@@ -1,0 +1,21 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: task-worktree-material-readability
+operation: assess
+treeIdentity: implementation
+impacts:
+  - type: brief
+    target: brief.md
+    reason: --task 运行时缺口、linked worktree 归一与任务库播种
+    status: aligned
+    sourceIdentities: [proposal.md, design.md]
+  - type: code-map
+    target: knowledge/code-map/task-system.md
+    reason: provider canonical 归一与 preview 播种职责说明
+    status: aligned
+    sourceIdentities: [specs/task-environments/spec.md, specs/worktree-buildr-web-preview/spec.md]
+  - type: explanation
+    target: knowledge/docs/architecture/buildr-data-design.md
+    reason: 工作树本地任务库副本的数据事实
+    status: aligned
+    sourceIdentities: [specs/worktree-buildr-web-preview/spec.md]
+unresolvedItems: []

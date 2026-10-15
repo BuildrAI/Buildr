@@ -9,24 +9,34 @@
 Buildr MUST 支持面向支持 runtime 的产品内置 Agent Skills，将其作为 workspace sync 的一部分进行同步，并 MUST 通过 capability contracts 路由可替换的 workspace 专业动作。
 
 #### Scenario: 产品内置 Buildr Skill
+
 - **WHEN** Buildr 产品包包含 Buildr 使用 Skill
 - **THEN** 该 Skill MUST 由 package 的产品入口 Skill 声明管理
 - **AND** `buildr skill install <agent>`、`buildr sync <agent>` 和首次 `buildr init --agent <agent>` MUST 能够为支持的 Agent runtime 安装或修复该 Skill
 - **AND** 该 Skill MUST NOT 写入 workspace 的 `skills/manifest.yml`
 
 #### Scenario: Buildr Skill 感知 Buildr 产品入口更新意图
+
 - **WHEN** 用户要求 Agent“更新 Buildr”“同步 Buildr”或表达明确等价意图，且没有限定只更新 CLI
 - **THEN** 产品内置 Buildr Skill 的 description 和正文 MUST 将这些表达统一识别为更新 Buildr CLI 与产品入口 Buildr Skill
 - **AND** Buildr Skill MUST 引导 Agent 先运行 `buildr update`
 - **AND** update 成功后 Agent MUST 重新解析当前 `buildr` 入口，再运行 `buildr skill install <agent> --target <dir>`
 - **AND** Agent MUST NOT 因该意图同步其他 workspace 产品能力或执行完整 workspace sync
 
+#### Scenario: Buildr Skill 指导更新后实例切换
+
+- **WHEN** `buildr update` 成功且同一安装槽位的旧版本 released 实例仍在运行（`installation status` 报 `stale`）
+- **THEN** Buildr Skill MUST 引导 Agent 告知用户旧版本仍在运行，并按 update 的 nextActions 指引经已安装 Launcher 重启完成实例切换
+- **AND** Agent MUST NOT 自行强杀实例；实例缺失 Launcher 或 Agent 运行于该实例内部时，告知用户需重启应用或下次启动时自动交接
+
 #### Scenario: Buildr Skill 感知只更新 CLI 意图
+
 - **WHEN** 用户明确要求“只更新 CLI”、不要安装或修复 Buildr Skill，或表达明确等价限制
 - **THEN** Buildr Skill MUST 引导 Agent 只运行 `buildr update`
 - **AND** Agent MUST NOT 追加 Skill install、sync、runtime render 或 workspace doctor
 
 #### Scenario: Buildr Skill 感知 Git 管理的 workspace 同步意图
+
 - **WHEN** 用户要求 Agent“更新 workspace”“同步 workspace”或表达明确等价意图，且 workspace root 由 Git 管理
 - **THEN** Buildr Skill MUST resolve `buildr.git-operations/v1`，并把明确 workspace、upstream、update operation 与授权交给 selected provider
 - **AND** Git 更新成功后 Agent MUST 直接运行 `buildr sync <agent> --target <dir>`，不得因 sync 再次询问授权
@@ -34,31 +44,35 @@ Buildr MUST 支持面向支持 runtime 的产品内置 Agent Skills，将其作�
 - **AND** Agent MUST 使用 sync 的最终 doctor 结果判断 workspace 同步是否完成
 
 #### Scenario: Git workspace update provider 不可用
+
 - **WHEN** `buildr.git-operations/v1` consumer readiness is `blocked`
 - **THEN** Buildr Skill MUST stop before changing the checkout
 - **AND** Agent MUST report the readiness reason and executable provider or binding nextActions
 - **AND** Agent MUST NOT silently fall back to a removed builtin or hand-written Git route
 
 #### Scenario: Git workspace 无法安全更新
+
 - **WHEN** workspace Git 更新遇到本地改动、分叉、冲突、缺少 upstream 或其他需要用户决策的状态
 - **THEN** Agent MUST 停止并说明实际状态和可执行选项
 - **AND** Agent MUST NOT 自动 stash、rebase、merge、覆盖或继续执行 `buildr sync`
 
 #### Scenario: Buildr Skill 感知非 Git workspace 同步意图
+
 - **WHEN** 用户要求 Agent“更新 workspace”“同步 workspace”或表达明确等价意图，且 workspace root 不由 Git 管理
 - **THEN** Buildr Skill MUST 直接运行 `buildr sync <agent> --target <dir>`
 - **AND** Agent MUST NOT 先运行 `buildr update`
 - **AND** Agent MUST 使用 sync 的最终 doctor 结果判断 workspace 同步是否完成
 
 #### Scenario: CLI update 受阻时停止 Buildr 产品入口更新
+
 - **WHEN** `buildr update` 返回 Git、registry、权限或来源决策点
 - **THEN** Buildr Skill MUST 向用户说明阻塞事实和可执行选项
 - **AND** Agent MUST NOT 使用旧 CLI 继续安装 Buildr Skill
 
 #### Scenario: Buildr Skill 感知首次初始化意图
+
 - **WHEN** 用户要求 Agent 首次使用 Buildr 管理尚未初始化的目录，且 runtime adapter 已确认
 - **THEN** Buildr Skill MUST 引导 Agent 使用 `buildr init --agent <agent>` 完成源资产初始化、产品 Buildr Skill 安装、runtime render 和 doctor
-- **AND** Buildr Skill MUST NOT 把独立 `skill install` 或 `sync` 列为完成首次 onboarding 的额外必需步骤
 
 #### Scenario: Buildr Skill 与用户 Skills 保持区分
 - **WHEN** Buildr 同步产品内置 Skills
@@ -689,3 +703,71 @@ Buildr MUST 随包提供 id 为 `frontend-development` 的可选前端开发技�
 #### Scenario: 安装和重载
 - **WHEN** 当前工作空间（Workspace）启用该可选技能（Skill），或提供同名实现
 - **THEN** Buildr MUST 按既有选择与投射语义使用它；卸载 MUST 不阻止无关任务推进
+
+### Requirement: 实现完成阶段必须指引登记任务验证报告
+产品内置的 `openspec-apply-change` 贡献与 `task-finish` 指引 MUST 明确：Agent 在实现完成、交付或任务完成（`completed`）之前，把当前已执行且仍适用的检查经 Task Verification 登记为正式报告；`completed` 之后不再写入，Agent MUST NOT 在完成任务后补救同一份报告。
+
+#### Scenario: apply 阶段指引登记时点
+- **WHEN** Agent 在 `openspec-apply-change` 完成实现且相关检查已执行
+- **THEN** apply 指引 MUST 要求在同一 active 阶段登记任务验证报告
+- **AND** MUST 说明 `completed` 后报告槽位锁死、无法补登
+
+#### Scenario: finish 指引保持登记顺序
+- **WHEN** Agent 收尾任务且存在已执行而未登记的检查
+- **THEN** `task-finish` 指引 MUST 在 `task complete` 之前完成验证报告登记
+- **AND** MUST NOT 引导 Agent 先把任务置为 completed 再补登记
+
+### Requirement: Buildr提供可选的功能设计技能
+
+Buildr MUST 随包提供可选的 `feature-design` 技能（Skill），使智能体（Agent）能够按自然语言意图发现功能讨论、较大需求收敛及已有方案接续能力。该技能（Skill）MUST 组合适用的专业设计方法，保持无应用状态、无固定阶段门禁；MUST NOT 仅因同时使用多个技能（Skill）新增能力契约（Capability Contract）或强制协作依赖。
+
+#### Scenario: 用户希望逐步设计较大功能
+- **WHEN** 用户要求讨论较大功能或继续已有方案
+- **THEN** 智能体（Agent）MUST 能发现功能设计技能（Skill），基于真实产品及已有决定收敛本轮目标和可评审成果
+- **AND** 技能（Skill）MUST 保留用户已授权范围，不自动展开所有未来模块
+
+#### Scenario: 用户没有安装可选技能
+- **WHEN** 工作空间（Workspace）没有安装功能设计技能（Skill）
+- **THEN** 其他已有专业工作 MUST 保持可继续，不得因缺少该技能（Skill）产生统一就绪门禁
+
+### Requirement: 功能设计按真实问题逐步形成可评审成果
+
+功能设计技能（Skill）MUST 要求区分已确认事实、建议和未知项，说明本轮要解决的问题、结果及必要边界。存在对象关系、执行或权限边界、环境隔离、导航或交互等实质选择时，MUST 按当前判断需要组合可视化与专业方法；图示 MUST 表达实际关系及边界，原型（UI Prototype）MUST 在已有制作授权内交给原型技能（Skill）处理，保留真实产品入口及关键状态。涉及多种技术时，MUST 按真实目标选择有代表性的首例检验抽象，不强制穷举或实现全部技术。确认设计、图示或原型（UI Prototype）MUST NOT 被推定为新的实现授权；既有同范围实现授权 MUST 继续有效。
+
+#### Scenario: 设计外部系统接入首例
+- **WHEN** 用户希望接入多种外部系统，本轮先讨论一种数据库连接
+- **THEN** 智能体（Agent）MUST 先收敛本轮使用路径，明确对象、当前事实来源、执行位置及环境隔离边界
+- **AND** 其他技术 MUST 仅按本轮需要检验差异，不自动扩展为全部接入实现
+
+#### Scenario: 用户已授权图示和原型讨论
+- **WHEN** 用户要求用架构图和原型（UI Prototype）解释方案
+- **THEN** 智能体（Agent）MUST 按实际问题采用相应制作能力，并把界面变化放回现有产品导航和关键状态供评审
+- **AND** 图示和原型（UI Prototype）MUST 明确区分拟议能力与当前实现
+
+#### Scenario: 用户认可建议但尚未授权实现
+- **WHEN** 用户仅认可设计建议或采用原型（UI Prototype），没有对应实现授权
+- **THEN** 智能体（Agent）MUST 停在已授权设计成果，不修改正式功能或操作外部系统
+
+#### Scenario: 同范围实现已有明确授权
+- **WHEN** 用户此前已明确授权同一目标的实现，范围及副作用没有变化
+- **THEN** 智能体（Agent）MUST 按既有授权接续适用实现工作，不因使用功能设计技能（Skill）重复索要授权
+
+### Requirement: 核心规则要求渐进简明沟通与引导
+
+Buildr 随包核心规则 MUST 要求智能体（Agent）的用户引导、解释和回复遵循少即是多、从简到繁、从基础到深入：优先呈现当前理解、判断和行动所需的结论与必要决定，按用户需要及问题复杂度展开依据和细节，避免一次性铺开无关术语与内部过程造成认知负担。详细材料 SHALL 可独立承载，普通回复给出必要概览与入口；用户明确要求详细说明时 MUST 提供所需深度。简化 MUST 保留影响目标判断、授权、真实结果、失败、未知和验收的必要信息，并保持现有术语与授权规则。该规则 MUST 不规定固定字数、统一教学阶段或每小步确认，不把渐进沟通变成阻断已授权工作的流程。
+
+#### Scenario: 普通问题先得到必要结论
+- **WHEN** 用户询问一个边界明确的问题或当前需要作出的决定
+- **THEN** 智能体（Agent）先给直接结论及必要说明，不先展开整套内部模型、命令或后续流程
+
+#### Scenario: 用户明确需要完整方案
+- **WHEN** 用户要求详细提案或架构方案
+- **THEN** 智能体（Agent）提供完整可独立阅读的材料，回复概述结果和阅读入口，不以简短为由省略所要求的设计深度
+
+#### Scenario: 简化仍披露影响判断的事实
+- **WHEN** 存在需要用户决定的实际影响、授权缺口、失败或未知结果
+- **THEN** 智能体（Agent）明确说明这些必要事实，不用简短成功表述掩盖未完成或不确定性
+
+#### Scenario: 渐进解释不撤销已有授权
+- **WHEN** 同一对象和范围内的工作已获授权且没有新的必要决定
+- **THEN** 智能体（Agent）连续推进，按需提供简明进展，不因逐步解释而要求用户逐步批准内部动作

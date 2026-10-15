@@ -10,6 +10,11 @@ include:
   - resources/contracts/bootstrap.yml
   - resources/installation/launcher/
   - resources/runtime/
+  - resources/workspace/skills/connections/nacos-connection/
+  - resources/workspace/skills/connections/mysql-connection/
+  - resources/workspace/skills/connections/kibana-connection/
+  - resources/workspace/skills/connections/xxl-job-connection/
+  - resources/workspace/skills/buildr/connection-authoring/
 
 agentSkills:
   - id: buildr
@@ -49,11 +54,17 @@ capabilityContracts:
     path: resources/workspace/skills/contracts/buildr/git-worktree-provider/v1.md
     target: skills/contracts/buildr/git-worktree-provider/v1.md
   - id: buildr.task-record
-    version: 3
-    description: 管理canonical Workspace中Task最小顶层事实及本机复盘文档摘要与决定状态。
-    path: resources/workspace/skills/contracts/buildr/task-record/v3.md
-    target: skills/contracts/buildr/task-record/v3.md
+    version: 4
+    description: 管理主工作空间中的任务说明、顶层事实及本机复盘文档摘要与决定状态。
+    path: resources/workspace/skills/contracts/buildr/task-record/v4.md
+    target: skills/contracts/buildr/task-record/v4.md
     replaces:
+      - id: buildr.task-record
+        version: 3
+        target: skills/contracts/buildr/task-record/v3.md
+        integrity: sha256-40754bab6ee2e2819f8bd72b4f36760491b73773ba93d94ef63bd3ab1e81ea33
+        provider: task-manager
+        description: 管理canonical Workspace中Task最小顶层事实及本机复盘文档摘要与决定状态。
       - id: buildr.task-record
         version: 2
         target: skills/contracts/buildr/task-record/v2.md
@@ -156,6 +167,11 @@ capabilityContracts:
         integrity: sha256-c15781d5fbc18516908f3f285057a9316364508607a4fbd00c791e1b9226f995
         provider: current-knowledge-maintenance
         description: 按 Change 或已确认当前事实的真实影响评估、收敛、检查或独立维护 Project 当前认知。
+  - id: buildr.current-knowledge-maintenance
+    version: 4
+    description: 按明确范围建设、检查与维护代码地图、技术图和解释文档，不维护变更说明文件。
+    path: resources/workspace/skills/contracts/buildr/current-knowledge-maintenance/v4.md
+    target: skills/contracts/buildr/current-knowledge-maintenance/v4.md
 initialSkillBindings:
   - capability: buildr.git-operations
     version: 1
@@ -164,7 +180,7 @@ initialSkillBindings:
     version: 1
     provider: task-worktree
   - capability: buildr.task-record
-    version: 3
+    version: 4
     provider: task-manager
   - capability: buildr.task-review
     version: 2
@@ -179,25 +195,54 @@ initialSkillBindings:
     version: 1
     provider: terminology-governance
   - capability: buildr.current-knowledge-maintenance
-    version: 3
+    version: 4
     provider: current-knowledge-maintenance
 builtins:
   rules: []
   skills:
+    - id: mysql-connection
+      path: resources/workspace/skills/connections/mysql-connection
+      target: skills/connections/mysql-connection
+      description: 配置和核验明确绑定的 MySQL 连接，发现数据库，并使用独立内置查询工具读取结构与数据。
+      required: false
+      connectionDefinitions: [assets/connection.yml]
+    - id: kibana-connection
+      path: resources/workspace/skills/connections/kibana-connection
+      target: skills/connections/kibana-connection
+      description: 使用明确绑定的 Kibana 连接发现视图与字段，执行有界只读日志搜索和统计。
+      required: false
+      connectionDefinitions: [assets/connection.yml]
+    - id: xxl-job-connection
+      path: resources/workspace/skills/connections/xxl-job-connection
+      target: skills/connections/xxl-job-connection
+      description: 从服务配置定位 XXL-JOB 执行器，查询和受控维护调度任务，核验执行记录与日志。
+      required: false
+      connectionDefinitions: [assets/connection.yml]
+    - id: nacos-connection
+      path: resources/workspace/skills/connections/nacos-connection
+      target: skills/connections/nacos-connection
+      description: 使用技能声明的 Nacos 连接发现、读取、比较与受控发布配置时使用；加载所选实例及自带程序帮助。
+      required: false
+      connectionDefinitions: [assets/connection.yml]
+    - id: connection-authoring
+      path: resources/workspace/skills/buildr/connection-authoring
+      target: skills/buildr/connection-authoring
+      description: 用户要为 Buildr 制作或维护自有外部系统接入方法时使用；交付连接声明、专业技能及必要程序，复用现有登记和投射。
+      required: false
     - id: task-triage
       path: resources/workspace/skills/buildr/task-triage
       target: skills/buildr/task-triage
-      description: 开始修改代码、文档、配置或技能等持久文件前使用；确定隔离位置，判断直接实施、事实维护或 OpenSpec 变更，并交接专业动作。
+      description: 用户授权修复、优化或继续修改代码、文档、配置、规则或技能时使用；首次持久写入前登记或接续任务、确定隔离位置，判断直接实施、事实维护或 OpenSpec 变更。
       required: false
       requires:
         - capability: buildr.task-record
-          version: 3
+          version: 4
           mode: optional
         - capability: buildr.git-operations
           version: 1
           mode: optional
         - capability: buildr.current-knowledge-maintenance
-          version: 3
+          version: 4
           mode: optional
         - capability: buildr.git-worktree-provider
           version: 1
@@ -217,6 +262,11 @@ builtins:
       target: skills/buildr/code-architecture
       description: 设计代码结构、调整模块职责或审查文件拆分与合并时使用；局部实现沿用既有结构。
       required: false
+    - id: feature-design
+      path: resources/workspace/skills/buildr/feature-design
+      target: skills/buildr/feature-design
+      description: 讨论或逐步设计新功能、收敛较大需求或接续已有方案时使用；基于真实产品形成可评审的小范围成果，不用于已定设计的局部实现。
+      required: false
     - id: project-testing
       path: resources/workspace/skills/buildr/project-testing
       target: skills/buildr/project-testing
@@ -225,11 +275,11 @@ builtins:
     - id: task-manager
       path: resources/workspace/skills/buildr/task-manager
       target: skills/buildr/task-manager
-      description: 创建或维护任务、记录工作进展与待处理事项、读取人的答复、纠正状态或调整父子关系时使用；维护当前工作事实，不执行研发、测试或交付。
+      description: 在已初始化的 Buildr 工作空间中，用户授权修复、优化、开始或继续代码、文档、配置、规则或技能修改，或要求维护任务与进展时使用；先登记或接续任务，纯只读咨询不创建任务。
       required: false
       provides:
         - capability: buildr.task-record
-          version: 3
+          version: 4
     - id: task-review
       path: resources/workspace/skills/buildr/task-review
       target: skills/buildr/task-review
@@ -274,7 +324,7 @@ builtins:
       required: false
       requires:
         - capability: buildr.task-record
-          version: 3
+          version: 4
           mode: required
       replaces:
         id: task-asset-review
@@ -316,7 +366,7 @@ builtins:
           version: 1
       requires:
         - capability: buildr.task-record
-          version: 3
+          version: 4
           mode: optional
         - capability: buildr.git-worktree-provider
           version: 1
@@ -349,7 +399,7 @@ builtins:
       required: false
       provides:
         - capability: buildr.current-knowledge-maintenance
-          version: 3
+          version: 4
       requires:
         - capability: buildr.terminology-governance
           version: 1
@@ -442,7 +492,7 @@ workspaceFiles:
   - resources/workspace/gitignore => .gitignore copy
   - resources/workspace/skills/contracts/buildr/git-operations/v1.md => skills/contracts/buildr/git-operations/v1.md copy
   - resources/workspace/skills/contracts/buildr/git-worktree-provider/v1.md => skills/contracts/buildr/git-worktree-provider/v1.md copy
-  - resources/workspace/skills/contracts/buildr/task-record/v3.md => skills/contracts/buildr/task-record/v3.md copy
+  - resources/workspace/skills/contracts/buildr/task-record/v4.md => skills/contracts/buildr/task-record/v4.md copy
   - resources/workspace/skills/contracts/buildr/task-review/v2.md => skills/contracts/buildr/task-review/v2.md copy
   - resources/workspace/skills/contracts/buildr/task-verification/v4.md => skills/contracts/buildr/task-verification/v4.md copy
   - resources/workspace/skills/contracts/buildr/task-finish/v1.md => skills/contracts/buildr/task-finish/v1.md copy
@@ -454,6 +504,7 @@ workspaceFiles:
   - resources/workspace/skills/buildr/code-map/SKILL.md => skills/buildr/code-map/SKILL.md copy
   - resources/workspace/skills/buildr/code-architecture/SKILL.md => skills/buildr/code-architecture/SKILL.md copy
   - resources/workspace/skills/buildr/code-architecture/references/examples.md => skills/buildr/code-architecture/references/examples.md copy
+  - resources/workspace/skills/buildr/feature-design/SKILL.md => skills/buildr/feature-design/SKILL.md copy
   - resources/workspace/skills/buildr/project-testing/SKILL.md => skills/buildr/project-testing/SKILL.md copy
   - resources/workspace/skills/buildr/project-testing/references/testing-model-v1.md => skills/buildr/project-testing/references/testing-model-v1.md copy
   - resources/workspace/skills/buildr/task-manager/SKILL.md => skills/buildr/task-manager/SKILL.md copy
@@ -491,6 +542,7 @@ workspaceFiles:
   - resources/workspace/skills/buildr/task-finish/SKILL.md => skills/buildr/task-finish/SKILL.md copy
   - resources/workspace/skills/buildr/terminology-governance/SKILL.md => skills/buildr/terminology-governance/SKILL.md copy
   - resources/workspace/skills/contracts/buildr/current-knowledge-maintenance/v3.md => skills/contracts/buildr/current-knowledge-maintenance/v3.md copy
+  - resources/workspace/skills/contracts/buildr/current-knowledge-maintenance/v4.md => skills/contracts/buildr/current-knowledge-maintenance/v4.md copy
   - resources/workspace/skills/buildr/project-composition-maintenance/SKILL.md => skills/buildr/project-composition-maintenance/SKILL.md copy
   - resources/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md => skills/buildr/current-knowledge-maintenance/SKILL.md copy
   - resources/workspace/skills/buildr/current-knowledge-maintenance/references/architecture-knowledge.md => skills/buildr/current-knowledge-maintenance/references/architecture-knowledge.md copy

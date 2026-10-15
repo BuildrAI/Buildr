@@ -1,0 +1,254 @@
+{
+  "version": 1,
+  "pages": [
+    {
+      "id": "files",
+      "title": "代码 · 资源管理器",
+      "notes": [
+        {
+          "id": "top",
+          "title": "随时可达的代码板块",
+          "text": "顶栏增加代码，与工作台、工作空间并列，三者共享同一工作空间。任务、项目和文章页面都能直接进入代码查看。",
+          "position": "code-top-entry"
+        },
+        {
+          "id": "menu",
+          "title": "左侧分配两个独立工具",
+          "text": "代码板块左侧只有资源管理器和源代码管理两个菜单，当前只高亮资源管理器。源代码管理预留后续入口，不显示虚构的正式结果。",
+          "position": "code-menu"
+        },
+        {
+          "id": "tree",
+          "title": "文件树使用专门的窄栏",
+          "text": "中间目录默认约 280px，可拖动边界调宽、收起和恢复。目录宽度独立保留，文件阅读占用剩余空间。",
+          "position": "explorer-tree-pane"
+        },
+        {
+          "id": "root",
+          "title": "代码库范围多选",
+          "text": "范围可以多选代码库，空筛选显示全部。每个代码库按根展示完整文件树，不按任务改动文件裁剪；当前阅读文件的位置和版本单独标识。",
+          "position": "working-directory"
+        },
+        {
+          "id": "tabs",
+          "title": "完整文件在阅读区打开",
+          "text": "多个文件保留在右侧标签中，可切换和关闭。同名文件按代码库、目录或历史版本区分，切换不会覆盖另一份内容。",
+          "position": "file-tabs"
+        },
+        {
+          "id": "read",
+          "title": "阅读源码、文档和图片",
+          "text": "源码有行号，文档支持阅读和原文，图片直接预览。只读演示不修改代码或执行 Git 操作。",
+          "position": "file-reading"
+        },
+        {
+          "id": "agent",
+          "title": "带文件与范围交给智能体",
+          "text": "点击行号选择一行，Shift 选择范围。解释或提出修改生成带代码库、目录、版本和范围的指令，不执行真实修改。",
+          "position": "agent-file-context"
+        }
+      ],
+      "states": [
+        {
+          "id": "multi-repository",
+          "title": "多选代码库范围",
+          "notes": [
+            {
+              "id": "all",
+              "title": "代码查看不限于当前任务",
+              "text": "示例选择 Buildr 与 Web 项目，同时展示两个完整文件树。清空筛选可恢复全部代码库，已打开文件继续保留。",
+              "position": "working-directory"
+            }
+          ]
+        },
+        {
+          "id": "task-origin",
+          "title": "从任务预选代码库",
+          "notes": [
+            {
+              "id": "origin",
+              "title": "定位本次工作的文件现场",
+              "text": "任务服务引用的代码库被预选并去重，仍展示整库所有示例文件。可以扩展或清除筛选；具体文件入口另带准确目录/版本和路径，返回任务恢复审阅。",
+              "position": "return-task"
+            }
+          ]
+        },
+        {
+          "id": "markdown",
+          "title": "文档阅读",
+          "notes": [
+            {
+              "id": "doc",
+              "title": "文档使用同一目录和文件标签",
+              "text": "可以切换阅读和原文，并继续打开其他源码或图片。",
+              "position": "file-reading"
+            }
+          ]
+        },
+        {
+          "id": "image",
+          "title": "图片资源",
+          "notes": [
+            {
+              "id": "image",
+              "title": "图片直接查看",
+              "text": "在相同阅读区预览代码库中的图片。",
+              "position": "file-reading"
+            }
+          ]
+        },
+        {
+          "id": "search",
+          "title": "搜索文件与内容",
+          "notes": [
+            {
+              "id": "search",
+              "title": "按所选目录搜索",
+              "text": "文件名搜索点击打开文件。内容搜索点击文件标题或路径只展开/折叠匹配，点击具体匹配行才定位阅读。此演示只覆盖示例文件。",
+              "position": "file-search"
+            }
+          ]
+        },
+        {
+          "id": "history",
+          "title": "任务提交中的完整文件",
+          "notes": [
+            {
+              "id": "history",
+              "title": "完整文件沿用明确历史版本",
+              "text": "承接任务中明确提交的文件定位，目录与文件采用同一历史模拟快照。查看当前文件另开对应来源的文件标签；全局历史列表留给下一步源代码管理。",
+              "position": "current-file"
+            }
+          ]
+        },
+        {
+          "id": "collapsed",
+          "title": "收起目录专注阅读",
+          "notes": [
+            {
+              "id": "expand",
+              "title": "给完整文件更多空间",
+              "text": "收起目录后文件阅读区使用全部内容宽度。右上角“恢复分屏”可以恢复原目录、搜索和选择。",
+              "position": "file-tabs"
+            }
+          ]
+        },
+        {
+          "id": "unavailable",
+          "title": "目录不可读取",
+          "notes": [
+            {
+              "id": "retry",
+              "title": "局部读取失败可恢复",
+              "text": "保留所选实例和位置，提供重试；仍可切到其他代码库继续查看。",
+              "position": "source-tree"
+            }
+          ]
+        },
+        {
+          "id": "large-file",
+          "title": "大文件分段阅读",
+          "notes": [
+            {
+              "id": "pages",
+              "title": "超过5 MiB后分段阅读",
+              "text": "模拟6 MiB文件，每次只展示512 KiB，通过上一段/下一段继续；真实产品另核对续读修订，文件变化需重新读取。本状态使用内存示例，不读取机器文件。",
+              "position": "file-reading"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "task-changes",
+      "title": "任务 · 从改动进入完整文件",
+      "notes": [
+        {
+          "id": "top",
+          "title": "任务里也能直接进入代码",
+          "text": "顶栏代码入口保持可达，进入后可以查看当前空间全部代码库。查看源文件只预选任务服务引用的代码库，不只显示本任务改动文件。",
+          "position": "task-file-entry"
+        },
+        {
+          "id": "full",
+          "title": "从差异进入完整实现",
+          "text": "查看完整文件定位所选文件对应的代码库和工作目录；历史提交中的文件沿用该版本。切换到代码区域后，任务的阶段与审阅选择继续保留。",
+          "position": "diff-full-file"
+        },
+        {
+          "id": "preserve",
+          "title": "任务审阅可以接着进行",
+          "text": "文件阅读提供返回任务入口；回来后仍是之前的阶段和所选差异。进入代码不改变任务范围或记录。",
+          "position": "task-context"
+        }
+      ],
+      "states": []
+    },
+    {
+      "id": "task",
+      "title": "任务 · 查看源文件入口",
+      "notes": [
+        {
+          "id": "locate",
+          "title": "任务入口预选服务相关代码库",
+          "text": "任务阶段内容继续使用原有布局。查看源文件进入代码板块，按任务服务引用预选代码库并去重；完整文件树可浏览，用户可以扩展或清空范围，并返回原任务。",
+          "position": "task-file-entry"
+        },
+        {
+          "id": "global",
+          "title": "保持三个顶层入口",
+          "text": "工作台处理任务，工作空间浏览登记资产，代码浏览实际实现与历史内容。三者使用同一空间范围。",
+          "position": "code-top-entry"
+        }
+      ],
+      "states": [
+        {
+          "id": "requirements",
+          "title": "任务说明",
+          "notes": []
+        },
+        {
+          "id": "design",
+          "title": "方案设计",
+          "notes": []
+        },
+        {
+          "id": "implementation",
+          "title": "开发实现",
+          "notes": []
+        },
+        {
+          "id": "closeout",
+          "title": "任务收尾",
+          "notes": []
+        }
+      ]
+    },
+    {
+      "id": "source-control",
+      "title": "代码 · 源代码管理待建设",
+      "notes": [
+        {
+          "id": "next",
+          "title": "两菜单框架，分步交付",
+          "text": "源代码管理的位置已经明确。下一子任务建设全局改动、提交历史、提交详情与任务定位；本阶段不伪造已完成能力。",
+          "position": "source-control-pending"
+        }
+      ],
+      "states": []
+    },
+    {
+      "id": "repository",
+      "title": "工作空间 · 代码库登记信息",
+      "notes": [
+        {
+          "id": "separate",
+          "title": "登记与代码查看各有入口",
+          "text": "工作空间代码库页面继续提供来源与引用关系；浏览源文件明确进入代码区域的默认目录。顶栏代码也可恢复上次查看位置。",
+          "position": "code-top-entry"
+        }
+      ],
+      "states": []
+    }
+  ]
+}

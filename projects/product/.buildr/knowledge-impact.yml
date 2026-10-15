@@ -1,26 +1,27 @@
 schemaVersion: buildr.knowledge-impact/v1
-task: fix-dev-baseline-verification-failures
+task: relax-node-version
 operation: reconcile
-treeIdentity: 6584abd4345319854c38967a11e1b2e5341406ee
 impacts:
   - type: reference
-    target: knowledge/docs/architecture/verification-framework.md
-    reason: 测试族名称与完整入口（test:fast / test:integration / test:system / test:daily-full）不变；npm 脚本内部增加 --import prelude 与 executor baseEnv 默认注入 BUILDR_NPM_ENTRY_PATH，不影响文档描述。
-    status: aligned
+    target: knowledge/docs/flows/open-source-release.md
+    reason: 开发、候选和发布准备改用稳定版 Node >=24.15.0，执行身份一致性继续保留。
+    status: updated
+    sourceIdentities:
+      - services/buildr/src/infrastructure/process.ts
+      - services/buildr/tools/verification/candidate-environment.ts
+      - services/buildr/tools/release/release-orchestration-runner.ts
+  - type: reference
+    target: knowledge/docs/flows/dsh-plugin-release.md
+    reason: 插件准备接受最低稳定版本，CI选定基准与实际版本证据分别说明。
+    status: updated
+    sourceIdentities:
+      - services/dsh-plugin/package.json
+      - services/dsh-plugin/tools/prepare-release-sdk.ts
+  - type: reference
+    target: services/buildr/docs/cli-reference.md
+    reason: 公开运行要求及关联README、限制说明同步为 >=24.15.0。
+    status: updated
     sourceIdentities:
       - services/buildr/package.json
-      - services/buildr/test/register-development-entry.ts
-      - services/buildr/test/verification/executor.ts
-  - type: reference
-    target: services/buildr/docs/cli-architecture.md
-    reason: 文档钉住的开发入口 run-development-npm run test:fast 不变。
-    status: aligned
-    sourceIdentities:
-      - services/buildr/package.json
-  - type: reference
-    target: openspec/specs/npm-cli-package/spec.md
-    reason: 规范已要求安装包保留 docs/cli-reference.md 离线参考；本变更让 payload docs 映射追上规范，无语义改动。
-    status: aligned
-    sourceIdentities:
-      - services/buildr/tools/release/application-payload.ts
+      - services/buildr/tools/release/release-artifact.ts
 unresolvedItems: []

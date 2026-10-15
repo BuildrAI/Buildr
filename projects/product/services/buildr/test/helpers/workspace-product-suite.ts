@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { execFile, execFileSync, spawn, spawnSync } from 'node:child_process';
 import test from 'node:test';
 import YAML from 'yaml';
 
@@ -19,6 +19,13 @@ const PRODUCT_ROOT: any = path.resolve(import.meta.dirname, '../..');
 const BUILDR: any = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
 const APP_PROCESS_TIMEOUT_MS: any = 60_000;
 const APP_COMMAND_TIMEOUT_MS: any = 15_000;
+
+function previewCommandDiagnostic(phase: string, result: any, timeoutMs: number): string {
+  return `[preview-command-result] ${JSON.stringify({
+    phase, status: result.status, errorCode: result.error?.code ?? null, signal: result.signal ?? null, timeoutMs,
+    stdoutBytes: Buffer.byteLength(result.stdout || ''), stderrBytes: Buffer.byteLength(result.stderr || ''),
+  })}`;
+}
 
 function temporaryRoot(t: any): any  {
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-workspace-product-'));
@@ -48,6 +55,28 @@ function runBuildr(args: any, options: any = {}): any  {
   const env: any = options.env || { ...process.env, ...(scopedAppData ? { BUILDR_APP_DATA_DIR: scopedAppData } : {}) };
   try {
     return spawnSync(process.execPath, [BUILDR, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8', ...options, env });
+  } finally {
+    if (transientAppData) fs.rmSync(transientAppData, { recursive: true, force: true });
+  }
+}
+
+async function runBuildrAsync(args: any, options: any = {}): Promise<any> {
+  const targetIndex: any = args.indexOf('--target');
+  const targetRoot: any = targetIndex >= 0 ? args[targetIndex + 1] : null;
+  const scopedAppData: any = options.env || process.env.BUILDR_APP_DATA_DIR
+    ? null
+    : targetRoot
+      ? path.join(path.dirname(path.resolve(targetRoot)), 'app-data')
+      : fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-workspace-product-command-'));
+  const transientAppData: any = scopedAppData && !targetRoot ? scopedAppData : null;
+  const env: any = options.env || { ...process.env, ...(scopedAppData ? { BUILDR_APP_DATA_DIR: scopedAppData } : {}) };
+  try {
+    return await new Promise((resolve: any) => {
+      const child: any = execFile(process.execPath, [BUILDR, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8', ...options, env }, (error: any, stdout: any, stderr: any) => {
+        resolve({ status: error ? (Number.isInteger(error.code) ? error.code : null) : 0, signal: error?.signal || null, stdout, stderr, error });
+      });
+      child.stdin?.end();
+    });
   } finally {
     if (transientAppData) fs.rmSync(transientAppData, { recursive: true, force: true });
   }
@@ -380,6 +409,8 @@ suiteTest('manifest-registry', 'sync 显式迁移 legacy Workspace，并在 iden
 });
 
 suiteTest('buildr-web-http', 'Buildr Web Runtime 只监听 loopback，并保护写 API、revision 与 prompt-only 创建', async (t: any) => {
+  let phase = 'workspace-setup';
+  try {
   const root: any = initWorkspace(t);
   isolateBuildrWebData(t, path.join(temporaryRoot(t), 'local-app-data'));
   const runtime: any = createRuntime();
@@ -392,6 +423,7 @@ suiteTest('buildr-web-http', 'Buildr Web Runtime 只监听 loopback，并保护�
   const apiBase: any = `/api/v1/workspaces/${initialWorkspaceId}`;
   assert.match(url, /^http:\/\/127\.0\.0\.1:\d+$/);
 
+  phase = 'spa-and-assets';
   const html: any = await fetch(url).then((response: any) => response.text());
   assert.match(html, /<title>Buildr Web<\/title>/);
   assert.match(html, /id="root"/);
@@ -421,14 +453,17 @@ suiteTest('buildr-web-http', 'Buildr Web Runtime 只监听 loopback，并保护�
   assert.equal(response.status, 404);
   response = await fetch(`${url}/api/v1/unknown`);
   assert.equal(response.status, 404);
+  phase = 'workspace-read';
   const registry: any = await fetch(`${url}/api/v1/workspaces`).then((response: any) => response.json());
   assert.equal(registry.workspaces.length, 1);
   assert.equal(registry.workspaces[0].workspace.id, initialWorkspaceId);
   const current: any = await fetch(`${url}${apiBase}`).then((response: any) => response.json());
   assert.equal(current.workspace.name, 'Demo');
   assert.equal(sha256(metadataFile), beforeHash, '只读启动和读取不得修改 Workspace');
-  const created: any = runBuildr(['project', 'create', 'web-demo', '--target', root, '--name', 'Web Demo', '--description', 'HTTP projection fixture']);
+  phase = 'project-create';
+  const created: any = await runBuildrAsync(['project', 'create', 'web-demo', '--target', root, '--name', 'Web Demo', '--description', 'HTTP projection fixture']);
   assert.equal(created.status, 0, created.stderr);
+  phase = 'read-after-project-create';
   const gettingStarted: any = await fetch(`${url}${apiBase}/getting-started?project=missing`).then((response: any) => response.json());
   assert.equal(gettingStarted.phase, 'service-empty');
   assert.equal(gettingStarted.projects.length, 1);
@@ -436,6 +471,7 @@ suiteTest('buildr-web-http', 'Buildr Web Runtime 只监听 loopback，并保护�
   response = await fetch(`${url}${apiBase}/changes`);
   assert.equal(response.status, 404);
 
+  phase = 'write-authorization';
   response = await fetch(`${url}${apiBase}`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json', 'x-buildr-session': sessionToken },
@@ -457,6 +493,7 @@ suiteTest('buildr-web-http', 'Buildr Web Runtime 只监听 loopback，并保护�
   });
   assert.equal(response.status, 415);
 
+  phase = 'oversize-body';
   response = await fetch(`${url}/api/v1/prompts/workspace-create`, {
     method: 'POST',
     headers: { origin: url, 'content-type': 'application/json', 'x-buildr-session': sessionToken },
@@ -464,6 +501,7 @@ suiteTest('buildr-web-http', 'Buildr Web Runtime 只监听 loopback，并保护�
   });
   assert.equal(response.status, 413);
 
+  phase = 'path-and-revision';
   response = await fetch(`${url}${apiBase}?path=/tmp/other`);
   assert.equal(response.status, 400);
 
@@ -484,6 +522,7 @@ suiteTest('buildr-web-http', 'Buildr Web Runtime 只监听 loopback，并保护�
   assert.equal(response.status, 409);
   assert.equal((await response.json()).error.code, 'workspace_revision_conflict');
 
+  phase = 'prompt-only-create';
   response = await fetch(`${url}/api/v1/prompts/workspace-create`, {
     method: 'POST',
     headers: { origin: url, 'content-type': 'application/json', 'x-buildr-session': sessionToken },
@@ -494,6 +533,10 @@ suiteTest('buildr-web-http', 'Buildr Web Runtime 只监听 loopback，并保护�
   assert.match(prompt.prompt, /先读取并遵循当前可用的 Buildr Skill/);
   assert.match(prompt.prompt, /目标位置尚未指定/);
   assert.equal(prompt.copiedMeansCreated, false);
+  } catch (cause) {
+    // Fixed phase labels retain the original error without copying request data.
+    throw new Error(`[buildr-web-http-scenario] phase=${phase}`, { cause });
+  }
 });
 
 suiteTest('buildr-web-http', 'Buildr Web 文章入口只读投影项目文章、配图和稳定错误状态', async (t: any) => {
@@ -646,7 +689,7 @@ suiteTest('app-process', '独立 checkout preview 并行隔离、输出身份并
   const second: any = await measure('workspace-second', () => initGitWorkspace(t, { name: 'preview-second' }));
   started.push('first-task');
   const firstStart: any = await runPreviewCommand('start-first', ['web', 'preview', 'start', 'first-task', '--target', first, '--no-open', '--json']);
-  assert.equal(firstStart.status, 0, firstStart.stderr);
+  assert.equal(firstStart.status, 0, previewCommandDiagnostic('start-first', firstStart, APP_COMMAND_TIMEOUT_MS));
   const firstPreview: any = JSON.parse(firstStart.stdout);
   assert.equal(firstPreview.status, 'started');
   assert.equal(firstPreview.owner.worktree, first);
@@ -662,30 +705,30 @@ suiteTest('app-process', '独立 checkout preview 并行隔离、输出身份并
 
   started.push('second-task');
   const secondStart: any = await runPreviewCommand('start-second', ['web', 'preview', 'start', 'second-task', '--target', second, '--no-open', '--json']);
-  assert.equal(secondStart.status, 0, secondStart.stderr);
+  assert.equal(secondStart.status, 0, previewCommandDiagnostic('start-second', secondStart, APP_COMMAND_TIMEOUT_MS));
   const secondPreview: any = JSON.parse(secondStart.stdout);
   assert.notEqual(secondPreview.url, firstPreview.url);
   assert.equal(secondPreview.owner.worktree, second);
   assert.equal(secondPreview.owner.identityMode, 'standalone-checkout');
 
   const collision: any = await runPreviewCommand('reject-collision', ['web', 'preview', 'start', 'first-task', '--target', second, '--no-open', '--json']);
-  assert.notEqual(collision.status, 0);
+  assert.notEqual(collision.status, 0, previewCommandDiagnostic('reject-collision', collision, APP_COMMAND_TIMEOUT_MS));
   assert.match(collision.stderr, /无法证明属于当前 worktree/);
 
   const listed: any = await runPreviewCommand('list-both', ['web', 'preview', 'list', '--json']);
-  assert.equal(listed.status, 0, listed.stderr);
+  assert.equal(listed.status, 0, previewCommandDiagnostic('list-both', listed, APP_COMMAND_TIMEOUT_MS));
   assert.deepEqual(JSON.parse(listed.stdout).previews.map((item: any) => item.instance).sort(), ['first-task', 'second-task']);
 
   const stopped: any = await measure('stop-first', () => stopPreview('first-task', { dataRoot: appData, caller: null }));
   started.splice(started.indexOf('first-task'), 1);
   assert.equal(stopped.status, 'stopped');
   const remainingResult: any = await runPreviewCommand('list-remaining', ['web', 'preview', 'list', '--json']);
-  assert.equal(remainingResult.status, 0, remainingResult.stderr);
+  assert.equal(remainingResult.status, 0, previewCommandDiagnostic('list-remaining', remainingResult, APP_COMMAND_TIMEOUT_MS));
   const remaining: any = JSON.parse(remainingResult.stdout).previews;
   assert.deepEqual(remaining.map((item: any) => item.instance), ['second-task']);
   const secondPid: any = secondPreview.pid;
   const secondStopped: any = await runPreviewCommand('stop-second', ['web', 'preview', 'stop', 'second-task', '--json']);
-  assert.equal(secondStopped.status, 0, secondStopped.stderr);
+  assert.equal(secondStopped.status, 0, previewCommandDiagnostic('stop-second', secondStopped, APP_COMMAND_TIMEOUT_MS));
   started.splice(started.indexOf('second-task'), 1);
   await measure('confirm-second-exit', async () => {
     for (let index: any = 0; index < 40; index += 1) {

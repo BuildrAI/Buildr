@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Button } from 'antd';
 import { MarkdownReader } from '../../../components/MarkdownReader';
-import type { ChangeArtifact, ChangePayload } from '../../../components/ChangeBriefPanel';
+import type { ChangeArtifact, ChangePayload } from '../api/task-api';
 import { resolveProjectMarkdownHref } from '../../../lib/projectDocuments';
 
 export function taskChangeArtifacts(change: ChangePayload): Array<{ label: string; artifact: ChangeArtifact }> {
   return [
-    { label: '需求或说明', artifact: change.brief },
     { label: '提案', artifact: change.artifacts.proposal },
     { label: '设计', artifact: change.artifacts.design },
     ...change.artifacts.specs.map(artifact => ({ label: `规范 · ${artifact.capability || artifact.path.split('/').at(-2) || '行为说明'}`, artifact })),
@@ -19,7 +18,7 @@ export function TaskArtifactReader({ change, artifactPath, onClose, onSelect, on
   artifactPath: string;
   onClose(): void;
   onSelect(path: string): void;
-  onProjectDocument?(path: string): void;
+  onProjectDocument?(path: string, projectRelative: boolean): void;
 }) {
   const [message, setMessage] = useState('');
   const closeRef = useRef(onClose);
@@ -41,7 +40,7 @@ export function TaskArtifactReader({ change, artifactPath, onClose, onSelect, on
     const path = resolveProjectMarkdownHref(artifactPath, href);
     const target = items.find(item => item.artifact.path === path);
     if (target) onSelect(target.artifact.path);
-    else if (path && onProjectDocument) onProjectDocument(path);
+    else if (path && onProjectDocument) onProjectDocument(path, href.trim().startsWith('@project/'));
     else setMessage('这个链接不在当前项目的可读材料范围内。');
   };
   return <aside className={`task-document-reader${embedded ? ' task-document-embedded' : ''}`} aria-label="成果阅读">

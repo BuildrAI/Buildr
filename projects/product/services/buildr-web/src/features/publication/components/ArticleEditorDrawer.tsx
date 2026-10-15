@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useBlocker } from 'react-router-dom';
 import type { TextAreaRef } from 'antd/es/input/TextArea';
 import { Alert, Button, Empty, Form, Input, Modal, Select, Space, Spin, message } from 'antd';
 import { CopyOutlined, EyeOutlined, EditOutlined, SaveOutlined } from '@ant-design/icons';
@@ -6,6 +7,7 @@ import { DrawerShell } from '../../../components/DrawerShell';
 import { publicationApi, type PublicationAsset, type PublicationDetail, type PublicationDraft } from '../api/publication-api';
 import { usePublication } from '../hooks/usePublication';
 import { articleDraft, insertMarkdown, publicationStatus, writingMethods } from '../publication-model';
+import { shouldBlockArticleNavigation } from '../publication-navigation';
 import { ArticleAssetsPanel } from './ArticleAssetsPanel';
 import { ArticleBody } from './ArticleBody';
 import { ArticleWritingDrawer } from './ArticleWritingDrawer';
@@ -24,22 +26,51 @@ export function ArticleEditorDrawer({ workspaceId, projectCode, publicationId, o
   const [messages, holder] = message.useMessage();
   const textarea = useRef<TextAreaRef>(null), selection = useRef({ start: 0, end: 0 });
   const dirty = Boolean(base && draft && JSON.stringify(draft) !== JSON.stringify(articleDraft(base)));
+  const exitState = useRef({ dirty, busy });
+  const savingExit = useRef(false);
+  exitState.current = { dirty, busy };
+  const blocker = useBlocker(({ nextLocation }) => {
+    const blocked = shouldBlockArticleNavigation(workspaceId, nextLocation.pathname, exitState.current);
+    savingExit.current = blocked && exitState.current.busy;
+    return blocked;
+  });
   const article = base?.publication;
   useEffect(() => {
     if (!read.data) return;
     setBase(read.data); setDraft(articleDraft(read.data)); setAssets(read.data.assets || []); selection.current = { start: read.data.content.length, end: read.data.content.length };
   }, [read.data]);
   useEffect(() => {
-    if (!dirty) return;
-    const handler = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    const handler = (event: BeforeUnloadEvent) => {
+      if (!exitState.current.dirty && !exitState.current.busy) return;
+      event.preventDefault(); event.returnValue = '';
+    };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
-  }, [dirty]);
+  }, []);
+  useEffect(() => {
+    if (blocker.state !== 'blocked' || (!busy && !savingExit.current)) return;
+    // Saving exits are cancelled now, never replayed after the request settles.
+    savingExit.current = false; blocker.reset(); setLeave(false);
+    messages.info('文章正在保存，请稍候再离开。');
+  }, [blocker, busy, messages]);
   const change = (key: keyof PublicationDraft, value: string) => setDraft(current => current ? { ...current, [key]: value } : current);
-  const cancel = () => { if (busy) return; if (dirty) setLeave(true); else onClose(); };
+  const resetExit = () => { savingExit.current = false; if (blocker.state === 'blocked') blocker.reset(); setLeave(false); };
+  const cancel = () => {
+    if (exitState.current.busy) return;
+    resetExit();
+    if (dirty) setLeave(true); else onClose();
+  };
+  const discard = () => {
+    if (exitState.current.busy || savingExit.current) { resetExit(); messages.info('文章正在保存，请稍候再离开。'); return; }
+    if (blocker.state === 'blocked') blocker.proceed();
+    setLeave(false); onClose();
+  };
   const save = async () => {
-    if (!base || !draft || busy) return;
+    if (!base || !draft || exitState.current.busy) return;
     if (!draft.title.trim()) { setSaveError('请填写文章标题'); return; }
+    // Close any earlier confirmation before starting this request. The ref also
+    // protects navigation in the interval before React commits the busy state.
+    exitState.current.busy = true; resetExit();
     setBusy(true); setSaveError('');
     try {
       const saved = await publicationApi.update(projectCode, publicationId, base.revision, { ...draft, title: draft.title.trim() });
@@ -48,7 +79,7 @@ export function ArticleEditorDrawer({ workspaceId, projectCode, publicationId, o
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : '保存失败，输入已保留');
       setConflict(/revision|conflict/i.test(String((err as { code?: string })?.code || '')));
-    } finally { setBusy(false); }
+    } finally { exitState.current.busy = false; setBusy(false); }
   };
   const compare = async () => {
     setComparing(true); setCompareLoading(true); setCompareError('');
@@ -84,7 +115,7 @@ export function ArticleEditorDrawer({ workspaceId, projectCode, publicationId, o
         <section className="publication-edit-methods"><h2>让智能体（Agent）帮一把</h2>{writingMethods.slice(1).map(method => <Button type="text" block key={method.value} onClick={() => setWriting(method.value)}>{method.value}<span>→</span></Button>)}<p className="publication-hint">保存编辑后，可带上最新内容准备写作请求。</p></section>
       </aside></div>
       {writing && <ArticleWritingDrawer projects={[{ code: projectCode, name: article.projectName }]} article={article} revision={base.revision} initialMethod={writing} hasUnsavedChanges={dirty} onClose={() => setWriting(null)} />}
-      <Modal open={leave} title="放弃尚未保存的修改？" okText="放弃修改" cancelText="继续编辑" onCancel={() => setLeave(false)} onOk={() => { setDraft(articleDraft(base)); setLeave(false); onClose(); }}><p>已上传的资源文件会保留，正文改动尚未保存。</p></Modal>
+      <Modal open={leave || (blocker.state === 'blocked' && !busy && !savingExit.current)} title="放弃尚未保存的修改？" okText="放弃修改" cancelText="继续编辑" onCancel={resetExit} onOk={discard}><p>已上传的资源文件会保留，正文改动尚未保存。</p></Modal>
       <Modal open={comparing} width={940} title="对照最新稿件" onCancel={() => setComparing(false)} footer={<Space wrap><Button onClick={() => setComparing(false)}>继续查看</Button><Button icon={<CopyOutlined />} onClick={() => { void navigator.clipboard.writeText(currentText).then(() => messages.success('当前修改已复制')).catch(() => messages.error('自动复制失败')); }}>复制我的修改</Button><Button type="primary" disabled={!latest || compareLoading} onClick={() => { if (!latest) return; setBase(latest); setAssets(latest.assets || []); setComparing(false); setConflict(false); setSaveError(''); }}>已完成对照，保留我的输入继续编辑</Button></Space>}>
         <Alert type="warning" message="请将需要保留的最新内容合入编辑框。确认后仍保留你的输入；下次保存将以当前编辑内容更新这份最新稿件。" />
         {compareLoading ? <Spin /> : compareError ? <Alert type="error" message={compareError} /> : latest && <div className="publication-compare"><section><h3>最新稿件</h3><strong>{latest.publication.title}</strong><p>{latest.publication.summary}</p><pre>{latest.content}</pre></section><section><h3>我的修改</h3><strong>{draft.title}</strong><p>{draft.summary}</p><pre>{draft.content}</pre></section></div>}

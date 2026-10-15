@@ -1,6 +1,8 @@
 import { runtimeCommandSelector, selectWorkspaceRuntime, type RuntimeSelection } from '../../agent-assets/application/runtime-selection.ts';
 import type { WorkspaceRepository } from '../persistence/workspace-manifest-repository.ts';
 import type { ProjectRepository } from '../persistence/project-manifest-repository.ts';
+import { CATALOG_FILES, renderAssetCatalog } from '../persistence/asset-catalog-repository.ts';
+import { createWorkspace } from '../domain/workspace.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createMutationPathGuard } from '../../../infrastructure/filesystem/workspace-mutation.ts';
@@ -184,9 +186,9 @@ export function registerWorkspaceOperations(runtime: WorkspaceOperationsRuntime)
   }
 
   function initializeWorkspace(input: WorkspaceInitializationInput, onAssetsReady: (result: WorkspaceInitializationResult) => void = () => {}) {
-    const { targetRoot, name, description, profile, agent } = input;
-    assertName(name, 'Workspace name');
-    if (!description.trim()) throw new Error('Workspace description must be a non-empty string.');
+    const { targetRoot, profile, agent } = input;
+    const workspaceId = createWorkspaceId();
+    const { name, description } = createWorkspace({ id: workspaceId, name: input.name, description: input.description });
     assertName(profile, 'Workspace profile');
     const sourceOnly = input.sourceOnly === true;
     if (sourceOnly && (agent != null || input.adapterId != null)) throw new Error('--source-only cannot be combined with --agent or --adapter.');
@@ -194,13 +196,14 @@ export function registerWorkspaceOperations(runtime: WorkspaceOperationsRuntime)
     const manifest = readPackageManifest();
     const created: any[] = [];
     const changed: any[] = [];
+    const firstInitialization = ['.buildr/workspace.yml', ...CATALOG_FILES]
+      .every(file => fs.lstatSync(path.join(targetRoot, file), { throwIfNoEntry: false }) === undefined);
 
     ensureDirectory(targetRoot);
     for (const relativeDir of manifest.workspaceDirectories) {
       ensureDirectory(path.join(targetRoot, relativeDir));
     }
 
-    const workspaceId = createWorkspaceId();
     const variables: Record<string, any> = {};
     for (const rawEntry of manifest.workspaceFiles) {
       const entry = parseManifestFileEntry(rawEntry, 'workspaceFiles');
@@ -211,7 +214,13 @@ export function registerWorkspaceOperations(runtime: WorkspaceOperationsRuntime)
       compatibility: { kind: 'organization', profile },
     }), created);
     ensureRootRequiredBlock(targetRoot, changed);
-    trackWrite(targetRoot, path.join(targetRoot, 'projects', 'manifest.yml'), renderProjectsYaml({ schemaVersion: 'buildr.projects/v2', projects: {} }), created);
+    if (firstInitialization) {
+      const emptyCatalog = renderAssetCatalog({ projects: [], services: [], repositories: [] });
+      for (const file of CATALOG_FILES) trackWrite(targetRoot, path.join(targetRoot, file), emptyCatalog[file], created);
+    } else {
+      // Existing layouts retain their explicit migration and recovery boundaries.
+      trackWrite(targetRoot, path.join(targetRoot, 'projects', 'manifest.yml'), renderProjectsYaml({ schemaVersion: 'buildr.projects/v2', projects: {} }), created);
+    }
     trackWrite(targetRoot, path.join(targetRoot, 'rules', 'manifest.yml'), renderRulesManifestYaml({ rules: [] }), created);
     trackWrite(targetRoot, path.join(targetRoot, 'skills', 'manifest.yml'), renderSkillsManifestYaml({ schemaVersion: 'buildr.skills/v3', workspaceId, skills: [] }), created);
     trackWrite(targetRoot, path.join(targetRoot, 'commands', 'manifest.yml'), renderCommandsManifestYaml({ commands: [] }), created);

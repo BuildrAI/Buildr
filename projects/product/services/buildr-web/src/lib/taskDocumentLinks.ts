@@ -1,6 +1,7 @@
 export type TaskProjectScope = {
   projects: string[];
   services: Array<{ project: string; service: string }>;
+  changes?: Array<{ project: string }>;
 };
 
 import {
@@ -16,6 +17,7 @@ function scopedProjectCodes(scope: TaskProjectScope): Set<string> {
   return new Set([
     ...(scope.projects || []),
     ...(scope.services || []).map((service) => service.project),
+    ...(scope.changes || []).map((change) => change.project),
   ]);
 }
 

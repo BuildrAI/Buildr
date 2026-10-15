@@ -8,6 +8,12 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   Object.entries({
   "typecheck": {
     "inputs": [
+      "tools/release/release-targets.ts",
+      "tools/release/package-compatibility.ts",
+      "tools/release/package-artifact-observation.ts",
+      "tools/release/release-package-evidence.ts",
+      "tools/release/plugin-hosted-release.ts",
+      "tools/release/package-release-operation.ts",
       "src/**/*.ts",
       "tsconfig.json",
       "tsconfig.test-context.json",
@@ -18,6 +24,12 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "unit": {
     "inputs": [
+      "tools/release/release-targets.ts",
+      "tools/release/package-compatibility.ts",
+      "tools/release/package-artifact-observation.ts",
+      "tools/release/release-package-evidence.ts",
+      "tools/release/plugin-hosted-release.ts",
+      "tools/release/package-release-operation.ts",
       "test/unit/**",
       "src/**",
       "services/buildr-web/**",
@@ -41,8 +53,23 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration": {
     "inputs": [
+      "src/modules/native-session-links/**",
+      "src/modules/codex-desktop/**",
+      "src/modules/dsh-desktop/**",
+      "src/modules/agent-operations/**",
       "src/modules/knowledge/**",
+      "knowledge/index.yml",
+      "src/modules/code/**",
       "test/integration/**",
+      "test/helpers/code-git-configuration-fixture.ts",
+      "test/helpers/legacy-asset-catalog.ts",
+      "resources/workspace/skills/buildr/task-triage/**",
+      "resources/workspace/components/buildr/openspec/component.yml",
+      "resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md",
+      "resources/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md",
+      "resources/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md",
+      "resources/workspace/components/buildr/openspec/contributions/openspec-sync-converge.md",
+      "resources/workspace/components/buildr/openspec/contributions/openspec-archive-converge.md",
       "test/verification/integration.ts",
       "test/verification/worker-budget.ts",
       "src/bootstrap/**",
@@ -71,13 +98,20 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/integration/test-context-runtime.test.ts",
       "test/integration/node-test-context-host.test.ts",
       "test/integration/verification-test-files.test.ts",
+      "test/integration/frontend-logic-worker-budget.test.ts",
+      "test/integration/browser-candidate.test.ts",
+      "test/integration/docs-quality.test.ts",
       "test/integration/capability-contracts.test.ts",
       "test/integration/capability-runtime.test.ts",
       "test/integration/buildr-web-read-executor.test.ts",
+      "test/integration/source-control-observation-http.test.ts",
+      "test/integration/task-materials-application.test.ts",
+      "test/integration/task-materials-http-cli.test.ts",
       "test/integration/buildr-web-runtime.test.ts",
       "test/integration/buildr-web-workspace.test.ts",
       "test/integration/preview-ownership.test.ts",
       "test/integration/runtime-skills.test.ts",
+      "test/integration/package-generic-skills.test.ts",
       "test/integration/task-record-http-contract.test.ts",
       "test/integration/task-manager-capability-graph.test.ts",
       "test/integration/task-pre-create-git-capability-graph.test.ts",
@@ -87,6 +121,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/integration/product-installation-registry.test.ts",
       "test/integration/workspace-management-fence.test.ts",
       "test/integration/workspace-sqlite.test.ts",
+      "test/integration/task-read-snapshot.test.ts",
       "test/integration/self-bootstrap-closeout.test.ts",
       "test/integration/parent-coordination-application.test.ts",
       "test/integration/parent-coordination-repository.test.ts",
@@ -118,6 +153,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/integration/openspec-domain.test.ts",
       "test/integration/openspec-projected-validator.test.ts",
       "src/modules/task/change/**",
+      "src/modules/task/materials/application/task-project-document-reader.ts",
       "src/modules/openspec/**"
     ],
     "inputExclusions": []
@@ -129,6 +165,9 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/integration/test-context-runtime.test.ts",
       "test/integration/node-test-context-host.test.ts",
       "test/integration/verification-test-files.test.ts",
+      "test/integration/frontend-logic-worker-budget.test.ts",
+      "test/integration/browser-candidate.test.ts",
+      "test/integration/docs-quality.test.ts",
       "test/context/**",
       "test/fixtures/node-test-context/**",
       "test-context.mjs",
@@ -157,12 +196,45 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/verification/resource-coordinator.ts",
       "test/verification/run-node-tests.ts",
       "test/verification/test-files.ts",
-      "test/verification/worker-budget.ts"
+      "test/verification/worker-budget.ts",
+      "services/buildr-web/tools/run-logic-tests.mjs",
+      "test/verification/release/browser-candidate.ts",
+      "test/verification/docs/quality.ts"
     ],
     "inputExclusions": []
   },
   "integration-runtime": {
     "inputs": [
+      "src/modules/mysql-query/**",
+      "bin/buildr-mysql.mjs",
+      "resources/workspace/skills/connections/mysql-connection/**",
+      "resources/workspace/skills/connections/kibana-connection/**",
+      "resources/workspace/skills/connections/xxl-job-connection/**",
+      "test/integration/mysql-query-skills.test.ts",
+      "test/integration/retired-connections.test.ts",
+      "test/integration/mysql-client-live.test.ts",
+      "test/integration/mysql-connection-program.test.ts",
+      "test/integration/kibana-connection-skill.test.ts",
+      "test/integration/xxl-job-connection-skill.test.ts",
+      "test/integration/builtin-connection-skills-package.test.ts",
+      "src/modules/connection-skills/**",
+      "src/modules/agent-assets/application/connection-skill-source.ts",
+      "src/modules/agent-assets/application/connection-impact.ts",
+      "resources/workspace/skills/connections/nacos-connection/**",
+      "resources/workspace/skills/buildr/connection-authoring/**",
+      "test/integration/connection-skill-definitions.test.ts",
+      "test/integration/connection-skills-runtime.test.ts",
+      "test/integration/connection-instance-filenames.test.ts",
+      "test/integration/connection-skills-safety.test.ts",
+      "test/integration/connection-skills-cli.test.ts",
+      "test/integration/connection-skills-workspace.test.ts",
+      "test/fixtures/connection-skills-cli-smoke.ts",
+      "test/integration/connection-skills-package.test.ts",
+      "test/integration/connection-authoring-forward.test.ts",
+      "test/fixtures/connection-authoring-cli-smoke.ts",
+      "test/fixtures/connection-authoring-example/**",
+      "src/modules/task/materials/**",
+      "src/infrastructure/filesystem/exclusive-file-lock.ts",
       "src/modules/workbench/**",
       "src/modules/task/work-context/**",
       "test/integration/workbench-application.test.ts",
@@ -170,10 +242,13 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/integration/capability-contracts.test.ts",
       "test/integration/capability-runtime.test.ts",
       "test/integration/buildr-web-read-executor.test.ts",
+      "test/integration/task-materials-application.test.ts",
+      "test/integration/task-materials-http-cli.test.ts",
       "test/integration/buildr-web-runtime.test.ts",
       "test/integration/buildr-web-workspace.test.ts",
       "test/integration/preview-ownership.test.ts",
       "test/integration/runtime-skills.test.ts",
+      "test/integration/package-generic-skills.test.ts",
       "test/integration/task-record-http-contract.test.ts",
       "test/integration/task-manager-capability-graph.test.ts",
       "test/integration/task-pre-create-git-capability-graph.test.ts",
@@ -213,6 +288,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     "inputs": [
       "test/integration/workspace-management-fence.test.ts",
       "test/integration/workspace-sqlite.test.ts",
+      "test/integration/task-read-snapshot.test.ts",
       "src/modules/workspace/**",
       "src/infrastructure/index.ts",
       "src/infrastructure/sqlite/**"
@@ -263,7 +339,9 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "contract": {
     "inputs": [
+      "knowledge/index.yml",
       "test/contract/**",
+      "test/helpers/legacy-asset-catalog.ts",
       "test/verification/http-contract-fresh-build-inventory.ts",
       "test/fixtures/**",
       ".node-version",
@@ -400,6 +478,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   "system-workspace-lifecycle": {
     "inputs": [
       "test/system/package-capability-retirement.test.ts",
+      "test/fixtures/legacy-task-record-contract-v3.md",
       "test/system/project-product.test.ts",
       "test/system/service-product.test.ts",
       "test/system/workspace-manifest-registry.test.ts",
@@ -407,6 +486,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/infrastructure/platform.ts",
       "src/infrastructure/product-layout.ts",
       "test/helpers/prepared-fixtures.ts",
+      "test/helpers/legacy-asset-catalog.ts",
       "test/helpers/workspace-product-suite.ts",
       "test/verification/system-suites.ts",
       "test/verification/system.ts",
@@ -417,6 +497,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "system-task-lifecycle": {
     "inputs": [
+      "test/helpers/legacy-asset-catalog.ts",
       "src/modules/task/persistence/task-repository.ts",
       "src/modules/task/persistence/task-project-repository.ts",
       "src/modules/task/persistence/task-service-repository.ts",
@@ -463,6 +544,21 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   "system-worktree-lifecycle": {
     "inputs": [
       "test/system/worktree-create.test.ts",
+      "src/modules/task/infrastructure/**",
+      "src/infrastructure/git/**",
+      "test/helpers/workspace-product-suite.ts",
+      "test/verification/system-suites.ts",
+      "test/verification/system.ts",
+      "test/helpers/task-lifecycle-system-context.ts",
+      "test/verification/system-file-timing-reporter.ts"
+    ],
+    "inputExclusions": []
+  },
+  "system-nested-git-isolation": {
+    "inputs": [
+      "test/system/worktree-nested-git-isolation.test.ts",
+      "test/integration/non-git-workspace-continuity.test.ts",
+      "tools/development/run-isolated-workspace-smoke.ts",
       "src/modules/task/infrastructure/**",
       "src/infrastructure/git/**",
       "test/helpers/workspace-product-suite.ts",
@@ -540,6 +636,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/system/buildr-web-launcher.test.ts",
       "test/system/workspace-runtime-recovery.test.ts",
       "test/system/worktree-create.test.ts",
+      "test/system/worktree-nested-git-isolation.test.ts",
       "test/helpers/task-finish-sqlite-fixture.ts",
       "src/modules/installation/application/cli-update.ts",
       "src/modules/task/application/finish/**",
@@ -600,6 +697,62 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration-candidate-release": {
     "inputs": [
+      "tools/release/release-targets.ts",
+      "tools/release/package-compatibility.ts",
+      "tools/release/package-artifact-observation.ts",
+      "tools/release/release-package-evidence.ts",
+      "tools/release/plugin-hosted-release.ts",
+      "tools/release/package-release-operation.ts",
+      "test/integration-candidate-release/**",
+      "tools/release/release-git-convergence.ts",
+      "tools/release/release-authority.ts",
+      "tools/release/release-contract.ts",
+      "tools/release/release-task-evidence-correlation.ts",
+      "tools/release/release-transaction-evidence.ts",
+      "tools/release/release-transaction-runner.ts",
+      "tools/release/release-lifecycle.ts",
+      "tools/release/release-phase-timeline.ts",
+      "tools/release/release-orchestration-runner.ts",
+      "tools/release/release-convergence.ts",
+      "tools/release/release-files.ts",
+      "tools/release/release-notes.ts",
+      "src/modules/installation/domain/release-version.ts"
+    ],
+    "inputExclusions": []
+  },
+  "integration-candidate-release-selection": {
+    "inputs": [
+      "tools/release/release-targets.ts",
+      "tools/release/package-compatibility.ts",
+      "tools/release/package-artifact-observation.ts",
+      "tools/release/release-package-evidence.ts",
+      "tools/release/plugin-hosted-release.ts",
+      "tools/release/package-release-operation.ts",
+      "test/integration-candidate-release/**",
+      "tools/release/release-git-convergence.ts",
+      "tools/release/release-authority.ts",
+      "tools/release/release-contract.ts",
+      "tools/release/release-task-evidence-correlation.ts",
+      "tools/release/release-transaction-evidence.ts",
+      "tools/release/release-transaction-runner.ts",
+      "tools/release/release-lifecycle.ts",
+      "tools/release/release-phase-timeline.ts",
+      "tools/release/release-orchestration-runner.ts",
+      "tools/release/release-convergence.ts",
+      "tools/release/release-files.ts",
+      "tools/release/release-notes.ts",
+      "src/modules/installation/domain/release-version.ts"
+    ],
+    "inputExclusions": []
+  },
+  "integration-candidate-package-selection": {
+    "inputs": [
+      "tools/release/release-targets.ts",
+      "tools/release/package-compatibility.ts",
+      "tools/release/package-artifact-observation.ts",
+      "tools/release/release-package-evidence.ts",
+      "tools/release/plugin-hosted-release.ts",
+      "tools/release/package-release-operation.ts",
       "test/integration-candidate-release/**",
       "tools/release/release-git-convergence.ts",
       "tools/release/release-authority.ts",
@@ -619,6 +772,12 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration-candidate-release-effects": {
     "inputs": [
+      "tools/release/release-targets.ts",
+      "tools/release/package-compatibility.ts",
+      "tools/release/package-artifact-observation.ts",
+      "tools/release/release-package-evidence.ts",
+      "tools/release/plugin-hosted-release.ts",
+      "tools/release/package-release-operation.ts",
       "test/integration-candidate-release/**",
       "tools/release/release-git-convergence.ts",
       "tools/release/release-authority.ts",
@@ -638,6 +797,37 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration-candidate-git-convergence": {
     "inputs": [
+      "tools/release/release-targets.ts",
+      "tools/release/package-compatibility.ts",
+      "tools/release/package-artifact-observation.ts",
+      "tools/release/release-package-evidence.ts",
+      "tools/release/plugin-hosted-release.ts",
+      "tools/release/package-release-operation.ts",
+      "test/integration-candidate-release/**",
+      "tools/release/release-git-convergence.ts",
+      "tools/release/release-authority.ts",
+      "tools/release/release-contract.ts",
+      "tools/release/release-task-evidence-correlation.ts",
+      "tools/release/release-transaction-evidence.ts",
+      "tools/release/release-transaction-runner.ts",
+      "tools/release/release-lifecycle.ts",
+      "tools/release/release-phase-timeline.ts",
+      "tools/release/release-orchestration-runner.ts",
+      "tools/release/release-convergence.ts",
+      "tools/release/release-files.ts",
+      "tools/release/release-notes.ts",
+      "src/modules/installation/domain/release-version.ts"
+    ],
+    "inputExclusions": []
+  },
+  "integration-candidate-git-selection": {
+    "inputs": [
+      "tools/release/release-targets.ts",
+      "tools/release/package-compatibility.ts",
+      "tools/release/package-artifact-observation.ts",
+      "tools/release/release-package-evidence.ts",
+      "tools/release/plugin-hosted-release.ts",
+      "tools/release/package-release-operation.ts",
       "test/integration-candidate-release/**",
       "tools/release/release-git-convergence.ts",
       "tools/release/release-authority.ts",
@@ -718,6 +908,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "resources/**",
       "package/**",
       "test/integration/application-payload-release.test.ts",
+      "test/helpers/legacy-asset-catalog.ts",
       "test/verification/release/candidate-package.ts",
       "test/verification/executor.ts",
       ".github/workflows/publish.yml"
@@ -784,6 +975,12 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "managed-mutations": {
     "inputs": [
+      "test/verification/integrity/managed-mutations.ts",
+      "test/verification/integrity/managed-mutation-analysis.ts",
+      "src/modules/code/application/code-commit-application.ts",
+      "src/modules/code/infrastructure/code-fetch-refs.ts",
+      "src/modules/code/infrastructure/editable-file.ts",
+      "src/modules/connection-skills/persistence/files.ts",
       "src/infrastructure/testing/context-runtime/node-test.ts",
       "src/infrastructure/testing/context-runtime/node-runner.ts",
       "src/modules/agent-assets/application/package-maintenance/**",
@@ -816,6 +1013,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     "inputs": [
       "commands.yml",
       "test/commands-cli.integration.ts",
+      "test/helpers/legacy-asset-catalog.ts",
       "src/modules/agent-assets/application/commands.ts",
       "src/modules/agent-assets/application/components.ts",
       "src/modules/agent-assets/application/skills.ts",
@@ -942,7 +1140,8 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/modules/agent-assets/application/rules.ts",
       "src/modules/agent-assets/application/skills.ts",
       "test/verification/workspace/fixture.ts",
-      "test/verification/workspace/workspace-lifecycle.ts"
+      "test/verification/workspace/workspace-lifecycle.ts",
+      "test/helpers/legacy-asset-catalog.ts"
     ],
     "inputExclusions": []
   },
@@ -985,6 +1184,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/modules/workspace/**",
       "src/modules/workspace/application/workspace-operations.ts",
       "test/verification/onboarding/init.ts",
+      "test/helpers/legacy-asset-catalog.ts",
       "resources/workspace/manifest.yml",
       "resources/workspace/AGENTS.md",
       "resources/workspace/components/**"
@@ -1023,11 +1223,24 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     ],
     "inputExclusions": []
   },
+  "artifact-browser-core": {
+    "inputs": ["test/verification/release/browser-candidate.ts"],
+    "inputExclusions": []
+  },
+  "frontend-logic": {
+    "inputs": ["services/buildr-web/**"],
+    "inputExclusions": []
+  },
+  "dsh-plugin": {
+    "inputs": ["services/dsh-plugin/**", ".github/workflows/publish-dsh-plugin.yml"],
+    "inputExclusions": []
+  },
   "service-branch-contract": {
     "inputs": [
       "src/modules/workspace/**",
       "test/verification/onboarding/service-branch.ts",
-      "services/**"
+      "test/helpers/legacy-asset-catalog.ts",
+      "services/manifest.yml"
     ],
     "inputExclusions": [
       "services/buildr-web/**"
@@ -1064,6 +1277,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "managed-data-integrity": {
     "inputs": [
+      "test/helpers/legacy-asset-catalog.ts",
       "src/modules/agent-assets/application/package-maintenance/**",
       "src/modules/agent-assets/application/package-maintenance.ts",
       "src/modules/workspace/application/workspace-operations.ts",
@@ -1103,6 +1317,7 @@ export const VERIFICATION_IGNORED_INPUTS: any = Object.freeze([
 
 export const VERIFICATION_GOVERNED_REPOSITORY_INPUTS: any = Object.freeze([
   ".github/workflows/publish.yml",
+  ".github/workflows/publish-dsh-plugin.yml",
   ".github/workflows/verify.yml"
 ]);
 

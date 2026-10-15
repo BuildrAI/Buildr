@@ -95,8 +95,20 @@ export const SYSTEM_SUITES: any = Object.freeze([
     schedulingCostMs: 25000,
     concurrencyClass: 'workspace-heavy',
     resources: Object.freeze(['workspace-saturating']),
+    contexts: Object.freeze([WORKSPACE_FOUNDATION_CONTEXT_KEY]),
     files: Object.freeze([
       'test/system/worktree-create.test.ts',
+    ]),
+  }),
+  Object.freeze({
+    id: 'system-nested-git-isolation',
+    name: 'System nested Git isolation lifecycle',
+    innerConcurrency: 1,
+    schedulingCostMs: 45000,
+    concurrencyClass: 'workspace-heavy',
+    resources: Object.freeze(['workspace-saturating']),
+    files: Object.freeze([
+      'test/system/worktree-nested-git-isolation.test.ts',
     ]),
   }),
   Object.freeze({

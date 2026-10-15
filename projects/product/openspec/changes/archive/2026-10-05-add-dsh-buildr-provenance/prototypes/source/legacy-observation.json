@@ -1,0 +1,89 @@
+{
+  "legacy": [
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/scene.tsx",
+      "sha256": "4b57f183bc4f4e4c41384c68f0f70f40765bbf70eb449786e0846e119ef6dc64",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/scene.css",
+      "sha256": "d1ce9d5dc1349e56d6dcf0a41e9ebbf5d3ae2ebd29e379ede04b3ea0c8a0b7c3",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/runtime.ts",
+      "sha256": "80ed941eaea6c1a9de05dd0905bbc199fd041599ee96e9cf64834614659496a6",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/data.ts",
+      "sha256": "357225d2f679d24da9e83111c8722df47f9bbdd45b1b037543be6d48966465a5",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/reader.tsx",
+      "sha256": "0c3e38620d46a8f985767f784c02f839c039b584efbdfac1b041677ac2d85d5f",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/build.mjs",
+      "sha256": "b2a89bdcb1cb239a051269f72c0c9721584d688668c7c18bb93d17f5a37a565e",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/scenes.json",
+      "sha256": "2a9a09a730bf182cdfc92d4aeacf21a826414a0356d414f94cd3bdd4313de004",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/trajectory.js",
+      "sha256": "279289119a81605dad99932affecc73402d8dda1932c5ac89a0cad4fcd4b076e",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/primitives-lite.js",
+      "sha256": "2014faf692df09ff16199915bba2c745bdc2ca11c821c8d2abcf69d32fc61489",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/observation-scenes.html",
+      "sha256": "f76977f8e137d9ab610e8453d7eef70a2de1ee6e6c8f18e921109bf16a07d515",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/preview.html",
+      "sha256": "edb5eaa8d5ceda430a593ab96744317decdce9a2a013a6c8cd64ca56fc2eb6ed",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/minimal-v2/scene.tsx",
+      "sha256": "5ecc53c6304dea5f525dc4ec8d68f0888141933f0118f2d1c8137d8b63945e50",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/minimal-v2/scenes.json",
+      "sha256": "cd40fe8ff8ab072c25e9082031d15dab5f39124ff993acaa809e6f9221bb8c8e",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/minimal-v2/build.mjs",
+      "sha256": "8466dd96f0c1d66cb3459a30ce6b3a9a69afc0b342c50f66136ca0f9f4c8ceda",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/minimal-v2/observation-scenes.html",
+      "sha256": "329e0df4f9f0ebfee537e32465d10c45c468d32807ca7de28432fe2ea37aa628",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/minimal-v2/preview.html",
+      "sha256": "6e065f7971ca780aa940bc3ca498274eac03ec8b92624a3a3bad41086f2dfeba",
+      "preserved": true
+    }
+  ],
+  "originalTrajectory": {
+    "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/trajectory-original.js",
+    "sha256": "2d68ed266c10a67a69e9dc417a07c2f0fe103ac5fcae1efe7b2c7ab9a965905e"
+  },
+  "primitiveSource": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/primitives.js"
+}

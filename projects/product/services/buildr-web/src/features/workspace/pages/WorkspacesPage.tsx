@@ -1,5 +1,5 @@
 import { workspaceApi } from '../api/workspace-api';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Alert, Button, Empty, Space, Tag, Typography } from 'antd';
 import { SettingOutlined } from '@ant-design/icons';
@@ -22,50 +22,83 @@ function useWorkspaceCatalog({ stayOnCatalog, onOpenWorkspace, onRecoveryPrompt,
   const [registry, setRegistry] = useState<WorkspaceRegistry | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [failure, setFailure] = useState('');
+  const mutation = useRef(false), readGeneration = useRef(0);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; ++readGeneration.current; }; }, []);
 
   const load = useCallback(async () => {
+    const generation = ++readGeneration.current;
     const next = await workspaceApi.listRegistered();
-    setRegistry(next);
+    if (mounted.current && readGeneration.current === generation) setRegistry(next);
     return next;
   }, []);
 
   useEffect(() => {
+    let active = true;
+    const generation = readGeneration.current + 1;
     void load()
       .then((next) => {
-        if (stayOnCatalog) return;
+        if (!active || !mounted.current || readGeneration.current !== generation || stayOnCatalog || mutation.current) return;
         const ready = (next.workspaces || []).filter((entry) => entry.status === 'ready' && entry.workspace?.id);
         if (ready.length === 1 && ready[0].workspace?.id) onOpenWorkspace(ready[0].workspace.id, true);
       })
-      .catch((error: Error) => setMessage(error.message));
+      .catch((error: Error) => { if (active && mounted.current && readGeneration.current === generation) setFailure(error.message); });
+    return () => { active = false; };
   }, [load, onOpenWorkspace, stayOnCatalog, workspaceRegistryRevision]);
 
   const remove = useCallback(async (entry: WorkspaceEntry) => {
-    if (!registry) return;
-    await workspaceApi.remove({ revision: registry.revision, rootPath: entry.rootPath });
-    await load();
-  }, [load, registry]);
+    if (!registry || mutation.current) return;
+    mutation.current = true; setRemoving(entry.rootPath); setFailure(''); setMessage(null);
+    try {
+      const next = await workspaceApi.remove({ revision: registry.revision, rootPath: entry.rootPath });
+      if (!mounted.current) return;
+      ++readGeneration.current; setRegistry(next);
+      setMessage('已从 Buildr Web 移除，目录内容保留。');
+    } catch (error) {
+      if (!mounted.current) return;
+      const reason = error instanceof Error ? error.message : '登记暂时不可修改。';
+      setFailure((error as { code?: string }).code === 'workspace_registry_revision_conflict'
+        ? `${reason} 本次未移除。请重新读取后核对，再决定是否移除。`
+        : `${reason} 请重新读取登记后核对结果。`);
+    } finally {
+      mutation.current = false;
+      if (mounted.current) setRemoving(null);
+    }
+  }, [registry]);
 
   const pick = useCallback(async () => {
-    if (!registry) return;
-    setAdding(true);
+    if (!registry || mutation.current) return;
+    mutation.current = true; setAdding(true); setFailure('');
     try {
       const result = await workspaceApi.pick({ revision: registry.revision });
+      if (!mounted.current) return;
       if (!result.canceled && result.status === 'canonical' && result.registry) {
         setRegistry(result.registry);
         await load();
-        if (result.registry.lastOpenedWorkspaceId) onOpenWorkspace(result.registry.lastOpenedWorkspaceId, false);
+        if (mounted.current && result.registry.lastOpenedWorkspaceId) onOpenWorkspace(result.registry.lastOpenedWorkspaceId, false);
       } else if (!result.canceled) {
         setMessage(result.message || '该目录暂时不能登记。');
         if (result.prompt) onRecoveryPrompt(result.prompt);
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '添加工作空间失败。');
+      if (mounted.current) setFailure(error instanceof Error ? error.message : '添加工作空间失败。');
     } finally {
-      setAdding(false);
+      mutation.current = false;
+      if (mounted.current) setAdding(false);
     }
   }, [load, onOpenWorkspace, onRecoveryPrompt, registry]);
 
-  return { registry, message, setMessage, adding, remove, pick };
+  const refresh = async () => {
+    if (mutation.current) return;
+    mutation.current = true; setRefreshing(true);
+    try { await load(); if (mounted.current) { setFailure(''); setMessage(null); } }
+    catch (error) { if (mounted.current) setFailure(error instanceof Error ? error.message : '登记读取失败，请重试。'); }
+    finally { mutation.current = false; if (mounted.current) setRefreshing(false); }
+  };
+  return { registry, message, setMessage, adding, removing, refreshing, failure, setFailure, refresh, remove, pick };
 }
 
 function healthLabel(status: string): string {
@@ -76,6 +109,7 @@ function healthLabel(status: string): string {
 }
 
 export function WorkspacesPage() {
+  const confirming = useRef(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const stayOnCatalog = searchParams.get('catalog') === '1';
@@ -86,7 +120,7 @@ export function WorkspacesPage() {
   const onRecoveryPrompt = useCallback((prompt: string) => {
     openAgentAction('workspace-recovery', { prompt });
   }, [openAgentAction]);
-  const { registry, message, setMessage, adding, remove, pick } = useWorkspaceCatalog({
+  const { registry, message, setMessage, adding, removing, refreshing, failure, setFailure, refresh, remove, pick } = useWorkspaceCatalog({
     stayOnCatalog,
     onOpenWorkspace,
     onRecoveryPrompt,
@@ -98,14 +132,20 @@ export function WorkspacesPage() {
   }, [setBreadcrumbParts]);
 
   const removeWorkspace = async (entry: WorkspaceEntry) => {
-    const ok = await confirmModal({
-      title: '移除工作空间',
-      content: `只从 Buildr Web 移除“${entry.workspace?.name || entry.rootPath}”，不会删除目录。继续吗？`,
-      okText: '移除',
-      okButtonProps: { danger: true },
-    });
-    if (!ok) return;
-    await remove(entry);
+    if (confirming.current || adding || removing || refreshing) return;
+    confirming.current = true;
+    try {
+      const ok = await confirmModal({
+        title: '移除工作空间',
+        content: `只从 Buildr Web 移除“${entry.workspace?.name || entry.rootPath}”，不会删除目录。继续吗？`,
+        okText: '移除',
+        okButtonProps: { danger: true },
+      });
+      if (!ok) return;
+      await remove(entry);
+    } catch (error) {
+      setFailure(error instanceof Error ? error.message : '移除尚未执行，请重试。');
+    } finally { confirming.current = false; }
   };
 
   const pickWorkspace = () => pick();
@@ -120,7 +160,7 @@ export function WorkspacesPage() {
           <p className="page-copy">从这里建立工作范围。工作空间是你和 Agent 共同工作的顶层目录；项目表示长期工作单元，服务按需登记代码仓、应用或模块。</p>
         </div>
         <div className="toolbar-actions">
-          <Button id="add-workspace" type="primary" loading={adding} onClick={() => void pickWorkspace()}>
+          <Button id="add-workspace" type="primary" loading={adding} disabled={Boolean(removing) || refreshing} onClick={() => void pickWorkspace()}>
             添加已有工作空间
           </Button>
           <Button id="create-workspace-agent" onClick={() => openAgentAction('workspace')}>
@@ -131,6 +171,9 @@ export function WorkspacesPage() {
       <div id="workspace-global-message" className={message ? '' : 'hidden'} role="status">
         {message ? <Alert type="info" showIcon message={message} style={{ marginBottom: 16 }} /> : null}
       </div>
+      {failure && <Alert id="workspace-operation-error" type="error" showIcon message={failure}
+        action={<Button size="small" loading={refreshing} disabled={adding || Boolean(removing)} onClick={() => void refresh()}>重新读取登记</Button>} />}
+      {removing && <p role="status">正在移除工作空间登记…</p>}
       <section id="workspace-grid" className="workspace-grid" aria-label="已登记工作空间">
         {(registry?.workspaces || []).map((entry) => {
           const ready = entry.status === 'ready';
@@ -173,6 +216,8 @@ export function WorkspacesPage() {
                 size="small"
                 type="text"
                 danger
+                loading={removing === entry.rootPath}
+                disabled={adding || refreshing || Boolean(removing && removing !== entry.rootPath)}
                 onClick={() => void removeWorkspace(entry)}
               >
                 移除
@@ -195,7 +240,7 @@ export function WorkspacesPage() {
             )}
           >
             <Space wrap>
-              <Button id="empty-add-workspace" type="primary" onClick={() => void pickWorkspace()}>
+              <Button id="empty-add-workspace" type="primary" loading={adding} disabled={Boolean(removing) || refreshing} onClick={() => void pickWorkspace()}>
                 添加已有工作空间
               </Button>
               <Button id="empty-create-workspace" onClick={() => openAgentAction('workspace')}>

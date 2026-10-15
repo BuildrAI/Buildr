@@ -24,9 +24,11 @@ Agent 在 `product` Project 中的最小运行规则。
 | Buildr 可执行实现 | `services/buildr/` | npm package、CLI、Buildr Web Runtime、`web-dist` 托管与打包、验证及维护脚本的实现根 |
 | Buildr Web 前端源码 | `services/buildr-web/` | Buildr Web Frontend Service 的 React/Vite 权威前端源码与正式构建 |
 | DSH 桌面插件 | `services/dsh-plugin/` | 独立插件包的源码、构建、验证与发布准备；不进入 Buildr 主包 |
-| Compatibility bridge | `buildr` | 只加载 `services/buildr/bin/buildr.mjs` 的稳定开发入口 |
-| Service registry | `services/manifest.yml` | 当前 Product Project 的 Service registry |
-| Service assets | `services/<service>/` | Service 实现目录；是否独立 Git repo 以 registry source 和实际 Git 边界为准 |
+| 兼容入口（Compatibility Bridge） | `buildr` | 委托 `services/buildr/tools/development/run-development-cli` 的稳定开发入口 |
+| 服务登记（Service Registry） | 工作空间（Workspace）根 `services/manifest.yml` | 全局服务（Service）登记；产品项目（Product Project）通过根 `projects/manifest.yml` 的 `serviceIds` 引用 |
+| 代码库登记（Repository Registry） | 工作空间（Workspace）根 `repositories/manifest.yml` | 代码库实例（Repository Instance）来源；服务（Service）使用 `repositoryId` 与 `modulePath` 定位代码 |
+| 旧服务登记（Legacy Service Registry） | 产品项目（Product Project）的 `services/manifest.yml` | `buildr.services/v2` 兼容清单不得替代全局登记 |
+| 服务资产（Service Assets） | `services/<service>/` | 服务（Service）的实现位置；Git 边界以被引用代码库实例（Repository Instance）的来源和实际仓库为准 |
 
 ## 产品边界
 

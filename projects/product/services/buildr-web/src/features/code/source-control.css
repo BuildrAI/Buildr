@@ -1,0 +1,266 @@
+.source-control-workbench { display:flex; flex:1; min-width:0; min-height:0; height:100%; overflow:hidden; background:var(--soft-surface); }
+.source-control-sidebar { width:100%; height:100%; min-height:0; display:flex; flex-direction:column;  background:var(--soft-surface); }
+.source-control-title { height:43px; min-height:43px; display:flex; align-items:center; justify-content:space-between; padding:0 14px; background:var(--soft-sidebar); border-bottom:1px solid var(--soft-line); font-size:12px; }
+.source-control-catalog-actions { display:flex; align-items:center; gap:2px; flex:none; }
+.source-control-catalog-actions .ant-btn { font-size:11px; padding-inline:5px; }
+:is(.source-control-fetch-results,.source-control-sync-results) { flex:none; max-height:132px; overflow:auto; padding:6px 12px; border-bottom:1px solid var(--soft-line); font-size:11px; }
+:is(.source-control-fetch-results,.source-control-sync-results) summary { color:var(--soft-muted); font-size:11px; }
+:is(.source-control-fetch-results,.source-control-sync-results) ul { padding:0; margin:4px 0 0; list-style:none; }
+:is(.source-control-fetch-results,.source-control-sync-results) li { padding-block:3px; }
+:is(.source-control-fetch-results,.source-control-sync-results) li>strong { font-weight:500; }
+:is(.source-control-fetch-results,.source-control-sync-results) li>span { margin-left:8px; color:var(--soft-primary); }
+:is(.source-control-fetch-results,.source-control-sync-results) li:not([data-fetch-status="succeeded"]):not([data-sync-status="succeeded"])>span { color:var(--soft-danger,var(--soft-muted)); }
+:is(.source-control-fetch-results,.source-control-sync-results) p { margin:2px 0 0; color:var(--soft-muted); overflow-wrap:anywhere; }
+.source-control-section-title { display:flex; align-items:center; justify-content:space-between; padding:8px 13px 3px; font-size:12px; }
+.source-control-section-title span { color:var(--soft-muted); margin-left:5px; font-weight:400; }
+.source-control-section-title .ant-btn { font-size:12px; height:26px; }
+.source-control-repositories { --source-control-tree-leading-width:40px; --source-control-tree-indent-step:22px; display:flex; flex:1; flex-direction:column; min-height:0; overflow:hidden; }
+.source-control-repository,.source-control-worktree { position:relative; display:flex; align-items:center; gap:4px; min-height:36px; padding:3px 10px; font-size:12px; }
+.source-control-repository:hover,.source-control-worktree:hover { background:color-mix(in srgb,var(--soft-primary) 4%,var(--soft-surface)); }
+.source-control-repository.is-selected,.source-control-worktree.is-selected { background:var(--soft-primary-soft,color-mix(in srgb,var(--soft-primary) 8%,var(--soft-surface))); box-shadow:inset 2px 0 var(--soft-primary); }
+.source-control-row-copy { display:flex; align-items:center; gap:6px; flex:1 1 0; min-width:0; }
+.source-control-row-copy>.selectable-hover-trigger { display:block; flex:0 1 auto; min-width:0; }
+.source-control-row-name-text { display:inline-block; width:max-content; }
+.source-control-row-shortcuts { display:flex; align-items:center; flex:none; width:max-content; gap:4px; }
+/* Keep the same controls measurable and remove hidden controls from keyboard navigation. */
+:is(.source-control-repository,.source-control-worktree)[data-source-row-layout="name"]>.source-control-row-shortcuts { position:absolute; right:38px; pointer-events:none; }
+/* Visibility transitions must not leave shortcut icons over the prioritized name. */
+:is(.source-control-repository,.source-control-worktree)[data-source-row-layout="name"] :is(.source-control-row-shortcuts,.source-control-row-shortcuts *) { visibility:hidden!important; transition:none!important; }
+.source-control-repository-copy { display:grid; grid-template-columns:minmax(0,1fr); align-items:center; column-gap:8px; width:100%; min-width:0; min-height:28px; border:0; text-align:left; padding:2px 0; background:transparent; color:inherit; font:inherit; cursor:pointer; }
+.source-control-repository-copy:disabled { cursor:default; }
+.source-control-repository-copy strong { min-width:0; font-size:12px; line-height:20px; font-weight:550; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.source-control-repository-copy small { color:var(--soft-muted); font-size:12px; padding:0 4px; border:1px solid var(--soft-line); border-radius:3px; white-space:nowrap; margin-left:5px; }
+.source-control-task-slot { display:flex; align-items:center; justify-content:center; width:20px; height:28px; flex:0 0 20px; color:var(--soft-muted); }
+.source-control-task-slot:empty { display:none; }
+.source-control-task-slot .anticon { font-size:13px; }
+.source-control-task-link.ant-btn { display:flex; align-items:center; justify-content:center; width:20px; height:28px; padding:0; color:var(--soft-primary); }
+.source-control-worktree-info dl { display:grid; grid-template-columns:32px minmax(0,1fr); gap:5px 8px; margin:0 0 12px; font-size:12px; }
+.source-control-worktree-info dt,.source-control-worktree-diagnostic { color:var(--soft-muted); }
+.source-control-worktree-info dd { margin:0; overflow-wrap:anywhere; }
+.source-control-worktree-info .ant-btn { font-size:12px; }
+.source-control-worktree-info-task { font-size:13px; }
+.source-control-worktree-info-location { color:var(--soft-muted); font-size:12px; }
+/* Inset edging keeps the measured hover-card bounds and list clearance unchanged. */
+.selectable-hover-card:has(.source-control-worktree-info) .ant-popover-inner { background:var(--soft-surface); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--soft-primary) 48%,var(--soft-line)),0 12px 30px color-mix(in srgb,var(--soft-ink) 18%,transparent),0 3px 8px color-mix(in srgb,var(--soft-primary) 12%,transparent); }
+.selectable-hover-card:has(.source-control-worktree-info) .source-control-worktree-info-task { padding:6px 8px; border-radius:5px; background:color-mix(in srgb,var(--soft-primary) 8%,var(--soft-surface)); color:var(--soft-primary); overflow-wrap:anywhere; }
+.selectable-hover-card:has(.source-control-worktree-info) .source-control-worktree-info-location { color:var(--soft-ink); font-weight:500; }
+.selectable-hover-card:has(.source-control-worktree-info) .source-control-worktree-diagnostic { padding:6px 8px; border-left:2px solid color-mix(in srgb,var(--soft-primary) 30%,var(--soft-line)); border-radius:3px; background:var(--soft-sidebar); font-size:11.5px; }
+.source-control-repository-copy:focus-visible,.source-control-fold:focus-visible { outline:2px solid var(--soft-primary); outline-offset:2px; border-radius:3px; }
+.source-control-catalog-note { margin:7px 14px 10px; color:var(--soft-muted); font-size:12px; line-height:1.7; }
+.source-control-browse-tabs { flex:none; padding:10px 12px; border-bottom:1px solid var(--soft-line); }
+.source-control-browse-tabs .ant-segmented { font-size:12px; }
+.source-control-list { flex:1; min-height:0; overflow:auto; }
+.source-control-change-group { border-bottom:1px solid var(--soft-line); padding-bottom:7px; }
+.source-control-change-heading { width:100%; display:flex; align-items:center; gap:8px; background:var(--soft-bg); border:0; padding:10px 13px; text-align:left; color:inherit; font:inherit; cursor:pointer; }
+.source-control-change-heading .anticon { font-size:12px; color:var(--soft-muted); }
+.source-control-change-heading strong { font-size:12px; font-weight:550; }
+.source-control-change-heading>span:last-child { margin-left:auto; color:var(--soft-muted); font-size:12px; }
+.source-control-change-area h3 { margin:8px 15px 2px; font-size:12px; color:var(--soft-muted); font-weight:500; }
+.source-control-change-area h3 span { margin-left:4px; }
+.source-control-change-area .task-changed-row { padding:7px 13px; gap:8px; }
+.source-control-change-area .task-changed-row-content strong { font-size:13px; }
+.source-control-change-area .task-changed-path { font-size:12px; }
+.source-control-change-area .task-changed-stats { font-size:12px; gap:5px; }
+.source-control-local-failure,.source-control-clean { margin:8px 15px; font-size:12px; color:var(--soft-muted); line-height:1.6; }
+.source-control-local-failure p { margin:0; }.source-control-local-failure .ant-btn { height:24px; font-size:12px; padding:0; }
+.source-control-clean .anticon { color:var(--soft-primary); margin-right:5px; }
+.source-control-list-note { margin:12px 14px; color:var(--soft-muted); font-size:12px; line-height:1.6; }
+.source-control-observed { display:flex; justify-content:space-between; flex:none; border-top:1px solid var(--soft-line); padding:9px 14px; font-size:12px; color:var(--soft-muted); background:var(--soft-sidebar); }
+.source-control-history-search { padding:9px 12px; flex:none; }
+.source-control-history-search .ant-input-affix-wrapper { width:100%; font-size:12px; }
+.source-control-history-search .ant-input { border:0; padding:0; font-size:12px; box-shadow:none; }
+.source-control-history-search>small { display:block; margin-top:5px; color:var(--soft-muted); font-size:12px; }
+.source-control-graph { list-style:none; margin:0; padding:0; }
+.source-control-graph>li { position:relative; }
+.source-control-history-row { display:flex; align-items:center; gap:4px; padding-right:10px; }
+.source-control-history-row>.selectable-hover-trigger { flex:1; min-width:0; }
+.source-control-graph .source-control-commit-toggle { display:flex; width:100%; min-width:0; min-height:38px; gap:8px; align-items:center; border:0; background:transparent; color:inherit; font:inherit; text-align:left; padding:8px 12px; cursor:pointer; }
+.source-control-history-row:hover { background:color-mix(in srgb,var(--soft-primary) 4%,var(--soft-surface)); }
+.source-control-graph>li.is-selected>.source-control-history-row { background:var(--soft-primary-soft,color-mix(in srgb,var(--soft-primary) 8%,var(--soft-surface))); box-shadow:inset 2px 0 var(--soft-primary); }
+.source-control-commit-toggle:focus-visible { outline:2px solid var(--soft-primary); outline-offset:-2px; }
+.source-control-commit-icon { display:flex; align-items:center; justify-content:center; width:15px; height:20px; flex:none; font-size:13px; color:var(--soft-primary); }
+.source-control-graph-copy { min-width:0; flex:1; }
+.source-control-graph-copy>strong { display:block; font-size:13px; font-weight:500; line-height:1.6; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.source-control-history-actions { display:flex; align-items:center; gap:2px; flex:none; color:var(--soft-muted); }
+.source-control-history-actions>span,.source-control-history-actions .ant-btn { display:flex; align-items:center; justify-content:center; width:26px; height:28px; padding:0; font-size:13px; }
+.source-control-history-actions .ant-btn { color:var(--soft-primary); }
+.source-control-history-actions .source-control-history-fold { color:var(--soft-muted); font-size:10px; }
+.source-control-commit-children { padding:2px 10px 9px 26px; position:relative; z-index:1; }
+.source-control-commit-children[hidden] { display:none; }
+.source-control-commit-children .task-changed-list { border:0; border-radius:0; }
+.source-control-commit-children .task-changed-list>li+li { border:0; }
+.source-control-commit-children .task-changed-row { padding:7px 5px; gap:7px; }
+.source-control-commit-children .task-changed-row-content { display:flex; flex-direction:column; align-items:flex-start; gap:2px; min-width:0; overflow:hidden; }
+.source-control-commit-children .task-changed-row-content strong { font-size:12px; font-weight:500; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.source-control-commit-children .task-changed-path { font-size:11px; max-width:100%; }
+.source-control-commit-children .task-changed-stats { font-size:11px; gap:4px; }
+.source-control-commit-children .task-changed-list>li.is-selected>.task-changed-row { background:var(--soft-primary-soft,color-mix(in srgb,var(--soft-primary) 8%,var(--soft-surface))); box-shadow:inset 2px 0 var(--soft-primary); }
+.source-control-commit-children .source-control-read-status { padding:7px 5px; }
+.source-control-commit-children .source-control-local-failure,.source-control-commit-children .source-control-clean { margin:7px 5px; }
+.source-control-reader { container-type:inline-size; width:100%; height:100%; flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; }
+.source-control-checkout { flex:none; min-height:43px; height:43px; padding:6px 14px; display:flex; align-items:center; gap:6px; border-bottom:1px solid var(--soft-line); }
+.source-control-checkout>div { display:flex; align-items:center; gap:9px; min-height:26px; }
+.source-control-checkout strong { font-size:12px; font-weight:550; }
+.source-control-checkout span { color:var(--soft-muted); font-size:12px; }
+.source-control-checkout code { font-size:12px; color:var(--soft-primary); }
+.source-control-checkout .ant-select { font-size:12px; min-width:95px; }
+.source-control-checkout>small { display:block; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--soft-muted); font-size:12px; }
+.source-control-reader>.ant-alert { flex:none; margin:9px 14px; font-size:12px; }
+.source-control-diff { flex:1; min-height:0; }
+.source-control-editable-diff { display:flex; flex:1; flex-direction:column; min-width:0; min-height:0; overflow:hidden; }
+.source-control-diff-loading { display:flex; justify-content:center; align-items:center; flex:1; gap:10px; font-size:12px; color:var(--soft-muted); }
+.source-control-diff-fallback { min-height:0; overflow:auto; }
+.source-control-diff-fallback>pre { margin:0; padding:14px; font:12px/1.85 ui-monospace,SFMono-Regular,Menlo,monospace; }
+/* The candidate owns its repository and file navigation; reuse the existing diff pane without a second file rail. */
+.source-control-diff>.task-diff-reader>.task-diff-rail { display:none; }
+.source-control-diff>.task-diff-reader.is-narrow-layout { flex-direction:row; }
+.source-control-diff .task-diff-toolbar { min-height:60px; padding:12px 17px; }
+.source-control-diff .task-diff-toolbar strong { font-size:12px; }
+.source-control-diff .task-diff-pane { width:100%; }
+.source-control-diff .task-commits-demo-note { flex:none; font-size:12px; margin:0; padding:8px 17px; border-top:1px solid var(--soft-line); }
+.source-control-commit-files .ant-btn { font-size:12px; height:26px; }
+.source-control-task-origin { padding:9px 14px; background:var(--soft-primary-soft,color-mix(in srgb,var(--soft-primary) 8%,var(--soft-surface))); border-bottom:1px solid var(--soft-line); font-size:12px; }
+.source-control-task-origin span,.source-control-task-origin small { display:block; }.source-control-task-origin small { font-size:12px; color:var(--soft-muted); margin-top:3px; }
+.source-control-task-origin .ant-btn { font-size:12px; height:26px; padding:0; }
+.source-control-list-state,.source-control-reader-state { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:25px 16px; gap:12px; color:var(--soft-muted); font-size:12px; }
+.source-control-reader-state { flex:1; }.source-control-reader-state .ant-alert { max-width:420px; }
+.source-control-full-file { display:flex; flex:1; min-height:0; flex-direction:column; }.source-control-full-file>header { display:flex; align-items:center; justify-content:space-between; padding:9px 16px; border-bottom:1px solid var(--soft-line); font-size:12px; }
+.source-control-full-file .repository-file-browser.global-reader { border:0; border-radius:0; flex:1; min-height:0; height:auto; }
+.source-control-full-file .repository-browser-context,.source-control-full-file .repository-browser-tree,.source-control-full-file .repository-tree-resize { display:none; }
+.source-control-full-file .repository-reader-content { max-height:none; }.source-control-full-file .repository-reader-toolbar { padding:12px 17px; }
+.source-control-diff { display:flex; flex-direction:column; }
+.source-control-diff>.task-diff-reader { flex:1; min-height:0; }
+.source-control-diff.is-history .task-diff-scope { display:none; }
+
+.source-control-sidebar[hidden] { display:none; }
+.source-control-reader { position:relative; }
+.source-control-reading-toggle { position:absolute; top:13px; right:13px; z-index:2; background:var(--soft-surface,#fff); }
+.source-control-checkout>div { padding-right:100px; }
+.source-control-change-area .task-changed-row-content { display:flex; flex-direction:column; align-items:flex-start; gap:3px; overflow:hidden; min-width:0; }
+.source-control-change-area .task-changed-row-content strong { display:block; max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.source-control-change-area .task-changed-path { max-width:100%; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+
+.source-control-columns { height:100%; }
+.source-control-stack { min-height:0; flex:1; }
+.source-control-browser { display:flex; flex-direction:column; height:100%; min-height:0; overflow:hidden; }
+.source-control-browser .source-control-list { min-height:0; flex:1; }
+.source-control-repositories { border:0; }
+.code-location-summary { max-width:calc(100% - 145px); height:30px; padding:0; text-align:left; }
+.code-location-summary > span { display:flex; align-items:center; gap:8px; min-width:0; }
+.code-location-summary strong { font-size:13px; overflow:hidden; text-overflow:ellipsis; }
+.code-location-summary code { color:var(--soft-primary); font-size:12px; }
+.code-location-summary span span { color:var(--soft-muted); }
+.source-control-commit-files { flex:none; min-height:36px; margin:0; border-bottom:1px solid var(--soft-line); }
+.source-control-commit-info h3 { margin:0 0 10px; font-size:14px; line-height:1.6; }
+.source-control-commit-info dl { display:grid; grid-template-columns:64px minmax(0,1fr); gap:5px 8px; margin:0 0 10px; font-size:12px; }
+.source-control-commit-info dt { color:var(--soft-muted); }
+.source-control-commit-info dd { margin:0; overflow-wrap:anywhere; }
+.source-control-commit-info pre { white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; margin:12px 0; cursor:text; }
+.source-control-commit-detail { flex:1; min-height:0; overflow:auto; padding:18px 20px; overscroll-behavior:contain; }
+.source-control-commit-detail>.source-control-commit-info { max-width:1200px; margin:0 auto; }
+.source-control-commit-detail-heading { display:flex; align-items:flex-start; gap:9px; margin-bottom:16px; }
+.source-control-commit-detail-heading>.anticon { color:var(--soft-primary); font-size:16px; line-height:1.65; flex:none; }
+.source-control-commit-detail-heading h3 { margin:0; font-size:16px; line-height:1.65; font-weight:550; }
+.source-control-commit-info.is-summary .source-control-commit-detail-heading { margin-bottom:12px; }
+.source-control-commit-info.is-summary .source-control-commit-detail-heading h3 { font-size:14px; }
+.source-control-commit-detail .source-control-commit-info dl { grid-template-columns:70px minmax(0,1fr); gap:8px 12px; margin-bottom:16px; }
+.source-control-commit-detail .source-control-commit-info pre { font-size:13px; line-height:1.8; margin:16px 0; }
+.source-control-commit-detail-task { display:flex; align-items:flex-start; gap:9px; margin:18px 0; padding-top:14px; border-top:1px solid var(--soft-line); font-size:12px; color:var(--soft-muted); }
+.source-control-commit-detail-task>.anticon { font-size:14px; line-height:2; flex:none; color:var(--soft-primary); }
+.source-control-commit-detail-task>div { min-width:0; }
+.source-control-commit-detail-task small { display:block; font-size:12px; }
+.source-control-commit-detail-task .ant-btn { height:auto; max-width:100%; padding:0; font-size:13px; line-height:1.7; text-align:left; white-space:normal; }
+.source-control-commit-detail-task code { display:block; overflow-wrap:anywhere; font-size:11px; margin-top:3px; }
+.source-control-commit-detail-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-top:16px; }
+.source-control-commit-detail-actions .ant-btn { font-size:12px; }
+
+.code-location-summary-content { display:flex; align-items:center; gap:8px; min-width:0; width:100%; }
+.code-location-summary-content strong,.code-location-summary-content>span { flex:none; }
+.code-location-summary-content code { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.source-control-checkout>.selectable-hover-trigger:first-child { flex:1; min-width:0; max-width:calc(100% - 130px); }
+.source-control-checkout .code-location-summary { max-width:100%; min-width:0; width:100%; }
+.source-control-graph>li>.selectable-hover-trigger,.source-control-history-row>.selectable-hover-trigger { display:block; width:100%; }
+.area-code .workspace-page:has(.code-source-control-page) { padding:0; max-width:none; }
+.area-code .workspace-page > .code-source-control-page { width:100%; max-width:none; margin:0; }
+.code-source-control-page { display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; height:100%; }
+.code-source-control-tab { min-height:43px; flex:none; }
+.source-control-read-status { display:flex; gap:8px; align-items:center; padding:8px 17px; flex:none; color:var(--soft-muted); font-size:12px; }
+.source-control-load-more { margin:0 14px 12px; }
+.source-control-fold { border:0; background:transparent; color:var(--soft-muted); display:flex; align-items:center; justify-content:center; width:22px; height:28px; padding:0; flex:none; cursor:pointer; }
+.source-control-fold:hover { color:var(--soft-primary); background:var(--soft-bg); }
+.source-control-repository-fold { display:grid; grid-template-columns:12px 22px; column-gap:4px; justify-content:end; width:var(--source-control-tree-leading-width); flex:0 0 var(--source-control-tree-leading-width); border-radius:4px; font-size:15px; color:var(--soft-primary); }
+.source-control-repository-chevron { display:flex; align-items:center; justify-content:center; width:12px; height:28px; font-size:10px; color:var(--soft-muted); }
+.source-control-repository-fold>.anticon { display:flex; align-items:center; justify-content:center; width:22px; height:28px; }
+.source-control-worktree-children .source-control-worktree { position:relative; --source-control-tree-indent:var(--source-control-tree-indent-step); }
+.source-control-worktree-children .source-control-worktree::before { content:''; position:absolute; top:0; bottom:0; left:calc(10px + var(--source-control-tree-leading-width) - 11px); border-left:1px solid var(--soft-line); pointer-events:none; }
+.source-control-worktree-children .source-control-worktree::after { content:''; position:absolute; top:50%; left:calc(10px + var(--source-control-tree-leading-width) - 11px); width:calc(var(--source-control-tree-indent-step) - 11px); border-top:1px solid var(--soft-line); pointer-events:none; }
+.source-control-worktree-children > div:last-child .source-control-worktree::before { bottom:50%; }
+.source-control-worktree-icon { display:flex; align-items:center; justify-content:center; width:var(--source-control-tree-indent-step); height:28px; margin-left:var(--source-control-tree-leading-width); flex:0 0 var(--source-control-tree-indent-step); color:var(--soft-muted); font-size:13px; }
+.source-control-change-worktree>.source-control-change-heading { padding-left:24px; background:var(--soft-surface); }
+.source-control-change-heading code { font-size:12px; color:var(--soft-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.source-control-area-heading { width:100%; border:0; background:transparent; display:flex; align-items:center; gap:7px; text-align:left; padding:7px 13px 4px 35px; font:inherit; font-size:12px; color:var(--soft-muted); cursor:pointer; }
+.source-control-area-heading:hover { color:var(--soft-primary); }
+.source-control-change-area .task-changed-row { padding-left:35px; }
+.source-control-change-group.is-single-worktree { border:0; }
+.source-control-change-group.is-single-worktree .source-control-area-heading { padding:8px 14px 5px; }
+.source-control-change-group.is-single-worktree .task-changed-row { padding:7px 14px; }
+.source-control-change-area .task-changed-list { border:0; border-radius:0; }
+.source-control-change-area .task-changed-list>li+li { border:0; }
+.source-control-change-area .task-changed-list>li.is-selected>.task-changed-row { background:var(--soft-primary-soft,color-mix(in srgb,var(--soft-primary) 8%,var(--soft-surface))); box-shadow:inset 2px 0 var(--soft-primary); }
+.source-control-browse-tabs .ant-segmented { padding:2px; border:1px solid var(--soft-line); background:var(--soft-bg); color:var(--soft-muted); }
+/* Page retention can interrupt the thumb motion; checked inputs remain the current selection. */
+.source-control-workbench .ant-segmented-thumb { display:none; }
+.source-control-workbench .ant-segmented-item:has(input:checked) { background:var(--soft-primary); color:var(--ant-color-white,#fff); font-weight:600; box-shadow:none; }
+.source-control-workbench .ant-segmented-item:not(:has(input:checked)) { background:transparent; color:var(--soft-muted); box-shadow:none; }
+.source-control-browse-tabs .ant-segmented-item-label { padding:3px 8px; line-height:25px; }
+.source-control-outside-filter { padding:7px 14px; border-bottom:1px solid var(--soft-line); color:var(--soft-muted); font-size:12px; }
+
+.source-control-catalog-pane { display:flex; flex-direction:column; height:100%; min-height:0; overflow:hidden; }
+.source-control-tree-controls { flex:none; background:var(--soft-surface); border-bottom:1px solid var(--soft-line); }
+.source-control-repository-tree-scroll { container-type:inline-size; container-name:source-control-catalog; flex:1; min-height:0; overflow:auto; overscroll-behavior:contain; }
+.source-control-catalog-pane>.source-control-task-origin { flex:0 1 auto; min-height:0; overflow:auto; }
+.source-control-catalog-toggle { display:flex; align-items:center; gap:8px; min-width:0; padding:0; border:0; background:transparent; color:inherit; font:inherit; cursor:pointer; }
+.source-control-catalog-toggle>.anticon { font-size:11px; color:var(--soft-muted); }
+.source-control-catalog-toggle:focus-visible { outline:2px solid var(--soft-primary); outline-offset:3px; border-radius:3px; }
+.source-control-checkout { padding-right:120px; }
+.source-control-checkout>.selectable-hover-trigger:first-child { max-width:none; }
+.source-control-selected-task.ant-btn { flex:none; width:26px; height:28px; padding:0; color:var(--soft-primary); }
+.source-control-selected-task .anticon { font-size:13px; }
+.source-control-commit-summary-meta { display:flex; align-items:center; gap:8px; flex-wrap:wrap; color:var(--soft-muted); font-size:12px; }
+.source-control-checkout .code-location-summary-content { overflow:hidden; gap:6px; }
+.source-control-checkout .code-location-summary-content strong { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.source-control-checkout .code-location-summary-content>span { flex:0 2 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.source-control-checkout .code-location-summary-content code { flex:0 0 auto; max-width:50%; }
+.source-control-checkout>.code-location-summary { flex:1; min-width:0; max-width:none; }
+.source-control-checkout .code-location-summary-caret.anticon { flex:none; font-size:10px; margin-left:auto; transition:transform .15s; }
+.source-control-checkout .code-location-summary[aria-expanded="true"] .code-location-summary-caret { transform:rotate(180deg); }
+.source-control-source-details { flex:none; max-height:210px; overflow:auto; padding:10px 14px; border-bottom:1px solid var(--soft-line); background:var(--soft-sidebar); font-size:12px; }
+.source-control-source-details>header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
+.source-control-source-details>header strong { font-size:12px; font-weight:550; }
+.source-control-source-details>header .ant-btn { width:24px; height:24px; padding:0; color:var(--soft-muted); }
+.source-control-source-details dl { display:grid; grid-template-columns:56px minmax(0,1fr); gap:5px 8px; margin:0; line-height:1.65; }
+.source-control-source-details dt { padding-top:2px; color:var(--soft-muted); white-space:nowrap; }
+.source-control-source-details dd { display:grid; grid-template-columns:minmax(0,1fr) 24px; align-items:start; gap:6px; min-width:0; margin:0; }
+.source-control-source-details code { min-width:0; padding-top:2px; font-size:12px; white-space:normal; overflow-wrap:anywhere; user-select:text; }
+.source-control-source-details dd .ant-btn { width:24px; height:24px; padding:0; color:var(--soft-muted); }
+.source-control-source-details .ant-btn { font-size:12px; }
+
+/* SCM rows prioritize names; only duplicates need a directory hint. */
+.source-control-change-area .task-changed-row-content,.source-control-commit-children .task-changed-row-content { flex-direction:row; align-items:center; gap:9px; }
+.source-control-change-area .task-changed-row-content strong,.source-control-commit-children .task-changed-row-content strong { flex:0 1 auto; min-width:0; max-width:70%; }
+.source-control-change-area .task-changed-path,.source-control-commit-children .task-changed-path { flex:1; min-width:0; }
+.source-control-change-area .is-name-only strong,.source-control-commit-children .is-name-only strong { flex:1; max-width:100%; }
+.source-control-change-area .is-name-only .task-changed-path,.source-control-commit-children .is-name-only .task-changed-path { display:none; }
+.source-control-change-area .task-changed-row,.source-control-commit-children .task-changed-row { min-height:34px; padding-top:6px; padding-bottom:6px; }
+.source-control-diff .task-diff-toolbar.is-compact-file { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px 12px; min-height:0; padding:9px 14px; }
+.source-control-diff .is-compact-file .task-diff-file { flex-direction:row; align-items:center; gap:9px; flex-wrap:wrap; }
+.source-control-diff .is-compact-file .task-diff-file strong { min-width:0; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.source-control-diff .task-diff-comparison { color:var(--soft-muted); font-size:11px; white-space:nowrap; }
+.source-control-diff .task-diff-absolute-path { grid-column:1/-1; min-width:0; color:var(--soft-muted); font-size:11px; line-height:1.6; overflow-wrap:anywhere; user-select:text; }
+.source-control-diff .task-diff-absolute-path code { font-family:inherit; }
+@container (max-width:650px) {
+  .source-control-diff .task-diff-toolbar.is-compact-file { grid-template-columns:minmax(0,1fr); }
+  .source-control-diff .is-compact-file .task-diff-actions { grid-row:3; }
+}
+.source-control-history-toolbar { padding:8px 12px 2px; }
+.source-control-history-toolbar .source-control-history-search { padding:0 0 7px; }

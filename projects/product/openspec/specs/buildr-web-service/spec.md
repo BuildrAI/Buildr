@@ -6,14 +6,14 @@ Product 下 `buildr-web` Service 的登记、源码根、React/Vite 所有权，
 
 ## Requirements
 
-### Requirement: Product 必须登记同仓 workspace Service buildr-web
-Buildr Product Project MUST 在 canonical Service registry（`services/manifest.yml`）中登记 `buildr-web` Service。该 Service MUST 使用 `source.type: workspace`，且 `source.path` MUST 等于 `projects/product/services/buildr-web`。`buildr-web` MUST 与 `buildr` 位于同一上级 Git workspace，MUST NOT 要求独立 Git remote 或虚构 Service Git 状态。
+### Requirement: Product 必须登记同代码库服务 buildr-web
+Buildr Product Project MUST 通过工作空间（Workspace）根 `projects/manifest.yml` 的 `serviceIds` 引用全局 `services/manifest.yml` 中的 `buildr-web` 服务（Service）。该服务 MUST 通过 `repositoryId` 引用与 `buildr` 相同的代码库实例（Repository Instance），且 `modulePath` MUST 等于 `projects/product/services/buildr-web`；代码库来源 MUST 由根 `repositories/manifest.yml` 登记，不在服务重复保存 `source`。`buildr-web` MUST NOT 要求独立 Git 远端（Remote）或虚构独立服务 Git 状态。旧项目内 `buildr.services/v2` 清单继续按兼容边界读取，不替代全局模型。
 
-#### Scenario: 读取 Product Service registry 中的 buildr-web
-- **WHEN** CLI、doctor 或本机应用读取 Product Project 的 Service collection
-- **THEN** registry MUST 返回 code 为 `buildr-web` 的 Service
-- **AND** Service `source.path` MUST 等于 `projects/product/services/buildr-web`
-- **AND** Service `source.type` MUST 为 `workspace`
+#### Scenario: 从全局关系读取 Product 的 buildr-web
+- **WHEN** 命令行接口（CLI）、诊断（Doctor）或本机应用从全局关系视图读取 Product Project 引用的服务（Service）
+- **THEN** 清单 MUST 返回 `code` 为 `buildr-web` 的服务（Service）
+- **AND** 服务 MUST 通过 `repositoryId` 引用实际共享的代码库实例（Repository Instance），且 `modulePath` 为 `projects/product/services/buildr-web`
+- **AND** 实际代码位置 MUST 从该实例的 `source` 与服务的 `modulePath` 组合解析
 
 #### Scenario: 定位 buildr-web 资产
 - **WHEN** Application 通过 Service metadata 定位 `product/buildr-web`

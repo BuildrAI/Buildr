@@ -219,6 +219,7 @@ export function registerAgentAssetsPackageAssets(dependencies: PackageAssetsDepe
       runtimePath: builtin.id,
       ...(builtin.provides ? { provides: builtin.provides } : {}),
       ...(builtin.requires ? { requires: builtin.requires } : {}),
+      ...(builtin.connectionDefinitions ? { connectionDefinitions: [...builtin.connectionDefinitions] } : {}),
     };
   }
 

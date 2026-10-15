@@ -1,0 +1,154 @@
+{
+  "status": "passed",
+  "checks": [
+    {
+      "name": "主页面默认为轨迹",
+      "passed": true
+    },
+    {
+      "name": "真实三列而非内容标签",
+      "passed": true
+    },
+    {
+      "name": "初始详情收起",
+      "passed": true
+    },
+    {
+      "name": "保留原始类型 system",
+      "passed": true
+    },
+    {
+      "name": "保留原始类型 user",
+      "passed": true
+    },
+    {
+      "name": "保留原始类型 context",
+      "passed": true
+    },
+    {
+      "name": "保留原始类型 compacted",
+      "passed": true
+    },
+    {
+      "name": "保留原始类型 message",
+      "passed": true
+    },
+    {
+      "name": "保留原始类型 tool",
+      "passed": true
+    },
+    {
+      "name": "保留原始类型 subtool",
+      "passed": true
+    },
+    {
+      "name": "混合而不整条标Buildr",
+      "passed": true
+    },
+    {
+      "name": "平台自身内容可识别DSH",
+      "passed": true
+    },
+    {
+      "name": "外部同名技能不是Buildr",
+      "passed": true
+    },
+    {
+      "name": "路径缺证据与范围错误不误标",
+      "passed": true
+    },
+    {
+      "name": "原详情的参数结果定义保留",
+      "passed": true
+    },
+    {
+      "name": "真实JsonTree参数展示",
+      "passed": true
+    },
+    {
+      "name": "真实结果展示",
+      "passed": true
+    },
+    {
+      "name": "稳定对象选择器",
+      "passed": true
+    },
+    {
+      "name": "可查看当时正文",
+      "passed": true
+    },
+    {
+      "name": "当前内容不同于历史内容",
+      "passed": true
+    },
+    {
+      "name": "混合内容保留非Buildr对象",
+      "passed": true
+    },
+    {
+      "name": "范围不匹配被明确解释",
+      "passed": true
+    },
+    {
+      "name": "第二页无计数回传网页按钮",
+      "passed": true
+    },
+    {
+      "name": "独立视图可看资料正文",
+      "passed": true
+    },
+    {
+      "name": "返回原轨迹选中稳定mock序号",
+      "passed": true
+    },
+    {
+      "name": "原搜索功能保留",
+      "passed": true
+    },
+    {
+      "name": "原折叠功能保留",
+      "passed": true
+    },
+    {
+      "name": "缺历史正文不补写",
+      "passed": true
+    },
+    {
+      "name": "显式看当前而不冒充历史",
+      "passed": true
+    },
+    {
+      "name": "窄屏不整页缩放",
+      "passed": true
+    },
+    {
+      "name": "复用阅读器说明高亮",
+      "passed": true
+    },
+    {
+      "name": "阅读器两个页面可用",
+      "passed": true
+    },
+    {
+      "name": "不访问真实后端",
+      "passed": true
+    },
+    {
+      "name": "无页面错误",
+      "passed": true
+    }
+  ],
+  "errors": [],
+  "network": [],
+  "browser": "Chromium 1228",
+  "sizes": [
+    "1340x940",
+    "708x860",
+    "1540x940"
+  ],
+  "limits": [
+    "仅离线模拟；未验证当前rc2新增来源列/对象扩展接口，未启用插件。",
+    "任务实际方案展示与单独查看由父代理统一验收。",
+    "数学外观、图片附件、复制真实剪贴板、超大历史虚拟化未覆盖。"
+  ]
+}

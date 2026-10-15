@@ -2,38 +2,56 @@ import { registerWebInstanceLifecycle } from './application/instance-lifecycle.t
 import { createWebCliContributions } from './interfaces/cli/web.ts';
 import { createLocalWorkspaceServer } from './http/server.ts';
 import { WORKSPACE_APPLICATION } from '../modules/workspace/module.ts';
+import { TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER } from '../modules/task/module.ts';
 import {
   SYSTEM_INSTALLATION_IDENTITY,
   SYSTEM_INSTALLATION_LAUNCHER,
 } from '../modules/installation/module.ts';
 import type { WebInstanceLifecycleRuntime, WebLifecycleOptions } from './application/instance-lifecycle.ts';
+import { readBuildrWebInstance } from './infrastructure/instance-runtime.ts';
 
 export const WEB_MODULE_ID = 'web-instance-lifecycle';
 export const WEB_INSTANCE_LIFECYCLE = 'web.instance-lifecycle';
+
+export function readCurrentBuildrWebOrigin(profile: { dataRoot: string }): string | null {
+  return readBuildrWebInstance(profile)?.url ?? null;
+}
 
 type WebModuleDependency = {
   ensureRegisteredTarget?(root: string | null): string | null;
   resolveRegisteredWorkspace?: WebLifecycleOptions['resolveRegisteredWorkspace'];
   readCurrentProductIdentity?(): ReturnType<WebLifecycleOptions['readProductIdentity']>;
   assertCurrentNpmLauncherBinding?: WebLifecycleOptions['assertNpmLauncherBinding'];
+  assertCanonicalTaskWorkspace?(root: string): string;
+  inspectGitWorktrees?: WebInstanceLifecycleRuntime['inspectGitWorktrees'];
+  readGitWorktreeEvidence?: WebInstanceLifecycleRuntime['readGitWorktreeEvidence'];
 };
 type WebModuleRequires = Record<string, WebModuleDependency>;
 
-export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: { httpContributions?: unknown[] } = {}) {
+export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: { httpContributions?: unknown[]; closeResources?: () => Promise<void> } = {}) {
   const httpContributions = options.httpContributions || [];
   return Object.freeze({
     id: WEB_MODULE_ID,
-    requires: Object.freeze([WORKSPACE_APPLICATION, SYSTEM_INSTALLATION_IDENTITY, SYSTEM_INSTALLATION_LAUNCHER]),
+    requires: Object.freeze([WORKSPACE_APPLICATION, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER, SYSTEM_INSTALLATION_IDENTITY, SYSTEM_INSTALLATION_LAUNCHER]),
     create(requires: WebModuleRequires) {
       const identity = requires[SYSTEM_INSTALLATION_IDENTITY];
       const launcher = requires[SYSTEM_INSTALLATION_LAUNCHER];
       const workspace = requires[WORKSPACE_APPLICATION];
-      if (!identity?.readCurrentProductIdentity || !launcher?.assertCurrentNpmLauncherBinding || !workspace?.ensureRegisteredTarget || !workspace?.resolveRegisteredWorkspace) {
+      const taskQuery = requires[TASK_QUERY_APPLICATION];
+      const worktreeProvider = requires[TASK_WORKTREE_PROVIDER];
+      if (!identity?.readCurrentProductIdentity || !launcher?.assertCurrentNpmLauncherBinding || !workspace?.ensureRegisteredTarget || !workspace?.resolveRegisteredWorkspace
+        || typeof taskQuery?.assertCanonicalTaskWorkspace !== 'function'
+        || typeof worktreeProvider?.inspectGitWorktrees !== 'function' || typeof worktreeProvider?.readGitWorktreeEvidence !== 'function') {
         throw new Error('Web module dependencies are incomplete.');
       }
-      const composition = Object.create(runtime) as WebInstanceLifecycleRuntime;
+      const composition = Object.assign(Object.create(runtime), {
+        assertCanonicalTaskWorkspace: taskQuery.assertCanonicalTaskWorkspace,
+        inspectGitWorktrees: worktreeProvider.inspectGitWorktrees,
+        readGitWorktreeEvidence: worktreeProvider.readGitWorktreeEvidence,
+      }) as WebInstanceLifecycleRuntime;
       registerWebInstanceLifecycle(composition, {
         httpContributions,
+        closeResources: options.closeResources,
         createLocalWorkspaceServer: (webRuntime, serverOptions) => Reflect.apply(createLocalWorkspaceServer, undefined, [webRuntime, serverOptions]),
         ensureRegisteredTarget: workspace.ensureRegisteredTarget,
         resolveRegisteredWorkspace: workspace.resolveRegisteredWorkspace,

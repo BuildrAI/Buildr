@@ -83,9 +83,10 @@ export function createLauncherCliContributions(application: any = null) {
       help: [
         'Usage: buildr web launcher install [--target <path>] [--port <0..65535>] [--json]',
         '',
-        'macOS 生成本机 Buildr Web.app，Windows 生成 Start Menu shortcut；两者只绑定已登记的 Host Node、package entry、npm prefix 与 installation identity。',
+        'macOS 生成本机 Buildr Web.app（默认 /Applications；默认位置不可写时报错并可用 --target 指定其他路径），Windows 生成 Start Menu shortcut；两者只绑定已登记的 Host Node、package entry、npm prefix 与 installation identity。',
         '默认首选 127.0.0.1:4457；--port 0 直接使用随机 loopback 端口，非零首选端口占用时只随机回退一次。',
         '普通 npm install 不会创建图形入口；已有同 ownership Launcher 才会在 npm 更新后刷新 binding。',
+        'status、repair、uninstall 省略 --target 时按真实位置操作：先查 /Applications，再查早期版本安装过的 ~/Applications。',
       ],
       match: ({ domain, action, runtimeId }: any) => domain === 'web' && action === 'launcher' && runtimeId === 'install',
       run: (runtime: any, context: any) => (application || runtime).manageBuildrWebLauncher('install', context.argv.slice(5)),

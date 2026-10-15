@@ -88,6 +88,24 @@ export function createExactNodePathEnvironment(sourceEnv: any, bin: any, options
   return { env: { ...inheritedEnv, PATH: pathEntries.join(pathApi.delimiter) }, pathEntries };
 }
 
+export function assertMinimumNodeVersion(version: unknown, minimumVersion: string): void {
+  const parse = (value: unknown): number[] | null => {
+    if (typeof value !== 'string' || !/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(value)) return null;
+    const parts = value.split('.').map(Number);
+    return parts.every(Number.isSafeInteger) ? parts : null;
+  };
+  const required = parse(minimumVersion), actual = parse(version);
+  if (!required) throw new Error(`Invalid minimum Node version: ${minimumVersion}.`);
+  if (actual) {
+    for (let index = 0; index < required.length; index++) {
+      if (actual[index] > required[index]) return;
+      if (actual[index] < required[index]) break;
+      if (index === required.length - 1) return;
+    }
+  }
+  throw new Error(`Node version ${version} does not meet required minimum ${minimumVersion}.`);
+}
+
 export function createExactNodeExecutionEnvironment(options: any = {}): any  {
   const inheritedEnv: any = { ...(options.env ?? process.env) };
   const nodeExecutable = realExecutable(options.nodeExecutable ?? process.execPath, 'Node executable');
@@ -122,6 +140,7 @@ export function createExactNodeExecutionEnvironment(options: any = {}): any  {
     }
   }
   if (options.expectedVersion && version !== options.expectedVersion) throw new Error(`Exact Node version ${version} does not match required ${options.expectedVersion}.`);
+  if (options.minimumVersion !== undefined) assertMinimumNodeVersion(version, options.minimumVersion);
   const audit: any = {
     schemaVersion: 'buildr.exact-node-execution-environment/v1',
     executable: reportedExecutable,

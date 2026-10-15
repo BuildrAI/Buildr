@@ -7,6 +7,7 @@ import { useAppShell } from '../../../app/AppShellContext';
 import { workspaceHref } from '../../../lib/labels';
 import { formatDateTime, taskStatusLabel } from '../../../lib/taskLabels';
 import { useWorkbenchPreferences } from '../hooks/useWorkbenchPreferences';
+import { TaskTypeBadge } from '../../../components/TaskTypeBadge';
 
 export const attentionLabels = { decision: '等你决定', acceptance: '等你验收', question: '需要你介入' };
 
@@ -18,7 +19,7 @@ export function WorkbenchTaskRow({ item, projectNames, compact = false, onError 
   const [saving, setSaving] = useState(false);
   const record = item.task.record, context = item.workContext.context;
   const pinned = has('pinned-task', record.taskId);
-  const href = workspaceHref(workspaceId, '/tasks/' + encodeURIComponent(record.taskId));
+  const href = workspaceHref(workspaceId, '/tasks/' + encodeURIComponent(record.taskId) + (record.isParent ? '?taskType=composite' : ''));
   const from = location.pathname + location.search;
   const open = (event: MouseEvent<HTMLElement>) => {
     if ((event.target as HTMLElement).closest('a,button,input,select')) return;
@@ -36,7 +37,7 @@ export function WorkbenchTaskRow({ item, projectNames, compact = false, onError 
   return <article className="workbench-task-row" data-workbench-task={record.taskId} onClick={open}>
     <span className={'workbench-task-status-symbol ' + record.status} title={taskStatusLabel(record.status)}>{record.status === 'completed' ? <CheckCircleOutlined /> : <ClockCircleOutlined />}</span>
     <div className="workbench-task-copy">
-      <Link className="workbench-task-title" to={href} state={{ from }}>{record.title}</Link>
+      <Link className="workbench-task-title" to={href} state={{ from }}>{record.title}</Link><TaskTypeBadge isParent={record.isParent} />
       <p className="workbench-task-summary">{summary}</p>
       <div className="workbench-task-meta">
         {record.scope.projects.length ? <span>{record.scope.projects.map(code => projectNames[code] || code).join('、')}</span> : <span>工作空间范围</span>}

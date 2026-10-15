@@ -3,6 +3,11 @@ export type OpenResult =
   | { ready: true; url: string; channel: 'released' | 'development'; ownershipIdentity: string }
   | { ready: false; code: string; message: string };
 
+/** Qualification of this gateway in the current cooperative plugin service domain. */
+export type ActivationStatus =
+  | { active: true; packageName: string }
+  | { active: false; packageName: string; code: 'plugin-conflict' | 'disposed'; message: string; ownerPackage?: string };
+
 /**
  * Host configuration. `binding` is the machine pointer to this Buildr installation and is optional:
  * a package installed from npm or a repository carries no machine paths, and the plugin discovers
@@ -16,6 +21,19 @@ export interface Config {
     nodeSha256?: string;
     cliSha256?: string;
   };
+  /** Development-only passive reader override; does not change the installation used by open(). */
+  sourceBinding?: {
+    nodeExecutable: string;
+    cliEntry: string;
+    nodeSha256?: string;
+    cliSha256?: string;
+  };
   timeoutMs?: number;
   pollMs?: number;
 }
+
+export type * from './source-types.ts';
+export type { DshDesktopClientState, DshDesktopClientAck, DshDesktopClientCommand, DshDesktopTaskPageRequest, DshDesktopTaskPageResult } from '../../../buildr/src/modules/agent-operations/contracts/dsh-desktop-bridge.ts';
+export type MaintainerBinding = { nodeExecutable: string; cliEntry: string; nodeSha256?: string; cliSha256?: string };
+export type BindingMaintenanceView = { revision: string; binding: MaintainerBinding | null };
+export type BindingMaintenanceUpdate = { expectedRevision: string; binding: MaintainerBinding | null };

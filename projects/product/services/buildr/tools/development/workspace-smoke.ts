@@ -26,15 +26,15 @@ function runBuildr(args: any): any  {
     env: process.env,
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
+  return result;
 }
 
-const sourceRoot: any = path.join(smokeRoot, 'service-source');
-fs.mkdirSync(sourceRoot, { recursive: true });
-fs.writeFileSync(path.join(sourceRoot, 'README.md'), '# Workspace smoke service\n');
-
 runBuildr(['init', '--target', workspaceRoot, '--name', 'smoke', '--description', 'Isolated Buildr Workspace smoke.', '--profile', 'team']);
-runBuildr(['project', 'create', 'smoke', '--target', workspaceRoot, '--name', 'Smoke', '--description', 'Workspace smoke project.']);
-runBuildr(['service', 'create', 'smoke/app', sourceRoot, '--target', workspaceRoot, '--name', 'Smoke App', '--description', 'Workspace smoke service.', '--type', 'application']);
+const catalog = JSON.parse(runBuildr(['assets', 'inspect', '--target', workspaceRoot, '--json']).stdout);
+assert.equal(catalog.migrationRequired, false);
+const input = path.join(smokeRoot, 'project-input.json');
+fs.writeFileSync(input, JSON.stringify({ revision: catalog.revision, code: 'smoke', name: 'Smoke', description: 'Workspace smoke project.', newServices: [{ code: 'app', name: 'Smoke App', description: 'Workspace smoke service.', type: 'application', directoryMode: 'create' }] }));
+runBuildr(['assets', 'create', 'project', '--target', workspaceRoot, '--input', input, '--json']);
 
 const runtime: any = createRuntime();
 const workspace: any = runtimeProvide(runtime, WORKSPACE_APPLICATION);

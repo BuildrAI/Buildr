@@ -1,5 +1,6 @@
 import { taskListScrollHost } from '../taskNavigation';
 import { TaskGoalSummary } from './TaskGoalSummary';
+import { TaskTypeBadge } from '../../../components/TaskTypeBadge';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Table, Tooltip } from 'antd';
@@ -55,7 +56,7 @@ export function TaskTable({ activeTaskId, tasks, prefetchTaskId, projectNames, c
       return <>
         {showGroup && <div className="task-project-group">{group}</div>}
         <div className="task-compact-copy">
-          <div className="task-row-heading"><Link className="task-row-main" title={`${record.taskId} · ${group}`} to={taskHref(record.taskId)} onClick={event => { event.stopPropagation(); if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); onOpen(record.taskId); }}><strong>{record.title}</strong></Link>{record.isParent && <span className="task-type-badge">组合任务</span>}</div>
+          <div className="task-row-heading"><Link className="task-row-main" title={`${record.taskId} · ${group}`} to={taskHref(record.taskId)} onClick={event => { event.stopPropagation(); if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); onOpen(record.taskId); }}><strong>{record.title}</strong></Link><TaskTypeBadge isParent={record.isParent} /></div>
           <TaskGoalSummary goal={record.intent} />
         </div>
       </>;

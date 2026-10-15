@@ -17,6 +17,7 @@ const repositoryRoot = path.resolve(serviceRoot, '../../../..');
 // This is the executable coverage contract, shared by Candidate and publication.
 // A new check must either name its Candidate evidence or explain its live boundary.
 export const RELEASE_CHECKS = Object.freeze([
+  { id: 'artifact-browser-core', phase: 'candidate', evidence: ['artifact-browser-macos'], operation: 'browser-core' },
   { id: 'package-contract', phase: 'candidate', evidence: ['core-package-runtime-release-macos'], operation: 'metadata' },
   { id: 'platform-launcher', phase: 'candidate', evidence: ['core-package-runtime-release-macos', 'runtime-windows'], operation: 'platform' },
   { id: 'host-node', phase: 'candidate', evidence: ['host-minimum-macos', 'host-current-macos', 'host-minimum-windows', 'host-current-windows', 'host-minimum-linux', 'host-current-linux'], operation: 'host' },
@@ -38,6 +39,7 @@ export type ReleaseInitialCheckId = Extract<typeof RELEASE_CHECKS[number], { pha
 export type ReleaseEffectCheckId = Extract<typeof RELEASE_CHECKS[number], { phase: 'protected' | 'post-publication' }>['id'];
 
 export const RELEASE_CONSUMER_COMMANDS = Object.freeze({
+  'browser-core': { file: 'test/verification/release/browser-candidate.ts', args: ['--selector', 'core'], preparation: 'browser-artifact' },
   platform: { file: 'test/verification/release/release-smoke.ts', args: ['--platform-launcher'], preparation: 'consumer' },
   host: { file: 'test/verification/host-node.ts', args: [], preparation: 'host' },
   registry: { file: 'test/verification/release/release-smoke.ts', args: [], preparation: 'consumer' },
@@ -53,7 +55,7 @@ export function validateReleaseCheckDefinitions(checks: readonly any[] = RELEASE
     if (!check.id || ids.has(check.id)) throw new Error(`Duplicate or missing release check: ${check.id}`);
     ids.add(check.id);
     if (check.phase === 'candidate') {
-      if (!Array.isArray(check.evidence) || !check.evidence.length || !['metadata', 'platform', 'host', 'publisher', 'lifecycle'].includes(check.operation)) throw new Error(`Release check ${check.id} has no executable Candidate coverage.`);
+      if (!Array.isArray(check.evidence) || !check.evidence.length || !['metadata', 'platform', 'host', 'publisher', 'lifecycle', 'browser-core'].includes(check.operation)) throw new Error(`Release check ${check.id} has no executable Candidate coverage.`);
     } else if (!['pre-publication', 'protected-authority', 'protected', 'post-publication'].includes(check.phase) || !check.reason?.trim()) {
       throw new Error(`Release check ${check.id} has no live-state or authorization boundary.`);
     }
@@ -103,7 +105,7 @@ export function inspectReleaseConsumerArtifact(manifestPath: string, roots = { s
   return { artifact, contract, documents };
 }
 
-export function runReleaseConsumer(operation: 'platform' | 'host' | 'registry' | 'metadata' | 'publisher', options: { manifestPath?: string; packageSpec?: string; env?: NodeJS.ProcessEnv; execute?: typeof spawnCommandSync } = {}): any {
+export function runReleaseConsumer(operation: 'platform' | 'host' | 'registry' | 'metadata' | 'publisher' | 'browser-core', options: { manifestPath?: string; packageSpec?: string; env?: NodeJS.ProcessEnv; execute?: typeof spawnCommandSync } = {}): any {
   const execute = options.execute ?? spawnCommandSync;
   const env = { ...process.env, ...options.env };
   let inspected: any = null;
@@ -150,8 +152,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       const { releaseContextIdentity } = await import('./release-readiness.ts');
       if (releaseContextIdentity(aggregate) !== context.candidate.aggregateIdentity) throw new Error('Frozen Candidate aggregate identity mismatches.');
       process.stdout.write('Release consumption coverage and immutable bytes passed.\n');
-    } else if (['platform', 'host', 'registry', 'metadata', 'publisher'].includes(action || '')) process.stdout.write(`${JSON.stringify(runReleaseConsumer(action as 'platform' | 'host' | 'registry' | 'metadata' | 'publisher'))}\n`);
-    else throw new Error('Usage: release-consumption.ts <plan|metadata|platform|host|publisher|registry|verify>');
+    } else if (['platform', 'host', 'registry', 'metadata', 'publisher', 'browser-core'].includes(action || '')) process.stdout.write(`${JSON.stringify(runReleaseConsumer(action as 'platform' | 'host' | 'registry' | 'metadata' | 'publisher' | 'browser-core'))}\n`);
+    else throw new Error('Usage: release-consumption.ts <plan|metadata|platform|host|publisher|registry|browser-core|verify>');
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;

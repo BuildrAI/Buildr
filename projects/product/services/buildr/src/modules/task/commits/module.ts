@@ -6,7 +6,7 @@ import { createTaskCommitsHttpContribution } from './interfaces/http/task-commit
 
 export const TASK_COMMITS_APPLICATION = 'task.commits-application';
 type Dependencies = {
-  [TASK_QUERY_APPLICATION]: Pick<TaskCommitsDependencies, 'readTask'>;
+  [TASK_QUERY_APPLICATION]: Pick<TaskCommitsDependencies, 'readTask' | 'readTaskCommitTargets'>;
   [WORKSPACE_QUERY]: Pick<TaskCommitsDependencies, 'readProjectRegistryRecord' | 'readServiceRegistryRecord' | 'resolveSourceRoot'>;
   [TASK_WORKTREE_PROVIDER]: Pick<TaskCommitsDependencies, 'readGitWorktreeEvidence'>;
 };
@@ -16,6 +16,7 @@ export const TASK_COMMITS_MODULE = Object.freeze({
   create(requires: Dependencies) {
     const application = createTaskCommitsApplication({
       readTask: requires[TASK_QUERY_APPLICATION].readTask,
+      readTaskCommitTargets: requires[TASK_QUERY_APPLICATION].readTaskCommitTargets,
       readProjectRegistryRecord: requires[WORKSPACE_QUERY].readProjectRegistryRecord,
       readServiceRegistryRecord: requires[WORKSPACE_QUERY].readServiceRegistryRecord,
       resolveSourceRoot: requires[WORKSPACE_QUERY].resolveSourceRoot,

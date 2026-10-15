@@ -1,0 +1,22 @@
+.task-codex-sessions { display: flex; align-items: center; gap: 2px; min-width: 0; margin: 8px 0; }
+.task-codex-summary { display: inline-flex; align-items: center; gap: 2px; min-width: 0; }
+.task-codex-sessions .ant-btn { height: 26px; padding: 0 5px; font-size: 12px; }
+.task-codex-sessions #task-codex-manage { color: var(--soft-muted); }
+.task-codex-status { font-size: 11px; }
+.task-codex-sessions #task-codex-manage.task-codex-read-error { color: var(--soft-development-ink); }
+.task-codex-panel { width: 356px; max-width: calc(100vw - 48px); max-height: calc(100dvh - 80px); overflow-y: auto; outline: none; }
+.task-codex-panel > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--soft-ink); font-size: 13px; }
+.task-codex-panel .ant-btn { font-size: 12px; }
+.task-codex-panel-caption, .task-codex-feedback { color: var(--soft-muted); font-size: 11px; line-height: 1.7; margin: 8px 0; }
+.task-codex-feedback { color: var(--soft-primary); }
+.task-codex-panel ul { list-style: none; padding: 0; margin: 0; max-height: 240px; overflow-y: auto; }
+.task-codex-panel li { display: flex; align-items: center; justify-content: space-between; gap: 6px; border-bottom: 1px solid var(--soft-line); padding: 8px 0; }
+.task-codex-panel li:last-child { border-bottom: 0; }
+.task-codex-panel li > div:first-child { min-width: 0; flex: 1; font-size: 12px; }
+.task-codex-panel li > div:last-child { display: flex; flex: 0 0 auto; }
+.task-codex-panel li code { display: block; color: var(--soft-muted); font-size: 10px; overflow-wrap: anywhere; margin-top: 3px; }
+.task-codex-panel-tools { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0; }
+.task-codex-association { border-top: 1px solid var(--soft-line); margin-top: 8px; padding-top: 2px; }
+.task-codex-association > code { display: block; color: var(--soft-ink); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; margin: 6px 0 8px; }
+.task-codex-panel .ant-alert { margin: 8px 0; font-size: 11px; }
+.task-codex-panel .ant-alert p { margin: 4px 0; overflow-wrap: anywhere; }

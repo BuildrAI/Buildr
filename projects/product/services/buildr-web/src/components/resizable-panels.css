@@ -1,0 +1,15 @@
+.resizable-panels { display:flex; flex:1; width:100%; height:100%; min-width:0; min-height:0; overflow:hidden; }
+.resizable-panels.direction-horizontal { flex-direction:row; }
+.resizable-panels.direction-vertical { flex-direction:column; }
+.resizable-panels-pane { min-width:0; min-height:0; overflow:auto; overscroll-behavior:contain; }
+.resizable-panels-first { flex:0 0 auto; }
+.resizable-panels-second { flex:1; }
+.resizable-panels-divider { flex:0 0 9px; }
+/* The 9px pointer target straddles the boundary and takes no space from either pane. */
+.resizable-panels.direction-horizontal>.resizable-panels-divider { height:100%; margin-inline:-4.5px; }
+.resizable-panels.direction-vertical>.resizable-panels-divider { width:100%; margin-block:-4.5px; }
+.resizable-panels-pane[hidden],.resizable-panels-divider[hidden] { display:none!important; }
+.resizable-panels.direction-horizontal.is-resizing { cursor:col-resize; }
+.resizable-panels.direction-vertical.is-resizing { cursor:row-resize; }
+.resizable-panels.is-resizing { user-select:none; }
+.resizable-panels.is-resizing>.split-divider::before,.resizable-panels.is-resizing>.split-divider::after { background:var(--soft-primary); }

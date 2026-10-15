@@ -62,6 +62,7 @@ Buildr Product MUST 以真实专业模块的自动测试证明分类契约可落
 - **AND** MUST证明无关开发不被该缺口阻止
 
 #### Scenario: Task Finish 入口缺口
-- **WHEN** Task Finish同时观察到Worktree、具体资源或Delivery缺口
-- **THEN** 自动测试 MUST 证明 Finish run 不会启动且各模块缺口均被保留
-- **AND** MUST NOT 把该失败解释为取消其他已成立的专业事实或 Agent 的全局工作许可
+- **WHEN** 收尾涉及的具体写入、交付或清理能力不能证明目标身份、当前版本、授权或资源归属
+- **THEN** 自动测试 MUST 证明对应能力在危险副作用前拒绝该动作，并保留此前已成立的事实与未解决缺口
+- **AND** 智能体（Agent）MUST 继续不依赖该缺口的已授权安全动作；必要成果仍未完成时不得报告整个目标完成
+- **AND** MUST NOT 要求旧收尾运行（Finish Run）、统一就绪状态或替代状态库，也不得将局部失败解释为取消其他专业事实或智能体（Agent）的全局工作许可

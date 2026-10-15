@@ -10,7 +10,7 @@ export function navigationState(pathname: string, search: string, workspaceId: s
     ? decode(parts[1]) || (resource === 'services' ? new URLSearchParams(search).get('project') : null)
     : null;
   return {
-    area: ['overview', 'tasks', 'activity'].includes(resource) ? 'workbench' as const : 'workspace' as const,
+    area: resource === 'code' ? 'code' as const : ['overview', 'tasks', 'activity'].includes(resource) ? 'workbench' as const : 'workspace' as const,
     resource,
     projectCode,
     serviceCode: resource === 'services' ? decode(parts[2]) : null,

@@ -9,19 +9,35 @@ import { openKnowledgeTopicDirectory, selectKnowledgeChildTopic, verifyKnowledge
 export const publicationTestPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN1sAAAAASUVORK5CYII=', 'base64');
 
 type Context = {
-  t: TestContext; page: Page; workspaceRoot: string; workspaceUrl: string;
+  t: TestContext; page: Page; workspaceRoot: string; workspaceUrl: string; otherWorkspaceUrl: string;
   expectedBrowserErrors: Set<string>;
   selectAntdOption(page: Page, id: string, text: string): Promise<unknown>;
   capture(page: Page, name: string): Promise<unknown>;
 };
 
-export async function runPublicationJourney({ t, page, workspaceRoot, workspaceUrl, expectedBrowserErrors, selectAntdOption, capture }: Context) {
+export async function runPublicationJourney({ t, page, workspaceRoot, workspaceUrl, otherWorkspaceUrl, expectedBrowserErrors, selectAntdOption, capture }: Context) {
   const root = path.join(workspaceRoot, 'projects/product/docs/publications');
   const apiBase = `${new URL(workspaceUrl).origin}/api/v1${new URL(workspaceUrl).pathname}`;
   const visible = () => page.locator('.workspace-page:not([hidden])');
   const editor = () => page.locator('.publication-editor-drawer');
   const primaryTabs = () => page.getByRole('tablist', { name: '打开的页面', exact: true }).getByRole('tab');
   writeReadingFixture(workspaceRoot);
+  const openEditorWithPeerHistory = async () => {
+    await page.goto(`${otherWorkspaceUrl}/overview`);
+    await page.getByRole('button', { name: '切换工作空间', exact: true }).waitFor({ state: 'visible' });
+    const peerHistoryLength = await page.evaluate(() => history.length);
+    await page.getByRole('button', { name: '切换工作空间', exact: true }).click();
+    await page.getByRole('menuitem').filter({ hasText: /^browser-smoke(?:-articles)?$/ }).click();
+    await page.waitForURL(`${workspaceUrl}/overview`);
+    await page.locator('[data-area="workspace"]').click();
+    await page.locator('[data-nav="articles"]').click();
+    await visible().getByRole('link', { name: '浏览器测试文章', exact: true }).click();
+    await visible().getByRole('button', { name: /编辑文章/ }).click();
+    await editor().locator('#article-edit-summary').waitFor({ state: 'visible' });
+    const steps = await page.evaluate(() => history.length) - peerHistoryLength;
+    assert.ok(steps > 0 && steps <= 6, `真实同文档导航建立跨空间历史：${steps}`);
+    return { steps, editingUrl: page.url() };
+  };
   const openKnowledgeSource = async (entry: Locator, sourceId: string) => {
     const base = new URL(apiBase), prefix = `${base.pathname}/knowledge/project/`;
     assert.equal(await entry.count(), 1, `来源 ${sourceId} 必须有唯一可点击入口`);
@@ -165,6 +181,86 @@ export async function runPublicationJourney({ t, page, workspaceRoot, workspaceU
       assert.deepEqual(writes, [], '主题、目录与分类阅读不得写回知识');
       assert.equal(fs.readFileSync(indexFile, 'utf8'), indexBefore);
     } finally { page.off('request', collectWrites); await page.setViewportSize({ width: 1680, height: 1000 }); }
+  });
+
+  await t.test('文章内嵌技术图与链接代码地图在主题目录合并，类型检索定位文章且地图原址保留', async () => {
+    const knowledgeUrl = `${workspaceUrl}/knowledge/project/product`;
+    const indexFile = path.join(workspaceRoot, 'projects/product/knowledge/index.yml'), articleFile = path.join(workspaceRoot, 'projects/product/knowledge/docs/explanation.md');
+    const beforeIndex = fs.readFileSync(indexFile, 'utf8'), beforeArticle = fs.readFileSync(articleFile, 'utf8');
+    const fixture = JSON.parse(beforeIndex);
+    fixture.relations.push({ from: 'browser-explanation', to: 'browser-diagram', kind: 'contains' }, { from: 'browser-explanation', to: 'browser-map', kind: 'guides' });
+    fs.writeFileSync(indexFile, JSON.stringify(fixture));
+    fs.writeFileSync(articleFile, beforeArticle.replace('![测试地图]', '[实现地图参考]'));
+    const main = () => visible().locator('.knowledge-page:visible');
+    const search = () => main().getByRole('textbox', { name: '检索知识', exact: true });
+    try {
+      await page.goto(`${knowledgeUrl}?object=browser-reading`);
+      await main().locator('[data-knowledge-chapter="browser-explanation"] iframe').waitFor({ state: 'visible' });
+      for (const [label, query] of [['图示', '测试技术图'], ['代码地图', '测试代码地图']]) {
+        await main().getByRole('group', { name: '内容类型', exact: true }).getByRole('button', { name: label, exact: true }).click();
+        await search().fill(query);
+        await main().locator('[data-knowledge-entry="browser-explanation"]:visible').waitFor({ state: 'visible' });
+        assert.equal(await main().locator('[data-knowledge-entry="browser-diagram"]:visible, [data-knowledge-entry="browser-map"]:visible').count(), 0);
+        assert.equal(await main().locator('[data-knowledge-entry]:visible').count(), 1);
+      }
+      await main().getByRole('link', { name: '实现地图参考', exact: true }).waitFor({ state: 'visible' });
+      await page.goto(`${knowledgeUrl}?artifact=browser-map`);
+      await main().locator('[data-knowledge-artifact="browser-map"]').waitFor({ state: 'visible' });
+    } finally { fs.writeFileSync(indexFile, beforeIndex); fs.writeFileSync(articleFile, beforeArticle); }
+  });
+
+  await t.test('主题按文章标题连续阅读，目录与正文链接定位本页，明确单篇与小节引用仍独立', async () => {
+    const knowledgeUrl = `${workspaceUrl}/knowledge/project/product`;
+    const projectRoot = path.join(workspaceRoot, 'projects/product');
+    const indexFile = path.join(projectRoot, 'knowledge/index.yml');
+    const firstFile = path.join(projectRoot, 'knowledge/docs/explanation.md'), secondFile = path.join(projectRoot, 'knowledge/docs/details.md');
+    const beforeIndex = fs.readFileSync(indexFile, 'utf8'), firstBody = fs.readFileSync(firstFile, 'utf8'), secondBody = fs.readFileSync(secondFile, 'utf8');
+    const fixture = JSON.parse(beforeIndex);
+    const second = fixture.artifacts.find((item: { id: string }) => item.id === 'browser-details-article');
+    second.objects.push('browser-reading');
+    fixture.artifacts = fixture.artifacts.filter((item: { id: string }) => item.id !== second.id);
+    fixture.artifacts.splice(fixture.artifacts.findIndex((item: { id: string }) => item.id === 'browser-explanation') + 1, 0, second);
+    fs.writeFileSync(indexFile, JSON.stringify(fixture));
+    fs.writeFileSync(firstFile, firstBody.replace('\n\n', '\n\n[阅读第二章](details.md) · [精确查看第二章小节](details.md#章节内小节)\n\n'));
+    fs.writeFileSync(secondFile, `${secondBody}\n[回看第一章](explanation.md)\n\n## 章节内小节\n\n${Array.from({ length: 20 }, () => '第二篇保留完整正文，支持章节定位后继续阅读。'.repeat(5)).join('\n\n')}\n`);
+    const main = () => visible().locator('.knowledge-page:visible');
+    const chapter = (id: string) => main().locator(`[data-knowledge-chapter="${id}"]`);
+    const positioned = async (id: string) => page.waitForFunction(value => {
+      const root = document.querySelector('.workspace-page:not([hidden]) .knowledge-page');
+      const target = root?.querySelector<HTMLElement>(`[data-knowledge-chapter="${value}"]`), host = root?.closest<HTMLElement>('.pane-body');
+      if (!target || !host) return false;
+      const offset = target.getBoundingClientRect().top - host.getBoundingClientRect().top;
+      return Math.abs(offset - (root?.querySelector<HTMLElement>('.knowledge-sticky-navigation')?.offsetHeight || 0) - 12) < 3;
+    }, id);
+    try {
+      await page.goto(`${knowledgeUrl}?object=browser-reading`);
+      await chapter('browser-details-article').waitFor({ state: 'visible' });
+      assert.deepEqual(await main().locator('[data-knowledge-chapter] > header h2').allTextContents(), ['浏览器知识说明', '深入阅读说明']);
+      await chapter('browser-details-article').getByRole('heading', { level: 3, name: '章节内小节', exact: true }).waitFor({ state: 'visible' });
+      const historyBefore = await page.evaluate(() => history.length);
+      const branch = main().locator('[data-knowledge-branch="topic:browser-reading"]:visible');
+      if (await branch.getAttribute('aria-expanded') !== 'true') await branch.click();
+      await main().locator('[data-knowledge-entry="browser-details-article"]:visible').first().click();
+      await positioned('browser-details-article');
+      assert.equal(new URL(page.url()).searchParams.get('object'), 'browser-reading');
+      assert.equal(new URL(page.url()).searchParams.has('artifact'), false);
+      assert.equal(await page.evaluate(() => history.length), historyBefore, '定位章节不创建页面历史');
+      assert.equal(await main().locator('[data-knowledge-entry="browser-details-article"]:visible').first().getAttribute('aria-current'), 'page');
+      await chapter('browser-details-article').getByRole('link', { name: '回看第一章', exact: true }).click();
+      await positioned('browser-explanation');
+      await chapter('browser-explanation').getByRole('link', { name: '阅读第二章', exact: true }).click();
+      await positioned('browser-details-article');
+      assert.equal(await page.evaluate(() => history.length), historyBefore);
+      await chapter('browser-explanation').getByRole('link', { name: '精确查看第二章小节', exact: true }).click();
+      await visible().locator('.pane-right [data-knowledge-reference] #章节内小节').waitFor({ state: 'visible' });
+      assert.equal(new URL(page.url()).searchParams.get('object'), 'browser-reading', '小节引用仍保留精确引用阅读');
+      await page.goto(`${knowledgeUrl}?artifact=browser-details-article`);
+      await main().locator('[data-knowledge-artifact="browser-details-article"]').getByRole('heading', { level: 2, name: '章节内小节', exact: true }).waitFor({ state: 'visible' });
+      assert.equal(await main().locator('[data-knowledge-chapter]').count(), 0, '明确单篇地址不套用主题章节模式');
+      assert.equal(await main().locator('[data-knowledge-artifact="browser-explanation"]').count(), 0);
+    } finally {
+      fs.writeFileSync(indexFile, beforeIndex); fs.writeFileSync(firstFile, firstBody); fs.writeFileSync(secondFile, secondBody);
+    }
   });
 
   await t.test('主目录中文组合输入保持焦点，筛选目录可以收展且清空恢复原状态', async () => {
@@ -326,8 +422,8 @@ export async function runPublicationJourney({ t, page, workspaceRoot, workspaceU
     await readingPane.evaluate((pane: HTMLElement) => { pane.scrollTop = pane.scrollHeight - pane.clientHeight; });
     const readingTop = await readingPane.evaluate((pane: HTMLElement) => pane.scrollTop);
     assert.ok(readingTop > 1000);
-    await visible().getByRole('button', { name: '展开阅读', exact: true }).click();
-    await visible().getByRole('button', { name: '恢复分屏', exact: true }).click();
+    await page.locator('.workspace-pane-host').getByRole('button', { name: '收起页面', exact: true }).click();
+    await page.locator('.workspace-pane-host').getByRole('button', { name: '展开页面', exact: true }).click();
     await page.waitForFunction((top: number) => Math.abs((document.querySelector('.workspace-page:not([hidden]) .pane-right > .pane-body')?.scrollTop || 0) - top) < 3, readingTop);
     await visible().getByRole('button', { name: /浏览器知识说明 项目知识/ }).click();
     const knowledge = visible().locator('[data-knowledge-artifact="browser-explanation"]:visible');
@@ -341,9 +437,10 @@ export async function runPublicationJourney({ t, page, workspaceRoot, workspaceU
     await visible().getByText('这是真实来源说明。', { exact: false }).last().waitFor({ state: 'visible' });
     await visible().getByRole('button', { name: '← 返回浏览器知识说明', exact: true }).click();
     await knowledge.waitFor({ state: 'visible' });
-    await visible().getByRole('button', { name: '展开阅读', exact: true }).click();
-    assert.equal(await primaryTabs().count(), tabCount);
-    await visible().getByRole('button', { name: '恢复分屏', exact: true }).click();
+    await page.locator('.workspace-pane-host').getByRole('button', { name: '收起页面', exact: true }).click();
+    assert.equal(await page.locator('.workspace-pane-host .collapsed-pane-tabs.side-left .collapsed-pane-item').count(), tabCount, '页面收起后保留全部竖向标签');
+    await page.locator('.workspace-pane-host').getByRole('button', { name: '展开页面', exact: true }).click();
+    assert.equal(await primaryTabs().count(), tabCount, '恢复页面后保留原来的横向标签');
     assert.equal(await visible().locator('#articles-search').inputValue(), '浏览器');
     await capture(page, 'article-knowledge-split.png');
     await page.goto(`${workspaceUrl}/articles/product/browser-article/edit`);
@@ -404,6 +501,59 @@ export async function runPublicationJourney({ t, page, workspaceRoot, workspaceU
     await editor().getByRole('button', { name: '关闭文章编辑', exact: true }).click();
     await page.getByRole('dialog', { name: '放弃尚未保存的修改？' }).getByRole('button', { name: '放弃修改', exact: true }).click();
     await editor().waitFor({ state: 'hidden' });
+  });
+
+  await t.test('跨工作空间历史退出允许继续编辑，明确放弃后才释放草稿', async () => {
+    const file = path.join(root, 'article.md'), before = fs.readFileSync(file);
+    const { steps, editingUrl } = await openEditorWithPeerHistory();
+    await editor().locator('#article-edit-summary').fill('跨工作空间退出仍保留的输入');
+    await page.evaluate(count => history.go(-count), steps);
+    const leave = page.getByRole('dialog', { name: '放弃尚未保存的修改？', exact: true });
+    await leave.waitFor({ state: 'visible' });
+    await leave.getByRole('button', { name: '继续编辑', exact: true }).click();
+    assert.equal(page.url(), editingUrl);
+    assert.equal(await editor().locator('#article-edit-summary').inputValue(), '跨工作空间退出仍保留的输入');
+    assert.deepEqual(fs.readFileSync(file), before);
+    await page.evaluate(count => history.go(-count), steps);
+    await leave.waitFor({ state: 'visible' });
+    await leave.getByRole('button', { name: '放弃修改', exact: true }).click({ trial: true });
+    await capture(page, 'article-workspace-leave-confirmation.png');
+    await leave.getByRole('button', { name: '放弃修改', exact: true }).click();
+    await page.waitForURL(`${otherWorkspaceUrl}/overview`);
+    await editor().waitFor({ state: 'hidden' });
+    assert.deepEqual(fs.readFileSync(file), before, '放弃未保存输入不修改真实文章');
+  });
+
+  await t.test('保存中跨空间退出被取消，失败后输入保留且不重放旧导航', async () => {
+    const file = path.join(root, 'article.md'), before = fs.readFileSync(file);
+    const { steps, editingUrl } = await openEditorWithPeerHistory();
+    const updateUrl = `${apiBase}/projects/product/publications/browser-article`;
+    let release!: () => void;
+    const waiting = new Promise<void>(resolve => { release = resolve; });
+    await page.route(updateUrl, async route => {
+      if (route.request().method() !== 'PUT') { await route.continue(); return; }
+      await waiting;
+      await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'publication_revision_conflict', message: '稿件已变化，输入已保留' } }) });
+    });
+    expectedBrowserErrors.add(updateUrl);
+    try {
+      await editor().locator('#article-edit-summary').fill('保存等待失败后继续保留');
+      const saving = page.waitForRequest(request => request.url() === updateUrl && request.method() === 'PUT');
+      await editor().locator('#article-save').click(); await saving;
+      await page.evaluate(count => history.go(-count), steps);
+      await page.getByText('文章正在保存，请稍候再离开。', { exact: true }).waitFor({ state: 'visible' });
+      assert.equal(page.url(), editingUrl);
+      assert.equal(await editor().locator('#article-edit-summary').inputValue(), '保存等待失败后继续保留');
+      assert.equal(await page.getByRole('dialog', { name: '放弃尚未保存的修改？', exact: true }).count(), 0);
+      release();
+      await editor().getByText('文章已被其他入口修改，你的输入已保留。', { exact: true }).waitFor({ state: 'visible' });
+      assert.equal(page.url(), editingUrl);
+      assert.equal(await editor().locator('#article-edit-summary').inputValue(), '保存等待失败后继续保留');
+      assert.deepEqual(fs.readFileSync(file), before);
+      await editor().getByRole('button', { name: '关闭文章编辑', exact: true }).click();
+      await page.getByRole('dialog', { name: '放弃尚未保存的修改？', exact: true }).getByRole('button', { name: '放弃修改', exact: true }).click();
+      await editor().waitFor({ state: 'hidden' });
+    } finally { release(); await page.unroute(updateUrl); }
   });
 
   await t.test('新建编辑真实文章，上传图片附件后插入并保存引用', async () => {

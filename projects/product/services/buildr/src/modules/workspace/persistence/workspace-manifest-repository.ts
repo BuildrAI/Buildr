@@ -1,3 +1,4 @@
+import { readVerifiedReadonlyBytes } from '../../../infrastructure/filesystem/verified-readonly-file.ts';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -115,14 +116,29 @@ export function createWorkspaceManifestRepository(runtime: WorkspaceManifestRepo
     return path.join(path.resolve(targetRoot), 'skills', 'manifest.yml');
   }
 
-  function readWorkspacePersistence(targetRoot: any) {
+  /** Locate only the first metadata entry on the caller directory's ancestor chain. */
+  function sourceWorkspaceRoot(targetDirectory: string): string | null {
+    const entry = fs.statSync(targetDirectory, { throwIfNoEntry: false });
+    if (!entry?.isDirectory()) return null;
+    let current = fs.realpathSync(targetDirectory);
+    while (true) {
+      const metadata = path.join(current, '.buildr', 'workspace.yml');
+      if (fs.lstatSync(metadata, { throwIfNoEntry: false })) return current;
+      const parent = path.dirname(current);
+      if (parent === current) return null;
+      current = parent;
+    }
+  }
+
+  function readWorkspacePersistence(targetRoot: any, options: { requireRootProof?: boolean } = {}) {
     const root = path.resolve(targetRoot);
     runtime.assertInitializedBuildrWorkspace(root);
     const metadataPath = workspaceMetadataPath(root);
     const skillsPath = workspaceSkillsManifestPath(root);
-    const metadataContent = fs.readFileSync(metadataPath, 'utf8');
+    const decode = (relative: string) => new TextDecoder('utf-8', { fatal: true }).decode(readVerifiedReadonlyBytes(root, relative, 512 * 1024));
+    const metadataContent = options.requireRootProof ? decode('.buildr/workspace.yml') : fs.readFileSync(metadataPath, 'utf8');
     const metadata = parseWorkspaceManifest(metadataContent);
-    const skillsContent = runtime.existsFile(skillsPath) ? fs.readFileSync(skillsPath, 'utf8') : null;
+    const skillsContent = runtime.existsFile(skillsPath) ? (options.requireRootProof ? decode('skills/manifest.yml') : fs.readFileSync(skillsPath, 'utf8')) : null;
     const skills = skillsContent === null
       ? { schemaVersion: 'buildr.skills/v3', workspaceId: null, skills: [] }
       : runtime.parseYamlDocument(skillsContent, 'skills/manifest.yml');
@@ -146,6 +162,7 @@ export function createWorkspaceManifestRepository(runtime: WorkspaceManifestRepo
     workspaceMetadataPath,
     workspaceSkillsManifestPath,
     readWorkspacePersistence,
+    sourceWorkspaceRoot,
     writeWorkspaceManifest,
     parseWorkspaceManifest,
     renderWorkspaceManifest,

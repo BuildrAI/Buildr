@@ -3,6 +3,7 @@
 ## Purpose
 
 定义 Buildr 对已登记项目中进行中与已归档 OpenSpec Change 的安全只读索引、标准产物详情、任务进度和 Agent 操作边界。
+
 ## Requirements
 
 ### Requirement: Buildr 必须安全索引 Project 的 active 与 archived Change
@@ -140,3 +141,20 @@ Buildr MUST 提供任务范围 Change 引用解析器（Task-scoped Change Refer
 - **WHEN** task-scoped Change 请求包含 `target`、`root`、`path`、cwd 或其他未登记位置提示
 - **THEN** interface MUST 在读取 Change artifacts 前拒绝请求
 - **AND** Resolver MUST只从Workspace registry、Task identity、Worktree provider与Project registry构造安全候选根
+
+### Requirement: 关联变更额外文件必须可发现并同源读取
+
+Buildr MUST 在关联变更（Change）的已解析实际根下有界递归发现标准文档以外的普通文件，保留相对路径、类型、来源身份和局部诊断，不要求固定 `artifacts/` 目录或逐项登记。正文 MUST 按需只读返回 Markdown（.md）、普通文本或支持的图片；标准文档与机器元数据不重复成为额外交付资料。历史 `brief.md` MUST 仅作为普通额外文档，不恢复专用任务说明来源。
+
+#### Scenario: 自定义目录与归档资料
+- **WHEN** 任务关联进行中或归档变更，额外文件位于根目录、`artifacts/` 或自定义嵌套目录
+- **THEN** 索引 MUST 返回这些文件的真实相对路径，用户能够按需读取支持的内容
+- **AND** MUST NOT 依赖任务状态或文件命名猜测资料是否属于交付
+
+#### Scenario: 来源变化或不安全路径
+- **WHEN** 文件请求越界、命中符号链接，或列表观察的来源已被替换
+- **THEN** 读取 MUST 拒绝受影响请求并提供局部诊断，MUST NOT 静默读取另一副本
+
+#### Scenario: 文档引用和局部限制
+- **WHEN** 额外 Markdown（.md）引用同一变更中的脚本、配置或图片，或某文件超限、不受支持
+- **THEN** 支持的引用 MUST 使用同一实际来源读取；不可读文件 MUST 给出明确提示，并保留其他可读资料

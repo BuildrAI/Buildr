@@ -681,30 +681,6 @@ Buildr MUST 允许用户从当前 Workspace 选择 canonical Project、可选 Se
 - **THEN** API MUST 按受控类型返回文件，并以下载方式提供非图片附件
 - **AND** HTML、脚本及其他可执行内容 MUST NOT 以内联文档执行
 
-### Requirement: Task 概览必须以关联 Change Brief 为主要说明
-Buildr Web MUST 仅在 Task 详情概览中，从该 Task Record 已保存的 Change 引用读取关联 Change，并 MUST 将每个可用的 Change Brief 作为主要人类可读说明。Task title、intent、范围和其他 Task 专业事实 MUST 保持可读，但 MUST NOT 取代 Brief 成为关联 Change 的主要说明。
-
-#### Scenario: 查看含 Brief 的关联 Change
-- **WHEN** 用户打开一个含有可解析 Change 引用且该 Change 提供 Brief 的 Task 概览
-- **THEN** 页面 MUST 在概览中展示该 Brief 的原始人类可读内容和 Change identity
-- **AND** 页面 MUST 提供从当前 Task 进入该 Change 技术 artifacts 的 Task-scoped 链接
-
-#### Scenario: 一个 Task 关联多个 Change
-- **WHEN** Task Record 保存多个 Change 引用
-- **THEN** 页面 MUST 按每个已保存引用分别展示可用 Brief 或其不可用状态
-- **AND** 页面 MUST NOT 推断、标记或合并任一“主 Change”
-
-#### Scenario: Brief 或关联 Change 不可用
-- **WHEN** 已保存的 Change 引用无法解析，或可解析 Change 没有 Brief
-- **THEN** 页面 MUST 展示该引用的真实 unavailable 状态
-- **AND** Task 的 title、intent 和其他可用事实 MUST 继续可读
-- **AND** 页面 MUST NOT 生成、保存、推断或从全局目录查找 Brief
-
-#### Scenario: Task 没有关联 Change
-- **WHEN** Task Record 没有 Change 引用
-- **THEN** 页面 MUST 显示明确的无关联 Change 状态
-- **AND** 页面 MUST NOT 扫描 Workspace、Project 或Worktree以发现 Change
-
 ### Requirement: 首次开始工作必须触发scope内Declaration Intake
 Buildr Web生成Start Work Agent prompt时 MUST要求Agent在任务分流前只读检查所选Project及可选Service的Preparation与Verification声明。Prompt生成 MUST不读取代码树来生成声明候选，也 MUST不写Project文件。
 
@@ -936,19 +912,22 @@ Buildr Web MUST 通过 Application read model 读取已登记 Workspace 中可�
 
 ### Requirement: Buildr Web Markdown 视图必须支持受控本地图片
 
-Buildr Web Markdown renderer MUST 支持标准 Markdown 图片语法，并 MUST 只将已由文章资源 API 解析的相对图片路径转换为本机同源资源 URL；不受控的图片路径 MUST NOT 绕过既有内容安全策略。
+Buildr Web Markdown renderer MUST 支持标准 Markdown 图片语法，并 MUST 只将由当前正文所属受控资源接口解析的本地相对图片转换为本机同源资源 URL；不受控图片路径 MUST NOT 绕过既有内容安全策略。文章图片 MUST 继续由文章资源 API 解析并保持原有路径限制；项目文档及任务材料 MUST 遵守 document-images 的当前正文、实际来源和范围约束。
 
 #### Scenario: 渲染文章本地图片
-
 - **WHEN** 文章正文包含 `![alt](assets/<filename>)` 且资源 API 能解析该文件
 - **THEN** 文章详情 MUST 渲染同源图片并保留 alt 文本
 - **AND** 图片 MUST 使用当前 Buildr Web 的资源 URL
 
 #### Scenario: 不受控图片路径
-
-- **WHEN** Markdown 图片路径为绝对路径、包含 `..`、反斜杠或未通过文章资源映射
+- **WHEN** Markdown 图片为远程、绝对、反斜杠、越过其所属根或未通过当前正文受控映射，或文章图片路径包含 `..`
 - **THEN** renderer MUST NOT 加载该图片
-- **AND** 页面 MUST 保留安全的文本或空内容表现
+- **AND** 页面 MUST 保留安全文本或对应局部不可用提示
+
+#### Scenario: 项目与任务材料图片
+- **WHEN** 用户在项目文档、任务材料或由任务打开的项目文档中阅读合法本地图片
+- **THEN** renderer MUST 使用对应主体和已观察正文/来源的同源图片接口
+- **AND** MUST 保留当前阅读布局、原文切换与导航，不要求将普通图片登记为技术图
 
 ### Requirement: Buildr Web 必须将 Change 限定为 Task-scoped 只读内容
 Buildr Web MUST 只通过当前 Task 的已保存 Change 引用读取 Change 内容。HTTP/Web MUST NOT 提供 Buildr Web 的 Change 创建、修改、关联、移除、继续、审查、同步或归档操作；这些 Change 动作 MUST 保持为 Agent 在 Task 过程中使用相应 authority 推进的工作。
@@ -1001,19 +980,36 @@ Buildr Web HTTP interface MUST 从 Buildr Web 构建产物目录提供 `index.ht
 - **AND** Origin 不匹配或缺少有效 session 时 MUST 在 Application mutation 前拒绝
 
 ### Requirement: npm Buildr Web Launcher 必须提供显式可恢复 lifecycle
-Buildr MUST 只从 formal npm installation 提供 `buildr web launcher install|status|repair|uninstall`。普通 npm install MUST NOT 修改 Applications、Desktop 或 Start Menu；所有 Launcher mutation MUST 由显式命令或同 ownership npm update 后的受限 refresh 触发。
+
+Buildr MUST 只从 formal npm installation 提供 `buildr web launcher install|status|repair|uninstall`。普通 npm install MUST NOT 修改 Applications、Desktop 或 Start Menu；所有 Launcher mutation MUST 由显式命令或同 ownership npm update 后的受限 refresh 触发。macOS 未显式给出 `--target` 时 Launcher 默认目标 MUST 为 `/Applications/Buildr Web.app`；该默认位置不可写或写入失败时 MUST fail closed 返回可解释错误并指引 `--target` 参数，MUST NOT 静默改用 `~/Applications`。`status`、`repair`、`uninstall` 与 npm update refresh 未显式给出 `--target` 时 MUST 先核对 `/Applications`，缺席时再核对遗留的 `~/Applications` 位置，并按真实目标操作同一 ownership 的 Launcher；`install` 在新目标成功创建后 MUST 移除同一 installation slot 在 `~/Applications` 的既有 Launcher，使本机只保留一份正式版图形入口。
 
 #### Scenario: 显式安装 Launcher
+
 - **WHEN** 用户从 formal npm installation 执行 `buildr web launcher install`
 - **THEN** Buildr MUST 原子创建本机 Launcher 与 closed binding，并返回 ownership、target、Host Node、package entry、prefix 与 payload identity
+- **AND** macOS 默认目标 MUST 为 `/Applications/Buildr Web.app`
 - **AND** target 已由 foreign installation 管理时 MUST fail closed 且不得覆盖
 
+#### Scenario: 默认目标不可写
+
+- **WHEN** macOS 默认 `/Applications` 因权限等原因不可写且未提供 `--target`
+- **THEN** install MUST 返回可解释错误并明确 `--target` 用法
+- **AND** MUST NOT 静默写入 `~/Applications` 或请求提权
+
+#### Scenario: 旧位置遗留 Launcher 的读取与迁移
+
+- **WHEN** Launcher 位于遗留 `~/Applications` 而 `/Applications` 无该入口
+- **THEN** `status`、`repair`、`uninstall` 与 npm update refresh MUST 按真实旧目标操作并在结果中如实呈现 target
+- **AND** `install` 默认目标成功创建后 MUST 移除该 installation slot 的旧位置 Launcher
+
 #### Scenario: 查询与修复 Launcher
+
 - **WHEN** 用户执行 `launcher status` 或 `launcher repair`
 - **THEN** status MUST 只读返回 `ready|stale|invalid|absent` 与精确诊断，repair MUST 只从当前已验证 npm installation 重建同 ownership binding
 - **AND** repair MUST NOT 从 PATH 搜索 Node、npm 或 Buildr，也不得改绑另一个 prefix
 
 #### Scenario: 卸载 Launcher
+
 - **WHEN** 用户执行 `launcher uninstall`
 - **THEN** Buildr MUST 只删除 binding 与 target ownership identity 精确匹配的 `.app` 或 shortcut
 - **AND** MUST 保留 npm package、Workspace Registry、SQLite、日志、Workspace data 与 Agent runtime
@@ -1248,17 +1244,22 @@ Buildr Web MUST 展示整体目标、计划入口、实际子任务及结果、�
 - **THEN** MUST 如实展示历史未记录，不补造授权。
 
 ### Requirement: Task详情必须只读展示current任务验证报告
-Buildr Web MUST在Task“证据”页展示任务验证报告presence、内容版本、Task scope、测试地图、实际checks、gaps、结论、report digest、完成时间和current/stale/unknown applicability。页面 MUST通过Task Verification Application读取，MUST不从Development gate或Execution Record派生报告。
+Buildr Web MUST 在开发实现节点按需展示任务验证报告（Task Verification Report）的存在性、内容版本、Task scope、测试地图、实际 checks、gaps、结论、report digest、完成时间和现有 current/stale/unknown applicability。页面 MUST 通过任务验证应用（Task Verification Application）读取，MUST 不从 Development gate 或 Execution Record 派生报告。检查的执行状态、未覆盖理由与业务不适用 MUST 分别表达；没有报告 MUST 只表示未记录，不自动推断通过、失败或不适用。
 
 #### Scenario: 查看已有报告
-- **WHEN**用户打开有current任务验证报告的Task证据页
-- **THEN**页面MUST显示实际测试体系、选择范围、targets、结果、未覆盖项和结论
-- **AND** GET MUST不执行测试、观察Git或修改Task事实
+- **WHEN** 用户打开有 current 任务验证报告的开发实现节点
+- **THEN** 页面 MUST 显示实际测试体系、选择范围、targets、结果、未覆盖项和结论
+- **AND** GET MUST 不执行测试、观察 Git 或修改 Task 事实
 
 #### Scenario: 报告不存在
-- **WHEN**Task尚无报告
-- **THEN**页面MUST显示“开发完成后交给智能体验证”的空状态
-- **AND**其他Task专业视图MUST正常工作
+- **WHEN** Task 尚无报告
+- **THEN** 页面 MUST 显示未记录的真实空状态，可提供交给智能体（Agent）按目标判断与验证的入口
+- **AND** 其他 Task 专业视图 MUST 正常工作，MUST NOT 因没有 Change 或报告而把验证表述为不适用
+
+#### Scenario: 检查未覆盖而非执行失败
+- **WHEN** 报告的 gaps 表明必要范围未执行、环境不可用或缺少测试，而 checks 保留实际 passed/failed 结果
+- **THEN** 页面 MUST 分别呈现实际执行结果、缺口与原结论，保留具体原因
+- **AND** MUST NOT 新增检查枚举、把所有缺口统一显示为“未通过”或把必要但未完成改成不适用
 
 ### Requirement: Buildr Web必须生成独立Task Verification Agent prompt
 证据页Agent Action MUST只提交Task ID并生成指导Agent读取Task、改动、测试地图和项目测试事实、直接执行测试、最后record报告的prompt。Buildr Web MUST不生成测试Plan、target identity、Candidate或报告内容。
@@ -1293,12 +1294,12 @@ Buildr Web MUST在前端形成携带Task ID的最小指令，要求Agent读取Ta
 - **AND** Agent自行选择并调用已有测试工具
 
 ### Requirement: Buildr Web Task 页面必须退出研发与旧交付历史
-Buildr Web MUST以Task Record为任务目标和结果authority，按需读取Review、Verification、Parent facts与Task Record拥有的本机复盘文档。页面 MUST不请求或展示Development、Task Environment、Task Candidate、Handoff、Task Planning Identity、Terminal Delivery、旧Finish history或独立Retrospective Application。
+Buildr Web MUST 以任务记录（Task Record）为任务短目标、状态和结果权威，以独立任务材料应用（Task Materials Application）的引用与真实文件为说明及过程材料来源，按需读取 Review、Verification、Parent facts 与 Task Record 拥有的本机复盘文档。页面 MUST 不请求或展示 Development、Task Environment、Task Candidate、Handoff、Task Planning Identity、Terminal Delivery、旧 Finish history 或独立 Retrospective Application。材料与专业结果 MUST 不被复制为 Web 专用业务状态或统一完成决定。
 
 #### Scenario: 查看没有Development的Task
 - **WHEN** 用户打开任意todo、active、completed或abandoned Task
-- **THEN** 页面 MUST正常展示概览、原型和证据
-- **AND** 概览中的复盘卡片缺少登记时 MUST保持简单空态且不自动提示或写入
+- **THEN** 页面 MUST 正常展示概览、适用任务材料、原型和专业证据；todo 的意向边界 MUST 保持不变，读取不自动形成正文
+- **AND** 概览中的复盘卡片缺少登记时 MUST 保持简单空态且不自动提示或写入
 
 #### Scenario: 完成任务
 - **WHEN** 用户通过现有Task Record动作完成Task
@@ -1462,3 +1463,105 @@ Buildr Web MUST只在普通搜索关键词达到3个Unicode字符后提交服务
 #### Scenario: 不安全的资源输入
 - **WHEN** 上传或读取包含路径穿越、符号链接、未允许类型、伪造图片或超限内容
 - **THEN** 操作 MUST 局部拒绝并保留已有文章与资源，其余阅读仍可用
+
+### Requirement: installation status 必须区分同槽位旧版本实例与外来实例
+
+Buildr 的公开 `installation status` MUST 在健康探测就绪之外比对运行中实例的产品身份与当前安装身份。released 实例健康但 `productIdentity`/`launcherIdentity` 所示安装身份与当前登记安装不一致时，Buildr MUST 判断该实例是否与当前安装属于同一安装槽位（installation slot）：由 Launcher 启动的实例以其 `launcherIdentity.installationSlotIdentity` 对比当前 binding；无 `launcherIdentity` 的实例以 `productIdentity.installationIdentity` 对比产品安装登记中同 `entryPath`/`productRoot` 的相邻记录。可证明同槽位时 MUST 将 `instances.released.status` 报告为 `stale` 并说明运行版本落后于安装版本、可经 Launcher 完成重启交接；无法证明同槽位时 MUST NOT 报告为可重启状态，保留可供消费方 fail closed 的身份事实。development 实例不因版本差异报告 `stale`。
+
+#### Scenario: 同槽位旧版本实例报告可重启
+
+- **WHEN** npm 安装更新后，同一安装槽位启动的旧版本 released 实例仍健康运行
+- **THEN** `installation status` MUST 将 `instances.released.status` 报告为 `stale`，并保留实例地址、PID 与已观察身份
+- **AND** `reason` MUST 说明运行版本与当前安装版本不一致且可经 Launcher 重启交接
+
+#### Scenario: 同槽位旧版本实例触发入口重启
+
+- **WHEN** 实例因同槽位旧版本报告为 `stale`，且消费方执行 Launcher 启动
+- **THEN** Runtime MUST 走既有 Launcher handoff 语义：优雅停止旧实例并按当前 binding 启动新实例
+- **AND** MUST NOT 并行运行两个 released 实例或强杀未经认证的进程
+
+#### Scenario: 外来实例保持拒绝语义
+
+- **WHEN** 健康 released 实例的安装槽位无法证明属于当前安装，或 channel 为 `profile-conflict`
+- **THEN** status MUST NOT 将其报告为 `stale` 可重启，消费方的既有身份匹配拒绝行为继续生效
+- **AND** MUST NOT 丢失实例已观察身份与 URL 事实
+
+#### Scenario: development 实例不因版本报告 stale
+
+- **WHEN** development 实例健康运行且其构建版本与登记开发安装不一致
+- **THEN** status MUST 保持既有开发实例判定，不因版本差异降级为 `stale`
+
+### Requirement: 普通任务材料必须独立于 OpenSpec 读取并复用文件边界
+任务材料命令行与任务限定超文本传输协议（HTTP）入口 MUST 调用同一独立材料应用（Task Materials Application），通过正式任务查询确认任务存在，再按已登记项目范围和受管工作树（Worktree）证据复用普通 Markdown 文件读取边界。普通材料读取 MUST 不依赖 OpenSpec Query、Change availability 或 Change artifact 发现。清单 MUST 固定为主工作空间（Canonical Workspace）的 `.buildr/local/task-materials/<task-id>/materials.json`，只保存唯一说明及零到多个方案、实施、交付的逻辑引用；正文 MUST 来自同任务本机 Markdown 或 Task scope 内的项目相对 Markdown，不复制入清单或 Task Record。
+
+#### Scenario: 没有 Change 的普通任务
+- **WHEN** 任务存在且合法材料引用指向任务本机或 scope 内项目正文，但没有 OpenSpec Change
+- **THEN** 命令行与 HTTP MUST 返回相同材料引用、当前正文、来源、实际摘要和逐项诊断
+- **AND** MUST NOT 为读取调用 OpenSpec 查询、扫描 Change 或要求创建虚假项目及 Change
+
+#### Scenario: 项目正文位于候选工作树
+- **WHEN** 合法项目来源引用对应可证明身份的 matching Worktree
+- **THEN** 普通读取 MUST 使用该候选实际文件根及未提交正文，并保持后续相对导航的任务现场
+- **AND** 缺失或身份冲突 MUST 返回局部诊断，MUST NOT 静默回退 retained 同名旧正文
+
+#### Scenario: 归档后读取稳定任务说明入口
+- **WHEN** 用户在 active 或 archived Change Brief 中点击 `@project/tasks/<task-id>/brief.md` 形式的限定项目根逻辑引用
+- **THEN** 文档解析 MUST 在同一已确认任务及项目范围内打开相同任务说明，不按 Change 目录深度拼接
+- **AND** 普通相对 Markdown 引用 MUST 保持原语义，逻辑前缀 MUST NOT 成为任意 Workspace 路径入口
+
+#### Scenario: 材料读取零写入
+- **WHEN** 客户端 inspect、打开或刷新任务材料
+- **THEN** 应用 MUST 只返回当前材料事实，不更新清单、Task Record、系统时间、状态或专业结果
+- **AND** Task 列表 MUST 不扫描材料正文，不批量生成或迁移历史说明
+
+### Requirement: 任务材料接口必须保护身份范围和独立观察版本
+任务材料接口（API）MUST 先解析已登记 Workspace 与真实 Task，使用固定 task-local 或限定 project-relative 来源，不接受任意 root、target、绝对路径或工作树物理路径。路径穿越、符号链接、非普通文件、非法编码与超限正文 MUST 被拒绝，单项失效 MUST 只影响相应材料。关联写入 MUST 使用已观察 `expectedCurrent`，任务本机正文写入 MUST 使用已观察 `expectedDocumentDigest`，保持各自版本保护与原子发布；项目正文继续通过真实工作树文件工具维护，HTTP MUST 不提供任意项目文件写入。写请求 MUST 复用同源、session、JSON、请求体大小与未知字段拒绝边界。
+
+#### Scenario: 陈旧引用或正文写入
+- **WHEN** 关联清单或任务本机正文在读取后已被另一入口修改
+- **THEN** 对应写入 MUST 明确返回冲突且保留现有事实，调用方 MUST 重读后判断
+- **AND** MUST NOT 静默覆盖、自动重放或通过 Task Record mutation 保存材料版本
+
+#### Scenario: 删除失效引用
+- **WHEN** 旧材料引用失效而调用方按当前关联版本明确解除该引用
+- **THEN** 应用 MUST 允许可独立验证的解除关联，不因其他未新增旧引用不可用阻塞整个更新
+- **AND** 解除引用 MUST 不删除正文、任务或专业结果
+
+#### Scenario: 伪造其他任务或任意路径
+- **WHEN** 请求指向不存在任务、其他任务固定目录、scope 外项目或越界路径
+- **THEN** 接口 MUST 在对应文件读写前拒绝请求且零副作用
+- **AND** MUST NOT 回退当前目录、其他任务或同名主目录文件
+
+#### Scenario: 任务材料不接管专业权威
+- **WHEN** 某项材料写入或读取失败，但 Task Record 与专业结果自身有效
+- **THEN** 页面及命令行 MUST 保留其他安全可读事实，材料应用 MUST 不计算审查适用性、验证结论或任务完成许可
+- **AND** MUST NOT 自动修改旧 brief、归档、专业历史或任务状态
+
+### Requirement: Task 说明必须由记录字段提供正文
+Buildr Web MUST 在任务详情的说明节点，通过任务记录应用读取 Task Record.brief 的真实 Markdown 正文，MUST NOT 以 OpenSpec Change、intent 或聊天作为唯一说明来源。Task title、intent、范围和其他专业事实 MUST 保持各自可读。任务可以关联零到多个 Change，变更说明（Change Brief）MUST 作为具体规范变化的辅助阅读来源；旧任务 brief 为空时 MUST 显示真实缺失并在方案辅助来源保留 Change Brief 只读入口，不将其作为任务正文，不合并多个 Brief，也不选主 Change。
+
+#### Scenario: 查看含 Brief 的关联 Change
+- **WHEN** 用户打开含有可解析 Change 引用且该 Change 提供 Brief 的任务
+- **THEN** 页面 MUST 保留该 Change Brief 原文和 Change identity 的只读阅读入口，并与独立任务说明区分
+- **AND** 页面 MUST 提供从当前 Task 进入该 Change 技术 artifacts 的 Task-scoped 链接
+
+#### Scenario: 一个 Task 关联多个 Change
+- **WHEN** Task Record 保存多个 Change 引用
+- **THEN** 页面 MUST 按每个已保存引用分别提供可用 Change Brief 或其不可用状态，独立说明节点仍读取唯一 Task Brief
+- **AND** 页面 MUST NOT 推断、标记或合并任一“主 Change”，也不得用旧 Brief 覆盖记录 brief
+
+#### Scenario: Brief 或关联 Change 不可用
+- **WHEN** 已保存的 Change 引用无法解析，或可解析 Change 没有 Brief
+- **THEN** 页面 MUST 展示该引用的真实 unavailable 状态
+- **AND** Task 的 title、intent、独立材料和其他可用事实 MUST 继续可读
+- **AND** 页面 MUST NOT 生成、保存、推断或从全局目录查找 Brief
+
+#### Scenario: Task 没有关联 Change
+- **WHEN** Task Record 没有 Change 引用
+- **THEN** 页面 MUST 显示明确的无关联 Change 状态，并直接读取记录 brief，其他正式任务材料按需读取
+- **AND** 页面 MUST NOT 扫描 Workspace、Project 或 Worktree 以发现 Change，也不得因空 `changes` 而跳过说明读取
+
+#### Scenario: 已有关联说明当前不可读
+- **WHEN** 任务记录 brief 为空或详情读取失败
+- **THEN** 页面 MUST 如实显示未填写或记录读取失败，不依赖文件来源诊断
+- **AND** MUST NOT 自动改用 Change Brief、intent 或其他同名文档伪装说明已齐备

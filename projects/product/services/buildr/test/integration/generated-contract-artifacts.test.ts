@@ -39,8 +39,23 @@ test('全部HTTP DTO从空显式目标生成两端闭合输出', async (t) => {
     inputs: { schemas: 'current' },
     artifacts: [{ id: 'backend-dto', root: backend }, { id: 'web-dto', root: web }],
   });
-  assert.equal(manifest.artifacts[0].files.length, 7);
-  assert.equal(manifest.artifacts[1].files.length, 7);
+  // Keep the complete output inventory of the five registered generator families closed.
+  const expectedFiles = [
+    'agent-assets-http-dto.ts',
+    'agent-operations-http-dto.ts',
+    'code-generation-http-dto.ts',
+    'code-http-dto.ts',
+    'codex-desktop-http-dto.ts',
+    'dsh-desktop-http-dto.ts',
+    'knowledge-http-dto.ts',
+    'native-session-links-http-dto.ts',
+    'runtime-system-http-dto.ts',
+    'task-dto.ts',
+    'task-professional-http-dto.ts',
+    'workbench-dto.ts',
+    'workspace-http-dto.ts',
+  ];
+  for (const artifact of manifest.artifacts) assert.deepEqual(artifact.files.map(file => file.path).sort(), expectedFiles);
   for (const directory of [backend, web]) {
     const knowledgeDto = fs.readFileSync(path.join(directory, 'knowledge-http-dto.ts'), 'utf8');
     assert.match(knowledgeDto, /export interface Knowledge_NavigationResponse/);

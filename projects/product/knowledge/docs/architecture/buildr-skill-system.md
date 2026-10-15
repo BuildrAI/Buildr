@@ -69,4 +69,12 @@ buildr doctor --agent <agent> --target <workspace> --json --detail full
 
 派生正文可以依据当前源重新生成，旧所有权却不能仅凭内容相似重建。遇到冲突应保留现场，核对实际归属；投射成功后仍应分别确认工具能发现入口、当前会话已采用方法，以及实际目标是否完成。
 
-本文依据[投射规范](../../../openspec/specs/workspace-first-runtime-projection/spec.md)、[资源规范](../../../openspec/specs/buildr-package-assets/spec.md)和代码地图列出的实现；适配器（Adapter）的全部平台分支不在本章展开。
+## 连接用途复用同一份技能
+
+连接技能（Connection Skill）是带接入声明和必要程序的普通技能（Skill），完整源位于 `skills/connections/`，沿用已有清单、来源选择和附件投射。连接目录（Connection Catalog）从已登记源读取声明；可发现不代表当前智能体（Agent）已经加载方法，已投射也不代表专业程序可运行。
+
+实例精确绑定已选来源，安装另一同系统方法不替换已有绑定。来源停用、缺失或不兼容时保留实例并报告局部问题；取消登记和卸载披露受影响实例，不自动删除配置和认证。制作自有方法使用[接入开发方法（connection-authoring）](../../../services/buildr/resources/workspace/skills/buildr/connection-authoring/SKILL.md)，不另建技能（Skill）加载系统。
+
+声明、实例、账号及专业职责集中在[外部系统连接](external-connections.md)；实际文件和程序入口见[连接代码地图](../../code-map/technical-layers.md#外部系统接入)。
+
+本文依据[投射规范](../../../openspec/specs/workspace-first-runtime-projection/spec.md)、[资源规范](../../../openspec/specs/buildr-package-assets/spec.md)、[当前接入变更](../../../openspec/changes/archive/2026-10-15-connection-skills-nacos/proposal.md)和代码地图列出的实现；适配器（Adapter）的全部平台分支不在本章展开。

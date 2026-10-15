@@ -7,6 +7,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
+import { normalizeReleaseTargets } from './release-targets.ts';
 
 export const releaseContextSchema: any = 'buildr.release-context/v2';
 export const releaseReadinessSchema: any = 'buildr.release-readiness/v1';
@@ -41,7 +42,7 @@ export function createReleaseContext(input: any): any  {
   closed(input, ['selection', 'release', 'candidate', 'artifact', 'convergence', 'preparation', 'node', 'workflow', 'taskCorrelation'], 'release context input');
   const value: any = {
     schemaVersion: releaseContextSchema,
-    selection: optionalProjection(input.selection, ['identity', 'version', 'branch', 'releaseHead', 'releaseTree', 'generation', 'status', 'reconciliationIdentity'], 'selection'),
+    selection: optionalProjection(input.selection, ['identity', 'version', 'selectionId', 'targets', 'branch', 'releaseHead', 'releaseTree', 'generation', 'status', 'reconciliationIdentity'], 'selection'),
     release: optionalProjection(input.release, ['version', 'sourceCommit', 'sourceTree'], 'release'),
     candidate: optionalProjection(input.candidate, ['workflow', 'runId', 'runAttempt', 'runUrl', 'sourceCommit', 'sourceTree', 'registryIdentity', 'aggregateIdentity', 'status'], 'candidate'),
     artifact: optionalProjection(input.artifact, ['artifactName', 'sourceCommit', 'filename', 'size', 'sha256', 'integrity', 'applicationPayloadDigest'], 'artifact'),
@@ -51,6 +52,13 @@ export function createReleaseContext(input: any): any  {
     workflow: optionalProjection(input.workflow, ['path', 'digest', 'repository', 'environment'], 'workflow'),
     taskCorrelation: optionalProjection(input.taskCorrelation, ['identity', 'status', 'sourceCommit', 'sourceTree', 'remoteRef'], 'taskCorrelation'),
   };
+  if (value.selection?.targets) {
+    const targets = normalizeReleaseTargets({ packages: value.selection.targets.packages, version: value.selection.targets.versions?.buildr,
+      pluginVersion: value.selection.targets.versions?.['dsh-plugin'], selectionId: value.selection.targets.selectionId });
+    if (JSON.stringify(canonical(targets)) !== JSON.stringify(canonical(value.selection.targets)) || !targets.packages.includes('buildr')
+        || value.selection.selectionId !== targets.selectionId || value.selection.version !== targets.versions.buildr
+        || value.release?.version !== targets.versions.buildr) throw new Error('Main release context does not match its shared target identity.');
+  }
   value.identity = releaseContextIdentity(value);
   return value;
 }
@@ -137,7 +145,7 @@ export function evaluateReleaseReadiness(input: any): any  {
     if (context.preparation.status !== 'passed') findings.push(finding('preparation-not-passed', 'release-preparation', 'passed', context.preparation.status, '在冻结source上重新执行Release Preparation。'));
     if (context.convergence && context.preparation.sourceCommit !== context.convergence.mainCommit) findings.push(finding('preparation-source-mismatch', 'release-preparation', context.convergence.mainCommit, context.preparation.sourceCommit, '按current publication source重建Release Preparation。'));
   }
-  if (context.node && context.preparation && (context.node.version !== context.preparation.nodeVersion || context.node.executionIdentity !== context.preparation.nodeIdentity)) findings.push(finding('node-preparation-mismatch', 'release-preparation', { version: context.preparation.nodeVersion, identity: context.preparation.nodeIdentity }, { version: context.node.version, identity: context.node.executionIdentity }, '使用Product exact Node重新运行Release Preparation。'));
+  if (context.node && context.preparation && (context.node.version !== context.preparation.nodeVersion || context.node.executionIdentity !== context.preparation.nodeIdentity)) findings.push(finding('node-preparation-mismatch', 'release-preparation', { version: context.preparation.nodeVersion, identity: context.preparation.nodeIdentity }, { version: context.node.version, identity: context.node.executionIdentity }, '使用同一已核验的 Node 重新运行 Release Preparation。'));
   if (context.workflow) {
     if (context.workflow.path !== '.github/workflows/publish.yml' || context.workflow.environment !== 'npm-production') findings.push(finding('workflow-authority-mismatch', 'publish-workflow', { path: '.github/workflows/publish.yml', environment: 'npm-production' }, context.workflow, '恢复唯一publish workflow authority。'));
     checkIdentity(findings, context.workflow.digest, 'workflow', 'publish-workflow');

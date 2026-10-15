@@ -14,6 +14,7 @@ export function createLocalWorkspaceServer(runtime: any, {
   webProfile = null,
   previewIdentity = null,
   onShutdown = null,
+  beforeShutdown = null,
   readExecutor = null,
   httpContributions = runtime.__bootstrapContributions?.('http') || [],
   ensureRegisteredTarget = runtime.ensureRegisteredTarget,
@@ -37,6 +38,30 @@ export function createLocalWorkspaceServer(runtime: any, {
   let origin: any = null;
   let closing = false;
   let routeRequest: any = null;
+  let shutdownPromise: Promise<void> | null = null;
+  let resourceShutdown: Promise<void> | null = null;
+
+  function closeResources(): Promise<void> {
+    resourceShutdown ||= Promise.resolve().then(() => beforeShutdown?.());
+    return resourceShutdown;
+  }
+
+  function shutdown(): Promise<void> {
+    if (shutdownPromise) return shutdownPromise;
+    closing = true;
+    shutdownPromise = (async () => {
+      let cleanupError: unknown;
+      try {
+        await closeResources();
+      } catch (error) {
+        cleanupError = error;
+      }
+      await new Promise<void>(resolve => server.close(() => resolve()));
+      await onShutdown?.(cleanupError);
+      if (cleanupError) throw cleanupError;
+    })();
+    return shutdownPromise;
+  }
 
   function submitTaskRead(request: any, response: any, operation: any, root: any, taskId: any, input: any = {}) {
     const controller = new AbortController();
@@ -66,13 +91,16 @@ export function createLocalWorkspaceServer(runtime: any, {
     isClosing: () => closing,
     shutdown: () => {
       closing = true;
-      setImmediate(() => server.close(() => onShutdown?.()));
+      setImmediate(() => { void shutdown().catch(error => { console.error('Buildr Web resource shutdown failed:', error); process.exitCode = 1; }); });
     },
     submitTaskRead,
     staticRoot,
   });
+  let hostWasListening = false;
+  server.once('listening', () => { hostWasListening = true; });
   server.once('close', () => {
     if (ownsReadExecutor) void taskReadExecutor.close();
+    if (hostWasListening) void closeResources().catch(error => console.error('Buildr Web resource shutdown failed:', error));
   });
 
   const ready: Promise<any> = new Promise((resolve: any, reject: any) => {
@@ -85,5 +113,5 @@ export function createLocalWorkspaceServer(runtime: any, {
       resolve({ server, url: origin, initialWorkspaceId, sessionToken, instanceSecret: healthSecret });
     });
   });
-  return { server, ready };
+  return { server, ready, shutdown };
 }

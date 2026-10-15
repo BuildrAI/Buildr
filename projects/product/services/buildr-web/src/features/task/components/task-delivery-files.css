@@ -1,0 +1,13 @@
+.task-delivery-files{margin-top:20px;min-width:0}
+.task-delivery-files h3{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-size:14px}
+.task-delivery-source+.task-delivery-source{margin-top:16px}
+.task-delivery-files .ant-tree{background:transparent;font-size:12.5px}
+.task-delivery-files .ant-tree-node-content-wrapper{min-width:0}
+.task-delivery-file{max-width:100%;border:0;padding:0;background:none;color:var(--soft-primary,#397d74);font:inherit;text-align:left;overflow-wrap:anywhere;cursor:pointer}
+.task-delivery-file:hover{text-decoration:underline}
+.task-delivery-file:focus-visible{outline:2px solid var(--soft-primary,#397d74);outline-offset:3px}
+.task-change-asset-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px}
+.task-change-asset-heading>div{min-width:0}
+.task-change-asset-heading small{display:block;margin-top:4px;color:var(--soft-muted);font-size:11px;overflow-wrap:anywhere}
+.task-delivery-image{display:block;max-width:100%;height:auto;margin:12px auto}
+.task-change-asset-reader .read-only-file-code-editor{min-height:240px}

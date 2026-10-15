@@ -42,7 +42,7 @@ export function createLocalWorkspaceRequestRouter({
   staticRoot,
 }: any) {
   const validateRequest = (id: any, value: any) => validateBuildrWebHttp(buildrWebOperation(id).requestSchemaId, value, id);
-  const workspaceAppRoute = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/overview|/workspace-overview|/activity|/settings|/knowledge/(?:project|service)/[A-Za-z0-9][A-Za-z0-9._-]*|/skills(?:/[A-Za-z0-9%][A-Za-z0-9%._-]*)?|/repositories(?:/[A-Za-z0-9][A-Za-z0-9._-]*)?|/articles(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/${taskIdPattern})?(?:/edit)?)?|/tasks(?:/${taskIdPattern}(?:/prototypes|/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${taskIdPattern})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?)?)?/?$`);
+  const workspaceAppRoute = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/codex|/code(?:/(?:explorer|source-control))?|/overview|/workspace-overview|/activity|/connections|/connection-skills|/settings|/knowledge/(?:project|service)/[A-Za-z0-9][A-Za-z0-9._-]*|/skills(?:/[A-Za-z0-9%][A-Za-z0-9%._-]*)?|/repositories(?:/[A-Za-z0-9][A-Za-z0-9._-]*)?|/articles(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/${taskIdPattern})?(?:/edit)?)?|/tasks(?:/${taskIdPattern}(?:/prototypes|/document|/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${taskIdPattern})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?)?)?/?$`);
 
   return async function routeLocalWorkspaceRequest(request: any, response: any) {
     const trustedOrigin = origin();
@@ -116,6 +116,10 @@ export function createLocalWorkspaceRequestRouter({
       }
       const workspaceId = apiMatch[1];
       const suffix = apiMatch[2] || '';
+      if (/^\/connections(?:\/|$)/.test(suffix)) {
+        jsonResponse(response, 410, { error: { code: 'connection_retired', message: '旧连接接口已退役，请使用 connection-skills 及 mysql-query。' } });
+        return;
+      }
       const { rootPath: root } = resolveRegisteredWorkspace(workspaceId, { touch: request.method === 'GET' });
       for (const contribution of httpContributions) {
         if (typeof contribution.handle !== 'function') continue;
@@ -125,7 +129,7 @@ export function createLocalWorkspaceRequestRouter({
           searchParams: requestUrl.searchParams,
           root,
           authorizeWrite: () => assertWriteRequest(request, trustedOrigin, sessionToken),
-          readBody: (allowed: any, label: any) => readAllowedJsonBody(request, allowed, label),
+          readBody: (allowed: any, label: any, maxBytes?: number) => readAllowedJsonBody(request, allowed, label, maxBytes),
           readJsonBody: (maxBytes?: number) => readJsonBody(request, maxBytes),
           submitTaskRead: (operation: any, taskId: any, input: any = {}) => submitTaskRead(request, response, operation, root, taskId, input),
           respond: contributionRespond(response),

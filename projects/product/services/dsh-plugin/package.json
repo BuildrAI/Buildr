@@ -1,14 +1,37 @@
 {
-  "name": "@buildr-ai/dsh-plugin-source",
-  "version": "0.1.0",
+  "name": "@buildr-ai/buildr-dsh-plugin-source",
+  "version": "0.1.0-rc.2",
+  "buildrCompatibility": {
+    "schemaVersion": "buildr.package-compatibility/v1",
+    "provides": [],
+    "requires": [
+      {
+        "packageName": "@buildr-ai/buildr",
+        "feature": "entry",
+        "required": true,
+        "versions": { "minInclusive": "0.1.0-rc.38", "maxExclusive": "0.2.0-0", "includePrerelease": true },
+        "contracts": ["buildr.installation-status/v1", "buildr.web-protocol/v1"]
+      },
+      {
+        "packageName": "@buildr-ai/buildr",
+        "feature": "sourceCapture",
+        "required": false,
+        "versions": { "minInclusive": "0.1.0-rc.38", "maxExclusive": "0.2.0-0", "includePrerelease": true },
+        "contracts": ["buildr.agent-asset-source-observations/v1", "buildr.agent-asset-source-result/v1"]
+      }
+    ]
+  },
   "private": true,
   "type": "module",
-  "engines": { "node": "24.15.0" },
+  "engines": { "node": ">=24.15.0" },
   "scripts": {
-    "build": "node tools/build-plugin.ts",
-    "build:dev": "node tools/build-plugin.ts --dev",
-    "verify": "node tools/verify-plugin.ts",
-    "verify:dev": "node tools/verify-plugin.ts --dev",
+    "build": "node tools/build-package.ts",
+    "build:dev": "node tools/build-package.ts --dev",
+    "verify": "node tools/verify-package.ts",
+    "verify:dev": "node tools/verify-package.ts --dev",
+    "sdk:prepare": "node tools/prepare-source-sdk.ts",
+    "composition:dev": "node tools/build-development-composition.ts",
+    "preset:adapter": "node tools/build-preset-adapter.ts",
     "release:status": "node tools/release.ts status",
     "release:prepare": "node tools/release.ts prepare",
     "test": "node --test test/unit/*.test.ts test/integration/*.test.ts",

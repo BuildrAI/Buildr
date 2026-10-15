@@ -271,7 +271,9 @@ test('历史Project、Service或Change不可用时Task仍可读并允许移除�
   assert.deepEqual(detail.record, inspected.record);
   assert.deepEqual(detail.referenceDiagnostics, inspected.referenceDiagnostics);
   const listed: any = runtime.queryTasks(root).tasks.find((item: any) => item.record.taskId === 'historical-references');
-  assert.deepEqual(listed.record, inspected.record);
+  const { brief: _brief, resultHistory: _history, ...summaryRecord } = inspected.record;
+  assert.deepEqual(listed.record, summaryRecord);
+  assert.equal(listed.recordDigest, inspected.recordDigest);
   assert.deepEqual(listed.referenceDiagnostics, [], '轻量列表只返回stored state，实时引用诊断留在详情入口');
   assert.deepEqual(runtime.queryTasks(root).diagnostics, []);
 

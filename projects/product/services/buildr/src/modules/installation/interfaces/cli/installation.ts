@@ -20,6 +20,10 @@ function printHumanInstance(instance: any) {
   console.log(`current instance: status=${humanValue(instance?.status)} readiness=${humanValue(instance?.observation?.health)} pid=${humanValue(identity?.pid)} url=${humanValue(identity?.url)}`);
   console.log(`  identity: channel=${humanValue(identity?.channel)} Buildr=${humanValue(identity?.version)} protocol=${humanValue(identity?.protocolIdentity)} payload=${humanValue(identity?.applicationPayloadDigest)} ownership=${humanValue(identity?.ownershipIdentity)}`);
   console.log(`  runtime: role=${humanValue(identity?.runtimeRole || runtime?.role)} Node=${humanValue(runtime?.version)} executable=${humanValue(runtime?.executable)} identity=${humanValue(runtime?.identity)}`);
+  if (Object.hasOwn(instance, 'matchesCurrentInstallation')) {
+    console.log(`  开发来源匹配：${instance.matchesCurrentInstallation === true ? '匹配' : instance.matchesCurrentInstallation === false ? '不匹配' : '无法证明'}`);
+    if (instance.installationMatchReason) console.log(`  ${instance.installationMatchReason}`);
+  }
 }
 
 async function runInstallationStatus(application: any, args: string[]) {
@@ -113,12 +117,12 @@ function printPlan(plan: any, label: any) {
 }
 
 
-function runUpdate(application: any, action: 'check' | 'update', args: string[]) {
+async function runUpdate(application: any, action: 'check' | 'update', args: string[]) {
   if (args.includes('--target')) throw new Error('buildr update 不接收 workspace --target；请使用 buildr sync <agent> --target <dir> 同步 workspace。');
   assertNoUnknownOptions(args, new Set(action === 'check' ? ['--json'] : ['--json', '--track']), new Set(['--json']));
   const track = action === 'update' ? optionValue(args, '--track', null) : null;
   if (track !== null && !['stable', 'candidate'].includes(track)) throw new Error('--track must be stable or candidate.');
-  const result = action === 'check' ? application.updateCheck() : application.updateBuildr({ track });
+  const result = await (action === 'check' ? application.updateCheck() : application.updateBuildr({ track }));
   if (hasFlag(args, '--json')) process.stdout.write(`${JSON.stringify(withJsonSchema(action === 'check' ? PUBLIC_JSON_SCHEMAS.updateCheck : PUBLIC_JSON_SCHEMAS.update, result), null, 2)}\n`);
   else printPlan(result, action === 'check' ? 'Buildr CLI update check' : 'Buildr CLI update');
   if (result.status === 'blocked') process.exitCode = 1;

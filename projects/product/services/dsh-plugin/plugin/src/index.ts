@@ -5,15 +5,30 @@ import { fileURLToPath } from 'node:url';
 import type { Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
-import { createInstalledBuildrBridge, discoverBinding } from '../process.ts';
-import type { Binding } from '../process.ts';
+import { createDiscoveringBuildrBridge } from '../process.ts';
 import { channelForPackage } from '../platform.ts';
 import { BuildrBridgeError } from '../bridge.ts';
-import type { Config, OpenResult } from './types.ts';
-export type { Config, OpenResult } from './types.ts';
+import type { ActivationStatus, Config, OpenResult } from './types.ts';
+import { createActivation } from '../activation.ts';
+import type {} from '@deepseek-ai/dsh-session-query';
+import type { SessionId } from '@deepseek-ai/dsh-session/types';
+import { readObservedSourceEvents, sourceRecord as readSourceRecord } from '../source-gateway.ts';
+import type { SourceEventReadRequest } from '../source-gateway.ts';
+import { createEventSourceCapture, mergeCapturedSources } from '../source-capture.ts';
+import type {} from '@deepseek-ai/dsh-tools';
+import { resolveCommandIdentityBindings, resolveSourceBinding } from '../source-binding.ts';
+import type { SourceRecordRequest, SourceRecordResult } from './source-types.ts';
+import { createDesktopServer, resolveDesktopIdentity, type DesktopNativeServices } from '../desktop-server.ts';
+import { DesktopNavigation, desktopFault } from '../desktop-navigation.ts';
+import { activateDesktopWindow } from '../desktop-window.ts';
+import { createBindingMaintenance, type NativeBindingEditor } from '../binding-maintenance.ts';
+import type { BindingMaintenanceView, BindingMaintenanceUpdate } from './types.ts';
+import type { DshDesktopClientAck, DshDesktopClientCommand, DshDesktopClientState, DshDesktopTaskPageRequest, DshDesktopTaskPageResult } from '../../../buildr/src/modules/agent-operations/contracts/dsh-desktop-bridge.ts';
+export type { SourceRecordRequest, SourceRecordResult } from './source-types.ts';
+export type { ActivationStatus, Config, OpenResult } from './types.ts';
 
 /** Shown only when this machine has no Buildr this plugin can reach. */
-const MISSING_MESSAGE = '这台机器上没有检测到 Buildr。请先安装 Buildr，再重启 DSH 后重试。';
+const MISSING_MESSAGE = '这台机器上没有检测到 Buildr。请先安装 Buildr 后重试。';
 
 /**
  * The package decides which installation it serves, so the user is never asked to choose. Reading the
@@ -27,9 +42,12 @@ function ownPackageName(): string {
     return '';
   }
 }
-const CHANNEL = channelForPackage(ownPackageName());
-
-type Bridge = NonNullable<ReturnType<typeof createInstalledBuildrBridge>>;
+const PACKAGE_NAME = ownPackageName();
+const CHANNEL = channelForPackage(PACKAGE_NAME);
+function packageVersion(): string {
+  try { return JSON.parse(readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'package.json'), 'utf8')).version as string; }
+  catch { return 'unknown'; }
+}
 
 /**
  * One gateway per plugin lifetime. The machine pointer comes from configuration when present; when it
@@ -45,50 +63,161 @@ export default class BuildrGateway extends TypertRemoteService {
       nodeExecutable: z.string(), cliEntry: z.string(),
       nodeSha256: z.string(), cliSha256: z.string(),
     }).required(false),
+    sourceBinding: z.object({
+      nodeExecutable: z.string(), cliEntry: z.string(),
+      nodeSha256: z.string(), cliSha256: z.string(),
+    }).required(false),
     timeoutMs: z.natural().min(1), pollMs: z.natural().min(1),
   });
   private readonly config: Config;
-  private bridge: Bridge | null = null;
-  private resolving: Promise<Bridge | null> | undefined;
+  private readonly hostContext: Context;
+  private readonly sourceLifetime = new AbortController();
+  private bridge: ReturnType<typeof createDiscoveringBuildrBridge> | undefined;
+  private readonly qualification: ReturnType<typeof createActivation>;
+  private captureRegistered = false;
+  private readonly desktopNavigation = new DesktopNavigation(undefined, async signal => {
+    if (!this.activation().active || this.sourceLifetime.signal.aborted) throw desktopFault('disposed', 'Buildr 桌面扩展不可用。');
+    const identity = resolveDesktopIdentity(this.hostContext.get('dshHomePath'), CHANNEL === 'npm' ? 'released' : 'development', packageVersion());
+    await activateDesktopWindow(identity.appPath, signal);
+  });
+  private desktopServer: Promise<Awaited<ReturnType<typeof createDesktopServer>>> | undefined;
   constructor(ctx: Context, config: Config) {
     super(ctx, 'buildr');
     this.config = config;
-    // Schemastery parses an omitted optional object as `binding: {}`. It is not an override:
-    // installation discovery remains the normal path for an unconfigured package.
-    const binding = config.binding;
-    if (binding?.nodeExecutable !== undefined || binding?.cliEntry !== undefined) {
-      this.bridge = createInstalledBuildrBridge(config, CHANNEL);
-    }
+    this.hostContext = ctx;
+    this.qualification = createActivation(ctx, PACKAGE_NAME);
     // Registered unconditionally: a discovered bridge is disposed with the plugin exactly like a
     // configured one, and activation must not depend on whether a pointer happened to be present.
-    ctx.effect(() => () => this.bridge?.dispose());
+    ctx.effect(() => async () => {
+      this.sourceLifetime.abort();
+      this.bridge?.dispose();
+      this.desktopNavigation.dispose();
+      if (this.desktopServer) await this.desktopServer.then(server => server.close(), () => {});
+    });
+    this.activation();
   }
 
-  /** Resolve the machine pointer once, on first use, and keep serving that result. */
-  private async resolve(): Promise<Bridge | null> {
-    if (this.bridge !== null) return this.bridge;
-    if (this.resolving !== undefined) return this.resolving;
-    this.resolving = (async () => {
-      const discovered: Readonly<Binding> | null = await discoverBinding();
-      if (discovered === null) return null;
-      const bridge = createInstalledBuildrBridge({ ...this.config, binding: { ...discovered } }, CHANNEL);
-      if (bridge !== null) this.bridge = bridge;
-      return bridge;
-    })();
-    try {
-      return await this.resolving;
-    } finally {
-      this.resolving = undefined;
+  /** Only a genuine desktop Client activates the reverse local transport. */
+  private startDesktopServer(): Promise<Awaited<ReturnType<typeof createDesktopServer>>> {
+    if (!this.desktopServer) {
+      this.desktopServer = (async () => {
+        if (!this.activation().active || this.sourceLifetime.signal.aborted) throw desktopFault('disposed', 'Buildr 桌面扩展不可用。');
+        const identity = resolveDesktopIdentity(this.hostContext.get('dshHomePath'), CHANNEL === 'npm' ? 'released' : 'development', packageVersion());
+        const server = await createDesktopServer({ identity, navigation: this.desktopNavigation,
+          resolveServices: () => {
+            const llm = this.hostContext.get('llm') as DesktopNativeServices['llm'] | undefined;
+            const agentDefaultModel = this.hostContext.get('agentDefaultModel') as DesktopNativeServices['agentDefaultModel'] | undefined;
+            return typeof llm?.prepareCall === 'function' && typeof agentDefaultModel?.currentSelection === 'function' ? { llm, agentDefaultModel } : undefined;
+          },
+          buildrOrigin: async () => {
+            const target = await this.ensureBridge().open();
+            if (!target?.ready) throw desktopFault('buildr_unavailable', '当前渠道的 Buildr 不可用。');
+            return target.url;
+          },
+        });
+        if (this.sourceLifetime.signal.aborted) { await server.close(); throw desktopFault('disposed', 'Buildr 桌面扩展已释放。'); }
+        return server;
+      })().catch(error => { this.desktopServer = undefined; throw error; });
     }
+    return this.desktopServer;
+  }
+
+  private ensureBridge(): ReturnType<typeof createDiscoveringBuildrBridge> {
+    if (!this.qualification.status().active) throw desktopFault('disposed', 'Buildr 桌面扩展不可用。');
+    return this.bridge ??= createDiscoveringBuildrBridge(this.config, CHANNEL);
+  }
+
+  @Remote({ mode: 'stream' })
+  async *desktopCommands(state: DshDesktopClientState, signal: AbortSignal): AsyncIterable<DshDesktopClientCommand> {
+    if (!state.desktop) throw desktopFault('client_invalid', '此连接仅服务 DSH 桌面客户端。');
+    await this.startDesktopServer();
+    yield* this.desktopNavigation.watch(state, signal);
+  }
+
+  @Remote('desktopState')
+  desktopState(state: DshDesktopClientState): void { this.desktopNavigation.update(state); }
+
+  @Remote('desktopAcknowledge')
+  desktopAcknowledge(ack: DshDesktopClientAck): void { this.desktopNavigation.acknowledge(ack); }
+
+  private bindingMaintenance() {
+    if (!this.activation().active) throw desktopFault('binding_unavailable', '当前 Buildr 插件不可维护。');
+    const editor = this.hostContext.get('configEditor') as NativeBindingEditor | undefined;
+    if (!editor || typeof editor.edit !== 'function') throw desktopFault('binding_unavailable', 'DSH 未提供原生配置编辑器。');
+    return createBindingMaintenance(editor, CHANNEL === 'npm' ? 'buildr' : 'buildr-dev', PACKAGE_NAME);
+  }
+
+  @Remote('bindingView')
+  bindingView(): BindingMaintenanceView { return this.bindingMaintenance().read(); }
+
+  @Remote('updateBinding')
+  updateBinding(request: BindingMaintenanceUpdate): Promise<BindingMaintenanceView> { return this.bindingMaintenance().update(request); }
+
+  /** Probe only this channel's verified Buildr; no browser transport secret crosses Remote. */
+  @Remote('desktopTaskPage')
+  async desktopTaskPage(request: DshDesktopTaskPageRequest): Promise<DshDesktopTaskPageResult> {
+    if (!this.activation().active || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(request.pageId))
+      throw desktopFault('task_page_invalid', '任务页面身份无效。');
+    const target = await this.ensureBridge().open();
+    if (!target?.ready) throw desktopFault('buildr_unavailable', '当前渠道的 Buildr 不可用。');
+    try {
+      const response = await fetch(target.url + '/api/v1/app/dsh/pages/probe?pageId=' + encodeURIComponent(request.pageId), {
+        method: 'GET', signal: AbortSignal.any([this.sourceLifetime.signal, AbortSignal.timeout(2500)]),
+      });
+      if (!response.ok) throw desktopFault('task_page_unavailable', '当前 Buildr 任务页面不可确认。');
+      const value = await response.json() as DshDesktopTaskPageResult;
+      return { taskUrl: typeof value.taskUrl === 'string' ? value.taskUrl : null };
+    } catch { throw desktopFault('task_page_unavailable', '当前 Buildr 任务页面不可确认。'); }
+  }
+
+  /** Recheck a released lease without changing another bundle's saved enablement. */
+  @Remote('activation')
+  activation(): ActivationStatus {
+    const status = this.qualification.status();
+    if (!status.active || this.captureRegistered) return status;
+    this.ensureBridge();
+    this.captureRegistered = true;
+    const capture = createEventSourceCapture({
+      channel: CHANNEL, signal: this.sourceLifetime.signal,
+      processDependencies: { timeoutMs: this.config.timeoutMs ?? 5_000 },
+      resolveBinding: () => resolveSourceBinding(this.config, CHANNEL),
+      resolveCommandBindings: () => resolveCommandIdentityBindings(this.config, CHANNEL),
+    });
+    this.hostContext.on('tools/source-capture', async (request, next) => {
+      if (!this.qualification.status().active) return next();
+      const source = await capture(request);
+      // Another explicitly installed source provider can establish its own facts.
+      try {
+        const other = await next();
+        return mergeCapturedSources(source, other);
+      } catch { return source; }
+    });
+    return status;
+  }
+
+  /** Read only the selected record's original events and captured Buildr fragments. */
+  @Remote('sourceRecord')
+  async sourceRecord(request: SourceRecordRequest): Promise<SourceRecordResult> {
+    const status = this.activation();
+    if (!status.active) return { ready: false, code: status.code, message: status.message };
+    const reader = this.hostContext.get('sessionQuery');
+    return readSourceRecord(request, {
+      signal: this.sourceLifetime.signal,
+      timeoutMs: this.config.timeoutMs ?? 10_000,
+      ...(reader === undefined || typeof reader.observeSession !== 'function' ? {} : {
+        readEvents: (address: SourceEventReadRequest, signal: AbortSignal) => readObservedSourceEvents(address, signal,
+          (sessionId, options) => reader.observeSession(sessionId as SessionId, options)),
+      }),
+    });
   }
 
   /** Return only a ready address/identity or a sanitized, actionable failure. */
   @Remote('open')
   async open(): Promise<OpenResult> {
     try {
-      const bridge = await this.resolve();
-      if (bridge === null) return { ready: false, code: 'not-installed', message: MISSING_MESSAGE };
-      return await bridge.open();
+      const status = this.activation();
+      if (!status.active) return { ready: false, code: status.code, message: status.message };
+      return await this.ensureBridge().open() ?? { ready: false, code: 'not-installed', message: MISSING_MESSAGE };
     } catch (error) {
       return error instanceof BuildrBridgeError
         ? { ready: false, code: error.code, message: error.message }

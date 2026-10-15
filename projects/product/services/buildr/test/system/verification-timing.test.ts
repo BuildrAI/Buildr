@@ -8,7 +8,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { cleanupOwnedProcessGroup, cleanupTrackedDescendants, createOwnedDescendantTracker, parseProcessLineage, runVerificationBatch, runVerificationStep } from '../verification/timing/parallel-runner.ts';
+import { cleanupOwnedProcessGroup, cleanupTrackedDescendants, createOwnedDescendantTracker, parseProcessLineage, runVerificationBatch, runVerificationStep, verificationFailureFacts } from '../verification/timing/parallel-runner.ts';
 import { executePlan } from '../verification/plan-runner.ts';
 import { candidateStepBudget } from '../verification/timing/budgets.ts';
 import { cleanupVerificationHarnessRoot, createVerificationPhaseRecorder, parseVerificationPhaseTimings } from '../verification/timing/phases.ts';
@@ -413,7 +413,14 @@ test('changed verification writes a persistent run-level timing summary', () => 
     const result: any = spawnSync(process.execPath, [path.join(productRoot, 'test', 'verification', 'changed.ts'), 'knowledge/docs/overview.md'], {
       cwd: productRoot,
       encoding: 'utf8',
-      env: { ...process.env, BUILDR_TIMING_OUTPUT: timingOutput, BUILDR_DIAGNOSTICS_OUTPUT: diagnosticsOutput },
+      env: {
+        ...process.env,
+        BUILDR_TIMING_OUTPUT: timingOutput,
+        BUILDR_DIAGNOSTICS_OUTPUT: diagnosticsOutput,
+        BUILDR_VERIFICATION_REUSE_DIR: path.join(root, 'reuse'),
+        BUILDR_VERIFICATION_REUSE_IMPORT: '',
+        BUILDR_VERIFICATION_REUSE_EXPORT: '',
+      },
     });
     assert.equal(result.status, 0, result.stderr);
     const summary: any = JSON.parse(fs.readFileSync(timingOutput, 'utf8'));
@@ -628,6 +635,8 @@ test('verification runner 对永久不退出 capability 独立超时并回收完
   assert.equal(result.status, 'timed-out');
   assert.equal(result.exitCode, 124);
   assert.equal(result.failureCode, 'capability-timeout');
+  assert.equal(result.childOutcome, 'unknown');
+  assert.ok(result.failureFacts.some((fact: any) => fact.kind === 'timeout'));
   assert.ok(result.durationMs < 2_000, `timeout took ${result.durationMs}ms`);
   assert.match(result.stderr, /never-exits exceeded 250 ms/);
   assert.ok(Number.isInteger(result.process.pid));
@@ -728,6 +737,8 @@ test('verification runner 的process-close-timeout返回失败并仍可生成tim
   });
   assert.equal(result.status, 'failed');
   assert.equal(result.failureCode, 'process-close-timeout');
+  assert.equal(result.childExitCode, 0);
+  assert.equal(result.childOutcome, 'passed');
   assert.match(result.stderr, /process-close-timeout/);
   const evidence: any = { runId: 'close-timeout-run', timingOutput: path.join(root, 'timing.json'), evidenceLifecycle: { evidenceRetention: 'caller-managed', cleanupAfter: 'caller-policy', cleanupStatus: 'not-applicable' } };
   writeVerificationTimingEvidence({
@@ -760,5 +771,26 @@ test('verification runner 将owned cleanup failure作为主失败返回', async 
   });
   assert.equal(result.status, 'failed');
   assert.equal(result.failureCode, 'process-cleanup-failed');
+  assert.equal(result.childExitCode, 0);
+  assert.equal(result.childSignal, null);
+  assert.equal(result.childOutcome, 'passed');
+  assert.deepEqual(result.failureFacts, [{ stage: 'cleanup', kind: 'cleanup', code: 'process-cleanup-failed' }]);
   assert.equal(result.processCleanup.status, 'failed');
+});
+
+test('verification failure facts retain prior real assertions alongside timeout and ignore arbitrary log mentions', () => {
+  const block = (message: string) => `not ok 1\n  ---\n  code: 'ERR_ASSERTION'\n  error: ${message}\n  ...`;
+  assert.deepEqual(verificationFailureFacts({ stdout: block('subprocess failed with ETIMEDOUT'), failureCode: 'capability-timeout' }), [
+    { stage: 'execution', kind: 'timeout', code: 'nested-process-timeout' },
+    { stage: 'execution', kind: 'timeout', code: 'capability-timeout' },
+  ]);
+  assert.deepEqual(verificationFailureFacts({ stdout: `${block('actual mismatch')}\n${block('command timed out')}`, failureCode: 'capability-timeout' }).map(item => item.kind), ['assertion', 'timeout', 'timeout']);
+  assert.deepEqual(verificationFailureFacts({ stdout: 'test title mentions ERR_ASSERTION ECONNRESET and timeout' }), []);
+});
+
+test('verification facts consume safe progress records and preserve separate prior assertion and nested timeout', () => {
+  const progress = (error: any) => `[buildr-integration-progress] ${JSON.stringify({ status: 'failed', error })}`;
+  const output = [progress({ causeCode: 'ERR_ASSERTION', timeout: false }), progress({ causeCode: 'ERR_ASSERTION', timeout: true, childErrorCode: 'ETIMEDOUT' })].join('\n');
+  assert.deepEqual(verificationFailureFacts({ stderr: output, failureCode: 'capability-timeout' }).map(item => item.kind), ['assertion', 'timeout', 'timeout']);
+  assert.deepEqual(verificationFailureFacts({ stderr: progress({ causeCode: 'ERR_ASSERTION' }) }), [{ stage: 'execution', kind: 'unknown', code: 'ERR_ASSERTION' }]);
 });

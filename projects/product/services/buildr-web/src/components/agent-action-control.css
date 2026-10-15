@@ -1,0 +1,4 @@
+.agent-action-control { display: flex; align-items: center; gap: 0; }
+.agent-action-control > .ant-btn, .agent-action-control > .ant-dropdown-trigger { height: 24px; width: 22px; min-width: 0; padding: 0; color: var(--soft-primary); }
+.agent-action-control .anticon-down { font-size: 9px; }
+.agent-action-control .anticon-robot { font-size: 15px; }

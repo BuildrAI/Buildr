@@ -1,4 +1,4 @@
-import { TASK_RECORD_SCHEMA, TASK_ID_SOURCE, isTaskRecordId, type ParentCompletion } from '../domain/task.ts';
+import { TASK_RECORD_SCHEMA, TASK_ID_SOURCE, TASK_BRIEF_MAX_BYTES, isTaskRecordId, type ParentCompletion } from '../domain/task.ts';
 import type {
   TaskChangeReference, TaskRecord, TaskRecordBusinessError, TaskRecordHistory, TaskRecordResult,
   TaskRecordStatus, TaskRetrospectiveDocumentState, TaskRetrospectiveReference,
@@ -41,6 +41,13 @@ export function assertTaskActionFields(input: unknown, fields: ReadonlySet<strin
 export function taskActionText(value: unknown, field: string): string {
   if (typeof value !== 'string' || !value.trim()) throw taskRecordError('task_record_field_invalid', `${field} 必须是非空字符串。`, 400, { field });
   return value.trim();
+}
+
+export function taskActionBrief(value: unknown, field = 'brief'): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string' || !value.isWellFormed()) throw taskRecordError('task_record_field_invalid', `${field} 必须是有效 Unicode Markdown 字符串或 null。`, 400, { field });
+  if (Buffer.byteLength(value, 'utf8') > TASK_BRIEF_MAX_BYTES) throw taskRecordError('task_record_brief_size_invalid', `${field} 不能超过 ${TASK_BRIEF_MAX_BYTES} 字节。`, 400, { field, maxBytes: TASK_BRIEF_MAX_BYTES });
+  return value.trim() ? value : null;
 }
 
 export function taskActionId(value: unknown, field: string): string {
@@ -229,13 +236,13 @@ function normalizeResultHistory(value: unknown = []): TaskRecordHistory[] {
   if (!Array.isArray(value)) throw taskRecordError('task_record_history_invalid', 'resultHistory 必须是数组。');
   return value.map((entry) => {
     const item = object(entry, 'resultHistory');
-    closed(item, new Set(['status', 'title', 'intent', 'parentTaskId', 'scope', 'changes', 'isParent', 'result', 'recordUpdatedAt', 'correctedAt', 'reason']), 'resultHistory');
+    closed(item, new Set(['status', 'title', 'intent', 'brief', 'parentTaskId', 'scope', 'changes', 'isParent', 'result', 'recordUpdatedAt', 'correctedAt', 'reason']), 'resultHistory');
     if (item.status !== 'completed' && item.status !== 'abandoned') throw taskRecordError('task_record_history_invalid', '结果历史只保存被更正的终态。');
     const result = normalizeResult(item.status, item.result);
     if (result === null) throw taskRecordError('task_record_history_invalid', '结果历史必须保存终态结果。');
     const scope = item.scope === undefined ? undefined : object(item.scope, 'resultHistory.scope');
     if (scope) closed(scope, new Set(['projects', 'services']), 'resultHistory.scope');
-    return { status: item.status, title: nonEmptyText(item.title, 'resultHistory.title'), intent: nonEmptyText(item.intent, 'resultHistory.intent'),
+    return { status: item.status, title: nonEmptyText(item.title, 'resultHistory.title'), intent: nonEmptyText(item.intent, 'resultHistory.intent'), brief: taskActionBrief(item.brief, 'resultHistory.brief'),
       parentTaskId: optionalTaskId(item.parentTaskId, 'resultHistory.parentTaskId'), result,
       ...(scope ? { scope: { projects: stringIdentities(scope.projects, 'resultHistory.scope.projects'), services: qualifiedIdentities(scope.services, 'resultHistory.scope.services', 'service').map((value) => ({ project: value.project, service: value.identity })) } } : {}),
       ...(item.changes === undefined ? {} : { changes: qualifiedIdentities(item.changes, 'resultHistory.changes', 'change').map((value) => ({ project: value.project, change: value.identity })) }),
@@ -246,11 +253,12 @@ function normalizeResultHistory(value: unknown = []): TaskRecordHistory[] {
 
 export function normalizeTaskRecord(value: unknown, { expectedTaskId = null }: { expectedTaskId?: string | null } = {}): TaskRecord {
   const record = object(value, 'Task Record');
-  closed(record, new Set(['schemaVersion', 'taskId', 'title', 'intent', 'scope', 'changes', 'parentTaskId', 'isParent', 'retrospective', 'status', 'result', 'resultHistory', 'createdAt', 'updatedAt']), '');
+  closed(record, new Set(['schemaVersion', 'taskId', 'title', 'intent', 'brief', 'scope', 'changes', 'parentTaskId', 'isParent', 'retrospective', 'status', 'result', 'resultHistory', 'createdAt', 'updatedAt']), '');
   if (record.isParent !== undefined && typeof record.isParent !== 'boolean') throw taskRecordError('task_record_field_invalid', 'isParent 必须是 boolean。');
   if (record.schemaVersion !== TASK_RECORD_SCHEMA) {
     throw taskRecordError('task_record_schema_unsupported', `Task Record schemaVersion 必须是 ${TASK_RECORD_SCHEMA}。`, 409, { field: 'schemaVersion', actual: record.schemaVersion });
   }
+  if (record.brief === undefined) throw taskRecordError('task_record_field_invalid', 'brief 必须显式为 Markdown 字符串或 null。', 400, { field: 'brief' });
   const taskId = nonEmptyText(record.taskId, 'taskId');
   if (!isTaskRecordId(taskId)) {
     throw taskRecordError('task_record_identity_invalid', 'Task ID 只能使用小写字母、数字、点、下划线或连字符，且不能包含路径分隔符。', 400, { field: 'taskId', value: taskId });
@@ -278,6 +286,7 @@ export function normalizeTaskRecord(value: unknown, { expectedTaskId = null }: {
     taskId,
     title: nonEmptyText(record.title, 'title'),
     intent: nonEmptyText(record.intent, 'intent'),
+    brief: taskActionBrief(record.brief),
     scope: {
       projects: stringIdentities(scope.projects, 'scope.projects'),
       services: qualifiedIdentities(scope.services, 'scope.services', 'service').map((item) => ({ project: item.project, service: item.identity })),

@@ -7,6 +7,7 @@ import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesyste
 import { createProject } from '../domain/project.ts';
 import { attachedSource, defaultAssetDescription, sourceIdentity, sourceOwnership, sourceRootKind } from '../domain/source-root.ts';
 import { declarationIntakeNextAction } from '../../../infrastructure/contracts/declaration-intake.ts';
+import { assertMarkdownImageSourceRoot, observeMarkdownImageContext, readMarkdownImage, type MarkdownImageRequest } from '../../../infrastructure/filesystem/markdown-images.ts';
 
 export type ProjectCreationInput = {
   targetRoot: string;
@@ -45,7 +46,7 @@ export type ProjectApplicationRuntime = {
   gitDefaultBranch(root: string, remote?: string): string;
   ensureGitBoundaries(targetRoot: string, items: any[]): string[];
   crypto: { randomUUID(): string };
-  getWorkspace(targetRoot: string): any;
+  getWorkspace(targetRoot: string, options?: { requireRootProof?: boolean }): any;
 };
 
 export function projectError(code: any, message: any, status: any = 400, details: any = undefined) {
@@ -83,14 +84,14 @@ export function compareProjectGit(project: any, observed: any, sameGitIdentity: 
 
 export function registerProjectApplication(runtime: ProjectApplicationRuntime) {
   // 读取：登记、列表、详情和文档。
-  function readProjectRegistryRecord(targetRoot: any) {
+  function readProjectRegistryRecord(targetRoot: any, options: { requireRootProof?: boolean } = {}) {
     let workspace;
     let persistence;
     try {
-      workspace = runtime.getWorkspace(targetRoot);
+      workspace = runtime.getWorkspace(targetRoot, options);
       const workspaceId = workspace.workspace.id;
       if (!workspaceId) throw projectError('project_workspace_migration_required', 'Workspace metadata 需要先完成 identity 迁移。', 409);
-      persistence = runtime.projectRepository.readProjectRegistryPersistence(targetRoot, { workspaceId });
+      persistence = runtime.projectRepository.readProjectRegistryPersistence(targetRoot, { workspaceId, requireRootProof: options.requireRootProof });
     } catch (error: any) {
       if (error.code) throw error;
       throw projectError('project_registry_invalid', error.message, 409, { path: 'projects/manifest.yml' });
@@ -142,7 +143,27 @@ export function registerProjectApplication(runtime: ProjectApplicationRuntime) {
     const entity = record.projects[code];
     if (!entity) throw projectError('project_not_found', `Project 不存在：${code}。`, 404);
     const document = runtime.sourceFiles.readDocument(runtime.sourceFiles.resolveRoot(record.root, entity.source), documentPath, 'project', projectError);
-    return { schemaVersion: 'buildr.project-document/v1', projectCode: code, ...document, entry: PROJECT_DOCUMENTS.has(document.path) };
+    let imageContext;
+    try { imageContext = observeMarkdownImageContext(projectImageSource(targetRoot, code, document.path, record), document.content); }
+    catch { /* Optional image observation cannot remove an already readable document. */ }
+    return { schemaVersion: 'buildr.project-document/v1', projectCode: code, ...document, entry: PROJECT_DOCUMENTS.has(document.path), ...(imageContext ? { imageContext } : {}) };
+  }
+
+  function projectImageSource(targetRoot: string, code: string, documentPath: unknown, record = readProjectRegistryRecord(targetRoot)) {
+    const entity = record.projects[code];
+    if (!entity) throw projectError('project_not_found', `Project 不存在：${code}。`, 404);
+    if (typeof documentPath !== 'string' || !documentPath.trim() || !documentPath.endsWith('.md') || documentPath.length > 1024) throw projectError('project_document_path_forbidden', '项目图片必须引用当前范围内的 Markdown 正文。', 400);
+    const sourceRoot = runtime.sourceFiles.resolveRoot(record.root, entity.source);
+    assertMarkdownImageSourceRoot(record.root, sourceRoot);
+    return { root: sourceRoot, path: path.posix.normalize(documentPath.trim()), identity: ['project', record.workspace.workspace.id, entity.id, entity.source] };
+  }
+
+  function projectDocumentImage(targetRoot: string, code: string, documentPath: unknown, input: MarkdownImageRequest) {
+    return readMarkdownImage(() => projectImageSource(targetRoot, code, documentPath), input);
+  }
+
+  function projectDocumentImageContext(targetRoot: string, code: string, documentPath: string, content: string) {
+    return observeMarkdownImageContext(projectImageSource(targetRoot, code, documentPath), content);
   }
 
   // 变更：迁移和元数据更新。
@@ -331,6 +352,8 @@ export function registerProjectApplication(runtime: ProjectApplicationRuntime) {
     listProjects,
     projectDetail,
     projectDocument,
+    projectDocumentImage,
+    projectDocumentImageContext,
     projectMigrationPlan,
     migrateProjectRegistry,
     updateProjectMetadata,

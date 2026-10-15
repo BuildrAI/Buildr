@@ -33,3 +33,24 @@ test('新增工作台没有放宽领域或应用的反向依赖，模块端口�
   assert.equal(isAllowedProductLayerImport('modules/workbench/module.ts', 'modules/workspace/module.ts'), true);
   assert.equal(isAllowedProductLayerImport('modules/workbench/module.ts', 'modules/installation/module.ts'), false);
 });
+
+test('source observation submodule only declares its real read ports, not a blanket module allowance', () => {
+ const root = 'modules/agent-assets/source/';
+ assert.equal(productLayerOf(`${root}module.ts`), 'module');
+ for (const target of ['modules/agent-assets/module.ts', 'modules/workspace/module.ts', 'modules/task/module.ts', 'modules/task/materials/module.ts']) assert.equal(isAllowedProductLayerImport(`${root}module.ts`, target), true);
+ assert.equal(isAllowedProductLayerImport(`${root}module.ts`, 'modules/installation/module.ts'), false);
+ assert.equal(productLayerOf('modules/agent-assets/unregistered/module.ts'), 'modules');
+ assert.equal(isAllowedProductLayerImport('modules/agent-assets/persistence/source-object-repository.ts', 'modules/agent-assets/application/source-observations.ts'), false);
+ assert.equal(isAllowedProductLayerImport('modules/agent-assets/persistence/source-object-repository.ts', 'modules/agent-assets/domain/source-observations.ts'), true);
+});
+
+test('统一智能体操作按独立模块分层，只登记代码场景的真实能力端口', () => {
+  const root = 'modules/agent-operations/';
+  assert.equal(productLayerOf(root + 'module.ts'), 'module');
+  for (const [directory, layer] of [['domain', 'domain'], ['application', 'application'], ['persistence', 'infrastructure'], ['infrastructure', 'infrastructure'], ['interfaces/http', 'interfaces'], ['interfaces/cli', 'interfaces']]) assert.equal(productLayerOf(root + directory + '/value.ts'), layer);
+  assert.equal(isAllowedProductLayerImport('modules/code/module.ts', root + 'module.ts'), true);
+  assert.equal(isAllowedProductLayerImport('modules/code/module.ts', 'modules/agent-assets/module.ts'), true);
+  assert.equal(isAllowedProductLayerImport('modules/task/module.ts', root + 'module.ts'), false);
+  assert.equal(isAllowedProductLayerImport(root + 'domain/agent-operations.ts', root + 'infrastructure/codex-app-server.ts'), false);
+  assert.equal(isAllowedProductLayerImport(root + 'infrastructure/codex-app-server.ts', 'modules/code/module.ts'), false);
+});

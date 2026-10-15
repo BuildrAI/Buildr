@@ -8,6 +8,8 @@ import YAML from 'yaml';
 
 import { assetIntegrity } from '../../src/modules/agent-assets/infrastructure/component-source.ts';
 import { skillDestinationRoot } from '../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
+import { archifyCostEnvironment } from '../helpers/archify-command-cost.ts';
+import { ARCHIFY_SCENARIO_LABELS, archifyScenarioTimings } from '../verification/integration-progress-reporter.ts';
 
 const file = fileURLToPath(import.meta.url);
 const serviceRoot = path.resolve(path.dirname(file), '../..');
@@ -23,15 +25,30 @@ function scenario() {
   // Only these child processes use the fixture home; the host installation is untouched.
   const env = { ...process.env, HOME: userHome, USERPROFILE: userHome };
   const entry = path.join(serviceRoot, 'bin/buildr.mjs');
+  const commandTimeoutMs = 60_000;
+  const scenarioStartedAt = performance.now();
+  const wrapperStartedAt = Number(process.env.BUILDR_ARCHIFY_WRAPPER_STARTED_AT);
   let step = 0;
+  let commandStartedAt = scenarioStartedAt;
   function progress(label: string) {
     process.stderr.write(`[archify-scenario] ${++step}: ${label}\n`);
+    const started = label.startsWith('start ');
+    const operationLabel = label.slice(started ? 6 : 7);
+    const operation = Object.hasOwn(ARCHIFY_SCENARIO_LABELS, operationLabel) ? ARCHIFY_SCENARIO_LABELS[operationLabel] : null;
+    const now = performance.now();
+    if (started) commandStartedAt = now;
+    if (operation) process.stderr.write(`[archify-scenario-timing] ${JSON.stringify({
+      step, operation, status: started ? 'started' : 'completed', elapsedMs: Math.round(now - scenarioStartedAt),
+      ...(Number.isSafeInteger(wrapperStartedAt) && wrapperStartedAt > 0
+        ? { wrapperElapsedMs: Math.max(0, Date.now() - wrapperStartedAt), commandTimeoutMs } : {}),
+      ...(started ? {} : { durationMs: Math.round(now - commandStartedAt) }),
+    })}\n`);
   }
   function run(args: string[], expected = 0) {
     const label = args.slice(0, 3).join(' ');
     progress(`start ${label}`);
     const result = spawnSync(process.execPath, [entry, ...args], {
-      cwd: serviceRoot, env, encoding: 'utf8', timeout: 60_000, maxBuffer: 8 * 1024 * 1024,
+      cwd: serviceRoot, env: archifyCostEnvironment(env, Math.ceil(step / 2)), encoding: 'utf8', timeout: commandTimeoutMs, maxBuffer: 8 * 1024 * 1024,
     });
     assert.equal(result.status, expected, `${args.join(' ')}\n${result.error?.message ?? ''}\n${result.stdout}\n${result.stderr}`);
     progress(`passed ${label}`);
@@ -89,7 +106,7 @@ function scenario() {
   progress('start installed renderer');
   const delivered = spawnSync(process.execPath, [path.join(projected, 'assets/archify/bin/archify.mjs'),
     'deliver', 'architecture', graph, output, '--quality', 'showcase', '--json'], {
-    cwd: projected, env, encoding: 'utf8', timeout: 60_000, maxBuffer: 4 * 1024 * 1024,
+    cwd: projected, env: archifyCostEnvironment(env, Math.ceil(step / 2)), encoding: 'utf8', timeout: commandTimeoutMs, maxBuffer: 4 * 1024 * 1024,
   });
   assert.equal(delivered.status, 0, `${delivered.error?.message ?? ''}\n${delivered.stdout}\n${delivered.stderr}`);
   progress('passed installed renderer');
@@ -127,11 +144,23 @@ function scenario() {
 if (process.argv.includes('--archify-scenario')) {
   scenario();
 } else {
-  test('Archify optional component installs, renders, updates and uninstalls without losing user content', { timeout: 180_000 }, () => {
+  const caseOptions = { timeout: 180_000 };
+  test('Archify optional component installs, renders, updates and uninstalls without losing user content', caseOptions, () => {
+    const wrapperStartedAt = Date.now();
+    const wrapperOptions = {
+      cwd: serviceRoot, encoding: 'utf8' as const, timeout: 175_000, maxBuffer: 8 * 1024 * 1024,
+      env: { ...process.env, BUILDR_ARCHIFY_WRAPPER_STARTED_AT: String(wrapperStartedAt) },
+    };
     const result = spawnSync(process.execPath, [path.join(serviceRoot, 'tools/development/run-isolated-workspace-smoke.ts'),
-      '--script', file, '--', '--archify-scenario'], {
-      cwd: serviceRoot, encoding: 'utf8', timeout: 175_000, maxBuffer: 8 * 1024 * 1024,
-    });
+      '--script', file, '--', '--archify-scenario'], wrapperOptions);
+    // Forward only validated numeric phase records, never arbitrary child output.
+    for (const timing of archifyScenarioTimings(result.stderr)) {
+      process.stderr.write(`[archify-scenario-timing] ${JSON.stringify(timing)}\n`);
+    }
+    process.stderr.write(`[archify-wrapper-timing] ${JSON.stringify({
+      elapsedMs: Date.now() - wrapperStartedAt, timeoutMs: wrapperOptions.timeout, caseTimeoutMs: caseOptions.timeout,
+      status: (result.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT' ? 'timed-out' : result.status === 0 ? 'passed' : 'failed',
+    })}\n`);
     assert.equal(result.status, 0, `${result.error?.message ?? ''}\n${result.stdout}\n${result.stderr}`);
     assert.match(result.stdout, /"cleanup":"cleaned"/);
   });

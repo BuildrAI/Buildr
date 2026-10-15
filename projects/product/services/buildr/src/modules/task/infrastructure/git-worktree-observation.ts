@@ -20,7 +20,7 @@ function contains(parent: string, child: string): boolean {
 
 // Resolve existing ancestors as well: a missing checkout below a symlink must not
 // be mistaken for a safe, absent target during a retry.
-function assertLiteralPath(value: string): void {
+export function assertLiteralWorktreePath(value: string): void {
   if (!path.isAbsolute(value) || path.normalize(value) !== value) fail(`路径必须为规范绝对路径：${value}`);
   let current = value;
   while (true) {
@@ -35,22 +35,27 @@ function assertLiteralPath(value: string): void {
   }
 }
 
-export function assertObservedCheckoutSet(observed: GitWorktreeObservedCheckout[], repositories: Repository[]): void {
-  const root = observed.find((item) => item.selector === 'workspace');
-  if (!root || observed.length !== repositories.length) fail('当前对象必须精确包含 workspace 及全部选定的独立仓库。');
+export function assertObservedCheckoutSet(observed: GitWorktreeObservedCheckout[], repositories: Repository[]): string {
+  if (observed.length !== repositories.length) fail('当前对象必须精确包含全部选定的独立仓库。');
   const paths = new Set<string>();
+  let groupRoot: string | null = null;
   for (const item of observed) {
-    assertLiteralPath(item.sourceRepository);
-    assertLiteralPath(item.checkoutPath);
+    assertLiteralWorktreePath(item.sourceRepository);
+    assertLiteralWorktreePath(item.checkoutPath);
     const expected = repositories.find((entry) => entry.selector === item.selector);
     if (!expected || !sameFilesystemPath(expected.sourceRepository, item.sourceRepository)) fail(`来源与当前声明不符：${item.selector}`);
-    if (item.checkoutPath !== path.resolve(root.checkoutPath, expected.sourcePath)) fail(`嵌套路径与当前来源不符：${item.selector}`);
+    let candidateRoot = item.checkoutPath;
+    if (expected.sourcePath !== '.') for (const _part of expected.sourcePath.split('/')) candidateRoot = path.dirname(candidateRoot);
+    if (item.checkoutPath !== path.resolve(candidateRoot, expected.sourcePath) || (groupRoot !== null && candidateRoot !== groupRoot)) fail(`嵌套路径与当前来源不符：${item.selector}`);
+    groupRoot = candidateRoot;
     if (paths.has(item.checkoutPath)) fail(`检出路径重复：${item.checkoutPath}`);
     paths.add(item.checkoutPath);
     for (const source of repositories) {
       if (contains(item.checkoutPath, source.sourceRepository)) fail(`目标包含保留的来源仓库：${item.selector}`);
     }
   }
+  if (!groupRoot || groupRoot === path.parse(groupRoot).root || repositories.some((item) => contains(groupRoot!, item.sourceRepository))) fail('观察组目录不能覆盖文件系统根或保留的来源仓库。');
+  return groupRoot;
 }
 
 export function assertCurrentCheckoutIdentity(
@@ -59,8 +64,8 @@ export function assertCurrentCheckoutIdentity(
   parseList: (text: string) => Registration[],
   { cleanup = false }: { cleanup?: boolean } = {},
 ): void {
-  assertLiteralPath(record.sourceRepository);
-  assertLiteralPath(record.checkoutPath);
+  assertLiteralWorktreePath(record.sourceRepository);
+  assertLiteralWorktreePath(record.checkoutPath);
   const read = (cwd: string, args: string[]): string => {
     const result = git(cwd, args);
     if (result.status !== 0) fail(`无法核对 ${record.selector}：${result.stderr.trim() || args.join(' ')}`);
@@ -89,13 +94,26 @@ export function assertCurrentCheckoutIdentity(
   if (!sameFilesystemPath(actualRoot, record.checkoutPath) || !sameFilesystemPath(actualCommon, common) || actualBranch !== record.branch || sameFilesystemPath(gitDir, common)) fail(`当前 Git 身份与来源不符或目标是主目录：${record.selector}`);
 }
 
-export function assertNoUnlistedNestedRepositories(repositories: GitWorktreeObservedCheckout[], git: Git): void {
+export function assertNoUnlistedNestedRepositories(repositories: GitWorktreeObservedCheckout[], git: Git, { groupRoot }: { groupRoot?: string } = {}): void {
   const known = new Set(repositories.map((item) => item.checkoutPath));
   const roots = repositories.filter((item) => !repositories.some((parent) => parent !== item && contains(parent.checkoutPath, item.checkoutPath)));
-  const pending = roots.map((item) => item.checkoutPath).filter((entry) => fs.existsSync(entry));
+  if (groupRoot) assertLiteralWorktreePath(groupRoot);
+  const pending = (groupRoot ? [groupRoot] : roots.map((item) => item.checkoutPath)).filter((entry) => fs.existsSync(entry));
+  const deadline = Date.now() + 5000;
+  let directoryCount = 0;
+  let entryCount = 0;
   while (pending.length) {
+    if (++directoryCount > 10000 || Date.now() > deadline) fail('工作树嵌套集合超过本次安全观察上限，尚未确认完整集合。');
     const directory = pending.pop()!;
-    const entries = fs.readdirSync(directory, { withFileTypes: true });
+    const entries: fs.Dirent[] = [];
+    const handle = fs.opendirSync(directory);
+    try {
+      let entry: fs.Dirent | null;
+      while ((entry = handle.readSync())) {
+        if (++entryCount > 100000 || Date.now() > deadline) fail('工作树嵌套集合超过本次安全观察上限，尚未确认完整集合。');
+        entries.push(entry);
+      }
+    } finally { handle.closeSync(); }
     if (entries.some((entry) => entry.name === '.git') && !known.has(directory)) fail(`清理集合遗漏嵌套 Git 仓库：${directory}`);
     if (['HEAD', 'objects', 'refs'].every((name) => entries.some((entry) => entry.name === name))) {
       const bare = git(directory, ['rev-parse', '--is-bare-repository']);

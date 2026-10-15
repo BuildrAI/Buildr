@@ -45,6 +45,15 @@ export function resolveWorkspaceMarkdownReference(
 ): WorkspaceMarkdownReference | null {
   const workspacePath = normalizedWorkspaceRelativePath(href);
   if (!workspacePath || !workspacePath.toLowerCase().endsWith('.md')) return null;
+  // This logical project prefix also works for an attached source outside the
+  // workspace. The public reader resolves its real root from the project code.
+  const logicalProject = /^projects\/([A-Za-z0-9][A-Za-z0-9._-]*)\/(.+)$/.exec(workspacePath);
+  if (logicalProject) {
+    const [, code, documentPath] = logicalProject;
+    const project = projects.find(item => item.code === code && allowedProjectCodes.has(code));
+    if (!project) return null;
+    return { projectCode: code, projectName: project.name || code, projectSourcePath: `projects/${code}`, documentPath, workspacePath, resolution: 'resolved' };
+  }
   const candidates = projects
     .filter((project) => allowedProjectCodes.has(project.code))
     .map((project) => ({ project, sourcePath: normalizedProjectSourcePath(project.source?.path) }))
@@ -76,17 +85,32 @@ export function resolveProjectMarkdownHref(currentDocPath: string, href: string)
   if (queryIndex >= 0) pathEnd = Math.min(pathEnd, queryIndex);
   const pathPart = value.slice(0, pathEnd);
   if (!pathPart) return null;
-  const current = String(currentDocPath || '').replace(/^\/+/, '').replace(/\\/g, '/');
-  const slash = current.lastIndexOf('/');
-  const baseDir = slash >= 0 ? current.slice(0, slash + 1) : '';
-  let resolved: string;
+  // Only this literal prefix is project-root logical navigation. Decode before
+  // validating segments so encoded separators and traversal cannot escape it.
+  if (pathPart.startsWith('@project/')) {
+    const rootPath = normalizedWorkspaceRelativePath(pathPart.slice('@project/'.length));
+    return rootPath?.toLowerCase().endsWith('.md') && !/^[a-z][a-z0-9+.-]*:/i.test(rootPath) ? rootPath : null;
+  }
+  if (pathPart.startsWith('@')) return null;
+  if (/^(?:[a-z][a-z0-9+.-]*:|\/|\\)/i.test(pathPart)) return null;
+  const current = normalizedWorkspaceRelativePath(currentDocPath);
+  if (!current) return null;
+  let target: string;
   try {
-    resolved = decodeURIComponent(new URL(pathPart, `https://project.local/${baseDir}`).pathname).replace(/^\/+/, '');
+    target = decodeURIComponent(pathPart);
   } catch {
     return null;
   }
-  if (!resolved || resolved.includes('\0') || /(^|\/)\.\.(\/|$)/.test(resolved)) return null;
-  if (!resolved.toLowerCase().endsWith('.md')) return null;
+  if (!target || /[\\\0]/.test(target) || /^(?:[a-z][a-z0-9+.-]*:|\/)/i.test(target)) return null;
+  const parts = current.split('/').slice(0, -1);
+  for (const part of target.split('/')) {
+    if (part === '..') {
+      if (!parts.length) return null;
+      parts.pop();
+    } else if (part && part !== '.') parts.push(part);
+  }
+  const resolved = parts.join('/');
+  if (!resolved.toLowerCase().endsWith('.md') || parts.some(part => part.toLowerCase() === '.git')) return null;
   return resolved;
 }
 

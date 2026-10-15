@@ -17,7 +17,7 @@ export async function runWorkspaceCompositionJourney({ t, page, runtime, workspa
     const requests: string[] = [], observe = (request: any) => requests.push(request.url());
     page.on('request', observe);
     await page.goto(`${workspaceUrl}/workspace-overview`);
-    const graph = page.locator('.workspace-page:visible #workspace-composition');
+    const graph = page.locator('#workspace-composition:visible');
     await graph.getByRole('button', { name: '总览共享服务，查看详情', exact: true }).waitFor();
     assert.equal(await graph.locator(`[data-composition-id="service:${serviceId}"]`).count(), 1);
     assert.match(await graph.locator(`[data-composition-id="service:${serviceId}"]`).innerText(), /2 个项目共用/);
@@ -79,9 +79,26 @@ export async function runWorkspaceCompositionJourney({ t, page, runtime, workspa
     await graph.getByRole('button', { name: /^重\s*试$/ }).click();
     await graph.getByRole('alert').waitFor({ state: 'hidden' });
     await page.getByRole('link', { name: '项目', exact: true }).click();
-    await page.locator('#project-table-body tr').filter({ hasText: '总览项目甲' }).click();
-    assert.equal(await page.getByRole('tab', { name: '概览', exact: true }).getAttribute('aria-selected'), 'true');
-    assert.equal(await page.locator('.pane-right:visible').count(), 0, '列表重入清空旧对象副屏');
+    await page.locator('#project-table-body:visible tr').filter({ hasText: '总览项目甲' }).locator('.resource-name a').click();
+    try {
+      await page.waitForURL(`${workspaceUrl}/projects/overview-a`);
+      assert.equal(await page.getByRole('tab', { name: '概览', exact: true }).getAttribute('aria-selected'), 'true');
+    } catch (error) {
+      console.error('[project-composition-reentry-scene]', JSON.stringify(await page.evaluate(() => {
+        const visible = (node: Element) => node.getClientRects().length > 0 && getComputedStyle(node).visibility !== 'hidden';
+        const rows = [...document.querySelectorAll<HTMLElement>('#project-table-body tr')].filter(row => row.textContent?.includes('总览项目甲')).slice(0, 4);
+        return {
+          url: location.href,
+          headings: [...document.querySelectorAll<HTMLElement>('h1, #service-detail-name')].filter(visible).slice(0, 8).map(node => ({ id: node.id, text: node.innerText.slice(0, 160) })),
+          tabs: [...document.querySelectorAll<HTMLElement>('[role=tab]')].filter(visible).slice(0, 16).map(node => ({ text: node.innerText.slice(0, 100), selected: node.getAttribute('aria-selected') })),
+          rows: rows.map(row => ({ text: row.innerText.slice(0, 240), visible: visible(row), inertAncestor: row.closest('[inert]')?.className || null, links: [...row.querySelectorAll<HTMLAnchorElement>('a')].slice(0, 3).map(link => ({ text: link.innerText.slice(0, 80), href: link.href })) })),
+          leftPanes: [...document.querySelectorAll<HTMLElement>('.pane-left')].filter(visible).slice(0, 4).map(pane => ({ className: pane.className, inert: pane.inert, bodyInert: pane.querySelector<HTMLElement>('.pane-body')?.inert ?? null })),
+          hosts: [...document.querySelectorAll<HTMLElement>('.workspace-pane-host')].slice(0, 4).map(host => ({ className: host.className, visible: visible(host), stageClass: host.querySelector('.pane-stage')?.className })),
+        };
+      })));
+      throw error;
+    }
+    assert.equal(await page.locator('.pane-right:visible').count(), 1, '列表重入保留独立右侧资料');
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`${workspaceUrl}/workspace-overview`);
     await graph.getByRole('button', { name: '总览项目甲，查看项目组成', exact: true }).waitFor();

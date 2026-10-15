@@ -26,13 +26,13 @@ function manifest(): Manifest {
   return parsed;
 }
 
-test('Task Retrospective 是按需纯 Skill，只依赖 Task Record v3', () => {
+test('Task Retrospective 是按需纯 Skill，只依赖 Task Record v4', () => {
   const value = manifest();
   const retrospective = value.builtins?.skills?.find((item) => item.id === 'task-retrospective');
   assert.ok(retrospective);
   assert.equal(retrospective.required, false);
   assert.deepEqual(retrospective.provides ?? [], []);
-  assert.ok(retrospective.requires?.some((item) => item.capability === 'buildr.task-record' && item.version === 3 && item.mode === 'required'));
+  assert.ok(retrospective.requires?.some((item) => item.capability === 'buildr.task-record' && item.version === 4 && item.mode === 'required'));
   assert.equal(value.capabilityContracts?.some((item) => item.id === 'buildr.task-retrospective'), false);
   assert.equal(value.initialSkillBindings?.some((item) => item.capability === 'buildr.task-retrospective'), false);
 });

@@ -1,4 +1,6 @@
 import path from 'node:path';
+import { createRuntime } from './runtime-harness.ts';
+import { useLegacyAssetCatalog } from './legacy-asset-catalog.ts';
 
 import { defaultTestContextPool } from '../context/node-test.ts';
 import {
@@ -33,6 +35,19 @@ export function copyPreparedWorkspace(t: any, name: any = 'workspace-foundation'
 
 export function copyPreparedProjectWorkspace(t: any, name: any = 'project-foundation'): any  {
   return foundation(acquire(t, PROJECT_FOUNDATION_CONTEXT_KEY, name));
+}
+
+export function copyPreparedLegacyWorkspace(t: any, name: any = 'legacy-workspace-foundation'): any {
+  const prepared = copyPreparedWorkspace(t, name);
+  useLegacyAssetCatalog(prepared.root);
+  return prepared;
+}
+
+export function copyPreparedLegacyProjectWorkspace(t: any, name: any = 'legacy-project-foundation'): any {
+  const prepared = copyPreparedProjectWorkspace(t, name);
+  useLegacyAssetCatalog(prepared.root);
+  createRuntime().createProjectAsset({ targetRoot: prepared.root, project: 'demo', repoRef: null, attachRef: null, name: null, description: null, remote: 'origin', remoteExplicit: false, integrationBranch: null });
+  return prepared;
 }
 
 export function copyPreparedGitRepository(t: any, name: any = 'git-repository'): any  {

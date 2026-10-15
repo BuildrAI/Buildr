@@ -6,6 +6,7 @@ import type http from 'node:http';
 
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.ts';
 import { assertLauncherWebProfile, resolveWebProfile, sameWebProfile } from '../../modules/installation/contracts/web-profile.ts';
+import { developmentInstanceMatchesInstallation } from '../../modules/installation/module.ts';
 import {
   clearBuildrWebInstance,
   acquireBuildrWebStartLock,
@@ -62,7 +63,7 @@ type LauncherBinding = LauncherIdentity & {
 };
 type StartLock = { file: string; owner: boolean };
 type ServerReady = { url: string; initialWorkspaceId: string | null };
-type ServerInstance = { server: http.Server; ready: Promise<ServerReady> };
+type ServerInstance = { server: http.Server; ready: Promise<ServerReady>; shutdown?: () => Promise<void> };
 type ServerOptions = {
   port: number;
   instanceSecret: string;
@@ -73,9 +74,11 @@ type ServerOptions = {
   httpContributions: unknown[];
   ensureRegisteredTarget(root: string | null): string | null;
   resolveRegisteredWorkspace?: (workspaceId: string, options: { touch: boolean }) => { rootPath: string };
-  onShutdown(): void;
+  onShutdown(cleanupError?: unknown): void;
+  beforeShutdown?: () => Promise<void>;
 };
 type WebRuntime = PreviewRuntime & {
+  prepareWorkspaceStructuredStore(root: string): unknown;
   __bootstrapContributions?(kind: string): unknown[];
   startBuildrWeb(args: string[]): Promise<unknown>;
   manageBuildrWebPreview(action: string, args: string[]): Promise<unknown>;
@@ -83,6 +86,7 @@ type WebRuntime = PreviewRuntime & {
 export type WebInstanceLifecycleRuntime = WebRuntime;
 export type WebLifecycleOptions = {
   httpContributions?: unknown[];
+  closeResources?: () => Promise<void>;
   createLocalWorkspaceServer(runtime: WebRuntime, options: ServerOptions): ServerInstance;
   ensureRegisteredTarget(root: string | null): string | null;
   resolveRegisteredWorkspace?: (workspaceId: string, options: { touch: boolean }) => { rootPath: string };
@@ -136,6 +140,14 @@ export function handoffWaitBudget(env: Record<string, string | undefined> = proc
   return { attempts: env.CI ? HANDOFF_WAIT_CI_ATTEMPTS : HANDOFF_WAIT_LOCAL_ATTEMPTS, intervalMs: HANDOFF_WAIT_INTERVAL_MS };
 }
 
+export function prepareTaskPreviewStructuredStore(runtime: Pick<WebRuntime, 'prepareWorkspaceStructuredStore'>, targetRoot: string | null, previewIdentity: PreviewOwner | null): void {
+  if (previewIdentity?.taskStore && previewIdentity.identityMode === 'task-worktree-v1' && targetRoot
+    && fs.realpathSync(targetRoot) === fs.realpathSync(previewIdentity.worktree)
+    && previewIdentity.workspaceRoot && fs.realpathSync(previewIdentity.workspaceRoot) !== fs.realpathSync(targetRoot)) {
+    runtime.prepareWorkspaceStructuredStore(targetRoot);
+  }
+}
+
 export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLifecycleOptions): WebRuntime {
   const httpContributions = options.httpContributions || runtime.__bootstrapContributions?.('http') || [];
 
@@ -156,6 +168,7 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
     const webProfile = resolveProfile(productIdentity);
     const handoffWait = handoffWaitBudget();
     assertProfile(launcherIdentity, webProfile, { productIdentity, productRoot: runtime.productRoot() });
+    prepareTaskPreviewStructuredStore(runtime, targetRoot, previewIdentity);
     const initialWorkspaceId = targetRoot ? options.ensureRegisteredTarget(targetRoot) : null;
 
     const assertCompatibleInstance = (healthy: WebInstance): WebInstance => {
@@ -173,6 +186,12 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
       const launcherProtocol = launcherIdentity?.protocolIdentity || (launcherIdentity?.protocolVersion ? `buildr.web-protocol/v${launcherIdentity.protocolVersion}` : null);
       const healthyLauncherProtocol = healthy.launcherIdentity?.protocolIdentity || (healthy.launcherIdentity?.protocolVersion ? `buildr.web-protocol/v${healthy.launcherIdentity.protocolVersion}` : null);
       if (launcherProtocol && healthyLauncherProtocol && launcherProtocol !== healthyLauncherProtocol) throw new Error(`已运行 Buildr Web protocol ${healthyLauncherProtocol} 与当前 Launcher ${launcherProtocol} 不兼容，请先退出旧实例。`);
+      if (webProfile.profile === 'development' && developmentInstanceMatchesInstallation(productIdentity, healthy.productIdentity) !== true) {
+        throw codedError('正在运行的 Buildr 开发版与当前来源不同，或旧记录缺少来源证明；请通过现有 Buildr 入口正常退出旧实例，再重新启动。', 'web_instance_development_source_conflict', 409, {
+          expectedInstallationIdentity: productIdentity.installationIdentity || null,
+          runningInstallationIdentity: healthy.productIdentity?.installationIdentity || null,
+        });
+      }
       return healthy;
     };
 
@@ -269,8 +288,13 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
             httpContributions,
             ensureRegisteredTarget: options.ensureRegisteredTarget,
             resolveRegisteredWorkspace: options.resolveRegisteredWorkspace,
-            onShutdown: () => {
+            beforeShutdown: options.closeResources,
+            onShutdown: (cleanupError?: unknown) => {
               if (state) clearInstance(state, webProfile);
+              if (cleanupError) {
+                console.error('Buildr Web owned resources did not confirm shutdown:', errorDetails(cleanupError).message);
+                process.exit(1);
+              }
               if (previewIdentity) process.exit(0);
             },
           });
@@ -294,7 +318,17 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
         if (!verified || !matchesBinding(verified, npmLauncherBinding)) throw codedError('新 Buildr Web health 未返回当前 Launcher binding identity，已停止启动。', 'launcher_handoff_readiness_identity_mismatch');
       }
       const cleanupReceipt = (): void => { if (state) clearInstance(state, webProfile); };
-      const closeForSignal = (): void => { cleanupReceipt(); instance?.server.close(() => process.exit(0)); };
+      const closeForSignal = (): void => {
+        void (async () => {
+          cleanupReceipt();
+          if (instance?.shutdown) await instance.shutdown();
+          else await new Promise<void>(resolve => instance?.server.close(() => resolve()));
+          process.exit(0);
+        })().catch(error => {
+          console.error('Buildr Web resource shutdown failed:', error);
+          process.exit(1);
+        });
+      };
       const signalNames: NodeJS.Signals[] = process.platform === 'win32' ? ['SIGINT', 'SIGTERM'] : ['SIGINT', 'SIGTERM', 'SIGHUP'];
       const detachLifecycleListeners = (): void => {
         cleanupReceipt();
@@ -326,7 +360,7 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
       if (!name) throw new Error('Usage: buildr web preview start <instance> [--task <task-id> --target <canonical-workspace>] [--port <port>] [--no-open] [--json]');
       const result = await startPreview(runtime, name, commandOptions);
       if (commandOptions.includes('--json')) console.log(JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.localAppPreview, result), null, 2));
-      else console.log(`Buildr Web 开发预览已${result.status === 'reused' ? '复用' : '启动'}：${result.url}\n实例：${result.owner.instance}\nworktree：${result.owner.worktree}\n分支：${result.owner.branch}\nHEAD：${result.owner.head}${result.owner.dirty ? '（有未提交修改）' : ''}`);
+      else console.log(`Buildr Web 开发预览已${result.status === 'reused' ? '复用' : '启动'}：${result.url}\n实例：${result.owner.instance}\nworktree：${result.owner.worktree}\n分支：${result.owner.branch}\nHEAD：${result.owner.head}${result.owner.dirty ? '（有未提交修改）' : ''}${result.owner.taskStore ? `\n任务库：${result.owner.taskStore.seeded ? '已按启动时点从 canonical 播种快照' : '复用工作树本地副本'}` : ''}`);
       return result;
     }
     if (action === 'list') {

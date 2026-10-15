@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 
 
 import { useAppShell } from '../../../app/AppShellContext';
-import type { ChangePayload } from '../../../components/ChangeBriefPanel';
+import type { ChangePayload } from '../api/task-api';
 import { taskApi } from '../api/task-api';
 
 type ChangeDetailResponse = {

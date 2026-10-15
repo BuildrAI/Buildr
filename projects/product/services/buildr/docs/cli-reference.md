@@ -23,7 +23,7 @@
 
 ### 安装 Buildr
 
-当前产品要求运行它的 Node.js 满足 `>=24.15.0 <25`；安装包不会自动下载替代版本。工作空间（Workspace）声明的受管 Node.js 只供该范围拥有的子进程使用，不能替代产品的安装要求。先检查 `node --version` 和 `npm --version`，再查询 npm 官方仓库：
+当前产品要求运行它的 Node.js 满足 `>=24.15.0`；安装包不会自动下载替代版本。工作空间（Workspace）声明的受管 Node.js 只供该范围拥有的子进程使用，不能替代产品的安装要求。先检查 `node --version` 和 `npm --version`，再查询 npm 官方仓库：
 
 ```bash
 npm view @buildr-ai/buildr dist-tags --json --registry https://registry.npmjs.org/
@@ -126,6 +126,12 @@ buildr help assets
 | `buildr init [--agent <agent>] [--adapter <adapter-id>]` | 默认初始化源资产并完整同步标准或已选文件约定，安装产品入口技能（Skill）、投射并执行最终诊断（Doctor）。仅源资产使用互斥的 `--source-only`。 |
 | `buildr web [--target <workspace>] [--no-open]` | 启动或复用只监听 `127.0.0.1` 的默认本机 Web 应用；默认打开浏览器，登记和切换多个 Workspace，`--target` 登记并打开指定 Workspace。 |
 | `buildr web preview start\|list\|stop` | 启动、查看或停止隔离的开发预览。带 `--task <task-id> --target <canonical-workspace>` 时，Preview使用matching Task Worktree并保存精确owner；停止时复核Worktree evidence与进程secret。不带Task时保持独立checkout preview。 |
+| `buildr agent list --json` | 查看本机执行接入与唯一默认；区别于规则、技能文件投射的 `runtime list`。 |
+| `buildr agent register codex\|dsh --executable <actual-entry> --expected-revision <revision> --json` | 由智能体（Agent）发现并验证真实入口后登记，不复制凭据或启动模型。Codex 可显式传 `--codex-home`，DSH 可显式传 `--dsh-home`；其余沿用原生默认。 |
+| `buildr codex connections --json` | 查看已确认的 Codex 关联登记及配置范围。已配置不表示桌面在线，不要求插件、卡片或握手。 |
+| `buildr codex link --target <workspace> --task <code> --native-session-id <direct-thread-id> [--connection-id <id>] --json` | 用户在当前 Codex 会话要求关联，或该会话新建任务成功后，直接采集 `CODEX_THREAD_ID` 并幂等建立关系。无需面板或待确认请求；多接入时明确选择，返回准确会话与固定任务链接。 |
+| `buildr codex sessions --target <workspace> [--task <code>] [--native-session-id <id>] [--connection-id <id>] --json` | 查询任务或具体会话的长期关系和准确双向链接，不创建请求、发送消息或要求插件。 |
+| `buildr agent select <agent-id> --expected-revision <revision> --json` | 按已观察版本改变默认，仅影响新执行；单次生成仍可覆盖选择。 |
 | `buildr installation status [--json]` | 分别报告receipt证明的npm CLI、Buildr Web Launcher、Buildr Web Dev、当前安装与当前Web实例的版本、路径、runtime role、protocol、payload和ownership identity；不扫描PATH。 |
 | `buildr web launcher install/status/repair/uninstall` | 从verified formal npm安装显式创建、诊断、修复或卸载本机Buildr Web Launcher；wrapper只执行binding中的Host Node和同一package entry。Development checkout使用隔离的Buildr Web Dev入口。 |
 | `buildr project create <code>` | 创建或登记 Project；`--name`/`--description` 设置 metadata，`--repo`、`--remote`、`--integration-branch` 声明独立 Git source，并补齐空 `commands.yml` requirement context。 |
@@ -135,8 +141,22 @@ buildr help assets
 | `buildr worktree create\|inspect\|cleanup <task-id>` | 窄Git worktree provider。`create`接受branch/start point与显式Project/Service selectors；`inspect`复核checkout/branch/HEAD/clean/registration；`cleanup`要求每仓成对提供expected source与delivered完整提交。它不判断Task完成，也不准备Runtime、CLI、依赖、projection或动态资源。 |
 | `buildr project verification inspect\|validate\|update` | 读取、校验或按expected identity更新Project测试地图。候选由Agent从真实测试、构建脚本、CI和说明形成，Application不生成内容。 |
 | `buildr task verification record\|inspect` | 保存或读取开发完成后的Task验证报告。Agent直接调用项目测试工具；Buildr不生成计划或代跑测试。 |
-| `buildr task create\|inspect\|update\|activate\|complete\|abandon` | 在canonical Workspace的SQLite中维护Task Record v3。除`create`外的写动作都必须提交刚观察到的`--expected-record <digest>`。完成只保存真实结果摘要，不保存`noChange`、Git、验证、环境或发布事实。终态Task可通过`update`登记固定本机复盘文档或显式更正业务事实。 |
+| `buildr task create\|inspect\|update\|activate\|complete\|abandon` | 在主工作空间（Canonical Workspace）的 SQLite 中维护 Task Record v4，`create\|update --brief-file <utf8-file>` 保存任务说明，`update --clear-brief` 显式清空。除`create`外的写动作都必须提交刚观察到的`--expected-record <digest>`。完成只保存真实结果摘要，不保存`noChange`、Git、验证、环境或发布事实。终态Task可通过`update`登记固定本机复盘文档或显式更正业务事实。 |
+| `buildr task brief migrate <task-id> [--dry-run] [--expected-record <digest> --expected-materials <digest> --expected-document <digest>]` | `--dry-run` 零写入返回观察版本；实际导入必须提供三个版本。显式导入唯一旧说明，校验记录、关联及实际正文版本；保留原文件和其他材料，释放旧说明关联，不覆盖已有正文。 |
+| `buildr task brief migrate --all [--dry-run] [--target <canonical-workspace>] [--json]` | 在明确批次授权内逐项观察与导入旧说明；`--dry-run` 只读报告，不迁移。各项成功、缺失、冲突及部分完成分别返回。 |
 | `buildr task commits <task-id> [--target <canonical-workspace>] [--json]` | 只读查询任务范围内带有有效 `Buildr-Task` 尾注（Trailer）的当前可达 Git 提交（Commit），包含本机未推送提交。返回真实完整说明、哈希值（Hash）、来源、读取范围和局部诊断；不抓取远端，不写任务或 Git。 |
+| `buildr code repositories [--task <id>] --target <workspace> --json` | 返回已登记代码库的稳定标识（ID）、本机位置、Git 身份、真实工作树（Worktree）目录与分组及局部诊断。`worktrees` 含具体成员 `id/repositoryId/groupId/path/branch/kind/taskId/available`，`worktreeGroups` 表达实际任务关联；跨库同任务归为一个选项，无任务关联的原生目录独立显示，不凭名称合并。`selectedWorktreeGroupIds` 默认选择 `main`，任务入口预选真实任务组；没有独立工作树（Worktree）时使用主目录并说明。任务代码库范围按关联服务去重，无可确定范围时显示全部，不裁剪文件树。 |
+| `buildr code source-control-inventory [--task <id>] --target <workspace> --json` | 只读登记身份和目录，不执行 Git 扫描；待查来源以 `code_source_control_pending` 和空数量表达。按返回的实例标识逐库读取状态，不能把轻量清单作为 Git 写入依据。 |
+| `buildr code source-control [--task <id>] --target <workspace> --json` | 全部登记实例及其Git实际主目录和关联工作树（Worktree）的分支（Branch）、本机上游、分层元信息与独立变更数量；不预读差异，不按任务证据过滤Git事实。库级汇总区分工作树的同名文件，未知数量为空值，单来源失败保留其他结果。返回与代码浏览器（Code Explorer）共享的 `checkout-…` 工作树标识与观察版本、全部/已读数量和截断；任务参数仅提供已确认范围的预选配对。 |
+| `buildr code branches --repository <id> --worktree <opaque-id> --target <workspace> --json` | 只读查看具体工作位置的本地和远程分支（Branch），最多1000项。完整引用（Ref）、提交（Commit）、上游（Upstream）、当前位置和其他位置占用分别返回，远程项的 `localBranch` 只表达已确认跟踪关系；`observedRevision` 绑定当前位置、引用（Ref）、跟踪关系和占用。只读本机远程记录，不抓取（Fetch）。 |
+| `buildr code authors --repository <id> [--worktree <opaque-id>] [--branch <local-name-or-full-ref>] --target <workspace> --json` | 在所选可达范围独立观察作者（Author）的姓名与邮箱身份，最多扫描最近2000条提交（Commit）及8 MiB对象；候选不依赖当前结果页或关键词，截断明确返回。同名不同邮箱分别保留。`currentAuthor` 独立返回所选具体工作位置的已配置姓名与邮箱，非空 `author.*` 优先、否则 `user.*`；缺失邮箱或不可确认时为 `null`，不猜测系统或环境身份。当前身份进入观察版本，网页“我的提交（me）”使用其准确邮箱筛选。 |
+| `buildr code history --repository <id> [--worktree <opaque-id>] [--task <id>] [--branch <local-name-or-full-ref>] [--author-email <email>] [--query <text>] [--limit <1-200>] [--cursor <value>] --target <workspace> --json` | 读取本机可达历史、引用和完整提交（Commit）说明，未指定范围或 `HEAD` 使用当前位置；兼容本地名称，也支持完整 `refs/heads/…` 或 `refs/remotes/…`。按邮箱身份和关键词组合筛选后再分页，游标（Cursor）绑定条件与观察版本。检查最近2000条记录，默认每页200条；关键词只搜索实际检查范围，覆盖和后续游标明确返回。有效唯一 `Buildr-Task` 尾注（Trailer）及存在任务才提供关联，不抓取远端。 |
+| `buildr code commit --repository <id> [--worktree <opaque-id>] --commit <full-sha> [--task <id>] --target <workspace> --json` | 固定完整提交的元信息及文件；根提交使用空内容，合并提交使用第一父提交，返回明确比较基线。 |
+| `buildr code diff\|source-file --repository <id> [--worktree <opaque-id>] --path <relative> --area unstaged\|staged\|untracked\|commit [--task <id>] [--commit <full-sha>] [--expected-revision <value>] [--page <index> \| --line <number>] --target <workspace> --json` | 差异（Diff）与全文保持所选比较层；暂存内容读取索引（Index）对象。首次全文不传页码，续读传真实文件 `revision`；提交级观察版本不能冒充文件版本。差异最多5000行或8 MiB，正文沿用5 MiB完整文本、约512 KiB大文件分段及8 MiB图片边界；只接受各操作适用参数，保留路径和版本拒绝边界，详见[只读代码观察](../resources/runtime/skills/buildr/references/code-observation.md)。 |
+| `buildr code directory\|file\|search --repository <id> [--path <relative>] [--task <id>] [--checkout <checkout-id>] [--worktree <same-id>] [--commit <full-sha>] [--query <text>] [--mode name\|content] [--show-ignored] [--page <index> \| --line <number>] [--match-query <text>] [--expected-revision <value>] --target <workspace> --json` | 与界面使用同一只读应用能力。`--checkout` 使用目录查询返回的具体检出标识，网页查询字段为 `checkoutId`；`--worktree`/`worktreeId` 是同一 `checkout-…` 身份的源代码管理别名，界面跳转将它准确传给代码浏览器（Code Explorer）的 `checkoutId`；每次读取验证当前登记与身份，已移除或同路径重建的旧身份明确失败，不能回退到主目录。未指定时兼容原默认/任务位置解析；固定提交（Commit）不依赖原工作树（Worktree）继续存在。`source` 返回实际 `checkoutId/worktreeGroupId`，历史版本两者为空。目录按层加载；当前与历史文本不超过5 MiB时完整读取，更大文本仅显示约512 KiB的只读段，图片保持8 MiB。文件的 `page` 返回0起始段编号、总段数、UTF-8字节起止位置、真实全局行号和首尾续行标志；切段不累积全文。`--page` 与 `--line` 二选一，续读指定段必须同时传上次 `revision` 的 `--expected-revision`；当前文件读取前后核对身份、大小和纳秒修改时间，变化返回 `code_file_changed`，历史文件绑定完整提交和文件对象。`--line` 可搭配 `--match-query` 在目标行内定位首个字面匹配，返回可选绝对字节范围 `matchOffset`/`matchEndOffset`；跨段匹配保留固定段边界。历史大文件流式读取 Git 文件对象，定位和读取共享15秒边界。当前目录名称/内容搜索使用随产品交付的 ripgrep，按字面内容忽略大小写，默认搜索未忽略普通文件（含隐藏源码）；`--show-ignored` 放开忽略与构建目录排除，包括实际存在且被忽略的隐藏目录，仍不跟随链接或搜索 Git 管理目录。历史搜索只读取完整提交中的普通文件。每个代码库结果最多100个匹配文件、累计200个匹配行，文件按 `path` 分组，`occurrences` 提供各匹配行的 `line` 与 `excerpt`，原有字段仍保留首个匹配行，名称搜索的 `occurrences` 为空。文件或匹配行超限，以及15秒执行与8 MiB输出上限触发时如实报告部分覆盖，不再使用旧累计文件或字节预算。界面输入至少2个字符才搜索，CLI 与 HTTP 仍接受1–200个字符。任务参数核对受管工作目录；不抓取远端、不修改文件或任务。HTTP 查询使用 `filePath` 表达相对路径，`page`/`line` 为十进制整数字符串。 |
+| `buildr task materials inspect <task-id> [--target <canonical-workspace>] [--json]` | 零写入读取独立任务材料清单、逐项正文、实际摘要、来源及局部诊断；无需 OpenSpec。 |
+| `buildr task materials record <task-id> --materials <json-file> --expected-current <absent\|sha256-digest> [--target <canonical-workspace>] [--json]` | 按已观察版本整值更新材料引用；输入文件只包含 `schemaVersion: buildr.task-materials/v2` 与完整 `documents`，不保存正文或改变任务状态。 |
+| `buildr task materials write <task-id> --path <relative-md> --content <utf8-file> --expected-document <absent\|sha256-digest> [--target <canonical-workspace>] [--json]` | 按已观察正文版本写入固定任务目录中的本机 Markdown；不写项目文件、不自动建立引用。 |
 | `buildr task work-context inspect\|record\|respond <task-id>` | 独立工作摘要与显式待处理事项。`record` 使用 `--expected-current <absent\|digest>`、`--progress`、`--next-step`；可明确登记或清除事项。`respond` 以当前版本、事项身份和真实用户意见保存答复，不改变任务状态或完成结果。 |
 | `buildr task parent inspect` | 只读查看整体目标、真实子任务及结果、完成观察身份和历史父计划。旧 record、reconcile、bind-child、refresh-planning、reconcile-child-delivery、accept 写入口已退役。父任务通过已有 task complete 提交当前版本、验收和明确用户授权。 |
 | `buildr task verification inspect\|record <task-id>` | 读取或整值保存Workspace SQLite中的current任务验证报告。`record --report <json-file>`接收Agent在开发完成后形成的实际检查、选择范围、目标、结果、未覆盖项和结论；`inspect`可带当前内容identity判断报告是否仍适用。命令不生成计划、不执行测试、不绑定Candidate。 |
@@ -152,7 +172,17 @@ buildr help assets
 
 新 Workspace 使用 `.buildr/workspace.yml` 的 `buildr.workspace/v1` schema，并与 `skills/manifest.yml.workspaceId` 共享同一 UUID。旧 metadata 可以在 `buildr web` 中只读查看；`buildr sync <agent>` 通过同一 source transaction 显式迁移两份 Manifest，identity 冲突时零写入失败。页面修改使用 revision compare-and-swap，不自动覆盖 Agent、Git 或编辑器已经产生的外部变化。
 
-Task Record 使用closed `buildr.task-record/v3` schema。顶层状态为`todo|active|completed|abandoned`，查询态`open`派生为todo + active。可选`retrospective`只保存本机Markdown的SHA-256与`pending-decision|decided`；不保存正文、处置说明或后续Task关系。只保存Child的`parentTaskId`，反向Children由查询派生；`isParent`保存明确父任务身份。所有非创建写动作都比较当前`recordDigest`。
+任务记录（Task Record）使用闭合 `buildr.task-record/v4`。顶层状态为 `todo|active|completed|abandoned`，查询态 `open` 派生为待办和进行中。`intent` 是一句话目标，`brief: string | null` 是该任务唯一 Markdown 正文，非空时保留原始格式与内容，按 1 MiB UTF-8 字节上限校验；空值表示尚未填写。说明随主工作空间（Canonical Workspace）的任务数据库保存，不随代码分支或 Git 推送。详情返回正文，列表不读取或携带正文，但同一任务的记录摘要与详情一致。所有非创建写入比较当前 `recordDigest`；正文变化进入终态更正历史与父任务验收观察。
+
+可空 `retrospective` 只保存本机复盘文档的 SHA-256 与 `pending-decision|decided`，不保存复盘正文、处置说明或后续关系。只保存子任务的 `parentTaskId`，反向关系由查询派生；`isParent` 保存明确父身份。更正终态记录继续使用真实原因，不能把导入的正文伪装成历史已有事实。
+
+独立任务材料（Task Materials）的清单固定在 `.buildr/local/task-materials/<task-id>/materials.json`，新写入使用 `buildr.task-materials/v2`，只允许 `solution|implementation|delivery`。每项包含 `id`、`role`、`title` 与 `source`；来源为 `{kind:'task',path:<relative-md>}` 或 `{kind:'project',project:<code>,path:<project-relative-md>}`。这些过程正文仍以真实文件为权威，不复制进清单或记录。公开读写仅呈现 v2 过程引用；旧清单尚含唯一 `brief` 时，普通方案、实施或交付更新在内部保留该 v1 关联，不能隐式丢失迁移来源。任务本机文件在同一固定目录，项目文件按真实任务范围及工作树（Worktree）证据读取，候选缺失不回退主目录。
+
+旧 `buildr.task-materials/v1` 清单保留受限读取，`brief` 只供遗留诊断及显式 `task brief migrate` 导入，任务说明节点不再读取文件或变更说明作为兜底。记录正文为空时，迁移比较记录、关联与实际正文版本，导入后释放旧说明关联；已有记录正文时，明确请求只释放退休关联并保留当前正文，包括部分导入后已编辑正文的恢复。两种动作均保留原文件和其他材料；缺失、安全失败、版本漂移及部分完成分别报告。批次不是全库原子提交，重试不能覆盖导入后已编辑的内容。普通列表、详情及材料读取均不自动迁移。
+
+材料 `inspect` 返回 `buildr.task-materials-result/v2`，包含 `materialsDigest: absent|sha256-<64hex>`、清单、逐项 `content`、`actualDigest`、来源（Provenance）及局部诊断；本机正文写入返回 `buildr.task-materials-write-result/v2`。`record` 和 `write` 使用同一逐任务独占锁（Exclusive Lock），锁内重读并比较各自版本，原子发布（Atomic Publication）；冲突需重读判断。旧失效引用可安全修改元数据或解除，不阻止无关材料。读取不创建目录或清单。任务限定超文本传输协议（HTTP）入口为 `GET /tasks/:taskId/materials`、`POST /tasks/:taskId/materials`（`{expectedCurrent,documents}`）及 `POST /tasks/:taskId/materials/documents`（`{path,content,expectedDocumentDigest}`）；写入仍校验同源、会话（Session）、闭合字段与有界正文。记录说明通过已有任务创建/更新入口的 `brief` 字段维护。
+
+变更的 proposal、design 等标准材料可按需要使用 `[任务说明](@task/<task-id>)` 进入当前工作空间的稳定任务正文；Buildr 不再生成、更新或专用展示额外 `brief.md`，已有历史文件仍按普通项目文档读取。任务记录中的项目文档引用使用明确 `projects/<project>/<path>`。导入时可证明的旧相对文档链接转为明确引用，未知链接报告诊断，不扩大文件读取范围；旧文件和归档内的原链接继续保持文件语义。
 
 `task commits` 先确认任务存在，再读取其项目、服务、关联变更对应项目与已知任务工作树（Worktree）中的真实代码库（Repository）；不会扫描任意目录。没有项目、服务或关联变更的工作空间级任务（Workspace-only Task），只检查任务所属主工作空间（Canonical Workspace）根目录本身的 Git 代码库，不向父目录寻找替代来源。关联依据是实际提交说明（Commit Message）末尾的 `Buildr-Task: <taskId>`，正文普通提及不算关联。查询按真实代码库和完整哈希值（Hash）去重，读取本机当前可达引用；JSON 使用 `buildr.task-commits/v1`，必须结合 `status`、`coverage` 与 `diagnostics` 判断结果完整性。部分结果不能表述为确定的零提交，读取成功也不代表任务完成。旧提交不自动补尾注或改写历史。
 
@@ -160,7 +190,7 @@ Task Record 使用closed `buildr.task-record/v3` schema。顶层状态为`todo|a
 
 Task Record、Task Verification与Planning/Completion Review以`.buildr/local/workspace.sqlite`作为单机持久化authority。复盘正文保存在被Git忽略的`.buildr/local/task-retrospectives/`，SQLite只保留Task上的文档摘要和决定状态。旧复盘current/source表、研发、旧收尾和统一Task Environment current表已删除，不建立history或双读。
 
-默认 App 的用户级登记文件只保存规范化 Workspace root 和最近使用项；Workspace 名称、说明、Project、Service 与全局 Change 列表始终从 retained Workspace 实时读取。任务（Task）详情按“任务需求、方案设计、开发实现、任务收尾”组织内容，读取工作摘要（Work Context）、关联 OpenSpec 材料、原型、审查（Review）与验证（Verification），并展示完成摘要和本机复盘入口。“任务收尾”后的“提交记录”是独立阅读标签，不增加工作阶段，与命令使用同一只读应用。页面不启动专业执行，也不重新建立旧研发或机器交付状态库。
+默认 App 的用户级登记文件只保存规范化 Workspace root 和最近使用项；Workspace 名称、说明、Project、Service 与全局 Change 列表始终从 retained Workspace 实时读取。任务（Task）详情按“任务说明、方案设计、开发实现、任务收尾”组织内容，读取工作摘要（Work Context）、关联 OpenSpec 材料、原型、审查（Review）与验证（Verification），并展示完成摘要和本机复盘入口。“改动与提交”是独立阅读标签，不增加工作阶段，与命令使用同一只读应用。页面不启动专业执行，也不重新建立旧研发或机器交付状态库。
 
 Project registry 使用 `buildr.projects/v2`：每个 Project 保存 UUID `id`、所属 `workspaceId`、可读 `code`、`name`、`description` 和 `source`。`source.path` 是文件系统物化位置；Git source 另外保存 URL、remote 和稳定的 `integrationBranch`。`currentBranch`、HEAD、dirty、upstream 与 ahead/behind 是实时观察状态，不写入 Domain。v1 registry 可只读查询，`buildr sync <agent>` 显式迁移；页面不会静默迁移、切分支、stash 或改写 remote。
 
@@ -176,6 +206,44 @@ Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git comm
 
 没有登记也没有明确对象时返回 `blocked` 和接续指引；实际删除或逐项确认对象不存在后才返回 `cleaned`。部分删除后可重传相同对象集合，重新核验版本与占用，结果区分删除和不存在确认。
 
+
+## 外部系统连接（Connection）
+
+`buildr connection-skill --help` 提供声明发现、实例及完整认证组维护、程序检查和专业执行。网页与命令使用同一应用，实例按准确技能源、定义及配置版本绑定；专业参数由所选程序解释。
+
+| 命令 | 用途 |
+| --- | --- |
+| `buildr connection-skill definitions list --target <workspace> --json` | 发现已登记声明、绑定来源及可用性。 |
+| `buildr connection-skill list --target <workspace> --json` | 读取当前实例及遮蔽认证的观察。 |
+| `buildr connection-skill get --connection <id> --json` | 读取准确实例及当前 `revision`。 |
+| `buildr connection-skill create --file <json-file\|-> --json` | 从明确输入保存团队实例和认证。 |
+| `buildr connection-skill update --connection <id> --file <json-file\|-> --json` | 核对文件中的已观察版本后更新。 |
+| `buildr connection-skill auth set\|use-team --connection <id> --file <json-file\|-> --json` | 独立保存完整个人认证组，或显式移除个人覆盖。 |
+| `buildr connection-skill remove --connection <id> --expected-revision <revision> --json` | 删除已观察实例，不操作外部数据。 |
+| `buildr connection-skill check\|help\|test --connection <id> --json` | 分别核对程序依赖、读取离线帮助及执行只读测试。 |
+| `buildr connection-skill run --connection <id> --expected-revision <revision> --program cli -- <专业参数>` | 向所选专业程序交接准确实例；认证不进入参数或普通输入。 |
+
+所有命令可指定 `--target`。配置及认证只从受支持输入读取，不在参数中传密码；个人组存在时整组覆盖，失效不自动回退团队。执行前重读当前观察，冲突后重新判断。Nacos、Kibana 和 XXL-JOB 的详细动作查所选技能（Skill）及程序帮助，通用入口不维护另一份专业命令表。更多使用方法见[外部系统连接](../resources/runtime/skills/buildr/references/external-connections.md)。
+
+旧 `buildr connection` 已退役并提示现行入口，旧网页地址跳转到连接目录，旧应用接口返回退役结果。旧数据直接清理，不迁移为团队实例或新个人认证；按需要在现行入口自行建立实例。
+
+## 独立 MySQL 查询
+
+通过 `buildr connection-skill definitions list`、`list` 及 `get` 选择准确的内置 `mysql-connection` 实例及当前 `revision`。连接配置与完整认证继续由通用连接入口维护；`buildr-mysql` 随主包安装，只通过私有进程间通信（IPC）执行测试与数据库发现，查询工具使用独立 `buildr mysql-query`。
+
+| 命令 | 用途 |
+|---|---|
+| `buildr mysql-query databases --connection <id> --expected-revision <revision> --target <workspace> --json` | 列出当前账号可访问的数据库。 |
+| `buildr mysql-query tables --connection <id> --expected-revision <revision> --database <name> --json` | 读取当前数据库的表；`columns` 另加 `--table <name>` 读取字段。 |
+| `buildr mysql-query query --connection <id> --expected-revision <revision> --database <name> --sql-file <file\|-> --json` | 使用明确实例观察执行单条只读查询，沿用 100/500 行、10 秒和 4 MiB 限制。 |
+| `buildr mysql-query preferences --connection <id> --expected-revision <revision> --json` | 只读取得实例的本机启用库、当前库和独立偏好版本。 |
+| `buildr mysql-query save-preferences --connection <id> --expected-revision <revision> --file <json-file\|-> --json` | 按文件中的 `{enabledDatabases,currentDatabase,expectedRevision}` 保存偏好；不修改连接或认证版本。 |
+
+所有命令可指定 `--target`。版本或完整认证来源变化后重新读取，不回退团队组或同名实例。连接页的“查询”动作打开独立查询工作面；偏好与团队配置分别保存。
+
+未传 `--database` 时使用连接默认库，`--database ""` 明确不设当前库。只执行单条只读查询；无最外层 LIMIT 时补充 100 行，显式 1—500 保留，超过 500 拒绝。每次最多 10 秒、4 MiB，失败不当作完整结果。
+
+结果的 `columns` 与行数组 `rows` 按位置对应，支持重名列和空结果表头，大整数与小数以文本保留精度。`limitReached` 只表示达到本次限制，不推断总数或自动读取下一页。查询结果不落库，启用库和当前库是每个实例独立的本机偏好。
 
 ## Runtime 与诊断
 
@@ -248,3 +316,21 @@ resolved `skill-url` 默认具有有限请求时间。维护者可设置：
 值必须是 `1..120000` 的整数毫秒。生产环境建议为 resolved source 提供 `sha256-<hex>` integrity。
 
 父任务使用 `task create --parent-task` 或 `task update --parent-task` 明确标记；`--parent <id>` 表示子任务归属。完成父任务时提供 `--expected-record <recordDigest>` 与 `--parent-completion <json-file>`，输入格式由随包 `task-manager` 说明。子任务完成不自动完成父任务。
+
+## 被动来源与内容对象读取
+
+`buildr agent-assets source inspect --target <workspace> --input <JSON-file|-> --json` 是独立被动只读入口；`--target` 可为工作空间（Workspace）根或其内部当前目录，仅沿当前目录祖先寻找最近元数据入口，再核对工作空间身份，不扫描其他目录或登记表。文件的相对定位器仍相对已确认工作空间（Workspace）根，实际调用方宜传绝对定位器。该入口不需要网页服务，不启动应用、不修复投射、不登记工作空间（Workspace）、不写业务或遥测。输入版本为 `buildr.agent-asset-source-observations/v1`，包含可选 `scope` 和 `observations`。`scope` 是已登记项目（Project）的查看上下文（Viewing Context），不是来源权威或扩大读取许可；每个对象的 `scope` 单独返回真实登记范围。当前规则（Rule）只解析工作空间（Workspace）根清单和核心区块，不冒称支持项目级规则清单。每项需明确 `id` 与 `type`（`file`、`skill`、`task-brief`、`task-material`、`capability`）；文件和技能（Skill）使用实际 `locator.path`，可附 `resourceBase`、`provider` 和 `adapterId`，当次正文用 `observedContent` 或完整 `observedDigest: sha256-<64hex>`。裸名称和提供者字符串不能证明归属。
+
+输入可选 `mode: metadata|content`，默认 `content` 保持独立读取兼容。`metadata` 返回身份、定位、版本、片段范围和依据，`current` 为 `null`、`observed` 不含正文。DSH 当次来源采集（Capture）以实际读取摘要调用此模式，不发送普通用户正文；保存后的查看路径直接读取原事件来源及片段，不调用本接口反查历史。
+
+输出版本为 `buildr.agent-asset-source-result/v1`，按项返回 `detected`、`unknown`、`conflict` 或 `error`，以及对象身份、实际来源作用域（Scope）、`providedBy`、`managedBy`、当前正文及摘要值（Digest）、观察版本、依据和局部诊断。`historical: matched-current` 仅表示观察文本或摘要值（Digest）与当前权威内容相符，不证明当时治理状态、模型采纳、规则遵循或任务完成；无历史证据时是 `unknown`。核心规则（Rule）只确认精确受管区块（Managed Block），混合文件保留区块外内容的独立关系。投射技能（Skill）需实际定位器与当前回执逐文件摘要匹配。
+
+一次最多 32 项，输入与返回正文分别限 2 MiB，完整 JSON 输出（含包装和换行）限 2 MiB，单份文本限 512 KiB；标准输入等待和查询检查有 5 秒边界。路径越界、秘密、符号链接、特殊文件和局部回执冲突仅影响相关项。当前只读取明确目标工作空间（Workspace）内的源和投射；用户层或其他工作空间（Workspace）的技能（Skill）位置不因同名被自动授权。本来源观察入口仅返回 Buildr 自身方法与能力内容；`task-brief` 与 `task-material` 返回 `unknown` 和 `source_user_material_excluded`，不调用正文读者。经 Buildr 能力访问资料时仅关联调用和必要对象引用；普通任务（Task）及资料读取接口保持原行为。普通产品源码不是方法来源。
+
+严格来源读取（Strict Source Read）在读取正文前、返回正文前，均通过保持打开的根目录及叶文件的文件描述符（File Descriptor）核对实际内核（Kernel）路径，随后始终读取同一个文件描述符（File Descriptor），不重新按可变路径打开文件。它不把重复路径检查冒充原子目录遍历，也不证明同一文件不存在其他硬链接别名（Hard-link Alias）。Linux 使用 `/proc/self/fd`，当前 macOS 使用固定 `/usr/sbin/lsof` 的本进程两个已持有描述符查询，关闭域名和端口解析，不用外壳（Shell）、不扫描其他描述符，不安装依赖或启动服务；查询输出和等待时间有界。平台机制缺失、模糊或路径已变时，仅相关来源读取失败，不降级到旧路径校验。Windows 的严格来源读取（Strict Source Read）当前未支持；原有普通技能（Skill）及任务（Task）读取接口不会因此整体关闭。
+
+## 专业结果的接续
+
+Nacos 的专业接口地址与可选网站明确分开，配置版本 1 保留为不兼容事实，不隐式迁移认证。完整方法由所选技能（Skill）说明，通用入口不猜测专业目标。
+
+专业程序提供 `--result-file` 时，按帮助使用受限本机新文件接续准确结果。Nacos 的授权范围及原文位置从该文件读取；普通展示可能遮蔽业务标识，不能作为准确机器输入。文件保存失败不撤销已发生的外部效果，先调查真实目标，不盲目重发。

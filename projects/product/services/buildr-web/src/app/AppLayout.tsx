@@ -1,14 +1,18 @@
+import { AgentRuntimeProvider, useAgentRuntime } from './AgentRuntimeContext';
+import { AgentRegistryDrawer } from '../features/agents/components/AgentRegistryDrawer';
+import { agentStatusLabel } from '../features/agents/agent-model';
 import { AppShellHeader, AppShellFrame } from './AppShellView';
 import { WorkbenchPreferencesProvider } from '../features/workbench/hooks/useWorkbenchPreferences';
 import { WorkbenchSearch } from '../features/workbench/components/WorkbenchSearch';
 import type { ResourcePreview } from './resource-preview';
 import { WorkspacePages } from './WorkspacePages';
+import type { WorkspacePageNavigationRequest } from './WorkspacePaneHost';
 import { workspacePageSearch } from './workspace-pages';
 import { runtimeSystemApi } from './api/runtime-system-api';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { Button, Drawer, Typography } from 'antd';
-import { AppstoreOutlined, CheckOutlined, MenuOutlined, PlusOutlined, SettingOutlined } from '@ant-design/icons';
+import { Alert, Button, Drawer, Tooltip, Typography } from 'antd';
+import { AppstoreOutlined, CheckOutlined, MenuOutlined, PlusOutlined, RobotOutlined, SettingOutlined } from '@ant-design/icons';
 import { api, setWorkspaceId } from '../api';
 import { AppShellContext, type WorkspaceShellInfo } from './AppShellContext';
 import { AppNavigation } from './AppNavigation';
@@ -20,6 +24,9 @@ import { DrawerShell } from '../components/DrawerShell';
 import { confirmModal } from '../lib/confirm';
 import { ReleaseAwarenessBanner } from '../features/installation/components/ReleaseAwarenessBanner';
 import { ArticleEditorProvider } from '../features/publication/components/ArticleEditorProvider';
+import { WorkspaceFileEditingProvider, useFileEditingDraftProtection } from './WorkspaceFileEditingProvider';
+import { WorkspaceSourceControlProvider } from './WorkspaceSourceControlProvider';
+import { readOptionalPreference, writeOptionalPreference } from '../lib/optional-preferences';
 
 type PreviewIdentity = {
   instance: string;
@@ -56,7 +63,14 @@ function productTitle(webProfile: WebProfile | null): string {
   return webProfile === 'development' ? 'Buildr Web Dev' : 'Buildr Web';
 }
 
-export function AppLayout({ renderResource }: { renderResource: (item: ResourcePreview) => ReactNode }) {
+export function AppLayout(props: { renderResource: (item: ResourcePreview) => ReactNode }) {
+  return <AgentRuntimeProvider><AppLayoutView {...props} /></AgentRuntimeProvider>;
+}
+
+function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePreview) => ReactNode }) {
+  useFileEditingDraftProtection();
+  const agents = useAgentRuntime();
+  const defaultAgent = agents.registry?.agents.find(agent => agent.id === agents.registry?.defaultAgentId);
   const params = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -66,8 +80,14 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
   const isGlobal = !workspaceId;
   const area = navigationState(location.pathname, location.search, workspaceId).area;
   const retainedSearch = workspaceId ? workspacePageSearch(workspaceId, location.pathname, location.search) : location.search;
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('buildr.sidebar-collapsed') === 'true');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => readOptionalPreference('buildr.sidebar-collapsed') === 'true');
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = Number(readOptionalPreference('buildr.sidebar-width'));
+    return Number.isFinite(saved) && saved >= 150 && saved <= 256 ? saved : 256;
+  });
   const [navigationOpen, setNavigationOpen] = useState(false);
+  const [pageNavigationRequest, setPageNavigationRequest] = useState<WorkspacePageNavigationRequest>();
+  const requestWorkspacePage = useCallback((destination: string) => setPageNavigationRequest(previous => ({ sequence: (previous?.sequence || 0) + 1, destination })), []);
   const [compactNavigation, setCompactNavigation] = useState(() => window.matchMedia('(max-width: 899px)').matches);
   useEffect(() => {
     const media = window.matchMedia('(max-width: 899px)');
@@ -84,7 +104,7 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
   const sectionHistory = useRef<{ workspaceId: string | null; pages: Record<string, { to: string; state?: unknown }> }>({ workspaceId, pages: {} });
   if (sectionHistory.current.workspaceId !== workspaceId) sectionHistory.current = { workspaceId, pages: {} };
   const section = workspaceId ? location.pathname.slice(`/workspaces/${workspaceId}/`.length).split('/')[0] : '';
-  if (workspaceId && ['workspace-overview', 'projects', 'services', 'repositories', 'skills', 'articles'].includes(section) && !/\/(new|edit)$/.test(location.pathname)) {
+  if (workspaceId && ['workspace-overview', 'projects', 'services', 'repositories', 'connection-skills', 'skills', 'articles'].includes(section) && !/\/(new|edit)$/.test(location.pathname)) {
     sectionHistory.current.pages[section] = { to: location.pathname + retainedSearch + location.hash, state: location.state };
   }
   const workspaceMenuTarget = (name: string) => sectionHistory.current.pages[name] || { to: `/workspaces/${workspaceId}/${name}` };
@@ -102,6 +122,9 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
   const [drawerAction, setDrawerAction] = useState<string | undefined>();
   const [drawerContext, setDrawerContext] = useState<Record<string, unknown>>({});
   const [exited, setExited] = useState(false);
+  const [quitting, setQuitting] = useState(false);
+  const [quitError, setQuitError] = useState('');
+  const quitPending = useRef(false);
   const [taskListResetToken, setTaskListResetToken] = useState(0);
   const [navigationRevision, setNavigationRevision] = useState(0);
   const refreshNavigation = useCallback(() => setNavigationRevision((value) => value + 1), []);
@@ -204,19 +227,29 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
 
   useEffect(() => { setNavigationOpen(false); }, [location.pathname, location.search]);
 
-  const quit = async () => {
-    const ok = await confirmModal({
-      title: '退出 Buildr Web？',
-      content: '退出 Buildr Web 后，本机服务将停止。确定退出吗？',
-      okText: '退出',
-      okButtonProps: { danger: true },
-    });
-    if (!ok) return;
-    await runtimeSystemApi.quit();
-    setExited(true);
+  const quit = async (ask = true) => {
+    if (quitPending.current) return;
+    quitPending.current = true;
+    try {
+      const ok = !ask || await confirmModal({
+        title: '退出 Buildr Web？',
+        content: '退出 Buildr Web 后，本机服务将停止。确定退出吗？',
+        okText: '退出',
+        okButtonProps: { danger: true },
+      });
+      if (!ok) return;
+      setQuitError(''); setQuitting(true); agents.setOpen(false);
+      await runtimeSystemApi.quit();
+      setExited(true);
+    } catch (error) {
+      setQuitError(error instanceof Error ? error.message : '退出失败，请重试。');
+    } finally {
+      quitPending.current = false; setQuitting(false);
+    }
   };
 
   const shellValue = {
+    requestWorkspacePage,
     workspaceId,
     navigationRevision,
     refreshNavigation,
@@ -244,8 +277,11 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
       return {
         key: id || entry.rootPath,
         disabled: !id || entry.status !== 'ready',
-        icon: id === workspaceId ? <CheckOutlined /> : undefined,
-        label: name,
+        className: id === workspaceId ? 'workspace-switcher-current' : undefined,
+        label: <span className="workspace-switcher-option" aria-current={id === workspaceId ? 'true' : undefined}>
+          <span className="workspace-switcher-option-name" title={name}>{name}</span>
+          <span className="workspace-switcher-option-check" aria-hidden="true">{id === workspaceId ? <CheckOutlined /> : null}</span>
+        </span>,
         onClick: id ? () => switchWorkspace(id) : undefined,
       };
     }),
@@ -277,12 +313,14 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
 
   return (
     <AppShellContext.Provider value={shellValue}>
+      <WorkspaceSourceControlProvider workspaceId={workspaceId}>
       <WorkbenchPreferencesProvider key={workspaceId || "global"} workspaceId={workspaceId}>
       <div className={"app-shell area-" + area}>
-        <AppShellHeader isGlobal={isGlobal} brandHref={isGlobal ? '/' : workspaceHref('/overview')} development={webProfile === 'development'} workspaceName={isGlobal ? '全部工作空间' : (workspace?.name || '正在读取…')} workspaceMenuItems={workspaceMenuItems} area={area} workbenchHref={workspaceHref('/overview')} workspaceDestination={{to:workspaceDestination.current.path,state:workspaceDestination.current.state}} actions={<>
+        <AppShellHeader isGlobal={isGlobal} brandHref={isGlobal ? '/' : workspaceHref('/overview')} development={webProfile === 'development'} workspaceName={isGlobal ? '全部工作空间' : (workspace?.name || '正在读取…')} workspaceMenuItems={workspaceMenuItems} area={area} workbenchHref={workspaceHref('/overview')} codeHref={workspaceHref('/code/source-control')} workspaceDestination={{to:workspaceDestination.current.path,state:workspaceDestination.current.state}} actions={<>
             {!isGlobal ? <WorkbenchSearch key={workspaceId} /> : null}
             {!isGlobal ? <Button className="shell-menu-toggle" aria-label="打开导航菜单" icon={<MenuOutlined />} onClick={() => setNavigationOpen(true)} /> : null}
-            <Button id="quit-buildr" className="nav-quit" type="text" onClick={() => { void quit(); }}>
+            <Tooltip title={defaultAgent ? defaultAgent.label + ' · ' + agentStatusLabel(defaultAgent) : agents.error || '查看或接入智能体'}><Button id="global-agents-entry" aria-label="智能体" type="text" icon={<RobotOutlined />} onClick={() => agents.setOpen(true)}><span className="global-agent-label">{defaultAgent?.label || '智能体'} <span className={'global-agent-status' + (defaultAgent?.availability === 'available' ? ' is-available' : '')} /></span></Button></Tooltip>
+            <Button id="quit-buildr" className="nav-quit" type="text" loading={quitting} onClick={() => { void quit(); }}>
               退出
             </Button>
             <div
@@ -295,18 +333,23 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
               title={preview?.worktree || undefined}
             />
             {!isGlobal ? (
+              <Tooltip title={area === 'workbench' ? '提出新目标' : '交给 Agent'}>
               <Button
                 id="open-agent-action"
+                aria-label={area === 'workbench' ? '提出新目标' : '交给 Agent'}
                 type="primary"
                 icon={<PlusOutlined />}
                 onClick={() => openAgentAction(area === "workbench" ? "start" : undefined)}
               >
                 {area === "workbench" ? "提出新目标" : "交给 Agent"}
               </Button>
+              </Tooltip>
             ) : null}
 </>} />
         <ReleaseAwarenessBanner openAgentAction={openAgentAction} />
-        <AppShellFrame isGlobal={isGlobal} compactNavigation={compactNavigation} sidebarCollapsed={sidebarCollapsed} onToggleSidebar={() => { setSidebarCollapsed(value => !value); localStorage.setItem('buildr.sidebar-collapsed', String(!sidebarCollapsed)); }} navigation={<AppNavigation key={workspaceId} />}>{/* Business content stays in the live adapter. */}<>{workspaceId ? <ArticleEditorProvider key={workspaceId} workspaceId={workspaceId}><WorkspacePages workspaceId={workspaceId} renderResource={renderResource} /></ArticleEditorProvider> : <Outlet />}</></AppShellFrame>
+        {quitError && <Alert id="quit-buildr-error" type="error" showIcon message="Buildr Web 尚未退出" description={quitError}
+          action={<Button size="small" loading={quitting} onClick={() => void quit(false)}>重试退出</Button>} />}
+        <AppShellFrame isGlobal={isGlobal} compactNavigation={compactNavigation} sidebarCollapsed={sidebarCollapsed} sidebarWidth={sidebarWidth} onSidebarResize={width => { setSidebarWidth(width); writeOptionalPreference('buildr.sidebar-width', String(Math.round(width))); }} onToggleSidebar={() => { setSidebarCollapsed(value => !value); writeOptionalPreference('buildr.sidebar-collapsed', String(!sidebarCollapsed)); }} navigation={<AppNavigation key={workspaceId} />}>{/* Business content stays in the live adapter. */}<>{workspaceId ? <WorkspaceFileEditingProvider key={workspaceId} workspaceId={workspaceId}><ArticleEditorProvider workspaceId={workspaceId}><WorkspacePages workspaceId={workspaceId} renderResource={renderResource} navigationRequest={pageNavigationRequest} /></ArticleEditorProvider></WorkspaceFileEditingProvider> : <Outlet />}</></AppShellFrame>
       </div>
 
       {!isGlobal ? <Drawer title="导航" placement="left" width={280} open={navigationOpen}
@@ -340,9 +383,11 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
           ) : null}
         </div>
       </DrawerShell>
+      <AgentRegistryDrawer />
       <WorkspaceSettingsDrawer open={settingsOpen} workspaceId={settingsWorkspaceId}
         onClose={() => setSettingsOpen(false)} onSaved={workspaceSettingsSaved} />
     </WorkbenchPreferencesProvider>
+    </WorkspaceSourceControlProvider>
     </AppShellContext.Provider>
   );
 }

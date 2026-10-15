@@ -95,6 +95,7 @@ function stagingPackageJson(payloadManifest: any, productMetadata: any): any  {
     bugs: productMetadata.bugs,
     keywords: productMetadata.keywords,
     publishConfig: productMetadata.publishConfig,
+    ...(productMetadata.buildrCompatibility ? { buildrCompatibility: productMetadata.buildrCompatibility } : {}),
     type: 'module',
     exports: {
       './test-context': {
@@ -104,7 +105,7 @@ function stagingPackageJson(payloadManifest: any, productMetadata: any): any  {
       },
       './package.json': './package.json',
     },
-    bin: { buildr: 'bin/buildr.mjs' },
+    bin: { buildr: 'bin/buildr.mjs', 'buildr-mysql': 'bin/buildr-mysql.mjs' },
     scripts: { postinstall: 'node scripts/postinstall.mjs' },
     files: [
       'LICENSE',
@@ -112,10 +113,12 @@ function stagingPackageJson(payloadManifest: any, productMetadata: any): any  {
       'application-payload.json',
       'installation-origin.json',
       'bin/buildr.mjs',
+      'bin/buildr-mysql.mjs',
       'test-context.mjs',
       'build/test-context/',
       'scripts/postinstall.mjs',
       'runtime/buildr.cjs',
+      'runtime/mysql-connection.cjs',
       'payload/',
     ],
     engines: { node: payloadManifest.enginesNode },
@@ -128,9 +131,10 @@ import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
-const [major, minor] = process.versions.node.split('.').map(Number);
-if (major !== 24 || minor < 15) {
-  console.error('Buildr requires a host Node matching >=24.15.0 <25; it will not download or select another Node runtime.');
+const versionParts = process.versions.node.split('.');
+const [major, minor] = versionParts.map(Number);
+if (versionParts.length !== 3 || versionParts.some(part => !/^(0|[1-9][0-9]*)$/.test(part) || !Number.isSafeInteger(Number(part))) || major < 24 || (major === 24 && minor < 15)) {
+  console.error('Buildr requires a host Node matching >=24.15.0; it will not download or select another Node runtime.');
   process.exit(1);
 }
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -176,6 +180,7 @@ export function createNpmPackStaging(payloadRoot: any, destination: any, options
     fs.mkdirSync(path.join(root, 'build/test-context'), { recursive: true });
     fs.copyFileSync(path.join(frozen.root, APPLICATION_PAYLOAD_MANIFEST), path.join(root, APPLICATION_PAYLOAD_MANIFEST));
     fs.copyFileSync(path.join(frozen.root, 'runtime/buildr.cjs'), path.join(root, 'runtime/buildr.cjs'));
+    fs.copyFileSync(path.join(frozen.root, 'runtime/mysql-connection.cjs'), path.join(root, 'runtime/mysql-connection.cjs'));
     copyTree(path.join(frozen.root, 'resources'), path.join(root, 'payload'));
     const productMetadata: any = JSON.parse(fs.readFileSync(path.join(root, 'payload/product/package.json'), 'utf8'));
     fs.copyFileSync(path.join(root, 'payload/product/LICENSE'), path.join(root, 'LICENSE'));
@@ -185,6 +190,7 @@ export function createNpmPackStaging(payloadRoot: any, destination: any, options
     fs.writeFileSync(path.join(root, 'package.json'), `${JSON.stringify(stagingPackageJson(frozen.manifest, productMetadata), null, 2)}\n`, 'utf8');
     fs.writeFileSync(path.join(root, 'installation-origin.json'), `${JSON.stringify(createNpmInstallationOrigin(frozen.manifest), null, 2)}\n`, 'utf8');
     fs.writeFileSync(path.join(root, 'bin/buildr.mjs'), npmBinSource(), { encoding: 'utf8', mode: 0o755 });
+    fs.writeFileSync(path.join(root, 'bin/buildr-mysql.mjs'), npmBinSource().replace("'buildr.cjs'", "'mysql-connection.cjs'"), { encoding: 'utf8', mode: 0o755 });
     fs.writeFileSync(path.join(root, 'scripts/postinstall.mjs'), npmPostinstallSource(), { encoding: 'utf8', mode: 0o755 });
     verifyApplicationPayload(root, { layout: 'installed' });
     return { root, manifest: frozen.manifest };
@@ -213,6 +219,10 @@ export function assertNpmTarballInventory(inventory: any): any  {
     'payload/product/src/infrastructure/sqlite/migrations/0000_create_migration_ledger.sql',
     'payload/product/web-dist/index.html',
     'payload/licenses/dependencies/ajv-LICENSE',
+    'payload/licenses/dependencies/@vscode__ripgrep-universal-LICENSE',
+    'payload/runtime/ripgrep/darwin-arm64/rg',
+    'payload/runtime/ripgrep/linux-x64/rg',
+    'payload/runtime/ripgrep/win32-x64/rg.exe',
     'payload/licenses/dependencies/yaml-LICENSE',
   ];
   for (const requiredPath of required) if (!paths.includes(requiredPath)) throw new Error(`npm tarball inventory is missing: ${requiredPath}`);

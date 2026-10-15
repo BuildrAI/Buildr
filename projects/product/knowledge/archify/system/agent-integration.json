@@ -1,0 +1,307 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "从确认接入到关联与调用",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1380,
+      760
+    ]
+  },
+  "components": [
+    {
+      "id": "local-codex",
+      "type": "external",
+      "label": "本机 Codex 与 DSH 桌面",
+      "sublabel": "程序、配置与桌面桥发现",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        310,
+        75
+      ]
+    },
+    {
+      "id": "connect",
+      "type": "frontend",
+      "label": "自动发现 · 用户确认",
+      "sublabel": "核对安装、版本与配置来源",
+      "pos": [
+        505,
+        40
+      ],
+      "size": [
+        300,
+        75
+      ]
+    },
+    {
+      "id": "registration",
+      "type": "database",
+      "label": "Buildr 接入登记",
+      "sublabel": "Codex / DSH 各自来源",
+      "pos": [
+        970,
+        40
+      ],
+      "size": [
+        300,
+        75
+      ]
+    },
+    {
+      "id": "chat-relations",
+      "type": "backend",
+      "label": "任务 ↔ 原生会话关系",
+      "sublabel": "提供者隔离 · 精确会话身份",
+      "pos": [
+        135,
+        250
+      ],
+      "size": [
+        320,
+        75
+      ]
+    },
+    {
+      "id": "task",
+      "type": "frontend",
+      "label": "Buildr 任务（Task）",
+      "sublabel": "查看关联 · 打开原生会话",
+      "pos": [
+        50,
+        520
+      ],
+      "size": [
+        270,
+        75
+      ]
+    },
+    {
+      "id": "native-chat",
+      "type": "external",
+      "label": "Codex / DSH 原生会话",
+      "sublabel": "桌面保有历史、工具与上下文",
+      "pos": [
+        350,
+        520
+      ],
+      "size": [
+        290,
+        75
+      ]
+    },
+    {
+      "id": "agent-operations",
+      "type": "backend",
+      "label": "统一操作层",
+      "sublabel": "生成 · 选择 · 取消 · 回收",
+      "pos": [
+        850,
+        250
+      ],
+      "size": [
+        300,
+        75
+      ]
+    },
+    {
+      "id": "codex-provider",
+      "type": "backend",
+      "label": "Codex 接入层",
+      "sublabel": "CodexAppServer",
+      "pos": [
+        690,
+        390
+      ],
+      "size": [
+        280,
+        65
+      ]
+    },
+    {
+      "id": "dsh-provider",
+      "type": "backend",
+      "label": "DSH 接入层",
+      "sublabel": "桌面桥调用与回执",
+      "pos": [
+        1040,
+        390
+      ],
+      "size": [
+        280,
+        65
+      ]
+    },
+    {
+      "id": "codex-process",
+      "type": "external",
+      "label": "Codex 应用服务",
+      "sublabel": "App Server · 临时会话",
+      "pos": [
+        690,
+        535
+      ],
+      "size": [
+        280,
+        80
+      ]
+    },
+    {
+      "id": "dsh-bridge",
+      "type": "backend",
+      "label": "Buildr 桌面插件",
+      "sublabel": "同宿主（Host）桥接",
+      "pos": [
+        1040,
+        535
+      ],
+      "size": [
+        280,
+        70
+      ]
+    },
+    {
+      "id": "dsh-native",
+      "type": "external",
+      "label": "DSH 当前模型服务",
+      "sublabel": "当前默认模型与推理级别",
+      "pos": [
+        1040,
+        665
+      ],
+      "size": [
+        280,
+        65
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "独立关系：双向打开原生会话与任务",
+      "wraps": [
+        "chat-relations",
+        "task",
+        "native-chat"
+      ],
+      "pad": 22
+    },
+    {
+      "kind": "region",
+      "label": "Codex 专用进程：按需启动与复用",
+      "wraps": [
+        "codex-process"
+      ],
+      "pad": 22
+    },
+    {
+      "kind": "region",
+      "label": "DSH 现有桌面宿主：连接与断开",
+      "wraps": [
+        "dsh-bridge",
+        "dsh-native"
+      ],
+      "pad": 22
+    }
+  ],
+  "connections": [
+    {
+      "id": "discover",
+      "from": "local-codex",
+      "to": "connect",
+      "label": "本机检测",
+      "variant": "emphasis"
+    },
+    {
+      "id": "confirm",
+      "from": "connect",
+      "to": "registration",
+      "label": "确认后保存",
+      "variant": "emphasis"
+    },
+    {
+      "id": "prepare-relations",
+      "from": "registration",
+      "to": "chat-relations",
+      "label": "各自桌面：关联范围",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "generation-registration",
+      "from": "registration",
+      "to": "agent-operations",
+      "label": "生成使用登记来源",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDx": -10
+    },
+    {
+      "id": "task-relations-read",
+      "from": "task",
+      "to": "chat-relations",
+      "label": "按任务查看",
+      "variant": "default",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "native-chat-link",
+      "from": "native-chat",
+      "to": "chat-relations",
+      "label": "原生会话显式关联",
+      "variant": "default",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "select-codex",
+      "from": "agent-operations",
+      "to": "codex-provider",
+      "label": "选择 Codex",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "select-dsh",
+      "from": "agent-operations",
+      "to": "dsh-provider",
+      "label": "选择 DSH",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "codex-protocol",
+      "from": "codex-provider",
+      "to": "codex-process",
+      "label": "标准输入输出（stdio）",
+      "variant": "emphasis",
+      "labelDy": 24
+    },
+    {
+      "id": "dsh-protocol",
+      "from": "dsh-provider",
+      "to": "dsh-bridge",
+      "label": "本机回环连接（Loopback TCP）",
+      "variant": "emphasis",
+      "labelDy": 24
+    },
+    {
+      "id": "dsh-compose",
+      "from": "dsh-bridge",
+      "to": "dsh-native",
+      "label": "无会话单次模型调用",
+      "variant": "default",
+      "labelDy": 24
+    }
+  ]
+}

@@ -6,6 +6,7 @@ import {
   isVersionOnlyPackageMetadataChange,
 } from '../verification/changed-paths.ts';
 import { createVerificationPlan } from '../verification/planner.ts';
+import { verificationStepOwnership } from '../verification/ownership.ts';
 
 const ids: any = (plan: any) => plan.steps.map((step: any) => step.id);
 
@@ -92,4 +93,67 @@ test('verification presentation metadata stays affected while invocation and env
   assert.equal(isVerificationDeclarationMetadataOnlyChange(base, presentation), true);
   assert.equal(isVerificationDeclarationMetadataOnlyChange(base, base.replace('argv: [npm, test]', 'argv: [npm, run, test:changed]')), false);
   assert.equal(isVerificationDeclarationMetadataOnlyChange(base, `${base}    environment:\n      requires: [node]\n`), false);
+});
+
+test('frontend and plugin paths select their real Service test entrypoints', () => {
+  for (const source of ['services/buildr-web/src/features/task/task-state.ts', 'services/buildr-web/test/task-state.test.mjs']) {
+    const plan = createVerificationPlan({ paths: [source] });
+    assert.equal(plan.status, 'ready');
+    const frontend = plan.steps.find((step: any) => step.id === 'frontend-logic');
+    assert.deepEqual(frontend.executor, { type: 'node', file: '../buildr-web/tools/run-logic-tests.mjs' });
+    assert.equal(ids(plan).includes('service-branch-contract'), false);
+  }
+  for (const source of ['services/dsh-plugin/plugin/client.ts', 'services/dsh-plugin/tools/verify-all.ts', '.github/workflows/publish-dsh-plugin.yml']) {
+    const plan = createVerificationPlan({ paths: [source] });
+    assert.equal(plan.status, 'ready');
+    assert.equal(plan.scope.mode, 'affected');
+    assert.deepEqual(plan.unmapped, []);
+    assert.deepEqual(ids(plan), ['dsh-plugin']);
+    assert.equal(plan.steps[0].executor.file, '../dsh-plugin/tools/verify-all.ts');
+  }
+  const candidate = createVerificationPlan({ profiles: ['candidate'] });
+  assert.ok(ids(candidate).includes('frontend-logic'));
+  assert.equal(ids(candidate).includes('dsh-plugin'), false, '独立插件不属于 Buildr 主包候选');
+});
+
+test('Product knowledge navigation index selects its real catalog integration and current source contract', () => {
+  const plan = createVerificationPlan({ paths: ['knowledge/index.yml'] });
+  assert.equal(plan.status, 'ready');
+  assert.equal(plan.scope.mode, 'affected');
+  assert.deepEqual(ids(plan), ['integration', 'contract']);
+  assert.deepEqual(plan.steps.find((step: any) => step.id === 'integration').executor, { type: 'node', file: 'test/verification/integration.ts', args: ['--suite', 'general'] });
+  assert.deepEqual(plan.unmapped, []);
+});
+
+test('package skill projection regression selects the slice that actually executes its file', () => {
+  const plan = createVerificationPlan({ paths: ['test/integration/package-generic-skills.test.ts'] });
+  assert.equal(plan.status, 'ready');
+  assert.deepEqual(ids(plan), ['integration-runtime']);
+});
+
+
+test('independent package release helpers select pure feedback and the real lifecycle owners', () => {
+  for (const source of [
+    'tools/release/release-targets.ts',
+    'tools/release/package-compatibility.ts',
+    'tools/release/package-artifact-observation.ts',
+    'tools/release/release-package-evidence.ts',
+    'tools/release/plugin-hosted-release.ts',
+    'tools/release/package-release-operation.ts',
+  ]) {
+    const plan = createVerificationPlan({ paths: [source] });
+    assert.equal(plan.status, 'ready');
+    assert.equal(plan.scope.mode, 'affected');
+    assert.deepEqual(plan.unmapped, []);
+    const selected = ids(plan);
+    for (const owner of ['unit', 'typecheck']) {
+      assert.ok(selected.includes(owner), `${source} must select ${owner}`);
+    }
+    for (const owner of ['integration-candidate-release', 'integration-candidate-release-selection', 'integration-candidate-package-selection', 'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection']) {
+      assert.ok(verificationStepOwnership(owner).inputs.includes(source), `${source} must belong to ${owner}`);
+      assert.equal(selected.includes(owner), false, 'daily feedback keeps publication lifecycle checks in their explicit release scope');
+      assert.ok(ids(createVerificationPlan({ paths: [source], groups: ['release'] })).includes(owner));
+    }
+    assert.equal(selected.includes('dsh-plugin'), false, 'main helper checks do not claim independent plugin loader evidence');
+  }
 });

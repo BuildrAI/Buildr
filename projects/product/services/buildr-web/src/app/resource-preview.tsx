@@ -3,9 +3,12 @@ import type { ResourcePreview, PreviewState } from './workspace-pages';
 export { resourcePreview } from './workspace-pages';
 export type { ResourcePreview, PreviewState } from './workspace-pages';
 export const ResourcePreviewContext = createContext<{
+  navigationType?: 'POP' | 'PUSH' | 'REPLACE';
+  navigationKey?: string;
+  taskBriefId?: string;
   render: (item: ResourcePreview) => ReactNode;
   states: Record<string, PreviewState>;
-  open: (owner: string, path: string) => boolean;
+  open: (owner: string, path: string, intent?: { taskBrief: true }) => boolean;
   identifyTask: (owner: string, id: string, composite: boolean) => void;
   activate: (owner: string, kind: string) => void;
   remove: (kind: string, id: string) => void;

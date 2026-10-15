@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import YAML from 'yaml';
 import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../tools/verification/package-check/verification-registry.ts';
 import { createVerificationPlan } from '../verification/planner.ts';
@@ -36,7 +36,7 @@ test('product verification exposes four gates, direct layers, and one focus entr
     assert.equal(scripts[`test:browser:${selector}`], `node --import ./test/register-development-entry.ts test/verification/browser-selector-dispatcher.ts --selector ${selector} --run`);
   }
   assert.equal(scripts['test:integration:candidate:recovery'], undefined);
-  assert.equal(scripts['test:integration:candidate:release'], 'node --import ./test/register-development-entry.ts test/verification/run-node-tests.ts test/integration-candidate-release/**/*.test.ts');
+  assert.equal(scripts['test:integration:candidate:release'], 'node --import ./test/register-development-entry.ts test/verification/run-node-tests.ts "test/integration-candidate-release/**/*.test.ts"', 'The shell must preserve the complete root-and-subdirectory pattern for the shared test selector.');
   assert.equal(scripts['coverage:unit'], 'node --import ./test/register-development-entry.ts test/verification/unit-coverage.ts');
   assert.equal(scripts['test:changed'], 'node --import ./test/register-development-entry.ts test/verification/changed.ts');
   assert.equal(scripts['test:focus'], 'node --import ./test/register-development-entry.ts test/verification/focus.ts');
@@ -129,7 +129,7 @@ test('Product live声明采用v4测试地图并保留后端、前端和环境体
   }
 });
 
-test('前端逻辑与浏览器测试分别声明真实完整入口，声明测试根与实际脚本覆盖一致', () => {
+test('前端逻辑与浏览器测试分别声明真实完整入口，声明测试根与实际脚本覆盖一致', async () => {
   const projectRoot: any = path.resolve(productRoot, '../..');
   const declaration: any = YAML.parse(fs.readFileSync(path.join(projectRoot, 'verification.yml'), 'utf8'));
   const webUnit: any = declaration.testing.find((item: any) => item.id === 'buildr-web-unit');
@@ -145,15 +145,15 @@ test('前端逻辑与浏览器测试分别声明真实完整入口，声明测�
 
   const frontendRoot: any = path.resolve(projectRoot, webUnit.full.cwd);
   const scripts: any = JSON.parse(fs.readFileSync(path.join(frontendRoot, 'package.json'), 'utf8')).scripts;
-  const [runner, flag, ...patterns]: string[] = scripts.test.trim().split(/\s+/u);
-  assert.deepEqual([runner, flag], ['node', '--test']);
-  assert.ok(patterns.length > 0, '完整入口必须选择真实测试文件');
+  assert.equal(scripts.test, 'node tools/run-logic-tests.mjs');
+  const { logicTestArguments } = await import(pathToFileURL(path.join(frontendRoot, 'tools/run-logic-tests.mjs')).href);
+  const invocation = logicTestArguments(frontendRoot, 1);
+  assert.deepEqual(invocation.slice(0, 2), ['--test', '--test-concurrency=1']);
   const actualTestFiles: any = fs.readdirSync(path.join(frontendRoot, 'test'))
     .filter((name: string) => name.endsWith('.test.mjs'))
     .map((name: string) => path.join(frontendRoot, 'test', name)).sort();
   assert.ok(actualTestFiles.length > 0, '当前前端测试目录不能为空');
-  const selectedFiles: any = [...new Set(fs.globSync(patterns, { cwd: frontendRoot }))]
-    .map((file: string) => path.resolve(frontendRoot, file)).sort();
+  const selectedFiles: any = [...new Set(invocation.slice(2))].sort();
   const declaredFiles: any = [...new Set(fs.globSync(webUnit.testRoots, { cwd: projectRoot }))]
     .map((file: string) => path.resolve(projectRoot, file)).sort();
   assert.deepEqual(selectedFiles, actualTestFiles, 'package test 脚本必须执行当前全部前端逻辑测试');
@@ -227,8 +227,8 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
   assert.ok(candidate.includes('BUILDR_VERIFICATION_SCHEDULING'));
   assert.ok(candidate.includes('schedulingMode'));
   assert.match(candidate, /BUILDR_VERIFICATION_SCHEDULING \?\? 'cost'/);
-  assert.match(candidate, /process\.versions\.node !== developmentNodeVersion/);
-  assert.match(candidate, /Buildr Product development Node mismatch/);
+  assert.match(candidate, /assertMinimumNodeVersion\(process\.versions\.node, developmentNodeVersion\)/);
+  assert.doesNotMatch(candidate, /process\.versions\.node !== developmentNodeVersion|Buildr Product development Node mismatch/);
   assert.match(candidate, /enforceOfflineVerification\(\)/);
   assert.ok(candidate.split(/\r?\n/).length < 100);
   const candidatePlan: any = createVerificationPlan({ profiles: ['candidate'] });
@@ -304,7 +304,7 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
   }
   assert.ok(candidatePlan.steps.some((step: any) => step.executor.file === 'test/capability-cli.integration.ts'));
   const systemOwners: any = candidatePlan.steps.filter((step: any) => step.id.startsWith('system-'));
-  assert.equal(systemOwners.length, 10);
+  assert.equal(systemOwners.length, 11);
   for (const owner of systemOwners) {
     assert.equal(owner.executor.file, 'test/verification/system.ts');
     assert.ok(owner.inputs.includes('test/helpers/task-lifecycle-system-context.ts'));
@@ -343,10 +343,10 @@ test('Host Node compatibility runs offline without a Workspace Node distribution
   const policy: any = read('src/infrastructure/network/verification-network-policy.ts');
   const workflow: any = read('../../../../.github/workflows/verify.yml');
   const hostJob: any = workflow.slice(workflow.indexOf('  candidate-host-node:'), workflow.indexOf('  candidate-gate:'));
-  assert.deepEqual(packageManifest.bundleDependencies, ['ajv', 'yaml']);
+  assert.deepEqual(packageManifest.bundleDependencies, ['@vscode/ripgrep-universal', 'ajv', 'mysql2', 'node-sql-parser', 'yaml']);
   assert.match(hostNode, /enforceOfflineVerification\(\)/);
   const executePlanCall: any = hostNode.slice(hostNode.indexOf('await executePlan('), hostNode.indexOf('results = execution.results'));
-  assert.match(executePlanCall, /expectedNodeVersion: null/);
+  assert.match(executePlanCall, /minimumNodeVersion: null/);
   assert.match(policy, /npm_config_offline = 'true'/);
   assert.match(policy, /BUILDR_VERIFICATION_NETWORK_MODE/);
   assert.match(cliSmoke, /\['install', '--offline', '--global'/);
@@ -379,7 +379,13 @@ test('Candidate source work is independent and all consumers use the one immutab
   }
   for (const id of ['candidate-source', 'candidate-artifact-consumers', 'candidate-host-node']) assert.equal(document.jobs[id].strategy['fail-fast'], false);
   assert.ok(CANDIDATE_CI_SHARDS.some((shard: any) => shard.id === 'release-infrastructure-windows'));
-  assert.deepEqual(document.jobs['candidate-gate'].needs, ['candidate-plan', 'candidate-bootstrap', 'candidate-source', 'candidate-artifact-consumers', 'candidate-host-node']);
+  assert.deepEqual(document.jobs['candidate-gate'].needs, ['candidate-plan', 'candidate-bootstrap', 'candidate-source', 'candidate-artifact-consumers', 'candidate-host-node', 'plugin-source-candidate']);
+  for (const id of ['candidate-bootstrap', 'candidate-artifact-consumers', 'candidate-host-node']) assert.equal(document.jobs[id].if, "needs.candidate-plan.outputs.buildr == 'true'");
+  assert.equal(document.jobs['candidate-source'].if, "needs.candidate-plan.outputs.buildr == 'true' && needs.candidate-plan.outputs.source_required == 'true'");
+  assert.equal(document.jobs['candidate-plan'].outputs.source_required, '${{ steps.plan.outputs.source_required }}');
+  assert.equal(document.env.BUILDR_SOURCE_VERIFICATION, "${{ github.event_name == 'workflow_dispatch' && inputs.source_verification || '' }}");
+  assert.deepEqual(document.jobs['plugin-source-candidate'].needs, ['candidate-plan', 'candidate-bootstrap']);
+  assert.equal(document.jobs['plugin-source-candidate'].if, "always() && needs.candidate-plan.result == 'success' && needs.candidate-plan.outputs.plugin == 'true' && (needs.candidate-plan.outputs.candidate_peer != 'true' || needs.candidate-bootstrap.result == 'success')");
   assert.match(document.jobs['candidate-gate'].if, /^always\(\)/);
   for (const [id, job] of Object.entries(document.jobs) as any[]) {
     if (!id.startsWith('candidate-')) continue;
@@ -470,4 +476,33 @@ test('package verifier selectors are stable, focused, and fail closed', () => {
   assert.deepEqual(selectPackageVerifiers('static,runtime').map((step: any) => step.id), ['static', 'runtime']);
   assert.throws(() => selectPackageVerifiers('unknown'), /Unknown package verifier/);
 
+});
+
+test('development CI prepares selected frontend and DSH dependencies before their real owners execute', () => {
+  const document = YAML.parse(read('../../../../.github/workflows/verify.yml'));
+  const steps = document.jobs['dev-feedback-macos'].steps;
+  const index = (name: string) => steps.findIndex((step: any) => step.name === name);
+  const verify = index('Verify changed product scope');
+  assert.ok(index('Install Buildr Web dependencies') < verify);
+  assert.ok(index('Prepare pinned DSH SDK') < verify);
+  const tooling = steps[index('Install pinned DSH package manager')];
+  const sdk = steps[index('Prepare pinned DSH SDK')];
+  assert.equal(tooling.if, "steps.services.outputs.dsh == 'true'");
+  assert.equal(sdk.if, "steps.services.outputs.dsh == 'true'");
+  assert.equal(tooling.shell, 'bash');
+  assert.match(tooling.run, /env -i PATH=/);
+  assert.match(tooling.run, /NPM_CONFIG_USERCONFIG=.*dsh-tooling\/user\.npmrc/);
+  assert.match(tooling.run, /NPM_CONFIG_GLOBALCONFIG=.*dsh-tooling\/global\.npmrc/);
+  assert.match(tooling.run, /npm install --prefix "\$\{RUNNER_TEMP\}\/dsh-tooling" --ignore-scripts/);
+  assert.match(tooling.run, /pnpm@11\.7\.0/);
+  assert.doesNotMatch(tooling.run, /--global/);
+  assert.equal(sdk.shell, 'bash');
+  assert.equal(sdk['working-directory'], 'projects/product/services/dsh-plugin');
+  assert.match(sdk.run, /node tools\/prepare-release-sdk\.ts --node "\$\(command -v node\)" --pnpm "\$\{RUNNER_TEMP\}\/dsh-tooling\/node_modules\/pnpm\/bin\/pnpm\.cjs"/);
+  assert.match(sdk.run, /fs\.appendFileSync\(process\.env\.GITHUB_ENV, `BUILDR_DSH_SOURCE_SDK_ROOT=/);
+  assert.match(sdk.run, /result\.status !== "prepared"/);
+  assert.doesNotMatch(sdk.run, /fetch-sdk\.ts/);
+  assert.equal(steps[verify].run, 'npm run test:changed -- --base "${{ steps.base.outputs.sha }}"');
+  assert.equal(document.jobs['dev-feedback-macos'].permissions, undefined);
+  assert.deepEqual(document.permissions, { contents: 'read' });
 });

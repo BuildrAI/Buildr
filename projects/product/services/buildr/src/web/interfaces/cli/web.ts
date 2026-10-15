@@ -23,7 +23,7 @@ export function createWebCliContributions(application: WebCliRuntime | null = nu
       "Usage: buildr web preview start <instance> [--task <task-id> --target <canonical-workspace>] [--port <port>] [--no-open] [--json]",
       "",
       "提供 --task 时，从该 Task 的受管 Git Worktree 启动；预览能力保存精确 owner 并负责认证停止自己创建的进程。",
-      "不提供 --task 时保留独立 checkout 预览。实例名不能接管其他健康预览，也不会替换默认 Buildr Web Runtime。"
+      "不提供 --task 时保留独立 checkout 预览。实例名不能接管其他健康预览，也不会替换默认 Buildr Web Runtime。",
     ],
     match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'preview' && runtimeId === 'start',
     run: (r, c) => (application || r).manageBuildrWebPreview('start', c.argv.slice(5)),

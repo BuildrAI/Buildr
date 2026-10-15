@@ -34,6 +34,7 @@ export function useTaskDetail({ taskId, lifecycle, onWorkspace, onBreadcrumb, wo
     const detail = await lifecycle.run(currentTaskId, 'detail', (signal) => taskApi.detail(currentTaskId, { signal }));
     if (taskIdRef.current !== currentTaskId) return;
     apply(detail, workspaceNameRef.current || '工作空间');
+    return detail;
   }, [taskId, lifecycle, apply]);
 
   useEffect(() => {

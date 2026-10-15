@@ -53,24 +53,29 @@ test('Task 读取生命周期去重同一 Task/operation，并在路由离开时
 
 test('React App 路由覆盖 workspace 深链并回退未知路径', () => {
   const app: any = read('../buildr-web/src/App.tsx');
-  assert.match(app, /path="\/workspaces\/:workspaceId"/);
-  assert.match(app, /path="tasks" element=\{<TasksSection \/>\}/);
-  assert.match(app, /<Route index element=\{<Navigate to="overview" replace \/>\} \/>/);
-  assert.match(app, /path="overview" element=\{<WorkbenchPage \/>\}/);
-  assert.match(app, /path="activity" element=\{<WorkbenchActivityPage \/>\}/);
-  assert.doesNotMatch(app, /\bOverviewPage\b/);
-  assert.match(app, /path="workspace-overview" element=\{<WorkspaceOverviewPage \/>\}/);
-  assert.match(app, /path=":taskId"/);
-  assert.match(app, /path=":taskId\/changes\/:projectCode\/:changeCode"/);
-  assert.match(app, /path="projects" element=\{<ProjectsSection \/>\}/);
-  assert.match(app, /path=":projectCode"/);
-  assert.match(app, /path=":projectCode\/edit"/);
-  assert.match(app, /path="services"/);
-  assert.match(app, /path="articles"/);
-  assert.match(app, /path="articles\/:publicationId"/);
-  assert.match(app, /<Route path="\*" element=\{<Navigate to="\." replace \/>\} \/>/);
-  assert.doesNotMatch(app, /path=["']\/changes["']/);
-  assert.doesNotMatch(app, /cdn|unpkg|jsdelivr|googleapis/i);
+  const routes = read('../buildr-web/src/app/workspace-routes.tsx');
+  assert.match(app, /path: '\/workspaces\/:workspaceId\/\*'/);
+  assert.match(app, /element: <CurrentWorkspaceRoute \/>/);
+  assert.match(app, /path: '\*', element: <Navigate to="\/" replace \/>/);
+  assert.match(routes, /CurrentWorkspaceRoute\(\)[\s\S]*useRoutes\(workspaceRoutes\)/);
+  assert.match(routes, /RetainedWorkspaceRoute\([\s\S]*useRoutes\(workspaceRoutes, location\)/);
+  assert.match(routes, /path: 'tasks', element: <TasksSection \/>/);
+  assert.match(routes, /index: true, element: <Navigate to="overview" replace \/>/);
+  assert.match(routes, /path: 'overview', element: <WorkbenchPage \/>/);
+  assert.match(routes, /path: 'activity', element: <WorkbenchActivityPage \/>/);
+  assert.doesNotMatch(routes, /\bOverviewPage\b/);
+  assert.match(routes, /path: 'workspace-overview', element: <WorkspaceOverviewPage \/>/);
+  assert.match(routes, /path: ':taskId'/);
+  assert.match(routes, /path: ':taskId\/changes\/:projectCode\/:changeCode'/);
+  assert.match(routes, /path: 'projects', element: <ProjectsSection \/>/);
+  assert.match(routes, /path: ':projectCode'/);
+  assert.match(routes, /path: ':projectCode\/edit'/);
+  assert.match(routes, /path: 'services'/);
+  assert.match(routes, /path: 'articles'/);
+  assert.match(routes, /path: 'articles\/:publicationId'/);
+  assert.match(routes, /path: '\*', element: <Navigate to="\." replace \/>/);
+  assert.doesNotMatch(app + routes, /path:\s*["']\/changes["']/);
+  assert.doesNotMatch(app + routes, /cdn|unpkg|jsdelivr|googleapis/i);
 });
 
 test('API client 通过 LocalSessionAdapter 为写请求附加 session，并拒绝 filesystem path 字段语义', () => {
@@ -88,24 +93,26 @@ test('API client 通过 LocalSessionAdapter 为写请求附加 session，并拒�
   assert.match(session, /Task API 不接受 filesystem path/);
 });
 
-test('Task-scoped Change 详情先提供人类可读 Brief，再展示技术 artifacts', () => {
+test('Task-scoped Change 详情直接展示标准产物，不要求专用变更说明', () => {
   const source: any = read('../buildr-web/src/features/task/pages/TaskChangeDetailPage.tsx');
-  const briefPanel: any = read('../buildr-web/src/components/ChangeBriefPanel.tsx');
   const styles: any = read('../buildr-web/src/styles.css');
   const markdown: any = read('../buildr-web/src/markdown.ts');
-  assert.ok(source.indexOf('id="change-brief"') < source.indexOf('technical-artifacts-panel'));
+  const taskApi: any = read('../buildr-web/src/features/task/api/task-api.ts');
+  const reader: any = read('../buildr-web/src/features/task/components/TaskArtifactReader.tsx');
+  assert.ok(source.indexOf('artifact={change.artifacts.proposal}') < source.indexOf('artifact={change.artifacts.design}'));
   assert.match(source, /MarkdownHost/);
-  assert.match(source, /ChangeBriefPanel/);
-  assert.match(briefPanel, /没有可读取的 Brief/);
-  assert.match(briefPanel, /headingOffset:\s*1/);
-  assert.match(briefPanel, /allowRelativeLinks:\s*true/);
+  assert.match(source, /id="change-artifacts"/);
+  assert.match(source, /headingOffset:\s*1/);
+  assert.match(source, /allowRelativeLinks:\s*true/);
+  assert.doesNotMatch(source, /ChangeBriefPanel|change-brief|change\.brief/);
+  assert.doesNotMatch(reader, /change\.brief/);
+  assert.match(taskApi, /export type ChangePayload/);
   assert.doesNotMatch(source, /brief\.content.*innerHTML|artifact\.content.*innerHTML|dangerouslySetInnerHTML/);
   assert.doesNotMatch(markdown, /innerHTML/);
   assert.match(markdown, /headingOffset/);
   assert.match(markdown, /allowRelativeLinks/);
   assert.match(markdown, /resolveSafeHref/);
-  assert.match(styles, /\.change-brief-panel/);
-  assert.match(briefPanel, /className="brief-content markdown-body"/);
+  assert.equal(fs.existsSync(path.join(productRoot, '../buildr-web/src/components/ChangeBriefPanel.tsx')), false);
   assert.match(styles, /\.markdown-body/);
   assert.match(styles, /\.artifact-content/);
   assert.match(styles, /\.content-view-toggle/);
@@ -130,6 +137,7 @@ test('Change 仅作为 Task-scoped 只读内容', () => {
 
 test('Buildr Web 在工作空间提供独立文章入口、只读内容视图和受控本地图片资源', () => {
   const app: any = read('../buildr-web/src/App.tsx');
+  const routes = read('../buildr-web/src/app/workspace-routes.tsx');
   const navigation: any = read('../buildr-web/src/app/AppNavigation.tsx');
   const index: any = read('../buildr-web/index.html');
   const server: any = read('src/web/http/server.ts');
@@ -145,9 +153,10 @@ test('Buildr Web 在工作空间提供独立文章入口、只读内容视图和
   assert.match(navigation, /item\('\/articles', '文章', 'articles'\)/);
   assert.match(navigation, /item\('\/overview', '概览', 'overview'\)/);
   assert.match(navigation, /item\('\/activity', '动态', 'activity'\)/);
-  assert.match(app, /path="articles"/);
-  assert.match(app, /path="articles\/:publicationId"/);
-  assert.match(app, /ArticleDetailPage/);
+  assert.match(routes, /path: 'articles', element: <ArticlesPage \/>/);
+  assert.match(routes, /path: 'articles\/:publicationId', element: <ArticleDetailPage \/>/);
+  assert.match(routes, /path: 'articles\/:projectCode\/:publicationId', element: <ArticleDetailPage \/>/);
+  assert.match(app, /CurrentWorkspaceRoute/);
   assert.match(index, /buildr-session/);
   assert.doesNotMatch(index, /cdn|unpkg|jsdelivr|googleapis/i);
   assert.match(staticFiles, /STATIC_ROOT[\s\S]*web-dist/);
@@ -177,11 +186,14 @@ test('任务详情复用系统副屏与抽屉，独立专业事实按工作节�
   assert.doesNotMatch(detail, /WorkspaceStage|pane-stage|pane-right/);
   assert.match(detail, /TaskWorkPath/);
   assert.match(detail, /TaskContextDrawer/);
-  assert.match(read('../buildr-web/src/features/task/hooks/useTaskReadingState.ts'), /useState<TaskReadingTab>\('requirements'\)/);
+  const readingState = read('../buildr-web/src/features/task/hooks/useTaskReadingState.ts');
+  assert.match(readingState, /const empty = .*selected: 'requirements'/);
+  assert.match(readingState, /restoreHistory = false/);
+  assert.match(readingState, /useState<TaskReadingTab>\(initial\.current\.selected\)/);
   const workContent = read('../buildr-web/src/features/task/components/taskWorkContent.ts');
-  assert.match(workContent, /TaskReadingTab = TaskNodeStage \| 'commits'/);
+  assert.match(workContent, /TaskReadingTab = TaskNodeStage \| 'changes'/);
   assert.match(workContent, /\['requirements', 'design', 'implementation', 'closeout'\] as TaskNodeStage\[\]/);
-  assert.match(detail, /contentTabs=\{\[\{ key: 'commits'/);
+  assert.match(detail, /contentTabs=\{\[\{ key: 'changes'/);
   assert.match(node, /data-task-artifact/);
   assert.match(node, /方案审查/);
   assert.match(node, /task-review-nav-label/);
@@ -198,14 +210,14 @@ test('任务详情复用系统副屏与抽屉，独立专业事实按工作节�
 test('任务 UI Prototype 只读按需加载并在离线 opaque-origin iframe 中展示', () => {
   const source: any = read('../buildr-web/src/features/task/pages/TaskDetailPage.tsx');
   const prototype: any = read('../buildr-web/src/features/task/components/PrototypeTab.tsx');
-  const artifactsHook: any = read('../buildr-web/src/features/task/hooks/useTaskArtifacts.ts');
   const server: any = read('src/web/http/server.ts');
   const responses: any = read('src/web/http/responses.ts');
   const changeHttp: any = read('src/modules/task/change/interfaces/http/change-http.ts');
   const styles: any = read('../buildr-web/src/styles.css');
   assert.match(source, /selected === 'design' && detail\.data\?\.record\.taskId === taskId && !artifacts\.prototypeData/);
   assert.doesNotMatch(source, /selected === 'design' && changeKeys &&/);
-  assert.match(artifactsHook, /'ui-prototypes'/);
+  // Request identity and cross-workspace isolation execute the real hook in
+  // buildr-web/test/task-materials.test.mjs, rather than pinning its spelling.
   assert.match(prototype, /界面原型/);
   assert.match(prototype, /模拟操作仅影响本次演示/);
   assert.match(read('../buildr-web/src/features/task/pages/PrototypeReaderPage.tsx'), /PrototypeReaderLayout/);
@@ -304,9 +316,9 @@ test('任务意图以 Markdown 链接展示 Project 内的只读文档', () => {
   const sharedResolver: any = read('../buildr-web/src/lib/workspaceMarkdownReferences.ts');
   assert.match(detail + overview, /id="task-detail-intent"[\s\S]*MarkdownHost/);
   assert.match(artifactsHook, /resolveTaskDocumentReference/);
-  assert.match(artifactsHook, /projectApi\.listProjects\(\)/);
+  assert.match(artifactsHook, /projectApi\.listProjects\(\{\}, workspaceId\)/);
   assert.match(read('../buildr-web/src/features/task/components/TaskReadingPane.tsx'), /TaskDocumentPreviewModal/);
-  assert.match(artifactsHook, /taskApi\.projectDocument\(taskId, reference\.projectCode, documentPath\)/);
+  assert.match(artifactsHook, /taskApi\.projectDocument\(taskId, reference\.projectCode, documentPath, \{ signal \}, workspaceId\)/);
   assert.match(prototype, /resolveProjectMarkdownHref/);
   assert.match(prototype, /相关资料/);
   assert.match(resolver, /resolveWorkspaceMarkdownReference\(href, allowedProjects, projects\)/);
@@ -354,7 +366,9 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
   assert.doesNotMatch(tasks, /task-diagnostics|历史引用诊断/);
   assert.doesNotMatch(listHook, /setDiagnostics/);
   assert.match(detail, /task-reference-diagnostics/);
-  assert.match(read('../buildr-web/src/features/task/components/TaskOverview.tsx'), /id="task-detail-id"/);
+  const header = read('../buildr-web/src/features/task/components/TaskHeaderMetadata.tsx');
+  assert.match(detail, /metadata=\{<TaskHeaderMetadata/);
+  assert.match(header, /id="task-detail-id"/);
   assert.doesNotMatch(tasks, /method:\s*'POST'/);
   assert.match(actionsHook, /taskApi\.list\(\{ status: 'active' \}\)/);
   assert.match(detail, /loadParentOptions/);
@@ -363,7 +377,7 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
   assert.doesNotMatch(detail, /setSelected\([^\n]*workContext\.data\?\.context\?\.stage/);
   assert.match(taskReadLifecycle, /pending\.get\(key\)/);
   assert.match(taskReadLifecycle, /entry\.controller\.abort\(\)/);
-  assert.match(read('../buildr-web/src/features/task/components/TaskSummary.tsx'), /id="task-work-context"/);
+  assert.match(header, /id="task-work-context"/);
   assert.doesNotMatch(detail, /Promise\.all\(\[api\('\/api\/v1\/workspace'\), api\(`\/api\/v1\/tasks\/\$\{encodeURIComponent\(taskId\)\}`\), api\('\/api\/v1\/tasks'\)\]\)/);
   assert.doesNotMatch(server, /request\.method === 'POST' && suffix === '\/tasks'/);
 });

@@ -32,6 +32,7 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 | `task create/inspect/update/activate/complete/abandon` | `buildr.task-record-result/v5` |
 | `task parent inspect` | `buildr.parent-coordination-result/v4` |
 | `task commits` / `GET /tasks/:taskId/commits` | `buildr.task-commits/v1` |
+| `task changed-files` / `GET /tasks/:taskId/changed-files` | `buildr.task-changed-files/v1` |
 | 只读兼容的旧父计划（Parent Plan），无现行写入命令 | `buildr.parent-plan/v2`（兼容读取 v1） |
 | Buildr Web Task stored detail/list query | `buildr.task-record-view/v3` / `buildr.task-record-list/v7` |
 | Buildr Web Task本机复盘文档读取 | `buildr.task-retrospective-document/v1` |
@@ -59,6 +60,8 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 `buildr.task-commits/v1` 是任务限定的闭合只读结果，由命令行（CLI）和网页共享。[任务接口定义](../../../services/buildr/src/modules/task/interfaces/http/task-http-schema.ts)生成 `TaskCommitsResult`：根对象包含 `schemaVersion`、`taskId`、`readAt`、`status: complete|partial`、`commits`、`repositories`、`coverage`、`diagnostics` 和固定为空的 `effects`。每条提交提供代码库（Repository）身份、完整及显示用短哈希值（Hash）、实际主题与完整说明、作者及作者时间和提交时间；来源条目说明实际目录、来源引用及读取状态。
 
 `coverage` 返回已观察引用、读取上限与截断标记；`diagnostics` 保留局部读取失败、非法尾注和归属冲突。`partial` 结果继续携带已成功读取的提交，不能只凭 `commits: []` 判断没有提交。`complete` 只表示本次明确范围读取完成，不承诺远端最新历史或已不可达对象。查询先核对任务存在，`GET /tasks/:taskId/commits` 不接受查询参数；读取不会更新任务状态、审查或验证结论，任务提交结果不是交付证明。
+
+`buildr.task-changed-files/v1` 是同范围的只读变更文件结果：根对象含 `files`（工作区改动：状态 M/U/A/D/R/C、增删数与差异预览）、`repositories`（含分支与领先远端计数）、`commits`（与 commits 同一形状）、`commitFiles`（按提交键的文件改动列表）、`repositoryMeta`、`coverage`（仓库/文件/提交文件/预览行数上限）与 `diagnostics`。未跟踪文件以 `kind: untracked` 返回全文差异预览；已删除或纯重命名文件不提供 `preview`。`GET /tasks/:taskId/changed-files` 不接受查询参数，不执行 Git 写入。
 
 `buildr.parent-coordination-result/v4`只读返回Task目标、当前Record摘要、`parent|child|ordinary` mode、直接Children结果、完成观察身份、已保存父任务完成依据和可选旧Parent Plan历史。它不读取Review、Verification、Development、Finish、Contribution或交付状态，不推断依赖和完成比例，也不传播任何Task状态。
 

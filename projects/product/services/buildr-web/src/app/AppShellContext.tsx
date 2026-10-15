@@ -23,6 +23,7 @@ export type AppShellContextValue = {
   resetTaskList: () => void;
   workspaceMenuTarget: (section: string) => { to: string; state?: unknown };
   forgetWorkspacePage: (path: string) => void;
+  requestWorkspacePage?: (destination: string) => void;
 };
 
 export const AppShellContext = createContext<AppShellContextValue | null>(null);

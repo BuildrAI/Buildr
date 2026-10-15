@@ -129,6 +129,8 @@
 
 按用户选择运行 `buildr update --track stable|candidate`；成功后重新解析当前入口，再执行 `buildr skill install <agent> --target <dir>`。用户明确要求“只更新 CLI”时不追加技能安装、工作空间（Workspace）同步或诊断。更新受阻时保留实际效果，不用旧 CLI 继续安装技能（Skill）。产品更新包含包内 Buildr Web；工作空间（Workspace）采用新版源资产与投射还需在已授权范围继续 `sync`，分别确认产品版本、网页和最终诊断（Doctor）。
 
+npm 更新完成后运行 `buildr installation status --json` 核对实例：released 实例报 `stale` 且 reason 说明版本落后时，同一安装槽位的旧版本仍在运行。此时告知用户旧版本仍在运行，并按 update 的 nextActions 指引启动已安装的 Buildr Web 启动器（Launcher），由其完成旧实例的优雅退出与新版本交接；不要使用 kill 等强杀方式。当前会话正运行在该旧实例内部或本机未安装 Launcher 时，只如实说明需要重启应用或下次经 Launcher 启动时自动交接，不代用户杀进程、不声称已切换。
+
 ## 工作空间更新与检出变化
 
 用户要求“更新 workspace”或“同步 workspace”时，先判断根目录是否受 Git 管理：是则解析 `buildr.git-operations/v1`，向所选提供者（Provider）提供明确 workspace、upstream 和 update operation，安全更新后运行 `buildr sync <agent> --target <dir>`；不是 Git workspace，直接运行 sync。该目标不先更新 CLI；已包含同步授权，不重复询问 sync。

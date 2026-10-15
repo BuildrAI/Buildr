@@ -6,6 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
+import { useLegacyAssetCatalog } from '../../helpers/legacy-asset-catalog.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const buildr: any = path.join(productRoot, 'bin', 'buildr.mjs');
@@ -84,6 +85,7 @@ try {
   verifyOptionalBuiltinPreflight('missing');
   verifyComponentConflictPreflight();
   run(['init', '--target', workspace, '--name', 'integrity-fixture']);
+  useLegacyAssetCatalog(workspace); // Retained project/service identity and rollback contracts.
 
   for (const id of ['.', '..']) {
     const before: any = fs.readFileSync(path.join(workspace, 'projects', 'manifest.yml'), 'utf8');

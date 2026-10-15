@@ -1,3 +1,4 @@
+import { readVerifiedReadonlyBatch, readVerifiedReadonlyBytes, VERIFIED_READONLY_BATCH_SIZE } from '../../../infrastructure/filesystem/verified-readonly-file.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -27,12 +28,46 @@ export function skillSourceRoot(workspaceRoot: string, relative: string): string
   if (!fs.statSync(directory).isDirectory()) throw skillContentError('技能源不是目录。');
   return directory;
 }
-export function readSkillText(directory: string, relative: string) {
+type SkillText = { path: string; content: string; format: string; digest: string };
+type SkillTextResult = { ok: true; file: SkillText } | { ok: false; error: Error };
+function textFileTarget(directory: string, relative: string): string {
   const target = safePath(directory, relative);
   const stat = fs.lstatSync(target);
   if (!stat.isFile()) throw skillContentError('只支持读取普通文本文件。');
   if (stat.size > MAX_BYTES) throw skillContentError('文件超过 512 KiB，暂不支持在线阅读。', 413);
   if (path.basename(relative) !== 'SKILL.md' && !textExtensions.has(path.extname(relative).toLowerCase())) throw skillContentError('此文件类型暂不支持在线阅读。', 415);
+  return target;
+}
+function skillText(relative: string, bytes: Buffer): SkillText {
+  let content: string;
+  try { content = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { throw skillContentError('此文件不是有效的 UTF-8 文本。', 415); }
+  if (content.includes('\0')) throw skillContentError('此文件不是可预览的文本。', 415);
+  return { path: relative, content, format: path.extname(relative).toLowerCase() === '.md' ? 'markdown' : 'text', digest: `sha256-${crypto.createHash('sha256').update(bytes).digest('hex')}` };
+}
+/** One bounded source batch; callers consume each batch before requesting another. */
+export function readSkillTexts(requests: readonly { directory: string; relative: string }[]): SkillTextResult[] {
+  if (requests.length > VERIFIED_READONLY_BATCH_SIZE) throw skillContentError('技能文件读取批次超过限制。');
+  const results: SkillTextResult[] = new Array(requests.length);
+  const readable: Array<{ index: number; directory: string; relative: string }> = [];
+  requests.forEach((request, index) => {
+    try { textFileTarget(request.directory, request.relative); readable.push({ index, ...request }); }
+    catch (cause) { results[index] = { ok: false, error: cause instanceof Error ? cause : skillContentError('技能文件不可读取。') }; }
+  });
+  const observed = readVerifiedReadonlyBatch(readable.map(request => ({ root: request.directory, relative: request.relative, maxBytes: MAX_BYTES })));
+  readable.forEach((request, index) => {
+    const result = observed[index]!;
+    if (!result.ok) { results[request.index] = result; return; }
+    try { results[request.index] = { ok: true, file: skillText(request.relative, result.bytes) }; }
+    catch (cause) { results[request.index] = { ok: false, error: cause instanceof Error ? cause : skillContentError('技能文件不可读取。') }; }
+  });
+  return results;
+}
+export function readSkillText(directory: string, relative: string, options: { requireRootProof?: boolean } = {}) {
+  const target = textFileTarget(directory, relative);
+  if (options.requireRootProof) {
+    const bytes = readVerifiedReadonlyBytes(directory, relative, MAX_BYTES);
+    return skillText(relative, bytes);
+  }
   const fd = fs.openSync(target, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
   try {
     const opened = fs.fstatSync(fd);
@@ -40,10 +75,7 @@ export function readSkillText(directory: string, relative: string) {
     const bytes = Buffer.alloc(MAX_BYTES + 1);
     const size = fs.readSync(fd, bytes, 0, bytes.length, 0);
     if (size > MAX_BYTES) throw skillContentError('文件超过 512 KiB，暂不支持在线阅读。', 413);
-    let content: string;
-    try { content = new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, size)); } catch { throw skillContentError('此文件不是有效的 UTF-8 文本。', 415); }
-    if (content.includes('\0')) throw skillContentError('此文件不是可预览的文本。', 415);
-    return { path: relative, content, format: path.extname(relative).toLowerCase() === '.md' ? 'markdown' : 'text', digest: `sha256-${crypto.createHash('sha256').update(bytes.subarray(0, size)).digest('hex')}` };
+    return skillText(relative, bytes.subarray(0, size));
   } finally { fs.closeSync(fd); }
 }
 export function skillReadingBody(content: string): string {

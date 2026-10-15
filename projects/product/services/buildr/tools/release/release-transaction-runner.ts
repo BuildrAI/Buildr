@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { longRunningOperationSummary } from '../../src/infrastructure/contracts/public-json.ts';
 import { createReleaseToolRuntime } from './runtime.ts';
-import { createExactNodeExecutionEnvironment } from '../../src/infrastructure/process.ts';
+import { assertMinimumNodeVersion, createExactNodeExecutionEnvironment } from '../../src/infrastructure/process.ts';
 import {
   releasePublishAuthority,
   releaseWorkflowPath,
@@ -23,6 +23,7 @@ import { createReleaseContext, evaluateReleaseReadiness, releaseContextIdentity,
 import { inspectReleaseSelection } from './release-selection.ts';
 import { createReleaseTaskEvidenceCorrelationFromRuntime, releaseTaskAssociationProjection } from './release-task-evidence-correlation.ts';
 import { inspectHostedReleaseTransaction } from './release-transaction-evidence.ts';
+import { artifactFromTarball } from './package-artifact-observation.ts';
 
 const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const workspaceRoot: any = path.resolve(serviceRoot, '../../../..');
@@ -160,7 +161,10 @@ export function readCandidateEvidence({ candidateRunId, ghCommand, repo, execute
     }
     const aggregate: any = JSON.parse(fs.readFileSync(findSingleFile(path.join(root, 'candidate-aggregate'), 'candidate-ci-aggregate.json'), 'utf8'));
     const artifact: any = readReleaseArtifact(findSingleFile(path.join(root, 'candidate-package'), 'release-artifact.json'));
-    return { aggregate, manifest: artifact.manifest };
+    const tarballBytes = fs.readFileSync(artifact.tarball);
+    const packageArtifact = artifactFromTarball(tarballBytes, { origin: 'candidate', packageName: artifact.manifest.packageName,
+      version: artifact.manifest.version, integrity: artifact.manifest.integrity, sourceCommit: artifact.manifest.sourceCommit });
+    return { aggregate, manifest: artifact.manifest, packageArtifact, tarballBytes };
   } finally {
     (dependencies.removeDirectory ?? ((directory: any) => fs.rmSync(directory, { recursive: true, force: true })))(root);
   }
@@ -172,7 +176,7 @@ function taskCorrelationProjection(value: any): any  {
 
 export async function runHostedReleaseTransaction(options: any = {}, dependencies: any = {}): Promise<any>  {
   const rawExecute: any = dependencies.execute ?? defaultExecute;
-  const exactNode: any = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env: process.env, requireNpm: true });
+  const exactNode: any = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env: process.env, requireNpm: true, minimumVersion: '24.15.0' });
   const execute: any = (command: any, args: any, executeOptions: any = {}) => rawExecute(command, args, { ...executeOptions, env: executeOptions.env ?? exactNode.env });
   const wait: any = dependencies.wait ?? defaultWait;
   const onStatus: any = dependencies.onStatus ?? ((message: any) => process.stderr.write(`${message}\n`));
@@ -195,7 +199,7 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
   const workflowSource: any = invoke(execute, 'git', ['show', `${sourceCommit}:${releaseWorkflowPath}`], repo);
   const workflowSha256: any = sha256(workflowSource);
   const productNodeVersion: any = invoke(execute, 'git', ['show', `${sourceCommit}:projects/product/.node-version`], repo).trim();
-  if (exactNode.audit.version !== productNodeVersion) throw new Error(`Release runner Node ${exactNode.audit.version} does not match Product exact Node ${productNodeVersion}.`);
+  assertMinimumNodeVersion(exactNode.audit.version, productNodeVersion);
   let context: any;
   if (options.releaseContext) context = validateReleaseContext(options.releaseContext);
   else {
@@ -237,7 +241,7 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
       source: { sourceCommit, sourceTree: actualTree, remoteRef: remoteMain },
     });
     const inspectSelection: any = dependencies.inspectSelection ?? inspectReleaseSelection;
-    const selection: any = inspectSelection({ version, repo, devRef: options.devCommit || 'origin/dev' }, { execute: rawExecute });
+    const selection: any = inspectSelection({ version, ...(options.selectionId ? { selectionId: options.selectionId, targets: options.targets } : {}), repo, devRef: options.devCommit || 'origin/dev' }, { execute: rawExecute });
     const mainParents: any = commitParents(execute, repo, sourceCommit);
     if (selection.status !== 'frozen' || selection.releaseHead !== candidateBase) throw new Error(`Candidate base ${candidateBase} does not match current frozen release generation ${selection.releaseHead ?? '<missing>'}.`);
     if (candidateSourceCommit !== selection.releaseHead) throw new Error(`Candidate run source ${candidateSourceCommit} is stale; current final release source is ${selection.releaseHead}.`);
@@ -263,6 +267,7 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
       selection: selection.selectionIdentity ? {
         identity: selection.selectionIdentity,
         version: selection.version,
+        ...(selection.selectionId ? { selectionId: selection.selectionId, targets: selection.targets } : {}),
         branch: selection.branch,
         releaseHead: selection.releaseHead,
         releaseTree: selection.releaseTree,

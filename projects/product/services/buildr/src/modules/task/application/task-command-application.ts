@@ -5,6 +5,7 @@ import {
   taskActionId as taskId,
   taskActionQualifiedReference as qualified,
   taskActionText as text,
+  taskActionBrief as brief,
   taskRecordError,
   taskRecordErrorFields as errorFields,
 } from './task-validation.ts';
@@ -26,6 +27,7 @@ import type {
   TaskCompleteInputDto,
   TaskCreateInputDto,
   TaskUpdateInputDto,
+  TaskImportBriefInputDto,
 } from './task-dto.ts';
 
 type ChangeResolution = {
@@ -67,6 +69,7 @@ type NormalizedUpdate = {
     isParent?: true;
     title?: string;
     intent?: string;
+    brief?: string | null;
     parentTaskId?: string | null;
     addProjects: string[];
     removeProjects: string[];
@@ -113,7 +116,7 @@ function effect(type: string, taskId: string): TaskEffect {
   return { type, taskId };
 }
 
-export function registerTaskCommandApplication(runtime: TaskCommandApplicationRuntime) {
+export function registerTaskCommandApplication<T extends TaskCommandApplicationRuntime>(runtime: T) {
   const tasks = runtime.taskRepository;
   const projects = runtime.taskProjectRepository;
   const services = runtime.taskServiceRepository;
@@ -130,7 +133,7 @@ export function registerTaskCommandApplication(runtime: TaskCommandApplicationRu
   }
   function domainTask(record: TaskRecord): Task {
     return new Task({
-      taskId: record.taskId, title: record.title, intent: record.intent, status: record.status,
+      taskId: record.taskId, title: record.title, intent: record.intent, brief: record.brief, status: record.status,
       parentTaskId: record.parentTaskId, isParent: record.isParent === true, result: record.result,
       resultHistory: record.resultHistory || [], retrospective: record.retrospective,
       createdAt: record.createdAt, updatedAt: record.updatedAt,
@@ -227,17 +230,18 @@ export function registerTaskCommandApplication(runtime: TaskCommandApplicationRu
     }
   }
   function createTask(targetRoot: string, input: TaskCreateInputDto) {
-    assertFields(input, new Set(['taskId', 'title', 'intent', 'projects', 'services', 'changes', 'parentTaskId', 'isParent', 'status']), 'Task create');
+    assertFields(input, new Set(['taskId', 'title', 'intent', 'brief', 'projects', 'services', 'changes', 'parentTaskId', 'isParent', 'status']), 'Task create');
     const taskIdValue = taskId(input.taskId, 'taskId');
     const requestedStatus = input.status ?? 'active';
     if (requestedStatus !== 'todo' && requestedStatus !== 'active') throw taskRecordError('task_record_status_invalid', 'Task create status 只支持 todo 或 active。', 400, { field: 'status', value: requestedStatus });
     const status: 'todo' | 'active' = requestedStatus;
     const timestamp = nowIso();
     const record = normalizeTaskRecord({
-      schemaVersion: 'buildr.task-record/v3',
+      schemaVersion: 'buildr.task-record/v4',
       taskId: taskIdValue,
       title: text(input.title, 'title'),
       intent: text(input.intent, 'intent'),
+      brief: brief(input.brief),
       scope: {
         projects: array(input.projects, 'projects'),
         services: array(input.services, 'services').map((item, index) => qualified(item, `services[${index}]`, 'service')),
@@ -267,7 +271,7 @@ export function registerTaskCommandApplication(runtime: TaskCommandApplicationRu
   }
 
   function normalizedUpdate(input: TaskUpdateInputDto): NormalizedUpdate {
-    assertFields(input, new Set(['expectedRecordDigest', 'status', 'reason', 'summary', 'parentCompletion', 'title', 'intent', 'parentTaskId', 'isParent', 'addProjects', 'removeProjects', 'addServices', 'removeServices', 'addChanges', 'removeChanges', 'retrospectiveState', 'retrospectiveDocumentDigest', 'clearRetrospective']), 'Task update');
+    assertFields(input, new Set(['expectedRecordDigest', 'status', 'reason', 'summary', 'parentCompletion', 'title', 'intent', 'brief', 'parentTaskId', 'isParent', 'addProjects', 'removeProjects', 'addServices', 'removeServices', 'addChanges', 'removeChanges', 'retrospectiveState', 'retrospectiveDocumentDigest', 'clearRetrospective']), 'Task update');
     if (input.isParent !== undefined && input.isParent !== true) throw taskRecordError('task_record_parent_role_permanent', '父任务身份不能清除。');
     const requestedStatus = input.status;
     if (requestedStatus !== undefined && requestedStatus !== 'todo' && requestedStatus !== 'active' && requestedStatus !== 'completed' && requestedStatus !== 'abandoned') throw taskRecordError('task_record_status_invalid', 'status 只支持 todo、active、completed、abandoned。');
@@ -281,6 +285,7 @@ export function registerTaskCommandApplication(runtime: TaskCommandApplicationRu
       ...(input.isParent === true ? { isParent: true } : {}),
       ...(input.title === undefined ? {} : { title: text(input.title, 'title') }),
       ...(input.intent === undefined ? {} : { intent: text(input.intent, 'intent') }),
+      ...(input.brief === undefined ? {} : { brief: brief(input.brief) }),
       ...(input.parentTaskId === undefined ? {} : { parentTaskId: input.parentTaskId === null ? null : taskId(input.parentTaskId, 'parentTaskId') }),
       addProjects: uniqueInput(array(input.addProjects, 'addProjects').map((item) => text(item, 'addProjects')), (item) => item, 'addProjects'),
       removeProjects: uniqueInput(array(input.removeProjects, 'removeProjects').map((item) => text(item, 'removeProjects')), (item) => item, 'removeProjects'),
@@ -293,7 +298,7 @@ export function registerTaskCommandApplication(runtime: TaskCommandApplicationRu
       clearRetrospective: input.clearRetrospective === true,
     };
     const collectionMutation = operations.addProjects.length > 0 || operations.removeProjects.length > 0 || operations.addServices.length > 0 || operations.removeServices.length > 0 || operations.addChanges.length > 0 || operations.removeChanges.length > 0;
-    const hasMutation = operations.status !== undefined || operations.isParent === true || operations.title !== undefined || operations.intent !== undefined || operations.parentTaskId !== undefined
+    const hasMutation = operations.status !== undefined || operations.isParent === true || operations.title !== undefined || operations.intent !== undefined || operations.brief !== undefined || operations.parentTaskId !== undefined
       || collectionMutation
       || operations.retrospectiveState !== undefined || operations.clearRetrospective;
     if (!hasMutation) throw taskRecordError('task_record_update_empty', 'Task update 至少需要一个明确 mutation。', 400, undefined, '提供 title/intent setter 或 scope/change add/remove 操作。');
@@ -304,7 +309,7 @@ export function registerTaskCommandApplication(runtime: TaskCommandApplicationRu
     if (operations.retrospectiveState !== undefined && operations.retrospectiveDocumentDigest === undefined) throw taskRecordError('task_record_retrospective_digest_required', '设置任务复盘状态必须提供已观察文档摘要。', 400);
     if (operations.retrospectiveState === undefined && operations.retrospectiveDocumentDigest !== undefined) throw taskRecordError('task_record_retrospective_state_required', '提供任务复盘文档摘要时必须同时设置状态。', 400);
     const retrospectiveMutation = operations.retrospectiveState !== undefined || operations.clearRetrospective;
-    const ordinaryMutation = operations.status !== undefined || operations.isParent === true || operations.title !== undefined || operations.intent !== undefined || operations.parentTaskId !== undefined || collectionMutation;
+    const ordinaryMutation = operations.status !== undefined || operations.isParent === true || operations.title !== undefined || operations.intent !== undefined || operations.brief !== undefined || operations.parentTaskId !== undefined || collectionMutation;
     if (retrospectiveMutation && ordinaryMutation) throw taskRecordError('task_record_update_conflict', '任务复盘文档状态必须单独更新。', 400);
     return { operations, expectedRecordDigest: input.expectedRecordDigest };
   }
@@ -393,6 +398,7 @@ export function registerTaskCommandApplication(runtime: TaskCommandApplicationRu
         ...(operations.isParent === true ? { isParent: true } : {}),
         ...(operations.title === undefined ? {} : { title: operations.title }),
         ...(operations.intent === undefined ? {} : { intent: operations.intent }),
+        ...(operations.brief === undefined ? {} : { brief: operations.brief }),
         ...(operations.parentTaskId === undefined ? {} : { parentTaskId: operations.parentTaskId }),
         scope: {
           projects: applyCollection(current.scope.projects, operations.addProjects, operations.removeProjects, (item) => item, 'Project scope'),
@@ -417,14 +423,30 @@ export function registerTaskCommandApplication(runtime: TaskCommandApplicationRu
         else next = { ...next, status: nextStatus, result: null, retrospective: null };
       }
       if (JSON.stringify(next) === JSON.stringify(current)) return current;
-      if (current.status === 'completed' && next.status === 'completed' && (next.intent !== current.intent || JSON.stringify(next.scope) !== JSON.stringify(current.scope) || JSON.stringify(next.changes) !== JSON.stringify(current.changes)) && (next.isParent || transaction.parentContext().isParent)) throw taskRecordError('task_record_completion_context_changed', '修改已完成父任务的目标或范围时，请显式更正为进行中，再重新验收。', 409);
+      if (current.status === 'completed' && next.status === 'completed' && (next.intent !== current.intent || next.brief !== current.brief || JSON.stringify(next.scope) !== JSON.stringify(current.scope) || JSON.stringify(next.changes) !== JSON.stringify(current.changes)) && (next.isParent || transaction.parentContext().isParent)) throw taskRecordError('task_record_completion_context_changed', '修改已完成父任务的目标或范围时，请显式更正为进行中，再重新验收。', 409);
       if (terminal && !retrospectiveOnly) {
         const reason = text(input.reason, 'reason');
         if (!current.result || (current.status !== 'completed' && current.status !== 'abandoned')) throw taskRecordError('task_record_result_invalid', '终态Task缺少结果，不能更正。', 500);
-        next.resultHistory = [...(current.resultHistory || []), { status: current.status, title: current.title, intent: current.intent, scope: current.scope, changes: current.changes, parentTaskId: current.parentTaskId, ...(current.isParent ? { isParent: true as const } : {}), result: current.result, recordUpdatedAt: current.updatedAt, correctedAt: nowIso(), reason }];
+        next.resultHistory = [...(current.resultHistory || []), { status: current.status, title: current.title, intent: current.intent, brief: current.brief, scope: current.scope, changes: current.changes, parentTaskId: current.parentTaskId, ...(current.isParent ? { isParent: true as const } : {}), result: current.result, recordUpdatedAt: current.updatedAt, correctedAt: nowIso(), reason }];
       }
       return next;
     }, { projects: operations.addProjects, services: operations.addServices, changes: operations.addChanges }, ['todo', 'active', 'completed', 'abandoned']);
+  }
+
+  function importTaskBrief(targetRoot: string, taskIdValue: string, input: TaskImportBriefInputDto) {
+    assertFields(input, new Set(['expectedRecordDigest', 'brief']), 'Task legacy brief import');
+    const imported = brief(input.brief);
+    if (imported === null) throw taskRecordError('task_record_brief_empty', '旧任务说明导入必须提供真实非空正文。', 400);
+    return mutate(targetRoot, taskIdValue, 'update', input, current => {
+      if (current.brief === imported) return current;
+      if (current.brief !== null) throw taskRecordError('task_record_brief_exists', '任务记录已具有说明正文，不能用旧文件覆盖。', 409);
+      const next: TaskRecord = { ...current, brief: imported };
+      if (current.status === 'completed' || current.status === 'abandoned') {
+        if (!current.result) throw taskRecordError('task_record_result_invalid', '终态Task缺少结果，不能导入说明。', 500);
+        next.resultHistory = [...(current.resultHistory || []), { status: current.status, title: current.title, intent: current.intent, brief: current.brief, scope: current.scope, changes: current.changes, parentTaskId: current.parentTaskId, ...(current.isParent ? { isParent: true as const } : {}), result: current.result, recordUpdatedAt: current.updatedAt, correctedAt: nowIso(), reason: '显式导入已关联的旧任务说明，统一正文存储。' }];
+      }
+      return next;
+    }, {}, ['todo', 'active', 'completed', 'abandoned']);
   }
 
   function activateTask(targetRoot: string, taskIdValue: string, input: TaskActivateInputDto) {
@@ -508,6 +530,6 @@ export function registerTaskCommandApplication(runtime: TaskCommandApplicationRu
 
   return Object.assign(runtime, {
     createTaskPersistence, mutateTaskPersistence, writeTaskPersistence,
-    createTask, updateTask, activateTask, completeTask, abandonTask, endTask,
+    createTask, updateTask, importTaskBrief, activateTask, completeTask, abandonTask, endTask,
   });
 }

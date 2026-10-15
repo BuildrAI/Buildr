@@ -53,7 +53,7 @@
       "type": "skill",
       "id": "code-map",
       "target": "skills/buildr/code-map",
-      "integrity": "sha256-75779ce756d97b9b8230a5b220496eb04e7be9ea4920bf94c1b64344e1b3e23a",
+      "integrity": "sha256-e00f19be1547b13433ccdfb146b511d4e84f176232cbd6b500fa903482656f72",
       "files": [
         {
           "path": "SKILL.md",
@@ -61,7 +61,39 @@
         },
         {
           "path": "references/knowledge-index.md",
-          "integrity": "sha256-d0031f13dd7ffd881ade3c5d6b6f58b22264243adc1f9fa1cbe3f1530cc5b7ec"
+          "integrity": "sha256-a5cb5e443be579942446d361af21656348743f76da5f175e9e343da82995b5b0"
+        }
+      ]
+    },
+    {
+      "type": "skill",
+      "id": "connection-authoring",
+      "target": "skills/buildr/connection-authoring",
+      "integrity": "sha256-0be08fa2393152be9a538d9d8279c89453bb2dca9b743990b806e1d08e18cc6e",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "integrity": "sha256-8038d9e86afd4c619a3689d7285ac1713f9f2365d977294f307d6f425e61872d"
+        },
+        {
+          "path": "references/connection-contract.md",
+          "integrity": "sha256-ec7770054e61e9785d847efb6aaf3ae659a50102e65608bf428b1e027a7e18ff"
+        },
+        {
+          "path": "templates/SKILL.md",
+          "integrity": "sha256-5cd584a7c2621e821461eba648f46975bc9a5afca30e438f5a0200381fd013e4"
+        },
+        {
+          "path": "templates/client.mjs",
+          "integrity": "sha256-f1ca1d7a4e70386c091b14e28140d5dce4e5da853ac00eaa6fac24c29263b1af"
+        },
+        {
+          "path": "templates/commands-and-results.md",
+          "integrity": "sha256-3241c7d87a1283cac7d00478febced546c31322bcd036dd1241719bf2dd96998"
+        },
+        {
+          "path": "templates/connection.yml",
+          "integrity": "sha256-47093c45553e7cc7b0ee1465ec4d597296478ad7719158c0cd55a441aed519d7"
         }
       ]
     },
@@ -69,11 +101,11 @@
       "type": "skill",
       "id": "current-knowledge-maintenance",
       "target": "skills/buildr/current-knowledge-maintenance",
-      "integrity": "sha256-9a77fb6203334e4e632c872946837912d9feff1f8df8d6e169da891ff97fdbb3",
+      "integrity": "sha256-d46d7d026a3fd43afed452b6fb2a7e91ffb8fb8a741c60bc91c8ad916b88d849",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-211550e9b9ca4b1ebc3ff44a08508c338be01f4e3ad4100b4688a5ebd1ef46b7"
+          "integrity": "sha256-3c9fed8ff720a7596e7d80a15b121820c362effce5d6c28159f8e7173aac6622"
         },
         {
           "path": "references/architecture-knowledge.md",
@@ -81,11 +113,11 @@
         },
         {
           "path": "references/artifacts.md",
-          "integrity": "sha256-4392f7d12b239558ea5e97530211662dcaccb7033025becf6675100dbf66d480"
+          "integrity": "sha256-3ffc368d6cde9b8975a2ed0a2df8e0aeadb2ab575a9d18daea7751258f85b752"
         },
         {
           "path": "references/change-collaboration.md",
-          "integrity": "sha256-518cf26115a9a1ef066d97150f26cacb7a411d0eeb5754f8bcbf3bafad09df09"
+          "integrity": "sha256-01239f24caba63e8d619599b9a970cfaee9bd5400c3b653704b06fc24fbcea34"
         },
         {
           "path": "references/verification.md",
@@ -107,13 +139,25 @@
     },
     {
       "type": "skill",
-      "id": "frontend-development",
-      "target": "skills/buildr/frontend-development",
-      "integrity": "sha256-0c486def047b583517306f779056800a7836a2e048f972c5d666dc05c9d7de47",
+      "id": "feature-design",
+      "target": "skills/buildr/feature-design",
+      "integrity": "sha256-9838e8c53c3284ff2edadde9c529e8783bc8b87e5412b78fd5323549b37bb71c",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-31ec16a90ed73852f485dd4e3ae5044300de22ae0cd9dd434b65b0b8c92682dc"
+          "integrity": "sha256-1a12dcfeeb70fbbf107d26c739983fb311b538657aba1b3447445659e2b9476b"
+        }
+      ]
+    },
+    {
+      "type": "skill",
+      "id": "frontend-development",
+      "target": "skills/buildr/frontend-development",
+      "integrity": "sha256-09ef179b397df25608128eafd1f3b3782a2848a37c89b1a84cde473d178f9e3b",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "integrity": "sha256-060d1102e683817770cc97ed9641792f04de7cac9b1287be3c0f5f171a9bb1d4"
         }
       ]
     },
@@ -121,11 +165,11 @@
       "type": "skill",
       "id": "git-operations",
       "target": "skills/buildr/git-operations",
-      "integrity": "sha256-f949829fddd94f450415c8abd2b9faead9103d69c987af3ce1f94aee3c1fb32c",
+      "integrity": "sha256-d5c7e495afa613d3ab51040c7e24fad392682e31d6a31fbd34ddf608f9a6f8ae",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-54eb8243d658fc861dec07b1c1b68882de6ae3c94f72aba667c0d015a526fbda"
+          "integrity": "sha256-ee6687546e492bbdbfb235474bd220ad2af0be1c2e88a45adfdf8ff95d1f4a63"
         }
       ]
     },
@@ -138,6 +182,146 @@
         {
           "path": "SKILL.md",
           "integrity": "sha256-50b5fb04eb75acb1218fc5c34caf4e0e7b66500f0df28e6f296f8b9f89e559b8"
+        }
+      ]
+    },
+    {
+      "type": "skill",
+      "id": "kibana-connection",
+      "target": "skills/connections/kibana-connection",
+      "integrity": "sha256-3e7886a98f2574b414cebc5a3213ab8fd3d9aadcc13ae7132c4df504390047b2",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "integrity": "sha256-62670d8b6602da4505e5a7132a2ed0b31734f94fb0d88a1f50214429b86f9fea"
+        },
+        {
+          "path": "assets/connection.yml",
+          "integrity": "sha256-0bb677b7f19577ab23cd6c86dbe3ff5991bde2c58e4c271e7f92694cb2b9f19a"
+        },
+        {
+          "path": "references/commands-and-results.md",
+          "integrity": "sha256-12afeb2baa21750dac22a688326e18358f207b73f85ef13bcb78987811a6358e"
+        },
+        {
+          "path": "references/context-protocol.md",
+          "integrity": "sha256-919ead316aa7c81d1ab12c81bd3bb2c7832a0746b1b42dd0183ec6c601a621cd"
+        },
+        {
+          "path": "references/service-log-discovery.md",
+          "integrity": "sha256-32297a02d5ac453dbd26a90ff89fe40581786c45594374c66f5203bdeba16731"
+        },
+        {
+          "path": "scripts/kibana-client.mjs",
+          "integrity": "sha256-76db8f8db02885b15144d53456b45416588acce144c15ae9d499c50ee17ec048"
+        },
+        {
+          "path": "scripts/lib/cli.mjs",
+          "integrity": "sha256-d382d38e7c1aef814f9c7267fc851bccfe7c3925dbf9f021564cd716d7c745b1"
+        },
+        {
+          "path": "scripts/lib/configuration.mjs",
+          "integrity": "sha256-a5e480579603014299358a5e254ee2c1f1e96729a5b417c6ed5a23a4c50d7401"
+        },
+        {
+          "path": "scripts/lib/context.mjs",
+          "integrity": "sha256-7b219f36e293a05115224f2298a3fafcd3def98951f2612c398770103481be2d"
+        },
+        {
+          "path": "scripts/lib/errors.mjs",
+          "integrity": "sha256-23496e341869cd1a28bcbedeea5a598c4d493f8ee8cfd8f7b4fd38fd41e9eaa2"
+        },
+        {
+          "path": "scripts/lib/operations.mjs",
+          "integrity": "sha256-b46f0a65178a36d311ab3294921b46de04612ce755149b79193500224e7b351b"
+        },
+        {
+          "path": "scripts/lib/query.mjs",
+          "integrity": "sha256-95cf0cc16b068cc3332f0fa305ee8ccc52a60c22424b9a073a05ae5c51fd1dfe"
+        }
+      ]
+    },
+    {
+      "type": "skill",
+      "id": "mysql-connection",
+      "target": "skills/connections/mysql-connection",
+      "integrity": "sha256-c34ecad5096ebd9ec205a62bbdf71ed5f65d3b99648d5d9e1b4160d367c6895e",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "integrity": "sha256-53bb408eadbf4bbbc569c7d9e723aafa995be75d717aca6e39797b8b07f5d824"
+        },
+        {
+          "path": "assets/connection.yml",
+          "integrity": "sha256-a559adb066c4a1c273e852df553b0f1dd038bb347d235b412fe287864ae88f7c"
+        },
+        {
+          "path": "references/commands-and-results.md",
+          "integrity": "sha256-1062cce1ed0f1993d0ef78f34c81f45a6f00dba914f45130f0110bca99d72bc9"
+        }
+      ]
+    },
+    {
+      "type": "skill",
+      "id": "nacos-connection",
+      "target": "skills/connections/nacos-connection",
+      "integrity": "sha256-0b26a18f91c3b036f7c7dfe5abb7431f20c6e4ba7e99dc84067290d0b0f7d0f8",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "integrity": "sha256-f7692a019f69fe523096ae0080c88b85db0093a6826550486de39bfca11edec3"
+        },
+        {
+          "path": "assets/connection.yml",
+          "integrity": "sha256-5cb76ed5aff1118cebecb2b18446b4c6df89f450767f46123e390e605f445759"
+        },
+        {
+          "path": "references/api-compatibility.md",
+          "integrity": "sha256-067a2c09c94264feb2407486c356c3be6795e0130f53f881b650a925f7e0bf01"
+        },
+        {
+          "path": "references/commands-and-results.md",
+          "integrity": "sha256-ee6c4b1e692004d6b92eb54fdbbc8ce9841b7ee91438a0c0eb5bcecb3c7c2ede"
+        },
+        {
+          "path": "references/context-protocol.md",
+          "integrity": "sha256-55111663230180c869e38cd2a88d53a4e818cfddc92d1b575799716f29cbc8d0"
+        },
+        {
+          "path": "references/service-config-discovery.md",
+          "integrity": "sha256-338a760484b82bdff3cd16bd261d1097ed7a73f14743e11bd4aa2439b79436e5"
+        },
+        {
+          "path": "scripts/lib/configuration.mjs",
+          "integrity": "sha256-5851fb3d5e438fd64c198eba4164b20d237f203f52266874b7455ca035c30dd1"
+        },
+        {
+          "path": "scripts/lib/context.mjs",
+          "integrity": "sha256-d775b96ba56cf84e7181d88648a3c79ecade043192e757cd6826468b1e94d2d2"
+        },
+        {
+          "path": "scripts/lib/errors.mjs",
+          "integrity": "sha256-fad2498d699d4cc0a16dab4a982a3b27132f9a9b3e5244aad54dc2371a84c213"
+        },
+        {
+          "path": "scripts/lib/http.mjs",
+          "integrity": "sha256-60796acf9673e2d5656b74d1c97b41737e6198181e024aff98df8ffb6f6f0674"
+        },
+        {
+          "path": "scripts/lib/operations.mjs",
+          "integrity": "sha256-f17593fca89d194d8bf5c2fa28516e2a6804a0ca4c08ad454869ab2ee7ec44f4"
+        },
+        {
+          "path": "scripts/lib/output.mjs",
+          "integrity": "sha256-c33eb4f524347c34fd627617bc406235dd6be0ccd85b3c9c4f5007310b41843a"
+        },
+        {
+          "path": "scripts/lib/workflow.mjs",
+          "integrity": "sha256-34fee7d665fc9b25fa60882801db3548b9ba2518b92764e07680db042bb6b90c"
+        },
+        {
+          "path": "scripts/nacos-client.mjs",
+          "integrity": "sha256-24fba52b88bc09cc7a032b64c4e86a75a81925a49d5fdc979d9238b1d4917993"
         }
       ]
     },
@@ -213,11 +397,11 @@
       "type": "skill",
       "id": "task-finish",
       "target": "skills/buildr/task-finish",
-      "integrity": "sha256-72ed6942fd83ffd2842ee36fa211697b9fb3f96d52e073b9f6d0ef795a6519da",
+      "integrity": "sha256-252e380d180e3337a78e9f08b511153766799d782429e6ffce215ad1fbff283c",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-c658e7e2a3bf7cf99b23727bdc5c8c34bd4a01b9b2e09fcebdeb935397ccaf77"
+          "integrity": "sha256-21a81d373f31368027cb3f3a6bc61fdf909a947ca30e2fb13f81b09172b375f6"
         }
       ]
     },
@@ -225,11 +409,11 @@
       "type": "skill",
       "id": "task-manager",
       "target": "skills/buildr/task-manager",
-      "integrity": "sha256-25eb78a0d4a9e2a73ec1a2d24535bc9aef16768de1f637b38e6cb09531ceddaa",
+      "integrity": "sha256-568a308ae21d9c608db783c11a2476f93d6d2001f99768e71ef4d4a2a5706f82",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-2c1b56b55fb7900b5cd9f16249daad151e9728bdfe0fc730bcc82313d68c122e"
+          "integrity": "sha256-62ac04e217015b7d347105ed1650ca10bd9e58a2721cfe8f587308da863960aa"
         },
         {
           "path": "agents/openai.yaml",
@@ -241,11 +425,11 @@
       "type": "skill",
       "id": "task-retrospective",
       "target": "skills/buildr/task-retrospective",
-      "integrity": "sha256-04e6c057d84f282dcb98f01872dd053e64cfb3029279509b13d2fff5b8121c95",
+      "integrity": "sha256-ab74369384004be906218ecfc38e52f082ce3c92d87dfdc1fcd870473668bfbd",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-2dc63c2b02b5900fbfc02f578fa965e5d315ca78562adb68b7ccf38234d0ccfe"
+          "integrity": "sha256-0fd17a85d38293be8accbffd3821614f2f31150f75d370278c007d740c72f737"
         },
         {
           "path": "agents/openai.yaml",
@@ -257,11 +441,11 @@
       "type": "skill",
       "id": "task-review",
       "target": "skills/buildr/task-review",
-      "integrity": "sha256-160bc0f817ac68bfb0f09a505d9216c910e9def78b5cd61a3aad1d501caf8f4d",
+      "integrity": "sha256-640c81c0be89903124749ddf94e273b3811e47e14056c383e8bdd5b28f6f2af2",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-ec29d632f520b946942e1875ee8e952c620338bcf8b55a0768d0f5cac1e9de4d"
+          "integrity": "sha256-0bcdd6f7b2e982c861cc799caafd6910ad5e4a14691aa3037c455633f4bb58fb"
         },
         {
           "path": "agents/openai.yaml",
@@ -273,15 +457,15 @@
       "type": "skill",
       "id": "task-triage",
       "target": "skills/buildr/task-triage",
-      "integrity": "sha256-219235aeb129e0ab3daa8e04917c393ff2d0c59eec088a2b8c05be27e2917476",
+      "integrity": "sha256-6a2e5048dedd1180046ffaa15fb9111e850fae600cad16b730796bc3555ff4ea",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-029f18dec6f8498640c7016d78731a376a081c744a6a5eff83d95752929fa4ae"
+          "integrity": "sha256-def1bc0f504c0e525913e073486eea9daf19dda467c9cca1a7c5c0da8f5462c5"
         },
         {
           "path": "references/structured-handoff.md",
-          "integrity": "sha256-70e10bbcb9111c2a1f8b15284a4d598f2ef8a09fff87c1e75af1e576c17f7858"
+          "integrity": "sha256-cab5924583ab68b461e9230bc43a1b71e8f4b6334b3d232426e3c998b77aed24"
         }
       ]
     },
@@ -289,11 +473,11 @@
       "type": "skill",
       "id": "task-verification",
       "target": "skills/buildr/task-verification",
-      "integrity": "sha256-cb577eebb78b7dd6956dafda12e4815114faba7889a8df33579b0e26b2c0c179",
+      "integrity": "sha256-efa1c8258959ff9d021a167041c2e52edafe12a0b7551c0441215409e7dc3e1b",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-7559190459e9c5ace6967fefaebefd0b5e6c1b764001004f5d4a6260fefb3427"
+          "integrity": "sha256-b764cd62c824170dfe58086e251de7f8cd2db4b3efca5b075b9e176f90b25b46"
         },
         {
           "path": "references/frontend-verification.md",
@@ -309,7 +493,7 @@
         },
         {
           "path": "references/record-report.md",
-          "integrity": "sha256-17b5e5bd7c5fafeb431cd4a6968fa10032768f1929277f4d36ddbfce4acb4ea3"
+          "integrity": "sha256-92bdbc20597b5346a486088859895949f3002a130e40bf3292cffd3cebe1b1df"
         },
         {
           "path": "templates/project-verification.yml",
@@ -321,11 +505,11 @@
       "type": "skill",
       "id": "task-worktree",
       "target": "skills/buildr/task-worktree",
-      "integrity": "sha256-b918df21543a40f88af0ffff3250bae97c7004f64f2359ed26b22e6b67ef9327",
+      "integrity": "sha256-d6ec200709e8927838373ced45b925c4847122e422655b19f18ad39ecbe0dfb2",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-216245ca5b48694bca9106420df08352284e41456281b921499ac03e353c222b"
+          "integrity": "sha256-d5e904e104e624719e6a8fb47cc5b75b865b8aa891c9f543d5aedfe078cb4f4c"
         }
       ]
     },
@@ -345,11 +529,11 @@
       "type": "skill",
       "id": "ui-prototype",
       "target": "skills/buildr/ui-prototype",
-      "integrity": "sha256-c6675c5812502aabafb6c7d80557d5e73a83f997aaa93a803c00849740bc0ccf",
+      "integrity": "sha256-0bd09806920d8ca17101e021562ada9deb676b6816a3294c02bab3ea55145053",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-56a574949bf3df9b1f270ff2040a6968b50b53c934f558907f217058d34ec4a8"
+          "integrity": "sha256-968b28bc5c9f31c775483e7a0500eb5301d36544736db061a8117c39b3240d2b"
         },
         {
           "path": "assets/feature-notes.css",
@@ -365,7 +549,7 @@
         },
         {
           "path": "references/feature-notes.md",
-          "integrity": "sha256-32b640e1ccc0562bde8108057bf7271a883941ca58c961167b5597ba6ed43306"
+          "integrity": "sha256-c709850b959c0603d90cff7cd8eabd338a8115bba0a1406a33a20a4e7fe6d55f"
         }
       ]
     },
@@ -406,6 +590,66 @@
         {
           "path": "references/visual-perception-and-layout.md",
           "integrity": "sha256-e7d1f7a60935b9ec3ebc97377b7bb2f7bf4ded1d5de36d6b53989119641a7d16"
+        }
+      ]
+    },
+    {
+      "type": "skill",
+      "id": "xxl-job-connection",
+      "target": "skills/connections/xxl-job-connection",
+      "integrity": "sha256-8d3f5d76dde46b0bf0c790432182ec3e0e2742756c96d11a2637b530c018cbd2",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "integrity": "sha256-7f16ada32a6802d67befa5e34052e72936bf7efca484919cbe356af044014130"
+        },
+        {
+          "path": "assets/connection.yml",
+          "integrity": "sha256-a3d3617571c293f6cea317600e266c52226908ed1d189a354c5b1210a76de731"
+        },
+        {
+          "path": "references/commands-and-results.md",
+          "integrity": "sha256-fc5916b0dabbb9e33b9638c4fc546ef1e4d8f452e2087e2a8e74db68dd385e12"
+        },
+        {
+          "path": "scripts/lib/configuration.mjs",
+          "integrity": "sha256-5718c15ba64c5cb10c406004c5b7523a560e24f4b2f3e89475b0cb54cca1b166"
+        },
+        {
+          "path": "scripts/lib/context.mjs",
+          "integrity": "sha256-7c659ef34161dcfc65132511ac10c4be7a0f910172264e9b8a0a516597fecd12"
+        },
+        {
+          "path": "scripts/lib/errors.mjs",
+          "integrity": "sha256-1bea7900a0de07d939baba48b4c21c3325d4619e82fe993203e76f2831eac87a"
+        },
+        {
+          "path": "scripts/lib/http.mjs",
+          "integrity": "sha256-936893f29e5db0be16589ddd5035da8539afb534ba2dc5c1af5030d0999fe27a"
+        },
+        {
+          "path": "scripts/lib/job.mjs",
+          "integrity": "sha256-d7698d785461798b1f70c40b58996c61ca42c04b5e6e163513487ab8c70e0826"
+        },
+        {
+          "path": "scripts/lib/operations.mjs",
+          "integrity": "sha256-d785fb5ce622a658f01627140882de3511ceb40b8d476a9d3b3cc6aa069702cc"
+        },
+        {
+          "path": "scripts/lib/output.mjs",
+          "integrity": "sha256-95202a198977f7abae4777fe9ea1f8ef31f43e1123a902e39898fe840d9a4872"
+        },
+        {
+          "path": "scripts/lib/state.mjs",
+          "integrity": "sha256-fa7ea3a050e73fd8340a38eb65aadf7dc33aca3eefe24e5793de8967a9b80cc1"
+        },
+        {
+          "path": "scripts/lib/workflow.mjs",
+          "integrity": "sha256-3d41d686d9474244ff78702608746a58a23acb27a338a869d182adcc048d14b6"
+        },
+        {
+          "path": "scripts/xxl-job-client.mjs",
+          "integrity": "sha256-ad6590101407c8582233f8ebdb3a7300371d2f5921fffb719070d240da0e5853"
         }
       ]
     }

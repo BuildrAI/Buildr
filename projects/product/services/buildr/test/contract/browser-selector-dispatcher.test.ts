@@ -1,8 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { parseChangedPaths, selectBrowserSelectors } from '../verification/browser-selector-dispatcher.ts';
+import { BROWSER_SELECTORS, parseChangedPaths, planBrowserCommands, planCodeBrowserGroups, selectBrowserSelectors } from '../verification/browser-selector-dispatcher.ts';
 import { createVerificationPlan } from '../verification/planner.ts';
+
+test('Task-owned materials select the existing production-host browser boundary', () => {
+  const plan = selectBrowserSelectors(['services/buildr/src/modules/task/materials/application/task-materials-application.ts']);
+  assert.equal(plan.status, 'selected');
+  assert.deepEqual(plan.selectors, ['task-materials']);
+});
 
 test('Browser dispatcher skips Chrome for HTTP-only Buildr Web changes', () => {
   const plan: any = selectBrowserSelectors(['src/web/http/server.ts']);
@@ -97,7 +103,9 @@ test('changed planner gives Buildr Web Runtime HTTP its narrow System owner', ()
 test('Browser dispatcher covers shared reading and publication components', () => {
   assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/publication/components/ArticleEditorDrawer.tsx']).selectors, ['layout', 'articles']);
   assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/knowledge/components/KnowledgeBrowser.tsx']).selectors, ['layout', 'project', 'service', 'articles']);
-  assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/app/WorkspacePages.tsx']).selectors, ['layout', 'shell', 'project', 'service', 'articles']);
+  for (const file of ['app/WorkspacePages.tsx', 'app/WorkspacePaneHost.tsx', 'components/WorkspaceStage.tsx']) {
+    assert.deepEqual(selectBrowserSelectors([`services/buildr-web/src/${file}`]).selectors, ['layout', 'shell', 'workbench', 'project', 'service', 'articles', 'task']);
+  }
 });
 
 test('shared styles and frontend browser scenarios select executable layout coverage', () => {
@@ -105,4 +113,56 @@ test('shared styles and frontend browser scenarios select executable layout cove
     assert.ok(selectBrowserSelectors([`services/buildr-web/src/${file}`]).selectors.includes('layout'));
   }
   assert.deepEqual(selectBrowserSelectors(['services/buildr-web/test/browser/layout-journey.ts']).selectors, ['all']);
+});
+
+test('code runs complete Explorer and SCM in separate isolated processes sharing one immutable artifact', () => {
+  const webDistRoot = '/tmp/buildr-browser-contract/immutable-web-dist';
+  const commands = planBrowserCommands(['code'], webDistRoot, {});
+  assert.deepEqual(commands.map(command => command.id), ['browser:code:explorer', 'browser:code:source-control']);
+  assert.deepEqual(commands.map(command => command.timeoutMs), [255_000, 495_000]);
+  assert.deepEqual(planCodeBrowserGroups({}).map(group => group.nodeTimeoutMs), [240_000, 480_000]);
+  for (const command of commands) {
+    assert.equal(command.argv[0], process.execPath);
+    assert.match(command.argv[1], /run-isolated-workspace-smoke\.ts$/);
+    assert.equal(command.argv[2], '--script');
+    assert.match(command.argv[3], /buildr-web-browser\.test\.ts$/);
+    assert.deepEqual(command.argv.slice(4), ['--', 'code']);
+    assert.equal(command.env.BUILDR_BROWSER_WEB_DIST_ROOT, webDistRoot);
+    assert.equal(Number(Boolean(command.env.BUILDR_CODE_EXPLORER_FOCUS)) + Number(Boolean(command.env.BUILDR_SOURCE_CONTROL_FOCUS)), 1);
+  }
+  assert.equal(commands[0].env.BUILDR_CODE_EXPLORER_FOCUS, 'all');
+  assert.equal(commands[0].env.BUILDR_SOURCE_CONTROL_FOCUS, '');
+  assert.equal(commands[1].env.BUILDR_CODE_EXPLORER_FOCUS, '');
+  assert.equal(commands[1].env.BUILDR_SOURCE_CONTROL_FOCUS, 'all');
+  assert.notEqual(commands[0].env, commands[1].env);
+});
+
+test('full browser plan includes both code groups exactly once and retains other selector budgets', () => {
+  const commands = planBrowserCommands(['all'], '/tmp/buildr-browser-contract/web-dist', {});
+  assert.equal(commands.length, BROWSER_SELECTORS.length + 1);
+  assert.deepEqual(commands.filter(command => command.argv.at(-1) === 'code').map(command => command.id), ['browser:code:explorer', 'browser:code:source-control']);
+  assert.equal(new Set(commands.map(command => command.id)).size, commands.length);
+  for (const command of commands.filter(command => command.argv.at(-1) !== 'code')) {
+    assert.equal(command.timeoutMs, command.id === 'browser:task' ? 495_000 : 360_000);
+  }
+  assert.equal(new Set(commands.map(command => command.env.BUILDR_BROWSER_WEB_DIST_ROOT)).size, 1);
+});
+
+test('explicit code focus dispatches only its group and preserves SCM title selection', () => {
+  const explorer = planBrowserCommands(['code'], '/tmp/web-dist', { BUILDR_CODE_EXPLORER_FOCUS: 'all' });
+  assert.deepEqual(explorer.map(command => command.id), ['browser:code:explorer']);
+  assert.equal(explorer[0].env.BUILDR_SOURCE_CONTROL_FOCUS, '');
+  for (const focus of ['all', '指定位置就地切换|远程']) {
+    const sourceControl = planBrowserCommands(['code'], '/tmp/web-dist', { BUILDR_SOURCE_CONTROL_FOCUS: focus });
+    assert.deepEqual(sourceControl.map(command => command.id), ['browser:code:source-control']);
+    assert.equal(sourceControl[0].env.BUILDR_SOURCE_CONTROL_FOCUS, focus);
+    assert.equal(sourceControl[0].env.BUILDR_CODE_EXPLORER_FOCUS, '');
+  }
+});
+
+test('code rejects conflicting or unsupported focus without changing unrelated selector semantics', () => {
+  const conflict = { BUILDR_CODE_EXPLORER_FOCUS: 'all', BUILDR_SOURCE_CONTROL_FOCUS: 'all' };
+  assert.throws(() => planBrowserCommands(['code'], '/tmp/web-dist', conflict), (error: any) => error.code === 'browser_code_focus_conflict');
+  assert.throws(() => planBrowserCommands(['code'], '/tmp/web-dist', { BUILDR_CODE_EXPLORER_FOCUS: '1' }), (error: any) => error.code === 'browser_code_explorer_focus_invalid');
+  assert.deepEqual(planBrowserCommands(['project'], '/tmp/web-dist', conflict).map(command => command.id), ['browser:project']);
 });

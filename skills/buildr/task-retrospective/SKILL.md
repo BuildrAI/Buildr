@@ -9,7 +9,7 @@ description: 用户明确要求复盘已完成或已放弃的正式Task，查看
 
 ## 1. 核对真实对象
 
-读取当前运行时（Runtime）绑定中 `buildr.task-record/v3` 的契约（Contract）和所选提供者（Provider），确认canonical Workspace、正式Task ID和当前Task Record。Task 必须是 `completed` 或 `abandoned`；进行中的工作可以讨论改进，但不登记为终态任务复盘。
+读取当前运行时（Runtime）绑定中 `buildr.task-record/v4` 的契约（Contract）和所选提供者（Provider），确认canonical Workspace、正式Task ID和当前Task Record。Task 必须是 `completed` 或 `abandoned`；进行中的工作可以讨论改进，但不登记为终态任务复盘。
 
 只读取当前真正可达且与复盘相关的最小事实：Task目标与结果、当前会话工具结果、Git、代码、测试、适用Review/Verification、CI或外部业务结果。已有本机文档只是调查线索，继续判断前重新核对当前事实。
 

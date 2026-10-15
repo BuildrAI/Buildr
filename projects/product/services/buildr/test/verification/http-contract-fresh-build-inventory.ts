@@ -23,6 +23,7 @@ export const HTTP_CONTRACT_FRESH_BUILD_FAMILIES: any = Object.freeze([
   ], [['buildr', 'build/generated/workbench-dto.ts'], ['buildr-web', 'build/generated/workbench-dto.ts']]),
   family('task-record', 'tools/codegen/contracts/task-dto.ts', [
     'src/modules/task/interfaces/http/task-http-schema.ts',
+    'src/modules/task/materials/application/task-materials-contracts.ts',
   ], [
     ['buildr', 'build/generated/task-dto.ts'],
     ['buildr-web', 'build/generated/task-dto.ts'],
@@ -34,9 +35,18 @@ export const HTTP_CONTRACT_FRESH_BUILD_FAMILIES: any = Object.freeze([
     ['buildr-web', 'build/generated/task-professional-http-dto.ts'],
   ]),
   family('workspace-agent-assets', 'tools/codegen/contracts/workspace-agent-assets-dto.ts', [
+    'src/modules/native-session-links/interfaces/http/native-session-links-http-contracts.ts',
+    'src/modules/dsh-desktop/interfaces/http/dsh-desktop-http-contracts.ts',
+    'src/modules/code/interfaces/http/code-http-contracts.ts',
     'src/modules/workspace/interfaces/http/workspace-http-contracts.ts',
     'src/modules/agent-assets/interfaces/http/agent-assets-http-contracts.ts',
   ], [
+    ['buildr', 'build/generated/native-session-links-http-dto.ts'],
+    ['buildr-web', 'build/generated/native-session-links-http-dto.ts'],
+    ['buildr', 'build/generated/dsh-desktop-http-dto.ts'],
+    ['buildr-web', 'build/generated/dsh-desktop-http-dto.ts'],
+    ['buildr', 'build/generated/code-http-dto.ts'],
+    ['buildr-web', 'build/generated/code-http-dto.ts'],
     ['buildr', 'build/generated/workspace-http-dto.ts'],
     ['buildr-web', 'build/generated/workspace-http-dto.ts'],
     ['buildr', 'build/generated/agent-assets-http-dto.ts'],

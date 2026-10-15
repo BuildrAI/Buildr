@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
+import { deflateSync } from 'node:zlib';
 import test from 'node:test';
 
 import { launchTestBrowser } from './browser-launch.ts';
@@ -15,11 +16,20 @@ import { WORKSPACE_APPLICATION } from '../../src/modules/workspace/module.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { materializeCleanProductSource } from '../helpers/clean-product-source.ts';
 import { recordVerificationResultFromEvidence } from '../helpers/task-verification-result-fixture.ts';
+import { gitCheckoutReadId } from '../../src/infrastructure/git/checkout-read-identity.ts';
+import { withSourceControlBranchFixture } from '../helpers/source-control-branch-fixture.ts';
+import { planCodeBrowserGroups } from '../verification/browser-selector-dispatcher.ts';
 import { runWorkspaceCompositionJourney } from './workspace-composition-journey.ts';
+import { runCodeExplorerJourney } from '../../../buildr-web/test/browser/code-explorer-journey.ts';
+import { runSourceControlJourney } from '../../../buildr-web/test/browser/source-control-journey.ts';
 import { runLayoutJourney } from '../../../buildr-web/test/browser/layout-journey.ts';
 import { runTaskCommitsJourney } from '../../../buildr-web/test/browser/task-commits-journey.ts';
+import { runTaskMaterialsJourney } from '../../../buildr-web/test/browser/task-materials-journey.ts';
+import { runCompositeTaskChildrenJourney } from '../../../buildr-web/test/browser/composite-task-children-journey.ts';
+import { runCodexNavigationJourney } from '../../../buildr-web/test/browser/codex-navigation-journey.ts';
 import { runWorkbenchJourney } from './workbench-journey.ts';
 import { runPublicationJourney, publicationTestPng } from './publication-journey.ts';
+import { useLegacyAssetCatalog } from '../helpers/legacy-asset-catalog.ts';
 import { runServiceKnowledgeJourney } from './service-knowledge-journey.ts';
 import { runProjectKnowledgeInitializationJourney } from './knowledge-initialization-journey.ts';
 
@@ -29,17 +39,22 @@ const SELECTOR_INPUT: any = process.argv[2] ?? 'all';
 const SCREENSHOT_DIR: any = process.env.BUILDR_SCREENSHOT_DIR;
 const BROWSER_WEB_DIST_ROOT: any = process.env.BUILDR_BROWSER_WEB_DIST_ROOT;
 if (!BROWSER_WEB_DIST_ROOT) throw new Error('Browser smoke requires BUILDR_BROWSER_WEB_DIST_ROOT from the Browser dispatcher staging build.');
-const KNOWN_SELECTORS: any = new Set(['all', 'core', 'shell', 'workbench', 'task', 'project', 'service', 'change', 'articles', 'layout']);
+const KNOWN_SELECTORS: any = new Set(['all', 'core', 'shell', 'workbench', 'task', 'task-materials', 'project', 'service', 'change', 'articles', 'layout', 'code']);
 const SELECTORS: any = new Set(SELECTOR_INPUT.split(',').map((item: any) => item.trim()).filter(Boolean));
 
 for (const selector of SELECTORS) if (!KNOWN_SELECTORS.has(selector)) throw new Error(`Unknown browser integration selector: ${selector}`);
 if (SELECTORS.size === 0) throw new Error('Browser integration selector cannot be empty.');
 const selected: any = (name: any) => SELECTORS.has('all') || SELECTORS.has(name);
-const selectorLabel: any = [...SELECTORS].join(',');
+const codeFocusProvided = Boolean(process.env.BUILDR_CODE_EXPLORER_FOCUS || process.env.BUILDR_SOURCE_CONTROL_FOCUS);
+const codeGroup = selected('code') && codeFocusProvided ? planCodeBrowserGroups()[0] : null;
+const runCodeExplorer = !codeGroup || codeGroup.id === 'explorer';
+const runSourceControl = !codeGroup || codeGroup.id === 'source-control';
+const selectorLabel: any = [...SELECTORS].join(',') + (SELECTORS.has('code') && codeGroup ? ':' + codeGroup.id : '');
 
 function runBuildr(args: any, buildr: any = BUILDR): any  {
   const result: any = spawnSync(process.execPath, [buildr, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8' });
   assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
+  return args.includes('--json') ? JSON.parse(result.stdout) : result.stdout;
 }
 
 function runGit(root: any, args: any): any  {
@@ -51,7 +66,6 @@ function writeChange(projectRoot: any, relative: any, title: any): any  {
   const changeRoot: any = path.join(projectRoot, 'openspec', 'changes', relative);
   fs.mkdirSync(path.join(changeRoot, 'specs', 'demo-capability'), { recursive: true });
   fs.writeFileSync(path.join(changeRoot, '.openspec.yaml'), 'schema: spec-driven\n');
-  fs.writeFileSync(path.join(changeRoot, 'brief.md'), `# ${title}\n\n## 一句话摘要\n\n普通用户先从这里了解变更。\n\n## 核心流程\n\n- 查看 Brief\n- 深入技术产物\n`);
   fs.writeFileSync(path.join(changeRoot, 'proposal.md'), `# ${title}\n\n验证 Buildr Web。\n`);
   fs.writeFileSync(path.join(changeRoot, 'design.md'), '## Context\n\nBrowser smoke fixture.\n' + '\n方案阅读位置验证。\n'.repeat(35));
   fs.writeFileSync(path.join(changeRoot, 'tasks.md'), '- [x] 准备 fixture\n- [ ] 验证页面\n');
@@ -83,6 +97,7 @@ function createCoreFixture(root: any): any  {
 
 function createServiceFixture(root: any): any  {
   runBuildr(['init', '--target', root, '--name', 'browser-smoke-service', '--description', '服务目录 Browser Smoke fixture']);
+  useLegacyAssetCatalog(root);
   runBuildr(['project', 'create', 'demo', '--target', root, '--name', '演示项目', '--description', '浏览器测试项目']);
   const source: any = path.join(path.dirname(root), 'service-source');
   fs.mkdirSync(source);
@@ -92,6 +107,7 @@ function createServiceFixture(root: any): any  {
 
 function createProjectFixture(root: any): any  {
   runBuildr(['init', '--target', root, '--name', 'browser-smoke-project', '--description', '项目目录 Browser Smoke fixture']);
+  useLegacyAssetCatalog(root);
   runBuildr(['project', 'create', 'demo', '--target', root, '--name', '演示项目', '--description', '浏览器测试项目']);
   const source: any = path.join(path.dirname(root), 'service-source');
   fs.mkdirSync(source);
@@ -110,6 +126,7 @@ function createArticlesFixture(root: any): any  {
 
 function createShellFixture(root: any): any  {
   runBuildr(['init', '--target', root, '--name', 'browser-smoke', '--description', 'Shell Browser Smoke fixture']);
+  useLegacyAssetCatalog(root);
   runBuildr(['project', 'create', 'demo', '--target', root, '--name', '演示项目', '--description', '浏览器测试项目']);
   runBuildr(['project', 'create', 'other', '--target', root, '--name', '另一项目', '--description', '用于验证 Workspace 摘要不锁定项目']);
   const source: any = path.join(path.dirname(root), 'service-source');
@@ -140,6 +157,7 @@ function createChangeFixture(root: any): any  {
 
 function createFixture(root: any, controllerCli: any, options: any = {}): any  {
   runBuildr(['init', '--target', root, '--name', 'browser-smoke', '--description', '隔离的浏览器 E2E fixture']);
+  useLegacyAssetCatalog(root);
   runBuildr(['project', 'create', 'demo', '--target', root, '--name', '演示项目', '--description', '浏览器测试项目']);
   runBuildr(['project', 'create', 'other', '--target', root, '--name', '另一项目', '--description', '用于验证 Workspace 摘要不锁定项目']);
   if (options.articles) {
@@ -171,16 +189,20 @@ testing:
     requirements: [node]
 `);
   writeChange(projectRoot, 'browser-flow', '浏览器流程');
-  writeUiPrototypeFixtures(projectRoot, 'browser-flow');
+  if (!options.materialsOnly) writeUiPrototypeFixtures(projectRoot, 'browser-flow');
   writeChange(projectRoot, 'archive/2026-07-22-archived-flow', '已归档流程');
   runGit(root, ['init', '-q']);
   runGit(root, ['config', 'user.name', 'Buildr Browser Fixture']);
   runGit(root, ['config', 'user.email', 'fixture@example.com']);
   runGit(root, ['add', '.']);
   runGit(root, ['commit', '-qm', 'browser fixture baseline']);
-  runBuildr(['task', 'create', 'browser-parent', '--title', '浏览器协调任务', '--intent', '验证 Parent Task 页面', '--project', 'demo', '--service', 'demo/api', '--target', root]);
-  runBuildr(['task', 'create', 'browser-task', '--title', '浏览器任务', '--intent', '验证 Task Record 页面，参考 [任务参考资料](projects/demo/docs/task-reference.md)。', '--parent', 'browser-parent', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
-  runBuildr(['task', 'create', 'created-in-app', '--title', '页面查看任务', '--intent', '验证 Buildr Web 轻量查询客户端', '--parent', 'browser-parent', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
+  if (options.materialsOnly) return;
+  const recordBriefFile = path.join(root, '.buildr/local/browser-record-brief.md');
+  fs.mkdirSync(path.dirname(recordBriefFile), { recursive: true });
+  fs.writeFileSync(recordBriefFile, '# 浏览器任务说明\n\n验证 Task Record 页面，说明保存在任务记录中。\n\n验证 Buildr Web 轻量查询客户端。\n');
+  runBuildr(['task', 'create', 'browser-parent', '--title', '浏览器协调任务', '--intent', '验证 Parent Task 页面', '--brief-file', recordBriefFile, '--project', 'demo', '--service', 'demo/api', '--target', root]);
+  runBuildr(['task', 'create', 'browser-task', '--title', '浏览器任务', '--intent', '验证 Task Record 页面，参考 [任务参考资料](projects/demo/docs/task-reference.md)。', '--brief-file', recordBriefFile, '--parent', 'browser-parent', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
+  runBuildr(['task', 'create', 'created-in-app', '--title', '页面查看任务', '--intent', '验证 Buildr Web 轻量查询客户端', '--brief-file', recordBriefFile, '--parent', 'browser-parent', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
   for (const [taskId, title, parentTaskId] of [
     ['browser-delivered', '已交付浏览器任务', null],
     ['browser-stale', '目标已变化浏览器任务', null],
@@ -192,6 +214,16 @@ testing:
   }
   runBuildr(['task', 'review', 'record', 'browser-task', '--type', 'planning', '--subject-identity', 'plan:browser-v1', '--method', 'self', '--reviewed', 'task intent', '--reviewed', 'change:demo/browser-flow', '--outcome', 'accepted', '--summary', '计划可执行', '--expected-current', 'absent', '--target', root]);
   runBuildr(['task', 'create', 'browser-abandon', '--title', '待放弃任务', '--intent', '验证明确放弃', '--target', root]);
+}
+
+function codeSegmentedText(version:'current'|'history') {
+  const heading='segmented '+version+' start\n';
+  let text=heading+'x'.repeat(512*1024-4-Buffer.byteLength(heading))+'前界😀BoundaryNeedle AfterBoundaryNeedle\n';
+  for(let line=3;line<=54;line++){
+    const prefix='segment '+line+' '+version+(line===40?' FarSegmentNeedle':'')+' ';
+    text+=prefix+'x'.repeat(96*1024-Buffer.byteLength(prefix)-1)+'\n';
+  }
+  return text+'segmented '+version+' end\n';
 }
 
 function createSelectedFixture(root: any, controllerCli: any): any  {
@@ -207,8 +239,32 @@ function createSelectedFixture(root: any, controllerCli: any): any  {
   if (selector === 'core') createCoreFixture(root);
   else if (selector === 'shell') createShellFixture(root);
   else if (selector === 'workbench') createShellFixture(root);
+  else if (selector === 'code') {
+    createShellFixture(root);
+    const source=path.join(root,'projects/demo/services/api');fs.mkdirSync(path.join(source,'src'),{recursive:true});
+    fs.writeFileSync(path.join(source,'src/main.ts'),'export const explorerAnswer = 1;\n'+'// readable source line\n'.repeat(120));
+    fs.writeFileSync(path.join(source,'README.md'),'# Explorer document\n\n[Source](src/main.ts)\n\n[同库父级资料](../services/foo)\n\n[代码关联任务说明](@task/browser-task)\n\n![Image](image.png)\n');
+    const parentRelativeFile=path.join(source,'../services/foo');fs.mkdirSync(path.dirname(parentRelativeFile),{recursive:true});fs.writeFileSync(parentRelativeFile,'export const parentRelativeSource = "same checkout";\n');
+    fs.writeFileSync(path.join(source,'image.png'),publicationTestPng);
+    fs.writeFileSync(path.join(source,'src/𠮷𠮷.ts'),'export const unicodeSearch = "𠮷𠮷";\n');
+    fs.writeFileSync(path.join(source,'large-text.txt'),'large text start\n'+('x'.repeat(80*1024-1)+'\n').repeat(63)+'large text end\n');
+    fs.writeFileSync(path.join(source,'zz-segmented-text.txt'),codeSegmentedText('history'));
+    fs.appendFileSync(path.join(root,'.gitignore'),'\n.agents/\n.worktrees/\n.pnpm-store/\n');
+    for(const directory of ['.agents','.worktrees','.pnpm-store']){fs.mkdirSync(path.join(root,directory),{recursive:true});fs.writeFileSync(path.join(root,directory,'browser-ignored.txt'),'ignored fixture source\n');}
+    runGit(root,['add','.']);runGit(root,['commit','-qm','code fixture\n\nBuildr-Task: browser-task']);
+    fs.writeFileSync(path.join(source,'zz-segmented-text.txt'),codeSegmentedText('current'));
+    fs.writeFileSync(path.join(source,'src/main.ts'),'export const explorerAnswer = 2;\nexport function registerApplicationDoctor() {}\n'+'// readable source line\n'.repeat(120));
+    fs.writeFileSync(path.join(source,'src/search-matches.ts'),[
+      'export const firstSearch = "Search.Hit[0] + SEARCH.HIT[0]";',
+      'export const nonLiteralSearch = "SearchXHit0";',
+      'export const nextSearch = "search.hit[0]";',
+      'export const lastSearch = "Search.Hit[0]";',
+      '',
+    ].join('\n'));
+  }
   else if (selector === 'layout') {
     createShellFixture(root);
+    for (const code of ['demo', 'other']) fs.writeFileSync(path.join(root, 'projects', code, 'README.md'), `# ${code} 项目文档\n\n独立来源的可编辑项目资料。\n`);
     const source = path.join(root, 'projects/demo/services/api');
     fs.mkdirSync(source, { recursive: true });
     fs.writeFileSync(path.join(source, 'README.md'), '# 布局阅读资料\n\n' + Array.from({ length: 35 }, (_, index) => `## 阅读段落 ${index + 1}\n\n${'这是具有稳定价值的前端阅读说明，用于验证宽屏、分屏和窄屏下正文可读，必要操作可达。'.repeat(8)}\n`).join('\n'));
@@ -217,6 +273,7 @@ function createSelectedFixture(root: any, controllerCli: any): any  {
   else if (selector === 'service') createServiceFixture(root);
   else if (selector === 'change') createChangeFixture(root);
   else if (selector === 'articles') createArticlesFixture(root);
+  else if (selector === 'task-materials') createFixture(root, controllerCli, { materialsOnly: true });
   else createFixture(root, controllerCli, { articles: selected('articles') });
   return selector;
 }
@@ -315,7 +372,9 @@ async function capture(page: any, name: any): Promise<any>  {
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, name), fullPage: true, animations: 'disabled' });
 }
 
-test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') || SELECTORS.has('task') ? 300_000 : SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
+// Dispatcher splits code into independent Explorer/SCM parents (240/480 seconds)
+// and reserves 15 seconds outside each parent for its isolated cleanup.
+test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('code') && codeGroup ? codeGroup.nodeTimeoutMs : SELECTORS.has('code') || SELECTORS.has('task') ? 480_000 : SELECTORS.has('all') ? 300_000 : SELECTORS.has('task-materials') ? 240_000 : SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
   const requestedSmokeRoot: any = process.env.BUILDR_SMOKE_ROOT;
   const managedSmokeRoot: any = requestedSmokeRoot && fs.existsSync(path.join(requestedSmokeRoot, '.buildr-smoke-owner')) ? requestedSmokeRoot : null;
   const base: any = managedSmokeRoot || fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-smoke-'));
@@ -348,9 +407,43 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   const otherRoot: any = path.join(base, 'other-workspace');
   runBuildr(['init', '--target', otherRoot, '--name', 'other-workspace', '--description', '第二个浏览器工作空间']);
   const runtime: any = createRuntime();
-  if (SELECTORS.has('layout')) {
+  if (SELECTORS.has('layout') || SELECTORS.has('code')) {
     const catalog = runtime.assetCatalog(workspaceRoot);
     if (catalog.migrationRequired) runtime.migrateAssetCatalog(workspaceRoot, { revision: catalog.revision });
+  }
+  let codeWorktreeFixture:any={};
+  if(SELECTORS.has('code')){
+    const second=path.join(workspaceRoot,'.buildr/local/second-code-repository');fs.mkdirSync(path.join(second,'src'),{recursive:true});runGit(second,['init','-b','main']);runGit(second,['config','user.name','Fixture']);runGit(second,['config','user.email','fixture@example.com']);
+    fs.writeFileSync(path.join(second,'src/main.ts'),'export const secondRepository = true;\n');fs.writeFileSync(path.join(second,'src/search-matches.ts'),'export const secondSearch = "Search.Hit[0]";\n');fs.writeFileSync(path.join(second,'README.md'),'# Second repository\n');fs.writeFileSync(path.join(second,'zz-segmented-text.txt'),'second repository isolated text\n');for(let i=1;i<=9;i++)fs.writeFileSync(path.join(second,'src/file'+i+'.ts'),'export const cachedFile'+i+' = true;\n');runGit(second,['add','.']);runGit(second,['commit','-qm','second repository']);
+    let catalog=runtime.createCatalogRepository(workspaceRoot,{revision:runtime.assetCatalog(workspaceRoot).revision,code:'second-code',name:'另一个代码库',path:second});
+    const secondRepositoryId=catalog.repositories.find((item:any)=>item.code==='second-code').id;
+    const primaryRepositoryId=catalog.repositories.find((item:any)=>item.id!==secondRepositoryId).id;
+    catalog=runtime.createCatalogService(workspaceRoot,{revision:catalog.revision,projectId:catalog.projects.find((item:any)=>item.code==='demo').id,service:{code:'second-api',name:'第二代码服务',repositoryId:secondRepositoryId}});
+    const worktreeTaskId='code-tree-task',branch='codex/code-tree-task';
+    runBuildr(['task','create',worktreeTaskId,'--title','跨库目录任务','--intent','验证真实多库工作树筛选与准确来源','--status','active','--project','demo','--service','demo/api','--service','demo/second-api','--target',workspaceRoot]);
+    const primaryCheckout=path.join(workspaceRoot,'.worktrees',worktreeTaskId),secondCheckout=path.join(primaryCheckout,'.buildr/local/second-code-repository');
+    runGit(workspaceRoot,['worktree','add','-b',branch,primaryCheckout,'HEAD']);
+    runGit(second,['worktree','add','-b',branch,secondCheckout,'HEAD']);
+    const worktreeFiles:any={
+      [primaryRepositoryId]:{path:'projects/demo/services/api/src/worktree-filter.ts',content:'export const WorktreeFilterNeedle = "task primary";\n'},
+      [secondRepositoryId]:{path:'src/worktree-filter.ts',content:'export const WorktreeFilterNeedle = "task secondary";\n'},
+    };
+    for(const [repositoryId,checkoutPath] of [[primaryRepositoryId,primaryCheckout],[secondRepositoryId,secondCheckout]]){
+      const file=worktreeFiles[repositoryId];fs.mkdirSync(path.dirname(path.join(checkoutPath,file.path)),{recursive:true});fs.writeFileSync(path.join(checkoutPath,file.path),file.content);
+    }
+    fs.writeFileSync(path.join(workspaceRoot,worktreeFiles[primaryRepositoryId].path),'export const WorktreeFilterNeedle = "main primary";\n');
+    fs.writeFileSync(path.join(second,worktreeFiles[secondRepositoryId].path),'export const WorktreeFilterNeedle = "main secondary";\n');
+    const repositories=[
+      {selector:'workspace',entityType:'workspace',sourcePath:'.',sourceRepository:workspaceRoot,checkoutPath:primaryCheckout},
+      {selector:'service:demo/second-api',entityType:'service',sourcePath:'.buildr/local/second-code-repository',sourceRepository:second,checkoutPath:secondCheckout},
+    ].map(item=>({...item,branch,startPoint:'HEAD',head:spawnSync('git',['rev-parse','HEAD'],{cwd:item.checkoutPath,encoding:'utf8'}).stdout.trim(),clean:false,registered:true,remote:null,remoteUrl:null,state:'created',diagnostic:null}));
+    runtime.writeGitWorktreeEvidence(workspaceRoot,{schemaVersion:'buildr.git-worktree-evidence/v1',taskId:worktreeTaskId,workspaceRoot,branch,planDigest:'sha256-'+crypto.createHash('sha256').update(JSON.stringify(repositories)).digest('hex'),status:'ready',repositories,effects:[],updatedAt:new Date().toISOString()});
+    const nativeCheckout=path.join(workspaceRoot,'.worktrees','native-reader');runGit(second,['worktree','add','-b','native-reader',nativeCheckout,'HEAD']);
+    const nativeFile={repositoryId:secondRepositoryId,path:'src/worktree-filter.ts',content:'export const WorktreeFilterNeedle = "native secondary";\n'};fs.writeFileSync(path.join(nativeCheckout,nativeFile.path),nativeFile.content);
+    const checkoutPaths=new Map([[gitCheckoutReadId(primaryCheckout),[workspaceRoot,primaryCheckout]],[gitCheckoutReadId(secondCheckout),[second,secondCheckout]],[gitCheckoutReadId(nativeCheckout),[second,nativeCheckout]]]);
+    codeWorktreeFixture={worktreeTaskId,worktreeGroupId:'task:'+worktreeTaskId,primaryRepositoryId,secondRepositoryId,worktreeFiles,nativeWorktree:nativeFile,nativeCheckoutLocation:fs.realpathSync(nativeCheckout),
+      createNativeWorktree:()=>{const checkoutPath=path.join(workspaceRoot,'.worktrees','native-late'),branch='native-late';runGit(second,['worktree','add','-b',branch,checkoutPath,'HEAD']);return {id:gitCheckoutReadId(checkoutPath),path:checkoutPath,branch};},
+      retireWorktree:(checkoutId:string)=>{const member=checkoutPaths.get(checkoutId);assert.ok(member,'fixture checkout identity is known');runGit(member[0],['worktree','remove','--force',member[1]]);}};
   }
   let registry: any = runtime.listRegisteredWorkspaces();
   registry = runtime.registerLocalWorkspace({ rootPath: otherRoot, revision: registry.revision });
@@ -406,6 +499,188 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     }
   });
 
+  if (selected('code')) {
+    const linkedBrief=path.join(workspaceRoot,'.buildr/local/code-task-entry-brief.md');
+    fs.writeFileSync(linkedBrief,'# 代码定位任务说明\n\n[读取本任务说明](@task/browser-task)\n');
+    const linkedTask=runBuildr(['task','inspect','browser-task','--target',workspaceRoot,'--json']);
+    runBuildr(['task','update','browser-task','--brief-file',linkedBrief,'--expected-record',linkedTask.recordDigest,'--target',workspaceRoot,'--json']);
+    const codeFile=path.join(workspaceRoot,'projects/demo/services/api/zz-segmented-text.txt');
+    const history=spawnSync('git',['rev-parse','HEAD'],{cwd:workspaceRoot,encoding:'utf8'});assert.equal(history.status,0,history.stderr);
+    if (runCodeExplorer) await runCodeExplorerJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,codeFixture:{...codeWorktreeFixture,current:codeSegmentedText('current'),history:codeSegmentedText('history'),commitHash:history.stdout.trim(),change:()=>fs.writeFileSync(codeFile,'changed segmented text\n'+codeSegmentedText('current')),restore:()=>fs.writeFileSync(codeFile,codeSegmentedText('current'))}});
+    if (runSourceControl) {
+    // This file belongs to the finished explorer fixture. SCM also needs a real clean checkout.
+    fs.rmSync(path.join(codeWorktreeFixture.nativeCheckoutLocation,codeWorktreeFixture.nativeWorktree.path));
+    // Prepare the SCM comparison only after the explorer canary. Both layers remain
+    // real Git data, while the original committed version is independently readable.
+    const sourceControlPath='projects/demo/services/api/src/main.ts';
+    const historicalSource=spawnSync('git',['show',history.stdout.trim()+':'+sourceControlPath],{cwd:workspaceRoot,encoding:'utf8'});assert.equal(historicalSource.status,0,historicalSource.stderr);
+    const indexText='export const sourceControlIndex = 21;\n';
+    const workingText='export const sourceControlWorking = 34;\n';
+    fs.writeFileSync(path.join(workspaceRoot,sourceControlPath),indexText);
+    runGit(workspaceRoot,['add','--',sourceControlPath]);
+    fs.writeFileSync(path.join(workspaceRoot,sourceControlPath),workingText);
+    const peerRoot=path.join(workspaceRoot,'.buildr/local/second-code-repository'),unavailableRepositoryLocation=fs.realpathSync(peerRoot);
+    const baselineWorktrees=[workspaceRoot,peerRoot].map(repository=>{
+      const listed=spawnSync('git',['worktree','list','--porcelain','-z'],{cwd:repository,encoding:'utf8'});assert.equal(listed.status,0,listed.stderr);
+      return {location:fs.realpathSync(repository),locations:listed.stdout.split('\0').filter((field:string)=>field.startsWith('worktree ')).map((field:string)=>fs.realpathSync(field.slice(9)))};
+    });
+    const prepareWorktrees=()=>{
+      const linked=['alpha','beta'].map((name,index)=>{
+      const branch='fixture/scm-'+name;
+      let checkout:string;
+      if(name==='alpha'){
+        const created=runBuildr(['worktree','create','browser-task','--branch',branch,'--start-point',history.stdout.trim(),'--include','service:demo/api','--target',workspaceRoot,'--json']);
+        assert.equal(created.repositories.length,1);checkout=created.repositories[0].checkoutPath;
+      }else{
+        checkout=path.join(base,'repo-a-worktrees','scm-other');runGit(workspaceRoot,['worktree','add','-b',branch,checkout,history.stdout.trim()]);
+      }
+      const committedText='export const sourceControl'+name+'History = '+(100+index*100)+';\n';
+      fs.writeFileSync(path.join(checkout,sourceControlPath),committedText);
+      runGit(checkout,['add','--',sourceControlPath]);
+      runGit(checkout,['commit','-qm','linked '+name+' history\n\nBuildr-Task: browser-task']);
+      const head=spawnSync('git',['rev-parse','HEAD'],{cwd:checkout,encoding:'utf8'});assert.equal(head.status,0,head.stderr);
+      const stagedText='export const sourceControl'+name+'Index = '+(101+index*100)+';\n';
+      const currentText='export const sourceControl'+name+'Working = '+(102+index*100)+';\n';
+      fs.writeFileSync(path.join(checkout,sourceControlPath),stagedText);runGit(checkout,['add','--',sourceControlPath]);
+      fs.writeFileSync(path.join(checkout,sourceControlPath),currentText);
+      return {name,filterName:path.basename(checkout),path:sourceControlPath,branch,location:fs.realpathSync(checkout),commitHash:head.stdout.trim(),historyText:committedText,indexText:stagedText,workingText:currentText};
+      });
+      const checkout=path.join(base,'repo-b-worktrees','browser-task'),peerPath='src/main.ts',branch='fixture/scm-peer';
+      runGit(peerRoot,['worktree','add','-b',branch,checkout,'HEAD']);
+      const committedText='export const sourceControlPeerHistory = 300;\n',stagedText='export const sourceControlPeerIndex = 301;\n',currentText='export const sourceControlPeerWorking = 302;\n';
+      fs.writeFileSync(path.join(checkout,peerPath),committedText);runGit(checkout,['add','--',peerPath]);runGit(checkout,['commit','-qm','linked peer history without a task trailer']);
+      const head=spawnSync('git',['rev-parse','HEAD'],{cwd:checkout,encoding:'utf8'});assert.equal(head.status,0,head.stderr);
+      fs.writeFileSync(path.join(checkout,peerPath),stagedText);runGit(checkout,['add','--',peerPath]);fs.writeFileSync(path.join(checkout,peerPath),currentText);
+      return [...linked,{name:'peer',filterName:path.basename(checkout),path:peerPath,branch,location:fs.realpathSync(checkout),commitHash:head.stdout.trim(),historyText:committedText,indexText:stagedText,workingText:currentText}];
+    };
+    const prepareRemoteStatuses=(linked:any[])=>{
+      const value=(cwd:string,args:string[])=>{const result=spawnSync('git',args,{cwd,encoding:'utf8'});assert.equal(result.status,0,result.stderr);return result.stdout.trim();};
+      const createRemote=(repository:string,name:string)=>{
+        const remote=path.join(base,name+'.git');fs.mkdirSync(remote);runGit(remote,['init','--bare','-q']);
+        runGit(remote,['config','user.name','Remote Status Fixture']);runGit(remote,['config','user.email','remote-fixture@example.com']);
+        runGit(repository,['remote','add','status-fixture',remote]);return remote;
+      };
+      const remoteCommit=(remote:string,baseHash:string,reference:string)=>{
+        const tree=value(remote,['rev-parse',baseHash+'^{tree}']);
+        const commit=value(remote,['commit-tree',tree,'-p',baseHash,'-m','remote status fixture']);
+        runGit(remote,['update-ref','refs/heads/'+reference,commit]);
+      };
+      const alpha=linked.find(item=>item.name==='alpha'),beta=linked.find(item=>item.name==='beta'),baseHash=history.stdout.trim();
+      const primaryRemote=createRemote(workspaceRoot,'scm-primary-status');
+      runGit(workspaceRoot,['push','-q','status-fixture',baseHash+':refs/heads/sync',baseHash+':refs/heads/mixed',baseHash+':refs/heads/ahead']);
+      remoteCommit(primaryRemote,baseHash,'mixed');runGit(workspaceRoot,['fetch','-q','status-fixture']);
+      const mainBranch=value(workspaceRoot,['symbolic-ref','--short','HEAD']);
+      for(const [branch,reference] of [[mainBranch,'sync'],[alpha.branch,'mixed'],[beta.branch,'ahead']])runGit(workspaceRoot,['branch','--set-upstream-to=status-fixture/'+reference,branch]);
+      const secondaryRemote=createRemote(peerRoot,'scm-secondary-status'),peerBase=value(peerRoot,['rev-parse','HEAD']);
+      runGit(peerRoot,['push','-q','status-fixture',peerBase+':refs/heads/behind']);remoteCommit(secondaryRemote,peerBase,'behind');runGit(peerRoot,['fetch','-q','status-fixture']);
+      runGit(peerRoot,['branch','--set-upstream-to=status-fixture/behind','native-reader']);
+      return [{location:fs.realpathSync(workspaceRoot),ahead:0,behind:0},{location:alpha.location,ahead:1,behind:1},{location:beta.location,ahead:1,behind:0},{location:codeWorktreeFixture.nativeCheckoutLocation,ahead:0,behind:1}];
+    };
+    const withStatusDigits=async(linked:any[],verify:(expected:any)=>Promise<void>)=>{
+      const value=(cwd:string,args:string[])=>{const result=spawnSync('git',args,{cwd,encoding:'utf8'});assert.equal(result.status,0,result.stderr);return result.stdout.trim();};
+      const alpha=linked.find(item=>item.name==='alpha'),beta=linked.find(item=>item.name==='beta'),peer=linked.find(item=>item.name==='peer');
+      const remote=value(workspaceRoot,['remote','get-url','status-fixture']),mixedRef='refs/heads/mixed',trackingRef='refs/remotes/status-fixture/mixed',betaRef='refs/heads/'+beta.branch;
+      const mixedBefore=value(remote,['rev-parse',mixedRef]),trackingBefore=value(workspaceRoot,['rev-parse',trackingRef]),betaBefore=value(workspaceRoot,['rev-parse',betaRef]);
+      const chain=(cwd:string,parent:string)=>{const tree=value(cwd,['rev-parse',parent+'^{tree}']);for(let index=0;index<11;index++)parent=value(cwd,['commit-tree',tree,'-p',parent,'-m','status digit fixture '+index]);return parent;};
+      const mixedAfter=chain(remote,mixedBefore),betaAfter=chain(workspaceRoot,betaBefore),fileDirectories:string[]=[];
+      try{
+        runGit(remote,['update-ref',mixedRef,mixedAfter,mixedBefore]);runGit(workspaceRoot,['fetch','-q','status-fixture']);
+        runGit(workspaceRoot,['update-ref',betaRef,betaAfter,betaBefore]);
+        for(const [checkout,count] of [[beta.location,11],[peer.location,122]] as Array<[string,number]>){
+          const directory=fs.mkdtempSync(path.join(checkout,'scm-status-count-'));fileDirectories.push(directory);
+          for(let index=0;index<count;index++)fs.writeFileSync(path.join(directory,String(index).padStart(3,'0')+'.txt'),'status digit fixture\n');
+        }
+        await verify({remote:[{location:alpha.location,ahead:1,behind:12},{location:beta.location,ahead:12,behind:0}],files:[{location:alpha.location,count:1},{location:beta.location,count:12},{location:peer.location,count:123},{location:codeWorktreeFixture.nativeCheckoutLocation,count:0}]});
+      }finally{
+        for(const directory of fileDirectories)fs.rmSync(directory,{recursive:true});
+        runGit(workspaceRoot,['update-ref',betaRef,betaBefore,betaAfter]);
+        runGit(remote,['update-ref',mixedRef,mixedBefore,mixedAfter]);
+        runGit(workspaceRoot,['update-ref',trackingRef,trackingBefore,mixedAfter]);
+      }
+    };
+    const withDuplicateFiles=async(verify:(files:any)=>Promise<void>)=>{
+      const directory=path.join(workspaceRoot,'scm-name-hints');
+      assert.equal(fs.existsSync(directory),false,'同名文件验收目录必须尚不存在，不能覆盖真实文件');
+      fs.mkdirSync(directory);
+      const files=[
+        {path:'scm-name-hints/alpha/src/index.ts',hint:'alpha/src',content:'export const scmDuplicateAlpha = true;\n'},
+        {path:'scm-name-hints/beta/src/index.ts',hint:'beta/src',content:'export const scmDuplicateBeta = true;\n'},
+        {path:'scm-name-hints/gamma/index.ts',hint:'gamma',content:'export const scmDuplicateGamma = true;\n'},
+        {path:'scm-name-hints/unique.ts',hint:undefined,content:'export const scmUniqueName = true;\n'},
+      ];
+      try{
+        for(const file of files){const location=path.join(workspaceRoot,file.path);fs.mkdirSync(path.dirname(location),{recursive:true});fs.writeFileSync(location,file.content);}
+        await verify({location:fs.realpathSync(workspaceRoot),files});
+      }finally{fs.rmSync(directory,{recursive:true});}
+    };
+    const withImages=async(verify:(images:any)=>Promise<void>)=>{
+      const value=(cwd:string,args:string[])=>{const result=spawnSync('git',args,{cwd,encoding:'utf8'});assert.equal(result.status,0,result.stderr);return result.stdout.trim();};
+      const png=(width:number,height:number,color:number[])=>{
+        const chunk=(type:string,data:Buffer)=>{
+          const bytes=Buffer.concat([Buffer.from(type),data]);let crc=0xffffffff;
+          for(const byte of bytes){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}
+          const size=Buffer.alloc(4),checksum=Buffer.alloc(4);size.writeUInt32BE(data.length);checksum.writeUInt32BE((crc^0xffffffff)>>>0);
+          return Buffer.concat([size,bytes,checksum]);
+        };
+        const header=Buffer.alloc(13);header.writeUInt32BE(width,0);header.writeUInt32BE(height,4);header[8]=8;header[9]=6;
+        const pixels=Buffer.alloc((1+width*4)*height);
+        for(let y=0;y<height;y++)for(let x=0;x<width;x++)pixels.set(color,y*(1+width*4)+1+x*4);
+        const bytes=Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),chunk('IHDR',header),chunk('IDAT',deflateSync(pixels)),chunk('IEND',Buffer.alloc(0))]);
+        return {bytes,width,height,content:'data:image/png;base64,'+bytes.toString('base64'),digest:'sha256-'+crypto.createHash('sha256').update(bytes).digest('hex')};
+      };
+      const versions={before:png(64,48,[172,54,54,255]),history:png(80,56,[50,139,90,255]),index:png(96,64,[51,99,181,255]),working:png(128,80,[224,153,43,255]),added:png(160,96,[130,64,164,255]),deleted:png(72,48,[38,149,169,255]),peer:png(32,96,[196,79,142,255])};
+      const imagePath='scm-image-fixture/changed.png',addedPath='scm-image-fixture/added.png',deletedPath='scm-image-fixture/deleted.png',stagedDeletedPath='scm-image-fixture/staged-deleted.png',binaryPath='scm-image-fixture/opaque.bin';
+      const primary={repository:workspaceRoot,branch:'fixture/scm-images-primary',location:path.join(base,'repo-a-worktrees','scm-images-primary')};
+      const peer={repository:peerRoot,branch:'fixture/scm-images-peer',location:path.join(base,'repo-b-worktrees','scm-images-peer')};
+      const created:any[]=[];
+      try{
+        for(const checkout of [primary,peer]){
+          runGit(checkout.repository,['worktree','add','-b',checkout.branch,checkout.location,checkout===primary?history.stdout.trim():'HEAD']);created.push(checkout);
+          checkout.location=fs.realpathSync(checkout.location);fs.mkdirSync(path.join(checkout.location,'scm-image-fixture'));
+        }
+        for(const relative of [imagePath,deletedPath,stagedDeletedPath])fs.writeFileSync(path.join(primary.location,relative),relative===imagePath?versions.before.bytes:versions.deleted.bytes);
+        runGit(primary.location,['add','--',imagePath,deletedPath,stagedDeletedPath]);runGit(primary.location,['commit','-qm','SCM image fixture baseline']);
+        const baseHash=value(primary.location,['rev-parse','HEAD']);
+        fs.writeFileSync(path.join(primary.location,imagePath),versions.history.bytes);fs.rmSync(path.join(primary.location,deletedPath));
+        runGit(primary.location,['add','--',imagePath,deletedPath]);runGit(primary.location,['commit','-qm','SCM image fixture history']);
+        const commitHash=value(primary.location,['rev-parse','HEAD']);
+        fs.writeFileSync(path.join(primary.location,imagePath),versions.index.bytes);runGit(primary.location,['add','--',imagePath]);
+        const indexBlob=value(primary.location,['rev-parse',':'+imagePath]);
+        fs.writeFileSync(path.join(primary.location,imagePath),versions.working.bytes);fs.writeFileSync(path.join(primary.location,addedPath),versions.added.bytes);
+        fs.rmSync(path.join(primary.location,stagedDeletedPath));runGit(primary.location,['add','--',stagedDeletedPath]);
+        fs.writeFileSync(path.join(primary.location,binaryPath),Buffer.from([0,255,10,0,127]));
+        fs.writeFileSync(path.join(peer.location,imagePath),versions.peer.bytes);
+        await verify({primary:{...primary,commitHash,baseHash,indexBlob},peer,imagePath,addedPath,deletedPath,stagedDeletedPath,binaryPath,versions});
+      }finally{
+        for(const checkout of created.toReversed()){
+          runGit(checkout.repository,['worktree','remove','--force',checkout.location]);runGit(checkout.repository,['branch','-D',checkout.branch]);
+        }
+      }
+    };
+    const withUnavailableRepository=async (read:()=>Promise<void>)=>{
+      const retained=peerRoot+'-temporarily-unavailable';fs.renameSync(peerRoot,retained);
+      try{await read();}finally{fs.renameSync(retained,peerRoot);}
+    };
+    const withBranches=(verify:(branches:any)=>Promise<void>)=>withSourceControlBranchFixture({base,repository:workspaceRoot,peerRepository:peerRoot,startPoint:history.stdout.trim(),originalPath:sourceControlPath},async branches=>{
+      try { await verify(branches); }
+      finally { await page.goto('about:blank').catch(()=>{}); }
+    });
+    const withRegisteredSource=async(location:string,verify:(source:any)=>Promise<void>)=>{
+      const catalog=runtime.assetCatalog(workspaceRoot),repository=catalog.repositories.find((item:any)=>item.id===codeWorktreeFixture.primaryRepositoryId);
+      assert.ok(repository);
+      runtime.updateCatalogAsset(workspaceRoot,'repository',repository.id,{revision:catalog.revision,path:location});
+      try {await verify({repositoryId:repository.id,location:fs.realpathSync(location),mainLocation:fs.realpathSync(workspaceRoot)});}
+      finally {
+        await page.goto('about:blank').catch(()=>{});
+        // The legacy fixture declares a service subdirectory; code readers already
+        // canonicalize it to this Git root. Current edits correctly reject restoring
+        // that legacy child path, so restore the same effective source through its root.
+        runtime.updateCatalogAsset(workspaceRoot,'repository',repository.id,{revision:runtime.assetCatalog(workspaceRoot).revision,path:workspaceRoot,url:repository.source.git?.url||'',remote:repository.source.git?.remote||'origin',integrationBranch:repository.source.integrationBranch||repository.source.git?.integrationBranch||''});
+      }
+    };
+    await runSourceControlJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,fixture:{path:sourceControlPath,location:fs.realpathSync(workspaceRoot),commitHash:history.stdout.trim(),historyText:historicalSource.stdout,indexText,workingText,prepareWorktrees,prepareRemoteStatuses,withStatusDigits,withDuplicateFiles,withImages,withBranches,withRegisteredSource,cleanLocation:codeWorktreeFixture.nativeCheckoutLocation,baselineWorktrees,unrelatedRetiredTaskId:codeWorktreeFixture.worktreeTaskId,unavailableRepositoryLocation,withUnavailableRepository}});
+    }
+  }
   if (selected('layout')) await runLayoutJourney({ t, page, workspaceUrl, capture });
 
   if (SELECTORS.has('core')) await t.test('核心流程进入 Workspace、Task 路由并读取代表性 Tab', async () => {
@@ -494,9 +769,11 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     const mainTabs = await page.getByRole('tablist', { name: '打开的页面', exact: true }).getByRole('tab').count();
     const secondSkill = page.locator('[data-skill-id]').filter({ hasNot: page.locator('a[href$="/ux-design-laws"]') }).first();
     await secondSkill.locator('a[href]').first().click();
-    await page.getByRole('tab', { name: '技能详情 关闭 技能详情', exact: true }).waitFor({ state: 'visible' });
+    await page.getByRole('tab', { name: '技能详情', exact: true }).waitFor({ state: 'visible' });
+    assert.equal(await page.getByRole('button', { name: '关闭 技能详情', exact: true }).count(), 1, '对象关闭是独立可访问控件');
     assert.equal(await page.getByRole('tablist', { name: '打开的页面', exact: true }).getByRole('tab').count(), mainTabs);
-    assert.equal(await page.getByRole('tab', { name: '技能详情 关闭 技能详情', exact: true }).count(), 1);
+    assert.equal(await page.getByRole('tab', { name: '技能详情', exact: true }).count(), 1);
+    assert.equal(await page.getByRole('button', { name: '关闭 技能详情', exact: true }).count(), 1, '对象关闭是独立可访问控件');
     await page.locator('#skills-search').fill('no-such-skill-xyz');
     await page.getByRole('button', { name: '清除搜索', exact: true }).click();
     await page.locator('#skills-add').click();
@@ -581,13 +858,13 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
 
   if (selected('shell')) await t.test('平级导航、页面级页签与手机菜单保持真实范围', async () => {
     await page.goto(`${workspaceUrl}/tasks`);
-    assert.deepEqual(await page.locator('.top-nav a').allTextContents(), ['工作台', '工作空间']);
+    assert.deepEqual(await page.locator('.top-nav a').allTextContents(), ['工作台', '工作空间', '代码']);
     await page.locator('[data-area="workspace"]').click();
     await page.waitForURL(`${workspaceUrl}/workspace-overview`);
     await page.waitForFunction(() => [...document.querySelectorAll('.shell-navigation .shell-nav-item')].some((node: any) => node.textContent === '项目'));
-    assert.deepEqual(await page.locator('.shell-navigation .shell-nav-item').allTextContents(), ['总览', '项目', '服务', '代码库', '技能', '文章']);
+    assert.deepEqual(await page.locator('.shell-navigation .shell-nav-item').allTextContents(), ['总览', '项目', '服务', '代码库', '连接', '技能', '文章']);
     await page.locator('[data-nav=projects]').click();
-    assert.equal(await page.getByRole('tab', { name: '项目目录', exact: true }).count(), 0);
+    assert.equal(await page.getByRole('tab', { name: '项目目录', exact: true }).count(), 1);
     await page.locator('#project-table-body tr').filter({ hasText: '演示项目' }).click();
     await page.waitForURL(`${workspaceUrl}/projects/demo`);
     await page.locator('.workspace-tabstrip .pane-tab.on').filter({ hasText: '演示项目' }).waitFor({ state: 'visible' });
@@ -632,7 +909,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole('button', { name: '打开导航菜单', exact: true }).click();
     await page.getByRole('dialog').waitFor({ state: 'visible' });
-    assert.deepEqual(await page.getByRole('dialog').locator('.shell-nav-item').allTextContents(), ['总览', '项目', '服务', '代码库', '技能', '文章']);
+    assert.deepEqual(await page.getByRole('dialog').locator('.shell-nav-item').allTextContents(), ['总览', '项目', '服务', '代码库', '连接', '技能', '文章']);
     await page.getByRole('dialog').locator('[data-nav="projects"]').click();
     await page.waitForURL(`${workspaceUrl}/projects`);
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
@@ -648,7 +925,198 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await capture(page, 'navigation-project-desktop.png');
   });
 
-  if (selected('articles')) await runPublicationJourney({ t, page, workspaceRoot, workspaceUrl, expectedBrowserErrors, selectAntdOption, capture });
+  if (selected('articles')) await runPublicationJourney({ t, page, workspaceRoot, workspaceUrl, otherWorkspaceUrl: `${url}/workspaces/${otherWorkspaceId}`, expectedBrowserErrors, selectAntdOption, capture });
+
+  if (selected('shell')) await t.test('偏好存储拒绝时仍可启动、浏览并在内存中调整侧栏', async () => {
+    const context = await browser.newContext({ locale: 'zh-CN', viewport: { width: 1280, height: 720 } });
+    const restricted = await context.newPage();
+    const errors: string[] = [];
+    restricted.on('pageerror', (error: Error) => errors.push(error.message));
+    await context.addInitScript(() => {
+      for (const method of ['getItem', 'setItem']) Object.defineProperty(Storage.prototype, method, {
+        configurable: true, value: () => { throw new DOMException('Storage denied by browser fixture', 'SecurityError'); },
+      });
+    });
+    try {
+      await restricted.goto(`${url}/?catalog=1`);
+      await restricted.locator('#workspace-grid .workspace-card').first().waitFor();
+      await restricted.goto(`${workspaceUrl}/projects/demo`);
+      await restricted.locator('#project-detail-name').waitFor();
+      assert.equal(await restricted.locator('.app-sidebar').evaluate((node: HTMLElement) => Math.round(node.getBoundingClientRect().width)), 256);
+      await restricted.getByRole('button', { name: '折叠菜单', exact: true }).click();
+      assert.equal(await restricted.locator('.app-sidebar').evaluate((node: HTMLElement) => Math.round(node.getBoundingClientRect().width)), 64);
+      await restricted.reload();
+      await restricted.locator('#project-detail-name').waitFor();
+      assert.equal(await restricted.locator('.app-sidebar').evaluate((node: HTMLElement) => Math.round(node.getBoundingClientRect().width)), 256, '无法持久化时重新使用默认值');
+      await restricted.goto(`${workspaceUrl}/tasks`);
+      await restricted.locator('#task-filter-q').waitFor();
+      await restricted.goto(`${workspaceUrl}/code/explorer`);
+      await restricted.locator('.code-explorer-stage').waitFor();
+      await restricted.locator('.code-file-tabstrip').waitFor();
+      assert.deepEqual(errors, [], '可选存储故障不能成为未处理页面错误');
+    } finally { await context.close(); }
+  });
+
+  if (selected('shell')) await t.test('移除失败可见，重新读取登记不自动重放移除；退出失败仍保留应用', async () => {
+    await page.goto(`${url}/?catalog=1`);
+    const registryUrl = `${url}/api/v1/workspaces`, quitUrl = `${url}/api/v1/app/quit`;
+    const before = runtime.listRegisteredWorkspaces();
+    const roots = before.workspaces.map((entry: any) => entry.rootPath).sort();
+    const card = page.locator(`.workspace-card[data-workspace-id="${otherWorkspaceId}"]`);
+    await card.waitFor();
+    let deletes = 0, reads = 0, quits = 0;
+    const failRemove = async (route: any) => {
+      if (route.request().method() === 'DELETE') {
+        deletes++;
+        return route.fulfill({ status: deletes <= 2 ? 409 : 500, contentType: 'application/json', body: JSON.stringify({ error: {
+          code: deletes <= 2 ? 'workspace_registry_revision_conflict' : 'workspace_registry_unavailable',
+          message: deletes === 1 ? '登记版本已变化' : deletes === 2 ? 'Workspace 登记列表被其他操作占用，或锁的归属尚不能确认。请重新读取后重试；持续失败时由智能体核对锁归属。' : '登记暂时不可修改',
+        } }) });
+      }
+      if (route.request().method() === 'GET') reads++;
+      await route.continue();
+    };
+    expectedBrowserErrors.add(registryUrl); expectedBrowserErrors.add(quitUrl);
+    await page.route(registryUrl, failRemove);
+    const remove = async (reason: string) => {
+      const requests: Array<{ method: string; url: string; failure?: string }> = [];
+      const observed = (request: any) => {
+        if (new URL(request.url()).pathname === '/api/v1/workspaces') requests.push({ method: request.method(), url: request.url() });
+      };
+      const failed = (request: any) => {
+        if (new URL(request.url()).pathname === '/api/v1/workspaces') requests.push({ method: request.method(), url: request.url(), failure: request.failure()?.errorText });
+      };
+      page.on('request', observed); page.on('requestfailed', failed);
+      let confirmationClosed = false;
+      const attempted = page.waitForResponse((response: any) => response.url() === registryUrl && response.request().method() === 'DELETE')
+        .then((response: any) => ({ response }), (error: unknown) => ({ error }));
+      try {
+        await card.getByRole('button', { name: '移除', exact: true }).click();
+        const confirmation = page.getByRole('dialog', { name: '移除工作空间', exact: true });
+        await confirmation.waitFor({ state: 'visible' });
+        await confirmAntModal(page);
+        await confirmation.waitFor({ state: 'hidden' }); confirmationClosed = true;
+        const result = await attempted;
+        if (result.error) throw result.error;
+        await page.waitForFunction((text: string) => document.getElementById('workspace-operation-error')?.textContent?.includes(text), reason);
+      } catch (error) {
+        const visible = await page.evaluate(() => {
+          const error = document.getElementById('workspace-operation-error');
+          return {
+            url: location.href,
+            operationError: error?.getClientRects().length ? error.textContent : null,
+            dialogs: Array.from(document.querySelectorAll('[role="dialog"]')).filter(node => node.getClientRects().length).map(node => node.textContent),
+          };
+        });
+        process.stderr.write(`[buildr-browser-remove-diagnostic] ${JSON.stringify({ reason, confirmationClosed, requests, routedDeletes: deletes, visible })}\n`);
+        throw error;
+      } finally { page.off('request', observed); page.off('requestfailed', failed); }
+    };
+    await remove('本次未移除');
+    assert.match(await page.locator('#workspace-operation-error').innerText(), /本次未移除/);
+    assert.equal(await card.isVisible(), true);
+    const previousReads = reads;
+    const refreshed = page.waitForResponse((response: any) => response.url() === registryUrl && response.request().method() === 'GET');
+    await page.getByRole('button', { name: '重新读取登记', exact: true }).click();
+    assert.equal((await refreshed).status(), 200);
+    await page.locator('#workspace-operation-error').waitFor({ state: 'hidden' });
+    assert.ok(reads > previousReads);
+    assert.equal(deletes, 1, '重新读取只观察当前登记，不重新执行删除');
+    assert.deepEqual(runtime.listRegisteredWorkspaces().workspaces.map((entry: any) => entry.rootPath).sort(), roots);
+    await remove('锁的归属尚不能确认');
+    assert.match(await page.locator('#workspace-operation-error').innerText(), /被其他操作占用，或锁的归属尚不能确认/);
+    assert.doesNotMatch(await page.locator('#workspace-operation-error').innerText(), /登记已被其他操作修改/);
+    assert.equal(deletes, 2);
+    await remove('登记暂时不可修改');
+    assert.match(await page.locator('#workspace-operation-error').innerText(), /登记暂时不可修改/);
+    assert.equal(deletes, 3);
+    assert.equal(await card.isVisible(), true);
+    await page.unroute(registryUrl, failRemove);
+    const failQuit = async (route: any) => { quits++; await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'quit_unavailable', message: '宿主暂时不能退出' } }) }); };
+    await page.route(quitUrl, failQuit);
+    await page.locator('#quit-buildr').click();
+    await page.getByRole('dialog', { name: '退出 Buildr Web？', exact: true }).waitFor({ state: 'visible' });
+    await confirmAntModal(page);
+    await page.locator('#quit-buildr-error').waitFor();
+    assert.match(await page.locator('#quit-buildr-error').innerText(), /尚未退出/);
+    assert.equal(await page.locator('#workspace-grid').isVisible(), true);
+    assert.equal(await page.locator('.exit-screen').count(), 0);
+    const retried = page.waitForResponse((response: any) => response.url() === quitUrl && response.request().method() === 'POST');
+    await page.getByRole('button', { name: '重试退出', exact: true }).click();
+    assert.equal((await retried).status(), 500);
+    await page.waitForFunction(() => !document.getElementById('quit-buildr')?.classList.contains('ant-btn-loading'));
+    assert.equal(quits, 2);
+    assert.equal(await page.locator('#workspace-grid').isVisible(), true);
+  });
+
+  if (selected('shell')) await t.test('页面与对象页签手动激活、关闭焦点和面板关联保持一致', async () => {
+    await page.goto(`${workspaceUrl}/projects`);
+    await page.locator('#project-table-body tr').filter({ hasText: '演示项目' }).click();
+    await page.locator('#project-detail-name').waitFor();
+    await page.locator('[data-nav="projects"]').click();
+    await page.locator('#project-table-body tr').filter({ hasText: '另一项目' }).click();
+    await page.waitForURL(`${workspaceUrl}/projects/other`);
+    await page.locator('#project-detail-name:visible').filter({ hasText: '另一项目' }).waitFor();
+    const strip = page.getByRole('tablist', { name: '打开的页面', exact: true });
+    for (const title of await strip.locator('.pane-tab-text').allTextContents()) {
+      if (!['项目目录', '演示项目', '另一项目'].includes(title)) await strip.getByRole('button', { name: `关闭 ${title}`, exact: true }).click();
+    }
+    const demo = strip.getByRole('tab', { name: '演示项目', exact: true }), other = strip.getByRole('tab', { name: '另一项目', exact: true });
+    await other.focus();
+    assert.equal(await strip.locator('[role="tab"][tabindex="0"]').count(), 1);
+    const previousUrl = page.url();
+    await other.press('ArrowLeft'); assert.equal(await demo.evaluate((node: HTMLElement) => node === document.activeElement), true);
+    assert.equal(page.url(), previousUrl, '方向键仅移动焦点，Enter 才激活');
+    await demo.press('Enter'); await page.waitForURL(`${workspaceUrl}/projects/demo`);
+    const control = await demo.getAttribute('aria-controls'), tabId = await demo.getAttribute('id');
+    assert.ok(control && tabId);
+    await page.waitForFunction(({ control, tabId }: { control: string; tabId: string }) => {
+      const panel = document.getElementById(control), tab = document.getElementById(tabId);
+      return panel && !panel.hasAttribute('hidden') && panel.getClientRects().length > 0 && tab?.getAttribute('aria-selected') === 'true';
+    }, { control, tabId });
+    assert.deepEqual(await page.evaluate((id: string) => { const panel = document.getElementById(id)!; return { role: panel.getAttribute('role'), label: panel.getAttribute('aria-labelledby'), hidden: panel.hasAttribute('hidden') }; }, control), { role: 'tabpanel', label: tabId, hidden: false });
+    await demo.press('End'); assert.equal(await other.evaluate((node: HTMLElement) => node === document.activeElement), true);
+    await other.press('Home'); assert.equal(await strip.getByRole('tab', { name: '项目目录', exact: true }).evaluate((node: HTMLElement) => node === document.activeElement), true);
+    await demo.press('Alt+ArrowRight');
+    await page.waitForFunction(() => Array.from(document.querySelectorAll('.workspace-tabstrip .pane-tab-text')).map(node => node.textContent).join('|') === '项目目录|另一项目|演示项目');
+    assert.deepEqual(await strip.locator('.pane-tab-text').allTextContents(), ['项目目录', '另一项目', '演示项目'], '目录与页面使用同一可见重排索引');
+    const demoBox = await demo.boundingBox(), otherBox = await other.boundingBox();
+    assert.ok(demoBox && otherBox);
+    await page.mouse.move(demoBox.x + demoBox.width / 2, demoBox.y + demoBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(otherBox.x + 8, otherBox.y + otherBox.height / 2, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForFunction(() => Array.from(document.querySelectorAll('.workspace-tabstrip .pane-tab-text')).map(node => node.textContent).join('|') === '项目目录|演示项目|另一项目');
+    await page.locator('.pane-tab-drag-ghost').waitFor({ state: 'hidden' });
+    await demo.press('Delete'); await demo.waitFor({ state: 'hidden' });
+    assert.equal(await other.evaluate((node: HTMLElement) => node === document.activeElement), true, '关闭后焦点进入邻近页签');
+    await other.press('Delete'); await page.waitForURL(`${workspaceUrl}/projects`);
+    assert.equal(await page.evaluate(() => document.activeElement !== document.body && !!(document.activeElement as HTMLElement)?.getClientRects().length), true, '关闭最后页签后焦点仍在可见工作内容');
+    await page.locator('#project-table-body tr').filter({ hasText: '演示项目' }).click();
+    await page.locator('[data-doc-row="agents"]').click();
+    await page.locator('.pane-right .markdown-body').waitFor();
+    await page.locator('[data-service-card="api"]').click();
+    await page.locator('#service-detail-name:visible').waitFor();
+    const objects = page.locator('.pane-right:visible').getByRole('tablist', { name: '打开的对象', exact: true });
+    const service = objects.getByRole('tab', { name: '服务详情', exact: true }), agents = objects.getByRole('tab', { name: 'AGENTS.md', exact: true });
+    await service.focus(); await service.press('Home');
+    assert.equal(await agents.evaluate((node: HTMLElement) => node === document.activeElement), true);
+    assert.equal(await service.getAttribute('aria-selected'), 'true');
+    await agents.press('Enter'); await page.locator('.pane-right .markdown-body:visible').waitFor();
+    const objectControl = await agents.getAttribute('aria-controls');
+    assert.equal(await page.evaluate((id: string) => document.getElementById(id)?.getAttribute('aria-labelledby'), objectControl), await agents.getAttribute('id'));
+    assert.equal(await objects.locator('[role="tab"][tabindex="0"]').count(), 1);
+    assert.equal(await objects.getByRole('button', { name: '关闭 AGENTS.md', exact: true }).count(), 1);
+    await agents.press('Delete'); await agents.waitFor({ state: 'hidden' });
+    assert.equal(await service.evaluate((node: HTMLElement) => node === document.activeElement), true);
+    await service.press('Delete'); await page.locator('.pane-right:visible').waitFor({ state: 'hidden' });
+    assert.equal(await page.evaluate(() => document.activeElement !== document.body && !!(document.activeElement as HTMLElement)?.getClientRects().length), true);
+    await page.setViewportSize({ width: 640, height: 720 });
+    await page.goto(`${workspaceUrl}/code/explorer`);
+    await page.getByRole('button', { name: '交给 Agent', exact: true }).waitFor();
+    await page.goto(`${workspaceUrl}/overview`);
+    await page.getByRole('button', { name: '提出新目标', exact: true }).waitFor();
+  });
 
   if (selected('shell')) await t.test('四类资源目录共享表头、搜索、操作位置与行密度', async () => {
     const heights: number[] = [];
@@ -682,7 +1150,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
         await page.locator('#service-table-body a[href*="/repositories/"]').first().click();
         await page.getByRole('button', { name: '编辑代码库', exact: true }).waitFor({ state: 'visible' });
       }
-      assert.equal(await page.getByRole('tab', { name: /^(项目目录|服务目录|代码库目录|技能目录|设置)$/ }).count(), 0);
+      assert.ok(await page.getByRole('tab', { name: /^(项目目录|服务目录|代码库目录|技能目录)$/ }).count() > 0, '已打开目录保留可恢复标签');
     }
     await page.setViewportSize({ width: 1280, height: 720 });
 
@@ -789,6 +1257,99 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     }
   });
 
+  if (selected('project')) await t.test('项目资料从实际规则文档返回，迟到资料不能恢复旧阅读', async () => {
+    const projectRoot = path.join(workspaceRoot, 'projects/demo');
+    const agents = path.join(projectRoot, 'AGENTS.md'), original = fs.readFileSync(agents, 'utf8');
+    const docs = path.join(projectRoot, 'docs'); fs.mkdirSync(docs, { recursive: true });
+    fs.appendFileSync(agents, '\n## 原始规则阅读\n\n[下一份资料](docs/continuity-fast.md)\n');
+    fs.writeFileSync(path.join(docs, 'continuity-fast.md'), '# 当前资料阅读\n\n[迟到资料](continuity-slow.md)\n');
+    fs.writeFileSync(path.join(docs, 'continuity-slow.md'), '# 迟到资料不得恢复\n');
+    let release!: () => void, requested!: () => void, handled!: () => void;
+    const waiting = new Promise<void>(resolve => { release = resolve; });
+    const entered = new Promise<void>(resolve => { requested = resolve; });
+    const finished = new Promise<void>(resolve => { handled = resolve; });
+    let routed = false;
+    const slow = (target: URL) => target.pathname === `/api/v1/workspaces/${initialWorkspaceId}/code/editor-file`
+      && target.searchParams.get('kind') === 'project'
+      && target.searchParams.get('projectCode') === 'demo'
+      && target.searchParams.get('filePath') === 'docs/continuity-slow.md';
+    await page.route(slow, async route => {
+      routed = true;
+      try {
+        const response = await route.fetch(); requested();
+        await waiting;
+        try { await route.fulfill({ response }); }
+        catch (error) { if (!route.request().failure()) throw error; }
+      }
+      finally { handled(); }
+    });
+    try {
+      await page.goto(`${workspaceUrl}/projects/demo`);
+      await page.locator('[data-doc-row="agents"]').click();
+      const reading = () => page.locator('.workspace-page:not([hidden]) .pane-right:visible');
+      await reading().getByRole('link', { name: '下一份资料', exact: true }).click();
+      await reading().getByRole('heading', { name: '当前资料阅读', exact: true }).waitFor({ state: 'visible' });
+      await reading().getByRole('link', { name: '迟到资料', exact: true }).click();
+      await entered;
+      await reading().getByRole('button', { name: '← 返回上一篇', exact: true }).click();
+      await reading().getByRole('heading', { name: '原始规则阅读', exact: true }).waitFor({ state: 'visible' });
+      release(); await finished;
+      assert.equal(await reading().getByRole('heading', { name: '原始规则阅读', exact: true }).isVisible(), true);
+      assert.equal(await reading().getByRole('heading', { name: '迟到资料不得恢复', exact: true }).count(), 0);
+      assert.equal(await reading().getByRole('button', { name: '← 返回上一篇', exact: true }).count(), 0);
+    } finally {
+      release(); if (routed) await finished; await page.unroute(slow); fs.writeFileSync(agents, original);
+      for (const file of ['continuity-fast.md', 'continuity-slow.md']) fs.rmSync(path.join(docs, file));
+    }
+  });
+
+  if (selected('project')) await t.test('全新工作空间不先迁移即可从网页创建首个项目', async () => {
+    const before = runtime.assetCatalog(otherRoot);
+    assert.equal(before.migrationRequired, false);
+    assert.deepEqual([before.projects, before.services, before.repositories], [[], [], []]);
+    await page.goto(`${url}/workspaces/${otherWorkspaceId}/projects/new`);
+    await page.getByRole('textbox', { name: '项目名称', exact: true }).fill('首次网页项目');
+    await page.getByRole('textbox', { name: '项目标识', exact: true }).fill('first-browser-project');
+    assert.equal(await page.getByRole('button', { name: '迁移登记', exact: true }).count(), 0);
+    await page.getByRole('dialog').getByRole('button', { name: '创建项目', exact: true }).click();
+    await page.waitForURL(`${url}/workspaces/${otherWorkspaceId}/projects/first-browser-project`);
+    await page.getByRole('heading', { name: '首次网页项目', exact: true }).waitFor({ state: 'visible' });
+    const after = runtime.assetCatalog(otherRoot);
+    assert.equal(after.migrationRequired, false);
+    assert.equal(after.projects[0].code, 'first-browser-project');
+    assert.deepEqual([after.services, after.repositories], [[], []]);
+  });
+
+  if (selected('project')) await t.test('项目文件图片保持当前工作空间与正文版本，更新后重新打开读取新观察', async () => {
+    const projectRoot = path.join(workspaceRoot, 'projects/demo');
+    const file = path.join(projectRoot, 'README.md'), imageFile = path.join(projectRoot, 'assets/project-readonly-image.png');
+    const before = fs.existsSync(file) ? fs.readFileSync(file) : null, imageBefore = fs.existsSync(imageFile) ? fs.readFileSync(imageFile) : null;
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64');
+    try {
+      fs.mkdirSync(path.dirname(imageFile), { recursive: true }); fs.writeFileSync(imageFile, png);
+      fs.writeFileSync(file, '# 项目配图说明\n\n![项目文档配图](assets/project-readonly-image.png)\n\n正文与图片沿用当前项目来源。\n');
+      await page.goto(`${workspaceUrl}/projects/demo`); await page.locator('[data-doc-row="readme"]').click();
+      const image = page.locator('.pane-right:visible').getByRole('img', { name: '项目文档配图', exact: true });
+      await image.scrollIntoViewIfNeeded();
+      await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>('.pane-right img')].some(item => item.alt === '项目文档配图' && item.complete && item.naturalWidth === 1));
+      const previous = new URL((await image.getAttribute('src'))!, workspaceUrl).href;
+      assert.ok(previous.includes(`/api/v1/workspaces/${initialWorkspaceId}/projects/demo/document-image?`));
+      assert.equal(new URL(previous).searchParams.get('documentPath'), 'README.md');
+      const result = await page.request.get(previous); assert.equal(result.status(), 200); assert.deepEqual(await result.body(), png);
+      assert.ok((await image.boundingBox())!.width <= 4, '图片保留自然尺寸并限制阅读宽度');
+      fs.appendFileSync(file, '\n项目正文已经更新。\n');
+      assert.equal((await page.request.get(previous)).status(), 409, '旧正文观察不能作为新图片读取依据');
+      await page.getByRole('button', { name: '关闭 项目文档', exact: true }).click(); await page.locator('[data-doc-row="readme"]').click();
+      await page.locator('.pane-right:visible .markdown-body').filter({ hasText: '项目正文已经更新' }).waitFor({ state: 'visible' });
+      await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>('.pane-right img')].some(item => item.alt === '项目文档配图' && item.complete && item.naturalWidth === 1));
+      assert.notEqual(await image.getAttribute('src'), new URL(previous).pathname + new URL(previous).search);
+      await capture(page, 'project-document-current-images.png');
+    } finally {
+      if (before) fs.writeFileSync(file, before); else fs.rmSync(file, { force: true });
+      if (imageBefore) fs.writeFileSync(imageFile, imageBefore); else fs.rmSync(imageFile, { force: true });
+    }
+  });
+
   if (selected('project')) await t.test('项目列表展示标题与说明，详情展示基础事实与文档', async () => {
     await page.goto(`${workspaceUrl}/projects`);
     const row: any = page.locator('#project-table-body tr').filter({ hasText: '演示项目' });
@@ -859,10 +1420,25 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('[data-doc-row="readme"]').click();
     assert.ok(Math.abs((await paneSize()).right - draggedPanes.right) <= 1);
     await page.reload();
+    const missingReadme = page.waitForResponse(response => {
+      const target = new URL(response.url());
+      return response.request().method() === 'GET'
+        && target.pathname === `/api/v1/workspaces/${initialWorkspaceId}/code/editor-file`
+        && target.searchParams.get('kind') === 'project'
+        && target.searchParams.get('projectCode') === 'demo'
+        && target.searchParams.get('filePath') === 'README.md';
+    });
+    void missingReadme.catch(() => {});
     await page.locator('[data-doc-row="readme"]').click();
+    const missingResponse = await missingReadme;
+    const missingError = (await missingResponse.json()).error;
+    assert.equal(missingResponse.status(), 404, '当前项目的README缺失，不是其他请求错误');
+    assert.equal(missingError.code, 'file_missing');
+    assert.equal(missingError.message, '文件当前不存在，请保留输入并重新核对位置。');
+    expectedBrowserErrors.add(missingResponse.url());
     await page.locator('.pane-right .artifact-missing').waitFor({ state: 'visible' });
     assert.ok(Math.abs((await paneSize()).right - draggedPanes.right) <= 1);
-    assert.match(await page.locator('.pane-right .artifact-missing').innerText(), /未找到 README\.md/);
+    assert.equal(await page.locator('.pane-right .artifact-missing').innerText(), missingError.message);
     await page.locator('[data-doc-row="agents"]').click();
     await page.waitForFunction(() => {
       const body: any = document.querySelector('.pane-right .markdown-body')?.textContent || '';
@@ -874,10 +1450,12 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#service-detail-name:visible').waitFor({ state: 'visible' });
     assert.equal(page.url(), `${workspaceUrl}/projects/demo`);
     assert.equal(await page.getByRole('tab', { name: '演示项目', exact: true }).count(), 1);
-    assert.equal(await page.getByRole('tab', { name: '服务详情 关闭 服务详情', exact: true }).count(), 1);
+    assert.equal(await page.getByRole('tab', { name: '服务详情', exact: true }).count(), 1);
+    assert.equal(await page.getByRole('button', { name: '关闭 服务详情', exact: true }).count(), 1, '对象关闭是独立可访问控件');
     assert.equal(await page.locator('.pane-right:visible [data-related-resources="projects"]').count(), 0);
     assert.equal(await page.locator('#project-detail-name').isVisible(), true);
-    assert.equal(await page.getByRole('tab', { name: 'AGENTS.md 关闭 AGENTS.md', exact: true }).count(), 1);
+    assert.equal(await page.getByRole('tab', { name: 'AGENTS.md', exact: true }).count(), 1);
+    assert.equal(await page.getByRole('button', { name: '关闭 AGENTS.md', exact: true }).count(), 1, '对象关闭是独立可访问控件');
     await page.goBack();
     await page.locator('.workspace-page:not([hidden]) .pane-right .markdown-body:visible').waitFor({ state: 'visible' });
     assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-right .markdown-body:visible').innerText(), projectDocumentText);
@@ -889,14 +1467,33 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.getByRole('tab', { name: '演示项目', exact: true }).click();
     await page.waitForURL(`${workspaceUrl}/projects/demo`);
     await page.locator('#service-detail-name:visible').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#project-detail-name').isVisible(), true);
+    assert.equal(await page.locator('#project-detail-name:visible').innerText(), '演示项目');
     await page.getByRole('link', { name: '返回项目列表', exact: true }).click();
-    await page.locator('#project-table-body tr').filter({ hasText: '演示项目' }).click();
-    await page.locator('#project-detail-name').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#service-detail-name:visible').count(), 0);
+    await page.waitForURL(`${workspaceUrl}/projects`);
+    await page.locator('#project-table-body:visible tr').filter({ hasText: '演示项目' }).locator('.resource-name a').click();
+    await page.waitForURL(`${workspaceUrl}/projects/demo`).catch(async (error: Error) => {
+      console.error('[project-directory-reentry-scene]', JSON.stringify(await page.evaluate(() => {
+        const visible = (node: Element) => node.getClientRects().length > 0 && getComputedStyle(node).visibility !== 'hidden';
+        const rows = [...document.querySelectorAll<HTMLElement>('#project-table-body tr')].filter(row => row.textContent?.includes('演示项目')).slice(0, 4);
+        return {
+          url: location.href,
+          headings: [...document.querySelectorAll<HTMLElement>('h1, #service-detail-name')].filter(visible).slice(0, 8).map(node => ({ id: node.id, text: node.innerText.slice(0, 160) })),
+          rows: rows.map(row => ({ text: row.innerText.slice(0, 240), visible: visible(row), inertAncestor: row.closest('[inert]')?.className || null, links: [...row.querySelectorAll<HTMLAnchorElement>('a')].slice(0, 3).map(link => ({ text: link.innerText.slice(0, 80), href: link.href })) })),
+          leftPanes: [...document.querySelectorAll<HTMLElement>('.pane-left')].filter(visible).slice(0, 4).map(pane => ({ className: pane.className, inert: pane.inert, bodyInert: pane.querySelector<HTMLElement>('.pane-body')?.inert ?? null })),
+          hosts: [...document.querySelectorAll<HTMLElement>('.workspace-pane-host')].slice(0, 4).map(host => ({ className: host.className, visible: visible(host), stageClass: host.querySelector('.pane-stage')?.className })),
+        };
+      })));
+      throw error;
+    });
+    await page.locator('#project-detail-name:visible').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#project-detail-name:visible').innerText(), '演示项目');
+    await page.locator('#service-detail-name:visible').waitFor({ state: 'visible' });
+    assert.equal(await page.getByRole('tab', { name: '服务详情', exact: true }).count(), 1, '目录重入复用项目页并保留已开服务对象');
+    assert.equal(await page.getByRole('tab', { name: 'AGENTS.md', exact: true }).count(), 1, '目录重入保留已有文档标签');
     await page.locator('#project-activity-link').click();
     assert.equal(page.url(), `${workspaceUrl}/projects/demo`, '项目动态在项目主页副屏打开，不离开当前页');
-    await page.getByRole('tab', { name: '项目动态 关闭 项目动态', exact: true }).waitFor({ state: 'visible' });
+    await page.getByRole('tab', { name: '项目动态', exact: true }).waitFor({ state: 'visible' });
+    assert.equal(await page.getByRole('button', { name: '关闭 项目动态', exact: true }).count(), 1, '对象关闭是独立可访问控件');
     await page.locator('.pane-right:visible .project-activity-controls').waitFor({ state: 'visible' });
     await page.locator('.pane-right:visible').getByRole('link', { name: '打开动态页', exact: true }).click();
     await page.waitForURL(current => current.pathname === new URL(`${workspaceUrl}/activity`).pathname && current.searchParams.get('project') === 'demo' && !current.searchParams.has('date'));
@@ -906,7 +1503,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.locator('.pane-right #progress-body').count(), 0, '项目主页进入统一动态页，不挂载旧侧栏详情');
     await page.goBack();
     await page.waitForURL(`${workspaceUrl}/projects/demo`);
-    await page.locator('#project-detail-name').waitFor({ state: 'visible' });
+    await page.locator('#project-detail-name:visible').waitFor({ state: 'visible' });
     await page.getByRole('button', { name: '编辑项目', exact: true }).click();
     await page.locator('#project-edit-form').waitFor({ state: 'visible' });
     assert.equal(await page.url(), `${workspaceUrl}/projects/demo`);
@@ -929,16 +1526,145 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.route(projectUpdateUrl, failProjectSave);
     await page.getByRole('button', { name: '保存修改', exact: true }).click();
     await page.locator('#project-edit-alert').waitFor({ state: 'visible' });
-    assert.match(await page.locator('#project-edit-alert').innerText(), /当前输入已保留/);
+    assert.match(await page.locator('#project-edit-alert').innerText(), /你的输入已保留/);
     assert.equal(await page.locator('#project-description').inputValue(), '已在抽屉中更新');
     await page.unroute(projectUpdateUrl, failProjectSave);
+    const freshProject = page.waitForResponse((response: any) => response.url() === projectUpdateUrl && response.request().method() === 'GET');
+    await page.getByRole('button', { name: '读取最新内容', exact: true }).click();
+    assert.equal((await freshProject).status(), 200);
+    await page.locator('.metadata-conflict dl').waitFor();
+    assert.equal(await page.locator('#project-description').inputValue(), '已在抽屉中更新');
     await capture(page, 'project-edit-drawer-desktop.png');
-    await page.getByRole('button', { name: '保存修改', exact: true }).click();
+    let releaseSave: () => void = () => {}, saveCaptured: () => void = () => {}, writes = 0;
+    const saveGate = new Promise<void>(resolve => { releaseSave = resolve; });
+    const capturedSave = new Promise<void>(resolve => { saveCaptured = resolve; });
+    const delaySave = async (route: any) => {
+      if (route.request().method() === 'PUT') { writes++; saveCaptured(); await saveGate; }
+      await route.continue();
+    };
+    await page.route(projectUpdateUrl, delaySave);
+    try {
+      const saved = page.waitForResponse((response: any) => response.url() === projectUpdateUrl && response.request().method() === 'PUT');
+      await page.getByRole('button', { name: '保留修改并按最新版本保存', exact: true }).click();
+      await capturedSave;
+      for (const selector of ['#project-name', '#project-description']) assert.equal(await page.locator(selector).isDisabled(), true, '保存期间字段不能接受未提交的新输入');
+      assert.equal(await page.getByRole('button', { name: '关闭编辑', exact: true }).isDisabled(), true);
+      assert.equal(await page.getByRole('button', { name: '取消', exact: true }).isDisabled(), true);
+      await page.evaluate(() => { const form = document.getElementById('project-edit-form') as HTMLFormElement; form.requestSubmit(); form.requestSubmit(); });
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      assert.equal(writes, 1, '等待中的重复表单提交不能生成第二次 PUT');
+      assert.equal(await page.locator('#project-description').inputValue(), '已在抽屉中更新');
+      releaseSave(); assert.equal((await saved).status(), 200);
+    } finally { releaseSave(); await page.unroute(projectUpdateUrl, delaySave); }
     await page.waitForFunction(() => document.getElementById('project-detail-description')?.textContent === '已在抽屉中更新');
     assert.equal(await page.locator('#project-detail-description').innerText(), '已在抽屉中更新');
     await page.waitForFunction(() => [...document.querySelectorAll('.workspace-tabstrip .pane-tab .pane-tab-text')].some((node: any) => node.textContent?.includes('演示项目（已更新）')));
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
     await page.setViewportSize({ width: 1280, height: 720 });
+  });
+
+  if (selected('project')) await t.test('元信息最新读取失败保留输入，旧编辑迟到响应不能解锁新保存', async () => {
+    await page.goto(`${workspaceUrl}/projects/demo`);
+    await page.locator('#project-detail-name').waitFor();
+    const target = `${url}/api/v1/workspaces/${initialWorkspaceId}/projects/demo`;
+    const original = await (await page.request.get(target)).json();
+    const session = await page.locator('meta[name="buildr-session"]').getAttribute('content');
+    const headers = { origin: url, 'x-buildr-session': session!, 'content-type': 'application/json' };
+    await page.getByRole('button', { name: '编辑项目', exact: true }).click();
+    await page.locator('#project-edit-form').waitFor();
+    await page.locator('#project-description').fill('旧编辑输入');
+    let reads = 0, writes = 0;
+    let releaseRead: () => void = () => {}, captureRead: () => void = () => {}, finishRead: () => void = () => {};
+    let releaseWrite: () => void = () => {}, captureWrite: () => void = () => {};
+    const readGate = new Promise<void>(resolve => { releaseRead = resolve; });
+    const readCaptured = new Promise<void>(resolve => { captureRead = resolve; });
+    const readFinished = new Promise<void>(resolve => { finishRead = resolve; });
+    const writeGate = new Promise<void>(resolve => { releaseWrite = resolve; });
+    const writeCaptured = new Promise<void>(resolve => { captureWrite = resolve; });
+    const injected = async (route: any) => {
+      if (route.request().method() === 'GET') {
+        reads++;
+        if (reads === 1) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'read_unavailable', message: '最新读取暂不可用' } }) });
+        if (reads === 2) {
+          const response = await route.fetch(); captureRead(); await readGate;
+          await route.fulfill({ response }); finishRead(); return;
+        }
+      }
+      if (route.request().method() === 'PUT') {
+        writes++;
+        if (writes === 1) return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'project_revision_conflict', message: '内容已变化' } }) });
+        captureWrite(); await writeGate;
+      }
+      await route.continue();
+    };
+    expectedBrowserErrors.add(target);
+    const saveRequests: Array<{ method: string; url: string; status: number | null; migrationRequired?: boolean; revision?: string; errorCode?: string }> = [];
+    const saveRequestEntries = new Map<any, (typeof saveRequests)[number]>();
+    const observeSaveRequest = (request: any) => {
+      if (request.url() !== target || saveRequests.length >= 16) return;
+      const observation = { method: request.method(), url: request.url(), status: null };
+      saveRequests.push(observation); saveRequestEntries.set(request, observation);
+    };
+    const observeSaveResponse = async (response: any) => {
+      const observation = saveRequestEntries.get(response.request());
+      if (!observation) return;
+      observation.status = response.status();
+      try {
+        const body = await response.json();
+        observation.migrationRequired = body.migrationRequired;
+        observation.revision = body.revision;
+        observation.errorCode = body.error?.code;
+      } catch { /* Status and identity remain useful if the body is unavailable. */ }
+    };
+    page.on('request', observeSaveRequest); page.on('response', observeSaveResponse);
+    await page.route(target, injected);
+    try {
+      await page.getByRole('button', { name: '保存修改', exact: true }).click();
+      await page.getByRole('button', { name: '读取最新内容', exact: true }).click();
+      await page.locator('.metadata-conflict').getByText('最新读取暂不可用', { exact: true }).waitFor();
+      assert.equal(await page.locator('#project-description').inputValue(), '旧编辑输入');
+      assert.equal(await page.getByRole('button', { name: '保留修改并按最新版本保存', exact: true }).count(), 0);
+      await page.getByRole('button', { name: '读取最新内容', exact: true }).click(); await readCaptured;
+      await page.getByRole('button', { name: '关闭编辑', exact: true }).click();
+      await page.getByRole('dialog').waitFor({ state: 'hidden' });
+      await page.getByRole('button', { name: '编辑项目', exact: true }).click();
+      await page.locator('#project-description').waitFor();
+      assert.equal(await page.locator('#project-description').inputValue(), original.project.description);
+      await page.locator('#project-description').fill('新编辑输入');
+      const saved = page.waitForResponse((response: any) => response.url() === target && response.request().method() === 'PUT');
+      await page.getByRole('button', { name: '保存修改', exact: true }).click(); await writeCaptured;
+      releaseRead(); await readFinished;
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      await page.evaluate(() => (document.getElementById('project-edit-form') as HTMLFormElement).requestSubmit());
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      assert.equal(writes, 2, '旧读取完成不能解锁新编辑正在执行的保存');
+      assert.equal(await page.locator('#project-description').inputValue(), '新编辑输入');
+      assert.equal(await page.locator('#project-description').isDisabled(), true);
+      releaseWrite(); assert.equal((await saved).status(), 200);
+      await page.getByRole('dialog').waitFor({ state: 'hidden' });
+    } catch (error) {
+      console.error('[project-metadata-recovery-scene]', JSON.stringify({
+        target, reads, writes, requests: saveRequests,
+        original: { migrationRequired: original.migrationRequired, revision: original.revision },
+        scene: await page.evaluate(() => {
+          const visible = (node: Element) => node.getClientRects().length > 0 && getComputedStyle(node).visibility !== 'hidden';
+          const form = document.querySelector<HTMLElement>('#project-edit-form');
+          const save = document.querySelector<HTMLButtonElement>('#project-save-button');
+          const alert = document.querySelector<HTMLElement>('#project-edit-alert');
+          return {
+            url: location.href, formVisible: Boolean(form && visible(form)),
+            save: save ? { disabled: save.disabled, loading: save.classList.contains('ant-btn-loading'), text: save.innerText.slice(0, 120) } : null,
+            fields: ['project-name', 'project-description'].map(id => { const field = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | null; return { id, disabled: field?.disabled ?? null, value: field?.value.slice(0, 240) ?? null }; }),
+            alert: alert ? { visible: visible(alert), text: alert.innerText.slice(0, 1200) } : null,
+            recoveryButtons: [...document.querySelectorAll<HTMLButtonElement>('.metadata-conflict button')].filter(visible).slice(0, 8).map(button => ({ text: button.innerText.slice(0, 120), disabled: button.disabled, loading: button.classList.contains('ant-btn-loading') })),
+          };
+        }),
+      }));
+      throw error;
+    } finally { releaseRead(); releaseWrite(); await page.unroute(target, injected); page.off('request', observeSaveRequest); page.off('response', observeSaveResponse); }
+    const current = await (await page.request.get(target)).json();
+    const restored = await page.request.put(target, { headers, data: { revision: current.revision, name: original.project.name, description: original.project.description } });
+    assert.equal(restored.status(), 200, await restored.text());
   });
 
   if (selected('project')) await t.test('代码库已有目录可以移除并重新登记且保留 Git 内容', async () => {
@@ -1067,8 +1793,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await capture(page, 'project-register-existing-desktop.png');
     await page.getByRole('button', { name: '登记项目', exact: true }).click();
     await page.waitForURL(`${workspaceUrl}/projects/register-browser`);
-    await page.locator('#project-detail-name').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#project-detail-name').innerText(), '重新登记后的名称');
+    await page.locator('#project-detail-name:visible').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#project-detail-name:visible').innerText(), '重新登记后的名称');
     const registered = runtime.assetCatalog(workspaceRoot).projects.find((project: any) => project.code === original.code);
     assert.notEqual(registered.id, original.id);
     assert.deepEqual(registered.serviceIds, []);
@@ -1094,7 +1820,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await unique(row.getByRole('button', { name: '编辑', exact: true }), '服务目录编辑操作');
     const directServiceHref = await detail.getAttribute('href');
     await detail.click();
-    await page.getByRole('tab', { name: '服务详情 关闭 服务详情', exact: true }).waitFor({ state: 'visible' });
+    await page.getByRole('tab', { name: '服务详情', exact: true }).waitFor({ state: 'visible' });
+    assert.equal(await page.getByRole('button', { name: '关闭 服务详情', exact: true }).count(), 1, '对象关闭是独立可访问控件');
     await page.getByRole('button', { name: '编辑服务', exact: true }).waitFor({ state: 'visible' });
     await page.locator('.pane-right:visible [data-related-resources="projects"]').waitFor({ state: 'visible' });
     await page.goto(new URL(directServiceHref, workspaceUrl).href);
@@ -1282,6 +2009,44 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       assert.equal((await rejected).status(), 409);
       assert.equal(await page.getByRole('textbox', { name: '名称', exact: true }).inputValue(), '保留我的输入');
       assert.equal(runtime.assetCatalog(workspaceRoot).services.find((s: any) => s.id === service.id).name, '另一入口修改');
+      assert.equal(await page.locator('#catalog-edit-save').isDisabled(), true);
+      await page.getByRole('button', { name: '读取最新内容', exact: true }).click();
+      await page.locator('.metadata-conflict dl').getByText('另一入口修改', { exact: true }).waitFor();
+      c = runtime.assetCatalog(workspaceRoot);
+      runtime.updateCatalogAsset(workspaceRoot, 'service', service.id, { revision: c.revision, description: '另一入口再次更新的说明' });
+      const secondRejected = page.waitForResponse((response: any) => response.request().method() === 'PUT' && response.url() === updateUrl);
+      await page.getByRole('button', { name: '保留修改并按最新版本保存', exact: true }).click();
+      assert.equal((await secondRejected).status(), 409, '读取最新后又变化，继续保存仍必须拒绝');
+      assert.equal(await page.getByRole('textbox', { name: '名称', exact: true }).inputValue(), '保留我的输入');
+      assert.equal(await page.getByRole('button', { name: '保留修改并按最新版本保存', exact: true }).count(), 0, '再次冲突必须重新读取');
+      await page.getByRole('button', { name: '读取最新内容', exact: true }).click();
+      await page.locator('.metadata-conflict dl').getByText('另一入口再次更新的说明', { exact: true }).waitFor();
+      let release: () => void = () => {}, captured: () => void = () => {}, writes = 0;
+      const gate = new Promise<void>(resolve => { release = resolve; });
+      const pending = new Promise<void>(resolve => { captured = resolve; });
+      const delayWrite = async (route: any) => {
+        if (route.request().method() === 'PUT') { writes++; captured(); await gate; }
+        await route.continue();
+      };
+      await page.route(updateUrl, delayWrite);
+      try {
+        const recovered = page.waitForResponse((response: any) => response.request().method() === 'PUT' && response.url() === updateUrl);
+        await page.getByRole('button', { name: '保留修改并按最新版本保存', exact: true }).click();
+        await pending;
+        for (const name of ['名称', '说明', '模块目录']) assert.equal(await page.getByRole('textbox', { name, exact: true }).isDisabled(), true);
+        assert.equal(await page.locator('#catalog-edit').getByRole('combobox').isDisabled(), true);
+        assert.equal(await page.getByRole('button', { name: '关闭编辑', exact: true }).isDisabled(), true);
+        await page.evaluate(() => { const form = document.getElementById('catalog-edit') as HTMLFormElement; form.requestSubmit(); form.requestSubmit(); });
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        assert.equal(writes, 1, '资产保存期间重复提交只能产生一次 PUT');
+        release(); assert.equal((await recovered).status(), 200);
+      } finally { release(); await page.unroute(updateUrl, delayWrite); }
+      await page.getByRole('dialog').waitFor({ state: 'hidden' });
+      const final = runtime.assetCatalog(workspaceRoot).services.find((s: any) => s.id === service.id);
+      assert.equal(final.name, '保留我的输入');
+      assert.equal(final.description, '另一入口再次更新的说明', '未改字段采用最后读取的新内容');
+      await page.locator('#service-table-body tr').filter({ hasText: '保留我的输入' }).getByRole('button', { name: '编辑', exact: true }).click();
+      await page.getByRole('textbox', { name: '名称', exact: true }).waitFor();
       await page.getByRole('button', { name: '关闭编辑', exact: true }).click();
       await page.getByRole('dialog').waitFor({ state: 'hidden' });
     } finally {
@@ -1338,7 +2103,29 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
     await page.getByRole('button', { name: '编辑代码库', exact: true }).click();
     await page.getByRole('textbox', { name: '仓库目录', exact: true }).fill('editable-future');
-    await page.locator('#catalog-edit-save').click();
+    c = runtime.assetCatalog(workspaceRoot);
+    runtime.updateCatalogAsset(workspaceRoot, 'repository', repository.id, { revision: c.revision, description: '另一入口更新的仓库说明' });
+    let writes = 0;
+    const countWrites = (request: any) => { if (request.url() === updateUrl && request.method() === 'PUT') writes++; };
+    page.on('request', countWrites);
+    try {
+      const rejected = page.waitForResponse((response: any) => response.url() === updateUrl && response.request().method() === 'PUT');
+      await page.locator('#catalog-edit-save').click(); assert.equal((await rejected).status(), 409);
+      await page.getByRole('button', { name: '读取最新内容', exact: true }).click();
+      await page.locator('.metadata-conflict dl').getByText('另一入口更新的仓库说明', { exact: true }).waitFor();
+      const directory = page.getByRole('textbox', { name: '仓库目录', exact: true });
+      await directory.fill('');
+      await page.getByRole('button', { name: '保留修改并按最新版本保存', exact: true }).click();
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      assert.equal(writes, 1, '冲突恢复不能绕过必填目录校验或把空输入改为根目录');
+      assert.equal(await directory.inputValue(), '');
+      assert.equal(await directory.evaluate((input: HTMLInputElement) => input.validity.valueMissing), true);
+      assert.equal(runtime.assetCatalog(workspaceRoot).repositories.find((r: any) => r.id === repository.id).source.path, 'editable-code');
+      await directory.fill('editable-future');
+      const saved = page.waitForResponse((response: any) => response.url() === updateUrl && response.request().method() === 'PUT');
+      await page.getByRole('button', { name: '保留修改并按最新版本保存', exact: true }).click();
+      assert.equal((await saved).status(), 200);
+    } finally { page.off('request', countWrites); }
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
     await page.locator('[data-repository-alignment="pending"]:visible').waitFor();
     assert.equal(runtime.assetCatalog(workspaceRoot).repositories.find((r: any) => r.id === repository.id).source.path, 'editable-future');
@@ -1427,7 +2214,14 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.getByRole('textbox', { name: '代码库标识', exact: true }).inputValue(), 'inline-picker-code');
     assert.equal(runtime.assetCatalog(workspaceRoot).repositories.length, count);
     await page.unroute(updateUrl, conflict);
-    await page.locator('#catalog-edit-save').click();
+    assert.equal(await page.locator('#catalog-edit-save').isDisabled(), true, '版本冲突后不能跳过最新内容核对');
+    await page.getByRole('button', { name: '读取最新内容', exact: true }).click();
+    const keep = page.getByRole('button', { name: '保留修改并按最新版本保存', exact: true });
+    await keep.waitFor();
+    assert.equal(await page.getByRole('textbox', { name: '名称', exact: true }).inputValue(), '保留服务名称草稿');
+    assert.equal(await page.getByRole('textbox', { name: '代码库标识', exact: true }).inputValue(), 'inline-picker-code');
+    assert.equal(runtime.assetCatalog(workspaceRoot).repositories.length, count, '读取最新内容仍不登记内联代码库');
+    await keep.click();
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
     const saved = runtime.assetCatalog(workspaceRoot), repository = saved.repositories.find((r: any) => r.code === 'inline-picker-code');
     assert.ok(repository); assert.equal(saved.repositories.length, count + 1);
@@ -1476,14 +2270,15 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.getByRole('link', { name: /演示服务/ }).filter({ hasText: '演示服务' }).last().click();
     await page.setViewportSize({ width: 390, height: 844 });
     await page.locator('[data-doc-row="readme"]').click();
-    await page.getByRole('dialog', { name: '阅读材料' }).waitFor({ state: 'visible' });
+    await page.locator('.pane-stage.reading-overlay .pane-right:visible').waitFor();
     assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-right:visible').count(), 1);
-    assert.equal(await page.getByRole('dialog', { name: '阅读材料' }).getAttribute('aria-modal'), 'true');
+    assert.equal(await page.locator('.pane-right:visible').getAttribute('role'), 'region');
     assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-reading-mask:visible').count(), 1);
-    assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-left').getAttribute('inert'), '');
-    await page.getByRole('button', { name: '关闭阅读', exact: true }).click();
-    await page.getByRole('dialog', { name: '阅读材料' }).waitFor({ state: 'hidden' });
-    assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-left').getAttribute('inert'), null);
+    assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-left > .pane-body').getAttribute('inert'), '');
+    await page.getByRole('button', { name: '关闭 服务详情', exact: true }).click();
+    await page.getByRole('button', { name: '关闭 代码库详情', exact: true }).click();
+    await page.locator('.pane-stage.reading-overlay').waitFor({ state: 'hidden' });
+    assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-left > .pane-body').getAttribute('inert'), null);
     assert.equal(await page.getByRole('heading', { name: '服务', exact: true }).isVisible(), true);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     await page.setViewportSize({ width: 1280, height: 720 });
@@ -1509,7 +2304,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await capture(page, 'service-edit-drawer-mobile.png');
     await page.keyboard.press('Escape');
     await page.locator('.metadata-edit-drawer').waitFor({ state: 'hidden' });
-    await page.getByRole('button', { name: '关闭阅读', exact: true }).click();
+    await page.getByRole('button', { name: '关闭 服务详情', exact: true }).click();
     await page.setViewportSize({ width: 1280, height: 720 });
   });
 
@@ -1520,7 +2315,12 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.waitForURL(`${workspaceUrl}/tasks/browser-task/changes/demo/browser-flow`);
     await page.locator('#task-change-provenance').waitFor({ state: 'visible' });
     assert.match(await page.locator('#task-change-provenance-facts').innerText(), /工作副本/);
-    assert.match(await page.locator('#change-brief').innerText(), /浏览器流程/);
+    assert.match(await page.locator('#change-artifacts').innerText(), /浏览器流程/);
+    assert.equal(await page.locator('#change-brief').count(), 0);
+    assert.equal(fs.existsSync(path.join(workspaceRoot, 'projects/demo/openspec/changes/browser-flow/brief.md')), false);
+    const response = await page.request.get(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/browser-task/changes/demo/browser-flow`);
+    assert.equal(response.status(), 200);
+    assert.equal(Object.hasOwn((await response.json()).resolution.workingCopy.change, 'brief'), false);
     assert.equal(await page.getByRole('button', { name: /审查|继续推进/ }).count(), 0, 'Change 详情只读展示');
   });
 
@@ -1542,11 +2342,14 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#task-prototype-source summary').click();
     assert.match(await page.locator('#task-prototype-source').innerText(), /任务原型[\s\S]*screen.html/);
     assert.doesNotMatch(await page.locator('#task-prototype-source').innerText(), /null\/null/);
+    assert.equal(await page.locator('#prototype-notes-panel').isVisible(), false, '任务内原型的功能说明默认收回');
     await page.locator('#prototype-notes-toggle').click();
     await page.getByText('此页面属于当前任务，不要求关联规范变更。').waitFor({ state: 'visible' });
     const [reader] = await Promise.all([page.waitForEvent('popup'), page.locator('#task-prototype-open-window').click()]);
     await reader.waitForURL((opened: any) => new URL(opened).pathname.endsWith(`/tasks/${taskId}/prototypes`));
     await reader.frameLocator('#task-prototype-frame').locator('#local-prototype-heading').waitFor({ state: 'visible' });
+    assert.equal(await reader.locator('#prototype-notes-panel').isVisible(), false, '单独查看也保持功能说明默认收回');
+    await reader.locator('#prototype-notes-toggle').click();
     await reader.getByText('此页面属于当前任务，不要求关联规范变更。').waitFor({ state: 'visible' });
     assert.equal(await reader.locator('#task-prototype-frame').getAttribute('sandbox'), 'allow-scripts');
     await reader.close();
@@ -1579,18 +2382,20 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     const focusReads: string[] = [];
     const trackFocusReads = (request: any) => { if (new URL(request.url()).pathname.includes('/tasks/browser-task')) focusReads.push(request.url()); };
     await page.locator('#task-node-content .markdown-body').waitFor({state:'visible'});
-    await page.waitForLoadState('networkidle');
+    await page.locator('#task-detail-refresh[aria-busy="false"]').waitFor({state:'visible'});
     page.on('request',trackFocusReads);
     await page.evaluate(() => { window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange')); });
     await page.waitForTimeout(350);
     page.off('request',trackFocusReads);
     assert.deepEqual(focusReads, [], '返回浏览器不自动重读任务详情');
     assert.deepEqual(await page.locator('[data-task-node]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-task-node'))), ['requirements','design','implementation','closeout']);
-    assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /验证 Task Record 页面/, '需求节点默认显示任务目标');
-    await page.locator('[data-task-artifact$="brief.md"]').click();
-    await page.locator('#task-node-content .markdown-body').filter({ hasText: '普通用户先从这里了解变更' }).waitFor({ state: 'visible' });
+    assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /验证 Task Record 页面/, '说明节点默认显示记录正文');
+    await page.locator('[data-task-node=design]').click();
+    await page.locator('[data-task-artifact$="proposal.md"]').click();
+    assert.equal(await page.locator('[data-task-artifact$="brief.md"]').count(), 0);
+    await page.locator('#task-node-content .markdown-body').filter({ hasText: '验证 Buildr Web' }).waitFor({ state: 'visible' });
     await page.locator('#task-node-content').getByRole('button',{name:'查看原文',exact:true}).click();
-    assert.match(await page.locator('#task-node-content .markdown-reader-source').innerText(), /普通用户先从这里了解变更/);
+    assert.match(await page.locator('#task-node-content .markdown-reader-source').innerText(), /验证 Buildr Web/);
     await page.locator('#task-node-content').getByRole('button',{name:'阅读模式',exact:true}).click();
     assert.equal(await page.locator('.pane-stage:visible').count(), 1, '任务详情复用列表分屏，内部不得再创建分屏');
     assert.equal(await page.locator('.pane-right:visible').count(), 1);
@@ -1602,6 +2407,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.getByRole('button',{name:'收藏当前资料',exact:true}).count(),0);
     assert.equal(await page.locator('#task-context-edit').count(),0);
     await closeTaskReading(page); await page.locator('[data-task-node=design]').click();
+    await page.locator('[data-task-artifact$="proposal.md"]').click();
     await page.locator('#task-node-content .markdown-body').filter({ hasText: '验证 Buildr Web' }).waitFor({ state: 'visible' });
     await page.locator('[data-task-artifact$="design.md"]').click();
     await page.locator('#task-node-content .markdown-body').filter({ hasText: 'Browser smoke fixture' }).waitFor({ state: 'visible' });
@@ -1861,9 +2667,10 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.locator('#task-filter-q').inputValue(), '轻量查询');
     assert.equal(await page.locator('.pane-right #task-detail-main').isVisible(), true);
     assert.equal(await page.locator('.pane-stage:visible').count(), 1, '任务详情中没有嵌套副屏');
-    assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /验证 Buildr Web 轻量查询客户端/, '需求节点默认显示任务目标');
-    await page.locator('[data-task-artifact$="brief.md"]').click();
-    await page.locator('#task-node-content .markdown-body').filter({ hasText: '普通用户先从这里了解变更' }).waitFor({ state: 'visible' });
+    assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /验证 Buildr Web 轻量查询客户端/, '说明节点默认显示记录正文');
+    await page.locator('[data-task-node=design]').click();
+    await page.locator('[data-task-artifact$="proposal.md"]').click();
+    await page.locator('#task-node-content .markdown-body').filter({ hasText: '验证 Buildr Web' }).waitFor({ state: 'visible' });
     assert.equal(await page.getByRole('link', {name:'查看关联变更',exact:true}).count(), 0, '节点正文不重复提供技术目录入口');
     assert.match(await page.locator('#task-detail-parent').innerText(), /浏览器协调任务[\s\S]*进行中/);
     await page.locator('#task-detail-parent a').click();
@@ -1879,9 +2686,11 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
 
     await page.goto(`${workspaceUrl}/tasks/created-in-app`);
     await closeTaskReading(page); await page.locator('[data-task-node=design]').click(); await page.locator('[data-task-content=review]').click();
+    await page.locator('#task-node-content .task-node-empty').filter({ hasText: '暂无审查记录。' }).waitFor({ state: 'visible' });
     assert.match(await page.locator('#task-node-content').innerText(), /暂无审查记录/);
     assert.equal(await page.getByRole('button', { name: '交给智能体审查', exact: true }).count(), 0);
     await closeTaskReading(page); await page.locator('[data-task-node=implementation]').click(); await page.locator('[data-task-content=verification]').click();
+    await page.locator('#task-node-content .task-node-empty').filter({ hasText: '尚未保存验证结果。' }).waitFor({ state: 'visible' });
     assert.match(await page.locator('#task-node-content').innerText(), /尚未保存验证结果/);
     await openTaskActionModal(page, 'task-complete-action');
     await page.locator('#task-complete-summary').fill('页面确认完成');
@@ -1923,25 +2732,40 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     const worktreeProject = path.join(workspaceRoot, '.worktrees/browser-task/projects/demo');
     fs.writeFileSync(path.join(worktreeProject, 'docs/task-reference.md'), '# 任务参考资料\n\n这是工作树的未提交说明。\n\n[继续阅读](more.md)\n');
     fs.writeFileSync(path.join(worktreeProject, 'docs/more.md'), '# 后续资料\n\n继续读取同一工作树。\n');
-    fs.writeFileSync(path.join(worktreeProject, 'openspec/changes/browser-flow/brief.md'), '# 工作树的需求或说明\n\n独立文件系统中的最新需求。\n');
+    fs.writeFileSync(path.join(worktreeProject, 'openspec/changes/browser-flow/proposal.md'), '# 工作树中的提案\n\n独立文件系统中的最新提案。\n\n[阅读历史说明](brief.md)\n');
+    const historicalBrief = '\ufeff# 旧变更说明\r\n\r\n旧文件保留，通过普通链接读取。\r\n';
+    const historicalBriefPath = path.join(worktreeProject, 'openspec/changes/browser-flow/brief.md');
+    fs.writeFileSync(historicalBriefPath, historicalBrief);
     await page.goto(`${workspaceUrl}/tasks/browser-task`);
     assert.equal(await page.locator('[data-task-node=requirements]').getAttribute('aria-pressed'), 'true');
-    assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /验证 Task Record 页面/, '需求节点默认显示任务目标');
-    await page.locator('[data-task-artifact$="brief.md"]').click();
-    await page.locator('#task-node-content .markdown-body').filter({ hasText: '独立文件系统中的最新需求' }).waitFor({ state: 'visible' });
+    assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /验证 Task Record 页面/, '说明节点默认显示记录正文');
+    await page.locator('[data-task-node=design]').click();
+    await page.locator('[data-task-artifact$="proposal.md"]').click();
+    assert.equal(await page.locator('[data-task-artifact$="brief.md"]').count(), 0);
+    await page.locator('#task-node-content .markdown-body').filter({ hasText: '独立文件系统中的最新提案' }).waitFor({ state: 'visible' });
+    await page.locator('#task-node-content').getByRole('link', { name: '阅读历史说明', exact: true }).click();
+    await page.locator('.resource-reader:visible .markdown-body').filter({ hasText: '旧文件保留，通过普通链接读取' }).waitFor({ state: 'visible' });
+    assert.equal(fs.readFileSync(historicalBriefPath, 'utf8'), historicalBrief);
+    await page.getByRole('button', { name: '关闭 文档', exact: true }).click();
+    await page.locator('.resource-reader:visible').waitFor({state:'hidden'});
+    await page.locator('#task-node-content .markdown-body').filter({ hasText: '独立文件系统中的最新提案' }).waitFor({state:'visible'});
+    await page.locator('#task-detail-refresh[aria-busy="false"]').waitFor({state:'visible'});
     const prototypeFailureRoute = /\/tasks\/browser-task\/ui-prototypes(?:\?|$)/;
     await page.route(prototypeFailureRoute, async (route: any) => {
       expectedBrowserErrors.add(route.request().url());
       return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'browser_prototype_fixture_failed', message: '原型读取夹具失败' } }) });
     });
     try {
-      const prototypeFailure = page.waitForResponse((response: any) => new URL(response.url()).pathname.endsWith('/tasks/browser-task/ui-prototypes'));
+      const prototypeFailure = page.waitForResponse((response: any) => new URL(response.url()).pathname.endsWith('/tasks/browser-task/ui-prototypes') && response.status() === 500);
       await closeTaskReading(page); await page.locator('[data-task-node=design]').click();
+      await page.locator('#task-detail-refresh').click();
       assert.equal((await prototypeFailure).status(), 500);
       await closeTaskReading(page); await page.locator('[data-task-node=requirements]').click();
       await page.locator('#task-detail-refresh:not(.ant-btn-loading)').waitFor({ state: 'visible' });
-      await page.locator('[data-task-artifact$="brief.md"]').click();
-      assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /独立文件系统中的最新需求/, '原型局部读取失败不能清空已读取的任务需求');
+      assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /验证 Task Record 页面/, '原型失败不影响记录说明');
+      await page.locator('[data-task-node=design]').click();
+      await page.locator('[data-task-artifact$="proposal.md"]').click();
+      assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /独立文件系统中的最新提案/, '原型局部读取失败不影响已读取的标准提案');
     } finally { await page.unroute(prototypeFailureRoute); }
     await page.locator('#task-detail-intent').getByRole('link', { name: '任务参考资料', exact: true }).click();
     const linkedDocument = page.locator('.resource-reader:visible');
@@ -1956,13 +2780,13 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await linkedDocument.getByRole('link', { name: '继续阅读', exact: true }).click();
     await linkedDocument.filter({ hasText: '工作树相关文档在阅读期间更新' }).waitFor({ state: 'visible' });
     await page.getByRole('button', { name: '关闭 文档', exact: true }).click();
-    await page.locator('#task-node-content .markdown-body').filter({ hasText: '独立文件系统中的最新需求' }).waitFor({ state: 'visible' });
+    await page.locator('#task-node-content .markdown-body').filter({ hasText: '独立文件系统中的最新提案' }).waitFor({ state: 'visible' });
     await openTaskActionModal(page, 'task-edit-action');
     assert.match(await antdSelectDisplay(page, 'task-edit-parent'), /browser-parent/);
     await selectAntdOption(page, 'task-edit-parent', '不关联组合任务');
     await page.getByRole('button', { name: '保存任务记录', exact: true }).click();
     await page.locator('#task-edit-form').waitFor({ state: 'hidden' });
-    assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /独立文件系统中的最新需求/, '保存后保留阅读内容');
+    assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /独立文件系统中的最新提案/, '保存后保留阅读内容');
     assert.equal(runtime.inspectTask(workspaceRoot, 'browser-task').record.parentTaskId, null);
     await closeTaskReading(page); await page.locator('[data-task-node=closeout]').click();
     assert.equal(await page.getByRole('button', {name:/^任务信息/}).count(), 0);
@@ -1994,7 +2818,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await closeTaskReading(page); await page.locator('[data-task-node=implementation]').click(); await page.locator('[data-task-content=verification]').click();
     await page.locator('#task-verification-result').filter({hasText:'保存冲突未通过，正在修复。'}).waitFor({state:'visible'});
     assert.match(await page.locator('#task-verification-result').innerText(), /未通过[\s\S]*冲突后输入被清空/);
-    assert.equal(await page.locator('.task-verification-checks .task-check-outcome').count(),0,'单项与总结果一致不重复状态，但保留失败原因');
+    assert.equal(await page.locator('.task-verification-checks .task-check-outcome.failed').count(),1,'保留实际检查的失败状态及原因');
     assert.equal(await page.locator('[data-task-node=implementation]').getAttribute('aria-current'),'step');
     assert.equal(await page.locator('[data-task-node=implementation]').getAttribute('aria-pressed'),'true');
     const failedReport=runtime.inspectTaskVerification(workspaceRoot,'browser-task');
@@ -2009,7 +2833,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     const listBeforeEdit = page.url();
     await openTaskActionModal(page, 'task-edit-action');
     await page.locator('#task-edit-title').fill('陈旧页面不得覆盖');
-    runtime.updateTask(workspaceRoot, 'browser-task', { expectedRecordDigest: runtime.inspectTask(workspaceRoot,'browser-task').recordDigest, intent:'另一客户端已经更新' });
+    await page.locator('#task-edit-brief').fill('# 页面保留的任务说明草稿\n');
+    runtime.updateTask(workspaceRoot, 'browser-task', { expectedRecordDigest: runtime.inspectTask(workspaceRoot,'browser-task').recordDigest, intent:'另一客户端已经更新', brief:'# 外部更新的任务说明\n' });
     await page.getByRole('button', { name:'保存任务记录',exact:true }).click();
     await page.locator('#task-edit-reread').waitFor({ state:'visible' });
     assert.equal(await page.locator('#task-edit-title').inputValue(),'陈旧页面不得覆盖');
@@ -2017,6 +2842,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#task-edit-state').filter({hasText:'已重读'}).waitFor({state:'visible'});
     assert.equal(await page.locator('#task-edit-intent').inputValue(),'另一客户端已经更新','重读时采用未编辑字段的最新值，保留已编辑草稿');
     assert.equal(await page.locator('#task-edit-title').inputValue(),'陈旧页面不得覆盖');
+    assert.equal(await page.locator('#task-edit-brief').inputValue(),'# 页面保留的任务说明草稿\n');
     await page.locator('#task-edit-intent').fill('页面基于最新记录更新');
     await page.getByRole('button', {name:'保存任务记录',exact:true}).click();
     await page.locator('#task-edit-form').waitFor({state:'hidden'});
@@ -2035,11 +2861,12 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     runtime.recordTaskWorkContext(workspaceRoot, 'browser-abandon', { expectedContextDigest: 'absent', stage: 'acceptance', progress: '检查已完成，等待确认。', nextStep: '读取用户意见后决定收尾。', attention: { kind: 'acceptance', reason: '请确认当前交付内容符合本次目标。' } });
     await page.goto(`${workspaceUrl}/tasks/browser-abandon`);
     await closeTaskReading(page); await page.locator('[data-task-node=closeout]').click();
-    assert.match(await page.locator('#task-node-content').innerText(), /请确认当前交付内容符合本次目标/,'用户确认节点直接展示已有待确认内容');
-    await page.locator('#task-closeout-respond').click();
+    assert.match(await page.locator('#task-attention').innerText(), /请确认当前交付内容符合本次目标/,'当前确认事项在任务回应区域展示');
+    assert.doesNotMatch(await page.locator('#task-node-content').innerText(), /用户确认/,'收尾不提供常驻用户确认目录');
+    await page.locator('#task-attention-respond').click();
     await page.locator('#task-attention-response-input').fill('仍需调整交付范围。');
     await page.locator('#task-context-save').click();
-    await page.locator('#task-node-content #task-attention-response').filter({hasText:'仍需调整交付范围'}).waitFor({state:'visible'});
+    await page.locator('#task-attention-response').filter({hasText:'仍需调整交付范围'}).waitFor({state:'visible'});
     assert.equal(runtime.inspectTask(workspaceRoot, 'browser-abandon').record.status, 'active', '记录用户意见不自动完成任务');
     await openTaskActionModal(page,'task-abandon-action');
     await page.locator('#task-abandon-reason').fill('浏览器验收取消');
@@ -2057,16 +2884,21 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       assert.equal(await page.locator('.pane-right:visible').count(),1);
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
       await capture(page,`local-app-task-detail-${width}.png`);
-      if(width===390) { await openTaskActionModal(page, 'task-edit-action'); await page.locator('#task-edit-title').fill('取消不写入'); await page.locator('#task-edit-title').press('Escape'); assert.notEqual(runtime.inspectTask(workspaceRoot,'browser-task').record.title,'取消不写入'); await page.getByRole('button',{name:'关闭阅读',exact:true}).click(); await page.locator('#task-table-body').waitFor({state:'visible'}); assert.equal(await page.locator('#task-detail-main').count(),0); }
+      if(width===390) { await openTaskActionModal(page, 'task-edit-action'); await page.locator('#task-edit-title').fill('取消不写入'); await page.locator('#task-edit-title').press('Escape'); assert.notEqual(runtime.inspectTask(workspaceRoot,'browser-task').record.title,'取消不写入'); await page.getByRole('button',{name:'关闭 普通任务',exact:true}).click(); await page.locator('#task-table-body').waitFor({state:'visible'}); assert.equal(await page.locator('#task-detail-main:visible').count(),0); }
     }
     await page.setViewportSize({width:1280,height:720});
   });
 
   if (selected('task')) await runTaskCommitsJourney({ t, page, runtime, workspaceRoot, workspaceUrl, expectedBrowserErrors, capture });
+  if (selected('task')) await runCodexNavigationJourney({ t, page, runtime, workspaceRoot, workspaceUrl, runBuildr, capture, expectedBrowserErrors });
+
+  if (selected('task') || selected('task-materials')) await runTaskMaterialsJourney({ t, page, runtime, workspaceRoot, workspaceUrl, runBuildr, runGit, capture, expectedBrowserErrors });
 
   if (selected('workbench')) await runWorkbenchJourney({ t, page, runtime, workspaceRoot, otherWorkspaceRoot: otherRoot, workspaceUrl, otherWorkspaceUrl: `${url}/workspaces/${otherWorkspaceId}`, expectedBrowserErrors, selectAntdOption, capture });
 
   if (selected('project')) await runWorkspaceCompositionJourney({ t, page, runtime, workspaceRoot, workspaceUrl, expectedBrowserErrors });
+
+  if (selected('task')) await runCompositeTaskChildrenJourney({ t, page, runtime, workspaceRoot, workspaceUrl, capture });
 
   const unexpectedBrowserErrors: any = browserErrors.filter((error: any) => ![...expectedBrowserErrors].some((expected: any) => error.includes(expected)));
   assert.deepEqual(unexpectedBrowserErrors, [], unexpectedBrowserErrors.join('\n'));

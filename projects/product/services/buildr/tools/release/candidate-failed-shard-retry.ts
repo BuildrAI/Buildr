@@ -1,7 +1,12 @@
 #!/usr/bin/env node
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { spawnCommandSync } from '../../src/infrastructure/process.ts';
+import { verificationFailureFacts } from '../../test/verification/timing/parallel-runner.ts';
+import { CANDIDATE_CI_EVIDENCE_SCHEMA } from './candidate-ci-contract.ts';
 import { releasePublishAuthority } from './release-authority.ts';
 
 const WORKFLOW: any = '.github/workflows/verify.yml';
@@ -25,15 +30,79 @@ function jobDisposition(name: any): any  {
   if (name === 'Candidate gate') return 'aggregate';
   if (name === 'Candidate plan') return 'plan';
   if (name === 'Candidate bootstrap') return 'bootstrap';
+  if (name === 'Plugin source Candidate') return 'shard';
   if (/^Candidate (?:source|artifact|core|Windows|Host Node) \(.+\)$/u.test(name)) return 'shard';
   if (/^Development feedback /u.test(name)) return 'not-applicable';
   return 'unknown';
 }
 
 export function classifyCandidateFailure(log: string): 'transient' | 'deterministic' | 'diagnosis-required' {
+  const facts = verificationFailureFacts({ stdout: log });
+  if (facts.some(fact => fact.kind === 'assertion')) return 'deterministic';
+  // Legacy log heuristics cannot disambiguate a wrapping assertion from a real
+  // assertion when the nested command timed out. Keep that case for diagnosis.
+  if (/ETIMEDOUT|capability-timeout|process-close-timeout|timed out|timeout/iu.test(log)) return 'diagnosis-required';
   if (/ERR_ASSERTION|AssertionError|SyntaxError|ERR_MODULE_NOT_FOUND|Cannot find (?:module|package)|error TS\d+|not ok \d+/iu.test(log)) return 'deterministic';
   if (/ECONNRESET|EAI_AGAIN|HTTP (?:429|502|503|504)|TLS handshake timeout|runner.*lost.*communication|runner.*shutdown/iu.test(log)) return 'transient';
   return 'diagnosis-required';
+}
+
+export function classifyCandidateStructuredFailures(evidence: any[], expected: any): 'transient' | 'deterministic' | 'diagnosis-required' | null {
+  if (!Array.isArray(evidence) || evidence.length === 0) return null;
+  const selected = evidence.filter(item => [CANDIDATE_CI_EVIDENCE_SCHEMA, 'buildr.candidate-environment-preparation/v1'].includes(item?.schemaVersion)
+    && String(item.workflow?.runId) === String(expected.runId) && item.workflow?.runAttempt === expected.runAttempt
+    && item.sourceCommit === expected.sourceCommit);
+  const facts: any[] = [];
+  for (const id of expected.failedIds) {
+    const matches = selected.filter(item => item.id === id && item.status === 'failed');
+    if (matches.length !== 1) return 'diagnosis-required';
+    const item = matches[0];
+    if (item.schemaVersion === 'buildr.candidate-environment-preparation/v1') {
+      if (!Array.isArray(item.operations)) return 'diagnosis-required';
+      const failed = item.operations.filter((operation: any) => operation?.status === 'failed');
+      if (failed.length === 0 || item.operations.some((operation: any) => !['passed', 'failed'].includes(operation?.status))) return 'diagnosis-required';
+      facts.push(...failed.map((operation: any) => ({ kind: operation.failureClass, code: operation.errorCode })));
+    } else {
+      if (!Array.isArray(item.results) || item.results.length === 0) return 'diagnosis-required';
+      for (const result of item.results) {
+        if (!result || typeof result !== 'object') return 'diagnosis-required';
+        if (result.processCleanup?.status === 'failed') facts.push({ kind: 'cleanup' });
+        if (result.status === 'passed') continue;
+        if (result.status === 'blocked') continue;
+        if (result.status === 'timed-out' || ['capability-timeout', 'process-close-timeout'].includes(result.failureCode)) facts.push({ kind: 'timeout' });
+        if (!Array.isArray(result.failureFacts) || result.failureFacts.length === 0) facts.push({ kind: 'unknown' });
+        else facts.push(...result.failureFacts.map((fact: any) => fact && typeof fact === 'object' ? fact : { kind: 'unknown' }));
+      }
+    }
+  }
+  if (facts.some(fact => fact.kind === 'assertion' || fact.kind === 'execution')) return 'deterministic';
+  if (facts.length > 0 && facts.every(fact => fact.kind === 'transient' && ['ECONNRESET', 'EAI_AGAIN', 'E429', 'E502', 'E503', 'E504'].includes(fact.code))) return 'transient';
+  return 'diagnosis-required';
+}
+
+function readFailureEvidence(run: any, gh: string, runId: number, repo: string): any[] {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-candidate-retry-evidence-'));
+  try {
+    invoke(run, gh, ['run', 'download', String(runId), '--repo', releasePublishAuthority.repository, '--pattern', 'candidate-evidence-*', '--dir', directory], repo, 90_000);
+    const evidence: any[] = [];
+    let files = 0;
+    const visit = (root: string, depth = 0) => {
+      if (depth > 4) throw new Error('Candidate retry evidence nesting exceeded.');
+      for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+        if (++files > 512) throw new Error('Candidate retry evidence file count exceeded.');
+        const file = path.join(root, entry.name);
+        if (entry.isDirectory()) visit(file, depth + 1);
+        else if (entry.isFile() && (/^candidate-ci-evidence-.+\.json$/u.test(entry.name) || /(?:^|-)preparation\.json$/u.test(entry.name))) {
+          if (fs.statSync(file).size > 2_000_000) throw new Error('Candidate retry evidence size exceeded.');
+          evidence.push(JSON.parse(fs.readFileSync(file, 'utf8')));
+        }
+      }
+    };
+    visit(directory);
+    return evidence;
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 export function inspectCandidateFailedShardRetry(options: any, dependencies: any = {}): any  {
@@ -79,9 +148,20 @@ export function inspectCandidateFailedShardRetry(options: any, dependencies: any
   const aggregate: any = jobs.find((job: any) => job.name === 'Candidate gate');
   if (aggregate?.conclusion !== 'failure') findings.push({ code: 'candidate-aggregate-not-failed', actual: aggregate?.conclusion ?? null });
   let failureClass = 'diagnosis-required';
+  let classificationSource = 'unavailable';
   if (findings.length === 0) {
-    const log = invoke(run, gh, ['run', 'view', String(runId), '--repo', releasePublishAuthority.repository, '--log-failed'], repo, 90_000);
-    failureClass = classifyCandidateFailure(log);
+    let evidence: any[] = [];
+    try { evidence = dependencies.readFailureEvidence ? dependencies.readFailureEvidence({ runId, runAttempt, sourceCommit: options.sourceCommit }) : readFailureEvidence(run, gh, runId, repo); } catch { /* Legacy runs may not contain structured evidence. */ }
+    const failedIds = failedShards.map((name: string) => name === 'Candidate bootstrap' ? 'artifact-macos' : name.match(/\(([^)]+)\)$/u)?.[1] ?? null);
+    const structured = classifyCandidateStructuredFailures(evidence, { runId, runAttempt, sourceCommit: options.sourceCommit, failedIds });
+    if (structured !== null) {
+      failureClass = structured;
+      classificationSource = 'structured-evidence';
+    } else {
+      const log = invoke(run, gh, ['run', 'view', String(runId), '--repo', releasePublishAuthority.repository, '--log-failed'], repo, 90_000);
+      failureClass = classifyCandidateFailure(log);
+      classificationSource = 'legacy-log';
+    }
     if (failureClass !== 'transient') findings.push({ code: 'candidate-failure-needs-diagnosis', classification: failureClass });
   }
   return {
@@ -94,6 +174,7 @@ export function inspectCandidateFailedShardRetry(options: any, dependencies: any
     sourceCommit: options.sourceCommit,
     failedShards,
     failureClass,
+    classificationSource,
     aggregate: aggregate ? { name: aggregate.name, conclusion: aggregate.conclusion } : null,
     findings,
     effects: [],

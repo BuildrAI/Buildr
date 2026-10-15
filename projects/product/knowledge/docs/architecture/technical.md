@@ -2,6 +2,8 @@
 
 本文帮助开发者判断改动属于哪里、会影响哪些事实，以及需要分别验证什么。Buildr 由三个服务（Service）协作：`services/buildr` 负责命令、业务能力、文件与 SQLite、本机网页托管和 Buildr npm 分发；`services/buildr-web` 负责 React 页面与交互；`services/dsh-plugin` 独立构建、验证和发布 DSH 桌面插件。三者共用一个 Git 代码库（Repository），各自维护版本与构建边界，沿用同一[产品术语表](../glossary.md)。
 
+整体组成见[系统全景图](../../archify/system/buildr-system-overview.html)，下面按调用与写入职责展开。
+
 ## 一次操作怎样到达真实数据
 
 ![调用、数据与副作用责任](../../archify/flows/capability-data-responsibility.html)
@@ -21,6 +23,12 @@
 登记、资产同步、任务记录与个人偏好各有写入者。资产同步可以组合登记维护，却不取得登记的第二写入权；工作台（Workbench）聚合已有事实，也不因此拥有它们。用户项目测试声明用于发现与选择检查，不是 Buildr 的通用测试执行引擎。数据归属和本机状态见[数据设计](buildr-data-design.md)。
 
 前端按功能维护页面、业务请求和完整交互，应用壳只组合导航及真正跨页共享的状态。缓存页面、筛选或草稿不表示数据一直最新；编辑前仍需核对当前事实，保存时比较已观察版本。工作摘要（Work Context）中的答复不自动启动智能体（Agent），界面原型（UI Prototype）不能继承正式页面的写入能力。具体状态与隔离边界见[前端技术层](../../code-map/technical-layers.md#前端技术层)。
+
+智能体（Agent）生成由 `agent-operations` 统一管理登记、默认与单次选择、运行（Run）、取消和结果。Codex 使用 Buildr 按需启动、复用和回收的专用应用服务（App Server）；DSH 连接已运行桌面的 Buildr 插件，调用同一宿主（Host）的当前模型服务，每次读取当前默认配置并记录实际采用值，不启动独立 DSH 生成进程。两者按登记身份串行排队；DSH 空闲回收、取消与退出只释放本次请求和连接。提交说明由 `code` 准备有界材料并校验来源及结果，提交、推送继续直接调用 Git。
+
+原生会话（Session）关联由 `native-session-links` 聚合 Codex 与 DSH 的多对多关系；`codex-desktop` 保留原有文件和深层链接（Deep Link），`dsh-desktop` 核验桌面范围并确认准确导航。原生程序继续保存对话与持续执行；一次生成不继承已有聊天的内容、工具或记忆。两条链路见[智能体（Agent）接入架构](agent-integration.md)。
+
+外部系统接入由 `connection-skills` 管理准确绑定的实例、团队配置与本机个人认证，页面与命令使用同一应用。专业技能（Skill）维护各系统的对象定位、操作与结果判断；MySQL 查询由独立模块承接。通用执行负责交接当前实例和私有认证，专业程序负责真实系统的授权及校验。对象分工与核心边界集中在[外部系统连接](external-connections.md)，实现位置见[连接代码地图](../../code-map/technical-layers.md#外部系统接入)。
 
 ## 写入保护和失败边界
 

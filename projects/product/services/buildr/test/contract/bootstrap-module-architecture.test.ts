@@ -1,3 +1,7 @@
+import { AGENT_ASSETS_SOURCE_READ } from '../../src/modules/agent-assets/module.ts';
+import { AGENT_ASSETS_SOURCE_QUERY } from '../../src/modules/agent-assets/source/module.ts';
+import { TASK_BRIEF_QUERY } from '../../src/modules/task/module.ts';
+import { TASK_MATERIALS_APPLICATION } from '../../src/modules/task/materials/module.ts';
 import { AGENT_ASSETS_DIAGNOSTICS_READ } from '../../src/modules/agent-assets/module.ts';
 import { PROJECT_DAILY_PROGRESS_APPLICATION } from '../../src/modules/task/module.ts';
 import { AGENT_ASSETS_PACKAGE_CHECK_SUPPORT } from '../../src/modules/agent-assets/module.ts';
@@ -11,6 +15,11 @@ import { createRuntime, runtimeContributions, runtimeModuleSnapshot, runtimeProv
 import { createRuntime as createProductRuntime } from '../../src/bootstrap/runtime.ts';
 import { OPENSPEC_QUERY, createOpenSpecModule } from '../../src/modules/openspec/module.ts';
 import { CHANGE_APPLICATION } from '../../src/modules/task/change/module.ts';
+import { AGENT_OPERATIONS_APPLICATION } from '../../src/modules/agent-operations/module.ts';
+import { CODEX_DESKTOP_APPLICATION } from '../../src/modules/codex-desktop/module.ts';
+import { NATIVE_SESSION_LINKS_APPLICATION } from '../../src/modules/native-session-links/module.ts';
+import { DSH_DESKTOP_APPLICATION, DSH_PAGE_OBSERVATIONS } from '../../src/modules/dsh-desktop/module.ts';
+import { CODE_APPLICATION, CODE_GENERATION_APPLICATION, CODE_SOURCE_CONTROL_OBSERVATIONS } from '../../src/modules/code/module.ts';
 
 test('OpenSpec 独占通用内容查询，任务能力只提供关联组合', () => {
   const runtime = createProductRuntime();
@@ -65,6 +74,7 @@ import {
   AGENT_ASSETS_APPLICATION,
   AGENT_ASSETS_CAPABILITY_QUERY,
   AGENT_ASSETS_DIAGNOSTICS_BINDER,
+  AGENT_ASSETS_CONNECTION_IMPACT_BINDER,
   AGENT_ASSETS_INTERNAL,
   AGENT_ASSETS_OPENSPEC_SUPPORT,
   createOpenSpecAssetSupport,
@@ -156,7 +166,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   }, {
     id: 'agent-assets',
     requires: [WORKSPACE_ASSET_SUPPORT, AGENT_ASSETS_RUNTIME],
-    provides: [AGENT_ASSETS_APPLICATION, AGENT_ASSETS_INTERNAL, AGENT_ASSETS_OPENSPEC_SUPPORT, AGENT_ASSETS_DIAGNOSTICS_READ, AGENT_ASSETS_PACKAGE_CHECK_SUPPORT, AGENT_ASSETS_DIAGNOSTICS_BINDER],
+    provides: [AGENT_ASSETS_APPLICATION, AGENT_ASSETS_SOURCE_READ, AGENT_ASSETS_INTERNAL, AGENT_ASSETS_OPENSPEC_SUPPORT, AGENT_ASSETS_DIAGNOSTICS_READ, AGENT_ASSETS_PACKAGE_CHECK_SUPPORT, AGENT_ASSETS_DIAGNOSTICS_BINDER, AGENT_ASSETS_CONNECTION_IMPACT_BINDER],
     contributions: {
       cli: [
         'package check', 'package build', 'runtime list',
@@ -196,7 +206,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   }, {
     id: 'task',
     requires: [WORKSPACE_TASK_SUPPORT],
-    provides: ['task.work-context-application', TASK_QUERY_APPLICATION, TASK_COMMAND_APPLICATION, TASK_RUNTIME_PORT, TASK_CHANGE_BINDER],
+    provides: ['task.work-context-application', TASK_QUERY_APPLICATION, TASK_BRIEF_QUERY, TASK_COMMAND_APPLICATION, TASK_RUNTIME_PORT, TASK_CHANGE_BINDER],
     contributions: {
       cli: ['task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon', 'task work-context inspect', 'task work-context record', 'task work-context respond'],
       http: ['task-work-context.http', 'task.http'],
@@ -228,10 +238,70 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     contributions: { cli: ['task commits'], http: ['task.commits.http'], diagnostics: [] },
     lifecycle: 'none',
   }, {
+    id: 'task-changed-files',
+    requires: [TASK_QUERY_APPLICATION, WORKSPACE_QUERY, TASK_WORKTREE_PROVIDER],
+    provides: ['task.changed-files-application'],
+    contributions: { cli: ['task changed-files'], http: ['task.changed-files.http'], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
+    id: 'task-materials',
+    requires: [TASK_QUERY_APPLICATION, TASK_COMMAND_APPLICATION, WORKSPACE_QUERY, TASK_WORKTREE_PROVIDER],
+    provides: ['task.materials-application', 'task.brief-migration-application'],
+    contributions: { cli: ['task materials inspect', 'task materials record', 'task materials write', 'task brief migrate'], http: ['task.materials.http'], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
+    id: 'agent-assets-source',
+    requires: [AGENT_ASSETS_SOURCE_READ, WORKSPACE_QUERY, TASK_BRIEF_QUERY, TASK_MATERIALS_APPLICATION],
+    provides: [AGENT_ASSETS_SOURCE_QUERY],
+    contributions: { cli: ['agent-assets source inspect'], http: [], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
     id: 'change',
     requires: ['openspec.query', WORKSPACE_QUERY, TASK_WORKTREE_PROVIDER, TASK_QUERY_APPLICATION],
     provides: ['change.application'],
     contributions: { cli: [], http: ['change.http'], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
+    id: 'agent-operations',
+    requires: [],
+    provides: [AGENT_OPERATIONS_APPLICATION],
+    contributions: { cli: ['agent', 'agent list', 'agent register', 'agent select'], http: ['agent-operations.http'], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
+    id: 'native-session-links',
+    requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, TASK_QUERY_APPLICATION],
+    provides: [NATIVE_SESSION_LINKS_APPLICATION],
+    contributions: { cli: ['dsh', 'dsh link', 'dsh sessions', 'dsh open-task'], http: ['native-session-links.http'], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
+    id: 'codex-desktop',
+    requires: [AGENT_OPERATIONS_APPLICATION, WORKSPACE_APPLICATION, WORKSPACE_QUERY, TASK_QUERY_APPLICATION, NATIVE_SESSION_LINKS_APPLICATION],
+    provides: [CODEX_DESKTOP_APPLICATION],
+    contributions: { cli: ['codex connections', 'codex link', 'codex sessions', 'codex'], http: ['codex-desktop.http'], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
+    id: 'dsh-desktop',
+    requires: [AGENT_OPERATIONS_APPLICATION],
+    provides: [DSH_DESKTOP_APPLICATION, DSH_PAGE_OBSERVATIONS],
+    contributions: { cli: [], http: ['dsh-desktop.http'], diagnostics: [] },
+    lifecycle: 'managed',
+  }, {
+    id: 'code',
+    requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER, AGENT_OPERATIONS_APPLICATION, AGENT_ASSETS_SOURCE_READ],
+    provides: [CODE_APPLICATION, CODE_GENERATION_APPLICATION, CODE_SOURCE_CONTROL_OBSERVATIONS],
+    contributions: {cli:['code repositories','code directory','code file','code search','code source-control','code source-control-inventory','code commit-context','code sync-context','code branches','code authors','code history','code commit','code diff','code source-file'],http:['code.files.http', 'code.generation.http'],diagnostics:[]},
+    lifecycle: 'managed',
+  }, {
+    id: 'connection-skills',
+    requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, WORKSPACE_TASK_SUPPORT, AGENT_ASSETS_SOURCE_READ, AGENT_ASSETS_CONNECTION_IMPACT_BINDER],
+    provides: ['connection-skills.application'],
+    contributions: { cli: ['connection-skill'], http: ['connection-skills.http'], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
+    id: 'mysql-query',
+    requires: ['connection-skills.application', WORKSPACE_TASK_SUPPORT],
+    provides: ['mysql-query.application'],
+    contributions: { cli: ['mysql-query'], http: ['mysql-query.http'], diagnostics: [] },
     lifecycle: 'none',
   }, {
     id: 'project-verification',
@@ -280,7 +350,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'web-instance-lifecycle',
-    requires: [WORKSPACE_APPLICATION, SYSTEM_INSTALLATION_IDENTITY, SYSTEM_INSTALLATION_LAUNCHER],
+    requires: [WORKSPACE_APPLICATION, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER, SYSTEM_INSTALLATION_IDENTITY, SYSTEM_INSTALLATION_LAUNCHER],
     provides: [WEB_INSTANCE_LIFECYCLE],
     contributions: {
       cli: ['web preview start', 'web preview list', 'web preview stop', 'web'],
@@ -311,7 +381,14 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'project daily-progress record', 'project daily-progress inspect', 'project daily-progress list',
     'workbench',
     'worktree create', 'worktree cleanup', 'worktree inspect',
-    'task commits',
+    'task commits', 'task changed-files',
+    'task materials inspect', 'task materials record', 'task materials write', 'task brief migrate',
+    'agent-assets source inspect',
+    'agent', 'agent list', 'agent register', 'agent select',
+    'dsh', 'dsh link', 'dsh sessions', 'dsh open-task',
+    'codex connections', 'codex link', 'codex sessions', 'codex',
+    'code repositories', 'code directory', 'code file', 'code search', 'code source-control','code source-control-inventory', 'code commit-context', 'code sync-context', 'code branches', 'code authors', 'code history', 'code commit', 'code diff', 'code source-file',
+    'connection-skill', 'mysql-query',
     'project verification inspect', 'project verification validate', 'project verification update',
     'task review inspect', 'task review record',
     'task verification inspect', 'task verification record',
@@ -322,7 +399,8 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'doctor',
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item: any) => item.id), [
-    'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'publication.http', 'task-work-context.http', 'task.http', 'task.daily-progress.http', 'workbench.http', 'task.commits.http', 'change.http',
+    'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'publication.http', 'task-work-context.http', 'task.http', 'task.daily-progress.http', 'workbench.http', 'task.commits.http', 'task.changed-files.http', 'task.materials.http', 'change.http', 'agent-operations.http', 'native-session-links.http', 'codex-desktop.http', 'dsh-desktop.http', 'code.files.http', 'code.generation.http',
+    'connection-skills.http', 'mysql-query.http',
     'task-review.http', 'task-verification.http',
     'task-parent-coordination.http', 'system-installation.release-awareness.http',
   ]);
@@ -342,6 +420,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   assert.equal(typeof workspace.getWorkspace, 'function');
   assert.equal(typeof project.listProjects, 'function');
   assert.equal(typeof service.listServices, 'function');
+  assert.equal(typeof query.resolveSourceWorkspaceRoot, 'function');
   assert.equal(typeof query.readProjectRegistryRecord, 'function');
   assert.equal(typeof query.readServiceRegistryRecord, 'function');
   const agentAssets: any = runtimeProvide(runtime, AGENT_ASSETS_APPLICATION);
@@ -351,11 +430,19 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   const agentRuntime: any = runtimeProvide(runtime, AGENT_ASSETS_RUNTIME);
   assert.equal(typeof agentRuntime.getRuntimeAdapter, 'function');
   assert.equal(typeof agentRuntime.assembleRuntimeProjection, 'function');
+  const agentOperations = runtimeProvide(runtime, AGENT_OPERATIONS_APPLICATION);
+  for (const name of ['listRegistry', 'registerCodex', 'selectAgent', 'startGeneration', 'getRun', 'cancelRun', 'close']) assert.equal(typeof agentOperations[name], 'function', name);
+  assert.equal(agentAssets.startGeneration, undefined);
+  assert.equal(typeof runtimeProvide(runtime, CODE_GENERATION_APPLICATION).generateCommitMessage, 'function');
   const taskQuery: any = runtimeProvide(runtime, TASK_QUERY_APPLICATION);
   const command: any = runtimeProvide(runtime, TASK_COMMAND_APPLICATION);
   assert.equal(typeof taskQuery.inspectTask, 'function');
   assert.equal(typeof taskQuery.inspectTaskRetrospectiveDocument, 'function');
   assert.equal(typeof taskQuery.readTask, 'function');
+  const briefQuery = runtimeProvide(runtime, TASK_BRIEF_QUERY);
+  assert.deepEqual(Object.keys(briefQuery), ['readTaskBrief']);
+  assert.equal(typeof briefQuery.readTaskBrief, 'function');
+  assert.equal(briefQuery.readTask, undefined);
   assert.equal(taskQuery.createTask, undefined);
   assert.equal(typeof command.createTask, 'function');
   assert.equal(command.inspectTask, undefined);
@@ -413,6 +500,7 @@ test('Agent Assets CLI contributions 保留公开根帮助的历史位置', () =
     'render', 'sync',
     'skills add', 'skills remove', 'skills bind', 'skills unbind',
     'skill install', 'runtime check', 'skills render', 'rules render',
+    'agent-assets source inspect',
   ]);
 });
 

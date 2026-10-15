@@ -1,3 +1,5 @@
+import { TASK_BRIEF_MAX_BYTES } from '../../domain/task.ts';
+
 import { TASK_ID_SOURCE } from '../../application/task-validation.ts';
 import type {
   TaskEndRequest,
@@ -37,7 +39,7 @@ export type TaskHttpInput = {
   root: string;
   runtime: TaskHttpRuntime;
   authorizeWrite(): void;
-  readBody<T>(schema: null, label: string): Promise<T>;
+  readBody<T>(schema: null, label: string, maxBytes?: number): Promise<T>;
 };
 
 function invalidContractInput(operationId: string, label: string, errors: readonly ValidationIssue[]): HttpBusinessError {
@@ -112,7 +114,7 @@ export async function handleTaskHttpRequest({ request, suffix, searchParams, roo
   }
   if (request.method === 'PATCH' && taskMatch) {
     authorizeWrite();
-    const input = validateRequest('task-record.update', await readBody<TaskUpdateRequest>(null, 'Task update'), 'Task update');
+    const input = validateRequest('task-record.update', await readBody<TaskUpdateRequest>(null, 'Task update', TASK_BRIEF_MAX_BYTES * 6 + 32 * 1024), 'Task update');
     return { status: 200, body: runtime.updateTask(root, taskMatch[1], input) };
   }
 
@@ -137,6 +139,15 @@ export async function handleTaskHttpRequest({ request, suffix, searchParams, roo
     const input = validateRequest('task-record.abandon', await readBody<TaskAbandonRequest>(null, 'Task abandon'), 'Task abandon');
     return { status: 200, body: runtime.abandonTask(root, taskAbandonMatch[1], input) };
   }
+
+  // This query-bearing read is owned and validated by the changed-files module.
+  if (request.method === 'GET' && new RegExp(`^/tasks/(${TASK_ID_SOURCE})/file-diff$`).test(suffix)) return null;
+
+  // Image owners validate their exact query contracts; unknown Task routes keep this guard.
+  if (request.method === 'GET' && new RegExp(`^/tasks/(${TASK_ID_SOURCE})/(?:materials/[A-Za-z0-9][A-Za-z0-9._-]*/image|document-image/[A-Za-z0-9][A-Za-z0-9._-]*)$`).test(suffix)) return null;
+
+  // Change assets validate exactly one observed source identity in their owning HTTP contribution.
+  if (request.method === 'GET' && new RegExp(`^/tasks/(${TASK_ID_SOURCE})/changes/[A-Za-z0-9][A-Za-z0-9._-]*/(${TASK_ID_SOURCE})/assets/.+$`).test(suffix)) return null;
 
   if ((suffix === '/tasks' || suffix.startsWith('/tasks/')) && searchParams.size > 0) {
     throw Object.assign(new Error('Task API 不接受 query 参数。'), { code: 'task_api_query_forbidden', status: 400 });

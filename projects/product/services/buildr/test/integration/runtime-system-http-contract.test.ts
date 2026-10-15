@@ -15,6 +15,7 @@ import { TASK_HTTP_OPERATIONS } from '../../src/modules/task/interfaces/http/tas
 import { TASK_PROFESSIONAL_HTTP_OPERATIONS } from '../../src/modules/task/interfaces/http/task-professional-http-contracts.ts';
 import { WORKSPACE_HTTP_OPERATIONS } from '../../src/modules/workspace/interfaces/http/workspace-http-contracts.ts';
 import { AGENT_ASSETS_HTTP_OPERATIONS } from '../../src/modules/agent-assets/interfaces/http/agent-assets-http-contracts.ts';
+import { CODE_HTTP_OPERATIONS } from '../../src/modules/code/interfaces/http/code-http-contracts.ts';
 import { inspectHttpOperationCoverage, ownedHttpOperations } from '../../src/web/http/http-operation-coverage.ts';
 import { taskRecordFixture as fixture } from '../helpers/task-record-system-fixture.ts';
 
@@ -193,6 +194,7 @@ test('Runtime/System validators 不变异输入且全局 operation coverage 闭�
 
   const coverage: any = inspectHttpOperationCoverage([
     WORKBENCH_HTTP_OPERATIONS,
+    CODE_HTTP_OPERATIONS,
     ownedHttpOperations('task-record', TASK_HTTP_OPERATIONS),
     ownedHttpOperations('task-professional', TASK_PROFESSIONAL_HTTP_OPERATIONS),
     ownedHttpOperations('workspace', WORKSPACE_HTTP_OPERATIONS),

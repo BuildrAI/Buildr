@@ -8,7 +8,7 @@
 
 **读取过程**：页面发起请求 → 超文本传输协议（HTTP）入口校验身份 → 应用解析已登记范围 → 领域规则校验知识关联 → 基础设施读取文件 → 页面呈现。查看图示时由单独的隔离响应加载 HTML，主文档与副屏共用同一成果。从已可读入口继续打开正文引用时，[引用读取实现](../../services/buildr/src/modules/knowledge/infrastructure/knowledge-references.ts)逐跳核对当前正文中的实际链接，并限制读取范围、敏感路径、符号链接及图片类型和大小；不会自动登记资料或修改源文件。
 
-**两种阅读方式**：主题阅读从索引中的对象及成果关联组织理解路径；文档目录先发现允许范围内的实际文件，再按同一索引中的 `documentSections` 编排章节、标题、用途和次序。`entryObject` 和 `entryDocument` 分别指定已有主题与真实文档为默认入口。文件发现负责覆盖与安全，作者负责阅读组织；入口只显示、计数一次，未编排文件仍可阅读，辅助依据可折叠但不退出搜索和总数。
+**两种阅读方式**：主题阅读以文章标题连续分章，索引中真实内嵌和参考关系让图与地图复用承载文章的目录入口；文档目录仍按实际文件与 `documentSections` 编排，保留地图文件。`entryObject` 和 `entryDocument` 分别指定已有主题与真实文档为默认入口。文件发现负责覆盖与安全，作者负责阅读组织；入口只显示、计数一次，未编排文件仍可阅读，辅助依据可折叠但不退出搜索和总数。
 
 | 职责 | 当前实现与边界 |
 | --- | --- |
@@ -70,6 +70,7 @@
       - [useKnowledgeNavigation.ts](../../services/buildr-web/src/features/knowledge/useKnowledgeNavigation.ts) — 有界主题及成果导航请求，取消旧请求与范围切换保护
       - [useKnowledgeDocuments.ts](../../services/buildr-web/src/features/knowledge/useKnowledgeDocuments.ts) — 独立读取文档编排与入口摘要，保留刷新数据并隔离不同范围的过时响应
       - [knowledge-reader-navigation.ts](../../services/buildr-web/src/features/knowledge/knowledge-reader-navigation.ts) — 共同树模型，处理祖先匹配、类型过滤、入口去重、补充阅读与唯一数量
+      - [useKnowledgeTopicChapters.ts](../../services/buildr-web/src/features/knowledge/useKnowledgeTopicChapters.ts) — 主副屏共用章节选择，限定当前阅读根定位并保留主题与历史
       - [knowledge-topics.ts](../../services/buildr-web/src/features/knowledge/knowledge-topics.ts) — 默认入口、主题祖先、成果归属和主题内分类
       - [useKnowledgeReading.ts](../../services/buildr-web/src/features/knowledge/useKnowledgeReading.ts) — 请求状态、取消与范围切换保护
       - [knowledge-diagram-layout.ts](../../services/buildr-web/src/features/knowledge/knowledge-diagram-layout.ts) — 原生图示比例、宿主宽度与嵌入高度计算

@@ -1,4 +1,5 @@
 import { compileJsonSchemaCatalog } from '../../../../infrastructure/contracts/json-schema-validator.ts';
+import { TASK_MATERIALS_SCHEMAS } from '../../materials/application/task-materials-contracts.ts';
 
 const DRAFT_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
 const CONTRACT_ROOT = 'https://schemas.buildr.ai/http/task-record';
@@ -23,6 +24,32 @@ const schema = (id: string, title: string, body: JsonSchema, definitions?: Recor
   ...(definitions ? { $defs: definitions } : {}),
 });
 
+const taskRecordProperties = {
+  schemaVersion: { const: 'buildr.task-record/v4' },
+  taskId: { $ref: '#/$defs/TaskId' },
+  title: nonEmptyText,
+  intent: nonEmptyText,
+  brief: nullable({ type: 'string', maxLength: 1_048_576 }),
+  scope: closed({
+    projects: arrayOf(nonEmptyText),
+    services: arrayOf({ $ref: '#/$defs/QualifiedService' }),
+  }, ['projects', 'services']),
+  changes: arrayOf({ $ref: '#/$defs/QualifiedChange' }),
+  parentTaskId: nullable({ $ref: '#/$defs/TaskId' }),
+  isParent: { type: 'boolean' },
+  retrospective: nullable(closed({
+    state: { enum: ['pending-decision', 'decided'] },
+    documentDigest: { type: 'string', pattern: '^sha256-[0-9a-f]{64}$' },
+  }, ['state', 'documentDigest'])),
+  status: { enum: ['todo', 'active', 'completed', 'abandoned'] },
+  result: { $ref: '#/$defs/TaskResult' },
+  resultHistory: arrayOf({ $ref: '#/$defs/TaskResultHistoryEntry' }),
+  createdAt: nonEmptyText,
+  updatedAt: nonEmptyText,
+};
+const taskRecordRequired = ['schemaVersion', 'taskId', 'title', 'intent', 'brief', 'scope', 'changes', 'parentTaskId', 'retrospective', 'status', 'result', 'createdAt', 'updatedAt'];
+const { brief: _brief, resultHistory: _history, ...taskSummaryProperties } = taskRecordProperties;
+
 export const TASK_HTTP_DEFINITIONS = Object.freeze({
   TaskId: { type: 'string', pattern: TASK_ID_PATTERN },
   QualifiedService: closed({ project: nonEmptyText, service: nonEmptyText }, ['project', 'service']),
@@ -46,34 +73,14 @@ export const TASK_HTTP_DEFINITIONS = Object.freeze({
     ],
   },
   TaskResultHistoryEntry: closed({
-    status: { enum: ['completed', 'abandoned'] }, title: nonEmptyText, intent: nonEmptyText,
+    status: { enum: ['completed', 'abandoned'] }, title: nonEmptyText, intent: nonEmptyText, brief: nullable({ type: 'string', maxLength: 1_048_576 }),
     parentTaskId: nullable({ $ref: '#/$defs/TaskId' }),
     scope: closed({ projects: arrayOf(nonEmptyText), services: arrayOf({ $ref: '#/$defs/QualifiedService' }) }, ['projects', 'services']),
     changes: arrayOf({ $ref: '#/$defs/QualifiedChange' }), isParent: { const: true }, result: { $ref: '#/$defs/TaskResult' },
     recordUpdatedAt: nonEmptyText, correctedAt: nonEmptyText, reason: nonEmptyText,
   }, ['status', 'title', 'intent', 'parentTaskId', 'result', 'recordUpdatedAt', 'correctedAt', 'reason']),
-  TaskRecord: closed({
-    schemaVersion: { const: 'buildr.task-record/v3' },
-    taskId: { $ref: '#/$defs/TaskId' },
-    title: nonEmptyText,
-    intent: nonEmptyText,
-    scope: closed({
-      projects: arrayOf(nonEmptyText),
-      services: arrayOf({ $ref: '#/$defs/QualifiedService' }),
-    }, ['projects', 'services']),
-    changes: arrayOf({ $ref: '#/$defs/QualifiedChange' }),
-    parentTaskId: nullable({ $ref: '#/$defs/TaskId' }),
-    isParent: { type: 'boolean' },
-    retrospective: nullable(closed({
-      state: { enum: ['pending-decision', 'decided'] },
-      documentDigest: { type: 'string', pattern: '^sha256-[0-9a-f]{64}$' },
-    }, ['state', 'documentDigest'])),
-    status: { enum: ['todo', 'active', 'completed', 'abandoned'] },
-    result: { $ref: '#/$defs/TaskResult' },
-    resultHistory: arrayOf({ $ref: '#/$defs/TaskResultHistoryEntry' }),
-    createdAt: nonEmptyText,
-    updatedAt: nonEmptyText,
-  }, ['schemaVersion', 'taskId', 'title', 'intent', 'scope', 'changes', 'parentTaskId', 'retrospective', 'status', 'result', 'createdAt', 'updatedAt']),
+  TaskRecord: closed(taskRecordProperties, taskRecordRequired),
+  TaskSummaryRecord: closed(taskSummaryProperties, taskRecordRequired.filter(field => field !== 'brief')),
   TaskRelationSummary: closed({
     taskId: { $ref: '#/$defs/TaskId' },
     title: nonEmptyText,
@@ -99,7 +106,7 @@ export const TASK_HTTP_DEFINITIONS = Object.freeze({
     details: true,
   }, ['taskId', 'kind', 'reference', 'code', 'message']),
   StoredTaskView: closed({
-    record: { $ref: '#/$defs/TaskRecord' },
+    record: { $ref: '#/$defs/TaskSummaryRecord' },
     recordDigest: nonEmptyText,
     taskRelations: { $ref: '#/$defs/TaskRelations' },
     retrospectiveDocument: { $ref: '#/$defs/RetrospectiveDocumentReference' },
@@ -128,6 +135,11 @@ export const TASK_HTTP_DEFINITIONS = Object.freeze({
 const defs = TASK_HTTP_DEFINITIONS;
 
 export const TASK_HTTP_SCHEMAS = Object.freeze({
+  materialsInspectRequest: TASK_MATERIALS_SCHEMAS.inspectRequest,
+  materialsRecordRequest: TASK_MATERIALS_SCHEMAS.recordRequest,
+  materialsWriteRequest: TASK_MATERIALS_SCHEMAS.writeRequest,
+  materialsResponse: TASK_MATERIALS_SCHEMAS.response,
+  materialsWriteResponse: TASK_MATERIALS_SCHEMAS.writeResponse,
   listRequest: schema('list/request', 'TaskListRequest', closed({
     q: { type: 'string' },
     project: nonEmptyText,
@@ -178,6 +190,7 @@ export const TASK_HTTP_SCHEMAS = Object.freeze({
     isParent: { const: true },
       title: nonEmptyText,
       intent: nonEmptyText,
+      brief: nullable({ type: 'string', maxLength: 1_048_576 }),
       parentTaskId: nullable({ $ref: '#/$defs/TaskId' }),
       addProjects: arrayOf(nonEmptyText),
       removeProjects: arrayOf(nonEmptyText),
@@ -209,16 +222,58 @@ export const TASK_HTTP_SCHEMAS = Object.freeze({
     reason: nonEmptyText,
   }, ['expectedRecordDigest', 'reason']), defs),
   abandonResponse: schema('abandon/response', 'TaskAbandonResponse', { $ref: '#/$defs/TaskRecordMutationResponse' }, defs),
+  fileDiffRequest: schema('file-diff/request', 'TaskFileDiffRequest', closed({ repositoryId: nonEmptyText, filePath: { type: 'string', minLength: 1, maxLength: 4096 }, commitHash: { type: 'string', pattern: '^(worktree|[a-f0-9]{40}|[a-f0-9]{64})$' }, checkoutId: { type: 'string', pattern: '^checkout-[a-f0-9]{64}$' } }, ['repositoryId', 'filePath', 'commitHash']), defs),
+  changedFileCountResponse: schema('changed-file-count/response', 'TaskChangedFileCountResponse', closed({
+    schemaVersion: { const: 'buildr.task-changed-file-count/v1' }, taskId: { $ref: '#/$defs/TaskId' }, readAt: nonEmptyText,
+    fileCount: { type: 'integer', minimum: 0 }, status: { enum: ['complete', 'partial'] },
+    coverage: closed({ repositoryLimit: { type: 'integer', minimum: 1 }, fileLimit: { type: 'integer', minimum: 1 }, truncated: { type: 'boolean' } }, ['repositoryLimit', 'fileLimit', 'truncated']),
+    diagnostics: arrayOf(closed({ code: nonEmptyText, message: nonEmptyText, reference: nullable(nonEmptyText), repositoryId: nullable(nonEmptyText), hash: nullable(nonEmptyText) }, ['code', 'message', 'reference', 'repositoryId', 'hash'])),
+    effects: arrayOf({ type: 'object' }),
+  }, ['schemaVersion', 'taskId', 'readAt', 'fileCount', 'status', 'coverage', 'diagnostics', 'effects']), defs),
+  changedFilesRequest: schema('changed-files/request', 'TaskChangedFilesRequest', closed({}), defs),
+  changedFilesResponse: schema('changed-files/response', 'TaskChangedFilesResult', closed({
+    schemaVersion: { const: 'buildr.task-changed-files/v1' }, taskId: { $ref: '#/$defs/TaskId' }, readAt: nonEmptyText,
+    status: { enum: ['complete', 'partial'] },
+    files: arrayOf(closed({
+      repositoryId: nonEmptyText, path: nonEmptyText, previousPath: nullable(nonEmptyText),
+      checkoutId: { type: 'string', pattern: '^checkout-[a-f0-9]{64}$' },
+      kind: { enum: ['tracked', 'untracked'] }, status: { enum: ['modified', 'untracked', 'added', 'deleted', 'renamed', 'conflicted'] },
+      additions: nullable({ type: 'integer', minimum: 0 }), deletions: nullable({ type: 'integer', minimum: 0 }),
+      preview: nullable({ type: 'string' }), previewTruncated: { type: 'boolean' },
+    }, ['repositoryId', 'path', 'previousPath', 'kind', 'status', 'additions', 'deletions', 'preview', 'previewTruncated'])),
+    repositories: arrayOf(closed({
+      id: nonEmptyText, label: nonEmptyText, root: nonEmptyText, sources: arrayOf(nonEmptyText),
+      status: { enum: ['complete', 'unavailable', 'truncated'] }, branch: nullable(nonEmptyText), ahead: nullable({ type: 'integer', minimum: 0 }),
+      fileCount: { type: 'integer', minimum: 0 }, scannedCommitCount: { type: 'integer', minimum: 0 },
+    }, ['id', 'label', 'root', 'sources', 'status', 'branch', 'ahead', 'fileCount', 'scannedCommitCount'])),
+    commits: arrayOf(closed({
+      taskId: { $ref: '#/$defs/TaskId' }, taskTitle: nonEmptyText,
+      repositoryId: nonEmptyText, hash: { type: 'string', pattern: '^(?:[a-f0-9]{40}|[a-f0-9]{64})$' },
+      shortHash: { type: 'string', pattern: '^[a-f0-9]{12}$' }, subject: { type: 'string' }, message: { type: 'string' },
+      authorName: { type: 'string' }, authorEmail: { type: 'string' }, authoredAt: nonEmptyText, committedAt: nonEmptyText,
+    }, ['taskId', 'taskTitle', 'repositoryId', 'hash', 'shortHash', 'subject', 'message', 'authorName', 'authorEmail', 'authoredAt', 'committedAt'])),
+    commitFiles: { type: 'object', additionalProperties: arrayOf(closed({
+      repositoryId: nonEmptyText, path: nonEmptyText, previousPath: nullable(nonEmptyText),
+      kind: { enum: ['tracked', 'untracked'] }, status: { enum: ['modified', 'untracked', 'added', 'deleted', 'renamed', 'conflicted'] },
+      additions: nullable({ type: 'integer', minimum: 0 }), deletions: nullable({ type: 'integer', minimum: 0 }),
+      preview: nullable({ type: 'string' }), previewTruncated: { type: 'boolean' },
+    }, ['repositoryId', 'path', 'previousPath', 'kind', 'status', 'additions', 'deletions', 'preview', 'previewTruncated'])) },
+    repositoryMeta: { type: 'object', additionalProperties: closed({ branch: nullable(nonEmptyText), ahead: nullable({ type: 'integer', minimum: 0 }) }, ['branch', 'ahead']) },
+    coverage: closed({ repositoryLimit: { type: 'integer', minimum: 1 }, fileLimit: { type: 'integer', minimum: 1 }, commitFileLimit: { type: 'integer', minimum: 1 }, previewLineLimit: { type: 'integer', minimum: 1 }, truncated: { type: 'boolean' } }, ['repositoryLimit', 'fileLimit', 'commitFileLimit', 'previewLineLimit', 'truncated']),
+    diagnostics: arrayOf(closed({ code: nonEmptyText, message: nonEmptyText, repositoryId: nullable(nonEmptyText), reference: nullable(nonEmptyText), hash: nullable(nonEmptyText) }, ['code', 'message', 'repositoryId', 'reference', 'hash'])),
+    effects: { type: 'array', maxItems: 0, items: false },
+  }, ['schemaVersion', 'taskId', 'readAt', 'status', 'files', 'repositories', 'commits', 'commitFiles', 'repositoryMeta', 'coverage', 'diagnostics', 'effects']), defs),
   retrospectiveDocumentRequest: schema('retrospective-document/request', 'TaskRetrospectiveDocumentRequest', closed({}), defs),
   commitsRequest: schema('commits/request', 'TaskCommitsRequest', closed({}), defs),
   commitsResponse: schema('commits/response', 'TaskCommitsResult', closed({
     schemaVersion: { const: 'buildr.task-commits/v1' }, taskId: { $ref: '#/$defs/TaskId' }, readAt: nonEmptyText,
     status: { enum: ['complete', 'partial'] },
     commits: arrayOf(closed({
+      taskId: { $ref: '#/$defs/TaskId' }, taskTitle: nonEmptyText,
       repositoryId: nonEmptyText, hash: { type: 'string', pattern: '^(?:[a-f0-9]{40}|[a-f0-9]{64})$' },
       shortHash: { type: 'string', pattern: '^[a-f0-9]{12}$' }, subject: { type: 'string' }, message: { type: 'string' },
       authorName: { type: 'string' }, authorEmail: { type: 'string' }, authoredAt: nonEmptyText, committedAt: nonEmptyText,
-    }, ['repositoryId', 'hash', 'shortHash', 'subject', 'message', 'authorName', 'authorEmail', 'authoredAt', 'committedAt'])),
+    }, ['taskId', 'taskTitle', 'repositoryId', 'hash', 'shortHash', 'subject', 'message', 'authorName', 'authorEmail', 'authoredAt', 'committedAt'])),
     repositories: arrayOf(closed({
       id: nonEmptyText, label: nonEmptyText, root: nonEmptyText, sources: arrayOf(nonEmptyText),
       status: { enum: ['complete', 'unavailable', 'truncated'] }, scannedCommitCount: { type: 'integer', minimum: 0 },
@@ -254,6 +309,9 @@ function operation(id: string, method: string, path: string, request: TaskHttpSc
 }
 
 export const TASK_HTTP_OPERATIONS = Object.freeze([
+  operation('task-materials.inspect', 'GET', '/tasks/:taskId/materials', 'materialsInspectRequest', 'materialsResponse'),
+  operation('task-materials.record', 'POST', '/tasks/:taskId/materials', 'materialsRecordRequest', 'materialsResponse'),
+  operation('task-materials.write', 'POST', '/tasks/:taskId/materials/documents', 'materialsWriteRequest', 'materialsWriteResponse'),
   operation('task-record.list', 'GET', '/tasks', 'listRequest', 'listResponse'),
   operation('task-record.detail', 'GET', '/tasks/:taskId', 'detailRequest', 'detailResponse'),
   operation('task-record.update', 'PATCH', '/tasks/:taskId', 'updateRequest', 'updateResponse'),
@@ -262,6 +320,9 @@ export const TASK_HTTP_OPERATIONS = Object.freeze([
   operation('task-record.abandon', 'POST', '/tasks/:taskId/abandon', 'abandonRequest', 'abandonResponse'),
   operation('task-record.retrospective-document', 'GET', '/tasks/:taskId/retrospective-document', 'retrospectiveDocumentRequest', 'retrospectiveDocumentResponse'),
   operation('task-record.commits', 'GET', '/tasks/:taskId/commits', 'commitsRequest', 'commitsResponse'),
+  operation('task-record.file-diff', 'GET', '/tasks/:taskId/file-diff', 'fileDiffRequest', 'changedFilesResponse'),
+  operation('task-record.changed-file-count', 'GET', '/tasks/:taskId/changed-file-count', 'changedFilesRequest', 'changedFileCountResponse'),
+  operation('task-record.changed-files', 'GET', '/tasks/:taskId/changed-files', 'changedFilesRequest', 'changedFilesResponse'),
 ]);
 
 const allSchemas = Object.freeze(Object.values(TASK_HTTP_SCHEMAS));

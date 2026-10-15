@@ -1,20 +1,21 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ChangeQuery, ChangeModel, ChangeLifecycle, Project, PrototypePage, PrototypeDiagnostic } from '../../../openspec/module.ts';
+import { inspectChangeAsset, readChangeAsset, type ChangeQuery, type ChangeModel, type ChangeLifecycle, type Project, type PrototypePage, type PrototypeDiagnostic } from '../../../openspec/module.ts';
 import { taskActionId } from '../../application/task-validation.ts';
+import { createTaskProjectDocumentReader, type TaskDocumentWorktreeQuery } from '../../materials/application/task-project-document-reader.ts';
+import { assertMarkdownImageSourceRoot, observeMarkdownImageContext } from '../../../../infrastructure/filesystem/markdown-images.ts';
 
 type TaskPrototype = PrototypePage & { id: string; provenance: string } & (
   | { source: 'change'; project: string; change: string; lifecycle: ChangeLifecycle }
   | { source: 'task'; project: null; change: null; lifecycle: null }
 );
-type WorktreeRepository = { selector: string; entityType: string; sourcePath: string; checkoutPath: string; state: string };
 export type OpenSpecQuery = Pick<ChangeQuery, 'findLogicalChange' | 'discoverUiPrototypes'>;
 export type ProjectQuery = {
   projectDetail(root: string, code: string): { project: Project };
   resolveSourceRoot(root: string, source: Project['source']): string;
 };
-export type WorktreeQuery = { inspectGitWorktrees(input: { workspaceRoot: string; taskId: string }): { status: string; repositories: WorktreeRepository[]; diagnostic?: { code: string; message: string } | null } };
+export type WorktreeQuery = TaskDocumentWorktreeQuery;
 type ChangeReference = { project: string; change: string };
 type ChangeWorkingCopy = { provenance: string; root: string; change: ChangeModel };
 type ChangeResolution = {
@@ -27,7 +28,7 @@ type ChangeResolution = {
   diagnostic: { code: string; message: string } | null;
 };
 export type ChangeRuntime = {
-  readTask(root: string, taskId: string): { record: { changes: ChangeReference[] } };
+  readTask(root: string, taskId: string): { record: { changes: ChangeReference[]; scope?: { projects: string[]; services: Array<{ project: string; service: string }> } } };
   inspectTask(root: string, taskId: string): { record: { changes: ChangeReference[]; scope?: { projects: string[]; services: Array<{ project: string; service: string }> } } };
   [key: string]: unknown;
 };
@@ -100,25 +101,7 @@ export function registerChangeApplication(runtime: ChangeRuntime, options: Chang
   }
   const requiredOpenSpecQuery = openSpecQuery;
   const requiredProjectQuery = projectQuery;
-  function taskScopedProjectRoot(targetRoot: string, taskId: string, projectCode: string, project: Project): string | null {
-    if (!worktreeQuery || typeof worktreeQuery.inspectGitWorktrees !== 'function') return null;
-    const inspected = worktreeQuery.inspectGitWorktrees({ workspaceRoot: targetRoot, taskId });
-    if (inspected.status !== 'ready' && !inspected.repositories.length) {
-      if (!inspected.diagnostic || inspected.diagnostic.code === 'git_worktree_evidence_missing') return null;
-      throw changeError('task_worktree_unavailable', '任务工作树当前不可读取，请核对工作树关联后重试。', 409);
-    }
-    const direct = inspected.repositories.find((repository) => repository.selector === `project:${projectCode}`);
-    if (direct) {
-      if (direct.entityType !== 'project' || direct.sourcePath !== project.source.path || direct.state !== 'ready') throw changeError('task_worktree_unavailable', '任务项目工作树身份已变化，不能读取主目录替代。', 409);
-      return path.resolve(direct.checkoutPath);
-    }
-    const workspace = inspected.repositories.find((repository) => repository.selector === 'workspace');
-    if (!workspace) return null;
-    if (workspace.entityType !== 'workspace' || workspace.sourcePath !== '.' || workspace.state !== 'ready') throw changeError('task_worktree_unavailable', '任务工作树身份已变化，不能读取主目录替代。', 409);
-    const executionRoot = path.resolve(workspace.checkoutPath);
-    const candidate = requiredProjectQuery.resolveSourceRoot(executionRoot, project.source);
-    return inside(executionRoot, candidate) ? candidate : null;
-  }
+  const { taskScopedProjectRoot, taskProjectDocument, resolveTaskProjectDocument } = createTaskProjectDocumentReader(runtime, requiredProjectQuery, worktreeQuery);
 
   function resolveTaskScopedChange(targetRoot: string, taskId: string, reference: unknown, options: { includeContent?: boolean; allowMissingTask?: boolean; taskRecordObserved?: boolean } = {}): ChangeResolution {
     const includeContent = options.includeContent || false;
@@ -167,26 +150,37 @@ export function registerChangeApplication(runtime: ChangeRuntime, options: Chang
     return { resolution };
   }
 
-  function taskProjectDocument(targetRoot: string, taskId: string, projectCode: string, documentPath: string) {
-    const task = runtime.inspectTask(targetRoot, taskId);
-    const scope = task.record.scope;
-    if (!scope?.projects.includes(projectCode) && !scope?.services.some(service => service.project === projectCode) && !task.record.changes.some(reference => reference.project === projectCode)) throw changeError('task_document_scope_forbidden', '文档不在当前任务的项目范围内。', 403);
-    const { project, projectRoot } = projectContext(requiredProjectQuery, targetRoot, projectCode);
-    const candidateRoot = taskScopedProjectRoot(targetRoot, taskId, projectCode, project);
-    const sourceRoot = candidateRoot || projectRoot;
-    const raw = typeof documentPath === 'string' ? documentPath : '';
-    const relative = path.posix.normalize(raw);
-    if (!raw || raw.includes('\\') || raw.includes('\0') || path.isAbsolute(raw) || /^[A-Za-z]:/.test(raw) || !relative.endsWith('.md') || !inside(sourceRoot, path.resolve(sourceRoot, relative))) throw changeError('task_document_path_forbidden', '只允许读取当前项目内的 Markdown 文档。', 400);
-    let current = sourceRoot;
-    for (const segment of relative.split('/')) {
-      current = path.join(current, segment);
-      const stat = fs.lstatSync(current, { throwIfNoEntry: false });
-      if (stat?.isSymbolicLink()) throw changeError('task_document_path_forbidden', '不能通过符号链接读取任务文档。', 400);
+  function taskChangeAsset(targetRoot: string, taskId: string, projectCode: string, changeCode: string, assetPath: string, expectedSourceIdentity: string) {
+    taskActionId(taskId, 'taskId');
+    function currentSource() {
+      const task = runtime.readTask(targetRoot, taskId);
+      if (!task.record.changes.some(reference => reference.project === projectCode && reference.change === changeCode)) throw changeError('task_change_not_associated', '这个变更未关联当前任务。', 404);
+      const resolution = resolveTaskScopedChange(targetRoot, taskId, { project: projectCode, change: changeCode }, { taskRecordObserved: true });
+      const working = resolution.workingCopy;
+      if (!working) throw changeError('task_change_asset_source_changed', resolution.diagnostic?.message || '资料来源当前不可读取，请刷新任务。', 409);
+      const base = working.provenance === 'task-worktree-candidate' ? working.root : targetRoot;
+      const changeRoot = path.resolve(base, working.change.artifacts.root);
+      if (!inside(working.root, changeRoot)) throw changeError('task_change_asset_path_forbidden', '资料目录不在当前变更来源内。');
+      assertMarkdownImageSourceRoot(working.root, changeRoot);
+      return { working, changeRoot };
     }
-    const file = path.resolve(sourceRoot, relative);
-    const stat = fs.statSync(file, { throwIfNoEntry: false });
-    if (stat && (!stat.isFile() || stat.size > 512 * 1024)) throw changeError('task_document_unreadable', '任务文档不是可读取的普通文件或超过 512 KB。', 400);
-    return { schemaVersion: 'buildr.task-project-document/v1', projectCode, path: relative, name: path.posix.basename(relative), exists: Boolean(stat), content: stat ? fs.readFileSync(file, 'utf8') : null, provenance: candidateRoot ? 'task-worktree-candidate' : 'retained-project' };
+    try {
+      const { working, changeRoot } = currentSource();
+      const document = readChangeAsset(changeRoot, assetPath, expectedSourceIdentity);
+      const documentPath = path.relative(working.root, path.join(changeRoot, assetPath)).split(path.sep).join('/');
+      let imageContext;
+      if (document.kind === 'markdown' && documentPath.endsWith('.md')) {
+        const source = resolveTaskProjectDocument(targetRoot, taskId, projectCode, documentPath);
+        if (path.resolve(source.root, source.path) !== path.resolve(changeRoot, assetPath)) throw changeError('task_change_asset_source_changed', '资料来源已变化，请刷新交付资料列表。', 409);
+        imageContext = observeMarkdownImageContext(source, document.content, document.actualDigest);
+      }
+      const refreshed = currentSource();
+      if (inspectChangeAsset(refreshed.changeRoot, assetPath, refreshed.changeRoot).sourceIdentity !== expectedSourceIdentity) throw changeError('task_change_asset_source_changed', '资料来源在读取时变化，请刷新交付资料列表。', 409);
+      return { schemaVersion: 'buildr.task-change-asset/v1', taskId, projectCode, changeCode, ...document, documentPath, provenance: working.provenance, ...(imageContext ? { imageContext } : {}) };
+    } catch (cause) {
+      if (cause && typeof cause === 'object' && 'code' in cause && ['ENOENT', 'ENOTDIR'].includes(String(cause.code))) throw changeError('task_change_asset_missing', '交付资料当前不存在，请刷新列表。', 404);
+      throw cause;
+    }
   }
 
   function taskUiPrototypeEntries(targetRoot: string, taskId: string): { taskId: string; prototypes: TaskPrototype[]; diagnostics: PrototypeDiagnostic[] } {
@@ -284,6 +278,7 @@ export function registerChangeApplication(runtime: ChangeRuntime, options: Chang
   return Object.assign(runtime, {
     resolveTaskScopedChange,
     taskScopedChangeDetail,
+    taskChangeAsset,
     taskProjectDocument,
     taskUiPrototypes,
     taskUiPrototype,

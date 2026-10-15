@@ -41,7 +41,7 @@ export function registerDomainsRules(dependencies: RulesDependencies) {
     addDoctorFinding,
   } = dependencies;
 
-  const { rulesManifestPath, parseRulesManifestYaml, renderRulesManifestYaml, validateRulesManifest, readRulesManifestForWrite, writeRulesManifest } = createRuleManifestRepository({
+  const { rulesManifestPath, parseRulesManifestYaml, renderRulesManifestYaml, validateRulesManifest, readRulesManifestForWrite, readRulesManifestForInspection, writeRulesManifest } = createRuleManifestRepository({
     atomicWriteFile, existsFile, isPlainObject, isValidAssetId, normalizeRelativePathForBuildr, parseYamlDocument, quoteYaml,
   });
 
@@ -277,6 +277,7 @@ export function registerDomainsRules(dependencies: RulesDependencies) {
     parseRulesManifestYaml,
     renderRulesManifestYaml,
     readRulesManifestForWrite,
+    readRulesManifestForInspection,
     writeRulesManifest,
     rulesAdd,
     rulesRemove,

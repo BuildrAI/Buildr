@@ -1,3 +1,11 @@
+import { AGENT_ASSETS_SOURCE_MODULE } from '../modules/agent-assets/source/module.ts';
+import { createConnectionSkillsModule } from '../modules/connection-skills/module.ts';
+import { createMySqlQueryModule } from '../modules/mysql-query/module.ts';
+import { CODE_MODULE, CODE_SOURCE_CONTROL_OBSERVATIONS } from '../modules/code/module.ts';
+import { AGENT_OPERATIONS_APPLICATION, createAgentOperationsModule } from '../modules/agent-operations/module.ts';
+import { createCodexDesktopModule } from '../modules/codex-desktop/module.ts';
+import { createNativeSessionLinksModule, NATIVE_SESSION_LINKS_APPLICATION } from '../modules/native-session-links/module.ts';
+import { createDshDesktopModule, DSH_DESKTOP_APPLICATION, DSH_PAGE_OBSERVATIONS } from '../modules/dsh-desktop/module.ts';
 import { WORKBENCH_MODULE } from '../modules/workbench/module.ts';
 import { createKnowledgeModule } from '../modules/knowledge/module.ts';
 import * as platform from '../infrastructure/platform.ts';
@@ -25,7 +33,7 @@ import {
   createParentCoordinationModule,
 } from '../modules/task/module.ts';
 import { createModuleRegistry } from './module-registry.ts';
-import { createWebModule } from '../web/module.ts';
+import { createWebModule, readCurrentBuildrWebOrigin } from '../web/module.ts';
 import { createWorkspaceModule, WORKSPACE_AGENT_ASSETS_BINDER, WORKSPACE_APPLICATION, WORKSPACE_QUERY } from '../modules/workspace/module.ts';
 import { createSystemInstallationModule, readCurrentProductIdentity, SYSTEM_INSTALLATION_APPLICATION } from '../modules/installation/module.ts';
 import { createSystemDoctorModule, SYSTEM_DOCTOR_APPLICATION } from '../modules/diagnostics/module.ts';
@@ -36,6 +44,8 @@ import { createPublicationModule } from '../modules/publication/module.ts';
 import { createOpenSpecModule } from '../modules/openspec/module.ts';
 import { CHANGE_APPLICATION, createChangeModule } from '../modules/task/change/module.ts';
 import { TASK_COMMITS_MODULE } from '../modules/task/commits/module.ts';
+import { TASK_CHANGED_FILES_MODULE } from '../modules/task/changed-files/module.ts';
+import { TASK_MATERIALS_MODULE } from '../modules/task/materials/module.ts';
 import { VERIFICATION_DECLARATION, createVerificationModule } from '../modules/project-testing/module.ts';
 import * as webProfileContract from '../modules/installation/contracts/web-profile.ts';
 
@@ -63,14 +73,29 @@ export function createRuntime(): any  {
   registry.install(WORKBENCH_MODULE);
   registry.install(createWorktreeProviderModule(runtime));
   registry.install(TASK_COMMITS_MODULE);
+  registry.install(TASK_CHANGED_FILES_MODULE);
+  registry.install(TASK_MATERIALS_MODULE);
+  registry.install(AGENT_ASSETS_SOURCE_MODULE);
   registry.install(createChangeModule(runtime));
+  registry.install(createAgentOperationsModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile }));
+  registry.install(createNativeSessionLinksModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile, readOrigin: readCurrentBuildrWebOrigin }));
+  registry.install(createCodexDesktopModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile, readOrigin: readCurrentBuildrWebOrigin }));
+  registry.install(createDshDesktopModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile, readOrigin: readCurrentBuildrWebOrigin }));
+  registry.provide(NATIVE_SESSION_LINKS_APPLICATION).bindDshDesktop(registry.provide(DSH_DESKTOP_APPLICATION));
+  registry.install(CODE_MODULE);
+  registry.install(createConnectionSkillsModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile }));
+  registry.install(createMySqlQueryModule());
   registry.provide(TASK_CHANGE_BINDER).bindChangeResolver(registry.provide(CHANGE_APPLICATION));
   registry.install(createVerificationModule(runtime));
   registry.install(TASK_REVIEW_MODULE);
   registry.install(createTaskVerificationModule(runtime, { verificationDeclaration: VERIFICATION_DECLARATION }));
   registry.install(createParentCoordinationModule(runtime));
   registry.install(createSystemInstallationModule(runtime));
-  registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http') }));
+  registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http'), closeResources: async () => {
+    registry.provide(CODE_SOURCE_CONTROL_OBSERVATIONS).close();
+    registry.provide(DSH_PAGE_OBSERVATIONS).close();
+    await Promise.all([registry.provide(DSH_DESKTOP_APPLICATION).close(), registry.provide(AGENT_OPERATIONS_APPLICATION).close()]);
+  } }));
   registry.install(createSystemDoctorModule(runtime, {
     diagnosticContributions: registry.contributions('diagnostics'),
     agentRuntimeCapability: AGENT_ASSETS_RUNTIME,

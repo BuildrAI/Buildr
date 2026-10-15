@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+development_root=$(CDPATH= cd "${0%/*}/.." && pwd)
+cli_root=$(CDPATH= cd "$development_root/../../bin" && pwd)
+selected_node=$("$development_root/resolve-development-node")
+exec "$selected_node" "$cli_root/buildr-mysql.mjs" "$@"

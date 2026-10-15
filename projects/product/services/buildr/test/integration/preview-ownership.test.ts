@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
 
 import { assertPreviewStopOwner, previewDataRoot, readPreviewOwner, startPreview, stopPreview, type PreviewCaller, type PreviewOwner, type PreviewRuntime } from '../../src/web/application/preview-lifecycle.ts';
 
@@ -195,4 +197,280 @@ test('preview timeout removes only its exited worker instance record when health
   });
   assert.equal(fs.existsSync(path.join(previewDataRoot('demo', fixture.dataRoot), 'instance.json')), false);
   assert.equal(readPreviewOwner('demo', fixture.dataRoot), null);
+});
+
+// Task preview workspace store seeding: the preview serves the worktree root, so its
+// local structured store must be seeded from canonical once, then reused untouched.
+function taskStoreFixture(t: test.TestContext, { withCanonicalStore = true }: { withCanonicalStore?: boolean } = {}) {
+  const target = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-preview-task-'));
+  const canonical = path.join(target, 'canonical');
+  const worktree = path.join(target, 'task-worktree');
+  // startPreview 以 canonical 相对路径在 worktree 内定位 product checkout。
+  const product = path.join(worktree, 'product');
+  const dataRoot = path.join(target, 'app-data');
+  const worker = path.join(target, 'worker.mjs');
+  const pidFile = path.join(target, 'worker.pid');
+  const storeDir = path.join(canonical, '.buildr', 'local');
+  fs.mkdirSync(storeDir, { recursive: true });
+  if (withCanonicalStore) {
+    const source = new DatabaseSync(path.join(storeDir, 'workspace.sqlite'));
+    source.exec("CREATE TABLE marker(id INTEGER PRIMARY KEY, note TEXT); INSERT INTO marker VALUES (1, 'canonical');");
+    source.close();
+  }
+  t.after(async () => {
+    if (fs.existsSync(pidFile)) {
+      const pid = Number(fs.readFileSync(pidFile, 'utf8'));
+      try { process.kill(pid, 'SIGKILL'); } catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error; }
+      for (let attempt = 0; attempt < 100; attempt++) {
+        try { process.kill(pid, 0); } catch { break; }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    }
+    fs.rmSync(target, { recursive: true, force: true });
+  });
+  execFileSync('git', ['init', '--quiet', canonical]);
+  execFileSync('git', ['-C', canonical, '-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '--quiet', '--allow-empty', '-m', 'fixture']);
+  execFileSync('git', ['-C', canonical, 'worktree', 'add', '--quiet', '--detach', worktree, 'HEAD']);
+  fs.mkdirSync(path.join(product, 'bin'), { recursive: true });
+  fs.writeFileSync(path.join(product, 'bin', 'buildr.mjs'), '// fixture cli\n');
+  fs.writeFileSync(worker, `
+import fs from 'node:fs';
+import path from 'node:path';
+import http from 'node:http';
+fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
+const server = http.createServer((req, res) => {
+  if (req.headers['x-buildr-instance'] !== 'fixture-secret') { res.writeHead(403).end(); return; }
+  if (req.method === 'POST') { res.writeHead(202).end(); server.close(() => process.exit(0)); }
+  else res.end(JSON.stringify({ schemaVersion: 'buildr.local-app-health/v1', status: 'ready' }));
+});
+server.listen(0, '127.0.0.1', () => {
+  fs.writeFileSync(path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json'), JSON.stringify({
+    schemaVersion: 'buildr.local-app-instance/v1', pid: process.pid,
+    url: 'http://127.0.0.1:' + server.address().port, secret: 'fixture-secret',
+  }));
+});
+`);
+  const runtime: PreviewRuntime = {
+    assertNoUnknownOptions() {},
+    optionValue(args: string[], key: string, fallback: string | null) { const index = args.indexOf(key); return index < 0 ? fallback : args[index + 1] || fallback; },
+    assertInitializedBuildrWorkspace(root: string) { return root; },
+    currentProductInvocation() { return { command: process.execPath, argsPrefix: [worker] }; },
+    productRoot() { return path.join(canonical, 'product'); },
+    assertCanonicalTaskWorkspace(root: string) { return root; },
+    inspectGitWorktrees() {
+      return {
+        status: 'ready',
+        repositories: [{ selector: 'workspace', checkoutPath: worktree, branch: 'codex/demo-task', head: 'a'.repeat(40), state: 'ready' }],
+        diagnostic: null,
+      };
+    },
+    readGitWorktreeEvidence() {
+      return { file: path.join(target, 'evidence.json'), evidence: { planDigest: 'sha256-' + 'b'.repeat(64), workspaceRoot: canonical } };
+    },
+    atomicWriteJson(file: string, value: unknown) { fs.writeFileSync(file, JSON.stringify(value)); },
+    removePath(file: string) { fs.rmSync(file, { force: true }); },
+  };
+  const seededStore = () => path.join(worktree, '.buildr', 'local', 'workspace.sqlite');
+  return { target, canonical, worktree, dataRoot, pidFile, runtime, seededStore,
+    start() { return startPreview(runtime, 'task-demo', ['--target', canonical, '--task', 'demo-task', '--no-open'], { dataRoot }); } };
+}
+
+test('task preview seeds the workspace store into the worktree once and reuses it', { timeout: 20_000 }, async (t) => {
+  const fixture = taskStoreFixture(t);
+  const result = await fixture.start();
+  assert.equal(result.status, 'started');
+  assert.deepEqual(result.owner.taskStore, { source: 'canonical', seeded: true });
+  assert.equal(result.owner.workspaceRoot, fixture.canonical);
+  const storeFile = fixture.seededStore();
+  assert.equal(fs.existsSync(storeFile), true);
+  const seeded = new DatabaseSync(storeFile, { readOnly: true });
+  assert.equal(seeded.prepare('SELECT note FROM marker WHERE id = 1').get()?.note, 'canonical');
+  seeded.close();
+
+  // An existing local copy is authoritative for the preview target; canonical is not re-copied.
+  const replaced = new DatabaseSync(storeFile);
+  replaced.exec("DELETE FROM marker; INSERT INTO marker VALUES (2, 'worktree-local');");
+  replaced.close();
+  const canonicalDb = new DatabaseSync(path.join(fixture.canonical, '.buildr', 'local', 'workspace.sqlite'));
+  canonicalDb.exec("INSERT INTO marker VALUES (3, 'new-canonical-write');");
+  canonicalDb.close();
+  const reused = await fixture.start();
+  assert.equal(reused.status, 'reused');
+  const kept = new DatabaseSync(storeFile, { readOnly: true });
+  assert.equal(kept.prepare('SELECT note FROM marker WHERE id = 2').get()?.note, 'worktree-local');
+  assert.equal(kept.prepare('SELECT note FROM marker WHERE id = 3').get(), undefined);
+  kept.close();
+  await stopPreview('task-demo', {
+    dataRoot: fixture.dataRoot,
+    caller: {
+      taskId: 'demo-task', workspaceRoot: fixture.canonical, worktree: fixture.worktree,
+      worktreeEvidencePath: path.join(fixture.target, 'evidence.json'), worktreePlanDigest: 'sha256-' + 'b'.repeat(64),
+    },
+  });
+});
+
+test('task preview fails closed when the canonical workspace store is unreadable', async (t) => {
+  const fixture = taskStoreFixture(t, { withCanonicalStore: false });
+  await assert.rejects(fixture.start(), (error) => {
+    const observed = failure(error);
+    assert.equal(observed.code, 'preview_task_store_unavailable');
+    return true;
+  });
+  assert.equal(fs.existsSync(fixture.seededStore()), false);
+  assert.equal(readPreviewOwner('task-demo', fixture.dataRoot), null);
+});
+
+test('task preview 拒绝 source 与 target 的数据库、父目录及 sidecar 链接，另一位置保持零写入', async (t) => {
+  for (const owner of ['source', 'target']) {
+    for (const linked of ['local', 'database', 'hard-link', '-wal', '-shm', '-journal']) {
+      await t.test(`${owner} ${linked}`, async child => {
+        const fixture = taskStoreFixture(child);
+        const foreign = path.join(fixture.target, 'foreign', '.buildr', 'local');
+        fs.mkdirSync(foreign, { recursive: true });
+        const external = path.join(foreign, 'external-file');
+        fs.writeFileSync(external, Buffer.from([0, 1, 2, 255]));
+        const root = owner === 'source' ? fixture.canonical : fixture.worktree;
+        const local = path.join(root, '.buildr', 'local');
+        fs.mkdirSync(local, { recursive: true });
+        const file = path.join(local, 'workspace.sqlite');
+        if (linked === 'local') {
+          fs.renameSync(local, `${local}.original`);
+          fs.symlinkSync(foreign, local, 'dir');
+        } else if (linked === 'database' || linked === 'hard-link') {
+          if (fs.existsSync(file)) fs.renameSync(file, `${file}.original`);
+          if (linked === 'database') fs.symlinkSync(external, file, 'file');
+          else fs.linkSync(external, file);
+        } else fs.symlinkSync(external, `${file}${linked}`, 'file');
+        const before = fs.readdirSync(foreign).sort().map(name => ({ name, bytes: fs.readFileSync(path.join(foreign, name)).toString('hex') }));
+        await assert.rejects(fixture.start(), error => coded(error, 'workspace_store_path_invalid'));
+        assert.deepEqual(fs.readdirSync(foreign).sort().map(name => ({ name, bytes: fs.readFileSync(path.join(foreign, name)).toString('hex') })), before);
+        assert.equal(readPreviewOwner('task-demo', fixture.dataRoot), null);
+        assert.equal(fs.existsSync(fixture.pidFile), false);
+      });
+    }
+  }
+});
+
+test('task preview 已有目标也检查其真实路径，不把 canonical 库链接当作自身副本', async t => {
+  const fixture = taskStoreFixture(t);
+  const local = path.dirname(fixture.seededStore());
+  fs.mkdirSync(local, { recursive: true });
+  const source = path.join(fixture.canonical, '.buildr', 'local', 'workspace.sqlite');
+  const before = fs.readFileSync(source);
+  fs.symlinkSync(source, fixture.seededStore(), 'file');
+  await assert.rejects(fixture.start(), error => coded(error, 'workspace_store_path_invalid'));
+  assert.deepEqual(fs.readFileSync(source), before);
+  assert.equal(fs.existsSync(fixture.pidFile), false);
+});
+
+test('task preview 快照期间出现合法已有目标时复用且不覆盖其内容', { timeout: 20000 }, async t => {
+  const fixture = taskStoreFixture(t);
+  const execute = DatabaseSync.prototype.exec;
+  let created = false;
+  t.mock.method(DatabaseSync.prototype, 'exec', function (this: DatabaseSync, sql: string) {
+    const result = execute.call(this, sql);
+    if (sql.startsWith('VACUUM INTO ')) {
+      const other = new DatabaseSync(fixture.seededStore());
+      try { other.exec("CREATE TABLE marker(id INTEGER PRIMARY KEY, note TEXT); INSERT INTO marker VALUES (2, 'other-preview');"); }
+      finally { other.close(); }
+      created = true;
+    }
+    return result;
+  });
+  const result = await fixture.start();
+  assert.equal(created, true);
+  assert.deepEqual(result.owner.taskStore, { source: 'existing', seeded: false });
+  const target = new DatabaseSync(fixture.seededStore(), { readOnly: true });
+  try {
+    assert.equal(target.prepare('SELECT note FROM marker WHERE id = 2').get()?.note, 'other-preview');
+    assert.equal(target.prepare('SELECT note FROM marker WHERE id = 1').get(), undefined);
+  } finally { target.close(); }
+  assert.equal(fs.readdirSync(path.dirname(fixture.seededStore())).some(name => name.includes('.seed-')), false);
+  await stopPreview('task-demo', {
+    dataRoot: fixture.dataRoot,
+    caller: { taskId: 'demo-task', workspaceRoot: fixture.canonical, worktree: fixture.worktree, worktreeEvidencePath: path.join(fixture.target, 'evidence.json'), worktreePlanDigest: 'sha256-' + 'b'.repeat(64) },
+  });
+});
+
+test('task preview 不接管或删除随机临时名上已有的未知文件', async t => {
+  const fixture = taskStoreFixture(t);
+  fs.mkdirSync(path.dirname(fixture.seededStore()), { recursive: true });
+  t.mock.method(crypto, 'randomBytes', () => Buffer.alloc(4));
+  const staging = `${fixture.seededStore()}.seed-${process.pid}-00000000`;
+  fs.writeFileSync(staging, 'unknown content\n');
+  const before = fs.readFileSync(staging);
+  await assert.rejects(fixture.start(), error => coded(error, 'workspace_store_path_invalid'));
+  assert.deepEqual(fs.readFileSync(staging), before);
+  assert.equal(fs.existsSync(fixture.seededStore()), false);
+  assert.equal(fs.existsSync(fixture.pidFile), false);
+});
+
+test('task preview 快照临时文件被普通文件替换时拒绝发布并保留替换文件', async t => {
+  const fixture = taskStoreFixture(t);
+  const execute = DatabaseSync.prototype.exec;
+  let staging = '';
+  t.mock.method(DatabaseSync.prototype, 'exec', function (this: DatabaseSync, sql: string) {
+    const result = execute.call(this, sql);
+    if (sql.startsWith('VACUUM INTO ')) {
+      staging = sql.slice("VACUUM INTO '".length, -1).replaceAll("''", "'");
+      fs.renameSync(staging, `${staging}.original`);
+      fs.writeFileSync(staging, 'replacement content\n');
+    }
+    return result;
+  });
+  await assert.rejects(fixture.start(), error => {
+    assert.equal(coded(error, 'workspace_store_path_invalid'), true);
+    assert.equal(error instanceof Error && 'previewStoreCleanupError' in error, true);
+    return true;
+  });
+  assert.ok(staging);
+  assert.equal(fs.readFileSync(staging, 'utf8'), 'replacement content\n');
+  assert.equal(fs.existsSync(fixture.seededStore()), false);
+  assert.equal(fs.existsSync(fixture.pidFile), false);
+});
+
+test('task preview 快照完成后 target 目录被替换，不发布或清理另一位置的同名临时文件', async t => {
+  const fixture = taskStoreFixture(t);
+  const local = path.dirname(fixture.seededStore());
+  const foreign = path.join(fixture.target, 'foreign');
+  fs.mkdirSync(foreign);
+  const execute = DatabaseSync.prototype.exec;
+  let foreignTemporary = '';
+  t.mock.method(DatabaseSync.prototype, 'exec', function (this: DatabaseSync, sql: string) {
+    const result = execute.call(this, sql);
+    if (sql.startsWith('VACUUM INTO ')) {
+      const staging = sql.slice("VACUUM INTO '".length, -1).replaceAll("''", "'");
+      fs.renameSync(local, `${local}.original`);
+      fs.symlinkSync(foreign, local, 'dir');
+      foreignTemporary = path.join(foreign, path.basename(staging));
+      fs.writeFileSync(foreignTemporary, 'foreign content\n');
+    }
+    return result;
+  });
+  await assert.rejects(fixture.start(), error => {
+    assert.equal(coded(error, 'workspace_store_path_invalid'), true);
+    assert.equal(error instanceof Error && 'previewStoreCleanupError' in error, true);
+    return true;
+  });
+  assert.ok(foreignTemporary);
+  assert.equal(fs.readFileSync(foreignTemporary, 'utf8'), 'foreign content\n');
+  assert.deepEqual(fs.readdirSync(foreign), [path.basename(foreignTemporary)]);
+  assert.equal(fs.existsSync(path.join(foreign, 'workspace.sqlite')), false);
+  assert.equal(fs.existsSync(fixture.pidFile), false);
+});
+
+test('task preview 快照失败只清理本次生成的临时文件，不创建目标或改变 source', async t => {
+  const fixture = taskStoreFixture(t);
+  const source = path.join(fixture.canonical, '.buildr', 'local', 'workspace.sqlite');
+  const before = fs.readFileSync(source);
+  const execute = DatabaseSync.prototype.exec;
+  t.mock.method(DatabaseSync.prototype, 'exec', function (this: DatabaseSync, sql: string) {
+    if (sql.startsWith('VACUUM INTO ')) throw new Error('snapshot failed');
+    return execute.call(this, sql);
+  });
+  await assert.rejects(fixture.start(), error => coded(error, 'preview_task_store_unavailable'));
+  assert.deepEqual(fs.readFileSync(source), before);
+  assert.deepEqual(fs.readdirSync(path.dirname(fixture.seededStore())), []);
+  assert.equal(fs.existsSync(fixture.seededStore()), false);
+  assert.equal(fs.existsSync(fixture.pidFile), false);
 });

@@ -1,18 +1,23 @@
-import { useAppShell } from './AppShellContext';
+import { AppShellContext, useAppShell } from './AppShellContext';
 import { useRef, useCallback, useContext, useEffect, useLayoutEffect, useState, type ReactNode, type MouseEvent } from 'react';
-import { UNSAFE_LocationContext, useLocation, useNavigate, useNavigationType, useOutlet } from 'react-router-dom';
-import { WorkspaceTabsContext, WorkspaceViewActiveContext } from './pageTabs';
-import { ResourcePreviewContext, resourcePreview, type PreviewState, type ResourcePreview } from './resource-preview';
+import { UNSAFE_LocationContext, useLocation, useNavigate, useNavigationType, useOutlet, type Location } from 'react-router-dom';
+import { WorkspaceTabsContext, WorkspaceViewActiveContext, WorkspaceViewTransientContext } from './pageTabs';
+import { InsideResourcePreview, ResourcePreviewContext, resourcePreview, type PreviewState, type ResourcePreview } from './resource-preview';
+import { dshResourceDestination, dshTaskResource } from './dsh-resource-navigation';
 import { PageTabStrip } from './PageTabStrip';
-import { moveTab, parseTabs, previewOwnerPath, previewOwnerSearch, ratioStorageKey, readRatio, tabForPath, tabsStorageKey, workspacePageSearch, type WorkspacePageTab } from './workspace-pages';
+import { tabElementId, tabPanelId } from '../lib/tab-navigation';
+import { reorderPageTabs, parseTabs, previewOwnerPath, previewOwnerSearch, ratioStorageKey, readRatio, tabForPath, tabsStorageKey, workspacePageSearch, workspacePageLayout, type WorkspacePageTab } from './workspace-pages';
+import { WorkspacePaneHostProvider, WorkspacePaneHost, useWorkspacePaneHost, type WorkspacePageNavigationRequest } from './WorkspacePaneHost';
+import { RetainedWorkspaceRoute } from './workspace-routes';
 
 type LocationValue = React.ContextType<typeof UNSAFE_LocationContext>;
-type Visited = { path: string; node: ReactNode; location: LocationValue; instance: string };
+type Visited = { path: string; location: LocationValue; instance: string };
 function read(key: string) { try { return localStorage.getItem(key); } catch { return null; } }
 function write(key: string, value: string) { try { localStorage.setItem(key, value); } catch { /* Private mode still permits browsing. */ } }
 
 /** Retains only visited workspace pages; each outlet keeps its own route and location. */
-export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: string; renderResource: (item: ResourcePreview) => ReactNode }) {
+export function WorkspacePages({ workspaceId, renderResource, navigationRequest }: { workspaceId: string; renderResource: (item: ResourcePreview) => ReactNode; navigationRequest?: WorkspacePageNavigationRequest }) {
+  const tabPrefix = `workspace-${workspaceId}`;
   const { forgetWorkspacePage } = useAppShell();
   const outlet = useOutlet();
   const location = useLocation();
@@ -23,7 +28,11 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
   const navigate = useNavigate();
   const current = tabForPath(workspaceId, location.pathname);
   const directPreview = resourcePreview(workspaceId, location.pathname + location.search);
+  const directDshTask = dshTaskResource(workspaceId, location.pathname, location.search);
   const [previews, setPreviews] = useState<Record<string, PreviewState>>({});
+  const [visited, setVisited] = useState<Visited[]>([]);
+  const visitedRef = useRef(visited); visitedRef.current = visited;
+  const previewRevision = useRef(0);
   const removedResources = useRef(new Set<string>());
   const removePreviewResource = (kind: string, id: string) => {
     removedResources.current.add(`${kind}:${id}`);
@@ -32,18 +41,25 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
       return [owner, { items, active: items.some(item => item.kind === state.active) ? state.active : items.at(-1)?.kind || null }];
     })));
   };
-  const commitPreview = useCallback((owner: string, next: PreviewState) => {
+  const commitPreview = useCallback((owner: string, next: PreviewState, taskBriefId?: string) => {
     setPreviews(prev => ({ ...prev, [owner]: next }));
-    navigate({ pathname: owner, search: owner === location.pathname ? location.search : '', hash: owner === location.pathname ? location.hash : '' }, { state: { ...(owner === location.pathname ? location.state : {}), resourceViews: next } });
+    const entry = visitedRef.current.find(item => item.path === owner);
+    const { taskBriefId: _previousBrief, ...retainedState } = (owner === location.pathname ? location.state : entry?.location.location.state) || {};
+    const state = { ...retainedState, resourceViews: next, ...(taskBriefId ? { taskBriefId } : {}) };
+    if (owner === location.pathname) navigate({ pathname: owner, search: location.search, hash: location.hash }, { state });
+    else setVisited(previous => previous.map(item => item.path === owner ? { ...item, location: { ...item.location, location: { ...item.location.location, state, key: `preview-${++previewRevision.current}` } } } : item));
   }, [navigate, location.pathname, location.search, location.hash, location.state]);
-  const openPreview = useCallback((owner: string, path: string) => {
-    const item = resourcePreview(workspaceId, path);
-    if (!item) return false;
+  const openPreview = useCallback((owner: string, path: string, intent?: { taskBrief: true }) => {
+    const resolved = resourcePreview(workspaceId, path);
+    if (!resolved) return false;
+    if (directDshTask) { navigate(dshResourceDestination(workspaceId, path, location.search)); return true; }
     const state = previews[owner] || { items: [], active: null };
-    if (state.active === item.kind && state.items.some(p => p.path === item.path)) return true;
-    commitPreview(owner, { items: state.items.some(p => p.kind === item.kind) ? state.items.map(p => p.kind === item.kind ? item : p) : [...state.items, item], active: item.kind });
+    const taskBriefId = intent?.taskBrief && ['task', 'composite-task'].includes(resolved.kind) ? resolved.id : undefined;
+    const item = taskBriefId ? state.items.find(item => ['task', 'composite-task'].includes(item.kind) && item.id === taskBriefId) || resolved : resolved;
+    if (!taskBriefId && state.active === item.kind && state.items.some(p => p.path === item.path)) return true;
+    commitPreview(owner, { items: state.items.some(p => p.kind === item.kind) ? state.items.map(p => p.kind === item.kind ? item : p) : [...state.items, item], active: item.kind }, taskBriefId);
     return true;
-  }, [workspaceId, previews, commitPreview]);
+  }, [workspaceId, previews, commitPreview, Boolean(directDshTask), navigate, location.search]);
   const identifyTask = useCallback((owner: string, id: string, composite: boolean) => {
     const state = previews[owner];
     if (!state) return;
@@ -77,27 +93,21 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
     const items = Array.isArray(saved?.items) ? saved.items.map(item => resourcePreview(workspaceId, item?.path)).filter((item): item is ResourcePreview => Boolean(item) && !removedResources.current.has(`${item!.kind}:${item!.id}`)).filter((item, index, all) => all.findIndex(other => other.kind === item.kind) === index) : [];
     setPreviews(prev => ({ ...prev, [location.pathname]: { items, active: items.some(item => item.kind === saved?.active) ? saved!.active : null } }));
   }, [location.key, location.pathname, workspaceId, navigationType]);
-  const captureResourceLink = (event: MouseEvent) => {
-    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    const link = (event.target as HTMLElement).closest('a');
-    if (!link || link.target === '_blank' || link.hasAttribute('download')) return;
-    const url = new URL(link.href, window.location.href);
-    if (url.origin === window.location.origin && openPreview(location.pathname, url.pathname + url.search + url.hash)) { event.preventDefault(); event.stopPropagation(); }
-  };
   useEffect(() => {
+    if (directDshTask) return;
     if (location.pathname === `/workspaces/${workspaceId}/projects/new`) { navigate(`/workspaces/${workspaceId}/projects`, { replace: true, state: { createProject: true } }); return; }
     const preview = resourcePreview(workspaceId, location.pathname + location.search);
     if (preview) {
       const owner = previewOwnerPath(workspaceId, preview);
       const listSearch = previewOwnerSearch(workspaceId, preview, location.state);
-      navigate({ pathname: owner, search: listSearch }, { replace: true, state: { resourceViews: { items: [preview], active: preview.kind } } });
+      const taskBriefId = location.state?.taskBriefId === preview.id ? preview.id : undefined;
+      navigate({ pathname: owner, search: listSearch }, { replace: true, state: { resourceViews: { items: [preview], active: preview.kind }, ...(taskBriefId ? { taskBriefId } : {}) } });
     }
-  }, [workspaceId, location.pathname, location.search, navigate]);
+  }, [workspaceId, location.pathname, location.search, location.state, navigate, Boolean(directDshTask)]);
   const [tabs, setTabs] = useState(() => parseTabs(workspaceId, read(tabsStorageKey(workspaceId))));
   const [ratio, updateRatio] = useState(() => readRatio(read(ratioStorageKey(workspaceId))));
   const [paneWidths, setPaneWidths] = useState<Record<string, number>>({});
   const reportPaneWidth = useCallback((path: string, width: number) => setPaneWidths((prev) => prev[path] === width ? prev : { ...prev, [path]: width }), []);
-  const [visited, setVisited] = useState<Visited[]>([]);
 
   const register = useCallback((tab: WorkspacePageTab) => {
     if (!tabForPath(workspaceId, tab.path) || resourcePreview(workspaceId, tab.path)) return;
@@ -111,7 +121,7 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
   useLayoutEffect(() => {
     const directory = '/workspaces/' + workspaceId + '/projects';
     const fromDirectory = [directory,`/workspaces/${workspaceId}/workspace-overview`].includes(previousPagePath.current) && navigationType !== 'POP'
-      && location.pathname.startsWith(directory + '/') && !location.pathname.slice(directory.length + 1).includes('/');
+      && location.pathname.startsWith(directory + '/') && !location.pathname.slice(directory.length + 1).includes('/') && !visitedRef.current.some(entry => entry.path === location.pathname);
     previousPagePath.current = location.pathname;
     if (!current || resourcePreview(workspaceId, location.pathname)) return;
     if (fromDirectory) setPreviews(prev => ({ ...prev, [location.pathname]: { items: [], active: null } }));
@@ -125,10 +135,10 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
     setVisited((prev) => {
       const old = prev.find((entry) => entry.path === location.pathname);
       if (old?.location.location.key === location.key) return prev;
-      const entry = { path: location.pathname, node: outlet, location: locationValue, instance: fromDirectory ? location.key : old?.instance || location.key };
+      const entry = { path: location.pathname, location: locationValue, instance: old?.instance || location.key };
       return old ? prev.map((p) => p.path === entry.path ? entry : p) : [...prev, entry];
     });
-  }, [location, locationValue, outlet, current?.key, navigationType, workspaceId]);
+  }, [location, locationValue, current?.key, navigationType, workspaceId]);
 
   useLayoutEffect(() => { write(tabsStorageKey(workspaceId), JSON.stringify(tabs)); }, [tabs, workspaceId]);
   const close = useCallback((key: string) => {
@@ -140,26 +150,100 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
     const fallback = tabForPath(workspaceId, `/workspaces/${workspaceId}/projects`)!;
     setTabs(next.length ? next : [fallback]);
     setVisited((prev) => prev.filter((p) => tabForPath(workspaceId, p.path)?.key !== key));
-    if (tabForPath(workspaceId, location.pathname)?.key === key) { const remaining = next.filter(tab => tab.kind === 'proj'); const target = remaining.at(-1) || fallback; navigate({ pathname: target.path, search: target.search || "" }); }
+    if (tabForPath(workspaceId, location.pathname)?.key === key) { const remaining = next.filter(tab => !tab.key.startsWith('dir:code:')); const target = remaining[Math.min(index, remaining.length - 1)] || fallback; navigate({ pathname: target.path, search: target.search || "" }); }
   }, [tabs, workspaceId, location.pathname, navigate, forgetWorkspacePage]);
-  const reorder = useCallback((key: string, index: number) => setTabs((prev) => moveTab(prev, key, index)), []);
+  const reorder = useCallback((key: string, index: number) => setTabs((prev) => reorderPageTabs(prev, key, index)), []);
   const setRatio = useCallback((value: number) => {
     updateRatio(value);
     write(ratioStorageKey(workspaceId), String(value));
   }, [workspaceId]);
   // Render a first visit immediately; layout effect retains the same keyed container before paint.
   const entries = current && !resourcePreview(workspaceId, location.pathname) && !visited.some((p) => p.path === location.pathname)
-    ? [...visited, { path: location.pathname, node: outlet, location: locationValue, instance: location.key }] : visited;
+    ? [...visited, { path: location.pathname, location: locationValue, instance: location.key }] : visited;
   const displayTabs = current && !resourcePreview(workspaceId, location.pathname) && !tabs.some((t) => t.key === current.key) ? [...tabs, current] : tabs;
-  return <ResourcePreviewContext.Provider value={{ render: renderResource, states: previews, open: openPreview, identifyTask, activate: activatePreview, close: closePreview, clear: clearPreview, remove: removePreviewResource }}><WorkspaceTabsContext.Provider value={{ tabs: displayTabs, register, close, reorder, ratio, setRatio, reportPaneWidth }}>
+  const hostedTabs = displayTabs.filter(tab => !tab.key.startsWith('dir:code:'));
+  const ensurePage = (key: string) => {
+    const tab = hostedTabs.find(item => item.key === key);
+    if (!tab) return;
+    setVisited(previous => previous.some(entry => entry.path === tab.path) ? previous : [...previous, { path: tab.path, instance: `retained:${tab.path}`, location: { navigationType, location: { pathname: tab.path, search: tab.search || '', hash: '', state: null, key: `retained:${tab.path}` } } }]);
+  };
+  const activatePage = (key: string) => {
+    const tab = hostedTabs.find(item => item.key === key);
+    if (!tab) return;
+    ensurePage(key);
+    const retained = visitedRef.current.find(entry => entry.path === tab.path)?.location.location;
+    navigate({ pathname: tab.path, search: tab.search || retained?.search || '', hash: retained?.hash || '' }, { state: retained?.state });
+  };
+  const resources = { navigationType, navigationKey: location.key, taskBriefId: location.state?.taskBriefId, render: renderResource, states: previews, open: openPreview, identifyTask, activate: activatePreview, close: closePreview, clear: clearPreview, remove: removePreviewResource };
+  return <WorkspaceTabsContext.Provider value={{ tabs: displayTabs, register, close, reorder, ratio, setRatio, reportPaneWidth }}><WorkspacePaneHostProvider workspaceId={workspaceId} currentPath={location.pathname} enabled={Boolean(current && !current.key.startsWith('dir:code:'))} tabs={hostedTabs} paneWidth={paneWidths[location.pathname] || 0} navigationRequest={navigationRequest} ensurePage={ensurePage} activatePage={activatePage} closePage={close} reorderPage={reorder}><HostedResources workspaceId={workspaceId} value={resources}>
     <div className="workspace-pages" hidden={!current}>
-      <div className="workspace-page-tabs" style={{ width: `calc(100% - ${paneWidths[location.pathname] || 0}px)` }}><PageTabStrip tabs={displayTabs.filter(tab => tab.kind !== 'dir')} onClose={close} onReorder={reorder} /></div>
-      <div className="workspace-page-stack" onClickCapture={captureResourceLink}>
-        {entries.map((entry) => <div key={entry.path + ":" + entry.instance} className="workspace-page" hidden={entry.path !== location.pathname || !current}>
-          <WorkspaceViewActiveContext.Provider value={entry.path === location.pathname && Boolean(current)}><UNSAFE_LocationContext.Provider value={entry.location}>{entry.node}</UNSAFE_LocationContext.Provider></WorkspaceViewActiveContext.Provider>
-        </div>)}
-      </div>
+      <FallbackPageHeader path={location.pathname} code={Boolean(current?.key.startsWith('dir:code:'))} tabPrefix={tabPrefix} tabs={hostedTabs} close={close} reorder={reorder} />
+      <WorkspacePageStack workspaceId={workspaceId} ownerPath={location.pathname}>
+        {entries.map(entry => <RetainedPage key={entry.path + ':' + entry.instance} entry={entry} workspaceId={workspaceId} currentPath={location.pathname} current={Boolean(current)} tabPrefix={tabPrefix} />)}
+        <WorkspacePaneHost />
+      </WorkspacePageStack>
     </div>
-    {!current && !directPreview ? outlet : null}
-  </WorkspaceTabsContext.Provider></ResourcePreviewContext.Provider>;
+    {directDshTask ? <InsideResourcePreview.Provider value={true}><WorkspaceViewActiveContext.Provider value={true}><WorkspacePageStack workspaceId={workspaceId} ownerPath={location.pathname} className="resource-preview-content" key={directDshTask.id}>{renderResource(directDshTask)}</WorkspacePageStack></WorkspaceViewActiveContext.Provider></InsideResourcePreview.Provider> : !current && !directPreview ? outlet : null}
+  </HostedResources></WorkspacePaneHostProvider></WorkspaceTabsContext.Provider>;
+}
+
+function HostedResources({ workspaceId, value, children }: { workspaceId: string; value: NonNullable<React.ContextType<typeof ResourcePreviewContext>>; children: ReactNode }) {
+  const host = useWorkspacePaneHost();
+  return <ResourcePreviewContext.Provider value={{ ...value, open(owner, path, intent) {
+    const opened = value.open(owner, path, intent);
+    const item = opened && resourcePreview(workspaceId, path);
+    if (item) host?.revealContent(owner, `preview:${item.kind}`);
+    return opened;
+  } }}>{children}</ResourcePreviewContext.Provider>;
+}
+
+function WorkspacePageStack({ workspaceId, ownerPath, className = 'workspace-page-stack', children }: { workspaceId: string; ownerPath: string; className?: string; children: ReactNode }) {
+  const previews = useContext(ResourcePreviewContext);
+  const navigate = useNavigate();
+  const capture = (event: MouseEvent) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const target = event.target as HTMLElement, link = target.closest('a');
+    if (!link || link.target === '_blank' || link.hasAttribute('download')) return;
+    // The file reader resolves these links against its own repository/version.
+    // A parent-relative file can otherwise resemble a workspace resource URL.
+    if (link.classList.contains('markdown-relative-link')) return;
+    const url = new URL(link.href, window.location.href);
+    const owner = target.closest<HTMLElement>('[data-workspace-pane-owner]')?.dataset.workspacePaneOwner || ownerPath;
+    // Code keeps its own panes. Navigate within the app to retain its open files.
+    if (url.origin === window.location.origin && tabForPath(workspaceId, owner)?.key.startsWith('dir:code:')) {
+      const resource = resourcePreview(workspaceId, url.pathname + url.search);
+      if (!resource) return;
+      const brief = link.classList.contains('markdown-task-link') && ['task', 'composite-task'].includes(resource.kind);
+      event.preventDefault(); event.stopPropagation();
+      navigate(url.pathname + url.search + url.hash, { state: brief ? { taskBriefId: resource.id } : undefined });
+      return;
+    }
+    if (url.origin === window.location.origin && previews?.open(owner, url.pathname + url.search + url.hash, link.classList.contains('markdown-task-link') ? { taskBrief: true } : undefined)) { event.preventDefault(); event.stopPropagation(); }
+  };
+  return <div className={className} onClickCapture={capture}>{children}</div>;
+}
+
+function FallbackPageHeader({ path, code, tabPrefix, tabs, close, reorder }: { path: string; code: boolean; tabPrefix: string; tabs: WorkspacePageTab[]; close: (key: string) => void; reorder: (key: string, index: number) => void }) {
+  const host = useWorkspacePaneHost();
+  if (code || host?.viewFor(path).registered) return null;
+  return <div className="workspace-page-tabs"><PageTabStrip idPrefix={tabPrefix} tabs={tabs} onClose={close} onReorder={reorder} /></div>;
+}
+
+function RetainedPage({ entry, workspaceId, currentPath, current, tabPrefix }: { entry: Visited; workspaceId: string; currentPath: string; current: boolean; tabPrefix: string }) {
+  const host = useWorkspacePaneHost(), shell = useAppShell(), previews = useContext(ResourcePreviewContext);
+  const view = host?.viewFor(entry.path), active = view?.registered ? view.pageVisible : entry.path === currentPath && current;
+  const transient = Boolean(view?.registered && view.pageTransient);
+  const tab = tabForPath(workspaceId, entry.path);
+  const breadcrumbGuard = useRef({ allowed: false, set: shell.setBreadcrumbParts });
+  breadcrumbGuard.current = { allowed: entry.path === currentPath && !transient, set: shell.setBreadcrumbParts };
+  const cachedBreadcrumb = useRef<string[] | null>(null);
+  const setBreadcrumbParts = useCallback((parts: string[]) => { const next = [...parts]; cachedBreadcrumb.current = next; const guard = breadcrumbGuard.current; if (guard.allowed) guard.set(next); }, [entry.path]);
+  useEffect(() => { const guard = breadcrumbGuard.current; if (guard.allowed && cachedBreadcrumb.current) guard.set(cachedBreadcrumb.current); }, [entry.path, currentPath, transient]);
+  const scopedShell = { ...shell, setBreadcrumbParts };
+  return <div className={`workspace-page${workspacePageLayout(workspaceId, entry.path) === 'functional' ? ' workspace-page-functional' : ''}`} hidden={entry.path !== currentPath || !current || view?.registered}
+    id={view?.registered ? undefined : tabPanelId(tabPrefix, entry.path)} role={!view?.registered && tab?.kind === 'proj' ? 'tabpanel' : undefined} aria-labelledby={!view?.registered && tab?.kind === 'proj' ? tabElementId(tabPrefix, tab.key) : undefined}>
+    <AppShellContext.Provider value={scopedShell}><WorkspaceViewActiveContext.Provider value={active}><WorkspaceViewTransientContext.Provider value={transient}><UNSAFE_LocationContext.Provider value={entry.location}>
+      <ResourcePreviewContext.Provider value={previews ? { ...previews, navigationType: entry.location.navigationType, navigationKey: entry.location.location.key, taskBriefId: entry.location.location.state?.taskBriefId } : null}><RetainedWorkspaceRoute location={entry.location.location as Location} /></ResourcePreviewContext.Provider>
+    </UNSAFE_LocationContext.Provider></WorkspaceViewTransientContext.Provider></WorkspaceViewActiveContext.Provider></AppShellContext.Provider>
+  </div>;
 }

@@ -44,7 +44,7 @@ test('Task Review 与纯复盘 Skill 职责独立且都不成为 Finish 依赖',
   const finish: any = manifest.builtins.skills.find((item: any) => item.id === 'task-finish');
   assert.deepEqual(review.provides, [{ capability: 'buildr.task-review', version: 2 }]);
   assert.deepEqual(retrospective.provides || [], []);
-  assert.ok(retrospective.requires.some((item: any) => item.capability === 'buildr.task-record' && item.version === 3));
+  assert.ok(retrospective.requires.some((item: any) => item.capability === 'buildr.task-record' && item.version === 4));
   assert.equal(manifest.builtins.skills.some((item: any) => item.id === 'task-development'), false);
   assert.equal(finish.requires.some((item: any) => item.capability === 'buildr.task-review'), false);
   assert.equal(finish.requires.some((item: any) => /retrospective|asset-review/.test(item.capability)), false);

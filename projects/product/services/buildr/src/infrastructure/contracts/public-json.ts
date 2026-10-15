@@ -1,4 +1,6 @@
 export const PUBLIC_JSON_SCHEMAS = Object.freeze({
+  agentAssetSourceObservations: 'buildr.agent-asset-source-observations/v1',
+  agentAssetSourceResult: 'buildr.agent-asset-source-result/v1',
   builtinList: 'buildr.builtin-list/v1',
   cliError: 'buildr.cli-error/v1',
   commandsCheck: 'buildr.commands-check/v1',
@@ -21,6 +23,7 @@ export const PUBLIC_JSON_SCHEMAS = Object.freeze({
   taskRecordView: 'buildr.task-record-view/v3',
   taskRecordList: 'buildr.task-record-list/v7',
   taskCommits: 'buildr.task-commits/v1',
+  taskChangedFiles: 'buildr.task-changed-files/v1',
   parentCoordinationResult: 'buildr.parent-coordination-result/v4',
   parentPlan: 'buildr.parent-plan/v2',
   dailyProgressInputSchema: 'buildr.project-daily-progress-input-schema/v1',

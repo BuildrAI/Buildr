@@ -1,15 +1,16 @@
 /* Reading surface within the existing resource preview; no nested split pane. */
 .task-detail-page { min-width:0; container:task-detail / inline-size; font-size:13px; }
-.task-detail-page .detail-page-header { margin:0 0 24px; padding:0; }
-.task-detail-page .detail-title-row { display:flex; gap:16px; align-items:flex-start; flex-wrap:nowrap; }
+.task-detail-page .detail-page-header { margin:0 0 16px; padding:0; }
+.task-detail-page .detail-title-row { display:flex; gap:16px; align-items:flex-start; flex-wrap:nowrap; margin-bottom:0; }
 .task-detail-page .detail-title-copy { flex:1; min-width:0; }
-.task-detail-page .task-detail-id { margin:5px 0 0; color:var(--soft-muted); font-size:11px; line-height:1.5; overflow-wrap:anywhere; }
+.task-detail-page .task-detail-id { margin:0; color:var(--soft-muted); font:11px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace; overflow-wrap:anywhere; }
+.task-header-metadata { margin-top:5px; }
 .task-title-heading { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .task-detail-page .detail-title-row h1 { margin:0; font-size:22px; line-height:1.5; font-weight:650; letter-spacing:-.4px; }
 .task-detail-page .lifecycle-badge { flex:none; font-size:11px; padding:3px 7px; white-space:nowrap; }
 .task-header-actions { display:flex; gap:2px; align-items:center; flex:none; }
 .task-header-actions .ant-btn { color:var(--soft-muted); }
-.task-detail-page .task-intent-markdown { margin:10px 0 0; font-size:13px; line-height:1.75; color:var(--soft-muted); }
+.task-detail-page .task-intent-markdown { margin:8px 0 0; font-size:13px; line-height:1.75; color:var(--soft-muted); }
 .task-detail-page .task-intent-markdown p { margin:0; }
 .task-detail-layout { display:grid; grid-template-columns:minmax(0,1fr); gap:20px; }
 .task-detail-reading { min-width:0; }
@@ -17,6 +18,8 @@
 .task-path-track { display:flex; overflow-x:auto; gap:24px; border-bottom:1px solid var(--soft-line); }
 .task-work-tab.ant-btn { flex:none; display:inline-flex; align-items:center; gap:5px; border-radius:0; padding:0 0 12px; height:36px; font-size:13px; color:var(--soft-muted); }
 .task-work-tab.ant-btn.selected { color:var(--soft-primary); font-weight:600; box-shadow:inset 0 -2px var(--soft-primary); }
+.task-badge { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 5px; margin-left:2px; border-radius:9px; background:var(--soft-line); color:var(--soft-muted); font-size:10.5px; font-weight:500; line-height:1; }
+.task-work-tab.ant-btn.selected .task-badge { background:var(--soft-primary-soft,#e7efec); color:var(--soft-primary); }
 .task-current-dot { width:5px; height:5px; border-radius:50%; background:var(--soft-primary); flex:none; }
 .task-node-content { min-width:0; }
 .task-content-toolbar { display:flex; align-items:center; flex-wrap:wrap; justify-content:space-between; gap:8px; margin:0 0 22px; min-height:28px; }
@@ -35,6 +38,7 @@
 .task-content-back { margin-bottom:18px; }
 .task-content-back .ant-btn { padding-left:0; font-size:12px; }
 .task-reader { min-width:0; font-size:14px; line-height:1.85; overflow-wrap:anywhere; }
+.task-reader:has(.task-document-reader) { width:100%; max-width:var(--reading-content-width); margin-inline:auto; }
 .task-reader h2 { font-size:18px; line-height:1.5; margin:0 0 16px; }
 .task-reader h3 { font-size:14px; margin:24px 0 8px; }
 .task-reader-origin { color:var(--soft-muted); font-size:11px; }
@@ -205,6 +209,16 @@
 .pane-body-inner > div:not([hidden]):has(> div:not([hidden]) > .task-detail-page),
 .pane-body-inner > div:not([hidden]) > div:not([hidden]):has(> .task-detail-page) { height:100%; min-height:0; }
 
+/* The shared host keeps portal targets in a fixed slot. Scope the full-height
+   task reader through the visible target so hidden retained tasks cannot affect
+   an unrelated document's scrolling. */
+.workspace-pane-stage .pane-right > .pane-body:has(> .pane-body-inner > .workspace-pane-mount:not([hidden]) > [data-workspace-pane-owner] > .workspace-resource-stack:not([hidden]) > [data-workspace-resource-kind]:not([hidden]) > .task-detail-page) { overflow:hidden; }
+.workspace-pane-stage .pane-right > .pane-body > .pane-body-inner:has(> .workspace-pane-mount:not([hidden]) > [data-workspace-pane-owner] > .workspace-resource-stack:not([hidden]) > [data-workspace-resource-kind]:not([hidden]) > .task-detail-page) { height:100%; min-height:0; padding-bottom:16px; }
+.workspace-pane-stage .workspace-pane-mount:not([hidden]):has(> [data-workspace-pane-owner] > .workspace-resource-stack:not([hidden]) > [data-workspace-resource-kind]:not([hidden]) > .task-detail-page),
+.workspace-pane-stage [data-workspace-pane-owner]:has(> .workspace-resource-stack:not([hidden]) > [data-workspace-resource-kind]:not([hidden]) > .task-detail-page),
+.workspace-pane-stage .workspace-resource-stack:not([hidden]):has(> [data-workspace-resource-kind]:not([hidden]) > .task-detail-page),
+.workspace-pane-stage [data-workspace-resource-kind]:not([hidden]):has(> .task-detail-page) { height:100%; min-height:0; }
+
 #task-checklist-toggle[aria-expanded="true"] { background:var(--soft-primary-soft,#e7efec); }
 
 .task-detail-page > .task-work-path { position:static; display:flex; align-items:stretch; flex:none; gap:12px; margin-bottom:0; border-bottom:1px solid var(--soft-line); }
@@ -212,8 +226,21 @@
 .task-path-actions { flex:none; display:flex; align-items:flex-start; }
 .task-checklist-actions { display:flex; gap:4px; align-items:center; }
 @container task-detail (min-width:1000px) {
-  .task-detail-layout.checklist-pinned { gap:20px; }
-  .task-checklist.is-pinned { position:relative; inset:auto; flex:0 0 35%; width:35%; border:0; border-left:1px solid var(--soft-line); border-radius:0; box-shadow:none; animation:none; }
+  .task-detail-layout.checklist-pinned { gap:0; }
+  .task-checklist.is-pinned { position:relative; inset:auto; flex:0 0 35%; width:35%; margin-top:20px; border:0; border-radius:0; box-shadow:none; animation:none; }
+  .task-checklist.is-pinned .side-reading-heading { padding:9px 14px; min-height:49px; align-items:center; }
+  .task-checklist.is-pinned .side-reading-body { padding:0 16px 16px 20px; background:#fff; }
+  .task-checklist.is-pinned .task-reader, .task-checklist.is-pinned .task-reader .task-document-reader .task-document-preview-content { font-size:12.5px; line-height:1.75; }
+  .task-checklist.is-pinned .markdown-body { font-size:12.5px; }
+  .task-checklist.is-pinned .markdown-body > :first-child { margin-top:0; }
+  .task-checklist.is-pinned .markdown-body h2, .task-checklist.is-pinned .markdown-body h3 { margin:16px 14px 6px; font-size:11px; font-weight:600; color:var(--soft-muted); letter-spacing:.02em; }
+  .task-checklist.is-pinned .markdown-body ol, .task-checklist.is-pinned .markdown-body ul { margin:0; padding:0 0 0 18px; }
+  .task-checklist.is-pinned .markdown-body ol > li, .task-checklist.is-pinned .markdown-body ul > li { margin:0; padding:9px 14px 9px 0; border-top:1px solid var(--soft-line); }
+  .task-checklist.is-pinned .markdown-body ol > li:first-child, .task-checklist.is-pinned .markdown-body ul > li:first-child { border-top:0; }
+  .task-checklist.is-pinned .markdown-body ol ol, .task-checklist.is-pinned .markdown-body ul ul { margin:4px 0 0 18px; padding:0; border-left:1px solid var(--soft-line); }
+  .task-checklist.is-pinned .markdown-body ol ol > li, .task-checklist.is-pinned .markdown-body ul ul > li { border-top:0; padding:5px 0 5px 10px; }
+  .task-checklist.is-pinned .markdown-body code { font-size:11px; padding:1px 5px; border-radius:4px; background:var(--soft-sidebar); }
+  .task-checklist.is-pinned .markdown-body li > p { margin:0; }
 }
 @container task-detail (max-width:540px) {
   .task-detail-page > .task-work-path { flex-wrap:wrap; gap:4px; }
@@ -222,6 +249,12 @@
 }
 
 .task-detail-layout > .task-detail-reading { padding-top:20px; }
+.task-detail-layout.checklist-resizing { cursor:col-resize; user-select:none; }
+.task-detail-layout.checklist-resizing * { cursor:col-resize !important; }
+
+/* Tool and prose tabs share the same inset and pinned checklist boundary. */
+.task-detail-page.is-wide { max-width:none; }
+.task-detail-page.is-wide .task-node-reading { padding-right:0; scrollbar-gutter:auto; }
 
 /* Long historical goals keep their full text; the detail itself must remain scrollable. */
 .task-detail-page{overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable}

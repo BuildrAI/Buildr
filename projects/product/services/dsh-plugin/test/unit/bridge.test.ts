@@ -20,9 +20,10 @@ function status(state = 'ready', url = 'http://127.0.0.1:49001', channel: 'npm' 
       development: present || channel !== 'development' ? { status: 'installed', identity: identityFor('development') } : { status: 'absent' },
     },
     instances: {
-      // A running instance states the channel it serves, which is how a development instance is
-      // recognised: its installation registers a source identity the process never restates.
-      [channel === 'npm' ? 'released' : 'development']: { status: state, identity: { ...identityFor(channel), channel, url } },
+      [channel === 'npm' ? 'released' : 'development']: {
+        status: state, identity: { ...identityFor(channel), channel, url },
+        ...(channel === 'development' ? { matchesCurrentInstallation: true } : {}),
+      },
       [channel === 'npm' ? 'development' : 'released']: { status: 'ready', identity: { ...identityFor(channel === 'npm' ? 'development' : 'npm'), channel: channel === 'npm' ? 'development' : 'npm', url: 'http://127.0.0.1:49999' } },
     },
   };
@@ -102,6 +103,24 @@ test('an instance belonging to another installation is refused', () => {
   const current = status();
   current.instances.released.identity.ownershipIdentity = 'installation-B';
   assert.throws(() => observeBoundInstance(current, 'npm'), /不属于该安装/);
+});
+
+test('development opening requires Buildr proof of the current source without comparing launcher build IDs', () => {
+  const current = status('ready', 'http://127.0.0.1:49001', 'development');
+  current.channels.development.identity.ownershipIdentity = 'launcher-build-current';
+  current.instances.development.identity.ownershipIdentity = 'launcher-build-previous';
+  current.channels.development.runtime = { identity: 'caller-node' };
+  current.instances.development.identity.runtime = { identity: 'running-node' };
+  assert.equal(observeBoundInstance(current, 'development').ready, true);
+  for (const proof of [false, null, undefined]) {
+    current.instances.development.matchesCurrentInstallation = proof;
+    assert.throws(() => observeBoundInstance(current, 'development'), (error: any) => {
+      assert.equal(error.code, 'instance-mismatch');
+      assert.match(error.message, /退出.*重新启动/);
+      return true;
+    });
+    assert.equal(current.instances.development.status, 'ready', 'source mismatch does not erase health');
+  }
 });
 
 test('DSH bridge bounds readiness wait and permits a later retry', async () => {

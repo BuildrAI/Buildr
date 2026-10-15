@@ -11,7 +11,7 @@ export function MarkdownReader({ content, source = content, path, options, class
   const [raw, setRaw] = useState(false);
   useEffect(() => setRaw(false), [path]);
   return <section className="markdown-reader">
-    <div className="markdown-reader-toolbar"><span>{toolbarStart || path.split('/').at(-1)}</span><Button type="text" size="small" aria-pressed={raw} onClick={() => setRaw(value => !value)}>{raw ? '阅读模式' : '查看原文'}</Button></div>
+    <div className="markdown-reader-toolbar"><span>{toolbarStart === undefined ? path.split('/').at(-1) : toolbarStart}</span><Button type="text" size="small" aria-pressed={raw} onClick={() => setRaw(value => !value)}>{raw ? '阅读模式' : '查看原文'}</Button></div>
     {raw ? <pre className="markdown-reader-source" aria-label="Markdown 原文">{source}</pre> : <MarkdownHost key={path} markdown={content} className={className} options={options} />}
   </section>;
 }

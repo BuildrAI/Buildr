@@ -40,7 +40,7 @@ function writeSummary(status: any): any  {
     stream: process.stdout,
     errorStream: process.stderr,
     executionProfile,
-    expectedNodeVersion: null,
+    minimumNodeVersion: null,
   });
 }
 
@@ -58,7 +58,7 @@ try {
     prefix: 'verify-host-node',
     concurrency: executionProfile.limits,
     executionProfile,
-    expectedNodeVersion: null,
+    minimumNodeVersion: null,
   });
   results = execution.results;
   contextLifecycle = execution.contextLifecycle;

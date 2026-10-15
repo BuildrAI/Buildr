@@ -172,6 +172,6 @@ export function useTaskList(input: {
 
   return {
     tasks, totalTaskCount, matchingTaskCount, filterProjects, filterServices, projectNames, serviceNames,
-    catalogError, retryCatalogs, loading, loadingMore, errorMessage, loadMoreError, hasMore, loadMore, retryLoadMore, reload: load, revision,
+    catalogError, retryCatalogs, loading, hasLoaded: loadedScope.current === scopeKey, loadingMore, errorMessage, loadMoreError, hasMore, loadMore, retryLoadMore, reload: load, revision,
   };
 }

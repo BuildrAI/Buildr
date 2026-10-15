@@ -1,36 +1,24 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Alert, Spin } from 'antd';
+import type { ReactNode } from 'react';
+import { taskDocumentLabel, taskDocumentTarget, type TaskDocumentItem, type TaskReadTarget } from './taskWorkContent';
+import type { TaskMaterialsState } from '../task-materials';
+import { Alert, Select } from 'antd';
 import type { TaskRecord } from '../../../../build/generated/task-dto';
-import type { TaskBriefState } from '../hooks/useTaskArtifacts';
-import { projectApi } from '../../project/api/project-api';
-import { resolveTaskDocumentReference, type TaskDocumentReference } from '../../../lib/taskDocumentLinks';
-import { ResourceDocumentPane } from '../../../components/ResourceDocumentPane';
-import { TaskArtifactReader } from './TaskArtifactReader';
-import { taskApi } from '../api/task-api';
+import type { TaskChangeState } from '../hooks/useTaskArtifacts';
 
-export function CompositeTaskPlan({ record, briefs, onDocument }: { record: TaskRecord; briefs: TaskBriefState[]; onDocument(projectOrChange: string, path: string): void }) {
-  const design = briefs.find(item => item.kind === 'ready' && item.change.artifacts.design.exists);
-  const link = [...record.intent.matchAll(/\[([^\]]*(?:方案|计划)[^\]]*)\]\(([^)]+)\)/g)][0]?.[2];
-  const [reference, setReference] = useState<TaskDocumentReference | null>(null), [error, setError] = useState(''), [loading, setLoading] = useState(false);
-  useEffect(() => {
-    let live = true; setReference(null); setError('');
-    if (design || !link) { setLoading(false); return; }
-    setLoading(true);
-    void projectApi.listProjects().then(data => {
-      if (!live) return;
-      const ref = resolveTaskDocumentReference(link, record.scope, data.projects || []);
-      if (!ref) throw new Error('方案链接不在当前任务的可读项目范围内。');
-      setReference(ref);
-    }).catch(cause => { if (live) setError(cause instanceof Error ? cause.message : '方案读取失败'); }).finally(() => { if (live) setLoading(false); });
-    return () => { live = false; };
-  }, [record.taskId, record.intent, link, Boolean(design)]);
-  const load = useCallback(async (file: string) => {
-    const data = await taskApi.projectDocument(record.taskId, reference!.projectCode, file.split('/').map(encodeURIComponent).join('/'));
-    return { ...data, path: data.path || file };
-  }, [record.taskId, reference?.projectCode]);
-  if (design?.kind === 'ready') return <TaskArtifactReader embedded change={design.change} artifactPath={design.change.artifacts.design.path} onClose={() => {}} onSelect={path => onDocument(design.key, path)} onProjectDocument={path => onDocument(design.key, path)} />;
-  if (loading) return <Spin size="small" />;
-  if (error) return <Alert type="warning" message={error} />;
-  if (reference) return <ResourceDocumentPane showHeader={false} file={reference.documentPath} load={load} onOpen={file => onDocument(reference.projectCode, file)} />;
-  return <p className="task-node-empty">{briefs.some(item => item.kind === 'missing') ? '方案暂时不可读取，请刷新后重试。' : '暂无方案。'}</p>;
+export function CompositeTaskPlan({ record, changes, documents, materials, selected = 'record:brief', onSelect, renderContent }: { record: TaskRecord; changes: TaskChangeState[]; documents: TaskDocumentItem[]; materials: TaskMaterialsState; selected?: string; onSelect?(key: string): void; renderContent(target: TaskReadTarget): ReactNode }) {
+  const entries = documents.filter(item => item.stage === 'design');
+  const options = [{ key: 'record:brief', label: '任务说明', target: { kind: 'brief', title: '任务说明' } as TaskReadTarget }, ...entries.map(item => ({ key: item.key, label: taskDocumentLabel(item, entries), target: taskDocumentTarget(item) }))];
+  const active = options.find(item => item.key === selected) || options[0];
+  const readingBrief = active.target.kind === 'brief';
+  return <section id="task-node-content" aria-label="任务说明与方案" data-task-id={record.taskId}>
+    <h2>任务说明与方案</h2>
+    {options.length > 1 && <Select aria-label="选择任务说明或方案" value={active.key} options={options.map(({ key, label }) => ({ value: key, label }))} onChange={onSelect} />}
+    {!readingBrief && <>
+      {materials.loading && active.target.kind !== 'material' && <Alert type="info" message="材料关联正在重新核对，当前显示上次读取的内容。" />}
+      {materials.error && active.target.kind !== 'material' && <Alert type="warning" message={`任务材料读取失败：${materials.error}`} description="材料关联的新版本尚未确认。请刷新任务后重试。" />}
+      {changes.map(item => item.kind === 'missing' ? <Alert key={item.key} type="warning" message={item.message} /> : null)}
+      {materials.data?.diagnostics.map((item, index) => <Alert key={index} type="warning" message={item.message} />)}
+    </>}
+    {renderContent(active.target)}
+  </section>;
 }

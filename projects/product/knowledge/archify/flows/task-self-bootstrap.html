@@ -5050,11 +5050,11 @@
         </g>
         </g>
 
-        <g data-edge-from="runner" data-edge-to="retained" data-edge-label="核对目标、干净状态、远端包含与锁" data-edge-key="1" data-edge-id="preflight">
+        <g data-edge-from="runner" data-edge-to="retained" data-edge-label="核对目标、未提交集合、远端包含与锁" data-edge-key="1" data-edge-id="preflight">
           <path data-composition-edge-from="runner" data-composition-edge-to="retained" data-composition-edge-id="preflight" data-composition-points="420,207;662,207" d="M 420 207 L 662 207" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
         <g data-detail="context">
-          <rect x="451.8" y="187" width="178.4" height="16" rx="3" class="c-mask"/>
-          <text x="541" y="197" class="t-backend" font-size="9" text-anchor="middle">核对目标、干净状态、远端包含与锁</text>
+          <rect x="446.6" y="187" width="188.8" height="16" rx="3" class="c-mask"/>
+          <text x="541" y="197" class="t-backend" font-size="9" text-anchor="middle">核对目标、未提交集合、远端包含与锁</text>
         </g>
         </g>
 
@@ -5389,6 +5389,7 @@
         <ul>
           <li>&bull; 只处理适用的已交付范围；任务编号可选，既有交付不因激活失败被撤销。</li>
           <li>&bull; 同步、提交、应用更新、入口与诊断分别核验；资源由原所有者独立清理。</li>
+          <li>&bull; 已知同步产物按精确版本显式恢复，不改写其他未提交内容。</li>
         </ul>
       </div>
     </div>

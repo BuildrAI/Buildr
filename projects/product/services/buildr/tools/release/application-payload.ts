@@ -27,6 +27,7 @@ const RESOURCE_SOURCES: any = Object.freeze([
   ['resources/runtime', 'product/resources/runtime', { exclude: new Set(['dsh']) }],
   ['docs', 'product/docs', { include: new Set(['cli-reference.md', 'dsh-desktop-plugin.md']) }],
   ['src/infrastructure/sqlite/migrations', 'product/src/infrastructure/sqlite/migrations'],
+  ['node_modules/@vscode/ripgrep-universal/bin', 'runtime/ripgrep'],
 ]);
 
 export function renderPackageReadme(source: string, sourceCommit: string, root = serviceRoot): string {
@@ -111,6 +112,7 @@ function runtimePackageMetadata(metadata: any): any  {
   return {
     name: metadata.name,
     version: metadata.version,
+    ...(metadata.buildrCompatibility !== undefined ? { buildrCompatibility: metadata.buildrCompatibility } : {}),
     description: metadata.description,
     license: metadata.license,
     repository: metadata.repository,
@@ -155,6 +157,7 @@ async function buildApplicationPayload(output: any, sourceCommit: any, options: 
       absWorkingDir: serviceRoot,
       entryPoints: {
         'runtime/buildr': MAIN_ENTRY,
+        'runtime/mysql-connection': path.join(serviceRoot, 'tools/release/mysql-connection-entry.ts'),
         'resources/runtime/read-worker': WORKER_ENTRY,
         'resources/runtime/upstream-openspec-worker': UPSTREAM_OPENSPEC_WORKER_ENTRY,
       },

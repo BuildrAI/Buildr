@@ -2,7 +2,8 @@ export const productLayerOf = (relative: string): string => {
   if (relative === 'infrastructure/contracts/public-json.ts') return 'infrastructure';
   const parts: any = relative.split('/');
   if (parts[0] === 'infrastructure') return 'infrastructure';
-  const moduleOffset: any = parts[0] === 'modules' && parts[1] === 'task' && ['change', 'commits', 'daily-progress', 'work-context'].includes(parts[2]) ? 3 : parts[0] === 'modules' ? 2 : 1;
+  const registeredSubmodule = parts[0] === 'modules' && ((parts[1] === 'task' && ['change', 'commits', 'changed-files', 'daily-progress', 'work-context', 'materials'].includes(parts[2])) || (parts[1] === 'agent-assets' && parts[2] === 'source'));
+  const moduleOffset: any = registeredSubmodule ? 3 : parts[0] === 'modules' ? 2 : 1;
   if (!['modules', 'web'].includes(parts[0])) return parts[0];
   if (parts.length === moduleOffset + 1 && /^module\.(?:mjs|ts)$/.test(parts[moduleOffset])) return 'module';
   return ({
@@ -24,6 +25,26 @@ const allowedTargets: any = {
   module: new Set(['interfaces', 'application', 'domain', 'infrastructure']),
 };
 const allowedCrossModulePorts: any = new Set([
+  'modules/agent-assets/source/module.ts -> modules/agent-assets/module.ts',
+  'modules/agent-assets/source/module.ts -> modules/workspace/module.ts',
+  'modules/agent-assets/source/module.ts -> modules/task/module.ts',
+  'modules/agent-assets/source/module.ts -> modules/task/materials/module.ts',
+  'modules/code/module.ts -> modules/task/module.ts',
+  'modules/code/module.ts -> modules/workspace/module.ts',
+  'modules/connection-skills/module.ts -> modules/workspace/module.ts',
+  'modules/connection-skills/module.ts -> modules/agent-assets/module.ts',
+  'modules/mysql-query/module.ts -> modules/connection-skills/module.ts',
+  'modules/mysql-query/module.ts -> modules/workspace/module.ts',
+  'modules/code/module.ts -> modules/agent-operations/module.ts',
+  'modules/codex-desktop/module.ts -> modules/agent-operations/module.ts',
+  'modules/codex-desktop/module.ts -> modules/workspace/module.ts',
+  'modules/codex-desktop/module.ts -> modules/task/module.ts',
+  'modules/codex-desktop/module.ts -> modules/native-session-links/module.ts',
+  'modules/native-session-links/module.ts -> modules/workspace/module.ts',
+  'modules/native-session-links/module.ts -> modules/task/module.ts',
+  'modules/dsh-desktop/module.ts -> modules/agent-operations/module.ts',
+  'modules/dsh-desktop/application/dsh-desktop-application.ts -> modules/agent-operations/module.ts',
+  'modules/code/module.ts -> modules/agent-assets/module.ts',
   'modules/workbench/module.ts -> modules/task/module.ts',
   'modules/workbench/module.ts -> modules/workspace/module.ts',
   'modules/knowledge/module.ts -> modules/workspace/module.ts',
@@ -33,6 +54,7 @@ const allowedCrossModulePorts: any = new Set([
   'modules/openspec/module.ts -> modules/agent-assets/module.ts',
   'web/infrastructure/instance-runtime.ts -> modules/installation/module.ts',
   'web/module.ts -> modules/installation/module.ts',
+  'web/module.ts -> modules/task/module.ts',
   'web/module.ts -> modules/workspace/module.ts',
   'bootstrap/cli/registry.ts -> modules/openspec/module.ts',
   'bootstrap/runtime.ts -> modules/publication/module.ts',
@@ -47,6 +69,12 @@ const allowedCrossModulePorts: any = new Set([
   'modules/task/change/module.ts -> modules/task/module.ts',
   'modules/task/commits/module.ts -> modules/task/module.ts',
   'modules/task/commits/module.ts -> modules/workspace/module.ts',
+  'modules/task/changed-files/module.ts -> modules/task/module.ts',
+  'modules/task/changed-files/module.ts -> modules/workspace/module.ts',
+  'modules/task/materials/module.ts -> modules/task/module.ts',
+  'modules/task/materials/module.ts -> modules/workspace/module.ts',
+  'bootstrap/runtime.ts -> modules/task/changed-files/module.ts',
+  'web/http/read-worker.ts -> modules/task/changed-files/module.ts',
 ]);
 
 export function isAllowedProductLayerImport(source: string, target: string): boolean {

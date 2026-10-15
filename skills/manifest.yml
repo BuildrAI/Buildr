@@ -5,20 +5,20 @@ skills:
     sourceIdentity: package:skills/buildr/task-triage
     source: buildr
     path: buildr/task-triage
-    description: 开始修改代码、文档、配置或技能等持久文件前使用；确定隔离位置，判断直接实施、事实维护或 OpenSpec 变更，并交接专业动作。
+    description: 用户授权修复、优化或继续修改代码、文档、配置、规则或技能时使用；首次持久写入前登记或接续任务、确定隔离位置，判断直接实施、事实维护或 OpenSpec 变更。
     enabled: true
     required: false
     state: installed
     runtimePath: task-triage
     requires:
       - capability: buildr.task-record
-        version: 3
+        version: 4
         mode: optional
       - capability: buildr.git-operations
         version: 1
         mode: optional
       - capability: buildr.current-knowledge-maintenance
-        version: 3
+        version: 4
         mode: optional
       - capability: buildr.git-worktree-provider
         version: 1
@@ -64,7 +64,7 @@ skills:
         version: 1
     requires:
       - capability: buildr.task-record
-        version: 3
+        version: 4
         mode: optional
       - capability: buildr.git-worktree-provider
         version: 1
@@ -154,7 +154,7 @@ skills:
     runtimePath: task-retrospective
     requires:
       - capability: buildr.task-record
-        version: 3
+        version: 4
         mode: required
   - id: capability-adaptation
     assetIdentity: buildr:skill:capability-adaptation
@@ -209,7 +209,7 @@ skills:
     runtimePath: current-knowledge-maintenance
     provides:
       - capability: buildr.current-knowledge-maintenance
-        version: 3
+        version: 4
     requires:
       - capability: buildr.terminology-governance
         version: 1
@@ -219,14 +219,14 @@ skills:
     sourceIdentity: package:skills/buildr/task-manager
     source: buildr
     path: buildr/task-manager
-    description: 创建或维护任务、记录工作进展与待处理事项、读取人的答复、纠正状态或调整父子关系时使用；维护当前工作事实，不执行研发、测试或交付。
+    description: 在已初始化的 Buildr 工作空间中，用户授权修复、优化、开始或继续代码、文档、配置、规则或技能修改，或要求维护任务与进展时使用；先登记或接续任务，纯只读咨询不创建任务。
     enabled: true
     required: false
     state: installed
     runtimePath: task-manager
     provides:
       - capability: buildr.task-record
-        version: 3
+        version: 4
   - id: task-review
     assetIdentity: buildr:skill:task-review
     sourceIdentity: package:skills/buildr/task-review
@@ -255,6 +255,11 @@ skills:
     description: Buildr 自举工作空间中的已交付改动涉及规则、技能、组件、命令或产品运行输入时使用；由唯一执行器完成适用同步、开发应用更新、入口验证与诊断。正式任务记录可选；无关改动和未安装自举组件的工作空间不适用。
     assetIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:skill:buildr-self-bootstrap-sync
     sourceIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:buildr-self-bootstrap-sync
+  - id: buildr-dev-preview
+    path: buildr-dev-preview
+    description: 在 Buildr 自身开发或验收中，需要启动服务验证时使用；运行对应工作树的 Buildr Web，修改后重新构建并重启预览。仅服务 Buildr 自举工作空间，不作为用户 workspace 的默认能力。
+    assetIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:skill:buildr-dev-preview
+    sourceIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:buildr-dev-preview
   - id: declaration-intake
     assetIdentity: buildr:skill:declaration-intake
     sourceIdentity: package:skills/buildr/declaration-intake
@@ -359,6 +364,74 @@ skills:
     required: false
     state: installed
     runtimePath: project-composition-maintenance
+  - id: feature-design
+    assetIdentity: buildr:skill:feature-design
+    sourceIdentity: package:skills/buildr/feature-design
+    source: buildr
+    path: buildr/feature-design
+    description: 讨论或逐步设计新功能、收敛较大需求或接续已有方案时使用；基于真实产品形成可评审的小范围成果，不用于已定设计的局部实现。
+    enabled: true
+    required: false
+    state: installed
+    runtimePath: feature-design
+  - id: nacos-connection
+    assetIdentity: buildr:skill:nacos-connection
+    sourceIdentity: package:skills/connections/nacos-connection
+    source: buildr
+    path: connections/nacos-connection
+    description: 使用技能声明的 Nacos 连接发现、读取、比较与受控发布配置时使用；加载所选实例及自带程序帮助。
+    enabled: true
+    required: false
+    state: installed
+    runtimePath: nacos-connection
+    connectionDefinitions:
+      - assets/connection.yml
+  - id: connection-authoring
+    assetIdentity: buildr:skill:connection-authoring
+    sourceIdentity: package:skills/buildr/connection-authoring
+    source: buildr
+    path: buildr/connection-authoring
+    description: 用户要为 Buildr 制作或维护自有外部系统接入方法时使用；交付连接声明、专业技能及必要程序，复用现有登记和投射。
+    enabled: true
+    required: false
+    state: installed
+    runtimePath: connection-authoring
+  - id: mysql-connection
+    assetIdentity: buildr:skill:mysql-connection
+    sourceIdentity: package:skills/connections/mysql-connection
+    source: buildr
+    path: connections/mysql-connection
+    description: 配置和核验明确绑定的 MySQL 连接，发现数据库，并使用独立内置查询工具读取结构与数据。
+    enabled: true
+    required: false
+    state: installed
+    runtimePath: mysql-connection
+    connectionDefinitions:
+      - assets/connection.yml
+  - id: kibana-connection
+    assetIdentity: buildr:skill:kibana-connection
+    sourceIdentity: package:skills/connections/kibana-connection
+    source: buildr
+    path: connections/kibana-connection
+    description: 使用明确绑定的 Kibana 连接发现视图与字段，执行有界只读日志搜索和统计。
+    enabled: true
+    required: false
+    state: installed
+    runtimePath: kibana-connection
+    connectionDefinitions:
+      - assets/connection.yml
+  - id: xxl-job-connection
+    assetIdentity: buildr:skill:xxl-job-connection
+    sourceIdentity: package:skills/connections/xxl-job-connection
+    source: buildr
+    path: connections/xxl-job-connection
+    description: 从服务配置定位 XXL-JOB 执行器，查询和受控维护调度任务，核验执行记录与日志。
+    enabled: true
+    required: false
+    state: installed
+    runtimePath: xxl-job-connection
+    connectionDefinitions:
+      - assets/connection.yml
 contracts:
   - id: buildr.terminology-governance
     version: 1
@@ -384,14 +457,18 @@ contracts:
     version: 2
     path: contracts/buildr/task-review/v2.md
     description: 对正式 Task 的实际方案或完成结果执行可选语义审查，维护两类当前结果及完整审查历史。
-  - id: buildr.task-record
-    version: 3
-    path: contracts/buildr/task-record/v3.md
-    description: 管理canonical Workspace中Task最小顶层事实及本机复盘文档摘要与决定状态。
   - id: buildr.current-knowledge-maintenance
     version: 3
     path: contracts/buildr/current-knowledge-maintenance/v3.md
     description: 按明确范围建设、检查与维护代码地图、技术图和解释文档。
+  - id: buildr.task-record
+    version: 4
+    path: contracts/buildr/task-record/v4.md
+    description: 管理主工作空间中的任务说明、顶层事实及本机复盘文档摘要与决定状态。
+  - id: buildr.current-knowledge-maintenance
+    version: 4
+    path: contracts/buildr/current-knowledge-maintenance/v4.md
+    description: 按明确范围建设、检查与维护代码地图、技术图和解释文档，不维护变更说明文件。
 bindings:
   - capability: buildr.terminology-governance
     version: 1
@@ -411,10 +488,13 @@ bindings:
   - capability: buildr.task-review
     version: 2
     provider: task-review
-  - capability: buildr.task-record
-    version: 3
-    provider: task-manager
   - capability: buildr.current-knowledge-maintenance
     version: 3
+    provider: current-knowledge-maintenance
+  - capability: buildr.task-record
+    version: 4
+    provider: task-manager
+  - capability: buildr.current-knowledge-maintenance
+    version: 4
     provider: current-knowledge-maintenance
 workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3

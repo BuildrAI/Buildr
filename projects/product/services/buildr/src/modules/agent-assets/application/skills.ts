@@ -8,12 +8,15 @@ import {
   migrateSkillsManifestDocument,
   validateCapabilityIdentity,
   validateProjectCapabilitiesDocument,
+  validateConnectionDefinitionReferences,
 } from '../persistence/skill-manifest.ts';
 import { selectedProviderImpacts } from '../persistence/capability-graph-repository.ts';
 import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
 import { createSkillRepository } from '../persistence/skill-repository.ts';
+import { connectionImpactObjects, type SkillConnectionImpactReader } from './connection-impact.ts';
 
 export interface SkillsDependencies {
+  connectionImpacts?: SkillConnectionImpactReader;
   isPlainObject: ReturnType<typeof import('./commands.ts').registerDomainsCommands>['isPlainObject'];
   componentOwnerForMember: ReturnType<typeof import('./components.ts').registerDomainsComponents>['componentOwnerForMember'];
   isValidAssetId: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['isValidAssetId'];
@@ -211,6 +214,7 @@ export function registerDomainsSkills(dependencies: SkillsDependencies) {
     if (metadata.description !== undefined && typeof metadata.description !== 'string') {
       throw new Error(`SKILL.md frontmatter description must be a string: ${skillFile}`);
     }
+    validateConnectionDefinitionReferences(metadata.connectionDefinitions, 'SKILL.md connectionDefinitions');
     return metadata;
   }
 
@@ -299,12 +303,31 @@ export function registerDomainsSkills(dependencies: SkillsDependencies) {
     }
   }
 
-  function discloseReplacedProviderDeclarations(targetRoot: any, scope: any, existing: any, declarations: any): any  {
-    if (!existing || declarations.provides.length === 0) return [];
+  function discloseReplacedSkillImpact(targetRoot: any, scope: any, existing: any, declarations: any): any  {
+    if (!existing) return [];
     const next: any = new Set(declarations.provides.map((item: any) => capabilityKey(item.capability, item.version)));
-    return (existing.provides || []).flatMap((previous: any) => next.has(capabilityKey(previous.capability, previous.version))
+    const impacts = declarations.provides.length === 0 ? [] : (existing.provides || []).flatMap((previous: any) => next.has(capabilityKey(previous.capability, previous.version))
       ? []
-      : discloseSelectedProviderImpact(targetRoot, scope, existing.id, previous, '替换 provider 声明，影响').impacts);
+      : selectedProviderImpacts(targetRoot, existing.id, { scope, capability: previous }));
+    if (existing.assetIdentity && dependencies.connectionImpacts) impacts.push(...connectionImpactObjects(dependencies.connectionImpacts(targetRoot, existing.assetIdentity)));
+    return impacts;
+  }
+
+  function skillSourceDeclaration(entry: any): any  {
+    if (entry.resolved) return ['resolved', entry.resolved.kind || 'skill-url', entry.resolved.url];
+    if (entry.source?.url) return ['remote', entry.source.kind || 'url', entry.source.url];
+    if (entry.path) return ['local', entry.path, ['buildr', 'openspec'].includes(entry.source) ? entry.source : 'workspace'];
+    return ['source', entry.source];
+  }
+
+  function retainReplacementIdentity(entry: any, existing: any): void {
+    if (!existing) return;
+    // The Skill remains the same object; a different declared source must still
+    // receive a new source identity instead of inheriting the old source's trust.
+    if (existing.assetIdentity) entry.assetIdentity = existing.assetIdentity;
+    if (JSON.stringify(skillSourceDeclaration(entry)) === JSON.stringify(skillSourceDeclaration(existing)) && existing.sourceIdentity) {
+      entry.sourceIdentity = existing.sourceIdentity;
+    }
   }
 
   function skillsAddUnsafe(input: any): any  {
@@ -315,6 +338,7 @@ export function registerDomainsSkills(dependencies: SkillsDependencies) {
       replace = false, ignoreUnsupported = false,
     } = input;
     const declarations = capabilityDeclarations(input);
+    validateConnectionDefinitionReferences(input.connectionDefinitions);
     if (sourceInput && (remoteSourceInput || resolvedSourceInput)) {
       throw new Error('--source cannot be combined with --remote-source or --resolved-source.');
     }
@@ -341,7 +365,7 @@ export function registerDomainsSkills(dependencies: SkillsDependencies) {
         throw new Error(`Skill already exists in skills/manifest.yml: ${explicitId}. Use --replace to replace the whole entry.`);
       }
       const existing = existingIndex === -1 ? null : manifest[existingIndex];
-      const impacts = discloseReplacedProviderDeclarations(targetRoot, scope, existing, declarations);
+      const impacts = discloseReplacedSkillImpact(targetRoot, scope, existing, declarations);
       const manifestEntry: any = { id: explicitId };
       if (remoteSourceInput) {
         manifestEntry.source = { kind: sourceKindInput, url: remoteSourceInput };
@@ -356,6 +380,9 @@ export function registerDomainsSkills(dependencies: SkillsDependencies) {
       }
       if (descriptionInput) manifestEntry.description = descriptionInput;
       applyCapabilityDeclarations(manifestEntry, existing, declarations);
+      const references = input.connectionDefinitions ?? existing?.connectionDefinitions;
+      if (references !== undefined) manifestEntry.connectionDefinitions = [...references];
+      retainReplacementIdentity(manifestEntry, existing);
       if (existingIndex === -1) {
         manifest.push(manifestEntry);
       } else {
@@ -378,19 +405,23 @@ export function registerDomainsSkills(dependencies: SkillsDependencies) {
       throw new Error(`Skill source contains unsupported top-level entries: ${source.unknownEntries.join(', ')}. Use --ignore-unsupported to skip them.`);
     }
 
-    const skillsRoot = path.join(scopeRoot, 'skills');
-    const targetDir = path.join(skillsRoot, skillId);
     const existingIndex = manifest.findIndex((skill: any) => skill.id === skillId);
     if (existingIndex !== -1 && !replace) {
       throw new Error(`Skill already exists in skills/manifest.yml: ${skillId}. Use --replace to replace the whole entry.`);
     }
 
     const existing = existingIndex === -1 ? null : manifest[existingIndex];
-    const impacts = discloseReplacedProviderDeclarations(targetRoot, scope, existing, declarations);
+    const references = input.connectionDefinitions ?? source.metadata.connectionDefinitions ?? existing?.connectionDefinitions;
+    const targetRelative = references?.length ? `connections/${skillId}` : skillId;
+    const targetDir = path.join(scopeRoot, 'skills', targetRelative);
+    assertSafeAssetTarget(targetRoot, targetDir, path.join(scopeRoot, 'skills'), 'Skill source target');
+    const impacts = discloseReplacedSkillImpact(targetRoot, scope, existing, declarations);
     copySupportedSkillSource(sourceDir, targetDir, source.entries, { replace });
-    const manifestEntry: any = { id: skillId, path: skillId };
+    const manifestEntry: any = { id: skillId, path: targetRelative };
     if (source.metadata.description) manifestEntry.description = source.metadata.description;
     applyCapabilityDeclarations(manifestEntry, existing, declarations);
+    if (references !== undefined) manifestEntry.connectionDefinitions = [...references];
+    retainReplacementIdentity(manifestEntry, existing);
     if (existingIndex === -1) {
       manifest.push(manifestEntry);
     } else {
@@ -410,6 +441,8 @@ export function registerDomainsSkills(dependencies: SkillsDependencies) {
 
   function discloseSelectedProviderImpact(targetRoot: any, scope: any, providerId: any, capability: any = null, action: any = '移除'): any  {
     const impacts = selectedProviderImpacts(targetRoot, providerId, { scope, capability });
+    const skill = readSkillsManifestForWrite(targetRoot).find((entry: any) => entry.id === providerId);
+    if (skill?.assetIdentity && dependencies.connectionImpacts) impacts.push(...connectionImpactObjects(dependencies.connectionImpacts(targetRoot, skill.assetIdentity)));
     return { action, providerId, impacts };
   }
 
@@ -425,7 +458,7 @@ export function registerDomainsSkills(dependencies: SkillsDependencies) {
       throw new Error(`Skill not found in skills/manifest.yml: ${id}`);
     }
     const removed = manifest[existingIndex];
-    const impact = (removed.provides || []).length > 0 ? discloseSelectedProviderImpact(targetRoot, scope, id) : null;
+    const impact = discloseSelectedProviderImpact(targetRoot, scope, id);
     if (scopeRoot === targetRoot && removed.path) {
       const owner = componentOwnerForMember(targetRoot, `skills/${removed.path}`);
       if (owner) throw new Error(`Skill is managed by Component ${owner}: skills/${removed.path}. Use buildr component lifecycle commands.`);

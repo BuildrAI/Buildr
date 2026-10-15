@@ -48,16 +48,17 @@ Buildr MUST 使用 `.buildr/workspace.yml` 持久化 Workspace 的 UUID `id`、`
 `buildr init` MUST create workspace assets that can receive Buildr product builtins and Components and render supported Agent runtimes.
 
 #### Scenario: 初始化根资产
-- **WHEN** Agent executes `buildr init --target <dir> --name <name> [--description <description>]`
+- **WHEN** 智能体（Agent）在 `.buildr/workspace.yml` 及项目、服务、代码库三份清单路径均无既有文件系统条目（Filesystem Entry，包括文件、目录或链接）的全新目录执行 `buildr init --target <dir> --name <name> [--description <description>]`
 - **THEN** Buildr MUST create root source assets including `.buildr/`, `rules/`, `skills/`, `commands/`, `components/` and `projects/`
 - **AND** Buildr MUST NOT create a root `practices/` directory
 - **AND** Buildr MUST create `.buildr/workspace.yml` with `schemaVersion: buildr.workspace/v1`、a generated UUID、name and description
 - **AND** 未提供 description 时 Buildr MUST 写入明确 TODO 并让 doctor 产生可见提示
 - **AND** Buildr MUST create `rules/manifest.yml`, `skills/manifest.yml`, `commands/manifest.yml`, `components/manifest.yml` and `projects/manifest.yml`
-- **AND** `skills/manifest.yml` MUST declare `schemaVersion: buildr.skills/v1`
+- **AND** `skills/manifest.yml` MUST declare `schemaVersion: buildr.skills/v3`
 - **AND** `skills/manifest.yml.workspaceId` MUST equal `.buildr/workspace.yml.id`
 - **AND** `components/manifest.yml` MUST declare `schemaVersion: buildr.components/v1`
 - **AND** `projects/manifest.yml` MUST declare `schemaVersion: buildr.projects/v2`
+- **AND** 空的全局 `services/manifest.yml` 与 `repositories/manifest.yml` MUST 分别使用 `buildr.services/v3` 与 `buildr.repositories/v1`；已有布局继续遵循显式迁移与恢复边界，不以初始化补齐半完成全局清单
 - **AND** Buildr MUST create root `AGENTS.md` required block 并内联随包核心规则正文
 - **AND** Buildr MUST be able to render initial Agent runtime for supported adapters
 
@@ -74,12 +75,12 @@ Buildr MUST 使用 `.buildr/workspace.yml` 持久化 Workspace 的 UUID `id`、`
 Buildr MUST 默认使用根 `projects/<project>/` 维护项目级业务资产，并使用 `projects/manifest.yml` 管理 Project 集合，但 MUST NOT 在 Project 下创建或维护 Skill 源目录。
 
 #### Scenario: 创建项目
-- **WHEN** Agent executes `buildr project create pig --target <root>`
+- **WHEN** 在没有全局服务（Service）及代码库实例（Repository Instance）清单的旧项目级布局中，Agent executes `buildr project create pig --target <root>`
 - **THEN** Buildr MUST create project-level `AGENTS.md`、`openspec/`、`services/` and `services/manifest.yml` under `<root>/projects/pig/`
 - **AND** Buildr MUST NOT create `<root>/projects/pig/skills/`、`<root>/projects/pig/skills/manifest.yml` or `<root>/projects/pig/practices/`
 
 #### Scenario: 未指定组织的 service 接入
-- **WHEN** Agent executes `buildr service create pig/freshx <repo-ref> --target <root>`
+- **WHEN** 在旧项目级服务（Service）布局中，Agent executes `buildr service create pig/freshx <repo-ref> --target <root>`
 - **THEN** Buildr MUST attach that service to `<root>/projects/pig/` service metadata and default service repo directory
 - **AND** service metadata MUST be written to `<root>/projects/pig/services/manifest.yml`
 

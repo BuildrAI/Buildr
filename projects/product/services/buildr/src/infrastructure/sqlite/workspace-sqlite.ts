@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
+import { createMutationPathGuard } from '../filesystem/workspace-mutation.ts';
 import { observeGitCheckoutIdentity } from '../git/checkout-identity.ts';
 import { resolveControllerSourceRoot, resolveProductResource } from '../product-resources/index.ts';
 
@@ -25,6 +26,73 @@ function structuredStoreError(code: any, message: any, status: any = 409, detail
   error.nextAction = nextAction;
   error.structuredStoreBusiness = true;
   return error;
+}
+
+export function workspaceStructuredStoreLocation(root: string) {
+  const invalid = (target: string) => structuredStoreError(
+    'workspace_store_path_invalid',
+    '工作空间（Workspace）数据库目录或文件不安全，或在打开期间已被替换。',
+    409,
+    { path: path.relative(root, target).split(path.sep).join('/') },
+    '保留现场并检查 .buildr/local 的实际目录和文件；不要删除或覆盖其他工作空间的数据。',
+  );
+  let actualRoot: string;
+  try { actualRoot = fs.realpathSync(root); } catch { throw invalid(root); }
+  const directory = path.join(actualRoot, '.buildr', 'local');
+  const file = path.join(directory, 'workspace.sqlite');
+  const directories = [path.join(actualRoot, '.buildr'), directory];
+  const identities = new Map<string, fs.BigIntStats>();
+  const temporaryFiles = new Set<string>();
+  let assertPath: ReturnType<typeof createMutationPathGuard>;
+  try { assertPath = createMutationPathGuard(actualRoot); } catch { throw invalid(root); }
+
+  function observe(target: string, kind: 'file' | 'directory', pin: boolean) {
+    try {
+      assertPath(target, kind);
+      const entry = fs.lstatSync(target, { bigint: true, throwIfNoEntry: false });
+      const previous = identities.get(target);
+      if (previous && (!entry || entry.dev !== previous.dev || entry.ino !== previous.ino)) throw invalid(target);
+      // A shared inode gives another database name different journal/WAL names.
+      if (kind === 'file' && entry && entry.nlink !== 1n) throw invalid(target);
+      if (entry && pin) identities.set(target, entry);
+      return entry;
+    } catch { throw invalid(path.join(root, path.relative(actualRoot, target))); }
+  }
+
+  function assertSafe() {
+    try { if (fs.realpathSync(root) !== actualRoot) throw invalid(root); } catch { throw invalid(root); }
+    for (const target of directories) observe(target, 'directory', true);
+    const entry = observe(file, 'file', true);
+    // Sidecars may be created/removed normally by other SQLite connections.
+    for (const suffix of ['-wal', '-shm', '-journal']) observe(`${file}${suffix}`, 'file', false);
+    return entry;
+  }
+
+  function assertTemporary(target: string) {
+    assertSafe();
+    if (!temporaryFiles.has(target)) throw invalid(target);
+    const entry = observe(target, 'file', true);
+    for (const suffix of ['-wal', '-shm', '-journal']) observe(`${target}${suffix}`, 'file', false);
+    return entry;
+  }
+
+  function createTemporary() {
+    assertSafe();
+    const target = `${file}.seed-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
+    for (const candidate of [target, ...['-wal', '-shm', '-journal'].map(suffix => `${target}${suffix}`)]) {
+      if (observe(candidate, 'file', false)) throw invalid(candidate);
+    }
+    const descriptor = fs.openSync(target, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW ?? 0), 0o600);
+    try {
+      identities.set(target, fs.fstatSync(descriptor, { bigint: true }));
+      temporaryFiles.add(target);
+      assertTemporary(target);
+    } finally { fs.closeSync(descriptor); }
+    return target;
+  }
+
+  assertSafe();
+  return { file, directory, assertSafe, createTemporary, assertTemporary };
 }
 
 export function loadWorkspaceSqliteMigrations(root: any = MIGRATIONS_ROOT): any  {
@@ -86,8 +154,8 @@ function validateAppliedMigrations(database: any, scripts: any, { allowPending }
     if (row.name !== script.name || row.checksum !== script.checksum) throw structuredStoreError('workspace_store_migration_drift', `已应用 migration 与 package script 不一致：${script.name}。`, 409, { version: row.version, appliedName: row.name, expectedName: script.name, appliedChecksum: row.checksum, expectedChecksum: script.checksum }, '恢复原 migration script；修正 schema 只能新增连续 migration。');
   }
   const pending = scripts.slice(applied.length);
-  // This additive migration leaves every existing table readable; reads never apply it.
-  const workbenchReadCompatible = pending.every((script: { name: string }) => ['0033_add_daily_workbench.sql', '0034_add_task_review_history.sql'].includes(script.name));
+  // These pending migrations preserve current readers; reads never apply them.
+  const workbenchReadCompatible = pending.every((script: { name: string }) => ['0033_add_daily_workbench.sql', '0034_add_task_review_history.sql', '0037_add_mysql_skill_query_preferences.sql', '0038_drop_legacy_external_connections.sql'].includes(script.name));
   if (pending.length && !allowPending && !workbenchReadCompatible) throw structuredStoreError('workspace_store_migration_required', `Workspace structured store 需要应用 ${pending.length} 个 migration。`, 409, { currentVersion: applied.at(-1)?.version ?? null, targetVersion: scripts.at(-1).version }, '执行一个合法 structured-store mutation 以原子升级数据库。');
   return { applied, pending };
 }
@@ -95,11 +163,20 @@ function validateAppliedMigrations(database: any, scripts: any, { allowPending }
 export function applyWorkspaceSqliteMigration(database: any, script: any): any  {
   const rebuildsReferencedTable = script.sql.includes('-- buildr:foreign-keys-off');
   try {
+    if (script.sql.includes('buildr_sha256(')) database.function('buildr_sha256', { deterministic: true }, (value: string) => digest(Buffer.from(value, 'utf8')));
     if (rebuildsReferencedTable) {
       database.exec('PRAGMA foreign_keys = OFF;');
       if (database.prepare('PRAGMA foreign_keys').get()?.foreign_keys !== 0) throw new Error('migration could not disable foreign keys');
     }
     database.exec('BEGIN IMMEDIATE');
+    // Another opener may have applied this pending script while we waited for the writer lock.
+    const applied = hasMigrationLedger(database) ? database.prepare('SELECT name, checksum FROM schema_migrations WHERE version = ?').get(script.version) : null;
+    if (applied) {
+      if (applied.name !== script.name || applied.checksum !== script.checksum) throw structuredStoreError('workspace_store_migration_drift', `已应用 migration 与 package script 不一致：${script.name}。`, 409, { version: script.version, appliedName: applied.name, expectedName: script.name, appliedChecksum: applied.checksum, expectedChecksum: script.checksum }, '恢复原 migration script；修正 schema 只能新增连续 migration。');
+      database.exec('COMMIT');
+      if (rebuildsReferencedTable) database.exec('PRAGMA foreign_keys = ON;');
+      return;
+    }
     database.exec(script.sql);
     if (rebuildsReferencedTable) {
       const violations = database.prepare('PRAGMA foreign_key_check').all();
@@ -282,25 +359,43 @@ export function registerWorkspaceSqlite(runtime: any, { observeCheckout = observ
 
   function openWorkspaceStructuredStore(targetRoot: any, { writable = false, allowPendingRead = false }: any = {}): any  {
     const root = assertCanonicalStructuredWorkspace(targetRoot, { writable });
+    // Check before the management claim can create anything under .buildr/local.
+    const location = workspaceStructuredStoreLocation(root);
     let candidateValidation = false;
     if (writable) {
       try { candidateValidation = isCandidateValidationWorkspace(runtimeSourceCheckout().checkout, observeCheckout(root)); } catch { /* management fence remains authoritative when checkout identity is unavailable */ }
     }
     if (!candidateValidation) {
-      if (writable) runtime.ensureWorkspaceManagementClaim?.(root);
+      if (writable) runtime.ensureWorkspaceManagementClaim?.(root, { assertSafe: location.assertSafe });
       else runtime.assertWorkspaceManagementAccess?.(root);
     }
     const file = workspaceStructuredStorePathAtRoot(root);
     const scripts = loadWorkspaceSqliteMigrations();
-    if (!fs.existsSync(file) && !writable) return { root, file, present: false, database: null, version: null, scripts };
-    if (writable) fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+    if (!location.assertSafe() && !writable) return { root, file, present: false, database: null, version: null, scripts };
     let database;
     try {
-      database = new DatabaseSync(file, writable ? {} : { readOnly: true });
       if (writable) {
-        try { fs.chmodSync(file, 0o600); } catch {}
+        try { fs.mkdirSync(location.directory, { mode: 0o700 }); } catch (error: any) { if (error.code !== 'EEXIST') throw error; }
+        if (!location.assertSafe()) {
+          // Only a genuinely new file is opened outside SQLite. Closing a separate
+          // descriptor for an existing database could release SQLite's POSIX locks.
+          try {
+            const descriptor = fs.openSync(location.file, fs.constants.O_RDWR | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW ?? 0), 0o600);
+            fs.closeSync(descriptor);
+          } catch (error: any) { if (error.code !== 'EEXIST') throw error; }
+        }
       }
+      location.assertSafe();
+      database = new DatabaseSync(location.file, writable ? {} : { readOnly: true });
+      // Node's SQLite API opens a pathname; repeat identity checks before any
+      // permission, WAL, schema or business mutation, without claiming atomicity.
+      location.assertSafe();
+      if (writable) {
+        try { fs.chmodSync(location.file, 0o600); } catch {}
+      }
+      location.assertSafe();
       configure(database, { writable });
+      location.assertSafe();
       const state = validateAppliedMigrations(database, scripts, { allowPending: writable || allowPendingRead || activeOperationScope(root)?.allowPendingRead === true });
       if (writable) {
         for (const script of state.pending) applyWorkspaceSqliteMigration(database, script);

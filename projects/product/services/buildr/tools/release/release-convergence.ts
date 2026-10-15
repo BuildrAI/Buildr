@@ -95,6 +95,7 @@ function releaseTaskRefs(repo: any, version: any): any  {
 export function checkReleaseConvergence({
   repo,
   version,
+  selectionId = version,
   candidateBase,
   candidateTree,
   stage = 'pre-main',
@@ -109,7 +110,8 @@ export function checkReleaseConvergence({
   if (!repo || !version || !candidateBase || !candidateTree) throw new Error('repo, version, candidateBase and candidateTree are required');
   if (!['pre-main', 'post-main', 'pre-tag'].includes(stage)) throw new Error(`Unsupported release convergence stage: ${stage}`);
   if (stage !== 'pre-tag' && authorityEvidence) throw new Error('authority evidence is only accepted by the pre-tag stage');
-  const release: any = `release-${version}`;
+  if (!/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/u.test(selectionId)) throw new Error('Release selection identity is invalid.');
+  const release: any = `release-${selectionId}`;
   main = String(main).replace(/^refs\/heads\//u, '').replace(new RegExp(`^(?:refs/remotes/)?${remote}/`, 'u'), '');
   dev = String(dev).replace(/^refs\/heads\//u, '').replace(new RegExp(`^(?:refs/remotes/)?${remote}/`, 'u'), '');
   if (fetch) runGit(repo, ['fetch', '--no-tags', remote, `refs/heads/${main}:refs/remotes/${remote}/${main}`, `refs/heads/${dev}:refs/remotes/${remote}/${dev}`, `refs/heads/${release}:refs/remotes/${remote}/${release}`]);
@@ -136,7 +138,7 @@ export function checkReleaseConvergence({
   if (trees.release !== candidateTree) findings.push({ code: 'release_tree_mismatch', expected: candidateTree, actual: trees.release });
   if (refs.release !== candidateBase) findings.push({ code: 'release_source_mismatch', expected: candidateBase, actual: refs.release });
   if (versions.release !== version) findings.push({ code: 'release_version_mismatch', expected: version, actual: versions.release });
-  for (const item of releaseTaskRefs(repo, version)) {
+  for (const item of releaseTaskRefs(repo, selectionId)) {
     if (!isAncestor(repo, item.commit, devRef)) findings.push({ code: 'release_task_not_integrated', ref: item.ref, commit: item.commit });
   }
   let publishedSource: any = null;
@@ -186,6 +188,7 @@ function parseArgs(argv: any): any  {
   return {
     repo: options.repo,
     version: options.version,
+    selectionId: options['selection-id'],
     candidateBase: options['candidate-base'],
     candidateTree: options['candidate-tree'],
     stage: options.stage || 'pre-main',

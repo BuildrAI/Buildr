@@ -99,10 +99,13 @@ Buildr 当前以本机使用为主。文件资料可以通过 Git 协作，本�
 
 ## Buildr 自举（Self-Bootstrapping）：本仓库就是一个工作空间（Workspace）
 
-**Buildr 也用自身组织开发。** 你正在查看的仓库就是一个实际工作空间（Workspace），其中的 `projects/product/` 是 Buildr 产品项目（Project），保存产品资料、设计与规范，并关联两个服务（Service）：
+**Buildr 也用自身组织开发。** 你正在查看的仓库就是一个实际工作空间（Workspace），其中的 `projects/product/` 是 Buildr 产品项目（Project），保存产品资料、设计与规范，并关联三个服务（Service）：
 
 - `projects/product/services/buildr/`：安装包、命令行工具（CLI）与本机运行能力。
 - `projects/product/services/buildr-web/`：当前产品界面的实现。
+- `projects/product/services/dsh-plugin/`：独立构建、验证和发布的 DSH 桌面插件。
+
+三个服务（Service）引用同一个代码库实例（Repository Instance），各自的模块路径（Module Path）定位到上述目录；目录分开不代表独立的 Git 仓库。
 
 本仓库中的规则（Rule）、技能（Skill）、知识与代码共同支撑日常研发，也展示了 Buildr 如何组织真实工作。
 

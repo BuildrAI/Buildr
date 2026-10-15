@@ -28,11 +28,24 @@ test('Task 文档引用使用已登记 Project source.path 解析 Workspace 相�
   );
 });
 
-test('Service scope 也授权其所属 Project，且选择最长登记路径', () => {
+test('projects/code 是逻辑项目引用，不由嵌套物理来源改写项目身份', () => {
   const reference: any = resolveTaskDocumentReference(
     'projects/product/nested/docs/guide.md',
     { projects: [], services: [{ project: 'product', service: 'buildr' }, { project: 'nested', service: 'web' }] },
     projects,
+  );
+  assert.equal(reference?.projectCode, 'product');
+  assert.equal(reference?.documentPath, 'nested/docs/guide.md');
+});
+
+test('Service scope 也授权其所属 Project，普通 Workspace 路径仍选择最长登记来源', () => {
+  const reference: any = resolveTaskDocumentReference(
+    'assets/product/nested/docs/guide.md',
+    { projects: [], services: [{ project: 'product', service: 'buildr' }, { project: 'nested', service: 'web' }] },
+    [
+      { code: 'product', source: { path: 'assets/product' } },
+      { code: 'nested', source: { path: 'assets/product/nested' } },
+    ],
   );
   assert.equal(reference?.projectCode, 'nested');
   assert.equal(reference?.documentPath, 'docs/guide.md');

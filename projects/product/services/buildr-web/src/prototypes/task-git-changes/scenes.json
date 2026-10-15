@@ -1,0 +1,210 @@
+{
+  "version": 1,
+  "pages": [
+    {
+      "id": "code",
+      "title": "任务 · 改动与提交",
+      "notes": [
+        {
+          "id": "entry",
+          "title": "一个标签看全部 Git 改动物",
+          "text": "「改动与提交」位于「任务收尾」之后，与四个工作阶段并列。默认是主从式工作台：左侧仓库树含未提交的更改与本任务的提交，右侧是该文件的差异；对应 IDE 源代码管理面板的“更改”与“提交历史”，不用离开任务页。",
+          "position": "changes-entry"
+        },
+        {
+          "id": "repos",
+          "title": "按仓库分组，带分支与计数",
+          "text": "左栏按仓库分组：仓库名、当前分支、领先远端计数与「改 / 提交」计数；文件行用单字母标记状态：M 已修改、U 未跟踪（新增）、D 已删除、R 已重命名。标签上的数字是当前未提交改动的文件数。",
+          "position": "changes-repo"
+        },
+        {
+          "id": "sections",
+          "title": "更改与提交同栏",
+          "text": "每个仓库内分「更改」与「提交」两个分组：更改是当前工作区未提交内容，提交展开可看该次的文件改动；两个分组独立计数与独立空态。",
+          "position": "rail-group"
+        }
+      ],
+      "states": [
+        {
+          "id": "diff",
+          "title": "选中文件看差异",
+          "notes": [
+            {
+              "id": "diff",
+              "title": "点文件即看差异",
+              "text": "在左栏点击任意文件，右侧差异面显示其改动：增删行按颜色区分、行号对齐，可一键复制路径；未跟踪文件全文按新增行展示，已删除与纯重命名文件说明没有预览的原因，而不是静默留空。",
+              "position": "changes-diff"
+            }
+          ]
+        },
+        {
+          "id": "diff-reader",
+          "title": "全文差异阅读面",
+          "notes": [
+            {
+              "id": "diff-reader",
+              "title": "主从式工作台",
+              "text": "「改动与提交」标签内常驻两栏：左栏是仓库树（仓库分组下分「更改」与「提交」，提交可展开看文件），右栏是差异面；两边各自独立滚动、占满高度，与 IDE 的导航加编辑器结构一致。工作台按可用宽度放开（工具面不套正文限宽）；应用左侧导航栏也可拖拽调宽。",
+              "position": "diff-reader"
+            },
+            {
+              "id": "rail-resize",
+              "title": "文件栏可拖宽、可收起",
+              "text": "左栏右缘可拖拽调宽（约 220–480px），双击恢复默认；栏也可整体收起，只留图标列。需要更大差异面时两种手段都给到。",
+              "position": "diff-file-rail"
+            },
+            {
+              "id": "rail",
+              "title": "文件栏即导航",
+              "text": "左栏列出任务范围内全部改动文件与提交；点文件右侧差异切换，点提交展开该次的文件。",
+              "position": "diff-file-rail"
+            },
+            {
+              "id": "modes",
+              "title": "两档视图、并排自动",
+              "text": "差异面只留「改动」与「全文」两档：「改动」按宽度自动并排或统一（够宽并排对照、不够统一堆叠），「全文」整份新文件；不再有独立的并排按钮，少一档选择。",
+              "position": "diff-modes"
+            }
+          ]
+        },
+        {
+          "id": "diff-reader-commit",
+          "title": "提交的全文差异",
+          "notes": [
+            {
+              "id": "diff-reader-commit",
+              "title": "同一差异面看提交改动",
+              "text": "展开左栏某次提交的文件列表后选择文件，右侧显示该提交对该文件的改动，工具栏下方保留仓库与提交短哈希上下文。",
+              "position": "diff-file-rail"
+            }
+          ]
+        },
+        {
+          "id": "fullscreen",
+          "title": "收起文件栏 + 悬停浮窗",
+          "notes": [
+            {
+              "id": "fullscreen",
+              "title": "收起即边侧条，悬停看浮窗",
+              "text": "工作台内容区按可用宽度放开（工具面不套正文限宽）。想要更大差异面时收起左侧仓库树成边侧条：悬停弹出浮窗浏览文件、移开即收回，展开恢复常驻栏并可拖宽。不再保留独立的「展开全屏」动作，减少一档等效选择。",
+              "position": "diff-file-rail"
+            }
+          ]
+        },
+        {
+          "id": "commit-files",
+          "title": "提交含哪些改动",
+          "notes": [
+            {
+              "id": "commit-files",
+              "title": "展开提交看文件",
+              "text": "展开一条提交，除完整说明（Commit Message）与哈希（Hash）外，还列出本次提交改动的文件，同样可展开差异预览与复制路径；与工作区改动共用同一套文件行样式。",
+              "position": "commit-files"
+            }
+          ]
+        },
+        {
+          "id": "no-commits",
+          "title": "有改动、尚无提交",
+          "notes": [
+            {
+              "id": "no-commits",
+              "title": "两个区块各自有状态",
+              "text": "工作区改动和提交记录是独立读取、独立呈现状态的两个区块：可以有改动但没有关联提交，也可以反过来。两个空白互不掩盖。",
+              "position": "commit-state"
+            }
+          ]
+        },
+        {
+          "id": "clean",
+          "title": "工作区干净",
+          "notes": [
+            {
+              "id": "clean",
+              "title": "区分“没有改动”和“读不到”",
+              "text": "可见仓库都没有未提交改动时明确说明，并提示任务工作树清理后也不再出现内容；这与读取失败是不同状态，下方提交记录不受影响。",
+              "position": "changes-state"
+            }
+          ]
+        },
+        {
+          "id": "partial",
+          "title": "部分仓库不可读",
+          "notes": [
+            {
+              "id": "partial",
+              "title": "保留已读结果并标注范围",
+              "text": "个别仓库暂不可读时，已读取的仓库照常展示，同时警示读取不完整并给出原因与重读入口；不把局部失败扩大成整个面板的失败。",
+              "position": "changes-state"
+            }
+          ]
+        },
+        {
+          "id": "loading",
+          "title": "正在读取",
+          "notes": [
+            {
+              "id": "loading",
+              "title": "明确正在读取",
+              "text": "读取期间显示等待状态，不把还未取得的结果显示为没有改动。这里由独立预览工具保持该状态。",
+              "position": "changes-state"
+            }
+          ]
+        },
+        {
+          "id": "failure",
+          "title": "读取失败",
+          "notes": [
+            {
+              "id": "failure",
+              "title": "失败可以重试",
+              "text": "明确区分无法读取和没有改动，提供“重新读取”；本页只读观察，面板不执行暂存、提交或回滚。",
+              "position": "changes-state"
+            }
+          ]
+        },
+        {
+          "id": "commit-example",
+          "title": "提交说明示例",
+          "notes": [
+            {
+              "id": "example",
+              "title": "提交后归属本任务",
+              "text": "提交这些改动时在说明末尾写入 Buildr-Task 任务编码，提交便会归到下方“提交记录”；此处仅展示和复制示例，不执行真实提交。",
+              "position": "commit-example"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "task-context",
+      "title": "任务 · 工作阶段",
+      "notes": [
+        {
+          "id": "entry",
+          "title": "保留任务原有路径",
+          "text": "工作阶段沿用任务现有入口。「改动与提交」只附加在「任务收尾」之后，不改变需求、设计、实现、收尾四个阶段的含义。",
+          "position": "changes-entry"
+        }
+      ],
+      "states": [
+        {
+          "id": "design",
+          "title": "方案设计",
+          "notes": []
+        },
+        {
+          "id": "implementation",
+          "title": "开发实现",
+          "notes": []
+        },
+        {
+          "id": "closeout",
+          "title": "任务收尾",
+          "notes": []
+        }
+      ]
+    }
+  ]
+}

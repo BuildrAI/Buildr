@@ -1,8 +1,9 @@
+import { SplitDivider } from '../../../components/SplitDivider';
 import { CompositeTaskContent } from '../components/CompositeTaskContent';
 import { CompositeTaskEndDrawer } from '../components/CompositeTaskEndDrawer';
 import { taskDocumentHref } from '../components/TaskLinkedDocument';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { useLocation, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useNavigationType, useParams } from 'react-router-dom';
 import { Alert, Button, Dropdown, Spin } from 'antd';
 import { MoreOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { useAppShell } from '../../../app/AppShellContext';
@@ -13,11 +14,17 @@ import { workspaceHref } from '../../../lib/labels';
 import { TaskOverview } from '../components/TaskOverview';
 import { TaskChecklist } from '../components/TaskChecklist';
 import { TaskSummary } from '../components/TaskSummary';
+import { TaskAgentSessions } from '../components/TaskAgentSessions';
+import { TaskHeaderMetadata } from '../components/TaskHeaderMetadata';
 import { useTaskVisit } from '../hooks/useTaskVisit';
 import { useWorkbenchPreferences } from '../../workbench/hooks/useWorkbenchPreferences';
 import { TaskContextDrawer } from '../components/TaskWorkContextCard';
 import { TaskWorkPath } from '../components/TaskWorkPath';
-import { TaskCommitsPane } from '../components/TaskCommitsPane';
+import { TaskChangesPane } from '../components/TaskChangesPane';
+import { TaskDeliveryFiles } from '../components/TaskDeliveryFiles';
+import { hasDeliveryFiles } from '../components/task-delivery-files';
+import { useTaskChangedFileCount } from '../hooks/useTaskChangedFileCount';
+import { useTaskChangedFiles } from '../hooks/useTaskChangedFiles';
 import { TaskNodeContent } from '../components/TaskNodeContent';
 import { TaskReadingPane } from '../components/TaskReadingPane';
 import { taskDocuments, type TaskReadTarget } from '../components/taskWorkContent';
@@ -39,6 +46,8 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
   const params = useParams();
   const previewContext = useResourcePreview();
   const location = useLocation();
+  const navigate = useNavigate();
+  const navigationType = useNavigationType();
   const [endOpen, setEndOpen] = useState(false);
   const taskId = providedTaskId || params.taskId || '';
   const insidePreview = useContext(InsideResourcePreview);
@@ -47,19 +56,41 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
   const preferences = useWorkbenchPreferences(workspaceId);
   const refreshContextAndList = useCallback(() => { resetTaskList(); return workContext.refresh(); }, [resetTaskList, workContext.refresh]);
   const editor = useTaskContextEditor(taskId, workContext.data, refreshContextAndList);
-  const reading = useTaskReadingState(taskId);
+  const reading = useTaskReadingState(taskId, workspaceId, (previewContext?.navigationType ?? navigationType) === 'POP', { key: previewContext?.navigationKey ?? location.key, taskBriefId: previewContext ? previewContext.taskBriefId : location.state?.taskBriefId });
   const { selected, extraContent, selectNode } = reading;
   const currentTask = useRef(taskId);
   currentTask.current = taskId;
   const [alert, setAlert] = useState<TaskAlert>(null);
   const checklist = useTaskChecklist(taskId, reading.rootRef);
+  const [checklistWidth, setChecklistWidth] = useState<number | null>(null);
+  const [checklistResizing, setChecklistResizing] = useState(false);
+  const checklistDrag = useRef<{ x: number; width: number } | null>(null);
+  useEffect(() => {
+    if (!checklistResizing) return;
+    const move = (event: PointerEvent) => {
+      const drag = checklistDrag.current;
+      if (!drag) return;
+      const max = Math.max(320, (reading.rootRef.current?.clientWidth ?? 1200) - 480);
+      setChecklistWidth(Math.min(max, Math.max(280, drag.width + drag.x - event.clientX)));
+    };
+    const stop = () => { checklistDrag.current = null; setChecklistResizing(false); };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', stop, { once: true });
+    return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop); };
+  }, [checklistResizing, reading.rootRef]);
   const [refreshing, setRefreshing] = useState(false);
+  // no shell-level fullscreen: the workbench rail collapse is the only focus gesture
   const [readerRefreshToken, setReaderRefreshToken] = useState(0);
   const lifecycle = useTaskRequestLifecycle();
   const href = (path: string) => workspaceHref(workspaceId, path);
   const onWorkspace = useCallback((workspace: WorkspaceResponse) => setWorkspace(workspace), [setWorkspace]);
   const onBreadcrumb = useCallback((workspaceName: string, title: string) => { if (!insidePreview) setBreadcrumbParts([workspaceName, '任务', title]); }, [insidePreview, setBreadcrumbParts]);
   const detail = useTaskDetail({ taskId, lifecycle, onWorkspace, onBreadcrumb, workspaceName: workspace?.name });
+  const changedCount = useTaskChangedFileCount(taskId, detail.data?.record.taskId === taskId && !detail.data.record.isParent, workspaceId ?? '');
+  const parentCommits = Boolean(detail.data?.record.isParent && reading.choices['composite:tab'] === 'commits');
+  const changedFiles = useTaskChangedFiles(taskId, selected === 'changes' || parentCommits, workspaceId ?? '');
+  const countResult = changedCount.data;
+  const changedFileCount = changedFiles.data && (!countResult || changedFiles.data.readAt >= countResult.readAt) ? changedFiles.data.files.length : countResult?.fileCount ?? null;
   useEffect(() => { if (detail.data) previewContext?.identifyTask(location.pathname, taskId, detail.data.record.isParent === true); }, [detail.data?.record.taskId, detail.data?.record.isParent, previewContext, location.pathname, taskId]);
   const refreshTaskAndList = useCallback(async () => { resetTaskList(); await detail.refresh(); }, [resetTaskList, detail.refresh]);
   const evidence = useTaskEvidence(taskId, lifecycle, {
@@ -67,7 +98,7 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
     verification: detail.data?.record.taskId === taskId && !detail.data.record.isParent && selected === 'implementation',
     coordination: detail.data?.record.taskId === taskId && (Boolean(detail.data.record.isParent) || extraContent?.kind === 'coordination' || (selected === 'closeout' && reading.choices.closeout === 'coordination')),
   });
-  const artifacts = useTaskArtifacts(taskId, detail.data, lifecycle);
+  const artifacts = useTaskArtifacts(taskId, detail.data, lifecycle, workspaceId);
   const preserveReading = useCallback(() => {}, []);
   const visitError = useTaskVisit(workspaceId, detail.data?.record);
   const actions = useTaskActions({ taskId, data: detail.data, refresh: refreshTaskAndList, refreshCoordination: evidence.refreshCoordination, showOverview: preserveReading, onAlert: setAlert });
@@ -85,7 +116,8 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
   const refresh = useCallback(async (includePrototype = selected === 'design') => {
     setRefreshing(true);
     try {
-      const results = await Promise.allSettled([detail.refresh(), workContext.refresh(), evidence.refreshLoaded(), ...(includePrototype ? [artifacts.refreshPrototype()] : [])]);
+      const results = await Promise.allSettled([detail.refresh().then(next => artifacts.refreshChanges(next)), workContext.refresh(), evidence.refreshLoaded(), artifacts.refreshMaterials(), ...(!detail.data?.record.isParent ? [changedCount.refresh()] : []), ...(changedFiles.data || selected === 'changes' || parentCommits ? [changedFiles.refresh()] : []), ...(includePrototype ? [artifacts.refreshPrototype()] : [])]);
+      resetTaskList();
       const taskRead = results[0];
       if (currentTask.current === taskId && taskRead.status === 'rejected' && !isTaskReadCancelled(taskRead.reason)) setAlert({ message: '任务信息刷新失败，当前仍显示上次读取的内容。请重试。', error: true });
     } finally {
@@ -94,18 +126,29 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
         setReaderRefreshToken(value => value + 1);
       }
     }
-  }, [taskId, selected, detail.refresh, workContext.refresh, evidence.refreshLoaded, artifacts.refreshPrototype]);
+  }, [taskId, selected, parentCommits, detail.data?.record.isParent, detail.refresh, workContext.refresh, evidence.refreshLoaded, changedCount.refresh, changedFiles.refresh, changedFiles.data, artifacts.refreshMaterials, artifacts.refreshPrototype, artifacts.refreshChanges, resetTaskList]);
   const closeExtraContent = () => { reading.closeExtra(); artifacts.closeDocument(); };
   const closeReadingDrawer = () => { reading.clearExtra(); artifacts.closeDocument(); };
   if (detail.error) return <Alert type="warning" message="任务不可用" description={detail.error} />;
   if (!detail.data || detail.data.record.taskId !== taskId) return <div className="task-content-loading"><Spin size="small" /> 正在读取任务…</div>;
   const data = detail.data, record = data.record;
+  const openCode=(file?:{gitRepositoryId:string;path:string;commitHash?:string;line?:number;checkoutId?:string})=>{
+    // Opening the Code page must not replay the earlier brief-opening intent on return.
+    const { taskBriefId: _briefIntent, ...returnState } = location.state || {};
+    navigate(href('/code/explorer'),{state:{codeEntry:{origin:'task',taskId,taskTitle:record.title,file,from:{pathname:location.pathname,search:location.search,hash:location.hash,state:returnState}}}});
+  };
+  const openSourceControl = () => {
+    const { taskBriefId: _briefIntent, ...returnState } = location.state || {};
+    navigate(href('/code/source-control'), {state: {sourceControlEntry: {origin: 'task', nonce: crypto.randomUUID(), taskId, taskTitle: record.title, from: {pathname: location.pathname, search: location.search, hash: location.hash, state: returnState}}}});
+  };
   const terminal = !['todo', 'active'].includes(record.status);
-  const documents = taskDocuments(artifacts.briefs);
+  const documents = taskDocuments(artifacts.changes, artifacts.materials.data);
   const continueWork = () => openAgentAction('task-continue', { taskId, title: record.title, intent: record.intent, status: record.status, projects: record.scope.projects, services: record.scope.services, result: record.result?.summary, progress: workContext.data?.context?.progress, nextStep: workContext.data?.context?.nextStep });
-  const readContent = (target: TaskReadTarget, inDrawer = false) => <TaskReadingPane onPrototypeSelect={key => reading.choose('design', `prototype:${key}`)} onPrototypeNotesOpen={checklist.close} prototypeNotesCloseToken={Number(checklist.open)} embedded inDrawer={inDrawer} refreshToken={readerRefreshToken} target={target} task={data} context={workContext.data?.context} artifacts={artifacts} evidence={evidence} workspaceId={workspaceId} href={href} onRead={reading.openExtra} onClose={closeExtraContent} onRespond={() => editor.open('respond')} onRelativeLink={link => void artifacts.openIntentDocument(link)} refreshTask={refreshTaskAndList} />;
+  const readContent = (target: TaskReadTarget, inDrawer = false) => <TaskReadingPane onPrototypeSelect={key => reading.choose('design', `prototype:${key}`)} onPrototypeNotesOpen={checklist.close} prototypeNotesCloseToken={Number(checklist.open)} embedded inDrawer={inDrawer} refreshToken={readerRefreshToken} target={target} task={data} context={workContext.data?.context} artifacts={artifacts} evidence={evidence} workspaceId={workspaceId} href={href} onRead={reading.openExtra} onClose={closeExtraContent} onRelativeLink={link => void artifacts.openIntentDocument(link)} refreshTask={refreshTaskAndList} />;
   const checklistTrigger = <Button id="task-checklist-toggle" size="small" type="text" icon={<UnorderedListOutlined />} aria-expanded={checklist.open} aria-controls="task-checklist-panel" onPointerEnter={event => checklist.enter('trigger', event.pointerType)} onPointerLeave={event => checklist.exit('trigger', event.pointerType)} onBlur={checklist.leave} onFocus={checklist.cancel} onKeyDown={event => { if (event.key === 'Escape' && checklist.open) { event.preventDefault(); event.stopPropagation(); checklist.close(); } }} onClick={checklist.toggle}>实施清单</Button>;
   const headerActions = <>
+    <Button id="task-source-files" size="small" type="text" onClick={()=>openCode()}>查看源文件</Button>
+    <Button size="small" type="text" data-task-source-control={taskId} onClick={openSourceControl}>源代码管理</Button>
     <RefreshButton id="task-detail-refresh" label="刷新任务" size="small" loading={refreshing} onClick={() => void refresh()} />
     <Dropdown menu={{ items: [
       { key: 'continue', label: <span id="task-continue">{terminal ? '基于成果生成新任务指令' : '生成接续指令'}</span> },
@@ -119,20 +162,22 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
       else actions.setActionModal(key as 'edit' | 'abandon');
     } }} trigger={['click']}><Button id="task-more-actions" size="small" type="text" icon={<MoreOutlined />} aria-label="更多任务操作" /></Dropdown>
   </>;
-  return <article ref={reading.rootRef} className="task-detail-page" id="task-detail-main" data-task-id={taskId}>
-    <TaskOverview actions={headerActions} record={record} onRelativeLink={link => void artifacts.openIntentDocument(link)} />
+  return <article ref={reading.rootRef} className={`task-detail-page${selected === 'changes' || parentCommits ? ' is-wide' : ''}`} id="task-detail-main" data-task-id={taskId}>
+    <TaskOverview actions={headerActions} record={record} onRelativeLink={link => void artifacts.openIntentDocument(link)} metadata={<TaskHeaderMetadata task={data} context={workContext.data} href={href} onOpen={(node, content) => { selectNode(node); if (content) reading.choose(node, content); }} />} />
     {visitError && <Alert type="warning" message={visitError} />}
     {alert && <Alert id="task-detail-alert" type={alert.error ? 'error' : 'success'} message={alert.message} closable onClose={() => setAlert(null)} />}
     {data.referenceDiagnostics.length > 0 && <Alert id="task-reference-diagnostics" type="warning" message={`部分引用不可用：${data.referenceDiagnostics.map(item => item.message).join('；')}`} />}
-    <TaskSummary task={data} context={workContext.data} error={workContext.error} href={href} onRespond={() => editor.open('respond')} onOpen={(node, content) => { selectNode(node); if (content) reading.choose(node, content); if (content === 'review') reading.choose(`${node}:review`, ''); }} />
-    {record.isParent ? <CompositeTaskContent key={taskId} refreshToken={readerRefreshToken} task={data} coordination={evidence.coordinationData} loading={evidence.coordinationLoading} briefs={artifacts.briefs} refresh={async () => { await refresh(); }} onEnd={() => setEndOpen(true)} href={href} onDocument={(key, path) => void artifacts.openChangeDocument(key, path)} /> : <>
-    <TaskWorkPath actions={checklistTrigger} record={record} context={workContext.data?.context} selected={selected === 'commits' ? null : selected} onSelect={selectNode} contentTabs={[{ key: 'commits', label: '提交记录', selected: selected === 'commits', onSelect: () => selectNode('commits') }]} />
-    <div className={`task-detail-layout${checklist.open && checklist.pinned ? ' checklist-pinned' : ''}`}>
+    <TaskSummary context={workContext.data} error={workContext.error} onRespond={() => editor.open('respond')} />
+    {workspaceId && <TaskAgentSessions key={`${workspaceId}:${taskId}`} workspaceId={workspaceId} taskId={taskId} />}
+    {record.isParent ? <CompositeTaskContent key={taskId} choices={reading.choices} choose={reading.choose} changed={changedFiles} onOpenFile={(file,repository,commit)=>openCode({gitRepositoryId:repository.id,path:file.path,commitHash:commit?.commit.hash})} deliveryFiles={hasDeliveryFiles(artifacts.changes) ? <TaskDeliveryFiles changes={artifacts.changes} loading={artifacts.changesLoading} onRead={reading.openExtra} /> : undefined} task={data} coordination={evidence.coordinationData} loading={evidence.coordinationLoading} changes={artifacts.changes} documents={documents} materials={artifacts.materials} renderContent={readContent} refresh={async () => { await refresh(); }} onEnd={() => setEndOpen(true)} href={href} /> : <>
+    <TaskWorkPath actions={checklistTrigger} record={record} context={workContext.data?.context} selected={selected === 'changes' ? null : selected} onSelect={selectNode} contentTabs={[{ key: 'changes', label: <span data-prototype-position="changes-entry" title={changedCount.error || (countResult?.status === 'partial' ? '数量为已读范围，详情见改动与提交。' : undefined)}>改动与提交{changedFileCount !== null && changedFileCount > 0 && <span className="task-badge">{changedFileCount}</span>}</span>, selected: selected === 'changes', onSelect: () => selectNode('changes') }]} />
+    <div className={`task-detail-layout${checklist.open && checklist.pinned ? ' checklist-pinned' : ''}${checklistResizing ? ' checklist-resizing' : ''}`}>
       <div className="task-detail-reading">
-    {selected === 'commits' ? <div id="task-node-content" className="task-node-content"><div className="task-node-reading"><TaskCommitsPane key={taskId} taskId={taskId} refreshToken={readerRefreshToken} /></div></div> : <TaskNodeContent choices={reading.choices} onChoose={reading.choose} selected={selected} record={record} documents={documents} briefs={artifacts.briefs} reviews={evidence.reviewData} verification={evidence.verificationData} reviewError={evidence.reviewError} verificationError={evidence.verificationError} reviewLoading={evidence.reviewLoading} verificationLoading={evidence.verificationLoading} prototypeData={artifacts.prototypeData} prototypeError={artifacts.prototypeError} hasRetrospective={Boolean(data.retrospectiveDocument.registered)} hasCoordination={data.taskRelations.children.length > 0} renderContent={readContent} />}
+    {selected === 'changes' ? <div id="task-node-content" className="task-node-content"><div className="task-node-reading"><TaskChangesPane key={taskId} changed={changedFiles} defaultCommit={terminal} onOpenFile={(file,repository,commit)=>openCode({gitRepositoryId:repository.id,path:file.path,commitHash:commit?.commit.hash,...(!commit && file.checkoutId ? {checkoutId:file.checkoutId} : {})})} /></div></div> : <TaskNodeContent choices={reading.choices} onChoose={reading.choose} selected={selected} record={record} documents={documents} changes={artifacts.changes} changesLoading={artifacts.changesLoading} materialsLoading={artifacts.materials.loading} materialsError={artifacts.materials.error} materialDiagnostics={artifacts.materials.data?.diagnostics} reviews={evidence.reviewData} verification={evidence.verificationData} reviewError={evidence.reviewError} verificationError={evidence.verificationError} reviewLoading={evidence.reviewLoading} verificationLoading={evidence.verificationLoading} prototypeData={artifacts.prototypeData} prototypeError={artifacts.prototypeError} hasRetrospective={Boolean(data.retrospectiveDocument.registered)} hasCoordination={data.taskRelations.children.length > 0} renderContent={readContent} />}
 
       </div>
-    <TaskChecklist open={checklist.open} pinned={checklist.pinned} canPin={checklist.canPin} onTogglePin={checklist.togglePin} onPointerEnter={event => checklist.enter('panel', event.pointerType)} onPointerLeave={event => checklist.exit('panel', event.pointerType)} onFocusCapture={checklist.cancel} onBlurCapture={checklist.leave} onClose={() => { checklist.close(); reading.rootRef.current?.querySelector<HTMLButtonElement>('#task-checklist-toggle')?.focus(); }} briefs={artifacts.briefs} documents={documents} renderContent={readContent} />
+    {checklist.open && checklist.pinned ? <SplitDivider className="task-checklist-resize" aria-label="拖拽调整实施清单宽度" title="拖拽调整宽度" onPointerDown={event => { checklistDrag.current = { x: event.clientX, width: checklistWidth ?? Math.round(reading.rootRef.current!.clientWidth * 0.35) }; setChecklistResizing(true); event.preventDefault(); }} /> : null}
+    <TaskChecklist open={checklist.open} pinned={checklist.pinned} canPin={checklist.canPin} onTogglePin={checklist.togglePin} onPointerEnter={event => checklist.enter('panel', event.pointerType)} onPointerLeave={event => checklist.exit('panel', event.pointerType)} onFocusCapture={checklist.cancel} onBlurCapture={checklist.leave} onClose={() => { checklist.close(); reading.rootRef.current?.querySelector<HTMLButtonElement>('#task-checklist-toggle')?.focus(); }} changes={artifacts.changes} changesLoading={artifacts.changesLoading} materials={artifacts.materials} documents={documents} renderContent={readContent} style={checklist.pinned && checklistWidth ? { width: checklistWidth, flexBasis: checklistWidth } : undefined} />
     </div>
     </>}
     <CompositeTaskEndDrawer taskId={taskId} open={endOpen} onClose={() => setEndOpen(false)} onSaved={async () => { await refresh(); resetTaskList(); }} />
@@ -140,7 +185,7 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
       {extraContent && readContent(extraContent, true)}
     </DrawerShell>
     <TaskContextDrawer editor={editor} title={record.title} />
-    <TaskEditModal message={alert?.error ? alert.message : undefined} onReread={() => void actions.edit.reread()} latest={actions.edit.latest} open={actions.actionModal === 'edit'} todo={record.status === 'todo'} editState={actions.edit.editState} title={actions.edit.title} intent={actions.edit.intent} projects={actions.edit.projectsText} services={actions.edit.servicesText} parentTaskId={actions.edit.parentTaskId} parentOptions={actions.edit.parentOptions} parentOptionsLoading={actions.edit.parentOptionsLoading} saving={actions.edit.saving} onClose={() => actions.setActionModal(null)} onSubmit={event => { void actions.edit.save(event); }} onOpenParents={() => { void actions.edit.loadParentOptions(); }} setTitle={actions.edit.setTitle} setIntent={actions.edit.setIntent} setProjects={actions.edit.setProjectsText} setServices={actions.edit.setServicesText} setParentTaskId={actions.edit.setParentTaskId} />
+    <TaskEditModal message={alert?.error ? alert.message : undefined} onReread={() => void actions.edit.reread()} latest={actions.edit.latest} open={actions.actionModal === 'edit'} todo={record.status === 'todo'} editState={actions.edit.editState} title={actions.edit.title} intent={actions.edit.intent} brief={actions.edit.brief} projects={actions.edit.projectsText} services={actions.edit.servicesText} parentTaskId={actions.edit.parentTaskId} parentOptions={actions.edit.parentOptions} parentOptionsLoading={actions.edit.parentOptionsLoading} saving={actions.edit.saving} onClose={() => actions.setActionModal(null)} onSubmit={event => { void actions.edit.save(event); }} onOpenParents={() => { void actions.edit.loadParentOptions(); }} setTitle={actions.edit.setTitle} setIntent={actions.edit.setIntent} setBrief={actions.edit.setBrief} setProjects={actions.edit.setProjectsText} setServices={actions.edit.setServicesText} setParentTaskId={actions.edit.setParentTaskId} />
     <TaskCompleteModal open={actions.actionModal === 'complete'} snapshot={actions.completion.snapshot} draft={actions.completion.draft} summary={actions.completion.summary} onClose={() => actions.setActionModal(null)} onSubmit={event => { void actions.completion.submit(event); }} setDraft={actions.completion.setDraft} setSummary={actions.completion.setSummary} />
     <TaskAbandonModal open={actions.actionModal === 'abandon'} reason={actions.abandonment.reason} onClose={() => actions.setActionModal(null)} onSubmit={event => { void actions.abandonment.submit(event); }} setReason={actions.abandonment.setReason} />
   </article>;

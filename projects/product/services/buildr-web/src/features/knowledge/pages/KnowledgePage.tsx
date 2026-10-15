@@ -1,5 +1,5 @@
 import { ResourceActions } from "../../workbench/components/ResourceActions";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Link,
   useLocation,
@@ -10,8 +10,9 @@ import { Alert, Button, Breadcrumb, Empty, Modal, Space, Spin } from "antd";
 import { ArrowUpOutlined } from "@ant-design/icons";
 import { useAppShell } from "../../../app/AppShellContext";
 import { useResourcePreview } from "../../../app/resource-preview";
-import { useWorkspacePageTabs } from "../../../app/pageTabs";
-import { WorkspaceStage } from "../../../components/WorkspaceStage";
+import { useWorkspacePageTabs, WorkspaceViewActiveContext, WorkspaceViewTransientContext } from "../../../app/pageTabs";
+import { useWorkspacePaneHost } from "../../../app/WorkspacePaneHost";
+import { WorkspaceStage, type WorkspaceObjectContentState } from "../../../components/WorkspaceStage";
 import { RefreshButton } from "../../../components/RefreshButton";
 import { workspaceHref } from "../../../lib/labels";
 import { KnowledgeActions } from "../components/KnowledgeActions";
@@ -30,6 +31,7 @@ import { useKnowledgeReading } from "../useKnowledgeReading";
 import { useKnowledgeNavigation } from "../useKnowledgeNavigation";
 import { useCompleteKnowledgeReading } from "../useCompleteKnowledgeReading";
 import { useKnowledgeDocuments } from "../useKnowledgeDocuments";
+import { useKnowledgeTopicChapters } from "../useKnowledgeTopicChapters";
 import { documentReadingTree, emptyReadingPreferences, readingFilter, topicReadingTree, type ReadingPreferences, type ReadingTarget } from "../knowledge-reader-navigation";
 import type { KnowledgeActionMode } from "../knowledge-request";
 import { knowledgeEntryObject, knowledgeReadingTopics, knowledgeSelectedTopic, knowledgeTopicArtifacts, knowledgeTopicTrail } from "../knowledge-topics";
@@ -39,6 +41,7 @@ import {
 import type { KnowledgeIndex, KnowledgeScope, KnowledgeReference } from "../api/knowledge-api";
 import "../knowledge.css";
 export function KnowledgePage() {
+  const paneHost = useWorkspacePaneHost(), inheritedTransient = useContext(WorkspaceViewTransientContext);
   const { scopeKind, scopeId = "" } = useParams();
   const scope: KnowledgeScope = {
       kind: scopeKind === "service" ? "service" : "project",
@@ -122,6 +125,7 @@ export function KnowledgePage() {
     positions = useRef<Record<string, number>>({}),
     viewKey = JSON.stringify([scopeKey, objectId, artifactId, documentId, browseDocuments]);
   const [showBackToTop, setShowBackToTop] = useState(false);
+  const chapters = useKnowledgeTopicChapters(root, !browseDocuments && !artifactId && objectId ? `${workspaceId}:${scopeKey}:${objectId}` : null, shownArtifacts);
   const scrollContext = useRef({ viewKey, loading: pageLoading });
   scrollContext.current = { viewKey, loading: pageLoading };
   const refreshPage = () => {
@@ -227,10 +231,13 @@ export function KnowledgePage() {
     if (saved !== undefined) setParams(new URLSearchParams(saved), { state: location.state });
     else move({ browse: documents ? "documents" : undefined });
   };
-  const selectReading = (target: ReadingTarget) => move({
-    [target.kind]: target.id, browse: browseDocuments ? "documents" : browseAll ? "all" : undefined,
-    q: query, type: preferences.filter === "all" ? undefined : preferences.filter,
-  });
+  const selectReading = (target: ReadingTarget) => {
+    if (target.kind === "artifact" && chapters.select(target.id)) return;
+    move({
+      [target.kind]: target.id, browse: browseDocuments ? "documents" : browseAll ? "all" : undefined,
+      q: query, type: preferences.filter === "all" ? undefined : preferences.filter,
+    });
+  };
   const openPrimary = (id: string) => selectReading({ kind: "artifact", id });
   useEffect(() => {
     if (!browseDocuments || objectId || artifactId || documentId || documentCatalog.loading) return;
@@ -241,7 +248,8 @@ export function KnowledgePage() {
     setParams(next, { replace: true, state: location.state });
   }, [browseDocuments, objectId, artifactId, documentId, documentCatalog.data, documentCatalog.loading]);
   const navigationArtifacts = data?.index ? data.index.artifacts : data?.index === null ? [] : navigation.data?.artifacts || [];
-  const nodes = browseDocuments ? documentReadingTree(documentCatalog.data, navigationArtifacts) : topicReadingTree(topics, navigationArtifacts);
+  const navigationRelations = data?.index ? data.index.relations : data?.index === null ? [] : navigation.data?.relations || [];
+  const nodes = browseDocuments ? documentReadingTree(documentCatalog.data, navigationArtifacts, navigationRelations) : topicReadingTree(topics, navigationArtifacts, navigationRelations);
   const readingTarget: ReadingTarget | null = documentId ? { kind: "document", id: documentId } : artifactId ? { kind: "artifact", id: artifactId } : objectId ? { kind: "object", id: objectId } : null;
   const displayTitle = browseDocuments && artifactId ? documentCatalog.data?.documents.find(item => item.artifactId === artifactId)?.title || title : title;
   const readingAnchor = useRef<HTMLElement | null>(null);
@@ -296,6 +304,7 @@ export function KnowledgePage() {
       };
     });
     previews?.activate(location.pathname, "");
+    paneHost?.revealContent(location.pathname, key);
   };
   const closePane = (key: string) => {
     setReadingState((s) => {
@@ -334,6 +343,7 @@ export function KnowledgePage() {
       return { scope: scopeKey, active: key, items: items.some(pane => pane.key === key) ? items : [...items, { key, kind: 'reference', id: key, title: referenceTitle, origin: title, reference, fragment }] };
     });
     previews?.activate(location.pathname, '');
+    paneHost?.revealContent(location.pathname, key);
   };
   const follow = (
     base: string,
@@ -351,6 +361,7 @@ export function KnowledgePage() {
       return;
     }
     if (artifact) {
+      if (!file && chapters.select(artifact.id)) return;
       if (artifact.kind === "document") openPrimary(artifact.id);
       else openPane("artifact", artifact.id);
       return;
@@ -409,6 +420,9 @@ export function KnowledgePage() {
         kind: p.kind,
         id: p.id,
         title: p.title,
+        identity: `${workspaceId}:${scopeKey}:${p.key}`,
+        contentLayout: "reading" as const,
+        contentLabel: p.title,
         origin: p.origin,
         observation: p.observation,
       })),
@@ -428,10 +442,10 @@ export function KnowledgePage() {
         setReadingState((s) => ({ ...s, active: key }))
       }
       onCloseObject={closePane}
-      objectContent={
-        <>
+      objectContent={({ displayedKey, visible, transient }: WorkspaceObjectContentState) =>
+        <WorkspaceViewTransientContext.Provider value={inheritedTransient || transient}>
           {panes.map((p) => (
-            <div key={p.key} hidden={activePane !== p.key}>
+            <WorkspaceViewActiveContext.Provider key={p.key} value={visible && displayedKey === p.key}><div hidden={displayedKey !== p.key}>
               <KnowledgeReadingPane
                 pane={p}
                 scope={scope}
@@ -452,9 +466,9 @@ export function KnowledgePage() {
                   )
                 }
               />
-            </div>
+            </div></WorkspaceViewActiveContext.Provider>
           ))}
-        </>
+        </WorkspaceViewTransientContext.Provider>
       }
     >
       <div ref={root} className="knowledge-page">
@@ -526,7 +540,7 @@ export function KnowledgePage() {
           </Space>
         </div>
         <KnowledgePreviewNotice sourceDirectory={pageScope?.directory} />
-        <KnowledgeTopicNavigation nodes={nodes} selected={readingTarget} documentsSelected={browseDocuments}
+        <KnowledgeTopicNavigation nodes={nodes} selected={chapters.selected ? { kind: "artifact", id: chapters.selected } : readingTarget} documentsSelected={browseDocuments}
           prose={showDocuments || (isReading && shownArtifacts.length > 0 && shownArtifacts.every(artifact => artifact.kind === 'document'))}
           preferences={preferences} onPreferences={updatePreferences}
           loading={browseDocuments ? documentCatalog.loading : navigation.loading}
@@ -589,7 +603,8 @@ export function KnowledgePage() {
               <KnowledgeArtifactReader
                 key={a.id}
                 {...reader}
-                showTitle={false}
+                showTitle={Boolean(objectId && !artifactId && !browseDocuments)}
+                chapter={Boolean(objectId && !artifactId && !browseDocuments && (a.kind === "document" || a.kind === "terms"))}
                 artifact={a}
                 artifacts={data.artifacts || []}
               />

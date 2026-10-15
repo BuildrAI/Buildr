@@ -10,10 +10,51 @@ import { executeVerificationCommand } from './support/process-executor.ts';
 
 import { collectChangedProductPaths } from './changed-paths.ts';
 
-export const BROWSER_SELECTORS: any = Object.freeze(['core', 'shell', 'workbench', 'project', 'service', 'change', 'task', 'articles', 'layout']);
+export const BROWSER_SELECTORS: any = Object.freeze(['core', 'shell', 'workbench', 'project', 'service', 'change', 'task', 'task-materials', 'articles', 'layout', 'code', 'connection-skills']);
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const projectRoot: any = path.resolve(productRoot, '../..');
+
+export function planCodeBrowserGroups(env: any = process.env): any[] {
+  const explorerFocus = env.BUILDR_CODE_EXPLORER_FOCUS || '';
+  const sourceControlFocus = env.BUILDR_SOURCE_CONTROL_FOCUS || '';
+  if (explorerFocus && sourceControlFocus) {
+    const error: Error & Record<string, any> = new Error('BUILDR_CODE_EXPLORER_FOCUS 与 BUILDR_SOURCE_CONTROL_FOCUS 不能同时设置。');
+    error.code = 'browser_code_focus_conflict';
+    throw error;
+  }
+  if (explorerFocus && explorerFocus !== 'all') {
+    const error: Error & Record<string, any> = new Error('BUILDR_CODE_EXPLORER_FOCUS 目前只接受 all。');
+    error.code = 'browser_code_explorer_focus_invalid';
+    throw error;
+  }
+  const explorer = { id: 'explorer', focus: explorerFocus || 'all', nodeTimeoutMs: 240_000, processTimeoutMs: 255_000 };
+  const sourceControl = { id: 'source-control', focus: sourceControlFocus || 'all', nodeTimeoutMs: 480_000, processTimeoutMs: 495_000 };
+  return explorerFocus ? [explorer] : sourceControlFocus ? [sourceControl] : [explorer, sourceControl];
+}
+
+export function planBrowserCommands(selectors: any[], webDistRoot: string, env: any = process.env): any[] {
+  const selected = selectors.includes('all') ? BROWSER_SELECTORS : selectors;
+  const browserTest = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../browser-smoke/buildr-web-browser.test.ts');
+  const isolationRunner = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../tools/development/run-isolated-workspace-smoke.ts');
+  return selected.flatMap((selector: string) => {
+    const groups = selector === 'code' ? planCodeBrowserGroups(env) : [null];
+    return groups.map((group: any) => ({
+      id: `browser:${selector}${group ? ':' + group.id : ''}`,
+      argv: [process.execPath, isolationRunner, '--script', selector === 'connection-skills' ? path.join(productRoot, 'test/browser-smoke/connection-skills.ts') : browserTest, '--', selector],
+      cwd: productRoot,
+      timeoutMs: group?.processTimeoutMs ?? (selector === 'task' ? 495_000 : 360_000),
+      env: {
+        ...env,
+        BUILDR_BROWSER_WEB_DIST_ROOT: webDistRoot,
+        ...(group ? {
+          BUILDR_CODE_EXPLORER_FOCUS: group.id === 'explorer' ? group.focus : '',
+          BUILDR_SOURCE_CONTROL_FOCUS: group.id === 'source-control' ? group.focus : '',
+        } : {}),
+      },
+    }));
+  });
+}
 
 function normalize(value: any): any  {
   return value.replaceAll('\\', '/').replace(/^\.\//, '');
@@ -73,6 +114,10 @@ export function selectBrowserSelectors(changedPaths: any): any  {
   const plan: any = { status: 'not-applicable', mode: 'affected', paths, selectors: [], reasons: [], diagnostics: [] };
   for (const originalValue of paths) {
     const value: any = buildrRelative(originalValue);
+    if (value === 'test/browser-smoke/connection-skills.ts') {
+      add(plan, 'connection-skills', originalValue, 'Connection skill page journey changed; verify isolated configuration and candidate authentication.');
+      continue;
+    }
     if (value.startsWith('test/browser-smoke/')) {
       plan.mode = 'full';
       plan.selectors = ['all'];
@@ -83,6 +128,10 @@ export function selectBrowserSelectors(changedPaths: any): any  {
       plan.mode = 'full';
       plan.selectors = ['all'];
       plan.reasons.push({ path: originalValue, selector: 'all', reason: 'Browser verification selection mechanism changed; run the complete selector set.' });
+      continue;
+    }
+    if (value.startsWith('src/modules/task/materials/')) {
+      add(plan, 'task-materials', originalValue, 'Task-owned material sources and node reading changed; verify direct reading without OpenSpec.');
       continue;
     }
     if (value.startsWith('src/web/http/')) {
@@ -99,13 +148,15 @@ export function selectBrowserSelectors(changedPaths: any): any  {
       if (originalValue.endsWith('.css') || originalValue.includes('/components/') || originalValue.includes('/app/') || originalValue.endsWith('/theme.ts')) {
         add(plan, 'layout', originalValue, 'Shared layout, reading or presentation changed; verify representative widths and retained state.');
       }
-      if (originalValue.includes('/features/workbench/')) add(plan, 'workbench', originalValue, 'Daily workbench overview, preferences or activity interaction changed.');
+      if (originalValue.includes('/features/code/') || originalValue.includes('RepositoryFileBrowser') || originalValue.includes('repository-file-browser')) add(plan, 'code', originalValue, 'Code scope, file reader and task file navigation changed.');
+      else if (originalValue.includes('/features/connection-skills/') || originalValue.includes('/features/mysql-query/')) add(plan, 'connection-skills', originalValue, 'Connection configuration or the independent query tool changed.');
+      else if (originalValue.includes('/features/workbench/')) add(plan, 'workbench', originalValue, 'Daily workbench overview, preferences or activity interaction changed.');
       else if (originalValue.includes('/features/knowledge/')) {
         for (const selector of ['project', 'service', 'articles']) add(plan, selector, originalValue, 'Knowledge reading is shared by project, service and article journeys.');
       }
       else if (originalValue.includes('/features/publication/')) add(plan, 'articles', originalValue, 'Article readers, editors, resources and publication state changed.');
       else if (originalValue.includes('/app/') || originalValue.includes('/components/WorkspaceStage')) {
-        for (const selector of ['shell', 'project', 'service', 'articles']) add(plan, selector, originalValue, 'Workspace navigation and split reading are shared across resource journeys.');
+        for (const selector of ['shell', 'workbench', 'project', 'service', 'articles', 'task']) add(plan, selector, originalValue, 'Workspace navigation and split reading are shared across resource and task journeys.');
       }
       else if (/\/(?:pages\/)?(?:[Pp]roject|[Pp]rojects)/.test(originalValue) || originalValue.includes('/pages/Project')) add(plan, 'project', originalValue, 'Project page or interaction changed.');
       else if (/\/(?:pages\/)?(?:[Ss]ervice|[Ss]ervices)/.test(originalValue) || originalValue.includes('/pages/Service')) add(plan, 'service', originalValue, 'Service page or interaction changed.');
@@ -189,6 +240,7 @@ async function main(): Promise<any>  {
   const stagingParent: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-web-dist-'));
   const stagingRoot: any = path.join(stagingParent, 'web-dist');
   try {
+    const commands = planBrowserCommands(plan.selectors, stagingRoot, { ...process.env, BUILDR_BROWSER_SELECTOR_PLAN_JSON: JSON.stringify(plan) });
     const prepareResult = await runPhase('artifacts', [process.execPath, path.join(productRoot, 'tools/development/run-development-npm.ts'), '--prefix', productRoot, 'run', 'artifacts:prepare'], productRoot, 120_000);
     if (prepareResult.status !== 'passed') {
       process.exitCode = prepareResult.exitCode ?? 1;
@@ -199,13 +251,10 @@ async function main(): Promise<any>  {
       process.exitCode = webDistResult.exitCode ?? 1;
       return;
     }
-    const browserTest: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../browser-smoke/buildr-web-browser.test.ts');
-    const isolationRunner: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../tools/development/run-isolated-workspace-smoke.ts');
-    // Each selector owns its workspace, profiles and browser. A failed journey cannot
-    // contaminate another selector; the production build is immutable and shared.
-    const selectors = plan.selectors.includes('all') ? BROWSER_SELECTORS : plan.selectors;
-    for (const selector of selectors) {
-      const result = await runPhase(`browser:${selector}`, [process.execPath, isolationRunner, '--script', browserTest, '--', selector], productRoot, 360_000, { ...process.env, BUILDR_BROWSER_SELECTOR_PLAN_JSON: JSON.stringify(plan), BUILDR_BROWSER_WEB_DIST_ROOT: stagingRoot });
+    // Each command owns its workspace, profiles and browser. Code's two bounded
+    // groups run serially against the same immutable production build.
+    for (const command of commands) {
+      const result = await runPhase(command.id, command.argv, command.cwd, command.timeoutMs, command.env);
       if (result.status !== 'passed') process.exitCode = 1;
     }
   } finally {

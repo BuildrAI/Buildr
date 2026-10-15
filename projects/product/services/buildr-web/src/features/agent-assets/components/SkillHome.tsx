@@ -1,12 +1,15 @@
 import { ResourceActions } from '../../workbench/components/ResourceActions';
 import { useAppShell } from '../../../app/AppShellContext';
 import { workspaceHref } from '../../../lib/labels';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Alert, Button, Input, Space, Tag } from 'antd';
 import { FileTextOutlined, RightOutlined } from '@ant-design/icons';
-import { WorkspaceStage } from '../../../components/WorkspaceStage';
+import { WorkspaceStage, type WorkspaceObjectContentState } from '../../../components/WorkspaceStage';
 import { ResourceDocumentPane } from '../../../components/ResourceDocumentPane';
-import { useWorkspacePageTabs } from '../../../app/pageTabs';
+import { useWorkspacePageTabs, WorkspaceViewActiveContext, WorkspaceViewTransientContext } from '../../../app/pageTabs';
+import { useWorkspacePaneHost } from '../../../app/WorkspacePaneHost';
+import { InsideResourcePreview } from '../../../app/resource-preview';
 import { agentAssetsApi, type SkillDetail, type SkillSummary } from '../api/agent-assets-api';
 import type { SkillAction } from '../skill-presentation';
 
@@ -16,6 +19,9 @@ export function SkillHome(props: SkillHomeProps) {
 }
 function SkillHomeContent({ skill, onAction, onRemove, children }: SkillHomeProps) {
   const tabs = useWorkspacePageTabs();
+  const location = useLocation(), paneHost = useWorkspacePaneHost();
+  const inheritedTransient = useContext(WorkspaceViewTransientContext);
+  const embedded = useContext(InsideResourcePreview);
   const { workspaceId } = useAppShell();
   const [detail, setDetail] = useState<SkillDetail | null>(null), [error, setError] = useState('');
   const [query, setQuery] = useState('');
@@ -26,12 +32,12 @@ function SkillHomeContent({ skill, onAction, onRemove, children }: SkillHomeProp
     return () => controller.abort();
   }, [skill.id]);
   const load = useCallback(async (file: string) => { const data = await agentAssetsApi.skillFile(skill.id, file); return { path: data.path, exists: true, content: data.format === 'text' ? data.content : data.readingContent, format: data.format }; }, [skill.id]);
-  const open = (file: string) => { setFiles(current => current.includes(file) ? current : [...current, file]); setActiveFile(file); };
+  const open = (file: string) => { setFiles(current => current.includes(file) ? current : [...current, file]); setActiveFile(file); paneHost?.revealContent(location.pathname, embedded ? undefined : file); };
   const close = (file: string) => setFiles(current => { const next = current.filter(f => f !== file); setActiveFile(active => active === file ? next.at(-1) || null : active); return next; });
   const documents = detail?.files.filter(f => f.path !== 'SKILL.md') || [];
   const matchingFiles = documents.filter(file => file.path.toLowerCase().includes(query.trim().toLowerCase()));
-  return <WorkspaceStage pageTabs={tabs.tabs} onClosePageTab={tabs.close} objectTabs={files.map(file => ({ key: file, kind: 'doc', title: file }))} activeObject={activeFile} onActivateObject={setActiveFile} onCloseObject={close}
-    objectContent={files.map(file => <div key={file} hidden={file !== activeFile}><ResourceDocumentPane file={file} load={load} onOpen={open} /></div>)}>
+  return <WorkspaceStage pageTabs={tabs.tabs} onClosePageTab={tabs.close} objectTabs={files.map(file => ({ key: file, kind: 'doc', title: file, identity: `skill:${skill.id}:${file}`, contentLayout: 'reading', contentLabel: file }))} activeObject={activeFile} onActivateObject={setActiveFile} onCloseObject={close}
+    objectContent={({ displayedKey, visible, transient }: WorkspaceObjectContentState) => <WorkspaceViewTransientContext.Provider value={inheritedTransient || transient}>{files.map(file => <WorkspaceViewActiveContext.Provider key={file} value={visible && displayedKey === file}><div hidden={file !== displayedKey}><ResourceDocumentPane file={file} load={load} onOpen={open} /></div></WorkspaceViewActiveContext.Provider>)}</WorkspaceViewTransientContext.Provider>}>
     <div className="resource-home">
       <header className="resource-home-head"><div><p className="resource-eyebrow">技能 <span> / {skill.id}</span></p><h1>{skill.title}</h1><p>{skill.description || '尚未填写说明。'}</p><div className="resource-home-meta"><span>{skill.sourceLabel}</span><Tag color={skill.enabled ? 'success' : 'default'}>{skill.enabled ? '已启用' : '已停用'}</Tag></div></div><Space wrap className="resource-home-actions"><ResourceActions size="middle" resource={{ kind: "skill", key: "skill:" + skill.id, label: skill.title, href: workspaceHref(workspaceId, "/skills/" + encodeURIComponent(skill.id)) }} /><Button onClick={onRemove}>移除</Button><Button onClick={() => onAction('adjust', skill)}>编辑技能</Button></Space></header>
       {error && <Alert type="error" message={error} />}

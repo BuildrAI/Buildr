@@ -1,4 +1,12 @@
-export const TASK_RECORD_SCHEMA = 'buildr.task-record/v3';
+import crypto from 'node:crypto';
+
+export const TASK_RECORD_SCHEMA = 'buildr.task-record/v4';
+export const TASK_BRIEF_MAX_BYTES = 1_048_576;
+export function taskContentDigest(value: string): string {
+  return `sha256-${crypto.createHash('sha256').update(value, 'utf8').digest('hex')}`;
+}
+export const taskBriefDigest = (brief: string | null): string | null => brief === null ? null : taskContentDigest(brief);
+export const taskHistoryDigest = (history: TaskResultHistory[]): string => taskContentDigest(JSON.stringify(history));
 export const TASK_ID_SOURCE = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?';
 const TASK_ID_PATTERN = new RegExp(`^${TASK_ID_SOURCE}$`);
 export function isTaskRecordId(value: unknown): value is string {
@@ -38,6 +46,7 @@ export class TaskResultHistory {
   readonly status: 'completed' | 'abandoned';
   readonly title: string;
   readonly intent: string;
+  readonly brief: string | null;
   readonly parentTaskId: string | null;
   readonly scope?: { projects: string[]; services: Array<{ project: string; service: string }> };
   readonly changes?: Array<{ project: string; change: string }>;
@@ -52,6 +61,7 @@ export class TaskResultHistory {
     this.status = input.status;
     this.title = input.title;
     this.intent = input.intent;
+    this.brief = input.brief;
     this.parentTaskId = input.parentTaskId;
     this.result = input.result;
     this.recordUpdatedAt = input.recordUpdatedAt;
@@ -74,6 +84,9 @@ export class Task {
   readonly taskId: string;
   readonly title: string;
   readonly intent: string;
+  readonly brief: string | null;
+  readonly briefDigest: string | null;
+  readonly resultHistoryDigest: string;
   readonly status: TaskStatus;
   readonly parentTaskId: string | null;
   readonly isParent: boolean;
@@ -83,10 +96,13 @@ export class Task {
   readonly createdAt: string;
   readonly updatedAt: string;
 
-  constructor(input: Task) {
+  constructor(input: Omit<Task, 'briefDigest' | 'resultHistoryDigest'>, digests?: { brief: string | null; history: string }) {
     this.taskId = input.taskId;
     this.title = input.title;
     this.intent = input.intent;
+    this.brief = input.brief;
+    this.briefDigest = digests ? digests.brief : taskBriefDigest(input.brief);
+    this.resultHistoryDigest = digests ? digests.history : taskHistoryDigest(input.resultHistory);
     this.status = input.status;
     this.parentTaskId = input.parentTaskId;
     this.isParent = input.isParent;

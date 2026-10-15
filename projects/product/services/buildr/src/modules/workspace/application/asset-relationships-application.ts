@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import { spawnSync } from '../../../infrastructure/process.ts';
 import fs from 'node:fs';
 import path from 'node:path';
+import { insideFilesystemPath, sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
 import { createProject, isProjectCode } from '../domain/project.ts';
 import { assetError, createBusinessService, createRepositoryInstance, object, relativeAssetPath, validateAssetCatalog, type AssetCatalog } from '../domain/asset-relationships.ts';
 import { CATALOG_FILES, assertCatalogFile, readAssetCatalog, renderAssetCatalog } from '../persistence/asset-catalog-repository.ts';
@@ -36,6 +37,25 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
   }
   function workspaceComposition(root:string) {
     return readAssetComposition(root,runtime.readWorkspaceRecord(root).workspace.id);
+  }
+  /** Compare registration source bytes without reparsing or re-observing every project repository. */
+  function assetCatalogVersion(root: string): string {
+    const observed: Record<string, string | null> = {};
+    for (const file of ['.buildr/workspace.yml', 'skills/manifest.yml', ...CATALOG_FILES]) {
+      assertCatalogFile(root, file);
+      const absolute = path.join(root, file);
+      try { observed[file] = fs.readFileSync(absolute, 'utf8'); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        observed[file] = null;
+      }
+    }
+    // Legacy projects own their service manifests. Keep their full validated observation
+    // rather than pretending that the absent global files describe all registrations.
+    if (observed['services/manifest.yml'] === null && observed['repositories/manifest.yml'] === null) {
+      Object.assign(observed, readAssetCatalog(root, runtime.readWorkspaceRecord(root).workspace.id).observed);
+    }
+    return 'sha256-' + crypto.createHash('sha256').update(JSON.stringify({ root:fs.realpathSync(root), observed })).digest('hex');
   }
   function assetCatalog(root: string) {
     const r = read(root);
@@ -85,13 +105,13 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
     const observation = { ...runtime.observeProjectGit(location, remote), remote };
     let actualRoot: string | null = null;
     try { actualRoot = gitRoot(location); } catch { /* reported as unavailable */ }
-    const validRoot = actualRoot !== null && actualRoot === fs.realpathSync(location);
+    const validRoot = actualRoot !== null && sameFilesystemPath(actualRoot, location);
     const identityConflict = Boolean(repository.source.git && (!observation.remoteUrl || !runtime.sameGitIdentity(observation.remoteUrl, repository.source.git.url)));
     const moduleIssues: string[] = [];
     if (validRoot) for (const service of c.catalog.services.filter(s => s.repositoryId === repository.id)) {
       const module = path.join(location, service.modulePath);
       if (!fs.existsSync(module) || !fs.statSync(module).isDirectory()) moduleIssues.push(`${service.name}：模块目录 ${service.modulePath || '.'} 尚未准备`);
-      else { const actual = fs.realpathSync(module); if (actual !== actualRoot && !actual.startsWith(actualRoot! + path.sep)) moduleIssues.push(`${service.name}：模块目录超出代码库范围`); }
+      else { const actual = fs.realpathSync(module); if (!insideFilesystemPath(actualRoot, actual)) moduleIssues.push(`${service.name}：模块目录超出代码库范围`); }
     }
     const issues = [!validRoot ? '目录不是独立 Git 仓库根目录，或本地代码缺失。' : null,
       identityConflict ? `远端 ${remote} 的实际地址与声明不一致，需要对齐。` : null, ...moduleIssues].filter((issue): issue is string => Boolean(issue));
@@ -102,6 +122,9 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
   function repositoryLocationKey(root: string, repository: AssetCatalog['repositories'][number]) {
     const location = resolveSourceRoot(root, repository.source);
     return fs.existsSync(location) ? fs.realpathSync(location) : path.resolve(location);
+  }
+  function sameRepositoryLocation(root: string, left: AssetCatalog['repositories'][number], right: AssetCatalog['repositories'][number]) {
+    return sameFilesystemPath(repositoryLocationKey(root, left), repositoryLocationKey(root, right));
   }
   function repositoryFromDraft(root: string, workspaceId: string, raw: any, allowUnaligned = false) {
     object(raw, ['code', 'name', 'description', 'url', 'remote', 'integrationBranch', 'path', 'observation'], '代码库');
@@ -123,7 +146,7 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
     if (fs.existsSync(location)) {
       const real = fs.realpathSync(location), workspace = fs.realpathSync(root);
       if (!attached && real !== workspace && !real.startsWith(workspace + path.sep)) throw assetError('repository_path_invalid', '目录链接超出工作空间，请使用明确的外部绝对路径登记。');
-      if (gitRoot(location) !== fs.realpathSync(location)) throw assetError('repository_not_root', '请选择 Git 仓库根目录，子目录应填写到服务的模块目录。');
+      if (!sameFilesystemPath(gitRoot(location), location)) throw assetError('repository_not_root', '请选择 Git 仓库根目录，子目录应填写到服务的模块目录。');
       if (repository.source.git && !allowUnaligned) {
         const observed = runtime.observeProjectGit(location, repository.source.git.remote);
         if (!observed.remoteUrl || !runtime.sameGitIdentity(observed.remoteUrl, repository.source.git.url)) throw assetError('repository_identity_conflict', '实际远端与声明不一致。', 409);
@@ -141,7 +164,7 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
       for (const r of catalog.repositories.filter(r => r.source.type === 'git')) {
         const location = resolveSourceRoot(root, r.source);
         next.push(r);
-        try { if (fs.existsSync(location) && gitRoot(location) === fs.realpathSync(location)) roots.set(fs.realpathSync(location), r); } catch { /* Unrelated broken Git declarations do not block workspace-source normalization. */ }
+        try { if (fs.existsSync(location)) { const actual = gitRoot(location); if (sameFilesystemPath(actual, location)) roots.set(actual, r); } } catch { /* Unrelated broken Git declarations do not block workspace-source normalization. */ }
       }
       for (const r of catalog.repositories.filter(r => r.source.type === 'workspace')) {
         const location = resolveSourceRoot(root, r.source), actual = gitRoot(location);
@@ -248,7 +271,7 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
     return mutate(root, revision, 'assets.repository.create', (catalog, workspaceId, directories) => {
       if (observation && observeCatalogDirectory(root, draft.path).observation !== observation) throw assetError('asset_directory_changed', '目录已变化，请重新选择。', 409);
       const repository = repositoryFromDraft(root, workspaceId, draft);
-      if (catalog.repositories.some(r => repositoryLocationKey(root, r) === repositoryLocationKey(root, repository))) throw assetError('repository_duplicate_path', '该目录已登记为代码库，请复用已有代码库。', 409);
+      if (catalog.repositories.some(r => sameRepositoryLocation(root, r, repository))) throw assetError('repository_duplicate_path', '该目录已登记为代码库，请复用已有代码库。', 409);
       catalog.repositories.push(repository);
       if (observation) directories.push({ serviceId: `repository:${repository.id}`, path: draft.path, observation });
     });
@@ -278,7 +301,7 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
         let ancestor = location; while (!fs.existsSync(ancestor)) ancestor = path.dirname(ancestor);
         let actual = ''; try { actual = gitRoot(ancestor); } catch { /* New standalone code can be prepared later. */ }
         const repositoryRoot = actual || location;
-        let repository = catalog.repositories.find(r => repositoryLocationKey(root, r) === repositoryRoot);
+        let repository = catalog.repositories.find(r => sameFilesystemPath(repositoryLocationKey(root, r), repositoryRoot));
         if (!repository) {
           let code = `${raw.code}-code`, suffix = 2; while (catalog.repositories.some(r => r.code === code)) code = `${raw.code}-code-${suffix++}`;
           const relative = path.relative(fs.realpathSync(root), repositoryRoot).split(path.sep).join('/') || '.';
@@ -291,7 +314,7 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
     }
     if (raw.repository) {
       const repository = repositoryFromDraft(root, workspaceId, raw.repository);
-      if (catalog.repositories.some(r => repositoryLocationKey(root, r) === repositoryLocationKey(root, repository))) throw assetError('repository_duplicate_path', '该目录已登记为代码库，请复用已有代码库。', 409);
+      if (catalog.repositories.some(r => sameRepositoryLocation(root, r, repository))) throw assetError('repository_duplicate_path', '该目录已登记为代码库，请复用已有代码库。', 409);
       catalog.repositories.push(repository); repositoryId = repository.id;
     }
     if (serviceDirectory) {
@@ -425,7 +448,7 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
           integrationBranch: input.integrationBranch ?? existing.source.integrationBranch ?? existing.source.git?.integrationBranch ?? '',
         }, true);
         const location = resolveSourceRoot(root, replacement.source);
-        if (catalog.repositories.some(r => r.id !== existing.id && repositoryLocationKey(root, r) === repositoryLocationKey(root, replacement))) throw assetError('repository_duplicate_path', '该目录已登记为代码库，请复用已有代码库。', 409);
+        if (catalog.repositories.some(r => r.id !== existing.id && sameRepositoryLocation(root, r, replacement))) throw assetError('repository_duplicate_path', '该目录已登记为代码库，请复用已有代码库。', 409);
         // Module declarations stay relative to the new root. Never move their files as part of saving.
         if (fs.existsSync(location)) for (const service of catalog.services.filter(s => s.repositoryId === existing.id)) {
           let module = path.join(location, service.modulePath);
@@ -440,7 +463,7 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
       if (kind === 'service' && repositoryDraft !== undefined) {
         if (Object.hasOwn(input, 'repositoryId')) throw assetError('service_repository_ambiguous', '请选择已有代码库或新增代码库，不能同时提供。');
         const repository = repositoryFromDraft(root, catalog.services[index].workspaceId, repositoryDraft);
-        if (catalog.repositories.some(r => repositoryLocationKey(root, r) === repositoryLocationKey(root, repository))) throw assetError('repository_duplicate_path', '该目录已登记为代码库，请复用已有代码库。', 409);
+        if (catalog.repositories.some(r => sameRepositoryLocation(root, r, repository))) throw assetError('repository_duplicate_path', '该目录已登记为代码库，请复用已有代码库。', 409);
         catalog.repositories.push(repository);
         patch.repositoryId = repository.id;
       }
@@ -469,6 +492,6 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
     if (!r) throw assetError('repository_not_found', '代码库不存在。', 404);
     return { prompt: [`对齐代码库声明：${r.name}（${r.code}）`, `声明：${JSON.stringify(r.source)}`, '读取当前 repositories/manifest.yml，核对稳定身份、最新版本、来源、集成分支和实际目录。', '先只读检查 Git 根目录、实际远端与服务模块；列明声明和实际的差异。声明保存不代表已执行远端改写、切换分支、克隆或搬迁。', '集成分支是后续工作的目标，不要求当前分支与之相同；仅因当前分支不同不得自动切换。', '远端或目录需要对齐时先提出具体动作与影响，在相应授权内执行；保留原目录、未提交改动和全部服务引用。', '已登记但代码缺失时，验证远端分支后准备至声明的实际目录；附接目录不由此动作搬迁或重建。', '代码库必须对应真实 Git 根目录；工作空间根使用 .，服务子目录用 modulePath；先读取独立 /services、/repositories 列表，状态按单个代码库读取。', '移除项目、服务或未被引用的代码库只取消登记和关系，保留代码、文件与历史任务；提交前读取最新 revision 并说明影响。', '目录已存在时核对仓库来源和工作状态，不覆盖、不丢弃修改、不隐式切换分支。', '来源信息缺失时先查明，不猜测 Git 地址或分支。准备失败仅报告相关代码库问题，不撤销项目与服务关系。', '为具体任务建立隔离工作位置，读取明确项目、服务和实际代码目录的适用规则。'].join('\n'), copiedMeansPrepared: false };
   }
-  Object.assign(runtime, { workspaceComposition, listCatalogDirectoryCandidates, catalogRepositoryLocalConfig, listCatalogServices, listCatalogRepositories, catalogRepositoryStatus, normalizeCatalogRepositories, deleteCatalogAsset, readGlobalServiceRegistry, catalogServiceDocument, assetCatalog, migrateAssetCatalog, createCatalogRepository, createCatalogService, createCatalogProject, listProjectRegistrationCandidates, registerCatalogProject, updateProjectServices, updateCatalogAsset, repositoryPreparePrompt });
+  Object.assign(runtime, { workspaceComposition, listCatalogDirectoryCandidates, catalogRepositoryLocalConfig, listCatalogServices, listCatalogRepositories, catalogRepositoryStatus, normalizeCatalogRepositories, deleteCatalogAsset, readGlobalServiceRegistry, catalogServiceDocument, assetCatalog, assetCatalogVersion, migrateAssetCatalog, createCatalogRepository, createCatalogService, createCatalogProject, listProjectRegistrationCandidates, registerCatalogProject, updateProjectServices, updateCatalogAsset, repositoryPreparePrompt });
   return runtime;
 }

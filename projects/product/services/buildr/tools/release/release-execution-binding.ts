@@ -16,7 +16,8 @@ type WorktreeResult = { status: string; taskId: string; evidencePath: string | n
 type WorktreeEvidence = { schemaVersion: string; taskId: string; status: string; branch: string; repositories: WorktreeRepository[] };
 type ReleaseExecutionBinding = {
   schemaVersion: typeof releaseExecutionBindingSchema;
-  version: string;
+  version: string | null;
+  selectionId?: string;
   taskId: string;
   workspaceRoot: string;
   executionRoot: string;
@@ -29,7 +30,27 @@ type ReleaseExecutionBinding = {
 
 const SHA = /^[a-f0-9]{40}$/u;
 const DIGEST = /^sha256-[a-f0-9]{64}$/u;
+const VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
 const digest = (value: unknown): string => `sha256-${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
+
+/** A selection key names Git/Task resources; package versions retain their own meaning. */
+export function releaseSelectionKey(input: { version?: string | null; selectionId?: string }): string {
+  if (input.selectionId !== undefined) {
+    const key = input.selectionId;
+    if (typeof key !== 'string' || !/^[a-z0-9](?:[a-z0-9._-]{0,238}[a-z0-9])?$/u.test(key)
+        || key.includes('..') || key.endsWith('.lock')) throw new Error('Release selectionId must be a safe, bounded Git/Task identity.');
+    return key;
+  }
+  if (typeof input.version !== 'string' || !VERSION.test(input.version)) throw new Error('Release version must be a valid semantic version without the leading v.');
+  return input.version;
+}
+
+function selectedVersion(input: { version?: string | null; selectionId?: string }): string | null {
+  releaseSelectionKey(input);
+  const version = input.version ?? null;
+  if (version !== null && (typeof version !== 'string' || !VERSION.test(version))) throw new Error('Release main package version is invalid.');
+  return version;
+}
 
 function git(repo: string, args: string[]): string {
   const result = spawnSync('git', args, { cwd: repo, encoding: 'utf8', windowsHide: true });
@@ -67,14 +88,15 @@ function evidence(value: unknown): WorktreeEvidence {
 
 function binding(value: unknown): ReleaseExecutionBinding {
   const item = record(value, 'release execution binding');
-  const fields = ['schemaVersion', 'version', 'taskId', 'workspaceRoot', 'executionRoot', 'branch', 'head', 'providerEvidence', 'providerIdentity', 'identity'];
+  const fields = ['schemaVersion', 'version', 'selectionId', 'taskId', 'workspaceRoot', 'executionRoot', 'branch', 'head', 'providerEvidence', 'providerIdentity', 'identity'];
   for (const field of Object.keys(item)) if (!fields.includes(field)) throw new Error(`release execution binding.${field} is not supported.`);
   const text = (field: string): string => {
     const candidate = item[field];
     if (typeof candidate !== 'string') throw new Error(`Release execution binding ${field} is invalid.`);
     return candidate;
   };
-  const version = text('version');
+  const selectionId = item.selectionId === undefined ? undefined : text('selectionId');
+  const version = selectedVersion({ version: item.version as string | null, selectionId });
   const taskId = text('taskId');
   const workspaceRoot = text('workspaceRoot');
   const executionRoot = text('executionRoot');
@@ -83,7 +105,7 @@ function binding(value: unknown): ReleaseExecutionBinding {
   const providerEvidence = text('providerEvidence');
   const providerIdentity = text('providerIdentity');
   const savedIdentity = text('identity');
-  if (item.schemaVersion !== releaseExecutionBindingSchema || taskId !== `release-${version}` || !SHA.test(head) || !DIGEST.test(providerIdentity) || !DIGEST.test(savedIdentity)) throw new Error('Release execution binding identity is invalid.');
+  if (item.schemaVersion !== releaseExecutionBindingSchema || taskId !== `release-${releaseSelectionKey({ version, selectionId })}` || !SHA.test(head) || !DIGEST.test(providerIdentity) || !DIGEST.test(savedIdentity)) throw new Error('Release execution binding identity is invalid.');
   const unsigned: Omit<ReleaseExecutionBinding, 'identity'> = {
     schemaVersion: releaseExecutionBindingSchema,
     version,
@@ -94,13 +116,14 @@ function binding(value: unknown): ReleaseExecutionBinding {
     head,
     providerEvidence,
     providerIdentity,
+    ...(selectionId === undefined ? {} : { selectionId }),
   };
   if (savedIdentity !== digest(unsigned)) throw new Error('Release execution binding identity mismatch.');
   return { ...unsigned, identity: savedIdentity };
 }
 
-export function createReleaseExecutionBinding(input: { version: string; task: ReleaseTask; worktreeResult: WorktreeResult; workspaceRoot: string; repo: string }): ReleaseExecutionBinding {
-  const taskId = `release-${input.version}`;
+export function createReleaseExecutionBinding(input: { version?: string | null; selectionId?: string; task: ReleaseTask; worktreeResult: WorktreeResult; workspaceRoot: string; repo: string }): ReleaseExecutionBinding {
+  const taskId = `release-${releaseSelectionKey(input)}`;
   if (input.task?.taskId !== taskId || input.task.status !== 'active') throw new Error(`Release execution requires active Task ${taskId}.`);
   if (input.worktreeResult?.status !== 'ready' || input.worktreeResult.taskId !== taskId || !input.worktreeResult.evidencePath) throw new Error(`Release execution requires ready Worktree ${taskId}.`);
   const workspaceRoot = fs.realpathSync(path.resolve(input.workspaceRoot));
@@ -118,7 +141,7 @@ export function createReleaseExecutionBinding(input: { version: string; task: Re
   if (!samePath(topLevel, executionRoot) || branch !== observed.branch || head !== observed.head || !SHA.test(head)) throw new Error(`Release Worktree branch or HEAD identity is invalid: ${JSON.stringify({ topLevel, executionRoot, branch, expectedBranch: observed.branch, head, expectedHead: observed.head })}`);
   const unsigned: Omit<ReleaseExecutionBinding, 'identity'> = {
     schemaVersion: releaseExecutionBindingSchema,
-    version: input.version,
+    version: selectedVersion(input),
     taskId,
     workspaceRoot,
     executionRoot,
@@ -126,6 +149,7 @@ export function createReleaseExecutionBinding(input: { version: string; task: Re
     head,
     providerEvidence,
     providerIdentity: digest(stored),
+    ...(input.selectionId === undefined ? {} : { selectionId: input.selectionId }),
   };
   return validateReleaseExecutionBinding({ ...unsigned, identity: digest(unsigned) }, { repo: executionRoot });
 }
@@ -153,22 +177,23 @@ function option(argv: string[], name: string): string {
   return argv[index + 1];
 }
 
-export function resolveReleaseExecutionBinding(input: { version: string; workspace: string; repo: string }, runtimeValue: any = createReleaseToolRuntime()): ReleaseExecutionBinding {
+export function resolveReleaseExecutionBinding(input: { version?: string | null; selectionId?: string; workspace: string; repo: string }, runtimeValue: any = createReleaseToolRuntime()): ReleaseExecutionBinding {
   const workspace = fs.realpathSync(path.resolve(input.workspace));
-  const taskId = `release-${input.version}`;
+  const taskId = `release-${releaseSelectionKey(input)}`;
   const task = runtimeValue.inspectTask(workspace, taskId)?.record;
   const worktreeResult = runtimeValue.inspectGitWorktrees({ workspaceRoot: workspace, taskId });
-  return createReleaseExecutionBinding({ version: input.version, task, worktreeResult, workspaceRoot: workspace, repo: input.repo });
+  return createReleaseExecutionBinding({ version: input.version, selectionId: input.selectionId, task, worktreeResult, workspaceRoot: workspace, repo: input.repo });
 }
 
 if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {
   try {
     const argv = process.argv.slice(2);
-    if (argv[0] !== 'create') throw new Error('Usage: release-execution-binding.ts create --version <version> --workspace <canonical-root> --repo <task-root>');
-    const version = option(argv, '--version');
+    if (argv[0] !== 'create') throw new Error('Usage: release-execution-binding.ts create [--version <main-version>] [--selection-id <id>] --workspace <canonical-root> --repo <task-root>');
+    const version = argv.includes('--version') ? option(argv, '--version') : undefined;
+    const selectionId = argv.includes('--selection-id') ? option(argv, '--selection-id') : undefined;
     const workspace = path.resolve(option(argv, '--workspace'));
     const repo = path.resolve(option(argv, '--repo'));
-    const taskId = `release-${version}`;
+    const taskId = `release-${releaseSelectionKey({ version, selectionId })}`;
     const runtime = createReleaseToolRuntime();
     if (typeof runtime.inspectTask !== 'function' || typeof runtime.inspectGitWorktrees !== 'function') throw new Error('Release execution runtime ports are unavailable.');
     const taskResult = Reflect.apply(runtime.inspectTask, runtime, [workspace, taskId]);
@@ -176,7 +201,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
     const taskValue = record(record(taskResult, 'Task result').record, 'Task record');
     if (typeof taskValue.taskId !== 'string' || typeof taskValue.status !== 'string') throw new Error('Release Task record is invalid.');
     const task: ReleaseTask = { taskId: taskValue.taskId, status: taskValue.status };
-    process.stdout.write(`${JSON.stringify(createReleaseExecutionBinding({ version, task, worktreeResult, workspaceRoot: workspace, repo }), null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify(createReleaseExecutionBinding({ version, selectionId, task, worktreeResult, workspaceRoot: workspace, repo }), null, 2)}\n`);
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;

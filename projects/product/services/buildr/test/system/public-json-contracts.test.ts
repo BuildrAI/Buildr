@@ -87,6 +87,7 @@ test('全部 workspace JSON command family 输出登记的 schemaVersion', async
     [['component', 'check', 'openspec', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.componentCheck],
     [['builtin', 'list', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.builtinList],
     [['task', 'create', 'json-task', '--title', 'JSON Task', '--intent', '验证公开 JSON family', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskRecordResult],
+    [['task', 'changed-files', 'json-task', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskChangedFiles],
     [['task', 'commits', 'json-task', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskCommits],
     [['task', 'review', 'inspect', 'json-task', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskReviewOperationResult],
     [['task', 'verification', 'inspect', 'json-task', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskVerificationOperationResult],
@@ -97,9 +98,13 @@ test('全部 workspace JSON command family 输出登记的 schemaVersion', async
 });
 
 test('schema registry 覆盖全部当前公开 JSON family', () => {
+  assert.equal(PUBLIC_JSON_SCHEMAS.agentAssetSourceObservations, 'buildr.agent-asset-source-observations/v1');
+  assert.equal(PUBLIC_JSON_SCHEMAS.agentAssetSourceResult, 'buildr.agent-asset-source-result/v1');
   assert.equal(PUBLIC_JSON_SCHEMAS.localAppPreview, 'buildr.local-app-preview/v1');
   assert.equal(PUBLIC_JSON_SCHEMAS.launcherStatus, 'buildr.launcher-status/v1');
   assert.deepEqual(Object.keys(PUBLIC_JSON_SCHEMAS).sort(), [
+    'agentAssetSourceObservations',
+    'agentAssetSourceResult',
     'builtinList',
     'cliError',
     'commandsCheck',
@@ -124,6 +129,7 @@ test('schema registry 覆盖全部当前公开 JSON family', () => {
     'parentPlan',
     'releaseAwareness',
     'runtimeList',
+    'taskChangedFiles',
     'taskCommits',
     'taskRecordList',
     'taskRecordResult',

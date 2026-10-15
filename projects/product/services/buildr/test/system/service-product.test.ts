@@ -7,14 +7,14 @@ import YAML from 'yaml';
 
 import { createRuntime } from '../helpers/runtime-harness.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
-import { copyPreparedGitRepository, copyPreparedProjectWorkspace } from '../helpers/prepared-fixtures.ts';
+import { copyPreparedGitRepository, copyPreparedLegacyProjectWorkspace } from '../helpers/prepared-fixtures.ts';
 
 const PRODUCT_ROOT: any = path.resolve(import.meta.dirname, '../..');
 const BUILDR: any = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
 function run(command: any, args: any, cwd: any = PRODUCT_ROOT): any  { return spawnSync(command, args, { cwd, encoding: 'utf8' }); }
 function runBuildr(args: any): any  { return run(process.execPath, [BUILDR, ...args]); }
 function setup(t: any): any  {
-  const prepared: any = copyPreparedProjectWorkspace(t, 'service-product');
+  const prepared: any = copyPreparedLegacyProjectWorkspace(t, 'legacy-service-product');
   return { base: prepared.base, root: prepared.root };
 }
 

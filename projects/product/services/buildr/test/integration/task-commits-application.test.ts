@@ -8,6 +8,7 @@ import test from 'node:test';
 import { createTaskCommitsApplication, type TaskCommitsDependencies } from '../../src/modules/task/commits/application/task-commits-application.ts';
 import { TASK_COMMIT_LIMITS } from '../../src/modules/task/commits/infrastructure/git-commit-reader.ts';
 import { TASK_HTTP_SCHEMAS, TASK_HTTP_VALIDATORS } from '../../src/modules/task/interfaces/http/task-http-schema.ts';
+import type { TaskCommitTarget } from '../../src/modules/task/commits/application/task-repository-scope.ts';
 
 function git(root: string, args: string[], input?: string): string {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
@@ -209,4 +210,67 @@ test('候选历史、结果、输出和总时间上限显式为部分结果', t 
   const bytes = inspect({ maxBytes: 4096 }); assert.equal(bytes.status, 'partial'); assert.equal(bytes.coverage.truncated, true);
   assert.ok(bytes.commits.some(item => item.hash === recent));
   const timed = inspect({ totalTimeoutMs: 0 }); assert.equal(timed.status, 'partial'); assert.ok(timed.diagnostics.some(item => item.code === 'task_commits_timeout'));
+});
+
+test('组合任务汇总自身与直接子任务并保留来源，同仓库去重，子任务不继承父兄弟或孙任务', t => {
+  const f = fixture(t);
+  const records: TaskCommitTarget[] = [
+    { ...f.record, title: '组合交付' },
+    { ...f.record, taskId: 'child-one', title: '直接子任务' },
+  ];
+  const dependencies = { ...f.dependencies, readTaskCommitTargets: (_root: string, taskId: string) => ({ root: f.root, records: taskId === 'task-one' ? records : records.filter(record => record.taskId === taskId), includesChildren: taskId === 'task-one', truncated: false }) };
+  const parent = commit(f.root, 'parent\n\nBuildr-Task: task-one');
+  const child = commit(f.root, 'child\n\nBuildr-Task: child-one');
+  commit(f.root, 'grandchild\n\nBuildr-Task: grandchild');
+  commit(f.root, 'unrelated\n\nBuildr-Task: unrelated');
+  const before = snapshot(f.root);
+  const application = createTaskCommitsApplication(dependencies);
+  const result = application.inspectTaskCommits(f.root, 'task-one');
+  assert.equal(result.status, 'complete'); assert.equal(result.repositories.length, 1);
+  assert.equal(result.repositories[0].scannedCommitCount, 4);
+  assert.deepEqual(new Set(result.commits.map(item => item.hash)), new Set([parent, child]));
+  assert.deepEqual(result.commits.map(item => [item.taskId, item.taskTitle]).sort(), [['child-one', '直接子任务'], ['task-one', '组合交付']]);
+  assert.deepEqual(application.inspectTaskCommits(f.root, 'child-one').commits.map(item => item.hash), [child]);
+  assert.equal(TASK_HTTP_VALIDATORS.validate(TASK_HTTP_SCHEMAS.commitsResponse.$id, result).valid, true);
+  assert.deepEqual(snapshot(f.root), before);
+});
+
+test('组合任务按每条提交所属任务的真实仓库范围过滤，子任务局部失败和超限不隐藏可读结果', t => {
+  const f = fixture(t), other = path.join(f.root, 'other'); init(other);
+  const records: TaskCommitTarget[] = [
+    { ...f.record, title: '父任务' },
+    { taskId: 'child-one', title: '子任务', scope: { projects: ['other'], services: [] }, changes: [] },
+  ];
+  const parent = commit(f.root, 'parent\n\nBuildr-Task: task-one');
+  commit(f.root, 'wrong child repository\n\nBuildr-Task: child-one');
+  const child = commit(other, 'child\n\nBuildr-Task: child-one');
+  commit(other, 'wrong parent repository\n\nBuildr-Task: task-one');
+  const dependencies: TaskCommitsDependencies = { ...f.dependencies,
+    readProjectRegistryRecord: () => ({ registry: { migrationRequired: false }, projects: { ...f.projects, other: { source: { path: 'other' } } } }),
+    readTaskCommitTargets: () => ({ root: f.root, records, includesChildren: true, truncated: false }),
+  };
+  const result = createTaskCommitsApplication(dependencies).inspectTaskCommits(f.root, 'task-one');
+  assert.equal(result.status, 'complete'); assert.equal(result.repositories.length, 2);
+  assert.deepEqual(new Set(result.commits.map(item => item.hash)), new Set([parent, child]));
+  const partial = createTaskCommitsApplication({ ...dependencies, readTaskCommitTargets: () => ({ root: f.root, records: [...records, { ...records[1], taskId: 'broken-child', scope: { projects: ['missing'], services: [] } }], includesChildren: true, truncated: true }) }).inspectTaskCommits(f.root, 'task-one');
+  assert.equal(partial.status, 'partial'); assert.equal(partial.coverage.truncated, true);
+  assert.deepEqual(new Set(partial.commits.map(item => item.hash)), new Set([parent, child]));
+  assert.ok(partial.diagnostics.some(item => item.code === 'task_commits_task_limit'));
+  assert.ok(partial.diagnostics.some(item => item.code === 'task_commits_project_unavailable'));
+});
+
+test('组合任务共享仓库仅扫描一次提交历史', { skip: process.platform === 'win32' }, t => {
+  const f = fixture(t); commit(f.root, 'parent\n\nBuildr-Task: task-one'); commit(f.root, 'child\n\nBuildr-Task: child-one');
+  const gitRoot = git(f.root, ['--exec-path']), realGit = path.join(gitRoot, 'git');
+  const bin = path.join(f.base, 'bin'), calls = path.join(f.base, 'calls.jsonl'); fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'git'), `#!${process.execPath}\nconst fs = require('node:fs'); const { spawnSync } = require('node:child_process'); fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify(process.argv.slice(2))+'\\n'); const result = spawnSync(${JSON.stringify(realGit)}, process.argv.slice(2), {stdio:'inherit'}); process.exit(result.status ?? 1);\n`, { mode: 0o755 });
+  const originalPath = process.env.PATH;
+  try {
+    process.env.PATH = `${bin}${path.delimiter}${originalPath}`;
+    const result = createTaskCommitsApplication({ ...f.dependencies, readTaskCommitTargets: () => ({ root: f.root, records: [f.record, { ...f.record, taskId: 'child-one' }], includesChildren: true, truncated: false }) }).inspectTaskCommits(f.root, 'task-one');
+    assert.equal(result.commits.length, 2);
+  } finally { process.env.PATH = originalPath; }
+  const commands: string[][] = fs.readFileSync(calls, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+  assert.equal(commands.filter(args => args.includes('rev-list')).length, 1);
+  assert.equal(commands.filter(args => args.includes('cat-file') && args.includes('--batch')).length, 1);
 });

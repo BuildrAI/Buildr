@@ -1,0 +1,22 @@
+.workspace-pane-host { position:absolute; inset:0; display:flex; flex-direction:column; min-height:0; }
+.workspace-pane-host[hidden] { display:none !important; }
+.workspace-pane-stage { flex:1; min-height:0; }
+.workspace-pane-mount[hidden],.workspace-pane-mount > [hidden] { display:none !important; }
+.workspace-pane-mount { min-width:0; min-height:0; }
+.workspace-pane-stage .pane-content-fill .workspace-pane-mount,
+.workspace-pane-stage .pane-content-fill .workspace-pane-mount > * { height:100%; min-height:0; }
+/* Hidden retained directories must not give the visible prose page a directory layout. */
+.workspace-page.workspace-pane-stage .pane-stage .pane-left > .pane-body > .pane-body-inner { width:var(--workspace-content-width,100%); max-width:min(100%,var(--main-content-width)); padding:24px var(--main-content-gutter) 56px; }
+.workspace-page.workspace-pane-stage .pane-stage:not(.split) .pane-left > .pane-body > .pane-body-inner { width:min(var(--main-content-width),100%); }
+.workspace-page.workspace-pane-stage .pane-stage .pane-left:has(.workspace-pane-mount:not([hidden]) .resource-directory,.workspace-pane-mount:not([hidden]) .publication-directory,.workspace-pane-mount:not([hidden]) .task-list-workspace,.workspace-pane-mount:not([hidden]) .workspace-composition,.workspace-pane-mount:not([hidden]) .project-home,.workspace-pane-mount:not([hidden]) .knowledge-page) > .pane-body > .pane-body-inner { width:100%; max-width:100%; padding-inline:32px; }
+.workspace-page.workspace-pane-stage .pane-stage.split .pane-left > .pane-body > .pane-body-inner { padding-inline:var(--main-content-gutter); }
+.workspace-page.workspace-pane-stage .pane-stage.peek-collapse.page-collapsed.page-peek-open > .pane-left > .pane-body > .pane-body-inner { width:100%; max-width:none; padding:20px; }
+@media (max-width:900px) { .workspace-page.workspace-pane-stage .pane-stage .pane-left > .pane-body > .pane-body-inner { padding-inline:var(--main-content-gutter); } }
+@media (max-width:620px) {
+  .workspace-pane-host > .workspace-page-tabs { width:var(--workspace-page-header-width) !important; }
+  .workspace-page.workspace-pane-stage .pane-stage.peek-collapse { flex-direction:row; }
+  .workspace-page.workspace-pane-stage .pane-stage.peek-collapse > .pane-left { min-height:0; }
+  .workspace-page.workspace-pane-stage .pane-stage.peek-collapse > .pane-right { min-height:0; border-top:0; }
+  .workspace-page.workspace-pane-stage .pane-stage.peek-collapse > .pane-right > .pane-tabstrip { position:absolute; top:-43px; height:43px; }
+  .workspace-page.workspace-pane-stage .pane-stage.peek-collapse.reading-overlay > .pane-right > .pane-tabstrip { position:static; top:auto; }
+}

@@ -4,7 +4,7 @@ import type { TaskCommit } from '../../features/task/components/task-commit-mode
 
 export const taskId = '2026-09-27-task-git-commits';
 export const record: TaskRecord = {
-  schemaVersion: 'buildr.task-record/v3', taskId, title: '任务与 Git 提交双向关联',
+  schemaVersion: 'buildr.task-record/v4', taskId, title: '任务与 Git 提交双向关联', brief: null,
   intent: '在任务中查看每次提交的说明和哈希值，在提交说明中保留任务编码，让工作目标与实际改动互相可追溯。',
   scope: { projects: ['product'], services: [{ project: 'product', service: 'buildr' }, { project: 'product', service: 'buildr-web' }] },
   changes: [], parentTaskId: null, retrospective: null, status: 'active', result: null,
@@ -19,7 +19,7 @@ const examples = [
   { hash: '5b90df62c146e3882ef04796a901d570f487c2aa', subject: 'docs(task): 明确任务与提交的关联约定', authorName: 'chenjun', committedAt: '2026-09-27 11:10', repositoryId: 'prototype-buildr', message: `docs(task): 明确任务与提交的关联约定\n\n一个任务可关联多次提交；一次提交通常关联一个任务。\n在提交说明末尾用 Buildr-Task 保留任务编码。\n\nBuildr-Task: ${taskId}` },
 ];
 
-export const commits: TaskCommit[] = examples.map(commit => ({ ...commit, shortHash: commit.hash.slice(0, 8), authorEmail: 'example@example.com', committedAt: commit.committedAt.replace(' ', 'T') + ':00+08:00', authoredAt: commit.committedAt.replace(' ', 'T') + ':00+08:00' }));
+export const commits: TaskCommit[] = examples.map(commit => ({ ...commit, taskId, taskTitle: record.title, shortHash: commit.hash.slice(0, 8), authorEmail: 'example@example.com', committedAt: commit.committedAt.replace(' ', 'T') + ':00+08:00', authoredAt: commit.committedAt.replace(' ', 'T') + ':00+08:00' }));
 export const commitResult: TaskCommitsResult = {
   schemaVersion: 'buildr.task-commits/v1', taskId, readAt: '2026-09-27T06:40:00Z', status: 'complete', commits,
   repositories: [{ id: 'prototype-buildr', label: 'Buildr', root: '/模拟工作空间/Buildr', sources: ['workspace'], status: 'complete', scannedCommitCount: 18 }],

@@ -31,7 +31,7 @@ Buildr 把项目资料、代码位置和经过验证的工作方法组织在一�
 
 ## 安装与维护入口
 
-产品通过 npm 分发，包名是 `@buildr-ai/buildr`。运行它的 Node.js 必须满足 `>=24.15.0 <25`；安装包不会自动下载另一套 Node.js。工作空间（Workspace）中按需声明的受管 Node.js 只供该范围拥有的子进程使用，不能替代产品安装所需的 Node.js。
+产品通过 npm 分发，包名是 `@buildr-ai/buildr`。运行它的 Node.js 必须满足 `>=24.15.0`；安装包不会自动下载另一套 Node.js。工作空间（Workspace）中按需声明的受管 Node.js 只供该范围拥有的子进程使用，不能替代产品安装所需的 Node.js。
 
 正式版轨道（Stable Track）使用 npm 的 `latest` 标签，候选版轨道（Candidate Track）使用 `next` 标签。先查询实际版本及其 `engines`，再安装选定版本；文档标题和源码中的版本号不证明该版本已经发布。如果 `latest` 仍指向预发布版本，它不能作为正式版已发布的证据。
 

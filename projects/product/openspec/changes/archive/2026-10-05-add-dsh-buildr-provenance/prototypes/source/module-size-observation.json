@@ -1,0 +1,122 @@
+[
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/reader.tsx",
+    "rendered": 1497596
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/react-dom/cjs/react-dom-client.production.js",
+    "rendered": 552879
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/resize-observer-polyfill/dist/ResizeObserver.es.js",
+    "rendered": 33636
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/rc-field-form/es/useForm.js",
+    "rendered": 27473
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/@rc-component/trigger/es/hooks/useAlign.js",
+    "rendered": 20874
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/rc-field-form/es/Field.js",
+    "rendered": 19353
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/rc-select/es/BaseSelect/index.js",
+    "rendered": 19325
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/rc-virtual-list/es/List.js",
+    "rendered": 19131
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/@rc-component/trigger/es/index.js",
+    "rendered": 18453
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/react/cjs/react.production.js",
+    "rendered": 18321
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/antd/es/button/style/index.js",
+    "rendered": 16731
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/rc-select/es/Select.js",
+    "rendered": 16073
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/@ant-design/fast-color/es/FastColor.js",
+    "rendered": 13729
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/@ant-design/cssinjs/es/hooks/useStyleRegister.js",
+    "rendered": 12024
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/rc-select/es/OptionList.js",
+    "rendered": 12024
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/rc-overflow/es/Overflow.js",
+    "rendered": 11896
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/scheduler/cjs/scheduler.production.js",
+    "rendered": 11134
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/rc-field-form/es/utils/validateUtil.js",
+    "rendered": 10766
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/antd/es/select/style/multiple.js",
+    "rendered": 10658
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/antd/es/modal/style/index.js",
+    "rendered": 10408
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/@rc-component/async-validator/es/index.js",
+    "rendered": 10225
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/antd/es/skeleton/style/index.js",
+    "rendered": 9926
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/antd/es/button/button.js",
+    "rendered": 9630
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/antd/es/config-provider/index.js",
+    "rendered": 9278
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/services/buildr-web/src/features/task/components/PrototypeTab.tsx",
+    "rendered": 9188
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/antd/es/select/style/variants.js",
+    "rendered": 8827
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/rc-motion/es/hooks/useStatus.js",
+    "rendered": 8711
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/antd/es/select/index.js",
+    "rendered": 8405
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/@ant-design/cssinjs-utils/es/util/genStyleUtils.js",
+    "rendered": 8403
+  },
+  {
+    "id": "/Users/chenjun/workspaces/BuildrAI/Buildr/projects/product/services/buildr-web/node_modules/antd/es/notification/style/index.js",
+    "rendered": 8292
+  }
+]

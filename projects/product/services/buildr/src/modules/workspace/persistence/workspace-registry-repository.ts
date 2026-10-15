@@ -4,6 +4,8 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { productDataRoot } from '../../../infrastructure/filesystem/product-data-root.ts';
+import { withExclusiveFileLock } from '../../../infrastructure/filesystem/exclusive-file-lock.ts';
+import { isConfirmedMissingPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
 
 export const WORKSPACE_REGISTRY_SCHEMA = 'buildr.local-workspace-registry/v1';
 
@@ -54,13 +56,18 @@ function canonicalRegistry(value: any, label: any) {
 
 export function readWorkspaceRegistryFile(file: any) {
   const resolved = path.resolve(file);
-  if (!fs.existsSync(resolved)) return { file: resolved, status: 'absent', registry: emptyRegistry(), reason: null };
+  let content: string;
+  try { content = fs.readFileSync(resolved, 'utf8'); }
+  catch (error: any) {
+    if (error.code === 'ENOENT' && isConfirmedMissingPath(resolved)) return { file: resolved, status: 'absent', registry: emptyRegistry(), reason: null };
+    return { file: resolved, status: 'invalid', registry: null, reason: `workspace-registry.json cannot be read: ${error.message}` };
+  }
   let value;
-  try { value = JSON.parse(fs.readFileSync(resolved, 'utf8')); } catch (error: any) {
+  try { value = JSON.parse(content); } catch (error: any) {
     return { file: resolved, status: 'invalid', registry: null, reason: `workspace-registry.json is invalid JSON: ${error.message}` };
   }
   try {
-    return { file: resolved, status: 'ready', registry: canonicalRegistry(value, 'workspace-registry.json'), reason: null };
+    return { file: resolved, status: 'ready', content, registry: canonicalRegistry(value, 'workspace-registry.json'), reason: null };
   } catch (error: any) {
     return { file: resolved, status: 'invalid', registry: null, reason: error.message };
   }
@@ -86,7 +93,7 @@ export function createWorkspaceRegistryRepository(runtime: WorkspaceRegistryRepo
       return { file, content, revision: registryRevision(content), registry };
     }
     if (observed.status === 'invalid') throw new Error(observed.reason);
-    const content = fs.readFileSync(file, 'utf8');
+    const content = observed.content!;
     return { file, content, revision: registryRevision(content), registry: observed.registry! };
   }
 
@@ -98,30 +105,25 @@ export function createWorkspaceRegistryRepository(runtime: WorkspaceRegistryRepo
     const file = workspaceRegistryPath();
     const lock = `${file}.lock`;
     runtime.ensureDirectory(path.dirname(file));
-    let descriptor;
     try {
-      descriptor = fs.openSync(lock, 'wx');
+      return withExclusiveFileLock(lock, file, () => {
+        const current = readWorkspaceRegistryPersistence();
+        if (current.revision !== expectedRevision) {
+          const conflict: Error & Record<string, any> = new Error('Workspace 登记列表已变化，请刷新后重试。');
+          conflict.code = 'workspace_registry_revision_conflict';
+          conflict.status = 409;
+          conflict.details = { currentRevision: current.revision };
+          throw conflict;
+        }
+        writeWorkspaceRegistry(current.file, mutate(current.registry));
+        return readWorkspaceRegistryPersistence();
+      }, { timeoutMs: 0 });
     } catch (error: any) {
-      if (error.code !== 'EEXIST') throw error;
-      const conflict: Error & Record<string, any> = new Error('Workspace 登记列表正在被另一个操作修改，请刷新后重试。');
+      if (error.code !== 'buildr_exclusive_file_lock_timeout') throw error;
+      const conflict: Error & Record<string, any> = new Error('Workspace 登记列表被其他操作占用，或锁的归属尚不能确认。请重新读取后重试；持续失败时由智能体核对锁归属。', { cause: error });
       conflict.code = 'workspace_registry_revision_conflict';
       conflict.status = 409;
       throw conflict;
-    }
-    try {
-      const current = readWorkspaceRegistryPersistence();
-      if (current.revision !== expectedRevision) {
-        const conflict: Error & Record<string, any> = new Error('Workspace 登记列表已变化，请刷新后重试。');
-        conflict.code = 'workspace_registry_revision_conflict';
-        conflict.status = 409;
-        conflict.details = { currentRevision: current.revision };
-        throw conflict;
-      }
-      writeWorkspaceRegistry(current.file, mutate(current.registry));
-      return readWorkspaceRegistryPersistence();
-    } finally {
-      if (descriptor !== undefined) fs.closeSync(descriptor);
-      fs.rmSync(lock, { force: true });
     }
   }
 

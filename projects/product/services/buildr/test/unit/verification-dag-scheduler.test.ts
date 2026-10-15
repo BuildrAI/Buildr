@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createVerificationSchedulingPriorities, parseVerificationSchedulingMode, runVerificationDag } from '../verification/dag-scheduler.ts';
+import { resolveVerificationExecutionProfile, verificationSteps } from '../verification/registry.ts';
 
 const step: any = (id: any, dependsOn: any = [], concurrencyClass: any = 'default', schedulingCostMs: any) => ({
   id, name: id, dependsOn, concurrencyClass, ...(schedulingCostMs == null ? {} : { schedulingCostMs }),
@@ -154,6 +155,55 @@ test('scheduler在启动step前拒绝超过profile容量的需求', async () => 
     execute: async () => { calls += 1; return { status: 'passed', exitCode: 0, durationMs: 1 }; },
   }), /Unsatisfied workers resource demand/);
   assert.equal(calls, 0);
+});
+
+test('受限 CI 的真实集成与系统检查不会叠加超过三个工作额度', async () => {
+  const ids: any = ['system-public-json-contracts', 'system-verification-contracts', 'integration'];
+  const steps: any = ids.map((id: any) => verificationSteps.find((item: any) => item.id === id));
+  const executionProfile: any = resolveVerificationExecutionProfile('ci-workspace-limited');
+  const active: any = new Set();
+  const demand: any = { workers: 0, processes: 0 };
+  const peak: any = { workers: 0, processes: 0 };
+  let integrationOverlap: any = false;
+  let integrationGrant: any;
+  const results: any = await runVerificationDag(plan(steps), {
+    concurrency: executionProfile.limits,
+    executionProfile,
+    execute: async (item: any, context: any) => {
+      active.add(item.id);
+      integrationOverlap ||= active.has('integration') && active.size > 1;
+      if (item.id === 'integration') integrationGrant = context.resourceGrant;
+      for (const resource of ['workers', 'processes']) {
+        demand[resource] += context.resourceGrant[resource];
+        peak[resource] = Math.max(peak[resource], demand[resource]);
+      }
+      await new Promise((resolve: any) => setImmediate(resolve));
+      for (const resource of ['workers', 'processes']) demand[resource] -= context.resourceGrant[resource];
+      active.delete(item.id);
+      return { status: 'passed', exitCode: 0, durationMs: 1 };
+    },
+  });
+  assert.ok(peak.workers <= 3, `Granted ${peak.workers} simultaneous workers`);
+  assert.ok(peak.processes <= 3, `Granted ${peak.processes} simultaneous processes`);
+  assert.equal(integrationOverlap, false);
+  assert.equal(integrationGrant.workers, 3);
+  assert.deepEqual(results.map((item: any) => [item.id, item.status]), ids.map((id: any) => [id, 'passed']));
+});
+
+test('受限 CI 可完整调度全部登记检查并保留完整工作额度', async () => {
+  const executionProfile: any = resolveVerificationExecutionProfile('ci-workspace-limited');
+  const results: any = await runVerificationDag(plan(verificationSteps), {
+    concurrency: executionProfile.limits,
+    executionProfile,
+    execute: async (_item: any, context: any) => {
+      assert.ok(context.resourceGrant.workers <= 3);
+      assert.ok(context.resourceGrant.processes <= 3);
+      return { status: 'passed', exitCode: 0, durationMs: 1 };
+    },
+  });
+  assert.equal(results.length, verificationSteps.length);
+  assert.ok(results.every((item: any) => item.status === 'passed'));
+  assert.equal(results.find((item: any) => item.id === 'integration-runtime').scheduling.grant.workers, 3);
 });
 
 test('critical-path 同分时优先 fan-out producer，再按自身成本和声明顺序稳定回退', async () => {

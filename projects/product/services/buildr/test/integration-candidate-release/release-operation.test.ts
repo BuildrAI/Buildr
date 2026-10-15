@@ -5,13 +5,26 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { reconcilePublicationAfterPreparedContext, runReleaseOperation } from '../../tools/release/release-orchestration-runner.ts';
+import { reconcilePublicationAfterPreparedContext, resolveRetainedController, runReleaseOperation } from '../../tools/release/release-orchestration-runner.ts';
 import { readCandidateEvidence } from '../../tools/release/release-transaction-runner.ts';
 import { createReleaseArtifactFixture } from '../helpers/release-artifact-fixture.ts';
 import { aggregateCandidateCiEvidence, candidateCiRegistryIdentity, createCandidateCiEvidence } from '../verification/candidate-ci-evidence.ts';
 import { CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES } from '../verification/registry.ts';
 
 const sourceRoot = path.resolve(import.meta.dirname, '../..');
+
+test('retained release controller accepts a newer Node and rejects an unmet source minimum', t => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-retained-controller-node-'));
+  t.after(() => fs.rmSync(workspace, { recursive: true, force: true }));
+  const project = path.join(workspace, 'projects/product');
+  fs.mkdirSync(path.join(project, 'services/buildr/bin'), { recursive: true });
+  fs.writeFileSync(path.join(project, 'services/buildr/bin/buildr.mjs'), '');
+  fs.writeFileSync(path.join(project, '.node-version'), '24.15.0\n');
+  const controller = resolveRetainedController(workspace);
+  assert.equal(fs.realpathSync(controller.executable), fs.realpathSync(process.execPath));
+  fs.writeFileSync(path.join(project, '.node-version'), '999.0.0\n');
+  assert.throws(() => resolveRetainedController(workspace), /does not meet required minimum 999\.0\.0/u);
+});
 
 test('Candidate artifact readback uses a bounded package download budget and reports timeout', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-candidate-readback-budget-'));
@@ -79,13 +92,14 @@ test('prepare creates one isolated release, validates before main, and reuses th
   const evidence = [
     ...CANDIDATE_CI_SHARDS.map((shard: any) => createCandidateCiEvidence({ ...execution, workflow, kind: 'shard', id: shard.id, platform: shard.runner === 'macos' ? 'darwin' : 'win32', registryIdentity: candidateCiRegistryIdentity(),
       artifact: shard.requiresArtifact || shard.producesArtifact ? artifactIdentity : null, primaryStepIds: shard.stepIds, status: 'passed', startedAt: '2026-01-01T00:00:00Z', finishedAt: '2026-01-01T00:00:01Z', durationMs: 1000,
-      results: shard.stepIds.map((id: string) => ({ id, status: 'passed', exitCode: 0, durationMs: 1 })) })),
+      results: shard.stepIds.map((id: string) => ({ id, status: 'passed', exitCode: 0, durationMs: 1,
+        ...(id === 'artifact-browser-core' ? { phases: ['artifact-unpack', 'artifact-verify', 'browser:core', 'artifact-cleanup'].map(id => ({ scope: 'candidate-browser-core', id, status: 'passed' })) } : {}) })) })),
     ...CANDIDATE_CI_HOST_NODE_TUPLES.map((tuple: any) => createCandidateCiEvidence({ ...execution, workflow, kind: 'host-node', id: tuple.id, platform: tuple.runner === 'macos' ? 'darwin' : tuple.runner === 'windows' ? 'win32' : 'linux', registryIdentity: candidateCiRegistryIdentity(),
       artifact: artifactIdentity, primaryStepIds: [], requestedNode: tuple.requestedNode, status: 'passed', startedAt: '2026-01-01T00:00:00Z', finishedAt: '2026-01-01T00:00:01Z', durationMs: 1000,
       results: [{ id: 'host-node-compatibility', status: 'passed', exitCode: 0, durationMs: 1 }] })),
   ];
   const aggregate = aggregateCandidateCiEvidence(evidence, execution, workflow);
-  assert.equal(aggregate.status, 'passed');
+  assert.equal(aggregate.status, 'passed', JSON.stringify(aggregate.findings));
   let task: any = null;
   let worktreeCreated = false;
   let dispatched = 0;
@@ -139,6 +153,13 @@ test('prepare creates one isolated release, validates before main, and reuses th
   };
   const candidateEvidence = { aggregate, manifest: artifact.manifest };
   const dependencies = { execute, runtime, observationOptions: { githubApi: api, registry: api }, candidateDependencies: { candidateEvidence },
+    // This fixture owns orchestration and uses a local proof owner in place of
+    // running every source check inside its deliberately minimal repository.
+    prepareLocalSourceVerification: async (input: any) => {
+      assert.equal(input.repo, repo);
+      assert.deepEqual(input.packages, ['buildr']);
+      return { status: 'ready', transport: 'owned-source-proof', recordCount: 1, missingStepIds: [] };
+    },
     resolveRetainedController: () => ({ workspaceRoot: workspace }),
     invokeRetainedController: (_controller: any, args: string[]) => {
       if (args[0] === 'task' && args[1] === 'create') { task = { taskId, title: 'Release fixture', status: 'active' }; return { status: 'created', record: task, effects: [{ type: 'task-created' }] }; }
@@ -154,6 +175,12 @@ test('prepare creates one isolated release, validates before main, and reuses th
     orchestrationDependencies: { transactionDependencies: { execute, runtime, candidateEvidence } },
   };
   const options = { action: 'prepare', workspace, version };
+  const missing = await runReleaseOperation(options, { ...dependencies, prepareLocalSourceVerification: async () => ({
+    status: 'local-verification-required', missingStepIds: ['unit'], recordCount: 0, nextActions: ['Run the missing local source check.'],
+  }) });
+  assert.equal(missing.status, 'local-verification-required');
+  assert.equal(dispatched, 0, 'missing local proof cannot spend a remote Candidate');
+  assert.equal(merges, 0, 'missing local proof cannot mutate main');
   const first = await runReleaseOperation(options, dependencies);
   assert.equal(first.status, 'candidate-running', JSON.stringify(first));
   assert.equal(dispatched, 1, 'lost responses must not dispatch twice');

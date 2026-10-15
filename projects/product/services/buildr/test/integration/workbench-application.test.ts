@@ -115,7 +115,28 @@ test('首批外置顶和事项按身份查得，跨项目任务不重复，日�
   assert.deepEqual(requested.dailyProgress.missingProjects, ['demo', 'other']);
 });
 
-test('有效0032数据库只读可用且字节与迁移台账不变，首次明确写入升级', (t) => {
+test('工作台的置顶与待处理任务只读取摘要，不扫描长任务正文', (t) => {
+  const { root } = taskRecordFixture(t, 'workbench-brief-summary');
+  const runtime = createRuntime();
+  const created = runtime.createTask(root, { taskId: 'long-brief', title: '长正文任务', intent: '保持工作台轻量', brief: '# 正文\n'.repeat(10_000), projects: ['demo'], services: [], changes: [] });
+  runtime.putWorkbenchPreference(root, 'pinned-task', 'long-brief');
+  runtime.recordTaskWorkContext(root, 'long-brief', { expectedContextDigest: 'absent', progress: '等待判断', nextStep: '继续处理', attention: { kind: 'question', reason: '确认目标' } });
+  const original = DatabaseSync.prototype.prepare;
+  const statements: string[] = [];
+  let read: any;
+  try {
+    DatabaseSync.prototype.prepare = function(sql: string) { statements.push(sql); return original.call(this, sql); };
+    read = runtime.inspectWorkbench(root);
+  } finally { DatabaseSync.prototype.prepare = original; }
+  conforms('WorkbenchResponse', read);
+  assert.equal(statements.some(sql => /SELECT\s+\*\s+FROM\s+tasks|SELECT[^;]*\b(?:brief|result_history_json)\b[^;]*FROM\s+tasks/iu.test(sql)), false, statements.join('\n'));
+  for (const entry of [...read.attention.items, ...read.active.items]) {
+    assert.equal('brief' in entry.task.record, false);
+    assert.equal(entry.task.recordDigest, created.recordDigest);
+  }
+});
+
+test('0032旧库只读报告所需迁移且保持零写入，显式准备后偏好可用', (t) => {
   const { root } = taskRecordFixture(t, 'workbench-old-sqlite');
   const file = path.join(root, '.buildr/local/workspace.sqlite');
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -125,15 +146,17 @@ test('有效0032数据库只读可用且字节与迁移台账不变，首次明�
   db.close();
   const before = fs.readFileSync(file);
   const runtime = createRuntime();
-  assert.equal(runtime.inspectTask(root, 'legacy').record.title, '旧任务');
-  assert.equal(runtime.inspectTaskWorkContext(root, 'legacy').context, null);
-  assert.equal(runtime.inspectWorkbench(root).active.items[0].task.record.taskId, 'legacy');
+  for (const read of [() => runtime.inspectTask(root, 'legacy'), () => runtime.inspectTaskWorkContext(root, 'legacy'), () => runtime.inspectWorkbench(root)]) {
+    assert.throws(read, (error: any) => error.code === 'workspace_store_migration_required');
+  }
   assert.deepEqual(fs.readFileSync(file), before);
   const read = new DatabaseSync(file, { readOnly: true });
   assert.equal(read.prepare('SELECT max(version) AS v FROM schema_migrations').get()?.v, 32); read.close();
+  runtime.prepareTask(root, 'legacy');
   runtime.putWorkbenchPreference(root, 'pinned-task', 'legacy');
+  assert.equal(runtime.inspectWorkbench(root).active.items[0].task.record.taskId, 'legacy');
   const upgraded = new DatabaseSync(file, { readOnly: true });
-  assert.equal(upgraded.prepare('SELECT max(version) AS v FROM schema_migrations').get()?.v, 34); upgraded.close();
+  assert.equal(upgraded.prepare('SELECT max(version) AS v FROM schema_migrations').get()?.v, loadWorkspaceSqliteMigrations().at(-1).version); upgraded.close();
 });
 
 test('命令行与应用读取相同摘要和偏好', (t) => {

@@ -7,23 +7,23 @@
 ## Requirements
 
 ### Requirement: 发布版本必须由唯一人工选择集合承载
-Buildr MUST为每个目标package version使用唯一`release-<version>`承载人工选择的发布集合。该集合 MUST从维护者指定且可由current `dev`证明的精确baseline commit/tree创建，MUST只包含维护者明确选择并以`cherry-pick -x`保留来源的`dev` commits，且 MUST NOT自动追随后续`dev`前进。任何没有`sourceDevCommit`的release-only metadata MUST在进入closeout前具有独立、可验证的dev回流证据；当前owner不支持该证据时 MUST拒绝该entry而非旁路放行。
+发布选择 SHALL 使用独立 `selectionId` 绑定明确目标集合及每个包的准确版本，并从维护者明确指定、可由当前 `dev` 证明的准确基线（Baseline）创建。选择 MUST 仅纳入明确有序、保留 `cherry-pick -x` 来源的提交（Commit），MUST NOT 自动跟随后续 `dev`。旧主包默认选择 SHALL 继续使用版本派生的原身份及 `release-<version>`；插件（Plugin）和联合选择 MUST 使用独立命名空间，不能与同版本主包选择碰撞。任何没有开发来源的独立发布元数据 MUST 具有独立、可验证的开发回流证据，现有所有者（Owner）不支持该证据时 MUST 拒绝该条目。
 
 #### Scenario: 从指定dev baseline创建release
-- **WHEN** 维护者明确要求为`<version>`从某个精确`dev` commit创建发布集合
-- **THEN** release owner MUST核验该commit属于current `dev` authority并记录commit/tree identity
-- **AND** 必须使用唯一`release-<version>` identity，已存在同版本identity时只能核验并复用或报告冲突
-- **AND** 创建本地集合 MUST NOT隐含remote push、Candidate执行或公共发布
+- **WHEN** 维护者明确要求为目标包集合从准确 `dev` 提交（Commit）创建选择
+- **THEN** 系统 MUST 核验其来源并固定源码、目标及各版本身份
+- **AND** 相同选择身份已存在时只能核验复用或报告冲突
+- **AND** 创建本机选择 MUST NOT 隐含远端推送、候选（Candidate）执行或公开发布
 
 #### Scenario: dev在创建后继续前进
-- **WHEN** `dev`在release集合创建后产生新的commit
-- **THEN** current release HEAD/tree和selection chain MUST保持不变
-- **AND** 新commit只有在维护者再次明确选择后才可进入该release集合
+- **WHEN** `dev` 在选择创建后产生新提交（Commit）
+- **THEN** 当前选择源码和来源链 MUST 保持不变
+- **AND** 新内容只有在明确选择后才能进入该组合
 
 #### Scenario: 版本材料或候选修复需要进入release
-- **WHEN** package version、CHANGELOG、README或Candidate修复尚未形成可由current `dev`证明的delivered commit
-- **THEN** Agent MUST先通过窄support Task把改动交付`dev`，再把该source commit以`cherry-pick -x`选择到release
-- **AND** MUST NOT直接在release worktree修改后把整条release历史合并或倒灌`dev`
+- **WHEN** 版本、发布说明或候选（Candidate）修复尚未正常交付 `dev`
+- **THEN** 智能体（Agent）MUST 先通过开发任务交付，再有序选择准确提交（Commit）
+- **AND** MUST NOT 直接编辑发布工作树（Worktree）后倒灌开发历史
 
 ### Requirement: Release更新必须保留逐commit provenance并在冲突时停止
 Release owner MUST只对维护者明确列出的`dev` source commits按明确顺序执行带`-x` provenance的最小cherry-pick。每个source、结果release commit、changed paths和顺序 MUST可由closed selection read model重建；冲突、source漂移或授权不足 MUST在后续成功commit、remote update和公共副作用前失败关闭。
@@ -68,6 +68,8 @@ Release create、update、freeze、reopen、abandon和cleanup MUST分别核验cu
 - **AND** 未获授权、ref漂移或ownership不可证明时 MUST保留remote ref
 
 ### Requirement: 发布模块必须保持唯一owner与窄consumer边界
+本条既有主包上下文（Context）和完整产品候选（Product Candidate）只用于主包相关证明，MUST NOT 强迫仅插件（Plugin）选择生成主包公开产物（Artifact）。逐包候选（Candidate）、发布事实与恢复继续由各自所有者（Owner）维护；共享选择只组合准确目标事实，不建立第二权威。
+
 `tools/release` MUST只拥有release selection、task correlation、readiness/convergence adapter、post-publication dev provenance reconciliation和checkout-only Git provenance；`verification` MUST继续拥有Product Candidate、verification evidence和唯一tarball。发布模块 MUST不读取Task Development或旧Finish repository，也 MUST不改变Product Candidate模型。
 
 #### Scenario: 模块消费其他owner事实
@@ -81,6 +83,8 @@ Release create、update、freeze、reopen、abandon和cleanup MUST分别核验cu
 - **AND** MUST不需要或恢复legacy Task Finish Application
 
 ### Requirement: Release selection 必须从精确 dev baseline 创建
+选择 SHALL 按已固定 `selectionId` 创建源码分支（Branch）与生命周期引用（Ref）；旧仅主包默认身份继续使用 `release-<version>` 及 `refs/buildr/release/<version>/`，插件（Plugin）与联合目标使用互不冲突的独立身份。以下版本命名场景（Scenario）保留为旧仅主包路径；其它目标 SHALL 执行同样的来源、清洁检出和引用占用校验。
+
 Release owner MUST在 clean checkout 中从维护者指定且可由 `dev` ref 证明的精确 commit 创建唯一 `release-<version>` branch，并记录 immutable baseline ref。创建 MUST不隐含 remote push、Candidate 或 publication。
 
 #### Scenario: create release collection
@@ -106,6 +110,8 @@ Update MUST按调用方给出的单个 source commit 执行 `git cherry-pick -x`
 - **AND** MUST不自动解决、继续选择、reset、rebase、force push 或报告部分成功
 
 ### Requirement: Lifecycle state 必须独立、可重建且 fail closed
+生命周期（Lifecycle）SHALL 使用已固定选择身份定位引用（Ref）。以下公开标签（Tag）相关条件仅用于已选择主包的发布收尾；仅插件（Plugin）选择 SHALL 消费插件自己的公开原字节事实及受保护 `main` 源码保全，不要求主包标签（Tag）或新版本。联合选择 MUST 在全部已选择逐包事实成立且共享用途结束后清理共享资源；纯源码交付 SHALL 依据其明确目标及受保护历史保全单独结束用途。
+
 Freeze、reopen、abandon和closeout MUST使用独立Git lifecycle refs与current owner facts，并保持幂等、compare-and-swap与授权边界。current freeze或abandon状态 MUST阻止update；只有显式reopen成功后才能继续逐commit update。Closeout MUST区分正式远端`release-<version>`、正式远端Tag、remote-tracking projection与owner-owned本地/中间资源：正式远端Tag MUST保留并核验；正式远端release ref按本轮显式绑定的清理政策处理，无新政策的历史授权保持保留行为；本地release branch、全部selection lifecycle refs、owned worktree、generation carrier与本地同名Tag属于必需清理资源；remote-tracking ref存在 MUST NOT阻止本地清理。
 
 #### Scenario: freeze and inspect
@@ -145,6 +151,8 @@ Freeze、reopen、abandon和closeout MUST使用独立Git lifecycle refs与curren
 - **AND** 未取得独立cleanup授权时 MUST保留本地与远端资源
 
 ### Requirement: Candidate source 与 release tree 必须形成不可变匹配
+本条准确源码冻结义务 SHALL 适用于各目标对应的候选（Candidate）证明；仅插件（Plugin）源码证明与合入后插件公开候选（Candidate）身份 MUST 分别核验。主包完整证明是否需要 SHALL 按实际源码差异判断，MUST NOT 因未选择主包而跳过受影响的完整检查。
+
 Candidate workflow MUST 接受精确 release ref/SHA，在 admission 时解析 commit identity 与 tree identity，并将二者作为 current Candidate source；后续 shard、aggregate 与 publish consumer MUST 拒绝只凭可变 ref 重建 source。
 
 #### Scenario: release HEAD 进入 Candidate admission
@@ -158,6 +166,8 @@ Candidate workflow MUST 接受精确 release ref/SHA，在 admission 时解析 c
 - **AND** 旧 generation 的 shard、aggregate 与 artifact evidence MUST 不再被接受
 
 ### Requirement: 唯一 artifact 必须由 Candidate 冻结并可回读
+本条唯一原字节义务 SHALL 分别作用于每个已选择包的候选（Candidate）；联合选择包含两份独立产物（Artifact），MUST NOT 合并成一个主包产物（Artifact）或重新打包。仅验证受影响主包的源码候选（Candidate）不等于授权公开主包。
+
 Candidate packaging MUST 只生成一个带 source identity、Candidate generation、package version、文件 manifest 与 bytes integrity 的 publishable tarball；所有验证和 publish consumer MUST 复用该 artifact identity。
 
 #### Scenario: Candidate 生成唯一 tarball
@@ -171,6 +181,7 @@ Candidate packaging MUST 只生成一个带 source identity、Candidate generati
 - **AND** workflow MUST 不产生第二份 publishable bytes
 
 ### Requirement: 共享 Release Context 必须只组合current owner facts
+以下既有主包发布上下文（Context）构造义务 SHALL 仅适用于主包受保护发布。仅插件（Plugin）和联合选择 SHALL 组合 `selectionId`、准确目标及版本、实际差异所需证明、各自原字节和逐包发布指针；MUST NOT 用主包上下文（Context）缺失阻止不依赖它的插件（Plugin）动作，也不能弱化已选择主包的原要求。
 
 Buildr MUST使用唯一closed builder组合release selection、release HEAD/tree、Product Candidate aggregate、冻结artifact、main/dev、Task correlation、matching Worktree evidence、最低充分执行环境观察、exact Node与publish workflow identity。Builder MUST直接读取当前事实并自动组合输入，不要求智能体复制绑定JSON或计算摘要；历史准备绑定仅用于读取兼容，MUST NOT要求重复npm ci形成新绑定。Builder MUST NOT读取Task Environment ready、Plan、Receipt或runtime投影。
 
@@ -198,6 +209,8 @@ Buildr MUST让`pre-candidate`、`pre-main`、`dispatch-check`与hosted`pre-tag`�
 - **AND** hosted workflow MUST逐字节消费并重新计算同一digest，不得接受后续重建的近似context
 
 ### Requirement: Release lifecycle 必须维持唯一协调Task与稳定恢复身份
+协调任务（Task）SHALL 按选择身份定位；旧仅主包默认保留 `release-<version>`，其它目标 SHALL 使用独立身份。仅插件（Plugin）选择 MUST 等待插件自身公开事实与适用收尾，不要求主包公开事实。联合选择 MUST 保留逐包事实及恢复身份，在全部已选择发布和必需共享收尾完成前保持同一任务（Task）进行中。以下主包单独场景（Scenario）继续适用原义务。
+
 Buildr MUST从current release owner facts派生version-scoped lifecycle read model，并 MUST让同一`release-<version>`协调Task从selection持续保持active到Publication、post-publication dev provenance reconciliation与必需closeout完成。阶段与恢复身份 MUST绑定version、Task ID、selection generation/identity、frozen context digest和适用publish run，不得写入Task Record新状态字段或建立旁路workflow store。
 
 #### Scenario: readiness完成并等待publication授权
@@ -216,6 +229,8 @@ Buildr MUST从current release owner facts派生version-scoped lifecycle read mod
 - **AND** 历史授权未包含正式远端release ref删除时 MUST保留其原政策，不自动扩大授权，也不因此阻止Task完成
 
 ### Requirement: Release Git owner 必须管理generation carrier与幂等closeout
+载体（Carrier）SHALL 由 `selectionId` 与代次（Generation）稳定派生；旧仅主包默认名称继续兼容。以下按主包版本及官方标签（Tag）判断的场景（Scenario）仅适用于主包路径。新目标 MUST 核验同一选择归属、受保护历史及全部已选择包用途；MUST NOT 因一包成功删除另一个包仍需恢复的共享引用（Ref）。
+
 Release Git owner MUST为每个selection generation使用确定性`codex/release-main-<version>-g<generation>` carrier，记录expected commit、remote ref、PR head/base与ownership。已合并且源码历史已保全的carrier缺失时，恢复 MUST复用已合并事实且不重建完成用途的引用。发布成功后，owner MUST按与当前context绑定的清理授权处理本版本carrier；同版本全轮次政策 MUST枚举全部可证明归属的generation。未知owner、ref漂移或活动用途 MUST只阻止对应资源删除，不扩大到其他已证明安全的资源。
 
 #### Scenario: 同version新generation创建PR
@@ -244,6 +259,8 @@ Release Git owner MUST为每个selection generation使用确定性`codex/release
 - **AND** 失败发布只有在核实不存在公开发布事实后才可重新准备
 
 ### Requirement: Release lifecycle必须派生编排与阶段时间线
+投射（Projection）SHALL 按选择身份及已选择逐包事实派生；旧主包时间线（Timeline）继续适用。仅插件（Plugin）MUST NOT 等待未选择主包的公开事实；联合选择 SHALL 分别报告两个包的公开、未知和恢复状态，不能由单包成功派生整体完成。
+
 Release lifecycle projection MUST在不增加Task Record字段或旁路workflow store的前提下，组合current selection、Candidate attempts/aggregate、main PR、readiness context、Publication evidence、dev provenance reconciliation、release closeout、Task、Worktree、Preparation与Doctor facts，返回current orchestration action、稳定recovery identity和Release Phase Timeline identity。
 
 #### Scenario: 等待publication授权
@@ -262,6 +279,8 @@ Release lifecycle projection MUST在不增加Task Record字段或旁路workflow 
 - **AND** 旧Timeline MAY作为外部历史evidence保留，但 MUST NOT成为current lifecycle成功输入
 
 ### Requirement: Release selection 必须把 main reconciliation 作为独立 provenance
+本条公开版本阻止源码收敛的条件 SHALL 只核验已选择公开包；未选择主包的现有公开版本 MUST NOT 阻止插件（Plugin）源码收敛。其它来源与冲突保护继续适用。
+
 Release selection MUST继续只从精确 dev baseline 和明确 `cherry-pick -x` source commits 构建；为解决当前 main 漂移而产生的 merge commit MUST作为独立 reconciliation provenance 记录，MUST NOT伪装成 `sourceDevCommit`，且 MUST绑定前一 frozen selection、main parent、release parent、resolution identity 和新 generation。
 
 #### Scenario: 记录 main reconciliation
@@ -280,6 +299,7 @@ Release selection MUST继续只从精确 dev baseline 和明确 `cherry-pick -x`
 - **AND** MUST不移动 frozen ref、覆盖 release branch 或递增 generation
 
 ### Requirement: Release Git mutation 必须绑定matching Worktree execution root
+匹配任务（Task）身份 SHALL 来自固定选择身份，旧主包默认继续为 `release-<version>`。仅插件（Plugin）及联合路径 MUST 绑定自己的唯一协调任务（Task）和提供者（Provider）工作树（Worktree），并执行相同真实仓库、分支（Branch）、提交（Commit）及当前版本核验；MUST NOT 因新目标回退到主检出执行写入。
 
 Release selection、reopen、main coverage/reconciliation与generation carrier准备等checkout-scoped Git mutation MUST只在matching active`release-<version>`Task的provider-owned Worktree中运行。Owner MUST核验canonical Workspace、Task、Worktree evidence、repo root、branch与HEAD；retained primary worktree或caller路径声明 MUST NOT成为执行授权。
 
@@ -301,6 +321,8 @@ Release selection、reopen、main coverage/reconciliation与generation carrier�
 - **AND** MUST NOT扫描其他worktree、切换执行root或回退到retained controller checkout执行Git mutation
 
 ### Requirement: Final release source 必须在 Candidate 前固定
+最终源码 SHALL 在任何适用候选（Candidate）前固定；各包证明都 MUST 绑定同一选择准确源码。仅插件（Plugin）来源证明不要求主包公开产物（Artifact），但实际主包或网页变化 MUST 继续消费完整主包证明；合入后公开插件（Plugin）候选（Candidate）另行绑定准确 `main` 来源。
+
 Release lifecycle MUST把完成current main coverage与历史收敛后的generation作为唯一final release source。Freeze history MUST保留pre-reconciliation generation，但Candidate、唯一artifact、carrier、main tree与publication context MUST只绑定final generation；普通dev前进 MUST继续不改变该source。
 
 #### Scenario: pre-reconciliation generation存在历史Candidate
@@ -314,6 +336,8 @@ Release lifecycle MUST把完成current main coverage与历史收敛后的generat
 - **AND** Candidate通过后release source MUST保持不可变直到main merge或由main drift显式产生下一generation
 
 ### Requirement: 发布身份链必须只组合当前发布与任务owner事实
+本条已有身份链 SHALL 保持主包单独发布的完整原要求。通用选择身份链 SHALL 使用 `selectionId`、目标及各版本、开发来源链、最终源码、实际差异所需候选（Candidate）证明、逐包原字节及发布事实；仅插件（Plugin）MUST NOT 把主包公开标签（Tag）或主包新版本加入必需链，联合各包 MUST 分别消费自己的受保护发布身份。
+
 Buildr MUST以`dev baseline → ordered selection chain → release HEAD/tree → Product Candidate generation → frozen tarball manifest/integrity → main tree → post-publication dev provenance reconciliation → transaction evidence`作为唯一发布身份链。Task correlation MUST只组合release/support Task Record关系、matching Worktree、真实Git/remote和当前发布owner事实。
 
 #### Scenario: 构造发布任务关联
@@ -385,3 +409,15 @@ Release MUST将dev、origin/dev和完整SHA解析为精确提交，分别记录�
 - **WHEN** 源码提交、产物字节、工具链、配方或相关平台条件变化
 - **THEN** 工具 MUST说明失效证明范围并重新验证
 - **AND** 内嵌源码身份变化 MUST重新构建，不能只凭tree相同复用旧包
+
+### Requirement: 源码交付不得隐含未选择包的新版本
+仅插件（Plugin）选择 SHALL 使用其独立版本推进源码核验、冻结及受保护 `main` 纳入，MUST NOT 要求主包新版本或主包版本未公开。实际源码差异影响主包产物（Artifact）时 SHALL 仍执行对应完整候选验证（Candidate Verification），验证现有版本不等于发布该版本。恢复 MUST 核验原目标、版本、源码及选择链，MUST NOT 静默替换选择身份。
+
+#### Scenario: 主包当前版本已经公开
+- **WHEN** 维护者只选择插件（Plugin），主包当前版本已公开且未选择主包发布
+- **THEN** 源码交付 MUST 不受主包公开状态阻塞
+- **AND** 主包公开发布及其标签（Tag）动作 MUST 不被派发
+
+#### Scenario: 同身份输入发生变化
+- **WHEN** 恢复请求改变目标包或版本而未形成新的明确选择
+- **THEN** 系统 MUST 返回身份冲突并保留原现场

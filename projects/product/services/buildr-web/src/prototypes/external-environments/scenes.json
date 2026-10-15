@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "title": "连接与查看数据",
+  "pages": [
+    {
+      "id": "data",
+      "title": "查看数据",
+      "notes": [
+        {
+          "id": "entry",
+          "title": "打开结果，先看数据",
+          "text": "智能体（Agent）在已有会话查询后，返回可打开的数据结果。本页用虚构数据演示。",
+          "position": "data-result"
+        },
+        {
+          "id": "sql",
+          "title": "需要时展开查询语句",
+          "text": "点击“查询语句”展开编辑区，修改后点击“运行”，表格显示新结果。",
+          "position": "data-sql"
+        },
+        {
+          "id": "target",
+          "title": "选择连接和数据库",
+          "text": "显示库只控制列表，当前库解析未限定表名，SQL 中的 database.table 可查询同一连接的其他可访问库。",
+          "position": "data-target"
+        },
+        {
+          "id": "range",
+          "title": "每次最多 500 行",
+          "text": "默认 100 行，最多 500 行。需要更多时，修改条件或点击下一页。",
+          "position": "data-range"
+        }
+      ],
+      "states": [
+        {
+          "id": "manual",
+          "title": "从连接进入人工查询",
+          "notes": []
+        },
+        {
+          "id": "empty",
+          "title": "没有匹配数据",
+          "notes": []
+        },
+        {
+          "id": "error",
+          "title": "只读语句校验失败",
+          "notes": []
+        },
+        {
+          "id": "over-limit",
+          "title": "超过 500，保留输入与旧结果",
+          "notes": []
+        },
+        {
+          "id": "limit500",
+          "title": "本次返回 500 行",
+          "notes": []
+        },
+        {
+          "id": "page2",
+          "title": "明确查询下一页",
+          "notes": []
+        }
+      ]
+    },
+    {
+      "id": "connections",
+      "title": "连接",
+      "notes": [
+        {
+          "id": "list",
+          "title": "查询或编辑连接",
+          "text": "点击“查询”看数据，点击“编辑”改配置；新增与编辑均在抽屉（Drawer）中完成。",
+          "position": "connection-list"
+        },
+        {
+          "id": "config",
+          "title": "填写连接信息",
+          "text": "填写地址、用户、密码和可选默认库；环境可自行命名。",
+          "position": "connection-list"
+        },
+        {
+          "id": "shared",
+          "title": "智能体查，你也能直接查",
+          "text": "智能体（Agent）在原会话使用工具查询；你在 Buildr 看数据或直接查询。",
+          "position": "connection-list"
+        }
+      ],
+      "states": []
+    }
+  ]
+}

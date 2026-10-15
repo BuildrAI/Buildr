@@ -1,0 +1,38 @@
+{
+  "revision": "discussion-v5",
+  "observedAt": "2026-10-13T15:02:40.559703+08:00",
+  "artifacts": [
+    {
+      "file": "connections.html",
+      "bytes": 1567557,
+      "sha256": "68dd0d70afc3722ee5ef8f622d8c3c3bd8aa1429ebeec0c26ce8b5abef997de7",
+      "sourceFilesMatched": 30,
+      "sourceCommit": "6c6dfd56de56ded44a64ece5a8dc2be72357cb2b",
+      "externalResourceReferences": [],
+      "networkConnectionsAllowed": false
+    },
+    {
+      "file": "viewer.html",
+      "bytes": 1350482,
+      "sha256": "a5ebeab78898f9594b956f455fa8690450911f3c47b2b2380386f5f1586c4dda",
+      "sourceFilesMatched": 18,
+      "sourceCommit": "6c6dfd56de56ded44a64ece5a8dc2be72357cb2b",
+      "externalResourceReferences": [],
+      "networkConnectionsAllowed": false
+    },
+    {
+      "file": "diagrams/workspace-environment-connections.html",
+      "bytes": 710229,
+      "sha256": "6048278f2f5db728f6b2420a190c33fe249712605080f61241bc69228f3c18d9"
+    },
+    {
+      "file": "diagrams/agent-mysql-query.html",
+      "bytes": 707508,
+      "sha256": "6f712e95ff44ba8f7fbe2dfded5b803c412e37cc9d018a0369907816fec4a3ad"
+    }
+  ],
+  "screenshots": [
+    "connection-v5-1600.png",
+    "query-v5-1920.png"
+  ]
+}

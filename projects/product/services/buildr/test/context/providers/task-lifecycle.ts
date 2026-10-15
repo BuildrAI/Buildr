@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { createRuntime } from '../../helpers/runtime-harness.ts';
+import { useLegacyAssetCatalog } from '../../helpers/legacy-asset-catalog.ts';
 import { TASK_LIFECYCLE_CONTEXT_KEY } from '../profiles.ts';
 
 export { TASK_LIFECYCLE_CONTEXT_KEY };
@@ -37,6 +38,7 @@ export function createTaskLifecycleContextProvider({ runtime = createRuntime() }
     footprints: Object.freeze(['filesystem', 'cli', 'workspace-lifecycle']),
     prepare({ contextRoot, seedRoot }: any): any  {
       setupOperation('workspace.init', () => runtime.initBuildr(['--source-only', '--target', seedRoot, '--name', 'system-task-context', '--description', 'Task lifecycle System context', '--profile', 'team']));
+      useLegacyAssetCatalog(seedRoot); // This Context exercises the retained project-owned Service CLI.
       setupOperation('project.create:demo', () => runtime.createProject(['demo', '--target', seedRoot, '--name', 'Demo', '--description', 'System context Project']));
       setupOperation('project.create:other', () => runtime.createProject(['other', '--target', seedRoot, '--name', 'Other', '--description', 'Secondary System context Project']));
       const serviceSource: any = path.join(contextRoot, 'service-source');

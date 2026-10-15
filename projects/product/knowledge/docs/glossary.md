@@ -128,6 +128,13 @@
 - 避免混用：不是固定存储结构，不等于已装入模型请求的内容，也不全是受管资产。
 - 来源：[产品定位规范](../../openspec/specs/agent-first-product-positioning/spec.md)。
 
+## 智能体会话（Agent Session）
+
+- 定义：带身份与上下文的智能体（Agent）工作单元，可以持续保存或临时使用；界面简称“会话”。
+- 适用范围：Codex 原生会话关联与智能体临时生成。
+- 避免混用：对话表示交流内容；会话不是执行进程或本机 HTTP 请求会话。Codex `thread` 与 ACP `session` 保持各自身份和生命周期。
+- 来源：[Codex 协作规范](../../openspec/specs/codex-desktop-collaboration/spec.md)与[智能体操作规范](../../openspec/specs/agent-operations/spec.md)。
+
 ## 任务上下文（Task Context）
 
 - 定义：智能体（Agent）为当前任务（Task）选择、组织和压缩形成的语义工作集。
@@ -333,7 +340,7 @@
 ## Buildr Web 启动器（Buildr Web Launcher）
 
 - 定义：启动已绑定 Buildr 安装并打开浏览器的平台图形入口。
-- 适用范围：正式名称 Buildr Web，以及源码开发入口 Buildr Web Dev。
+- 适用范围：正式名称 Buildr Web，以及源码开发入口 Buildr Web Dev；macOS 默认安装到 `/Applications`（早期版本为 `~/Applications`，管理命令会继续按真实位置操作）。
 - 避免混用：不是独立安装更新渠道，不复制 Node.js 或取得工作空间（Workspace）数据所有权。
 - 来源：[技术架构](architecture/technical.md)。
 

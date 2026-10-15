@@ -1,0 +1,219 @@
+{
+  "version": 1,
+  "pages": [
+    {
+      "id": "project-docs",
+      "title": "项目资料 · 阅读与编辑",
+      "notes": [
+        {
+          "id": "project-entry",
+          "title": "从项目资料打开原文件",
+          "text": "项目文档和 AGENTS.md 在项目右侧打开。进入编辑后修改该入口实际指向的文件；不会写到另一个同名文件。",
+          "position": "project-documents"
+        },
+        {
+          "id": "project-identity",
+          "title": "编辑前看清实际位置",
+          "text": "第一行显示完整相对路径，文件名只出现一次；第二行显示“主目录 · dev”及保存状态。机器绝对路径可悬停查看，不占常驻空间。同一文件从资源管理器（Explorer）打开时呈现同一份内容；不同工作树（Worktree）分别处理。",
+          "position": "file-identity"
+        },
+        {
+          "id": "project-mode",
+          "title": "保留阅读，按需进入编辑",
+          "text": "Markdown 保留等宽、位置固定的“阅读 / 编辑”。阅读显示渲染正文，编辑修改完整原文；预览（Preview）放在第二行，仅编辑时可见。代码和普通文本直接显示编辑器（Editor），不提供阅读切换，也不自动聚焦；只读内容遵循实际维护边界。",
+          "position": "file-mode"
+        }
+      ],
+      "states": [
+        {
+          "id": "editing",
+          "title": "编辑中 · 默认自动保存",
+          "notes": [
+            {
+              "id": "project-edit",
+              "title": "修改完整原文",
+              "text": "编辑器（Editor）保留完整 Markdown 原文。停止输入片刻后自动保存（Auto-save），切换阅读与编辑不会丢掉当前内容。",
+              "position": "editor-input"
+            },
+            {
+              "id": "project-history",
+              "title": "撤销、重做也会保存",
+              "text": "在编辑器（Editor）中使用 Cmd+Z 撤销（Undo）、Cmd+Shift+Z 重做（Redo）。已自动保存的修改仍可撤销；撤销和重做后的正文再次自动保存（Auto-save）。",
+              "position": "editor-input"
+            },
+            {
+              "id": "project-saving",
+              "title": "保存结果始终可见",
+              "text": "文件信息栏同时显示保存中或已保存。Cmd+S 可立即尝试保存；正常编辑无需单独确认。",
+              "position": "save-status"
+            }
+          ]
+        },
+        {
+          "id": "saved",
+          "title": "自动保存完成",
+          "notes": [
+            {
+              "id": "project-saved",
+              "title": "确认当前内容已保存",
+              "text": "“已保存”表示当前正文写入成功。后续输入、撤销（Undo）和重做（Redo）会再次触发自动保存（Auto-save）。此演示仅更新本次页面内的模拟内容。",
+              "position": "save-status"
+            },
+            {
+              "id": "project-saved-history",
+              "title": "保存后保留编辑历史",
+              "text": "自动保存（Auto-save）不会清空撤销（Undo）和重做（Redo）记录，可以继续调整刚刚保存的内容。",
+              "position": "editor-input"
+            }
+          ]
+        },
+        {
+          "id": "failure",
+          "title": "保存失败 · 保留输入",
+          "notes": [
+            {
+              "id": "project-failure",
+              "title": "失败不会丢掉输入",
+              "text": "无法保存时保留当前正文，明确显示失败原因和“重试保存”。成功前不会标记为已保存；重试使用当前仍保留的内容。",
+              "position": "save-status"
+            }
+          ]
+        },
+        {
+          "id": "conflict",
+          "title": "保存冲突 · 选择保留内容",
+          "notes": [
+            {
+              "id": "project-conflict",
+              "title": "发现外部变化先暂停保存",
+              "text": "另一入口或智能体（Agent）修改了同一文件时，暂停该文件的自动保存（Auto-save），保留自己的输入和外部最新内容。比较双方内容后，可编辑合并结果、明确采用磁盘版本，或稍后处理。",
+              "position": "conflict-resolution"
+            },
+            {
+              "id": "project-conflict-status",
+              "title": "解决后才恢复自动保存",
+              "text": "采用磁盘版本需要再次确认，之后替换编辑正文；编辑合并结果并保存时重新核对最新版本。稍后处理会保留当前输入并继续暂停保存，不会静默覆盖外部变化。",
+              "position": "save-status"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "explorer",
+      "title": "资源管理器 · 阅读与编辑",
+      "notes": [
+        {
+          "id": "explorer-entry",
+          "title": "从文件树进入编辑",
+          "text": "资源管理器（Explorer）继续浏览所选目录中的文件。当前代码和普通文本直接打开编辑器（Editor），修改后自动保存；Markdown 默认渲染阅读。历史文本与大文件片段保持只读，支持受支持语言的高亮；图片和二进制沿用原展示。",
+          "position": "file-tree"
+        },
+        {
+          "id": "explorer-identity",
+          "title": "按真实文件和版本区分",
+          "text": "第一行显示完整相对路径，文件名只出现一次；第二行显示“主目录 · dev”或“历史版本 · 2b83e8c”，并合并当前保存状态。机器绝对路径可悬停查看。是否可编辑取决于真实文件及其维护边界，和阅读入口无关。",
+          "position": "file-identity"
+        },
+        {
+          "id": "explorer-mode",
+          "title": "按文件类型呈现",
+          "text": "Markdown 保留“阅读 / 编辑”，仅编辑时在第二行提供预览（Preview）。代码和普通文本直接显示带受支持语法高亮的编辑器（Editor），不显示阅读切换，打开时不自动聚焦正文。只读代码仍用同一编辑器并明确提示原因；切换入口继续保留同文件内容与编辑历史。",
+          "position": "file-mode"
+        }
+      ],
+      "states": [
+        {
+          "id": "editing",
+          "title": "编辑中 · 默认自动保存",
+          "notes": [
+            {
+              "id": "explorer-edit",
+              "title": "当前文本直接编辑",
+              "text": "编辑器（Editor）呈现完整当前文件。停止输入片刻后自动保存（Auto-save），正常编辑无需反复确认；Cmd+S 可立即尝试保存。",
+              "position": "editor-input"
+            },
+            {
+              "id": "explorer-history",
+              "title": "常用快捷键继续有效",
+              "text": "在编辑器（Editor）中使用 Cmd+Z 撤销（Undo）、Cmd+Shift+Z 重做（Redo）。保存不会清空编辑历史；恢复后的正文继续自动保存（Auto-save）。",
+              "position": "editor-input"
+            },
+            {
+              "id": "explorer-saving",
+              "title": "保存状态跟随当前文件",
+              "text": "文件信息栏合并显示当前文件的保存中与保存结果。切换文件不会把另一个文件的保存状态借到这里。",
+              "position": "save-status"
+            }
+          ]
+        },
+        {
+          "id": "saved",
+          "title": "自动保存完成",
+          "notes": [
+            {
+              "id": "explorer-saved",
+              "title": "当前输入已保存",
+              "text": "“已保存”表示当前文本已完成写入。可以立即继续编辑或撤销（Undo）；本次演示只更新模拟内容，不修改机器上的文件。",
+              "position": "save-status"
+            },
+            {
+              "id": "explorer-saved-history",
+              "title": "自动保存不切断编辑历史",
+              "text": "保存之后仍可撤销（Undo）和重做（Redo）。每次内容变化都沿用相同的自动保存（Auto-save）和冲突检查行为。",
+              "position": "editor-input"
+            }
+          ]
+        },
+        {
+          "id": "failure",
+          "title": "保存失败 · 保留输入",
+          "notes": [
+            {
+              "id": "explorer-failure",
+              "title": "保留内容并允许重试",
+              "text": "保存失败时展示原因并保留编辑正文。可以继续修改或重试保存；成功前不会显示已保存。",
+              "position": "save-status"
+            }
+          ]
+        },
+        {
+          "id": "conflict",
+          "title": "保存冲突 · 比较双方内容",
+          "notes": [
+            {
+              "id": "explorer-conflict",
+              "title": "外部更新不会被静默覆盖",
+              "text": "发现同一文件的外部变化后，暂停自动保存（Auto-save），保留自己的输入并展示外部最新内容。可编辑合并结果并保存、明确采用磁盘版本，或稍后处理。",
+              "position": "conflict-resolution"
+            },
+            {
+              "id": "explorer-conflict-status",
+              "title": "明确解决后再保存",
+              "text": "采用磁盘版本需要再次确认，避免丢掉自己的输入。编辑合并结果并保存时重新核对版本，成功后恢复自动保存（Auto-save）；稍后处理则继续保留输入并暂停保存。",
+              "position": "save-status"
+            }
+          ]
+        },
+        {
+          "id": "readonly",
+          "title": "历史版本 · 只读",
+          "notes": [
+            {
+              "id": "explorer-readonly-identity",
+              "title": "历史内容保持只读",
+              "text": "完整相对路径单独一行，第二行明确显示“历史版本 · 2b83e8c”。机器绝对路径可悬停查看。没有编辑与保存入口，避免把历史内容意外写入当前文件。",
+              "position": "file-identity"
+            },
+            {
+              "id": "explorer-open-current",
+              "title": "需要修改时进入当前文件",
+              "text": "选择“打开当前文件”后读取对应工作树（Worktree）中的当前内容，再从当前文件进入编辑；历史版本仍保留用于对照。",
+              "position": "file-mode"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

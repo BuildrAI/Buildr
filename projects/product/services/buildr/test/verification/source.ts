@@ -1,0 +1,116 @@
+#!/usr/bin/env node
+import fs from 'node:fs';
+import path from 'node:path';
+import process from 'node:process';
+import { fileURLToPath } from 'node:url';
+import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
+import { assertMinimumNodeVersion } from '../../src/infrastructure/process.ts';
+import { enforceOfflineVerification } from '../../src/infrastructure/network/verification-network-policy.ts';
+import { prepareCandidateEnvironment } from '../../tools/verification/candidate-environment.ts';
+import { createVerificationAdmissionPlan, createVerificationPlan } from './planner.ts';
+import { CANDIDATE_CI_SHARDS, resolveVerificationExecutionProfile } from './registry.ts';
+import { collectVerificationSourceIdentity, createVerificationEvidencePaths, writeVerificationTimingEvidence } from './timing/evidence.ts';
+
+const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const projectRoot = path.resolve(productRoot, '../..');
+
+export function parseSourceArgs(args: string[]): { help: boolean; json: boolean; force: boolean; output: string | null } {
+  const result = { help: false, json: false, force: false, output: null as string | null };
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index];
+    if (arg === '--help' || arg === '-h') result.help = true;
+    else if (arg === '--json') result.json = true;
+    else if (arg === '--force') result.force = true;
+    else if (arg === '--output') {
+      const value = args[++index];
+      if (!value || value.startsWith('-')) throw new Error('Missing value for --output');
+      if (result.output !== null) throw new Error('--output may only be supplied once');
+      result.output = value;
+    } else throw new Error(`Unknown test:source option: ${arg}`);
+  }
+  if (result.help && args.length !== 1) throw new Error('--help cannot be combined with other arguments');
+  return result;
+}
+
+export function sourceOnlyVerificationSteps(steps: any[]): { steps: any[]; excludedStepIds: string[] } {
+  const byId = new Map(steps.map(step => [step.id, step]));
+  const excluded = new Set<string>(steps.filter(step => step.executor?.type === 'candidate-artifact' || step.executor?.consumesArtifact === true).map(step => step.id));
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const step of steps) {
+      if (!excluded.has(step.id) && (step.dependsOn ?? []).some((id: string) => excluded.has(id) || !byId.has(id))) {
+        excluded.add(step.id);
+        changed = true;
+      }
+    }
+  }
+  return { steps: steps.filter(step => !excluded.has(step.id)), excludedStepIds: [...excluded].sort() };
+}
+
+export function createSourceVerificationPlan(platform: string = process.platform): any {
+  const runner = platform === 'darwin' ? 'macos' : platform === 'win32' ? 'windows' : platform;
+  const shardStepIds: string[] = [...new Set<string>(CANDIDATE_CI_SHARDS.filter((shard: any) => shard.runner === runner).flatMap((shard: any) => shard.stepIds))];
+  const selected = createVerificationPlan({ stepIds: shardStepIds });
+  const composed = shardStepIds.length > 0 ? createVerificationAdmissionPlan(selected) : selected;
+  const source = sourceOnlyVerificationSteps(composed.steps);
+  const ids = new Set(source.steps.map(step => step.id));
+  return {
+    ...composed,
+    schemaVersion: 'buildr.verification-source-plan/v1',
+    source: 'candidate-source', runner,
+    status: source.steps.length > 0 ? composed.status : 'blocked',
+    diagnostic: source.steps.length > 0 ? composed.diagnostic : { code: 'source-runner-not-declared', message: `No Candidate source checks are declared for ${runner}.` },
+    stepIds: shardStepIds.filter(id => ids.has(id)),
+    admissionStepIds: (composed.admissionStepIds ?? []).filter((id: string) => ids.has(id)),
+    excludedStepIds: source.excludedStepIds,
+    steps: source.steps,
+  };
+}
+
+function usage(): void {
+  process.stdout.write('Usage: npm run test:source -- [--json] [--force] [--output <source-bundle.json>]\n');
+}
+
+if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {
+  try {
+    const args = parseSourceArgs(process.argv.slice(2));
+    if (args.help) usage();
+    else {
+      const plan = createSourceVerificationPlan();
+      if (args.json) {
+        process.stdout.write(`${JSON.stringify(plan, null, 2)}\n`);
+        if (plan.status !== 'ready') process.exitCode = 1;
+      } else {
+        if (plan.status !== 'ready') throw new Error(plan.diagnostic?.message ?? 'Source verification plan is blocked.');
+        assertMinimumNodeVersion(process.versions.node, fs.readFileSync(path.join(projectRoot, '.node-version'), 'utf8').trim());
+        // The preparation owner verifies content receipts; the execution owner
+        // verifies and exports complete source results independently.
+        prepareCandidateEnvironment({ profile: 'source-runtime', reusePrepared: true, preparationReuseOptions: { force: args.force } });
+        enforceOfflineVerification();
+        const { executePlan } = await import('./plan-runner.ts');
+        const executionProfile = resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE);
+        const evidence = createVerificationEvidencePaths('source');
+        const source = collectVerificationSourceIdentity(productRoot, { projectRoot });
+        const startedAt = Date.now();
+        const execution = await executePlan(plan, {
+          productRoot, projectRoot, diagnosticsDirectory: evidence.diagnosticsOutput,
+          stream: process.stdout, errorStream: process.stderr, prefix: 'verify-source',
+          concurrency: executionProfile.limits, executionProfile, runId: evidence.runId,
+          taskId: process.env.BUILDR_TASK_ID ?? source.branch ?? 'source',
+          reuse: { force: args.force, ...(args.output ? { output: path.resolve(args.output) } : {}) },
+        });
+        writeVerificationTimingEvidence({
+          ...evidence, kind: 'source', source, status: execution.passed ? 'passed' : 'failed',
+          results: execution.results, contextLifecycle: execution.contextLifecycle,
+          startedAt, finishedAt: Date.now(), diagnosticsDirectory: evidence.diagnosticsOutput,
+          prefix: 'verify-source', stream: process.stdout, errorStream: process.stderr, executionProfile,
+        });
+        if (!execution.passed) process.exitCode = 1;
+      }
+    }
+  } catch (error: any) {
+    process.stderr.write(`${error.message}\n`);
+    process.exitCode = 1;
+  }
+}

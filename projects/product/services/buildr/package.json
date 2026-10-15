@@ -1,6 +1,16 @@
 {
   "name": "@buildr-ai/buildr",
-  "version": "0.1.0-rc.38",
+  "version": "0.1.0-rc.39",
+  "buildrCompatibility": {
+    "schemaVersion": "buildr.package-compatibility/v1",
+    "provides": [
+      "buildr.installation-status/v1",
+      "buildr.web-protocol/v1",
+      "buildr.agent-asset-source-observations/v1",
+      "buildr.agent-asset-source-result/v1"
+    ],
+    "requires": []
+  },
   "private": false,
   "description": "Buildr CLI for managing Agent workspace assets.",
   "license": "MIT",
@@ -35,11 +45,13 @@
     "./*": "./*"
   },
   "bin": {
-    "buildr": "bin/buildr.mjs"
+    "buildr": "bin/buildr.mjs",
+    "buildr-mysql": "bin/buildr-mysql.mjs"
   },
   "files": [
     "LICENSE",
     "bin/buildr.mjs",
+    "bin/buildr-mysql.mjs",
     "build/test-context/",
     "src/",
     "README.md",
@@ -90,10 +102,11 @@
     "test:browser:task": "node --import ./test/register-development-entry.ts test/verification/browser-selector-dispatcher.ts --selector task --run",
     "test:browser:articles": "node --import ./test/register-development-entry.ts test/verification/browser-selector-dispatcher.ts --selector articles --run",
     "smoke:workspace": "node tools/development/run-isolated-workspace-smoke.ts",
-    "test:integration:candidate:release": "node --import ./test/register-development-entry.ts test/verification/run-node-tests.ts test/integration-candidate-release/**/*.test.ts",
+    "test:integration:candidate:release": "node --import ./test/register-development-entry.ts test/verification/run-node-tests.ts \"test/integration-candidate-release/**/*.test.ts\"",
     "coverage:unit": "node --import ./test/register-development-entry.ts test/verification/unit-coverage.ts",
     "test:changed": "node --import ./test/register-development-entry.ts test/verification/changed.ts",
     "test:audit:verification": "node --import ./test/register-development-entry.ts test/verification/audit.ts",
+    "test:source": "node --import ./test/register-development-entry.ts test/verification/source.ts",
     "test:focus": "node --import ./test/register-development-entry.ts test/verification/focus.ts",
     "test:host-node": "node --import ./test/register-development-entry.ts test/verification/host-node.ts",
     "benchmark:task-query-million": "node tools/performance/task-query-million.ts",
@@ -109,14 +122,20 @@
     "pack:check": "npm pack --dry-run"
   },
   "engines": {
-    "node": ">=24.15.0 <25"
+    "node": ">=24.15.0"
   },
   "dependencies": {
+    "@vscode/ripgrep-universal": "1.18.0",
     "ajv": "8.18.0",
+    "mysql2": "3.24.5",
+    "node-sql-parser": "5.4.0",
     "yaml": "^2.9.0"
   },
   "bundleDependencies": [
+    "@vscode/ripgrep-universal",
     "ajv",
+    "mysql2",
+    "node-sql-parser",
     "yaml"
   ],
   "devDependencies": {

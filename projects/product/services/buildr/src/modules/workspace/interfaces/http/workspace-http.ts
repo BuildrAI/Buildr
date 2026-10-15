@@ -1,4 +1,5 @@
 import { WORKSPACE_HTTP_OPERATIONS, WORKSPACE_HTTP_SCHEMAS, validateWorkspaceHttp } from './workspace-http-contracts.ts';
+import { documentImageQuery } from '../../../../infrastructure/filesystem/markdown-images.ts';
 
 const WORKSPACE_ID = '[0-9a-fA-F-]{36}';
 const CODE = '[A-Za-z0-9][A-Za-z0-9._-]*';
@@ -66,7 +67,7 @@ export function createWorkspaceHttpContribution(application: any) {
       }
       return null;
     },
-    async handle({ request, suffix, searchParams, root, authorizeWrite, readJsonBody }: any) {
+    async handle({ request, suffix, searchParams, root, authorizeWrite, readJsonBody, respond: response }: any) {
       if (request.method === 'GET' && suffix === '') {
         validateRequest('workspace.read', {});
         return respond('workspace.read', application.getWorkspace(root));
@@ -135,6 +136,13 @@ export function createWorkspaceHttpContribution(application: any) {
       if (request.method === 'PUT' && projectMatch) {
         authorizeWrite();
         return respond('project.update', application.updateProjectMetadata(root, projectMatch[1], validateRequest('project.update', await readJsonBody())));
+      }
+      const projectImageMatch = suffix.match(new RegExp(`^/projects/(${CODE})/document-image$`));
+      if (request.method === 'GET' && projectImageMatch) {
+        const input = documentImageQuery(searchParams, true);
+        const image = application.projectDocumentImage(root, projectImageMatch[1], input.path, input);
+        response.binary(image.bytes, image.contentType, { disposition: 'inline', filename: image.filename });
+        return true;
       }
       const projectDocumentMatch = suffix.match(new RegExp(`^/projects/(${CODE})/documents/(.+)$`));
       if (request.method === 'GET' && projectDocumentMatch) {

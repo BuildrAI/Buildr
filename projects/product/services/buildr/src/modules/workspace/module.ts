@@ -63,14 +63,14 @@ export const WORKSPACE_DIAGNOSTICS = 'workspace.diagnostics';
 
 const WORKSPACE_METHODS = Object.freeze([
   'listCatalogDirectoryCandidates', 'catalogRepositoryLocalConfig', 'listCatalogServices', 'listCatalogRepositories', 'catalogRepositoryStatus', 'normalizeCatalogRepositories', 'deleteCatalogAsset',
-  'workspaceComposition', 'catalogServiceDocument', 'assetCatalog', 'migrateAssetCatalog', 'createCatalogRepository', 'createCatalogService', 'createCatalogProject', 'listProjectRegistrationCandidates', 'registerCatalogProject', 'updateProjectServices', 'updateCatalogAsset', 'repositoryPreparePrompt',
+  'workspaceComposition', 'catalogServiceDocument', 'assetCatalog', 'assetCatalogVersion', 'migrateAssetCatalog', 'createCatalogRepository', 'createCatalogService', 'createCatalogProject', 'listProjectRegistrationCandidates', 'registerCatalogProject', 'updateProjectServices', 'updateCatalogAsset', 'repositoryPreparePrompt',
   'getWorkspace', 'listRegisteredWorkspaces', 'registerLocalWorkspace', 'removeRegisteredWorkspace',
   'resolveRegisteredWorkspace', 'workspaceMigrationPlan', 'migrateWorkspaceMetadata', 'updateWorkspaceMetadata',
   'generateWorkspaceCreatePrompt', 'inspectLocalWorkspaceCandidate', 'getWorkspaceGettingStarted',
   'generateStartWorkPrompt', 'diagnoseWorkspaceMetadata', 'initializeWorkspace', 'recoverWorkspaceMutation',
 ]);
 const PROJECT_METHODS = Object.freeze([
-  'readProjectRegistryRecord', 'listProjects', 'projectDetail', 'projectDocument', 'projectMigrationPlan',
+  'readProjectRegistryRecord', 'listProjects', 'projectDetail', 'projectDocument', 'projectDocumentImage', 'projectDocumentImageContext', 'projectMigrationPlan',
   'migrateProjectRegistry', 'updateProjectMetadata', 'generateProjectCreatePrompt', 'createProjectAsset',
 ]);
 const SERVICE_METHODS = Object.freeze([
@@ -78,8 +78,8 @@ const SERVICE_METHODS = Object.freeze([
   'migrateServiceRegistry', 'updateServiceMetadata', 'generateServiceCreatePrompt', 'createServiceAsset',
 ]);
 const WORKSPACE_QUERY_METHODS = Object.freeze([
-  'getWorkspace', 'readProjectRegistryRecord', 'readServiceRegistryRecord',
-  'listProjects', 'listServices', 'projectDetail', 'serviceDetail',
+  'getWorkspace', 'resolveSourceWorkspaceRoot', 'readProjectRegistryRecord', 'readServiceRegistryRecord',
+  'listProjects', 'listServices', 'projectDetail', 'projectDocumentImageContext', 'serviceDetail',
   'resolveSourceRoot', 'resolveProjectRoot', 'resolveServiceRoot',
 ]);
 

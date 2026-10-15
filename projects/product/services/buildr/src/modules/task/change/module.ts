@@ -9,7 +9,7 @@ export const CHANGE_MODULE_ID = 'change';
 export const CHANGE_APPLICATION = 'change.application';
 
 const METHODS = Object.freeze([
-  'resolveTaskScopedChange', 'taskScopedChangeDetail', 'taskProjectDocument',
+  'resolveTaskScopedChange', 'taskScopedChangeDetail', 'taskChangeAsset', 'taskProjectDocument',
   'taskUiPrototypes', 'taskUiPrototype',
 ]);
 
@@ -48,7 +48,8 @@ function worktreeDependency(requires: ChangeModuleRequires): WorktreeQuery {
   const value = dependency(requires, TASK_WORKTREE_PROVIDER);
   if (typeof value.inspectGitWorktrees !== 'function') throw new Error('Worktree Query dependency is invalid.');
   const inspectGitWorktrees = value.inspectGitWorktrees;
-  return { inspectGitWorktrees: (input) => Reflect.apply(inspectGitWorktrees, value, [input]) };
+  const readEvidence = value.readGitWorktreeEvidence;
+  return { inspectGitWorktrees: (input) => Reflect.apply(inspectGitWorktrees, value, [input]), ...(typeof readEvidence === 'function' ? { readGitWorktreeEvidence: (root: string, taskId: string, options: { optional: boolean }) => Reflect.apply(readEvidence, value, [root, taskId, options]) } : {}) };
 }
 
 function runtimeMethod(runtime: ChangeRuntime, method: string): Callable {
@@ -74,6 +75,7 @@ export function createChangeModule(runtime: ChangeRuntime) {
         ...Object.fromEntries(METHODS.map((method) => [method, runtimeMethod(composition, method)])),
         inspectTask: (...args: Parameters<typeof registered.inspectTask>) => registered.inspectTask(...args),
         taskScopedChangeDetail: (...args: Parameters<typeof registered.taskScopedChangeDetail>) => registered.taskScopedChangeDetail(...args),
+        taskChangeAsset: (...args: Parameters<typeof registered.taskChangeAsset>) => registered.taskChangeAsset(...args),
         taskProjectDocument: (...args: Parameters<typeof registered.taskProjectDocument>) => registered.taskProjectDocument(...args),
         taskUiPrototypes: (...args: Parameters<typeof registered.taskUiPrototypes>) => registered.taskUiPrototypes(...args),
         taskUiPrototype: (...args: Parameters<typeof registered.taskUiPrototype>) => registered.taskUiPrototype(...args),

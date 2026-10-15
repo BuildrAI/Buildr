@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { readPrototypeMetadata, type PrototypeMetadata } from './prototype-metadata.ts';
 import path from 'node:path';
 import { inspectChangeChecklist } from './change-checklist.ts';
+import { discoverChangeAssets, type ChangeAsset, type ChangeAssetDiagnostic } from './change-assets.ts';
 
 export type ChangeLifecycle = 'active' | 'archived';
 export type Project = { id: string; code: string; name: string; source: { type?: string; path: string } };
@@ -14,8 +15,9 @@ export type ChangeModel = {
   project: { id: string; code: string; name: string };
   updatedAt: string;
   progress: unknown;
-  brief: Artifact & { kind: string };
   artifacts: { root: string; proposal: Artifact; design: Artifact; tasks: Artifact; specs: Array<Artifact & { capability: string }> };
+  assets: ChangeAsset[];
+  assetDiagnostics: ChangeAssetDiagnostic[];
 };
 export type PrototypePage = { path: string; title: string; html: string; sizeBytes: number; updatedAt: string; metadata?: PrototypeMetadata };
 export type PrototypeDiagnostic = { code: string; message: string; path?: string; project?: string; change?: string };
@@ -30,7 +32,7 @@ type ChangeError = Error & { code: string; status: number; details?: unknown };
 const SAFE_SEGMENT: RegExp = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const ACTIVE_PREFIX = 'active~';
 const ARCHIVED_PREFIX = 'archived~';
-const CHANGE_CONTENT_FILES = ['.openspec.yaml', 'brief.md', 'proposal.md', 'design.md', 'tasks.md'];
+const CHANGE_CONTENT_FILES = ['.openspec.yaml', 'proposal.md', 'design.md', 'tasks.md'];
 const UI_PROTOTYPE_MARKER = '<!-- buildr:ui-prototype -->';
 const UI_PROTOTYPE_MAX_DEPTH = 8;
 const UI_PROTOTYPE_MAX_CANDIDATES = 200;
@@ -227,10 +229,6 @@ function buildChangeAtProjectRoot(targetRoot: string, project: Project, projectR
   if (!isDirectory(changeRoot) || !isFile(identityFile)) return null;
   const code = lifecycle === 'archived' ? archivedChangeCode(directory) : directory;
   const proposal = artifact(path.join(changeRoot, 'proposal.md'), targetRoot, includeContent);
-  const brief = {
-    kind: 'buildr-companion',
-    ...artifact(path.join(changeRoot, 'brief.md'), targetRoot, includeContent),
-  };
   const design = artifact(path.join(changeRoot, 'design.md'), targetRoot, includeContent);
   const tasks = artifact(path.join(changeRoot, 'tasks.md'), targetRoot, includeContent);
   const changeSpecs = specs(changeRoot, targetRoot, includeContent);
@@ -242,7 +240,7 @@ function buildChangeAtProjectRoot(targetRoot: string, project: Project, projectR
     project: { id: project.id, code: project.code, name: project.name },
     updatedAt: updatedAt(changeRoot),
     progress: inspectChecklist(changeRoot),
-    brief,
+    ...(includeContent ? discoverChangeAssets(changeRoot, projectRoot, targetRoot) : { assets: [], assetDiagnostics: [] }),
     artifacts: {
       root: relativePath(targetRoot, changeRoot),
       proposal,

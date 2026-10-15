@@ -44,7 +44,7 @@ function passedEvidence(workflow: any = null): any  {
     finishedAt: '2026-08-13T00:00:01.000Z',
     durationMs: 1000,
     status: 'passed',
-    results: shard.stepIds.map((id: any) => ({ id, status: 'passed', exitCode: 0, durationMs: 1 })),
+    results: shard.stepIds.map((id: any) => ({ id, status: 'passed', exitCode: 0, durationMs: 1, phases: id === 'artifact-browser-core' ? ['artifact-unpack', 'artifact-verify', 'browser:core', 'artifact-cleanup'].map(id => ({ scope: 'candidate-browser-core', id, status: 'passed', durationMs: 1 })) : [] })),
   }));
   const hosts: any = CANDIDATE_CI_HOST_NODE_TUPLES.map((tuple: any) => createCandidateCiEvidence({
     kind: 'host-node',
@@ -96,7 +96,7 @@ test('Windows lifecycle owners are partitioned into bounded semantic shards', ()
     },
     {
       id: 'task-worktree-recovery-windows',
-      stepIds: ['system-task-lifecycle', 'system-worktree-lifecycle', 'openspec-convergence-recovery'],
+      stepIds: ['system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation', 'openspec-convergence-recovery'],
     },
     { id: 'task-concurrent-windows', stepIds: ['concurrent-task-acceptance'] },
   ]);
@@ -117,6 +117,69 @@ test('Candidate aggregate accepts one current complete evidence set', () => {
   assert.deepEqual(result.findings, []);
   assert.equal(result.evidenceIds.length, CANDIDATE_CI_SHARDS.length + CANDIDATE_CI_HOST_NODE_TUPLES.length);
   assert.deepEqual(result.artifact, artifact);
+});
+
+test('Candidate aggregate rechecks reused source records and retains independent failure facts', () => {
+  const complete = passedEvidence();
+  const shard = complete.find((item: any) => item.id === 'preflight-macos');
+  const result = shard.results[0];
+  result.disposition = 'reused';
+  result.reusedFrom = { runId: 'local-source-1', sourceCommit: 'c'.repeat(40) };
+  result.sourceRecord = { identity: { stepId: result.id, key: `sha256-${'a'.repeat(64)}` } };
+  assert.ok(aggregateCandidateCiEvidence(complete, candidateContext).findings.some((item: any) => item.code === 'source-reuse-invalid'));
+  const checked: any[] = [];
+  const accepted = aggregateCandidateCiEvidence(complete, candidateContext, null, {
+    validateSourceRecord(record: any, stepId: string, runner: string) { checked.push({ record, stepId, runner }); return true; },
+  });
+  assert.equal(accepted.status, 'passed');
+  assert.deepEqual(checked, [{ record: result.sourceRecord, stepId: result.id, runner: 'macos' }]);
+  const projected = createCandidateCiEvidence({ ...shard, results: [{ ...result, childExitCode: 7, childSignal: null, childOutcome: 'failed', failureFacts: [{ kind: 'assertion', code: 'ERR_ASSERTION' }, { kind: 'timeout', scope: 'capability' }] }] });
+  assert.equal(projected.results[0].childExitCode, 7);
+  assert.equal(projected.results[0].failureFacts.length, 2);
+});
+
+test('Candidate aggregate preserves fresh Windows execution when its optional future reuse record is not portable', () => {
+  const workflow = { runId: '38797032896', runAttempt: '1' };
+  const complete = passedEvidence(workflow);
+  const shard = complete.find((item: any) => item.id === 'runtime-windows');
+  for (const id of ['system-app-process', 'runtime-adapter-parity']) {
+    const result = shard.results.find((item: any) => item.id === id);
+    result.durationMs = 12_345;
+    result.sourceRecord = { identity: { stepId: id, key: `sha256-${'a'.repeat(64)}` } };
+  }
+  let checked = 0;
+  const accepted = aggregateCandidateCiEvidence(complete, candidateContext, workflow, {
+    validateSourceRecord() { checked++; return false; },
+  });
+  assert.equal(accepted.status, 'passed');
+  assert.deepEqual(accepted.findings, []);
+  assert.equal(checked, 0, 'fresh same-run results do not use the optional future reuse proof');
+  assert.equal(shard.results.find((item: any) => item.id === 'system-app-process').durationMs, 12_345);
+});
+
+test('Candidate aggregate still rejects an invalid or missing record for explicitly reused results', () => {
+  for (const hasRecord of [true, false]) {
+    const complete = passedEvidence();
+    const result = complete.find((item: any) => item.id === 'runtime-windows').results.find((item: any) => item.id === 'system-app-process');
+    result.disposition = 'reused';
+    if (hasRecord) result.sourceRecord = { identity: { stepId: result.id, key: `sha256-${'a'.repeat(64)}` } };
+    const rejected = aggregateCandidateCiEvidence(complete, candidateContext, null, { validateSourceRecord: () => !hasRecord });
+    assert.equal(rejected.status, 'failed');
+    assert.ok(rejected.findings.some((item: any) => item.code === 'source-reuse-invalid' && item.id === 'runtime-windows' && item.detail === result.id));
+  }
+});
+
+test('an optional source record cannot bypass fresh Browser phase coverage or failed phases', () => {
+  for (const failure of ['missing', 'failed']) {
+    const complete = passedEvidence();
+    const result = complete.find((item: any) => item.id === 'artifact-browser-macos').results.find((item: any) => item.id === 'artifact-browser-core');
+    result.sourceRecord = { identity: { stepId: result.id, key: `sha256-${'a'.repeat(64)}` } };
+    if (failure === 'missing') result.phases = [];
+    else result.phases.find((phase: any) => phase.id === 'browser:core').status = 'failed';
+    const rejected = aggregateCandidateCiEvidence(complete, candidateContext, null, { validateSourceRecord: () => true });
+    assert.equal(rejected.status, 'failed', failure);
+    assert.ok(rejected.findings.some((item: any) => item.code === (failure === 'missing' ? 'browser-phase-missing' : 'browser-phase-not-passed')), failure);
+  }
 });
 
 test('Candidate aggregate accepts mixed attempts from the same workflow run', () => {
@@ -198,7 +261,7 @@ test('Candidate checkpoint retains completed evidence but is never aggregate eli
 
 test('Candidate aggregate rejects missing, duplicate, failed and stale evidence', () => {
   const complete: any = passedEvidence();
-  const missing: any = aggregateCandidateCiEvidence(complete.slice(1), candidateContext);
+  const missing: any = aggregateCandidateCiEvidence(complete.filter((item: any) => item.id !== 'preflight-macos'), candidateContext);
   assert.ok(missing.findings.some((item: any) => item.code === 'evidence-missing' && item.id === 'preflight-macos'));
 
   const duplicate: any = aggregateCandidateCiEvidence([...complete, complete[0]], candidateContext);
@@ -224,4 +287,44 @@ test('Release rehearsal evidence is bound to purpose, tree and rehearsal identit
   const drifted: any = structuredClone(evidence);
   drifted[0].sourceTree = 'e'.repeat(40);
   assert.ok(aggregateCandidateCiEvidence(drifted, { purpose: 'release-rehearsal', sourceCommit, sourceTree, rehearsalIdentity }).findings.some((item: any) => item.code === 'source-tree-mismatch'));
+});
+
+test('Candidate has one independent owner for the complete frontend logic suite', () => {
+  const shard = CANDIDATE_CI_SHARDS.find((item: any) => item.id === 'frontend-logic-macos');
+  assert.deepEqual(shard.stepIds, ['frontend-logic']);
+  assert.equal(shard.requiresArtifact, false);
+  const plan = createCandidateCiShardPlan(shard.id);
+  assert.deepEqual(plan.steps.map((item: any) => item.id), ['frontend-logic']);
+  const withoutFrontend = passedEvidence().filter((item: any) => item.id !== shard.id);
+  assert.ok(aggregateCandidateCiEvidence(withoutFrontend, candidateContext).findings.some((item: any) => item.id === shard.id && item.code === 'evidence-missing'));
+});
+
+test('Candidate rejects missing, incomplete, failed and mismatched artifact Browser core evidence', () => {
+  const id = 'artifact-browser-macos';
+  const missing = aggregateCandidateCiEvidence(passedEvidence().filter((item: any) => item.id !== id), candidateContext);
+  assert.ok(missing.findings.some((item: any) => item.code === 'evidence-missing' && item.id === id));
+  for (const [code, mutate] of [
+    ['primary-result-missing', (item: any) => { item.results = []; }],
+    ['browser-phase-missing', (item: any) => { item.results[0].phases = []; }],
+    ['result-not-passed', (item: any) => { item.status = 'failed'; }],
+    ['artifact-identity-mismatch', (item: any) => { item.artifact = { ...item.artifact, sha256: 'e'.repeat(64) }; }],
+  ] as const) {
+    const evidence = passedEvidence();
+    mutate(evidence.find((item: any) => item.id === id));
+    assert.ok(aggregateCandidateCiEvidence(evidence, candidateContext).findings.some((item: any) => item.code === code), code);
+  }
+});
+
+test('Candidate Browser requires exactly one passed unpack, verification, journey and cleanup phase', () => {
+  for (const phaseId of ['artifact-unpack', 'artifact-verify', 'browser:core', 'artifact-cleanup']) {
+    for (const mode of ['missing', 'failed', 'duplicate']) {
+      const evidence = passedEvidence();
+      const step = evidence.find((item: any) => item.id === 'artifact-browser-macos').results[0];
+      if (mode === 'missing') step.phases = step.phases.filter((phase: any) => phase.id !== phaseId);
+      else if (mode === 'failed') step.phases.find((phase: any) => phase.id === phaseId).status = 'failed';
+      else step.phases.push({ ...step.phases.find((phase: any) => phase.id === phaseId) });
+      const code = mode === 'failed' ? 'browser-phase-not-passed' : `browser-phase-${mode}`;
+      assert.ok(aggregateCandidateCiEvidence(evidence, candidateContext).findings.some((item: any) => item.code === code && item.detail === phaseId), `${phaseId}/${mode}`);
+    }
+  }
 });

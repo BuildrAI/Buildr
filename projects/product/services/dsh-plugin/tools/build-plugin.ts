@@ -1,13 +1,11 @@
 /** Build a closed DSH package using the pinned SDK's real Typert compiler. No install hooks or servers. */
-import { cp, mkdir, readFile, writeFile, symlink, rm } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, writeFile, symlink } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { createSdkRequire } from './sdk-require.ts';
-import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve, join } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import type * as Esbuild from 'esbuild';
-import { DSH_SDK_BASELINES, DSH_SDK_COMMIT_MARKER } from './sdk-baselines.ts';
+import { newBuildOutput, ownedBuildRoot, sdkDeclarationPaths, validatePreparedSourceSdk } from './prepare-source-sdk.ts';
 
 /** SDK TypeScript 6 compiler API used at this isolated build boundary; Buildr uses TypeScript 7. */
 interface CompilerProgram { emit(): { emitSkipped: boolean } }
@@ -38,72 +36,79 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
  */
 const dev = process.argv.includes('--dev');
 const VARIANT = dev
-  ? { name: '@buildr-ai/dsh-plugin-dev', entryId: 'buildr-dev', service: 'buildr-dev', titleKey: 'titleDev', locale: 'buildr-dev', remote: 'buildr-dev', out: 'build/dsh-plugin-dev' }
-  : { name: '@buildr-ai/dsh-plugin', entryId: 'buildr', service: 'buildr', titleKey: 'title', locale: 'buildr', remote: 'buildr', out: 'build/dsh-plugin' };
-const sdkArg = process.argv.slice(2).find(argument => !argument.startsWith('--'));
-const sdk = resolve(sdkArg ?? process.env.BUILDR_DSH_SDK_ROOT ?? join(root, 'build/dsh-0.2.0-rc.1'));
+  ? { name: '@buildr-ai/buildr-dsh-plugin-dev', entryId: 'buildr-dev', service: 'buildr-dev', titleKey: 'titleDev', locale: 'buildr-dev', remote: 'buildr-dev', out: 'build/dsh-plugin-dev' }
+  : { name: '@buildr-ai/buildr-dsh-plugin', entryId: 'buildr', service: 'buildr', titleKey: 'title', locale: 'buildr', remote: 'buildr', out: 'build/dsh-plugin' };
+const args = process.argv.slice(2);
+const option = (name: string): string | undefined => {
+  const index = args.indexOf(name);
+  if (index < 0) return undefined;
+  if (!args[index + 1] || args[index + 1].startsWith('--')) throw new Error(`Missing ${name} value`);
+  return args[index + 1];
+};
+for (let index = 0; index < args.length; index++) {
+  if (args[index] === '--dev') continue;
+  if (!['--source-sdk', '--output'].includes(args[index])) throw new Error(`Unknown build argument ${args[index]}; use --source-sdk <prepared SDK>`);
+  index++;
+}
+const sourceSdk = option('--source-sdk') ?? process.env.BUILDR_DSH_SOURCE_SDK_ROOT;
+if (sourceSdk === undefined) throw new Error('增强插件源码需要支持来源对接的候选 SDK：先运行 prepare-source-sdk，再显式提供 --source-sdk。旧版已交付插件不受此编译前置影响。');
+const sdk = resolve(sourceSdk);
+const sourceReceipt = validatePreparedSourceSdk(sdk, root);
+const baseline = sourceReceipt.baseline;
 const req = createSdkRequire(sdk);
-/**
- * Which baseline this input is. A fetched baseline records its commit beside the source; a git
- * checkout records it in history. Either way the build refuses an input it cannot identify.
- */
-const marker = join(sdk, DSH_SDK_COMMIT_MARKER);
-const sdkCommit = existsSync(marker)
-  ? readFileSync(marker, 'utf8').trim()
-  : execFileSync('git', ['rev-parse', 'HEAD'], { cwd: sdk, encoding: 'utf8' }).trim();
-const sdkVersion = String(req('./package.json').version);
-const baseline = DSH_SDK_BASELINES.find(candidate => candidate.commit === sdkCommit && candidate.version === sdkVersion);
-if (baseline === undefined) {
-  throw new Error(`Buildr DSH plugin requires a verified SDK baseline; got ${sdkCommit} / ${sdkVersion}. Known: ${DSH_SDK_BASELINES.map(candidate => `${candidate.commit.slice(0, 8)} / ${candidate.version}`).join(', ')}`);
-}
-// Build the SDK's own client artifacts only when a baseline does not already ship them. Compiling
-// them unconditionally would surface the SDK's own type errors instead of ours, which is not this
-// plugin's build to fix.
-if (!['packages/client/ui-sidebar', 'packages/client/ui-sidebar-browser', 'packages/api/remotes']
-  .every(relative => existsSync(join(sdk, relative, 'lib')))) {
-  execFileSync(process.execPath, [req.resolve('typescript/bin/tsc'), '-b', 'packages/client/ui-sidebar/tsconfig.json', 'packages/client/ui-sidebar-browser/tsconfig.client.json', 'packages/api/remotes/tsconfig.client.json'], { cwd: sdk, stdio: 'inherit' });
-}
 const { tsImport } = req('tsx/esm/api') as { tsImport(url: string, parent: string): Promise<unknown> };
 const ts = req('typescript') as SdkCompiler;
 const { build } = req('esbuild') as typeof Esbuild;
 const { transform } = req('lightningcss') as CssCompiler;
 const { WorkspaceTypertGenerator } = await tsImport(pathToFileURL(join(sdk, 'packages/typert/generator/src/index.ts')).href, import.meta.url) as TypertCompiler;
 const { PLATFORM_MODULES } = await tsImport(pathToFileURL(join(sdk, 'packages/client/web/src/platform.ts')).href, import.meta.url) as { PLATFORM_MODULES: string[] };
-const stage = join(root, 'build/dsh-plugin-compile');
+const out = newBuildOutput(root, option('--output') ?? VARIANT.out);
+const stage = await mkdtemp(join(ownedBuildRoot(root), 'dsh-plugin-compile-'));
 const pkg = join(stage, 'packages/plugin');
-const out = join(root, VARIANT.out);
 const source = join(root, 'plugin');
-await rm(stage, { recursive: true, force: true });
 await mkdir(pkg, { recursive: true });
 await symlink(join(sdk, 'node_modules'), join(stage, 'node_modules'), 'dir');
 await cp(source, pkg, { recursive: true });
+// The main package owns the sole wire source. Materialize only a build projection so published
+// extensions remain self-contained and never import a sibling service or another npm package.
+const desktopContract = 'src/modules/agent-operations/contracts/dsh-desktop-bridge.ts';
+await cp(join(root, '..', 'buildr', desktopContract), join(pkg, 'desktop-contract.ts'));
+for (const file of ['desktop-server.ts', 'desktop-navigation.ts', 'src/index.ts', 'src/desktop-client.ts', 'src/types.ts']) {
+  const filename = join(pkg, file), prefix = file.startsWith('src/') ? '../' : './';
+  await writeFile(filename, (await readFile(filename, 'utf8')).replaceAll(
+    file.startsWith('src/') ? '../../../buildr/' + desktopContract : '../../buildr/' + desktopContract,
+    prefix + 'desktop-contract.ts'));
+}
 // Cordis and the Remote generator both require the service key to be a literal, so the development
 // variant takes its own key here rather than at runtime. This is the whole difference between the
-// two packages' Host halves: they must be able to coexist in one DSH profile.
+// two packages' Host halves: diagnostics retain separate namespaces. Cooperative business ownership
+// is checked inside each gateway; the official DSH installer remains unchanged.
 if (dev) {
   const hostFile = join(pkg, 'src/index.ts');
   await writeFile(hostFile, (await readFile(hostFile, 'utf8')).replace("super(ctx, 'buildr')", "super(ctx, 'buildr-dev')"));
   const clientFile = join(pkg, 'src/client.tsx');
   await writeFile(clientFile, (await readFile(clientFile, 'utf8')).replaceAll("'remote.buildr'", "'remote.buildr-dev'"));
 }
-/** Peer range covering the whole minor line of the compiled baseline, never older versions. */
-function baselinePeerRange(version: string): string {
-  const match = /^(\d+)\.(\d+)\./.exec(version);
-  if (!match) throw new Error(`Baseline version ${version} is not a semantic version.`);
-  return `>=${version} <${match[1]}.${Number(match[2]) + 1}.0-0`;
-}
 const template = JSON.parse(await readFile(join(source, 'package.template.json'), 'utf8')) as Manifest;
+const sourceMetadata = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
 const manifest = {
   ...template,
-  version: JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version,
+  version: sourceMetadata.version,
+  buildrCompatibility: sourceMetadata.buildrCompatibility,
   name: VARIANT.name,
-  // Declare the minor line this build was compiled against: runtime versions at or above the
-  // baseline within the same minor pass, while older builds and the next minor line's
-  // prereleases stay refusable. The `<X.Y.0-0` bound excludes the next line's prereleases.
+  // Exact candidate target version, not proof that an unpatched runtime exposes the optional slots.
   peerDependencies: {
     ...template.peerDependencies,
-    '@deepseek-ai/dsh': baselinePeerRange(baseline.version),
-    '@deepseek-ai/dsh-typert-protocol': baselinePeerRange(baseline.version),
+    '@deepseek-ai/dsh': baseline.version,
+    '@deepseek-ai/dsh-typert-protocol': baseline.version,
+  },
+  buildrDshSourceSdk: {
+    upstream: baseline,
+    sourceManifestSha256: sourceReceipt.sourceManifest.sha256,
+    sourcePatchSha256: sourceReceipt.patchSha256,
+    compiledContracts: sourceReceipt.contracts,
+    runtimeSlotSupport: 'checked-at-runtime',
+    desktopValidated: false,
   },
   description: dev
     ? 'Buildr 开发版入口，面向 Buildr 源码开发者；不随正式发布提供'
@@ -114,22 +119,14 @@ const manifest = {
 // Typert's source mapper uses lib/types/<leaf> -> src/<leaf>; final tsc output also includes parent bridge modules.
 const reflectionManifest = { ...manifest, exports: Object.fromEntries(Object.entries(manifest.exports).map(([key, value]) => [key, typeof value === 'object' && value.types ? { ...value, types: value.types.replace('/types/src/', '/types/') } : value])) };
 await writeFile(join(pkg, 'package.json'), JSON.stringify(reflectionManifest, null, 2) + '\n');
-const rawBase = ts.readConfigFile(join(sdk, 'tsconfig.base.json'), ts.sys.readFile).config as { compilerOptions: { paths: Record<string, string[]> } };
-const paths = Object.fromEntries(Object.entries(rawBase.compilerOptions.paths).map(([key, paths]) => [key, paths.map(p => {
-  const full = resolve(sdk, p);
-  const declaration = full.replace('/src', '/lib/types').replace(/\.tsx?$/, '.d.ts');
-  if (p.includes('*')) return declaration;
-  if (ts.sys.fileExists(declaration)) return declaration;
-  if (ts.sys.fileExists(join(declaration, 'index.d.ts'))) return join(declaration, 'index.d.ts');
-  return full;
-})]));
+const paths = sdkDeclarationPaths(sdk);
 // The compiler recognizes decorators by the registered protocol package, not their spelling.
 const protocol = join(stage, 'packages/protocol');
 await mkdir(protocol, { recursive: true });
 for (const name of ['package.json', 'src', 'lib/types']) await cp(join(sdk, 'packages/typert/protocol', name), join(protocol, name), { recursive: true });
 paths['@deepseek-ai/dsh-typert-protocol'] = [join(protocol, 'lib/types/index.d.ts')];
-paths['@buildr-ai/dsh-plugin'] = [join(pkg, 'src/index.ts')];
-paths['@buildr-ai/dsh-plugin/types'] = [join(pkg, 'src/types.ts')];
+paths['@buildr-ai/buildr-dsh-plugin'] = [join(pkg, 'src/index.ts')];
+paths['@buildr-ai/buildr-dsh-plugin/types'] = [join(pkg, 'src/types.ts')];
 const uiRequire = createRequire(join(sdk, 'packages/client/ui-sidebar/package.json'));
 const remotesRequire = createRequire(join(sdk, 'packages/api/remotes/package.json'));
 const zodEntry = remotesRequire.resolve('zod');
@@ -165,10 +162,13 @@ compile(join(pkg, 'tsconfig.client.json'));
 await build({ entryPoints: [join(pkg, 'src/index.ts')], outfile: join(pkg, 'lib/index.js'), bundle: true, platform: 'node', format: 'esm', target: 'es2022',
   external: ['@deepseek-ai/schemastery', '@deepseek-ai/cordis'], alias: { '@deepseek-ai/dsh-typert-protocol': join(sdk, 'packages/typert/protocol/src/index.ts'), zod: zodEntry },
   tsconfig: join(pkg, 'tsconfig.json') });
+await build({ entryPoints: [join(pkg, 'src/types.ts')], outfile: join(pkg, 'lib/types.js'), bundle: true, platform: 'node', format: 'esm', target: 'es2022',
+  tsconfig: join(pkg, 'tsconfig.json') });
 await build({ entryPoints: [join(pkg, 'src/client.tsx')], outfile: join(pkg, 'lib/client.js'), bundle: true, platform: 'browser', format: 'cjs', target: 'es2022',
   tsconfig: join(pkg, 'tsconfig.client.json'), external: [...PLATFORM_MODULES], nodePaths: [join(sdk, 'node_modules')], alias: { zod: zodEntry },
   define: {
     __BUILDR_ENTRY_ID__: JSON.stringify(VARIANT.entryId),
+    __BUILDR_PACKAGE_NAME__: JSON.stringify(VARIANT.name),
     __BUILDR_TITLE_KEY__: JSON.stringify(VARIANT.titleKey),
     // A locale namespace is a registration key: two packages claiming the same one collide, and the
     // rejected registration is what previously stopped the development entry from reaching its slot.
@@ -185,8 +185,8 @@ await build({ entryPoints: [join(pkg, 'src/client.tsx')], outfile: join(pkg, 'li
     });
   } }],
 });
-await rm(out, { recursive: true, force: true });
-await mkdir(out, { recursive: true });
+await mkdir(dirname(out), { recursive: true });
+await mkdir(out);
 await cp(join(pkg, 'lib'), join(out, 'lib'), { recursive: true });
 if (!dev) await cp(join(source, 'cordis.patch.yml'), join(out, 'cordis.patch.yml'));
 await cp(join(source, 'README.md'), join(out, 'lib/README.md'));

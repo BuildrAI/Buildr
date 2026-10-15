@@ -1,0 +1,128 @@
+.task-diff-reader { display:flex; gap:0; min-height:0; height:100%; background:#fff; }
+.task-changes-pane { display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; height:100%; }
+.task-changes-pane > .ant-alert { flex:none; }
+.task-changes-pane > .task-diff-reader { flex:1; }
+.task-changes-state { display:flex; align-items:center; flex-direction:column; gap:14px; padding:32px 20px; text-align:center; }
+.task-changes-state h3 { margin:0; font-size:15px; font-weight:550; }
+.task-changes-state p { margin:0; font-size:12px; color:var(--soft-muted); }
+.task-changes-state .ant-alert { width:100%; max-width:620px; text-align:left; }
+.task-rail-body { flex:1; min-height:0; overflow-y:auto; padding-bottom:12px; }
+.task-rail-repo { margin:8px 0 0; }
+.task-rail-repo + .task-rail-repo { border-top:1px solid var(--soft-line); padding-top:8px; }
+.task-rail-repo-top { display:flex; align-items:center; gap:8px; min-width:0; flex-basis:100%; }
+.task-rail-repo-top .task-changed-repo-count { margin-left:auto; flex:none; }
+.task-diff-rail .task-rail-repo { margin:4px 0 0; }
+.task-rail-repo-top .task-changed-repo-branch { max-width:90px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:2px 5px; }
+.task-rail-repo-top .task-changed-repo-branch .anticon { flex:none; }
+.task-rail-repo-toggle { display:flex; align-items:center; gap:6px; border:0; background:transparent; padding:0; margin:0; cursor:pointer; color:inherit; font:inherit; min-width:0; flex:1; text-align:left; }
+.task-rail-repo-toggle .task-commits-expand { display:inline-flex; align-items:center; }
+.task-diff-rail .task-commits-expand { flex:none; display:inline-flex; width:9px; justify-content:flex-start; }
+.task-rail-repo-toggle .task-commits-expand { font-size:9px; flex:none; }
+.task-rail-repo-toggle .task-changed-repo-label { min-width:0; overflow:hidden; }
+.task-rail-repo-toggle .task-changed-repo-label strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.task-rail-repo-toggle:focus-visible { outline:2px solid var(--soft-primary); outline-offset:-2px; border-radius:4px; }
+.task-rail-repo-toggle:hover strong { color:var(--soft-primary); }
+.task-rail-group { margin:12px 10px 2px 26px; padding:0; font-size:11px; font-weight:600; color:var(--soft-muted); letter-spacing:.02em; }
+.task-rail-empty { margin:4px 10px 10px; padding:0; font-size:11px; color:var(--soft-muted); }
+.task-rail-commits { margin:0; padding:0; list-style:none; }
+.task-rail-commit { display:flex; width:100%; align-items:flex-start; gap:6px; padding:7px 10px 7px 26px; border:0; background:transparent; text-align:left; cursor:pointer; color:inherit; font:inherit; }
+.task-rail-commit:hover strong { color:var(--soft-primary); }
+.task-rail-commit.is-selected { background:var(--soft-primary-soft,#e7efec); }
+.task-rail-commit:focus-visible { outline:2px solid var(--soft-primary); outline-offset:-2px; border-radius:6px; }
+.task-rail-commit .task-commits-expand { margin-top:3px; font-size:9px; flex:none; }
+.task-rail-commit-content { min-width:0; flex:1; }
+.task-rail-commit-content strong { display:block; font-size:12px; font-weight:550; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.task-rail-commit-content .task-commits-meta { display:flex; align-items:baseline; flex-wrap:wrap; gap:4px 9px; margin-top:2px; font-size:10.5px; color:var(--soft-muted); }
+.task-rail-commit-content .task-commits-meta code { color:var(--soft-primary); background:var(--soft-primary-soft,#e7efec); padding:1px 5px; border-radius:4px; font-size:10.5px; }
+.task-rail-commit-source { display:block; margin-top:2px; font-size:10.5px; color:var(--soft-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.task-rail-commit-files { margin:0 4px 8px 31px; border-left:1px solid var(--soft-line); padding-left:7px; }
+.task-rail-commit-files .task-changed-list { border-radius:6px; }
+.task-diff-scope { color:var(--soft-primary); }
+.task-diff-rail { flex:0 0 320px; position:relative; border-right:1px solid var(--soft-line); background:#fff; display:flex; flex-direction:column; min-width:0; }
+.task-diff-rail .task-diff-rail-resize { position:absolute; top:0; right:-4px; width:9px; height:100%; align-self:auto; }
+.task-diff-reader.is-resizing { user-select:none; cursor:col-resize; }
+.task-diff-rail.is-collapsed { flex-basis:44px; align-items:center; border-right:1px solid #dce5e0; }
+.task-diff-rail-head { display:flex; align-items:center; justify-content:space-between; min-height:49px; padding:9px 12px; border-bottom:1px solid var(--soft-line); background:#fff; }
+.task-diff-rail-title { min-width:0; display:flex; align-items:baseline; gap:8px; }
+.task-diff-rail-title strong { font-size:13px; font-weight:600; flex:none; }
+.task-diff-rail-title small { font-size:11px; color:var(--soft-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.task-diff-rail .task-changed-list { border:0; border-radius:0; overflow-y:auto; }
+.task-diff-rail .task-changed-list > li + li { border-top:0; }
+.task-diff-rail .task-changed-path { display:none; }
+.task-diff-rail .task-changed-row { padding:7px 10px; }
+.task-diff-rail .task-rail-repo > .task-changed-list .task-changed-row { padding-left:26px; }
+.task-diff-rail .task-changed-row-content strong { word-break:break-all; overflow-wrap:anywhere; }
+.task-diff-rail .task-changed-detail { margin-left:0; }
+.task-diff-pane { flex:1; min-width:0; min-height:0; height:100%; display:flex; flex-direction:column; }
+.task-diff-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; min-height:49px; padding:9px 20px; border-bottom:1px solid var(--soft-line); }
+.task-diff-file { min-width:0; display:flex; flex-direction:column; gap:2px; }
+.task-diff-file strong { font-size:13px; font-weight:550; overflow-wrap:anywhere; }
+.task-diff-file small { font-size:11px; color:var(--soft-muted); overflow-wrap:anywhere; }
+.task-diff-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.task-diff-body { flex:1; min-height:0; overflow:auto; padding:0; }
+.task-diff-body.has-editor { display:flex; flex-direction:column; overflow:hidden; }
+.task-diff-navigation { display:inline-flex; align-items:center; gap:3px; color:var(--soft-muted); font-size:11px; white-space:nowrap; }
+.task-diff-text { margin:0; padding:14px 0; font:12px/1.85 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre; overflow-x:auto; }
+.task-diff-line { display:flex; align-items:baseline; gap:10px; padding:0 14px; min-width:max-content; }
+.task-diff-line.line-add { background:#e7f4e7; }
+.task-diff-line.line-del { background:#f8e7e5; }
+.task-diff-line.line-hunk { color:#7c74c9; font-weight:600; padding:8px 14px; }
+.task-diff-line.line-meta { color:var(--soft-muted); }
+.task-diff-gutter { flex:none; width:42px; text-align:right; font-style:normal; font-size:10.5px; color:var(--soft-muted); user-select:none; }
+.task-diff-line em { font-style:normal; min-width:0; }
+/* 并排：左右各为独立可滚动的显示框，中间是独立的对照行号缝 */
+.task-diff-split { --task-diff-row-height:22.2px; display:flex; min-height:0; height:100%; font:12px/1.85 ui-monospace,SFMono-Regular,Menlo,monospace; }
+.task-diff-split-side { flex:1 1 50%; min-width:0; overflow:auto; }
+.task-diff-split-side > .task-diff-row { width:max-content; min-width:100%; }
+.task-diff-row { display:block; padding:0 12px; white-space:pre; height:var(--task-diff-row-height); min-height:var(--task-diff-row-height); line-height:var(--task-diff-row-height); }
+.task-diff-row > em { font-style:normal; min-width:0; }
+.task-diff-row.is-add { background:#e7f4e7; }
+.task-diff-row.is-del { background:#f8e7e5; }
+.task-diff-row.is-empty { background:#f5f6f6; }
+.task-diff-split-gutter { flex:none; display:flex; flex-direction:column; border-left:1px solid var(--soft-line); border-right:1px solid var(--soft-line); background:var(--soft-sidebar); color:var(--soft-muted); overflow:hidden; }
+.task-diff-nums { height:var(--task-diff-row-height); line-height:var(--task-diff-row-height); flex:none; display:flex; gap:8px; justify-content:flex-end; padding:0 8px; font-style:normal; font-size:10.5px; user-select:none; }
+.task-diff-nums > i { flex:none; width:36px; text-align:right; font-style:normal; }
+.task-diff-nums.is-hunk { color:#7c74c9; }
+.task-diff-empty { margin:20px; font-size:12.5px; color:var(--soft-muted); }
+.task-diff-hint { margin:10px 14px; font-size:11px; color:var(--soft-muted); }
+.task-diff-hint .anticon { margin-right:6px; }
+.task-diff-scope-note { margin:0; padding:10px 14px; font-size:11.5px; color:var(--soft-muted); border-bottom:1px solid var(--soft-line); }
+.task-diff-scope-note .anticon { margin-right:6px; }
+.task-diff-reader.is-narrow-layout { flex-direction:column; }
+.task-diff-reader.is-narrow-layout .task-diff-rail { flex:none; border-right:0; border-bottom:1px solid var(--soft-line); max-height:240px; flex-basis:auto !important; }
+.task-diff-reader.is-narrow-layout .task-diff-rail .task-rail-body { overflow-y:auto; }
+.task-diff-reader.is-narrow-layout .task-diff-rail-resize { display:none; }
+/* 文件栏收起即成边侧条，悬停弹出浮窗；展开恢复常驻栏并可拖宽 */
+.task-diff-rail.is-collapsed { flex-basis:44px !important; }
+.task-diff-rail.is-collapsed .task-diff-rail-head { justify-content:center; min-height:44px; padding:6px; }
+.task-diff-rail-peek { position:absolute; top:0; left:44px; z-index:20; width:320px; height:100%; overflow-y:auto; background:var(--soft-sidebar); border:1px solid var(--soft-line); border-left:0; border-radius:0 10px 10px 0; box-shadow:12px 0 32px rgba(20,26,30,.14); padding:12px 0 12px; }
+.task-diff-rail .task-rail-repo-top { flex:1 1 100%; gap:6px; }
+.task-rail-repo-toggle { flex:1 !important; }
+.task-diff-pane > .task-commits-demo-note { font-size:11px; line-height:1.6; color:var(--soft-muted); }
+.task-diff-rail.is-collapsed .task-diff-rail-title { display:none; }
+.task-commit-details { padding:20px; font-size:13px; line-height:1.75; }
+.task-commit-details h2 { margin:0 0 12px; font-size:18px; line-height:1.5; overflow-wrap:anywhere; }
+.task-commit-details dl { margin:0 0 20px; display:grid; grid-template-columns:auto minmax(0,1fr); gap:6px 12px; }
+.task-commit-details dt { color:var(--soft-muted); }
+.task-commit-details dd { margin:0; overflow-wrap:anywhere; }
+.task-commit-details pre { margin:12px 0; white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; user-select:text; }
+.task-commit-details .task-commit-actions { display:flex; gap:8px; flex-wrap:wrap; }
+
+/* Scope the mode contrast to this reader; selected state remains visible on hover. */
+.task-diff-mode.ant-segmented { background:var(--soft-sidebar); border:1px solid var(--soft-line); padding:3px; }
+.task-diff-mode .ant-segmented-item { min-width:52px; color:var(--soft-muted); }
+.task-diff-mode .ant-segmented-item-selected,
+.task-diff-mode .ant-segmented-item-selected:hover { background:var(--soft-primary); color:#fff; font-weight:600; box-shadow:none; }
+.task-diff-mode .ant-segmented-thumb { background:var(--soft-primary); }
+
+.task-diff-version-head { flex:none; position:sticky; top:0; height:30px; line-height:30px; padding:0 12px; background:var(--soft-sidebar); border-bottom:1px solid var(--soft-line); color:var(--soft-muted); font:12px/30px sans-serif; z-index:1; }
+
+.task-diff-mode .ant-segmented-item-disabled,
+.task-diff-mode .ant-segmented-item-disabled:hover { color:#a6adb4; background:transparent; transition:none; cursor:not-allowed; }
+.task-diff-mode .ant-segmented-item-disabled::after,
+.task-diff-mode .ant-segmented-item-disabled:hover::after { opacity:0; background:transparent; transition:none; }
+
+.task-diff-read-status { margin:0; padding:6px 14px; border-bottom:1px solid var(--soft-line); color:var(--soft-muted); font-size:11.5px; }
+
+.task-diff-loading { display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; flex:none; }
+.task-diff-loading .ant-spin .ant-spin-dot { font-size:14px; }

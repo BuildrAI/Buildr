@@ -19,6 +19,9 @@ const git = (repo: string, args: string[]) => {
 test('publication effects use the real artifact and recover each external partial result', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-publication-effects-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const npmCache = path.join(root, 'npm-content-cache');
+  let installCount = 0;
+  let installDurationMs = 0;
   const sourceRepo = path.join(root, 'source');
   fs.mkdirSync(sourceRepo);
   git(sourceRepo, ['init', '-b', 'main']);
@@ -82,6 +85,7 @@ test('publication effects use the real artifact and recover each external partia
       const fetchImpl: typeof fetch = (url, init) => fetch(`${api}${new URL(String(url)).pathname}`, init);
       const dependencies = {
         fetchImpl,
+        observePublishedPackageArtifact: async () => ({ observation: { status: 'absent', packageName: '@buildr-ai/buildr-dsh-plugin' } }),
         publish: async (args: string[]) => {
           assert.equal(args[0], artifact.tarball, 'the exact prebuilt tarball is consumed');
           try { const response = await fetch(`${api}/registry-write`, { method: 'PUT', body: fs.readFileSync(args[0]!) }); return { status: response.status === 201 ? 0 : 1 }; }
@@ -91,9 +95,12 @@ test('publication effects use the real artifact and recover each external partia
         registryInstall: () => {
           if (failure === 'registry-smoke' && !repaired) throw new Error('injected install read failure');
           installed++;
+          installCount++;
+          const installStartedAt = Date.now();
           const prefix = path.join(repo, 'installed');
           const cli = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-          const result = spawnSync(cli, ['install', '--offline', '--ignore-scripts', '--prefix', prefix, artifact.tarball], { encoding: 'utf8', shell: process.platform === 'win32', env: { ...process.env, npm_config_cache: path.join(repo, 'cache') } });
+          const result = spawnSync(cli, ['install', '--offline', '--ignore-scripts', '--prefix', prefix, artifact.tarball], { encoding: 'utf8', shell: process.platform === 'win32', env: { ...process.env, npm_config_cache: npmCache } });
+          installDurationMs += Date.now() - installStartedAt;
           assert.equal(result.status, 0, result.stderr);
           const metadata = JSON.parse(fs.readFileSync(path.join(prefix, 'node_modules/@buildr-ai/buildr/package.json'), 'utf8'));
           assert.equal(metadata.version, version);
@@ -122,9 +129,11 @@ test('publication effects use the real artifact and recover each external partia
       assert.equal(third.status, 'passed');
       assert.equal(writes, writesBefore);
       assert.equal(releaseWrites, 1);
-      assert.ok(installed >= 1);
+      assert.equal(installed, 2, 'each successful recovery retains both real package-consumer installations');
     });
   }
+  assert.equal(installCount, 12);
+  t.diagnostic(`publication package-consumer installs=${installCount} durationMs=${installDurationMs}`);
 });
 
 test('publishFrozenArtifact converges on delayed registry propagation without republishing', async t => {

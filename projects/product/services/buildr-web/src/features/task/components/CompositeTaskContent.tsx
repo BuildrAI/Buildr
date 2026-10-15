@@ -1,25 +1,28 @@
-import { TaskCommitsPane } from './TaskCommitsPane';
+import { TaskChangesPane, type TaskChangesPaneProps } from './TaskChangesPane';
 import { TaskGoalSummary } from './TaskGoalSummary';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
+import type { TaskDocumentItem, TaskReadTarget } from './taskWorkContent';
+import type { TaskMaterialsState } from '../task-materials';
 import { Alert, Button, Input, Select, Spin, Table } from 'antd';
-import { CloseOutlined } from '@ant-design/icons';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useResourcePreview } from '../../../app/resource-preview';
 import type { TaskDetailResponse } from '../../../../build/generated/task-dto';
-import type { ParentCoordinationResult } from './parentCoordination';
-import type { TaskBriefState } from '../hooks/useTaskArtifacts';
+import { prioritizeOpenChildren, type ParentCoordinationResult } from './parentCoordination';
+import type { TaskChangeState } from '../hooks/useTaskArtifacts';
 import { CreatableResourceSelect } from '../../../components/CreatableResourceSelect';
+import { TaskTypeBadge } from '../../../components/TaskTypeBadge';
 import { taskApi } from '../api/task-api';
 import { CompositeTaskPlan } from './CompositeTaskPlan';
 import { formatDateTime, taskStatusLabel } from '../../../lib/taskLabels';
 import './composite-task.css';
 
-type Props = { refreshToken: number; task: TaskDetailResponse; coordination: ParentCoordinationResult | null; loading: boolean; briefs: TaskBriefState[]; refresh(): Promise<void>; onEnd(): void; href(path: string): string; onDocument(changeKey: string, path: string): void };
-export function CompositeTaskContent({ task, refreshToken, coordination, loading, briefs, refresh, onEnd, href, onDocument }: Props) {
+type Props = { choices: Record<string, string>; choose(key: string, value: string): void; changed: TaskChangesPaneProps['changed']; onOpenFile?: TaskChangesPaneProps['onOpenFile']; deliveryFiles?: ReactNode; task: TaskDetailResponse; coordination: ParentCoordinationResult | null; loading: boolean; changes: TaskChangeState[]; documents: TaskDocumentItem[]; materials: TaskMaterialsState; renderContent(target: TaskReadTarget): ReactNode; refresh(): Promise<void>; onEnd(): void; href(path: string): string };
+export function CompositeTaskContent({ task, choices, choose, changed, onOpenFile, deliveryFiles, coordination, loading, changes, documents, materials, renderContent, refresh, onEnd, href }: Props) {
   const previews = useResourcePreview();
   const location = useLocation();
   const navigate = useNavigate();
-  const [tab, setTab] = useState('overview'), [filter, setFilter] = useState('all'), [query, setQuery] = useState('');
+  const tab = choices['composite:tab'] || 'overview', setTab = (value: string) => choose('composite:tab', value);
+  const [filter, setFilter] = useState('all'), [query, setQuery] = useState('');
   const [options, setOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [optionsLoading, setOptionsLoading] = useState(false);
   const [loaded, setLoaded] = useState(false), [saving, setSaving] = useState(false), [error, setError] = useState('');
@@ -49,17 +52,17 @@ export function CompositeTaskContent({ task, refreshToken, coordination, loading
     finally { setSaving(false); }
   };
   const selectCount = (state: string) => { setFilter(state); setQuery(''); setTab('children'); };
-  const visible = children.filter(child => (filter === 'all' || child.status === filter) && `${child.title} ${child.intent}`.includes(query));
+  const visible = prioritizeOpenChildren(children.filter(child => (filter === 'all' || child.status === filter) && `${child.title} ${child.intent}`.includes(query)));
 
   return <>
     <div className="task-work-path"><div className="task-path-track" role="tablist" aria-label="组合任务内容">{[['overview', '概览'], ['children', '子任务'], ['acceptance', '验收'], ['commits', '提交记录']].map(([key, label]) => <Button key={key} role="tab" aria-selected={tab === key} type="text" className={`task-work-tab ${tab === key ? 'selected' : ''}`} onClick={() => setTab(key)}>{label}</Button>)}</div></div>
-    <div className="composite-task-reader">
-      {tab === 'commits' && <TaskCommitsPane key={task.record.taskId} taskId={task.record.taskId} refreshToken={refreshToken} />}
+    <div className={`composite-task-reader${tab === 'commits' ? ' is-commits' : ''}`}>
+      {tab === 'commits' && <TaskChangesPane key={task.record.taskId} changed={changed} commitsOnly defaultCommit onOpenFile={onOpenFile} />}
       {error && <Alert message={error} type="warning" closable onClose={() => setError('')} />}
       {tab !== 'acceptance' && tab !== 'commits' && coordination?.diagnostic && <Alert type="warning" message={coordination.diagnostic.message} action={<Button onClick={() => void refresh()}>重试</Button>} />}
       {tab === 'overview' && <>
         {loading ? <Spin size="small" /> : coordination?.children && <div className="composite-task-counts"><button onClick={() => selectCount('all')}><b>{children.length}</b>项子任务</button>{(['completed', 'active', 'todo', 'abandoned'] as const).filter(status => status !== 'abandoned' || children.some(child => child.status === status)).map(status => <button key={status} onClick={() => selectCount(status)}><b>{children.filter(child => child.status === status).length}</b>{taskStatusLabel(status)}</button>)}</div>}
-        <CompositeTaskPlan record={task.record} briefs={briefs} onDocument={onDocument} />
+        <CompositeTaskPlan record={task.record} changes={changes} documents={documents} materials={materials} selected={choices['composite:plan']} onSelect={value => choose('composite:plan', value)} renderContent={renderContent} />
       </>}
       {tab === 'children' && <>
         <div className="composite-task-toolbar"><Input aria-label="搜索子任务" placeholder="搜索子任务" value={query} onChange={event => setQuery(event.target.value)} /><Select aria-label="子任务状态" value={filter} onChange={setFilter} options={[{ value: 'all', label: '全部状态' }, ...['completed', 'active', 'todo', 'abandoned'].map(value => ({ value, label: taskStatusLabel(value) }))]} />{!terminal && <div className="composite-task-picker"><CreatableResourceSelect label="关联子任务" placeholder="关联子任务" options={options} value={null} disabled={saving || task.record.status !== 'active'} loading={optionsLoading} onOpen={() => void loadOptions()} onChange={value => void associate(value as string)} /></div>}</div>
@@ -71,13 +74,14 @@ export function CompositeTaskContent({ task, refreshToken, coordination, loading
             if (!previews?.open(location.pathname, path)) navigate(path);
           }, onKeyDown: event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); event.currentTarget.click(); } } })}
           columns={[
-            { title: '任务', key: 'task', render: (_value, child) => <div className="task-compact-copy"><div className="task-row-heading"><Link className="task-row-main" to={href(`/tasks/${encodeURIComponent(child.taskId)}${child.isParent ? '?taskType=composite' : ''}`)}><strong>{child.title}</strong></Link>{child.isParent && <span className="task-type-badge">组合任务</span>}</div><TaskGoalSummary goal={child.intent} /></div> },
+            { title: '任务', key: 'task', render: (_value, child) => <div className="task-compact-copy"><div className="task-row-heading"><Link className="task-row-main" to={href(`/tasks/${encodeURIComponent(child.taskId)}${child.isParent ? '?taskType=composite' : ''}`)}><strong>{child.title}</strong></Link><TaskTypeBadge isParent={child.isParent} /></div><TaskGoalSummary goal={child.intent} /></div> },
             { title: '状态', key: 'status', width: 88, render: (_value, child) => <span className={`lifecycle-badge ${child.status}`}>{taskStatusLabel(child.status)}</span> },
-            ...(!terminal ? [{ title: '', key: 'unlink', width: 42, render: (_value: unknown, child: NonNullable<ParentCoordinationResult['children']>[number]) => <Button type="text" size="small" icon={<CloseOutlined />} disabled={saving} aria-label={`解除关联 ${child.title}`} onClick={event => { event.stopPropagation(); void associate(child.taskId, true); }} /> }] : []),
+            ...(!terminal ? [{ title: '操作', key: 'unlink', width: 112, align: 'right' as const, className: 'composite-task-actions', render: (_value: unknown, child: NonNullable<ParentCoordinationResult['children']>[number]) => <span className="resource-directory-row-actions"><Button type="text" className="composite-task-unlink" disabled={saving} aria-label={`解除关联 ${child.title}`} onClick={event => { event.stopPropagation(); void associate(child.taskId, true); }}>解除关联</Button></span> }] : []),
           ]}
         /></div>
       </>}
       {tab === 'acceptance' && <section className="task-reader"><h2>{task.record.status === 'completed' ? '已完成' : task.record.status === 'abandoned' ? '已放弃' : '尚未验收'}</h2>{task.record.result ? <><p className="task-report-meta">记录时间：{formatDateTime(task.record.result.parentCompletion?.recordedAt || task.record.updatedAt)}</p><p>{task.record.result.summary}</p>{task.record.status === 'completed' && !task.record.result.parentCompletion && <p>历史记录未保存独立验收依据。</p>}</> : <><p>{coordination?.children ? `当前 ${children.length} 项子任务，${children.filter(child => ['todo', 'active'].includes(child.status)).length} 项未结束。` : '子任务情况暂不可读取。'}</p><Button onClick={onEnd}>结束组合任务</Button></>}</section>}
+      {tab === 'acceptance' && deliveryFiles}
     </div>
   </>;
 }

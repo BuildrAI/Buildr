@@ -9,7 +9,7 @@ import YAML from 'yaml';
 
 import { createRuntime } from '../helpers/runtime-harness.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
-import { copyPreparedGitRepository, copyPreparedWorkspace } from '../helpers/prepared-fixtures.ts';
+import { copyPreparedGitRepository, copyPreparedWorkspace, copyPreparedLegacyWorkspace } from '../helpers/prepared-fixtures.ts';
 
 const PRODUCT_ROOT: any = path.resolve(import.meta.dirname, '../..');
 const BUILDR: any = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
@@ -33,7 +33,7 @@ function initWorkspace(t: any): any  {
 }
 
 test('Project create 写入 v2 Domain，Application 受控修改并生成 prompt', (t: any) => {
-  const root: any = initWorkspace(t);
+  const root: any = copyPreparedLegacyWorkspace(t, 'legacy-project-domain').root;
   let result: any = runBuildr(['project', 'create', 'demo', '--target', root, '--name', 'Demo Project', '--description', 'Project description']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Next: 运行 declaration-intake Skill/);
@@ -63,7 +63,7 @@ test('Project create 写入 v2 Domain，Application 受控修改并生成 prompt
 });
 
 test('Project create 重入保留已有 v1 与 v2 Service registry', (t: any) => {
-  const root: any = initWorkspace(t);
+  const root: any = copyPreparedLegacyWorkspace(t, 'legacy-project-reentry').root;
   const legacyManifest: any = path.join(root, 'projects', 'legacy', 'services', 'manifest.yml');
   fs.mkdirSync(path.dirname(legacyManifest), { recursive: true });
   const legacyContent: any = [

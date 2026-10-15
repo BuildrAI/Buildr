@@ -1,0 +1,18 @@
+.task-commits-preview .task-commits-page { padding-bottom:48px; }
+.task-commits-preview .task-detail-page { height:auto; overflow:visible; max-width:none; display:flex; flex-direction:column; }
+.task-commits-preview .task-detail-page > .task-work-path { position:static; }
+.task-commits-preview .task-commits-reading { padding:24px 0 32px; flex:1; min-height:0; display:flex; flex-direction:column; }
+.task-commits-preview .task-diff-reader { min-height:520px; height:calc(100vh - 320px); }
+/* 工作台是工具面：整块内容区放宽上限，正文/列表视图仍保持原限宽 */
+.task-commits-preview .workspace-page:not(:has(.pane-stage)) > .task-detail-page.is-wide { max-width:100%; transition:max-width .18s ease; }
+.task-commits-preview .task-detail-page.is-wide .task-commits-reading { width:100%; max-width:none; }
+.task-commits-preview .task-commits-tab-count { margin-left:6px; font-size:10px; }
+.task-commits-preview .task-path-track { overflow-x:auto; scrollbar-width:thin; }
+.task-commits-preview .task-work-tab { flex:none; }
+.task-commits-preview .task-commits-project-link { width:100%; background:transparent; border:0; text-align:left; cursor:pointer; }
+.task-commits-preview .task-path-actions > div { display:flex; align-items:center; }
+@media (max-width:700px) {
+  .task-commits-preview .workspace-page.task-commits-page { padding:16px 16px 48px; }
+  .task-commits-preview .task-commits-reading { padding-top:22px; }
+  .task-commits-preview .task-work-path .task-path-actions { padding-bottom:6px; }
+}

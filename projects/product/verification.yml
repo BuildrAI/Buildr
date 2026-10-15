@@ -1,5 +1,36 @@
 schemaVersion: buildr.project-verification/v4
 testing:
+  - id: buildr-source
+    title: Buildr 发布前本机源码检查
+    scope:
+      project: product
+      services:
+        - buildr
+        - buildr-web
+    purpose: 使用候选登记完成当前平台适用源码检查并复用有效结果，不证明其他平台或最终发布包
+    sourcePaths:
+      - services/buildr/src/**
+      - services/buildr/resources/**
+      - services/buildr/tools/**
+      - services/buildr-web/src/**
+      - services/buildr-web/tools/**
+    testRoots:
+      - services/buildr/test/**
+      - services/buildr-web/test/**
+    full:
+      kind: command
+      argv:
+        - tools/development/run-development-npm
+        - run
+        - test:source
+      cwd: services/buildr
+    selection:
+      - 普通开发继续选择受影响检查；准备发布时按当前平台候选源码登记补齐有效结果
+      - 按实际内容、配方、依赖和原环境复用；最终包和未覆盖平台仍单独验证
+      - 传入 --json 只看计划；--force 强制重跑；--output 导出可搬运源码结果
+    requirements:
+      - 稳定版 Node >=24.15.0 与相邻 npm，通过项目 wrapper 执行
+      - git
   - id: buildr-fast
     title: Buildr 后端低成本完整回归
     scope:
@@ -55,6 +86,32 @@ testing:
       - node
       - npm
       - git
+  - id: buildr-release-infrastructure
+    title: Buildr 发布选择与恢复完整检查
+    scope:
+      project: product
+      services:
+        - buildr
+    purpose: 验证源码选择、独立版本、逐包发布编排、真实 Git 收敛及失败恢复；隔离外部发布副作用，不证明实际公开发布
+    sourcePaths:
+      - services/buildr/tools/release/**
+      - services/buildr/src/modules/installation/domain/release-version.ts
+    testRoots:
+      - services/buildr/test/integration-candidate-release/**
+    full:
+      kind: command
+      argv:
+        - tools/development/run-development-npm
+        - run
+        - test:integration:candidate:release
+      cwd: services/buildr
+    selection:
+      - 既有三类发布基础设施检查分别拥有选择、公开副作用恢复和 Git 收敛边界；完整入口运行全部检查
+      - 开发中的受影响选择保留低成本检查；本族通过显式发布组或完整候选（Candidate）执行，不混入日常完整核心检查
+      - 三种包选择、同版本身份漂移、联合顺序、响应未知和共享清理使用隔离 Git 仓库及外部系统替身，不派发真实发布
+    requirements:
+      - 项目锁定 Node 与 npm，通过项目 wrapper 执行
+      - git
   - id: buildr-system
     title: Buildr 系统测试
     scope:
@@ -94,6 +151,7 @@ testing:
       - services/buildr-web/package.json
       - services/buildr-web/package-lock.json
       - services/buildr-web/tsconfig*.json
+      - services/buildr-web/tools/run-logic-tests.mjs
     testRoots:
       - services/buildr-web/test/*.test.mjs
     full:
@@ -105,6 +163,10 @@ testing:
     selection:
       - 从真实测试文件选择与当前逻辑变化相关的检查，使用服务已有 Node.js 测试入口
       - 需要完整前端逻辑回归时运行 full；类型构建和浏览器交互由 buildr-web 独立验证
+      - 自动受影响选择通过 frontend-logic 调用本族完整入口；完整主包候选（Candidate）包含该独立源码证据，日常后端 Core
+        不代表前端通过
+      - npm test 与 frontend-logic 使用同一完整测试驱动；获授工作进程预算（Worker Budget）通过 Node.js
+        前置 --test-concurrency 显式生效，独立调用默认 1
     requirements:
       - node
       - npm
@@ -152,6 +214,8 @@ testing:
         自动化入口或其运行依赖
       - 原型候选构建使用前端现有依赖；单独执行 node tools/build-prototype.mjs <output.html>
         并在隔离生产托管中验证，不由完整浏览器入口自动生成或证明原型效果
+      - 完整主包候选（Candidate）由 artifact-browser-core 消费唯一压缩包内 web-dist
+        并执行核心代表旅程（Browser Journey）；该证据不代表全部选择器（Selector）通过，受影响源码验收仍按页面选择
     requirements:
       - node
       - npm
@@ -188,10 +252,11 @@ testing:
     location:
       kind: service
       service: dsh-plugin
-    purpose: 验证正式版和开发版的构建、逻辑、同场装载与 DSH 真实加载器边界
+    purpose: 验证正式版和开发版完整组合的构建、逻辑、同场装载、可撤销接线、候选字节与发布恢复检查，以及 DSH 真实加载器边界
     sourcePaths:
       - plugin/**
       - tools/**
+      - sdk-patches/**
       - package.json
     testRoots:
       - test/unit/**
@@ -204,9 +269,26 @@ testing:
       cwd: .
     selection:
       - 开发中按改动选择对应单元、进程或装载测试；完成时运行完整入口
-      - 完整入口使用已核验 DSH SDK；若设置 BUILDR_DSH_SDK_ROOT，须指向同一基线，否则按固定标签获取
+      - 完整入口构建可安装组合并验证物理文件、自足引用及内层真实入口；组合生命周期测试覆盖停用恢复与配置保全，厂商发行应用的原生装卸另行验收
+      - 增强源码完整入口必须显式提供 --source-sdk 或 BUILDR_DSH_SOURCE_SDK_ROOT，指向经
+        prepare-source-sdk 重建并核对基线、补丁清单、生成声明与产物摘要的独占软件开发工具包（SDK）；普通未补丁 rc.2 或旧
+        rc.1 不代表新接口支持，不自动修改共享检出或真实配置档（Profile）
+      - 完整入口还须显式提供 --buildr-peer 原字节清单、--buildr-peer-manifest 就绪对端清单，或对应
+        BUILDR_DSH_BUILDR_PEER_INPUT／BUILDR_DSH_BUILDR_PEER_MANIFEST
+        文件引用；原始和就绪输入互斥，不能默认消费相邻开发源码
+      - 仅插件（Plugin）发布核对准确公开主包，联合候选（Candidate）消费准确主包候选；两个包版本相同不证明能力或字节相同
+      - 独立发布工作流（Workflow）由仓库级选择映射指向本族；完整入口包含候选搬运与可信发布恢复的隔离检查，真实 npm
+        信任和公开发布仍需另外授权及验收
+      - 新托管准备使用 prepare-release-sdk.ts，固定真实上游提交及补丁后的冻结依赖；必须显式提供对应 Node 和 pnpm
+        入口，不复用本机认证配置
       - 桌面应用的真实按钮与跨重启交互另行验收，不能由装载测试替代
+      - 自动受影响选择通过 dsh-plugin 调用完整入口并准备固定 SDK 与 pnpm@11.7.0；本族不进入独立 Buildr
+        主包候选（Candidate）集合
     requirements:
-      - node 24.15.0
+      - node >=24.15.0
       - pnpm
-      - 已核验的 DSH SDK 或获取其发布归档的网络
+      - 与明确 Node 配套的 npm 入口，或 --npm 指定的固定
+        npm；对端在独占临时前缀（Prefix）按原字节安装，使用空认证配置（Configuration）且禁用安装脚本
+      - 经过完整性（Integrity）核验的准确公开主包或联合候选（Candidate）及其文件清单；基础公开入口、可选能力缺失和实际调用失败分别验证，不复用本机默认安装或认证
+      - 已核验的来源增强软件开发工具包（SDK）、持久源码补丁清单及完整 SHA256；构建依赖通过冻结锁文件与 --ignore-scripts
+        预先准备，准备器直接调用构建工具，不执行安装脚本或启用运行时（Runtime）

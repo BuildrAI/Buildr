@@ -235,7 +235,7 @@ Project Application MUST only allow low-risk metadata updates using a registry r
 
 #### Scenario: 修改 Project name 与 description
 - **WHEN** caller submits `name` or `description` with the current registry revision
-- **THEN** Application MUST validate the Domain, atomically update v2 manifest and return the new revision
+- **THEN** Application MUST validate the Domain, atomically update the current canonical manifest and return the new revision；已使用全局模型的项目 MUST 保留 `serviceIds` 与 `buildr.projects/v3`，旧 v2 清单继续按兼容边界维护
 - **AND** all other Project entries and fields MUST remain unchanged
 
 #### Scenario: 拒绝 identity 或 source 修改

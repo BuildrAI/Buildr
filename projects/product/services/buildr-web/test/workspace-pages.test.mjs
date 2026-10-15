@@ -1,12 +1,33 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { tabForPath, parseTabs, paneDimensions, readRatio, moveTab, ratioStorageKey, resourcePreview, previewOwnerPath, previewOwnerSearch, workspacePageSearch } from '../src/app/workspace-pages.ts';
+import { tabForPath, parseTabs, paneDimensions, readRatio, moveTab, reorderPageTabs, ratioStorageKey, resourcePreview, previewOwnerPath, previewOwnerSearch, workspacePageSearch, workspacePageLayout } from '../src/app/workspace-pages.ts';
+
+test('连接查询和代码工具铺满功能面板，文档与跨工作空间路径保持阅读宽度', () => {
+ for (const path of ['/connection-skills', '/connections', '/code/explorer', '/code/source-control']) assert.equal(workspacePageLayout('w', '/workspaces/w' + path), 'functional');
+ for (const path of ['/projects/product', '/articles', '/services', '/tasks']) assert.equal(workspacePageLayout('w', '/workspaces/w' + path), 'reading');
+ assert.equal(workspacePageLayout('w', '/workspaces/other/connections'), 'reading');
+ assert.equal(workspacePageLayout('w', '/workspaces/w/connections/unknown'), 'reading');
+});
 test('恢复页签只接受当前工作空间已支持的路由并去重', () => {
  const valid={path:'/workspaces/a/skills',title:'技能'};
  const raw=JSON.stringify([valid,valid,{path:'/workspaces/b/skills'},{path:'https://example.com'},{path:'/workspaces/a/projects/%2e%2e'},{path:'/workspaces/a/services/p/s/edit'}]);
  assert.deepEqual(parseTabs('a',raw).map(t=>t.key),['dir:skills']);
  assert.deepEqual(parseTabs('a','invalid'),[]);
  assert.equal(tabForPath('a','/workspaces/a/settings'),null);
+});
+
+test('历史连接标签归一到现行目录并去重，其他工作空间和错误子路径不恢复', () => {
+ const current = { key: 'dir:connection-skills', kind: 'dir', title: '连接', path: '/workspaces/w/connection-skills' };
+ const legacy = { path: '/workspaces/w/connections', title: '连接' };
+ const recent = { path: current.path, title: '连接（新机制）' };
+ for (const saved of [[legacy, recent], [recent, legacy], [legacy], [recent]]) {
+  assert.deepEqual(parseTabs('w', JSON.stringify(saved)), [current]);
+ }
+ assert.deepEqual(parseTabs('w', JSON.stringify([
+  { path: '/workspaces/other/connections' },
+  { path: '/workspaces/w/connections/unknown' },
+  { path: '/workspaces/w/connection-skills/unknown' },
+ ])), []);
 });
 
 test('文章阅读编辑复用副屏身份，跨项目不混用，旧主标签恢复被清理', () => {
@@ -67,6 +88,14 @@ test('标签移动保留身份与集合，支持向前向后和边界', () => {
  assert.deepEqual(moveTab(tabs,'c',0).map(t=>t.key),['c','a','b']);
  assert.deepEqual(moveTab(tabs,'a',99).map(t=>t.key),['b','c','a']);
  assert.deepEqual(tabs.map(t=>t.key),['a','b','c']);
+});
+
+test('页面和目录使用同一可见重排索引，代码内部布局保持独立', () => {
+ const tabs=[{key:'dir:projects',kind:'dir'},{key:'a',kind:'proj'},{key:'dir:services',kind:'dir'},{key:'b',kind:'proj'}];
+ assert.deepEqual(reorderPageTabs(tabs,'a',1).map(tab=>tab.key),['dir:projects','a','dir:services','b']);
+ assert.deepEqual(reorderPageTabs(tabs,'b',0).map(tab=>tab.key),['b','dir:projects','a','dir:services']);
+ assert.deepEqual(reorderPageTabs(tabs,'a',99).filter(tab=>tab.kind!=='dir').map(tab=>tab.key),['b','a']);
+ assert.deepEqual(tabs.map(tab=>tab.key),['dir:projects','a','dir:services','b']);
 });
 
 test('项目详情与知识共享一个项目标签，恢复旧标签去重且保留检索上下文',()=>{

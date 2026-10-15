@@ -12,7 +12,12 @@ test('默认文档检查发现 knowledge 中的失效链接，并接受修复后
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const checker = path.join(root, 'services/buildr/test/verification/docs/quality.ts');
   fs.mkdirSync(path.dirname(checker), { recursive: true });
-  fs.copyFileSync(path.join(serviceRoot, 'test/verification/docs/quality.ts'), checker);
+  // The checker imports the same Task ID authority and path identity used by the product.
+  for (const relative of ['test/verification/docs/quality.ts', 'src/modules/task/domain/task.ts', 'src/infrastructure/filesystem/filesystem-path-identity.ts']) {
+    const target = path.join(root, 'services/buildr', relative);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.copyFileSync(path.join(serviceRoot, relative), target);
+  }
   const docs = path.join(root, 'knowledge/docs');
   fs.mkdirSync(docs, { recursive: true });
   fs.writeFileSync(path.join(docs, 'overview.md'), '# 示例\n\n[缺失目标](target.md)\n');
