@@ -23,6 +23,7 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
   };
   const open = async (branches: any) => {
     await page.goto(workspaceUrl + '/code/source-control'); await root().locator('.source-control-repository-copy').first().waitFor();
+    await root().locator('.source-control-title .anticon-spin').waitFor({state:'hidden'});
     const response = await page.request.get(api + '/code/source-control'); assert.equal(response.status(), 200);
     const catalog = await response.json(), repository = catalog.repositories.find((item: any) => item.worktrees.some((tree: any) => tree.location === branches.location));
     assert.ok(repository); const tree = repository.worktrees.find((item: any) => item.location === branches.location);
@@ -46,7 +47,7 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
     return {starts, cancelled, setLastExecutionConfig: (config: typeof executionConfig) => {agent.lastExecutionConfig = config;}, dispose: async () => {for (const [pattern, handler] of handlers) await page.unroute(pattern, handler);}};
   };
 
-  await scenario('统一生成控件取消保留说明，生成后手改并提交只改变原工作树', async () => {
+  await scenario('统一生成控件刷新与取消保留说明，生成后手改并提交只改变原工作树', async () => {
     await fixture.withBranches(async (branches: any) => {
       branches.configureAuthor({name: '浏览器提交', email: 'commit-browser@example.invalid'});
       const protocol = await model(true);
@@ -65,6 +66,13 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
         const height = await panel.evaluate((element: HTMLElement) => element.getBoundingClientRect().height); assert.ok(height >= 65 && height <= 120, '默认说明区保持紧凑：' + height);
         await assertCommitSplit(panel);
         await input.fill('保留手写草稿');
+        const draftInput = await input.elementHandle();
+        const inventoryRead = page.waitForResponse((reply: any) => new URL(reply.url()).pathname.endsWith('/code/source-control-inventory'));
+        await root().getByRole('button', {name:'刷新源代码管理', exact:true}).click(); await inventoryRead;
+        await root().locator('.source-control-title .anticon-spin').waitFor({state:'hidden'});
+        assert.equal(await input.inputValue(), '保留手写草稿', '逐库刷新完成后仍保留用户正在输入的提交说明');
+        assert.equal(await input.evaluate((element: HTMLElement, before: HTMLElement) => element === before, draftInput), true, '刷新不会重建当前说明输入框');
+        await draftInput.dispose();
         const started = page.waitForResponse((reply: any) => new URL(reply.url()).pathname.endsWith('/code/commit-message'));
         await panel.locator('#generate-commit-message').click(); await started; await panel.locator('#cancel-commit-message').click(); await panel.locator('#cancel-commit-message').waitFor({state: 'hidden'});
         assert.equal(await input.inputValue(), '保留手写草稿'); assert.equal(protocol.cancelled.size, 1);

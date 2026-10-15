@@ -13,7 +13,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
   };
   const root = () => page.locator('.code-source-control-page:visible');
   const api = workspaceUrl.replace('/workspaces/', '/api/v1/workspaces/');
-  let mainWorktreeId = '';
+  let mainWorktreeId = '', mainRepositoryId = '';
   const catalog = async (taskId?: string) => {
     const response = await page.request.get(api + '/code/source-control' + (taskId ? '?taskId=' + encodeURIComponent(taskId) : ''));
     assert.equal(response.status(), 200); return response.json();
@@ -146,9 +146,10 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
   const open = async () => {
     await page.goto(workspaceUrl + '/code/source-control');
     await root().locator('.source-control-repository-copy').first().waitFor();
+    await root().locator('.source-control-title .anticon-spin').waitFor({state:'hidden'});
     const observed = await catalog();
     const repository = observed.repositories.find((item: any) => item.worktrees.some((worktree: any) => worktree.location === fixture.location));
-    assert.ok(repository); mainWorktreeId = repository.worktrees.find((item: any) => item.location === fixture.location).worktreeId;
+    assert.ok(repository); mainRepositoryId = repository.id; mainWorktreeId = repository.worktrees.find((item: any) => item.location === fixture.location).worktreeId;
     await root().getByRole('button', {name: '查看主工作树 · ' + repository.name, exact: true}).click();
   };
   const areaValue: Record<string,string> = {'未暂存': 'unstaged', '已暂存': 'staged', '未跟踪': 'untracked'};
@@ -215,6 +216,46 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await page.mouse.move(x, y); await page.mouse.down();
     await page.mouse.move(x + dx, y + dy, {steps: 12}); await page.mouse.up();
   };
+
+  await scenario('渐进刷新保持首登记库默认来源并保留用户主动选择', async () => {
+    const observed = await catalog();
+    const first = observed.repositories[0], fast = observed.repositories.find((item: any, index: number) => index > 0 && item.worktrees.some((tree: any) => tree.isMain));
+    assert.ok(first?.worktrees.some((tree: any) => tree.isMain) && fast, '场景需要两个真实可读代码库');
+    let release = () => {}, gate = Promise.resolve();
+    const delayed = async (route: any) => {if (new URL(route.request().url()).searchParams.get('repositoryId') === first.id) await gate; try {await route.continue();} catch {/* 页面退出会取消旧读取。 */}};
+    await page.route(/\/code\/source-control(?:\?|$)/, delayed);
+    try {
+      for (const explicit of [false, true]) {
+        gate = new Promise<void>(resolve => {release = resolve;});
+        await page.goto(workspaceUrl + '/code/source-control');
+        const firstButton = root().locator('[data-source-repository="' + first.id + '"] > .source-control-repository .source-control-repository-copy');
+        const fastButton = root().locator('[data-source-repository="' + fast.id + '"] > .source-control-repository .source-control-repository-copy');
+        await fastButton.waitFor(); await page.waitForFunction((id: string) => !!document.querySelector('[data-source-repository="' + id + '"] > .source-control-repository .source-control-repository-copy:not(:disabled)'), fast.id);
+        assert.equal(await firstButton.isDisabled(), true, '首库仍在等待读取');
+        assert.equal(await root().locator('.source-control-repository-copy[aria-pressed="true"]').count(), 0, '后库先完成也不自动选中');
+        if (explicit) {await fastButton.click(); assert.equal(await fastButton.getAttribute('aria-pressed'), 'true');}
+        release(); await root().locator('.source-control-title .anticon-spin').waitFor({state:'hidden'});
+        assert.equal(await (explicit ? fastButton : firstButton).getAttribute('aria-pressed'), 'true', explicit ? '首库后到不能抢回用户主动选择' : '没有主动选择时首库完成才提供确定默认来源');
+      }
+    } finally {release(); await page.unroute(/\/code\/source-control(?:\?|$)/, delayed);}
+  });
+
+  await scenario('首登记库确认不可读后默认选择后续已确认来源', async () => {
+    const response = await page.request.get(api + '/code/source-control-inventory'); assert.equal(response.status(), 200);
+    const first = (await response.json()).repositories[0]; assert.ok(first);
+    const substitute = async (route: any) => {
+      if (new URL(route.request().url()).searchParams.get('repositoryId') !== first.id) {await route.continue(); return;}
+      await route.fulfill({json:{readAt:new Date().toISOString(),observedRevision:'unavailable-first',repositories:[{...first,diagnostics:[{code:'browser_first_unavailable',repositoryId:first.id,message:'隔离首库暂不可读取'}]}],selectedRepositoryIds:[],selectedWorktreeIds:[],selectedWorktrees:[],scopeReason:'all',diagnostics:[{code:'browser_first_unavailable',repositoryId:first.id,message:'隔离首库暂不可读取'}],coverage:{limit:128,truncated:false,nextCursor:null},worktreeCoverage:{limit:128,total:null,read:0,truncated:false}}});
+    };
+    await page.route(/\/code\/source-control(?:\?|$)/, substitute);
+    try {
+      await page.goto(workspaceUrl + '/code/source-control'); await root().locator('.source-control-repository-copy').first().waitFor();
+      await root().locator('.source-control-title .anticon-spin').waitFor({state:'hidden'});
+      const selected = root().locator('.source-control-repository-copy[aria-pressed="true"]');
+      assert.equal(await selected.count(), 1, '一个库确认失败不阻止默认查看其余已确认库');
+      assert.notEqual(await selected.evaluate((element: HTMLElement) => element.closest('[data-source-repository]')?.getAttribute('data-source-repository')), first.id);
+    } finally {await page.unroute(/\/code\/source-control(?:\?|$)/, substitute);}
+  });
 
   await scenario('源代码管理真实清单、同文件两层差异与实际暂存全文', async () => {
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -297,16 +338,21 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await noOverflow(); await capture(page, 'source-control-fixture-working-full.png');
     const peer = observed.repositories.find((repository: any) => repository.location === fixture.unavailableRepositoryLocation); assert.ok(peer);
     const refreshCatalog = async () => {
-      const response = page.waitForResponse((returned: any) => new URL(returned.url()).pathname.endsWith('/code/source-control'));
-      await root().getByRole('button', {name: '刷新源代码管理', exact: true}).click();
-      const returned = await response; assert.equal(returned.status(), 200); const body = await returned.json();
-      await root().locator('.source-control-title .anticon-spin').waitFor({state: 'hidden'}); return body;
+      const observations: Promise<any>[] = [];
+      const observe = (returned: any) => {const url = new URL(returned.url()); if (url.pathname.endsWith('/code/source-control') && url.searchParams.has('repositoryId')) observations.push(returned.json());};
+      page.on('response', observe);
+      try {
+        const inventory = page.waitForResponse((returned: any) => new URL(returned.url()).pathname.endsWith('/code/source-control-inventory'));
+        await root().getByRole('button', {name:'刷新源代码管理', exact:true}).click(); assert.equal((await inventory).status(), 200);
+        await root().locator('.source-control-title .anticon-spin').waitFor({state:'hidden'});
+        return {repositories:(await Promise.all(observations)).flatMap(value => value.repositories)};
+      } finally {page.off('response', observe);}
     };
     await fixture.withUnavailableRepository(async () => {
       const unavailable = (await refreshCatalog()).repositories.find((repository: any) => repository.id === peer.id);
       assert.ok(unavailable); assert.equal(unavailable.worktreeCount, null); assert.equal(unavailable.fileCount, null); assert.ok(unavailable.diagnostics.length);
       const upper = root().locator('[data-source-repository="' + peer.id + '"]');
-      const status = upper.locator('.source-control-status-button');
+      const status = upper.locator(':scope > .source-control-repository .source-control-status-button');
       assert.equal(await status.getAttribute('data-remote-state'), 'unavailable');
       assert.equal(await status.getAttribute('data-file-state'), 'unavailable');
       assert.equal(await status.locator('.anticon-question-circle').count(), 1);
@@ -580,6 +626,8 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     const saved = await page.evaluate((values: string[]) => values.map(key => localStorage.getItem(key)), keys);
     assert.ok(saved.every((value: any) => value !== null));
     await page.reload(); await root().locator('.source-control-repository-copy').first().waitFor();
+    await root().locator('.source-control-title .anticon-spin').waitFor({state:'hidden'});
+    await root().locator('[data-source-repository="' + mainRepositoryId + '"] > .source-control-repository .source-control-repository-copy').click();
     assert.deepEqual([Number(await horizontal.getAttribute('aria-valuenow')), Number(await vertical.getAttribute('aria-valuenow'))], after);
     await page.setViewportSize({width: 1024, height: 768}); await row('未暂存').click();
     await diff().getByText('sourceControlWorking = 34', {exact: false}).waitFor();
@@ -609,8 +657,8 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
       assert.ok((await diff().innerText()).includes('sourceControlWorking = 34'), '迟到暂存响应不能覆盖当前未暂存差异');
     } finally { release(); await page.unroute('**/code/diff?**', delayed); }
     const failed = async (route: any) => route.fulfill({status: 503, contentType: 'application/json', body: JSON.stringify({error: {code: 'scm_fixture_unavailable', message: '隔离测试清单暂不可读取'}})});
-    const catalogRoute = /\/code\/source-control(?:\?|$)/;
-    expectedBrowserErrors.add('/code/source-control');
+    const catalogRoute = /\/code\/source-control-inventory(?:\?|$)/;
+    expectedBrowserErrors.add('/code/source-control-inventory');
     await page.route(catalogRoute, failed);
     try {
       await root().getByRole('button', {name: '刷新源代码管理', exact: true}).click();

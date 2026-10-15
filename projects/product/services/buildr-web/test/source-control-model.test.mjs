@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {sourceControlRepository,sourceControlFileCount,sourceControlFileKey,sourceControlVisibleWorktrees,sourceControlWorktreeKey,sourceControlFilePathHints,sourceControlAbsolutePath,sourceControlFileTooltip} from '../src/features/code/source-control-model.ts';
+import {sourceControlDefaultSource,sourceControlRepository,sourceControlFileCount,sourceControlFileKey,sourceControlVisibleWorktrees,sourceControlWorktreeKey,sourceControlFilePathHints,sourceControlAbsolutePath,sourceControlFileTooltip} from '../src/features/code/source-control-model.ts';
 const change=(worktreeId,area='unstaged')=>({repositoryId:'repo',worktreeId,path:'same.ts',area,previousPath:null,kind:'tracked',status:'modified',additions:null,deletions:null,preview:null,previewTruncated:false});
 const worktree=(worktreeId,name,isMain=false)=>({worktreeId,name,location:'/actual/'+worktreeId,isMain,isRegistered:isMain,status:'complete',branch:isMain?'main':'feature',head:'a'.repeat(40),upstream:null,ahead:null,behind:null,taskId:null,taskTitle:null,taskDiagnostic:null,fileCount:1,changes:[change(worktreeId)],observedRevision:'scm:'+worktreeId,readAt:'now',coverage:{fileLimit:1000,truncated:false},diagnostics:[]});
 const catalog=(id='repo')=>({id,name:id,code:id,location:'/registered',source:null,status:'complete',branch:'compatibility-only',ahead:99,behind:99,fileCount:2,changes:[],head:null,observedRevision:'scm:registered',diagnostics:[],worktrees:[worktree(id+'-main','main',true),worktree(id+'-linked','same-task-name')],worktreeCount:2});
@@ -45,4 +45,25 @@ test('absolute display paths stay on the selected source and preserve both sides
   assert.equal(sourceControlAbsolutePath('C:\\actual\\linked\\','src/file.ts'),'C:\\actual\\linked\\src\\file.ts');
   assert.equal(sourceControlAbsolutePath(undefined,'file.ts'),undefined);
   assert.equal(sourceControlFileTooltip('/actual/linked',{path:'new/file.ts',previousPath:'old/file.ts'}),'/actual/linked/old/file.ts → /actual/linked/new/file.ts');
+});
+
+test('首登记库尚未读取时不因后库先完成而默认选择后库，首库完成后确定默认来源',()=>{
+  const first=sourceControlRepository(catalog('first')),fast=sourceControlRepository(catalog('fast'));
+  const pending=sourceControlRepository({...catalog('first'),status:'unavailable',fileCount:null,worktreeCount:null,worktrees:[],diagnostics:[{code:'code_source_control_pending',message:'custom text'}]});
+  assert.equal(pending.pending,true,'等待只依据稳定诊断码派生，不匹配中文文案');
+  assert.equal(sourceControlDefaultSource([]),undefined);
+  assert.equal(sourceControlDefaultSource([pending,fast]),undefined);
+  const selected=sourceControlDefaultSource([first,fast]);
+  assert.equal(selected.repository,first);assert.equal(selected.worktree,first.worktrees[0]);
+  assert.equal(sourceControlDefaultSource([first,{...fast,branch:'updated'}]).repository,first);
+});
+
+test('已确认没有工作树的失败首库不阻止默认查看后库，但不能跨过尚在等待的更早库',()=>{
+  const failed=sourceControlRepository({...catalog('failed'),status:'unavailable',fileCount:null,worktreeCount:null,worktrees:[],diagnostics:[{code:'code_repository_unavailable',message:'unavailable'}]});
+  const pending=sourceControlRepository({...catalog('pending'),status:'unavailable',fileCount:null,worktreeCount:null,worktrees:[],diagnostics:[{code:'code_source_control_pending',message:'waiting'}]});
+  const ready=sourceControlRepository(catalog('ready'));
+  assert.equal(failed.pending,false);
+  assert.equal(sourceControlDefaultSource([failed,ready]).repository,ready);
+  assert.equal(sourceControlDefaultSource([failed,pending,ready]),undefined,'更早库未完成时仍保持确定的默认顺序');
+  assert.equal(sourceControlDefaultSource([failed,failed]),undefined,'全部失败时不伪造默认来源');
 });

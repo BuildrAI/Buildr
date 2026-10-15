@@ -4,6 +4,8 @@
 
 ## 查看清单和改动
 
+需要尽快取得全部登记身份并逐库查看时，先运行 `buildr code source-control-inventory --target <workspace> --json`（任务入口可加 `--task <task-id>`），再按返回的实例标识读取 `buildr code source-control --repository <id> --target <workspace> --json`。轻量清单不执行 Git 扫描：`code_source_control_pending` 表示尚未检查，`fileCount`、`worktreeCount` 和 Git 身份可为空，不能当作干净、无工作树（Worktree）或允许写入。网页以有限并发逐库读取，完成一个即更新一个；等待及失败保留已有结果，相关诊断仍须核对。完整单次读取与逐库读取均保留各自覆盖及时间边界。
+
 ```text
 buildr code source-control --target <workspace> --json
 buildr code source-control --task <task-id> --target <workspace> --json

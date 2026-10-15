@@ -15,7 +15,7 @@ import { CodeLocationDetails, CodeLocationSummary } from './CodeLocationSummary'
 import { SourceControlRepositoryTree, SourceControlChanges, layerFile, worktreeLabel, type SourceControlRowContext } from './SourceControlRepositories';
 import { formatShortDateTime } from '../../../lib/taskLabels';
 import { useSourceControlRead } from '../hooks/useSourceControlRead';
-import { sourceControlAbsolutePath, sourceControlChange, sourceControlCommit, sourceControlFileKey as fileIdentity, sourceControlWorktreeKey, type SourceControlCommit, type SourceControlFileTarget, type SourceControlWorktree, type SourceControlObservation, type SourceControlReader, type SourceControlRepository, type SourceControlScene, type SourceControlScopeSelection } from '../source-control-model';
+import { sourceControlAbsolutePath, sourceControlDefaultSource, sourceControlChange, sourceControlCommit, sourceControlFileKey as fileIdentity, sourceControlWorktreeKey, type SourceControlCommit, type SourceControlFileTarget, type SourceControlWorktree, type SourceControlObservation, type SourceControlReader, type SourceControlRepository, type SourceControlScene, type SourceControlScopeSelection } from '../source-control-model';
 import type { CodeSourceControlInput } from '../api/code-api';
 import '../source-control.css';
 export type { SourceControlChange, SourceControlCommit, SourceControlRepository, SourceControlFileTarget, SourceControlScene, SourceControlState } from '../source-control-model';
@@ -64,7 +64,7 @@ export function SourceControlWorkbench({ repositories, scene, reader, readKey, o
   const taskSelections = useRef(new Map<string, {selectedWorktreeKey: string; changeFileKey: string; historyFileKey: string; commitHash: string; commitSummary?: SourceControlCommit; commitBaseHash: string | null; historyReaderMode: 'detail' | 'file'; scene: SourceControlScene; returnScene: SourceControlScene}>());
   const history = scene === 'history' || scene === 'full-file' && returnScene === 'history';
   const sources = repositories.flatMap(repository => repository.worktrees.map(worktree => ({repository, worktree})));
-  const selectedSource = scopeSelection && selectionEpoch !== scopeSelection.key ? undefined : selectedWorktreeKey ? sources.find(({repository, worktree}) => sourceControlWorktreeKey(repository.id, worktree.worktreeId) === selectedWorktreeKey) : sources.find(({worktree}) => worktree.isMain) || sources[0];
+  const selectedSource = scopeSelection && selectionEpoch !== scopeSelection.key ? undefined : selectedWorktreeKey ? sources.find(({repository, worktree}) => sourceControlWorktreeKey(repository.id, worktree.worktreeId) === selectedWorktreeKey) : sourceControlDefaultSource(repositories);
   const selectedRepository = selectedSource?.repository, selectedWorktree = selectedSource?.worktree;
   const selectedIdentity = selectedSource ? sourceControlWorktreeKey(selectedSource.repository.id, selectedSource.worktree.worktreeId) : '';
   useEffect(() => { setSourceDetailsExpanded(false); }, [selectedIdentity]);

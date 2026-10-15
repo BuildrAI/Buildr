@@ -77,11 +77,11 @@ export function createCodeHttpContribution(application:CodeApplication) {
     for(const key of searchParams.keys())if(!allowed.includes(key)||searchParams.getAll(key).length!==1)throw codeFailure('code_query_invalid','代码读取查询参数无效。');
     const values=Object.fromEntries(searchParams);
     if(!CODE_HTTP_VALIDATORS.validate(CODE_HTTP_REQUESTS[operation].$id,values).valid)throw codeFailure('code_query_invalid','代码读取查询参数不符合契约。');
-    if(operation!=='repositories'&&operation!=='sourceControl'&&!values.repositoryId)throw codeFailure('code_query_invalid','必须选择代码库。');
+    if(operation!=='repositories'&&operation!=='sourceControl'&&operation!=='sourceControlInventory'&&!values.repositoryId)throw codeFailure('code_query_invalid','必须选择代码库。');
     if(values.showIgnored&&!['true','false'].includes(values.showIgnored))throw codeFailure('code_query_invalid','忽略文件选项无效。');
     if(values.mode&&!['name','content'].includes(values.mode))throw codeFailure('code_query_invalid','搜索模式无效。');
     const {filePath,page,line,limit,...query}=values;
-    const input={...query,path:filePath,showIgnored:values.showIgnored==='true',...(page===undefined?{}:{page:Number(page)}),...(line===undefined?{}:{line:Number(line)}),...(limit===undefined?{}:{limit:Number(limit)})} as CodeInput;
+    const input=(operation==='sourceControlInventory'?values:{...query,path:filePath,showIgnored:values.showIgnored==='true',...(page===undefined?{}:{page:Number(page)}),...(line===undefined?{}:{line:Number(line)}),...(limit===undefined?{}:{limit:Number(limit)})}) as CodeInput;
     const body=await(submitTaskRead?submitTaskRead('code-'+CODE_HTTP_PATHS[operation],'code-files',{input:JSON.stringify(input)}):operation==='repositories'?application.repositories(root,values.taskId):application[operation](root,input));
     if(!CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS[operation].$id,body).valid)throw codeFailure('code_response_invalid','代码读取结果不符合契约。',500);
     return {status:200,body};

@@ -11,7 +11,7 @@ import { SOURCE_CONTROL_LIMITS, assertCodeRevision, assertSourceControlPath, cod
 import type { CodeReadMeta, CodeReadDiagnostic, CodeSourceControlInput, CodeSourceControlResponse, CodeSourceControlRepository, CodeHistoryCommit, CodeHistoryResponse, CodeAuthorsResponse, CodeCommitResponse, CodeDiffResponse, CodeSourceFileResponse } from './source-control-model.ts';
 
 type Catalog = { repositories: Array<{ id: string; code: string; name: string; location: string; available: boolean; gitId: string | null }>; selectedRepositoryIds: string[]; scopeReason: string; diagnostics: CodeReadDiagnostic[] };
-type Dependencies = { repositories(root: string, taskId?: string, repositoryId?: string): Catalog; source(root: string, input: CodeSourceControlInput): CodeSource;worktrees(root:string,repositoryId:string,registered:Catalog['repositories'][number]):{worktrees:CodeGitWorktree[];source(worktreeId:string):CodeSource;verify(source:CodeSource):void}; taskAssociations?(root:string,repositories:CodeSourceControlRepository[],taskId?:string,deadline?:number):ReturnType<typeof readSourceControlTaskAssociations>; readTask?(root: string, taskId: string): { taskId: string; title: string } };
+type Dependencies = { repositories(root: string, taskId?: string, repositoryId?: string): Catalog; inventory(root:string,taskId?:string):Catalog; source(root: string, input: CodeSourceControlInput): CodeSource;worktrees(root:string,repositoryId:string,registered:Catalog['repositories'][number]):{worktrees:CodeGitWorktree[];source(worktreeId:string):CodeSource;verify(source:CodeSource):void}; taskAssociations?(root:string,repositories:CodeSourceControlRepository[],taskId?:string,deadline?:number):ReturnType<typeof readSourceControlTaskAssociations>; readTask?(root: string, taskId: string): { taskId: string; title: string } };
 const diagnostic = (error: unknown, repositoryId: string | null,worktreeId?:string): CodeReadDiagnostic => ({ code: (error as { code?: string })?.code || 'code_source_unavailable', message: error instanceof Error ? error.message : '代码来源暂不可读取。', repositoryId,...(worktreeId?{worktreeId}:{}) });
 function metadata(observedRevision: string, limit: number, truncated = false, diagnostics: CodeReadDiagnostic[] = [], nextCursor: string | null = null): CodeReadMeta {
   return { readAt: new Date().toISOString(), observedRevision, coverage: { limit, truncated, nextCursor }, diagnostics };
@@ -26,6 +26,13 @@ function validateInput(input: CodeSourceControlInput) {
 }
 
 export function createSourceControlApplication(dependencies: Dependencies) {
+  function sourceControlInventory(root:string,input:CodeSourceControlInput={}):CodeSourceControlResponse{
+    if(Object.entries(input).some(([key,value])=>key!=='taskId'&&value!==undefined))throw codeFailure('code_inventory_input_invalid','代码库清单只接受任务范围参数。');
+    if(input.taskId!==undefined&&(typeof input.taskId!=='string'||!input.taskId))throw codeFailure('code_inventory_input_invalid','任务范围必须指定有效任务。');
+    const catalog=dependencies.inventory(root,input.taskId);
+    const repositories:CodeSourceControlRepository[]=[...new Map(catalog.repositories.map(repository=>[repository.id,repository])).values()].map(repository=>({...repository,available:false,source:null,status:'unavailable',branch:null,head:null,upstream:null,ahead:null,behind:null,fileCount:null,changes:[],observedRevision:null,diagnostics:[{code:'code_source_control_pending',message:'代码库已登记，状态正在读取。',repositoryId:repository.id}],worktrees:[],worktreeCount:null,worktreeCoverage:{limit:SOURCE_CONTROL_LIMITS.worktrees,total:null,read:0,truncated:false}}));
+    return {...metadata(codeRevision(repositories.map(repository=>[repository.id,repository.code,repository.name,repository.location])),SOURCE_CONTROL_LIMITS.repositories,false,[...catalog.diagnostics,...repositories.flatMap(repository=>repository.diagnostics)]),repositories,selectedRepositoryIds:catalog.selectedRepositoryIds,selectedWorktreeIds:[],selectedWorktrees:[],worktreeCoverage:{limit:SOURCE_CONTROL_LIMITS.totalWorktrees,total:repositories.length?null:0,read:0,truncated:false},scopeReason:catalog.scopeReason};
+  }
   function verifySource(root:string,input:CodeSourceControlInput,source:CodeSource){
     const current=dependencies.source(root,{...input,worktreeId:source.worktreeId||input.worktreeId});
     if(current.worktreeId!==source.worktreeId||current.location!==source.location)throw codeFailure('code_worktree_identity_changed','读取期间工作树身份已变化，请刷新后继续。',409);
@@ -211,5 +218,5 @@ export function createSourceControlApplication(dependencies: Dependencies) {
     verifySource(root,input,source);
     return { ...result, ...metadata(result.revision, result.limitBytes, result.truncated) };
   }
-  return Object.freeze({ sourceControl, history, authors, commit, diff, sourceFile });
+  return Object.freeze({ sourceControl, sourceControlInventory, history, authors, commit, diff, sourceFile });
 }

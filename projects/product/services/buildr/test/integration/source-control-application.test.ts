@@ -36,7 +36,7 @@ function configureFixtureGit(root: string, git: (...args: string[]) => unknown) 
   git('config', 'commit.gpgSign', 'false');
 }
 
-function fixture(t: test.TestContext, format = 'sha1') {
+function fixture(t: test.TestContext, format = 'sha1', versionedCatalog = false) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-source-control-')), root = path.join(base, 'repository');
   fs.mkdirSync(root); t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const git = (...args: string[]) => execFileSync('git', ['--no-optional-locks', '-C', root, ...args], { encoding: 'utf8', env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' }, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -47,7 +47,7 @@ function fixture(t: test.TestContext, format = 'sha1') {
   let evidence:{evidence:{repositories:Array<{sourceRepository:string;checkoutPath:string}>}}|null=null;
   const catalog = { repositories: [{ id: 'repo-one', code: 'repo', name: 'Fixture Repository', source: { type: 'workspace', path: root } }], services: [{ id: 's1', code: 'one', repositoryId: 'repo-one' }, { id: 's2', code: 'two', repositoryId: 'repo-one' }], projects: [{ id: 'p-id', code: 'p', serviceIds: ['s1', 's2'] }] };
   let catalogReads=0;
-  const app = createCodeApplication({ assetCatalog: () => {catalogReads++;return catalog;}, resolveSourceRoot: (_root, source) => source.path,
+  const app = createCodeApplication({ assetCatalog: () => {catalogReads++;return catalog;}, assetCatalogVersion:versionedCatalog?()=>JSON.stringify(catalog):undefined, resolveSourceRoot: (_root, source) => source.path,
     readTaskScope: (_root, id) => { if (!tasks.has(id)) throw Error('missing task'); return { projects: ['p'], services: [] }; },
     readTask: (_root, id) => { const task = tasks.get(id); if (!task) throw Error('missing task'); return task; }, readGitWorktreeEvidence: () => evidence });
   const snapshot = () => ({ status: git('status', '--porcelain=v2', '-z'), head: (() => { try { return git('rev-parse', 'HEAD'); } catch { return ''; } })(), index: fs.existsSync(path.join(root, '.git/index')) ? crypto.createHash('sha256').update(fs.readFileSync(path.join(root, '.git/index'))).digest('hex') : '', refs: git('for-each-ref', '--format=%(refname) %(objectname)') });
@@ -252,6 +252,24 @@ test('task association limits and unreadable evidence cannot assert a unique tas
   assert.equal(limited.taskId, null); assert.match(limited.taskDiagnostic!, /尚未完整读取/);
 });
 
+test('task association enrichment observes each repeated source once per refresh',t=>{
+  const f=fixture(t);f.write('base.ts','base\n');f.commit('base');
+  const linked=path.join(f.base,'topic');f.git('worktree','add','-b','task/topic',linked);
+  const repositories=f.app.sourceControl(f.root).repositories;
+  const evidence={evidence:{repositories:Array.from({length:20},()=>({sourceRepository:f.root,checkoutPath:linked,branch:'task/topic'}))}};
+  const dependencies={readGitWorktreeEvidence:()=>evidence,readTask:()=>({taskId:'task-one',title:'当前明确任务'})};
+  const original=childProcess.execFileSync;let sourceReads=0;
+  const capture=t.mock.method(childProcess,'execFileSync',(file:any,args:any,options:any)=>{if(file==='git'&&args.includes('--git-common-dir'))sourceReads++;return original(file,args,options);});
+  syncBuiltinESMExports();
+  try{
+    for(let refresh=1;refresh<=2;refresh++){
+      const associations=[...readSourceControlTaskAssociations(f.root,repositories,dependencies,'task-one').values()];
+      assert.equal(associations[0].taskId,'task-one');assert.equal(associations[0].taskDiagnostic,null);
+      assert.equal(sourceReads,refresh,'repeat evidence shares this refresh observation, while the next refresh re-observes it');
+    }
+  }finally{capture.mock.restore();syncBuiltinESMExports();}
+});
+
 test('root and merge commits compare the actual empty tree and first parent in SHA-1 and SHA-256 repositories', async t => {
   for (const format of ['sha1', 'sha256']) {
     const f = fixture(t, format); f.write('base.ts', 'base\n'); const root = f.commit('root');
@@ -283,10 +301,10 @@ test('conflicted files keep their identity and current full content without pret
   await assert.rejects(f.app.sourceFile(f.root,{...f.input,path:'a.ts',area:'staged'}),hasCode('code_index_file_missing'));assert.deepEqual(f.snapshot(),before);
 });
 
-test('HTTP contracts, bounded worker dispatch and CLI share all five source-control application operations', async t => {
+test('HTTP contracts, bounded worker dispatch and CLI share all source-control application operations', async t => {
   const f = fixture(t); f.write('a.ts', 'base\n'); const hash = f.commit('base\n\nBuildr-Task: task-one'); f.write('a.ts', 'changed\n');
   const http = createCodeHttpContribution(f.app); const cases = [
-    ['source-control', {}, 'sourceControl'], ['history', { repositoryId: 'repo-one' }, 'history'], ['commit', { repositoryId: 'repo-one', commitHash: hash }, 'commit'],
+    ['source-control', {}, 'sourceControl'], ['source-control-inventory', {}, 'sourceControlInventory'], ['history', { repositoryId: 'repo-one' }, 'history'], ['commit', { repositoryId: 'repo-one', commitHash: hash }, 'commit'],
     ['diff', { repositoryId: 'repo-one', filePath: 'a.ts', area: 'unstaged' }, 'diff'], ['source-file', { repositoryId: 'repo-one', filePath: 'a.ts', area: 'unstaged' }, 'sourceFile'],
   ] as const;
   for (const [operation, input, method] of cases) {
@@ -333,7 +351,7 @@ test('all Git checkouts retain independent same-path index/worktree versions, so
 });
 
 test('catalog refresh scales Git reads linearly and observes fresh status and inventory on the next request', t => {
-  const f = fixture(t); f.write('same.ts', 'base\n'); f.commit('base');
+  const f = fixture(t,'sha1',true); f.write('same.ts', 'base\n'); f.commit('base');
   const linked = Array.from({ length: 5 }, (_, index) => path.join(f.base, 'topic-' + index));
   for (const [index, directory] of linked.entries()) f.git('worktree', 'add', '-b', 'topic-' + index, directory);
   const canonicalLinked = linked.map(directory => fs.realpathSync(directory));
@@ -351,12 +369,57 @@ test('catalog refresh scales Git reads linearly and observes fresh status and in
   try { catalog = f.app.sourceControl(f.root); }
   finally { capture.mock.restore(); captureSpawn.mock.restore(); syncBuiltinESMExports(); }
   assert.equal(catalog.repositories[0].worktreeCount, 6); assert.equal(catalog.worktreeCoverage.read, 6); assert.deepEqual(catalog.diagnostics, []);
-  assert.ok(gitReads <= 10 + 8 * 6, `six worktrees should stay within a linear Git-read budget; observed ${gitReads}`);
-  assert.ok(f.catalogReads()<=7, `reuse the observed catalog when entering each repository; observed ${f.catalogReads()} reads`);
+  assert.ok(gitReads <= 4 + 5 * 6, `six worktrees should stay within a linear Git-read budget; observed ${gitReads}`);
+  t.diagnostic(`six-worktree refresh: ${gitReads} Git reads and ${f.catalogReads()} full catalog read`);
+  assert.equal(f.catalogReads(),1,'one refresh parses the catalog once and checks its observed version thereafter');
   fs.writeFileSync(path.join(linked[0], 'same.ts'), 'changed after first refresh\n'); f.git('worktree', 'remove', linked[1]);
   const refreshed = f.app.sourceControl(f.root).repositories[0];
   assert.equal(refreshed.worktreeCount, 5); assert.equal(refreshed.worktrees.find(worktree => worktree.location === fs.realpathSync(linked[0]))?.fileCount, 1);
   assert.ok(!refreshed.worktrees.some(worktree => worktree.location === canonicalLinked[1]));
+  assert.equal(f.catalogReads(),2,'the next refresh owns a fresh catalog observation');
+});
+
+test('source-control inventory returns registered order and task scope without starting Git or claiming clean status',t=>{
+  const f=fixture(t);f.catalog.repositories.push({id:'missing',code:'missing',name:'Missing',source:{type:'workspace',path:path.join(f.base,'missing')}});
+  const capture=t.mock.method(childProcess,'execFileSync',()=>{throw Error('inventory must not launch Git');});
+  const captureSpawn=t.mock.method(childProcess,'spawnSync',()=>{throw Error('inventory must not launch Git');});
+  syncBuiltinESMExports();
+  try{
+    const inventory=f.app.sourceControlInventory(f.root,{taskId:'task-one'});
+    assert.deepEqual(inventory.repositories.map(repository=>repository.id),['repo-one','missing']);
+    assert.deepEqual(inventory.selectedRepositoryIds,['repo-one']);
+    assert.equal(inventory.worktreeCoverage.read,0);assert.equal(inventory.worktreeCoverage.total,null);
+    for(const repository of inventory.repositories){assert.equal(repository.status,'unavailable');assert.equal(repository.fileCount,null);assert.equal(repository.source,null);assert.deepEqual(repository.worktrees,[]);assert.ok(repository.diagnostics.some(item=>item.code==='code_source_control_pending'));}
+    assert.throws(()=>f.app.sourceControlInventory(f.root,{taskId:'missing-task'}),/missing task/);
+    assert.throws(()=>f.app.sourceControlInventory(f.root,{repositoryId:'missing'}),hasCode('code_inventory_input_invalid'));
+    assert.throws(()=>f.app.sourceControlInventory(f.root,{taskId:''}),hasCode('code_inventory_input_invalid'));
+  }finally{capture.mock.restore();captureSpawn.mock.restore();syncBuiltinESMExports();}
+});
+
+test('catalog refresh retains legacy workspace sources registered at a repository subdirectory',t=>{
+  const f=fixture(t,'sha1',true);f.write('module/same.ts','base\n');f.commit('base');
+  f.catalog.repositories[0].source.path=path.join(f.root,'module');
+  f.write('module/same.ts','changed\n');
+  const repository=f.app.sourceControl(f.root).repositories[0];
+  assert.equal(repository.status,'complete');assert.equal(repository.location,fs.realpathSync(f.root));assert.equal(repository.fileCount,1);
+  assert.deepEqual(repository.changes.map(file=>file.path),['module/same.ts']);
+});
+
+test('versioned catalog refresh rejects a changed registration and reads the replacement only on the next request',t=>{
+  const f=fixture(t,'sha1',true);f.write('same.ts','base\n');f.commit('base');
+  const other=path.join(f.base,'other');fs.mkdirSync(other);checkoutGit(other,'init','--initial-branch=other');
+  const original=childProcess.execFileSync;let retargeted=false;
+  const capture=t.mock.method(childProcess,'execFileSync',(file:any,args:any,options:any)=>{
+    const result=original(file,args,options);
+    if(!retargeted&&file==='git'&&args.includes('status')){retargeted=true;f.catalog.repositories[0].source.path=other;}
+    return result;
+  });
+  syncBuiltinESMExports();
+  let catalog:ReturnType<typeof f.app.sourceControl>;
+  try{catalog=f.app.sourceControl(f.root);}finally{capture.mock.restore();syncBuiltinESMExports();}
+  assert.equal(retargeted,true);assert.equal(catalog.repositories[0].status,'unavailable');assert.equal(catalog.repositories[0].worktrees[0].observedRevision,null);
+  assert.ok(catalog.diagnostics.some(item=>item.code==='code_worktree_identity_changed'));assert.equal(f.catalogReads(),1);
+  const refreshed=f.app.sourceControl(f.root);assert.equal(refreshed.repositories[0].location,fs.realpathSync(other));assert.equal(refreshed.repositories[0].status,'complete');assert.equal(f.catalogReads(),2);
 });
 
 test('catalog refresh rejects a checkout replaced while its status was being read and keeps other members available', t => {
@@ -380,6 +443,32 @@ test('catalog refresh rejects a checkout replaced while its status was being rea
   assert.equal(repository.status, 'partial'); assert.equal(repository.worktrees.find(worktree => worktree.isMain)?.status, 'complete');
   assert.equal(changed.status, 'unavailable'); assert.equal(changed.fileCount, null); assert.equal(changed.observedRevision, null);
   assert.ok(changed.diagnostics.some(item => item.code === 'code_worktree_identity_changed'));
+});
+
+test('catalog refresh rejects a registered linked checkout redirected while another member is read',t=>{
+  const f=fixture(t,'sha1',true);f.write('same.ts','base\n');const head=f.commit('base');
+  const linked=path.join(f.base,'registered');f.git('worktree','add','-b','registered',linked);f.catalog.repositories[0].source.path=linked;
+  const foreign=path.join(f.base,'foreign');fs.mkdirSync(foreign);checkoutGit(foreign,'init','--initial-branch=foreign');
+  // Git can retain stale registrations whose path now belongs to another store.
+  // A matching path in the replacement inventory alone cannot prove identity.
+  const stale=path.join(foreign,'.git','worktrees','stale');fs.mkdirSync(stale,{recursive:true});
+  fs.writeFileSync(path.join(stale,'gitdir'),path.join(fs.realpathSync(f.root),'.git')+'\n');
+  fs.writeFileSync(path.join(stale,'HEAD'),head+'\n');fs.writeFileSync(path.join(stale,'commondir'),'../..\n');
+  assert.ok(checkoutGit(foreign,'worktree','list','--porcelain').includes(fs.realpathSync(f.root)));
+  const original=childProcess.execFileSync;let redirected=false;
+  const capture=t.mock.method(childProcess,'execFileSync',(file:any,args:any,options:any)=>{
+    const result=original(file,args,options);
+    if(!redirected&&file==='git'&&args.includes('status')&&args[args.indexOf('-C')+1]===fs.realpathSync(f.root)){
+      redirected=true;fs.writeFileSync(path.join(linked,'.git'),'gitdir: '+path.join(foreign,'.git')+'\n');
+    }
+    return result;
+  });
+  syncBuiltinESMExports();
+  let catalog:ReturnType<typeof f.app.sourceControl>;
+  try{catalog=f.app.sourceControl(f.root);}finally{capture.mock.restore();syncBuiltinESMExports();}
+  assert.equal(redirected,true);const observed=catalog.repositories[0].worktrees.find(worktree=>worktree.isMain)!;
+  assert.equal(observed.status,'unavailable');assert.equal(observed.observedRevision,null);assert.equal(observed.fileCount,null);
+  assert.ok(observed.diagnostics.some(item=>item.code==='code_worktree_identity_changed'));
 });
 
 for(const sameRepository of [false,true])test('catalog refresh rejects a repository registration retargeted during status to '+(sameRepository?'the same common Git directory':'a foreign repository')+' and keeps other repositories available', t => {

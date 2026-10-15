@@ -46,7 +46,7 @@ export type SourceControlState = '' | 'empty' | 'partial' | 'loading' | 'failure
 export type SourceControlChange = ChangedFileEntry & { worktreeId?: string | null; area: 'unstaged' | 'staged' | 'untracked'; content: string; previousContent?: string };
 export type SourceControlCommit = Omit<TaskCommit, 'taskId' | 'taskTitle'> & { worktreeId?: string | null; files: SourceControlChange[]; branches: string[]; tags: string[]; taskId?: string | null; taskTitle?: string | null; taskDiagnostic?: string | null };
 export type SourceControlRepository = {
-  id: string; name: string; location: string; taskLocation?: string; taskBranch?: string | null;
+  id: string; name: string; location: string; taskLocation?: string; taskBranch?: string | null; readonly pending?: boolean;
   gitId?: string | null; checkoutId?: string | null; readVersion?: string;
   branch: string | null; branches: string[]; ahead: number | null; behind: number | null;
   status: 'ready' | 'clean' | 'offline' | 'partial'; simulated: boolean; services: string[];
@@ -61,6 +61,15 @@ export type SourceControlWorktree = {
   status: SourceControlRepository['status']; changes: SourceControlChange[]; commits: SourceControlCommit[];
   fileCount: number | null; observedRevision?: string | null; diagnostics: string[];
 };
+/** The initial source follows registration order, independently of read completion order. */
+export function sourceControlDefaultSource(repositories: SourceControlRepository[]) {
+  for (const repository of repositories) {
+    if (repository.pending) return undefined;
+    const worktree = repository.worktrees.find(item => item.isMain) || repository.worktrees[0];
+    if (worktree) return {repository, worktree};
+  }
+  return undefined;
+}
 export type SourceControlScopeSelection = { key: string; repositoryIds: string[]; worktrees: Array<{repositoryId: string; worktreeId: string}>; reason: string };
 export const sourceControlWorktreeKey = (repositoryId: string, worktreeId: string) => JSON.stringify([repositoryId, worktreeId]);
 export function sourceControlVisibleWorktrees(repository: SourceControlRepository, names: string[], exact: string[] = []) {
@@ -91,7 +100,7 @@ export function sourceControlRepository(repository: CodeSourceControlRepository)
   return { id: repository.id, name: repository.name, location: repository.source?.location || repository.location, gitId:repository.gitId, checkoutId:repository.source?.checkoutId || null,
     branch: repository.branch, branches: [], ahead: repository.ahead, behind: repository.behind,
     status: repository.status === 'unavailable' ? 'offline' : repository.status === 'partial' ? 'partial' : repository.fileCount === 0 ? 'clean' : 'ready',
-    simulated: false, services: [], worktrees: repository.worktrees.map(sourceControlWorktree), worktreeCount: repository.worktreeCount, changes: repository.changes.map(sourceControlChange), commits: [],
+    pending: repository.diagnostics.some(item => item.code === 'code_source_control_pending'), simulated: false, services: [], worktrees: repository.worktrees.map(sourceControlWorktree), worktreeCount: repository.worktreeCount, changes: repository.changes.map(sourceControlChange), commits: [],
     fileCount: repository.fileCount, head: repository.head, observedRevision: repository.observedRevision,
     diagnostics: repository.diagnostics.map(item => item.message), ...(taskLocation ? { taskLocation, taskBranch: repository.branch } : {}) };
 }

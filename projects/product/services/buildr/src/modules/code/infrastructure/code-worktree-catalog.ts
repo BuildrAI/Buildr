@@ -53,9 +53,19 @@ export function readSourceControlTaskAssociations(root: string, repositories: Ar
       }
     } catch { incomplete = true; uniquenessUnknown = true; }
   }
+  // Task records often name the same source checkout. Share that observation
+  // only inside this enrichment, including failures, and reacquire next read.
+  const sourceCommons = new Map<string, string | null>();
+  const readCommonDirectory = (location: string) => {
+    let key:string;try{key=fs.realpathSync(location);}catch{key=path.resolve(location);}
+    if(!sourceCommons.has(key)){try{sourceCommons.set(key,gitCommonDirectory(location));}catch{sourceCommons.set(key,null);}}
+    const common=sourceCommons.get(key);
+    if(!common)throw Error('Git source identity is unavailable.');
+    return common;
+  };
   const commons = new Map<string, string>();
   for (const { repository } of members) if (!commons.has(repository.id)) {
-    try { commons.set(repository.id, gitCommonDirectory(repository.location)); } catch { incomplete = true; }
+    try { commons.set(repository.id, readCommonDirectory(repository.location)); } catch { incomplete = true; }
   }
   const matches = new Map<string, Map<string, { task: { taskId: string; title: string } | null; diagnostic: string | null }>>();
   for (const id of [...ids].sort()) {
@@ -68,7 +78,7 @@ export function readSourceControlTaskAssociations(root: string, repositories: Ar
       const matching = members.filter(({ worktree }) => sameFilesystemPath(worktree.location, recorded.checkoutPath));
       if (!matching.length) continue;
       let common: string;
-      try { common = gitCommonDirectory(recorded.sourceRepository); } catch { incomplete = true; uniquenessUnknown = true; continue; }
+      try { common = readCommonDirectory(recorded.sourceRepository); } catch { incomplete = true; uniquenessUnknown = true; continue; }
       for (const { repository, worktree } of matching) {
         const registeredCommon = commons.get(repository.id);
         if (!registeredCommon || !sameFilesystemPath(common, registeredCommon)) continue;

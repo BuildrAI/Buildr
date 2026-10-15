@@ -404,6 +404,9 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
     const rgVersion=spawnSync(bundledRg,['--version'],{encoding:'utf8',env:{...runtimeEnv,PATH:''}});assert.equal(rgVersion.status,0,rgVersion.stderr);assert.match(rgVersion.stdout,/ripgrep/);
     const codeCatalog=runWithGit(['code','repositories','--target',workflowWorkspace,'--json']);assert.equal(codeCatalog.status,0,codeCatalog.stderr);
     const codeRepository=JSON.parse(codeCatalog.stdout).repositories.find((repo:any)=>repo.location===fs.realpathSync(external));assert.ok(codeRepository);
+    const inventoryCli=runWithGit(['code','source-control-inventory','--target',workflowWorkspace,'--json']);assert.equal(inventoryCli.status,0,inventoryCli.stderr);
+    const pendingRepository=JSON.parse(inventoryCli.stdout).repositories.find((repo:any)=>repo.id===codeRepository.id);
+    assert.ok(pendingRepository);assert.equal(pendingRepository.gitId,null);assert.equal(pendingRepository.fileCount,null);assert.ok(pendingRepository.diagnostics.some((item:any)=>item.code==='code_source_control_pending'));
     const codeSearch=runWithGit(['code','search','--repository',codeRepository.id,'--query','External service','--mode','content','--target',workflowWorkspace,'--json']);assert.equal(codeSearch.status,0,codeSearch.stderr);
     const codeResult=JSON.parse(codeSearch.stdout);assert.ok(codeResult.matches.some((match:any)=>match.path==='README.md'&&match.line===1));assert.equal(codeResult.truncated,false);assert.deepEqual(codeResult.diagnostics,[]);
     const pagedText='first\n'+'p'.repeat(5*1024*1024)+'\ninstalled [Needle]\n';fs.writeFileSync(path.join(external,'paged.txt'),pagedText);
@@ -544,6 +547,9 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
     assert.equal(instance.productIdentity.installationIdentity, healthIdentity.productIdentity.installationIdentity);
     const workspaceRegistry=await(await fetch(instance.url+'/api/v1/workspaces',{headers:{'x-buildr-instance':instance.secret}})).json();
     const registeredWorkspace=workspaceRegistry.workspaces.find((entry:any)=>sameFilesystemPath(entry.rootPath,workflowWorkspace));assert.ok(registeredWorkspace,JSON.stringify(workspaceRegistry));
+    const inventoryResponse=await fetch(instance.url+'/api/v1/workspaces/'+registeredWorkspace.workspace.id+'/code/source-control-inventory',{headers:{'x-buildr-instance':instance.secret}});assert.equal(inventoryResponse.status,200);
+    const pendingHttp=(await inventoryResponse.json()).repositories.find((repo:any)=>repo.id===codeRepository.id);
+    assert.deepEqual(pendingHttp,pendingRepository,'installed CLI and bundled read worker expose the same unverified registration, without pretending it is clean');
     const codeQuery=new URLSearchParams({repositoryId:codeRepository.id,query:'External service',mode:'content'});
     const codeResponse=await fetch(instance.url+'/api/v1/workspaces/'+registeredWorkspace.workspace.id+'/code/search?'+codeQuery,{headers:{'x-buildr-instance':instance.secret}});assert.equal(codeResponse.status,200);
     const httpCodeResult=await codeResponse.json();

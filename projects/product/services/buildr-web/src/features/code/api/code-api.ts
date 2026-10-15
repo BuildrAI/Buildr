@@ -41,6 +41,7 @@ export const codeApi = {
     return saved;
   },
   search:(id:string,input:CodeReadInput,signal?:AbortSignal)=>request<CodeSearch>(id,'search',input,signal),
+  sourceControlInventory:(id:string,input:{taskId?:string}={},signal?:AbortSignal)=>request<CodeSourceControlResponse>(id,'source-control-inventory',input,signal),
   sourceControl:(id:string,input:CodeSourceControlInput={},signal?:AbortSignal)=>request<CodeSourceControlResponse>(id,'source-control',input,signal),
   history:(id:string,input:CodeSourceControlInput,signal?:AbortSignal)=>request<CodeHistoryResponse>(id,'history',input,signal),
   commit:(id:string,input:CodeSourceControlInput,signal?:AbortSignal)=>request<CodeCommitResponse>(id,'commit',input,signal),

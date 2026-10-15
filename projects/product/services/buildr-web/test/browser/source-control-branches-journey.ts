@@ -25,6 +25,7 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
   const open = async (branches: any) => {
     await page.goto(workspaceUrl + '/code/source-control');
     await root().locator('.source-control-repository-copy').first().waitFor();
+    await root().locator('.source-control-title .anticon-spin').waitFor({state:'hidden'});
     const response = await page.request.get(api + '/code/source-control'); assert.equal(response.status(), 200);
     const catalog = await response.json(), repository = catalog.repositories.find((item: any) => item.worktrees.some((worktree: any) => worktree.location === branches.location));
     assert.ok(repository);
@@ -544,17 +545,24 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
       const peerTree = {...peer.worktrees.find((item: any) => item.isRegistered), repositoryId:peer.id, repositoryName:peer.name};
       const reads: string[] = [], contentReads: string[] = [];
       const gates = new Map<string, {gate:Promise<void>; release():void}>();
-      for (const id of ['', worktree.repositoryId, peer.id]) {
-        let release = () => {}; const gate = new Promise<void>(resolve => {release = resolve;}); gates.set(id, {gate, release});
+      for (const id of [worktree.repositoryId, peer.id]) for (const phase of ['full', 'local']) {
+        let release = () => {}; const gate = new Promise<void>(resolve => {release = resolve;});
+        gates.set(id + ':' + phase, {gate, release});
       }
       const catalogPath = new URL(api + '/code/source-control').pathname;
+      const inventoryPath = new URL(api + '/code/source-control-inventory').pathname;
+      let inventoryReads = 0;
       const matchesCatalog = (url: URL) => url.pathname === catalogPath;
+      const repositoryRequest = (id:string) => page.waitForRequest((request:any) => {const url = new URL(request.url()); return url.pathname === catalogPath && url.searchParams.get('repositoryId') === id;});
       const interceptCatalog = async (route: any) => {
-        const id = new URL(route.request().url()).searchParams.get('repositoryId') || ''; reads.push(id);
-        await gates.get(id)!.gate;
+        const id = new URL(route.request().url()).searchParams.get('repositoryId') || '';
+        const phase = reads.includes(id) ? 'local' : 'full'; reads.push(id);
+        const control = gates.get(id + ':' + phase);
+        if (control) await control.gate;
         const repository = observed.repositories.find((item: any) => item.id === id);
+        assert.ok(repository, '渐进刷新每次读取明确的代码库');
         const branch = id === worktree.repositoryId ? 'concurrent-a-new' : 'concurrent-b-new';
-        const value = id ? {...observed, readAt:new Date().toISOString(), repositories:[{...repository, branch, worktrees:repository.worktrees.map((item: any) => ({...item, branch}))}]} : observed;
+        const value = {...observed, readAt:new Date().toISOString(), repositories:[phase === 'local' ? {...repository, branch, worktrees:repository.worktrees.map((item: any) => ({...item, branch}))} : repository]};
         await route.fulfill({json:value});
       };
       const interceptFetch = async (route: any) => {
@@ -563,9 +571,13 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
       };
       const observeContents = (request: any) => {
         const url = new URL(request.url());
+        if (url.pathname === inventoryPath) inventoryReads++;
         if (/\/code\/(?:history|commit|diff|source-file|branches|authors)$/.test(url.pathname)) contentReads.push(url.searchParams.get('repositoryId') || '');
       };
-      const initialCatalog = async (route:any) => {await route.fulfill({json:observed});};
+      const initialCatalog = async (route:any) => {
+        const id = new URL(route.request().url()).searchParams.get('repositoryId');
+        await route.fulfill({json:{...observed, repositories:observed.repositories.filter((repository:any) => repository.id === id)}});
+      };
       await page.route(matchesCatalog, initialCatalog);
       const initialReturned = page.waitForResponse((response:any) => new URL(response.url()).pathname === catalogPath);
       await root().getByRole('button', {name:'刷新源代码管理', exact:true}).click(); await initialReturned;
@@ -574,28 +586,31 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
       await page.route(matchesCatalog, interceptCatalog); await page.route('**/code/fetch', interceptFetch);
       page.on('request', observeContents);
       try {
-        const fullReturned = page.waitForResponse((response: any) => {const url = new URL(response.url()); return url.pathname === catalogPath && !url.searchParams.has('repositoryId');});
-        const fullStarted = page.waitForRequest((request: any) => {const url = new URL(request.url()); return url.pathname === catalogPath && !url.searchParams.has('repositoryId');});
-        await root().getByRole('button', {name:'刷新源代码管理', exact:true}).click(); await fullStarted;
-        const aStarted = page.waitForRequest((request: any) => new URL(request.url()).searchParams.get('repositoryId') === worktree.repositoryId && new URL(request.url()).pathname === catalogPath);
-        const aReturned = page.waitForResponse((response: any) => new URL(response.url()).searchParams.get('repositoryId') === worktree.repositoryId && new URL(response.url()).pathname === catalogPath);
-        await fetchOne(worktree); await aStarted;
+        const fullStarted = Promise.all([repositoryRequest(worktree.repositoryId), repositoryRequest(peer.id)]);
+        await root().getByRole('button', {name:'刷新源代码管理', exact:true}).click();
+        const [fullA, fullB] = await fullStarted;
+        const fullReturned = Promise.all([fullA, fullB].map(request => page.waitForResponse((response:any) => response.request() === request)));
+        const aStarted = repositoryRequest(worktree.repositoryId);
+        await fetchOne(worktree); const aRequest = await aStarted;
+        const aReturned = page.waitForResponse((response:any) => response.request() === aRequest);
         // Let A's own invalidation publish before measuring B's effect on retained A reading.
         await page.evaluate(async () => {await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);});
         const aReads = contentReads.filter(id => id === worktree.repositoryId).length;
-        const bStarted = page.waitForRequest((request: any) => new URL(request.url()).searchParams.get('repositoryId') === peer.id && new URL(request.url()).pathname === catalogPath);
-        const bReturned = page.waitForResponse((response: any) => new URL(response.url()).searchParams.get('repositoryId') === peer.id && new URL(response.url()).pathname === catalogPath);
-        await fetchOne(peerTree); await bStarted;
-        gates.get(peer.id)!.release(); await bReturned;
+        const bStarted = repositoryRequest(peer.id);
+        await fetchOne(peerTree); const bRequest = await bStarted;
+        const bReturned = page.waitForResponse((response:any) => response.request() === bRequest);
+        gates.get(peer.id + ':local')!.release(); await bReturned;
         await page.waitForFunction(({id}: {id:string}) => [...document.querySelectorAll('[data-source-worktree]')].some(element => element.getAttribute('data-source-worktree') === id && element.querySelector('.source-control-row-action-button')?.getAttribute('title') === 'concurrent-b-new · 管理分支'), {id:peerTree.worktreeId});
         assert.equal(contentReads.filter(id => id === worktree.repositoryId).length, aReads, 'B更新不触发A的分支、历史、作者、提交或文件读取');
-        gates.get(worktree.repositoryId)!.release(); await aReturned;
-        gates.get('')!.release(); await fullReturned;
-        await page.evaluate(async () => {await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);});
-        assert.equal(await row(worktree).locator('.source-control-row-action-button').getAttribute('title'), 'concurrent-a-new · 管理分支');
-        assert.equal(await row(peerTree).locator('.source-control-row-action-button').getAttribute('title'), 'concurrent-b-new · 管理分支');
+        gates.get(worktree.repositoryId + ':local')!.release(); await aReturned;
+        await page.waitForFunction(({id}: {id:string}) => [...document.querySelectorAll('[data-source-worktree]')].some(element => element.getAttribute('data-source-worktree') === id && element.querySelector('.source-control-row-action-button')?.getAttribute('title') === 'concurrent-a-new · 管理分支'), {id:worktree.worktreeId});
+        gates.get(worktree.repositoryId + ':full')!.release(); gates.get(peer.id + ':full')!.release(); await fullReturned;
+        await root().locator('.source-control-title .anticon-spin').waitFor({state:'hidden'});
+        assert.equal(await row(worktree).locator('.source-control-row-action-button').getAttribute('title'), 'concurrent-a-new · 管理分支', '较旧全量刷新中的逐库结果不能覆盖A的新局部观察');
+        assert.equal(await row(peerTree).locator('.source-control-row-action-button').getAttribute('title'), 'concurrent-b-new · 管理分支', '较旧全量刷新最终合并也不能覆盖B的新局部观察');
         assert.equal(await row(worktree).locator('.source-control-repository-copy').getAttribute('aria-pressed'), 'true');
-        assert.deepEqual(reads, ['', worktree.repositoryId, peer.id]);
+        assert.equal(inventoryReads, 1, '全量刷新只发现一次清单，单库获取不重复发现');
+        assert.deepEqual([...reads].sort(), [...observed.repositories.map((repository:any) => repository.id), worktree.repositoryId, peer.id].sort(), '全量每库一次，两个获取目标再各作一次局部读取');
         await capture(page, 'source-control-scoped-concurrent.png');
       } finally {
         for (const value of gates.values()) value.release(); page.off('request', observeContents);
@@ -610,8 +625,9 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
       const {worktree} = await open(branches), before = branches.snapshot();
       const observed = await (await page.request.get(api + '/code/source-control')).json();
       const reads: string[] = [], writes: any[] = [];
-      let allSucceeded = false;
-      const observe = (request: any) => { const url = new URL(request.url()); if (url.pathname === new URL(api + '/code/source-control').pathname) reads.push(url.searchParams.get('repositoryId') || ''); };
+      let allSucceeded = false, inventoryReads = 0;
+      const catalogPath = new URL(api + '/code/source-control').pathname, inventoryPath = new URL(api + '/code/source-control-inventory').pathname;
+      const observe = (request: any) => {const url = new URL(request.url()); if (url.pathname === inventoryPath) inventoryReads++; if (url.pathname === catalogPath) reads.push(url.searchParams.get('repositoryId') || '');};
       const intercept = async (route: any) => {
         const input = route.request().postDataJSON(); writes.push(input);
         await route.fulfill({json:{readAt:new Date().toISOString(), repositories:input.repositories.map((item: any, index: number) => ({repositoryId:item.repositoryId, gitId:item.expectedGitId, status:allSucceeded || index === 0 ? 'succeeded' : 'failed', message:allSucceeded || index === 0 ? '隔离获取成功' : '隔离远程认证失败', remotes:[{name:'origin', status:allSucceeded || index === 0 ? 'succeeded' : 'failed', message:allSucceeded || index === 0 ? '已获取' : '认证失败'}]}))}});
@@ -622,12 +638,14 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
         await wide.press('End');
         await root().getByRole('button', {name:'刷新源代码管理', exact:true}).click();
         await root().locator('.source-control-title .anticon-spin').waitFor({state:'hidden'});
-        assert.equal(writes.length, 0, '只读刷新不执行获取远程'); reads.length = 0;
-        const refreshed = page.waitForResponse((response: any) => new URL(response.url()).pathname === new URL(api + '/code/source-control').pathname);
-        await fetchAll(); await refreshed;
+        assert.equal(writes.length, 0, '只读刷新不执行获取远程'); reads.length = 0; inventoryReads = 0;
+        const inventoryReturned = page.waitForResponse((response: any) => new URL(response.url()).pathname === inventoryPath);
+        await fetchAll(); await inventoryReturned;
+        await root().locator('.source-control-title .anticon-spin').waitFor({state:'hidden'});
         assert.equal(writes.length, 1);
         assert.deepEqual(writes[0].repositories, observed.repositories.map((item: any) => ({repositoryId:item.id, expectedGitId:item.gitId, expectedCheckoutId:item.source?.checkoutId || null})));
-        assert.deepEqual(reads, [''], '一批全部获取只作一次全目录观察');
+        assert.equal(inventoryReads, 1, '一批全部获取只重新发现一次全目录清单');
+        assert.deepEqual([...reads].sort(), observed.repositories.map((item:any) => item.id).sort(), '清单内每个代码库只读取一次状态');
         await page.locator('.source-control-operation-notice [data-fetch-status="succeeded"]').waitFor(); await page.locator('.source-control-operation-notice [data-fetch-status="failed"]').first().waitFor();
         assert.equal(await page.locator('.source-control-operation-notice [data-fetch-repository]').count(), observed.repositories.length);
         assert.equal(await root().locator('.source-control-fetch-results,.source-control-sync-results').count(), 0, '结果浮窗不占目录空间');
