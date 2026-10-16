@@ -118,7 +118,7 @@ async function download(url: string, fetchImpl: typeof fetch): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-export async function observePublishedPackageArtifact(packageValue: keyof typeof packageNames, options: { version?: string; expectedIntegrity?: string; fetchImpl?: typeof fetch } = {}): Promise<{ observation: PublishedPackageObservation; bytes?: Buffer }> {
+export async function observePublishedPackageArtifact(packageValue: keyof typeof packageNames, options: { version?: string; expectedIntegrity?: string; distTag?: 'latest' | 'next'; fetchImpl?: typeof fetch } = {}): Promise<{ observation: PublishedPackageObservation; bytes?: Buffer }> {
   const packageName = packageNames[packageValue];
   if (!packageName) throw new Error('Unsupported release package.');
   try {
@@ -128,7 +128,8 @@ export async function observePublishedPackageArtifact(packageValue: keyof typeof
       const response = await requestReleaseJson(new URL(encodeURIComponent(packageName), registry), { fetchImpl, headers: { accept: 'application/json' } });
       if (response.status === 404) return { observation: { status: 'absent', packageName } };
       if (response.status !== 200 || response.body?.name !== packageName) throw new Error('Official package identity is unknown.');
-      version = response.body?.['dist-tags']?.latest ?? response.body?.['dist-tags']?.next;
+      if (options.distTag && !['latest', 'next'].includes(options.distTag)) throw new Error('Official release channel is invalid.');
+      version = options.distTag ? response.body?.['dist-tags']?.[options.distTag] : response.body?.['dist-tags']?.latest ?? response.body?.['dist-tags']?.next;
       if (typeof version !== 'string') throw new Error('Official package has no exact public release endpoint.');
     }
     if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(version)) throw new Error('Official package version is invalid.');

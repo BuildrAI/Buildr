@@ -363,6 +363,7 @@ export function reconcilePublicationAfterPreparedContext(publication: any, conte
 
 export async function runReleaseOperation(options: any, dependencies: any = {}): Promise<any> {
   let action = options.action;
+  if (options.recoverPublication === true && (action !== 'resume' || options.authorized !== true)) throw new Error('Publication executor recovery requires explicit resume --recover-publication --authorized.');
   if (!['prepare', 'inspect', 'publish', 'resume'].includes(action)) throw new Error('Release operation must be prepare, inspect, publish or resume.');
   const targets = normalizeReleaseTargets({ packages: options.packages, version: options.version, pluginVersion: options.pluginVersion, selectionId: options.selectionId });
   const key = targets.selectionId;
@@ -737,6 +738,7 @@ function parseOptions(argv: any): any  {
   for (let index: any = 0; index < rest.length; index++) {
     const key: any = rest[index];
     if (key === '--authorized') { options.authorized = true; continue; }
+    if (key === '--recover-publication') { options.recoverPublication = true; continue; }
     const value: any = rest[index + 1];
     if (!key?.startsWith('--') || value === undefined) throw new Error(`Invalid argument: ${key || '<missing>'}`);
     if (key === '--source') options.sources.push(value);
@@ -749,7 +751,7 @@ function parseOptions(argv: any): any  {
     sourceVerification: options['source-verification'],
     supportTasks: options['support-tasks'] ? options['support-tasks'].split(',').filter(Boolean) : undefined,
   };
-  if (!options.input) throw new Error('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--authorized]');
+  if (!options.input) throw new Error('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--authorized] [--recover-publication]');
   if (!['compact', 'full'].includes(options.detail)) throw new Error('--detail must be compact or full.');
   const input: any = JSON.parse(fs.readFileSync(path.resolve(options.input), 'utf8'));
   if (action === 'inspect') return { action, detail: options.detail, output: options.output ? path.resolve(options.output) : null, expectedTimelineIdentity: options['timeline-identity'] ?? null, inspectedResult: input };

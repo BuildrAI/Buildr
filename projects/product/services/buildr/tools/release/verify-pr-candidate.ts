@@ -214,7 +214,9 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
       const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH ?? '', 'utf8'));
       const repository = process.env.GITHUB_REPOSITORY ?? '';
       requireFact(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(repository), 'GitHub repository is unavailable.');
-      const result = await verifyReleasePullRequestCandidate(event, repository, async endpoint =>
+      const result = /^codex\/release-executor-/u.test(event?.pull_request?.head?.ref ?? '')
+        ? await (await import('./release-executor-admission.ts')).verifyReleaseExecutorPullRequest(event, repository, repo)
+        : await verifyReleasePullRequestCandidate(event, repository, async endpoint =>
         JSON.parse(execFileSync('gh', ['api', endpoint], { encoding: 'utf8', timeout: 30_000 })),
         { git, loadAggregate: async runId => {
           const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-plugin-source-proof-'));

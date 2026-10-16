@@ -9,6 +9,7 @@ import { spawnCommandSync } from '../../src/infrastructure/process.ts';
 import { readReleaseArtifact, assertNpmTarballInventory } from './release-artifact.ts';
 import { resolveReleaseContract } from './release-contract.ts';
 import { extractReleaseNotes } from './release-notes.ts';
+import { validateReleaseExecutorRecovery } from './release-executor-recovery.ts';
 import { publisherNpmCli, PUBLISH_NPM_VERSION } from '../verification/candidate-environment.ts';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
@@ -20,8 +21,8 @@ export const RELEASE_CHECKS = Object.freeze([
   { id: 'artifact-browser-core', phase: 'candidate', evidence: ['artifact-browser-macos'], operation: 'browser-core' },
   { id: 'package-contract', phase: 'candidate', evidence: ['core-package-runtime-release-macos'], operation: 'metadata' },
   { id: 'platform-launcher', phase: 'candidate', evidence: ['core-package-runtime-release-macos', 'runtime-windows'], operation: 'platform' },
-  { id: 'host-node', phase: 'candidate', evidence: ['host-minimum-macos', 'host-current-macos', 'host-minimum-windows', 'host-current-windows', 'host-minimum-linux', 'host-current-linux'], operation: 'host' },
-  { id: 'publisher-cli', phase: 'candidate', evidence: ['host-minimum-linux'], operation: 'publisher' },
+  { id: 'host-node', phase: 'candidate', evidence: ['host-minimum-macos', 'host-current-macos', 'host-minimum-windows', 'host-current-windows'], operation: 'host' },
+  { id: 'publisher-cli', phase: 'candidate', evidence: ['host-minimum-macos'], operation: 'publisher' },
   { id: 'release-lifecycle', phase: 'candidate', evidence: ['release-infrastructure-macos', 'release-infrastructure-windows'], operation: 'lifecycle' },
   { id: 'artifact-readback', phase: 'pre-publication', reason: 'Recheck downloaded bytes against the frozen Candidate before mutation.' },
   { id: 'publication-authority', phase: 'protected-authority', reason: 'Real platform approval and OIDC exist only in the protected run.' },
@@ -45,8 +46,15 @@ export const RELEASE_CONSUMER_COMMANDS = Object.freeze({
   registry: { file: 'test/verification/release/release-smoke.ts', args: [], preparation: 'consumer' },
 });
 
+// Kept only for a bound repair of an already-frozen transaction. These are
+// historical Linux checks, never new macOS results or current Linux support.
+const historicalReleaseChecks = RELEASE_CHECKS.map(check => check.id === 'host-node'
+  ? { ...check, evidence: ['host-minimum-macos', 'host-current-macos', 'host-minimum-windows', 'host-current-windows', 'host-minimum-linux', 'host-current-linux'] }
+  : check.id === 'publisher-cli' ? { ...check, evidence: ['host-minimum-linux'] } : check);
+const consumptionIdentity = (checks: readonly any[]) => `sha256-${crypto.createHash('sha256').update(JSON.stringify({ checks, commands: RELEASE_CONSUMER_COMMANDS, publisherNpm: PUBLISH_NPM_VERSION })).digest('hex')}`;
+
 export function releaseConsumptionIdentity(): string {
-  return `sha256-${crypto.createHash('sha256').update(JSON.stringify({ checks: RELEASE_CHECKS, commands: RELEASE_CONSUMER_COMMANDS, publisherNpm: PUBLISH_NPM_VERSION })).digest('hex')}`;
+  return consumptionIdentity(RELEASE_CHECKS);
 }
 
 export function validateReleaseCheckDefinitions(checks: readonly any[] = RELEASE_CHECKS): void {
@@ -62,12 +70,20 @@ export function validateReleaseCheckDefinitions(checks: readonly any[] = RELEASE
   }
 }
 
-export function assertReleaseConsumptionCoverage(aggregate: any, expected: { sourceCommit: string; sourceTree?: string }, artifact: any): void {
+export function assertReleaseConsumptionCoverage(aggregate: any, expected: { sourceCommit: string; sourceTree?: string }, artifact: any, recoveryContext?: any): void {
   validateReleaseCheckDefinitions();
   if (aggregate?.status !== 'passed' || aggregate.sourceCommit !== expected.sourceCommit || (expected.sourceTree && aggregate.sourceTree !== expected.sourceTree)) throw new Error('Release consumption requires a passed Candidate for the exact source.');
-  if (aggregate.consumptionIdentity !== releaseConsumptionIdentity()) throw new Error('Candidate release consumption recipe is missing or stale.');
-  for (const check of RELEASE_CHECKS) {
-    if ('evidence' in check && check.evidence.some(id => !aggregate.evidenceIds?.includes(id))) throw new Error(`Candidate is missing release check ${check.id}.`);
+  let checks: readonly any[] = RELEASE_CHECKS;
+  if (aggregate.consumptionIdentity !== releaseConsumptionIdentity()) {
+    const recovery = recoveryContext && validateReleaseExecutorRecovery(recoveryContext);
+    if (!recovery || recoveryContext.release?.sourceCommit !== expected.sourceCommit
+      || recoveryContext.candidate?.sourceCommit !== expected.sourceCommit
+      || recoveryContext.artifact?.sha256 !== artifact?.sha256
+      || aggregate.consumptionIdentity !== consumptionIdentity(historicalReleaseChecks)) throw new Error('Candidate release consumption recipe is missing or stale.');
+    checks = historicalReleaseChecks;
+  }
+  for (const check of checks) {
+    if ('evidence' in check && check.evidence.some((id: string) => !aggregate.evidenceIds?.includes(id))) throw new Error(`Candidate is missing release check ${check.id}.`);
   }
   for (const field of ['sourceCommit', 'filename', 'size', 'sha256', 'integrity', 'applicationPayloadDigest']) {
     if (!artifact || aggregate.artifact?.[field] !== artifact[field]) throw new Error(`Candidate consumption artifact ${field} mismatches.`);
@@ -147,7 +163,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       const context = JSON.parse(fs.readFileSync(contextFile, 'utf8'));
       const aggregate = JSON.parse(fs.readFileSync(aggregateFile, 'utf8'));
       const artifact = inspectReleaseConsumerArtifact(manifestFile).artifact.manifest;
-      assertReleaseConsumptionCoverage(aggregate, context.release, artifact);
+      assertReleaseConsumptionCoverage(aggregate, context.release, artifact, context);
       for (const field of ['sourceCommit', 'filename', 'size', 'sha256', 'integrity', 'applicationPayloadDigest']) if (artifact[field] !== context.artifact?.[field]) throw new Error(`Frozen release context artifact ${field} mismatches.`);
       const { releaseContextIdentity } = await import('./release-readiness.ts');
       if (releaseContextIdentity(aggregate) !== context.candidate.aggregateIdentity) throw new Error('Frozen Candidate aggregate identity mismatches.');

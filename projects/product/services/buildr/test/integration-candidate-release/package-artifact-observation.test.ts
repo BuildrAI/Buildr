@@ -145,3 +145,15 @@ test('tar parser rejects a partial trailing header instead of silently accepting
   const record = tarRecord({ name: 'package/package.json', body: JSON.stringify(metadata) });
   assert.throws(() => packageMetadataFromTarball(gzipSync(Buffer.concat([record, Buffer.from('incomplete header')]))));
 });
+
+
+test('explicit candidate channel reads next without falling back to legacy latest', async () => {
+  const bytes = tarball(), fixture = fetchFixture(bytes, { packument: jsonResponse({ name: metadata.name, 'dist-tags': { latest: '0.1.0-rc.1', next: version } }) });
+  const observed = await observePublishedPackageArtifact('dsh-plugin', { distTag: 'next', fetchImpl: fixture.fetchImpl });
+  assert.equal(observed.observation.status, 'present');
+  assert.ok(fixture.calls[1].url.endsWith(encodeURIComponent(version)));
+  const missing = fetchFixture(bytes);
+  const unavailable = await observePublishedPackageArtifact('dsh-plugin', { distTag: 'next', fetchImpl: missing.fetchImpl });
+  assert.equal(unavailable.observation.status, 'unknown');
+  assert.equal(missing.calls.length, 1);
+});

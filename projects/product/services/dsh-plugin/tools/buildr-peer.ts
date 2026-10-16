@@ -4,6 +4,7 @@ import { spawnSync, type SpawnSyncOptionsWithStringEncoding } from 'node:child_p
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { pairExecutionDiagnostic } from '../../buildr/tools/release/package-pair-diagnostics.ts';
 import { gunzipSync } from 'node:zlib';
 import { isDeepStrictEqual } from 'node:util';
 import { artifactFromTarball } from '../../buildr/tools/release/package-artifact-observation.ts';
@@ -108,7 +109,13 @@ export function prepareBuildrPeer(options: { artifactManifest: string; nodeExecu
   writeFileSync(path.join(root, OWNER), JSON.stringify({ schemaVersion: PEER_SCHEMA, artifact: input.artifact }));
   const scope = { root, workspace: path.join(root, 'workspace'), appData: path.join(root, 'app-data'), productData: path.join(root, 'product-data') }, environment = smokePeerEnvironment(scope, nodeExecutable);
   const execute = options.execute ?? spawnSync;
-  const run = (args: string[]) => { const result = execute(nodeExecutable, [npmCli, ...args], { cwd: root, env: environment, shell: false, encoding: 'utf8', timeout: 180_000, maxBuffer: 2 * 1024 * 1024 }); if (result.error || result.status !== 0) fail('isolated npm operation failed'); return String(result.stdout).trim(); };
+  const run = (args: string[]) => {
+    const result = execute(nodeExecutable, [npmCli, ...args], { cwd: root, env: environment, shell: false, encoding: 'utf8', timeout: 180_000, maxBuffer: 2 * 1024 * 1024 });
+    if (result.error || result.status !== 0) throw Object.assign(new Error('buildr_peer_invalid: isolated npm operation failed'), {
+      pairExecution: pairExecutionDiagnostic(args[0] === 'install' ? 'provider-install' : 'npm-version', 'isolated-npm-operation-failed', result),
+    });
+    return String(result.stdout).trim();
+  };
   const npmVersion = run(['--version']); if (!/^\d+\.\d+\.\d+$/.test(npmVersion)) fail('npm version response');
   const tarball = path.join(root, 'artifact.tgz'); writeFileSync(tarball, input.bytes);
   const prefix = path.join(root, 'prefix');

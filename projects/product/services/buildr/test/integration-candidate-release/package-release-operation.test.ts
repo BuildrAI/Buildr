@@ -23,8 +23,8 @@ function artifact(name: string, origin = 'candidate', version = name === 'buildr
       { packageName: '@buildr-ai/buildr', feature: 'entry', required: true, versions: { minInclusive: '0.0.0', maxExclusive: '1.0.0', includePrerelease: true }, contracts: ['buildr.web-protocol/v1'] },
     ] }, ...(origin === 'candidate' ? { sourceCommit } : {}) };
 }
-function fixture(packages = 'dsh-plugin'): any {
-  const targets = normalizeReleaseTargets({ packages, ...(packages.includes('buildr') ? { version: '0.2.0' } : {}), ...(packages.includes('dsh-plugin') ? { pluginVersion: '0.1.0' } : {}) });
+function fixture(packages = 'dsh-plugin', buildrVersion = '0.2.0'): any {
+  const targets = normalizeReleaseTargets({ packages, ...(packages.includes('buildr') ? { version: buildrVersion } : {}), ...(packages.includes('dsh-plugin') ? { pluginVersion: '0.1.0' } : {}) });
   const selection = { selectionId: targets.selectionId, version: targets.versions.buildr ?? null, targets, status: 'frozen', identity: digest('a'),
     selectionIdentity: digest('a'), releaseHead: hash('b'), releaseTree: hash('d'), generation: 1 };
   const convergence = { mainCommit: hash('c'), mainTree: selection.releaseTree, devCommit: hash('f'), mergeParents: [hash('e'), selection.releaseHead], pluginTree: hash('a') };
@@ -39,7 +39,7 @@ function fixture(packages = 'dsh-plugin'): any {
     if (name === 'buildr') owned[name] = { artifact: item, ownerContext: createReleaseContext({ selection: contextSelection,
       release: { version: item.version, sourceCommit: selection.releaseHead, sourceTree: selection.releaseTree }, artifact: { sha256: item.artifactSha256, integrity: item.integrity },
       convergence: { mainCommit: convergence.mainCommit, mainTree: convergence.mainTree, devCommit: convergence.devCommit, mergeParents: convergence.mergeParents }, node: { authority: 'projects/product/.node-version', version: '24.15.0', executionIdentity: digest('d') } }) };
-    else owned[name] = { artifact: item, prepareRunId: 100, prepareRunAttempt: 1, buildrPeer: targets.packages.includes('buildr') ? artifact('buildr') : published.buildr.artifact,
+    else owned[name] = { artifact: item, prepareRunId: 100, prepareRunAttempt: 1, buildrPeer: targets.packages.includes('buildr') ? artifact('buildr', 'candidate', buildrVersion) : published.buildr.artifact,
       candidate: { schemaVersion: 'buildr.dsh-plugin-release-candidate/v1', packageName: item.packageName, version: item.version, sourceCommit: convergence.mainCommit,
         sourceTree: convergence.pluginTree, sha256: item.artifactSha256, integrity: item.integrity } };
   }
@@ -194,6 +194,26 @@ test('joint continuation preserves successful first owner and cleans only after 
   assert.equal(final.status, 'passed'); assert.equal(f.counts().dispatches, 2); assert.equal(f.counts().cleanups, 1);
 });
 
+test('after main publication the plugin observes the frozen peer channel without changing its prepared package', async () => {
+  for (const [version, distTag] of [['0.2.0-rc.1', 'next'], ['0.2.0', 'latest']]) {
+    const f = fixture('buildr,dsh-plugin', version), observations: any[] = [], pluginInputs: any[] = [];
+    const observe = f.dependencies.observePublishedPackageArtifact, publish = f.dependencies.runPluginHostedOperation;
+    f.dependencies.observePublishedPackageArtifact = async (name: string, options: any) => {
+      observations.push({ name, ...options });
+      return name === 'buildr' && options.distTag ? { observation: { status: 'present', artifact: { ...f.owned.buildr.artifact, origin: 'registry' } }, bytes: Buffer.from('buildr') }
+        : observe(name, options);
+    };
+    f.dependencies.runPluginHostedOperation = (input: any, dependencies: any) => { pluginInputs.push(input); return publish(input, dependencies); };
+    await continuePackageRelease({ action: 'publish', authorized: true }, f.scope, f.dependencies);
+    assert.equal(observations.some(value => value.distTag), false, 'prepublication observations retain their original policy');
+    const next = await continuePackageRelease({ action: 'resume' }, f.scope, f.dependencies);
+    assert.equal(next.package, 'dsh-plugin'); assert.equal(next.status, 'publication-running');
+    assert.deepEqual(observations.filter(value => value.distTag), [{ name: 'buildr', distTag }]);
+    assert.equal(pluginInputs[0].candidateRunId, 100); assert.equal(pluginInputs[0].sourceCommit, f.context.convergence.mainCommit);
+    assert.equal(pluginInputs[0].originalSourceCommit, f.context.convergence.mainCommit);
+  }
+});
+
 test('lost main dispatch response refuses ambiguous matching runs without adopting or repeating publication', async () => {
   const f = fixture('buildr');
   f.state.publicationAuthorization = { contextIdentity: f.context.identity };
@@ -204,6 +224,130 @@ test('lost main dispatch response refuses ambiguous matching runs without adopti
   assert.equal(result.status, 'publication-dispatch-ambiguous');
   assert.equal(f.state.packagePublications.buildr.runId, null);
   assert.equal(f.counts().dispatches, 0); assert.equal(f.counts().cleanups, 0); assert.equal(f.counts().saved, 0);
+});
+
+function failedPublicationFixture(): any {
+  const f = fixture('buildr,dsh-plugin'), executionCommit = hash('9');
+  const oldRun = { ...f.run('buildr', 201, 'failure'), run_attempt: 2 };
+  const failedEvidence = (publicFacts: any = {}) => createReleaseTransactionEvidence({ context: f.owned.buildr.ownerContext, outcome: 'failed',
+    publish: { repository: 'BuildrAI/Buildr', workflow: '.github/workflows/publish.yml', runId: 201, runAttempt: 2,
+      headSha: f.context.convergence.mainCommit, runUrl: 'https://github.com/BuildrAI/Buildr/actions/runs/201' },
+    publicFacts: { version: f.targets.versions.buildr, tagCommit: f.context.convergence.mainCommit, registryPublished: false,
+      registryObservation: 'absent', effects: [{ type: 'tag-reused', state: 'confirmed' }], ...publicFacts } });
+  const evidence = failedEvidence(), saved: any[] = [], dispatches: any[] = [];
+  f.state.publicationAuthorization = { contextIdentity: f.context.identity, cleanupPolicy: 'delete-owned-release-branches/v2' };
+  f.state.packagePublications.buildr = { contextIdentity: f.context.identity, requested: true, runId: 201, releaseId: 'original', retryRequested: true };
+  f.scope.save = () => saved.push(structuredClone(f.state));
+  f.scope.readRun = (id: number) => id === 201 ? oldRun : { ...f.run('buildr', id), head_sha: executionCommit, status: 'in_progress', conclusion: null };
+  f.scope.gh = (args: string[]) => {
+    if (args[0] === 'run' && args[1] === 'view') return 'deterministic compatibility failure';
+    assert.deepEqual(args.slice(0, 2), ['run', 'list']);
+    return JSON.stringify([{ databaseId: 202, displayTitle: 'Release 0.2.0 (recovery)', headSha: executionCommit }]);
+  };
+  const git = f.scope.git;
+  f.scope.git = (args: string[]) => args[0] === 'rev-parse' && args[1] === 'origin/main' ? executionCommit : git(args);
+  f.scope.execute = (command: string, args: string[]) => {
+    assert.equal(command, 'git');
+    if (args[0] === 'merge-base') return { status: 0, stdout: '' };
+    if (args[0] === 'rev-parse') return { status: 0, stdout: hash('8') };
+    if (args[0] === 'show') return { status: 0, stdout: 'publisher on macOS\n' };
+    if (args[0] === 'diff') return { status: 0, stdout: 'projects/product/services/buildr/tools/release/package-release-operation.ts\0' };
+    if (args[0] === 'ls-tree') return { status: 0, stdout: `100644 blob ${hash('a')}\t${args.at(-1)}\n` };
+    return assert.fail(`unexpected recovery command ${args.join(' ')}`);
+  };
+  f.dependencies.inspectHostedReleaseTransaction = async () => ({ status: 'failed', evidence });
+  f.dependencies.observeUnpublishedRelease = async () => ({ facts: { npm: { state: 'absent' }, githubRelease: { state: 'absent' } }, activeRuns: [] });
+  f.dependencies.inspectReleaseTag = () => ({ status: 'ready', action: 'reuse', observed: { targetCommit: f.context.convergence.mainCommit } });
+  f.dependencies.runHostedReleaseTransaction = async (input: any, dependencies: any) => {
+    assert.equal(input.releaseContext.convergence.mainCommit, f.context.convergence.mainCommit);
+    assert.equal(input.sourceCommit, executionCommit);
+    assert.equal(input.candidateBase, f.selection.releaseHead);
+    assert.equal(input.candidateTree, f.selection.releaseTree);
+    assert.equal(dependencies.candidateEvidence.packageArtifact, f.owned.buildr.artifact);
+    if (input.action === 'readiness') return { status: 'ready', context: input.releaseContext };
+    dispatches.push(input);
+    assert.equal(saved.at(-1).publicationRecoveryHistory[0].pointer.runId, 201, 'original request must be saved before dispatch');
+    dependencies.onDispatchIntent({ releaseId: 'recovery' });
+    return { status: 'unknown' };
+  };
+  return { ...f, oldRun, evidence, failedEvidence, executionCommit, saved, dispatches };
+}
+
+test('failed original publication stays blocked until explicit recovery preserves history and dispatches the original bytes once', async () => {
+  const f = failedPublicationFixture(), oldState = structuredClone(f.state);
+  const before = await continuePackageRelease({ action: 'resume' }, f.scope, f.dependencies);
+  assert.equal(before.status, 'diagnosis-required');
+  assert.deepEqual(f.state, oldState); assert.equal(f.dispatches.length, 0);
+  const recovered = await continuePackageRelease({ action: 'resume', authorized: true, recoverPublication: true }, f.scope, f.dependencies);
+  assert.equal(recovered.status, 'publication-unknown'); assert.equal(f.dispatches.length, 1);
+  const history = f.state.publicationRecoveryHistory[0];
+  assert.deepEqual(history.context, oldState.context); assert.deepEqual(history.transaction, oldState.transactions.buildr);
+  assert.deepEqual(history.pointer, oldState.packagePublications.buildr); assert.deepEqual(history.authorization, oldState.publicationAuthorization);
+  assert.deepEqual(history.run, f.oldRun); assert.deepEqual(history.evidence, f.evidence);
+  assert.deepEqual(f.state.context.targets, oldState.context.targets); assert.deepEqual(f.state.context.selection, oldState.context.selection);
+  assert.deepEqual(f.state.context.convergence, oldState.context.convergence); assert.deepEqual(f.state.context.compatibility, oldState.context.compatibility);
+  assert.deepEqual(f.state.context.packages['dsh-plugin'], oldState.context.packages['dsh-plugin']);
+  assert.deepEqual(f.state.context.packages.buildr.artifact, oldState.context.packages.buildr.artifact);
+  assert.notEqual(f.state.context.identity, oldState.context.identity);
+  assert.equal(f.state.context.packages.buildr.ownerContext.executorRecovery.previousEvidenceIdentity, f.evidence.identity);
+  assert.equal(f.state.publicationAuthorization.contextIdentity, f.state.context.identity);
+  assert.equal(f.state.publicationAuthorization.previousContextIdentity, oldState.context.identity);
+  assert.equal(f.state.packagePublications.buildr.requested, true); assert.equal(f.state.packagePublications.buildr.runId, null);
+  const resumed = await continuePackageRelease({ action: 'resume', authorized: true, recoverPublication: true }, f.scope, f.dependencies);
+  assert.equal(resumed.status, 'publication-running'); assert.equal(f.state.packagePublications.buildr.runId, 202);
+  assert.equal(f.dispatches.length, 1); assert.equal(f.state.publicationRecoveryHistory.length, 1);
+});
+
+test('executor recovery preserves the complete old request for unsafe or unknown observations', async t => {
+  const cases: Array<[string, (f: any) => void]> = [
+    ['no run ID', f => { f.state.packagePublications.buildr.runId = null; }],
+    ['first attempt', f => { f.oldRun.run_attempt = 1; }],
+    ['active', f => { f.oldRun.status = 'in_progress'; }],
+    ['success', f => { f.oldRun.conclusion = 'success'; }],
+    ['cancelled', f => { f.oldRun.conclusion = 'cancelled'; }],
+    ['timeout', f => { f.oldRun.conclusion = 'timed_out'; }],
+    ['wrong source', f => { f.oldRun.head_sha = hash('6'); }],
+    ['wrong workflow', f => { f.oldRun.path = '.github/workflows/verify.yml'; }],
+    ['stale journal', f => { f.oldRun.run_attempt = 3; }],
+    ['unknown journal', f => { f.dependencies.inspectHostedReleaseTransaction = async () => ({ status: 'unknown', evidence: f.evidence }); }],
+    ['possible npm effect', f => { f.dependencies.inspectHostedReleaseTransaction = async () => ({ status: 'failed', evidence: f.failedEvidence({ effects: [{ type: 'npm-publish', state: 'unknown' }] }) }); }],
+    ['published registry', f => { f.dependencies.inspectHostedReleaseTransaction = async () => ({ status: 'failed', evidence: f.failedEvidence({ registryPublished: true, registryObservation: 'present' }) }); }],
+    ['unknown registry', f => { f.dependencies.observeUnpublishedRelease = async () => ({ facts: { npm: { state: 'unknown' }, githubRelease: { state: 'absent' } }, activeRuns: [] }); }],
+    ['current publication active', f => { f.dependencies.observeUnpublishedRelease = async () => ({ facts: { npm: { state: 'absent' }, githubRelease: { state: 'absent' } }, activeRuns: [{ id: 300 }] }); }],
+    ['tag drift', f => { f.dependencies.inspectReleaseTag = () => ({ status: 'ready', action: 'reuse', observed: { targetCommit: hash('6') } }); }],
+    ['plugin request exists', f => { f.state.packagePublications['dsh-plugin'] = { requested: true, runId: null }; }],
+    ['wrong authorization', f => { f.state.publicationAuthorization.contextIdentity = digest('9'); }],
+    ['readiness blocked', f => { f.dependencies.runHostedReleaseTransaction = async () => ({ status: 'blocked' }); }],
+  ];
+  for (const [name, mutate] of cases) await t.test(name, async () => {
+    const f = failedPublicationFixture(); mutate(f); const original = structuredClone(f.state);
+    const result = await continuePackageRelease({ action: 'resume', authorized: true, recoverPublication: true }, f.scope, f.dependencies);
+    assert.equal(result.status, 'publication-recovery-blocked'); assert.deepEqual(f.state, original);
+    assert.equal(f.saved.length, 0); assert.equal(f.dispatches.length, 0); assert.deepEqual(f.scope.effects, []);
+  });
+  for (const options of [{ action: 'resume', recoverPublication: true }, { action: 'publish', authorized: true, recoverPublication: true }]) {
+    const f = failedPublicationFixture(), original = structuredClone(f.state);
+    assert.equal((await continuePackageRelease(options, f.scope, f.dependencies)).status, 'authorization-required');
+    assert.deepEqual(f.state, original); assert.equal(f.saved.length, 0);
+  }
+});
+
+test('publication recovery rejects unreadable evidence, changed bytes and non-tool executor changes without state writes', async () => {
+  for (const mutate of [
+    (f: any) => { f.scope.readRun = () => { throw new Error('API unavailable'); }; },
+    (f: any) => { f.dependencies.inspectHostedReleaseTransaction = async () => ({ status: 'unknown' }); },
+    (f: any) => { f.dependencies.readCandidateEvidence = () => ({ packageArtifact: { ...f.owned.buildr.artifact, artifactSha256: '9'.repeat(64) } }); },
+    (f: any) => { const execute = f.scope.execute; f.scope.execute = (command: string, args: string[]) => args[0] === 'diff'
+      ? { status: 0, stdout: 'projects/product/services/buildr/src/cli.ts\0' } : execute(command, args); },
+    (f: any) => { const read = f.scope.git; let mainReads = 0; f.scope.git = (args: string[]) => args[1] === 'origin/main' && ++mainReads > 1 ? hash('7') : read(args); },
+  ]) {
+    const f = failedPublicationFixture(); mutate(f); const original = structuredClone(f.state);
+    let result: any;
+    try { result = await continuePackageRelease({ action: 'resume', authorized: true, recoverPublication: true }, f.scope, f.dependencies); }
+    catch (error) { assert.ok(error instanceof Error); }
+    if (result) assert.equal(result.status, 'publication-recovery-blocked');
+    assert.deepEqual(f.state, original); assert.equal(f.saved.length, 0); assert.equal(f.dispatches.length, 0);
+  }
 });
 
 test('frozen byte/context drift and unknown peer block only the next public action', async () => {
@@ -242,6 +386,26 @@ test('unknown journal/public state cannot authorize a recovery; failed actual le
   const result = await evaluateObservedPackagePlan(f.targets, { 'dsh-plugin': { artifact: consumer, bytes: Buffer.from('plugin') } },
     { buildr: { observation: { status: 'present', artifact: old }, bytes: Buffer.from('main') }, 'dsh-plugin': { observation: f.published['dsh-plugin'] } }, { verifyBuildrPluginPair: () => { throw new Error('Local installation unavailable'); } });
   assert.equal(result.status, 'blocked');
+  assert.equal(result.pairDiagnostics[0].stage, 'pair-verification');
+  assert.equal(result.pairDiagnostics[0].message, 'Local installation unavailable');
+});
+
+test('blocked child execution retains its original stage and code without changing a passing release context', async () => {
+  const targets = normalizeReleaseTargets({ version: '0.2.0' }), main = artifact('buildr'), old = artifact('dsh-plugin', 'registry');
+  old.compatibility = null;
+  const candidates = { buildr: { artifact: main, bytes: Buffer.from('main') } };
+  const counterparts = { 'dsh-plugin': { observation: { status: 'present', artifact: old }, bytes: Buffer.from('plugin') } };
+  const proof = (status: 'unknown' | 'passed') => ({ status: status === 'passed' ? 'passed' : 'blocked', diagnostic: 'pair-runtime-unavailable',
+    execution: { stage: 'provider-install', code: 'isolated-npm-operation-failed', errorCode: 'ETIMEDOUT', exitCode: null },
+    legacyPairEvidence: { schemaVersion: 'buildr.package-pair-evidence/v1', consumer: old, provider: main,
+      features: [{ feature: 'entry', required: true, status }], evidenceSha256: 'a'.repeat(64) } });
+  const blocked = await evaluateObservedPackagePlan(targets, candidates, counterparts, { verifyBuildrPluginPair: () => proof('unknown') });
+  assert.equal(blocked.status, 'blocked'); assert.equal(blocked.checks[0].features[0].status, 'unknown');
+  assert.equal(blocked.pairDiagnostics[0].code, 'isolated-npm-operation-failed');
+  assert.equal(blocked.pairDiagnostics[0].errorCode, 'ETIMEDOUT');
+  assert.equal(blocked.pairDiagnostics[0].consumer.version, old.version);
+  const passed = await evaluateObservedPackagePlan(targets, candidates, counterparts, { verifyBuildrPluginPair: () => proof('passed') });
+  assert.equal(passed.status, 'passed'); assert.equal(passed.pairDiagnostics, undefined);
 });
 
 test('new default operations bind targets; an existing selection ID cannot change versions', async t => {

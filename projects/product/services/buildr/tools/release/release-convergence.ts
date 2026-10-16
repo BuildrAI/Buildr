@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { assertReleaseExecutorRecoverySource, releaseExecutionCommit } from './release-executor-recovery.ts';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import process from 'node:process';
@@ -105,6 +106,7 @@ export function checkReleaseConvergence({
   fetch = true,
   authorityEvidence = null,
   publicationSourceCommit = null,
+  releaseContext = null,
   nowMs = Date.now(),
 }: any): any  {
   if (!repo || !version || !candidateBase || !candidateTree) throw new Error('repo, version, candidateBase and candidateTree are required');
@@ -141,11 +143,14 @@ export function checkReleaseConvergence({
   for (const item of releaseTaskRefs(repo, selectionId)) {
     if (!isAncestor(repo, item.commit, devRef)) findings.push({ code: 'release_task_not_integrated', ref: item.ref, commit: item.commit });
   }
+  const recovery = releaseContext ? assertReleaseExecutorRecoverySource(releaseContext, { repo }) : null;
+  if (recovery && (releaseContext.convergence.mainCommit !== publicationSourceCommit || releaseContext.release.sourceCommit !== candidateBase || releaseContext.release.sourceTree !== candidateTree
+      || releaseExecutionCommit(releaseContext) !== refs.main)) throw new Error('Release executor recovery does not match the original source and current protected main.');
   let publishedSource: any = null;
   if (checksMain && publicationSourceCommit && publicationSourceCommit !== refs.main) {
     const tagRefs = runGit(repo, ['ls-remote', '--tags', remote, `refs/tags/v${version}`, `refs/tags/v${version}^{}`]).stdout.trim().split(/\r?\n/u).filter(Boolean).map((line: string) => line.split(/\s/u));
     const tagTarget = tagRefs.find((entry: any) => entry[1]?.endsWith('^{}'))?.[0] ?? tagRefs[0]?.[0];
-    if (tagTarget === publicationSourceCommit && isAncestor(repo, publicationSourceCommit, refs.main)) {
+    if ((tagTarget === publicationSourceCommit || (recovery && !tagTarget)) && isAncestor(repo, publicationSourceCommit, refs.main)) {
       publishedSource = { commit: publicationSourceCommit, tree: rev(repo, `${publicationSourceCommit}^{tree}`), version: packageVersionAt(repo, publicationSourceCommit) };
     } else findings.push({ code: 'main_source_mismatch', expected: publicationSourceCommit, actual: refs.main });
   }
@@ -156,8 +161,8 @@ export function checkReleaseConvergence({
   if (stage === 'pre-tag') {
     findings.push(...checkReleaseAuthorityEvidence({
       evidence: authorityEvidence,
-      sourceCommit: publishedSource?.commit ?? refs.main,
-      workflowSource: fileAt(repo, publishedSource?.commit ?? mainRef, releaseWorkflowPath),
+      sourceCommit: recovery?.sourceCommit ?? publishedSource?.commit ?? refs.main,
+      workflowSource: fileAt(repo, recovery?.sourceCommit ?? publishedSource?.commit ?? mainRef, releaseWorkflowPath),
       nowMs,
     }));
   }

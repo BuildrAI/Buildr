@@ -4,6 +4,7 @@ import { normalizeReleaseTargets, type ReleaseTargets } from './release-targets.
 import { parseCompatibilityArtifact, sameArtifactIdentity } from './package-compatibility.ts';
 import { releaseContextIdentity, validateReleaseContext } from './release-readiness.ts';
 import { validateReleaseTransactionEvidence } from './release-transaction-evidence.ts';
+import { releaseExecutionCommit } from './release-executor-recovery.ts';
 import { containsCredentialMaterial } from './release-authority.ts';
 import { assertPluginCandidateAdoption } from '../../../dsh-plugin/tools/candidate-adoption.ts';
 
@@ -89,14 +90,16 @@ export function validatePackageOwnerPublication(context: any, name: string, publ
   const candidate = context.packages[name];
   const artifact = parseCompatibilityArtifact(publication?.registryArtifact);
   const run = publication?.run;
+  const recoveredOwner = name === 'buildr' ? validateReleaseTransactionEvidence(publication?.ownerEvidence) : null;
+  const executionCommit = recoveredOwner ? releaseExecutionCommit(recoveredOwner.context) : (context.packages.buildr ? releaseExecutionCommit(context.packages.buildr.ownerContext) : context.convergence.mainCommit);
   if (artifact.origin !== 'registry' || !sameArtifactIdentity(candidate.artifact, artifact)) fail('Selected package publication has not been confirmed from the same registry bytes.');
   if (run?.repository?.full_name !== repository || run.event !== 'workflow_dispatch' || run.status !== 'completed' || run.conclusion !== 'success'
-      || run.head_sha !== context.convergence.mainCommit || run.head_branch !== 'main'
+      || run.head_sha !== executionCommit || run.head_branch !== 'main'
       || !Number.isSafeInteger(run.id) || run.id < 1 || !Number.isSafeInteger(run.run_attempt) || run.run_attempt < 1) fail('Selected package publication run is unknown or mismatched.');
   let ownerEvidence: any;
   if (name === 'buildr') {
     if (run.path?.split('@')[0] !== '.github/workflows/publish.yml') fail('Main publication uses a different owner.');
-    ownerEvidence = validateReleaseTransactionEvidence(publication.ownerEvidence);
+    ownerEvidence = recoveredOwner;
     if (ownerEvidence.status !== 'passed' || ownerEvidence.context.identity !== candidate.ownerContext.identity
         || ownerEvidence.release.registryPublished !== true || ownerEvidence.release.registrySmoke !== 'passed'
         || !ownerEvidence.release.githubRelease || ownerEvidence.release.tag !== `v${artifact.version}`

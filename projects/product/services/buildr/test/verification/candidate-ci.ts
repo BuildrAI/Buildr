@@ -192,7 +192,7 @@ function runHostNode(tupleId: any): any  {
   });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
-  if (result.status === 0 && tupleId === 'host-minimum-linux') {
+  if (result.status === 0 && tupleId === 'host-minimum-macos') {
     const publishCheck = spawnCommandSync(exactNode.nodeExecutable, [path.join(productRoot, 'tools/release/release-consumption.ts'), 'publisher'], {
       cwd: productRoot, encoding: 'utf8', env: { ...exactNode.env, ...artifactEnvironment(artifact) }, timeout: 120_000,
     });
@@ -235,7 +235,7 @@ function aggregate(): any  {
 }
 
 if (action === 'plan') {
-  const platforms: Record<string, string> = { macos: 'macos-15', windows: 'windows-2025', linux: 'ubuntu-24.04' };
+  const platforms: Record<string, string> = { macos: 'macos-15', windows: 'windows-2025' };
   const reuse = planCandidateSourceReuse(CANDIDATE_CI_SHARDS, candidateSourceImportFromEnvironment(process.env), validateSourceRecord);
   if (reuse.reusedShards.length > 0) {
     const sourceCommit = resolveCandidateSourceCommit(productRoot, expectedSource);
@@ -257,7 +257,7 @@ if (action === 'plan') {
   const matrices = {
     source: reuse.sourceShards.map((shard: any) => ({ shard: shard.id, os: platforms[shard.runner], preparation: shard.id === 'frontend-logic-macos' ? 'frontend' : ['core-project-task-macos', 'release-infrastructure-macos', 'release-infrastructure-windows'].includes(shard.id) ? 'source-runtime' : 'base' })),
     artifact: CANDIDATE_CI_SHARDS.filter((shard: any) => shard.requiresArtifact).map((shard: any) => ({ shard: shard.id, os: platforms[shard.runner], preparation: shard.id === 'artifact-browser-macos' ? 'browser-artifact' : 'source-runtime' })),
-    host: CANDIDATE_CI_HOST_NODE_TUPLES.map((tuple: any) => ({ id: tuple.id, os: platforms[tuple.runner], node: tuple.requestedNode, preparation: tuple.id === 'host-minimum-linux' ? 'publisher' : 'host' })),
+    host: CANDIDATE_CI_HOST_NODE_TUPLES.map((tuple: any) => ({ id: tuple.id, os: platforms[tuple.runner], node: tuple.requestedNode, preparation: tuple.id === 'host-minimum-macos' ? 'publisher' : 'host' })),
   };
   if (process.env.GITHUB_OUTPUT) for (const [key, include] of Object.entries(matrices)) fs.appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${JSON.stringify({ include })}\n`);
   if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `source_required=${reuse.sourceShards.length > 0}\n`);

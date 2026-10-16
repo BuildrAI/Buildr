@@ -16,6 +16,7 @@ import { extractReleaseNotes } from './release-notes.ts';
 import { createReleaseTransactionEvidence } from './release-transaction-evidence.ts';
 import { containsCredentialMaterial } from './release-authority.ts';
 import { inspectReleaseSourceProvenance } from './release-selection.ts';
+import { assertReleaseExecutorRecoverySource, releaseExecutionCommit } from './release-executor-recovery.ts';
 
 export const releasePublicationRepositoryRoot = path.resolve(import.meta.dirname, '../../../../../..');
 
@@ -46,9 +47,11 @@ async function executeChecks(checks: readonly any[], handlers: Record<string, ()
       effects.push(...(error.effects || []));
       step.status = 'failed';
       step.failureCode = error.code || 'release-check-failed';
+      if (error.compatibility) step.compatibility = error.compatibility;
       step.durationMs = Date.now() - started;
       checkpoint({ steps, effects });
-      return { status: 'failed', steps, effects, failure: { check: check.id, code: step.failureCode, message: error.message } };
+      return { status: 'failed', steps, effects, failure: { check: check.id, code: step.failureCode, message: error.message,
+        ...(step.compatibility ? { compatibility: step.compatibility } : {}) } };
     }
     step.durationMs = Date.now() - started;
     step.finishedAt = new Date().toISOString();
@@ -83,7 +86,8 @@ export async function completePublicationEffects(options: any, dependencies: any
     'npm-publish': async () => {
       if (!values.registry?.published) {
         values.compatibility = await checkPublicationCompatibility({ context, artifact }, dependencies);
-        if (values.compatibility.status !== 'passed') throw Object.assign(new Error('Current public plugin cannot consume the frozen main package.'), { code: 'release-package-compatibility-blocked' });
+        if (values.compatibility.status !== 'passed') throw Object.assign(new Error('Package compatibility recheck did not pass; inspect the recorded checks and pair diagnostics.'),
+          { code: 'release-package-compatibility-blocked', compatibility: values.compatibility });
       }
       const published = await publishFrozenArtifact({ manifestPath: artifact.manifestPath, npmTag }, { ...dependencies,
         onEffects: (effects: any[]) => checkpoint({ pendingEffects: effects }),
@@ -130,6 +134,7 @@ export async function runReleasePublication(options: any, dependencies: any = {}
   validateReleaseCheckDefinitions();
   const repo = path.resolve(options.repo || releasePublicationRepositoryRoot);
   const context = validateReleaseContext(options.context);
+  const recovery = assertReleaseExecutorRecoverySource(context, { repo });
   const artifact = inspectReleaseConsumerArtifact(options.manifestPath).artifact;
   const phases: any[] = [];
   const effects: any[] = [];
@@ -149,7 +154,7 @@ export async function runReleasePublication(options: any, dependencies: any = {}
       if (readiness.status !== 'ready') throw new Error(`Frozen context is not ready: ${readiness.findings.map((item: any) => item.code).join(', ')}`);
     },
     'publication-authority': async () => {
-      authority = await runReleaseAuthorityOidcProbe({ repo, sourceCommit: context.convergence.mainCommit, workflowSha256: context.workflow.digest.slice(7) }, {
+      authority = await runReleaseAuthorityOidcProbe({ repo, sourceCommit: releaseExecutionCommit(context), workflowSha256: (recovery?.workflowDigest ?? context.workflow.digest).slice(7), context }, {
         fetchImpl: (url: any, init: any) => fetch(url, { ...init, signal: AbortSignal.timeout(15_000) }),
       });
       save(path.join(options.outputDirectory, 'release-authority.json'), authority);
@@ -157,7 +162,7 @@ export async function runReleasePublication(options: any, dependencies: any = {}
     },
     'source-convergence': () => {
       const convergence = checkReleaseConvergence({ repo, version: context.release.version, selectionId: context.selection?.selectionId ?? context.release.version, candidateBase: context.release.sourceCommit, candidateTree: context.release.sourceTree,
-        stage: 'pre-tag', authorityEvidence: authority, publicationSourceCommit: context.convergence.mainCommit });
+        stage: 'pre-tag', authorityEvidence: authority, publicationSourceCommit: context.convergence.mainCommit, releaseContext: context });
       if (convergence.ok) inspectReleaseSourceProvenance({ repo, sourceCommit: context.release.sourceCommit, generation: context.selection.generation, devRef: 'origin/dev' });
       return convergence;
     },

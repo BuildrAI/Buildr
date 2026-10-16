@@ -186,7 +186,7 @@ export function runPluginHostedOperation(options: any, dependencies: any = {}): 
       ? [`buildr_peer_origin=${options.peer.origin}`, `buildr_peer_version=${options.peer.version}`, `buildr_peer_integrity=${options.peer.integrity}`,
         `source_candidate_run_id=${options.sourceCandidateRunId}`, `source_commit=${options.candidateSourceCommit}`, `selection_identity=${options.selectionIdentity}`,
         ...(options.peer.origin === 'candidate' ? [`buildr_candidate_run_id=${options.buildrCandidateRunId}`] : [])]
-      : [`candidate_run_id=${options.candidateRunId}`, ...(pointer.recoveryRunId ? [`recovery_run_id=${pointer.recoveryRunId}`] : [])];
+      : [`candidate_run_id=${options.candidateRunId}`, ...(options.originalSourceCommit && options.originalSourceCommit !== options.sourceCommit ? [`publication_source_commit=${options.originalSourceCommit}`] : []), ...(pointer.recoveryRunId ? [`recovery_run_id=${pointer.recoveryRunId}`] : [])];
     try { gh(['workflow', 'run', workflow, '--repo', repository, '--ref', 'main', '-f', `operation=${options.operation}`, '-f', `version=${options.version}`, ...fields.flatMap(field => ['-f', field])]); effect.state = 'confirmed'; }
     catch { /* Query only after an uncertain request. */ }
     found = locateRun(gh, options, options.operation);

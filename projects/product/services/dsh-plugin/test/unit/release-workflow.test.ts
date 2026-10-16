@@ -179,3 +179,15 @@ test('new preparation requires an exact source Candidate; publication cannot rep
     assert.throws(() => validateWorkflowInput({...env,[name]:'replacement'},{commit,version}),/publish-cannot-replace-source/);
   }
 });
+
+
+test('publisher-only advance keeps the original prepare run source explicit', async () => {
+  const original = 'b'.repeat(40);
+  const selected = validateWorkflowInput({ ...env, PLUGIN_PUBLICATION_SOURCE_COMMIT: original }, { commit, version });
+  assert.equal(selected.publicationSourceCommit, original);
+  const fake = api([run(50, 'publish', { status: 'in_progress' }), run(10, 'prepare', { head_sha: original })]);
+  assert.deepEqual(await verifyPublishRuns(selected, commit, '50', async path => path === `${base}/runs/10` ? run(10, 'prepare', { head_sha: original }) : fake.read(path)), { candidateRunId: '10' });
+  await assert.rejects(verifyPublishRuns(selected, commit, '50', api().read), /candidate-run-mismatch/);
+  assert.throws(() => validateWorkflowInput({ ...env, PLUGIN_PUBLICATION_SOURCE_COMMIT: 'bad' }, { commit, version }), /publication-source-identity/);
+  assert.throws(() => validateWorkflowInput({ ...prepareEnv, PLUGIN_PUBLICATION_SOURCE_COMMIT: original }, { commit, version }), /prepare-cannot-replace-publication-source/);
+});

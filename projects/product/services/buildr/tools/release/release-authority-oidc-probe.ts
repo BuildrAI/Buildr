@@ -6,6 +6,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
+import { assertReleaseExecutorRecoverySource, releaseExecutionCommit } from './release-executor-recovery.ts';
 import {
   npmOidcAudience,
   npmRegistryOrigin,
@@ -116,6 +117,10 @@ export async function runReleaseAuthorityOidcProbe(options: any, dependencies: a
   const repo: any = path.resolve(options.repo || workspaceRoot);
   const sourceCommit: any = requiredString(options.sourceCommit, 'sourceCommit');
   const workflowSha256: any = requiredString(options.workflowSha256, 'workflowSha256');
+  if (options.context) {
+    const recovery = assertReleaseExecutorRecoverySource(options.context, { repo });
+    if (sourceCommit !== releaseExecutionCommit(options.context) || workflowSha256 !== (recovery?.workflowDigest ?? options.context.workflow?.digest)?.slice(7)) throw new ProbeError('executor_identity_mismatch', 'Authority must identify the real release executor.');
+  }
   if (!/^[a-f0-9]{40}$/.test(sourceCommit)) throw new ProbeError('source_commit_invalid', 'sourceCommit must be a full Git commit', sourceCommit);
   if (!/^[a-f0-9]{64}$/.test(workflowSha256)) throw new ProbeError('workflow_digest_invalid', 'workflowSha256 must be a SHA-256 digest', workflowSha256);
 
