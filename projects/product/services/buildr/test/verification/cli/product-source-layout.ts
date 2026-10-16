@@ -1,3 +1,7 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { isScriptSource } from './source-imports.ts';
+
 const forbiddenProjectRootEntries: any = new Set([
   'bin',
   'package',
@@ -87,3 +91,39 @@ export const productSourceLayoutContract: any = Object.freeze({
   deferredPackageFiles: [...deferredPackageFiles].sort(),
   generatedTrackedPatterns: generatedTrackedPatterns.map((pattern: any) => pattern.source),
 });
+
+export function validateProductSourceReferences(repositoryRoot: string): string[] {
+  const productPrefix = 'projects/product/services/buildr/';
+  const roots = [...['bin', 'src', 'resources', 'test', 'docs', 'package', 'tools'].map(root => productPrefix + root),
+    'skills/buildr-release', '.github/workflows'];
+  const files = new Set([productPrefix + 'AGENTS.md', productPrefix + 'README.md', '.github/pull_request_template.md']);
+  const visit = (relative: string): void => {
+    const absolute = path.join(repositoryRoot, relative);
+    if (!fs.existsSync(absolute)) return;
+    for (const entry of fs.readdirSync(absolute, { withFileTypes: true })) {
+      const file = relative + '/' + entry.name;
+      if (entry.isDirectory()) visit(file);
+      else if (isScriptSource(file) || /\.(?:json|md|yml|yaml)$/u.test(file) || !path.extname(file)) files.add(file);
+    }
+  };
+  for (const root of roots) visit(root);
+  const retiredTokens = [
+    'package/' + 'manifest.yml', 'package/targets/' + 'workspace', 'tools/build/launcher/' + 'assets',
+    ['package', 'bootstrap'].join('/'), 'src/web/' + 'web-dist',
+  ];
+  // A retired scripts root must start a declared path. A scripts directory
+  // inside an explicitly bound Skill (including a template path) is current.
+  const retiredScriptRoot = /(?:^|[\s"'(\x60=])(?:\.{1,2}\/)*(?:projects\/product\/)?scripts\/(?:release|run-development)(?=[./-]|\b)/u;
+  const otherSkillScripts = /skills\/(?!buildr-release(?:\/|$))[^\s"'\x60]*\/scripts\/(?:release|run-development)(?=[./-]|\b)/u;
+  const findings: string[] = [];
+  for (const relative of [...files].sort()) {
+    if (relative.startsWith(productPrefix + 'test/fixtures/') || relative.startsWith(productPrefix + 'docs/archive/')) continue;
+    const file = path.join(repositoryRoot, relative);
+    if (!fs.existsSync(file)) continue;
+    // Only this exact checkout-owned Skill prefix is current. Other retired
+    // references in the same file must still be diagnosed.
+    const source = fs.readFileSync(file, 'utf8').replaceAll('skills/buildr-release/scripts/', 'buildr-release-source/');
+    if (retiredTokens.some(token => source.includes(token)) || retiredScriptRoot.test(source) || otherSkillScripts.test(source)) findings.push(`current Product file references migrated root path: ${relative}`);
+  }
+  return findings;
+}

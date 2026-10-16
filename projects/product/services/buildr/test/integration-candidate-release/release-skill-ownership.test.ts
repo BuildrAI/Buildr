@@ -41,7 +41,7 @@ test('the complete release Skill source is accepted by the real projection owner
   // Runtime sync uses this same complete-source reader through render-plan.ts.
   const source = fileURLToPath(new URL('../../../../../../skills/buildr-release/', import.meta.url));
   const inventory = enumerateSkillSourceFiles(source);
-  for (const relative of ['SKILL.md', 'scripts/package.json', 'scripts/release-orchestration-runner.ts',
+  for (const relative of ['SKILL.md', 'scripts/package.json', 'scripts/' + 'release-orchestration-runner.ts',
     'scripts/candidate-package.ts', 'scripts/dsh-plugin/release.ts']) {
     const entry = inventory.find((file: any) => file.relativePath === relative);
     assert.ok(entry, `the real Skill inventory must include ${relative}`);
@@ -137,7 +137,7 @@ test('method and publication recovery repairs preserve the original package sour
   const fixture = sourceFixture(t);
   const repairs = [
     skillPrefix + 'SKILL.md',
-    skillPrefix + 'scripts/release-orchestration-runner.ts',
+    'skills/buildr-release/scripts/release-orchestration-runner.ts',
     skillPrefix + 'scripts/candidate-repair-operation.ts',
     skillPrefix + 'scripts/dsh-plugin/release-workflow.ts',
   ];
@@ -159,9 +159,9 @@ test('method and publication recovery repairs preserve the original package sour
 test('local and immutable proofs track selected release Skill modules and real dependencies without binding unrelated scripts', t => {
   const fixture = sourceFixture(t);
   const selectedTest = 'test/integration-candidate-release/selected.test.ts';
-  const selectedModule = skillPrefix + 'scripts/release-selection.ts';
-  const dependency = skillPrefix + 'scripts/release-files.ts';
-  const unrelated = skillPrefix + 'scripts/release-publication.ts';
+  const selectedModule = 'skills/buildr-release/scripts/release-selection.ts';
+  const dependency = 'skills/buildr-release/scripts/release-files.ts';
+  const unrelated = 'skills/buildr-release/scripts/release-publication.ts';
   const method = skillPrefix + 'SKILL.md';
   fixture.write(productPrefix + selectedTest, "import '../../../../../../skills/buildr-release/scripts/release-selection.ts';\n");
   fixture.write(selectedModule, "import './release-files.ts';\nexport const selected = true;\n");

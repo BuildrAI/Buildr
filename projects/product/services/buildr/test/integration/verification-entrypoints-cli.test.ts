@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
@@ -7,6 +8,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { PACKAGE_VERIFIERS } from '../../tools/verification/package-check/verification-registry.ts';
+import { validateProductSourceReferences } from '../verification/cli/product-source-layout.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const projectRoot: any = path.resolve(productRoot, '../..');
@@ -16,6 +18,40 @@ function defaultPlanningEnvironment(): any  {
   delete environment.BUILDR_VERIFICATION_PROFILE;
   return environment;
 }
+
+test('architecture scan includes the release Skill and root callers while preserving retired-path detection', t => {
+  const repository = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-architecture-release-paths-'));
+  t.after(() => fs.rmSync(repository, { recursive: true, force: true }));
+  const product = 'projects/product/services/buildr/';
+  const write = (relative: string, source: string) => {
+    const file = path.join(repository, relative); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, source);
+  };
+  const current = '../../../../skills/buildr-release/scripts/release-orchestration-runner.ts';
+  const retired = ['scripts', 'release.ts'].join('/');
+  const unrelatedSkill = ['skills', 'other', 'scripts', 'release.ts'].join('/');
+  write(product + 'test/release.test.ts', `import '${current}';\n`);
+  write(product + 'test/skill-template.test.ts', "const releaseSkill = '../../../../skills/buildr-release';\nread(`${releaseSkill}/scripts/release-orchestration-runner.ts`);\n");
+  write(product + 'test/skill-prefix.test.ts', "const skillPrefix = 'skills/buildr-release/';\nread(`${skillPrefix}scripts/release-readiness.ts`);\n");
+  write(product + 'docs/cli-architecture.md', `Release owner: ${current}\n`);
+  write('skills/buildr-release/SKILL.md', `node ${current}\n`);
+  write('skills/buildr-release/scripts/release-orchestration-runner.ts', "export const ready = true;\n");
+  write('.github/workflows/verify.yml', `run: node ${current}\n`);
+  assert.deepEqual(validateProductSourceReferences(repository), [], 'current release references are accepted at each real source boundary');
+
+  const rejected = [
+    product + 'test/mixed-release.test.ts', 'skills/buildr-release/scripts/release-recovery.ts',
+    'skills/buildr-release/SKILL.md', '.github/workflows/publish-dsh-plugin.yml', '.github/pull_request_template.md',
+  ];
+  for (const file of rejected) write(file, `current: ${current}\nretired: ${retired}\n`);
+  const relativeLegacyFile = product + 'tools/relative-legacy.ts';
+  write(relativeLegacyFile, `import '${['..', '..', 'scripts', 'release.ts'].join('/')}';\n`);
+  write(product + 'tools/other-skill.ts', `import '${unrelatedSkill}';\n`);
+  write(product + 'test/fixtures/historical.ts', retired);
+  write(product + 'docs/archive/historical.md', retired);
+  assert.deepEqual(validateProductSourceReferences(repository), [...rejected, relativeLegacyFile, product + 'tools/other-skill.ts'].sort()
+    .map(file => `current Product file references migrated root path: ${file}`),
+  'the exact current Skill prefix cannot hide another retired reference or another Skill owner');
+});
 
 test('documentation quality ignores trailing whitespace', () => {
   const temporaryRoot: any = fs.mkdtempSync(path.join(projectRoot, 'openspec', '.docs-quality-'));

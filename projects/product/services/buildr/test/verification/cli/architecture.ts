@@ -2,15 +2,13 @@
 
 import { isAllowedProductLayerImport } from './product-layer-boundaries.ts';
 
-import { isScriptSource } from './source-imports.ts';
-
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { validateVerificationRegistry } from '../planner.ts';
 import { verificationSteps } from '../registry.ts';
-import { validateProductSourceLayout } from './product-source-layout.ts';
+import { validateProductSourceLayout, validateProductSourceReferences } from './product-source-layout.ts';
 import { COMMAND_CATALOG, COMMAND_REGISTRY } from '../../../src/bootstrap/cli/registry.ts';
 
 const reportOnly: any = process.argv.includes('--report');
@@ -498,42 +496,7 @@ if (fs.existsSync(gitWorktreeInterface)) {
   }
 }
 
-const legacyRootTokens: any[] = [
-  'package/' + 'manifest.yml',
-  'package/targets/' + 'workspace',
-  'tools/build/launcher/' + 'assets',
-  ['package', 'bootstrap'].join('/'),
-  'src/web/' + 'web-dist',
-  'scripts/' + 'release',
-  'scripts/' + 'run-development',
-];
-const currentRoots: any[] = ['bin', 'src', 'resources', 'test', 'docs', 'package', 'tools'];
-for (const root of currentRoots) {
-  for (const file of listFiles(path.join(productRoot, root), (item: any) => (isScriptSource(item) || /\.(?:json|md|yml|yaml)$/.test(item)) || !path.extname(item))) {
-    const relative: any = path.relative(productRoot, file).split(path.sep).join('/');
-    const content: any = fs.readFileSync(file, 'utf8');
-    const historicalDocumentation: any = relative.startsWith('docs/archive/');
-    if (legacyRootTokens.some((token: any) => content.includes(token)) && !relative.startsWith('test/fixtures/') && !historicalDocumentation) {
-      problems.push(`current Product file references migrated root path: ${relative}`);
-    }
-  }
-}
-
-const workspaceRoot: any = path.resolve(productRoot, '..', '..');
-const currentCallers: any[] = [
-  path.join(productRoot, 'AGENTS.md'),
-  path.join(productRoot, 'README.md'),
-  path.join(workspaceRoot, '.github', 'pull_request_template.md'),
-  path.join(workspaceRoot, '.github', 'workflows', 'publish.yml'),
-  path.join(workspaceRoot, '.github', 'workflows', 'verify.yml'),
-  path.join(workspaceRoot, 'skills', 'buildr-release', 'SKILL.md'),
-];
-for (const file of currentCallers) {
-  if (!fs.existsSync(file)) continue;
-  if (legacyRootTokens.some((token: any) => fs.readFileSync(file, 'utf8').includes(token))) {
-    problems.push(`current Product caller references migrated root path: ${path.relative(workspaceRoot, file).split(path.sep).join('/')}`);
-  }
-}
+problems.push(...validateProductSourceReferences(repositoryRoot));
 
 if (problems.length) {
   const heading: any = reportOnly ? 'CLI architecture gaps:' : 'CLI architecture verification failed:';

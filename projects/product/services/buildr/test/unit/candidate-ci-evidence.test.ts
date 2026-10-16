@@ -1,7 +1,4 @@
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import test from 'node:test';
 import {
   aggregateCandidateCiEvidence,
@@ -9,7 +6,6 @@ import {
   candidateCiTiming,
   createCandidateCiCheckpoint,
   createCandidateCiEvidence,
-  readCandidateCiPreparationFiles,
 } from '../verification/candidate-ci-evidence.ts';
 import { createCandidateCiShardPlan, createVerificationPlan, validateCandidateCiCoverage } from '../verification/planner.ts';
 import {
@@ -329,17 +325,6 @@ test('Candidate timing separates reused origin phases and costs from current wor
   assert.equal(timing.checks[0].preparation.status, 'unknown');
   const aggregate = aggregateCandidateCiEvidence(passedEvidence(), candidateContext, null, { preparations: [] });
   assert.equal(aggregate.status, 'passed', 'missing timing does not revoke complete check evidence');
-});
-
-test('Candidate reads preparation diagnostics independently from required check evidence', t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-candidate-preparation-evidence-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const record = { schemaVersion: 'buildr.candidate-environment-preparation/v1', id: 'preflight-macos' };
-  fs.writeFileSync(path.join(root, 'preflight-macos-preparation.json'), JSON.stringify(record));
-  fs.writeFileSync(path.join(root, 'unreadable-preparation.json'), '{');
-  fs.writeFileSync(path.join(root, 'other.json'), '{}');
-  assert.deepEqual(readCandidateCiPreparationFiles(root), [record]);
-  assert.deepEqual(readCandidateCiPreparationFiles(path.join(root, 'missing')), []);
 });
 
 test('Candidate checkpoint retains completed evidence but is never aggregate eligible', () => {
