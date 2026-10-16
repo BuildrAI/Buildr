@@ -138,12 +138,16 @@ export function inspectCandidateFailedShardRetry(options: any, dependencies: any
   const view: any = parse(invoke(run, gh, ['run', 'view', String(runId), '--repo', releasePublishAuthority.repository, '--json', 'jobs'], repo), 'Candidate jobs readback');
   const jobs: any = Array.isArray(view.jobs) ? view.jobs : [];
   const bootstrap: any = jobs.find((job: any) => job.name === 'Candidate bootstrap');
-  if (!['success', 'failure'].includes(bootstrap?.conclusion)) findings.push({ code: 'candidate-bootstrap-not-terminal', actual: bootstrap?.conclusion ?? null });
   const unknown: any = jobs.filter((job: any) => jobDisposition(job.name) === 'unknown');
   if (unknown.length > 0) findings.push({ code: 'candidate-job-unknown', jobs: unknown.map((job: any) => job.name).sort() });
   const failedShards: any = jobs.filter((job: any) => ['shard', 'bootstrap', 'plan'].includes(jobDisposition(job.name)) && job.conclusion === 'failure').map((job: any) => job.name).sort();
-  if (failedShards.length === 0) findings.push({ code: 'candidate-failed-shard-missing' });
-  const nonPassedShards: any = jobs.filter((job: any) => jobDisposition(job.name) === 'shard' && !['success', 'failure', ...(bootstrap?.conclusion === 'failure' ? ['skipped'] : [])].includes(job.conclusion));
+  const aggregateOnly = failedShards.length === 0;
+  if (!['success', 'failure', ...(aggregateOnly ? ['skipped'] : [])].includes(bootstrap?.conclusion)) findings.push({ code: 'candidate-bootstrap-not-terminal', actual: bootstrap?.conclusion ?? null });
+  if (aggregateOnly && (jobs.find((job: any) => job.name === 'Candidate plan')?.conclusion !== 'success'
+      || jobs.some((job: any) => jobDisposition(job.name) !== 'aggregate' && !['success', 'skipped'].includes(job.conclusion)))) {
+    findings.push({ code: 'candidate-aggregate-dependencies-not-passed' });
+  }
+  const nonPassedShards: any = jobs.filter((job: any) => jobDisposition(job.name) === 'shard' && !['success', 'failure', ...(aggregateOnly || bootstrap?.conclusion === 'failure' ? ['skipped'] : [])].includes(job.conclusion));
   if (nonPassedShards.length > 0) findings.push({ code: 'candidate-shard-not-terminal', jobs: nonPassedShards.map((job: any) => ({ name: job.name, conclusion: job.conclusion })) });
   const aggregate: any = jobs.find((job: any) => job.name === 'Candidate gate');
   if (aggregate?.conclusion !== 'failure') findings.push({ code: 'candidate-aggregate-not-failed', actual: aggregate?.conclusion ?? null });
@@ -151,16 +155,16 @@ export function inspectCandidateFailedShardRetry(options: any, dependencies: any
   let classificationSource = 'unavailable';
   if (findings.length === 0) {
     let evidence: any[] = [];
-    try { evidence = dependencies.readFailureEvidence ? dependencies.readFailureEvidence({ runId, runAttempt, sourceCommit: options.sourceCommit }) : readFailureEvidence(run, gh, runId, repo); } catch { /* Legacy runs may not contain structured evidence. */ }
+    if (!aggregateOnly) try { evidence = dependencies.readFailureEvidence ? dependencies.readFailureEvidence({ runId, runAttempt, sourceCommit: options.sourceCommit }) : readFailureEvidence(run, gh, runId, repo); } catch { /* Legacy runs may not contain structured evidence. */ }
     const failedIds = failedShards.map((name: string) => name === 'Candidate bootstrap' ? 'artifact-macos' : name.match(/\(([^)]+)\)$/u)?.[1] ?? null);
-    const structured = classifyCandidateStructuredFailures(evidence, { runId, runAttempt, sourceCommit: options.sourceCommit, failedIds });
+    const structured = aggregateOnly ? null : classifyCandidateStructuredFailures(evidence, { runId, runAttempt, sourceCommit: options.sourceCommit, failedIds });
     if (structured !== null) {
       failureClass = structured;
       classificationSource = 'structured-evidence';
     } else {
       const log = invoke(run, gh, ['run', 'view', String(runId), '--repo', releasePublishAuthority.repository, '--log-failed'], repo, 90_000);
       failureClass = classifyCandidateFailure(log);
-      classificationSource = 'legacy-log';
+      classificationSource = aggregateOnly ? 'aggregate-log' : 'legacy-log';
     }
     if (failureClass !== 'transient') findings.push({ code: 'candidate-failure-needs-diagnosis', classification: failureClass });
   }
@@ -173,12 +177,13 @@ export function inspectCandidateFailedShardRetry(options: any, dependencies: any
     runAttempt,
     sourceCommit: options.sourceCommit,
     failedShards,
+    recoveryScope: aggregateOnly ? 'aggregate-only' : 'failed-jobs',
     failureClass,
     classificationSource,
     aggregate: aggregate ? { name: aggregate.name, conclusion: aggregate.conclusion } : null,
     findings,
     effects: [],
-    nextActions: findings.length === 0 ? [`使用同一run执行一次失败作业重跑：${runId}`] : ['读取对应失败分片与进程/资源诊断，修复确定性原因；不重跑完整候选。'],
+    nextActions: findings.length === 0 ? [aggregateOnly ? `仅恢复run ${runId}失败的Candidate gate；完整覆盖仍由原汇总器核验。` : `使用同一run执行一次失败作业重跑：${runId}`] : ['读取对应失败分片与进程/资源诊断，修复确定性原因；不重跑完整候选。'],
   };
 }
 
@@ -189,6 +194,9 @@ export function retryCandidateFailedShards(options: any, dependencies: any = {})
   const gh: any = options.ghCommand || 'gh';
   const repo: any = options.repo || process.cwd();
   const effect = { type: 'github-candidate-failed-jobs-rerun', runId: inspected.runId, previousAttempt: inspected.runAttempt, failedShards: inspected.failedShards, state: 'unknown' };
+  // The operation owner must persist this before sending a request whose
+  // response can be lost while GitHub still exposes the previous attempt.
+  dependencies.onRetryIntent?.({ runId: inspected.runId, previousAttempt: inspected.runAttempt, recoveryScope: inspected.recoveryScope });
   try {
     invoke(run, gh, ['run', 'rerun', String(inspected.runId), '--failed', '--repo', releasePublishAuthority.repository], repo);
     effect.state = 'confirmed';

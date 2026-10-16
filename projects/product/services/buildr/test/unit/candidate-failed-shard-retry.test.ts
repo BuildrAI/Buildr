@@ -64,6 +64,43 @@ test('Candidate retry automatically reruns only failed jobs after matching inspe
   assert.equal(dependencies.calls.filter((call: any) => call.includes(`run rerun ${runId} --failed`)).length, 1);
 });
 
+test('a transient gate failure recovers only aggregation after the selected jobs passed', () => {
+  const completed = [
+    { name: 'Candidate plan', conclusion: 'success' },
+    ...jobs.map(job => job.name === 'Candidate gate' ? job : { ...job, conclusion: job.name.startsWith('Development') ? 'skipped' : 'success' }),
+    { name: 'Plugin source Candidate', conclusion: 'skipped' },
+  ];
+  const dependencies = fixture({ jobs: completed });
+  const intents: any[] = [];
+  const result = retryCandidateFailedShards({ runId, sourceCommit, repo: '/fixture' }, { ...dependencies,
+    onRetryIntent: (intent: any) => {
+      assert.equal(dependencies.calls.some((call: string) => call.includes('run rerun')), false, 'persist intent before sending');
+      intents.push(intent);
+    },
+  });
+  assert.equal(result.status, 'dispatched');
+  assert.equal(result.recoveryScope, 'aggregate-only');
+  assert.equal(result.classificationSource, 'aggregate-log');
+  assert.deepEqual(result.failedShards, []);
+  assert.deepEqual(intents, [{ runId, previousAttempt: 1, recoveryScope: 'aggregate-only' }]);
+  assert.equal(dependencies.calls.filter((call: string) => call.includes('run rerun')).length, 1);
+  assert.equal(dependencies.calls.some((call: string) => call.includes('run download')), false, 'the gate owns complete evidence aggregation');
+  const reused = fixture({ jobs: completed.map(job => job.name.includes('(') || job.name === 'Plugin source Candidate' ? { ...job, conclusion: 'skipped' } : job) });
+  assert.equal(retryCandidateFailedShards({ runId, sourceCommit, repo: '/fixture' }, reused).status, 'dispatched', 'fully reused checks still restore only the gate');
+  for (const overrides of [
+    { log: 'AssertionError: evidence missing' },
+    { current: { run_attempt: 2 } },
+    { jobs: completed.map(job => job.name === 'Candidate plan' ? { ...job, conclusion: 'skipped' } : job) },
+    { jobs: completed.map(job => job.name.includes('core-package') ? { ...job, conclusion: null } : job) },
+    { jobs: completed.map(job => job.name.includes('core-package') ? { ...job, conclusion: 'cancelled' } : job) },
+    { jobs: completed.map(job => job.name.startsWith('Development') ? { ...job, conclusion: 'failure' } : job) },
+  ]) {
+    const blocked = fixture({ jobs: completed, ...overrides });
+    assert.equal(retryCandidateFailedShards({ runId, sourceCommit, repo: '/fixture' }, blocked).status, 'blocked');
+    assert.equal(blocked.calls.some((call: string) => call.includes('run rerun')), false);
+  }
+});
+
 test('Candidate retry blocks changed source and nonterminal shard sets', () => {
   const wrongSource: any = fixture({ current: { head_sha: 'b'.repeat(40) } });
   assert.equal(inspectCandidateFailedShardRetry({ runId, sourceCommit, ghCommand: 'gh', repo: '/fixture' }, wrongSource).status, 'blocked');

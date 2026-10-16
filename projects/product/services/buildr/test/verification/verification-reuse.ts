@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { assertMinimumNodeVersion, createExactNodeExecutionEnvironment, spawnCommandSync } from '../../src/infrastructure/process.ts';
-import { verificationSteps, resolveVerificationExecutionProfile } from './registry.ts';
+import { verificationSteps, resolveVerificationExecutionProfile, verificationStepExecutionInputs } from './registry.ts';
 import { estimateVerificationPlan } from './planner.ts';
 import { preparationContentDigest } from '../../tools/verification/candidate-preparation-reuse.ts';
 import { withExclusiveFileLock } from '../../src/infrastructure/filesystem/exclusive-file-lock.ts';
@@ -111,7 +111,9 @@ export function createVerificationReuseIdentity(step: VerificationReuseStep, sna
   const contentIdentity = inputs?.contentIdentity ?? snapshot.contentIdentities[step.reuse.scope];
   if (!contentIdentity) return null;
   const declared = verificationSteps.find((item: VerificationReuseStep) => item.id === step.id);
+  const execution = verificationStepExecutionInputs(step);
   const recipeIdentity = digest({ version: proof ? 2 : 1, id: step.id, executor: step.executor, dependsOn: declared?.dependsOn ?? step.dependsOn ?? [], contexts: step.contexts ?? [], timeoutMs: step.timeoutMs ?? null, reuse: step.reuse,
+    ...(execution ? { execution } : {}),
     ...(inputs ? { source: inputs.recipeIdentity, fallback: inputs.fallback, resources: step.resources, resourceDemand: step.resourceDemand, concurrencyClass: step.concurrencyClass } : {}) });
   const { platform, arch, nodeVersion, tools, variablesIdentity } = snapshot.environment;
   const requiredTools = Object.fromEntries(requiredToolKeys(step).map(key => [key, tools[key] ?? 'unavailable']));
@@ -369,7 +371,7 @@ export function inspectVerificationReusePlan(plan: any, options: VerificationReu
     const reasons: string[] = [];
     if (record) reasons.push('matching-complete-result');
     else if (options.force) reasons.push('explicit-force');
-    else if (!step.reuse) reasons.push('fresh-proof-required');
+    else if (!step.reuse) reasons.push(step.reuseDisabledReason ?? 'fresh-proof-required');
     else if (!identity) reasons.push('inputs-unavailable');
     else if (!prior) reasons.push('no-matching-result');
     else {
@@ -405,14 +407,23 @@ export function inspectVerificationReusePlan(plan: any, options: VerificationReu
 export function createVerificationPlanReuse(plan: any, options: any): any {
   if (options.reuse === false || !plan.steps.some((step: VerificationReuseStep) => step.reuse)) return null;
   const env = { ...process.env, ...options.env }, config = options.reuse ?? {};
+  let declaredProfile: any = null;
+  try { declaredProfile = resolveVerificationExecutionProfile(options.executionProfile?.id ?? env.BUILDR_VERIFICATION_PROFILE, env); } catch { /* Unknown custom profiles cannot create portable proof. */ }
+  const steps = plan.steps.map((step: VerificationReuseStep) => {
+    if (!verificationStepExecutionInputs(step)) return step;
+    const actualWorkers = options.executionProfile?.limits?.innerConcurrency?.[step.id] ?? step.resourceDemand?.workers ?? 1;
+    const registeredWorkers = declaredProfile?.limits?.innerConcurrency?.[step.id] ?? step.resourceDemand?.workers ?? 1;
+    return !declaredProfile || actualWorkers !== registeredWorkers
+      ? { ...step, reuse: false, reuseDisabledReason: 'custom-worker-budget-requires-fresh-proof' } : step;
+  });
   const imports = config.imports ? Array.isArray(config.imports) ? config.imports : [config.imports] : [];
   if (env.BUILDR_VERIFICATION_REUSE_IMPORT) imports.push(readVerificationReuseBundle(env.BUILDR_VERIFICATION_REUSE_IMPORT));
-  const snapshotOptions = { productRoot: options.productRoot, projectRoot: options.projectRoot, env, steps: plan.steps };
+  const snapshotOptions = { productRoot: options.productRoot, projectRoot: options.projectRoot, env, steps };
   const snapshot = collectVerificationReuseSnapshot(snapshotOptions);
   const store = createVerificationReuseStore({ ...snapshotOptions, snapshot, imports, portableImports: config.portableImports === true });
   const force = config.force === true || env.BUILDR_VERIFICATION_FORCE === '1';
   const hits = new Map<string, VerificationReuseRecord>();
-  for (const step of plan.steps) {
+  for (const step of steps) {
     const identity = createVerificationReuseIdentity(step, snapshot);
     if (identity && force) store.invalidate(identity);
     const record = !force ? store.lookup(step) : null;
@@ -420,11 +431,11 @@ export function createVerificationPlanReuse(plan: any, options: any): any {
   }
   return {
     hits,
-    explanation: inspectVerificationReusePlan(plan, { ...snapshotOptions, snapshot, force, imports }),
+    explanation: inspectVerificationReusePlan({ ...plan, steps }, { ...snapshotOptions, snapshot, force, imports }),
     finish(results: any[], cleanupClean: boolean): VerificationReuseBundle {
       const after = collectVerificationReuseSnapshot(snapshotOptions);
       for (const result of results) {
-        const step = plan.steps.find((item: VerificationReuseStep) => item.id === result.id);
+        const step = steps.find((item: VerificationReuseStep) => item.id === result.id);
         if (!step || result.disposition === 'reused') continue;
         const start = result.startedAt ?? new Date().toISOString(), finish = result.finishedAt ?? start;
         store.stage(step, result, { kind: env.GITHUB_RUN_ID ? 'ci' : 'local', runId: options.runId ?? `verification-${process.pid}`,
@@ -434,7 +445,7 @@ export function createVerificationPlanReuse(plan: any, options: any): any {
       const written = store.commit(after, cleanupClean);
       const records = new Map(written.records.map(record => [record.identity.key, record]));
       for (const result of results) {
-        const step = plan.steps.find((item: VerificationReuseStep) => item.id === result.id), prior = hits.get(result.id);
+        const step = steps.find((item: VerificationReuseStep) => item.id === result.id), prior = hits.get(result.id);
         if (!step || result.status === 'blocked' || result.status === 'skipped') continue;
         const identity = createVerificationReuseIdentity(step, snapshot), current = createVerificationReuseIdentity(step, after);
         if (!identity) continue;
@@ -472,7 +483,7 @@ export function createVerificationPlanReuse(plan: any, options: any): any {
       return bundle;
     },
     invalidate(): void {
-      for (const step of plan.steps) { const identity = createVerificationReuseIdentity(step, snapshot); if (identity) store.invalidate(identity); }
+      for (const step of steps) { const identity = createVerificationReuseIdentity(step, snapshot); if (identity) store.invalidate(identity); }
     },
   };
 }

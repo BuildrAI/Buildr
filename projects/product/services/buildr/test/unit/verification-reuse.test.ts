@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createVerificationReuseIdentity, reusedVerificationResult, validateVerificationReuseRecord,
   type VerificationReuseSnapshot, type VerificationReuseStep, type VerificationReuseRecord } from '../verification/verification-reuse.ts';
-import { verificationSteps } from '../verification/registry.ts';
+import { verificationSteps, verificationStepExecutionInputs } from '../verification/registry.ts';
 
 const sha = `sha256-${'a'.repeat(64)}` as const;
 const step: VerificationReuseStep = { id: 'fixture-check', executor: { type: 'node', file: 'check.ts' }, reuse: { scope: 'backend' }, dependsOn: [] };
@@ -23,6 +23,26 @@ test('source identity binds content and check recipe while commit and checkout l
   assert.notDeepEqual(createVerificationReuseIdentity(step, { ...snapshot, contentIdentities: { ...snapshot.contentIdentities, backend: `sha256-${'b'.repeat(64)}` } }), identity);
   assert.equal(createVerificationReuseIdentity({ ...step, executor: { type: 'candidate-artifact' } }, snapshot), null);
   assert.equal(createVerificationReuseIdentity({ ...step, executor: { type: 'node', consumesArtifact: true } }, snapshot), null);
+});
+
+test('execution inputs bind only the selected check inner workers, not queue capacities or unrelated checks', () => {
+  const selected = { ...step, resourceDemand: { workers: 2, processes: 2 } };
+  const profile = { local: { global: 4, classes: { default: 4 }, capacities: { workers: 8 }, innerConcurrency: { [step.id]: 3, other: 4 } } };
+  const before = verificationStepExecutionInputs(selected, profile);
+  assert.deepEqual(before, { innerWorkers: { local: 3 } });
+  assert.deepEqual(verificationStepExecutionInputs(selected, { local: { ...profile.local, global: 8, classes: {}, capacities: {}, innerConcurrency: { [step.id]: 3, other: 8 } } }), before);
+  assert.notDeepEqual(verificationStepExecutionInputs(selected, { local: { ...profile.local, innerConcurrency: { [step.id]: 4 } } }), before);
+  assert.deepEqual(verificationStepExecutionInputs(selected, { local: { innerConcurrency: {} } }), { innerWorkers: { local: 2 } });
+  for (const type of ['npm', 'package-selector', 'workspace-suite']) assert.equal(verificationStepExecutionInputs({ ...selected, executor: { type } }, profile), null, type);
+});
+
+test('unit proofs include the actual Web dependencies consumed by imported helpers', () => {
+  const unit = verificationSteps.find((item: VerificationReuseStep) => item.id === 'unit');
+  const complete = { ...snapshot, environment: { ...snapshot.environment, tools: { ...snapshot.environment.tools, 'web-dependencies': sha } } };
+  const before = createVerificationReuseIdentity(unit, complete);
+  assert.ok(before);
+  assert.notDeepEqual(createVerificationReuseIdentity(unit, { ...complete, environment: { ...complete.environment,
+    tools: { ...complete.environment.tools, 'web-dependencies': `sha256-${'b'.repeat(64)}` } } }), before);
 });
 test('Git-sensitive and exact-tool checks bind necessary facts without a global HEAD expiry', () => {
   const changed = { ...snapshot, gitIdentity: `sha256-${'b'.repeat(64)}` as const };

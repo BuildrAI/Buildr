@@ -97,14 +97,22 @@ function timeline(options: any, state: any = {}): any  {
     phases.push({ id: 'publication-approval', phase: 'publication-approval', status: state.evidence.status === 'passed' ? 'passed' : 'blocked', owner: { id: 'github-environment', identity: state.evidence.identity }, startedAt: null, finishedAt: state.evidence.observedAt ?? null, waitType: 'environment-approval' });
     phases.push({ id: 'publication', phase: 'publication', status: state.evidence.status === 'passed' ? 'passed' : 'blocked', owner: { id: 'release-transaction-evidence', identity: state.evidence.identity }, startedAt: null, finishedAt: state.evidence.observedAt ?? null, waitType: 'machine-execution' });
   }
-  for (const [key, phase, ownerId] of [['reconciliation', 'dev-reconciliation', 'release-git-convergence'], ['gitCloseout', 'release-git-closeout', 'release-git-convergence'], ['taskCompletion', 'task-completion', 'task-record'], ['worktreeCleanup', 'worktree-cleanup', 'task-worktree'], ['doctor', 'doctor', 'doctor']]) {
+  for (const [key, phase, ownerId] of [['reconciliation', 'dev-reconciliation', 'release-git-convergence'], ['gitCloseout', 'release-git-closeout', 'release-git-convergence'], ['taskCompletion', 'task-completion', 'task-record'], ['worktreeCleanup', 'worktree-cleanup', 'task-worktree']]) {
     const result: any = state[key];
     if (result) phases.push({ id: phase, phase, status: ['passed', 'completed', 'cleaned', 'ready'].includes(result.status) ? 'passed' : 'blocked', owner: { id: ownerId, identity: result.identity ?? result.recordDigest ?? result.receiptDigest ?? null }, startedAt: null, finishedAt: result.observedAt ?? null, waitType: 'machine-execution' });
+  }
+  if (state.selfBootstrapCloseout) {
+    const activation = state.selfBootstrapCloseout;
+    phases.push({ id: 'self-bootstrap-activation', phase: 'self-bootstrap-activation',
+      status: ['passed', 'not-applicable'].includes(activation.status) ? 'passed' : activation.status === 'pending' ? 'pending' : 'blocked',
+      owner: { id: 'buildr-self-bootstrap-sync', identity: activation.identity ?? activation.receiptDigest ?? null },
+      startedAt: null, finishedAt: activation.observedAt ?? null, waitType: 'machine-execution' });
   }
   return createReleasePhaseTimeline({
     version: options.version,
     generation: Number(context?.selection?.generation ?? options.generation ?? 0),
-    terminalStatus: state.doctor?.status === 'ready' ? 'closed' : state.blocked ? 'blocked' : 'active',
+    terminalStatus: ['passed', 'not-applicable'].includes(state.selfBootstrapCloseout?.status) ? 'closed'
+      : state.blocked || state.selfBootstrapCloseout && state.selfBootstrapCloseout.status !== 'pending' ? 'blocked' : 'active',
     phases,
   });
 }
@@ -127,12 +135,13 @@ function result(options: any, action: any, status: any, state: any, steps: any, 
       publication: state.evidence?.status ?? state.dispatch?.evidence?.status ?? 'not-observed',
       taskRegistration: state.taskCompletion?.status ?? 'not-run',
       cleanup: state.worktreeCleanup?.status ?? state.gitCloseout?.status ?? 'not-run',
-      activation: state.doctor?.status ?? 'not-run',
+      activation: state.selfBootstrapCloseout?.status === 'passed' ? 'ready' : state.selfBootstrapCloseout?.status ?? 'not-run',
     },
     ...(state.gitCloseout ? { cleanup: { status: state.gitCloseout.status, branches: state.gitCloseout.branches ?? [], findings: state.gitCloseout.findings ?? [], diagnostic: state.gitCloseout.diagnostic ?? null } } : {}),
     nextActions,
     timeline: phaseTimeline,
     ...(state.context ? { context: state.context } : {}),
+    ...(state.closeoutProgress ? { closeoutProgress: state.closeoutProgress } : {}),
     ...(lifecycle ? { lifecycle } : {}),
   };
   return value;
@@ -141,15 +150,6 @@ function result(options: any, action: any, status: any, state: any, steps: any, 
 function blocked(options: any, action: any, state: any, steps: any, ownerResult: any, fallback: any): any  {
   const nextActions: any = ownerResult?.nextActions?.length ? ownerResult.nextActions : [fallback];
   return result(options, action, 'blocked', state, steps, nextActions);
-}
-
-function doctorIsReady(value: any): any  {
-  return value?.status === 'ready' || (value?.ok === true && value?.health?.ready === true);
-}
-
-function normalizeDoctorResult(value: any): any  {
-  if (!doctorIsReady(value) || value?.status === 'ready') return value;
-  return { ...value, status: 'ready' };
 }
 
 function parseControllerOutput(run: any, label: any): any  {
@@ -217,79 +217,89 @@ async function closeout(options: any, dependencies: any): Promise<any>  {
   if (context?.release?.version !== options.version) return blocked(options, 'closeout', { evidence, context }, steps, { nextActions: ['Publication evidence version与请求version不一致，重新选择matching run。'] }, '选择matching Publication run。');
   if (options.expectedContextDigest != null && options.expectedContextDigest !== context?.identity) return blocked(options, 'closeout', { evidence, context }, steps,
     { nextActions: ['Publication evidence context与本轮授权不一致，保留引用并选择matching run。'] }, '选择matching Publication context。');
-
-  const reconciliation: any = (dependencies.reconcilePublishedReleaseWithDev ?? reconcilePublishedReleaseWithDev)({ repo: options.repo, publicationEvidence: evidence, remote: options.remote, main: options.main, dev: options.dev,
-    inspectDriftedReleaseForCleanup: true }, dependencies.gitDependencies);
-  steps.push(step('release-git-convergence', 'reconcile-dev', reconciliation));
-  if (reconciliation.status !== 'passed') return blocked(options, 'closeout', { evidence, context, reconciliation }, steps, reconciliation, '恢复dev provenance reconciliation后重试。');
-
   const generation: any = context.selection?.generation;
   const expectedCommit: any = context.release?.sourceCommit;
-  if (options.generation != null && Number(options.generation) !== generation) return blocked(options, 'closeout', { evidence, context, reconciliation }, steps, { nextActions: ['请求generation与Publication context不一致，使用current evidence generation重试。'] }, '修正generation。');
-  if (options.expectedCommit != null && options.expectedCommit !== expectedCommit) return blocked(options, 'closeout', { evidence, context, reconciliation }, steps, { nextActions: ['请求expected commit与Publication context不一致，使用current evidence source重试。'] }, '修正expected commit。');
-  const gitCloseout: any = (dependencies.closeoutReleaseGitResources ?? closeoutReleaseGitResources)({
-    repo: options.repo,
-    remote: options.remote,
-    main: options.main,
-    dev: options.dev,
-    version: options.version,
-    generation,
-    expectedCommit,
-    publicationEvidence: evidence,
-    authorizeCarrierCleanup: options.authorizeCarrierCleanup === true,
-    authorizeLocalSelectionCleanup: options.authorizeLocalSelectionCleanup === true,
-    authorizeRemoteDelete: options.authorizeRemoteDelete === true,
-    cleanupPolicy: options.cleanupPolicy,
-    ghCommand: options.ghCommand,
-    repository: options.repository,
-  }, dependencies.gitDependencies);
-  steps.push(step('release-git-convergence', 'closeout', gitCloseout));
-  if (gitCloseout.status !== 'passed') return blocked(options, 'closeout', { evidence, context, reconciliation, gitCloseout }, steps, gitCloseout, '取得明确cleanup授权或恢复Git closeout后重试。');
+  if (options.generation != null && Number(options.generation) !== generation) return blocked(options, 'closeout', { evidence, context }, steps, { nextActions: ['请求generation与Publication context不一致，使用current evidence generation重试。'] }, '修正generation。');
+  if (options.expectedCommit != null && options.expectedCommit !== expectedCommit) return blocked(options, 'closeout', { evidence, context }, steps, { nextActions: ['请求expected commit与Publication context不一致，使用current evidence source重试。'] }, '修正expected commit。');
+  const retained = options.closeoutProgress?.contextIdentity === context.identity && options.closeoutProgress?.evidenceIdentity === evidence.identity
+    && options.closeoutProgress?.taskCompletion?.status === 'completed' && options.closeoutProgress?.worktreeCleanup?.status === 'cleaned';
+  let { reconciliation, gitCloseout, lifecycle, taskCompletion, worktreeCleanup } = retained ? options.closeoutProgress : {};
+  if (!retained) {
+    reconciliation = (dependencies.reconcilePublishedReleaseWithDev ?? reconcilePublishedReleaseWithDev)({ repo: options.repo, publicationEvidence: evidence, remote: options.remote, main: options.main, dev: options.dev,
+      inspectDriftedReleaseForCleanup: true }, dependencies.gitDependencies);
+    steps.push(step('release-git-convergence', 'reconcile-dev', reconciliation));
+    if (reconciliation.status !== 'passed') return blocked(options, 'closeout', { evidence, context, reconciliation }, steps, reconciliation, '恢复dev provenance reconciliation后重试。');
 
-  const root: any = path.resolve(options.canonicalWorkspace ?? options.repo ?? workspaceRoot);
-  const runtime: any = dependencies.runtime ?? createReleaseToolRuntime();
-  const inspectTask: any = dependencies.inspectTask ?? ((target: any, taskId: any) => runtime.inspectTask(target, taskId));
-  let taskResult: any = inspectTask(root, options.releaseTask);
-  let controller: any;
-  try { controller = (dependencies.resolveRetainedController ?? resolveRetainedController)(root); } catch (error: any) {
-    return blocked(options, 'closeout', { evidence, context, reconciliation, gitCloseout }, steps, { nextActions: [error.message] }, '恢复matching retained controller后重试。');
+    gitCloseout = (dependencies.closeoutReleaseGitResources ?? closeoutReleaseGitResources)({
+      repo: options.repo,
+      remote: options.remote,
+      main: options.main,
+      dev: options.dev,
+      version: options.version,
+      generation,
+      expectedCommit,
+      publicationEvidence: evidence,
+      authorizeCarrierCleanup: options.authorizeCarrierCleanup === true,
+      authorizeLocalSelectionCleanup: options.authorizeLocalSelectionCleanup === true,
+      authorizeRemoteDelete: options.authorizeRemoteDelete === true,
+      cleanupPolicy: options.cleanupPolicy,
+      ghCommand: options.ghCommand,
+      repository: options.repository,
+    }, dependencies.gitDependencies);
+    steps.push(step('release-git-convergence', 'closeout', gitCloseout));
+    if (gitCloseout.status !== 'passed') return blocked(options, 'closeout', { evidence, context, reconciliation, gitCloseout }, steps, gitCloseout, '取得明确cleanup授权或恢复Git closeout后重试。');
+
+    const root: any = path.resolve(options.canonicalWorkspace ?? options.repo ?? workspaceRoot);
+    const runtime: any = dependencies.runtime ?? createReleaseToolRuntime();
+    const inspectTask: any = dependencies.inspectTask ?? ((target: any, taskId: any) => runtime.inspectTask(target, taskId));
+    let taskResult: any = inspectTask(root, options.releaseTask);
+    let controller: any;
+    try { controller = (dependencies.resolveRetainedController ?? resolveRetainedController)(root); } catch (error: any) {
+      return blocked(options, 'closeout', { evidence, context, reconciliation, gitCloseout }, steps, { nextActions: [error.message] }, '恢复matching retained controller后重试。');
+    }
+    const invokeRetained: any = dependencies.invokeRetainedController ?? defaultInvokeRetained;
+    const activeLifecycle: any = createReleaseLifecycle({
+      version: options.version,
+      releaseTask: { taskId: options.releaseTask, status: taskResult.record.status, recordDigest: taskResult.recordDigest },
+      selection: { status: context.selection.status, generation, identity: context.selection.identity },
+      candidate: { status: context.candidate.status, identity: context.candidate.aggregateIdentity },
+      readiness: { status: 'ready', contextDigest: context.identity },
+      publication: { status: 'passed', runId: evidence.publish.runId, evidenceIdentity: evidence.identity },
+      convergence: { status: reconciliation.status, recoveryIdentity: reconciliation.recoveryIdentity },
+      closeout: { status: gitCloseout.status, identity: gitCloseout.identity, formalReleaseRef: gitCloseout.formalReleaseRef },
+    });
+    if (activeLifecycle.status !== 'passed' || activeLifecycle.phase !== 'closed') return blocked(options, 'closeout', { evidence, context, reconciliation, gitCloseout, lifecycle: activeLifecycle }, steps, activeLifecycle, '恢复release lifecycle closed事实后重试。');
+
+    if (taskResult.record.status === 'completed') taskCompletion = { status: 'completed', recordDigest: taskResult.recordDigest, effects: [] };
+    else if (taskResult.record.status === 'active') {
+      taskCompletion = invokeRetained(controller, ['task', 'complete', options.releaseTask, '--summary', options.completionSummary ?? `Release ${options.version} Publication、dev provenance与资源收尾已完成。`, '--expected-record', taskResult.recordDigest, '--target', root, '--json']);
+      taskResult = inspectTask(root, options.releaseTask);
+    } else taskCompletion = { status: 'blocked', effects: [], nextActions: [`Release Task状态${taskResult.record.status}不能作为closeout完成事实。`] };
+    steps.push(step('task-record', 'complete', taskCompletion, taskCompletion.effects?.length ? 'executed' : 'reused'));
+    if (taskResult.record.status !== 'completed') return blocked(options, 'closeout', { evidence, context, reconciliation, gitCloseout, lifecycle: activeLifecycle, taskCompletion }, steps, taskCompletion, '恢复Task completion后重试。');
+
+    worktreeCleanup = invokeRetained(controller, [
+      'worktree', 'cleanup', options.releaseTask,
+      '--expected-source', `workspace=${context.release.sourceCommit}`,
+      '--delivered-ref', `workspace=${context.convergence.mainCommit}`,
+      '--target', root, '--json',
+    ]);
+    steps.push(step('task-worktree', 'cleanup', worktreeCleanup, worktreeCleanup.effects?.length ? 'executed' : 'reused'));
+    if (worktreeCleanup.status !== 'cleaned') return blocked(options, 'closeout', { evidence, context, reconciliation, gitCloseout, lifecycle: activeLifecycle, taskCompletion, worktreeCleanup }, steps, worktreeCleanup, '恢复Task Worktree cleanup后重试。');
+
+    lifecycle = createReleaseLifecycle({ ...activeLifecycle.facts, version: options.version, releaseTask: { taskId: options.releaseTask, status: 'completed', recordDigest: taskResult.recordDigest } });
   }
-  const invokeRetained: any = dependencies.invokeRetainedController ?? defaultInvokeRetained;
-  const activeLifecycle: any = createReleaseLifecycle({
-    version: options.version,
-    releaseTask: { taskId: options.releaseTask, status: taskResult.record.status, recordDigest: taskResult.recordDigest },
-    selection: { status: context.selection.status, generation, identity: context.selection.identity },
-    candidate: { status: context.candidate.status, identity: context.candidate.aggregateIdentity },
-    readiness: { status: 'ready', contextDigest: context.identity },
-    publication: { status: 'passed', runId: evidence.publish.runId, evidenceIdentity: evidence.identity },
-    convergence: { status: reconciliation.status, recoveryIdentity: reconciliation.recoveryIdentity },
-    closeout: { status: gitCloseout.status, identity: gitCloseout.identity, formalReleaseRef: gitCloseout.formalReleaseRef },
-  });
-  if (activeLifecycle.status !== 'passed' || activeLifecycle.phase !== 'closed') return blocked(options, 'closeout', { evidence, context, reconciliation, gitCloseout, lifecycle: activeLifecycle }, steps, activeLifecycle, '恢复release lifecycle closed事实后重试。');
-
-  let taskCompletion: any;
-  if (taskResult.record.status === 'completed') taskCompletion = { status: 'completed', recordDigest: taskResult.recordDigest, effects: [] };
-  else if (taskResult.record.status === 'active') {
-    taskCompletion = invokeRetained(controller, ['task', 'complete', options.releaseTask, '--summary', options.completionSummary ?? `Release ${options.version} Publication、dev provenance与资源收尾已完成。`, '--expected-record', taskResult.recordDigest, '--target', root, '--json']);
-    taskResult = inspectTask(root, options.releaseTask);
-  } else taskCompletion = { status: 'blocked', effects: [], nextActions: [`Release Task状态${taskResult.record.status}不能作为closeout完成事实。`] };
-  steps.push(step('task-record', 'complete', taskCompletion, taskCompletion.effects?.length ? 'executed' : 'reused'));
-  if (taskResult.record.status !== 'completed') return blocked(options, 'closeout', { evidence, context, reconciliation, gitCloseout, lifecycle: activeLifecycle, taskCompletion }, steps, taskCompletion, '恢复Task completion后重试。');
-
-  const worktreeCleanup: any = invokeRetained(controller, [
-    'worktree', 'cleanup', options.releaseTask,
-    '--expected-source', `workspace=${context.release.sourceCommit}`,
-    '--delivered-ref', `workspace=${context.convergence.mainCommit}`,
-    '--target', root, '--json',
-  ]);
-  steps.push(step('task-worktree', 'cleanup', worktreeCleanup, worktreeCleanup.effects?.length ? 'executed' : 'reused'));
-  if (worktreeCleanup.status !== 'cleaned') return blocked(options, 'closeout', { evidence, context, reconciliation, gitCloseout, lifecycle: activeLifecycle, taskCompletion, worktreeCleanup }, steps, worktreeCleanup, '恢复Task Worktree cleanup后重试。');
-
-  const doctor: any = normalizeDoctorResult(invokeRetained(controller, ['doctor', '--target', root, '--json', '--detail', 'compact', ...(options.agent ? ['--agent', options.agent] : [])]));
-  steps.push(step('doctor', 'inspect', doctor));
-  if (!doctorIsReady(doctor)) return blocked(options, 'closeout', { evidence, context, reconciliation, gitCloseout, lifecycle: activeLifecycle, taskCompletion, worktreeCleanup, doctor }, steps, doctor, '修复Doctor blocker后以同一closeout恢复。');
-  const completedLifecycle: any = createReleaseLifecycle({ ...activeLifecycle.facts, version: options.version, releaseTask: { taskId: options.releaseTask, status: 'completed', recordDigest: taskResult.recordDigest } });
-  return result(options, 'closeout', 'passed', { evidence, context, reconciliation, gitCloseout, lifecycle: completedLifecycle, taskCompletion, worktreeCleanup, doctor }, steps, []);
+  const previous = retained ? options.closeoutProgress.selfBootstrapCloseout : null;
+  const closeoutProgress = { contextIdentity: context.identity, evidenceIdentity: evidence.identity, reconciliation, gitCloseout, lifecycle, taskCompletion, worktreeCleanup,
+    ...(previous ? { selfBootstrapCloseout: previous } : {}) };
+  dependencies.onCloseoutProgress?.(closeoutProgress);
+  const selfBootstrapCloseout = ['passed', 'not-applicable'].includes(previous?.status) ? previous : dependencies.selfBootstrapCloseout
+    ? await dependencies.selfBootstrapCloseout({ workspace: path.resolve(options.canonicalWorkspace ?? options.repo ?? workspaceRoot), context, evidence })
+    : { status: 'pending', effects: [], nextActions: ['接续buildr-self-bootstrap-sync唯一执行器，记录实际激活或不适用结果；保留已完成公开、任务登记及清理事实。'] };
+  steps.push(step('buildr-self-bootstrap-sync', 'closeout', previous === selfBootstrapCloseout ? { ...selfBootstrapCloseout, effects: [] } : selfBootstrapCloseout, previous === selfBootstrapCloseout ? 'reused' : 'executed'));
+  const passed = ['passed', 'not-applicable'].includes(selfBootstrapCloseout.status);
+  return result(options, 'closeout', passed ? 'passed' : selfBootstrapCloseout.status === 'pending' ? 'published-self-bootstrap-pending' : 'published-self-bootstrap-blocked',
+    { evidence, context, reconciliation, gitCloseout, lifecycle, taskCompletion, worktreeCleanup, selfBootstrapCloseout, closeoutProgress: { ...closeoutProgress, selfBootstrapCloseout } }, steps, passed ? [] : selfBootstrapCloseout.nextActions ?? ['接续唯一自举执行器。']);
 }
 
 export async function runReleaseOrchestration(options: any = {}, dependencies: any = {}): Promise<any>  {
@@ -532,12 +542,15 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
         && state.publication.contextIdentity === state.context?.identity;
       const closed = await runReleaseOrchestration({ action: 'closeout', version: options.version, releaseTask: `release-${options.version}`, publishRunId: state.publication.runId,
         expectedContextDigest: state.publication.contextIdentity,
+        closeoutProgress: state.closeout?.progress,
         repo: workspace, canonicalWorkspace: workspace, remote: 'origin', agent: options.agent || 'codex', authorizeCarrierCleanup: true, authorizeLocalSelectionCleanup: true,
         authorizeRemoteDelete: cleanupAuthorized,
         cleanupPolicy: cleanupAuthorized ? state.publication.cleanupAuthorization.policy : undefined,
-        ghCommand: options.ghCommand }, dependencies.orchestrationDependencies);
+        ghCommand: options.ghCommand }, { ...dependencies.orchestrationDependencies,
+          onCloseoutProgress: (progress: any) => { state.closeout = { ...state.closeout, progress }; save(); },
+        });
       currentEffects.push(...closed.effects);
-      state.closeout = { status: closed.status, outcomes: closed.outcomes };
+      state.closeout = { status: closed.status, outcomes: closed.outcomes, progress: closed.closeoutProgress };
       writeOperation(file, state);
       return answer(closed.status, closed.nextActions, { outcomes: closed.outcomes, cleanup: closed.cleanup, result: closed });
     }
@@ -714,9 +727,15 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     if (candidate.status !== 'completed' || candidate.conclusion !== 'success') ensureCandidateBranch(carrier);
     if (candidate.status !== 'completed') return answer('candidate-running', ['等待当前候选终态，再继续同一prepare。'], { run: candidate });
     if (candidate.conclusion !== 'success') {
-      const retried = retryCandidateFailedShards({ runId: state.candidate.runId, sourceCommit, repo }, { execute });
+      const previousRetry = state.candidate.retry;
+      if (previousRetry?.runId === state.candidate.runId && Number(candidate.run_attempt) <= previousRetry.previousAttempt) {
+        return answer('candidate-retry-unconfirmed', ['回读同一候选运行的新attempt；不重复发送失败作业恢复请求。'], { run: candidate });
+      }
+      const retried = retryCandidateFailedShards({ runId: state.candidate.runId, sourceCommit, repo, ghCommand: options.ghCommand }, { execute,
+        onRetryIntent: (intent: any) => { state.candidate.retry = intent; save(); },
+      });
       currentEffects.push(...retried.effects);
-      return answer(retried.status === 'dispatched' ? 'candidate-running' : 'diagnosis-required', retried.nextActions, { retry: retried });
+      return answer(retried.status === 'dispatched' ? 'candidate-running' : retried.status === 'unknown' ? 'candidate-retry-unconfirmed' : 'diagnosis-required', retried.nextActions, { retry: retried });
     }
     const candidateEvidence = !scoped || plan.requirements.buildr ? readCandidateEvidence({ candidateRunId: state.candidate.runId, ghCommand: options.ghCommand || 'gh', repo, execute, dependencies: dependencies.candidateDependencies }) : null;
     if (candidateEvidence) {

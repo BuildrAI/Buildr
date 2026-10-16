@@ -1,5 +1,6 @@
 import { discoveredVerificationFiles, literalUrlImports, verificationEntryFiles } from '../../test/verification/verification-input-discovery.ts';
 import { createVerificationSourceInputReader, verificationInputSourceFromGit } from '../../test/verification/verification-source-inputs.ts';
+import { verificationStepExecutionInputs } from '../../test/verification/registry.ts';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
@@ -101,12 +102,12 @@ function checkSource(repo: string, commit: string, reader?: CandidateInputReader
   return createVerificationSourceInputReader(repo, path.join(repo, prefix), commit, source);
 }
 
-function checkIdentity(source: ReturnType<typeof checkSource>, step: any): string {
+function checkIdentity(source: ReturnType<typeof checkSource>, step: any, legacyExecution = false): string {
   const inputs = source.inputs({ ...step, reuse: step.reuse || { scope: 'repository' } }, true);
   if (inputs.unavailable) throw new Error('Candidate check inputs include unavailable source bytes.');
   return digest({ version: 3, descriptor: { id: step.id, executor: step.executor, dependsOn: step.dependsOn,
     contexts: step.contexts, timeoutMs: step.timeoutMs, resources: step.resources, resourceDemand: step.resourceDemand,
-    concurrencyClass: step.concurrencyClass, executionProfile: step.executionProfile, scope: step.reuse?.scope ?? 'repository' }, inputs });
+    concurrencyClass: step.concurrencyClass, executionProfile: legacyExecution ? step.executionProfile : verificationStepExecutionInputs(step), scope: step.reuse?.scope ?? 'repository' }, inputs });
 }
 
 /** Candidate transport uses the same normalized bytes, scopes and executable
@@ -173,6 +174,10 @@ export function createCandidateCheckInputReader(repo: string) {
     return checkIdentity(sources.get(commit)!, step);
   };
   return Object.assign(current, { matches(commit: string, step: any, identity: string): boolean {
-    return current(commit, step) === identity || legacyCandidateCheckInputIdentity(repo, commit, step, reader) === identity;
+    // Prior v3 records included all CI queue limits. Authenticate their original
+    // digest before today's per-check execution policy compares applicability.
+    if (current(commit, step) === identity) return true;
+    if (checkIdentity(sources.get(commit)!, step, true) === identity) return true;
+    return legacyCandidateCheckInputIdentity(repo, commit, step, reader) === identity;
   } });
 }

@@ -8,6 +8,7 @@ import { scopedVerificationInputs } from '../verification/verification-inputs.ts
 import { candidateCheckInputIdentity } from '../../tools/release/candidate-source-binding.ts';
 import { executableModuleInputs } from '../verification/verification-input-discovery.ts';
 import { createVerificationSourceInputReader } from '../verification/verification-source-inputs.ts';
+import { verificationSteps } from '../verification/registry.ts';
 
 test('working-tree and immutable Git readers give the same inputs across scopes and preserve modes and links', t => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-input-reader-'));
@@ -30,6 +31,51 @@ test('working-tree and immutable Git readers give the same inputs across scopes 
   for (const scope of ['backend', 'web', 'plugin', 'product', 'repository', 'runtime'] as const) {
     const step = { id: 'check', executor: { type: 'node-test', files: ['test/check.test.ts'] }, reuse: { scope } };
     assert.deepEqual(working.inputs(step, true), committed.inputs(step, true), scope);
+  }
+});
+
+test('registered unit and contract proofs bind the Web, knowledge and root files their checks actually read', t => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-declared-inputs-'));
+  t.after(() => fs.rmSync(repo, { recursive: true, force: true }));
+  const prefix = 'projects/product/services/buildr/';
+  const productRoot = path.join(repo, prefix);
+  const write = (file: string, text: string) => {
+    const target = path.join(repo, file); fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, text);
+  };
+  write(prefix + 'package.json', '{}');
+  write(prefix + 'test/unit/task-document-links.test.ts', "import '../../../buildr-web/src/lib/taskDocumentLinks.ts';");
+  write(prefix + 'test/verification/cli/architecture.ts', "readFileSync(projectRoot + '/knowledge/docs/architecture/technical.md');");
+  write(prefix + 'test/verification/runtime/adapter-contract.ts', "readFileSync(repositoryRoot + '/README.md'); readFileSync(repositoryRoot + '/README.en.md');");
+  write(prefix + 'test/verification/integrity/managed-mutations.ts', 'export {};');
+  const cases = [
+    ['unit', 'projects/product/services/buildr-web/src/lib/taskDocumentLinks.ts'],
+    ['cli-architecture', 'projects/product/knowledge/docs/architecture/technical.md'],
+    ['runtime-adapter-contract', 'README.md'],
+    ['runtime-adapter-contract', 'README.en.md'],
+  ];
+  for (const [, file] of cases) write(file!, '// original input');
+  const git = (...args: string[]) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const commit = () => {
+    git('add', '.');
+    git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', '-c', 'commit.gpgSign=false', 'commit', '-m', 'fixture');
+    return git('rev-parse', 'HEAD');
+  };
+  git('init', '--initial-branch=main');
+  let source = commit();
+  const observe = (id: string) => {
+    const step = verificationSteps.find((item: any) => item.id === id);
+    const working = createVerificationSourceInputReader(repo, productRoot).inputs(step, true);
+    const immutable = createVerificationSourceInputReader(repo, productRoot, source).inputs(step, true);
+    assert.deepEqual(working, immutable, `${id}: local and immutable source must agree`);
+    return { inputs: working, candidate: candidateCheckInputIdentity(repo, source, step) };
+  };
+  for (const [id, file] of cases) {
+    const before = observe(id!), backendBefore = observe('managed-mutations');
+    write(file!, '// changed real input'); source = commit();
+    const after = observe(id!);
+    assert.notEqual(after.inputs.contentIdentity, before.inputs.contentIdentity, `${id}: ${file}`);
+    assert.notEqual(after.candidate, before.candidate, `${id}: formal repair must also reject the previous input`);
+    assert.deepEqual(observe('managed-mutations'), backendBefore, 'an independent backend-only proof stays applicable');
   }
 });
 
@@ -91,6 +137,12 @@ test('local and Git proofs isolate selected system contents while binding discov
     const before = files.get(file)!; files.set(file, before + '\n// changed');
     const changed = observe(); assert.notEqual(changed.local, original.local, file); assert.notEqual(changed.git, original.git, file);
     files.set(file, before);
+  }
+  for (const file of ['test/verification/executor.ts', 'test/verification/plan-runner.ts', 'test/verification/dag-scheduler.ts', 'test/verification/resource-coordinator.ts']) {
+    files.set(file, '// shared execution behavior changed');
+    const changed = observe();
+    assert.notEqual(changed.local, original.local, file); assert.notEqual(changed.git, original.git, file);
+    files.delete(file);
   }
   files.set('test/system/new.test.ts', '// new member');
   assert.notEqual(observe().local, original.local); assert.notEqual(observe().git, original.git);

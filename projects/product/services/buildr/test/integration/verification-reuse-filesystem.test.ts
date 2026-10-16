@@ -362,6 +362,25 @@ test('executePlan automatically skips a second executor call and forced failure 
   assert.equal(calls, 3);
 });
 
+test('custom inner worker grants execute without reusing or exporting a registered-profile proof', async t => {
+  const f = fixture(t); let calls = 0;
+  const plan = { status: 'ready', paths: [], steps: [{ ...f.step, dependsOn: [], contexts: [], resourceDemand: { workers: 1, processes: 1 } }] };
+  const options = { ...f.options, runId: 'worker-profile-fixture', concurrency: 2,
+    resourceCoordinator: { root: path.join(f.root, 'resources') },
+    executorFactory: () => async () => { calls++; return { ...passed }; } };
+  const registered = await executePlan(plan, options);
+  assert.equal(registered.sourceBundle.records.length, 1);
+  const custom = { ...options, executionProfile: { id: 'local', limits: { innerConcurrency: { [f.step.id]: 2 } } } };
+  const execution = await executePlan(plan, custom);
+  assert.equal(execution.passed, true);
+  assert.equal(calls, 2, 'a different actual worker grant cannot consume the previous registered proof');
+  assert.equal(execution.sourceBundle.records.length, 0, 'unregistered execution conditions cannot become portable evidence');
+  assert.deepEqual(execution.reusePlan.steps[0].reasons, ['custom-worker-budget-requires-fresh-proof']);
+  const current = await executePlan(plan, options);
+  assert.equal(current.results[0].disposition, 'reused', 'custom execution does not revoke the independent registered result');
+  assert.equal(calls, 2);
+});
+
 test('a corrupt invalidation marker rejects old success and imports until a fresh execution replaces it', t => {
   const f = fixture(t), snapshot = f.observe(), store = createVerificationReuseStore({ ...f.options, snapshot });
   store.stage(f.step, passed, origin(snapshot.sourceCommit));

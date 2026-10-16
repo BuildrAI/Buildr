@@ -14,6 +14,7 @@ import { candidateProofDescriptors, assertCandidateRepairPlan } from '../verific
 import { prepareCandidateRepair, materializeCandidateRepair } from '../verification/candidate-repair-cli.ts';
 import { createReleaseArtifactFixture } from '../helpers/release-artifact-fixture.ts';
 import { createCandidateCiEvidence, candidateCiRegistryIdentity, aggregateCandidateCiEvidence, readCandidateCiEvidenceFiles } from '../verification/candidate-ci-evidence.ts';
+import { createVerificationSourceInputReader } from '../verification/verification-source-inputs.ts';
 
 test('real source binding preserves producer identity for test repair and rejects product, dependency and packaging changes', t => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'candidate-source-binding-'));
@@ -144,6 +145,19 @@ test('formal repair retains the producer and unaffected check while a changed as
   const input = { repo, repository: 'BuildrAI/Buildr', originalRun: run, artifact, verificationSource, evidence, registryIdentity: 'registry' };
   const plan = createCandidateRepairPlan(input, { descriptors });
   assert.deepEqual(plan.checks.map((check: any) => check.steps.map((step: any) => step.disposition)), [['reuse'], ['reuse', 'execute']]);
+  const definition = candidateProofDefinition(first);
+  assert.equal(candidateCheckInputIdentity(repo, source, { ...definition, executionProfile: { ...definition.executionProfile, global: 99, capacities: {} } }), evidence[1]!.checkInputs.first,
+    'queue-only limits cannot revoke the check proof');
+  assert.notEqual(candidateCheckInputIdentity(repo, source, { ...definition, resourceDemand: { workers: 4, processes: 4 } }), evidence[1]!.checkInputs.first,
+    'an actual inner worker grant remains a check input');
+  const originalInputs = createVerificationSourceInputReader(repo, path.join(repo, prefix), source).inputs({ ...first, reuse: { scope: 'repository' } }, true);
+  const previousV3 = { version: 3, descriptor: { id: first.id, executor: first.executor, dependsOn: first.dependsOn,
+    executionProfile: definition.executionProfile, scope: 'repository' }, inputs: originalInputs };
+  const v3Evidence = structuredClone(evidence);
+  v3Evidence[1]!.checkInputs.first = 'sha256-' + crypto.createHash('sha256').update(JSON.stringify(previousV3)).digest('hex');
+  const adoptedV3 = createCandidateRepairPlan({ ...input, evidence: v3Evidence }, { descriptors });
+  assert.equal(adoptedV3.checks[1].steps[0].disposition, 'reuse', 'the prior full-profile v3 digest is authenticated before current applicability');
+  assert.deepEqual(adoptedV3.checks[1].original, v3Evidence[1]);
   // Historical v2 bound the result validator globally, although first.test.ts
   // never executed it. Authenticate those bytes before applying the shared policy.
   const legacyEvidence = structuredClone(evidence);

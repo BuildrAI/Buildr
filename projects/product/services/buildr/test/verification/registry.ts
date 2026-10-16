@@ -259,7 +259,7 @@ export const VERIFICATION_DAILY_CORE_EXCLUSIONS: any = Object.freeze({
 });
 
 // Reuse scopes describe complete check inputs, independently of changed-path ownership.
-const BACKEND_REUSE_CHECKS = new Set(['unit', 'component', 'cli-architecture', 'runtime-adapter-contract', 'managed-mutations', 'cli-compatibility']);
+const BACKEND_REUSE_CHECKS = new Set(['component', 'managed-mutations', 'cli-compatibility']);
 // These bounded fixture suites read runtime/source assets, not this Product's governance records.
 const RUNTIME_REUSE_CHECKS = new Set(['integration-runtime', 'integration-data-store', 'integration-task-read-models', 'integration-task-coordination',
   'integration-project-daily-progress', 'system-buildr-web-http', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation',
@@ -278,7 +278,10 @@ function sourceReusePolicy(definition: any): any {
   if (NON_REUSABLE_CHECKS.has(definition.id) || definition.executor?.type === 'candidate-artifact' || definition.executor?.consumesArtifact
     || definition.id.startsWith('host-')) return false;
   if (BACKEND_REUSE_CHECKS.has(definition.id)) return Object.freeze({ scope: 'backend' });
-  if (definition.id === 'frontend-logic') return Object.freeze({ scope: 'web' });
+  // The backend unit entry also executes tests importing Web helpers. Architecture
+  // and adapter contracts read Product knowledge and repository-root materials,
+  // so they retain the complete repository scope below.
+  if (definition.id === 'frontend-logic' || definition.id === 'unit') return Object.freeze({ scope: 'web' });
   // Other registered checks conservatively include all Product material;
   // checks reading source Git identities also bind the observed Git history.
   const usesGit = VERIFICATION_STEP_TESTING[definition.id]?.environment?.footprints.includes('git');
@@ -381,6 +384,14 @@ export const VERIFICATION_EXECUTION_PROFILES: any = Object.freeze({
 });
 
 export const VERIFICATION_CONCURRENCY: any = VERIFICATION_EXECUTION_PROFILES.local;
+
+/** Only the worker grant reaches these child executors. Queue capacities and
+ * unrelated steps' budgets do not change this check's execution inputs. */
+export function verificationStepExecutionInputs(definition: any, profiles: any = VERIFICATION_EXECUTION_PROFILES): any {
+  if (!['node', 'node-test', 'node-context-test'].includes(definition.executor?.type)) return null;
+  return { innerWorkers: Object.fromEntries(Object.entries(profiles).map(([id, profile]: [string, any]) =>
+    [id, profile.innerConcurrency?.[definition.id] ?? definition.resourceDemand?.workers ?? 1])) };
+}
 
 export const VERIFICATION_ENVIRONMENT_FOOTPRINTS: any = Object.freeze(['filesystem', 'cli', 'git', 'loopback-network', 'network', 'workspace-lifecycle']);
 export const VERIFICATION_DEVELOPMENT_RUNNERS: any = Object.freeze(['windows']);

@@ -64,7 +64,7 @@ test('reprepare releases only a terminal failed Publication pointer for a new un
   assert.throws(() => reconcilePublicationAfterPreparedContext(publication, context, { id: 41, status: 'completed', conclusion: 'success' }), /succeeded/u);
 });
 
-for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs tools on original bytes' : 'preserves the original candidate'} through adoption and readiness after unrelated dev and Task changes`, async t => {
+for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs tools on original bytes' : 'recovers an unknown aggregate retry on the original candidate'} through adoption and readiness after unrelated dev and Task changes`, async t => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-operation-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const workspace = path.join(root, 'workspace');
@@ -106,6 +106,7 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
   let dispatched = 0;
   let merges = 0;
   let candidateComplete = false;
+  let candidateConclusion = 'success', candidateAttempt = 1, retryRequests = 0;
   let verificationSource: string | null = null, repairRequested = false;
   let pr: any = null;
   const providerFile = path.join(workspace, '.git/buildr/task-worktrees', `${taskId}.json`);
@@ -133,10 +134,16 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
     const body = (value: unknown) => ({ status: 0, stdout: JSON.stringify(value) });
     if (args[0] === 'auth') return { status: 0, stdout: 'local-test-service' };
     if (args[0] === 'workflow') { dispatched++; if (args.includes('verification_source=' + verificationSource)) repairRequested = true; return { status: 1, stderr: 'injected lost dispatch response' }; }
+    if (args[0] === 'run' && args[1] === 'rerun') { retryRequests++; return { status: 1, stderr: 'injected lost rerun response' }; }
+    if (args.includes('--log-failed')) return { status: 0, stdout: 'ECONNRESET while downloading aggregate evidence' };
+    if (args[0] === 'run' && args[1] === 'view') return body({ jobs: [
+      { name: 'Candidate plan', conclusion: 'success' }, { name: 'Candidate bootstrap', conclusion: 'success' },
+      { name: 'Candidate source (core-task-lifecycle-macos)', conclusion: 'success' }, { name: 'Candidate gate', conclusion: 'failure' },
+    ] });
     if (args[0] === 'run' && args[1] === 'list') return body(dispatched ? [
       { databaseId: 700, headSha: sourceCommit, status: candidateComplete ? 'completed' : 'queued', conclusion: candidateComplete ? 'success' : null },
       ...(repairRequested ? [{ databaseId: 701, headSha: sourceCommit, displayTitle: 'Candidate repair 700 ' + verificationSource, status: 'completed', conclusion: 'success' }] : [])] : []);
-    if (args[0] === 'api') return body({ id: args[1]?.endsWith('/701') ? 701 : 700, head_sha: sourceCommit, run_attempt: 1, path: '.github/workflows/verify.yml', repository: { full_name: 'BuildrAI/Buildr' }, event: 'workflow_dispatch', status: candidateComplete ? 'completed' : 'queued', conclusion: candidateComplete ? 'success' : null });
+    if (args[0] === 'api') return body({ id: args[1]?.endsWith('/701') ? 701 : 700, head_sha: sourceCommit, run_attempt: candidateAttempt, path: '.github/workflows/verify.yml', repository: { full_name: 'BuildrAI/Buildr' }, event: 'workflow_dispatch', status: candidateComplete ? 'completed' : 'queued', conclusion: candidateComplete ? candidateConclusion : null });
     if (args[0] === 'pr' && args[1] === 'list') return body(pr ? [pr] : []);
     if (args[0] === 'pr' && args[1] === 'create') {
       pr = { number: 1, state: 'OPEN', headRefOid: sourceCommit, headRefName: args[args.indexOf('--head') + 1], baseRefName: 'main', url: 'https://github.com/BuildrAI/Buildr/pull/1' };
@@ -189,6 +196,25 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
   assert.equal(first.status, 'candidate-running', JSON.stringify(first));
   assert.equal(dispatched, 1, 'lost responses must not dispatch twice');
   candidateComplete = true;
+  if (!repairTools) {
+    candidateConclusion = 'failure';
+    const lost = await runReleaseOperation(options, dependencies);
+    assert.equal(lost.status, 'candidate-retry-unconfirmed', JSON.stringify(lost));
+    assert.equal(lost.retry.recoveryScope, 'aggregate-only');
+    assert.equal(retryRequests, 1);
+    const pending = JSON.parse(fs.readFileSync(path.join(workspace, '.git/buildr/release-operations', `${version}.json`), 'utf8'));
+    assert.deepEqual(pending.candidate.retry, { runId: 700, previousAttempt: 1, recoveryScope: 'aggregate-only' });
+    const unconfirmed = await runReleaseOperation(options, dependencies);
+    assert.equal(unconfirmed.status, 'candidate-retry-unconfirmed', JSON.stringify(unconfirmed));
+    assert.equal(unconfirmed.recovery.action, 'read-original-request');
+    assert.equal(retryRequests, 1, 'a lost response with the old attempt visible must never send another retry');
+    candidateAttempt = 2;
+    const repeatedFailure = await runReleaseOperation(options, dependencies);
+    assert.equal(repeatedFailure.status, 'diagnosis-required', JSON.stringify(repeatedFailure));
+    assert.equal(retryRequests, 1, 'a second failed attempt requires diagnosis');
+    candidateConclusion = 'success';
+    aggregate.workflow.aggregateAttempt = 2;
+  }
   aggregate.sourceCommit = 'f'.repeat(40);
   const invalid = await runReleaseOperation(options, dependencies);
   assert.equal(invalid.status, 'blocked');
@@ -255,6 +281,7 @@ test('publish binds cleanup to its context and resume never expands historical a
     inspectTask: () => ({ record: { status: 'completed' }, recordDigest: digest('8') }),
     resolveRetainedController: () => ({ workspaceRoot: workspace }),
     invokeRetainedController: (_controller: any, args: string[]) => ({ status: args[0] === 'worktree' ? 'cleaned' : 'ready', effects: [] }),
+    selfBootstrapCloseout: async () => ({ status: 'not-applicable', effects: [] }),
   };
   const dependencies = { orchestrationDependencies, execute: (command: string, args: string[]) => {
     if (command === 'git' && args[0] === 'fetch') return { status: 0, stdout: '' };

@@ -77,6 +77,7 @@ function fixture(packages = 'dsh-plugin', buildrVersion = '0.2.0'): any {
     reconcilePublishedReleaseWithDev: () => ({ status: 'passed' }), closeoutReleaseGitResources: () => { cleanups++; return { status: 'passed' }; },
     runtime: { inspectTask: () => ({ record: { status: 'completed' } }) }, resolveRetainedController: () => ({}),
     invokeRetainedController: (_controller: any, args: string[]) => ({ status: args[0] === 'worktree' ? 'cleaned' : 'ready' }),
+    selfBootstrapCloseout: async () => ({ status: 'not-applicable', reason: 'Fixture has no self-bootstrap inputs.' }),
   };
   return { targets, selection, context, owned, state, published, candidates, scope, dependencies, run, journal,
     counts: () => ({ dispatches, cleanups, saved }), setRecoveryJournalId: (value: number) => { recoveryJournalId = value; } };
@@ -593,6 +594,27 @@ test('release closeout consumes the unique runner not-applicable result without 
   const result = await continuePackageRelease({ action: 'resume' }, f.scope, f.dependencies);
   assert.equal(result.status, 'passed'); assert.equal(result.outcomes.activation, 'not-applicable'); assert.equal(calls, 1);
   assert.equal(f.state.closeout.outcomes.activation, 'not-applicable');
+});
+
+test('default release closeout waits for its unique runner and resume preserves completed effects', async () => {
+  const f = fixture(); delete f.dependencies.selfBootstrapCloseout;
+  let worktreeCleanups = 0;
+  f.dependencies.invokeRetainedController = (_controller: any, args: string[]) => {
+    assert.notEqual(args[0], 'doctor'); worktreeCleanups++; return { status: 'cleaned' };
+  };
+  await continuePackageRelease({ action: 'publish', authorized: true }, f.scope, f.dependencies);
+  const pending = await continuePackageRelease({ action: 'resume' }, f.scope, f.dependencies);
+  assert.equal(pending.status, 'published-self-bootstrap-pending');
+  assert.deepEqual(pending.outcomes, { publication: 'passed', taskRegistration: 'completed', cleanup: 'cleaned', activation: 'pending' });
+  const again = await continuePackageRelease({ action: 'resume' }, f.scope, f.dependencies);
+  assert.equal(again.status, 'published-self-bootstrap-pending'); assert.equal(worktreeCleanups, 1);
+  assert.equal(f.counts().cleanups, 1); assert.equal(f.counts().dispatches, 1);
+  let ownerCalls = 0;
+  f.dependencies.selfBootstrapCloseout = async () => { ownerCalls++; return { status: 'passed', effects: [] }; };
+  const completed = await continuePackageRelease({ action: 'resume' }, f.scope, f.dependencies);
+  assert.equal(completed.status, 'passed'); assert.equal(completed.outcomes.activation, 'ready');
+  await continuePackageRelease({ action: 'resume' }, f.scope, f.dependencies);
+  assert.equal(ownerCalls, 1); assert.equal(worktreeCleanups, 1); assert.equal(f.counts().cleanups, 1);
 });
 
 test('a repaired plugin executor advances once more only with official skipped-upload proof while retaining the C1 package anchor', async () => {

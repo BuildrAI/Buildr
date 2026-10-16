@@ -122,6 +122,21 @@ test('timeline consumes the delivered failed-shard retry and aggregate workflow 
   assert.equal(retryAttempt.attempt.aggregateIdentity, aggregateIdentity);
 });
 
+test('timeline accepts aggregate-only recovery while retaining the original check attempts', () => {
+  const retry = { schemaVersion: 'buildr.candidate-failed-shard-retry-result/v1', status: 'dispatched', runId: 42,
+    runAttempt: 1, recoveryScope: 'aggregate-only', failedShards: [] };
+  const input = { retryResults: [retry], aggregate: { status: 'passed', workflow: {
+    runId: '42', aggregateAttempt: 2, evidenceAttempts: [{ id: 'preflight-macos', runAttempt: 1 }],
+  } } };
+  const attempts = projectCandidateRetryAttempts(input);
+  const recovered = attempts.find((item: any) => item.runAttempt === 2);
+  assert.deepEqual(recovered.rerunScope, ['Candidate gate']);
+  assert.equal(recovered.evidence[0].disposition, 'reused');
+  assert.equal(recovered.evidence[0].originRunAttempt, 1);
+  assert.throws(() => projectCandidateRetryAttempts({ ...input, retryResults: [{ ...retry, recoveryScope: 'failed-jobs' }] }), /recovery scope/u);
+  assert.throws(() => projectCandidateRetryAttempts({ ...input, retryResults: [{ ...retry, failedShards: ['runtime-windows'] }] }), /recovery scope/u);
+});
+
 test('compact timeline keeps identity and pointer without full owner evidence', () => {
   const timeline: any = createReleasePhaseTimeline({ version: '1.0.0', generation: 0, terminalStatus: 'closed', phases: [
     { id: 'doctor', phase: 'doctor', status: 'passed', owner: { id: 'doctor', identity: digest('5') }, startedAt: null, finishedAt: '2026-08-25T00:00:00.000Z', waitType: 'machine-execution' },

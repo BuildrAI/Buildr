@@ -7,7 +7,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { evaluateReleasePlan, normalizeReleaseTargets } from './release-targets.ts';
 import { sameArtifactIdentity } from './package-compatibility.ts';
 import { observePublishedPackageArtifact } from './package-artifact-observation.ts';
-import { createPackageReleaseContext, createPackagePublicationEvidence, validatePackageReleaseContext, validatePackageOwnerPublication, packageExecutionCommit, pluginExecutorRecoverySchema, assertUnattemptedPluginPublication } from './release-package-evidence.ts';
+import { createPackageReleaseContext, createPackagePublicationEvidence, validatePackageReleaseContext, validatePackagePublicationEvidence, validatePackageOwnerPublication, packageExecutionCommit, pluginExecutorRecoverySchema, assertUnattemptedPluginPublication } from './release-package-evidence.ts';
 import { runPluginHostedOperation, readHostedPluginCandidate, reconcilePluginPreparationPointer, readHostedPluginNoWriteProof, validatePluginNoWriteProof, validatePluginHostedRun } from './plugin-hosted-release.ts';
 import { runHostedReleaseTransaction } from './release-transaction-runner.ts';
 import { inspectHostedReleaseTransaction, validateReleaseTransactionEvidence } from './release-transaction-evidence.ts';
@@ -375,6 +375,12 @@ export async function continuePackageRelease(options: any, scope: any, dependenc
   const { state, save, effects, readRun, gh, git } = scope;
   if (!state.context) return { status: 'preparation-required', nextActions: ['先prepare准确选择与各包候选。'] };
   let context = validatePackageReleaseContext(state.context);
+  if (state.publicationEvidence && state.closeout?.contextIdentity === context.identity
+      && state.closeout?.outcomes?.cleanup === 'cleaned' && state.closeout?.outcomes?.taskRegistration === 'completed') {
+    const evidence = validatePackagePublicationEvidence(state.publicationEvidence);
+    if (evidence.context.identity !== context.identity || evidence.identity !== state.closeout.evidenceIdentity) throw new Error('Closeout progress differs from the confirmed package Publication.');
+    return closeoutPackageRelease({ ...options, context, evidence }, scope, dependencies);
+  }
   let recoveredCandidates: any;
   if (options.recoverPublication === true) {
     const pluginOnly = context.packages['dsh-plugin'] && (!context.packages.buildr || state.packagePublications?.buildr?.status === 'passed');
@@ -498,42 +504,47 @@ export async function continuePackageRelease(options: any, scope: any, dependenc
 
 async function closeoutPackageRelease(options: any, scope: any, dependencies: any): Promise<any> {
   const { state, effects, save } = scope;
-  const reconciliation = (dependencies.reconcilePublishedReleaseWithDev ?? reconcilePublishedReleaseWithDev)({ repo: scope.workspace, publicationEvidence: options.evidence, inspectDriftedReleaseForCleanup: true }, { execute: scope.execute });
-  effects.push(...(reconciliation.effects ?? []));
-  if (reconciliation.status !== 'passed') return { status: 'published-dev-reconciliation-blocked', outcomes: { publication: 'passed' }, ownerResult: reconciliation, nextActions: reconciliation.nextActions };
-  const cleanup = (dependencies.closeoutReleaseGitResources ?? closeoutReleaseGitResources)({ repo: scope.workspace, version: state.targets.versions.buildr ?? null,
-    selectionId: state.targets.selectionId, targets: state.targets, generation: options.context.selection.generation, expectedCommit: options.context.selection.releaseHead,
-    publicationEvidence: options.evidence, authorizeCarrierCleanup: true, authorizeLocalSelectionCleanup: true,
-    authorizeRemoteDelete: state.publicationAuthorization?.contextIdentity === options.context.identity, cleanupPolicy: state.publicationAuthorization?.cleanupPolicy,
-    ghCommand: options.ghCommand }, { execute: scope.execute });
-  effects.push(...(cleanup.effects ?? []));
-  if (cleanup.status !== 'passed') return { status: 'published-cleanup-blocked', outcomes: { publication: 'passed' }, cleanup, nextActions: cleanup.nextActions };
-  const runtime = dependencies.runtime ?? createReleaseToolRuntime();
-  const taskId = `release-${state.targets.selectionId}`;
-  const controller = dependencies.resolveRetainedController(scope.workspace);
-  const invoke = dependencies.invokeRetainedController;
-  let task = runtime.inspectTask(scope.workspace, taskId);
-  if (task.record.status === 'active') {
-    const completed = invoke(controller, ['task', 'complete', taskId, '--summary', '所选包原字节发布、开发来源与共享引用收尾已完成。', '--expected-record', task.recordDigest, '--target', scope.workspace, '--json']);
-    effects.push(...(completed.effects ?? [])); task = runtime.inspectTask(scope.workspace, taskId);
+  const retained = state.closeout?.contextIdentity === options.context.identity && state.closeout?.evidenceIdentity === options.evidence.identity
+    && state.closeout?.outcomes?.cleanup === 'cleaned' && state.closeout?.outcomes?.taskRegistration === 'completed';
+  let cleanup = retained ? state.closeout.cleanup : null;
+  if (!retained) {
+    const reconciliation = (dependencies.reconcilePublishedReleaseWithDev ?? reconcilePublishedReleaseWithDev)({ repo: scope.workspace, publicationEvidence: options.evidence, inspectDriftedReleaseForCleanup: true }, { execute: scope.execute });
+    effects.push(...(reconciliation.effects ?? []));
+    if (reconciliation.status !== 'passed') return { status: 'published-dev-reconciliation-blocked', outcomes: { publication: 'passed' }, ownerResult: reconciliation, nextActions: reconciliation.nextActions };
+    cleanup = (dependencies.closeoutReleaseGitResources ?? closeoutReleaseGitResources)({ repo: scope.workspace, version: state.targets.versions.buildr ?? null,
+      selectionId: state.targets.selectionId, targets: state.targets, generation: options.context.selection.generation, expectedCommit: options.context.selection.releaseHead,
+      publicationEvidence: options.evidence, authorizeCarrierCleanup: true, authorizeLocalSelectionCleanup: true,
+      authorizeRemoteDelete: state.publicationAuthorization?.contextIdentity === options.context.identity, cleanupPolicy: state.publicationAuthorization?.cleanupPolicy,
+      ghCommand: options.ghCommand }, { execute: scope.execute });
+    effects.push(...(cleanup.effects ?? []));
+    if (cleanup.status !== 'passed') return { status: 'published-cleanup-blocked', outcomes: { publication: 'passed' }, cleanup, nextActions: cleanup.nextActions };
+    const runtime = dependencies.runtime ?? createReleaseToolRuntime();
+    const taskId = `release-${state.targets.selectionId}`;
+    const controller = dependencies.resolveRetainedController(scope.workspace);
+    const invoke = dependencies.invokeRetainedController;
+    let task = runtime.inspectTask(scope.workspace, taskId);
+    if (task.record.status === 'active') {
+      const completed = invoke(controller, ['task', 'complete', taskId, '--summary', '所选包原字节发布、开发来源与共享引用收尾已完成。', '--expected-record', task.recordDigest, '--target', scope.workspace, '--json']);
+      effects.push(...(completed.effects ?? [])); task = runtime.inspectTask(scope.workspace, taskId);
+    }
+    if (task.record.status !== 'completed') return { status: 'published-registration-blocked', outcomes: { publication: 'passed', cleanup: 'passed' }, nextActions: ['恢复准确发布任务登记，保留公开事实。'] };
+    const worktree = invoke(controller, ['worktree', 'cleanup', taskId, '--expected-source', `workspace=${options.context.selection.releaseHead}`,
+      '--delivered-ref', `workspace=${options.context.convergence.mainCommit}`, '--target', scope.workspace, '--json']);
+    effects.push(...(worktree.effects ?? []));
+    if (worktree.status !== 'cleaned') return { status: 'published-worktree-cleanup-blocked', outcomes: { publication: 'passed', taskRegistration: 'completed' }, cleanup, nextActions: worktree.nextActions };
+    state.closeout = { contextIdentity: options.context.identity, evidenceIdentity: options.evidence.identity, cleanup,
+      status: 'pending', outcomes: { publication: 'passed', taskRegistration: 'completed', cleanup: 'cleaned', activation: 'pending' } }; save();
   }
-  if (task.record.status !== 'completed') return { status: 'published-registration-blocked', outcomes: { publication: 'passed', cleanup: 'passed' }, nextActions: ['恢复准确发布任务登记，保留公开事实。'] };
-  const worktree = invoke(controller, ['worktree', 'cleanup', taskId, '--expected-source', `workspace=${options.context.selection.releaseHead}`,
-    '--delivered-ref', `workspace=${options.context.convergence.mainCommit}`, '--target', scope.workspace, '--json']);
-  effects.push(...(worktree.effects ?? []));
-  if (worktree.status !== 'cleaned') return { status: 'published-worktree-cleanup-blocked', outcomes: { publication: 'passed', taskRegistration: 'completed' }, cleanup, nextActions: worktree.nextActions };
+  if (state.closeout.status === 'passed') return { status: 'passed', outcomes: state.closeout.outcomes, cleanup, selfBootstrapCloseout: state.closeout.selfBootstrapCloseout, nextActions: [] };
   if (dependencies.selfBootstrapCloseout) {
     const result = await dependencies.selfBootstrapCloseout({ workspace: scope.workspace, context: options.context, evidence: options.evidence });
     effects.push(...(result.effects ?? []));
     const passed = result.status === 'passed' || result.status === 'not-applicable';
-    state.closeout = { status: passed ? 'passed' : 'blocked', outcomes: { publication: 'passed', taskRegistration: 'completed', cleanup: 'cleaned',
+    state.closeout = { ...state.closeout, selfBootstrapCloseout: result, status: passed ? 'passed' : 'blocked', outcomes: { publication: 'passed', taskRegistration: 'completed', cleanup: 'cleaned',
       activation: result.status === 'not-applicable' ? 'not-applicable' : passed ? 'ready' : 'blocked' } }; save();
     return { status: passed ? 'passed' : 'published-self-bootstrap-blocked', outcomes: state.closeout.outcomes, cleanup,
       selfBootstrapCloseout: result, nextActions: passed ? [] : result.nextActions ?? ['接续唯一自举执行器的实际收尾结果。'] };
   }
-  const doctor = invoke(controller, ['doctor', '--target', scope.workspace, '--json', '--detail', 'compact', ...(options.agent ? ['--agent', options.agent] : [])]);
-  effects.push(...(doctor.effects ?? []));
-  const ready = doctor.status === 'ready' || (doctor.ok === true && doctor.health?.ready === true);
-  state.closeout = { status: ready ? 'passed' : 'blocked', outcomes: { publication: 'passed', taskRegistration: 'completed', cleanup: 'cleaned', activation: ready ? 'ready' : 'blocked' } }; save();
-  return { status: ready ? 'passed' : 'published-doctor-blocked', outcomes: state.closeout.outcomes, cleanup, nextActions: ready ? [] : doctor.nextActions ?? ['恢复Doctor对应问题后继续原收尾。'] };
+  return { status: 'published-self-bootstrap-pending', outcomes: state.closeout.outcomes, cleanup,
+    nextActions: ['接续buildr-self-bootstrap-sync唯一执行器，记录实际激活或不适用结果；保留已完成公开、任务登记及清理事实。'] };
 }

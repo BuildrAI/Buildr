@@ -144,10 +144,11 @@ export function projectCandidateRetryAttempts(input: any = {}): any  {
     const runAttempt: any = Number(result.runAttempt);
     if (!Number.isSafeInteger(runAttempt) || runAttempt < 1 || runAttempt >= aggregateAttempt) throw new Error(`${label}.runAttempt does not precede the aggregate attempt.`);
     const failedShards: any = [...(result.failedShards ?? [])].map((item: any, shardIndex: any) => requiredText(item, `${label}.failedShards[${shardIndex}]`)).sort();
-    if (failedShards.length === 0) throw new Error(`${label}.failedShards must not be empty.`);
+    const aggregateOnly = result.recoveryScope === 'aggregate-only';
+    if (aggregateOnly ? failedShards.length !== 0 : failedShards.length === 0) throw new Error(`${label}.failedShards does not match its recovery scope.`);
     if (attempts.has(runAttempt)) throw new Error(`${label}.runAttempt is duplicated.`);
     attempts.set(runAttempt, { runId, runAttempt, status: 'failed', rerunScope: rerunScopes.get(runAttempt) ?? [], evidence: [] });
-    rerunScopes.set(runAttempt + 1, failedShards);
+    rerunScopes.set(runAttempt + 1, aggregateOnly ? ['Candidate gate'] : failedShards);
   }
   const evidence: any = [...(workflow?.evidenceAttempts ?? [])].map((item: any, index: any) => {
     const originRunAttempt: any = Number(item?.runAttempt);

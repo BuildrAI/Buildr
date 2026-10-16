@@ -20,6 +20,7 @@ import {
   createCandidateCiEvidence,
   readCandidateCiArtifact,
   readCandidateCiEvidenceFiles,
+  readCandidateCiPreparationFiles,
   resolveCandidateExecutionContext,
   resolveCandidateSourceCommit,
   writeCandidateCiEvidence,
@@ -105,6 +106,8 @@ async function runShard(shardId: any): Promise<any>  {
   let status: any = 'failed';
   let failure: any = null;
   let cleanupClean = false;
+  let contextLifecycle: any = null;
+  let fullPlanCoordination: any = null;
   const completedResults: any[] = [];
   const writeCheckpoint: any = (checkpointStatus: any = 'running') => {
     let checkpointArtifact: any = externalArtifact;
@@ -150,6 +153,8 @@ async function runShard(shardId: any): Promise<any>  {
       },
     });
     results = execution.results;
+    contextLifecycle = execution.contextLifecycle;
+    fullPlanCoordination = execution.fullPlanCoordination;
     cleanupClean = execution.cleanupClean === true;
     if (repair) {
       const selected = repair.checks.find((item: any) => item.id === shardId);
@@ -187,6 +192,8 @@ async function runShard(shardId: any): Promise<any>  {
     results,
     checkInputs,
     cleanupClean,
+    contextLifecycle,
+    fullPlanCoordination,
   });
   const output: any = writeCandidateCiEvidence(evidencePath(shardId), evidence);
   process.stdout.write(`[candidate-ci] evidence=${output}\n`);
@@ -257,13 +264,16 @@ function runHostNode(tupleId: any): any  {
 }
 
 function aggregate(): any  {
+  const startedAtMs = Date.now();
   const sourceCommit: any = resolveCandidateSourceCommit(productRoot, expectedSource);
   const executionContext: any = resolveCandidateExecutionContext(productRoot, sourceCommit);
   const evidenceRoot: any = path.resolve(process.env.BUILDR_CANDIDATE_CI_EVIDENCE_DIR || outputRoot);
   const repair = repairPlan();
   const result: any = aggregateCandidateCiEvidence(readCandidateCiEvidenceFiles(evidenceRoot), executionContext, workflowIdentity, {
     validateSourceRecord, validateCandidateProof: (result: any, id: string) => repair && validateCandidateRepairProof(result, id, repair),
+    preparations: readCandidateCiPreparationFiles(evidenceRoot),
   });
+  result.timing.aggregation = { startedAt: new Date(startedAtMs).toISOString(), finishedAt: new Date().toISOString(), elapsedMs: Date.now() - startedAtMs };
   const output: any = path.resolve(process.env.BUILDR_CANDIDATE_CI_AGGREGATE_OUTPUT || path.join(outputRoot, 'candidate-ci-aggregate.json'));
   fs.mkdirSync(path.dirname(output), { recursive: true });
   fs.writeFileSync(output, `${JSON.stringify(result, null, 2)}\n`, 'utf8');

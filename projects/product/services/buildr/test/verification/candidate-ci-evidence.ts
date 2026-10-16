@@ -117,6 +117,10 @@ function resultProjection(results: any): any  {
     exitCode: item.exitCode,
     durationMs: item.durationMs,
     queueDurationMs: item.queueDurationMs ?? null,
+    ...(item.queuedAt ? { queuedAt: item.queuedAt } : {}),
+    ...(item.startedAt ? { startedAt: item.startedAt } : {}),
+    ...(item.finishedAt ? { finishedAt: item.finishedAt } : {}),
+    ...(item.resourceCoordination ? { resourceCoordination: item.resourceCoordination } : {}),
     phases: item.phases ?? [],
     failureCode: item.failureCode ?? null,
     processCleanup: item.processCleanup ?? null,
@@ -214,6 +218,8 @@ export function createCandidateCiEvidence(input: any): any  {
     results,
     ...(input.checkInputs ? { checkInputs: input.checkInputs } : {}),
     ...(input.cleanupClean !== undefined ? { cleanupClean: input.cleanupClean } : {}),
+    ...(input.contextLifecycle ? { contextLifecycle: input.contextLifecycle } : {}),
+    ...(input.fullPlanCoordination ? { fullPlanCoordination: input.fullPlanCoordination } : {}),
     ...(input.verificationSource ? { verificationSource: input.verificationSource, sourceBinding: input.sourceBinding } : {}),
   };
 }
@@ -237,6 +243,72 @@ export function readCandidateCiEvidenceFiles(root: any): any  {
   };
   visit(path.resolve(root));
   return results;
+}
+
+// Preparation is diagnostic evidence, never a second eligibility authority.
+// A stale, unreadable or missing receipt must not invalidate successful checks.
+export function readCandidateCiPreparationFiles(root: string): any[] {
+  const results: any[] = [];
+  const visit = (directory: string) => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const target = path.join(directory, entry.name);
+      if (entry.isDirectory()) visit(target);
+      else if (entry.isFile() && /-preparation\.json$/u.test(entry.name)) {
+        try {
+          if (fs.statSync(target).size <= 8 * 1024 * 1024) results.push(JSON.parse(fs.readFileSync(target, 'utf8')));
+        } catch { /* Missing diagnostics remain unknown, not a failed check. */ }
+      }
+    }
+  };
+  try {
+    if (fs.statSync(path.resolve(root), { throwIfNoEntry: false })?.isDirectory()) visit(path.resolve(root));
+  } catch { /* An unavailable diagnostic directory does not change check facts. */ }
+  return results;
+}
+
+const observedDuration = (value: any): number | null => Number.isFinite(value) && value >= 0 ? value : null;
+
+export function candidateCiTiming(evidence: any[], preparations: any[] = []): any {
+  return {
+    // These are parallel, possibly nested observations. Their durations are not additive.
+    durationSemantics: 'per-observation-not-additive',
+    platformQueueDurationMs: null,
+    agentDurationMs: null,
+    unknown: ['platform-queue-not-observed', 'agent-time-not-recorded'],
+    checks: evidence.map(item => {
+      const runId = item.workflow?.runId, runAttempt = workflowAttempt(item.workflow?.runAttempt);
+      const matching = preparations.filter(preparation => preparation?.schemaVersion === 'buildr.candidate-environment-preparation/v1'
+        && preparation.id === item.id && preparation.sourceCommit === (item.verificationSource ?? item.sourceCommit)
+        && runId != null && String(preparation.workflow?.runId) === String(runId) && runAttempt !== null
+        && workflowAttempt(preparation.workflow?.runAttempt) === runAttempt);
+      const preparation = matching.length === 1 ? matching[0] : null;
+      return {
+        id: item.id, workflow: item.workflow ?? null,
+        startedAt: item.startedAt ?? null, finishedAt: item.finishedAt ?? null, elapsedMs: observedDuration(item.durationMs),
+        preparation: preparation ? {
+          status: preparation.status, profile: preparation.profile, node: preparation.node ?? null,
+          startedAt: preparation.startedAt ?? null, finishedAt: preparation.finishedAt ?? null,
+          elapsedMs: observedDuration(preparation.durationMs),
+          operations: (Array.isArray(preparation.operations) ? preparation.operations : []).filter((operation: any) => operation && typeof operation === 'object').map((operation: any) => ({
+            id: operation.id, status: operation.status, disposition: operation.disposition ?? 'unknown',
+            startedAt: operation.startedAt ?? null, finishedAt: operation.finishedAt ?? null,
+            elapsedMs: observedDuration(operation.durationMs),
+            ...(operation.reusedFrom ? { reusedFrom: operation.reusedFrom } : {}),
+          })),
+        } : { status: 'unknown', elapsedMs: null, reason: matching.length > 1 ? 'preparation-record-ambiguous' : 'matching-preparation-not-observed' },
+        contextLifecycle: item.contextLifecycle ?? null,
+        fullPlanCoordination: item.fullPlanCoordination ?? null,
+        results: (item.results ?? []).map((result: any) => ({
+          id: result.id, disposition: result.disposition ?? (result.status === 'blocked' ? 'not-executed' : 'executed'), elapsedMs: observedDuration(result.durationMs),
+          queueDurationMs: result.disposition === 'reused' ? null : observedDuration(result.queueDurationMs),
+          resourceCoordination: result.disposition === 'reused' ? null : result.resourceCoordination ?? null,
+          phases: result.disposition === 'reused' ? [] : result.phases ?? [],
+          // Reused phases and time describe their origin, not work done by this run.
+          ...(result.reusedFrom ? { reusedFrom: result.reusedFrom, originPhases: result.phases ?? [] } : {}),
+        })),
+      };
+    }),
+  };
 }
 
 function evidenceFinding(code: any, id: any, detail: any): any  {
@@ -349,6 +421,7 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any
     status: findings.length === 0 ? 'passed' : 'failed',
     evidenceIds: [...byId.keys()].sort(),
     findings,
+    timing: candidateCiTiming([...byId.values()], options.preparations),
     ...(expectedContext.sourceBinding ? { verificationSource: expectedContext.verificationSource, sourceBinding: expectedContext.sourceBinding } : {}),
   };
 }

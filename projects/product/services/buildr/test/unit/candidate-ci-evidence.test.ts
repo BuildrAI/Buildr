@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import {
   aggregateCandidateCiEvidence,
   candidateCiRegistryIdentity,
+  candidateCiTiming,
   createCandidateCiCheckpoint,
   createCandidateCiEvidence,
+  readCandidateCiPreparationFiles,
 } from '../verification/candidate-ci-evidence.ts';
 import { createCandidateCiShardPlan, createVerificationPlan, validateCandidateCiCoverage } from '../verification/planner.ts';
 import {
@@ -270,6 +275,71 @@ test('Candidate shard evidence retains bounded failure diagnostics', () => {
     processCleanup: { status: 'failed', ownership: 'runner-observed-lineage' },
     diagnostics: { stdoutFile: 'release.stdout.log', stderrFile: 'release.stderr.log' },
   });
+});
+
+test('Candidate timing retains execution ownership facts and binds preparation to the exact observation', () => {
+  const original = passedEvidence({ runId: '52', runAttempt: '2' }).find((item: any) => item.id === 'preflight-macos');
+  const contextLifecycle = { contexts: [{ provider: 'runtime', owned: true, prepareDurationMs: 100 }], events: [{ operation: 'cleanup', status: 'cleaned' }] };
+  const fullPlanCoordination = { waitDurationMs: 70, release: [{ status: 'released' }] };
+  const evidence = createCandidateCiEvidence({ ...original, platform: 'darwin', contextLifecycle, fullPlanCoordination,
+    results: [{ id: 'typecheck', status: 'passed', exitCode: 0, durationMs: 300, queueDurationMs: 80,
+      queuedAt: original.startedAt, startedAt: original.startedAt, finishedAt: original.finishedAt,
+      resourceCoordination: { waitDurationMs: 50 }, phases: [{ scope: 'check', id: 'assertions', durationMs: 200, status: 'passed' }] }] });
+  assert.deepEqual(evidence.contextLifecycle, contextLifecycle);
+  assert.deepEqual(evidence.fullPlanCoordination, fullPlanCoordination);
+  assert.equal(evidence.results[0].resourceCoordination.waitDurationMs, 50);
+  assert.equal(evidence.results[0].queuedAt, original.startedAt);
+  const preparation = { schemaVersion: 'buildr.candidate-environment-preparation/v1', id: evidence.id, sourceCommit,
+    workflow: { runId: '52', runAttempt: 2 }, status: 'failed', profile: 'base', durationMs: 400,
+    operations: [{ id: 'buildr-dependencies', status: 'failed', disposition: 'executed', durationMs: 350 }] };
+  const timing = candidateCiTiming([evidence], [preparation, { ...preparation, workflow: { runId: '52', runAttempt: 1 } }]);
+  assert.equal(timing.checks[0].preparation.elapsedMs, 400);
+  assert.equal(timing.checks[0].preparation.operations[0].elapsedMs, 350);
+  assert.equal(timing.checks[0].preparation.status, 'failed', 'diagnostics preserve failure without rewriting the successful check');
+  assert.equal(timing.checks[0].results[0].queueDurationMs, 80);
+  assert.deepEqual(timing.checks[0].contextLifecycle, contextLifecycle);
+  assert.equal(timing.platformQueueDurationMs, null);
+  assert.equal(timing.agentDurationMs, null);
+  assert.equal(timing.durationSemantics, 'per-observation-not-additive');
+  assert.equal('totalDurationMs' in timing, false, 'parallel and nested observations must not be added');
+  for (const stale of [{ ...preparation, sourceCommit: 'e'.repeat(40) }, { ...preparation, workflow: { runId: '53', runAttempt: 2 } }, { ...preparation, workflow: { runId: '52', runAttempt: 1 } }]) {
+    assert.equal(candidateCiTiming([evidence], [stale]).checks[0].preparation.elapsedMs, null);
+  }
+  assert.equal(candidateCiTiming([evidence], [preparation, preparation]).checks[0].preparation.reason, 'preparation-record-ambiguous');
+  const verificationSource = 'd'.repeat(40);
+  const repaired = { ...evidence, verificationSource };
+  assert.equal(candidateCiTiming([repaired], [preparation]).checks[0].preparation.status, 'unknown', 'product-source preparation cannot stand in for the verification checkout');
+  assert.equal(candidateCiTiming([repaired], [{ ...preparation, sourceCommit: verificationSource }]).checks[0].preparation.elapsedMs, 400);
+});
+
+test('Candidate timing separates reused origin phases and costs from current work and preserves unknown costs', () => {
+  const [evidence] = passedEvidence({ runId: '52', runAttempt: '1' });
+  evidence.results = [{ id: 'artifact-browser-core', status: 'passed', durationMs: 0, disposition: 'reused',
+    queueDurationMs: 30, resourceCoordination: { waitDurationMs: 20 }, phases: [{ id: 'browser:core', durationMs: 700 }],
+    reusedFrom: { runId: '42', durationMs: 900 } }, { id: 'unknown-cost', status: 'failed' }];
+  const timing = candidateCiTiming([evidence]);
+  assert.equal(timing.checks[0].elapsedMs, 1000);
+  assert.equal(timing.checks[0].results[0].elapsedMs, 0);
+  assert.equal(timing.checks[0].results[0].reusedFrom.durationMs, 900);
+  assert.equal(timing.checks[0].results[0].queueDurationMs, null);
+  assert.equal(timing.checks[0].results[0].resourceCoordination, null);
+  assert.deepEqual(timing.checks[0].results[0].phases, []);
+  assert.equal(timing.checks[0].results[0].originPhases[0].durationMs, 700);
+  assert.equal(timing.checks[0].results[1].elapsedMs, null);
+  assert.equal(timing.checks[0].preparation.status, 'unknown');
+  const aggregate = aggregateCandidateCiEvidence(passedEvidence(), candidateContext, null, { preparations: [] });
+  assert.equal(aggregate.status, 'passed', 'missing timing does not revoke complete check evidence');
+});
+
+test('Candidate reads preparation diagnostics independently from required check evidence', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-candidate-preparation-evidence-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const record = { schemaVersion: 'buildr.candidate-environment-preparation/v1', id: 'preflight-macos' };
+  fs.writeFileSync(path.join(root, 'preflight-macos-preparation.json'), JSON.stringify(record));
+  fs.writeFileSync(path.join(root, 'unreadable-preparation.json'), '{');
+  fs.writeFileSync(path.join(root, 'other.json'), '{}');
+  assert.deepEqual(readCandidateCiPreparationFiles(root), [record]);
+  assert.deepEqual(readCandidateCiPreparationFiles(path.join(root, 'missing')), []);
 });
 
 test('Candidate checkpoint retains completed evidence but is never aggregate eligible', () => {

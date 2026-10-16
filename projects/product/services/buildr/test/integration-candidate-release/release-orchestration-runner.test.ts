@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import path from 'node:path';
 
 import { compactReleaseOrchestration, inspectReleaseOrchestration, runReleaseOrchestration } from '../../tools/release/release-orchestration-runner.ts';
 
@@ -53,6 +52,7 @@ function closeoutDependencies(overrides: any = {}): any  {
       }
       return { status: 'ready', identity: digest('b'), effects: [], nextActions: [] };
     },
+    selfBootstrapCloseout: async () => ({ status: 'passed', effects: [], nextActions: [] }),
     ...overrides,
   };
   return { dependencies, calls, getTask: () => task, getGitCloseoutInput: () => gitCloseoutInput, setTask: (value: any) => { task = value; } };
@@ -100,7 +100,7 @@ test('closeout completes every owner in order and emits compact timeline output'
   assert.equal(fixture.getGitCloseoutInput().publicationEvidence.identity, digest('4'));
   assert.ok(fixture.calls[0].includes('--expected-record'));
   assert.deepEqual(fixture.calls[1].slice(3, 7), ['--expected-source', `workspace=${commit('a')}`, '--delivered-ref', `workspace=${commit('a')}`]);
-  assert.deepEqual(fixture.calls.map((args: any) => args.slice(0, 3)), [['task', 'complete', 'release-1.0.0-rc.1'], ['worktree', 'cleanup', 'release-1.0.0-rc.1'], ['doctor', '--target', path.resolve('/workspace')]]);
+  assert.deepEqual(fixture.calls.map((args: any) => args.slice(0, 3)), [['task', 'complete', 'release-1.0.0-rc.1'], ['worktree', 'cleanup', 'release-1.0.0-rc.1']]);
   assert.equal(value.lifecycle.phase, 'closed');
   assert.equal(value.timeline.terminalStatus, 'closed');
   assert.equal(value.timeline.phases.find((item: any) => item.id === 'candidate-attempt:42:2').attempt.evidence[0].disposition, 'reused');
@@ -111,21 +111,39 @@ test('closeout completes every owner in order and emits compact timeline output'
   assert.throws(() => inspectReleaseOrchestration(value, digest('f')), /does not match/u);
 });
 
-test('closeout accepts the official Doctor ok and health.ready contract', async () => {
+test('default closeout hands activation to its unique runner and resumes without repeating completed effects', async () => {
   const fixture: any = closeoutDependencies();
+  delete fixture.dependencies.selfBootstrapCloseout;
   const invoke: any = fixture.dependencies.invokeRetainedController;
   fixture.dependencies.invokeRetainedController = (controller: any, args: any) => {
-    if (args[0] === 'doctor') return { ok: true, health: { ready: true }, findings: [], effects: [], nextActions: [] };
+    assert.notEqual(args[0], 'doctor');
     return invoke(controller, args);
   };
-  const value: any = await runReleaseOrchestration({
+  const options = {
     action: 'closeout', version: '1.0.0-rc.1', releaseTask: 'release-1.0.0-rc.1', publishRunId: 84,
     repo: '/workspace', canonicalWorkspace: '/workspace', authorizeCarrierCleanup: true, authorizeLocalSelectionCleanup: true,
-  }, fixture.dependencies);
+  };
+  const pending = await runReleaseOrchestration(options, fixture.dependencies);
+  assert.equal(pending.status, 'published-self-bootstrap-pending');
+  assert.deepEqual(pending.outcomes, { publication: 'passed', taskRegistration: 'completed', cleanup: 'cleaned', activation: 'pending' });
+  assert.equal(pending.timeline.terminalStatus, 'active');
+  const resume = { ...options, closeoutProgress: pending.closeoutProgress };
+  fixture.dependencies.closeoutReleaseGitResources = () => assert.fail('completed Git cleanup cannot repeat');
+  fixture.dependencies.invokeRetainedController = () => assert.fail('completed Task and worktree cleanup cannot repeat');
+  assert.equal((await runReleaseOrchestration(resume, fixture.dependencies)).status, 'published-self-bootstrap-pending');
+  fixture.dependencies.selfBootstrapCloseout = async () => ({ status: 'blocked', effects: [] });
+  const blocked = await runReleaseOrchestration(resume, fixture.dependencies);
+  assert.equal(blocked.status, 'published-self-bootstrap-blocked');
+  assert.equal(blocked.outcomes.activation, 'blocked');
+  assert.equal(blocked.timeline.phases.find((item: any) => item.id === 'self-bootstrap-activation').status, 'blocked');
+  assert.equal(blocked.timeline.terminalStatus, 'blocked');
+  fixture.dependencies.selfBootstrapCloseout = async () => ({ status: 'passed', effects: [] });
+  const value = await runReleaseOrchestration(resume, fixture.dependencies);
   assert.equal(value.status, 'passed');
   assert.equal(value.lifecycle.phase, 'closed');
-  assert.equal(value.steps.find((item: any) => item.owner === 'doctor').status, 'ready');
-  assert.equal(value.timeline.phases.find((item: any) => item.id === 'doctor').status, 'passed');
+  assert.equal(value.outcomes.activation, 'ready');
+  assert.equal(value.steps.find((item: any) => item.owner === 'buildr-self-bootstrap-sync').status, 'passed');
+  assert.equal(value.timeline.phases.find((item: any) => item.id === 'self-bootstrap-activation').status, 'passed');
   assert.equal(value.timeline.terminalStatus, 'closed');
 });
 
