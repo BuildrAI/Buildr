@@ -79,6 +79,7 @@ presentation:
   methodLabel: Buildr 标准接入
   summaryFields: [apiBaseUrl, namespaceId, defaultGroup]
   websiteField: consoleUrl
+  websiteFallbackField: apiBaseUrl
   groups:
     - id: connection
       title: 连接信息

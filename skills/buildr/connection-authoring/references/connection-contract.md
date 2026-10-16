@@ -14,6 +14,8 @@
 
 `presentation.categoryLabel` 与 `methodLabel` 仅提供类别和接入方式的纯文本展示名，不参与选择或授权。`groups` 是有序区块数组，每项为 `{id, title, fields, collapsed?}`；`fields` 使用 `config.<key>` 或 `authentication.<key>` 引用，可混合编排地址、团队认证与业务范围，每个字段至多出现一次。未列字段由通用页面回落展示；低频内容声明 `collapsed: true`，不能隐藏必需保护或通过任意界面代码执行操作。实例名称、环境、启用状态与默认收起的个人账号入口由 Buildr 维护，不重复声明。
 
+网站入口用 `presentation.websiteField` 引用已声明的 `url` 配置字段；双地址方法可另用 `websiteFallbackField` 显式引用基础地址字段。网站覆盖值缺失、为空文本或仅含空白时使用回落值，字段默认值仍按声明生效；非空覆盖值优先，非法时不改用另一目标。最终候选继续经过网址安全校验，整体配置问题仍单独诊断；该选择不修改实例配置、认证目标或程序上下文（Context）。未声明回落字段时不按常见字段名猜测基础地址。
+
 `programs` 是命名程序对象：`bundled` 使用技能（Skill）目录相对 `entry` 和可选 `runtime`；`installed` 使用独立 `executable` 名称。二者可以声明参数数组、`helpArgs`、`dependencies` 和 `installHint`；版本检查使用 `version: {args, constraint}`。所有随附运行代码放在声明入口所属的同一附件树，通常为 `scripts/`，例如 `scripts/bin/client.mjs` 与 `scripts/lib/`；通用启动会观察该树的当前文件，文档与配置附件继续按各自职责保存。独立安装程序的内部依赖不由启动入口完整证明，应声明依赖及版本检查并由该方法自行核验实际可用性。只读测试与动态选择在 `hooks` 引用程序并声明 `effect: read`，不得借测试发布配置或部署。动态发现可使用 `inputs` 列出所需字段引用，让地址与认证齐备后先发现业务范围；只降低该发现动作对未给配置字段的必填要求，所有已给值仍校验，完整认证和认证目标边界不变。省略 `inputs` 沿用完整配置检查，连接测试始终检查完整配置。
 
 共享认证绑定的是声明接收方 `kind/entry/runtime/executable/args`，不保存本机程序绝对路径。目录返回 `declarationRevision`（声明文件摘要）、`programRecipients`（本机实际接收方位置或缺失）及当前 `revision`；后者同时观察声明与本机位置。输入 `expected.definitionRevision` 使用刚读到的 `revision`，不得用 `declarationRevision` 替代。目录读取只定位程序，不执行版本探测或登录；缺失程序仅影响使用它的动作。相同机器程序位置变化后重读当前接收方再继续；换机器在声明相同、依赖可用且没有个人组时使用团队组，不为路径差异改写团队文件。旧版独立程序的路径耦合认证若被诊断为失效，须明确重新录入该组，不能猜测迁移。
