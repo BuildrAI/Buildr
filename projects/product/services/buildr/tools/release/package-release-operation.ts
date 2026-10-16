@@ -13,6 +13,7 @@ import { runHostedReleaseTransaction } from './release-transaction-runner.ts';
 import { inspectHostedReleaseTransaction, validateReleaseTransactionEvidence } from './release-transaction-evidence.ts';
 import { createReleaseContext, releaseContextIdentity } from './release-readiness.ts';
 import { assertReleaseExecutorRecoveryEvidence, createReleaseExecutorRecovery, releaseExecutionCommit, assertReleaseExecutorSource } from './release-executor-recovery.ts';
+import { containsCredentialMaterial } from './release-authority.ts';
 import { observeUnpublishedRelease } from './release-observation.ts';
 import { inspectReleaseTag } from './release-tag-ensure.ts';
 import { reconcilePublishedReleaseWithDev, closeoutReleaseGitResources } from './release-git-convergence.ts';
@@ -241,6 +242,52 @@ async function recoverMainPublication(options: any, context: any, scope: any, de
   return { status: 'ready', context: replacement, candidates };
 }
 
+function assertPluginExchangeNoWrite(context: any, observed: any, pointer: any): void {
+  const owned = context.packages['dsh-plugin'], executionCommit = packageExecutionCommit(context, 'dsh-plugin'), journal = observed.journal;
+  validatePluginHostedRun(observed.run, { operation: 'publish', version: owned.artifact.version, sourceCommit: executionCommit, runId: pointer.runId });
+  if (pointer.contextIdentity !== context.identity || pointer.sourceCommit !== executionCommit || pointer.version !== owned.artifact.version
+    || observed.run.status !== 'completed' || observed.run.conclusion !== 'failure'
+    || journal?.schemaVersion !== 'buildr.dsh-plugin-publication/v1' || journal.status !== 'blocked' || journal.action !== 'blocked'
+    || journal.code !== 'plugin-npm-oidc-exchange-failed' || journal.attempted !== false || journal.publishedObserved !== false || journal.registry !== 'absent'
+    || journal.packageName !== owned.artifact.packageName || journal.version !== owned.artifact.version || journal.integrity !== owned.artifact.integrity
+    || journal.sha256 !== owned.artifact.artifactSha256 || journal.sourceCommit !== owned.artifact.sourceCommit || journal.sourceTree !== owned.candidate.sourceTree
+    || journal.request?.runId !== pointer.runId || journal.request.runAttempt !== 1 || Object.keys(journal.request).length !== 3
+    || journal.request.workflowRef !== 'BuildrAI/Buildr/.github/workflows/publish-dsh-plugin.yml@refs/heads/main'
+    || journal.authority !== undefined || !Number.isFinite(Date.parse(journal.observedAt)) || containsCredentialMaterial(journal)) throw new Error('Plugin configuration recovery requires its exact unattempted npm exchange failure.');
+}
+
+/** A repaired external publisher binding needs no new executor or package context. */
+async function recoverPluginAuthority(options: any, context: any, scope: any, dependencies: any): Promise<any> {
+  const { state, git, readRun, save, effects } = scope, pointer = state.packagePublications['dsh-plugin'];
+  const ready = (candidates?: any) => ({ status: 'ready', context, ...(candidates ? { candidates } : {}) });
+  const blocked = (message: string) => ({ status: 'publication-recovery-blocked', nextActions: [message] });
+  if (pointer.authorityRecovery) {
+    assertPluginExchangeNoWrite(context, pointer.authorityRecovery, pointer.authorityRecovery.previousPointer);
+    return ready(); // Requested or unknown recovery is only read back; never create another intent.
+  }
+  if (!pointer.requested || !Number.isSafeInteger(pointer.runId) || pointer.runId < 1 || pointer.status === 'passed' || pointer.evidence || state.publicationEvidence) return ready();
+  const executionCommit = packageExecutionCommit(context, 'dsh-plugin'), owned = context.packages['dsh-plugin'];
+  const observed = (dependencies.runPluginHostedOperation ?? runPluginHostedOperation)({ operation: 'publish', authorized: true, repo: state.executionRoot,
+    version: owned.artifact.version, sourceCommit: executionCommit, originalSourceCommit: context.convergence.mainCommit,
+    candidateRunId: owned.prepareRunId, pointer: structuredClone(pointer), ghCommand: options.ghCommand }, { ...dependencies.pluginDependencies, execute: scope.execute });
+  effects.push(...(observed.effects ?? []));
+  if (observed.status !== 'blocked') return blocked('原插件请求尚未确认上传前失败，保留原请求。');
+  assertPluginExchangeNoWrite(context, observed, pointer);
+  const exact = await (dependencies.observePublishedPackageArtifact ?? observePublishedPackageArtifact)('dsh-plugin', { ...dependencies.observationOptions, version: owned.artifact.version });
+  if (exact.observation?.status !== 'absent') return blocked('插件准确版本并非官方确认缺失，不创建另一上传请求。');
+  const candidates = await candidateBytes(context, state, scope, dependencies);
+  git(['fetch', '--no-tags', 'origin', 'refs/heads/main:refs/remotes/origin/main', 'refs/heads/dev:refs/remotes/origin/dev']);
+  if (git(['rev-parse', 'origin/main']) !== executionCommit) return blocked('当前main已改变，保留原执行器请求。');
+  assertPluginExchangeNoWrite(context, { run: readRun(pointer.runId), journal: observed.journal }, pointer);
+  if (git(['rev-parse', 'origin/main']) !== executionCommit) return blocked('核验期间main已改变，保留原请求。');
+  const previousPointer = structuredClone(pointer);
+  Object.assign(pointer, { authorityRecovery: { previousPointer, run: structuredClone(observed.run), journal: structuredClone(observed.journal) },
+    recoveryRunId: observed.run.id, previousRunIds: [...(pointer.previousRunIds ?? []), observed.run.id], requested: false, runId: null });
+  effects.push({ type: 'plugin-publication-authority-recovery-bound', contextIdentity: context.identity, previousRunId: observed.run.id, sourceCommit: executionCommit });
+  save(); // The existing owner dispatch consumes this durable intent, including after a lost response.
+  return ready(candidates);
+}
+
 /** Replace only the first, explicitly unattempted plugin request; successful main ownership stays intact. */
 async function recoverPluginPublication(options: any, context: any, scope: any, dependencies: any): Promise<any> {
   const { state, git, readRun, gh, save, effects } = scope;
@@ -264,7 +311,7 @@ async function recoverPluginPublication(options: any, context: any, scope: any, 
     if (recovery.previousNoWriteEvidenceIdentity) {
       const proof = validatePluginNoWriteProof(previous.noWriteProof, { runId: recovery.previousRunId, version: owned.artifact.version, sourceCommit: packageExecutionCommit(previousContext, 'dsh-plugin') });
       if (proof.identity !== recovery.previousNoWriteEvidenceIdentity) return blocked('插件零写入证明发生变化。');
-      return { status: 'ready', context }; // This bounded extension does not add another recovery layer.
+      return recoverPluginAuthority(options, context, scope, dependencies); // Keep the executor history and C1 anchor unchanged.
     }
     if (releaseContextIdentity(previous.journal) !== recovery.previousJournalIdentity) return blocked('原插件拒绝日志发生变化。');
     assertUnattemptedPluginPublication(previousContext.packages['dsh-plugin'], previous, packageExecutionCommit(previousContext, 'dsh-plugin'));
