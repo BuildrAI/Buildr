@@ -23,7 +23,7 @@ export function AgentConnectionDetails({agent, desktop, busy, onClose, onPrepare
     {connection && <dl><dt>安装</dt><dd>{connection.installationLabel}</dd><dt>配置来源</dt><dd>{connection.configurationLabel}</dd></dl>}
     {lastOperationReason && lastOperationReason !== connection?.safeReason && <section><strong>最近操作说明</strong><p>{lastOperationReason}</p></section>}
     <section><strong>最近读取的生成配置</strong>{config ? <dl><dt>模型</dt><dd>{config.model ?? '未提供具体值'}</dd><dt>提供方</dt><dd>{config.modelProvider ?? '未提供具体值'}</dd><dt>推理级别</dt><dd>{config.reasoningEffort ?? '未提供具体值'}</dd></dl> : <p>本次服务尚未读取生成配置。</p>}</section>
-    <p>{agent.kind === 'codex' ? '独立服务按需启动，空闲 30 分钟后释放，退出 Buildr 时关闭。一次性生成不积累对话历史。桌面继续管理原生会话及记忆（Memory）。' : '使用正在运行的 DSH 桌面后台；空闲 30 分钟后释放连接。退出 Buildr 只清理自身请求与连接，DSH 桌面继续运行。一次性生成不积累对话历史。'}</p>
+    <p>{agent.kind === 'codex' ? '独立服务按需启动，空闲 1 小时后释放，退出 Buildr 时关闭。一次性生成不积累对话历史。桌面继续管理原生会话及记忆（Memory）。' : '使用正在运行的 DSH 桌面后台；空闲 30 分钟后释放连接。退出 Buildr 只清理自身请求与连接，DSH 桌面继续运行。一次性生成不积累对话历史。'}</p>
   </div>;
   return <section id={`agent-connection-details-${agent.id}`} className="agent-registry-details" role="dialog" aria-modal="false" aria-label={`${agent.label} 接入详情`} tabIndex={-1} onKeyDown={event => {if (event.key === 'Escape') {event.stopPropagation(); onClose();}}}>
       <header className="agent-registry-detail-heading"><div><strong>{agent.label}</strong><span>接入详情</span></div><Button type="text" size="small" aria-label="关闭接入详情" icon={<CloseOutlined />} onClick={onClose} /></header>

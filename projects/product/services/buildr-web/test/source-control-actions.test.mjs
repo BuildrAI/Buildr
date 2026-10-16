@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { SourceControlActions, actionSourceKey, commitMessageOutput } from '../src/features/code/source-control-actions.ts';
+import { SourceControlActions, actionSourceKey, commitMessageOutput, commitResultFeedback } from '../src/features/code/source-control-actions.ts';
 
 const source = {workspaceId: 'w', repositoryId: 'repo', worktreeId: 'checkout-a', branch: 'dev'};
 const other = {...source, worktreeId: 'checkout-b', branch: 'feature'};
 const identity = value => ({repositoryId: value.repositoryId, checkoutId: value.worktreeId, worktreeId: value.worktreeId, worktreeGroupId: 'main', taskId: null, commitHash: null, location: '/fixture/' + value.worktreeId, version: 'current', kind: 'default'});
 const context = (value, revision = 'content-1') => ({source: identity(value), revision, head: 'a'.repeat(40), branch: value.branch, hasChanges: true, fileCount: 2, push: {revision: 'push-1', target: 'origin/dev', available: true, reason: null, ahead: 2}});
 const run = (status = 'succeeded', output = {commitMessage: 'generated'}, agentId = 'codex') => ({id: 'run-1', agentId, registrationRevision: 'registry-1', status, output, error: null, executionConfig: null});
-const result = (value = source, pushStatus = 'not-requested') => ({source: identity(value), commit: {completed: true, hash: 'b'.repeat(40), message: 'submitted', status: 'succeeded'}, push: {status: pushStatus, target: 'origin/dev', message: pushStatus, retry: pushStatus === 'failed' ? {expectedHead: 'b'.repeat(40), expectedPushRevision: 'push-after-commit'} : null}, effects: {indexUpdated: true, warnings: []}});
+const result = (value = source, pushStatus = 'not-requested') => ({source: identity(value), commit: {completed: true, hash: 'b'.repeat(40), message: 'submitted', status: 'succeeded'}, push: {status: pushStatus, target: 'origin/dev', message: pushStatus, retry: pushStatus === 'failed' ? {expectedHead: 'b'.repeat(40), expectedPushRevision: 'push-after-commit'} : null}, sync: null, effects: {indexUpdated: true, warnings: []}});
+const syncResult = (value = source, status = 'succeeded') => ({...result(value), sync: {source: identity(value), readAt: '2026-10-16T00:00:00.000Z', branch: value.branch, head: 'c'.repeat(40), upstream: 'origin/dev', status, message: '同步阶段说明', fetch: {status: 'succeeded', message: '已获取固定上游'}, rebase: {status: 'succeeded', message: '已整合远端更新'}, push: {status: status === 'succeeded' ? 'succeeded' : 'not-requested', message: '同步内的推送说明'}}});
 const deferred = () => {let resolve, reject; const promise = new Promise((yes, no) => {resolve = yes; reject = no;}); return {promise, resolve, reject};};
 const client = (overrides = {}) => ({context: async value => context(value), generate: async () => run(), run: async () => run(), cancel: async () => run('cancelled', null), commit: async value => result(value), push: async value => result(value, 'succeeded'), ...overrides});
 const create = (api, refresh = () => {}) => new SourceControlActions(api, refresh, () => {}, async () => {});
@@ -76,6 +77,69 @@ test('手写提交不调用智能体，清除的仅是提交时说明并刷新�
   await actions.observe(source); actions.setText(source, 'manual'); actions.setText(other, 'keep other'); await actions.commit(source, 'commit');
   assert.equal(writes, 1); assert.equal(refreshes, 1); assert.equal(actions.state(source).text, ''); assert.equal(actions.state(other).text, 'keep other');
   assert.equal(actions.state(source).gitResult.commit.hash, 'b'.repeat(40));
+});
+
+test('三种提交入口共用最新就绪状态，执行期间不能切换动作重复写入', async () => {
+  for (const mode of ['commit', 'commit-sync', 'commit-push']) {
+    const write = deferred(), calls = [], actions = create(client({commit: (...args) => {calls.push(args); return write.promise;}}));
+    actions.setText(source, 'ready draft');
+    await actions.commit(source, mode); assert.equal(calls.length, 0, '尚未取得上下文时不写入');
+    await actions.observe(source); actions.setText(source, ' ');
+    await actions.commit(source, mode); assert.equal(calls.length, 0, '空白说明不写入');
+    actions.setText(source, 'ready draft'); const pending = actions.commit(source, mode);
+    await actions.commit(source, mode === 'commit' ? 'commit-push' : 'commit');
+    assert.deepEqual(calls, [[source, 'content-1', 'ready draft', mode]], '重复事件仅保留首次动作和已观察版本');
+    write.resolve(mode === 'commit-sync' ? syncResult() : result(source, mode === 'commit-push' ? 'succeeded' : 'not-requested')); await pending;
+    assert.equal(actions.state(source).gitResult.commit.completed, true);
+  }
+});
+
+test('提交并同步单次写入，迟到的部分成功归原来源且保留原提交与最终同步身份', async () => {
+  for (const status of ['succeeded', 'failed', 'unavailable', 'unknown']) {
+    const write = deferred(), calls = [], actions = create(client({commit: (...args) => {calls.push(args); return write.promise;}, push: async () => {throw Error('不得拆开再次推送');}}));
+    await Promise.all([actions.observe(source), actions.observe(other)]);
+    actions.setText(source, '提交后同步'); actions.setText(other, '其他来源草稿');
+    const pending = actions.commit(source, 'commit-sync');
+    assert.equal(actions.state(source).gitPending, 'commit-sync');
+    assert.equal(actions.state(other).gitPending, null);
+    write.resolve(syncResult(source, status)); await pending;
+    const state = actions.state(source);
+    assert.deepEqual(calls, [[source, 'content-1', '提交后同步', 'commit-sync']]);
+    assert.equal(state.gitResult.commit.hash, 'b'.repeat(40), '同步后的提交不覆盖原已成立提交');
+    assert.equal(state.gitResult.sync.head, 'c'.repeat(40), '同步后的最终身份单独保留');
+    assert.equal(state.gitResult.sync.status, status); assert.equal(state.unknownCommit, false);
+    assert.equal(state.text, '', '提交已成立时同步失败或未知也不保留可误重提的说明');
+    assert.equal(actions.state(other).text, '其他来源草稿'); assert.equal(actions.state(other).gitResult, null);
+    await actions.retryPush(source); assert.equal(calls.length, 1);
+  }
+});
+
+test('同步阶段反馈独立于顶层推送，部分成功不否定已成立提交', () => {
+  for (const [status, label] of [['succeeded', '已提交并同步'], ['failed', '已提交，同步失败'], ['unavailable', '已提交，尚未同步'], ['unknown', '已提交，同步结果待核对']]) {
+    const value = syncResult(source, status), feedback = commitResultFeedback(value);
+    assert.equal(value.push.status, 'not-requested'); assert.equal(feedback.text, label);
+    assert.equal(feedback.warning, status !== 'succeeded');
+    assert.match(feedback.details, /origin\/dev/); assert.match(feedback.details, /已获取固定上游/);
+    assert.match(feedback.details, /已整合远端更新/); assert.match(feedback.details, /同步内的推送说明/);
+    assert.ok(feedback.details.includes('初次提交：' + value.commit.hash)); assert.ok(feedback.details.includes('同步后提交：' + value.sync.head));
+    assert.equal(Boolean(feedback.note), status !== 'succeeded');
+    if (feedback.note) assert.match(feedback.note, /已有提交无需重复提交/);
+  }
+  const unknown = syncResult(); unknown.commit = {...unknown.commit, completed: false, status: 'unknown'};
+  assert.equal(commitResultFeedback(unknown).text, '提交结果尚未确认'); assert.equal(commitResultFeedback(unknown).note, '');
+  const unknownHead = syncResult(source, 'unknown'); unknownHead.sync.head = null;
+  assert.match(commitResultFeedback(unknownHead).details, /同步后提交：尚未确认/);
+  assert.equal(commitResultFeedback(result(source, 'failed')).text, '已提交，推送失败');
+  assert.equal(commitResultFeedback(result(source, 'succeeded')).text, '已提交并推送');
+  assert.equal(commitResultFeedback(result()).text, '已提交');
+});
+
+test('同步结果不能经旧推送重试事件绕过重新观察与整合', async () => {
+  let pushes = 0;
+  const value = {...syncResult(source, 'failed'), push: result(source, 'failed').push};
+  const actions = create(client({commit: async () => value, push: async () => {pushes++; return result(source, 'succeeded');}}));
+  await actions.observe(source); actions.setText(source, '提交后同步'); await actions.commit(source, 'commit-sync'); await actions.retryPush(source);
+  assert.equal(pushes, 0); assert.equal(actions.state(source).gitResult.sync.status, 'failed');
 });
 
 test('重新观察到新内容后，旧版本已完成的迟到生成不能覆盖草稿或解除过期提示', async () => {

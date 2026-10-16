@@ -29,3 +29,13 @@ test('生成、提交及推送使用独立接口并传完整来源和精确观�
   assert.equal(requests[3][0].endsWith('/code/push'), true); assert.deepEqual(JSON.parse(requests[3][1].body), {repositoryId: source.repositoryId, worktreeId: source.worktreeId, expectedHead: 'a'.repeat(40), expectedPushRevision: 'fixed-upstream'});
   assert.ok(requests.slice(1).every(([, options]) => options.method === 'POST' && options.signal === undefined));
 });
+
+test('提交并同步在一次提交请求内传入来源和版本，不拆成后续同步请求', async () => {
+  const requests = [], client = createCodeActionsClient(async (...args) => {requests.push(args); return {};});
+  const source = {workspaceId: 'workspace', repositoryId: 'repository', worktreeId: 'worktree', branch: 'dev'};
+  await client.commit(source, 'observed-content', '同步提交', 'commit-sync');
+  assert.equal(requests.length, 1); assert.equal(requests[0][0], '/api/v1/workspaces/workspace/code/commit-changes');
+  assert.equal(requests[0][1].method, 'POST');
+  assert.deepEqual(JSON.parse(requests[0][1].body), {repositoryId: 'repository', worktreeId: 'worktree', expectedRevision: 'observed-content', message: '同步提交', mode: 'commit-sync'});
+  assert.equal(requests[0][1].signal, undefined);
+});

@@ -10,7 +10,9 @@ Codex 与 DSH 共用一次生成的业务链路，具体提供者（Provider）�
 2. **生成**：统一层固定本次执行者，轮到本身份执行时提交给具体提供者（Provider），只根据给定材料调用一次，不自行补查。
 3. **呈现**：校验内容、来源和草稿版本，仍适用时填回编辑框。失败、取消或期间已有编辑，保留现有草稿。
 
-生成只写说明；提交、推送由 Buildr 的 Git 能力执行，不由本次模型请求代办。
+生成只写说明；提交、同步（Sync）和推送由 Buildr 的 Git 能力执行，不由本次模型请求代办。
+
+主按钮固定为“提交”；下拉菜单依次提供“提交并同步”和“提交并推送”，点击直接执行，不改变主按钮动作。“提交并同步”先完成本机提交，再获取固定上游、按需快进或变基（Rebase）并推送；后续失败时保留已成立提交并分别显示阶段结果，从该来源的“同步”入口继续，不重复提交同一批内容。
 
 ## 两种后端的区别
 
@@ -40,6 +42,8 @@ Buildr 在统一业务层准备适用规则的有界原文摘录，优先保留�
 | 职责 | 优先看这里 |
 | --- | --- |
 | 界面动作与草稿 | [SourceControlActions](../../../services/buildr-web/src/features/code/source-control-actions.ts) |
+| 本机提交与后续组合动作 | [createCodeCommitApplication](../../../services/buildr/src/modules/code/application/code-commit-application.ts) |
+| 固定上游同步（Sync）及阶段结果 | [createCodeSyncApplication](../../../services/buildr/src/modules/code/application/code-sync-application.ts) |
 | 准备资料、提示词与业务校验 | [generateCommitMessage](../../../services/buildr/src/modules/code/application/code-commit-message-application.ts) |
 | 选择、排队、运行与取消 | [startGeneration](../../../services/buildr/src/modules/agent-operations/application/agent-operations-application.ts) |
 | Codex 原生调用 | [CodexAppServer](../../../services/buildr/src/modules/agent-operations/infrastructure/codex-app-server.ts) |

@@ -304,7 +304,7 @@ export class AgentOperationsApplication {
       pool.tail = client.close().then(() => { if (pool.client === client) { pool.client = null; pool.started = false; } }).catch(error => { pool.stopFailure = error; throw error; }).finally(() => { pool.stopping = false; });
       // Retain a failed close: a new run must not spawn beside a process whose exit is unproved.
       void pool.tail.catch(() => {});
-    }, this.options.idleMs ?? 30 * 60 * 1000);
+    }, this.options.idleMs ?? (pool.registration.kind === 'codex' ? 60 : 30) * 60 * 1000);
     pool.idleTimer.unref();
   }
   async startGeneration(input: AgentGenerationInput): Promise<AgentRunView> {
