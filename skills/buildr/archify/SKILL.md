@@ -1,6 +1,6 @@
 ---
 name: archify
-description: 使用 Archify 创建或修改架构、流程、时序、数据流与状态图，或将 Mermaid 转为可交互的独立 HTML 图示时使用。
+description: 使用 Archify 创建或修改架构、流程、时序、数据流、状态、实体关系、类与接口、树、时间线和执行耗时图，或将 Mermaid 转为可交互的独立 HTML 图示时使用。
 ---
 
 # Archify
