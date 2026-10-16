@@ -9,6 +9,7 @@ import { createReleaseContext, validateReleaseContext } from '../../tools/releas
 import { releaseExecutionCommit, validateReleaseExecutorRecovery } from '../../tools/release/release-executor-recovery.ts';
 import { createReleaseTransactionEvidence, validateReleaseTransactionEvidence } from '../../tools/release/release-transaction-evidence.ts';
 import { verifyReleaseExecutorPullRequest } from '../../tools/release/release-executor-admission.ts';
+import { readHostedPluginNoWriteProof } from '../../tools/release/plugin-hosted-release.ts';
 
 const sha = (letter: string) => letter.repeat(40);
 const digest = (letter: string) => `sha256-${letter.repeat(64)}`;
@@ -89,7 +90,8 @@ function pluginAdmissionFixture(): any {
   };
   const dependencies = { git, readRun: async () => run, readPluginJournal: async (options: any) => {
     assert.equal(options.runId, run.id); assert.equal(options.version, journal.version); return journal;
-  }, recoveryDependencies: { execute: (_command: string, args: string[]) => ({ status: 0, stdout: git(args) }) } };
+  }, readPluginNoWriteProof: async () => { throw new Error('No official skipped-upload proof'); },
+  recoveryDependencies: { execute: (_command: string, args: string[]) => ({ status: 0, stdout: git(args) }) } };
   return { event, run, journal, dependencies, reads, paths, source, sourceTree, execution, head, repository };
 }
 
@@ -103,6 +105,67 @@ test('plugin repair admission binds the authentic unattempted run and preserves 
   assert.ok(f.reads.some((args: string[]) => args[0] === 'diff' && args.includes(f.source) && args.includes(f.head)));
   assert.ok(f.reads.some((args: string[]) => args[0] === 'diff' && args.includes(f.execution) && args.includes(f.head)));
   assert.equal(result.candidateRunId, undefined, 'admission cannot pretend to be a new package Candidate');
+});
+
+function noWriteAdmissionFixture(): any {
+  const f = pluginAdmissionFixture(), calls: string[][] = [];
+  const jobs = { total_count: 1, jobs: [{ id: 700, run_id: f.run.id, head_sha: f.execution, name: 'publish', status: 'completed', conclusion: 'failure', steps: [
+    { number: 1, name: 'Verify candidate run and complete publication history', status: 'completed', conclusion: 'failure' },
+    { number: 2, name: 'Publish immutable plugin', status: 'completed', conclusion: 'skipped' },
+  ] }] };
+  f.dependencies.readPluginJournal = async () => { throw new Error('No publication.json exists before the upload step'); };
+  delete f.dependencies.readPluginNoWriteProof;
+  f.dependencies.pluginDependencies = { execute: (command: string, args: string[]) => {
+    assert.equal(command, 'gh'); assert.equal(args[0], 'api'); calls.push(args);
+    return { status: 0, stdout: JSON.stringify(args[1].includes('/jobs?') ? jobs : f.run) };
+  } };
+  return { ...f, jobs, calls };
+}
+
+test('plugin PR admission uses official skipped-upload jobs without inventing a package source or publication journal', async () => {
+  const f = noWriteAdmissionFixture();
+  const result = await verifyReleaseExecutorPullRequest(f.event, f.repository, '/fixture', f.dependencies);
+  assert.equal(result.status, 'passed'); assert.equal(result.kind, 'plugin-pre-upload-repair-admission'); assert.equal(result.aggregateEligible, false);
+  assert.equal(result.originalRunId, f.run.id); assert.equal(result.originalExecutionCommit, f.execution); assert.equal(result.executionCommit, f.head);
+  assert.equal(result.packageVersion, f.journal.version); assert.match(result.noWriteProofIdentity, /^sha256-[a-f0-9]{64}$/u);
+  assert.equal(Object.hasOwn(result, 'originalSourceCommit'), false); assert.equal(Object.hasOwn(result, 'candidateRunId'), false);
+  assert.equal(Object.hasOwn(result, 'journal'), false);
+  assert.deepEqual(f.calls.map((args: string[]) => args[1]), [`repos/BuildrAI/Buildr/actions/runs/${f.run.id}`,
+    `repos/BuildrAI/Buildr/actions/runs/${f.run.id}/attempts/1/jobs?per_page=100`]);
+  const comparisons = f.reads.filter((args: string[]) => args[0] === 'diff');
+  assert.equal(comparisons.length, 1); assert.ok(comparisons[0].includes(f.execution)); assert.ok(comparisons[0].includes(f.head));
+});
+
+test('pre-upload admission rejects incomplete, executed or mismatched official job proof and source changes', async t => {
+  const cases: Array<[string, (f: any) => void]> = [
+    ['incomplete jobs page', f => { f.jobs.total_count++; }],
+    ['missing jobs', f => { f.jobs.total_count = 0; f.jobs.jobs = []; }],
+    ['active job', f => { f.jobs.jobs[0].status = 'in_progress'; }],
+    ['wrong job run', f => { f.jobs.jobs[0].run_id++; }],
+    ['wrong job head', f => { f.jobs.jobs[0].head_sha = sha('9'); }],
+    ['wrong publish job', f => { f.jobs.jobs[0].name = 'other'; }],
+    ['missing upload step', f => { f.jobs.jobs[0].steps.pop(); }],
+    ['upload executed successfully', f => { f.jobs.jobs[0].steps[1].conclusion = 'success'; }],
+    ['upload attempted and failed', f => { f.jobs.jobs[0].steps[1].conclusion = 'failure'; }],
+    ['upload unknown', f => { f.jobs.jobs[0].steps[1].conclusion = 'unknown'; }],
+    ['upload unfinished', f => { f.jobs.jobs[0].steps[1].status = 'in_progress'; }],
+    ['duplicate upload step', f => { f.jobs.jobs[0].steps.push({ ...f.jobs.jobs[0].steps[1], number: 3 }); }],
+    ['different job has an upload step', f => { f.jobs.total_count++; f.jobs.jobs.push({ ...f.jobs.jobs[0], id: 701, name: 'other',
+      steps: [{ ...f.jobs.jobs[0].steps[1], conclusion: 'success' }] }); }],
+    ['new version', f => { const read = f.dependencies.git; f.dependencies.git = (args: string[]) => args[0] === 'show' && args[1].endsWith('/package.json')
+      ? JSON.stringify({ name: '@buildr-ai/buildr-dsh-plugin-source', private: true, version: '0.1.0-rc.3' }) : read(args); }],
+    ['payload change', f => { f.paths.push('projects/product/services/dsh-plugin/src/index.ts'); }],
+    ['lock change', f => { f.paths.push('projects/product/services/dsh-plugin/package-lock.json'); }],
+    ['unknown jobs API', f => { f.dependencies.pluginDependencies.execute = () => ({ status: 1, stderr: 'unavailable' }); }],
+    ['tampered proof', f => { f.dependencies.readPluginNoWriteProof = (options: any, dependencies: any) => ({ ...readHostedPluginNoWriteProof(options, dependencies), identity: digest('9') }); }],
+  ];
+  for (const [name, mutate] of cases) await t.test(name, async () => {
+    const f = noWriteAdmissionFixture(); mutate(f);
+    await assert.rejects(() => verifyReleaseExecutorPullRequest(f.event, f.repository, '/fixture', f.dependencies));
+  });
+  const f = pluginAdmissionFixture(); f.journal.attempted = true;
+  f.dependencies.readPluginNoWriteProof = () => assert.fail('an existing attempted journal cannot fall back to another no-write proof');
+  await assert.rejects(() => verifyReleaseExecutorPullRequest(f.event, f.repository, '/fixture', f.dependencies));
 });
 
 test('real PR CLI resolves the admission import cycle before reporting a missing original run marker', t => {

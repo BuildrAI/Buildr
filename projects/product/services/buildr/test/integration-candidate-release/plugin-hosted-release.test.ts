@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { gzipSync } from 'node:zlib';
 import { artifactFromTarball } from '../../tools/release/package-artifact-observation.ts';
-import { readHostedPluginCandidate, readHostedPluginJournal, reconcilePluginPreparationPointer, runPluginHostedOperation, validatePluginHostedRun } from '../../tools/release/plugin-hosted-release.ts';
+import { readHostedPluginCandidate, readHostedPluginJournal, reconcilePluginPreparationPointer, runPluginHostedOperation, validatePluginHostedRun, readHostedPluginNoWriteProof, validatePluginNoWriteProof } from '../../tools/release/plugin-hosted-release.ts';
 import { createReleaseCandidate, PLUGIN_SERVICE_PATH, SOURCE_SDK_MANIFEST, sourceSdkIdentityFromFiles } from '../../../dsh-plugin/tools/release-candidate.ts';
 import { archiveTreeIdentity } from '../../../dsh-plugin/tools/verify-all.ts';
 import { identity } from '../../../dsh-plugin/tools/verify-buildr-plugin-pair.ts';
@@ -349,4 +349,44 @@ test('main adoption readback and context preserve tested source separately from 
   for(const changes of [{adopted:true,adoption:(v:any)=>v.source.selectionIdentity='sha256-'+'4'.repeat(64)},{adopted:true,adoption:(v:any)=>v.main.parents.reverse()}]){
     const changed=candidateFixture(changes);assert.throws(()=>readHostedPluginCandidate({...options({}),runId:11},changed.dependencies));
   }
+});
+
+function noWriteReadback(changes: (value: any) => void = () => {}): any {
+  const value = { run: run('publish', 22, { conclusion: 'failure' }), response: { total_count: 2, jobs: [
+    { id: 31, run_id: 22, head_sha: mainSource, name: 'publish', status: 'completed', conclusion: 'failure', steps: [
+      { number: 1, name: 'Verify candidate run and complete publication history', status: 'completed', conclusion: 'failure' },
+      { number: 2, name: 'Publish immutable plugin', status: 'completed', conclusion: 'skipped' } ] },
+    { id: 32, run_id: 22, head_sha: mainSource, name: 'prepare', status: 'completed', conclusion: 'skipped', steps: [] },
+  ] } }; changes(value); const calls: string[][] = [];
+  const options = { repo: '/fixture', runId: 22, version, sourceCommit: mainSource };
+  const read = () => readHostedPluginNoWriteProof(options, { execute: (command: string, args: string[]) => {
+    assert.equal(command, 'gh'); calls.push(args);
+    return { status: 0, stdout: JSON.stringify(args[1].includes('/jobs?') ? value.response : value.run) };
+  } });
+  return { value, calls, read, options };
+}
+
+test('official complete skipped-step evidence yields a separate no-write proof without inventing a publication journal', () => {
+  const f = noWriteReadback(), proof = f.read();
+  assert.equal(proof.schemaVersion, 'buildr.plugin-publication-no-write/v1'); assert.equal(proof.run.id, 22);
+  assert.equal(Object.hasOwn(proof, 'journal'), false); assert.equal(Object.hasOwn(proof, 'attempted'), false);
+  assert.deepEqual(validatePluginNoWriteProof(proof, f.options), proof);
+  assert.equal(f.calls.length, 2); assert.ok(f.calls[1][1].endsWith('/attempts/1/jobs?per_page=100'));
+  assert.throws(() => validatePluginNoWriteProof({ ...proof, extra: true }, f.options));
+  assert.throws(() => validatePluginNoWriteProof(proof, { ...f.options, sourceCommit: selectedSource }));
+});
+
+test('no-write proof refuses missing, ambiguous, incomplete, executed or mismatched official run and job facts', () => {
+  const mutations: Array<(value: any) => void> = [
+    v => { v.run.status = 'in_progress'; }, v => { v.run.conclusion = 'success'; }, v => { v.run.run_attempt = 2; },
+    v => { v.run.head_sha = selectedSource; }, v => { v.run.repository.full_name = 'other/repo'; },
+    v => { v.response.total_count = 3; }, v => { v.response.jobs = []; v.response.total_count = 0; },
+    v => { v.response.jobs[0].status = 'in_progress'; }, v => { v.response.jobs[0].conclusion = 'success'; },
+    v => { v.response.jobs[0].run_id = 23; }, v => { v.response.jobs[0].head_sha = selectedSource; },
+    v => { v.response.jobs[0].steps.pop(); }, v => { v.response.jobs[0].steps[1].conclusion = 'success'; },
+    v => { v.response.jobs[0].steps[1].conclusion = 'failure'; }, v => { v.response.jobs[0].steps[1].status = 'in_progress'; },
+    v => { v.response.jobs[1].steps.push({ number: 1, name: 'Publish immutable plugin', status: 'completed', conclusion: 'success' }); },
+    v => { v.response.jobs[1].name = 'publish'; }, v => { delete v.response.jobs[0].steps; },
+  ];
+  for (const change of mutations) assert.throws(() => noWriteReadback(change).read());
 });
