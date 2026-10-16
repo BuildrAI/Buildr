@@ -1,13 +1,13 @@
 # Archify 可选组件（Component）
 
-Archify 用于创建架构、流程、时序、数据流和状态图。Buildr 随包提供固定版本的完整技能（Skill）目录，通过既有组件（Component）能力管理安装、更新和卸载，默认不启用。
+Archify 用于创建架构、流程、时序、数据流、状态、实体关系、类与接口、树、时间线和执行耗时图。Buildr 随包提供固定版本的完整技能（Skill）目录，通过既有组件（Component）能力管理安装、更新和卸载，默认不启用。
 
 ## 来源
 
 - 上游仓库：[tt-a1i/archify](https://github.com/tt-a1i/archify)。
-- 上游版本：`2.16.0`；Buildr 组件（Component）版本：`2.16.0+buildr.1`。
-- 正式发行包：[archify.zip](https://github.com/tt-a1i/archify/releases/download/v2.16.0/archify.zip)。
-- 发行包 SHA-256：`4c59fa6557a2385beaaef8c7219cc414573acc9f0c30a932d5053b0b20689a46`。
+- 上游版本：`3.1.0`；Buildr 组件（Component）版本：`3.1.0+buildr.1`。
+- 正式发行包：[archify.zip](https://github.com/tt-a1i/archify/releases/download/v3.1.0/archify.zip)。
+- 发行包 SHA-256：`ffedc53390c9da6e859f41e432c5d2d0615a23cf00a503181f07efbba88a7ce8`。
 - 原始内容位于 `resources/workspace/skills/buildr/archify/assets/archify/`，完整保留 MIT 许可证、上游正文和程序。没有从个人安装目录复制缓存或依赖。
 
 ## 使用

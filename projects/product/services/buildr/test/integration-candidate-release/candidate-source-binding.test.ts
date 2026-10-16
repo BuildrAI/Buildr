@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { createCandidateSourceBinding, assertCandidateSourceBinding, candidateCheckInputIdentity, verificationOnlyPath, releaseExecutionSource, assertReleaseExecutionCheckout } from '../../tools/release/candidate-source-binding.ts';
+import { createCandidateSourceBinding, assertCandidateSourceBinding, candidateCheckInputIdentity, readGitSourceInventory, verificationOnlyPath, releaseExecutionSource, assertReleaseExecutionCheckout } from '../../tools/release/candidate-source-binding.ts';
 import { createReleaseContext, validateReleaseContext } from '../../tools/release/release-readiness.ts';
 import { assertReleaseExecutorSource, releaseExecutorRecoverySchema } from '../../tools/release/release-executor-recovery.ts';
 import { continueCandidateRepair } from '../../tools/release/candidate-repair-operation.ts';
@@ -91,8 +92,11 @@ test('unknown and plugin build inputs remain conservative instead of being treat
   }
 });
 
-test('runtime-discovered integration and system tests revoke proof on addition, deletion or content changes', () => {
+test('runtime-discovered integration and system tests revoke proof on addition, deletion or content changes', t => {
   const prefix = 'projects/product/services/buildr/';
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'candidate-input-discovery-'));
+  t.after(() => fs.rmSync(repo, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(repo, prefix), { recursive: true });
   for (const family of ['integration', 'system']) {
     const step = { id: family, executor: { type: 'node', file: `test/verification/${family}.ts`, args: ['--owner', 'example'] } };
     const reader = {
@@ -101,11 +105,12 @@ test('runtime-discovered integration and system tests revoke proof on addition, 
           ...(commit === 'added' ? [`test/${family}/added.test.ts`] : [])]
           .map(file => ({ path: prefix + file, mode: '100644', kind: 'blob', object: commit === 'changed' && file.endsWith('example.test.ts') ? 'changed' : file }));
       },
-      blob(_commit: string, file: string) { return file.endsWith(`${family}.ts`) ? "import fs from 'node:fs'; fs.readdirSync('test');" : '// discovered test'; },
+      blob(commit: string, file: string) { return file.endsWith(`${family}.ts`) ? "import fs from 'node:fs'; fs.readdirSync('test');"
+        : commit === 'changed' && file.endsWith('example.test.ts') ? '// changed test' : '// discovered test'; },
     };
-    const original = candidateCheckInputIdentity('.', 'original', step, reader);
-    for (const changed of ['changed', 'added', 'removed']) assert.notEqual(candidateCheckInputIdentity('.', changed, step, reader), original, `${family}:${changed}`);
-    assert.equal(candidateCheckInputIdentity('.', 'unchanged', step, reader), original);
+    const original = candidateCheckInputIdentity(repo, 'original', step, reader);
+    for (const changed of ['changed', 'added', 'removed']) assert.notEqual(candidateCheckInputIdentity(repo, changed, step, reader), original, `${family}:${changed}`);
+    assert.equal(candidateCheckInputIdentity(repo, 'unchanged', step, reader), original);
   }
 });
 
@@ -118,6 +123,7 @@ test('formal repair retains the producer and unaffected check while a changed as
   const commit = () => { git('add', '.'); git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', '-c', 'commit.gpgSign=false', 'commit', '-m', 'fixture'); return git('rev-parse', 'HEAD'); };
   git('init', '--initial-branch=main'); write('package.json', '{"version":"1.0.0"}\n');
   write('test/first.test.ts', '// first\n'); write('test/second.test.ts', '// second\n');
+  write('test/verification/verification-reuse.ts', '// old result validator\n');
   const source = commit(), tree = git('rev-parse', 'HEAD^{tree}');
   const first = { id: 'first', executor: { type: 'node-test', files: ['test/first.test.ts'] }, dependsOn: [] };
   const second = { id: 'second', executor: { type: 'node-test', files: ['test/second.test.ts'] }, dependsOn: ['first'] };
@@ -132,10 +138,35 @@ test('formal repair retains the producer and unaffected check while a changed as
     artifact: descriptor.producesArtifact ? artifact : null,
     checkInputs: Object.fromEntries(descriptor.steps.map(step => [step.id, candidateCheckInputIdentity(repo, source, candidateProofDefinition(step))])),
     results: descriptor.steps.map(step => ({ id: step.id, status: 'passed', exitCode: 0, durationMs: 1500, processCleanup: { status: 'clean' } })) }));
-  write('test/second.test.ts', '// repaired assertion\n'); const verificationSource = commit();
+  write('test/second.test.ts', '// repaired assertion\n');
+  write('test/verification/verification-reuse.ts', '// repaired result validator\n');
+  const verificationSource = commit();
   const input = { repo, repository: 'BuildrAI/Buildr', originalRun: run, artifact, verificationSource, evidence, registryIdentity: 'registry' };
   const plan = createCandidateRepairPlan(input, { descriptors });
   assert.deepEqual(plan.checks.map((check: any) => check.steps.map((step: any) => step.disposition)), [['reuse'], ['reuse', 'execute']]);
+  // Historical v2 bound the result validator globally, although first.test.ts
+  // never executed it. Authenticate those bytes before applying the shared policy.
+  const legacyEvidence = structuredClone(evidence);
+  const legacyInput = { version: 2, discoveredMembers: [], descriptor: { id: first.id, executor: first.executor,
+    dependsOn: first.dependsOn, executionProfile: candidateProofDefinition(first).executionProfile },
+    entries: readGitSourceInventory(repo, source).filter(entry => [prefix + 'package.json', prefix + 'test/first.test.ts', prefix + 'test/verification/verification-reuse.ts'].includes(entry.path)) };
+  legacyEvidence[1]!.checkInputs.first = 'sha256-' + crypto.createHash('sha256').update(JSON.stringify(legacyInput)).digest('hex');
+  const migrated = createCandidateRepairPlan({ ...input, evidence: legacyEvidence }, { descriptors });
+  assert.equal(migrated.checks[1].steps[0].disposition, 'reuse', 'authenticated old evidence survives the input-model upgrade');
+  assert.deepEqual(migrated.checks[1].original, legacyEvidence[1], 'migration preserves the original record');
+  assert.notEqual(migrated.checks[1].steps[0].inputIdentity, legacyEvidence[1]!.checkInputs.first);
+  legacyEvidence[1]!.checkInputs.first = 'sha256-' + '0'.repeat(64);
+  assert.equal(createCandidateRepairPlan({ ...input, evidence: legacyEvidence }, { descriptors }).checks[1].steps[0].disposition, 'execute', 'unknown old identities cannot authorize reuse');
+  for (const policy of [true, 'comparison']) {
+    const gitFirst = { ...first, reuse: { scope: 'repository', git: policy } };
+    const gitDescriptors = [descriptors[0]!, { ...descriptors[1]!, steps: [gitFirst, second] }];
+    const gitEvidence = structuredClone(evidence);
+    gitEvidence[1]!.checkInputs.first = candidateCheckInputIdentity(repo, source, candidateProofDefinition(gitFirst));
+    const gitPlan = createCandidateRepairPlan({ ...input, evidence: gitEvidence }, { descriptors: gitDescriptors,
+      inputIdentity: (commit, step) => candidateCheckInputIdentity(repo, commit, step) });
+    assert.equal(gitPlan.checks[1].steps[0].reason, 'current-git-state-required', String(policy));
+    assert.equal(gitPlan.checks[1].steps[0].disposition, 'execute', String(policy));
+  }
   const reused = reusedCandidateProofResult(plan.checks[1].steps[0].proof);
   assert.equal(reused.durationMs, 0); assert.equal(reused.reusedFrom.durationMs, 1500);
   assert.equal(validateCandidateRepairProof(reused, 'source-macos', plan), true);

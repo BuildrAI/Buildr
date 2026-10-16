@@ -1,0 +1,316 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Buildr 发布架构与重构边界",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": "projects/product/knowledge/archify/flows/release-architecture.html",
+    "viewBox": [
+      1220,
+      590
+    ],
+    "repository": {
+      "url": "https://github.com/BuildrAI/Buildr",
+      "revision": "6a1e268bd3a1388c524f7d4f24273d436deceb9b"
+    }
+  },
+  "components": [
+    {
+      "id": "guidance",
+      "type": "external",
+      "label": "技能负责方法与判断",
+      "sublabel": "buildr-release · task-verification",
+      "pos": [
+        40,
+        30
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "sources": [
+        {
+          "path": "skills/buildr-release/SKILL.md"
+        },
+        {
+          "path": "projects/product/services/buildr/resources/workspace/skills/buildr/task-verification/SKILL.md"
+        }
+      ]
+    },
+    {
+      "id": "inputs",
+      "type": "backend",
+      "label": "统一检查输入与复用",
+      "sublabel": "本机与正式补验共用输入选择",
+      "pos": [
+        460,
+        30
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/test/verification/verification-source-inputs.ts"
+        },
+        {
+          "path": "projects/product/services/buildr/tools/release/candidate-source-binding.ts"
+        }
+      ]
+    },
+    {
+      "id": "build",
+      "type": "backend",
+      "label": "构建主包与独立插件",
+      "sublabel": "计划内构建；同一原包继续使用",
+      "pos": [
+        880,
+        30
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/test/verification/release/candidate-package.ts"
+        },
+        {
+          "path": "projects/product/services/dsh-plugin/tools/build-package.ts"
+        }
+      ]
+    },
+    {
+      "id": "selection",
+      "type": "backend",
+      "label": "发布选择与协调",
+      "sublabel": "固定包、版本、准确提交及源码树",
+      "pos": [
+        40,
+        230
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/tools/release/release-selection.ts"
+        },
+        {
+          "path": "projects/product/services/buildr/tools/release/release-orchestration-runner.ts"
+        }
+      ]
+    },
+    {
+      "id": "plan",
+      "type": "backend",
+      "label": "检查定义与缺项计划",
+      "sublabel": "必需集合减去已有有效结果",
+      "pos": [
+        460,
+        230
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/test/verification/registry.ts"
+        },
+        {
+          "path": "projects/product/services/buildr/test/verification/planner.ts"
+        }
+      ]
+    },
+    {
+      "id": "execution",
+      "type": "cloud",
+      "label": "本机与 GitHub 执行",
+      "sublabel": "同一执行器；只补真实平台差异",
+      "pos": [
+        880,
+        230
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/test/verification/plan-runner.ts"
+        },
+        {
+          "path": ".github/workflows/verify.yml"
+        }
+      ]
+    },
+    {
+      "id": "publication",
+      "type": "security",
+      "label": "受保护的公开发布",
+      "sublabel": "只发布获准原包；回读真实效果",
+      "pos": [
+        40,
+        455
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/tools/release/release-publication.ts"
+        },
+        {
+          "path": ".github/workflows/publish-dsh-plugin.yml"
+        }
+      ]
+    },
+    {
+      "id": "coverage",
+      "type": "backend",
+      "label": "结果采用与完整汇总",
+      "sublabel": "按项核对输入、平台、原包及清理",
+      "pos": [
+        460,
+        455
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/test/verification/candidate-ci-evidence.ts"
+        },
+        {
+          "path": "projects/product/services/buildr/test/verification/candidate-repair.ts"
+        }
+      ]
+    },
+    {
+      "id": "results",
+      "type": "database",
+      "label": "保留原始检查结果",
+      "sublabel": "通过、失败和来源分别保全",
+      "pos": [
+        880,
+        455
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/test/verification/verification-reuse.ts"
+        },
+        {
+          "path": "projects/product/services/buildr/test/verification/candidate-ci.ts"
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "method",
+      "from": "guidance",
+      "to": "selection"
+    },
+    {
+      "id": "frozen",
+      "from": "selection",
+      "to": "plan",
+      "label": "冻结输入",
+      "variant": "emphasis"
+    },
+    {
+      "id": "identity",
+      "from": "inputs",
+      "to": "plan",
+      "label": "统一规则",
+      "labelDy": 70
+    },
+    {
+      "id": "missing",
+      "from": "plan",
+      "to": "execution",
+      "label": "只执行缺项",
+      "variant": "emphasis",
+      "labelDy": 25
+    },
+    {
+      "id": "prepare-package",
+      "from": "plan",
+      "to": "build",
+      "label": "需要原包"
+    },
+    {
+      "id": "consume-package",
+      "from": "build",
+      "to": "execution",
+      "label": "同一原包",
+      "labelDy": 70
+    },
+    {
+      "id": "record",
+      "from": "execution",
+      "to": "results",
+      "label": "原始结果",
+      "variant": "emphasis",
+      "labelDy": 70
+    },
+    {
+      "id": "aggregate",
+      "from": "results",
+      "to": "coverage",
+      "label": "核验采用",
+      "variant": "emphasis"
+    },
+    {
+      "id": "readiness",
+      "from": "coverage",
+      "to": "publication",
+      "label": "完整就绪",
+      "variant": "emphasis"
+    },
+    {
+      "id": "authorize",
+      "from": "selection",
+      "to": "publication",
+      "label": "当前授权",
+      "variant": "security",
+      "labelDy": 70
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "现有边界保留",
+      "items": [
+        "发布选择已经冻结；dev 前进不自动选入",
+        "主包与插件独立版本、原包和公开事实"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "本轮收敛目标",
+      "items": [
+        "同一输入规则；旧结果先核验原来源再采用",
+        "执行地点不决定规则；真实平台条件仍须满足"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "失败从所属边界恢复",
+      "items": [
+        "检查补检查，汇总重汇总，登记重登记",
+        "有效结果及原包保留；结果复用不赋予发布权限"
+      ]
+    }
+  ]
+}

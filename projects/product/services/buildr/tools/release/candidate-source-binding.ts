@@ -1,4 +1,5 @@
 import { discoveredVerificationFiles, literalUrlImports, verificationEntryFiles } from '../../test/verification/verification-input-discovery.ts';
+import { createVerificationSourceInputReader, verificationInputSourceFromGit } from '../../test/verification/verification-source-inputs.ts';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
@@ -90,9 +91,33 @@ export function assertReleaseExecutionCheckout(repo: string, context: any): void
   if (gitRead(repo, ['rev-parse', 'HEAD']).trim() !== releaseExecutionSource(repo, context)) throw new Error('Release executor checkout differs from the protected publisher source.');
 }
 
-/** A check's executable recipe is compared in both snapshots. Dynamic readers
- * conservatively bind all verification inputs; production bytes bind separately. */
+type CandidateInputReader = { inventory: (commit: string) => GitSourceEntry[]; blob: (commit: string, file: string) => string };
+
+function checkSource(repo: string, commit: string, reader?: CandidateInputReader) {
+  const inventory = reader?.inventory(commit);
+  const objects = inventory && new Map(inventory.map(entry => [entry.object, entry.path]));
+  const source = inventory && verificationInputSourceFromGit(inventory.map(entry => ({ ...entry, file: entry.path })),
+    object => Buffer.from(reader!.blob(commit, objects!.get(object)!)));
+  return createVerificationSourceInputReader(repo, path.join(repo, prefix), commit, source);
+}
+
+function checkIdentity(source: ReturnType<typeof checkSource>, step: any): string {
+  const inputs = source.inputs({ ...step, reuse: step.reuse || { scope: 'repository' } }, true);
+  if (inputs.unavailable) throw new Error('Candidate check inputs include unavailable source bytes.');
+  return digest({ version: 3, descriptor: { id: step.id, executor: step.executor, dependsOn: step.dependsOn,
+    contexts: step.contexts, timeoutMs: step.timeoutMs, resources: step.resources, resourceDemand: step.resourceDemand,
+    concurrencyClass: step.concurrencyClass, executionProfile: step.executionProfile, scope: step.reuse?.scope ?? 'repository' }, inputs });
+}
+
+/** Candidate transport uses the same normalized bytes, scopes and executable
+ * dependency selection as local reuse; platform and package checks stay separate. */
 export function candidateCheckInputIdentity(repo: string, commit: string, step: any, reader?: { inventory: (commit: string) => GitSourceEntry[]; blob: (commit: string, file: string) => string }): string {
+  return checkIdentity(checkSource(repo, commit, reader), step);
+}
+
+/** Authentication of historical v2 evidence only. Never emits new evidence or
+ * decides present-day applicability: both snapshots must match the shared model. */
+function legacyCandidateCheckInputIdentity(repo: string, commit: string, step: any, reader: CandidateInputReader): string {
   const entries = reader?.inventory(commit) ?? readGitSourceInventory(repo, commit), byPath = new Map(entries.map(entry => [entry.path, entry]));
   const selected = new Set<string>(), visited = new Set<string>(), pending: string[] = [];
   const add = (file: string) => { selected.add(file); if (!visited.has(file)) { visited.add(file); pending.push(file); } };
@@ -136,11 +161,18 @@ export function candidateCheckInputIdentity(repo: string, commit: string, step: 
     entries: [...selected].sort().map(file => byPath.get(file) ?? { path: file, absent: true }) });
 }
 
-export function createCandidateCheckInputReader(repo: string): (commit: string, step: any) => string {
+export function createCandidateCheckInputReader(repo: string) {
   const inventories = new Map<string, GitSourceEntry[]>(), blobs = new Map<string, string>();
   const reader = {
     inventory(commit: string) { if (!inventories.has(commit)) inventories.set(commit, readGitSourceInventory(repo, commit)); return inventories.get(commit)!; },
     blob(commit: string, file: string) { const key = commit + ':' + file; if (!blobs.has(key)) blobs.set(key, gitRead(repo, ['show', key])); return blobs.get(key)!; },
   };
-  return (commit, step) => candidateCheckInputIdentity(repo, commit, step, reader);
+  const sources = new Map<string, ReturnType<typeof checkSource>>();
+  const current = (commit: string, step: any) => {
+    if (!sources.has(commit)) sources.set(commit, checkSource(repo, commit));
+    return checkIdentity(sources.get(commit)!, step);
+  };
+  return Object.assign(current, { matches(commit: string, step: any, identity: string): boolean {
+    return current(commit, step) === identity || legacyCandidateCheckInputIdentity(repo, commit, step, reader) === identity;
+  } });
 }

@@ -10,7 +10,7 @@
 | 改动归属 | `ownership.ts`：选择、排除、委托及扩大范围的理由 |
 | 检查定义与选择 | `registry.ts`、`planner.ts`：步骤、依赖、范围和预算 |
 | 执行与资源 | `plan-runner.ts`、`dag-scheduler.ts`、`executor.ts`、`resource-coordinator.ts` |
-| 输入、复用与耗时 | `verification-inputs.ts`、`verification-reuse.ts`、`timing/` |
+| 输入、复用与耗时 | `verification-source-inputs.ts`、`verification-inputs.ts`、`verification-reuse.ts`、`timing/` |
 | 原包补验及汇总 | `candidate-repair.ts`、`candidate-repair-cli.ts`、`candidate-ci-evidence.ts` |
 | 正式任务报告 | 通用任务验证（Task Verification）只消费真实摘要，不接管测试执行 |
 
@@ -46,6 +46,8 @@
 真实系统依赖、具体风险及开发触发输入以[平台清单](../../../services/buildr/test/verification/platform-boundaries.ts)为准。源码与包消费分片（Shard）分开；没有平台依据不能默认加入 Windows，包消费分片不能混入通用源码检查。
 
 本机有效结果可跳过对应远端检查和专属准备；尚未支持复用的检查继续执行。核对者的平台不能冒充原执行平台，空选择、跳过或计划成功也不是测试通过。完整职责与失败处理见[发布流程](../flows/open-source-release.md)。
+
+本机复用与正式补验共用源码读取、范围及实际依赖选择。结果传递格式可以不同，适用性不另写一套；历史结果先核验原来源，再比较当前输入，保留原记录和真实执行时间。
 
 ## 新测试怎样接入
 

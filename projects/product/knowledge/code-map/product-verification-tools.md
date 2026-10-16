@@ -12,6 +12,7 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
   - [source.ts](../../services/buildr/test/verification/source.ts) — 本机发布准备的适用源码集合，不生产或消费最终原包；与远端共享登记及执行器（Executor）
   - [verification-reuse.ts](../../services/buildr/test/verification/verification-reuse.ts) — 内容、配方、环境和必要 Git 身份，成功结果持久复用与可搬运证明；输入漂移或清理失败不得写成成功
   - [verification-inputs.ts](../../services/buildr/test/verification/verification-inputs.ts) — 已核验运行检查的产品与配方输入分离、静态依赖及子脚本读取；未知输入保守回退
+  - [verification-source-inputs.ts](../../services/buildr/test/verification/verification-source-inputs.ts) — 本机与正式补验共享的源码读取、字节与权限规范化、范围及逐项输入；准确提交只读 Git 对象，不切换工作目录
   - [local-source-verification.ts](../../services/buildr/test/verification/local-source-verification.ts) — 发布派发前核对冻结工作树的本机适用源码证明，合并合法插件阶段，缺项只返回必要补齐动作
   - [candidate-source-reuse.ts](../../services/buildr/test/verification/candidate-source-reuse.ts) — 有界受控交接、源码分片（Shard）覆盖计算；实际身份由复用模块核验
   - [test-files.ts](../../services/buildr/test/verification/test-files.ts) — 解析安全路径、展开文件匹配并去重，空集合失败
@@ -40,7 +41,7 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
 - [services/buildr/package.json](../../services/buildr/package.json) — 稳定命令、生成物准备、测试及公开包导出
 - [services/buildr-web/package.json](../../services/buildr-web/package.json) — 前端构建及独立逻辑测试入口
 - **`services/buildr/tools/release/`** — 发布恢复与检查来源
-  - [candidate-source-binding.ts](../../services/buildr/tools/release/candidate-source-binding.ts) — 原产包与验证提交的真实构建输入比较、逐检查身份以及受保护发布工具检出校验
+  - [candidate-source-binding.ts](../../services/buildr/tools/release/candidate-source-binding.ts) — 原产包与验证提交的真实构建输入比较；调用共享输入实现形成检查身份，旧算法只核验历史结果；另行保护发布工具检出
   - [candidate-repair-operation.ts](../../services/buildr/tools/release/candidate-repair-operation.ts) — 在原承载引用请求正式补验，未知请求回读，保留原包和运行指针
   - [release-failure.ts](../../services/buildr/tools/release/release-failure.ts) — 有界命令诊断、明确拒绝识别与阶段恢复建议；不创建第二份发布事实
 - **`services/buildr/tools/development/`** — 真实开发环境边界

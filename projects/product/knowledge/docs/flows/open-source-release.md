@@ -2,6 +2,21 @@
 
 本页是发布、恢复和清理的唯一流程入口。准备停在公开发布之前；公开动作须绑定所选包的准确版本、内容和授权。插件专属事实见[插件发布说明](dsh-plugin-release.md)，测试职责见[验证框架](../architecture/verification-framework.md)。
 
+![发布职责、交接与恢复边界](../../archify/flows/release-architecture.html)
+
+## 谁负责什么
+
+| 责任 | 实际技能与实现 |
+| --- | --- |
+| 工作方法 | `buildr-release` 指导发布；`project-testing` 建设测试，`task-verification` 选择已有检查并登记真实报告 |
+| 冻结与推进 | [发布协调](../../../services/buildr/tools/release/release-orchestration-runner.ts)调用[发布选择](../../../services/buildr/tools/release/release-selection.ts)，固定包、版本、准确提交与源码树；后续 `dev` 不自动进入 |
+| 定义、选择与执行 | `test/verification/` 的 `registry.ts`、`planner.ts` 与 `plan-runner.ts`；本机和 GitHub 共用[输入读取](../../../services/buildr/test/verification/verification-source-inputs.ts)及依赖选择，执行地点不另定规则 |
+| 生成安装包 | [主包生产](../../../services/buildr/test/verification/release/candidate-package.ts)与[插件构建](../../../services/dsh-plugin/tools/build-package.ts)，分别保留原包身份 |
+| 采用与完整汇总 | [正式补验](../../../services/buildr/test/verification/candidate-repair.ts)逐项核对输入、平台、原包及清理，[候选汇总](../../../services/buildr/test/verification/candidate-ci-evidence.ts)核对必需集合齐全 |
+| 公开与回读 | [发布执行](../../../services/buildr/tools/release/release-publication.ts)及各包的受保护工作流（Workflow），只公开获准原包并核对真实效果 |
+
+这些是工程职责，不是六个通用产品模块。`src/modules/project-testing` 管测试地图，任务验证应用（Task Verification Application）管报告；两者不执行产品测试或发布。缺哪项补哪项，汇总失败重做汇总，登记失败重做登记；已成立的检查和原包事实保留。
+
 ## 选择发布内容
 
 两个包独立版本、独立原包、独立发布；选择公开哪个包，不等于选择验证哪些源码。
@@ -73,6 +88,8 @@ release-orchestration-runner.ts inspect|publish|resume <同一选择与版本> -
 ## 原包正式补验
 
 `--verification-source` 必须是 `origin/dev` 中的准确提交，且与原产包源码的产品、依赖、构建和原工作流输入一致。检查源码与产包源码分别记录；补验代码不因此获得公开发布权限。
+
+旧格式结果先用原始提交核验，再用当前共享输入规则比较前后两份源码；不改写旧记录，也不因输入算法升级全部重跑。无法核验的旧结果只补对应项；实际 Git 比较及宿主 Node 仍须重新观察。
 
 | 变化或失败 | 处理 |
 | --- | --- |

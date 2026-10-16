@@ -43,7 +43,8 @@ export function createCandidateRepairPlan(input: {
   if (input.originalRun.head_sha !== productSource) throw new Error('Candidate repair must preserve its original workflow source.');
   const binding = createCandidateSourceBinding(input.repo, productSource, input.verificationSource);
   createCandidateSourceBinding(input.repo, productSource, input.originalRun.head_sha);
-  const inputs = options.inputIdentity ?? createCandidateCheckInputReader(input.repo);
+  const sharedInputs = options.inputIdentity ? null : createCandidateCheckInputReader(input.repo);
+  const inputs = options.inputIdentity ?? sharedInputs!;
   const byId = new Map<string, any>();
   for (const item of input.evidence) {
     if (item?.schemaVersion !== CANDIDATE_CI_EVIDENCE_SCHEMA || byId.has(item.id)) throw new Error('Candidate repair evidence schema or uniqueness differs.');
@@ -70,14 +71,20 @@ export function createCandidateRepairPlan(input: {
       const currentIdentity = inputs(input.verificationSource, candidateProofDefinition(step));
       const result = original?.results?.find((value: any) => value.id === step.id);
       const priorIdentity = original?.checkInputs?.[step.id] ?? null;
+      const definition = candidateProofDefinition(step);
+      const priorSource = original?.verificationSource ?? productSource;
+      // Authenticate the original v2 digest before comparing both immutable
+      // snapshots under today's shared input policy. Keep the old record intact.
+      const matchingInputs = priorIdentity === currentIdentity || Boolean(sharedInputs && priorIdentity
+        && sharedInputs.matches(priorSource, definition, priorIdentity) && inputs(priorSource, definition) === currentIdentity);
       const producer = descriptor.producesArtifact && step.id === 'candidate-tarball';
       const complete = original?.status === 'passed' || original?.cleanupClean === true;
-      const freshGit = step.reuse?.git === true;
+      const freshGit = Boolean(step.reuse?.git);
       const reusable = descriptor.kind !== 'host-node' && !freshGit && platformMatches && packageMatches && complete && goodResult(result)
-        && (producer || priorIdentity === currentIdentity);
+        && (producer || matchingInputs);
       const reason = descriptor.kind === 'host-node' ? 'actual-host-environment-required' : freshGit ? 'current-git-state-required' : !original ? 'missing-evidence' : !platformMatches ? 'platform-or-tuple-changed'
         : !packageMatches ? 'artifact-changed' : !complete || !goodResult(result) ? 'prior-check-not-passed'
-          : !producer && priorIdentity !== currentIdentity ? 'check-inputs-changed' : producer ? 'original-package-preserved' : 'matching-complete-proof';
+          : !producer && !matchingInputs ? 'check-inputs-changed' : producer ? 'original-package-preserved' : 'matching-complete-proof';
       const originalResult = result?.candidateProof?.originalResult ?? (result ? { ...result, durationMs: result.reusedFrom?.durationMs ?? result.durationMs } : null);
       const origin = result?.candidateProof?.origin ?? (result?.sourceRecord ? { ...result.sourceRecord.origin, runner: result.sourceRecord.environment }
         : { runId: String(input.originalRun.id), runAttempt: Number(original?.workflow.runAttempt),

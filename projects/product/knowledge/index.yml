@@ -295,6 +295,9 @@ objects:
     parent: verification-product-tools
     title: Node.js 测试上下文
     summary: 面向 Node.js 的可选能力：复用昂贵准备，保持案例隔离，管理创建、恢复和清理。
+  - id: product-release
+    title: Buildr 与 DSH 发布
+    summary: 发布职责、冻结选择、原包验证、逐项补验与公开恢复。
   - id: knowledge-maintenance
     title: 知识建设与维护
     summary: 谁指导事实建设，谁维护表达，职责落在哪些文件，以及变化后怎样跟上。
@@ -303,6 +306,19 @@ objects:
     title: 智能体接入与执行
     summary: 从确认接入到关联原生会话与一次生成，理解 Codex 专用进程与 DSH 桌面后台的区别。
 artifacts:
+  - id: product-release-flow
+    title: Buildr 与 DSH 插件发布流程
+    kind: document
+    path: knowledge/docs/flows/open-source-release.md
+    objects: [product-release]
+    sources: [release-coordination-source, release-selection-source, release-publication-source, verification-source-reader, verification-candidate-repair]
+  - id: product-release-architecture
+    title: Buildr 发布架构与重构边界
+    kind: diagram
+    path: knowledge/archify/flows/release-architecture.html
+    graphSource: knowledge/archify/flows/release-architecture.json
+    objects: [product-release]
+    sources: [release-coordination-source, release-selection-source, release-publication-source, verification-source-reader, verification-candidate-source-binding, verification-candidate-repair]
   - id: agent-integration-article
     title: 接入方式与职责
     kind: document
@@ -1159,7 +1175,7 @@ artifacts:
       - verification-ref-73fbe375
       - verification-installed-package
       - verification-ref-e568f1e4
-    observedDigest: 21c39ddb2f64ca550c791c5904c4a71a2c948c07cfd20ac3663650ef6398e11e
+    observedDigest: 4c784fd3d8eee8ce6b7bfc60bef19d40c414d611183c18cf3b2e9871fbde51f4
     files:
       - verification-file-263d3698
       - verification-file-9894349f
@@ -1174,6 +1190,7 @@ artifacts:
     objects:
       - verification-product-tools
     sources:
+      - verification-source-reader
       - verification-scoped-inputs
       - verification-candidate-repair
       - verification-candidate-repair-entry
@@ -1230,7 +1247,7 @@ artifacts:
       - verification-ref-73fbe375
     files:
       - verification-product-map-file
-    observedDigest: 92829f9962d60ebecc57038cb5790792abd5f86e819f00c1bd2e273a8ffde345
+    observedDigest: a1f0e8f527d3e36da2f3901f5ffb84b11beba906cac35db7b16af19ad1191195
   - id: verification-context-guide
     title: Node.js 测试上下文：复用、隔离与生命周期
     kind: document
@@ -1422,6 +1439,23 @@ artifacts:
       - file-responsibility-graph
       - project-terms
 sources:
+  - id: release-coordination-source
+    title: 发布协调入口
+    kind: code
+    path: services/buildr/tools/release/release-orchestration-runner.ts
+  - id: release-selection-source
+    title: 冻结发布选择
+    kind: code
+    path: services/buildr/tools/release/release-selection.ts
+  - id: release-publication-source
+    title: 公开效果与恢复
+    kind: code
+    path: services/buildr/tools/release/release-publication.ts
+  - id: verification-source-reader
+    title: 共享检查源码输入
+    kind: code
+    path: services/buildr/test/verification/verification-source-inputs.ts
+    summary: 本机与正式补验共享字节、权限、范围及依赖选择，历史提交只读核验。
   - id: verification-scoped-inputs
     title: 检查输入范围与保守回退
     kind: code
@@ -1441,7 +1475,7 @@ sources:
     title: 产包源码与验证源码绑定
     kind: code
     path: services/buildr/tools/release/candidate-source-binding.ts
-    summary: 比较精确提交的真实构建输入，形成检查身份并核验受保护发布使用的工具源码。
+    summary: 比较真实构建输入，采用共享检查输入并核验历史结果，另行保护发布工具源码。
   - id: release-candidate-repair-operation
     title: 原候选补验请求与恢复
     kind: code
@@ -3071,7 +3105,7 @@ sources:
     title: 采用实例：Buildr 产品的测试与验证
     kind: evidence
     path: knowledge/docs/architecture/verification-framework.md
-    observedDigest: 21c39ddb2f64ca550c791c5904c4a71a2c948c07cfd20ac3663650ef6398e11e
+    observedDigest: 4c784fd3d8eee8ce6b7bfc60bef19d40c414d611183c18cf3b2e9871fbde51f4
   - id: verification-file-8c3c96dd
     title: Node.js 测试上下文：复用、隔离与生命周期
     kind: evidence
@@ -3101,7 +3135,7 @@ sources:
     summary: 说明冻结候选、同包消费、明确发布授权与公开事实回读；发布流程保持独立维护。
     kind: evidence
     path: knowledge/docs/flows/open-source-release.md
-    observedDigest: 1d5e3d54cd363a33aa656ec7cf5ed6cda7fcbc86fa4cfceefa389b771773cdf5
+    observedDigest: 159c0c283e5c28f2f42b67134945e5901f1b5566b1c77357b3adeaf62ce1bdb6
   - id: verification-context-types
     title: 测试上下文公开类型
     summary: 定义上下文配置、生存范围、并发、生命周期钩子与测试回调的严格类型。
@@ -3125,7 +3159,7 @@ sources:
     summary: Buildr 产品自身的选择执行与上下文复用位置，不是用户项目的必需实现。
     kind: evidence
     path: knowledge/code-map/product-verification-tools.md
-    observedDigest: 92829f9962d60ebecc57038cb5790792abd5f86e819f00c1bd2e273a8ffde345
+    observedDigest: a1f0e8f527d3e36da2f3901f5ffb84b11beba906cac35db7b16af19ad1191195
   - id: parent-input-validation
     title: 任务与完成依据输入校验
     kind: code
@@ -3506,6 +3540,8 @@ sources:
     path: services/buildr-web/src/features/task/components/PrototypeReaderLayout.tsx
     summary: 独立任务阅读与离线预览共用页面目录和阅读布局，页面选择由入口接入。
 relations:
+  - { from: product-release-flow, to: product-release-architecture, kind: contains }
+  - { from: product-release-flow, to: verification-product-architecture, kind: guides }
   - { from: external-connections-document, to: technical-layers-map, kind: guides }
   - { from: product-overview-article, to: system, kind: guides }
   - { from: reference-technical-document, to: system, kind: guides }

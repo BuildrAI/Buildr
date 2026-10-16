@@ -60,7 +60,7 @@ function scenario() {
   const projected = path.join(workspace, '.agents/skills/archify');
   const definitionPath = path.join(serviceRoot, 'resources/workspace/components/buildr/archify/component.yml');
   const definition = YAML.parse(fs.readFileSync(definitionPath, 'utf8'));
-  assert.equal(definition.upstream.version, '2.16.0');
+  assert.equal(definition.upstream.version, '3.1.0');
   assert.equal(definition.integrity[0], `skills/buildr/archify=${assetIntegrity(source)}`);
   assert.equal(fs.existsSync(path.join(source, 'node_modules')), false);
   assert.match(fs.readFileSync(path.join(source, 'assets/archify/LICENSE'), 'utf8'), /MIT License/);
@@ -119,7 +119,7 @@ function scenario() {
   const priorProgram = path.join(installed, 'assets/archify/bin/archify.mjs');
   fs.appendFileSync(priorProgram, '\n// prior-release fixture\n');
   const priorDefinition = YAML.parse(fs.readFileSync(receiptPath, 'utf8'));
-  priorDefinition.version = '2.15.0+buildr.1';
+  priorDefinition.version = '2.16.0+buildr.1';
   priorDefinition.integrity = [`skills/buildr/archify=${assetIntegrity(installed)}`];
   fs.writeFileSync(receiptPath, YAML.stringify(priorDefinition));
   run(['sync', 'codex', ...target]);
