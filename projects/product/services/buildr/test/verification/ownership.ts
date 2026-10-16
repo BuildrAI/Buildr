@@ -1,3 +1,4 @@
+import { WINDOWS_SOURCE_BOUNDARY_INPUTS } from './platform-boundaries.ts';
 const freezeOwnership: any = (value: any) => Object.freeze({
   inputs: Object.freeze(value.inputs),
   inputExclusions: Object.freeze(value.inputExclusions),
@@ -164,6 +165,9 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration-verification": {
     "inputs": [
+      "test/integration/verification-input-boundaries.test.ts",
+      "test/verification/verification-input-discovery.ts",
+      "test/verification/platform-boundaries.ts",
       "test/integration/task-verification-report.test.ts",
       "test/integration/verification-resource-coordinator.test.ts",
       "test/integration/test-context-runtime.test.ts",
@@ -634,29 +638,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     ],
     "inputExclusions": []
   },
-  "system-windows-platform": {
-    "inputs": [
-      "test/system/cli-update.test.ts",
-      "test/system/buildr-web-launcher.test.ts",
-      "test/system/workspace-runtime-recovery.test.ts",
-      "test/system/worktree-create.test.ts",
-      "test/system/worktree-nested-git-isolation.test.ts",
-      "test/helpers/task-finish-sqlite-fixture.ts",
-      "src/modules/installation/application/cli-update.ts",
-      "src/modules/task/application/finish/**",
-      "src/modules/task/infrastructure/**",
-      "src/infrastructure/filesystem/**",
-      "src/infrastructure/git/**",
-      "src/modules/agent-assets/infrastructure/runtime/**",
-      "src/web/**",
-      "resources/workspace/**",
-      "services/buildr-web/package.json",
-      "services/buildr-web/package-lock.json",
-      "services/buildr-web/vite.config.*",
-      "services/buildr-web/tsconfig*.json"
-    ],
-    "inputExclusions": []
-  },
+  "system-windows-platform": { "inputs": WINDOWS_SOURCE_BOUNDARY_INPUTS, "inputExclusions": [] },
   "cli-architecture": {
     "inputs": [
       "bin/**",
@@ -1351,6 +1333,7 @@ export const VERIFICATION_FULL_SCOPE_AUTHORITIES: any = Object.freeze([
     'test/verification/candidate-ci.ts', 'test/verification/candidate-ci-evidence.ts',
     'test/verification/candidate-repair.ts', 'test/verification/candidate-repair-cli.ts',
     'test/verification/verification-reuse.ts', 'test/verification/verification-inputs.ts',
+    'test/verification/verification-input-discovery.ts', 'test/verification/platform-boundaries.ts',
     'test/verification/source.ts', 'test/verification/local-source-verification.ts',
     'test/verification/dag-scheduler.ts', 'test/verification/executor.ts',
     'test/verification/plan-runner.ts', 'test/verification/profile.ts',
@@ -1370,6 +1353,7 @@ export const VERIFICATION_FULL_SCOPE_AUTHORITIES: any = Object.freeze([
 export const VERIFICATION_FULL_SCOPE_INPUTS: any = Object.freeze(VERIFICATION_FULL_SCOPE_AUTHORITIES.map((item: any) => item.pattern));
 
 export const VERIFICATION_DELEGATED_INPUTS: any = Object.freeze([
+  { owner: "product.windows-platform", inputs: ["test/platform/**"] },
   {
     "owner": "product.browser-smoke",
     "inputs": [

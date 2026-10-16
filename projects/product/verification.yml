@@ -7,7 +7,7 @@ testing:
       services:
         - buildr
         - buildr-web
-    purpose: 使用候选登记完成当前平台适用源码检查并复用有效结果，不证明其他平台或最终发布包
+    purpose: 使用候选登记完成当前平台适用源码检查并复用有效结果；macOS 包含完整通用主证明，Windows 仅补真实系统差异，不证明最终发布包
     sourcePaths:
       - services/buildr/src/**
       - services/buildr/resources/**
@@ -30,6 +30,38 @@ testing:
       - 传入 --json 只看计划；--force 强制重跑；--output 导出可搬运源码结果
     requirements:
       - 稳定版 Node >=24.15.0 与相邻 npm，通过项目 wrapper 执行
+      - git
+  - id: buildr-windows-boundaries
+    title: Buildr Windows 真实系统差异
+    scope:
+      project: product
+      services:
+        - buildr
+    purpose: 验证实际命令 shim、路径别名、目录链接、硬链接锁、进程树清理及一个 Git 换行转换用例；只在真实 Windows 执行时形成
+      Windows 证明
+    sourcePaths:
+      - services/buildr/src/infrastructure/process.ts
+      - services/buildr/src/infrastructure/filesystem/**
+      - services/buildr/src/infrastructure/git/**
+      - services/buildr/src/modules/task/infrastructure/**
+    testRoots:
+      - services/buildr/test/platform/**
+    full:
+      kind: command
+      argv:
+        - tools/development/run-development-npm
+        - run
+        - test:focus
+        - --
+        - system-windows-platform
+      cwd: services/buildr
+    selection:
+      - 按 test/verification/platform-boundaries.ts 的实际系统依赖和输入选择，沿用统一登记及原断言
+      - 只选择 worktree-create.test.ts 中的路径别名与 CRLF 用例，不重复整套任务和工作目录检查
+      - 最终包快捷方式、安装启动及退出由 release-tarball-smoke 和宿主 Node 检查独立证明；本族不替代原包消费
+    requirements:
+      - Windows；其他系统执行仅证明当地可适用部分，命令 shim 用例跳过必须如实报告
+      - 稳定版 Node >=24.15.0 与相邻 npm
       - git
   - id: buildr-fast
     title: Buildr 后端低成本完整回归
@@ -106,7 +138,7 @@ testing:
         - test:integration:candidate:release
       cwd: services/buildr
     selection:
-      - 既有三类发布基础设施检查分别拥有选择、公开副作用恢复和 Git 收敛边界；完整入口运行全部检查
+      - 六组发布基础设施检查分别承担契约、源码选择、独立包选择、副作用恢复和两组 Git 收敛；完整入口运行全部检查，候选只需一份通用源码证明
       - 开发中的受影响选择保留低成本检查；本族通过显式发布组或完整候选（Candidate）执行，不混入日常完整核心检查
       - 三种包选择、同版本身份漂移、联合顺序、响应未知和共享清理使用隔离 Git 仓库及外部系统替身，不派发真实发布
     requirements:

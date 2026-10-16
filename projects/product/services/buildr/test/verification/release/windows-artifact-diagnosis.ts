@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { enforceOfflineVerification } from '../../../src/infrastructure/network/verification-network-policy.ts';
 import { readCandidateCiArtifact } from '../candidate-ci-evidence.ts';
 import { executePlan } from '../plan-runner.ts';
-import { createCandidateCiShardPlan } from '../planner.ts';
+import { createVerificationPlan } from '../planner.ts';
 import { resolveVerificationExecutionProfile } from '../registry.ts';
 import { CANDIDATE_TARBALL_ENV, CANDIDATE_PACK_METADATA_ENV, CANDIDATE_RELEASE_MANIFEST_ENV } from './candidate-package.ts';
 
@@ -17,13 +17,13 @@ export const WINDOWS_ARTIFACT_DIAGNOSIS_STEPS = Object.freeze(['system-app-proce
 export const WINDOWS_DIAGNOSIS_SCENARIOS = Object.freeze({
   'runtime-windows': { shard: 'runtime-windows', artifactConsumer: true, stepIds: WINDOWS_ARTIFACT_DIAGNOSIS_STEPS },
   'package-consumer-windows': { shard: 'runtime-windows', artifactConsumer: true, stepIds: ['release-tarball-smoke'] },
-  'worktree-windows': { shard: 'task-worktree-recovery-windows', artifactConsumer: false, stepIds: ['system-worktree-lifecycle', 'system-nested-git-isolation'] },
-  'nested-lifecycle-windows': { shard: 'task-worktree-recovery-windows', artifactConsumer: false, stepIds: ['system-nested-git-isolation'] },
-  'task-lifecycle-windows': { shard: 'task-worktree-recovery-windows', artifactConsumer: false, stepIds: ['system-task-lifecycle'] },
-  'preview-lifecycle-windows': { shard: 'runtime-windows', artifactConsumer: false, stepIds: ['system-app-process'] },
-  'publication-effects-windows': { shard: 'release-infrastructure-windows', artifactConsumer: false, stepIds: ['integration-candidate-release-effects'] },
-  'release-contract-windows': { shard: 'release-infrastructure-windows', artifactConsumer: false, stepIds: ['integration-candidate-release', 'integration-candidate-release-selection', 'integration-candidate-package-selection'] },
-  'git-convergence-windows': { shard: 'release-infrastructure-windows', artifactConsumer: false, stepIds: ['integration-candidate-git-convergence', 'integration-candidate-git-selection'] },
+  'worktree-windows': { shard: 'task-worktree-recovery-macos', artifactConsumer: false, stepIds: ['system-worktree-lifecycle', 'system-nested-git-isolation'] },
+  'nested-lifecycle-windows': { shard: 'task-worktree-recovery-macos', artifactConsumer: false, stepIds: ['system-nested-git-isolation'] },
+  'task-lifecycle-windows': { shard: 'task-worktree-recovery-macos', artifactConsumer: false, stepIds: ['system-task-lifecycle'] },
+  'preview-lifecycle-windows': { shard: 'runtime-source-macos', artifactConsumer: false, stepIds: ['system-app-process'] },
+  'publication-effects-windows': { shard: 'release-infrastructure-macos', artifactConsumer: false, stepIds: ['integration-candidate-release-effects'] },
+  'release-contract-windows': { shard: 'release-infrastructure-macos', artifactConsumer: false, stepIds: ['integration-candidate-release', 'integration-candidate-release-selection', 'integration-candidate-package-selection'] },
+  'git-convergence-windows': { shard: 'release-infrastructure-macos', artifactConsumer: false, stepIds: ['integration-candidate-git-convergence', 'integration-candidate-git-selection'] },
 });
 const servicePrefix = 'projects/product/services/buildr/';
 const sha = /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u;
@@ -58,8 +58,10 @@ export function validateWindowsArtifactDiagnosis(env: NodeJS.ProcessEnv, run: an
 export function createWindowsArtifactDiagnosisPlan(scenario = 'runtime-windows'): any {
   const definition = Object.hasOwn(WINDOWS_DIAGNOSIS_SCENARIOS, scenario) && WINDOWS_DIAGNOSIS_SCENARIOS[scenario as keyof typeof WINDOWS_DIAGNOSIS_SCENARIOS];
   if (!definition) fail('diagnosis-unknown-scenario');
-  // The original shard may contain artifact consumers; the selected source-only owner receives no package inputs below.
-  const plan = createCandidateCiShardPlan(definition.shard, { externalArtifact: true });
+  // Explicit diagnostics can run a generic owner on Windows without adding it
+  // to every Candidate. Keep the registered executor, limits and resources.
+  const original = createVerificationPlan({ stepIds: [...definition.stepIds] });
+  const plan = { ...original, steps: original.steps.filter((step: any) => step.id !== 'candidate-tarball').map((step: any) => ({ ...step, dependsOn: step.dependsOn.filter((id: string) => id !== 'candidate-tarball') })) };
   const steps = plan.steps.filter((step: any) => definition.stepIds.includes(step.id));
   const selected = new Set(steps.map((step: any) => step.id));
   if (steps.length !== definition.stepIds.length || steps.some((step: any) => step.dependsOn.some((id: string) => !selected.has(id)))) fail('diagnosis-plan-coverage-mismatch');

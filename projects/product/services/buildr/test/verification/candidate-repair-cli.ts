@@ -38,9 +38,9 @@ export function materializeCandidateRepair(plan: any, directory: string, workflo
   const needsExecution = (id: string) => selected(id).steps.some((step: any) => step.disposition === 'execute');
   const matrices = {
     source: CANDIDATE_CI_SHARDS.filter((shard: any) => !shard.requiresArtifact && !shard.producesArtifact && needsExecution(shard.id))
-      .map((shard: any) => ({ shard: shard.id, os: platforms[shard.runner], preparation: shard.id === 'frontend-logic-macos' ? 'frontend' : ['core-project-task-macos', 'release-infrastructure-macos', 'release-infrastructure-windows'].includes(shard.id) ? 'source-runtime' : 'base' })),
+      .map((shard: any) => ({ shard: shard.id, os: platforms[shard.runner], preparation: shard.preparation })),
     artifact: CANDIDATE_CI_SHARDS.filter((shard: any) => shard.requiresArtifact && needsExecution(shard.id))
-      .map((shard: any) => ({ shard: shard.id, os: platforms[shard.runner], preparation: shard.id === 'artifact-browser-macos' ? 'browser-artifact' : 'source-runtime' })),
+      .map((shard: any) => ({ shard: shard.id, os: platforms[shard.runner], preparation: shard.preparation })),
     host: CANDIDATE_CI_HOST_NODE_TUPLES.filter((tuple: any) => needsExecution(tuple.id))
       .map((tuple: any) => ({ id: tuple.id, os: platforms[tuple.runner], node: tuple.requestedNode, preparation: tuple.id === 'host-minimum-macos' ? 'publisher' : 'host' })),
   };

@@ -293,8 +293,8 @@ if (action === 'plan') {
     }
   }
   const matrices = {
-    source: reuse.sourceShards.map((shard: any) => ({ shard: shard.id, os: platforms[shard.runner], preparation: shard.id === 'frontend-logic-macos' ? 'frontend' : ['core-project-task-macos', 'release-infrastructure-macos', 'release-infrastructure-windows'].includes(shard.id) ? 'source-runtime' : 'base' })),
-    artifact: CANDIDATE_CI_SHARDS.filter((shard: any) => shard.requiresArtifact).map((shard: any) => ({ shard: shard.id, os: platforms[shard.runner], preparation: shard.id === 'artifact-browser-macos' ? 'browser-artifact' : 'source-runtime' })),
+    source: reuse.sourceShards.map((shard: any) => ({ shard: shard.id, os: platforms[shard.runner], preparation: shard.preparation })),
+    artifact: CANDIDATE_CI_SHARDS.filter((shard: any) => shard.requiresArtifact).map((shard: any) => ({ shard: shard.id, os: platforms[shard.runner], preparation: shard.preparation })),
     host: CANDIDATE_CI_HOST_NODE_TUPLES.map((tuple: any) => ({ id: tuple.id, os: platforms[tuple.runner], node: tuple.requestedNode, preparation: tuple.id === 'host-minimum-macos' ? 'publisher' : 'host' })),
   };
   if (process.env.GITHUB_OUTPUT) for (const [key, include] of Object.entries(matrices)) fs.appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${JSON.stringify({ include })}\n`);

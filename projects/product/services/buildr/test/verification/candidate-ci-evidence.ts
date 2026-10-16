@@ -39,6 +39,7 @@ function registryProjection(): any  {
       dependsOn: item.dependsOn,
       consumesArtifact: item.executor.consumesArtifact === true,
       executor: item.executor,
+      platformEvidence: item.platformEvidence ?? null,
       timeoutMs: item.timeoutMs,
       resources: item.resources,
     })),

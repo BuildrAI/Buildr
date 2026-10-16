@@ -241,6 +241,8 @@ export function validateCandidateCiCoverage(
       if (!byId.has(id)) findings.push({ step: shard.id, code: 'candidate_shard_unknown_step', value: id });
       else if (!candidateIds.has(id)) findings.push({ step: shard.id, code: 'candidate_shard_non_candidate_step', value: id });
       owners.set(id, [...(owners.get(id) ?? []), shard.id]);
+      if (shard.runner === 'windows' && !(byId.get(id)?.platformEvidence?.length > 0)) findings.push({ step: id, code: 'candidate_windows_boundary_undeclared' });
+      if (shard.requiresArtifact && !byId.get(id)?.executor?.consumesArtifact) findings.push({ step: id, code: 'candidate_source_in_artifact_shard' });
       if (byId.get(id)?.executor?.consumesArtifact && !shard.requiresArtifact) {
         findings.push({ step: shard.id, code: 'candidate_shard_artifact_requirement_missing', value: id });
       }

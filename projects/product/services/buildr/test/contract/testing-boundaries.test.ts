@@ -37,7 +37,7 @@ const fullIsolationOwners: any[] = [
   'worktree-nested-git-isolation.test.ts',
 ];
 
-test('release lifecycle partitions preserve every original file exactly once on both Candidate platforms', () => {
+test('release lifecycle partitions preserve every original file exactly once in Candidate source coverage', () => {
   const owners = [
     'integration-candidate-release', 'integration-candidate-release-selection', 'integration-candidate-package-selection',
     'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection',
@@ -54,7 +54,7 @@ test('release lifecycle partitions preserve every original file exactly once on 
     files.push(...selected);
     const workers = VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency[id];
     assert.ok(workers <= selected.length, `${id} cannot exceed its real file count`);
-    for (const platform of ['macos', 'windows']) {
+    for (const platform of ['macos']) {
       const shard = CANDIDATE_CI_SHARDS.find((item: any) => item.id === `release-infrastructure-${platform}`);
       assert.equal(shard.stepIds.filter((owner: string) => owner === id).length, 1, `${platform}:${id}`);
     }
@@ -75,7 +75,7 @@ test('nested Git isolation is an independent bounded System owner without repeat
   assert.equal(step.timeoutMs, 360_000);
   assert.equal(step.testing.primaryEvidenceOwner, nested.id);
   assert.ok(step.profiles.includes('core') && step.profiles.includes('candidate'));
-  const windows = CANDIDATE_CI_SHARDS.find((shard: any) => shard.id === 'task-worktree-recovery-windows');
+  const windows = CANDIDATE_CI_SHARDS.find((shard: any) => shard.id === 'task-worktree-recovery-macos');
   assert.equal(windows.stepIds.filter((id: string) => id === nested.id).length, 1);
   const originalSource = fs.readFileSync(path.join(productRoot, old.files[0]), 'utf8');
   const nestedSource = fs.readFileSync(path.join(productRoot, nested.files[0]), 'utf8');
@@ -100,6 +100,17 @@ function directBoundaryImports(layer: any): any  {
 test('Unit 与 Component 不直接穿过真实进程、网络或文件系统边界', () => {
   assert.deepEqual(directBoundaryImports('unit'), []);
   assert.deepEqual(directBoundaryImports('component'), []);
+});
+
+test('Windows shared-file selection retains exactly one real Git path case', () => {
+  const step = verificationSteps.find((item: any) => item.id === 'system-windows-platform');
+  const argument = step.executor.args.find((item: string) => item.startsWith('--test-name-pattern='));
+  const pattern = new RegExp(argument.slice('--test-name-pattern='.length));
+  for (const [file, expected] of [['test/system/worktree-create.test.ts', 1], ['test/platform/windows-boundaries.test.ts', 4]] as const) {
+    const source = fs.readFileSync(path.join(productRoot, file), 'utf8');
+    const names = [...source.matchAll(/\btest\('([^']+)'/gu)].map(match => match[1]!);
+    assert.equal(names.filter(name => pattern.test(name)).length, expected, file);
+  }
 });
 
 test('每个Verification owner都有唯一且有理由的Context disposition', () => {

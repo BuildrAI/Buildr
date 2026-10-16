@@ -60,6 +60,11 @@ test('共享进程基础层保留参数并只为 Windows command shim 启用 she
   );
   assert.equal(quoteWindowsCommandArgument(''), '""');
   assert.equal(quoteWindowsCommandArgument('plain'), 'plain');
+  assert.equal(quoteWindowsCommandArgument('left&right'), '"left&right"');
+  const spaced = buildCommandInvocation('C:\\Program Files (x86)\\Buildr\\buildr.cmd', ['left&right'], { platform: 'win32' });
+  assert.equal(spaced.executable, '"C:\\Program Files (x86)\\Buildr\\buildr.cmd"');
+  assert.deepEqual(spaced.args, ['"left&right"']);
+  assert.equal(buildCommandInvocation('/tmp/path with spaces/tool', [], { platform: 'darwin' }).executable, '/tmp/path with spaces/tool');
 });
 
 test('共享 PATH 解析器在 Windows 语义下解析 PATHEXT shim', (t: any) => {

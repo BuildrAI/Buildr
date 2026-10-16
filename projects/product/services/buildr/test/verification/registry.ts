@@ -1,3 +1,4 @@
+import { WINDOWS_PLATFORM_BOUNDARIES } from './platform-boundaries.ts';
 import { PACKAGE_VERIFIERS } from '../../tools/verification/package-check/verification-registry.ts';
 import { assertVerificationContextDispositionCoverage, verificationContextDisposition } from '../context/dispositions.ts';
 import { TEST_CONTEXT_KEYS, TASK_LIFECYCLE_CONTEXT_KEY, testContextProfileByKey } from '../context/profiles.ts';
@@ -59,7 +60,7 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
   'integration-task-read-models': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Task entry and read-model applications preserve their SQLite and Application boundaries.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-task-coordination': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Parent coordination and publication applications preserve their real repository boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-project-daily-progress': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Project daily progress Application, store, and CLI boundaries remain coherent without synthesizing Git.', TEST_ENVIRONMENTS.repeatedFilesystem),
-  'system-windows-platform': testing(PROJECT_OWNER, 'Development', 'System', 300000, 'Windows high-risk CLI, worktree, Task Finish, launcher, and managed runtime journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'system-windows-platform': testing(PROJECT_OWNER, 'Development', 'Integration', 8000, 'Native Windows command shims, path aliases, locks and process cleanup preserve their OS contracts.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-buildr-web-http': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Buildr Web Runtime HTTP routes preserve read, error, session and cleanup boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-verification-admission': testing(PROJECT_OWNER, 'Static Conformance', 'System', 10000, 'Changed-path collection remains trustworthy before broad project verification.', TEST_ENVIRONMENTS.repeatedCli),
   'system-verification-contracts': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Verification orchestration, timing, resource, and Workspace contracts hold through public entrypoints.', TEST_ENVIRONMENTS.repeatedCli),
@@ -233,6 +234,7 @@ export const VERIFICATION_STEP_EVIDENCE: any = Object.freeze({
 });
 
 export const VERIFICATION_DAILY_CORE_EXCLUSIONS: any = Object.freeze({
+  'system-windows-platform': 'Actual Windows boundary proof; daily affected selection uses the same explicit platform owner.',
   'artifact-browser-core': 'Consumes the unique Candidate tarball through the representative core Browser journey; it does not replace affected or full source Browser checks.',
   'frontend-logic': 'The independent frontend logic suite runs for frontend changes and full Candidate; backend Core does not imply frontend coverage.',
   'integration-candidate-release': 'Exercises release infrastructure lifecycle and recovery; selected only for release-related changes or full Candidate.',
@@ -261,7 +263,8 @@ const BACKEND_REUSE_CHECKS = new Set(['unit', 'component', 'cli-architecture', '
 // These bounded fixture suites read runtime/source assets, not this Product's governance records.
 const RUNTIME_REUSE_CHECKS = new Set(['integration-runtime', 'integration-data-store', 'integration-task-read-models', 'integration-task-coordination',
   'integration-project-daily-progress', 'system-buildr-web-http', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation',
-  'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection']);
+  'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection',
+  'system-runtime-recovery', 'system-app-process', 'system-workspace-lifecycle', 'system-windows-platform']);
 const NON_REUSABLE_CHECKS = new Set(['typecheck', 'dsh-plugin', 'candidate-tarball', 'application-payload-release', 'release-tarball-smoke', 'artifact-browser-core', 'cli-package-parity', 'host-node-contract', 'host-node-boundaries']);
 // Lifecycle fixtures create and mutate their own repositories. Only checks that
 // actually observe the retained checkout history bind its Git state.
@@ -423,6 +426,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/openspec-projected-validator.test.ts',
   ], { schedulingCostMs: 2000, args: ['--test-concurrency=3'] }),
   integrationSlice('integration-verification', [
+    'test/integration/verification-input-boundaries.test.ts',
     'test/integration/task-verification-report.test.ts',
     'test/integration/verification-resource-coordinator.test.ts',
     'test/integration/test-context-runtime.test.ts',
@@ -551,7 +555,7 @@ export const verificationSteps: any = Object.freeze([
   ...SYSTEM_SUITES.map((suite: any) => step({
     id: suite.id,
     name: suite.name,
-    executor: { type: 'node', file: 'test/verification/system.ts', args: ['--owner', suite.id] },
+    executor: { type: 'node', file: 'test/verification/system.ts', args: ['--owner', suite.id], discoveredFiles: [...suite.files] },
     profiles: ['candidate'],
     schedulingCostMs: suite.schedulingCostMs,
     concurrencyClass: suite.concurrencyClass,
@@ -560,13 +564,7 @@ export const verificationSteps: any = Object.freeze([
     workerDemand: suite.innerConcurrency,
     admission: suite.id === 'system-verification-admission',
   })),
-  step({ id: 'system-windows-platform', name: 'Windows high-risk system journey slice', executor: { type: 'node-test', files: [
-    'test/system/cli-update.test.ts',
-    'test/system/buildr-web-launcher.test.ts',
-    'test/system/workspace-runtime-recovery.test.ts',
-    'test/system/worktree-create.test.ts',
-    'test/system/worktree-nested-git-isolation.test.ts',
-  ], args: ['--test-concurrency=1', '--test-reporter=dot'] }, groups: ['windows-npm-preflight'], selection: 'explicit-only', developmentRunners: ['windows'],  schedulingCostMs: 300000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating', 'task-lifecycle-heavy'] }),
+  step({ id: 'system-windows-platform', name: 'Native Windows boundary checks', executor: { type: 'node-test', files: ['test/platform/windows-boundaries.test.ts', 'test/system/worktree-create.test.ts'], args: ['--test-concurrency=1', '--test-reporter=dot', '--test-name-pattern=^(?:native |owned process |项目与服务共享实际仓库)'] }, profiles: ['candidate'], groups: ['windows-npm-preflight'], selection: 'explicit-only', developmentRunners: ['windows'], platformEvidence: WINDOWS_PLATFORM_BOUNDARIES.filter(item => item.stepId === 'system-windows-platform'), schedulingCostMs: 8000, timeoutMs: 60_000, concurrencyClass: 'workspace-heavy', resources: ['app-runtime'] }),
   step({ id: 'cli-architecture', name: 'CLI modular architecture', executor: { type: 'node', file: 'test/verification/cli/architecture.ts' }, profiles: ['fast', 'candidate'], }),
   step({ id: 'openspec-spec-quality', name: 'OpenSpec canonical spec quality', executor: { type: 'node', file: 'test/verification/openspec/spec-quality.ts' }, profiles: ['fast', 'candidate'], }),
   step({ id: 'openspec-strict', name: 'openspec strict validation', executor: { type: 'openspec', args: ['validate', '--all', '--strict'] }, profiles: ['fast', 'candidate'], }),
@@ -635,7 +633,7 @@ export const verificationSteps: any = Object.freeze([
   step({ id: 'cli-package-parity', name: 'CLI package parity', executor: { type: 'node', file: 'test/verification/cli/package-parity.ts', consumesArtifact: true }, profiles: ['candidate'], groups: ['cli'],  dependsOn: ['candidate-tarball'], schedulingCostMs: 15000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'service-branch-contract', name: 'Service branch contract', executor: { type: 'node', file: 'test/verification/onboarding/service-branch.ts' }, profiles: ['candidate'],   schedulingCostMs: 3000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'remote-skill-timeout', name: 'remote Skill timeout contract', executor: { type: 'node', file: 'test/verification/network/remote-text.ts' }, profiles: ['candidate'],  concurrencyClass: 'network' }),
-  step({ id: 'release-tarball-smoke', name: 'release metadata and real platform Launcher consumption', executor: { type: 'node', file: 'tools/release/release-consumption.ts', args: ['platform'], consumesArtifact: true }, profiles: ['candidate'], groups: ['release', 'windows-npm-preflight'], dependsOn: ['candidate-tarball'], schedulingCostMs: 25000, timeoutMs: 300_000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'release-tarball-smoke', platformEvidence: WINDOWS_PLATFORM_BOUNDARIES.filter(item => item.stepId === 'release-tarball-smoke'), name: 'release metadata and real platform Launcher consumption', executor: { type: 'node', file: 'tools/release/release-consumption.ts', args: ['platform'], consumesArtifact: true }, profiles: ['candidate'], groups: ['release', 'windows-npm-preflight'], dependsOn: ['candidate-tarball'], schedulingCostMs: 25000, timeoutMs: 300_000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'managed-data-integrity', name: 'managed data integrity', executor: { type: 'node', file: 'test/verification/integrity/managed-data-integrity.ts' }, profiles: ['candidate'], groups: ['package'],  schedulingCostMs: 9000, concurrencyClass: 'workspace-heavy' }),
 
   step({ id: 'docs-quality', name: 'documentation quality', executor: { type: 'node', file: 'test/verification/docs/quality.ts' }, profiles: ['candidate'],  concurrencyClass: 'default' }),
@@ -648,6 +646,7 @@ const candidateShard: any = (id: any, runner: any, phase: any, stepIds: any, opt
   runner,
   phase,
   stepIds: Object.freeze(stepIds),
+  preparation: options.preparation ?? 'base',
   requiresArtifact: options.requiresArtifact === true,
   producesArtifact: options.producesArtifact === true,
 });
@@ -705,14 +704,12 @@ export const CORE_MACOS_SHARDS: any = Object.freeze([
     'system-public-json-contracts',
     'system-openspec-contract-audit',
     'openspec-contract-fixtures',
-  ]),
-  candidateShard('core-package-runtime-release-macos', 'macos', 'verification', [
+  ], { preparation: 'source-runtime' }),
+  candidateShard('core-runtime-source-macos', 'macos', 'verification', [
     'integration-runtime',
     'integration-release',
     'system-buildr-web-http',
-    'application-payload-release',
     'npm-launcher-candidate',
-    'open-source-candidate',
     'package-workspace',
     'package-commands',
     'package-rules',
@@ -720,11 +717,15 @@ export const CORE_MACOS_SHARDS: any = Object.freeze([
     'package-runtime',
     'ownership-recovery',
     'runtime-reconciliation',
-    'cli-package-parity',
     'remote-skill-timeout',
-    'release-tarball-smoke',
     'managed-data-integrity',
-  ], { requiresArtifact: true }),
+  ], { preparation: 'source-runtime' }),
+  candidateShard('core-package-runtime-release-macos', 'macos', 'verification', [
+    'application-payload-release',
+    'open-source-candidate',
+    'cli-package-parity',
+    'release-tarball-smoke',
+  ], { requiresArtifact: true, preparation: 'source-runtime' }),
   candidateShard('core-cli-contract-macos', 'macos', 'verification', [
     'capability-cli-integration',
     'commands-cli-integration',
@@ -735,8 +736,8 @@ export const CORE_MACOS_SHARDS: any = Object.freeze([
 ]);
 
 export const CANDIDATE_CI_SHARDS: any = Object.freeze([
-  candidateShard('artifact-browser-macos', 'macos', 'verification', ['artifact-browser-core'], { requiresArtifact: true }),
-  candidateShard('frontend-logic-macos', 'macos', 'verification', ['frontend-logic']),
+  candidateShard('artifact-browser-macos', 'macos', 'verification', ['artifact-browser-core'], { requiresArtifact: true, preparation: 'browser-artifact' }),
+  candidateShard('frontend-logic-macos', 'macos', 'verification', ['frontend-logic'], { preparation: 'frontend' }),
   candidateShard('preflight-macos', 'macos', 'preflight', [
     'typecheck',
     'unit',
@@ -757,38 +758,16 @@ export const CANDIDATE_CI_SHARDS: any = Object.freeze([
     'candidate-tarball',
   ], { producesArtifact: true }),
   ...CORE_MACOS_SHARDS,
-  candidateShard('release-infrastructure-macos', 'macos', 'verification', ['integration-candidate-release', 'integration-candidate-release-selection', 'integration-candidate-package-selection', 'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection']),
-  candidateShard('release-infrastructure-windows', 'windows', 'verification', ['integration-candidate-release', 'integration-candidate-release-selection', 'integration-candidate-package-selection', 'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection']),
-  candidateShard('runtime-windows', 'windows', 'verification', [
-    'system-runtime-recovery',
-    'system-app-process',
-    'npm-launcher-candidate',
-    'runtime-adapter-parity',
-    'release-tarball-smoke',
-  ], { requiresArtifact: true }),
-  candidateShard('workspace-lifecycle-windows', 'windows', 'verification', [
-    'system-workspace-lifecycle',
-    'workspace-lifecycle',
-  ]),
-  candidateShard('task-worktree-recovery-windows', 'windows', 'verification', [
-    'system-task-lifecycle',
-    'system-worktree-lifecycle',
-    'system-nested-git-isolation',
-    'openspec-convergence-recovery',
-  ]),
-  candidateShard('task-concurrent-windows', 'windows', 'verification', [
-    'concurrent-task-acceptance',
-  ]),
+  candidateShard('release-infrastructure-macos', 'macos', 'verification', ['integration-candidate-release', 'integration-candidate-release-selection', 'integration-candidate-package-selection', 'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection'], { preparation: 'source-runtime' }),
+  candidateShard('platform-boundaries-windows', 'windows', 'verification', ['system-windows-platform']),
+  candidateShard('runtime-windows', 'windows', 'verification', ['release-tarball-smoke'], { requiresArtifact: true, preparation: 'consumer' }),
+  candidateShard('runtime-source-macos', 'macos', 'verification', ['system-runtime-recovery', 'system-app-process', 'runtime-adapter-parity'], { preparation: 'source-runtime' }),
+  candidateShard('workspace-lifecycle-macos', 'macos', 'verification', ['system-workspace-lifecycle', 'workspace-lifecycle']),
+  candidateShard('task-worktree-recovery-macos', 'macos', 'verification', ['system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation', 'openspec-convergence-recovery']),
+  candidateShard('task-concurrent-macos', 'macos', 'verification', ['concurrent-task-acceptance']),
 ]);
 
 export const CANDIDATE_CI_PLATFORM_REPEATS: any = Object.freeze({
-  'integration-candidate-release': Object.freeze(['release-infrastructure-macos', 'release-infrastructure-windows']),
-  'integration-candidate-release-selection': Object.freeze(['release-infrastructure-macos', 'release-infrastructure-windows']),
-  'integration-candidate-package-selection': Object.freeze(['release-infrastructure-macos', 'release-infrastructure-windows']),
-  'integration-candidate-release-effects': Object.freeze(['release-infrastructure-macos', 'release-infrastructure-windows']),
-  'integration-candidate-git-convergence': Object.freeze(['release-infrastructure-macos', 'release-infrastructure-windows']),
-  'integration-candidate-git-selection': Object.freeze(['release-infrastructure-macos', 'release-infrastructure-windows']),
-  'npm-launcher-candidate': Object.freeze(['core-package-runtime-release-macos', 'runtime-windows']),
   'release-tarball-smoke': Object.freeze(['core-package-runtime-release-macos', 'runtime-windows']),
 });
 

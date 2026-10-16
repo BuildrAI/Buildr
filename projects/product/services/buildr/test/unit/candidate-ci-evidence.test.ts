@@ -118,23 +118,23 @@ test('new Candidate host coverage is exactly macOS and Windows and rejects Linux
 });
 
 
-test('Windows lifecycle owners are partitioned into bounded semantic shards', () => {
+test('Generic lifecycle owners retain complete source coverage on one primary platform', () => {
   const shardIds: any[] = [
-    'workspace-lifecycle-windows',
-    'task-worktree-recovery-windows',
-    'task-concurrent-windows',
+    'workspace-lifecycle-macos',
+    'task-worktree-recovery-macos',
+    'task-concurrent-macos',
   ];
   const shards: any = CANDIDATE_CI_SHARDS.filter((shard: any) => shardIds.includes(shard.id));
   assert.deepEqual(shards.map((shard: any) => ({ id: shard.id, stepIds: shard.stepIds })), [
     {
-      id: 'workspace-lifecycle-windows',
+      id: 'workspace-lifecycle-macos',
       stepIds: ['system-workspace-lifecycle', 'workspace-lifecycle'],
     },
     {
-      id: 'task-worktree-recovery-windows',
+      id: 'task-worktree-recovery-macos',
       stepIds: ['system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation', 'openspec-convergence-recovery'],
     },
-    { id: 'task-concurrent-windows', stepIds: ['concurrent-task-acceptance'] },
+    { id: 'task-concurrent-macos', stepIds: ['concurrent-task-acceptance'] },
   ]);
   const owners: any = shards.flatMap((shard: any) => shard.stepIds);
   assert.equal(new Set(owners).size, owners.length);
@@ -145,6 +145,13 @@ test('Candidate CI coverage fails closed for unowned and duplicated steps', () =
   assert.ok(validateCandidateCiCoverage(verificationSteps, withoutUnit).findings.some((item: any) => item.step === 'unit' && item.code === 'candidate_step_unowned'));
   const duplicated: any = CANDIDATE_CI_SHARDS.map((item: any) => item.id === 'core-cli-contract-macos' ? { ...item, stepIds: [...item.stepIds, 'unit'] } : item);
   assert.ok(validateCandidateCiCoverage(verificationSteps, duplicated).findings.some((item: any) => item.step === 'unit' && item.code === 'candidate_step_duplicated'));
+});
+
+test('Candidate rejects undeclared Windows repeats and source checks hidden in artifact jobs', () => {
+  const windows = CANDIDATE_CI_SHARDS.map((shard: any) => shard.id === 'core-cli-contract-macos' ? { ...shard, runner: 'windows' } : shard);
+  assert.ok(validateCandidateCiCoverage(verificationSteps, windows).findings.some((item: any) => item.code === 'candidate_windows_boundary_undeclared'));
+  const mixed = CANDIDATE_CI_SHARDS.map((shard: any) => shard.id === 'core-runtime-source-macos' ? { ...shard, requiresArtifact: true } : shard);
+  assert.ok(validateCandidateCiCoverage(verificationSteps, mixed).findings.some((item: any) => item.code === 'candidate_source_in_artifact_shard'));
 });
 
 test('Candidate aggregate accepts one current complete evidence set', () => {
@@ -177,8 +184,8 @@ test('Candidate aggregate rechecks reused source records and retains independent
 test('Candidate aggregate preserves fresh Windows execution when its optional future reuse record is not portable', () => {
   const workflow = { runId: '38797032896', runAttempt: '1' };
   const complete = passedEvidence(workflow);
-  const shard = complete.find((item: any) => item.id === 'runtime-windows');
-  for (const id of ['system-app-process', 'runtime-adapter-parity']) {
+  const shard = complete.find((item: any) => item.id === 'platform-boundaries-windows');
+  for (const id of ['system-windows-platform']) {
     const result = shard.results.find((item: any) => item.id === id);
     result.durationMs = 12_345;
     result.sourceRecord = { identity: { stepId: id, key: `sha256-${'a'.repeat(64)}` } };
@@ -190,18 +197,18 @@ test('Candidate aggregate preserves fresh Windows execution when its optional fu
   assert.equal(accepted.status, 'passed');
   assert.deepEqual(accepted.findings, []);
   assert.equal(checked, 0, 'fresh same-run results do not use the optional future reuse proof');
-  assert.equal(shard.results.find((item: any) => item.id === 'system-app-process').durationMs, 12_345);
+  assert.equal(shard.results.find((item: any) => item.id === 'system-windows-platform').durationMs, 12_345);
 });
 
 test('Candidate aggregate still rejects an invalid or missing record for explicitly reused results', () => {
   for (const hasRecord of [true, false]) {
     const complete = passedEvidence();
-    const result = complete.find((item: any) => item.id === 'runtime-windows').results.find((item: any) => item.id === 'system-app-process');
+    const result = complete.find((item: any) => item.id === 'platform-boundaries-windows').results.find((item: any) => item.id === 'system-windows-platform');
     result.disposition = 'reused';
     if (hasRecord) result.sourceRecord = { identity: { stepId: result.id, key: `sha256-${'a'.repeat(64)}` } };
     const rejected = aggregateCandidateCiEvidence(complete, candidateContext, null, { validateSourceRecord: () => !hasRecord });
     assert.equal(rejected.status, 'failed');
-    assert.ok(rejected.findings.some((item: any) => item.code === 'source-reuse-invalid' && item.id === 'runtime-windows' && item.detail === result.id));
+    assert.ok(rejected.findings.some((item: any) => item.code === 'source-reuse-invalid' && item.id === 'platform-boundaries-windows' && item.detail === result.id));
   }
 });
 

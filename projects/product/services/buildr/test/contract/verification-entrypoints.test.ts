@@ -303,7 +303,7 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
     assert.ok(workspaceSuites.some((step: any) => step.id === suite), `Workspace E2E registry must retain ${suite}`);
   }
   assert.ok(candidatePlan.steps.some((step: any) => step.executor.file === 'test/capability-cli.integration.ts'));
-  const systemOwners: any = candidatePlan.steps.filter((step: any) => step.id.startsWith('system-'));
+  const systemOwners: any = candidatePlan.steps.filter((step: any) => step.id.startsWith('system-') && step.id !== 'system-windows-platform');
   assert.equal(systemOwners.length, 11);
   for (const owner of systemOwners) {
     assert.equal(owner.executor.file, 'test/verification/system.ts');
@@ -378,7 +378,7 @@ test('Candidate source work is independent and all consumers use the one immutab
     assert.equal(document.jobs[id].steps.filter((step: any) => step.with?.name === 'candidate-package').length, 1);
   }
   for (const id of ['candidate-source', 'candidate-artifact-consumers', 'candidate-host-node']) assert.equal(document.jobs[id].strategy['fail-fast'], false);
-  assert.ok(CANDIDATE_CI_SHARDS.some((shard: any) => shard.id === 'release-infrastructure-windows'));
+  assert.equal(CANDIDATE_CI_SHARDS.some((shard: any) => shard.id === 'release-infrastructure-windows'), false);
   assert.deepEqual(document.jobs['candidate-gate'].needs, ['candidate-plan', 'candidate-bootstrap', 'candidate-source', 'candidate-artifact-consumers', 'candidate-host-node', 'plugin-source-candidate']);
   assert.equal(document.jobs['candidate-bootstrap'].if, "needs.candidate-plan.outputs.buildr == 'true'");
   for (const [id, key] of [['candidate-artifact-consumers', 'artifact'], ['candidate-host-node', 'host']]) {

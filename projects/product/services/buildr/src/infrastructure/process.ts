@@ -33,7 +33,7 @@ export function buildCommandInvocation(executable: any, args: any, options: any 
   const platform = options.platform ?? process.platform;
   const windowsShim = platform === 'win32' && /\.(?:cmd|bat)$/i.test(executable);
   return {
-    executable,
+    executable: windowsShim ? quoteWindowsCommandArgument(executable) : executable,
     args: windowsShim ? args.map(quoteWindowsCommandArgument) : [...args],
     shell: windowsShim,
   };
@@ -42,7 +42,7 @@ export function buildCommandInvocation(executable: any, args: any, options: any 
 export function quoteWindowsCommandArgument(value: any): any  {
   const argument = String(value);
   if (argument.length === 0) return '""';
-  if (!/[\s"]/u.test(argument)) return argument;
+  if (!/[\s"&|<>^()]/u.test(argument)) return argument;
   return `"${argument.replace(/(\\*)"/gu, '$1$1\\"').replace(/(\\+)$/u, '$1$1')}"`;
 }
 

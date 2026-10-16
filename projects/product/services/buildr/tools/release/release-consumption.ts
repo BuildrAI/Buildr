@@ -25,7 +25,7 @@ export const RELEASE_CHECKS = Object.freeze([
   { id: 'platform-launcher', phase: 'candidate', evidence: ['core-package-runtime-release-macos', 'runtime-windows'], operation: 'platform' },
   { id: 'host-node', phase: 'candidate', evidence: ['host-minimum-macos', 'host-current-macos', 'host-minimum-windows', 'host-current-windows'], operation: 'host' },
   { id: 'publisher-cli', phase: 'candidate', evidence: ['host-minimum-macos'], operation: 'publisher' },
-  { id: 'release-lifecycle', phase: 'candidate', evidence: ['release-infrastructure-macos', 'release-infrastructure-windows'], operation: 'lifecycle' },
+  { id: 'release-lifecycle', phase: 'candidate', evidence: ['release-infrastructure-macos'], operation: 'lifecycle' },
   { id: 'artifact-readback', phase: 'pre-publication', reason: 'Recheck downloaded bytes against the frozen Candidate before mutation.' },
   { id: 'publication-authority', phase: 'protected-authority', reason: 'Real platform approval and OIDC exist only in the protected run.' },
   { id: 'source-convergence', phase: 'protected-authority', reason: 'Git refs and publishing authority can change after Candidate.' },
@@ -49,10 +49,13 @@ export const RELEASE_CONSUMER_COMMANDS = Object.freeze({
 });
 
 // Kept only for a bound repair of an already-frozen transaction. These are
-// historical Linux checks, never new macOS results or current Linux support.
+// historical platform recipes, never new-scope results or current Linux support.
+const previousPlatformReleaseChecks = RELEASE_CHECKS.map(check => check.id === 'release-lifecycle'
+  ? { ...check, evidence: ['release-infrastructure-macos', 'release-infrastructure-windows'] } : check);
 const historicalReleaseChecks = RELEASE_CHECKS.map(check => check.id === 'host-node'
   ? { ...check, evidence: ['host-minimum-macos', 'host-current-macos', 'host-minimum-windows', 'host-current-windows', 'host-minimum-linux', 'host-current-linux'] }
-  : check.id === 'publisher-cli' ? { ...check, evidence: ['host-minimum-linux'] } : check);
+  : check.id === 'publisher-cli' ? { ...check, evidence: ['host-minimum-linux'] }
+  : check.id === 'release-lifecycle' ? { ...check, evidence: ['release-infrastructure-macos', 'release-infrastructure-windows'] } : check);
 const consumptionIdentity = (checks: readonly any[]) => `sha256-${crypto.createHash('sha256').update(JSON.stringify({ checks, commands: RELEASE_CONSUMER_COMMANDS, publisherNpm: PUBLISH_NPM_VERSION })).digest('hex')}`;
 
 export function releaseConsumptionIdentity(): string {
@@ -78,11 +81,12 @@ export function assertReleaseConsumptionCoverage(aggregate: any, expected: { sou
   let checks: readonly any[] = RELEASE_CHECKS;
   if (aggregate.consumptionIdentity !== releaseConsumptionIdentity()) {
     const recovery = recoveryContext && validateReleaseExecutorRecovery(recoveryContext);
+    const historical = [previousPlatformReleaseChecks, historicalReleaseChecks].find(recipe => aggregate.consumptionIdentity === consumptionIdentity(recipe));
     if (!recovery || recoveryContext.release?.sourceCommit !== expected.sourceCommit
       || recoveryContext.candidate?.sourceCommit !== expected.sourceCommit
       || recoveryContext.artifact?.sha256 !== artifact?.sha256
-      || aggregate.consumptionIdentity !== consumptionIdentity(historicalReleaseChecks)) throw new Error('Candidate release consumption recipe is missing or stale.');
-    checks = historicalReleaseChecks;
+      || !historical) throw new Error('Candidate release consumption recipe is missing or stale.');
+    checks = historical;
   }
   for (const check of checks) {
     if ('evidence' in check && check.evidence.some((id: string) => !aggregate.evidenceIds?.includes(id))) throw new Error(`Candidate is missing release check ${check.id}.`);

@@ -192,7 +192,7 @@ test('default repair preparation verifies real package bytes, retains partial pr
     checkInputs: Object.fromEntries(check.steps.map((step: any) => [step.id, candidateCheckInputIdentity(repo, source, candidateProofDefinition(step))])),
     results: check.steps.map((step: any) => ({ id: step.id, status: 'passed', exitCode: 0, durationMs: 1,
       phases: step.id === 'artifact-browser-core' ? ['artifact-unpack', 'artifact-verify', 'browser:core', 'artifact-cleanup'].map(id => ({ scope: 'candidate-browser-core', id, status: 'passed' })) : [] })) }));
-  const failedShard = evidence.find((item: any) => item.id === 'release-infrastructure-windows');
+  const failedShard = evidence.find((item: any) => item.id === 'release-infrastructure-macos');
   failedShard.status = 'failed'; failedShard.results[0].status = 'failed'; failedShard.results[0].exitCode = 1;
   const output = path.join(root, 'repair');
   const call = (args: string[]) => {

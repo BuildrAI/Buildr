@@ -26,6 +26,7 @@ test('macOS source includes source nodes from mixed artifact shards and excludes
   assert.ok(ids.includes('npm-launcher-candidate'));
   assert.ok(ids.includes('integration-candidate-release-effects'));
   assert.ok(ids.includes('frontend-logic'));
+  for (const id of ['system-app-process', 'system-runtime-recovery', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation', 'system-workspace-lifecycle', 'workspace-lifecycle', 'runtime-adapter-parity', 'concurrent-task-acceptance', 'openspec-convergence-recovery']) assert.ok(ids.includes(id), id);
   for (const id of ['candidate-tarball', 'artifact-browser-core', 'open-source-candidate', 'cli-package-parity', 'release-tarball-smoke']) assert.equal(ids.includes(id), false, id);
   assert.ok(plan.steps.every((step: any) => step.executor.type !== 'candidate-artifact' && !step.executor.consumesArtifact));
   assert.ok(plan.steps.every((step: any) => step.dependsOn.every((id: string) => ids.includes(id))));
@@ -35,9 +36,8 @@ test('Windows source preserves its declared coverage without claiming a macOS so
   const plan = createSourceVerificationPlan('win32');
   const ids = plan.steps.map((step: any) => step.id);
   assert.equal(plan.runner, 'windows');
-  assert.ok(ids.includes('system-app-process'));
-  assert.ok(ids.includes('workspace-lifecycle'));
-  assert.ok(ids.includes('npm-launcher-candidate'));
+  assert.ok(ids.includes('system-windows-platform'));
+  for (const id of ['system-app-process', 'workspace-lifecycle', 'npm-launcher-candidate']) assert.equal(ids.includes(id), false, id);
   assert.equal(ids.includes('frontend-logic'), false);
   assert.equal(ids.includes('release-tarball-smoke'), false);
   assert.equal(createSourceVerificationPlan('unsupported').status, 'blocked');

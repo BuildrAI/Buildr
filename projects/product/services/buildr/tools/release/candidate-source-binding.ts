@@ -1,3 +1,4 @@
+import { discoveredVerificationFiles, literalUrlImports, verificationEntryFiles } from '../../test/verification/verification-input-discovery.ts';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
@@ -95,33 +96,34 @@ export function candidateCheckInputIdentity(repo: string, commit: string, step: 
   const entries = reader?.inventory(commit) ?? readGitSourceInventory(repo, commit), byPath = new Map(entries.map(entry => [entry.path, entry]));
   const selected = new Set<string>(), visited = new Set<string>(), pending: string[] = [];
   const add = (file: string) => { selected.add(file); if (!visited.has(file)) { visited.add(file); pending.push(file); } };
-  // These entrypoints discover files at runtime instead of listing them in argv.
-  // Bind the complete discovered family (including currently excluded files),
-  // then follow its imports; an added or changed test must revoke old proof.
-  const discoveredFamily = step.executor?.file === 'test/verification/integration.ts' ? 'test/integration/'
-    : step.executor?.file === 'test/verification/system.ts' ? 'test/system/' : null;
   for (const entry of entries) {
     const relative = entry.path.startsWith(prefix) ? entry.path.slice(prefix.length) : '';
     if (!verificationOnlyPath(entry.path)) selected.add(entry.path);
     if (/^test\/(?:helpers|context|fixtures)\//u.test(relative) || /^test\/verification\/(?:timing|support)\//u.test(relative)) selected.add(entry.path);
-    if (/^test\/verification\/(?:executor|plan-runner|dag-scheduler|resource-coordinator|worker-budget|verification-reuse|verification-inputs|candidate-repair|candidate-ci|test-files)\.ts$/u.test(relative)) selected.add(entry.path);
+    if (/^test\/verification\/(?:executor|plan-runner|dag-scheduler|resource-coordinator|worker-budget|verification-reuse|verification-inputs|candidate-repair|candidate-ci|test-files|verification-input-discovery)\.ts$/u.test(relative)) selected.add(entry.path);
     const selectors = [...(step.executor?.files ?? []), ...(step.executor?.args ?? []).filter((argument: string) => argument.startsWith('test/'))];
     if (selectors.some((pattern: string) => path.matchesGlob(relative, pattern))) add(entry.path);
-    if (discoveredFamily && relative.startsWith(discoveredFamily) && /\.test\.[cm]?[jt]sx?$/u.test(relative)) add(entry.path);
   }
-  if (step.executor?.file) add(prefix + step.executor.file);
+  const discovery = discoveredVerificationFiles(step, entries.filter(entry => entry.path.startsWith(prefix)).map(entry => entry.path.slice(prefix.length)));
+  for (const file of discovery.selected) add(prefix + file);
+  for (const file of verificationEntryFiles(step.executor ?? {})) add(path.posix.normalize(prefix + file));
   // The descriptor binds selection, execution dependencies, limits and resources.
-  let conservative = !step.executor?.file && !step.executor?.files?.length;
+  let conservative = verificationEntryFiles(step.executor ?? {}).length === 0 && !step.executor?.files?.length;
   while (pending.length) {
     const file = pending.pop()!;
     if (!byPath.has(file) || !verificationOnlyPath(file) || !/\.[cm]?[jt]sx?$/u.test(file)) continue;
     const text = reader?.blob(commit, file) ?? gitRead(repo, ['show', commit + ':' + file]);
+    const urls = literalUrlImports(text);
+    for (const target of urls.imports) {
+      const relative = path.posix.normalize(path.posix.join(path.posix.dirname(file), target));
+      if (byPath.has(relative)) add(relative); else conservative = true;
+    }
     const catalog = /\/test\/(?:verification|context)\/(?:registry|ownership|system-suites|profiles|dispositions)\.ts$/u.test(file);
     for (const match of catalog ? [] : text.matchAll(/['"]((?:test|tools)\/[^'"\n]+\.[cm]?[jt]sx?)['"]/gu)) {
       const child = prefix + match[1]!;
       if (byPath.has(child)) add(child); else conservative = true;
     }
-    if (/\b(?:import|require)\s*\(\s*(?!['"\s])(?:[a-zA-Z_$])/u.test(text)) conservative = true;
+    if (/\b(?:import|require)\s*\(\s*(?!['"\s])(?:[a-zA-Z_$])/u.test(urls.remainder)) conservative = true;
     for (const match of text.matchAll(/\b(?:from\s*|import\s*\(?\s*|require\s*\(\s*)['"]([^'"\n]+)['"]/gu)) {
       if (!match[1]!.startsWith('.')) continue;
       const relative = path.posix.normalize(path.posix.join(path.posix.dirname(file), match[1]!));
@@ -129,7 +131,7 @@ export function candidateCheckInputIdentity(repo: string, commit: string, step: 
     }
   }
   if (conservative) for (const entry of entries) selected.add(entry.path);
-  return digest({ version: 1, descriptor: { id: step.id, executor: step.executor, dependsOn: step.dependsOn,
+  return digest({ version: 2, discoveredMembers: discovery.inventory, descriptor: { id: step.id, executor: step.executor, dependsOn: step.dependsOn,
     contexts: step.contexts, timeoutMs: step.timeoutMs, resources: step.resources, resourceDemand: step.resourceDemand, concurrencyClass: step.concurrencyClass, executionProfile: step.executionProfile },
     entries: [...selected].sort().map(file => byPath.get(file) ?? { path: file, absent: true }) });
 }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createWindowsArtifactDiagnosisPlan, runWindowsArtifactDiagnosis, validateWindowsArtifactDiagnosis, WINDOWS_ARTIFACT_DIAGNOSIS_SCHEMA, WINDOWS_ARTIFACT_DIAGNOSIS_STEPS, WINDOWS_DIAGNOSIS_SCENARIOS } from '../verification/release/windows-artifact-diagnosis.ts';
-import { createCandidateCiShardPlan } from '../verification/planner.ts';
+import { createCandidateCiShardPlan, createVerificationPlan } from '../verification/planner.ts';
 
 const oldSource = 'a'.repeat(40), checkSource = 'b'.repeat(40), tree = 'c'.repeat(40);
 const env = { DIAGNOSTIC_CANDIDATE_RUN_ID: '38780998205', DIAGNOSTIC_CANDIDATE_SOURCE: oldSource,
@@ -38,10 +38,13 @@ test('borrowing original package bytes rejects every changed production or unrel
 });
 
 test('diagnosis retains exactly the three original recipes without producer or unrelated lifecycle checks', () => {
-  const plan = createWindowsArtifactDiagnosisPlan(), original = createCandidateCiShardPlan('runtime-windows', { externalArtifact: true });
+  const plan = createWindowsArtifactDiagnosisPlan(), original = createVerificationPlan({ stepIds: [...WINDOWS_ARTIFACT_DIAGNOSIS_STEPS] });
   assert.deepEqual(plan.steps.map((step: any) => step.id).sort(), [...WINDOWS_ARTIFACT_DIAGNOSIS_STEPS].sort());
   assert.equal(plan.steps.some((step: any) => ['candidate-tarball', 'system-runtime-recovery', 'npm-launcher-candidate'].includes(step.id)), false);
-  for (const step of plan.steps) assert.deepEqual(step, original.steps.find((item: any) => item.id === step.id));
+  for (const step of plan.steps) {
+    const registered = original.steps.find((item: any) => item.id === step.id);
+    assert.deepEqual(step, { ...registered, dependsOn: registered.dependsOn.filter((id: string) => id !== 'candidate-tarball') });
+  }
   assert.throws(() => createWindowsArtifactDiagnosisPlan('toString'), /diagnosis-unknown-scenario/u);
 });
 
@@ -101,7 +104,7 @@ test('source-only diagnoses select only their failed owner and never pass artifa
     const plan = createWindowsArtifactDiagnosisPlan(scenario), original = createCandidateCiShardPlan(definition.shard, { externalArtifact: true });
     assert.deepEqual(plan.steps.map((step: any) => step.id).sort(), [...definition.stepIds].sort());
     assert.equal(plan.steps.some((step: any) => step.executor.type === 'candidate-artifact' || step.executor.consumesArtifact), false);
-    for (const selected of plan.steps) assert.deepEqual(selected, original.steps.find((step: any) => step.id === selected.id));
+    for (const selected of plan.steps) assert.deepEqual(selected.executor, original.steps.find((step: any) => step.id === selected.id).executor);
     const summary = await runWindowsArtifactDiagnosis({ env: { ...env, DIAGNOSTIC_SCENARIO: scenario, BUILDR_CANDIDATE_TARBALL: '/inherited.tgz', BUILDR_RELEASE_ARTIFACT_MANIFEST: '/inherited.json' } }, {
       platform: 'win32', readRun: () => run, readGitFacts: () => facts, readArtifact: () => artifact, writeSummary: () => {},
       execute: async (selected, options) => {
@@ -117,9 +120,9 @@ test('source-only diagnoses select only their failed owner and never pass artifa
 
 test('nested-lifecycle diagnosis retains one original owner and explicitly masks inherited package inputs', async () => {
   const scenario = 'nested-lifecycle-windows', plan = createWindowsArtifactDiagnosisPlan(scenario);
-  const original = createCandidateCiShardPlan('task-worktree-recovery-windows', { externalArtifact: false });
+  const original = createCandidateCiShardPlan('task-worktree-recovery-macos', { externalArtifact: false });
   assert.deepEqual(plan.steps.map((step: any) => step.id), ['system-nested-git-isolation']);
-  assert.deepEqual(plan.steps[0], original.steps.find((step: any) => step.id === 'system-nested-git-isolation'));
+  assert.deepEqual(plan.steps[0].executor, original.steps.find((step: any) => step.id === 'system-nested-git-isolation').executor);
   let executions = 0;
   const summary = await runWindowsArtifactDiagnosis({ env: { ...env, DIAGNOSTIC_SCENARIO: scenario } }, {
     platform: 'win32', readRun: () => run, readGitFacts: () => facts, readArtifact: () => artifact, writeSummary: () => {},
