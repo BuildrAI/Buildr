@@ -10,6 +10,7 @@ config:
     - { key: website, label: 网站地址, type: url, required: true }
     - { key: scope, label: 模拟业务范围, type: select, optionsFrom: scopes }
 authentication:
+  # 系统只允许个人账号时声明 allowedSources: [personal]；省略保持团队与个人兼容。
   fields:
     - { key: username, label: 用户名, type: string, required: true, minLength: 1 }
     - { key: password, label: 密码, type: secret, required: true }

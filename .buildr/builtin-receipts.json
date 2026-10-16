@@ -69,15 +69,15 @@
       "type": "skill",
       "id": "connection-authoring",
       "target": "skills/buildr/connection-authoring",
-      "integrity": "sha256-607711b8ab11010642b51bceb68863b79c09f34ff05ef9d3553feea537b22706",
+      "integrity": "sha256-6c70a768a45d5476e0159d2e3236cc9ddb37ca986e03095172572c2edf265449",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-8038d9e86afd4c619a3689d7285ac1713f9f2365d977294f307d6f425e61872d"
+          "integrity": "sha256-8ca404850e54cfdb4dee28d28a500ec41aeb4776f40b6dad0a7c65f43d4d31f4"
         },
         {
           "path": "references/connection-contract.md",
-          "integrity": "sha256-e82bcf851d253d9d42891a0afba41e82ab76e27f7bbf5ee1899ed72e04e67cfa"
+          "integrity": "sha256-9430059d678dc4c616b93550edde6a7b4a47a653c51649da41f088662701f2d2"
         },
         {
           "path": "templates/SKILL.md",
@@ -93,7 +93,7 @@
         },
         {
           "path": "templates/connection.yml",
-          "integrity": "sha256-ce4e43f49a6900f07ebfb3a6533024189244684089fbf8607082c6753fb833ab"
+          "integrity": "sha256-8522146a481c43a9937eeabdbca76e183b6487146f0cc7342d31af9293a3aee5"
         }
       ]
     },
