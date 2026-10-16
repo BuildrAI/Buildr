@@ -21,6 +21,7 @@
 ### Modified Capabilities
 
 - `product-verification-quality`: 明确通用源码与真实平台差异的证明职责、候选分片和结果复用范围。
+- `release-collection-model`: 发布专用代码随技能维护，产包与检查各守职责，保留窄读取及独立恢复边界。
 
 ## Impact
 

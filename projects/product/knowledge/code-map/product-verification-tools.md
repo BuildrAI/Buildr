@@ -2,14 +2,14 @@
 
 Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/workspace-testing-and-verification-framework.md)的一个采用实例。本图定位它自己的测试选择、执行、前端检查、候选聚合和上下文复用实现；这些工具不构成用户项目的必需技术栈。通用方法及软件支持见[通用框架实现地图](verification-framework.md)。
 
-路径相对于 `projects/product/`。本实例的稳定入口和准备方式见[产品测试地图](../../verification.yml)、[准备声明](../../preparation.yml)，职责与限制见[产品测试架构](../docs/architecture/verification-framework.md)。
+产品路径相对于 `projects/product/`；发布技能（Skill）脚本位于工作空间根的 `skills/buildr-release/`。本实例的稳定入口和准备方式见[产品测试地图](../../verification.yml)、[准备声明](../../preparation.yml)，职责与限制见[产品测试架构](../docs/architecture/verification-framework.md)。
 
 ## 产品测试工具：发现、选择、执行
 
 这些文件服务 Buildr 产品自己的工程验证。`changed.ts` 收集差异后调用规划器（Planner），组合前置检查并将执行交给 `executePlan()`；后者通过依赖调度和执行器（Executor）调用真实工具。依赖方向是项目工具消费测试及公共技术能力，不是通用项目地图模块反向执行这些脚本。
 
 - **`services/buildr/test/verification/`** — 产品自己的测试编排
-  - [source.ts](../../services/buildr/test/verification/source.ts) — 本机发布准备的适用源码集合，不生产或消费最终原包；与远端共享登记及执行器（Executor）
+  - [source.ts](../../services/buildr/test/verification/source.ts) — 本机发布准备的适用源码集合，先核验有效结果、按缺项准备依赖并重新观察；不生产或消费最终原包，与远端共享登记及执行器（Executor）
   - [verification-reuse.ts](../../services/buildr/test/verification/verification-reuse.ts) — 内容、配方、环境和必要 Git 身份，成功结果持久复用与可搬运证明；输入漂移或清理失败不得写成成功
   - [verification-inputs.ts](../../services/buildr/test/verification/verification-inputs.ts) — 已核验运行检查的产品与配方输入分离、静态依赖及子脚本读取；未知输入保守回退
   - [verification-source-inputs.ts](../../services/buildr/test/verification/verification-source-inputs.ts) — 本机与正式补验共享的源码读取、字节与权限规范化、范围及逐项输入；准确提交只读 Git 对象，不切换工作目录
@@ -34,16 +34,20 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
   - [browser-selector-dispatcher.ts](../../services/buildr/test/verification/browser-selector-dispatcher.ts) — 选择页面检查，准备隔离 `web-dist`，通过隔离执行器（Runner）启动浏览器（Browser）测试
   - `release/`
     - [browser-candidate.ts](../../services/buildr/test/verification/release/browser-candidate.ts) — 校验唯一候选压缩包（Candidate Tarball）、解包并直接托管包内 `web-dist`，执行核心旅程及清理；测试驱动仍来自当前源码，不替代安装后全部行为验收
+    - [verify-pr-candidate.ts](../../services/buildr/test/verification/release/verify-pr-candidate.ts) — 生成受控候选矩阵并汇总源码、平台、原包及插件证明
+    - [release-consumption.ts](../../services/buildr/test/verification/release/release-consumption.ts) — 发布消费要求及已有候选证明映射；真实官方消费另行核验
   - `timing/`
     - [report.ts](../../services/buildr/test/verification/timing/report.ts) — 汇总实际步骤结果、上下文（Context）、耗时与诊断文件
   - `docs/`
     - [quality.ts](../../services/buildr/test/verification/docs/quality.ts) — 检查文档相对链接存在且不越出产品根；不判断正文语义
 - [services/buildr/package.json](../../services/buildr/package.json) — 稳定命令、生成物准备、测试及公开包导出
 - [services/buildr-web/package.json](../../services/buildr-web/package.json) — 前端构建及独立逻辑测试入口
-- **`services/buildr/tools/release/`** — 发布恢复与检查来源
-  - [candidate-source-binding.ts](../../services/buildr/tools/release/candidate-source-binding.ts) — 原产包与验证提交的真实构建输入比较；调用共享输入实现形成检查身份，旧算法只核验历史结果；另行保护发布工具检出
-  - [candidate-repair-operation.ts](../../services/buildr/tools/release/candidate-repair-operation.ts) — 在原承载引用请求正式补验，未知请求回读，保留原包和运行指针
-  - [release-failure.ts](../../services/buildr/tools/release/release-failure.ts) — 有界命令诊断、明确拒绝识别与阶段恢复建议；不创建第二份发布事实
+- **`skills/buildr-release/scripts/`（工作空间根）** — 发布协调、产包及恢复；检查仍由验证框架承担
+  - [release-orchestration-runner.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/release-orchestration-runner.ts) — 正常准备、只读逐包运行观察、授权公开及恢复入口
+  - [candidate-package.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/candidate-package.ts) — 生产主包原字节，供后续检查共同消费
+  - [candidate-source-binding.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/candidate-source-binding.ts) — 原产包与验证提交的真实构建输入比较；调用共享输入实现形成检查身份，旧算法只核验历史结果；另行保护发布工具检出
+  - [candidate-repair-operation.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/candidate-repair-operation.ts) — 在原承载引用请求正式补验，未知请求回读，保留原包和运行指针
+  - [release-failure.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/release-failure.ts) — 有界命令诊断、明确拒绝识别与阶段恢复建议；不创建第二份发布事实
 - **`services/buildr/tools/development/`** — 真实开发环境边界
   - [run-development-npm.ts](../../services/buildr/tools/development/run-development-npm.ts) — 检查当前 Node.js 在项目声明范围内并调用相邻 npm；无扩展名的同名入口负责在声明范围内选择 Node.js（声明版本优先）
   - [run-isolated-workspace-smoke.ts](../../services/buildr/tools/development/run-isolated-workspace-smoke.ts) — 隔离工作目录和两类应用数据目录，统一成功与失败清理
@@ -70,7 +74,7 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
 
 ## 前端与产品行为：从要证明的结果定位测试
 
-前端逻辑测试由 `services/buildr-web/package.json` 的 `test` 执行，`frontend-logic` 在前端受影响路径和完整候选（Candidate）中调用它。源码浏览器（Browser）旅程由后端 `test:browser:smoke` 或 `test:browser:changed` 执行；完整候选（Candidate）另由 `artifact-browser-core` 消费唯一压缩包内的网页载荷执行核心旅程，不证明全部页面。后端 `test:daily-full` 继续只声明日常后端范围。`dsh-plugin` 在插件受影响路径调用独立完整验证，不进入主包候选集合。各入口的工作目录与覆盖边界见[产品测试架构](../docs/architecture/verification-framework.md#测什么以及一次通过能说明什么)。
+前端逻辑测试由 `services/buildr-web/package.json` 的 `test` 执行，`frontend-logic` 在前端受影响路径和完整候选（Candidate）中调用它。源码浏览器（Browser）旅程由后端 `test:browser:smoke` 或 `test:browser:changed` 执行；完整候选（Candidate）另由 `artifact-browser-core` 消费唯一压缩包内的网页载荷执行核心旅程，不证明全部页面。后端 `test:daily-full` 继续只声明日常后端范围。`dsh-plugin` 在插件受影响路径调用独立完整验证，不进入主包候选集合。各入口的工作目录与覆盖边界见[产品测试架构](../docs/architecture/verification-framework.md#当前入口)。
 
 - **`services/buildr-web/test/`** — 前端逻辑的独立测试集合
   - [parentCoordination.test.mjs](../../services/buildr-web/test/parentCoordination.test.mjs) — 父任务确认的默认拒绝、子任务处置和版本保留，不启动网页

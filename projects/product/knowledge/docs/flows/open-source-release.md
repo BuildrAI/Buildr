@@ -1,56 +1,29 @@
-# Buildr 发布：职责与主线
+# Buildr 发布
 
-发布由人确定目标和公开授权，智能体（Agent）依据 `buildr-release` 调用工程工具并持续推进。本文先说明当前组成，再说明从准备到公开的主线；具体检查见[验证架构](../architecture/verification-framework.md)，插件专属事实见[插件发布说明](dsh-plugin-release.md)。
+**固定候选 → 跑测试 → 打包 → 验包 → 发布。** 本页是唯一发布流程入口；准备停在公开之前。
 
-## 谁负责什么
+## 谁负责
 
-![发布的组成与职责](../../archify/flows/release-architecture.html)
+![发布代码归 buildr-release，检查归验证框架](../../archify/flows/release-architecture.html)
 
-| 责任主体 | 负责什么 |
-| --- | --- |
-| 人 | 确定包、各自版本和范围；对准确原包及公开顺序授权 |
-| 智能体（Agent） | 读事实、判断缺项、调用工具、跟踪和恢复；技能（Skill）提供方法 |
-| [发布协调](../../../services/buildr/tools/release/release-orchestration-runner.ts) | 冻结选择，组合下属能力，推进纳入、逐包就绪与恢复 |
-| [产品验证工程](../../code-map/product-verification-tools.md) | 统一检查定义、选择、输入、复用、执行及汇总；本机与 GitHub 是执行场所 |
-| [主包产包](../../../services/buildr/test/verification/release/candidate-package.ts)与[插件产包](../../../services/dsh-plugin/tools/build-package.ts) | 分别生产原包和身份清单；主包消费正式网页构建 |
-| [公开工程](../../../services/buildr/tools/release/release-publication.ts) | 在受保护环境中公开已授权原包，回读官方效果 |
-| 正式记录与本机自举 | 项目测试应用管理地图，任务验证应用管理报告；自举只交给 `buildr-self-bootstrap-sync` 唯一执行器 |
+智能体（Agent）按 `buildr-release` 推进工作，人决定目标和公开授权。**发布流程与发布专用代码归 `buildr-release`，作为技能（Skill）随附脚本；全部检查归验证框架。** 本机与 GitHub 共用同一份代码和检查定义。
 
-源码事实来自 Git，检查事实来自原执行记录，公开事实来自官方系统。协调器记录选择、意图、运行指针及观察结果；这些事实仍须向原权威回读核对。
+## 怎么发布
 
-## 从准备到公开
+![固定候选、跑测试、打包、验包、发布](../../archify/flows/release-workflow.html)
 
-![发布主线与准备边界](../../archify/flows/release-workflow.html)
+1. **固定候选**：固定包、独立版本、分支（Branch）、准确提交（Commit）和对端；后续 `dev` 不自动进入。
+2. **跑测试**：验证框架采用有效旧结果，只执行缺失或失效的检查，包括发布工具自身的检查。
+3. **打包**：每个包生成一份准确原包；测试或汇总修复不默认重打，产品或构建输入变化才重打相关包。
+4. **验包**：验证同一原包的安装、启动、核心页面及必要平台／插件组合；确认必需检查齐全，再核对同树 `main`、准确对端和顺序。**准备到此停止。**
+5. **发布**：获得准确内容的授权后，通过受保护工作流（Workflow）公开已验原包并回读官方结果；不重新生成“交付版”。
 
-| 步骤 | 交付什么，以及在哪里止步 |
-| --- | --- |
-| 1. 确定范围 | 人选择包、独立版本与基线，智能体调用 `prepare` |
-| 2. 冻结选择 | 固定准确源码、源码树和对端；后续 `dev` 不自动进入 |
-| 3. 补源码缺项 | 本机核对已有结果，只执行缺失或失效检查，导出有效证明 |
-| 4. 形成候选证明 | 按需要分别产包，复用源码结果，补真实平台、原包消费及组合检查，完整汇总 |
-| 5. 纳入并逐包就绪 | 将同树源码纳入受保护 `main`；采用已验证的插件原包，再核验对端、兼容与公开顺序。**准备到此停止** |
-| 6. 授权公开 | 人确认展示的准确包、版本、原字节和顺序；就绪不等于公开授权 |
-| 7. 公开并回读 | 受保护工作流（Workflow）消费原包，分别核对 npm、标签与官方公开效果 |
-| 8. 分项收尾 | 智能体分别推进任务登记、引用清理及独立自举；后续失败不撤销公开成功 |
+## 执行与恢复
 
-两个包独立版本、独立原包、独立公开。选择公开哪个包，不等于只验证那个包；兼容及共享输入决定必要组合。
+- 本机能充分证明的在本机完成；GitHub 只补必要平台、干净环境和受保护执行条件。无依赖项可以并行。
+- 有效结果保留，只补相关缺项。检查失败补检查，汇总失败补汇总；请求未知先回读。共享准备不能共享被案例改过的数据。
+- 公开后的任务登记、引用清理、独立自举分别接续，保留已完成的公开事实；自举只交给 `buildr-self-bootstrap-sync` 唯一执行器。
 
-## 入口与恢复
+发布代码位于工作空间根的 `skills/buildr-release/scripts/`：[主入口](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/release-orchestration-runner.ts)、[主包打包](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/candidate-package.ts)及[插件发布](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/dsh-plugin/release.ts)；[插件检查](../../../services/dsh-plugin/tools/verify-all.ts)仍归验证工具。从 `services/buildr` 经 `tools/development/run-development-node ../../../../skills/buildr-release/scripts/release-orchestration-runner.ts --help` 查看参数：`prepare` 准备、`inspect` 只读逐包运行状态、`publish --authorized` 公开获准内容、`resume` 回读后接续。正式补验绑定 `--verification-source`，不赋予补验代码公开权限。插件细节见[插件说明](dsh-plugin-release.md)。
 
-在 `services/buildr`，通过 `tools/development/run-development-node` 调用[唯一操作入口](../../../services/buildr/tools/release/release-orchestration-runner.ts)：
-
-```text
-tools/release/release-orchestration-runner.ts prepare|inspect|publish|resume --workspace <主工作空间> --packages <包选择> <对应版本参数>
-```
-
-`--packages` 可选 `buildr`、`dsh-plugin` 或两者；版本分别使用 `--version`、`--plugin-version`。`inspect` 只读，`publish --authorized` 公开当前获准内容，`resume` 先回读，再接续未完成事项。
-
-| 当前事实 | 从哪里继续 |
-| --- | --- |
-| 检查、汇总或登记失败 | 只恢复对应步骤；有效检查和原包保留 |
-| 测试工具变化，构建输入未变 | 核验适用性后沿用原包，只补失效检查；正式补验绑定 `--verification-source` |
-| 产品或构建输入真实变化 | 重新固定选择并生产相关新包；保留仍有效的独立源码证明 |
-| 请求响应未知 | 先回读原请求，不能把未知当作不存在而重复发送 |
-| 两包部分成功或公开后收尾失败 | 保留成功包和已完成效果，只恢复剩余事项；清理仍须满足原绑定授权、归属和保全条件 |
-
-原包、检查覆盖、候选完整性、公开授权、官方公开和自举结果分别成立。当前默认命令行（CLI）尚未自动接回独立自举执行器结果，因此保留 `activation: pending`，不以健康诊断（Doctor）通过冒充激活完成。
+[检查明细与工程核对底稿](../architecture/verification-framework.md)记录输入、结果复用、工具自验与剩余候选缺口。两组重复 OpenSpec 包装检查已退出默认候选，定向入口仍保留；源码准备按真实缺项选择，当前清理失败保留原有效结果。局部检查通过不表示完整候选通过；**本轮未准备新候选或公开发布。**

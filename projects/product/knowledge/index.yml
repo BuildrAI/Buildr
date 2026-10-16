@@ -297,7 +297,7 @@ objects:
     summary: 面向 Node.js 的可选能力：复用昂贵准备，保持案例隔离，管理创建、恢复和清理。
   - id: product-release
     title: Buildr 与 DSH 发布
-    summary: 发布职责、冻结选择、原包验证、逐项补验与公开恢复。
+    summary: 按发布技能固定候选，验证框架跑测试，打包后测原包；准确授权公开，失败局部恢复。
   - id: knowledge-maintenance
     title: 知识建设与维护
     summary: 谁指导事实建设，谁维护表达，职责落在哪些文件，以及变化后怎样跟上。
@@ -307,20 +307,20 @@ objects:
     summary: 从确认接入到关联原生会话与一次生成，理解 Codex 专用进程与 DSH 桌面后台的区别。
 artifacts:
   - id: product-release-flow
-    title: Buildr 发布：职责与主线
+    title: Buildr 发布
     kind: document
     path: knowledge/docs/flows/open-source-release.md
     objects: [product-release]
     sources: [release-coordination-source, release-selection-source, release-publication-source, verification-source-reader, verification-candidate-repair]
   - id: product-release-architecture
-    title: Buildr 发布：组成与职责
+    title: Buildr 发布：谁负责什么
     kind: diagram
     path: knowledge/archify/flows/release-architecture.html
     graphSource: knowledge/archify/flows/release-architecture.json
     objects: [product-release]
     sources: [release-coordination-source, release-selection-source, release-publication-source, verification-source-reader, verification-candidate-source-binding, verification-candidate-repair]
   - id: product-release-workflow
-    title: Buildr 发布：从准备到公开
+    title: Buildr 发布：五步流程
     kind: diagram
     path: knowledge/archify/flows/release-workflow.html
     graphSource: knowledge/archify/flows/release-workflow.json
@@ -1161,7 +1161,7 @@ artifacts:
       - verification-file-bc346270
       - verification-file-e9222fb3
   - id: verification-product-architecture
-    title: 采用实例：Buildr 产品的测试与验证
+    title: Buildr 验证：现有检查与发布取舍
     kind: document
     path: knowledge/docs/architecture/verification-framework.md
     objects:
@@ -1454,16 +1454,19 @@ artifacts:
 sources:
   - id: release-coordination-source
     title: 发布协调入口
-    kind: code
-    path: services/buildr/tools/release/release-orchestration-runner.ts
+    kind: skill
+    skillId: buildr-release
+    path: scripts/release-orchestration-runner.ts
   - id: release-selection-source
     title: 冻结发布选择
-    kind: code
-    path: services/buildr/tools/release/release-selection.ts
+    kind: skill
+    skillId: buildr-release
+    path: scripts/release-selection.ts
   - id: release-publication-source
     title: 公开效果与恢复
-    kind: code
-    path: services/buildr/tools/release/release-publication.ts
+    kind: skill
+    skillId: buildr-release
+    path: scripts/release-publication.ts
   - id: verification-source-reader
     title: 共享检查源码输入
     kind: code
@@ -1486,18 +1489,21 @@ sources:
     summary: 读取受控原运行和真实压缩包，生成执行矩阵及保留证据，采用输入不变的插件完整证明。
   - id: verification-candidate-source-binding
     title: 产包源码与验证源码绑定
-    kind: code
-    path: services/buildr/tools/release/candidate-source-binding.ts
+    kind: skill
+    skillId: buildr-release
+    path: scripts/candidate-source-binding.ts
     summary: 比较真实构建输入，采用共享检查输入并核验历史结果，另行保护发布工具源码。
   - id: release-candidate-repair-operation
     title: 原候选补验请求与恢复
-    kind: code
-    path: services/buildr/tools/release/candidate-repair-operation.ts
+    kind: skill
+    skillId: buildr-release
+    path: scripts/candidate-repair-operation.ts
     summary: 保留冻结选择与原包，在原承载引用派发补验；未知效果先回读，避免重复请求。
   - id: release-command-recovery
     title: 发布命令诊断与阶段恢复
-    kind: code
-    path: services/buildr/tools/release/release-failure.ts
+    kind: skill
+    skillId: buildr-release
+    path: scripts/release-failure.ts
     summary: 保留有界命令错误，区分明确拒绝和未知效果，投影已成立事实与最小恢复动作。
   - id: connection-runtime-spec
     title: 连接通用运行约定
@@ -2726,8 +2732,9 @@ sources:
     observedDigest: eeb0c534b93b60636cee00b62763f1834c0d0bca2f93840a1758a52bea865efd
   - id: task-source-release-task-evidence-correlation-60b024
     title: 发布任务关联
-    kind: code
-    path: services/buildr/tools/release/release-task-evidence-correlation.ts
+    kind: skill
+    skillId: buildr-release
+    path: scripts/release-task-evidence-correlation.ts
     summary: 只关联完成的发布支持任务与发布输入，任务状态不是候选、产物或发布成功证明。
     observedDigest: d62d1bddf0ea1368c705ad802be9e50c0d68049cf55d4423edc66065e23ff02d
   - id: task-source-2026-08-30-parent-child-task-audit-b28c38
@@ -3130,7 +3137,7 @@ sources:
     summary: 本主题的可独立阅读或维护成果；事实来源见关联文章和实现地图。
     observedDigest: fb6051da600c470d8d245b897735b84c2b4cc68d3a1ed621852595f9177ea9eb
   - id: verification-file-9894349f
-    title: 采用实例：Buildr 产品的测试与验证
+    title: Buildr 验证：现有检查与发布取舍
     kind: evidence
     path: knowledge/docs/architecture/verification-framework.md
     observedDigest: 4c784fd3d8eee8ce6b7bfc60bef19d40c414d611183c18cf3b2e9871fbde51f4

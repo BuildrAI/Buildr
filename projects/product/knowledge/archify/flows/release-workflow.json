@@ -2,13 +2,13 @@
   "schema_version": 2,
   "diagram_type": "workflow",
   "meta": {
-    "title": "Buildr 发布：从准备到公开",
+    "title": "Buildr 发布：五步流程",
     "locale": "zh-CN",
     "quality_profile": "showcase",
     "output": "projects/product/knowledge/archify/flows/release-workflow.html",
     "repository": {
       "url": "https://github.com/BuildrAI/Buildr.git",
-      "revision": "171c7b83bd889d84a2f074cbbd39370d6fdcc5b9"
+      "revision": "afb4b089b112c35fcea70de6fdf13267608bd5ab"
     },
     "legend": {
       "entries": {
@@ -16,10 +16,10 @@
           "label": "人及智能体"
         },
         "backend": {
-          "label": "产品工程"
+          "label": "发布与验证代码"
         },
         "security": {
-          "label": "授权与受保护公开"
+          "label": "公开授权与受保护执行"
         },
         "cloud": {
           "label": "官方事实"
@@ -29,116 +29,41 @@
   },
   "lanes": [
     {
-      "id": "person",
-      "label": "人：目标与公开授权"
-    },
-    {
-      "id": "agent",
-      "label": "智能体（Agent）：调用与接续"
-    },
-    {
       "id": "release",
-      "label": "发布工程：冻结、纳入、逐包就绪"
+      "label": "智能体（Agent）按 buildr-release 推进发布"
     },
     {
-      "id": "verification",
-      "label": "验证与包工程：本机 / GitHub"
-    },
-    {
-      "id": "protected",
-      "label": "受保护工作流（Workflow）：公开与回读"
-    }
-  ],
-  "phases": [
-    {
-      "id": "freeze",
-      "label": "确定范围并冻结",
-      "fromCol": 0,
-      "toCol": 0
-    },
-    {
-      "id": "verify",
-      "label": "取得候选证明",
-      "fromCol": 1,
-      "toCol": 2,
-      "variant": "emphasis"
-    },
-    {
-      "id": "readiness",
-      "label": "纳入与就绪",
-      "fromCol": 3,
-      "toCol": 3
-    },
-    {
-      "id": "publish",
-      "label": "独立授权后公开",
-      "fromCol": 4,
-      "toCol": 4,
-      "variant": "security"
-    },
-    {
-      "id": "observe",
-      "label": "回读与分项收尾",
-      "fromCol": 5,
-      "toCol": 5
+      "id": "testing",
+      "label": "验证框架负责检查；本机与 GitHub 按需执行"
     }
   ],
   "nodes": [
     {
-      "id": "goal",
-      "lane": "person",
-      "col": 0,
-      "type": "external",
-      "label": "确定范围",
-      "sublabel": "包、独立版本、基线",
-      "sources": [
-        {
-          "path": "AGENTS.md"
-        },
-        {
-          "path": "skills/buildr-release/SKILL.md"
-        }
-      ]
-    },
-    {
-      "id": "invoke",
-      "lane": "agent",
-      "col": 0,
-      "type": "external",
-      "label": "调用 prepare",
-      "sublabel": "按方法持续推进",
-      "sources": [
-        {
-          "path": "skills/buildr-release/SKILL.md"
-        }
-      ]
-    },
-    {
-      "id": "frozen",
+      "id": "freeze",
       "lane": "release",
       "col": 0,
       "type": "backend",
-      "label": "冻结选择",
-      "sublabel": "准确源码与固定对端",
+      "label": "1 固定候选",
+      "sublabel": "固定包、版本、准确源码与对端",
       "sources": [
         {
-          "path": "projects/product/services/buildr/tools/release/release-selection.ts"
-        },
-        {
-          "path": "projects/product/services/buildr/tools/release/release-orchestration-runner.ts"
+          "path": "skills/buildr-release/scripts/release-selection.ts"
         }
       ]
     },
     {
-      "id": "source",
-      "lane": "verification",
+      "id": "test",
+      "lane": "testing",
       "col": 1,
       "type": "backend",
-      "label": "本机补源码缺项",
-      "sublabel": "采用有效结果并导出",
+      "label": "2 跑测试",
+      "sublabel": "采用有效结果，只补缺项",
       "sources": [
         {
           "path": "projects/product/services/buildr/test/verification/source.ts"
+        },
+        {
+          "path": "projects/product/services/buildr/test/verification/registry.ts"
         },
         {
           "path": "projects/product/services/buildr/test/verification/verification-reuse.ts"
@@ -146,69 +71,49 @@
       ]
     },
     {
-      "id": "candidate",
-      "lane": "verification",
+      "id": "pack",
+      "lane": "release",
       "col": 2,
       "type": "backend",
-      "label": "按需形成候选证明",
-      "sublabel": "独立产包＋平台与组合",
+      "label": "3 打包",
+      "sublabel": "每个包生成一份准确原包",
       "sources": [
         {
-          "path": ".github/workflows/verify.yml"
+          "path": "skills/buildr-release/scripts/candidate-package.ts"
         },
         {
-          "path": "projects/product/services/buildr/test/verification/candidate-ci.ts"
-        },
-        {
-          "path": "projects/product/services/buildr/test/verification/release/candidate-package.ts"
+          "path": "projects/product/services/dsh-plugin/tools/build-package.ts"
         }
-      ],
-      "tag": "按所选包需要"
+      ]
     },
     {
-      "id": "ready",
-      "lane": "release",
+      "id": "consume",
+      "lane": "testing",
       "col": 3,
       "type": "backend",
-      "label": "纳入并逐包就绪",
-      "sublabel": "同树 main；采用插件原包",
+      "label": "4 验包",
+      "sublabel": "安装、启动、核心页面及必要组合",
+      "tag": "必需检查齐全才就绪",
       "sources": [
         {
-          "path": "projects/product/services/buildr/tools/release/release-orchestration-runner.ts"
+          "path": "projects/product/services/buildr/test/verification/release/release-consumption.ts"
         },
         {
-          "path": "projects/product/services/buildr/tools/release/package-release-operation.ts"
+          "path": "projects/product/services/buildr/test/verification/release/browser-candidate.ts"
         },
         {
-          "path": "projects/product/services/buildr/tools/release/release-readiness.ts"
+          "path": "projects/product/services/buildr/test/verification/candidate-ci-evidence.ts"
         }
-      ],
-      "tag": "准备到此停止"
-    },
-    {
-      "id": "authorize",
-      "lane": "person",
-      "col": 4,
-      "type": "security",
-      "label": "授权公开",
-      "sublabel": "准确包、原字节与顺序",
-      "sources": [
-        {
-          "path": "projects/product/services/buildr/tools/release/package-release-operation.ts"
-        },
-        {
-          "path": "projects/product/services/buildr/tools/release/release-authority.ts"
-        }
-      ],
-      "tag": "未授权保持就绪"
+      ]
     },
     {
       "id": "publish",
-      "lane": "protected",
+      "lane": "release",
       "col": 4,
       "type": "security",
-      "label": "公开获准原包",
-      "sublabel": "受保护环境与固定权限",
+      "label": "5 发布",
+      "sublabel": "公开已验原包，回读官方结果",
+      "tag": "人授权准确包后执行",
       "sources": [
         {
           "path": ".github/workflows/publish.yml"
@@ -217,142 +122,64 @@
           "path": ".github/workflows/publish-dsh-plugin.yml"
         },
         {
-          "path": "projects/product/services/buildr/tools/release/release-publication.ts"
+          "path": "skills/buildr-release/scripts/release-publication.ts"
         }
       ]
-    },
-    {
-      "id": "official",
-      "lane": "protected",
-      "col": 5,
-      "type": "cloud",
-      "label": "回读官方事实",
-      "sublabel": "npm、标签与原字节",
-      "sources": [
-        {
-          "path": "projects/product/services/buildr/tools/release/release-publication.ts"
-        }
-      ]
-    },
-    {
-      "id": "finish",
-      "lane": "agent",
-      "col": 5,
-      "type": "external",
-      "label": "分别登记与收尾",
-      "sublabel": "任务、引用、独立自举",
-      "sources": [
-        {
-          "path": "projects/product/services/buildr/tools/release/package-release-operation.ts"
-        },
-        {
-          "path": "skills/buildr-self-bootstrap-sync/SKILL.md"
-        }
-      ],
-      "tag": "保留已成功效果"
     }
-  ],
-  "mainPath": [
-    "goal",
-    "invoke",
-    "frozen",
-    "source",
-    "candidate",
-    "ready",
-    "authorize",
-    "publish",
-    "official",
-    "finish"
   ],
   "edges": [
     {
-      "id": "goal-invoke",
-      "from": "goal",
-      "to": "invoke",
+      "id": "freeze-test",
+      "from": "freeze",
+      "to": "test",
       "role": "main",
       "variant": "emphasis"
     },
     {
-      "id": "invoke-frozen",
-      "from": "invoke",
-      "to": "frozen",
+      "id": "test-pack",
+      "from": "test",
+      "to": "pack",
       "role": "main",
       "variant": "emphasis"
     },
     {
-      "id": "frozen-source",
-      "from": "frozen",
-      "to": "source",
+      "id": "pack-consume",
+      "from": "pack",
+      "to": "consume",
       "role": "main",
       "variant": "emphasis"
     },
     {
-      "id": "source-candidate",
-      "from": "source",
-      "to": "candidate",
-      "role": "main",
-      "variant": "emphasis"
-    },
-    {
-      "id": "candidate-ready",
-      "from": "candidate",
-      "to": "ready",
-      "role": "main",
-      "variant": "emphasis"
-    },
-    {
-      "id": "ready-authorize",
-      "from": "ready",
-      "to": "authorize",
-      "role": "main",
-      "variant": "security",
-      "label": "准备到此停止"
-    },
-    {
-      "id": "authorize-publish",
-      "from": "authorize",
+      "id": "consume-publish",
+      "from": "consume",
       "to": "publish",
       "role": "main",
-      "variant": "security"
-    },
-    {
-      "id": "publish-official",
-      "from": "publish",
-      "to": "official",
-      "role": "main",
-      "variant": "emphasis"
-    },
-    {
-      "id": "official-finish",
-      "from": "official",
-      "to": "finish",
-      "role": "main",
-      "variant": "emphasis"
+      "variant": "security",
+      "label": "准备止步；授权后继续"
     }
+  ],
+  "mainPath": [
+    "freeze",
+    "test",
+    "pack",
+    "consume",
+    "publish"
   ],
   "cards": [
     {
+      "dot": "amber",
+      "title": "先跑测试，再验证打出来的包",
+      "items": [
+        "主线是五步；无依赖检查可以并行，必需证明齐全后才进入公开",
+        "公开前核对同树 main、准确对端和顺序；使用已验原字节，不重新打交付包"
+      ]
+    },
+    {
       "dot": "emerald",
-      "title": "准备与公开是两个边界",
+      "title": "失败从对应步骤继续",
       "items": [
-        "prepare 止于逐包就绪，不能自动越过人的公开授权",
-        "主包与插件独立版本、独立原包，公开顺序由兼容结果确定"
-      ]
-    },
-    {
-      "dot": "cyan",
-      "title": "两包独立产包，纳入后采用原候选",
-      "items": [
-        "候选阶段按需要分别形成原包及必要平台、组合证明",
-        "main 纳入后采用已验证插件原包，不在该准备步骤重新产包"
-      ]
-    },
-    {
-      "dot": "rose",
-      "title": "失败从所属步骤接续",
-      "items": [
-        "检查补检查、汇总重汇总、登记重登记；有效结果和原包保留",
-        "请求未知先回读；自举结果独立报告，当前默认回传尚未接通"
+        "有效结果保留，只补受影响检查；产品或构建输入变化才重打相关包",
+        "请求未知先回读；登记、清理和独立自举分别接续，不撤销已完成公开"
       ]
     }
   ]
