@@ -75,7 +75,14 @@ test('owned process tree releases descendant sockets and temporary files', { tim
   const closed = once(child, 'close');
   const result = await terminateOwnedProcess({ pid: child.pid, processes: [{ pid: ready.pid }], graceMs: 100, confirmMs: 2_000 });
   await closed;
-  assert.equal(result.status, 'clean', JSON.stringify(result));
+  const diagnostic = JSON.stringify(result);
+  t.diagnostic(diagnostic);
+  assert.deepEqual(result.forced, [], diagnostic);
+  assert.deepEqual(result.remaining, [], diagnostic);
+  for (const pid of [child.pid, ready.pid]) {
+    assert.ok(Number.isInteger(pid) && pid > 0, diagnostic);
+    assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' }, `owned pid ${pid} still exists: ${diagnostic}`);
+  }
   const socket = net.createServer();
   socket.listen(ready.port, '127.0.0.1');
   await once(socket, 'listening');

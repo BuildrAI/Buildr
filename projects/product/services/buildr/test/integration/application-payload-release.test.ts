@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { createRequire } from 'node:module';
 
 import { buildApplicationPayload } from '../../../../../../skills/buildr-release/scripts/application-payload.ts';
 import { createNpmPackStaging, createReleaseArtifact, npmBinSource, readReleaseArtifact } from '../../../../../../skills/buildr-release/scripts/release-artifact.ts';
@@ -123,18 +124,25 @@ test('payload verify runs from a clean tree with no node_modules or esbuild', as
   try {
     const generated: any = createGeneratedReleaseInputs(path.join(root, 'generated'), SOURCE_COMMIT);
     const payload: any = await buildApplicationPayload(path.join(root, 'payload'), SOURCE_COMMIT, { generatedArtifactManifest: generated.manifest, webDistRoot: generated.webDistRoot });
-    const cleanRoot: any = path.join(root, 'clean-service');
+    const cleanWorkspace: any = path.join(root, 'clean-workspace');
+    const cleanRoot: any = path.join(cleanWorkspace, 'projects/product/services/buildr');
     for (const relative of [
       '../../../../skills/buildr-release/scripts/application-payload.ts',
+      '../../../../skills/buildr-release/scripts/package.json',
+      'package.json',
       'tools/build/generated-artifacts.ts',
       'src/infrastructure/product-resources/index.ts',
       'src/infrastructure/filesystem/filesystem-path-identity.ts',
     ]) {
       const target: any = path.join(cleanRoot, relative);
+      const ownedRelative = path.relative(root, target);
+      assert.ok(ownedRelative && !ownedRelative.startsWith('..') && !path.isAbsolute(ownedRelative), `fixture write must stay inside its owned root: ${relative}`);
       fs.mkdirSync(path.dirname(target), { recursive: true });
       fs.copyFileSync(path.join(serviceRoot, relative), target);
     }
     assert.equal(fs.existsSync(path.join(cleanRoot, 'node_modules')), false);
+    assert.equal(fs.existsSync(path.join(cleanWorkspace, 'node_modules')), false);
+    assert.throws(() => createRequire(path.join(cleanRoot, 'package.json')).resolve('esbuild'), { code: 'MODULE_NOT_FOUND' });
     const result: any = spawnSync(process.execPath, [
       path.join(cleanRoot, '../../../../skills/buildr-release/scripts/application-payload.ts'),
       'verify', '--payload', payload.root, '--layout', 'frozen',
