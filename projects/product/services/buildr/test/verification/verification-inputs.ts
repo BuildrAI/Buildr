@@ -1,4 +1,4 @@
-import { discoveredVerificationFiles, literalUrlImports, verificationEntryFiles } from './verification-input-discovery.ts';
+import { discoveredVerificationFiles, executableModuleInputs, literalUrlImports, verificationEntryFiles } from './verification-input-discovery.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -12,7 +12,7 @@ const sharedRecipe = [
 const sharedTrees = ['test/helpers/', 'test/context/', 'test/fixtures/', 'test/verification/timing/', 'test/verification/support/'];
 type Entry = string[];
 
-export function scopedVerificationInputs(entries: Entry[], repositoryRoot: string, productRoot: string, step: any): {
+export function scopedVerificationInputs(entries: Entry[], repositoryRoot: string, productRoot: string, step: any, options: { proof?: boolean; readText?: (file: string) => string } = {}): {
   content: Entry[]; recipe: Entry[]; fallback: boolean; unresolved: string[];
 } {
   const prefix = path.relative(fs.realpathSync(repositoryRoot), fs.realpathSync(productRoot)).split(path.sep).join('/') + '/';
@@ -25,7 +25,12 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
     return relative !== null && (relative.startsWith('test/') || relative.startsWith('tools/release/') || relative.startsWith('tools/verification/'));
   };
   const content = entries.filter(([file]) => !recipeFile(file!));
-  for (const relative of sharedRecipe) selected.add(prefix + relative);
+  // Result validation does not execute the assertions. Its consumers still bind
+  // it through their real imports; changes to the executor/scheduler remain inputs.
+  const validationOnly = new Set(['verification-reuse.ts', 'verification-inputs.ts', 'verification-input-discovery.ts']);
+  for (const relative of sharedRecipe) {
+    if (!options.proof || !validationOnly.has(path.posix.basename(relative))) selected.add(prefix + relative);
+  }
   for (const [file] of entries) {
     const relative = local(file!);
     if (relative && sharedTrees.some(tree => relative.startsWith(tree))) selected.add(file!);
@@ -45,20 +50,22 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
   while (pending.length) {
     const file = pending.pop()!;
     if (!recipeFile(file) || !/\.[cm]?[jt]sx?$/u.test(file) || !byPath.has(file)) continue;
-    const text = fs.readFileSync(path.resolve(repositoryRoot, file), 'utf8');
+    const text = options.readText ? options.readText(file) : fs.readFileSync(path.resolve(repositoryRoot, file), 'utf8');
     const urls = literalUrlImports(text);
+    const executable = options.proof ? executableModuleInputs(text) : null;
     // Child scripts are often passed to spawn via a repository-relative literal,
     // rather than imported into the current test process.
     const catalog = /\/test\/(?:verification|context)\/(?:registry|ownership|system-suites|profiles|dispositions)\.ts$/u.test(file);
-    for (const match of catalog ? [] : text.matchAll(/['"]((?:test|tools)\/[^'"\n]+\.[cm]?[jt]sx?)['"]/gu)) {
-      const child = prefix + match[1]!;
-      if (byPath.has(child)) add(child); else { fallback = true; unresolved.add(file + ':child:' + match[1]!); }
+    const children = executable?.children ?? [...text.matchAll(/['"]((?:test|tools)\/[^'"\n]+\.[cm]?[jt]sx?)['"]/gu)].map(match => match[1]!);
+    for (const target of catalog ? [] : children) {
+      const child = prefix + target;
+      if (byPath.has(child)) add(child); else if (!executable) { fallback = true; unresolved.add(file + ':child:' + target); }
     }
     // Computed module paths retain the conservative scope. Never infer their
     // complete inputs from the changed-path ownership map.
-    if (/\b(?:import|require)\s*\(\s*(?!['"\s])(?:[a-zA-Z_$])/u.test(urls.remainder)) { fallback = true; unresolved.add(file + ':computed-import'); }
+    if (executable ? executable.computed : /\b(?:import|require)\s*\(\s*(?!['"\s])(?:[a-zA-Z_$])/u.test(urls.remainder)) { fallback = true; unresolved.add(file + ':computed-import'); }
     const imports = [...text.matchAll(/\b(?:from\s*|import\s*\(?\s*|require\s*\(\s*)['"]([^'"\n]+)['"]/gu)].map(match => match[1]!);
-    for (const target of [...imports, ...urls.imports]) {
+    for (const target of executable?.imports ?? [...imports, ...urls.imports]) {
       if (!target.startsWith('.')) continue;
       const relative = path.relative(repositoryRoot, path.resolve(repositoryRoot, path.dirname(file), target)).split(path.sep).join('/');
       if (relative.startsWith('../') || path.isAbsolute(relative)) { fallback = true; continue; }

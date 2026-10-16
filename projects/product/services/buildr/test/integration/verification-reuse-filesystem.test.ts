@@ -92,6 +92,69 @@ test('node test runner arguments are recipe inputs rather than invisible child t
   fs.appendFileSync(path.join(directory, 'selected.test.ts'), '// changed assertion\n');
   assert.notEqual(createVerificationReuseIdentity(step, observe())!.key, key);
 });
+
+test('result policy changes preserve independent checks while assertions and execution machinery remain inputs', t => {
+  const f = fixture(t);
+  const write = (file: string, content: string) => { const target = path.join(f.productRoot, file); fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, content); };
+  write('test/selected.test.ts', '// independent assertion\n');
+  write('test/consumer.test.ts', "import './verification/verification-reuse.ts';\n");
+  write('test/verification/verification-reuse.ts', 'export const policy = 1;\n');
+  const selected = { ...f.step, executor: { type: 'node-test', files: ['test/selected.test.ts'] } };
+  const consumer = { ...selected, id: 'policy-consumer', executor: { type: 'node-test', files: ['test/consumer.test.ts'] } };
+  const options = { ...f.options, steps: [selected, consumer] };
+  const observe = () => collectVerificationReuseSnapshot(options);
+  const before = observe();
+  const key = (step: typeof selected) => createVerificationReuseIdentity(step, observe())!.key;
+  const original = key(selected), consumerOriginal = key(consumer);
+  const store = createVerificationReuseStore({ ...options, snapshot: before });
+  store.stage(selected, passed, origin(before.sourceCommit));
+  assert.equal(store.commit(observe(), true).records.length, 1);
+  write('test/verification/verification-reuse.ts', 'export const policy = 2;\n');
+  write('test/unrelated.test.ts', '// independent other suite\n');
+  assert.equal(key(selected), original);
+  assert.notEqual(key(consumer), consumerOriginal);
+  assert.ok(createVerificationReuseStore({ ...options, snapshot: observe(), readOnly: true }).lookup(selected));
+  write('test/selected.test.ts', '// changed assertion\n');
+  assert.notEqual(key(selected), original);
+  write('test/selected.test.ts', '// independent assertion\n');
+  write('test/verification/executor.ts', '// changed execution machinery\n');
+  assert.notEqual(key(selected), original);
+});
+
+test('old complete proof is authenticated from Git, retained unchanged and cannot bypass a newer failure', async t => {
+  const f = fixture(t);
+  const write = (file: string, content: string) => { const target = path.join(f.productRoot, file); fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, content); };
+  const runGit = (...args: string[]) => execFileSync('git', ['-C', f.root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  write('test/selected.test.ts', '// independent assertion\n');
+  write('test/verification/verification-reuse.ts', 'export const policy = 1;\n');
+  runGit('add', '.'); runGit('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', 'commit', '-m', 'complete proof source');
+  const step = { ...f.step, executor: { type: 'node-test', files: ['test/selected.test.ts'] }, dependsOn: [], contexts: [] };
+  const options = { ...f.options, steps: [step] };
+  const observe = () => collectVerificationReuseSnapshot(options);
+  const before = observe(), legacy = { ...before, proofInputs: undefined };
+  const store = createVerificationReuseStore({ ...options, snapshot: legacy });
+  store.stage(step, passed, origin(before.sourceCommit));
+  const old = store.commit(legacy, true).records[0]!;
+  const original = JSON.stringify(old);
+  write('test/verification/verification-reuse.ts', 'export const policy = 2;\n');
+  write('test/unrelated.test.ts', '// unrelated repair\n');
+  assert.equal(validateVerificationReuseRecord(old, { ...options, snapshot: observe(), step }), true);
+  assert.deepEqual(createVerificationReuseStore({ ...options, snapshot: observe(), readOnly: true }).lookup(step), old);
+  let executed = 0;
+  const plan = { status: 'ready', scope: { mode: 'explicit' }, paths: [], steps: [step] };
+  const result = await executePlan(plan, { ...options, executorFactory: () => async () => { executed++; return { ...passed }; } });
+  assert.equal(result.passed, true); assert.equal(executed, 0);
+  assert.equal(JSON.stringify(result.sourceBundle.records[0]), original, 'reuse preserves the actual execution record');
+  const wrongOrigin = { ...old, origin: { ...old.origin, sourceCommit: 'b'.repeat(40) } };
+  assert.equal(validateVerificationReuseRecord(wrongOrigin, { ...options, snapshot: observe(), step }), false);
+  write('test/selected.test.ts', '// actual assertion changed\n');
+  assert.equal(validateVerificationReuseRecord(old, { ...options, snapshot: observe(), step }), false);
+  write('test/selected.test.ts', '// independent assertion\n');
+  const failure = createVerificationReuseStore({ ...options, snapshot: observe() });
+  failure.stage(step, { ...passed, status: 'failed', exitCode: 1, childOutcome: 'failed', childExitCode: 1 }, origin(before.sourceCommit));
+  write('test/verification/verification-reuse.ts', 'export const policy = 3;\n');
+  assert.equal(createVerificationReuseStore({ ...options, snapshot: observe(), imports: [{ schemaVersion: 'buildr.verification-source-bundle/v1', records: [old] }], readOnly: true }).lookup(step), null);
+});
 function origin(sourceCommit: string) { return { kind: 'local' as const, runId: 'source-fixture', sourceCommit, startedAt: new Date().toISOString(), finishedAt: new Date().toISOString() }; }
 
 test('reuse planning is read-only, explains input and recipe misses and removes reused work from its estimate', t => {
@@ -217,6 +280,55 @@ test('default cache loss does not deny an actual passed check and drift preserve
   reuse.finish([timedOut], true);
   assert.equal(timedOut.status, 'timed-out'); assert.equal(timedOut.exitCode, 124); assert.equal(timedOut.failureCode, 'capability-timeout');
   assert.ok((timedOut as any).failureFacts.some((fact: any) => fact.code === 'verification-reuse-input-drift'));
+  const drift = (timedOut as any).failureFacts.find((fact: any) => fact.code === 'verification-reuse-input-drift');
+  assert.deepEqual(drift.changes.map((change: any) => change.field), ['contentIdentity']);
+  assert.match(drift.changes[0].before, /^sha256-[a-f0-9]{64}$/u);
+  assert.notEqual(drift.changes[0].before, drift.changes[0].after);
+  assert.equal(drift.cleanupClean, true);
+});
+
+test('comparison reuse ignores unrelated refs but records real base drift and rejects a missing base', t => {
+  const f = fixture(t);
+  const runGit = (...args: string[]) => execFileSync('git', ['-C', f.root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  runGit('branch', 'comparison-base');
+  const step = { ...f.step, reuse: { scope: 'backend' as const, git: 'comparison' as const } };
+  const options = { ...f.options, steps: [step], env: { ...f.options.env, BUILDR_VERIFICATION_BASE: 'comparison-base' } };
+  const observe = () => collectVerificationReuseSnapshot(options);
+  const before = observe(), original = createVerificationReuseIdentity(step, before)!;
+  const proof = createVerificationPlanReuse({ steps: [step] }, options);
+  const extra = runGit('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', 'commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', 'unrelated history');
+  runGit('branch', 'unrelated', extra);
+  const unrelated = observe();
+  assert.notEqual(unrelated.gitIdentity, before.gitIdentity);
+  assert.deepEqual(createVerificationReuseIdentity(step, unrelated), original);
+  const successful = { ...passed, id: step.id };
+  assert.equal(proof.finish([successful], true).records.length, 1);
+  assert.equal(successful.status, 'passed');
+
+  const messages: string[] = [];
+  const changed = createVerificationPlanReuse({ steps: [step] }, { ...options, stream: { write: (text: string) => messages.push(text) } });
+  runGit('update-ref', 'refs/heads/comparison-base', extra);
+  const result: any = { ...passed, id: step.id };
+  assert.equal(changed.finish([result], true).records.length, 0);
+  assert.equal(result.failureCode, 'verification-reuse-input-drift');
+  const fact = result.failureFacts.find((item: any) => item.code === result.failureCode);
+  assert.deepEqual(fact.changes.map((item: any) => item.field), ['gitIdentity']);
+  assert.equal(fact.git.before.base, before.sourceCommit);
+  assert.equal(fact.git.after.base, extra);
+  assert.equal(fact.git.before.baseRef, 'comparison-base');
+  assert.ok(messages.some(text => text.includes(extra) && text.includes('gitIdentity')));
+  runGit('branch', '-D', 'comparison-base');
+  assert.equal(observe().gitComparison, null);
+  assert.equal(createVerificationReuseIdentity(step, observe()), null);
+});
+
+test('unclean result disposal reports cleanup failure rather than inventing an input change', t => {
+  const f = fixture(t), reuse = createVerificationPlanReuse({ steps: [f.step] }, f.options);
+  const result: any = { ...passed, id: f.step.id };
+  assert.equal(reuse.finish([result], false).records.length, 0);
+  assert.equal(result.failureCode, 'verification-reuse-cleanup-failed');
+  assert.deepEqual(result.failureFacts[0].changes, []);
+  assert.equal(result.failureFacts[0].cleanupClean, false);
 });
 
 test('only the fresh staged record survives unavailable cache and an observed invalidation still revokes it', t => {

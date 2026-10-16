@@ -5,6 +5,27 @@ import path from 'node:path';
 import test from 'node:test';
 import { scopedVerificationInputs } from '../verification/verification-inputs.ts';
 import { candidateCheckInputIdentity } from '../../tools/release/candidate-source-binding.ts';
+import { executableModuleInputs } from '../verification/verification-input-discovery.ts';
+
+test('module discovery distinguishes generated source and comments from actual imports and template expressions', () => {
+  const source = [
+    "import actual from '../actual.ts';",
+    "const fixture = \"import '../../fixture.ts'; await import(variable)\";",
+    'function generated() { return `await import(process.env.GENERATED)`; }',
+    '// await import(commented)',
+    '/* require(alsoCommented) */',
+    'const pattern = /import\\(notCode\\)/u;',
+    "await import(new URL('../url.ts', import.meta.url).href);",
+    "require('../required.ts');",
+  ].join('\n');
+  const inputs = executableModuleInputs(source);
+  assert.deepEqual(inputs.imports, ['../actual.ts', '../url.ts', '../required.ts']);
+  assert.equal(inputs.computed, false);
+  for (const statement of ['await import(modulePath)', 'require(modulePath)', '`value ${await import(modulePath)}`', '`outer ${`inner ${require(modulePath)}`}`']) {
+    assert.equal(executableModuleInputs(statement).computed, true, statement);
+  }
+  assert.deepEqual(executableModuleInputs("await import(/* comment */ '../literal.ts')").imports, ['../literal.ts']);
+});
 
 test('local and Git proofs isolate selected system contents while binding discovery membership and literal URL dependencies', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-input-boundaries-'));

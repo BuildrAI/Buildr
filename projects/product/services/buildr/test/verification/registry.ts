@@ -268,7 +268,7 @@ const RUNTIME_REUSE_CHECKS = new Set(['integration-runtime', 'integration-data-s
 const NON_REUSABLE_CHECKS = new Set(['typecheck', 'dsh-plugin', 'candidate-tarball', 'application-payload-release', 'release-tarball-smoke', 'artifact-browser-core', 'cli-package-parity', 'host-node-contract', 'host-node-boundaries']);
 // Lifecycle fixtures create and mutate their own repositories. Only checks that
 // actually observe the retained checkout history bind its Git state.
-const GIT_SOURCE_CHECKS = new Set(['openspec-candidate-audit', 'service-branch-contract', 'open-source-candidate', 'integration-self-bootstrap']);
+const GIT_SOURCE_CHECKS = new Set(['open-source-candidate']);
 const REUSE_INPUTS_BY_STEP: Readonly<Record<string, readonly string[]>> = Object.freeze({
   'docs-quality': Object.freeze(['BUILDR_CHANGED_PATHS_JSON']),
   'runtime-skill-projection': Object.freeze(['BUILDR_CHANGED_PATHS_JSON']),
@@ -282,7 +282,8 @@ function sourceReusePolicy(definition: any): any {
   // Other registered checks conservatively include all Product material;
   // checks reading source Git identities also bind the observed Git history.
   const usesGit = VERIFICATION_STEP_TESTING[definition.id]?.environment?.footprints.includes('git');
-  return Object.freeze({ scope: RUNTIME_REUSE_CHECKS.has(definition.id) ? 'runtime' : 'repository', git: GIT_SOURCE_CHECKS.has(definition.id),
+  return Object.freeze({ scope: RUNTIME_REUSE_CHECKS.has(definition.id) ? 'runtime' : 'repository',
+    git: definition.id === 'openspec-candidate-audit' ? 'comparison' : GIT_SOURCE_CHECKS.has(definition.id),
     ...(RUNTIME_REUSE_CHECKS.has(definition.id) ? { inputMode: 'runtime-check' } : {}),
     ...(usesGit ? { tools: ['git'] } : {}), ...(REUSE_INPUTS_BY_STEP[definition.id] ? { inputs: REUSE_INPUTS_BY_STEP[definition.id] } : {}) });
 }

@@ -32,6 +32,26 @@ test('Git-sensitive and exact-tool checks bind necessary facts without a global 
   assert.equal(createVerificationReuseIdentity({ ...step, reuse: { scope: 'backend', tools: ['sdk'] } }, snapshot), null);
   assert.equal(createVerificationReuseIdentity(step, { ...snapshot, unavailableScopes: ['backend'] }), null);
 });
+test('comparison proofs bind the resolved base and HEAD while isolated Git fixtures ignore retained refs', () => {
+  const comparison = { head: 'a'.repeat(40), baseRef: 'origin/dev', base: 'b'.repeat(40), mergeBase: 'c'.repeat(40) };
+  const selected: VerificationReuseStep = { ...step, reuse: { scope: 'backend', git: 'comparison' } };
+  const current = { ...snapshot, gitComparison: comparison };
+  const identity = createVerificationReuseIdentity(selected, current);
+  assert.ok(identity);
+  assert.equal(createVerificationReuseIdentity(selected, snapshot), null);
+  assert.deepEqual(createVerificationReuseIdentity(selected, { ...current, gitIdentity: `sha256-${'b'.repeat(64)}` }), identity);
+  for (const field of ['head', 'base', 'mergeBase']) {
+    assert.notDeepEqual(createVerificationReuseIdentity(selected, { ...current, gitComparison: { ...comparison, [field]: 'd'.repeat(40) } }), identity, field);
+  }
+  const complete = { ...snapshot, environment: { ...snapshot.environment, tools: { ...snapshot.environment.tools, 'web-dependencies': sha, git: '2.50.1' } } };
+  for (const id of ['integration-self-bootstrap', 'service-branch-contract']) {
+    const fixture = verificationSteps.find((item: VerificationReuseStep) => item.id === id);
+    const original = createVerificationReuseIdentity(fixture, complete);
+    assert.ok(original, id);
+    assert.equal('gitIdentity' in original, false, id);
+    assert.deepEqual(createVerificationReuseIdentity(fixture, { ...complete, gitIdentity: `sha256-${'b'.repeat(64)}` }), original, id);
+  }
+});
 test('portable checks use the recorded runner and stable supported Node family, never the checker platform', () => {
   const value = record();
   const ubuntu = { ...snapshot, environment: { ...snapshot.environment, platform: 'linux', arch: 'x64', nodeVersion: '24.15.0' } };
@@ -91,7 +111,7 @@ test('only reviewed fixture runtime checks exclude Product governance material w
   for (const id of ['docs-quality', 'openspec-strict', 'openspec-candidate-audit', 'contract', 'integration-verification']) {
     assert.equal(verificationSteps.find((item: VerificationReuseStep) => item.id === id).reuse.scope, 'repository', id);
   }
-  assert.equal(verificationSteps.find((item: VerificationReuseStep) => item.id === 'openspec-candidate-audit').reuse.git, true);
+  assert.equal(verificationSteps.find((item: VerificationReuseStep) => item.id === 'openspec-candidate-audit').reuse.git, 'comparison');
   const runtime = verificationSteps.find((item: VerificationReuseStep) => item.id === 'integration-runtime');
   const complete = { ...snapshot, stepInputs: { [runtime.id]: { contentIdentity: sha, recipeIdentity: sha, fallback: false, unavailable: false } },
     environment: { ...snapshot.environment, tools: { ...snapshot.environment.tools, 'web-dependencies': sha, git: '2.50.1' } } };
