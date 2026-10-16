@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 import { sameFilesystemPath } from '../../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { verifyApplicationPayload } from '../../../src/infrastructure/product-resources/index.ts';
-import { resolveCandidateSourceCommit } from '../candidate-ci-evidence.ts';
+import { resolveCandidateExecutionContext, resolveCandidateSourceCommit } from '../candidate-ci-evidence.ts';
 import { executeVerificationCommand } from '../support/process-executor.ts';
 import { createVerificationPhaseRecorder } from '../timing/phases.ts';
 import { readSharedCandidatePackage } from './candidate-package.ts';
@@ -64,10 +64,15 @@ export async function runCandidateBrowser({
   }
 }
 
+export function resolveCandidateBrowserSource(root: string, env: NodeJS.ProcessEnv = process.env): string {
+  const verificationSource = resolveCandidateSourceCommit(root, env.BUILDR_CANDIDATE_SOURCE_SHA || null);
+  return resolveCandidateExecutionContext(root, verificationSource, env).sourceCommit;
+}
+
 async function main(): Promise<void> {
   if (process.argv.slice(2).join(' ') !== '--selector core') throw new Error('Candidate Browser accepts only --selector core.');
   const candidate = readSharedCandidatePackage();
-  const sourceCommit = resolveCandidateSourceCommit(serviceRoot, process.env.BUILDR_CANDIDATE_SOURCE_SHA || null);
+  const sourceCommit = resolveCandidateBrowserSource(serviceRoot);
   // The source harness provides isolated fixtures and HTTP hosting. Only the Web
   // bytes come from the Candidate; installed CLI/runtime behavior has separate owners.
   await runCandidateBrowser({ candidate, sourceCommit });
