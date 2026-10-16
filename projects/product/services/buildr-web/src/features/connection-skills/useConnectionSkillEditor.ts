@@ -111,6 +111,7 @@ export function useConnectionSkillEditor({ instance: initial, definitions, clien
       if (!mounted.current) return;
       setInstance(response.instance); setName(response.instance.name); setEnvironment(response.instance.environment); setConfig(response.instance.config); setFieldLabels(response.instance.fieldLabels || {}); setObserved(previous => afterTeamSave(previous, response.instance));
       setConflict(false); setNotice(response.instance.authentication.personal.configured ? '连接配置已保存。' : '连接配置已保存，请继续授权本机个人账号。'); onSaved(response.instance);
+      if (!forAuthorization) onTeamSaved();
       return response.instance;
     } catch (cause) { if (mounted.current) reportSaveError(cause); }
     finally { if (mounted.current) setSaving(null); }

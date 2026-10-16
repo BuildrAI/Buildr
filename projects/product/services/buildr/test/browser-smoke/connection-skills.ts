@@ -689,6 +689,31 @@ try {
   assert.equal(await page.locator('#connection-skill-personal-username').count(), 0);
   assert.equal(await page.locator('#connection-skill-personal-password').count(), 0);
   assert.equal(await page.locator('#connection-skill-saved-personal-password').count(), 0);
+  const managedAuthorizationRequests: string[] = [];
+  page.on('request', request => { if (request.url().endsWith('/auth/authorize')) managedAuthorizationRequests.push(request.url()); });
+  await page.locator('#connection-skill-name').fill('外部授权配置保存后关闭');
+  await page.locator('#connection-skill-config-endpoint').fill('https://browser-create.example.test/');
+  const managedCreateRoute = '**/connection-skills/instances';
+  await page.route(managedCreateRoute, route => route.request().method() === 'POST'
+    ? route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'fixture_create_rejected', message: '模拟新增配置保存失败' } }) })
+    : route.continue());
+  await page.locator('#save-connection-skill-team').click();
+  await page.locator('#connection-skill-error').filter({ hasText: '模拟新增配置保存失败' }).waitFor();
+  assert.equal(await page.locator('#connection-skill-editor').isVisible(), true, 'A failed explicit create keeps the editor open.');
+  assert.equal(await page.locator('#connection-skill-name').inputValue(), '外部授权配置保存后关闭');
+  assert.equal(await page.locator('#connection-skill-config-endpoint').inputValue(), 'https://browser-create.example.test/');
+  assert.equal(connections.list(workspaceRoot).instances.some((item: any) => item.name === '外部授权配置保存后关闭'), false);
+  await page.unroute(managedCreateRoute);
+  await page.locator('#save-connection-skill-team').click();
+  await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
+  const managedUnauthenticated = connections.list(workspaceRoot).instances.find((item: any) => item.name === '外部授权配置保存后关闭');
+  assert.ok(managedUnauthenticated, 'Explicit create saves the browser-authorized connection without requiring authentication.');
+  assert.equal(managedUnauthenticated.authentication.personal.present, false);
+  await page.locator('#connection-skills-table').locator(`[data-row-key="${managedUnauthenticated.id}"]`).getByText('外部授权配置保存后关闭', { exact: true }).waitFor();
+  assert.deepEqual(managedAuthorizationRequests, [], 'Explicit configuration save never starts browser authorization.');
+  await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-browser-create-save-closed.png') });
+  await page.locator('#create-connection-skill').click();
+  await page.locator('[data-connection-system]').filter({ hasText: '外部授权夹具' }).click();
   await page.locator('#connection-skill-name').fill('无需内部字段的授权');
   await page.locator('#connection-skill-config-endpoint').fill('https://browser-authorization.example.test/');
   const managedRoute = '**/connection-skills/instances/*/auth/authorize';
@@ -697,6 +722,9 @@ try {
   await page.locator('#connection-skill-save-notice').filter({ hasText: '连接配置已保存；本次授权未完成' }).waitFor();
   let managedInstance = connections.list(workspaceRoot).instances.find((item: any) => item.name === '无需内部字段的授权');
   assert.ok(managedInstance); assert.equal(managedInstance.authentication.personal.present, false);
+  assert.equal(await page.locator('#connection-skill-editor').isVisible(), true, 'The internal shell save and failed first authorization keep the editor open for retry.');
+  assert.equal(await page.locator('#connection-skill-name').inputValue(), '无需内部字段的授权');
+  assert.equal(await page.locator('#connection-skill-config-endpoint').inputValue(), 'https://browser-authorization.example.test/');
   assert.equal(YAML.parse(fs.readFileSync(path.join(workspaceRoot, managedInstance.sourcePath), 'utf8')).authentication, null);
   await page.unroute(managedRoute);
   const managedRequest = page.waitForRequest(request => request.url().endsWith('/auth/authorize'));
@@ -715,8 +743,31 @@ try {
   assert.equal(await page.locator('#authorize-connection-skill-personal').isDisabled(), true);
   await page.locator('#connection-skill-authorization-dirty').waitFor();
   await page.locator('#save-connection-skill-team').click();
-  await page.locator('#connection-skill-save-notice').filter({ hasText: '连接配置已保存' }).waitFor();
-  assert.equal(await page.locator('#connection-skill-editor').isVisible(), true);
+  await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
+  const managedSavedRow = page.locator('#connection-skills-table').locator(`[data-row-key="${managedInstance.id}"]`);
+  await managedSavedRow.getByText('授权后的非秘密草稿', { exact: true }).waitFor();
+  assert.equal(connections.get(workspaceRoot, managedInstance.id).instance.name, '授权后的非秘密草稿');
+  await managedSavedRow.getByRole('button', { name: '编辑', exact: true }).click();
+  await page.locator('#connection-skill-name').fill('授权后的再次编辑');
+  const managedUpdateRoute = `**/connection-skills/instances/${managedInstance.id}`;
+  await page.route(managedUpdateRoute, route => route.request().method() === 'PATCH'
+    ? route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'fixture_update_rejected', message: '模拟编辑配置保存失败' } }) })
+    : route.continue());
+  await page.locator('#save-connection-skill-team').click();
+  await page.locator('#connection-skill-error').filter({ hasText: '模拟编辑配置保存失败' }).waitFor();
+  assert.equal(await page.locator('#connection-skill-editor').isVisible(), true, 'A failed explicit browser-authorized edit keeps the editor open.');
+  assert.equal(await page.locator('#connection-skill-name').inputValue(), '授权后的再次编辑');
+  assert.equal(await page.locator('#connection-skill-config-endpoint').inputValue(), 'https://browser-authorization.example.test/');
+  assert.equal(connections.get(workspaceRoot, managedInstance.id).instance.name, '授权后的非秘密草稿', 'A failed edit does not update the saved row.');
+  await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-browser-edit-failure-retained.png') });
+  await page.unroute(managedUpdateRoute);
+  await page.locator('#save-connection-skill-team').click();
+  await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
+  await managedSavedRow.getByText('授权后的再次编辑', { exact: true }).waitFor();
+  assert.equal(connections.get(workspaceRoot, managedInstance.id).instance.name, '授权后的再次编辑');
+  assert.equal(managedAuthorizationRequests.length, 2, 'Explicit edits never restart authorization after the failed and successful authorization attempts.');
+  await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-browser-edit-save-closed.png') });
+  await managedSavedRow.getByRole('button', { name: '编辑', exact: true }).click();
   await page.locator('#discover-connection-skill-config-scope').click();
   await page.locator('#connection-skill-discovery-scope').filter({ hasText: '已读取 2 个可选项' }).waitFor();
   managedInstance = connections.get(workspaceRoot, managedInstance.id).instance;
@@ -738,7 +789,7 @@ try {
   await page.locator('#authorize-connection-skill-personal').click(); await beginClosed; await closedRouteReady;
   await page.locator('#close-connection-skill-editor').click(); releaseManaged!();
   await page.unroute(managedRoute);
-  await page.locator('#connection-skills-table tr').filter({ hasText: '授权后的非秘密草稿' }).getByRole('button', { name: '编辑', exact: true }).click();
+  await managedSavedRow.getByRole('button', { name: '编辑', exact: true }).click();
   await page.locator('#connection-skill-authorization-state').filter({ hasText: '本机已授权' }).waitFor();
   assert.equal(await page.locator('#connection-skill-environment').count(), 0);
   assert.equal(await page.locator('#connection-skill-saved-personal-password').count(), 0);
@@ -746,7 +797,7 @@ try {
   await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-browser-authorization.png') });
   await page.locator('#close-connection-skill-editor').click();
   assert.deepEqual(browserErrors, []);
-  process.stdout.write(JSON.stringify({ schemaVersion: 'buildr.workspace-smoke-scenario/v1', status: 'passed', checks: ['category-order-initial-search-refresh-local-updates', 'website-fallback-and-explicit-override', 'system-and-explicit-method-selection', 'dependency-ordered-discovery', 'progressive-fields-and-authentication', 'explicit-production-flag', 'legacy-route-redirect', 'legacy-tabs-merge', 'single-connection-navigation', 'no-legacy-api-requests', 'mysql-query-ui-fixture', 'mysql-database-picker-search-and-hidden-selection', 'mysql-database-picker-close-save-once', 'mysql-database-picker-unchanged-no-write', 'mysql-database-picker-current-cleared', 'mysql-database-picker-refresh-and-close-discard', 'mysql-database-picker-reopen-and-viewport', 'query-observed-revision-and-original-sql', 'query-precision-display', 'separate-save', 'unsaved-switch', 'explicit-candidate', 'failed-test-save-independent', 'independent-draft-revisions', 'revision-conflict', 'narrow-and-keyboard', 'missing-skill-personal-removal', 'main-save-closes-and-updates-row', 'failed-save-retains-draft', 'main-save-preserves-personal-draft', 'reread-authentication-identity', 'optional-program-failure-isolated', 'nacos-api-and-website-distinct', 'focus-and-retained-page-no-read', 'test-discovery-check-no-directory-read', 'explicit-refresh-only', 'local-save-delete', 'interrupted-first-read-retried', 'late-list-cannot-rollback-save', 'combined-directory-and-local-diagnostics', 'failed-or-malformed-directory-retains-snapshot', 'personal-only-new-discovery-and-test', 'personal-two-step-partial-save-preserves-draft', 'explicit-personal-secret-reveal-no-store-and-keyboard', 'revealed-secret-close-and-late-response-discard', 'personal-upgrade-preserves-and-migrates-old-group', 'browser-authorization-hidden-environment-and-internal-fields', 'browser-authorization-partial-shell-save-and-safe-private-result', 'browser-reauthorization-saved-config-cancel-close-and-late-response'], realExternalSystem: false, queryBackend: 'intercepted-ui-fixture' }) + '\n');
+  process.stdout.write(JSON.stringify({ schemaVersion: 'buildr.workspace-smoke-scenario/v1', status: 'passed', checks: ['category-order-initial-search-refresh-local-updates', 'website-fallback-and-explicit-override', 'system-and-explicit-method-selection', 'dependency-ordered-discovery', 'progressive-fields-and-authentication', 'explicit-production-flag', 'legacy-route-redirect', 'legacy-tabs-merge', 'single-connection-navigation', 'no-legacy-api-requests', 'mysql-query-ui-fixture', 'mysql-database-picker-search-and-hidden-selection', 'mysql-database-picker-close-save-once', 'mysql-database-picker-unchanged-no-write', 'mysql-database-picker-current-cleared', 'mysql-database-picker-refresh-and-close-discard', 'mysql-database-picker-reopen-and-viewport', 'query-observed-revision-and-original-sql', 'query-precision-display', 'separate-save', 'unsaved-switch', 'explicit-candidate', 'failed-test-save-independent', 'independent-draft-revisions', 'revision-conflict', 'narrow-and-keyboard', 'missing-skill-personal-removal', 'main-save-closes-and-updates-row', 'failed-save-retains-draft', 'main-save-preserves-personal-draft', 'reread-authentication-identity', 'optional-program-failure-isolated', 'nacos-api-and-website-distinct', 'focus-and-retained-page-no-read', 'test-discovery-check-no-directory-read', 'explicit-refresh-only', 'local-save-delete', 'interrupted-first-read-retried', 'late-list-cannot-rollback-save', 'combined-directory-and-local-diagnostics', 'failed-or-malformed-directory-retains-snapshot', 'personal-only-new-discovery-and-test', 'personal-two-step-partial-save-preserves-draft', 'explicit-personal-secret-reveal-no-store-and-keyboard', 'revealed-secret-close-and-late-response-discard', 'personal-upgrade-preserves-and-migrates-old-group', 'browser-authorization-hidden-environment-and-internal-fields', 'browser-authorization-explicit-create-save-closes-without-auth', 'browser-authorization-explicit-create-and-edit-failures-retain-draft', 'browser-authorization-main-save-and-reopened-edit-close-update-row', 'browser-authorization-partial-shell-save-and-safe-private-result', 'browser-reauthorization-saved-config-cancel-close-and-late-response'], realExternalSystem: false, queryBackend: 'intercepted-ui-fixture' }) + '\n');
 } catch (error) {
   if (page) { process.stderr.write(JSON.stringify({ body: (await page.locator('body').innerText()).slice(-5000) }) + '\n'); await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-failure.png') }); }
   throw error;
