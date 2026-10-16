@@ -307,18 +307,25 @@ objects:
     summary: 从确认接入到关联原生会话与一次生成，理解 Codex 专用进程与 DSH 桌面后台的区别。
 artifacts:
   - id: product-release-flow
-    title: Buildr 与 DSH 插件发布流程
+    title: Buildr 发布：职责与主线
     kind: document
     path: knowledge/docs/flows/open-source-release.md
     objects: [product-release]
     sources: [release-coordination-source, release-selection-source, release-publication-source, verification-source-reader, verification-candidate-repair]
   - id: product-release-architecture
-    title: Buildr 发布架构与重构边界
+    title: Buildr 发布：组成与职责
     kind: diagram
     path: knowledge/archify/flows/release-architecture.html
     graphSource: knowledge/archify/flows/release-architecture.json
     objects: [product-release]
     sources: [release-coordination-source, release-selection-source, release-publication-source, verification-source-reader, verification-candidate-source-binding, verification-candidate-repair]
+  - id: product-release-workflow
+    title: Buildr 发布：从准备到公开
+    kind: diagram
+    path: knowledge/archify/flows/release-workflow.html
+    graphSource: knowledge/archify/flows/release-workflow.json
+    objects: [product-release]
+    sources: [release-coordination-source, release-selection-source, release-publication-source, verification-candidate-repair]
   - id: agent-integration-article
     title: 接入方式与职责
     kind: document
@@ -3562,6 +3569,7 @@ sources:
     summary: 独立任务阅读与离线预览共用页面目录和阅读布局，页面选择由入口接入。
 relations:
   - { from: product-release-flow, to: product-release-architecture, kind: contains }
+  - { from: product-release-flow, to: product-release-workflow, kind: contains }
   - { from: product-release-flow, to: verification-product-architecture, kind: guides }
   - { from: external-connections-document, to: technical-layers-map, kind: guides }
   - { from: product-overview-article, to: system, kind: guides }
