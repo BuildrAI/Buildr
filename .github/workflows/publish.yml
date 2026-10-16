@@ -67,6 +67,8 @@ jobs:
         with:
           ref: ${{ fromJSON(inputs.release_context).executorRecovery.sourceCommit || inputs.source_commit }}
           fetch-depth: 0
+      - name: Confirm protected executor before repository code
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
       - uses: actions/setup-node@v6
         with:
           node-version: "24.15.0"
@@ -151,6 +153,8 @@ jobs:
         with:
           ref: ${{ fromJSON(inputs.release_context).executorRecovery.sourceCommit || inputs.source_commit }}
           fetch-depth: 0
+      - name: Confirm protected executor before repository code
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
       - uses: actions/setup-node@v6
         with:
           node-version: "24.15.0"
@@ -197,6 +201,8 @@ jobs:
         with:
           ref: ${{ fromJSON(inputs.release_context).executorRecovery.sourceCommit || inputs.source_commit }}
           fetch-depth: 0
+      - name: Confirm protected executor before repository code
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
       - uses: actions/setup-node@v6
         with:
           node-version: "24.15.0"
