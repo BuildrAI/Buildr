@@ -121,6 +121,9 @@ function checkIdentity(source: ReturnType<typeof checkSource>, step: any, legacy
 /** Candidate transport uses the same normalized bytes, scopes and executable
  * dependency selection as local reuse; platform and package checks stay separate. */
 export function candidateCheckInputIdentity(repo: string, commit: string, step: any, reader?: { inventory: (commit: string) => GitSourceEntry[]; blob: (commit: string, file: string) => string }): string {
+  // Explicit byte readers already supply repository-relative fixture inputs.
+  // Native Git accepts a service cwd, but source paths below require its root.
+  if (!reader) repo = gitRead(repo, ['rev-parse', '--show-toplevel']).trim();
   return checkIdentity(checkSource(repo, commit, reader), step);
 }
 
@@ -188,6 +191,8 @@ function legacyCandidateCheckInputIdentity(repo: string, commit: string, step: a
 }
 
 export function createCandidateCheckInputReader(repo: string) {
+  // Resolve once per reader, not once per check or historical source snapshot.
+  repo = gitRead(repo, ['rev-parse', '--show-toplevel']).trim();
   const inventories = new Map<string, GitSourceEntry[]>(), blobs = new Map<string, string>();
   const reader = {
     inventory(commit: string) { if (!inventories.has(commit)) inventories.set(commit, readGitSourceInventory(repo, commit)); return inventories.get(commit)!; },

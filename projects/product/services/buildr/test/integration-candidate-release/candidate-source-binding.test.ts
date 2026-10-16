@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { createCandidateSourceBinding, assertCandidateSourceBinding, candidateCheckInputIdentity, readGitSourceInventory, verificationOnlyPath, releaseExecutionSource, assertReleaseExecutionCheckout } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
+import { createCandidateSourceBinding, assertCandidateSourceBinding, candidateCheckInputIdentity, createCandidateCheckInputReader, readGitSourceInventory, verificationOnlyPath, releaseExecutionSource, assertReleaseExecutionCheckout } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
 import { createReleaseContext, validateReleaseContext } from '../../../../../../skills/buildr-release/scripts/release-readiness.ts';
 import { assertReleaseExecutorSource, releaseExecutorRecoverySchema } from '../../../../../../skills/buildr-release/scripts/release-executor-recovery.ts';
 import { continueCandidateRepair } from '../../../../../../skills/buildr-release/scripts/candidate-repair-operation.ts';
@@ -15,6 +15,37 @@ import { prepareCandidateRepair, materializeCandidateRepair } from '../verificat
 import { createReleaseArtifactFixture } from '../helpers/release-artifact-fixture.ts';
 import { createCandidateCiEvidence, candidateCiRegistryIdentity, aggregateCandidateCiEvidence, readCandidateCiEvidenceFiles } from '../verification/candidate-ci-evidence.ts';
 import { createVerificationSourceInputReader } from '../verification/verification-source-inputs.ts';
+
+test('shared candidate input reader resolves a real service directory once and preserves immutable historical identities', t => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'candidate-service-input-reader-'));
+  t.after(() => fs.rmSync(repo, { recursive: true, force: true }));
+  const prefix = 'projects/product/services/buildr/', service = path.join(repo, prefix);
+  const git = (...args: string[]) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const write = (file: string, value: string) => { const target = path.join(service, file); fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, value); };
+  const commit = () => { git('add', '.'); git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', '-c', 'commit.gpgSign=false', 'commit', '-m', 'fixture'); return git('rev-parse', 'HEAD'); };
+  git('init', '--initial-branch=main');
+  write('package.json', '{"name":"@buildr-ai/buildr","version":"1.0.0"}\n');
+  write('src/runtime.ts', 'export const runtime = 1;\n');
+  write('test/selected.test.ts', "import '../src/runtime.ts'; export const assertion = 1;\n");
+  const original = commit();
+  write('test/selected.test.ts', "import '../src/runtime.ts'; export const assertion = 2;\n");
+  const repaired = commit();
+  const step = { id: 'service-input-fixture', executor: { type: 'node-test', files: ['test/selected.test.ts'] }, reuse: { scope: 'backend' as const } };
+  const fromRoot = createCandidateCheckInputReader(repo), fromService = createCandidateCheckInputReader(service);
+  const originalIdentity = fromRoot(original, step), repairedIdentity = fromRoot(repaired, step);
+  assert.notEqual(originalIdentity, repairedIdentity, 'a changed executed assertion must invalidate its original proof');
+  assert.equal(fromService(original, step), originalIdentity, 'Git inventory paths remain relative to the actual repository root');
+  assert.equal(fromService(repaired, step), repairedIdentity);
+  assert.equal(candidateCheckInputIdentity(service, original, step), originalIdentity, 'the single-check entry accepts the same service directory');
+  assert.equal(fromService.matches(original, step, originalIdentity), true);
+  assert.equal(fromService.matches(repaired, step, originalIdentity), false, 'normalizing cwd cannot authorize changed assertions');
+  write('test/selected.test.ts', '// uncommitted working bytes cannot replace a historical Git object\n');
+  const before = { head: git('rev-parse', 'HEAD'), status: git('status', '--porcelain=v1') };
+  const later = createCandidateCheckInputReader(service);
+  assert.equal(later(original, step), originalIdentity);
+  assert.equal(later(repaired, step), repairedIdentity);
+  assert.deepEqual({ head: git('rev-parse', 'HEAD'), status: git('status', '--porcelain=v1') }, before, 'reading original commits never checks out or rewrites the caller state');
+});
 
 test('real source binding preserves producer identity for test repair and rejects product, dependency and packaging changes', t => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'candidate-source-binding-'));

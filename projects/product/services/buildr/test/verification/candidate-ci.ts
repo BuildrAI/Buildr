@@ -58,9 +58,10 @@ function repairPlan(): any {
   return plan;
 }
 
+let checkInputReader: ReturnType<typeof createCandidateCheckInputReader> | undefined;
 function checkInputsFor(id: string, commit: string): any {
   const descriptor = candidateProofDescriptors().find(item => item.id === id);
-  const input = createCandidateCheckInputReader(productRoot);
+  const input = checkInputReader ??= createCandidateCheckInputReader(productRoot);
   return Object.fromEntries(descriptor.steps.map((step: any) => [step.id, input(commit, candidateProofDefinition(step))]));
 }
 
