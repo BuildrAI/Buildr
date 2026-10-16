@@ -20,6 +20,8 @@ const buildr = 'projects/product/services/buildr/';
 const plugin = 'projects/product/services/dsh-plugin/';
 // Explicit files only: no runtime, package metadata, lock, payload or build-tool changes.
 export const releaseExecutorRecoveryPaths = new Set([
+  'README.md', 'README.en.md', `${buildr}README.md`, `${buildr}docs/cli-reference.md`,
+  `${plugin}test/unit/plugin-release.test.ts`,
   '.github/workflows/publish.yml', '.github/workflows/publish-dsh-plugin.yml', '.github/workflows/verify.yml',
   ...['release-executor-recovery', 'release-readiness', 'release-authority-oidc-probe', 'release-convergence',
     'release-transaction-evidence', 'release-package-evidence', 'release-publication', 'package-pair-diagnostics',

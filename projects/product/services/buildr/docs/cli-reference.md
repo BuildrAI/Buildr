@@ -46,7 +46,7 @@ buildr installation status --json
 buildr web launcher install
 ```
 
-其他平台通过下文的 `buildr web --target "<dir>"` 打开 Buildr Web。
+Buildr 当前只承诺支持 macOS 与 Windows，在这两个平台也可通过下文的 `buildr web --target "<dir>"` 在浏览器中打开 Buildr Web。Linux 暂无支持承诺。
 
 全局安装与启动器（Launcher）不会向尚未确认的工作空间（Workspace）写入内容，也不会安装智能体（Agent）的技能（Skill）；这些在确认目录并初始化时完成。
 

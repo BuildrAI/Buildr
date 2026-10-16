@@ -6,7 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { createReleaseContext, releaseContextIdentity } from '../../tools/release/release-readiness.ts';
 import { createReleaseTransactionEvidence } from '../../tools/release/release-transaction-evidence.ts';
-import { createPackagePublicationEvidence, createPackageReleaseContext, validatePackageOwnerPublication, validatePackagePublicationEvidence, validatePackageReleaseContext } from '../../tools/release/release-package-evidence.ts';
+import { createPackagePublicationEvidence, createPackageReleaseContext, validatePackageOwnerPublication, validatePackagePublicationEvidence, validatePackageReleaseContext, packageExecutionCommit } from '../../tools/release/release-package-evidence.ts';
 import { normalizeReleaseTargets } from '../../tools/release/release-targets.ts';
 import { createReleaseExecutionBinding } from '../../tools/release/release-execution-binding.ts';
 import { cleanupReleaseSelection, createReleaseSelection, freezeReleaseSelection, selectReleaseCommit } from '../../tools/release/release-selection.ts';
@@ -279,4 +279,31 @@ test('repaired publisher evidence binds a new execution head without moving the 
     const changed = clone(publications); changed[name].run.head_sha = context.convergence.mainCommit;
     assert.throws(() => createPackagePublicationEvidence({ context, publications: changed }), /run is unknown/);
   }
+});
+
+test('plugin-only executor recovery changes only the plugin execution head and retains the published main owner evidence', () => {
+  const data = fixture('buildr,dsh-plugin'), original = data.context, executionCommit = hash('9');
+  const recovery = { schemaVersion: 'buildr.plugin-executor-recovery/v1', sourceCommit: executionCommit, sourceTree: hash('8'), workflowDigest: digest('8'),
+    originalContextIdentity: original.identity, previousRunId: 20, previousRunAttempt: 1, previousJournalIdentity: digest('7') };
+  const context = createPackageReleaseContext({ ...original, packages: { ...original.packages,
+    'dsh-plugin': { ...original.packages['dsh-plugin'], executorRecovery: recovery } } });
+  assert.equal(packageExecutionCommit(context, 'buildr'), original.convergence.mainCommit);
+  assert.equal(packageExecutionCommit(context, 'dsh-plugin'), executionCommit);
+  assert.deepEqual(context.packages.buildr, original.packages.buildr);
+  assert.equal(validatePackageReleaseContext(context).identity, context.identity);
+  const publications = clone(data.publications); publications['dsh-plugin'].run.head_sha = executionCommit;
+  const evidence = createPackagePublicationEvidence({ context, publications });
+  assert.deepEqual(evidence.publications.buildr.ownerEvidence, data.publications.buildr.ownerEvidence);
+  assert.deepEqual(evidence.context.selection, original.selection); assert.deepEqual(evidence.context.convergence, original.convergence);
+  assert.equal(validatePackagePublicationEvidence(evidence).identity, evidence.identity);
+  assert.throws(() => createPackagePublicationEvidence({ context, publications: data.publications }), /run is unknown or mismatched/);
+  for (const mutate of [
+    (value: any) => { value.packages['dsh-plugin'].executorRecovery.originalContextIdentity = digest('6'); },
+    (value: any) => { value.packages['dsh-plugin'].executorRecovery.previousRunAttempt = 2; },
+    (value: any) => { value.packages['dsh-plugin'].executorRecovery.extra = true; },
+    (value: any) => { value.packages['dsh-plugin'].executorRecovery.sourceCommit = original.convergence.mainCommit; },
+    (value: any) => { value.packages['dsh-plugin'].executorRecovery = null; },
+    (value: any) => { value.compatibility.publicationOrder.reverse(); },
+    (value: any) => { value.packages.buildr.ownerContext.node.executionIdentity = digest('6'); },
+  ]) { const changed = clone(context); mutate(changed); assert.throws(() => validatePackageReleaseContext(changed)); }
 });

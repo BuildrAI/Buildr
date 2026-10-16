@@ -18,6 +18,8 @@ import { assertPluginCandidateAdoption, type PluginCandidateMain } from './candi
 import { PLUGIN_PACKAGE, PLUGIN_REGISTRY, PLUGIN_SERVICE_PATH, SOURCE_SDK_MANIFEST, readReleaseCandidate, sourceSdkIdentityFromFiles, type ReleaseCandidate, type SourceSdkIdentity } from './release-candidate.ts';
 
 export const PLUGIN_PUBLISH_AUTHORITY = Object.freeze({ provider: 'github-actions', repository: 'BuildrAI/Buildr', workflow: 'publish-dsh-plugin.yml', environment: 'npm-production', allowedActions: ['npm publish'] });
+// Public GitHub repository identities, independently checked against immutable OIDC claims.
+const PLUGIN_PUBLISH_REPOSITORY_IDS = Object.freeze({ owner: '313666831', repository: '993537957' });
 export const PLUGIN_WORKFLOW_PATH = '.github/workflows/publish-dsh-plugin.yml';
 export const PUBLICATION_SCHEMA = 'buildr.dsh-plugin-publication/v1';
 const serviceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -72,7 +74,10 @@ export function assertPluginOidcClaims(token: string, sourceCommit: string, nowM
     claims = JSON.parse(Buffer.from(parts[1]!, 'base64url').toString('utf8'));
   } catch { failure('plugin-oidc-invalid'); }
   const audience = claims.aud;
-  if (claims.iss !== 'https://token.actions.githubusercontent.com' || !(audience === 'npm:registry.npmjs.org' || Array.isArray(audience) && audience.includes('npm:registry.npmjs.org')) || claims.sub !== 'repo:BuildrAI/Buildr:environment:npm-production'
+  const legacySubject = claims.sub === 'repo:BuildrAI/Buildr:environment:npm-production';
+  const immutableSubject = claims.sub === `repo:BuildrAI@${PLUGIN_PUBLISH_REPOSITORY_IDS.owner}/Buildr@${PLUGIN_PUBLISH_REPOSITORY_IDS.repository}:environment:npm-production`
+    && claims.repository_owner_id === PLUGIN_PUBLISH_REPOSITORY_IDS.owner && claims.repository_id === PLUGIN_PUBLISH_REPOSITORY_IDS.repository;
+  if (claims.iss !== 'https://token.actions.githubusercontent.com' || !(audience === 'npm:registry.npmjs.org' || Array.isArray(audience) && audience.includes('npm:registry.npmjs.org')) || !(legacySubject || immutableSubject)
     || claims.repository !== PLUGIN_PUBLISH_AUTHORITY.repository || claims.workflow_ref !== `${PLUGIN_PUBLISH_AUTHORITY.repository}/${PLUGIN_WORKFLOW_PATH}@refs/heads/main` || claims.sha !== sourceCommit || claims.ref !== 'refs/heads/main' || claims.runner_environment !== 'github-hosted' || claims.event_name !== 'workflow_dispatch'
     || claims.environment !== undefined && claims.environment !== PLUGIN_PUBLISH_AUTHORITY.environment) failure('plugin-oidc-authority-mismatch');
   const now = nowMs / 1000;
