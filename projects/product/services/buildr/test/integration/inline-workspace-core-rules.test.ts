@@ -12,6 +12,7 @@ import { buildApplicationPayload } from '../../tools/release/application-payload
 import { createReleaseArtifact } from '../../tools/release/release-artifact.ts';
 import { createGeneratedReleaseInputs } from '../helpers/generated-release-inputs.ts';
 import { copyPreparedWorkspace } from '../helpers/prepared-fixtures.ts';
+import { createRuntime } from '../helpers/runtime-harness.ts';
 
 const service: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const source: any = fs.readFileSync(path.join(service, 'resources/workspace/AGENTS.md'), 'utf8');
@@ -118,9 +119,11 @@ test('modified, unreceipted, foreign and symlink legacy files survive sync witho
   for (const options of [{ modified: true }, { receipt: false }, { foreign: true }, { symlink: true }, { missing: true }, { unregistered: true, receipt: false }]) {
     await t.test(JSON.stringify(options), (t: any) => {
       // Initialization has its own real CLI and installed-package cases below.
-      // Each migration starts from an independent copy; sync/doctor still run
-      // through the real CLI and assert preservation and repeatability.
-      const { root, workspace, run }: any = fixture(t, true);
+      // Each ownership variant uses the real builtin-sync and Doctor application
+      // on its own filesystem; the surrounding cases retain process, full-sync,
+      // installed-package and rollback coverage.
+      const { root, workspace }: any = fixture(t, true);
+      const runtime = createRuntime();
       legacy(workspace, options);
       if (options.unregistered) {
         const rulesPath: any = path.join(workspace, 'rules/manifest.yml');
@@ -135,7 +138,7 @@ test('modified, unreceipted, foreign and symlink legacy files survive sync witho
         fs.symlinkSync(path.join(root, 'outside.md'), file);
       }
       const before: any = options.missing ? null : fs.readFileSync(file, 'utf8');
-      run(['sync', 'codex', '--target', workspace]);
+      runtime.syncPackageBuiltins(workspace);
       assertInline(workspace);
       const entry: any = YAML.parse(fs.readFileSync(path.join(workspace, 'rules/manifest.yml'), 'utf8')).rules.find((r: any) => r.id === 'buildr-core');
       if (options.missing) {
@@ -150,11 +153,11 @@ test('modified, unreceipted, foreign and symlink legacy files survive sync witho
         assert.equal(entry.required, false);
         assert.equal(entry.enabled, false);
       }
-      const doctor: any = JSON.parse(run(['doctor', '--agent', 'codex', '--target', workspace, '--json']));
+      const doctor: any = runtime.doctor({ targetRoot: workspace, agent: 'codex' });
       assert.ok(doctor.findings.some((f: any) => f.code === 'rules.legacy_core'));
       assert.equal(doctor.findings.some((f: any) => f.code === 'rules.buildr_unregistered' && f.path === 'rules/buildr/core.md'), false);
       assert.equal(doctor.findings.some((f: any) => f.code === 'rules.required_block_invalid'), false);
-      run(['sync', 'codex', '--target', workspace]);
+      runtime.syncPackageBuiltins(workspace);
       assert.equal(fs.readFileSync(file, 'utf8'), before);
     });
   }

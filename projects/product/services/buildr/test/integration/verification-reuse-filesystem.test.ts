@@ -51,6 +51,27 @@ test('reviewed runtime proof partitions unrelated tests while binding its real t
   }
 });
 
+test('runtime discovery binds added, changed and deleted assertions to local reuse', t => {
+  const f = fixture(t);
+  for (const family of ['integration', 'system']) {
+    const runner = path.join(f.productRoot, `test/verification/${family}.ts`);
+    const selected = path.join(f.productRoot, `test/${family}/selected.test.ts`);
+    fs.mkdirSync(path.dirname(runner), { recursive: true });
+    fs.mkdirSync(path.dirname(selected), { recursive: true });
+    fs.writeFileSync(runner, "import fs from 'node:fs'; fs.readdirSync('test');\n");
+    fs.writeFileSync(selected, '// original assertion\n');
+    const step = { ...f.step, executor: { type: 'node', file: `test/verification/${family}.ts` }, reuse: { scope: 'runtime' as const, inputMode: 'runtime-check' as const } };
+    const key = () => createVerificationReuseIdentity(step, collectVerificationReuseSnapshot({ ...f.options, steps: [step] }))!.key;
+    const original = key();
+    fs.writeFileSync(selected, '// changed assertion\n'); assert.notEqual(key(), original);
+    fs.writeFileSync(selected, '// original assertion\n'); assert.equal(key(), original);
+    const added = path.join(path.dirname(selected), 'added.test.ts');
+    fs.writeFileSync(added, '// new assertion\n'); assert.notEqual(key(), original);
+    fs.rmSync(added); assert.equal(key(), original);
+    fs.rmSync(selected); assert.notEqual(key(), original);
+  }
+});
+
 test('computed test imports retain a conservative scope instead of inventing dependency coverage', t => {
   const f = fixture(t), file = path.join(f.productRoot, 'test/check.ts');
   fs.mkdirSync(path.dirname(file)); fs.writeFileSync(file, 'const modulePath = process.env.TEST_MODULE; await import(modulePath);\n');

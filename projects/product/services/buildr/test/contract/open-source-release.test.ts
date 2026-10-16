@@ -1,3 +1,4 @@
+import { PUBLISHER_PAIR_DIAGNOSIS_SCOPE } from '../../tools/release/package-pair-publisher-diagnosis.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -658,4 +659,23 @@ test('release convergence and self-bootstrap runner fail closed on unmatched aut
   assert.match(convergenceSource, /reconcilePublishedReleaseWithDev/);
   assert.match(convergenceSource, /authorizeRemoteDelete/);
   assert.doesNotMatch(convergenceSource, /\['merge'|\['commit'|\['worktree', 'add'|\['reset', '--hard'/);
+});
+
+test('publisher workflow routes one bounded macOS pair with no Linux, SDK, Candidate gate or publication authority', () => {
+  const workflow = YAML.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../../../../../../.github/workflows/verify.yml'), 'utf8'));
+  assert.ok(workflow.on.workflow_dispatch.inputs.diagnostic_scope.options.includes(PUBLISHER_PAIR_DIAGNOSIS_SCOPE));
+  const job = workflow.jobs['diagnostic-package-pair-publisher'];
+  assert.match(job.if, /inputs\.diagnostic_scope == 'package-pair-publisher'/u);
+  assert.deepEqual(job.strategy.matrix.os, ['macos-15']); assert.equal(job.strategy['fail-fast'], false);
+  assert.deepEqual(job.permissions, { contents: 'read', actions: 'read' }); assert.equal(job['timeout-minutes'], 15);
+  assert.equal(job.steps.filter((step: any) => step.run === 'node tools/release/package-pair-publisher-diagnosis.ts').length, 1);
+  assert.equal(job.steps.find((step: any) => step.uses === 'actions/setup-node@v6').with['node-version'], '24.15.0');
+  const download = job.steps.find((step: any) => step.uses === 'actions/download-artifact@v7');
+  assert.equal(download.with.name, 'candidate-package'); assert.equal(download.with['run-id'], '${{ inputs.diagnostic_candidate_run_id }}');
+  assert.ok(job.steps.some((step: any) => step.run === 'node tools/verification/candidate-environment.ts prepare --profile publisher'));
+  const serialized = JSON.stringify(job);
+  assert.doesNotMatch(serialized, /test:candidate|verify-all|prepare-release-sdk|npm pack|trusted-publish|id-token|source_verification.*GITHUB_ENV/u);
+  assert.doesNotMatch(serialized, /ubuntu|linux/u);
+  for (const id of ['candidate-plan', 'candidate-gate']) assert.equal(workflow.jobs[id]['runs-on'], 'macos-15');
+  for (const id of ['candidate-plan', 'candidate-gate']) assert.match(workflow.jobs[id].if, /inputs\.diagnostic_scope == 'none'/u);
 });
