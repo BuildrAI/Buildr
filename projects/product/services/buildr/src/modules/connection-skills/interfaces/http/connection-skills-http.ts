@@ -10,7 +10,7 @@ export function createConnectionSkillsHttp(application: ConnectionSkillsApplicat
     if (request.method === 'GET' && subpath === '/directory') return { status: 200, body: application.directory(root) };
     if (request.method === 'GET' && subpath === '/definitions') return { status: 200, body: application.definitions(root) };
     if (request.method === 'GET' && subpath === '/instances') return { status: 200, body: application.list(root) };
-    const match = subpath.match(/^\/instances\/([a-zA-Z0-9_-]+)(?:\/(auth|check|help))?$/);
+    const match = subpath.match(/^\/instances\/([a-zA-Z0-9_-]+)(?:\/(auth(?:\/(?:reveal|migrate|relocate))?|check|help))?$/);
     if (request.method === 'GET' && match && !match[2]) return { status: 200, body: application.get(root, match[1]!) };
     if (!['POST', 'PATCH', 'PUT', 'DELETE'].includes(request.method || '')) return null;
     context.authorizeWrite();
@@ -22,6 +22,9 @@ export function createConnectionSkillsHttp(application: ConnectionSkillsApplicat
       if (request.method === 'PATCH' && !match[2]) return { status: 200, body: application.save(root, id, input) };
       if (request.method === 'DELETE' && !match[2]) return { status: 200, body: application.remove(root, id, input) };
       if (request.method === 'PUT' && match[2] === 'auth') return { status: 200, body: application.saveAuth(root, id, input) };
+      if (request.method === 'POST' && match[2] === 'auth/reveal') return { status: 200, headers: { 'cache-control': 'no-store' }, body: application.revealPersonal(root, id, input) };
+      if (request.method === 'POST' && match[2] === 'auth/migrate') return { status: 200, body: application.migrateAuth(root, id, input) };
+      if (request.method === 'POST' && match[2] === 'auth/relocate') return { status: 200, body: application.relocateAuth(root, id, input) };
       if (request.method === 'POST' && match[2] === 'check') return { status: 200, body: application.check(root, id) };
       if (request.method === 'POST' && match[2] === 'help') return { status: 200, body: await application.help(root, id) };
     }

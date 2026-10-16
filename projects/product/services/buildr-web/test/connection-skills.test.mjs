@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createApiClient } from '../src/api/client.ts';
 import { createConnectionSkillsClient } from '../src/features/connection-skills/api/connection-skills-api.ts';
-import { afterPersonalSave, afterTeamSave, authenticationDraftsAfterRead, bindingFor, bindingKey, categoryLabel, connectionSystems, createDraftRequestScope, draftHookInput, draftObservations, fieldDefaults, hooksAvailable, personalDraftDirty, personalDraftFor, validateFields, websiteHref, withFieldValue } from '../src/features/connection-skills/connection-skill-form.ts';
+import { afterPersonalSave, afterTeamSave, authenticationDraftsAfterRead, authenticationSourceAllowed, bindingFor, bindingKey, categoryLabel, connectionSystems, createDraftRequestScope, draftHookInput, draftObservations, fieldDefaults, hooksAvailable, personalAuthenticationOnly, personalDraftDirty, personalDraftFor, validateFields, websiteHref, withFieldValue } from '../src/features/connection-skills/connection-skill-form.ts';
 import { tabForPath } from '../src/app/workspace-pages.ts';
 import { connectionFieldLabel, connectionSummaryLines, displayFieldLabels, fieldLabelsAfterRead } from '../src/features/connection-skills/connection-skill-summary.ts';
 import { sortConnectionInstances } from '../src/features/connection-skills/connection-skill-list.ts';
@@ -49,6 +49,56 @@ test('草稿明确测试团队组而不改变已保存个人来源，不展开�
   assert.deepEqual(input.authentication, { source: 'team', intent: 'keep' });
   assert.deepEqual(input.expected, { teamRevision: 'team-current', definitionRevision: 'definition-current', localRevision: 'local-current' });
   assert.deepEqual(instance, before);
+});
+
+test('个人模式只选择本机个人完整组，缺省声明继续兼容团队与个人', () => {
+  const personal = structuredClone(entry);
+  personal.definition.authentication.allowedSources = ['personal'];
+  assert.equal(personalAuthenticationOnly(personal), true);
+  assert.equal(personalAuthenticationOnly(entry), false);
+  assert.equal(personalAuthenticationOnly(undefined), false);
+  assert.throws(() => draftHookInput(personal, instance, instance.config, { source: 'team', intent: 'keep' }), /不支持所选认证来源/);
+  const kept = draftHookInput(personal, instance, instance.config, { source: 'personal', intent: 'keep' }, 'scopes');
+  assert.deepEqual(kept.authentication, { source: 'personal', intent: 'keep' });
+  assert.equal(kept.expected.localRevision, instance.localRevision);
+  assert.throws(() => draftHookInput(personal, instance, instance.config, { source: 'personal', intent: 'replace', values: { username: 'other' } }), /密码/);
+  const teamOnly = structuredClone(entry); teamOnly.definition.authentication.allowedSources = ['team'];
+  assert.equal(personalAuthenticationOnly(teamOnly), false);
+  assert.equal(authenticationSourceAllowed(teamOnly, 'personal'), false);
+  assert.equal(authenticationSourceAllowed(teamOnly, 'team'), true);
+  assert.equal(authenticationSourceAllowed(entry, 'personal'), true);
+  assert.throws(() => draftHookInput(teamOnly, instance, instance.config, { source: 'personal', intent: 'keep' }), /不支持所选认证来源/);
+});
+
+test('旧版共享认证通过保全迁移接口搬到本机，旧个人来源仍可单独移除', async () => {
+  const requests = [], expected = { teamRevision: 'team-current', definitionRevision: 'definition-current', localRevision: 'local-current' };
+  const client = createConnectionSkillsClient(async (url, init) => { requests.push({ url, init }); return { instance, migrated: true, sourceRemoved: true }; }, 'workspace');
+  await client.migratePersonal(instance.id, { source: { id: instance.id, authenticationSource: 'team', expected }, expected, removeSource: true });
+  assert.equal(requests.length, 1); assert.equal(requests[0].init.method, 'POST');
+  assert.equal(requests[0].url, '/api/v1/workspaces/workspace/connection-skills/instances/instance-a/auth/migrate');
+  assert.deepEqual(JSON.parse(requests[0].init.body), { source: { id: instance.id, authenticationSource: 'team', expected }, expected, removeSource: true });
+  assert.equal(requests[0].init.body.includes('password'), false, 'The browser never round-trips the old stored secret during migration.');
+  await client.savePersonal(instance.id, { intent: 'remove', expected });
+  assert.equal(requests[1].init.method, 'PUT'); assert.deepEqual(JSON.parse(requests[1].init.body), { intent: 'remove', expected });
+});
+
+test('查看个人秘密是显式带版本的非缓存POST，普通读取不触发查看', async t => {
+  const requests = [], expected = { teamRevision: 'team-current', definitionRevision: 'definition-current', localRevision: 'local-current' };
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    requests.push({ url, init });
+    return new Response(JSON.stringify(url.endsWith('/reveal') ? { field: 'password', value: 'fictional-personal-secret' } : { instance }), { headers: { 'content-type': 'application/json' } });
+  });
+  const client = createConnectionSkillsClient(createApiClient({ getWorkspaceId: () => 'ignored', sessionAdapter: { writeHeaders: () => ({ 'x-buildr-session': 'fixture' }) } }), 'workspace');
+  await client.get(instance.id);
+  assert.equal(requests.length, 1); assert.equal(requests[0].url.endsWith('/reveal'), false);
+  const controller = new AbortController();
+  assert.deepEqual(await client.revealPersonal(instance.id, { field: 'password', expected }, controller.signal), { field: 'password', value: 'fictional-personal-secret' });
+  const request = requests[1];
+  assert.equal(request.url, '/api/v1/workspaces/workspace/connection-skills/instances/instance-a/auth/reveal');
+  assert.equal(request.init.method, 'POST'); assert.equal(request.init.cache, 'no-store');
+  assert.equal(request.init.headers.get('x-buildr-session'), 'fixture'); assert.equal(request.init.signal, controller.signal);
+  assert.deepEqual(JSON.parse(request.init.body), { field: 'password', expected });
+  assert.equal(request.init.body.includes('fictional-personal-secret'), false);
 });
 
 test('不完整个人候选不回退团队，目标变化不能保持旧认证', () => {

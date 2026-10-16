@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { validateConfig, validateAuthentication, type ConnectionBinding, type ConnectionDefinition } from '../domain/definition.ts';
+import { validateConfig, validateAuthentication, type AuthenticationSource, type ConnectionBinding, type ConnectionDefinition } from '../domain/definition.ts';
 import { assertRevision, diagnostic, failure, identifier, object, text, type AuthenticationGroup, type ConnectionInstance, type ConnectionScope, type Expected, type Values } from '../domain/instance.ts';
 import { normalizeHookOutput } from '../domain/hook-result.ts';
 import { publicFieldLabels, validatedFieldLabels } from '../domain/field-labels.ts';
@@ -70,6 +70,9 @@ export class ConnectionSkillsApplication {
     if (group.targetBinding !== this.target(scope, instance, entry, group.values)) throw failure('connection_skill_auth_target_changed', '所选认证组绑定的目标或接收程序已变化，请重新录入该组；未回退其他来源。');
     return validateAuthentication(entry.definition.authentication.fields, group.values);
   }
+  private assertSource(entry: ConnectionCatalogEntry, source: AuthenticationSource): void {
+    if (!(entry.definition.authentication.allowedSources ?? ['team', 'personal']).includes(source)) throw failure('connection_skill_auth_source_denied', source === 'team' ? '此接入只允许本机个人认证，不使用或保存团队认证。' : '此接入不允许个人认证。');
+  }
   private public(scope: ConnectionScope, instance: ConnectionInstance, teamRevision: string, sourcePath: string, observationDiagnostic?: string, observation?: ConnectionObservation) {
     const resolved = this.catalog.resolve(scope.rootPath, instance.binding, observation?.catalog), entry = resolved.definition;
     const local = this.files.readLocal(scope, instance.id);
@@ -87,7 +90,11 @@ export class ConnectionSkillsApplication {
     if (observationDiagnostic) diagnostics.push(observationDiagnostic);
     let publicConfig: Values = {};
     if (entry) try { publicConfig = validateConfig(entry.definition.config.fields, instance.config); } catch (cause) { diagnostics.push(diagnostic(cause)); }
-    const teamAuthentication = summary(instance.authentication), personalAuthentication = { present: local.present, ...summary(local.group, local.diagnostic) };
+    const teamAuthentication = { present: instance.authentication !== null, ...summary(instance.authentication) }, personalAuthentication = { present: local.present, ...summary(local.group, local.diagnostic) };
+    if (entry) {
+      if (instance.authentication) try { this.assertSource(entry, 'team'); } catch (cause) { teamAuthentication.configured = false; teamAuthentication.diagnostic = diagnostic(cause); }
+      if (local.present) try { this.assertSource(entry, 'personal'); } catch (cause) { personalAuthentication.configured = false; personalAuthentication.diagnostic = diagnostic(cause); }
+    }
     const secretFields = entry?.definition.authentication.fields.filter(field => field.type === 'secret') || [];
     const secrets = secretFields.flatMap(field => [instance.authentication?.values[field.key], local.group?.values[field.key]]).filter((value): value is string => typeof value === 'string');
     // An unavailable binding or invalid saved group cannot safely classify old label text.
@@ -114,7 +121,7 @@ export class ConnectionSkillsApplication {
     }
     const websiteUrl = publicWebsite(entry?.definition, instance.config);
     return { ...instance, config: publicConfig, fieldLabels, sourcePath, revision, teamRevision, localRevision: local.revision, definitionRevision,
-      authentication: { source: local.present ? 'personal' as const : 'team' as const, team: teamAuthentication, personal: personalAuthentication },
+      authentication: { source: local.present || entry?.definition.authentication.allowedSources?.every(source => source === 'personal') ? 'personal' as const : 'team' as const, team: teamAuthentication, personal: personalAuthentication },
       availability: { ready: diagnostics.length === 0, diagnostics }, programAvailability, definition: entry, websiteUrl };
   }
   list(root: string) {
@@ -158,10 +165,10 @@ export class ConnectionSkillsApplication {
           ? publicFieldLabels(entry.definition.config.fields, value.config, before.value.fieldLabels) : {}
         : validatedFieldLabels(entry.definition.config.fields, value.config, input.fieldLabels);
       const intent = object(input.authentication || { intent: 'keep' }) as AuthIntent;
-      if (intent.intent === 'replace') value.authentication = { targetBinding: this.target(scope, value, entry, validateAuthentication(entry.definition.authentication.fields, intent.values)), values: validateAuthentication(entry.definition.authentication.fields, intent.values) };
+      if (intent.intent === 'replace') { this.assertSource(entry, 'team'); value.authentication = { targetBinding: this.target(scope, value, entry, validateAuthentication(entry.definition.authentication.fields, intent.values)), values: validateAuthentication(entry.definition.authentication.fields, intent.values) }; }
       else if (intent.intent === 'keep') {
         value.authentication = before.value?.authentication ?? null;
-        if (value.authentication) this.group(scope, value, entry, value.authentication);
+        if (value.authentication) { this.assertSource(entry, 'team'); this.group(scope, value, entry, value.authentication); }
       } else if (intent.intent !== 'remove') throw failure('connection_skill_auth_intent_invalid', '请选择保持、替换或移除认证。', 400);
       const labelSecrets = (group: AuthenticationGroup | null, previous = false): string[] => {
         if (!group) return [];
@@ -188,7 +195,7 @@ export class ConnectionSkillsApplication {
       const entry = input.intent === 'remove' ? null : this.entry(scope, team.value.binding, expected.definitionRevision, true, this.observe(scope));
       let group: AuthenticationGroup | null;
       if (input.intent === 'remove') group = null;
-      else if (input.intent === 'replace' && entry) group = { targetBinding: this.target(scope, team.value, entry, validateAuthentication(entry.definition.authentication.fields, input.values)), values: validateAuthentication(entry.definition.authentication.fields, input.values) };
+      else if (input.intent === 'replace' && entry) { this.assertSource(entry, 'personal'); group = { targetBinding: this.target(scope, team.value, entry, validateAuthentication(entry.definition.authentication.fields, input.values)), values: validateAuthentication(entry.definition.authentication.fields, input.values) }; }
       else throw failure('connection_skill_auth_intent_invalid', '个人认证必须明确整组替换或移除。', 400);
       assertRevision(this.files.readTeam(scope, id).revision, expected.teamRevision);
       const currentObservation = this.observe(scope);
@@ -197,6 +204,84 @@ export class ConnectionSkillsApplication {
       this.files.writeLocal(scope, id, group, expected.localRevision!);
       return this.getObserved(scope, id, currentObservation);
     });
+  }
+  private observedAuthentication(scope: ConnectionScope, id: string, expected: Expected, allowConfigMigration = false) {
+    object(expected); requireDefinitionObservation(expected);
+    const saved = this.files.readTeam(scope, identifier(id)); assertRevision(saved.revision, expected.teamRevision);
+    if (!saved.value) throw failure('connection_skill_not_found', '当前实例不存在。', 404);
+    const resolved = this.catalog.resolve(scope.rootPath, saved.value.binding);
+    const entry = allowConfigMigration && resolved.definition && resolved.diagnostics.every(item => item.code === 'connection_config_incompatible')
+      ? resolved.definition : this.entry(scope, saved.value.binding, expected.definitionRevision, true);
+    assertRevision(entry.revision, expected.definitionRevision);
+    const local = this.files.readLocal(scope, id); assertRevision(local.revision, expected.localRevision);
+    if (local.diagnostic) throw failure('connection_skill_auth_unavailable', local.diagnostic);
+    return { saved, instance: saved.value, entry, local };
+  }
+  /** An explicit local UI action; regular observations never return secret values. */
+  revealPersonal(root: string, id: string, raw: unknown) {
+    const scope = this.resolveScope(root), input = object(raw);
+    return this.files.lock(scope, identifier(id), () => {
+      const current = this.observedAuthentication(scope, id, object(input.expected) as Expected);
+      this.assertSource(current.entry, 'personal');
+      const field = current.entry.definition.authentication.fields.find(field => field.key === input.field && field.type === 'secret');
+      if (!field) throw failure('connection_skill_secret_field_invalid', '只能明确查看当前声明中的一个个人秘密字段。', 400);
+      if (!current.local.present) throw failure('connection_skill_auth_missing', '当前本机尚未保存个人认证。');
+      const values = this.group(scope, current.instance, current.entry, current.local.group);
+      if (typeof values[field.key] !== 'string') throw failure('connection_skill_auth_missing', '该个人秘密字段尚未保存。');
+      return { field: field.key, value: values[field.key] as string };
+    });
+  }
+  relocateAuth(root: string, id: string, raw: unknown) {
+    const scope = this.resolveScope(root), input = object(raw);
+    return this.files.lock(scope, identifier(id), () => {
+      const current = this.observedAuthentication(scope, id, object(input.expected) as Expected);
+      this.files.relocateLocal(scope, id, current.local.revision);
+      return { relocated: true, ...this.getObserved(scope, id) };
+    });
+  }
+  /** Rebinds one complete group locally without returning it through a public channel. */
+  migrateAuth(root: string, id: string, raw: unknown) {
+    const scope = this.resolveScope(root), input = object(raw), source = object(input.source);
+    const sourceId = identifier(source.id); identifier(id);
+    if (!['team', 'personal'].includes(String(source.authenticationSource)) || typeof input.removeSource !== 'boolean') throw failure('connection_skill_auth_migration_invalid', '迁移须明确来源认证组及是否移除来源。', 400);
+    if (sourceId === id && source.authenticationSource === 'personal') throw failure('connection_skill_auth_migration_invalid', '同一实例的个人认证无需跨实例迁移。', 400);
+    const ids = [...new Set([id, sourceId])].sort();
+    const locked = (position: number): ReturnType<ConnectionSkillsApplication['get']> & { migrated: true; sourceRemoved: boolean } => position < ids.length
+      ? this.files.lock(scope, ids[position]!, () => locked(position + 1))
+      : migrate();
+    const migrate = () => {
+      const target = this.observedAuthentication(scope, id, object(input.expected) as Expected);
+      const original = this.observedAuthentication(scope, sourceId, object(source.expected) as Expected, true);
+      this.assertSource(target.entry, 'personal');
+      const originalGroup = source.authenticationSource === 'personal' ? original.local.group : original.instance.authentication;
+      const values = this.group(scope, original.instance, original.entry, originalGroup);
+      // Account identity and recipient must agree; environment labels are not credentials.
+      const sameSource = (['skillAssetIdentity', 'definitionId', 'sourceIdentity'] as const).every(key => original.instance.binding[key] === target.instance.binding[key]);
+      if (!sameSource || this.target(scope, { ...original.instance, id, binding: target.instance.binding }, original.entry, values) !== this.target(scope, target.instance, target.entry, values)) throw failure('connection_skill_auth_migration_target', '来源与目标的绑定、认证接收方或账号字段不一致；未迁移。');
+      const group = { targetBinding: this.target(scope, target.instance, target.entry, values), values };
+      if (target.local.present && digest(target.local.group) !== digest(group)) throw failure('connection_skill_auth_migration_conflict', '目标已有不同个人认证；未覆盖或移除来源。');
+      if (!target.local.present) this.files.writeLocal(scope, id, group, target.local.revision);
+      else this.files.relocateLocal(scope, id, target.local.revision);
+      if (input.removeSource) {
+        // Local preservation happens first; a later conflict retains the source for recovery.
+        try {
+          assertRevision(this.files.readTeam(scope, id).revision, target.saved.revision);
+          const preserved = this.files.readLocal(scope, id);
+          if (preserved.diagnostic || digest(preserved.group) !== digest(group)) throw failure('connection_skill_auth_migration_conflict', '目标个人认证在来源移除前已变化；来源保留。');
+          assertRevision(this.files.readTeam(scope, sourceId).revision, original.saved.revision);
+          if (source.authenticationSource === 'personal') this.files.writeLocal(scope, sourceId, null, original.local.revision);
+          else {
+            const secrets = original.entry.definition.authentication.fields.filter(field => field.type === 'secret').map(field => values[field.key]).filter((value): value is string => typeof value === 'string');
+            const fieldLabels = publicFieldLabels(original.entry.definition.config.fields, original.instance.config, original.instance.fieldLabels, secrets);
+            this.files.writeTeam(scope, { ...original.instance, fieldLabels, authentication: null }, original.saved.revision, original.entry.definition.systemId ?? original.entry.definition.definitionId);
+          }
+        } catch {
+          throw Object.assign(failure('connection_skill_auth_migration_partial', '目标本机个人认证已持久保全，但来源移除尚未确认；请重新读取两者核对，不重复迁移。'), { details: { targetPreserved: true, durability: 'confirmed', targetId: id, sourceId, sourceRemoval: 'unresolved' } });
+        }
+      }
+      return { migrated: true as const, sourceRemoved: input.removeSource as boolean, ...this.getObserved(scope, id) };
+    };
+    return locked(0);
   }
   remove(root: string, id: string, raw: unknown) {
     const scope = this.resolveScope(root), input = object(raw), expected = object(input.expected) as Expected;
@@ -218,7 +303,10 @@ export class ConnectionSkillsApplication {
     const local = this.files.readLocal(scope, id);
     if (local.present && local.diagnostic) throw failure('connection_skill_auth_unavailable', local.diagnostic);
     assertRevision(local.revision, view.localRevision);
-    const source = local.present ? 'personal' as const : 'team' as const, values = this.group(scope, { ...instance, config }, entry, local.present ? local.group : instance.authentication);
+    const source = local.present ? 'personal' as const : 'team' as const;
+    if (!local.present && entry.definition.authentication.allowedSources?.every(source => source === 'personal')) throw failure('connection_skill_auth_missing', '此接入需要当前本机的个人认证，请先保存完整账号。');
+    this.assertSource(entry, source);
+    const values = this.group(scope, { ...instance, config }, entry, local.present ? local.group : instance.authentication);
     return { entry, context: { id, revision: view.revision, revisions: { teamRevision: view.teamRevision, localRevision: view.localRevision, definitionRevision: view.definitionRevision }, config, authentication: { source, values }, authenticationRevision: local.present ? local.revision : team.revision } };
   }
   /** Internal capability for installed builtins. Authentication never becomes a public response. */
@@ -282,6 +370,7 @@ export class ConnectionSkillsApplication {
     assertRevision(saved.revision, expected.teamRevision);
     const authentication = object(input.authentication), source = authentication.source;
     if (source !== 'team' && source !== 'personal') throw failure('connection_skill_auth_source_invalid', '请明确本次测试采用的完整认证组。', 400);
+    this.assertSource(entry, source);
     const candidate: ConnectionInstance = { schemaVersion: 'buildr.connection-instance/v1', id, name: 'draft', enabled: true, environment: '', category: entry.definition.category, binding, config, authentication: null };
     let values: Values;
     if (authentication.intent === 'replace') values = validateAuthentication(entry.definition.authentication.fields, authentication.values);

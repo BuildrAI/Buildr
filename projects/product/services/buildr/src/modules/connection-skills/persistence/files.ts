@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import YAML from 'yaml';
 import { atomicWriteFile, atomicWriteJson } from '../../../infrastructure/filesystem/atomic-files.ts';
 import { withExclusiveFileLock } from '../../../infrastructure/filesystem/exclusive-file-lock.ts';
@@ -124,17 +125,99 @@ export class ConnectionFiles {
     }
     return { instances, diagnostics };
   }
-  private localPath(scope: ConnectionScope, id: string): string { return path.join(this.dataRoot, digest([scope.workspaceId, scope.rootPath]), identifier(id) + '.json'); }
+  private localDirectory(scope: ConnectionScope): string { return path.join(scope.rootPath, '.buildr', 'local', 'connection-skills', digest(this.dataRoot)); }
+  private localPath(scope: ConnectionScope, id: string): string { return path.join(this.localDirectory(scope), identifier(id) + '.json'); }
+  private legacyLocalPath(scope: ConnectionScope, id: string): string { return path.join(this.dataRoot, digest([scope.workspaceId, scope.rootPath]), identifier(id) + '.json'); }
+  private localSources(scope: ConnectionScope, id: string) {
+    const file = this.localPath(scope, id), legacyFile = this.legacyLocalPath(scope, id);
+    const current = read(scope.rootPath, file, 64 * 1024), legacy = read(this.dataRoot, legacyFile, 64 * 1024);
+    if (current !== null && legacy !== null && current !== legacy) throw failure('connection_skill_auth_migration_conflict', '新旧个人认证同时存在且不同；请核对后明确保留，未覆盖或回退。');
+    return { file, legacyFile, current, legacy, raw: current ?? legacy };
+  }
+  private prepareLocalDirectory(scope: ConnectionScope, id: string): void {
+    const directory = this.localDirectory(scope); safePath(scope.rootPath, directory);
+    const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_')));
+    const git = (args: string[]) => spawnSync('git', ['-C', scope.rootPath, ...args], { env: { ...env, LC_ALL: 'C' }, encoding: 'utf8', timeout: 2000, maxBuffer: 64 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
+    const repository = git(['rev-parse', '--show-toplevel']);
+    if (repository.status === 0) {
+      const relative = path.relative(scope.rootPath, this.localPath(scope, id)).split(path.sep).join('/');
+      const ignored = git(['check-ignore', '--no-index', '--quiet', '--', relative]);
+      const tracked = git(['ls-files', '--', relative]);
+      if (ignored.status !== 0 || tracked.status !== 0 || tracked.stdout.trim()) throw failure('connection_skill_auth_not_ignored', '个人认证目录须先由 Git 忽略且不含已跟踪文件；未写入凭据。');
+    } else {
+      let marker = false;
+      for (let parent = scope.rootPath;; parent = path.dirname(parent)) { if (fs.existsSync(path.join(parent, '.git'))) { marker = true; break; } if (path.dirname(parent) === parent) break; }
+      if (marker || repository.error || repository.status !== 128 || !repository.stderr.includes('not a git repository')) throw failure('connection_skill_auth_git_unavailable', '无法确认个人认证目录的 Git 归属与忽略边界；未写入凭据。');
+    }
+    fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+    const stat = fs.lstatSync(directory);
+    if (!stat.isDirectory() || process.platform !== 'win32' && (stat.mode & 0o077 || process.getuid && stat.uid !== process.getuid())) throw failure('connection_skill_auth_permissions', '本机个人认证目录必须仅当前用户可访问。');
+  }
+  /** A readable destination is insufficient before removing the only durable source. */
+  private confirmLocalDurability(scope: ConnectionScope, id: string): void {
+    const file = this.localPath(scope, id), raw = read(scope.rootPath, file, 64 * 1024);
+    if (raw === null) throw failure('connection_skill_auth_missing', '目标个人认证尚未保存，来源保留。');
+    const synchronizeFile = (root: string, filename: string) => {
+      safePath(root, filename);
+      const descriptor = fs.openSync(filename, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+      try {
+        const before = fs.fstatSync(descriptor);
+        if (!before.isFile()) throw new Error('not a regular file');
+        fs.fsyncSync(descriptor);
+        const after = fs.lstatSync(filename);
+        if (!after.isFile() || after.isSymbolicLink() || before.dev !== after.dev || before.ino !== after.ino) throw new Error('file changed');
+      } finally { fs.closeSync(descriptor); }
+    };
+    const synchronizeDirectories = (directory: string, root: string) => {
+      // Resolve approved root aliases (for example /var -> /private/var) first.
+      let current = fs.realpathSync(directory); const stop = fs.realpathSync(root);
+      for (;;) {
+        const descriptor = fs.openSync(current, fs.constants.O_RDONLY | (fs.constants.O_DIRECTORY || 0) | (fs.constants.O_NOFOLLOW || 0));
+        try { if (!fs.fstatSync(descriptor).isDirectory()) throw new Error('not a directory'); fs.fsyncSync(descriptor); }
+        finally { fs.closeSync(descriptor); }
+        if (current === stop) break;
+        const parent = path.dirname(current); if (parent === current) throw new Error('directory root changed'); current = parent;
+      }
+    };
+    try {
+      // The ciphertext is usable only while this profile's encryption key also survives.
+      synchronizeFile(this.dataRoot, path.join(this.dataRoot, 'key.json'));
+      synchronizeDirectories(this.dataRoot, path.parse(fs.realpathSync(this.dataRoot)).root);
+      synchronizeFile(scope.rootPath, file);
+      synchronizeDirectories(path.dirname(file), scope.rootPath);
+      if (read(scope.rootPath, file, 64 * 1024) !== raw) throw new Error('destination changed');
+    } catch {
+      let targetReadable = false;
+      try { targetReadable = read(scope.rootPath, file, 64 * 1024) === raw; } catch { /* Preserve the source when the destination cannot be observed. */ }
+      throw Object.assign(failure('connection_skill_auth_durability_unconfirmed', '目标个人认证的持久化尚未确认，来源未移除；请检查本机存储后重新读取。'), { details: { targetReadable, durability: 'unconfirmed', sourceRemoval: 'not-attempted' } });
+    }
+  }
+  /** Moves only this profile's exact workspace record; ordinary reads never migrate. */
+  relocateLocal(scope: ConnectionScope, id: string, expected: string): void {
+    const observed = this.readLocal(scope, id); assertRevision(observed.revision, expected);
+    if (observed.diagnostic) throw failure('connection_skill_auth_unavailable', observed.diagnostic);
+    const source = this.localSources(scope, id);
+    if (source.legacy === null) { if (source.current !== null) this.confirmLocalDurability(scope, id); return; }
+    this.prepareLocalDirectory(scope, id);
+    if (source.current === null) {
+      const descriptor = fs.openSync(source.file, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW || 0), 0o600);
+      try { fs.writeFileSync(descriptor, source.legacy, 'utf8'); fs.fsyncSync(descriptor); } finally { fs.closeSync(descriptor); }
+    }
+    this.confirmLocalDurability(scope, id);
+    if (read(scope.rootPath, source.file, 64 * 1024) !== source.legacy || read(this.dataRoot, source.legacyFile, 64 * 1024) !== source.legacy) throw failure('connection_skill_revision_conflict', '迁移期间个人认证已变化，原文件保留；请重新读取。');
+    fs.unlinkSync(source.legacyFile);
+  }
   readLocal(scope: ConnectionScope, id: string): { present: boolean; revision: string; group: AuthenticationGroup | null; diagnostic: string | null } {
     let raw: string | null;
-    try { raw = read(this.dataRoot, this.localPath(scope, id), 64 * 1024); }
-    catch { return { present: true, revision: 'unreadable', group: null, diagnostic: '个人认证文件不可读取；未回退团队认证。' }; }
+    let source: ReturnType<ConnectionFiles['localSources']>;
+    try { source = this.localSources(scope, id); raw = source.raw; }
+    catch (cause) { return { present: true, revision: 'unreadable', group: null, diagnostic: diagnostic(cause) }; }
     if (raw === null) return { present: false, revision: 'absent', group: null, diagnostic: null };
     let revision: string;
     try { revision = this.revision(raw); } catch { revision = 'unreadable'; }
     try {
       const encrypted = JSON.parse(raw);
-      if (process.platform !== 'win32' && (fs.statSync(this.localPath(scope, id)).mode & 0o077)) throw new Error();
+      if (process.platform !== 'win32' && (fs.statSync(source.current !== null ? source.file : source.legacyFile).mode & 0o077)) throw new Error();
       const cipher = crypto.createDecipheriv('aes-256-gcm', this.key(), Buffer.from(encrypted.iv, 'base64'));
       cipher.setAAD(Buffer.from(JSON.stringify([scope.workspaceId, scope.rootPath, id]))); cipher.setAuthTag(Buffer.from(encrypted.tag, 'base64'));
       const group = JSON.parse(Buffer.concat([cipher.update(Buffer.from(encrypted.ciphertext, 'base64')), cipher.final()]).toString('utf8'));
@@ -209,14 +292,27 @@ export class ConnectionFiles {
   removeTeam(scope: ConnectionScope, id: string, expected: string): void { const current = this.readTeam(scope, id); assertRevision(current.revision, expected); if (!current.value) throw failure('connection_skill_not_found', '当前实例不存在。', 404); const file = path.join(scope.rootPath, current.sourcePath); safePath(scope.rootPath, file); fs.unlinkSync(file); }
   writeLocal(scope: ConnectionScope, id: string, group: AuthenticationGroup | null, expected: string): void {
     assertRevision(this.readLocal(scope, id).revision, expected);
-    const file = this.localPath(scope, id); safePath(this.dataRoot, file);
-    if (group === null) { fs.rmSync(file, { force: true }); return; }
+    const sources = this.localSources(scope, id), file = sources.file; safePath(scope.rootPath, file);
+    if (group === null) { fs.rmSync(file, { force: true }); if (sources.legacy !== null) { if (read(this.dataRoot, sources.legacyFile, 64 * 1024) !== sources.legacy) throw failure('connection_skill_revision_conflict', '旧个人认证已变化，未移除。'); fs.unlinkSync(sources.legacyFile); } return; }
     if (Buffer.byteLength(JSON.stringify(group)) > 32 * 1024) throw failure('connection_skill_auth_invalid', '认证组超过大小限制。', 400);
     const iv = crypto.randomBytes(12), cipher = crypto.createCipheriv('aes-256-gcm', this.key(true), iv);
     cipher.setAAD(Buffer.from(JSON.stringify([scope.workspaceId, scope.rootPath, id])));
     const ciphertext = Buffer.concat([cipher.update(JSON.stringify(group), 'utf8'), cipher.final()]);
-    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-    atomicWriteJson(file, { iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), ciphertext: ciphertext.toString('base64') }, { mode: 0o600 });
+    this.prepareLocalDirectory(scope, id);
+    const encrypted = { iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), ciphertext: ciphertext.toString('base64') };
+    if (sources.current === null) {
+      const descriptor = fs.openSync(file, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW || 0), 0o600);
+      try { fs.writeFileSync(descriptor, JSON.stringify(encrypted) + '\n', 'utf8'); fs.fsyncSync(descriptor); } finally { fs.closeSync(descriptor); }
+    } else {
+      if (read(scope.rootPath, file, 64 * 1024) !== sources.current) throw failure('connection_skill_revision_conflict', '个人认证在保存期间已变化；未覆盖。');
+      atomicWriteJson(file, encrypted, { mode: 0o600 });
+    }
+    const installed = read(scope.rootPath, file, 64 * 1024);
+    try { if (installed === null || JSON.stringify(JSON.parse(installed)) !== JSON.stringify(encrypted)) throw new Error(); }
+    catch { throw failure('connection_skill_revision_conflict', '目标个人认证在保存期间已变化，来源保留。'); }
+    this.confirmLocalDurability(scope, id);
+    if (read(scope.rootPath, file, 64 * 1024) !== installed) throw failure('connection_skill_revision_conflict', '目标个人认证在持久化核对期间已变化，来源保留。');
+    if (sources.legacy !== null) { if (read(this.dataRoot, sources.legacyFile, 64 * 1024) !== sources.legacy) throw failure('connection_skill_revision_conflict', '旧个人认证在保存期间已变化，两份资料均保留。'); fs.unlinkSync(sources.legacyFile); }
   }
   privateState(scope: ConnectionScope, identity: string): string {
     const directory = path.join(this.dataRoot, 'providers', digest([scope.workspaceId, scope.rootPath, identity]));

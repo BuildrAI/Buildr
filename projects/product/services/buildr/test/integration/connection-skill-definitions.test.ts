@@ -18,6 +18,18 @@ const sample = () => ({ schemaVersion: 'buildr.connection-definition/v1', defini
   authentication: { fields: [{ key: 'username', label: '账号', type: 'string', required: true, minLength: 1 }, { key: 'password', label: '密码', type: 'secret', required: true }], targetFields: ['website'] },
   programs: { cli: { kind: 'bundled', runtime: 'node', entry: 'scripts/client.mjs', contextProtocol: 'buildr.connection-context/v1' } }, hooks: { spaces: { program: 'cli', args: ['spaces'], effect: 'read' } }, presentation: { summaryFields: ['website'], websiteField: 'website' } });
 
+test('认证来源可明确限制为个人，旧声明仍保持双来源兼容', () => {
+  assert.equal(parseConnectionDefinition(YAML.stringify(sample())).authentication.allowedSources, undefined);
+  for (const allowedSources of [['personal'], ['team'], ['team', 'personal']]) {
+    const value = sample(); Object.assign(value.authentication, { allowedSources });
+    assert.deepEqual(parseConnectionDefinition(YAML.stringify(value)).authentication.allowedSources, allowedSources);
+  }
+  for (const allowedSources of [[], ['personal', 'personal'], ['shared'], ['team', 'personal', 'team'], 'personal', null]) {
+    const value = sample(); Object.assign(value.authentication, { allowedSources });
+    assert.throws(() => parseConnectionDefinition(YAML.stringify(value)), { code: 'connection_definition_invalid', field: 'authentication.allowedSources' });
+  }
+});
+
 test('声明保留专业差异并严格校验配置、整组认证与有限表达式', () => {
   const definition = parseConnectionDefinition(YAML.stringify(sample()));
   assert.equal(definition.category, 'company-any-category');

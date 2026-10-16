@@ -19,6 +19,13 @@ export function bindingFor(entry: CatalogEntry): ConnectionBinding {
 export function bindingKey(binding: ConnectionBinding): string {
   return JSON.stringify([binding.skillAssetIdentity, binding.definitionId, binding.sourceIdentity, binding.configVersion]);
 }
+export function personalAuthenticationOnly(entry?: CatalogEntry): boolean {
+  const sources = entry?.definition.authentication.allowedSources;
+  return Boolean(sources?.includes('personal') && !sources.includes('team'));
+}
+export function authenticationSourceAllowed(entry: CatalogEntry | undefined, source: AuthenticationInput['source']): boolean {
+  return entry?.definition.authentication.allowedSources?.includes(source) ?? true;
+}
 export function fieldDefaults(fields: ConnectionField[]): Record<string, unknown> {
   return Object.fromEntries(fields.filter(field => field.default !== undefined && field.type !== 'secret').map(field => [field.key, structuredClone(field.default)]));
 }
@@ -105,6 +112,7 @@ export function hooksAvailable(entry: CatalogEntry | undefined, instance: Connec
 
 /** A candidate selects one complete group without changing the persisted source. */
 export function draftHookInput(entry: CatalogEntry, instance: ConnectionInstance | undefined, config: Record<string, unknown>, authentication: AuthenticationInput, hook?: string): HookInput {
+  if (!authenticationSourceAllowed(entry, authentication.source)) throw new Error('此接入方式不支持所选认证来源。');
   const inputs = hook && hook !== 'test' ? entry.definition.hooks?.[hook]?.inputs : undefined;
   const requiredConfig = new Set(inputs ? [...inputs.filter(reference => reference.startsWith('config.')).map(reference => reference.slice(7)), ...entry.definition.authentication.targetFields] : []);
   validateFields(inputs ? entry.definition.config.fields.map(field => ({ ...field, required: requiredConfig.has(field.key), ...(requiredConfig.has(field.key) || Object.hasOwn(config, field.key) ? { dependsOn: undefined } : {}) })) : entry.definition.config.fields, config);

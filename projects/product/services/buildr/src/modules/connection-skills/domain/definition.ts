@@ -19,13 +19,14 @@ export interface ConnectionProgram {
   version?: { args: string[]; constraint: string }; dependencies?: ConnectionDependency[]; installHint?: string;
 }
 export type ConnectionFieldReference = `config.${string}` | `authentication.${string}`;
+export type AuthenticationSource = 'team' | 'personal';
 export interface ConnectionPresentationGroup { id: string; title: string; fields: ConnectionFieldReference[]; collapsed?: boolean }
 export interface ConnectionHook { program: string; args: string[]; effect: 'read'; inputs?: ConnectionFieldReference[] }
 export interface ConnectionDefinition {
   schemaVersion: typeof CONNECTION_DEFINITION_SCHEMA; definitionId: string; name: string; description: string;
   category: string; systemId?: string; configVersion: number;
   config: { fields: ConnectionField[] };
-  authentication: { fields: ConnectionField[]; targetFields: string[] };
+  authentication: { fields: ConnectionField[]; targetFields: string[]; allowedSources?: AuthenticationSource[] };
   programs: Record<string, ConnectionProgram>; hooks?: Record<string, ConnectionHook>;
   presentation?: { summaryFields: string[]; websiteField?: string; websiteFallbackField?: string; categoryLabel?: string; methodLabel?: string; groups?: ConnectionPresentationGroup[] };
 }
@@ -96,7 +97,11 @@ export function parseConnectionDefinition(content: string): ConnectionDefinition
   if (value.systemId !== undefined) ensure(key(value.systemId), 'systemId', '系统名称编号不合法。');
   ensure(Number.isSafeInteger(value.configVersion) && value.configVersion > 0, 'configVersion', '配置版本必须是正整数。');
   closed(value.config, ['fields'], 'config'); value.config.fields = fields(value.config.fields, false);
-  closed(value.authentication, ['fields', 'targetFields'], 'authentication'); value.authentication.fields = fields(value.authentication.fields, true);
+  closed(value.authentication, ['fields', 'targetFields', 'allowedSources'], 'authentication'); value.authentication.fields = fields(value.authentication.fields, true);
+  if (value.authentication.allowedSources !== undefined) {
+    const sources = value.authentication.allowedSources;
+    ensure(Array.isArray(sources) && sources.length > 0 && sources.length <= 2 && sources.every(source => ['team', 'personal'].includes(source)) && new Set(sources).size === sources.length, 'authentication.allowedSources', '认证来源必须为非空、不重复的 team/personal 数组。');
+  }
   value.authentication.targetFields ??= []; strings(value.authentication.targetFields, 'authentication.targetFields');
   const configuration = new Map<string, ConnectionField>(value.config.fields.map((f: ConnectionField) => [f.key, f]));
   const fieldReferences = new Set([...value.config.fields.map((field: ConnectionField) => `config.${field.key}`), ...value.authentication.fields.map((field: ConnectionField) => `authentication.${field.key}`)]);

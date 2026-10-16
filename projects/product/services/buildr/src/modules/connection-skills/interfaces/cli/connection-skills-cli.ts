@@ -13,12 +13,13 @@ function readInput(file: string, limit = 4 * 1024 * 1024): Buffer {
 export function createConnectionSkillsCli(application: ConnectionSkillsApplication) {
   return [Object.freeze({ key: 'connection-skill', surface: 'agent-machine', summary: '发现连接技能、管理共享实例和个人认证，并运行技能自带程序。',
     help: [
-      'Usage: buildr connection-skill <definitions list|definitions inspect|list|get|create|update|remove|auth set|auth use-team|check|help|test|discover|run> [--target <workspace>] [--json]',
+      'Usage: buildr connection-skill <definitions list|definitions inspect|list|get|create|update|remove|auth set|auth clear|auth use-team|auth migrate|auth relocate|check|help|test|discover|run> [--target <workspace>] [--json]',
       'get/update/remove/check/help/test/run --connection <id>; definitions inspect --asset <assetIdentity> --definition <definitionId>',
       'create/update/auth/test/discover --file <json-file|->; config/auth 仅从文件或标准输入读取，不在参数中传密码。',
       'run --connection <id> --expected-revision <revision> --program <id> [--context compare=<id>@<revision>] -- <专业参数...>',
       'run 的标准输入完整交给专业程序；多个上下文分别明确编号和观察版本。',
       'help 来自所选程序，不交付认证；list/get 仅返回遮蔽认证的观察，源已登记不代表程序已安装或连接已验证。',
+      'auth migrate 仅在进程内转移完整组；auth relocate 将本 profile 的旧个人密文迁入工作空间 .buildr/local，均以 --file 提供准确观察，不输出秘密。',
     ], match: ({ domain }: { domain?: string }) => domain === 'connection-skill',
     async run(_runtime: unknown, context: { argv: string[] }) {
       const args = context.argv.slice(3), action = args.shift() || 'list';
@@ -29,7 +30,7 @@ export function createConnectionSkillsCli(application: ConnectionSkillsApplicati
         definitions: ['--asset', '--definition'], list: [], get: ['--connection'], create: ['--file'], update: ['--connection', '--file'], remove: ['--connection', '--file', '--expected-revision'],
         auth: ['--connection', '--file'], check: ['--connection', '--program'], help: ['--connection', '--program'], test: ['--connection', '--file'], discover: ['--connection', '--file', '--hook'], run: ['--connection', '--expected-revision', '--program', '--context'],
       };
-      if (!actionFlags[action] || action === 'definitions' && !['list', 'inspect'].includes(subaction || '') || action === 'auth' && !['set', 'use-team'].includes(subaction || '')) throw failure('connection_skill_cli_invalid', '未知连接技能动作。', 400);
+      if (!actionFlags[action] || action === 'definitions' && !['list', 'inspect'].includes(subaction || '') || action === 'auth' && !['set', 'clear', 'use-team', 'migrate', 'relocate'].includes(subaction || '')) throw failure('connection_skill_cli_invalid', '未知连接技能动作。', 400);
       const allowed = ['--target', '--json', ...actionFlags[action]!];
       while (args.length) {
         const flag = args.shift()!;
@@ -63,7 +64,17 @@ export function createConnectionSkillsCli(application: ConnectionSkillsApplicati
       else if (action === 'create') result = application.save(root, null, input);
       else if (action === 'update') result = application.save(root, id, input);
       else if (action === 'remove') result = application.remove(root, id, input);
-      else if (action === 'auth' && ['set', 'use-team'].includes(subaction || '')) result = application.saveAuth(root, id, { ...input, intent: subaction === 'set' ? 'replace' : 'remove' });
+      else if (action === 'auth') {
+        if (subaction === 'migrate') result = application.migrateAuth(root, id, input);
+        else if (subaction === 'relocate') result = application.relocateAuth(root, id, input);
+        else {
+          if (subaction === 'use-team') {
+            const sources = application.get(root, id).instance.definition?.definition.authentication.allowedSources;
+            if (sources && !sources.includes('team')) throw failure('connection_skill_auth_source_denied', '此接入只允许个人认证；清除个人认证请使用 auth clear。');
+          }
+          result = application.saveAuth(root, id, { ...input, intent: subaction === 'set' ? 'replace' : 'remove' });
+        }
+      }
       else if (action === 'check') result = application.check(root, id, program);
       else if (action === 'help') result = await application.help(root, id, program);
       else if (action === 'test' || action === 'discover') {

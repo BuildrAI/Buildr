@@ -41,6 +41,7 @@
 .buildr-connection-form-collapse .ant-collapse-content-box, .buildr-connection-personal-collapse .ant-collapse-content-box, .buildr-connection-details-collapse .ant-collapse-content-box { padding-inline: 0 !important; }
 .buildr-connection-personal-collapse, .buildr-connection-details-collapse, .buildr-connection-form-collapse { border-top: 1px solid var(--soft-line); border-radius: 0; }
 .buildr-connection-personal-content { display: grid; gap: 14px; }
+.buildr-connection-saved-personal-secrets { display: grid; gap: 14px; }
 .buildr-connection-skill-switch { display: flex; align-items: center; gap: 10px; }
 .buildr-connection-skill-discovery { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .buildr-connection-inline-result { font-size: 12px; color: var(--soft-muted); }
