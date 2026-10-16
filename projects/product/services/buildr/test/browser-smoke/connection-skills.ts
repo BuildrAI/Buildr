@@ -668,8 +668,85 @@ try {
   await page.getByRole('button', { name: '隐藏已保存的密码', exact: true }).click();
   await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-personal-migration.png') });
   await page.locator('#close-connection-skill-editor').click();
+  // Browser-authorized methods keep internal authentication fields off the page.
+  const managedDefinition = { ...definition, definitionId: 'browser-managed', name: '外部授权夹具', systemId: 'browser-managed',
+    config: { fields: definition.config.fields.map(field => field.key === 'scope' ? { ...field, required: false } : field) },
+    authentication: { ...definition.authentication, allowedSources: ['personal'], authorization: { program: 'authorize', args: [], inputs: ['config.endpoint'], label: '登录外部账号', reauthorizeLabel: '重新授权外部账号', timeoutMs: 30000 } },
+    programs: { ...definition.programs, authorize: { kind: 'bundled', runtime: 'node', entry: 'scripts/authorize.mjs', contextProtocol: 'buildr.connection-authorization-context/v1' } },
+    presentation: { ...definition.presentation, environment: 'hidden' },
+  };
+  fs.writeFileSync(path.join(skillRoot, 'assets/managed.yml'), YAML.stringify(managedDefinition));
+  fs.writeFileSync(path.join(skillRoot, 'scripts/authorize.mjs'), `process.once('message', ({context}) => { if (context.protocolVersion !== 'buildr.connection-authorization-context/v1' || Object.hasOwn(context.connection,'authentication')) process.exit(2); process.stdout.write('suppressed-fixture-secret'); process.send({type:'buildr.connection-auth-result',callId:context.callId,status:'success',values:{username:'fixture-managed-user',password:'fixture-managed-password'}}, () => process.disconnect()); });`);
+  const managedManifest = YAML.parse(fs.readFileSync(manifestPath, 'utf8'));
+  managedManifest.skills.find((skill: any) => skill.id === 'browser-connection').connectionDefinitions.push('assets/managed.yml');
+  fs.writeFileSync(manifestPath, YAML.stringify(managedManifest));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('#create-connection-skill').click();
+  await page.locator('[data-connection-system]').filter({ hasText: '外部授权夹具' }).click();
+  await page.locator('#connection-skill-authorization-state').filter({ hasText: '尚未授权' }).waitFor();
+  assert.equal(await page.locator('#connection-skill-environment').count(), 0);
+  assert.equal(await page.locator('#connection-skill-name').getAttribute('placeholder'), '外部授权夹具');
+  assert.equal(await page.locator('#connection-skill-personal-username').count(), 0);
+  assert.equal(await page.locator('#connection-skill-personal-password').count(), 0);
+  assert.equal(await page.locator('#connection-skill-saved-personal-password').count(), 0);
+  await page.locator('#connection-skill-name').fill('无需内部字段的授权');
+  await page.locator('#connection-skill-config-endpoint').fill('https://browser-authorization.example.test/');
+  const managedRoute = '**/connection-skills/instances/*/auth/authorize';
+  await page.route(managedRoute, route => route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'connection_skill_authorization_browser_closed', message: '授权浏览器已关闭；未替换个人认证，可重新发起授权。' } }) }));
+  await page.locator('#authorize-connection-skill-personal').click();
+  await page.locator('#connection-skill-save-notice').filter({ hasText: '连接配置已保存；本次授权未完成' }).waitFor();
+  let managedInstance = connections.list(workspaceRoot).instances.find((item: any) => item.name === '无需内部字段的授权');
+  assert.ok(managedInstance); assert.equal(managedInstance.authentication.personal.present, false);
+  assert.equal(YAML.parse(fs.readFileSync(path.join(workspaceRoot, managedInstance.sourcePath), 'utf8')).authentication, null);
+  await page.unroute(managedRoute);
+  const managedRequest = page.waitForRequest(request => request.url().endsWith('/auth/authorize'));
+  const managedResponse = page.waitForResponse(response => response.url().endsWith('/auth/authorize'));
+  await page.locator('#authorize-connection-skill-personal').click();
+  assert.deepEqual(Object.keys((await managedRequest).postDataJSON()), ['expected']);
+  const authorizationResult = await (await managedResponse).json();
+  assert.equal(authorizationResult.status, 'success');
+  assert.equal(JSON.stringify(authorizationResult).includes('fixture-managed-password'), false);
+  assert.equal(JSON.stringify(authorizationResult).includes('suppressed-fixture-secret'), false);
+  await page.locator('#connection-skill-authorization-state').filter({ hasText: '本机已授权' }).waitFor();
+  assert.equal((await page.locator('#connection-skill-editor').innerText()).includes('fixture-managed-user'), false, 'No accountLabelField means no internal username fallback.');
+  const managedRow = page.locator('#connection-skills-table tr').filter({ hasText: '无需内部字段的授权' });
+  assert.equal((await managedRow.innerText()).includes('未填写环境'), false);
+  await page.locator('#connection-skill-name').fill('授权后的非秘密草稿');
+  assert.equal(await page.locator('#authorize-connection-skill-personal').isDisabled(), true);
+  await page.locator('#connection-skill-authorization-dirty').waitFor();
+  await page.locator('#save-connection-skill-team').click();
+  await page.locator('#connection-skill-save-notice').filter({ hasText: '连接配置已保存' }).waitFor();
+  assert.equal(await page.locator('#connection-skill-editor').isVisible(), true);
+  await page.locator('#discover-connection-skill-config-scope').click();
+  await page.locator('#connection-skill-discovery-scope').filter({ hasText: '已读取 2 个可选项' }).waitFor();
+  managedInstance = connections.get(workspaceRoot, managedInstance.id).instance;
+  const originalManagedRevision = managedInstance.localRevision;
+  let releaseManaged: (() => void) | undefined, routeEntered: (() => void) | undefined;
+  await page.route(managedRoute, async route => { await new Promise<void>(resolve => { releaseManaged = resolve; routeEntered?.(); }); await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'success', instance: { ...managedInstance, id: 'stale-wrong-instance' } }) }).catch(() => {}); });
+  const cancelledRouteReady = new Promise<void>(resolve => { routeEntered = resolve; });
+  const beginCancelled = page.waitForRequest(request => request.url().endsWith('/auth/authorize'));
+  await page.locator('#authorize-connection-skill-personal').click(); await beginCancelled; await cancelledRouteReady;
+  await page.locator('#connection-skill-authorization-waiting').waitFor();
+  const cancelledRequest = page.waitForEvent('requestfailed', { predicate: request => request.url().endsWith('/auth/authorize') });
+  await page.locator('#cancel-connection-skill-authorization').click();
+  await cancelledRequest; releaseManaged!();
+  await page.locator('#connection-skill-authorization-waiting').waitFor({ state: 'hidden' });
+  assert.equal(connections.get(workspaceRoot, managedInstance.id).instance.localRevision, originalManagedRevision);
+  assert.equal(await page.locator('#connection-skill-error').count(), 0, 'A cancelled late response cannot replace state or show an error.');
+  const closedRouteReady = new Promise<void>(resolve => { routeEntered = resolve; });
+  const beginClosed = page.waitForRequest(request => request.url().endsWith('/auth/authorize'));
+  await page.locator('#authorize-connection-skill-personal').click(); await beginClosed; await closedRouteReady;
+  await page.locator('#close-connection-skill-editor').click(); releaseManaged!();
+  await page.unroute(managedRoute);
+  await page.locator('#connection-skills-table tr').filter({ hasText: '授权后的非秘密草稿' }).getByRole('button', { name: '编辑', exact: true }).click();
+  await page.locator('#connection-skill-authorization-state').filter({ hasText: '本机已授权' }).waitFor();
+  assert.equal(await page.locator('#connection-skill-environment').count(), 0);
+  assert.equal(await page.locator('#connection-skill-saved-personal-password').count(), 0);
+  assert.equal(connections.get(workspaceRoot, managedInstance.id).instance.localRevision, originalManagedRevision);
+  await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-browser-authorization.png') });
+  await page.locator('#close-connection-skill-editor').click();
   assert.deepEqual(browserErrors, []);
-  process.stdout.write(JSON.stringify({ schemaVersion: 'buildr.workspace-smoke-scenario/v1', status: 'passed', checks: ['category-order-initial-search-refresh-local-updates', 'website-fallback-and-explicit-override', 'system-and-explicit-method-selection', 'dependency-ordered-discovery', 'progressive-fields-and-authentication', 'explicit-production-flag', 'legacy-route-redirect', 'legacy-tabs-merge', 'single-connection-navigation', 'no-legacy-api-requests', 'mysql-query-ui-fixture', 'mysql-database-picker-search-and-hidden-selection', 'mysql-database-picker-close-save-once', 'mysql-database-picker-unchanged-no-write', 'mysql-database-picker-current-cleared', 'mysql-database-picker-refresh-and-close-discard', 'mysql-database-picker-reopen-and-viewport', 'query-observed-revision-and-original-sql', 'query-precision-display', 'separate-save', 'unsaved-switch', 'explicit-candidate', 'failed-test-save-independent', 'independent-draft-revisions', 'revision-conflict', 'narrow-and-keyboard', 'missing-skill-personal-removal', 'main-save-closes-and-updates-row', 'failed-save-retains-draft', 'main-save-preserves-personal-draft', 'reread-authentication-identity', 'optional-program-failure-isolated', 'nacos-api-and-website-distinct', 'focus-and-retained-page-no-read', 'test-discovery-check-no-directory-read', 'explicit-refresh-only', 'local-save-delete', 'interrupted-first-read-retried', 'late-list-cannot-rollback-save', 'combined-directory-and-local-diagnostics', 'failed-or-malformed-directory-retains-snapshot', 'personal-only-new-discovery-and-test', 'personal-two-step-partial-save-preserves-draft', 'explicit-personal-secret-reveal-no-store-and-keyboard', 'revealed-secret-close-and-late-response-discard', 'personal-upgrade-preserves-and-migrates-old-group'], realExternalSystem: false, queryBackend: 'intercepted-ui-fixture' }) + '\n');
+  process.stdout.write(JSON.stringify({ schemaVersion: 'buildr.workspace-smoke-scenario/v1', status: 'passed', checks: ['category-order-initial-search-refresh-local-updates', 'website-fallback-and-explicit-override', 'system-and-explicit-method-selection', 'dependency-ordered-discovery', 'progressive-fields-and-authentication', 'explicit-production-flag', 'legacy-route-redirect', 'legacy-tabs-merge', 'single-connection-navigation', 'no-legacy-api-requests', 'mysql-query-ui-fixture', 'mysql-database-picker-search-and-hidden-selection', 'mysql-database-picker-close-save-once', 'mysql-database-picker-unchanged-no-write', 'mysql-database-picker-current-cleared', 'mysql-database-picker-refresh-and-close-discard', 'mysql-database-picker-reopen-and-viewport', 'query-observed-revision-and-original-sql', 'query-precision-display', 'separate-save', 'unsaved-switch', 'explicit-candidate', 'failed-test-save-independent', 'independent-draft-revisions', 'revision-conflict', 'narrow-and-keyboard', 'missing-skill-personal-removal', 'main-save-closes-and-updates-row', 'failed-save-retains-draft', 'main-save-preserves-personal-draft', 'reread-authentication-identity', 'optional-program-failure-isolated', 'nacos-api-and-website-distinct', 'focus-and-retained-page-no-read', 'test-discovery-check-no-directory-read', 'explicit-refresh-only', 'local-save-delete', 'interrupted-first-read-retried', 'late-list-cannot-rollback-save', 'combined-directory-and-local-diagnostics', 'failed-or-malformed-directory-retains-snapshot', 'personal-only-new-discovery-and-test', 'personal-two-step-partial-save-preserves-draft', 'explicit-personal-secret-reveal-no-store-and-keyboard', 'revealed-secret-close-and-late-response-discard', 'personal-upgrade-preserves-and-migrates-old-group', 'browser-authorization-hidden-environment-and-internal-fields', 'browser-authorization-partial-shell-save-and-safe-private-result', 'browser-reauthorization-saved-config-cancel-close-and-late-response'], realExternalSystem: false, queryBackend: 'intercepted-ui-fixture' }) + '\n');
 } catch (error) {
   if (page) { process.stderr.write(JSON.stringify({ body: (await page.locator('body').innerText()).slice(-5000) }) + '\n'); await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-failure.png') }); }
   throw error;

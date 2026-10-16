@@ -1,6 +1,7 @@
 import type { ConnectionSkillsApplication } from '../../application/connection-skills-application.ts';
 import { failure } from '../../domain/instance.ts';
-type HttpContext = { request: { method?: string }; suffix: string; searchParams: URLSearchParams; root: string; authorizeWrite(): void; readJsonBody(maxBytes?: number): Promise<unknown> };
+type HttpRequest = { method?: string; once?(event: string, listener: () => void): unknown; removeListener?(event: string, listener: () => void): unknown; socket?: { once(event: string, listener: () => void): unknown; removeListener(event: string, listener: () => void): unknown } };
+type HttpContext = { request: HttpRequest; suffix: string; searchParams: URLSearchParams; root: string; authorizeWrite(): void; readJsonBody(maxBytes?: number): Promise<unknown> };
 export function createConnectionSkillsHttp(application: ConnectionSkillsApplication) {
   return Object.freeze({ id: 'connection-skills.http', async handle(context: HttpContext) {
     const { request, suffix, root, searchParams } = context;
@@ -10,7 +11,7 @@ export function createConnectionSkillsHttp(application: ConnectionSkillsApplicat
     if (request.method === 'GET' && subpath === '/directory') return { status: 200, body: application.directory(root) };
     if (request.method === 'GET' && subpath === '/definitions') return { status: 200, body: application.definitions(root) };
     if (request.method === 'GET' && subpath === '/instances') return { status: 200, body: application.list(root) };
-    const match = subpath.match(/^\/instances\/([a-zA-Z0-9_-]+)(?:\/(auth(?:\/(?:reveal|migrate|relocate))?|check|help))?$/);
+    const match = subpath.match(/^\/instances\/([a-zA-Z0-9_-]+)(?:\/(auth(?:\/(?:reveal|migrate|relocate|authorize))?|check|help))?$/);
     if (request.method === 'GET' && match && !match[2]) return { status: 200, body: application.get(root, match[1]!) };
     if (!['POST', 'PATCH', 'PUT', 'DELETE'].includes(request.method || '')) return null;
     context.authorizeWrite();
@@ -22,6 +23,12 @@ export function createConnectionSkillsHttp(application: ConnectionSkillsApplicat
       if (request.method === 'PATCH' && !match[2]) return { status: 200, body: application.save(root, id, input) };
       if (request.method === 'DELETE' && !match[2]) return { status: 200, body: application.remove(root, id, input) };
       if (request.method === 'PUT' && match[2] === 'auth') return { status: 200, body: application.saveAuth(root, id, input) };
+      if (request.method === 'POST' && match[2] === 'auth/authorize') {
+        const controller = new AbortController(), abort = () => controller.abort();
+        request.once?.('aborted', abort); request.socket?.once('close', abort);
+        try { return { status: 200, body: await application.authorize(root, id, input, { signal: controller.signal }) }; }
+        finally { request.removeListener?.('aborted', abort); request.socket?.removeListener('close', abort); }
+      }
       if (request.method === 'POST' && match[2] === 'auth/reveal') return { status: 200, headers: { 'cache-control': 'no-store' }, body: application.revealPersonal(root, id, input) };
       if (request.method === 'POST' && match[2] === 'auth/migrate') return { status: 200, body: application.migrateAuth(root, id, input) };
       if (request.method === 'POST' && match[2] === 'auth/relocate') return { status: 200, body: application.relocateAuth(root, id, input) };

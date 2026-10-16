@@ -440,6 +440,9 @@ artifacts:
       - connection-skills-application
       - connection-skills-files
       - connection-skills-program
+      - connection-authorization-program
+      - connection-authorization-ui
+      - connection-authorization-state
       - mysql-connection-source
       - mysql-query-source
       - mysql-domain-source
@@ -516,6 +519,7 @@ artifacts:
       - connection-skills-catalog
       - connection-skills-application
       - connection-skills-program
+      - connection-authorization-program
       - connection-skills-files
       - mysql-query-preferences-source
       - connection-skills-workspace
@@ -530,6 +534,8 @@ artifacts:
       - connection-skills-authoring-source
       - connection-skills-ui
       - connection-personal-secrets-ui
+      - connection-authorization-ui
+      - connection-authorization-state
   - id: project-relations-article
     title: 项目、服务与代码库如何协作
     kind: document
@@ -1535,7 +1541,17 @@ sources:
     title: 按系统选择的连接编辑界面
     kind: code
     path: services/buildr-web/src/features/connection-skills/components/ConnectionSkillEditDrawer.tsx
-    summary: 按允许来源装配账号区与主测试，仅个人模式直接使用本机认证并显式迁移旧组，双来源保留独立个人区。
+    summary: 按声明装配账号、授权与连接环境展示，隐藏方法不渲染空环境标签；双来源保留独立个人区。
+  - id: connection-authorization-ui
+    title: 个人浏览器授权入口
+    kind: code
+    path: services/buildr-web/src/features/connection-skills/components/ConnectionBrowserAuthorization.tsx
+    summary: 显示本机授权状态、首次或重新授权和取消，不要求录入内部认证字段。
+  - id: connection-authorization-state
+    title: 个人授权等待与局部保存
+    kind: code
+    path: services/buildr-web/src/features/connection-skills/useConnectionAuthorization.ts
+    summary: 新增先保存无认证配置壳，独立取消信号及迟到响应保护，准确呈现授权与保存事实。
   - id: connection-personal-secrets-ui
     title: 本人已保存秘密的显式查看
     kind: code
@@ -1565,7 +1581,7 @@ sources:
     title: 接入声明及字段约束
     kind: code
     path: services/buildr/src/modules/connection-skills/domain/definition.ts
-    summary: 校验受限声明、允许的认证来源、整组认证及字段条件，不枚举远端业务权限或专业动作。
+    summary: 校验受限声明、个人授权程序、连接环境展示、认证来源和字段条件，不枚举远端业务权限。
   - id: connection-skills-catalog
     title: 连接定义与精确绑定
     kind: code
@@ -1575,7 +1591,12 @@ sources:
     title: 实例管理与专业程序交接
     kind: code
     path: services/buildr/src/modules/connection-skills/application/connection-skills-application.ts
-    summary: 按声明约束认证来源、独立保存并核对观察；显式保全迁移及本人单字段查看，普通读取不披露秘密，运行按准确实例交接。
+    summary: 按声明约束来源并核对观察，独立授权、保存及保全迁移；普通读取不披露秘密，运行按准确实例交接。
+  - id: connection-authorization-program
+    title: 个人授权私有进程交接
+    kind: code
+    path: services/buildr/src/modules/connection-skills/infrastructure/authorization-program.ts
+    summary: 不发送旧认证，只有唯一合法私有结果及正常退出才交付新组；输出抑制，取消和超时终止本次程序。
   - id: connection-skills-program
     title: 独立程序与私有通道
     kind: code

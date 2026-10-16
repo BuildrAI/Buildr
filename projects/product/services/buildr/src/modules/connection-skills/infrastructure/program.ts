@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
-import type { ConnectionProgram } from '../domain/definition.ts';
+import { CONNECTION_AUTHORIZATION_PROTOCOL, type ConnectionProgram } from '../domain/definition.ts';
 import { failure } from '../domain/instance.ts';
 import { digest, safePath } from '../persistence/files.ts';
 
@@ -10,6 +10,7 @@ export type ProgramSource = { definition: { programs: Record<string, ConnectionP
 export type ProgramRecipient = { executable: string | null; entry: string | null };
 export type ResolvedProgram = { executable: string; args: string[]; cwd: string; identity: string; recipient: string; declaration: ConnectionProgram };
 const environment = () => Object.fromEntries(['PATH', 'SystemRoot', 'WINDIR', 'PATHEXT', 'TEMP', 'TMP', 'TMPDIR', 'LANG', 'LC_ALL'].filter(key => process.env[key] !== undefined).map(key => [key, process.env[key]!]));
+export const connectionProgramEnvironment = environment;
 export function locateExecutable(name: string): string | null {
   if (name === 'node') try { return fs.realpathSync(process.execPath); } catch { return null; }
   if (!name || /[/\\\s\0]/.test(name)) return null;
@@ -39,7 +40,7 @@ function programFiles(directory: string): string {
 }
 export function programRecipient(root: string, source: ProgramSource): string {
   // Preserve the existing bundled Node binding shape; machine paths belong only to observations.
-  return digest(Object.entries(source.definition.programs).sort(([a], [b]) => a.localeCompare(b)).map(([id, p]) => [id, p.kind, p.entry ?? null, p.runtime ?? null, p.executable ?? null, p.args ?? [], null]));
+  return digest(Object.entries(source.definition.programs).filter(([, p]) => p.contextProtocol !== CONNECTION_AUTHORIZATION_PROTOCOL).sort(([a], [b]) => a.localeCompare(b)).map(([id, p]) => [id, p.kind, p.entry ?? null, p.runtime ?? null, p.executable ?? null, p.args ?? [], null]));
 }
 /** Locating a receiver does not execute it, inspect versions or require every program to exist. */
 export function programRecipients(root: string, source: ProgramSource): Record<string, ProgramRecipient> {

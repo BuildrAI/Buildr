@@ -2,6 +2,7 @@ import YAML from 'yaml';
 
 export const CONNECTION_DEFINITION_SCHEMA = 'buildr.connection-definition/v1';
 export const CONNECTION_CONTEXT_PROTOCOL = 'buildr.connection-context/v1';
+export const CONNECTION_AUTHORIZATION_PROTOCOL = 'buildr.connection-authorization-context/v1';
 export type ConnectionValue = string | number | boolean | string[];
 export type ConnectionValues = Record<string, ConnectionValue>;
 export interface ConnectionDiagnostic { code: string; message: string; field?: string }
@@ -15,20 +16,21 @@ export interface ConnectionField {
 export interface ConnectionDependency { executable: string; version?: { args: string[]; constraint: string }; installHint?: string }
 export interface ConnectionProgram {
   kind: 'bundled' | 'installed'; runtime?: string; entry?: string; executable?: string;
-  args?: string[]; helpArgs?: string[]; contextProtocol?: typeof CONNECTION_CONTEXT_PROTOCOL;
+  args?: string[]; helpArgs?: string[]; contextProtocol?: typeof CONNECTION_CONTEXT_PROTOCOL | typeof CONNECTION_AUTHORIZATION_PROTOCOL;
   version?: { args: string[]; constraint: string }; dependencies?: ConnectionDependency[]; installHint?: string;
 }
 export type ConnectionFieldReference = `config.${string}` | `authentication.${string}`;
 export type AuthenticationSource = 'team' | 'personal';
+export interface ConnectionAuthorization { program: string; args?: string[]; inputs?: `config.${string}`[]; label: string; reauthorizeLabel: string; timeoutMs?: number; accountLabelField?: string }
 export interface ConnectionPresentationGroup { id: string; title: string; fields: ConnectionFieldReference[]; collapsed?: boolean }
 export interface ConnectionHook { program: string; args: string[]; effect: 'read'; inputs?: ConnectionFieldReference[] }
 export interface ConnectionDefinition {
   schemaVersion: typeof CONNECTION_DEFINITION_SCHEMA; definitionId: string; name: string; description: string;
   category: string; systemId?: string; configVersion: number;
   config: { fields: ConnectionField[] };
-  authentication: { fields: ConnectionField[]; targetFields: string[]; allowedSources?: AuthenticationSource[] };
+  authentication: { fields: ConnectionField[]; targetFields: string[]; allowedSources?: AuthenticationSource[]; authorization?: ConnectionAuthorization };
   programs: Record<string, ConnectionProgram>; hooks?: Record<string, ConnectionHook>;
-  presentation?: { summaryFields: string[]; websiteField?: string; websiteFallbackField?: string; categoryLabel?: string; methodLabel?: string; groups?: ConnectionPresentationGroup[] };
+  presentation?: { summaryFields: string[]; websiteField?: string; websiteFallbackField?: string; categoryLabel?: string; methodLabel?: string; groups?: ConnectionPresentationGroup[]; environment?: 'hidden' };
 }
 export interface ConnectionBinding { skillAssetIdentity: string; definitionId: string; sourceIdentity: string; configVersion: number }
 export function connectionError(code: string, message: string, field?: string): Error & ConnectionDiagnostic & { status: number; statusCode: number } {
@@ -97,7 +99,7 @@ export function parseConnectionDefinition(content: string): ConnectionDefinition
   if (value.systemId !== undefined) ensure(key(value.systemId), 'systemId', '系统名称编号不合法。');
   ensure(Number.isSafeInteger(value.configVersion) && value.configVersion > 0, 'configVersion', '配置版本必须是正整数。');
   closed(value.config, ['fields'], 'config'); value.config.fields = fields(value.config.fields, false);
-  closed(value.authentication, ['fields', 'targetFields', 'allowedSources'], 'authentication'); value.authentication.fields = fields(value.authentication.fields, true);
+  closed(value.authentication, ['fields', 'targetFields', 'allowedSources', 'authorization'], 'authentication'); value.authentication.fields = fields(value.authentication.fields, true);
   if (value.authentication.allowedSources !== undefined) {
     const sources = value.authentication.allowedSources;
     ensure(Array.isArray(sources) && sources.length > 0 && sources.length <= 2 && sources.every(source => ['team', 'personal'].includes(source)) && new Set(sources).size === sources.length, 'authentication.allowedSources', '认证来源必须为非空、不重复的 team/personal 数组。');
@@ -118,18 +120,35 @@ export function parseConnectionDefinition(content: string): ConnectionDefinition
     if (raw.kind === 'bundled') { safeConnectionRelativePath(raw.entry); ensure(raw.runtime === undefined || command(raw.runtime), id, '程序运行时名称不合法。'); ensure(raw.executable === undefined, id, '随附程序不能同时声明独立程序。'); }
     else { ensure(command(raw.executable) && raw.entry === undefined && raw.runtime === undefined, id, '独立程序必须只声明可执行名称。'); }
     for (const name of ['args', 'helpArgs']) if (raw[name] !== undefined) strings(raw[name], id);
-    ensure(raw.contextProtocol === undefined || raw.contextProtocol === CONNECTION_CONTEXT_PROTOCOL, id, '上下文协议不支持。');
+    ensure(raw.contextProtocol === undefined || raw.contextProtocol === CONNECTION_CONTEXT_PROTOCOL || raw.contextProtocol === CONNECTION_AUTHORIZATION_PROTOCOL, id, '上下文协议不支持。');
     if (raw.version !== undefined) dependency({ executable: raw.executable || raw.runtime || 'program', version: raw.version }, id);
     if (raw.installHint !== undefined) ensure(typeof raw.installHint === 'string', id, '安装指引必须是文本。');
     if (raw.dependencies !== undefined) { ensure(Array.isArray(raw.dependencies) && raw.dependencies.length <= 32, id, '程序依赖必须是有界数组。'); raw.dependencies.forEach((item: unknown) => dependency(item, id)); }
   }
+  if (value.authentication.authorization !== undefined) {
+    const authorization = value.authentication.authorization;
+    closed(authorization, ['program', 'args', 'inputs', 'label', 'reauthorizeLabel', 'timeoutMs', 'accountLabelField'], 'authentication.authorization');
+    ensure(value.authentication.allowedSources?.length === 1 && value.authentication.allowedSources[0] === 'personal', 'authentication.authorization', '授权程序只允许本机个人认证。');
+    ensure(key(authorization.program) && Object.hasOwn(value.programs, authorization.program), 'authentication.authorization.program', '授权必须引用已声明程序。');
+    const program = value.programs[authorization.program];
+    ensure(program.contextProtocol === CONNECTION_AUTHORIZATION_PROTOCOL && (program.runtime === 'node' || program.kind === 'installed'), 'authentication.authorization.program', '授权程序必须明确使用受支持的私有授权上下文协议。');
+    for (const name of ['label', 'reauthorizeLabel']) ensure(typeof authorization[name] === 'string' && authorization[name].trim() && authorization[name].length <= 200, `authentication.authorization.${name}`, '授权按钮名称必须是有界非空文本。');
+    if (authorization.args !== undefined) strings(authorization.args, 'authentication.authorization.args');
+    if (authorization.inputs !== undefined) {
+      references(authorization.inputs, 'authentication.authorization.inputs');
+      ensure(authorization.inputs.every((reference: string) => reference.startsWith('config.')), 'authentication.authorization.inputs', '授权前置项只能引用配置，不得请求旧认证。');
+    }
+    if (authorization.timeoutMs !== undefined) ensure(Number.isSafeInteger(authorization.timeoutMs) && authorization.timeoutMs >= 1000 && authorization.timeoutMs <= 300_000, 'authentication.authorization.timeoutMs', '授权等待须为 1000 到 300000 毫秒。');
+    if (authorization.accountLabelField !== undefined) ensure(value.authentication.fields.some((field: ConnectionField) => field.key === authorization.accountLabelField && field.type !== 'secret'), 'authentication.authorization.accountLabelField', '账号展示只能引用已声明的非秘密认证字段。');
+  }
   if (value.hooks !== undefined) {
     ensure(object(value.hooks) && Object.keys(value.hooks).length <= 32, 'hooks', '槽位必须是有界声明对象。');
-    for (const [id, raw] of Object.entries(value.hooks)) { ensure(key(id), id, '槽位编号不合法。'); closed(raw, ['program', 'args', 'effect', 'inputs'], id); ensure(Object.hasOwn(value.programs, raw.program) && raw.effect === 'read', id, '槽位必须引用明确程序并限定只读效果。'); strings(raw.args, id); if (raw.inputs !== undefined) references(raw.inputs, `hooks.${id}.inputs`); }
+    for (const [id, raw] of Object.entries(value.hooks)) { ensure(key(id), id, '槽位编号不合法。'); closed(raw, ['program', 'args', 'effect', 'inputs'], id); ensure(Object.hasOwn(value.programs, raw.program) && raw.effect === 'read' && value.programs[raw.program].contextProtocol !== CONNECTION_AUTHORIZATION_PROTOCOL, id, '槽位必须引用普通上下文程序并限定只读效果。'); strings(raw.args, id); if (raw.inputs !== undefined) references(raw.inputs, `hooks.${id}.inputs`); }
   }
   for (const field of value.config.fields) if (field.optionsFrom) ensure(Object.hasOwn(value.hooks || {}, field.optionsFrom), field.key, '动态选项必须引用已声明槽位。');
   if (value.presentation !== undefined) {
-    closed(value.presentation, ['summaryFields', 'websiteField', 'websiteFallbackField', 'categoryLabel', 'methodLabel', 'groups'], 'presentation'); value.presentation.summaryFields ??= []; strings(value.presentation.summaryFields, 'presentation.summaryFields');
+    closed(value.presentation, ['summaryFields', 'websiteField', 'websiteFallbackField', 'categoryLabel', 'methodLabel', 'groups', 'environment'], 'presentation'); value.presentation.summaryFields ??= []; strings(value.presentation.summaryFields, 'presentation.summaryFields');
+    ensure(value.presentation.environment === undefined || value.presentation.environment === 'hidden', 'presentation.environment', '环境展示声明只支持 hidden；省略保持原行为。');
     ensure(new Set(value.presentation.summaryFields).size === value.presentation.summaryFields.length && value.presentation.summaryFields.every((name: string) => configuration.has(name)), 'presentation.summaryFields', '摘要只能引用非秘密配置字段。');
     for (const name of ['websiteField', 'websiteFallbackField']) if (value.presentation[name] !== undefined) ensure(configuration.get(value.presentation[name])?.type === 'url', `presentation.${name}`, '网站入口必须引用网址字段。');
     for (const name of ['categoryLabel', 'methodLabel']) if (value.presentation[name] !== undefined) ensure(typeof value.presentation[name] === 'string' && value.presentation[name].trim(), `presentation.${name}`, '展示名称必须是非空文本。');

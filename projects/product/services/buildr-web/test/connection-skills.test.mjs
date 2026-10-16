@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createApiClient } from '../src/api/client.ts';
 import { createConnectionSkillsClient } from '../src/features/connection-skills/api/connection-skills-api.ts';
-import { afterPersonalSave, afterTeamSave, authenticationDraftsAfterRead, authenticationSourceAllowed, bindingFor, bindingKey, categoryLabel, connectionSystems, createDraftRequestScope, draftHookInput, draftObservations, fieldDefaults, hooksAvailable, personalAuthenticationOnly, personalDraftDirty, personalDraftFor, validateFields, websiteHref, withFieldValue } from '../src/features/connection-skills/connection-skill-form.ts';
+import { afterPersonalSave, afterTeamSave, authenticationDraftsAfterRead, authenticationSourceAllowed, authorizationAccountLabel, bindingFor, bindingKey, categoryLabel, connectionDraftChanged, connectionEnvironmentHidden, connectionSystems, createDraftRequestScope, draftHookInput, draftObservations, fieldDefaults, hooksAvailable, personalAuthenticationOnly, personalDraftDirty, personalDraftFor, validateFields, websiteHref, withFieldValue } from '../src/features/connection-skills/connection-skill-form.ts';
 import { tabForPath } from '../src/app/workspace-pages.ts';
 import { connectionFieldLabel, connectionSummaryLines, displayFieldLabels, fieldLabelsAfterRead } from '../src/features/connection-skills/connection-skill-summary.ts';
 import { sortConnectionInstances } from '../src/features/connection-skills/connection-skill-list.ts';
@@ -332,4 +332,46 @@ test('重读刷新保持认证的公开身份与干净基线，明确更换和�
   assert.equal(personalDraftDirty(removal.personalBaseline, { ...removal.personal, enabled: true }), false, 'Cancelling removal returns to the fresh saved account.');
   const untouchedBlank = authenticationDraftsAfterRead(fresh, { intent: 'replace', values: {}, edited: false }, personalDraftFor(), personalDraftFor());
   assert.equal(untouchedBlank.team.intent, 'keep'); assert.equal(untouchedBlank.personal.values.username, 'new-person'); assert.equal(personalDraftDirty(untouchedBlank.personalBaseline, untouchedBlank.personal), false);
+});
+
+
+test('连接环境展示仅消费明确声明，账号摘要不回退内部字段', () => {
+  const managed = structuredClone(entry);
+  managed.definition.presentation = { environment: 'hidden', summaryFields: [] };
+  managed.definition.authentication.authorization = { program: 'cli', args: ['authorize'], inputs: ['config.endpoint'], label: '登录授权', reauthorizeLabel: '重新授权', timeoutMs: 30000 };
+  assert.equal(connectionEnvironmentHidden(entry), false); assert.equal(connectionEnvironmentHidden(undefined), false); assert.equal(connectionEnvironmentHidden(managed), true);
+  assert.equal(authorizationAccountLabel(managed, instance), '', 'No declaration means no username or internal user ID fallback.');
+  managed.definition.authentication.authorization.accountLabelField = 'username';
+  assert.equal(authorizationAccountLabel(managed, instance), 'person');
+  managed.definition.authentication.authorization.accountLabelField = 'password';
+  assert.equal(authorizationAccountLabel(managed, { ...instance, authentication: { ...instance.authentication, personal: { ...instance.authentication.personal, values: { password: 'never-display' } } } }), '');
+});
+
+test('授权前识别非秘密配置草稿且不因身份观察变化丢弃草稿', () => {
+  const saved = { ...instance, name: '连接', environment: '', enabled: true, fieldLabels: {} };
+  const draft = { name: '连接', environment: '', enabled: true, config: { scope: 'default', endpoint: instance.config.endpoint }, fieldLabels: {} };
+  assert.equal(connectionDraftChanged(saved, draft), false);
+  assert.equal(connectionDraftChanged(saved, { ...draft, name: '新名称' }), true);
+  assert.equal(connectionDraftChanged(saved, { ...draft, config: { ...draft.config, scope: 'other' } }), true);
+  assert.equal(connectionDraftChanged(saved, { ...draft, fieldLabels: { scope: { value: 'default', label: '范围' } } }), true);
+  assert.equal(connectionDraftChanged(undefined, draft), false, 'A new connection may save its shell as part of the explicit authorization action.');
+});
+
+test('授权方法的发现保持宿主完整认证，不要求前端接收内部账号字段', () => {
+  const managed = structuredClone(entry); managed.definition.authentication.allowedSources = ['personal'];
+  managed.definition.authentication.authorization = { program: 'cli', args: ['authorize'], inputs: ['config.endpoint'], label: '登录授权', reauthorizeLabel: '重新授权', timeoutMs: 30000 };
+  const projected = { ...instance, authentication: { ...instance.authentication, personal: { ...instance.authentication.personal, values: {} } } };
+  assert.deepEqual(draftHookInput(managed, projected, instance.config, { source: 'personal', intent: 'keep' }, 'scopes').authentication, { source: 'personal', intent: 'keep' });
+  assert.throws(() => draftHookInput(managed, projected, instance.config, { source: 'personal', intent: 'replace', values: { username: 'person', password: 'manual' } }), /请先授权/);
+  assert.throws(() => draftHookInput(managed, { ...projected, authentication: { ...projected.authentication, personal: { ...projected.authentication.personal, configured: false } } }, instance.config, { source: 'personal', intent: 'keep' }), /请先授权/);
+});
+
+test('授权请求只传准确实例观察并支持取消，不把内部认证交给网页', async () => {
+  const requests = [], expected = { teamRevision: 'team-current', localRevision: 'local-current', definitionRevision: 'definition-current' }, controller = new AbortController();
+  const client = createConnectionSkillsClient(async (url, init) => { requests.push({ url, init }); return { status: 'success', instance }; }, 'selected/workspace');
+  assert.equal((await client.authorizePersonal(instance.id, { expected }, controller.signal)).status, 'success');
+  assert.equal(requests[0].url, '/api/v1/workspaces/selected%2Fworkspace/connection-skills/instances/instance-a/auth/authorize');
+  assert.equal(requests[0].init.method, 'POST'); assert.equal(requests[0].init.signal, controller.signal);
+  assert.deepEqual(JSON.parse(requests[0].init.body), { expected });
+  assert.equal(requests.length, 1);
 });

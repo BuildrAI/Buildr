@@ -224,6 +224,7 @@ Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git comm
 | `buildr connection-skill auth set\|clear\|use-team --connection <id> --file <json-file\|-> --json` | 独立保存或清除完整本机个人组；恢复团队认证仅在声明允许团队来源时可用。 |
 | `buildr connection-skill auth migrate --connection <目标id> --file <json-file\|-> --json` | 明确迁移准确来源到本机个人组，核对双方观察及认证接收方；应用内部重新绑定，不输出秘密。 |
 | `buildr connection-skill auth relocate --connection <id> --file <json-file\|-> --json` | 将当前本机应用身份的旧个人密文显式迁入规范工作空间 `.buildr/local/` 私有忽略目录；冲突不覆盖。 |
+| `buildr connection-skill auth authorize --connection <id> --file <json-file\|-> --json` | 显式启动所声明的个人授权程序，完整新组只经私有通道加密保存，不输出令牌；取消或提交前失败保留原组。 |
 | `buildr connection-skill remove --connection <id> --expected-revision <revision> --json` | 删除已观察实例，不操作外部数据。 |
 | `buildr connection-skill check\|help\|test --connection <id> --json` | 分别核对程序依赖、读取离线帮助及执行只读测试。 |
 | `buildr connection-skill run --connection <id> --expected-revision <revision> --program cli -- <专业参数>` | 向所选专业程序交接准确实例；认证不进入参数或普通输入。 |
@@ -231,6 +232,8 @@ Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git comm
 所有命令可指定 `--target`。配置及认证只从受支持输入读取，不在参数中传密码；个人组存在时整组覆盖，失效不自动回退团队。执行前重读当前观察，冲突后重新判断。Nacos、Kibana 和 XXL-JOB 的详细动作查所选技能（Skill）及程序帮助，通用入口不维护另一份专业命令表。更多使用方法见[外部系统连接](../resources/runtime/skills/buildr/references/external-connections.md)。
 
 `authentication.allowedSources: [personal]` 的定义只使用本机个人组，不使用或保存共享认证。`auth clear` 只移除本机组，不自动换账号；`auth use-team` 对此模式明确拒绝。`auth relocate` 输入为 `{expected:{teamRevision,localRevision,definitionRevision}}`；`auth migrate` 输入为 `{source:{id,authenticationSource,expected:{teamRevision,localRevision,definitionRevision}},expected:{teamRevision,localRevision,definitionRevision},removeSource:boolean}`，源和目标观察都须刚读取。迁移仅在同一绑定来源与准确认证接收目标间进行，目标已有不同个人组时停止；源删除明确指定且必须晚于目标保全。配置不兼容的旧实例只能作为可证明认证目标未变的迁移来源，目标须为当前兼容实例，不自动改写旧绑定。本人查看已保存密码仅由界面的显式单字段动作提供，不设输出秘密的命令行接口（CLI）。
+
+`auth authorize` 同样使用 `{expected:{teamRevision,localRevision,definitionRevision}}`，无需读取或输入认证值。它只启动当前声明的专用个人授权程序；首次和重新授权使用同一准确实例动作，浏览器依赖、外部登录和范围由专业方法说明。成功结果只包含遮蔽后的实例；等待期间可以取消，提交前取消或失败不替换旧组。若保存已发生而持久化核验未确认，按实际诊断重新读取，不自动再次授权。
 
 旧 `buildr connection` 已退役并提示现行入口，旧网页地址跳转到连接目录，旧应用接口返回退役结果。旧数据直接清理，不迁移为团队实例或新个人认证；按需要在现行入口自行建立实例。
 

@@ -9,20 +9,21 @@ type Props = {
   fieldLabels: ConnectionFieldLabels;
   intent: 'keep' | 'replace' | 'remove'; disabled: boolean;
   authenticationSource?: 'team' | 'personal'; savedSecrets?: ReactNode;
+  showAuthentication?: boolean;
   options: Record<string, NonNullable<HookResult['options']>>; discovering: string; discoveryResults: Record<string, HookResult>; discoveryReady: Record<string, boolean>;
   onConfig(key: string, value: unknown, label?: string): void; onAuthentication(key: string, value: unknown): void; onIntent(intent: 'keep' | 'replace' | 'remove'): void; onDiscover(hook: string): void;
 };
 
-export function ConnectionTeamForm({ entry, instance, config, fieldLabels, authentication, intent, disabled, authenticationSource = 'team', savedSecrets, options, discovering, discoveryResults, discoveryReady, onConfig, onAuthentication, onIntent, onDiscover }: Props) {
+export function ConnectionTeamForm({ entry, instance, config, fieldLabels, authentication, intent, disabled, authenticationSource = 'team', savedSecrets, showAuthentication = true, options, discovering, discoveryResults, discoveryReady, onConfig, onAuthentication, onIntent, onDiscover }: Props) {
   const configFields = entry.definition.config.fields, authFields = entry.definition.authentication.fields;
   const references = new Map<string, { source: 'config' | 'authentication'; field: ConnectionField }>([
     ...configFields.map(field => [`config.${field.key}`, { source: 'config' as const, field }] as const),
-    ...authFields.map(field => [`authentication.${field.key}`, { source: 'authentication' as const, field }] as const),
+    ...(showAuthentication ? authFields.map(field => [`authentication.${field.key}`, { source: 'authentication' as const, field }] as const) : []),
   ]);
   const groups = entry.definition.presentation?.groups || [];
   const assigned = new Set(groups.flatMap(group => group.fields));
   const remainder = [...references.keys()].filter(key => !assigned.has(key));
-  const sections = [...groups, ...(remainder.length ? [{ id: '__remaining', title: groups.length ? '其他设置' : '连接与账号', fields: remainder, collapsed: false }] : [])];
+  const sections = [...groups, ...(remainder.length ? [{ id: '__remaining', title: groups.length ? '其他设置' : '连接与账号', fields: remainder, collapsed: false }] : [])].map(section => ({ ...section, fields: section.fields.filter(field => references.has(field)) })).filter(section => section.fields.length);
   const firstAuthentication = sections.flatMap(section => section.fields).find(reference => references.get(reference)?.source === 'authentication');
   function renderField(reference: string) {
     const item = references.get(reference);

@@ -1,11 +1,14 @@
 import crypto from 'node:crypto';
-import { validateConfig, validateAuthentication, type AuthenticationSource, type ConnectionBinding, type ConnectionDefinition } from '../domain/definition.ts';
+import fs from 'node:fs';
+import path from 'node:path';
+import { CONNECTION_AUTHORIZATION_PROTOCOL, validateConfig, validateAuthentication, type AuthenticationSource, type ConnectionBinding, type ConnectionDefinition } from '../domain/definition.ts';
 import { assertRevision, diagnostic, failure, identifier, object, text, type AuthenticationGroup, type ConnectionInstance, type ConnectionScope, type Expected, type Values } from '../domain/instance.ts';
 import { normalizeHookOutput } from '../domain/hook-result.ts';
 import { publicFieldLabels, validatedFieldLabels } from '../domain/field-labels.ts';
 import { ConnectionFiles, digest } from '../persistence/files.ts';
 import { createConnectionCatalog, type ConnectionCatalogEntry, type ConnectionCatalogResult } from './catalog.ts';
 import { checkProgram, programRecipient, resolveProgram, runProgram } from '../infrastructure/program.ts';
+import { runAuthorizationProgram } from '../infrastructure/authorization-program.ts';
 
 type Catalog = ReturnType<typeof createConnectionCatalog>;
 type ProgramAvailability = Record<string, { ready: boolean; diagnostics: string[] }>;
@@ -82,6 +85,7 @@ export class ConnectionSkillsApplication {
       const values: Values = {};
       if (entry && resolved.available && group && !error) for (const field of entry.definition.authentication.fields) {
         if (field.type === 'secret' || group.values[field.key] === undefined) continue;
+        if (entry.definition.authentication.authorization && entry.definition.authentication.authorization.accountLabelField !== field.key) continue;
         try { Object.assign(values, validateConfig([field], { [field.key]: group.values[field.key] })); } catch { /* Invalid source values are never projected as arbitrary public objects. */ }
       }
       return { configured: group !== null && !error, values, diagnostic: error };
@@ -97,6 +101,9 @@ export class ConnectionSkillsApplication {
     }
     const secretFields = entry?.definition.authentication.fields.filter(field => field.type === 'secret') || [];
     const secrets = secretFields.flatMap(field => [instance.authentication?.values[field.key], local.group?.values[field.key]]).filter((value): value is string => typeof value === 'string');
+    if (entry?.definition.authentication.authorization) for (const group of [teamAuthentication, personalAuthentication]) for (const [key, value] of Object.entries(group.values)) {
+      if (secrets.some(secret => secret && String(value).includes(secret))) delete group.values[key];
+    }
     // An unavailable binding or invalid saved group cannot safely classify old label text.
     // Omit only optional display metadata; the authoritative instance remains readable.
     const labelsAvailable = resolved.available && (!instance.authentication || !teamAuthentication.diagnostic) && (!local.present || !personalAuthentication.diagnostic);
@@ -205,6 +212,71 @@ export class ConnectionSkillsApplication {
       return this.getObserved(scope, id, currentObservation);
     });
   }
+  async authorize(root: string, id: string, raw: unknown, options: { signal?: AbortSignal } = {}) {
+    const scope = this.resolveScope(root), input = object(raw), expected = object(input.expected) as Expected;
+    if (Object.keys(input).some(key => key !== 'expected') || Object.keys(expected).some(key => !['teamRevision', 'localRevision', 'definitionRevision'].includes(key))) throw failure('connection_skill_authorization_input_invalid', '授权只接收准确的三项当前观察。', 400);
+    identifier(id); requireDefinitionObservation(expected);
+    if (typeof expected.teamRevision !== 'string' || typeof expected.localRevision !== 'string') throw failure('connection_skill_revision_required', '授权必须提供连接和本机个人认证的当前观察。', 400);
+    const initial = this.observedAuthentication(scope, id, expected), authorization = initial.entry.definition.authentication.authorization;
+    if (!authorization) throw failure('connection_skill_authorization_unavailable', '此接入未声明个人授权程序。', 404);
+    if (!initial.instance.enabled || !initial.entry.enabled) throw failure('connection_skill_disabled', '此连接已停用。');
+    this.assertSource(initial.entry, 'personal');
+    const requiredFields = new Set([...initial.entry.definition.authentication.targetFields, ...(authorization.inputs || []).map(reference => reference.slice('config.'.length))]);
+    const config = validateConfig(initial.entry.definition.config.fields, initial.instance.config, { requiredFields });
+    const program = resolveProgram(scope.rootPath, initial.entry, authorization.program), checked = checkProgram(program);
+    if (!checked.ready) throw failure('connection_skill_dependency_version', checked.diagnostics.join(' '));
+    const reobserve = () => {
+      if (options.signal?.aborted) throw failure('connection_skill_authorization_cancelled', '本次授权已取消；未替换个人认证。');
+      const currentScope = this.resolveScope(root);
+      if (currentScope.rootPath !== scope.rootPath || currentScope.workspaceId !== scope.workspaceId) throw failure('connection_skill_context_changed', '工作空间身份已变化；未替换个人认证。');
+      const current = this.observedAuthentication(scope, id, expected);
+      if (!current.instance.enabled || !current.entry.enabled) throw failure('connection_skill_disabled', '此连接已停用；未替换个人认证。');
+      if (resolveProgram(scope.rootPath, current.entry, authorization.program).identity !== program.identity) throw failure('connection_skill_program_changed', '授权程序已变化；未替换个人认证。');
+      return current;
+    };
+    reobserve();
+    const directory = fs.mkdtempSync(path.join(this.files.privateState(scope, initial.entry.skill.assetIdentity), 'authorization-'));
+    fs.chmodSync(directory, 0o700);
+    const directoryIdentity = fs.lstatSync(directory);
+    const context = {
+      protocolVersion: CONNECTION_AUTHORIZATION_PROTOCOL, callId: crypto.randomUUID(), workspace: { id: scope.workspaceId, root: scope.rootPath },
+      definition: { skillAssetIdentity: initial.entry.skill.assetIdentity, definitionId: initial.entry.definition.definitionId, revision: initial.entry.revision },
+      connection: { id, config, revisions: { teamRevision: expected.teamRevision, localRevision: expected.localRevision, definitionRevision: expected.definitionRevision } }, privateStateRoot: directory,
+    };
+    let response: { status: 'success'; instance: ReturnType<ConnectionSkillsApplication['get']>['instance']; accountLabel?: string; warnings?: string[] } | undefined;
+    let authorizationError: unknown;
+    try {
+      const rawValues = await runAuthorizationProgram(program, authorization.args || [], context, { signal: options.signal, timeoutMs: authorization.timeoutMs ?? 180_000 });
+      let values: Values;
+      try { values = validateAuthentication(initial.entry.definition.authentication.fields, rawValues); }
+      catch { throw failure('connection_skill_authorization_result_invalid', '授权程序未返回声明要求的完整认证组；未替换个人认证。'); }
+      response = this.files.lock(scope, id, () => {
+        const current = reobserve();
+        const group = { targetBinding: this.target(scope, current.instance, current.entry, values), values };
+        try { this.files.writeLocal(scope, id, group, expected.localRevision!); }
+        catch (cause) {
+          const saved = this.files.readLocal(scope, id), observed = !saved.diagnostic && saved.group && digest(saved.group) === digest(group);
+          throw Object.assign(failure('connection_skill_authorization_persistence_unconfirmed', '个人认证保存结果尚待核验，请重新读取当前状态；不要自动再次授权。'), { details: { authenticationSaved: observed ? 'observed' : 'unknown', durability: 'unconfirmed' } });
+        }
+        const view = this.getObserved(scope, id).instance;
+        const label = authorization.accountLabelField ? view.authentication.personal.values[authorization.accountLabelField] : undefined;
+        return { status: 'success' as const, instance: view, ...(typeof label === 'string' || typeof label === 'number' || typeof label === 'boolean' ? { accountLabel: String(label) } : {}) };
+      });
+      return response;
+    } catch (cause) {
+      authorizationError = cause;
+      throw cause;
+    } finally {
+      let cleaned = false;
+      try {
+        const current = fs.lstatSync(directory, { throwIfNoEntry: false });
+        if (!current) cleaned = true;
+        else if (current.isDirectory() && !current.isSymbolicLink() && current.dev === directoryIdentity.dev && current.ino === directoryIdentity.ino) { fs.rmSync(directory, { recursive: true }); cleaned = true; }
+      } catch { /* Retain changed or in-use state, never remove an unverified path. */ }
+      if (!cleaned && response) response.warnings = ['本次授权临时目录尚未清理；已保存个人认证的事实保持，需核对本机浏览器是否退出。'];
+      if (!cleaned && authorizationError && typeof authorizationError === 'object') Object.assign(authorizationError, { details: { ...('details' in authorizationError && typeof authorizationError.details === 'object' ? authorizationError.details : {}), cleanup: 'unconfirmed' } });
+    }
+  }
   private observedAuthentication(scope: ConnectionScope, id: string, expected: Expected, allowConfigMigration = false) {
     object(expected); requireDefinitionObservation(expected);
     const saved = this.files.readTeam(scope, identifier(id)); assertRevision(saved.revision, expected.teamRevision);
@@ -223,6 +295,7 @@ export class ConnectionSkillsApplication {
     return this.files.lock(scope, identifier(id), () => {
       const current = this.observedAuthentication(scope, id, object(input.expected) as Expected);
       this.assertSource(current.entry, 'personal');
+      if (current.entry.definition.authentication.authorization) throw failure('connection_skill_secret_field_invalid', '此接入使用受保护授权，不公开内部认证字段。', 400);
       const field = current.entry.definition.authentication.fields.find(field => field.key === input.field && field.type === 'secret');
       if (!field) throw failure('connection_skill_secret_field_invalid', '只能明确查看当前声明中的一个个人秘密字段。', 400);
       if (!current.local.present) throw failure('connection_skill_auth_missing', '当前本机尚未保存个人认证。');
@@ -342,6 +415,7 @@ export class ConnectionSkillsApplication {
       return [name, other];
     })) };
     const program = resolveProgram(scope.rootPath, selected.entry, programId);
+    if (program.declaration.contextProtocol === CONNECTION_AUTHORIZATION_PROTOCOL) throw failure('connection_skill_program_protocol', '授权专用程序不能接收普通连接认证，请使用明确的授权入口。', 400);
     const check = checkProgram(program); if (!check.ready) throw failure('connection_skill_dependency_version', check.diagnostics.join(' '));
     const context = { protocolVersion: 'buildr.connection-context/v1', callId: crypto.randomUUID(), workspace: { id: scope.workspaceId, root: scope.rootPath }, definition: { skillAssetIdentity: selected.entry.skill.assetIdentity, definitionId: selected.entry.definition.definitionId, revision: selected.entry.revision }, connections: Object.fromEntries(Object.entries(selections).map(([name, value]) => [name, value.context])), privateStateRoot: this.files.privateState(scope, selected.entry.skill.assetIdentity) };
     const revalidate = () => {

@@ -10,6 +10,10 @@
 
 完整个人组加密保存于规范工作空间（Workspace）的 `.buildr/local/connection-skills/` 当前本机应用身份目录，文件和目录只允许本人访问并忽略 Git；加密密钥仍在本机应用数据目录。旧本机路径只兼容读取，存储迁移和共享转个人必须显式执行、核对双方观察并保全目标，冲突不覆盖。相同认证目标的实例合并须由应用重新绑定个人组，不能复制旧密文或从其他来源借凭据。界面可显式查看本人当前已保存的单个秘密字段，普通列表/详情/诊断不返回秘密，查看不会自动更换认证。
 
+`authentication.authorization` 可选，适用于只允许 `[personal]` 的接入。它引用命名授权程序并可声明 `args/inputs/label/reauthorizeLabel/timeoutMs/accountLabelField`；`inputs` 只引用配置字段，账号展示字段只能引用非秘密认证字段。授权程序与普通业务程序使用不同上下文，不接收旧认证；完整字段声明仍用于宿主校验和密文保存，界面不显示这些字段的录入与令牌查看。首次新增先保存必要非秘密配置，再授权和发现范围；授权后才能确定的范围不应阻塞授权本身，业务命令另行要求准确目标。
+
+授权和重新授权均为明确动作，普通打开页面不执行。程序须使用本次独立浏览器会话或外部系统支持的安全回调交接，不从其他用户资料借用会话，不把秘密放进公开回调网址、普通输出或诊断。取消、超时、关闭浏览器、异常退出、无效结果及开始观察变化时，提交前失败保留原个人组并清理本次资源；新组已经替换后若持久化核验失败，准确报告待核验并重新读取，不虚构旧组仍在，也不盲目重授权。
+
 字段支持 `string`、`url`、`integer`、`boolean`、`enum`、`select`、`multiselect`，认证组另支持 `secret`。`required` 检查字段存在；需要非空文本时声明 `minLength: 1`，允许空密码时不增加该约束。使用 `minLength/maxLength`、`minimum/maximum`、固定 `values`、`optionsFrom` 及 `dependsOn: {field, equals}` 表达简单条件。不允许任意脚本表达式；秘密字段不能有默认值，不能进入摘要或网站字段。网站只接受不嵌账号密码的 HTTP/HTTPS 地址，不能用查询或锚点参数承载密码、令牌；普通页面锚点保留。
 
 动态选项使用 `options: [{value: string, label: string}]`，单选与多选分别保存文本编号和文本编号数组。程序将数值编号规范为文本后返回，不依赖页面静默转换；非法选项只使该次发现失败，不使连接整体不可用。提供者（Provider）不能预先用隐藏文本改写选项编号；编号与已知秘密重合时由宿主明确拒绝该次发现，不生成替代身份，可按该方法支持的准确只读定位或私有产物（Artifact）接续。单选与多选的固定 `values` 同样必须为文本编号；数值或布尔固定值使用 `enum`。固定枚举及条件相等值可使用文本、布尔值或有限数值，不能使用 `NaN` 或无穷值。
@@ -18,6 +22,8 @@
 
 `presentation.categoryLabel` 与 `methodLabel` 仅提供类别和接入方式的纯文本展示名，不参与选择或授权。`groups` 是有序区块数组，每项为 `{id, title, fields, collapsed?}`；`fields` 使用 `config.<key>` 或 `authentication.<key>` 引用，可混合编排地址、团队认证与业务范围，每个字段至多出现一次。未列字段由通用页面回落展示；低频内容声明 `collapsed: true`，不能隐藏必需保护或通过任意界面代码执行操作。实例名称、环境、启用状态与默认收起的个人账号入口由 Buildr 维护，不重复声明。
 
+`presentation.environment: hidden` 可隐藏通用连接环境输入、名称示例中的环境及列表空环境标签；省略保持兼容。它只影响连接级元数据展示，不能替代专业操作的目标环境，也不形成权限开关。
+
 网站入口用 `presentation.websiteField` 引用已声明的 `url` 配置字段；双地址方法可另用 `websiteFallbackField` 显式引用基础地址字段。网站覆盖值缺失、为空文本或仅含空白时使用回落值，字段默认值仍按声明生效；非空覆盖值优先，非法时不改用另一目标。最终候选继续经过网址安全校验，整体配置问题仍单独诊断；该选择不修改实例配置、认证目标或程序上下文（Context）。未声明回落字段时不按常见字段名猜测基础地址。
 
 `programs` 是命名程序对象：`bundled` 使用技能（Skill）目录相对 `entry` 和可选 `runtime`；`installed` 使用独立 `executable` 名称。二者可以声明参数数组、`helpArgs`、`dependencies` 和 `installHint`；版本检查使用 `version: {args, constraint}`。所有随附运行代码放在声明入口所属的同一附件树，通常为 `scripts/`，例如 `scripts/bin/client.mjs` 与 `scripts/lib/`；通用启动会观察该树的当前文件，文档与配置附件继续按各自职责保存。独立安装程序的内部依赖不由启动入口完整证明，应声明依赖及版本检查并由该方法自行核验实际可用性。只读测试与动态选择在 `hooks` 引用程序并声明 `effect: read`，不得借测试发布配置或部署。动态发现可使用 `inputs` 列出所需字段引用，让地址与认证齐备后先发现业务范围；只降低该发现动作对未给配置字段的必填要求，所有已给值仍校验，完整认证和认证目标边界不变。省略 `inputs` 沿用完整配置检查，连接测试始终检查完整配置。
@@ -25,6 +31,12 @@
 共享认证绑定的是声明接收方 `kind/entry/runtime/executable/args`，不保存本机程序绝对路径。目录返回 `declarationRevision`（声明文件摘要）、`programRecipients`（本机实际接收方位置或缺失）及当前 `revision`；后者同时观察声明与本机位置。输入 `expected.definitionRevision` 使用刚读到的 `revision`，不得用 `declarationRevision` 替代。目录读取只定位程序，不执行版本探测或登录；缺失程序仅影响使用它的动作。相同机器程序位置变化后重读当前接收方再继续；换机器在声明相同、依赖可用且没有个人组时使用团队组，不为路径差异改写团队文件。旧版独立程序的路径耦合认证若被诊断为失效，须明确重新录入该组，不能猜测迁移。
 
 ## 私有上下文与写前再核验
+
+个人授权程序须声明 `contextProtocol: buildr.connection-authorization-context/v1`。它不作为普通业务认证接收方，不用于只读槽位；新增此专用程序不改变既有业务程序的稳定认证接收集合，但仍进入定义与执行观察。宿主通过 `{type: 'buildr.connection-authorization-context', context}` 发送本次 `protocolVersion/callId/workspace/definition/connection/privateStateRoot`；`connection` 包含准确实例 `id`、有限前置配置 `config` 和三项 `revisions`，没有旧认证。授权程序只在本次受限 `privateStateRoot` 创建临时资源，收到父通道断开、终止或 `{type:'buildr.connection-authorization-cancel',callId}` 时关闭本次浏览器并清理。
+
+成功时发送唯一 `{type:'buildr.connection-auth-result',callId:context.callId,status:'success',values:<声明要求的完整认证组>}`，等待进程间通信（IPC）发送回调完成后断开并正常退出。不得把完整组写到标准输出（Standard Output）、标准错误（Standard Error）、文件回执或普通日志。宿主抑制授权输出，重新校验当前观察、认证组及目标后保存；单纯发送消息不等于保存成功。普通业务程序仍使用下述原上下文，不能接收或模拟授权上下文。
+
+失败消息只允许 `{type:'buildr.connection-auth-result',callId,status:'failure',reason}`，`reason` 使用固定枚举 `dependency-unavailable|browser-closed|session-invalid|cancelled|timeout|authorization-failed`。宿主将其映射为固定诊断，不接受或转述程序任意错误正文，避免错误中出现新令牌；失败不会保存认证。
 
 Node.js 随附程序通过独立进程间通信（IPC）接收 `{type: 'buildr.connection-context', context}`。认证不进入业务标准输入（Standard Input）、参数或普通环境；只消费本次明确命名的实例。精简结构如下，尖括号均为占位，不能写入真实秘密：
 
