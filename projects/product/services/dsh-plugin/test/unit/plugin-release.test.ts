@@ -160,6 +160,52 @@ test('OIDC claims reject wrong environment, workflow, source and expired identit
   assertPluginOidcClaims(jwt(claims()), sourceCommit, now);
   for (const changed of [{ sub: 'repo:BuildrAI/Buildr:environment:other' }, { workflow_ref: 'BuildrAI/Buildr/.github/workflows/publish.yml@refs/heads/main' }, { sha: 'f'.repeat(40) }, { runner_environment: 'self-hosted' }, { exp: now / 1000 }, { aud: 'other' }, { nbf: now / 1000 + 120 }]) assert.throws(() => assertPluginOidcClaims(jwt(claims(changed)), sourceCommit, now));
 });
+test('OIDC immutable subject accepts only the observed repository IDs bound to independent claims', () => {
+  const immutable = { sub: 'repo:BuildrAI@313666831/Buildr@993537957:environment:npm-production',
+    repository_owner_id: '313666831', repository_id: '993537957' };
+  assert.doesNotThrow(() => assertPluginOidcClaims(jwt(claims(immutable)), sourceCommit, now));
+  assert.doesNotThrow(() => assertPluginOidcClaims(jwt(claims({ ...immutable, aud: ['other', 'npm:registry.npmjs.org'] })), sourceCommit, now));
+  for (const changed of [
+    { repository_owner_id: undefined }, { repository_id: undefined }, { repository_owner_id: '1' }, { repository_id: '2' },
+    { repository_owner_id: 313666831 }, { repository_id: 993537957 },
+    { sub: 'repo:BuildrAI@1/Buildr@2:environment:npm-production', repository_owner_id: '1', repository_id: '2' },
+    { sub: 'repo:BuildrAI@993537957/Buildr@313666831:environment:npm-production', repository_owner_id: '993537957', repository_id: '313666831' },
+    { sub: 'repo:other@313666831/Buildr@993537957:environment:npm-production' },
+    { sub: 'repo:BuildrAI@313666831/other@993537957:environment:npm-production' },
+    { sub: 'repo:BuildrAI@313666831/Buildr:environment:npm-production' },
+    { sub: 'repo:BuildrAI/Buildr@993537957:environment:npm-production' },
+    { sub: 'repo:BuildrAI@313666831/Buildr@993537957:environment:other' },
+    { sub: 'repo:BuildrAI@313666831/Buildr@993537957:environment:npm-production:ref:refs/heads/main' },
+  ]) assert.throws(() => assertPluginOidcClaims(jwt(claims({ ...immutable, ...changed })), sourceCommit, now), /plugin-oidc-authority-mismatch/);
+});
+test('OIDC immutable subject keeps every issuer, audience, environment, workflow and lifetime restriction', () => {
+  const immutable = { sub: 'repo:BuildrAI@313666831/Buildr@993537957:environment:npm-production',
+    repository_owner_id: '313666831', repository_id: '993537957' };
+  for (const changed of [{ iss: 'https://other.invalid' }, { aud: 'other' }, { aud: ['other'] }, { environment: 'other' },
+    { repository: 'other/repo' }, { workflow_ref: 'BuildrAI/Buildr/.github/workflows/publish.yml@refs/heads/main' },
+    { sha: 'f'.repeat(40) }, { ref: 'refs/heads/dev' }, { runner_environment: 'self-hosted' }, { event_name: 'push' },
+    { exp: now / 1000 }, { nbf: now / 1000 + 120 }, { iat: now / 1000 + 120 }]) {
+    assert.throws(() => assertPluginOidcClaims(jwt(claims({ ...immutable, ...changed })), sourceCommit, now));
+  }
+});
+test('OIDC immutable subject still reaches npm signature exchange and an ID mismatch cannot reach it', async () => {
+  const immutable = { sub: 'repo:BuildrAI@313666831/Buildr@993537957:environment:npm-production',
+    repository_owner_id: '313666831', repository_id: '993537957' };
+  const state = { sourceCommit, sourceTree, version, workflowSha256, sourceSdk };
+  for (const invalid of [false, true]) {
+    const token = jwt(claims({ ...immutable, ...(invalid ? { repository_id: '2' } : {}) })); let reads = 0;
+    const proof = probePluginPublishAuthority(state, { env: hostedEnvironment(), now: () => now, fetchImpl: async (url, options) => {
+      reads++;
+      if (reads === 1) return new Response(JSON.stringify({ value: token }));
+      assert.match(String(url), /exchange\/package\/%40buildr-ai%2Fbuildr-dsh-plugin$/);
+      assert.equal((options?.headers as Record<string, string>).Authorization, `Bearer ${token}`);
+      return new Response(JSON.stringify({ token: 'exchange-secret', token_type: 'oidc', created: (now - 1000) / 1000, expires: (now + 3600_000) / 1000 }), { status: 201 });
+    } });
+    if (invalid) { await assert.rejects(proof, /plugin-oidc-authority-mismatch/); assert.equal(reads, 1); }
+    else { const result = await proof; assert.equal(reads, 2); assert.equal(result.status, 'ready');
+      for (const secret of [token, 'request-secret', 'exchange-secret']) assert.equal(JSON.stringify(result).includes(secret), false); }
+  }
+});
 test('the real OIDC exchange protocol uses the plugin endpoint and never retains either token', async () => {
   const token = jwt(claims()), calls: string[] = [];
   const result = await probePluginPublishAuthority({ sourceCommit, sourceTree, version, workflowSha256, sourceSdk }, { env: hostedEnvironment(), now: () => now,

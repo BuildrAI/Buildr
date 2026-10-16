@@ -1,17 +1,18 @@
 /** Package projections in the existing release operation. Git and package owners remain authoritative. */
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { evaluateReleasePlan, normalizeReleaseTargets } from './release-targets.ts';
 import { sameArtifactIdentity } from './package-compatibility.ts';
 import { observePublishedPackageArtifact } from './package-artifact-observation.ts';
-import { createPackageReleaseContext, createPackagePublicationEvidence, validatePackageReleaseContext, validatePackageOwnerPublication } from './release-package-evidence.ts';
+import { createPackageReleaseContext, createPackagePublicationEvidence, validatePackageReleaseContext, validatePackageOwnerPublication, packageExecutionCommit, pluginExecutorRecoverySchema, assertUnattemptedPluginPublication } from './release-package-evidence.ts';
 import { runPluginHostedOperation, readHostedPluginCandidate, reconcilePluginPreparationPointer } from './plugin-hosted-release.ts';
 import { runHostedReleaseTransaction } from './release-transaction-runner.ts';
 import { inspectHostedReleaseTransaction, validateReleaseTransactionEvidence } from './release-transaction-evidence.ts';
-import { createReleaseContext } from './release-readiness.ts';
-import { assertReleaseExecutorRecoveryEvidence, createReleaseExecutorRecovery, releaseExecutionCommit } from './release-executor-recovery.ts';
+import { createReleaseContext, releaseContextIdentity } from './release-readiness.ts';
+import { assertReleaseExecutorRecoveryEvidence, createReleaseExecutorRecovery, releaseExecutionCommit, assertReleaseExecutorSource } from './release-executor-recovery.ts';
 import { observeUnpublishedRelease } from './release-observation.ts';
 import { inspectReleaseTag } from './release-tag-ensure.ts';
 import { reconcilePublishedReleaseWithDev, closeoutReleaseGitResources } from './release-git-convergence.ts';
@@ -154,7 +155,7 @@ async function candidateBytes(context: any, state: any, scope: any, dependencies
 export function validatePluginRecovery(context: any, observed: any, registryArtifact: any): void {
   const owned = context.packages['dsh-plugin'], journal = observed.journal, run = observed.run;
   if (run?.repository?.full_name !== 'BuildrAI/Buildr' || run.path?.split('@')[0] !== '.github/workflows/publish-dsh-plugin.yml'
-      || run.event !== 'workflow_dispatch' || run.head_branch !== 'main' || run.head_sha !== (context.packages.buildr ? releaseExecutionCommit(context.packages.buildr.ownerContext) : context.convergence.mainCommit)
+      || run.event !== 'workflow_dispatch' || run.head_branch !== 'main' || run.head_sha !== packageExecutionCommit(context, 'dsh-plugin')
       || run.status !== 'completed' || run.run_attempt !== 1 || !Number.isSafeInteger(run.id) || run.id < 1
       || registryArtifact.origin !== 'registry' || !sameArtifactIdentity(owned.artifact, registryArtifact)
       || journal?.schemaVersion !== 'buildr.dsh-plugin-publication/v1' || !['passed', 'blocked'].includes(journal.status)
@@ -240,6 +241,68 @@ async function recoverMainPublication(options: any, context: any, scope: any, de
   return { status: 'ready', context: replacement, candidates };
 }
 
+/** Replace only the first, explicitly unattempted plugin request; successful main ownership stays intact. */
+async function recoverPluginPublication(options: any, context: any, scope: any, dependencies: any): Promise<any> {
+  const { state, git, readRun, gh, save, effects } = scope;
+  const blocked = (message: string) => ({ status: 'publication-recovery-blocked', nextActions: [message] });
+  if (options.action !== 'resume' || options.authorized !== true) return { status: 'authorization-required', nextActions: ['明确授权原插件包的执行器恢复，再resume --recover-publication --authorized。'] };
+  const owned = context.packages['dsh-plugin'], pointer = state.packagePublications?.['dsh-plugin'];
+  if (!owned || (state.publicationEvidence && !owned.executorRecovery) || state.publicationAuthorization?.contextIdentity !== context.identity
+    || !pointer || pointer.contextIdentity !== context.identity || (pointer.status === 'passed' && !owned.executorRecovery)) return blocked('插件恢复缺少原请求或准确授权。');
+  if (context.packages.buildr) {
+    const main = state.packagePublications?.buildr;
+    if (main?.status !== 'passed' || main.contextIdentity !== context.identity || !main.evidence) return blocked('保留主包原身份；只有已验证完成的主包才能接续插件恢复。');
+    validatePackageOwnerPublication(context, 'buildr', main.evidence);
+  }
+  if (owned.executorRecovery) {
+    const previous = state.pluginPublicationRecoveryHistory?.at(-1), recovery = owned.executorRecovery;
+    if (!previous || previous.context?.identity !== recovery.originalContextIdentity || state.publicationAuthorization.pluginRecoveryAuthorized !== true
+      || previous.pointer?.runId !== recovery.previousRunId || releaseContextIdentity(previous.journal) !== recovery.previousJournalIdentity) return blocked('插件恢复历史不完整，不创建另一请求。');
+    assertUnattemptedPluginPublication(previous.context.packages['dsh-plugin'], previous, packageExecutionCommit(previous.context, 'dsh-plugin'));
+    return { status: 'ready', context };
+  }
+  if (!pointer.requested || !Number.isSafeInteger(pointer.runId) || pointer.runId < 1 || pointer.evidence) return blocked('原插件请求未知或已取得发布证据，保留原指针。');
+  const originalExecution = packageExecutionCommit(context, 'dsh-plugin');
+  const observed = (dependencies.runPluginHostedOperation ?? runPluginHostedOperation)({ operation: 'publish', authorized: true, repo: state.executionRoot,
+    version: owned.artifact.version, sourceCommit: originalExecution, originalSourceCommit: context.convergence.mainCommit,
+    candidateRunId: owned.prepareRunId, pointer: structuredClone(pointer), ghCommand: options.ghCommand }, { ...dependencies.pluginDependencies, execute: scope.execute });
+  if (observed.status !== 'blocked') return blocked('原插件运行或日志未知，不替换原请求。');
+  assertUnattemptedPluginPublication(owned, observed, originalExecution);
+  const exact = await (dependencies.observePublishedPackageArtifact ?? observePublishedPackageArtifact)('dsh-plugin', { ...dependencies.observationOptions, version: owned.artifact.version });
+  if (exact.observation?.status !== 'absent') return blocked('插件准确版本并非官方确认缺失，保留原请求。');
+  const history = JSON.parse(gh(['api', 'repos/BuildrAI/Buildr/actions/workflows/publish-dsh-plugin.yml/runs?event=workflow_dispatch&branch=main&per_page=100']));
+  if (!Array.isArray(history.workflow_runs) || !Number.isSafeInteger(history.total_count) || history.total_count !== history.workflow_runs.length
+    || history.workflow_runs.some((run: any) => run.display_title === `DSH publish ${owned.artifact.version}` && run.status !== 'completed')) return blocked('插件发布活动历史未知或仍有未结束请求，不替换原指针。');
+  const candidates = await candidateBytes(context, state, scope, dependencies);
+  git(['fetch', '--no-tags', 'origin', 'refs/heads/main:refs/remotes/origin/main', 'refs/heads/dev:refs/remotes/origin/dev']);
+  const sourceCommit = git(['rev-parse', 'origin/main']), repo = state.executionRoot;
+  if (sourceCommit === originalExecution) return blocked('尚无新的受保护插件执行器修复，不重复原请求。');
+  assertReleaseExecutorSource({ repo, originalCommit: context.convergence.mainCommit, executionCommit: sourceCommit }, { execute: scope.execute });
+  const actual = assertReleaseExecutorSource({ repo, originalCommit: originalExecution, executionCommit: sourceCommit }, { execute: scope.execute });
+  const workflow = scope.execute('git', ['show', `${sourceCommit}:.github/workflows/publish-dsh-plugin.yml`], { cwd: repo, encoding: 'utf8', timeout: 30_000 });
+  if (workflow.status !== 0 || typeof workflow.stdout !== 'string') return blocked('新插件执行器工作流不可读取。');
+  const executorRecovery = { schemaVersion: pluginExecutorRecoverySchema, sourceCommit, sourceTree: actual.sourceTree,
+    workflowDigest: `sha256-${crypto.createHash('sha256').update(workflow.stdout).digest('hex')}`, originalContextIdentity: context.identity,
+    previousRunId: observed.run.id, previousRunAttempt: observed.run.run_attempt, previousJournalIdentity: releaseContextIdentity(observed.journal) };
+  const replacement = createPackageReleaseContext({ ...context, packages: { ...context.packages, 'dsh-plugin': { ...owned, executorRecovery } } });
+  const latest = readRun(pointer.runId);
+  assertUnattemptedPluginPublication(owned, { run: latest, journal: observed.journal }, originalExecution);
+  if (git(['rev-parse', 'origin/main']) !== sourceCommit) return blocked('插件恢复核验期间main发生变化，保留原请求。');
+  state.pluginPublicationRecoveryHistory ??= [];
+  state.pluginPublicationRecoveryHistory.push({ context: structuredClone(context), authorization: structuredClone(state.publicationAuthorization),
+    pointer: structuredClone(pointer), run: structuredClone(observed.run), journal: structuredClone(observed.journal) });
+  state.context = replacement;
+  state.publicationAuthorization = { ...state.publicationAuthorization, contextIdentity: replacement.identity, pluginRecoveryAuthorized: true };
+  for (const name of context.targets.packages) {
+    if (name !== 'dsh-plugin') state.packagePublications[name].contextIdentity = replacement.identity;
+  }
+  state.packagePublications['dsh-plugin'] = { contextIdentity: replacement.identity, requested: false, runId: null, previousRunIds: [observed.run.id] };
+  effects.push({ type: 'plugin-publication-executor-recovery-bound', previousRunId: observed.run.id, originalContextIdentity: context.identity,
+    contextIdentity: replacement.identity, sourceCommit });
+  save();
+  return { status: 'ready', context: replacement, candidates };
+}
+
 /** Continue only the first unfinished package in the original safe order. */
 export async function continuePackageRelease(options: any, scope: any, dependencies: any = {}): Promise<any> {
   const { state, save, effects, readRun, gh, git } = scope;
@@ -247,7 +310,8 @@ export async function continuePackageRelease(options: any, scope: any, dependenc
   let context = validatePackageReleaseContext(state.context);
   let recoveredCandidates: any;
   if (options.recoverPublication === true) {
-    const recovered = await recoverMainPublication(options, context, scope, dependencies);
+    const pluginOnly = context.packages['dsh-plugin'] && (!context.packages.buildr || state.packagePublications?.buildr?.status === 'passed');
+    const recovered = await (pluginOnly ? recoverPluginPublication : recoverMainPublication)(options, context, scope, dependencies);
     if (recovered.status !== 'ready') return recovered;
     context = recovered.context;
     recoveredCandidates = recovered.candidates;
@@ -285,7 +349,7 @@ export async function continuePackageRelease(options: any, scope: any, dependenc
       result = { run, ownerEvidence: observed.evidence };
     } else {
       const observed = (dependencies.runPluginHostedOperation ?? runPluginHostedOperation)({ operation: 'publish', authorized: true, repo: state.executionRoot,
-        version: context.targets.versions['dsh-plugin'], sourceCommit: context.packages.buildr ? releaseExecutionCommit(context.packages.buildr.ownerContext) : context.convergence.mainCommit,
+        version: context.targets.versions['dsh-plugin'], sourceCommit: packageExecutionCommit(context, 'dsh-plugin'),
         originalSourceCommit: context.convergence.mainCommit, candidateRunId: context.packages['dsh-plugin'].prepareRunId,
         pointer, ghCommand: options.ghCommand }, { ...dependencies.pluginDependencies, execute: scope.execute, onPointer: save });
       effects.push(...(observed.effects ?? [])); save();
@@ -300,11 +364,11 @@ export async function continuePackageRelease(options: any, scope: any, dependenc
             validatePluginRecovery(context, observed, exact.observation.artifact);
             await candidateBytes(context, state, scope, dependencies);
             const currentMain = git(['rev-parse', 'origin/main']);
-            if (currentMain !== (context.packages.buildr ? releaseExecutionCommit(context.packages.buildr.ownerContext) : context.convergence.mainCommit)) return { status: 'publication-source-drift', package: name, nextActions: ['准确包已公开，保留原记录；当前main改变，核对原来源的恢复路径。'] };
+            if (currentMain !== packageExecutionCommit(context, 'dsh-plugin')) return { status: 'publication-source-drift', package: name, nextActions: ['准确包已公开，保留原记录；当前main改变，核对原来源的恢复路径。'] };
             Object.assign(pointer, { recoveryRunId: observed.run.id, previousRunIds: [...(pointer.previousRunIds ?? []), observed.run.id],
               recoveryRequested: true, requested: false, runId: null }); save();
             const recovered = (dependencies.runPluginHostedOperation ?? runPluginHostedOperation)({ operation: 'publish', authorized: true, repo: state.executionRoot,
-              version: context.targets.versions[name], sourceCommit: context.packages.buildr ? releaseExecutionCommit(context.packages.buildr.ownerContext) : context.convergence.mainCommit,
+              version: context.targets.versions[name], sourceCommit: packageExecutionCommit(context, 'dsh-plugin'),
               originalSourceCommit: context.convergence.mainCommit, candidateRunId: context.packages[name].prepareRunId,
               pointer, ghCommand: options.ghCommand }, { ...dependencies.pluginDependencies, execute: scope.execute, onPointer: save });
             effects.push(...(recovered.effects ?? [])); save();
@@ -332,7 +396,7 @@ export async function continuePackageRelease(options: any, scope: any, dependenc
   if (options.action === 'resume' && !state.publicationAuthorization) return { status: 'authorization-required', nextActions: ['原操作尚未取得公开发布授权。'] };
   git(['fetch', '--no-tags', 'origin', 'refs/heads/main:refs/remotes/origin/main', 'refs/heads/dev:refs/remotes/origin/dev']);
   const currentMain = git(['rev-parse', 'origin/main']);
-  if (currentMain !== (context.packages.buildr ? releaseExecutionCommit(context.packages.buildr.ownerContext) : context.convergence.mainCommit)) return { status: 'publication-source-drift', nextActions: ['保留原包与请求；当前main与授权来源不同，核对原来源的发布路径。'] };
+  if (currentMain !== packageExecutionCommit(context, next)) return { status: 'publication-source-drift', nextActions: ['保留原包与请求；当前main与授权来源不同，核对原来源的发布路径。'] };
   const candidates = recoveredCandidates ?? await candidateBytes(context, state, scope, dependencies);
   const completed = originalOrder.filter((name: string) => state.packagePublications[name]?.status === 'passed');
   const peerVersion = context.packages['dsh-plugin']?.buildrPeer?.version;
@@ -357,7 +421,7 @@ export async function continuePackageRelease(options: any, scope: any, dependenc
     });
     if (dispatched.github?.runId) { pointer.requested = true; pointer.runId = dispatched.github.runId; save(); }
   } else dispatched = (dependencies.runPluginHostedOperation ?? runPluginHostedOperation)({ operation: 'publish', authorized: true, repo: state.executionRoot,
-    version: context.targets.versions['dsh-plugin'], sourceCommit: context.packages.buildr ? releaseExecutionCommit(context.packages.buildr.ownerContext) : context.convergence.mainCommit,
+    version: context.targets.versions['dsh-plugin'], sourceCommit: packageExecutionCommit(context, 'dsh-plugin'),
     originalSourceCommit: context.convergence.mainCommit, candidateRunId: context.packages['dsh-plugin'].prepareRunId,
     pointer, ghCommand: options.ghCommand }, { ...dependencies.pluginDependencies, execute: scope.execute, onPointer: save });
   effects.push(...(dispatched.effects ?? [])); save();
@@ -391,6 +455,15 @@ async function closeoutPackageRelease(options: any, scope: any, dependencies: an
     '--delivered-ref', `workspace=${options.context.convergence.mainCommit}`, '--target', scope.workspace, '--json']);
   effects.push(...(worktree.effects ?? []));
   if (worktree.status !== 'cleaned') return { status: 'published-worktree-cleanup-blocked', outcomes: { publication: 'passed', taskRegistration: 'completed' }, cleanup, nextActions: worktree.nextActions };
+  if (dependencies.selfBootstrapCloseout) {
+    const result = await dependencies.selfBootstrapCloseout({ workspace: scope.workspace, context: options.context, evidence: options.evidence });
+    effects.push(...(result.effects ?? []));
+    const passed = result.status === 'passed' || result.status === 'not-applicable';
+    state.closeout = { status: passed ? 'passed' : 'blocked', outcomes: { publication: 'passed', taskRegistration: 'completed', cleanup: 'cleaned',
+      activation: result.status === 'not-applicable' ? 'not-applicable' : passed ? 'ready' : 'blocked' } }; save();
+    return { status: passed ? 'passed' : 'published-self-bootstrap-blocked', outcomes: state.closeout.outcomes, cleanup,
+      selfBootstrapCloseout: result, nextActions: passed ? [] : result.nextActions ?? ['接续唯一自举执行器的实际收尾结果。'] };
+  }
   const doctor = invoke(controller, ['doctor', '--target', scope.workspace, '--json', '--detail', 'compact', ...(options.agent ? ['--agent', options.agent] : [])]);
   effects.push(...(doctor.effects ?? []));
   const ready = doctor.status === 'ready' || (doctor.ok === true && doctor.health?.ready === true);

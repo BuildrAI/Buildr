@@ -10,6 +10,7 @@ import { assertPluginCandidateAdoption } from '../../../dsh-plugin/tools/candida
 
 export const packageReleaseContextSchema = 'buildr.package-release-context/v1';
 export const packagePublicationEvidenceSchema = 'buildr.package-publication-evidence/v1';
+export const pluginExecutorRecoverySchema = 'buildr.plugin-executor-recovery/v1';
 const sha = /^[a-f0-9]{40}$/u;
 const digest = /^sha256-[a-f0-9]{64}$/u;
 const repository = 'BuildrAI/Buildr';
@@ -70,11 +71,23 @@ export function createPackageReleaseContext(input: any): any {
           ? !sameArtifactIdentity(peer, input.packages.buildr.artifact) || peer.sourceCommit !== selection.releaseHead
           : peer.origin !== 'registry'))) fail('Plugin preparation peer differs from the selected Candidate or exact registry bytes.');
       packages[name] = { artifact, candidate, prepareRunId: owned.prepareRunId, prepareRunAttempt: owned.prepareRunAttempt,
-        ...(peer ? { buildrPeer: peer } : {}), ...(owned.adoption ? { adoption: owned.adoption } : {}) };
+        ...(peer ? { buildrPeer: peer } : {}), ...(owned.adoption ? { adoption: owned.adoption } : {}),
+        ...(Object.hasOwn(owned, 'executorRecovery') ? { executorRecovery: owned.executorRecovery } : {}) };
     }
   }
   const value: any = { schemaVersion: packageReleaseContextSchema, targets, selection: { ...selection }, convergence: { ...convergence },
     compatibility: input.compatibility, packages, candidate: input.candidate };
+  const recovery = packages['dsh-plugin']?.executorRecovery;
+  if (Object.hasOwn(packages['dsh-plugin'] ?? {}, 'executorRecovery')) {
+    const fields = ['schemaVersion', 'sourceCommit', 'sourceTree', 'workflowDigest', 'originalContextIdentity', 'previousRunId', 'previousRunAttempt', 'previousJournalIdentity'];
+    if (!recovery || Object.keys(recovery).length !== fields.length || fields.some(key => !Object.hasOwn(recovery, key))
+      || recovery.schemaVersion !== pluginExecutorRecoverySchema || !sha.test(recovery.sourceCommit ?? '') || !sha.test(recovery.sourceTree ?? '')
+      || !digest.test(recovery.workflowDigest ?? '') || !digest.test(recovery.originalContextIdentity ?? '') || !digest.test(recovery.previousJournalIdentity ?? '')
+      || !Number.isSafeInteger(recovery.previousRunId) || recovery.previousRunId < 1 || recovery.previousRunAttempt !== 1
+      || recovery.sourceCommit === (packages.buildr ? releaseExecutionCommit(packages.buildr.ownerContext) : convergence.mainCommit)) fail('Plugin executor recovery identity is invalid.');
+    const original = structuredClone(value); delete original.packages['dsh-plugin'].executorRecovery;
+    if (releaseContextIdentity(original) !== recovery.originalContextIdentity) fail('Plugin executor recovery changed the original package context.');
+  }
   if (containsCredentialMaterial(value)) fail('Package release context cannot contain credentials.');
   return { ...value, identity: releaseContextIdentity(value) };
 }
@@ -86,12 +99,33 @@ export function validatePackageReleaseContext(value: any): any {
   return recreated;
 }
 
+/** The main owner remains unchanged when only the plugin publisher is repaired. */
+export function packageExecutionCommit(context: any, name: string): string {
+  if (name === 'dsh-plugin' && context.packages[name]?.executorRecovery) return context.packages[name].executorRecovery.sourceCommit;
+  return context.packages.buildr ? releaseExecutionCommit(context.packages.buildr.ownerContext) : context.convergence.mainCommit;
+}
+
+/** Only the observed pre-upload OIDC refusal can authorize a replacement plugin request. */
+export function assertUnattemptedPluginPublication(owned: any, observed: any, executionCommit: string): void {
+  const { run, journal } = observed;
+  if (run?.repository?.full_name !== repository || run.path?.split('@')[0] !== '.github/workflows/publish-dsh-plugin.yml'
+    || run.event !== 'workflow_dispatch' || run.head_branch !== 'main' || run.head_sha !== executionCommit
+    || run.status !== 'completed' || run.conclusion !== 'failure' || run.run_attempt !== 1 || !Number.isSafeInteger(run.id) || run.id < 1
+    || journal?.schemaVersion !== 'buildr.dsh-plugin-publication/v1' || journal.status !== 'blocked' || journal.action !== 'blocked'
+    || journal.code !== 'plugin-oidc-authority-mismatch' || journal.attempted !== false || journal.publishedObserved !== false || journal.registry !== 'absent'
+    || journal.packageName !== owned.artifact.packageName || journal.version !== owned.artifact.version
+    || journal.integrity !== owned.artifact.integrity || journal.sha256 !== owned.artifact.artifactSha256
+    || journal.sourceCommit !== owned.artifact.sourceCommit || journal.sourceTree !== owned.candidate.sourceTree
+    || journal.request?.workflowRef !== `${repository}/.github/workflows/publish-dsh-plugin.yml@refs/heads/main`
+    || journal.request.runId !== run.id || journal.request.runAttempt !== 1 || containsCredentialMaterial(journal)) fail('Plugin executor recovery requires the exact unattempted OIDC failure journal.');
+}
+
 export function validatePackageOwnerPublication(context: any, name: string, publication: any): any {
   const candidate = context.packages[name];
   const artifact = parseCompatibilityArtifact(publication?.registryArtifact);
   const run = publication?.run;
   const recoveredOwner = name === 'buildr' ? validateReleaseTransactionEvidence(publication?.ownerEvidence) : null;
-  const executionCommit = recoveredOwner ? releaseExecutionCommit(recoveredOwner.context) : (context.packages.buildr ? releaseExecutionCommit(context.packages.buildr.ownerContext) : context.convergence.mainCommit);
+  const executionCommit = recoveredOwner ? releaseExecutionCommit(recoveredOwner.context) : packageExecutionCommit(context, name);
   if (artifact.origin !== 'registry' || !sameArtifactIdentity(candidate.artifact, artifact)) fail('Selected package publication has not been confirmed from the same registry bytes.');
   if (run?.repository?.full_name !== repository || run.event !== 'workflow_dispatch' || run.status !== 'completed' || run.conclusion !== 'success'
       || run.head_sha !== executionCommit || run.head_branch !== 'main'
