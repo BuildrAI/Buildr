@@ -98,6 +98,31 @@ test('selection mutates only the bound Task branch and formal release ref', (t: 
   assert.equal(freeze(data).freeze.state, 'frozen');
 });
 
+test('selection keeps the immediate dev source after multiple cherry-picks and reuses the applied commit', (t: any) => {
+  const data: any = fixture('0.1.0-rc.91'); t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
+  git(data.retained, 'checkout', '-b', 'original-task', data.baseline);
+  fs.writeFileSync(path.join(data.retained, 'projects/product/multi-hop.txt'), 'verified correction\n');
+  git(data.retained, 'add', 'projects/product/multi-hop.txt');
+  git(data.retained, 'commit', '-m', 'original task correction');
+  const original = git(data.retained, 'rev-parse', 'HEAD');
+  git(data.retained, 'checkout', 'dev');
+  git(data.retained, 'cherry-pick', '-x', original);
+  data.source = git(data.retained, 'rev-parse', 'HEAD');
+  assert.equal(create(data).status, 'passed');
+  const selected: any = select(data);
+  assert.equal(selected.status, 'passed', JSON.stringify(selected));
+  assert.equal(selected.selectionChain.at(-1).sourceDevCommit, data.source);
+  const body = git(data.repo, 'show', '-s', '--format=%B', selected.releaseHead);
+  assert.ok(body.includes(`(cherry picked from commit ${original})`));
+  assert.ok(body.includes(`(cherry picked from commit ${data.source})`));
+  const reused: any = select(data);
+  assert.equal(reused.status, 'passed');
+  assert.equal(reused.action, 'reused');
+  assert.deepEqual(reused.effects, []);
+  assert.equal(git(data.repo, 'rev-parse', 'HEAD'), selected.releaseHead);
+  assert.equal(freeze(data).freeze.state, 'frozen');
+});
+
 test('retained primary worktree and stale binding fail before mutation', (t: any) => {
   const data: any = fixture('0.1.0-rc.2'); t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
   const binding: any = data.binding();

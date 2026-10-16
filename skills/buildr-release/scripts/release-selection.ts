@@ -228,8 +228,10 @@ function mainReconciliationMetadata(commit: any, repo: any, dependencies: any): 
 
 function selectionSource(commit: any, repo: any, dependencies: any): any  {
   const body: any = commitBody(commit, repo, dependencies);
-  const match: any = body.match(/cherry picked from commit ([0-9a-f]{40})/iu);
-  return match?.[1] ?? null;
+  // Git preserves earlier hops and appends the immediate source last. Keep the
+  // original history while binding selection to this actual dev cherry-pick.
+  const matches: any[] = [...body.matchAll(/cherry picked from commit ([0-9a-f]{40})/giu)];
+  return matches.at(-1)?.[1] ?? null;
 }
 
 function selectionCommits(baseline: any, branchHead: any, repo: any, dependencies: any): any  {
