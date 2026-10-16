@@ -85,7 +85,8 @@ test('source package selectors and isolated launcher checks are reusable while f
 test('only reviewed fixture runtime checks exclude Product governance material while governance owners retain it', () => {
   const ids = ['integration-runtime', 'integration-data-store', 'integration-task-read-models', 'integration-task-coordination',
     'integration-project-daily-progress', 'system-buildr-web-http', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation',
-    'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection'];
+    'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection',
+    'system-runtime-recovery', 'system-app-process', 'system-workspace-lifecycle', 'system-windows-platform'];
   assert.deepEqual(verificationSteps.filter((item: VerificationReuseStep) => item.reuse && item.reuse.scope === 'runtime').map((item: VerificationReuseStep) => item.id).sort(), ids.sort());
   for (const id of ['docs-quality', 'openspec-strict', 'openspec-candidate-audit', 'contract', 'integration-verification']) {
     assert.equal(verificationSteps.find((item: VerificationReuseStep) => item.id === id).reuse.scope, 'repository', id);

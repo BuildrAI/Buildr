@@ -31,7 +31,7 @@ test('source diagnosis accepts only full exact clean source identities and its c
 
 test('source diagnosis keeps the one registered owner recipe and its original budget without any package owner', () => {
   const plan = createWindowsSourceDiagnosisPlan(WINDOWS_SOURCE_DIAGNOSIS_SCENARIO);
-  const original = createCandidateCiShardPlan('runtime-windows', { externalArtifact: true });
+  const original = createCandidateCiShardPlan('runtime-source-macos', { externalArtifact: false });
   assert.equal(plan.status, 'ready');
   assert.deepEqual(plan.primaryStepIds, ['system-app-process']);
   assert.deepEqual(plan.steps, original.steps.filter((step: any) => step.id === 'system-app-process'));
