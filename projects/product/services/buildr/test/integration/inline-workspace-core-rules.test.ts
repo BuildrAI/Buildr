@@ -11,6 +11,7 @@ import { registerWorkspaceInfrastructure } from '../../src/infrastructure/filesy
 import { buildApplicationPayload } from '../../tools/release/application-payload.ts';
 import { createReleaseArtifact } from '../../tools/release/release-artifact.ts';
 import { createGeneratedReleaseInputs } from '../helpers/generated-release-inputs.ts';
+import { copyPreparedWorkspace } from '../helpers/prepared-fixtures.ts';
 
 const service: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const source: any = fs.readFileSync(path.join(service, 'resources/workspace/AGENTS.md'), 'utf8');
@@ -18,11 +19,11 @@ const block: any = source.match(/<!-- buildr:required begin -->[\s\S]*?<!-- buil
 const principles: any[] = ['以目标驱动协作', '以真实工作现场为中心', '提供确定性能力，开放组合方式', '多种入口共享同一当前事实', '约束局部化，失败影响隔离', '以可信完成目标的效率衡量性能'];
 const hash: any = (bytes: any) => `sha256-${crypto.createHash('sha256').update(bytes).digest('hex')}`;
 
-function fixture(t: any): any  {
+function fixture(t: any, prepared = false): any  {
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-inline-core-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const workspace: any = path.join(root, 'workspace');
-  fs.mkdirSync(workspace);
+  const workspace: any = prepared ? copyPreparedWorkspace(t, 'legacy-core-preservation').root : path.join(root, 'workspace');
+  if (!prepared) fs.mkdirSync(workspace);
   const env: any = { ...process.env, BUILDR_APP_DATA_DIR: path.join(root, 'app-data'), BUILDR_PRODUCT_DATA_DIR: path.join(root, 'product-data') };
   const run: any = (args: any, cli: any = path.join(service, 'bin/buildr.mjs')) => {
     const result: any = spawnSync(process.execPath, [cli, ...args], { cwd: service, env, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, timeout: 60000 });
@@ -116,8 +117,10 @@ test('new workspace and receipt-owned upgrade deliver all principles without a C
 test('modified, unreceipted, foreign and symlink legacy files survive sync without global failure', async (t: any) => {
   for (const options of [{ modified: true }, { receipt: false }, { foreign: true }, { symlink: true }, { missing: true }, { unregistered: true, receipt: false }]) {
     await t.test(JSON.stringify(options), (t: any) => {
-      const { root, workspace, run }: any = fixture(t);
-      run(['init', '--target', workspace, '--name', 'preserve', '--profile', 'personal']);
+      // Initialization has its own real CLI and installed-package cases below.
+      // Each migration starts from an independent copy; sync/doctor still run
+      // through the real CLI and assert preservation and repeatability.
+      const { root, workspace, run }: any = fixture(t, true);
       legacy(workspace, options);
       if (options.unregistered) {
         const rulesPath: any = path.join(workspace, 'rules/manifest.yml');

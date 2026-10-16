@@ -105,7 +105,7 @@ Buildr 的验证由以下几部分共同组成。**某个入口的“完整”�
 
 正式补验独立记录不可变产包源码（Product Source）和验证源码（Verification Source）。原工作流（Workflow）定义及构建输入必须不变，正式入口读取原运行和原包，再以当前完整登记计算缺项；普通诊断不能直接提升。失败分片（Shard）只有明确清理完成的成功检查可保留，宿主 Node.js（Host Node）与必要 Git 观察仍执行。旧证据缺少逐项输入身份时保守补齐，复用记录保留原结果和来源，不能重写原始失败。
 
-汇总对复用结果仍核验原包、检查身份、平台和完整覆盖；核心浏览器（Browser）解包、验证、旅程及清理阶段不能省略，宿主 Node.js（Host Node）不能用空的成功包装或矛盾退出状态通过。公开发布还必须采用已绑定的工具源码。前端和 DSH 服务当前保留较宽输入边界，后续收窄需相应反例证明，不宣称所有工具变化都可以原包补验。
+汇总对复用结果仍核验原包、检查身份、平台和完整覆盖；核心浏览器（Browser）解包、验证、旅程及清理阶段不能省略，宿主 Node.js（Host Node）不能用空的成功包装或矛盾退出状态通过。补验来源只证明检查结果；公开发布仍使用受保护 `main` 或经发布恢复准入核验的执行来源，不从补验记录选择带生产权限的代码。前端和 DSH 服务当前保留较宽输入边界，后续收窄需相应反例证明，不宣称所有工具变化都可以原包补验。
 
 跨平台候选（Candidate）由[证据聚合实现](../../../services/buildr/test/verification/candidate-ci-evidence.ts)核对所需分片与宿主组合是否齐全、是否证明当前源码及登记身份、是否消费同一压缩包；新增前端逻辑或核心浏览器证据缺失、失败或身份不符同样使聚合失败。源码结果可以保留匹配内容的原提交与执行时间，最终包必须绑定最终源码与原字节。本机 `test:source` 或 `test:candidate` 的结果不能独自替代这份聚合。正式任务报告仍须分别说明所需前端逻辑、浏览器（Browser）选择范围及目标环境检查是否实际完成。发布（Release）还涉及当前外部权限、真实发布与回读，流程和恢复由[开源发布说明](../flows/open-source-release.md)单独维护。`integration-candidate-release`、`integration-candidate-release-selection`、`integration-candidate-package-selection`、`integration-candidate-release-effects`、`integration-candidate-git-convergence` 与 `integration-candidate-git-selection` 是发布专用证据，不默认纳入日常 `core`；它们分别承担发布契约、冻结源码选择、独立包选择、发布副作用恢复、真实 Git 收尾及代际清理、真实 Git 选择及恢复。原有文件逐一分配且不重复，保留各项断言及 300 秒能力时限。嵌套 Git 隔离由 `system-nested-git-isolation` 独立承担，不再占用其他工作树生命周期案例的总时限。
 
