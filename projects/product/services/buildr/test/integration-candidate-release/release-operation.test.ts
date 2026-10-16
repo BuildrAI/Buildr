@@ -61,6 +61,53 @@ function inspectFixture(t: any, packagePublications: any): any {
     options: { action: 'inspect', workspace, packages: targets.packages, version: targets.versions.buildr, pluginVersion: targets.versions['dsh-plugin'] } };
 }
 
+test('candidate stop rejects unsupported actions and low-level input without creating release state', async t => {
+  for (const action of ['inspect', 'publish', 'resume']) {
+    await assert.rejects(() => runReleaseOperation({ action, stopAfter: 'candidate' }), /only supported by prepare/u);
+  }
+  await assert.rejects(() => runReleaseOperation({ action: 'prepare', stopAfter: 'publication' }), /only supported by prepare/u);
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-candidate-stop-cli-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const entry = path.resolve(sourceRoot, '../../../../skills/buildr-release/scripts/release-orchestration-runner.ts');
+  const invoke = (args: readonly string[]) => spawnSync(process.execPath, [entry, ...args], { cwd: root, encoding: 'utf8', timeout: 15_000,
+    env: { ...process.env, BUILDR_APP_DATA_DIR: path.join(root, 'app-data'), BUILDR_PRODUCT_DATA_DIR: path.join(root, 'product-data') } });
+  const help = invoke(['--help']);
+  assert.equal(help.status, 0, help.stderr); assert.match(help.stdout, /--stop-after candidate/u);
+  for (const [args, expected] of [
+    [['prepare', '--version', '1.0.0', '--stop-after', 'candidate'], /requires --workspace/u],
+    [['prepare', '--version', '1.0.0', '--stop-after', 'publication'], /only supported by/u],
+    [['publish', '--version', '1.0.0', '--stop-after', 'candidate'], /only supported by/u],
+    [['prepare', '--input', 'missing-input.json', '--stop-after', 'candidate'], /only supported by/u],
+  ] as const) {
+    const result = invoke(args);
+    assert.equal(result.status, 1, result.stdout);
+    assert.match(result.stderr, expected);
+  }
+  assert.deepEqual(fs.readdirSync(root), [], 'invalid scope must not create operation, profile or application state');
+});
+
+test('candidate-only prepare preserves scoped and legacy publication facts without entering resume', async t => {
+  for (const scoped of [false, true]) for (const publication of [
+    { publicationAuthorization: { contextIdentity: 'sha256-existing' } },
+    { packagePublications: { buildr: { requested: true, runId: null } } },
+    { publication: { requested: true, runId: 201 } },
+  ]) {
+    const f = inspectFixture(t, {});
+    const state = { ...JSON.parse(f.bytes), ...publication, version: f.targets.versions.buildr };
+    const file = scoped ? f.file : path.join(f.directory, f.targets.versions.buildr + '.json');
+    if (!scoped) { delete state.targets; state.schemaVersion = 'buildr.release-operation-input/v1'; fs.unlinkSync(f.file); }
+    const bytes = JSON.stringify(state) + '\n'; fs.writeFileSync(file, bytes);
+    const result = await runReleaseOperation({ action: 'prepare', workspace: f.workspace, version: f.targets.versions.buildr,
+      stopAfter: 'candidate', ...(scoped ? { packages: f.targets.packages, pluginVersion: f.targets.versions['dsh-plugin'] } : {}) }, {
+      execute: () => assert.fail('candidate-only scope must never read, dispatch, retry or clean up a publication'),
+    });
+    assert.equal(result.action, 'prepare'); assert.equal(result.status, 'blocked');
+    assert.equal(result.diagnostic.code, 'candidate-only-publication-conflict'); assert.deepEqual(result.effects, []);
+    assert.equal(fs.readFileSync(file, 'utf8'), bytes, 'existing publication authority and pointers remain untouched');
+    assert.deepEqual(fs.readdirSync(f.directory), [path.basename(file)]);
+  }
+});
+
 test('inspect refreshes both package runs without resuming or rewriting the release operation', async t => {
   const f = inspectFixture(t, { buildr: { requested: true, runId: 201, status: 'running' }, 'dsh-plugin': { requested: true, runId: 202, status: 'running' } });
   const requests: number[] = [];
@@ -285,11 +332,17 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
     aggregate.workflow.aggregateAttempt = 2;
   }
   aggregate.sourceCommit = 'f'.repeat(40);
-  const invalid = await runReleaseOperation(options, dependencies);
+  const invalid = await runReleaseOperation({ ...options, stopAfter: 'candidate' }, dependencies);
   assert.equal(invalid.status, 'blocked');
   assert.equal(merges, 0, 'artifact/Candidate mismatch is rejected before main mutation');
   assert.equal(pr, null);
   aggregate.sourceCommit = sourceCommit;
+  const evidenceIds = aggregate.evidenceIds;
+  aggregate.evidenceIds = evidenceIds.filter((id: string) => id !== 'host-minimum-windows');
+  const missingConsumer = await runReleaseOperation({ ...options, stopAfter: 'candidate' }, dependencies);
+  assert.equal(missingConsumer.status, 'blocked'); assert.match(missingConsumer.diagnostic.message, /missing release check host-node/u);
+  assert.equal(pr, null); assert.equal(merges, 0);
+  aggregate.evidenceIds = evidenceIds;
   if (repairTools) {
     const file = path.join(workspace, 'projects/product/services/buildr/test/repair.test.ts'); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, '// verification-only repair\n');
     git(workspace, ['add', 'projects/product/services/buildr/test/repair.test.ts']); git(workspace, ['commit', '-m', 'repair validation tools']); git(workspace, ['push', 'origin', 'dev']);
@@ -297,6 +350,17 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
     aggregate.sourceBinding = createCandidateSourceBinding(workspace, sourceCommit, verificationSource);
     aggregate.verificationSource = verificationSource; aggregate.workflow.runId = '701';
   }
+  const boundedOptions = { ...options, stopAfter: 'candidate', ...(verificationSource ? { verificationSource } : {}) };
+  const verified = await runReleaseOperation(boundedOptions, dependencies);
+  assert.equal(verified.status, 'candidate-verified', JSON.stringify(verified));
+  assert.equal(verified.action, 'prepare'); assert.equal(verified.stopAfter, 'candidate');
+  assert.equal(verified.sourceCommit, sourceCommit); assert.equal(verified.sourceTree, sourceTree);
+  assert.equal(verified.artifacts.buildr.sha256, artifact.manifest.sha256);
+  assert.equal(merges, 0); assert.equal(pr, null, 'bounded prepare stops before even creating a main PR');
+  const dispatchesAfterVerification = dispatched;
+  assert.equal((await runReleaseOperation(boundedOptions, dependencies)).status, 'candidate-verified');
+  assert.equal(dispatched, dispatchesAfterVerification, 'rechecking the bounded result retains the original candidate and bytes');
+  assert.equal(pr, null); assert.equal(merges, 0);
   const ready = await runReleaseOperation({ ...options, ...(verificationSource ? { verificationSource } : {}) }, dependencies);
   assert.equal(ready.status, 'awaiting-publication-authorization', JSON.stringify(ready));
   assert.equal(merges, 1); assert.equal(dispatched, repairTools ? 2 : 1);

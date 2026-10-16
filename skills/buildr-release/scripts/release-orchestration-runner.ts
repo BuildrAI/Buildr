@@ -391,6 +391,8 @@ function observeReleaseRun(pointer: any, readRun: (runId: number) => any): any {
 
 export async function runReleaseOperation(options: any, dependencies: any = {}): Promise<any> {
   let action = options.action;
+  if (options.stopAfter !== undefined && (options.stopAfter !== 'candidate' || action !== 'prepare')) throw new Error('--stop-after candidate is only supported by prepare.');
+  const stopAfterCandidate = options.stopAfter === 'candidate';
   if (options.recoverPublication === true && (action !== 'resume' || options.authorized !== true)) throw new Error('Publication executor recovery requires explicit resume --recover-publication --authorized.');
   if (!['prepare', 'inspect', 'publish', 'resume'].includes(action)) throw new Error('Release operation must be prepare, inspect, publish or resume.');
   const targets = normalizeReleaseTargets({ packages: options.packages, version: options.version, pluginVersion: options.pluginVersion, selectionId: options.selectionId });
@@ -497,6 +499,12 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
   try {
     if (fs.existsSync(file)) state = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (scoped && JSON.stringify(state.targets) !== JSON.stringify(targets)) throw new Error('Stored release targets changed while acquiring the operation lock.');
+    if (stopAfterCandidate && (state.publicationAuthorization || state.publication?.requested || state.publicationEvidence
+        || Object.values(state.packagePublications ?? {}).some((value: any) => value.requested || value.runId || value.evidence))) {
+      return answer('blocked', ['此选择已有公开授权或公开请求；只读检查原事实，为新候选使用独立选择。'], {
+        diagnostic: { code: 'candidate-only-publication-conflict', message: 'Candidate-only preparation cannot resume an authorized or requested publication.' },
+      });
+    }
     if (scoped && (action === 'publish' || action === 'resume' || (action === 'prepare' && (state.publicationAuthorization || Object.values(state.packagePublications ?? {}).some((value: any) => value.requested))))) {
       if (action === 'prepare') action = 'resume';
       const continued = await continuePackageRelease({ ...options, action }, packageScope(), packageDependencies);
@@ -774,6 +782,11 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       if (!targets.packages.includes('buildr') && (pluginSource.aggregate.verification.peer.version !== state.preparationPeer.version || pluginSource.aggregate.verification.peer.integrity !== state.preparationPeer.integrity || pluginSource.aggregate.verification.peer.artifactSha256 !== state.preparationPeer.artifactSha256)) throw new Error('Plugin source Candidate consumed a different frozen registry peer.');
       state.pluginSourceAggregate = pluginSource.aggregate; save();
     }
+    if (stopAfterCandidate) return answer('candidate-verified', [], {
+      stopAfter: 'candidate', sourceTree: selection.releaseTree, run: candidate,
+      artifacts: { ...(candidateEvidence ? { buildr: candidateEvidence.manifest } : {}),
+        ...(scoped && plan.requirements.plugin ? { 'dsh-plugin': state.pluginSourceAggregate.candidate } : {}) },
+    });
     phase = 'adoption-readiness';
     const pr = take(ensureReleaseToMainPullRequest({ ...selectionArgs, generation: selection.generation, repo, candidateCommit: sourceCommit, candidateTree: selection.releaseTree,
       title: `Release ${key}`, body: `Release ${key} from frozen ${sourceCommit}.\n\nCandidate run ID: ${state.candidate.runId}${scoped ? `\nRelease selection: ${JSON.stringify(plan.selection)}${plan.requirements.plugin ? `\nBuildr peer: ${JSON.stringify(state.pluginSourceAggregate.verification.peer)}` : ''}` : ''}`,
@@ -837,9 +850,11 @@ function parseOptions(argv: any): any  {
     pluginVersion: options['plugin-version'], selectionId: options['selection-id'],
     sourceVerification: options['source-verification'],
     verificationSource: options['verification-source'],
+    stopAfter: options['stop-after'],
     supportTasks: options['support-tasks'] ? options['support-tasks'].split(',').filter(Boolean) : undefined,
   };
-  if (!options.input) throw new Error('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--authorized] [--recover-publication]');
+  if (options['stop-after'] !== undefined) throw new Error('--stop-after candidate is only supported by normal prepare, without --input.');
+  if (!options.input) throw new Error('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--stop-after candidate] [--authorized] [--recover-publication]');
   if (!['compact', 'full'].includes(options.detail)) throw new Error('--detail must be compact or full.');
   const input: any = JSON.parse(fs.readFileSync(path.resolve(options.input), 'utf8'));
   if (action === 'inspect') return { action, detail: options.detail, output: options.output ? path.resolve(options.output) : null, expectedTimelineIdentity: options['timeline-identity'] ?? null, inspectedResult: input };
@@ -851,7 +866,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
   try {
     options = parseOptions(process.argv.slice(2));
     if (options.help) {
-      process.stdout.write('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--authorized] [--recover-publication]\n');
+      process.stdout.write('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--stop-after candidate] [--authorized] [--recover-publication]\n');
     } else {
     const value: any = options.normalOperation ? await runReleaseOperation(options) : options.action === 'inspect'
       ? inspectReleaseOrchestration(options.inspectedResult, options.expectedTimelineIdentity)
