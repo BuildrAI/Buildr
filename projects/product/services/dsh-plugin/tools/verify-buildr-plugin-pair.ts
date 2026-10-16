@@ -9,13 +9,14 @@ import { isDeepStrictEqual } from 'node:util';
 import { hash, inspectSmokeScope, OFFICIAL_REGISTRY, packageArchiveFiles, prepareBuildrPeer, readArtifactInput, resolvePeerNpm, smokePeerEnvironment, type PreparedBuildrPeer } from './buildr-peer.ts';
 import { artifactFromTarball } from '../../buildr/tools/release/package-artifact-observation.ts';
 import { parseCompatibilityArtifact, parseLegacyPairEvidence, sameArtifactIdentity, type ArtifactContractProof, type ArtifactIdentity, type CompatibilityArtifact, type LegacyPairEvidence } from '../../buildr/tools/release/package-compatibility.ts';
+import { pairExecutionDiagnostic, type PairExecutionDiagnostic } from '../../buildr/tools/release/package-pair-diagnostics.ts';
 
 const service = path.resolve(import.meta.dirname, '..');
 const runner = path.resolve(service, '../buildr/tools/development/run-isolated-workspace-smoke.ts');
 const thisFile = fileURLToPath(import.meta.url);
 type ArtifactInput = { artifact: CompatibilityArtifact; tarball: string };
 export const identity = (a: CompatibilityArtifact): ArtifactIdentity => ({ packageName: a.packageName, version: a.version, integrity: a.integrity, artifactSha256: a.artifactSha256 });
-export interface PairReport { schemaVersion: 'buildr.dsh-package-pair-verification/v1'; status: 'passed' | 'blocked'; consumer: ArtifactIdentity; provider: ArtifactIdentity; features: LegacyPairEvidence['features']; contracts: string[]; diagnostic: string | null; evidenceSha256: string; legacyPairEvidence: LegacyPairEvidence; providerContracts?: ArtifactContractProof }
+export interface PairReport { schemaVersion: 'buildr.dsh-package-pair-verification/v1'; status: 'passed' | 'blocked'; consumer: ArtifactIdentity; provider: ArtifactIdentity; features: LegacyPairEvidence['features']; contracts: string[]; diagnostic: string | null; evidenceSha256: string; legacyPairEvidence: LegacyPairEvidence; providerContracts?: ArtifactContractProof; execution?: PairExecutionDiagnostic }
 /** Public status calls label their own active npm origin current; registry-selected origins use installed. */
 export function publicPairIdentity(status:any,artifact:CompatibilityArtifact) {
   const installation=status?.channels?.npm,instance=status?.instances?.released;
@@ -38,10 +39,23 @@ export function assertPairReport(value: unknown, consumer: CompatibilityArtifact
   }
   return report;
 }
-function unavailableReport(consumerArtifact: CompatibilityArtifact, providerArtifact: CompatibilityArtifact): PairReport {
+function unavailableReport(consumerArtifact: CompatibilityArtifact, providerArtifact: CompatibilityArtifact, execution: PairExecutionDiagnostic): PairReport {
   const consumer = identity(consumerArtifact), provider = identity(providerArtifact), features: LegacyPairEvidence['features'] = [{ feature:'entry', required:true, status:'unknown' }], contracts: string[] = [], diagnostic = 'pair-runtime-unavailable';
   const evidenceSha256 = hash(Buffer.from(JSON.stringify({ consumer, provider, features, contracts, diagnostic })));
-  return {schemaVersion:'buildr.dsh-package-pair-verification/v1',status:'blocked',consumer,provider,features,contracts,diagnostic,evidenceSha256,legacyPairEvidence:{schemaVersion:'buildr.package-pair-evidence/v1',consumer,provider,features,evidenceSha256}};
+  return {schemaVersion:'buildr.dsh-package-pair-verification/v1',status:'blocked',consumer,provider,features,contracts,diagnostic,evidenceSha256,execution,legacyPairEvidence:{schemaVersion:'buildr.package-pair-evidence/v1',consumer,provider,features,evidenceSha256}};
+}
+export function inspectPairExecution(result: any, consumer: CompatibilityArtifact, provider: CompatibilityArtifact): PairReport {
+  const rows = String(result.stdout ?? '').split(/\r?\n/).filter(line => line.startsWith('{')).map(line => { try { return JSON.parse(line); } catch { return null; } });
+  const reports = rows.filter(row => row?.schemaVersion === 'buildr.dsh-package-pair-verification/v1');
+  const execution = rows.find(row => row?.schemaVersion === 'buildr.workspace-smoke-run/v1');
+  if (reports.length !== 1 || result.error || result.status !== 0 || execution?.status !== 'passed' || execution?.cleanup !== 'cleaned') {
+    const failure = rows.find(row => row?.schemaVersion === 'buildr.dsh-package-pair-failure/v1')?.execution;
+    const details = failure ? pairExecutionDiagnostic(failure.stage, failure.code, failure)
+      : pairExecutionDiagnostic('pair-runtime', result.error?.code === 'ETIMEDOUT' ? 'pair-runtime-timeout'
+        : execution?.cleanup && execution.cleanup !== 'cleaned' ? 'pair-cleanup-failed' : 'pair-runtime-unavailable', result);
+    return unavailableReport(consumer, provider, details);
+  }
+  return assertPairReport(reports[0], consumer, provider);
 }
 export function verifyBuildrPluginPair(options: { consumer: ArtifactInput; provider: ArtifactInput; sourceSdk?: string; nodeExecutable?: string; npmCli?: string }): PairReport {
   const node = realpathSync(options.nodeExecutable ?? process.execPath), stage = realpathSync(mkdtempSync(path.join(tmpdir(), 'buildr-pair-input-')));
@@ -51,10 +65,7 @@ export function verifyBuildrPluginPair(options: { consumer: ArtifactInput; provi
     for (const [name, value] of [['consumer', options.consumer], ['provider', options.provider]] as const) { const filename=path.join(stage,`${name}.json`); writeFileSync(filename,JSON.stringify({schemaVersion:'buildr.package-artifact-input/v1',...value})); readArtifactInput(filename); }
     const env = smokePeerEnvironment({ root: stage, workspace: path.join(stage, 'workspace'), appData: path.join(stage, 'app'), productData: path.join(stage, 'product') }, node);
     const result = spawnSync(node, [runner, '--script', thisFile, '--', '--pair-input', input], { cwd: service, env, shell: false, encoding: 'utf8', timeout: 180_000, maxBuffer: 2 * 1024 * 1024 });
-    const rows = String(result.stdout ?? '').split(/\r?\n/).filter(line => line.startsWith('{')).map(line => { try { return JSON.parse(line); } catch { return null; } });
-    const reports = rows.filter(row => row?.schemaVersion === 'buildr.dsh-package-pair-verification/v1'), execution = rows.find(row => row?.schemaVersion === 'buildr.workspace-smoke-run/v1');
-    if (reports.length !== 1 || result.error || result.status !== 0 || execution?.status !== 'passed' || execution?.cleanup !== 'cleaned') return unavailableReport(options.consumer.artifact,options.provider.artifact);
-    return assertPairReport(reports[0], options.consumer.artifact, options.provider.artifact);
+    return inspectPairExecution(result, options.consumer.artifact, options.provider.artifact);
   } finally { if (realpathSync(stage) !== stage) throw new Error('Pair input ownership changed'); rmSync(stage, { recursive: true, force: true }); }
 }
 function missingCommand(result: ReturnType<typeof spawnSync>): boolean {
@@ -77,20 +88,28 @@ async function consumePair(input: { consumer: ArtifactInput; provider: ArtifactI
   const cli = (args: string[], stdin?: string) => spawnSync(node, [peer.cliEntry, ...args], { cwd: scope.workspace, env: environment, input: stdin, shell: false, encoding: 'utf8', timeout: 30_000, maxBuffer: 2 * 1024 * 1024 });
   const features: LegacyPairEvidence['features'] = [{ feature: 'entry', required: true, status: 'unknown' }];
   const contracts: string[] = []; let diagnostic: string | null = null;
+  let stage = 'plugin-install', execution: PairExecutionDiagnostic | undefined;
   let web: ReturnType<typeof spawn> | undefined, ctx: any;
   try {
     const npm = resolvePeerNpm(node, input.npmCli), prefix = path.join(scope.root, 'plugin-prefix');
     const install = spawnSync(node, [npm, 'install', '--global', '--prefix', prefix, '--ignore-scripts', '--legacy-peer-deps', '--no-audit', '--no-fund', '--registry', OFFICIAL_REGISTRY, frozenConsumer.tarball], { cwd: scope.root, env: environment, shell: false, encoding: 'utf8', timeout: 120_000, maxBuffer: 2 * 1024 * 1024 });
-    if (install.error || install.status !== 0) throw new Error('plugin-dependencies-unavailable');
+    if (install.error || install.status !== 0) throw Object.assign(new Error('plugin-dependencies-unavailable'), {
+      pairExecution: pairExecutionDiagnostic(stage, 'plugin-dependencies-unavailable', install),
+    });
+    stage = 'plugin-integrity';
     const pluginRoot = path.join(prefix, ...(process.platform === 'win32' ? [] : ['lib']), 'node_modules', '@buildr-ai', 'buildr-dsh-plugin');
     for (const [name, bytes] of frozenConsumer.files) if (hash(readFileSync(path.join(pluginRoot, name.slice(8)))) !== hash(bytes)) throw new Error('installed-plugin-byte-drift');
     const main = frozenConsumer.metadata.main;
     if (typeof main !== 'string' || path.isAbsolute(main) || path.relative(pluginRoot, path.resolve(pluginRoot, main)).startsWith('..') || !frozenConsumer.files.has(`package/${main.replace(/^\.\//, '')}`)) throw new Error('plugin-host-entry-unavailable');
     // Enrollment is explicit and confined to this smoke scope; npm scripts remain disabled.
+    stage = 'installation-status';
     const enrolled = spawnSync(node, [peer.cliEntry, '__internal', 'enroll-npm-installation'], { cwd: scope.workspace, env: { ...environment, BUILDR_INTERNAL_PRODUCT_REENTRY: '1' }, shell: false, encoding: 'utf8', timeout: 30_000 });
     // Legacy packages may identify their npm origin directly without the enrollment command.
     const initial = cli(['installation', 'status', '--json']);
-    if (initial.error || initial.status !== 0) throw new Error('public-installation-status-unavailable');
+    if (initial.error || initial.status !== 0) throw Object.assign(new Error('public-installation-status-unavailable'), {
+      pairExecution: pairExecutionDiagnostic(stage, 'public-installation-status-unavailable', initial),
+    });
+    stage = 'web-start';
     web = spawn(node, [peer.cliEntry, 'web', '--no-open', '--port', '0'], { cwd: scope.workspace, env: environment, stdio: ['ignore', 'ignore', 'ignore'] });
     let status: any;
     const deadline = Date.now() + 30_000;
@@ -102,17 +121,20 @@ async function consumePair(input: { consumer: ArtifactInput; provider: ArtifactI
       await new Promise(resolve => setTimeout(resolve, 200));
     }
     const {installation,url}=publicPairIdentity(status,peer.artifact);
+    stage = 'plugin-host';
     const req = createRequire(path.join(pluginRoot, 'package.json')), { Context } = req('@deepseek-ai/cordis');
     for (const key of Object.keys(process.env)) delete process.env[key]; Object.assign(process.env, environment);
     try {
       const host = await import(pathToFileURL(path.resolve(pluginRoot, main)).href);
       if (typeof host.default !== 'function') throw new Error('actual-plugin-host-unavailable');
       ctx = new Context(); const gateway = new host.default(ctx, { binding: { nodeExecutable: node, cliEntry: peer.cliEntry }, timeoutMs: 10_000 });
+      stage = 'plugin-open';
       const opened = await gateway.open();
       if (opened?.ready !== true || opened.channel !== 'released' || opened.ownershipIdentity !== installation.identity.ownershipIdentity || opened.url !== url.origin) throw new Error('actual-plugin-open-failed');
       features[0].status = 'passed'; contracts.push('buildr.installation-status/v1', 'buildr.web-protocol/v1');
       if (typeof gateway.sourceRecord !== 'function') features.push({ feature: 'sourceCapture', required: false, status: 'unsupported' });
       else {
+        stage = 'source-capture';
         const setup = cli(['init', '--source-only', '--target', scope.workspace, '--name', 'pair-source', '--description', 'isolated pair proof', '--profile', 'personal']);
         writeFileSync(path.join(scope.workspace, 'ordinary.txt'), 'PRIVATE_PAIR_BODY');
         const observations = { schemaVersion: 'buildr.agent-asset-source-observations/v1', observations: [{ id: 'ordinary', type: 'file', locator: { path: path.join(scope.workspace, 'ordinary.txt') } }] };
@@ -123,10 +145,15 @@ async function consumePair(input: { consumer: ArtifactInput; provider: ArtifactI
           const passed = setup.status === 0 && source.status === 0 && result?.schemaVersion === 'buildr.agent-asset-source-result/v1' && Array.isArray(result.effects) && result.effects.length === 0 && !JSON.stringify(result).includes('PRIVATE_PAIR_BODY');
           features.push({ feature: 'sourceCapture', required: false, status: passed ? 'passed' : 'failed' });
           if (passed) contracts.push('buildr.agent-asset-source-observations/v1', 'buildr.agent-asset-source-result/v1');
+          else execution = pairExecutionDiagnostic(stage, 'source-capture-failed', setup.status !== 0 ? setup : source);
         }
       }
     } finally { /* This owned child exits after the report; no caller environment is restored. */ }
-  } catch (error) { diagnostic = error instanceof Error && /^[a-z-]+$/.test(error.message) ? error.message : 'package-consumption-error'; if (features[0].status !== 'passed') features[0].status = 'failed'; }
+  } catch (error: any) {
+    diagnostic = error instanceof Error && /^[a-z-]+$/.test(error.message) ? error.message : 'package-consumption-error';
+    execution = error?.pairExecution ?? pairExecutionDiagnostic(stage, diagnostic, error);
+    if (features[0].status !== 'passed') features[0].status = 'failed';
+  }
   finally {
     if (ctx?.fiber) await ctx.fiber.dispose();
     if (web && web.exitCode === null) { web.kill('SIGTERM'); await Promise.race([new Promise(resolve => web!.once('close', resolve)), new Promise(resolve => setTimeout(resolve, 3000))]); if (web.exitCode === null) { web.kill('SIGKILL'); await new Promise(resolve => web!.once('close', resolve)); } }
@@ -134,10 +161,14 @@ async function consumePair(input: { consumer: ArtifactInput; provider: ArtifactI
   const consumer = identity(frozenConsumer.artifact), provider = identity(peer.artifact);
   const evidence = { consumer, provider, features, contracts, diagnostic }, evidenceSha256 = hash(Buffer.from(JSON.stringify(evidence)));
   const legacyPairEvidence: LegacyPairEvidence = { schemaVersion: 'buildr.package-pair-evidence/v1', consumer, provider, features, evidenceSha256 };
-  return { schemaVersion: 'buildr.dsh-package-pair-verification/v1', status: features.some(f => f.status === 'failed' || f.status === 'unknown' || f.required && f.status !== 'passed') ? 'blocked' : 'passed', ...evidence, evidenceSha256, legacyPairEvidence,
+  return { schemaVersion: 'buildr.dsh-package-pair-verification/v1', status: features.some(f => f.status === 'failed' || f.status === 'unknown' || f.required && f.status !== 'passed') ? 'blocked' : 'passed', ...evidence, evidenceSha256, legacyPairEvidence, ...(execution ? { execution } : {}),
     ...(peer.artifact.origin === 'registry' && peer.artifact.compatibility === null && features[0].status === 'passed' ? { providerContracts: { schemaVersion: 'buildr.package-contract-proof/v1', ...provider, contracts, evidenceSha256 } as ArtifactContractProof } : {}) };
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === thisFile && process.argv[2] === '--pair-input') {
   try { const input = JSON.parse(readFileSync(process.argv[3], 'utf8')); console.log(JSON.stringify(await consumePair(input))); }
-  catch { process.stderr.write('Package pair preparation failed in its isolated scope.\n'); process.exitCode = 1; }
+  catch (error: any) {
+    const execution = error?.pairExecution ?? pairExecutionDiagnostic('pair-preparation', 'pair-preparation-failed', error);
+    process.stdout.write(`${JSON.stringify({ schemaVersion: 'buildr.dsh-package-pair-failure/v1', execution })}\n`);
+    process.exitCode = 1;
+  }
 }

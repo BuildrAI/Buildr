@@ -13,6 +13,7 @@ import { inspectHostedReleaseTransaction } from './release-transaction-evidence.
 import { reconcilePublishedReleaseWithDev, closeoutReleaseGitResources } from './release-git-convergence.ts';
 import { createReleaseToolRuntime } from './runtime.ts';
 import { classifyCandidateFailure } from './candidate-failed-shard-retry.ts';
+import { pairExecutionDiagnostic } from './package-pair-diagnostics.ts';
 
 export async function observePackageCounterparts(dependencies: any = {}): Promise<any> {
   const observe = dependencies.observePublishedPackageArtifact ?? observePublishedPackageArtifact;
@@ -29,6 +30,8 @@ export async function evaluateObservedPackagePlan(targets: any, candidates: any,
     return verifyBuildrPluginPair(input);
   });
   const pairEvidence: any[] = [];
+  const pairDiagnostics: any[] = [];
+  const identity = ({ packageName, version, integrity, artifactSha256 }: any) => ({ packageName, version, integrity, artifactSha256 });
   const pairs: any[] = [];
   const add = (consumer: any, provider: any) => {
     if (consumer?.artifact && provider?.artifact && (!consumer.artifact.compatibility || !provider.artifact.compatibility)
@@ -47,13 +50,20 @@ export async function evaluateObservedPackagePlan(targets: any, candidates: any,
       let result: any;
       try { result = await proof({ consumer: { artifact: pair.consumer.artifact, tarball: consumer }, provider: { artifact: pair.provider.artifact, tarball: provider },
         nodeExecutable: process.execPath, ...(dependencies.npmCli ? { npmCli: dependencies.npmCli } : {}) }); }
-      catch { continue; } // No legacy proof means only that related compatibility remains unknown.
+      catch (error) {
+        pairDiagnostics.push({ consumer: identity(pair.consumer.artifact), provider: identity(pair.provider.artifact),
+          ...pairExecutionDiagnostic('pair-verification', 'pair-verification-error', error) });
+        continue; // No legacy proof means only that related compatibility remains unknown.
+      }
+      if (result.status === 'blocked') pairDiagnostics.push({ consumer: identity(pair.consumer.artifact), provider: identity(pair.provider.artifact),
+        ...pairExecutionDiagnostic(result.execution?.stage ?? 'pair-consumption', result.execution?.code ?? result.diagnostic ?? 'pair-consumption-failed', result.execution) });
       if (result.legacyPairEvidence) pairEvidence.push(result.legacyPairEvidence);
       if (result.providerContracts && pair.provider.artifact.origin === 'registry') pair.provider.artifact.verifiedContracts = result.providerContracts;
     } finally { fs.rmSync(root, { recursive: true, force: true }); }
   }
-  return evaluateReleasePlan({ targets, candidates: Object.fromEntries(Object.entries(candidates).map(([key, value]: any) => [key, value.artifact])),
+  const plan = evaluateReleasePlan({ targets, candidates: Object.fromEntries(Object.entries(candidates).map(([key, value]: any) => [key, value.artifact])),
     published: Object.fromEntries(Object.entries(counterparts).map(([key, value]: any) => [key, value.observation])), legacyPairEvidence: pairEvidence });
+  return { ...plan, ...(plan.status === 'blocked' && pairDiagnostics.length ? { pairDiagnostics } : {}) };
 }
 
 export async function preparePackageRelease(options: any, scope: any, dependencies: any = {}): Promise<any> {

@@ -46,9 +46,11 @@ async function executeChecks(checks: readonly any[], handlers: Record<string, ()
       effects.push(...(error.effects || []));
       step.status = 'failed';
       step.failureCode = error.code || 'release-check-failed';
+      if (error.compatibility) step.compatibility = error.compatibility;
       step.durationMs = Date.now() - started;
       checkpoint({ steps, effects });
-      return { status: 'failed', steps, effects, failure: { check: check.id, code: step.failureCode, message: error.message } };
+      return { status: 'failed', steps, effects, failure: { check: check.id, code: step.failureCode, message: error.message,
+        ...(step.compatibility ? { compatibility: step.compatibility } : {}) } };
     }
     step.durationMs = Date.now() - started;
     step.finishedAt = new Date().toISOString();
@@ -83,7 +85,8 @@ export async function completePublicationEffects(options: any, dependencies: any
     'npm-publish': async () => {
       if (!values.registry?.published) {
         values.compatibility = await checkPublicationCompatibility({ context, artifact }, dependencies);
-        if (values.compatibility.status !== 'passed') throw Object.assign(new Error('Current public plugin cannot consume the frozen main package.'), { code: 'release-package-compatibility-blocked' });
+        if (values.compatibility.status !== 'passed') throw Object.assign(new Error('Package compatibility recheck did not pass; inspect the recorded checks and pair diagnostics.'),
+          { code: 'release-package-compatibility-blocked', compatibility: values.compatibility });
       }
       const published = await publishFrozenArtifact({ manifestPath: artifact.manifestPath, npmTag }, { ...dependencies,
         onEffects: (effects: any[]) => checkpoint({ pendingEffects: effects }),

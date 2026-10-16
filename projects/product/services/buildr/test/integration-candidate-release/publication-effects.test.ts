@@ -64,6 +64,42 @@ const git = (repo: string, args: string[]) => {
   return result.stdout.trim();
 };
 
+test('publication failure and checkpoints preserve an unknown pair check without attempting npm publication', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-publication-compatibility-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const repo = path.join(root, 'repo'), remote = path.join(root, 'remote.git');
+  fs.mkdirSync(repo); git(repo, ['init', '-b', 'main']);
+  git(repo, ['config', 'user.name', 'Buildr Test']); git(repo, ['config', 'user.email', 'buildr@example.com']);
+  fs.writeFileSync(path.join(repo, 'value'), 'source'); git(repo, ['add', 'value']); git(repo, ['commit', '-m', 'source']);
+  git(repo, ['init', '--bare', remote]); git(repo, ['remote', 'add', 'origin', remote]);
+  const source = git(repo, ['rev-parse', 'HEAD']), built = await createReleaseArtifactFixture(path.join(root, 'artifact'), source);
+  const artifact = readReleaseArtifact(built.manifestPath), version = artifact.manifest.version;
+  const checkpoints: any[] = [];
+  const result = await completePublicationEffects({ context: { release: { version }, convergence: { mainCommit: source },
+    workflow: { repository: 'BuildrAI/Buildr' } }, artifact, repo, notes: 'Fixture notes.', token: 'local-test-service',
+    checkpoint: (value: any) => checkpoints.push(structuredClone(value)),
+  }, {
+    fetchImpl: async (url: any) => {
+      if (String(url).includes('/git/ref/')) return new Response(JSON.stringify({ object: { type: 'commit', sha: source } }), { status: 200 });
+      return new Response(JSON.stringify(String(url).includes('registry.npmjs.org') ? { name: '@buildr-ai/buildr', 'dist-tags': { latest: '0.0.1' } } : {}),
+        { status: String(url).includes('registry.npmjs.org') && !String(url).endsWith(`/${version}`) ? 200 : 404 });
+    },
+    observePublishedPackageArtifact: async () => ({ observation: { status: 'present', artifact: {
+      packageName: '@buildr-ai/buildr-dsh-plugin', version: '0.1.0-rc.1', origin: 'registry', compatibility: null,
+      integrity: `sha512-${Buffer.alloc(64, 1).toString('base64')}`, artifactSha256: '1'.repeat(64),
+    } }, bytes: Buffer.from('plugin') }),
+    verifyBuildrPluginPair: () => { throw Object.assign(new Error('spawn missing npm'), { code: 'ENOENT' }); },
+    publish: () => assert.fail('an unproved pair cannot reach npm publication'),
+  });
+  assert.equal(result.status, 'failed'); assert.equal(result.failure.code, 'release-package-compatibility-blocked');
+  const compatibility = result.failure.compatibility;
+  assert.equal(compatibility.checks[0].features[0].status, 'unknown');
+  assert.equal(compatibility.pairDiagnostics[0].errorCode, 'ENOENT');
+  assert.equal(compatibility.pairDiagnostics[0].message, 'spawn missing npm');
+  assert.deepEqual(checkpoints.at(-1).steps.at(-1).compatibility, compatibility);
+  assert.equal(result.effects.some((effect: any) => effect.type.includes('npm')), false);
+});
+
 test('publication effects use the real artifact and recover each external partial result', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-publication-effects-'));
   t.after(() => {

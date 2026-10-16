@@ -44,8 +44,12 @@ test('real offline local installation preserves archive files and never runs lif
   assert.equal(readPreparedBuildrPeer(peer.manifestPath).cliEntry,peer.cliEntry);
   writeFileSync(peer.cliEntry,'changed');assert.throws(()=>readPreparedBuildrPeer(peer.manifestPath),/drift/);
 });
-test('failed preparation produces no ready manifest or forwarded diagnostic material',t=>{
-  const f=fixture(t);assert.throws(()=>prepareBuildrPeer({artifactManifest:f.input,npmCli,ownedRoot:f.root,execute:(_node,args)=>({status:args[1]==='--version'?0:1,stdout:args[1]==='--version'?'11.5.1':'private-output',stderr:'private-diagnostic'})}),error=>error instanceof Error&&error.message==='buildr_peer_invalid: isolated npm operation failed');
+test('failed preparation retains bounded child facts without producing a ready manifest or forwarding stdout',t=>{
+  const f=fixture(t);assert.throws(()=>prepareBuildrPeer({artifactManifest:f.input,npmCli,ownedRoot:f.root,execute:(_node,args)=>({status:args[1]==='--version'?0:1,stdout:args[1]==='--version'?'11.5.1':'private-output',stderr:'npm error code ENOTFOUND'})}),(error:any)=>{
+    assert.equal(error.message,'buildr_peer_invalid: isolated npm operation failed');
+    assert.deepEqual(error.pairExecution,{stage:'provider-install',code:'isolated-npm-operation-failed',exitCode:1,stderr:'npm error code ENOTFOUND'});
+    assert.ok(!JSON.stringify(error).includes('private-output'));return true;
+  });
   const stage=readdirSync(f.root).find(x=>x.startsWith('buildr-peer-'))!;assert.equal(readdirSync(path.join(f.root,stage)).includes('peer.json'),false);
 });
 test('owned runtime environment has no inherited account or source selection and supports all platform roots',t=>{

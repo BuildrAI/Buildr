@@ -242,6 +242,26 @@ test('unknown journal/public state cannot authorize a recovery; failed actual le
   const result = await evaluateObservedPackagePlan(f.targets, { 'dsh-plugin': { artifact: consumer, bytes: Buffer.from('plugin') } },
     { buildr: { observation: { status: 'present', artifact: old }, bytes: Buffer.from('main') }, 'dsh-plugin': { observation: f.published['dsh-plugin'] } }, { verifyBuildrPluginPair: () => { throw new Error('Local installation unavailable'); } });
   assert.equal(result.status, 'blocked');
+  assert.equal(result.pairDiagnostics[0].stage, 'pair-verification');
+  assert.equal(result.pairDiagnostics[0].message, 'Local installation unavailable');
+});
+
+test('blocked child execution retains its original stage and code without changing a passing release context', async () => {
+  const targets = normalizeReleaseTargets({ version: '0.2.0' }), main = artifact('buildr'), old = artifact('dsh-plugin', 'registry');
+  old.compatibility = null;
+  const candidates = { buildr: { artifact: main, bytes: Buffer.from('main') } };
+  const counterparts = { 'dsh-plugin': { observation: { status: 'present', artifact: old }, bytes: Buffer.from('plugin') } };
+  const proof = (status: 'unknown' | 'passed') => ({ status: status === 'passed' ? 'passed' : 'blocked', diagnostic: 'pair-runtime-unavailable',
+    execution: { stage: 'provider-install', code: 'isolated-npm-operation-failed', errorCode: 'ETIMEDOUT', exitCode: null },
+    legacyPairEvidence: { schemaVersion: 'buildr.package-pair-evidence/v1', consumer: old, provider: main,
+      features: [{ feature: 'entry', required: true, status }], evidenceSha256: 'a'.repeat(64) } });
+  const blocked = await evaluateObservedPackagePlan(targets, candidates, counterparts, { verifyBuildrPluginPair: () => proof('unknown') });
+  assert.equal(blocked.status, 'blocked'); assert.equal(blocked.checks[0].features[0].status, 'unknown');
+  assert.equal(blocked.pairDiagnostics[0].code, 'isolated-npm-operation-failed');
+  assert.equal(blocked.pairDiagnostics[0].errorCode, 'ETIMEDOUT');
+  assert.equal(blocked.pairDiagnostics[0].consumer.version, old.version);
+  const passed = await evaluateObservedPackagePlan(targets, candidates, counterparts, { verifyBuildrPluginPair: () => proof('passed') });
+  assert.equal(passed.status, 'passed'); assert.equal(passed.pairDiagnostics, undefined);
 });
 
 test('new default operations bind targets; an existing selection ID cannot change versions', async t => {
