@@ -118,6 +118,7 @@ function stagingPackageJson(payloadManifest: any, productMetadata: any): any  {
       'build/test-context/',
       'scripts/postinstall.mjs',
       'runtime/buildr.cjs',
+      'runtime/workspace-cli-router.cjs',
       'runtime/mysql-connection.cjs',
       'payload/',
     ],
@@ -125,22 +126,36 @@ function stagingPackageJson(payloadManifest: any, productMetadata: any): any  {
   };
 }
 
-export function npmBinSource(): any  {
+export function npmBinSource(options: { workspaceRouting?: boolean } = {}): string {
+  const routing = options.workspaceRouting !== false;
   return `#!/usr/bin/env node
 import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+${routing ? `let delegated = false;
+try {
+  const { dispatchWorkspaceCli } = await import(pathToFileURL(path.join(root, 'runtime', 'workspace-cli-router.cjs')).href);
+  delegated = await dispatchWorkspaceCli(process.argv, { entryPath: fileURLToPath(import.meta.url) });
+} catch (error) {
+  console.error('[' + (error.code || 'workspace_cli.failed') + '] ' + error.message);
+  if (error.nextAction) console.error(error.nextAction);
+  process.exitCode = 1;
+  delegated = true;
+}
+if (!delegated) {
+` : ''}
 const versionParts = process.versions.node.split('.');
 const [major, minor] = versionParts.map(Number);
 if (versionParts.length !== 3 || versionParts.some(part => !/^(0|[1-9][0-9]*)$/.test(part) || !Number.isSafeInteger(Number(part))) || major < 24 || (major === 24 && minor < 15)) {
   console.error('Buildr requires a host Node matching >=24.15.0; it will not download or select another Node runtime.');
   process.exit(1);
 }
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 process.env.BUILDR_APPLICATION_PAYLOAD_ROOT = root;
 process.env.BUILDR_NPM_ENTRY_PATH = fileURLToPath(import.meta.url);
 await import(pathToFileURL(path.join(root, 'runtime', 'buildr.cjs')).href);
+${routing ? '}' : ''}
 `;
 }
 
@@ -180,6 +195,7 @@ export function createNpmPackStaging(payloadRoot: any, destination: any, options
     fs.mkdirSync(path.join(root, 'build/test-context'), { recursive: true });
     fs.copyFileSync(path.join(frozen.root, APPLICATION_PAYLOAD_MANIFEST), path.join(root, APPLICATION_PAYLOAD_MANIFEST));
     fs.copyFileSync(path.join(frozen.root, 'runtime/buildr.cjs'), path.join(root, 'runtime/buildr.cjs'));
+    fs.copyFileSync(path.join(frozen.root, 'runtime/workspace-cli-router.cjs'), path.join(root, 'runtime/workspace-cli-router.cjs'));
     fs.copyFileSync(path.join(frozen.root, 'runtime/mysql-connection.cjs'), path.join(root, 'runtime/mysql-connection.cjs'));
     copyTree(path.join(frozen.root, 'resources'), path.join(root, 'payload'));
     const productMetadata: any = JSON.parse(fs.readFileSync(path.join(root, 'payload/product/package.json'), 'utf8'));
@@ -190,7 +206,7 @@ export function createNpmPackStaging(payloadRoot: any, destination: any, options
     fs.writeFileSync(path.join(root, 'package.json'), `${JSON.stringify(stagingPackageJson(frozen.manifest, productMetadata), null, 2)}\n`, 'utf8');
     fs.writeFileSync(path.join(root, 'installation-origin.json'), `${JSON.stringify(createNpmInstallationOrigin(frozen.manifest), null, 2)}\n`, 'utf8');
     fs.writeFileSync(path.join(root, 'bin/buildr.mjs'), npmBinSource(), { encoding: 'utf8', mode: 0o755 });
-    fs.writeFileSync(path.join(root, 'bin/buildr-mysql.mjs'), npmBinSource().replace("'buildr.cjs'", "'mysql-connection.cjs'"), { encoding: 'utf8', mode: 0o755 });
+    fs.writeFileSync(path.join(root, 'bin/buildr-mysql.mjs'), npmBinSource({ workspaceRouting: false }).replace("'buildr.cjs'", "'mysql-connection.cjs'"), { encoding: 'utf8', mode: 0o755 });
     fs.writeFileSync(path.join(root, 'scripts/postinstall.mjs'), npmPostinstallSource(), { encoding: 'utf8', mode: 0o755 });
     verifyApplicationPayload(root, { layout: 'installed' });
     return { root, manifest: frozen.manifest };
@@ -210,6 +226,7 @@ export function assertNpmTarballInventory(inventory: any): any  {
     'build/test-context/index.js',
     'build/test-context/index.d.ts',
     'runtime/buildr.cjs',
+    'runtime/workspace-cli-router.cjs',
     'payload/runtime/read-worker.cjs',
     'payload/runtime/upstream-openspec-worker.cjs',
     'payload/product/package.json',

@@ -21,20 +21,20 @@ Buildr MUST在 Buildr Service root 提供 npm package metadata，使维护者能
 - **AND** the executable MUST NOT require `tools/`, `test/` or active Change artifacts
 
 ### Requirement: installed CLI uses package assets
-已安装的 `buildr` command MUST 使用 npm package 中包含的 `resources/`、`web-dist/` 和明确发布的 runtime assets，而不是要求访问 development checkout。
+前置工作空间（Workspace）来源选择决定由当前 npm 安装执行时，已安装的 `buildr` command MUST 使用 npm package 中包含的 `resources/`、`web-dist/` 和明确发布的 runtime assets，而不是要求访问 development checkout。
 
 #### Scenario: Initialize workspace from installed command
-- **WHEN** the installed `buildr` command runs `buildr init --target <dir> --name <name> --profile <profile>`
+- **WHEN** 前置选择保持当前 npm 安装，且 the installed `buildr` command runs `buildr init --target <dir> --name <name> --profile <profile>`
 - **THEN** Buildr MUST create the default workspace baseline from packaged `resources/`
 - **AND** the workspace MUST NOT require files outside the installed npm package
 
 #### Scenario: Complete onboarding from installed command
-- **WHEN** the installed `buildr` command runs `buildr init --agent <agent> --target <dir> --name <name> --profile <profile>`
+- **WHEN** 前置选择保持当前 npm 安装，且 the installed `buildr` command runs `buildr init --agent <agent> --target <dir> --name <name> --profile <profile>`
 - **THEN** Buildr MUST create the workspace baseline, install the product Buildr Skill, reconcile the selected Agent runtime, and run final doctor using only packaged assets
 - **AND** the command MUST behave consistently with the checkout-based CLI for the same inputs
 
 #### Scenario: Run onboarding commands from installed command
-- **WHEN** the installed `buildr` command runs `assets`, `project create`, `service create`, `doctor`, `sync`, `runtime check`, `rules render`, or `skills render`
+- **WHEN** 前置选择保持当前 npm 安装，且 the installed `buildr` command runs `assets`, `project create`, `service create`, `doctor`, `sync`, `runtime check`, `rules render`, or `skills render`
 - **THEN** each command MUST behave consistently with the checkout-based CLI for the same inputs
 - **AND** 开发维护命令 `package check` MUST 明确要求开发检出目录，不将其描述为安装包健康检查
 
@@ -42,6 +42,11 @@ Buildr MUST在 Buildr Service root 提供 npm package metadata，使维护者能
 - **WHEN** 已安装命令无法启动，或本机无法联网
 - **THEN** 安装包 MUST 保留源自现有 `docs/cli-reference.md` 的离线参考，包含首次安装、入口缺失、同步中断及恢复边界
 - **AND** MUST 不重新创建 bootstrap 指南或命令；开发源码及未随包参考的链接不承诺离线可达
+
+#### Scenario: 已登记开发来源的资产责任
+- **WHEN** 默认 npm 入口按有效工作空间（Workspace）归属委派到开发来源
+- **THEN** 被选中的开发入口 MUST 使用自己的源码与交付资产
+- **AND** npm 入口 MUST NOT 先加载本包业务运行时（Runtime）或将本包资产身份注入开发来源
 
 ### Requirement: npm package excludes private workspace assets
 Buildr npm package MUST 仅包含已安装命令所需的 `bin/`、产品 `src/` runtime、`resources/`、`web-dist/`、明确可发布的文档和 deferred runtime assets，并 MUST 排除仓库测试、checkout-only 工具、active changes 和私有 Workspace 内容。
@@ -140,6 +145,7 @@ Buildr release automation MUST 将 prerelease 版本发布到 `next`，将稳定
 
 ### Requirement: 开发 checkout 必须从 Buildr Service package root 运行并保留 Project bridge
 Buildr MUST 将 `projects/product/services/buildr` 作为 development checkout 的 npm package root，并 MUST 保留 `projects/product/buildr` 作为稳定且唯一的 checkout 开发 CLI 入口；source discovery、诊断和 self-bootstrap 必须识别二者属于同一 Product checkout。Project bridge MUST只使用Product checkout声明最低版本要求的开发Node启动Service CLI；package `engines.node`继续只表达npm正式安装的Host Node兼容范围。机器默认PATH中的`buildr` MUST保留给npm installation，canonical development preparation、self-bootstrap和release preparation MUST NOT创建、覆盖或要求该入口绑定development checkout。
+默认 npm 入口 MAY 按已验证的工作空间（Workspace）管理归属委派到该显式开发入口；该委派 MUST NOT 改变 PATH 入口所有权，且显式开发入口 MUST 不进行按目录选版。
 
 #### Scenario: 从 Service package root 打包
 - **WHEN** 维护者从 `projects/product/services/buildr` 运行 `npm pack`
@@ -167,6 +173,11 @@ Buildr MUST 将 `projects/product/services/buildr` 作为 development checkout �
 - **WHEN** 维护者运行 canonical development preparation、self-bootstrap 或 release preparation
 - **THEN** Buildr MUST通过当前retained checkout的`projects/product/buildr`与同一实际开发Node执行命令
 - **AND** MUST NOT创建、覆盖、删除或要求PATH中的默认`buildr`指向development checkout
+
+#### Scenario: 默认入口委派不创建开发安装
+- **WHEN** 默认 npm `buildr` 为开发版已登记工作空间（Workspace）委派到开发入口
+- **THEN** PATH 中的 `buildr` MUST 继续由原 npm 安装拥有
+- **AND** 开发准备与自举 MUST NOT 因此创建、替换或要求默认入口指向开发目录
 
 ### Requirement: Buildr Skill 必须由目标 Workspace 生命周期投射
 Buildr 全局安装 MUST NOT 猜测 Agent runtime destination 或安装 Buildr Skill；Buildr Skill MUST 由目标 Workspace 的 `init`、`sync` 或 `render` 生命周期管理。
@@ -222,7 +233,8 @@ Buildr npm package MUST包含当前v4 Project测试地图的读取、校验和�
 - **AND** MUST NOT下载Product Node或从PATH选择其他Node掩盖不兼容
 
 ### Requirement: npm CLI 与本机 Launcher 必须共享安装身份
-Buildr MUST 将 npm package 作为唯一正式产品 installation，并 MUST 让 CLI 与本地图形 Launcher 共享同一 npm installation identity、Buildr version、protocol identity、`applicationPayloadDigest`、Host Node executable、package entry 和 npm prefix。Launcher MUST 是可重建投射，不得成为平台 installation、复制 payload 或建立独立更新事实；来源 MUST 由 formal npm origin、payload binding 与 ownership receipt 证明，不得根据 PATH 或文件名猜测。Development checkout MUST只拥有显式 Project bridge 与隔离的 `Buildr Web Dev` Launcher，不得创建第二个机器默认 CLI installation。
+Buildr MUST 将 npm package 作为唯一正式产品 installation，并 MUST 让未委派的 CLI 与本地图形 Launcher 共享同一 npm installation identity、Buildr version、protocol identity、`applicationPayloadDigest`、Host Node executable、package entry 和 npm prefix。Launcher MUST 是可重建投射，不得成为平台 installation、复制 payload 或建立独立更新事实；来源 MUST 由 formal npm origin、payload binding 与 ownership receipt 证明，不得根据 PATH 或文件名猜测。Development checkout MUST只拥有显式 Project bridge 与隔离的 `Buildr Web Dev` Launcher，不得创建第二个机器默认 CLI installation。
+默认 CLI 前置选择 MAY 为已登记工作空间（Workspace）委派到其开发来源；该动作 MUST NOT 改写 npm 或图形启动器（Launcher）的绑定身份，图形启动 MUST 保持显式绑定来源。
 
 #### Scenario: 安装 npm Buildr
 - **WHEN** 用户通过 npm 安装 `@buildr-ai/buildr`
@@ -244,6 +256,11 @@ Buildr MUST 将 npm package 作为唯一正式产品 installation，并 MUST 让
 - **THEN** Buildr MUST先通过唯一开发准备入口生成当前 HTTP DTO 与 ignored `web-dist`，再将 `Buildr Web Dev` 绑定当前 checkout 和 development runtime
 - **AND** 干净 checkout 缺少任一生成输入时必须在 Launcher 变更前生成或明确失败，不得安装一个启动后返回 `web_dist_missing` 的 Launcher
 - **AND** MUST NOT创建或覆盖默认 PATH CLI、npm installation 或 npm-owned `Buildr Web` Launcher
+
+#### Scenario: 默认 CLI 按归属委派
+- **WHEN** 默认 npm CLI 的工作空间（Workspace）命令被委派到开发来源
+- **THEN** 执行结果 MUST 反映所选开发来源的身份
+- **AND** 原 npm 安装及其图形启动器（Launcher）MUST 保留各自绑定身份与更新责任
 
 ### Requirement: npm 与 development 安装必须拥有明确更新责任
 Buildr MUST 让 npm 与 development 只更新各自拥有的 installation，并 MUST 在版本、source root、Host Node、package entry、prefix 或 ownership identity 不一致时提供可解释诊断。当前产品 MUST NOT 声明 platform installer 更新渠道。
@@ -295,15 +312,16 @@ Buildr npm package MUST 包含 application payload 中 Buildr Web 运行所需�
 - **AND** npm pack 与 Launcher install MUST NOT 需要 `projects/product/services/buildr-web` 或重建前端资源
 
 ### Requirement: npm发行版运行时不得依赖development准备事实
-npm安装的Buildr CLI、Launcher与`buildr web`其产品启动、package entry和Web静态负载 MUST只消费已安装package、安装回执、兼容Host Node及随包`web-dist`，并 MUST NOT读取Product源码`preparation.yml`、源码`node_modules`、源码TypeScript或要求用户设置`BUILDR_NODE`。Workspace命令 MAY且在其既有契约要求时 MUST读取目标用户Workspace的Rules、Project declarations、runtime projection与其他权威资产；这些目标Workspace输入 MUST NOT被误判为Product development依赖。
+前置工作空间（Workspace）来源选择保持 npm 安装执行时，npm安装的Buildr CLI、Launcher与`buildr web`其产品启动、package entry和Web静态负载 MUST只消费已安装package、安装回执、兼容Host Node及随包`web-dist`，并 MUST NOT读取Product源码`preparation.yml`、源码`node_modules`、源码TypeScript或要求用户设置`BUILDR_NODE`。Workspace命令 MAY且在其既有契约要求时 MUST读取目标用户Workspace的Rules、Project declarations、runtime projection与其他权威资产；这些目标Workspace输入 MUST NOT被误判为Product development依赖。
+默认入口的前置选择 MAY 只读现有本机管理及开发启动登记以发现目标来源；MUST 不初始化本包业务运行时（Runtime），不得为 npm 执行引入开发准备依赖。被选中的开发执行 MUST 由其已验证的显式入口和 Node 承担，不能把开发依赖伪装为 npm 正常运行要求。
 
 #### Scenario: 用户在普通Workspace运行发行版CLI
-- **WHEN** 用户通过npm installation执行`buildr doctor`、`sync`、`update`或其他发行版命令
+- **WHEN** 前置选择保持 npm 执行，且用户通过npm installation执行`buildr doctor`、`sync`、`update`或其他发行版命令
 - **THEN** CLI MUST从安装回执与package entry使用兼容Host Node启动
 - **AND** MUST不查找Product checkout的精确development Node或源码依赖，但doctor与sync仍 MUST按各自契约读取目标Workspace authority
 
 #### Scenario: 用户运行发行版Buildr Web
-- **WHEN** 用户执行npm installation的`buildr web`或已验证Launcher binding
+- **WHEN** 前置选择保持 npm 执行，且用户执行npm installation的`buildr web`或已验证Launcher binding
 - **THEN** runtime MUST托管该package携带的`web-dist`
 - **AND** MUST不安装Buildr Web源码依赖、运行源码TypeScript/Vite或读取Task preparation closure
 
@@ -311,6 +329,11 @@ npm安装的Buildr CLI、Launcher与`buildr web`其产品启动、package entry�
 - **WHEN** npm tarball或Launcher smoke发现入口需要`BUILDR_NODE`、Product checkout、源码`node_modules`或源码TypeScript
 - **THEN** Candidate或发布验证 MUST将其判为发行缺陷并失败
 - **AND** MUST不把设置环境变量或安装源码依赖作为用户恢复动作
+
+#### Scenario: 不存在开发登记的普通 npm 使用
+- **WHEN** 用户的普通工作空间（Workspace）未登记开发管理归属且本机没有开发检出目录
+- **THEN** 默认入口和 npm 代表性命令 MUST 仍仅凭已安装包及兼容宿主 Node 正常执行
+- **AND** MUST NOT 要求创建开发登记、安装源码依赖或设置 `BUILDR_NODE`
 
 ### Requirement: 唯一npm tarball必须发布公共Test Context Runtime与类型
 正式`@buildr-ai/buildr` Candidate tarball MUST在既有CLI Application Payload之外包含`@buildr-ai/buildr/test-context` facade、生成的标准ESM JavaScript和matching `.d.ts`，并 MUST从package exports提供稳定`import`与`types`解析。该公共library MUST由同一Candidate artifact生成和发布，不得形成第二tarball或发布流程。

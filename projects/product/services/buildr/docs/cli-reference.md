@@ -12,6 +12,9 @@
 
 ## CLI identity、帮助与错误
 
+- 支持按归属选版的默认 npm `buildr` 在解析业务命令前，优先根据 `--target <dir>`，否则根据当前目录所属工作空间（Workspace）的现有网页管理归属选择发布版或开发版。子目录、符号链接（Symbolic Link）和可证明关系的独立工作树（Worktree）可用于定位；原参数和执行目录保持不变，各业务命令接受的目标位置仍以其帮助为准。
+- 开发版通过本机 Buildr Web Dev 的有效启动登记发现，不要求网页正在运行。未登记目录继续当前 npm；归属损坏、冲突或开发来源不可用时明确失败，不自动换版。默认链接仍由 npm 管理，旧安装须升级入口包后才具备此能力。
+- `update`、`update check`、`installation status`、`web launcher` 和内部安装动作保持当前安装。`web` 不带 `--target` 时保持本安装的目录列表，带目标的普通 `web` 按归属选择；显式 `projects/product/buildr` 和图形启动器（Launcher）继续执行绑定来源。
 - `buildr --version`、`buildr -V` 和 `buildr version` 输出当前实际执行 package 的版本；`buildr version --json` 输出 `buildr.version/v1`。
 - `buildr help <command...>` 与 `buildr <command...> --help` / `-h` 使用同一 canonical 帮助主题。
 - 未知命令默认向 stderr 输出简洁错误、有限建议和 `buildr --help` 提示，并以 2 退出；携带 `--json` 时 stdout 只输出 `buildr.cli-error/v1`，stderr 为空。

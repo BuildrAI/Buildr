@@ -11,6 +11,7 @@ Agent 是 Buildr 功能的默认操作入口。在用户目标和已有授权内
 ## 执行与按需读取
 
 1. 确认目标工作空间（Workspace）；未指定时从当前目录定位组织根，`--target` 不指向服务（Service）代码仓。
+   支持按归属选版的 npm 默认 `buildr` 会在业务命令解析前，按 `--target` 或当前目录所属工作空间（Workspace）的既有网页管理登记，自动选择发布版或开发版；不要求网页运行。普通工作继续使用 `buildr`，不保存另一份版本偏好，不手改管理记录或默认链接。子目录和工作树（Worktree）仅用于定位归属，具体命令的目标参数仍遵循自身帮助。`version --json` 报告所选实际版本；`update`、`installation status`、`web launcher` 等安装自身动作保持当前 npm 安装，显式开发入口和图形启动器（Launcher）保持绑定来源。旧 npm 入口需先升级才具备选择能力；所选来源不可用或归属冲突时按明确诊断恢复，不切换另一版绕过。
 2. `<agent>` 使用当前宿主的明确身份；用户指定其他运行时（Runtime）时遵从其选择。不得从技能路径、生成标记或 Doctor 检测结果推断宿主。身份未知可省略；`codex`、`dsh` 及未登记的有效品牌采用 `agents-standard`，已知专用例外保留。按需用 `buildr runtime list --json` 核对文件约定，而非等待品牌登记。显式 `--adapter` 必须存在；执行失败不借用其他适配器（Adapter）。
 3. 已初始化且本次维护规则、技能等受管工作资产需要现状时，运行一次 `buildr doctor --agent <agent> --target <dir> --json`；已有同一现场的诊断直接复用。首次初始化按下表办理，不先制造缺失诊断。连接管理与数据库查询直接使用下表对应入口，不以 Doctor 为前置条件。
 4. 选择下表对应动作；采用内部流程、调整工作方式、修改或替换 Skill 行为时，先加载 `capability-adaptation` 判断是否触达或产生跨 Skill 稳定依赖边界。

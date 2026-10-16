@@ -180,6 +180,26 @@ async function buildApplicationPayload(output: any, sourceCommit: any, options: 
       throw new Error(`application payload bundle emitted warnings:\n${warnings.join('\n')}`);
     }
 
+    // The npm selector runs before the full product's Node version check and must
+    // remain independently executable without loading the business runtime.
+    const router = buildSync({
+      absWorkingDir: serviceRoot,
+      entryPoints: [path.join(serviceRoot, 'src/modules/installation/application/workspace-cli-routing.ts')],
+      outfile: path.join(destination, 'runtime/workspace-cli-router.cjs'),
+      bundle: true,
+      platform: 'node',
+      format: 'cjs',
+      target: 'node18',
+      external: ['node:*'],
+      legalComments: 'none',
+      sourcemap: false,
+      charset: 'utf8',
+      logLevel: 'silent',
+    });
+    if (router.warnings.length) {
+      throw new Error(`workspace CLI router bundle emitted warnings:\n${formatMessagesSync(router.warnings, { kind: 'warning', color: false }).join('\n')}`);
+    }
+
     const resourceRoot: any = path.join(destination, 'resources');
     for (const [source, target, options] of RESOURCE_SOURCES) copyTree(path.join(serviceRoot, source), path.join(resourceRoot, target), options);
     copyTree(webDistRoot, path.join(resourceRoot, 'product/web-dist'));

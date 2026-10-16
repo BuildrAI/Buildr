@@ -14,6 +14,8 @@ projects/product/buildr（checkout convenience）
 
 `bin/buildr.mjs` 是薄入口。`src/bootstrap/cli/main.ts` 处理内部安装动作、进程级错误，并延迟加载命令分发；`src/bootstrap/cli/registry.ts` 创建技术运行时（Runtime），从模块贡献（Contribution）建立唯一命令目录、帮助与未知命令候选，再调用对应入口。模块生命周期由模块登记（Module Registry）管理。
 
+正式 npm 包由 `tools/release/release-artifact.ts:npmBinSource()` 生成默认入口，在完整业务负载、产品 Node 范围检查及安装环境注入之前，调用安装模块的 `application/workspace-cli-routing.ts`。独立的 `runtime/workspace-cli-router.cjs` 只读现有管理归属和启动登记，选择继续当前 npm 或委派开发来源；不装配业务运行时（Runtime）或打开 SQLite。参数与当前目录原样传递，委派边界清理父来源身份并传播标准输入输出、退出状态及适用信号。显式源码入口、图形启动器（Launcher）、安装自身动作和独立 `buildr-mysql` 保持绑定来源。
+
 ## 源码结构
 
 ```text
