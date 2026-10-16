@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { assertReleaseExecutorSource, createReleaseExecutorRecovery } from './release-executor-recovery.ts';
 import { inspectHostedReleaseTransaction } from './release-transaction-evidence.ts';
 import { containsCredentialMaterial } from './release-authority.ts';
-import { readHostedPluginJournal, validatePluginHostedRun } from './plugin-hosted-release.ts';
+import { readHostedPluginJournal, readHostedPluginNoWriteProof, validatePluginHostedRun, validatePluginNoWriteProof } from './plugin-hosted-release.ts';
 
 /** This admits release-tool changes; the publication owner still verifies the frozen prepare and package bytes. */
 async function verifyPluginRepair(pr: any, repository: string, repo: string, runId: number, dependencies: any): Promise<any> {
@@ -14,7 +14,20 @@ async function verifyPluginRepair(pr: any, repository: string, repo: string, run
   if (!version || run.status !== 'completed' || run.conclusion !== 'failure') throw new Error('Plugin publisher repair requires an authentic terminal failed publication.');
   validatePluginHostedRun(run, { operation: 'publish', version, sourceCommit: pr.base.sha, runId });
   if (read(['rev-parse', 'HEAD']).trim() !== pr.head.sha || read(['rev-parse', 'origin/main']).trim() !== pr.base.sha) throw new Error('Plugin publisher repair must bind the current main executor and exact pull request head.');
-  const journal = await (dependencies.readPluginJournal ?? readHostedPluginJournal)({ repo, runId, version }, dependencies.pluginDependencies);
+  let journal: any;
+  try {
+    journal = await (dependencies.readPluginJournal ?? readHostedPluginJournal)({ repo, runId, version }, dependencies.pluginDependencies);
+  } catch {
+    // Missing artifacts are not evidence of no write. Require the complete official
+    // job proof that the unique immutable publication step was explicitly skipped.
+    const proof = validatePluginNoWriteProof(await (dependencies.readPluginNoWriteProof ?? readHostedPluginNoWriteProof)(
+      { repo, runId, version, sourceCommit: pr.base.sha }, dependencies.pluginDependencies), { runId, version, sourceCommit: pr.base.sha });
+    const metadata = JSON.parse(read(['show', `${pr.base.sha}:projects/product/services/dsh-plugin/package.json`]));
+    if (metadata.name !== '@buildr-ai/buildr-dsh-plugin-source' || metadata.private !== true || metadata.version !== version) throw new Error('Plugin pre-upload repair version differs from the current main source.');
+    const execution = assertReleaseExecutorSource({ repo, originalCommit: pr.base.sha, executionCommit: pr.head.sha }, dependencies.recoveryDependencies);
+    return { status: 'passed', kind: 'plugin-pre-upload-repair-admission', aggregateEligible: false, originalRunId: runId,
+      originalExecutionCommit: pr.base.sha, executionCommit: execution.sourceCommit, packageVersion: version, noWriteProofIdentity: proof.identity };
+  }
   const fields = ['schemaVersion', 'packageName', 'version', 'sourceCommit', 'sourceTree', 'sha256', 'integrity', 'attempted', 'publishedObserved',
     'status', 'action', 'registry', 'observedAt', 'request', 'code'];
   if (!journal || typeof journal !== 'object' || Array.isArray(journal) || Object.keys(journal).some(key => !fields.includes(key))

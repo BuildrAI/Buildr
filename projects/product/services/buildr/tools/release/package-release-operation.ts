@@ -8,7 +8,7 @@ import { evaluateReleasePlan, normalizeReleaseTargets } from './release-targets.
 import { sameArtifactIdentity } from './package-compatibility.ts';
 import { observePublishedPackageArtifact } from './package-artifact-observation.ts';
 import { createPackageReleaseContext, createPackagePublicationEvidence, validatePackageReleaseContext, validatePackageOwnerPublication, packageExecutionCommit, pluginExecutorRecoverySchema, assertUnattemptedPluginPublication } from './release-package-evidence.ts';
-import { runPluginHostedOperation, readHostedPluginCandidate, reconcilePluginPreparationPointer } from './plugin-hosted-release.ts';
+import { runPluginHostedOperation, readHostedPluginCandidate, reconcilePluginPreparationPointer, readHostedPluginNoWriteProof, validatePluginNoWriteProof, validatePluginHostedRun } from './plugin-hosted-release.ts';
 import { runHostedReleaseTransaction } from './release-transaction-runner.ts';
 import { inspectHostedReleaseTransaction, validateReleaseTransactionEvidence } from './release-transaction-evidence.ts';
 import { createReleaseContext, releaseContextIdentity } from './release-readiness.ts';
@@ -254,20 +254,34 @@ async function recoverPluginPublication(options: any, context: any, scope: any, 
     if (main?.status !== 'passed' || main.contextIdentity !== context.identity || !main.evidence) return blocked('保留主包原身份；只有已验证完成的主包才能接续插件恢复。');
     validatePackageOwnerPublication(context, 'buildr', main.evidence);
   }
+  let noWriteProof: any;
   if (owned.executorRecovery) {
     const previous = state.pluginPublicationRecoveryHistory?.at(-1), recovery = owned.executorRecovery;
-    if (!previous || previous.context?.identity !== recovery.originalContextIdentity || state.publicationAuthorization.pluginRecoveryAuthorized !== true
-      || previous.pointer?.runId !== recovery.previousRunId || releaseContextIdentity(previous.journal) !== recovery.previousJournalIdentity) return blocked('插件恢复历史不完整，不创建另一请求。');
-    assertUnattemptedPluginPublication(previous.context.packages['dsh-plugin'], previous, packageExecutionCommit(previous.context, 'dsh-plugin'));
-    return { status: 'ready', context };
+    if (!previous || state.publicationAuthorization.pluginRecoveryAuthorized !== true || previous.pointer?.runId !== recovery.previousRunId) return blocked('插件恢复历史不完整，不创建另一请求。');
+    const previousContext = validatePackageReleaseContext(previous.context), original = structuredClone(previousContext);
+    delete original.packages['dsh-plugin'].executorRecovery;
+    if (createPackageReleaseContext(original).identity !== recovery.originalContextIdentity) return blocked('插件恢复历史改变原包上下文。');
+    if (recovery.previousNoWriteEvidenceIdentity) {
+      const proof = validatePluginNoWriteProof(previous.noWriteProof, { runId: recovery.previousRunId, version: owned.artifact.version, sourceCommit: packageExecutionCommit(previousContext, 'dsh-plugin') });
+      if (proof.identity !== recovery.previousNoWriteEvidenceIdentity) return blocked('插件零写入证明发生变化。');
+      return { status: 'ready', context }; // This bounded extension does not add another recovery layer.
+    }
+    if (releaseContextIdentity(previous.journal) !== recovery.previousJournalIdentity) return blocked('原插件拒绝日志发生变化。');
+    assertUnattemptedPluginPublication(previousContext.packages['dsh-plugin'], previous, packageExecutionCommit(previousContext, 'dsh-plugin'));
+    if (!pointer.requested || !Number.isSafeInteger(pointer.runId) || pointer.runId < 1 || pointer.status === 'passed' || pointer.evidence || state.publicationEvidence) return { status: 'ready', context };
+    const current = readRun(pointer.runId);
+    if (current.status !== 'completed' || current.conclusion !== 'failure') return { status: 'ready', context };
+    noWriteProof = (dependencies.readHostedPluginNoWriteProof ?? readHostedPluginNoWriteProof)({ repo: state.executionRoot, runId: pointer.runId,
+      version: owned.artifact.version, sourceCommit: packageExecutionCommit(context, 'dsh-plugin'), ghCommand: options.ghCommand }, { ...dependencies.pluginDependencies, execute: scope.execute });
+    validatePluginNoWriteProof(noWriteProof, { runId: pointer.runId, version: owned.artifact.version, sourceCommit: packageExecutionCommit(context, 'dsh-plugin') });
   }
   if (!pointer.requested || !Number.isSafeInteger(pointer.runId) || pointer.runId < 1 || pointer.evidence) return blocked('原插件请求未知或已取得发布证据，保留原指针。');
   const originalExecution = packageExecutionCommit(context, 'dsh-plugin');
-  const observed = (dependencies.runPluginHostedOperation ?? runPluginHostedOperation)({ operation: 'publish', authorized: true, repo: state.executionRoot,
+  const observed = noWriteProof ? { status: 'blocked', run: noWriteProof.run, noWriteProof } : (dependencies.runPluginHostedOperation ?? runPluginHostedOperation)({ operation: 'publish', authorized: true, repo: state.executionRoot,
     version: owned.artifact.version, sourceCommit: originalExecution, originalSourceCommit: context.convergence.mainCommit,
     candidateRunId: owned.prepareRunId, pointer: structuredClone(pointer), ghCommand: options.ghCommand }, { ...dependencies.pluginDependencies, execute: scope.execute });
   if (observed.status !== 'blocked') return blocked('原插件运行或日志未知，不替换原请求。');
-  assertUnattemptedPluginPublication(owned, observed, originalExecution);
+  if (!noWriteProof) assertUnattemptedPluginPublication(owned, observed, originalExecution);
   const exact = await (dependencies.observePublishedPackageArtifact ?? observePublishedPackageArtifact)('dsh-plugin', { ...dependencies.observationOptions, version: owned.artifact.version });
   if (exact.observation?.status !== 'absent') return blocked('插件准确版本并非官方确认缺失，保留原请求。');
   const history = JSON.parse(gh(['api', 'repos/BuildrAI/Buildr/actions/workflows/publish-dsh-plugin.yml/runs?event=workflow_dispatch&branch=main&per_page=100']));
@@ -282,15 +296,20 @@ async function recoverPluginPublication(options: any, context: any, scope: any, 
   const workflow = scope.execute('git', ['show', `${sourceCommit}:.github/workflows/publish-dsh-plugin.yml`], { cwd: repo, encoding: 'utf8', timeout: 30_000 });
   if (workflow.status !== 0 || typeof workflow.stdout !== 'string') return blocked('新插件执行器工作流不可读取。');
   const executorRecovery = { schemaVersion: pluginExecutorRecoverySchema, sourceCommit, sourceTree: actual.sourceTree,
-    workflowDigest: `sha256-${crypto.createHash('sha256').update(workflow.stdout).digest('hex')}`, originalContextIdentity: context.identity,
-    previousRunId: observed.run.id, previousRunAttempt: observed.run.run_attempt, previousJournalIdentity: releaseContextIdentity(observed.journal) };
+    workflowDigest: `sha256-${crypto.createHash('sha256').update(workflow.stdout).digest('hex')}`, originalContextIdentity: owned.executorRecovery?.originalContextIdentity ?? context.identity,
+    previousRunId: observed.run.id, previousRunAttempt: observed.run.run_attempt,
+    ...(noWriteProof ? { previousNoWriteEvidenceIdentity: noWriteProof.identity } : { previousJournalIdentity: releaseContextIdentity(observed.journal) }) };
   const replacement = createPackageReleaseContext({ ...context, packages: { ...context.packages, 'dsh-plugin': { ...owned, executorRecovery } } });
   const latest = readRun(pointer.runId);
-  assertUnattemptedPluginPublication(owned, { run: latest, journal: observed.journal }, originalExecution);
+  if (noWriteProof) {
+    validatePluginHostedRun(latest, { operation: 'publish', version: owned.artifact.version, sourceCommit: originalExecution, runId: pointer.runId });
+    if (latest.status !== 'completed' || latest.conclusion !== 'failure') return blocked('原插件运行在核验期间发生变化。');
+  } else assertUnattemptedPluginPublication(owned, { run: latest, journal: observed.journal }, originalExecution);
   if (git(['rev-parse', 'origin/main']) !== sourceCommit) return blocked('插件恢复核验期间main发生变化，保留原请求。');
   state.pluginPublicationRecoveryHistory ??= [];
   state.pluginPublicationRecoveryHistory.push({ context: structuredClone(context), authorization: structuredClone(state.publicationAuthorization),
-    pointer: structuredClone(pointer), run: structuredClone(observed.run), journal: structuredClone(observed.journal) });
+    pointer: structuredClone(pointer), run: structuredClone(observed.run),
+    ...(noWriteProof ? { noWriteProof: structuredClone(noWriteProof) } : { journal: structuredClone(observed.journal) }) });
   state.context = replacement;
   state.publicationAuthorization = { ...state.publicationAuthorization, contextIdentity: replacement.identity, pluginRecoveryAuthorized: true };
   for (const name of context.targets.packages) {

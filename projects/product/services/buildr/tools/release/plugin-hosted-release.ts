@@ -2,6 +2,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
+import { releaseContextIdentity } from './release-readiness.ts';
 import { spawnSync } from 'node:child_process';
 import { readReleaseCandidate, sourceSdkIdentityFromFiles, SOURCE_SDK_MANIFEST, PLUGIN_SERVICE_PATH } from '../../../dsh-plugin/tools/release-candidate.ts';
 import { artifactFromTarball } from './package-artifact-observation.ts';
@@ -46,6 +48,49 @@ export function validatePluginHostedRun(run: any, options: { operation: 'prepare
       || run.head_branch !== 'main' || run.head_sha !== options.sourceCommit || !sourceHash.test(options.sourceCommit)
       || run.display_title !== `DSH ${options.operation} ${options.version}` || !Number.isSafeInteger(run.id) || run.id < 1
       || (options.runId && run.id !== options.runId) || run.run_attempt !== 1) throw new Error('Plugin workflow run identity differs from its original request.');
+}
+
+export const pluginNoWriteProofSchema = 'buildr.plugin-publication-no-write/v1';
+
+function createPluginNoWriteProof(run: any, jobs: any[], options: { runId: number; version: string; sourceCommit: string }): any {
+  validatePluginHostedRun(run, { operation: 'publish', ...options });
+  if (run.status !== 'completed' || run.conclusion !== 'failure' || !Array.isArray(jobs) || !jobs.length || jobs.length > 100
+    || new Set(jobs.map(job => job?.id)).size !== jobs.length) throw new Error('Plugin no-write proof requires a complete terminal failed run.');
+  const projected = jobs.map(job => {
+    if (!Number.isSafeInteger(job?.id) || job.id < 1 || job.run_id !== run.id || job.head_sha !== run.head_sha || job.status !== 'completed'
+      || typeof job.name !== 'string' || !job.name || job.name.length > 256 || typeof job.conclusion !== 'string'
+      || !Array.isArray(job.steps) || job.steps.length > 100 || new Set(job.steps.map((step: any) => step?.number)).size !== job.steps.length) throw new Error('Plugin no-write job evidence is incomplete.');
+    const steps = job.steps.map((step: any) => {
+      if (!Number.isSafeInteger(step?.number) || step.number < 1 || typeof step.name !== 'string' || !step.name || step.name.length > 256
+        || step.status !== 'completed' || typeof step.conclusion !== 'string') throw new Error('Plugin no-write step evidence is incomplete.');
+      return { number: step.number, name: step.name, status: step.status, conclusion: step.conclusion };
+    });
+    return { id: job.id, run_id: job.run_id, head_sha: job.head_sha, name: job.name, status: job.status, conclusion: job.conclusion, steps };
+  });
+  const publish = projected.filter(job => job.name === 'publish');
+  const upload = projected.flatMap(job => job.steps).filter((step: any) => step.name === 'Publish immutable plugin');
+  if (publish.length !== 1 || publish[0].conclusion !== 'failure' || upload.length !== 1 || !publish[0].steps.includes(upload[0]) || upload[0].conclusion !== 'skipped') throw new Error('Plugin no-write proof requires the unique immutable publication step to be explicitly skipped.');
+  const value = { schemaVersion: pluginNoWriteProofSchema, version: options.version,
+    run: { id: run.id, repository: { full_name: run.repository.full_name }, path: run.path, event: run.event, head_branch: run.head_branch,
+      head_sha: run.head_sha, display_title: run.display_title, run_attempt: run.run_attempt, status: run.status, conclusion: run.conclusion }, jobs: projected };
+  return { ...value, identity: releaseContextIdentity(value) };
+}
+
+export function validatePluginNoWriteProof(proof: any, expected: { runId?: number; version?: string; sourceCommit?: string } = {}): any {
+  const options = { runId: expected.runId ?? proof?.run?.id, version: expected.version ?? proof?.version, sourceCommit: expected.sourceCommit ?? proof?.run?.head_sha };
+  const recreated = createPluginNoWriteProof(proof?.run, proof?.jobs, options);
+  if (proof?.schemaVersion !== pluginNoWriteProofSchema || !isDeepStrictEqual(proof, recreated)) throw new Error('Plugin no-write proof identity changed.');
+  return recreated;
+}
+
+/** Positive official jobs evidence, not a fabricated publication journal. Any missing or executed upload refuses. */
+export function readHostedPluginNoWriteProof(options: { repo: string; runId: number; version: string; sourceCommit: string; ghCommand?: string }, dependencies: any = {}): any {
+  const { gh } = tools(options, dependencies);
+  const run = JSON.parse(gh(['api', `repos/${repository}/actions/runs/${options.runId}`]));
+  validatePluginHostedRun(run, { operation: 'publish', ...options });
+  const response = JSON.parse(gh(['api', `repos/${repository}/actions/runs/${options.runId}/attempts/1/jobs?per_page=100`]));
+  if (!Array.isArray(response.jobs) || !Number.isSafeInteger(response.total_count) || response.total_count !== response.jobs.length) throw new Error('Plugin no-write jobs history is incomplete.');
+  return createPluginNoWriteProof(run, response.jobs, options);
 }
 
 function locateRun(gh: any, options: any, operation: string): any {

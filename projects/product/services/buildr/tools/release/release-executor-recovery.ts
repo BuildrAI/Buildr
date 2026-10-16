@@ -29,7 +29,7 @@ export const releaseExecutorRecoveryPaths = new Set([
     'package-pair-publisher-diagnosis', 'verify-pr-candidate', 'release-executor-admission', 'package-artifact-observation', 'release-consumption']
     .map(name => `${buildr}tools/release/${name}.ts`),
   ...['release-executor-recovery', 'release-readiness', 'package-pair-diagnostics', 'package-pair-publisher-diagnosis', 'candidate-ci-evidence'].map(name => `${buildr}test/unit/${name}.test.ts`),
-  ...['release-executor-recovery', 'package-release-operation', 'package-publication-evidence', 'release-authority-cli', 'release-convergence', 'publication-effects', 'package-artifact-observation']
+  ...['release-executor-recovery', 'package-release-operation', 'package-publication-evidence', 'plugin-hosted-release', 'release-authority-cli', 'release-convergence', 'publication-effects', 'package-artifact-observation']
     .map(name => `${buildr}test/integration-candidate-release/${name}.test.ts`),
   ...['registry', 'planner', 'candidate-ci'].map(name => `${buildr}test/verification/${name}.ts`),
   `${buildr}test/contract/release-authority.test.ts`, `${buildr}test/contract/open-source-release.test.ts`,

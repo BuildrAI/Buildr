@@ -1,13 +1,15 @@
 /** Validate manual inputs and remote run facts before consuming release artifacts. */
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, lstatSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { assertPluginSourceAggregate, releaseCandidateRequirements } from '../../buildr/tools/release/verify-pr-candidate.ts';
 import { assertReleaseExecutorSource } from '../../buildr/tools/release/release-executor-recovery.ts';
+import { containsCredentialMaterial } from '../../buildr/tools/release/release-authority.ts';
 import { assertBoundVerification } from './full-verification.ts';
-import { readReleaseCandidate, sourceSdkIdentityFromFiles, SOURCE_SDK_MANIFEST, PLUGIN_SERVICE_PATH, type ReleaseCandidate } from './release-candidate.ts';
+import { parseReleaseCandidate, readReleaseCandidate, sourceSdkIdentityFromFiles, SOURCE_SDK_MANIFEST, PLUGIN_SERVICE_PATH, type ReleaseCandidate } from './release-candidate.ts';
 import { assertPluginCandidateAdoption, createPluginCandidateAdoption, PLUGIN_CANDIDATE_ADOPTION_FILE, type PluginCandidateAdoption, type PluginCandidateMain } from './candidate-adoption.ts';
 
 export const REPOSITORY = 'BuildrAI/Buildr';
@@ -19,7 +21,9 @@ export interface WorkflowInput { operation: 'prepare' | 'publish'; version: stri
 export interface BuildrPeerCandidateSource { mainCommit: string; candidateCommit: string; mainParents: string[]; mainTree: string; candidateTree: string; workflowId: number }
 type Run = { id: number; workflow_id: number; path: string; event: string; head_branch: string; head_sha: string; status: string; conclusion: string | null; display_title: string; run_attempt: number; run_number: number; repository: { full_name: string } };
 type Job = { name: string; status: string; conclusion: string | null; steps?: Array<{ name: string; status: string; conclusion: string | null }> };
-export type GithubRead = (path: string) => Promise<any>;
+export type GithubRead = ((path: string) => Promise<any>) & {
+  readArtifactJson?: (runId: number, artifactName: string, filename: 'candidate.json' | 'publication.json') => Promise<unknown>;
+};
 // The fixed SDK patch exceeds execFileSync's default 1 MiB output limit.
 function readSourceGit(args: string[]): string {
   return execFileSync('git', args, { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
@@ -156,6 +160,42 @@ async function pages(api: GithubRead, path: string, key: string): Promise<any[]>
   }
   fail('history-incomplete');
 }
+/** A unique official artifact must keep its identity across the bounded download. */
+async function originalRunJson(api: GithubRead, run: Run, artifactName: string, filename: 'candidate.json' | 'publication.json'): Promise<any> {
+  if (!api.readArtifactJson) fail('original-artifact-reader-unavailable');
+  const inspect = async () => {
+    const artifacts = await pages(api, `/repos/${REPOSITORY}/actions/runs/${run.id}/artifacts`, 'artifacts');
+    const matching = artifacts.filter(value => value?.name === artifactName);
+    const artifact = matching[0];
+    if (matching.length !== 1 || !Number.isSafeInteger(artifact.id) || artifact.id < 1 || artifact.expired !== false
+      || !Number.isSafeInteger(artifact.size_in_bytes) || artifact.size_in_bytes <= 0 || artifact.size_in_bytes > 8 * 1024 * 1024
+      || artifact.workflow_run?.id !== run.id || artifact.workflow_run?.head_sha !== run.head_sha || artifact.workflow_run?.head_branch !== 'main') fail('original-artifact-identity');
+    return artifact;
+  };
+  const before = await inspect(), document = await api.readArtifactJson(run.id, artifactName, filename), after = await inspect();
+  if (before.id !== after.id || before.size_in_bytes !== after.size_in_bytes || before.digest !== after.digest) fail('original-artifact-changed');
+  return document;
+}
+
+async function confirmedOidcNoWrite(api: GithubRead, run: Run, attempt: number, jobs: Job[], version: string,
+  prepared: () => Promise<ReleaseCandidate>): Promise<boolean> {
+  const matching = jobs.filter(job => job.name === 'publish'), step = matching[0]?.steps?.filter(value => value.name === PUBLISH_STEP);
+  if (!api.readArtifactJson || run.conclusion !== 'failure' || run.head_branch !== 'main' || !/^[a-f0-9]{40}$/u.test(run.head_sha)
+    || matching.length !== 1 || matching[0]?.status !== 'completed' || matching[0]?.conclusion !== 'failure'
+    || step?.length !== 1 || step[0]?.status !== 'completed' || step[0]?.conclusion !== 'failure') return false;
+  try {
+    const journal = await originalRunJson(api, run, `plugin-publication-v${version}`, 'publication.json');
+    if (!journal || containsCredentialMaterial(journal) || journal.schemaVersion !== 'buildr.dsh-plugin-publication/v1'
+      || journal.attempted !== false || journal.publishedObserved !== false || journal.registry !== 'absent'
+      || journal.status !== 'blocked' || journal.action !== 'blocked' || journal.code !== 'plugin-oidc-authority-mismatch'
+      || journal.authority !== undefined || !Number.isFinite(Date.parse(journal.observedAt))
+      || journal.request?.runId !== run.id || journal.request?.runAttempt !== attempt
+      || journal.request?.workflowRef !== `${REPOSITORY}/${WORKFLOW}@refs/heads/main`) return false;
+    const candidate = await prepared();
+    return candidate.version === version && ['packageName', 'version', 'sourceCommit', 'sourceTree', 'sha256', 'integrity']
+      .every(field => journal[field] === candidate[field as keyof ReleaseCandidate]);
+  } catch { return false; } // Unknown evidence remains a possible previous request.
+}
 export async function verifyPublishRuns(input: WorkflowInput, sourceCommit: string, currentRunId: string, api: GithubRead): Promise<{ candidateRunId: string; recoveryRunId?: string }> {
   if (input.operation !== 'publish' || !input.candidateRunId) fail('publish-input-required');
   const base = `/repos/${REPOSITORY}/actions`;
@@ -167,6 +207,12 @@ export async function verifyPublishRuns(input: WorkflowInput, sourceCommit: stri
   const candidate: Run = await api(`${base}/runs/${input.candidateRunId}`);
   validateCandidateRun(candidate, input.candidateRunId, input.publicationSourceCommit ?? sourceCommit, input.version, workflow.id);
   const history = await pages(api, `${base}/workflows/publish-dsh-plugin.yml/runs`, 'workflow_runs');
+  let prepared: Promise<ReleaseCandidate> | undefined;
+  const originalCandidate = () => prepared ??= originalRunJson(api, candidate, `plugin-candidate-v${input.version}`, 'candidate.json').then(value => {
+    const manifest = parseReleaseCandidate(value);
+    if (manifest.version !== input.version) fail('original-candidate-version');
+    return manifest;
+  });
   const uncertain: Run[] = [];
   for (const run of history as Run[]) {
     ownRun(run);
@@ -176,7 +222,7 @@ export async function verifyPublishRuns(input: WorkflowInput, sourceCommit: stri
     let mayHaveStarted = false;
     for (let attempt = 1; attempt <= run.run_attempt; attempt++) {
       const jobs = await pages(api, `${base}/runs/${run.id}/attempts/${attempt}/jobs`, 'jobs');
-      if (publicationMayHaveStarted(jobs)) mayHaveStarted = true;
+      if (publicationMayHaveStarted(jobs) && !await confirmedOidcNoWrite(api, run, attempt, jobs, input.version, originalCandidate)) mayHaveStarted = true;
     }
     if (mayHaveStarted) uncertain.push(run);
   }
@@ -189,7 +235,7 @@ export async function verifyPublishRuns(input: WorkflowInput, sourceCommit: stri
 }
 export function githubReader(token: string, fetchImpl: typeof fetch = fetch): GithubRead {
   if (!token) fail('github-read-access-required');
-  return async path => {
+  const reader: GithubRead = async path => {
     if (!path.startsWith(`/repos/${REPOSITORY}/actions/`) || path.includes('..')) fail('github-read-path');
     const response = await fetchImpl(`https://api.github.com${path}`, { headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' }, signal: AbortSignal.timeout(15_000) });
     if (!response.ok) fail('github-read-failed');
@@ -197,6 +243,25 @@ export function githubReader(token: string, fetchImpl: typeof fetch = fetch): Gi
     if (Buffer.byteLength(body) > 8 * 1024 * 1024) fail('github-response-too-large');
     return JSON.parse(body);
   };
+  reader.readArtifactJson = async (runId, artifactName, filename) => {
+    if (!Number.isSafeInteger(runId) || runId < 1 || !/^plugin-(?:publication|candidate)-v[0-9A-Za-z.-]+$/u.test(artifactName)
+      || !['candidate.json', 'publication.json'].includes(filename)) fail('github-artifact-input');
+    // Same owned, bounded gh artifact-download pattern used by the hosted plugin owner.
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'buildr-plugin-history-')));
+    try {
+      execFileSync('gh', ['run', 'download', String(runId), '--repo', REPOSITORY, '--name', artifactName, '--dir', root], {
+        env: { ...process.env, GH_TOKEN: token }, timeout: 60_000, maxBuffer: 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      const files = readdirSync(root, { withFileTypes: true });
+      if (files.length > 8 || files.some(file => !file.isFile()) || files.filter(file => file.name === filename).length !== 1
+        || files.reduce((sum, file) => sum + lstatSync(join(root, file.name)).size, 0) > 8 * 1024 * 1024) fail('github-artifact-files');
+      const target = join(root, filename), state = lstatSync(target);
+      if (!state.isFile() || state.size > 256 * 1024 || realpathSync(target) !== target) fail('github-artifact-json');
+      return JSON.parse(readFileSync(target, 'utf8'));
+    } catch { fail('github-artifact-read-failed'); }
+    finally { rmSync(root, { recursive: true, force: true }); }
+  };
+  return reader;
 }
 if (import.meta.main) {
   try {

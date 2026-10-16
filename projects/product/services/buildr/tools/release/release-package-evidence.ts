@@ -79,10 +79,11 @@ export function createPackageReleaseContext(input: any): any {
     compatibility: input.compatibility, packages, candidate: input.candidate };
   const recovery = packages['dsh-plugin']?.executorRecovery;
   if (Object.hasOwn(packages['dsh-plugin'] ?? {}, 'executorRecovery')) {
-    const fields = ['schemaVersion', 'sourceCommit', 'sourceTree', 'workflowDigest', 'originalContextIdentity', 'previousRunId', 'previousRunAttempt', 'previousJournalIdentity'];
+    const proofField = Object.hasOwn(recovery ?? {}, 'previousJournalIdentity') ? 'previousJournalIdentity' : 'previousNoWriteEvidenceIdentity';
+    const fields = ['schemaVersion', 'sourceCommit', 'sourceTree', 'workflowDigest', 'originalContextIdentity', 'previousRunId', 'previousRunAttempt', proofField];
     if (!recovery || Object.keys(recovery).length !== fields.length || fields.some(key => !Object.hasOwn(recovery, key))
       || recovery.schemaVersion !== pluginExecutorRecoverySchema || !sha.test(recovery.sourceCommit ?? '') || !sha.test(recovery.sourceTree ?? '')
-      || !digest.test(recovery.workflowDigest ?? '') || !digest.test(recovery.originalContextIdentity ?? '') || !digest.test(recovery.previousJournalIdentity ?? '')
+      || !digest.test(recovery.workflowDigest ?? '') || !digest.test(recovery.originalContextIdentity ?? '') || !digest.test(recovery[proofField] ?? '')
       || !Number.isSafeInteger(recovery.previousRunId) || recovery.previousRunId < 1 || recovery.previousRunAttempt !== 1
       || recovery.sourceCommit === (packages.buildr ? releaseExecutionCommit(packages.buildr.ownerContext) : convergence.mainCommit)) fail('Plugin executor recovery identity is invalid.');
     const original = structuredClone(value); delete original.packages['dsh-plugin'].executorRecovery;
