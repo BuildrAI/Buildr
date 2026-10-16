@@ -31,6 +31,20 @@ fs.appendFileSync(file, content);`;
   assert.equal(findManagedMutationViolations(source, 'src/other.ts').length, 4);
 });
 
+test('reviewed connection authorization cleanup and record relocation retain exact file and method boundaries', () => {
+  for (const [file, method, mutation] of [
+    ['src/modules/connection-skills/application/connection-skills-application.ts', 'authorize', 'fs.rmSync(directory, { recursive: true });'],
+    ['src/modules/connection-skills/persistence/files.ts', 'relocateLocal', 'fs.writeFileSync(descriptor, source, "utf8");'],
+  ] as const) {
+    const source = `class Store {\n  ${method}() { try { ${mutation} } finally { fs.closeSync(descriptor); } }\n  unrelated() { fs.rmSync(file); }\n}`;
+    assert.deepEqual(findManagedMutationViolations(source, file), [
+      `${file}:2: direct mutation in ${method}`, `${file}:3: direct mutation in unrelated`,
+    ]);
+    assert.deepEqual(findManagedMutationViolations(source, file, new Set([method])), [`${file}:3: direct mutation in unrelated`]);
+    assert.equal(findManagedMutationViolations(source, file.replace('/connection-skills/', '/unreviewed/')).length, 2);
+  }
+});
+
 test('nested function ownership returns to its caller while anonymous callbacks stay inside their owner', () => {
   const source = `function publish() {
   function read() { return file; }

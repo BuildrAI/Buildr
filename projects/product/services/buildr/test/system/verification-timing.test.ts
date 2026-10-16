@@ -490,9 +490,13 @@ test('identified expensive candidate steps have non-blocking target budgets', ()
     'package-rules',
     'package-skills',
     'package-runtime',
-    'openspec-contract-fixtures',
+    'integration-openspec',
     'cli-compatibility',
   ]) assert.ok(candidateStepBudget(id) > 0, `${id} must have a target budget`);
+  assert.equal(candidateStepBudget('integration-openspec'), 5000);
+  for (const diagnosticOnly of ['openspec-contract-fixtures', 'openspec-convergence-recovery']) {
+    assert.equal(candidateStepBudget(diagnosticOnly), undefined, `${diagnosticOnly} must not regain a default Candidate budget`);
+  }
 });
 
 test('verification process cleanup 只终止 runner-owned process group', () => {

@@ -314,7 +314,7 @@ Contract 格式、scope 规则、替换示例以及 `ready` 的边界见 [Skill 
 
 ## 内部实现边界
 
-`bin/buildr.mjs` 是稳定的 npm 命令入口。正式安装包包含打包后的 `runtime/buildr.cjs` 与 `payload/`，不依赖开发目录中的完整 `src/` 模块树；具体内容由[发布打包实现](../tools/release/release-artifact.ts)确定。内部文件不是公开 JavaScript 接口（API），不承诺文件级导入兼容；维护约定见[命令架构](cli-architecture.md)。
+`bin/buildr.mjs` 是稳定的 npm 命令入口。正式安装包包含打包后的 `runtime/buildr.cjs` 与 `payload/`，不依赖开发目录中的完整 `src/` 模块树；具体内容由[发布打包实现](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/release-artifact.ts)确定。内部文件不是公开 JavaScript 接口（API），不承诺文件级导入兼容；维护约定见[命令架构](cli-architecture.md)。
 
 ## 远端 Skill 请求
 

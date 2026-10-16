@@ -26,4 +26,4 @@
 
 发布代码位于工作空间根的 `skills/buildr-release/scripts/`：[主入口](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/release-orchestration-runner.ts)、[主包打包](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/candidate-package.ts)及[插件发布](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/dsh-plugin/release.ts)；[插件检查](../../../services/dsh-plugin/tools/verify-all.ts)仍归验证工具。从 `services/buildr` 经 `tools/development/run-development-node ../../../../skills/buildr-release/scripts/release-orchestration-runner.ts --help` 查看参数：`prepare` 准备、`inspect` 只读逐包运行状态、`publish --authorized` 公开获准内容、`resume` 回读后接续。正式补验绑定 `--verification-source`，不赋予补验代码公开权限。插件细节见[插件说明](dsh-plugin-release.md)。
 
-[检查明细与工程核对底稿](../architecture/verification-framework.md)记录输入、结果复用、工具自验与剩余候选缺口。两组重复 OpenSpec 包装检查已退出默认候选，定向入口仍保留；源码准备按真实缺项选择，当前清理失败保留原有效结果。局部检查通过不表示完整候选通过；**本轮未准备新候选或公开发布。**
+[检查明细与工程核对底稿](../architecture/verification-framework.md)记录输入、结果复用、工具自验与剩余候选缺口。两组重复 OpenSpec 包装检查已退出默认候选，定向入口仍保留；源码准备按真实缺项选择，当前清理失败保留原有效结果。局部检查通过不表示完整候选通过。
