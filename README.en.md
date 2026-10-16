@@ -65,7 +65,7 @@ Share this project link with your agent:
 
 > Use https://github.com/BuildrAI/Buildr to install Buildr and its launcher for me. Explain workspaces, projects, services, and repositories, then open Buildr and guide me through configuration.
 
-The official package is `@buildr-ai/buildr`. Your agent follows the [installation reference](projects/product/services/buildr/docs/cli-reference.md#首次使用) and handles environment preparation. Regular users do not need to clone this repository or learn commands first. The launcher currently supports macOS and Windows; other platforms open Buildr in a browser.
+The official package is `@buildr-ai/buildr`. Your agent follows the [installation reference](projects/product/services/buildr/docs/cli-reference.md#首次使用) and handles environment preparation. Regular users do not need to clone this repository or learn commands first. Buildr currently supports macOS and Windows, using either the launcher or a browser. Linux support is not currently promised.
 
 ### 2. Configure your work
 

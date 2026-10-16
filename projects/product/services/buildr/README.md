@@ -40,7 +40,7 @@ Buildr 把项目资料、代码位置和经过验证的工作方法组织在一�
 - [运行时适配参考](docs/agent-runtime-adapters.md)：当前支持的工具、发现入口及刷新要求。
 - [入口不可用与恢复](docs/cli-reference.md#入口不可用与恢复)：按当前命令帮助处理安装、技能（Skill）、同步与启动器（Launcher）问题。
 
-macOS 与 Windows 可按需安装 Buildr Web 启动器（Launcher）；它依赖同一 npm 安装和兼容的 Node.js。其他平台通过 `buildr web --target "<dir>"` 打开本机页面。
+Buildr 当前只承诺支持 macOS 与 Windows，可按需安装依赖同一 npm 安装和兼容 Node.js 的 Buildr Web 启动器（Launcher），也可在这两个平台通过 `buildr web --target "<dir>"` 在浏览器中打开本机页面。Linux 暂无支持承诺。
 
 ## 当前能力与边界
 

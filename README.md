@@ -77,7 +77,7 @@ Buildr 当前以本机使用为主。文件资料可以通过 Git 协作，本�
 
 > 请参考 https://github.com/BuildrAI/Buildr 帮我安装 Buildr 和启动器，解释工作空间、项目、服务和代码库，然后打开 Buildr，引导我完成配置。
 
-官方包名为 `@buildr-ai/buildr`。智能体（Agent）按[安装参考](projects/product/services/buildr/docs/cli-reference.md#首次使用)处理环境与安装；普通使用不需要克隆本仓库或先学命令。启动器（Launcher）目前支持 macOS 和 Windows，其他平台通过浏览器打开 Buildr。
+官方包名为 `@buildr-ai/buildr`。智能体（Agent）按[安装参考](projects/product/services/buildr/docs/cli-reference.md#首次使用)处理环境与安装；普通使用不需要克隆本仓库或先学命令。Buildr 当前只承诺支持 macOS 和 Windows，可通过启动器（Launcher）或浏览器使用；Linux 暂无支持承诺。
 
 ### 2. 配置你的工作
 
