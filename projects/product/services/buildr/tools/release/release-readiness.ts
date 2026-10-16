@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { normalizeReleaseTargets } from './release-targets.ts';
+import { validateReleaseExecutorRecovery } from './release-executor-recovery.ts';
 
 export const releaseContextSchema: any = 'buildr.release-context/v2';
 export const releaseReadinessSchema: any = 'buildr.release-readiness/v1';
@@ -39,7 +40,7 @@ function optionalProjection(value: any, fields: any, label: any): any  {
 }
 
 export function createReleaseContext(input: any): any  {
-  closed(input, ['selection', 'release', 'candidate', 'artifact', 'convergence', 'preparation', 'node', 'workflow', 'taskCorrelation'], 'release context input');
+  closed(input, ['selection', 'release', 'candidate', 'artifact', 'convergence', 'preparation', 'node', 'workflow', 'taskCorrelation', 'executorRecovery'], 'release context input');
   const value: any = {
     schemaVersion: releaseContextSchema,
     selection: optionalProjection(input.selection, ['identity', 'version', 'selectionId', 'targets', 'branch', 'releaseHead', 'releaseTree', 'generation', 'status', 'reconciliationIdentity'], 'selection'),
@@ -59,12 +60,14 @@ export function createReleaseContext(input: any): any  {
         || value.selection.selectionId !== targets.selectionId || value.selection.version !== targets.versions.buildr
         || value.release?.version !== targets.versions.buildr) throw new Error('Main release context does not match its shared target identity.');
   }
+  if (Object.hasOwn(input, 'executorRecovery')) value.executorRecovery = input.executorRecovery;
+  validateReleaseExecutorRecovery(value);
   value.identity = releaseContextIdentity(value);
   return value;
 }
 
 export function validateReleaseContext(value: any): any  {
-  closed(value, ['schemaVersion', 'selection', 'release', 'candidate', 'artifact', 'convergence', 'preparation', 'node', 'workflow', 'taskCorrelation', 'identity'], 'release context');
+  closed(value, ['schemaVersion', 'selection', 'release', 'candidate', 'artifact', 'convergence', 'preparation', 'node', 'workflow', 'taskCorrelation', 'executorRecovery', 'identity'], 'release context');
   if (value.schemaVersion !== releaseContextSchema || !DIGEST.test(value.identity || '')) throw new Error('Release context schema/identity is invalid.');
   const { schemaVersion: _schemaVersion, identity: _identity, ...input }: any = value;
   const recreated: any = createReleaseContext(input);

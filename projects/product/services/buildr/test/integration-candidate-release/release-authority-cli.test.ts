@@ -17,7 +17,8 @@ import { validateReleasePreparationBinding } from '../../tools/release/release-t
 import { RELEASE_CHECKS, releaseConsumptionIdentity } from '../../tools/release/release-consumption.ts';
 import { createReleaseTaskEvidenceCorrelation } from '../../tools/release/release-task-evidence-correlation.ts';
 import { runHostedReleaseTransaction } from '../../tools/release/release-transaction-runner.ts';
-import { createReleaseContext } from '../../tools/release/release-readiness.ts';
+import { createReleaseContext, releaseContextIdentity } from '../../tools/release/release-readiness.ts';
+import { createReleaseExecutorRecovery } from '../../tools/release/release-executor-recovery.ts';
 import { createReleaseTransactionEvidence, inspectHostedReleaseTransaction, validateReleaseTransactionEvidence } from '../../tools/release/release-transaction-evidence.ts';
 import { ensureReleaseTag, inspectReleaseTag } from '../../tools/release/release-tag-ensure.ts';
 import { createExactNodeExecutionEnvironment } from '../../src/infrastructure/process.ts';
@@ -221,6 +222,70 @@ test('release transaction runner dispatches and follows exactly one frozen workf
   }
   assert.equal(calls.some((item: any) => item.startsWith('git tag ') || item.startsWith('git push ')), false);
   assert.equal(calls.some((item: any) => item.startsWith('npm ')), false);
+});
+
+test('recovery runner uses the new executor head but dispatches the unchanged original source and Candidate', async () => {
+  const executionCommit = gitSha('f'), executionTree = gitSha('9'), newWorkflow = `${workflow}\n# repaired publisher executor\n`;
+  const candidate = { aggregate: { status: 'passed', sourceCommit: candidateSourceCommit, sourceTree: candidateTree,
+    consumptionIdentity: releaseConsumptionIdentity(), evidenceIds: [...new Set(RELEASE_CHECKS.flatMap((check: any) => check.evidence || []))],
+    registryIdentity: digest('7'), workflow: { runId: '654', aggregateAttempt: 1 },
+    artifact: { sourceCommit: candidateSourceCommit, filename: 'buildr-ai-buildr.tgz', size: 123, sha256: '9'.repeat(64), integrity: 'sha512-Zml4dHVyZQ==', applicationPayloadDigest: digest('a') } }, manifest: null as any };
+  candidate.manifest = structuredClone(candidate.aggregate.artifact);
+  const { schemaVersion: _schema, identity: _identity, ...originalInput } = releaseContext();
+  const original = createReleaseContext({ ...originalInput, candidate: { ...originalInput.candidate, aggregateIdentity: releaseContextIdentity(candidate.aggregate) } });
+  const previousEvidence = createReleaseTransactionEvidence({ context: original, outcome: 'failed',
+    publish: { repository: 'BuildrAI/Buildr', workflow: '.github/workflows/publish.yml', runId, runAttempt: 2, headSha: fixtureCommit,
+      runUrl: `https://github.com/BuildrAI/Buildr/actions/runs/${runId}` },
+    publicFacts: { version, tagCommit: fixtureCommit, registryObservation: 'absent', registryPublished: false } });
+  const calls: string[][] = []; let dispatched = false;
+  const execute = (command: string, args: string[]) => {
+    calls.push([command, ...args]);
+    if (command === 'git') {
+      if (args[0] === 'merge-base') return { status: 0, stdout: '' };
+      if (args[0] === 'diff') return { status: 0, stdout: '.github/workflows/publish.yml\0' };
+      if (args[0] === 'ls-tree') return { status: 0, stdout: `100644 blob ${gitSha('a')}\t.github/workflows/publish.yml\n` };
+      if (args[0] === 'rev-parse') return { status: 0, stdout: args[1] === `${executionCommit}^{tree}` ? executionTree : executionCommit };
+      if (args[0] === 'show' && args[1].endsWith(':projects/product/services/buildr/package.json')) return { status: 0, stdout: JSON.stringify({ version }) };
+      if (args[0] === 'show' && args[1].endsWith(':projects/product/.node-version')) return { status: 0, stdout: '24.15.0\n' };
+      if (args[0] === 'show' && args[1].endsWith(':.github/workflows/publish.yml')) return { status: 0, stdout: newWorkflow };
+    }
+    if (command === 'gh') {
+      if (args[0] === 'api' && args[1].endsWith('/654')) return { status: 0, stdout: JSON.stringify({ id: 654, repository: { full_name: 'BuildrAI/Buildr' },
+        event: 'pull_request', status: 'completed', conclusion: 'success', path: '.github/workflows/verify.yml', head_sha: candidateSourceCommit, run_attempt: 1 }) };
+      if (args[0] === 'workflow') { dispatched = true; return { status: 0, stdout: '' }; }
+      if (args[0] === 'run') return { status: 0, stdout: JSON.stringify(dispatched ? [{ databaseId: 1000, displayTitle: `Release ${version} (recovery)`, headSha: executionCommit }] : []) };
+      if (args[0] === 'api' && args[1].endsWith('/1000')) return { status: 0, stdout: JSON.stringify({ id: 1000, run_attempt: 1, repository: { full_name: 'BuildrAI/Buildr' },
+        event: 'workflow_dispatch', path: '.github/workflows/publish.yml', head_sha: executionCommit, status: 'in_progress', html_url: 'https://github.com/BuildrAI/Buildr/actions/runs/1000' }) };
+    }
+    return { status: 1, stderr: 'unexpected fixture command' };
+  };
+  const executorRecovery = createReleaseExecutorRecovery(original, { repo: '/fixture', sourceCommit: executionCommit, previousEvidence }, { execute });
+  const { schemaVersion: _oldSchema, identity: _oldIdentity, ...projection } = original;
+  const context = createReleaseContext({ ...projection, executorRecovery });
+  const options = { action: 'dispatch', publicationAuthorized: true, repo: '/fixture', sourceCommit: 'origin/main', remoteMain: 'origin/main', version,
+    candidateBase: candidateSourceCommit, candidateTree, releaseContext: context, timeoutMs: 1000 };
+  const dependencies = { execute, candidateEvidence: candidate, releaseId: 'recovery', onStatus: () => {} };
+  await assert.rejects(() => runHostedReleaseTransaction({ ...options, releaseContext: original }, dependencies), /does not match source tree/u,
+    'the old source-bound context cannot execute the repaired main');
+  const result = await runHostedReleaseTransaction(options, dependencies);
+  assert.equal(result.status, 'running', JSON.stringify(result)); assert.equal(result.context.identity, context.identity);
+  const dispatches = calls.filter(call => call[0] === 'gh' && call[1] === 'workflow');
+  assert.equal(dispatches.length, 1);
+  for (const field of [`source_commit=${fixtureCommit}`, `candidate_base=${candidateSourceCommit}`, `candidate_tree=${candidateTree}`,
+    'candidate_run_id=654', `workflow_sha256=${sha256(newWorkflow)}`, `context_digest=${context.identity}`]) assert.ok(dispatches[0].includes(field), field);
+  assert.ok(!dispatches[0].includes(`source_commit=${executionCommit}`));
+  assert.equal(result.context.release.sourceCommit, original.release.sourceCommit);
+  assert.deepEqual(result.context.artifact, original.artifact);
+  for (const mutate of [
+    (value: any) => { value.aggregate.evidenceIds = []; },
+    (value: any) => { value.aggregate.registryIdentity = digest('6'); },
+    (value: any) => { value.aggregate.workflow.aggregateAttempt = 2; },
+    (value: any) => { value.manifest.sha256 = '8'.repeat(64); },
+  ]) {
+    const changed = structuredClone(candidate); mutate(changed);
+    await assert.rejects(() => runHostedReleaseTransaction(options, { ...dependencies, candidateEvidence: changed }));
+  }
+  assert.equal(calls.filter(call => call[0] === 'gh' && call[1] === 'workflow').length, 1, 'no changed evidence can dispatch');
 });
 
 test('release transaction runner binds preparation inputs to the final frozen source commit', async (t: any) => {

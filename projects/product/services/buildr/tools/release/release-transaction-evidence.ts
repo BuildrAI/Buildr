@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { longRunningOperationSummary } from '../../src/infrastructure/contracts/public-json.ts';
 import { releaseContextSchema, validateReleaseContext } from './release-readiness.ts';
+import { releaseExecutionCommit } from './release-executor-recovery.ts';
 import { validateReleaseTaskEvidenceCorrelation } from './release-task-evidence-correlation.ts';
 
 export const releaseTransactionContextSchema: any = 'buildr.release-transaction-context/v2';
@@ -192,13 +193,13 @@ export function createReleaseTransactionEvidence({ context, publish, outcome, pu
   positiveInteger(publish.runAttempt, 'publish.runAttempt');
   sha(publish.headSha, 'publish.headSha');
   if (!publish.repository || publish.workflow !== '.github/workflows/publish.yml' || !publish.runUrl) throw new Error('Publish run repository/workflow/url is invalid.');
-  if (publish.headSha !== contextSourceCommit(normalizedContext)) throw new Error('Publish run head does not match release context source.');
+  if (publish.headSha !== releaseExecutionCommit(normalizedContext)) throw new Error('Publish run head does not match release context source.');
   if (!['passed', 'failed', 'cancelled'].includes(outcome)) throw new Error(`Unsupported release transaction outcome: ${outcome}.`);
   const version: any = String(publicFacts?.version || '');
   if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(version)) throw new Error('Release transaction evidence requires the target version.');
   const tagCommit: any = publicFacts?.tagCommit ?? null;
   if (tagCommit !== null) sha(tagCommit, 'release.tagCommit');
-  if (outcome === 'passed' && tagCommit !== publish.headSha) throw new Error('Passed release transaction must observe the tag at the publish source commit.');
+  if (outcome === 'passed' && tagCommit !== contextSourceCommit(normalizedContext)) throw new Error('Passed release transaction must observe the tag at the publish source commit.');
   const value: any = {
     schemaVersion: releaseTransactionEvidenceSchema,
     status: outcome,

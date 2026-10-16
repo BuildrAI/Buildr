@@ -255,3 +255,28 @@ test('joint cleanup preserves all refs until both package owners are proven, the
   assert.equal(git(repo, 'rev-parse', 'refs/buildr/release/other-release/baseline'), baseline);
   assert.equal(cleanupReleaseSelection({ ...options, confirm: true, publicationEvidence }).action, 'already-cleaned');
 });
+
+
+test('repaired publisher evidence binds a new execution head without moving the original joint package sources or tag', () => {
+  const data = fixture('buildr,dsh-plugin'), input = clone(data.input), original = input.packages.buildr.ownerContext;
+  const { schemaVersion: _schema, identity: _identity, ...owner } = original;
+  input.packages.buildr.ownerContext = createReleaseContext({ ...owner, executorRecovery: {
+    schemaVersion: 'buildr.release-executor-recovery/v1', sourceCommit: hash('9'), sourceTree: hash('8'), workflowDigest: digest('7'),
+    originalContextIdentity: original.identity, previousRunId: 99, previousRunAttempt: 2, previousEvidenceIdentity: digest('6'),
+  } });
+  const context = createPackageReleaseContext(input), publications = clone(data.publications);
+  const old = publications.buildr.ownerEvidence;
+  publications.buildr.run.head_sha = hash('9');
+  publications.buildr.ownerEvidence = createReleaseTransactionEvidence({ context: context.packages.buildr.ownerContext, publish: { ...old.publish, headSha: hash('9') }, outcome: 'passed',
+    publicFacts: { ...old.release, version: context.targets.versions.buildr } });
+  publications['dsh-plugin'].run.head_sha = hash('9');
+  const evidence = createPackagePublicationEvidence({ context, publications });
+  assert.equal(validatePackagePublicationEvidence(evidence).identity, evidence.identity);
+  assert.equal(evidence.publications.buildr.ownerEvidence.release.tagCommit, context.convergence.mainCommit);
+  assert.equal(evidence.publications['dsh-plugin'].ownerEvidence.sourceCommit, context.convergence.mainCommit);
+  assert.equal(evidence.context.packages.buildr.artifact.artifactSha256, data.context.packages.buildr.artifact.artifactSha256);
+  for (const name of ['buildr', 'dsh-plugin']) {
+    const changed = clone(publications); changed[name].run.head_sha = context.convergence.mainCommit;
+    assert.throws(() => createPackagePublicationEvidence({ context, publications: changed }), /run is unknown/);
+  }
+});

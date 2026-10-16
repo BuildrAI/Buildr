@@ -443,12 +443,15 @@ test('publish workflow delegates one protected transaction and consumes the Cand
   assert.equal(document.jobs.release.permissions['id-token'], 'write');
   assert.equal(document.jobs.release.permissions.contents, 'write');
   for (const job of Object.values(document.jobs) as any[]) {
-    assert.equal(job.steps.find((step: any) => step.uses === 'actions/checkout@v7').with.ref, '${{ inputs.source_commit }}');
+    assert.equal(job.steps.find((step: any) => step.uses === 'actions/checkout@v7').with.ref, '${{ fromJSON(inputs.release_context).executorRecovery.sourceCommit || inputs.source_commit }}');
     for (const step of job.steps.filter((step: any) => step.with?.name === 'candidate-package')) assert.equal(step.with['run-id'], '${{ inputs.candidate_run_id }}');
   }
   assert.equal(document.jobs.candidate.steps.filter((step: any) => step.run?.includes('release-consumption.ts verify')).length, 1);
   assert.equal(document.jobs.release.steps.filter((step: any) => step.run?.includes('release-publication.ts')).length, 1);
   assert.equal(document.jobs.release.steps.filter((step: any) => step.run === 'node tools/verification/candidate-environment.ts prepare --profile publisher').length, 1);
+  for (const job of Object.values(document.jobs) as any[]) assert.equal(job['runs-on'], 'macos-latest');
+  assert.match(document.jobs.contract.steps.find((step: any) => step.name === 'Confirm the frozen dispatch identity').run, /inputs.source_commit.*\^\{tree\}/u);
+  assert.equal(document.jobs.contract.steps.find((step: any) => step.name === 'Download the original failed publisher evidence').with['run-id'], '${{ fromJSON(inputs.release_context).executorRecovery.previousRunId }}');
   assert.doesNotMatch(workflow, /NODE_AUTH_TOKEN|NPM_TOKEN|npm publish|npm pack|artifacts:prepare|application-payload.*build/);
 });
 
@@ -471,7 +474,7 @@ test('CI and publish workflows use the supported Node runtime', () => {
   assert.equal(verifyDocument.jobs['dev-feedback-windows']['runs-on'], 'windows-latest');
   assert.equal(verifyDocument.jobs['candidate-plan'].if, "(!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))");
   assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.purpose.options, ['candidate', 'release-rehearsal']);
-  assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.options, ['none', 'core-project-task-macos', 'nested-git-isolation-windows', 'runtime-windows', 'failed-windows', 'package-consumer-windows', 'nested-lifecycle-windows', 'app-process-windows', 'task-lifecycle-windows', 'preview-lifecycle-windows', 'publication-effects-windows']);
+  assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.options, ['none', 'core-project-task-macos', 'nested-git-isolation-windows', 'runtime-windows', 'failed-windows', 'package-consumer-windows', 'nested-lifecycle-windows', 'app-process-windows', 'task-lifecycle-windows', 'preview-lifecycle-windows', 'publication-effects-windows', 'package-pair-publisher']);
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.default, 'none');
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.expected_source_tree.required, false);
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.rehearsal_identity.required, false);

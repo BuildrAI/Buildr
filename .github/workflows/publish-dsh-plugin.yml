@@ -18,6 +18,10 @@ on:
         description: Successful main adoption or legacy prepare run (publish only)
         required: false
         type: string
+      publication_source_commit:
+        description: Original protected source of the prepared bytes when only publisher tools advanced
+        required: false
+        type: string
       source_candidate_run_id:
         description: Successful original verify run containing the plugin Candidate (prepare only)
         required: false
@@ -62,7 +66,7 @@ concurrency:
 jobs:
   prepare:
     if: inputs.operation == 'prepare'
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     timeout-minutes: 40
     env:
       PLUGIN_SOURCE_CANDIDATE_RUN_ID: ${{ inputs.source_candidate_run_id }}
@@ -134,7 +138,7 @@ jobs:
 
   publish:
     if: inputs.operation == 'publish'
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     timeout-minutes: 15
     environment: npm-production
     permissions:
@@ -156,6 +160,7 @@ jobs:
       - name: Verify candidate run and complete publication history
         env:
           GH_TOKEN: ${{ github.token }}
+          PLUGIN_PUBLICATION_SOURCE_COMMIT: ${{ inputs.publication_source_commit }}
           PLUGIN_SOURCE_CANDIDATE_RUN_ID: ${{ inputs.source_candidate_run_id }}
           PLUGIN_SOURCE_COMMIT: ${{ inputs.source_commit }}
           PLUGIN_SELECTION_IDENTITY: ${{ inputs.selection_identity }}
@@ -209,6 +214,7 @@ jobs:
           --manifest "${RUNNER_TEMP}/candidate/candidate.json"
           --version "${PLUGIN_VERSION}"
           --source-commit "${GITHUB_SHA}"
+          --publication-source-commit "${{ inputs.publication_source_commit || github.sha }}"
           --verification "${RUNNER_TEMP}/verification/plugin-full-verification.json"
           --adoption "${RUNNER_TEMP}/verification/plugin-candidate-adoption.json"
           --output "${RUNNER_TEMP}/publication/publication.json"

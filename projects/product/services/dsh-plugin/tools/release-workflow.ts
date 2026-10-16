@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { assertPluginSourceAggregate, releaseCandidateRequirements } from '../../buildr/tools/release/verify-pr-candidate.ts';
+import { assertReleaseExecutorSource } from '../../buildr/tools/release/release-executor-recovery.ts';
 import { assertBoundVerification } from './full-verification.ts';
 import { readReleaseCandidate, sourceSdkIdentityFromFiles, SOURCE_SDK_MANIFEST, PLUGIN_SERVICE_PATH, type ReleaseCandidate } from './release-candidate.ts';
 import { assertPluginCandidateAdoption, createPluginCandidateAdoption, PLUGIN_CANDIDATE_ADOPTION_FILE, type PluginCandidateAdoption, type PluginCandidateMain } from './candidate-adoption.ts';
@@ -14,7 +15,7 @@ export const WORKFLOW = '.github/workflows/publish-dsh-plugin.yml';
 export const PUBLISH_STEP = 'Publish immutable plugin';
 export const BUILDR_CANDIDATE_WORKFLOW = '.github/workflows/verify.yml';
 export interface BuildrPeerInput { origin: 'registry' | 'candidate'; version: string; integrity: string; candidateRunId?: string }
-export interface WorkflowInput { operation: 'prepare' | 'publish'; version: string; candidateRunId?: string; recoveryRunId?: string; buildrPeer?: BuildrPeerInput; sourceCandidateRunId?: string; sourceCommit?: string; selectionIdentity?: string }
+export interface WorkflowInput { operation: 'prepare' | 'publish'; version: string; candidateRunId?: string; recoveryRunId?: string; buildrPeer?: BuildrPeerInput; sourceCandidateRunId?: string; sourceCommit?: string; selectionIdentity?: string; publicationSourceCommit?: string }
 export interface BuildrPeerCandidateSource { mainCommit: string; candidateCommit: string; mainParents: string[]; mainTree: string; candidateTree: string; workflowId: number }
 type Run = { id: number; workflow_id: number; path: string; event: string; head_branch: string; head_sha: string; status: string; conclusion: string | null; display_title: string; run_attempt: number; run_number: number; repository: { full_name: string } };
 type Job = { name: string; status: string; conclusion: string | null; steps?: Array<{ name: string; status: string; conclusion: string | null }> };
@@ -56,6 +57,7 @@ export function validateWorkflowInput(env: NodeJS.ProcessEnv, source: { commit: 
   if (!exactVersion.test(version) || version !== source.version) fail('version-must-match-source');
   const candidateRunId = runId(env.PLUGIN_CANDIDATE_RUN_ID, operation === 'publish');
   const recoveryRunId = runId(env.PLUGIN_RECOVERY_RUN_ID, false);
+  if (operation === 'prepare' && env.PLUGIN_PUBLICATION_SOURCE_COMMIT) fail('prepare-cannot-replace-publication-source');
   if (operation === 'prepare' && (candidateRunId || recoveryRunId)) fail('prepare-cannot-consume-publication');
   if (candidateRunId === env.GITHUB_RUN_ID || recoveryRunId === env.GITHUB_RUN_ID) fail('current-run-cannot-be-source');
   const buildrPeer = buildrPeerInput(env, operation);
@@ -66,7 +68,9 @@ export function validateWorkflowInput(env: NodeJS.ProcessEnv, source: { commit: 
     if (sourceCandidateRunId === env.GITHUB_RUN_ID || !/^[a-f0-9]{40}$/u.test(sourceFields[1] ?? '') || !/^(?:sha256-)?[a-f0-9]{64}$/u.test(sourceFields[2] ?? '')) fail('source-candidate-input');
     return { operation, version, candidateRunId, recoveryRunId, buildrPeer, sourceCandidateRunId, sourceCommit: sourceFields[1], selectionIdentity: sourceFields[2] };
   }
-  return { operation, version, candidateRunId, recoveryRunId };
+  const publicationSourceCommit = env.PLUGIN_PUBLICATION_SOURCE_COMMIT;
+  if (publicationSourceCommit && !/^[a-f0-9]{40}$/u.test(publicationSourceCommit)) fail('publication-source-identity');
+  return { operation, version, candidateRunId, recoveryRunId, ...(publicationSourceCommit ? { publicationSourceCommit } : {}) };
 }
 export function pluginCandidateMain(commit: string, git: (args: string[]) => string = args => execFileSync('git', args, { encoding: 'utf8' }).trim()): PluginCandidateMain {
   const parents = git(['rev-list', '--parents', '-n', '1', commit]).split(/\s/u);
@@ -161,7 +165,7 @@ export async function verifyPublishRuns(input: WorkflowInput, sourceCommit: stri
   ownRun(current);
   if (current.workflow_id !== workflow.id || current.display_title !== `DSH publish ${input.version}` || current.head_sha !== sourceCommit || current.head_branch !== 'main' || current.run_attempt !== 1) fail('current-run-mismatch');
   const candidate: Run = await api(`${base}/runs/${input.candidateRunId}`);
-  validateCandidateRun(candidate, input.candidateRunId, sourceCommit, input.version, workflow.id);
+  validateCandidateRun(candidate, input.candidateRunId, input.publicationSourceCommit ?? sourceCommit, input.version, workflow.id);
   const history = await pages(api, `${base}/workflows/publish-dsh-plugin.yml/runs`, 'workflow_runs');
   const uncertain: Run[] = [];
   for (const run of history as Run[]) {
@@ -199,7 +203,10 @@ if (import.meta.main) {
     const commit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
     const version = JSON.parse(readFileSync('package.json', 'utf8')).version;
     const input = validateWorkflowInput(process.env, { commit, version });
-    if (process.argv[2] === 'publish-check') await verifyPublishRuns(input, commit, process.env.GITHUB_RUN_ID!, githubReader(process.env.GH_TOKEN ?? ''));
+    if (process.argv[2] === 'publish-check') {
+      if (input.publicationSourceCommit) assertReleaseExecutorSource({ repo: readSourceGit(['rev-parse', '--show-toplevel']).trim(), originalCommit: input.publicationSourceCommit, executionCommit: commit });
+      await verifyPublishRuns(input, commit, process.env.GITHUB_RUN_ID!, githubReader(process.env.GH_TOKEN ?? ''));
+    }
     else if (process.argv[2] === 'adopt-candidate') {
       const args = process.argv.slice(3), values = new Map<string, string>();
       for (let index = 0; index < args.length; index += 2) {

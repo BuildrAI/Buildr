@@ -52,7 +52,7 @@ concurrency:
 
 jobs:
   contract:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     timeout-minutes: 15
     outputs:
       version: ${{ steps.contract.outputs.version }}
@@ -65,7 +65,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.source_commit }}
+          ref: ${{ fromJSON(inputs.release_context).executorRecovery.sourceCommit || inputs.source_commit }}
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
@@ -80,6 +80,32 @@ jobs:
           node tools/release/release-readiness.ts validate-context \
             --input "${RUNNER_TEMP}/contract-input/release-context.json" \
             --output "${RUNNER_TEMP}/contract/release-context.json"
+      - name: Download the original failed publisher evidence
+        if: fromJSON(inputs.release_context).executorRecovery != null
+        uses: actions/download-artifact@v7
+        with:
+          name: release-evidence-v${{ inputs.version }}-${{ fromJSON(inputs.release_context).executorRecovery.previousRunAttempt }}
+          path: ${{ runner.temp }}/previous-publisher
+          github-token: ${{ github.token }}
+          run-id: ${{ fromJSON(inputs.release_context).executorRecovery.previousRunId }}
+      - name: Validate the original failed publisher identity
+        if: fromJSON(inputs.release_context).executorRecovery != null
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIOUS_RUN_ID: ${{ fromJSON(inputs.release_context).executorRecovery.previousRunId }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${PREVIOUS_RUN_ID}" > "${RUNNER_TEMP}/previous-publisher/run.json"
+          node --input-type=module -e '
+            import fs from "node:fs";
+            import path from "node:path";
+            import { validateReleaseTransactionEvidence } from "./tools/release/release-transaction-evidence.ts";
+            import { assertReleaseExecutorRecoveryEvidence } from "./tools/release/release-executor-recovery.ts";
+            const context = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            const files = directory => fs.readdirSync(directory, { withFileTypes: true }).flatMap(entry => entry.isDirectory() ? files(path.join(directory, entry.name)) : entry.name === "release-transaction-evidence.json" ? [path.join(directory, entry.name)] : []);
+            const matches = files(process.argv[2]);
+            if (matches.length !== 1) throw new Error("Expected the unique original publisher journal");
+            assertReleaseExecutorRecoveryEvidence(context, validateReleaseTransactionEvidence(JSON.parse(fs.readFileSync(matches[0], "utf8"))), JSON.parse(fs.readFileSync(path.join(process.argv[2], "run.json"), "utf8")));
+          ' "${RUNNER_TEMP}/contract/release-context.json" "${RUNNER_TEMP}/previous-publisher"
       - name: Resolve the npm-only release contract
         id: contract
         run: >-
@@ -88,12 +114,15 @@ jobs:
           --output "${RUNNER_TEMP}/contract/release-contract.json"
       - name: Confirm the frozen dispatch identity
         run: |
-          test "$(git rev-parse HEAD)" = "${{ inputs.source_commit }}"
-          test "$(git rev-parse HEAD^{tree})" = "${{ inputs.candidate_tree }}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git rev-parse "${{ inputs.source_commit }}^{tree}")" = "${{ inputs.candidate_tree }}"
           test "${{ steps.contract.outputs.version }}" = "${{ inputs.version }}"
           node --input-type=module -e '
             import fs from "node:fs";
+            const { assertReleaseExecutorRecoverySource, releaseExecutionCommit } = await import("./tools/release/release-executor-recovery.ts");
             const context = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            assertReleaseExecutorRecoverySource(context, { repo: process.env.GITHUB_WORKSPACE });
+            if (releaseExecutionCommit(context) !== process.env.GITHUB_SHA) throw new Error("release executor differs from the actual protected workflow source");
             if (context.identity !== process.argv[2]) throw new Error("release context digest does not match dispatch input");
             if (context.convergence.mainCommit !== process.argv[3] || context.release.sourceTree !== process.argv[4] || String(context.candidate.runId) !== process.argv[5]) throw new Error("release context does not match dispatch identity");
           ' "${RUNNER_TEMP}/contract/release-context.json" "${{ inputs.context_digest }}" "${{ inputs.source_commit }}" "${{ inputs.candidate_tree }}" "${{ inputs.candidate_run_id }}"
@@ -112,7 +141,7 @@ jobs:
 
   candidate:
     needs: contract
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     timeout-minutes: 15
     defaults:
       run:
@@ -120,7 +149,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.source_commit }}
+          ref: ${{ fromJSON(inputs.release_context).executorRecovery.sourceCommit || inputs.source_commit }}
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: "24.15.0"
@@ -152,7 +182,7 @@ jobs:
 
   release:
     needs: [contract, candidate]
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     timeout-minutes: 40
     environment: npm-production
     permissions:
@@ -165,7 +195,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.source_commit }}
+          ref: ${{ fromJSON(inputs.release_context).executorRecovery.sourceCommit || inputs.source_commit }}
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:

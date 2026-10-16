@@ -24,6 +24,7 @@ import { inspectReleaseSelection } from './release-selection.ts';
 import { createReleaseTaskEvidenceCorrelationFromRuntime, releaseTaskAssociationProjection } from './release-task-evidence-correlation.ts';
 import { inspectHostedReleaseTransaction } from './release-transaction-evidence.ts';
 import { artifactFromTarball } from './package-artifact-observation.ts';
+import { releaseExecutionCommit, validateReleaseExecutorRecovery } from './release-executor-recovery.ts';
 
 const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const workspaceRoot: any = path.resolve(serviceRoot, '../../../..');
@@ -189,19 +190,42 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
   const version: any = requiredVersion(options.version);
   const candidateBase: any = requiredHash(options.candidateBase, 'candidateBase');
   const candidateTree: any = requiredHash(options.candidateTree, 'candidateTree');
+  const suppliedContext: any = options.releaseContext ? validateReleaseContext(options.releaseContext) : null;
+  const executorRecovery: any = suppliedContext ? validateReleaseExecutorRecovery(suppliedContext, { repo, verifyGit: true }, { execute }) : null;
   const sourceCommit: any = fullCommit(execute, repo, options.sourceCommit || 'origin/main');
   const remoteMain: any = fullCommit(execute, repo, options.remoteMain || 'origin/main');
   if (sourceCommit !== remoteMain) throw new Error(`Release source ${sourceCommit} is not current origin/main ${remoteMain}.`);
   const actualVersion: any = packageVersionAt(execute, repo, sourceCommit);
   if (actualVersion !== version) throw new Error(`Release version ${version} does not match ${sourceCommit} package version ${actualVersion ?? '<missing>'}.`);
   const actualTree: any = fullCommit(execute, repo, `${sourceCommit}^{tree}`);
-  if (actualTree !== candidateTree) throw new Error(`Release candidate tree ${candidateTree} does not match source tree ${actualTree}.`);
+  if (executorRecovery) {
+    if (sourceCommit !== releaseExecutionCommit(suppliedContext) || suppliedContext.release.sourceCommit !== candidateBase
+      || suppliedContext.release.sourceTree !== candidateTree) throw new Error('Recovery execution differs from the original frozen Candidate.');
+  } else if (actualTree !== candidateTree) throw new Error(`Release candidate tree ${candidateTree} does not match source tree ${actualTree}.`);
   const workflowSource: any = invoke(execute, 'git', ['show', `${sourceCommit}:${releaseWorkflowPath}`], repo);
   const workflowSha256: any = sha256(workflowSource);
   const productNodeVersion: any = invoke(execute, 'git', ['show', `${sourceCommit}:projects/product/.node-version`], repo).trim();
   assertMinimumNodeVersion(exactNode.audit.version, productNodeVersion);
   let context: any;
-  if (options.releaseContext) context = validateReleaseContext(options.releaseContext);
+  if (suppliedContext) {
+    context = suppliedContext;
+    if (executorRecovery) {
+      const candidateRunId = context.candidate?.runId;
+      const run = parseJson(invoke(execute, ghCommand, ['api', `repos/${releasePublishAuthority.repository}/actions/runs/${candidateRunId}`], repo), 'Recovery Candidate run readback');
+      if (run.id !== candidateRunId || run.repository?.full_name !== releasePublishAuthority.repository || run.status !== 'completed'
+        || run.conclusion !== 'success' || !['pull_request', 'workflow_dispatch'].includes(run.event)
+        || run.path?.split('@')[0] !== '.github/workflows/verify.yml' || run.head_sha !== candidateBase
+        || run.run_attempt !== context.candidate.runAttempt) throw new Error('Recovery Candidate run changed.');
+      const candidateEvidence = readCandidateEvidence({ candidateRunId, ghCommand, repo, execute, dependencies });
+      const { aggregate, manifest } = candidateEvidence;
+      assertReleaseConsumptionCoverage(aggregate, { sourceCommit: candidateBase, sourceTree: candidateTree }, manifest, context);
+      if (releaseContextIdentity(aggregate) !== context.candidate.aggregateIdentity || aggregate.registryIdentity !== context.candidate.registryIdentity
+        || String(aggregate.workflow?.runId) !== String(candidateRunId) || aggregate.workflow?.aggregateAttempt !== context.candidate.runAttempt
+        || manifest.sourceCommit !== candidateBase || manifest.filename !== context.artifact.filename || manifest.size !== context.artifact.size
+        || manifest.sha256 !== context.artifact.sha256 || manifest.integrity !== context.artifact.integrity
+        || manifest.applicationPayloadDigest !== context.artifact.applicationPayloadDigest) throw new Error('Recovery must consume the original Candidate aggregate and package.');
+    }
+  }
   else {
     if (!options.releaseTask) throw new Error('--release-task is required.');
     const candidateRunId: any = Number(options.candidateRunId);
@@ -310,9 +334,9 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
   }
   const observedBindings: any = {
     version: context.release?.version,
-    mainCommit: context.convergence?.mainCommit,
-    mainTree: context.convergence?.mainTree,
-    workflowDigest: context.workflow?.digest,
+    mainCommit: releaseExecutionCommit(context),
+    mainTree: executorRecovery?.sourceTree ?? context.convergence?.mainTree,
+    workflowDigest: executorRecovery?.workflowDigest ?? context.workflow?.digest,
     nodeVersion: context.node?.version,
     nodeIdentity: context.node?.executionIdentity,
   };
@@ -347,7 +371,7 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
     try {
       invoke(execute, ghCommand, [
         'workflow', 'run', releasePublishAuthority.workflow, '--repo', releasePublishAuthority.repository, '--ref', 'main',
-        '-f', `release_id=${releaseId}`, '-f', `version=${version}`, '-f', `source_commit=${sourceCommit}`,
+        '-f', `release_id=${releaseId}`, '-f', `version=${version}`, '-f', `source_commit=${context.convergence.mainCommit}`,
         '-f', `candidate_base=${candidateBase}`, '-f', `candidate_tree=${candidateTree}`, '-f', `workflow_sha256=${workflowSha256}`,
         '-f', `context_digest=${context.identity}`, '-f', `candidate_run_id=${context.candidate.runId}`, '-f', `release_context=${JSON.stringify(context)}`,
       ], repo);

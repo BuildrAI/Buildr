@@ -16,6 +16,7 @@ import { extractReleaseNotes } from './release-notes.ts';
 import { createReleaseTransactionEvidence } from './release-transaction-evidence.ts';
 import { containsCredentialMaterial } from './release-authority.ts';
 import { inspectReleaseSourceProvenance } from './release-selection.ts';
+import { assertReleaseExecutorRecoverySource, releaseExecutionCommit } from './release-executor-recovery.ts';
 
 export const releasePublicationRepositoryRoot = path.resolve(import.meta.dirname, '../../../../../..');
 
@@ -133,6 +134,7 @@ export async function runReleasePublication(options: any, dependencies: any = {}
   validateReleaseCheckDefinitions();
   const repo = path.resolve(options.repo || releasePublicationRepositoryRoot);
   const context = validateReleaseContext(options.context);
+  const recovery = assertReleaseExecutorRecoverySource(context, { repo });
   const artifact = inspectReleaseConsumerArtifact(options.manifestPath).artifact;
   const phases: any[] = [];
   const effects: any[] = [];
@@ -152,7 +154,7 @@ export async function runReleasePublication(options: any, dependencies: any = {}
       if (readiness.status !== 'ready') throw new Error(`Frozen context is not ready: ${readiness.findings.map((item: any) => item.code).join(', ')}`);
     },
     'publication-authority': async () => {
-      authority = await runReleaseAuthorityOidcProbe({ repo, sourceCommit: context.convergence.mainCommit, workflowSha256: context.workflow.digest.slice(7) }, {
+      authority = await runReleaseAuthorityOidcProbe({ repo, sourceCommit: releaseExecutionCommit(context), workflowSha256: (recovery?.workflowDigest ?? context.workflow.digest).slice(7), context }, {
         fetchImpl: (url: any, init: any) => fetch(url, { ...init, signal: AbortSignal.timeout(15_000) }),
       });
       save(path.join(options.outputDirectory, 'release-authority.json'), authority);
@@ -160,7 +162,7 @@ export async function runReleasePublication(options: any, dependencies: any = {}
     },
     'source-convergence': () => {
       const convergence = checkReleaseConvergence({ repo, version: context.release.version, selectionId: context.selection?.selectionId ?? context.release.version, candidateBase: context.release.sourceCommit, candidateTree: context.release.sourceTree,
-        stage: 'pre-tag', authorityEvidence: authority, publicationSourceCommit: context.convergence.mainCommit });
+        stage: 'pre-tag', authorityEvidence: authority, publicationSourceCommit: context.convergence.mainCommit, releaseContext: context });
       if (convergence.ok) inspectReleaseSourceProvenance({ repo, sourceCommit: context.release.sourceCommit, generation: context.selection.generation, devRef: 'origin/dev' });
       return convergence;
     },

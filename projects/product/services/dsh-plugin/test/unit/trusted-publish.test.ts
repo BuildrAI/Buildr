@@ -97,7 +97,7 @@ test('post-approval current public bytes are consumed before write while origina
     const result = await publishPluginCandidate({ ...options(f), npmCli: '/fixture/fixed-npm-cli.js' }, dependencies({
       authority: async () => { events.push('authority'); return (await dependencies().authority!(dependencies().source!())); },
       registry: async () => ({ published, ...(published ? { integrity: f.manifest.integrity } : {}) }),
-      observePeer: async (name, request) => { events.push('current-public'); assert.equal(name, 'buildr'); assert.equal(request?.version, undefined); return { observation: { status: 'present', artifact: current.artifact }, bytes: current.bytes }; },
+      observePeer: async (name, request) => { events.push('current-public'); assert.equal(name, 'buildr'); assert.equal(request?.version, undefined); assert.equal(request?.distTag, 'next'); return { observation: { status: 'present', artifact: current.artifact }, bytes: current.bytes }; },
       verifyPair: request => { events.push('actual-pair'); assert.equal(request.npmCli, '/fixture/fixed-npm-cli.js'); assert.equal(request.nodeExecutable, process.execPath); assert.equal(request.consumer.artifact.integrity, f.manifest.integrity); assert.deepEqual(readFileSync(request.provider.tarball), current.bytes); assert.deepEqual(readFileSync(request.consumer.tarball), readFileSync(f.candidate.tarball)); return pair(request.consumer.artifact, request.provider.artifact); },
       publish: async () => { events.push('write'); published = true; return { status: 0 }; },
     }));
@@ -148,4 +148,21 @@ test('lost request stays readback-only after aggregate loss; no new authority or
 test('removing manifest compatibility cannot disguise a declared archive as legacy', async t => {
   const f = fixture(t); delete (f.candidate.manifest as any).compatibility;
   await assert.rejects(verifyPluginPublishCompatibility({ candidate: f.candidate }, {}), /plugin-candidate-compatibility-drift/);
+});
+
+
+test('publisher execution source can advance while original prepared bytes stay frozen', async t => {
+  const f = fixture(t), current = peer(), executionCommit = '9'.repeat(40); let published = false;
+  const base = dependencies();
+  const result = await publishPluginCandidate({ ...options(f), sourceCommit: executionCommit, publicationSourceCommit: sourceCommit }, dependencies({
+    env: { ...base.env, GITHUB_SHA: executionCommit },
+    source: () => ({ ...base.source!(), executionCommit }),
+    registry: async () => ({ published, ...(published ? { integrity: f.manifest.integrity } : {}) }),
+    observePeer: async () => ({ observation: { status: 'present', artifact: current.artifact }, bytes: current.bytes }),
+    verifyPair: request => pair(request.consumer.artifact, request.provider.artifact),
+    publish: async () => { published = true; return { status: 0 }; },
+  }));
+  assert.equal(result.status, 'passed');
+  assert.equal(result.sourceCommit, sourceCommit);
+  assert.equal(result.sha256, f.manifest.sha256);
 });

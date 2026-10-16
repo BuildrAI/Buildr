@@ -9,16 +9,20 @@ import { observePublishedPackageArtifact } from './package-artifact-observation.
 import { createPackageReleaseContext, createPackagePublicationEvidence, validatePackageReleaseContext, validatePackageOwnerPublication } from './release-package-evidence.ts';
 import { runPluginHostedOperation, readHostedPluginCandidate, reconcilePluginPreparationPointer } from './plugin-hosted-release.ts';
 import { runHostedReleaseTransaction } from './release-transaction-runner.ts';
-import { inspectHostedReleaseTransaction } from './release-transaction-evidence.ts';
+import { inspectHostedReleaseTransaction, validateReleaseTransactionEvidence } from './release-transaction-evidence.ts';
+import { createReleaseContext } from './release-readiness.ts';
+import { assertReleaseExecutorRecoveryEvidence, createReleaseExecutorRecovery, releaseExecutionCommit } from './release-executor-recovery.ts';
+import { observeUnpublishedRelease } from './release-observation.ts';
+import { inspectReleaseTag } from './release-tag-ensure.ts';
 import { reconcilePublishedReleaseWithDev, closeoutReleaseGitResources } from './release-git-convergence.ts';
 import { createReleaseToolRuntime } from './runtime.ts';
 import { classifyCandidateFailure } from './candidate-failed-shard-retry.ts';
 import { pairExecutionDiagnostic } from './package-pair-diagnostics.ts';
 
-export async function observePackageCounterparts(dependencies: any = {}): Promise<any> {
+export async function observePackageCounterparts(dependencies: any = {}, packageOptions: any = {}): Promise<any> {
   const observe = dependencies.observePublishedPackageArtifact ?? observePublishedPackageArtifact;
   const names = ['buildr', 'dsh-plugin'] as const;
-  const values = await Promise.allSettled(names.map(name => observe(name, dependencies.observationOptions ?? {})));
+  const values = await Promise.allSettled(names.map(name => observe(name, { ...dependencies.observationOptions, ...packageOptions[name] })));
   return Object.fromEntries(values.map((value, index) => [names[index], value.status === 'fulfilled' ? value.value
     : { observation: { status: 'unknown', packageName: names[index] === 'buildr' ? '@buildr-ai/buildr' : '@buildr-ai/buildr-dsh-plugin', diagnostic: 'Official counterpart observation failed.' } }]));
 }
@@ -136,7 +140,7 @@ async function candidateBytes(context: any, state: any, scope: any, dependencies
   if (context.targets.packages.includes('buildr')) {
     const owned = (dependencies.readCandidateEvidence)(state.candidate.runId);
     if (!owned.packageArtifact || !sameArtifactIdentity(owned.packageArtifact, context.packages.buildr.artifact)) throw new Error('Frozen main Candidate bytes changed.');
-    values.buildr = { artifact: owned.packageArtifact, bytes: owned.tarballBytes };
+    values.buildr = { artifact: owned.packageArtifact, bytes: owned.tarballBytes, candidateEvidence: owned };
   }
   if (context.targets.packages.includes('dsh-plugin')) {
     const owned = (dependencies.readHostedPluginCandidate ?? readHostedPluginCandidate)({ repo: state.transactions?.buildr?.repo ?? state.executionRoot, runId: context.packages['dsh-plugin'].prepareRunId,
@@ -150,7 +154,7 @@ async function candidateBytes(context: any, state: any, scope: any, dependencies
 export function validatePluginRecovery(context: any, observed: any, registryArtifact: any): void {
   const owned = context.packages['dsh-plugin'], journal = observed.journal, run = observed.run;
   if (run?.repository?.full_name !== 'BuildrAI/Buildr' || run.path?.split('@')[0] !== '.github/workflows/publish-dsh-plugin.yml'
-      || run.event !== 'workflow_dispatch' || run.head_branch !== 'main' || run.head_sha !== context.convergence.mainCommit
+      || run.event !== 'workflow_dispatch' || run.head_branch !== 'main' || run.head_sha !== (context.packages.buildr ? releaseExecutionCommit(context.packages.buildr.ownerContext) : context.convergence.mainCommit)
       || run.status !== 'completed' || run.run_attempt !== 1 || !Number.isSafeInteger(run.id) || run.id < 1
       || registryArtifact.origin !== 'registry' || !sameArtifactIdentity(owned.artifact, registryArtifact)
       || journal?.schemaVersion !== 'buildr.dsh-plugin-publication/v1' || !['passed', 'blocked'].includes(journal.status)
@@ -161,11 +165,93 @@ export function validatePluginRecovery(context: any, observed: any, registryArti
       || journal.request.runId !== run.id || journal.request.runAttempt !== 1) throw new Error('Plugin recovery requires the original attempted journal and exact public bytes.');
 }
 
+/** A replacement executor continues the original bytes only after the previous request is fully observed. */
+async function recoverMainPublication(options: any, context: any, scope: any, dependencies: any): Promise<any> {
+  const { state, git, readRun, save, effects } = scope;
+  const pointer = state.packagePublications?.buildr, owner = context.packages.buildr?.ownerContext;
+  const blocked = (message: string) => ({ status: 'publication-recovery-blocked', nextActions: [message] });
+  if (options.action !== 'resume' || options.authorized !== true) return { status: 'authorization-required', nextActions: ['明确授权同版本、原包和原顺序的执行器恢复，再resume --recover-publication --authorized。'] };
+  if (owner?.executorRecovery) {
+    const previous = state.publicationRecoveryHistory?.at(-1);
+    if (!previous || previous.context?.identity !== state.publicationAuthorization?.previousContextIdentity
+      || previous.context?.packages?.buildr?.ownerContext?.identity !== owner.executorRecovery.originalContextIdentity
+      || state.publicationAuthorization?.contextIdentity !== context.identity || state.publicationAuthorization?.recoveryAuthorized !== true
+      || pointer?.contextIdentity !== context.identity) return blocked('恢复请求缺少准确原历史与本次授权，不创建另一请求。');
+    assertReleaseExecutorRecoveryEvidence(owner, previous.evidence, previous.run);
+    return { status: 'ready', context };
+  }
+  if (!owner || !pointer?.requested || !Number.isSafeInteger(pointer.runId) || pointer.runId < 1
+    || pointer.status === 'passed' || pointer.evidence || state.publicationEvidence
+    || pointer.contextIdentity !== context.identity || state.publicationAuthorization?.contextIdentity !== context.identity
+    || Object.entries(state.packagePublications ?? {}).some(([name, value]: any) => name !== 'buildr' && (value.requested || value.runId || value.evidence))) {
+    return blocked('仅能恢复准确授权上下文中首个尚未发布的主包请求；保留原请求与历史。');
+  }
+  const run = readRun(pointer.runId);
+  const matches = (value: any) => value?.id === pointer.runId && value.repository?.full_name === 'BuildrAI/Buildr'
+    && value.path?.split('@')[0] === '.github/workflows/publish.yml' && value.event === 'workflow_dispatch'
+    && value.head_branch === 'main' && value.head_sha === owner.convergence.mainCommit
+    && value.status === 'completed' && value.conclusion === 'failure' && Number.isSafeInteger(value.run_attempt) && value.run_attempt >= 2;
+  if (!matches(run)) return blocked('原主包请求尚未确认至少两次尝试后的终态失败，不替换指针。');
+  const inspected = await (dependencies.inspectHostedReleaseTransaction ?? inspectHostedReleaseTransaction)({ runId: pointer.runId,
+    repository: 'BuildrAI/Buildr', ghCommand: options.ghCommand }, dependencies.evidenceDependencies);
+  const evidence = validateReleaseTransactionEvidence(inspected.evidence);
+  if (inspected.status !== 'failed' || evidence.status !== 'failed' || evidence.context.identity !== owner.identity
+    || evidence.publish.runId !== run.id || evidence.publish.runAttempt !== run.run_attempt || evidence.publish.headSha !== run.head_sha
+    || evidence.release.registryPublished !== false || evidence.release.registryObservation !== 'absent' || evidence.release.registryIntegrity !== null
+    || evidence.release.githubRelease !== null || evidence.release.tag !== `v${context.targets.versions.buildr}`
+    || evidence.release.tagCommit !== owner.convergence.mainCommit
+    || (evidence.attempt.effects ?? []).some((effect: any) => !['local-tag-created', 'local-tag-reused', 'remote-tag-pushed', 'tag-reused'].includes(effect.type)
+      || effect.state !== 'confirmed')) return blocked('缺少原运行最新匹配的失败记录，或存在未确认的发布副作用；保留原请求。');
+  const publicState = await (dependencies.observeUnpublishedRelease ?? observeUnpublishedRelease)(context.targets.versions.buildr,
+    { token: process.env.GH_TOKEN || process.env.GITHUB_TOKEN, ...dependencies.observationOptions });
+  if (publicState.facts?.npm?.state !== 'absent' || publicState.facts?.githubRelease?.state !== 'absent'
+    || !Array.isArray(publicState.activeRuns) || publicState.activeRuns.length !== 0) return blocked('当前官方版本、GitHub Release或活动发布运行未确认安全，不派发恢复。');
+  const repo = state.transactions?.buildr?.repo ?? state.executionRoot ?? scope.workspace;
+  const tag = (dependencies.inspectReleaseTag ?? inspectReleaseTag)({ repo, tag: evidence.release.tag, sourceCommit: owner.convergence.mainCommit }, { execute: scope.execute });
+  if (tag.status !== 'ready' || tag.action !== 'reuse' || tag.observed?.targetCommit !== owner.convergence.mainCommit) return blocked('现有标签未精确指向原主包来源，不移动或重建标签。');
+  const candidates = await candidateBytes(context, state, scope, dependencies);
+  git(['fetch', '--no-tags', 'origin', 'refs/heads/main:refs/remotes/origin/main', 'refs/heads/dev:refs/remotes/origin/dev']);
+  const executionCommit = git(['rev-parse', 'origin/main']);
+  const executorRecovery = createReleaseExecutorRecovery(owner, { repo, sourceCommit: executionCommit, previousEvidence: evidence }, { execute: scope.execute });
+  const { schemaVersion: _schema, identity: _identity, ...projection } = owner;
+  const newOwner = createReleaseContext({ ...projection, executorRecovery });
+  const replacement = createPackageReleaseContext({ ...context, packages: { ...context.packages, buildr: { ...context.packages.buildr, ownerContext: newOwner } } });
+  const transaction = { ...state.transactions.buildr, repo, sourceCommit: executionCommit, remoteMain: 'origin/main', version: context.targets.versions.buildr,
+    candidateBase: context.selection.releaseHead, candidateTree: context.selection.releaseTree, releaseContext: newOwner };
+  const ready = await (dependencies.runHostedReleaseTransaction ?? runHostedReleaseTransaction)({ ...transaction, action: 'readiness' },
+    { ...dependencies.transactionDependencies, candidateEvidence: candidates.buildr.candidateEvidence });
+  if (ready.status !== 'ready' || ready.context?.identity !== newOwner.identity) return blocked('新执行器的原包就绪核验未通过；保留原请求。');
+  const latest = readRun(pointer.runId);
+  if (!matches(latest) || latest.run_attempt !== run.run_attempt || git(['rev-parse', 'origin/main']) !== executionCommit) return blocked('恢复核验期间原运行或main发生变化，保留原请求并重新读取。');
+  state.publicationRecoveryHistory ??= [];
+  state.publicationRecoveryHistory.push({ package: 'buildr', context: structuredClone(context), transaction: structuredClone(state.transactions.buildr),
+    authorization: structuredClone(state.publicationAuthorization), pointer: structuredClone(pointer), run: structuredClone(run), evidence });
+  state.context = replacement;
+  state.transactions.buildr = transaction;
+  state.publicationAuthorization = { ...state.publicationAuthorization, contextIdentity: replacement.identity, recoveryAuthorized: true,
+    previousContextIdentity: context.identity };
+  state.packagePublications.buildr = { contextIdentity: replacement.identity, requested: false, runId: null };
+  for (const [name, value] of Object.entries(state.packagePublications) as Array<[string, any]>) {
+    if (name !== 'buildr' && !value.requested && !value.runId && !value.evidence) value.contextIdentity = replacement.identity;
+  }
+  effects.push({ type: 'publication-executor-recovery-bound', previousRunId: run.id, previousRunAttempt: run.run_attempt,
+    originalContextIdentity: context.identity, contextIdentity: replacement.identity, sourceCommit: executionCommit });
+  save();
+  return { status: 'ready', context: replacement, candidates };
+}
+
 /** Continue only the first unfinished package in the original safe order. */
 export async function continuePackageRelease(options: any, scope: any, dependencies: any = {}): Promise<any> {
   const { state, save, effects, readRun, gh, git } = scope;
   if (!state.context) return { status: 'preparation-required', nextActions: ['先prepare准确选择与各包候选。'] };
-  const context = validatePackageReleaseContext(state.context);
+  let context = validatePackageReleaseContext(state.context);
+  let recoveredCandidates: any;
+  if (options.recoverPublication === true) {
+    const recovered = await recoverMainPublication(options, context, scope, dependencies);
+    if (recovered.status !== 'ready') return recovered;
+    context = recovered.context;
+    recoveredCandidates = recovered.candidates;
+  }
   state.packagePublications ??= {};
   const originalOrder = context.compatibility.publicationOrder;
   for (const name of originalOrder) {
@@ -177,7 +263,7 @@ export async function continuePackageRelease(options: any, scope: any, dependenc
       if (!pointer.runId) {
         const title = `Release ${context.targets.versions.buildr} (${pointer.releaseId || context.packages.buildr.ownerContext.identity.slice(7, 31)})`;
         const runs = JSON.parse(gh(['run', 'list', '--repo', 'BuildrAI/Buildr', '--workflow', 'publish.yml', '--event', 'workflow_dispatch', '--limit', '100', '--json', 'databaseId,displayTitle,headSha']));
-        const matches = runs.filter((run: any) => run.displayTitle === title && run.headSha === context.convergence.mainCommit);
+        const matches = runs.filter((run: any) => run.displayTitle === title && run.headSha === releaseExecutionCommit(context.packages.buildr.ownerContext));
         if (matches.length > 1) return { status: 'publication-dispatch-ambiguous', package: name, nextActions: ['多个运行匹配原主包请求；保留原指针，核对准确运行身份，不再次派发。'] };
         const found = matches[0];
         if (!found) return { status: 'publication-dispatch-unconfirmed', nextActions: ['回读原主包请求，不再次派发。'] };
@@ -199,7 +285,8 @@ export async function continuePackageRelease(options: any, scope: any, dependenc
       result = { run, ownerEvidence: observed.evidence };
     } else {
       const observed = (dependencies.runPluginHostedOperation ?? runPluginHostedOperation)({ operation: 'publish', authorized: true, repo: state.executionRoot,
-        version: context.targets.versions['dsh-plugin'], sourceCommit: context.convergence.mainCommit, candidateRunId: context.packages['dsh-plugin'].prepareRunId,
+        version: context.targets.versions['dsh-plugin'], sourceCommit: context.packages.buildr ? releaseExecutionCommit(context.packages.buildr.ownerContext) : context.convergence.mainCommit,
+        originalSourceCommit: context.convergence.mainCommit, candidateRunId: context.packages['dsh-plugin'].prepareRunId,
         pointer, ghCommand: options.ghCommand }, { ...dependencies.pluginDependencies, execute: scope.execute, onPointer: save });
       effects.push(...(observed.effects ?? [])); save();
       if (observed.status !== 'passed') {
@@ -213,11 +300,12 @@ export async function continuePackageRelease(options: any, scope: any, dependenc
             validatePluginRecovery(context, observed, exact.observation.artifact);
             await candidateBytes(context, state, scope, dependencies);
             const currentMain = git(['rev-parse', 'origin/main']);
-            if (currentMain !== context.convergence.mainCommit) return { status: 'publication-source-drift', package: name, nextActions: ['准确包已公开，保留原记录；当前main改变，核对原来源的恢复路径。'] };
+            if (currentMain !== (context.packages.buildr ? releaseExecutionCommit(context.packages.buildr.ownerContext) : context.convergence.mainCommit)) return { status: 'publication-source-drift', package: name, nextActions: ['准确包已公开，保留原记录；当前main改变，核对原来源的恢复路径。'] };
             Object.assign(pointer, { recoveryRunId: observed.run.id, previousRunIds: [...(pointer.previousRunIds ?? []), observed.run.id],
               recoveryRequested: true, requested: false, runId: null }); save();
             const recovered = (dependencies.runPluginHostedOperation ?? runPluginHostedOperation)({ operation: 'publish', authorized: true, repo: state.executionRoot,
-              version: context.targets.versions[name], sourceCommit: context.convergence.mainCommit, candidateRunId: context.packages[name].prepareRunId,
+              version: context.targets.versions[name], sourceCommit: context.packages.buildr ? releaseExecutionCommit(context.packages.buildr.ownerContext) : context.convergence.mainCommit,
+              originalSourceCommit: context.convergence.mainCommit, candidateRunId: context.packages[name].prepareRunId,
               pointer, ghCommand: options.ghCommand }, { ...dependencies.pluginDependencies, execute: scope.execute, onPointer: save });
             effects.push(...(recovered.effects ?? [])); save();
             return { status: recovered.status === 'passed' ? 'publication-readback-required' : `publication-${recovered.status}`, package: name,
@@ -244,10 +332,12 @@ export async function continuePackageRelease(options: any, scope: any, dependenc
   if (options.action === 'resume' && !state.publicationAuthorization) return { status: 'authorization-required', nextActions: ['原操作尚未取得公开发布授权。'] };
   git(['fetch', '--no-tags', 'origin', 'refs/heads/main:refs/remotes/origin/main', 'refs/heads/dev:refs/remotes/origin/dev']);
   const currentMain = git(['rev-parse', 'origin/main']);
-  if (currentMain !== context.convergence.mainCommit) return { status: 'publication-source-drift', nextActions: ['保留原包与请求；当前main与授权来源不同，核对原来源的发布路径。'] };
-  const candidates = await candidateBytes(context, state, scope, dependencies);
-  const counterparts = await observePackageCounterparts(dependencies);
+  if (currentMain !== (context.packages.buildr ? releaseExecutionCommit(context.packages.buildr.ownerContext) : context.convergence.mainCommit)) return { status: 'publication-source-drift', nextActions: ['保留原包与请求；当前main与授权来源不同，核对原来源的发布路径。'] };
+  const candidates = recoveredCandidates ?? await candidateBytes(context, state, scope, dependencies);
   const completed = originalOrder.filter((name: string) => state.packagePublications[name]?.status === 'passed');
+  const peerVersion = context.packages['dsh-plugin']?.buildrPeer?.version;
+  const counterpartOptions = completed.includes('buildr') && peerVersion ? { buildr: { distTag: peerVersion.includes('-') ? 'next' : 'latest' } } : {};
+  const counterparts = await observePackageCounterparts(dependencies, counterpartOptions);
   const planTargets = completed.length ? normalizeReleaseTargets({ packages: next, version: next === 'buildr' ? context.targets.versions.buildr : undefined,
     pluginVersion: next === 'dsh-plugin' ? context.targets.versions['dsh-plugin'] : undefined, selectionId: context.targets.selectionId }) : context.targets;
   const plan = await evaluateObservedPackagePlan(planTargets, candidates, counterparts, dependencies);
@@ -261,12 +351,14 @@ export async function continuePackageRelease(options: any, scope: any, dependenc
   if (next === 'buildr') {
     dispatched = await (dependencies.runHostedReleaseTransaction ?? runHostedReleaseTransaction)({ ...state.transactions.buildr, action: 'dispatch', publicationAuthorized: true,
       dispatchPreviouslyRequested: pointer.requested }, { ...dependencies.transactionDependencies,
+      ...(candidates.buildr?.candidateEvidence ? { candidateEvidence: candidates.buildr.candidateEvidence } : {}),
       onDispatchIntent: (intent: any) => { Object.assign(pointer, { requested: true, releaseId: intent.releaseId }); save(); },
       onDispatchObserved: (run: any) => { Object.assign(pointer, { requested: true, runId: run.runId }); save(); },
     });
     if (dispatched.github?.runId) { pointer.requested = true; pointer.runId = dispatched.github.runId; save(); }
   } else dispatched = (dependencies.runPluginHostedOperation ?? runPluginHostedOperation)({ operation: 'publish', authorized: true, repo: state.executionRoot,
-    version: context.targets.versions['dsh-plugin'], sourceCommit: context.convergence.mainCommit, candidateRunId: context.packages['dsh-plugin'].prepareRunId,
+    version: context.targets.versions['dsh-plugin'], sourceCommit: context.packages.buildr ? releaseExecutionCommit(context.packages.buildr.ownerContext) : context.convergence.mainCommit,
+    originalSourceCommit: context.convergence.mainCommit, candidateRunId: context.packages['dsh-plugin'].prepareRunId,
     pointer, ghCommand: options.ghCommand }, { ...dependencies.pluginDependencies, execute: scope.execute, onPointer: save });
   effects.push(...(dispatched.effects ?? [])); save();
   return { status: dispatched.status === 'passed' ? 'publication-readback-required' : `publication-${dispatched.status}`, package: next, run: dispatched.run,
