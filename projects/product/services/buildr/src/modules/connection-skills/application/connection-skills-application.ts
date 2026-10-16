@@ -15,6 +15,18 @@ function requireDefinitionObservation(expected: Expected): void {
 }
 type AuthIntent = { intent: 'keep' | 'replace' | 'remove'; values?: Values };
 type TeamInput = { id?: string; name: string; environment?: string; enabled?: boolean; binding: ConnectionBinding; config: Values; fieldLabels?: unknown; authentication: AuthIntent; expected: Expected };
+function publicWebsite(definition: ConnectionDefinition | undefined, config: Values): string | null {
+  const presentation = definition?.presentation;
+  const valueFor = (key: string | undefined) => key ? Object.hasOwn(config, key) ? config[key] : definition?.config.fields.find(field => field.key === key)?.default : undefined;
+  const primary = valueFor(presentation?.websiteField);
+  const key = primary === undefined || typeof primary === 'string' && !primary.trim() ? presentation?.websiteFallbackField : presentation?.websiteField;
+  const field = definition?.config.fields.find(field => field.key === key);
+  if (!key || field?.type !== 'url') return null;
+  try {
+    const value = validateConfig([field], { [key]: valueFor(key) })[key];
+    return typeof value === 'string' ? value : null;
+  } catch { return null; }
+}
 export class ConnectionSkillsApplication {
   readonly files: ConnectionFiles;
   readonly catalog: Catalog;
@@ -100,9 +112,7 @@ export class ConnectionSkillsApplication {
     } catch {
       if (!observationDiagnostic) diagnostics.push('本机观察版本不可用；连接源内容已保留，需恢复本机观察能力后才能执行或修改。');
     }
-    const websiteField = entry?.definition.presentation?.websiteField;
-    let websiteUrl: string | null = null;
-    if (websiteField && typeof publicConfig[websiteField] === 'string') try { const url = new URL(publicConfig[websiteField] as string); if (['https:', 'http:'].includes(url.protocol) && !url.username && !url.password) websiteUrl = url.href; } catch { /* Invalid website never becomes a clickable target. */ }
+    const websiteUrl = publicWebsite(entry?.definition, instance.config);
     return { ...instance, config: publicConfig, fieldLabels, sourcePath, revision, teamRevision, localRevision: local.revision, definitionRevision,
       authentication: { source: local.present ? 'personal' as const : 'team' as const, team: teamAuthentication, personal: personalAuthentication },
       availability: { ready: diagnostics.length === 0, diagnostics }, programAvailability, definition: entry, websiteUrl };

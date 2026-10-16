@@ -5,6 +5,7 @@ import { createConnectionSkillsClient } from '../src/features/connection-skills/
 import { afterPersonalSave, afterTeamSave, authenticationDraftsAfterRead, bindingFor, bindingKey, categoryLabel, connectionSystems, createDraftRequestScope, draftHookInput, draftObservations, fieldDefaults, hooksAvailable, personalDraftDirty, personalDraftFor, validateFields, websiteHref, withFieldValue } from '../src/features/connection-skills/connection-skill-form.ts';
 import { tabForPath } from '../src/app/workspace-pages.ts';
 import { connectionFieldLabel, connectionSummaryLines, displayFieldLabels, fieldLabelsAfterRead } from '../src/features/connection-skills/connection-skill-summary.ts';
+import { sortConnectionInstances } from '../src/features/connection-skills/connection-skill-list.ts';
 
 const entry = {
   definition: { schemaVersion: 'buildr.connection-definition/v1', definitionId: 'custom', name: '自制接入', category: 'custom', configVersion: 1,
@@ -15,6 +16,31 @@ const entry = {
 };
 const instance = { id: 'instance-a', binding: bindingFor(entry), config: { endpoint: 'https://custom.example.test/', scope: 'default' }, teamRevision: 'team-current', localRevision: 'local-current',
   authentication: { source: 'personal', team: { configured: true, values: { username: 'team' } }, personal: { present: true, configured: true, values: { username: 'person' } } } };
+
+test('连接按类别聚集，同类保留输入顺序且未知类别同样适用', () => {
+  const input = Object.freeze([
+    { id: 'logs-a', category: 'logs' },
+    { id: 'mysql', category: 'data-source', name: 'Z MySQL', environment: 'prod' },
+    { id: 'custom-a', category: 'company-custom' },
+    { id: 'nacos', category: 'configuration' },
+    { id: 'yearning', category: 'data-source', name: 'A Yearning', environment: 'qa' },
+    { id: 'custom-b', category: 'company-custom' },
+  ].map(Object.freeze));
+  const before = [...input], result = sortConnectionInstances(input);
+  assert.deepEqual(result.map(row => row.id), ['custom-a', 'custom-b', 'nacos', 'mysql', 'yearning', 'logs-a']);
+  assert.notEqual(result, input);
+  assert.deepEqual(input, before, 'Display ordering never changes the directory snapshot.');
+  assert.equal(result[3], input[1], 'Rows retain their exact object identity and execution binding.');
+});
+
+test('排序权重相同但机器键不同的类别仍分别聚集', () => {
+  const input = [
+    { id: 'decomposed-first', category: 'e\u0301' },
+    { id: 'composed', category: '\u00e9' },
+    { id: 'decomposed-second', category: 'e\u0301' },
+  ];
+  assert.deepEqual(sortConnectionInstances(input).map(row => row.id), ['decomposed-first', 'decomposed-second', 'composed']);
+});
 
 test('草稿明确测试团队组而不改变已保存个人来源，不展开保持的秘密', () => {
   const before = structuredClone(instance);

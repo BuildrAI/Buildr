@@ -35,3 +35,4 @@ presentation:
       fields: [config.scope]
   summaryFields: [website]
   websiteField: website
+  # 双地址方法可增加 websiteFallbackField: apiBaseUrl；须先声明该 url 配置字段。

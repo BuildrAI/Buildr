@@ -79,6 +79,17 @@ test('有序展示分组和发现前置输入只接受有限字段引用，旧�
   invalid(candidate => { candidate.hooks.spaces.inputs = { evaluate: 'config.website' }; });
 });
 
+test('网站回落仅接受已声明的网址配置字段，旧声明不推断回落', () => {
+  const value = sample();
+  Object.assign(value.presentation, { websiteFallbackField: 'website' });
+  assert.equal(parseConnectionDefinition(YAML.stringify(value)).presentation?.websiteFallbackField, 'website');
+  assert.equal(parseConnectionDefinition(YAML.stringify(sample())).presentation?.websiteFallbackField, undefined);
+  for (const websiteFallbackField of ['missing', 'count', 'note', 'password', 'authentication.password', 1, {}, null]) {
+    Object.assign(value.presentation, { websiteFallbackField });
+    assert.throws(() => parseConnectionDefinition(YAML.stringify(value)), { code: 'connection_definition_invalid', field: 'presentation.websiteFallbackField' });
+  }
+});
+
 test('目录从当前源重建、精确绑定、来源和兼容版本变化局部诊断，不运行程序', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-definition-')); t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const skills = [{ id: 'first', path: 'connections/first', assetIdentity: 'company:skill:first', sourceIdentity: 'company:first', connectionDefinitions: ['assets/connection.yml'] }, { id: 'second', path: 'connections/second', assetIdentity: 'company:skill:second', sourceIdentity: 'company:second', connectionDefinitions: ['assets/connection.yml'] }];

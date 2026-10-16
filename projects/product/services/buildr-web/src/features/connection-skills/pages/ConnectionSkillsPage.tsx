@@ -13,6 +13,7 @@ import { createConnectionSkillsClient } from '../api/connection-skills-api';
 import type { CatalogEntry, ConnectionInstance } from '../connection-skill-types';
 import { categoryLabel, diagnosticText, websiteHref } from '../connection-skill-form';
 import { connectionSummaryLines } from '../connection-skill-summary';
+import { sortConnectionInstances } from '../connection-skill-list';
 import { ConnectionSkillEditDrawer } from '../components/ConnectionSkillEditDrawer';
 import { MySqlQuery, createMySqlQueryClient, mysqlQueryTarget, type MySqlQueryTarget } from '../../mysql-query';
 import '../connection-skills.css';
@@ -23,6 +24,7 @@ export function ConnectionSkillsPage() {
   const paneHost = useWorkspacePaneHost(), location = useLocation();
   const [queryOpen, setQueryOpen] = useState(false), [queryEntry, setQueryEntry] = useState<{ id: string; nonce: number } | null>(null);
   const [instances, setInstances] = useState<ConnectionInstance[]>([]), [definitions, setDefinitions] = useState<CatalogEntry[]>([]);
+  const sortedInstances = useMemo(() => sortConnectionInstances(instances), [instances]);
   const [loading, setLoading] = useState(true), [error, setError] = useState(''), [diagnostics, setDiagnostics] = useState<unknown[]>([]), [refresh, setRefresh] = useState(0);
   const [editing, setEditing] = useState<ConnectionInstance | null>(), [removing, setRemoving] = useState('');
   const current = useRef({ client, refresh }); current.current = { client, refresh };
@@ -74,7 +76,7 @@ export function ConnectionSkillsPage() {
     objectContentLayout="fill" objectLabel="查询" retainObjectContent
     objectContent={({ visible }) => queryEntry && <MySqlQuery connections={queryTargets} client={queryClient} entry={queryEntry} active={queryOpen && visible} layoutKey={workspaceId || ''} />}
   >
-    <ResourceDirectory<ConnectionInstance> title="连接" noun="连接" description="管理团队使用的外部系统，供你和智能体（Agent）使用。" data={instances} total={instances.length} showTotal loading={loading} error={directoryLoaded ? undefined : error} rowKey={instance => instance.id} name={instance => instance.name} summary={summary} onRefresh={reload} searchId="connection-skills-search" tableId="connection-skills-table" countId="connection-skills-count" searchText={instance => `${instance.name} ${instance.environment} ${summary(instance)} ${connectionSummaryLines(instance).join(' ')} ${Object.values(instance.config).join(' ')}`} searchPlaceholder="搜索名称、系统或范围"
+    <ResourceDirectory<ConnectionInstance> title="连接" noun="连接" description="管理团队使用的外部系统，供你和智能体（Agent）使用。" data={sortedInstances} total={instances.length} showTotal loading={loading} error={directoryLoaded ? undefined : error} rowKey={instance => instance.id} name={instance => instance.name} summary={summary} onRefresh={reload} searchId="connection-skills-search" tableId="connection-skills-table" countId="connection-skills-count" searchText={instance => `${instance.name} ${instance.environment} ${summary(instance)} ${connectionSummaryLines(instance).join(' ')} ${Object.values(instance.config).join(' ')}`} searchPlaceholder="搜索名称、系统或范围"
       notice={<><p className="buildr-connection-skill-muted">连接配置随当前工作空间（Workspace）的团队文件共享。</p>{directoryLoaded && error && <Alert showIcon type="error" message={error} />}{diagnostics.map((item, index) => <Alert key={index} showIcon type="warning" message={diagnosticText(item)} />)}</>}
       actions={<Button id="create-connection-skill" type="primary" icon={<PlusOutlined />} disabled={loading || !definitions.some(entry => entry.enabled)} onClick={() => setEditing(null)}>新增连接</Button>}
       columns={[

@@ -8,7 +8,7 @@ export type ConnectionDefinition = {
   schemaVersion: string; definitionId: string; name: string; description: string; category: string; systemId?: string; configVersion: number;
   config: { fields: ConnectionField[] }; authentication: { fields: ConnectionField[]; targetFields: string[] };
   programs: Record<string, unknown>; hooks?: Record<string, { program: string; args: string[]; effect: 'read'; inputs?: string[] }>;
-  presentation?: { summaryFields: string[]; websiteField?: string; categoryLabel?: string; methodLabel?: string; groups?: { id: string; title: string; fields: string[]; collapsed?: boolean }[] };
+  presentation?: { summaryFields: string[]; websiteField?: string; websiteFallbackField?: string; categoryLabel?: string; methodLabel?: string; groups?: { id: string; title: string; fields: string[]; collapsed?: boolean }[] };
 };
 export type CatalogEntry = {
   definition: ConnectionDefinition; skill: { id: string; assetIdentity: string; sourceIdentity: string; sourcePath: string; entryPath: string };

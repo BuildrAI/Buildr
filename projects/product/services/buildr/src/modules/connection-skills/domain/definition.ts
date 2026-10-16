@@ -27,7 +27,7 @@ export interface ConnectionDefinition {
   config: { fields: ConnectionField[] };
   authentication: { fields: ConnectionField[]; targetFields: string[] };
   programs: Record<string, ConnectionProgram>; hooks?: Record<string, ConnectionHook>;
-  presentation?: { summaryFields: string[]; websiteField?: string; categoryLabel?: string; methodLabel?: string; groups?: ConnectionPresentationGroup[] };
+  presentation?: { summaryFields: string[]; websiteField?: string; websiteFallbackField?: string; categoryLabel?: string; methodLabel?: string; groups?: ConnectionPresentationGroup[] };
 }
 export interface ConnectionBinding { skillAssetIdentity: string; definitionId: string; sourceIdentity: string; configVersion: number }
 export function connectionError(code: string, message: string, field?: string): Error & ConnectionDiagnostic & { status: number; statusCode: number } {
@@ -124,9 +124,9 @@ export function parseConnectionDefinition(content: string): ConnectionDefinition
   }
   for (const field of value.config.fields) if (field.optionsFrom) ensure(Object.hasOwn(value.hooks || {}, field.optionsFrom), field.key, '动态选项必须引用已声明槽位。');
   if (value.presentation !== undefined) {
-    closed(value.presentation, ['summaryFields', 'websiteField', 'categoryLabel', 'methodLabel', 'groups'], 'presentation'); value.presentation.summaryFields ??= []; strings(value.presentation.summaryFields, 'presentation.summaryFields');
+    closed(value.presentation, ['summaryFields', 'websiteField', 'websiteFallbackField', 'categoryLabel', 'methodLabel', 'groups'], 'presentation'); value.presentation.summaryFields ??= []; strings(value.presentation.summaryFields, 'presentation.summaryFields');
     ensure(new Set(value.presentation.summaryFields).size === value.presentation.summaryFields.length && value.presentation.summaryFields.every((name: string) => configuration.has(name)), 'presentation.summaryFields', '摘要只能引用非秘密配置字段。');
-    if (value.presentation.websiteField !== undefined) ensure(configuration.get(value.presentation.websiteField)?.type === 'url', 'presentation.websiteField', '网站入口必须引用网址字段。');
+    for (const name of ['websiteField', 'websiteFallbackField']) if (value.presentation[name] !== undefined) ensure(configuration.get(value.presentation[name])?.type === 'url', `presentation.${name}`, '网站入口必须引用网址字段。');
     for (const name of ['categoryLabel', 'methodLabel']) if (value.presentation[name] !== undefined) ensure(typeof value.presentation[name] === 'string' && value.presentation[name].trim(), `presentation.${name}`, '展示名称必须是非空文本。');
     if (value.presentation.groups !== undefined) {
       ensure(Array.isArray(value.presentation.groups) && value.presentation.groups.length <= 32, 'presentation.groups', '展示分组必须是有界数组。');

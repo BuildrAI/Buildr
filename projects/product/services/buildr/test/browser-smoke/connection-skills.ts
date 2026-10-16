@@ -97,10 +97,15 @@ try {
   const assertReads = (expected: typeof reads, reason: string) => assert.deepEqual(reads, expected, reason);
   const originalEdit = () => page!.locator('#connection-skills-table').locator(`[data-row-key="${created.id}"]`).getByRole('button', { name: '编辑', exact: true });
   const editOriginal = () => originalEdit().click();
+  const rowIds = () => page!.locator('#connection-skills-table tbody > tr[data-row-key]').evaluateAll(rows => rows.map(row => row.getAttribute('data-row-key')));
+  const assertRows = async (expected: string[], reason: string) => assert.deepEqual(await rowIds(), expected, reason);
   const directoryPattern = '**/connection-skills/directory';
   await page.route(directoryPattern, async route => {
     const response = await route.fetch(), body = await response.json();
-    await route.fulfill({ response, json: { ...body, diagnostics: [...body.diagnostics, { code: 'fixture-local-source', message: '目录局部诊断夹具' }] } });
+    assert.equal(body.instances.length, 2);
+    const reversedCategories = [queryInstance.id, created.id].map(id => body.instances.find((instance: any) => instance.id === id));
+    assert.ok(reversedCategories.every(Boolean));
+    await route.fulfill({ response, json: { ...body, instances: reversedCategories, diagnostics: [...body.diagnostics, { code: 'fixture-local-source', message: '目录局部诊断夹具' }] } });
   });
   await page.addInitScript(({ workspaceId, basePath }) => {
     localStorage.setItem(`buildr.web.page-tabs.${workspaceId}`, JSON.stringify([
@@ -112,6 +117,7 @@ try {
   await page.waitForURL(`${base}/connection-skills`);
   await page.locator('#connection-skills-table').waitFor();
   await originalEdit().waitFor();
+  await assertRows([created.id, queryInstance.id], 'Initial display orders category keys instead of using directory input order.');
   assert.equal(await page.locator('[data-nav="connections"]').count(), 0, 'Retired connection navigation is removed.');
   assert.equal(await page.locator('[data-nav="connection-skills"]').getAttribute('aria-label'), '连接');
   assert.equal(await page.getByRole('link', { name: '打开已有连接', exact: true }).count(), 0);
@@ -305,6 +311,13 @@ try {
   await page.locator('#save-connection-skill-team').click();
   await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
   await page.locator('#connection-skills-table').getByText('新增保存后关闭', { exact: true }).waitFor();
+  const added = connections.list(workspaceRoot).instances.find((instance: any) => instance.name === '新增保存后关闭');
+  assert.ok(added);
+  await assertRows([created.id, added.id, queryInstance.id], 'A locally appended configuration joins its category without another directory request.');
+  await page.locator('#connection-skills-search').fill('fixture.example.test');
+  await assertRows([created.id, added.id], 'Search preserves the relative order of same-category instances.');
+  await page.locator('#connection-skills-search').fill('');
+  await assertRows([created.id, added.id, queryInstance.id], 'Clearing search restores the same category order.');
   const namedSelectionRow = page.locator('#connection-skills-table tr').filter({ hasText: '新增保存后关闭' });
   assert.equal(await namedSelectionRow.locator('.buildr-connection-skill-summary > span').nth(1).innerText(), '测试空间', 'Saved dynamic selection uses its chosen name in the list.');
   await namedSelectionRow.getByRole('button', { name: '编辑', exact: true }).click();
@@ -329,6 +342,9 @@ try {
   await page.getByRole('button', { name: '刷新连接', exact: true }).click();
   await (await directoryRefresh).finished();
   await page.locator('#create-connection-skill:not([disabled])').waitFor();
+  const currentInstances = connections.list(workspaceRoot).instances;
+  const refreshedRowOrder: string[] = [...currentInstances.filter((instance: any) => instance.category === 'configuration'), ...currentInstances.filter((instance: any) => instance.category === 'data-source')].map((instance: any) => instance.id);
+  await assertRows(refreshedRowOrder, 'Explicit refresh keeps categories together and preserves the fresh directory order within each.');
   const refreshedReads = { ...reads };
   assertReads({ ...beforeFailedRefresh, directory: beforeFailedRefresh.directory + 3 }, 'Each explicit refresh reads the combined current directory once.');
   await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-save-closed.png') });
@@ -377,6 +393,7 @@ try {
   await page.locator('#save-connection-skill-team').click();
   await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
   assertReads(refreshedReads, 'Updating a saved connection only replaces its row.');
+  await assertRows(refreshedRowOrder, 'Editing a row keeps it in the same category position without reordering peers.');
   assert.equal(connections.get(workspaceRoot, created.id).instance.authentication.source, 'personal', 'Failed connection test does not block successful save or change personal authentication.');
 
   await editOriginal();
@@ -483,20 +500,33 @@ try {
   assert.equal(YAML.parse(fs.readFileSync(teamFile, 'utf8')).name, '另一入口修改');
   await page.locator('#close-connection-skill-editor').click();
   await page.setViewportSize({ width: 1280, height: 900 });
+  const beforeNacosReads = { ...reads };
   await page.locator('#create-connection-skill').click();
   await page.locator('[data-connection-system]').filter({ hasText: 'Nacos' }).click();
   assert.equal(await page.locator('#connection-skill-config-production').isChecked(), false, 'New builtin Nacos starts with production unchecked; the custom fixture retains its own true default.');
   await page.locator('#connection-skill-config-apiBaseUrl').fill('http://admin.example.invalid:8848/nacos');
-  await page.locator('#connection-skill-config-consoleUrl').fill('http://console.example.invalid:8080/');
   await page.locator('#connection-skill-team-username').fill('offline-reader');
   await page.locator('#connection-skill-team-password').fill('offline-fixture-password');
   await page.locator('#connection-skill-name').fill('独立接口与网站');
   await page.locator('#save-connection-skill-team').click();
   await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
-  const nacos = connections.list(workspaceRoot).instances.find((item: any) => item.name === '独立接口与网站');
+  let nacos = connections.list(workspaceRoot).instances.find((item: any) => item.name === '独立接口与网站');
   assert.equal(nacos.binding.configVersion, 2);
   assert.equal(nacos.config.apiBaseUrl, 'http://admin.example.invalid:8848/nacos');
+  const nacosRow = page.locator('#connection-skills-table tr').filter({ hasText: '独立接口与网站' });
+  assert.equal(nacos.config.consoleUrl, undefined, 'Leaving the optional website empty does not write an inferred value.');
+  assert.equal(nacos.websiteUrl, nacos.config.apiBaseUrl);
+  assert.equal(await nacosRow.getByRole('link', { name: '打开网站', exact: true }).getAttribute('href'), nacos.config.apiBaseUrl, 'An explicitly declared website fallback is available without contacting the external system.');
+  await nacosRow.getByRole('button', { name: '编辑', exact: true }).click();
+  await page.locator('#connection-skill-config-consoleUrl').fill('http://console.example.invalid:8080/');
+  await page.locator('#save-connection-skill-team').click();
+  await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
+  nacos = connections.get(workspaceRoot, nacos.id).instance;
   assert.equal(nacos.websiteUrl, 'http://console.example.invalid:8080/');
+  assert.equal(await nacosRow.getByRole('link', { name: '打开网站', exact: true }).getAttribute('href'), nacos.websiteUrl, 'Saving an explicit website override immediately takes precedence.');
+  const finalRowOrder = [...refreshedRowOrder.filter(id => id !== queryInstance.id), nacos.id, queryInstance.id];
+  await assertRows(finalRowOrder, 'The Nacos create and edit responses keep the new row within its category.');
+  assertReads(beforeNacosReads, 'Website fallback and override saves update the returned row without directory requests.');
   const nacosSummary = page.locator('#connection-skills-table tr').filter({ hasText: '独立接口与网站' }).locator('.buildr-connection-skill-summary > span');
   assert.equal(await nacosSummary.count(), 2, 'Nacos address and default ranges occupy two logical lines.');
   assert.match(await nacosSummary.nth(1).innerText(), /public.*DEFAULT_GROUP/, 'Namespace and group share the second summary line.');
@@ -506,6 +536,7 @@ try {
   await page.getByRole('menuitem', { name: '删除实例', exact: true }).click();
   await page.locator('.ant-modal-confirm').getByRole('button', { name: /^删\s*除$/ }).click();
   await addedRow.waitFor({ state: 'hidden' });
+  await assertRows(finalRowOrder.filter(id => id !== added.id), 'Deleting a row preserves category grouping and the remaining peer order.');
   assertReads(beforeDeleteReads, 'Delete removes the selected row without rereading other instances.');
   await page.goto(`${base}/connections`, { waitUntil: 'domcontentloaded' });
   await page.waitForURL(`${base}/connection-skills`);
@@ -514,7 +545,7 @@ try {
   assert.equal(connections.get(workspaceRoot, created.id).instance.name, '另一入口修改');
   assert.deepEqual(legacyRequests, [], 'Connection navigation never calls a retired API.');
   assert.deepEqual(browserErrors, []);
-  process.stdout.write(JSON.stringify({ schemaVersion: 'buildr.workspace-smoke-scenario/v1', status: 'passed', checks: ['system-and-explicit-method-selection', 'dependency-ordered-discovery', 'progressive-fields-and-authentication', 'explicit-production-flag', 'legacy-route-redirect', 'legacy-tabs-merge', 'single-connection-navigation', 'no-legacy-api-requests', 'mysql-query-ui-fixture', 'mysql-database-picker-search-and-hidden-selection', 'mysql-database-picker-close-save-once', 'mysql-database-picker-unchanged-no-write', 'mysql-database-picker-current-cleared', 'mysql-database-picker-refresh-and-close-discard', 'mysql-database-picker-reopen-and-viewport', 'query-observed-revision-and-original-sql', 'query-precision-display', 'separate-save', 'unsaved-switch', 'explicit-candidate', 'failed-test-save-independent', 'independent-draft-revisions', 'revision-conflict', 'narrow-and-keyboard', 'missing-skill-personal-removal', 'main-save-closes-and-updates-row', 'failed-save-retains-draft', 'main-save-preserves-personal-draft', 'reread-authentication-identity', 'optional-program-failure-isolated', 'nacos-api-and-website-distinct', 'focus-and-retained-page-no-read', 'test-discovery-check-no-directory-read', 'explicit-refresh-only', 'local-save-delete', 'interrupted-first-read-retried', 'late-list-cannot-rollback-save', 'combined-directory-and-local-diagnostics', 'failed-or-malformed-directory-retains-snapshot'], realExternalSystem: false, queryBackend: 'intercepted-ui-fixture' }) + '\n');
+  process.stdout.write(JSON.stringify({ schemaVersion: 'buildr.workspace-smoke-scenario/v1', status: 'passed', checks: ['category-order-initial-search-refresh-local-updates', 'website-fallback-and-explicit-override', 'system-and-explicit-method-selection', 'dependency-ordered-discovery', 'progressive-fields-and-authentication', 'explicit-production-flag', 'legacy-route-redirect', 'legacy-tabs-merge', 'single-connection-navigation', 'no-legacy-api-requests', 'mysql-query-ui-fixture', 'mysql-database-picker-search-and-hidden-selection', 'mysql-database-picker-close-save-once', 'mysql-database-picker-unchanged-no-write', 'mysql-database-picker-current-cleared', 'mysql-database-picker-refresh-and-close-discard', 'mysql-database-picker-reopen-and-viewport', 'query-observed-revision-and-original-sql', 'query-precision-display', 'separate-save', 'unsaved-switch', 'explicit-candidate', 'failed-test-save-independent', 'independent-draft-revisions', 'revision-conflict', 'narrow-and-keyboard', 'missing-skill-personal-removal', 'main-save-closes-and-updates-row', 'failed-save-retains-draft', 'main-save-preserves-personal-draft', 'reread-authentication-identity', 'optional-program-failure-isolated', 'nacos-api-and-website-distinct', 'focus-and-retained-page-no-read', 'test-discovery-check-no-directory-read', 'explicit-refresh-only', 'local-save-delete', 'interrupted-first-read-retried', 'late-list-cannot-rollback-save', 'combined-directory-and-local-diagnostics', 'failed-or-malformed-directory-retains-snapshot'], realExternalSystem: false, queryBackend: 'intercepted-ui-fixture' }) + '\n');
 } catch (error) {
   if (page) { process.stderr.write(JSON.stringify({ body: (await page.locator('body').innerText()).slice(-5000) }) + '\n'); await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-failure.png') }); }
   throw error;

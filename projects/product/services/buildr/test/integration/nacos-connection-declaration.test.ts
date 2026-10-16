@@ -20,6 +20,15 @@ test('new builtin Nacos and XXL-JOB default to non-production while saved true v
   }
 });
 
+test('builtin dual-address declarations explicitly use their API base as website fallback', () => {
+  for (const skill of ['nacos-connection', 'kibana-connection']) {
+    const definition = parseConnectionDefinition(fs.readFileSync(new URL(`../../resources/workspace/skills/connections/${skill}/assets/connection.yml`, import.meta.url), 'utf8'));
+    assert.equal(definition.presentation?.websiteField, 'consoleUrl');
+    assert.equal(definition.presentation?.websiteFallbackField, 'apiBaseUrl');
+    assert.deepEqual(definition.authentication.targetFields, ['apiBaseUrl']);
+  }
+});
+
 test('Nacos declared nonempty account and group reject invalid saves and execution while empty passwords remain valid', async t => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-nacos-declaration-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -44,7 +53,7 @@ test('Nacos declared nonempty account and group reject invalid saves and executi
   assert.equal(created.config.production, false);
   assert.equal(created.websiteUrl, input.config.consoleUrl); assert.equal(created.config.apiBaseUrl, input.config.apiBaseUrl);
   const optional = app.save(workspace, null, { ...input, id: 'api-only', config: { apiBaseUrl: input.config.apiBaseUrl }, authentication: { intent: 'remove' } }).instance;
-  assert.equal(optional.websiteUrl, null); assert.equal(optional.config.consoleUrl, undefined);
+  assert.equal(optional.websiteUrl, input.config.apiBaseUrl); assert.equal(optional.config.consoleUrl, undefined);
   const file = path.join(workspace, created.sourcePath), raw = YAML.parse(fs.readFileSync(file, 'utf8'));
   raw.config.defaultGroup = ''; fs.writeFileSync(file, YAML.stringify(raw));
   let current = app.get(workspace, created.id).instance;

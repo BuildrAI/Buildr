@@ -51,6 +51,45 @@ else {
   const expected = (id = 'example-one') => { const v = app.get(workspace, id).instance; return { teamRevision: v.teamRevision, definitionRevision: v.definitionRevision, localRevision: v.localRevision }; };
   return { root, workspace, directory, declaration, definition, app, create, expected, binding, source: (value: string) => sourceIdentity = value, enabled: (value: boolean) => enabled = value, catalogReads: () => catalogReads, beforeCatalogRead: (callback?: (count: number) => void) => beforeCatalogRead = callback };
 }
+test('网站投影仅在覆盖缺失或空白时显式回落，保留默认值、安全过滤与旧声明', t => {
+  const f = fixture(t), created = f.create(), file = path.join(f.workspace, created.sourcePath);
+  const definition: any = structuredClone(f.definition);
+  definition.config.fields.push({ key: 'console', label: '网站覆盖', type: 'url' });
+  definition.presentation = { summaryFields: ['site'], websiteField: 'console', websiteFallbackField: 'site' };
+  fs.writeFileSync(f.declaration, YAML.stringify(definition));
+  const saved = YAML.parse(fs.readFileSync(file, 'utf8'));
+  const base = 'https://api.example.invalid/prefix/', override = 'https://console.example.invalid/app/#/';
+  const observe = (config: Record<string, unknown>) => {
+    fs.writeFileSync(file, YAML.stringify({ ...saved, config }));
+    const before = fs.readFileSync(file, 'utf8'), view = f.app.get(f.workspace, created.id).instance;
+    assert.equal(fs.readFileSync(file, 'utf8'), before, '网站选择不能改写配置或认证');
+    return view;
+  };
+  assert.equal(observe({ site: base, console: override }).websiteUrl, override);
+  assert.equal(observe({ site: base }).websiteUrl, base);
+  for (const console of ['', ' \t ']) {
+    const view = observe({ site: base, console });
+    assert.equal(view.websiteUrl, base);
+    assert.ok(view.availability.diagnostics.some(message => message.includes('网站覆盖')), '空白源值的整体配置诊断仍保留');
+  }
+  const unsafe = ['not a url', 'javascript:alert(1)', 'file:///private', 'https://reader:secret@example.invalid/', 'https://example.invalid/?access_token=secret', 'https://example.invalid/#/app?token=secret'];
+  for (const console of [...unsafe, 5]) assert.equal(observe({ site: base, console }).websiteUrl, null, '非法非空覆盖不能换用合法基础地址');
+  for (const site of unsafe) assert.equal(observe({ site }).websiteUrl, null, '回落目标同样经过安全校验');
+  definition.config.fields[1].default = override;
+  fs.writeFileSync(f.declaration, YAML.stringify(definition));
+  assert.equal(observe({ site: base }).websiteUrl, override, '已声明的网站默认值优先于回落');
+  delete definition.config.fields[1].default;
+  definition.config.fields[0].default = base;
+  fs.writeFileSync(f.declaration, YAML.stringify(definition));
+  assert.equal(observe({}).websiteUrl, base, '已声明的基础地址默认值仍生效');
+  delete definition.presentation.websiteFallbackField;
+  fs.writeFileSync(f.declaration, YAML.stringify(definition));
+  assert.equal(observe({ site: base }).websiteUrl, null, '旧声明不从其他网址字段猜测回落');
+  assert.equal(observe({ site: base, console: override }).websiteUrl, override);
+  delete definition.presentation.websiteField;
+  fs.writeFileSync(f.declaration, YAML.stringify(definition));
+  assert.equal(observe({ site: base, console: override }).websiteUrl, null, '没有网站声明时不猜字段');
+});
 test('one read phase observes the catalog once and saves retain a separate write observation', async t => {
   const f = fixture(t);
   let before = f.catalogReads(); const created = f.create(); assert.equal(f.catalogReads() - before, 2, 'saving observes once for validation and once immediately before writing');
