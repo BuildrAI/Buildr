@@ -114,7 +114,8 @@ export async function preparePackageRelease(options: any, scope: any, dependenci
       ...dependencies.pluginDependencies, execute: scope.execute, onPointer: save,
     });
     effects.push(...(prepared.effects ?? [])); save();
-    if (prepared.status !== 'passed') return { status: `plugin-preparation-${prepared.status}`, nextActions: prepared.nextActions ?? [], run: prepared.run };
+    if (prepared.status !== 'passed') return { status: `plugin-preparation-${prepared.status}`, nextActions: prepared.nextActions ?? [], run: prepared.run,
+      diagnostic: prepared.diagnostic ?? null, dispatch: prepared.dispatch ?? state.pluginPreparation.dispatch ?? null };
     const boundPeer = prepared.candidate.buildrPeer ?? prepared.verification.peer;
     if (!boundPeer || !sameArtifactIdentity(boundPeer.artifact ?? boundPeer, peer)) throw new Error('Main-only plugin preparation consumed a different peer artifact.');
     packages['dsh-plugin'] = { artifact: prepared.artifact, candidate: prepared.candidate, prepareRunId: prepared.run.id, prepareRunAttempt: prepared.run.run_attempt, buildrPeer: peer,

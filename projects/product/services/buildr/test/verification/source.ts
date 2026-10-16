@@ -10,6 +10,7 @@ import { prepareCandidateEnvironment } from '../../tools/verification/candidate-
 import { createVerificationAdmissionPlan, createVerificationPlan } from './planner.ts';
 import { CANDIDATE_CI_SHARDS, resolveVerificationExecutionProfile } from './registry.ts';
 import { collectVerificationSourceIdentity, createVerificationEvidencePaths, writeVerificationTimingEvidence } from './timing/evidence.ts';
+import { inspectVerificationReusePlan } from './verification-reuse.ts';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const projectRoot = path.resolve(productRoot, '../..');
@@ -79,7 +80,8 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
     else {
       const plan = createSourceVerificationPlan();
       if (args.json) {
-        process.stdout.write(`${JSON.stringify(plan, null, 2)}\n`);
+        const reuse = inspectVerificationReusePlan(plan, { productRoot, projectRoot, force: args.force, env: enforceOfflineVerification({ ...process.env }) });
+        process.stdout.write(`${JSON.stringify({ ...plan, reuse }, null, 2)}\n`);
         if (plan.status !== 'ready') process.exitCode = 1;
       } else {
         if (plan.status !== 'ready') throw new Error(plan.diagnostic?.message ?? 'Source verification plan is blocked.');

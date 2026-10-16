@@ -15,6 +15,8 @@ import { createReleaseSelection, selectReleaseCommit, freezeReleaseSelection, re
 import { resolveReleaseExecutionBinding } from './release-execution-binding.ts';
 import { observeUnpublishedRelease } from './release-observation.ts';
 import { retryCandidateFailedShards, classifyCandidateFailure } from './candidate-failed-shard-retry.ts';
+import { releaseCommandDiagnostic, releaseDispatchRejected, releaseRecoveryPlan } from './release-failure.ts';
+import { continueCandidateRepair } from './candidate-repair-operation.ts';
 import { containsCredentialMaterial, releasePublishAuthority } from './release-authority.ts';
 import { createReleaseLifecycle, projectReleaseLifecycleOrchestration } from './release-lifecycle.ts';
 import { compactReleasePhaseTimeline, createReleasePhaseTimeline, projectCandidateAttempts } from './release-phase-timeline.ts';
@@ -381,11 +383,16 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
   let state: any = saved ?? { schemaVersion: scoped ? 'buildr.release-operation-input/v2' : 'buildr.release-operation-input/v1',
     version: targets.versions.buildr ?? null, ...(scoped ? { targets } : {}), workspace, sources: [], candidate: null, publication: null };
   const currentEffects: any[] = [];
+  let phase = action === 'publish' ? 'publication' : 'preflight';
+  const operationStartedAt = Date.now();
   const execute = dependencies.execute ?? ((command: string, args: string[], spawnOptions: any) => spawnSync(command, args, { timeout: 30_000, ...spawnOptions, encoding: 'utf8' }));
   const command = (executable: string, args: string[], cwd = workspace) => {
     const timeout = executable === (options.ghCommand || 'gh') && args.includes('--log-failed') ? 90_000 : 30_000;
     const value = execute(executable, args, { cwd, timeout, maxBuffer: 8 * 1024 * 1024 });
-    if (value.status !== 0) throw new Error(`${executable} ${args[0]} failed: ${String(value.stderr || value.stdout || value.error?.message || '').trim()}`);
+    if (value.status !== 0 || value.error) {
+      const diagnostic = releaseCommandDiagnostic(executable, args, value);
+      throw Object.assign(new Error(`${executable} ${args[0]} failed: ${diagnostic.stderr || diagnostic.message || diagnostic.exitCode}`), { diagnostic });
+    }
     return String(value.stdout || '').trim();
   };
   const git = (args: string[], cwd = workspace) => command('git', args, cwd);
@@ -428,6 +435,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
         ? `codex/release-main-${key}-g*` : releaseCarrierBranchFor(key, state.context.selection.generation)],
       retainedTag: targets.packages.includes('buildr') ? `v${targets.versions.buildr}` : null } : null,
     effects: currentEffects, nextActions, ...extra,
+    recovery: releaseRecoveryPlan(phase, status, state, nextActions), operationDurationMs: Date.now() - operationStartedAt,
     };
   };
   const take = (value: any) => {
@@ -634,10 +642,31 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     };
     if (!alreadyMerged) ensureCandidateBranch(`release-${key}`);
     if (state.candidate?.sourceCommit !== sourceCommit) state.candidate = { sourceCommit, branch: carrier, runId: options.candidateRunId || null, dispatchRequested: false };
+    if (options.verificationSource || state.candidate.repair) {
+      phase = 'candidate-verification';
+      const fields = scoped ? [`release_packages=${targets.packages.join(',')}`, `buildr_version=${JSON.parse(git(['show', `${sourceCommit}:projects/product/services/buildr/package.json`, '--'], repo)).version}`,
+        `plugin_version=${plan.pluginVersion}`, `selection_id=${key}`, `selection_baseline=${baseline}`, `selection_main=${plan.selection.main}`,
+        `selection_identity=${selection.selectionIdentity}`, ...(!targets.packages.includes('buildr') && plan.requirements.plugin
+          ? [`buildr_peer_version=${state.preparationPeer.version}`, `buildr_peer_integrity=${state.preparationPeer.integrity}`] : [])] : [];
+      let sourceTransport: string | undefined;
+      if (options.sourceVerification) {
+        const { readVerificationReuseBundle } = await import('../../test/verification/verification-reuse.ts');
+        const { encodeCandidateSourceImport } = await import('../../test/verification/candidate-source-reuse.ts');
+        sourceTransport = encodeCandidateSourceImport(readVerificationReuseBundle(options.sourceVerification));
+      }
+      const repaired = continueCandidateRepair({ repo, candidate: state.candidate,
+        verificationSource: options.verificationSource ?? state.candidate.repair.verificationSource, fields, sourceTransport }, {
+        gh: args => gh(args, repo), git: args => git(args, repo), save, ensureCarrier: () => ensureCandidateBranch(carrier),
+      });
+      currentEffects.push(...repaired.effects);
+      if (repaired.status !== 'adopted') return answer(repaired.status, repaired.nextActions, repaired);
+    }
     if (!state.candidate.runId) {
       const find = () => JSON.parse(gh(['run', 'list', '--repo', releasePublishAuthority.repository, '--workflow', 'verify.yml', '--branch', carrier, '--event', 'workflow_dispatch', '--limit', '100', '--json', 'databaseId,headSha,status,conclusion'])).find((run: any) => run.headSha === sourceCommit);
       let existing = find();
+      if (!existing && state.candidate.dispatchRejected === true) state.candidate.dispatchRequested = false;
       if (!existing && !state.candidate.dispatchRequested) {
+        phase = 'source-verification';
         const localSource = await (dependencies.prepareLocalSourceVerification ?? prepareLocalSourceVerification)({
           repo, sourceFile: options.sourceVerification,
           packages: [...(!scoped || plan.requirements.buildr ? ['buildr'] : []), ...(scoped && plan.requirements.plugin ? ['dsh-plugin'] : [])],
@@ -647,7 +676,9 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
           return answer('local-verification-required', localSource.nextActions, { localSource });
         }
         ensureCandidateBranch(carrier);
+        phase = 'candidate-verification';
         state.candidate.dispatchRequested = true;
+        state.candidate.dispatchRejected = false;
         writeOperation(file, state);
         const effect = { type: 'candidate-dispatched', branch: carrier, sourceCommit, state: 'unknown' };
         currentEffects.push(effect);
@@ -659,13 +690,24 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
         state.candidate.sourceVerification = { recordCount: localSource.recordCount ?? 0, digest: identity(localSource.transport ?? '') };
         writeOperation(file, state);
         try { gh(['workflow', 'run', 'verify.yml', '--repo', releasePublishAuthority.repository, '--ref', carrier, '-f', 'purpose=candidate', ...fields.flatMap(field => ['-f', field])]); effect.state = 'confirmed'; }
-        catch { /* Resolve response loss by the same source/carrier readback. */ }
+        catch (error: any) {
+          state.candidate.dispatchDiagnostic = error.diagnostic ?? { code: 'candidate-dispatch-unknown', message: String(error.message).slice(-8192) };
+          state.candidate.dispatchRejected = releaseDispatchRejected(state.candidate.dispatchDiagnostic);
+          state.candidate.dispatchHistory = [...(state.candidate.dispatchHistory ?? []), { diagnostic: state.candidate.dispatchDiagnostic, rejected: state.candidate.dispatchRejected, observedAt: new Date().toISOString() }];
+          if (state.candidate.dispatchRejected) effect.state = 'not-applied';
+          writeOperation(file, state);
+        }
         existing = find();
+        if (!existing && state.candidate.dispatchRejected) {
+          state.candidate.dispatchRequested = false; writeOperation(file, state);
+          return answer('candidate-dispatch-rejected', ['修复明确拒绝的请求条件后继续同一prepare；保留源码证明与发布选择。'], { diagnostic: state.candidate.dispatchDiagnostic });
+        }
       }
       if (!existing) { writeOperation(file, state); return answer('candidate-dispatch-unconfirmed', ['稍后inspect/prepare回读同一载体的运行，不再次派发。']); }
       state.candidate.runId = Number(existing.databaseId);
     }
     writeOperation(file, state);
+    phase = 'candidate-verification';
     const candidate = readRun(state.candidate.runId);
     if (candidate.head_sha !== sourceCommit) throw new Error('Candidate run source differs from the frozen release.');
       if (candidate.repository?.full_name !== releasePublishAuthority.repository || candidate.path?.split('@')[0] !== '.github/workflows/verify.yml' || candidate.event !== 'workflow_dispatch' || (scoped && candidate.head_branch !== carrier)) throw new Error('Candidate run does not belong to the expected repository, carrier and verification workflow.');
@@ -689,6 +731,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       if (!targets.packages.includes('buildr') && (pluginSource.aggregate.verification.peer.version !== state.preparationPeer.version || pluginSource.aggregate.verification.peer.integrity !== state.preparationPeer.integrity || pluginSource.aggregate.verification.peer.artifactSha256 !== state.preparationPeer.artifactSha256)) throw new Error('Plugin source Candidate consumed a different frozen registry peer.');
       state.pluginSourceAggregate = pluginSource.aggregate; save();
     }
+    phase = 'adoption-readiness';
     const pr = take(ensureReleaseToMainPullRequest({ ...selectionArgs, generation: selection.generation, repo, candidateCommit: sourceCommit, candidateTree: selection.releaseTree,
       title: `Release ${key}`, body: `Release ${key} from frozen ${sourceCommit}.\n\nCandidate run ID: ${state.candidate.runId}${scoped ? `\nRelease selection: ${JSON.stringify(plan.selection)}${plan.requirements.plugin ? `\nBuildr peer: ${JSON.stringify(state.pluginSourceAggregate.verification.peer)}` : ''}` : ''}`,
       authorizeReleasePush: true, authorizePullRequest: true }, { execute }));
@@ -726,7 +769,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     return answer(prepared.status, prepared.nextActions, { result: prepared });
   } catch (error: any) {
     writeOperation(file, state);
-    return answer('blocked', error.ownerResult?.nextActions || ['核对已发生效果并以同一版本继续；不重新创建现场或发布。'], { diagnostic: { code: error.code || 'release-operation-blocked', message: error.message }, ownerResult: error.ownerResult });
+    return answer('blocked', error.ownerResult?.nextActions || ['核对已发生效果并以同一版本继续；不重新创建现场或发布。'], { diagnostic: error.diagnostic ?? { code: error.code || 'release-operation-blocked', message: error.message }, ownerResult: error.ownerResult });
   } finally {
     fs.unlinkSync(lock);
   }
@@ -749,6 +792,7 @@ function parseOptions(argv: any): any  {
     ...options, normalOperation: true, candidateRunId: options['candidate-run-id'] ? Number(options['candidate-run-id']) : null,
     pluginVersion: options['plugin-version'], selectionId: options['selection-id'],
     sourceVerification: options['source-verification'],
+    verificationSource: options['verification-source'],
     supportTasks: options['support-tasks'] ? options['support-tasks'].split(',').filter(Boolean) : undefined,
   };
   if (!options.input) throw new Error('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--authorized] [--recover-publication]');

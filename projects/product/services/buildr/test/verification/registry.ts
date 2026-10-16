@@ -260,9 +260,12 @@ export const VERIFICATION_DAILY_CORE_EXCLUSIONS: any = Object.freeze({
 const BACKEND_REUSE_CHECKS = new Set(['unit', 'component', 'cli-architecture', 'runtime-adapter-contract', 'managed-mutations', 'cli-compatibility']);
 // These bounded fixture suites read runtime/source assets, not this Product's governance records.
 const RUNTIME_REUSE_CHECKS = new Set(['integration-runtime', 'integration-data-store', 'integration-task-read-models', 'integration-task-coordination',
-  'integration-project-daily-progress', 'system-buildr-web-http', 'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection']);
+  'integration-project-daily-progress', 'system-buildr-web-http', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation',
+  'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection']);
 const NON_REUSABLE_CHECKS = new Set(['typecheck', 'dsh-plugin', 'candidate-tarball', 'application-payload-release', 'release-tarball-smoke', 'artifact-browser-core', 'cli-package-parity', 'host-node-contract', 'host-node-boundaries']);
-const GIT_SOURCE_CHECKS = new Set(['openspec-candidate-audit', 'service-branch-contract', 'open-source-candidate', 'integration-self-bootstrap', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation']);
+// Lifecycle fixtures create and mutate their own repositories. Only checks that
+// actually observe the retained checkout history bind its Git state.
+const GIT_SOURCE_CHECKS = new Set(['openspec-candidate-audit', 'service-branch-contract', 'open-source-candidate', 'integration-self-bootstrap']);
 const REUSE_INPUTS_BY_STEP: Readonly<Record<string, readonly string[]>> = Object.freeze({
   'docs-quality': Object.freeze(['BUILDR_CHANGED_PATHS_JSON']),
   'runtime-skill-projection': Object.freeze(['BUILDR_CHANGED_PATHS_JSON']),
@@ -277,6 +280,7 @@ function sourceReusePolicy(definition: any): any {
   // checks reading source Git identities also bind the observed Git history.
   const usesGit = VERIFICATION_STEP_TESTING[definition.id]?.environment?.footprints.includes('git');
   return Object.freeze({ scope: RUNTIME_REUSE_CHECKS.has(definition.id) ? 'runtime' : 'repository', git: GIT_SOURCE_CHECKS.has(definition.id),
+    ...(RUNTIME_REUSE_CHECKS.has(definition.id) ? { inputMode: 'runtime-check' } : {}),
     ...(usesGit ? { tools: ['git'] } : {}), ...(REUSE_INPUTS_BY_STEP[definition.id] ? { inputs: REUSE_INPUTS_BY_STEP[definition.id] } : {}) });
 }
 
@@ -307,16 +311,9 @@ const step: any = (definition: any) => {
   };
   return Object.freeze({
     dependsOn: [],
-    profiles: [],
     groups: [],
     concurrencyClass: 'default',
     resources: [],
-    contexts: Object.freeze([]),
-    isolationMode: 'none',
-    resetStrategy: 'none',
-    parallelSafety: 'worker-safe',
-    resourceDemand: Object.freeze({ workers: 1, processes: 1 }),
-    preflight: null,
     admission: false,
     developmentRunners: [],
     ...definition,
@@ -524,7 +521,7 @@ export const verificationSteps: any = Object.freeze([
   step({ id: 'typecheck', name: 'TypeScript static checking', executor: { type: 'npm', args: ['run', 'typecheck'] }, profiles: ['fast', 'candidate'], }),
   step({ id: 'unit', name: 'fine-grained unit tests', executor: { type: 'npm', args: ['run', 'test:unit'] }, profiles: ['fast', 'candidate'],  concurrencyClass: 'cpu-heavy' }),
   step({ id: 'component', name: 'bounded component tests', executor: { type: 'npm', args: ['run', 'test:component'] }, profiles: ['fast', 'candidate'],  concurrencyClass: 'cpu-heavy' }),
-  step({ id: 'integration', name: 'cross-domain technical boundary integration tests', executor: { type: 'node', file: 'test/verification/integration.ts', args: ['--suite', 'general'] }, profiles: ['candidate'], workerDemand: 4, schedulingCostMs: 5000, timeoutMs: 300_000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'integration', name: 'cross-domain technical boundary integration tests', executor: { type: 'node', file: 'test/verification/integration.ts', args: ['--suite', 'general'] }, profiles: ['candidate'], workerDemand: 4, schedulingCostMs: 5000, timeoutMs: 300_000, concurrencyClass: 'exclusive' }),
   ...INTEGRATION_PRIMARY_SLICES.map((slice: any) => step({
     id: slice.id,
     name: ({
@@ -538,7 +535,7 @@ export const verificationSteps: any = Object.freeze([
       'integration-task-read-models': 'Task read-model integration slice',
       'integration-task-coordination': 'Task coordination integration slice',
       'integration-project-daily-progress': 'Project daily progress integration slice',
-    })[slice.id],
+    } as Record<string, string>)[slice.id],
     executor: { type: slice.executorType, files: [...slice.files], args: [...slice.args] },
     profiles: ['candidate'],
     schedulingCostMs: slice.schedulingCostMs,
@@ -574,6 +571,7 @@ export const verificationSteps: any = Object.freeze([
   step({ id: 'runtime-adapter-contract', name: 'runtime adapter contract', executor: { type: 'node', file: 'test/verification/runtime/adapter-contract.ts' }, profiles: ['candidate'], groups: ['runtime'], }),
 
   step({ id: 'integration-candidate-release', name: 'Candidate integration: release contracts and recovery', executor: { type: 'node', file: 'test/verification/run-node-tests.ts', args: [
+    'test/integration-candidate-release/candidate-source-binding.test.ts',
     'test/integration-candidate-release/package-artifact-observation.test.ts',
     'test/integration-candidate-release/package-publication-evidence.test.ts',
     'test/integration-candidate-release/package-release-operation.test.ts',

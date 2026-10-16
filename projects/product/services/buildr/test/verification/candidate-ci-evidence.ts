@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { isDeepStrictEqual } from 'node:util';
 import { spawnCommandSync } from '../../src/infrastructure/process.ts';
 import { readReleaseArtifact, releaseArtifactManifestName, releasePackMetadataName } from '../../tools/release/release-artifact.ts';
 import { releaseConsumptionIdentity, RELEASE_CHECKS, validateReleaseCheckDefinitions } from '../../tools/release/release-consumption.ts';
@@ -19,6 +20,7 @@ import {
 } from './registry.ts';
 import { validateCandidateCiCoverage } from './planner.ts';
 import { CANDIDATE_SOURCE_REUSE_POLICY } from './candidate-source-reuse.ts';
+import { createCandidateSourceBinding } from '../../tools/release/candidate-source-binding.ts';
 
 export { CANDIDATE_CI_AGGREGATE_SCHEMA, CANDIDATE_CI_CHECKPOINT_SCHEMA, CANDIDATE_CI_EVIDENCE_SCHEMA };
 
@@ -71,6 +73,12 @@ export function resolveCandidateExecutionContext(productRoot: any, sourceCommit:
   if (expectedTree && expectedTree !== sourceTree) throw new Error(`Candidate source tree ${sourceTree} does not match expected ${expectedTree}`);
   if (purpose === 'release-rehearsal' && !/^sha256-[a-f0-9]{64}$/u.test(rehearsalIdentity || '')) throw new Error('Release rehearsal requires a closed rehearsal identity.');
   if (purpose === 'candidate' && rehearsalIdentity) throw new Error('Final Candidate must not carry a release rehearsal identity.');
+  if (env.BUILDR_CANDIDATE_PRODUCT_SOURCE) {
+    if (purpose !== 'candidate' || env.GITHUB_EVENT_NAME !== 'workflow_dispatch') throw new Error('Candidate repair requires the controlled candidate entry.');
+    const sourceBinding = createCandidateSourceBinding(productRoot, env.BUILDR_CANDIDATE_PRODUCT_SOURCE, sourceCommit);
+    return { purpose, sourceCommit: sourceBinding.productSource, sourceTree: sourceBinding.productTree, rehearsalIdentity,
+      verificationSource: sourceCommit, sourceBinding };
+  }
   return { purpose, sourceCommit, sourceTree, rehearsalIdentity };
 }
 
@@ -118,6 +126,7 @@ function resultProjection(results: any): any  {
     ...(item.disposition ? { disposition: item.disposition } : {}),
     ...(item.reusedFrom ? { reusedFrom: item.reusedFrom } : {}),
     ...(item.sourceRecord ? { sourceRecord: item.sourceRecord } : {}),
+    ...(item.candidateProof ? { candidateProof: item.candidateProof } : {}),
     ...(item.process ? { process: item.process } : {}),
     diagnostics: item.diagnostics ?? (item.stdoutPath || item.stderrPath ? {
       stdoutFile: item.stdoutPath ? diagnosticFileName(item.stdoutPath) : null,
@@ -202,6 +211,9 @@ export function createCandidateCiEvidence(input: any): any  {
     durationMs: input.durationMs,
     status: passed ? 'passed' : 'failed',
     results,
+    ...(input.checkInputs ? { checkInputs: input.checkInputs } : {}),
+    ...(input.cleanupClean !== undefined ? { cleanupClean: input.cleanupClean } : {}),
+    ...(input.verificationSource ? { verificationSource: input.verificationSource, sourceBinding: input.sourceBinding } : {}),
   };
 }
 
@@ -216,7 +228,10 @@ export function readCandidateCiEvidenceFiles(root: any): any  {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const target: any = path.join(directory, entry.name);
       if (entry.isDirectory()) visit(target);
-      else if (entry.isFile() && /^candidate-ci-evidence-.+\.json$/u.test(entry.name)) results.push(JSON.parse(fs.readFileSync(target, 'utf8')));
+      else if (entry.isFile() && /^candidate-ci-evidence-.+\.json$/u.test(entry.name)) {
+        if (fs.statSync(target).size > 8 * 1024 * 1024) throw new Error(`Candidate evidence exceeds its byte budget: ${entry.name}`);
+        results.push(JSON.parse(fs.readFileSync(target, 'utf8')));
+      }
     }
   };
   visit(path.resolve(root));
@@ -277,17 +292,22 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any
       else if (expectedRunAttempt !== null && itemRunAttempt > expectedRunAttempt) findings.push(evidenceFinding('workflow-attempt-future', id, itemRunAttempt));
       if (itemRunId === expectedRunId && itemRunAttempt !== null) evidenceAttempts.push({ id, runAttempt: itemRunAttempt });
     }
-    if (item.status !== 'passed' || item.results.some((result: any) => result.status !== 'passed')) findings.push(evidenceFinding('result-not-passed', id, item.status));
+    if (item.status !== 'passed' || item.results.some((result: any) => result.status !== 'passed' || result.exitCode !== 0
+      || result.childExitCode !== undefined && result.childExitCode !== 0 || result.childOutcome !== undefined && result.childOutcome !== 'passed'
+      || result.childSignal !== undefined && result.childSignal !== null)) findings.push(evidenceFinding('result-not-passed', id, item.status));
     if (JSON.stringify(item.primaryStepIds) !== JSON.stringify(expectation.primaryStepIds)) findings.push(evidenceFinding('primary-steps-mismatch', id, item.primaryStepIds));
     for (const stepId of expectation.primaryStepIds) {
       const stepResult = item.results.find((result: any) => result.id === stepId);
       if (!stepResult) findings.push(evidenceFinding('primary-result-missing', id, stepId));
+      else if (stepResult.disposition === 'reused' && stepResult.candidateProof) {
+        if (!options.validateCandidateProof?.(stepResult, id)) findings.push(evidenceFinding('candidate-repair-proof-invalid', id, stepId));
+      }
       else if (stepResult.disposition === 'reused') {
         if (!stepResult.sourceRecord || !options.validateSourceRecord?.(stepResult.sourceRecord, stepId, expectation.runner)) {
           findings.push(evidenceFinding('source-reuse-invalid', id, stepId));
         }
       }
-      else if (stepId === 'artifact-browser-core') {
+      if (stepResult && stepId === 'artifact-browser-core') {
         for (const phaseId of ['artifact-unpack', 'artifact-verify', 'browser:core', 'artifact-cleanup']) {
           const phases = (stepResult.phases ?? []).filter((phase: any) => phase.scope === 'candidate-browser-core' && phase.id === phaseId);
           if (phases.length === 0) findings.push(evidenceFinding('browser-phase-missing', id, phaseId));
@@ -297,11 +317,17 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any
       }
     }
     if (expectation.requestedNode && item.requestedNode !== expectation.requestedNode) findings.push(evidenceFinding('host-node-request-mismatch', id, item.requestedNode));
+    if (expectation.kind === 'host-node') for (const result of item.results) {
+      if (result.disposition === 'reused' && !options.validateCandidateProof?.(result, id)) findings.push(evidenceFinding('candidate-repair-proof-invalid', id, result.id));
+    }
+    if (expectation.kind === 'host-node' && (item.results.length !== 1 || item.results[0]?.id !== 'host-node-compatibility')) findings.push(evidenceFinding('host-node-result-missing', id, null));
+    if (expectedContext.sourceBinding && (item.verificationSource !== expectedContext.verificationSource
+      || !isDeepStrictEqual(item.sourceBinding, expectedContext.sourceBinding))) findings.push(evidenceFinding('verification-source-mismatch', id, item.verificationSource));
     if (expectation.requiresArtifact && !item.artifact) findings.push(evidenceFinding('artifact-missing', id, null));
     if (item.artifact) {
       if (item.artifact.sourceCommit !== expectedContext.sourceCommit) findings.push(evidenceFinding('artifact-source-mismatch', id, item.artifact.sourceCommit));
       if (!artifactIdentity) artifactIdentity = item.artifact;
-      else if (JSON.stringify(item.artifact) !== JSON.stringify(artifactIdentity)) findings.push(evidenceFinding('artifact-identity-mismatch', id, item.artifact.sha256));
+      else if (!isDeepStrictEqual(item.artifact, artifactIdentity)) findings.push(evidenceFinding('artifact-identity-mismatch', id, item.artifact.sha256));
     }
   }
   for (const id of byId.keys()) if (!expected.has(id)) findings.push(evidenceFinding('unexpected-evidence', id, null));
@@ -322,5 +348,6 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any
     status: findings.length === 0 ? 'passed' : 'failed',
     evidenceIds: [...byId.keys()].sort(),
     findings,
+    ...(expectedContext.sourceBinding ? { verificationSource: expectedContext.verificationSource, sourceBinding: expectedContext.sourceBinding } : {}),
   };
 }

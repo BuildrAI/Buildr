@@ -25,6 +25,7 @@ import { createReleaseTaskEvidenceCorrelationFromRuntime, releaseTaskAssociation
 import { inspectHostedReleaseTransaction } from './release-transaction-evidence.ts';
 import { artifactFromTarball } from './package-artifact-observation.ts';
 import { releaseExecutionCommit, validateReleaseExecutorRecovery } from './release-executor-recovery.ts';
+import { assertCandidateSourceBinding } from './candidate-source-binding.ts';
 
 const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const workspaceRoot: any = path.resolve(serviceRoot, '../../../..');
@@ -162,6 +163,11 @@ export function readCandidateEvidence({ candidateRunId, ghCommand, repo, execute
     }
     const aggregate: any = JSON.parse(fs.readFileSync(findSingleFile(path.join(root, 'candidate-aggregate'), 'candidate-ci-aggregate.json'), 'utf8'));
     const artifact: any = readReleaseArtifact(findSingleFile(path.join(root, 'candidate-package'), 'release-artifact.json'));
+    if (aggregate.sourceBinding) {
+      assertCandidateSourceBinding(repo, aggregate.sourceBinding);
+      if (aggregate.sourceBinding.productSource !== artifact.manifest.sourceCommit || aggregate.sourceCommit !== artifact.manifest.sourceCommit
+        || aggregate.verificationSource !== aggregate.sourceBinding.verificationSource) throw new Error('Candidate repair does not preserve its original package source.');
+    }
     const tarballBytes = fs.readFileSync(artifact.tarball);
     const packageArtifact = artifactFromTarball(tarballBytes, { origin: 'candidate', packageName: artifact.manifest.packageName,
       version: artifact.manifest.version, integrity: artifact.manifest.integrity, sourceCommit: artifact.manifest.sourceCommit });
@@ -288,6 +294,7 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
       throw new Error(`Candidate aggregate workflow identity mismatch: ${JSON.stringify({ expected: aggregateWorkflowExpected, actual: aggregateWorkflowActual })}`);
     }
     context = createReleaseContext({
+      ...(aggregate.sourceBinding ? { verification: aggregate.sourceBinding } : {}),
       selection: selection.selectionIdentity ? {
         identity: selection.selectionIdentity,
         version: selection.version,

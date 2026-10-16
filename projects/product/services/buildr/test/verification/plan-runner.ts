@@ -38,6 +38,11 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   const heartbeatIntervalMs: any = Number.isFinite(options.heartbeatIntervalMs) && options.heartbeatIntervalMs > 0 ? options.heartbeatIntervalMs : 15_000;
   const concurrency: any = options.concurrency ?? VERIFICATION_CONCURRENCY;
   const reuse = createVerificationPlanReuse(plan, options);
+  if (reuse?.explanation) {
+    const estimate = reuse.explanation.estimate;
+    options.stream?.write(`[${prefix}] plan: execute=${estimate.executedCount} reuse=${estimate.reusedCount} remaining-work=${estimate.remainingWorkMs}ms dependency-path=${estimate.dependencyCriticalPathMs}ms (history/declared targets; queue/preparation excluded)\n`);
+    for (const item of reuse.explanation.steps) options.stream?.write(`[${prefix}] ${item.disposition}: ${item.id} reason=${item.reasons.join(',')} scope=${item.inputScope}\n`);
+  }
   const resourceCoordinator: any = options.resourceCoordinator ?? createVerificationResourceCoordinator({
     root: resolveVerificationCoordinationRoot(options.productRoot, options.env),
     resources: {
@@ -55,7 +60,7 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
     },
   });
   let fullPlanLease: any = null;
-  if (plan.scope?.mode === 'full') {
+  if (plan.scope?.mode === 'full' && plan.steps.some((step: any) => !reuse?.hits.has(step.id))) {
     const waitStartedAt: any = Date.now();
     options.stream?.write(`[${prefix}] waiting: ${FULL_PLAN_RESOURCE_ID} shared capacity\n`);
     const waitHeartbeat: any = setInterval(() => {
@@ -117,7 +122,10 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   let fullPlanRelease: any[] = [];
   let contextCleanup: any = null;
   try {
-    results = await runVerificationDag(plan, {
+    const executionPlan = { ...plan, steps: plan.steps.map((step: any) => reuse?.hits.has(step.id)
+      ? { ...step, resources: [], resourceClaims: [], concurrencyClass: 'default', resourceDemand: { workers: 1, processes: 1 } }
+      : step) };
+    results = await runVerificationDag(executionPlan, {
       execute,
       concurrency,
       schedulingMode: options.schedulingMode,
@@ -163,6 +171,8 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
     diagnosticsDirectory,
     artifactDirectory,
     ...(sourceBundle ? { sourceBundle } : {}),
+    cleanupClean: contextCleanup?.status === 'cleaned',
+    ...(reuse?.explanation ? { reusePlan: reuse.explanation } : {}),
     coordinationRoot: resourceCoordinator.root,
     fullPlanCoordination: fullPlanLease ? { waitDurationMs: fullPlanLease.waitDurationMs, release: fullPlanRelease } : null,
     contextLifecycle: { contexts: preparedContexts.map((context: any) => ({ provider: context.provider.key, identity: context.marker.identity, owned: context.owned, prepareDurationMs: context.prepareDurationMs })), events: contextCleanup?.events ?? contextPool.events() },

@@ -16,6 +16,8 @@ Buildr 产品自身是在通用框架下建设测试能力的一个项目实例�
 | 选择和校验 | `test/verification/planner.ts` | 受影响范围（affected）或完整范围（full）、选择理由与预算判断 |
 | 执行与协调 | `plan-runner.ts`、`dag-scheduler.ts`、`executor.ts`、`resource-coordinator.ts` | 按依赖和实际资源额度运行，汇总真实结果 |
 | 诊断与耗时 | `test/verification/timing/` | 等待、执行、清理、失败及来源身份 |
+| 复用输入与解释 | `verification-inputs.ts`、`verification-reuse.ts` | 实际产品及检查输入、成功记录适用性、执行前原因和剩余成本 |
+| 原包正式补验 | `candidate-repair.ts`、`candidate-repair-cli.ts` | 不变构建输入绑定、逐项保留及执行计划、完整候选证明 |
 | 报告消费 | 通用任务验证（Task Verification） | 智能体（Agent）把适用执行摘要纳入正式报告 |
 
 项目执行计划（Verification Plan）和有向无环图（DAG）属于这些测试工具。通用任务验证应用层（Task Verification Application）不生成它们，也不接管它们的日志或资源。
@@ -95,9 +97,21 @@ Buildr 的验证由以下几部分共同组成。**某个入口的“完整”�
 
 日常执行保留实际结果、选择理由、来源身份、排队与资源等待、执行和清理耗时；上下文（Context）执行另记录创建、复用、取得、重置、污染失效和销毁。这些帮助定位失败与性能，属于测试工具的临时证据，不能冒充正式任务完成或发布成功。
 
+### 输入边界与局部失效
+
+路径归属用于回答“改了这里应该选择什么”，不能充当检查实际读取范围。已核验的运行检查采用 `reuse.inputMode: runtime-check`，分别记录产品内容和检查配方（Recipe）：本检查文件、静态导入与子脚本、共享辅助材料、上下文（Context）、执行器（Executor）和资源定义都纳入身份。无关测试变化不使这些检查失效；共享执行语义变化仍扩大。动态或未解析输入回退保守范围，并在计划显示具体未解析路径。
+
+`system-task-lifecycle`、`system-worktree-lifecycle` 和 `system-nested-git-isolation` 操作隔离 Git 现场，不再绑定整个真实仓库的引用。确实观察保留检出或源码卫生的检查继续绑定当前 Git。只读计划（Read-only Plan）不写缓存（Cache），显示逐项失效原因、复用来源、历史或目标成本，以及依赖和资源下界；没有实际检查需要执行的完整计划不占用整轮共享容量。
+
+正式补验独立记录不可变产包源码（Product Source）和验证源码（Verification Source）。原工作流（Workflow）定义及构建输入必须不变，正式入口读取原运行和原包，再以当前完整登记计算缺项；普通诊断不能直接提升。失败分片（Shard）只有明确清理完成的成功检查可保留，宿主 Node.js（Host Node）与必要 Git 观察仍执行。旧证据缺少逐项输入身份时保守补齐，复用记录保留原结果和来源，不能重写原始失败。
+
+汇总对复用结果仍核验原包、检查身份、平台和完整覆盖；核心浏览器（Browser）解包、验证、旅程及清理阶段不能省略，宿主 Node.js（Host Node）不能用空的成功包装或矛盾退出状态通过。公开发布还必须采用已绑定的工具源码。前端和 DSH 服务当前保留较宽输入边界，后续收窄需相应反例证明，不宣称所有工具变化都可以原包补验。
+
 跨平台候选（Candidate）由[证据聚合实现](../../../services/buildr/test/verification/candidate-ci-evidence.ts)核对所需分片与宿主组合是否齐全、是否证明当前源码及登记身份、是否消费同一压缩包；新增前端逻辑或核心浏览器证据缺失、失败或身份不符同样使聚合失败。源码结果可以保留匹配内容的原提交与执行时间，最终包必须绑定最终源码与原字节。本机 `test:source` 或 `test:candidate` 的结果不能独自替代这份聚合。正式任务报告仍须分别说明所需前端逻辑、浏览器（Browser）选择范围及目标环境检查是否实际完成。发布（Release）还涉及当前外部权限、真实发布与回读，流程和恢复由[开源发布说明](../flows/open-source-release.md)单独维护。`integration-candidate-release`、`integration-candidate-release-selection`、`integration-candidate-package-selection`、`integration-candidate-release-effects`、`integration-candidate-git-convergence` 与 `integration-candidate-git-selection` 是发布专用证据，不默认纳入日常 `core`；它们分别承担发布契约、冻结源码选择、独立包选择、发布副作用恢复、真实 Git 收尾及代际清理、真实 Git 选择及恢复。原有文件逐一分配且不重复，保留各项断言及 300 秒能力时限。嵌套 Git 隔离由 `system-nested-git-isolation` 独立承担，不再占用其他工作树生命周期案例的总时限。
 
 后续优化先依据当前耗时找出选择放大、重复准备、执行体或清理瓶颈。不能为追求速度删除正在证明的安装、初始化、迁移、恢复、平台或发布物边界。
+
+`integration` 通用集成组和 `system-nested-git-isolation` 使用已有独占调度（Exclusive Scheduling），避免有界子进程与其他外层重检查争用；组内并发、案例和原时限保留。输入身份同时包含并发类别，调度变化必须重新取得相关证明。复用结果不申请整轮或逐检查执行资源；它保留依赖顺序和完整覆盖，不占用已经无需执行的资源。
 
 `system-app-process` 与适配器检查共同使用已有 `workspace-saturating` 资源，在 `ci-workspace-limited` 中避免预览的多层命令行接口（CLI）冷启动与另一组密集工作空间操作同时饱和；其他轻量检查仍可并行。`integration-candidate-release-effects` 使用已有独占调度（Exclusive Scheduling）。其中同一原包先完成一次真实离线安装，再检查七种发布与故障恢复场景；六个成功恢复场景各自保留两次包消费请求及已安装包检查，完整性冲突场景不得到达消费步骤。十二次协议检查与一次真实安装分别计数，不反复安装相同字节，不建立跨运行缓存（Cache），也不改变正式发布的真实安装行为。两组检查保留各自覆盖及原有时限，资源等待、真实安装和恢复检查分别记录；调度互斥不能解释所有历史失败。
 

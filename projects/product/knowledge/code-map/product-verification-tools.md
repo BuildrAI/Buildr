@@ -11,6 +11,7 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
 - **`services/buildr/test/verification/`** — 产品自己的测试编排
   - [source.ts](../../services/buildr/test/verification/source.ts) — 本机发布准备的适用源码集合，不生产或消费最终原包；与远端共享登记及执行器（Executor）
   - [verification-reuse.ts](../../services/buildr/test/verification/verification-reuse.ts) — 内容、配方、环境和必要 Git 身份，成功结果持久复用与可搬运证明；输入漂移或清理失败不得写成成功
+  - [verification-inputs.ts](../../services/buildr/test/verification/verification-inputs.ts) — 已核验运行检查的产品与配方输入分离、静态依赖及子脚本读取；未知输入保守回退
   - [local-source-verification.ts](../../services/buildr/test/verification/local-source-verification.ts) — 发布派发前核对冻结工作树的本机适用源码证明，合并合法插件阶段，缺项只返回必要补齐动作
   - [candidate-source-reuse.ts](../../services/buildr/test/verification/candidate-source-reuse.ts) — 有界受控交接、源码分片（Shard）覆盖计算；实际身份由复用模块核验
   - [test-files.ts](../../services/buildr/test/verification/test-files.ts) — 解析安全路径、展开文件匹配并去重，空集合失败
@@ -27,6 +28,8 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
   - [candidate.ts](../../services/buildr/test/verification/candidate.ts) — 本机日常完整或候选（Candidate）集合入口；只执行当前机器上的注册步骤
   - [candidate-ci.ts](../../services/buildr/test/verification/candidate-ci.ts) — 跨平台候选（Candidate）的规划、分片执行、宿主 Node.js（Host Node）检查及聚合入口
   - [candidate-ci-evidence.ts](../../services/buildr/test/verification/candidate-ci-evidence.ts) — 检查证据齐全性以及源码、登记、作业和唯一压缩包身份
+  - [candidate-repair.ts](../../services/buildr/test/verification/candidate-repair.ts) — 原包正式补验的逐项适用性、完整覆盖和保留来源；宿主与必要 Git 事实重新观察
+  - [candidate-repair-cli.ts](../../services/buildr/test/verification/candidate-repair-cli.ts) — 受控原运行、真实包读取，生成缺项矩阵及保留证据；采用不变 DSH 原包与精确对端证明
   - [browser-selector-dispatcher.ts](../../services/buildr/test/verification/browser-selector-dispatcher.ts) — 选择页面检查，准备隔离 `web-dist`，通过隔离执行器（Runner）启动浏览器（Browser）测试
   - `release/`
     - [browser-candidate.ts](../../services/buildr/test/verification/release/browser-candidate.ts) — 校验唯一候选压缩包（Candidate Tarball）、解包并直接托管包内 `web-dist`，执行核心旅程及清理；测试驱动仍来自当前源码，不替代安装后全部行为验收
@@ -36,6 +39,10 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
     - [quality.ts](../../services/buildr/test/verification/docs/quality.ts) — 检查文档相对链接存在且不越出产品根；不判断正文语义
 - [services/buildr/package.json](../../services/buildr/package.json) — 稳定命令、生成物准备、测试及公开包导出
 - [services/buildr-web/package.json](../../services/buildr-web/package.json) — 前端构建及独立逻辑测试入口
+- **`services/buildr/tools/release/`** — 发布恢复与检查来源
+  - [candidate-source-binding.ts](../../services/buildr/tools/release/candidate-source-binding.ts) — 原产包与验证提交的真实构建输入比较、逐检查身份以及受保护发布工具检出校验
+  - [candidate-repair-operation.ts](../../services/buildr/tools/release/candidate-repair-operation.ts) — 在原承载引用请求正式补验，未知请求回读，保留原包和运行指针
+  - [release-failure.ts](../../services/buildr/tools/release/release-failure.ts) — 有界命令诊断、明确拒绝识别与阶段恢复建议；不创建第二份发布事实
 - **`services/buildr/tools/development/`** — 真实开发环境边界
   - [run-development-npm.ts](../../services/buildr/tools/development/run-development-npm.ts) — 检查当前 Node.js 在项目声明范围内并调用相邻 npm；无扩展名的同名入口负责在声明范围内选择 Node.js（声明版本优先）
   - [run-isolated-workspace-smoke.ts](../../services/buildr/tools/development/run-isolated-workspace-smoke.ts) — 隔离工作目录和两类应用数据目录，统一成功与失败清理

@@ -380,9 +380,12 @@ test('Candidate source work is independent and all consumers use the one immutab
   for (const id of ['candidate-source', 'candidate-artifact-consumers', 'candidate-host-node']) assert.equal(document.jobs[id].strategy['fail-fast'], false);
   assert.ok(CANDIDATE_CI_SHARDS.some((shard: any) => shard.id === 'release-infrastructure-windows'));
   assert.deepEqual(document.jobs['candidate-gate'].needs, ['candidate-plan', 'candidate-bootstrap', 'candidate-source', 'candidate-artifact-consumers', 'candidate-host-node', 'plugin-source-candidate']);
-  for (const id of ['candidate-bootstrap', 'candidate-artifact-consumers', 'candidate-host-node']) assert.equal(document.jobs[id].if, "needs.candidate-plan.outputs.buildr == 'true'");
+  assert.equal(document.jobs['candidate-bootstrap'].if, "needs.candidate-plan.outputs.buildr == 'true'");
+  for (const [id, key] of [['candidate-artifact-consumers', 'artifact'], ['candidate-host-node', 'host']]) {
+    assert.equal(document.jobs[id!].if, `needs.candidate-plan.outputs.buildr == 'true' && needs.candidate-plan.outputs.${key}_required == 'true'`);
+  }
   assert.equal(document.jobs['candidate-source'].if, "needs.candidate-plan.outputs.buildr == 'true' && needs.candidate-plan.outputs.source_required == 'true'");
-  assert.equal(document.jobs['candidate-plan'].outputs.source_required, '${{ steps.plan.outputs.source_required }}');
+  for (const key of ['source', 'artifact', 'host']) assert.equal(document.jobs['candidate-plan'].outputs[key + '_required'], '${{ steps.repair.outputs.' + key + '_required || steps.plan.outputs.' + key + '_required }}');
   assert.equal(document.env.BUILDR_SOURCE_VERIFICATION, "${{ github.event_name == 'workflow_dispatch' && inputs.source_verification || '' }}");
   assert.deepEqual(document.jobs['plugin-source-candidate'].needs, ['candidate-plan', 'candidate-bootstrap']);
   assert.equal(document.jobs['plugin-source-candidate'].if, "always() && needs.candidate-plan.result == 'success' && needs.candidate-plan.outputs.plugin == 'true' && (needs.candidate-plan.outputs.candidate_peer != 'true' || needs.candidate-bootstrap.result == 'success')");

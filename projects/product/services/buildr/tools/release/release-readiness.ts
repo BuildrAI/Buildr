@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { normalizeReleaseTargets } from './release-targets.ts';
 import { validateReleaseExecutorRecovery } from './release-executor-recovery.ts';
+import { validateCandidateSourceBindingValue } from './candidate-source-binding.ts';
 
 export const releaseContextSchema: any = 'buildr.release-context/v2';
 export const releaseReadinessSchema: any = 'buildr.release-readiness/v1';
@@ -40,7 +41,7 @@ function optionalProjection(value: any, fields: any, label: any): any  {
 }
 
 export function createReleaseContext(input: any): any  {
-  closed(input, ['selection', 'release', 'candidate', 'artifact', 'convergence', 'preparation', 'node', 'workflow', 'taskCorrelation', 'executorRecovery'], 'release context input');
+  closed(input, ['selection', 'release', 'candidate', 'artifact', 'convergence', 'preparation', 'node', 'workflow', 'taskCorrelation', 'executorRecovery', 'verification'], 'release context input');
   const value: any = {
     schemaVersion: releaseContextSchema,
     selection: optionalProjection(input.selection, ['identity', 'version', 'selectionId', 'targets', 'branch', 'releaseHead', 'releaseTree', 'generation', 'status', 'reconciliationIdentity'], 'selection'),
@@ -53,6 +54,12 @@ export function createReleaseContext(input: any): any  {
     workflow: optionalProjection(input.workflow, ['path', 'digest', 'repository', 'environment'], 'workflow'),
     taskCorrelation: optionalProjection(input.taskCorrelation, ['identity', 'status', 'sourceCommit', 'sourceTree', 'remoteRef'], 'taskCorrelation'),
   };
+  if (input.verification) {
+    const binding = validateCandidateSourceBindingValue(input.verification);
+    if (binding.productSource !== value.release?.sourceCommit || binding.productTree !== value.release?.sourceTree
+      || binding.productSource !== value.artifact?.sourceCommit) throw new Error('Release verification source differs from the original package.');
+    value.verification = canonical(binding);
+  }
   if (value.selection?.targets) {
     const targets = normalizeReleaseTargets({ packages: value.selection.targets.packages, version: value.selection.targets.versions?.buildr,
       pluginVersion: value.selection.targets.versions?.['dsh-plugin'], selectionId: value.selection.targets.selectionId });
@@ -67,7 +74,7 @@ export function createReleaseContext(input: any): any  {
 }
 
 export function validateReleaseContext(value: any): any  {
-  closed(value, ['schemaVersion', 'selection', 'release', 'candidate', 'artifact', 'convergence', 'preparation', 'node', 'workflow', 'taskCorrelation', 'executorRecovery', 'identity'], 'release context');
+  closed(value, ['schemaVersion', 'selection', 'release', 'candidate', 'artifact', 'convergence', 'preparation', 'node', 'workflow', 'taskCorrelation', 'executorRecovery', 'verification', 'identity'], 'release context');
   if (value.schemaVersion !== releaseContextSchema || !DIGEST.test(value.identity || '')) throw new Error('Release context schema/identity is invalid.');
   const { schemaVersion: _schemaVersion, identity: _identity, ...input }: any = value;
   const recreated: any = createReleaseContext(input);

@@ -2,7 +2,7 @@ import path from 'node:path';
 import { enforceOfflineVerification } from '../../src/infrastructure/network/verification-network-policy.ts';
 import { createSourceVerificationPlan } from './source.ts';
 import { assertSourceBundle, encodeCandidateSourceImport } from './candidate-source-reuse.ts';
-import { collectVerificationReuseBundle, collectVerificationReuseSnapshot, createVerificationReuseStore, readVerificationReuseBundle, validateVerificationReuseRecord } from './verification-reuse.ts';
+import { collectVerificationReuseBundle, collectVerificationReuseSnapshot, createVerificationReuseStore, inspectVerificationReusePlan, readVerificationReuseBundle, validateVerificationReuseRecord } from './verification-reuse.ts';
 
 // This owner checks local source readiness before spending a remote Candidate.
 // Final package, other platforms and publishing remain separate owners.
@@ -44,6 +44,7 @@ export async function prepareLocalSourceVerification(options: {
   return {
     status: missingStepIds.length ? 'local-verification-required' : 'ready',
     runner: plan.runner, missingStepIds, recordCount: bundle.records.length,
+    ...(snapshot ? { verificationPlan: inspectVerificationReusePlan(plan, { productRoot, projectRoot, snapshot, env: sourceEnv, imports: [bundle] }) } : {}),
     ...(missingStepIds.length ? {} : { transport: encodeCandidateSourceImport(bundle) }), nextActions,
   };
 }

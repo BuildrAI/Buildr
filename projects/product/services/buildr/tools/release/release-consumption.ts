@@ -5,6 +5,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
+import { assertReleaseExecutionCheckout } from './candidate-source-binding.ts';
 import { spawnCommandSync } from '../../src/infrastructure/process.ts';
 import { readReleaseArtifact, assertNpmTarballInventory } from './release-artifact.ts';
 import { resolveReleaseContract } from './release-contract.ts';
@@ -162,6 +164,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       if (!contextFile || !aggregateFile || !manifestFile) throw new Error('verify requires context, aggregate and manifest files.');
       const context = JSON.parse(fs.readFileSync(contextFile, 'utf8'));
       const aggregate = JSON.parse(fs.readFileSync(aggregateFile, 'utf8'));
+      if (!isDeepStrictEqual(context.verification ?? null, aggregate.sourceBinding ?? null)) throw new Error('Release executor proof differs from the frozen Candidate.');
+      if (context.verification) assertReleaseExecutionCheckout(repositoryRoot, context);
       const artifact = inspectReleaseConsumerArtifact(manifestFile).artifact.manifest;
       assertReleaseConsumptionCoverage(aggregate, context.release, artifact, context);
       for (const field of ['sourceCommit', 'filename', 'size', 'sha256', 'integrity', 'applicationPayloadDigest']) if (artifact[field] !== context.artifact?.[field]) throw new Error(`Frozen release context artifact ${field} mismatches.`);

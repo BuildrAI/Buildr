@@ -10,12 +10,14 @@ import { artifactFromTarball } from './package-artifact-observation.ts';
 import { assertBoundPluginVerification } from './verify-pr-candidate.ts';
 import { assertPluginCandidateAdoption, PLUGIN_CANDIDATE_ADOPTION_FILE } from '../../../dsh-plugin/tools/candidate-adoption.ts';
 import { parseCompatibilityArtifact } from './package-compatibility.ts';
+import { releaseCommandDiagnostic, releaseDispatchRejected } from './release-failure.ts';
 
 const repository = 'BuildrAI/Buildr';
 const workflow = 'publish-dsh-plugin.yml';
 const workflowPath = `.github/workflows/${workflow}`;
 const sourceHash = /^[a-f0-9]{40}$/u;
 const defaultExecute = (command: string, args: string[], options: any) => spawnSync(command, args, { ...options, encoding: 'utf8', timeout: options.timeout ?? 30_000 });
+
 
 function singleFile(root: string, filename: string, optional = false): string {
   const matches: string[] = [];
@@ -37,7 +39,10 @@ function tools(options: any, dependencies: any): any {
   const execute = dependencies.execute ?? defaultExecute;
   const call = (command: string, args: string[], timeout = 30_000) => {
     const result = execute(command, args, { cwd: options.repo, timeout, maxBuffer: 8 * 1024 * 1024 });
-    if (result.status !== 0) throw new Error(`${command} ${args[0]} failed during plugin workflow readback.`);
+    if (result.status !== 0 || result.error) {
+      const diagnostic = releaseCommandDiagnostic(command, args, result);
+      throw Object.assign(new Error(`${command} ${args[0]} failed during plugin workflow readback: ${diagnostic.stderr || diagnostic.message || diagnostic.exitCode}`), { diagnostic });
+    }
     return command === 'git' ? String(result.stdout ?? '') : String(result.stdout ?? '').trim();
   };
   return { gh: (args: string[], timeout?: number) => call(options.ghCommand ?? 'gh', args, timeout), git: (args: string[]) => call('git', args) };
@@ -220,7 +225,17 @@ export function runPluginHostedOperation(options: any, dependencies: any = {}): 
       || !sourceHash.test(options.candidateSourceCommit ?? '') || !/^(?:sha256-)?[a-f0-9]{64}$/u.test(options.selectionIdentity ?? ''))) throw new Error('Plugin adoption requires the original verified source Candidate.');
   }
   const effects: any[] = [];
-  let found = pointer.runId ? { databaseId: pointer.runId } : locateRun(gh, options, options.operation);
+  let found: any;
+  try { found = pointer.runId ? { databaseId: pointer.runId } : locateRun(gh, options, options.operation); }
+  catch (error: any) {
+    if (!error.diagnostic) throw error;
+    return { status: 'readback-required', effects, diagnostic: error.diagnostic, dispatch: pointer.dispatch ?? null,
+      nextActions: ['修复原请求的运行查询；保留已有候选及请求身份，不重新验证或派发。'] };
+  }
+  if (!found && pointer.requested && pointer.dispatch?.state === 'rejected') {
+    pointer.requested = false;
+    dependencies.onPointer?.(pointer);
+  }
   if (!found && !pointer.requested) {
     Object.assign(pointer, { requested: true, version: options.version, sourceCommit: options.sourceCommit, runId: null });
     if (options.operation === 'prepare') pointer.sourceCandidate = { runId: options.sourceCandidateRunId, commit: options.candidateSourceCommit, selectionIdentity: options.selectionIdentity };
@@ -232,11 +247,31 @@ export function runPluginHostedOperation(options: any, dependencies: any = {}): 
         `source_candidate_run_id=${options.sourceCandidateRunId}`, `source_commit=${options.candidateSourceCommit}`, `selection_identity=${options.selectionIdentity}`,
         ...(options.peer.origin === 'candidate' ? [`buildr_candidate_run_id=${options.buildrCandidateRunId}`] : [])]
       : [`candidate_run_id=${options.candidateRunId}`, ...(options.originalSourceCommit && options.originalSourceCommit !== options.sourceCommit ? [`publication_source_commit=${options.originalSourceCommit}`] : []), ...(pointer.recoveryRunId ? [`recovery_run_id=${pointer.recoveryRunId}`] : [])];
-    try { gh(['workflow', 'run', workflow, '--repo', repository, '--ref', 'main', '-f', `operation=${options.operation}`, '-f', `version=${options.version}`, ...fields.flatMap(field => ['-f', field])]); effect.state = 'confirmed'; }
-    catch { /* Query only after an uncertain request. */ }
-    found = locateRun(gh, options, options.operation);
+    try {
+      gh(['workflow', 'run', workflow, '--repo', repository, '--ref', 'main', '-f', `operation=${options.operation}`, '-f', `version=${options.version}`, ...fields.flatMap(field => ['-f', field])]);
+      effect.state = 'confirmed';
+      pointer.dispatch = { state: 'accepted', diagnostic: null };
+    } catch (error: any) {
+      const diagnostic = error.diagnostic ?? { code: 'plugin-dispatch-unknown', message: String(error.message).slice(-8192) };
+      pointer.dispatch = { state: releaseDispatchRejected(diagnostic) ? 'rejected' : 'unknown', diagnostic };
+      if (pointer.dispatch.state === 'rejected') effect.state = 'not-applied';
+    }
+    pointer.dispatchHistory = [...(pointer.dispatchHistory ?? []), { ...pointer.dispatch, observedAt: new Date().toISOString() }];
+    dependencies.onPointer?.(pointer);
+    try { found = locateRun(gh, options, options.operation); }
+    catch (error: any) {
+      return { status: 'readback-required', effects, diagnostic: error.diagnostic ?? { code: 'plugin-readback-unknown', message: String(error.message).slice(-8192) },
+        dispatch: pointer.dispatch, nextActions: ['回读原请求；查询尚未完成，不重新派发。'] };
+    }
+    if (!found && pointer.dispatch.state === 'rejected') {
+      // Persist the rejected attempt before allowing a later explicit resume.
+      pointer.requested = false;
+      dependencies.onPointer?.(pointer);
+      return { status: 'dispatch-rejected', effects, diagnostic: pointer.dispatch.diagnostic,
+        nextActions: ['修复明确拒绝的请求条件后继续同一操作；复用候选与原包。'] };
+    }
   }
-  if (!found) return { status: 'dispatch-unconfirmed', effects, nextActions: ['回读同一插件运行请求；响应未知时不再次派发。'] };
+  if (!found) return { status: 'dispatch-unconfirmed', effects, diagnostic: pointer.dispatch?.diagnostic ?? null, nextActions: ['回读同一插件运行请求；响应未知时不再次派发。'] };
   Object.assign(pointer, { requested: true, version: options.version, sourceCommit: options.sourceCommit, runId: Number(found.databaseId) });
   dependencies.onPointer?.(pointer);
   const run = JSON.parse(gh(['api', `repos/${repository}/actions/runs/${pointer.runId}`]));
@@ -249,7 +284,7 @@ export function runPluginHostedOperation(options: any, dependencies: any = {}): 
   }
   let journal: any;
   try { journal = readHostedPluginJournal({ ...options, runId: run.id }, dependencies); }
-  catch { return { status: 'readback-required', run, effects, nextActions: ['原运行日志未知；保留请求，不重新发布。'] }; }
+  catch (error: any) { return { status: 'readback-required', run, effects, diagnostic: error.diagnostic ?? { code: 'plugin-journal-unavailable', message: String(error.message).slice(-8192) }, nextActions: ['原运行日志未知；保留请求，不重新发布。'] }; }
   return { status: run.conclusion === 'success' && journal.status === 'passed' ? 'passed' : 'blocked', run, journal, effects,
     nextActions: run.conclusion === 'success' && journal.status === 'passed' ? [] : ['核对原插件日志与准确公开字节，恢复尚未完成事项。'] };
 }

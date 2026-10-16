@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
+import { createCandidateSourceBinding } from './candidate-source-binding.ts';
 import { isDeepStrictEqual } from 'node:util';
 import { parseReleaseCandidate, readReleaseCandidate, sourceSdkIdentityFromFiles, SOURCE_SDK_MANIFEST, PLUGIN_SERVICE_PATH } from '../../../dsh-plugin/tools/release-candidate.ts';
 import { MAIN_PACKAGE, compatibilityVersion, parseCompatibilityArtifact } from './package-compatibility.ts';
@@ -193,13 +194,25 @@ async function main(): Promise<void> {
     const repo = path.resolve(serviceRoot, '../../../..');
     const git: GitRead = args => execFileSync('git', args, { cwd: repo, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
     const action = process.argv[2];
+    let planEnv = process.env, planGit = git;
+    requireFact(!process.env.BUILDR_CANDIDATE_REPAIR_RUN_ID || process.env.BUILDR_CANDIDATE_PRODUCT_SOURCE && process.env.BUILDR_CANDIDATE_VERIFICATION_SOURCE,
+      'Candidate repair requires both exact product and verification sources.');
+    if (process.env.BUILDR_CANDIDATE_PRODUCT_SOURCE) {
+      const source = process.env.BUILDR_CANDIDATE_PRODUCT_SOURCE;
+      requireFact(process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' && process.env.BUILDR_CANDIDATE_REPAIR_RUN_ID
+        && source === process.env.GITHUB_SHA, 'Separate verification source requires the original controlled workflow.');
+      createCandidateSourceBinding(repo, source, git(['rev-parse', 'HEAD']).trim());
+      requireFact(git(['rev-parse', 'HEAD']).trim() === process.env.BUILDR_CANDIDATE_VERIFICATION_SOURCE, 'Candidate repair verification checkout differs.');
+      planEnv = { ...process.env, CANDIDATE_SOURCE_SHA: source };
+      planGit = args => args.join(' ') === 'rev-parse HEAD' ? source : git(args);
+    }
     if (action === 'plan') {
-      const plan = createReleaseCandidatePlan(process.env, git);
+      const plan = createReleaseCandidatePlan(planEnv, planGit);
       fs.writeFileSync(path.join(process.env.RUNNER_TEMP ?? os.tmpdir(), 'release-candidate-plan.json'), `${JSON.stringify(plan)}\n`);
       if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `buildr=${plan.requirements.buildr}\nplugin=${plan.requirements.plugin}\njoint=${plan.selection?.packages.join(',') === 'buildr,dsh-plugin'}\ncandidate_peer=${plan.selection?.packages.includes('buildr') === true}\nplugin_version=${plan.pluginVersion ?? ''}\n`);
       process.stdout.write(`${JSON.stringify(plan)}\n`);
     } else if (action === 'plugin-aggregate') {
-      const plan = createReleaseCandidatePlan(process.env, git);
+      const plan = createReleaseCandidatePlan(planEnv, planGit);
       const candidateFile = path.join(repo, PLUGIN_SERVICE_PATH, 'build/release-candidates', plan.pluginVersion, 'candidate.json');
       const manifestBytes = Buffer.from(git(['show', `${plan.sourceCommit}:${PLUGIN_SERVICE_PATH}/${SOURCE_SDK_MANIFEST}`, '--']));
       const patchBytes = Buffer.from(git(['show', `${plan.sourceCommit}:${PLUGIN_SERVICE_PATH}/sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.patch`, '--']));

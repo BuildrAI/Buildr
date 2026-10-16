@@ -69,6 +69,29 @@ function passedEvidence(workflow: any = null): any  {
   return [...shards, ...hosts];
 }
 
+test('formal repair aggregate keeps original package identity and requires each carried proof to validate', () => {
+  const workflow = { runId: '52', runAttempt: '1' }, evidence = passedEvidence(workflow);
+  const context = { ...candidateContext, verificationSource: 'e'.repeat(40), sourceBinding: { identity: 'binding' } };
+  for (const item of evidence) { item.verificationSource = context.verificationSource; item.sourceBinding = context.sourceBinding; }
+  const carried = evidence.find((item: any) => item.id === 'artifact-browser-macos').results[0];
+  carried.disposition = 'reused'; carried.candidateProof = { originalRunId: '42' };
+  const valid = aggregateCandidateCiEvidence(evidence, context, workflow, { validateCandidateProof: (result: any, id: string) => result === carried && id === 'artifact-browser-macos' });
+  assert.equal(valid.status, 'passed'); assert.equal(valid.artifact.sourceCommit, sourceCommit);
+  assert.equal(valid.verificationSource, context.verificationSource);
+  assert.equal(aggregateCandidateCiEvidence(evidence, context, workflow).status, 'failed');
+  carried.phases = [];
+  const incomplete = aggregateCandidateCiEvidence(evidence, context, workflow, { validateCandidateProof: () => true });
+  assert.ok(incomplete.findings.some((finding: any) => finding.code === 'browser-phase-missing'));
+});
+
+test('host and child process success cannot be manufactured from an empty or contradictory passed wrapper', () => {
+  const evidence = passedEvidence();
+  evidence.find((item: any) => item.kind === 'host-node').results = [];
+  assert.ok(aggregateCandidateCiEvidence(evidence, candidateContext).findings.some((finding: any) => finding.code === 'host-node-result-missing'));
+  const other = passedEvidence(); other[0].results[0].childExitCode = 1;
+  assert.ok(aggregateCandidateCiEvidence(other, candidateContext).findings.some((finding: any) => finding.code === 'result-not-passed'));
+});
+
 test('Candidate CI coverage is a closed projection of the full local Candidate', () => {
   assert.deepEqual(validateCandidateCiCoverage(), { ok: true, findings: [] });
   const local: any = createVerificationPlan({ profiles: ['candidate'] }).steps.map((item: any) => item.id).sort();

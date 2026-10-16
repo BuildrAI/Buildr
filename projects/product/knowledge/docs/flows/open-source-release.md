@@ -18,6 +18,19 @@ Buildr 主包 `@buildr-ai/buildr` 与 DSH（DeepSeek Harness）插件（Plugin�
 
 日常相关验证并保留有效结果 → 本机补齐适用源码检查 → 交付 `dev` 并选择冻结组合 → 远端补齐必要平台与唯一包检查 → 发布同一份产物（Artifact）。
 
+六个阶段各自解决明确问题；完整覆盖由仍有效的结果组成，不要求每次重新执行全部检查。
+
+| 阶段 | 解决的问题 | 完成依据与失败去向 |
+|---|---|---|
+| 开发完成 | 产品改动及发布工具自身是否正确 | 按影响运行检查；发布基础设施变化另验正常准备、采用、就绪与恢复。普通功能不增加完整发布演练（Release Rehearsal） |
+| 发布预检 | 选哪些包、版本、源码和对端，哪些证明仍有效 | 固定选择，核对来源及当前外部事实；缺项先列出，版本或输入不成立在本阶段解决 |
+| 源码补验 | 当前平台还缺哪些源码证明 | 只执行缺失或失效检查，保存可复用结果；测试工具错误回到对应工具修复 |
+| 唯一包及平台检查 | 用户拿到的原包能否安装运行，其他平台是否成立 | 生成一次原包，必要消费者及平台并行；失败按检查输入补验，产品构建输入变化才重建 |
+| 纳入与就绪 | 同一组合是否已纳入 `main`，所选包是否具备发布条件 | 读回合并、原包、兼容与逐包就绪事实；本阶段工具错误只恢复相应操作 |
+| 公开与回读 | 已授权包是否真正公开且可安装 | 上传已验证原包并回读；部分成功保留，未确认请求先查询 |
+
+准备候选版停在第五阶段。开发版可用证明的是当前开发环境；干净安装、发布包遗漏和其他平台仍需各自检查。发布准备不应再次承担已完成的开发排错，也不能因工具内部错误否定已验证原包。
+
 - 基线是明确的完整提交，不自动追随后续 `dev`。额外内容通过明确、有序的 `cherry-pick -x` 纳入。
 - 所选包的版本材料必须已由正常开发交付到 `dev`，并进入选择组合；主包使用根 `CHANGELOG.md`，插件按自身交付材料核验。不强制两个包使用相同版本。支持任务在所需修复、相关验证和交付完成前保留现场。
 - 完整候选前处理 `main` 历史关系。已有 `main` 是祖先时直接使用当前源码；必要的历史收敛保持已选产品内容，记录真实父提交。未知独有内容或语义冲突由维护者决定。
@@ -56,17 +69,29 @@ Buildr 主包不捆绑插件，`artifact` 档位也不获取 DSH 软件开发工
 
 本机在服务目录运行 `tools/development/run-development-npm run test:source -- --output <bundle.json>`，完成本平台适用的源码检查并导出有界结果；`--json` 只看计划，`--force` 要求重新执行。正常开发仍用 `test:changed` 和必要低成本回归，不增加每次完整检查。入口与远端共用检查登记及执行实现，成功结果按真实输入复用，修复只使相关证明失效。
 
+只读计划（Read-only Plan）逐项给出执行或复用、失效原因、原执行来源和耗时；估算优先采用同平台历史耗时，没有历史时使用声明目标，同时显示依赖最长路径和资源容量下界。它不创建缓存（Cache）、不申请执行容量，也不使已有结果失效。估算不含下载、准备与排队，不能当作完成时间承诺；实际时间另由阶段时间线与检查报告保存。
+
 发布准备先检查本机有效结果，缺项时返回准确执行位置与补齐入口，不直接把缺项交给远端反复试跑。受控手动候选运输源码结果，远端核对内容、配方与原平台后跳过已证明的源码作业及专属安装；保留 Windows 等未证明平台、唯一包、浏览器（Browser）、安装及宿主兼容验证。最终汇总仍核对完整覆盖，明确 `executed` 与 `reused`、原运行时间和本次成本。外部合并请求（Pull Request）不能声明自己的成功来跳过检查。
 
 [共享消费配方](../../../services/buildr/tools/release/release-consumption.ts)是检查与覆盖关系的唯一声明。候选包括源码及真实前端逻辑、唯一包的完整性、版本与发布说明、分发文档链接、安装和运行、同包网页的核心浏览器旅程（Browser Journey）、真实 macOS/Windows 启动器（Launcher）、宿主 Node，以及发布基础设施故障恢复。核心浏览器结果绑定同一源码、登记及压缩包身份，不能推导全部页面或独立 DSH 包已通过。当前仅承诺 macOS 与 Windows，远端不运行 Linux 作业；固定 npm 的无写入发布检查在 macOS 候选中验证。已有冻结候选中的 Linux 结果保留为历史事实，不代表当前支持范围，也不要求重新执行。
 
 发布演练（Release Rehearsal）用于基础设施验收或必要诊断，使用相同候选实现。正常发布不强制“完整演练之后再完整候选”。精确源码、产物及相关输入相同的完整演练可直接作为最终验证，正式发布继续消费原包。
 
-Windows 原包运行失败时，可从 `dev` 的 `verify.yml` 选择 `diagnostic_scope=runtime-windows`；需要同时诊断工作树和发布恢复失败时选择 `failed-windows`；仅补跑原包消费边界时选择 `package-consumer-windows`，仅补跑嵌套仓库检查时选择 `nested-lifecycle-windows`。这些入口都须提供 `expected_source_tree`、`diagnostic_candidate_run_id` 和 `diagnostic_candidate_source`。入口分别绑定当前检查源码和原候选压缩包，只接受测试、诊断工具以及本页和验证架构说明的变化，复核运行身份与原包字节后，只执行所选失败边界；纯源码场景不称为已消费原包。诊断保留原断言、时限、独立摘要及最后进入的子阶段，不产生可用于发布的完整候选证明；确认必要修复后，再准备最终源码和完整候选。
+Windows 原包运行失败时，可从 `dev` 的 `verify.yml` 选择 `diagnostic_scope=runtime-windows`；需要同时诊断工作树和发布恢复失败时选择 `failed-windows`；仅补跑原包消费边界时选择 `package-consumer-windows`，仅补跑嵌套仓库检查时选择 `nested-lifecycle-windows`。这些入口都须提供 `expected_source_tree`、`diagnostic_candidate_run_id` 和 `diagnostic_candidate_source`。入口分别绑定当前检查源码和原候选压缩包，只接受测试、诊断工具以及本页和验证架构说明的变化，复核运行身份与原包字节后，只执行所选失败边界；纯源码场景不称为已消费原包。诊断保留原断言、时限、独立摘要及最后进入的子阶段，不产生可用于发布的完整候选证明。修复后按下面的正式补验条件处理，不把局部诊断文件直接当作完整候选。
 
 生产源码修复后的 Windows 预览检查使用 `diagnostic_scope=app-process-windows`，只接受当前 `expected_source_tree`；它在当前源码执行原登记检查，不下载或借用旧包，不形成完整候选证明。此入口只用于修复定位，最终仍须冻结新源码、验证新包。
 
 仅需定位任务生命周期、预览生命周期或发布效果恢复失败时，分别使用 `task-lifecycle-windows`、`preview-lifecycle-windows`、`publication-effects-windows`。三者沿用原包诊断的运行、源码和字节校验，每次只执行对应原登记检查，保留原断言和时限；它们执行当前源码检查，摘要明确 `artifactConsumed: false`，不重复已通过的包消费或其他检查。
+
+### 原包正式补验
+
+已有受控候选运行结束后，`prepare <同一选择> --verification-source <exact-sha>` 可采用独立验证源码（Verification Source）。它必须已在 `origin/dev` 中，且与原产包源码（Product Source）的产品、依赖、构建及工作流（Workflow）输入完全相同。工具比较真实 Git 内容；未知输入保守算入构建输入，不根据文件名中含有“测试”就认定可复用。
+
+补验仍由原发布承载分支（Carrier Branch）的固定工作流（Workflow）运行，检出指定验证源码（Verification Source）；原运行的源码身份、原包清单和字节不变。计划读取原运行的逐项结果，核对输入摘要、平台、退出状态和清理事实，保留成功证明，执行其余检查。失败分片（Shard）中已完成且已清理的检查也可复用。宿主 Node.js（Host Node）组合和确实读取当前 Git 的检查仍需重新观察。完整汇总保留逐项来源和原失败记录，缺项不能通过。
+
+未变化的 DSH 包、软件开发工具包（SDK）及精确 Buildr 对端可以保留插件完整验证和原字节。当前前端与 DSH 服务的测试及工具仍按保守构建输入处理；修改它们不自动取得原包补验资格。主包发布上下文（Release Context）同时绑定验证源码，受保护发布核验后使用该工具源码消费原包，避免发布时退回旧工具。
+
+旧工作流（Workflow）没有补验入口时，先验收并采用新基础设施，不能直接用新参数恢复旧候选。旧证据缺少逐项输入摘要时，保留原产包事实，但相关检查需要取得新证明。工作流定义、构建输入或产品源码变化也需要新的适用候选，不能用补验绕过。
 
 | 变化 | 处理 |
 |---|---|
@@ -74,6 +99,7 @@ Windows 原包运行失败时，可从 `dev` 的 `verify.yml` 选择 `diagnostic
 | 同一运行的明确暂态分片失败 | 最多自动恢复一次失败作业，复用其他成功分片；重复同错进入诊断 |
 | 最终包内嵌源码身份变化 | 重新构建并验证新包，即使文件树相同；内容匹配的独立源码结果仍可复用 |
 | 工具链、配方或相关平台条件变化 | 说明失效证明范围，重新验证相关结果 |
+| 仅主包验证工具或测试变化，构建及工作流输入不变 | 正式补验原包，只执行失效或必须重新观察的检查；保留原运行历史 |
 | 任务标题、登记版本或运输载体等无关信息变化 | 不废弃候选结果，不重算产品内容 |
 | 候选后 `main` 前进 | 先检查实际合并关系；需要改变最终源码时重新收敛和验证，已匹配的合并结果直接复用 |
 
@@ -87,6 +113,7 @@ Windows 原包运行失败时，可从 `dev` 的 `verify.yml` 选择 `diagnostic
 release-orchestration-runner.ts prepare --packages buildr --version <buildr-version> --workspace <workspace> [--baseline <ref>] [--source <sha> ...]
 release-orchestration-runner.ts prepare --packages dsh-plugin --plugin-version <plugin-version> --workspace <workspace> [--baseline <ref>] [--source <sha> ...]
 release-orchestration-runner.ts prepare --packages buildr,dsh-plugin --version <buildr-version> --plugin-version <plugin-version> --workspace <workspace> [--baseline <ref>] [--source <sha> ...]
+release-orchestration-runner.ts prepare <同一包选择与版本> --workspace <workspace> --verification-source <exact-sha>
 release-orchestration-runner.ts inspect|publish|resume <同一包选择与版本> --workspace <workspace> [--selection-id <id>]
 ```
 
@@ -97,6 +124,8 @@ release-orchestration-runner.ts inspect|publish|resume <同一包选择与版本
 发布工具修复后的恢复使用 `resume --recover-publication --authorized`，保留原候选运行、两包原字节、版本、源码及现有标签（Tag）。执行器仅接受原失败运行的准确记录，并将受保护 `main` 上经核对的发布工具修复作为独立执行来源；未知请求或生产代码、包版本、锁文件、负载变化不能走此路径。恢复记录保留原上下文和运行，不将新执行器提交冒充包源码。兼容检查在受支持的 macOS 执行；候选渠道 `next` 与稳定渠道 `latest` 分别观察当前官方对端。
 
 `inspect` 只读。运行尚未完成时返回运行编号；智能体跟踪终态后继续同一入口。`publish` 只用于已授权公开发布，不能由“准备”自动升级；新发布展示并绑定本轮分支清理政策与上下文。`resume` 从真实运行与公开事实继续未完成事项，不重新构造已验证提交或重新打包。
+
+入口返回当前阶段（Phase）、已保留事实、最小恢复动作和本次调用耗时。派发错误保留有界标准错误、退出码、信号和系统错误；明确拒绝与可能已受理分别处理。明确拒绝且查询确认没有运行时可重试原请求；响应丢失、查询失败或结果不唯一时先回读，不能重复派发。该投影不代替远端事实，也不自动调度完整重跑。
 
 Git 目录内的选择操作记录只保存目标、冻结上下文及逐包远端运行指针，以便中断后继续；它不代替 Git、任务记录、GitHub 或 npm 的事实。无需智能体复制大段 JSON、手工补字段或计算摘要。旧默认主包记录继续按原格式和授权读取；不能因升级推导插件授权或清理授权。旧窄工具只用于对应所有者的诊断；不再独立执行依赖安装以制造准备绑定。
 

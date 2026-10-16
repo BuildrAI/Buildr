@@ -3,6 +3,26 @@ import test from 'node:test';
 
 import { inspectCandidateFailedShardRetry } from '../../tools/release/candidate-failed-shard-retry.ts';
 import { compactReleasePhaseTimeline, createReleasePhaseTimeline, projectCandidateAttempts, projectCandidateRetryAttempts } from '../../tools/release/release-phase-timeline.ts';
+import { releaseRecoveryPlan, releaseCommandDiagnostic, releaseDispatchRejected } from '../../tools/release/release-failure.ts';
+
+test('recovery explains the failing boundary while retaining prior candidate and published package facts', () => {
+  const state = { candidate: { runId: 42, sourceCommit: 'a'.repeat(40) }, context: { identity: 'prepared-context' },
+    packagePublications: { buildr: { runId: 51, evidence: { status: 'passed' } }, 'dsh-plugin': { runId: 52 } } };
+  const value = releaseRecoveryPlan('adoption-readiness', 'plugin-preparation-dispatch-unconfirmed', state, ['query original request']);
+  assert.equal(value.stage, 'adoption-readiness'); assert.equal(value.action, 'read-original-request');
+  assert.equal(value.automaticFullRerun, false);
+  assert.deepEqual(value.retained.map((item: any) => item.kind), ['candidate-run', 'prepared-context', 'published-package']);
+  assert.equal(value.retained[2].package, 'buildr');
+  assert.equal(releaseRecoveryPlan('preflight', 'local-verification-required', state, []).action, 'complete-missing-checks');
+  assert.equal(releaseRecoveryPlan('candidate-verification', 'diagnosis-required', state, []).action, 'diagnose-failed-boundary');
+});
+
+test('request diagnostics are bounded and an unknown response never proves rejection', () => {
+  const diagnostic = releaseCommandDiagnostic('gh', ['workflow', 'run'], { status: 1, stderr: 'x'.repeat(20000) + ' HTTP 422: invalid input' });
+  assert.ok(diagnostic.stderr.length <= 8192); assert.equal(releaseDispatchRejected(diagnostic), true);
+  assert.equal(releaseDispatchRejected(releaseCommandDiagnostic('gh', ['workflow', 'run'], { status: null, signal: 'SIGTERM', error: { code: 'ETIMEDOUT' } })), false);
+  assert.equal(releaseDispatchRejected(releaseCommandDiagnostic('gh', ['workflow', 'run'], { status: 1, stderr: 'HTTP 503: response lost' })), false);
+});
 
 const digest: any = (letter: any) => `sha256-${letter.repeat(64)}`;
 

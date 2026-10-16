@@ -10,6 +10,7 @@ import { readCandidateEvidence } from '../../tools/release/release-transaction-r
 import { createReleaseArtifactFixture } from '../helpers/release-artifact-fixture.ts';
 import { aggregateCandidateCiEvidence, candidateCiRegistryIdentity, createCandidateCiEvidence } from '../verification/candidate-ci-evidence.ts';
 import { CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES } from '../verification/registry.ts';
+import { createCandidateSourceBinding } from '../../tools/release/candidate-source-binding.ts';
 
 const sourceRoot = path.resolve(import.meta.dirname, '../..');
 
@@ -63,7 +64,7 @@ test('reprepare releases only a terminal failed Publication pointer for a new un
   assert.throws(() => reconcilePublicationAfterPreparedContext(publication, context, { id: 41, status: 'completed', conclusion: 'success' }), /succeeded/u);
 });
 
-test('prepare creates one isolated release, validates before main, and reuses the same Candidate after unrelated dev and Task changes', async t => {
+for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs tools on original bytes' : 'preserves the original candidate'} through adoption and readiness after unrelated dev and Task changes`, async t => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-operation-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const workspace = path.join(root, 'workspace');
@@ -105,6 +106,7 @@ test('prepare creates one isolated release, validates before main, and reuses th
   let dispatched = 0;
   let merges = 0;
   let candidateComplete = false;
+  let verificationSource: string | null = null, repairRequested = false;
   let pr: any = null;
   const providerFile = path.join(workspace, '.git/buildr/task-worktrees', `${taskId}.json`);
   const runtime = {
@@ -130,9 +132,11 @@ test('prepare creates one isolated release, validates before main, and reuses th
     if (command !== 'gh') return spawnSync(command, args, { ...options, encoding: 'utf8' });
     const body = (value: unknown) => ({ status: 0, stdout: JSON.stringify(value) });
     if (args[0] === 'auth') return { status: 0, stdout: 'local-test-service' };
-    if (args[0] === 'workflow') { dispatched++; return { status: 1, stderr: 'injected lost dispatch response' }; }
-    if (args[0] === 'run' && args[1] === 'list') return body(dispatched ? [{ databaseId: 700, headSha: sourceCommit, status: candidateComplete ? 'completed' : 'queued', conclusion: candidateComplete ? 'success' : null }] : []);
-    if (args[0] === 'api') return body({ id: 700, head_sha: sourceCommit, run_attempt: 1, path: '.github/workflows/verify.yml', repository: { full_name: 'BuildrAI/Buildr' }, event: 'workflow_dispatch', status: candidateComplete ? 'completed' : 'queued', conclusion: candidateComplete ? 'success' : null });
+    if (args[0] === 'workflow') { dispatched++; if (args.includes('verification_source=' + verificationSource)) repairRequested = true; return { status: 1, stderr: 'injected lost dispatch response' }; }
+    if (args[0] === 'run' && args[1] === 'list') return body(dispatched ? [
+      { databaseId: 700, headSha: sourceCommit, status: candidateComplete ? 'completed' : 'queued', conclusion: candidateComplete ? 'success' : null },
+      ...(repairRequested ? [{ databaseId: 701, headSha: sourceCommit, displayTitle: 'Candidate repair 700 ' + verificationSource, status: 'completed', conclusion: 'success' }] : [])] : []);
+    if (args[0] === 'api') return body({ id: args[1]?.endsWith('/701') ? 701 : 700, head_sha: sourceCommit, run_attempt: 1, path: '.github/workflows/verify.yml', repository: { full_name: 'BuildrAI/Buildr' }, event: 'workflow_dispatch', status: candidateComplete ? 'completed' : 'queued', conclusion: candidateComplete ? 'success' : null });
     if (args[0] === 'pr' && args[1] === 'list') return body(pr ? [pr] : []);
     if (args[0] === 'pr' && args[1] === 'create') {
       pr = { number: 1, state: 'OPEN', headRefOid: sourceCommit, headRefName: args[args.indexOf('--head') + 1], baseRefName: 'main', url: 'https://github.com/BuildrAI/Buildr/pull/1' };
@@ -191,9 +195,16 @@ test('prepare creates one isolated release, validates before main, and reuses th
   assert.equal(merges, 0, 'artifact/Candidate mismatch is rejected before main mutation');
   assert.equal(pr, null);
   aggregate.sourceCommit = sourceCommit;
-  const ready = await runReleaseOperation(options, dependencies);
+  if (repairTools) {
+    const file = path.join(workspace, 'projects/product/services/buildr/test/repair.test.ts'); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, '// verification-only repair\n');
+    git(workspace, ['add', 'projects/product/services/buildr/test/repair.test.ts']); git(workspace, ['commit', '-m', 'repair validation tools']); git(workspace, ['push', 'origin', 'dev']);
+    verificationSource = git(workspace, ['rev-parse', 'HEAD']);
+    aggregate.sourceBinding = createCandidateSourceBinding(workspace, sourceCommit, verificationSource);
+    aggregate.verificationSource = verificationSource; aggregate.workflow.runId = '701';
+  }
+  const ready = await runReleaseOperation({ ...options, ...(verificationSource ? { verificationSource } : {}) }, dependencies);
   assert.equal(ready.status, 'awaiting-publication-authorization', JSON.stringify(ready));
-  assert.equal(merges, 1); assert.equal(dispatched, 1);
+  assert.equal(merges, 1); assert.equal(dispatched, repairTools ? 2 : 1);
   task.title = 'Unrelated Task title update';
   fs.writeFileSync(path.join(workspace, 'unrelated.txt'), 'later dev content');
   git(workspace, ['add', 'unrelated.txt']); git(workspace, ['commit', '-m', 'later dev']); git(workspace, ['push', 'origin', 'dev']);
@@ -201,10 +212,15 @@ test('prepare creates one isolated release, validates before main, and reuses th
   assert.equal(repeated.status, 'awaiting-publication-authorization', JSON.stringify(repeated));
   assert.equal(repeated.contextIdentity, ready.contextIdentity);
   assert.equal(repeated.sourceCommit, sourceCommit);
-  assert.equal(dispatched, 1); assert.equal(merges, 1);
+  assert.equal(dispatched, repairTools ? 2 : 1); assert.equal(merges, 1);
   assert.equal(git(workspace, ['ls-remote', 'origin', `refs/heads/${pr.headRefName}`]), '', 'prepare must not recreate a merged carrier deleted by GitHub');
   const record = JSON.parse(fs.readFileSync(path.join(workspace, '.git/buildr/release-operations', `${version}.json`), 'utf8'));
-  assert.equal(record.candidate.runId, 700);
+  assert.equal(record.candidate.runId, repairTools ? 701 : 700);
+  if (repairTools) {
+    assert.equal(record.context.verification.verificationSource, verificationSource);
+    assert.equal(record.context.artifact.sha256, artifact.manifest.sha256);
+    assert.equal(record.context.release.sourceCommit, sourceCommit);
+  }
   assert.equal(record.sources.length, 0);
 });
 

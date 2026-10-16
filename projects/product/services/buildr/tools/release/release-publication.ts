@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { assertReleaseExecutionCheckout } from './candidate-source-binding.ts';
 import { RELEASE_CHECKS, runReleaseConsumer, inspectReleaseConsumerArtifact, validateReleaseCheckDefinitions, type ReleaseInitialCheckId, type ReleaseEffectCheckId } from './release-consumption.ts';
 import { validateReleaseContext, evaluateReleaseReadiness } from './release-readiness.ts';
 import { runReleaseAuthorityOidcProbe } from './release-authority-oidc-probe.ts';
@@ -148,6 +149,7 @@ export async function runReleasePublication(options: any, dependencies: any = {}
   let authority: any;
   const initial = await executeChecks(RELEASE_CHECKS.filter(check => ['pre-publication', 'protected-authority'].includes(check.phase)), {
     'artifact-readback': () => {
+      if (context.verification) assertReleaseExecutionCheckout(repo, context);
       if (artifact.manifest.version !== context.release.version) throw new Error('Protected artifact version differs from the frozen release.');
       for (const field of ['sourceCommit', 'filename', 'size', 'sha256', 'integrity', 'applicationPayloadDigest']) if (artifact.manifest[field] !== context.artifact[field]) throw new Error(`Protected artifact ${field} mismatches the frozen Candidate.`);
       const readiness = evaluateReleaseReadiness({ stage: 'pre-tag', context });

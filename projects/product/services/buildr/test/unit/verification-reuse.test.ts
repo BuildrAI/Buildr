@@ -84,18 +84,21 @@ test('source package selectors and isolated launcher checks are reusable while f
 
 test('only reviewed fixture runtime checks exclude Product governance material while governance owners retain it', () => {
   const ids = ['integration-runtime', 'integration-data-store', 'integration-task-read-models', 'integration-task-coordination',
-    'integration-project-daily-progress', 'system-buildr-web-http', 'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection'];
+    'integration-project-daily-progress', 'system-buildr-web-http', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation',
+    'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection'];
   assert.deepEqual(verificationSteps.filter((item: VerificationReuseStep) => item.reuse && item.reuse.scope === 'runtime').map((item: VerificationReuseStep) => item.id).sort(), ids.sort());
   for (const id of ['docs-quality', 'openspec-strict', 'openspec-candidate-audit', 'contract', 'integration-verification']) {
     assert.equal(verificationSteps.find((item: VerificationReuseStep) => item.id === id).reuse.scope, 'repository', id);
   }
   assert.equal(verificationSteps.find((item: VerificationReuseStep) => item.id === 'openspec-candidate-audit').reuse.git, true);
   const runtime = verificationSteps.find((item: VerificationReuseStep) => item.id === 'integration-runtime');
-  const complete = { ...snapshot, environment: { ...snapshot.environment, tools: { ...snapshot.environment.tools, 'web-dependencies': sha, git: '2.50.1' } } };
+  const complete = { ...snapshot, stepInputs: { [runtime.id]: { contentIdentity: sha, recipeIdentity: sha, fallback: false, unavailable: false } },
+    environment: { ...snapshot.environment, tools: { ...snapshot.environment.tools, 'web-dependencies': sha, git: '2.50.1' } } };
   const identity = createVerificationReuseIdentity(runtime, complete);
   assert.ok(identity);
   assert.notEqual(createVerificationReuseIdentity({ ...runtime, executor: { ...runtime.executor, args: ['--different-recipe'] } }, complete)?.key, identity.key);
-  assert.notEqual(createVerificationReuseIdentity(runtime, { ...complete, contentIdentities: { ...complete.contentIdentities, runtime: `sha256-${'b'.repeat(64)}` } })?.key, identity.key);
+  assert.notEqual(createVerificationReuseIdentity(runtime, { ...complete, stepInputs: { [runtime.id]: { ...complete.stepInputs[runtime.id], contentIdentity: `sha256-${'b'.repeat(64)}` } } })?.key, identity.key);
+  assert.equal(createVerificationReuseIdentity(runtime, { ...complete, stepInputs: undefined }), null);
 });
 
 test('declared semantic inputs distinguish subsets and bases without changing unrelated check identities', () => {

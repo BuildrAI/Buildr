@@ -260,7 +260,7 @@ export function validateCandidateCiCoverage(
     if (!candidateIds.has(id) || !Array.isArray(allowed) || allowed.length < 2 || new Set(allowed).size !== allowed.length) {
       findings.push({ step: id, code: 'candidate_platform_repeat_invalid' });
     }
-    for (const shardId of allowed ?? []) if (!shardIds.has(shardId)) findings.push({ step: id, code: 'candidate_platform_repeat_unknown_shard', value: shardId });
+    for (const shardId of Array.isArray(allowed) ? allowed : []) if (!shardIds.has(shardId)) findings.push({ step: id, code: 'candidate_platform_repeat_unknown_shard', value: shardId });
   }
   const tupleIds: any = new Set();
   const expectedTuples: any = new Set(['minimum:macos', 'minimum:windows', 'current:macos', 'current:windows']);

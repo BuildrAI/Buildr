@@ -1173,6 +1173,12 @@ artifacts:
     objects:
       - verification-product-tools
     sources:
+      - verification-scoped-inputs
+      - verification-candidate-repair
+      - verification-candidate-repair-entry
+      - verification-candidate-source-binding
+      - release-candidate-repair-operation
+      - release-command-recovery
       - verification-frontend-test-runner
       - verification-candidate-browser
       - verification-candidate-environment
@@ -1415,6 +1421,36 @@ artifacts:
       - file-responsibility-graph
       - project-terms
 sources:
+  - id: verification-scoped-inputs
+    title: 检查输入范围与保守回退
+    kind: code
+    path: services/buildr/test/verification/verification-inputs.ts
+    summary: 分离已核验运行检查的产品内容和测试配方，跟踪静态导入及子脚本，未解析读取保留保守输入。
+  - id: verification-candidate-repair
+    title: 原包正式补验计划
+    kind: code
+    path: services/buildr/test/verification/candidate-repair.ts
+    summary: 核验原运行、包身份及逐项检查输入，保留有效证明并选择必要补验，保持完整覆盖与原始来源。
+  - id: verification-candidate-repair-entry
+    title: 受控补验入口与插件原包采用
+    kind: code
+    path: services/buildr/test/verification/candidate-repair-cli.ts
+    summary: 读取受控原运行和真实压缩包，生成执行矩阵及保留证据，采用输入不变的插件完整证明。
+  - id: verification-candidate-source-binding
+    title: 产包源码与验证源码绑定
+    kind: code
+    path: services/buildr/tools/release/candidate-source-binding.ts
+    summary: 比较精确提交的真实构建输入，形成检查身份并核验受保护发布使用的工具源码。
+  - id: release-candidate-repair-operation
+    title: 原候选补验请求与恢复
+    kind: code
+    path: services/buildr/tools/release/candidate-repair-operation.ts
+    summary: 保留冻结选择与原包，在原承载引用派发补验；未知效果先回读，避免重复请求。
+  - id: release-command-recovery
+    title: 发布命令诊断与阶段恢复
+    kind: code
+    path: services/buildr/tools/release/release-failure.ts
+    summary: 保留有界命令错误，区分明确拒绝和未知效果，投影已成立事实与最小恢复动作。
   - id: connection-runtime-spec
     title: 连接通用运行约定
     kind: spec

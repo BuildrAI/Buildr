@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import test from 'node:test';
-import { collectVerificationReuseSnapshot, collectVerificationReuseBundle, createVerificationReuseIdentity, createVerificationReuseStore, createVerificationPlanReuse, reusedVerificationResult, validateVerificationReuseRecord } from '../verification/verification-reuse.ts';
+import { collectVerificationReuseSnapshot, collectVerificationReuseBundle, createVerificationReuseIdentity, createVerificationReuseStore, createVerificationPlanReuse, inspectVerificationReusePlan, reusedVerificationResult, validateVerificationReuseRecord } from '../verification/verification-reuse.ts';
 import { executePlan } from '../verification/plan-runner.ts';
 import { runVerificationStep } from '../verification/timing/parallel-runner.ts';
 
@@ -27,7 +27,71 @@ function fixture(t: test.TestContext) {
   return { root, productRoot, step, options, observe };
 }
 const passed = { status: 'passed', exitCode: 0, durationMs: 12, childOutcome: 'passed', childExitCode: 0, childSignal: null, processCleanup: { status: 'clean' } };
+
+test('reviewed runtime proof partitions unrelated tests while binding its real test and tool imports', t => {
+  const f = fixture(t);
+  const write = (name: string, value: string) => { const file = path.join(f.productRoot, name); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, value); };
+  write('test/integration/selected.test.ts', "import '../../tools/release/selected.ts';\n");
+  write('tools/release/selected.ts', 'export const value = 1;\n');
+  const step = { ...f.step, executor: { type: 'node-test', files: ['test/integration/selected.test.ts'] }, reuse: { scope: 'runtime' as const, inputMode: 'runtime-check' as const } };
+  const observe = () => collectVerificationReuseSnapshot({ ...f.options, steps: [step] });
+  const key = () => createVerificationReuseIdentity(step, observe())!.key;
+  const original = key();
+  assert.equal(observe().stepInputs![step.id]!.fallback, false);
+  write('test/integration/unrelated.test.ts', 'throw new Error("unrelated");\n');
+  write('tools/release/unrelated.ts', 'export const unrelated = true;\n');
+  assert.equal(key(), original);
+  execFileSync('git', ['-C', f.root, 'branch', 'unrelated-task']);
+  assert.equal(key(), original);
+  for (const name of ['src/check.ts', 'test/integration/selected.test.ts', 'tools/release/selected.ts', 'test/helpers/common.ts']) {
+    const file = path.join(f.productRoot, name), previous = fs.existsSync(file) ? fs.readFileSync(file) : null;
+    write(name, (previous?.toString() ?? '') + '// actual input changed\n');
+    assert.notEqual(key(), original, name);
+    if (previous) fs.writeFileSync(file, previous); else fs.rmSync(file);
+  }
+});
+
+test('computed test imports retain a conservative scope instead of inventing dependency coverage', t => {
+  const f = fixture(t), file = path.join(f.productRoot, 'test/check.ts');
+  fs.mkdirSync(path.dirname(file)); fs.writeFileSync(file, 'const modulePath = process.env.TEST_MODULE; await import(modulePath);\n');
+  const step = { ...f.step, executor: { type: 'node', file: 'test/check.ts' }, reuse: { scope: 'runtime' as const, inputMode: 'runtime-check' as const } };
+  const observe = () => collectVerificationReuseSnapshot({ ...f.options, steps: [step] });
+  const first = observe(); assert.equal(first.stepInputs![step.id]!.fallback, true);
+  fs.writeFileSync(path.join(f.productRoot, 'test/unknown.ts'), 'new dependency');
+  assert.notEqual(createVerificationReuseIdentity(step, observe())!.key, createVerificationReuseIdentity(step, first)!.key);
+});
+
+test('node test runner arguments are recipe inputs rather than invisible child test paths', t => {
+  const f = fixture(t), directory = path.join(f.productRoot, 'test'); fs.mkdirSync(directory);
+  fs.writeFileSync(path.join(directory, 'runner.ts'), '// child runner\n');
+  fs.writeFileSync(path.join(directory, 'selected.test.ts'), '// original test\n');
+  const step = { ...f.step, executor: { type: 'node', file: 'test/runner.ts', args: ['test/selected.test.ts'] }, reuse: { scope: 'runtime' as const, inputMode: 'runtime-check' as const } };
+  const observe = () => collectVerificationReuseSnapshot({ ...f.options, steps: [step] });
+  const key = createVerificationReuseIdentity(step, observe())!.key;
+  fs.appendFileSync(path.join(directory, 'selected.test.ts'), '// changed assertion\n');
+  assert.notEqual(createVerificationReuseIdentity(step, observe())!.key, key);
+});
 function origin(sourceCommit: string) { return { kind: 'local' as const, runId: 'source-fixture', sourceCommit, startedAt: new Date().toISOString(), finishedAt: new Date().toISOString() }; }
+
+test('reuse planning is read-only, explains input and recipe misses and removes reused work from its estimate', t => {
+  const f = fixture(t), step = { ...f.step, testing: { targetDurationMs: 1200 }, dependsOn: [] };
+  const plan = { steps: [step] };
+  const missing = inspectVerificationReusePlan(plan, f.options);
+  assert.equal(fs.existsSync(f.options.env.BUILDR_VERIFICATION_REUSE_DIR), false);
+  assert.deepEqual(missing.steps[0].reasons, ['no-matching-result']);
+  assert.equal(missing.estimate.remainingWorkMs, 1200);
+  const snapshot = f.observe(), store = createVerificationReuseStore({ ...f.options, snapshot });
+  store.stage(step, passed, origin(snapshot.sourceCommit)); store.commit(f.observe(), true);
+  const reused = inspectVerificationReusePlan(plan, f.options);
+  assert.equal(reused.estimate.remainingWorkMs, 0); assert.equal(reused.estimate.reusedOriginalMs, 12);
+  assert.equal(reused.steps[0].origin.runId, 'source-fixture');
+  const changed = inspectVerificationReusePlan({ steps: [{ ...step, executor: { ...step.executor, args: ['--different'] } }] }, f.options);
+  assert.deepEqual(changed.steps[0].reasons, ['check-recipe-changed']);
+  assert.deepEqual(inspectVerificationReusePlan(plan, { ...f.options, force: true }).steps[0].reasons, ['explicit-force']);
+  assert.ok(createVerificationReuseStore({ ...f.options, snapshot: f.observe() }).lookup(step), 'planning force never revokes a valid result');
+  fs.appendFileSync(path.join(f.productRoot, 'src/check.ts'), '// change\n');
+  assert.deepEqual(inspectVerificationReusePlan(plan, f.options).steps[0].reasons, ['product-input-changed']);
+});
 
 test('local source cache starts empty, persists atomic success and invalidates old green after forced failure', t => {
   const f = fixture(t), snapshot = f.observe();
@@ -148,13 +212,15 @@ test('only the fresh staged record survives unavailable cache and an observed in
 });
 
 test('executePlan automatically skips a second executor call and forced failure revokes its old result', async t => {
-  const f = fixture(t); let calls = 0, fail = false;
-  const plan = { status: 'ready', paths: [], steps: [{ ...f.step, dependsOn: [], contexts: [] }] };
-  const options = { ...f.options, runId: 'plan-fixture', concurrency: 1, resourceCoordinator: { root: path.join(f.root, 'resources') },
+  const f = fixture(t); let calls = 0, fail = false, grants = 0;
+  const plan = { status: 'ready', scope: { mode: 'full' }, paths: [], steps: [{ ...f.step, dependsOn: [], contexts: [], resourceClaims: ['owned-test-resource'] }] };
+  const options = { ...f.options, runId: 'plan-fixture', concurrency: 1, resourceCoordinator: { root: path.join(f.root, 'resources'),
+    async acquire() { grants++; return { waitDurationMs: 0, claims: [], async release() { return []; } }; } },
     executorFactory: () => async () => { calls++; return fail ? { ...passed, status: 'failed', exitCode: 1, childOutcome: 'failed', childExitCode: 1 } : { ...passed }; } };
   const first = await executePlan(plan, options);
   assert.equal(first.passed, true); assert.equal(first.sourceBundle.records.length, 1);
   const next = await executePlan(plan, options);
+  assert.equal(grants, 2, 'a fully reused plan acquires neither the full-plan lease nor per-check resources');
   assert.equal(calls, 1); assert.equal(next.results[0].disposition, 'reused'); assert.equal(next.results[0].durationMs, 0);
   fail = true;
   const forced = await executePlan(plan, { ...options, reuse: { force: true } });

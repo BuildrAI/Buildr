@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { executePlan, FULL_PLAN_RESOURCE_ID, FULL_PLAN_WAIT_TIMEOUT_MS } from '../verification/plan-runner.ts';
+import { verificationSteps } from '../verification/registry.ts';
 
 function emptyPlan(mode: any): any  {
   return { scope: { mode }, steps: [], paths: [], delegated: [] };
@@ -25,10 +26,16 @@ function coordinator(events: any): any  {
 
 const silentExecutor: any = () => async () => ({ status: 'passed', durationMs: 0 });
 
+test('long nested and cross-domain owners retain their deadlines while avoiding competing outer owners', () => {
+  for (const id of ['system-nested-git-isolation', 'integration']) assert.equal(verificationSteps.find((step: any) => step.id === id).concurrencyClass, 'exclusive');
+  assert.equal(verificationSteps.find((step: any) => step.id === 'integration').timeoutMs, 300_000);
+});
+
 test('Full plan 持有跨 Task 共享容量直到整个 DAG 结束', async () => {
   const events: any[] = [];
   const output: any[] = [];
-  const result: any = await executePlan(emptyPlan('full'), {
+  const plan = { ...emptyPlan('full'), steps: [{ id: 'local-check', name: 'local check', dependsOn: [], contexts: [] }] };
+  const result: any = await executePlan(plan, {
     productRoot: process.cwd(),
     resourceCoordinator: coordinator(events),
     executorFactory: silentExecutor,
@@ -48,9 +55,9 @@ test('Full plan 持有跨 Task 共享容量直到整个 DAG 结束', async () =>
   assert.match(output.join(''), /acquired: product-full-execution wait=17ms/);
 });
 
-test('Affected plan 不占用 Full 共享容量', async () => {
+for (const mode of ['affected', 'full']) test(`${mode} 空计划不占用 Full 共享容量`, async () => {
   const events: any[] = [];
-  const result: any = await executePlan(emptyPlan('affected'), {
+  const result: any = await executePlan(emptyPlan(mode), {
     productRoot: process.cwd(),
     resourceCoordinator: coordinator(events),
     executorFactory: silentExecutor,
