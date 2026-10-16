@@ -18,11 +18,15 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
   const prefix = path.relative(fs.realpathSync(repositoryRoot), fs.realpathSync(productRoot)).split(path.sep).join('/') + '/';
   const byPath = new Map(entries.map(entry => [entry[0]!, entry]));
   const selected = new Set<string>(), queued = new Set<string>(), pending: string[] = [];
-  const add = (file: string) => { selected.add(file); if (!queued.has(file)) { queued.add(file); pending.push(file); } };
+  const add = (file: string) => {
+    selected.add(file);
+    if (file.startsWith('skills/buildr-release/scripts/')) selected.add('skills/buildr-release/package.json');
+    if (!queued.has(file)) { queued.add(file); pending.push(file); }
+  };
   const local = (file: string) => file.startsWith(prefix) ? file.slice(prefix.length) : null;
   const recipeFile = (file: string) => {
     const relative = local(file);
-    return relative !== null && (relative.startsWith('test/') || relative.startsWith('tools/release/') || relative.startsWith('tools/verification/'));
+    return file.startsWith('skills/buildr-release/') || relative !== null && (relative.startsWith('test/') || relative.startsWith('tools/release/') || relative.startsWith('tools/verification/'));
   };
   const content = entries.filter(([file]) => !recipeFile(file!));
   // Result validation does not execute the assertions. Its consumers still bind

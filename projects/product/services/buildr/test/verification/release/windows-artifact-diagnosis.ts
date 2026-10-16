@@ -10,7 +10,7 @@ import { readCandidateCiArtifact } from '../candidate-ci-evidence.ts';
 import { executePlan } from '../plan-runner.ts';
 import { createVerificationPlan } from '../planner.ts';
 import { resolveVerificationExecutionProfile } from '../registry.ts';
-import { CANDIDATE_TARBALL_ENV, CANDIDATE_PACK_METADATA_ENV, CANDIDATE_RELEASE_MANIFEST_ENV } from './candidate-package.ts';
+import { CANDIDATE_TARBALL_ENV, CANDIDATE_PACK_METADATA_ENV, CANDIDATE_RELEASE_MANIFEST_ENV } from '../../../../../../../skills/buildr-release/scripts/candidate-package.ts';
 
 export const WINDOWS_ARTIFACT_DIAGNOSIS_SCHEMA = 'buildr.windows-artifact-diagnosis/v1';
 export const WINDOWS_ARTIFACT_DIAGNOSIS_STEPS = Object.freeze(['system-app-process', 'runtime-adapter-parity', 'release-tarball-smoke']);

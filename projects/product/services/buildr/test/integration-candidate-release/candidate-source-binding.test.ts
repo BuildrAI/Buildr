@@ -5,10 +5,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { createCandidateSourceBinding, assertCandidateSourceBinding, candidateCheckInputIdentity, readGitSourceInventory, verificationOnlyPath, releaseExecutionSource, assertReleaseExecutionCheckout } from '../../tools/release/candidate-source-binding.ts';
-import { createReleaseContext, validateReleaseContext } from '../../tools/release/release-readiness.ts';
-import { assertReleaseExecutorSource, releaseExecutorRecoverySchema } from '../../tools/release/release-executor-recovery.ts';
-import { continueCandidateRepair } from '../../tools/release/candidate-repair-operation.ts';
+import { createCandidateSourceBinding, assertCandidateSourceBinding, candidateCheckInputIdentity, readGitSourceInventory, verificationOnlyPath, releaseExecutionSource, assertReleaseExecutionCheckout } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
+import { createReleaseContext, validateReleaseContext } from '../../../../../../skills/buildr-release/scripts/release-readiness.ts';
+import { assertReleaseExecutorSource, releaseExecutorRecoverySchema } from '../../../../../../skills/buildr-release/scripts/release-executor-recovery.ts';
+import { continueCandidateRepair } from '../../../../../../skills/buildr-release/scripts/candidate-repair-operation.ts';
 import { createCandidateRepairPlan, candidateProofDefinition, reusedCandidateProofResult, validateCandidateRepairProof, candidateRepairShardPlan } from '../verification/candidate-repair.ts';
 import { candidateProofDescriptors, assertCandidateRepairPlan } from '../verification/candidate-repair.ts';
 import { prepareCandidateRepair, materializeCandidateRepair } from '../verification/candidate-repair-cli.ts';
@@ -30,7 +30,7 @@ test('real source binding preserves producer identity for test repair and reject
   write(prefix + 'test/second.test.ts', 'const value = 1;\n');
   const original = commit();
   write(prefix + 'test/second.test.ts', 'const repaired = 2;\n');
-  write(prefix + 'tools/release/plugin-hosted-release.ts', 'export const repaired = true;\n');
+  write(prefix + '../../../../skills/buildr-release/scripts/plugin-hosted-release.ts', 'export const repaired = true;\n');
   const repaired = commit();
   const binding = createCandidateSourceBinding(repo, original, repaired);
   assert.equal(binding.productSource, original); assert.equal(binding.verificationSource, repaired);
@@ -48,9 +48,9 @@ test('real source binding preserves producer identity for test repair and reject
   const step = (file: string) => ({ id: file, executor: { type: 'node-test', files: [file] } });
   assert.equal(candidateCheckInputIdentity(repo, original, step('test/first.test.ts')), candidateCheckInputIdentity(repo, repaired, step('test/first.test.ts')));
   assert.notEqual(candidateCheckInputIdentity(repo, original, step('test/second.test.ts')), candidateCheckInputIdentity(repo, repaired, step('test/second.test.ts')));
-  for (const file of ['src/index.ts', 'package-lock.json', 'test/context/public.ts', 'tools/release/release-artifact.ts', 'tools/release/application-payload.ts']) {
+  for (const file of ['src/index.ts', 'package-lock.json', 'test/context/public.ts', '../../../../skills/buildr-release/scripts/release-artifact.ts', '../../../../skills/buildr-release/scripts/application-payload.ts']) {
     write(prefix + file, 'changed build input\n'); const changed = commit();
-    assert.throws(() => createCandidateSourceBinding(repo, repaired, changed), (error: any) => error.code === 'candidate-build-inputs-changed' && error.changedPaths.includes(prefix + file));
+    assert.throws(() => createCandidateSourceBinding(repo, repaired, changed), (error: any) => error.code === 'candidate-build-inputs-changed' && error.changedPaths.includes(path.posix.normalize(prefix + file)));
     git('revert', '--no-commit', changed); commit();
   }
 });
@@ -72,7 +72,7 @@ test('candidate repair provenance coexists with protected publisher recovery wit
     artifact: { sourceCommit: original }, convergence: { mainCommit: original }, verification: binding };
   const context = createReleaseContext(base);
   git('checkout', '--detach', original);
-  write(prefix + 'tools/release/plugin-hosted-release.ts', '// publisher repair\n');
+  write(prefix + '../../../../skills/buildr-release/scripts/plugin-hosted-release.ts', '// publisher repair\n');
   const executor = commit();
   const recovery = { schemaVersion: releaseExecutorRecoverySchema,
     ...assertReleaseExecutorSource({ repo, originalCommit: original, executionCommit: executor }),
@@ -125,6 +125,7 @@ test('formal repair retains the producer and unaffected check while a changed as
   git('init', '--initial-branch=main'); write('package.json', '{"version":"1.0.0"}\n');
   write('test/first.test.ts', '// first\n'); write('test/second.test.ts', '// second\n');
   write('test/verification/verification-reuse.ts', '// old result validator\n');
+  write('../../../../skills/buildr-release/SKILL.md', '# original release method\n');
   const source = commit(), tree = git('rev-parse', 'HEAD^{tree}');
   const first = { id: 'first', executor: { type: 'node-test', files: ['test/first.test.ts'] }, dependsOn: [] };
   const second = { id: 'second', executor: { type: 'node-test', files: ['test/second.test.ts'] }, dependsOn: ['first'] };
@@ -163,7 +164,7 @@ test('formal repair retains the producer and unaffected check while a changed as
   const legacyEvidence = structuredClone(evidence);
   const legacyInput = { version: 2, discoveredMembers: [], descriptor: { id: first.id, executor: first.executor,
     dependsOn: first.dependsOn, executionProfile: candidateProofDefinition(first).executionProfile },
-    entries: readGitSourceInventory(repo, source).filter(entry => [prefix + 'package.json', prefix + 'test/first.test.ts', prefix + 'test/verification/verification-reuse.ts'].includes(entry.path)) };
+    entries: readGitSourceInventory(repo, source).filter(entry => [prefix + 'package.json', prefix + 'test/first.test.ts', prefix + 'test/verification/verification-reuse.ts', 'skills/buildr-release/SKILL.md'].includes(entry.path)) };
   legacyEvidence[1]!.checkInputs.first = 'sha256-' + crypto.createHash('sha256').update(JSON.stringify(legacyInput)).digest('hex');
   const migrated = createCandidateRepairPlan({ ...input, evidence: legacyEvidence }, { descriptors });
   assert.equal(migrated.checks[1].steps[0].disposition, 'reuse', 'authenticated old evidence survives the input-model upgrade');

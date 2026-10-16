@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createReleaseContext, validateReleaseContext } from '../../tools/release/release-readiness.ts';
-import { releaseExecutionCommit, validateReleaseExecutorRecovery } from '../../tools/release/release-executor-recovery.ts';
-import { createReleaseTransactionEvidence, validateReleaseTransactionEvidence } from '../../tools/release/release-transaction-evidence.ts';
-import { verifyReleaseExecutorPullRequest } from '../../tools/release/release-executor-admission.ts';
-import { readHostedPluginNoWriteProof } from '../../tools/release/plugin-hosted-release.ts';
+import { createReleaseContext, validateReleaseContext } from '../../../../../../skills/buildr-release/scripts/release-readiness.ts';
+import { releaseExecutionCommit, validateReleaseExecutorRecovery } from '../../../../../../skills/buildr-release/scripts/release-executor-recovery.ts';
+import { createReleaseTransactionEvidence, validateReleaseTransactionEvidence } from '../../../../../../skills/buildr-release/scripts/release-transaction-evidence.ts';
+import { verifyReleaseExecutorPullRequest } from '../../../../../../skills/buildr-release/scripts/release-executor-admission.ts';
+import { readHostedPluginNoWriteProof } from '../../../../../../skills/buildr-release/scripts/plugin-hosted-release.ts';
 
 const sha = (letter: string) => letter.repeat(40);
 const digest = (letter: string) => `sha256-${letter.repeat(64)}`;
@@ -71,7 +71,7 @@ function pluginAdmissionFixture(): any {
     sourceCommit: source, sourceTree, sha256: '1'.repeat(64), integrity: `sha512-${Buffer.alloc(64, 1).toString('base64')}`,
     attempted: false, publishedObserved: false, status: 'blocked', action: 'blocked', registry: 'absent', observedAt: '2026-10-16T02:55:10.544Z',
     request: { runId: 123, runAttempt: 1, workflowRef: 'BuildrAI/Buildr/.github/workflows/publish-dsh-plugin.yml@refs/heads/main' }, code: 'plugin-oidc-authority-mismatch' };
-  const reads: string[][] = [], paths = ['projects/product/services/dsh-plugin/tools/trusted-publish.ts'];
+  const reads: string[][] = [], paths = ['skills/buildr-release/scripts/dsh-plugin/trusted-publish.ts'];
   const git = (args: string[]) => {
     reads.push(args);
     if (args[0] === 'rev-parse') return args[1] === 'HEAD' ? head : args[1] === 'origin/main' ? execution

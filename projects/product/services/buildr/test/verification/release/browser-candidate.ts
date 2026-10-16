@@ -10,7 +10,7 @@ import { verifyApplicationPayload } from '../../../src/infrastructure/product-re
 import { resolveCandidateExecutionContext, resolveCandidateSourceCommit } from '../candidate-ci-evidence.ts';
 import { executeVerificationCommand } from '../support/process-executor.ts';
 import { createVerificationPhaseRecorder } from '../timing/phases.ts';
-import { readSharedCandidatePackage } from './candidate-package.ts';
+import { readSharedCandidatePackage } from '../../../../../../../skills/buildr-release/scripts/candidate-package.ts';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../../..');
 export const CANDIDATE_BROWSER_SELECTORS = Object.freeze(['core']);

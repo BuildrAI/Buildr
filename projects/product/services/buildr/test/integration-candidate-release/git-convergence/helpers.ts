@@ -8,16 +8,16 @@ import {
   closeoutReleaseGitResources as closeoutReleaseGitResourcesActual,
   cleanupRemoteReleaseBranch as cleanupRemoteReleaseBranchActual,
   releaseCarrierBranchFor,
-} from '../../../tools/release/release-git-convergence.ts';
-import { createReleaseContext } from '../../../tools/release/release-readiness.ts';
+} from '../../../../../../../skills/buildr-release/scripts/release-git-convergence.ts';
+import { createReleaseContext } from '../../../../../../../skills/buildr-release/scripts/release-readiness.ts';
 import {
   createReleaseSelection,
   freezeReleaseSelection,
   selectReleaseCommit,
-} from '../../../tools/release/release-selection.ts';
-import { createReleaseTransactionEvidence } from '../../../tools/release/release-transaction-evidence.ts';
-import { createReleaseExecutionBinding } from '../../../tools/release/release-execution-binding.ts';
-import { runReleaseOrchestration as runReleaseOrchestrationActual } from '../../../tools/release/release-orchestration-runner.ts';
+} from '../../../../../../../skills/buildr-release/scripts/release-selection.ts';
+import { createReleaseTransactionEvidence } from '../../../../../../../skills/buildr-release/scripts/release-transaction-evidence.ts';
+import { createReleaseExecutionBinding } from '../../../../../../../skills/buildr-release/scripts/release-execution-binding.ts';
+import { runReleaseOrchestration as runReleaseOrchestrationActual } from '../../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts';
 
 export const digest: any = (value: any) => `sha256-${String(value).padStart(64, '0')}`;
 

@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { sameFilesystemPath } from '../../../src/infrastructure/filesystem/filesystem-path-identity.ts';
-import { createCandidatePackage, readSharedCandidatePackage } from './candidate-package.ts';
+import { createCandidatePackage, readSharedCandidatePackage } from '../../../../../../../skills/buildr-release/scripts/candidate-package.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const workspaceRoot: any = path.resolve(productRoot, '../../../..');

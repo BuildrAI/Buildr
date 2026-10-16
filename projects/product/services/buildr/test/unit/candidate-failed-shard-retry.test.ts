@@ -5,8 +5,8 @@ import {
   classifyCandidateStructuredFailures,
   inspectCandidateFailedShardRetry,
   retryCandidateFailedShards,
-} from '../../tools/release/candidate-failed-shard-retry.ts';
-import { CANDIDATE_CI_EVIDENCE_SCHEMA } from '../../tools/release/candidate-ci-contract.ts';
+} from '../../../../../../skills/buildr-release/scripts/candidate-failed-shard-retry.ts';
+import { CANDIDATE_CI_EVIDENCE_SCHEMA } from '../verification/release/candidate-ci-contract.ts';
 
 const runId: any = 32807422982;
 const sourceCommit: any = 'a'.repeat(40);

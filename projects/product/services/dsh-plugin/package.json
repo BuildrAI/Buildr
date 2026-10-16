@@ -32,8 +32,8 @@
     "sdk:prepare": "node tools/prepare-source-sdk.ts",
     "composition:dev": "node tools/build-development-composition.ts",
     "preset:adapter": "node tools/build-preset-adapter.ts",
-    "release:status": "node tools/release.ts status",
-    "release:prepare": "node tools/release.ts prepare",
+    "release:status": "node ../../../../skills/buildr-release/scripts/dsh-plugin/release.ts status",
+    "release:prepare": "node ../../../../skills/buildr-release/scripts/dsh-plugin/release.ts prepare",
     "test": "node --test test/unit/*.test.ts test/integration/*.test.ts",
     "test:full": "node tools/verify-all.ts"
   }

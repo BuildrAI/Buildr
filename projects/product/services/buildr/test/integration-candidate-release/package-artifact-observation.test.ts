@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import test from 'node:test';
 import { gzipSync } from 'node:zlib';
-import { artifactFromTarball, observePublishedPackageArtifact, packageMetadataFromTarball, packageNames } from '../../tools/release/package-artifact-observation.ts';
+import { artifactFromTarball, observePublishedPackageArtifact, packageMetadataFromTarball, packageNames } from '../../../../../../skills/buildr-release/scripts/package-artifact-observation.ts';
 
 const version = '0.1.0-rc.2';
 const compatibility = { schemaVersion: 'buildr.package-compatibility/v1', provides: ['buildr.plugin.entry/v1'], requires: [] };

@@ -11,7 +11,7 @@ import { createCandidateCiShardPlan } from './planner.ts';
 import { candidateSourceImportFromEnvironment, planCandidateSourceReuse } from './candidate-source-reuse.ts';
 import { collectVerificationReuseSnapshot, validateVerificationReuseRecord } from './verification-reuse.ts';
 import { CANDIDATE_CI_HOST_NODE_TUPLES, CANDIDATE_CI_SHARDS, resolveVerificationExecutionProfile } from './registry.ts';
-import { createCandidateCheckInputReader } from '../../tools/release/candidate-source-binding.ts';
+import { createCandidateCheckInputReader } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
 import { assertCandidateRepairPlan, candidateProofDefinition, candidateProofDescriptors, candidateRepairShardPlan, reusedCandidateProofResult, validateCandidateRepairProof } from './candidate-repair.ts';
 import {
   aggregateCandidateCiEvidence,
@@ -30,7 +30,7 @@ import {
   CANDIDATE_PACK_METADATA_ENV,
   CANDIDATE_RELEASE_MANIFEST_ENV,
   CANDIDATE_TARBALL_ENV,
-} from './release/candidate-package.ts';
+} from '../../../../../../skills/buildr-release/scripts/candidate-package.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const projectRoot: any = path.resolve(productRoot, '../..');
@@ -220,7 +220,7 @@ function runHostNode(tupleId: any): any  {
   const artifact: any = readCandidateCiArtifact(process.env.BUILDR_CANDIDATE_CI_ARTIFACT_DIR || path.join(outputRoot, 'candidate-package'), sourceCommit);
   fs.mkdirSync(outputRoot, { recursive: true });
   const startedAtMs: any = Date.now();
-  const result: any = spawnCommandSync(exactNode.nodeExecutable, [path.join(productRoot, 'tools/release/release-consumption.ts'), 'host'], {
+  const result: any = spawnCommandSync(exactNode.nodeExecutable, [path.join(productRoot, 'test/verification/release/release-consumption.ts'), 'host'], {
     cwd: productRoot,
     encoding: 'utf8',
     env: {
@@ -233,7 +233,7 @@ function runHostNode(tupleId: any): any  {
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
   if (result.status === 0 && tupleId === 'host-minimum-macos') {
-    const publishCheck = spawnCommandSync(exactNode.nodeExecutable, [path.join(productRoot, 'tools/release/release-consumption.ts'), 'publisher'], {
+    const publishCheck = spawnCommandSync(exactNode.nodeExecutable, [path.join(productRoot, 'test/verification/release/release-consumption.ts'), 'publisher'], {
       cwd: productRoot, encoding: 'utf8', env: { ...exactNode.env, ...artifactEnvironment(artifact) }, timeout: 120_000,
     });
     if (publishCheck.stdout) process.stdout.write(publishCheck.stdout);

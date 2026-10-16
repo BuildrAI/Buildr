@@ -241,7 +241,7 @@ if (verificationSteps.filter((step: any) => step.executor.type === 'candidate-ar
 
 const packageJson: any = JSON.parse(fs.readFileSync(path.join(productRoot, 'package.json'), 'utf8'));
 if (packageJson.bin?.buildr !== 'bin/buildr.mjs') problems.push('package.json bin must expose bin/buildr.mjs');
-const candidatePackageSource: any = fs.readFileSync(path.join(productRoot, 'test', 'verification', 'release', 'candidate-package.ts'), 'utf8');
+const candidatePackageSource: any = fs.readFileSync(path.join(productRoot, '../../../../skills/buildr-release/scripts/candidate-package.ts'), 'utf8');
 if (!candidatePackageSource.includes('buildApplicationPayload(') || !candidatePackageSource.includes('createReleaseArtifact(')) {
   problems.push('formal candidate must build the application payload and create the release artifact from that frozen payload');
 }

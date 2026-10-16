@@ -6,13 +6,13 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { gzipSync } from 'node:zlib';
 import test from 'node:test';
-import { runReleaseOperation } from '../../tools/release/release-orchestration-runner.ts';
-import { containsCredentialMaterial } from '../../tools/release/release-authority.ts';
-import { artifactFromTarball } from '../../tools/release/package-artifact-observation.ts';
-import { createPluginSourceAggregate } from '../../tools/release/verify-pr-candidate.ts';
+import { runReleaseOperation } from '../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts';
+import { containsCredentialMaterial } from '../../../../../../skills/buildr-release/scripts/release-authority.ts';
+import { artifactFromTarball } from '../../../../../../skills/buildr-release/scripts/package-artifact-observation.ts';
+import { createPluginSourceAggregate } from '../verification/release/verify-pr-candidate.ts';
 import { preservePluginSourceCandidate } from '../verification/candidate-repair-cli.ts';
 import { PEER_INPUT_SCHEMA } from '../../../dsh-plugin/tools/buildr-peer.ts';
-import { createReleaseCandidate, PLUGIN_SERVICE_PATH, SOURCE_SDK_MANIFEST, sourceSdkIdentityFromFiles } from '../../../dsh-plugin/tools/release-candidate.ts';
+import { createReleaseCandidate, PLUGIN_SERVICE_PATH, SOURCE_SDK_MANIFEST, sourceSdkIdentityFromFiles } from '../../../../../../skills/buildr-release/scripts/dsh-plugin/release-candidate.ts';
 import { archiveTreeIdentity } from '../../../dsh-plugin/tools/verify-all.ts';
 import { identity } from '../../../dsh-plugin/tools/verify-buildr-plugin-pair.ts';
 

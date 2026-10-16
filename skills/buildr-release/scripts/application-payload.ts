@@ -1,0 +1,274 @@
+#!/usr/bin/env node
+
+import crypto from 'node:crypto';
+import { createRequire } from 'node:module';
+import fs from 'node:fs';
+import path from 'node:path';
+import process from 'node:process';
+import { fileURLToPath } from 'node:url';
+
+import {
+  APPLICATION_PAYLOAD_MANIFEST,
+  APPLICATION_PAYLOAD_PROTOCOL_IDENTITY,
+  APPLICATION_PAYLOAD_SCHEMA_VERSION,
+  canonicalApplicationPayloadIdentity,
+  validateApplicationPayloadManifest,
+  verifyApplicationPayload,
+} from '../../../projects/product/services/buildr/src/infrastructure/product-resources/index.ts';
+import { sameFilesystemPath } from '../../../projects/product/services/buildr/src/infrastructure/filesystem/filesystem-path-identity.ts';
+import { assertGeneratedArtifactEntry } from '../../../projects/product/services/buildr/tools/build/generated-artifacts.ts';
+
+const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../projects/product/services/buildr');
+const MAIN_ENTRY: any = path.join(serviceRoot, '../../../../skills/buildr-release/scripts/application-payload-entry.ts');
+const WORKER_ENTRY: any = path.join(serviceRoot, 'src/web/http/read-worker.ts');
+const UPSTREAM_OPENSPEC_WORKER_ENTRY: any = path.join(serviceRoot, 'src/modules/openspec/application/upstream-openspec-worker.ts');
+const RESOURCE_SOURCES: any = Object.freeze([
+  ['resources', 'product/resources', { exclude: new Set(['installation', 'runtime']) }],
+  ['resources/installation/launcher', 'product/resources/installation/launcher', { include: new Set(['Buildr.icns', 'Buildr.ico']) }],
+  ['resources/runtime', 'product/resources/runtime', { exclude: new Set(['dsh']) }],
+  ['docs', 'product/docs', { include: new Set(['cli-reference.md', 'dsh-desktop-plugin.md']) }],
+  ['src/infrastructure/sqlite/migrations', 'product/src/infrastructure/sqlite/migrations'],
+  ['node_modules/@vscode/ripgrep-universal/bin', 'runtime/ripgrep'],
+]);
+
+export function renderPackageReadme(source: string, sourceCommit: string, root = serviceRoot): string {
+  if (!/^[a-f0-9]{40}$/u.test(sourceCommit)) throw new Error('Package documentation requires an exact source commit.');
+  const repository = path.resolve(root, '../../../..');
+  return source.replace(/\]\(([^)\s]+)(?:\s+"[^"]*")?\)/gu, (match, link: string) => {
+    if (/^(?:https?:|mailto:|#)/u.test(link)) return match;
+    const [file, fragment] = link.split('#');
+    const target = path.resolve(root, file!);
+    const relative = path.relative(repository, target).split(path.sep).join('/');
+    if (relative.startsWith('../') || !fs.statSync(target, { throwIfNoEntry: false })?.isFile()) throw new Error(`Package README link does not resolve in source: ${link}`);
+    return `](https://github.com/BuildrAI/Buildr/blob/${sourceCommit}/${relative}${fragment ? `#${fragment}` : ''})`;
+  });
+}
+
+function sha256(bytes: any): any  {
+  return crypto.createHash('sha256').update(bytes).digest('hex');
+}
+
+function parseArgs(argv: any): any  {
+  const command: any = argv[2];
+  const options: any = {};
+  for (let index: any = 3; index < argv.length; index += 1) {
+    const name: any = argv[index];
+    if (!name.startsWith('--')) throw new Error(`Unsupported argument: ${name}`);
+    const value: any = argv[index + 1];
+    if (!value || value.startsWith('--')) throw new Error(`Missing value for ${name}`);
+    options[name.slice(2)] = value;
+    index += 1;
+  }
+  return { command, options };
+}
+
+function assertDestination(output: any): any  {
+  const resolved: any = path.resolve(output || '');
+  if (!output || resolved === path.parse(resolved).root || resolved === serviceRoot) throw new Error('application payload --output must be a dedicated directory.');
+  return resolved;
+}
+
+function copyFile(source: any, target: any, mode: any = null): any  {
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.copyFileSync(source, target, fs.constants.COPYFILE_EXCL);
+  fs.chmodSync(target, mode ?? (fs.statSync(source).mode & 0o777));
+}
+
+function copyTree(sourceRoot: any, targetRoot: any, options: any = {}, relative: any = ''): any  {
+  const source: any = relative ? path.join(sourceRoot, relative) : sourceRoot;
+  const entries: any = fs.readdirSync(source, { withFileTypes: true }).sort((left: any, right: any) => left.name.localeCompare(right.name));
+  for (const entry of entries) {
+    if (!relative && options.exclude?.has(entry.name)) continue;
+    if (!relative && options.include && !options.include.has(entry.name)) continue;
+    const childRelative: any = relative ? path.join(relative, entry.name) : entry.name;
+    if (entry.isSymbolicLink()) throw new Error(`application payload input must not be a symlink: ${path.relative(serviceRoot, path.join(sourceRoot, childRelative))}`);
+    if (entry.isDirectory()) copyTree(sourceRoot, targetRoot, options, childRelative);
+    else if (entry.isFile()) copyFile(path.join(sourceRoot, childRelative), path.join(targetRoot, childRelative));
+    else throw new Error(`application payload input must be a regular file: ${path.relative(serviceRoot, path.join(sourceRoot, childRelative))}`);
+  }
+}
+
+function fileInventory(root: any, relative: any = ''): any  {
+  const current: any = relative ? path.join(root, relative) : root;
+  const entries: any = fs.readdirSync(current, { withFileTypes: true }).sort((left: any, right: any) => left.name.localeCompare(right.name));
+  const files: any[] = [];
+  for (const entry of entries) {
+    const child: any = relative ? path.join(relative, entry.name) : entry.name;
+    if (entry.isSymbolicLink()) throw new Error(`application payload output must not contain symlinks: ${child}`);
+    if (entry.isDirectory()) files.push(...fileInventory(root, child));
+    else if (entry.isFile()) {
+      const file: any = path.join(root, child);
+      const bytes: any = fs.readFileSync(file);
+      files.push({ path: child.split(path.sep).join('/'), mode: fs.statSync(file).mode & 0o777, size: bytes.length, sha256: sha256(bytes) });
+    } else throw new Error(`application payload output must contain only files and directories: ${child}`);
+  }
+  return files;
+}
+
+function packageMetadata(): any  {
+  return JSON.parse(fs.readFileSync(path.join(serviceRoot, 'package.json'), 'utf8'));
+}
+
+function runtimePackageMetadata(metadata: any): any  {
+  return {
+    name: metadata.name,
+    version: metadata.version,
+    ...(metadata.buildrCompatibility !== undefined ? { buildrCompatibility: metadata.buildrCompatibility } : {}),
+    description: metadata.description,
+    license: metadata.license,
+    repository: metadata.repository,
+    homepage: metadata.homepage,
+    bugs: metadata.bugs,
+    keywords: metadata.keywords,
+    publishConfig: metadata.publishConfig,
+    type: metadata.type,
+    engines: metadata.engines,
+    dependencies: Object.fromEntries(Object.entries(metadata.dependencies || {}).sort(([left]: any, [right]: any) => left.localeCompare(right))),
+  };
+}
+
+function dependencyInventory(resourceRoot: any, metadata: any): any  {
+  return Object.keys(metadata.dependencies || {}).sort().map((name: any) => {
+    const dependencyRoot: any = path.join(serviceRoot, 'node_modules', name);
+    const dependency: any = JSON.parse(fs.readFileSync(path.join(dependencyRoot, 'package.json'), 'utf8'));
+    const licenseName: any = fs.readdirSync(dependencyRoot).sort().find((candidate: any) => /^licen[sc]e(?:\.|$)/iu.test(candidate));
+    if (!licenseName) throw new Error(`production dependency license is missing: ${name}`);
+    const target: any = `licenses/dependencies/${name.replaceAll('/', '__')}-LICENSE`;
+    copyFile(path.join(dependencyRoot, licenseName), path.join(resourceRoot, ...target.split('/')), 0o644);
+    return { name, version: dependency.version, license: dependency.license, licensePath: `resources/${target}` };
+  });
+}
+
+async function buildApplicationPayload(output: any, sourceCommit: any, options: any = {}): Promise<any>  {
+  if (!/^[a-f0-9]{40,64}$/.test(sourceCommit || '')) throw new Error('--source-commit must be a full hexadecimal commit identity.');
+  const webDistRoot: any = path.resolve(options.webDistRoot || '');
+  const generatedArtifactManifest: any = options.generatedArtifactManifest;
+  if (!options.webDistRoot || !generatedArtifactManifest) throw new Error('application payload requires explicit generated artifact manifest and web-dist root.');
+  assertGeneratedArtifactEntry(generatedArtifactManifest, 'web-dist', webDistRoot);
+  if (generatedArtifactManifest.artifacts.some((artifact: any) => artifact.id === 'dsh-plugin') || options.dshPluginRoot) {
+    throw new Error('application payload does not bundle the independently released DSH plugin');
+  }
+  const { buildSync, formatMessagesSync }: any = createRequire(path.join(serviceRoot, 'package.json'))('esbuild');
+  const destination: any = assertDestination(output);
+  if (fs.existsSync(destination)) throw new Error(`application payload output already exists: ${destination}`);
+  fs.mkdirSync(path.join(destination, 'runtime'), { recursive: true });
+  fs.mkdirSync(path.join(destination, 'resources'), { recursive: true });
+  try {
+    const bundle: any = buildSync({
+      absWorkingDir: serviceRoot,
+      entryPoints: {
+        'runtime/buildr': MAIN_ENTRY,
+        'runtime/mysql-connection': path.join(serviceRoot, '../../../../skills/buildr-release/scripts/mysql-connection-entry.ts'),
+        'resources/runtime/read-worker': WORKER_ENTRY,
+        'resources/runtime/upstream-openspec-worker': UPSTREAM_OPENSPEC_WORKER_ENTRY,
+      },
+      outdir: destination,
+      outExtension: { '.js': '.cjs' },
+      bundle: true,
+      splitting: false,
+      platform: 'node',
+      format: 'cjs',
+      target: 'node24',
+      external: ['node:*'],
+      legalComments: 'none',
+      sourcemap: false,
+      metafile: true,
+      charset: 'utf8',
+      logLevel: 'silent',
+    });
+    if (bundle.warnings.length) {
+      const warnings: any = formatMessagesSync(bundle.warnings, { kind: 'warning', color: false });
+      throw new Error(`application payload bundle emitted warnings:\n${warnings.join('\n')}`);
+    }
+
+    // The npm selector runs before the full product's Node version check and must
+    // remain independently executable without loading the business runtime.
+    const router = buildSync({
+      absWorkingDir: serviceRoot,
+      entryPoints: [path.join(serviceRoot, 'src/modules/installation/application/workspace-cli-routing.ts')],
+      outfile: path.join(destination, 'runtime/workspace-cli-router.cjs'),
+      bundle: true,
+      platform: 'node',
+      format: 'cjs',
+      target: 'node18',
+      external: ['node:*'],
+      legalComments: 'none',
+      sourcemap: false,
+      charset: 'utf8',
+      logLevel: 'silent',
+    });
+    if (router.warnings.length) {
+      throw new Error(`workspace CLI router bundle emitted warnings:\n${formatMessagesSync(router.warnings, { kind: 'warning', color: false }).join('\n')}`);
+    }
+
+    const resourceRoot: any = path.join(destination, 'resources');
+    for (const [source, target, options] of RESOURCE_SOURCES) copyTree(path.join(serviceRoot, source), path.join(resourceRoot, target), options);
+    copyTree(webDistRoot, path.join(resourceRoot, 'product/web-dist'));
+    fs.mkdirSync(path.join(resourceRoot, 'build'), { recursive: true });
+    fs.writeFileSync(path.join(resourceRoot, 'build/generated-artifacts.json'), `${JSON.stringify(generatedArtifactManifest, null, 2)}\n`, { encoding: 'utf8', mode: 0o644 });
+    copyFile(path.join(serviceRoot, 'LICENSE'), path.join(resourceRoot, 'product/LICENSE'), 0o644);
+    fs.writeFileSync(path.join(resourceRoot, 'product/README.md'), renderPackageReadme(fs.readFileSync(path.join(serviceRoot, 'README.md'), 'utf8'), sourceCommit), { mode: 0o644 });
+    const metadata: any = packageMetadata();
+    fs.writeFileSync(path.join(resourceRoot, 'product/package.json'), `${JSON.stringify(runtimePackageMetadata(metadata), null, 2)}\n`, { encoding: 'utf8', mode: 0o644 });
+    const productionDependencies: any = dependencyInventory(resourceRoot, metadata);
+    const files: any = fileInventory(destination)
+      .filter((entry: any) => entry.path !== APPLICATION_PAYLOAD_MANIFEST)
+      .sort((left: any, right: any) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
+    const manifest: any = {
+      schemaVersion: APPLICATION_PAYLOAD_SCHEMA_VERSION,
+      packageName: metadata.name,
+      buildrVersion: metadata.version,
+      protocolIdentity: APPLICATION_PAYLOAD_PROTOCOL_IDENTITY,
+      sourceCommit,
+      enginesNode: metadata.engines.node,
+      productionDependencies,
+      files,
+    };
+    manifest.applicationPayloadDigest = canonicalApplicationPayloadIdentity(manifest);
+    validateApplicationPayloadManifest(manifest);
+    fs.writeFileSync(path.join(destination, APPLICATION_PAYLOAD_MANIFEST), `${JSON.stringify(manifest, null, 2)}\n`, { encoding: 'utf8', mode: 0o644 });
+    verifyApplicationPayload(destination, { layout: 'frozen' });
+    return { root: destination, manifest };
+  } catch (error: any) {
+    fs.rmSync(destination, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+function appendGitHubOutput(result: any): any  {
+  if (!process.env.GITHUB_OUTPUT) return;
+  fs.appendFileSync(process.env.GITHUB_OUTPUT, [
+    `payload_root=${result.root}`,
+    `payload_manifest=${path.join(result.root, APPLICATION_PAYLOAD_MANIFEST)}`,
+    `application_payload_digest=${result.manifest.applicationPayloadDigest}`,
+    '',
+  ].join('\n'));
+}
+
+export { buildApplicationPayload, verifyApplicationPayload };
+
+async function main(): Promise<any>  {
+  const { command, options }: any = parseArgs(process.argv);
+  if (command === 'build') {
+    if (!options['generated-artifacts'] || !options['web-dist']) throw new Error('application payload build requires --generated-artifacts and --web-dist.');
+    const generatedArtifactManifest: any = JSON.parse(fs.readFileSync(path.resolve(options['generated-artifacts']), 'utf8'));
+    const result: any = await buildApplicationPayload(options.output, options['source-commit'], { generatedArtifactManifest, webDistRoot: options['web-dist'], dshPluginRoot: options['dsh-plugin'] });
+    appendGitHubOutput(result);
+    process.stdout.write(`${JSON.stringify(result.manifest, null, 2)}\n`);
+    return;
+  }
+  if (command === 'verify') {
+    const root: any = assertDestination(options.payload);
+    const result: any = verifyApplicationPayload(root, { layout: options.layout || 'auto', readableOnly: options['readable-only'] === 'true' });
+    process.stdout.write(`${JSON.stringify(result.manifest, null, 2)}\n`);
+    return;
+  }
+  throw new Error('Usage: application-payload.ts build --output <dir> --source-commit <sha> --generated-artifacts <manifest> --web-dist <dir> | verify --payload <dir> [--layout frozen|installed]');
+}
+
+if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {
+  main().catch((error: any) => {
+    process.stderr.write(`${error.message}\n`);
+    process.exitCode = 1;
+  });
+}

@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnCommandSync } from '../../../src/infrastructure/process.ts';
-import { createCandidatePackage, readSharedCandidatePackage } from '../release/candidate-package.ts';
+import { createCandidatePackage, readSharedCandidatePackage } from '../../../../../../../skills/buildr-release/scripts/candidate-package.ts';
 import { resolveCandidateExecutionContext, resolveCandidateSourceCommit } from '../candidate-ci-evidence.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');

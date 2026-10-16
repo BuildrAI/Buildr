@@ -12,7 +12,7 @@ import { collectVerificationSourceInputs } from './verification-source-inputs.ts
 import { resolveVerificationBase } from './changed-paths.ts';
 
 export type ReuseDigest = `sha256-${string}`;
-export type VerificationReuseScope = 'backend' | 'web' | 'product' | 'repository' | 'plugin' | 'runtime';
+export type VerificationReuseScope = 'backend' | 'platform-backend' | 'web' | 'product' | 'repository' | 'plugin' | 'runtime';
 export interface VerificationReusePolicy { scope: VerificationReuseScope; git?: boolean | 'comparison'; exactNode?: boolean; tools?: string[]; inputs?: readonly string[]; inputMode?: 'runtime-check' }
 export interface VerificationReuseStep { id: string; executor: Record<string, any>; reuse?: VerificationReusePolicy | false; dependsOn?: string[]; contexts?: string[]; timeoutMs?: number; [key: string]: any }
 export interface VerificationReuseEnvironment { platform: string; arch: string; nodeVersion: string; tools: Record<string, string>; variablesIdentity: ReuseDigest }
@@ -97,7 +97,7 @@ export function collectVerificationReuseSnapshot(options: VerificationReuseOptio
 
 function requiredToolKeys(step: VerificationReuseStep): string[] {
   const scope = step.reuse && step.reuse.scope;
-  return [...new Set(['backend-dependencies', ...(scope !== 'backend' ? ['web-dependencies'] : []), ...(scope === 'plugin' ? ['plugin-dependencies'] : []), ...(step.reuse && step.reuse.tools || [])])];
+  return [...new Set(['backend-dependencies', ...(!['backend', 'platform-backend'].includes(scope || '') ? ['web-dependencies'] : []), ...(scope === 'plugin' ? ['plugin-dependencies'] : []), ...(step.reuse && step.reuse.tools || [])])];
 }
 
 export function createVerificationReuseIdentity(step: VerificationReuseStep, snapshot: VerificationReuseSnapshot, legacy = false): VerificationReuseIdentity | null {
@@ -449,10 +449,15 @@ export function createVerificationPlanReuse(plan: any, options: any): any {
         if (!step || result.status === 'blocked' || result.status === 'skipped') continue;
         const identity = createVerificationReuseIdentity(step, snapshot), current = createVerificationReuseIdentity(step, after);
         if (!identity) continue;
-        if (!cleanupClean || identity.key !== current?.key) {
+        // A reused check did not touch this execution's shared contexts or
+        // leases. Their cleanup cannot revoke its original clean execution.
+        // Its current inputs and any independently observed revocation still
+        // have to match before it can remain in this run's exported coverage.
+        const cleanupAffected = !cleanupClean && result.disposition !== 'reused';
+        if (cleanupAffected || identity.key !== current?.key) {
           store.invalidate(identity);
           result.sourceRecord = undefined;
-          const code = cleanupClean ? 'verification-reuse-input-drift' : 'verification-reuse-cleanup-failed';
+          const code = cleanupAffected ? 'verification-reuse-cleanup-failed' : 'verification-reuse-input-drift';
           const changes = (['contentIdentity', 'recipeIdentity', 'environmentIdentity', 'gitIdentity'] as const)
             .filter(field => identity[field] !== current?.[field])
             .map(field => ({ field, before: identity[field] ?? null, after: current?.[field] ?? null }));
@@ -483,7 +488,13 @@ export function createVerificationPlanReuse(plan: any, options: any): any {
       return bundle;
     },
     invalidate(): void {
-      for (const step of steps) { const identity = createVerificationReuseIdentity(step, snapshot); if (identity) store.invalidate(identity); }
+      // This is disposal of the current execution, not a revocation of earlier
+      // evidence that was only read here and never acquired these resources.
+      for (const step of steps) {
+        if (hits.has(step.id)) continue;
+        const identity = createVerificationReuseIdentity(step, snapshot);
+        if (identity) store.invalidate(identity);
+      }
     },
   };
 }

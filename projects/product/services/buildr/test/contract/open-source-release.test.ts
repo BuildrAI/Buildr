@@ -1,4 +1,4 @@
-import { PUBLISHER_PAIR_DIAGNOSIS_SCOPE } from '../../tools/release/package-pair-publisher-diagnosis.ts';
+import { PUBLISHER_PAIR_DIAGNOSIS_SCOPE } from '../verification/release/package-pair-publisher-diagnosis.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -12,10 +12,10 @@ import {
   inspectPackageVersionConsistency,
   inspectTarballFiles,
 } from '../verification/release/open-source-candidate.ts';
-import { resolveReleaseContract } from '../../tools/release/release-contract.ts';
-import { extractReleaseNotes } from '../../tools/release/release-notes.ts';
-import { releasePublicationRepositoryRoot } from '../../tools/release/release-publication.ts';
-import { ensureGitHubRelease } from '../../tools/release/github-release-ensure.ts';
+import { resolveReleaseContract } from '../../../../../../skills/buildr-release/scripts/release-contract.ts';
+import { extractReleaseNotes } from '../../../../../../skills/buildr-release/scripts/release-notes.ts';
+import { releasePublicationRepositoryRoot } from '../../../../../../skills/buildr-release/scripts/release-publication.ts';
+import { ensureGitHubRelease } from '../../../../../../skills/buildr-release/scripts/github-release-ensure.ts';
 import {
   assertRegistryArtifact,
   assertRegistryTagTransition,
@@ -23,7 +23,7 @@ import {
   registryDistTagsState,
   registryVersionState,
   waitForRegistryRelease,
-} from '../../tools/release/registry-version-state.ts';
+} from '../../../../../../skills/buildr-release/scripts/registry-version-state.ts';
 import { cleanupReleaseSmokeRoot, resolveReleaseSmokeSource } from '../verification/release/release-smoke.ts';
 
 const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -498,12 +498,12 @@ test('CI and publish workflows use the supported Node runtime', () => {
   assert.equal(diagnosis.steps.find((step: any) => step.uses?.startsWith('actions/upload-artifact@')).with.name, 'diagnostic-core-project-task-macos');
   assert.equal(diagnosis.steps.some((step: any) => /aggregate|publish|npm (?:pack|publish)/u.test(step.run || '')), false);
   const gateSteps: any[] = verifyDocument.jobs['candidate-gate'].steps;
-  assert.equal(gateSteps.find((step: any) => step.name === 'Verify existing Candidate for release pull request').run, 'node tools/release/verify-pr-candidate.ts');
+  assert.equal(gateSteps.find((step: any) => step.name === 'Verify existing Candidate for release pull request').run, 'node test/verification/release/verify-pr-candidate.ts');
   for (const name of ['Prepare aggregate evidence directory', 'Download all Candidate evidence', 'Aggregate the closed Candidate evidence set']) {
     assert.equal(gateSteps.find((step: any) => step.name === name).if, "(github.event_name == 'workflow_dispatch' || github.head_ref == 'dev') && needs.candidate-plan.outputs.buildr == 'true'");
   }
   assert.equal(verifyDocument.jobs['candidate-gate'].permissions.actions, 'read');
-  assert.match(fs.readFileSync(path.join(serviceRoot, 'tools/release/release-orchestration-runner.ts'), 'utf8'), /Candidate run ID: \$\{state\.candidate\.runId\}/u);
+  assert.match(fs.readFileSync(path.join(serviceRoot, '../../../../skills/buildr-release/scripts/release-orchestration-runner.ts'), 'utf8'), /Candidate run ID: \$\{state\.candidate\.runId\}/u);
   assert.doesNotMatch(verifyWorkflow, /os: \[macos-latest, windows-latest\]/);
   assert.match(verifyWorkflow, /npm run test:changed -- --base/);
   assert.match(verifyWorkflow, /npm run test:changed -- --development-runner windows --base/);
@@ -652,7 +652,7 @@ test('Windows nested Git diagnosis keeps closed inputs, original isolated assert
 
 test('release convergence and self-bootstrap runner fail closed on unmatched authority evidence', () => {
   const selfBootstrapRunner: any = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/scripts/closeout.mjs'), 'utf8');
-  const convergenceSource: any = fs.readFileSync(path.join(serviceRoot, 'tools/release/release-git-convergence.ts'), 'utf8');
+  const convergenceSource: any = fs.readFileSync(path.join(serviceRoot, '../../../../skills/buildr-release/scripts/release-git-convergence.ts'), 'utf8');
   assert.match(selfBootstrapRunner, /self-bootstrap-closeout\.remote-drift/);
   assert.match(convergenceSource, /Publication evidence is not a complete passed transaction/);
   assert.match(convergenceSource, /published-but-dev-reconciliation-blocked/);
@@ -668,7 +668,7 @@ test('publisher workflow routes one bounded macOS pair with no Linux, SDK, Candi
   assert.match(job.if, /inputs\.diagnostic_scope == 'package-pair-publisher'/u);
   assert.deepEqual(job.strategy.matrix.os, ['macos-15']); assert.equal(job.strategy['fail-fast'], false);
   assert.deepEqual(job.permissions, { contents: 'read', actions: 'read' }); assert.equal(job['timeout-minutes'], 15);
-  assert.equal(job.steps.filter((step: any) => step.run === 'node tools/release/package-pair-publisher-diagnosis.ts').length, 1);
+  assert.equal(job.steps.filter((step: any) => step.run === 'node test/verification/release/package-pair-publisher-diagnosis.ts').length, 1);
   assert.equal(job.steps.find((step: any) => step.uses === 'actions/setup-node@v6').with['node-version'], '24.15.0');
   const download = job.steps.find((step: any) => step.uses === 'actions/download-artifact@v7');
   assert.equal(download.with.name, 'candidate-package'); assert.equal(download.with['run-id'], '${{ inputs.diagnostic_candidate_run_id }}');

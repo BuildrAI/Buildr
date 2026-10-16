@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hash } from '../../tools/buildr-peer.ts';
 import { assertPairReport, identity, inspectPairExecution, publicPairIdentity, type PairReport } from '../../tools/verify-buildr-plugin-pair.ts';
-import type { CompatibilityArtifact } from '../../../buildr/tools/release/package-compatibility.ts';
+import type { CompatibilityArtifact } from '../../../../../../skills/buildr-release/scripts/package-compatibility.ts';
 const consumer:CompatibilityArtifact={packageName:'@buildr-ai/buildr-dsh-plugin',version:'1.0.0',integrity:'sha512-'+createHash('sha512').update('fixture').digest('base64'),artifactSha256:'a'.repeat(64),origin:'registry',compatibility:null};
 const provider:CompatibilityArtifact={...consumer,packageName:'@buildr-ai/buildr',artifactSha256:'b'.repeat(64)};
 function report(status:'passed'|'failed'|'unknown'='passed'):PairReport{

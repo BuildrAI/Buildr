@@ -6,7 +6,7 @@ import { dirname, join, resolve, sep } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { createSdkRequire } from '../../tools/sdk-require.ts';
 import { DSH_SDK_BASELINES, DSH_SDK_DEFAULT_BASELINE } from '../../tools/sdk-baselines.ts';
-import { parseReleaseInput, releasePrepareCommands } from '../../tools/release.ts';
+import { parseReleaseInput, releasePrepareCommands } from '../../../../../../skills/buildr-release/scripts/dsh-plugin/release.ts';
 import { applySourcePatch, archiveSourceDigests, buildSourceHostArtifacts, mirrorSdkDependencies, newBuildOutput, ownedBuildRoot, parseSourcePatchManifest, parseSourceSdkReceipt, parseSourceHostArtifacts, sdkDeclarationPaths, sha256, SOURCE_EVENT_CONTRACT, sourceRelativePath, trajectoryBundleTool, validatePreparedSourceSdk, verifySourcePatchInput, verifySourceSdkApi } from '../../tools/prepare-source-sdk.ts';
 import { clientCompositionPatch, hostCompositionPatch, parseHostConfigurations, stageHostCompositionPatch, trajectoryCompositionDirectory } from '../../tools/build-development-composition.ts';
 
@@ -320,9 +320,9 @@ test('release preparation requires the same explicit SDK and never falls back to
 });
 test('missing or marker-only release inputs are refused before release status or registry operations', t => {
   const env = { ...process.env }; delete env.BUILDR_DSH_SOURCE_SDK_ROOT;
-  assert.throws(() => execFileSync(process.execPath, [join(service, 'tools/release.ts'), 'prepare'], { cwd: service, env, stdio: ['ignore', 'pipe', 'pipe'] }), /发布准备需要显式/);
+  assert.throws(() => execFileSync(process.execPath, [join(service, '../../../../skills/buildr-release/scripts/dsh-plugin/release.ts'), 'prepare'], { cwd: service, env, stdio: ['ignore', 'pipe', 'pipe'] }), /发布准备需要显式/);
   const root = directory(t); const sdk = join(root, 'sdk'); mkdirSync(sdk); writeFileSync(join(sdk, '.dsh-sdk-commit'), baseline.commit);
-  assert.throws(() => execFileSync(process.execPath, [join(service, 'tools/release.ts'), 'prepare', '--source-sdk', sdk], { cwd: service, env, stdio: ['ignore', 'pipe', 'pipe'] }), /buildr-dsh-source-sdk/);
+  assert.throws(() => execFileSync(process.execPath, [join(service, '../../../../skills/buildr-release/scripts/dsh-plugin/release.ts'), 'prepare', '--source-sdk', sdk], { cwd: service, env, stdio: ['ignore', 'pipe', 'pipe'] }), /buildr-dsh-source-sdk/);
 });
 
 const toolchain = process.env.BUILDR_DSH_SDK_ROOT ?? join(service, 'build/upstream-research/dsh-v0.2.0-rc.2');

@@ -1,4 +1,4 @@
-import { checkReleaseConvergence } from '../../tools/release/release-convergence.ts';
+import { checkReleaseConvergence } from '../../../../../../skills/buildr-release/scripts/release-convergence.ts';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -11,17 +11,17 @@ import {
   releaseAuthorityPreflightSchema,
   releaseAuthorityProbeSchema,
   sha256,
-} from '../../tools/release/release-authority.ts';
-import { runReleaseAuthorityOidcProbe } from '../../tools/release/release-authority-oidc-probe.ts';
-import { containsCredentialMaterial } from '../../tools/release/release-authority-preflight.ts';
-import { validateReleasePreparationBinding } from '../../tools/release/release-transaction-evidence.ts';
-import { RELEASE_CHECKS, releaseConsumptionIdentity } from '../../tools/release/release-consumption.ts';
-import { createReleaseTaskEvidenceCorrelation } from '../../tools/release/release-task-evidence-correlation.ts';
-import { runHostedReleaseTransaction } from '../../tools/release/release-transaction-runner.ts';
-import { createReleaseContext, releaseContextIdentity } from '../../tools/release/release-readiness.ts';
-import { assertReleaseExecutorSource, assertReleaseExecutorRecoveryEvidence, assertReleaseExecutorRecoverySource, createReleaseExecutorRecovery } from '../../tools/release/release-executor-recovery.ts';
-import { createReleaseTransactionEvidence, inspectHostedReleaseTransaction, validateReleaseTransactionEvidence } from '../../tools/release/release-transaction-evidence.ts';
-import { ensureReleaseTag, inspectReleaseTag } from '../../tools/release/release-tag-ensure.ts';
+} from '../../../../../../skills/buildr-release/scripts/release-authority.ts';
+import { runReleaseAuthorityOidcProbe } from '../../../../../../skills/buildr-release/scripts/release-authority-oidc-probe.ts';
+import { containsCredentialMaterial } from '../../../../../../skills/buildr-release/scripts/release-authority-preflight.ts';
+import { validateReleasePreparationBinding } from '../../../../../../skills/buildr-release/scripts/release-transaction-evidence.ts';
+import { RELEASE_CHECKS, releaseConsumptionIdentity } from '../verification/release/release-consumption.ts';
+import { createReleaseTaskEvidenceCorrelation } from '../../../../../../skills/buildr-release/scripts/release-task-evidence-correlation.ts';
+import { runHostedReleaseTransaction } from '../../../../../../skills/buildr-release/scripts/release-transaction-runner.ts';
+import { createReleaseContext, releaseContextIdentity } from '../../../../../../skills/buildr-release/scripts/release-readiness.ts';
+import { assertReleaseExecutorSource, assertReleaseExecutorRecoveryEvidence, assertReleaseExecutorRecoverySource, createReleaseExecutorRecovery } from '../../../../../../skills/buildr-release/scripts/release-executor-recovery.ts';
+import { createReleaseTransactionEvidence, inspectHostedReleaseTransaction, validateReleaseTransactionEvidence } from '../../../../../../skills/buildr-release/scripts/release-transaction-evidence.ts';
+import { ensureReleaseTag, inspectReleaseTag } from '../../../../../../skills/buildr-release/scripts/release-tag-ensure.ts';
 import { createExactNodeExecutionEnvironment } from '../../src/infrastructure/process.ts';
 
 const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -54,7 +54,7 @@ jobs:
     environment: npm-production
     permissions: { contents: write, id-token: write }
     steps:
-      - run: node tools/release/release-publication.ts context.json artifact.json output
+      - run: node ../../../../skills/buildr-release/scripts/release-publication.ts context.json artifact.json output
 `;
 
 const digest: any = (letter: any) => `sha256-${letter.repeat(64)}`;
@@ -173,7 +173,7 @@ test('hosted OIDC probe CLI creates the nested evidence directory even when bloc
   const repo: any = probeRepo(t, 'buildr-authority-probe-output-');
   const output: any = path.join(repo, 'runner-temp', 'authority', 'release-authority.json');
   const result: any = spawnSync(process.execPath, [
-    path.join(serviceRoot, 'tools', 'release', 'release-authority-oidc-probe.ts'),
+    path.join(serviceRoot, '../../../../skills/buildr-release/scripts', 'release-authority-oidc-probe.ts'),
     '--repo', repo,
     '--source-commit', fixtureCommit,
     '--workflow-sha256', sha256(workflow),
@@ -447,7 +447,7 @@ test('release transaction finalizer preserves official Registry integrity in the
   fs.writeFileSync(contextFile, `${JSON.stringify(releaseContext())}\n`);
   fs.writeFileSync(registryFile, `${JSON.stringify({ published: true, integrity: 'sha512-aW50ZWdyaXR5' })}\n`);
   const result: any = spawnSync(process.execPath, [
-    path.join(serviceRoot, 'tools', 'release', 'release-transaction-evidence.ts'), 'finalize',
+    path.join(serviceRoot, '../../../../skills/buildr-release/scripts', 'release-transaction-evidence.ts'), 'finalize',
     '--context', contextFile, '--output', output, '--outcome', 'success',
     '--repository', 'BuildrAI/Buildr', '--workflow', '.github/workflows/publish.yml',
     '--run-id', String(runId), '--run-attempt', String(runAttempt),
@@ -569,7 +569,7 @@ else { process.stderr.write('unexpected gh command: '+key); process.exitCode=1; 
   if (process.platform === 'win32') fs.writeFileSync(ghExecutable, `@"${process.execPath}" "${fakeGh}" %*\r\n`);
   const evidencePath: any = path.join(root, 'authority-evidence.json');
   const result: any = spawnSync(process.execPath, [
-    path.join(serviceRoot, 'tools', 'release', 'release-authority-preflight.ts'),
+    path.join(serviceRoot, '../../../../skills/buildr-release/scripts', 'release-authority-preflight.ts'),
     '--repo', repo,
     '--source-commit', sourceCommit,
     '--gh', ghExecutable,
@@ -622,7 +622,7 @@ test('real Git permits only a descendant release-tool fix and retains the origin
 
 test('real Git rejects production, package, lock and unrelated tool changes and non-descendant histories', t => {
   const f = executorRecoveryFixture(t);
-  for (const file of ['projects/product/services/buildr/src/production.ts', 'projects/product/services/buildr/package.json', 'projects/product/services/buildr/package-lock.json', 'projects/product/services/buildr/tools/release/application-payload.ts', 'projects/product/services/buildr/tools/unrelated.ts']) {
+  for (const file of ['projects/product/services/buildr/src/production.ts', 'projects/product/services/buildr/package.json', 'projects/product/services/buildr/package-lock.json', 'skills/buildr-release/scripts/application-payload.ts', 'projects/product/services/buildr/tools/unrelated.ts']) {
     f.git('checkout', '--detach', f.executionCommit); f.write(file, 'changed\n'); const commit = f.commit();
     assert.throws(() => assertReleaseExecutorSource({ repo: f.repo, originalCommit: f.originalCommit, executionCommit: commit }), /outside/);
   }
@@ -666,7 +666,7 @@ test('real PR CLI resolves the admission import cycle before reporting a missing
   const event = { pull_request: { body: '', base: { ref: 'main', sha: 'd'.repeat(40) },
     head: { ref: 'codex/release-executor-plugin-oidc', sha: 'e'.repeat(40), repo: { full_name: 'BuildrAI/Buildr' } } } };
   fs.writeFileSync(eventFile, JSON.stringify(event));
-  const result = spawnSync(process.execPath, [fileURLToPath(new URL('../../tools/release/verify-pr-candidate.ts', import.meta.url))], {
+  const result = spawnSync(process.execPath, [fileURLToPath(new URL('../verification/release/verify-pr-candidate.ts', import.meta.url))], {
     encoding: 'utf8', timeout: 5000, env: { ...process.env, NODE_OPTIONS: undefined, GH_TOKEN: undefined, GITHUB_TOKEN: undefined,
       GITHUB_REPOSITORY: 'BuildrAI/Buildr', GITHUB_EVENT_PATH: eventFile },
   });

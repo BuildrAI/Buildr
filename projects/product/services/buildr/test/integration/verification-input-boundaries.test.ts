@@ -5,8 +5,8 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import test from 'node:test';
 import { scopedVerificationInputs } from '../verification/verification-inputs.ts';
-import { candidateCheckInputIdentity } from '../../tools/release/candidate-source-binding.ts';
-import { executableModuleInputs } from '../verification/verification-input-discovery.ts';
+import { candidateCheckInputIdentity } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
+import { discoveredVerificationFiles, executableModuleInputs } from '../verification/verification-input-discovery.ts';
 import { createVerificationSourceInputReader } from '../verification/verification-source-inputs.ts';
 import { verificationSteps } from '../verification/registry.ts';
 
@@ -153,4 +153,61 @@ test('local and Git proofs isolate selected system contents while binding discov
   const opaque = observe(); assert.equal(opaque.fallback, true);
   files.set('test/system/other.test.ts', '// unknown dependency changed');
   assert.notEqual(observe().local, opaque.local); assert.notEqual(observe().git, opaque.git);
+});
+
+test('general integration proof follows the real discovered members and keeps imported delegated files as inputs', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-general-input-boundaries-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const prefix = 'projects/product/services/buildr/';
+  fs.mkdirSync(path.join(root, prefix), { recursive: true });
+  const delegated = 'test/integration/openspec-domain.test.ts';
+  const addedDelegated = 'test/integration/openspec-convergence-recovery.test.ts';
+  const general = 'test/integration/general.test.ts';
+  const files = new Map<string, string>([
+    ['package.json', '{}'], ['src/product.ts', 'export const value=1'],
+    ['test/verification/integration.ts', 'export {}'],
+    [general, 'export const assertion=1'], [delegated, 'export const delegated=1'],
+    ['test/integration/nested/ignored.test.ts', '// not a top-level member'],
+    ['test/integration/ignored.test.mjs', '// not selected by the actual *.test.ts runner'],
+  ]);
+  const step = verificationSteps.find((item: any) => item.id === 'integration');
+  const observe = () => {
+    const inventory = [...files].map(([file, value]) => ({ path: prefix + file, mode: '100644', kind: 'blob', object: value }));
+    const inputs = scopedVerificationInputs(inventory.map(entry => [entry.path, entry.object]), root, path.join(root, prefix), step, {
+      proof: true, readText: file => files.get(file.slice(prefix.length))!,
+    });
+    const immutable = candidateCheckInputIdentity(root, 'a'.repeat(40), step, { inventory: () => inventory, blob: (_commit, file) => files.get(file.slice(prefix.length))! });
+    return { local: JSON.stringify([inputs.content, inputs.recipe]), immutable, fallback: inputs.fallback };
+  };
+  assert.deepEqual(discoveredVerificationFiles(step, [...files.keys()]), { selected: [general], inventory: [general] });
+  const original = observe();
+  assert.equal(original.fallback, false);
+  for (const file of [delegated, 'test/integration/nested/ignored.test.ts', 'test/integration/ignored.test.mjs']) {
+    files.set(file, '// unrelated content changed');
+    assert.deepEqual(observe(), original, `${file}: unexecuted content is not an input`);
+  }
+  files.set(addedDelegated, '// another delegated owner appeared');
+  assert.deepEqual(observe(), original, 'new delegated members are still outside general execution');
+  files.delete(delegated);
+  assert.deepEqual(observe(), original, 'a removed delegated member is checked by its own owner');
+  files.set('test/integration/new-general.test.ts', '// new general assertion');
+  assert.notEqual(observe().local, original.local);
+  assert.notEqual(observe().immutable, original.immutable);
+  files.delete('test/integration/new-general.test.ts');
+  files.set(general, 'export const assertion=2');
+  assert.notEqual(observe().local, original.local);
+  assert.notEqual(observe().immutable, original.immutable);
+  files.set(general, "import './openspec-domain.test.ts';");
+  files.set(delegated, 'export const delegated=1');
+  const imported = observe();
+  assert.equal(imported.fallback, false);
+  files.set(delegated, 'export const delegated=2');
+  assert.notEqual(observe().local, imported.local, 'a real import must not be hidden by discovery exclusions');
+  assert.notEqual(observe().immutable, imported.immutable);
+  files.set(general, 'await import(process.env.UNKNOWN_MODULE)');
+  const opaque = observe();
+  assert.equal(opaque.fallback, true);
+  files.set(delegated, 'export const delegated=3');
+  assert.notEqual(observe().local, opaque.local, 'an unknown reader retains the conservative fallback');
+  assert.notEqual(observe().immutable, opaque.immutable);
 });

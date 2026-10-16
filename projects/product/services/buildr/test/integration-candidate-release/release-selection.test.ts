@@ -6,10 +6,10 @@ import os from 'node:os';
 import path from 'node:path';
 import test, { after } from 'node:test';
 
-import { createReleaseExecutionBinding, validateReleaseExecutionBinding } from '../../tools/release/release-execution-binding.ts';
-import { abandonReleaseSelection, cleanupReleaseSelection, createReleaseSelection, freezeReleaseSelection, inspectReleaseSelection, inspectReleaseSelectionCleanup, reconcileReleaseSelectionWithMain, releaseSelectionKey, reopenReleaseSelection, selectionIdentity, selectReleaseCommit } from '../../tools/release/release-selection.ts';
-import { normalizeReleaseTargets } from '../../tools/release/release-targets.ts';
-import { createPackagePublicationEvidence, createPackageReleaseContext } from '../../tools/release/release-package-evidence.ts';
+import { createReleaseExecutionBinding, validateReleaseExecutionBinding } from '../../../../../../skills/buildr-release/scripts/release-execution-binding.ts';
+import { abandonReleaseSelection, cleanupReleaseSelection, createReleaseSelection, freezeReleaseSelection, inspectReleaseSelection, inspectReleaseSelectionCleanup, reconcileReleaseSelectionWithMain, releaseSelectionKey, reopenReleaseSelection, selectionIdentity, selectReleaseCommit } from '../../../../../../skills/buildr-release/scripts/release-selection.ts';
+import { normalizeReleaseTargets } from '../../../../../../skills/buildr-release/scripts/release-targets.ts';
+import { createPackagePublicationEvidence, createPackageReleaseContext } from '../../../../../../skills/buildr-release/scripts/release-package-evidence.ts';
 
 const digest: any = (value: any) => `sha256-${String(value).padStart(64, '0')}`;
 

@@ -4,10 +4,19 @@ export function discoveredVerificationFiles(step: any, files: string[]): { selec
   const family = step.executor?.file === 'test/verification/system.ts' ? 'test/system/'
     : step.executor?.file === 'test/verification/integration.ts' ? 'test/integration/' : null;
   if (!family) return { selected: [], inventory: [] };
-  const inventory = files.filter(file => file.startsWith(family) && /\.test\.[cm]?[jt]sx?$/u.test(file)).sort();
+  const integration = family === 'test/integration/';
+  const inventory = files.filter(file => file.startsWith(family) && (integration
+    ? !file.slice(family.length).includes('/') && file.endsWith('.test.ts')
+    : /\.test\.[cm]?[jt]sx?$/u.test(file))).sort();
+  // The general runner reads only top-level *.test.ts files and excludes the
+  // exact delegated members declared beside it. Their content and existence
+  // belong to those owners; a real import can still add them as dependencies.
+  const discovered = integration
+    ? inventory.filter(file => !(step.executor.excludedFiles ?? []).includes(file))
+    : inventory;
   // The executor's declaration is derived from the same suite registry used by
   // the runner, not from changed-path ownership. Unknown callers bind all files.
-  return { selected: step.executor.discoveredFiles ?? inventory, inventory };
+  return { selected: step.executor.discoveredFiles ?? discovered, inventory: discovered };
 }
 
 export function verificationEntryFiles(executor: any): string[] {

@@ -7,17 +7,17 @@ import {
   releaseAuthorityProbeSchema,
   releasePublishAuthority,
   sha256,
-} from '../../tools/release/release-authority.ts';
+} from '../../../../../../skills/buildr-release/scripts/release-authority.ts';
 import {
   containsCredentialMaterial,
   inspectWorkflowAuthority,
   runReleaseAuthorityPreflight,
-} from '../../tools/release/release-authority-preflight.ts';
-import { checkReleaseAuthorityEvidence } from '../../tools/release/release-convergence.ts';
+} from '../../../../../../skills/buildr-release/scripts/release-authority-preflight.ts';
+import { checkReleaseAuthorityEvidence } from '../../../../../../skills/buildr-release/scripts/release-convergence.ts';
 import {
   authorityFailureDiagnostic,
   runTrustedPublish,
-} from '../../tools/release/trusted-publish.ts';
+} from '../../../../../../skills/buildr-release/scripts/trusted-publish.ts';
 
 const commit: any = 'a'.repeat(40);
 const runId: any = 123;
@@ -47,7 +47,7 @@ jobs:
       contents: write
       id-token: write
     steps:
-      - run: node tools/release/release-publication.ts context.json artifact.json evidence
+      - run: node ../../../../skills/buildr-release/scripts/release-publication.ts context.json artifact.json evidence
 `;
 
 function probeEvidence(overrides: any = {}): any  {

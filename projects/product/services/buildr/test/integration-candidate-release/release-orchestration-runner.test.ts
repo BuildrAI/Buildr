@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { compactReleaseOrchestration, inspectReleaseOrchestration, runReleaseOrchestration } from '../../tools/release/release-orchestration-runner.ts';
+import { compactReleaseOrchestration, inspectReleaseOrchestration, runReleaseOrchestration } from '../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts';
 
 const digest: any = (letter: any) => `sha256-${letter.repeat(64)}`;
 const commit: any = (letter: any) => letter.repeat(40);

@@ -5,10 +5,10 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { newBuildOutput, ownedBuildRoot, validatePreparedSourceSdk } from './prepare-source-sdk.ts';
 import { hash, packageArchiveFiles, prepareBuildrPeer, readArtifactInput, readPreparedBuildrPeer, resolvePeerNpm, smokePeerEnvironment } from './buildr-peer.ts';
-import { artifactFromTarball } from '../../buildr/tools/release/package-artifact-observation.ts';
+import { artifactFromTarball } from '../../../../../skills/buildr-release/scripts/package-artifact-observation.ts';
 import { verifyBuildrPluginPair } from './verify-buildr-plugin-pair.ts';
 import { captureVerificationSource, gitTreeSourceIdentity } from './verification-source.ts';
-import { createReleaseCandidate, readReleaseCandidate, sourceSdkIdentityFromFiles, SOURCE_SDK_MANIFEST, type SourceSdkIdentity } from './release-candidate.ts';
+import { createReleaseCandidate, readReleaseCandidate, sourceSdkIdentityFromFiles, SOURCE_SDK_MANIFEST, type SourceSdkIdentity } from '../../../../../skills/buildr-release/scripts/dsh-plugin/release-candidate.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export function parseVerificationInputs(args: string[], env: NodeJS.ProcessEnv = process.env): {sourceSdk:string;peerInput?:string;peerManifest?:string;output?:string;npmCli?:string;candidateOutput?:string} {

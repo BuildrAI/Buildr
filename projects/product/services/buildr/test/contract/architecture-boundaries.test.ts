@@ -149,12 +149,12 @@ test('Workspace、Project 与 Service Domain 保持纯净且 Buildr Web 静态�
   const packageJson: any = JSON.parse(fs.readFileSync(path.join(productRoot, 'package.json'), 'utf8'));
   assert.match(fs.readFileSync(path.join(productRoot, '.gitignore'), 'utf8'), /^web-dist\/$/m);
   assert.equal(packageJson.bin.buildr, 'bin/buildr.mjs');
-  const candidatePackage: any = fs.readFileSync(path.join(productRoot, 'test/verification/release/candidate-package.ts'), 'utf8');
+  const candidatePackage: any = fs.readFileSync(path.join(productRoot, '../../../../skills/buildr-release/scripts/candidate-package.ts'), 'utf8');
   assert.match(candidatePackage, /buildApplicationPayload\(/);
   assert.match(candidatePackage, /createReleaseArtifact\(/);
   assert.doesNotMatch(candidatePackage, /\['pack', productRoot/);
   assert.equal(fs.existsSync(path.join(productRoot, 'tools', 'development')), true);
-  assert.equal(fs.existsSync(path.join(productRoot, 'tools', 'release')), true);
+  assert.equal(fs.existsSync(path.join(productRoot, '../../../../skills/buildr-release/scripts')), true);
   assert.equal(fs.existsSync(path.join(productRoot, 'src/modules/workspace/module.ts')), true);
   assert.equal(fs.existsSync(path.join(productRoot, 'src/domain/project/project.mjs')), false);
   assert.equal(fs.existsSync(path.join(productRoot, 'src/domain/service/service.mjs')), false);

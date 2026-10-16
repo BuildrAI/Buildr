@@ -80,7 +80,7 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   // Provider implementations may load the full Product runtime. Keep them out of
   // the clean-checkout Candidate aggregate import graph until execution starts.
   const { TEST_CONTEXT_PROVIDERS }: any = await import('../context/registry.ts');
-  const contextPool: any = createTestContextPool({
+  const contextPool: any = (options.contextPoolFactory ?? createTestContextPool)({
     providers: TEST_CONTEXT_PROVIDERS,
     env: { ...process.env, ...(options.env ?? {}) },
   });
@@ -157,6 +157,8 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
     try {
       contextCleanup = contextPool.cleanup();
     } catch (error) {
+      // Only new executions depended on this pool. Reused results retain the
+      // successful cleanup and ownership facts from their original run.
       reuse?.invalidate();
       throw error;
     } finally {

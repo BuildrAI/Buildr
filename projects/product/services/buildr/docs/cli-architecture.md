@@ -14,7 +14,7 @@ projects/product/buildr（checkout convenience）
 
 `bin/buildr.mjs` 是薄入口。`src/bootstrap/cli/main.ts` 处理内部安装动作、进程级错误，并延迟加载命令分发；`src/bootstrap/cli/registry.ts` 创建技术运行时（Runtime），从模块贡献（Contribution）建立唯一命令目录、帮助与未知命令候选，再调用对应入口。模块生命周期由模块登记（Module Registry）管理。
 
-正式 npm 包由 `tools/release/release-artifact.ts:npmBinSource()` 生成默认入口，在完整业务负载、产品 Node 范围检查及安装环境注入之前，调用安装模块的 `application/workspace-cli-routing.ts`。独立的 `runtime/workspace-cli-router.cjs` 只读现有管理归属和启动登记，选择继续当前 npm 或委派开发来源；不装配业务运行时（Runtime）或打开 SQLite。参数与当前目录原样传递，委派边界清理父来源身份并传播标准输入输出、退出状态及适用信号。显式源码入口、图形启动器（Launcher）、安装自身动作和独立 `buildr-mysql` 保持绑定来源。
+正式 npm 包由 `../../../../skills/buildr-release/scripts/release-artifact.ts:npmBinSource()` 生成默认入口，在完整业务负载、产品 Node 范围检查及安装环境注入之前，调用安装模块的 `application/workspace-cli-routing.ts`。独立的 `runtime/workspace-cli-router.cjs` 只读现有管理归属和启动登记，选择继续当前 npm 或委派开发来源；不装配业务运行时（Runtime）或打开 SQLite。参数与当前目录原样传递，委派边界清理父来源身份并传播标准输入输出、退出状态及适用信号。显式源码入口、图形启动器（Launcher）、安装自身动作和独立 `buildr-mysql` 保持绑定来源。
 
 ## 源码结构
 
@@ -107,7 +107,7 @@ module.ts → private composition
 ## npm 与交付边界
 
 - `package.json#bin.buildr` 指向 `bin/buildr.mjs`。
-- `tools/release/application-payload.ts` 构建产品运行闭包；`package.json#files` 与 manifest 约束 npm 文件集合。
+- `../../../../skills/buildr-release/scripts/application-payload.ts` 构建产品运行闭包；`package.json#files` 与 manifest 约束 npm 文件集合。
 - `resources/runtime/` 与 `resources/workspace/` 保存文件型交付源。
 - `tools/build/launcher/` 只构建/维护 Development Launcher。
 - 源码桥接与 macOS 开发启动器（Development Launcher）将 `tools/development/programs/` 和已选 Node.js 的目录加入当前进程的 `PATH`，提供 `buildr-mysql` 辅助命令。该私有目录不含 `buildr`，默认 npm 安装入口保持独立；通用连接程序继续按实际依赖判断可用性。

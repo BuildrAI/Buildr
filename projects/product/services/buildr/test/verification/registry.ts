@@ -264,7 +264,7 @@ const BACKEND_REUSE_CHECKS = new Set(['component', 'managed-mutations', 'cli-com
 const RUNTIME_REUSE_CHECKS = new Set(['integration-runtime', 'integration-data-store', 'integration-task-read-models', 'integration-task-coordination',
   'integration-project-daily-progress', 'system-buildr-web-http', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation',
   'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection',
-  'system-runtime-recovery', 'system-app-process', 'system-workspace-lifecycle', 'system-windows-platform']);
+  'system-runtime-recovery', 'system-app-process', 'system-workspace-lifecycle']);
 const NON_REUSABLE_CHECKS = new Set(['typecheck', 'dsh-plugin', 'candidate-tarball', 'application-payload-release', 'release-tarball-smoke', 'artifact-browser-core', 'cli-package-parity', 'host-node-contract', 'host-node-boundaries']);
 // Lifecycle fixtures create and mutate their own repositories. Only checks that
 // actually observe the retained checkout history bind its Git state.
@@ -277,6 +277,9 @@ const REUSE_INPUTS_BY_STEP: Readonly<Record<string, readonly string[]>> = Object
 function sourceReusePolicy(definition: any): any {
   if (NON_REUSABLE_CHECKS.has(definition.id) || definition.executor?.type === 'candidate-artifact' || definition.executor?.consumesArtifact
     || definition.id.startsWith('host-')) return false;
+  // Native boundary fixtures materialize the complete backend, not Web/plugin
+  // source or this workspace's release Skill. Their Git operations use fixtures.
+  if (definition.id === 'system-windows-platform') return Object.freeze({ scope: 'platform-backend', inputMode: 'runtime-check', tools: ['git'] });
   if (BACKEND_REUSE_CHECKS.has(definition.id)) return Object.freeze({ scope: 'backend' });
   // The backend unit entry also executes tests importing Web helpers. Architecture
   // and adapter contracts read Product knowledge and repository-root materials,
@@ -439,6 +442,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
   ], { schedulingCostMs: 2000, args: ['--test-concurrency=3'] }),
   integrationSlice('integration-verification', [
     'test/integration/verification-input-boundaries.test.ts',
+    'test/integration/verification-windows-inputs.test.ts',
     'test/integration/task-verification-report.test.ts',
     'test/integration/verification-resource-coordinator.test.ts',
     'test/integration/test-context-runtime.test.ts',
@@ -540,7 +544,7 @@ export const verificationSteps: any = Object.freeze([
   step({ id: 'typecheck', name: 'TypeScript static checking', executor: { type: 'npm', args: ['run', 'typecheck'] }, profiles: ['fast', 'candidate'], }),
   step({ id: 'unit', name: 'fine-grained unit tests', executor: { type: 'npm', args: ['run', 'test:unit'] }, profiles: ['fast', 'candidate'],  concurrencyClass: 'cpu-heavy' }),
   step({ id: 'component', name: 'bounded component tests', executor: { type: 'npm', args: ['run', 'test:component'] }, profiles: ['fast', 'candidate'],  concurrencyClass: 'cpu-heavy' }),
-  step({ id: 'integration', name: 'cross-domain technical boundary integration tests', executor: { type: 'node', file: 'test/verification/integration.ts', args: ['--suite', 'general'] }, profiles: ['candidate'], workerDemand: 4, schedulingCostMs: 5000, timeoutMs: 300_000, concurrencyClass: 'exclusive' }),
+  step({ id: 'integration', name: 'cross-domain technical boundary integration tests', executor: { type: 'node', file: 'test/verification/integration.ts', args: ['--suite', 'general'], excludedFiles: [...INTEGRATION_GENERAL_EXCLUDED_FILES] }, profiles: ['candidate'], workerDemand: 4, schedulingCostMs: 5000, timeoutMs: 300_000, concurrencyClass: 'exclusive' }),
   ...INTEGRATION_PRIMARY_SLICES.map((slice: any) => step({
     id: slice.id,
     name: ({
@@ -593,6 +597,7 @@ export const verificationSteps: any = Object.freeze([
     'test/integration-candidate-release/release-contract-cold-start.test.ts',
     'test/integration-candidate-release/release-convergence.test.ts',
     'test/integration-candidate-release/release-node-runner.test.ts',
+    'test/integration-candidate-release/release-skill-ownership.test.ts',
     'test/integration-candidate-release/release-operation.test.ts',
     'test/integration-candidate-release/release-orchestration-runner.test.ts',
     'test/integration-candidate-release/release-recovery.test.ts',
@@ -625,8 +630,10 @@ export const verificationSteps: any = Object.freeze([
 
   step({ id: 'capability-cli-integration', name: 'capability CLI integration', executor: { type: 'node', file: 'test/capability-cli.integration.ts' }, profiles: ['candidate'],  schedulingCostMs: 25000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'commands-cli-integration', name: 'Commands context CLI integration', executor: { type: 'node', file: 'test/commands-cli.integration.ts' }, profiles: ['candidate'], groups: ['cli', 'package'],  schedulingCostMs: 12000, concurrencyClass: 'workspace-heavy' }),
-  step({ id: 'openspec-contract-fixtures', name: 'OpenSpec contract fixtures', executor: { type: 'node', file: 'test/verification/openspec/contract.ts', args: ['--suite', 'contract'] }, profiles: ['candidate'], groups: ['openspec'],  concurrencyClass: 'cpu-heavy' }),
-  step({ id: 'openspec-convergence-recovery', name: 'OpenSpec convergence recovery journey', executor: { type: 'node', file: 'test/verification/openspec/contract.ts', args: ['--suite', 'recovery'] }, profiles: ['candidate'], groups: ['openspec', 'recovery'],  schedulingCostMs: 40000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
+  // Explicit diagnostic entries retain their suites; integration-openspec owns
+  // these same six files in the complete source and Candidate selections.
+  step({ id: 'openspec-contract-fixtures', name: 'OpenSpec contract fixtures', executor: { type: 'node', file: 'test/verification/openspec/contract.ts', args: ['--suite', 'contract'] }, groups: ['openspec'],  concurrencyClass: 'cpu-heavy' }),
+  step({ id: 'openspec-convergence-recovery', name: 'OpenSpec convergence recovery journey', executor: { type: 'node', file: 'test/verification/openspec/contract.ts', args: ['--suite', 'recovery'] }, groups: ['openspec', 'recovery'],  schedulingCostMs: 40000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
   step({ id: 'package-static', ...packageVerifier('static'), profiles: ['candidate'], groups: ['package'], }),
   step({ id: 'package-workspace', ...packageVerifier('workspace'), profiles: ['candidate'], groups: ['package'],  schedulingCostMs: 7000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'package-commands', ...packageVerifier('commands'), profiles: ['candidate'], groups: ['package'],  schedulingCostMs: 3000, concurrencyClass: 'workspace-heavy' }),
@@ -646,7 +653,7 @@ export const verificationSteps: any = Object.freeze([
   step({ id: 'cli-package-parity', name: 'CLI package parity', executor: { type: 'node', file: 'test/verification/cli/package-parity.ts', consumesArtifact: true }, profiles: ['candidate'], groups: ['cli'],  dependsOn: ['candidate-tarball'], schedulingCostMs: 15000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'service-branch-contract', name: 'Service branch contract', executor: { type: 'node', file: 'test/verification/onboarding/service-branch.ts' }, profiles: ['candidate'],   schedulingCostMs: 3000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'remote-skill-timeout', name: 'remote Skill timeout contract', executor: { type: 'node', file: 'test/verification/network/remote-text.ts' }, profiles: ['candidate'],  concurrencyClass: 'network' }),
-  step({ id: 'release-tarball-smoke', platformEvidence: WINDOWS_PLATFORM_BOUNDARIES.filter(item => item.stepId === 'release-tarball-smoke'), name: 'release metadata and real platform Launcher consumption', executor: { type: 'node', file: 'tools/release/release-consumption.ts', args: ['platform'], consumesArtifact: true }, profiles: ['candidate'], groups: ['release', 'windows-npm-preflight'], dependsOn: ['candidate-tarball'], schedulingCostMs: 25000, timeoutMs: 300_000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'release-tarball-smoke', platformEvidence: WINDOWS_PLATFORM_BOUNDARIES.filter(item => item.stepId === 'release-tarball-smoke'), name: 'release metadata and real platform Launcher consumption', executor: { type: 'node', file: 'test/verification/release/release-consumption.ts', args: ['platform'], consumesArtifact: true }, profiles: ['candidate'], groups: ['release', 'windows-npm-preflight'], dependsOn: ['candidate-tarball'], schedulingCostMs: 25000, timeoutMs: 300_000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'managed-data-integrity', name: 'managed data integrity', executor: { type: 'node', file: 'test/verification/integrity/managed-data-integrity.ts' }, profiles: ['candidate'], groups: ['package'],  schedulingCostMs: 9000, concurrencyClass: 'workspace-heavy' }),
 
   step({ id: 'docs-quality', name: 'documentation quality', executor: { type: 'node', file: 'test/verification/docs/quality.ts' }, profiles: ['candidate'],  concurrencyClass: 'default' }),
@@ -684,7 +691,6 @@ export const CORE_MACOS_STEP_IDS: any = Object.freeze([
   'open-source-candidate',
   'capability-cli-integration',
   'commands-cli-integration',
-  'openspec-contract-fixtures',
   'package-workspace',
   'package-commands',
   'package-rules',
@@ -716,7 +722,6 @@ export const CORE_MACOS_SHARDS: any = Object.freeze([
     'system-verification-contracts',
     'system-public-json-contracts',
     'system-openspec-contract-audit',
-    'openspec-contract-fixtures',
   ], { preparation: 'source-runtime' }),
   candidateShard('core-runtime-source-macos', 'macos', 'verification', [
     'integration-runtime',
@@ -776,7 +781,7 @@ export const CANDIDATE_CI_SHARDS: any = Object.freeze([
   candidateShard('runtime-windows', 'windows', 'verification', ['release-tarball-smoke'], { requiresArtifact: true, preparation: 'consumer' }),
   candidateShard('runtime-source-macos', 'macos', 'verification', ['system-runtime-recovery', 'system-app-process', 'runtime-adapter-parity'], { preparation: 'source-runtime' }),
   candidateShard('workspace-lifecycle-macos', 'macos', 'verification', ['system-workspace-lifecycle', 'workspace-lifecycle']),
-  candidateShard('task-worktree-recovery-macos', 'macos', 'verification', ['system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation', 'openspec-convergence-recovery']),
+  candidateShard('task-worktree-recovery-macos', 'macos', 'verification', ['system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation']),
   candidateShard('task-concurrent-macos', 'macos', 'verification', ['concurrent-task-acceptance']),
 ]);
 

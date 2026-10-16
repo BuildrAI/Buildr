@@ -8,7 +8,7 @@ import {
   CANDIDATE_RELEASE_MANIFEST_ENV,
   CANDIDATE_TARBALL_ENV,
   readSharedCandidatePackage,
-} from './release/candidate-package.ts';
+} from '../../../../../../skills/buildr-release/scripts/candidate-package.ts';
 import { runVerificationStep, writeVerificationDiagnostics } from './timing/parallel-runner.ts';
 import { resolveNodeTestFiles } from './test-files.ts';
 

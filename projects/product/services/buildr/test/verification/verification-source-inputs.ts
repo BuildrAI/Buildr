@@ -89,19 +89,39 @@ export function createVerificationSourceInputReader(repositoryRoot: string, prod
   const source = suppliedSource ?? (commit ? committedSource(repositoryRoot, commit) : workingSource(repositoryRoot));
   const prefix = 'projects/product/services/', backend = `${prefix}buildr/`, web = `${prefix}buildr-web/`, plugin = `${prefix}dsh-plugin/`;
   const common = (file: string) => ['projects/product/.node-version', 'projects/product/buildr', 'projects/product/preparation.yml', 'projects/product/verification.yml'].includes(file);
-  const inBackend = (file: string) => file.startsWith(backend) || common(file);
+  const inBackend = (file: string) => file.startsWith(backend) || file.startsWith('skills/buildr-release/') || common(file);
   const selected: Record<VerificationReuseScope, Entry[]> = {
     backend: source.entries.filter(([file]) => inBackend(file!)),
+    // Windows boundary fixtures retain the entire backend runtime/materialized
+    // source and common declarations, independently of changed-path ownership.
+    'platform-backend': source.entries.filter(([file]) => file!.startsWith(backend) || common(file!)),
     web: source.entries.filter(([file]) => inBackend(file!) || file!.startsWith(web)),
     plugin: source.entries.filter(([file]) => inBackend(file!) || file!.startsWith(web) || file!.startsWith(plugin) || file!.startsWith('.github/')),
-    product: source.entries.filter(([file]) => file!.startsWith('projects/product/') || file === 'CHANGELOG.md' || file!.startsWith('.github/')),
+    product: source.entries.filter(([file]) => file!.startsWith('projects/product/') || file!.startsWith('skills/buildr-release/') || file === 'CHANGELOG.md' || file!.startsWith('.github/')),
     repository: source.entries,
     runtime: source.entries.filter(([file]) => !['knowledge', 'openspec', 'tasks'].some(directory => file!.startsWith(`projects/product/${directory}/`))),
   };
   const inputs = (step: VerificationReuseStep, proof: boolean) => {
     const scope = step.reuse && step.reuse.scope;
     if (!scope) throw new Error('Expected a reusable source check.');
-    const value = scopedVerificationInputs(selected[scope], repositoryRoot, productRoot, step, { proof, readText: source.readText });
+    let value = scopedVerificationInputs(selected[scope], repositoryRoot, productRoot, step, { proof, readText: source.readText });
+    if (scope === 'platform-backend') {
+      const scopedPaths = new Set(selected[scope].map(([file]) => file!));
+      const sourcePaths = new Set(source.entries.map(([file]) => file!));
+      const outside = value.unresolved.flatMap(item => {
+        const target = item.split(':module:')[1];
+        if (!target) return [];
+        return [target, ...['.ts', '.tsx', '.js', '/index.ts', '/index.js'].map(suffix => target + suffix)]
+          .filter(file => sourcePaths.has(file) && !scopedPaths.has(file));
+      });
+      if (outside.length) {
+        // A real import outgrows the reviewed scope. Re-run the shared selector
+        // against all immutable/source bytes; an absent marker cannot prove it.
+        value = scopedVerificationInputs(source.entries, repositoryRoot, productRoot, step, { proof, readText: source.readText });
+        value.fallback = true;
+        value.unresolved = [...new Set([...value.unresolved, ...outside.map(file => `platform-backend:module-outside-scope:${file}`)])].sort();
+      }
+    }
     return { contentIdentity: digest(value.content), recipeIdentity: digest(value.recipe), fallback: value.fallback, unresolved: value.unresolved,
       unavailable: [...value.content, ...value.recipe].some(([file]) => source.unavailable.has(file!)) };
   };

@@ -137,7 +137,7 @@ test('Generic lifecycle owners retain complete source coverage on one primary pl
     },
     {
       id: 'task-worktree-recovery-macos',
-      stepIds: ['system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation', 'openspec-convergence-recovery'],
+      stepIds: ['system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation'],
     },
     { id: 'task-concurrent-macos', stepIds: ['concurrent-task-acceptance'] },
   ]);

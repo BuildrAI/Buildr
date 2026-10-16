@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { inspectCandidateFailedShardRetry } from '../../tools/release/candidate-failed-shard-retry.ts';
-import { compactReleasePhaseTimeline, createReleasePhaseTimeline, projectCandidateAttempts, projectCandidateRetryAttempts } from '../../tools/release/release-phase-timeline.ts';
-import { releaseRecoveryPlan, releaseCommandDiagnostic, releaseDispatchRejected } from '../../tools/release/release-failure.ts';
+import { inspectCandidateFailedShardRetry } from '../../../../../../skills/buildr-release/scripts/candidate-failed-shard-retry.ts';
+import { compactReleasePhaseTimeline, createReleasePhaseTimeline, projectCandidateAttempts, projectCandidateRetryAttempts } from '../../../../../../skills/buildr-release/scripts/release-phase-timeline.ts';
+import { releaseRecoveryPlan, releaseCommandDiagnostic, releaseDispatchRejected } from '../../../../../../skills/buildr-release/scripts/release-failure.ts';
 
 test('recovery explains the failing boundary while retaining prior candidate and published package facts', () => {
   const state = { candidate: { runId: 42, sourceCommit: 'a'.repeat(40) }, context: { identity: 'prepared-context' },

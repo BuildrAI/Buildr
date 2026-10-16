@@ -10,10 +10,10 @@ import process from 'node:process';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { sameFilesystemPath } from '../../../src/infrastructure/filesystem/filesystem-path-identity.ts';
-import { buildApplicationPayload } from '../../../tools/release/application-payload.ts';
-import { createReleaseArtifact, readReleaseArtifact } from '../../../tools/release/release-artifact.ts';
-import { officialRegistry } from '../../../tools/release/registry-version-state.ts';
-import { readSharedCandidatePackage } from './candidate-package.ts';
+import { buildApplicationPayload } from '../../../../../../../skills/buildr-release/scripts/application-payload.ts';
+import { createReleaseArtifact, readReleaseArtifact } from '../../../../../../../skills/buildr-release/scripts/release-artifact.ts';
+import { officialRegistry } from '../../../../../../../skills/buildr-release/scripts/registry-version-state.ts';
+import { readSharedCandidatePackage } from '../../../../../../../skills/buildr-release/scripts/candidate-package.ts';
 import { cleanupVerificationHarnessRoot, createVerificationPhaseRecorder } from '../timing/phases.ts';
 import { createExactNodeExecutionEnvironment } from '../../../src/infrastructure/process.ts';
 

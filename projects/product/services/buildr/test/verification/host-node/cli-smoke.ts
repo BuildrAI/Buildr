@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawn, spawnSync } from 'node:child_process';
-import { readSharedCandidatePackage } from '../release/candidate-package.ts';
+import { readSharedCandidatePackage } from '../../../../../../../skills/buildr-release/scripts/candidate-package.ts';
 
 const productRoot: any = path.resolve(import.meta.dirname, '../../..');
 const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-host-node-cli-'));

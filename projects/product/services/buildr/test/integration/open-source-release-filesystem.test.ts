@@ -5,15 +5,15 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { buildApplicationPayload } from '../../tools/release/application-payload.ts';
-import { createReleaseArtifact, readReleaseArtifact } from '../../tools/release/release-artifact.ts';
+import { buildApplicationPayload } from '../../../../../../skills/buildr-release/scripts/application-payload.ts';
+import { createReleaseArtifact, readReleaseArtifact } from '../../../../../../skills/buildr-release/scripts/release-artifact.ts';
 import { inspectCandidateFile, inspectCandidatePaths } from '../verification/release/open-source-candidate.ts';
 import {
   CANDIDATE_PACK_METADATA_ENV,
   CANDIDATE_RELEASE_MANIFEST_ENV,
   CANDIDATE_TARBALL_ENV,
   readSharedCandidatePackage,
-} from '../verification/release/candidate-package.ts';
+} from '../../../../../../skills/buildr-release/scripts/candidate-package.ts';
 import {
   createReleaseSmokeProgressRecorder,
   preserveLauncherFailureEvidence,

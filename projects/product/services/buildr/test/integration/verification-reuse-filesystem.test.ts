@@ -331,6 +331,34 @@ test('unclean result disposal reports cleanup failure rather than inventing an i
   assert.equal(result.failureFacts[0].cleanupClean, false);
 });
 
+test('unclean current disposal preserves an original reused proof and withholds only the new success', t => {
+  const f = fixture(t), snapshot = f.observe(), store = createVerificationReuseStore({ ...f.options, snapshot });
+  store.stage(f.step, passed, origin(snapshot.sourceCommit));
+  const original = store.commit(f.observe(), true).records[0];
+  const fresh = { ...f.step, id: 'fresh-source-fixture' };
+  const reuse = createVerificationPlanReuse({ steps: [f.step, fresh] }, f.options);
+  const selected: any = reusedVerificationResult(original), executed: any = { ...passed, id: fresh.id };
+  const bundle = reuse.finish([selected, executed], false);
+  assert.deepEqual(bundle.records, [original], 'current cleanup cannot rewrite the origin or revoke a prior clean execution');
+  assert.equal(selected.status, 'passed'); assert.equal(selected.failureCode, undefined);
+  assert.deepEqual(selected.sourceRecord, original);
+  assert.equal(executed.failureCode, 'verification-reuse-cleanup-failed');
+  assert.deepEqual(createVerificationReuseStore({ ...f.options, snapshot: f.observe() }).lookup(f.step), original);
+  assert.equal(createVerificationReuseStore({ ...f.options, snapshot: f.observe(), steps: [fresh] }).lookup(fresh), null);
+});
+
+for (const change of ['input-drift', 'revoked']) test(`unclean disposal still rejects a reused proof after ${change}`, t => {
+  const f = fixture(t), snapshot = f.observe(), store = createVerificationReuseStore({ ...f.options, snapshot });
+  store.stage(f.step, passed, origin(snapshot.sourceCommit));
+  const original = store.commit(f.observe(), true).records[0];
+  const reuse = createVerificationPlanReuse({ steps: [f.step] }, f.options), selected: any = reusedVerificationResult(original);
+  if (change === 'input-drift') fs.appendFileSync(path.join(f.productRoot, 'src/check.ts'), '// current input changed\n');
+  else createVerificationReuseStore({ ...f.options, snapshot: f.observe() }).invalidate(original.identity);
+  assert.equal(reuse.finish([selected], false).records.length, 0);
+  assert.equal(selected.status, 'failed');
+  assert.equal(selected.failureCode, change === 'input-drift' ? 'verification-reuse-input-drift' : 'verification-reuse-superseded');
+});
+
 test('only the fresh staged record survives unavailable cache and an observed invalidation still revokes it', t => {
   const f = fixture(t), unavailable = path.join(f.root, 'cache-is-a-file'); fs.writeFileSync(unavailable, 'occupied');
   const options = { ...f.options, env: { ...f.options.env, BUILDR_VERIFICATION_REUSE_DIR: unavailable } };
@@ -360,6 +388,40 @@ test('executePlan automatically skips a second executor call and forced failure 
   assert.equal(forced.passed, false); assert.equal(calls, 2);
   await executePlan(plan, options);
   assert.equal(calls, 3);
+});
+
+for (const failure of ['context-cleanup', 'full-plan-release']) test(`executePlan ${failure} failure preserves prior reused success for the next run`, async t => {
+  const f = fixture(t), oldStep = { ...f.step, dependsOn: [], contexts: [] };
+  const newStep = { ...oldStep, id: 'new-source-fixture' };
+  let calls = 0, releases = 0;
+  const options = { ...f.options, runId: 'cleanup-fixture', concurrency: 1,
+    resourceCoordinator: { root: path.join(f.root, 'resources'), async acquire() {
+      return { waitDurationMs: 0, async release() { releases++; return []; } };
+    } },
+    executorFactory: () => async () => { calls++; return { ...passed }; },
+  };
+  const seeded = await executePlan({ status: 'ready', paths: [], steps: [oldStep] }, options);
+  const original = seeded.sourceBundle.records[0];
+  const plan = { status: 'ready', scope: { mode: 'full' }, paths: [], steps: [oldStep, newStep] };
+  const completed: any[] = [];
+  const failing = { ...options, onComplete: (result: any) => completed.push(result),
+    ...(failure === 'context-cleanup' ? { contextPoolFactory: () => ({
+      prepareAll: () => [], environment: () => ({}), events: () => [],
+      cleanup() { throw new Error('injected current context cleanup failure'); },
+    }) } : { resourceCoordinator: { ...options.resourceCoordinator, async acquire() {
+      return { waitDurationMs: 0, async release() { releases++; return [{ status: 'failed' }]; } };
+    } } }),
+  };
+  await assert.rejects(executePlan(plan, failing), failure === 'context-cleanup' ? /injected current context cleanup failure/u : /Failed to release/u);
+  assert.equal(completed.find(result => result.id === oldStep.id).status, 'passed');
+  assert.equal(completed.find(result => result.id === oldStep.id).disposition, 'reused');
+  assert.deepEqual(createVerificationReuseStore({ ...f.options, snapshot: f.observe() }).lookup(oldStep), original);
+  assert.equal(createVerificationReuseStore({ ...f.options, snapshot: f.observe(), steps: [newStep] }).lookup(newStep), null);
+  const resumed = await executePlan(plan, options);
+  assert.equal(resumed.passed, true);
+  assert.equal(resumed.results.find((result: any) => result.id === oldStep.id).disposition, 'reused');
+  assert.equal(calls, 3, 'the original check executes once; only the failed run\'s new check repeats');
+  assert.equal(releases, 2);
 });
 
 test('custom inner worker grants execute without reusing or exporting a registered-profile proof', async t => {

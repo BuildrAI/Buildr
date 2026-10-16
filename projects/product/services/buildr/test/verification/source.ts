@@ -69,6 +69,48 @@ export function createSourceVerificationPlan(platform: string = process.platform
   };
 }
 
+const sourcePreparationProfiles = ['base', 'frontend', 'source-runtime'] as const;
+const sourceVerificationForce = (force: boolean | undefined, env: NodeJS.ProcessEnv = process.env) => force === true || env.BUILDR_VERIFICATION_FORCE === '1';
+
+/** Preparation follows the existing Candidate declarations for checks that will
+ * actually execute. An unregistered check retains the conservative source setup. */
+export function sourceVerificationPreparation(plan: any, reuse: any, shards: readonly any[] = CANDIDATE_CI_SHARDS): any {
+  const dispositions = new Map((reuse?.steps ?? []).map((step: any) => [step.id, step.disposition]));
+  const missing = plan.steps.filter((step: any) => dispositions.get(step.id) !== 'reuse');
+  let rank = -1;
+  for (const step of missing) {
+    const owners = shards.filter(shard => shard.stepIds.includes(step.id));
+    const required = owners.length ? owners.map(owner => owner.preparation) : ['source-runtime'];
+    for (const profile of required) {
+      const current = sourcePreparationProfiles.indexOf(profile);
+      rank = Math.max(rank, current < 0 ? sourcePreparationProfiles.length - 1 : current);
+    }
+  }
+  return { profile: rank < 0 ? null : sourcePreparationProfiles[rank], stepIds: missing.map((step: any) => step.id) };
+}
+
+/** Preparation can change dependency identities. Observe reuse again before any
+ * check runs, and prepare a broader declared environment only if newly missing
+ * checks require it. No preparation receipt is treated as a test result. */
+export function prepareSourceVerificationEnvironment(plan: any, options: any, dependencies: any = {}): any {
+  options = { ...options, force: sourceVerificationForce(options.force, options.env ?? process.env) };
+  const inspect = dependencies.inspectReuse ?? inspectVerificationReusePlan;
+  const prepare = dependencies.prepareEnvironment ?? prepareCandidateEnvironment;
+  const shards = dependencies.shards ?? CANDIDATE_CI_SHARDS;
+  const preparations: any[] = [];
+  let preparedRank = -1;
+  let reuse = inspect(plan, options);
+  while (true) {
+    const required = sourceVerificationPreparation(plan, reuse, shards);
+    const rank = required.profile === null ? -1 : sourcePreparationProfiles.indexOf(required.profile);
+    if (rank <= preparedRank) return { reuse, preparation: required, preparations };
+    preparations.push(prepare({ profile: required.profile, reusePrepared: true,
+      preparationReuseOptions: { force: options.force === true } }));
+    preparedRank = rank;
+    reuse = inspect(plan, options);
+  }
+}
+
 function usage(): void {
   process.stdout.write('Usage: npm run test:source -- [--json] [--force] [--output <source-bundle.json>]\n');
 }
@@ -79,16 +121,15 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
     if (args.help) usage();
     else {
       const plan = createSourceVerificationPlan();
+      const reuseOptions = { productRoot, projectRoot, force: sourceVerificationForce(args.force), env: enforceOfflineVerification({ ...process.env }) };
       if (args.json) {
-        const reuse = inspectVerificationReusePlan(plan, { productRoot, projectRoot, force: args.force, env: enforceOfflineVerification({ ...process.env }) });
-        process.stdout.write(`${JSON.stringify({ ...plan, reuse }, null, 2)}\n`);
+        const reuse = inspectVerificationReusePlan(plan, reuseOptions);
+        process.stdout.write(`${JSON.stringify({ ...plan, reuse, preparation: sourceVerificationPreparation(plan, reuse) }, null, 2)}\n`);
         if (plan.status !== 'ready') process.exitCode = 1;
       } else {
         if (plan.status !== 'ready') throw new Error(plan.diagnostic?.message ?? 'Source verification plan is blocked.');
         assertMinimumNodeVersion(process.versions.node, fs.readFileSync(path.join(projectRoot, '.node-version'), 'utf8').trim());
-        // The preparation owner verifies content receipts; the execution owner
-        // verifies and exports complete source results independently.
-        prepareCandidateEnvironment({ profile: 'source-runtime', reusePrepared: true, preparationReuseOptions: { force: args.force } });
+        prepareSourceVerificationEnvironment(plan, reuseOptions);
         enforceOfflineVerification();
         const { executePlan } = await import('./plan-runner.ts');
         const executionProfile = resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE);
@@ -100,7 +141,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
           stream: process.stdout, errorStream: process.stderr, prefix: 'verify-source',
           concurrency: executionProfile.limits, executionProfile, runId: evidence.runId,
           taskId: process.env.BUILDR_TASK_ID ?? source.branch ?? 'source',
-          reuse: { force: args.force, ...(args.output ? { output: path.resolve(args.output) } : {}) },
+          reuse: { force: reuseOptions.force, ...(args.output ? { output: path.resolve(args.output) } : {}) },
         });
         writeVerificationTimingEvidence({
           ...evidence, kind: 'source', source, status: execution.passed ? 'passed' : 'failed',

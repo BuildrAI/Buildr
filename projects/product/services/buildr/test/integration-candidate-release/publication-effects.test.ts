@@ -5,10 +5,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { completePublicationEffects } from '../../tools/release/release-publication.ts';
-import { publishFrozenArtifact } from '../../tools/release/trusted-publish.ts';
+import { completePublicationEffects } from '../../../../../../skills/buildr-release/scripts/release-publication.ts';
+import { publishFrozenArtifact } from '../../../../../../skills/buildr-release/scripts/trusted-publish.ts';
 import { createReleaseArtifactFixture } from '../helpers/release-artifact-fixture.ts';
-import { readReleaseArtifact } from '../../tools/release/release-artifact.ts';
+import { readReleaseArtifact } from '../../../../../../skills/buildr-release/scripts/release-artifact.ts';
 import { createVerificationPhaseRecorder, VERIFICATION_PHASE_TIMING_PREFIX } from '../verification/timing/phases.ts';
 
 const phaseScope = 'integration-candidate-release-effects';

@@ -4,7 +4,7 @@ import {
   MAIN_PACKAGE, PLUGIN_PACKAGE, compareCompatibilityVersions, compatibilityVersion, evaluatePackageCompatibility,
   parseCompatibilityArtifact, parsePackageCompatibility, satisfiesVersionEndpoints,
   type CompatibilityArtifact, type LegacyPairEvidence, type PackageCompatibility,
-} from '../../tools/release/package-compatibility.ts';
+} from '../../../../../../skills/buildr-release/scripts/package-compatibility.ts';
 
 import { mainCompatibilityFixture, pluginCompatibilityFixture } from '../helpers/package-compatibility-fixtures.ts';
 

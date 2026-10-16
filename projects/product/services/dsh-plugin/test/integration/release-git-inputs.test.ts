@@ -7,13 +7,13 @@ import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import test, { type TestContext } from 'node:test';
-import { artifactFromTarball } from '../../../buildr/tools/release/package-artifact-observation.ts';
-import type { CompatibilityArtifact } from '../../../buildr/tools/release/package-compatibility.ts';
-import { createPluginCandidateAdoption } from '../../tools/candidate-adoption.ts';
+import { artifactFromTarball } from '../../../../../../skills/buildr-release/scripts/package-artifact-observation.ts';
+import type { CompatibilityArtifact } from '../../../../../../skills/buildr-release/scripts/package-compatibility.ts';
+import { createPluginCandidateAdoption } from '../../../../../../skills/buildr-release/scripts/dsh-plugin/candidate-adoption.ts';
 import { hash } from '../../tools/buildr-peer.ts';
-import { createReleaseCandidate, PLUGIN_SERVICE_PATH, readReleaseCandidate, SOURCE_SDK_MANIFEST, sourceSdkIdentityFromFiles } from '../../tools/release-candidate.ts';
-import { pluginCandidateMain } from '../../tools/release-workflow.ts';
-import { publishPluginCandidate } from '../../tools/trusted-publish.ts';
+import { createReleaseCandidate, PLUGIN_SERVICE_PATH, readReleaseCandidate, SOURCE_SDK_MANIFEST, sourceSdkIdentityFromFiles } from '../../../../../../skills/buildr-release/scripts/dsh-plugin/release-candidate.ts';
+import { pluginCandidateMain } from '../../../../../../skills/buildr-release/scripts/dsh-plugin/release-workflow.ts';
+import { publishPluginCandidate } from '../../../../../../skills/buildr-release/scripts/dsh-plugin/trusted-publish.ts';
 import { archiveTreeIdentity } from '../../tools/verify-all.ts';
 import { identity } from '../../tools/verify-buildr-plugin-pair.ts';
 
@@ -97,8 +97,8 @@ test('default source adoption reads the actual large committed SDK patch without
   const f = fixture(t), runner = join(f.artifacts, 'default-adoption.mjs');
   writeFileSync(runner, `import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { verifySourceCandidateAdoption } from ${JSON.stringify(pathToFileURL(join(serviceRoot, 'tools/release-workflow.ts')).href)};
-import { readReleaseCandidate } from ${JSON.stringify(pathToFileURL(join(serviceRoot, 'tools/release-candidate.ts')).href)};
+import { verifySourceCandidateAdoption } from ${JSON.stringify(pathToFileURL(join(serviceRoot, '../../../../skills/buildr-release/scripts/dsh-plugin/release-workflow.ts')).href)};
+import { readReleaseCandidate } from ${JSON.stringify(pathToFileURL(join(serviceRoot, '../../../../skills/buildr-release/scripts/dsh-plugin/release-candidate.ts')).href)};
 const data = JSON.parse(fs.readFileSync(new URL('./data.json', import.meta.url), 'utf8'));
 try {
   const result = await verifySourceCandidateAdoption(data.input, data.main, readReleaseCandidate(fileURLToPath(new URL('./candidate.json', import.meta.url))), data.aggregate,
@@ -124,7 +124,7 @@ globalThis.fetch = async url => {
     PLUGIN_OPERATION: 'prepare', PLUGIN_VERSION: version, PLUGIN_CANDIDATE_RUN_ID: '', PLUGIN_RECOVERY_RUN_ID: '', PLUGIN_SOURCE_CANDIDATE_RUN_ID: '41',
     PLUGIN_SOURCE_COMMIT: f.data.input.sourceCommit, PLUGIN_SELECTION_IDENTITY: f.data.input.selectionIdentity, PLUGIN_BUILDR_PEER_ORIGIN: 'registry',
     PLUGIN_BUILDR_PEER_VERSION: f.data.input.buildrPeer.version, PLUGIN_BUILDR_PEER_INTEGRITY: f.data.input.buildrPeer.integrity, PLUGIN_BUILDR_CANDIDATE_RUN_ID: '', GH_TOKEN: 'fixture-read-access', GITHUB_OUTPUT: '' };
-  const args = ['--import', pathToFileURL(preload).href, join(serviceRoot, 'tools/release-workflow.ts'), 'adopt-candidate', '--candidate', f.manifestPath, '--aggregate', f.aggregatePath, '--output', output];
+  const args = ['--import', pathToFileURL(preload).href, join(serviceRoot, '../../../../skills/buildr-release/scripts/dsh-plugin/release-workflow.ts'), 'adopt-candidate', '--candidate', f.manifestPath, '--aggregate', f.aggregatePath, '--output', output];
   const result = spawnSync(process.execPath, args, { cwd: f.service, env, encoding: 'utf8', timeout: 10_000 });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(readFileSync(output, 'utf8')).candidate, f.manifest);

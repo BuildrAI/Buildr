@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { compactReleaseTransaction } from '../../tools/release/release-transaction-runner.ts';
-import { compactReleaseTransactionInspect } from '../../tools/release/release-transaction-evidence.ts';
+import { compactReleaseTransaction } from '../../../../../../skills/buildr-release/scripts/release-transaction-runner.ts';
+import { compactReleaseTransactionInspect } from '../../../../../../skills/buildr-release/scripts/release-transaction-evidence.ts';
 
 test('release transaction compact保留evidence identity与inspect入口', () => {
   const evidence: any = {

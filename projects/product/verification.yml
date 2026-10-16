@@ -126,7 +126,7 @@ testing:
         - buildr
     purpose: 验证源码选择、独立版本、逐包发布编排、真实 Git 收敛及失败恢复；隔离外部发布副作用，不证明实际公开发布
     sourcePaths:
-      - services/buildr/tools/release/**
+      - services/buildr/test/verification/release/**
       - services/buildr/src/modules/installation/domain/release-version.ts
     testRoots:
       - services/buildr/test/integration-candidate-release/**
@@ -141,6 +141,8 @@ testing:
       - 六组发布基础设施检查分别承担契约、源码选择、独立包选择、副作用恢复和两组 Git 收敛；完整入口运行全部检查，候选只需一份通用源码证明
       - 开发中的受影响选择保留低成本检查；本族通过显式发布组或完整候选（Candidate）执行，不混入日常完整核心检查
       - 三种包选择、同版本身份漂移、联合顺序、响应未知和共享清理使用隔离 Git 仓库及外部系统替身，不派发真实发布
+      - 发布脚本位于工作空间的
+        skills/buildr-release/scripts/；同时核对这些源码及项目内检查，由现有项目测试入口统一验证，不另建执行根。
     requirements:
       - 项目锁定 Node 与 npm，通过项目 wrapper 执行
       - git

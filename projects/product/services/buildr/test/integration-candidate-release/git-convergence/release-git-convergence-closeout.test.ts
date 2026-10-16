@@ -3,10 +3,10 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import test from 'node:test';
 
-import { releaseCarrierBranchFor } from '../../../tools/release/release-git-convergence.ts';
-import { createReleaseContext } from '../../../tools/release/release-readiness.ts';
-import { createReleaseLifecycle } from '../../../tools/release/release-lifecycle.ts';
-import { createReleaseTransactionEvidence } from '../../../tools/release/release-transaction-evidence.ts';
+import { releaseCarrierBranchFor } from '../../../../../../../skills/buildr-release/scripts/release-git-convergence.ts';
+import { createReleaseContext } from '../../../../../../../skills/buildr-release/scripts/release-readiness.ts';
+import { createReleaseLifecycle } from '../../../../../../../skills/buildr-release/scripts/release-lifecycle.ts';
+import { createReleaseTransactionEvidence } from '../../../../../../../skills/buildr-release/scripts/release-transaction-evidence.ts';
 import {
   cleanupRemoteReleaseBranch,
   closeoutReleaseGitResources,
@@ -151,6 +151,7 @@ test('发布编排真实调用Git closeout并把精确交付映射直接交给Wo
   });
   const dependencies: any = {
     inspectHostedReleaseTransaction: async () => ({ status: 'passed', evidence: orchestrationEvidence }),
+    selfBootstrapCloseout: async () => ({ status: 'not-applicable', effects: [], reason: 'Isolated Git fixture has no installed self-bootstrap component.' }),
     reconcilePublishedReleaseWithDev: () => ({ status: 'passed', identity: digest('9'), recoveryIdentity: digest('8'), effects: [], nextActions: [] }),
     inspectTask: () => ({ record: task, recordDigest: digest(task.status === 'active' ? '7' : '6') }),
     resolveRetainedController: () => ({ executable: process.execPath, argsPrefix: [], workspaceRoot: data.controller }),
@@ -210,6 +211,7 @@ test('authorized closeout deletes the formal branch and resumes after Task compl
       registryIntegrity: data.publicationEvidence.release.registryIntegrity, githubRelease: data.publicationEvidence.release.githubRelease, registrySmoke: 'passed' } });
   const dependencies = {
     inspectHostedReleaseTransaction: async () => ({ status: 'passed', evidence }),
+    selfBootstrapCloseout: async () => ({ status: 'not-applicable', effects: [], reason: 'Isolated Git fixture has no installed self-bootstrap component.' }),
     inspectTask: () => ({ record: task, recordDigest: digest('8') }),
     resolveRetainedController: () => ({ workspaceRoot: data.controller }),
     invokeRetainedController: (_controller: any, args: string[]) => {

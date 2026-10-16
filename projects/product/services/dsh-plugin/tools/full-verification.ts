@@ -1,10 +1,10 @@
 /** Validate portable final-candidate evidence without installing, fetching or querying Git. */
 import { readFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
-import { parseReleaseCandidate, type readReleaseCandidate, type ReleaseCandidate, type SourceSdkIdentity } from './release-candidate.ts';
+import { parseReleaseCandidate, type readReleaseCandidate, type ReleaseCandidate, type SourceSdkIdentity } from '../../../../../skills/buildr-release/scripts/dsh-plugin/release-candidate.ts';
 import { archiveTreeIdentity } from './verify-all.ts';
-import { artifactFromTarball } from '../../buildr/tools/release/package-artifact-observation.ts';
-import { parseCompatibilityArtifact, evaluatePackageCompatibility, type CompatibilityArtifact } from '../../buildr/tools/release/package-compatibility.ts';
+import { artifactFromTarball } from '../../../../../skills/buildr-release/scripts/package-artifact-observation.ts';
+import { parseCompatibilityArtifact, evaluatePackageCompatibility, type CompatibilityArtifact } from '../../../../../skills/buildr-release/scripts/package-compatibility.ts';
 import { assertPairReport, type PairReport } from './verify-buildr-plugin-pair.ts';
 export interface VerificationSource { observedCommit:string; dirty:boolean; contentSha256:string }
 export interface SourceBinding { method:'git-tree-content-equivalence'; testedGitHead:string; testedWorkingTreeDirty:boolean; verifiedContentSha256:string; candidateSourceCommit:string; candidateSourceTree:string }

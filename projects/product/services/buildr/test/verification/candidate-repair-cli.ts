@@ -6,10 +6,10 @@ import { fileURLToPath } from 'node:url';
 import { createCandidateRepairPlan, reusedCandidateProofResult } from './candidate-repair.ts';
 import { candidateCiRegistryIdentity, createCandidateCiEvidence, readCandidateCiArtifact, readCandidateCiEvidenceFiles, writeCandidateCiEvidence } from './candidate-ci-evidence.ts';
 import { CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES } from './registry.ts';
-import { createCandidateSourceBinding } from '../../tools/release/candidate-source-binding.ts';
+import { createCandidateSourceBinding } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
 import { validateCandidateRepairRun } from './candidate-repair.ts';
-import { assertPluginSourceAggregate, createPluginSourceAggregate } from '../../tools/release/verify-pr-candidate.ts';
-import { readReleaseCandidate } from '../../../dsh-plugin/tools/release-candidate.ts';
+import { assertPluginSourceAggregate, createPluginSourceAggregate } from './release/verify-pr-candidate.ts';
+import { readReleaseCandidate } from '../../../../../../skills/buildr-release/scripts/dsh-plugin/release-candidate.ts';
 import { readArtifactInput } from '../../../dsh-plugin/tools/buildr-peer.ts';
 
 export function prepareCandidateRepair(options: { repo: string; output: string; runId: string; productSource: string; verificationSource: string; repository: string }, dependencies: any = {}): any {

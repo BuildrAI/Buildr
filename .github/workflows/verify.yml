@@ -182,7 +182,7 @@ jobs:
         if: steps.services.outputs.dsh == 'true'
         shell: bash
         run: |
-          node tools/release/package-artifact-observation.ts --package buildr --discover current --tarball "${RUNNER_TEMP}/development-buildr-peer.tgz" --output "${RUNNER_TEMP}/development-buildr-peer.json"
+          node ../../../../skills/buildr-release/scripts/package-artifact-observation.ts --package buildr --discover current --tarball "${RUNNER_TEMP}/development-buildr-peer.tgz" --output "${RUNNER_TEMP}/development-buildr-peer.json"
           node --input-type=module -e 'import fs from "node:fs"; fs.appendFileSync(process.env.GITHUB_ENV, `BUILDR_DSH_BUILDR_PEER_INPUT=${process.argv[1]}\n`);' "${RUNNER_TEMP}/development-buildr-peer.json"
       - name: Verify changed product scope
         env:
@@ -300,7 +300,7 @@ jobs:
       - name: Resolve checks from the complete frozen source difference
         id: scope
         working-directory: projects/product/services/buildr
-        run: node tools/release/verify-pr-candidate.ts plan
+        run: node test/verification/release/verify-pr-candidate.ts plan
       - id: plan
         if: steps.scope.outputs.buildr == 'true' && !inputs.repair_candidate_run_id
         working-directory: projects/product/services/buildr
@@ -686,7 +686,7 @@ jobs:
           DIAGNOSTIC_RUN_JSON: ${{ runner.temp }}/publisher-pair-original-run.json
           DIAGNOSTIC_ARTIFACT_DIR: ${{ runner.temp }}/publisher-pair-original-package
           DIAGNOSTIC_OUTPUT: ${{ runner.temp }}/publisher-pair-diagnosis
-        run: node tools/release/package-pair-publisher-diagnosis.ts
+        run: node test/verification/release/package-pair-publisher-diagnosis.ts
       - name: Upload independent publisher pair diagnosis
         if: always()
         uses: actions/upload-artifact@v7
@@ -995,7 +995,7 @@ jobs:
           package-manager-cache: false
       - name: Validate the frozen source and complete difference
         working-directory: projects/product/services/buildr
-        run: node tools/release/verify-pr-candidate.ts plan
+        run: node test/verification/release/verify-pr-candidate.ts plan
       - name: Install isolated fixed preparation tooling
         if: ${{ !inputs.repair_candidate_run_id || needs.candidate-plan.outputs.buildr != 'true' }}
         run: |
@@ -1048,7 +1048,7 @@ jobs:
           PEER_VERSION: ${{ inputs.buildr_version }}
           PEER_INTEGRITY: ${{ steps.joint-peer.outputs.integrity }}
         run: >-
-          node tools/release/package-artifact-observation.ts --package buildr
+          node ../../../../skills/buildr-release/scripts/package-artifact-observation.ts --package buildr
           --candidate-manifest "${RUNNER_TEMP}/joint-buildr-candidate/release-artifact.json"
           --version "${PEER_VERSION}" --integrity "${PEER_INTEGRITY}"
           --output "${RUNNER_TEMP}/plugin-buildr-peer.json"
@@ -1059,7 +1059,7 @@ jobs:
           PEER_VERSION: ${{ inputs.buildr_peer_version }}
           PEER_INTEGRITY: ${{ inputs.buildr_peer_integrity }}
         run: >-
-          node tools/release/package-artifact-observation.ts --package buildr
+          node ../../../../skills/buildr-release/scripts/package-artifact-observation.ts --package buildr
           --version "${PEER_VERSION}" --integrity "${PEER_INTEGRITY}"
           --tarball "${RUNNER_TEMP}/published-buildr-peer.tgz"
           --output "${RUNNER_TEMP}/plugin-buildr-peer.json"
@@ -1077,7 +1077,7 @@ jobs:
       - name: Bind plugin source-admission aggregate
         if: ${{ !inputs.repair_candidate_run_id }}
         working-directory: projects/product/services/buildr
-        run: node tools/release/verify-pr-candidate.ts plugin-aggregate
+        run: node test/verification/release/verify-pr-candidate.ts plugin-aggregate
       - name: Adopt unchanged plugin proof and original bytes
         if: inputs.repair_candidate_run_id
         working-directory: projects/product/services/buildr
@@ -1124,7 +1124,7 @@ jobs:
         if: github.event_name == 'pull_request' && github.head_ref != 'dev'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node tools/release/verify-pr-candidate.ts
+        run: node test/verification/release/verify-pr-candidate.ts
       - name: Prepare aggregate evidence directory
         if: (github.event_name == 'workflow_dispatch' || github.head_ref == 'dev') && needs.candidate-plan.outputs.buildr == 'true'
         run: mkdir -p "${{ runner.temp }}/candidate-evidence"

@@ -8,7 +8,7 @@ import {
   canonicalApplicationPayloadIdentity,
   validateApplicationPayloadManifest,
 } from '../../src/infrastructure/product-resources/index.ts';
-import { createNpmInstallationOrigin } from '../../tools/release/release-artifact.ts';
+import { createNpmInstallationOrigin } from '../../../../../../skills/buildr-release/scripts/release-artifact.ts';
 
 function manifest(): any  {
   const requiredFiles: any[] = [

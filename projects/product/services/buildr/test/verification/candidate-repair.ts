@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { createCandidateSourceBinding, createCandidateCheckInputReader } from '../../tools/release/candidate-source-binding.ts';
-import { CANDIDATE_CI_EVIDENCE_SCHEMA } from '../../tools/release/candidate-ci-contract.ts';
+import { createCandidateSourceBinding, createCandidateCheckInputReader } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
+import { CANDIDATE_CI_EVIDENCE_SCHEMA } from './release/candidate-ci-contract.ts';
 import { CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES, verificationSteps, resolveVerificationExecutionProfile } from './registry.ts';
 
 export const CANDIDATE_REPAIR_SCHEMA = 'buildr.candidate-repair-plan/v1';

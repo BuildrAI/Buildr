@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { BUILDR_CANDIDATE_WORKFLOW, githubReader, publicationMayHaveStarted, PUBLISH_STEP, REPOSITORY, validateBuildrPeerCandidateRun, validateCandidateRun, validateWorkflowInput, verifyBuildrPeerCandidate, verifyPublishRuns, WORKFLOW } from '../../tools/release-workflow.ts';
+import { BUILDR_CANDIDATE_WORKFLOW, githubReader, publicationMayHaveStarted, PUBLISH_STEP, REPOSITORY, validateBuildrPeerCandidateRun, validateCandidateRun, validateWorkflowInput, verifyBuildrPeerCandidate, verifyPublishRuns, WORKFLOW } from '../../../../../../skills/buildr-release/scripts/dsh-plugin/release-workflow.ts';
 
 const commit = 'a'.repeat(40), version = '0.1.0-rc.1';
 const base = `/repos/${REPOSITORY}/actions`;
@@ -222,7 +222,7 @@ test('main preparation adopts the original verified Candidate without building o
   const workflow = readFileSync(fileURLToPath(new URL('../../../../../../.github/workflows/publish-dsh-plugin.yml', import.meta.url)), 'utf8');
   const prepare = workflow.slice(workflow.indexOf('\n  prepare:'), workflow.indexOf('\n  publish:'));
   const download = prepare.indexOf('- name: Download the original verified plugin Candidate');
-  const adopt = prepare.indexOf('node tools/release-workflow.ts adopt-candidate');
+  const adopt = prepare.indexOf('node ../../../../skills/buildr-release/scripts/dsh-plugin/release-workflow.ts adopt-candidate');
   const upload = prepare.indexOf('- name: Upload the original candidate bytes');
   assert.ok(download >= 0 && adopt > download && upload > adopt);
   assert.ok(prepare.includes('run-id: ${{ inputs.source_candidate_run_id }}'));

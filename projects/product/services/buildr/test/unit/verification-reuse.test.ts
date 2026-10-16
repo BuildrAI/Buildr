@@ -7,7 +7,7 @@ import { verificationSteps, verificationStepExecutionInputs } from '../verificat
 const sha = `sha256-${'a'.repeat(64)}` as const;
 const step: VerificationReuseStep = { id: 'fixture-check', executor: { type: 'node', file: 'check.ts' }, reuse: { scope: 'backend' }, dependsOn: [] };
 const snapshot: VerificationReuseSnapshot = { productRoot: '/one/checkout', repositoryRoot: '/one', sourceCommit: 'a'.repeat(40), gitIdentity: sha,
-  contentIdentities: { backend: sha, web: sha, product: sha, repository: sha, plugin: sha, runtime: sha },
+  contentIdentities: { backend: sha, 'platform-backend': sha, web: sha, product: sha, repository: sha, plugin: sha, runtime: sha },
   environment: { platform: 'darwin', arch: 'arm64', nodeVersion: '24.21.0', tools: { 'backend-dependencies': sha }, variablesIdentity: sha } };
 function record(): VerificationReuseRecord {
   const identity = createVerificationReuseIdentity(step, snapshot)!;
@@ -126,7 +126,7 @@ test('only reviewed fixture runtime checks exclude Product governance material w
   const ids = ['integration-runtime', 'integration-data-store', 'integration-task-read-models', 'integration-task-coordination',
     'integration-project-daily-progress', 'system-buildr-web-http', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation',
     'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection',
-    'system-runtime-recovery', 'system-app-process', 'system-workspace-lifecycle', 'system-windows-platform'];
+    'system-runtime-recovery', 'system-app-process', 'system-workspace-lifecycle'];
   assert.deepEqual(verificationSteps.filter((item: VerificationReuseStep) => item.reuse && item.reuse.scope === 'runtime').map((item: VerificationReuseStep) => item.id).sort(), ids.sort());
   for (const id of ['docs-quality', 'openspec-strict', 'openspec-candidate-audit', 'contract', 'integration-verification']) {
     assert.equal(verificationSteps.find((item: VerificationReuseStep) => item.id === id).reuse.scope, 'repository', id);

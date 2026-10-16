@@ -6,13 +6,13 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { buildApplicationPayload } from '../../tools/release/application-payload.ts';
-import { createNpmPackStaging, createReleaseArtifact, npmBinSource, readReleaseArtifact } from '../../tools/release/release-artifact.ts';
+import { buildApplicationPayload } from '../../../../../../skills/buildr-release/scripts/application-payload.ts';
+import { createNpmPackStaging, createReleaseArtifact, npmBinSource, readReleaseArtifact } from '../../../../../../skills/buildr-release/scripts/release-artifact.ts';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { createInstallationOrigin } from '../../src/modules/installation/infrastructure/installation-origin.ts';
 import { GENERATED_USER_REGISTRY_RESOURCE_SOURCES } from '../../src/infrastructure/product-layout.ts';
 import { verifyApplicationPayload } from '../../src/infrastructure/product-resources/index.ts';
-import { readSharedCandidatePackage } from '../verification/release/candidate-package.ts';
+import { readSharedCandidatePackage } from '../../../../../../skills/buildr-release/scripts/candidate-package.ts';
 import { createGeneratedReleaseInputs } from '../helpers/generated-release-inputs.ts';
 
 const SOURCE_COMMIT: any = 'b'.repeat(40);
@@ -125,7 +125,7 @@ test('payload verify runs from a clean tree with no node_modules or esbuild', as
     const payload: any = await buildApplicationPayload(path.join(root, 'payload'), SOURCE_COMMIT, { generatedArtifactManifest: generated.manifest, webDistRoot: generated.webDistRoot });
     const cleanRoot: any = path.join(root, 'clean-service');
     for (const relative of [
-      'tools/release/application-payload.ts',
+      '../../../../skills/buildr-release/scripts/application-payload.ts',
       'tools/build/generated-artifacts.ts',
       'src/infrastructure/product-resources/index.ts',
       'src/infrastructure/filesystem/filesystem-path-identity.ts',
@@ -136,7 +136,7 @@ test('payload verify runs from a clean tree with no node_modules or esbuild', as
     }
     assert.equal(fs.existsSync(path.join(cleanRoot, 'node_modules')), false);
     const result: any = spawnSync(process.execPath, [
-      path.join(cleanRoot, 'tools/release/application-payload.ts'),
+      path.join(cleanRoot, '../../../../skills/buildr-release/scripts/application-payload.ts'),
       'verify', '--payload', payload.root, '--layout', 'frozen',
     ], {
       cwd: cleanRoot,

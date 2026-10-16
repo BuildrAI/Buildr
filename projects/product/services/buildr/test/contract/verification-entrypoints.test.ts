@@ -190,7 +190,7 @@ test('remote text owner includes product re-entry and payload entry boundaries',
     'src/infrastructure/network/**',
     'src/infrastructure/product-invocation/**',
     'src/bootstrap/cli/main.ts',
-    'tools/release/application-payload-entry.ts',
+    'skills/buildr-release/scripts/application-payload-entry.ts',
   ]) assert.ok(remote.inputs.includes(input), `remote-skill-timeout must own ${input}`);
 });
 
@@ -284,7 +284,7 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
     'remote Skill timeout contract',
     'release metadata and real platform Launcher consumption',
     'managed data integrity',
-    'OpenSpec contract fixtures',
+    'OpenSpec application integration slice',
     'documentation quality',
   ]) assert.ok(candidatePlan.steps.some((step: any) => step.name === stage), `candidate verifier must retain ${stage}`);
   for (const excluded of [
@@ -450,7 +450,7 @@ test('双任务并发验收输出完整的组合证据并执行归属清理', ()
   assert.ok(entry.budgetMs > 0);
 });
 
-test('OpenSpec fixture Candidate owners use disjoint complete suites', () => {
+test('OpenSpec fixture entries stay explicit while complete Candidate runs their six files once', () => {
   const owners: any = Object.fromEntries(verificationSteps
     .filter((step: any) => ['openspec-contract-fixtures', 'openspec-convergence-recovery'].includes(step.id))
     .map((step: any) => [step.id, step.executor.args]));
@@ -458,6 +458,20 @@ test('OpenSpec fixture Candidate owners use disjoint complete suites', () => {
     'openspec-contract-fixtures': ['--suite', 'contract'],
     'openspec-convergence-recovery': ['--suite', 'recovery'],
   });
+  const candidate = createVerificationPlan({ profiles: ['candidate'] });
+  const primary = candidate.steps.find((step: any) => step.id === 'integration-openspec');
+  assert.ok(primary, 'the complete Candidate retains all OpenSpec assertions');
+  for (const name of ['openspec-domain', 'openspec-deterministic-sync', 'openspec-convergence-preflight', 'openspec-projected-validator', 'openspec-convergence-transaction', 'openspec-convergence-recovery']) {
+    const file = `test/integration/${name}.test.ts`;
+    const selected = candidate.steps.flatMap((step: any) => step.executor.files ?? []);
+    assert.equal(selected.filter((value: string) => value === file).length, 1, file);
+  }
+  for (const id of Object.keys(owners)) {
+    assert.equal(candidate.steps.some((step: any) => step.id === id), false, `${id} must not rerun the same files`);
+    const explicit = createVerificationPlan({ stepIds: [id] });
+    assert.equal(explicit.status, 'ready');
+    assert.deepEqual(explicit.steps.map((step: any) => step.id), [id], 'the explicit diagnostic entry remains available');
+  }
 });
 
 test('CLI package parity owns representative equivalence without lifecycle duplication', () => {

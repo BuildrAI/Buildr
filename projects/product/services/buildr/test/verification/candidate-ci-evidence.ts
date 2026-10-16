@@ -4,14 +4,14 @@ import path from 'node:path';
 import process from 'node:process';
 import { isDeepStrictEqual } from 'node:util';
 import { spawnCommandSync } from '../../src/infrastructure/process.ts';
-import { readReleaseArtifact, releaseArtifactManifestName, releasePackMetadataName } from '../../tools/release/release-artifact.ts';
-import { releaseConsumptionIdentity, RELEASE_CHECKS, validateReleaseCheckDefinitions } from '../../tools/release/release-consumption.ts';
+import { readReleaseArtifact, releaseArtifactManifestName, releasePackMetadataName } from '../../../../../../skills/buildr-release/scripts/release-artifact.ts';
+import { releaseConsumptionIdentity, RELEASE_CHECKS, validateReleaseCheckDefinitions } from './release/release-consumption.ts';
 import {
   CANDIDATE_CI_AGGREGATE_SCHEMA,
   CANDIDATE_CI_CHECKPOINT_SCHEMA,
   CANDIDATE_CI_EVIDENCE_SCHEMA,
   CANDIDATE_EXECUTION_PURPOSES,
-} from '../../tools/release/candidate-ci-contract.ts';
+} from './release/candidate-ci-contract.ts';
 import {
   CANDIDATE_CI_HOST_NODE_TUPLES,
   CANDIDATE_CI_PLATFORM_REPEATS,
@@ -20,7 +20,7 @@ import {
 } from './registry.ts';
 import { validateCandidateCiCoverage } from './planner.ts';
 import { CANDIDATE_SOURCE_REUSE_POLICY } from './candidate-source-reuse.ts';
-import { createCandidateSourceBinding } from '../../tools/release/candidate-source-binding.ts';
+import { createCandidateSourceBinding } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
 
 export { CANDIDATE_CI_AGGREGATE_SCHEMA, CANDIDATE_CI_CHECKPOINT_SCHEMA, CANDIDATE_CI_EVIDENCE_SCHEMA };
 

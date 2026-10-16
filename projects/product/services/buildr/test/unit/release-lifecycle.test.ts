@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createReleaseLifecycle, projectReleaseLifecycleOrchestration } from '../../tools/release/release-lifecycle.ts';
+import { createReleaseLifecycle, projectReleaseLifecycleOrchestration } from '../../../../../../skills/buildr-release/scripts/release-lifecycle.ts';
 
 const digest: any = (letter: any) => `sha256-${letter.repeat(64)}`;
 

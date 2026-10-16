@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { compatibilityVersion, parsePackageCompatibility } from '../../tools/release/package-compatibility.ts';
+import { compatibilityVersion, parsePackageCompatibility } from '../../../../../../skills/buildr-release/scripts/package-compatibility.ts';
 import { mainCompatibilityFixture, pluginCompatibilityFixture } from '../helpers/package-compatibility-fixtures.ts';
 
 test('public compatibility declarations have one service authority and preserve independent main operation', () => {

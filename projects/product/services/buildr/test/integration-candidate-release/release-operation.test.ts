@@ -5,12 +5,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { reconcilePublicationAfterPreparedContext, resolveRetainedController, runReleaseOperation } from '../../tools/release/release-orchestration-runner.ts';
-import { readCandidateEvidence } from '../../tools/release/release-transaction-runner.ts';
+import { reconcilePublicationAfterPreparedContext, resolveRetainedController, runReleaseOperation } from '../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts';
+import { readCandidateEvidence } from '../../../../../../skills/buildr-release/scripts/release-transaction-runner.ts';
 import { createReleaseArtifactFixture } from '../helpers/release-artifact-fixture.ts';
 import { aggregateCandidateCiEvidence, candidateCiRegistryIdentity, createCandidateCiEvidence } from '../verification/candidate-ci-evidence.ts';
 import { CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES } from '../verification/registry.ts';
-import { createCandidateSourceBinding } from '../../tools/release/candidate-source-binding.ts';
+import { createCandidateSourceBinding } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
+import { normalizeReleaseTargets } from '../../../../../../skills/buildr-release/scripts/release-targets.ts';
 
 const sourceRoot = path.resolve(import.meta.dirname, '../..');
 
@@ -45,6 +46,74 @@ function git(repo: string, args: string[]) {
   assert.equal(result.status, 0, result.stderr);
   return result.stdout.trim();
 }
+
+function inspectFixture(t: any, packagePublications: any): any {
+  const workspace = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-inspect-')));
+  t.after(() => fs.rmSync(workspace, { recursive: true, force: true }));
+  git(workspace, ['init', '-b', 'dev']);
+  const targets = normalizeReleaseTargets({ packages: 'buildr,dsh-plugin', version: '0.1.0-rc.41', pluginVersion: '0.1.0-rc.7' });
+  const directory = path.join(workspace, '.git/buildr/release-operations');
+  fs.mkdirSync(directory, { recursive: true });
+  const file = path.join(directory, targets.selectionId + '.json');
+  const state = { schemaVersion: 'buildr.release-operation-input/v2', workspace, targets, sources: [], candidate: { runId: 700 }, publication: null, packagePublications };
+  const bytes = JSON.stringify(state) + '\n'; fs.writeFileSync(file, bytes);
+  return { workspace, targets, file, bytes, directory,
+    options: { action: 'inspect', workspace, packages: targets.packages, version: targets.versions.buildr, pluginVersion: targets.versions['dsh-plugin'] } };
+}
+
+test('inspect refreshes both package runs without resuming or rewriting the release operation', async t => {
+  const f = inspectFixture(t, { buildr: { requested: true, runId: 201, status: 'running' }, 'dsh-plugin': { requested: true, runId: 202, status: 'running' } });
+  const requests: number[] = [];
+  const result = await runReleaseOperation(f.options, {
+    execute: (command: string, args: string[]) => {
+      assert.equal(command, 'gh'); assert.equal(args[0], 'api', 'inspect cannot dispatch, merge, retry, or clean up');
+      const id = Number(args[1].split('/').at(-1)); requests.push(id);
+      return { status: 0, stdout: JSON.stringify({ id, status: id === 202 ? 'in_progress' : 'completed', conclusion: id === 202 ? null : 'success',
+        head_sha: 'a'.repeat(40), run_attempt: 2, html_url: `https://github.com/BuildrAI/Buildr/actions/runs/${id}` }) };
+    },
+  });
+  assert.equal(result.status, 'inspected');
+  assert.deepEqual(requests, [700, 201, 202]);
+  assert.equal(result.packagePublications.buildr.runObservation.run.conclusion, 'success');
+  assert.equal(result.packagePublications['dsh-plugin'].runObservation.run.status, 'in_progress');
+  assert.equal(result.packagePublications.buildr.status, 'running', 'a successful run observation is not fabricated public-package evidence');
+  assert.equal(result.run.headSha, 'a'.repeat(40));
+  assert.deepEqual(result.effects, []);
+  assert.equal(fs.readFileSync(f.file, 'utf8'), f.bytes);
+  assert.deepEqual(fs.readdirSync(f.directory), [f.targets.selectionId + '.json']);
+});
+
+test('inspect retains readable package facts when another package readback is unknown', async t => {
+  const f = inspectFixture(t, { buildr: { requested: true, runId: 201 }, 'dsh-plugin': { requested: true, runId: 202 } });
+  const result = await runReleaseOperation(f.options, {
+    execute: (command: string, args: string[]) => {
+      assert.equal(command, 'gh'); assert.equal(args[0], 'api');
+      const id = Number(args[1].split('/').at(-1));
+      return id === 202 ? { status: 1, stderr: 'HTTP 503 readback unavailable' }
+        : { status: 0, stdout: JSON.stringify({ id, status: 'completed', conclusion: 'success' }) };
+    },
+  });
+  assert.equal(result.status, 'inspected');
+  assert.equal(result.packagePublications.buildr.runObservation.status, 'observed');
+  assert.equal(result.packagePublications['dsh-plugin'].runObservation.status, 'unknown');
+  assert.equal(result.packagePublications['dsh-plugin'].runId, 202);
+  assert.equal(fs.readFileSync(f.file, 'utf8'), f.bytes);
+});
+
+test('inspect keeps an unconfirmed package request distinct from an unrequested package', async t => {
+  const f = inspectFixture(t, { buildr: { requested: true, runId: null } });
+  let requests = 0;
+  const result = await runReleaseOperation(f.options, {
+    execute: (command: string, args: string[]) => {
+      assert.equal(command, 'gh'); assert.equal(args[0], 'api'); requests++;
+      return { status: 0, stdout: JSON.stringify({ id: 700, status: 'completed', conclusion: 'success' }) };
+    },
+  });
+  assert.equal(requests, 1, 'unconfirmed requests are not dispatched again');
+  assert.equal(result.packagePublications.buildr.runObservation.status, 'dispatch-unconfirmed');
+  assert.equal(result.packagePublications['dsh-plugin'].runObservation.status, 'not-requested');
+  assert.equal(fs.readFileSync(f.file, 'utf8'), f.bytes);
+});
 
 test('reprepare releases only a terminal failed Publication pointer for a new unpublished context', () => {
   const publication = { requested: true, contextIdentity: 'sha256-old', runId: 41 };

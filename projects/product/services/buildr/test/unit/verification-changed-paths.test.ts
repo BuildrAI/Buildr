@@ -6,6 +6,7 @@ import {
   isVersionOnlyPackageMetadataChange,
 } from '../verification/changed-paths.ts';
 import { createVerificationPlan } from '../verification/planner.ts';
+import { INTEGRATION_GENERAL_EXCLUDED_FILES } from '../verification/registry.ts';
 import { verificationStepOwnership } from '../verification/ownership.ts';
 
 const ids: any = (plan: any) => plan.steps.map((step: any) => step.id);
@@ -121,7 +122,7 @@ test('Product knowledge navigation index selects its real catalog integration an
   assert.equal(plan.status, 'ready');
   assert.equal(plan.scope.mode, 'affected');
   assert.deepEqual(ids(plan), ['integration', 'contract']);
-  assert.deepEqual(plan.steps.find((step: any) => step.id === 'integration').executor, { type: 'node', file: 'test/verification/integration.ts', args: ['--suite', 'general'] });
+  assert.deepEqual(plan.steps.find((step: any) => step.id === 'integration').executor, { type: 'node', file: 'test/verification/integration.ts', args: ['--suite', 'general'], excludedFiles: INTEGRATION_GENERAL_EXCLUDED_FILES });
   assert.deepEqual(plan.unmapped, []);
 });
 
@@ -134,12 +135,12 @@ test('package skill projection regression selects the slice that actually execut
 
 test('independent package release helpers select pure feedback and the real lifecycle owners', () => {
   for (const source of [
-    'tools/release/release-targets.ts',
-    'tools/release/package-compatibility.ts',
-    'tools/release/package-artifact-observation.ts',
-    'tools/release/release-package-evidence.ts',
-    'tools/release/plugin-hosted-release.ts',
-    'tools/release/package-release-operation.ts',
+    'skills/buildr-release/scripts/release-targets.ts',
+    'skills/buildr-release/scripts/package-compatibility.ts',
+    'skills/buildr-release/scripts/package-artifact-observation.ts',
+    'skills/buildr-release/scripts/release-package-evidence.ts',
+    'skills/buildr-release/scripts/plugin-hosted-release.ts',
+    'skills/buildr-release/scripts/package-release-operation.ts',
   ]) {
     const plan = createVerificationPlan({ paths: [source] });
     assert.equal(plan.status, 'ready');

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
 import { PUBLISHER_PAIR_DIAGNOSIS_SCOPE, publisherPairPluginInput, runPublisherPairDiagnosis,
-  validatePublisherPairArtifact, validatePublisherPairDiagnosis, validatePublisherPairPublicPlugin } from '../../tools/release/package-pair-publisher-diagnosis.ts';
+  validatePublisherPairArtifact, validatePublisherPairDiagnosis, validatePublisherPairPublicPlugin } from '../verification/release/package-pair-publisher-diagnosis.ts';
 
 const original = 'a'.repeat(40), current = 'b'.repeat(40), tree = 'c'.repeat(40), bytes = Buffer.from('frozen public plugin');
 const integrity = `sha512-${createHash('sha512').update(bytes).digest('base64')}`;

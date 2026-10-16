@@ -6,14 +6,14 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import test from 'node:test';
 
-import { CANDIDATE_CI_AGGREGATE_SCHEMA } from '../../tools/release/candidate-ci-contract.ts';
+import { CANDIDATE_CI_AGGREGATE_SCHEMA } from '../verification/release/candidate-ci-contract.ts';
 import {
   assertNoConflictingPublicationRuns,
   cleanupReleaseRehearsal,
   prepareReleaseRehearsal,
   promoteReleaseRehearsal,
   RELEASE_REHEARSAL_EVIDENCE_SCHEMA,
-} from '../../tools/release/release-rehearsal.ts';
+} from '../../../../../../skills/buildr-release/scripts/release-rehearsal.ts';
 
 const version = '1.2.3-rc.1';
 const git = (repo: string, args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();

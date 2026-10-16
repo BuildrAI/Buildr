@@ -64,7 +64,7 @@ test('release owners consume the current Task v3 inspection port', () => {
     'release-task-evidence-correlation.ts',
     'release-transaction-runner.ts',
     'release-orchestration-runner.ts',
-  ].map((file: any) => read(path.join(SERVICE_ROOT, 'tools/release', file))).join('\n');
+  ].map((file: any) => read(path.join(SERVICE_ROOT, '../../../../skills/buildr-release/scripts', file))).join('\n');
 
   assert.match(releaseTools, /inspectTask/);
   assert.doesNotMatch(releaseTools, /inspectTaskRecord/);
