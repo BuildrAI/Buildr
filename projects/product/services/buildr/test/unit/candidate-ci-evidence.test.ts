@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import {
   aggregateCandidateCiEvidence,
   candidateCiRegistryIdentity,
@@ -119,20 +117,6 @@ test('new Candidate host coverage is exactly macOS and Windows and rejects Linux
   assert.ok(aggregateCandidateCiEvidence(changed, candidateContext).findings.some((finding: any) => finding.code === 'runner-mismatch'));
 });
 
-test('actual Candidate plan schedules no Linux and retains publisher preparation on minimum macOS', () => {
-  const cli = fileURLToPath(new URL('../verification/candidate-ci.ts', import.meta.url));
-  const env = { ...process.env, GITHUB_OUTPUT: undefined, BUILDR_SOURCE_VERIFICATION: undefined };
-  const planned = spawnSync(process.execPath, [cli, 'plan'], { env, encoding: 'utf8', timeout: 20_000, maxBuffer: 2 * 1024 * 1024 });
-  assert.equal(planned.status, 0, planned.stderr);
-  const plan = JSON.parse(planned.stdout);
-  assert.equal(plan.matrices.host.length, 4);
-  for (const matrix of Object.values(plan.matrices) as any[]) for (const row of matrix) assert.match(row.os, /^(?:macos-|windows-)/u);
-  assert.deepEqual(plan.matrices.host.find((row: any) => row.id === 'host-minimum-macos'), {
-    id: 'host-minimum-macos', os: 'macos-15', node: '24.15.0', preparation: 'publisher',
-  });
-  const refused = spawnSync(process.execPath, [cli, 'host', 'host-minimum-linux'], { env, encoding: 'utf8', timeout: 20_000 });
-  assert.notEqual(refused.status, 0); assert.match(refused.stderr, /Unknown Candidate Host Node tuple: host-minimum-linux/u);
-});
 
 test('Windows lifecycle owners are partitioned into bounded semantic shards', () => {
   const shardIds: any[] = [

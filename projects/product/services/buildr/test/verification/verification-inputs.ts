@@ -18,6 +18,10 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
   const byPath = new Map(entries.map(entry => [entry[0]!, entry]));
   const selected = new Set<string>(), queued = new Set<string>(), pending: string[] = [];
   const add = (file: string) => { selected.add(file); if (!queued.has(file)) { queued.add(file); pending.push(file); } };
+  // Runtime discovery is not visible in argv or static imports. Include the
+  // discovered family so new, removed or changed assertions revoke old proof.
+  const discoveredFamily = step.executor.file === 'test/verification/integration.ts' ? 'test/integration/'
+    : step.executor.file === 'test/verification/system.ts' ? 'test/system/' : null;
   const local = (file: string) => file.startsWith(prefix) ? file.slice(prefix.length) : null;
   const recipeFile = (file: string) => {
     const relative = local(file);
@@ -28,6 +32,7 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
   for (const [file] of entries) {
     const relative = local(file!);
     if (relative && sharedTrees.some(tree => relative.startsWith(tree))) selected.add(file!);
+    if (relative && discoveredFamily && relative.startsWith(discoveredFamily) && /\.test\.[cm]?[jt]sx?$/u.test(relative)) add(file!);
   }
   if (step.executor.file) add(prefix + step.executor.file);
   const selectors = [...(step.executor.files ?? []), ...(step.executor.args ?? []).filter((argument: string) => argument.startsWith('test/'))];

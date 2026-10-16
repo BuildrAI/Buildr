@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { createCandidateSourceBinding, assertCandidateSourceBinding, candidateCheckInputIdentity, verificationOnlyPath, releaseExecutionSource, assertReleaseExecutionCheckout } from '../../tools/release/candidate-source-binding.ts';
 import { createReleaseContext, validateReleaseContext } from '../../tools/release/release-readiness.ts';
@@ -88,6 +88,24 @@ test('unknown and plugin build inputs remain conservative instead of being treat
   for (const file of ['unknown-input.txt', 'projects/product/services/buildr-web/vite.config.ts',
     'projects/product/services/dsh-plugin/sdk-patches/host.patch', 'projects/product/services/buildr/tools/build/artifact-set.ts']) {
     assert.equal(verificationOnlyPath(file), false, file);
+  }
+});
+
+test('runtime-discovered integration and system tests revoke proof on addition, deletion or content changes', () => {
+  const prefix = 'projects/product/services/buildr/';
+  for (const family of ['integration', 'system']) {
+    const step = { id: family, executor: { type: 'node', file: `test/verification/${family}.ts`, args: ['--owner', 'example'] } };
+    const reader = {
+      inventory(commit: string) {
+        return ['package.json', `test/verification/${family}.ts`, ...(commit === 'removed' ? [] : [`test/${family}/example.test.ts`]),
+          ...(commit === 'added' ? [`test/${family}/added.test.ts`] : [])]
+          .map(file => ({ path: prefix + file, mode: '100644', kind: 'blob', object: commit === 'changed' && file.endsWith('example.test.ts') ? 'changed' : file }));
+      },
+      blob(_commit: string, file: string) { return file.endsWith(`${family}.ts`) ? "import fs from 'node:fs'; fs.readdirSync('test');" : '// discovered test'; },
+    };
+    const original = candidateCheckInputIdentity('.', 'original', step, reader);
+    for (const changed of ['changed', 'added', 'removed']) assert.notEqual(candidateCheckInputIdentity('.', changed, step, reader), original, `${family}:${changed}`);
+    assert.equal(candidateCheckInputIdentity('.', 'unchanged', step, reader), original);
   }
 });
 
@@ -212,4 +230,19 @@ test('default repair preparation verifies real package bytes, retains partial pr
   assert.equal(aggregateCandidateCiEvidence(retained.slice(1), context, workflow).status, 'failed', 'missing retained proof cannot close coverage');
   fs.appendFileSync(built.tarball, 'changed');
   assert.throws(() => prepareCandidateRepair({ repo, output: path.join(root, 'corrupt'), runId: '42', productSource: source, verificationSource: source, repository: 'BuildrAI/Buildr' }, { call }), /mismatch|integrity|size/u);
+});
+
+test('actual Candidate plan schedules no Linux and retains publisher preparation on minimum macOS', () => {
+  const cli = path.resolve(import.meta.dirname, '../verification/candidate-ci.ts');
+  const env = { ...process.env, GITHUB_OUTPUT: undefined, BUILDR_SOURCE_VERIFICATION: undefined };
+  const planned = spawnSync(process.execPath, [cli, 'plan'], { env, encoding: 'utf8', timeout: 20_000, maxBuffer: 2 * 1024 * 1024 });
+  assert.equal(planned.status, 0, planned.stderr);
+  const plan = JSON.parse(planned.stdout);
+  assert.equal(plan.matrices.host.length, 4);
+  for (const matrix of Object.values(plan.matrices) as any[]) for (const row of matrix) assert.match(row.os, /^(?:macos-|windows-)/u);
+  assert.deepEqual(plan.matrices.host.find((row: any) => row.id === 'host-minimum-macos'), {
+    id: 'host-minimum-macos', os: 'macos-15', node: '24.15.0', preparation: 'publisher',
+  });
+  const refused = spawnSync(process.execPath, [cli, 'host', 'host-minimum-linux'], { env, encoding: 'utf8', timeout: 20_000 });
+  assert.notEqual(refused.status, 0); assert.match(refused.stderr, /Unknown Candidate Host Node tuple: host-minimum-linux/u);
 });

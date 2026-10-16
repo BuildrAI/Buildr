@@ -95,6 +95,11 @@ export function candidateCheckInputIdentity(repo: string, commit: string, step: 
   const entries = reader?.inventory(commit) ?? readGitSourceInventory(repo, commit), byPath = new Map(entries.map(entry => [entry.path, entry]));
   const selected = new Set<string>(), visited = new Set<string>(), pending: string[] = [];
   const add = (file: string) => { selected.add(file); if (!visited.has(file)) { visited.add(file); pending.push(file); } };
+  // These entrypoints discover files at runtime instead of listing them in argv.
+  // Bind the complete discovered family (including currently excluded files),
+  // then follow its imports; an added or changed test must revoke old proof.
+  const discoveredFamily = step.executor?.file === 'test/verification/integration.ts' ? 'test/integration/'
+    : step.executor?.file === 'test/verification/system.ts' ? 'test/system/' : null;
   for (const entry of entries) {
     const relative = entry.path.startsWith(prefix) ? entry.path.slice(prefix.length) : '';
     if (!verificationOnlyPath(entry.path)) selected.add(entry.path);
@@ -102,6 +107,7 @@ export function candidateCheckInputIdentity(repo: string, commit: string, step: 
     if (/^test\/verification\/(?:executor|plan-runner|dag-scheduler|resource-coordinator|worker-budget|verification-reuse|verification-inputs|candidate-repair|candidate-ci|test-files)\.ts$/u.test(relative)) selected.add(entry.path);
     const selectors = [...(step.executor?.files ?? []), ...(step.executor?.args ?? []).filter((argument: string) => argument.startsWith('test/'))];
     if (selectors.some((pattern: string) => path.matchesGlob(relative, pattern))) add(entry.path);
+    if (discoveredFamily && relative.startsWith(discoveredFamily) && /\.test\.[cm]?[jt]sx?$/u.test(relative)) add(entry.path);
   }
   if (step.executor?.file) add(prefix + step.executor.file);
   // The descriptor binds selection, execution dependencies, limits and resources.

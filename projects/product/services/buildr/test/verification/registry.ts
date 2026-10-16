@@ -481,7 +481,9 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/task-manager-capability-graph.test.ts',
     'test/integration/task-pre-create-git-capability-graph.test.ts',
     'test/integration/web-dist-verification.test.ts',
-  ], { schedulingCostMs: 4000, args: ['--test-concurrency=4'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
+  // The complete 46-file real-CLI slice takes ~160s at the CI worker budget.
+  // Bound runner variance without changing cases or their individual deadlines.
+  ], { schedulingCostMs: 4000, timeoutMs: 240_000, args: ['--test-concurrency=4'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
   integrationSlice('integration-release', [
     'test/integration/open-source-release-filesystem.test.ts',
     'test/integration/product-installation-identity.test.ts',
