@@ -1,136 +1,82 @@
 # 采用实例：Buildr 产品的测试与验证
 
-Buildr 产品自身是在通用框架下建设测试能力的一个项目实例。它把测试建设、选哪些检查、怎样执行、怎样消费证据分开。通用工作方式见[完整验证框架](workspace-testing-and-verification-framework.md)；本文只解释 `product` 项目（Project）的真实实现。路径除注明外相对于 `services/buildr/`，定位入口见[实例工具地图](../../code-map/product-verification-tools.md)。
-
-项目地图与任务报告的公共实现见[通用框架实现地图](../../code-map/verification-framework.md)，与本实例的测试执行工具分别维护。
+本页解释 Product 的验证职责和入口。通用规则见[完整验证框架](workspace-testing-and-verification-framework.md)，实际声明见[项目测试地图](../../../verification.yml)，文件定位见[实例工具地图](../../code-map/product-verification-tools.md)。路径除注明外相对于 `services/buildr/`。
 
 ## 从项目地图到执行工具
 
-[项目测试地图](../../../verification.yml)目前有九个测试族（Testing Family）：`buildr-source`、`buildr-fast`、`buildr-functional`、`buildr-release-infrastructure`、`buildr-system`、`buildr-web-unit`、`buildr-web`、`buildr-environment-smoke` 和 `dsh-plugin`。`buildr-source` 负责发布前本机适用源码集合，`buildr-fast`、`buildr-functional` 和 `buildr-system` 负责后端与工程检查，`buildr-release-infrastructure` 负责无公开副作用的发布恢复；`buildr-web-unit` 负责前端逻辑；`buildr-web` 负责构建及真实页面交互；`buildr-environment-smoke` 用于明确目标环境中的安装与运行检查；`dsh-plugin` 独立验证桌面插件包。地图供智能体（Agent）发现稳定入口，具体文件发现、路径归属、步骤和资源另由项目工具维护。
+| 责任 | 唯一主要位置 |
+| --- | --- |
+| 发现与分组 | `test-files.ts`、`system-suites.ts`、`registry.ts` |
+| 改动归属 | `ownership.ts`：选择、排除、委托及扩大范围的理由 |
+| 检查定义与选择 | `registry.ts`、`planner.ts`：步骤、依赖、范围和预算 |
+| 执行与资源 | `plan-runner.ts`、`dag-scheduler.ts`、`executor.ts`、`resource-coordinator.ts` |
+| 输入、复用与耗时 | `verification-inputs.ts`、`verification-reuse.ts`、`timing/` |
+| 原包补验及汇总 | `candidate-repair.ts`、`candidate-repair-cli.ts`、`candidate-ci-evidence.ts` |
+| 正式任务报告 | 通用任务验证（Task Verification）只消费真实摘要，不接管测试执行 |
 
-| 责任 | 唯一主要位置 | 产生什么 |
-| --- | --- | --- |
-| 发现测试与分组 | `test/verification/test-files.ts`、`system-suites.ts`、`registry.ts` | 真实文件集合、系统分组及集成分片 |
-| 解释改动归属 | `test/verification/ownership.ts` | 路径匹配、排除、委托及必须扩大范围的原因 |
-| 定义检查步骤 | `test/verification/registry.ts` | 步骤身份、执行器（Executor）、依赖、分类、资源需求和预算 |
-| 选择和校验 | `test/verification/planner.ts` | 受影响范围（affected）或完整范围（full）、选择理由与预算判断 |
-| 执行与协调 | `plan-runner.ts`、`dag-scheduler.ts`、`executor.ts`、`resource-coordinator.ts` | 按依赖和实际资源额度运行，汇总真实结果 |
-| 诊断与耗时 | `test/verification/timing/` | 等待、执行、清理、失败及来源身份 |
-| 复用输入与解释 | `verification-inputs.ts`、`verification-reuse.ts` | 实际产品及检查输入、成功记录适用性、执行前原因和剩余成本 |
-| 原包正式补验 | `candidate-repair.ts`、`candidate-repair-cli.ts` | 不变构建输入绑定、逐项保留及执行计划、完整候选证明 |
-| 报告消费 | 通用任务验证（Task Verification） | 智能体（Agent）把适用执行摘要纳入正式报告 |
-
-项目执行计划（Verification Plan）和有向无环图（DAG）属于这些测试工具。通用任务验证应用层（Task Verification Application）不生成它们，也不接管它们的日志或资源。
+上述文件位于 `test/verification/`。地图用于发现稳定入口，具体测试和资源以这些工具为准。
 
 ## 测什么，以及一次通过能说明什么
 
-Buildr 的验证由以下几部分共同组成。**某个入口的“完整”只相对于它声明的集合**，不能把后端、前端逻辑、页面交互和跨平台候选相互替代。
+后端在 `services/buildr` 使用 `tools/development/run-development-npm run <脚本>`。稳定版 Node 要求 `>=24.15.0`；持续集成（CI）使用当前 24.x，最低版本另做轻量兼容检查。
 
-下表的工作目录均相对于 `projects/product/`。后端命令用 `tools/development/run-development-npm run <脚本名>`；前端使用表内给出的相邻服务包装入口（Wrapper），两者都在项目声明的开发 Node 范围内选择 Node.js，声明版本优先；候选（Candidate）准备也接受稳定版 Node >=24.15.0，记录实际程序与版本。远端持续集成（Continuous Integration）的检查程序使用当前 24.x 稳定版；最低版本兼容检查仍在三个操作系统上分别使用 24.15.0，二者职责独立。
-
-| 测试对象 | 真实入口与工作目录 | 证明范围及独立检查 |
+| 需要证明什么 | 入口 | 边界 |
 | --- | --- | --- |
-| 发布前本机源码 | 在 `services/buildr` 执行 `test:source -- --output <bundle.json>`，对应 `buildr-source` | 补齐当前平台适用源码检查，复用有效结果；不打包，不证明其他平台、最终压缩包或公开发布 |
-| 后端行为与工程约束 | 在 `services/buildr` 执行 `test:fast`、`test:integration`、`test:system`；日常较大范围用 `test:daily-full` | 分别检查类型与静态边界、细粒度行为、真实技术集成、完整公共入口及恢复。`test:daily-full` 执行注册表的 `core` 集合；不自动运行前端逻辑或浏览器（Browser）旅程，也不等于完整候选 |
-| 前端逻辑 | 在 `services/buildr-web` 执行 `../buildr/tools/development/run-development-npm test`，对应 `buildr-web-unit` | 运行 `test/*.test.mjs`，检查输入转换、筛选、分页等逻辑；不启动浏览器（Browser），不证明页面已正确呈现或可交互 |
-| 前端构建与真实页面旅程 | 在 `services/buildr` 执行 `test:browser:smoke`；按改动选择用 `test:browser:changed`，对应 `buildr-web` | 准备隔离构建产物并验证页面与后端协作；不执行前端 `test/*.test.mjs`。单独构建可在 `services/buildr-web` 执行 `../buildr/tools/development/run-development-npm run build`，但构建成功没有交互证明 |
-| DSH 插件包 | 在 `services/dsh-plugin` 执行 `node tools/verify-all.ts`，对应 `dsh-plugin` | 核对 SDK 基线、构建正式版与开发版、运行逻辑及同场装载测试，并用真实 DSH 装载器验证两种产物；不证明用户当前桌面已更新或跨重启行为已经人工验收 |
-| 本机候选（Candidate） | 在 `services/buildr` 执行 `test:candidate`，由 `candidate.ts` 选择 `candidate` 集合 | 在当前机器检查源码、真实前端逻辑、唯一压缩包及其核心浏览器旅程（Browser Journey），运行适用发布物检查；不产生其他平台结果，也不证明全部页面或独立 DSH 包已通过 |
-| 跨平台候选（Candidate）聚合 | 仓库根 `.github/workflows/verify.yml` 调用 `candidate-ci.ts` 的 `plan`、`run`、`host`、`aggregate` | 组织源码分片（Shard）、真实前端逻辑、单一发布物及其 macOS 核心浏览器旅程（Browser Journey）、macOS/Windows 平台检查和 macOS/Windows 宿主 Node.js（Host Node）组合；聚合校验来源、登记和发布物身份。其通过只证明登记集合，不等于全部页面、独立插件或公开发布已成功 |
-| 明确目标环境中的实际运行 | `buildr-environment-smoke` 给出按目标执行的指导，无固定全局命令 | 检查指定安装或发布环境中的命令行（CLI）、HTTP 或页面入口；只证明实际观察到的环境和行为，不用开发目录测试替代它 |
+| 日常改动 | `test:changed`；先看选择用 `-- --plan` | 按影响选择，附加必要低成本前置检查 |
+| 低成本／日常完整后端 | `test:fast`、`test:core` | 不等于前端、原包或跨平台完整候选 |
+| 定向检查 | `test:focus -- <step-id>` | 只运行选定步骤及真实依赖 |
+| 发布前本机源码 | `test:source -- --output <bundle.json>` | 补齐当前平台源码证明，不打最终包；`--json` 看计划 |
+| 前端逻辑 | 前端目录 `../buildr/tools/development/run-development-npm test` | 覆盖逻辑，不证明页面交互 |
+| 页面交互 | `test:browser:changed`、`test:browser:smoke` | 真实浏览器（Browser）检查；构建成功不能替代 |
+| 本机候选 | `test:candidate` | 当前机器的完整登记集合、原包及核心页面旅程 |
+| 跨平台候选 | `verify.yml` → `candidate-ci.ts` | 聚合源码、平台、唯一包和宿主证明，不代表公开成功 |
+| DSH 插件 | 插件目录 `node tools/verify-all.ts` | 独立构建、逻辑、同场装载及真实加载器；不代表用户桌面已更新 |
 
-[后端脚本](../../../services/buildr/package.json)、[前端脚本](../../../services/buildr-web/package.json)、[执行注册表](../../../services/buildr/test/verification/registry.ts)、[本机候选入口](../../../services/buildr/test/verification/candidate.ts)和[跨平台候选入口](../../../services/buildr/test/verification/candidate-ci.ts)共同限定上述范围。`frontend-logic` 调用前端完整入口；`dsh-plugin` 在受影响选择中运行插件完整验证，保持独立发布边界。`dev` 合并请求（Pull Request）的持续集成（CI）按受影响路径单独选择源码浏览器检查；候选的 `artifact-browser-core` 则直接消费唯一压缩包内网页载荷，不重新构建网页。两者输入和选择范围不同，不能相互推导完成。所有面向 `main` 的合并请求（Pull Request）实际执行来源及候选证据校验；不支持来源明确失败。
-
-日常定向检查可用 `test:focus -- <step-id>`，用 `test:changed -- --plan` 查看选择及理由，再由 `test:changed` 执行。后者会为选中步骤组合 `fast` 前置检查，关键执行依据变化时扩大到日常完整集合。纯知识修改可选文档质量步骤并补阅读验收。选择预览、类型检查、构建、`coverage:unit` 覆盖率各自提供不同证据，不能互相冒充实际行为测试。
-
-## 真实用例怎样证明产品行为
-
-下面列出六个现有例子，帮助理解测试对象和技术边界；链接是测试定义，不表示当前版本已经执行通过。
-
-| 用例与来源 | 在什么边界观察什么 | 证明的限制 |
-| --- | --- | --- |
-| [源码变化选中必要回归](../../../services/buildr/test/unit/verification-changed-paths.test.ts) | 对测试地图模块的应用、领域、命令行（CLI）和装配路径分别规划，断言选中 `integration-declarations` | 证明选择规则没有漏掉这些路径；被选测试仍需实际执行 |
-| [多服务测试地图解析与安全保存](../../../services/buildr/test/integration/project-verification-map.test.ts) | 使用真实临时目录和项目、服务、代码库登记，验证外部服务目录解析、不可用位置隔离、版本冲突和写入失败保留原文件 | 证明地图维护和位置诊断；不执行地图中声明的用户测试 |
-| [正式报告的命令行登记与读取](../../../services/buildr/test/system/task-verification-product.test.ts) | 通过真实命令行（CLI）进程保存报告，再读取并核对内容身份适用性；另测候选写入被拒绝时的错误投射 | 证明报告入口与身份边界；示例报告中的 `passed` 是测试输入，不是替用户执行测试 |
-| [父任务完成表单的确认规则](../../../services/buildr-web/test/parentCoordination.test.mjs) | 直接调用前端输入转换，确认默认未授权、缺少确认或子任务处置时拒绝，合法输入保留已观察版本 | 证明前端逻辑；不能代替真实表单点击或后端并发校验 |
-| [工作台回应冲突后的重读与保存](../../../services/buildr/test/browser-smoke/workbench-journey.ts) | 在真实页面输入答复，制造其他入口更新，观察 HTTP 409、保留输入、重读再保存，并核对任务记录未被改写 | 证明该页面、接口和持久化共同完成的旅程；不是全部页面或全部并发场景的证明 |
-| [压缩包离线安装后运行命令行与网页](../../../services/buildr/test/integration/application-payload-release.test.ts) | 安装实际候选（Candidate）压缩包，在隔离目录运行命令行（CLI），再按需启动网页并核对健康与发布物身份 | 证明被安装压缩包在本次宿主上的行为；跨平台结论还需各平台对应证据 |
-
-这些例子展示从纯逻辑、技术集成、公共入口到真实页面和发布物的不同边界。新增测试应先选择能捕获目标错误的边界，再决定目录、夹具（Fixture）和运行方式，不根据文件名机械判断证明强度。
+需要直接定位时仍可使用 `test:unit`、`test:component`、`test:contract`、`test:integration`、`test:system`。每个入口的“完整”仅指其登记范围；后端、前端逻辑、页面交互、安装环境和独立插件不能相互替代。
 
 ## 本机与远端各证明什么
 
-通用功能只保留一份完整源码主证明。发布工具六组检查、任务与工作目录生命周期、运行恢复、适配器和并发检查由 macOS 源码分片（Shard）承担，本机 `test:source` 可以执行或复用它们。完整功能覆盖没有删除，Windows 不再默认重复这些业务矩阵。
+| 内容 | 证明责任 |
+| --- | --- |
+| 通用功能、任务与工作目录、恢复、适配器、六组发布工具检查 | macOS 源码主证明，候选核验并复用本机结果 |
+| Windows 命令、路径别名、链接、硬链接锁和进程树清理 | `system-windows-platform` 的最小用例，含一个 Git／CRLF 案例 |
+| 原包快捷方式、安装、启动及退出 | 两系统的真实原包消费者 |
+| 最低／当前 Node | 两系统轻量安装运行链路，不重复功能矩阵 |
 
-[真实平台清单](../../../services/buildr/test/verification/platform-boundaries.ts)同时表达系统依赖、具体故障、最小用例、开发触发输入及复用条件。`system-windows-platform` 执行原生命令入口、目录别名和链接、硬链接锁、进程树清理，以及 `worktree-create.test.ts` 中唯一指定的路径与 CRLF 用例；其他用例不被带入。真实快捷方式属于原包 `release-tarball-smoke`；最低和当前 Node 的两系统组合只覆盖轻量安装、运行及退出，不展开完整功能矩阵。原系统结果只能证明实际平台，不能重命名为另一个平台结果。
+真实系统依赖、具体风险及开发触发输入以[平台清单](../../../services/buildr/test/verification/platform-boundaries.ts)为准。源码与包消费分片（Shard）分开；没有平台依据不能默认加入 Windows，包消费分片不能混入通用源码检查。
 
-原包消费分片只放真正消费包字节的检查，源码不再依附它。登记校验拒绝混入源码检查，也拒绝没有明确系统依赖的 Windows 默认检查。已有有效源码结果可使对应远端分片与专属准备一起跳过；类型等未声明可复用的检查仍按当前登记执行。新结构的真实 Windows 和 GitHub 验收须单独报告，本机通过不代替它们。
-
-系统检查的输入由实际套件登记生成；所选文件内容、导入依赖及发现成员都进入身份。无关系统文件只改变内容不会撤销另一集合证明，新增或删除成员仍触发核验。字面量 URL 导入可精确追踪，工作空间与包检查执行器解析到真实入口。计算导入、生成代码中的不明确读取等仍保守扩大；当前不承诺所有无关测试修复都可命中。前后提交或分片数量不同的计数不能直接作为同范围提速率。
+本机有效结果可跳过对应远端检查和专属准备；尚未支持复用的检查继续执行。核对者的平台不能冒充原执行平台，空选择、跳过或计划成功也不是测试通过。完整职责与失败处理见[发布流程](../flows/open-source-release.md)。
 
 ## 新测试怎样接入
 
-先确认待证明结果与最低充分边界，再同时核对两件事：**完整入口发现它，相关源码变化也能选择它。** 新文件存在、能单独运行或碰巧被单元集合覆盖，都不足以证明第二件事。
-
-1. 在最接近事实责任主体（Owner）的测试目录增加案例，复用适用夹具（Fixture）。
-2. 核对所属入口的文件发现方式。后端集成分片由 `INTEGRATION_PRIMARY_SLICES` 与排除集协作，系统测试（System）由 `SYSTEM_SUITES` 维护分组；前端逻辑由前端包的 `test/*.test.mjs` 发现，页面旅程由浏览器（Browser）选择器接入。
-3. 后端步骤在 `ownership.ts` 核对路径影响，页面旅程核对 `browser-selector-dispatcher.ts` 的选择结果；前端逻辑与插件路径分别选择 `frontend-logic` 和 `dsh-plugin` 完整入口。修改选择机制时也要验证其自身。
-4. 确需新增稳定步骤时，再维护 `registry.ts` 中的执行器（Executor）、分类、真实依赖、预算和资源，以及 `test/context/dispositions.ts` 的处置。
-5. 用实际测试取得行为证据，再用选择预览确认必要步骤被选中；预览本身不算测试通过。
-6. 只有稳定入口、测试族（Testing Family）的范围或环境变化，才交给声明接入（declaration-intake）和任务验证（task-verification）维护 `verification.yml`。
-
-## 执行依赖与资源
-
-执行注册表（Registry）描述主要证明责任（`primaryEvidenceOwner`）、公共结果、真实技术边界、目标耗时与副作用。重复辅助检查可以存在，但不能把同一事实包装成多份独立主要证明。
-
-依赖图（DAG）负责等待真实前置结果；执行入口还组合其明确要求的低成本前置检查。调度器（Scheduler）同时考虑步骤类别、具名资源和 `workers/processes/git/workspaceIo` 容量。执行器（Executor）把实际授予额度传给子进程并发或持久工作进程（Worker Host），内层不能自行扩大额度。
-
-前端 `npm test` 与登记步骤 `frontend-logic` 共用 `services/buildr-web/tools/run-logic-tests.mjs`。登记步骤使用 Node.js 执行器（Executor）将获授预算传入同一驱动（Test Runner），后者把 `--test-concurrency` 放在测试文件参数前；直接调用默认 1 个工作进程（Worker）。预算限制影响并发，不缩小完整文件集合。
-
-未知步骤、无效配置、必要依赖缺失或不可满足资源会在相关执行开始前失败。路径选择的成功状态只证明规则匹配通过，不证明待验证的公共行为或测试覆盖已经充分。
+1. 选择能证明公共结果的最低充分边界，保留真实副作用及必要失败场景。
+2. 接入实际文件发现：集成分组用 `INTEGRATION_PRIMARY_SLICES`，系统分组用 `SYSTEM_SUITES`；前端及浏览器使用各自入口。
+3. 同时登记 `ownership.ts` 与 `registry.ts`；验证相关变更能选中它，完整集合无遗漏、无无意重复。
+4. 核对依赖、隔离、资源和超时，再更新已有项目地图；不因增加一个文件创建新流程。
 
 ## 环境与状态隔离
 
-[测试上下文运行时](../guides/node-test-context-runtime.md)复用昂贵应用组装或不可变准备内容，同时保留逐案例隔离。公共实现位于 `src/infrastructure/testing/context-runtime/`，Buildr 专用提供者（Provider）位于 `test/context/providers/`。
+[测试上下文运行时](../guides/node-test-context-runtime.md)复用昂贵组装和不可变准备，案例状态继续隔离。处置由 `test/context/dispositions.ts` 声明，内层进程遵守外层授予的并发额度。
 
-三种处置由 `test/context/dispositions.ts` 维护：`context-runtime` 由公共运行时（Runtime）管理复用和隔离，`hybrid` 保留真实文件、数据库或进程边界，`full-lifecycle` 保留被测完整生命周期或无可复用状态的检查。复用不改变测试的真实边界。
+工作空间（Workspace）的命令行（CLI）和 HTTP 检查须经 `tools/development/run-isolated-workspace-smoke.ts`，同时隔离工作目录、`BUILDR_APP_DATA_DIR`、`BUILDR_PRODUCT_DATA_DIR`，成功失败均清理。测试不得进入用户真实应用状态。
 
-工作空间（Workspace）命令行（CLI）及 HTTP 冒烟必须经 `tools/development/run-isolated-workspace-smoke.ts`：同时隔离工作目录、`BUILDR_APP_DATA_DIR` 和 `BUILDR_PRODUCT_DATA_DIR`，成功或失败后均清理。不能让测试进入真实用户应用状态。
-
-前端服务（Service）负责 React/Vite 源码和构建；后端服务（Service）托管正式 `web-dist`。源码浏览器（Browser）验证使用隔离构建产物，候选浏览器（Browser）验证使用唯一压缩包内已校验载荷；后者只准备源码测试运行时（Runtime）和显式浏览器，不安装前端构建依赖或替换载荷。页面逻辑的 `buildr-web/test/*.test.mjs`、类型检查或构建不能替代真实交互。浏览器（Browser）选择细节见 `browser-selector-dispatcher.ts`，关键页面旅程在 `test/browser-smoke/`。
+源码页面检查使用隔离构建；候选页面检查使用唯一压缩包内网页，不能重建替换。完整初始化、恢复、卸载及清理保留真实生命周期，不因复用夹具而省略。
 
 ## 证据如何支持交付
 
-日常开发继续按受影响范围运行，完成后补必要低成本回归；准备发布时才使用 `npm run test:source` 完成当前平台适用的源码检查。两者使用同一登记和执行器（Executor）。执行前先核对成功结果的实际内容、配方、依赖、平台及必要 Git 事实；有效结果保留覆盖和原执行来源，跳过对应检查及其专属准备。无关任务文字或提交编号改变不会单独使内容证明失效。已核对的运行检查排除项目知识、规范和任务材料的行政变化，文档、规范及源码卫生检查仍覆盖自身材料；其余未知输入保守扩大。失败、输入漂移或清理不完整不能写成可复用成功；`--force` 可要求真实重跑。
+| 输入或结果 | 处理 |
+| --- | --- |
+| 内容、配方、依赖、必要环境一致且完整成功、清理干净 | 复用，保留原时间与来源；`--force` 可强制执行 |
+| 当前检查、实际依赖或共享执行行为变化 | 对应结果失效 |
+| 独立系统集合的其他文件只改内容 | 不撤销本集合；发现成员新增／删除仍需核验 |
+| 读取不明确或计算导入 | 保守扩大范围，显示未解析项 |
+| 执行期间输入漂移、失败或清理不全 | 不保存可复用成功，保留真实失败事实 |
+| 原包补验 | 分别绑定产包源码和验证源码，保留原字节；不赋予补验代码发布权限 |
 
-本机源码入口不生成最终发布包，也不把 macOS 结果说成 Windows 结果。源码分片（Shard）按声明的操作系统承担责任，保留原执行架构，不虚构在目标处理器上的执行；真正安装包与宿主架构仍由独立消费检查证明。结果导出后，只有受控候选入口接受；计划和最终汇总重新核验当前输入与原执行环境。已证明的源码分片（Shard）不再远端安装和执行，未覆盖平台及唯一原包消费仍真实执行。普通外部合并请求（Pull Request）不能自带“已通过”声明来跳过检查。缓存（Cache）丢失只增加必要执行，不产生成功事实。准备复用另核验安装内容及输出；网页配置明确声明的两份 TypeScript 增量编译缓存不算安装依赖变化，其他依赖字节和未知缓存文件变化仍失效。
+选择路径用于决定“该测什么”，不是完整读取范围。系统输入由真实分组生成，静态依赖可追踪；动态读取、前端和 DSH 的部分输入仍较宽，不能宣称所有局部修复都已精准复用。实际读取 Git 的检查仍核对当前 Git；其他隔离仓库用例不绑定无关任务引用。
 
-日常执行保留实际结果、选择理由、来源身份、排队与资源等待、执行和清理耗时；上下文（Context）执行另记录创建、复用、取得、重置、污染失效和销毁。这些帮助定位失败与性能，属于测试工具的临时证据，不能冒充正式任务完成或发布成功。
-
-### 输入边界与局部失效
-
-路径归属用于回答“改了这里应该选择什么”，不能充当检查实际读取范围。已核验的运行检查采用 `reuse.inputMode: runtime-check`，分别记录产品内容和检查配方（Recipe）：本检查文件、静态导入与子脚本、共享辅助材料、上下文（Context）、执行器（Executor）和资源定义都纳入身份。无关测试变化不使这些检查失效；共享执行语义变化仍扩大。动态或未解析输入回退保守范围，并在计划显示具体未解析路径。
-
-`system-task-lifecycle`、`system-worktree-lifecycle` 和 `system-nested-git-isolation` 操作隔离 Git 现场，不再绑定整个真实仓库的引用。确实观察保留检出或源码卫生的检查继续绑定当前 Git。只读计划（Read-only Plan）不写缓存（Cache），显示逐项失效原因、复用来源、历史或目标成本，以及依赖和资源下界；没有实际检查需要执行的完整计划不占用整轮共享容量。
-
-正式补验独立记录不可变产包源码（Product Source）和验证源码（Verification Source）。原工作流（Workflow）定义及构建输入必须不变，正式入口读取原运行和原包，再以当前完整登记计算缺项；普通诊断不能直接提升。失败分片（Shard）只有明确清理完成的成功检查可保留，宿主 Node.js（Host Node）与必要 Git 观察仍执行。旧证据缺少逐项输入身份时保守补齐，复用记录保留原结果和来源，不能重写原始失败。
-
-汇总对复用结果仍核验原包、检查身份、平台和完整覆盖；核心浏览器（Browser）解包、验证、旅程及清理阶段不能省略，宿主 Node.js（Host Node）不能用空的成功包装或矛盾退出状态通过。补验来源只证明检查结果；公开发布仍使用受保护 `main` 或经发布恢复准入核验的执行来源，不从补验记录选择带生产权限的代码。前端和 DSH 服务当前保留较宽输入边界，后续收窄需相应反例证明，不宣称所有工具变化都可以原包补验。
-
-跨平台候选（Candidate）由[证据聚合实现](../../../services/buildr/test/verification/candidate-ci-evidence.ts)核对所需分片与宿主组合是否齐全、是否证明当前源码及登记身份、是否消费同一压缩包；新增前端逻辑或核心浏览器证据缺失、失败或身份不符同样使聚合失败。源码结果可以保留匹配内容的原提交与执行时间，最终包必须绑定最终源码与原字节。本机 `test:source` 或 `test:candidate` 的结果不能独自替代这份聚合。正式任务报告仍须分别说明所需前端逻辑、浏览器（Browser）选择范围及目标环境检查是否实际完成。发布（Release）还涉及当前外部权限、真实发布与回读，流程和恢复由[开源发布说明](../flows/open-source-release.md)单独维护。`integration-candidate-release`、`integration-candidate-release-selection`、`integration-candidate-package-selection`、`integration-candidate-release-effects`、`integration-candidate-git-convergence` 与 `integration-candidate-git-selection` 是发布专用证据，不默认纳入日常 `core`；它们分别承担发布契约、冻结源码选择、独立包选择、发布副作用恢复、真实 Git 收尾及代际清理、真实 Git 选择及恢复。原有文件逐一分配且不重复，保留各项断言及 300 秒能力时限。嵌套 Git 隔离由 `system-nested-git-isolation` 独立承担，不再占用其他工作树生命周期案例的总时限。
-
-后续优化先依据当前耗时找出选择放大、重复准备、执行体或清理瓶颈。不能为追求速度删除正在证明的安装、初始化、迁移、恢复、平台或发布物边界。
-
-`integration` 通用集成组和 `system-nested-git-isolation` 使用已有独占调度（Exclusive Scheduling），避免有界子进程与其他外层重检查争用；组内并发、案例和原时限保留。输入身份同时包含并发类别，调度变化必须重新取得相关证明。复用结果不申请整轮或逐检查执行资源；它保留依赖顺序和完整覆盖，不占用已经无需执行的资源。
-
-`system-app-process` 与适配器检查共同使用已有 `workspace-saturating` 资源，在 `ci-workspace-limited` 中避免预览的多层命令行接口（CLI）冷启动与另一组密集工作空间操作同时饱和；其他轻量检查仍可并行。`integration-candidate-release-effects` 使用已有独占调度（Exclusive Scheduling）。其中同一原包先完成一次真实离线安装，再检查七种发布与故障恢复场景；六个成功恢复场景各自保留两次包消费请求及已安装包检查，完整性冲突场景不得到达消费步骤。十二次协议检查与一次真实安装分别计数，不反复安装相同字节，不建立跨运行缓存（Cache），也不改变正式发布的真实安装行为。两组检查保留各自覆盖及原有时限，资源等待、真实安装和恢复检查分别记录；调度互斥不能解释所有历史失败。
-
-工作树（Worktree）生命周期组声明已有 `WORKSPACE_FOUNDATION_CONTEXT_KEY`，多数案例复用不可变基础的逐例独立租约（Lease），公共完整初始化代表和混合来源闭环继续真实执行初始化与命令行接口（CLI）；身份、故障、删除安全及清理断言保留。通用集成（Integration）可设置 `BUILDR_INTEGRATION_FILE_TIMING=1`，在原点状输出和相同文件/工作进程（Worker）集合之外复用现有文件计时报告器（Reporter）与 Node.js 内置详细报告，将最慢文件摘要和实际失败原因写到标准错误输出；它是可选诊断，不改变覆盖、并发预算或通过条件。计时只证明本次入口与环境，不能用不同案例数的历史组计算同范围提速率。
+报告分别保存准备、排队、执行、断言、超时及清理耗时。时限和资源预算用于定位长尾，不靠无限加时掩盖问题；不能将不同集合的计数或耗时直接比较。正式任务报告、候选聚合、代码交付与公开发布分别陈述。
 
 ## OpenSpec 工具依赖风险
 
-主包将 OpenSpec 1.13.0 固定为开发依赖，其 `fast-glob → micromatch → braces` 链目前保留嵌套模式导致栈耗尽的上游风险，见[官方公告](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)。生产依赖审计与全量开发审计必须分别报告；生产结果不能消除开发工具风险，也不涵盖单独安装的外部 OpenSpec。上游尚无兼容修复时保留实际警报，不执行审计建议的破坏性降级，不以覆盖版本或忽略警报冒充修复。
-
-已安装上游的模式匹配入口在产物输出解析中，模式来自所选规范模式（Schema）的 `generates`，普通目录名不等于已触发漏洞。Buildr 的上游解析与声明工具调用由单独进程（Process）承担，失败局部报告；这不保证开发者直接运行 OpenSpec 或不可信自定义模式时免受影响。继续使用当前已验证模式，评估不可信模式前先核对来源与实际生成路径；没有证明完整可达性和修复的部分继续保留风险，不扩展为无关资料或生产读取的全局门禁。
-
-本次核对的已安装外部 OpenSpec 1.13.0 同样包含 `fast-glob 3.3.3 → micromatch 4.0.8 → braces 3.0.3`；主包中的开发依赖与单独安装的外部工具要分别核对。`generates` 的模式匹配用于发现产物路径、生成状态与指令，归档（Archive）也会查找任务文件；正文解析和文本校验不因此全部依赖 `braces`。当前内置 `tasks.md` 与 `specs/**/*.md` 模式不含花括号扩展，未证明存在不可信嵌套模式的完整触发路径。上游修复尚未落地，本轮按用户决定暂缓处理并保留审计警报；后续采用修复版本时仍须检查真实依赖链与既有能力，不能仅凭新版本发布宣称问题消除。
+现有记录保留 OpenSpec 1.13.0 的开发依赖链 `fast-glob → micromatch → braces` 风险，见[官方公告](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)。生产依赖、项目开发依赖及外部安装须分别审计；当前内置模式未证明存在完整触发路径，也不等于风险已修复。按既有决定暂缓处理，不执行破坏性降级或隐去警报；升级时重新核对实际依赖与能力。

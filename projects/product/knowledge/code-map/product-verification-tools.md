@@ -69,7 +69,7 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
 
 ## 前端与产品行为：从要证明的结果定位测试
 
-前端逻辑测试由 `services/buildr-web/package.json` 的 `test` 执行，`frontend-logic` 在前端受影响路径和完整候选（Candidate）中调用它。源码浏览器（Browser）旅程由后端 `test:browser:smoke` 或 `test:browser:changed` 执行；完整候选（Candidate）另由 `artifact-browser-core` 消费唯一压缩包内的网页载荷执行核心旅程，不证明全部页面。后端 `test:daily-full` 继续只声明日常后端范围。`dsh-plugin` 在插件受影响路径调用独立完整验证，不进入主包候选集合。各入口的工作目录、覆盖边界及六个用例的证明范围见[产品测试架构](../docs/architecture/verification-framework.md#测什么以及一次通过能说明什么)。
+前端逻辑测试由 `services/buildr-web/package.json` 的 `test` 执行，`frontend-logic` 在前端受影响路径和完整候选（Candidate）中调用它。源码浏览器（Browser）旅程由后端 `test:browser:smoke` 或 `test:browser:changed` 执行；完整候选（Candidate）另由 `artifact-browser-core` 消费唯一压缩包内的网页载荷执行核心旅程，不证明全部页面。后端 `test:daily-full` 继续只声明日常后端范围。`dsh-plugin` 在插件受影响路径调用独立完整验证，不进入主包候选集合。各入口的工作目录与覆盖边界见[产品测试架构](../docs/architecture/verification-framework.md#测什么以及一次通过能说明什么)。
 
 - **`services/buildr-web/test/`** — 前端逻辑的独立测试集合
   - [parentCoordination.test.mjs](../../services/buildr-web/test/parentCoordination.test.mjs) — 父任务确认的默认拒绝、子任务处置和版本保留，不启动网页
