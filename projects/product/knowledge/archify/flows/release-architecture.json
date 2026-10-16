@@ -11,8 +11,8 @@
       590
     ],
     "repository": {
-      "url": "https://github.com/BuildrAI/Buildr",
-      "revision": "6a1e268bd3a1388c524f7d4f24273d436deceb9b"
+      "url": "https://github.com/BuildrAI/Buildr.git",
+      "revision": "40479c66a58d25fabb3ebf0a3a724d22a6409931"
     }
   },
   "components": [
@@ -101,6 +101,9 @@
         },
         {
           "path": "projects/product/services/buildr/tools/release/release-orchestration-runner.ts"
+        },
+        {
+          "path": "projects/product/services/buildr/tools/release/candidate-failed-shard-retry.ts"
         }
       ]
     },
@@ -167,6 +170,9 @@
         },
         {
           "path": ".github/workflows/publish-dsh-plugin.yml"
+        },
+        {
+          "path": "projects/product/services/buildr/tools/release/package-release-operation.ts"
         }
       ]
     },
@@ -211,6 +217,9 @@
         },
         {
           "path": "projects/product/services/buildr/test/verification/candidate-ci.ts"
+        },
+        {
+          "path": "projects/product/services/buildr/tools/release/release-phase-timeline.ts"
         }
       ]
     }
@@ -298,18 +307,19 @@
     },
     {
       "dot": "amber",
-      "title": "本轮收敛目标",
+      "title": "输入与耗时按项核对",
       "items": [
-        "同一输入规则；旧结果先核验原来源再采用",
-        "执行地点不决定规则；真实平台条件仍须满足"
+        "源码、配方与内层额度共同决定结果适用性",
+        "安装、排队、执行及复用原耗时分别展示"
       ]
     },
     {
       "dot": "emerald",
       "title": "失败从所属边界恢复",
       "items": [
-        "检查补检查，汇总重汇总，登记重登记",
-        "有效结果及原包保留；结果复用不赋予发布权限"
+        "汇总失败只恢复汇总；未知请求先回读",
+        "有效结果及原包保留；复用不授予发布权限",
+        "自举交给唯一执行器；默认CLI回传尚待接通"
       ]
     }
   ]
