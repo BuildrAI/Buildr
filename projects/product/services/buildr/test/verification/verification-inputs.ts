@@ -20,7 +20,7 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
   const selected = new Set<string>(), queued = new Set<string>(), pending: string[] = [];
   const add = (file: string) => {
     selected.add(file);
-    if (file.startsWith('skills/buildr-release/scripts/')) selected.add('skills/buildr-release/package.json');
+    if (file.startsWith('skills/buildr-release/scripts/')) selected.add('skills/buildr-release/scripts/package.json');
     if (!queued.has(file)) { queued.add(file); pending.push(file); }
   };
   const local = (file: string) => file.startsWith(prefix) ? file.slice(prefix.length) : null;

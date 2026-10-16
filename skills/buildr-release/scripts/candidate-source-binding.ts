@@ -12,7 +12,7 @@ const sha = /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u;
 const prefix = 'projects/product/services/buildr/';
 const releaseScripts = 'skills/buildr-release/scripts/';
 export const releaseBuildInputPaths = new Set([
-  'skills/buildr-release/package.json',
+  'skills/buildr-release/scripts/package.json',
   ...['candidate-package', 'application-payload', 'application-payload-entry', 'mysql-connection-entry',
     'release-artifact', 'release-files', 'release-contract', 'release-notes'].map(name => `${releaseScripts}${name}.ts`),
   `${releaseScripts}dsh-plugin/release.ts`,

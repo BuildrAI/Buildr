@@ -9,6 +9,7 @@ import { candidateCheckInputIdentity, createCandidateSourceBinding, verification
 import { collectChangedProductPaths } from '../verification/changed-paths.ts';
 import { createVerificationPlan } from '../verification/planner.ts';
 import { createVerificationSourceInputReader } from '../verification/verification-source-inputs.ts';
+import { enumerateSkillSourceFiles } from '../../src/modules/agent-assets/infrastructure/runtime/skills/projection-files.ts';
 
 const productPrefix = 'projects/product/services/buildr/';
 const skillPrefix = 'skills/buildr-release/';
@@ -35,6 +36,29 @@ function sourceFixture(t: test.TestContext) {
   };
   return { root, productRoot, git, write, commit };
 }
+
+test('the complete release Skill source is accepted by the real projection owner and rejects root package metadata', t => {
+  // Runtime sync uses this same complete-source reader through render-plan.ts.
+  const source = fileURLToPath(new URL('../../../../../../skills/buildr-release/', import.meta.url));
+  const inventory = enumerateSkillSourceFiles(source);
+  for (const relative of ['SKILL.md', 'scripts/package.json', 'scripts/release-orchestration-runner.ts',
+    'scripts/candidate-package.ts', 'scripts/dsh-plugin/release.ts']) {
+    const entry = inventory.find((file: any) => file.relativePath === relative);
+    assert.ok(entry, `the real Skill inventory must include ${relative}`);
+    assert.deepEqual(entry.content, fs.readFileSync(path.join(source, relative)));
+  }
+  assert.equal(inventory.some((file: any) => file.relativePath === 'package.json'), false);
+  const metadata = inventory.find((file: any) => file.relativePath === 'scripts/package.json');
+  assert.equal(JSON.parse(metadata.content.toString('utf8')).type, 'module');
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-skill-format-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const invalid = path.join(root, 'skill');
+  fs.cpSync(source, invalid, { recursive: true });
+  fs.writeFileSync(path.join(invalid, 'package.json'), metadata.content);
+  assert.throws(() => enumerateSkillSourceFiles(invalid), /Skill source contains unsupported top-level entries: package\.json/u);
+  assert.equal(fs.existsSync(path.join(source, 'package.json')), false, 'the negative fixture must never modify the actual Skill');
+});
 
 test('the relocated source release CLI exposes help without creating release or application state', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-help-'));
@@ -66,7 +90,7 @@ test('real Git discovery retains staged, unstaged and untracked release Skill pa
   const newModule = skillPrefix + 'scripts/new-release-recovery.ts';
   fixture.write(selectedModule, 'export const value = 1;\n');
   fixture.write(method, '# Release method\n');
-  fixture.write(skillPrefix + 'package.json', '{"type":"module"}\n');
+  fixture.write(skillPrefix + 'scripts/package.json', '{"type":"module"}\n');
   const baseline = fixture.commit();
   fixture.write(selectedModule, 'export const value = 2;\n');
   fixture.write(method, '# Updated release method\n');
@@ -89,7 +113,7 @@ test('real Git discovery retains staged, unstaged and untracked release Skill pa
 test('relocated package producers and payload inputs require new package bytes after a real source change', t => {
   const fixture = sourceFixture(t);
   const buildInputs = [
-    skillPrefix + 'package.json',
+    skillPrefix + 'scripts/package.json',
     ...['candidate-package', 'application-payload', 'application-payload-entry', 'mysql-connection-entry',
       'release-artifact', 'release-files', 'release-contract', 'release-notes'].map(name => skillPrefix + `scripts/${name}.ts`),
     skillPrefix + 'scripts/dsh-plugin/release.ts',
@@ -158,7 +182,7 @@ test('local and immutable proofs track selected release Skill modules and real d
   fixture.write(method, '# Revised release method\n');
   source = fixture.commit();
   assert.deepEqual(observe(), original, 'unexecuted Skill scripts and method text do not alter this proof');
-  for (const file of [selectedModule, dependency, productPrefix + selectedTest, skillPrefix + 'package.json']) {
+  for (const file of [selectedModule, dependency, productPrefix + selectedTest, skillPrefix + 'scripts/package.json']) {
     const before = observe();
     fixture.write(file, file.endsWith('/package.json') ? '{"type":"commonjs"}\n'
       : fs.readFileSync(path.join(fixture.root, file), 'utf8') + '// real consumed input changed\n');
