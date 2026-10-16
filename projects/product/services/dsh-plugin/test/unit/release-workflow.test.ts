@@ -88,6 +88,65 @@ test('known skipped publication step permits a fresh attempt', async () => {
   const fake = api([run(20, 'publish', { conclusion: 'failure' })], { '20:1': jobs('skipped') });
   assert.deepEqual(await verifyPublishRuns(input(), commit, '50', fake.read), { candidateRunId: '10' });
 });
+const preparedManifest = { schemaVersion: 'buildr.dsh-plugin-release-candidate/v1', packageName: '@buildr-ai/buildr-dsh-plugin',
+  version, sourceCommit: 'f'.repeat(40), sourceTree: 'e'.repeat(40), registry: 'https://registry.npmjs.org/', filename: 'plugin.tgz',
+  size: 123, sha256: 'd'.repeat(64), integrity: `sha512-${Buffer.alloc(64, 3).toString('base64')}`, npmTag: 'next', fileCount: 1, published: false,
+  sourceSdk: { baseline: { tag: 'dsh-v0.2.0-rc.2', commit: '639ed015397290b3745d163aafe02ffee4aa3f84', version: '0.2.0-rc.2' },
+    manifestSha256: '1'.repeat(64), patchSha256: '2'.repeat(64), contracts: {} } };
+const noWriteJournal = () => ({ schemaVersion: 'buildr.dsh-plugin-publication/v1', packageName: preparedManifest.packageName, version,
+  sourceCommit: preparedManifest.sourceCommit, sourceTree: preparedManifest.sourceTree, sha256: preparedManifest.sha256, integrity: preparedManifest.integrity,
+  attempted: false, publishedObserved: false, status: 'blocked', action: 'blocked', registry: 'absent', code: 'plugin-oidc-authority-mismatch',
+  observedAt: '2026-10-16T02:55:10.544Z', request: { runId: 20, runAttempt: 1, workflowRef: `${REPOSITORY}/${WORKFLOW}@refs/heads/main` } });
+function noWriteApi(options: { journal?: any; manifest?: any; artifactChange?: any; previousJobs?: any[]; previousRun?: any; unavailable?: boolean; duplicate?: boolean; replaced?: boolean } = {}) {
+  const previous = run(20, 'publish', { head_sha: 'b'.repeat(40), conclusion: 'failure', ...options.previousRun });
+  const fake = api([previous], { '20:1': options.previousJobs ?? jobs('failure'), '20:2': jobs('failure') });
+  const documents: string[] = []; let artifactReads = 0;
+  const reader = Object.assign(async (endpoint: string) => {
+    const match = endpoint.match(/\/runs\/(10|20)\/artifacts\?/);
+    if (match) {
+      artifactReads++;
+      const original = match[1] === '20' ? previous : run(10, 'prepare');
+      const artifact = { id: original.id + 100, name: `${original.id === 20 ? 'plugin-publication' : 'plugin-candidate'}-v${version}`,
+        expired: false, size_in_bytes: 1234, workflow_run: { id: original.id, head_sha: original.head_sha, head_branch: 'main' }, ...options.artifactChange };
+      if (options.replaced && artifactReads > 1) artifact.id++;
+      return { total_count: options.duplicate ? 2 : 1, artifacts: options.duplicate ? [artifact, { ...artifact, id: artifact.id + 1 }] : [artifact] };
+    }
+    return fake.read(endpoint);
+  }, { readArtifactJson: async (runId: number, name: string, filename: string) => {
+    documents.push(`${runId}:${name}:${filename}`);
+    if (options.unavailable) throw new Error('unavailable');
+    return runId === 20 ? options.journal ?? noWriteJournal() : options.manifest ?? preparedManifest;
+  } });
+  return { reader, documents };
+}
+test('an entered failed publish step is excluded only by its unique official no-write journal bound to original prepared bytes', async () => {
+  const fake = noWriteApi();
+  assert.deepEqual(await verifyPublishRuns(input(), commit, '50', fake.reader), { candidateRunId: '10' });
+  assert.deepEqual(fake.documents, [`20:plugin-publication-v${version}:publication.json`, `10:plugin-candidate-v${version}:candidate.json`]);
+});
+test('no-write history keeps unknown, cancelled, mismatched and possibly written attempts uncertain', async () => {
+  for (const changed of [{ attempted: true }, { publishedObserved: true }, { registry: 'unknown' }, { registry: 'present' },
+    { status: 'passed' }, { action: 'readback-required' }, { code: 'plugin-current-buildr-incompatible' },
+    { packageName: 'other' }, { version: '0.1.1' }, { sourceCommit: commit }, { sourceTree: 'c'.repeat(40) },
+    { sha256: 'c'.repeat(64) }, { integrity: `sha512-${Buffer.alloc(64, 4).toString('base64')}` },
+    { request: { ...noWriteJournal().request, runId: 19 } }, { request: { ...noWriteJournal().request, runAttempt: 2 } },
+    { request: { ...noWriteJournal().request, workflowRef: `${REPOSITORY}/.github/workflows/publish.yml@refs/heads/main` } }]) {
+    const fake = noWriteApi({ journal: { ...noWriteJournal(), ...changed } });
+    await assert.rejects(verifyPublishRuns(input(), commit, '50', fake.reader), /previous-publication-evidence-required/);
+  }
+  for (const options of [{ unavailable: true }, { previousJobs: jobs('cancelled') }, { previousJobs: [] },
+    { previousRun: { conclusion: 'cancelled' } }, { artifactChange: { expired: true } },
+    { artifactChange: { workflow_run: { id: 19, head_sha: commit, head_branch: 'main' } } },
+    { duplicate: true }, { replaced: true },
+    { manifest: { ...preparedManifest, version: '0.1.1' } }]) {
+    const fake = noWriteApi(options);
+    await assert.rejects(verifyPublishRuns(input(), commit, '50', fake.reader), /previous-publication-evidence-required/);
+  }
+});
+test('a later no-write journal cannot erase an earlier unproved entered attempt', async () => {
+  const fake = noWriteApi({ previousRun: { run_attempt: 2 }, journal: { ...noWriteJournal(), request: { ...noWriteJournal().request, runAttempt: 2 } } });
+  await assert.rejects(verifyPublishRuns(input(), commit, '50', fake.reader), /previous-publication-evidence-required/);
+});
 test('entered, cancelled or missing publication step requires evidence even without recovery input', async () => {
   for (const previousJobs of [jobs(), jobs('failure'), jobs('cancelled'), [], [{ name: 'publish', status: 'completed', conclusion: 'cancelled', steps: [] }], [{ name: 'publish', status: 'completed', conclusion: 'failure', steps: [{ name: PUBLISH_STEP, status: 'in_progress', conclusion: null }] }]]) {
     const fake = api([run(20, 'publish', { conclusion: 'cancelled' })], { '20:1': previousJobs });
@@ -144,6 +203,9 @@ test('GitHub reader stays on the repository read endpoint and hides error respon
   await assert.rejects(reader('/repos/other/repo/actions/runs'), /github-read-path/);
   assert.equal(calls, 0);
   await assert.rejects(reader(`${base}/runs/20`), error => error instanceof Error && !error.message.includes('private response'));
+  assert.equal(typeof reader.readArtifactJson, 'function');
+  await assert.rejects(reader.readArtifactJson!(0, `plugin-publication-v${version}`, 'publication.json'), /github-artifact-input/);
+  await assert.rejects(reader.readArtifactJson!(20, 'plugin-publication-v$(touch private)', 'publication.json'), /github-artifact-input/);
 });
 test('workflow declares the same publication step and default preparation without commit triggers', () => {
   const path = fileURLToPath(new URL('../../../../../../.github/workflows/publish-dsh-plugin.yml', import.meta.url));

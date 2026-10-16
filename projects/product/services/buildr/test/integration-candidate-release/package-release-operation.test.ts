@@ -11,7 +11,7 @@ import { createReleaseTransactionEvidence } from '../../tools/release/release-tr
 import { runReleaseOperation } from '../../tools/release/release-orchestration-runner.ts';
 import { spawnSync } from 'node:child_process';
 import { checkPublicationCompatibility } from '../../tools/release/release-publication.ts';
-import { runPluginHostedOperation } from '../../tools/release/plugin-hosted-release.ts';
+import { runPluginHostedOperation, readHostedPluginNoWriteProof } from '../../tools/release/plugin-hosted-release.ts';
 import { createReleaseArtifactFixture } from '../helpers/release-artifact-fixture.ts';
 
 const hash = (digit: string) => digit.repeat(40), digest = (digit: string) => `sha256-${digit.repeat(64)}`;
@@ -593,4 +593,44 @@ test('release closeout consumes the unique runner not-applicable result without 
   const result = await continuePackageRelease({ action: 'resume' }, f.scope, f.dependencies);
   assert.equal(result.status, 'passed'); assert.equal(result.outcomes.activation, 'not-applicable'); assert.equal(calls, 1);
   assert.equal(f.state.closeout.outcomes.activation, 'not-applicable');
+});
+
+test('a repaired plugin executor advances once more only with official skipped-upload proof while retaining the C1 package anchor', async () => {
+  const f = unattemptedPluginFixture();
+  await continuePackageRelease({ action: 'resume', authorized: true, recoverPublication: true }, f.scope, f.dependencies);
+  const c2 = structuredClone(f.state), sourceCommit = hash('6');
+  f.state.packagePublications['dsh-plugin'].runId = 204;
+  const failed = { ...f.run('dsh-plugin', 204, 'failure'), head_sha: f.executionCommit, display_title: 'DSH publish 0.1.0' };
+  const jobs = { total_count: 1, jobs: [{ id: 301, run_id: 204, head_sha: f.executionCommit, name: 'publish', status: 'completed', conclusion: 'failure',
+    steps: [{ number: 1, name: 'Publish immutable plugin', status: 'completed', conclusion: 'skipped' }] }] };
+  const proof = readHostedPluginNoWriteProof({ repo: '/fixture', runId: 204, version: '0.1.0', sourceCommit: f.executionCommit }, {
+    execute: (_command: string, args: string[]) => ({ status: 0, stdout: JSON.stringify(args[1].includes('/jobs?') ? jobs : failed) }) });
+  f.scope.readRun = (id: number) => id === 201 ? c2.packagePublications.buildr.evidence.run : failed;
+  f.scope.git = (args: string[]) => args[0] === 'fetch' ? '' : args[1] === 'origin/main' ? sourceCommit : hash('8');
+  f.scope.gh = () => JSON.stringify({ total_count: 1, workflow_runs: [failed] });
+  f.dependencies.readHostedPluginNoWriteProof = () => proof;
+  f.dependencies.runPluginHostedOperation = (input: any, deps: any) => {
+    assert.equal(input.sourceCommit, sourceCommit); assert.equal(input.originalSourceCommit, f.originalContext.convergence.mainCommit);
+    assert.equal(input.candidateRunId, 100);
+    if (!input.pointer.requested) {
+      const history = f.saved.at(-1).pluginPublicationRecoveryHistory;
+      assert.equal(history.length, 2); assert.deepEqual(history[1].noWriteProof, proof); assert.equal(Object.hasOwn(history[1], 'journal'), false);
+      f.requests.push(input); Object.assign(input.pointer, { requested: true, runId: null, sourceCommit, version: input.version }); deps.onPointer();
+    }
+    return { status: 'dispatch-unconfirmed' };
+  };
+  const before = structuredClone(f.state);
+  f.dependencies.readHostedPluginNoWriteProof = () => ({ ...proof, identity: digest('1') });
+  await assert.rejects(() => continuePackageRelease({ action: 'resume', authorized: true, recoverPublication: true }, f.scope, f.dependencies), /identity/);
+  assert.deepEqual(f.state, before); assert.equal(f.requests.length, 1);
+  f.dependencies.readHostedPluginNoWriteProof = () => proof;
+  assert.equal((await continuePackageRelease({ action: 'resume', authorized: true, recoverPublication: true }, f.scope, f.dependencies)).status, 'publication-dispatch-unconfirmed');
+  const recovery = f.state.context.packages['dsh-plugin'].executorRecovery;
+  assert.equal(recovery.sourceCommit, sourceCommit); assert.equal(recovery.originalContextIdentity, f.originalContext.identity);
+  assert.equal(recovery.previousNoWriteEvidenceIdentity, proof.identity); assert.equal(Object.hasOwn(recovery, 'previousJournalIdentity'), false);
+  assert.deepEqual(f.state.context.packages.buildr, c2.context.packages.buildr);
+  assert.deepEqual(f.state.packagePublications.buildr.evidence, c2.packagePublications.buildr.evidence);
+  assert.deepEqual(f.state.pluginPublicationRecoveryHistory[1].context, c2.context);
+  assert.equal((await continuePackageRelease({ action: 'resume', authorized: true, recoverPublication: true }, f.scope, f.dependencies)).status, 'publication-dispatch-unconfirmed');
+  assert.equal(f.requests.length, 2); assert.equal(f.state.pluginPublicationRecoveryHistory.length, 2);
 });
