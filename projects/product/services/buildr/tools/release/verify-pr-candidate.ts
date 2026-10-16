@@ -187,7 +187,7 @@ export async function verifyReleasePullRequestCandidate(
   return { status: 'passed', runId, sourceCommit, branch };
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+async function main(): Promise<void> {
   try {
     const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
     const repo = path.resolve(serviceRoot, '../../../..');
@@ -235,3 +235,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     process.exitCode = 1;
   }
 }
+
+// Complete module initialization before the admission adapter imports this module again.
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) void main();
