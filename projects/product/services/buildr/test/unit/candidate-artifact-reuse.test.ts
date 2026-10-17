@@ -5,6 +5,7 @@ import { gzipSync } from 'node:zlib';
 import {
   candidateArtifactImportFromEnvironment,
   decodeCandidateArtifactImport, encodeCandidateArtifactImport, MAX_ARTIFACT_IMPORT_CHARACTERS,
+  reusableCandidateArtifactStepIds,
   reusedCandidateArtifactResult,
   validateCandidateArtifactEvidence,
 } from '../verification/candidate-artifact-reuse.ts';
@@ -83,4 +84,34 @@ test('Host Node reuse keeps exact minimum and stable current tuple semantics', (
       assert.equal(validateCandidateArtifactEvidence(changed, host, context, changed.checkInputs, artifact), false, version);
     }
   }
+});
+
+test('clean failed local groups retain only successful children with unchanged inputs and actual environment', () => {
+  const group = { ...descriptor, steps: [{ id: 'contract' }, { id: 'payload' }, { id: 'parity' }] };
+  const original = evidence(group);
+  original.status = 'failed'; original.results[2].status = 'failed'; original.results[2].exitCode = 1;
+  const currentInputs = { ...original.checkInputs, parity: hash('corrected parity assertion') };
+  const expectedEnvironment = { executionEnvironment: { ...original.executionEnvironment, inputsIdentity: hash(currentInputs) } };
+  assert.deepEqual(reusableCandidateArtifactStepIds(original, group, context, currentInputs, artifact, expectedEnvironment), ['contract', 'payload']);
+  assert.equal(validateCandidateArtifactEvidence(original, group, context, original.checkInputs, artifact), false,
+    'successful children never make the failed group complete');
+  const adopted = reusedCandidateArtifactResult(original, 'payload');
+  assert.equal(adopted.artifactRecord.status, 'failed');
+  assert.equal(adopted.reusedFrom.durationMs, 100);
+  assert.equal(adopted.artifactRecord.results[2].status, 'failed');
+  const changedInputs = { ...currentInputs, payload: hash('changed payload assertion') };
+  assert.deepEqual(reusableCandidateArtifactStepIds(original, group, context, changedInputs, artifact, expectedEnvironment), ['contract']);
+  for (const change of [
+    (item: any) => { item.cleanupClean = false; },
+    (item: any) => { item.workflow = { runId: '52', runAttempt: '1' }; },
+    (item: any) => { item.artifact.sha256 = 'e'.repeat(64); },
+    (item: any) => { item.results.push(item.results[0]); },
+    (item: any) => { item.executionEnvironment.inputsIdentity = hash(currentInputs); },
+    (item: any) => { item.executionEnvironment.dependencyIdentity = hash('different actual dependencies'); },
+  ]) {
+    const changed = structuredClone(original); change(changed);
+    assert.deepEqual(reusableCandidateArtifactStepIds(changed, group, context, currentInputs, artifact, expectedEnvironment), []);
+  }
+  const changedEnvironment = { ...original.executionEnvironment, dependencyIdentity: hash('new actual controller') };
+  assert.deepEqual(reusableCandidateArtifactStepIds(original, group, context, currentInputs, artifact, { executionEnvironment: changedEnvironment }), []);
 });

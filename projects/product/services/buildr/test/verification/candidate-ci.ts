@@ -4,16 +4,17 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import { assertMinimumNodeVersion, createExactNodeExecutionEnvironment, spawnCommandSync } from '../../src/infrastructure/process.ts';
 import { enforceOfflineVerification } from '../../src/infrastructure/network/verification-network-policy.ts';
 import { executePlan } from './plan-runner.ts';
 import { createCandidateCiShardPlan } from './planner.ts';
 import { candidateSourceImportFromEnvironment, planCandidateSourceReuse } from './candidate-source-reuse.ts';
 import { assertFrozenCandidateCheckout, candidateArtifactImportFromEnvironment, candidateDeferredArtifactIds, candidateDependencyInputsIdentity, createCandidateDeferredPlan,
-  createCandidateExecutionEnvironment, readCandidateDeferredPlan, reusedCandidateArtifactResult, validateCandidateArtifactEvidence } from './candidate-artifact-reuse.ts';
+  createCandidateExecutionEnvironment, readCandidateDeferredPlan, reusableCandidateArtifactStepIds, reusedCandidateArtifactResult, validateCandidateArtifactEvidence } from './candidate-artifact-reuse.ts';
 import { collectVerificationReuseSnapshot, validateVerificationReuseRecord } from './verification-reuse.ts';
 import { CANDIDATE_CI_HOST_NODE_TUPLES, CANDIDATE_CI_SHARDS, resolveVerificationExecutionProfile, verificationSteps } from './registry.ts';
-import { createCandidateCheckInputReader } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
+import { createCandidateCheckInputReader, createCandidateSourceBinding } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
 import { assertCandidateRepairPlan, candidateProofDefinition, candidateProofDescriptors, candidateRepairShardPlan, reusedCandidateProofResult, validateCandidateRepairProof } from './candidate-repair.ts';
 import {
   aggregateCandidateCiEvidence,
@@ -76,13 +77,25 @@ function validateSourceRecord(record: any, stepId: string, runner: string): bool
     ...(step?.platformScope?.kind === 'common' ? {} : { runner }) });
 }
 
-function validateArtifactRecord(record: any, evidenceId: string, artifact?: any): boolean {
+function artifactRecordSourceMatches(record: any): boolean {
+  try {
+    const source = record.verificationSource ?? record.sourceCommit;
+    const binding = createCandidateSourceBinding(productRoot, record.sourceCommit, source);
+    return record.sourceTree === binding.productTree && (!record.verificationSource
+      ? !record.sourceBinding : isDeepStrictEqual(record.sourceBinding, binding));
+  } catch { return false; }
+}
+
+function validateArtifactRecord(record: any, evidenceId: string, artifact?: any, stepId?: string): boolean {
   const verificationSource = resolveCandidateSourceCommit(productRoot, expectedSource);
   const context = resolveCandidateExecutionContext(productRoot, verificationSource);
   const descriptor = candidateProofDescriptors().find(item => item.id === evidenceId);
-  return Boolean(descriptor && validateCandidateArtifactEvidence(record, descriptor, context, checkInputsFor(evidenceId, verificationSource), artifact,
-    { dependencyInputsIdentity: candidateDependencyInputsIdentity(productRoot, verificationSource,
-      descriptor.preparation ?? (descriptor.kind === 'host-node' ? descriptor.id === 'host-minimum-macos' ? 'publisher' : 'host' : 'base')) }));
+  if (!descriptor || !artifactRecordSourceMatches(record)) return false;
+  const inputs = checkInputsFor(evidenceId, verificationSource);
+  const environment = { dependencyInputsIdentity: candidateDependencyInputsIdentity(productRoot, verificationSource,
+    descriptor.preparation ?? (descriptor.kind === 'host-node' ? descriptor.id === 'host-minimum-macos' ? 'publisher' : 'host' : 'base')) };
+  return validateCandidateArtifactEvidence(record, descriptor, context, inputs, artifact, environment)
+    || Boolean(stepId && reusableCandidateArtifactStepIds(record, descriptor, context, inputs, artifact, environment).includes(stepId));
 }
 
 function artifactEnvironment(artifact: any): any  {
@@ -114,8 +127,21 @@ async function runShard(shardId: any): Promise<any>  {
   const externalArtifact: any = shard.requiresArtifact ? readCandidateCiArtifact(artifactDirectory, sourceCommit) : null;
   const repair = repairPlan();
   const originalPlan = createCandidateCiShardPlan(shardId, { externalArtifact: Boolean(externalArtifact) });
-  const plan: any = repair ? candidateRepairShardPlan(repair, shardId, originalPlan) : originalPlan;
   const checkInputs = checkInputsFor(shardId, verificationSource);
+  let localReused: any[] = [];
+  if (!Object.entries(process.env).some(([key, value]) => key.startsWith('GITHUB_') && value) && externalArtifact) {
+    try {
+      const previous = JSON.parse(fs.readFileSync(evidencePath(shardId), 'utf8'));
+      const descriptor = candidateProofDescriptors().find(item => item.id === shardId);
+      const reusable = artifactRecordSourceMatches(previous) ? reusableCandidateArtifactStepIds(previous, descriptor, executionContext, checkInputs,
+        externalArtifact.identity, { executionEnvironment: createCandidateExecutionEnvironment(productRoot, checkInputs, process.env, { preparation: shard.preparation }) }) : [];
+      localReused = reusable.map(stepId => reusedCandidateArtifactResult(previous, stepId));
+    } catch { /* Invalid, stale or incomplete prior proof must execute again. */ }
+  }
+  const reusedIds = new Set(localReused.map(result => result.id));
+  const plan: any = repair ? candidateRepairShardPlan(repair, shardId, originalPlan) : { ...originalPlan,
+    steps: originalPlan.steps.filter((step: any) => !reusedIds.has(step.id)).map((step: any) => ({ ...step,
+      dependsOn: step.dependsOn.filter((dependency: string) => !reusedIds.has(dependency)) })) };
   const startedAtMs: any = Date.now();
   const startedAt: any = new Date(startedAtMs).toISOString();
   let results: any[] = [];
@@ -175,6 +201,8 @@ async function runShard(shardId: any): Promise<any>  {
     if (repair) {
       const selected = repair.checks.find((item: any) => item.id === shardId);
       results = selected.steps.map((item: any) => item.disposition === 'reuse' ? reusedCandidateProofResult(item.proof) : results.find(result => result.id === item.id));
+    } else if (localReused.length > 0) {
+      results = shard.stepIds.map((stepId: string) => localReused.find(result => result.id === stepId) ?? results.find(result => result.id === stepId));
     }
     if (!workflowIdentity) assertFrozenCandidateCheckout(productRoot, verificationSource);
     status = execution.passed ? 'passed' : 'failed';

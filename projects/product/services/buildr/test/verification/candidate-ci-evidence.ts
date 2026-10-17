@@ -75,7 +75,8 @@ export function resolveCandidateExecutionContext(productRoot: any, sourceCommit:
   if (purpose === 'release-rehearsal' && !/^sha256-[a-f0-9]{64}$/u.test(rehearsalIdentity || '')) throw new Error('Release rehearsal requires a closed rehearsal identity.');
   if (purpose === 'candidate' && rehearsalIdentity) throw new Error('Final Candidate must not carry a release rehearsal identity.');
   if (env.BUILDR_CANDIDATE_PRODUCT_SOURCE) {
-    if (purpose !== 'candidate' || env.GITHUB_EVENT_NAME !== 'workflow_dispatch') throw new Error('Candidate repair requires the controlled candidate entry.');
+    const local = !Object.entries(env).some(([key, value]) => key.startsWith('GITHUB_') && value);
+    if (purpose !== 'candidate' || !local && env.GITHUB_EVENT_NAME !== 'workflow_dispatch') throw new Error('Candidate repair requires the controlled candidate entry or a local process without GitHub identity.');
     const sourceBinding = createCandidateSourceBinding(productRoot, env.BUILDR_CANDIDATE_PRODUCT_SOURCE, sourceCommit);
     return { purpose, sourceCommit: sourceBinding.productSource, sourceTree: sourceBinding.productTree, rehearsalIdentity,
       verificationSource: sourceCommit, sourceBinding };
@@ -379,7 +380,7 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any
         if (!options.validateCandidateProof?.(stepResult, id)) findings.push(evidenceFinding('candidate-repair-proof-invalid', id, stepId));
       }
       else if (stepResult.disposition === 'reused' && stepResult.artifactRecord) {
-        if (!options.validateArtifactRecord?.(stepResult.artifactRecord, id, item.artifact)) findings.push(evidenceFinding('artifact-reuse-invalid', id, stepId));
+        if (!options.validateArtifactRecord?.(stepResult.artifactRecord, id, item.artifact, stepId)) findings.push(evidenceFinding('artifact-reuse-invalid', id, stepId));
       }
       else if (stepResult.disposition === 'reused') {
         if (!stepResult.sourceRecord || !options.validateSourceRecord?.(stepResult.sourceRecord, stepId, expectation.runner)) {
@@ -398,7 +399,7 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any
     if (expectation.requestedNode && item.requestedNode !== expectation.requestedNode) findings.push(evidenceFinding('host-node-request-mismatch', id, item.requestedNode));
     if (expectation.kind === 'host-node') for (const result of item.results) {
       if (result.disposition === 'reused' && !(result.artifactRecord
-        ? options.validateArtifactRecord?.(result.artifactRecord, id, item.artifact)
+        ? options.validateArtifactRecord?.(result.artifactRecord, id, item.artifact, result.id)
         : options.validateCandidateProof?.(result, id))) findings.push(evidenceFinding('candidate-repair-proof-invalid', id, result.id));
     }
     if (expectation.kind === 'host-node' && (item.results.length !== 1 || item.results[0]?.id !== 'host-node-compatibility')) findings.push(evidenceFinding('host-node-result-missing', id, null));

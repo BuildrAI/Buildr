@@ -175,15 +175,15 @@ export function validCandidateExecutionEnvironment(evidence: any, checkInputs: R
 }
 
 /** The caller authenticates immutable input identities before checking reuse. */
-export function validateCandidateArtifactEvidence(evidence: any, descriptor: any, context: any, checkInputs: Record<string, string>, artifact?: any,
-  expectedEnvironment?: { dependencyInputsIdentity?: string; executionEnvironment?: any }): boolean {
+function validateCandidateArtifactEnvelope(evidence: any, descriptor: any, context: any, checkInputs: Record<string, string>, artifact?: any,
+  expectedEnvironment?: { dependencyInputsIdentity?: string; executionEnvironment?: any }, allowFailed = false): boolean {
   if (evidence?.schemaVersion !== CANDIDATE_CI_EVIDENCE_SCHEMA || !descriptor.requiresArtifact || descriptor.producesArtifact
     || evidence.id !== descriptor.id || evidence.kind !== descriptor.kind || evidence.sourceCommit !== context.sourceCommit
     || evidence.sourceTree !== context.sourceTree || evidence.purpose !== 'candidate' || evidence.rehearsalIdentity
     || (descriptor.platformScope?.kind === 'common' ? !['darwin', 'win32'].includes(evidence.runner?.platform)
       : evidence.runner?.platform !== platform(descriptor.runner) || evidence.runner?.os !== descriptor.runner)
     || descriptor.arch && evidence.runner.arch !== descriptor.arch
-    || evidence.status !== 'passed' || evidence.cleanupClean !== true || !evidence.artifact
+    || !(evidence.status === 'passed' || allowFailed && evidence.status === 'failed') || evidence.cleanupClean !== true || !evidence.artifact
     || evidence.artifact.sourceCommit !== context.sourceCommit || !/^[a-f0-9]{64}$/u.test(evidence.artifact.sha256 ?? '')
     || evidence.runner?.os !== (evidence.runner?.platform === 'darwin' ? 'macos' : 'windows')
     || !Number.isSafeInteger(evidence.artifact.size) || evidence.artifact.size < 1
@@ -199,9 +199,30 @@ export function validateCandidateArtifactEvidence(evidence: any, descriptor: any
   }
   const expected = descriptor.steps.map((step: any) => step.id);
   if (!Array.isArray(evidence.results) || evidence.results.length !== expected.length || new Set(evidence.results.map((result: any) => result.id)).size !== expected.length) return false;
-  return expected.every((id: string) => evidence.results.some((result: any) => result.id === id && result.status === 'passed' && result.exitCode === 0
-    && (result.childExitCode === undefined || result.childExitCode === 0) && (result.childSignal === undefined || result.childSignal === null)
-    && (result.childOutcome === undefined || result.childOutcome === 'passed') && (!result.processCleanup || result.processCleanup.status === 'clean')));
+  return expected.every((id: string) => evidence.results.some((result: any) => result.id === id))
+    && isDeepStrictEqual(Object.keys(checkInputs).sort(), [...expected].sort());
+}
+
+const passedArtifactStep = (result: any): boolean => result.status === 'passed' && result.exitCode === 0
+  && (result.childExitCode === undefined || result.childExitCode === 0) && (result.childSignal === undefined || result.childSignal === null)
+  && (result.childOutcome === undefined || result.childOutcome === 'passed') && (!result.processCleanup || result.processCleanup.status === 'clean');
+
+export function validateCandidateArtifactEvidence(evidence: any, descriptor: any, context: any, checkInputs: Record<string, string>, artifact?: any,
+  expectedEnvironment?: { dependencyInputsIdentity?: string; executionEnvironment?: any }): boolean {
+  return validateCandidateArtifactEnvelope(evidence, descriptor, context, checkInputs, artifact, expectedEnvironment)
+    && evidence.results.every(passedArtifactStep);
+}
+
+/** A failed local group is never complete proof. Its clean successful children
+ * can survive a retry only after their own inputs and the real environment agree.
+ * The caller also authenticates any separate verification source binding. */
+export function reusableCandidateArtifactStepIds(evidence: any, descriptor: any, context: any, checkInputs: Record<string, string>, artifact: any,
+  expectedEnvironment?: { dependencyInputsIdentity?: string; executionEnvironment?: any }): string[] {
+  if (evidence?.workflow || !evidence?.checkInputs
+    || !validateCandidateArtifactEnvelope(evidence, descriptor, context, evidence.checkInputs, artifact, expectedEnvironment, true)) return [];
+  return descriptor.steps.filter((step: any) => digestPattern.test(checkInputs[step.id] ?? '')
+    && evidence.checkInputs[step.id] === checkInputs[step.id]
+    && passedArtifactStep(evidence.results.find((result: any) => result.id === step.id))).map((step: any) => step.id);
 }
 
 export function sameCandidateExecutionEnvironment(left: any, right: any): boolean {

@@ -9,6 +9,7 @@ import {
   assertFrozenCandidateCheckout, candidateDeferredArtifactIds, candidateDependencyInputsIdentity, createCandidateDeferredPlan,
   readCandidateArtifactImports, readCandidateDeferredPlan,
 } from '../verification/candidate-artifact-reuse.ts';
+import { resolveCandidateExecutionContext } from '../verification/candidate-ci-evidence.ts';
 
 const hash = (value: unknown) => `sha256-${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
 const context = { sourceCommit: 'a'.repeat(40), sourceTree: 'b'.repeat(40), purpose: 'candidate' };
@@ -63,4 +64,29 @@ test('dependency source identity normalizes checkout aliases and local proof rej
   assert.throws(() => assertFrozenCandidateCheckout(service, source), /clean frozen checkout/);
   git(['add', '.']); git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', '-c', 'commit.gpgSign=false', 'commit', '-m', 'changed']);
   assert.throws(() => assertFrozenCandidateCheckout(service, source), /exact frozen source/);
+});
+
+test('local test-only repair binds its original package without assuming a GitHub identity', t => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'candidate-local-repair-'));
+  t.after(() => fs.rmSync(repo, { recursive: true, force: true }));
+  const service = path.join(repo, 'projects/product/services/buildr');
+  fs.mkdirSync(path.join(service, 'test'), { recursive: true });
+  const git = (args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const commit = (message: string) => { git(['add', '.']); git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', '-c', 'commit.gpgSign=false', 'commit', '-m', message]); return git(['rev-parse', 'HEAD']); };
+  git(['init', '--initial-branch=main']);
+  fs.writeFileSync(path.join(service, 'package.json'), '{"version":"1.0.0"}\n');
+  const product = commit('product');
+  fs.writeFileSync(path.join(service, 'test', 'parity.ts'), 'export const repaired = true;\n');
+  const verification = commit('test-only repair');
+  const env = { BUILDR_CANDIDATE_PRODUCT_SOURCE: product };
+  const local = resolveCandidateExecutionContext(service, verification, env);
+  assert.equal(local.sourceCommit, product); assert.equal(local.verificationSource, verification);
+  assert.equal(local.sourceBinding.productSource, product); assert.equal(local.sourceBinding.verificationSource, verification);
+  for (const identity of [{ GITHUB_RUN_ID: '52' }, { GITHUB_JOB: 'candidate' }, { GITHUB_SHA: product }, { GITHUB_EVENT_NAME: 'pull_request' }]) {
+    assert.throws(() => resolveCandidateExecutionContext(service, verification, { ...env, ...identity }), /without GitHub identity/);
+  }
+  assert.equal(resolveCandidateExecutionContext(service, verification, { ...env, GITHUB_EVENT_NAME: 'workflow_dispatch' }).sourceCommit, product);
+  fs.writeFileSync(path.join(service, 'package.json'), '{"version":"2.0.0"}\n');
+  const changed = commit('product changed');
+  assert.throws(() => resolveCandidateExecutionContext(service, changed, env), /build inputs changed/);
 });

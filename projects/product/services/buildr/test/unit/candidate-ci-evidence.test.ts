@@ -178,10 +178,30 @@ test('aggregate revalidates local artifact records and never turns them into sou
   owner.results[0].disposition = 'reused'; owner.results[0].artifactRecord = original;
   assert.equal(aggregateCandidateCiEvidence(complete, candidateContext, { runId: '52', runAttempt: '1' }).status, 'failed');
   const accepted = aggregateCandidateCiEvidence(complete, candidateContext, { runId: '52', runAttempt: '1' }, {
-    validateArtifactRecord(record: any, id: string, expected: any) { return record === original && id === owner.id && expected.sha256 === artifact.sha256; },
+    validateArtifactRecord(record: any, id: string, expected: any, stepId: string) {
+      return record === original && id === owner.id && expected.sha256 === artifact.sha256 && stepId === owner.results[0].id;
+    },
   });
   assert.equal(accepted.status, 'passed');
   assert.equal(owner.results[0].artifactRecord.workflow, null);
+});
+
+test('aggregate authenticates a reused child of a failed local group by its exact step', () => {
+  const complete = passedEvidence({ runId: '52', runAttempt: '1' });
+  const owner = complete.find((item: any) => item.id === 'core-package-runtime-release-macos');
+  const original = structuredClone(owner); original.workflow = null; original.status = 'failed'; original.cleanupClean = true;
+  original.results[2].status = 'failed'; original.results[2].exitCode = 1;
+  for (const result of owner.results.slice(0, 2)) { result.disposition = 'reused'; result.artifactRecord = original; }
+  const seen: string[] = [];
+  const options = { validateArtifactRecord(record: any, id: string, expected: any, stepId: string) {
+    seen.push(stepId);
+    return record === original && id === owner.id && expected.sha256 === artifact.sha256
+      && original.results.some((result: any) => result.id === stepId && result.status === 'passed' && result.exitCode === 0);
+  } };
+  assert.equal(aggregateCandidateCiEvidence(complete, candidateContext, { runId: '52', runAttempt: '1' }, options).status, 'passed');
+  assert.deepEqual(seen, owner.primaryStepIds.slice(0, 2));
+  owner.results[2].disposition = 'reused'; owner.results[2].artifactRecord = original;
+  assert.equal(aggregateCandidateCiEvidence(complete, candidateContext, { runId: '52', runAttempt: '1' }, options).status, 'failed');
 });
 
 test('Candidate aggregate accepts one current complete evidence set', () => {

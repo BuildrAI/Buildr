@@ -2,7 +2,6 @@
 
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnCommandSync } from '../../../src/infrastructure/process.ts';
@@ -11,11 +10,20 @@ import { resolveCandidateExecutionContext, resolveCandidateSourceCommit } from '
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const checkoutCli: any = path.join(productRoot, 'bin', 'buildr.mjs');
-const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-cli-parity-'));
+// Use the common smoke owner for both registered and direct invocations.
+if (!process.env.BUILDR_SMOKE_ROOT) {
+  const child = spawnCommandSync(process.execPath, [
+    path.join(productRoot, 'tools/development/run-isolated-workspace-smoke.ts'),
+    '--script', fileURLToPath(import.meta.url),
+  ], { cwd: productRoot, stdio: 'inherit' });
+  if (child.error) throw child.error;
+  process.exit(child.status ?? 1);
+}
+const root: any = fs.mkdtempSync(path.join(process.env.BUILDR_SMOKE_ROOT, 'cli-parity-'));
 
 function spawn(command: any, args: any, options: any = {}): any  {
   return spawnCommandSync(command, args, {
-    cwd: options.cwd || productRoot,
+    cwd: options.cwd || root,
     encoding: 'utf8',
     env: {
       ...process.env,
