@@ -161,6 +161,7 @@ function fixture(t: any, changes: { mainRuntime?: boolean; omitSourcePatch?: boo
   const state = () => JSON.parse(fs.readFileSync(file, 'utf8'));
   let task: any = null, worktreeCreated = false, candidateVisible = false, candidateDispatches = 0, pluginDispatches = 0;
   let merges = 0, mainReads = 0, unpublishedReads = 0, pluginSourceReads = 0, postMainReads = 0, pr: any = null, postMainSource = '';
+  let mainGate = 'ready', mainReadbackFailed = false, loseMergeResponse = false, elapsed = 0;
   const events: string[] = [], requests: any[] = [];
   const runtime = {
     inspectTask(target: string, id: string) {
@@ -199,6 +200,10 @@ function fixture(t: any, changes: { mainRuntime?: boolean; omitSourcePatch?: boo
         display_title: plugin ? 'DSH prepare ' + pluginVersion : 'Candidate', run_attempt: 1, status: 'completed', conclusion: 'success' });
     }
     if (args[0] === 'pr' && args[1] === 'list') return body(pr ? [pr] : []);
+    if (args[0] === 'pr' && args[1] === 'view') return mainReadbackFailed ? { status: 1, stderr: 'HTTP 503 readback unavailable' }
+      : body({ ...pr, mergeStateStatus: mainGate === 'ready' ? 'CLEAN' : 'BLOCKED', mergeable: 'MERGEABLE', isDraft: false });
+    if (args[0] === 'pr' && args[1] === 'checks') return body([{ name: 'protected-gate', state: mainGate === 'ready' ? 'SUCCESS' : 'IN_PROGRESS',
+      bucket: mainGate === 'ready' ? 'pass' : mainGate === 'failed' ? 'fail' : 'pending' }]);
     if (args[0] === 'pr' && args[1] === 'create') {
       assert.ok(events.includes('source-proof')); events.push('pr-created');
       pr = { number: 1, state: 'OPEN', headRefOid: state().sourceCommit, headRefName: args[args.indexOf('--head') + 1], baseRefName: 'main', url: 'https://github.com/BuildrAI/Buildr/pull/1' };
@@ -210,11 +215,15 @@ function fixture(t: any, changes: { mainRuntime?: boolean; omitSourcePatch?: boo
       git(workspace, ['worktree', 'add', '--detach', merger, 'origin/main']); git(merger, ['merge', '--no-ff', state().sourceCommit, '-m', 'release merge']);
       const merged = git(merger, ['rev-parse', 'HEAD']); git(merger, ['push', 'origin', 'HEAD:main']); git(workspace, ['worktree', 'remove', merger]);
       git(workspace, ['push', 'origin', ':refs/heads/' + pr.headRefName, ':refs/heads/release-' + selectionId]);
-      pr = { ...pr, state: 'MERGED', mergedAt: new Date().toISOString(), mergeCommit: { oid: merged } }; return { status: 0, stdout: '' };
+      pr = { ...pr, state: 'MERGED', mergedAt: new Date().toISOString(), mergeCommit: { oid: merged } };
+      return loseMergeResponse ? { status: 1, stderr: 'lost merge response' } : { status: 0, stdout: '' };
     }
     assert.fail('Unexpected fixture host command ' + args.join(' '));
   };
-  const dependencies = { prepareLocalSourceVerification: () => ({status:'ready',transport:null,missingStepIds:[]}), execute, runtime, resolveRetainedController: () => ({ workspaceRoot: workspace }),
+  const dependencies = { prepareLocalSourceVerification: (input: any) => {
+    assert.equal(input.base, baseline, 'source verification receives the immutable release baseline');
+    return {status:'ready',transport:null,missingStepIds:[]};
+  }, execute, runtime, now: () => elapsed, sleep: async (ms: number) => { elapsed += ms; }, resolveRetainedController: () => ({ workspaceRoot: workspace }),
     invokeRetainedController(_controller: any, args: string[]) {
       if (args[0] === 'task' && args[1] === 'create') { task = { taskId, status: 'active', title: 'Plugin release' }; return { status: 'created', record: task, effects: [] }; }
       assert.deepEqual(args.slice(0, 2), ['worktree', 'create']); assert.equal(args[args.indexOf('--start-point') + 1], baseline);
@@ -243,10 +252,52 @@ function fixture(t: any, changes: { mainRuntime?: boolean; omitSourcePatch?: boo
   const options = { action: 'prepare', workspace, packages: 'dsh-plugin', pluginVersion, baseline, sources: [selectedSource], detail: 'full' };
   return { workspace, repo, baseline, peer, state, options, dependencies, events, requests,
     revealCandidate() { candidateVisible = true; },
+    setMainGate(value: string) { mainGate = value; },
+    setMainReadbackFailed(value: boolean) { mainReadbackFailed = value; },
+    loseMergeResponse() { loseMergeResponse = true; },
     counts: () => ({ candidateDispatches, pluginDispatches, merges, mainReads, unpublishedReads, pluginSourceReads, postMainReads }),
     remoteRef: (name: string) => git(workspace, ['ls-remote', 'origin', 'refs/heads/' + name]),
   };
 }
+
+releaseSelectionTest('protected main waiting, failed checks and unknown reads resume the same PR without rerunning the Candidate', async t => {
+  const data = fixture(t);
+  assertReleaseStatus(await runReleaseOperation(data.options, data.dependencies), 'candidate-dispatch-unconfirmed'); data.revealCandidate();
+  data.setMainGate('pending');
+  const pending = await runReleaseOperation(data.options, data.dependencies);
+  assertReleaseStatus(pending, 'main-merge-pending'); assert.equal(pending.mainPullRequest.durationMs, 30_000);
+  assert.equal(pending.recovery.stage, 'adoption-readiness'); assert.equal(pending.recovery.automaticFullRerun, false);
+  assert.equal(data.counts().merges, 0); assert.equal(data.counts().pluginDispatches, 0);
+  const frozenSource = data.state().sourceCommit, candidateRunId = data.state().candidate.runId;
+  data.setMainGate('failed');
+  const failed = await runReleaseOperation(data.options, data.dependencies);
+  assertReleaseStatus(failed, 'blocked'); assert.equal(failed.diagnostic.code, 'release-main-required-check-failed');
+  assert.equal(data.counts().merges, 0);
+  data.setMainReadbackFailed(true);
+  const unknown = await runReleaseOperation(data.options, data.dependencies);
+  assertReleaseStatus(unknown, 'main-merge-readback-required'); assert.equal(unknown.recovery.action, 'read-original-request');
+  assert.equal(data.counts().merges, 0);
+  data.setMainReadbackFailed(false); data.setMainGate('ready');
+  assertReleaseStatus(await runReleaseOperation(data.options, data.dependencies), 'awaiting-publication-authorization');
+  assert.equal(data.state().sourceCommit, frozenSource); assert.equal(data.state().candidate.runId, candidateRunId);
+  assert.equal(data.counts().candidateDispatches, 1); assert.equal(data.counts().merges, 1); assert.equal(data.counts().pluginDispatches, 1);
+  assert.equal(data.requests.filter((args: string[]) => args[0] === 'pr' && args[1] === 'create').length, 1);
+  const merge = data.requests.find((args: string[]) => args[0] === 'pr' && args[1] === 'merge');
+  assert.ok(merge.includes('--match-head-commit')); assert.ok(merge.includes('--merge'));
+  assert.ok(data.requests.every((args: string[]) => !args.includes('--admin') && !args.includes('--auto')));
+});
+
+releaseSelectionTest('unknown main merge response is read back before continuation and does not merge or create a PR twice', async t => {
+  const data = fixture(t);
+  assertReleaseStatus(await runReleaseOperation(data.options, data.dependencies), 'candidate-dispatch-unconfirmed'); data.revealCandidate();
+  data.loseMergeResponse();
+  const unknown = await runReleaseOperation(data.options, data.dependencies);
+  assertReleaseStatus(unknown, 'main-merge-readback-required'); assert.equal(data.counts().merges, 1);
+  assert.equal(unknown.effects.find((effect: any) => effect.type === 'release-main-merge').state, 'unknown');
+  assertReleaseStatus(await runReleaseOperation(data.options, data.dependencies), 'awaiting-publication-authorization');
+  assert.equal(data.counts().candidateDispatches, 1); assert.equal(data.counts().merges, 1); assert.equal(data.counts().pluginDispatches, 1);
+  assert.equal(data.requests.filter((args: string[]) => args[0] === 'pr' && args[1] === 'create').length, 1);
+});
 
 releaseSelectionTest('plugin-only prepare recovers one lost source dispatch, admits exact peer proof, and prepares separate main bytes without resurrecting refs', async t => {
   const data = fixture(t);

@@ -44,10 +44,10 @@ test('restoring controller dependencies rechecks prior package proof before exec
     execute: () => assert.fail('restored valid proof must not execute again'),
   });
   assert.equal(result.status, 'passed');
-  assert.deepEqual(preparations, ['consumer', 'host', 'browser-artifact', 'source-runtime']);
+  assert.deepEqual(preparations, ['browser-artifact', 'base', 'consumer', 'host']);
   assert.ok(result.results.every((node: any) => node.disposition === 'reused'));
   assert.ok(observations.includes('host-current-macos:host'));
-  assert.equal(activePreparation, 'source-runtime');
+  assert.equal(activePreparation, 'host');
 });
 
 test('an invalid package proof remains a miss after preparation and still executes', t => {

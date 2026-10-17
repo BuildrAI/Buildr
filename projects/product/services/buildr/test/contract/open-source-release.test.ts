@@ -469,6 +469,7 @@ test('CI and publish workflows use the supported Node runtime', () => {
   assert.deepEqual(Object.keys(verifyDocument.on).sort(), ['pull_request', 'workflow_dispatch']);
   assert.deepEqual(verifyDocument.on.pull_request.branches, ['dev', 'main']);
   assert.equal(verifyDocument.on.push, undefined);
+  assert.equal(verifyDocument.env.BUILDR_VERIFICATION_BASE, '${{ inputs.selection_baseline || \'\' }}', 'Candidate and formal repair share their already frozen selection baseline');
   assert.equal(verifyDocument.jobs['dev-feedback-macos'].if, "github.event_name == 'pull_request' && github.base_ref == 'dev'");
   assert.equal(verifyDocument.jobs['dev-feedback-windows'].if, "github.event_name == 'pull_request' && github.base_ref == 'dev'");
   assert.equal(verifyDocument.jobs['dev-feedback-macos']['runs-on'], 'macos-latest');

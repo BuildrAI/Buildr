@@ -885,7 +885,9 @@ export const CORE_MACOS_SHARDS: any = Object.freeze([
     'application-payload-release',
     'open-source-candidate',
     'cli-package-parity',
-  ], { requiresArtifact: true, preparation: 'source-runtime' }),
+  // These consumers use the original package Web payload or explicit generated
+  // fixtures. Only the backend harness is needed; never rebuild source Web here.
+  ], { requiresArtifact: true, preparation: 'base' }),
   candidateShard('core-cli-contract-macos', 'macos', 'verification', [
     'capability-cli-integration',
     'commands-cli-integration',

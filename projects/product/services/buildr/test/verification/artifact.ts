@@ -51,12 +51,12 @@ export function createLocalArtifactPlan(platform = process.platform, options: an
   const hosts = scope === 'common' ? [] : CANDIDATE_CI_HOST_NODE_TUPLES.filter((tuple: any) => tuple.runner === runner && tuple.expectation === nodeTuple);
   const nodes = [...shards.map((shard: any) => ({ id: shard.id, action: 'run', preparation: shard.preparation, stepIds: shard.stepIds })),
     ...hosts.map((tuple: any) => ({ id: tuple.id, action: 'host', preparation: tuple.id === 'host-minimum-macos' ? 'publisher' : 'host', stepIds: ['host-node-compatibility'] }))];
-  // Group by the actual dependency operation: source-runtime also needs full
-  // development dependencies. Keep it adjacent to browser preparation so the
-  // controller does not alternate full -> production-only -> full installs.
+  // Source verification leaves a full controller environment. Consume it first,
+  // then move once to production-only consumers; never remove development
+  // dependencies only to restore them for the next package check.
   const dependencyMode = (node: any) => candidateEnvironmentPlan(node.preparation)
     .find(operation => operation.id === 'buildr-dependencies')!.args.includes('--omit=dev') ? 0 : 1;
-  nodes.sort((left, right) => dependencyMode(left) - dependencyMode(right));
+  nodes.sort((left, right) => dependencyMode(right) - dependencyMode(left));
   return { schemaVersion: 'buildr.local-artifact-plan/v1', runner, scope, nodeTuple, nodes };
 }
 

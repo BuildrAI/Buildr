@@ -26,6 +26,25 @@ test('release preparation transports only the content-validated source bundle', 
   assert.deepEqual(decodeCandidateSourceImport(ready.transport).records, [record]);
 });
 
+test('candidate preparation and recovery use the frozen baseline instead of the shell tracking ref', async () => {
+  const base = 'b'.repeat(40);
+  const env = { BUILDR_VERIFICATION_BASE: 'origin/dev', KEEP: 'source-context' };
+  const dependencies = { ...fixture([]), collectBundle(options: any) {
+    assert.equal(options.env.BUILDR_VERIFICATION_BASE, base);
+    assert.equal(options.env.KEEP, 'source-context');
+    return { schemaVersion: 'buildr.verification-source-bundle/v1', records: [] };
+  } };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const result = await prepareLocalSourceVerification({ repo: '/frozen', base, env }, dependencies);
+    assert.equal(result.verificationBase, base);
+    assert.ok(result.nextActions[0].includes(`test:source -- --base ${base}`));
+    assert.equal(env.BUILDR_VERIFICATION_BASE, 'origin/dev');
+  }
+  for (const invalid of ['origin/dev', 'b'.repeat(41)]) {
+    await assert.rejects(prepareLocalSourceVerification({ repo: '/frozen', base: invalid }, dependencies), /exact frozen comparison base/u);
+  }
+});
+
 test('plugin-only preparation transports its own source phases and does not require Buildr source checks', async () => {
   const phases = ['dsh-plugin:unit'].map(stepId => ({ ...record, identity: { ...record.identity, stepId } }));
   const dependencies = { ...fixture([]), createSourcePlan: () => ({ status: 'blocked', steps: [], runner: 'macos' }),

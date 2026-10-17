@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { reconcilePublicationAfterPreparedContext, resolveRetainedController, runReleaseOperation } from '../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts';
+import { reconcilePublicationAfterPreparedContext, resolveRetainedController, runReleaseOperation, waitForReleaseMainPullRequest } from '../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts';
 import { readCandidateEvidence } from '../../../../../../skills/buildr-release/scripts/release-transaction-runner.ts';
 import { createReleaseArtifactFixture } from '../helpers/release-artifact-fixture.ts';
 import { aggregateCandidateCiEvidence, candidateCiRegistryIdentity, createCandidateCiEvidence, CANDIDATE_CI_AGGREGATE_SCHEMA } from '../verification/candidate-ci-evidence.ts';
@@ -14,6 +14,86 @@ import { createCandidateSourceBinding } from '../../../../../../skills/buildr-re
 import { normalizeReleaseTargets } from '../../../../../../skills/buildr-release/scripts/release-targets.ts';
 
 const sourceRoot = path.resolve(import.meta.dirname, '../..');
+
+function protectedMainFixture(): any {
+  const sourceCommit = 'a'.repeat(40), branch = 'codex/release-main-1.0.0-rc.1-g1';
+  const options = { repo: '/isolated-release', url: 'https://github.com/BuildrAI/Buildr/pull/1', sourceCommit, branch };
+  const pullRequest = { state: 'OPEN', headRefOid: sourceCommit, headRefName: branch, baseRefName: 'main', url: options.url,
+    mergeStateStatus: 'CLEAN', mergeable: 'MERGEABLE', isDraft: false };
+  let elapsed = 0;
+  const requests: string[][] = [], waits: number[] = [];
+  return { options, pullRequest, requests, waits, elapsed: () => elapsed,
+    dependencies(read: (args: string[]) => any) { return { now: () => elapsed,
+      sleep: async (ms: number) => { elapsed += ms; waits.push(ms); },
+      execute: (command: string, args: string[], config: any) => {
+        assert.equal(command, 'gh'); assert.equal(config.cwd, options.repo);
+        assert.ok(config.timeout > 0 && config.timeout <= 30_000);
+        assert.ok(args[0] === 'pr' && ['view', 'checks'].includes(args[1]!), 'waiting is read-only');
+        if (args[1] === 'checks') assert.ok(args.includes('--required'));
+        requests.push(args); return read(args);
+      } }; },
+  };
+}
+
+test('protected main waits through an uncomputed state and missing checks, then admits the same ready PR', async () => {
+  const f = protectedMainFixture();
+  const result = await waitForReleaseMainPullRequest(f.options, f.dependencies((args: string[]) => args[1] === 'view'
+    ? { status: 0, stdout: JSON.stringify({ ...f.pullRequest, ...(f.elapsed() === 0 ? { mergeStateStatus: 'UNKNOWN', mergeable: 'UNKNOWN' } : {}) }) }
+    : f.elapsed() === 0 ? { status: 1, stdout: '', stderr: `no checks reported on the '${f.options.branch}' branch` }
+      : { status: 0, stdout: JSON.stringify([{ name: 'protected-gate', bucket: 'pass', state: 'SUCCESS' }]) }));
+  assert.equal(result.status, 'ready'); assert.equal(result.pullRequest.url, f.options.url);
+  assert.equal(result.durationMs, 3_000); assert.deepEqual(f.waits, [3_000]);
+});
+
+test('protected main waiting stops at its bounded deadline without a failed merge or repeated work', async () => {
+  const f = protectedMainFixture();
+  const result = await waitForReleaseMainPullRequest(f.options, f.dependencies((args: string[]) => ({ status: args[1] === 'checks' ? 8 : 0,
+    stdout: JSON.stringify(args[1] === 'view' ? { ...f.pullRequest, mergeStateStatus: 'BLOCKED' }
+      : [{ name: 'protected-gate', bucket: 'pending', state: 'IN_PROGRESS' }]) })));
+  assert.equal(result.status, 'pending'); assert.equal(result.durationMs, 30_000);
+  assert.equal(f.requests.length, 20); assert.equal(f.waits.length, 10);
+  assert.equal(result.checks[0].name, 'protected-gate');
+});
+
+test('a clean new PR still waits for its required check to register', async () => {
+  const f = protectedMainFixture();
+  const result = await waitForReleaseMainPullRequest(f.options, f.dependencies((args: string[]) => ({ status: 0,
+    stdout: JSON.stringify(args[1] === 'view' ? f.pullRequest
+      : f.elapsed() === 0 ? [] : [{ name: 'Candidate gate', bucket: 'pass', state: 'SUCCESS' }]) })));
+  assert.equal(result.status, 'ready');
+  assert.deepEqual(f.waits, [3_000], 'an initially empty required-check list is not permission to merge');
+});
+
+for (const bucket of ['fail', 'cancel']) test(`protected main reports required ${bucket} without waiting or touching unrelated checks`, async () => {
+  const f = protectedMainFixture();
+  const result = await waitForReleaseMainPullRequest(f.options, f.dependencies((args: string[]) => ({ status: args[1] === 'checks' ? 1 : 0,
+    stdout: JSON.stringify(args[1] === 'view' ? { ...f.pullRequest, mergeStateStatus: 'BLOCKED' } : [{ name: 'protected-gate', bucket }]) })));
+  assert.equal(result.status, 'blocked'); assert.equal(result.diagnostic.code, 'release-main-required-check-failed');
+  assert.deepEqual(f.waits, []);
+});
+
+test('protected main readback failures are unknown and credential-shaped diagnostics are redacted', async () => {
+  const f = protectedMainFixture();
+  const result = await waitForReleaseMainPullRequest(f.options, f.dependencies(() => ({ status: 1,
+    stderr: 'HTTP 503 Bearer private-value' })));
+  assert.equal(result.status, 'unknown'); assert.equal(result.diagnostic.httpStatus, 503);
+  assert.doesNotMatch(JSON.stringify(result), /private-value/u); assert.deepEqual(f.waits, []);
+});
+
+for (const condition of ['head-drift', 'closed', 'draft', 'DIRTY', 'BEHIND']) test(`protected main rejects ${condition} before any merge`, async () => {
+  const f = protectedMainFixture();
+  const changed = condition === 'head-drift' ? { headRefOid: 'b'.repeat(40) } : condition === 'closed' ? { state: 'CLOSED' }
+    : condition === 'draft' ? { isDraft: true } : { mergeStateStatus: condition };
+  const result = await waitForReleaseMainPullRequest(f.options, f.dependencies(() => ({ status: 0, stdout: JSON.stringify({ ...f.pullRequest, ...changed }) })));
+  assert.equal(result.status, 'blocked'); assert.equal(f.requests.length, 1); assert.deepEqual(f.waits, []);
+});
+
+test('protected main readback adopts an externally completed merge without requesting another merge', async () => {
+  const f = protectedMainFixture();
+  const result = await waitForReleaseMainPullRequest(f.options, f.dependencies(() => ({ status: 0,
+    stdout: JSON.stringify({ ...f.pullRequest, state: 'MERGED' }) })));
+  assert.equal(result.status, 'ready'); assert.equal(result.pullRequest.state, 'MERGED'); assert.equal(f.requests.length, 1);
+});
 
 test('retained release controller accepts a newer Node and rejects an unmet source minimum', t => {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-retained-controller-node-'));
@@ -380,6 +460,8 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
       ...(repairRequested ? [{ databaseId: 701, headSha: sourceCommit, displayTitle: 'Candidate repair 700 ' + verificationSource, status: 'completed', conclusion: 'success' }] : [])] : []);
     if (args[0] === 'api') return body({ id: args[1]?.endsWith('/701') ? 701 : 700, head_sha: sourceCommit, run_attempt: candidateAttempt, path: '.github/workflows/verify.yml', repository: { full_name: 'BuildrAI/Buildr' }, event: 'workflow_dispatch', status: candidateComplete ? 'completed' : 'queued', conclusion: candidateComplete ? candidateConclusion : null });
     if (args[0] === 'pr' && args[1] === 'list') return body(pr ? [pr] : []);
+    if (args[0] === 'pr' && args[1] === 'view') return body({ ...pr, mergeStateStatus: 'CLEAN', mergeable: 'MERGEABLE', isDraft: false });
+    if (args[0] === 'pr' && args[1] === 'checks') return body([{ name: 'protected-gate', state: 'SUCCESS', bucket: 'pass' }]);
     if (args[0] === 'pr' && args[1] === 'create') {
       pr = { number: 1, state: 'OPEN', headRefOid: sourceCommit, headRefName: args[args.indexOf('--head') + 1], baseRefName: 'main', url: 'https://github.com/BuildrAI/Buildr/pull/1' };
       return { status: 0, stdout: pr.url };
@@ -403,6 +485,7 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
     // running every source check inside its deliberately minimal repository.
     prepareLocalSourceVerification: async (input: any) => {
       assert.equal(input.repo, repo);
+      assert.equal(input.base, sourceCommit, 'local source checks use the immutable selected baseline');
       assert.deepEqual(input.packages, ['buildr']);
       return { status: 'ready', transport: 'owned-source-proof', recordCount: 1, missingStepIds: [] };
     },

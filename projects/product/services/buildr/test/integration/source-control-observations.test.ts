@@ -40,8 +40,25 @@ function fixture(t: test.TestContext, options: { waitMs?: number; idleMs?: numbe
     }
     throw Error('Observation never became quiet.');
   };
+  const nextInvalidation = async (cursor: string, timeoutMs = 5000) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      // An empty long-poll response is a heartbeat, not evidence that an expected
+      // filesystem notification is missing. Keep one bounded wait across polls.
+      while (!controller.signal.aborted) {
+        const current = await observations.watch(root, cursor, controller.signal);
+        if (controller.signal.aborted) break;
+        if (current.repositoryIds.length || current.refsRepositoryIds?.length || current.refreshAll || current.diagnostics?.length) return current;
+        cursor = current.cursor;
+      }
+      throw Error(`Observation did not invalidate within ${timeoutMs} ms.`);
+    } finally {
+      clearTimeout(timer); controller.abort();
+    }
+  };
   const register = async () => { await observations.observe(root, application.sourceControl(root)); return quiet((await observations.watch(root)).cursor); };
-  return { root, locations, git, write, catalog, application, observations, quiet, register };
+  return { root, locations, git, write, catalog, application, observations, quiet, nextInvalidation, register };
 }
 
 test('external and atomic saves invalidate only their Repository, including edits of an already modified file', async t => {
@@ -264,19 +281,54 @@ test('unselected branch and packed refs changes are distinguished from index cha
   const f = fixture(t); let state = await f.register();
   const before = f.application.sourceControl(f.root, { repositoryId: 'repo-0' }).observedRevision;
   f.git(f.locations[0], 'branch', 'not-checked-out');
-  state = await deadline(f.observations.watch(f.root, state.cursor));
+  state = await f.nextInvalidation(state.cursor);
   assert.deepEqual(state.refsRepositoryIds, ['repo-0']);
   assert.equal(f.application.sourceControl(f.root, { repositoryId: 'repo-0' }).observedRevision, before, 'status alone cannot detect an unselected branch');
   state = await f.quiet(state.cursor);
   f.git(f.locations[0], 'pack-refs', '--all');
-  state = await deadline(f.observations.watch(f.root, state.cursor));
+  state = await f.nextInvalidation(state.cursor);
   assert.deepEqual(state.refsRepositoryIds, ['repo-0']);
   state = await f.quiet(state.cursor);
-  f.write(0, 'staged change'); state = await deadline(f.observations.watch(f.root, state.cursor)); state = await f.quiet(state.cursor);
+  f.write(0, 'staged change'); state = await f.nextInvalidation(state.cursor); state = await f.quiet(state.cursor);
   f.git(f.locations[0], 'add', 'file.txt');
-  state = await deadline(f.observations.watch(f.root, state.cursor));
+  state = await f.nextInvalidation(state.cursor);
   assert.deepEqual(state.repositoryIds, ['repo-0']);
   assert.deepEqual(state.refsRepositoryIds, []);
+});
+
+test('a refs observation arriving after an empty heartbeat is still awaited', async t => {
+  const f = fixture(t); const state = await f.register();
+  const watch = f.observations.watch.bind(f.observations);
+  let emptyHeartbeats = 0;
+  t.mock.method(f.observations, 'watch', async (...args: Parameters<typeof watch>) => {
+    const current = await watch(...args);
+    if (!current.repositoryIds.length && !current.refreshAll && ++emptyHeartbeats === 1) {
+      f.git(f.locations[0], 'branch', 'after-first-heartbeat');
+    }
+    return current;
+  });
+  const update = await f.nextInvalidation(state.cursor);
+  assert.ok(emptyHeartbeats >= 1, 'the Git change is deliberately made after the first empty heartbeat');
+  assert.deepEqual(update.repositoryIds, ['repo-0']);
+  assert.deepEqual(update.refsRepositoryIds, ['repo-0']);
+});
+
+test('waiting for an invalidation preserves unrelated events and cancels the active poll at its deadline', async t => {
+  const f = fixture(t); const state = await f.register();
+  f.write(0, 'worktree-only change');
+  const changed = await f.nextInvalidation(state.cursor);
+  assert.deepEqual(changed.repositoryIds, ['repo-0']);
+  assert.deepEqual(changed.refsRepositoryIds, [], 'the helper cannot swallow a non-refs event while waiting for refs');
+  const quiet = await f.quiet(changed.cursor);
+  const watch = f.observations.watch.bind(f.observations);
+  let activePolls = 0; let activeSignal: AbortSignal | undefined;
+  t.mock.method(f.observations, 'watch', async (...args: Parameters<typeof watch>) => {
+    activePolls++; activeSignal = args[2];
+    try { return await watch(...args); } finally { activePolls--; }
+  });
+  await assert.rejects(f.nextInvalidation(quiet.cursor, 30), /Observation did not invalidate within 30 ms\./);
+  assert.equal(activeSignal?.aborted, true);
+  assert.equal(activePolls, 0, 'a missing notification cannot leave a background watch or retry loop');
 });
 
 test('replacing a checkout at the same path rebinds filesystem identity rather than retaining the old inode', async t => {

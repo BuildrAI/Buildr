@@ -18,8 +18,11 @@ test('package selection keeps common checks once and native package checks separ
     assert.equal(new Set(plan.nodes.map((node: any) => node.id)).size, plan.nodes.length);
     const modes = plan.nodes.map((node: any) => candidateEnvironmentPlan(node.preparation)
       .find(operation => operation.id === 'buildr-dependencies')!.args.includes('--omit=dev') ? 'production' : 'development');
-    assert.deepEqual(modes.filter((mode: string, index: number) => mode !== modes[index - 1]), ['production', 'development'],
-      'source-runtime and browser controllers share full dependencies without an intervening production install');
+    assert.deepEqual(modes.filter((mode: string, index: number) => mode !== modes[index - 1]), ['development', 'production'],
+      'source and browser controllers finish before the single move to production-only consumers');
+    assert.ok(plan.nodes.every((node: any) => !candidateEnvironmentPlan(node.preparation)
+      .some(operation => ['buildr-web-dependencies', 'buildr-web-source-runtime'].includes(operation.id))),
+      'package verification consumes original Web bytes and never prepares source Web');
   }
   assert.throws(() => createLocalArtifactPlan('linux'), /No package platform/u);
 });

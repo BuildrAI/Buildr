@@ -7,9 +7,10 @@ import { collectVerificationReuseBundle, collectVerificationReuseSnapshot, creat
 // This owner checks local source readiness before spending a remote Candidate.
 // Final package, other platforms and publishing remain separate owners.
 export async function prepareLocalSourceVerification(options: {
-  repo: string; sourceFile?: string; platform?: string; env?: NodeJS.ProcessEnv; packages?: string[];
+  repo: string; sourceFile?: string; base?: string; platform?: string; env?: NodeJS.ProcessEnv; packages?: string[];
 }, dependencies: any = {}): Promise<any> {
-  const sourceEnv = enforceOfflineVerification({ ...(options.env ?? process.env) });
+  if (options.base !== undefined && !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(options.base)) throw new Error('Local candidate source verification requires an exact frozen comparison base.');
+  const sourceEnv = enforceOfflineVerification({ ...(options.env ?? process.env), ...(options.base ? { BUILDR_VERIFICATION_BASE: options.base } : {}) });
   const buildrRequired = options.packages?.includes('buildr') ?? true;
   const pluginRequired = options.packages?.includes('dsh-plugin') ?? false;
   const productRoot = path.join(options.repo, 'projects/product/services/buildr');
@@ -40,12 +41,12 @@ export async function prepareLocalSourceVerification(options: {
     for (const id of pluginOwner.PLUGIN_SOURCE_PHASE_IDS) if (!plugin.records.some((record: any) => record.identity.stepId === id)) missingStepIds.push(id);
   }
   const nextActions = missingStepIds.length ? [
-    ...(missingStepIds.some((id: string) => !id.startsWith('dsh-plugin:')) ? [`在 ${productRoot} 执行 tools/development/run-development-npm run test:source；仅补齐失效或缺失结果，再继续同一 prepare。`] : []),
+    ...(missingStepIds.some((id: string) => !id.startsWith('dsh-plugin:')) ? [`在 ${productRoot} 执行 tools/development/run-development-npm run test:source${options.base ? ` -- --base ${options.base}` : ''}；仅补齐失效或缺失结果，再继续同一 prepare。`] : []),
     ...(missingStepIds.some((id: string) => id.startsWith('dsh-plugin:')) ? ['在该冻结源码的 dsh-plugin 服务运行 verify-all.ts，显式消费固定 SDK 与真实 Buildr 对端，再继续同一 prepare。'] : []),
   ] : [];
   return {
     status: missingStepIds.length ? 'local-verification-required' : 'ready',
-    runner: plan.runner, missingStepIds, recordCount: bundle.records.length,
+    runner: plan.runner, missingStepIds, recordCount: bundle.records.length, verificationBase: sourceEnv.BUILDR_VERIFICATION_BASE ?? null,
     ...(snapshot ? { verificationPlan: inspectVerificationReusePlan(plan, { productRoot, projectRoot, snapshot, env: sourceEnv, imports: [bundle] }) } : {}),
     ...(missingStepIds.length ? {} : { transport: encodeCandidateSourceImport(bundle) }), nextActions,
   };

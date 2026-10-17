@@ -114,6 +114,7 @@ env:
   BUILDR_PLUGIN_VERSION: ${{ inputs.plugin_version || '' }}
   BUILDR_SELECTION_ID: ${{ inputs.selection_id || '' }}
   BUILDR_SELECTION_BASELINE: ${{ inputs.selection_baseline || '' }}
+  BUILDR_VERIFICATION_BASE: ${{ inputs.selection_baseline || '' }}
   BUILDR_SELECTION_MAIN: ${{ inputs.selection_main || '' }}
   BUILDR_SELECTION_IDENTITY: ${{ inputs.selection_identity || '' }}
   BUILDR_BUILDR_PEER_VERSION: ${{ inputs.buildr_peer_version || '' }}

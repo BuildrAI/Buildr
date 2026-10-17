@@ -405,6 +405,62 @@ function observeReleaseRun(pointer: any, readRun: (runId: number) => any): any {
   }
 }
 
+export async function waitForReleaseMainPullRequest(options: any, dependencies: any = {}): Promise<any> {
+  const now = dependencies.now ?? Date.now;
+  const sleep = dependencies.sleep ?? ((ms: number) => new Promise(resolve => setTimeout(resolve, ms)));
+  const startedAt = now(), deadline = startedAt + 30_000;
+  const execute = dependencies.execute ?? spawnSync;
+  let pullRequest: any = null, checks: any[] = [];
+  const finish = (status: string, diagnostic?: any) => ({ status, pullRequest, checks, durationMs: now() - startedAt,
+    ...(diagnostic ? { diagnostic } : {}) });
+  const read = (args: string[]) => {
+    const value = execute(options.ghCommand || 'gh', args, { cwd: options.repo, encoding: 'utf8',
+      timeout: Math.max(1, deadline - now()), maxBuffer: 1024 * 1024 });
+    if (!value.error && args[1] === 'checks' && value.status === 1 && !String(value.stdout || '').trim()
+        && /^no (?:required )?checks reported on the '[^'\r\n]+' branch$/u.test(String(value.stderr || '').trim())) return [];
+    let parsed: any;
+    try { parsed = JSON.parse(String(value.stdout || '')); } catch { /* report the bounded command cause below */ }
+    // gh pr checks uses 8 for pending and 1 for completed failing checks.
+    if (value.error || parsed === undefined || (value.status !== 0 && !(args[1] === 'checks' && [1, 8].includes(value.status)))) {
+      throw Object.assign(new Error('Protected pull request readback failed.'), {
+        diagnostic: releaseCommandDiagnostic(options.ghCommand || 'gh', args, value),
+      });
+    }
+    return parsed;
+  };
+  try {
+    while (true) {
+      if (pullRequest && now() >= deadline) return finish('pending');
+      pullRequest = read(['pr', 'view', options.url, '--repo', releasePublishAuthority.repository, '--json',
+        'state,headRefOid,headRefName,baseRefName,url,mergeStateStatus,mergeable,isDraft']);
+      if (pullRequest.headRefOid !== options.sourceCommit || pullRequest.headRefName !== options.branch
+          || pullRequest.baseRefName !== 'main' || pullRequest.url !== options.url) {
+        return finish('blocked', { code: 'release-main-pr-head-drift', message: 'Protected pull request no longer matches the frozen release.' });
+      }
+      if (pullRequest.state === 'MERGED') return finish('ready');
+      if (pullRequest.state !== 'OPEN' || pullRequest.isDraft || ['DIRTY', 'BEHIND'].includes(pullRequest.mergeStateStatus)) {
+        return finish('blocked', { code: 'release-main-pr-not-mergeable', message: 'Protected pull request needs its reported conflict, base or draft condition resolved.' });
+      }
+      checks = read(['pr', 'checks', options.url, '--repo', releasePublishAuthority.repository, '--required', '--json', 'name,state,bucket,link']);
+      if (!Array.isArray(checks) || checks.some(check => !['pass', 'fail', 'pending', 'skipping', 'cancel'].includes(check.bucket))) {
+        throw new Error('Protected pull request checks returned an unknown result.');
+      }
+      if (checks.some(check => ['fail', 'cancel'].includes(check.bucket))) {
+        return finish('blocked', { code: 'release-main-required-check-failed', message: 'A required protected pull request check failed or was cancelled; diagnose that check only.' });
+      }
+      // This release owner targets protected Buildr main, which requires a
+      // Candidate gate. A new PR can briefly look clean before checks register.
+      if (checks.length > 0 && !checks.some(check => check.bucket === 'pending') && ['CLEAN', 'UNSTABLE'].includes(pullRequest.mergeStateStatus)
+          && pullRequest.mergeable === 'MERGEABLE') return finish('ready');
+      const remaining = deadline - now();
+      if (remaining <= 0) return finish('pending');
+      await sleep(Math.min(3_000, remaining));
+    }
+  } catch (error: any) {
+    return finish('unknown', error.diagnostic ?? { code: 'release-main-pr-readback-failed', message: error.message });
+  }
+}
+
 export async function runReleaseOperation(options: any, dependencies: any = {}): Promise<any> {
   let action = options.action;
   if (options.stopAfter !== undefined && (options.stopAfter !== 'candidate' || action !== 'prepare')) throw new Error('--stop-after candidate is only supported by prepare.');
@@ -743,7 +799,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       if (!existing && !state.candidate.dispatchRequested) {
         phase = 'source-verification';
         const localSource = await (dependencies.prepareLocalSourceVerification ?? prepareLocalSourceVerification)({
-          repo, sourceFile: options.sourceVerification,
+          repo, sourceFile: options.sourceVerification, base: selection.devBaseline,
           packages: [...(!scoped || plan.requirements.buildr ? ['buildr'] : []), ...(scoped && plan.requirements.plugin ? ['dsh-plugin'] : [])],
         });
         if (localSource.status !== 'ready') {
@@ -849,10 +905,24 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       title: `Release ${key}`, body: `Release ${key} from frozen ${sourceCommit}.\n\nCandidate run ID: ${state.candidate.runId}${scoped ? `\nRelease selection: ${JSON.stringify(plan.selection)}${plan.requirements.plugin ? `\nBuildr peer: ${JSON.stringify(state.pluginSourceAggregate.verification.peer)}` : ''}` : ''}`,
       authorizeReleasePush: true, authorizePullRequest: true }, { execute }));
     if (pr.pullRequest.state !== 'MERGED') {
-      const effect = { type: 'release-main-merge', url: pr.pullRequest.url, sourceCommit, state: 'unknown' };
-      currentEffects.push(effect);
-      gh(['pr', 'merge', pr.pullRequest.url, '--repo', releasePublishAuthority.repository, '--merge', '--match-head-commit', sourceCommit], repo);
-      effect.state = 'confirmed';
+      const mainPullRequest = await waitForReleaseMainPullRequest({ repo, url: pr.pullRequest.url, sourceCommit, branch: carrier,
+        ghCommand: options.ghCommand }, { execute, now: dependencies.now, sleep: dependencies.sleep });
+      if (mainPullRequest.status !== 'ready') return answer(mainPullRequest.status === 'pending' ? 'main-merge-pending'
+        : mainPullRequest.status === 'unknown' ? 'main-merge-readback-required' : 'blocked', [
+        mainPullRequest.status === 'blocked' ? '只处理该合并请求报告的失败或冲突，再继续同一 prepare；保留候选与原包。'
+          : '保留当前合并请求、候选与原包，稍后继续同一 prepare 回读合并条件；不重新派发候选或创建合并请求。',
+      ], { mainPullRequest, ...(mainPullRequest.diagnostic ? { diagnostic: mainPullRequest.diagnostic } : {}) });
+      if (mainPullRequest.pullRequest.state !== 'MERGED') {
+        const effect = { type: 'release-main-merge', url: pr.pullRequest.url, sourceCommit, state: 'unknown' };
+        currentEffects.push(effect);
+        try {
+          gh(['pr', 'merge', pr.pullRequest.url, '--repo', releasePublishAuthority.repository, '--merge', '--match-head-commit', sourceCommit], repo);
+          effect.state = 'confirmed';
+        } catch (error: any) {
+          return answer('main-merge-readback-required', ['合并响应未确认；继续同一 prepare 先回读该合并请求，不重建候选或合并请求。'],
+            { mainPullRequest, diagnostic: error.diagnostic });
+        }
+      }
       git(['fetch', '--no-tags', 'origin', 'refs/heads/main:refs/remotes/origin/main'], repo);
     }
     if (scoped) {
