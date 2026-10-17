@@ -29,6 +29,9 @@ import { preparePackageRelease, continuePackageRelease, evaluateObservedPackageP
 import { observePublishedPackageArtifact } from './package-artifact-observation.ts';
 import { createReleaseCandidatePlan, assertPluginSourceAggregate } from '../../../projects/product/services/buildr/test/verification/release/verify-pr-candidate.ts';
 import { readPluginSourceCandidate } from './plugin-hosted-release.ts';
+import { readReleaseArtifact, releaseArtifactManifestName } from './release-artifact.ts';
+import { CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES } from '../../../projects/product/services/buildr/test/verification/registry.ts';
+import { candidatePreparationDirectory, readCandidatePreparationSnapshot } from './release-task-evidence-correlation.ts';
 
 export const releaseOrchestrationSchema: any = 'buildr.release-orchestration-result/v1';
 
@@ -405,6 +408,153 @@ function observeReleaseRun(pointer: any, readRun: (runId: number) => any): any {
   }
 }
 
+function preserveCandidatePreparation(workspace: string, key: string, selection: any, mainCommit: string, run: any, buildr: any, plugin: any, verificationInputs: any): any {
+  const directory = candidatePreparationDirectory(workspace, key, { sourceCommit: selection.releaseHead, generation: selection.generation,
+    run: { id: run.id, attempt: run.run_attempt } }, true);
+  const retain = (name: string, bytes: Buffer) => {
+    const file = path.join(directory, name);
+    const parent = path.dirname(file);
+    if (!fs.lstatSync(parent, { throwIfNoEntry: false })) fs.mkdirSync(parent);
+    if (!fs.lstatSync(parent).isDirectory() || fs.lstatSync(parent).isSymbolicLink()) throw new Error('Retained Candidate package directory is an alias.');
+    const existing = fs.lstatSync(file, { throwIfNoEntry: false });
+    if (existing && (!existing.isFile() || !fs.readFileSync(file).equals(bytes))) throw new Error(`Retained Candidate file differs: ${name}`);
+    if (!existing) fs.writeFileSync(file, bytes, { flag: 'wx', mode: 0o600 });
+  };
+  const json = (name: string, value: any) => retain(name, Buffer.from(`${JSON.stringify(value, null, 2)}\n`));
+  const artifacts: any = {};
+  for (const [name, owned] of Object.entries({ buildr, 'dsh-plugin': plugin }) as any) {
+    if (!owned) continue;
+    const manifest = name === 'buildr' ? owned.manifest : owned.candidate ?? owned.aggregate.candidate;
+    if (!Buffer.isBuffer(owned.tarballBytes) || path.basename(manifest.filename) !== manifest.filename
+        || crypto.createHash('sha256').update(owned.tarballBytes).digest('hex') !== manifest.sha256
+        || `sha512-${crypto.createHash('sha512').update(owned.tarballBytes).digest('base64')}` !== manifest.integrity) {
+      throw new Error(`Verified ${name} Candidate original bytes are unavailable for retention.`);
+    }
+    retain(`${name}/${manifest.filename}`, owned.tarballBytes);
+    json(`${name}/${name === 'buildr' ? releaseArtifactManifestName : 'candidate.json'}`, manifest);
+    artifacts[name] = name === 'dsh-plugin' ? owned.aggregate.candidate : manifest;
+  }
+  const snapshot = { selection: { identity: selection.selectionIdentity, sourceCommit: selection.releaseHead, sourceTree: selection.releaseTree,
+    generation: selection.generation, mainCommit }, run: { id: run.id, attempt: run.run_attempt }, artifacts,
+    buildr: buildr ? { aggregate: buildr.aggregate, manifest: buildr.manifest } : null, plugin: plugin?.aggregate ?? null, verificationInputs };
+  json('preparation-evidence.json', snapshot);
+  return { ...snapshot.selection, directory, snapshotIdentity: identity(snapshot), run: snapshot.run, artifacts,
+    status: 'verified', cleanup: 'pending' };
+}
+
+function readPreparedCandidate(workspace: string, state: any, selection: any): any {
+  const prepared = state.preparation;
+  if (!prepared || selection.status !== 'frozen' || prepared.identity !== selection.selectionIdentity
+      || prepared.sourceCommit !== selection.releaseHead || prepared.sourceTree !== selection.releaseTree
+      || prepared.generation !== selection.generation || state.candidate?.runId !== prepared.run.id
+      || state.candidate?.sourceCommit !== prepared.sourceCommit) throw new Error('Completed preparation differs from the current frozen selection; explicitly prepare the changed selection.');
+  const expectedDirectory = prepared.directory;
+  const snapshot = readCandidatePreparationSnapshot(workspace, state.targets?.selectionId ?? state.version, prepared);
+  if (snapshot.buildr) {
+    const owned = readReleaseArtifact(path.join(expectedDirectory, 'buildr', releaseArtifactManifestName));
+    if (JSON.stringify(owned.manifest) !== JSON.stringify(snapshot.buildr.manifest)) throw new Error('Retained main package manifest changed.');
+    assertReleaseConsumptionCoverage(snapshot.buildr.aggregate, { sourceCommit: prepared.sourceCommit, sourceTree: prepared.sourceTree }, owned.manifest);
+  }
+  if (snapshot.plugin) {
+    assertPluginSourceAggregate(snapshot.plugin, state.candidatePlan, prepared.run.id, prepared.run.attempt);
+    const bytes = fs.readFileSync(path.join(expectedDirectory, 'dsh-plugin', snapshot.plugin.candidate.filename));
+    if (crypto.createHash('sha256').update(bytes).digest('hex') !== snapshot.plugin.candidate.sha256) throw new Error('Retained plugin bytes changed.');
+  }
+  return snapshot;
+}
+
+function finishCandidatePreparation(workspace: string, state: any, selection: any, snapshot: any, owners: any): any {
+  const prepared = state.preparation, taskId = `release-${state.targets?.selectionId ?? state.version}`;
+  const { runtime, controller, invoke, save, effects, git } = owners;
+  let stage = 'materials';
+  const call = (args: string[]) => {
+    const value = invoke(controller, [...args, '--target', workspace, '--json']);
+    effects.push(...(value.effects ?? []));
+    if (value.status === 'blocked' || value.diagnostic) throw Object.assign(new Error(value.diagnostic?.message ?? 'Preparation closeout owner did not complete.'), { ownerResult: value });
+    return value;
+  };
+  const input = (name: string, value: string) => {
+    candidatePreparationDirectory(workspace, state.targets?.selectionId ?? state.version, prepared);
+    const file = path.join(prepared.directory, `${name}-${identity(value).slice(7, 23)}`);
+    const stat = fs.lstatSync(file, { throwIfNoEntry: false });
+    if (stat && (!stat.isFile() || stat.isSymbolicLink() || fs.readFileSync(file, 'utf8') !== value)) throw new Error('Preparation input file changed or is an alias.');
+    if (!stat) fs.writeFileSync(file, value, { flag: 'wx', mode: 0o600 });
+    return file;
+  };
+  try {
+    const materialPath = 'candidate-preparation.md', materialId = 'candidate-preparation';
+    const content = `# 候选准备结果\n\n源码：${prepared.sourceCommit}\n\n源码树：${prepared.sourceTree}\n\n候选运行：${prepared.run.id}，第 ${prepared.run.attempt} 次。\n\n${Object.entries(prepared.artifacts).map(([name, artifact]: any) => `${name}：${artifact.version}，SHA-256 ${artifact.sha256}`).join('\n\n')}\n\n所选必需源码与原包覆盖已通过；完整来源和复用保留在 ${path.relative(workspace, prepared.directory)}/preparation-evidence.json。\n\n本次到验包结束，未授权或执行公开；原包、证据和冻结来源保留，任务结束不表示已公开。\n`;
+    const materials = call(['task', 'materials', 'inspect', taskId]);
+    const reference = materials.materials?.documents?.find((item: any) => item.id === materialId);
+    if (reference && (reference.source.kind !== 'task' || reference.source.path !== materialPath)) throw new Error('Preparation material identity is already used by another document.');
+    const existing = path.join(workspace, '.buildr/local/task-materials', taskId, materialPath);
+    const stat = fs.lstatSync(existing, { throwIfNoEntry: false });
+    if (stat && (!stat.isFile() || stat.size > 512 * 1024 || fs.readFileSync(existing, 'utf8') !== content)) throw new Error('Preparation material changed; preserve it and resolve the document conflict.');
+    if (!stat) call(['task', 'materials', 'write', taskId, '--path', materialPath, '--content', input('preparation-material.md', content), '--expected-document', 'absent']);
+    if (!reference) call(['task', 'materials', 'record', taskId, '--materials', input('preparation-materials.json', JSON.stringify({
+      schemaVersion: 'buildr.task-materials/v2', documents: [...(materials.materials?.documents ?? []),
+        { id: materialId, role: 'delivery', title: '候选准备与验包结果', source: { kind: 'task', path: materialPath } }],
+    })), '--expected-current', materials.materialsDigest]);
+    prepared.materials = 'recorded'; save();
+    stage = 'report';
+    const checks: any[] = [];
+    if (snapshot.buildr) {
+      const evidenceIds = new Set(snapshot.buildr.aggregate.evidenceIds);
+      for (const [kind, testing, ids] of [
+        ['source', 'buildr-source', CANDIDATE_CI_SHARDS.filter((item: any) => !item.requiresArtifact && !item.producesArtifact).map((item: any) => item.id)],
+        ['artifact', 'buildr-artifact', [...CANDIDATE_CI_SHARDS.filter((item: any) => item.requiresArtifact || item.producesArtifact), ...CANDIDATE_CI_HOST_NODE_TUPLES].map((item: any) => item.id)],
+      ] as any) checks.push({ id: `candidate-${kind}`, project: 'product', testing, selection: 'full', targets: ids.filter((id: string) => evidenceIds.has(id)),
+        source: 'command', outcome: 'passed', summary: `准确候选 ${prepared.run.id}/${prepared.run.attempt} 的完整 ${kind} 覆盖通过，原始来源及复用记录保留。` });
+    }
+    if (snapshot.plugin) checks.push({ id: 'candidate-plugin', project: 'product', service: 'dsh-plugin', testing: 'dsh-plugin', selection: 'full',
+      targets: snapshot.plugin.verification.checks, source: 'command', outcome: 'passed', summary: '冻结插件原包、完整验证及准确主包对端通过；未执行插件公开或桌面交互验收。' });
+    const report = { contentIdentity: prepared.snapshotIdentity, contentSummary: `冻结 ${prepared.sourceCommit}、源码树 ${prepared.sourceTree} 与同一原包。`, checks, gaps: [],
+      conclusion: { outcome: 'passed', summary: '本次准备范围的必需源码与原包覆盖通过，公开不属于本次准备完成结论。' } };
+    const observed = call(['task', 'verification', 'inspect', taskId, '--content-identity', prepared.snapshotIdentity]);
+    if (observed.slot?.report?.content?.identity !== prepared.snapshotIdentity || observed.slot.report.conclusion?.outcome !== 'passed') {
+      const task = runtime.inspectTask(workspace, taskId);
+      if (task.record.status !== 'active') throw new Error('Completed preparation is missing its matching formal report; preserve the completed Task and correct its facts explicitly.');
+      const recorded = call(['task', 'verification', 'record', taskId, '--report', input('preparation-report.json', JSON.stringify(report)),
+        '--expected-report', observed.slot?.present ? observed.slot.reportDigest : 'absent']);
+      if (recorded.status !== 'recorded' || recorded.slot?.report?.conclusion?.outcome !== 'passed') throw new Error('Preparation report registration was not confirmed.');
+    }
+    prepared.report = 'recorded'; save();
+    stage = 'task';
+    let task = runtime.inspectTask(workspace, taskId);
+    if (task.record.status === 'active') {
+      call(['task', 'complete', taskId, '--summary', '冻结候选的源码检查与同一原包验包已完成；原包、证据和冻结来源保留，尚未公开。', '--expected-record', task.recordDigest]);
+      task = runtime.inspectTask(workspace, taskId);
+    }
+    if (task.record.status !== 'completed') throw new Error('Preparation Task completion was not confirmed.');
+    prepared.taskRegistration = 'completed'; save();
+    stage = 'cleanup';
+    readPreparedCandidate(workspace, state, inspectReleaseSelection({ selectionId: state.targets?.selectionId, targets: state.targets,
+      version: state.targets?.versions.buildr ?? state.version, repo: workspace, devRef: 'origin/dev' }));
+    const branch = `codex/${taskId}`, checkout = path.join(workspace, '.worktrees', taskId);
+    if (prepared.cleanup !== 'cleaned' && fs.existsSync(checkout) && !path.relative(checkout, fileURLToPath(import.meta.url)).startsWith('..')) {
+      prepared.cleanup = 'after-owner-exit'; prepared.cleanupRequested = true; save();
+      return { status: 'candidate-verified', nextActions: [`当前执行器退出后，以保留入口执行 worktree cleanup ${taskId} --expected-source workspace=${prepared.sourceCommit} --delivered-ref workspace=${prepared.sourceCommit} --target ${workspace} --json；保留 release 和冻结引用，再继续同一 prepare --stop-after candidate 或 resume 确认收尾完成。`] };
+    }
+    if (prepared.cleanup !== 'cleaned') {
+      const listed = git(['worktree', 'list', '--porcelain']);
+      const ownedBranch = git(['for-each-ref', '--format=%(objectname)', `refs/heads/${branch}`]);
+      const provider = runtime.inspectGitWorktrees({ workspaceRoot: workspace, taskId });
+      if (fs.existsSync(checkout) || listed.split(/\r?\n/u).includes(`worktree ${checkout}`) || ownedBranch || provider.evidencePath) {
+        prepared.cleanupRequested = true; save();
+        const cleaned = call(['worktree', 'cleanup', taskId, '--expected-source', `workspace=${prepared.sourceCommit}`, '--delivered-ref', `workspace=${prepared.sourceCommit}`]);
+        if (cleaned.status !== 'cleaned') throw new Error('Preparation worktree cleanup was not confirmed.');
+      } else if (!prepared.cleanupRequested || provider.status !== 'absent' && provider.diagnostic?.code !== 'git_worktree_evidence_missing') throw new Error('Preparation cleanup provider readback is unresolved.');
+      prepared.cleanup = 'cleaned'; save();
+    }
+    prepared.status = 'completed'; save();
+    return { status: 'candidate-verified', nextActions: [] };
+  } catch (error: any) {
+    save();
+    return { status: `candidate-${stage}-closeout-required`, diagnostic: { code: `candidate-${stage}-closeout-required`, message: error.message },
+      ownerResult: error.ownerResult, nextActions: [`只恢复候选准备的 ${stage}；继续同一 prepare --stop-after candidate 或 resume，保留检查、原包和冻结选择，不重跑候选。`] };
+  }
+}
+
 export async function waitForReleaseMainPullRequest(options: any, dependencies: any = {}): Promise<any> {
   const now = dependencies.now ?? Date.now;
   const sleep = dependencies.sleep ?? ((ms: number) => new Promise(resolve => setTimeout(resolve, ms)));
@@ -577,6 +727,46 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
         diagnostic: { code: 'candidate-only-publication-conflict', message: 'Candidate-only preparation cannot resume an authorized or requested publication.' },
       });
     }
+    const preparationInputChanged = state.preparation && ((options.baseline && git(['rev-parse', `${options.baseline}^{commit}`]) !== state.baseline)
+      || (options.sources ?? []).some((ref: string) => !state.sources.includes(git(['rev-parse', `${ref}^{commit}`]))));
+    if (state.preparation && (options.verificationSource || options.sourceVerification || options.artifactVerification)) {
+      const snapshot = readCandidatePreparationSnapshot(workspace, key, state.preparation);
+      let different = Boolean(options.verificationSource && git(['rev-parse', `${options.verificationSource}^{commit}`]) !== snapshot.verificationInputs.sourceCommit);
+      if (options.sourceVerification) {
+        const { readVerificationReuseBundle } = await import('../../../projects/product/services/buildr/test/verification/verification-reuse.ts');
+        const { encodeCandidateSourceImport } = await import('../../../projects/product/services/buildr/test/verification/candidate-source-reuse.ts');
+        different ||= identity(encodeCandidateSourceImport(readVerificationReuseBundle(options.sourceVerification))) !== snapshot.verificationInputs.source;
+      }
+      if (options.artifactVerification) {
+        const { readCandidateArtifactImports, encodeCandidateArtifactImport } = await import('../../../projects/product/services/buildr/test/verification/candidate-artifact-reuse.ts');
+        different ||= identity(encodeCandidateArtifactImport(readCandidateArtifactImports(options.artifactVerification))) !== snapshot.verificationInputs.artifact;
+      }
+      if (different) {
+        if ((dependencies.runtime ?? createReleaseToolRuntime()).inspectTask(workspace, `release-${key}`).record?.status === 'active') {
+          state.preparationHistory = [...(state.preparationHistory ?? []), state.preparation]; state.preparation = null; save();
+        } else return answer('blocked', ['保留已完成准备；验证来源或导入已改变，先明确恢复活动准备再补验，不忽略本次显式输入。'], {
+          diagnostic: { code: 'completed-preparation-verification-changed', message: 'Completed preparation verification inputs changed; explicitly restore active preparation before adopting new proof.' },
+        });
+      }
+    }
+    if (preparationInputChanged && (dependencies.runtime ?? createReleaseToolRuntime()).inspectTask(workspace, `release-${key}`).record?.status === 'completed') {
+      return answer('blocked', ['已完成准备仅消费原冻结选择；先明确恢复活动准备，再选入新源码或重定基线。'], {
+        diagnostic: { code: 'completed-preparation-selection-changed', message: 'Completed preparation cannot select new source or baseline; explicitly restore active preparation.' },
+      });
+    }
+    if (state.preparation && !preparationInputChanged && (stopAfterCandidate || action === 'resume' && !state.preparation.adoptionRequested)
+        && !state.publicationAuthorization && !state.publication?.requested && !state.publicationEvidence) {
+      phase = 'candidate-closeout';
+      const selection = inspectReleaseSelection({ ...selectionArgs, repo: workspace, devRef: 'origin/dev' });
+      const snapshot = readPreparedCandidate(workspace, state, selection);
+      const runtime = dependencies.runtime ?? createReleaseToolRuntime();
+      const completed = finishCandidatePreparation(workspace, state, selection, snapshot, { runtime,
+        controller: (dependencies.resolveRetainedController ?? resolveRetainedController)(workspace),
+        invoke: dependencies.invokeRetainedController ?? defaultInvokeRetained, save, effects: currentEffects, git });
+      return answer(completed.status, completed.nextActions, { ...completed, stopAfter: 'candidate', sourceTree: selection.releaseTree,
+        artifacts: snapshot.artifacts, preparationCloseout: state.preparation });
+    }
+    if (action === 'resume' && state.preparation?.adoptionRequested && !state.context && !state.publicationAuthorization && !state.publication?.requested) action = 'prepare';
     if (scoped && (action === 'publish' || action === 'resume' || (action === 'prepare' && (state.publicationAuthorization || Object.values(state.packagePublications ?? {}).some((value: any) => value.requested))))) {
       if (action === 'prepare') action = 'resume';
       const continued = await continuePackageRelease({ ...options, action }, packageScope(), packageDependencies);
@@ -698,15 +888,27 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       const services = targets.packages.flatMap(name => name === 'buildr' ? ['product/buildr', 'product/buildr-web'] : ['product/dsh-plugin']);
       task = take(invoke(controller, ['task', 'create', taskId, '--title', `准备发布 ${key}`, '--intent', '验证已明确选择的最终发布组合和唯一产物；公开发布需独立授权。', '--project', 'product', ...services.flatMap(service => ['--service', service]), '--target', workspace, '--json']));
     }
-    if (task.record?.status !== 'active') throw new Error('Release preparation requires the matching active Task.');
+    const completedPreparation = task.record?.status === 'completed' && Boolean(state.preparation);
+    if (task.record?.status !== 'active' && !completedPreparation) throw new Error('Release preparation requires the matching active Task.');
+    if (completedPreparation) {
+      if (preparationInputChanged) throw new Error('Completed preparation cannot select new source or a new baseline; explicitly restore active preparation before changing its frozen selection.');
+      const snapshot = readPreparedCandidate(workspace, state, existingSelection);
+      if (state.preparation.status !== 'completed') {
+        const finished = finishCandidatePreparation(workspace, state, existingSelection, snapshot, { runtime, controller, invoke, save, effects: currentEffects, git });
+        if (finished.status !== 'candidate-verified' || state.preparation.status !== 'completed') return answer(finished.status, finished.nextActions,
+          { ...finished, preparationCloseout: state.preparation });
+      }
+      state.preparation.adoptionRequested = true; save();
+    }
     let worktree = runtime.inspectGitWorktrees({ workspaceRoot: workspace, taskId });
-    if (worktree.status !== 'ready') worktree = take(invoke(controller, ['worktree', 'create', taskId, '--target', workspace, '--branch', `codex/${taskId}`, '--start-point', baseline, '--include', 'workspace', '--json']));
+    if (worktree.status !== 'ready') worktree = take(invoke(controller, ['worktree', 'create', taskId, '--target', workspace, '--branch', `codex/${taskId}`,
+      '--start-point', completedPreparation ? existingSelection.releaseHead : baseline, '--include', 'workspace', '--json']));
     const repo = worktree.repositories.find((entry: any) => entry.selector === 'workspace')?.checkoutPath;
     if (!repo) throw new Error('Release Worktree has no matching workspace repository.');
     state.executionRoot = repo; save();
     const binding = () => resolveReleaseExecutionBinding({ ...selectionArgs, workspace, repo }, runtime);
     let selection = inspectReleaseSelection({ ...selectionArgs, repo, devRef: 'origin/dev' });
-    if (selection.status === 'blocked') {
+    if (!completedPreparation && selection.status === 'blocked') {
       const existing = git(['for-each-ref', '--format=%(refname)', `refs/heads/release-${key}`, `refs/buildr/release/${key}/`], repo);
       if (existing) throw new Error(selection.diagnostic?.message || 'Existing release selection cannot be read.');
       selection = take(createReleaseSelection({ ...selectionArgs, repo, baseline, devRef: 'origin/dev', executionBinding: binding() }));
@@ -714,17 +916,23 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     if (selection.devBaseline !== baseline) throw new Error('The existing release baseline differs from the explicit selection.');
     state.sources = [...new Set([...selection.selectionChain.map((entry: any) => entry.sourceDevCommit), ...state.sources])];
     const unselected = state.sources.filter((source: string) => !selection.selectionChain.some((entry: any) => entry.sourceDevCommit === source));
-    if (unselected.length && selection.status === 'frozen') take(reopenReleaseSelection({ ...selectionArgs, repo, devRef: 'origin/dev', executionBinding: binding(), confirm: true, reason: '纳入已授权并完成相关验证的明确dev修复提交' }));
-    for (const source of state.sources) take(selectReleaseCommit({ ...selectionArgs, repo, source, devRef: 'origin/dev', executionBinding: binding() }));
-    selection = take(freezeReleaseSelection({ ...selectionArgs, repo, devRef: 'origin/dev', executionBinding: binding() }));
+    if (!completedPreparation) {
+      if (unselected.length && selection.status === 'frozen') take(reopenReleaseSelection({ ...selectionArgs, repo, devRef: 'origin/dev', executionBinding: binding(), confirm: true, reason: '纳入已授权并完成相关验证的明确dev修复提交' }));
+      for (const source of state.sources) take(selectReleaseCommit({ ...selectionArgs, repo, source, devRef: 'origin/dev', executionBinding: binding() }));
+      selection = take(freezeReleaseSelection({ ...selectionArgs, repo, devRef: 'origin/dev', executionBinding: binding() }));
+    }
     const main = git(['rev-parse', 'origin/main'], repo);
     const mainParents = git(['rev-list', '--parents', '-n', '1', main], repo).split(/\s/u).slice(1);
     const alreadyMerged = mainParents.length === 2 && mainParents[1] === selection.releaseHead && git(['rev-parse', `${main}^{tree}`], repo) === selection.releaseTree;
-    if (!alreadyMerged) selection = take(reconcileReleaseToMain({ ...selectionArgs, repo, devRef: 'origin/dev', mainRef: 'origin/main', executionBinding: binding(), confirm: true, reason: '冻结完整候选前核验当前main来源与最终组合' }));
+    if (completedPreparation && !alreadyMerged && main !== state.preparation.mainCommit) throw new Error('Main changed after completed preparation; explicitly restore active preparation to reconcile the changed source.');
+    if (!alreadyMerged && !completedPreparation) selection = take(reconcileReleaseToMain({ ...selectionArgs, repo, devRef: 'origin/dev', mainRef: 'origin/main', executionBinding: binding(), confirm: true, reason: '冻结完整候选前核验当前main来源与最终组合' }));
     // Lifecycle action completion is not the selection's lifecycle state.
     selection = inspectReleaseSelection({ ...selectionArgs, repo, devRef: 'origin/dev' });
     if (selection.status !== 'frozen') throw new Error('Final release selection is no longer frozen.');
     const sourceCommit = selection.releaseHead;
+    if (state.preparation && state.preparation.sourceCommit !== sourceCommit) {
+      state.preparationHistory = [...(state.preparationHistory ?? []), state.preparation]; state.preparation = null; save();
+    }
     for (const name of targets.packages) if (JSON.parse(git(['show', `${sourceCommit}:projects/product/services/${name}/package.json`, '--'], repo)).version !== targets.versions[name]) throw new Error(`Selected ${name} version differs from requested release; first deliver and select its version materials on dev.`);
     // These materials already belong to the release contract. Check the frozen
     // bytes before asking for expensive local source proof or a remote run.
@@ -768,7 +976,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       state.candidate = { sourceCommit, branch: carrier, runId: options.candidateRunId || null, dispatchRequested: false,
         ...(!options.candidateRunId && localRunner ? { localRunner } : {}) };
     }
-    if (options.verificationSource || options.artifactVerification || (options.sourceVerification && state.candidate.runId) || state.candidate.repair) {
+    if (!completedPreparation && (options.verificationSource || options.artifactVerification || (options.sourceVerification && state.candidate.runId) || state.candidate.repair)) {
       phase = 'candidate-verification';
       const fields = scoped ? [`release_packages=${targets.packages.join(',')}`, `buildr_version=${JSON.parse(git(['show', `${sourceCommit}:projects/product/services/buildr/package.json`, '--'], repo)).version}`,
         `plugin_version=${plan.pluginVersion}`, `selection_id=${key}`, `selection_baseline=${baseline}`, `selection_main=${plan.selection.main}`,
@@ -790,7 +998,17 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
         gh: args => gh(args, repo), git: args => git(args, repo), save, ensureCarrier: () => ensureCandidateBranch(carrier),
       });
       currentEffects.push(...repaired.effects);
+      if (sourceTransport !== undefined || artifactTransport !== undefined) {
+        const inputIdentity = crypto.createHash('sha256').update(JSON.stringify({ source: sourceTransport ?? null, artifact: artifactTransport ?? null })).digest('hex');
+        if (state.candidate.repair?.inputIdentity === inputIdentity) {
+          state.candidate.repair.verificationInputs = {
+            ...(sourceTransport !== undefined ? { source: identity(sourceTransport) } : {}),
+            ...(artifactTransport !== undefined ? { artifact: identity(artifactTransport) } : {}),
+          }; save();
+        }
+      }
       if (repaired.status !== 'adopted') return answer(repaired.status, repaired.nextActions, repaired);
+      state.candidate.verificationInputs = { ...state.candidate.verificationInputs, ...state.candidate.repair?.verificationInputs }; save();
     }
     if (!state.candidate.runId) {
       const find = () => JSON.parse(gh(['run', 'list', '--repo', releasePublishAuthority.repository, '--workflow', 'verify.yml', '--branch', carrier, '--event', 'workflow_dispatch', '--limit', '100', '--json', 'databaseId,headSha,status,conclusion'])).find((run: any) => run.headSha === sourceCommit);
@@ -861,7 +1079,8 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       currentEffects.push(...retried.effects);
       return answer(retried.status === 'dispatched' ? 'candidate-running' : retried.status === 'unknown' ? 'candidate-retry-unconfirmed' : 'diagnosis-required', retried.nextActions, { retry: retried });
     }
-    const artifactDestination = state.candidate.localRunner ? path.join(repo, 'projects/product/services/buildr/build/verification/candidates', sourceCommit, 'candidate-package') : undefined;
+    const artifactDestination = completedPreparation && state.preparation.artifacts.buildr ? path.join(state.preparation.directory, 'buildr')
+      : state.candidate.localRunner ? path.join(repo, 'projects/product/services/buildr/build/verification/candidates', sourceCommit, 'candidate-package') : undefined;
     const candidateEvidence = !scoped || plan.requirements.buildr ? readCandidateEvidence({ candidateRunId: state.candidate.runId, ghCommand: options.ghCommand || 'gh', repo, execute,
       artifactDestination, dependencies: dependencies.candidateDependencies }) : null;
     if (candidateEvidence?.aggregate.status === 'incomplete') {
@@ -887,19 +1106,27 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       assertReleaseConsumptionCoverage(candidateEvidence.aggregate, { sourceCommit, sourceTree: selection.releaseTree }, candidateEvidence.manifest);
       if (String(candidateEvidence.aggregate.workflow?.runId) !== String(state.candidate.runId) || Number(candidateEvidence.aggregate.workflow?.aggregateAttempt) !== Number(candidate.run_attempt)) throw new Error('Candidate evidence belongs to a different run/attempt.');
     }
+    let pluginSourceCandidate: any = null;
     if (scoped && plan.requirements.plugin) {
       plan.expectedPeer = targets.packages.includes('buildr') ? candidateEvidence?.packageArtifact : state.preparationPeer;
       plan.peerSourceCommit = sourceCommit;
       const pluginSource = readPluginSourceCandidate({ repo, plan, runId: state.candidate.runId, runAttempt: candidate.run_attempt, ghCommand: options.ghCommand }, { execute, ...dependencies.pluginSourceDependencies });
       assertPluginSourceAggregate(pluginSource.aggregate, plan, state.candidate.runId, candidate.run_attempt);
       if (!targets.packages.includes('buildr') && (pluginSource.aggregate.verification.peer.version !== state.preparationPeer.version || pluginSource.aggregate.verification.peer.integrity !== state.preparationPeer.integrity || pluginSource.aggregate.verification.peer.artifactSha256 !== state.preparationPeer.artifactSha256)) throw new Error('Plugin source Candidate consumed a different frozen registry peer.');
-      state.pluginSourceAggregate = pluginSource.aggregate; save();
+      state.pluginSourceAggregate = pluginSource.aggregate; pluginSourceCandidate = pluginSource; save();
     }
-    if (stopAfterCandidate) return answer('candidate-verified', [], {
-      stopAfter: 'candidate', sourceTree: selection.releaseTree, run: candidate,
-      artifacts: { ...(candidateEvidence ? { buildr: candidateEvidence.manifest } : {}),
-        ...(scoped && plan.requirements.plugin ? { 'dsh-plugin': state.pluginSourceAggregate.candidate } : {}) },
-    });
+    if (stopAfterCandidate) {
+      phase = 'candidate-closeout';
+      state.preparation ??= preserveCandidatePreparation(workspace, key, selection, main, candidate, candidateEvidence, pluginSourceCandidate, {
+        sourceCommit: candidateEvidence?.aggregate.verificationSource ?? state.candidate.repair?.verificationSource ?? sourceCommit,
+        source: state.candidate.verificationInputs?.source ?? state.candidate.sourceVerification?.digest ?? null,
+        artifact: state.candidate.verificationInputs?.artifact ?? null,
+      }); save();
+      const snapshot = readPreparedCandidate(workspace, state, selection);
+      const completed = finishCandidatePreparation(workspace, state, selection, snapshot, { runtime, controller, invoke, save, effects: currentEffects, git });
+      return answer(completed.status, completed.nextActions, { ...completed, stopAfter: 'candidate', sourceTree: selection.releaseTree, run: candidate,
+        artifacts: snapshot.artifacts, preparationCloseout: state.preparation });
+    }
     phase = 'adoption-readiness';
     const pr = take(ensureReleaseToMainPullRequest({ ...selectionArgs, generation: selection.generation, repo, candidateCommit: sourceCommit, candidateTree: selection.releaseTree,
       title: `Release ${key}`, body: `Release ${key} from frozen ${sourceCommit}.\n\nCandidate run ID: ${state.candidate.runId}${scoped ? `\nRelease selection: ${JSON.stringify(plan.selection)}${plan.requirements.plugin ? `\nBuildr peer: ${JSON.stringify(state.pluginSourceAggregate.verification.peer)}` : ''}` : ''}`,

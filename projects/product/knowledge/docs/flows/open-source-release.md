@@ -22,7 +22,7 @@
 
 本机是 macOS，GitHub 补 Windows；本机是 Windows，GitHub 补 macOS。**只有操作系统相关检查分平台；通用功能和核心页面不因此两边重跑。** 最低／当前 Node 的必要系统组合仍须满足，同一原包贯穿全部验包。插件按实际发布范围另外核对准确双包组合，见[插件说明](dsh-plugin-release.md)。
 
-`prepare --stop-after candidate` 停在验包；继续发布时再核对同树 `main`、准确对端、顺序及授权。发布代码位于工作空间根的 `skills/buildr-release/scripts/`，检查明细和入口见[验证框架](../architecture/verification-framework.md)及[工具地图](../../code-map/product-verification-tools.md)。
+`prepare --stop-after candidate` 停在验包：保全原包和证明，登记验证报告和结果材料，关联本轮过程报告，结束准备任务，并逐项清理或说明保留的临时资源。记录或清理失败只补相应动作。后续可明确接续同一冻结候选，再核对同树 `main`、准确对端、顺序及公开授权；纳入新源码仍须恢复活动准备。发布代码位于工作空间根的 `skills/buildr-release/scripts/`，检查明细和入口见[验证框架](../architecture/verification-framework.md)及[工具地图](../../code-map/product-verification-tools.md)。
 
 ## 失败从哪里继续
 

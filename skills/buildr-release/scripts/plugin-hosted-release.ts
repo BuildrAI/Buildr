@@ -191,7 +191,7 @@ export function readPluginSourceCandidate(options: any, dependencies: any = {}):
     if (fs.statSync(filename).size > 4 * 1024 * 1024) throw new Error('Plugin source aggregate exceeds its byte budget.');
     const aggregate = JSON.parse(fs.readFileSync(filename, 'utf8'));
     if (aggregate.candidate.integrity !== owned.manifest.integrity || aggregate.candidate.sha256 !== owned.manifest.sha256) throw new Error('Plugin source aggregate differs from original Candidate archive.');
-    return { aggregate, candidate: owned.manifest };
+    return { aggregate, candidate: owned.manifest, tarballBytes: fs.readFileSync(owned.tarball) };
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 }
 
