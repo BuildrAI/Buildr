@@ -8,15 +8,15 @@
     "output": "projects/product/knowledge/archify/flows/release-architecture.html",
     "repository": {
       "url": "https://github.com/BuildrAI/Buildr.git",
-      "revision": "112803642ea5ea06a741a681466f6384e813099a"
+      "revision": "a3bfca371544c7b56d02603c4a87df4f682e7e4d"
     },
     "legend": {
       "entries": {
         "external": {
-          "label": "人及智能体"
+          "label": "工作协调"
         },
         "backend": {
-          "label": "方法与代码"
+          "label": "发布与验证代码"
         },
         "cloud": {
           "label": "执行场所"
@@ -26,35 +26,16 @@
   },
   "components": [
     {
-      "id": "person",
-      "type": "external",
-      "label": "人：目标与公开授权",
-      "sublabel": "决定包、版本和允许公开的准确内容",
-      "pos": [
-        40,
-        40
-      ],
-      "size": [
-        320,
-        95
-      ],
-      "sources": [
-        {
-          "path": "AGENTS.md"
-        }
-      ]
-    },
-    {
       "id": "agent",
       "type": "external",
-      "label": "智能体（Agent）：推进工作",
-      "sublabel": "按 buildr-release 调用代码、处理失败",
+      "label": "智能体（Agent）：协调执行",
+      "sublabel": "人确定目标与公开授权",
       "pos": [
-        480,
+        415,
         40
       ],
       "size": [
-        360,
+        390,
         95
       ],
       "sources": [
@@ -70,9 +51,9 @@
       "id": "release",
       "type": "backend",
       "label": "buildr-release：发布流程与代码",
-      "sublabel": "固定候选、打包、发布与失败接续",
+      "sublabel": "固定候选、制包、公开与失败恢复",
       "pos": [
-        450,
+        40,
         260
       ],
       "size": [
@@ -94,14 +75,14 @@
     {
       "id": "testing",
       "type": "backend",
-      "label": "验证框架：全部检查",
-      "sublabel": "跑测试、验包、复用结果、准备环境与汇总",
+      "label": "验证框架：检查与有效结果",
+      "sublabel": "通用一次；源码与原包的平台节点分开",
       "pos": [
-        40,
-        500
+        760,
+        260
       ],
       "size": [
-        370,
+        420,
         110
       ],
       "sources": [
@@ -109,7 +90,7 @@
           "path": "projects/product/services/buildr/test/verification/registry.ts"
         },
         {
-          "path": "projects/product/services/buildr/test/verification/plan-runner.ts"
+          "path": "projects/product/services/buildr/test/verification/candidate-ci.ts"
         },
         {
           "path": "projects/product/services/buildr/test/verification/verification-reuse.ts"
@@ -117,16 +98,38 @@
       ]
     },
     {
-      "id": "execution",
+      "id": "local",
       "type": "cloud",
-      "label": "执行场所：本机与 GitHub",
-      "sublabel": "共用同一份发布代码和检查定义",
+      "label": "本机：通用检查＋本机系统",
+      "sublabel": "macOS 或 Windows，验同一原包",
       "pos": [
-        710,
-        500
+        760,
+        520
       ],
       "size": [
         420,
+        110
+      ],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/test/verification/source.ts"
+        },
+        {
+          "path": "projects/product/services/buildr/test/verification/artifact.ts"
+        }
+      ]
+    },
+    {
+      "id": "github",
+      "type": "cloud",
+      "label": "GitHub：只补必要工作",
+      "sublabel": "另一系统源码、制包、另一系统验包、获准发布",
+      "pos": [
+        40,
+        520
+      ],
+      "size": [
+        520,
         110
       ],
       "sources": [
@@ -135,63 +138,61 @@
         },
         {
           "path": ".github/workflows/publish.yml"
-        },
-        {
-          "path": "projects/product/services/buildr/test/verification/source.ts"
         }
       ]
     }
   ],
   "connections": [
     {
-      "id": "goal",
-      "from": "person",
-      "to": "agent",
-      "label": "目标与授权",
-      "variant": "emphasis"
-    },
-    {
-      "id": "follow",
+      "id": "follow-release",
       "from": "agent",
       "to": "release",
       "label": "按技能推进",
       "variant": "emphasis"
     },
     {
-      "id": "test",
-      "from": "release",
+      "id": "select-checks",
+      "from": "agent",
       "to": "testing",
-      "label": "调用跑测试、验包",
+      "label": "选择检查",
       "variant": "emphasis"
     },
     {
-      "id": "release-execute",
+      "id": "release-github",
       "from": "release",
-      "to": "execution",
-      "label": "打包、获准发布"
+      "to": "github",
+      "label": "制包、获准发布"
     },
     {
-      "id": "test-execute",
+      "id": "testing-local",
       "from": "testing",
-      "to": "execution",
-      "label": "按需执行检查"
+      "to": "local",
+      "label": "通用＋本机系统",
+      "variant": "emphasis"
+    },
+    {
+      "id": "testing-peer",
+      "from": "testing",
+      "to": "github",
+      "label": "只补另一系统缺项",
+      "variant": "emphasis"
     }
   ],
   "cards": [
     {
-      "dot": "amber",
-      "title": "职责与代码放在一起",
+      "dot": "emerald",
+      "title": "系统对称，通用不重复",
       "items": [
-        "发布专用代码归 buildr-release 的随附脚本；检查定义和执行归验证框架",
-        "发布代码在 skills/buildr-release/scripts；所有检查由现有验证框架管理"
+        "macOS 本机补 Windows；Windows 本机补 macOS",
+        "平台源码和平台原包分别执行、分别恢复；通用功能和核心页面只验一次"
       ]
     },
     {
-      "dot": "cyan",
-      "title": "只补必要工作",
+      "dot": "amber",
+      "title": "同一份代码、同一原包",
       "items": [
-        "本机能充分证明的本机完成；GitHub 补必要平台、干净环境和受保护条件",
-        "有效结果直接采用；局部失败只恢复相关步骤，不整套重来"
+        "发布代码在 skills/buildr-release/scripts；检查归现有验证框架",
+        "先采用有效结果，再准备缺项；全部源码通过后制包，验包齐全并获准才公开"
       ]
     }
   ]
