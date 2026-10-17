@@ -205,7 +205,9 @@ test('Windows native timeout returns no tentative bodies and the killed owner re
     const started = performance.now();
     readVerifiedReadonlyBatch([f.request('left', 'a.md'), f.request('right', 'a.md')]).forEach(denied);
     assert.equal(fs.readFileSync(ready, 'utf8'), 'ready', 'the real native owner reached the held-handle stage before timeout');
-    assert.ok(performance.now() - started < 10_000);
+    const elapsed = performance.now() - started;
+    assert.ok(elapsed >= WINDOWS_READONLY_TIMEOUT_MS * 0.9, 'an immediate rejection cannot stand in for the native deadline');
+    assert.ok(elapsed < WINDOWS_READONLY_TIMEOUT_MS + 5_000);
     fs.renameSync(path.dirname(first), `${path.dirname(first)}-closed`);
     fs.renameSync(path.join(f.directory, 'right'), path.join(f.directory, 'right-closed'));
   } finally { restore(); }

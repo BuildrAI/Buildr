@@ -4,7 +4,10 @@ import { execFileSync } from 'node:child_process';
 import type { VerifiedReadonlyRequest, VerifiedReadonlyResult } from './verified-readonly-types.ts';
 
 const SCHEMA = 'buildr.windows-verified-readonly/v1';
-export const WINDOWS_READONLY_TIMEOUT_MS = 5_000;
+// One bounded call includes system PowerShell startup, first compilation and
+// held-handle reads. Warm calls of 400–900 ms do not guarantee a 5 s cold call;
+// two native runs reached that total deadline without identifying the slow phase.
+export const WINDOWS_READONLY_TIMEOUT_MS = 10_000;
 function unavailable(): Error { return Object.assign(new Error('来源文件无法在授权根内确认。'), { code: 'readonly_root_unconfirmed' }); }
 
 // Windows PowerShell 5.1 supplies .NET and Add-Type. No downloaded module,
