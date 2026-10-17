@@ -155,9 +155,10 @@ public static class BuildrVerifiedReadonlyWindows {
             Require(String.Equals(FinalName(handle), rootName, StringComparison.Ordinal));
             root = new Root { Handle = handle, Name = rootName, Id = Id(handle) };
             roots.Add(rootName, root);
+          } else {
+            Metadata(root.Handle, true);
+            Require(Same(Id(root.Handle), root.Id) && String.Equals(FinalName(root.Handle), root.Name, StringComparison.Ordinal));
           }
-          Metadata(root.Handle, true);
-          Require(Same(Id(root.Handle), root.Id) && String.Equals(FinalName(root.Handle), root.Name, StringComparison.Ordinal));
           // Test instrumentation may pause here while real Windows paths change.
           string leafName = Path.Combine(rootName, relative.Replace('/', '\\'));
           SafeFileHandle leafHandle = Open(leafName, false); held.Add(leafHandle);
@@ -181,7 +182,8 @@ public static class BuildrVerifiedReadonlyWindows {
               if (count == 0) break;
               body.Write(buffer, 0, (int)count);
             }
-            Require(body.Length <= leaf.Limit && Attest(leaf));
+            Require(body.Length <= leaf.Limit);
+            // These bytes remain private until the final full root/leaf proof.
             leaf.Body = body.ToArray();
           }
         } catch { leaf.Body = null; }

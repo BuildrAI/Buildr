@@ -42,7 +42,12 @@ export function createWindowsSourceDiagnosisPlan(scenario: string): any {
   const plan = createVerificationPlan({ stepIds: [stepId] });
   if (plan.steps.length !== 1 || plan.steps[0].id !== stepId || plan.steps[0].dependsOn.length !== 0
       || plan.steps[0].executor.type === 'candidate-artifact' || plan.steps[0].executor.consumesArtifact) fail('diagnosis-plan-coverage-mismatch');
-  return { ...plan, source: 'windows-source-diagnosis', primaryStepIds: [stepId] };
+  // Diagnostic runs never authorize an aggregate. Retain the registered cases,
+  // filters and worker grant while exposing actual case timings and skips.
+  const steps = plan.steps.map((step: any) => ({ ...step, executor: { ...step.executor,
+    args: (step.executor.args ?? []).map((arg: string) => arg === '--test-reporter=dot' ? '--test-reporter=tap' : arg),
+  } }));
+  return { ...plan, source: 'windows-source-diagnosis', primaryStepIds: [stepId], steps };
 }
 
 function readGitFacts(productRoot: string): GitFacts {

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { syncBuiltinESMExports } from 'node:module';
 import test from 'node:test';
 import { readVerifiedReadonlyBatch, readVerifiedReadonlyBytes, VERIFIED_READONLY_BATCH_SIZE } from '../../src/infrastructure/filesystem/verified-readonly-file.ts';
-import { WINDOWS_READONLY_SCRIPT } from '../../src/infrastructure/filesystem/verified-readonly-file-windows.ts';
+import { WINDOWS_READONLY_SCRIPT, WINDOWS_READONLY_TIMEOUT_MS } from '../../src/infrastructure/filesystem/verified-readonly-file-windows.ts';
 import { readSkillTexts } from '../../src/modules/agent-assets/persistence/skill-content-repository.ts';
 import { fixture, body, denied } from '../helpers/verified-readonly-fixture.ts';
 
@@ -55,24 +55,78 @@ test('Windows actual handles read Unicode, exact bounds and sixteen independent 
     f.write(`根 空格${index}/目录/内容.md`, index === 0 ? '' : `内容 ${index}`);
     return f.request(`根 空格${index}`, '目录/内容.md');
   });
-  const samples: Array<{ phase: string; requestCount: number; elapsedMs: number }> = [];
-  const timed = (phase: string, selected: typeof requests) => {
+  type Phase = 'first-call' | 'multi-file-batch' | 'repeat-call' | 'exact-byte-limit' | 'over-byte-limit';
+  const samples: Array<{ phase: Phase; requestCount: number; elapsedMs: number; acceptedCount: number | null; deniedCount: number | null }> = [];
+  const calls: Array<{ phase: Phase; requestCount: number; elapsedMs: number; timeoutMs: number | null;
+    outcome: 'completed' | 'failed'; errorCode: string | null; exitCode: number | null; signal: string | null; outputBytes: number | null;
+    systemPowerShell: boolean; noProfile: boolean }> = [];
+  let currentPhase: Phase = 'first-call', requestCount = 0;
+  const original = childProcess.execFileSync;
+  const captured = t.mock.method(childProcess, 'execFileSync', ((file: any, args: any, options: any) => {
     const started = performance.now();
-    try { return readVerifiedReadonlyBatch(selected).map(body); }
-    finally { samples.push({ phase, requestCount: selected.length, elapsedMs: performance.now() - started }); }
+    let failure: any = null, output: any = null;
+    try { output = original(file, args, options); return output; }
+    catch (error) { failure = error; throw error; }
+    finally {
+      // Deliberately omit argv, paths, input, stdout/stderr and error messages.
+      const knownCode = ['ETIMEDOUT', 'ENOBUFS', 'ENOENT', 'EACCES', 'EPERM', 'EINVAL'];
+      const knownSignal = ['SIGTERM', 'SIGKILL', 'SIGABRT', 'SIGSEGV', 'SIGINT'];
+      calls.push({ phase: currentPhase, requestCount, elapsedMs: performance.now() - started,
+        timeoutMs: Number.isSafeInteger(options?.timeout) ? options.timeout : null,
+        outcome: failure === null ? 'completed' : 'failed',
+        errorCode: failure === null ? null : knownCode.includes(failure.code) ? failure.code : failure.code == null ? null : 'unknown',
+        exitCode: failure === null ? 0 : Number.isInteger(failure.status) ? failure.status : null,
+        signal: failure?.signal == null ? null : knownSignal.includes(failure.signal) ? failure.signal : 'unknown',
+        outputBytes: Buffer.isBuffer(output) ? output.length : null,
+        systemPowerShell: file === path.join(process.env.SystemRoot!, 'System32/WindowsPowerShell/v1.0/powershell.exe'),
+        noProfile: Array.isArray(args) && args.includes('-NoProfile') });
+    }
+  }) as typeof childProcess.execFileSync);
+  syncBuiltinESMExports();
+  t.after(() => {
+    captured.mock.restore(); syncBuiltinESMExports();
+    const record = { schemaVersion: 'buildr.windows-readonly-cost/v1', kind: 'windows-readonly-cost', samples, calls,
+      node: { version: process.versions.node, platform: process.platform, arch: process.arch },
+      helperTimeoutMs: WINDOWS_READONLY_TIMEOUT_MS,
+      persistentOwner: false, compilationPerCall: true };
+    t.diagnostic(JSON.stringify(record));
+    const output = process.env.BUILDR_DIAGNOSTICS_OUTPUT;
+    if (output) {
+      try {
+        fs.mkdirSync(output, { recursive: true });
+        fs.writeFileSync(path.join(output, 'windows-readonly-cost.json'), `${JSON.stringify(record, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+      } catch {
+        // The TAP diagnostic above still holds the record. Optional persistence
+        // must neither overwrite an earlier sample nor replace the test result.
+        t.diagnostic('windows-readonly-cost persistence unavailable; original test result retained');
+      }
+    }
+  });
+  const timed = (phase: Phase, selected: typeof requests) => {
+    currentPhase = phase; requestCount = selected.length;
+    const started = performance.now();
+    let acceptedCount: number | null = null, deniedCount: number | null = null;
+    try {
+      const values = readVerifiedReadonlyBatch(selected);
+      acceptedCount = values.filter(value => value.ok).length; deniedCount = values.length - acceptedCount;
+      return values.map(body);
+    } finally { samples.push({ phase, requestCount: selected.length, elapsedMs: performance.now() - started, acceptedCount, deniedCount }); }
   };
-  t.after(() => t.diagnostic(JSON.stringify({ kind: 'windows-readonly-cost', samples,
-    node: { executable: process.execPath, version: process.versions.node },
-    powershell: { executable: path.join(process.env.SystemRoot!, 'System32/WindowsPowerShell/v1.0/powershell.exe'), noProfile: true },
-    persistentOwner: false, compilationPerCall: true })));
   assert.deepEqual(timed('first-call', requests.slice(1, 2)), ['内容 1']);
   assert.deepEqual(timed('multi-file-batch', requests), requests.map((_, index) => index === 0 ? '' : `内容 ${index}`));
   assert.deepEqual(timed('repeat-call', requests.slice(1, 2)), ['内容 1']);
   assert.deepEqual(readVerifiedReadonlyBatch([]), []);
   assert.throws(() => readVerifiedReadonlyBatch([...requests, requests[0]!]), { code: 'readonly_root_unconfirmed' });
   f.write('exact/a.md', '12345');
+  currentPhase = 'exact-byte-limit'; requestCount = 1;
   assert.equal(readVerifiedReadonlyBytes(path.join(f.directory, 'exact'), 'a.md', 5).toString(), '12345');
+  currentPhase = 'over-byte-limit';
   assert.throws(() => readVerifiedReadonlyBytes(path.join(f.directory, 'exact'), 'a.md', 4), { code: 'readonly_root_unconfirmed' });
+  assert.deepEqual(calls.map(call => [call.phase, call.requestCount]), [
+    ['first-call', 1], ['multi-file-batch', VERIFIED_READONLY_BATCH_SIZE], ['repeat-call', 1],
+    ['exact-byte-limit', 1], ['over-byte-limit', 1],
+  ], 'the observer records every real native call, while empty and invalid batches start no child');
+  assert.ok(calls.every(call => call.systemPowerShell && call.noProfile && call.timeoutMs === WINDOWS_READONLY_TIMEOUT_MS));
   // A successful read must close roots as well as leaves, including all 32 handles.
   for (let index = 0; index < requests.length; index++) fs.renameSync(requests[index]!.root, `${requests[index]!.root}-closed`);
 });
