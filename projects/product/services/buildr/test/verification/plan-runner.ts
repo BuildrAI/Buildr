@@ -167,17 +167,22 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   }
   const releaseFailed: any = fullPlanRelease.some((item: any) => item.status !== 'released');
   if (releaseFailed) { reuse?.invalidate(); throw new Error(`Failed to release ${FULL_PLAN_RESOURCE_ID} shared capacity`); }
-  const sourceBundle = reuse?.finish(results, contextCleanup?.status === 'cleaned');
+  // An interrupted child may have left a process touching shared inputs. Keep
+  // completed checks only after both child ownership and pool cleanup are known.
+  const interruptionClean = !options.signal?.aborted || results.every((result: any) =>
+    result.disposition === 'reused' || result.status === 'blocked' || result.processCleanup?.status === 'clean');
+  const cleanupClean = contextCleanup?.status === 'cleaned' && interruptionClean;
+  const sourceBundle = reuse?.finish(results, cleanupClean);
   return {
     results,
     diagnosticsDirectory,
     artifactDirectory,
     ...(sourceBundle ? { sourceBundle } : {}),
-    cleanupClean: contextCleanup?.status === 'cleaned',
+    cleanupClean,
     ...(reuse?.explanation ? { reusePlan: reuse.explanation } : {}),
     coordinationRoot: resourceCoordinator.root,
     fullPlanCoordination: fullPlanLease ? { waitDurationMs: fullPlanLease.waitDurationMs, release: fullPlanRelease } : null,
     contextLifecycle: { contexts: preparedContexts.map((context: any) => ({ provider: context.provider.key, identity: context.marker.identity, owned: context.owned, prepareDurationMs: context.prepareDurationMs })), events: contextCleanup?.events ?? contextPool.events() },
-    passed: results.every((result: any) => result.status === 'passed'),
+    passed: !options.signal?.aborted && results.every((result: any) => result.status === 'passed'),
   };
 }

@@ -93,6 +93,9 @@ export function prepareCandidateEnvironment({
       ...(profile === 'host' ? {} : { minimumVersion: requiredVersion }),
     });
     evidence.node = exact.audit;
+    const childEnv: NodeJS.ProcessEnv = { ...exact.env, npm_config_fetch_retries: '1', npm_config_fetch_timeout: '30000' };
+    delete childEnv.BUILDR_CANDIDATE_PREPARATION_OUTPUT;
+    delete childEnv.BUILDR_CANDIDATE_PREPARATION_ID;
     const prepared = reusePrepared ? createCandidatePreparationReuse(roots, exact.audit, { ...preparationReuseOptions, env: exact.env }) : null;
     persist();
     for (const item of candidateEnvironmentPlan(profile, roots)) {
@@ -117,7 +120,7 @@ export function prepareCandidateEnvironment({
       try {
         result = execute(executable, item.args, {
           cwd: item.cwd, encoding: 'utf8', timeout: timeoutMs,
-          env: { ...exact.env, npm_config_fetch_retries: '1', npm_config_fetch_timeout: '30000' },
+          env: childEnv,
         });
       } catch (error: any) {
         result = { status: null, error, signal: null };

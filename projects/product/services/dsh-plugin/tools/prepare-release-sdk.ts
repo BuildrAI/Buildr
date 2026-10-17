@@ -10,6 +10,7 @@ const SERVICE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const RELEASE_SDK_REPOSITORY = `https://github.com/${DSH_SDK_REPOSITORY}.git`;
 export const RELEASE_SDK_MANIFEST = 'sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.json';
 export const RELEASE_SDK_PNPM_VERSION = '11.7.0';
+export const RELEASE_SDK_STORE_DIRECTORY = 'dsh-release-sdk-pnpm-store';
 export interface ReleaseSdkInput { node: string; pnpm: string }
 interface CommandOptions { cwd: string; env: NodeJS.ProcessEnv; diagnostic?: boolean }
 export type ReleaseSdkCommand = (executable: string, args: string[], options: CommandOptions) => string;
@@ -25,6 +26,13 @@ function absoluteFile(value: string, label: string): string {
   const file = realpathSync(value);
   if (!lstatSync(file).isFile()) fail(`${label} must be a regular file`);
   return file;
+}
+/** Share downloaded bytes only; each preparation still owns its checkout, install and generated SDK. */
+export function releaseSdkStore(serviceRoot = SERVICE_ROOT): string {
+  const store = join(ownedBuildRoot(serviceRoot), RELEASE_SDK_STORE_DIRECTORY);
+  if (!existsSync(store)) mkdirSync(store, { recursive: true });
+  if (!lstatSync(store).isDirectory() || lstatSync(store).isSymbolicLink() || realpathSync(store) !== store) fail('dependency store must be an owned regular directory');
+  return store;
 }
 /** Public input selects tools, never upstream repositories, refs, manifests or existing SDKs. */
 export function parseReleaseSdkInput(args: string[]): ReleaseSdkInput {
@@ -130,6 +138,10 @@ function isolatedSdkValidation<T>(node: string, action: 'verify-input' | 'valida
 }
 /** Public orchestration downloads only the fixed source; injected collaborators are test-only API arguments. */
 export async function prepareReleaseSdk(input: ReleaseSdkInput, dependencies: Dependencies = {}) {
+  const started = performance.now();
+  const timingsMs: Record<string, number> = {};
+  let phaseStarted = started;
+  const finishPhase = (name: string) => { const now = performance.now(); timingsMs[name] = Math.round(now - phaseStarted); phaseStarted = now; };
   const run = dependencies.command ?? command, verifyPatched = dependencies.verifyPatched ?? verifyPatchedReleaseSdkCheckout;
   const plan = releaseSdkPlan(), node = absoluteFile(input.node, 'Node'), pnpm = absoluteFile(input.pnpm, 'pnpm');
   if (!/\.(?:cjs|mjs|js)$/.test(pnpm)) fail('pnpm must name its installed JavaScript entry');
@@ -141,6 +153,7 @@ export async function prepareReleaseSdk(input: ReleaseSdkInput, dependencies: De
   const nodeVersion = selectedNodeVersion(run(node, ['--version'], { cwd: stage, env }), plan.nodeRequirement);
   if (realpathSync(process.execPath) !== node) fail('run this preparer with the selected Node and pass that exact executable');
   if (run(node, [pnpm, '--version'], { cwd: stage, env }).trim() !== plan.pnpmVersion) fail(`pnpm ${plan.pnpmVersion} is required`);
+  finishPhase('toolValidation');
   const source = join(stage, 'source'); mkdirSync(source);
   git(source, ['init', '--quiet'], run, env);
   git(source, ['remote', 'add', 'origin', plan.repository], run, env);
@@ -155,13 +168,17 @@ export async function prepareReleaseSdk(input: ReleaseSdkInput, dependencies: De
   git(source, ['apply', selected.patchFile], run, env);
   verifyPatched(source, plan, run, env);
   const lock = join(source, 'pnpm-lock.yaml'), lockSha256 = sha256(readFileSync(lock));
-  run(node, [pnpm, 'install', '--frozen-lockfile', '--ignore-scripts', '--store-dir', join(stage, 'pnpm-store')], { cwd: source, env, diagnostic: true });
+  finishPhase('sourceDownloadAndPatch');
+  const store = releaseSdkStore();
+  run(node, [pnpm, 'install', '--frozen-lockfile', '--ignore-scripts', '--prefer-offline', '--verify-store-integrity=true', '--store-dir', store], { cwd: source, env, diagnostic: true });
   if (!existsSync(join(source, 'node_modules')) || !lstatSync(join(source, 'node_modules')).isDirectory() || lstatSync(join(source, 'node_modules')).isSymbolicLink()) fail('frozen dependency installation did not create owned dependencies');
   if (sha256(readFileSync(lock)) !== lockSha256) fail('frozen dependency lockfile changed during installation');
   verifyPatched(source, plan, run, env);
+  finishPhase('dependencyInstall');
   const existingOutputs = new Set(readdirSync(build).map(entry => join(build, entry)));
   const stdout = run(node, [join(SERVICE_ROOT, 'tools/prepare-source-sdk.ts'), '--source', source, '--manifest', plan.manifestFile, '--node', node], { cwd: SERVICE_ROOT, env });
   const sdk = preparedReleaseSdkOutput(stdout, existingOutputs);
+  finishPhase('sourceSdkBuild');
   let receipt: SourceSdkReceipt;
   try {
     receipt = dependencies.validate ? dependencies.validate(sdk, SERVICE_ROOT)
@@ -173,7 +190,9 @@ export async function prepareReleaseSdk(input: ReleaseSdkInput, dependencies: De
     if (existsSync(ready)) unlinkSync(ready);
     throw error;
   }
-  return { schemaVersion: 'buildr.dsh-release-sdk/v1', status: 'prepared', sdk, baseline: receipt.baseline, sourceManifestSha256: receipt.sourceManifest.sha256, patchSha256: receipt.patchSha256, nodeRequirement: plan.nodeRequirement, nodeVersion, nodeExecutable: node, pnpmVersion: plan.pnpmVersion, runtimeActivated: false, desktopValidated: false };
+  finishPhase('outputValidation');
+  timingsMs.total = Math.round(performance.now() - started);
+  return { schemaVersion: 'buildr.dsh-release-sdk/v1', status: 'prepared', sdk, baseline: receipt.baseline, sourceManifestSha256: receipt.sourceManifest.sha256, patchSha256: receipt.patchSha256, nodeRequirement: plan.nodeRequirement, nodeVersion, nodeExecutable: node, pnpmVersion: plan.pnpmVersion, dependencyStore: store, timingsMs, runtimeActivated: false, desktopValidated: false };
 }
 
 if (import.meta.main) console.log(JSON.stringify(await prepareReleaseSdk(parseReleaseSdkInput(process.argv.slice(2)))));

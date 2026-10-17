@@ -7,6 +7,7 @@ import test from 'node:test';
 import { collectVerificationReuseSnapshot, collectVerificationReuseBundle, createVerificationReuseIdentity, createVerificationReuseStore, createVerificationPlanReuse, inspectVerificationReusePlan, reusedVerificationResult, validateVerificationReuseRecord } from '../verification/verification-reuse.ts';
 import { executePlan } from '../verification/plan-runner.ts';
 import { runVerificationStep } from '../verification/timing/parallel-runner.ts';
+import { createVerificationExecutor } from '../verification/executor.ts';
 
 function fixture(t: test.TestContext) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-source-reuse-'));
@@ -27,6 +28,56 @@ function fixture(t: test.TestContext) {
   return { root, productRoot, step, options, observe };
 }
 const passed = { status: 'passed', exitCode: 0, durationMs: 12, childOutcome: 'passed', childExitCode: 0, childSignal: null, processCleanup: { status: 'clean' } };
+
+for (const cleanup of ['clean', 'failed', 'unknown']) test(`interrupted source exports completed checks only with confirmed ${cleanup} child cleanup`, async t => {
+  const f = fixture(t);
+  const steps = ['completed', 'in-flight', 'pending'].map(id => ({ ...f.step, id, dependsOn: [], contexts: [] }));
+  const cancellation = new AbortController(), executed: string[] = [];
+  const output = path.join(f.root, '.cache', 'partial.json');
+  const plan = { status: 'ready', paths: [], steps };
+  const options = { ...f.options, steps, concurrency: 1, runId: 'partial-source-original',
+    executorFactory: () => async (step: any) => {
+      executed.push(step.id);
+      if (step.id === 'in-flight') {
+        cancellation.abort();
+        return { status: 'cancelled', exitCode: 130, childOutcome: 'unknown', childExitCode: null, childSignal: 'SIGTERM', durationMs: 1,
+          ...(cleanup === 'unknown' ? {} : { processCleanup: { status: cleanup } }) };
+      }
+      return { ...passed };
+    } };
+  const interrupted = await executePlan(plan, { ...options, signal: cancellation.signal, reuse: { output } });
+  assert.equal(interrupted.passed, false);
+  assert.equal(interrupted.cleanupClean, cleanup === 'clean');
+  assert.deepEqual(executed, ['completed', 'in-flight']);
+  const bundle = JSON.parse(fs.readFileSync(output, 'utf8'));
+  assert.deepEqual(bundle.records.map((record: any) => record.identity.stepId), cleanup === 'clean' ? ['completed'] : []);
+  if (cleanup === 'clean') {
+    const origin = bundle.records[0].origin;
+    assert.equal(origin.runId, 'partial-source-original');
+    executed.length = 0;
+    const resumed = await executePlan(plan, { ...options, runId: 'partial-source-resume', executorFactory: () => async (step: any) => { executed.push(step.id); return { ...passed }; } });
+    assert.equal(resumed.passed, true);
+    assert.deepEqual(executed, ['in-flight', 'pending']);
+    assert.deepEqual(resumed.sourceBundle.records.find((record: any) => record.identity.stepId === 'completed').origin, origin);
+  }
+});
+
+test('verification children cannot overwrite parent preparation evidence through inherited output paths', async t => {
+  const f = fixture(t), output = path.join(f.root, '.cache', 'parent-preparation.json');
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  fs.writeFileSync(output, '{"durationMs":17000}\n');
+  const file = path.join(f.productRoot, 'inspect-environment.mjs');
+  fs.writeFileSync(file, `import fs from 'node:fs';
+if (process.env.BUILDR_CANDIDATE_PREPARATION_OUTPUT) fs.writeFileSync(process.env.BUILDR_CANDIDATE_PREPARATION_OUTPUT, '{}');
+process.stdout.write(JSON.stringify({ output: process.env.BUILDR_CANDIDATE_PREPARATION_OUTPUT ?? null, id: process.env.BUILDR_CANDIDATE_PREPARATION_ID ?? null, profile: process.env.BUILDR_VERIFICATION_PROFILE, worker: process.env.BUILDR_VERIFICATION_WORKER_BUDGET }));\n`);
+  const env = { ...f.options.env, BUILDR_CANDIDATE_PREPARATION_OUTPUT: output, BUILDR_CANDIDATE_PREPARATION_ID: 'parent', BUILDR_VERIFICATION_PROFILE: 'ci-workspace-limited' };
+  const execute = createVerificationExecutor({ productRoot: f.productRoot, env, minimumNodeVersion: null });
+  const result = await execute({ id: 'receipt-isolation', executor: { type: 'node', file: 'inspect-environment.mjs' } }, { resourceGrant: { workers: 2 } });
+  assert.equal(result.status, 'passed', result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { output: null, id: null, profile: 'ci-workspace-limited', worker: '2' });
+  assert.equal(fs.readFileSync(output, 'utf8'), '{"durationMs":17000}\n');
+  assert.equal(env.BUILDR_CANDIDATE_PREPARATION_OUTPUT, output);
+});
 
 test('reviewed runtime proof partitions unrelated tests while binding its real test and tool imports', t => {
   const f = fixture(t);

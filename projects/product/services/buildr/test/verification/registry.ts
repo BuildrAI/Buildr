@@ -283,6 +283,13 @@ const RUNTIME_REUSE_CHECKS = new Set(['integration-runtime', 'integration-code',
   'integration-project-daily-progress', 'system-buildr-web-http', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation',
   'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection',
   'system-runtime-recovery', 'system-app-process', 'system-workspace-lifecycle']);
+// These reviewed entries do not consume this checkout's release notes. Package
+// static checks still read Product knowledge and OpenSpec: keep their complete
+// repository scope, excluding only this one independent material.
+const RELEASE_NOTES_INDEPENDENT_CHECKS = new Set([...RUNTIME_REUSE_CHECKS,
+  'package-static', 'package-workspace', 'package-commands', 'package-rules', 'package-skills', 'package-runtime',
+  'workspace-lifecycle', 'ownership-recovery', 'runtime-reconciliation', 'init-onboarding', 'service-branch-contract',
+  'managed-data-integrity', 'runtime-adapter-parity']);
 const NON_REUSABLE_CHECKS = new Set(['dsh-plugin', 'candidate-tarball', 'application-payload-release', 'release-tarball-smoke', 'artifact-browser-core', 'cli-package-parity', 'host-node-contract', 'host-node-boundaries']);
 // Lifecycle fixtures create and mutate their own repositories. Only checks that
 // actually observe the retained checkout history bind its Git state.
@@ -310,7 +317,8 @@ function sourceReusePolicy(definition: any): any {
   return Object.freeze({ scope: RUNTIME_REUSE_CHECKS.has(definition.id) ? 'runtime' : 'repository',
     git: definition.id === 'openspec-candidate-audit' ? 'comparison' : GIT_SOURCE_CHECKS.has(definition.id),
     ...(RUNTIME_REUSE_CHECKS.has(definition.id) ? { inputMode: 'runtime-check' } : {}),
-    ...(usesGit ? { tools: ['git'] } : {}), ...(REUSE_INPUTS_BY_STEP[definition.id] ? { inputs: REUSE_INPUTS_BY_STEP[definition.id] } : {}) });
+    ...(usesGit ? { tools: ['git'] } : {}), ...(RELEASE_NOTES_INDEPENDENT_CHECKS.has(definition.id) ? { releaseNotes: false } : {}),
+    ...(REUSE_INPUTS_BY_STEP[definition.id] ? { inputs: REUSE_INPUTS_BY_STEP[definition.id] } : {}) });
 }
 
 const step: any = (definition: any) => {

@@ -16,6 +16,7 @@ import { resolveReleaseExecutionBinding } from './release-execution-binding.ts';
 import { observeUnpublishedRelease } from './release-observation.ts';
 import { retryCandidateFailedShards, classifyCandidateFailure } from './candidate-failed-shard-retry.ts';
 import { releaseCommandDiagnostic, releaseDispatchRejected, releaseRecoveryPlan } from './release-failure.ts';
+import { extractReleaseNotes } from './release-notes.ts';
 import { assertCandidateDispatchBudget, continueCandidateRepair } from './candidate-repair-operation.ts';
 import { containsCredentialMaterial, releasePublishAuthority } from './release-authority.ts';
 import { createReleaseLifecycle, projectReleaseLifecycleOrchestration } from './release-lifecycle.ts';
@@ -669,6 +670,10 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     if (selection.status !== 'frozen') throw new Error('Final release selection is no longer frozen.');
     const sourceCommit = selection.releaseHead;
     for (const name of targets.packages) if (JSON.parse(git(['show', `${sourceCommit}:projects/product/services/${name}/package.json`, '--'], repo)).version !== targets.versions[name]) throw new Error(`Selected ${name} version differs from requested release; first deliver and select its version materials on dev.`);
+    // These materials already belong to the release contract. Check the frozen
+    // bytes before asking for expensive local source proof or a remote run.
+    // Plugin-only preparation does not require an unrelated main release note.
+    if (targets.packages.includes('buildr')) extractReleaseNotes(git(['show', `${sourceCommit}:CHANGELOG.md`, '--'], repo), targets.versions.buildr);
     state.sourceCommit = sourceCommit;
     let plan: any = null;
     if (scoped) {

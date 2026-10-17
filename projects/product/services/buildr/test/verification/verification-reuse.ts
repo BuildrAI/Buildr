@@ -13,7 +13,7 @@ import { resolveVerificationBase } from './changed-paths.ts';
 
 export type ReuseDigest = `sha256-${string}`;
 export type VerificationReuseScope = 'backend' | 'platform-backend' | 'web' | 'product' | 'repository' | 'plugin' | 'runtime';
-export interface VerificationReusePolicy { scope: VerificationReuseScope; git?: boolean | 'comparison'; exactNode?: boolean; tools?: string[]; inputs?: readonly string[]; inputMode?: 'runtime-check' }
+export interface VerificationReusePolicy { scope: VerificationReuseScope; git?: boolean | 'comparison'; exactNode?: boolean; tools?: string[]; inputs?: readonly string[]; inputMode?: 'runtime-check'; releaseNotes?: false }
 export interface VerificationReuseStep { id: string; executor: Record<string, any>; reuse?: VerificationReusePolicy | false; dependsOn?: string[]; contexts?: string[]; timeoutMs?: number; [key: string]: any }
 export interface VerificationReuseEnvironment { platform: string; arch: string; nodeVersion: string; tools: Record<string, string>; variablesIdentity: ReuseDigest }
 export interface VerificationReuseSnapshot {

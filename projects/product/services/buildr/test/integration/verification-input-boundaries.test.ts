@@ -99,6 +99,59 @@ test('module discovery distinguishes generated source and comments from actual i
   assert.deepEqual(executableModuleInputs("await import(/* comment */ '../literal.ts')").imports, ['../literal.ts']);
 });
 
+test('reviewed release-note independence preserves real readers, unknown roots and local/Git agreement', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-note-inputs-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const prefix = 'projects/product/services/buildr/', productRoot = path.join(root, prefix);
+  fs.mkdirSync(productRoot, { recursive: true });
+  const files = new Map<string, string>([
+    ['CHANGELOG.md', '# Changelog\n'], [prefix + 'package.json', '{}'],
+    [prefix + 'src/product.ts', 'export const value=1;'],
+    [prefix + 'test/verification/fixture.ts', 'export const assertion=1;'],
+    ['projects/product/knowledge/current.md', '# Current knowledge\n'],
+    ['projects/product/openspec/specs/current/spec.md', '# Current specification\n'],
+  ]);
+  const registered = verificationSteps.find((item: any) => item.id === 'package-static');
+  assert.equal(registered.reuse.scope, 'repository', 'package checks still bind actual Product knowledge and OpenSpec');
+  assert.equal(registered.reuse.releaseNotes, false);
+  const step = { ...registered, executor: { type: 'node', file: 'test/verification/fixture.ts' } };
+  const observe = (selected = step) => {
+    const inventory = [...files].map(([file, text]) => ({ path: file, mode: '100644', kind: 'blob', object: text }));
+    const source = { entries: inventory.map(item => [item.path, item.object]), unavailable: new Set<string>(), readText: (file: string) => files.get(file)! };
+    const local = createVerificationSourceInputReader(root, productRoot, undefined, source).inputs(selected, true);
+    const immutable = candidateCheckInputIdentity(root, 'a'.repeat(40), selected, { inventory: () => inventory, blob: (_commit, file) => files.get(file)! });
+    return { local, immutable };
+  };
+  const original = observe();
+  files.set('CHANGELOG.md', '# Changelog\n- Release note repair\n');
+  assert.deepEqual(observe(), original, 'only the reviewed independent material is excluded');
+  for (const file of [prefix + 'package.json', prefix + 'src/product.ts', 'projects/product/knowledge/current.md', 'projects/product/openspec/specs/current/spec.md']) {
+    const before = files.get(file)!; files.set(file, before + '\nchanged actual input');
+    const changed = observe();
+    assert.notEqual(changed.local.contentIdentity, original.local.contentIdentity, file);
+    assert.notEqual(changed.immutable, original.immutable, file);
+    files.set(file, before);
+  }
+  const conservative = { ...step, reuse: { ...step.reuse, releaseNotes: undefined } };
+  const unreviewed = observe(conservative);
+  files.set('CHANGELOG.md', '# Changed again\n');
+  assert.notDeepEqual(observe(conservative), unreviewed, 'unreviewed checks retain the original complete scope');
+  for (const source of [
+    "fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8');",
+    'for (const file of fs.readdirSync(repositoryRoot)) fs.readFileSync(path.join(repositoryRoot, file));',
+    'const files = fs.readdirSync(\n  repositoryRoot,\n);',
+    'fs.readFileSync(\n  path.join(repositoryRoot, file),\n  "utf8",\n);',
+    'await import(process.env.UNKNOWN_MODULE);',
+  ]) {
+    files.set(prefix + 'test/verification/fixture.ts', source);
+    const before = observe();
+    files.set('CHANGELOG.md', files.get('CHANGELOG.md') + '\nchanged');
+    const after = observe();
+    assert.notEqual(after.local.contentIdentity, before.local.contentIdentity, source);
+    assert.notEqual(after.immutable, before.immutable, source);
+  }
+});
+
 test('local and Git proofs isolate selected system contents while binding discovery membership and literal URL dependencies', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-input-boundaries-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

@@ -50,11 +50,16 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
     }
   }
   let fallback = verificationEntryFiles(step.executor).length === 0 && !(step.executor.files?.length > 0);
+  let readsReleaseNotes = false;
   const unresolved = new Set<string>();
   while (pending.length) {
     const file = pending.pop()!;
     if (!recipeFile(file) || !/\.[cm]?[jt]sx?$/u.test(file) || !byPath.has(file)) continue;
     const text = options.readText ? options.readText(file) : fs.readFileSync(path.resolve(repositoryRoot, file), 'utf8');
+    // Reviewed checks can exclude the checkout's release notes without
+    // excluding other Product materials. A direct reader outgrows that claim.
+    if (/\bCHANGELOG\.md\b/iu.test(text)
+      || /\b(?:readFileSync|readFile|readdirSync|readdir|opendirSync|opendir|copyFileSync|cpSync|globSync|glob)\s*\([^;]*\b(?:repositoryRoot|workspaceRoot|gitRoot)\b/u.test(text)) readsReleaseNotes = true;
     const urls = literalUrlImports(text);
     const executable = options.proof ? executableModuleInputs(text) : null;
     // Child scripts are often passed to spawn via a repository-relative literal,
@@ -79,6 +84,7 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
       else if (!relative.includes('/build/')) { fallback = true; unresolved.add(file + ':module:' + relative); }
     }
   }
-  return { content: fallback ? entries : content,
+  return { content: fallback ? entries : content.filter(([file]) => !(file === 'CHANGELOG.md'
+      && step.reuse?.releaseNotes === false && !readsReleaseNotes)),
     recipe: [...selected].sort().map(file => byPath.get(file) ?? [file, 'absent']).concat(discovery.inventory.map(file => [prefix + file, 'discovered-member'])), fallback, unresolved: [...unresolved].sort() };
 }

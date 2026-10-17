@@ -1,8 +1,22 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createSourceVerificationPlan, parseSourceArgs, prepareSourceVerificationEnvironment, sourceOnlyVerificationSteps, sourceVerificationPreparation } from '../verification/source.ts';
+import { EventEmitter } from 'node:events';
+import { createSourceVerificationPlan, parseSourceArgs, prepareSourceVerificationEnvironment, sourceOnlyVerificationSteps, sourceVerificationPreparation, sourceVerificationCancellation } from '../verification/source.ts';
 import { createPlatformArtifactVerificationPlan, createPlatformSourceVerificationPlan, validateCandidateCiCoverage, validateVerificationRegistry } from '../verification/planner.ts';
 import { CANDIDATE_CI_SHARDS, verificationSteps } from '../verification/registry.ts';
+
+for (const [signal, exitCode] of [['SIGINT', 130], ['SIGTERM', 143]] as const) test(`source ${signal} requests graceful cancellation and releases its signal listeners`, () => {
+  const signals = new EventEmitter();
+  const cancellation = sourceVerificationCancellation(signals as any);
+  assert.equal(cancellation.signal.aborted, false);
+  signals.emit(signal);
+  assert.equal(cancellation.signal.aborted, true);
+  assert.equal(cancellation.signal.reason, signal);
+  assert.equal(cancellation.exitCode(), exitCode);
+  cancellation.dispose();
+  assert.equal(signals.listenerCount('SIGINT'), 0);
+  assert.equal(signals.listenerCount('SIGTERM'), 0);
+});
 
 test('source flags keep plan-only output, force and portable export explicit', () => {
   assert.deepEqual(parseSourceArgs([]), { help: false, json: false, force: false, scope: 'all', output: null });

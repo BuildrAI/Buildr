@@ -193,6 +193,7 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
   fs.mkdirSync(path.join(workspace, path.dirname(packageFile)), { recursive: true });
   fs.mkdirSync(path.join(workspace, '.github/workflows'), { recursive: true });
   fs.writeFileSync(path.join(workspace, packageFile), JSON.stringify({ name: '@buildr-ai/buildr', version: '0.0.0' }));
+  fs.writeFileSync(path.join(workspace, 'CHANGELOG.md'), `## ${version} - 2026-10-17\n\nCandidate changes.\n`);
   fs.writeFileSync(path.join(workspace, 'projects/product/.node-version'), `${process.versions.node}\n`);
   fs.copyFileSync(path.resolve(sourceRoot, '../../../../.github/workflows/publish.yml'), path.join(workspace, '.github/workflows/publish.yml'));
   git(workspace, ['init', '-b', 'dev']); git(workspace, ['config', 'user.name', 'Buildr Test']); git(workspace, ['config', 'user.email', 'buildr@example.com']);
@@ -304,6 +305,14 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
     orchestrationDependencies: { transactionDependencies: { execute, runtime, candidateEvidence } },
   };
   const options = { action: 'prepare', workspace, version };
+  const missingNotes = await runReleaseOperation(options, { ...dependencies,
+    execute: (command: any, args: any, invocation: any) => command === 'git' && args[0] === 'show' && args[1]?.endsWith(':CHANGELOG.md')
+      ? { status: 0, stdout: '## 0.0.0 - 2026-10-17\n\nOther release.\n' } : execute(command, args, invocation),
+    prepareLocalSourceVerification: () => assert.fail('invalid frozen release notes must be caught before requesting source checks'),
+  });
+  assert.equal(missingNotes.status, 'blocked');
+  assert.match(missingNotes.diagnostic.message, /CHANGELOG is missing release section/u);
+  assert.equal(dispatched, 0, 'missing release notes must not spend a remote run');
   const missing = await runReleaseOperation(options, { ...dependencies, prepareLocalSourceVerification: async () => ({
     status: 'local-verification-required', missingStepIds: ['unit'], recordCount: 0, nextActions: ['Run the missing local source check.'],
   }) });

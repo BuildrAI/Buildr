@@ -1035,12 +1035,29 @@ jobs:
         run: |
           node "${RUNNER_TEMP}/plugin-tooling/node_modules/npm/bin/npm-cli.js" run test:integration:candidate:release
           node test/verification/run-node-tests.ts 'test/unit/release-*.test.ts' 'test/unit/package-compatibility.test.ts' 'test/contract/release-*.test.ts' 'test/contract/open-source-release.test.ts' 'test/contract/package-compatibility.test.ts'
+      - name: Restore pinned SDK dependency downloads
+        if: ${{ !inputs.repair_candidate_run_id }}
+        id: sdk-downloads
+        uses: actions/cache/restore@v5
+        continue-on-error: true
+        with:
+          path: projects/product/services/dsh-plugin/build/dsh-release-sdk-pnpm-store
+          key: dsh-sdk-downloads-v1-${{ runner.os }}-${{ runner.arch }}-pnpm11.7.0-${{ hashFiles('projects/product/services/dsh-plugin/tools/sdk-baselines.ts', 'projects/product/services/dsh-plugin/sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.json', 'projects/product/services/dsh-plugin/sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.patch') }}
+          restore-keys: |
+            dsh-sdk-downloads-v1-${{ runner.os }}-${{ runner.arch }}-pnpm11.7.0-
       - name: Prepare pinned source SDK
         if: ${{ !inputs.repair_candidate_run_id }}
         id: sdk
         run: |
           node tools/prepare-release-sdk.ts --node "$(command -v node)" --pnpm "${RUNNER_TEMP}/plugin-tooling/node_modules/pnpm/bin/pnpm.cjs" > "${RUNNER_TEMP}/plugin-sdk.json"
-          node --input-type=module -e 'import fs from "node:fs"; import path from "node:path"; const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (value.status !== "prepared" || !path.isAbsolute(value.sdk ?? "") || /[\u0000-\u001f\u007f]/.test(value.sdk)) throw new Error("Prepared SDK output missing"); fs.appendFileSync(process.env.GITHUB_OUTPUT, `root=${value.sdk}\n`);' "${RUNNER_TEMP}/plugin-sdk.json"
+          node --input-type=module -e 'import fs from "node:fs"; import path from "node:path"; const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (value.status !== "prepared" || !path.isAbsolute(value.sdk ?? "") || /[\u0000-\u001f\u007f]/.test(value.sdk)) throw new Error("Prepared SDK output missing"); fs.appendFileSync(process.env.GITHUB_OUTPUT, `root=${value.sdk}\n`); console.error(JSON.stringify({ sdkPreparationTimingsMs: value.timingsMs }));' "${RUNNER_TEMP}/plugin-sdk.json"
+      - name: Preserve SDK downloads before plugin verification
+        if: ${{ !inputs.repair_candidate_run_id && steps.sdk-downloads.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: projects/product/services/dsh-plugin/build/dsh-release-sdk-pnpm-store
+          key: ${{ steps.sdk-downloads.outputs.cache-primary-key }}
       - name: Download the joint Buildr Candidate original bytes
         if: needs.candidate-plan.outputs.candidate_peer == 'true'
         uses: actions/download-artifact@v7

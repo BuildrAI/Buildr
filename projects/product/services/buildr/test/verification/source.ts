@@ -16,6 +16,20 @@ const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const projectRoot = path.resolve(productRoot, '../..');
 
 export type SourceVerificationScope = 'all' | 'common' | 'platform';
+
+/** Graceful interruption lets the existing runner observe child and shared
+ * cleanup before exporting completed checks. A hard kill cannot provide it. */
+export function sourceVerificationCancellation(signals: Pick<NodeJS.Process, 'on' | 'removeListener'> = process): any {
+  const controller = new AbortController();
+  const interrupt = () => controller.abort('SIGINT');
+  const terminate = () => controller.abort('SIGTERM');
+  signals.on('SIGINT', interrupt);
+  signals.on('SIGTERM', terminate);
+  return { signal: controller.signal,
+    exitCode: () => controller.signal.reason === 'SIGTERM' ? 143 : 130,
+    dispose: () => { signals.removeListener('SIGINT', interrupt); signals.removeListener('SIGTERM', terminate); } };
+}
+
 export function parseSourceArgs(args: string[]): { help: boolean; json: boolean; force: boolean; scope: SourceVerificationScope; output: string | null } {
   const result = { help: false, json: false, force: false, scope: 'all' as SourceVerificationScope, output: null as string | null };
   let scopeSupplied = false;
@@ -149,20 +163,25 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
         const evidence = createVerificationEvidencePaths('source');
         const source = collectVerificationSourceIdentity(productRoot, { projectRoot });
         const startedAt = Date.now();
-        const execution = await executePlan(plan, {
-          productRoot, projectRoot, diagnosticsDirectory: evidence.diagnosticsOutput,
-          stream: process.stdout, errorStream: process.stderr, prefix: 'verify-source',
-          concurrency: executionProfile.limits, executionProfile, runId: evidence.runId,
-          taskId: process.env.BUILDR_TASK_ID ?? source.branch ?? 'source',
-          reuse: { force: reuseOptions.force, ...(args.output ? { output: path.resolve(args.output) } : {}) },
-        });
+        const cancellation = sourceVerificationCancellation();
+        let execution: any;
+        try {
+          execution = await executePlan(plan, {
+            productRoot, projectRoot, diagnosticsDirectory: evidence.diagnosticsOutput,
+            stream: process.stdout, errorStream: process.stderr, prefix: 'verify-source',
+            concurrency: executionProfile.limits, executionProfile, runId: evidence.runId,
+            taskId: process.env.BUILDR_TASK_ID ?? source.branch ?? 'source', signal: cancellation.signal,
+            reuse: { force: reuseOptions.force, ...(args.output ? { output: path.resolve(args.output) } : {}) },
+          });
+        } finally { cancellation.dispose(); }
         writeVerificationTimingEvidence({
           ...evidence, kind: 'source', source, status: execution.passed ? 'passed' : 'failed',
           results: execution.results, contextLifecycle: execution.contextLifecycle,
           startedAt, finishedAt: Date.now(), diagnosticsDirectory: evidence.diagnosticsOutput,
           prefix: 'verify-source', stream: process.stdout, errorStream: process.stderr, executionProfile,
         });
-        if (!execution.passed) process.exitCode = 1;
+        if (cancellation.signal.aborted) process.exitCode = cancellation.exitCode();
+        else if (!execution.passed) process.exitCode = 1;
       }
     }
   } catch (error: any) {

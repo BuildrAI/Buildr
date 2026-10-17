@@ -240,7 +240,7 @@ Windows 开发机上，一个 Git 路径与换行（CRLF）场景会与通用工
 | `browser-artifact` | 测试运行依赖、生成材料和明确 Chromium | 网页仍读原包；不重建替换候选网页 |
 | `consumer`／`host` | 生产依赖，不准备源码网页或前端工具链 | 保留真实干净安装边界；共享包下载与不可变材料不等于沿用本机 node_modules |
 | `publisher` | 生产依赖和固定发布 npm | 保留真实发布工具与权限边界，不能由开发 npm 代替 |
-| 插件 SDK | 独立固定 SDK、补丁、依赖与构建 | 主包检查不应因此下载 SDK；插件按需要独立准备 |
+| 插件开发工具包（SDK） | 固定 DSH 源码、补丁、依赖与构建，供插件编译及真实加载检查 | 缓存只存依赖下载内容，冻结安装、完整性核验、编译和真实加载照常执行。GitHub 缓存命中受分支可见性限制，首次准备仍需下载与编译 |
 
 已有共享：`integration-runtime`、`system-verification-admission`、`system-task-lifecycle`、`system-buildr-web-http` 使用不变任务种子；三个任务读模型／协调／每日演进组可在工作进程（Worker）内共享应用组装，案例数据隔离。部分系统组使用 workspace／project／Git 基础种子，真实创建、迁移和清理仍执行。适配器脚本仅在单项内部共享种子；多数静态／源码资源项没有跨项共享上下文，不能把“可考虑共享”写成“已共享”。
 
@@ -254,11 +254,13 @@ Windows 开发机上，一个 Git 路径与换行（CRLF）场景会与通用工
 | 处理边界 | 行为与限制 | 依据 |
 | --- | --- | --- |
 | 已调整：候选去重与输入成员 | 两个包装检查保留手动选择；general 的配方成员与执行过滤共用声明；两系统平台源码使用 `platform-backend`。其他全仓／运行范围仍保守，未知读取不猜测 | `registry.ts`、`verification-input-discovery.ts`、`verification-source-inputs.ts` |
+| 已调整：发布说明不拖累无关检查 | 仅对逐项审查确认不读根 `CHANGELOG.md` 的检查排除该文件；实际读取、根目录读取或未知依赖仍保守，原源码／知识／规范范围不变。新配方首次使旧结果保守失效，后续按新规则局部复用 | `registry.ts`、`verification-inputs.ts` |
 | 已调整：清理失败保全 | 本次共享清理失败阻止相关新证明；原运行已成功且清理干净的复用结果不被撤销，仍须通过当前输入和独立失效核验 | `plan-runner.ts`、`verification-reuse.ts` |
 | 已调整：按缺项准备 | 先核验有效结果，按剩余检查准备真实依赖，准备后重新观察；类型检查按准确 Node／npm、真实依赖及完整类型输入核验，强制执行同时作用于准备和检查 | `source.ts`、`registry.ts`、`verification-reuse.ts` |
+| 已调整：源码中断保全 | 正常停止后不再派发，确认子进程、共享环境及租约已清理才保存完成项；整次检查仍不通过，强制杀死或清理不明不产生新成功证明 | `source.ts`、`dag-scheduler.ts`、`plan-runner.ts` |
 | 已调整：逐包只读观察 | `inspect` 分别回读各包 Actions 运行，未知只标未知，不改写指针、不接续或重发；官方包字节和公开事实仍由发布恢复核验 | `skills/buildr-release/scripts/release-orchestration-runner.ts` |
 | 已调整：控制器准备；保留干净消费 | 本机按实际依赖安装要求分组，生产依赖控制器先执行，源码宿主和浏览器控制器相邻，避免完整依赖／生产依赖／完整依赖往返；准备后重新核验旧证明。真实包消费者仍分别使用隔离安装前缀、工作空间与应用数据，不能为省安装删除这些证明 | `artifact.ts`、`candidate-preparation-reuse.ts`、原包与宿主消费者 |
-| 尚未完整串联：耗时 | 已有准备／安装／检查排队／执行／重试／汇总记录；原耗时和本次分列，嵌套并发不相加，缺失阶段及智能体处理时间保持未知 | `verification-reuse.ts`、`source.ts`、`candidate-ci.ts` |
+| 尚未完整串联：耗时 | 准备记录输出不再传给子检查，避免覆盖父记录；插件工具包准备分别记录工具、源码下载与补丁、依赖安装、编译及核验。已有准备／安装／检查排队／执行／重试／汇总记录；嵌套并发不相加，缺失阶段及智能体处理时间保持未知 | `candidate-environment.ts`、`executor.ts`、插件 `prepare-release-sdk.ts` |
 | 工具自验、候选与公开分别成立 | 发布脚本归技能，检查与汇总归验证框架；定向回归、真实候选验包和实际公开分别报告。公开后自举交接唯一执行器，实际结果未接回时保持 pending | `package-release-operation.ts`、`release-orchestration-runner.ts` |
 
 源码检查发现和分组仍由 `test-files.ts`、`system-suites.ts`、`registry.ts` 管理，改动选择由 `ownership.ts`／`planner.ts`，执行与资源由 `plan-runner.ts`／`executor.ts` 等管理；项目地图和正式任务报告应用只管理声明与结果，不执行产品测试。新增检查须接入真实文件发现、归属、定义、依赖和资源；本页仅解释，不新增一套状态或门禁。
