@@ -5,11 +5,11 @@ import path from 'node:path';
 import { syncBuiltinESMExports } from 'node:module';
 import test from 'node:test';
 import { readVerifiedReadonlyBatch, readVerifiedReadonlyBytes, VERIFIED_READONLY_BATCH_SIZE } from '../../src/infrastructure/filesystem/verified-readonly-file.ts';
-import { WINDOWS_READONLY_SCRIPT, WINDOWS_READONLY_TIMEOUT_MS } from '../../src/infrastructure/filesystem/verified-readonly-file-windows.ts';
+import { readWindowsVerifiedReadonlyBatch, WINDOWS_READONLY_SCRIPT, WINDOWS_READONLY_TARGET_MS, WINDOWS_READONLY_TIMEOUT_MS } from '../../src/infrastructure/filesystem/verified-readonly-file-windows.ts';
 import { readSkillTexts } from '../../src/modules/agent-assets/persistence/skill-content-repository.ts';
 import { fixture, body, denied } from '../helpers/verified-readonly-fixture.ts';
 
-const native = { skip: process.platform !== 'win32', timeout: 20_000 };
+const native = { skip: process.platform !== 'win32', timeout: 90_000 };
 const beforeLeaf = '// Test instrumentation may pause here while real Windows paths change.';
 const beforeRead = '// All root and leaf handles remain held across the entire before/read/after stage.';
 
@@ -49,6 +49,57 @@ function attacker(t: test.TestContext, ready: string, done: string, action: stri
   });
 }
 
+test('Windows native wrapper warns past its target without rejecting verified bytes or replacing failures', t => {
+  const f = fixture(t), oldSystemRoot = process.env.SystemRoot;
+  process.env.SystemRoot = f.directory;
+  const secret = 'PRIVATE_BODY_NEVER_LOGGED';
+  const request = f.request('authorized-root', 'private.md');
+  const warnings: Array<{ message: unknown; options: unknown }> = [];
+  const invocations: Array<{ file: unknown; args: unknown; options: any }> = [];
+  let now = 0, elapsed = WINDOWS_READONLY_TARGET_MS + 250, warningThrows = false, childThrows = false;
+  let row: unknown = { index: 0, ok: true, bytes: Buffer.from(secret).toString('base64') };
+  const clock = t.mock.method(performance, 'now', () => now);
+  const warning = t.mock.method(process, 'emitWarning', ((message: unknown, options: unknown) => {
+    warnings.push({ message, options });
+    if (warningThrows) throw new Error('optional warning output unavailable');
+  }) as typeof process.emitWarning);
+  const child = t.mock.method(childProcess, 'execFileSync', ((file: unknown, args: unknown, options: any) => {
+    invocations.push({ file, args, options }); now += elapsed;
+    if (childThrows) throw Object.assign(new Error('native deadline'), { code: 'ETIMEDOUT' });
+    return Buffer.from(JSON.stringify({ schemaVersion: 'buildr.windows-verified-readonly/v1', results: [row] }));
+  }) as typeof childProcess.execFileSync);
+  syncBuiltinESMExports();
+  try {
+    assert.equal(body(readWindowsVerifiedReadonlyBatch([request])[0]!), secret);
+    assert.deepEqual(warnings, [{ message: JSON.stringify({ elapsedMs: elapsed, targetMs: WINDOWS_READONLY_TARGET_MS }), options: { code: 'BUILDR_WINDOWS_READONLY_SLOW' } }]);
+    warningThrows = true;
+    assert.equal(body(readWindowsVerifiedReadonlyBatch([request])[0]!), secret, 'a synchronous warning failure cannot discard verified bytes');
+    row = { index: 0, ok: false, bytes: null };
+    denied(readWindowsVerifiedReadonlyBatch([request])[0]!);
+    row = { index: 0, ok: true, bytes: '@@@@' };
+    denied(readWindowsVerifiedReadonlyBatch([request])[0]!);
+    childThrows = true;
+    denied(readWindowsVerifiedReadonlyBatch([request])[0]!);
+    assert.equal(warnings.length, 5, 'late denied, malformed and timed-out reads preserve their failures when warning output also fails');
+    warningThrows = false; childThrows = false; elapsed = WINDOWS_READONLY_TARGET_MS;
+    row = { index: 0, ok: true, bytes: Buffer.from(secret).toString('base64') };
+    assert.equal(body(readWindowsVerifiedReadonlyBatch([request])[0]!), secret);
+    assert.equal(warnings.length, 5, 'the target itself does not warn');
+    assert.equal(invocations.length, 6, 'no outcome starts an automatic retry');
+    for (const call of invocations) {
+      assert.equal(call.file, path.join(f.directory, 'System32/WindowsPowerShell/v1.0/powershell.exe'));
+      assert.ok(Array.isArray(call.args) && call.args.includes('-NoProfile'));
+      assert.equal(call.options.timeout, 30_000);
+      assert.deepEqual(JSON.parse(call.options.input.toString('utf8')), { requests: [request] });
+    }
+    assert.doesNotMatch(JSON.stringify(warnings), /PRIVATE_BODY_NEVER_LOGGED|authorized-root|private\.md/);
+    assert.equal(JSON.stringify(warnings).includes(f.directory), false);
+  } finally {
+    child.mock.restore(); warning.mock.restore(); clock.mock.restore(); syncBuiltinESMExports();
+    if (oldSystemRoot === undefined) delete process.env.SystemRoot; else process.env.SystemRoot = oldSystemRoot;
+  }
+});
+
 test('Windows actual handles read Unicode, exact bounds and sixteen independent roots in order', native, t => {
   const f = fixture(t);
   const requests = Array.from({ length: VERIFIED_READONLY_BATCH_SIZE }, (_, index) => {
@@ -87,7 +138,7 @@ test('Windows actual handles read Unicode, exact bounds and sixteen independent 
     captured.mock.restore(); syncBuiltinESMExports();
     const record = { schemaVersion: 'buildr.windows-readonly-cost/v1', kind: 'windows-readonly-cost', samples, calls,
       node: { version: process.versions.node, platform: process.platform, arch: process.arch },
-      helperTimeoutMs: WINDOWS_READONLY_TIMEOUT_MS,
+      helperTargetMs: WINDOWS_READONLY_TARGET_MS, helperTimeoutMs: WINDOWS_READONLY_TIMEOUT_MS,
       persistentOwner: false, compilationPerCall: true };
     t.diagnostic(JSON.stringify(record));
     const output = process.env.BUILDR_DIAGNOSTICS_OUTPUT;
@@ -152,7 +203,10 @@ test('Windows reparse roots and intermediate junctions cannot disclose outside b
 test('Windows leaf symlinks are rejected before returning their target body', native, t => {
   const f = fixture(t); const outside = f.write('foreign/a.md', 'FOREIGN_NEVER_READ'); f.write('left/good.md', 'safe');
   try { fs.symlinkSync(outside, path.join(f.directory, 'left/link.md'), 'file'); }
-  catch (error: any) { if (error.code === 'EPERM') { t.skip('Native Windows file-symlink privilege is unavailable; junction proof remains separate.'); return; } throw error; }
+  catch (error: any) {
+    if (error.code === 'EPERM') throw Object.assign(new Error('Windows 文件符号链接权限缺失，无法完成原生边界验证。'), { code: 'native_windows_file_symlink_privilege_required' });
+    throw error;
+  }
   const values = readVerifiedReadonlyBatch([f.request('left', 'link.md'), f.request('left', 'good.md')]);
   denied(values[0]!); assert.equal(body(values[1]!), 'safe');
 });
@@ -200,7 +254,7 @@ test('Windows held root and leaf handles block real replacement and write attemp
 test('Windows native timeout returns no tentative bodies and the killed owner releases all held handles', native, t => {
   const f = fixture(t); const first = f.write('left/a.md', 'first'); f.write('right/a.md', 'second');
   const ready = path.join(f.directory, 'held-ready');
-  const restore = instrument(t, script => script.replace(beforeRead, `${beforeRead}\nFile.WriteAllText(${JSON.stringify(ready)}, "ready"); System.Threading.Thread.Sleep(30000);`));
+  const restore = instrument(t, script => script.replace(beforeRead, `${beforeRead}\nFile.WriteAllText(${JSON.stringify(ready)}, "ready"); System.Threading.Thread.Sleep(60000);`));
   try {
     const started = performance.now();
     readVerifiedReadonlyBatch([f.request('left', 'a.md'), f.request('right', 'a.md')]).forEach(denied);

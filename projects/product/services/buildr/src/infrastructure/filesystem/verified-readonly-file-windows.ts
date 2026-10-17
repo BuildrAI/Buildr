@@ -4,10 +4,10 @@ import { execFileSync } from 'node:child_process';
 import type { VerifiedReadonlyRequest, VerifiedReadonlyResult } from './verified-readonly-types.ts';
 
 const SCHEMA = 'buildr.windows-verified-readonly/v1';
-// One bounded call includes system PowerShell startup, first compilation and
-// held-handle reads. Warm calls of 400–900 ms do not guarantee a 5 s cold call;
-// two native runs reached that total deadline without identifying the slow phase.
-export const WINDOWS_READONLY_TIMEOUT_MS = 10_000;
+// Startup, compilation and held-handle reads share this budget. Exceeding the
+// target only warns; the separate deadline stops a stuck local system process.
+export const WINDOWS_READONLY_TARGET_MS = 10_000;
+export const WINDOWS_READONLY_TIMEOUT_MS = 30_000;
 function unavailable(): Error { return Object.assign(new Error('来源文件无法在授权根内确认。'), { code: 'readonly_root_unconfirmed' }); }
 
 // Windows PowerShell 5.1 supplies .NET and Add-Type. No downloaded module,
@@ -255,6 +255,7 @@ export function readWindowsVerifiedReadonlyBatch(requests: readonly VerifiedRead
     } catch { /* Invalid requests occupy only their own result slot. */ }
   });
   if (!readable.length) return results;
+  const started = performance.now();
   try {
     const systemRoot = process.env.SystemRoot;
     if (!systemRoot || !path.isAbsolute(systemRoot) || systemRoot.includes('\0')) throw unavailable();
@@ -270,5 +271,13 @@ export function readWindowsVerifiedReadonlyBatch(requests: readonly VerifiedRead
     const observed = parseWindowsReadonlyResponse(bytes, selected);
     readable.forEach((item, index) => { results[item.index] = observed[index]!; });
   } catch { /* Compiler, policy, timeout or protocol failures disclose no batch bytes. */ }
+  finally {
+    try {
+      const elapsedMs = Math.round(performance.now() - started);
+      if (Number.isFinite(elapsedMs) && elapsedMs > WINDOWS_READONLY_TARGET_MS) {
+        process.emitWarning(JSON.stringify({ elapsedMs, targetMs: WINDOWS_READONLY_TARGET_MS }), { code: 'BUILDR_WINDOWS_READONLY_SLOW' });
+      }
+    } catch { /* Optional timing warnings never replace the original read result. */ }
+  }
   return results;
 }

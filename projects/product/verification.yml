@@ -66,6 +66,7 @@ testing:
       - 稳定版 Node >=24.15.0 与相邻 npm
       - git
       - 系统 Windows PowerShell 5.1 与 .NET；缺失时严格句柄读取关闭相关结果，不退回路径猜测
+      - Windows 文件符号链接创建权限；不足时是环境缺项，不以跳过证明完整平台覆盖，可由 GitHub 补验同一节点
   - id: buildr-macos-boundaries
     title: Buildr macOS 真实系统差异
     scope:
