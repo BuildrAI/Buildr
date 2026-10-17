@@ -24,9 +24,10 @@ import { createReleaseContext, evaluateReleaseReadiness, releaseContextIdentity,
 import { inspectReleaseSelection } from './release-selection.ts';
 import { createReleaseTaskEvidenceCorrelationFromRuntime, releaseTaskAssociationProjection } from './release-task-evidence-correlation.ts';
 import { inspectHostedReleaseTransaction } from './release-transaction-evidence.ts';
-import { artifactFromTarball } from './package-artifact-observation.ts';
+import { artifactFromTarball, releaseManifestFromTarball } from './package-artifact-observation.ts';
 import { releaseExecutionCommit, validateReleaseExecutorRecovery } from './release-executor-recovery.ts';
 import { assertCandidateSourceBinding } from './candidate-source-binding.ts';
+import { CANDIDATE_CI_AGGREGATE_SCHEMA } from '../../../projects/product/services/buildr/test/verification/release/candidate-ci-contract.ts';
 
 const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../projects/product/services/buildr');
 const workspaceRoot: any = path.resolve(serviceRoot, '../../../..');
@@ -159,11 +160,32 @@ export function readCandidateEvidence({ candidateRunId, ghCommand, repo, execute
   if (dependencies.candidateEvidence) return dependencies.candidateEvidence;
   const root: any = (dependencies.makeTempDirectory ?? ((prefix: any) => fs.mkdtempSync(prefix)))(path.join(os.tmpdir(), 'buildr-release-candidate-'));
   try {
-    for (const name of ['candidate-aggregate', 'candidate-package']) {
-      invoke(execute, ghCommand, ['run', 'download', String(candidateRunId), '--repo', releasePublishAuthority.repository, '--name', name, '--dir', path.join(root, name)], repo, { timeout: name === 'candidate-package' ? 120_000 : 60_000 });
-    }
+    const download = (name: string) => invoke(execute, ghCommand, ['run', 'download', String(candidateRunId), '--repo', releasePublishAuthority.repository, '--name', name, '--dir', path.join(root, name)], repo, { timeout: name === 'candidate-package' ? 120_000 : 60_000 });
+    download('candidate-aggregate');
     const aggregate: any = JSON.parse(fs.readFileSync(findSingleFile(path.join(root, 'candidate-aggregate'), 'candidate-ci-aggregate.json'), 'utf8'));
-    const artifact: any = readReleaseArtifact(findSingleFile(path.join(root, 'candidate-package'), 'release-artifact.json'));
+    const directory = artifactDestination ? path.resolve(artifactDestination) : null;
+    const retained = directory ? fs.lstatSync(directory, { throwIfNoEntry: false }) : null;
+    let artifact: any;
+    if (retained) {
+      const manifestPath = path.join(directory!, 'release-artifact.json');
+      const manifestStat = fs.lstatSync(manifestPath, { throwIfNoEntry: false });
+      if (!retained.isDirectory() || !manifestStat?.isFile() || manifestStat.size > 1024 * 1024) throw new Error('Local Candidate destination contains different or unconfirmed bytes.');
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+      const tarballStat = typeof manifest?.filename === 'string' && path.basename(manifest.filename) === manifest.filename
+        ? fs.lstatSync(path.join(directory!, manifest.filename), { throwIfNoEntry: false }) : null;
+      if (!tarballStat?.isFile() || tarballStat.size > 256 * 1024 * 1024) throw new Error('Local Candidate destination contains different or unconfirmed bytes.');
+      artifact = readReleaseArtifact(manifestPath);
+      const fields = ['sourceCommit', 'filename', 'size', 'sha256', 'integrity', 'applicationPayloadDigest'];
+      if (aggregate.schemaVersion !== CANDIDATE_CI_AGGREGATE_SCHEMA || aggregate.purpose !== 'candidate'
+        || String(aggregate.workflow?.runId) !== String(candidateRunId) || aggregate.sourceCommit !== artifact.manifest.sourceCommit
+        || !fields.every(field => aggregate.artifact?.[field] === artifact.manifest[field])) throw new Error('Local Candidate destination differs from the Candidate aggregate.');
+      if (!isDeepStrictEqual(releaseManifestFromTarball(fs.readFileSync(artifact.tarball), artifact.manifest.filename), artifact.manifest)) {
+        throw new Error('Local Candidate manifest differs from its original archive.');
+      }
+    } else {
+      download('candidate-package');
+      artifact = readReleaseArtifact(findSingleFile(path.join(root, 'candidate-package'), 'release-artifact.json'));
+    }
     if (aggregate.sourceBinding) {
       assertCandidateSourceBinding(repo, aggregate.sourceBinding);
       if (aggregate.sourceBinding.productSource !== artifact.manifest.sourceCommit || aggregate.sourceCommit !== artifact.manifest.sourceCommit
@@ -172,12 +194,9 @@ export function readCandidateEvidence({ candidateRunId, ghCommand, repo, execute
     const tarballBytes = fs.readFileSync(artifact.tarball);
     const packageArtifact = artifactFromTarball(tarballBytes, { origin: 'candidate', packageName: artifact.manifest.packageName,
       version: artifact.manifest.version, integrity: artifact.manifest.integrity, sourceCommit: artifact.manifest.sourceCommit });
-    if (artifactDestination) {
-      const directory = path.resolve(artifactDestination);
-      const manifest = path.join(directory, 'release-artifact.json');
-      if (fs.existsSync(directory)) {
-        if (!fs.existsSync(manifest) || !isDeepStrictEqual(readReleaseArtifact(manifest).manifest, artifact.manifest)) throw new Error('Local Candidate destination contains different or unconfirmed bytes.');
-      } else fs.cpSync(path.dirname(artifact.manifestPath), directory, { recursive: true, errorOnExist: true });
+    if (directory && !retained) {
+      if (fs.lstatSync(directory, { throwIfNoEntry: false })) throw new Error('Local Candidate destination appeared during download.');
+      fs.cpSync(path.dirname(artifact.manifestPath), directory, { recursive: true, errorOnExist: true, force: false });
     }
     return { aggregate, manifest: artifact.manifest, packageArtifact, tarballBytes, ...(artifactDestination ? { artifactDirectory: path.resolve(artifactDestination) } : {}) };
   } finally {

@@ -8,7 +8,7 @@ import test from 'node:test';
 import { reconcilePublicationAfterPreparedContext, resolveRetainedController, runReleaseOperation } from '../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts';
 import { readCandidateEvidence } from '../../../../../../skills/buildr-release/scripts/release-transaction-runner.ts';
 import { createReleaseArtifactFixture } from '../helpers/release-artifact-fixture.ts';
-import { aggregateCandidateCiEvidence, candidateCiRegistryIdentity, createCandidateCiEvidence } from '../verification/candidate-ci-evidence.ts';
+import { aggregateCandidateCiEvidence, candidateCiRegistryIdentity, createCandidateCiEvidence, CANDIDATE_CI_AGGREGATE_SCHEMA } from '../verification/candidate-ci-evidence.ts';
 import { CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES } from '../verification/registry.ts';
 import { createCandidateSourceBinding } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
 import { normalizeReleaseTargets } from '../../../../../../skills/buildr-release/scripts/release-targets.ts';
@@ -32,13 +32,129 @@ test('Candidate artifact readback uses a bounded package download budget and rep
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-candidate-readback-budget-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const observed: number[] = [];
-  const execute = (_command: string, _args: string[], options: any) => {
+  const execute = (_command: string, args: string[], options: any) => {
     observed.push(options.timeout);
+    if (observed.length === 1) {
+      const directory = args[args.indexOf('--dir') + 1]!;
+      fs.mkdirSync(directory, { recursive: true });
+      fs.writeFileSync(path.join(directory, 'candidate-ci-aggregate.json'), '{}');
+    }
     return observed.length === 1 ? { status: 0, stdout: '' } : { status: null, stderr: '', error: new Error('ETIMEDOUT') };
   };
   assert.throws(() => readCandidateEvidence({ candidateRunId: 42, ghCommand: 'gh', repo: root, execute,
     dependencies: { makeTempDirectory: () => root, removeDirectory: () => {} } }), /ETIMEDOUT/u);
   assert.deepEqual(observed, [60_000, 120_000]);
+});
+
+test('Candidate artifact readback reuses only the complete manifest derived from the authenticated original bytes', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-candidate-local-readback-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const built = await createReleaseArtifactFixture(path.join(root, 'original'), 'a'.repeat(40));
+  const original = fs.readFileSync(built.tarball);
+  const identity = Object.fromEntries(['sourceCommit', 'filename', 'size', 'sha256', 'integrity', 'applicationPayloadDigest'].map(key => [key, built.manifest[key]]));
+  const aggregate = { schemaVersion: CANDIDATE_CI_AGGREGATE_SCHEMA, purpose: 'candidate', status: 'passed',
+    sourceCommit: built.manifest.sourceCommit, workflow: { runId: '42', aggregateAttempt: 1 }, artifact: identity };
+  const read = (destination: string | undefined, selectedAggregate = aggregate, failure?: string) => {
+    const temporary = fs.mkdtempSync(path.join(root, 'readback-')), downloads: string[] = [];
+    const execute = (_command: string, args: string[], options: any) => {
+      const name = args[args.indexOf('--name') + 1]!, directory = args[args.indexOf('--dir') + 1]!;
+      downloads.push(name);
+      assert.equal(options.timeout, name === 'candidate-package' ? 120_000 : 60_000);
+      if (failure === name) return { status: null, error: new Error('ETIMEDOUT') };
+      if (failure === 'destination-race' && name === 'candidate-package' && destination) {
+        fs.mkdirSync(destination); fs.writeFileSync(path.join(destination, 'retain.txt'), 'concurrent owner');
+      }
+      if (name === 'candidate-aggregate') {
+        fs.mkdirSync(directory, { recursive: true }); fs.writeFileSync(path.join(directory, 'candidate-ci-aggregate.json'), JSON.stringify(selectedAggregate));
+      } else fs.cpSync(path.dirname(built.manifestPath), directory, { recursive: true });
+      return { status: 0, stdout: '' };
+    };
+    try {
+      return { result: readCandidateEvidence({ candidateRunId: 42, ghCommand: 'gh', repo: root, execute, artifactDestination: destination,
+        dependencies: { makeTempDirectory: () => temporary } }), downloads };
+    } catch (error) { Object.assign(error as Error, { downloads }); throw error; }
+    finally { assert.equal(fs.existsSync(temporary), false, 'owned download staging is cleaned on success and failure'); }
+  };
+  const local = path.join(root, 'local'); fs.cpSync(path.dirname(built.manifestPath), local, { recursive: true });
+  const result = read(local);
+  assert.deepEqual(result.downloads, ['candidate-aggregate'], 'a verified local package is never downloaded twice');
+  assert.deepEqual(result.result.manifest, built.manifest); assert.deepEqual(result.result.tarballBytes, original);
+  assert.equal(result.result.artifactDirectory, local);
+  for (const destination of [path.join(root, 'absent'), undefined]) {
+    const downloaded = read(destination);
+    assert.deepEqual(downloaded.downloads, ['candidate-aggregate', 'candidate-package']);
+    assert.deepEqual(downloaded.result.manifest, built.manifest);
+    if (destination) assert.deepEqual(fs.readFileSync(path.join(destination, built.manifest.filename)), original);
+  }
+  const mutations: Record<string, (manifest: any) => void> = {
+    generated: value => { value.generatedArtifactIdentity = `sha256-${'9'.repeat(64)}`; },
+    engines: value => { value.enginesNode = '>=999.0.0'; },
+    inventorySize: value => { value.inventory[0].size++; },
+    inventoryMode: value => { value.inventory[0].mode ^= 0o100; },
+    packMetadata: value => { value.packMetadata = 'other.json'; },
+    extra: value => { value.unconfirmed = true; },
+    packageName: value => { value.packageName = '@buildr-ai/buildr-dsh-plugin'; },
+    version: value => { value.version = '999.0.0'; },
+  };
+  for (const [name, mutate] of Object.entries(mutations)) await t.test(name, () => {
+    const manifest = structuredClone(built.manifest); mutate(manifest);
+    fs.writeFileSync(path.join(local, 'release-artifact.json'), JSON.stringify(manifest));
+    const before = fs.readFileSync(path.join(local, 'release-artifact.json'));
+    assert.throws(() => read(local), error => (error as any).downloads?.join() === 'candidate-aggregate');
+    assert.deepEqual(fs.readFileSync(path.join(local, 'release-artifact.json')), before);
+    assert.deepEqual(fs.readFileSync(path.join(local, built.manifest.filename)), original);
+  });
+  fs.writeFileSync(path.join(local, 'release-artifact.json'), JSON.stringify(built.manifest));
+  for (const field of Object.keys(identity)) await t.test('aggregate ' + field, () => {
+    const changed = structuredClone(aggregate);
+    changed.artifact[field] = typeof identity[field] === 'number' ? identity[field] + 1 : 'different';
+    assert.throws(() => read(local, changed), error => (error as any).downloads?.join() === 'candidate-aggregate');
+  });
+  await t.test('original bytes', () => {
+    fs.appendFileSync(path.join(local, built.manifest.filename), 'changed');
+    assert.throws(() => read(local), error => (error as any).downloads?.join() === 'candidate-aggregate');
+    assert.equal(fs.statSync(path.join(local, built.manifest.filename)).size, original.length + 7);
+    fs.writeFileSync(path.join(local, built.manifest.filename), original);
+  });
+  await t.test('missing manifest', () => {
+    fs.unlinkSync(path.join(local, 'release-artifact.json'));
+    assert.throws(() => read(local), error => (error as any).downloads?.join() === 'candidate-aggregate');
+    assert.equal(fs.existsSync(path.join(local, 'release-artifact.json')), false);
+    fs.writeFileSync(path.join(local, 'release-artifact.json'), JSON.stringify(built.manifest));
+  });
+  await t.test('bounded actual files', () => {
+    fs.writeFileSync(path.join(local, 'release-artifact.json'), Buffer.alloc(1024 * 1024 + 1, 32));
+    assert.throws(() => read(local), error => (error as any).downloads?.join() === 'candidate-aggregate');
+    fs.writeFileSync(path.join(local, 'release-artifact.json'), JSON.stringify(built.manifest));
+    fs.truncateSync(path.join(local, built.manifest.filename), 256 * 1024 * 1024 + 1);
+    assert.throws(() => read(local), error => (error as any).downloads?.join() === 'candidate-aggregate');
+    assert.equal(fs.statSync(path.join(local, built.manifest.filename)).size, 256 * 1024 * 1024 + 1);
+    fs.writeFileSync(path.join(local, built.manifest.filename), original);
+  });
+  await t.test('links cannot replace retained files', { skip: process.platform === 'win32' }, () => {
+    const broken = path.join(root, 'broken'); fs.symlinkSync(path.join(root, 'missing'), broken);
+    assert.throws(() => read(broken), error => (error as any).downloads?.join() === 'candidate-aggregate');
+    for (const filename of ['release-artifact.json', built.manifest.filename]) {
+      const file = path.join(local, filename), backup = path.join(root, filename + '.backup');
+      fs.renameSync(file, backup); fs.symlinkSync(backup, file);
+      assert.throws(() => read(local), error => (error as any).downloads?.join() === 'candidate-aggregate');
+      assert.equal(fs.lstatSync(file).isSymbolicLink(), true);
+      fs.unlinkSync(file); fs.renameSync(backup, file);
+    }
+  });
+  await t.test('source binding conflict', () => {
+    assert.throws(() => read(local, { ...aggregate, sourceBinding: {} } as any), error => (error as any).downloads?.join() === 'candidate-aggregate');
+  });
+  for (const failure of ['candidate-aggregate', 'candidate-package']) await t.test(failure + ' timeout cleanup', () => {
+    assert.throws(() => read(path.join(root, 'unavailable'), aggregate, failure), /ETIMEDOUT/u);
+    assert.equal(fs.existsSync(path.join(root, 'unavailable')), false);
+  });
+  await t.test('a destination appearing during download is never overwritten', () => {
+    const destination = path.join(root, 'concurrent');
+    assert.throws(() => read(destination, aggregate, 'destination-race'), /appeared during download/u);
+    assert.deepEqual(fs.readdirSync(destination), ['retain.txt']);
+    assert.equal(fs.readFileSync(path.join(destination, 'retain.txt'), 'utf8'), 'concurrent owner');
+  });
 });
 
 function git(repo: string, args: string[]) {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import test from 'node:test';
 import { gzipSync } from 'node:zlib';
-import { artifactFromTarball, observePublishedPackageArtifact, packageMetadataFromTarball, packageNames } from '../../../../../../skills/buildr-release/scripts/package-artifact-observation.ts';
+import { artifactFromTarball, observePublishedPackageArtifact, packageMetadataFromTarball, packageNames, releaseManifestFromTarball } from '../../../../../../skills/buildr-release/scripts/package-artifact-observation.ts';
 
 const version = '0.1.0-rc.2';
 const compatibility = { schemaVersion: 'buildr.package-compatibility/v1', provides: ['buildr.plugin.entry/v1'], requires: [] };
@@ -116,6 +116,24 @@ test('tar parser accepts ordinary npm metadata, prefix paths, PAX paths and GNU 
     [{ name: 'long', kind: 'L', body: 'package/package.json\0' }, { name: 'ignored', body }]]) {
     assert.deepEqual(packageMetadataFromTarball(tarball(entries)), metadata);
   }
+});
+
+test('release manifest derivation bounds each JSON and leaves ordinary package metadata observation unchanged', () => {
+  const main = { name: packageNames.buildr, version, engines: { node: '>=24.15.0' } };
+  const payload = { packageName: main.name, buildrVersion: version, sourceCommit: 'a'.repeat(40), enginesNode: main.engines.node,
+    protocolIdentity: 'buildr.web-protocol/v1', applicationPayloadDigest: `sha256-${'b'.repeat(64)}` };
+  const entries = [{ name: 'package/package.json', body: JSON.stringify(main) },
+    { name: 'package/application-payload.json', body: JSON.stringify(payload) },
+    { name: 'package/payload/build/generated-artifacts.json', body: JSON.stringify({ identity: `sha256-${'c'.repeat(64)}` }) }];
+  const bytes = tarball(entries), manifest = releaseManifestFromTarball(bytes, 'main.tgz');
+  assert.equal(manifest.packageName, main.name); assert.equal(manifest.generatedArtifactIdentity, `sha256-${'c'.repeat(64)}`);
+  assert.deepEqual(manifest.inventory, entries.map(entry => ({ path: entry.name.slice(8), size: Buffer.byteLength(entry.body), mode: 0o644 })).sort((a, b) => a.path < b.path ? -1 : 1));
+  for (const index of [1, 2]) for (const body of ['invalid JSON', '[]', ' '.repeat(1024 * 1024 + 1)]) {
+    const changed = entries.map((entry, position) => position === index ? { ...entry, body } : entry), archive = tarball(changed);
+    assert.deepEqual(packageMetadataFromTarball(archive), main, 'the old API only observes package.json');
+    assert.throws(() => releaseManifestFromTarball(archive, 'main.tgz'));
+  }
+  for (const index of [1, 2]) assert.throws(() => releaseManifestFromTarball(tarball(entries.filter((_entry, position) => position !== index)), 'main.tgz'));
 });
 
 test('tar parser rejects traversal, duplicate files, links, global path replacement and malformed metadata', () => {
