@@ -32,11 +32,12 @@ export async function prepareLocalSourceVerification(options: {
     && validate(record, { productRoot, projectRoot, snapshot, stepId: step.id,
       ...(step.platformScope?.kind === 'common' ? {} : { runner: plan.runner }) }))).map((step: any) => step.id);
   if (pluginRequired) {
-    const collector = dependencies.collectPluginBundle ?? (await import(new URL('../../../dsh-plugin/tools/verify-all.ts', import.meta.url).href)).collectPluginSourceVerificationBundle;
+    const pluginOwner = await import(new URL('../../../dsh-plugin/tools/verify-all.ts', import.meta.url).href);
+    const collector = dependencies.collectPluginBundle ?? pluginOwner.collectPluginSourceVerificationBundle;
     const plugin = await collector({ repo: options.repo, env: options.env, imports: providedBundle });
     assertSourceBundle(plugin);
     bundle = { schemaVersion: 'buildr.verification-source-bundle/v1', records: [...bundle.records.filter((record: any) => !record.identity.stepId.startsWith('dsh-plugin:')), ...plugin.records] };
-    for (const id of ['dsh-plugin:unit', 'dsh-plugin:integration']) if (!plugin.records.some((record: any) => record.identity.stepId === id)) missingStepIds.push(id);
+    for (const id of pluginOwner.PLUGIN_SOURCE_PHASE_IDS) if (!plugin.records.some((record: any) => record.identity.stepId === id)) missingStepIds.push(id);
   }
   const nextActions = missingStepIds.length ? [
     ...(missingStepIds.some((id: string) => !id.startsWith('dsh-plugin:')) ? [`在 ${productRoot} 执行 tools/development/run-development-npm run test:source；仅补齐失效或缺失结果，再继续同一 prepare。`] : []),

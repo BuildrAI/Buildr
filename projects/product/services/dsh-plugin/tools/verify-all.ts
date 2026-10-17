@@ -1,6 +1,6 @@
 /** Complete plugin source, package and DSH loader verification against an explicit prepared source SDK. */
 import { execFileSync, spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { newBuildOutput, ownedBuildRoot, validatePreparedSourceSdk } from './prepare-source-sdk.ts';
@@ -25,17 +25,22 @@ export function parseVerificationInputs(args: string[], env: NodeJS.ProcessEnv =
   return { sourceSdk: resolve(sdk), ...(raw ? { peerInput: resolve(raw) } : { peerManifest: resolve(prepared!) }), output: values.get('--output') ? resolve(values.get('--output')!) : undefined, npmCli: values.get('--npm'), ...(values.has('--candidate-output') ? { candidateOutput: resolve(values.get('--candidate-output')!) } : {}) };
 }
 export const archiveTreeIdentity = (bytes: Buffer) => hash(Buffer.from(JSON.stringify([...packageArchiveFiles(bytes)].map(([name, data]) => [name, hash(data)]).sort((a, b) => a[0].localeCompare(b[0])))));
-export const PLUGIN_SOURCE_PHASE_IDS = ['dsh-plugin:unit', 'dsh-plugin:integration'] as const;
+// Only the SDK-independent source phase is portable. SDK consumers run
+// freshly until their actual installed dependencies and built inputs are bound.
+export const PLUGIN_SOURCE_PHASE_IDS = ['dsh-plugin:unit'] as const;
 export const PLUGIN_PEER_PHASE_FILES = ['test/integration/source-business-gateway.test.ts'] as const;
+const freshSdkFiles = ['test/unit/sdk-source.test.ts'];
 export function pluginSourcePhaseFiles(group: 'unit' | 'integration', pluginRoot = root): string[] {
-  return readdirSync(join(pluginRoot, 'test', group)).filter(name => name.endsWith('.test.ts')).sort()
+  const files = readdirSync(join(pluginRoot, 'test', group)).filter(name => name.endsWith('.test.ts')).sort()
     .map(name => `test/${group}/${name}`).filter(file => !(PLUGIN_PEER_PHASE_FILES as readonly string[]).includes(file));
+  return group === 'unit' ? files.filter(file => !freshSdkFiles.includes(file))
+    : [...files, ...freshSdkFiles.filter(file => existsSync(join(pluginRoot, file)))];
 }
 export function pluginSourcePhaseStep(group: 'unit' | 'integration', files: string[], env: NodeJS.ProcessEnv = process.env) {
   const workers = resolveVerificationWorkerBudget({ env, fallback: 2, maximum: files.length, label: `Plugin ${group} tests` });
   return { id: `dsh-plugin:${group}`, executor: { type: 'node-test', files: [...files].sort(), args: [`--test-concurrency=${workers}`] },
     resourceDemand: { workers, processes: workers },
-    reuse: { scope: 'plugin' as const, git: false, ...(group === 'integration' ? { tools: ['sdk'] } : {}) } };
+    reuse: group === 'unit' ? { scope: 'plugin' as const, git: false } : false as const };
 }
 export function pluginSourceSdkKey(pluginRoot = root): string {
   const identity = sourceSdkIdentityFromFiles(readFileSync(join(pluginRoot, SOURCE_SDK_MANIFEST)),
@@ -57,16 +62,14 @@ export async function assertPluginSourcePhaseProof(input: { productRoot: string;
 }
 export async function collectPluginSourceVerificationBundle(options: { env?: NodeJS.ProcessEnv; pluginRoot?: string; repo?: string; imports?: { schemaVersion: string; records: any[] } } = {}) {
   const pluginRoot = options.pluginRoot ?? (options.repo ? resolve(options.repo, 'projects/product/services/dsh-plugin') : root);
-  const steps = (['unit', 'integration'] as const).map(group => pluginSourcePhaseStep(group, pluginSourcePhaseFiles(group, pluginRoot), options.env));
+  const steps = [pluginSourcePhaseStep('unit', pluginSourcePhaseFiles('unit', pluginRoot), options.env)];
   const { createVerificationReuseStore, collectVerificationReuseSnapshot, validateVerificationReuseRecord, VERIFICATION_REUSE_BUNDLE_SCHEMA } = await import(new URL('../../buildr/test/verification/verification-reuse.ts', import.meta.url).href);
   const productRoot = resolve(pluginRoot, '../buildr');
   const snapshot = collectVerificationReuseSnapshot({ productRoot, env: options.env });
-  snapshot.environment.tools.sdk = pluginSourceSdkKey(pluginRoot);
   if (options.imports && (options.imports.schemaVersion !== VERIFICATION_REUSE_BUNDLE_SCHEMA || !Array.isArray(options.imports.records) || options.imports.records.length > 512)) throw new Error('Plugin source verification bundle is invalid.');
   const imports = { schemaVersion: VERIFICATION_REUSE_BUNDLE_SCHEMA, records: (options.imports?.records ?? []).filter(record => {
     const step = steps.find(item => item.id === record?.identity?.stepId);
-    return step && (step.id !== 'dsh-plugin:integration' || record.environment?.tools?.sdk === snapshot.environment.tools.sdk)
-      && validateVerificationReuseRecord(record, { productRoot, snapshot, step });
+    return step && validateVerificationReuseRecord(record, { productRoot, snapshot, step });
   }) };
   const store = createVerificationReuseStore({ productRoot, snapshot, steps, env: options.env, imports: [imports], portableImports: true });
   return { schemaVersion: VERIFICATION_REUSE_BUNDLE_SCHEMA, records: steps.map(step => store.lookup(step)).filter(Boolean) };
@@ -109,10 +112,8 @@ for (const group of ['unit', 'integration'] as const) {
   const files = pluginSourcePhaseFiles(group);
   const step = pluginSourcePhaseStep(group, files);
   const snapshot = collectVerificationReuseSnapshot({ productRoot: resolve(root, '../buildr') });
-  if (group === 'integration') snapshot.environment.tools = { ...snapshot.environment.tools, sdk: pluginSourceSdkKey() };
-  const matchingImports = { ...imported, records: imported.records.filter((record: any) => group === 'unit' || record.environment?.tools?.sdk === snapshot.environment.tools.sdk) };
-  const store = createVerificationReuseStore({ productRoot: resolve(root, '../buildr'), snapshot, steps: [step], imports: [matchingImports], portableImports: true });
-  const reused = process.env.BUILDR_VERIFICATION_FORCE === '1' ? null : store.lookup(step);
+  const store = step.reuse ? createVerificationReuseStore({ productRoot: resolve(root, '../buildr'), snapshot, steps: [step], imports: [imported], portableImports: true }) : null;
+  const reused = process.env.BUILDR_VERIFICATION_FORCE === '1' ? null : store?.lookup(step);
   if (reused) {
     const phase = { ...reused.result, durationMs: 0, disposition: 'reused', reusedFrom: { key: reused.identity.key, origin: reused.origin, environment: reused.environment, durationMs: reused.result.durationMs } };
     sourcePhases.push(phase); sourceProofs.push({ productRoot: resolve(root, '../buildr'), step, store, record: reused, snapshot, phase });
@@ -122,15 +123,15 @@ for (const group of ['unit', 'integration'] as const) {
   const startedAt = new Date().toISOString();
   const result = await runVerificationStep({ name: step.id, command: process.execPath, args: ['--test', ...step.executor.args, ...files], cwd: root, env: environment });
   if (result.stdout) process.stdout.write(result.stdout); if (result.stderr) process.stderr.write(result.stderr);
-  store.stage(step, result, { kind: process.env.GITHUB_RUN_ID ? 'ci' : 'local', runId: process.env.GITHUB_RUN_ID ?? `dsh-${process.pid}-${Date.now()}`, sourceCommit: snapshot.sourceCommit, startedAt, finishedAt: new Date().toISOString() });
-  const after = collectVerificationReuseSnapshot({ productRoot: resolve(root, '../buildr') });
-  if (group === 'integration') Object.assign(after.environment.tools, { sdk: pluginSourceSdkKey() });
-  const committed = store.commit(after, result.processCleanup?.status === 'clean');
+  store?.stage(step, result, { kind: process.env.GITHUB_RUN_ID ? 'ci' : 'local', runId: process.env.GITHUB_RUN_ID ?? `dsh-${process.pid}-${Date.now()}`, sourceCommit: snapshot.sourceCommit, startedAt, finishedAt: new Date().toISOString() });
+  const after = store ? collectVerificationReuseSnapshot({ productRoot: resolve(root, '../buildr') }) : null;
+  const committed = store?.commit(after!, result.processCleanup?.status === 'clean');
   const phase = { id: step.id, status: result.status, exitCode: result.exitCode, childOutcome: result.childOutcome, childExitCode: result.childExitCode, childSignal: result.childSignal,
     disposition: 'executed', durationMs: result.durationMs, startedAt, finishedAt: new Date().toISOString(), environment: snapshot.environment };
   sourcePhases.push(phase);
   if (result.status !== 'passed') throw new Error(`Plugin ${group} verification failed (${result.exitCode}).`);
-  const proof = { productRoot: resolve(root, '../buildr'), step, store, record: committed.records.find((record: any) => record.identity.stepId === step.id), snapshot, phase, fresh: true };
+  if (!store) continue;
+  const proof = { productRoot: resolve(root, '../buildr'), step, store, record: committed!.records.find((record: any) => record.identity.stepId === step.id), snapshot, phase, fresh: true };
   await assertPluginSourcePhaseProof({ ...proof, current: after }); sourceProofs.push(proof);
 }
 console.error('[dsh-source-phase] peer-gateway started');
@@ -150,7 +151,6 @@ const consumer = { ...artifactFromTarball(bytes, { origin: 'candidate', packageN
 const input = readArtifactInput(raw), pair = verifyBuildrPluginPair({ consumer: { artifact: consumer, tarball }, provider: { artifact: input.artifact, tarball: input.tarball }, npmCli: request.npmCli });
 if (pair.status !== 'passed') throw new Error(`Real plugin peer verification blocked: ${pair.diagnostic ?? 'feature failed'}`);
 const current = collectVerificationReuseSnapshot({ productRoot: resolve(root, '../buildr') });
-current.environment.tools.sdk = pluginSourceSdkKey();
 for (const proof of sourceProofs) await assertPluginSourcePhaseProof({ ...proof, current });
 if (captureVerificationSource(root).contentSha256 !== verificationSource.contentSha256) throw new Error('验证期间插件来源内容发生变化；本次结果不能绑定其他来源。');
 const sourceSdk = { baseline: sdkReceipt.baseline, manifestSha256: sdkReceipt.sourceManifest.sha256, patchSha256: sdkReceipt.patchSha256, contracts: sdkReceipt.contracts };

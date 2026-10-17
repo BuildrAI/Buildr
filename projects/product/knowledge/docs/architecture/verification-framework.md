@@ -193,8 +193,8 @@ Windows 源码只补 `system-windows-platform` 中的原生命令、PATH／PATHE
 | 阶段／精确标识 | 证明与顺序 | 当前复用及拟取舍 |
 | --- | --- | --- |
 | 固定 SDK、正式／开发入口与两种组合构建（无独立检查 ID） | 明确 Node／pnpm、固定 SDK 与补丁／依赖，生成两个不同身份组合 | 共享本次核验 SDK；当前构建在采用源码结果之前，拟按真实缺项减少准备 |
-| `dsh-plugin:unit` | 完整插件单元集合 | 已支持有效源码结果采用，不能拿主包 unit 代替 |
-| `dsh-plugin:integration` | 插件集成集合，排除独立对端网关文件 | 已支持按源码、依赖及 SDK 摘要采用 |
+| `dsh-plugin:unit` | 不消费工具包现场的单元集合 | 已支持有效源码结果采用，不能拿主包 unit 代替 |
+| `dsh-plugin:integration` | 插件集成及 `sdk-source.test.ts` 全部检查，排除独立对端网关文件 | 使用工具包实际依赖和两种构建，当前现场执行；不导出或采用欠绑定的旧结果 |
 | `dsh-plugin:peer-gateway` | 单独执行 `source-business-gateway.test.ts`，消费准确主包对端 | 当前每次执行；对端／网关及输入变化需重验 |
 | `source-ui` | SDK 和构建入口的源码 UI 组装 | 当前新跑；不是 Chromium，也不证明厂商桌面真机 |
 | `released-loader`、`development-loader` | 两种变体的完整清单、自足运行引用、真实 SDK Loader／网关／Slot 组装 | 当前各自新跑；保留两种身份及同场装载，不能只测开发版 |

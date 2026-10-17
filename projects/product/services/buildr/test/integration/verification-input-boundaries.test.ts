@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -149,6 +150,39 @@ test('reviewed release-note independence preserves real readers, unknown roots a
     const after = observe();
     assert.notEqual(after.local.contentIdentity, before.local.contentIdentity, source);
     assert.notEqual(after.immutable, before.immutable, source);
+  }
+});
+
+test('reviewed source checks keep results for a notes-only repair while binding their actual source and execution inputs', () => {
+  const productRoot = path.resolve(import.meta.dirname, '../..'), repositoryRoot = path.resolve(productRoot, '../../../..');
+  const files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { cwd: repositoryRoot, encoding: 'utf8' }).split('\0').filter(Boolean);
+  const content = new Map<string, string>(), entries: string[][] = [];
+  const hash = (value: string | Buffer) => crypto.createHash('sha256').update(value).digest('hex');
+  for (const file of [...new Set(files)].sort()) {
+    const absolute = path.join(repositoryRoot, file), stat = fs.lstatSync(absolute, { throwIfNoEntry: false });
+    if (!stat) { entries.push([file, 'absent']); continue; }
+    if (!stat.isFile() && !stat.isSymbolicLink()) { entries.push([file, 'other']); continue; }
+    const bytes = fs.readFileSync(absolute); content.set(file, bytes.toString('utf8'));
+    entries.push(stat.isSymbolicLink() ? [file, 'link', fs.readlinkSync(absolute), hash(bytes)] : [file, stat.mode & 0o111 ? 'executable' : 'file', hash(bytes)]);
+  }
+  assert.ok(content.has('CHANGELOG.md'));
+  const observe = (changed?: string) => createVerificationSourceInputReader(repositoryRoot, productRoot, undefined, {
+    entries: entries.map(entry => entry[0] === changed ? [entry[0]!, 'file', hash(content.get(changed)! + '\ninput perturbation')] : entry),
+    unavailable: new Set(), readText: file => content.get(file)!,
+  });
+  const original = observe(), notes = observe('CHANGELOG.md');
+  const ids = ['openspec-spec-quality', 'integration-knowledge', 'integration-workspace-assets', 'integration-archify',
+    'integration-declarations', 'integration-openspec', 'integration-self-bootstrap', 'system-public-json-contracts',
+    'system-openspec-contract-audit', 'concurrent-task-acceptance', 'npm-launcher-candidate', 'capability-cli-integration',
+    'commands-cli-integration', 'remote-skill-timeout'];
+  const actualInputs = ['projects/product/services/buildr/package-lock.json', 'projects/product/services/buildr/src/bootstrap/cli/main.ts',
+    'projects/product/knowledge/docs/overview.md', 'projects/product/openspec/specs/task-record/spec.md',
+    'projects/product/services/buildr/test/verification/executor.ts'];
+  const readers = actualInputs.map(file => { assert.ok(content.has(file), file); return [file, observe(file)] as const; });
+  for (const id of ids) {
+    const step = verificationSteps.find((item: any) => item.id === id), before = original.inputs(step, true);
+    assert.deepEqual(notes.inputs(step, true), before, id + ': release-note content is independent');
+    for (const [file, reader] of readers) assert.notDeepEqual(reader.inputs(step, true), before, id + ': ' + file);
   }
 });
 
