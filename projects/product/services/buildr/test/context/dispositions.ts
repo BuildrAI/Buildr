@@ -8,6 +8,9 @@ const disposition: any = (mode: any, reasonCode: any, reason: any, owners: any) 
 const entries: any[] = [
   ...disposition('hybrid', 'immutable-seed-with-real-boundary', 'The owner reuses an immutable seed while retaining its real CLI, process, or Workspace boundary.', [
     'integration-runtime',
+    'integration-code',
+    'integration-workspace-assets',
+    'integration-task-records',
     'system-verification-admission',
     'system-task-lifecycle',
     'system-buildr-web-http',
@@ -35,6 +38,10 @@ const entries: any[] = [
   ]),
   ...disposition('full-lifecycle', 'isolated-boundary-owned-by-test', 'The owner intentionally creates isolated filesystem, Git, SQLite, network, or process state as its primary boundary.', [
     'integration',
+    'integration-desktop',
+    'integration-knowledge',
+    'integration-connections',
+    'integration-runtime-projection',
     'integration-declarations',
     'integration-openspec',
     'integration-verification',
@@ -52,6 +59,7 @@ const entries: any[] = [
   ]),
   ...disposition('full-lifecycle', 'lifecycle-is-primary-evidence', 'Initialization, mutation, recovery, Finish, cleanup, or concurrency is the primary evidence and cannot be replaced by a cached Context.', [
     'integration-self-bootstrap',
+    'integration-archify',
     'system-verification-contracts',
     'system-public-json-contracts',
     'system-openspec-contract-audit',
@@ -61,6 +69,7 @@ const entries: any[] = [
     'system-runtime-recovery',
     'system-app-process',
     'system-windows-platform',
+    'system-macos-platform',
     'concurrent-task-acceptance',
     'openspec-convergence-recovery',
     'runtime-adapter-parity',

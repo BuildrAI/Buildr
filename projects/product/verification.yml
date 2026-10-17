@@ -7,7 +7,7 @@ testing:
       services:
         - buildr
         - buildr-web
-    purpose: 使用候选登记完成当前平台适用源码检查并复用有效结果，不证明其他平台或最终发布包
+    purpose: 通用产品逻辑只有一套，默认选择通用检查和本机系统源码节点；另一系统只补真实系统差异，不证明最终发布包
     sourcePaths:
       - services/buildr/src/**
       - services/buildr/resources/**
@@ -28,9 +28,94 @@ testing:
       - 普通开发继续选择受影响检查；准备发布时按当前平台候选源码登记补齐有效结果
       - 按实际内容、配方、依赖和原环境复用；最终包和未覆盖平台仍单独验证
       - 传入 --json 只看计划；--force 强制重跑；--output 导出可搬运源码结果
+      - --scope common 只选通用逻辑；--scope platform 只选实际系统机制，不附带另一套功能检查
+      - 严格来源文件读取的系统差异由原生平台节点验证；真实失败不得跳过或冒充另一系统已验
     requirements:
       - 稳定版 Node >=24.15.0 与相邻 npm，通过项目 wrapper 执行
       - git
+  - id: buildr-windows-boundaries
+    title: Buildr Windows 真实系统差异
+    scope:
+      project: product
+      services:
+        - buildr
+    purpose: 验证实际命令 shim、路径别名、目录链接、硬链接锁、严格文件句柄读取、进程树清理及一个 Git 换行转换用例；只在真实 Windows 执行时形成
+      Windows 证明
+    sourcePaths:
+      - services/buildr/src/infrastructure/process.ts
+      - services/buildr/src/infrastructure/filesystem/**
+      - services/buildr/src/infrastructure/git/**
+      - services/buildr/src/modules/task/infrastructure/**
+    testRoots:
+      - services/buildr/test/platform/**
+    full:
+      kind: command
+      argv:
+        - tools/development/run-development-npm
+        - run
+        - test:focus
+        - --
+        - system-windows-platform
+      cwd: services/buildr
+    selection:
+      - 按 test/verification/platform-boundaries.ts 的实际系统依赖和输入选择，沿用统一登记及原断言
+      - 只选择 worktree-create.test.ts 中的路径别名与 CRLF 用例，不重复整套任务和工作目录检查
+      - 最终包快捷方式、安装启动及退出由 release-tarball-smoke 和宿主 Node 检查独立证明；本族不替代原包消费
+    requirements:
+      - Windows；其他系统执行仅证明当地可适用部分，命令 shim 用例跳过必须如实报告
+      - 稳定版 Node >=24.15.0 与相邻 npm
+      - git
+      - 系统 Windows PowerShell 5.1 与 .NET；缺失时严格句柄读取关闭相关结果，不退回路径猜测
+      - Windows 文件符号链接创建权限；不足时是环境缺项，不以跳过证明完整平台覆盖，可由 GitHub 补验同一节点
+  - id: buildr-macos-boundaries
+    title: Buildr macOS 真实系统差异
+    scope:
+      project: product
+      services:
+        - buildr
+    purpose: 验证目录描述符、系统文件句柄、开发壳入口和应用壳入口的真实系统机制；不重复产品逻辑或通用功能
+    sourcePaths:
+      - services/buildr/src/infrastructure/filesystem/verified-readonly-file.ts
+      - services/buildr/tools/development/**
+      - services/buildr/src/modules/installation/**
+    testRoots:
+      - services/buildr/test/platform/macos-*.test.ts
+    full:
+      kind: command
+      argv: [tools/development/run-development-npm, run, test:source, --, --scope, platform]
+      cwd: services/buildr
+    selection:
+      - 仅在真实 macOS 执行 system-macos-platform；只补此节点，不重跑通用检查
+      - 最终原包的应用启动入口由 runtime-macos 独立证明
+    requirements:
+      - macOS
+      - 稳定版 Node >=24.15.0 与相邻 npm
+      - git
+  - id: buildr-artifact
+    title: Buildr 通用原包与系统验包
+    scope:
+      project: product
+      services:
+        - buildr
+        - buildr-web
+    purpose: 对同一最终原包执行一次通用检查，并分别证明两个系统的原生启动及最低和当前 Node；本入口不制包、不公开
+    sourcePaths:
+      - services/buildr/**
+      - services/buildr-web/**
+    testRoots:
+      - services/buildr/test/verification/release/**
+      - services/buildr/test/verification/host-node/**
+    full:
+      kind: agent
+      instructions:
+        - 从发布入口取已核验来源和摘要的准确原包目录，用 tools/development/run-development-node 调用 test/verification/artifact.ts，显式提供 --artifact-dir 和 --output
+        - --scope common 只执行通用原包检查一次；--scope platform 只执行当前系统的 runtime-macos 或 runtime-windows 及当前 Node
+        - 最低 Node 使用实际 24.15.0 程序运行 --scope platform --node-tuple minimum，仅补宿主组合，不重复通用检查与启动器
+        - 有效结果保留原实际系统和程序；使用同一 prepare 的 --artifact-verification 导入，缺项不冒充完整通过
+    requirements:
+      - 明确冻结源码、同一原包及隔离检查目录
+      - 真实 macOS 或 Windows；另一个系统的证明不能由当前系统结果替代
+      - 最低 Node 使用实际 24.15.0，当前兼容组合使用登记的 24.x；一般开发工具仍接受稳定版 >=24.15.0，不要求恰好最低版本
   - id: buildr-fast
     title: Buildr 后端低成本完整回归
     scope:
@@ -94,7 +179,7 @@ testing:
         - buildr
     purpose: 验证源码选择、独立版本、逐包发布编排、真实 Git 收敛及失败恢复；隔离外部发布副作用，不证明实际公开发布
     sourcePaths:
-      - services/buildr/tools/release/**
+      - services/buildr/test/verification/release/**
       - services/buildr/src/modules/installation/domain/release-version.ts
     testRoots:
       - services/buildr/test/integration-candidate-release/**
@@ -106,9 +191,11 @@ testing:
         - test:integration:candidate:release
       cwd: services/buildr
     selection:
-      - 既有三类发布基础设施检查分别拥有选择、公开副作用恢复和 Git 收敛边界；完整入口运行全部检查
+      - 六组发布基础设施检查分别承担契约、源码选择、独立包选择、副作用恢复和两组 Git 收敛；完整入口运行全部检查，候选只需一份通用源码证明
       - 开发中的受影响选择保留低成本检查；本族通过显式发布组或完整候选（Candidate）执行，不混入日常完整核心检查
       - 三种包选择、同版本身份漂移、联合顺序、响应未知和共享清理使用隔离 Git 仓库及外部系统替身，不派发真实发布
+      - 发布脚本位于工作空间的
+        skills/buildr-release/scripts/；同时核对这些源码及项目内检查，由现有项目测试入口统一验证，不另建执行根。
     requirements:
       - 项目锁定 Node 与 npm，通过项目 wrapper 执行
       - git

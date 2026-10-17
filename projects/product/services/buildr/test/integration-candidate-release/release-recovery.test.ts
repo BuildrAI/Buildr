@@ -5,10 +5,22 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { ensureReleaseTag } from '../../tools/release/release-tag-ensure.ts';
-import { observeUnpublishedRelease, requestReleaseJson } from '../../tools/release/release-observation.ts';
-import { registryVersionState, waitForRegistryRelease } from '../../tools/release/registry-version-state.ts';
-import { ensureGitHubRelease } from '../../tools/release/github-release-ensure.ts';
+import { ensureReleaseTag } from '../../../../../../skills/buildr-release/scripts/release-tag-ensure.ts';
+import { observeUnpublishedRelease, requestReleaseJson } from '../../../../../../skills/buildr-release/scripts/release-observation.ts';
+import { registryVersionState, waitForRegistryRelease } from '../../../../../../skills/buildr-release/scripts/registry-version-state.ts';
+import { ensureGitHubRelease } from '../../../../../../skills/buildr-release/scripts/github-release-ensure.ts';
+import { readCandidateCiPreparationFiles } from '../verification/candidate-ci-evidence.ts';
+
+test('Candidate reads preparation diagnostics independently from required check evidence', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-candidate-preparation-evidence-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const record = { schemaVersion: 'buildr.candidate-environment-preparation/v1', id: 'preflight-macos' };
+  fs.writeFileSync(path.join(root, 'preflight-macos-preparation.json'), JSON.stringify(record));
+  fs.writeFileSync(path.join(root, 'unreadable-preparation.json'), '{');
+  fs.writeFileSync(path.join(root, 'other.json'), '{}');
+  assert.deepEqual(readCandidateCiPreparationFiles(root), [record]);
+  assert.deepEqual(readCandidateCiPreparationFiles(path.join(root, 'missing')), []);
+});
 
 function gitFixture(t: any) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-recovery-'));

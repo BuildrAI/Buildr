@@ -6,7 +6,10 @@
 .source-control-commit-actions { display: flex; align-items: center; gap: 3px; margin-top: 8px; }
 .source-control-commit-split { min-width: 0; flex: 1; }
 .source-control-commit-split > #commit-changes { flex: 1; min-width: 0; font-size: 12px; justify-content: center; }
-.source-control-commit-split > #commit-action-menu { flex: none; width: 28px; font-size: 10px; padding: 0; }
+.source-control-commit-split > #commit-action-menu { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 28px; font-size: 10px; padding: 0; }
+/* Keep the icon-only button independent of the text button's baseline. */
+.source-control-commit-split > #commit-action-menu .ant-btn-icon { display: flex; align-items: center; justify-content: center; margin: 0; line-height: 1; }
+.source-control-commit-split > #commit-action-menu .anticon { display: flex; }
 .source-control-commit-actions > .ant-btn { width: 23px; padding: 0; color: var(--soft-muted); }
 .source-control-generation-status { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--soft-muted); margin: 4px 0 0; }
 .source-control-generation-status > .ant-btn { font-size: 11px; margin-left: auto; height: 22px; }

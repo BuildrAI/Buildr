@@ -79,7 +79,7 @@ jobs:
         run: |
           mkdir -p "${RUNNER_TEMP}/contract-input" "${RUNNER_TEMP}/contract"
           node --input-type=module -e 'import fs from "node:fs"; fs.writeFileSync(process.argv[1], `${process.env.BUILDR_RELEASE_CONTEXT}\n`, { mode: 0o600 });' "${RUNNER_TEMP}/contract-input/release-context.json"
-          node tools/release/release-readiness.ts validate-context \
+          node ../../../../skills/buildr-release/scripts/release-readiness.ts validate-context \
             --input "${RUNNER_TEMP}/contract-input/release-context.json" \
             --output "${RUNNER_TEMP}/contract/release-context.json"
       - name: Download the original failed publisher evidence
@@ -100,8 +100,8 @@ jobs:
           node --input-type=module -e '
             import fs from "node:fs";
             import path from "node:path";
-            import { validateReleaseTransactionEvidence } from "./tools/release/release-transaction-evidence.ts";
-            import { assertReleaseExecutorRecoveryEvidence } from "./tools/release/release-executor-recovery.ts";
+            import { validateReleaseTransactionEvidence } from "../../../../skills/buildr-release/scripts/release-transaction-evidence.ts";
+            import { assertReleaseExecutorRecoveryEvidence } from "../../../../skills/buildr-release/scripts/release-executor-recovery.ts";
             const context = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
             const files = directory => fs.readdirSync(directory, { withFileTypes: true }).flatMap(entry => entry.isDirectory() ? files(path.join(directory, entry.name)) : entry.name === "release-transaction-evidence.json" ? [path.join(directory, entry.name)] : []);
             const matches = files(process.argv[2]);
@@ -111,7 +111,7 @@ jobs:
       - name: Resolve the npm-only release contract
         id: contract
         run: >-
-          node tools/release/release-contract.ts "v${{ inputs.version }}"
+          node ../../../../skills/buildr-release/scripts/release-contract.ts "v${{ inputs.version }}"
           --source-commit "${{ inputs.source_commit }}"
           --output "${RUNNER_TEMP}/contract/release-contract.json"
       - name: Confirm the frozen dispatch identity
@@ -121,7 +121,7 @@ jobs:
           test "${{ steps.contract.outputs.version }}" = "${{ inputs.version }}"
           node --input-type=module -e '
             import fs from "node:fs";
-            const { assertReleaseExecutorRecoverySource, releaseExecutionCommit } = await import("./tools/release/release-executor-recovery.ts");
+            const { assertReleaseExecutorRecoverySource, releaseExecutionCommit } = await import("../../../../skills/buildr-release/scripts/release-executor-recovery.ts");
             const context = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
             assertReleaseExecutorRecoverySource(context, { repo: process.env.GITHUB_WORKSPACE });
             if (releaseExecutionCommit(context) !== process.env.GITHUB_SHA) throw new Error("release executor differs from the actual protected workflow source");
@@ -130,7 +130,7 @@ jobs:
           ' "${RUNNER_TEMP}/contract/release-context.json" "${{ inputs.context_digest }}" "${{ inputs.source_commit }}" "${{ inputs.candidate_tree }}" "${{ inputs.candidate_run_id }}"
       - name: Freeze release notes
         run: >-
-          node tools/release/release-notes.ts
+          node ../../../../skills/buildr-release/scripts/release-notes.ts
           "${{ steps.contract.outputs.version }}"
           ../../../../CHANGELOG.md
           > "${RUNNER_TEMP}/contract/release-notes.md"
@@ -179,7 +179,7 @@ jobs:
           run-id: ${{ inputs.candidate_run_id }}
       - name: Validate matching Candidate aggregate and immutable bytes
         run: >-
-          node tools/release/release-consumption.ts verify
+          node test/verification/release/release-consumption.ts verify
           "${RUNNER_TEMP}/contract/release-context.json"
           "${RUNNER_TEMP}/candidate-aggregate/candidate-ci-aggregate.json"
           "${RUNNER_TEMP}/candidate/release-artifact.json"
@@ -220,11 +220,35 @@ jobs:
           path: ${{ runner.temp }}/candidate
           github-token: ${{ github.token }}
           run-id: ${{ inputs.candidate_run_id }}
+      - name: Read the previous npm write journal before any retry
+        if: github.run_attempt != 1 || fromJSON(inputs.release_context).executorRecovery != null
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILDR_RELEASE_CONTEXT: ${{ inputs.release_context }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          node --input-type=module -e '
+            import fs from "node:fs";
+            import path from "node:path";
+            import { spawnSync } from "node:child_process";
+            const context = JSON.parse(process.env.BUILDR_RELEASE_CONTEXT);
+            const currentAttempt = Number(process.env.GITHUB_RUN_ATTEMPT);
+            const runId = currentAttempt > 1 ? Number(process.env.GITHUB_RUN_ID) : context.executorRecovery?.previousRunId;
+            const attempt = currentAttempt > 1 ? currentAttempt - 1 : context.executorRecovery?.previousRunAttempt;
+            if (![runId, attempt].every(value => Number.isSafeInteger(value) && value > 0)) throw new Error("Previous publisher identity is unavailable");
+            const directory = path.join(process.env.RUNNER_TEMP, "previous-publication");
+            fs.mkdirSync(directory, { recursive: true });
+            const result = spawnSync("gh", ["run", "download", String(runId), "--repo", process.env.GITHUB_REPOSITORY,
+              "--name", `release-evidence-v${process.env.RELEASE_VERSION}-${attempt}`, "--dir", directory], { stdio: "inherit", timeout: 120000 });
+            if (result.status !== 0 || result.error) throw new Error("Previous publisher journal remains unknown; npm write will stay blocked");
+          '
       - name: Publish and recover through the shared release checks
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          BUILDR_PREVIOUS_PUBLICATION_DIRECTORY: ${{ runner.temp }}/previous-publication
         run: >-
-          node tools/release/release-publication.ts
+          node ../../../../skills/buildr-release/scripts/release-publication.ts
           "${RUNNER_TEMP}/contract/release-context.json"
           "${RUNNER_TEMP}/candidate/release-artifact.json"
           "${RUNNER_TEMP}/contract"

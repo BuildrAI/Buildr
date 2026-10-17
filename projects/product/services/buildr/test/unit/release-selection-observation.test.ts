@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { inspectReleaseSelection } from '../../tools/release/release-selection.ts';
+import { inspectReleaseSelection } from '../../../../../../skills/buildr-release/scripts/release-selection.ts';
 
 const version = '1.2.3-rc.1';
 const branch = `refs/heads/release-${version}`;

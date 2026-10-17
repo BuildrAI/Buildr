@@ -1,8 +1,28 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { inspectCandidateFailedShardRetry } from '../../tools/release/candidate-failed-shard-retry.ts';
-import { compactReleasePhaseTimeline, createReleasePhaseTimeline, projectCandidateAttempts, projectCandidateRetryAttempts } from '../../tools/release/release-phase-timeline.ts';
+import { inspectCandidateFailedShardRetry } from '../../../../../../skills/buildr-release/scripts/candidate-failed-shard-retry.ts';
+import { compactReleasePhaseTimeline, createReleasePhaseTimeline, projectCandidateAttempts, projectCandidateRetryAttempts } from '../../../../../../skills/buildr-release/scripts/release-phase-timeline.ts';
+import { releaseRecoveryPlan, releaseCommandDiagnostic, releaseDispatchRejected } from '../../../../../../skills/buildr-release/scripts/release-failure.ts';
+
+test('recovery explains the failing boundary while retaining prior candidate and published package facts', () => {
+  const state = { candidate: { runId: 42, sourceCommit: 'a'.repeat(40) }, context: { identity: 'prepared-context' },
+    packagePublications: { buildr: { runId: 51, evidence: { status: 'passed' } }, 'dsh-plugin': { runId: 52 } } };
+  const value = releaseRecoveryPlan('adoption-readiness', 'plugin-preparation-dispatch-unconfirmed', state, ['query original request']);
+  assert.equal(value.stage, 'adoption-readiness'); assert.equal(value.action, 'read-original-request');
+  assert.equal(value.automaticFullRerun, false);
+  assert.deepEqual(value.retained.map((item: any) => item.kind), ['candidate-run', 'prepared-context', 'published-package']);
+  assert.equal(value.retained[2].package, 'buildr');
+  assert.equal(releaseRecoveryPlan('preflight', 'local-verification-required', state, []).action, 'complete-missing-checks');
+  assert.equal(releaseRecoveryPlan('candidate-verification', 'diagnosis-required', state, []).action, 'diagnose-failed-boundary');
+});
+
+test('request diagnostics are bounded and an unknown response never proves rejection', () => {
+  const diagnostic = releaseCommandDiagnostic('gh', ['workflow', 'run'], { status: 1, stderr: 'x'.repeat(20000) + ' HTTP 422: invalid input' });
+  assert.ok(diagnostic.stderr.length <= 8192); assert.equal(releaseDispatchRejected(diagnostic), true);
+  assert.equal(releaseDispatchRejected(releaseCommandDiagnostic('gh', ['workflow', 'run'], { status: null, signal: 'SIGTERM', error: { code: 'ETIMEDOUT' } })), false);
+  assert.equal(releaseDispatchRejected(releaseCommandDiagnostic('gh', ['workflow', 'run'], { status: 1, stderr: 'HTTP 503: response lost' })), false);
+});
 
 const digest: any = (letter: any) => `sha256-${letter.repeat(64)}`;
 
@@ -100,6 +120,21 @@ test('timeline consumes the delivered failed-shard retry and aggregate workflow 
     ['core-task-lifecycle-macos', 'reused', 1],
   ]);
   assert.equal(retryAttempt.attempt.aggregateIdentity, aggregateIdentity);
+});
+
+test('timeline accepts aggregate-only recovery while retaining the original check attempts', () => {
+  const retry = { schemaVersion: 'buildr.candidate-failed-shard-retry-result/v1', status: 'dispatched', runId: 42,
+    runAttempt: 1, recoveryScope: 'aggregate-only', failedShards: [] };
+  const input = { retryResults: [retry], aggregate: { status: 'passed', workflow: {
+    runId: '42', aggregateAttempt: 2, evidenceAttempts: [{ id: 'preflight-macos', runAttempt: 1 }],
+  } } };
+  const attempts = projectCandidateRetryAttempts(input);
+  const recovered = attempts.find((item: any) => item.runAttempt === 2);
+  assert.deepEqual(recovered.rerunScope, ['Candidate gate']);
+  assert.equal(recovered.evidence[0].disposition, 'reused');
+  assert.equal(recovered.evidence[0].originRunAttempt, 1);
+  assert.throws(() => projectCandidateRetryAttempts({ ...input, retryResults: [{ ...retry, recoveryScope: 'failed-jobs' }] }), /recovery scope/u);
+  assert.throws(() => projectCandidateRetryAttempts({ ...input, retryResults: [{ ...retry, failedShards: ['runtime-windows'] }] }), /recovery scope/u);
 });
 
 test('compact timeline keeps identity and pointer without full owner evidence', () => {

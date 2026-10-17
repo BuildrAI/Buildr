@@ -14,9 +14,9 @@ test('payload toolchain is exact and npm runtime bundle stays CommonJS without s
   assert.equal(metadata.dependencies['@types/node'], undefined);
   assert.equal(lock.packages['node_modules/esbuild'].version, '0.28.2');
   assert.equal(lock.packages['node_modules/postject'], undefined);
-  const builder: any = read('tools/release/application-payload.ts');
+  const builder: any = read('../../../../skills/buildr-release/scripts/application-payload.ts');
   assert.doesNotMatch(builder, /^import .* from 'esbuild';$/mu);
-  assert.match(builder, /await import\('esbuild'\)/);
+  assert.match(builder, /createRequire\(path\.join\(serviceRoot, 'package\.json'\)\)\('esbuild'\)/);
   assert.match(builder, /format: 'cjs'/);
   assert.match(builder, /splitting: false/);
   assert.match(builder, /external: \['node:\*'\]/);
@@ -42,7 +42,7 @@ test('npm pack path consumes frozen payload and admits only Launcher icon resour
   assert.ok(metadata.files.includes('resources/'));
   assert.ok(metadata.files.includes('web-dist/'));
   assert.equal(metadata.files.some((entry: any) => entry.startsWith('tools/') || entry.startsWith('test/')), false);
-  const artifact: any = read('tools/release/release-artifact.ts');
+  const artifact: any = read('../../../../skills/buildr-release/scripts/release-artifact.ts');
   assert.match(artifact, /createNpmPackStaging\(payloadRoot/);
   assert.equal((artifact.match(/\['pack', stagingRoot/g) || []).length, 1);
   assert.match(artifact, /application-payload\.json/);

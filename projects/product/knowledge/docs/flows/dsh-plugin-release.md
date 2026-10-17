@@ -9,7 +9,7 @@ DSH（DeepSeek Harness）插件（Plugin）由独立服务（Service）[插件�
 插件（Plugin）保持独立版本，在插件服务根目录使用[项目 Node 版本声明](<../../../.node-version>)所示最低要求（当前为稳定版 Node `>=24.15.0`）的运行环境。以下窄工具用于查询与产物（Artifact）诊断，正常发布由统一入口编排。构建显式消费已核验的源码软件开发工具包（SDK），完整验证还消费冻结的真实 Buildr 包；查询与打包不使用本机 npm 认证配置：
 
 ```sh
-node tools/release.ts status
+node ../../../../skills/buildr-release/scripts/dsh-plugin/release.ts status
 node tools/verify-all.ts --source-sdk <prepared-source-sdk> --buildr-peer <exact-package-input.json> --output <plugin-full-verification.json> --candidate-output build/release-candidates/<version>
 ```
 
@@ -82,13 +82,13 @@ node tools/build-development-composition.ts --source-sdk <prepared-source-sdk> -
 | `buildr_peer_integrity` | 该原压缩包的 SHA512 完整性（Integrity）值 |
 | `buildr_candidate_run_id` | `candidate` 时必填，`registry` 时禁止；固定联合主包候选运行 |
 
-`registry` 从唯一[包观察器](<../../../services/buildr/tools/release/package-artifact-observation.ts>)读取官方精确版本并校验原字节；`candidate` 下载原 `candidate-package`，校验成功的完整候选运行、冻结源码与受保护合并的父关系，并确认主线与冻结源码文件树一致。冻结提交与 `main` 合并提交不同是正常事实，不能要求两个提交编号相同。观察器生成 `buildr.package-artifact-input/v1` 输入，[对端准备器](<../../../services/dsh-plugin/tools/prepare-buildr-peer.ts>)在独占目录安装原包、禁用安装脚本、隔离认证及正式产品数据，验证实际安装入口；不会读取邻近主包开发源码或复用全局安装。
+`registry` 从唯一[包观察器](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/package-artifact-observation.ts)读取官方精确版本并校验原字节；`candidate` 下载原 `candidate-package`，校验成功的完整候选运行、冻结源码与受保护合并的父关系，并确认主线与冻结源码文件树一致。冻结提交与 `main` 合并提交不同是正常事实，不能要求两个提交编号相同。观察器生成 `buildr.package-artifact-input/v1` 输入，[对端准备器](<../../../services/dsh-plugin/tools/prepare-buildr-peer.ts>)在独占目录安装原包、禁用安装脚本、隔离认证及正式产品数据，验证实际安装入口；不会读取邻近主包开发源码或复用全局安装。
 
 完整聚合 `plugin-full-verification.json` 保留实际对端来源、版本、完整性（Integrity）、SHA-256、必需入口及可选来源采集（Source Capture）结果，并绑定最终候选原字节。安装目录的本机绝对路径不作为可搬运证明。旧公开 `0.1.0-rc.38` 的声明缺失及可选采集缺失按统一流程明确降级；必需入口失败仍阻止发布，运行错误不伪装为不支持。
 
 合并前 `verify.yml` 的 `plugin-candidate-v<version>` 与 `plugin-candidate-aggregate` 只证明冻结源码；后者使用 `buildr.dsh-plugin-source-ci-aggregate/v1`。同名成果（Artifact）必须按运行编号区分。只有 `main` 上独立 `operation=prepare` 成功运行的最终原包与兼容聚合可供公开发布，不以合并前源码检查代替。
 
-另一运行选择 `operation=publish`，只填写同一 `main` 提交的原成功准备运行编号 `candidate_run_id`，按需填写恢复编号，在 `npm-production` 中审批。发布拒绝新的对端字段，不重新获取或替换已冻结对端。只有该发布作业（Job）授予 `id-token: write`；[插件发布器](<../../../services/dsh-plugin/tools/trusted-publish.ts>)验证真实开放身份连接（OIDC）与包的 npm 信任，隔离用户／全局 npm 配置及长期认证环境，再发布原压缩包。不提供本机令牌（Token）回退，不读取或修改现有凭据。主包的 `publish.yml` 身份不能用于插件。
+另一运行选择 `operation=publish`，只填写同一 `main` 提交的原成功准备运行编号 `candidate_run_id`，按需填写恢复编号，在 `npm-production` 中审批。发布拒绝新的对端字段，不重新获取或替换已冻结对端。只有该发布作业（Job）授予 `id-token: write`；[插件发布器](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/dsh-plugin/trusted-publish.ts)验证真实开放身份连接（OIDC）与包的 npm 信任，隔离用户／全局 npm 配置及长期认证环境，再发布原压缩包。不提供本机令牌（Token）回退，不读取或修改现有凭据。主包的 `publish.yml` 身份不能用于插件。
 
 发布作业（Job）还下载原准备运行的 `plugin-full-verification.json`。新的 npm 写入前，核对最终候选原字节、冻结对端、完整软件开发工具包（SDK）及实际测试来源绑定，并重新读取当前已公开 Buildr 的精确原包，验证实际包组合与兼容要求；当前对端漂移不改写原准备聚合。新声明候选缺少原聚合或当前兼容证明时停止新写入。已公开同字节版本优先复用；原请求结果未知时仅回读，因此旧运行缺少聚合不会抹去已成立事实，也不能触发重发。真实无声明的旧候选保留原发布所有者（Owner）的权限与失败边界，不能通过删除清单字段伪装旧包。
 

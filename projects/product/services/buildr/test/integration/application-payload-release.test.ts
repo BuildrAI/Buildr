@@ -5,14 +5,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { createRequire } from 'node:module';
 
-import { buildApplicationPayload } from '../../tools/release/application-payload.ts';
-import { createNpmPackStaging, createReleaseArtifact, npmBinSource, readReleaseArtifact } from '../../tools/release/release-artifact.ts';
+import { buildApplicationPayload } from '../../../../../../skills/buildr-release/scripts/application-payload.ts';
+import { createNpmPackStaging, createReleaseArtifact, npmBinSource, readReleaseArtifact } from '../../../../../../skills/buildr-release/scripts/release-artifact.ts';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { createInstallationOrigin } from '../../src/modules/installation/infrastructure/installation-origin.ts';
 import { GENERATED_USER_REGISTRY_RESOURCE_SOURCES } from '../../src/infrastructure/product-layout.ts';
 import { verifyApplicationPayload } from '../../src/infrastructure/product-resources/index.ts';
-import { readSharedCandidatePackage } from '../verification/release/candidate-package.ts';
+import { readSharedCandidatePackage } from '../../../../../../skills/buildr-release/scripts/candidate-package.ts';
 import { createGeneratedReleaseInputs } from '../helpers/generated-release-inputs.ts';
 
 const SOURCE_COMMIT: any = 'b'.repeat(40);
@@ -123,20 +124,27 @@ test('payload verify runs from a clean tree with no node_modules or esbuild', as
   try {
     const generated: any = createGeneratedReleaseInputs(path.join(root, 'generated'), SOURCE_COMMIT);
     const payload: any = await buildApplicationPayload(path.join(root, 'payload'), SOURCE_COMMIT, { generatedArtifactManifest: generated.manifest, webDistRoot: generated.webDistRoot });
-    const cleanRoot: any = path.join(root, 'clean-service');
+    const cleanWorkspace: any = path.join(root, 'clean-workspace');
+    const cleanRoot: any = path.join(cleanWorkspace, 'projects/product/services/buildr');
     for (const relative of [
-      'tools/release/application-payload.ts',
+      '../../../../skills/buildr-release/scripts/application-payload.ts',
+      '../../../../skills/buildr-release/scripts/package.json',
+      'package.json',
       'tools/build/generated-artifacts.ts',
       'src/infrastructure/product-resources/index.ts',
       'src/infrastructure/filesystem/filesystem-path-identity.ts',
     ]) {
       const target: any = path.join(cleanRoot, relative);
+      const ownedRelative = path.relative(root, target);
+      assert.ok(ownedRelative && !ownedRelative.startsWith('..') && !path.isAbsolute(ownedRelative), `fixture write must stay inside its owned root: ${relative}`);
       fs.mkdirSync(path.dirname(target), { recursive: true });
       fs.copyFileSync(path.join(serviceRoot, relative), target);
     }
     assert.equal(fs.existsSync(path.join(cleanRoot, 'node_modules')), false);
+    assert.equal(fs.existsSync(path.join(cleanWorkspace, 'node_modules')), false);
+    assert.throws(() => createRequire(path.join(cleanRoot, 'package.json')).resolve('esbuild'), { code: 'MODULE_NOT_FOUND' });
     const result: any = spawnSync(process.execPath, [
-      path.join(cleanRoot, 'tools/release/application-payload.ts'),
+      path.join(cleanRoot, '../../../../skills/buildr-release/scripts/application-payload.ts'),
       'verify', '--payload', payload.root, '--layout', 'frozen',
     ], {
       cwd: cleanRoot,
@@ -585,6 +593,7 @@ test('npm thin entry enforces the minimum without an upper major version limit',
     const entry: any = path.join(root, 'bin/buildr.mjs');
     fs.mkdirSync(path.dirname(entry));
     fs.mkdirSync(path.join(root, 'runtime'));
+    fs.writeFileSync(path.join(root, 'runtime/workspace-cli-router.cjs'), 'exports.dispatchWorkspaceCli = async () => false;\n');
     fs.writeFileSync(path.join(root, 'runtime/buildr.cjs'), "process.stdout.write('payload-loaded\\n');\n");
     for (const version of ['23.99.0', '24.14.9', '24.15.0', '24.21.0', '25.0.0', '26.0.0', '24.15.0-rc.1', '25.0.0-nightly', '024.15.0', '25.0']) {
       fs.writeFileSync(entry, npmBinSource().replace('process.versions.node', JSON.stringify(version)));
@@ -598,6 +607,41 @@ test('npm thin entry enforces the minimum without an upper major version limit',
         assert.equal(result.stdout, '');
       }
     }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('npm thin entry delegates before the product engine check and installation environment injection', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-npm-routing-order-'));
+  try {
+    const entry = path.join(root, 'bin/buildr.mjs');
+    fs.mkdirSync(path.dirname(entry));
+    fs.mkdirSync(path.join(root, 'runtime'));
+    fs.writeFileSync(entry, npmBinSource().replace('process.versions.node', JSON.stringify('20.0.0')));
+    fs.writeFileSync(path.join(root, 'runtime/buildr.cjs'), 'throw new Error("wrong product runtime loaded");\n');
+    fs.writeFileSync(path.join(root, 'runtime/workspace-cli-router.cjs'), `
+exports.dispatchWorkspaceCli = async (argv, options) => {
+  process.stdout.write(JSON.stringify({args: argv.slice(2), entry: options.entryPath, npmEntry: process.env.BUILDR_NPM_ENTRY_PATH ?? null, payload: process.env.BUILDR_APPLICATION_PAYLOAD_ROOT ?? null}));
+  process.exitCode = 17;
+  return true;
+};
+`);
+    const env = { ...process.env };
+    delete env.BUILDR_NPM_ENTRY_PATH;
+    delete env.BUILDR_APPLICATION_PAYLOAD_ROOT;
+    const result = spawnSync(process.execPath, [entry, 'future-command', '参数 with spaces'], { encoding: 'utf8', env });
+    assert.equal(result.status, 17, result.stderr);
+    assert.equal(result.stderr, '');
+    assert.deepEqual(JSON.parse(result.stdout), { args: ['future-command', '参数 with spaces'], entry: fs.realpathSync(entry), npmEntry: null, payload: null });
+    assert.doesNotMatch(npmBinSource({ workspaceRouting: false }), /workspace-cli-router|dispatchWorkspaceCli/);
+    fs.writeFileSync(path.join(root, 'runtime/workspace-cli-router.cjs'), "exports.dispatchWorkspaceCli = async () => { throw Object.assign(new Error('registered source unavailable'), {code:'workspace_cli.development_unavailable', nextAction:'Restore the registered source.'}); };\n");
+    const failed = spawnSync(process.execPath, [entry, 'version'], { encoding: 'utf8', env });
+    assert.equal(failed.status, 1);
+    assert.equal(failed.stdout, '');
+    assert.match(failed.stderr, /workspace_cli\.development_unavailable/);
+    assert.match(failed.stderr, /Restore the registered source\./);
+    assert.doesNotMatch(failed.stderr, /requires a host Node|wrong product runtime/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

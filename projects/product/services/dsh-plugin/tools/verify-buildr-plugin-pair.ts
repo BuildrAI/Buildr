@@ -7,9 +7,9 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { hash, inspectSmokeScope, OFFICIAL_REGISTRY, packageArchiveFiles, prepareBuildrPeer, readArtifactInput, resolvePeerNpm, smokePeerEnvironment, type PreparedBuildrPeer } from './buildr-peer.ts';
-import { artifactFromTarball } from '../../buildr/tools/release/package-artifact-observation.ts';
-import { parseCompatibilityArtifact, parseLegacyPairEvidence, sameArtifactIdentity, type ArtifactContractProof, type ArtifactIdentity, type CompatibilityArtifact, type LegacyPairEvidence } from '../../buildr/tools/release/package-compatibility.ts';
-import { pairExecutionDiagnostic, type PairExecutionDiagnostic } from '../../buildr/tools/release/package-pair-diagnostics.ts';
+import { artifactFromTarball } from '../../../../../skills/buildr-release/scripts/package-artifact-observation.ts';
+import { parseCompatibilityArtifact, parseLegacyPairEvidence, sameArtifactIdentity, type ArtifactContractProof, type ArtifactIdentity, type CompatibilityArtifact, type LegacyPairEvidence } from '../../../../../skills/buildr-release/scripts/package-compatibility.ts';
+import { pairExecutionDiagnostic, type PairExecutionDiagnostic } from '../../../../../skills/buildr-release/scripts/package-pair-diagnostics.ts';
 
 const service = path.resolve(import.meta.dirname, '..');
 const runner = path.resolve(service, '../buildr/tools/development/run-isolated-workspace-smoke.ts');

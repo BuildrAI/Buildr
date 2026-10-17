@@ -7,12 +7,12 @@ import test from 'node:test';
 
 // Candidate-only owner: release convergence across real Git histories.
 
-import { checkReleaseConvergence } from '../../tools/release/release-convergence.ts';
+import { checkReleaseConvergence } from '../../../../../../skills/buildr-release/scripts/release-convergence.ts';
 import {
   releaseAuthorityProbeSchema,
   releasePublishAuthority,
   sha256,
-} from '../../tools/release/release-authority.ts';
+} from '../../../../../../skills/buildr-release/scripts/release-authority.ts';
 
 function differentTree(tree: any): any  {
   return `${tree.slice(0, -1)}${tree.endsWith('0') ? '1' : '0'}`;

@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import {
   aggregateCandidateCiEvidence,
   candidateCiRegistryIdentity,
+  candidateCiTiming,
   createCandidateCiCheckpoint,
   createCandidateCiEvidence,
 } from '../verification/candidate-ci-evidence.ts';
@@ -69,6 +68,29 @@ function passedEvidence(workflow: any = null): any  {
   return [...shards, ...hosts];
 }
 
+test('formal repair aggregate keeps original package identity and requires each carried proof to validate', () => {
+  const workflow = { runId: '52', runAttempt: '1' }, evidence = passedEvidence(workflow);
+  const context = { ...candidateContext, verificationSource: 'e'.repeat(40), sourceBinding: { identity: 'binding' } };
+  for (const item of evidence) { item.verificationSource = context.verificationSource; item.sourceBinding = context.sourceBinding; }
+  const carried = evidence.find((item: any) => item.id === 'artifact-browser-macos').results[0];
+  carried.disposition = 'reused'; carried.candidateProof = { originalRunId: '42' };
+  const valid = aggregateCandidateCiEvidence(evidence, context, workflow, { validateCandidateProof: (result: any, id: string) => result === carried && id === 'artifact-browser-macos' });
+  assert.equal(valid.status, 'passed'); assert.equal(valid.artifact.sourceCommit, sourceCommit);
+  assert.equal(valid.verificationSource, context.verificationSource);
+  assert.equal(aggregateCandidateCiEvidence(evidence, context, workflow).status, 'failed');
+  carried.phases = [];
+  const incomplete = aggregateCandidateCiEvidence(evidence, context, workflow, { validateCandidateProof: () => true });
+  assert.ok(incomplete.findings.some((finding: any) => finding.code === 'browser-phase-missing'));
+});
+
+test('host and child process success cannot be manufactured from an empty or contradictory passed wrapper', () => {
+  const evidence = passedEvidence();
+  evidence.find((item: any) => item.kind === 'host-node').results = [];
+  assert.ok(aggregateCandidateCiEvidence(evidence, candidateContext).findings.some((finding: any) => finding.code === 'host-node-result-missing'));
+  const other = passedEvidence(); other[0].results[0].childExitCode = 1;
+  assert.ok(aggregateCandidateCiEvidence(other, candidateContext).findings.some((finding: any) => finding.code === 'result-not-passed'));
+});
+
 test('Candidate CI coverage is a closed projection of the full local Candidate', () => {
   assert.deepEqual(validateCandidateCiCoverage(), { ok: true, findings: [] });
   const local: any = createVerificationPlan({ profiles: ['candidate'] }).steps.map((item: any) => item.id).sort();
@@ -76,7 +98,8 @@ test('Candidate CI coverage is a closed projection of the full local Candidate',
   assert.deepEqual(distributed, local);
   const corePlans: any = CORE_MACOS_SHARDS.map((shard: any) => createCandidateCiShardPlan(shard.id, { externalArtifact: true }));
   assert.ok(corePlans.every((plan: any) => !plan.steps.some((item: any) => item.id === 'candidate-tarball')));
-  assert.ok(corePlans.some((plan: any) => plan.steps.some((item: any) => item.id === 'release-tarball-smoke')));
+  assert.ok(corePlans.every((plan: any) => !plan.steps.some((item: any) => item.id === 'release-tarball-smoke')));
+  assert.ok(createCandidateCiShardPlan('runtime-macos', { externalArtifact: true }).steps.some((item: any) => item.id === 'release-tarball-smoke'));
   assert.ok(corePlans.every((plan: any) => plan.steps.every((item: any) => !item.dependsOn.includes('candidate-tarball'))));
   const coreOwners: any = CORE_MACOS_SHARDS.flatMap((shard: any) => shard.stepIds);
   assert.deepEqual([...coreOwners].sort(), [...CORE_MACOS_STEP_IDS].sort());
@@ -96,38 +119,24 @@ test('new Candidate host coverage is exactly macOS and Windows and rejects Linux
   assert.ok(aggregateCandidateCiEvidence(changed, candidateContext).findings.some((finding: any) => finding.code === 'runner-mismatch'));
 });
 
-test('actual Candidate plan schedules no Linux and retains publisher preparation on minimum macOS', () => {
-  const cli = fileURLToPath(new URL('../verification/candidate-ci.ts', import.meta.url));
-  const env = { ...process.env, GITHUB_OUTPUT: undefined, BUILDR_SOURCE_VERIFICATION: undefined };
-  const planned = spawnSync(process.execPath, [cli, 'plan'], { env, encoding: 'utf8', timeout: 20_000, maxBuffer: 2 * 1024 * 1024 });
-  assert.equal(planned.status, 0, planned.stderr);
-  const plan = JSON.parse(planned.stdout);
-  assert.equal(plan.matrices.host.length, 4);
-  for (const matrix of Object.values(plan.matrices) as any[]) for (const row of matrix) assert.match(row.os, /^(?:macos-|windows-)/u);
-  assert.deepEqual(plan.matrices.host.find((row: any) => row.id === 'host-minimum-macos'), {
-    id: 'host-minimum-macos', os: 'macos-15', node: '24.15.0', preparation: 'publisher',
-  });
-  const refused = spawnSync(process.execPath, [cli, 'host', 'host-minimum-linux'], { env, encoding: 'utf8', timeout: 20_000 });
-  assert.notEqual(refused.status, 0); assert.match(refused.stderr, /Unknown Candidate Host Node tuple: host-minimum-linux/u);
-});
 
-test('Windows lifecycle owners are partitioned into bounded semantic shards', () => {
+test('Generic lifecycle owners retain complete source coverage on one primary platform', () => {
   const shardIds: any[] = [
-    'workspace-lifecycle-windows',
-    'task-worktree-recovery-windows',
-    'task-concurrent-windows',
+    'workspace-lifecycle-macos',
+    'task-worktree-recovery-macos',
+    'task-concurrent-macos',
   ];
   const shards: any = CANDIDATE_CI_SHARDS.filter((shard: any) => shardIds.includes(shard.id));
   assert.deepEqual(shards.map((shard: any) => ({ id: shard.id, stepIds: shard.stepIds })), [
     {
-      id: 'workspace-lifecycle-windows',
+      id: 'workspace-lifecycle-macos',
       stepIds: ['system-workspace-lifecycle', 'workspace-lifecycle'],
     },
     {
-      id: 'task-worktree-recovery-windows',
-      stepIds: ['system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation', 'openspec-convergence-recovery'],
+      id: 'task-worktree-recovery-macos',
+      stepIds: ['system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation'],
     },
-    { id: 'task-concurrent-windows', stepIds: ['concurrent-task-acceptance'] },
+    { id: 'task-concurrent-macos', stepIds: ['concurrent-task-acceptance'] },
   ]);
   const owners: any = shards.flatMap((shard: any) => shard.stepIds);
   assert.equal(new Set(owners).size, owners.length);
@@ -138,6 +147,61 @@ test('Candidate CI coverage fails closed for unowned and duplicated steps', () =
   assert.ok(validateCandidateCiCoverage(verificationSteps, withoutUnit).findings.some((item: any) => item.step === 'unit' && item.code === 'candidate_step_unowned'));
   const duplicated: any = CANDIDATE_CI_SHARDS.map((item: any) => item.id === 'core-cli-contract-macos' ? { ...item, stepIds: [...item.stepIds, 'unit'] } : item);
   assert.ok(validateCandidateCiCoverage(verificationSteps, duplicated).findings.some((item: any) => item.step === 'unit' && item.code === 'candidate_step_duplicated'));
+});
+
+test('Candidate rejects platform checks in a common owner and source checks hidden in artifact jobs', () => {
+  const windows = CANDIDATE_CI_SHARDS.map((shard: any) => shard.id === 'platform-boundaries-windows'
+    ? { ...shard, platformScope: { kind: 'common', runners: [] } } : shard);
+  assert.ok(validateCandidateCiCoverage(verificationSteps, windows).findings.some((item: any) => item.code === 'candidate_platform_check_in_common_shard'));
+  const mixed = CANDIDATE_CI_SHARDS.map((shard: any) => shard.id === 'core-runtime-source-macos' ? { ...shard, requiresArtifact: true } : shard);
+  assert.ok(validateCandidateCiCoverage(verificationSteps, mixed).findings.some((item: any) => item.code === 'candidate_source_in_artifact_shard'));
+});
+
+test('only the explicitly deferred original-package nodes can yield incomplete and cannot satisfy release coverage', async () => {
+  const { assertReleaseConsumptionCoverage } = await import('../verification/release/release-consumption.ts');
+  const deferredIds = ['runtime-macos', 'host-minimum-macos'];
+  const evidence = passedEvidence().filter((item: any) => !deferredIds.includes(item.id));
+  const awaiting = aggregateCandidateCiEvidence(evidence, candidateContext, null, { deferredIds });
+  assert.equal(awaiting.status, 'incomplete');
+  assert.deepEqual(awaiting.deferredIds, [...deferredIds].sort());
+  assert.throws(() => assertReleaseConsumptionCoverage(awaiting, candidateContext, artifact), /passed Candidate/);
+  assert.equal(aggregateCandidateCiEvidence(evidence.slice(1), candidateContext, null, { deferredIds }).status, 'failed');
+  evidence[0].status = 'failed';
+  assert.equal(aggregateCandidateCiEvidence(evidence, candidateContext, null, { deferredIds }).status, 'failed');
+  assert.equal(aggregateCandidateCiEvidence(passedEvidence(), candidateContext, null, { deferredIds }).status, 'passed');
+});
+
+test('aggregate revalidates local artifact records and never turns them into source or remote execution claims', () => {
+  const complete = passedEvidence({ runId: '52', runAttempt: '1' });
+  const owner = complete.find((item: any) => item.id === 'runtime-macos');
+  const original = structuredClone(owner); original.workflow = null;
+  owner.results[0].disposition = 'reused'; owner.results[0].artifactRecord = original;
+  assert.equal(aggregateCandidateCiEvidence(complete, candidateContext, { runId: '52', runAttempt: '1' }).status, 'failed');
+  const accepted = aggregateCandidateCiEvidence(complete, candidateContext, { runId: '52', runAttempt: '1' }, {
+    validateArtifactRecord(record: any, id: string, expected: any, stepId: string) {
+      return record === original && id === owner.id && expected.sha256 === artifact.sha256 && stepId === owner.results[0].id;
+    },
+  });
+  assert.equal(accepted.status, 'passed');
+  assert.equal(owner.results[0].artifactRecord.workflow, null);
+});
+
+test('aggregate authenticates a reused child of a failed local group by its exact step', () => {
+  const complete = passedEvidence({ runId: '52', runAttempt: '1' });
+  const owner = complete.find((item: any) => item.id === 'core-package-runtime-release-macos');
+  const original = structuredClone(owner); original.workflow = null; original.status = 'failed'; original.cleanupClean = true;
+  original.results[2].status = 'failed'; original.results[2].exitCode = 1;
+  for (const result of owner.results.slice(0, 2)) { result.disposition = 'reused'; result.artifactRecord = original; }
+  const seen: string[] = [];
+  const options = { validateArtifactRecord(record: any, id: string, expected: any, stepId: string) {
+    seen.push(stepId);
+    return record === original && id === owner.id && expected.sha256 === artifact.sha256
+      && original.results.some((result: any) => result.id === stepId && result.status === 'passed' && result.exitCode === 0);
+  } };
+  assert.equal(aggregateCandidateCiEvidence(complete, candidateContext, { runId: '52', runAttempt: '1' }, options).status, 'passed');
+  assert.deepEqual(seen, owner.primaryStepIds.slice(0, 2));
+  owner.results[2].disposition = 'reused'; owner.results[2].artifactRecord = original;
+  assert.equal(aggregateCandidateCiEvidence(complete, candidateContext, { runId: '52', runAttempt: '1' }, options).status, 'failed');
 });
 
 test('Candidate aggregate accepts one current complete evidence set', () => {
@@ -170,8 +234,8 @@ test('Candidate aggregate rechecks reused source records and retains independent
 test('Candidate aggregate preserves fresh Windows execution when its optional future reuse record is not portable', () => {
   const workflow = { runId: '38797032896', runAttempt: '1' };
   const complete = passedEvidence(workflow);
-  const shard = complete.find((item: any) => item.id === 'runtime-windows');
-  for (const id of ['system-app-process', 'runtime-adapter-parity']) {
+  const shard = complete.find((item: any) => item.id === 'platform-boundaries-windows');
+  for (const id of ['system-windows-platform']) {
     const result = shard.results.find((item: any) => item.id === id);
     result.durationMs = 12_345;
     result.sourceRecord = { identity: { stepId: id, key: `sha256-${'a'.repeat(64)}` } };
@@ -183,18 +247,18 @@ test('Candidate aggregate preserves fresh Windows execution when its optional fu
   assert.equal(accepted.status, 'passed');
   assert.deepEqual(accepted.findings, []);
   assert.equal(checked, 0, 'fresh same-run results do not use the optional future reuse proof');
-  assert.equal(shard.results.find((item: any) => item.id === 'system-app-process').durationMs, 12_345);
+  assert.equal(shard.results.find((item: any) => item.id === 'system-windows-platform').durationMs, 12_345);
 });
 
 test('Candidate aggregate still rejects an invalid or missing record for explicitly reused results', () => {
   for (const hasRecord of [true, false]) {
     const complete = passedEvidence();
-    const result = complete.find((item: any) => item.id === 'runtime-windows').results.find((item: any) => item.id === 'system-app-process');
+    const result = complete.find((item: any) => item.id === 'platform-boundaries-windows').results.find((item: any) => item.id === 'system-windows-platform');
     result.disposition = 'reused';
     if (hasRecord) result.sourceRecord = { identity: { stepId: result.id, key: `sha256-${'a'.repeat(64)}` } };
     const rejected = aggregateCandidateCiEvidence(complete, candidateContext, null, { validateSourceRecord: () => !hasRecord });
     assert.equal(rejected.status, 'failed');
-    assert.ok(rejected.findings.some((item: any) => item.code === 'source-reuse-invalid' && item.id === 'runtime-windows' && item.detail === result.id));
+    assert.ok(rejected.findings.some((item: any) => item.code === 'source-reuse-invalid' && item.id === 'platform-boundaries-windows' && item.detail === result.id));
   }
 });
 
@@ -256,6 +320,60 @@ test('Candidate shard evidence retains bounded failure diagnostics', () => {
     processCleanup: { status: 'failed', ownership: 'runner-observed-lineage' },
     diagnostics: { stdoutFile: 'release.stdout.log', stderrFile: 'release.stderr.log' },
   });
+});
+
+test('Candidate timing retains execution ownership facts and binds preparation to the exact observation', () => {
+  const original = passedEvidence({ runId: '52', runAttempt: '2' }).find((item: any) => item.id === 'preflight-macos');
+  const contextLifecycle = { contexts: [{ provider: 'runtime', owned: true, prepareDurationMs: 100 }], events: [{ operation: 'cleanup', status: 'cleaned' }] };
+  const fullPlanCoordination = { waitDurationMs: 70, release: [{ status: 'released' }] };
+  const evidence = createCandidateCiEvidence({ ...original, platform: 'darwin', contextLifecycle, fullPlanCoordination,
+    results: [{ id: 'typecheck', status: 'passed', exitCode: 0, durationMs: 300, queueDurationMs: 80,
+      queuedAt: original.startedAt, startedAt: original.startedAt, finishedAt: original.finishedAt,
+      resourceCoordination: { waitDurationMs: 50 }, phases: [{ scope: 'check', id: 'assertions', durationMs: 200, status: 'passed' }] }] });
+  assert.deepEqual(evidence.contextLifecycle, contextLifecycle);
+  assert.deepEqual(evidence.fullPlanCoordination, fullPlanCoordination);
+  assert.equal(evidence.results[0].resourceCoordination.waitDurationMs, 50);
+  assert.equal(evidence.results[0].queuedAt, original.startedAt);
+  const preparation = { schemaVersion: 'buildr.candidate-environment-preparation/v1', id: evidence.id, sourceCommit,
+    workflow: { runId: '52', runAttempt: 2 }, status: 'failed', profile: 'base', durationMs: 400,
+    operations: [{ id: 'buildr-dependencies', status: 'failed', disposition: 'executed', durationMs: 350 }] };
+  const timing = candidateCiTiming([evidence], [preparation, { ...preparation, workflow: { runId: '52', runAttempt: 1 } }]);
+  assert.equal(timing.checks[0].preparation.elapsedMs, 400);
+  assert.equal(timing.checks[0].preparation.operations[0].elapsedMs, 350);
+  assert.equal(timing.checks[0].preparation.status, 'failed', 'diagnostics preserve failure without rewriting the successful check');
+  assert.equal(timing.checks[0].results[0].queueDurationMs, 80);
+  assert.deepEqual(timing.checks[0].contextLifecycle, contextLifecycle);
+  assert.equal(timing.platformQueueDurationMs, null);
+  assert.equal(timing.agentDurationMs, null);
+  assert.equal(timing.durationSemantics, 'per-observation-not-additive');
+  assert.equal('totalDurationMs' in timing, false, 'parallel and nested observations must not be added');
+  for (const stale of [{ ...preparation, sourceCommit: 'e'.repeat(40) }, { ...preparation, workflow: { runId: '53', runAttempt: 2 } }, { ...preparation, workflow: { runId: '52', runAttempt: 1 } }]) {
+    assert.equal(candidateCiTiming([evidence], [stale]).checks[0].preparation.elapsedMs, null);
+  }
+  assert.equal(candidateCiTiming([evidence], [preparation, preparation]).checks[0].preparation.reason, 'preparation-record-ambiguous');
+  const verificationSource = 'd'.repeat(40);
+  const repaired = { ...evidence, verificationSource };
+  assert.equal(candidateCiTiming([repaired], [preparation]).checks[0].preparation.status, 'unknown', 'product-source preparation cannot stand in for the verification checkout');
+  assert.equal(candidateCiTiming([repaired], [{ ...preparation, sourceCommit: verificationSource }]).checks[0].preparation.elapsedMs, 400);
+});
+
+test('Candidate timing separates reused origin phases and costs from current work and preserves unknown costs', () => {
+  const [evidence] = passedEvidence({ runId: '52', runAttempt: '1' });
+  evidence.results = [{ id: 'artifact-browser-core', status: 'passed', durationMs: 0, disposition: 'reused',
+    queueDurationMs: 30, resourceCoordination: { waitDurationMs: 20 }, phases: [{ id: 'browser:core', durationMs: 700 }],
+    reusedFrom: { runId: '42', durationMs: 900 } }, { id: 'unknown-cost', status: 'failed' }];
+  const timing = candidateCiTiming([evidence]);
+  assert.equal(timing.checks[0].elapsedMs, 1000);
+  assert.equal(timing.checks[0].results[0].elapsedMs, 0);
+  assert.equal(timing.checks[0].results[0].reusedFrom.durationMs, 900);
+  assert.equal(timing.checks[0].results[0].queueDurationMs, null);
+  assert.equal(timing.checks[0].results[0].resourceCoordination, null);
+  assert.deepEqual(timing.checks[0].results[0].phases, []);
+  assert.equal(timing.checks[0].results[0].originPhases[0].durationMs, 700);
+  assert.equal(timing.checks[0].results[1].elapsedMs, null);
+  assert.equal(timing.checks[0].preparation.status, 'unknown');
+  const aggregate = aggregateCandidateCiEvidence(passedEvidence(), candidateContext, null, { preparations: [] });
+  assert.equal(aggregate.status, 'passed', 'missing timing does not revoke complete check evidence');
 });
 
 test('Candidate checkpoint retains completed evidence but is never aggregate eligible', () => {

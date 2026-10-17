@@ -296,7 +296,11 @@ test('author candidates and history honestly report the bounded scan and skipped
   execFileSync('git', ['-C', f.root, 'fast-import', '--quiet'], { input: stream, stdio: ['pipe', 'pipe', 'pipe'] });
   const before = f.snapshot(), authors = f.app.authors(f.root, f.input()); assert.equal(authors.coverage.truncated, true); assert.equal(authors.coverage.limit, 2000); assert.deepEqual(authors.authors, [{ name: 'Same Name', email: 'recent@example.com' }]); assert.ok(authors.diagnostics.some(item => item.code === 'code_authors_truncated')); assert.deepEqual(f.snapshot(), before);
   const tree = f.git('rev-parse', 'HEAD^{tree}'), parent = f.git('rev-parse', 'HEAD');
-  const big = execFileSync('git', ['-C', f.root, 'commit-tree', tree, '-p', parent], { input: 'large object\n' + 'x'.repeat(8 * 1024 * 1024), encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 'Oversized Author', GIT_AUTHOR_EMAIL: 'oversized@example.com' }, stdio: ['pipe', 'pipe', 'pipe'] }).trim(); f.git('update-ref', 'refs/heads/main', big);
+  const messageFile = path.join(f.base, 'oversized-commit-message.txt');
+  fs.writeFileSync(messageFile, 'large object\n' + 'x'.repeat(8 * 1024 * 1024));
+  // Keep the oversized object while avoiding a multi-megabyte synchronous stdin
+  // pipe in fixture preparation; Git must not wait indefinitely for its EOF.
+  const big = execFileSync('git', ['-C', f.root, 'commit-tree', tree, '-p', parent, '-F', messageFile], { timeout: 10_000, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 'Oversized Author', GIT_AUTHOR_EMAIL: 'oversized@example.com' }, stdio: ['ignore', 'pipe', 'pipe'] }).trim(); f.git('update-ref', 'refs/heads/main', big);
   const oversized = f.app.authors(f.root, f.input()); assert.equal(oversized.coverage.truncated, true); assert.equal(oversized.authors.some(item => item.email === 'oversized@example.com'), false); const history = f.app.history(f.root, f.input()); assert.ok(history.diagnostics.some(item => item.code === 'code_history_bytes_truncated'));
 });
 

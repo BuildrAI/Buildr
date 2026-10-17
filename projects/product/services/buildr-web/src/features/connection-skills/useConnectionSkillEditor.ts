@@ -3,8 +3,9 @@ import { WorkspaceViewActiveContext } from '../../app/pageTabs';
 import type { ApiError } from '../../api/client';
 import type { ConnectionSkillsClient } from './api/connection-skills-api';
 import type { CatalogEntry, ConnectionFieldLabels, ConnectionInstance, HookInput, HookResult } from './connection-skill-types';
-import { afterPersonalSave, afterTeamSave, authenticationDraftsAfterRead, bindingFor, bindingKey, createDraftRequestScope, draftHookInput, draftObservations, fieldDefaults, hooksAvailable, personalDraftDirty, personalDraftFor, targetDraftChanged, validateFields, withFieldValue } from './connection-skill-form';
+import { afterPersonalSave, afterTeamSave, authenticationDraftsAfterRead, authenticationSourceAllowed, bindingFor, bindingKey, connectionDraftChanged, createDraftRequestScope, draftHookInput, draftObservations, fieldDefaults, hooksAvailable, personalAuthenticationOnly, personalDraftDirty, personalDraftFor, targetDraftChanged, validateFields, withFieldValue } from './connection-skill-form';
 import { displayFieldLabels, fieldLabelsAfterRead } from './connection-skill-summary';
+import { useConnectionAuthorization } from './useConnectionAuthorization';
 
 type Props = { instance?: ConnectionInstance; definitions: CatalogEntry[]; client: ConnectionSkillsClient; onSaved(saved: ConnectionInstance): void; onTeamSaved(): void };
 
@@ -14,6 +15,8 @@ export function useConnectionSkillEditor({ instance: initial, definitions, clien
   const [observed, setObserved] = useState(() => draftObservations(initial));
   const [definitionKey, setDefinitionKey] = useState(initial ? bindingKey(initial.binding) : '');
   const entry = definitions.find(candidate => bindingKey(bindingFor(candidate)) === definitionKey) || (instance?.definition && bindingKey(bindingFor(instance.definition)) === definitionKey ? instance.definition : undefined);
+  const personalOnly = personalAuthenticationOnly(entry);
+  const personalAllowed = authenticationSourceAllowed(entry, 'personal');
   const [name, setName] = useState(initial?.name || ''), [environment, setEnvironment] = useState(initial?.environment || ''), [enabled, setEnabled] = useState(initial?.enabled ?? true);
   const [config, setConfig] = useState<Record<string, unknown>>(initial?.config || {});
   const [fieldLabels, setFieldLabels] = useState<ConnectionFieldLabels>(initial?.fieldLabels || {});
@@ -30,14 +33,20 @@ export function useConnectionSkillEditor({ instance: initial, definitions, clien
   const [options, setOptions] = useState<Record<string, NonNullable<HookResult['options']>>>({});
   const [discoveryResults, setDiscoveryResults] = useState<Record<string, HookResult>>({}), [error, setError] = useState(''), [notice, setNotice] = useState('');
   const [conflict, setConflict] = useState(false), [reading, setReading] = useState(false);
+  const [secretEpoch, setSecretEpoch] = useState(0);
   const [programCheck, setProgramCheck] = useState<{ program: string; ready: boolean; diagnostics: string[]; installHint: string | null }>(), [checking, setChecking] = useState(false);
   const requests = useRef(createDraftRequestScope()).current, mounted = useRef(true);
   const enteredSecrets = useRef(new Map<string, string>()).current;
+  const authorizationMethod = entry?.definition.authentication.authorization;
+  const configurationDirty = connectionDraftChanged(instance, { name, environment, enabled, config, fieldLabels });
+  const authorization = useConnectionAuthorization({ entry, instance, client, active, dirty: configurationDirty, expected: observed.personal, saveShell: () => saveAuthorizationConfiguration(true), onAuthorized: acceptAuthorization, onError: reportAuthorizationError, onNotice: message => { setNotice(message); if (!message) setError(''); } });
   function rememberSecret(source: 'team' | 'personal', key: string, value: unknown) {
     if (typeof value === 'string' && value && entry?.definition.authentication.fields.some(field => field.key === key && field.type === 'secret')) enteredSecrets.set(`${source}.${key}`, value);
   }
   function invalidate(clearOptions = true) {
+    authorization.cancel();
     requests.invalidate(); setTesting(null); setDiscovering(''); setTestStale({ team: true, personal: true }); setNotice('');
+    setSecretEpoch(previous => previous + 1);
     if (clearOptions) { setOptions({}); setDiscoveryResults({}); }
   }
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; requests.invalidate(); enteredSecrets.clear(); }; }, [requests, enteredSecrets]);
@@ -48,11 +57,15 @@ export function useConnectionSkillEditor({ instance: initial, definitions, clien
     setObserved(draftObservations(undefined, selected.revision)); setProgramCheck(undefined);
     setName(previous => previous || selected.definition.name);
     setTeamValues(fieldDefaults(selected.definition.authentication.fields)); setTeamIntent('replace'); setTeamAuthenticationEdited(false);
-    setPersonalEnabled(false); setPersonalValues({}); setPersonalIntent('replace'); setPersonalBaseline(personalDraftFor()); setError('');
+    setPersonalEnabled(personalAuthenticationOnly(selected)); setPersonalValues(fieldDefaults(selected.definition.authentication.fields)); setPersonalIntent('replace'); setPersonalBaseline(personalDraftFor()); setError('');
   }
   function reportSaveError(cause: unknown) {
     const failure = cause as ApiError; setError(failure.message || '保存失败。');
-    if (failure.status === 409) setConflict(true);
+    if (failure.status === 409 || failure.code === 'connection_skill_authorization_persistence_unconfirmed') setConflict(true);
+  }
+  function reportAuthorizationError(cause: unknown) {
+    const failure = cause as ApiError; setError(failure.message || '本次授权未完成。');
+    if (failure.code === 'connection_skill_authorization_persistence_unconfirmed' || failure.status === 409 && /revision|changed/u.test(failure.code || '')) setConflict(true);
   }
   async function reread() {
     if (!instance) return;
@@ -78,6 +91,31 @@ export function useConnectionSkillEditor({ instance: initial, definitions, clien
     finally { if (mounted.current) setChecking(false); }
   }
   function ensureEntry() { if (!entry) throw new Error('请先选择连接系统。'); return entry; }
+  function acceptAuthorization(saved: ConnectionInstance) {
+    const draft = personalDraftFor(saved);
+    requests.invalidate(); setTesting(null); setDiscovering(''); setOptions({}); setDiscoveryResults({}); setTestStale({ team: true, personal: true });
+    setInstance(saved); setObserved(draftObservations(saved)); setPersonalBaseline(draft); setPersonalEnabled(draft.enabled); setPersonalIntent(draft.intent); setPersonalValues(draft.values);
+    setFieldLabels(previous => fieldLabelsAfterRead(entry?.definition.config.fields || [], config, previous, instance?.fieldLabels, saved.fieldLabels)); setConflict(false); setError(''); onSaved(saved);
+  }
+  async function saveAuthorizationConfiguration(forAuthorization = false): Promise<ConnectionInstance | undefined> {
+    try {
+      const current = ensureEntry();
+      if (instance?.authentication.team.present) throw new Error('检测到旧版共享认证，请先迁移为本机个人账号，再保存连接。');
+      if (!name.trim()) throw new Error('请填写连接名称。');
+      validateFields(current.definition.config.fields, config);
+      if (!forAuthorization) invalidate(false);
+      else { requests.invalidate(); setTesting(null); setDiscovering(''); }
+      setSaving('team'); setError('');
+      const input = { name: name.trim(), environment: environment.trim(), enabled, binding: bindingFor(current), config, fieldLabels, authentication: { intent: 'remove' as const }, expected: observed.team };
+      const response = instance ? await client.update(instance.id, input) : await client.create(input);
+      if (!mounted.current) return;
+      setInstance(response.instance); setName(response.instance.name); setEnvironment(response.instance.environment); setConfig(response.instance.config); setFieldLabels(response.instance.fieldLabels || {}); setObserved(previous => afterTeamSave(previous, response.instance));
+      setConflict(false); setNotice(response.instance.authentication.personal.configured ? '连接配置已保存。' : '连接配置已保存，请继续授权本机个人账号。'); onSaved(response.instance);
+      if (!forAuthorization) onTeamSaved();
+      return response.instance;
+    } catch (cause) { if (mounted.current) reportSaveError(cause); }
+    finally { if (mounted.current) setSaving(null); }
+  }
   async function saveTeam() {
     try {
       const keepPersonalDraft = personalDraftDirty(personalBaseline, { enabled: personalEnabled, intent: personalIntent, values: personalValues });
@@ -98,23 +136,66 @@ export function useConnectionSkillEditor({ instance: initial, definitions, clien
     } catch (cause) { if (mounted.current) reportSaveError(cause); }
     finally { if (mounted.current) setSaving(null); }
   }
-  async function savePersonal() {
+  async function savePersonalConnection() {
+    let configurationSaved = false;
+    try {
+      const current = ensureEntry();
+      if (instance?.authentication.team.present) throw new Error('检测到旧版共享认证，请先迁移为本机个人账号，再保存连接。');
+      if (!name.trim()) throw new Error('请填写连接名称。');
+      validateFields(current.definition.config.fields, config);
+      if (personalIntent === 'keep' && (!instance?.authentication.personal.configured || targetDraftChanged(current, config, instance))) throw new Error('连接地址已改变，请重新填写个人账号。');
+      validateFields(current.definition.authentication.fields, personalValues, personalIntent === 'keep');
+      invalidate(false); setSaving('team'); setError('');
+      const input = { name: name.trim(), environment: environment.trim(), enabled, binding: bindingFor(current), config, fieldLabels, authentication: { intent: 'remove' as const }, expected: observed.team };
+      const configuration = instance ? await client.update(instance.id, input) : await client.create(input);
+      if (!mounted.current) return;
+      configurationSaved = true;
+      let saved = configuration.instance, nextObserved = afterTeamSave(observed, saved);
+      setInstance(saved); setName(saved.name); setEnvironment(saved.environment); setConfig(saved.config); setFieldLabels(saved.fieldLabels || {}); setObserved(nextObserved); onSaved(saved);
+      if (personalIntent === 'replace') {
+        const authentication = await client.savePersonal(saved.id, { intent: 'replace', values: personalValues, expected: nextObserved.personal });
+        if (!mounted.current) return;
+        saved = authentication.instance; nextObserved = afterPersonalSave(nextObserved, saved);
+        const savedDraft = personalDraftFor(saved);
+        setInstance(saved); setObserved(nextObserved); setPersonalValues(savedDraft.values); setPersonalEnabled(savedDraft.enabled); setPersonalIntent(savedDraft.intent); setPersonalBaseline(savedDraft); onSaved(saved);
+      }
+      setConflict(false); setNotice('连接和本机个人账号已保存。'); onTeamSaved();
+    } catch (cause) {
+      if (mounted.current) { reportSaveError(cause); if (configurationSaved) setNotice('连接配置已保存；个人账号尚未保存，请核对后重试。'); }
+    } finally { if (mounted.current) setSaving(null); }
+  }
+  async function migratePersonal() {
+    if (!instance) return;
+    invalidate(); setSaving('personal'); setError('');
+    try {
+      const response = await client.migratePersonal(instance.id, { source: { id: instance.id, authenticationSource: 'team', expected: observed.personal }, expected: observed.personal, removeSource: true });
+      if (!mounted.current) return;
+      const refreshed = authenticationDraftsAfterRead(response.instance, { intent: teamIntent, values: teamValues, edited: teamAuthenticationEdited }, personalBaseline, { enabled: personalEnabled, intent: personalIntent, values: personalValues });
+      setInstance(response.instance); setObserved(draftObservations(response.instance)); setPersonalBaseline(refreshed.personalBaseline); setPersonalEnabled(refreshed.personal.enabled); setPersonalIntent(refreshed.personal.intent); setPersonalValues(refreshed.personal.values);
+      setConflict(false); setNotice('旧版认证已迁移并加密保存在本机；原共享认证已移除，其他草稿已保留。'); onSaved(response.instance);
+    } catch (cause) {
+      if (mounted.current) { reportSaveError(cause); if ((cause as ApiError).code === 'connection_skill_auth_migration_partial') { setConflict(true); setNotice('本机个人认证已保全；旧版共享认证移除尚未确认，请重新读取后核对。'); } }
+    } finally { if (mounted.current) setSaving(null); }
+  }
+  async function savePersonal(remove = false) {
     try {
       if (!instance) throw new Error('请先保存连接，再保存个人账号。');
-      if (personalEnabled) {
+      const replacing = personalEnabled && !remove;
+      if (replacing) {
         const current = ensureEntry();
+        if (!authenticationSourceAllowed(current, 'personal')) throw new Error('此接入方式不支持保存个人认证；可以移除遗留个人账号。');
         if (targetDraftChanged(current, config, instance)) throw new Error('连接地址尚有未保存变化，请先保存连接。');
         validateFields(current.definition.authentication.fields, personalValues);
       }
       invalidate(false); setSaving('personal'); setError('');
-      const response = await client.savePersonal(instance.id, { intent: personalEnabled ? 'replace' : 'remove', ...(personalEnabled ? { values: personalValues } : {}), expected: observed.personal });
+      const response = await client.savePersonal(instance.id, { intent: replacing ? 'replace' : 'remove', ...(replacing ? { values: personalValues } : {}), expected: observed.personal });
       if (mounted.current) {
         const savedDraft = personalDraftFor(response.instance);
         setFieldLabels(previous => fieldLabelsAfterRead(entry?.definition.config.fields || [], config, previous, instance.fieldLabels, response.instance.fieldLabels));
         setInstance(response.instance); setPersonalValues(savedDraft.values); setPersonalBaseline(savedDraft);
         setObserved(previous => afterPersonalSave(previous, response.instance));
         setPersonalEnabled(savedDraft.enabled); setPersonalIntent(savedDraft.intent);
-        setConflict(false); setNotice(personalEnabled ? '个人账号已保存，仅本机使用。' : '个人账号已移除，后续使用团队账号。'); onSaved(response.instance);
+        setConflict(false); setNotice(replacing ? '个人账号已保存，仅本机使用。' : personalOnly ? '本机个人账号已移除，请填写账号后再使用此连接。' : '个人账号已移除，后续使用团队账号。'); onSaved(response.instance);
       }
     } catch (cause) { if (mounted.current) reportSaveError(cause); }
     finally { if (mounted.current) setSaving(null); }
@@ -127,7 +208,7 @@ export function useConnectionSkillEditor({ instance: initial, definitions, clien
     const input = draftHookInput(current, instance, config, { source, intent, ...(intent === 'replace' ? { values } : {}) }, hook);
     return { ...input, expected: { ...observed.team, ...(instance ? { localRevision: observed.personal.localRevision } : {}) } };
   }
-  async function runHook(hook?: string, source: 'team' | 'personal' = 'team') {
+  async function runHook(hook?: string, source: 'team' | 'personal' = personalOnly ? 'personal' : 'team') {
     let input: HookInput;
     try { input = candidate(source, hook); } catch (cause) { setError((cause as Error).message); return; }
     const request = requests.begin();
@@ -156,9 +237,9 @@ export function useConnectionSkillEditor({ instance: initial, definitions, clien
   }
   const visibleLabels = displayFieldLabels(entry?.definition.config.fields || [], config, fieldLabels, [...enteredSecrets.values()]);
   return {
-    instance, entry, definitionKey, name, environment, enabled, config, fieldLabels: visibleLabels, teamIntent, teamValues, personalEnabled, personalIntent, personalValues,
+    instance, entry, definitionKey, name, environment, enabled, config, fieldLabels: visibleLabels, teamIntent, teamValues, personalOnly, personalAllowed, personalEnabled, personalIntent, personalValues, secretEpoch, authorizationMethod, configurationDirty, authorizing: authorization.authorizing, authorize: authorization.authorize, cancelAuthorization: () => authorization.cancel(false),
     saving, testing, discovering, testResult: testResults.team, testStale: testStale.team, personalTestResult: testResults.personal, personalTestStale: testStale.personal, options, discoveryResults, error, notice, conflict, reading, programCheck, checking,
-    disabled, ready: hooksAvailable(entry, instance, programCheck, disabled), hookReady(hook: string) { return hooksAvailable(entry, instance, programCheck, disabled, hook); }, chooseDefinition, saveTeam, savePersonal, reread, checkProgram, runHook, changeTeamIntent,
+    disabled, ready: hooksAvailable(entry, instance, programCheck, disabled || authorization.authorizing), hookReady(hook: string) { return hooksAvailable(entry, instance, programCheck, disabled || authorization.authorizing, hook); }, chooseDefinition, saveTeam: authorizationMethod ? saveAuthorizationConfiguration : personalOnly ? savePersonalConnection : saveTeam, savePersonal, migratePersonal, reread, checkProgram, runHook, changeTeamIntent, reportAuthenticationConflict: reportSaveError,
     resetDefinition() { if (!instance) { invalidate(); setDefinitionKey(''); setError(''); } },
     setName(value: string) { invalidate(false); setName(value); },
     setEnvironment(value: string) { invalidate(false); setEnvironment(value); },
@@ -175,8 +256,9 @@ export function useConnectionSkillEditor({ instance: initial, definitions, clien
     },
     changeTeam(key: string, value: unknown) { invalidate(); rememberSecret('team', key, value); setTeamIntent('replace'); setTeamAuthenticationEdited(true); setTeamValues(previous => withFieldValue(previous, key, value)); },
     setPersonalEnabled(value: boolean) { invalidate(); setPersonalEnabled(value); },
-    changePersonal(key: string, value: unknown) { invalidate(); rememberSecret('personal', key, value); setPersonalIntent('replace'); setPersonalValues(previous => withFieldValue(previous, key, value)); },
-    replacePersonal() { invalidate(); setPersonalIntent('replace'); setPersonalValues(fieldDefaults(entry?.definition.authentication.fields || [])); },
+    changePersonal(key: string, value: unknown) { invalidate(); rememberSecret('personal', key, value); if (personalOnly) setPersonalEnabled(true); setPersonalIntent('replace'); setPersonalValues(previous => withFieldValue(previous, key, value)); },
+    replacePersonal() { invalidate(); if (personalOnly) setPersonalEnabled(true); setPersonalIntent('replace'); setPersonalValues(fieldDefaults(entry?.definition.authentication.fields || [])); },
+    keepPersonal() { invalidate(); if (personalOnly) setPersonalEnabled(true); setPersonalIntent('keep'); setPersonalValues(instance?.authentication.personal.values || {}); },
     close() { invalidate(); },
   };
 }

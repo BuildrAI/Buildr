@@ -6,10 +6,10 @@ import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { gzipSync } from 'node:zlib';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { createReleaseCandidate, PLUGIN_PACKAGE, parseReleaseCandidate, readReleaseCandidate, sourceSdkIdentityFromFiles, type SourceSdkIdentity } from '../../tools/release-candidate.ts';
-import { assertReleaseSourceStable, captureReleaseSource, releaseRegistryVersionArguments } from '../../tools/release.ts';
-import { assertPluginHostedIdentity, assertPluginOidcClaims, isolatedPluginNpmEnvironment, PLUGIN_PUBLISH_AUTHORITY, probePluginPublishAuthority, publishPluginCandidate, type PublishDependencies } from '../../tools/trusted-publish.ts';
-import { assertPluginCandidateAdoption, createPluginCandidateAdoption } from '../../tools/candidate-adoption.ts';
+import { createReleaseCandidate, PLUGIN_PACKAGE, parseReleaseCandidate, readReleaseCandidate, sourceSdkIdentityFromFiles, type SourceSdkIdentity } from '../../../../../../skills/buildr-release/scripts/dsh-plugin/release-candidate.ts';
+import { assertReleaseSourceStable, captureReleaseSource, releaseRegistryVersionArguments } from '../../../../../../skills/buildr-release/scripts/dsh-plugin/release.ts';
+import { assertPluginHostedIdentity, assertPluginOidcClaims, isolatedPluginNpmEnvironment, PLUGIN_PUBLISH_AUTHORITY, probePluginPublishAuthority, publishPluginCandidate, type PublishDependencies } from '../../../../../../skills/buildr-release/scripts/dsh-plugin/trusted-publish.ts';
+import { assertPluginCandidateAdoption, createPluginCandidateAdoption } from '../../../../../../skills/buildr-release/scripts/dsh-plugin/candidate-adoption.ts';
 import { writeVerifiedPluginCandidate } from '../../tools/verify-all.ts';
 
 const version = '0.1.0-rc.1', sourceCommit = 'a'.repeat(40), sourceTree = 'b'.repeat(40), workflowSha256 = 'c'.repeat(64), now = Date.parse('2026-10-09T12:00:00Z');

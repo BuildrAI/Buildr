@@ -28,6 +28,20 @@ export function commitMessageOutput(value: unknown): string | null {
   if (typeof value !== 'object' || value === null || !('commitMessage' in value) || typeof value.commitMessage !== 'string' || !value.commitMessage.trim()) return null;
   return value.commitMessage;
 }
+export function commitResultFeedback(result: GitMutationResult) {
+  const sync = result.sync;
+  const text = !result.commit.completed
+    ? result.commit.status === 'unknown' ? '提交结果尚未确认' : '提交未完成'
+    : sync
+      ? sync.status === 'succeeded' ? '已提交并同步' : sync.status === 'failed' ? '已提交，同步失败' : sync.status === 'unknown' ? '已提交，同步结果待核对' : '已提交，尚未同步'
+      : result.push.status === 'succeeded' ? '已提交并推送' : result.push.status === 'failed' ? '已提交，推送失败' : result.push.status === 'unknown' ? '已提交，推送结果待核对' : result.push.status === 'unavailable' ? '已提交，尚未推送' : '已提交';
+  return {
+    text,
+    warning: !result.commit.completed || (sync ? sync.status !== 'succeeded' : result.push.status === 'failed' || result.push.status === 'unknown'),
+    details: [result.commit.message, result.commit.hash ? (sync ? '初次提交：' : '提交：') + result.commit.hash : '', ...(sync ? ['同步后提交：' + (sync.head || '尚未确认'), sync.upstream, sync.message, '获取（Fetch）：' + sync.fetch.message, '整合（Integration）：' + sync.rebase.message, '推送（Push）：' + sync.push.message] : [result.push.message]), ...result.effects.warnings].filter(Boolean).join('\n'),
+    note: result.commit.completed && sync && sync.status !== 'succeeded' ? '请核对当前变更与远端状态，再从该来源的“同步”入口继续；已有提交无需重复提交。' : '',
+  };
+}
 const message = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
 const terminal = (run: AgentRun) => run.status === 'succeeded' || run.status === 'failed' || run.status === 'cancelled';
 const rejectedBeforeCommit = new Set(['code_commit_location_invalid', 'code_commit_input_invalid', 'code_commit_no_changes', 'code_commit_index_locked', 'code_commit_index_prepare_failed', 'code_commit_stage_failed', 'code_commit_tree_failed', 'code_worktree_identity_changed', 'code_source_changed', 'session_forbidden', 'code_query_invalid', 'code_commit_request_invalid']);
@@ -130,7 +144,7 @@ export class SourceControlActions {
   }
   async retryPush(source: CodeActionSource): Promise<void> {
     const before = this.state(source), retry = before.gitResult?.push.retry;
-    if (!retry || before.gitPending || !before.gitResult?.commit.completed || before.unknownCommit) return;
+    if (!retry || before.gitPending || !before.gitResult?.commit.completed || before.gitResult.sync || before.unknownCommit) return;
     this.update(source, {gitPending: 'push', gitError: ''});
     try { const result = await this.client.push(source, retry); if (!sameResultSource(source, result)) throw Error('推送返回的来源不一致，已有提交保留，请重新核对。'); this.update(source, {gitResult: result, unknownCommit: result.commit.status === 'unknown'}); }
     catch (error) {

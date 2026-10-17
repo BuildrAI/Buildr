@@ -70,7 +70,7 @@ Release create、update、freeze、reopen、abandon和cleanup MUST分别核验cu
 ### Requirement: 发布模块必须保持唯一owner与窄consumer边界
 本条既有主包上下文（Context）和完整产品候选（Product Candidate）只用于主包相关证明，MUST NOT 强迫仅插件（Plugin）选择生成主包公开产物（Artifact）。逐包候选（Candidate）、发布事实与恢复继续由各自所有者（Owner）维护；共享选择只组合准确目标事实，不建立第二权威。
 
-`tools/release` MUST只拥有release selection、task correlation、readiness/convergence adapter、post-publication dev provenance reconciliation和checkout-only Git provenance；`verification` MUST继续拥有Product Candidate、verification evidence和唯一tarball。发布模块 MUST不读取Task Development或旧Finish repository，也 MUST不改变Product Candidate模型。
+发布流程与发布专用代码 MUST 随组织自有 `buildr-release` 技能（Skill）维护，负责固定选择、准确原包生产、就绪核对、公开与恢复。既有产品验证框架 MUST 负责全部检查、定义与选择、输入、结果复用、执行及完整覆盖汇总，消费相同的不可变原包。本机与 GitHub MUST 调用同一份权威代码及检查定义。发布模块 MUST 只读取任务与工作树所需的窄事实，不读取旧 Task Development 或 Finish repository，不建立旁路状态库，也不复制产品候选模型。
 
 #### Scenario: 模块消费其他owner事实
 - **WHEN** release readiness需要任务关联
@@ -81,6 +81,11 @@ Release create、update、freeze、reopen、abandon和cleanup MUST分别核验cu
 - **WHEN** Publication已成立但Activation、具体资源cleanup、Diagnostics或dev provenance reconciliation失败
 - **THEN** 系统 MUST保留Publication并按失败owner报告恢复动作
 - **AND** MUST不需要或恢复legacy Task Finish Application
+
+#### Scenario: 发布代码或检查修复
+- **WHEN** 智能体在所选源码检出位置检查、准备或恢复发布
+- **THEN** 技能随附脚本 SHALL 调用既有验证框架，只补必要缺项并保留原始来源
+- **AND** 只有产品或真实构建输入变化才使相关原包失效，验证来源不得取得公开执行权限
 
 ### Requirement: Release selection 必须从精确 dev baseline 创建
 选择 SHALL 按已固定 `selectionId` 创建源码分支（Branch）与生命周期引用（Ref）；旧仅主包默认身份继续使用 `release-<version>` 及 `refs/buildr/release/<version>/`，插件（Plugin）与联合目标使用互不冲突的独立身份。以下版本命名场景（Scenario）保留为旧仅主包路径；其它目标 SHALL 执行同样的来源、清洁检出和引用占用校验。
@@ -398,7 +403,7 @@ Release MUST将dev、origin/dev和完整SHA解析为精确提交，分别记录�
 - **AND** MUST不在执行目录创建或推断第二份任务数据
 
 ### Requirement: 精确候选结果必须可直接作为最终验证
-完整候选结果 MUST绑定精确源码提交、产物字节与清单、检查配方、锁文件、Node和平台等相关执行输入。匹配的完整演练或候选 MUST允许直接复用；用途标签、任务登记或临时载体变化 MUST不导致重新构建和全量执行。
+完整候选结果 MUST绑定真实产包源码提交、产物字节与清单、验证源码、检查配方、锁文件、Node和平台等相关执行输入。匹配的完整演练或候选 MUST允许直接复用；用途标签、任务登记或临时载体变化 MUST不导致重新构建和全量执行。受控补验在构建输入不变时 SHALL保持原产包源码和原字节，并以独立验证源码证明新增或修复的检查；不满足该证明的旧格式继续按原精确源码边界读取。
 
 #### Scenario: 全绿演练被纳入同一源码
 - **WHEN** 已验证源码和产物未变，纳入后的相关输入全部匹配
@@ -406,9 +411,19 @@ Release MUST将dev、origin/dev和完整SHA解析为精确提交，分别记录�
 - **AND** MUST重新核验当前选择、main关系及临发布公开状态，而不重新pack
 
 #### Scenario: 源码或相关执行条件变化
-- **WHEN** 源码提交、产物字节、工具链、配方或相关平台条件变化
-- **THEN** 工具 MUST说明失效证明范围并重新验证
-- **AND** 内嵌源码身份变化 MUST重新构建，不能只凭tree相同复用旧包
+- **WHEN** 产品构建输入、产物字节、工具链、配方或相关平台条件变化
+- **THEN** 工具 MUST说明失效证明范围并重新取得受影响证明
+- **AND** 真正改变内嵌产包源码身份或构建输入时 MUST重新构建，不能只凭tree相同复用旧包
+
+#### Scenario: 仅验证工具修复
+- **WHEN** 验证源码变化但原产包源码及真实构建输入保持不变
+- **THEN** 工具 SHALL消费原包并记录独立验证来源，只补齐受影响证明
+- **AND** MUST不冒称原包由后来的验证提交生成，不重写原始成功或失败记录
+
+#### Scenario: 补验来源不改变发布权限
+- **WHEN** 完整候选保留原包并绑定独立验证来源，随后准备公开发布
+- **THEN** 发布 MUST使用受保护主线或通过既有发布恢复准入的执行来源
+- **AND** 验证来源 MUST仅作为证明来源；不能替代发布执行来源，也不能改变原恢复上下文
 
 ### Requirement: 源码交付不得隐含未选择包的新版本
 仅插件（Plugin）选择 SHALL 使用其独立版本推进源码核验、冻结及受保护 `main` 纳入，MUST NOT 要求主包新版本或主包版本未公开。实际源码差异影响主包产物（Artifact）时 SHALL 仍执行对应完整候选验证（Candidate Verification），验证现有版本不等于发布该版本。恢复 MUST 核验原目标、版本、源码及选择链，MUST NOT 静默替换选择身份。

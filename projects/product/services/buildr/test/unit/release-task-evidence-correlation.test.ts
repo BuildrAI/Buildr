@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import test from 'node:test';
 
-import { createReleaseTaskEvidenceCorrelation, inspectReleaseTaskEvidenceCorrelation, validateReleaseTaskEvidenceCorrelation } from '../../tools/release/release-task-evidence-correlation.ts';
-import { createReleaseTransactionContext } from '../../tools/release/release-transaction-evidence.ts';
+import { createReleaseTaskEvidenceCorrelation, inspectReleaseTaskEvidenceCorrelation, validateReleaseTaskEvidenceCorrelation } from '../../../../../../skills/buildr-release/scripts/release-task-evidence-correlation.ts';
+import { createReleaseTransactionContext } from '../../../../../../skills/buildr-release/scripts/release-transaction-evidence.ts';
 
 const digest = (letter: string): string => `sha256-${letter.repeat(64)}`;
 const sha = (letter: string): string => letter.repeat(40);

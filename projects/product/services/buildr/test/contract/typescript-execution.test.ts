@@ -17,7 +17,7 @@ test('TypeScript execution foundation is strict, no-emit, and development-only',
   assert.equal(metadata.dependencies['@types/node'], undefined);
   assert.equal(lock.packages['node_modules/typescript'].version, '7.0.2');
   assert.equal(lock.packages['node_modules/@types/node'].version, '24.13.3');
-  assert.deepEqual(config.include, ['src/**/*.ts', 'tools/**/*.ts']);
+  assert.deepEqual(config.include, ['src/**/*.ts', 'tools/**/*.ts', '../../../../skills/buildr-release/scripts/**/*.ts']);
   const testConfig: any = JSON.parse(read('tsconfig.test.json'));
   assert.deepEqual(testConfig.include, ['test/**/*.ts']);
   assert.equal(testConfig.compilerOptions.strict, false);
@@ -30,6 +30,16 @@ test('TypeScript execution foundation is strict, no-emit, and development-only',
   assert.equal(config.compilerOptions.verbatimModuleSyntax, true);
   assert.equal(config.compilerOptions.erasableSyntaxOnly, true);
   assert.equal(config.compilerOptions.allowImportingTsExtensions, true);
+});
+
+test('release Skill TypeScript retains its private module owner inside the source scripts', () => {
+  const releaseSkill = '../../../../skills/buildr-release';
+  const metadata: any = JSON.parse(read(`${releaseSkill}/scripts/package.json`));
+  assert.equal(metadata.private, true);
+  assert.equal(metadata.type, 'module');
+  assert.equal(fs.existsSync(`${releaseSkill}/package.json`), false, 'module metadata belongs inside the Skill scripts, not the Skill root');
+  assert.equal(fs.existsSync(`${releaseSkill}/scripts/release-orchestration-runner.ts`), true);
+  assert.equal(fs.existsSync(['tools', 'release', 'release-orchestration-runner.ts'].join('/')), false, 'the previous release entry must not return to the product tools namespace');
 });
 
 test('TypeScript production source has a low-cost affected verification owner', () => {

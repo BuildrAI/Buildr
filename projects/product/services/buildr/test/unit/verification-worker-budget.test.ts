@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { nodeContextTestArguments, nodeTestConcurrencyArguments, parseNodeTestContextSummary, workerBudgetEnvironment } from '../verification/executor.ts';
+import { resolveVerificationExecutionProfile, verificationSteps } from '../verification/registry.ts';
 import { VERIFICATION_WORKER_BUDGET_ENV, resolveVerificationWorkerBudget } from '../verification/worker-budget.ts';
 
 test('验证内部 worker budget 使用默认值并受 suite 上限约束', () => {
@@ -51,4 +52,36 @@ test('Context-aware node runner摘要进入稳定timing evidence', () => {
   });
   assert.equal(parseNodeTestContextSummary('# node-test-context-summary {'), null);
   assert.equal(parseNodeTestContextSummary('TAP version 13'), null);
+});
+
+
+test('complete low-cost suites execute through the granted node-test boundary instead of unbounded npm children', () => {
+  for (const [id, local, limited] of [['unit', 4, 3], ['component', 1, 1], ['contract', 2, 2]] as const) {
+    const step = verificationSteps.find((item: any) => item.id === id);
+    assert.equal(step.executor.type, 'node-test');
+    assert.deepEqual(step.executor.files, [`test/${id}/*.test.ts`]);
+    assert.equal(step.resourceDemand.workers, local);
+    assert.deepEqual(nodeTestConcurrencyArguments(step, { resourceGrant: { workers: local } }), [`--test-concurrency=${local}`]);
+    assert.deepEqual(nodeTestConcurrencyArguments(step, resolveVerificationExecutionProfile('ci-workspace-limited')), [`--test-concurrency=${limited}`]);
+    assert.deepEqual(nodeTestConcurrencyArguments(step, { resourceGrant: { workers: 1 } }), ['--test-concurrency=1']);
+    assert.ok(step.executor.args.includes('./test/register-development-entry.ts'));
+  }
+});
+
+test('Archify lifecycle owns its existing long child bounds without extending other Workspace checks', () => {
+  const archify = verificationSteps.find((step: any) => step.id === 'integration-archify');
+  const workspace = verificationSteps.find((step: any) => step.id === 'integration-workspace-assets');
+  assert.deepEqual(archify.executor.files, ['test/integration/archify-command-cost.test.ts', 'test/integration/archify-component.test.ts']);
+  assert.equal(archify.timeoutMs, 300_000);
+  assert.equal(workspace.timeoutMs, 180_000);
+  assert.equal(workspace.executor.files.length, 8);
+  assert.equal(workspace.executor.files.some((file: string) => archify.executor.files.includes(file)), false);
+  const limited = resolveVerificationExecutionProfile('ci-workspace-limited');
+  assert.deepEqual(nodeTestConcurrencyArguments(archify, limited), ['--test-concurrency=1']);
+  assert.deepEqual(nodeTestConcurrencyArguments(workspace, limited), ['--test-concurrency=2']);
+  for (const id of ['integration-code', 'integration-desktop', 'integration-workspace-assets', 'integration-task-records', 'integration-connections', 'integration-runtime-projection', 'integration-runtime']) {
+    const step = verificationSteps.find((item: any) => item.id === id);
+    assert.ok(step.reuse.tools.includes('git'), `${id}: real fixture Git requires the observed Git executable version`);
+    assert.equal(step.reuse.git, false, `${id}: private fixture Git must not bind the shared checkout HEAD`);
+  }
 });

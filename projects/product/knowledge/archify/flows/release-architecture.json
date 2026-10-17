@@ -1,0 +1,199 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Buildr 发布：谁负责什么",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": "projects/product/knowledge/archify/flows/release-architecture.html",
+    "repository": {
+      "url": "https://github.com/BuildrAI/Buildr.git",
+      "revision": "a3bfca371544c7b56d02603c4a87df4f682e7e4d"
+    },
+    "legend": {
+      "entries": {
+        "external": {
+          "label": "工作协调"
+        },
+        "backend": {
+          "label": "发布与验证代码"
+        },
+        "cloud": {
+          "label": "执行场所"
+        }
+      }
+    }
+  },
+  "components": [
+    {
+      "id": "agent",
+      "type": "external",
+      "label": "智能体（Agent）：协调执行",
+      "sublabel": "人确定目标与公开授权",
+      "pos": [
+        415,
+        40
+      ],
+      "size": [
+        390,
+        95
+      ],
+      "sources": [
+        {
+          "path": "AGENTS.md"
+        },
+        {
+          "path": "skills/buildr-release/SKILL.md"
+        }
+      ]
+    },
+    {
+      "id": "release",
+      "type": "backend",
+      "label": "buildr-release：发布流程与代码",
+      "sublabel": "固定候选、制包、公开与失败恢复",
+      "pos": [
+        40,
+        260
+      ],
+      "size": [
+        420,
+        110
+      ],
+      "sources": [
+        {
+          "path": "skills/buildr-release/SKILL.md"
+        },
+        {
+          "path": "skills/buildr-release/scripts/release-orchestration-runner.ts"
+        },
+        {
+          "path": "skills/buildr-release/scripts/candidate-package.ts"
+        }
+      ]
+    },
+    {
+      "id": "testing",
+      "type": "backend",
+      "label": "验证框架：检查与有效结果",
+      "sublabel": "通用一次；源码与原包的平台节点分开",
+      "pos": [
+        760,
+        260
+      ],
+      "size": [
+        420,
+        110
+      ],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/test/verification/registry.ts"
+        },
+        {
+          "path": "projects/product/services/buildr/test/verification/candidate-ci.ts"
+        },
+        {
+          "path": "projects/product/services/buildr/test/verification/verification-reuse.ts"
+        }
+      ]
+    },
+    {
+      "id": "local",
+      "type": "cloud",
+      "label": "本机：通用检查＋本机系统",
+      "sublabel": "macOS 或 Windows，验同一原包",
+      "pos": [
+        760,
+        520
+      ],
+      "size": [
+        420,
+        110
+      ],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/test/verification/source.ts"
+        },
+        {
+          "path": "projects/product/services/buildr/test/verification/artifact.ts"
+        }
+      ]
+    },
+    {
+      "id": "github",
+      "type": "cloud",
+      "label": "GitHub：只补必要工作",
+      "sublabel": "另一系统源码、制包、另一系统验包、获准发布",
+      "pos": [
+        40,
+        520
+      ],
+      "size": [
+        520,
+        110
+      ],
+      "sources": [
+        {
+          "path": ".github/workflows/verify.yml"
+        },
+        {
+          "path": ".github/workflows/publish.yml"
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "follow-release",
+      "from": "agent",
+      "to": "release",
+      "label": "按技能推进",
+      "variant": "emphasis"
+    },
+    {
+      "id": "select-checks",
+      "from": "agent",
+      "to": "testing",
+      "label": "选择检查",
+      "variant": "emphasis"
+    },
+    {
+      "id": "release-github",
+      "from": "release",
+      "to": "github",
+      "label": "制包、获准发布"
+    },
+    {
+      "id": "testing-local",
+      "from": "testing",
+      "to": "local",
+      "label": "通用＋本机系统",
+      "variant": "emphasis"
+    },
+    {
+      "id": "testing-peer",
+      "from": "testing",
+      "to": "github",
+      "label": "只补另一系统缺项",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "系统对称，通用不重复",
+      "items": [
+        "macOS 本机补 Windows；Windows 本机补 macOS",
+        "平台源码和平台原包分别执行、分别恢复；通用功能和核心页面只验一次"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "同一份代码、同一原包",
+      "items": [
+        "发布代码在 skills/buildr-release/scripts；检查归现有验证框架",
+        "先采用有效结果，再准备缺项；全部源码通过后制包，验包齐全并获准才公开"
+      ]
+    }
+  ]
+}

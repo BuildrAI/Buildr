@@ -1,8 +1,13 @@
+import { MACOS_PLATFORM_BOUNDARIES, WINDOWS_PLATFORM_BOUNDARIES } from './platform-boundaries.ts';
 import { PACKAGE_VERIFIERS } from '../../tools/verification/package-check/verification-registry.ts';
 import { assertVerificationContextDispositionCoverage, verificationContextDisposition } from '../context/dispositions.ts';
 import { TEST_CONTEXT_KEYS, TASK_LIFECYCLE_CONTEXT_KEY, testContextProfileByKey } from '../context/profiles.ts';
 import { verificationStepOwnership } from './ownership.ts';
 import { SYSTEM_SUITES } from './system-suites.ts';
+
+export const VERIFICATION_PLATFORMS = Object.freeze(['macos', 'windows']);
+export const COMMON_PLATFORM_SCOPE = Object.freeze({ kind: 'common', runners: Object.freeze([]) });
+const platformScope = (...runners: string[]) => Object.freeze({ kind: 'platform', runners: Object.freeze(runners) });
 
 const PROJECT_OWNER: any = 'project:product';
 const SERVICE_OWNER: any = 'service:product/buildr';
@@ -48,18 +53,27 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
   typecheck: testing(SERVICE_OWNER, 'Static Conformance', 'Static', 5000, 'Buildr TypeScript production sources satisfy the strict no-emit execution contract.', TEST_ENVIRONMENTS.sourceReadOnly),
   unit: testing(SERVICE_OWNER, 'Development', 'Unit', 5000, 'Pure Buildr logic behaves correctly with collaborators replaced.', TEST_ENVIRONMENTS.pure),
   component: testing(SERVICE_OWNER, 'Development', 'Component', 3000, 'A bounded Buildr application assembly behaves correctly with fake collaborators.', TEST_ENVIRONMENTS.pure),
-  integration: testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Small cross-domain technical boundaries behave correctly across real filesystem, Git, or process boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
+  integration: testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Generated inputs and verification tools preserve their process, build and compatibility boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-code': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Code browsing, editing, observation and Git operations preserve the actual checkout and mutation boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-desktop': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Desktop and Agent connections preserve their isolated registration, lifecycle, Git read roots and HTTP boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-knowledge': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Knowledge and Agent source reading preserve current content, provenance and HTTP results.', TEST_ENVIRONMENTS.repeatedCli),
+  'integration-workspace-assets': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Workspace assets preserve composition, registration, mutation and user content.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-archify': testing(SERVICE_OWNER, 'Development', 'Integration', 60000, 'Archify installation, rendering, upgrade, user content protection, removal and bounded diagnostics retain their real isolated lifecycle.', TEST_ENVIRONMENTS.repeatedCli),
+  'integration-task-records': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Task records, materials and workbench views preserve filesystem, Git, SQLite and HTTP behavior.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-connections': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Connection Skills preserve definitions, credential handling, Git workspaces, process and local protocol boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-runtime-projection': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Runtime projections preserve declarations, ownership, executable Git modes and installed Skill content.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-declarations': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Project verification declarations preserve diagnostics and package registry boundaries.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-openspec': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Change and OpenSpec convergence applications preserve real filesystem and Git boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-verification': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Project testing maps and Task completion reports remain coherent.', TEST_ENVIRONMENTS.repeatedCli),
-  'integration-runtime': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Runtime, capability, Buildr Web, and Web dist boundaries remain coherent.', TEST_ENVIRONMENTS.repeatedCli),
+  'integration-runtime': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Buildr Web Runtime preserves read, instance, private Git preview and generated Web boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-release': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Release filesystem and installation identity boundaries remain coherent without publishing.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-data-store': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Workspace SQLite authority, migration, and checkout isolation remain coherent.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-self-bootstrap': testing(SERVICE_OWNER, 'Development', 'Integration', 45000, 'The single self-bootstrap closeout lifecycle preserves retained checkout and runtime synchronization boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'integration-task-read-models': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Task entry and read-model applications preserve their SQLite and Application boundaries.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-task-coordination': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Parent coordination and publication applications preserve their real repository boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-project-daily-progress': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Project daily progress Application, store, and CLI boundaries remain coherent without synthesizing Git.', TEST_ENVIRONMENTS.repeatedFilesystem),
-  'system-windows-platform': testing(PROJECT_OWNER, 'Development', 'System', 300000, 'Windows high-risk CLI, worktree, Task Finish, launcher, and managed runtime journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'system-macos-platform': testing(PROJECT_OWNER, 'Development', 'Integration', 8000, 'Existing macOS descriptor proofs and POSIX development entries preserve their native contracts.', TEST_ENVIRONMENTS.repeatedFilesystem),
+  'system-windows-platform': testing(PROJECT_OWNER, 'Development', 'Integration', 80_000, 'Native Windows command shims, path aliases, locks and process cleanup preserve their OS contracts.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-buildr-web-http': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Buildr Web Runtime HTTP routes preserve read, error, session and cleanup boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-verification-admission': testing(PROJECT_OWNER, 'Static Conformance', 'System', 10000, 'Changed-path collection remains trustworthy before broad project verification.', TEST_ENVIRONMENTS.repeatedCli),
   'system-verification-contracts': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Verification orchestration, timing, resource, and Workspace contracts hold through public entrypoints.', TEST_ENVIRONMENTS.repeatedCli),
@@ -122,6 +136,10 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
 });
 
 export const VERIFICATION_STEP_EVIDENCE: any = Object.freeze({
+  'integration-archify': primaryEvidence(
+    'An Archify install, render, upgrade, removal or diagnostic command that loses user content, changes CLI behavior or leaks private inputs must fail.',
+    'real isolated Workspace and user home, component lifecycle, rendering and bounded CLI diagnostics',
+  ),
   'integration-candidate-release': primaryEvidence(
     'A release contract, selection, rehearsal, recovery, or Git convergence boundary that drifts from the frozen Candidate source must fail.',
     'real temporary Git repositories, release runner entrypoints, and branch convergence',
@@ -233,6 +251,8 @@ export const VERIFICATION_STEP_EVIDENCE: any = Object.freeze({
 });
 
 export const VERIFICATION_DAILY_CORE_EXCLUSIONS: any = Object.freeze({
+  'system-macos-platform': 'Actual macOS descriptor and development-entry proof; selected independently from common source checks.',
+  'system-windows-platform': 'Actual Windows boundary proof; daily affected selection uses the same explicit platform owner.',
   'artifact-browser-core': 'Consumes the unique Candidate tarball through the representative core Browser journey; it does not replace affected or full source Browser checks.',
   'frontend-logic': 'The independent frontend logic suite runs for frontend changes and full Candidate; backend Core does not imply frontend coverage.',
   'integration-candidate-release': 'Exercises release infrastructure lifecycle and recovery; selected only for release-related changes or full Candidate.',
@@ -257,12 +277,30 @@ export const VERIFICATION_DAILY_CORE_EXCLUSIONS: any = Object.freeze({
 });
 
 // Reuse scopes describe complete check inputs, independently of changed-path ownership.
-const BACKEND_REUSE_CHECKS = new Set(['unit', 'component', 'cli-architecture', 'runtime-adapter-contract', 'managed-mutations', 'cli-compatibility']);
+const BACKEND_REUSE_CHECKS = new Set(['component', 'managed-mutations', 'cli-compatibility']);
 // These bounded fixture suites read runtime/source assets, not this Product's governance records.
-const RUNTIME_REUSE_CHECKS = new Set(['integration-runtime', 'integration-data-store', 'integration-task-read-models', 'integration-task-coordination',
-  'integration-project-daily-progress', 'system-buildr-web-http', 'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection']);
-const NON_REUSABLE_CHECKS = new Set(['typecheck', 'dsh-plugin', 'candidate-tarball', 'application-payload-release', 'release-tarball-smoke', 'artifact-browser-core', 'cli-package-parity', 'host-node-contract', 'host-node-boundaries']);
-const GIT_SOURCE_CHECKS = new Set(['openspec-candidate-audit', 'service-branch-contract', 'open-source-candidate', 'integration-self-bootstrap', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation']);
+const RUNTIME_REUSE_CHECKS = new Set(['integration-runtime', 'integration-code', 'integration-desktop', 'integration-task-records', 'integration-connections', 'integration-runtime-projection', 'integration-data-store', 'integration-task-read-models', 'integration-task-coordination',
+  'integration-project-daily-progress', 'system-buildr-web-http', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation',
+  'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection',
+  'system-runtime-recovery', 'system-app-process', 'system-workspace-lifecycle']);
+// These reviewed entries do not consume this checkout's release notes. Package
+// static checks still read Product knowledge and OpenSpec: keep their complete
+// repository scope, excluding only this one independent material.
+const RELEASE_NOTES_INDEPENDENT_CHECKS = new Set([...RUNTIME_REUSE_CHECKS,
+  'package-static', 'package-workspace', 'package-commands', 'package-rules', 'package-skills', 'package-runtime',
+  'workspace-lifecycle', 'ownership-recovery', 'runtime-reconciliation', 'init-onboarding', 'service-branch-contract',
+  'managed-data-integrity', 'runtime-adapter-parity',
+  // These source checks read repository materials, packaged resources or owned
+  // fixture repositories. Their real entrypoints do not read root release notes.
+  // Keep every other repository input and the shared reader's conservative guard.
+  'openspec-spec-quality', 'integration-knowledge', 'integration-workspace-assets', 'integration-archify',
+  'integration-declarations', 'integration-openspec', 'integration-self-bootstrap', 'system-public-json-contracts',
+  'system-openspec-contract-audit', 'concurrent-task-acceptance', 'npm-launcher-candidate', 'capability-cli-integration',
+  'commands-cli-integration', 'remote-skill-timeout']);
+const NON_REUSABLE_CHECKS = new Set(['dsh-plugin', 'candidate-tarball', 'application-payload-release', 'release-tarball-smoke', 'artifact-browser-core', 'cli-package-parity', 'host-node-contract', 'host-node-boundaries']);
+// Lifecycle fixtures create and mutate their own repositories. Only checks that
+// actually observe the retained checkout history bind its Git state.
+const GIT_SOURCE_CHECKS = new Set(['open-source-candidate']);
 const REUSE_INPUTS_BY_STEP: Readonly<Record<string, readonly string[]>> = Object.freeze({
   'docs-quality': Object.freeze(['BUILDR_CHANGED_PATHS_JSON']),
   'runtime-skill-projection': Object.freeze(['BUILDR_CHANGED_PATHS_JSON']),
@@ -271,20 +309,30 @@ const REUSE_INPUTS_BY_STEP: Readonly<Record<string, readonly string[]>> = Object
 function sourceReusePolicy(definition: any): any {
   if (NON_REUSABLE_CHECKS.has(definition.id) || definition.executor?.type === 'candidate-artifact' || definition.executor?.consumesArtifact
     || definition.id.startsWith('host-')) return false;
+  if (definition.id === 'typecheck') return Object.freeze({ scope: 'repository', exactNode: true, tools: ['npm'] });
+  // Native boundary fixtures materialize the complete backend, not Web/plugin
+  // source or this workspace's release Skill. Their Git operations use fixtures.
+  if (['system-windows-platform', 'system-macos-platform'].includes(definition.id)) return Object.freeze({ scope: 'platform-backend', inputMode: 'runtime-check', tools: ['git'] });
   if (BACKEND_REUSE_CHECKS.has(definition.id)) return Object.freeze({ scope: 'backend' });
-  if (definition.id === 'frontend-logic') return Object.freeze({ scope: 'web' });
+  // The backend unit entry also executes tests importing Web helpers. Architecture
+  // and adapter contracts read Product knowledge and repository-root materials,
+  // so they retain the complete repository scope below.
+  if (definition.id === 'frontend-logic' || definition.id === 'unit') return Object.freeze({ scope: 'web' });
   // Other registered checks conservatively include all Product material;
   // checks reading source Git identities also bind the observed Git history.
   const usesGit = VERIFICATION_STEP_TESTING[definition.id]?.environment?.footprints.includes('git');
-  return Object.freeze({ scope: RUNTIME_REUSE_CHECKS.has(definition.id) ? 'runtime' : 'repository', git: GIT_SOURCE_CHECKS.has(definition.id),
-    ...(usesGit ? { tools: ['git'] } : {}), ...(REUSE_INPUTS_BY_STEP[definition.id] ? { inputs: REUSE_INPUTS_BY_STEP[definition.id] } : {}) });
+  return Object.freeze({ scope: RUNTIME_REUSE_CHECKS.has(definition.id) ? 'runtime' : 'repository',
+    git: definition.id === 'openspec-candidate-audit' ? 'comparison' : GIT_SOURCE_CHECKS.has(definition.id),
+    ...(RUNTIME_REUSE_CHECKS.has(definition.id) ? { inputMode: 'runtime-check' } : {}),
+    ...(usesGit ? { tools: ['git'] } : {}), ...(RELEASE_NOTES_INDEPENDENT_CHECKS.has(definition.id) ? { releaseNotes: false } : {}),
+    ...(REUSE_INPUTS_BY_STEP[definition.id] ? { inputs: REUSE_INPUTS_BY_STEP[definition.id] } : {}) });
 }
 
 const step: any = (definition: any) => {
   const classification: any = VERIFICATION_STEP_TESTING[definition.id];
   const evidence: any = VERIFICATION_STEP_EVIDENCE[definition.id] ?? null;
   const contextDisposition: any = verificationContextDisposition(definition.id);
-  const ownership: any = verificationStepOwnership(definition.id);
+  const ownership: any = verificationStepOwnership(definition.id, definition.executor);
   const declaredProfiles: any = definition.profiles ?? [];
   const profiles: any = declaredProfiles.includes('candidate') && !Object.hasOwn(VERIFICATION_DAILY_CORE_EXCLUSIONS, definition.id)
     ? [...declaredProfiles, 'core']
@@ -307,18 +355,12 @@ const step: any = (definition: any) => {
   };
   return Object.freeze({
     dependsOn: [],
-    profiles: [],
     groups: [],
     concurrencyClass: 'default',
     resources: [],
-    contexts: Object.freeze([]),
-    isolationMode: 'none',
-    resetStrategy: 'none',
-    parallelSafety: 'worker-safe',
-    resourceDemand: Object.freeze({ workers: 1, processes: 1 }),
-    preflight: null,
     admission: false,
     developmentRunners: [],
+    platformScope: COMMON_PLATFORM_SCOPE,
     ...definition,
     profiles: Object.freeze(profiles),
     contexts: Object.freeze(contexts),
@@ -376,13 +418,21 @@ export const VERIFICATION_RESOURCE_CONTRACTS: any = Object.freeze({
 export const VERIFICATION_EXECUTION_PROFILES: any = Object.freeze({
   local: concurrency(4, 3, 2, { integration: 4, ...Object.fromEntries(SYSTEM_SUITES.map((suite: any) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }, { workers: 8, processes: 8, git: 3, workspaceIo: 3 }),
   ci: concurrency(4, 3, 2, { integration: 4, ...Object.fromEntries(SYSTEM_SUITES.map((suite: any) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }, { workers: 8, processes: 8, git: 3, workspaceIo: 3 }),
-  'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, 'integration-runtime': 3, ...Object.fromEntries(SYSTEM_SUITES.map((suite: any) => [suite.id, Math.min(suite.innerConcurrency, 2)])), 'integration-candidate-release': 2, 'integration-candidate-release-selection': 1, 'integration-candidate-package-selection': 1, 'integration-candidate-release-effects': 1, 'integration-candidate-git-convergence': 2, 'integration-candidate-git-selection': 2, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2 }, { workers: 3, processes: 3, git: 2, workspaceIo: 2 }),
+  'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, unit: 3, component: 1, contract: 2, 'integration-runtime': 2, 'integration-code': 2, 'integration-desktop': 2, 'integration-knowledge': 1, 'integration-workspace-assets': 2, 'integration-archify': 1, 'integration-task-records': 2, 'integration-connections': 2, 'integration-runtime-projection': 1,  ...Object.fromEntries(SYSTEM_SUITES.map((suite: any) => [suite.id, Math.min(suite.innerConcurrency, 2)])), 'integration-candidate-release': 2, 'integration-candidate-release-selection': 1, 'integration-candidate-package-selection': 1, 'integration-candidate-release-effects': 1, 'integration-candidate-git-convergence': 2, 'integration-candidate-git-selection': 2, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2 }, { workers: 3, processes: 3, git: 2, workspaceIo: 2 }),
 });
 
 export const VERIFICATION_CONCURRENCY: any = VERIFICATION_EXECUTION_PROFILES.local;
 
+/** Only the worker grant reaches these child executors. Queue capacities and
+ * unrelated steps' budgets do not change this check's execution inputs. */
+export function verificationStepExecutionInputs(definition: any, profiles: any = VERIFICATION_EXECUTION_PROFILES): any {
+  if (!['node', 'node-test', 'node-context-test'].includes(definition.executor?.type)) return null;
+  return { innerWorkers: Object.fromEntries(Object.entries(profiles).map(([id, profile]: [string, any]) =>
+    [id, profile.innerConcurrency?.[definition.id] ?? definition.resourceDemand?.workers ?? 1])) };
+}
+
 export const VERIFICATION_ENVIRONMENT_FOOTPRINTS: any = Object.freeze(['filesystem', 'cli', 'git', 'loopback-network', 'network', 'workspace-lifecycle']);
-export const VERIFICATION_DEVELOPMENT_RUNNERS: any = Object.freeze(['windows']);
+export const VERIFICATION_DEVELOPMENT_RUNNERS: any = VERIFICATION_PLATFORMS;
 export const VERIFICATION_ENVIRONMENT_ISOLATIONS: any = Object.freeze(['none', 'read-only', 'unique-temporary-root', 'shared']);
 export const VERIFICATION_RESET_BURDENS: any = Object.freeze(['none', 'single-cleanup', 'repeated-cleanup', 'lifecycle']);
 export const VERIFICATION_CONTEXT_KEYS: any = TEST_CONTEXT_KEYS;
@@ -412,6 +462,134 @@ const integrationSlice: any = (id: any, files: any, options: any = {}) => Object
 });
 
 export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
+  // Explicit stable owners replace the exclusive catch-all. The tool owner
+  // remains exclusive because generated-artifact-set refreshes checkout DTOs.
+  integrationSlice('integration', [
+    'test/integration/browser-launch.test.ts',
+    'test/integration/browser-selector-dispatcher-runtime.test.ts',
+    'test/integration/development-entry.test.ts',
+    'test/integration/dsh-payload.test.ts',
+    'test/integration/generated-artifact-set.test.ts',
+    'test/integration/generated-artifacts.test.ts',
+    'test/integration/generated-contract-artifacts.test.ts',
+    'test/integration/process-infrastructure.test.ts',
+    'test/integration/typescript-execution.test.ts',
+    'test/integration/verification-entrypoints-cli.test.ts',
+    'test/integration/verification-process-executor.test.ts',
+    'test/integration/verification-reuse-filesystem.test.ts',
+    'test/integration/windows-artifact-diagnosis.test.ts',
+  ], { schedulingCostMs: 5000, timeoutMs: 300_000, concurrencyClass: 'exclusive', args: ['--test-concurrency=4'] }),
+  integrationSlice('integration-code', [
+    'test/integration/code-branch-application.test.ts',
+    'test/integration/code-commit-application.test.ts',
+    'test/integration/code-commit-guidance.test.ts',
+    'test/integration/code-commit-message-http.test.ts',
+    'test/integration/code-commit-message-large-http.test.ts',
+    'test/integration/code-explorer-application.test.ts',
+    'test/integration/code-fetch-application.test.ts',
+    'test/integration/code-git-configuration.test.ts',
+    'test/integration/code-sync-application.test.ts',
+    'test/integration/file-editing-application.test.ts',
+    'test/integration/git-checkout-identity.test.ts',
+    'test/integration/git-worktree-evidence-reader.test.ts',
+    'test/integration/source-control-application.test.ts',
+    'test/integration/source-control-observation-http.test.ts',
+    'test/integration/source-control-observations.test.ts',
+  ], { schedulingCostMs: 5000, args: ['--test-concurrency=3'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
+  integrationSlice('integration-desktop', [
+    'test/integration/agent-codex-discovery.test.ts',
+    'test/integration/agent-codex-remove.test.ts',
+    'test/integration/agent-operations.test.ts',
+    'test/integration/codex-desktop-application.test.ts',
+    'test/integration/codex-desktop-concurrency.test.ts',
+    'test/integration/codex-desktop-disconnect.test.ts',
+    'test/integration/codex-desktop-module-http.test.ts',
+    'test/integration/codex-desktop-plugin.test.ts',
+    'test/integration/codex-desktop-recovery.test.ts',
+    'test/integration/dsh-desktop-backend.test.ts',
+    'test/integration/dsh-page-observations.test.ts',
+    'test/integration/native-session-links.test.ts',
+  ], { schedulingCostMs: 5000, args: ['--test-concurrency=3'] }),
+  integrationSlice('integration-knowledge', [
+    'test/integration/agent-asset-source-query.test.ts',
+    'test/integration/current-knowledge-capability-graph.test.ts',
+    'test/integration/knowledge-document-quality.test.ts',
+    'test/integration/knowledge-query.test.ts',
+    'test/integration/skill-content-query.test.ts',
+  ], { schedulingCostMs: 4000, args: ['--test-concurrency=2'] }),
+  integrationSlice('integration-workspace-assets', [
+    'test/integration/asset-catalog-version.test.ts',
+    'test/integration/asset-relationships.test.ts',
+    'test/integration/attached-project-services.test.ts',
+    'test/integration/inline-workspace-core-rules.test.ts',
+    'test/integration/non-git-workspace-continuity.test.ts',
+    'test/integration/workspace-agent-assets-http-contract.test.ts',
+    'test/integration/workspace-composition.test.ts',
+    'test/integration/workspace-mutation-recovery.test.ts',
+  ], { schedulingCostMs: 5000, args: ['--test-concurrency=2'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
+  integrationSlice('integration-archify', [
+    'test/integration/archify-command-cost.test.ts',
+    'test/integration/archify-component.test.ts',
+  // Existing child limits are 175s + 35s; retain bounded startup and cleanup
+  // room when the limited profile grants this lifecycle only one worker.
+  ], { schedulingCostMs: 60000, timeoutMs: 300_000, args: ['--test-concurrency=2'] }),
+  integrationSlice('integration-task-records', [
+    'test/integration/document-images.test.ts',
+    'test/integration/markdown-image-files.test.ts',
+    'test/integration/task-brief-migration.test.ts',
+    'test/integration/task-brief-record.test.ts',
+    'test/integration/task-changed-files-application.test.ts',
+    'test/integration/task-commits-application.test.ts',
+    'test/integration/task-manager-capability-graph.test.ts',
+    'test/integration/task-materials-application.test.ts',
+    'test/integration/task-materials-http-cli.test.ts',
+    'test/integration/task-parent-history-migration.test.ts',
+    'test/integration/task-pre-create-git-capability-graph.test.ts',
+    'test/integration/task-record-http-contract.test.ts',
+    'test/integration/workbench-application.test.ts',
+    'test/integration/workbench-http-contract.test.ts',
+  ], { schedulingCostMs: 5000, args: ['--test-concurrency=3'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
+  integrationSlice('integration-connections', [
+    'test/integration/builtin-connection-skills-package.test.ts',
+    'test/integration/connection-authoring-forward.test.ts',
+    'test/integration/connection-instance-filenames.test.ts',
+    'test/integration/connection-skill-definitions.test.ts',
+    'test/integration/connection-authorization.test.ts',
+    'test/integration/connection-skills-cli.test.ts',
+    'test/integration/connection-skills-package.test.ts',
+    'test/integration/connection-skills-runtime.test.ts',
+    'test/integration/connection-skills-safety.test.ts',
+    'test/integration/connection-skills-workspace.test.ts',
+    'test/integration/connection-source-batch.test.ts',
+    'test/integration/kibana-connection-skill.test.ts',
+    'test/integration/mysql-client-live.test.ts',
+    'test/integration/mysql-connection-program.test.ts',
+    'test/integration/mysql-query-skills.test.ts',
+    'test/integration/nacos-connection-declaration.test.ts',
+    'test/integration/nacos-connection-skill.test.ts',
+    'test/integration/retired-connections.test.ts',
+    'test/integration/xxl-job-connection-skill.test.ts',
+  ], { schedulingCostMs: 5000, timeoutMs: 240_000, args: ['--test-concurrency=3'] }),
+  integrationSlice('integration-runtime-projection', [
+    'test/integration/capability-contracts.test.ts',
+    'test/integration/capability-runtime.test.ts',
+    'test/integration/package-generic-skills.test.ts',
+    'test/integration/retired-adapter-teardown.test.ts',
+    'test/integration/runtime-command-selection.test.ts',
+    'test/integration/runtime-skills.test.ts',
+    'test/integration/shared-skill-ownership.test.ts',
+    'test/integration/standard-runtime-projection.test.ts',
+  ], { schedulingCostMs: 4000, args: ['--test-concurrency=2'] }),
+  integrationSlice('integration-runtime', [
+    'test/integration/buildr-web-read-executor.test.ts',
+    'test/integration/buildr-web-runtime.test.ts',
+    'test/integration/buildr-web-workspace.test.ts',
+    'test/integration/preview-ownership.test.ts',
+    'test/integration/runtime-system-http-contract.test.ts',
+    'test/integration/web-dist-verification.test.ts',
+    'test/integration/web-resource-shutdown.test.ts',
+  ], { schedulingCostMs: 4000, args: ['--test-concurrency=2'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
+
   integrationSlice('integration-declarations', [
     'test/integration/core-diagnostics-and-package.test.ts',
     'test/integration/project-verification-map.test.ts',
@@ -426,6 +604,12 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/openspec-projected-validator.test.ts',
   ], { schedulingCostMs: 2000, args: ['--test-concurrency=3'] }),
   integrationSlice('integration-verification', [
+    'test/integration/candidate-artifact-reuse.test.ts',
+    'test/integration/verification-reuse.test.ts',
+    'test/integration/verification-source-inputs.test.ts',
+    'test/integration/verification-artifact.test.ts',
+    'test/integration/verification-input-boundaries.test.ts',
+    'test/integration/verification-windows-inputs.test.ts',
     'test/integration/task-verification-report.test.ts',
     'test/integration/verification-resource-coordinator.test.ts',
     'test/integration/test-context-runtime.test.ts',
@@ -437,58 +621,11 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/browser-candidate.test.ts',
     'test/integration/docs-quality.test.ts',
   ], { schedulingCostMs: 5000, admission: true, args: ['--test-concurrency=3'] }),
-  integrationSlice('integration-runtime', [
-    'test/integration/mysql-query-skills.test.ts',
-    'test/integration/retired-connections.test.ts',
-    'test/integration/mysql-client-live.test.ts',
-    'test/integration/mysql-connection-program.test.ts',
-    'test/integration/kibana-connection-skill.test.ts',
-    'test/integration/xxl-job-connection-skill.test.ts',
-    'test/integration/builtin-connection-skills-package.test.ts',
-    'test/integration/connection-skill-definitions.test.ts',
-    'test/integration/connection-skills-runtime.test.ts',
-    'test/integration/connection-instance-filenames.test.ts',
-    'test/integration/connection-skills-safety.test.ts',
-    'test/integration/connection-skills-cli.test.ts',
-    'test/integration/connection-skills-workspace.test.ts',
-    'test/integration/connection-skills-package.test.ts',
-    'test/integration/connection-authoring-forward.test.ts',
-    'test/integration/native-session-links.test.ts',
-    'test/integration/dsh-desktop-backend.test.ts',
-    'test/integration/dsh-page-observations.test.ts',
-    'test/integration/source-control-observation-http.test.ts',
-    'test/integration/agent-operations.test.ts',
-    'test/integration/code-commit-application.test.ts',
-    'test/integration/code-commit-message-http.test.ts',
-    'test/integration/web-resource-shutdown.test.ts',
-    'test/integration/workbench-application.test.ts',
-    'test/integration/workbench-http-contract.test.ts',
-    'test/integration/capability-contracts.test.ts',
-    'test/integration/capability-runtime.test.ts',
-    'test/integration/buildr-web-read-executor.test.ts',
-    'test/integration/code-explorer-application.test.ts',
-    'test/integration/file-editing-application.test.ts',
-    'test/integration/task-materials-application.test.ts',
-    'test/integration/task-materials-http-cli.test.ts',
-    'test/integration/document-images.test.ts',
-    'test/integration/markdown-image-files.test.ts',
-    'test/integration/buildr-web-runtime.test.ts',
-    'test/integration/buildr-web-workspace.test.ts',
-    'test/integration/preview-ownership.test.ts',
-    'test/integration/runtime-skills.test.ts',
-    'test/integration/standard-runtime-projection.test.ts',
-    'test/integration/runtime-command-selection.test.ts',
-    'test/integration/shared-skill-ownership.test.ts',
-    'test/integration/package-generic-skills.test.ts',
-    'test/integration/task-record-http-contract.test.ts',
-    'test/integration/task-manager-capability-graph.test.ts',
-    'test/integration/task-pre-create-git-capability-graph.test.ts',
-    'test/integration/web-dist-verification.test.ts',
-  ], { schedulingCostMs: 4000, args: ['--test-concurrency=4'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
   integrationSlice('integration-release', [
     'test/integration/open-source-release-filesystem.test.ts',
     'test/integration/product-installation-identity.test.ts',
     'test/integration/product-installation-registry.test.ts',
+    'test/integration/workspace-cli-routing.test.ts',
   ], { schedulingCostMs: 2000, args: ['--test-concurrency=2'] }),
   integrationSlice('integration-data-store', [
     'test/integration/workspace-management-fence.test.ts',
@@ -511,34 +648,43 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
   ], { schedulingCostMs: 5000, executorType: 'node-context-test', concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
 ]);
 
+// The compatibility general entry aggregates every source Integration owner.
+// Artifact-only files stay in their original package consumers.
 export const INTEGRATION_GENERAL_EXCLUDED_FILES: any = Object.freeze([...new Set([
   'test/integration/application-payload-release.test.ts',
   'test/integration/npm-launcher.test.ts',
-  ...INTEGRATION_PRIMARY_SLICES.flatMap((slice: any) => slice.files),
 ])]);
 
 export const verificationSteps: any = Object.freeze([
-  step({ id: 'artifact-browser-core', name: 'Candidate tarball core Browser journey', executor: { type: 'node', file: 'test/verification/release/browser-candidate.ts', args: ['--selector', 'core'], consumesArtifact: true }, profiles: ['candidate'], groups: ['release'], dependsOn: ['candidate-tarball'], timeoutMs: 360_000, concurrencyClass: 'workspace-heavy', resources: ['app-runtime'] }),
+  step({ id: 'artifact-browser-core', name: 'Candidate tarball core Browser journey', executor: { type: 'node', file: 'test/verification/release/browser-candidate.ts', discoveredFiles: ['test/browser-smoke/buildr-web-browser.test.ts'], args: ['--selector', 'core'], consumesArtifact: true }, profiles: ['candidate'], groups: ['release'], dependsOn: ['candidate-tarball'], timeoutMs: 360_000, concurrencyClass: 'workspace-heavy', resources: ['app-runtime'] }),
   step({ id: 'frontend-logic', name: 'Buildr Web complete logic suite', executor: { type: 'node', file: '../buildr-web/tools/run-logic-tests.mjs' }, profiles: ['candidate'], concurrencyClass: 'cpu-heavy' }),
   step({ id: 'dsh-plugin', name: 'DSH plugin complete build and loader verification', executor: { type: 'node', file: '../dsh-plugin/tools/verify-all.ts' }, timeoutMs: 360_000, concurrencyClass: 'exclusive' }),
   step({ id: 'typecheck', name: 'TypeScript static checking', executor: { type: 'npm', args: ['run', 'typecheck'] }, profiles: ['fast', 'candidate'], }),
-  step({ id: 'unit', name: 'fine-grained unit tests', executor: { type: 'npm', args: ['run', 'test:unit'] }, profiles: ['fast', 'candidate'],  concurrencyClass: 'cpu-heavy' }),
-  step({ id: 'component', name: 'bounded component tests', executor: { type: 'npm', args: ['run', 'test:component'] }, profiles: ['fast', 'candidate'],  concurrencyClass: 'cpu-heavy' }),
-  step({ id: 'integration', name: 'cross-domain technical boundary integration tests', executor: { type: 'node', file: 'test/verification/integration.ts', args: ['--suite', 'general'] }, profiles: ['candidate'], workerDemand: 4, schedulingCostMs: 5000, timeoutMs: 300_000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'unit', name: 'fine-grained unit tests', executor: { type: 'node-test', files: ['test/unit/*.test.ts'], args: ['--import', './test/register-development-entry.ts', '--test-reporter=dot'] }, workerDemand: 4, profiles: ['fast', 'candidate'],  concurrencyClass: 'cpu-heavy' }),
+  step({ id: 'component', name: 'bounded component tests', executor: { type: 'node-test', files: ['test/component/*.test.ts'], args: ['--import', './test/register-development-entry.ts', '--test-reporter=dot'] }, workerDemand: 1, profiles: ['fast', 'candidate'],  concurrencyClass: 'cpu-heavy' }),
   ...INTEGRATION_PRIMARY_SLICES.map((slice: any) => step({
     id: slice.id,
     name: ({
+      'integration-runtime-projection': 'Runtime projection integration slice',
+      'integration-connections': 'Connection Skill integration slice',
+      'integration-task-records': 'Task record and material integration slice',
+      'integration-workspace-assets': 'Workspace asset integration slice',
+      'integration-archify': 'Archify component lifecycle integration slice',
+      'integration-knowledge': 'Knowledge and source reading integration slice',
+      'integration-desktop': 'Desktop and Agent connection integration slice',
+      'integration-code': 'Code and Git application integration slice',
+      'integration': 'Build and verification tool boundaries',
       'integration-declarations': 'Project declaration integration slice',
       'integration-openspec': 'OpenSpec application integration slice',
       'integration-verification': 'Verification orchestration integration slice',
-      'integration-runtime': 'Runtime and Buildr Web integration slice',
+      'integration-runtime': 'Buildr Web Runtime integration slice',
       'integration-release': 'Release and installation integration slice',
       'integration-data-store': 'Workspace data-store integration slice',
       'integration-self-bootstrap': 'Self-bootstrap closeout integration slice',
       'integration-task-read-models': 'Task read-model integration slice',
       'integration-task-coordination': 'Task coordination integration slice',
       'integration-project-daily-progress': 'Project daily progress integration slice',
-    })[slice.id],
+    } as Record<string, string>)[slice.id],
     executor: { type: slice.executorType, files: [...slice.files], args: [...slice.args] },
     profiles: ['candidate'],
     schedulingCostMs: slice.schedulingCostMs,
@@ -548,11 +694,11 @@ export const verificationSteps: any = Object.freeze([
     contexts: [...slice.contexts],
     admission: slice.admission,
   })),
-  step({ id: 'contract', name: 'repository contract tests', executor: { type: 'npm', args: ['run', 'test:contract'] }, profiles: ['fast', 'candidate'], concurrencyClass: 'cpu-heavy' }),
+  step({ id: 'contract', name: 'repository contract tests', executor: { type: 'node-test', files: ['test/contract/*.test.ts'], args: ['--import', './test/register-development-entry.ts', '--test-reporter=dot'] }, workerDemand: 2, profiles: ['fast', 'candidate'], concurrencyClass: 'cpu-heavy' }),
   ...SYSTEM_SUITES.map((suite: any) => step({
     id: suite.id,
     name: suite.name,
-    executor: { type: 'node', file: 'test/verification/system.ts', args: ['--owner', suite.id] },
+    executor: { type: 'node', file: 'test/verification/system.ts', args: ['--owner', suite.id], discoveredFiles: [...suite.files] },
     profiles: ['candidate'],
     schedulingCostMs: suite.schedulingCostMs,
     concurrencyClass: suite.concurrencyClass,
@@ -561,19 +707,15 @@ export const verificationSteps: any = Object.freeze([
     workerDemand: suite.innerConcurrency,
     admission: suite.id === 'system-verification-admission',
   })),
-  step({ id: 'system-windows-platform', name: 'Windows high-risk system journey slice', executor: { type: 'node-test', files: [
-    'test/system/cli-update.test.ts',
-    'test/system/buildr-web-launcher.test.ts',
-    'test/system/workspace-runtime-recovery.test.ts',
-    'test/system/worktree-create.test.ts',
-    'test/system/worktree-nested-git-isolation.test.ts',
-  ], args: ['--test-concurrency=1', '--test-reporter=dot'] }, groups: ['windows-npm-preflight'], selection: 'explicit-only', developmentRunners: ['windows'],  schedulingCostMs: 300000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating', 'task-lifecycle-heavy'] }),
+  step({ id: 'system-macos-platform', name: 'Native macOS source boundaries', executor: { type: 'node-test', files: ['test/platform/macos-readonly-boundaries.test.ts', 'test/platform/macos-development-entry.test.ts', 'test/platform/macos-launcher-boundaries.test.ts'], args: ['--test-concurrency=1', '--test-reporter=dot'] }, profiles: ['candidate'], selection: 'explicit-only', developmentRunners: ['macos'], platformScope: platformScope('macos'), platformEvidence: MACOS_PLATFORM_BOUNDARIES.filter(item => item.stepId === 'system-macos-platform'), schedulingCostMs: 8000, timeoutMs: 60_000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'system-windows-platform', name: 'Native Windows boundary checks', executor: { type: 'node-test', files: ['test/platform/windows-boundaries.test.ts', 'test/platform/windows-readonly-boundaries.test.ts', 'test/system/worktree-create.test.ts'], supportingFiles: ['test/system/worktree-create.test.ts'], args: ['--test-concurrency=1', '--test-reporter=dot', '--test-name-pattern=^(?:native |owned process |项目与服务共享实际仓库|Windows )'] }, profiles: ['candidate'], groups: ['windows-npm-preflight'], selection: 'explicit-only', developmentRunners: ['windows'], platformScope: platformScope('windows'), platformEvidence: WINDOWS_PLATFORM_BOUNDARIES.filter(item => item.stepId === 'system-windows-platform'), schedulingCostMs: 80_000, timeoutMs: 90_000, concurrencyClass: 'workspace-heavy', resources: ['app-runtime'] }),
   step({ id: 'cli-architecture', name: 'CLI modular architecture', executor: { type: 'node', file: 'test/verification/cli/architecture.ts' }, profiles: ['fast', 'candidate'], }),
   step({ id: 'openspec-spec-quality', name: 'OpenSpec canonical spec quality', executor: { type: 'node', file: 'test/verification/openspec/spec-quality.ts' }, profiles: ['fast', 'candidate'], }),
   step({ id: 'openspec-strict', name: 'openspec strict validation', executor: { type: 'openspec', args: ['validate', '--all', '--strict'] }, profiles: ['fast', 'candidate'], }),
   step({ id: 'runtime-adapter-contract', name: 'runtime adapter contract', executor: { type: 'node', file: 'test/verification/runtime/adapter-contract.ts' }, profiles: ['candidate'], groups: ['runtime'], }),
 
   step({ id: 'integration-candidate-release', name: 'Candidate integration: release contracts and recovery', executor: { type: 'node', file: 'test/verification/run-node-tests.ts', args: [
+    'test/integration-candidate-release/candidate-source-binding.test.ts',
     'test/integration-candidate-release/package-artifact-observation.test.ts',
     'test/integration-candidate-release/package-publication-evidence.test.ts',
     'test/integration-candidate-release/package-release-operation.test.ts',
@@ -582,6 +724,7 @@ export const verificationSteps: any = Object.freeze([
     'test/integration-candidate-release/release-contract-cold-start.test.ts',
     'test/integration-candidate-release/release-convergence.test.ts',
     'test/integration-candidate-release/release-node-runner.test.ts',
+    'test/integration-candidate-release/release-skill-ownership.test.ts',
     'test/integration-candidate-release/release-operation.test.ts',
     'test/integration-candidate-release/release-orchestration-runner.test.ts',
     'test/integration-candidate-release/release-recovery.test.ts',
@@ -614,8 +757,10 @@ export const verificationSteps: any = Object.freeze([
 
   step({ id: 'capability-cli-integration', name: 'capability CLI integration', executor: { type: 'node', file: 'test/capability-cli.integration.ts' }, profiles: ['candidate'],  schedulingCostMs: 25000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'commands-cli-integration', name: 'Commands context CLI integration', executor: { type: 'node', file: 'test/commands-cli.integration.ts' }, profiles: ['candidate'], groups: ['cli', 'package'],  schedulingCostMs: 12000, concurrencyClass: 'workspace-heavy' }),
-  step({ id: 'openspec-contract-fixtures', name: 'OpenSpec contract fixtures', executor: { type: 'node', file: 'test/verification/openspec/contract.ts', args: ['--suite', 'contract'] }, profiles: ['candidate'], groups: ['openspec'],  concurrencyClass: 'cpu-heavy' }),
-  step({ id: 'openspec-convergence-recovery', name: 'OpenSpec convergence recovery journey', executor: { type: 'node', file: 'test/verification/openspec/contract.ts', args: ['--suite', 'recovery'] }, profiles: ['candidate'], groups: ['openspec', 'recovery'],  schedulingCostMs: 40000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
+  // Explicit diagnostic entries retain their suites; integration-openspec owns
+  // these same six files in the complete source and Candidate selections.
+  step({ id: 'openspec-contract-fixtures', name: 'OpenSpec contract fixtures', executor: { type: 'node', file: 'test/verification/openspec/contract.ts', args: ['--suite', 'contract'] }, groups: ['openspec'],  concurrencyClass: 'cpu-heavy' }),
+  step({ id: 'openspec-convergence-recovery', name: 'OpenSpec convergence recovery journey', executor: { type: 'node', file: 'test/verification/openspec/contract.ts', args: ['--suite', 'recovery'] }, groups: ['openspec', 'recovery'],  schedulingCostMs: 40000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
   step({ id: 'package-static', ...packageVerifier('static'), profiles: ['candidate'], groups: ['package'], }),
   step({ id: 'package-workspace', ...packageVerifier('workspace'), profiles: ['candidate'], groups: ['package'],  schedulingCostMs: 7000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'package-commands', ...packageVerifier('commands'), profiles: ['candidate'], groups: ['package'],  schedulingCostMs: 3000, concurrencyClass: 'workspace-heavy' }),
@@ -635,7 +780,7 @@ export const verificationSteps: any = Object.freeze([
   step({ id: 'cli-package-parity', name: 'CLI package parity', executor: { type: 'node', file: 'test/verification/cli/package-parity.ts', consumesArtifact: true }, profiles: ['candidate'], groups: ['cli'],  dependsOn: ['candidate-tarball'], schedulingCostMs: 15000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'service-branch-contract', name: 'Service branch contract', executor: { type: 'node', file: 'test/verification/onboarding/service-branch.ts' }, profiles: ['candidate'],   schedulingCostMs: 3000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'remote-skill-timeout', name: 'remote Skill timeout contract', executor: { type: 'node', file: 'test/verification/network/remote-text.ts' }, profiles: ['candidate'],  concurrencyClass: 'network' }),
-  step({ id: 'release-tarball-smoke', name: 'release metadata and real platform Launcher consumption', executor: { type: 'node', file: 'tools/release/release-consumption.ts', args: ['platform'], consumesArtifact: true }, profiles: ['candidate'], groups: ['release', 'windows-npm-preflight'], dependsOn: ['candidate-tarball'], schedulingCostMs: 25000, timeoutMs: 300_000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'release-tarball-smoke', platformScope: platformScope('macos', 'windows'), platformEvidence: [...MACOS_PLATFORM_BOUNDARIES, ...WINDOWS_PLATFORM_BOUNDARIES].filter(item => item.stepId === 'release-tarball-smoke'), name: 'release metadata and real platform Launcher consumption', executor: { type: 'node', file: 'test/verification/release/release-consumption.ts', args: ['platform'], consumesArtifact: true }, profiles: ['candidate'], groups: ['release', 'windows-npm-preflight'], dependsOn: ['candidate-tarball'], schedulingCostMs: 25000, timeoutMs: 300_000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'managed-data-integrity', name: 'managed data integrity', executor: { type: 'node', file: 'test/verification/integrity/managed-data-integrity.ts' }, profiles: ['candidate'], groups: ['package'],  schedulingCostMs: 9000, concurrencyClass: 'workspace-heavy' }),
 
   step({ id: 'docs-quality', name: 'documentation quality', executor: { type: 'node', file: 'test/verification/docs/quality.ts' }, profiles: ['candidate'],  concurrencyClass: 'default' }),
@@ -644,16 +789,26 @@ export const verificationSteps: any = Object.freeze([
 assertVerificationContextDispositionCoverage(verificationSteps.map((item: any) => item.id));
 
 const candidateShard: any = (id: any, runner: any, phase: any, stepIds: any, options: any = {}) => Object.freeze({
+  platformScope: stepIds.every((stepId: string) => verificationSteps.find((step: any) => step.id === stepId)?.platformScope.kind === 'platform') ? platformScope(runner) : COMMON_PLATFORM_SCOPE,
   id,
   runner,
   phase,
   stepIds: Object.freeze(stepIds),
+  preparation: options.preparation ?? 'base',
   requiresArtifact: options.requiresArtifact === true,
   producesArtifact: options.producesArtifact === true,
 });
 
 export const CORE_MACOS_STEP_IDS: any = Object.freeze([
   'integration',
+  'integration-code',
+  'integration-knowledge',
+  'integration-workspace-assets',
+  'integration-archify',
+  'integration-task-records',
+  'integration-desktop',
+  'integration-connections',
+  'integration-runtime-projection',
   'integration-declarations',
   'integration-openspec',
   'integration-runtime',
@@ -672,7 +827,6 @@ export const CORE_MACOS_STEP_IDS: any = Object.freeze([
   'open-source-candidate',
   'capability-cli-integration',
   'commands-cli-integration',
-  'openspec-contract-fixtures',
   'package-workspace',
   'package-commands',
   'package-rules',
@@ -685,7 +839,6 @@ export const CORE_MACOS_STEP_IDS: any = Object.freeze([
   'cli-package-parity',
   'service-branch-contract',
   'remote-skill-timeout',
-  'release-tarball-smoke',
   'managed-data-integrity',
 ]);
 
@@ -695,6 +848,11 @@ export const CORE_MACOS_SHARDS: any = Object.freeze([
   ]),
   candidateShard('core-project-task-macos', 'macos', 'verification', [
     'integration',
+    'integration-code',
+    'integration-knowledge',
+    'integration-workspace-assets',
+    'integration-archify',
+    'integration-task-records',
     'integration-declarations',
     'integration-openspec',
     'integration-data-store',
@@ -704,15 +862,15 @@ export const CORE_MACOS_SHARDS: any = Object.freeze([
     'system-verification-contracts',
     'system-public-json-contracts',
     'system-openspec-contract-audit',
-    'openspec-contract-fixtures',
-  ]),
-  candidateShard('core-package-runtime-release-macos', 'macos', 'verification', [
+  ], { preparation: 'source-runtime' }),
+  candidateShard('core-runtime-source-macos', 'macos', 'verification', [
     'integration-runtime',
+    'integration-desktop',
+    'integration-connections',
+    'integration-runtime-projection',
     'integration-release',
     'system-buildr-web-http',
-    'application-payload-release',
     'npm-launcher-candidate',
-    'open-source-candidate',
     'package-workspace',
     'package-commands',
     'package-rules',
@@ -720,11 +878,14 @@ export const CORE_MACOS_SHARDS: any = Object.freeze([
     'package-runtime',
     'ownership-recovery',
     'runtime-reconciliation',
-    'cli-package-parity',
     'remote-skill-timeout',
-    'release-tarball-smoke',
     'managed-data-integrity',
-  ], { requiresArtifact: true }),
+  ], { preparation: 'source-runtime' }),
+  candidateShard('core-package-runtime-release-macos', 'macos', 'verification', [
+    'application-payload-release',
+    'open-source-candidate',
+    'cli-package-parity',
+  ], { requiresArtifact: true, preparation: 'source-runtime' }),
   candidateShard('core-cli-contract-macos', 'macos', 'verification', [
     'capability-cli-integration',
     'commands-cli-integration',
@@ -735,8 +896,8 @@ export const CORE_MACOS_SHARDS: any = Object.freeze([
 ]);
 
 export const CANDIDATE_CI_SHARDS: any = Object.freeze([
-  candidateShard('artifact-browser-macos', 'macos', 'verification', ['artifact-browser-core'], { requiresArtifact: true }),
-  candidateShard('frontend-logic-macos', 'macos', 'verification', ['frontend-logic']),
+  candidateShard('artifact-browser-macos', 'macos', 'verification', ['artifact-browser-core'], { requiresArtifact: true, preparation: 'browser-artifact' }),
+  candidateShard('frontend-logic-macos', 'macos', 'verification', ['frontend-logic'], { preparation: 'frontend' }),
   candidateShard('preflight-macos', 'macos', 'preflight', [
     'typecheck',
     'unit',
@@ -757,39 +918,19 @@ export const CANDIDATE_CI_SHARDS: any = Object.freeze([
     'candidate-tarball',
   ], { producesArtifact: true }),
   ...CORE_MACOS_SHARDS,
-  candidateShard('release-infrastructure-macos', 'macos', 'verification', ['integration-candidate-release', 'integration-candidate-release-selection', 'integration-candidate-package-selection', 'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection']),
-  candidateShard('release-infrastructure-windows', 'windows', 'verification', ['integration-candidate-release', 'integration-candidate-release-selection', 'integration-candidate-package-selection', 'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection']),
-  candidateShard('runtime-windows', 'windows', 'verification', [
-    'system-runtime-recovery',
-    'system-app-process',
-    'npm-launcher-candidate',
-    'runtime-adapter-parity',
-    'release-tarball-smoke',
-  ], { requiresArtifact: true }),
-  candidateShard('workspace-lifecycle-windows', 'windows', 'verification', [
-    'system-workspace-lifecycle',
-    'workspace-lifecycle',
-  ]),
-  candidateShard('task-worktree-recovery-windows', 'windows', 'verification', [
-    'system-task-lifecycle',
-    'system-worktree-lifecycle',
-    'system-nested-git-isolation',
-    'openspec-convergence-recovery',
-  ]),
-  candidateShard('task-concurrent-windows', 'windows', 'verification', [
-    'concurrent-task-acceptance',
-  ]),
+  candidateShard('release-infrastructure-macos', 'macos', 'verification', ['integration-candidate-release', 'integration-candidate-release-selection', 'integration-candidate-package-selection', 'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection'], { preparation: 'source-runtime' }),
+  candidateShard('platform-boundaries-macos', 'macos', 'verification', ['system-macos-platform']),
+  candidateShard('platform-boundaries-windows', 'windows', 'verification', ['system-windows-platform']),
+  candidateShard('runtime-macos', 'macos', 'verification', ['release-tarball-smoke'], { requiresArtifact: true, preparation: 'consumer' }),
+  candidateShard('runtime-windows', 'windows', 'verification', ['release-tarball-smoke'], { requiresArtifact: true, preparation: 'consumer' }),
+  candidateShard('runtime-source-macos', 'macos', 'verification', ['system-runtime-recovery', 'system-app-process', 'runtime-adapter-parity'], { preparation: 'source-runtime' }),
+  candidateShard('workspace-lifecycle-macos', 'macos', 'verification', ['system-workspace-lifecycle', 'workspace-lifecycle']),
+  candidateShard('task-worktree-recovery-macos', 'macos', 'verification', ['system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation']),
+  candidateShard('task-concurrent-macos', 'macos', 'verification', ['concurrent-task-acceptance']),
 ]);
 
 export const CANDIDATE_CI_PLATFORM_REPEATS: any = Object.freeze({
-  'integration-candidate-release': Object.freeze(['release-infrastructure-macos', 'release-infrastructure-windows']),
-  'integration-candidate-release-selection': Object.freeze(['release-infrastructure-macos', 'release-infrastructure-windows']),
-  'integration-candidate-package-selection': Object.freeze(['release-infrastructure-macos', 'release-infrastructure-windows']),
-  'integration-candidate-release-effects': Object.freeze(['release-infrastructure-macos', 'release-infrastructure-windows']),
-  'integration-candidate-git-convergence': Object.freeze(['release-infrastructure-macos', 'release-infrastructure-windows']),
-  'integration-candidate-git-selection': Object.freeze(['release-infrastructure-macos', 'release-infrastructure-windows']),
-  'npm-launcher-candidate': Object.freeze(['core-package-runtime-release-macos', 'runtime-windows']),
-  'release-tarball-smoke': Object.freeze(['core-package-runtime-release-macos', 'runtime-windows']),
+  'release-tarball-smoke': Object.freeze(['runtime-macos', 'runtime-windows']),
 });
 
 export const CANDIDATE_CI_HOST_NODE_TUPLES: any = Object.freeze([

@@ -5,13 +5,13 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {gzipSync} from 'node:zlib';
 import {createHash} from 'node:crypto';
-import {createReleaseCandidate,readReleaseCandidate,sourceSdkIdentityFromFiles} from '../../tools/release-candidate.ts';
-import {artifactFromTarball} from '../../../buildr/tools/release/package-artifact-observation.ts';
+import {createReleaseCandidate,readReleaseCandidate,sourceSdkIdentityFromFiles} from '../../../../../../skills/buildr-release/scripts/dsh-plugin/release-candidate.ts';
+import {artifactFromTarball} from '../../../../../../skills/buildr-release/scripts/package-artifact-observation.ts';
 import {hash} from '../../tools/buildr-peer.ts';
 import {archiveTreeIdentity} from '../../tools/verify-all.ts';
 import {assertBoundVerification,assertBoundVerificationManifest,type BoundVerification} from '../../tools/full-verification.ts';
 import {identity} from '../../tools/verify-buildr-plugin-pair.ts';
-import { verifySourceCandidateAdoption } from '../../tools/release-workflow.ts';
+import { verifySourceCandidateAdoption } from '../../../../../../skills/buildr-release/scripts/dsh-plugin/release-workflow.ts';
 function archive(metadata:unknown):Buffer {
  const chunks:Buffer[]=[];
  for(const [name,text] of [['package/package.json',JSON.stringify(metadata)],['package/lib/index.js','export default class Host {}']]) {

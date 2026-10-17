@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { createReleaseCandidatePlan } from '../../tools/release/verify-pr-candidate.ts';
+import { createReleaseCandidatePlan } from '../verification/release/verify-pr-candidate.ts';
 
 test('complete main-to-frozen Git diff catches main changes already present in the dev baseline', () => {
   const sdkPatches = path.resolve(import.meta.dirname, '../../../dsh-plugin/sdk-patches');

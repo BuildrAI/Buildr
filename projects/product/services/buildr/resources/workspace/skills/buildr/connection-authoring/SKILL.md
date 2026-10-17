@@ -15,6 +15,10 @@ description: 用户要为 Buildr 制作或维护自有外部系统接入方法�
 
 ## 制作完整源目录
 
+按系统真实身份模型声明认证来源：只允许个人授权的系统使用 `authentication.allowedSources: [personal]`，不把某个人的环境或审批权限固定成所有账号的权限。远端系统决定当前账号能看、能做什么；用户授权本次动作，专业程序另行说明已实现及已验证范围。多人共用一个个人账号也不改变其远端身份。此模式的实例文件只共享非秘密配置，完整个人组加密保存在规范工作空间（Workspace）`.buildr/local/` 私有忽略目录，本机密钥不随文件共享；显式查看已保存个人秘密不改变认证组，也不允许把原值写入提示词（Prompt）或普通结果。
+
+外部登录返回的用户编号或会话令牌不应要求用户手工复制。系统需要浏览器授权时，声明 `authentication.authorization`，由专用程序接收本次授权并经私有通道交回完整个人组；界面使用授权与重新授权入口，不显示内部字段。程序须说明浏览器依赖、取消和资源清理，不从日常浏览器资料或其他账号借用认证。一个连接覆盖多个环境时，使用 `presentation.environment: hidden` 隐藏连接环境标签，专业操作仍明确选择环境；该展示策略不决定远端权限。
+
 从当前技能（Skill）入口相对位置读取 [接入约定](references/connection-contract.md) 和 `templates/`。将模板 `SKILL.md` 放到入口、`connection.yml` 放到 `assets/`、`client.mjs` 放到 `scripts/`、`commands-and-results.md` 放到 `references/`，再修改名称与真实能力；不冒用既有技能（Skill）身份。所有新连接技能源统一放在用户自己的 `skills/connections/<skill-id>/`：
 
 ```text

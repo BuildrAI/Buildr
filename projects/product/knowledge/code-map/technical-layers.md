@@ -64,14 +64,15 @@
 - **[技能声明接入（connection-skills）](../../services/buildr/src/modules/connection-skills/)** — 逐实例文件、个人组、声明管理及通用执行；不拥有专业业务命令。
   - [模块装配（module.ts）](../../services/buildr/src/modules/connection-skills/module.ts) — 使用工作空间（Workspace）和资产公开端口装配命令、网页与应用。
   - **`domain/`** — 声明、实例及输入约束。
-    - [声明与字段校验（definition.ts）](../../services/buildr/src/modules/connection-skills/domain/definition.ts) — 受限字段、程序和只读槽位，`presentation.groups` 编排字段，`hooks.inputs` 定义发现所需输入；`validateConfig` 与 `validateAuthentication` 为各入口共享校验。
+    - [声明与字段校验（definition.ts）](../../services/buildr/src/modules/connection-skills/domain/definition.ts) — 受限字段、程序和只读槽位，`authentication.allowedSources` 限定认证来源，`authorization` 声明独立个人授权；`presentation` 编排字段及连接环境展示，`hooks.inputs` 定义发现输入。
     - [实例身份与观察（instance.ts）](../../services/buildr/src/modules/connection-skills/domain/instance.ts) — 绑定输入、观察冲突和安全诊断。
     - [选择名称（field-labels.ts）](../../services/buildr/src/modules/connection-skills/domain/field-labels.ts) — 有界展示记录的严格保存、容错读取、编号匹配及公开秘密遮蔽，不参与远端身份。
   - **`application/`** — 当前来源及用例。
     - [重建目录与精确选择（catalog.ts）](../../services/buildr/src/modules/connection-skills/application/catalog.ts) — `list/resolve` 核对技能入口、声明、来源、停用和兼容版本；入口与有效声明分阶段批读，局部失败不改绑。
-    - [连接管理与运行（connection-skills-application.ts）](../../services/buildr/src/modules/connection-skills/application/connection-skills-application.ts) — `directory` 共同返回实例、定义及诊断；`save/saveAuth/run/hook` 分开团队与个人保存、版本核对和明确草稿测试；同阶段共享声明目录观察，写前及程序再核验重新观察。
-  - [团队文件与本机认证（persistence/files.ts）](../../services/buildr/src/modules/connection-skills/persistence/files.ts) — 普通文件边界、原子替换、逐实例锁和加密个人组；实例配置不进入本机 SQLite。
+    - [连接管理与运行（connection-skills-application.ts）](../../services/buildr/src/modules/connection-skills/application/connection-skills-application.ts) — 共同目录、来源约束、独立保存与观察核对；`authorize` 按当前观察接收新个人组，`migrateAuth/relocateAuth` 显式保全迁移，普通读取不返回秘密。密码方法可显式单字段查看，授权方法不公开内部字段。
+  - [团队文件与本机认证（persistence/files.ts）](../../services/buildr/src/modules/connection-skills/persistence/files.ts) — 普通文件边界、原子替换、逐实例锁；个人密文在规范工作空间私有忽略目录，密钥留本机应用目录，旧路径只读兼容及显式迁移；实例配置不进入本机 SQLite。
   - [专业程序启动（infrastructure/program.ts）](../../services/buildr/src/modules/connection-skills/infrastructure/program.ts) — 随附及独立程序定位、显式版本检查、私有进程间通信（IPC）、业务标准输入（Standard Input）、超时和有界秘密输出。
+  - [个人授权程序（infrastructure/authorization-program.ts）](../../services/buildr/src/modules/connection-skills/infrastructure/authorization-program.ts) — 独立授权上下文不交接旧认证，私有结果唯一且正常退出才交给应用；抑制普通输出，处理取消、超时及进程清理。
   - [所选来源解析（infrastructure/workspace.ts）](../../services/buildr/src/modules/connection-skills/infrastructure/workspace.ts) — 唯一登记目录维护配置入口，以 Git 公共目录证明关联代码工作树（Git Worktree）；独立克隆（Clone）及多个来源显式冲突。
   - [命令入口（interfaces/cli/connection-skills-cli.ts）](../../services/buildr/src/modules/connection-skills/interfaces/cli/connection-skills-cli.ts) 与 [网页入口（interfaces/http/connection-skills-http.ts）](../../services/buildr/src/modules/connection-skills/interfaces/http/connection-skills-http.ts) — 同一应用的输入输出适配。
 - [资产公开源读取（connection-skill-source.ts）](../../services/buildr/src/modules/agent-assets/application/connection-skill-source.ts) — 验证已登记源目录、入口名称、相对文件及实际路径，提供逐项和有界批量读取，不从陈旧投射猜执行程序。
@@ -79,14 +80,16 @@
 - [Nacos 完整技能源（nacos-connection）](../../services/buildr/resources/workspace/skills/connections/nacos-connection/) — 独立说明、接入声明、程序和详细方法；资源映射安装到 `skills/connections/nacos-connection/`。
 - [接入制作指引（connection-authoring）](../../services/buildr/resources/workspace/skills/buildr/connection-authoring/) — 指导制作标准目录、声明、程序及验证，不承载真实实例配置。
 - [资产影响只读端口（connection-impact.ts）](../../services/buildr/src/modules/agent-assets/application/connection-impact.ts) — 一次装配连接引用回调，取消登记及内置卸载披露编号、名称与文件；读取故障作为诊断，不阻源操作或删除实例、认证。
-- **[连接页面（connection-skills）](../../services/buildr-web/src/features/connection-skills/)** — 先选择连接系统，再按地址与团队账号、业务范围填写；高级设置和个人账号默认收起。
+- **[连接页面（connection-skills）](../../services/buildr-web/src/features/connection-skills/)** — 先选择系统，再按声明填写地址、允许来源的账号与业务范围；仅个人模式直接使用本机账号，双来源模式保留独立个人区。
   - [页面（ConnectionSkillsPage.tsx）](../../services/buildr-web/src/features/connection-skills/pages/ConnectionSkillsPage.tsx) — 实例列表、新增入口与局部诊断；首次或明确刷新仅请求共同目录，保存和删除局部更新，隔离迟到读取。
   - [列表摘要（connection-skill-summary.ts）](../../services/buildr-web/src/features/connection-skills/connection-skill-summary.ts) — 优先使用匹配的选择名称，地址及其余范围压为两逻辑行，不调用外部发现。
-  - [编辑抽屉（ConnectionSkillEditDrawer.tsx）](../../services/buildr-web/src/features/connection-skills/components/ConnectionSkillEditDrawer.tsx) — 装配系统选择、团队表单、个人区和底部固定操作；主测试使用团队候选。
+  - [编辑抽屉（ConnectionSkillEditDrawer.tsx）](../../services/buildr-web/src/features/connection-skills/components/ConnectionSkillEditDrawer.tsx) — 装配系统选择、声明允许的认证入口、环境展示、显式迁移与底部操作，主测试选择准确候选来源。
   - [编辑状态（useConnectionSkillEditor.ts）](../../services/buildr-web/src/features/connection-skills/useConnectionSkillEditor.ts) — 维护两组草稿及独立观察版本、保存、测试、迟到响应与冲突。
   - [系统选择（ConnectionSystemPicker.tsx）](../../services/buildr-web/src/features/connection-skills/components/ConnectionSystemPicker.tsx) — 类别分组与系统选项，同系统多个方法时才选择接入方式。
-  - [团队表单（ConnectionTeamForm.tsx）](../../services/buildr-web/src/features/connection-skills/components/ConnectionTeamForm.tsx) — 按声明区块编排配置与完整团队认证、发现业务范围，未列字段通用回落。
+  - [连接表单（ConnectionTeamForm.tsx）](../../services/buildr-web/src/features/connection-skills/components/ConnectionTeamForm.tsx) — 按声明编排配置与当前主来源的完整认证、发现业务范围，未列字段通用回落。
   - [个人账号（ConnectionPersonalAuthentication.tsx）](../../services/buildr-web/src/features/connection-skills/components/ConnectionPersonalAuthentication.tsx) — 默认折叠、明确覆盖状态、独立测试和保存。
+  - [已保存个人秘密（ConnectionSavedPersonalSecrets.tsx）](../../services/buildr-web/src/features/connection-skills/components/ConnectionSavedPersonalSecrets.tsx) — 显式单字段查看、默认隐藏、按当前对象及观察清空，隔离迟到响应且不回填认证草稿。
+  - [浏览器授权（ConnectionBrowserAuthorization.tsx）](../../services/buildr-web/src/features/connection-skills/components/ConnectionBrowserAuthorization.tsx)及[授权状态（useConnectionAuthorization.ts）](../../services/buildr-web/src/features/connection-skills/useConnectionAuthorization.ts) — 首次授权、重新授权及取消；新增先保存无认证配置壳，内部认证字段不进入表单，关闭或目标变化时丢弃迟到结果。
 
 实际操作为“智能体（Agent）发现绑定 → 读取专业技能（Skill）及程序帮助 → 通用入口启动程序 → 所选程序访问真实系统”。程序写前请求本机上下文再次校验，通用宿主不审批业务；Nacos 随附程序另维护远端版本、授权及结果。MySQL 另由独立查询应用消费同一明确实例，所有入口保留观察版本及只读边界。
 

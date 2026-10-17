@@ -60,6 +60,11 @@ test('共享进程基础层保留参数并只为 Windows command shim 启用 she
   );
   assert.equal(quoteWindowsCommandArgument(''), '""');
   assert.equal(quoteWindowsCommandArgument('plain'), 'plain');
+  assert.equal(quoteWindowsCommandArgument('left&right'), '"left&right"');
+  const spaced = buildCommandInvocation('C:\\Program Files (x86)\\Buildr\\buildr.cmd', ['left&right'], { platform: 'win32' });
+  assert.equal(spaced.executable, '"C:\\Program Files (x86)\\Buildr\\buildr.cmd"');
+  assert.deepEqual(spaced.args, ['"left&right"']);
+  assert.equal(buildCommandInvocation('/tmp/path with spaces/tool', [], { platform: 'darwin' }).executable, '/tmp/path with spaces/tool');
 });
 
 test('共享 PATH 解析器在 Windows 语义下解析 PATHEXT shim', (t: any) => {
@@ -185,6 +190,24 @@ test('local preparation reports actual executed and reused operations and repair
   outputs.set('generated-contracts-and-test-context', 'sha256-output-drift');
   assert.deepEqual(run().operations.map((operation: any) => operation.disposition), ['reused', 'executed']);
   assert.equal(calls, 3);
+});
+
+test('preparation subprocesses do not inherit the parent timing output or operation identity', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-preparation-owner-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, '.node-version'), '24.15.0\n');
+  const output = path.join(root, 'parent.json');
+  const env = { ...process.env, BUILDR_CANDIDATE_PREPARATION_OUTPUT: output, BUILDR_CANDIDATE_PREPARATION_ID: 'parent', BUILDR_VERIFICATION_PROFILE: 'ci-workspace-limited' };
+  const result = prepareCandidateEnvironment({ profile: 'base', env, roots: { serviceRoot: root, webRoot: root, projectRoot: root }, stream: { write: () => true },
+    execute: ((_command: string, _args: string[], options: any) => {
+      assert.equal(options.env.BUILDR_CANDIDATE_PREPARATION_OUTPUT, undefined);
+      assert.equal(options.env.BUILDR_CANDIDATE_PREPARATION_ID, undefined);
+      assert.equal(options.env.BUILDR_VERIFICATION_PROFILE, 'ci-workspace-limited');
+      return { status: 0 };
+    }) as any });
+  assert.equal(result.id, 'parent');
+  assert.equal(JSON.parse(fs.readFileSync(output, 'utf8')).id, 'parent');
+  assert.equal(env.BUILDR_CANDIDATE_PREPARATION_OUTPUT, output);
 });
 
 test('preparation content identity checks bytes and nested build helpers while excluding only generated root outputs', t => {

@@ -5,11 +5,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { reconcilePublicationAfterPreparedContext, resolveRetainedController, runReleaseOperation } from '../../tools/release/release-orchestration-runner.ts';
-import { readCandidateEvidence } from '../../tools/release/release-transaction-runner.ts';
+import { reconcilePublicationAfterPreparedContext, resolveRetainedController, runReleaseOperation } from '../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts';
+import { readCandidateEvidence } from '../../../../../../skills/buildr-release/scripts/release-transaction-runner.ts';
 import { createReleaseArtifactFixture } from '../helpers/release-artifact-fixture.ts';
 import { aggregateCandidateCiEvidence, candidateCiRegistryIdentity, createCandidateCiEvidence } from '../verification/candidate-ci-evidence.ts';
 import { CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES } from '../verification/registry.ts';
+import { createCandidateSourceBinding } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
+import { normalizeReleaseTargets } from '../../../../../../skills/buildr-release/scripts/release-targets.ts';
 
 const sourceRoot = path.resolve(import.meta.dirname, '../..');
 
@@ -45,6 +47,121 @@ function git(repo: string, args: string[]) {
   return result.stdout.trim();
 }
 
+function inspectFixture(t: any, packagePublications: any): any {
+  const workspace = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-inspect-')));
+  t.after(() => fs.rmSync(workspace, { recursive: true, force: true }));
+  git(workspace, ['init', '-b', 'dev']);
+  const targets = normalizeReleaseTargets({ packages: 'buildr,dsh-plugin', version: '0.1.0-rc.41', pluginVersion: '0.1.0-rc.7' });
+  const directory = path.join(workspace, '.git/buildr/release-operations');
+  fs.mkdirSync(directory, { recursive: true });
+  const file = path.join(directory, targets.selectionId + '.json');
+  const state = { schemaVersion: 'buildr.release-operation-input/v2', workspace, targets, sources: [], candidate: { runId: 700 }, publication: null, packagePublications };
+  const bytes = JSON.stringify(state) + '\n'; fs.writeFileSync(file, bytes);
+  return { workspace, targets, file, bytes, directory,
+    options: { action: 'inspect', workspace, packages: targets.packages, version: targets.versions.buildr, pluginVersion: targets.versions['dsh-plugin'] } };
+}
+
+test('candidate stop rejects unsupported actions and low-level input without creating release state', async t => {
+  for (const action of ['inspect', 'publish', 'resume']) {
+    await assert.rejects(() => runReleaseOperation({ action, stopAfter: 'candidate' }), /only supported by prepare/u);
+  }
+  await assert.rejects(() => runReleaseOperation({ action: 'prepare', stopAfter: 'publication' }), /only supported by prepare/u);
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-candidate-stop-cli-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const entry = path.resolve(sourceRoot, '../../../../skills/buildr-release/scripts/release-orchestration-runner.ts');
+  const invoke = (args: readonly string[]) => spawnSync(process.execPath, [entry, ...args], { cwd: root, encoding: 'utf8', timeout: 15_000,
+    env: { ...process.env, BUILDR_APP_DATA_DIR: path.join(root, 'app-data'), BUILDR_PRODUCT_DATA_DIR: path.join(root, 'product-data') } });
+  const help = invoke(['--help']);
+  assert.equal(help.status, 0, help.stderr); assert.match(help.stdout, /--stop-after candidate/u);
+  for (const [args, expected] of [
+    [['prepare', '--version', '1.0.0', '--stop-after', 'candidate'], /requires --workspace/u],
+    [['prepare', '--version', '1.0.0', '--stop-after', 'publication'], /only supported by/u],
+    [['publish', '--version', '1.0.0', '--stop-after', 'candidate'], /only supported by/u],
+    [['prepare', '--input', 'missing-input.json', '--stop-after', 'candidate'], /only supported by/u],
+  ] as const) {
+    const result = invoke(args);
+    assert.equal(result.status, 1, result.stdout);
+    assert.match(result.stderr, expected);
+  }
+  assert.deepEqual(fs.readdirSync(root), [], 'invalid scope must not create operation, profile or application state');
+});
+
+test('candidate-only prepare preserves scoped and legacy publication facts without entering resume', async t => {
+  for (const scoped of [false, true]) for (const publication of [
+    { publicationAuthorization: { contextIdentity: 'sha256-existing' } },
+    { packagePublications: { buildr: { requested: true, runId: null } } },
+    { publication: { requested: true, runId: 201 } },
+  ]) {
+    const f = inspectFixture(t, {});
+    const state = { ...JSON.parse(f.bytes), ...publication, version: f.targets.versions.buildr };
+    const file = scoped ? f.file : path.join(f.directory, f.targets.versions.buildr + '.json');
+    if (!scoped) { delete state.targets; state.schemaVersion = 'buildr.release-operation-input/v1'; fs.unlinkSync(f.file); }
+    const bytes = JSON.stringify(state) + '\n'; fs.writeFileSync(file, bytes);
+    const result = await runReleaseOperation({ action: 'prepare', workspace: f.workspace, version: f.targets.versions.buildr,
+      stopAfter: 'candidate', ...(scoped ? { packages: f.targets.packages, pluginVersion: f.targets.versions['dsh-plugin'] } : {}) }, {
+      execute: () => assert.fail('candidate-only scope must never read, dispatch, retry or clean up a publication'),
+    });
+    assert.equal(result.action, 'prepare'); assert.equal(result.status, 'blocked');
+    assert.equal(result.diagnostic.code, 'candidate-only-publication-conflict'); assert.deepEqual(result.effects, []);
+    assert.equal(fs.readFileSync(file, 'utf8'), bytes, 'existing publication authority and pointers remain untouched');
+    assert.deepEqual(fs.readdirSync(f.directory), [path.basename(file)]);
+  }
+});
+
+test('inspect refreshes both package runs without resuming or rewriting the release operation', async t => {
+  const f = inspectFixture(t, { buildr: { requested: true, runId: 201, status: 'running' }, 'dsh-plugin': { requested: true, runId: 202, status: 'running' } });
+  const requests: number[] = [];
+  const result = await runReleaseOperation(f.options, {
+    execute: (command: string, args: string[]) => {
+      assert.equal(command, 'gh'); assert.equal(args[0], 'api', 'inspect cannot dispatch, merge, retry, or clean up');
+      const id = Number(args[1].split('/').at(-1)); requests.push(id);
+      return { status: 0, stdout: JSON.stringify({ id, status: id === 202 ? 'in_progress' : 'completed', conclusion: id === 202 ? null : 'success',
+        head_sha: 'a'.repeat(40), run_attempt: 2, html_url: `https://github.com/BuildrAI/Buildr/actions/runs/${id}` }) };
+    },
+  });
+  assert.equal(result.status, 'inspected');
+  assert.deepEqual(requests, [700, 201, 202]);
+  assert.equal(result.packagePublications.buildr.runObservation.run.conclusion, 'success');
+  assert.equal(result.packagePublications['dsh-plugin'].runObservation.run.status, 'in_progress');
+  assert.equal(result.packagePublications.buildr.status, 'running', 'a successful run observation is not fabricated public-package evidence');
+  assert.equal(result.run.headSha, 'a'.repeat(40));
+  assert.deepEqual(result.effects, []);
+  assert.equal(fs.readFileSync(f.file, 'utf8'), f.bytes);
+  assert.deepEqual(fs.readdirSync(f.directory), [f.targets.selectionId + '.json']);
+});
+
+test('inspect retains readable package facts when another package readback is unknown', async t => {
+  const f = inspectFixture(t, { buildr: { requested: true, runId: 201 }, 'dsh-plugin': { requested: true, runId: 202 } });
+  const result = await runReleaseOperation(f.options, {
+    execute: (command: string, args: string[]) => {
+      assert.equal(command, 'gh'); assert.equal(args[0], 'api');
+      const id = Number(args[1].split('/').at(-1));
+      return id === 202 ? { status: 1, stderr: 'HTTP 503 readback unavailable' }
+        : { status: 0, stdout: JSON.stringify({ id, status: 'completed', conclusion: 'success' }) };
+    },
+  });
+  assert.equal(result.status, 'inspected');
+  assert.equal(result.packagePublications.buildr.runObservation.status, 'observed');
+  assert.equal(result.packagePublications['dsh-plugin'].runObservation.status, 'unknown');
+  assert.equal(result.packagePublications['dsh-plugin'].runId, 202);
+  assert.equal(fs.readFileSync(f.file, 'utf8'), f.bytes);
+});
+
+test('inspect keeps an unconfirmed package request distinct from an unrequested package', async t => {
+  const f = inspectFixture(t, { buildr: { requested: true, runId: null } });
+  let requests = 0;
+  const result = await runReleaseOperation(f.options, {
+    execute: (command: string, args: string[]) => {
+      assert.equal(command, 'gh'); assert.equal(args[0], 'api'); requests++;
+      return { status: 0, stdout: JSON.stringify({ id: 700, status: 'completed', conclusion: 'success' }) };
+    },
+  });
+  assert.equal(requests, 1, 'unconfirmed requests are not dispatched again');
+  assert.equal(result.packagePublications.buildr.runObservation.status, 'dispatch-unconfirmed');
+  assert.equal(result.packagePublications['dsh-plugin'].runObservation.status, 'not-requested');
+  assert.equal(fs.readFileSync(f.file, 'utf8'), f.bytes);
+});
+
 test('reprepare releases only a terminal failed Publication pointer for a new unpublished context', () => {
   const publication = { requested: true, contextIdentity: 'sha256-old', runId: 41 };
   const context = { identity: 'sha256-new' };
@@ -63,7 +180,7 @@ test('reprepare releases only a terminal failed Publication pointer for a new un
   assert.throws(() => reconcilePublicationAfterPreparedContext(publication, context, { id: 41, status: 'completed', conclusion: 'success' }), /succeeded/u);
 });
 
-test('prepare creates one isolated release, validates before main, and reuses the same Candidate after unrelated dev and Task changes', async t => {
+for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs tools on original bytes' : 'adopts late source proof after an unknown aggregate retry'} through adoption and readiness after unrelated dev and Task changes`, async t => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-operation-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const workspace = path.join(root, 'workspace');
@@ -76,6 +193,7 @@ test('prepare creates one isolated release, validates before main, and reuses th
   fs.mkdirSync(path.join(workspace, path.dirname(packageFile)), { recursive: true });
   fs.mkdirSync(path.join(workspace, '.github/workflows'), { recursive: true });
   fs.writeFileSync(path.join(workspace, packageFile), JSON.stringify({ name: '@buildr-ai/buildr', version: '0.0.0' }));
+  fs.writeFileSync(path.join(workspace, 'CHANGELOG.md'), `## ${version} - 2026-10-17\n\nCandidate changes.\n`);
   fs.writeFileSync(path.join(workspace, 'projects/product/.node-version'), `${process.versions.node}\n`);
   fs.copyFileSync(path.resolve(sourceRoot, '../../../../.github/workflows/publish.yml'), path.join(workspace, '.github/workflows/publish.yml'));
   git(workspace, ['init', '-b', 'dev']); git(workspace, ['config', 'user.name', 'Buildr Test']); git(workspace, ['config', 'user.email', 'buildr@example.com']);
@@ -105,6 +223,10 @@ test('prepare creates one isolated release, validates before main, and reuses th
   let dispatched = 0;
   let merges = 0;
   let candidateComplete = false;
+  let candidateConclusion = 'success', candidateAttempt = 1, retryRequests = 0;
+  let verificationSource: string | null = null, repairRequested = false;
+  let lateSourceVerification: string | null = null;
+  const repairRequests: string[][] = [];
   let pr: any = null;
   const providerFile = path.join(workspace, '.git/buildr/task-worktrees', `${taskId}.json`);
   const runtime = {
@@ -130,9 +252,17 @@ test('prepare creates one isolated release, validates before main, and reuses th
     if (command !== 'gh') return spawnSync(command, args, { ...options, encoding: 'utf8' });
     const body = (value: unknown) => ({ status: 0, stdout: JSON.stringify(value) });
     if (args[0] === 'auth') return { status: 0, stdout: 'local-test-service' };
-    if (args[0] === 'workflow') { dispatched++; return { status: 1, stderr: 'injected lost dispatch response' }; }
-    if (args[0] === 'run' && args[1] === 'list') return body(dispatched ? [{ databaseId: 700, headSha: sourceCommit, status: candidateComplete ? 'completed' : 'queued', conclusion: candidateComplete ? 'success' : null }] : []);
-    if (args[0] === 'api') return body({ id: 700, head_sha: sourceCommit, run_attempt: 1, path: '.github/workflows/verify.yml', repository: { full_name: 'BuildrAI/Buildr' }, event: 'workflow_dispatch', status: candidateComplete ? 'completed' : 'queued', conclusion: candidateComplete ? 'success' : null });
+    if (args[0] === 'workflow') { dispatched++; if (args.includes('verification_source=' + verificationSource)) { repairRequested = true; repairRequests.push(args); } return { status: 1, stderr: 'injected lost dispatch response' }; }
+    if (args[0] === 'run' && args[1] === 'rerun') { retryRequests++; return { status: 1, stderr: 'injected lost rerun response' }; }
+    if (args.includes('--log-failed')) return { status: 0, stdout: 'ECONNRESET while downloading aggregate evidence' };
+    if (args[0] === 'run' && args[1] === 'view') return body({ jobs: [
+      { name: 'Candidate plan', conclusion: 'success' }, { name: 'Candidate bootstrap', conclusion: 'success' },
+      { name: 'Candidate source (core-task-lifecycle-macos)', conclusion: 'success' }, { name: 'Candidate gate', conclusion: 'failure' },
+    ] });
+    if (args[0] === 'run' && args[1] === 'list') return body(dispatched ? [
+      { databaseId: 700, headSha: sourceCommit, status: candidateComplete ? 'completed' : 'queued', conclusion: candidateComplete ? 'success' : null },
+      ...(repairRequested ? [{ databaseId: 701, headSha: sourceCommit, displayTitle: 'Candidate repair 700 ' + verificationSource, status: 'completed', conclusion: 'success' }] : [])] : []);
+    if (args[0] === 'api') return body({ id: args[1]?.endsWith('/701') ? 701 : 700, head_sha: sourceCommit, run_attempt: candidateAttempt, path: '.github/workflows/verify.yml', repository: { full_name: 'BuildrAI/Buildr' }, event: 'workflow_dispatch', status: candidateComplete ? 'completed' : 'queued', conclusion: candidateComplete ? candidateConclusion : null });
     if (args[0] === 'pr' && args[1] === 'list') return body(pr ? [pr] : []);
     if (args[0] === 'pr' && args[1] === 'create') {
       pr = { number: 1, state: 'OPEN', headRefOid: sourceCommit, headRefName: args[args.indexOf('--head') + 1], baseRefName: 'main', url: 'https://github.com/BuildrAI/Buildr/pull/1' };
@@ -175,25 +305,101 @@ test('prepare creates one isolated release, validates before main, and reuses th
     orchestrationDependencies: { transactionDependencies: { execute, runtime, candidateEvidence } },
   };
   const options = { action: 'prepare', workspace, version };
+  const missingNotes = await runReleaseOperation(options, { ...dependencies,
+    execute: (command: any, args: any, invocation: any) => command === 'git' && args[0] === 'show' && args[1]?.endsWith(':CHANGELOG.md')
+      ? { status: 0, stdout: '## 0.0.0 - 2026-10-17\n\nOther release.\n' } : execute(command, args, invocation),
+    prepareLocalSourceVerification: () => assert.fail('invalid frozen release notes must be caught before requesting source checks'),
+  });
+  assert.equal(missingNotes.status, 'blocked');
+  assert.match(missingNotes.diagnostic.message, /CHANGELOG is missing release section/u);
+  assert.equal(dispatched, 0, 'missing release notes must not spend a remote run');
   const missing = await runReleaseOperation(options, { ...dependencies, prepareLocalSourceVerification: async () => ({
     status: 'local-verification-required', missingStepIds: ['unit'], recordCount: 0, nextActions: ['Run the missing local source check.'],
   }) });
   assert.equal(missing.status, 'local-verification-required');
   assert.equal(dispatched, 0, 'missing local proof cannot spend a remote Candidate');
   assert.equal(merges, 0, 'missing local proof cannot mutate main');
-  const first = await runReleaseOperation(options, dependencies);
+  const initialSourceVerification = path.join(root, 'initial-source-verification.json');
+  fs.writeFileSync(initialSourceVerification, JSON.stringify({ schemaVersion: 'buildr.verification-source-bundle/v1', records: [] }));
+  const first = await runReleaseOperation({ ...options, sourceVerification: initialSourceVerification }, dependencies);
   assert.equal(first.status, 'candidate-running', JSON.stringify(first));
   assert.equal(dispatched, 1, 'lost responses must not dispatch twice');
   candidateComplete = true;
+  if (!repairTools) {
+    candidateConclusion = 'failure';
+    const lost = await runReleaseOperation(options, dependencies);
+    assert.equal(lost.status, 'candidate-retry-unconfirmed', JSON.stringify(lost));
+    assert.equal(lost.retry.recoveryScope, 'aggregate-only');
+    assert.equal(retryRequests, 1);
+    const pending = JSON.parse(fs.readFileSync(path.join(workspace, '.git/buildr/release-operations', `${version}.json`), 'utf8'));
+    assert.deepEqual(pending.candidate.retry, { runId: 700, previousAttempt: 1, recoveryScope: 'aggregate-only' });
+    const unconfirmed = await runReleaseOperation(options, dependencies);
+    assert.equal(unconfirmed.status, 'candidate-retry-unconfirmed', JSON.stringify(unconfirmed));
+    assert.equal(unconfirmed.recovery.action, 'read-original-request');
+    assert.equal(retryRequests, 1, 'a lost response with the old attempt visible must never send another retry');
+    candidateAttempt = 2;
+    const repeatedFailure = await runReleaseOperation(options, dependencies);
+    assert.equal(repeatedFailure.status, 'diagnosis-required', JSON.stringify(repeatedFailure));
+    assert.equal(retryRequests, 1, 'a second failed attempt requires diagnosis');
+    candidateConclusion = 'success';
+    aggregate.workflow.aggregateAttempt = 2;
+  }
+  const completeIds = aggregate.evidenceIds;
+  aggregate.status = 'incomplete';
+  aggregate.deferredIds = ['runtime-macos'];
+  aggregate.findings = [{ code: 'evidence-missing', id: 'runtime-macos', detail: null }];
+  aggregate.evidenceIds = completeIds.filter((id: string) => id !== 'runtime-macos');
+  const localRequired = await runReleaseOperation({ ...options, stopAfter: 'candidate' }, dependencies);
+  assert.equal(localRequired.status, 'local-artifact-verification-required', JSON.stringify(localRequired));
+  assert.deepEqual(localRequired.localArtifact.missingEvidenceIds, ['runtime-macos']);
+  assert.equal(merges, 0); assert.equal(pr, null);
+  assert.equal(dispatched, 1, 'local package handoff must not start another build or public action');
+  aggregate.status = 'passed'; aggregate.findings = []; aggregate.evidenceIds = completeIds;
+  delete aggregate.deferredIds;
   aggregate.sourceCommit = 'f'.repeat(40);
-  const invalid = await runReleaseOperation(options, dependencies);
+  const invalid = await runReleaseOperation({ ...options, stopAfter: 'candidate' }, dependencies);
   assert.equal(invalid.status, 'blocked');
   assert.equal(merges, 0, 'artifact/Candidate mismatch is rejected before main mutation');
   assert.equal(pr, null);
   aggregate.sourceCommit = sourceCommit;
-  const ready = await runReleaseOperation(options, dependencies);
+  const evidenceIds = aggregate.evidenceIds;
+  aggregate.evidenceIds = evidenceIds.filter((id: string) => id !== 'host-minimum-windows');
+  const missingConsumer = await runReleaseOperation({ ...options, stopAfter: 'candidate' }, dependencies);
+  assert.equal(missingConsumer.status, 'blocked'); assert.match(missingConsumer.diagnostic.message, /missing release check host-node/u);
+  assert.equal(pr, null); assert.equal(merges, 0);
+  aggregate.evidenceIds = evidenceIds;
+  if (repairTools) {
+    const file = path.join(workspace, 'projects/product/services/buildr/test/repair.test.ts'); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, '// verification-only repair\n');
+    git(workspace, ['add', 'projects/product/services/buildr/test/repair.test.ts']); git(workspace, ['commit', '-m', 'repair validation tools']); git(workspace, ['push', 'origin', 'dev']);
+    verificationSource = git(workspace, ['rev-parse', 'HEAD']);
+    aggregate.sourceBinding = createCandidateSourceBinding(workspace, sourceCommit, verificationSource);
+    aggregate.verificationSource = verificationSource; aggregate.workflow.runId = '701';
+  } else {
+    verificationSource = sourceCommit;
+    lateSourceVerification = path.join(root, 'late-source-verification.json');
+    fs.writeFileSync(lateSourceVerification, JSON.stringify({ schemaVersion: 'buildr.verification-source-bundle/v1', records: [] }));
+    aggregate.sourceBinding = createCandidateSourceBinding(workspace, sourceCommit, sourceCommit);
+    aggregate.verificationSource = sourceCommit; aggregate.workflow.runId = '701';
+  }
+  const boundedOptions = { ...options, stopAfter: 'candidate', ...(repairTools ? { verificationSource } : { sourceVerification: lateSourceVerification }) };
+  const verified = await runReleaseOperation(boundedOptions, dependencies);
+  assert.equal(verified.status, 'candidate-verified', JSON.stringify(verified));
+  assert.equal(verified.action, 'prepare'); assert.equal(verified.stopAfter, 'candidate');
+  assert.equal(verified.sourceCommit, sourceCommit); assert.equal(verified.sourceTree, sourceTree);
+  assert.equal(verified.artifacts.buildr.sha256, artifact.manifest.sha256);
+  if (!repairTools) {
+    assert.equal(repairRequests.length, 1, 'a late source bundle alone must enter formal repair instead of being ignored');
+    assert.ok(repairRequests[0].some(field => field.startsWith('source_verification=')));
+    assert.ok(repairRequests[0].includes('verification_source=' + sourceCommit), 'late proof keeps the original frozen verification source');
+  }
+  assert.equal(merges, 0); assert.equal(pr, null, 'bounded prepare stops before even creating a main PR');
+  const dispatchesAfterVerification = dispatched;
+  assert.equal((await runReleaseOperation(boundedOptions, dependencies)).status, 'candidate-verified');
+  assert.equal(dispatched, dispatchesAfterVerification, 'rechecking the bounded result retains the original candidate and bytes');
+  assert.equal(pr, null); assert.equal(merges, 0);
+  const ready = await runReleaseOperation({ ...options, ...(repairTools ? { verificationSource } : {}) }, dependencies);
   assert.equal(ready.status, 'awaiting-publication-authorization', JSON.stringify(ready));
-  assert.equal(merges, 1); assert.equal(dispatched, 1);
+  assert.equal(merges, 1); assert.equal(dispatched, 2);
   task.title = 'Unrelated Task title update';
   fs.writeFileSync(path.join(workspace, 'unrelated.txt'), 'later dev content');
   git(workspace, ['add', 'unrelated.txt']); git(workspace, ['commit', '-m', 'later dev']); git(workspace, ['push', 'origin', 'dev']);
@@ -201,10 +407,13 @@ test('prepare creates one isolated release, validates before main, and reuses th
   assert.equal(repeated.status, 'awaiting-publication-authorization', JSON.stringify(repeated));
   assert.equal(repeated.contextIdentity, ready.contextIdentity);
   assert.equal(repeated.sourceCommit, sourceCommit);
-  assert.equal(dispatched, 1); assert.equal(merges, 1);
+  assert.equal(dispatched, 2); assert.equal(merges, 1);
   assert.equal(git(workspace, ['ls-remote', 'origin', `refs/heads/${pr.headRefName}`]), '', 'prepare must not recreate a merged carrier deleted by GitHub');
   const record = JSON.parse(fs.readFileSync(path.join(workspace, '.git/buildr/release-operations', `${version}.json`), 'utf8'));
-  assert.equal(record.candidate.runId, 700);
+  assert.equal(record.candidate.runId, 701);
+  assert.equal(record.context.verification.verificationSource, verificationSource);
+  assert.equal(record.context.artifact.sha256, artifact.manifest.sha256);
+  assert.equal(record.context.release.sourceCommit, sourceCommit);
   assert.equal(record.sources.length, 0);
 });
 
@@ -239,6 +448,7 @@ test('publish binds cleanup to its context and resume never expands historical a
     inspectTask: () => ({ record: { status: 'completed' }, recordDigest: digest('8') }),
     resolveRetainedController: () => ({ workspaceRoot: workspace }),
     invokeRetainedController: (_controller: any, args: string[]) => ({ status: args[0] === 'worktree' ? 'cleaned' : 'ready', effects: [] }),
+    selfBootstrapCloseout: async () => ({ status: 'not-applicable', effects: [] }),
   };
   const dependencies = { orchestrationDependencies, execute: (command: string, args: string[]) => {
     if (command === 'git' && args[0] === 'fetch') return { status: 0, stdout: '' };

@@ -27,17 +27,17 @@ test('release preparation transports only the content-validated source bundle', 
 });
 
 test('plugin-only preparation transports its own source phases and does not require Buildr source checks', async () => {
-  const phases = ['dsh-plugin:unit', 'dsh-plugin:integration'].map(stepId => ({ ...record, identity: { ...record.identity, stepId } }));
+  const phases = ['dsh-plugin:unit'].map(stepId => ({ ...record, identity: { ...record.identity, stepId } }));
   const dependencies = { ...fixture([]), createSourcePlan: () => ({ status: 'blocked', steps: [], runner: 'macos' }),
     collectPluginBundle: async (options: any) => { assert.equal(options.repo, '/frozen'); return { schemaVersion: 'buildr.verification-source-bundle/v1', records: phases }; } };
   const ready = await prepareLocalSourceVerification({ repo: '/frozen', packages: ['dsh-plugin'] }, dependencies);
   assert.equal(ready.status, 'ready');
   assert.deepEqual(decodeCandidateSourceImport(ready.transport).records.map((item: any) => item.identity.stepId), phases.map(item => item.identity.stepId));
   const missing = await prepareLocalSourceVerification({ repo: '/frozen', packages: ['dsh-plugin'] }, {
-    ...dependencies, collectPluginBundle: async () => ({ schemaVersion: 'buildr.verification-source-bundle/v1', records: [phases[0]] }),
+    ...dependencies, collectPluginBundle: async () => ({ schemaVersion: 'buildr.verification-source-bundle/v1', records: [] }),
   });
   assert.equal(missing.status, 'local-verification-required');
-  assert.deepEqual(missing.missingStepIds, ['dsh-plugin:integration']);
+  assert.deepEqual(missing.missingStepIds, ['dsh-plugin:unit']);
 });
 
 test('release preparation refuses a structurally valid source record invalidated by a newer local failure', async () => {
@@ -50,7 +50,7 @@ test('release preparation refuses a structurally valid source record invalidated
 test('Buildr readiness matches the standard offline source environment without changing plugin or release environment', async () => {
   const env = { BUILDR_VERIFICATION_NETWORK_MODE: 'online', KEEP: 'release-context' };
   const processMode = process.env.BUILDR_VERIFICATION_NETWORK_MODE;
-  const phases = ['dsh-plugin:unit', 'dsh-plugin:integration'].map(stepId => ({ ...record, identity: { ...record.identity, stepId } }));
+  const phases = ['dsh-plugin:unit'].map(stepId => ({ ...record, identity: { ...record.identity, stepId } }));
   const ready = await prepareLocalSourceVerification({ repo: '/source', env, packages: ['buildr', 'dsh-plugin'] }, {
     ...fixture([record]),
     collectBundle(options: any) {
@@ -67,7 +67,7 @@ test('Buildr readiness matches the standard offline source environment without c
     },
   });
   assert.equal(ready.status, 'ready');
-  assert.equal(decodeCandidateSourceImport(ready.transport).records.length, 3);
+  assert.equal(decodeCandidateSourceImport(ready.transport).records.length, 2);
   assert.equal(env.BUILDR_VERIFICATION_NETWORK_MODE, 'online');
   assert.equal(process.env.BUILDR_VERIFICATION_NETWORK_MODE, processMode);
 });

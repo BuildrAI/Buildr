@@ -2,10 +2,10 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { readReleaseCandidate } from './release-candidate.ts';
+import { readReleaseCandidate } from '../../../../../skills/buildr-release/scripts/dsh-plugin/release-candidate.ts';
 import { readArtifactInput } from './buildr-peer.ts';
 import { archiveTreeIdentity } from './verify-all.ts';
-import { artifactFromTarball } from '../../buildr/tools/release/package-artifact-observation.ts';
+import { artifactFromTarball } from '../../../../../skills/buildr-release/scripts/package-artifact-observation.ts';
 import { verifyBuildrPluginPair } from './verify-buildr-plugin-pair.ts';
 import { captureVerificationSource, gitTreeSourceIdentity } from './verification-source.ts';
 import { assertBoundVerification } from './full-verification.ts';

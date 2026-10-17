@@ -18,6 +18,18 @@ const sample = () => ({ schemaVersion: 'buildr.connection-definition/v1', defini
   authentication: { fields: [{ key: 'username', label: '账号', type: 'string', required: true, minLength: 1 }, { key: 'password', label: '密码', type: 'secret', required: true }], targetFields: ['website'] },
   programs: { cli: { kind: 'bundled', runtime: 'node', entry: 'scripts/client.mjs', contextProtocol: 'buildr.connection-context/v1' } }, hooks: { spaces: { program: 'cli', args: ['spaces'], effect: 'read' } }, presentation: { summaryFields: ['website'], websiteField: 'website' } });
 
+test('认证来源可明确限制为个人，旧声明仍保持双来源兼容', () => {
+  assert.equal(parseConnectionDefinition(YAML.stringify(sample())).authentication.allowedSources, undefined);
+  for (const allowedSources of [['personal'], ['team'], ['team', 'personal']]) {
+    const value = sample(); Object.assign(value.authentication, { allowedSources });
+    assert.deepEqual(parseConnectionDefinition(YAML.stringify(value)).authentication.allowedSources, allowedSources);
+  }
+  for (const allowedSources of [[], ['personal', 'personal'], ['shared'], ['team', 'personal', 'team'], 'personal', null]) {
+    const value = sample(); Object.assign(value.authentication, { allowedSources });
+    assert.throws(() => parseConnectionDefinition(YAML.stringify(value)), { code: 'connection_definition_invalid', field: 'authentication.allowedSources' });
+  }
+});
+
 test('声明保留专业差异并严格校验配置、整组认证与有限表达式', () => {
   const definition = parseConnectionDefinition(YAML.stringify(sample()));
   assert.equal(definition.category, 'company-any-category');
@@ -77,6 +89,17 @@ test('有序展示分组和发现前置输入只接受有限字段引用，旧�
   invalid(candidate => { candidate.hooks.spaces.inputs = ['config.missing']; });
   invalid(candidate => { candidate.hooks.spaces.inputs = ['config.website', 'config.website']; });
   invalid(candidate => { candidate.hooks.spaces.inputs = { evaluate: 'config.website' }; });
+});
+
+test('网站回落仅接受已声明的网址配置字段，旧声明不推断回落', () => {
+  const value = sample();
+  Object.assign(value.presentation, { websiteFallbackField: 'website' });
+  assert.equal(parseConnectionDefinition(YAML.stringify(value)).presentation?.websiteFallbackField, 'website');
+  assert.equal(parseConnectionDefinition(YAML.stringify(sample())).presentation?.websiteFallbackField, undefined);
+  for (const websiteFallbackField of ['missing', 'count', 'note', 'password', 'authentication.password', 1, {}, null]) {
+    Object.assign(value.presentation, { websiteFallbackField });
+    assert.throws(() => parseConnectionDefinition(YAML.stringify(value)), { code: 'connection_definition_invalid', field: 'presentation.websiteFallbackField' });
+  }
 });
 
 test('目录从当前源重建、精确绑定、来源和兼容版本变化局部诊断，不运行程序', t => {

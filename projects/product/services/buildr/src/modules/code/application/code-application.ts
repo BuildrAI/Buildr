@@ -172,6 +172,19 @@ export function createCodeApplication(dependencies:CodeDependencies) {
     };
   }
   const sourceControlApplication=createSourceControlApplication({repositories:repositoryScope,inventory:(root,taskId)=>repositoryScope(root,taskId,undefined,false),source:(root,input)=>source(root,input as CodeInput),worktrees:sourceControlWorktrees,taskAssociations:(root,repositories,taskId,deadline)=>readSourceControlTaskAssociations(root,repositories,dependencies,taskId,deadline),readTask:dependencies.readTask});
+  const syncApplication = createCodeSyncApplication({ source: (root, input) => source(root, input as CodeInput), observation: (root, input) => {
+    const location = input as CodeInput;
+    if (location.taskId || location.commitHash || location.checkoutId !== undefined) return undefined;
+    const repository = dependencies.assetCatalog(root).repositories.find(item => item.id === input.repositoryId);
+    if (!repository) throw codeFailure('code_repository_not_registered', '代码库不在当前工作空间的登记范围内。', 404);
+    let registeredLocation: string;
+    try { registeredLocation = fs.realpathSync(dependencies.resolveSourceRoot(root, repository.source)); }
+    catch { throw codeFailure('code_repository_unavailable', '代码库本机目录当前不可读取。', 404); }
+    const registered = createGitCommitReader().repository(registeredLocation);
+    const reading = sourceControlWorktrees(root, repository.id, { location: registered.root, available: true });
+    const current = reading.source(input.worktreeId);
+    return { source: current, verify: () => reading.verify(current) };
+  } });
   return Object.freeze({
     // Editing already selects an exact live checkout. Task associations enrich
     // catalogs, but must not be rediscovered around each complete file read.
@@ -193,20 +206,9 @@ export function createCodeApplication(dependencies:CodeDependencies) {
       if(!repository)throw codeFailure('code_repository_not_registered','代码库不在当前工作空间的登记范围内。',404);
       return createGitCommitReader().repository(dependencies.resolveSourceRoot(root,repository.source)).root;
     }}),
-    ...createCodeCommitApplication({ source: (root, input) => source(root, input as CodeInput) }),
-    ...createCodeSyncApplication({ source: (root, input) => source(root, input as CodeInput), observation: (root, input) => {
-      const location = input as CodeInput;
-      if (location.taskId || location.commitHash || location.checkoutId !== undefined) return undefined;
-      const repository = dependencies.assetCatalog(root).repositories.find(item => item.id === input.repositoryId);
-      if (!repository) throw codeFailure('code_repository_not_registered', '代码库不在当前工作空间的登记范围内。', 404);
-      let registeredLocation: string;
-      try { registeredLocation = fs.realpathSync(dependencies.resolveSourceRoot(root, repository.source)); }
-      catch { throw codeFailure('code_repository_unavailable', '代码库本机目录当前不可读取。', 404); }
-      const registered = createGitCommitReader().repository(registeredLocation);
-      const reading = sourceControlWorktrees(root, repository.id, { location: registered.root, available: true });
-      const current = reading.source(input.worktreeId);
-      return { source: current, verify: () => reading.verify(current) };
-    } }),
+    ...createCodeCommitApplication({ source: (root, input) => source(root, input as CodeInput), prepareCommitSync: syncApplication.prepareCommitSync }),
+    syncContext: syncApplication.syncContext,
+    sync: syncApplication.sync,
     repositories,
     directory:(root:string,input:CodeInput)=>{const current=source(root,input),result=readCodeDirectory(current,input.path||'',Boolean(input.showIgnored));assertReadSource(current);return result;},
     file:async(root:string,input:CodeInput)=>{const current=source(root,input),result=await readCodeFile(current,input.path||'',input);assertReadSource(current);return result;},

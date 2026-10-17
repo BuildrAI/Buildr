@@ -93,7 +93,7 @@ jobs:
           node-version: '24.15.0'
           package-manager-cache: false
       - name: Validate manual source inputs
-        run: node tools/release-workflow.ts input-check
+        run: node ../../../../skills/buildr-release/scripts/dsh-plugin/release-workflow.ts input-check
       - name: Download the original verified plugin Candidate
         uses: actions/download-artifact@v7
         with:
@@ -112,7 +112,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
-          node tools/release-workflow.ts adopt-candidate
+          node ../../../../skills/buildr-release/scripts/dsh-plugin/release-workflow.ts adopt-candidate
           --candidate "${RUNNER_TEMP}/candidate/candidate.json"
           --aggregate "${RUNNER_TEMP}/verification/plugin-candidate-ci-aggregate.json"
           --output "${RUNNER_TEMP}/verification/plugin-candidate-adoption.json"
@@ -172,7 +172,7 @@ jobs:
           PLUGIN_BUILDR_PEER_VERSION: ${{ inputs.buildr_peer_version }}
           PLUGIN_BUILDR_PEER_INTEGRITY: ${{ inputs.buildr_peer_integrity }}
           PLUGIN_BUILDR_CANDIDATE_RUN_ID: ${{ inputs.buildr_candidate_run_id }}
-        run: node tools/release-workflow.ts publish-check
+        run: node ../../../../skills/buildr-release/scripts/dsh-plugin/release-workflow.ts publish-check
       - name: Download the exact prepared candidate
         uses: actions/download-artifact@v7
         with:
@@ -210,7 +210,7 @@ jobs:
         env:
           PLUGIN_VERSION: ${{ inputs.version }}
         run: >-
-          node tools/trusted-publish.ts
+          node ../../../../skills/buildr-release/scripts/dsh-plugin/trusted-publish.ts
           --manifest "${RUNNER_TEMP}/candidate/candidate.json"
           --version "${PLUGIN_VERSION}"
           --source-commit "${GITHUB_SHA}"

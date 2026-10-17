@@ -69,15 +69,15 @@
       "type": "skill",
       "id": "connection-authoring",
       "target": "skills/buildr/connection-authoring",
-      "integrity": "sha256-0be08fa2393152be9a538d9d8279c89453bb2dca9b743990b806e1d08e18cc6e",
+      "integrity": "sha256-88b3e11d773005dc51e122588fdff33f214b365c2b037bffb0dfab2a56c5b291",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-8038d9e86afd4c619a3689d7285ac1713f9f2365d977294f307d6f425e61872d"
+          "integrity": "sha256-47d71b50ffdd88bd09cf39a8897543de1ef5690e238acf854efb3742f8405fa4"
         },
         {
           "path": "references/connection-contract.md",
-          "integrity": "sha256-ec7770054e61e9785d847efb6aaf3ae659a50102e65608bf428b1e027a7e18ff"
+          "integrity": "sha256-ec9e7ebdaaeadb23fdf7041761a72903f58ec1f4ad7893e9d990b2f7990071e5"
         },
         {
           "path": "templates/SKILL.md",
@@ -93,7 +93,7 @@
         },
         {
           "path": "templates/connection.yml",
-          "integrity": "sha256-47093c45553e7cc7b0ee1465ec4d597296478ad7719158c0cd55a441aed519d7"
+          "integrity": "sha256-8522146a481c43a9937eeabdbca76e183b6487146f0cc7342d31af9293a3aee5"
         }
       ]
     },
@@ -189,7 +189,7 @@
       "type": "skill",
       "id": "kibana-connection",
       "target": "skills/connections/kibana-connection",
-      "integrity": "sha256-3e7886a98f2574b414cebc5a3213ab8fd3d9aadcc13ae7132c4df504390047b2",
+      "integrity": "sha256-dfc3f4482e30786ea3bbc4fe97221c14a5ec8ed1489e89fad1cff9d1cb4faac8",
       "files": [
         {
           "path": "SKILL.md",
@@ -197,7 +197,7 @@
         },
         {
           "path": "assets/connection.yml",
-          "integrity": "sha256-0bb677b7f19577ab23cd6c86dbe3ff5991bde2c58e4c271e7f92694cb2b9f19a"
+          "integrity": "sha256-d46f22408ce5cd14ac69ebc566efccfed8cd1d43a99b1fed621257d51bf27fe4"
         },
         {
           "path": "references/commands-and-results.md",
@@ -265,7 +265,7 @@
       "type": "skill",
       "id": "nacos-connection",
       "target": "skills/connections/nacos-connection",
-      "integrity": "sha256-0b26a18f91c3b036f7c7dfe5abb7431f20c6e4ba7e99dc84067290d0b0f7d0f8",
+      "integrity": "sha256-c6dd4300cdfd65bb96101e0f8ccb17fcecd47e0b7ba16c115ac51b94039893cf",
       "files": [
         {
           "path": "SKILL.md",
@@ -273,7 +273,7 @@
         },
         {
           "path": "assets/connection.yml",
-          "integrity": "sha256-5cb76ed5aff1118cebecb2b18446b4c6df89f450767f46123e390e605f445759"
+          "integrity": "sha256-9dcb03f55620a09d4f6902ebefc82493524860b36c36477ba7bdd75a41e07b5e"
         },
         {
           "path": "references/api-compatibility.md",

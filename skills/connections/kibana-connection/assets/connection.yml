@@ -65,6 +65,7 @@ presentation:
   methodLabel: Buildr 标准接入
   summaryFields: [apiBaseUrl, dataViewId]
   websiteField: consoleUrl
+  websiteFallbackField: apiBaseUrl
   groups:
     - id: connection
       title: 连接信息

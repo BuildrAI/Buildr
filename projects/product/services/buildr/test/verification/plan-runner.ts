@@ -38,6 +38,11 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   const heartbeatIntervalMs: any = Number.isFinite(options.heartbeatIntervalMs) && options.heartbeatIntervalMs > 0 ? options.heartbeatIntervalMs : 15_000;
   const concurrency: any = options.concurrency ?? VERIFICATION_CONCURRENCY;
   const reuse = createVerificationPlanReuse(plan, options);
+  if (reuse?.explanation) {
+    const estimate = reuse.explanation.estimate;
+    options.stream?.write(`[${prefix}] plan: execute=${estimate.executedCount} reuse=${estimate.reusedCount} remaining-work=${estimate.remainingWorkMs}ms dependency-path=${estimate.dependencyCriticalPathMs}ms (history/declared targets; queue/preparation excluded)\n`);
+    for (const item of reuse.explanation.steps) options.stream?.write(`[${prefix}] ${item.disposition}: ${item.id} reason=${item.reasons.join(',')} scope=${item.inputScope}\n`);
+  }
   const resourceCoordinator: any = options.resourceCoordinator ?? createVerificationResourceCoordinator({
     root: resolveVerificationCoordinationRoot(options.productRoot, options.env),
     resources: {
@@ -55,7 +60,7 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
     },
   });
   let fullPlanLease: any = null;
-  if (plan.scope?.mode === 'full') {
+  if (plan.scope?.mode === 'full' && plan.steps.some((step: any) => !reuse?.hits.has(step.id))) {
     const waitStartedAt: any = Date.now();
     options.stream?.write(`[${prefix}] waiting: ${FULL_PLAN_RESOURCE_ID} shared capacity\n`);
     const waitHeartbeat: any = setInterval(() => {
@@ -75,7 +80,7 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   // Provider implementations may load the full Product runtime. Keep them out of
   // the clean-checkout Candidate aggregate import graph until execution starts.
   const { TEST_CONTEXT_PROVIDERS }: any = await import('../context/registry.ts');
-  const contextPool: any = createTestContextPool({
+  const contextPool: any = (options.contextPoolFactory ?? createTestContextPool)({
     providers: TEST_CONTEXT_PROVIDERS,
     env: { ...process.env, ...(options.env ?? {}) },
   });
@@ -117,7 +122,10 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   let fullPlanRelease: any[] = [];
   let contextCleanup: any = null;
   try {
-    results = await runVerificationDag(plan, {
+    const executionPlan = { ...plan, steps: plan.steps.map((step: any) => reuse?.hits.has(step.id)
+      ? { ...step, resources: [], resourceClaims: [], concurrencyClass: 'default', resourceDemand: { workers: 1, processes: 1 } }
+      : step) };
+    results = await runVerificationDag(executionPlan, {
       execute,
       concurrency,
       schedulingMode: options.schedulingMode,
@@ -149,6 +157,8 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
     try {
       contextCleanup = contextPool.cleanup();
     } catch (error) {
+      // Only new executions depended on this pool. Reused results retain the
+      // successful cleanup and ownership facts from their original run.
       reuse?.invalidate();
       throw error;
     } finally {
@@ -157,15 +167,22 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   }
   const releaseFailed: any = fullPlanRelease.some((item: any) => item.status !== 'released');
   if (releaseFailed) { reuse?.invalidate(); throw new Error(`Failed to release ${FULL_PLAN_RESOURCE_ID} shared capacity`); }
-  const sourceBundle = reuse?.finish(results, contextCleanup?.status === 'cleaned');
+  // An interrupted child may have left a process touching shared inputs. Keep
+  // completed checks only after both child ownership and pool cleanup are known.
+  const interruptionClean = !options.signal?.aborted || results.every((result: any) =>
+    result.disposition === 'reused' || result.status === 'blocked' || result.processCleanup?.status === 'clean');
+  const cleanupClean = contextCleanup?.status === 'cleaned' && interruptionClean;
+  const sourceBundle = reuse?.finish(results, cleanupClean);
   return {
     results,
     diagnosticsDirectory,
     artifactDirectory,
     ...(sourceBundle ? { sourceBundle } : {}),
+    cleanupClean,
+    ...(reuse?.explanation ? { reusePlan: reuse.explanation } : {}),
     coordinationRoot: resourceCoordinator.root,
     fullPlanCoordination: fullPlanLease ? { waitDurationMs: fullPlanLease.waitDurationMs, release: fullPlanRelease } : null,
     contextLifecycle: { contexts: preparedContexts.map((context: any) => ({ provider: context.provider.key, identity: context.marker.identity, owned: context.owned, prepareDurationMs: context.prepareDurationMs })), events: contextCleanup?.events ?? contextPool.events() },
-    passed: results.every((result: any) => result.status === 'passed'),
+    passed: !options.signal?.aborted && results.every((result: any) => result.status === 'passed'),
   };
 }

@@ -123,16 +123,17 @@ export async function runVerificationDag(plan: any, options: any = {}): Promise<
     for (const [dimension, demand] of Object.entries(resourceGrant)) activeDemand.set(dimension, (activeDemand.get(dimension) ?? 0) + demand);
     let resourceHandle: any = null;
     const promise: any = Promise.resolve().then(async () => {
+      if (options.signal?.aborted) return { status: 'blocked', exitCode: null, durationMs: 0, reason: 'execution cancelled before start', failureCode: 'capability-cancelled' };
       resourceHandle = options.resourceCoordinator && (step.resourceClaims ?? step.resources ?? []).length > 0
         ? await options.resourceCoordinator.acquire(step.resourceClaims ?? step.resources, { authorizedResources: options.authorizedResources, signal: options.signal })
         : null;
+      if (options.signal?.aborted) return { status: 'blocked', exitCode: null, durationMs: 0, reason: 'execution cancelled before start', failureCode: 'capability-cancelled' };
       startedAtMs = now();
       options.onStart?.(step, resourceGrant);
       return execute(step, { resourceEnvironment: resourceHandle?.environment || {}, executionProfile: options.executionProfile, resourceGrant });
     }).then((result: any) => ({ id: step.id, title: step.title, name: step.name, ...result }), (error: any) => ({
       id: step.id, title: step.title, name: step.name, status: 'failed', exitCode: 1, signal: null, durationMs: 0, stdout: '', stderr: `${error.stack || error.message}\n`,
     })).then(async (result: any) => {
-      startedAtMs ??= now();
       const release: any = resourceHandle ? await resourceHandle.release() : [];
       const releaseFailed: any = release.some((item: any) => !['released', 'not-applicable'].includes(item.status));
       const finishedAtMs: any = now();
@@ -142,9 +143,11 @@ export async function runVerificationDag(plan: any, options: any = {}): Promise<
         ...(resourceHandle ? { resourceCoordination: { waitDurationMs: resourceHandle.waitDurationMs, acquiredAt: resourceHandle.acquiredAt, claims: resourceHandle.claims.map(({ heartbeat, directory, token, ...claim }: any) => claim), release } } : {}),
         ...(releaseFailed && result.status === 'passed' ? { status: 'failed', exitCode: 1, stderr: `${result.stderr || ''}Verification resource cleanup did not preserve ownership.\n` } : {}),
         queuedAt,
-        startedAt: new Date(startedAtMs).toISOString(),
-        finishedAt: new Date(finishedAtMs).toISOString(),
-        queueDurationMs: startedAtMs - queuedAtMs,
+        ...(startedAtMs === null ? { [result.status === 'blocked' ? 'blockedAt' : 'finishedAt']: new Date(finishedAtMs).toISOString() } : {
+          startedAt: new Date(startedAtMs).toISOString(),
+          finishedAt: new Date(finishedAtMs).toISOString(),
+          queueDurationMs: startedAtMs - queuedAtMs,
+        }),
       };
       active.delete(step.id);
       activeByClass.set(concurrencyClass, activeByClass.get(concurrencyClass) - 1);
@@ -177,6 +180,15 @@ export async function runVerificationDag(plan: any, options: any = {}): Promise<
 
   while (pending.size > 0 || active.size > 0) {
     let progressed: any = false;
+    if (options.signal?.aborted) {
+      for (const step of pending.values()) {
+        const result = { id: step.id, title: step.title, name: step.name, status: 'blocked', exitCode: null, signal: null, durationMs: 0,
+          stdout: '', stderr: '', reason: 'execution cancelled before start', failureCode: 'capability-cancelled', queuedAt, blockedAt: new Date(now()).toISOString() };
+        results.set(step.id, result);
+        options.onComplete?.(result, step);
+      }
+      pending.clear();
+    }
     for (const step of [...pending.values()]) {
       const blockedBy: any = failedDependency(step, results);
       if (!blockedBy) continue;

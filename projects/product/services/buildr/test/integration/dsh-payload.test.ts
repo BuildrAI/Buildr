@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { createGeneratedReleaseInputs } from '../helpers/generated-release-inputs.ts';
 import { createGeneratedArtifactManifest } from '../../tools/build/generated-artifacts.ts';
-import { buildApplicationPayload } from '../../tools/release/application-payload.ts';
+import { buildApplicationPayload } from '../../../../../../skills/buildr-release/scripts/application-payload.ts';
 
 test('Buildr payload includes the desktop bridge while excluding the retired DSH runtime and independent plugin', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-without-dsh-plugin-'));

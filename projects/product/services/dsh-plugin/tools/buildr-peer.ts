@@ -4,11 +4,11 @@ import { spawnSync, type SpawnSyncOptionsWithStringEncoding } from 'node:child_p
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { pairExecutionDiagnostic } from '../../buildr/tools/release/package-pair-diagnostics.ts';
+import { pairExecutionDiagnostic } from '../../../../../skills/buildr-release/scripts/package-pair-diagnostics.ts';
 import { gunzipSync } from 'node:zlib';
 import { isDeepStrictEqual } from 'node:util';
-import { artifactFromTarball } from '../../buildr/tools/release/package-artifact-observation.ts';
-import { parseCompatibilityArtifact, type CompatibilityArtifact } from '../../buildr/tools/release/package-compatibility.ts';
+import { artifactFromTarball } from '../../../../../skills/buildr-release/scripts/package-artifact-observation.ts';
+import { parseCompatibilityArtifact, type CompatibilityArtifact } from '../../../../../skills/buildr-release/scripts/package-compatibility.ts';
 
 export const PEER_INPUT_SCHEMA = 'buildr.package-artifact-input/v1';
 export const PEER_SCHEMA = 'buildr.dsh-prepared-buildr-peer/v1';

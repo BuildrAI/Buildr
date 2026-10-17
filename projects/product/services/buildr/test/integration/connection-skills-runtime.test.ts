@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import YAML from 'yaml';
 import { ConnectionSkillsApplication } from '../../src/modules/connection-skills/application/connection-skills-application.ts';
@@ -41,6 +42,7 @@ else {
     } else if(message.type==='buildr.connection-revalidated') { console.log(JSON.stringify({revalidated:message.ok})); process.disconnect(); }
   });
 }
+
 `);
   let sourceIdentity = 'source:example'; let enabled = true; let catalogReads = 0; let beforeCatalogRead: ((count: number) => void) | undefined;
   const catalog = createConnectionCatalog({ assets: { readSkills: () => { catalogReads++; beforeCatalogRead?.(catalogReads); return [{ id: 'example', path: 'connections/example', assetIdentity: 'asset:example', sourceIdentity, enabled, connectionDefinitions: ['assets/connection.yml'] }]; }, readSkillFile: (_root, _skill, relative) => { const content = fs.readFileSync(path.join(directory, relative), 'utf8'); return { content, digest: digest(content), directory, absolutePath: path.join(directory, relative) }; } } });
@@ -51,6 +53,213 @@ else {
   const expected = (id = 'example-one') => { const v = app.get(workspace, id).instance; return { teamRevision: v.teamRevision, definitionRevision: v.definitionRevision, localRevision: v.localRevision }; };
   return { root, workspace, directory, declaration, definition, app, create, expected, binding, source: (value: string) => sourceIdentity = value, enabled: (value: boolean) => enabled = value, catalogReads: () => catalogReads, beforeCatalogRead: (callback?: (count: number) => void) => beforeCatalogRead = callback };
 }
+test('仅个人接入拒绝团队保存、草稿及运行，个人缺失不回退，未限制声明保持兼容', async t => {
+  const f = fixture(t), created = f.create();
+  const definition = structuredClone(f.definition); Object.assign(definition.authentication, { allowedSources: ['personal'] });
+  fs.writeFileSync(f.declaration, YAML.stringify(definition));
+  let view = f.app.get(f.workspace, created.id).instance;
+  assert.equal(view.authentication.source, 'personal'); assert.equal(view.authentication.team.configured, false);
+  assert.throws(() => f.app.save(f.workspace, view.id, { ...view, authentication: { intent: 'keep' }, expected: f.expected() }), { code: 'connection_skill_auth_source_denied' });
+  assert.throws(() => f.app.save(f.workspace, null, { id: 'blocked', name: 'Blocked', binding: f.binding, config: created.config, authentication: { intent: 'replace', values: { username: 'team', password: 'fictional-team' } }, expected: { teamRevision: 'absent', definitionRevision: view.definitionRevision } }), { code: 'connection_skill_auth_source_denied' });
+  await assert.rejects(f.app.hook(f.workspace, { id: view.id, binding: f.binding, config: created.config, expected: f.expected(), authentication: { source: 'team', intent: 'keep' } }, 'test'), { code: 'connection_skill_auth_source_denied' });
+  await assert.rejects(f.app.run(f.workspace, { id: view.id, expectedRevision: view.revision, args: ['read'] }), { code: 'connection_skill_auth_missing' });
+  view = f.app.save(f.workspace, view.id, { ...view, authentication: { intent: 'remove' }, expected: f.expected() }).instance;
+  view = f.app.saveAuth(f.workspace, view.id, { intent: 'replace', values: { username: 'person-user', password: 'personal-secret-456' }, expected: f.expected() }).instance;
+  const result = await f.app.run(f.workspace, { id: view.id, expectedRevision: view.revision, args: ['read'] });
+  assert.equal(JSON.parse(result.stdout).source, 'personal');
+  f.app.saveAuth(f.workspace, view.id, { intent: 'remove', expected: f.expected() });
+  view = f.app.get(f.workspace, view.id).instance;
+  await assert.rejects(f.app.run(f.workspace, { id: view.id, expectedRevision: view.revision, args: ['read'] }), { code: 'connection_skill_auth_missing' });
+});
+
+test('查看个人秘密只接受当前观察和单个声明秘密字段，普通读取不返回秘密', async t => {
+  const f = fixture(t), created = f.create();
+  assert.throws(() => f.app.revealPersonal(f.workspace, created.id, { field: 'password', expected: f.expected() }), { code: 'connection_skill_auth_missing' });
+  f.app.saveAuth(f.workspace, created.id, { intent: 'replace', values: { username: 'person-user', password: 'personal-secret-456' }, expected: f.expected() });
+  const expected = f.expected(), http = createConnectionSkillsHttp(f.app); let authorized = 0;
+  assert.throws(() => f.app.revealPersonal(f.workspace, created.id, { field: 'username', expected }), { code: 'connection_skill_secret_field_invalid' });
+  assert.throws(() => f.app.revealPersonal(f.workspace, created.id, { field: 'password', expected: { ...expected, localRevision: 'absent' } }), { code: 'connection_skill_revision_conflict' });
+  const result = await http.handle({ root: f.workspace, suffix: `/connection-skills/instances/${created.id}/auth/reveal`, searchParams: new URLSearchParams(), request: { method: 'POST' }, authorizeWrite: () => { authorized++; }, readJsonBody: async () => ({ field: 'password', expected }) });
+  assert.equal(authorized, 1); assert.deepEqual(result?.body, { field: 'password', value: 'personal-secret-456' });
+  assert.equal(result && 'headers' in result ? result.headers['cache-control'] : undefined, 'no-store');
+  assert.equal(JSON.stringify(f.app.get(f.workspace, created.id)).includes('personal-secret-456'), false);
+  assert.equal(JSON.stringify(f.app.directory(f.workspace)).includes('personal-secret-456'), false);
+});
+
+test('团队认证仅在明确迁移动作内转换为个人，目标冲突保留双方', t => {
+  const f = fixture(t), created = f.create();
+  const definition = structuredClone(f.definition); Object.assign(definition.authentication, { allowedSources: ['personal'] }); fs.writeFileSync(f.declaration, YAML.stringify(definition));
+  const expected = f.expected();
+  const result = f.app.migrateAuth(f.workspace, created.id, { source: { id: created.id, authenticationSource: 'team', expected }, expected, removeSource: true });
+  assert.equal(result.migrated, true); assert.equal(result.instance.authentication.source, 'personal'); assert.equal(result.instance.authentication.team.configured, false);
+  assert.equal(JSON.stringify(result).includes('team-secret-123'), false);
+  assert.equal(fs.readFileSync(path.join(f.workspace, result.instance.sourcePath), 'utf8').includes('team-secret-123'), false);
+  assert.equal(f.app.revealPersonal(f.workspace, created.id, { field: 'password', expected: f.expected() }).value, 'team-secret-123');
+  const target = f.app.save(f.workspace, null, { id: 'target', name: 'Target', binding: f.binding, config: created.config, authentication: { intent: 'remove' }, expected: { teamRevision: 'absent', definitionRevision: result.instance.definitionRevision } }).instance;
+  f.app.saveAuth(f.workspace, target.id, { intent: 'replace', values: { username: 'another-user', password: 'different-private' }, expected: f.expected(target.id) });
+  assert.throws(() => f.app.migrateAuth(f.workspace, target.id, { source: { id: created.id, authenticationSource: 'personal', expected: f.expected() }, expected: f.expected(target.id), removeSource: true }), { code: 'connection_skill_auth_migration_conflict' });
+  assert.equal(f.app.get(f.workspace, created.id).instance.authentication.personal.present, true);
+  assert.equal(f.app.revealPersonal(f.workspace, target.id, { field: 'password', expected: f.expected(target.id) }).value, 'different-private');
+});
+
+test('跨实例迁移可接续配置版本升级，认证接收方漂移仍阻止迁移', t => {
+  const f = fixture(t), original = f.create();
+  f.app.saveAuth(f.workspace, original.id, { intent: 'replace', values: { username: 'person-user', password: 'personal-secret-456' }, expected: f.expected() });
+  const definition = structuredClone(f.definition); definition.configVersion = 2; Object.assign(definition.authentication, { allowedSources: ['personal'] }); fs.writeFileSync(f.declaration, YAML.stringify(definition));
+  const entry = f.app.definitions(f.workspace).definitions[0]!, binding = { ...f.binding, configVersion: 2 };
+  const create = (id: string, site: string) => f.app.save(f.workspace, null, { id, name: id, binding, config: { site }, authentication: { intent: 'remove' }, expected: { teamRevision: 'absent', definitionRevision: entry.revision } }).instance;
+  const wrong = create('wrong', 'https://different.invalid/');
+  assert.throws(() => f.app.migrateAuth(f.workspace, wrong.id, { source: { id: original.id, authenticationSource: 'personal', expected: f.expected() }, expected: f.expected(wrong.id), removeSource: true }), { code: 'connection_skill_auth_migration_target' });
+  const target = create('merged', String(original.config.site));
+  const result = f.app.migrateAuth(f.workspace, target.id, { source: { id: original.id, authenticationSource: 'personal', expected: f.expected() }, expected: f.expected(target.id), removeSource: true });
+  assert.equal(result.instance.authentication.personal.configured, true); assert.equal(f.app.get(f.workspace, original.id).instance.authentication.personal.present, false);
+  assert.equal(f.app.revealPersonal(f.workspace, target.id, { field: 'password', expected: f.expected(target.id) }).value, 'personal-secret-456');
+});
+
+test('个人密文在工作空间忽略目录按当前profile隔离，旧资料只在明确迁移后删除', t => {
+  const f = fixture(t), created = f.create(), scope = { rootPath: f.workspace, workspaceId: 'fixture-workspace' };
+  f.app.saveAuth(f.workspace, created.id, { intent: 'replace', values: { username: 'person-user', password: 'personal-secret-456' }, expected: f.expected() });
+  const file = path.join(f.workspace, '.buildr/local/connection-skills', digest(f.app.files.dataRoot), `${created.id}.json`);
+  const legacy = path.join(f.app.files.dataRoot, digest([scope.workspaceId, scope.rootPath]), `${created.id}.json`);
+  const bytes = fs.readFileSync(file); assert.equal(bytes.includes('personal-secret-456'), false); assert.equal(bytes.includes('person-user'), false);
+  assert.equal(fs.existsSync(path.join(path.dirname(file), 'key.json')), false);
+  if (process.platform !== 'win32') { assert.equal(fs.statSync(file).mode & 0o777, 0o600); assert.equal(fs.statSync(path.dirname(file)).mode & 0o777, 0o700); }
+  fs.mkdirSync(path.dirname(legacy), { recursive: true, mode: 0o700 }); fs.renameSync(file, legacy);
+  const observed = f.app.get(f.workspace, created.id).instance; assert.equal(observed.authentication.personal.configured, true);
+  assert.equal(fs.existsSync(file), false, '读取不能迁移'); assert.equal(fs.existsSync(legacy), true);
+  const relocated = f.app.relocateAuth(f.workspace, created.id, { expected: f.expected() });
+  assert.equal(relocated.instance.revision, observed.revision); assert.deepEqual(fs.readFileSync(file), bytes); assert.equal(fs.existsSync(legacy), false);
+  fs.writeFileSync(legacy, JSON.stringify({ different: 'record' }), { mode: 0o600 });
+  assert.equal(f.app.files.readLocal(scope, created.id).present, true); assert.match(f.app.files.readLocal(scope, created.id).diagnostic!, /同时存在/);
+  assert.throws(() => f.app.relocateAuth(f.workspace, created.id, { expected: f.expected() }), { code: 'connection_skill_observation_unavailable' });
+  assert.deepEqual(fs.readFileSync(file), bytes); assert.equal(fs.existsSync(legacy), true);
+});
+
+test('迁移保全后来源移除失败明确报告已知事实，不回滚个人组或盲目重试', t => {
+  const f = fixture(t), created = f.create(), expected = f.expected();
+  const write = t.mock.method(f.app.files, 'writeTeam', () => { throw new Error('simulated source write failure'); });
+  assert.throws(() => f.app.migrateAuth(f.workspace, created.id, { source: { id: created.id, authenticationSource: 'team', expected }, expected, removeSource: true }), error => {
+    assert.equal((error as any).code, 'connection_skill_auth_migration_partial');
+    assert.deepEqual((error as any).details, { targetPreserved: true, durability: 'confirmed', targetId: created.id, sourceId: created.id, sourceRemoval: 'unresolved' });
+    assert.equal(JSON.stringify(error).includes('team-secret-123'), false); return true;
+  });
+  write.mock.restore();
+  const observed = f.app.get(f.workspace, created.id).instance;
+  assert.equal(observed.authentication.personal.configured, true); assert.equal(observed.authentication.team.present, true);
+  assert.equal(f.app.revealPersonal(f.workspace, created.id, { field: 'password', expected: f.expected() }).value, 'team-secret-123');
+});
+
+test('目录同步失败时旧个人文件仍保留，可读目标不能冒充持久保全', t => {
+  const f = fixture(t), created = f.create(), scope = { rootPath: f.workspace, workspaceId: 'fixture-workspace' };
+  f.app.saveAuth(f.workspace, created.id, { intent: 'replace', values: { username: 'person-user', password: 'personal-secret-456' }, expected: f.expected() });
+  const directory = path.join(f.workspace, '.buildr/local/connection-skills', digest(f.app.files.dataRoot)), file = path.join(directory, `${created.id}.json`);
+  const legacy = path.join(f.app.files.dataRoot, digest([scope.workspaceId, scope.rootPath]), `${created.id}.json`), bytes = fs.readFileSync(file);
+  fs.mkdirSync(path.dirname(legacy), { recursive: true, mode: 0o700 }); fs.renameSync(file, legacy);
+  const synchronize = fs.fsyncSync;
+  const sync = t.mock.method(fs, 'fsyncSync', (descriptor: number) => {
+    const current = fs.fstatSync(descriptor), target = fs.statSync(directory);
+    if (current.isDirectory() && current.dev === target.dev && current.ino === target.ino) throw Object.assign(new Error('simulated directory sync failure'), { code: 'EIO' });
+    return synchronize(descriptor);
+  });
+  assert.throws(() => f.app.relocateAuth(f.workspace, created.id, { expected: f.expected() }), error => {
+    assert.equal((error as any).code, 'connection_skill_auth_durability_unconfirmed');
+    assert.deepEqual((error as any).details, { targetReadable: true, durability: 'unconfirmed', sourceRemoval: 'not-attempted' }); return true;
+  });
+  sync.mock.restore(); assert.deepEqual(fs.readFileSync(legacy), bytes); assert.deepEqual(fs.readFileSync(file), bytes);
+});
+
+test('目标目录同步失败不移除团队或其他实例个人来源，重用可读目标仍须确认持久化', async t => {
+  for (const authenticationSource of ['team', 'personal'] as const) await t.test(authenticationSource, t => {
+    const f = fixture(t), original = f.create();
+    if (authenticationSource === 'personal') f.app.saveAuth(f.workspace, original.id, { intent: 'replace', values: { username: 'person-user', password: 'personal-secret-456' }, expected: f.expected() });
+    const target = authenticationSource === 'team' ? original : f.create('target');
+    const directory = path.join(f.workspace, '.buildr/local/connection-skills', digest(f.app.files.dataRoot));
+    const sourceFile = authenticationSource === 'team' ? path.join(f.workspace, original.sourcePath) : path.join(directory, `${original.id}.json`);
+    const sourceBytes = fs.readFileSync(sourceFile), synchronize = fs.fsyncSync; let attempts = 0;
+    const sync = t.mock.method(fs, 'fsyncSync', (descriptor: number) => {
+      const current = fs.fstatSync(descriptor);
+      if (current.isDirectory()) {
+        const saved = fs.statSync(directory);
+        if (current.dev === saved.dev && current.ino === saved.ino) { attempts++; throw Object.assign(new Error('directory sync unsupported'), { code: 'ENOTSUP' }); }
+      }
+      return synchronize(descriptor);
+    });
+    for (let retry = 0; retry < 2; retry++) {
+      assert.throws(() => f.app.migrateAuth(f.workspace, target.id, { source: { id: original.id, authenticationSource, expected: f.expected(original.id) }, expected: f.expected(target.id), removeSource: true }), error => {
+        assert.equal((error as any).code, 'connection_skill_auth_durability_unconfirmed');
+        assert.equal((error as any).details.targetReadable, true); assert.equal((error as any).details.durability, 'unconfirmed'); return true;
+      });
+      assert.deepEqual(fs.readFileSync(sourceFile), sourceBytes);
+    }
+    sync.mock.restore(); assert.equal(attempts, 2);
+  });
+});
+
+test('密钥同步失败也不能在密文即时可读后移除唯一团队来源', t => {
+  const f = fixture(t), created = f.create(), sourceFile = path.join(f.workspace, created.sourcePath), sourceBytes = fs.readFileSync(sourceFile);
+  const synchronize = fs.fsyncSync, keyFile = path.join(f.app.files.dataRoot, 'key.json');
+  const sync = t.mock.method(fs, 'fsyncSync', (descriptor: number) => {
+    const current = fs.fstatSync(descriptor), key = fs.statSync(keyFile);
+    if (current.isFile() && current.dev === key.dev && current.ino === key.ino) throw Object.assign(new Error('simulated key sync failure'), { code: 'EIO' });
+    return synchronize(descriptor);
+  });
+  const expected = f.expected();
+  assert.throws(() => f.app.migrateAuth(f.workspace, created.id, { source: { id: created.id, authenticationSource: 'team', expected }, expected, removeSource: true }), { code: 'connection_skill_auth_durability_unconfirmed' });
+  sync.mock.restore(); assert.deepEqual(fs.readFileSync(sourceFile), sourceBytes);
+});
+
+test('Git 工作空间写个人认证前必须证明目录被忽略且未跟踪', t => {
+  const f = fixture(t), created = f.create();
+  const git = (args: string[]) => spawnSync('git', ['-C', f.workspace, ...args], { encoding: 'utf8' });
+  assert.equal(git(['init', '--quiet']).status, 0);
+  const save = () => f.app.saveAuth(f.workspace, created.id, { intent: 'replace', values: { username: 'person-user', password: 'personal-secret-456' }, expected: f.expected() });
+  assert.throws(save, { code: 'connection_skill_auth_not_ignored' });
+  assert.equal(f.app.get(f.workspace, created.id).instance.authentication.personal.present, false);
+  fs.writeFileSync(path.join(f.workspace, '.gitignore'), '/.buildr/local/\n'); save();
+  const relative = `.buildr/local/connection-skills/${digest(f.app.files.dataRoot)}/${created.id}.json`;
+  assert.equal(git(['add', '--force', '--', relative]).status, 0);
+  assert.throws(save, { code: 'connection_skill_auth_not_ignored' });
+});
+
+test('网站投影仅在覆盖缺失或空白时显式回落，保留默认值、安全过滤与旧声明', t => {
+  const f = fixture(t), created = f.create(), file = path.join(f.workspace, created.sourcePath);
+  const definition: any = structuredClone(f.definition);
+  definition.config.fields.push({ key: 'console', label: '网站覆盖', type: 'url' });
+  definition.presentation = { summaryFields: ['site'], websiteField: 'console', websiteFallbackField: 'site' };
+  fs.writeFileSync(f.declaration, YAML.stringify(definition));
+  const saved = YAML.parse(fs.readFileSync(file, 'utf8'));
+  const base = 'https://api.example.invalid/prefix/', override = 'https://console.example.invalid/app/#/';
+  const observe = (config: Record<string, unknown>) => {
+    fs.writeFileSync(file, YAML.stringify({ ...saved, config }));
+    const before = fs.readFileSync(file, 'utf8'), view = f.app.get(f.workspace, created.id).instance;
+    assert.equal(fs.readFileSync(file, 'utf8'), before, '网站选择不能改写配置或认证');
+    return view;
+  };
+  assert.equal(observe({ site: base, console: override }).websiteUrl, override);
+  assert.equal(observe({ site: base }).websiteUrl, base);
+  for (const console of ['', ' \t ']) {
+    const view = observe({ site: base, console });
+    assert.equal(view.websiteUrl, base);
+    assert.ok(view.availability.diagnostics.some(message => message.includes('网站覆盖')), '空白源值的整体配置诊断仍保留');
+  }
+  const unsafe = ['not a url', 'javascript:alert(1)', 'file:///private', 'https://reader:secret@example.invalid/', 'https://example.invalid/?access_token=secret', 'https://example.invalid/#/app?token=secret'];
+  for (const console of [...unsafe, 5]) assert.equal(observe({ site: base, console }).websiteUrl, null, '非法非空覆盖不能换用合法基础地址');
+  for (const site of unsafe) assert.equal(observe({ site }).websiteUrl, null, '回落目标同样经过安全校验');
+  definition.config.fields[1].default = override;
+  fs.writeFileSync(f.declaration, YAML.stringify(definition));
+  assert.equal(observe({ site: base }).websiteUrl, override, '已声明的网站默认值优先于回落');
+  delete definition.config.fields[1].default;
+  definition.config.fields[0].default = base;
+  fs.writeFileSync(f.declaration, YAML.stringify(definition));
+  assert.equal(observe({}).websiteUrl, base, '已声明的基础地址默认值仍生效');
+  delete definition.presentation.websiteFallbackField;
+  fs.writeFileSync(f.declaration, YAML.stringify(definition));
+  assert.equal(observe({ site: base }).websiteUrl, null, '旧声明不从其他网址字段猜测回落');
+  assert.equal(observe({ site: base, console: override }).websiteUrl, override);
+  delete definition.presentation.websiteField;
+  fs.writeFileSync(f.declaration, YAML.stringify(definition));
+  assert.equal(observe({ site: base, console: override }).websiteUrl, null, '没有网站声明时不猜字段');
+});
 test('one read phase observes the catalog once and saves retain a separate write observation', async t => {
   const f = fixture(t);
   let before = f.catalogReads(); const created = f.create(); assert.equal(f.catalogReads() - before, 2, 'saving observes once for validation and once immediately before writing');

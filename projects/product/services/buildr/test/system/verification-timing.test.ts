@@ -27,6 +27,18 @@ const reporter: any = path.join(productRoot, 'test', 'verification', 'timing', '
 const summaryVerifier: any = path.join(productRoot, 'test', 'verification', 'timing', 'verify-summary.ts');
 const evidenceCleaner: any = path.join(productRoot, 'test', 'verification', 'timing', 'cleanup-evidence.ts');
 
+test('timing summary names timed-out and dependency-blocked checks without reporting them as absent failures', () => {
+  const lines = formatVerificationTimingSummary({ totalDurationMs: 1000, summaryPath: '/timing.json', steps: [
+    { name: 'native files', status: 'timed-out', exitCode: 124, durationMs: 1000 },
+    { name: 'dependent', status: 'blocked', exitCode: 1, durationMs: 0 },
+    { name: 'valid proof', status: 'passed', exitCode: 0, durationMs: 5 },
+  ] });
+  const failed = lines.find((line: string) => line.includes('failed:'));
+  assert.match(failed, /native files \(124; timed-out\)/u);
+  assert.match(failed, /dependent \(1; blocked\)/u);
+  assert.doesNotMatch(failed, /valid proof|none/u);
+});
+
 async function assertProcessExited(pid: any, timeoutMs: any = 1_000): Promise<any>  {
   const deadline: any = Date.now() + timeoutMs;
   while (true) {
@@ -490,9 +502,13 @@ test('identified expensive candidate steps have non-blocking target budgets', ()
     'package-rules',
     'package-skills',
     'package-runtime',
-    'openspec-contract-fixtures',
+    'integration-openspec',
     'cli-compatibility',
   ]) assert.ok(candidateStepBudget(id) > 0, `${id} must have a target budget`);
+  assert.equal(candidateStepBudget('integration-openspec'), 5000);
+  for (const diagnosticOnly of ['openspec-contract-fixtures', 'openspec-convergence-recovery']) {
+    assert.equal(candidateStepBudget(diagnosticOnly), undefined, `${diagnosticOnly} must not regain a default Candidate budget`);
+  }
 });
 
 test('verification process cleanup 只终止 runner-owned process group', () => {

@@ -295,6 +295,9 @@ objects:
     parent: verification-product-tools
     title: Node.js 测试上下文
     summary: 面向 Node.js 的可选能力：复用昂贵准备，保持案例隔离，管理创建、恢复和清理。
+  - id: product-release
+    title: Buildr 与 DSH 发布
+    summary: 按发布技能固定候选，验证框架跑测试，打包后测原包；准确授权公开，失败局部恢复。
   - id: knowledge-maintenance
     title: 知识建设与维护
     summary: 谁指导事实建设，谁维护表达，职责落在哪些文件，以及变化后怎样跟上。
@@ -303,6 +306,26 @@ objects:
     title: 智能体接入与执行
     summary: 从确认接入到关联原生会话与一次生成，理解 Codex 专用进程与 DSH 桌面后台的区别。
 artifacts:
+  - id: product-release-flow
+    title: Buildr 发布
+    kind: document
+    path: knowledge/docs/flows/open-source-release.md
+    objects: [product-release]
+    sources: [release-coordination-source, release-selection-source, release-publication-source, verification-source-reader, verification-candidate-repair, verification-local-source, verification-platform-boundaries, verification-local-artifact, verification-artifact-reuse]
+  - id: product-release-architecture
+    title: Buildr 发布：谁负责什么
+    kind: diagram
+    path: knowledge/archify/flows/release-architecture.html
+    graphSource: knowledge/archify/flows/release-architecture.json
+    objects: [product-release]
+    sources: [release-coordination-source, release-selection-source, release-publication-source, verification-source-reader, verification-candidate-source-binding, verification-candidate-repair, verification-local-source, verification-platform-boundaries, verification-local-artifact, verification-artifact-reuse]
+  - id: product-release-workflow
+    title: Buildr 发布：五步流程
+    kind: diagram
+    path: knowledge/archify/flows/release-workflow.html
+    graphSource: knowledge/archify/flows/release-workflow.json
+    objects: [product-release]
+    sources: [release-coordination-source, release-selection-source, release-publication-source, verification-candidate-repair, verification-local-source, verification-platform-boundaries, verification-local-artifact, verification-artifact-reuse]
   - id: agent-integration-article
     title: 接入方式与职责
     kind: document
@@ -424,6 +447,9 @@ artifacts:
       - connection-skills-application
       - connection-skills-files
       - connection-skills-program
+      - connection-authorization-program
+      - connection-authorization-ui
+      - connection-authorization-state
       - mysql-connection-source
       - mysql-query-source
       - mysql-domain-source
@@ -500,6 +526,7 @@ artifacts:
       - connection-skills-catalog
       - connection-skills-application
       - connection-skills-program
+      - connection-authorization-program
       - connection-skills-files
       - mysql-query-preferences-source
       - connection-skills-workspace
@@ -513,6 +540,9 @@ artifacts:
       - xxl-job-connection-source
       - connection-skills-authoring-source
       - connection-skills-ui
+      - connection-personal-secrets-ui
+      - connection-authorization-ui
+      - connection-authorization-state
   - id: project-relations-article
     title: 项目、服务与代码库如何协作
     kind: document
@@ -1131,12 +1161,16 @@ artifacts:
       - verification-file-bc346270
       - verification-file-e9222fb3
   - id: verification-product-architecture
-    title: 采用实例：Buildr 产品的测试与验证
+    title: Buildr 验证框架
     kind: document
     path: knowledge/docs/architecture/verification-framework.md
     objects:
       - verification-product-tools
     sources:
+      - verification-local-source
+      - verification-platform-boundaries
+      - verification-local-artifact
+      - verification-artifact-reuse
       - verification-frontend-test-runner
       - verification-candidate-browser
       - verification-candidate-environment
@@ -1158,7 +1192,7 @@ artifacts:
       - verification-ref-73fbe375
       - verification-installed-package
       - verification-ref-e568f1e4
-    observedDigest: 21c39ddb2f64ca550c791c5904c4a71a2c948c07cfd20ac3663650ef6398e11e
+    observedDigest: 4c784fd3d8eee8ce6b7bfc60bef19d40c414d611183c18cf3b2e9871fbde51f4
     files:
       - verification-file-263d3698
       - verification-file-9894349f
@@ -1173,6 +1207,17 @@ artifacts:
     objects:
       - verification-product-tools
     sources:
+      - verification-local-source
+      - verification-platform-boundaries
+      - verification-local-artifact
+      - verification-artifact-reuse
+      - verification-source-reader
+      - verification-scoped-inputs
+      - verification-candidate-repair
+      - verification-candidate-repair-entry
+      - verification-candidate-source-binding
+      - release-candidate-repair-operation
+      - release-command-recovery
       - verification-frontend-test-runner
       - verification-candidate-browser
       - verification-candidate-environment
@@ -1223,7 +1268,7 @@ artifacts:
       - verification-ref-73fbe375
     files:
       - verification-product-map-file
-    observedDigest: 92829f9962d60ebecc57038cb5790792abd5f86e819f00c1bd2e273a8ffde345
+    observedDigest: a1f0e8f527d3e36da2f3901f5ffb84b11beba906cac35db7b16af19ad1191195
   - id: verification-context-guide
     title: Node.js 测试上下文：复用、隔离与生命周期
     kind: document
@@ -1415,6 +1460,79 @@ artifacts:
       - file-responsibility-graph
       - project-terms
 sources:
+  - id: verification-local-source
+    title: 通用与本机平台源码检查
+    kind: code
+    path: services/buildr/test/verification/source.ts
+    summary: 独立选择通用源码和本机平台源码，采用有效结果后只准备和执行缺项，不生产最终原包。
+  - id: verification-platform-boundaries
+    title: 两系统源码与原包真实边界
+    kind: code
+    path: services/buildr/test/verification/platform-boundaries.ts
+    summary: 记录 macOS 与 Windows 原生命令、路径、锁、文件描述符、进程和原包启动器的具体机制及最小断言。
+  - id: verification-local-artifact
+    title: 通用与本机平台原包检查
+    kind: code
+    path: services/buildr/test/verification/artifact.ts
+    summary: 显式消费同一原包，独立选择通用与本机平台检查，分别保存最低和当前 Node 的真实执行证明，不重新制包。
+  - id: verification-artifact-reuse
+    title: 原包检查证明交接与复用
+    kind: code
+    path: services/buildr/test/verification/candidate-artifact-reuse.ts
+    summary: 核验原包字节、检查输入、真实环境和原始来源，暂留应由本机补齐的缺项，已有有效证明不重复执行。
+  - id: release-coordination-source
+    title: 发布协调入口
+    kind: skill
+    skillId: buildr-release
+    path: scripts/release-orchestration-runner.ts
+  - id: release-selection-source
+    title: 冻结发布选择
+    kind: skill
+    skillId: buildr-release
+    path: scripts/release-selection.ts
+  - id: release-publication-source
+    title: 公开效果与恢复
+    kind: skill
+    skillId: buildr-release
+    path: scripts/release-publication.ts
+  - id: verification-source-reader
+    title: 共享检查源码输入
+    kind: code
+    path: services/buildr/test/verification/verification-source-inputs.ts
+    summary: 本机与正式补验共享字节、权限、范围及依赖选择，历史提交只读核验。
+  - id: verification-scoped-inputs
+    title: 检查输入范围与保守回退
+    kind: code
+    path: services/buildr/test/verification/verification-inputs.ts
+    summary: 分离已核验运行检查的产品内容和测试配方，跟踪静态导入及子脚本，未解析读取保留保守输入。
+  - id: verification-candidate-repair
+    title: 原包正式补验计划
+    kind: code
+    path: services/buildr/test/verification/candidate-repair.ts
+    summary: 核验原运行、包身份及逐项检查输入，保留有效证明并选择必要补验，保持完整覆盖与原始来源。
+  - id: verification-candidate-repair-entry
+    title: 受控补验入口与插件原包采用
+    kind: code
+    path: services/buildr/test/verification/candidate-repair-cli.ts
+    summary: 读取受控原运行和真实压缩包，生成执行矩阵及保留证据，采用输入不变的插件完整证明。
+  - id: verification-candidate-source-binding
+    title: 产包源码与验证源码绑定
+    kind: skill
+    skillId: buildr-release
+    path: scripts/candidate-source-binding.ts
+    summary: 比较真实构建输入，采用共享检查输入并核验历史结果，另行保护发布工具源码。
+  - id: release-candidate-repair-operation
+    title: 原候选补验请求与恢复
+    kind: skill
+    skillId: buildr-release
+    path: scripts/candidate-repair-operation.ts
+    summary: 保留冻结选择与原包，在原承载引用派发补验；未知效果先回读，避免重复请求。
+  - id: release-command-recovery
+    title: 发布命令诊断与阶段恢复
+    kind: skill
+    skillId: buildr-release
+    path: scripts/release-failure.ts
+    summary: 保留有界命令错误，区分明确拒绝和未知效果，投影已成立事实与最小恢复动作。
   - id: connection-runtime-spec
     title: 连接通用运行约定
     kind: spec
@@ -1464,7 +1582,22 @@ sources:
     title: 按系统选择的连接编辑界面
     kind: code
     path: services/buildr-web/src/features/connection-skills/components/ConnectionSkillEditDrawer.tsx
-    summary: 装配系统目录、声明分组和独立账号区，主测试使用团队候选，个人账号默认收起并分别保存。
+    summary: 按声明装配账号、授权与连接环境展示，隐藏方法不渲染空环境标签；双来源保留独立个人区。
+  - id: connection-authorization-ui
+    title: 个人浏览器授权入口
+    kind: code
+    path: services/buildr-web/src/features/connection-skills/components/ConnectionBrowserAuthorization.tsx
+    summary: 显示本机授权状态、首次或重新授权和取消，不要求录入内部认证字段。
+  - id: connection-authorization-state
+    title: 个人授权等待与局部保存
+    kind: code
+    path: services/buildr-web/src/features/connection-skills/useConnectionAuthorization.ts
+    summary: 新增先保存无认证配置壳，独立取消信号及迟到响应保护，准确呈现授权与保存事实。
+  - id: connection-personal-secrets-ui
+    title: 本人已保存秘密的显式查看
+    kind: code
+    path: services/buildr-web/src/features/connection-skills/components/ConnectionSavedPersonalSecrets.tsx
+    summary: 按当前实例和观察单字段查看，默认隐藏，关闭或变更清空，迟到结果不回填认证草稿。
   - id: connection-skills-registration
     title: 连接技能源标准目录登记
     kind: code
@@ -1489,7 +1622,7 @@ sources:
     title: 接入声明及字段约束
     kind: code
     path: services/buildr/src/modules/connection-skills/domain/definition.ts
-    summary: 校验受限声明、整组认证、网址和简单字段条件，不枚举专业业务动作。
+    summary: 校验受限声明、个人授权程序、连接环境展示、认证来源和字段条件，不枚举远端业务权限。
   - id: connection-skills-catalog
     title: 连接定义与精确绑定
     kind: code
@@ -1499,7 +1632,12 @@ sources:
     title: 实例管理与专业程序交接
     kind: code
     path: services/buildr/src/modules/connection-skills/application/connection-skills-application.ts
-    summary: 团队与个人分别保存并核对观察版本，运行按明确实例交接上下文，草稿测试不持久化。
+    summary: 按声明约束来源并核对观察，独立授权、保存及保全迁移；普通读取不披露秘密，运行按准确实例交接。
+  - id: connection-authorization-program
+    title: 个人授权私有进程交接
+    kind: code
+    path: services/buildr/src/modules/connection-skills/infrastructure/authorization-program.ts
+    summary: 不发送旧认证，只有唯一合法私有结果及正常退出才交付新组；输出抑制，取消和超时终止本次程序。
   - id: connection-skills-program
     title: 独立程序与私有通道
     kind: code
@@ -1509,7 +1647,7 @@ sources:
     title: 团队实例与本机整组认证
     kind: code
     path: services/buildr/src/modules/connection-skills/persistence/files.ts
-    summary: 逐实例团队文件、独立本机加密个人组、观察标识与局部锁，配置与本机状态各自维护。
+    summary: 逐实例共享文件、工作空间私有忽略目录的加密个人组及本机专有密钥，保留观察、局部锁和旧路径显式迁移。
   - id: connection-skills-workspace
     title: 连接的唯一配置来源
     kind: code
@@ -2622,8 +2760,9 @@ sources:
     observedDigest: eeb0c534b93b60636cee00b62763f1834c0d0bca2f93840a1758a52bea865efd
   - id: task-source-release-task-evidence-correlation-60b024
     title: 发布任务关联
-    kind: code
-    path: services/buildr/tools/release/release-task-evidence-correlation.ts
+    kind: skill
+    skillId: buildr-release
+    path: scripts/release-task-evidence-correlation.ts
     summary: 只关联完成的发布支持任务与发布输入，任务状态不是候选、产物或发布成功证明。
     observedDigest: d62d1bddf0ea1368c705ad802be9e50c0d68049cf55d4423edc66065e23ff02d
   - id: task-source-2026-08-30-parent-child-task-audit-b28c38
@@ -2823,7 +2962,7 @@ sources:
     observedDigest: eaa44bb44871878b56dadae21c8b9b7d2658b9ab2bb296a30c0f073eaff73644
   - id: verification-source-b5e167a6ea
     title: 产品验证步骤注册表
-    summary: 稳定步骤、集成分片、分类、主要证明责任、资源及候选分片
+    summary: 稳定步骤、集成分片、通用与平台归属、主要证明责任、资源及候选分片
     kind: code
     path: services/buildr/test/verification/registry.ts
     observedDigest: cabaca06c40afe232f5150011e7c4ebb0f62f99bac61c8c5f9f1346baad87efa
@@ -3026,10 +3165,10 @@ sources:
     summary: 本主题的可独立阅读或维护成果；事实来源见关联文章和实现地图。
     observedDigest: fb6051da600c470d8d245b897735b84c2b4cc68d3a1ed621852595f9177ea9eb
   - id: verification-file-9894349f
-    title: 采用实例：Buildr 产品的测试与验证
+    title: Buildr 验证框架
     kind: evidence
     path: knowledge/docs/architecture/verification-framework.md
-    observedDigest: 21c39ddb2f64ca550c791c5904c4a71a2c948c07cfd20ac3663650ef6398e11e
+    observedDigest: 4c784fd3d8eee8ce6b7bfc60bef19d40c414d611183c18cf3b2e9871fbde51f4
   - id: verification-file-8c3c96dd
     title: Node.js 测试上下文：复用、隔离与生命周期
     kind: evidence
@@ -3059,7 +3198,7 @@ sources:
     summary: 说明冻结候选、同包消费、明确发布授权与公开事实回读；发布流程保持独立维护。
     kind: evidence
     path: knowledge/docs/flows/open-source-release.md
-    observedDigest: 1d5e3d54cd363a33aa656ec7cf5ed6cda7fcbc86fa4cfceefa389b771773cdf5
+    observedDigest: 159c0c283e5c28f2f42b67134945e5901f1b5566b1c77357b3adeaf62ce1bdb6
   - id: verification-context-types
     title: 测试上下文公开类型
     summary: 定义上下文配置、生存范围、并发、生命周期钩子与测试回调的严格类型。
@@ -3083,7 +3222,7 @@ sources:
     summary: Buildr 产品自身的选择执行与上下文复用位置，不是用户项目的必需实现。
     kind: evidence
     path: knowledge/code-map/product-verification-tools.md
-    observedDigest: 92829f9962d60ebecc57038cb5790792abd5f86e819f00c1bd2e273a8ffde345
+    observedDigest: a1f0e8f527d3e36da2f3901f5ffb84b11beba906cac35db7b16af19ad1191195
   - id: parent-input-validation
     title: 任务与完成依据输入校验
     kind: code
@@ -3152,7 +3291,7 @@ sources:
     observedDigest: a5f284c3aaed1b1632f0f75fde7acfbf13f414270bfdba15292f3127dfa999f9
   - id: verification-ref-afecd484
     title: 跨平台候选编排入口
-    summary: 组织计划、平台分片、宿主Node.js检查与证据聚合。
+    summary: 按有效证明选择跨平台源码与原包缺项，组织真实宿主 Node 组合并汇总；源码全部通过后制包。
     kind: code
     path: services/buildr/test/verification/candidate-ci.ts
     observedDigest: 17ac8a16f50ae8768915914c154786002c4ef3114d5ad5a9765dd92230b1e86f
@@ -3464,6 +3603,9 @@ sources:
     path: services/buildr-web/src/features/task/components/PrototypeReaderLayout.tsx
     summary: 独立任务阅读与离线预览共用页面目录和阅读布局，页面选择由入口接入。
 relations:
+  - { from: product-release-flow, to: product-release-architecture, kind: contains }
+  - { from: product-release-flow, to: product-release-workflow, kind: contains }
+  - { from: product-release-flow, to: verification-product-architecture, kind: guides }
   - { from: external-connections-document, to: technical-layers-map, kind: guides }
   - { from: product-overview-article, to: system, kind: guides }
   - { from: reference-technical-document, to: system, kind: guides }

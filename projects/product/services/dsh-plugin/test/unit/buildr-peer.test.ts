@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, readdirSync, rmSync
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { gzipSync } from 'node:zlib';
-import { artifactFromTarball } from '../../../buildr/tools/release/package-artifact-observation.ts';
+import { artifactFromTarball } from '../../../../../../skills/buildr-release/scripts/package-artifact-observation.ts';
 import { packageArchiveFiles, prepareBuildrPeer, readArtifactInput, readPreparedBuildrPeer, resolvePeerNpm, smokePeerEnvironment } from '../../tools/buildr-peer.ts';
 import { parseVerificationInputs } from '../../tools/verify-all.ts';
 const npmCli = resolvePeerNpm(process.execPath);

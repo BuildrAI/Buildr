@@ -17,10 +17,10 @@ test('release contract runs from a clean checkout before dependencies are instal
   const cleanService: any = path.join(cleanWorkspace, 'projects/product/services/buildr');
   for (const relative of [
     'package.json',
-    'tools/release/release-authority.ts',
-    'tools/release/release-contract.ts',
-    'tools/release/release-files.ts',
-    'tools/release/release-notes.ts',
+    '../../../../skills/buildr-release/scripts/release-authority.ts',
+    '../../../../skills/buildr-release/scripts/release-contract.ts',
+    '../../../../skills/buildr-release/scripts/release-files.ts',
+    '../../../../skills/buildr-release/scripts/release-notes.ts',
     'src/modules/installation/domain/release-version.ts',
     'src/infrastructure/filesystem/filesystem-path-identity.ts',
   ]) {
@@ -34,7 +34,7 @@ test('release contract runs from a clean checkout before dependencies are instal
   const metadata: any = JSON.parse(fs.readFileSync(path.join(cleanService, 'package.json'), 'utf8'));
   const output: any = path.join(root, 'release-contract.json');
   const result: any = spawnSync(process.execPath, [
-    path.join(cleanService, 'tools/release/release-contract.ts'),
+    path.join(cleanService, '../../../../skills/buildr-release/scripts/release-contract.ts'),
     `v${metadata.version}`,
     '--source-commit', sourceCommit,
     '--output', output,

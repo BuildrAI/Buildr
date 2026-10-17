@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { createGeneratedReleaseInputs } from './generated-release-inputs.ts';
-import { buildApplicationPayload } from '../../tools/release/application-payload.ts';
-import { createReleaseArtifact } from '../../tools/release/release-artifact.ts';
+import { buildApplicationPayload } from '../../../../../../skills/buildr-release/scripts/application-payload.ts';
+import { createReleaseArtifact } from '../../../../../../skills/buildr-release/scripts/release-artifact.ts';
 
 // Real package bytes with the small, declared Web/Test Context fixture. Full
 // React and clean-checkout packaging are exercised by the hosted Candidate.

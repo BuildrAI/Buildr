@@ -8,7 +8,7 @@ import type { CodeCommitMessageRunRun } from '../../../../build/generated/code-g
 export type CommitContext = CodeCommitContextCommitContext;
 export type GitMutationResult = CodeGitMutationResultCommitChanges;
 export type CodeActionSource = { workspaceId: string; repositoryId: string; worktreeId: string; branch: string | null };
-export type CommitMode = 'commit' | 'commit-push';
+export type CommitMode = 'commit' | 'commit-sync' | 'commit-push';
 export type PushRetry = NonNullable<GitMutationResult['push']['retry']>;
 export function createCodeActionsClient(client: ApiClient) {
   const agents = createAgentOperationsClient(client);

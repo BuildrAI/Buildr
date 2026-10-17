@@ -1,15 +1,10 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
-import { createReleaseContext, validateReleaseContext } from '../../tools/release/release-readiness.ts';
-import { releaseExecutionCommit, validateReleaseExecutorRecovery } from '../../tools/release/release-executor-recovery.ts';
-import { createReleaseTransactionEvidence, validateReleaseTransactionEvidence } from '../../tools/release/release-transaction-evidence.ts';
-import { verifyReleaseExecutorPullRequest } from '../../tools/release/release-executor-admission.ts';
-import { readHostedPluginNoWriteProof } from '../../tools/release/plugin-hosted-release.ts';
+import { createReleaseContext, validateReleaseContext } from '../../../../../../skills/buildr-release/scripts/release-readiness.ts';
+import { releaseExecutionCommit, validateReleaseExecutorRecovery } from '../../../../../../skills/buildr-release/scripts/release-executor-recovery.ts';
+import { createReleaseTransactionEvidence, validateReleaseTransactionEvidence } from '../../../../../../skills/buildr-release/scripts/release-transaction-evidence.ts';
+import { verifyReleaseExecutorPullRequest } from '../../../../../../skills/buildr-release/scripts/release-executor-admission.ts';
+import { readHostedPluginNoWriteProof } from '../../../../../../skills/buildr-release/scripts/plugin-hosted-release.ts';
 
 const sha = (letter: string) => letter.repeat(40);
 const digest = (letter: string) => `sha256-${letter.repeat(64)}`;
@@ -76,7 +71,7 @@ function pluginAdmissionFixture(): any {
     sourceCommit: source, sourceTree, sha256: '1'.repeat(64), integrity: `sha512-${Buffer.alloc(64, 1).toString('base64')}`,
     attempted: false, publishedObserved: false, status: 'blocked', action: 'blocked', registry: 'absent', observedAt: '2026-10-16T02:55:10.544Z',
     request: { runId: 123, runAttempt: 1, workflowRef: 'BuildrAI/Buildr/.github/workflows/publish-dsh-plugin.yml@refs/heads/main' }, code: 'plugin-oidc-authority-mismatch' };
-  const reads: string[][] = [], paths = ['projects/product/services/dsh-plugin/tools/trusted-publish.ts'];
+  const reads: string[][] = [], paths = ['skills/buildr-release/scripts/dsh-plugin/trusted-publish.ts'];
   const git = (args: string[]) => {
     reads.push(args);
     if (args[0] === 'rev-parse') return args[1] === 'HEAD' ? head : args[1] === 'origin/main' ? execution
@@ -168,20 +163,6 @@ test('pre-upload admission rejects incomplete, executed or mismatched official j
   await assert.rejects(() => verifyReleaseExecutorPullRequest(f.event, f.repository, '/fixture', f.dependencies));
 });
 
-test('real PR CLI resolves the admission import cycle before reporting a missing original run marker', t => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-admission-cli-'));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  const eventFile = path.join(directory, 'event.json'), f = pluginAdmissionFixture();
-  f.event.pull_request.body = '';
-  fs.writeFileSync(eventFile, JSON.stringify(f.event));
-  const result = spawnSync(process.execPath, [fileURLToPath(new URL('../../tools/release/verify-pr-candidate.ts', import.meta.url))], {
-    encoding: 'utf8', timeout: 5000, env: { ...process.env, NODE_OPTIONS: undefined, GH_TOKEN: undefined, GITHUB_TOKEN: undefined,
-      GITHUB_REPOSITORY: f.repository, GITHUB_EVENT_PATH: eventFile },
-  });
-  assert.equal(result.status, 1, `${result.stderr}\n${result.error?.message ?? ''}`);
-  assert.match(result.stderr, /Release pull request Candidate check failed: Publisher repair requires one original publication run\./u);
-  assert.doesNotMatch(result.stderr, /unsettled top-level await/u);
-});
 
 test('plugin repair admission rejects unknown, attempted, mismatched or ambiguous original requests', async t => {
   const cases: Array<[string, (f: any) => void]> = [

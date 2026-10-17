@@ -9,13 +9,9 @@ import { fetchCodeRemoteRefs } from '../infrastructure/code-fetch-refs.ts';
 import { runCodeGitMutation } from '../infrastructure/code-git-mutation-runner.ts';
 import { acquireCodeGitOperation } from '../infrastructure/code-git-operation-lock.ts';
 import { pushObservedCodeSource } from './code-push-operation.ts';
+import type { CodeSyncLocation, CodeSyncInput, CodeSyncStatus, CodeSyncStage, CodeSyncContext, CodeSyncResult, PreparedCodeCommitSync } from './code-sync-model.ts';
 
-export type CodeSyncLocation = { repositoryId: string; worktreeId: string };
-export type CodeSyncInput = CodeSyncLocation & { expectedRevision: string };
-export type CodeSyncStatus = 'succeeded' | 'failed' | 'unavailable' | 'unknown';
-export type CodeSyncStage = { status: CodeSyncStatus | 'not-requested'; message: string };
-export type CodeSyncContext = { source: CodeSource; revision: string; head: string | null; branch: string | null; target: string | null; available: boolean; reason: string | null; ahead: number | null; behind: number | null; hasChanges: boolean };
-export type CodeSyncResult = { source: CodeSource; readAt: string; branch: string | null; head: string | null; upstream: string | null; status: CodeSyncStatus; message: string; fetch: CodeSyncStage; rebase: CodeSyncStage; push: CodeSyncStage };
+export type { CodeSyncLocation, CodeSyncInput, CodeSyncStatus, CodeSyncStage, CodeSyncContext, CodeSyncResult } from './code-sync-model.ts';
 type Dependencies = {
   source(root: string, input: CodeSyncLocation): CodeSource;
   observation?(root: string, input: CodeSyncLocation): { source: CodeSource; verify(): void } | undefined;
@@ -118,72 +114,90 @@ export function createCodeSyncApplication(dependencies: Dependencies) {
       }
     }
   }
-  async function sync(root: string, input: CodeSyncInput): Promise<CodeSyncResult> {
+  async function syncWithinOperation(root: string, input: CodeSyncInput): Promise<CodeSyncResult> {
     if (!input.expectedRevision) throw codeFailure('code_sync_input_invalid', '同步需要已观察的来源版本。');
-    const initial = source(root, input), release = acquireCodeGitOperation(initial);
-    try {
-      const before = observe(root, input); assertCodeRevision(before.revision, input.expectedRevision);
-      let expectedFinalHead = before.status.head;
-      const response: CodeSyncResult = { source: before.source, readAt: new Date().toISOString(), branch: before.status.branch, head: before.status.head, upstream: before.status.upstream, status: 'unavailable', message: '', fetch: notRequested('尚未获取远程。'), rebase: notRequested('尚未拉取整合。'), push: notRequested('尚未推送。') };
-      const finish = (status: CodeSyncStatus, message: string) => {
-        response.status = status; response.message = message; response.readAt = new Date().toISOString();
-        try {
-          const final = status === 'succeeded' ? observe(root, input) : null;
-          const current = final?.source || source(root, input), state = final?.status || observeSourceControl(current, { gitConfig: readCodeCheckoutFilterConfig(current).overrides });
-          response.source = current; response.branch = state.branch; response.head = state.head; response.upstream = state.upstream;
-          if (final) {
-            if (state.branch !== before.status.branch || state.head !== expectedFinalHead || final.push.upstreamHead !== expectedFinalHead || final.targetRevision !== before.targetRevision) {
-              response.status = 'unknown'; response.message = '已确认的操作阶段结果保留；当前来源或目标已发生后续变化，请刷新核对。';
-            }
+    const before = observe(root, input); assertCodeRevision(before.revision, input.expectedRevision);
+    let expectedFinalHead = before.status.head;
+    const response: CodeSyncResult = { source: before.source, readAt: new Date().toISOString(), branch: before.status.branch, head: before.status.head, upstream: before.status.upstream, status: 'unavailable', message: '', fetch: notRequested('尚未获取远程。'), rebase: notRequested('尚未拉取整合。'), push: notRequested('尚未推送。') };
+    const finish = (status: CodeSyncStatus, message: string) => {
+      response.status = status; response.message = message; response.readAt = new Date().toISOString();
+      try {
+        const final = status === 'succeeded' ? observe(root, input) : null;
+        const current = final?.source || source(root, input), state = final?.status || observeSourceControl(current, { gitConfig: readCodeCheckoutFilterConfig(current).overrides });
+        response.source = current; response.branch = state.branch; response.head = state.head; response.upstream = state.upstream;
+        if (final) {
+          if (state.branch !== before.status.branch || state.head !== expectedFinalHead || final.push.upstreamHead !== expectedFinalHead || final.targetRevision !== before.targetRevision) {
+            response.status = 'unknown'; response.message = '已确认的操作阶段结果保留；当前来源或目标已发生后续变化，请刷新核对。';
           }
         }
-        catch { response.status = 'unknown'; response.message += ' 当前来源结果尚无法重新确认，请刷新核对。'; }
-        return response;
-      };
-      if (before.reason) return finish('unavailable', before.reason);
-      response.fetch = await fetchCodeRemoteRefs(before.source, { url: before.fetchUrl!, refspecs: ['+' + before.push.destinationRef + ':' + before.push.upstreamRef] }, { run, verify: () => { assertCodeRevision(observe(root, input).revision, before.revision); } });
-      if (response.fetch.status !== 'succeeded') return finish(response.fetch.status as CodeSyncStatus, '获取上游未完成，整合与推送未执行。');
-      let fetched: ReturnType<typeof observe>;
+      }
+      catch { response.status = 'unknown'; response.message += ' 当前来源结果尚无法重新确认，请刷新核对。'; }
+      return response;
+    };
+    if (before.reason) return finish('unavailable', before.reason);
+    response.fetch = await fetchCodeRemoteRefs(before.source, { url: before.fetchUrl!, refspecs: ['+' + before.push.destinationRef + ':' + before.push.upstreamRef] }, { run, verify: () => { assertCodeRevision(observe(root, input).revision, before.revision); } });
+    if (response.fetch.status !== 'succeeded') return finish(response.fetch.status as CodeSyncStatus, '获取上游未完成，整合与推送未执行。');
+    let fetched: ReturnType<typeof observe>;
+    try {
+      fetched = observe(root, input); assertCodeRevision(fetched.targetRevision, before.targetRevision);
+      // Fetch legitimately changes status ahead/behind, but not local files, index, HEAD or configuration.
+      assertCodeRevision(fetched.localRevision, before.localRevision);
+      if (fetched.reason || !fetched.push.upstreamHead) throw codeFailure('code_sync_upstream_unavailable', fetched.reason || '获取后上游提交尚无法确认。', 409);
+      if (!ancestor(fetched.source, before.push.upstreamHead!, fetched.push.upstreamHead)) throw codeFailure('code_sync_upstream_rewritten', '上游历史已被改写，已保留获取结果；未自动整合或推送，请核对后处理。', 409);
+    } catch (error) { response.rebase = { status: 'unavailable', message: (error as Error).message }; return finish('unavailable', '已获取上游；本地整合与推送未执行。'); }
+    let integrated = fetched;
+    if (fetched.behind) {
+      let integrationStarted = false;
       try {
-        fetched = observe(root, input); assertCodeRevision(fetched.targetRevision, before.targetRevision);
-        // Fetch legitimately changes status ahead/behind, but not local files, index, HEAD or configuration.
-        assertCodeRevision(fetched.localRevision, before.localRevision);
-        if (fetched.reason || !fetched.push.upstreamHead) throw codeFailure('code_sync_upstream_unavailable', fetched.reason || '获取后上游提交尚无法确认。', 409);
-        if (!ancestor(fetched.source, before.push.upstreamHead!, fetched.push.upstreamHead)) throw codeFailure('code_sync_upstream_rewritten', '上游历史已被改写，已保留获取结果；未自动整合或推送，请核对后处理。', 409);
-      } catch (error) { response.rebase = { status: 'unavailable', message: (error as Error).message }; return finish('unavailable', '已获取上游；本地整合与推送未执行。'); }
-      let integrated = fetched;
-      if (fetched.behind) {
-        let integrationStarted = false;
-        try {
-          const replay = text(fetched.source, ['rev-list', '--reverse', fetched.push.upstreamHead + '..' + fetched.status.head]).split('\n').filter(Boolean);
-          if (!optional(fetched.source, ['merge-base', fetched.status.head!, fetched.push.upstreamHead!])) throw codeFailure('code_sync_history_unrelated', '当前分支与上游没有可核实的共同历史，未自动整合。', 409);
-          if (replay.length > 10_000) throw codeFailure('code_sync_commit_limit', '待整合提交超过完整核对上限。', 409);
-          if (replay.length && text(fetched.source, ['rev-list', '--merges', fetched.push.upstreamHead + '..' + fetched.status.head])) throw codeFailure('code_sync_merge_replay', '待重放范围包含合并提交，未自动改变合并结构；请核对后处理。', 409);
-          assertSafeIntegration(fetched, fetched.push.upstreamHead!, replay);
-          assertCodeRevision(observe(root, input).revision, fetched.revision);
-          const settings = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-c', 'submodule.recurse=false', '-c', 'rebase.autoStash=false', '-c', 'rebase.updateRefs=false', '-c', 'rebase.autoSquash=false', '-c', 'rerere.enabled=false'];
-          const args = fetched.ahead ? [...settings, 'rebase', '--no-autostash', '--no-update-refs', '--no-fork-point', '--no-rebase-merges', fetched.push.upstreamHead!]
-            : [...settings, 'merge', '--ff-only', '--no-edit', fetched.push.upstreamHead!];
-          integrationStarted = true;
-          const result = await run(fetched.source, args, { timeoutMs: 60_000 });
-          if (!result.ok) {
-            response.rebase = { status: result.timedOut ? 'unknown' : 'failed', message: result.timedOut ? '拉取整合超时，现场已保留；请刷新核对，不会自动重试。' : 'Git 未完成拉取整合；冲突及当前现场已保留，请查看改动后继续处理。' };
-            return finish(response.rebase.status as CodeSyncStatus, '已获取上游，拉取整合尚未完成；推送未执行。');
-          }
-          integrated = observe(root, input); assertCodeRevision(integrated.targetRevision, before.targetRevision);
-          if (integrated.push.upstreamHead !== fetched.push.upstreamHead || !integrated.status.head || !ancestor(integrated.source, fetched.push.upstreamHead!, integrated.status.head) || (!fetched.ahead && integrated.status.head !== fetched.push.upstreamHead)) throw codeFailure('code_sync_integration_changed', '整合后当前提交或上游发生变化，请刷新核对。', 409);
-          response.rebase = { status: 'succeeded', message: fetched.ahead ? '已将当前分支相对固定上游未推送的提交变基。' : '已快进到本次获取的上游提交。' };
-        } catch (error) { response.rebase = { status: integrationStarted ? 'unknown' : 'unavailable', message: (error as Error).message }; return finish(integrationStarted ? 'unknown' : 'unavailable', '已获取上游；整合未确认，推送未执行。'); }
-      } else response.rebase = notRequested('当前分支无需拉取整合。');
-      expectedFinalHead = integrated.status.head;
-      try {
-        const ready = verifyTarget(root, input, before, integrated.status.head, fetched.push.upstreamHead);
-        if (ready.push.ahead === 0) response.push = notRequested('当前分支没有待推送提交。');
-        else { const pushed = await pushObservedCodeSource(root, input, ready.push, source, run); response.push = { status: pushed.status === 'not-requested' ? 'not-requested' : pushed.status, message: pushed.message }; }
-      } catch (error) { response.push = { status: 'unavailable', message: (error as Error).message }; }
-      const status = response.push.status === 'not-requested' ? 'succeeded' : response.push.status;
-      return finish(status, status === 'succeeded' ? '当前分支已与固定上游同步。' : '已完成的获取与本地整合保留；推送尚未完成。');
-    } finally { release(); }
+        const replay = text(fetched.source, ['rev-list', '--reverse', fetched.push.upstreamHead + '..' + fetched.status.head]).split('\n').filter(Boolean);
+        if (!optional(fetched.source, ['merge-base', fetched.status.head!, fetched.push.upstreamHead!])) throw codeFailure('code_sync_history_unrelated', '当前分支与上游没有可核实的共同历史，未自动整合。', 409);
+        if (replay.length > 10_000) throw codeFailure('code_sync_commit_limit', '待整合提交超过完整核对上限。', 409);
+        if (replay.length && text(fetched.source, ['rev-list', '--merges', fetched.push.upstreamHead + '..' + fetched.status.head])) throw codeFailure('code_sync_merge_replay', '待重放范围包含合并提交，未自动改变合并结构；请核对后处理。', 409);
+        assertSafeIntegration(fetched, fetched.push.upstreamHead!, replay);
+        assertCodeRevision(observe(root, input).revision, fetched.revision);
+        const settings = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-c', 'submodule.recurse=false', '-c', 'rebase.autoStash=false', '-c', 'rebase.updateRefs=false', '-c', 'rebase.autoSquash=false', '-c', 'rerere.enabled=false'];
+        const args = fetched.ahead ? [...settings, 'rebase', '--no-autostash', '--no-update-refs', '--no-fork-point', '--no-rebase-merges', fetched.push.upstreamHead!]
+          : [...settings, 'merge', '--ff-only', '--no-edit', fetched.push.upstreamHead!];
+        integrationStarted = true;
+        const result = await run(fetched.source, args, { timeoutMs: 60_000 });
+        if (!result.ok) {
+          response.rebase = { status: result.timedOut ? 'unknown' : 'failed', message: result.timedOut ? '拉取整合超时，现场已保留；请刷新核对，不会自动重试。' : 'Git 未完成拉取整合；冲突及当前现场已保留，请查看改动后继续处理。' };
+          return finish(response.rebase.status as CodeSyncStatus, '已获取上游，拉取整合尚未完成；推送未执行。');
+        }
+        integrated = observe(root, input); assertCodeRevision(integrated.targetRevision, before.targetRevision);
+        if (integrated.push.upstreamHead !== fetched.push.upstreamHead || !integrated.status.head || !ancestor(integrated.source, fetched.push.upstreamHead!, integrated.status.head) || (!fetched.ahead && integrated.status.head !== fetched.push.upstreamHead)) throw codeFailure('code_sync_integration_changed', '整合后当前提交或上游发生变化，请刷新核对。', 409);
+        response.rebase = { status: 'succeeded', message: fetched.ahead ? '已将当前分支相对固定上游未推送的提交变基。' : '已快进到本次获取的上游提交。' };
+      } catch (error) { response.rebase = { status: integrationStarted ? 'unknown' : 'unavailable', message: (error as Error).message }; return finish(integrationStarted ? 'unknown' : 'unavailable', '已获取上游；整合未确认，推送未执行。'); }
+    } else response.rebase = notRequested('当前分支无需拉取整合。');
+    expectedFinalHead = integrated.status.head;
+    try {
+      const ready = verifyTarget(root, input, before, integrated.status.head, fetched.push.upstreamHead);
+      if (ready.push.ahead === 0) response.push = notRequested('当前分支没有待推送提交。');
+      else { const pushed = await pushObservedCodeSource(root, input, ready.push, source, run); response.push = { status: pushed.status === 'not-requested' ? 'not-requested' : pushed.status, message: pushed.message }; }
+    } catch (error) { response.push = { status: 'unavailable', message: (error as Error).message }; }
+    const status = response.push.status === 'not-requested' ? 'succeeded' : response.push.status;
+    return finish(status, status === 'succeeded' ? '当前分支已与固定上游同步。' : '已完成的获取与本地整合保留；推送尚未完成。');
   }
-  return Object.freeze({ syncContext, sync });
+  /** The caller holds the shared Git operation lock across commit and sync. */
+  function prepareCommitSync(root: string, input: CodeSyncLocation): PreparedCodeCommitSync {
+    const before = observe(root, input);
+    return async committedHead => {
+      let after: ReturnType<typeof observe> | undefined;
+      try {
+        after = observe(root, input);
+        assertCodeRevision(after.targetRevision, before.targetRevision);
+        if (after.status.head !== committedHead || after.push.upstreamHead !== before.push.upstreamHead) throw codeFailure('code_source_changed', '提交已成立，但当前提交或原同步上游记录已变化；请刷新后重新判断。', 409);
+      } catch (error) {
+        return { source: after?.source || before.source, readAt: new Date().toISOString(), branch: after?.status.branch || null, head: after?.status.head || null, upstream: after?.status.upstream || null, status: 'unavailable', message: '提交已成立；同步未执行。' + (error as Error).message, fetch: notRequested('尚未获取远程。'), rebase: notRequested('尚未拉取整合。'), push: notRequested('尚未推送。') };
+      }
+      return syncWithinOperation(root, { ...input, expectedRevision: after.revision });
+    };
+  }
+  return Object.freeze({ syncContext, prepareCommitSync,
+    async sync(root: string, input: CodeSyncInput) {
+      if (!input.expectedRevision) throw codeFailure('code_sync_input_invalid', '同步需要已观察的来源版本。');
+      const release = acquireCodeGitOperation(source(root, input));
+      try { return await syncWithinOperation(root, input); } finally { release(); }
+    },
+  });
 }

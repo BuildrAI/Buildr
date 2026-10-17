@@ -1,0 +1,332 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Buildr 发布：五步流程",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": "projects/product/knowledge/archify/flows/release-workflow.html",
+    "repository": {
+      "url": "https://github.com/BuildrAI/Buildr.git",
+      "revision": "a3bfca371544c7b56d02603c4a87df4f682e7e4d"
+    },
+    "legend": {
+      "entries": {
+        "backend": {
+          "label": "发布与检查"
+        },
+        "security": {
+          "label": "获准公开"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "release",
+      "label": "发布协调：智能体（Agent）按 buildr-release 推进"
+    },
+    {
+      "id": "common",
+      "label": "通用检查：本机只跑一次"
+    },
+    {
+      "id": "local",
+      "label": "平台检查：本机系统（macOS 或 Windows）"
+    },
+    {
+      "id": "peer",
+      "label": "平台检查：GitHub 补另一系统"
+    }
+  ],
+  "phases": [
+    {
+      "id": "freeze-phase",
+      "label": "1 固定候选",
+      "fromCol": 0,
+      "toCol": 0
+    },
+    {
+      "id": "source-phase",
+      "label": "2 源码验证",
+      "fromCol": 1,
+      "toCol": 1
+    },
+    {
+      "id": "pack-phase",
+      "label": "3 打包",
+      "fromCol": 2,
+      "toCol": 2
+    },
+    {
+      "id": "artifact-phase",
+      "label": "4 验包",
+      "fromCol": 3,
+      "toCol": 3
+    },
+    {
+      "id": "publish-phase",
+      "label": "5 获准发布",
+      "fromCol": 4,
+      "toCol": 4,
+      "variant": "security"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "freeze",
+      "lane": "release",
+      "col": 0,
+      "type": "backend",
+      "label": "固定候选",
+      "sublabel": "包、版本、准确源码与对端",
+      "sources": [
+        {
+          "path": "skills/buildr-release/scripts/release-selection.ts"
+        }
+      ]
+    },
+    {
+      "id": "source-common",
+      "lane": "common",
+      "col": 1,
+      "type": "backend",
+      "label": "通用源码",
+      "sublabel": "产品逻辑、接口与发布工具",
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/test/verification/source.ts"
+        },
+        {
+          "path": "projects/product/services/buildr/test/verification/registry.ts"
+        }
+      ]
+    },
+    {
+      "id": "source-local",
+      "lane": "local",
+      "col": 1,
+      "type": "backend",
+      "label": "本机平台源码",
+      "sublabel": "命令、路径、锁与进程",
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/test/verification/registry.ts"
+        },
+        {
+          "path": "projects/product/services/buildr/test/verification/platform-boundaries.ts"
+        }
+      ]
+    },
+    {
+      "id": "source-peer",
+      "lane": "peer",
+      "col": 1,
+      "type": "backend",
+      "label": "另一平台源码",
+      "sublabel": "只补真实系统差异",
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/test/verification/registry.ts"
+        },
+        {
+          "path": ".github/workflows/verify.yml"
+        }
+      ]
+    },
+    {
+      "id": "pack",
+      "lane": "release",
+      "col": 2,
+      "type": "backend",
+      "label": "GitHub 制一份原包",
+      "sublabel": "源码三部分全部通过后",
+      "tag": "源码三部分全部通过",
+      "sources": [
+        {
+          "path": "skills/buildr-release/scripts/candidate-package.ts"
+        },
+        {
+          "path": ".github/workflows/verify.yml"
+        }
+      ],
+      "height": 96
+    },
+    {
+      "id": "artifact-common",
+      "lane": "common",
+      "col": 3,
+      "type": "backend",
+      "label": "通用原包检查",
+      "sublabel": "包内容、公共命令、核心页面",
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/test/verification/registry.ts"
+        },
+        {
+          "path": "projects/product/services/buildr/test/verification/release/browser-candidate.ts"
+        }
+      ]
+    },
+    {
+      "id": "artifact-local",
+      "lane": "local",
+      "col": 3,
+      "type": "backend",
+      "label": "本机平台原包",
+      "sublabel": "原生启动器与 Node 组合",
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/test/verification/artifact.ts"
+        },
+        {
+          "path": "projects/product/services/buildr/test/verification/host-node.ts"
+        }
+      ]
+    },
+    {
+      "id": "artifact-peer",
+      "lane": "peer",
+      "col": 3,
+      "type": "backend",
+      "label": "另一平台原包",
+      "sublabel": "同一原包，只补系统差异",
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/test/verification/registry.ts"
+        },
+        {
+          "path": ".github/workflows/verify.yml"
+        }
+      ]
+    },
+    {
+      "id": "publish",
+      "lane": "release",
+      "col": 4,
+      "type": "security",
+      "label": "GitHub 公开已验原包",
+      "sublabel": "验包齐全＋人授权后",
+      "tag": "验包齐全＋人授权",
+      "sources": [
+        {
+          "path": ".github/workflows/publish.yml"
+        },
+        {
+          "path": "skills/buildr-release/scripts/release-publication.ts"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "freeze-source-common",
+      "from": "freeze",
+      "to": "source-common",
+      "role": "main",
+      "variant": "emphasis"
+    },
+    {
+      "id": "source-common-pack",
+      "from": "source-common",
+      "to": "pack",
+      "role": "main",
+      "variant": "emphasis"
+    },
+    {
+      "id": "pack-artifact-common",
+      "from": "pack",
+      "to": "artifact-common",
+      "role": "main",
+      "variant": "emphasis"
+    },
+    {
+      "id": "artifact-common-publish",
+      "from": "artifact-common",
+      "to": "publish",
+      "role": "main",
+      "variant": "security"
+    },
+    {
+      "id": "freeze-source-local",
+      "from": "freeze",
+      "to": "source-local",
+      "role": "branch",
+      "variant": "emphasis"
+    },
+    {
+      "id": "source-local-pack",
+      "from": "source-local",
+      "to": "pack",
+      "role": "branch",
+      "variant": "emphasis"
+    },
+    {
+      "id": "pack-artifact-b-local",
+      "from": "pack",
+      "to": "artifact-local",
+      "role": "branch",
+      "variant": "emphasis"
+    },
+    {
+      "id": "artifact-local-publish",
+      "from": "artifact-local",
+      "to": "publish",
+      "role": "branch",
+      "variant": "security"
+    },
+    {
+      "id": "freeze-source-peer",
+      "from": "freeze",
+      "to": "source-peer",
+      "role": "branch",
+      "variant": "emphasis"
+    },
+    {
+      "id": "source-peer-pack",
+      "from": "source-peer",
+      "to": "pack",
+      "role": "branch",
+      "variant": "emphasis"
+    },
+    {
+      "id": "pack-artifact-a-peer",
+      "from": "pack",
+      "to": "artifact-peer",
+      "role": "branch",
+      "variant": "emphasis"
+    },
+    {
+      "id": "artifact-peer-publish",
+      "from": "artifact-peer",
+      "to": "publish",
+      "role": "branch",
+      "variant": "security"
+    }
+  ],
+  "mainPath": [
+    "freeze",
+    "source-common",
+    "pack",
+    "artifact-common",
+    "publish"
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "独立节点，由智能体安排",
+      "items": [
+        "默认先本机源码，再补另一系统；验包可按原包上传现场安排并行",
+        "通用功能只验一次；最低／当前 Node 满足真实系统组合"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "失败只恢复相关节点",
+      "items": [
+        "先复用有效结果，只为缺项准备环境；产品或构建输入变化才重打相关包",
+        "准备止于验包；公开授权、任务登记与独立自举分别成立"
+      ]
+    }
+  ]
+}

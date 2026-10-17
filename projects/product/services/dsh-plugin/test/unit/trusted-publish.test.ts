@@ -5,12 +5,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { gzipSync } from 'node:zlib';
-import { artifactFromTarball } from '../../../buildr/tools/release/package-artifact-observation.ts';
-import type { CompatibilityArtifact, PackageCompatibility } from '../../../buildr/tools/release/package-compatibility.ts';
-import { createReleaseCandidate, PLUGIN_PACKAGE, readReleaseCandidate, type SourceSdkIdentity } from '../../tools/release-candidate.ts';
+import { artifactFromTarball } from '../../../../../../skills/buildr-release/scripts/package-artifact-observation.ts';
+import type { CompatibilityArtifact, PackageCompatibility } from '../../../../../../skills/buildr-release/scripts/package-compatibility.ts';
+import { createReleaseCandidate, PLUGIN_PACKAGE, readReleaseCandidate, type SourceSdkIdentity } from '../../../../../../skills/buildr-release/scripts/dsh-plugin/release-candidate.ts';
 import { archiveTreeIdentity } from '../../tools/verify-all.ts';
 import { identity, type PairReport } from '../../tools/verify-buildr-plugin-pair.ts';
-import { PLUGIN_PUBLISH_AUTHORITY, publishPluginCandidate, verifyPluginPublishCompatibility, type PublishDependencies } from '../../tools/trusted-publish.ts';
+import { PLUGIN_PUBLISH_AUTHORITY, publishPluginCandidate, verifyPluginPublishCompatibility, type PublishDependencies } from '../../../../../../skills/buildr-release/scripts/dsh-plugin/trusted-publish.ts';
 
 const version = '0.1.0-rc.1', sourceCommit = 'a'.repeat(40), sourceTree = 'b'.repeat(40), workflowSha256 = 'c'.repeat(64);
 const now = Date.parse('2026-10-09T12:00:00Z');

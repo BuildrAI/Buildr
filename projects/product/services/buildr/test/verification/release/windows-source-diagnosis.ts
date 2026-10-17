@@ -13,7 +13,10 @@ import { projectResult } from './windows-artifact-diagnosis.ts';
 
 export const WINDOWS_SOURCE_DIAGNOSIS_SCHEMA = 'buildr.windows-source-diagnosis/v1';
 export const WINDOWS_SOURCE_DIAGNOSIS_SCENARIO = 'app-process-windows';
-const stepId = 'system-app-process';
+const sourceOwners: Record<string, string> = Object.freeze({
+  'app-process-windows': 'system-app-process',
+  'readonly-files-windows': 'system-windows-platform',
+});
 const sha = /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u;
 interface GitFacts { head: string; tree: string; dirty: boolean }
 interface DiagnosisOptions { env?: NodeJS.ProcessEnv; productRoot?: string }
@@ -27,18 +30,24 @@ const fail = (code: string): never => { throw Object.assign(new Error(code), { c
 const required = (env: NodeJS.ProcessEnv, key: string) => env[key] || fail(`diagnosis-missing-${key.toLowerCase().replaceAll('_', '-')}`);
 
 export function validateWindowsSourceDiagnosis(env: NodeJS.ProcessEnv, facts: GitFacts): void {
-  if (env.DIAGNOSTIC_SCENARIO !== WINDOWS_SOURCE_DIAGNOSIS_SCENARIO) fail('diagnosis-unknown-scenario');
+  if (!Object.hasOwn(sourceOwners, env.DIAGNOSTIC_SCENARIO || '')) fail('diagnosis-unknown-scenario');
   if (!sha.test(env.GITHUB_SHA || '') || facts.head !== env.GITHUB_SHA) fail('diagnosis-check-source-mismatch');
   if (!sha.test(env.EXPECTED_SOURCE_TREE || '') || facts.tree !== env.EXPECTED_SOURCE_TREE) fail('diagnosis-check-tree-mismatch');
   if (facts.dirty) fail('diagnosis-checkout-dirty');
 }
 
 export function createWindowsSourceDiagnosisPlan(scenario: string): any {
-  if (scenario !== WINDOWS_SOURCE_DIAGNOSIS_SCENARIO) fail('diagnosis-unknown-scenario');
+  if (!Object.hasOwn(sourceOwners, scenario)) fail('diagnosis-unknown-scenario');
+  const stepId = sourceOwners[scenario]!;
   const plan = createVerificationPlan({ stepIds: [stepId] });
   if (plan.steps.length !== 1 || plan.steps[0].id !== stepId || plan.steps[0].dependsOn.length !== 0
       || plan.steps[0].executor.type === 'candidate-artifact' || plan.steps[0].executor.consumesArtifact) fail('diagnosis-plan-coverage-mismatch');
-  return { ...plan, source: 'windows-source-diagnosis', primaryStepIds: [stepId] };
+  // Diagnostic runs never authorize an aggregate. Retain the registered cases,
+  // filters and worker grant while exposing actual case timings and skips.
+  const steps = plan.steps.map((step: any) => ({ ...step, executor: { ...step.executor,
+    args: (step.executor.args ?? []).map((arg: string) => arg === '--test-reporter=dot' ? '--test-reporter=tap' : arg),
+  } }));
+  return { ...plan, source: 'windows-source-diagnosis', primaryStepIds: [stepId], steps };
 }
 
 function readGitFacts(productRoot: string): GitFacts {
@@ -74,6 +83,7 @@ export async function runWindowsSourceDiagnosis(options: DiagnosisOptions = {}, 
     summary.sourceCommit = facts.head; summary.sourceTree = facts.tree;
     validateWindowsSourceDiagnosis(env, facts);
     const plan = createWindowsSourceDiagnosisPlan(env.DIAGNOSTIC_SCENARIO!);
+    const stepId = sourceOwners[env.DIAGNOSTIC_SCENARIO!]!;
     const executionEnv = { ...env };
     // Explicit undefined survives the executor's process.env merge. Deletion
     // would restore inherited package inputs from its outer environment.
@@ -87,7 +97,7 @@ export async function runWindowsSourceDiagnosis(options: DiagnosisOptions = {}, 
       execution = await (dependencies.execute ?? executePlan)(plan, {
         productRoot, projectRoot: path.resolve(productRoot, '../..'), diagnosticsDirectory: path.join(output, 'diagnostics'),
         env: executionEnv, executionProfile: profile, concurrency: profile.limits, reuse: false,
-        runId: `windows-source-diagnosis-${env.GITHUB_RUN_ID || process.pid}`, taskId: 'windows-source-diagnosis-app-process-windows',
+        runId: `windows-source-diagnosis-${env.GITHUB_RUN_ID || process.pid}`, taskId: `windows-source-diagnosis-${env.DIAGNOSTIC_SCENARIO}`,
         stream: process.stdout, errorStream: process.stderr, prefix: 'windows-source-diagnosis',
         onComplete(result: any) { record(result); summary.results = [...results.values()]; persist(output, summary); },
       });

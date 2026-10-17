@@ -1,12 +1,36 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import test from 'node:test';
-import { candidateBrowserWebRoot, runCandidateBrowser } from '../verification/release/browser-candidate.ts';
+import { candidateBrowserWebRoot, runCandidateBrowser, resolveCandidateBrowserSource } from '../verification/release/browser-candidate.ts';
 
 const sourceCommit = 'a'.repeat(40);
 const candidate = { tarball: '/frozen/buildr.tgz', manifest: { sourceCommit, sha256: 'b'.repeat(64), applicationPayloadDigest: `sha256-${'c'.repeat(64)}` } };
 const payload = (root: string) => ({ root, layout: 'installed', manifest: { sourceCommit, applicationPayloadDigest: candidate.manifest.applicationPayloadDigest } });
+
+test('the Browser entry binds the preserved product source while still verifying its repaired checkout', t => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-source-'));
+  t.after(() => fs.rmSync(repo, { recursive: true, force: true }));
+  const root = path.join(repo, 'projects/product/services/buildr');
+  fs.mkdirSync(path.join(root, 'test'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'package.json'), '{}');
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  git('init', '--initial-branch=main'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.com');
+  const commit = () => { git('add', '.'); git('-c', 'commit.gpgSign=false', 'commit', '-m', 'fixture'); return git('rev-parse', 'HEAD'); };
+  const product = commit();
+  fs.writeFileSync(path.join(root, 'test/assertion.ts'), '// repaired assertion');
+  const verifier = commit();
+  const env = { GITHUB_EVENT_NAME: 'workflow_dispatch', BUILDR_CANDIDATE_SOURCE_SHA: verifier, BUILDR_CANDIDATE_PRODUCT_SOURCE: product };
+  assert.equal(resolveCandidateBrowserSource(root, env), product);
+  assert.equal(resolveCandidateBrowserSource(root, { BUILDR_CANDIDATE_SOURCE_SHA: verifier }), verifier);
+  assert.throws(() => resolveCandidateBrowserSource(root, { ...env, BUILDR_CANDIDATE_SOURCE_SHA: product }), /does not match expected/u);
+  assert.throws(() => resolveCandidateBrowserSource(root, { ...env, GITHUB_EVENT_NAME: 'push' }), /controlled candidate entry/u);
+  fs.writeFileSync(path.join(root, 'package.json'), '{"changed":true}');
+  const changed = commit();
+  assert.throws(() => resolveCandidateBrowserSource(root, { ...env, BUILDR_CANDIDATE_SOURCE_SHA: changed }), /build inputs changed/u);
+});
 
 test('Candidate Browser rejects source and Web payload drift before starting the browser', () => {
   assert.throws(() => candidateBrowserWebRoot(candidate, payload('/package'), 'd'.repeat(40)), /exact source-bound/u);

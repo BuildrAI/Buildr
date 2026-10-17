@@ -78,7 +78,10 @@ const allowed: any = new Map([
   ['src/modules/code/application/code-commit-application.ts', new Set(['commitChanges'])],
   ['src/modules/code/infrastructure/code-fetch-refs.ts', new Set(['fetchCodeRemoteRefs'])],
   ['src/modules/code/infrastructure/editable-file.ts', new Set(['replaceEditableFile'])],
-  ['src/modules/connection-skills/persistence/files.ts', new Set(['key', 'writeTeam', 'writeLocal'])],
+  // Removes only its own mkdtemp directory after matching its device and inode.
+  ['src/modules/connection-skills/application/connection-skills-application.ts', new Set(['authorize'])],
+  // relocateLocal exclusively writes the guarded personal-record destination and confirms durability before source removal.
+  ['src/modules/connection-skills/persistence/files.ts', new Set(['key', 'writeTeam', 'writeLocal', 'relocateLocal'])],
 ]);
 
 const violations: any[] = [];

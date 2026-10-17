@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { MAIN_PACKAGE, PLUGIN_PACKAGE, parsePackageCompatibility, type CompatibilityArtifact, type PackageCompatibility } from '../../tools/release/package-compatibility.ts';
-import { evaluateReleasePlan, normalizeReleaseTargets, type PublishedPackageObservation } from '../../tools/release/release-targets.ts';
+import { MAIN_PACKAGE, PLUGIN_PACKAGE, parsePackageCompatibility, type CompatibilityArtifact, type PackageCompatibility } from '../../../../../../skills/buildr-release/scripts/package-compatibility.ts';
+import { evaluateReleasePlan, normalizeReleaseTargets, type PublishedPackageObservation } from '../../../../../../skills/buildr-release/scripts/release-targets.ts';
 
 import { mainCompatibilityFixture, pluginCompatibilityFixture } from '../helpers/package-compatibility-fixtures.ts';
 

@@ -2,7 +2,21 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { BUILDR_CANDIDATE_WORKFLOW, githubReader, publicationMayHaveStarted, PUBLISH_STEP, REPOSITORY, validateBuildrPeerCandidateRun, validateCandidateRun, validateWorkflowInput, verifyBuildrPeerCandidate, verifyPublishRuns, WORKFLOW } from '../../tools/release-workflow.ts';
+import { BUILDR_CANDIDATE_WORKFLOW, githubReader, publicationMayHaveStarted, PUBLISH_STEP, REPOSITORY, validateBuildrPeerCandidateRun, validateCandidateRun, validateWorkflowInput, verifyBuildrPeerCandidate, verifyPublishRuns, WORKFLOW } from '../../../../../../skills/buildr-release/scripts/dsh-plugin/release-workflow.ts';
+import { validateBuildrPeerCandidateAggregate } from '../../../../../../skills/buildr-release/scripts/dsh-plugin/release-workflow.ts';
+import { RELEASE_CHECKS, releaseConsumptionIdentity } from '../../../buildr/test/verification/release/release-consumption.ts';
+
+test('a green remote preparation with local package gaps cannot become a complete Buildr peer', () => {
+  const sourceCommit = 'a'.repeat(40), sourceTree = 'b'.repeat(40);
+  const artifact = { sourceCommit, filename: 'original.tgz', size: 12, sha256: 'c'.repeat(64), integrity: 'sha512-original', applicationPayloadDigest: 'sha256-' + 'd'.repeat(64) };
+  const run = { id: 42, run_attempt: 2 };
+  const aggregate = { status: 'passed', sourceCommit, sourceTree, artifact, consumptionIdentity: releaseConsumptionIdentity(),
+    workflow: { runId: '42', aggregateAttempt: 2 }, evidenceIds: [...new Set(RELEASE_CHECKS.flatMap(check => 'evidence' in check ? [...check.evidence] : []))] };
+  assert.doesNotThrow(() => validateBuildrPeerCandidateAggregate(aggregate, artifact, run, sourceTree));
+  assert.throws(() => validateBuildrPeerCandidateAggregate({ ...aggregate, status: 'incomplete' }, artifact, run, sourceTree), /passed Candidate/u);
+  assert.throws(() => validateBuildrPeerCandidateAggregate({ ...aggregate, workflow: { runId: '43', aggregateAttempt: 2 } }, artifact, run, sourceTree), /aggregate-run-mismatch/u);
+  assert.throws(() => validateBuildrPeerCandidateAggregate({ ...aggregate, artifact: { ...artifact, sha256: 'e'.repeat(64) } }, artifact, run, sourceTree), /sha256 mismatches/u);
+});
 
 const commit = 'a'.repeat(40), version = '0.1.0-rc.1';
 const base = `/repos/${REPOSITORY}/actions`;
@@ -222,7 +236,7 @@ test('main preparation adopts the original verified Candidate without building o
   const workflow = readFileSync(fileURLToPath(new URL('../../../../../../.github/workflows/publish-dsh-plugin.yml', import.meta.url)), 'utf8');
   const prepare = workflow.slice(workflow.indexOf('\n  prepare:'), workflow.indexOf('\n  publish:'));
   const download = prepare.indexOf('- name: Download the original verified plugin Candidate');
-  const adopt = prepare.indexOf('node tools/release-workflow.ts adopt-candidate');
+  const adopt = prepare.indexOf('node ../../../../skills/buildr-release/scripts/dsh-plugin/release-workflow.ts adopt-candidate');
   const upload = prepare.indexOf('- name: Upload the original candidate bytes');
   assert.ok(download >= 0 && adopt > download && upload > adopt);
   assert.ok(prepare.includes('run-id: ${{ inputs.source_candidate_run_id }}'));

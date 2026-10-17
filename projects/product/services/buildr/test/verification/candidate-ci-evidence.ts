@@ -2,15 +2,16 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { isDeepStrictEqual } from 'node:util';
 import { spawnCommandSync } from '../../src/infrastructure/process.ts';
-import { readReleaseArtifact, releaseArtifactManifestName, releasePackMetadataName } from '../../tools/release/release-artifact.ts';
-import { releaseConsumptionIdentity, RELEASE_CHECKS, validateReleaseCheckDefinitions } from '../../tools/release/release-consumption.ts';
+import { readReleaseArtifact, releaseArtifactManifestName, releasePackMetadataName } from '../../../../../../skills/buildr-release/scripts/release-artifact.ts';
+import { releaseConsumptionIdentity, RELEASE_CHECKS, validateReleaseCheckDefinitions } from './release/release-consumption.ts';
 import {
   CANDIDATE_CI_AGGREGATE_SCHEMA,
   CANDIDATE_CI_CHECKPOINT_SCHEMA,
   CANDIDATE_CI_EVIDENCE_SCHEMA,
   CANDIDATE_EXECUTION_PURPOSES,
-} from '../../tools/release/candidate-ci-contract.ts';
+} from './release/candidate-ci-contract.ts';
 import {
   CANDIDATE_CI_HOST_NODE_TUPLES,
   CANDIDATE_CI_PLATFORM_REPEATS,
@@ -19,6 +20,7 @@ import {
 } from './registry.ts';
 import { validateCandidateCiCoverage } from './planner.ts';
 import { CANDIDATE_SOURCE_REUSE_POLICY } from './candidate-source-reuse.ts';
+import { createCandidateSourceBinding } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
 
 export { CANDIDATE_CI_AGGREGATE_SCHEMA, CANDIDATE_CI_CHECKPOINT_SCHEMA, CANDIDATE_CI_EVIDENCE_SCHEMA };
 
@@ -37,6 +39,7 @@ function registryProjection(): any  {
       dependsOn: item.dependsOn,
       consumesArtifact: item.executor.consumesArtifact === true,
       executor: item.executor,
+      platformEvidence: item.platformEvidence ?? null,
       timeoutMs: item.timeoutMs,
       resources: item.resources,
     })),
@@ -71,6 +74,13 @@ export function resolveCandidateExecutionContext(productRoot: any, sourceCommit:
   if (expectedTree && expectedTree !== sourceTree) throw new Error(`Candidate source tree ${sourceTree} does not match expected ${expectedTree}`);
   if (purpose === 'release-rehearsal' && !/^sha256-[a-f0-9]{64}$/u.test(rehearsalIdentity || '')) throw new Error('Release rehearsal requires a closed rehearsal identity.');
   if (purpose === 'candidate' && rehearsalIdentity) throw new Error('Final Candidate must not carry a release rehearsal identity.');
+  if (env.BUILDR_CANDIDATE_PRODUCT_SOURCE) {
+    const local = !Object.entries(env).some(([key, value]) => key.startsWith('GITHUB_') && value);
+    if (purpose !== 'candidate' || !local && env.GITHUB_EVENT_NAME !== 'workflow_dispatch') throw new Error('Candidate repair requires the controlled candidate entry or a local process without GitHub identity.');
+    const sourceBinding = createCandidateSourceBinding(productRoot, env.BUILDR_CANDIDATE_PRODUCT_SOURCE, sourceCommit);
+    return { purpose, sourceCommit: sourceBinding.productSource, sourceTree: sourceBinding.productTree, rehearsalIdentity,
+      verificationSource: sourceCommit, sourceBinding };
+  }
   return { purpose, sourceCommit, sourceTree, rehearsalIdentity };
 }
 
@@ -108,6 +118,10 @@ function resultProjection(results: any): any  {
     exitCode: item.exitCode,
     durationMs: item.durationMs,
     queueDurationMs: item.queueDurationMs ?? null,
+    ...(item.queuedAt ? { queuedAt: item.queuedAt } : {}),
+    ...(item.startedAt ? { startedAt: item.startedAt } : {}),
+    ...(item.finishedAt ? { finishedAt: item.finishedAt } : {}),
+    ...(item.resourceCoordination ? { resourceCoordination: item.resourceCoordination } : {}),
     phases: item.phases ?? [],
     failureCode: item.failureCode ?? null,
     processCleanup: item.processCleanup ?? null,
@@ -118,6 +132,8 @@ function resultProjection(results: any): any  {
     ...(item.disposition ? { disposition: item.disposition } : {}),
     ...(item.reusedFrom ? { reusedFrom: item.reusedFrom } : {}),
     ...(item.sourceRecord ? { sourceRecord: item.sourceRecord } : {}),
+    ...(item.artifactRecord ? { artifactRecord: item.artifactRecord } : {}),
+    ...(item.candidateProof ? { candidateProof: item.candidateProof } : {}),
     ...(item.process ? { process: item.process } : {}),
     diagnostics: item.diagnostics ?? (item.stdoutPath || item.stderrPath ? {
       stdoutFile: item.stdoutPath ? diagnosticFileName(item.stdoutPath) : null,
@@ -202,6 +218,12 @@ export function createCandidateCiEvidence(input: any): any  {
     durationMs: input.durationMs,
     status: passed ? 'passed' : 'failed',
     results,
+    ...(input.checkInputs ? { checkInputs: input.checkInputs } : {}),
+    ...(input.executionEnvironment ? { executionEnvironment: input.executionEnvironment } : {}),
+    ...(input.cleanupClean !== undefined ? { cleanupClean: input.cleanupClean } : {}),
+    ...(input.contextLifecycle ? { contextLifecycle: input.contextLifecycle } : {}),
+    ...(input.fullPlanCoordination ? { fullPlanCoordination: input.fullPlanCoordination } : {}),
+    ...(input.verificationSource ? { verificationSource: input.verificationSource, sourceBinding: input.sourceBinding } : {}),
   };
 }
 
@@ -216,11 +238,80 @@ export function readCandidateCiEvidenceFiles(root: any): any  {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const target: any = path.join(directory, entry.name);
       if (entry.isDirectory()) visit(target);
-      else if (entry.isFile() && /^candidate-ci-evidence-.+\.json$/u.test(entry.name)) results.push(JSON.parse(fs.readFileSync(target, 'utf8')));
+      else if (entry.isFile() && /^candidate-ci-evidence-.+\.json$/u.test(entry.name)) {
+        if (fs.statSync(target).size > 8 * 1024 * 1024) throw new Error(`Candidate evidence exceeds its byte budget: ${entry.name}`);
+        results.push(JSON.parse(fs.readFileSync(target, 'utf8')));
+      }
     }
   };
   visit(path.resolve(root));
   return results;
+}
+
+// Preparation is diagnostic evidence, never a second eligibility authority.
+// A stale, unreadable or missing receipt must not invalidate successful checks.
+export function readCandidateCiPreparationFiles(root: string): any[] {
+  const results: any[] = [];
+  const visit = (directory: string) => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const target = path.join(directory, entry.name);
+      if (entry.isDirectory()) visit(target);
+      else if (entry.isFile() && /-preparation\.json$/u.test(entry.name)) {
+        try {
+          if (fs.statSync(target).size <= 8 * 1024 * 1024) results.push(JSON.parse(fs.readFileSync(target, 'utf8')));
+        } catch { /* Missing diagnostics remain unknown, not a failed check. */ }
+      }
+    }
+  };
+  try {
+    if (fs.statSync(path.resolve(root), { throwIfNoEntry: false })?.isDirectory()) visit(path.resolve(root));
+  } catch { /* An unavailable diagnostic directory does not change check facts. */ }
+  return results;
+}
+
+const observedDuration = (value: any): number | null => Number.isFinite(value) && value >= 0 ? value : null;
+
+export function candidateCiTiming(evidence: any[], preparations: any[] = []): any {
+  return {
+    // These are parallel, possibly nested observations. Their durations are not additive.
+    durationSemantics: 'per-observation-not-additive',
+    platformQueueDurationMs: null,
+    agentDurationMs: null,
+    unknown: ['platform-queue-not-observed', 'agent-time-not-recorded'],
+    checks: evidence.map(item => {
+      const runId = item.workflow?.runId, runAttempt = workflowAttempt(item.workflow?.runAttempt);
+      const matching = preparations.filter(preparation => preparation?.schemaVersion === 'buildr.candidate-environment-preparation/v1'
+        && preparation.id === item.id && preparation.sourceCommit === (item.verificationSource ?? item.sourceCommit)
+        && runId != null && String(preparation.workflow?.runId) === String(runId) && runAttempt !== null
+        && workflowAttempt(preparation.workflow?.runAttempt) === runAttempt);
+      const preparation = matching.length === 1 ? matching[0] : null;
+      return {
+        id: item.id, workflow: item.workflow ?? null,
+        startedAt: item.startedAt ?? null, finishedAt: item.finishedAt ?? null, elapsedMs: observedDuration(item.durationMs),
+        preparation: preparation ? {
+          status: preparation.status, profile: preparation.profile, node: preparation.node ?? null,
+          startedAt: preparation.startedAt ?? null, finishedAt: preparation.finishedAt ?? null,
+          elapsedMs: observedDuration(preparation.durationMs),
+          operations: (Array.isArray(preparation.operations) ? preparation.operations : []).filter((operation: any) => operation && typeof operation === 'object').map((operation: any) => ({
+            id: operation.id, status: operation.status, disposition: operation.disposition ?? 'unknown',
+            startedAt: operation.startedAt ?? null, finishedAt: operation.finishedAt ?? null,
+            elapsedMs: observedDuration(operation.durationMs),
+            ...(operation.reusedFrom ? { reusedFrom: operation.reusedFrom } : {}),
+          })),
+        } : { status: 'unknown', elapsedMs: null, reason: matching.length > 1 ? 'preparation-record-ambiguous' : 'matching-preparation-not-observed' },
+        contextLifecycle: item.contextLifecycle ?? null,
+        fullPlanCoordination: item.fullPlanCoordination ?? null,
+        results: (item.results ?? []).map((result: any) => ({
+          id: result.id, disposition: result.disposition ?? (result.status === 'blocked' ? 'not-executed' : 'executed'), elapsedMs: observedDuration(result.durationMs),
+          queueDurationMs: result.disposition === 'reused' ? null : observedDuration(result.queueDurationMs),
+          resourceCoordination: result.disposition === 'reused' ? null : result.resourceCoordination ?? null,
+          phases: result.disposition === 'reused' ? [] : result.phases ?? [],
+          // Reused phases and time describe their origin, not work done by this run.
+          ...(result.reusedFrom ? { reusedFrom: result.reusedFrom, originPhases: result.phases ?? [] } : {}),
+        })),
+      };
+    }),
+  };
 }
 
 function evidenceFinding(code: any, id: any, detail: any): any  {
@@ -241,7 +332,7 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any
     findings.push(evidenceFinding('workflow-aggregate-attempt-invalid', 'Candidate gate', expectedWorkflow?.runAttempt ?? null));
   }
   const expected: any = new Map([
-    ...CANDIDATE_CI_SHARDS.map((item: any) => [item.id, { kind: 'shard', runner: item.runner, primaryStepIds: item.stepIds, requiresArtifact: item.requiresArtifact || item.producesArtifact }]),
+    ...CANDIDATE_CI_SHARDS.map((item: any) => [item.id, { kind: 'shard', runner: item.runner, platformScope: item.platformScope, primaryStepIds: item.stepIds, requiresArtifact: item.requiresArtifact || item.producesArtifact }]),
     ...CANDIDATE_CI_HOST_NODE_TUPLES.map((item: any) => [item.id, { kind: 'host-node', runner: item.runner, primaryStepIds: [], requiresArtifact: true, requestedNode: item.requestedNode }]),
   ]);
   const byId: any = new Map();
@@ -262,7 +353,8 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any
       continue;
     }
     if (item.kind !== expectation.kind) findings.push(evidenceFinding('kind-mismatch', id, item.kind));
-    if (item.runner?.os !== expectation.runner) findings.push(evidenceFinding('runner-mismatch', id, item.runner?.os));
+    if (expectation.platformScope?.kind === 'common' ? !['macos', 'windows'].includes(item.runner?.os)
+      : item.runner?.os !== expectation.runner) findings.push(evidenceFinding('runner-mismatch', id, item.runner?.os));
     if (item.sourceCommit !== expectedContext.sourceCommit) findings.push(evidenceFinding('source-mismatch', id, item.sourceCommit));
     if (item.sourceTree !== expectedContext.sourceTree) findings.push(evidenceFinding('source-tree-mismatch', id, item.sourceTree));
     if (item.purpose !== expectedContext.purpose) findings.push(evidenceFinding('purpose-mismatch', id, item.purpose));
@@ -277,17 +369,25 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any
       else if (expectedRunAttempt !== null && itemRunAttempt > expectedRunAttempt) findings.push(evidenceFinding('workflow-attempt-future', id, itemRunAttempt));
       if (itemRunId === expectedRunId && itemRunAttempt !== null) evidenceAttempts.push({ id, runAttempt: itemRunAttempt });
     }
-    if (item.status !== 'passed' || item.results.some((result: any) => result.status !== 'passed')) findings.push(evidenceFinding('result-not-passed', id, item.status));
+    if (item.status !== 'passed' || item.results.some((result: any) => result.status !== 'passed' || result.exitCode !== 0
+      || result.childExitCode !== undefined && result.childExitCode !== 0 || result.childOutcome !== undefined && result.childOutcome !== 'passed'
+      || result.childSignal !== undefined && result.childSignal !== null)) findings.push(evidenceFinding('result-not-passed', id, item.status));
     if (JSON.stringify(item.primaryStepIds) !== JSON.stringify(expectation.primaryStepIds)) findings.push(evidenceFinding('primary-steps-mismatch', id, item.primaryStepIds));
     for (const stepId of expectation.primaryStepIds) {
       const stepResult = item.results.find((result: any) => result.id === stepId);
       if (!stepResult) findings.push(evidenceFinding('primary-result-missing', id, stepId));
+      else if (stepResult.disposition === 'reused' && stepResult.candidateProof) {
+        if (!options.validateCandidateProof?.(stepResult, id)) findings.push(evidenceFinding('candidate-repair-proof-invalid', id, stepId));
+      }
+      else if (stepResult.disposition === 'reused' && stepResult.artifactRecord) {
+        if (!options.validateArtifactRecord?.(stepResult.artifactRecord, id, item.artifact, stepId)) findings.push(evidenceFinding('artifact-reuse-invalid', id, stepId));
+      }
       else if (stepResult.disposition === 'reused') {
         if (!stepResult.sourceRecord || !options.validateSourceRecord?.(stepResult.sourceRecord, stepId, expectation.runner)) {
           findings.push(evidenceFinding('source-reuse-invalid', id, stepId));
         }
       }
-      else if (stepId === 'artifact-browser-core') {
+      if (stepResult && stepId === 'artifact-browser-core') {
         for (const phaseId of ['artifact-unpack', 'artifact-verify', 'browser:core', 'artifact-cleanup']) {
           const phases = (stepResult.phases ?? []).filter((phase: any) => phase.scope === 'candidate-browser-core' && phase.id === phaseId);
           if (phases.length === 0) findings.push(evidenceFinding('browser-phase-missing', id, phaseId));
@@ -297,14 +397,28 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any
       }
     }
     if (expectation.requestedNode && item.requestedNode !== expectation.requestedNode) findings.push(evidenceFinding('host-node-request-mismatch', id, item.requestedNode));
+    if (expectation.kind === 'host-node') for (const result of item.results) {
+      if (result.disposition === 'reused' && !(result.artifactRecord
+        ? options.validateArtifactRecord?.(result.artifactRecord, id, item.artifact, result.id)
+        : options.validateCandidateProof?.(result, id))) findings.push(evidenceFinding('candidate-repair-proof-invalid', id, result.id));
+    }
+    if (expectation.kind === 'host-node' && (item.results.length !== 1 || item.results[0]?.id !== 'host-node-compatibility')) findings.push(evidenceFinding('host-node-result-missing', id, null));
+    if (expectedContext.sourceBinding && (item.verificationSource !== expectedContext.verificationSource
+      || !isDeepStrictEqual(item.sourceBinding, expectedContext.sourceBinding))) findings.push(evidenceFinding('verification-source-mismatch', id, item.verificationSource));
     if (expectation.requiresArtifact && !item.artifact) findings.push(evidenceFinding('artifact-missing', id, null));
     if (item.artifact) {
       if (item.artifact.sourceCommit !== expectedContext.sourceCommit) findings.push(evidenceFinding('artifact-source-mismatch', id, item.artifact.sourceCommit));
       if (!artifactIdentity) artifactIdentity = item.artifact;
-      else if (JSON.stringify(item.artifact) !== JSON.stringify(artifactIdentity)) findings.push(evidenceFinding('artifact-identity-mismatch', id, item.artifact.sha256));
+      else if (!isDeepStrictEqual(item.artifact, artifactIdentity)) findings.push(evidenceFinding('artifact-identity-mismatch', id, item.artifact.sha256));
     }
   }
   for (const id of byId.keys()) if (!expected.has(id)) findings.push(evidenceFinding('unexpected-evidence', id, null));
+  const deferredIds = Array.isArray(options.deferredIds) ? [...new Set(options.deferredIds)] as string[] : [];
+  const validDeferred = deferredIds.every(id => {
+    const descriptor = expected.get(id);
+    return descriptor?.requiresArtifact && !CANDIDATE_CI_SHARDS.some((shard: any) => shard.id === id && shard.producesArtifact);
+  });
+  const awaitingLocal = validDeferred && findings.length > 0 && findings.every(item => item.code === 'evidence-missing' && deferredIds.includes(item.id));
   return {
     schemaVersion: CANDIDATE_CI_AGGREGATE_SCHEMA,
     purpose: expectedContext.purpose,
@@ -319,8 +433,11 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any
       aggregateAttempt: expectedRunAttempt,
       evidenceAttempts: evidenceAttempts.sort((left: any, right: any) => left.id.localeCompare(right.id)),
     },
-    status: findings.length === 0 ? 'passed' : 'failed',
+    status: findings.length === 0 ? 'passed' : awaitingLocal ? 'incomplete' : 'failed',
+    ...(awaitingLocal ? { deferredIds: findings.map(item => item.id).sort(), awaiting: 'local-artifact-verification' } : {}),
     evidenceIds: [...byId.keys()].sort(),
     findings,
+    timing: candidateCiTiming([...byId.values()], options.preparations),
+    ...(expectedContext.sourceBinding ? { verificationSource: expectedContext.verificationSource, sourceBinding: expectedContext.sourceBinding } : {}),
   };
 }

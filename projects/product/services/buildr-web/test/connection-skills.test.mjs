@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createApiClient } from '../src/api/client.ts';
 import { createConnectionSkillsClient } from '../src/features/connection-skills/api/connection-skills-api.ts';
-import { afterPersonalSave, afterTeamSave, authenticationDraftsAfterRead, bindingFor, bindingKey, categoryLabel, connectionSystems, createDraftRequestScope, draftHookInput, draftObservations, fieldDefaults, hooksAvailable, personalDraftDirty, personalDraftFor, validateFields, websiteHref, withFieldValue } from '../src/features/connection-skills/connection-skill-form.ts';
+import { afterPersonalSave, afterTeamSave, authenticationDraftsAfterRead, authenticationSourceAllowed, authorizationAccountLabel, bindingFor, bindingKey, categoryLabel, connectionDraftChanged, connectionEnvironmentHidden, connectionSystems, createDraftRequestScope, draftHookInput, draftObservations, fieldDefaults, hooksAvailable, personalAuthenticationOnly, personalDraftDirty, personalDraftFor, validateFields, websiteHref, withFieldValue } from '../src/features/connection-skills/connection-skill-form.ts';
 import { tabForPath } from '../src/app/workspace-pages.ts';
 import { connectionFieldLabel, connectionSummaryLines, displayFieldLabels, fieldLabelsAfterRead } from '../src/features/connection-skills/connection-skill-summary.ts';
+import { sortConnectionInstances } from '../src/features/connection-skills/connection-skill-list.ts';
 
 const entry = {
   definition: { schemaVersion: 'buildr.connection-definition/v1', definitionId: 'custom', name: '自制接入', category: 'custom', configVersion: 1,
@@ -16,6 +17,31 @@ const entry = {
 const instance = { id: 'instance-a', binding: bindingFor(entry), config: { endpoint: 'https://custom.example.test/', scope: 'default' }, teamRevision: 'team-current', localRevision: 'local-current',
   authentication: { source: 'personal', team: { configured: true, values: { username: 'team' } }, personal: { present: true, configured: true, values: { username: 'person' } } } };
 
+test('连接按类别聚集，同类保留输入顺序且未知类别同样适用', () => {
+  const input = Object.freeze([
+    { id: 'logs-a', category: 'logs' },
+    { id: 'mysql', category: 'data-source', name: 'Z MySQL', environment: 'prod' },
+    { id: 'custom-a', category: 'company-custom' },
+    { id: 'nacos', category: 'configuration' },
+    { id: 'yearning', category: 'data-source', name: 'A Yearning', environment: 'qa' },
+    { id: 'custom-b', category: 'company-custom' },
+  ].map(Object.freeze));
+  const before = [...input], result = sortConnectionInstances(input);
+  assert.deepEqual(result.map(row => row.id), ['custom-a', 'custom-b', 'nacos', 'mysql', 'yearning', 'logs-a']);
+  assert.notEqual(result, input);
+  assert.deepEqual(input, before, 'Display ordering never changes the directory snapshot.');
+  assert.equal(result[3], input[1], 'Rows retain their exact object identity and execution binding.');
+});
+
+test('排序权重相同但机器键不同的类别仍分别聚集', () => {
+  const input = [
+    { id: 'decomposed-first', category: 'e\u0301' },
+    { id: 'composed', category: '\u00e9' },
+    { id: 'decomposed-second', category: 'e\u0301' },
+  ];
+  assert.deepEqual(sortConnectionInstances(input).map(row => row.id), ['decomposed-first', 'decomposed-second', 'composed']);
+});
+
 test('草稿明确测试团队组而不改变已保存个人来源，不展开保持的秘密', () => {
   const before = structuredClone(instance);
   const input = draftHookInput(entry, instance, instance.config, { source: 'team', intent: 'keep' });
@@ -23,6 +49,56 @@ test('草稿明确测试团队组而不改变已保存个人来源，不展开�
   assert.deepEqual(input.authentication, { source: 'team', intent: 'keep' });
   assert.deepEqual(input.expected, { teamRevision: 'team-current', definitionRevision: 'definition-current', localRevision: 'local-current' });
   assert.deepEqual(instance, before);
+});
+
+test('个人模式只选择本机个人完整组，缺省声明继续兼容团队与个人', () => {
+  const personal = structuredClone(entry);
+  personal.definition.authentication.allowedSources = ['personal'];
+  assert.equal(personalAuthenticationOnly(personal), true);
+  assert.equal(personalAuthenticationOnly(entry), false);
+  assert.equal(personalAuthenticationOnly(undefined), false);
+  assert.throws(() => draftHookInput(personal, instance, instance.config, { source: 'team', intent: 'keep' }), /不支持所选认证来源/);
+  const kept = draftHookInput(personal, instance, instance.config, { source: 'personal', intent: 'keep' }, 'scopes');
+  assert.deepEqual(kept.authentication, { source: 'personal', intent: 'keep' });
+  assert.equal(kept.expected.localRevision, instance.localRevision);
+  assert.throws(() => draftHookInput(personal, instance, instance.config, { source: 'personal', intent: 'replace', values: { username: 'other' } }), /密码/);
+  const teamOnly = structuredClone(entry); teamOnly.definition.authentication.allowedSources = ['team'];
+  assert.equal(personalAuthenticationOnly(teamOnly), false);
+  assert.equal(authenticationSourceAllowed(teamOnly, 'personal'), false);
+  assert.equal(authenticationSourceAllowed(teamOnly, 'team'), true);
+  assert.equal(authenticationSourceAllowed(entry, 'personal'), true);
+  assert.throws(() => draftHookInput(teamOnly, instance, instance.config, { source: 'personal', intent: 'keep' }), /不支持所选认证来源/);
+});
+
+test('旧版共享认证通过保全迁移接口搬到本机，旧个人来源仍可单独移除', async () => {
+  const requests = [], expected = { teamRevision: 'team-current', definitionRevision: 'definition-current', localRevision: 'local-current' };
+  const client = createConnectionSkillsClient(async (url, init) => { requests.push({ url, init }); return { instance, migrated: true, sourceRemoved: true }; }, 'workspace');
+  await client.migratePersonal(instance.id, { source: { id: instance.id, authenticationSource: 'team', expected }, expected, removeSource: true });
+  assert.equal(requests.length, 1); assert.equal(requests[0].init.method, 'POST');
+  assert.equal(requests[0].url, '/api/v1/workspaces/workspace/connection-skills/instances/instance-a/auth/migrate');
+  assert.deepEqual(JSON.parse(requests[0].init.body), { source: { id: instance.id, authenticationSource: 'team', expected }, expected, removeSource: true });
+  assert.equal(requests[0].init.body.includes('password'), false, 'The browser never round-trips the old stored secret during migration.');
+  await client.savePersonal(instance.id, { intent: 'remove', expected });
+  assert.equal(requests[1].init.method, 'PUT'); assert.deepEqual(JSON.parse(requests[1].init.body), { intent: 'remove', expected });
+});
+
+test('查看个人秘密是显式带版本的非缓存POST，普通读取不触发查看', async t => {
+  const requests = [], expected = { teamRevision: 'team-current', definitionRevision: 'definition-current', localRevision: 'local-current' };
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    requests.push({ url, init });
+    return new Response(JSON.stringify(url.endsWith('/reveal') ? { field: 'password', value: 'fictional-personal-secret' } : { instance }), { headers: { 'content-type': 'application/json' } });
+  });
+  const client = createConnectionSkillsClient(createApiClient({ getWorkspaceId: () => 'ignored', sessionAdapter: { writeHeaders: () => ({ 'x-buildr-session': 'fixture' }) } }), 'workspace');
+  await client.get(instance.id);
+  assert.equal(requests.length, 1); assert.equal(requests[0].url.endsWith('/reveal'), false);
+  const controller = new AbortController();
+  assert.deepEqual(await client.revealPersonal(instance.id, { field: 'password', expected }, controller.signal), { field: 'password', value: 'fictional-personal-secret' });
+  const request = requests[1];
+  assert.equal(request.url, '/api/v1/workspaces/workspace/connection-skills/instances/instance-a/auth/reveal');
+  assert.equal(request.init.method, 'POST'); assert.equal(request.init.cache, 'no-store');
+  assert.equal(request.init.headers.get('x-buildr-session'), 'fixture'); assert.equal(request.init.signal, controller.signal);
+  assert.deepEqual(JSON.parse(request.init.body), { field: 'password', expected });
+  assert.equal(request.init.body.includes('fictional-personal-secret'), false);
 });
 
 test('不完整个人候选不回退团队，目标变化不能保持旧认证', () => {
@@ -256,4 +332,46 @@ test('重读刷新保持认证的公开身份与干净基线，明确更换和�
   assert.equal(personalDraftDirty(removal.personalBaseline, { ...removal.personal, enabled: true }), false, 'Cancelling removal returns to the fresh saved account.');
   const untouchedBlank = authenticationDraftsAfterRead(fresh, { intent: 'replace', values: {}, edited: false }, personalDraftFor(), personalDraftFor());
   assert.equal(untouchedBlank.team.intent, 'keep'); assert.equal(untouchedBlank.personal.values.username, 'new-person'); assert.equal(personalDraftDirty(untouchedBlank.personalBaseline, untouchedBlank.personal), false);
+});
+
+
+test('连接环境展示仅消费明确声明，账号摘要不回退内部字段', () => {
+  const managed = structuredClone(entry);
+  managed.definition.presentation = { environment: 'hidden', summaryFields: [] };
+  managed.definition.authentication.authorization = { program: 'cli', args: ['authorize'], inputs: ['config.endpoint'], label: '登录授权', reauthorizeLabel: '重新授权', timeoutMs: 30000 };
+  assert.equal(connectionEnvironmentHidden(entry), false); assert.equal(connectionEnvironmentHidden(undefined), false); assert.equal(connectionEnvironmentHidden(managed), true);
+  assert.equal(authorizationAccountLabel(managed, instance), '', 'No declaration means no username or internal user ID fallback.');
+  managed.definition.authentication.authorization.accountLabelField = 'username';
+  assert.equal(authorizationAccountLabel(managed, instance), 'person');
+  managed.definition.authentication.authorization.accountLabelField = 'password';
+  assert.equal(authorizationAccountLabel(managed, { ...instance, authentication: { ...instance.authentication, personal: { ...instance.authentication.personal, values: { password: 'never-display' } } } }), '');
+});
+
+test('授权前识别非秘密配置草稿且不因身份观察变化丢弃草稿', () => {
+  const saved = { ...instance, name: '连接', environment: '', enabled: true, fieldLabels: {} };
+  const draft = { name: '连接', environment: '', enabled: true, config: { scope: 'default', endpoint: instance.config.endpoint }, fieldLabels: {} };
+  assert.equal(connectionDraftChanged(saved, draft), false);
+  assert.equal(connectionDraftChanged(saved, { ...draft, name: '新名称' }), true);
+  assert.equal(connectionDraftChanged(saved, { ...draft, config: { ...draft.config, scope: 'other' } }), true);
+  assert.equal(connectionDraftChanged(saved, { ...draft, fieldLabels: { scope: { value: 'default', label: '范围' } } }), true);
+  assert.equal(connectionDraftChanged(undefined, draft), false, 'A new connection may save its shell as part of the explicit authorization action.');
+});
+
+test('授权方法的发现保持宿主完整认证，不要求前端接收内部账号字段', () => {
+  const managed = structuredClone(entry); managed.definition.authentication.allowedSources = ['personal'];
+  managed.definition.authentication.authorization = { program: 'cli', args: ['authorize'], inputs: ['config.endpoint'], label: '登录授权', reauthorizeLabel: '重新授权', timeoutMs: 30000 };
+  const projected = { ...instance, authentication: { ...instance.authentication, personal: { ...instance.authentication.personal, values: {} } } };
+  assert.deepEqual(draftHookInput(managed, projected, instance.config, { source: 'personal', intent: 'keep' }, 'scopes').authentication, { source: 'personal', intent: 'keep' });
+  assert.throws(() => draftHookInput(managed, projected, instance.config, { source: 'personal', intent: 'replace', values: { username: 'person', password: 'manual' } }), /请先授权/);
+  assert.throws(() => draftHookInput(managed, { ...projected, authentication: { ...projected.authentication, personal: { ...projected.authentication.personal, configured: false } } }, instance.config, { source: 'personal', intent: 'keep' }), /请先授权/);
+});
+
+test('授权请求只传准确实例观察并支持取消，不把内部认证交给网页', async () => {
+  const requests = [], expected = { teamRevision: 'team-current', localRevision: 'local-current', definitionRevision: 'definition-current' }, controller = new AbortController();
+  const client = createConnectionSkillsClient(async (url, init) => { requests.push({ url, init }); return { status: 'success', instance }; }, 'selected/workspace');
+  assert.equal((await client.authorizePersonal(instance.id, { expected }, controller.signal)).status, 'success');
+  assert.equal(requests[0].url, '/api/v1/workspaces/selected%2Fworkspace/connection-skills/instances/instance-a/auth/authorize');
+  assert.equal(requests[0].init.method, 'POST'); assert.equal(requests[0].init.signal, controller.signal);
+  assert.deepEqual(JSON.parse(requests[0].init.body), { expected });
+  assert.equal(requests.length, 1);
 });

@@ -4,15 +4,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { gzipSync } from 'node:zlib';
-import { artifactFromTarball } from '../../tools/release/package-artifact-observation.ts';
-import { readHostedPluginCandidate, readHostedPluginJournal, reconcilePluginPreparationPointer, runPluginHostedOperation, validatePluginHostedRun, readHostedPluginNoWriteProof, validatePluginNoWriteProof } from '../../tools/release/plugin-hosted-release.ts';
-import { createReleaseCandidate, PLUGIN_SERVICE_PATH, SOURCE_SDK_MANIFEST, sourceSdkIdentityFromFiles } from '../../../dsh-plugin/tools/release-candidate.ts';
+import { artifactFromTarball } from '../../../../../../skills/buildr-release/scripts/package-artifact-observation.ts';
+import { readHostedPluginCandidate, readHostedPluginJournal, reconcilePluginPreparationPointer, runPluginHostedOperation, validatePluginHostedRun, readHostedPluginNoWriteProof, validatePluginNoWriteProof } from '../../../../../../skills/buildr-release/scripts/plugin-hosted-release.ts';
+import { createReleaseCandidate, PLUGIN_SERVICE_PATH, SOURCE_SDK_MANIFEST, sourceSdkIdentityFromFiles } from '../../../../../../skills/buildr-release/scripts/dsh-plugin/release-candidate.ts';
 import { archiveTreeIdentity } from '../../../dsh-plugin/tools/verify-all.ts';
 import { identity } from '../../../dsh-plugin/tools/verify-buildr-plugin-pair.ts';
-import { createPluginCandidateAdoption } from '../../../dsh-plugin/tools/candidate-adoption.ts';
-import { createPackageReleaseContext, validatePackageReleaseContext } from '../../tools/release/release-package-evidence.ts';
-import { normalizeReleaseTargets, evaluateReleasePlan } from '../../tools/release/release-targets.ts';
-import { validatePluginRecovery } from '../../tools/release/package-release-operation.ts';
+import { createPluginCandidateAdoption } from '../../../../../../skills/buildr-release/scripts/dsh-plugin/candidate-adoption.ts';
+import { createPackageReleaseContext, validatePackageReleaseContext } from '../../../../../../skills/buildr-release/scripts/release-package-evidence.ts';
+import { normalizeReleaseTargets, evaluateReleasePlan } from '../../../../../../skills/buildr-release/scripts/release-targets.ts';
+import { validatePluginRecovery } from '../../../../../../skills/buildr-release/scripts/package-release-operation.ts';
 
 const version = '0.1.0-rc.7', mainSource = 'c'.repeat(40), selectedSource = 'b'.repeat(40), serviceTree = 'e'.repeat(40);
 const repository = 'BuildrAI/Buildr';
@@ -63,6 +63,52 @@ test('unknown dispatch remains a single request even when no run is visible on r
   const pointer: any = {}, hosted = harness({ lostResponse: true });
   for (let attempt = 0; attempt < 3; attempt++) assert.equal(runPluginHostedOperation(options(pointer), hosted.dependencies).status, 'dispatch-unconfirmed');
   assert.equal(hosted.dispatches(), 1); assert.equal(pointer.requested, true); assert.equal(pointer.runId, null);
+});
+
+test('explicit dispatch rejection retains the error and retries only the request on resume', () => {
+  const pointer: any = {}, base = harness({ lists: [[], [], [], [row(22)]] });
+  let attempts = 0;
+  const execute = (command: string, args: string[], config: any) => {
+    if (args[0] === 'workflow' && ++attempts === 1) return { status: 1, stderr: 'HTTP 422: Unexpected inputs provided: obsolete_field', signal: null };
+    return base.dependencies.execute(command, args, config);
+  };
+  const dependencies = { ...base.dependencies, execute };
+  const rejected = runPluginHostedOperation(options(pointer), dependencies);
+  assert.equal(rejected.status, 'dispatch-rejected');
+  assert.equal(rejected.diagnostic.httpStatus, 422);
+  assert.match(rejected.diagnostic.stderr, /obsolete_field/u);
+  assert.equal(rejected.effects[0].state, 'not-applied');
+  assert.equal(pointer.requested, false);
+  assert.equal(runPluginHostedOperation(options(pointer), dependencies).status, 'passed');
+  assert.equal(attempts, 2);
+  assert.equal(pointer.dispatchHistory[0].state, 'rejected');
+  assert.equal(pointer.dispatchHistory[1].state, 'accepted');
+});
+
+test('lost response and subsequent query failure preserve both errors without permitting redispatch', () => {
+  const pointer: any = {}, base = harness();
+  let lists = 0, requests = 0;
+  const dependencies = { ...base.dependencies, execute(command: string, args: string[], config: any) {
+    if (args[0] === 'workflow') { requests++; return { status: null, signal: 'SIGTERM', error: { code: 'ETIMEDOUT', message: 'request timed out' }, stderr: 'response unavailable' }; }
+    if (args[0] === 'run' && ++lists > 1) return { status: 1, stderr: 'HTTP 503: unavailable' };
+    return base.dependencies.execute(command, args, config);
+  } };
+  for (let i = 0; i < 2; i++) {
+    const result = runPluginHostedOperation(options(pointer), dependencies);
+    assert.equal(result.status, 'readback-required');
+    assert.equal(result.diagnostic.httpStatus, 503);
+    assert.equal(pointer.dispatch.diagnostic.systemCode, 'ETIMEDOUT');
+    assert.equal(pointer.dispatch.diagnostic.signal, 'SIGTERM');
+  }
+  assert.equal(requests, 1); assert.equal(pointer.requested, true);
+});
+
+test('default process adapter returns an observable bounded query error without changing request identity', () => {
+  const pointer: any = {};
+  const result = runPluginHostedOperation({ ...options(pointer), ghCommand: '/buildr-test-nonexistent-client/gh' });
+  assert.equal(result.status, 'readback-required');
+  assert.equal(result.diagnostic.systemCode, 'ENOENT');
+  assert.deepEqual(pointer, {}); assert.deepEqual(result.effects, []);
 });
 test('an uncertain main adoption request cannot swap its original source Candidate or selection', () => {
   const pointer:any={},hosted=harness({lostResponse:true});

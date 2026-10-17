@@ -100,6 +100,9 @@ function readManagementRecord(file: any) {
   }
 }
 
+// The default CLI observes the same ownership contract before loading a product runtime.
+export { readManagementRecord as readWorkspaceManagementRecord };
+
 function sameOwner(left: any, right: any) {
   return left?.profileIdentity === right?.profileIdentity
     && left?.channel === right?.channel

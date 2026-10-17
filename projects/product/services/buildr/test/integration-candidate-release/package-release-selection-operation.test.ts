@@ -6,11 +6,13 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { gzipSync } from 'node:zlib';
 import test from 'node:test';
-import { runReleaseOperation } from '../../tools/release/release-orchestration-runner.ts';
-import { containsCredentialMaterial } from '../../tools/release/release-authority.ts';
-import { artifactFromTarball } from '../../tools/release/package-artifact-observation.ts';
-import { createPluginSourceAggregate } from '../../tools/release/verify-pr-candidate.ts';
-import { createReleaseCandidate, PLUGIN_SERVICE_PATH, SOURCE_SDK_MANIFEST, sourceSdkIdentityFromFiles } from '../../../dsh-plugin/tools/release-candidate.ts';
+import { runReleaseOperation } from '../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts';
+import { containsCredentialMaterial } from '../../../../../../skills/buildr-release/scripts/release-authority.ts';
+import { artifactFromTarball } from '../../../../../../skills/buildr-release/scripts/package-artifact-observation.ts';
+import { createPluginSourceAggregate } from '../verification/release/verify-pr-candidate.ts';
+import { preservePluginSourceCandidate } from '../verification/candidate-repair-cli.ts';
+import { PEER_INPUT_SCHEMA } from '../../../dsh-plugin/tools/buildr-peer.ts';
+import { createReleaseCandidate, PLUGIN_SERVICE_PATH, SOURCE_SDK_MANIFEST, sourceSdkIdentityFromFiles } from '../../../../../../skills/buildr-release/scripts/dsh-plugin/release-candidate.ts';
 import { archiveTreeIdentity } from '../../../dsh-plugin/tools/verify-all.ts';
 import { identity } from '../../../dsh-plugin/tools/verify-buildr-plugin-pair.ts';
 
@@ -91,6 +93,46 @@ function git(repo: string, args: string[]): string {
   const value = spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
   assert.equal(value.status, 0, value.stderr); return value.stdout.trim();
 }
+
+test('formal repair preserves actual plugin bytes and peer proof without rebuilding or installing the SDK', t => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'plugin-repair-'));
+  t.after(() => fs.rmSync(repo, { recursive: true, force: true }));
+  const main = path.join(repo, 'projects/product/services/buildr'); fs.mkdirSync(main, { recursive: true });
+  fs.writeFileSync(path.join(main, 'package.json'), '{"name":"@buildr-ai/buildr"}\n');
+  git(repo, ['init', '-b', 'dev']); git(repo, ['config', 'user.name', 'Fixture']); git(repo, ['config', 'user.email', 'fixture@example.com']);
+  git(repo, ['add', '.']); git(repo, ['commit', '-m', 'source']);
+  const sourceCommit = git(repo, ['rev-parse', 'HEAD']), sourceTree = git(repo, ['rev-parse', 'HEAD^{tree}']);
+  const peerBytes = archive({ name: '@buildr-ai/buildr', version: mainVersion, buildrCompatibility: mainCompatibility });
+  const peer = artifactFromTarball(peerBytes, { origin: 'registry', packageName: '@buildr-ai/buildr', version: mainVersion,
+    integrity: 'sha512-' + crypto.createHash('sha512').update(peerBytes).digest('base64') });
+  const owned = pluginCandidate(sourceCommit, sourceTree, peer);
+  const plan = { legacy: false, requirements: { buildr: false, plugin: true }, sourceCommit, sourceTree, serviceTree: sourceTree,
+    pluginVersion, sourceSdk, selection: { packages: ['dsh-plugin'], versions: { 'dsh-plugin': pluginVersion } }, changedPaths: [], workflowSha256: 'a'.repeat(64),
+    registryPeer: { version: peer.version, integrity: peer.integrity } };
+  const previous = createPluginSourceAggregate(plan, owned.candidate, owned.verification, { runId: 42, runAttempt: 1 });
+  const temporaryRoot = path.join(repo, 'temporary'); fs.mkdirSync(temporaryRoot);
+  fs.writeFileSync(path.join(temporaryRoot, 'release-candidate-plan.json'), JSON.stringify(plan));
+  fs.writeFileSync(path.join(temporaryRoot, 'peer.tgz'), peerBytes);
+  fs.writeFileSync(path.join(temporaryRoot, 'plugin-buildr-peer.json'), JSON.stringify({ schemaVersion: PEER_INPUT_SCHEMA, artifact: peer, tarball: 'peer.tgz' }));
+  const requests: string[][] = [];
+  const call = (args: string[]) => {
+    requests.push(args);
+    if (args[0] === 'api') return JSON.stringify({ id: 42, repository: { full_name: 'BuildrAI/Buildr' }, path: '.github/workflows/verify.yml', event: 'workflow_dispatch', status: 'completed', head_sha: sourceCommit, run_attempt: 1 });
+    assert.deepEqual(args.slice(0, 3), ['run', 'download', '42']);
+    const destination = args[args.indexOf('--dir') + 1]!; fs.mkdirSync(destination, { recursive: true });
+    if (args.includes('plugin-candidate-aggregate')) fs.writeFileSync(path.join(destination, 'plugin-candidate-ci-aggregate.json'), JSON.stringify(previous));
+    else { fs.writeFileSync(path.join(destination, 'candidate.json'), JSON.stringify(owned.candidate)); fs.writeFileSync(path.join(destination, owned.candidate.filename), owned.tarballBytes); }
+    return '';
+  };
+  const result = preservePluginSourceCandidate({ repo, temporaryRoot, runId: '42', verificationSource: sourceCommit, workflow: { runId: 52, runAttempt: 1 } }, { call });
+  assert.equal(result.status, 'passed'); assert.equal(result.candidate.sha256, owned.candidate.sha256);
+  const aggregate = JSON.parse(fs.readFileSync(path.join(temporaryRoot, 'plugin-candidate-ci-aggregate.json'), 'utf8'));
+  assert.deepEqual(aggregate.verification, previous.verification); assert.equal(aggregate.workflow.runId, 52);
+  assert.equal(aggregate.reusedFrom.workflow.runId, 42); assert.ok(aggregate.checks.every((check: any) => check.disposition === 'reused'));
+  assert.equal(requests.length, 3);
+  previous.candidate.sha256 = 'b'.repeat(64);
+  assert.throws(() => preservePluginSourceCandidate({ repo, temporaryRoot, runId: '42', verificationSource: sourceCommit, workflow: { runId: 52, runAttempt: 1 } }, { call }), /different bytes|invalid|differs/u);
+});
 
 function fixture(t: any, changes: { mainRuntime?: boolean; omitSourcePatch?: boolean; mutateAggregate?: (value: any) => void } = {}): any {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-package-selection-operation-')));
@@ -304,11 +346,19 @@ releaseSelectionTest('wrong frozen registry peer or source aggregate blocks befo
       assert.deepEqual(value.verification.peer, data.peer);
       mutate(value);
     };
-    const result = await runReleaseOperation(data.options, data.dependencies);
+    const result = await runReleaseOperation({ ...data.options, stopAfter: 'candidate' }, data.dependencies);
     assertReleaseStatus(result, 'blocked'); assert.equal(data.counts().pluginSourceReads, previousReads + 1);
     assert.equal(data.state().sourceCommit, frozenSource);
     assert.equal(git(data.repo, ['rev-parse', frozenRef]), frozenSource);
     assert.equal(data.counts().merges, 0); assert.equal(data.counts().pluginDispatches, 0); assert.equal(data.counts().mainReads, 0);
     assert.ok(data.requests.every((args: string[]) => args[0] !== 'pr')); assert.equal(data.counts().candidateDispatches, 1);
   }));
+  mutateAggregate = () => {};
+  const verified = await runReleaseOperation({ ...data.options, stopAfter: 'candidate' }, data.dependencies);
+  assertReleaseStatus(verified, 'candidate-verified'); assert.equal(verified.sourceCommit, frozenSource); assert.equal(verified.sourceTree, frozenTree);
+  assert.deepEqual(verified.artifacts['dsh-plugin'], data.state().pluginSourceAggregate.candidate);
+  assert.deepEqual(data.state().pluginSourceAggregate.verification.peer, data.peer);
+  assert.equal(data.counts().merges, 0); assert.equal(data.counts().pluginDispatches, 0); assert.equal(data.counts().postMainReads, 0);
+  assert.equal(data.state().context, undefined, 'candidate-only proof does not manufacture protected-main readiness');
+  assert.ok(data.requests.every((args: string[]) => args[0] !== 'pr'));
 });

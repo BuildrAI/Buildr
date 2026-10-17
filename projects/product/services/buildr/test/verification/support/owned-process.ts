@@ -1,6 +1,24 @@
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
 
+async function waitForOwnedChildClose(child: any, timeoutMs: number): Promise<boolean> {
+  if (child.exitCode !== null || child.signalCode !== null) return true;
+  return new Promise(resolve => {
+    const onClose = () => { clearTimeout(timer); resolve(true); };
+    const timer = setTimeout(() => { child.off('close', onClose); resolve(false); }, timeoutMs);
+    child.once('close', onClose);
+  });
+}
+
+/** A signalled child still owns its files until its exit has been confirmed. */
+export async function stopOwnedChildProcess(child: any, timeoutMs = 2_000): Promise<void> {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  child.kill('SIGTERM');
+  if (await waitForOwnedChildClose(child, timeoutMs)) return;
+  child.kill('SIGKILL');
+  if (!await waitForOwnedChildClose(child, timeoutMs)) throw new Error(`Owned child process ${child.pid} did not close after SIGKILL.`);
+}
+
 function parseProcessLineage(output: any) {
   return String(output || '').split('\n').flatMap((line: any) => {
     const match = line.trim().match(/^(\d+)\s+(\d+)(?:\s+(.+))?$/u);

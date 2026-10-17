@@ -12,6 +12,9 @@
 
 ## CLI identity、帮助与错误
 
+- 支持按归属选版的默认 npm `buildr` 在解析业务命令前，优先根据 `--target <dir>`，否则根据当前目录所属工作空间（Workspace）的现有网页管理归属选择发布版或开发版。子目录、符号链接（Symbolic Link）和可证明关系的独立工作树（Worktree）可用于定位；原参数和执行目录保持不变，各业务命令接受的目标位置仍以其帮助为准。
+- 开发版通过本机 Buildr Web Dev 的有效启动登记发现，不要求网页正在运行。未登记目录继续当前 npm；归属损坏、冲突或开发来源不可用时明确失败，不自动换版。默认链接仍由 npm 管理，旧安装须升级入口包后才具备此能力。
+- `update`、`update check`、`installation status`、`web launcher` 和内部安装动作保持当前安装。`web` 不带 `--target` 时保持本安装的目录列表，带目标的普通 `web` 按归属选择；显式 `projects/product/buildr` 和图形启动器（Launcher）继续执行绑定来源。
 - `buildr --version`、`buildr -V` 和 `buildr version` 输出当前实际执行 package 的版本；`buildr version --json` 输出 `buildr.version/v1`。
 - `buildr help <command...>` 与 `buildr <command...> --help` / `-h` 使用同一 canonical 帮助主题。
 - 未知命令默认向 stderr 输出简洁错误、有限建议和 `buildr --help` 提示，并以 2 退出；携带 `--json` 时 stdout 只输出 `buildr.cli-error/v1`，stderr 为空。
@@ -218,12 +221,19 @@ Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git comm
 | `buildr connection-skill get --connection <id> --json` | 读取准确实例及当前 `revision`。 |
 | `buildr connection-skill create --file <json-file\|-> --json` | 从明确输入保存团队实例和认证。 |
 | `buildr connection-skill update --connection <id> --file <json-file\|-> --json` | 核对文件中的已观察版本后更新。 |
-| `buildr connection-skill auth set\|use-team --connection <id> --file <json-file\|-> --json` | 独立保存完整个人认证组，或显式移除个人覆盖。 |
+| `buildr connection-skill auth set\|clear\|use-team --connection <id> --file <json-file\|-> --json` | 独立保存或清除完整本机个人组；恢复团队认证仅在声明允许团队来源时可用。 |
+| `buildr connection-skill auth migrate --connection <目标id> --file <json-file\|-> --json` | 明确迁移准确来源到本机个人组，核对双方观察及认证接收方；应用内部重新绑定，不输出秘密。 |
+| `buildr connection-skill auth relocate --connection <id> --file <json-file\|-> --json` | 将当前本机应用身份的旧个人密文显式迁入规范工作空间 `.buildr/local/` 私有忽略目录；冲突不覆盖。 |
+| `buildr connection-skill auth authorize --connection <id> --file <json-file\|-> --json` | 显式启动所声明的个人授权程序，完整新组只经私有通道加密保存，不输出令牌；取消或提交前失败保留原组。 |
 | `buildr connection-skill remove --connection <id> --expected-revision <revision> --json` | 删除已观察实例，不操作外部数据。 |
 | `buildr connection-skill check\|help\|test --connection <id> --json` | 分别核对程序依赖、读取离线帮助及执行只读测试。 |
 | `buildr connection-skill run --connection <id> --expected-revision <revision> --program cli -- <专业参数>` | 向所选专业程序交接准确实例；认证不进入参数或普通输入。 |
 
 所有命令可指定 `--target`。配置及认证只从受支持输入读取，不在参数中传密码；个人组存在时整组覆盖，失效不自动回退团队。执行前重读当前观察，冲突后重新判断。Nacos、Kibana 和 XXL-JOB 的详细动作查所选技能（Skill）及程序帮助，通用入口不维护另一份专业命令表。更多使用方法见[外部系统连接](../resources/runtime/skills/buildr/references/external-connections.md)。
+
+`authentication.allowedSources: [personal]` 的定义只使用本机个人组，不使用或保存共享认证。`auth clear` 只移除本机组，不自动换账号；`auth use-team` 对此模式明确拒绝。`auth relocate` 输入为 `{expected:{teamRevision,localRevision,definitionRevision}}`；`auth migrate` 输入为 `{source:{id,authenticationSource,expected:{teamRevision,localRevision,definitionRevision}},expected:{teamRevision,localRevision,definitionRevision},removeSource:boolean}`，源和目标观察都须刚读取。迁移仅在同一绑定来源与准确认证接收目标间进行，目标已有不同个人组时停止；源删除明确指定且必须晚于目标保全。配置不兼容的旧实例只能作为可证明认证目标未变的迁移来源，目标须为当前兼容实例，不自动改写旧绑定。本人查看已保存密码仅由界面的显式单字段动作提供，不设输出秘密的命令行接口（CLI）。
+
+`auth authorize` 同样使用 `{expected:{teamRevision,localRevision,definitionRevision}}`，无需读取或输入认证值。它只启动当前声明的专用个人授权程序；首次和重新授权使用同一准确实例动作，浏览器依赖、外部登录和范围由专业方法说明。成功结果只包含遮蔽后的实例；等待期间可以取消，提交前取消或失败不替换旧组。若保存已发生而持久化核验未确认，按实际诊断重新读取，不自动再次授权。
 
 旧 `buildr connection` 已退役并提示现行入口，旧网页地址跳转到连接目录，旧应用接口返回退役结果。旧数据直接清理，不迁移为团队实例或新个人认证；按需要在现行入口自行建立实例。
 
@@ -304,7 +314,7 @@ Contract 格式、scope 规则、替换示例以及 `ready` 的边界见 [Skill 
 
 ## 内部实现边界
 
-`bin/buildr.mjs` 是稳定的 npm 命令入口。正式安装包包含打包后的 `runtime/buildr.cjs` 与 `payload/`，不依赖开发目录中的完整 `src/` 模块树；具体内容由[发布打包实现](../tools/release/release-artifact.ts)确定。内部文件不是公开 JavaScript 接口（API），不承诺文件级导入兼容；维护约定见[命令架构](cli-architecture.md)。
+`bin/buildr.mjs` 是稳定的 npm 命令入口。正式安装包包含打包后的 `runtime/buildr.cjs` 与 `payload/`，不依赖开发目录中的完整 `src/` 模块树；具体内容由[发布打包实现](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/release-artifact.ts)确定。内部文件不是公开 JavaScript 接口（API），不承诺文件级导入兼容；维护约定见[命令架构](cli-architecture.md)。
 
 ## 远端 Skill 请求
 

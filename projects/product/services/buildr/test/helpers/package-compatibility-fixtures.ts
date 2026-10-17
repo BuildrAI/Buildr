@@ -1,4 +1,4 @@
-import type { PackageCompatibility } from '../../tools/release/package-compatibility.ts';
+import type { PackageCompatibility } from '../../../../../../skills/buildr-release/scripts/package-compatibility.ts';
 
 /** Representative public contracts for pure planning tests; source authority is checked separately. */
 export const mainCompatibilityFixture: PackageCompatibility = {

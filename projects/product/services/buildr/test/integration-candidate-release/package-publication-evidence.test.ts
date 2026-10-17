@@ -4,12 +4,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { createReleaseContext, releaseContextIdentity } from '../../tools/release/release-readiness.ts';
-import { createReleaseTransactionEvidence } from '../../tools/release/release-transaction-evidence.ts';
-import { createPackagePublicationEvidence, createPackageReleaseContext, validatePackageOwnerPublication, validatePackagePublicationEvidence, validatePackageReleaseContext, packageExecutionCommit } from '../../tools/release/release-package-evidence.ts';
-import { normalizeReleaseTargets } from '../../tools/release/release-targets.ts';
-import { createReleaseExecutionBinding } from '../../tools/release/release-execution-binding.ts';
-import { cleanupReleaseSelection, createReleaseSelection, freezeReleaseSelection, selectReleaseCommit } from '../../tools/release/release-selection.ts';
+import { createReleaseContext, releaseContextIdentity } from '../../../../../../skills/buildr-release/scripts/release-readiness.ts';
+import { createReleaseTransactionEvidence } from '../../../../../../skills/buildr-release/scripts/release-transaction-evidence.ts';
+import { createPackagePublicationEvidence, createPackageReleaseContext, validatePackageOwnerPublication, validatePackagePublicationEvidence, validatePackageReleaseContext, packageExecutionCommit } from '../../../../../../skills/buildr-release/scripts/release-package-evidence.ts';
+import { normalizeReleaseTargets } from '../../../../../../skills/buildr-release/scripts/release-targets.ts';
+import { createReleaseExecutionBinding } from '../../../../../../skills/buildr-release/scripts/release-execution-binding.ts';
+import { cleanupReleaseSelection, createReleaseSelection, freezeReleaseSelection, selectReleaseCommit } from '../../../../../../skills/buildr-release/scripts/release-selection.ts';
 
 const hash = (value: string) => value.repeat(40);
 const digest = (value: string) => 'sha256-' + value.repeat(64);

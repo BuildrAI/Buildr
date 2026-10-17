@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
+import { execFileSync } from 'node:child_process';
 import { createRuntime, runtimeContributions, runtimeProvide } from '../helpers/runtime-harness.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { CODEX_DESKTOP_APPLICATION } from '../../src/modules/codex-desktop/module.ts';
@@ -14,8 +15,11 @@ import { TASK_QUERY_APPLICATION } from '../../src/modules/task/module.ts';
 import { WORKSPACE_APPLICATION, WORKSPACE_QUERY } from '../../src/modules/workspace/module.ts';
 import { AGENT_OPERATIONS_APPLICATION, type AgentOperationsApplication } from '../../src/modules/agent-operations/module.ts';
 
-const isolated = Boolean(process.env.BUILDR_SMOKE_ROOT);
-test('Codex desktop production module composes registered Workspace/Task identities and HTTP relations', { skip: !isolated && 'Run through tools/development/run-isolated-workspace-smoke.ts.' }, async t => {
+test('Codex desktop production module composes registered Workspace/Task identities and HTTP relations', async t => {
+  if (!process.env.BUILDR_SMOKE_ROOT) {
+    const output = execFileSync(process.execPath, [path.resolve(import.meta.dirname, '../../tools/development/run-isolated-workspace-smoke.ts'), '--script', import.meta.filename], { encoding: 'utf8', timeout: 60_000 });
+    assert.match(output, /"status":"passed"/); assert.match(output, /"cleanup":"cleaned"/); return;
+  }
   const base = process.env.BUILDR_SMOKE_ROOT!, root = process.env.BUILDR_SMOKE_WORKSPACE_ROOT!;
   for (const directory of [root, process.env.BUILDR_APP_DATA_DIR!, process.env.BUILDR_PRODUCT_DATA_DIR!]) {
     assert.equal(path.isAbsolute(directory), true);

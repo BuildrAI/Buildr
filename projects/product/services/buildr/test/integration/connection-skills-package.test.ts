@@ -5,8 +5,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import YAML from 'yaml';
-import { buildApplicationPayload } from '../../tools/release/application-payload.ts';
-import { createReleaseArtifact } from '../../tools/release/release-artifact.ts';
+import { buildApplicationPayload } from '../../../../../../skills/buildr-release/scripts/application-payload.ts';
+import { createReleaseArtifact } from '../../../../../../skills/buildr-release/scripts/release-artifact.ts';
 import { createGeneratedReleaseInputs } from '../helpers/generated-release-inputs.ts';
 import { parseConnectionDefinition } from '../../src/modules/connection-skills/domain/definition.ts';
 

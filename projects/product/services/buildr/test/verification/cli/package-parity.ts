@@ -2,19 +2,28 @@
 
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnCommandSync } from '../../../src/infrastructure/process.ts';
-import { createCandidatePackage, readSharedCandidatePackage } from '../release/candidate-package.ts';
+import { createCandidatePackage, readSharedCandidatePackage } from '../../../../../../../skills/buildr-release/scripts/candidate-package.ts';
+import { resolveCandidateExecutionContext, resolveCandidateSourceCommit } from '../candidate-ci-evidence.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const checkoutCli: any = path.join(productRoot, 'bin', 'buildr.mjs');
-const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-cli-parity-'));
+// Use the common smoke owner for both registered and direct invocations.
+if (!process.env.BUILDR_SMOKE_ROOT) {
+  const child = spawnCommandSync(process.execPath, [
+    path.join(productRoot, 'tools/development/run-isolated-workspace-smoke.ts'),
+    '--script', fileURLToPath(import.meta.url),
+  ], { cwd: productRoot, stdio: 'inherit' });
+  if (child.error) throw child.error;
+  process.exit(child.status ?? 1);
+}
+const root: any = fs.mkdtempSync(path.join(process.env.BUILDR_SMOKE_ROOT, 'cli-parity-'));
 
 function spawn(command: any, args: any, options: any = {}): any  {
   return spawnCommandSync(command, args, {
-    cwd: options.cwd || productRoot,
+    cwd: options.cwd || root,
     encoding: 'utf8',
     env: {
       ...process.env,
@@ -49,6 +58,8 @@ function normalizeWorkspaceSnapshot(value: any): any  {
 }
 
 try {
+  const verificationSource = resolveCandidateSourceCommit(productRoot, process.env.BUILDR_CANDIDATE_SOURCE_SHA || null);
+  const executionContext = resolveCandidateExecutionContext(productRoot, verificationSource);
   const packDir: any = path.join(root, 'pack');
   const prefix: any = path.join(root, 'prefix');
   fs.mkdirSync(packDir, { recursive: true });
@@ -100,9 +111,11 @@ try {
 
   const checkoutIdentity: any = JSON.parse(runCheckout(['version', '--json']).stdout);
   const packagedIdentity: any = JSON.parse(runPackaged(['version', '--json']).stdout);
-  for (const field of ['schemaVersion', 'package', 'version', 'protocolIdentity', 'sourceCommit']) {
+  for (const field of ['schemaVersion', 'package', 'version', 'protocolIdentity']) {
     assert.equal(packagedIdentity[field], checkoutIdentity[field], `version identity differs: ${field}`);
   }
+  assert.equal(checkoutIdentity.sourceCommit, verificationSource, 'checkout identity differs from the verified source');
+  assert.equal(packagedIdentity.sourceCommit, executionContext.sourceCommit, 'package identity differs from the preserved product source');
   for (const field of ['platform', 'architecture']) {
     assert.equal(packagedIdentity.runtime[field], checkoutIdentity.runtime[field], `runtime identity differs: ${field}`);
   }

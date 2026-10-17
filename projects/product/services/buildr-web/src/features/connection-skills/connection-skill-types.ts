@@ -6,9 +6,9 @@ export type ConnectionField = {
 };
 export type ConnectionDefinition = {
   schemaVersion: string; definitionId: string; name: string; description: string; category: string; systemId?: string; configVersion: number;
-  config: { fields: ConnectionField[] }; authentication: { fields: ConnectionField[]; targetFields: string[] };
+  config: { fields: ConnectionField[] }; authentication: { fields: ConnectionField[]; targetFields: string[]; allowedSources?: ('team' | 'personal')[]; authorization?: { program: string; args?: string[]; inputs?: string[]; label: string; reauthorizeLabel: string; timeoutMs?: number; accountLabelField?: string } };
   programs: Record<string, unknown>; hooks?: Record<string, { program: string; args: string[]; effect: 'read'; inputs?: string[] }>;
-  presentation?: { summaryFields: string[]; websiteField?: string; categoryLabel?: string; methodLabel?: string; groups?: { id: string; title: string; fields: string[]; collapsed?: boolean }[] };
+  presentation?: { summaryFields: string[]; websiteField?: string; websiteFallbackField?: string; categoryLabel?: string; methodLabel?: string; environment?: 'hidden'; groups?: { id: string; title: string; fields: string[]; collapsed?: boolean }[] };
 };
 export type CatalogEntry = {
   definition: ConnectionDefinition; skill: { id: string; assetIdentity: string; sourceIdentity: string; sourcePath: string; entryPath: string };
@@ -16,7 +16,7 @@ export type CatalogEntry = {
   enabled: boolean; available: boolean; diagnostics: { code: string; message: string; field?: string }[];
 };
 export type ConnectionBinding = { skillAssetIdentity: string; definitionId: string; sourceIdentity: string; configVersion: number };
-export type AuthState = { configured: boolean; values: Record<string, unknown>; diagnostic: string | null };
+export type AuthState = { present?: boolean; configured: boolean; values: Record<string, unknown>; diagnostic: string | null };
 export type ConnectionFieldLabels = Record<string, { value: string; label: string }>;
 export type ConnectionInstance = {
   id: string; name: string; environment: string; enabled: boolean; category: string; binding: ConnectionBinding; config: Record<string, unknown>;

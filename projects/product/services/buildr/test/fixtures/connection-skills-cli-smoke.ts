@@ -35,6 +35,14 @@ fs.writeFileSync(file, JSON.stringify({ values: { username: 'personal-fixture', 
 assert.equal(command(['connection-skill', 'auth', 'set', '--connection', 'smoke-nacos', '--file', file]).instance.authentication.source, 'personal');
 const readAgain = command(['connection-skill', 'get', '--connection', 'smoke-nacos']).instance;
 assert.equal(readAgain.authentication.source, 'personal'); assert.ok(!JSON.stringify(readAgain).includes('local-fixture-password'));
+fs.writeFileSync(file, JSON.stringify({ id: 'smoke-copy', name: 'Local transfer only', binding: readAgain.binding, config: readAgain.config, authentication: { intent: 'remove' }, expected: { teamRevision: 'absent', definitionRevision: readAgain.definitionRevision } }));
+const copiedTarget = command(['connection-skill', 'create', '--file', file]).instance;
+const expected = (view: any) => ({ teamRevision: view.teamRevision, definitionRevision: view.definitionRevision, localRevision: view.localRevision });
+fs.writeFileSync(file, JSON.stringify({ source: { id: readAgain.id, authenticationSource: 'personal', expected: expected(readAgain) }, expected: expected(copiedTarget), removeSource: false }));
+const copied = command(['connection-skill', 'auth', 'migrate', '--connection', copiedTarget.id, '--file', file]);
+assert.equal(copied.instance.authentication.source, 'personal'); assert.equal(copied.sourceRemoved, false); assert.ok(!JSON.stringify(copied).includes('local-fixture-password'));
+fs.writeFileSync(file, JSON.stringify({ expected: expected(copied.instance) }));
+assert.equal(command(['connection-skill', 'auth', 'relocate', '--connection', copiedTarget.id, '--file', file]).relocated, true);
 assert.ok(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8').includes('少即是多'));
 const assets = runtimeProvide(createRuntime(), AGENT_ASSETS_APPLICATION) as {
   skillsAdd(input: { targetRoot: string; sourceInput: string; explicitId: string; connectionDefinitions?: string[] }): unknown;

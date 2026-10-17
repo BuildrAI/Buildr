@@ -105,7 +105,9 @@ export const SYSTEM_SUITES: any = Object.freeze([
     name: 'System nested Git isolation lifecycle',
     innerConcurrency: 1,
     schedulingCostMs: 45000,
-    concurrencyClass: 'workspace-heavy',
+    // Its public lifecycle has a bounded nested process deadline. Do not
+    // compete with other CLI-heavy owners while that deadline is running.
+    concurrencyClass: 'exclusive',
     resources: Object.freeze(['workspace-saturating']),
     files: Object.freeze([
       'test/system/worktree-nested-git-isolation.test.ts',

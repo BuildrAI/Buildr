@@ -3,15 +3,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { preparePackageRelease, continuePackageRelease, evaluateObservedPackagePlan, validatePluginRecovery } from '../../tools/release/package-release-operation.ts';
-import { normalizeReleaseTargets, evaluateReleasePlan } from '../../tools/release/release-targets.ts';
-import { createReleaseContext } from '../../tools/release/release-readiness.ts';
-import { createPackageReleaseContext } from '../../tools/release/release-package-evidence.ts';
-import { createReleaseTransactionEvidence } from '../../tools/release/release-transaction-evidence.ts';
-import { runReleaseOperation } from '../../tools/release/release-orchestration-runner.ts';
+import { preparePackageRelease, continuePackageRelease, evaluateObservedPackagePlan, validatePluginRecovery } from '../../../../../../skills/buildr-release/scripts/package-release-operation.ts';
+import { normalizeReleaseTargets, evaluateReleasePlan } from '../../../../../../skills/buildr-release/scripts/release-targets.ts';
+import { createReleaseContext } from '../../../../../../skills/buildr-release/scripts/release-readiness.ts';
+import { createPackageReleaseContext } from '../../../../../../skills/buildr-release/scripts/release-package-evidence.ts';
+import { createReleaseTransactionEvidence } from '../../../../../../skills/buildr-release/scripts/release-transaction-evidence.ts';
+import { runReleaseOperation } from '../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts';
 import { spawnSync } from 'node:child_process';
-import { checkPublicationCompatibility } from '../../tools/release/release-publication.ts';
-import { runPluginHostedOperation, readHostedPluginNoWriteProof } from '../../tools/release/plugin-hosted-release.ts';
+import { checkPublicationCompatibility } from '../../../../../../skills/buildr-release/scripts/release-publication.ts';
+import { runPluginHostedOperation, readHostedPluginNoWriteProof } from '../../../../../../skills/buildr-release/scripts/plugin-hosted-release.ts';
 import { createReleaseArtifactFixture } from '../helpers/release-artifact-fixture.ts';
 
 const hash = (digit: string) => digit.repeat(40), digest = (digit: string) => `sha256-${digit.repeat(64)}`;
@@ -77,6 +77,7 @@ function fixture(packages = 'dsh-plugin', buildrVersion = '0.2.0'): any {
     reconcilePublishedReleaseWithDev: () => ({ status: 'passed' }), closeoutReleaseGitResources: () => { cleanups++; return { status: 'passed' }; },
     runtime: { inspectTask: () => ({ record: { status: 'completed' } }) }, resolveRetainedController: () => ({}),
     invokeRetainedController: (_controller: any, args: string[]) => ({ status: args[0] === 'worktree' ? 'cleaned' : 'ready' }),
+    selfBootstrapCloseout: async () => ({ status: 'not-applicable', reason: 'Fixture has no self-bootstrap inputs.' }),
   };
   return { targets, selection, context, owned, state, published, candidates, scope, dependencies, run, journal,
     counts: () => ({ dispatches, cleanups, saved }), setRecoveryJournalId: (value: number) => { recoveryJournalId = value; } };
@@ -251,7 +252,7 @@ function failedPublicationFixture(): any {
     if (args[0] === 'merge-base') return { status: 0, stdout: '' };
     if (args[0] === 'rev-parse') return { status: 0, stdout: hash('8') };
     if (args[0] === 'show') return { status: 0, stdout: 'publisher on macOS\n' };
-    if (args[0] === 'diff') return { status: 0, stdout: 'projects/product/services/buildr/tools/release/package-release-operation.ts\0' };
+    if (args[0] === 'diff') return { status: 0, stdout: 'skills/buildr-release/scripts/package-release-operation.ts\0' };
     if (args[0] === 'ls-tree') return { status: 0, stdout: `100644 blob ${hash('a')}\t${args.at(-1)}\n` };
     return assert.fail(`unexpected recovery command ${args.join(' ')}`);
   };
@@ -595,6 +596,27 @@ test('release closeout consumes the unique runner not-applicable result without 
   assert.equal(f.state.closeout.outcomes.activation, 'not-applicable');
 });
 
+test('default release closeout waits for its unique runner and resume preserves completed effects', async () => {
+  const f = fixture(); delete f.dependencies.selfBootstrapCloseout;
+  let worktreeCleanups = 0;
+  f.dependencies.invokeRetainedController = (_controller: any, args: string[]) => {
+    assert.notEqual(args[0], 'doctor'); worktreeCleanups++; return { status: 'cleaned' };
+  };
+  await continuePackageRelease({ action: 'publish', authorized: true }, f.scope, f.dependencies);
+  const pending = await continuePackageRelease({ action: 'resume' }, f.scope, f.dependencies);
+  assert.equal(pending.status, 'published-self-bootstrap-pending');
+  assert.deepEqual(pending.outcomes, { publication: 'passed', taskRegistration: 'completed', cleanup: 'cleaned', activation: 'pending' });
+  const again = await continuePackageRelease({ action: 'resume' }, f.scope, f.dependencies);
+  assert.equal(again.status, 'published-self-bootstrap-pending'); assert.equal(worktreeCleanups, 1);
+  assert.equal(f.counts().cleanups, 1); assert.equal(f.counts().dispatches, 1);
+  let ownerCalls = 0;
+  f.dependencies.selfBootstrapCloseout = async () => { ownerCalls++; return { status: 'passed', effects: [] }; };
+  const completed = await continuePackageRelease({ action: 'resume' }, f.scope, f.dependencies);
+  assert.equal(completed.status, 'passed'); assert.equal(completed.outcomes.activation, 'ready');
+  await continuePackageRelease({ action: 'resume' }, f.scope, f.dependencies);
+  assert.equal(ownerCalls, 1); assert.equal(worktreeCleanups, 1); assert.equal(f.counts().cleanups, 1);
+});
+
 test('a repaired plugin executor advances once more only with official skipped-upload proof while retaining the C1 package anchor', async () => {
   const f = unattemptedPluginFixture();
   await continuePackageRelease({ action: 'resume', authorized: true, recoverPublication: true }, f.scope, f.dependencies);
@@ -633,4 +655,97 @@ test('a repaired plugin executor advances once more only with official skipped-u
   assert.deepEqual(f.state.pluginPublicationRecoveryHistory[1].context, c2.context);
   assert.equal((await continuePackageRelease({ action: 'resume', authorized: true, recoverPublication: true }, f.scope, f.dependencies)).status, 'publication-dispatch-unconfirmed');
   assert.equal(f.requests.length, 2); assert.equal(f.state.pluginPublicationRecoveryHistory.length, 2);
+});
+
+async function exchangeFailureFixture(): Promise<any> {
+  const f = unattemptedPluginFixture();
+  await continuePackageRelease({ action: 'resume', authorized: true, recoverPublication: true }, f.scope, f.dependencies);
+  const c2 = structuredClone(f.state), executionCommit = hash('6'), priorRunId = 38846099453;
+  const noWriteRun = { ...f.run('dsh-plugin', 204, 'failure'), head_sha: f.executionCommit, display_title: 'DSH publish 0.1.0' };
+  const jobs = { total_count: 1, jobs: [{ id: 301, run_id: 204, head_sha: f.executionCommit, name: 'publish', status: 'completed', conclusion: 'failure',
+    steps: [{ number: 1, name: 'Publish immutable plugin', status: 'completed', conclusion: 'skipped' }] }] };
+  const proof = readHostedPluginNoWriteProof({ repo: '/fixture', runId: 204, version: '0.1.0', sourceCommit: f.executionCommit }, {
+    execute: (_command: string, args: string[]) => ({ status: 0, stdout: JSON.stringify(args[1].includes('/jobs?') ? jobs : noWriteRun) }) });
+  const { previousJournalIdentity: _journal, ...oldRecovery } = c2.context.packages['dsh-plugin'].executorRecovery;
+  const context = createPackageReleaseContext({ ...c2.context, packages: { ...c2.context.packages, 'dsh-plugin': { ...c2.context.packages['dsh-plugin'],
+    executorRecovery: { ...oldRecovery, sourceCommit: executionCommit, previousRunId: 204, previousNoWriteEvidenceIdentity: proof.identity } } } });
+  const pointer = { contextIdentity: context.identity, requested: true, runId: priorRunId, sourceCommit: executionCommit, version: '0.1.0', previousRunIds: [204] };
+  f.state.pluginPublicationRecoveryHistory.push({ context: c2.context, pointer: { ...c2.packagePublications['dsh-plugin'], runId: 204 }, run: noWriteRun, noWriteProof: proof });
+  f.state.context = context; f.state.publicationAuthorization.contextIdentity = context.identity;
+  f.state.packagePublications.buildr.contextIdentity = context.identity; f.state.packagePublications['dsh-plugin'] = pointer;
+  const failed = { ...f.run('dsh-plugin', priorRunId, 'failure'), head_sha: executionCommit, display_title: 'DSH publish 0.1.0' };
+  const journal: any = { ...f.journal, code: 'plugin-npm-oidc-exchange-failed', observedAt: '2026-10-16T03:34:22.522Z', request: { ...f.journal.request, runId: priorRunId } };
+  f.scope.readRun = (id: number) => id === 201 ? c2.packagePublications.buildr.evidence.run : failed;
+  f.scope.git = (args: string[]) => args[0] === 'fetch' ? '' : args[1] === 'origin/main' ? executionCommit : hash('8');
+  const requests: any[] = [];
+  f.dependencies.runPluginHostedOperation = (input: any, deps: any) => {
+    assert.equal(input.sourceCommit, executionCommit);
+    if (input.pointer.runId === priorRunId) return { status: 'blocked', run: failed, journal, effects: [{ type: 'original-plugin-request-observed' }] };
+    if (!input.pointer.requested) {
+      assert.equal(f.saved.at(-1).packagePublications['dsh-plugin'].authorityRecovery.previousPointer.runId, priorRunId);
+      assert.equal(input.pointer.recoveryRunId, priorRunId); assert.equal(input.pointer.recoveryRequested, undefined);
+      requests.push(input); Object.assign(input.pointer, { requested: true, runId: null }); deps.onPointer();
+    }
+    return { status: 'dispatch-unconfirmed', effects: [{ type: 'plugin-publish-dispatched', state: 'unknown' }] };
+  };
+  return { ...f, executionCommit, context, failed, journal, requests, priorRunId };
+}
+
+test('same-executor exchange failure retries once after explicit configuration repair without consuming later public-readback recovery', async () => {
+  const f = await exchangeFailureFixture(), before = structuredClone(f.state);
+  const options = { action: 'resume', authorized: true, recoverPublication: true };
+  assert.equal((await continuePackageRelease(options, f.scope, f.dependencies)).status, 'publication-dispatch-unconfirmed');
+  assert.equal(f.requests.length, 1); assert.deepEqual(f.state.context, before.context);
+  assert.deepEqual(f.state.packagePublications.buildr, before.packagePublications.buildr);
+  assert.deepEqual(f.state.pluginPublicationRecoveryHistory, before.pluginPublicationRecoveryHistory);
+  const pointer = f.state.packagePublications['dsh-plugin'];
+  assert.deepEqual(pointer.authorityRecovery.previousPointer, before.packagePublications['dsh-plugin']);
+  assert.deepEqual(pointer.authorityRecovery.run, f.failed); assert.deepEqual(pointer.authorityRecovery.journal, f.journal);
+  assert.equal(pointer.recoveryRunId, f.priorRunId); assert.equal(pointer.recoveryRequested, undefined);
+  assert.ok(f.scope.effects.some((effect: any) => effect.type === 'original-plugin-request-observed'));
+  assert.ok(f.scope.effects.some((effect: any) => effect.type === 'plugin-publish-dispatched' && effect.state === 'unknown'));
+  assert.equal((await continuePackageRelease(options, f.scope, f.dependencies)).status, 'publication-dispatch-unconfirmed'); assert.equal(f.requests.length, 1);
+  // A real upload can remain in registry processing, then become publicly visible.
+  const attemptedJournal = { ...f.journal, attempted: true, action: 'readback-required', code: 'plugin-publication-attempt-unconfirmed', request: { ...f.journal.request, runId: 400 } };
+  const observe = f.dependencies.observePublishedPackageArtifact;
+  f.dependencies.observePublishedPackageArtifact = (name: string, input: any) => name === 'dsh-plugin'
+    ? { observation: { status: 'present', artifact: { ...f.owned['dsh-plugin'].artifact, origin: 'registry' } }, bytes: Buffer.from('plugin') } : observe(name, input);
+  f.dependencies.runPluginHostedOperation = (input: any, deps: any) => {
+    if (!input.pointer.requested) {
+      assert.equal(input.pointer.recoveryRunId, 400); assert.equal(input.pointer.recoveryRequested, true);
+      assert.ok(input.pointer.authorityRecovery); f.requests.push(input);
+      Object.assign(input.pointer, { requested: true, runId: 401 }); deps.onPointer(); return { status: 'running', run: { ...f.failed, id: 401, status: 'in_progress', conclusion: null } };
+    }
+    if (input.pointer.runId === 401) return { status: 'passed', run: { ...f.failed, id: 401, conclusion: 'success' },
+      journal: { ...attemptedJournal, status: 'passed', action: 'reused', registry: 'present', publishedObserved: true } };
+    input.pointer.runId = 400; deps.onPointer(); return { status: 'blocked', run: { ...f.failed, id: 400 }, journal: attemptedJournal };
+  };
+  assert.equal((await continuePackageRelease(options, f.scope, f.dependencies)).status, 'publication-running');
+  assert.equal((await continuePackageRelease(options, f.scope, f.dependencies)).status, 'passed');
+  assert.equal(f.requests.length, 2); assert.deepEqual(f.state.context, before.context);
+  assert.deepEqual(f.state.packagePublications.buildr.evidence, before.packagePublications.buildr.evidence);
+  assert.equal(f.state.packagePublications['dsh-plugin'].evidence.recoveryRunId, 400);
+  assert.deepEqual(f.state.pluginPublicationRecoveryHistory, before.pluginPublicationRecoveryHistory);
+});
+
+test('same-executor authority retry refuses active, unknown, attempted, mismatched or public predecessors without changing the intent', async t => {
+  const cases: Array<[string, (f: any) => void]> = [
+    ['attempted', f => { f.journal.attempted = true; }], ['missing attempted', f => { delete f.journal.attempted; }],
+    ['wrong code', f => { f.journal.code = 'plugin-publication-attempt-unconfirmed'; }], ['possibly published', f => { f.journal.publishedObserved = true; }],
+    ['wrong bytes', f => { f.journal.sha256 = '9'.repeat(64); }], ['wrong source', f => { f.journal.sourceCommit = hash('8'); }],
+    ['wrong request', f => { f.journal.request.runId++; }], ['wrong workflow', f => { f.journal.request.workflowRef = 'other/workflow'; }],
+    ['active', f => { f.failed.status = 'in_progress'; }], ['cancelled', f => { f.failed.conclusion = 'cancelled'; }],
+    ['attempt two', f => { f.failed.run_attempt = 2; }], ['wrong executor', f => { f.failed.head_sha = hash('8'); }],
+    ['unknown journal', f => { f.dependencies.runPluginHostedOperation = () => ({ status: 'readback-required' }); }],
+    ['public', f => { f.dependencies.observePublishedPackageArtifact = async () => ({ observation: { status: 'present' } }); }],
+    ['unknown registry', f => { f.dependencies.observePublishedPackageArtifact = async () => ({ observation: { status: 'unknown' } }); }],
+    ['main changed', f => { f.scope.git = (args: string[]) => args[0] === 'fetch' ? '' : hash('8'); }],
+    ['wrong parent pointer', f => { f.state.packagePublications['dsh-plugin'].contextIdentity = digest('8'); }],
+  ];
+  for (const [name, mutate] of cases) await t.test(name, async () => {
+    const f = await exchangeFailureFixture(); mutate(f); const before = structuredClone(f.state), saves = f.saved.length;
+    let result: any; try { result = await continuePackageRelease({ action: 'resume', authorized: true, recoverPublication: true }, f.scope, f.dependencies); } catch (error) { assert.ok(error instanceof Error); }
+    if (result) assert.ok(['publication-recovery-blocked', 'publication-blocked', 'publication-readback-required'].includes(result.status), result.status);
+    assert.deepEqual(f.state, before); assert.equal(f.saved.length, saves); assert.equal(f.requests.length, 0);
+  });
 });

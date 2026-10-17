@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { pairExecutionDiagnostic } from '../../tools/release/package-pair-diagnostics.ts';
+import { pairExecutionDiagnostic } from '../../../../../../skills/buildr-release/scripts/package-pair-diagnostics.ts';
 
 test('pair diagnostics retain failed child facts without misclassifying a timeout as incompatibility', () => {
   const timeout = pairExecutionDiagnostic('provider-install', 'isolated-npm-operation-failed', {

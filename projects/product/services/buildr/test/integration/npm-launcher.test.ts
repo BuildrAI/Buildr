@@ -10,8 +10,8 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { createRuntime } from '../helpers/runtime-harness.ts';
-import { buildApplicationPayload } from '../../tools/release/application-payload.ts';
-import { createNpmPackStaging } from '../../tools/release/release-artifact.ts';
+import { buildApplicationPayload } from '../../../../../../skills/buildr-release/scripts/application-payload.ts';
+import { createNpmPackStaging } from '../../../../../../skills/buildr-release/scripts/release-artifact.ts';
 import { createGeneratedReleaseInputs } from '../helpers/generated-release-inputs.ts';
 import {
   createProductUpdateAuthority,

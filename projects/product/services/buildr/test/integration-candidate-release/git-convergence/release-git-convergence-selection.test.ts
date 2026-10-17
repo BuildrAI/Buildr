@@ -11,15 +11,15 @@ import {
   inspectDevBranchPolicy,
   reconcilePublishedReleaseWithDev,
   releaseCarrierBranchFor,
-} from '../../../tools/release/release-git-convergence.ts';
-import { createReleaseContext } from '../../../tools/release/release-readiness.ts';
+} from '../../../../../../../skills/buildr-release/scripts/release-git-convergence.ts';
+import { createReleaseContext } from '../../../../../../../skills/buildr-release/scripts/release-readiness.ts';
 import {
   createReleaseSelection,
   freezeReleaseSelection,
   inspectReleaseSelection,
   selectReleaseCommit,
-} from '../../../tools/release/release-selection.ts';
-import { createReleaseTransactionEvidence } from '../../../tools/release/release-transaction-evidence.ts';
+} from '../../../../../../../skills/buildr-release/scripts/release-selection.ts';
+import { createReleaseTransactionEvidence } from '../../../../../../../skills/buildr-release/scripts/release-transaction-evidence.ts';
 import { commit, configure, convergenceFixture, git, releaseWorktree } from './helpers.ts';
 
 test('release→main creates one PR from the frozen release source after explicit authorization', (t: any) => {

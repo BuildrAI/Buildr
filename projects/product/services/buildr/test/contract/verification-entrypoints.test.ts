@@ -6,7 +6,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import YAML from 'yaml';
 import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../tools/verification/package-check/verification-registry.ts';
 import { createVerificationPlan } from '../verification/planner.ts';
-import { CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES, VERIFICATION_DAILY_CORE_EXCLUSIONS, VERIFICATION_EXECUTION_PROFILES, verificationSteps } from '../verification/registry.ts';
+import { CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES, INTEGRATION_GENERAL_EXCLUDED_FILES, INTEGRATION_PRIMARY_SLICES, VERIFICATION_DAILY_CORE_EXCLUSIONS, VERIFICATION_EXECUTION_PROFILES, verificationSteps } from '../verification/registry.ts';
+import { runIntegrationSuite } from '../verification/integration.ts';
 import {
   VERIFICATION_DELEGATED_INPUTS,
   VERIFICATION_FULL_SCOPE_INPUTS,
@@ -18,14 +19,33 @@ import { workspaceSuites } from '../verification/workspace/suites.ts';
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read: any = (relative: any) => fs.readFileSync(path.join(productRoot, relative), 'utf8');
 
+test('complete Integration entry preserves source exclusivity before the two artifact fixtures and stops on failure', () => {
+  const inventory = [...INTEGRATION_PRIMARY_SLICES.flatMap((slice: any) => slice.files), ...INTEGRATION_GENERAL_EXCLUDED_FILES];
+  const calls: string[][] = [];
+  const run = (_command: string, args: string[]) => { calls.push(args); return { status: 0 }; };
+  assert.equal(runIntegrationSuite({ suite: 'all', inventory, run }), 0);
+  assert.equal(calls.length, 2);
+  assert.equal(path.basename(calls[0]![0]!), 'focus.ts');
+  assert.deepEqual(calls[0]!.slice(1), INTEGRATION_PRIMARY_SLICES.map((slice: any) => slice.id));
+  assert.equal(path.basename(calls[1]![0]!), 'run-node-tests.ts');
+  assert.deepEqual(calls[1]!.slice(1), INTEGRATION_GENERAL_EXCLUDED_FILES);
+  calls.length = 0;
+  assert.equal(runIntegrationSuite({ suite: 'general', inventory, run }), 0);
+  assert.equal(calls.length, 1);
+  calls.length = 0;
+  assert.equal(runIntegrationSuite({ suite: 'all', inventory, run: (_command: string, args: string[]) => { calls.push(args); return { status: 7 }; } }), 7);
+  assert.equal(calls.length, 1, 'source failures must not enter packing fixtures');
+  assert.throws(() => runIntegrationSuite({ suite: 'all', inventory: inventory.filter((file: string) => file !== INTEGRATION_GENERAL_EXCLUDED_FILES[0]), run }), /ownership is incomplete/u);
+});
+
 test('product verification exposes four gates, direct layers, and one focus entry', () => {
   const scripts: any = JSON.parse(read('package.json')).scripts;
   assert.equal(scripts.test, 'npm run artifacts:prepare && ./test/verification/verify-buildr-product-fast');
   assert.equal(scripts['test:fast'], 'npm run artifacts:prepare && ./test/verification/verify-buildr-product-fast');
-  assert.equal(scripts['test:unit'], 'node --import ./test/register-development-entry.ts --test test/unit/*.test.ts');
-  assert.equal(scripts['test:component'], 'node --import ./test/register-development-entry.ts --test test/component/*.test.ts');
-  assert.equal(scripts['test:contract'], 'node --import ./test/register-development-entry.ts --test test/contract/*.test.ts');
-  assert.equal(scripts['test:integration'], 'node --import ./test/register-development-entry.ts --test test/integration/*.test.ts');
+  assert.equal(scripts['test:unit'], 'node --import ./test/register-development-entry.ts test/verification/run-node-tests.ts "test/unit/*.test.ts"');
+  assert.equal(scripts['test:component'], 'node --import ./test/register-development-entry.ts test/verification/run-node-tests.ts "test/component/*.test.ts"');
+  assert.equal(scripts['test:contract'], 'node --import ./test/register-development-entry.ts test/verification/run-node-tests.ts "test/contract/*.test.ts"');
+  assert.equal(scripts['test:integration'], 'node --import ./test/register-development-entry.ts test/verification/integration.ts --suite all');
   assert.equal(scripts.typecheck, 'npm run artifacts:prepare && npm run contracts:check && npm run contracts:check:workspace && npm run test-context:check && tsc --project tsconfig.json && tsc --project tsconfig.test.json');
   assert.equal(scripts['test:system'], 'node --import ./test/register-development-entry.ts test/verification/system.ts');
   assert.equal(scripts['test:integration:fast'], undefined);
@@ -190,7 +210,7 @@ test('remote text owner includes product re-entry and payload entry boundaries',
     'src/infrastructure/network/**',
     'src/infrastructure/product-invocation/**',
     'src/bootstrap/cli/main.ts',
-    'tools/release/application-payload-entry.ts',
+    'skills/buildr-release/scripts/application-payload-entry.ts',
   ]) assert.ok(remote.inputs.includes(input), `remote-skill-timeout must own ${input}`);
 });
 
@@ -243,11 +263,19 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
   for (const stage of [
     'fine-grained unit tests',
     'bounded component tests',
-    'cross-domain technical boundary integration tests',
+    'Build and verification tool boundaries',
+    'Code and Git application integration slice',
+    'Desktop and Agent connection integration slice',
+    'Knowledge and source reading integration slice',
+    'Workspace asset integration slice',
+    'Archify component lifecycle integration slice',
+    'Task record and material integration slice',
+    'Connection Skill integration slice',
+    'Runtime projection integration slice',
     'Project declaration integration slice',
     'OpenSpec application integration slice',
     'Verification orchestration integration slice',
-    'Runtime and Buildr Web integration slice',
+    'Buildr Web Runtime integration slice',
     'Release and installation integration slice',
     'Workspace data-store integration slice',
     'Self-bootstrap closeout integration slice',
@@ -284,7 +312,7 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
     'remote Skill timeout contract',
     'release metadata and real platform Launcher consumption',
     'managed data integrity',
-    'OpenSpec contract fixtures',
+    'OpenSpec application integration slice',
     'documentation quality',
   ]) assert.ok(candidatePlan.steps.some((step: any) => step.name === stage), `candidate verifier must retain ${stage}`);
   for (const excluded of [
@@ -303,7 +331,7 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
     assert.ok(workspaceSuites.some((step: any) => step.id === suite), `Workspace E2E registry must retain ${suite}`);
   }
   assert.ok(candidatePlan.steps.some((step: any) => step.executor.file === 'test/capability-cli.integration.ts'));
-  const systemOwners: any = candidatePlan.steps.filter((step: any) => step.id.startsWith('system-'));
+  const systemOwners: any = candidatePlan.steps.filter((step: any) => step.id.startsWith('system-') && step.platformScope.kind !== 'platform');
   assert.equal(systemOwners.length, 11);
   for (const owner of systemOwners) {
     assert.equal(owner.executor.file, 'test/verification/system.ts');
@@ -372,17 +400,22 @@ test('runtime adapter contract uses one run-unique temporary root with owner cle
 test('Candidate source work is independent and all consumers use the one immutable artifact', () => {
   const document = YAML.parse(read('../../../../.github/workflows/verify.yml'));
   assert.equal(document.jobs['candidate-source'].needs, 'candidate-plan');
-  assert.equal(document.jobs['candidate-bootstrap'].needs, 'candidate-plan');
+  assert.deepEqual(document.jobs['candidate-bootstrap'].needs, ['candidate-plan', 'candidate-source']);
   for (const id of ['candidate-artifact-consumers', 'candidate-host-node']) {
     assert.deepEqual(document.jobs[id].needs, ['candidate-plan', 'candidate-bootstrap']);
     assert.equal(document.jobs[id].steps.filter((step: any) => step.with?.name === 'candidate-package').length, 1);
   }
   for (const id of ['candidate-source', 'candidate-artifact-consumers', 'candidate-host-node']) assert.equal(document.jobs[id].strategy['fail-fast'], false);
-  assert.ok(CANDIDATE_CI_SHARDS.some((shard: any) => shard.id === 'release-infrastructure-windows'));
+  assert.equal(CANDIDATE_CI_SHARDS.some((shard: any) => shard.id === 'release-infrastructure-windows'), false);
   assert.deepEqual(document.jobs['candidate-gate'].needs, ['candidate-plan', 'candidate-bootstrap', 'candidate-source', 'candidate-artifact-consumers', 'candidate-host-node', 'plugin-source-candidate']);
-  for (const id of ['candidate-bootstrap', 'candidate-artifact-consumers', 'candidate-host-node']) assert.equal(document.jobs[id].if, "needs.candidate-plan.outputs.buildr == 'true'");
+  assert.equal(document.jobs['candidate-bootstrap'].if, "always() && needs.candidate-plan.result == 'success' && needs.candidate-plan.outputs.buildr == 'true' && (needs.candidate-source.result == 'success' || needs.candidate-source.result == 'skipped')");
+  for (const input of ['artifact_verification', 'local_runner']) assert.ok(document.on.workflow_dispatch.inputs[input]);
+  assert.equal(document.env.BUILDR_ARTIFACT_VERIFICATION, "${{ github.event_name == 'workflow_dispatch' && inputs.artifact_verification || '' }}");
+  for (const [id, key] of [['candidate-artifact-consumers', 'artifact'], ['candidate-host-node', 'host']]) {
+    assert.equal(document.jobs[id!].if, `needs.candidate-plan.outputs.buildr == 'true' && needs.candidate-plan.outputs.${key}_required == 'true'`);
+  }
   assert.equal(document.jobs['candidate-source'].if, "needs.candidate-plan.outputs.buildr == 'true' && needs.candidate-plan.outputs.source_required == 'true'");
-  assert.equal(document.jobs['candidate-plan'].outputs.source_required, '${{ steps.plan.outputs.source_required }}');
+  for (const key of ['source', 'artifact', 'host']) assert.equal(document.jobs['candidate-plan'].outputs[key + '_required'], '${{ steps.repair.outputs.' + key + '_required || steps.plan.outputs.' + key + '_required }}');
   assert.equal(document.env.BUILDR_SOURCE_VERIFICATION, "${{ github.event_name == 'workflow_dispatch' && inputs.source_verification || '' }}");
   assert.deepEqual(document.jobs['plugin-source-candidate'].needs, ['candidate-plan', 'candidate-bootstrap']);
   assert.equal(document.jobs['plugin-source-candidate'].if, "always() && needs.candidate-plan.result == 'success' && needs.candidate-plan.outputs.plugin == 'true' && (needs.candidate-plan.outputs.candidate_peer != 'true' || needs.candidate-bootstrap.result == 'success')");
@@ -398,7 +431,7 @@ test('Candidate source work is independent and all consumers use the one immutab
 test('changed ownership authority is physically separate from the Candidate execution graph', () => {
   const registry: any = read('test/verification/registry.ts');
   const ownership: any = read('test/verification/ownership.ts');
-  assert.match(registry, /verificationStepOwnership\(definition\.id\)/u);
+  assert.match(registry, /verificationStepOwnership\(definition\.id, definition\.executor\)/u);
   assert.match(ownership, /VERIFICATION_STEP_OWNERSHIP/u);
   assert.deepEqual(Object.keys(VERIFICATION_STEP_OWNERSHIP).sort(), verificationSteps.map((step: any) => step.id).sort());
   assert.deepEqual(validateVerificationStepOwnership(verificationSteps.map((step: any) => step.id)), { ok: true, findings: [] });
@@ -447,7 +480,7 @@ test('双任务并发验收输出完整的组合证据并执行归属清理', ()
   assert.ok(entry.budgetMs > 0);
 });
 
-test('OpenSpec fixture Candidate owners use disjoint complete suites', () => {
+test('OpenSpec fixture entries stay explicit while complete Candidate runs their six files once', () => {
   const owners: any = Object.fromEntries(verificationSteps
     .filter((step: any) => ['openspec-contract-fixtures', 'openspec-convergence-recovery'].includes(step.id))
     .map((step: any) => [step.id, step.executor.args]));
@@ -455,6 +488,20 @@ test('OpenSpec fixture Candidate owners use disjoint complete suites', () => {
     'openspec-contract-fixtures': ['--suite', 'contract'],
     'openspec-convergence-recovery': ['--suite', 'recovery'],
   });
+  const candidate = createVerificationPlan({ profiles: ['candidate'] });
+  const primary = candidate.steps.find((step: any) => step.id === 'integration-openspec');
+  assert.ok(primary, 'the complete Candidate retains all OpenSpec assertions');
+  for (const name of ['openspec-domain', 'openspec-deterministic-sync', 'openspec-convergence-preflight', 'openspec-projected-validator', 'openspec-convergence-transaction', 'openspec-convergence-recovery']) {
+    const file = `test/integration/${name}.test.ts`;
+    const selected = candidate.steps.flatMap((step: any) => step.executor.files ?? []);
+    assert.equal(selected.filter((value: string) => value === file).length, 1, file);
+  }
+  for (const id of Object.keys(owners)) {
+    assert.equal(candidate.steps.some((step: any) => step.id === id), false, `${id} must not rerun the same files`);
+    const explicit = createVerificationPlan({ stepIds: [id] });
+    assert.equal(explicit.status, 'ready');
+    assert.deepEqual(explicit.steps.map((step: any) => step.id), [id], 'the explicit diagnostic entry remains available');
+  }
 });
 
 test('CLI package parity owns representative equivalence without lifecycle duplication', () => {

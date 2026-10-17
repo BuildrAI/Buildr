@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { gzipSync } from 'node:zlib';
 import test from 'node:test';
+import { CANDIDATE_CI_SHARDS, verificationStepById } from '../verification/registry.ts';
 import {
   candidateSourceImportFromEnvironment, decodeCandidateSourceImport, encodeCandidateSourceImport,
   MAX_SOURCE_IMPORT_CHARACTERS, planCandidateSourceReuse,
@@ -13,6 +14,14 @@ const record = (stepId: string, runner = 'macos', passed = true) => ({
   origin: { finishedAt: '2026-10-15T00:00:00.000Z' },
 });
 const bundle = (records: any[] = []) => ({ schemaVersion: 'buildr.verification-source-bundle/v1', records });
+
+test('complete reusable macOS source proof including type checking leaves only actual Windows boundaries', () => {
+  const source = CANDIDATE_CI_SHARDS.filter((shard: any) => !shard.requiresArtifact && !shard.producesArtifact && shard.runner === 'macos');
+  const records = source.flatMap((shard: any) => shard.stepIds.filter((id: string) => verificationStepById(id).reuse).map((id: string) => record(id)));
+  const plan = planCandidateSourceReuse(CANDIDATE_CI_SHARDS, bundle(records), (item, _id, runner) => item.environment.runner === runner);
+  assert.deepEqual(plan.sourceShards.map((shard: any) => shard.id), ['platform-boundaries-windows']);
+  assert.deepEqual(plan.reusedShards.map(item => item.shard.id), source.map((shard: any) => shard.id));
+});
 
 test('source transport preserves the portable records and rejects modified or oversized input', () => {
   const original = bundle([record('unit')]);

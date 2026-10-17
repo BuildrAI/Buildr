@@ -19,6 +19,27 @@ export function bindingFor(entry: CatalogEntry): ConnectionBinding {
 export function bindingKey(binding: ConnectionBinding): string {
   return JSON.stringify([binding.skillAssetIdentity, binding.definitionId, binding.sourceIdentity, binding.configVersion]);
 }
+export function personalAuthenticationOnly(entry?: CatalogEntry): boolean {
+  const sources = entry?.definition.authentication.allowedSources;
+  return Boolean(sources?.includes('personal') && !sources.includes('team'));
+}
+export function authenticationSourceAllowed(entry: CatalogEntry | undefined, source: AuthenticationInput['source']): boolean {
+  return entry?.definition.authentication.allowedSources?.includes(source) ?? true;
+}
+export function connectionEnvironmentHidden(entry?: CatalogEntry): boolean {
+  return entry?.definition.presentation?.environment === 'hidden';
+}
+export function authorizationAccountLabel(entry: CatalogEntry | undefined, instance?: ConnectionInstance): string {
+  const key = entry?.definition.authentication.authorization?.accountLabelField;
+  const field = entry?.definition.authentication.fields.find(field => field.key === key && field.type !== 'secret');
+  const value = field && instance?.authentication.personal.values[field.key];
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? String(value) : '';
+}
+export function connectionDraftChanged(instance: ConnectionInstance | undefined, draft: { name: string; environment: string; enabled: boolean; config: Record<string, unknown>; fieldLabels?: Record<string, unknown> }): boolean {
+  if (!instance) return false;
+  const ordered = (value: Record<string, unknown>) => JSON.stringify(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)));
+  return draft.name.trim() !== instance.name || draft.environment.trim() !== instance.environment || draft.enabled !== instance.enabled || ordered(draft.config) !== ordered(instance.config) || ordered(draft.fieldLabels || {}) !== ordered(instance.fieldLabels || {});
+}
 export function fieldDefaults(fields: ConnectionField[]): Record<string, unknown> {
   return Object.fromEntries(fields.filter(field => field.default !== undefined && field.type !== 'secret').map(field => [field.key, structuredClone(field.default)]));
 }
@@ -105,12 +126,15 @@ export function hooksAvailable(entry: CatalogEntry | undefined, instance: Connec
 
 /** A candidate selects one complete group without changing the persisted source. */
 export function draftHookInput(entry: CatalogEntry, instance: ConnectionInstance | undefined, config: Record<string, unknown>, authentication: AuthenticationInput, hook?: string): HookInput {
+  if (!authenticationSourceAllowed(entry, authentication.source)) throw new Error('此接入方式不支持所选认证来源。');
   const inputs = hook && hook !== 'test' ? entry.definition.hooks?.[hook]?.inputs : undefined;
   const requiredConfig = new Set(inputs ? [...inputs.filter(reference => reference.startsWith('config.')).map(reference => reference.slice(7)), ...entry.definition.authentication.targetFields] : []);
   validateFields(inputs ? entry.definition.config.fields.map(field => ({ ...field, required: requiredConfig.has(field.key), ...(requiredConfig.has(field.key) || Object.hasOwn(config, field.key) ? { dependsOn: undefined } : {}) })) : entry.definition.config.fields, config);
   const values = authentication.intent === 'replace' ? authentication.values || {} : instance?.authentication[authentication.source].values || {};
   if (authentication.intent === 'keep' && (!instance || targetDraftChanged(entry, config, instance))) throw new Error('目标已改变或没有已保存认证，请为本次候选重新填写完整认证。');
-  validateFields(inputs ? entry.definition.authentication.fields.map(field => inputs.includes(`authentication.${field.key}`) ? { ...field, required: true, dependsOn: undefined } : field) : entry.definition.authentication.fields, values, authentication.intent === 'keep');
+  if (entry.definition.authentication.authorization) {
+    if (authentication.source !== 'personal' || authentication.intent !== 'keep' || !instance?.authentication.personal.configured) throw new Error('请先授权本机个人账号，再读取外部系统。');
+  } else validateFields(inputs ? entry.definition.authentication.fields.map(field => inputs.includes(`authentication.${field.key}`) ? { ...field, required: true, dependsOn: undefined } : field) : entry.definition.authentication.fields, values, authentication.intent === 'keep');
   return { ...(instance ? { id: instance.id } : {}), binding: bindingFor(entry), config, expected: { teamRevision: instance?.teamRevision || 'absent', definitionRevision: entry.revision, ...(instance ? { localRevision: instance.localRevision } : {}) }, authentication };
 }
 

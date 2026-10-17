@@ -18,7 +18,7 @@ import { registerCommandHelp } from '../../src/bootstrap/cli/help.ts';
 const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
 const code = (expected: string) => (error: unknown) => (error as { code?: string }).code === expected;
 const outputSchema = { type: 'object', additionalProperties: false, properties: { commitMessage: { type: 'string', minLength: 1 } }, required: ['commitMessage'] };
-function fixture(t: test.TestContext, mode = 'normal', idleMs = 30 * 60 * 1000, onInspection?: CodexAppServerOptions['onInspection']) {
+function fixture(t: test.TestContext, mode = 'normal', idleMs?: number, onInspection?: CodexAppServerOptions['onInspection']) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-operations-')), home = path.join(root, 'codex-home'), dataRoot = path.join(root, 'buildr-profile');
   fs.mkdirSync(home); const executable = path.join(root, 'codex-fixture');
   fs.writeFileSync(executable, '#!/bin/sh\nexport BUILDR_FAKE_CODEX_MODE=' + quote(mode) + '\nexec ' + quote(process.execPath) + ' ' + quote(path.resolve(import.meta.dirname, '../fixtures/agent-codex-app-server.ts')) + ' "$@"\n', { mode: 0o755 });
@@ -485,6 +485,41 @@ test('result validation receives schema-validated output and can reject stale re
   const result = await settled(f.app, run.id); assert.equal(result.status, 'failed'); assert.equal(result.error?.code, 'code_source_changed'); assert.equal(result.output, null);
   assert.equal(validations, 1);
 });
+
+for (const [kind, idleMinutes] of [['codex', 60], ['dsh', 30]] as const) {
+  test(kind + ' production default releases its idle resource after ' + idleMinutes + ' minutes without query renewal', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-default-idle-'));
+    const identity = { id: 'agent-12345678-1234-1234-1234-123456789abc', label: 'Idle fixture', executable: process.execPath, version: 'test' };
+    const registration: AgentRegistration = kind === 'codex' ? { ...identity, kind, codexHome: root } : { ...identity, kind, dshHome: root };
+    fs.writeFileSync(path.join(root, 'agent-registrations.json'), JSON.stringify({ schemaVersion: 'buildr.agent-registrations/v1', defaultAgentId: registration.id, agents: [registration] }));
+    let alive = false, closes = 0;
+    const app = new AgentOperationsApplication({
+      dataRoot: root, available: () => true,
+      inspectEntry: () => ({ executable: process.execPath, codexHome: root, label: identity.label, version: identity.version }),
+      providerFactory: () => ({ get alive() { return alive; }, start: async () => { alive = true; }, generate: async input => { input.onRunning(); return { commitMessage: 'Idle fixture result' }; }, close: async () => { alive = false; closes++; } }),
+    });
+    t.after(async () => { try { await app.close(); } finally { fs.rmSync(root, { recursive: true, force: true }); } });
+    const drain = () => new Promise<void>(resolve => setImmediate(resolve));
+    const run = await app.startGeneration({ cwd: root, prompt: 'Supplied changes only.', outputSchema });
+    await drain(); assert.equal(app.getRun(run.id).status, 'succeeded');
+    assert.equal(app.listRegistry().agents[0].runtimeStatus, 'idle');
+    if (kind === 'codex') {
+      t.mock.timers.tick(30 * 60 * 1000); await drain();
+      assert.equal(closes, 0, 'Codex must retain its owned process after thirty idle minutes');
+      assert.equal(app.listRegistry().agents[0].runtimeStatus, 'idle');
+      assert.equal(app.getRun(run.id).status, 'succeeded');
+    }
+    t.mock.timers.tick((kind === 'codex' ? 30 : idleMinutes) * 60 * 1000 - 1); await drain();
+    assert.equal(closes, 0); assert.equal(app.listRegistry().agents[0].runtimeStatus, 'idle');
+    assert.equal(app.getRun(run.id).status, 'succeeded');
+    t.mock.timers.tick(1); await drain();
+    assert.equal(closes, 1, 'queries must not postpone the original idle deadline');
+    assert.equal(app.listRegistry().agents[0].runtimeStatus, 'stopped');
+    assert.equal(app.listRegistry().defaultAgentId, registration.id);
+    assert.equal(app.getRun(run.id).status, 'succeeded');
+  });
+}
 
 test('idle recycling excludes active/queued work, queries do not reset it, and next generation restarts', posix, async t => {
   const f = fixture(t, 'slow', 60); f.register(); const one = await f.generate(), two = await f.generate();

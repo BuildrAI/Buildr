@@ -119,7 +119,7 @@ export function collectChangedProductPaths(options: any): any  {
   const base: any = resolveVerificationBase(gitRoot, options.base);
   const head: any = options.head ?? 'HEAD';
   git(gitRoot, ['rev-parse', '--verify', `${head}^{commit}`]);
-  const pathspecs: any[] = [projectPrefix || '.', ...VERIFICATION_GOVERNED_REPOSITORY_INPUTS];
+  const pathspecs: any[] = [projectPrefix || '.', 'skills/buildr-release/', ...VERIFICATION_GOVERNED_REPOSITORY_INPUTS];
   const commands: any = options.head ? [
     ['diff', '--name-only', '-z', `${base}...${head}`, '--', ...pathspecs],
   ] : [
@@ -133,7 +133,9 @@ export function collectChangedProductPaths(options: any): any  {
   for (const workspacePath of workspacePaths) {
     const normalizedWorkspacePath: any = workspacePath.replaceAll('\\', '/');
     let relative: any;
-    if (!productPrefix || normalizedWorkspacePath === productPrefix || normalizedWorkspacePath.startsWith(`${productPrefix}/`)) {
+    if (normalizedWorkspacePath.startsWith('skills/buildr-release/')) {
+      relative = normalizedWorkspacePath;
+    } else if (!productPrefix || normalizedWorkspacePath === productPrefix || normalizedWorkspacePath.startsWith(`${productPrefix}/`)) {
       relative = productPrefix ? normalizedWorkspacePath.slice(productPrefix.length + 1) : normalizedWorkspacePath;
     } else if (!projectPrefix || normalizedWorkspacePath === projectPrefix || normalizedWorkspacePath.startsWith(`${projectPrefix}/`)) {
       relative = projectPrefix ? normalizedWorkspacePath.slice(projectPrefix.length + 1) : normalizedWorkspacePath;

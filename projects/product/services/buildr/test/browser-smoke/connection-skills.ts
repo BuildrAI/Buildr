@@ -97,10 +97,15 @@ try {
   const assertReads = (expected: typeof reads, reason: string) => assert.deepEqual(reads, expected, reason);
   const originalEdit = () => page!.locator('#connection-skills-table').locator(`[data-row-key="${created.id}"]`).getByRole('button', { name: '编辑', exact: true });
   const editOriginal = () => originalEdit().click();
+  const rowIds = () => page!.locator('#connection-skills-table tbody > tr[data-row-key]').evaluateAll(rows => rows.map(row => row.getAttribute('data-row-key')));
+  const assertRows = async (expected: string[], reason: string) => assert.deepEqual(await rowIds(), expected, reason);
   const directoryPattern = '**/connection-skills/directory';
   await page.route(directoryPattern, async route => {
     const response = await route.fetch(), body = await response.json();
-    await route.fulfill({ response, json: { ...body, diagnostics: [...body.diagnostics, { code: 'fixture-local-source', message: '目录局部诊断夹具' }] } });
+    assert.equal(body.instances.length, 2);
+    const reversedCategories = [queryInstance.id, created.id].map(id => body.instances.find((instance: any) => instance.id === id));
+    assert.ok(reversedCategories.every(Boolean));
+    await route.fulfill({ response, json: { ...body, instances: reversedCategories, diagnostics: [...body.diagnostics, { code: 'fixture-local-source', message: '目录局部诊断夹具' }] } });
   });
   await page.addInitScript(({ workspaceId, basePath }) => {
     localStorage.setItem(`buildr.web.page-tabs.${workspaceId}`, JSON.stringify([
@@ -112,6 +117,7 @@ try {
   await page.waitForURL(`${base}/connection-skills`);
   await page.locator('#connection-skills-table').waitFor();
   await originalEdit().waitFor();
+  await assertRows([created.id, queryInstance.id], 'Initial display orders category keys instead of using directory input order.');
   assert.equal(await page.locator('[data-nav="connections"]').count(), 0, 'Retired connection navigation is removed.');
   assert.equal(await page.locator('[data-nav="connection-skills"]').getAttribute('aria-label'), '连接');
   assert.equal(await page.getByRole('link', { name: '打开已有连接', exact: true }).count(), 0);
@@ -305,6 +311,13 @@ try {
   await page.locator('#save-connection-skill-team').click();
   await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
   await page.locator('#connection-skills-table').getByText('新增保存后关闭', { exact: true }).waitFor();
+  const added = connections.list(workspaceRoot).instances.find((instance: any) => instance.name === '新增保存后关闭');
+  assert.ok(added);
+  await assertRows([created.id, added.id, queryInstance.id], 'A locally appended configuration joins its category without another directory request.');
+  await page.locator('#connection-skills-search').fill('fixture.example.test');
+  await assertRows([created.id, added.id], 'Search preserves the relative order of same-category instances.');
+  await page.locator('#connection-skills-search').fill('');
+  await assertRows([created.id, added.id, queryInstance.id], 'Clearing search restores the same category order.');
   const namedSelectionRow = page.locator('#connection-skills-table tr').filter({ hasText: '新增保存后关闭' });
   assert.equal(await namedSelectionRow.locator('.buildr-connection-skill-summary > span').nth(1).innerText(), '测试空间', 'Saved dynamic selection uses its chosen name in the list.');
   await namedSelectionRow.getByRole('button', { name: '编辑', exact: true }).click();
@@ -329,6 +342,9 @@ try {
   await page.getByRole('button', { name: '刷新连接', exact: true }).click();
   await (await directoryRefresh).finished();
   await page.locator('#create-connection-skill:not([disabled])').waitFor();
+  const currentInstances = connections.list(workspaceRoot).instances;
+  const refreshedRowOrder: string[] = [...currentInstances.filter((instance: any) => instance.category === 'configuration'), ...currentInstances.filter((instance: any) => instance.category === 'data-source')].map((instance: any) => instance.id);
+  await assertRows(refreshedRowOrder, 'Explicit refresh keeps categories together and preserves the fresh directory order within each.');
   const refreshedReads = { ...reads };
   assertReads({ ...beforeFailedRefresh, directory: beforeFailedRefresh.directory + 3 }, 'Each explicit refresh reads the combined current directory once.');
   await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-save-closed.png') });
@@ -377,6 +393,7 @@ try {
   await page.locator('#save-connection-skill-team').click();
   await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
   assertReads(refreshedReads, 'Updating a saved connection only replaces its row.');
+  await assertRows(refreshedRowOrder, 'Editing a row keeps it in the same category position without reordering peers.');
   assert.equal(connections.get(workspaceRoot, created.id).instance.authentication.source, 'personal', 'Failed connection test does not block successful save or change personal authentication.');
 
   await editOriginal();
@@ -483,20 +500,33 @@ try {
   assert.equal(YAML.parse(fs.readFileSync(teamFile, 'utf8')).name, '另一入口修改');
   await page.locator('#close-connection-skill-editor').click();
   await page.setViewportSize({ width: 1280, height: 900 });
+  const beforeNacosReads = { ...reads };
   await page.locator('#create-connection-skill').click();
   await page.locator('[data-connection-system]').filter({ hasText: 'Nacos' }).click();
   assert.equal(await page.locator('#connection-skill-config-production').isChecked(), false, 'New builtin Nacos starts with production unchecked; the custom fixture retains its own true default.');
   await page.locator('#connection-skill-config-apiBaseUrl').fill('http://admin.example.invalid:8848/nacos');
-  await page.locator('#connection-skill-config-consoleUrl').fill('http://console.example.invalid:8080/');
   await page.locator('#connection-skill-team-username').fill('offline-reader');
   await page.locator('#connection-skill-team-password').fill('offline-fixture-password');
   await page.locator('#connection-skill-name').fill('独立接口与网站');
   await page.locator('#save-connection-skill-team').click();
   await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
-  const nacos = connections.list(workspaceRoot).instances.find((item: any) => item.name === '独立接口与网站');
+  let nacos = connections.list(workspaceRoot).instances.find((item: any) => item.name === '独立接口与网站');
   assert.equal(nacos.binding.configVersion, 2);
   assert.equal(nacos.config.apiBaseUrl, 'http://admin.example.invalid:8848/nacos');
+  const nacosRow = page.locator('#connection-skills-table tr').filter({ hasText: '独立接口与网站' });
+  assert.equal(nacos.config.consoleUrl, undefined, 'Leaving the optional website empty does not write an inferred value.');
+  assert.equal(nacos.websiteUrl, nacos.config.apiBaseUrl);
+  assert.equal(await nacosRow.getByRole('link', { name: '打开网站', exact: true }).getAttribute('href'), nacos.config.apiBaseUrl, 'An explicitly declared website fallback is available without contacting the external system.');
+  await nacosRow.getByRole('button', { name: '编辑', exact: true }).click();
+  await page.locator('#connection-skill-config-consoleUrl').fill('http://console.example.invalid:8080/');
+  await page.locator('#save-connection-skill-team').click();
+  await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
+  nacos = connections.get(workspaceRoot, nacos.id).instance;
   assert.equal(nacos.websiteUrl, 'http://console.example.invalid:8080/');
+  assert.equal(await nacosRow.getByRole('link', { name: '打开网站', exact: true }).getAttribute('href'), nacos.websiteUrl, 'Saving an explicit website override immediately takes precedence.');
+  const finalRowOrder = [...refreshedRowOrder.filter(id => id !== queryInstance.id), nacos.id, queryInstance.id];
+  await assertRows(finalRowOrder, 'The Nacos create and edit responses keep the new row within its category.');
+  assertReads(beforeNacosReads, 'Website fallback and override saves update the returned row without directory requests.');
   const nacosSummary = page.locator('#connection-skills-table tr').filter({ hasText: '独立接口与网站' }).locator('.buildr-connection-skill-summary > span');
   assert.equal(await nacosSummary.count(), 2, 'Nacos address and default ranges occupy two logical lines.');
   assert.match(await nacosSummary.nth(1).innerText(), /public.*DEFAULT_GROUP/, 'Namespace and group share the second summary line.');
@@ -506,6 +536,7 @@ try {
   await page.getByRole('menuitem', { name: '删除实例', exact: true }).click();
   await page.locator('.ant-modal-confirm').getByRole('button', { name: /^删\s*除$/ }).click();
   await addedRow.waitFor({ state: 'hidden' });
+  await assertRows(finalRowOrder.filter(id => id !== added.id), 'Deleting a row preserves category grouping and the remaining peer order.');
   assertReads(beforeDeleteReads, 'Delete removes the selected row without rereading other instances.');
   await page.goto(`${base}/connections`, { waitUntil: 'domcontentloaded' });
   await page.waitForURL(`${base}/connection-skills`);
@@ -513,8 +544,260 @@ try {
   await originalEdit().waitFor();
   assert.equal(connections.get(workspaceRoot, created.id).instance.name, '另一入口修改');
   assert.deepEqual(legacyRequests, [], 'Connection navigation never calls a retired API.');
+
+  // Add the personal-only definition after the existing directory/order journey.
+  // This is an offline fixture, including all values displayed by the password eye.
+  const personalDefinition = { ...definition, definitionId: 'browser-personal', name: '个人授权夹具', systemId: 'browser-personal', authentication: { ...definition.authentication, allowedSources: ['personal'] } };
+  fs.writeFileSync(path.join(skillRoot, 'assets/personal.yml'), YAML.stringify(personalDefinition));
+  const personalManifest = YAML.parse(fs.readFileSync(manifestPath, 'utf8'));
+  personalManifest.skills.find((skill: any) => skill.id === 'browser-connection').connectionDefinitions.push('assets/personal.yml');
+  fs.writeFileSync(manifestPath, YAML.stringify(personalManifest));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('#create-connection-skill').click();
+  await page.locator('[data-connection-system]').filter({ hasText: '个人授权夹具' }).click();
+  await page.locator('#connection-skill-personal-only').waitFor();
+  assert.equal(await page.locator('#connection-skill-team-username').count(), 0);
+  assert.equal(await page.locator('#connection-skill-personal-enabled').count(), 0, 'Personal-only mode has no fallback-to-team switch.');
+  await page.locator('#connection-skill-name').fill('个人账号验证');
+  await page.locator('#connection-skill-config-endpoint').fill('https://personal.example.test/');
+  await page.locator('#connection-skill-personal-username').fill('fixture-local-user');
+  await page.locator('#connection-skill-personal-password').fill('fixture-local-password');
+  const personalDiscover = page.waitForRequest(request => request.url().includes('/connection-skills/discover') && request.method() === 'POST');
+  await page.locator('#discover-connection-skill-config-scope').click();
+  assert.equal((await personalDiscover).postDataJSON().authentication.source, 'personal');
+  await page.locator('#connection-skill-config-scope').click();
+  await page.getByTitle('测试空间', { exact: true }).click();
+  const personalTest = page.waitForRequest(request => request.url().includes('/connection-skills/test') && request.method() === 'POST');
+  await page.locator('#test-connection-skill').click();
+  assert.equal((await personalTest).postDataJSON().authentication.source, 'personal');
+  await page.locator('#connection-skill-personal-test-result').filter({ hasText: '只读测试通过' }).waitFor();
+
+  // A failed second save must keep the successful configuration, entered secret,
+  // and open editor; it must not claim the personal authentication was saved.
+  const personalAuthRoute = '**/connection-skills/instances/*/auth';
+  await page.route(personalAuthRoute, async route => {
+    if (route.request().method() !== 'PUT') return route.fallback();
+    await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'connection_skill_revision_conflict', message: '模拟个人认证观察冲突' } }) });
+  });
+  await page.locator('#save-connection-skill-team').click();
+  await page.locator('#connection-skill-save-notice').filter({ hasText: '连接配置已保存；个人账号尚未保存' }).waitFor();
+  assert.equal(await page.locator('#connection-skill-personal-password').inputValue(), 'fixture-local-password');
+  let personalInstance = connections.list(workspaceRoot).instances.find((instance: any) => instance.name === '个人账号验证');
+  assert.ok(personalInstance);
+  assert.equal(personalInstance.authentication.personal.present, false);
+  assert.equal(YAML.parse(fs.readFileSync(path.join(workspaceRoot, personalInstance.sourcePath), 'utf8')).authentication, null);
+  await page.unroute(personalAuthRoute);
+  await page.locator('#reread-connection-skill').click();
+  await page.locator('#connection-skill-save-notice').filter({ hasText: '已读取最新配置' }).waitFor();
+  assert.equal(await page.locator('#connection-skill-personal-password').inputValue(), 'fixture-local-password');
+  await page.locator('#save-connection-skill-team').click();
+  await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
+  personalInstance = connections.get(workspaceRoot, personalInstance.id).instance;
+  assert.equal(personalInstance.authentication.source, 'personal');
+  assert.equal(personalInstance.authentication.personal.configured, true);
+  assert.equal(JSON.stringify(personalInstance).includes('fixture-local-password'), false, 'Regular observations never expose the saved password.');
+  const personalRow = page.locator('#connection-skills-table tr').filter({ hasText: '个人账号验证' });
+  await personalRow.getByRole('button', { name: '编辑', exact: true }).click();
+  const savedPassword = page.locator('#connection-skill-saved-personal-password');
+  await savedPassword.waitFor();
+  assert.equal(await savedPassword.inputValue(), '••••••••');
+  const revealResponse = page.waitForResponse(response => response.url().endsWith('/auth/reveal'));
+  await page.getByRole('button', { name: '查看已保存的密码', exact: true }).click();
+  assert.equal((await revealResponse).headers()['cache-control'], 'no-store');
+  await page.waitForFunction(() => (document.querySelector('#connection-skill-saved-personal-password') as HTMLInputElement)?.value === 'fixture-local-password');
+  assert.equal(await savedPassword.getAttribute('type'), 'text');
+  await page.getByRole('button', { name: '隐藏已保存的密码', exact: true }).click();
+  assert.equal(await savedPassword.inputValue(), '••••••••');
+  // Keyboard users get the same explicit, on-demand action.
+  const eye = page.getByRole('button', { name: '查看已保存的密码', exact: true });
+  await eye.focus(); await page.keyboard.press('Enter');
+  await page.waitForFunction(() => (document.querySelector('#connection-skill-saved-personal-password') as HTMLInputElement)?.value === 'fixture-local-password');
+  await page.locator('#close-connection-skill-editor').click();
+  await personalRow.getByRole('button', { name: '编辑', exact: true }).click();
+  assert.equal(await savedPassword.inputValue(), '••••••••', 'Closing the editor discards the previously revealed value.');
+  let releaseReveal: (() => void) | undefined;
+  await page.route('**/auth/reveal', async route => {
+    await new Promise<void>(resolve => { releaseReveal = resolve; });
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ field: 'password', value: 'stale-fixture-password' }) }).catch(() => {});
+  });
+  const staleReveal = page.waitForRequest(request => request.url().endsWith('/auth/reveal'));
+  await page.getByRole('button', { name: '查看已保存的密码', exact: true }).click();
+  await staleReveal;
+  await page.locator('#change-connection-skill-personal').click();
+  releaseReveal!();
+  await page.unroute('**/auth/reveal');
+  assert.equal(await page.locator('#connection-skill-personal-password').inputValue(), '', 'A late reveal cannot become an editable authentication draft.');
+  assert.equal(await savedPassword.count(), 0);
+  await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-personal-only.png') });
+  await page.locator('#close-connection-skill-editor').click();
+
+  // An upgrade must preserve the complete old group before clearing its source.
+  // Create only offline fixture credentials while the source still permits team auth.
+  const legacyPath = path.join(skillRoot, 'assets/legacy-personal.yml');
+  const legacyDefinition = { ...definition, definitionId: 'browser-legacy-personal', name: '个人认证迁移夹具', systemId: 'browser-legacy-personal' };
+  fs.writeFileSync(legacyPath, YAML.stringify(legacyDefinition));
+  const legacyManifest = YAML.parse(fs.readFileSync(manifestPath, 'utf8'));
+  legacyManifest.skills.find((skill: any) => skill.id === 'browser-connection').connectionDefinitions.push('assets/legacy-personal.yml');
+  fs.writeFileSync(manifestPath, YAML.stringify(legacyManifest));
+  const legacyEntry = connections.definitions(workspaceRoot).definitions.find((item: any) => item.definition.definitionId === legacyDefinition.definitionId);
+  const legacyInstance = connections.save(workspaceRoot, null, { name: '旧版个人账号迁移', environment: '', enabled: true, binding: { ...binding, definitionId: legacyDefinition.definitionId }, config: { endpoint: 'https://personal-migration.example.test/', scope: 'scope-a' }, authentication: { intent: 'replace', values: { username: 'fixture-migrating-user', password: 'fixture-migrating-password' } }, expected: { teamRevision: 'absent', definitionRevision: legacyEntry.revision } }).instance;
+  const legacyTeamPath = path.join(workspaceRoot, legacyInstance.sourcePath);
+  assert.ok(YAML.parse(fs.readFileSync(legacyTeamPath, 'utf8')).authentication);
+  fs.writeFileSync(legacyPath, YAML.stringify({ ...legacyDefinition, authentication: { ...legacyDefinition.authentication, allowedSources: ['personal'] } }));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  const legacyRow = page.locator('#connection-skills-table tr').filter({ hasText: '旧版个人账号迁移' });
+  await legacyRow.getByRole('button', { name: '编辑', exact: true }).click();
+  await page.locator('#connection-skill-legacy-team-auth').waitFor();
+  assert.equal(await page.locator('#save-connection-skill-team').isDisabled(), true, 'Ordinary save cannot remove the only persisted old group.');
+  assert.ok(YAML.parse(fs.readFileSync(legacyTeamPath, 'utf8')).authentication, 'Opening the upgraded connection never clears the old source.');
+  assert.equal(connections.get(workspaceRoot, legacyInstance.id).instance.authentication.personal.present, false);
+  const migrationRequest = page.waitForRequest(request => request.url().endsWith('/auth/migrate') && request.method() === 'POST');
+  await page.locator('#migrate-connection-skill-personal').click();
+  const migrationInput = (await migrationRequest).postDataJSON();
+  assert.equal(migrationInput.source.id, legacyInstance.id); assert.equal(migrationInput.source.authenticationSource, 'team'); assert.equal(migrationInput.removeSource, true);
+  assert.deepEqual(migrationInput.source.expected, migrationInput.expected);
+  assert.equal(JSON.stringify(migrationInput).includes('fixture-migrating-password'), false, 'The browser requests a bound move without round-tripping the stored secret.');
+  await page.locator('#connection-skill-save-notice').filter({ hasText: '旧版认证已迁移并加密保存在本机' }).waitFor();
+  const migratedInstance = connections.get(workspaceRoot, legacyInstance.id).instance;
+  assert.equal(migratedInstance.authentication.team.present, false); assert.equal(migratedInstance.authentication.personal.configured, true); assert.equal(migratedInstance.authentication.source, 'personal');
+  assert.equal(YAML.parse(fs.readFileSync(legacyTeamPath, 'utf8')).authentication, null);
+  assert.equal(await page.locator('#connection-skill-legacy-team-auth').count(), 0);
+  assert.equal(await page.locator('#save-connection-skill-team').isEnabled(), true);
+  await page.getByRole('button', { name: '查看已保存的密码', exact: true }).click();
+  await page.waitForFunction(() => (document.querySelector('#connection-skill-saved-personal-password') as HTMLInputElement)?.value === 'fixture-migrating-password');
+  await page.getByRole('button', { name: '隐藏已保存的密码', exact: true }).click();
+  await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-personal-migration.png') });
+  await page.locator('#close-connection-skill-editor').click();
+  // Browser-authorized methods keep internal authentication fields off the page.
+  const managedDefinition = { ...definition, definitionId: 'browser-managed', name: '外部授权夹具', systemId: 'browser-managed',
+    config: { fields: definition.config.fields.map(field => field.key === 'scope' ? { ...field, required: false } : field) },
+    authentication: { ...definition.authentication, allowedSources: ['personal'], authorization: { program: 'authorize', args: [], inputs: ['config.endpoint'], label: '登录外部账号', reauthorizeLabel: '重新授权外部账号', timeoutMs: 30000 } },
+    programs: { ...definition.programs, authorize: { kind: 'bundled', runtime: 'node', entry: 'scripts/authorize.mjs', contextProtocol: 'buildr.connection-authorization-context/v1' } },
+    presentation: { ...definition.presentation, environment: 'hidden' },
+  };
+  fs.writeFileSync(path.join(skillRoot, 'assets/managed.yml'), YAML.stringify(managedDefinition));
+  fs.writeFileSync(path.join(skillRoot, 'scripts/authorize.mjs'), `process.once('message', ({context}) => { if (context.protocolVersion !== 'buildr.connection-authorization-context/v1' || Object.hasOwn(context.connection,'authentication')) process.exit(2); process.stdout.write('suppressed-fixture-secret'); process.send({type:'buildr.connection-auth-result',callId:context.callId,status:'success',values:{username:'fixture-managed-user',password:'fixture-managed-password'}}, () => process.disconnect()); });`);
+  const managedManifest = YAML.parse(fs.readFileSync(manifestPath, 'utf8'));
+  managedManifest.skills.find((skill: any) => skill.id === 'browser-connection').connectionDefinitions.push('assets/managed.yml');
+  fs.writeFileSync(manifestPath, YAML.stringify(managedManifest));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('#create-connection-skill').click();
+  await page.locator('[data-connection-system]').filter({ hasText: '外部授权夹具' }).click();
+  await page.locator('#connection-skill-authorization-state').filter({ hasText: '尚未授权' }).waitFor();
+  assert.equal(await page.locator('#connection-skill-environment').count(), 0);
+  assert.equal(await page.locator('#connection-skill-name').getAttribute('placeholder'), '外部授权夹具');
+  assert.equal(await page.locator('#connection-skill-personal-username').count(), 0);
+  assert.equal(await page.locator('#connection-skill-personal-password').count(), 0);
+  assert.equal(await page.locator('#connection-skill-saved-personal-password').count(), 0);
+  const managedAuthorizationRequests: string[] = [];
+  page.on('request', request => { if (request.url().endsWith('/auth/authorize')) managedAuthorizationRequests.push(request.url()); });
+  await page.locator('#connection-skill-name').fill('外部授权配置保存后关闭');
+  await page.locator('#connection-skill-config-endpoint').fill('https://browser-create.example.test/');
+  const managedCreateRoute = '**/connection-skills/instances';
+  await page.route(managedCreateRoute, route => route.request().method() === 'POST'
+    ? route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'fixture_create_rejected', message: '模拟新增配置保存失败' } }) })
+    : route.continue());
+  await page.locator('#save-connection-skill-team').click();
+  await page.locator('#connection-skill-error').filter({ hasText: '模拟新增配置保存失败' }).waitFor();
+  assert.equal(await page.locator('#connection-skill-editor').isVisible(), true, 'A failed explicit create keeps the editor open.');
+  assert.equal(await page.locator('#connection-skill-name').inputValue(), '外部授权配置保存后关闭');
+  assert.equal(await page.locator('#connection-skill-config-endpoint').inputValue(), 'https://browser-create.example.test/');
+  assert.equal(connections.list(workspaceRoot).instances.some((item: any) => item.name === '外部授权配置保存后关闭'), false);
+  await page.unroute(managedCreateRoute);
+  await page.locator('#save-connection-skill-team').click();
+  await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
+  const managedUnauthenticated = connections.list(workspaceRoot).instances.find((item: any) => item.name === '外部授权配置保存后关闭');
+  assert.ok(managedUnauthenticated, 'Explicit create saves the browser-authorized connection without requiring authentication.');
+  assert.equal(managedUnauthenticated.authentication.personal.present, false);
+  await page.locator('#connection-skills-table').locator(`[data-row-key="${managedUnauthenticated.id}"]`).getByText('外部授权配置保存后关闭', { exact: true }).waitFor();
+  assert.deepEqual(managedAuthorizationRequests, [], 'Explicit configuration save never starts browser authorization.');
+  await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-browser-create-save-closed.png') });
+  await page.locator('#create-connection-skill').click();
+  await page.locator('[data-connection-system]').filter({ hasText: '外部授权夹具' }).click();
+  await page.locator('#connection-skill-name').fill('无需内部字段的授权');
+  await page.locator('#connection-skill-config-endpoint').fill('https://browser-authorization.example.test/');
+  const managedRoute = '**/connection-skills/instances/*/auth/authorize';
+  await page.route(managedRoute, route => route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'connection_skill_authorization_browser_closed', message: '授权浏览器已关闭；未替换个人认证，可重新发起授权。' } }) }));
+  await page.locator('#authorize-connection-skill-personal').click();
+  await page.locator('#connection-skill-save-notice').filter({ hasText: '连接配置已保存；本次授权未完成' }).waitFor();
+  let managedInstance = connections.list(workspaceRoot).instances.find((item: any) => item.name === '无需内部字段的授权');
+  assert.ok(managedInstance); assert.equal(managedInstance.authentication.personal.present, false);
+  assert.equal(await page.locator('#connection-skill-editor').isVisible(), true, 'The internal shell save and failed first authorization keep the editor open for retry.');
+  assert.equal(await page.locator('#connection-skill-name').inputValue(), '无需内部字段的授权');
+  assert.equal(await page.locator('#connection-skill-config-endpoint').inputValue(), 'https://browser-authorization.example.test/');
+  assert.equal(YAML.parse(fs.readFileSync(path.join(workspaceRoot, managedInstance.sourcePath), 'utf8')).authentication, null);
+  await page.unroute(managedRoute);
+  const managedRequest = page.waitForRequest(request => request.url().endsWith('/auth/authorize'));
+  const managedResponse = page.waitForResponse(response => response.url().endsWith('/auth/authorize'));
+  await page.locator('#authorize-connection-skill-personal').click();
+  assert.deepEqual(Object.keys((await managedRequest).postDataJSON()), ['expected']);
+  const authorizationResult = await (await managedResponse).json();
+  assert.equal(authorizationResult.status, 'success');
+  assert.equal(JSON.stringify(authorizationResult).includes('fixture-managed-password'), false);
+  assert.equal(JSON.stringify(authorizationResult).includes('suppressed-fixture-secret'), false);
+  await page.locator('#connection-skill-authorization-state').filter({ hasText: '本机已授权' }).waitFor();
+  assert.equal((await page.locator('#connection-skill-editor').innerText()).includes('fixture-managed-user'), false, 'No accountLabelField means no internal username fallback.');
+  const managedRow = page.locator('#connection-skills-table tr').filter({ hasText: '无需内部字段的授权' });
+  assert.equal((await managedRow.innerText()).includes('未填写环境'), false);
+  await page.locator('#connection-skill-name').fill('授权后的非秘密草稿');
+  assert.equal(await page.locator('#authorize-connection-skill-personal').isDisabled(), true);
+  await page.locator('#connection-skill-authorization-dirty').waitFor();
+  await page.locator('#save-connection-skill-team').click();
+  await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
+  const managedSavedRow = page.locator('#connection-skills-table').locator(`[data-row-key="${managedInstance.id}"]`);
+  await managedSavedRow.getByText('授权后的非秘密草稿', { exact: true }).waitFor();
+  assert.equal(connections.get(workspaceRoot, managedInstance.id).instance.name, '授权后的非秘密草稿');
+  await managedSavedRow.getByRole('button', { name: '编辑', exact: true }).click();
+  await page.locator('#connection-skill-name').fill('授权后的再次编辑');
+  const managedUpdateRoute = `**/connection-skills/instances/${managedInstance.id}`;
+  await page.route(managedUpdateRoute, route => route.request().method() === 'PATCH'
+    ? route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'fixture_update_rejected', message: '模拟编辑配置保存失败' } }) })
+    : route.continue());
+  await page.locator('#save-connection-skill-team').click();
+  await page.locator('#connection-skill-error').filter({ hasText: '模拟编辑配置保存失败' }).waitFor();
+  assert.equal(await page.locator('#connection-skill-editor').isVisible(), true, 'A failed explicit browser-authorized edit keeps the editor open.');
+  assert.equal(await page.locator('#connection-skill-name').inputValue(), '授权后的再次编辑');
+  assert.equal(await page.locator('#connection-skill-config-endpoint').inputValue(), 'https://browser-authorization.example.test/');
+  assert.equal(connections.get(workspaceRoot, managedInstance.id).instance.name, '授权后的非秘密草稿', 'A failed edit does not update the saved row.');
+  await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-browser-edit-failure-retained.png') });
+  await page.unroute(managedUpdateRoute);
+  await page.locator('#save-connection-skill-team').click();
+  await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
+  await managedSavedRow.getByText('授权后的再次编辑', { exact: true }).waitFor();
+  assert.equal(connections.get(workspaceRoot, managedInstance.id).instance.name, '授权后的再次编辑');
+  assert.equal(managedAuthorizationRequests.length, 2, 'Explicit edits never restart authorization after the failed and successful authorization attempts.');
+  await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-browser-edit-save-closed.png') });
+  await managedSavedRow.getByRole('button', { name: '编辑', exact: true }).click();
+  await page.locator('#discover-connection-skill-config-scope').click();
+  await page.locator('#connection-skill-discovery-scope').filter({ hasText: '已读取 2 个可选项' }).waitFor();
+  managedInstance = connections.get(workspaceRoot, managedInstance.id).instance;
+  const originalManagedRevision = managedInstance.localRevision;
+  let releaseManaged: (() => void) | undefined, routeEntered: (() => void) | undefined;
+  await page.route(managedRoute, async route => { await new Promise<void>(resolve => { releaseManaged = resolve; routeEntered?.(); }); await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'success', instance: { ...managedInstance, id: 'stale-wrong-instance' } }) }).catch(() => {}); });
+  const cancelledRouteReady = new Promise<void>(resolve => { routeEntered = resolve; });
+  const beginCancelled = page.waitForRequest(request => request.url().endsWith('/auth/authorize'));
+  await page.locator('#authorize-connection-skill-personal').click(); await beginCancelled; await cancelledRouteReady;
+  await page.locator('#connection-skill-authorization-waiting').waitFor();
+  const cancelledRequest = page.waitForEvent('requestfailed', { predicate: request => request.url().endsWith('/auth/authorize') });
+  await page.locator('#cancel-connection-skill-authorization').click();
+  await cancelledRequest; releaseManaged!();
+  await page.locator('#connection-skill-authorization-waiting').waitFor({ state: 'hidden' });
+  assert.equal(connections.get(workspaceRoot, managedInstance.id).instance.localRevision, originalManagedRevision);
+  assert.equal(await page.locator('#connection-skill-error').count(), 0, 'A cancelled late response cannot replace state or show an error.');
+  const closedRouteReady = new Promise<void>(resolve => { routeEntered = resolve; });
+  const beginClosed = page.waitForRequest(request => request.url().endsWith('/auth/authorize'));
+  await page.locator('#authorize-connection-skill-personal').click(); await beginClosed; await closedRouteReady;
+  await page.locator('#close-connection-skill-editor').click(); releaseManaged!();
+  await page.unroute(managedRoute);
+  await managedSavedRow.getByRole('button', { name: '编辑', exact: true }).click();
+  await page.locator('#connection-skill-authorization-state').filter({ hasText: '本机已授权' }).waitFor();
+  assert.equal(await page.locator('#connection-skill-environment').count(), 0);
+  assert.equal(await page.locator('#connection-skill-saved-personal-password').count(), 0);
+  assert.equal(connections.get(workspaceRoot, managedInstance.id).instance.localRevision, originalManagedRevision);
+  await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-browser-authorization.png') });
+  await page.locator('#close-connection-skill-editor').click();
   assert.deepEqual(browserErrors, []);
-  process.stdout.write(JSON.stringify({ schemaVersion: 'buildr.workspace-smoke-scenario/v1', status: 'passed', checks: ['system-and-explicit-method-selection', 'dependency-ordered-discovery', 'progressive-fields-and-authentication', 'explicit-production-flag', 'legacy-route-redirect', 'legacy-tabs-merge', 'single-connection-navigation', 'no-legacy-api-requests', 'mysql-query-ui-fixture', 'mysql-database-picker-search-and-hidden-selection', 'mysql-database-picker-close-save-once', 'mysql-database-picker-unchanged-no-write', 'mysql-database-picker-current-cleared', 'mysql-database-picker-refresh-and-close-discard', 'mysql-database-picker-reopen-and-viewport', 'query-observed-revision-and-original-sql', 'query-precision-display', 'separate-save', 'unsaved-switch', 'explicit-candidate', 'failed-test-save-independent', 'independent-draft-revisions', 'revision-conflict', 'narrow-and-keyboard', 'missing-skill-personal-removal', 'main-save-closes-and-updates-row', 'failed-save-retains-draft', 'main-save-preserves-personal-draft', 'reread-authentication-identity', 'optional-program-failure-isolated', 'nacos-api-and-website-distinct', 'focus-and-retained-page-no-read', 'test-discovery-check-no-directory-read', 'explicit-refresh-only', 'local-save-delete', 'interrupted-first-read-retried', 'late-list-cannot-rollback-save', 'combined-directory-and-local-diagnostics', 'failed-or-malformed-directory-retains-snapshot'], realExternalSystem: false, queryBackend: 'intercepted-ui-fixture' }) + '\n');
+  process.stdout.write(JSON.stringify({ schemaVersion: 'buildr.workspace-smoke-scenario/v1', status: 'passed', checks: ['category-order-initial-search-refresh-local-updates', 'website-fallback-and-explicit-override', 'system-and-explicit-method-selection', 'dependency-ordered-discovery', 'progressive-fields-and-authentication', 'explicit-production-flag', 'legacy-route-redirect', 'legacy-tabs-merge', 'single-connection-navigation', 'no-legacy-api-requests', 'mysql-query-ui-fixture', 'mysql-database-picker-search-and-hidden-selection', 'mysql-database-picker-close-save-once', 'mysql-database-picker-unchanged-no-write', 'mysql-database-picker-current-cleared', 'mysql-database-picker-refresh-and-close-discard', 'mysql-database-picker-reopen-and-viewport', 'query-observed-revision-and-original-sql', 'query-precision-display', 'separate-save', 'unsaved-switch', 'explicit-candidate', 'failed-test-save-independent', 'independent-draft-revisions', 'revision-conflict', 'narrow-and-keyboard', 'missing-skill-personal-removal', 'main-save-closes-and-updates-row', 'failed-save-retains-draft', 'main-save-preserves-personal-draft', 'reread-authentication-identity', 'optional-program-failure-isolated', 'nacos-api-and-website-distinct', 'focus-and-retained-page-no-read', 'test-discovery-check-no-directory-read', 'explicit-refresh-only', 'local-save-delete', 'interrupted-first-read-retried', 'late-list-cannot-rollback-save', 'combined-directory-and-local-diagnostics', 'failed-or-malformed-directory-retains-snapshot', 'personal-only-new-discovery-and-test', 'personal-two-step-partial-save-preserves-draft', 'explicit-personal-secret-reveal-no-store-and-keyboard', 'revealed-secret-close-and-late-response-discard', 'personal-upgrade-preserves-and-migrates-old-group', 'browser-authorization-hidden-environment-and-internal-fields', 'browser-authorization-explicit-create-save-closes-without-auth', 'browser-authorization-explicit-create-and-edit-failures-retain-draft', 'browser-authorization-main-save-and-reopened-edit-close-update-row', 'browser-authorization-partial-shell-save-and-safe-private-result', 'browser-reauthorization-saved-config-cancel-close-and-late-response'], realExternalSystem: false, queryBackend: 'intercepted-ui-fixture' }) + '\n');
 } catch (error) {
   if (page) { process.stderr.write(JSON.stringify({ body: (await page.locator('body').innerText()).slice(-5000) }) + '\n'); await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-failure.png') }); }
   throw error;

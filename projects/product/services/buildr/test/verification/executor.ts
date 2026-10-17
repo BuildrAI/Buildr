@@ -8,7 +8,7 @@ import {
   CANDIDATE_RELEASE_MANIFEST_ENV,
   CANDIDATE_TARBALL_ENV,
   readSharedCandidatePackage,
-} from './release/candidate-package.ts';
+} from '../../../../../../skills/buildr-release/scripts/candidate-package.ts';
 import { runVerificationStep, writeVerificationDiagnostics } from './timing/parallel-runner.ts';
 import { resolveNodeTestFiles } from './test-files.ts';
 
@@ -72,6 +72,10 @@ export function createVerificationExecutor(options: any): any  {
     BUILDR_NODE_IDENTITY: exactNode.audit.identity,
     BUILDR_NPM_ENTRY_PATH: inheritedEnv.BUILDR_NPM_ENTRY_PATH || path.join(productRoot, 'bin', 'buildr.mjs'),
   };
+  // These paths belong to the parent preparation operation. Nested test
+  // fixtures must not overwrite its timing receipt through process.env.
+  delete baseEnv.BUILDR_CANDIDATE_PREPARATION_OUTPUT;
+  delete baseEnv.BUILDR_CANDIDATE_PREPARATION_ID;
   const sharedCandidate: any = readSharedCandidatePackage(baseEnv);
   const artifacts: any = sharedCandidate ? { candidate: sharedCandidate } : {};
   const nodeTestFile: any = (file: any) => {

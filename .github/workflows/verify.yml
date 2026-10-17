@@ -1,4 +1,5 @@
 name: Verify Buildr
+run-name: ${{ inputs.repair_candidate_run_id && format('Candidate repair {0} {1}', inputs.repair_candidate_run_id, inputs.verification_source) || github.event.pull_request.title || 'Verify Buildr' }}
 
 on:
   workflow_dispatch:
@@ -14,7 +15,7 @@ on:
         required: false
         default: none
         type: choice
-        options: [none, core-project-task-macos, nested-git-isolation-windows, runtime-windows, failed-windows, package-consumer-windows, nested-lifecycle-windows, app-process-windows, task-lifecycle-windows, preview-lifecycle-windows, publication-effects-windows, package-pair-publisher]
+        options: [none, core-project-task-macos, nested-git-isolation-windows, runtime-windows, failed-windows, package-consumer-windows, nested-lifecycle-windows, app-process-windows, readonly-files-windows, task-lifecycle-windows, preview-lifecycle-windows, publication-effects-windows, package-pair-publisher]
       diagnostic_candidate_run_id:
         description: Original Candidate run whose immutable package is consumed only by an independent diagnosis
         required: false
@@ -72,6 +73,27 @@ on:
         description: Bounded runner-produced source results for the controlled Candidate entry
         required: false
         type: string
+      artifact_verification:
+        description: Bounded results from the same final package, retaining their actual execution origin
+        required: false
+        type: string
+      local_runner:
+        description: Reserve common and matching OS package checks for the local machine
+        required: false
+        type: choice
+        options: ['', macos, windows]
+      repair_candidate_run_id:
+        description: Completed controlled Candidate whose original package and valid checks are preserved
+        required: false
+        type: string
+      product_source:
+        description: Exact original package-producing commit for a formal repair
+        required: false
+        type: string
+      verification_source:
+        description: Exact verification-tool commit on dev; product inputs and workflow must match the original Candidate
+        required: false
+        type: string
   pull_request:
     branches: [dev, main]
 
@@ -83,7 +105,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CANDIDATE_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  CANDIDATE_SOURCE_SHA: ${{ inputs.repair_candidate_run_id && inputs.verification_source || github.event.pull_request.head.sha || github.sha }}
   BUILDR_CANDIDATE_PURPOSE: ${{ inputs.purpose || 'candidate' }}
   BUILDR_CANDIDATE_EXPECTED_SOURCE_TREE: ${{ inputs.expected_source_tree || '' }}
   BUILDR_RELEASE_REHEARSAL_IDENTITY: ${{ inputs.rehearsal_identity || '' }}
@@ -97,6 +119,11 @@ env:
   BUILDR_BUILDR_PEER_VERSION: ${{ inputs.buildr_peer_version || '' }}
   BUILDR_BUILDR_PEER_INTEGRITY: ${{ inputs.buildr_peer_integrity || '' }}
   BUILDR_SOURCE_VERIFICATION: ${{ github.event_name == 'workflow_dispatch' && inputs.source_verification || '' }}
+  BUILDR_ARTIFACT_VERIFICATION: ${{ github.event_name == 'workflow_dispatch' && inputs.artifact_verification || '' }}
+  BUILDR_CANDIDATE_LOCAL_RUNNER: ${{ github.event_name == 'workflow_dispatch' && !inputs.repair_candidate_run_id && inputs.local_runner || '' }}
+  BUILDR_CANDIDATE_REPAIR_RUN_ID: ${{ inputs.repair_candidate_run_id || '' }}
+  BUILDR_CANDIDATE_PRODUCT_SOURCE: ${{ inputs.product_source || '' }}
+  BUILDR_CANDIDATE_VERIFICATION_SOURCE: ${{ inputs.verification_source || '' }}
 
 jobs:
   dev-feedback-macos:
@@ -166,7 +193,7 @@ jobs:
         if: steps.services.outputs.dsh == 'true'
         shell: bash
         run: |
-          node tools/release/package-artifact-observation.ts --package buildr --discover current --tarball "${RUNNER_TEMP}/development-buildr-peer.tgz" --output "${RUNNER_TEMP}/development-buildr-peer.json"
+          node ../../../../skills/buildr-release/scripts/package-artifact-observation.ts --package buildr --discover current --tarball "${RUNNER_TEMP}/development-buildr-peer.tgz" --output "${RUNNER_TEMP}/development-buildr-peer.json"
           node --input-type=module -e 'import fs from "node:fs"; fs.appendFileSync(process.env.GITHUB_ENV, `BUILDR_DSH_BUILDR_PEER_INPUT=${process.argv[1]}\n`);' "${RUNNER_TEMP}/development-buildr-peer.json"
       - name: Verify changed product scope
         env:
@@ -257,11 +284,16 @@ jobs:
     if: (!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))
     runs-on: macos-15
     timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
     outputs:
-      source: ${{ steps.plan.outputs.source }}
-      source_required: ${{ steps.plan.outputs.source_required }}
-      artifact: ${{ steps.plan.outputs.artifact }}
-      host: ${{ steps.plan.outputs.host }}
+      source: ${{ steps.repair.outputs.source || steps.plan.outputs.source }}
+      source_required: ${{ steps.repair.outputs.source_required || steps.plan.outputs.source_required }}
+      artifact: ${{ steps.repair.outputs.artifact || steps.plan.outputs.artifact }}
+      artifact_required: ${{ steps.repair.outputs.artifact_required || steps.plan.outputs.artifact_required }}
+      host: ${{ steps.repair.outputs.host || steps.plan.outputs.host }}
+      host_required: ${{ steps.repair.outputs.host_required || steps.plan.outputs.host_required }}
       buildr: ${{ steps.scope.outputs.buildr }}
       plugin: ${{ steps.scope.outputs.plugin }}
       joint: ${{ steps.scope.outputs.joint }}
@@ -279,13 +311,44 @@ jobs:
       - name: Resolve checks from the complete frozen source difference
         id: scope
         working-directory: projects/product/services/buildr
-        run: node tools/release/verify-pr-candidate.ts plan
+        run: node test/verification/release/verify-pr-candidate.ts plan
       - id: plan
-        if: steps.scope.outputs.buildr == 'true'
+        if: steps.scope.outputs.buildr == 'true' && !inputs.repair_candidate_run_id
         working-directory: projects/product/services/buildr
         env:
           BUILDR_CANDIDATE_CI_EVIDENCE_DIR: ${{ runner.temp }}/candidate-reused-source
         run: node test/verification/candidate-ci.ts plan
+      - id: repair
+        if: steps.scope.outputs.buildr == 'true' && inputs.repair_candidate_run_id
+        working-directory: projects/product/services/buildr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILDR_CANDIDATE_REPAIR_DIR: ${{ runner.temp }}/candidate-repair
+        run: node test/verification/candidate-repair-cli.ts plan
+      - name: Preserve formal repair plan
+        if: inputs.repair_candidate_run_id && steps.scope.outputs.buildr == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: candidate-repair-plan
+          path: ${{ runner.temp }}/candidate-repair/candidate-repair-plan.json
+          if-no-files-found: error
+          overwrite: true
+      - name: Preserve original package bytes
+        if: inputs.repair_candidate_run_id && steps.scope.outputs.buildr == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: candidate-package
+          path: ${{ runner.temp }}/candidate-repair/candidate-package
+          if-no-files-found: error
+          overwrite: true
+      - name: Preserve validated formal repair proofs
+        if: inputs.repair_candidate_run_id && steps.scope.outputs.buildr == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: candidate-evidence-reused-repair
+          path: ${{ runner.temp }}/candidate-repair/reused-evidence
+          if-no-files-found: error
+          overwrite: true
       - name: Preserve validated source result reuse
         if: steps.scope.outputs.buildr == 'true'
         uses: actions/upload-artifact@v7
@@ -634,7 +697,7 @@ jobs:
           DIAGNOSTIC_RUN_JSON: ${{ runner.temp }}/publisher-pair-original-run.json
           DIAGNOSTIC_ARTIFACT_DIR: ${{ runner.temp }}/publisher-pair-original-package
           DIAGNOSTIC_OUTPUT: ${{ runner.temp }}/publisher-pair-diagnosis
-        run: node tools/release/package-pair-publisher-diagnosis.ts
+        run: node test/verification/release/package-pair-publisher-diagnosis.ts
       - name: Upload independent publisher pair diagnosis
         if: always()
         uses: actions/upload-artifact@v7
@@ -645,8 +708,8 @@ jobs:
           overwrite: true
 
   diagnostic-app-process-windows:
-    name: Independent Windows source diagnosis (app-process-windows)
-    if: github.event_name == 'workflow_dispatch' && inputs.diagnostic_scope == 'app-process-windows'
+    name: Independent Windows source diagnosis (${{ inputs.diagnostic_scope }})
+    if: github.event_name == 'workflow_dispatch' && (inputs.diagnostic_scope == 'app-process-windows' || inputs.diagnostic_scope == 'readonly-files-windows')
     runs-on: windows-2025
     timeout-minutes: 20
     permissions:
@@ -662,7 +725,7 @@ jobs:
           DISPATCH_REF: ${{ github.ref }}
           DISPATCH_PURPOSE: ${{ inputs.purpose }}
           EXPECTED_SOURCE_TREE: ${{ inputs.expected_source_tree }}
-          EXTRA_INPUTS_PRESENT: ${{ inputs.release_packages != '' || inputs.buildr_version != '' || inputs.plugin_version != '' || inputs.buildr_peer_version != '' || inputs.buildr_peer_integrity != '' || inputs.selection_id != '' || inputs.selection_baseline != '' || inputs.selection_main != '' || inputs.selection_identity != '' || inputs.rehearsal_identity != '' || inputs.source_verification != '' || inputs.diagnostic_candidate_run_id != '' || inputs.diagnostic_candidate_source != '' }}
+          EXTRA_INPUTS_PRESENT: ${{ inputs.release_packages != '' || inputs.buildr_version != '' || inputs.plugin_version != '' || inputs.buildr_peer_version != '' || inputs.buildr_peer_integrity != '' || inputs.selection_id != '' || inputs.selection_baseline != '' || inputs.selection_main != '' || inputs.selection_identity != '' || inputs.rehearsal_identity != '' || inputs.source_verification != '' || inputs.artifact_verification != '' || inputs.local_runner != '' || inputs.repair_candidate_run_id != '' || inputs.product_source != '' || inputs.verification_source != '' || inputs.diagnostic_candidate_run_id != '' || inputs.diagnostic_candidate_source != '' }}
         run: |
           set -euo pipefail
           [[ "$DISPATCH_REF" == 'refs/heads/dev' && "$DISPATCH_PURPOSE" == 'candidate' ]] || { echo 'Source diagnosis requires the dev Candidate entry.' >&2; exit 1; }
@@ -679,28 +742,28 @@ jobs:
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
       - name: Prepare the current Windows source environment
-        run: node tools/verification/candidate-environment.ts prepare --profile source-runtime
-      - name: Diagnose only the registered application process owner
+        run: node tools/verification/candidate-environment.ts prepare --profile ${{ inputs.diagnostic_scope == 'readonly-files-windows' && 'base' || 'source-runtime' }}
+      - name: Diagnose only the registered Windows source owner
         env:
           EXPECTED_SOURCE_TREE: ${{ inputs.expected_source_tree }}
-          DIAGNOSTIC_SCENARIO: app-process-windows
-          DIAGNOSTIC_OUTPUT: ${{ runner.temp }}/diagnostic-app-process-windows
-          BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/diagnostic-app-process-windows/diagnostics
+          DIAGNOSTIC_SCENARIO: ${{ inputs.diagnostic_scope }}
+          DIAGNOSTIC_OUTPUT: ${{ runner.temp }}/diagnostic-${{ inputs.diagnostic_scope }}
+          BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/diagnostic-${{ inputs.diagnostic_scope }}/diagnostics
           BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
         run: node test/verification/release/windows-source-diagnosis.ts
       - name: Upload independent source diagnosis
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: diagnostic-app-process-windows
-          path: ${{ runner.temp }}/diagnostic-app-process-windows
+          name: diagnostic-${{ inputs.diagnostic_scope }}
+          path: ${{ runner.temp }}/diagnostic-${{ inputs.diagnostic_scope }}
           if-no-files-found: warn
           overwrite: true
 
   candidate-bootstrap:
     name: Candidate bootstrap
-    needs: candidate-plan
-    if: needs.candidate-plan.outputs.buildr == 'true'
+    needs: [candidate-plan, candidate-source]
+    if: always() && needs.candidate-plan.result == 'success' && needs.candidate-plan.outputs.buildr == 'true' && (needs.candidate-source.result == 'success' || needs.candidate-source.result == 'skipped')
     runs-on: macos-15
     timeout-minutes: 15
     defaults:
@@ -717,11 +780,13 @@ jobs:
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
       - name: Prepare Candidate artifact environment
+        if: ${{ !inputs.repair_candidate_run_id }}
         env:
           BUILDR_CANDIDATE_PREPARATION_ID: artifact-macos
           BUILDR_CANDIDATE_PREPARATION_OUTPUT: ${{ runner.temp }}/candidate-evidence/artifact-macos-preparation.json
         run: node tools/verification/candidate-environment.ts prepare --profile artifact
       - name: Build the single Candidate artifact
+        if: ${{ !inputs.repair_candidate_run_id }}
         env:
           BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
           BUILDR_CANDIDATE_CI_OUTPUT_DIR: ${{ runner.temp }}/candidate-artifact-run
@@ -731,6 +796,7 @@ jobs:
           BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
         run: node test/verification/candidate-ci.ts run artifact-macos
       - name: Upload immutable Candidate artifact
+        if: ${{ !inputs.repair_candidate_run_id }}
         uses: actions/upload-artifact@v7
         with:
           name: candidate-package
@@ -741,7 +807,7 @@ jobs:
           if-no-files-found: error
           overwrite: true
       - name: Upload artifact evidence
-        if: always()
+        if: always() && !inputs.repair_candidate_run_id
         uses: actions/upload-artifact@v7
         with:
           name: candidate-evidence-artifact-macos
@@ -773,6 +839,12 @@ jobs:
           node-version: '24.x'
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
+      - name: Read formal repair plan
+        if: inputs.repair_candidate_run_id
+        uses: actions/download-artifact@v7
+        with:
+          name: candidate-repair-plan
+          path: ${{ runner.temp }}/candidate-repair-plan
       - name: Prepare Candidate source environment
         env:
           BUILDR_CANDIDATE_PREPARATION_ID: ${{ matrix.shard }}
@@ -800,7 +872,7 @@ jobs:
   candidate-artifact-consumers:
     name: Candidate artifact (${{ matrix.shard }})
     needs: [candidate-plan, candidate-bootstrap]
-    if: needs.candidate-plan.outputs.buildr == 'true'
+    if: needs.candidate-plan.outputs.buildr == 'true' && needs.candidate-plan.outputs.artifact_required == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -819,6 +891,12 @@ jobs:
           node-version: '24.x'
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
+      - name: Read formal repair plan
+        if: inputs.repair_candidate_run_id
+        uses: actions/download-artifact@v7
+        with:
+          name: candidate-repair-plan
+          path: ${{ runner.temp }}/candidate-repair-plan
       - name: Prepare Candidate artifact consumer environment
         env:
           BUILDR_CANDIDATE_PREPARATION_ID: ${{ matrix.shard }}
@@ -851,7 +929,7 @@ jobs:
   candidate-host-node:
     name: Candidate Host Node (${{ matrix.id }})
     needs: [candidate-plan, candidate-bootstrap]
-    if: needs.candidate-plan.outputs.buildr == 'true'
+    if: needs.candidate-plan.outputs.buildr == 'true' && needs.candidate-plan.outputs.host_required == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
@@ -870,6 +948,12 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
+      - name: Read formal repair plan
+        if: inputs.repair_candidate_run_id
+        uses: actions/download-artifact@v7
+        with:
+          name: candidate-repair-plan
+          path: ${{ runner.temp }}/candidate-repair-plan
       - name: Prepare Candidate Host Node environment
         env:
           BUILDR_CANDIDATE_PREPARATION_ID: ${{ matrix.id }}
@@ -904,6 +988,9 @@ jobs:
     if: always() && needs.candidate-plan.result == 'success' && needs.candidate-plan.outputs.plugin == 'true' && (needs.candidate-plan.outputs.candidate_peer != 'true' || needs.candidate-bootstrap.result == 'success')
     runs-on: macos-15
     timeout-minutes: 40
+    permissions:
+      actions: read
+      contents: read
     defaults:
       run:
         working-directory: projects/product/services/dsh-plugin
@@ -919,8 +1006,9 @@ jobs:
           package-manager-cache: false
       - name: Validate the frozen source and complete difference
         working-directory: projects/product/services/buildr
-        run: node tools/release/verify-pr-candidate.ts plan
+        run: node test/verification/release/verify-pr-candidate.ts plan
       - name: Install isolated fixed preparation tooling
+        if: ${{ !inputs.repair_candidate_run_id || needs.candidate-plan.outputs.buildr != 'true' }}
         run: |
           mkdir -p "${RUNNER_TEMP}/plugin-tooling"
           : > "${RUNNER_TEMP}/plugin-tooling/user.npmrc"
@@ -929,6 +1017,7 @@ jobs:
           env -i PATH="${PATH}" NPM_CONFIG_USERCONFIG="${RUNNER_TEMP}/plugin-tooling/user.npmrc" NPM_CONFIG_GLOBALCONFIG="${RUNNER_TEMP}/plugin-tooling/global.npmrc" \
             npm install --prefix "${RUNNER_TEMP}/plugin-tooling" --ignore-scripts --no-save --no-package-lock --no-audit --no-fund --registry=https://registry.npmjs.org/ npm@11.5.1 pnpm@11.7.0
       - name: Install locked Buildr CLI development dependencies
+        if: ${{ !inputs.repair_candidate_run_id || needs.candidate-plan.outputs.buildr != 'true' }}
         working-directory: projects/product/services/buildr
         run: |
           mkdir -p "${RUNNER_TEMP}/buildr-cli-dependencies"
@@ -937,18 +1026,38 @@ jobs:
           env -i PATH="${PATH}" NPM_CONFIG_USERCONFIG="${RUNNER_TEMP}/buildr-cli-dependencies/user.npmrc" NPM_CONFIG_GLOBALCONFIG="${RUNNER_TEMP}/buildr-cli-dependencies/global.npmrc" \
             node "${RUNNER_TEMP}/plugin-tooling/node_modules/npm/bin/npm-cli.js" ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/ --cache "${RUNNER_TEMP}/buildr-cli-dependencies/npm-cache"
       - name: Prepare shared release-tool generated test inputs
+        if: ${{ !inputs.repair_candidate_run_id || needs.candidate-plan.outputs.buildr != 'true' }}
         working-directory: projects/product/services/buildr
         run: node "${RUNNER_TEMP}/plugin-tooling/node_modules/npm/bin/npm-cli.js" run artifacts:prepare
       - name: Verify shared source-admission release tools
+        if: needs.candidate-plan.outputs.buildr != 'true'
         working-directory: projects/product/services/buildr
         run: |
           node "${RUNNER_TEMP}/plugin-tooling/node_modules/npm/bin/npm-cli.js" run test:integration:candidate:release
           node test/verification/run-node-tests.ts 'test/unit/release-*.test.ts' 'test/unit/package-compatibility.test.ts' 'test/contract/release-*.test.ts' 'test/contract/open-source-release.test.ts' 'test/contract/package-compatibility.test.ts'
+      - name: Restore pinned SDK dependency downloads
+        if: ${{ !inputs.repair_candidate_run_id }}
+        id: sdk-downloads
+        uses: actions/cache/restore@v5
+        continue-on-error: true
+        with:
+          path: projects/product/services/dsh-plugin/build/dsh-release-sdk-pnpm-store
+          key: dsh-sdk-downloads-v1-${{ runner.os }}-${{ runner.arch }}-pnpm11.7.0-${{ hashFiles('projects/product/services/dsh-plugin/tools/sdk-baselines.ts', 'projects/product/services/dsh-plugin/sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.json', 'projects/product/services/dsh-plugin/sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.patch') }}
+          restore-keys: |
+            dsh-sdk-downloads-v1-${{ runner.os }}-${{ runner.arch }}-pnpm11.7.0-
       - name: Prepare pinned source SDK
+        if: ${{ !inputs.repair_candidate_run_id }}
         id: sdk
         run: |
           node tools/prepare-release-sdk.ts --node "$(command -v node)" --pnpm "${RUNNER_TEMP}/plugin-tooling/node_modules/pnpm/bin/pnpm.cjs" > "${RUNNER_TEMP}/plugin-sdk.json"
-          node --input-type=module -e 'import fs from "node:fs"; import path from "node:path"; const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (value.status !== "prepared" || !path.isAbsolute(value.sdk ?? "") || /[\u0000-\u001f\u007f]/.test(value.sdk)) throw new Error("Prepared SDK output missing"); fs.appendFileSync(process.env.GITHUB_OUTPUT, `root=${value.sdk}\n`);' "${RUNNER_TEMP}/plugin-sdk.json"
+          node --input-type=module -e 'import fs from "node:fs"; import path from "node:path"; const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (value.status !== "prepared" || !path.isAbsolute(value.sdk ?? "") || /[\u0000-\u001f\u007f]/.test(value.sdk)) throw new Error("Prepared SDK output missing"); fs.appendFileSync(process.env.GITHUB_OUTPUT, `root=${value.sdk}\n`); console.error(JSON.stringify({ sdkPreparationTimingsMs: value.timingsMs }));' "${RUNNER_TEMP}/plugin-sdk.json"
+      - name: Preserve SDK downloads before plugin verification
+        if: ${{ !inputs.repair_candidate_run_id && steps.sdk-downloads.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: projects/product/services/dsh-plugin/build/dsh-release-sdk-pnpm-store
+          key: ${{ steps.sdk-downloads.outputs.cache-primary-key }}
       - name: Download the joint Buildr Candidate original bytes
         if: needs.candidate-plan.outputs.candidate_peer == 'true'
         uses: actions/download-artifact@v7
@@ -967,7 +1076,7 @@ jobs:
           PEER_VERSION: ${{ inputs.buildr_version }}
           PEER_INTEGRITY: ${{ steps.joint-peer.outputs.integrity }}
         run: >-
-          node tools/release/package-artifact-observation.ts --package buildr
+          node ../../../../skills/buildr-release/scripts/package-artifact-observation.ts --package buildr
           --candidate-manifest "${RUNNER_TEMP}/joint-buildr-candidate/release-artifact.json"
           --version "${PEER_VERSION}" --integrity "${PEER_INTEGRITY}"
           --output "${RUNNER_TEMP}/plugin-buildr-peer.json"
@@ -978,11 +1087,12 @@ jobs:
           PEER_VERSION: ${{ inputs.buildr_peer_version }}
           PEER_INTEGRITY: ${{ inputs.buildr_peer_integrity }}
         run: >-
-          node tools/release/package-artifact-observation.ts --package buildr
+          node ../../../../skills/buildr-release/scripts/package-artifact-observation.ts --package buildr
           --version "${PEER_VERSION}" --integrity "${PEER_INTEGRITY}"
           --tarball "${RUNNER_TEMP}/published-buildr-peer.tgz"
           --output "${RUNNER_TEMP}/plugin-buildr-peer.json"
       - name: Verify complete plugin against the exact peer
+        if: ${{ !inputs.repair_candidate_run_id }}
         env:
           PLUGIN_SOURCE_SDK: ${{ steps.sdk.outputs.root }}
           PLUGIN_VERSION: ${{ needs.candidate-plan.outputs.plugin_version }}
@@ -993,8 +1103,15 @@ jobs:
           --candidate-output "build/release-candidates/${PLUGIN_VERSION}"
           --npm "${RUNNER_TEMP}/plugin-tooling/node_modules/npm/bin/npm-cli.js"
       - name: Bind plugin source-admission aggregate
+        if: ${{ !inputs.repair_candidate_run_id }}
         working-directory: projects/product/services/buildr
-        run: node tools/release/verify-pr-candidate.ts plugin-aggregate
+        run: node test/verification/release/verify-pr-candidate.ts plugin-aggregate
+      - name: Adopt unchanged plugin proof and original bytes
+        if: inputs.repair_candidate_run_id
+        working-directory: projects/product/services/buildr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node test/verification/candidate-repair-cli.ts plugin
       - name: Upload plugin source Candidate bytes
         uses: actions/upload-artifact@v7
         with:
@@ -1035,7 +1152,7 @@ jobs:
         if: github.event_name == 'pull_request' && github.head_ref != 'dev'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node tools/release/verify-pr-candidate.ts
+        run: node test/verification/release/verify-pr-candidate.ts
       - name: Prepare aggregate evidence directory
         if: (github.event_name == 'workflow_dispatch' || github.head_ref == 'dev') && needs.candidate-plan.outputs.buildr == 'true'
         run: mkdir -p "${{ runner.temp }}/candidate-evidence"
@@ -1046,6 +1163,12 @@ jobs:
         with:
           pattern: candidate-evidence-*
           path: ${{ runner.temp }}/candidate-evidence
+      - name: Read formal repair plan
+        if: inputs.repair_candidate_run_id && needs.candidate-plan.outputs.buildr == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          name: candidate-repair-plan
+          path: ${{ runner.temp }}/candidate-repair-plan
       - name: Aggregate the closed Candidate evidence set
         if: (github.event_name == 'workflow_dispatch' || github.head_ref == 'dev') && needs.candidate-plan.outputs.buildr == 'true'
         env:

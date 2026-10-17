@@ -1,25 +1,34 @@
 /** Cooperative ownership exercised against the real pinned Cordis lifecycle. */
 import assert from 'node:assert/strict';
 import { resolve, join } from 'node:path';
-import { mkdir } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
-import test from 'node:test';
+import test, { before, after } from 'node:test';
 import { createSdkRequire } from '../../tools/sdk-require.ts';
 import { createActivation } from '../../plugin/activation.ts';
 
-const sdk = resolve(process.env.BUILDR_DSH_SDK_ROOT ?? 'build/dsh-0.2.0-rc.1');
-const req = createSdkRequire(sdk);
-const { build } = req('esbuild');
-const output = resolve('build/activation-runtime/cordis.mjs');
-await mkdir(resolve('build/activation-runtime'), { recursive: true });
-await build({ stdin: { contents: "export { Context } from '@deepseek-ai/cordis';", resolveDir: sdk, loader: 'ts' },
-  outfile: output, bundle: true, platform: 'node', format: 'esm', target: 'es2022',
-  tsconfig: join(sdk, 'tsconfig.base.json'), nodePaths: [join(sdk, 'node_modules')] });
-const { Context } = await import(pathToFileURL(output).href);
+const sdk = process.env.BUILDR_DSH_SOURCE_SDK_ROOT ? resolve(process.env.BUILDR_DSH_SOURCE_SDK_ROOT) : null;
+const sdkRequired = { skip: sdk ? false : 'explicit verified source SDK required' };
+let runtimeRoot: string | undefined;
+let Context: any;
+before(async () => {
+  if (!sdk) return;
+  runtimeRoot = await mkdtemp(join(tmpdir(), 'buildr-plugin-activation-'));
+  const { build } = createSdkRequire(sdk)('esbuild');
+  const output = join(runtimeRoot, 'cordis.mjs');
+  await build({ stdin: { contents: "export { Context } from '@deepseek-ai/cordis';", resolveDir: sdk, loader: 'ts' },
+    outfile: output, bundle: true, platform: 'node', format: 'esm', target: 'es2022',
+    tsconfig: join(sdk, 'tsconfig.base.json'), nodePaths: [join(sdk, 'node_modules')] });
+  ({ Context } = await import(pathToFileURL(output).href));
+});
+after(async () => {
+  if (runtimeRoot) await rm(runtimeRoot, { recursive: true, force: true, maxRetries: 3 });
+});
 const release = '@buildr-ai/buildr-dsh-plugin', development = '@buildr-ai/buildr-dsh-plugin-dev';
 
 for (const order of [[release, development], [development, release]]) {
-  test(`same-domain qualification is exclusive in order ${order.join(' then ')}`, async () => {
+  test(`same-domain qualification is exclusive in order ${order.join(' then ')}`, sdkRequired, async () => {
     const host = new Context();
     const leases: ReturnType<typeof createActivation>[] = [];
     const fibers = order.map(packageName => host.plugin({ name: packageName, apply(ctx: InstanceType<typeof Context>) {
@@ -37,7 +46,7 @@ for (const order of [[release, development], [development, release]]) {
   });
 }
 
-test('normal owner disposal releases the lease for a surviving plugin recheck', async () => {
+test('normal owner disposal releases the lease for a surviving plugin recheck', sdkRequired, async () => {
   const host = new Context(); let first!: ReturnType<typeof createActivation>, second!: ReturnType<typeof createActivation>;
   const owner = host.plugin({ name: release, apply(ctx: InstanceType<typeof Context>) { first = createActivation(ctx, release); first.status(); } });
   await owner;
@@ -48,7 +57,7 @@ test('normal owner disposal releases the lease for a surviving plugin recheck', 
   await host.fiber.dispose();
 });
 
-test('independent service domains each retain their own owner', async () => {
+test('independent service domains each retain their own owner', sdkRequired, async () => {
   const host = new Context(); let left!: ReturnType<typeof createActivation>, right!: ReturnType<typeof createActivation>;
   await host.isolate('buildrPluginOwner').plugin({ name: 'left', apply(ctx: InstanceType<typeof Context>) { left = createActivation(ctx, release); left.status(); } });
   await host.isolate('buildrPluginOwner').plugin({ name: 'right', apply(ctx: InstanceType<typeof Context>) { right = createActivation(ctx, development); right.status(); } });

@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createHash } from 'node:crypto';
 import { createVerificationReuseIdentity, reusedVerificationResult, validateVerificationReuseRecord,
   type VerificationReuseSnapshot, type VerificationReuseStep, type VerificationReuseRecord } from '../verification/verification-reuse.ts';
-import { verificationSteps } from '../verification/registry.ts';
+import { verificationSteps, verificationStepExecutionInputs } from '../verification/registry.ts';
 
 const sha = `sha256-${'a'.repeat(64)}` as const;
 const step: VerificationReuseStep = { id: 'fixture-check', executor: { type: 'node', file: 'check.ts' }, reuse: { scope: 'backend' }, dependsOn: [] };
 const snapshot: VerificationReuseSnapshot = { productRoot: '/one/checkout', repositoryRoot: '/one', sourceCommit: 'a'.repeat(40), gitIdentity: sha,
-  contentIdentities: { backend: sha, web: sha, product: sha, repository: sha, plugin: sha, runtime: sha },
+  contentIdentities: { backend: sha, 'platform-backend': sha, web: sha, product: sha, repository: sha, plugin: sha, runtime: sha },
   environment: { platform: 'darwin', arch: 'arm64', nodeVersion: '24.21.0', tools: { 'backend-dependencies': sha }, variablesIdentity: sha } };
 function record(): VerificationReuseRecord {
   const identity = createVerificationReuseIdentity(step, snapshot)!;
@@ -15,6 +16,18 @@ function record(): VerificationReuseRecord {
     origin: { kind: 'local', runId: 'source-fixture-1', sourceCommit: snapshot.sourceCommit, startedAt: '2026-10-15T00:00:00.000Z', finishedAt: '2026-10-15T00:00:01.000Z' },
     result: { id: step.id, status: 'passed', exitCode: 0, durationMs: 1000, childOutcome: 'passed', childExitCode: 0, childSignal: null } };
 }
+
+test('opting into a live database cannot reuse a previous skipped or stale external observation', () => {
+  const mysql = { ...step, executor: { type: 'node-test', files: ['test/integration/mysql-client-live.test.ts'] } };
+  const hash = (value: string) => `sha256-${createHash('sha256').update(JSON.stringify(value)).digest('hex')}` as const;
+  const offline = { ...snapshot, inputIdentities: { BUILDR_TEST_MYSQL_CONNECTION_FILE: hash('') } };
+  assert.ok(createVerificationReuseIdentity(mysql, offline));
+  assert.equal(createVerificationReuseIdentity(mysql, snapshot), null, 'unknown opt-in input cannot authorize reuse');
+  const live = { ...offline, inputIdentities: { BUILDR_TEST_MYSQL_CONNECTION_FILE: hash('/private-connection-file') } };
+  assert.equal(createVerificationReuseIdentity(mysql, live), null);
+  assert.deepEqual(createVerificationReuseIdentity(step, live), createVerificationReuseIdentity(step, offline), 'unrelated groups retain their cache identity');
+  assert.doesNotMatch(JSON.stringify(live), /private-connection/u);
+});
 test('source identity binds content and check recipe while commit and checkout location are provenance', () => {
   const identity = createVerificationReuseIdentity(step, snapshot);
   assert.deepEqual(createVerificationReuseIdentity(step, { ...snapshot, sourceCommit: 'b'.repeat(40), productRoot: '/another/checkout', repositoryRoot: '/another' }), identity);
@@ -24,6 +37,26 @@ test('source identity binds content and check recipe while commit and checkout l
   assert.equal(createVerificationReuseIdentity({ ...step, executor: { type: 'candidate-artifact' } }, snapshot), null);
   assert.equal(createVerificationReuseIdentity({ ...step, executor: { type: 'node', consumesArtifact: true } }, snapshot), null);
 });
+
+test('execution inputs bind only the selected check inner workers, not queue capacities or unrelated checks', () => {
+  const selected = { ...step, resourceDemand: { workers: 2, processes: 2 } };
+  const profile = { local: { global: 4, classes: { default: 4 }, capacities: { workers: 8 }, innerConcurrency: { [step.id]: 3, other: 4 } } };
+  const before = verificationStepExecutionInputs(selected, profile);
+  assert.deepEqual(before, { innerWorkers: { local: 3 } });
+  assert.deepEqual(verificationStepExecutionInputs(selected, { local: { ...profile.local, global: 8, classes: {}, capacities: {}, innerConcurrency: { [step.id]: 3, other: 8 } } }), before);
+  assert.notDeepEqual(verificationStepExecutionInputs(selected, { local: { ...profile.local, innerConcurrency: { [step.id]: 4 } } }), before);
+  assert.deepEqual(verificationStepExecutionInputs(selected, { local: { innerConcurrency: {} } }), { innerWorkers: { local: 2 } });
+  for (const type of ['npm', 'package-selector', 'workspace-suite']) assert.equal(verificationStepExecutionInputs({ ...selected, executor: { type } }, profile), null, type);
+});
+
+test('unit proofs include the actual Web dependencies consumed by imported helpers', () => {
+  const unit = verificationSteps.find((item: VerificationReuseStep) => item.id === 'unit');
+  const complete = { ...snapshot, environment: { ...snapshot.environment, tools: { ...snapshot.environment.tools, 'web-dependencies': sha } } };
+  const before = createVerificationReuseIdentity(unit, complete);
+  assert.ok(before);
+  assert.notDeepEqual(createVerificationReuseIdentity(unit, { ...complete, environment: { ...complete.environment,
+    tools: { ...complete.environment.tools, 'web-dependencies': `sha256-${'b'.repeat(64)}` } } }), before);
+});
 test('Git-sensitive and exact-tool checks bind necessary facts without a global HEAD expiry', () => {
   const changed = { ...snapshot, gitIdentity: `sha256-${'b'.repeat(64)}` as const };
   assert.deepEqual(createVerificationReuseIdentity(step, changed), createVerificationReuseIdentity(step, snapshot));
@@ -31,6 +64,26 @@ test('Git-sensitive and exact-tool checks bind necessary facts without a global 
   assert.notDeepEqual(createVerificationReuseIdentity(gitStep, changed), createVerificationReuseIdentity(gitStep, snapshot));
   assert.equal(createVerificationReuseIdentity({ ...step, reuse: { scope: 'backend', tools: ['sdk'] } }, snapshot), null);
   assert.equal(createVerificationReuseIdentity(step, { ...snapshot, unavailableScopes: ['backend'] }), null);
+});
+test('comparison proofs bind the resolved base and HEAD while isolated Git fixtures ignore retained refs', () => {
+  const comparison = { head: 'a'.repeat(40), baseRef: 'origin/dev', base: 'b'.repeat(40), mergeBase: 'c'.repeat(40) };
+  const selected: VerificationReuseStep = { ...step, reuse: { scope: 'backend', git: 'comparison' } };
+  const current = { ...snapshot, gitComparison: comparison };
+  const identity = createVerificationReuseIdentity(selected, current);
+  assert.ok(identity);
+  assert.equal(createVerificationReuseIdentity(selected, snapshot), null);
+  assert.deepEqual(createVerificationReuseIdentity(selected, { ...current, gitIdentity: `sha256-${'b'.repeat(64)}` }), identity);
+  for (const field of ['head', 'base', 'mergeBase']) {
+    assert.notDeepEqual(createVerificationReuseIdentity(selected, { ...current, gitComparison: { ...comparison, [field]: 'd'.repeat(40) } }), identity, field);
+  }
+  const complete = { ...snapshot, environment: { ...snapshot.environment, tools: { ...snapshot.environment.tools, 'web-dependencies': sha, git: '2.50.1' } } };
+  for (const id of ['integration-self-bootstrap', 'service-branch-contract']) {
+    const fixture = verificationSteps.find((item: VerificationReuseStep) => item.id === id);
+    const original = createVerificationReuseIdentity(fixture, complete);
+    assert.ok(original, id);
+    assert.equal('gitIdentity' in original, false, id);
+    assert.deepEqual(createVerificationReuseIdentity(fixture, { ...complete, gitIdentity: `sha256-${'b'.repeat(64)}` }), original, id);
+  }
 });
 test('portable checks use the recorded runner and stable supported Node family, never the checker platform', () => {
   const value = record();
@@ -44,6 +97,7 @@ test('portable checks use the recorded runner and stable supported Node family, 
     assert.equal(validateVerificationReuseRecord({ ...value, environment: { ...value.environment, nodeVersion } }, { productRoot: '/unused', step, snapshot }), false, nodeVersion);
   }
 });
+
 test('incomplete atomic exit, cleanup drift and unbounded portable fields cannot become a passed proof', () => {
   const value = record(), options = { productRoot: '/unused', step, snapshot };
   assert.equal(validateVerificationReuseRecord(value, options), true);
@@ -83,19 +137,24 @@ test('source package selectors and isolated launcher checks are reusable while f
 });
 
 test('only reviewed fixture runtime checks exclude Product governance material while governance owners retain it', () => {
-  const ids = ['integration-runtime', 'integration-data-store', 'integration-task-read-models', 'integration-task-coordination',
-    'integration-project-daily-progress', 'system-buildr-web-http', 'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection'];
+  const ids = ['integration-runtime', 'integration-code', 'integration-desktop', 'integration-task-records', 'integration-connections',
+    'integration-runtime-projection', 'integration-data-store', 'integration-task-read-models', 'integration-task-coordination',
+    'integration-project-daily-progress', 'system-buildr-web-http', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation',
+    'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection',
+    'system-runtime-recovery', 'system-app-process', 'system-workspace-lifecycle'];
   assert.deepEqual(verificationSteps.filter((item: VerificationReuseStep) => item.reuse && item.reuse.scope === 'runtime').map((item: VerificationReuseStep) => item.id).sort(), ids.sort());
   for (const id of ['docs-quality', 'openspec-strict', 'openspec-candidate-audit', 'contract', 'integration-verification']) {
     assert.equal(verificationSteps.find((item: VerificationReuseStep) => item.id === id).reuse.scope, 'repository', id);
   }
-  assert.equal(verificationSteps.find((item: VerificationReuseStep) => item.id === 'openspec-candidate-audit').reuse.git, true);
+  assert.equal(verificationSteps.find((item: VerificationReuseStep) => item.id === 'openspec-candidate-audit').reuse.git, 'comparison');
   const runtime = verificationSteps.find((item: VerificationReuseStep) => item.id === 'integration-runtime');
-  const complete = { ...snapshot, environment: { ...snapshot.environment, tools: { ...snapshot.environment.tools, 'web-dependencies': sha, git: '2.50.1' } } };
+  const complete = { ...snapshot, stepInputs: { [runtime.id]: { contentIdentity: sha, recipeIdentity: sha, fallback: false, unavailable: false } },
+    environment: { ...snapshot.environment, tools: { ...snapshot.environment.tools, 'web-dependencies': sha, git: '2.50.1' } } };
   const identity = createVerificationReuseIdentity(runtime, complete);
   assert.ok(identity);
   assert.notEqual(createVerificationReuseIdentity({ ...runtime, executor: { ...runtime.executor, args: ['--different-recipe'] } }, complete)?.key, identity.key);
-  assert.notEqual(createVerificationReuseIdentity(runtime, { ...complete, contentIdentities: { ...complete.contentIdentities, runtime: `sha256-${'b'.repeat(64)}` } })?.key, identity.key);
+  assert.notEqual(createVerificationReuseIdentity(runtime, { ...complete, stepInputs: { [runtime.id]: { ...complete.stepInputs[runtime.id], contentIdentity: `sha256-${'b'.repeat(64)}` } } })?.key, identity.key);
+  assert.equal(createVerificationReuseIdentity(runtime, { ...complete, stepInputs: undefined }), null);
 });
 
 test('declared semantic inputs distinguish subsets and bases without changing unrelated check identities', () => {

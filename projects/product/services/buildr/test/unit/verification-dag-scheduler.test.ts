@@ -8,6 +8,40 @@ const step: any = (id: any, dependsOn: any = [], concurrencyClass: any = 'defaul
 });
 const plan: any = (steps: any) => ({ steps });
 
+test('cancellation preserves completed results and never starts pending checks', async () => {
+  const cancellation = new AbortController();
+  const started: string[] = [];
+  const results = await runVerificationDag(plan([step('completed'), step('in-flight'), step('pending')]), {
+    concurrency: 1, signal: cancellation.signal,
+    execute: async (item: any) => {
+      started.push(item.id);
+      if (item.id === 'in-flight') { cancellation.abort(); return { status: 'cancelled', exitCode: 130, durationMs: 1 }; }
+      return { status: 'passed', exitCode: 0, durationMs: 1 };
+    },
+  });
+  assert.deepEqual(started, ['completed', 'in-flight']);
+  assert.deepEqual(results.map((result: any) => result.status), ['passed', 'cancelled', 'blocked']);
+  assert.equal(results[2].failureCode, 'capability-cancelled');
+  assert.equal(Object.hasOwn(results[2], 'startedAt'), false);
+});
+
+test('cancellation while acquiring a resource releases it without launching the check', async () => {
+  const cancellation = new AbortController();
+  let released = 0;
+  const results = await runVerificationDag(plan([{ ...step('waiting'), resourceClaims: ['shared'] }]), {
+    concurrency: 1, signal: cancellation.signal,
+    resourceCoordinator: { acquire: async () => { cancellation.abort(); return { claims: [], release: async () => { released++; return []; } }; } },
+    execute: async () => assert.fail('cancelled resource acquisition must not start a child'),
+  });
+  assert.equal(released, 1);
+  assert.equal(results[0].status, 'blocked');
+  assert.equal(results[0].failureCode, 'capability-cancelled');
+  assert.equal(Object.hasOwn(results[0], 'startedAt'), false);
+  assert.equal(Object.hasOwn(results[0], 'finishedAt'), false);
+  assert.equal(Object.hasOwn(results[0], 'queueDurationMs'), false);
+  assert.ok(results[0].blockedAt);
+});
+
 test('scheduler 遵守全局与 class 上限并按 plan 顺序返回', async () => {
   let active: any = 0;
   let peak: any = 0;
@@ -203,7 +237,8 @@ test('受限 CI 可完整调度全部登记检查并保留完整工作额度', a
   });
   assert.equal(results.length, verificationSteps.length);
   assert.ok(results.every((item: any) => item.status === 'passed'));
-  assert.equal(results.find((item: any) => item.id === 'integration-runtime').scheduling.grant.workers, 3);
+  assert.equal(results.find((item: any) => item.id === 'integration-runtime').scheduling.grant.workers, 2);
+  for (const [id, workers] of [['unit', 3], ['component', 1], ['contract', 2]]) assert.equal(results.find((item: any) => item.id === id).scheduling.grant.workers, workers);
 });
 
 test('受限 CI 将真实 App 与适配器重型检查互斥，轻量检查仍可并行', async () => {

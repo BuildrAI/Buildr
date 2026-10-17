@@ -6,7 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawn, spawnSync } from 'node:child_process';
-import { readSharedCandidatePackage } from '../release/candidate-package.ts';
+import { readSharedCandidatePackage } from '../../../../../../../skills/buildr-release/scripts/candidate-package.ts';
+import { stopOwnedChildProcess } from '../support/owned-process.ts';
 
 const productRoot: any = path.resolve(import.meta.dirname, '../../..');
 const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-host-node-cli-'));
@@ -50,14 +51,6 @@ async function waitForInstance(file: any, child: any, timeoutMs: any = 20_000): 
     await delay(100);
   }
   throw new Error('Buildr Web did not write a readiness instance before timeout.');
-}
-
-async function stopWeb(child: any): Promise<any>  {
-  if (!child || child.exitCode !== null) return;
-  child.kill('SIGTERM');
-  const deadline: any = Date.now() + 5_000;
-  while (Date.now() < deadline && child.exitCode === null) await delay(50);
-  if (child.exitCode === null) child.kill('SIGKILL');
 }
 
 try {
@@ -121,6 +114,6 @@ try {
   assert.match(await shell.text(), /<div id="root"><\/div>/);
   process.stdout.write(`Installed CLI and on-demand Buildr Web smoke passed on ${process.platform} with Host Node ${process.versions.node}; main role=host.\n`);
 } finally {
-  await stopWeb(web);
+  await stopOwnedChildProcess(web, 5_000);
   fs.rmSync(root, { recursive: true, force: true });
 }

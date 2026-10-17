@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createCandidateCiShardPlan } from '../verification/planner.ts';
+import { createCandidateCiShardPlan, createVerificationPlan } from '../verification/planner.ts';
 import { createWindowsSourceDiagnosisPlan, runWindowsSourceDiagnosis, validateWindowsSourceDiagnosis,
   WINDOWS_SOURCE_DIAGNOSIS_SCHEMA, WINDOWS_SOURCE_DIAGNOSIS_SCENARIO } from '../verification/release/windows-source-diagnosis.ts';
 
@@ -31,13 +31,41 @@ test('source diagnosis accepts only full exact clean source identities and its c
 
 test('source diagnosis keeps the one registered owner recipe and its original budget without any package owner', () => {
   const plan = createWindowsSourceDiagnosisPlan(WINDOWS_SOURCE_DIAGNOSIS_SCENARIO);
-  const original = createCandidateCiShardPlan('runtime-windows', { externalArtifact: true });
+  const original = createCandidateCiShardPlan('runtime-source-macos', { externalArtifact: false });
   assert.equal(plan.status, 'ready');
   assert.deepEqual(plan.primaryStepIds, ['system-app-process']);
-  assert.deepEqual(plan.steps, original.steps.filter((step: any) => step.id === 'system-app-process'));
+  const registered = original.steps.filter((step: any) => step.id === 'system-app-process');
+  assert.deepEqual(plan.steps, registered.map((step: any) => ({ ...step, executor: { ...step.executor,
+    args: step.executor.args.map((arg: string) => arg === '--test-reporter=dot' ? '--test-reporter=tap' : arg),
+  } })));
+  assert.deepEqual(createCandidateCiShardPlan('runtime-source-macos', { externalArtifact: false }), original,
+    'diagnostics cannot mutate the registered recipe');
   assert.equal(plan.steps[0].timeoutMs, 360_000);
   assert.equal(plan.steps.some((step: any) => step.executor.type === 'candidate-artifact' || step.executor.consumesArtifact), false);
   for (const scenario of ['runtime-windows', 'all', 'toString']) assert.throws(() => createWindowsSourceDiagnosisPlan(scenario), /diagnosis-unknown-scenario/u);
+});
+
+test('Windows file diagnosis selects only its native source owner and cannot count as a complete candidate', async () => {
+  const nativeEnv = { ...env, DIAGNOSTIC_SCENARIO: 'readonly-files-windows' };
+  assert.doesNotThrow(() => validateWindowsSourceDiagnosis(nativeEnv, facts));
+  const plan = createWindowsSourceDiagnosisPlan(nativeEnv.DIAGNOSTIC_SCENARIO);
+  assert.deepEqual(plan.primaryStepIds, ['system-windows-platform']);
+  assert.deepEqual(plan.steps.map((step: any) => step.id), ['system-windows-platform']);
+  assert.ok(plan.steps[0].executor.args.includes('--test-reporter=tap'));
+  assert.ok(createVerificationPlan({ stepIds: ['system-windows-platform'] }).steps
+    .find((step: any) => step.id === 'system-windows-platform').executor.args.includes('--test-reporter=dot'));
+  assert.ok(plan.steps.every((step: any) => !step.executor.consumesArtifact && step.executor.type !== 'candidate-artifact'));
+  const summary = await runWindowsSourceDiagnosis({ env: nativeEnv }, {
+    platform: 'win32', readGitFacts: () => facts, writeSummary: () => {},
+    execute: async (_plan, options) => {
+      assert.equal(options.reuse, false);
+      const completed = { ...result(), id: 'system-windows-platform' };
+      options.onComplete(completed);
+      return { passed: true, results: [completed] };
+    },
+  });
+  assert.equal(summary.status, 'passed');
+  assert.equal(summary.aggregateEligible, false);
 });
 
 test('fresh source diagnosis masks every inherited package input and retains actual projected execution facts', async () => {
