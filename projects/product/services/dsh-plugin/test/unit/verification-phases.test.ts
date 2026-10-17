@@ -75,14 +75,14 @@ test('collector exports real completed source phases from the selected worktree 
   for(const group of ['unit','integration']){mkdirSync(join(pluginRoot,'test',group),{recursive:true});writeFileSync(join(pluginRoot,'test',group,'fixture.test.ts'),"import test from 'node:test';test('fixture',()=>{});\n");}
   const git=(...args:string[])=>execFileSync('git',args,{cwd:repo,stdio:['ignore','pipe','pipe']});
   git('init','-q');git('config','user.name','Plugin test');git('config','user.email','plugin@example.com');git('add','.');git('commit','-qm','source');
-  const env={...process.env,BUILDR_VERIFICATION_REUSE_DIR:join(repo,'cache')};
+  const env={...process.env,BUILDR_VERIFICATION_WORKER_BUDGET:'1',BUILDR_VERIFICATION_REUSE_DIR:join(repo,'cache')};
   delete env.NODE_TEST_CONTEXT;
   const {collectVerificationReuseSnapshot,createVerificationReuseStore,createVerificationReuseIdentity}=await import(new URL('../../../buildr/test/verification/verification-reuse.ts',import.meta.url).href);
   const {runVerificationStep}=await import(new URL('../../../buildr/test/verification/timing/parallel-runner.ts',import.meta.url).href);
   // Keep the cache outside the source identity, as the normal temporary cache is.
   const cache=realpathSync(mkdtempSync(join(tmpdir(),'buildr-plugin-phase-cache-')));env.BUILDR_VERIFICATION_REUSE_DIR=cache;t.after(()=>rmSync(cache,{recursive:true,force:true}));
   for(const group of ['unit','integration'] as const){
-    const step=pluginSourcePhaseStep(group,pluginSourcePhaseFiles(group,pluginRoot));
+    const step=pluginSourcePhaseStep(group,pluginSourcePhaseFiles(group,pluginRoot),env);
     const snapshot=collectVerificationReuseSnapshot({productRoot:backend,env});snapshot.environment.tools.sdk=pluginSourceSdkKey(pluginRoot);
     const store=createVerificationReuseStore({productRoot:backend,env,snapshot,steps:[step]});
     const startedAt=new Date().toISOString();const result=await runVerificationStep({name:step.id,command:process.execPath,args:['--test',...step.executor.args,...step.executor.files],cwd:pluginRoot,env});
@@ -96,14 +96,14 @@ test('collector exports real completed source phases from the selected worktree 
   const wrongSdk=structuredClone(bundle),record=wrongSdk.records.find((value:any)=>value.identity.stepId==='dsh-plugin:integration');
   record.environment.tools.sdk='e'.repeat(64);
   const wrongSnapshot=collectVerificationReuseSnapshot({productRoot:backend,env});wrongSnapshot.environment=record.environment;
-  record.identity=createVerificationReuseIdentity(pluginSourcePhaseStep('integration',pluginSourcePhaseFiles('integration',pluginRoot)),wrongSnapshot);record.identityAfter=record.identity.key;
+  record.identity=createVerificationReuseIdentity(pluginSourcePhaseStep('integration',pluginSourcePhaseFiles('integration',pluginRoot),env),wrongSnapshot);record.identityAfter=record.identity.key;
   assert.deepEqual((await collectPluginSourceVerificationBundle({repo,env,imports:wrongSdk})).records.map((value:any)=>value.identity.stepId),['dsh-plugin:unit']);
   const otherPlatform=structuredClone(bundle),foreignRecord=otherPlatform.records.find((value:any)=>value.identity.stepId==='dsh-plugin:integration');
   foreignRecord.environment.platform=process.platform==='darwin'?'linux':'darwin';
   const foreignSnapshot=collectVerificationReuseSnapshot({productRoot:backend,env});foreignSnapshot.environment=foreignRecord.environment;
-  foreignRecord.identity=createVerificationReuseIdentity(pluginSourcePhaseStep('integration',pluginSourcePhaseFiles('integration',pluginRoot)),foreignSnapshot);foreignRecord.identityAfter=foreignRecord.identity.key;
+  foreignRecord.identity=createVerificationReuseIdentity(pluginSourcePhaseStep('integration',pluginSourcePhaseFiles('integration',pluginRoot),env),foreignSnapshot);foreignRecord.identityAfter=foreignRecord.identity.key;
   assert.deepEqual((await collectPluginSourceVerificationBundle({repo,env,imports:otherPlatform})).records.map((value:any)=>value.identity.stepId),['dsh-plugin:unit']);
-  const step=pluginSourcePhaseStep('integration',pluginSourcePhaseFiles('integration',pluginRoot));
+  const step=pluginSourcePhaseStep('integration',pluginSourcePhaseFiles('integration',pluginRoot),env);
   const snapshot=collectVerificationReuseSnapshot({productRoot:backend,env});snapshot.environment.tools.sdk=pluginSourceSdkKey(pluginRoot);
   const options={productRoot:backend,env,snapshot,steps:[step],imports:[bundle],portableImports:true};
   const reading=createVerificationReuseStore(options),reused=reading.lookup(step);assert.ok(reused);
