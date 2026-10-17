@@ -74,7 +74,7 @@ export function checkReleaseAuthorityEvidence({ evidence, sourceCommit, workflow
       || !Number.isSafeInteger(github?.runId) || github.runId < 1
       || !Number.isSafeInteger(github?.runAttempt) || github.runAttempt < 1
       || typeof github?.workflowRef !== 'string'
-      || !github.workflowRef.startsWith(`${releasePublishAuthority.repository}/${releaseWorkflowPath}@refs/heads/main`)) {
+      || github.workflowRef !== `${releasePublishAuthority.repository}/${releaseWorkflowPath}@refs/heads/main`) {
     findings.push({ code: 'release_authority_github_identity_mismatch', expected: { ...expectedGithub, workflowRef: `${releasePublishAuthority.repository}/${releaseWorkflowPath}@refs/heads/main`, runId: '<positive integer>', runAttempt: '<positive integer>' }, actual: github ?? null });
   }
   if (evidence.npm?.package !== releasePackageName || evidence.npm?.exchange?.status !== 201) {

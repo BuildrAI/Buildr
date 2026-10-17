@@ -16,6 +16,7 @@ import { officialRegistry } from '../../../../../../../skills/buildr-release/scr
 import { readSharedCandidatePackage } from '../../../../../../../skills/buildr-release/scripts/candidate-package.ts';
 import { cleanupVerificationHarnessRoot, createVerificationPhaseRecorder } from '../timing/phases.ts';
 import { createExactNodeExecutionEnvironment } from '../../../src/infrastructure/process.ts';
+import { stopOwnedChildProcess as stopChildProcess } from '../support/owned-process.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const packageName: any = '@buildr-ai/buildr';
@@ -319,29 +320,6 @@ async function canBindLoopbackPort(port: any): Promise<any>  {
     });
     probe.listen(port, '127.0.0.1', () => probe.close(() => resolve(true)));
   });
-}
-
-async function waitForChildClose(child: any, timeoutMs: any): Promise<any>  {
-  if (child.exitCode !== null || child.signalCode !== null) return true;
-  return new Promise((resolve: any) => {
-    const onClose: any = () => {
-      clearTimeout(timer);
-      resolve(true);
-    };
-    const timer: any = setTimeout(() => {
-      child.off('close', onClose);
-      resolve(false);
-    }, timeoutMs);
-    child.once('close', onClose);
-  });
-}
-
-async function stopChildProcess(child: any, timeoutMs: any = 2_000): Promise<any>  {
-  if (!child || child.exitCode !== null || child.signalCode !== null) return;
-  child.kill('SIGTERM');
-  if (await waitForChildClose(child, timeoutMs)) return;
-  child.kill('SIGKILL');
-  if (!await waitForChildClose(child, timeoutMs)) throw new Error(`Owned child process ${child.pid} did not close after SIGKILL.`);
 }
 
 export function cleanupReleaseSmokeRoot(root: any, options: any = {}): any  {

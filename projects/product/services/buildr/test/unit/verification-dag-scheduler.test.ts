@@ -203,7 +203,8 @@ test('受限 CI 可完整调度全部登记检查并保留完整工作额度', a
   });
   assert.equal(results.length, verificationSteps.length);
   assert.ok(results.every((item: any) => item.status === 'passed'));
-  assert.equal(results.find((item: any) => item.id === 'integration-runtime').scheduling.grant.workers, 3);
+  assert.equal(results.find((item: any) => item.id === 'integration-runtime').scheduling.grant.workers, 2);
+  for (const [id, workers] of [['unit', 3], ['component', 1], ['contract', 2]]) assert.equal(results.find((item: any) => item.id === id).scheduling.grant.workers, workers);
 });
 
 test('受限 CI 将真实 App 与适配器重型检查互斥，轻量检查仍可并行', async () => {

@@ -220,9 +220,33 @@ jobs:
           path: ${{ runner.temp }}/candidate
           github-token: ${{ github.token }}
           run-id: ${{ inputs.candidate_run_id }}
+      - name: Read the previous npm write journal before any retry
+        if: github.run_attempt != 1 || fromJSON(inputs.release_context).executorRecovery != null
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILDR_RELEASE_CONTEXT: ${{ inputs.release_context }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          node --input-type=module -e '
+            import fs from "node:fs";
+            import path from "node:path";
+            import { spawnSync } from "node:child_process";
+            const context = JSON.parse(process.env.BUILDR_RELEASE_CONTEXT);
+            const currentAttempt = Number(process.env.GITHUB_RUN_ATTEMPT);
+            const runId = currentAttempt > 1 ? Number(process.env.GITHUB_RUN_ID) : context.executorRecovery?.previousRunId;
+            const attempt = currentAttempt > 1 ? currentAttempt - 1 : context.executorRecovery?.previousRunAttempt;
+            if (![runId, attempt].every(value => Number.isSafeInteger(value) && value > 0)) throw new Error("Previous publisher identity is unavailable");
+            const directory = path.join(process.env.RUNNER_TEMP, "previous-publication");
+            fs.mkdirSync(directory, { recursive: true });
+            const result = spawnSync("gh", ["run", "download", String(runId), "--repo", process.env.GITHUB_REPOSITORY,
+              "--name", `release-evidence-v${process.env.RELEASE_VERSION}-${attempt}`, "--dir", directory], { stdio: "inherit", timeout: 120000 });
+            if (result.status !== 0 || result.error) throw new Error("Previous publisher journal remains unknown; npm write will stay blocked");
+          '
       - name: Publish and recover through the shared release checks
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          BUILDR_PREVIOUS_PUBLICATION_DIRECTORY: ${{ runner.temp }}/previous-publication
         run: >-
           node ../../../../skills/buildr-release/scripts/release-publication.ts
           "${RUNNER_TEMP}/contract/release-context.json"

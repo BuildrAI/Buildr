@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createLocalArtifactPlan, parseArtifactArgs, runLocalArtifactVerification } from '../verification/artifact.ts';
+import { candidateEnvironmentPlan } from '../../tools/verification/candidate-environment.ts';
 
 test('package selection keeps common checks once and native package checks separate on either machine', () => {
   const ids = (platform: string, scope: string) => createLocalArtifactPlan(platform, { scope }).nodes.map((node: any) => node.id);
@@ -15,6 +16,10 @@ test('package selection keeps common checks once and native package checks separ
     assert.ok(plan.nodes.some((node: any) => node.stepIds.includes('artifact-browser-core')));
     assert.ok(plan.nodes.some((node: any) => node.stepIds.includes('release-tarball-smoke')));
     assert.equal(new Set(plan.nodes.map((node: any) => node.id)).size, plan.nodes.length);
+    const modes = plan.nodes.map((node: any) => candidateEnvironmentPlan(node.preparation)
+      .find(operation => operation.id === 'buildr-dependencies')!.args.includes('--omit=dev') ? 'production' : 'development');
+    assert.deepEqual(modes.filter((mode: string, index: number) => mode !== modes[index - 1]), ['production', 'development'],
+      'source-runtime and browser controllers share full dependencies without an intervening production install');
   }
   assert.throws(() => createLocalArtifactPlan('linux'), /No package platform/u);
 });

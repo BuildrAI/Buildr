@@ -141,6 +141,18 @@ test('hosted OIDC probe exchanges identity but never retains either token', asyn
   assert.equal(containsCredentialMaterial(result), false);
 });
 
+test('hosted OIDC probe rejects every workflow ref outside exact main before requesting credentials', async (t: any) => {
+  const repo: any = probeRepo(t, 'buildr-authority-probe-ref-');
+  let requests: any = 0;
+  for (const ref of ['refs/heads/main-extra', 'refs/heads/main/nested', 'refs/heads/dev', 'refs/tags/main']) {
+    await assert.rejects(runReleaseAuthorityOidcProbe({ repo, sourceCommit: fixtureCommit, workflowSha256: sha256(workflow) }, {
+      env: { ...hostedEnvironment(), GITHUB_WORKFLOW_REF: `BuildrAI/Buildr/.github/workflows/publish.yml@${ref}` },
+      fetchImpl: async () => { requests += 1; throw new Error('must not request credentials'); },
+    }), (error: any) => error.code === 'github_workflow_mismatch', ref);
+  }
+  assert.equal(requests, 0);
+});
+
 test('hosted OIDC probe normalizes Registry Unix-second exchange timestamps', async (t: any) => {
   const repo: any = probeRepo(t, 'buildr-authority-probe-unix-time-');
   const created: any = '2026-08-13T00:04:00.000Z';

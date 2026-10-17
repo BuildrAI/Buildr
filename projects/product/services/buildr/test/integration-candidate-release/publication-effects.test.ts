@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { completePublicationEffects } from '../../../../../../skills/buildr-release/scripts/release-publication.ts';
+import { completePublicationEffects, publicationAttemptFromJournal } from '../../../../../../skills/buildr-release/scripts/release-publication.ts';
 import { publishFrozenArtifact } from '../../../../../../skills/buildr-release/scripts/trusted-publish.ts';
 import { createReleaseArtifactFixture } from '../helpers/release-artifact-fixture.ts';
 import { readReleaseArtifact } from '../../../../../../skills/buildr-release/scripts/release-artifact.ts';
@@ -329,7 +329,7 @@ test('publishFrozenArtifact converges on delayed registry propagation without re
   assert.ok(reads >= 3, `readback polled until propagation converged (reads=${reads})`);
 });
 
-test('publishFrozenArtifact reports unconfirmed after the bounded window and never republishes', async t => {
+test('publishFrozenArtifact retains an unknown write across attempts and later reads back the same bytes without republishing', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-publish-unconfirmed-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const sourceRepo = path.join(root, 'source');
@@ -346,23 +346,56 @@ test('publishFrozenArtifact reports unconfirmed after the bounded window and nev
   const npmTag = version.includes('-') ? 'next' : 'latest';
 
   let publishCalls = 0;
+  let visible = false;
   const server = http.createServer((req, res) => {
     const json = (status: number, body: unknown) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
-    if (req.url?.endsWith(`/${version}`)) return json(404, {});
+    if (req.url?.endsWith(`/${version}`)) return visible ? json(200, { name: '@buildr-ai/buildr', version, dist: { integrity: artifact.manifest.integrity } }) : json(404, {});
     return json(200, { name: '@buildr-ai/buildr', 'dist-tags': { latest: '0.0.1', next: null } });
   });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); }));
   const api = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const fetchImpl: typeof fetch = (url, init) => fetch(`${api}${new URL(String(url)).pathname}`, init);
-  const result = await publishFrozenArtifact({ manifestPath: built.manifestPath, npmTag }, {
+  const context = { identity: `sha256-${'a'.repeat(64)}` };
+  const firstRun = { repository: 'BuildrAI/Buildr', workflow: '.github/workflows/publish.yml', runId: 42, runAttempt: 1, headSha: source };
+  const journal: any = { schemaVersion: 'buildr.release-publication-steps/v1', contextIdentity: context.identity, publish: firstRun,
+    artifact: Object.fromEntries(['packageName', 'version', 'sourceCommit', 'filename', 'size', 'sha256', 'integrity', 'applicationPayloadDigest'].map(key => [key, artifact.manifest[key]])),
+    npmAttempted: false, effects: [] };
+  const dependencies = {
     fetchImpl,
     publish: async () => { publishCalls++; return { status: 0, stdout: '', stderr: '' }; },
     registryWait: { attempts: 3, delayMs: 1 },
-  });
+    onEffects: (effects: any[]) => { journal.npmAttempted = true; journal.effects = structuredClone(effects); },
+  };
+  const result = await publishFrozenArtifact({ manifestPath: built.manifestPath, npmTag,
+    previousAttempt: publicationAttemptFromJournal(null, context, artifact.manifest, firstRun) }, dependencies);
   assert.equal(result.status, 'blocked');
   assert.equal(result.action, 'readback-required');
   assert.equal(result.diagnostic.code, 'npm-publication-unconfirmed');
   assert.equal(publishCalls, 1, 'the bounded window expires without a second publish');
+  assert.equal(journal.npmAttempted, true, 'write intent is retained before waiting for propagation');
+  const nextRun = { ...firstRun, runAttempt: 2 };
+  const previousAttempt = publicationAttemptFromJournal(journal, context, artifact.manifest, nextRun);
+  assert.equal(previousAttempt, 'attempted');
+  const resumed = await publishFrozenArtifact({ manifestPath: built.manifestPath, npmTag, previousAttempt }, dependencies);
+  assert.equal(resumed.status, 'blocked'); assert.equal(resumed.diagnostic.code, 'npm-publication-attempt-unconfirmed');
+  assert.equal(publishCalls, 1, 'a later attempt with a fresh 404 must only read back the original write');
+  for (const previous of [null, { ...journal, contextIdentity: `sha256-${'b'.repeat(64)}` }, { ...journal, artifact: { ...journal.artifact, sha256: '0'.repeat(64) } },
+    { ...journal, publish: { ...firstRun, runId: 43 } }, { ...journal, publish: { ...firstRun, runAttempt: 2 } }, { ...journal, npmAttempted: null }]) {
+    const unknown = publicationAttemptFromJournal(previous, context, artifact.manifest, nextRun);
+    assert.equal(unknown, 'unknown');
+    assert.equal((await publishFrozenArtifact({ manifestPath: built.manifestPath, npmTag, previousAttempt: unknown }, dependencies)).diagnostic.code, 'npm-publication-history-unknown');
+  }
+  assert.equal(publicationAttemptFromJournal({ ...journal, npmAttempted: false, effects: [] }, context, artifact.manifest, nextRun), 'not-attempted', 'a bound failure before any write can still publish');
+  const recoveryContext = { identity: `sha256-${'c'.repeat(64)}`, convergence: { mainCommit: source }, executorRecovery: {
+    originalContextIdentity: context.identity, previousRunId: 42, previousRunAttempt: 1,
+  } };
+  assert.equal(publicationAttemptFromJournal(journal, recoveryContext, artifact.manifest, { ...firstRun, runId: 43 }), 'attempted', 'publisher repair retains the original context write boundary');
+  assert.equal(publishCalls, 1);
+  visible = true;
+  const recovered = await publishFrozenArtifact({ manifestPath: built.manifestPath, npmTag, previousAttempt }, dependencies);
+  assert.equal(recovered.status, 'passed'); assert.equal(recovered.action, 'reused');
+  assert.equal(recovered.registry.integrity, artifact.manifest.integrity); assert.equal(publishCalls, 1);
+  assert.equal((await publishFrozenArtifact({ manifestPath: built.manifestPath, npmTag, previousAttempt: 'unknown' }, dependencies)).status, 'passed', 'unknown history cannot deny confirmed matching public bytes');
 });
 

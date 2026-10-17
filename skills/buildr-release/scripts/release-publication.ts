@@ -29,6 +29,45 @@ function save(file: string, value: any): void {
   fs.renameSync(temporary, file);
 }
 
+const publicationArtifact = (manifest: any) => Object.fromEntries(['packageName', 'version', 'sourceCommit', 'filename', 'size', 'sha256', 'integrity', 'applicationPayloadDigest'].map(key => [key, manifest[key]]));
+
+/** A journal authorizes only the matching npm write boundary, never Candidate eligibility. */
+export function publicationAttemptFromJournal(previous: any, context: any, manifest: any, publish: any): 'not-attempted' | 'attempted' | 'unknown' {
+  const recovery = context.executorRecovery;
+  const earlierAttempt = Number(publish?.runAttempt) > 1;
+  if (!previous) return !earlierAttempt && !recovery ? 'not-attempted' : 'unknown';
+  const expectedContext = earlierAttempt || !recovery ? context.identity : recovery.originalContextIdentity;
+  const expectedRunId = earlierAttempt || !recovery ? publish?.runId : recovery.previousRunId;
+  const expectedAttempt = earlierAttempt ? publish.runAttempt - 1 : recovery?.previousRunAttempt ?? publish?.runAttempt;
+  if (previous.schemaVersion !== 'buildr.release-publication-steps/v1' || previous.contextIdentity !== expectedContext
+      || previous.publish?.repository !== 'BuildrAI/Buildr' || previous.publish?.workflow !== '.github/workflows/publish.yml'
+      || previous.publish?.runId !== expectedRunId || previous.publish?.runAttempt !== expectedAttempt
+      || previous.publish?.headSha !== (earlierAttempt || !recovery ? publish?.headSha : context.convergence.mainCommit)
+      || JSON.stringify(previous.artifact) !== JSON.stringify(publicationArtifact(manifest))
+      || !Array.isArray(previous.effects) || ![true, false].includes(previous.npmAttempted)) return 'unknown';
+  if (previous.npmAttempted === false && previous.effects.some((effect: any) => effect?.type === 'npm-published')) return 'unknown';
+  return previous.npmAttempted ? 'attempted' : 'not-attempted';
+}
+
+function readPublicationJournal(directory: string): any {
+  const files: string[] = [];
+  let visited = 0;
+  const visit = (root: string, depth = 0) => {
+    if (depth > 4) throw new Error('Publication journal nesting exceeded.');
+    for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+      if (++visited > 512) throw new Error('Publication journal file count exceeded.');
+      const file = path.join(root, entry.name);
+      if (entry.isDirectory()) visit(file, depth + 1);
+      else if (entry.isFile() && entry.name === 'publication-steps.json') files.push(file);
+    }
+  };
+  try {
+    visit(directory);
+    if (files.length !== 1 || fs.statSync(files[0]!).size > 2 * 1024 * 1024) return null;
+    return JSON.parse(fs.readFileSync(files[0]!, 'utf8'));
+  } catch { return null; }
+}
+
 async function executeChecks(checks: readonly any[], handlers: Record<string, () => any>, checkpoint: (value: any) => void) {
   const steps: any[] = [];
   const effects: any[] = [];
@@ -90,7 +129,7 @@ export async function completePublicationEffects(options: any, dependencies: any
         if (values.compatibility.status !== 'passed') throw Object.assign(new Error('Package compatibility recheck did not pass; inspect the recorded checks and pair diagnostics.'),
           { code: 'release-package-compatibility-blocked', compatibility: values.compatibility });
       }
-      const published = await publishFrozenArtifact({ manifestPath: artifact.manifestPath, npmTag }, { ...dependencies,
+      const published = await publishFrozenArtifact({ manifestPath: artifact.manifestPath, npmTag, previousAttempt: options.previousAttempt ?? 'not-attempted' }, { ...dependencies,
         onEffects: (effects: any[]) => checkpoint({ pendingEffects: effects }),
       });
       if (published.registry) values.registry = published.registry;
@@ -141,10 +180,19 @@ export async function runReleasePublication(options: any, dependencies: any = {}
   const effects: any[] = [];
   let pendingEffects: any[] = [];
   const journal = path.join(options.outputDirectory, 'publication-steps.json');
+  const previous = options.previousPublicationDirectory ? readPublicationJournal(options.previousPublicationDirectory)
+    : fs.existsSync(journal) ? readPublicationJournal(options.outputDirectory) : null;
+  const previousAttempt = publicationAttemptFromJournal(previous, context, artifact.manifest, options.publish);
+  let npmAttempted: boolean | null = previousAttempt === 'attempted' ? true : previousAttempt === 'not-attempted' ? false : null;
   const checkpoint = (value: any) => {
-    if (value.pendingEffects) pendingEffects = value.pendingEffects;
+    if (value.pendingEffects) {
+      pendingEffects = value.pendingEffects;
+      if (pendingEffects.some(effect => effect.type === 'npm-published')) npmAttempted = true;
+    }
     else if (value.steps) pendingEffects = [];
-    save(journal, { schemaVersion: 'buildr.release-publication-steps/v1', contextIdentity: context.identity, steps: [...phases, ...(value.steps || [])], effects: [...effects, ...(value.effects || []), ...pendingEffects] });
+    save(journal, { schemaVersion: 'buildr.release-publication-steps/v1', contextIdentity: context.identity, publish: options.publish,
+      artifact: publicationArtifact(artifact.manifest), npmAttempted,
+      steps: [...phases, ...(value.steps || [])], effects: [...effects, ...(value.effects || []), ...pendingEffects] });
   };
   let authority: any;
   const initial = await executeChecks(RELEASE_CHECKS.filter(check => ['pre-publication', 'protected-authority'].includes(check.phase)), {
@@ -173,7 +221,7 @@ export async function runReleasePublication(options: any, dependencies: any = {}
   effects.push(...initial.effects);
   let completed: any = initial;
   if (initial.status === 'passed') {
-    completed = await completePublicationEffects({ context, artifact, repo, token: options.token, checkpoint }, dependencies);
+    completed = await completePublicationEffects({ context, artifact, repo, token: options.token, checkpoint, previousAttempt }, dependencies);
     phases.push(...completed.steps);
     effects.push(...completed.effects);
   }
@@ -202,6 +250,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const [contextFile, manifestPath, outputDirectory] = process.argv.slice(2);
   if (!contextFile || !manifestPath || !outputDirectory) throw new Error('Usage: release-publication.ts <context> <artifact-manifest> <output-directory>');
   const result = await runReleasePublication({ context: JSON.parse(fs.readFileSync(contextFile, 'utf8')), manifestPath, outputDirectory, token: process.env.GITHUB_TOKEN,
+    previousPublicationDirectory: process.env.BUILDR_PREVIOUS_PUBLICATION_DIRECTORY,
     publish: { repository: process.env.GITHUB_REPOSITORY, workflow: '.github/workflows/publish.yml', runId: Number(process.env.GITHUB_RUN_ID), runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT),
       runUrl: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`, headSha: process.env.GITHUB_SHA },
   });

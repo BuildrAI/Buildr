@@ -70,13 +70,20 @@ export async function publishFrozenArtifact(options: any, dependencies: any = {}
   const npmTag = manifest.version.includes('-') ? 'next' : 'latest';
   if (options.npmTag !== npmTag) throw new Error(`Frozen package ${manifest.version} requires dist-tag ${npmTag}.`);
   const effects: any[] = [];
+  const previousAttempt = options.previousAttempt ?? 'not-attempted';
+  let attempted: boolean | null = previousAttempt === 'attempted' ? true : previousAttempt === 'not-attempted' ? false : null;
   const read = () => registryVersionState(manifest.packageName, manifest.version, dependencies.fetchImpl ?? fetch);
   try {
     const before = await read();
     assertRegistryArtifact(before, manifest);
-    if (before.published) return { status: 'passed', action: 'reused', registry: before, effects: [] };
-    const publishEffect = { type: 'npm-published', package: manifest.packageName, version: manifest.version, integrity: manifest.integrity, state: 'unknown' };
+    if (before.published) return { status: 'passed', action: 'reused', registry: before, effects: [], attempted };
+    if (previousAttempt !== 'not-attempted') return { status: 'blocked', action: 'readback-required', attempted, effects,
+      diagnostic: { code: previousAttempt === 'attempted' ? 'npm-publication-attempt-unconfirmed' : 'npm-publication-history-unknown', message: 'The previous publication journal does not authorize another npm write.' },
+      nextActions: ['回读原请求的准确版本与完整性；404不能授权重发，缺失或不匹配的原日志只阻止新增npm写入。'] };
+    const publishEffect = { type: 'npm-published', package: manifest.packageName, version: manifest.version, sourceCommit: manifest.sourceCommit,
+      sha256: manifest.sha256, integrity: manifest.integrity, state: 'unknown' };
     effects.push(publishEffect);
+    attempted = true;
     dependencies.onEffects?.(effects);
     const command = await (dependencies.publish ?? ((args: string[]) => runTrustedPublish(args, {
       npmCommand: process.execPath,
@@ -87,13 +94,13 @@ export async function publishFrozenArtifact(options: any, dependencies: any = {}
     const after = await awaitRegistryPublication(read, manifest, dependencies);
     if (!after.published) {
       publishEffect.state = command.status === 0 ? 'unknown' : 'not-confirmed';
-      return { status: 'blocked', action: 'readback-required', effects, diagnostic: command.diagnostic ?? { code: 'npm-publication-unconfirmed', message: 'Official Registry has not confirmed the publish result.' }, nextActions: ['回读同一版本与integrity后恢复；未知状态下不重复publish。'] };
+      return { status: 'blocked', action: 'readback-required', attempted, effects, diagnostic: command.diagnostic ?? { code: 'npm-publication-unconfirmed', message: 'Official Registry has not confirmed the publish result.' }, nextActions: ['回读同一版本与integrity后恢复；未知状态下不重复publish。'] };
     }
     publishEffect.state = 'confirmed';
     dependencies.onEffects?.(effects);
-    return { status: 'passed', action: command.status === 0 ? 'published' : 'recovered', registry: after, effects };
+    return { status: 'passed', action: command.status === 0 ? 'published' : 'recovered', registry: after, attempted, effects };
   } catch (error) {
-    return { status: 'blocked', action: 'readback-required', effects, diagnostic: { code: (error as any)?.code ?? 'npm-publication-blocked', message: error instanceof Error ? error.message : String(error) }, nextActions: ['回读官方Registry中的精确版本，保留已发布事实，冲突时停止。'] };
+    return { status: 'blocked', action: 'readback-required', attempted, effects, diagnostic: { code: (error as any)?.code ?? 'npm-publication-blocked', message: error instanceof Error ? error.message : String(error) }, nextActions: ['回读官方Registry中的精确版本，保留已发布事实，冲突时停止。'] };
   }
 }
 
@@ -102,7 +109,8 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
   const option = (name: string) => args[args.indexOf(name) + 1];
   if (!args.includes('--manifest') || !args.includes('--tag')) throw new Error('Usage: trusted-publish.ts --manifest <frozen-manifest> --tag <next|latest> [--output <file>]');
   const output = args.includes('--output') ? option('--output') : null;
-  const result = await publishFrozenArtifact({ manifestPath: option('--manifest'), npmTag: option('--tag') }, {
+  const result = await publishFrozenArtifact({ manifestPath: option('--manifest'), npmTag: option('--tag'),
+    previousAttempt: Number(process.env.GITHUB_RUN_ATTEMPT ?? 1) > 1 ? 'unknown' : 'not-attempted' }, {
     onEffects: (effects: any[]) => { if (output) fs.writeFileSync(output, `${JSON.stringify({ status: 'running', effects })}\n`, { mode: 0o600 }); },
   });
   if (output) fs.writeFileSync(output, `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 });

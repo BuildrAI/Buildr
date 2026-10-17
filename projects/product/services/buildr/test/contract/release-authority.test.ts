@@ -141,6 +141,10 @@ test('pre-tag convergence consumes credential-free evidence from the current pro
   assert.deepEqual(checkReleaseAuthorityEvidence({ evidence: probeEvidence(), sourceCommit: commit, workflowSource: workflow, nowMs: Date.parse(now) }), []);
   const wrongRun: any = checkReleaseAuthorityEvidence({ evidence: probeEvidence({ github: { ...probeEvidence().github, runAttempt: 0 } }), sourceCommit: commit, workflowSource: workflow, nowMs: Date.parse(now) });
   assert.equal(wrongRun.some((item: any) => item.code === 'release_authority_github_identity_mismatch'), true);
+  for (const ref of ['refs/heads/main-extra', 'refs/heads/main/nested', 'refs/heads/dev', 'refs/tags/main']) {
+    const evidence: any = probeEvidence({ github: { ...probeEvidence().github, workflowRef: `BuildrAI/Buildr/.github/workflows/publish.yml@${ref}` } });
+    assert.equal(checkReleaseAuthorityEvidence({ evidence, sourceCommit: commit, workflowSource: workflow, nowMs: Date.parse(now) }).some((item: any) => item.code === 'release_authority_github_identity_mismatch'), true, ref);
+  }
   const expiredEvidence: any = probeEvidence({ observedAt: '2026-08-12T00:00:00.000Z' });
   assert.equal(checkReleaseAuthorityEvidence({ evidence: expiredEvidence, sourceCommit: commit, workflowSource: workflow, nowMs: Date.parse(now) }).some((item: any) => item.code === 'release_authority_evidence_stale'), true);
   const drifted: any = probeEvidence({ workflow: { path: '.github/workflows/publish.yml', sha256: '0'.repeat(64) } });

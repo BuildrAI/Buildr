@@ -180,7 +180,7 @@ test('reprepare releases only a terminal failed Publication pointer for a new un
   assert.throws(() => reconcilePublicationAfterPreparedContext(publication, context, { id: 41, status: 'completed', conclusion: 'success' }), /succeeded/u);
 });
 
-for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs tools on original bytes' : 'recovers an unknown aggregate retry on the original candidate'} through adoption and readiness after unrelated dev and Task changes`, async t => {
+for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs tools on original bytes' : 'adopts late source proof after an unknown aggregate retry'} through adoption and readiness after unrelated dev and Task changes`, async t => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-operation-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const workspace = path.join(root, 'workspace');
@@ -224,6 +224,8 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
   let candidateComplete = false;
   let candidateConclusion = 'success', candidateAttempt = 1, retryRequests = 0;
   let verificationSource: string | null = null, repairRequested = false;
+  let lateSourceVerification: string | null = null;
+  const repairRequests: string[][] = [];
   let pr: any = null;
   const providerFile = path.join(workspace, '.git/buildr/task-worktrees', `${taskId}.json`);
   const runtime = {
@@ -249,7 +251,7 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
     if (command !== 'gh') return spawnSync(command, args, { ...options, encoding: 'utf8' });
     const body = (value: unknown) => ({ status: 0, stdout: JSON.stringify(value) });
     if (args[0] === 'auth') return { status: 0, stdout: 'local-test-service' };
-    if (args[0] === 'workflow') { dispatched++; if (args.includes('verification_source=' + verificationSource)) repairRequested = true; return { status: 1, stderr: 'injected lost dispatch response' }; }
+    if (args[0] === 'workflow') { dispatched++; if (args.includes('verification_source=' + verificationSource)) { repairRequested = true; repairRequests.push(args); } return { status: 1, stderr: 'injected lost dispatch response' }; }
     if (args[0] === 'run' && args[1] === 'rerun') { retryRequests++; return { status: 1, stderr: 'injected lost rerun response' }; }
     if (args.includes('--log-failed')) return { status: 0, stdout: 'ECONNRESET while downloading aggregate evidence' };
     if (args[0] === 'run' && args[1] === 'view') return body({ jobs: [
@@ -308,7 +310,9 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
   assert.equal(missing.status, 'local-verification-required');
   assert.equal(dispatched, 0, 'missing local proof cannot spend a remote Candidate');
   assert.equal(merges, 0, 'missing local proof cannot mutate main');
-  const first = await runReleaseOperation(options, dependencies);
+  const initialSourceVerification = path.join(root, 'initial-source-verification.json');
+  fs.writeFileSync(initialSourceVerification, JSON.stringify({ schemaVersion: 'buildr.verification-source-bundle/v1', records: [] }));
+  const first = await runReleaseOperation({ ...options, sourceVerification: initialSourceVerification }, dependencies);
   assert.equal(first.status, 'candidate-running', JSON.stringify(first));
   assert.equal(dispatched, 1, 'lost responses must not dispatch twice');
   candidateComplete = true;
@@ -361,21 +365,32 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
     verificationSource = git(workspace, ['rev-parse', 'HEAD']);
     aggregate.sourceBinding = createCandidateSourceBinding(workspace, sourceCommit, verificationSource);
     aggregate.verificationSource = verificationSource; aggregate.workflow.runId = '701';
+  } else {
+    verificationSource = sourceCommit;
+    lateSourceVerification = path.join(root, 'late-source-verification.json');
+    fs.writeFileSync(lateSourceVerification, JSON.stringify({ schemaVersion: 'buildr.verification-source-bundle/v1', records: [] }));
+    aggregate.sourceBinding = createCandidateSourceBinding(workspace, sourceCommit, sourceCommit);
+    aggregate.verificationSource = sourceCommit; aggregate.workflow.runId = '701';
   }
-  const boundedOptions = { ...options, stopAfter: 'candidate', ...(verificationSource ? { verificationSource } : {}) };
+  const boundedOptions = { ...options, stopAfter: 'candidate', ...(repairTools ? { verificationSource } : { sourceVerification: lateSourceVerification }) };
   const verified = await runReleaseOperation(boundedOptions, dependencies);
   assert.equal(verified.status, 'candidate-verified', JSON.stringify(verified));
   assert.equal(verified.action, 'prepare'); assert.equal(verified.stopAfter, 'candidate');
   assert.equal(verified.sourceCommit, sourceCommit); assert.equal(verified.sourceTree, sourceTree);
   assert.equal(verified.artifacts.buildr.sha256, artifact.manifest.sha256);
+  if (!repairTools) {
+    assert.equal(repairRequests.length, 1, 'a late source bundle alone must enter formal repair instead of being ignored');
+    assert.ok(repairRequests[0].some(field => field.startsWith('source_verification=')));
+    assert.ok(repairRequests[0].includes('verification_source=' + sourceCommit), 'late proof keeps the original frozen verification source');
+  }
   assert.equal(merges, 0); assert.equal(pr, null, 'bounded prepare stops before even creating a main PR');
   const dispatchesAfterVerification = dispatched;
   assert.equal((await runReleaseOperation(boundedOptions, dependencies)).status, 'candidate-verified');
   assert.equal(dispatched, dispatchesAfterVerification, 'rechecking the bounded result retains the original candidate and bytes');
   assert.equal(pr, null); assert.equal(merges, 0);
-  const ready = await runReleaseOperation({ ...options, ...(verificationSource ? { verificationSource } : {}) }, dependencies);
+  const ready = await runReleaseOperation({ ...options, ...(repairTools ? { verificationSource } : {}) }, dependencies);
   assert.equal(ready.status, 'awaiting-publication-authorization', JSON.stringify(ready));
-  assert.equal(merges, 1); assert.equal(dispatched, repairTools ? 2 : 1);
+  assert.equal(merges, 1); assert.equal(dispatched, 2);
   task.title = 'Unrelated Task title update';
   fs.writeFileSync(path.join(workspace, 'unrelated.txt'), 'later dev content');
   git(workspace, ['add', 'unrelated.txt']); git(workspace, ['commit', '-m', 'later dev']); git(workspace, ['push', 'origin', 'dev']);
@@ -383,15 +398,13 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
   assert.equal(repeated.status, 'awaiting-publication-authorization', JSON.stringify(repeated));
   assert.equal(repeated.contextIdentity, ready.contextIdentity);
   assert.equal(repeated.sourceCommit, sourceCommit);
-  assert.equal(dispatched, repairTools ? 2 : 1); assert.equal(merges, 1);
+  assert.equal(dispatched, 2); assert.equal(merges, 1);
   assert.equal(git(workspace, ['ls-remote', 'origin', `refs/heads/${pr.headRefName}`]), '', 'prepare must not recreate a merged carrier deleted by GitHub');
   const record = JSON.parse(fs.readFileSync(path.join(workspace, '.git/buildr/release-operations', `${version}.json`), 'utf8'));
-  assert.equal(record.candidate.runId, repairTools ? 701 : 700);
-  if (repairTools) {
-    assert.equal(record.context.verification.verificationSource, verificationSource);
-    assert.equal(record.context.artifact.sha256, artifact.manifest.sha256);
-    assert.equal(record.context.release.sourceCommit, sourceCommit);
-  }
+  assert.equal(record.candidate.runId, 701);
+  assert.equal(record.context.verification.verificationSource, verificationSource);
+  assert.equal(record.context.artifact.sha256, artifact.manifest.sha256);
+  assert.equal(record.context.release.sourceCommit, sourceCommit);
   assert.equal(record.sources.length, 0);
 });
 

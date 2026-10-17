@@ -7,6 +7,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { spawnCommandSync } from '../../../projects/product/services/buildr/src/infrastructure/process.ts';
+import { withExclusiveFileLock } from '../../../projects/product/services/buildr/src/infrastructure/filesystem/exclusive-file-lock.ts';
 import { CANDIDATE_CI_AGGREGATE_SCHEMA } from '../../../projects/product/services/buildr/test/verification/release/candidate-ci-contract.ts';
 import { releasePublishAuthority } from './release-authority.ts';
 import { validateReleaseExecutionBinding } from './release-execution-binding.ts';
@@ -142,11 +143,107 @@ export function prepareReleaseRehearsal(options: { version: string; repo: string
   }
 }
 
-export function dispatchReleaseRehearsal(preparationValue: any, options: { repo: string; confirm?: boolean }): any {
+function readPreparationFile(file: string): { raw: string; value: any } {
+  const state = fs.lstatSync(file);
+  if (!state.isFile() || state.size > 2 * 1024 * 1024 || fs.realpathSync(file) !== file) throw new Error('Rehearsal preparation must be one bounded regular file at its real path.');
+  const raw = fs.readFileSync(file, 'utf8');
+  return { raw, value: validateReleaseRehearsalPreparation(JSON.parse(raw)) };
+}
+
+function replacePreparationFile(file: string, raw: string, value: any): string {
+  if (readPreparationFile(file).raw !== raw) throw new Error('Rehearsal preparation changed before its intent could be retained.');
+  const temporary = `${file}.pending-${process.pid}-${crypto.randomUUID()}`;
+  const next = `${JSON.stringify(value, null, 2)}\n`;
+  try {
+    fs.writeFileSync(temporary, next, { mode: 0o600, flag: 'wx' });
+    if (readPreparationFile(file).raw !== raw) throw new Error('Rehearsal preparation changed while retaining its intent.');
+    fs.renameSync(temporary, file);
+    return next;
+  } finally { fs.rmSync(temporary, { force: true }); }
+}
+
+/** A repeated prepare cannot erase an earlier unknown dispatch intent. */
+export function writeReleaseRehearsalPreparation(filename: string, value: any): any {
+  const preparation = validateReleaseRehearsalPreparation(value), input = path.resolve(filename);
+  fs.mkdirSync(path.dirname(input), { recursive: true });
+  const file = path.join(fs.realpathSync(path.dirname(input)), path.basename(input));
+  return withExclusiveFileLock(`${file}.lock`, file, () => {
+    if (fs.existsSync(file)) {
+      const current = readPreparationFile(file).value;
+      if (current.identity !== preparation.identity) throw new Error('Existing rehearsal preparation differs; preserve its dispatch history.');
+      return current;
+    }
+    fs.writeFileSync(file, `${JSON.stringify(preparation, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
+    return preparation;
+  });
+}
+
+export function dispatchReleaseRehearsal(preparationValue: any, options: { repo: string; confirm?: boolean; preparationPath?: string }, dependencies: any = {}): any {
   const preparation = validateReleaseRehearsalPreparation(preparationValue);
   if (options.confirm !== true) throw new Error('Release rehearsal dispatch requires explicit confirmation.');
-  run('gh', ['workflow', 'run', 'verify.yml', '--repo', releasePublishAuthority.repository, '--ref', preparation.carrier.branch, '-f', 'purpose=release-rehearsal', '-f', `expected_source_tree=${preparation.prospective.tree}`, '-f', `rehearsal_identity=${preparation.identity}`], options.repo);
-  return { schemaVersion: 'buildr.release-rehearsal-dispatch/v1', status: 'dispatched', preparationIdentity: preparation.identity, effects: [{ type: 'github-release-rehearsal-dispatched', branch: preparation.carrier.branch }], nextActions: ['读取matching workflow run id并在终态执行inspect。'] };
+  const execute = dependencies.execute ?? spawnCommandSync;
+  const request = (args: string[]) => execute('gh', args, { cwd: options.repo, encoding: 'utf8', timeout: 30_000 });
+  const result = (status: string, effect: any = null, observed: any = null): any => ({ schemaVersion: 'buildr.release-rehearsal-dispatch/v1', status,
+    preparationIdentity: preparation.identity, effects: effect ? [effect] : [], ...(observed ? { workflow: observed } : {}),
+    nextActions: [observed ? '对同一runId执行inspect，终态仍须核验rehearsalIdentity与完整原包证明。' : '回读同一演练请求；未知请求不能再次派发。'] });
+  const lookup = () => {
+    const response = request(['api', `repos/${releasePublishAuthority.repository}/actions/workflows/verify.yml/runs?event=workflow_dispatch&branch=${encodeURIComponent(preparation.carrier.branch)}&per_page=100`]);
+    if (response.error || response.status !== 0) throw new Error('Rehearsal workflow history is unknown.');
+    const body = JSON.parse(String(response.stdout));
+    if (!Array.isArray(body.workflow_runs) || !Number.isSafeInteger(body.total_count) || body.total_count !== body.workflow_runs.length || body.total_count > 100) throw new Error('Rehearsal workflow history is incomplete.');
+    if (body.workflow_runs.some((item: any) => item.repository?.full_name !== releasePublishAuthority.repository
+      || item.path?.split('@')[0] !== '.github/workflows/verify.yml' || item.event !== 'workflow_dispatch'
+      || item.head_branch !== preparation.carrier.branch || item.head_sha !== preparation.prospective.commit
+      || !Number.isSafeInteger(item.id) || item.id < 1 || !Number.isSafeInteger(item.run_attempt) || item.run_attempt < 1
+      || typeof item.status !== 'string')) throw new Error('Rehearsal workflow run identity is incomplete.');
+    return body.workflow_runs.filter((item: any) => item.repository?.full_name === releasePublishAuthority.repository
+      && item.path?.split('@')[0] === '.github/workflows/verify.yml' && item.event === 'workflow_dispatch'
+      && item.head_branch === preparation.carrier.branch && item.head_sha === preparation.prospective.commit
+      && Number.isSafeInteger(item.id) && item.id > 0);
+  };
+  const continueRequest = (stored: any = null, file: string | null = null): any => {
+    if (stored && stored.value.identity !== preparation.identity) throw new Error('Stored rehearsal preparation identity changed.');
+    const value = stored?.value ?? preparation;
+    const intents = (value.effects ?? []).filter((item: any) => item?.type === 'github-release-rehearsal-dispatched');
+    const validIntent = intents.length === 1 && intents[0].preparationIdentity === preparation.identity
+      && intents[0].branch === preparation.carrier.branch && intents[0].sourceCommit === preparation.prospective.commit
+      && intents[0].workflow === '.github/workflows/verify.yml' && intents[0].repository === releasePublishAuthority.repository;
+    if (intents.length && !validIntent && value.schemaVersion === RELEASE_REHEARSAL_PREPARATION_SCHEMA) return result('readback-required');
+    let matches: any[];
+    try { matches = lookup(); } catch { return result('readback-required', validIntent ? intents[0] : null); }
+    if (matches.length > 1 || validIntent && intents[0].runId && matches[0]?.id !== intents[0].runId) return result('readback-required', validIntent ? intents[0] : null);
+    let intent = validIntent ? intents[0] : null;
+    if (matches.length === 0 && !intent) {
+      // v1 effects participate in its identity. Missing durable v2 input is read-only.
+      if (!file || value.schemaVersion !== RELEASE_REHEARSAL_PREPARATION_SCHEMA) return result('readback-required');
+      intent = { type: 'github-release-rehearsal-dispatched', preparationIdentity: preparation.identity,
+        repository: releasePublishAuthority.repository, workflow: '.github/workflows/verify.yml', branch: preparation.carrier.branch,
+        sourceCommit: preparation.prospective.commit, state: 'unknown', runId: null };
+      value.effects = [...(value.effects ?? []), intent];
+      stored.raw = replacePreparationFile(file, stored.raw, value);
+      if (readPreparationFile(file).raw !== stored.raw) throw new Error('Rehearsal preparation changed before dispatch.');
+      try { request(['workflow', 'run', 'verify.yml', '--repo', releasePublishAuthority.repository, '--ref', preparation.carrier.branch,
+        '-f', 'purpose=release-rehearsal', '-f', `expected_source_tree=${preparation.prospective.tree}`, '-f', `rehearsal_identity=${preparation.identity}`]); }
+      catch { /* Lost and rejected responses both retain this intent; only readback follows. */ }
+      try { matches = lookup(); } catch { return result('readback-required', intent); }
+    }
+    if (matches.length !== 1) return result('readback-required', intent);
+    if (!intent && file && value.schemaVersion === RELEASE_REHEARSAL_PREPARATION_SCHEMA) {
+      intent = { type: 'github-release-rehearsal-dispatched', preparationIdentity: preparation.identity,
+        repository: releasePublishAuthority.repository, workflow: '.github/workflows/verify.yml', branch: preparation.carrier.branch,
+        sourceCommit: preparation.prospective.commit, state: 'confirmed', runId: matches[0].id };
+      value.effects = [...(value.effects ?? []), intent];
+    }
+    if (intent && file && value.schemaVersion === RELEASE_REHEARSAL_PREPARATION_SCHEMA) {
+      intent.runId = matches[0].id; intent.state = 'confirmed';
+      replacePreparationFile(file, stored.raw, value);
+    }
+    return result(matches[0].status === 'completed' ? 'inspect-required' : 'running', intent, matches[0]);
+  };
+  if (!options.preparationPath) return continueRequest();
+  const input = path.resolve(options.preparationPath);
+  const file = path.join(fs.realpathSync(path.dirname(input)), path.basename(input));
+  return withExclusiveFileLock(`${file}.lock`, file, () => continueRequest(readPreparationFile(file), file));
 }
 
 export function inspectReleaseRehearsal(preparationValue: any, options: { repo: string; runId: number }): any {
@@ -191,7 +288,7 @@ export function inspectReleaseRehearsal(preparationValue: any, options: { repo: 
   return evidence;
 }
 
-export function cleanupReleaseRehearsal(preparationValue: any, options: { repo: string; confirm?: boolean }): any {
+export function cleanupReleaseRehearsal(preparationValue: any, options: { repo: string; confirm?: boolean }, dependencies: any = {}): any {
   const preparation = validateReleaseRehearsalPreparation(preparationValue);
   if (options.confirm !== true) throw new Error('Release rehearsal cleanup requires explicit confirmation.');
   const actualLocal = run('git', ['rev-parse', '--verify', preparation.carrier.localRef], options.repo, { allowFailure: true }).stdout;
@@ -199,10 +296,12 @@ export function cleanupReleaseRehearsal(preparationValue: any, options: { repo: 
   const remoteValue = run('git', ['ls-remote', preparation.carrier.remote, `refs/heads/${preparation.carrier.branch}`], options.repo).stdout;
   const actualRemote = remoteValue.split(/\s+/u)[0] || null;
   if (actualRemote && actualRemote !== preparation.prospective.commit) throw new Error('Release rehearsal remote carrier drifted.');
-  const effects = [];
+  const effects: any[] = [];
   if (actualRemote) {
-    run('git', ['push', preparation.carrier.remote, '--delete', preparation.carrier.branch], options.repo);
-    effects.push({ type: 'release-rehearsal-remote-carrier-deleted', branch: preparation.carrier.branch });
+    const removed = pushReleaseBranch({ repo: options.repo, remote: preparation.carrier.remote, branch: preparation.carrier.branch,
+      commit: preparation.prospective.commit, before: actualRemote, remove: true }, dependencies, effects);
+    removed.type = 'release-rehearsal-remote-carrier-deleted';
+    removed.branch = preparation.carrier.branch;
   }
   if (actualLocal) {
     run('git', ['update-ref', '-d', preparation.carrier.localRef, preparation.prospective.commit], options.repo);
@@ -303,10 +402,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToP
     const repo = path.resolve(values.repo || process.cwd());
     const prepared = values.prepared ? readJson(values.prepared) : null;
     const evidence = values.evidence ? readJson(values.evidence) : null;
-    const result = action === 'prepare'
+    if (values.output && [values.prepared, values.evidence].filter(Boolean).some(input => path.resolve(input) === path.resolve(values.output)
+      || fs.existsSync(values.output) && fs.realpathSync(input) === fs.realpathSync(values.output))) throw new Error('Rehearsal output cannot overwrite its preparation or evidence input.');
+    let result = action === 'prepare'
       ? prepareReleaseRehearsal({ version: values.version, repo, sourceDevCommits: values.sources, devRef: values.devref, remote: values.remote, executionBinding: readJson(values.executionbinding) })
       : action === 'dispatch'
-        ? dispatchReleaseRehearsal(prepared, { repo, confirm: values.confirm })
+        ? dispatchReleaseRehearsal(prepared, { repo, confirm: values.confirm, preparationPath: values.prepared })
         : action === 'inspect'
           ? inspectReleaseRehearsal(prepared, { repo, runId: Number(values.runid) })
           : action === 'promote'
@@ -315,7 +416,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToP
             ? cleanupReleaseRehearsal(prepared, { repo, confirm: values.confirm })
             : null;
     if (!result) throw new Error('Usage: release-rehearsal.ts <prepare|dispatch|inspect|promote|cleanup> ...');
-    if (values.output) { fs.mkdirSync(path.dirname(path.resolve(values.output)), { recursive: true }); fs.writeFileSync(path.resolve(values.output), `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 }); }
+    if (values.output) {
+      if (action === 'prepare' && result.schemaVersion === RELEASE_REHEARSAL_PREPARATION_SCHEMA) result = writeReleaseRehearsalPreparation(values.output, result);
+      else if (action === 'prepare' && fs.existsSync(values.output)) throw new Error('Failed preparation cannot overwrite existing rehearsal history.');
+      else { fs.mkdirSync(path.dirname(path.resolve(values.output)), { recursive: true }); fs.writeFileSync(path.resolve(values.output), `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 }); }
+    }
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     if (['failed', 'blocked'].includes(result.status)) process.exitCode = 1;
   } catch (error: unknown) {

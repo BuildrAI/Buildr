@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createHash } from 'node:crypto';
 import { createVerificationReuseIdentity, reusedVerificationResult, validateVerificationReuseRecord,
   type VerificationReuseSnapshot, type VerificationReuseStep, type VerificationReuseRecord } from '../verification/verification-reuse.ts';
 import { verificationSteps, verificationStepExecutionInputs } from '../verification/registry.ts';
@@ -15,6 +16,18 @@ function record(): VerificationReuseRecord {
     origin: { kind: 'local', runId: 'source-fixture-1', sourceCommit: snapshot.sourceCommit, startedAt: '2026-10-15T00:00:00.000Z', finishedAt: '2026-10-15T00:00:01.000Z' },
     result: { id: step.id, status: 'passed', exitCode: 0, durationMs: 1000, childOutcome: 'passed', childExitCode: 0, childSignal: null } };
 }
+
+test('opting into a live database cannot reuse a previous skipped or stale external observation', () => {
+  const mysql = { ...step, executor: { type: 'node-test', files: ['test/integration/mysql-client-live.test.ts'] } };
+  const hash = (value: string) => `sha256-${createHash('sha256').update(JSON.stringify(value)).digest('hex')}` as const;
+  const offline = { ...snapshot, inputIdentities: { BUILDR_TEST_MYSQL_CONNECTION_FILE: hash('') } };
+  assert.ok(createVerificationReuseIdentity(mysql, offline));
+  assert.equal(createVerificationReuseIdentity(mysql, snapshot), null, 'unknown opt-in input cannot authorize reuse');
+  const live = { ...offline, inputIdentities: { BUILDR_TEST_MYSQL_CONNECTION_FILE: hash('/private-connection-file') } };
+  assert.equal(createVerificationReuseIdentity(mysql, live), null);
+  assert.deepEqual(createVerificationReuseIdentity(step, live), createVerificationReuseIdentity(step, offline), 'unrelated groups retain their cache identity');
+  assert.doesNotMatch(JSON.stringify(live), /private-connection/u);
+});
 test('source identity binds content and check recipe while commit and checkout location are provenance', () => {
   const identity = createVerificationReuseIdentity(step, snapshot);
   assert.deepEqual(createVerificationReuseIdentity(step, { ...snapshot, sourceCommit: 'b'.repeat(40), productRoot: '/another/checkout', repositoryRoot: '/another' }), identity);
@@ -124,7 +137,8 @@ test('source package selectors and isolated launcher checks are reusable while f
 });
 
 test('only reviewed fixture runtime checks exclude Product governance material while governance owners retain it', () => {
-  const ids = ['integration-runtime', 'integration-data-store', 'integration-task-read-models', 'integration-task-coordination',
+  const ids = ['integration-runtime', 'integration-code', 'integration-desktop', 'integration-task-records', 'integration-connections',
+    'integration-runtime-projection', 'integration-data-store', 'integration-task-read-models', 'integration-task-coordination',
     'integration-project-daily-progress', 'system-buildr-web-http', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation',
     'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection',
     'system-runtime-recovery', 'system-app-process', 'system-workspace-lifecycle'];

@@ -54,12 +54,19 @@ test('architecture scan includes the release Skill and root callers while preser
 });
 
 test('documentation quality ignores trailing whitespace', () => {
-  const temporaryRoot: any = fs.mkdtempSync(path.join(projectRoot, 'openspec', '.docs-quality-'));
-  const document: any = path.join(temporaryRoot, 'trailing-whitespace.md');
-  const relativeDocument: any = path.relative(projectRoot, document).split(path.sep).join('/');
+  const temporaryRoot: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-docs-whitespace-'));
+  const isolatedProject: any = path.join(temporaryRoot, 'projects/product');
+  const isolatedService: any = path.join(isolatedProject, 'services/buildr');
+  const document: any = path.join(isolatedProject, 'openspec/trailing-whitespace.md');
+  const relativeDocument: any = 'openspec/trailing-whitespace.md';
+  fs.mkdirSync(path.dirname(document), { recursive: true });
+  for (const relative of ['test/verification/docs/quality.ts', 'src/modules/task/domain/task.ts', 'src/infrastructure/filesystem/filesystem-path-identity.ts']) {
+    const target = path.join(isolatedService, relative);
+    fs.mkdirSync(path.dirname(target), { recursive: true }); fs.copyFileSync(path.join(productRoot, relative), target);
+  }
   fs.writeFileSync(document, '# Example  \n\nbody  \n', 'utf8');
   try {
-    const runner: any = path.join(productRoot, 'test', 'verification', 'docs', 'quality.ts');
+    const runner: any = path.join(isolatedService, 'test', 'verification', 'docs', 'quality.ts');
     const result: any = spawnSync(process.execPath, [runner], {
       cwd: productRoot,
       encoding: 'utf8',

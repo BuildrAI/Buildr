@@ -27,6 +27,18 @@ const reporter: any = path.join(productRoot, 'test', 'verification', 'timing', '
 const summaryVerifier: any = path.join(productRoot, 'test', 'verification', 'timing', 'verify-summary.ts');
 const evidenceCleaner: any = path.join(productRoot, 'test', 'verification', 'timing', 'cleanup-evidence.ts');
 
+test('timing summary names timed-out and dependency-blocked checks without reporting them as absent failures', () => {
+  const lines = formatVerificationTimingSummary({ totalDurationMs: 1000, summaryPath: '/timing.json', steps: [
+    { name: 'native files', status: 'timed-out', exitCode: 124, durationMs: 1000 },
+    { name: 'dependent', status: 'blocked', exitCode: 1, durationMs: 0 },
+    { name: 'valid proof', status: 'passed', exitCode: 0, durationMs: 5 },
+  ] });
+  const failed = lines.find((line: string) => line.includes('failed:'));
+  assert.match(failed, /native files \(124; timed-out\)/u);
+  assert.match(failed, /dependent \(1; blocked\)/u);
+  assert.doesNotMatch(failed, /valid proof|none/u);
+});
+
 async function assertProcessExited(pid: any, timeoutMs: any = 1_000): Promise<any>  {
   const deadline: any = Date.now() + timeoutMs;
   while (true) {

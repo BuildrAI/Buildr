@@ -53,6 +53,14 @@ const digest = (value: unknown): ReuseDigest => `sha256-${crypto.createHash('sha
 const runnerPlatform = (runner: string) => runner === 'macos' ? 'darwin' : runner === 'windows' ? 'win32' : runner;
 const sorted = (value: Record<string, string>) => Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)));
 const git = (root: string, args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
+const liveMysqlInput = 'BUILDR_TEST_MYSQL_CONNECTION_FILE';
+
+export function requiresFreshExternalVerification(step: VerificationReuseStep, snapshot: VerificationReuseSnapshot): boolean {
+  // A mutable external database cannot be attested by source bytes or an old
+  // skipped test. Only its owning group loses reuse; credentials stay unread.
+  return Boolean(step.executor.files?.includes('test/integration/mysql-client-live.test.ts')
+    && snapshot.inputIdentities?.[liveMysqlInput] !== digest(''));
+}
 
 /** Hash actual source bytes, modes and link targets. HEAD is provenance, never the content key. */
 export function collectVerificationReuseSnapshot(options: VerificationReuseOptions): VerificationReuseSnapshot {
@@ -69,8 +77,8 @@ export function collectVerificationReuseSnapshot(options: VerificationReuseOptio
     }
     return history.get(commit)!;
   };
-  const inputNames = [...new Set([...(options.steps ?? verificationSteps), ...(options.step ? [options.step] : [])]
-    .flatMap((step: VerificationReuseStep) => step.reuse && step.reuse.inputs || []))].sort();
+  const inputNames = [...new Set([liveMysqlInput, ...[...(options.steps ?? verificationSteps), ...(options.step ? [options.step] : [])]
+    .flatMap((step: VerificationReuseStep) => step.reuse && step.reuse.inputs || [])])].sort();
   const inputIdentities = Object.fromEntries(inputNames.map(name => [name, digest(env[name] ?? '')]));
   const variables = Object.fromEntries(['TZ', 'LANG', 'LC_ALL', 'NODE_OPTIONS', 'BUILDR_VERIFICATION_PROFILE', 'BUILDR_VERIFICATION_NETWORK_MODE'].map(key => [key, env[key] ?? '']));
   const exactNode = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env, requireNpm: true });
@@ -102,6 +110,7 @@ function requiredToolKeys(step: VerificationReuseStep): string[] {
 
 export function createVerificationReuseIdentity(step: VerificationReuseStep, snapshot: VerificationReuseSnapshot, legacy = false): VerificationReuseIdentity | null {
   if (!step.reuse || step.executor?.type === 'candidate-artifact' || step.executor?.consumesArtifact) return null;
+  if (requiresFreshExternalVerification(step, snapshot)) return null;
   if (step.reuse.git === 'comparison' && !snapshot.gitComparison) return null;
   const selected = legacy ? null : snapshot.proofInputs?.[step.id];
   const proof = selected?.selectionIdentity === digest({ executor: step.executor, scope: step.reuse.scope }) ? selected : null;
@@ -374,6 +383,7 @@ export function inspectVerificationReusePlan(plan: any, options: VerificationReu
     if (record) reasons.push('matching-complete-result');
     else if (options.force) reasons.push('explicit-force');
     else if (!step.reuse) reasons.push(step.reuseDisabledReason ?? 'fresh-proof-required');
+    else if (requiresFreshExternalVerification(step, snapshot)) reasons.push('external-live-environment-requires-fresh-proof');
     else if (!identity) reasons.push('inputs-unavailable');
     else if (!prior) reasons.push('no-matching-result');
     else {

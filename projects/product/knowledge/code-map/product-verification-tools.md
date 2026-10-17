@@ -10,7 +10,7 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
 
 - **`services/buildr/test/verification/`** — 产品自己的测试编排
   - [source.ts](../../services/buildr/test/verification/source.ts) — 本机源码入口，分别选择通用检查与当前系统的原生源码检查；先核验有效结果、按缺项准备依赖并重新观察，不生产或消费最终原包
-  - [artifact.ts](../../services/buildr/test/verification/artifact.ts) — 本机原包入口，显式读取同一原包目录；通用原包与本机平台分别选择，最低／当前 Node 各记录真实执行环境；不回退制包
+  - [artifact.ts](../../services/buildr/test/verification/artifact.ts) — 本机原包入口，显式读取同一原包目录；通用原包与本机平台分别选择，按依赖档位排序并在准备后重新判断有效结果；不回退制包
   - [candidate-artifact-reuse.ts](../../services/buildr/test/verification/candidate-artifact-reuse.ts) — 原包证明的有界交接、原字节／输入／真实环境核验、暂留本机缺项及原始来源保留；普通日志不能替代正式证据
   - [verification-reuse.ts](../../services/buildr/test/verification/verification-reuse.ts) — 内容、配方、环境和必要 Git 身份，成功结果持久复用与可搬运证明；输入漂移或清理失败不得写成成功
   - [verification-inputs.ts](../../services/buildr/test/verification/verification-inputs.ts) — 已核验运行检查的产品与配方输入分离、静态依赖及子脚本读取；未知输入保守回退
@@ -20,7 +20,7 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
   - [test-files.ts](../../services/buildr/test/verification/test-files.ts) — 解析安全路径、展开文件匹配并去重，空集合失败
   - [system-suites.ts](../../services/buildr/test/verification/system-suites.ts) — 系统测试（System）分组、实际文件和有关资源
   - [ownership.ts](../../services/buildr/test/verification/ownership.ts) — 改动路径归属、排除项、委托与扩大范围的依据
-  - [registry.ts](../../services/buildr/test/verification/registry.ts) — 稳定步骤、集成分片、通用／平台归属、主要证明责任、资源及候选分片；平台归属与运行场所分别声明
+  - [registry.ts](../../services/buildr/test/verification/registry.ts) — 稳定步骤、职责分片、通用／平台归属、主要证明责任、真实工作进程额度及候选分片；平台归属与运行场所分别声明
   - [platform-boundaries.ts](../../services/buildr/test/verification/platform-boundaries.ts) — macOS 与 Windows 原生命令、路径／锁、文件描述符／进程及原包启动器的具体机制与最小断言；不以系统名称复制通用功能
   - [planner.ts](../../services/buildr/test/verification/planner.ts) — 校验步骤与预算，选择范围并给出原因，组合低成本前置检查
   - [changed.ts](../../services/buildr/test/verification/changed.ts) — 日常受影响范围（affected）的预览或执行入口
@@ -51,6 +51,8 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
   - [candidate-source-binding.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/candidate-source-binding.ts) — 原产包与验证提交的真实构建输入比较；调用共享输入实现形成检查身份，旧算法只核验历史结果；另行保护发布工具检出
   - [candidate-repair-operation.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/candidate-repair-operation.ts) — 在原承载引用请求正式补验，未知请求回读，保留原包和运行指针
   - [release-failure.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/release-failure.ts) — 有界命令诊断、明确拒绝识别与阶段恢复建议；不创建第二份发布事实
+  - [release-publication.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/release-publication.ts) — 沿用逐效果日志，绑定准确原包及运行尝试；npm 写入未知时只回读，缺失原日志只停止相关新增写入
+  - [release-rehearsal.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/release-rehearsal.ts) — 显式演练使用 v2 准备文件持久保存请求意图；旧 v1 或无持久位置仅回读恢复，终态仍需检查完整性
 - **`services/buildr/tools/development/`** — 真实开发环境边界
   - [run-development-npm.ts](../../services/buildr/tools/development/run-development-npm.ts) — 检查当前 Node.js 在项目声明范围内并调用相邻 npm；无扩展名的同名入口负责在声明范围内选择 Node.js（声明版本优先）
   - [run-isolated-workspace-smoke.ts](../../services/buildr/tools/development/run-isolated-workspace-smoke.ts) — 隔离工作目录和两类应用数据目录，统一成功与失败清理

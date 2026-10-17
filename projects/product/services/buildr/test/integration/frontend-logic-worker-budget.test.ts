@@ -69,3 +69,34 @@ test('frontend real leaf obeys one- and two-worker grants without dropping eithe
     }
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+test('the real complete unit executor obeys granted workers without an unbounded npm test child', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-unit-worker-grant-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'test/unit'), { recursive: true });
+  fs.copyFileSync(path.join(serviceRoot, 'test/register-development-entry.ts'), path.join(root, 'test/register-development-entry.ts'));
+  for (const name of ['first', 'second']) {
+    fs.writeFileSync(path.join(root, 'test/unit', `${name}.test.ts`), `import test from 'node:test';
+import fs from 'node:fs'; import path from 'node:path';
+test('${name} controlled leaf', async () => {
+  const markers=path.join(import.meta.dirname,'active'); fs.mkdirSync(markers,{recursive:true});
+  const own=path.join(markers,'${name}'); fs.writeFileSync(own,'active');
+  console.log('observedConcurrentTestWorkers:'+fs.readdirSync(markers).length);
+  try { await new Promise(resolve=>setTimeout(resolve,250)); } finally { fs.rmSync(own); }
+});
+`);
+  }
+  const registered = verificationSteps.find((step: any) => step.id === 'unit');
+  // Keep the registered executor and files; TAP exposes fixture observations
+  // that the ordinary compact reporter intentionally suppresses.
+  const unit = { ...registered, executor: { ...registered.executor, args: [...registered.executor.args.filter((arg: string) => !arg.startsWith('--test-reporter=')), '--test-reporter=tap'] } };
+  const execute = createVerificationExecutor({ productRoot: root, minimumNodeVersion: '24.15.0', env: { NODE_TEST_CONTEXT: undefined } });
+  for (const workers of [1, 2]) {
+    const result = await execute({ ...unit, timeoutMs: 30_000 }, { resourceGrant: { workers, processes: workers } });
+    assert.equal(result.status, 'passed', result.stderr);
+    assert.match(result.stdout, /tests 2/u);
+    const observed = [...result.stdout.matchAll(/observedConcurrentTestWorkers:(\d+)/gu)].map(match => Number(match[1]));
+    assert.equal(observed.length, 2, result.stdout);
+    assert.equal(Math.max(...observed), workers, result.stdout);
+  }
+});

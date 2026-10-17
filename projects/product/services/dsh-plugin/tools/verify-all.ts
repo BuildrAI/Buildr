@@ -9,6 +9,7 @@ import { artifactFromTarball } from '../../../../../skills/buildr-release/script
 import { verifyBuildrPluginPair } from './verify-buildr-plugin-pair.ts';
 import { captureVerificationSource, gitTreeSourceIdentity } from './verification-source.ts';
 import { createReleaseCandidate, readReleaseCandidate, sourceSdkIdentityFromFiles, SOURCE_SDK_MANIFEST, type SourceSdkIdentity } from '../../../../../skills/buildr-release/scripts/dsh-plugin/release-candidate.ts';
+import { resolveVerificationWorkerBudget } from '../../buildr/test/verification/worker-budget.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export function parseVerificationInputs(args: string[], env: NodeJS.ProcessEnv = process.env): {sourceSdk:string;peerInput?:string;peerManifest?:string;output?:string;npmCli?:string;candidateOutput?:string} {
@@ -30,8 +31,11 @@ export function pluginSourcePhaseFiles(group: 'unit' | 'integration', pluginRoot
   return readdirSync(join(pluginRoot, 'test', group)).filter(name => name.endsWith('.test.ts')).sort()
     .map(name => `test/${group}/${name}`).filter(file => !(PLUGIN_PEER_PHASE_FILES as readonly string[]).includes(file));
 }
-export function pluginSourcePhaseStep(group: 'unit' | 'integration', files: string[]) {
-  return { id: `dsh-plugin:${group}`, executor: { type: 'node-test', files: [...files].sort() }, reuse: { scope: 'plugin' as const, git: false, ...(group === 'integration' ? { tools: ['sdk'] } : {}) } };
+export function pluginSourcePhaseStep(group: 'unit' | 'integration', files: string[], env: NodeJS.ProcessEnv = process.env) {
+  const workers = resolveVerificationWorkerBudget({ env, fallback: 2, maximum: files.length, label: `Plugin ${group} tests` });
+  return { id: `dsh-plugin:${group}`, executor: { type: 'node-test', files: [...files].sort(), args: [`--test-concurrency=${workers}`] },
+    resourceDemand: { workers, processes: workers },
+    reuse: { scope: 'plugin' as const, git: false, ...(group === 'integration' ? { tools: ['sdk'] } : {}) } };
 }
 export function pluginSourceSdkKey(pluginRoot = root): string {
   const identity = sourceSdkIdentityFromFiles(readFileSync(join(pluginRoot, SOURCE_SDK_MANIFEST)),
@@ -53,7 +57,7 @@ export async function assertPluginSourcePhaseProof(input: { productRoot: string;
 }
 export async function collectPluginSourceVerificationBundle(options: { env?: NodeJS.ProcessEnv; pluginRoot?: string; repo?: string; imports?: { schemaVersion: string; records: any[] } } = {}) {
   const pluginRoot = options.pluginRoot ?? (options.repo ? resolve(options.repo, 'projects/product/services/dsh-plugin') : root);
-  const steps = (['unit', 'integration'] as const).map(group => pluginSourcePhaseStep(group, pluginSourcePhaseFiles(group, pluginRoot)));
+  const steps = (['unit', 'integration'] as const).map(group => pluginSourcePhaseStep(group, pluginSourcePhaseFiles(group, pluginRoot), options.env));
   const { createVerificationReuseStore, collectVerificationReuseSnapshot, validateVerificationReuseRecord, VERIFICATION_REUSE_BUNDLE_SCHEMA } = await import(new URL('../../buildr/test/verification/verification-reuse.ts', import.meta.url).href);
   const productRoot = resolve(pluginRoot, '../buildr');
   const snapshot = collectVerificationReuseSnapshot({ productRoot, env: options.env });
@@ -116,7 +120,7 @@ for (const group of ['unit', 'integration'] as const) {
   }
   console.error(`[dsh-source-phase] ${group} started`);
   const startedAt = new Date().toISOString();
-  const result = await runVerificationStep({ name: step.id, command: process.execPath, args: ['--test', ...files], cwd: root, env: environment });
+  const result = await runVerificationStep({ name: step.id, command: process.execPath, args: ['--test', ...step.executor.args, ...files], cwd: root, env: environment });
   if (result.stdout) process.stdout.write(result.stdout); if (result.stderr) process.stderr.write(result.stderr);
   store.stage(step, result, { kind: process.env.GITHUB_RUN_ID ? 'ci' : 'local', runId: process.env.GITHUB_RUN_ID ?? `dsh-${process.pid}-${Date.now()}`, sourceCommit: snapshot.sourceCommit, startedAt, finishedAt: new Date().toISOString() });
   const after = collectVerificationReuseSnapshot({ productRoot: resolve(root, '../buildr') });

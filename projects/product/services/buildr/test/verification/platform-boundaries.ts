@@ -21,6 +21,24 @@ export const WINDOWS_PLATFORM_BOUNDARIES = Object.freeze([
     risk: 'A failed check leaves a descendant, socket or locked temporary directory alive.',
     proof: 'test/platform/windows-boundaries.test.ts: owned process tree releases resources',
     inputs: ['test/verification/support/owned-process.ts', 'test/verification/support/process-executor.ts', 'src/infrastructure/filesystem/exclusive-file-lock.ts'] },
+  { id: 'readonly-handle-proof', stepId: 'system-windows-platform',
+    dependency: 'System Windows PowerShell 5.1/.NET, CreateFileW share modes, GetFinalPathNameByHandleW and 128-bit FILE_ID_INFO',
+    risk: 'A reparse point, replaced root/leaf or incompatible writer exposes unproved bytes, or a file/root-local failure discards independent reads.',
+    proof: 'test/platform/windows-readonly-boundaries.test.ts: actual handles, concurrent junction replacement, writer exclusion, timeout/close and strict Skill source caller',
+    inputs: [
+      'src/infrastructure/filesystem/verified-readonly-file.ts',
+      'src/infrastructure/filesystem/verified-readonly-file-windows.ts',
+      'src/infrastructure/filesystem/required-block.ts',
+      'src/modules/agent-assets/interfaces/cli/source-inspect.ts',
+      'src/modules/agent-assets/persistence/skill-content-repository.ts',
+      'src/modules/agent-assets/application/connection-skill-source.ts',
+      'src/modules/workspace/persistence/workspace-manifest-repository.ts',
+      'src/modules/workspace/persistence/project-manifest-repository.ts',
+      'src/modules/task/materials/application/task-project-document-reader.ts',
+      'src/modules/openspec/application/change-assets.ts',
+      'src/modules/code/infrastructure/code-commit-material.ts',
+      'test/helpers/verified-readonly-fixture.ts',
+    ] },
   { id: 'installed-launcher', stepId: 'release-tarball-smoke',
     dependency: 'Real Windows npm installation, PowerShell .lnk creation/invocation and product shutdown',
     risk: 'Installed bytes cannot launch, preserve paths with spaces, reach readiness or shut down cleanly.',
@@ -29,7 +47,7 @@ export const WINDOWS_PLATFORM_BOUNDARIES = Object.freeze([
 ]);
 
 export const WINDOWS_SOURCE_BOUNDARY_INPUTS = Object.freeze([...new Set([
-  'test/platform/windows-boundaries.test.ts', 'test/verification/platform-boundaries.ts',
+  'test/platform/windows-boundaries.test.ts', 'test/platform/windows-readonly-boundaries.test.ts', 'test/verification/platform-boundaries.ts',
   ...WINDOWS_PLATFORM_BOUNDARIES.filter(item => item.stepId === 'system-windows-platform').flatMap(item => item.inputs),
 ])]);
 

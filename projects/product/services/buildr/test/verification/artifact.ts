@@ -5,7 +5,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { assertMinimumNodeVersion, spawnCommandSync } from '../../src/infrastructure/process.ts';
-import { prepareCandidateEnvironment } from '../../tools/verification/candidate-environment.ts';
+import { candidateEnvironmentPlan, prepareCandidateEnvironment } from '../../tools/verification/candidate-environment.ts';
 import { CANDIDATE_CI_HOST_NODE_TUPLES, CANDIDATE_CI_SHARDS } from './registry.ts';
 import { readCandidateCiArtifact, resolveCandidateExecutionContext, resolveCandidateSourceCommit } from './candidate-ci-evidence.ts';
 import { createCandidateCheckInputReader } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
@@ -49,9 +49,15 @@ export function createLocalArtifactPlan(platform = process.platform, options: an
     shard.platformScope.kind === 'common' ? scope !== 'platform' : scope !== 'common' && shard.platformScope.runners.includes(runner)
   ));
   const hosts = scope === 'common' ? [] : CANDIDATE_CI_HOST_NODE_TUPLES.filter((tuple: any) => tuple.runner === runner && tuple.expectation === nodeTuple);
-  return { schemaVersion: 'buildr.local-artifact-plan/v1', runner, scope, nodeTuple,
-    nodes: [...shards.map((shard: any) => ({ id: shard.id, action: 'run', preparation: shard.preparation, stepIds: shard.stepIds })),
-      ...hosts.map((tuple: any) => ({ id: tuple.id, action: 'host', preparation: tuple.id === 'host-minimum-macos' ? 'publisher' : 'host', stepIds: ['host-node-compatibility'] }))] };
+  const nodes = [...shards.map((shard: any) => ({ id: shard.id, action: 'run', preparation: shard.preparation, stepIds: shard.stepIds })),
+    ...hosts.map((tuple: any) => ({ id: tuple.id, action: 'host', preparation: tuple.id === 'host-minimum-macos' ? 'publisher' : 'host', stepIds: ['host-node-compatibility'] }))];
+  // Group by the actual dependency operation: source-runtime also needs full
+  // development dependencies. Keep it adjacent to browser preparation so the
+  // controller does not alternate full -> production-only -> full installs.
+  const dependencyMode = (node: any) => candidateEnvironmentPlan(node.preparation)
+    .find(operation => operation.id === 'buildr-dependencies')!.args.includes('--omit=dev') ? 0 : 1;
+  nodes.sort((left, right) => dependencyMode(left) - dependencyMode(right));
+  return { schemaVersion: 'buildr.local-artifact-plan/v1', runner, scope, nodeTuple, nodes };
 }
 
 export function runLocalArtifactVerification(options: any, dependencies: any = {}): any {
@@ -77,9 +83,8 @@ export function runLocalArtifactVerification(options: any, dependencies: any = {
   for (const key of ['GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'GITHUB_JOB', 'GITHUB_EVENT_NAME', 'BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT']) delete env[key];
   const prepared = new Set<string>();
   const results: any[] = [];
-  for (const node of plan.nodes) {
+  const reusableEvidence = dependencies.reusableEvidence ?? ((node: any): boolean => {
     const evidenceFile = path.join(output, `candidate-ci-evidence-${node.id}.json`);
-    let reusable = false;
     if (fs.existsSync(evidenceFile)) {
       try {
         const previous = JSON.parse(fs.readFileSync(evidenceFile, 'utf8'));
@@ -88,15 +93,22 @@ export function runLocalArtifactVerification(options: any, dependencies: any = {
         const descriptor = candidateProofDescriptors().find(item => item.id === node.id);
         const readInput = createCandidateCheckInputReader(productRoot);
         const inputs = Object.fromEntries(descriptor.steps.map((step: any) => [step.id, readInput(source, candidateProofDefinition(step))]));
-        reusable = validateCandidateArtifactEvidence(previous, descriptor, context, inputs, artifact.identity)
+        return validateCandidateArtifactEvidence(previous, descriptor, context, inputs, artifact.identity)
           && sameCandidateExecutionEnvironment(previous.executionEnvironment, createCandidateExecutionEnvironment(productRoot, inputs, env, { preparation: node.preparation }));
       } catch { /* An unreadable or stale result is a miss, never success. */ }
     }
-    if (reusable) { results.push({ id: node.id, status: 'passed', disposition: 'reused' }); continue; }
+    return false;
+  });
+  for (const node of plan.nodes) {
+    const evidenceFile = path.join(output, `candidate-ci-evidence-${node.id}.json`);
+    if (reusableEvidence(node)) { results.push({ id: node.id, status: 'passed', disposition: 'reused' }); continue; }
     if (!prepared.has(node.preparation)) {
       (dependencies.prepare ?? prepareCandidateEnvironment)({ profile: node.preparation, env, reusePrepared: true,
         output: path.join(output, `${node.preparation}-preparation.json`) });
       prepared.add(node.preparation);
+      // Preparing the required controller can restore the exact environment of
+      // an earlier success. Recheck the unchanged proof before starting tests.
+      if (reusableEvidence(node)) { results.push({ id: node.id, status: 'passed', disposition: 'reused' }); continue; }
     }
     const result = (dependencies.execute ?? spawnCommandSync)(process.execPath, [entry, node.action, node.id], {
       cwd: productRoot, encoding: 'utf8', env: { ...env, BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT: evidenceFile },

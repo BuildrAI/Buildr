@@ -81,7 +81,7 @@ function workflowIdentity(env: any): any  {
 
 function assertHostedIdentity(identity: any, sourceCommit: any): any  {
   if (identity.repository !== releasePublishAuthority.repository) throw new ProbeError('github_repository_mismatch', 'GitHub repository does not match release authority', identity.repository);
-  if (!identity.workflowRef.startsWith(`${releasePublishAuthority.repository}/${releaseWorkflowPath}@`)) throw new ProbeError('github_workflow_mismatch', 'GitHub workflow ref does not match release authority', identity.workflowRef);
+  if (identity.workflowRef !== `${releasePublishAuthority.repository}/${releaseWorkflowPath}@refs/heads/main`) throw new ProbeError('github_workflow_mismatch', 'GitHub workflow ref does not match release authority', identity.workflowRef);
   if (identity.event !== 'workflow_dispatch') throw new ProbeError('github_event_mismatch', 'Authority probe must run from workflow_dispatch', identity.event);
   if (identity.headSha !== sourceCommit) throw new ProbeError('github_source_commit_mismatch', 'GitHub checkout does not match frozen source commit', identity.headSha);
 }

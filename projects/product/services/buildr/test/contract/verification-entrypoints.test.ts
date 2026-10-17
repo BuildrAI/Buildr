@@ -6,7 +6,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import YAML from 'yaml';
 import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../tools/verification/package-check/verification-registry.ts';
 import { createVerificationPlan } from '../verification/planner.ts';
-import { CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES, VERIFICATION_DAILY_CORE_EXCLUSIONS, VERIFICATION_EXECUTION_PROFILES, verificationSteps } from '../verification/registry.ts';
+import { CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES, INTEGRATION_GENERAL_EXCLUDED_FILES, INTEGRATION_PRIMARY_SLICES, VERIFICATION_DAILY_CORE_EXCLUSIONS, VERIFICATION_EXECUTION_PROFILES, verificationSteps } from '../verification/registry.ts';
+import { runIntegrationSuite } from '../verification/integration.ts';
 import {
   VERIFICATION_DELEGATED_INPUTS,
   VERIFICATION_FULL_SCOPE_INPUTS,
@@ -18,14 +19,33 @@ import { workspaceSuites } from '../verification/workspace/suites.ts';
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read: any = (relative: any) => fs.readFileSync(path.join(productRoot, relative), 'utf8');
 
+test('complete Integration entry preserves source exclusivity before the two artifact fixtures and stops on failure', () => {
+  const inventory = [...INTEGRATION_PRIMARY_SLICES.flatMap((slice: any) => slice.files), ...INTEGRATION_GENERAL_EXCLUDED_FILES];
+  const calls: string[][] = [];
+  const run = (_command: string, args: string[]) => { calls.push(args); return { status: 0 }; };
+  assert.equal(runIntegrationSuite({ suite: 'all', inventory, run }), 0);
+  assert.equal(calls.length, 2);
+  assert.equal(path.basename(calls[0]![0]!), 'focus.ts');
+  assert.deepEqual(calls[0]!.slice(1), INTEGRATION_PRIMARY_SLICES.map((slice: any) => slice.id));
+  assert.equal(path.basename(calls[1]![0]!), 'run-node-tests.ts');
+  assert.deepEqual(calls[1]!.slice(1), INTEGRATION_GENERAL_EXCLUDED_FILES);
+  calls.length = 0;
+  assert.equal(runIntegrationSuite({ suite: 'general', inventory, run }), 0);
+  assert.equal(calls.length, 1);
+  calls.length = 0;
+  assert.equal(runIntegrationSuite({ suite: 'all', inventory, run: (_command: string, args: string[]) => { calls.push(args); return { status: 7 }; } }), 7);
+  assert.equal(calls.length, 1, 'source failures must not enter packing fixtures');
+  assert.throws(() => runIntegrationSuite({ suite: 'all', inventory: inventory.filter((file: string) => file !== INTEGRATION_GENERAL_EXCLUDED_FILES[0]), run }), /ownership is incomplete/u);
+});
+
 test('product verification exposes four gates, direct layers, and one focus entry', () => {
   const scripts: any = JSON.parse(read('package.json')).scripts;
   assert.equal(scripts.test, 'npm run artifacts:prepare && ./test/verification/verify-buildr-product-fast');
   assert.equal(scripts['test:fast'], 'npm run artifacts:prepare && ./test/verification/verify-buildr-product-fast');
-  assert.equal(scripts['test:unit'], 'node --import ./test/register-development-entry.ts --test test/unit/*.test.ts');
-  assert.equal(scripts['test:component'], 'node --import ./test/register-development-entry.ts --test test/component/*.test.ts');
-  assert.equal(scripts['test:contract'], 'node --import ./test/register-development-entry.ts --test test/contract/*.test.ts');
-  assert.equal(scripts['test:integration'], 'node --import ./test/register-development-entry.ts --test test/integration/*.test.ts');
+  assert.equal(scripts['test:unit'], 'node --import ./test/register-development-entry.ts test/verification/run-node-tests.ts "test/unit/*.test.ts"');
+  assert.equal(scripts['test:component'], 'node --import ./test/register-development-entry.ts test/verification/run-node-tests.ts "test/component/*.test.ts"');
+  assert.equal(scripts['test:contract'], 'node --import ./test/register-development-entry.ts test/verification/run-node-tests.ts "test/contract/*.test.ts"');
+  assert.equal(scripts['test:integration'], 'node --import ./test/register-development-entry.ts test/verification/integration.ts --suite all');
   assert.equal(scripts.typecheck, 'npm run artifacts:prepare && npm run contracts:check && npm run contracts:check:workspace && npm run test-context:check && tsc --project tsconfig.json && tsc --project tsconfig.test.json');
   assert.equal(scripts['test:system'], 'node --import ./test/register-development-entry.ts test/verification/system.ts');
   assert.equal(scripts['test:integration:fast'], undefined);
@@ -243,11 +263,19 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
   for (const stage of [
     'fine-grained unit tests',
     'bounded component tests',
-    'cross-domain technical boundary integration tests',
+    'Build and verification tool boundaries',
+    'Code and Git application integration slice',
+    'Desktop and Agent connection integration slice',
+    'Knowledge and source reading integration slice',
+    'Workspace asset integration slice',
+    'Archify component lifecycle integration slice',
+    'Task record and material integration slice',
+    'Connection Skill integration slice',
+    'Runtime projection integration slice',
     'Project declaration integration slice',
     'OpenSpec application integration slice',
     'Verification orchestration integration slice',
-    'Runtime and Buildr Web integration slice',
+    'Buildr Web Runtime integration slice',
     'Release and installation integration slice',
     'Workspace data-store integration slice',
     'Self-bootstrap closeout integration slice',
@@ -403,7 +431,7 @@ test('Candidate source work is independent and all consumers use the one immutab
 test('changed ownership authority is physically separate from the Candidate execution graph', () => {
   const registry: any = read('test/verification/registry.ts');
   const ownership: any = read('test/verification/ownership.ts');
-  assert.match(registry, /verificationStepOwnership\(definition\.id\)/u);
+  assert.match(registry, /verificationStepOwnership\(definition\.id, definition\.executor\)/u);
   assert.match(ownership, /VERIFICATION_STEP_OWNERSHIP/u);
   assert.deepEqual(Object.keys(VERIFICATION_STEP_OWNERSHIP).sort(), verificationSteps.map((step: any) => step.id).sort());
   assert.deepEqual(validateVerificationStepOwnership(verificationSteps.map((step: any) => step.id)), { ok: true, findings: [] });

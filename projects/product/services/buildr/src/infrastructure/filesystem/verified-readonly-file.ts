@@ -2,10 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { execFileSync } from 'node:child_process';
+import { readWindowsVerifiedReadonlyBatch } from './verified-readonly-file-windows.ts';
+import type { VerifiedReadonlyRequest, VerifiedReadonlyResult } from './verified-readonly-types.ts';
+export type { VerifiedReadonlyRequest, VerifiedReadonlyResult } from './verified-readonly-types.ts';
 
 export const VERIFIED_READONLY_BATCH_SIZE = 16;
-export interface VerifiedReadonlyRequest { root: string; relative: string; maxBytes: number }
-export type VerifiedReadonlyResult = { ok: true; bytes: Buffer } | { ok: false; error: Error };
 type HeldRoot = { fd: number; canonical: string; identity: fs.Stats };
 type HeldFile = { index: number; root: HeldRoot; fd: number; relative: string; maxBytes: number; identity: fs.Stats };
 
@@ -65,6 +66,7 @@ function attest(files: HeldFile[]): Set<HeldFile> {
  */
 export function readVerifiedReadonlyBatch(requests: readonly VerifiedReadonlyRequest[]): VerifiedReadonlyResult[] {
   if (!Array.isArray(requests) || requests.length > VERIFIED_READONLY_BATCH_SIZE) throw unavailable();
+  if (process.platform === 'win32') return readWindowsVerifiedReadonlyBatch(requests);
   const results: Array<VerifiedReadonlyResult | undefined> = Array.from({ length: requests.length }, () => undefined), held = new Set<number>(), roots = new Map<string, HeldRoot>(), files: HeldFile[] = [];
   try {
     if (!['darwin', 'linux'].includes(process.platform) || !fs.constants.O_DIRECTORY) throw unavailable();

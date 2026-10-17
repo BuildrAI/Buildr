@@ -40,6 +40,26 @@ test('source diagnosis keeps the one registered owner recipe and its original bu
   for (const scenario of ['runtime-windows', 'all', 'toString']) assert.throws(() => createWindowsSourceDiagnosisPlan(scenario), /diagnosis-unknown-scenario/u);
 });
 
+test('Windows file diagnosis selects only its native source owner and cannot count as a complete candidate', async () => {
+  const nativeEnv = { ...env, DIAGNOSTIC_SCENARIO: 'readonly-files-windows' };
+  assert.doesNotThrow(() => validateWindowsSourceDiagnosis(nativeEnv, facts));
+  const plan = createWindowsSourceDiagnosisPlan(nativeEnv.DIAGNOSTIC_SCENARIO);
+  assert.deepEqual(plan.primaryStepIds, ['system-windows-platform']);
+  assert.deepEqual(plan.steps.map((step: any) => step.id), ['system-windows-platform']);
+  assert.ok(plan.steps.every((step: any) => !step.executor.consumesArtifact && step.executor.type !== 'candidate-artifact'));
+  const summary = await runWindowsSourceDiagnosis({ env: nativeEnv }, {
+    platform: 'win32', readGitFacts: () => facts, writeSummary: () => {},
+    execute: async (_plan, options) => {
+      assert.equal(options.reuse, false);
+      const completed = { ...result(), id: 'system-windows-platform' };
+      options.onComplete(completed);
+      return { passed: true, results: [completed] };
+    },
+  });
+  assert.equal(summary.status, 'passed');
+  assert.equal(summary.aggregateEligible, false);
+});
+
 test('fresh source diagnosis masks every inherited package input and retains actual projected execution facts', async () => {
   const saved: any[] = []; let sourceReads = 0;
   const summary = await runWindowsSourceDiagnosis({ env: { ...env, ...Object.fromEntries(packageKeys.map(key => [key, '/private-old-package'])),

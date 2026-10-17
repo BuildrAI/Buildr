@@ -707,7 +707,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       state.candidate = { sourceCommit, branch: carrier, runId: options.candidateRunId || null, dispatchRequested: false,
         ...(!options.candidateRunId && localRunner ? { localRunner } : {}) };
     }
-    if (options.verificationSource || options.artifactVerification || state.candidate.repair) {
+    if (options.verificationSource || options.artifactVerification || (options.sourceVerification && state.candidate.runId) || state.candidate.repair) {
       phase = 'candidate-verification';
       const fields = scoped ? [`release_packages=${targets.packages.join(',')}`, `buildr_version=${JSON.parse(git(['show', `${sourceCommit}:projects/product/services/buildr/package.json`, '--'], repo)).version}`,
         `plugin_version=${plan.pluginVersion}`, `selection_id=${key}`, `selection_baseline=${baseline}`, `selection_main=${plan.selection.main}`,

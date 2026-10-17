@@ -29,7 +29,7 @@ testing:
       - 按实际内容、配方、依赖和原环境复用；最终包和未覆盖平台仍单独验证
       - 传入 --json 只看计划；--force 强制重跑；--output 导出可搬运源码结果
       - --scope common 只选通用逻辑；--scope platform 只选实际系统机制，不附带另一套功能检查
-      - Windows 严格来源文件读取尚有产品限制；真实功能失败不得跳过或冒充另一系统已验，按详细验证说明报告
+      - 严格来源文件读取的系统差异由原生平台节点验证；真实失败不得跳过或冒充另一系统已验
     requirements:
       - 稳定版 Node >=24.15.0 与相邻 npm，通过项目 wrapper 执行
       - git
@@ -39,7 +39,7 @@ testing:
       project: product
       services:
         - buildr
-    purpose: 验证实际命令 shim、路径别名、目录链接、硬链接锁、进程树清理及一个 Git 换行转换用例；只在真实 Windows 执行时形成
+    purpose: 验证实际命令 shim、路径别名、目录链接、硬链接锁、严格文件句柄读取、进程树清理及一个 Git 换行转换用例；只在真实 Windows 执行时形成
       Windows 证明
     sourcePaths:
       - services/buildr/src/infrastructure/process.ts
@@ -65,6 +65,7 @@ testing:
       - Windows；其他系统执行仅证明当地可适用部分，命令 shim 用例跳过必须如实报告
       - 稳定版 Node >=24.15.0 与相邻 npm
       - git
+      - 系统 Windows PowerShell 5.1 与 .NET；缺失时严格句柄读取关闭相关结果，不退回路径猜测
   - id: buildr-macos-boundaries
     title: Buildr macOS 真实系统差异
     scope:
@@ -113,7 +114,7 @@ testing:
     requirements:
       - 明确冻结源码、同一原包及隔离检查目录
       - 真实 macOS 或 Windows；另一个系统的证明不能由当前系统结果替代
-      - 实际最低 Node 24.15.0 与当前稳定版 Node >=24.15.0 分别执行
+      - 最低 Node 使用实际 24.15.0，当前兼容组合使用登记的 24.x；一般开发工具仍接受稳定版 >=24.15.0，不要求恰好最低版本
   - id: buildr-fast
     title: Buildr 后端低成本完整回归
     scope:

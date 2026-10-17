@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { DshPageObservations } from '../../src/modules/dsh-desktop/application/dsh-page-observations.ts';
 import { createDshDesktopHttpContribution } from '../../src/modules/dsh-desktop/interfaces/http/dsh-desktop-http.ts';
 import { createDshDesktopModule, DSH_DESKTOP_APPLICATION, DSH_PAGE_OBSERVATIONS } from '../../src/modules/dsh-desktop/module.ts';
@@ -10,6 +12,7 @@ import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 
 const origin = 'http://127.0.0.1:38529';
 const workspaceId = randomUUID(), taskUrl = `${origin}/workspaces/${workspaceId}/tasks/exact-task`;
+const isolatedHttp = process.argv.includes('--isolated-http');
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 function fixture(t: test.TestContext, timeouts = {}) {
   const pages = new DshPageObservations({ readOrigin: () => origin, ...timeouts });
@@ -17,6 +20,7 @@ function fixture(t: test.TestContext, timeouts = {}) {
   return pages;
 }
 
+if (!isolatedHttp) {
 test('only the current page and challenge can acknowledge a task; no previous proof is cached', async t => {
   const pages = fixture(t, { probeMs: 20 }), pageId = randomUUID(), another = randomUUID();
   assert.equal((await Promise.all([pages.probe(pageId), delay(30)]))[0], null);
@@ -89,7 +93,15 @@ test('module lifecycle owns observation cleanup and production HTTP schemas are 
   await descriptor.lifecycle.stop();
 });
 
-test('real local HTTP authenticates acknowledgements and shutdown releases active long polls', { skip: !process.env.BUILDR_SMOKE_ROOT && 'Run through tools/development/run-isolated-workspace-smoke.ts.' }, async t => {
+}
+
+test('real local HTTP authenticates acknowledgements and shutdown releases active long polls', async t => {
+  if (!process.env.BUILDR_SMOKE_ROOT) {
+    // Run just this previously skipped case in the isolated child; the other
+    // in-process cases keep their single execution in the parent test runner.
+    const output = execFileSync(process.execPath, [path.resolve(import.meta.dirname, '../../tools/development/run-isolated-workspace-smoke.ts'), '--script', import.meta.filename, '--', '--isolated-http'], { encoding: 'utf8', timeout: 20_000 });
+    assert.match(output, /"status":"passed"/); assert.match(output, /"cleanup":"cleaned"/); return;
+  }
   let url: string | null = null;
   const pages = new DshPageObservations({ readOrigin: () => url });
   const contribution = createDshDesktopHttpContribution({ async listConnections() { return { connections: [] }; } } as unknown as DshDesktopApplication, pages);

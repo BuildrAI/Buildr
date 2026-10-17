@@ -65,15 +65,23 @@ macOS 与 Windows 开发对称交换执行位置。两类平台节点独立选�
 | `docs-quality` | Markdown 相对链接、仓库边界及任务引用格式；不判断正文业务语义 | 本机通用组，必要时 GitHub 补缺项 | 可复用；全仓输入或 BUILDR_CHANGED_PATHS_JSON 检查子集变化失效 | 依赖、生成物；无共享可变状态 | 保留；无完整重复证据 |
 
 
-### 集成测试和发布脚本自身检查（17 项）
+### 集成测试和发布脚本自身检查（25 项）
 
 | 检查 | 证明什么 | 当前在哪里跑 | 旧结果与重跑条件 | 能共享什么 | 讨论取舍 |
 | --- | --- | --- | --- | --- | --- |
-| `integration` | 未分入其他组的真实文件、Git、进程等跨域技术边界 | 本机通用组，必要时 GitHub 补缺项 | 可复用；全仓产品输入仍保守；配方按 general 实际过滤成员及依赖 | 公共依赖；本项现场与清理独立 | 保留；专项成员不再仅因扫描目录纳入 |
+| `integration` | 生成物、构建与验证工具的真实边界 | 本机通用组，必要时 GitHub 补缺项 | 可复用；全仓输入保守匹配 | 依赖；生成 DTO 会写共享检出 | 保留独占；不再包含全部通用集成测试 |
+| `integration-archify` | Archify 安装、绘图、升级、用户内容保护、卸载与耗时采集 | 本机通用组，必要时 GitHub 补缺项 | 相同组件、运行代码和执行条件才复用 | 独立目录；生命周期单独计时 | 独立恢复，不拖着其他资产检查重跑 |
+| `integration-code` | 代码查看、修改、Git 与检出身份 | 本机通用组，必要时 GitHub 补缺项 | 该组输入及真实条件仍有效才复用 | 独立目录；有界并发 | 独立失败与重跑 |
+| `integration-desktop` | 桌面连接、智能体入口及真实 HTTP 装配 | 本机通用组，必要时 GitHub 补缺项 | 该组输入及真实条件仍有效才复用 | 独立目录；有界并发 | 独立失败与重跑 |
+| `integration-knowledge` | 知识与资产来源读取、当前内容及来源证明 | 本机通用组，必要时 GitHub 补缺项 | 该组输入及真实条件仍有效才复用 | 独立目录；有界并发 | 独立失败与重跑 |
+| `integration-workspace-assets` | 工作空间资产、组成、登记及内容保护 | 本机通用组，必要时 GitHub 补缺项 | 该组输入及真实条件仍有效才复用 | 独立目录；有界并发 | 独立失败与重跑 |
+| `integration-task-records` | 任务记录、材料、工作摘要与工作台 | 本机通用组，必要时 GitHub 补缺项 | 该组输入及真实条件仍有效才复用 | 独立目录；有界并发 | 独立失败与重跑 |
+| `integration-connections` | 连接技能、凭据、进程及本机协议 | 本机通用组，必要时 GitHub 补缺项 | 该组输入仍有效才复用；真实 MySQL 另取新证明 | 独立目录；有界并发 | 独立失败与重跑 |
+| `integration-runtime-projection` | 能力投射、安装及技能内容 | 本机通用组，必要时 GitHub 补缺项 | 该组输入及真实条件仍有效才复用 | 独立目录；有界并发 | 独立失败与重跑 |
 | `integration-declarations` | 项目准备／验证声明的解析、诊断、保存与包登记边界 | 本机通用组，必要时 GitHub 补缺项 | 可复用；全仓输入变化会失效 | 公共依赖；本项现场与清理独立 | 保留；无完整重复证据 |
 | `integration-openspec` | 变更域、确定性同步、预检、投射校验、事务／失败恢复及上游调用 | 本机通用组，必要时 GitHub 补缺项 | 可复用；全仓输入变化会失效 | 公共依赖；本项现场与清理独立 | 保留；无完整重复证据 |
 | `integration-verification` | 测试地图、正式报告、选择／调度／复用／资源与完成边界 | 本机通用组，必要时 GitHub 补缺项 | 可复用；全仓输入变化会失效 | 公共依赖；本项现场与清理独立 | 保留；无完整重复证据 |
-| `integration-runtime` | 运行时、能力与网页载荷、观察、材料、HTTP 和投射的集成边界 | 本机通用组，必要时 GitHub 补缺项 | 可复用；运行范围输入变化会失效 | 不变种子；真实边界与数据隔离 | 保留；无完整重复证据 |
+| `integration-runtime` | 网页运行、实例、预览及生成网页的集成边界 | 本机通用组，必要时 GitHub 补缺项 | 可复用；运行范围输入变化会失效 | 不变种子；真实边界与数据隔离 | 保留；无完整重复证据 |
 | `integration-release` | 安装登记／来源／身份、发布文件系统与 CLI 路由；不产生公开效果 | 本机通用组，必要时 GitHub 补缺项 | 可复用；全仓输入变化会失效 | 公共依赖；本项现场与清理独立 | 保留；无完整重复证据 |
 | `integration-data-store` | 真实 SQLite、迁移、管理写入围栏与任务快照隔离 | 本机通用组，必要时 GitHub 补缺项 | 可复用；运行范围输入变化会失效 | 公共依赖；本项现场与清理独立 | 保留；无完整重复证据 |
 | `integration-self-bootstrap` | 隔离 Git 中唯一自举的同步、恢复、Node／入口和应用更新顺序；不等于本机正式激活 | 本机通用组，必要时 GitHub 补缺项 | 可复用；全仓输入变化会失效 | 公共依赖；本项现场与清理独立 | 保留；无完整重复证据 |
@@ -152,9 +160,9 @@ macOS 与 Windows 开发对称交换执行位置。两类平台节点独立选�
 
 | 检查 | 证明什么 | 当前在哪里跑 | 旧结果与重跑条件 | 能共享什么 | 讨论取舍 |
 | --- | --- | --- | --- | --- | --- |
-| `host-node-contract` | 实际 Node 满足包最低版本及稳定版约定 | 两系统 × 最低／当前 Node | 当前每个实际组合新跑 | 依赖、生成物；无共享可变状态 | 保留；无完整重复证据 |
-| `host-node-boundaries` | 实际 Node 下进程、文件系统和 SQLite 的敏感边界 | 两系统 × 最低／当前 Node | 当前每个实际组合新跑 | 公共依赖；本项现场与清理独立 | 保留；无完整重复证据 |
-| `host-node-cli-smoke` | 该 Node 安装同一原包，检查身份、帮助、初始化、网页健康与清理 | 两系统 × 最低／当前 Node | 当前每个实际组合新跑 | 同一原包；安装／页面现场独立 | 保留独立证明；同组合准备可合并（拟） |
+| `host-node-contract` | 实际 Node 满足包最低版本及稳定版约定 | 两系统 × 最低／当前 Node | 可复用同原包、准确 Node 及真实环境证明；组合不互替 | 依赖、生成物；无共享可变状态 | 保留；无完整重复证据 |
+| `host-node-boundaries` | 实际 Node 下进程、文件系统和 SQLite 的敏感边界 | 两系统 × 最低／当前 Node | 可复用同原包、准确 Node 及真实环境证明；组合不互替 | 公共依赖；本项现场与清理独立 | 保留；无完整重复证据 |
+| `host-node-cli-smoke` | 该 Node 安装同一原包，检查身份、帮助、初始化、网页健康与清理 | 两系统 × 最低／当前 Node | 可复用同原包、准确 Node 及真实环境证明；组合不互替 | 同一原包；安装／页面现场独立 | 保留独立干净安装；终止进程后确认退出再清理 |
 | `dsh-plugin` | 两种插件变体的构建、逻辑、真实 SDK 装载与准确主包组合 | 插件本机；GitHub macOS | 普通源码复用仅 unit／integration；正式补验可核验采用原包及完整证明 | 固定 SDK／构建；组合数据独立 | 保留；无完整重复证据 |
 
 
@@ -164,11 +172,11 @@ macOS 与 Windows 开发对称交换执行位置。两类平台节点独立选�
 
 macOS 源码的 `system-macos-platform` 只执行三组现有系统断言：`lsof` 文件描述符身份证明、开发壳入口的执行权限／Node 链接／参数、应用壳入口与私有 PATH；对应 `test/platform/macos-readonly-boundaries.test.ts`、`macos-development-entry.test.ts`、`macos-launcher-boundaries.test.ts`。它们从原通用测试移出，通用产品逻辑不再携带这些 macOS 前提。
 
-Windows 源码只补 `system-windows-platform` 中的原生命令、PATH／PATHEXT、路径大小写／junction、硬链接锁、taskkill 子树清理，以及 `worktree-create.test.ts` 的一个 Git／CRLF 用例。具体机制和触发路径见[平台清单](../../../services/buildr/test/verification/platform-boundaries.ts)；触发路径不等于完整结果输入。结果使用 `platform-backend` 范围保留真实物化材料及公共声明，不随无关前端／发布技能源变化失效。`release-tarball-smoke` 另证明 macOS 原生应用与 Windows PowerShell 快捷方式的真实原包消费，不重复通用功能全套。
+Windows 源码只补 `system-windows-platform` 中的原生命令、PATH／PATHEXT、路径大小写／junction、硬链接锁、taskkill 子树清理，以及 `worktree-create.test.ts` 的一个 Git／CRLF 用例；另有原生句柄读取，证明授权根、文件身份、并发替换拒绝和超时释放。具体机制和触发路径见[平台清单](../../../services/buildr/test/verification/platform-boundaries.ts)；触发路径不等于完整结果输入。结果使用 `platform-backend` 范围保留真实物化材料及公共声明，不随无关前端／发布技能源变化失效。`release-tarball-smoke` 另证明 macOS 原生应用与 Windows PowerShell 快捷方式的真实原包消费，不重复通用功能全套。
 
 四个宿主证据是 `host-minimum-macos`、`host-minimum-windows`、`host-current-macos`、`host-current-windows`。最低组合测试 `24.15.0`，当前组合取 `24.x`；各跑 `host-node-contract`、`host-node-boundaries`、`host-node-cli-smoke`，共同消费唯一原包。计划中的 `candidate-tarball` 在已注入原包时只是依赖节点，不是四次打包。外层结果名 `host-node-compatibility` 不是第五类测试。最低 macOS 还用固定 npm `11.5.1` 对同包执行发布干运行（Dry Run），不产生公开效果。
 
-这些检查都涉及安装／初始化，但证明对象不同。拟共享同“包＋系统＋Node”组合的下载和不可变准备，保留各自断言、失败与清理；没有断言包含证据前不整项删除。当前宿主组合要求真实新跑，不能写成已有跨组合复用。
+这些检查都涉及安装／初始化，但证明对象不同。共享同“包＋系统＋Node”组合的下载和不可变准备，保留各自断言、失败与清理；没有断言包含证据前不整项删除。首次必须取得每个必要组合的真实证明；后续同包、同 Node、同依赖及执行输入的有效结果可复用，不能跨组合冒充。
 
 
 ### 浏览器：源码页面与原包核心检查分开
@@ -211,7 +219,13 @@ Windows 源码只补 `system-windows-platform` 中的原生命令、PATH／PATHE
 | 官方消费者 | `registry-install` | 准确官方已公开版本可安装；候选离线原包安装不证明官方仓库可安装 |
 
 
-## 环境怎样共享
+## 并发与环境怎样共享
+
+`unit`、`component`、`contract` 由执行器直接传入实际额度，本机分别为 4／1／2 个测试工作进程；受限持续集成（CI）的单元组最多 3 个，全部仍受同一总容量约束。手动 npm 测试入口也使用已有有界执行器；完整集成入口先按同一分组运行，再执行两份原包夹具，保留独占屏障和原覆盖。Buildr 单元组有传递的只读路径身份探测；插件源码基础组还含真实文件／Git／进程检查，不因目录叫 `unit` 就视为全部纯逻辑。真实工作进程数同样进入执行与复用配方。
+
+原通用／运行集成两大组的 102 个文件按职责分组。13 个会触碰共享生成物的工程工具文件仍独占，其余组以私有目录和数据隔离配合有界并发。Archify 的安装、绘图、升级与卸载是独立生命周期检查，不与短小资产检查共用超时。兼容 `integration.ts --suite general` 通过同一分组覆盖源码集成集合，候选不会再调用它重复执行。
+
+Windows 开发机上，一个 Git 路径与换行（CRLF）场景会与通用工作树旅程重叠。它同时包含通用去重／冲突和真实平台断言，本轮保留这项小范围重复；没有用例耗时收益依据前，不为消重增加用例级证据规则，也不删除平台证明。
 
 环境准备、测试夹具共享、旧结果复用分别判断。见[准备入口](../../../services/buildr/tools/verification/candidate-environment.ts)和[上下文处置](../../../services/buildr/test/context/dispositions.ts)。
 
@@ -241,7 +255,7 @@ Windows 源码只补 `system-windows-platform` 中的原生命令、PATH／PATHE
 | 已调整：清理失败保全 | 本次共享清理失败阻止相关新证明；原运行已成功且清理干净的复用结果不被撤销，仍须通过当前输入和独立失效核验 | `plan-runner.ts`、`verification-reuse.ts` |
 | 已调整：按缺项准备 | 先核验有效结果，按剩余检查准备真实依赖，准备后重新观察；类型检查按准确 Node／npm、真实依赖及完整类型输入核验，强制执行同时作用于准备和检查 | `source.ts`、`registry.ts`、`verification-reuse.ts` |
 | 已调整：逐包只读观察 | `inspect` 分别回读各包 Actions 运行，未知只标未知，不改写指针、不接续或重发；官方包字节和公开事实仍由发布恢复核验 | `skills/buildr-release/scripts/release-orchestration-runner.ts` |
-| 尚未合并：安装与初始化准备 | 原包／Node 检查仍分别安装；可继续比较同组合下载和只读种子，保留各自断言、失败与清理 | 原包消费与宿主、`package/run.ts` |
+| 已调整：控制器准备；保留干净消费 | 本机按实际依赖安装要求分组，生产依赖控制器先执行，源码宿主和浏览器控制器相邻，避免完整依赖／生产依赖／完整依赖往返；准备后重新核验旧证明。真实包消费者仍分别使用隔离安装前缀、工作空间与应用数据，不能为省安装删除这些证明 | `artifact.ts`、`candidate-preparation-reuse.ts`、原包与宿主消费者 |
 | 尚未完整串联：耗时 | 已有准备／安装／检查排队／执行／重试／汇总记录；原耗时和本次分列，嵌套并发不相加，缺失阶段及智能体处理时间保持未知 | `verification-reuse.ts`、`source.ts`、`candidate-ci.ts` |
 | 工具自验、候选与公开分别成立 | 发布脚本归技能，检查与汇总归验证框架；定向回归、真实候选验包和实际公开分别报告。公开后自举交接唯一执行器，实际结果未接回时保持 pending | `package-release-operation.ts`、`release-orchestration-runner.ts` |
 
@@ -249,9 +263,11 @@ Windows 源码只补 `system-windows-platform` 中的原生命令、PATH／PATHE
 
 完整候选必须同时具备通用源码、两系统源码、同一最终原包的通用与两系统验包、最低／当前 Node 必要组合、完整汇总及适用的准确插件对端组合。每项绑定实际输入、原包和来源；历史原包、局部诊断及文档检查不能代替当前候选验收。实际执行范围、耗时和通过情况以对应任务报告为准，流程代码通过不表示已经准备或公开新版本。
 
-## 已知产品限制
+## 真实平台与外部环境边界
 
-平台节点拆分不表示 Windows 通用功能已完整验收。严格来源文件读取的底层 `verified-readonly-file.ts` 目前只实现 darwin／linux；Windows 上 `connection-source-batch`、`agent-asset-source-query` 中依赖该证明的通用案例仍可能失败。该项属于产品能力缺口，不能通过删除断言、跳过通用检查或采用 macOS 成功结果掩盖；本次流程调整不改这项产品能力。
+严格来源读取已补 Windows 原生句柄实现，并进入 `system-windows-platform`；系统 PowerShell／.NET 不可用、证明或清理失败时，只拒绝相关读取，不降级为不可靠路径检查。新增实现的协议与 macOS 兼容、Windows 真机执行分别验收；节点登记不等于已通过完整候选。
+
+真实 MySQL 用例仅在明确提供 `BUILDR_TEST_MYSQL_CONNECTION_FILE` 时执行；默认跳过不能证明真实数据库。显式启用时，其所属连接组必须取得新结果，不复用旧跳过或先前数据库现场。
 
 ## OpenSpec 工具依赖风险
 

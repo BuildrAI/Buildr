@@ -53,11 +53,19 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
   typecheck: testing(SERVICE_OWNER, 'Static Conformance', 'Static', 5000, 'Buildr TypeScript production sources satisfy the strict no-emit execution contract.', TEST_ENVIRONMENTS.sourceReadOnly),
   unit: testing(SERVICE_OWNER, 'Development', 'Unit', 5000, 'Pure Buildr logic behaves correctly with collaborators replaced.', TEST_ENVIRONMENTS.pure),
   component: testing(SERVICE_OWNER, 'Development', 'Component', 3000, 'A bounded Buildr application assembly behaves correctly with fake collaborators.', TEST_ENVIRONMENTS.pure),
-  integration: testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Small cross-domain technical boundaries behave correctly across real filesystem, Git, or process boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
+  integration: testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Generated inputs and verification tools preserve their process, build and compatibility boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-code': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Code browsing, editing, observation and Git operations preserve the actual checkout and mutation boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-desktop': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Desktop and Agent connections preserve their isolated registration, lifecycle, Git read roots and HTTP boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-knowledge': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Knowledge and Agent source reading preserve current content, provenance and HTTP results.', TEST_ENVIRONMENTS.repeatedCli),
+  'integration-workspace-assets': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Workspace assets preserve composition, registration, mutation and user content.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-archify': testing(SERVICE_OWNER, 'Development', 'Integration', 60000, 'Archify installation, rendering, upgrade, user content protection, removal and bounded diagnostics retain their real isolated lifecycle.', TEST_ENVIRONMENTS.repeatedCli),
+  'integration-task-records': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Task records, materials and workbench views preserve filesystem, Git, SQLite and HTTP behavior.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-connections': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Connection Skills preserve definitions, credential handling, Git workspaces, process and local protocol boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-runtime-projection': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Runtime projections preserve declarations, ownership, executable Git modes and installed Skill content.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-declarations': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Project verification declarations preserve diagnostics and package registry boundaries.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-openspec': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Change and OpenSpec convergence applications preserve real filesystem and Git boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-verification': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Project testing maps and Task completion reports remain coherent.', TEST_ENVIRONMENTS.repeatedCli),
-  'integration-runtime': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Runtime, capability, Buildr Web, and Web dist boundaries remain coherent.', TEST_ENVIRONMENTS.repeatedCli),
+  'integration-runtime': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Buildr Web Runtime preserves read, instance, private Git preview and generated Web boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-release': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Release filesystem and installation identity boundaries remain coherent without publishing.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-data-store': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Workspace SQLite authority, migration, and checkout isolation remain coherent.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-self-bootstrap': testing(SERVICE_OWNER, 'Development', 'Integration', 45000, 'The single self-bootstrap closeout lifecycle preserves retained checkout and runtime synchronization boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle),
@@ -128,6 +136,10 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
 });
 
 export const VERIFICATION_STEP_EVIDENCE: any = Object.freeze({
+  'integration-archify': primaryEvidence(
+    'An Archify install, render, upgrade, removal or diagnostic command that loses user content, changes CLI behavior or leaks private inputs must fail.',
+    'real isolated Workspace and user home, component lifecycle, rendering and bounded CLI diagnostics',
+  ),
   'integration-candidate-release': primaryEvidence(
     'A release contract, selection, rehearsal, recovery, or Git convergence boundary that drifts from the frozen Candidate source must fail.',
     'real temporary Git repositories, release runner entrypoints, and branch convergence',
@@ -267,7 +279,7 @@ export const VERIFICATION_DAILY_CORE_EXCLUSIONS: any = Object.freeze({
 // Reuse scopes describe complete check inputs, independently of changed-path ownership.
 const BACKEND_REUSE_CHECKS = new Set(['component', 'managed-mutations', 'cli-compatibility']);
 // These bounded fixture suites read runtime/source assets, not this Product's governance records.
-const RUNTIME_REUSE_CHECKS = new Set(['integration-runtime', 'integration-data-store', 'integration-task-read-models', 'integration-task-coordination',
+const RUNTIME_REUSE_CHECKS = new Set(['integration-runtime', 'integration-code', 'integration-desktop', 'integration-task-records', 'integration-connections', 'integration-runtime-projection', 'integration-data-store', 'integration-task-read-models', 'integration-task-coordination',
   'integration-project-daily-progress', 'system-buildr-web-http', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation',
   'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection',
   'system-runtime-recovery', 'system-app-process', 'system-workspace-lifecycle']);
@@ -305,7 +317,7 @@ const step: any = (definition: any) => {
   const classification: any = VERIFICATION_STEP_TESTING[definition.id];
   const evidence: any = VERIFICATION_STEP_EVIDENCE[definition.id] ?? null;
   const contextDisposition: any = verificationContextDisposition(definition.id);
-  const ownership: any = verificationStepOwnership(definition.id);
+  const ownership: any = verificationStepOwnership(definition.id, definition.executor);
   const declaredProfiles: any = definition.profiles ?? [];
   const profiles: any = declaredProfiles.includes('candidate') && !Object.hasOwn(VERIFICATION_DAILY_CORE_EXCLUSIONS, definition.id)
     ? [...declaredProfiles, 'core']
@@ -391,7 +403,7 @@ export const VERIFICATION_RESOURCE_CONTRACTS: any = Object.freeze({
 export const VERIFICATION_EXECUTION_PROFILES: any = Object.freeze({
   local: concurrency(4, 3, 2, { integration: 4, ...Object.fromEntries(SYSTEM_SUITES.map((suite: any) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }, { workers: 8, processes: 8, git: 3, workspaceIo: 3 }),
   ci: concurrency(4, 3, 2, { integration: 4, ...Object.fromEntries(SYSTEM_SUITES.map((suite: any) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }, { workers: 8, processes: 8, git: 3, workspaceIo: 3 }),
-  'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, 'integration-runtime': 3, ...Object.fromEntries(SYSTEM_SUITES.map((suite: any) => [suite.id, Math.min(suite.innerConcurrency, 2)])), 'integration-candidate-release': 2, 'integration-candidate-release-selection': 1, 'integration-candidate-package-selection': 1, 'integration-candidate-release-effects': 1, 'integration-candidate-git-convergence': 2, 'integration-candidate-git-selection': 2, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2 }, { workers: 3, processes: 3, git: 2, workspaceIo: 2 }),
+  'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, unit: 3, component: 1, contract: 2, 'integration-runtime': 2, 'integration-code': 2, 'integration-desktop': 2, 'integration-knowledge': 1, 'integration-workspace-assets': 2, 'integration-archify': 1, 'integration-task-records': 2, 'integration-connections': 2, 'integration-runtime-projection': 1,  ...Object.fromEntries(SYSTEM_SUITES.map((suite: any) => [suite.id, Math.min(suite.innerConcurrency, 2)])), 'integration-candidate-release': 2, 'integration-candidate-release-selection': 1, 'integration-candidate-package-selection': 1, 'integration-candidate-release-effects': 1, 'integration-candidate-git-convergence': 2, 'integration-candidate-git-selection': 2, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2 }, { workers: 3, processes: 3, git: 2, workspaceIo: 2 }),
 });
 
 export const VERIFICATION_CONCURRENCY: any = VERIFICATION_EXECUTION_PROFILES.local;
@@ -435,6 +447,133 @@ const integrationSlice: any = (id: any, files: any, options: any = {}) => Object
 });
 
 export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
+  // Explicit stable owners replace the exclusive catch-all. The tool owner
+  // remains exclusive because generated-artifact-set refreshes checkout DTOs.
+  integrationSlice('integration', [
+    'test/integration/browser-launch.test.ts',
+    'test/integration/browser-selector-dispatcher-runtime.test.ts',
+    'test/integration/development-entry.test.ts',
+    'test/integration/dsh-payload.test.ts',
+    'test/integration/generated-artifact-set.test.ts',
+    'test/integration/generated-artifacts.test.ts',
+    'test/integration/generated-contract-artifacts.test.ts',
+    'test/integration/process-infrastructure.test.ts',
+    'test/integration/typescript-execution.test.ts',
+    'test/integration/verification-entrypoints-cli.test.ts',
+    'test/integration/verification-process-executor.test.ts',
+    'test/integration/verification-reuse-filesystem.test.ts',
+    'test/integration/windows-artifact-diagnosis.test.ts',
+  ], { schedulingCostMs: 5000, timeoutMs: 300_000, concurrencyClass: 'exclusive', args: ['--test-concurrency=4'] }),
+  integrationSlice('integration-code', [
+    'test/integration/code-branch-application.test.ts',
+    'test/integration/code-commit-application.test.ts',
+    'test/integration/code-commit-guidance.test.ts',
+    'test/integration/code-commit-message-http.test.ts',
+    'test/integration/code-commit-message-large-http.test.ts',
+    'test/integration/code-explorer-application.test.ts',
+    'test/integration/code-fetch-application.test.ts',
+    'test/integration/code-git-configuration.test.ts',
+    'test/integration/code-sync-application.test.ts',
+    'test/integration/file-editing-application.test.ts',
+    'test/integration/git-checkout-identity.test.ts',
+    'test/integration/git-worktree-evidence-reader.test.ts',
+    'test/integration/source-control-application.test.ts',
+    'test/integration/source-control-observation-http.test.ts',
+    'test/integration/source-control-observations.test.ts',
+  ], { schedulingCostMs: 5000, args: ['--test-concurrency=3'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
+  integrationSlice('integration-desktop', [
+    'test/integration/agent-codex-discovery.test.ts',
+    'test/integration/agent-codex-remove.test.ts',
+    'test/integration/agent-operations.test.ts',
+    'test/integration/codex-desktop-application.test.ts',
+    'test/integration/codex-desktop-concurrency.test.ts',
+    'test/integration/codex-desktop-disconnect.test.ts',
+    'test/integration/codex-desktop-module-http.test.ts',
+    'test/integration/codex-desktop-plugin.test.ts',
+    'test/integration/codex-desktop-recovery.test.ts',
+    'test/integration/dsh-desktop-backend.test.ts',
+    'test/integration/dsh-page-observations.test.ts',
+    'test/integration/native-session-links.test.ts',
+  ], { schedulingCostMs: 5000, args: ['--test-concurrency=3'] }),
+  integrationSlice('integration-knowledge', [
+    'test/integration/agent-asset-source-query.test.ts',
+    'test/integration/current-knowledge-capability-graph.test.ts',
+    'test/integration/knowledge-document-quality.test.ts',
+    'test/integration/knowledge-query.test.ts',
+    'test/integration/skill-content-query.test.ts',
+  ], { schedulingCostMs: 4000, args: ['--test-concurrency=2'] }),
+  integrationSlice('integration-workspace-assets', [
+    'test/integration/asset-catalog-version.test.ts',
+    'test/integration/asset-relationships.test.ts',
+    'test/integration/attached-project-services.test.ts',
+    'test/integration/inline-workspace-core-rules.test.ts',
+    'test/integration/non-git-workspace-continuity.test.ts',
+    'test/integration/workspace-agent-assets-http-contract.test.ts',
+    'test/integration/workspace-composition.test.ts',
+    'test/integration/workspace-mutation-recovery.test.ts',
+  ], { schedulingCostMs: 5000, args: ['--test-concurrency=2'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
+  integrationSlice('integration-archify', [
+    'test/integration/archify-command-cost.test.ts',
+    'test/integration/archify-component.test.ts',
+  // Existing child limits are 175s + 35s; retain bounded startup and cleanup
+  // room when the limited profile grants this lifecycle only one worker.
+  ], { schedulingCostMs: 60000, timeoutMs: 300_000, args: ['--test-concurrency=2'] }),
+  integrationSlice('integration-task-records', [
+    'test/integration/document-images.test.ts',
+    'test/integration/markdown-image-files.test.ts',
+    'test/integration/task-brief-migration.test.ts',
+    'test/integration/task-brief-record.test.ts',
+    'test/integration/task-changed-files-application.test.ts',
+    'test/integration/task-commits-application.test.ts',
+    'test/integration/task-manager-capability-graph.test.ts',
+    'test/integration/task-materials-application.test.ts',
+    'test/integration/task-materials-http-cli.test.ts',
+    'test/integration/task-parent-history-migration.test.ts',
+    'test/integration/task-pre-create-git-capability-graph.test.ts',
+    'test/integration/task-record-http-contract.test.ts',
+    'test/integration/workbench-application.test.ts',
+    'test/integration/workbench-http-contract.test.ts',
+  ], { schedulingCostMs: 5000, args: ['--test-concurrency=3'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
+  integrationSlice('integration-connections', [
+    'test/integration/builtin-connection-skills-package.test.ts',
+    'test/integration/connection-authoring-forward.test.ts',
+    'test/integration/connection-instance-filenames.test.ts',
+    'test/integration/connection-skill-definitions.test.ts',
+    'test/integration/connection-skills-cli.test.ts',
+    'test/integration/connection-skills-package.test.ts',
+    'test/integration/connection-skills-runtime.test.ts',
+    'test/integration/connection-skills-safety.test.ts',
+    'test/integration/connection-skills-workspace.test.ts',
+    'test/integration/connection-source-batch.test.ts',
+    'test/integration/kibana-connection-skill.test.ts',
+    'test/integration/mysql-client-live.test.ts',
+    'test/integration/mysql-connection-program.test.ts',
+    'test/integration/mysql-query-skills.test.ts',
+    'test/integration/nacos-connection-declaration.test.ts',
+    'test/integration/nacos-connection-skill.test.ts',
+    'test/integration/retired-connections.test.ts',
+    'test/integration/xxl-job-connection-skill.test.ts',
+  ], { schedulingCostMs: 5000, timeoutMs: 240_000, args: ['--test-concurrency=3'] }),
+  integrationSlice('integration-runtime-projection', [
+    'test/integration/capability-contracts.test.ts',
+    'test/integration/capability-runtime.test.ts',
+    'test/integration/package-generic-skills.test.ts',
+    'test/integration/retired-adapter-teardown.test.ts',
+    'test/integration/runtime-command-selection.test.ts',
+    'test/integration/runtime-skills.test.ts',
+    'test/integration/shared-skill-ownership.test.ts',
+    'test/integration/standard-runtime-projection.test.ts',
+  ], { schedulingCostMs: 4000, args: ['--test-concurrency=2'] }),
+  integrationSlice('integration-runtime', [
+    'test/integration/buildr-web-read-executor.test.ts',
+    'test/integration/buildr-web-runtime.test.ts',
+    'test/integration/buildr-web-workspace.test.ts',
+    'test/integration/preview-ownership.test.ts',
+    'test/integration/runtime-system-http-contract.test.ts',
+    'test/integration/web-dist-verification.test.ts',
+    'test/integration/web-resource-shutdown.test.ts',
+  ], { schedulingCostMs: 4000, args: ['--test-concurrency=2'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
+
   integrationSlice('integration-declarations', [
     'test/integration/core-diagnostics-and-package.test.ts',
     'test/integration/project-verification-map.test.ts',
@@ -466,56 +605,6 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/browser-candidate.test.ts',
     'test/integration/docs-quality.test.ts',
   ], { schedulingCostMs: 5000, admission: true, args: ['--test-concurrency=3'] }),
-  integrationSlice('integration-runtime', [
-    'test/integration/mysql-query-skills.test.ts',
-    'test/integration/retired-connections.test.ts',
-    'test/integration/mysql-client-live.test.ts',
-    'test/integration/mysql-connection-program.test.ts',
-    'test/integration/kibana-connection-skill.test.ts',
-    'test/integration/xxl-job-connection-skill.test.ts',
-    'test/integration/builtin-connection-skills-package.test.ts',
-    'test/integration/connection-skill-definitions.test.ts',
-    'test/integration/connection-skills-runtime.test.ts',
-    'test/integration/connection-instance-filenames.test.ts',
-    'test/integration/connection-skills-safety.test.ts',
-    'test/integration/connection-skills-cli.test.ts',
-    'test/integration/connection-skills-workspace.test.ts',
-    'test/integration/connection-skills-package.test.ts',
-    'test/integration/connection-authoring-forward.test.ts',
-    'test/integration/native-session-links.test.ts',
-    'test/integration/dsh-desktop-backend.test.ts',
-    'test/integration/dsh-page-observations.test.ts',
-    'test/integration/source-control-observation-http.test.ts',
-    'test/integration/agent-operations.test.ts',
-    'test/integration/code-commit-application.test.ts',
-    'test/integration/code-commit-message-http.test.ts',
-    'test/integration/web-resource-shutdown.test.ts',
-    'test/integration/workbench-application.test.ts',
-    'test/integration/workbench-http-contract.test.ts',
-    'test/integration/capability-contracts.test.ts',
-    'test/integration/capability-runtime.test.ts',
-    'test/integration/buildr-web-read-executor.test.ts',
-    'test/integration/code-explorer-application.test.ts',
-    'test/integration/file-editing-application.test.ts',
-    'test/integration/task-materials-application.test.ts',
-    'test/integration/task-materials-http-cli.test.ts',
-    'test/integration/document-images.test.ts',
-    'test/integration/markdown-image-files.test.ts',
-    'test/integration/buildr-web-runtime.test.ts',
-    'test/integration/buildr-web-workspace.test.ts',
-    'test/integration/preview-ownership.test.ts',
-    'test/integration/runtime-skills.test.ts',
-    'test/integration/standard-runtime-projection.test.ts',
-    'test/integration/runtime-command-selection.test.ts',
-    'test/integration/shared-skill-ownership.test.ts',
-    'test/integration/package-generic-skills.test.ts',
-    'test/integration/task-record-http-contract.test.ts',
-    'test/integration/task-manager-capability-graph.test.ts',
-    'test/integration/task-pre-create-git-capability-graph.test.ts',
-    'test/integration/web-dist-verification.test.ts',
-  // The complete 46-file real-CLI slice takes ~160s at the CI worker budget.
-  // Bound runner variance without changing cases or their individual deadlines.
-  ], { schedulingCostMs: 4000, timeoutMs: 240_000, args: ['--test-concurrency=4'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
   integrationSlice('integration-release', [
     'test/integration/open-source-release-filesystem.test.ts',
     'test/integration/product-installation-identity.test.ts',
@@ -543,27 +632,36 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
   ], { schedulingCostMs: 5000, executorType: 'node-context-test', concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
 ]);
 
+// The compatibility general entry aggregates every source Integration owner.
+// Artifact-only files stay in their original package consumers.
 export const INTEGRATION_GENERAL_EXCLUDED_FILES: any = Object.freeze([...new Set([
   'test/integration/application-payload-release.test.ts',
   'test/integration/npm-launcher.test.ts',
-  ...INTEGRATION_PRIMARY_SLICES.flatMap((slice: any) => slice.files),
 ])]);
 
 export const verificationSteps: any = Object.freeze([
-  step({ id: 'artifact-browser-core', name: 'Candidate tarball core Browser journey', executor: { type: 'node', file: 'test/verification/release/browser-candidate.ts', args: ['--selector', 'core'], consumesArtifact: true }, profiles: ['candidate'], groups: ['release'], dependsOn: ['candidate-tarball'], timeoutMs: 360_000, concurrencyClass: 'workspace-heavy', resources: ['app-runtime'] }),
+  step({ id: 'artifact-browser-core', name: 'Candidate tarball core Browser journey', executor: { type: 'node', file: 'test/verification/release/browser-candidate.ts', discoveredFiles: ['test/browser-smoke/buildr-web-browser.test.ts'], args: ['--selector', 'core'], consumesArtifact: true }, profiles: ['candidate'], groups: ['release'], dependsOn: ['candidate-tarball'], timeoutMs: 360_000, concurrencyClass: 'workspace-heavy', resources: ['app-runtime'] }),
   step({ id: 'frontend-logic', name: 'Buildr Web complete logic suite', executor: { type: 'node', file: '../buildr-web/tools/run-logic-tests.mjs' }, profiles: ['candidate'], concurrencyClass: 'cpu-heavy' }),
   step({ id: 'dsh-plugin', name: 'DSH plugin complete build and loader verification', executor: { type: 'node', file: '../dsh-plugin/tools/verify-all.ts' }, timeoutMs: 360_000, concurrencyClass: 'exclusive' }),
   step({ id: 'typecheck', name: 'TypeScript static checking', executor: { type: 'npm', args: ['run', 'typecheck'] }, profiles: ['fast', 'candidate'], }),
-  step({ id: 'unit', name: 'fine-grained unit tests', executor: { type: 'npm', args: ['run', 'test:unit'] }, profiles: ['fast', 'candidate'],  concurrencyClass: 'cpu-heavy' }),
-  step({ id: 'component', name: 'bounded component tests', executor: { type: 'npm', args: ['run', 'test:component'] }, profiles: ['fast', 'candidate'],  concurrencyClass: 'cpu-heavy' }),
-  step({ id: 'integration', name: 'cross-domain technical boundary integration tests', executor: { type: 'node', file: 'test/verification/integration.ts', args: ['--suite', 'general'], excludedFiles: [...INTEGRATION_GENERAL_EXCLUDED_FILES] }, profiles: ['candidate'], workerDemand: 4, schedulingCostMs: 5000, timeoutMs: 300_000, concurrencyClass: 'exclusive' }),
+  step({ id: 'unit', name: 'fine-grained unit tests', executor: { type: 'node-test', files: ['test/unit/*.test.ts'], args: ['--import', './test/register-development-entry.ts', '--test-reporter=dot'] }, workerDemand: 4, profiles: ['fast', 'candidate'],  concurrencyClass: 'cpu-heavy' }),
+  step({ id: 'component', name: 'bounded component tests', executor: { type: 'node-test', files: ['test/component/*.test.ts'], args: ['--import', './test/register-development-entry.ts', '--test-reporter=dot'] }, workerDemand: 1, profiles: ['fast', 'candidate'],  concurrencyClass: 'cpu-heavy' }),
   ...INTEGRATION_PRIMARY_SLICES.map((slice: any) => step({
     id: slice.id,
     name: ({
+      'integration-runtime-projection': 'Runtime projection integration slice',
+      'integration-connections': 'Connection Skill integration slice',
+      'integration-task-records': 'Task record and material integration slice',
+      'integration-workspace-assets': 'Workspace asset integration slice',
+      'integration-archify': 'Archify component lifecycle integration slice',
+      'integration-knowledge': 'Knowledge and source reading integration slice',
+      'integration-desktop': 'Desktop and Agent connection integration slice',
+      'integration-code': 'Code and Git application integration slice',
+      'integration': 'Build and verification tool boundaries',
       'integration-declarations': 'Project declaration integration slice',
       'integration-openspec': 'OpenSpec application integration slice',
       'integration-verification': 'Verification orchestration integration slice',
-      'integration-runtime': 'Runtime and Buildr Web integration slice',
+      'integration-runtime': 'Buildr Web Runtime integration slice',
       'integration-release': 'Release and installation integration slice',
       'integration-data-store': 'Workspace data-store integration slice',
       'integration-self-bootstrap': 'Self-bootstrap closeout integration slice',
@@ -580,7 +678,7 @@ export const verificationSteps: any = Object.freeze([
     contexts: [...slice.contexts],
     admission: slice.admission,
   })),
-  step({ id: 'contract', name: 'repository contract tests', executor: { type: 'npm', args: ['run', 'test:contract'] }, profiles: ['fast', 'candidate'], concurrencyClass: 'cpu-heavy' }),
+  step({ id: 'contract', name: 'repository contract tests', executor: { type: 'node-test', files: ['test/contract/*.test.ts'], args: ['--import', './test/register-development-entry.ts', '--test-reporter=dot'] }, workerDemand: 2, profiles: ['fast', 'candidate'], concurrencyClass: 'cpu-heavy' }),
   ...SYSTEM_SUITES.map((suite: any) => step({
     id: suite.id,
     name: suite.name,
@@ -594,7 +692,7 @@ export const verificationSteps: any = Object.freeze([
     admission: suite.id === 'system-verification-admission',
   })),
   step({ id: 'system-macos-platform', name: 'Native macOS source boundaries', executor: { type: 'node-test', files: ['test/platform/macos-readonly-boundaries.test.ts', 'test/platform/macos-development-entry.test.ts', 'test/platform/macos-launcher-boundaries.test.ts'], args: ['--test-concurrency=1', '--test-reporter=dot'] }, profiles: ['candidate'], selection: 'explicit-only', developmentRunners: ['macos'], platformScope: platformScope('macos'), platformEvidence: MACOS_PLATFORM_BOUNDARIES.filter(item => item.stepId === 'system-macos-platform'), schedulingCostMs: 8000, timeoutMs: 60_000, concurrencyClass: 'workspace-heavy' }),
-  step({ id: 'system-windows-platform', name: 'Native Windows boundary checks', executor: { type: 'node-test', files: ['test/platform/windows-boundaries.test.ts', 'test/system/worktree-create.test.ts'], args: ['--test-concurrency=1', '--test-reporter=dot', '--test-name-pattern=^(?:native |owned process |项目与服务共享实际仓库)'] }, profiles: ['candidate'], groups: ['windows-npm-preflight'], selection: 'explicit-only', developmentRunners: ['windows'], platformScope: platformScope('windows'), platformEvidence: WINDOWS_PLATFORM_BOUNDARIES.filter(item => item.stepId === 'system-windows-platform'), schedulingCostMs: 8000, timeoutMs: 60_000, concurrencyClass: 'workspace-heavy', resources: ['app-runtime'] }),
+  step({ id: 'system-windows-platform', name: 'Native Windows boundary checks', executor: { type: 'node-test', files: ['test/platform/windows-boundaries.test.ts', 'test/platform/windows-readonly-boundaries.test.ts', 'test/system/worktree-create.test.ts'], supportingFiles: ['test/system/worktree-create.test.ts'], args: ['--test-concurrency=1', '--test-reporter=dot', '--test-name-pattern=^(?:native |owned process |项目与服务共享实际仓库|Windows )'] }, profiles: ['candidate'], groups: ['windows-npm-preflight'], selection: 'explicit-only', developmentRunners: ['windows'], platformScope: platformScope('windows'), platformEvidence: WINDOWS_PLATFORM_BOUNDARIES.filter(item => item.stepId === 'system-windows-platform'), schedulingCostMs: 8000, timeoutMs: 60_000, concurrencyClass: 'workspace-heavy', resources: ['app-runtime'] }),
   step({ id: 'cli-architecture', name: 'CLI modular architecture', executor: { type: 'node', file: 'test/verification/cli/architecture.ts' }, profiles: ['fast', 'candidate'], }),
   step({ id: 'openspec-spec-quality', name: 'OpenSpec canonical spec quality', executor: { type: 'node', file: 'test/verification/openspec/spec-quality.ts' }, profiles: ['fast', 'candidate'], }),
   step({ id: 'openspec-strict', name: 'openspec strict validation', executor: { type: 'openspec', args: ['validate', '--all', '--strict'] }, profiles: ['fast', 'candidate'], }),
@@ -687,6 +785,14 @@ const candidateShard: any = (id: any, runner: any, phase: any, stepIds: any, opt
 
 export const CORE_MACOS_STEP_IDS: any = Object.freeze([
   'integration',
+  'integration-code',
+  'integration-knowledge',
+  'integration-workspace-assets',
+  'integration-archify',
+  'integration-task-records',
+  'integration-desktop',
+  'integration-connections',
+  'integration-runtime-projection',
   'integration-declarations',
   'integration-openspec',
   'integration-runtime',
@@ -726,6 +832,11 @@ export const CORE_MACOS_SHARDS: any = Object.freeze([
   ]),
   candidateShard('core-project-task-macos', 'macos', 'verification', [
     'integration',
+    'integration-code',
+    'integration-knowledge',
+    'integration-workspace-assets',
+    'integration-archify',
+    'integration-task-records',
     'integration-declarations',
     'integration-openspec',
     'integration-data-store',
@@ -738,6 +849,9 @@ export const CORE_MACOS_SHARDS: any = Object.freeze([
   ], { preparation: 'source-runtime' }),
   candidateShard('core-runtime-source-macos', 'macos', 'verification', [
     'integration-runtime',
+    'integration-desktop',
+    'integration-connections',
+    'integration-runtime-projection',
     'integration-release',
     'system-buildr-web-http',
     'npm-launcher-candidate',

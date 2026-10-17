@@ -59,88 +59,122 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration": {
     "inputs": [
+      "tools/build/**",
+      "tools/codegen/**",
+      "tools/testing/**",
+      "tools/development/**",
+      "tools/verification/candidate-environment.ts",
+      "tools/verification/candidate-preparation-reuse.ts",
+      "src/bootstrap/cli/identity.ts",
+      "src/infrastructure/process.ts",
+      "test/verification/integration.ts",
+      "test/verification/worker-budget.ts",
+      "test/verification/support/**",
+      "test/verification/verification-reuse.ts",
+      "test/verification/plan-runner.ts",
+      "buildr"
+    ],
+    "inputExclusions": []
+  },
+  "integration-code": {
+    "inputs": [
+      "src/modules/code/**",
+      "src/infrastructure/git/**",
+      "src/modules/task/infrastructure/git-worktree-provider.ts",
+      "test/helpers/code-git-configuration-fixture.ts",
+      "test/fixtures/code-commit-message-large-fixture.ts"
+    ],
+    "inputExclusions": []
+  },
+  "integration-desktop": {
+    "inputs": [
       "src/modules/native-session-links/**",
       "src/modules/codex-desktop/**",
       "src/modules/dsh-desktop/**",
       "src/modules/agent-operations/**",
+      "test/helpers/codex-desktop-fixture.ts",
+      "test/fixtures/agent-codex-app-server.ts"
+    ],
+    "inputExclusions": []
+  },
+  "integration-knowledge": {
+    "inputs": [
       "src/modules/knowledge/**",
       "knowledge/index.yml",
-      "src/modules/code/**",
-      "test/integration/**",
-      "test/helpers/code-git-configuration-fixture.ts",
-      "test/helpers/legacy-asset-catalog.ts",
-      "resources/workspace/skills/buildr/task-triage/**",
-      "resources/workspace/components/buildr/openspec/component.yml",
-      "resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md",
-      "resources/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md",
-      "resources/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md",
-      "resources/workspace/components/buildr/openspec/contributions/openspec-sync-converge.md",
-      "resources/workspace/components/buildr/openspec/contributions/openspec-archive-converge.md",
-      "test/verification/integration.ts",
-      "test/verification/worker-budget.ts",
-      "src/bootstrap/**",
-      "src/infrastructure/content/**",
-      "src/infrastructure/final-doctor-process.ts",
-      "src/infrastructure/git/checkout-identity.ts",
-      "src/infrastructure/process.ts",
-      "buildr",
-      "tools/development/run-development-cli"
+      "src/modules/agent-assets/application/source-query.ts",
+      "src/modules/agent-assets/application/source-observations.ts",
+      "src/modules/agent-assets/application/skill-content-query.ts",
+      "src/modules/agent-assets/persistence/source-object-repository.ts",
+      "src/modules/agent-assets/persistence/skill-content-repository.ts"
     ],
-    "inputExclusions": [
-      "test/integration/candidate-artifact-reuse.test.ts",
-      "test/integration/verification-reuse.test.ts",
-      "test/integration/verification-source-inputs.test.ts",
-      "test/integration/verification-artifact.test.ts",
-      "test/integration/application-payload-release.test.ts",
-      "test/integration/npm-launcher.test.ts",
-      "test/integration/core-diagnostics-and-package.test.ts",
-      "test/integration/project-verification-map.test.ts",
-      "test/integration/change-application.test.ts",
-      "test/integration/openspec-convergence-preflight.test.ts",
-      "test/integration/openspec-convergence-recovery.test.ts",
-      "test/integration/openspec-convergence-transaction.test.ts",
-      "test/integration/openspec-deterministic-sync.test.ts",
-      "test/integration/openspec-domain.test.ts",
-      "test/integration/openspec-projected-validator.test.ts",
-      "test/integration/verification-entrypoints-cli.test.ts",
-      "test/integration/task-verification-report.test.ts",
-      "test/integration/verification-resource-coordinator.test.ts",
-      "test/integration/test-context-runtime.test.ts",
-      "test/integration/node-test-context-host.test.ts",
-      "test/integration/verification-test-files.test.ts",
-      "test/integration/frontend-logic-worker-budget.test.ts",
-      "test/integration/browser-candidate.test.ts",
-      "test/integration/docs-quality.test.ts",
-      "test/integration/capability-contracts.test.ts",
-      "test/integration/capability-runtime.test.ts",
-      "test/integration/buildr-web-read-executor.test.ts",
-      "test/integration/source-control-observation-http.test.ts",
-      "test/integration/task-materials-application.test.ts",
-      "test/integration/task-materials-http-cli.test.ts",
-      "test/integration/buildr-web-runtime.test.ts",
-      "test/integration/buildr-web-workspace.test.ts",
-      "test/integration/preview-ownership.test.ts",
-      "test/integration/runtime-skills.test.ts",
-      "test/integration/package-generic-skills.test.ts",
-      "test/integration/task-record-http-contract.test.ts",
-      "test/integration/task-manager-capability-graph.test.ts",
-      "test/integration/task-pre-create-git-capability-graph.test.ts",
-      "test/integration/web-dist-verification.test.ts",
-      "test/integration/open-source-release-filesystem.test.ts",
-      "test/integration/product-installation-identity.test.ts",
-      "test/integration/product-installation-registry.test.ts",
-      "test/integration/workspace-cli-routing.test.ts",
-      "test/integration/workspace-management-fence.test.ts",
-      "test/integration/workspace-sqlite.test.ts",
-      "test/integration/task-read-snapshot.test.ts",
-      "test/integration/self-bootstrap-closeout.test.ts",
-      "test/integration/parent-coordination-application.test.ts",
-      "test/integration/parent-coordination-repository.test.ts",
-      "test/integration/publication-application.test.ts",
-      "test/integration/project-daily-progress-application.test.ts",
-      "test/integration/task-review-repository.test.ts",
-      "test/integration/task-verification-report.test.ts",
-    ]
+    "inputExclusions": []
+  },
+  "integration-workspace-assets": {
+    "inputs": [
+      "src/modules/workspace/**",
+      "src/infrastructure/filesystem/atomic-files.ts",
+      "src/infrastructure/filesystem/workspace-mutation.ts",
+      "src/infrastructure/filesystem/workspace-path.ts",
+      "resources/workspace/AGENTS.md",
+      "resources/workspace/components/**",
+      "resources/workspace/skills/buildr/task-triage/**",
+      "test/helpers/legacy-asset-catalog.ts"
+    ],
+    "inputExclusions": []
+  },
+  "integration-archify": {
+    "inputs": [
+      "src/modules/agent-assets/infrastructure/component-source.ts",
+      "src/modules/agent-assets/infrastructure/runtime/**",
+      "resources/workspace/components/buildr/archify/**",
+      "resources/workspace/skills/buildr/archify/**",
+      "test/helpers/archify-command-cost.ts",
+      "tools/development/run-isolated-workspace-smoke.ts"
+    ],
+    "inputExclusions": []
+  },
+  "integration-task-records": {
+    "inputs": [
+      "src/modules/task/domain/**",
+      "src/modules/task/materials/**",
+      "src/modules/task/commits/**",
+      "src/modules/task/changed-files/**",
+      "src/modules/task/record/**",
+      "src/modules/task/interfaces/http/**",
+      "src/modules/workbench/**",
+      "src/infrastructure/filesystem/markdown-images.ts",
+      "src/infrastructure/sqlite/migrations/0026_migrate_legacy_parent_plan_history.sql"
+    ],
+    "inputExclusions": []
+  },
+  "integration-connections": {
+    "inputs": [
+      "src/modules/connection-skills/**",
+      "src/modules/mysql-query/**",
+      "src/modules/agent-assets/application/connection-skill-source.ts",
+      "src/modules/agent-assets/application/connection-impact.ts",
+      "bin/buildr-mysql.mjs",
+      "resources/workspace/skills/connections/**",
+      "resources/workspace/skills/buildr/connection-authoring/**",
+      "test/fixtures/connection-skills-cli-smoke.ts",
+      "test/fixtures/connection-authoring-cli-smoke.ts",
+      "test/fixtures/connection-authoring-example/**"
+    ],
+    "inputExclusions": []
+  },
+  "integration-runtime-projection": {
+    "inputs": [
+      "src/modules/agent-assets/infrastructure/runtime/**",
+      "src/modules/agent-assets/application/runtime-selection.ts",
+      "src/modules/agent-assets/persistence/skill-manifest.ts",
+      "src/modules/agent-assets/persistence/capability-graph-repository.ts",
+      "src/modules/agent-assets/interfaces/cli/agent-assets.ts",
+      "src/infrastructure/filesystem/exclusive-file-lock.ts",
+      "resources/manifest.yml",
+      "resources/workspace/skills/**",
+      "resources/runtime/**"
+    ],
+    "inputExclusions": []
   },
   "integration-declarations": {
     "inputs": [
@@ -223,68 +257,14 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration-runtime": {
     "inputs": [
-      "src/modules/mysql-query/**",
-      "bin/buildr-mysql.mjs",
-      "resources/workspace/skills/connections/mysql-connection/**",
-      "resources/workspace/skills/connections/kibana-connection/**",
-      "resources/workspace/skills/connections/xxl-job-connection/**",
-      "test/integration/mysql-query-skills.test.ts",
-      "test/integration/retired-connections.test.ts",
-      "test/integration/mysql-client-live.test.ts",
-      "test/integration/mysql-connection-program.test.ts",
-      "test/integration/kibana-connection-skill.test.ts",
-      "test/integration/xxl-job-connection-skill.test.ts",
-      "test/integration/builtin-connection-skills-package.test.ts",
-      "src/modules/connection-skills/**",
-      "src/modules/agent-assets/application/connection-skill-source.ts",
-      "src/modules/agent-assets/application/connection-impact.ts",
-      "resources/workspace/skills/connections/nacos-connection/**",
-      "resources/workspace/skills/buildr/connection-authoring/**",
-      "test/integration/connection-skill-definitions.test.ts",
-      "test/integration/connection-skills-runtime.test.ts",
-      "test/integration/connection-instance-filenames.test.ts",
-      "test/integration/connection-skills-safety.test.ts",
-      "test/integration/connection-skills-cli.test.ts",
-      "test/integration/connection-skills-workspace.test.ts",
-      "test/fixtures/connection-skills-cli-smoke.ts",
-      "test/integration/connection-skills-package.test.ts",
-      "test/integration/connection-authoring-forward.test.ts",
-      "test/fixtures/connection-authoring-cli-smoke.ts",
-      "test/fixtures/connection-authoring-example/**",
-      "src/modules/task/materials/**",
-      "src/infrastructure/filesystem/exclusive-file-lock.ts",
-      "src/modules/workbench/**",
-      "src/modules/task/work-context/**",
-      "test/integration/workbench-application.test.ts",
-      "test/integration/workbench-http-contract.test.ts",
-      "test/integration/capability-contracts.test.ts",
-      "test/integration/capability-runtime.test.ts",
-      "test/integration/buildr-web-read-executor.test.ts",
-      "test/integration/task-materials-application.test.ts",
-      "test/integration/task-materials-http-cli.test.ts",
-      "test/integration/buildr-web-runtime.test.ts",
-      "test/integration/buildr-web-workspace.test.ts",
-      "test/integration/preview-ownership.test.ts",
-      "test/integration/runtime-skills.test.ts",
-      "test/integration/package-generic-skills.test.ts",
-      "test/integration/task-record-http-contract.test.ts",
-      "test/integration/task-manager-capability-graph.test.ts",
-      "test/integration/task-pre-create-git-capability-graph.test.ts",
-      "test/integration/web-dist-verification.test.ts",
       "src/bootstrap/**",
+      "src/web/**",
+      "src/modules/workspace/**",
       "src/infrastructure/contracts/json-schema-validator.ts",
       "src/modules/task/module.ts",
-      "src/modules/task/interfaces/http/**",
-      "src/modules/agent-assets/infrastructure/runtime/**",
-      "src/modules/workspace/**",
-      "src/web/**",
-      "tools/codegen/contracts/**",
-      "services/buildr-web/src/api/**",
-      "services/buildr-web/src/App.tsx",
-      "services/buildr-web/src/features/task/**",
+      "tools/build/web-dist.ts",
       "test/verification/web-dist.ts",
-      "resources/workspace/skills/buildr/task-manager/**",
-      "resources/workspace/skills/buildr/task-triage/**"
+      "services/buildr-web/src/features/task/hooks/useTaskRequestLifecycle.ts"
     ],
     "inputExclusions": []
   },
@@ -1392,10 +1372,13 @@ export const VERIFICATION_PRODUCTION_OWNER_ALLOWLIST: any = Object.freeze([
 
 export const VERIFICATION_SELECTION_METADATA_INPUTS: any = Object.freeze(['verification.yml', 'package.json', 'package-lock.json']);
 
-export function verificationStepOwnership(id: any): any  {
+export function verificationStepOwnership(id: any, executor: any = null): any  {
   const value: any = VERIFICATION_STEP_OWNERSHIP[id];
   if (!value) throw new Error(`Missing verification ownership declaration: ${id}`);
-  return value;
+  // The executing file selectors are also changed-path inputs; do not maintain
+  // a second hand-copied membership list beside the primary suite registry.
+  const members: string[] = executor?.files ?? executor?.discoveredFiles ?? [];
+  return members.length === 0 ? value : Object.freeze({ ...value, inputs: Object.freeze([...new Set([...value.inputs, ...members])]) });
 }
 
 export function validateVerificationStepOwnership(stepIds: any): any  {

@@ -3,8 +3,32 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpa
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { assertPluginSourcePhaseProof, collectPluginSourceVerificationBundle, PLUGIN_PEER_PHASE_FILES, PLUGIN_SOURCE_PHASE_IDS, pluginSourcePhaseFiles, pluginSourcePhaseStep, pluginSourceSdkKey } from '../../tools/verify-all.ts';
+import { assertPluginSourcePhaseProof, collectPluginSourceVerificationBundle, parseVerificationInputs, PLUGIN_PEER_PHASE_FILES, PLUGIN_SOURCE_PHASE_IDS, pluginSourcePhaseFiles, pluginSourcePhaseStep, pluginSourceSdkKey } from '../../tools/verify-all.ts';
+
+test('manual activation tests report the missing explicit SDK while formal full verification still rejects it', t => {
+  const root = mkdtempSync(join(tmpdir(), 'buildr-plugin-no-sdk-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const env: NodeJS.ProcessEnv = { ...process.env, BUILDR_DSH_SDK_ROOT: join(root, 'unselected-sdk') };
+  delete env.BUILDR_DSH_SOURCE_SDK_ROOT;
+  delete env.NODE_TEST_CONTEXT;
+  const output = execFileSync(process.execPath, ['--test', '--test-reporter=tap', fileURLToPath(new URL('../integration/activation.test.ts', import.meta.url))], {
+    cwd: root, env, encoding: 'utf8', timeout: 10_000,
+  });
+  assert.equal([...output.matchAll(/# SKIP explicit verified source SDK required/gu)].length, 4, output);
+  for (const name of [
+    'same-domain qualification is exclusive in order @buildr-ai/buildr-dsh-plugin then @buildr-ai/buildr-dsh-plugin-dev',
+    'same-domain qualification is exclusive in order @buildr-ai/buildr-dsh-plugin-dev then @buildr-ai/buildr-dsh-plugin',
+    'normal owner disposal releases the lease for a surviving plugin recheck',
+    'independent service domains each retain their own owner',
+  ]) assert.ok(output.includes(name), name);
+  assert.match(output, /# pass 0\b/u);
+  assert.match(output, /# fail 0\b/u);
+  assert.match(output, /# skipped 4\b/u);
+  assert.deepEqual(readdirSync(root), [], 'missing SDK must not create a guessed SDK or shared runtime output');
+  assert.throws(() => parseVerificationInputs([], {}), /完整验证需要/u);
+});
 
 test('source and fresh peer phases partition every integration file without dropping coverage', () => {
   const all = readdirSync(new URL('../integration/', import.meta.url)).filter(file => file.endsWith('.test.ts')).map(file => `test/integration/${file}`).sort();
@@ -12,6 +36,20 @@ test('source and fresh peer phases partition every integration file without drop
   assert.deepEqual([...cached, ...PLUGIN_PEER_PHASE_FILES].sort(), all);
   assert.equal(new Set([...cached, ...PLUGIN_PEER_PHASE_FILES]).size, all.length);
   assert.deepEqual(PLUGIN_SOURCE_PHASE_IDS, ['dsh-plugin:unit', 'dsh-plugin:integration']);
+});
+test('source phase execution binds the real managed worker budget into its reusable recipe', async () => {
+  const { createVerificationReuseIdentity } = await import(new URL('../../../buildr/test/verification/verification-reuse.ts', import.meta.url).href);
+  const files = ['test/unit/first.test.ts', 'test/unit/second.test.ts'];
+  const one = pluginSourcePhaseStep('unit', files, { BUILDR_VERIFICATION_WORKER_BUDGET: '1' });
+  const two = pluginSourcePhaseStep('unit', files, {});
+  assert.deepEqual(one.executor.args, ['--test-concurrency=1']);
+  assert.deepEqual(one.resourceDemand, { workers: 1, processes: 1 });
+  assert.deepEqual(two.executor.args, ['--test-concurrency=2']);
+  assert.throws(() => pluginSourcePhaseStep('unit', files, { BUILDR_VERIFICATION_WORKER_BUDGET: '0' }));
+  const sha = `sha256-${'a'.repeat(64)}`;
+  const snapshot: any = { contentIdentities: { plugin: sha }, environment: { platform: 'darwin', arch: 'arm64', nodeVersion: '24.21.0', variablesIdentity: sha,
+    tools: { 'backend-dependencies': sha, 'web-dependencies': sha, 'plugin-dependencies': sha } } };
+  assert.notEqual(createVerificationReuseIdentity(one, snapshot)!.key, createVerificationReuseIdentity(two, snapshot)!.key);
 });
 test('a new peer retains source integration proof while SDK, source or platform changes invalidate it', async () => {
   const { createVerificationReuseIdentity } = await import(new URL('../../../buildr/test/verification/verification-reuse.ts', import.meta.url).href);
@@ -38,6 +76,7 @@ test('collector exports real completed source phases from the selected worktree 
   const git=(...args:string[])=>execFileSync('git',args,{cwd:repo,stdio:['ignore','pipe','pipe']});
   git('init','-q');git('config','user.name','Plugin test');git('config','user.email','plugin@example.com');git('add','.');git('commit','-qm','source');
   const env={...process.env,BUILDR_VERIFICATION_REUSE_DIR:join(repo,'cache')};
+  delete env.NODE_TEST_CONTEXT;
   const {collectVerificationReuseSnapshot,createVerificationReuseStore,createVerificationReuseIdentity}=await import(new URL('../../../buildr/test/verification/verification-reuse.ts',import.meta.url).href);
   const {runVerificationStep}=await import(new URL('../../../buildr/test/verification/timing/parallel-runner.ts',import.meta.url).href);
   // Keep the cache outside the source identity, as the normal temporary cache is.
@@ -46,8 +85,8 @@ test('collector exports real completed source phases from the selected worktree 
     const step=pluginSourcePhaseStep(group,pluginSourcePhaseFiles(group,pluginRoot));
     const snapshot=collectVerificationReuseSnapshot({productRoot:backend,env});snapshot.environment.tools.sdk=pluginSourceSdkKey(pluginRoot);
     const store=createVerificationReuseStore({productRoot:backend,env,snapshot,steps:[step]});
-    const startedAt=new Date().toISOString();const result=await runVerificationStep({name:step.id,command:process.execPath,args:['--test',...step.executor.files],cwd:pluginRoot,env});
-    assert.equal(result.status,'passed');store.stage(step,result,{kind:'local',runId:'plugin-fixture',sourceCommit:snapshot.sourceCommit,startedAt,finishedAt:new Date().toISOString()});
+    const startedAt=new Date().toISOString();const result=await runVerificationStep({name:step.id,command:process.execPath,args:['--test',...step.executor.args,...step.executor.files],cwd:pluginRoot,env});
+    assert.equal(result.status,'passed');assert.match(result.stdout,/\btests 1\b/u);assert.match(result.stdout,/\bpass 1\b/u);store.stage(step,result,{kind:'local',runId:'plugin-fixture',sourceCommit:snapshot.sourceCommit,startedAt,finishedAt:new Date().toISOString()});
     const after=collectVerificationReuseSnapshot({productRoot:backend,env});after.environment.tools.sdk=pluginSourceSdkKey(pluginRoot);store.commit(after,true);
   }
   const bundle=await collectPluginSourceVerificationBundle({repo,env});assert.deepEqual(bundle.records.map((value:any)=>value.identity.stepId).sort(),[...PLUGIN_SOURCE_PHASE_IDS].sort());

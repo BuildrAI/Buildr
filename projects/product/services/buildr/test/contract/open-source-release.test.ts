@@ -475,7 +475,7 @@ test('CI and publish workflows use the supported Node runtime', () => {
   assert.equal(verifyDocument.jobs['dev-feedback-windows']['runs-on'], 'windows-latest');
   assert.equal(verifyDocument.jobs['candidate-plan'].if, "(!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))");
   assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.purpose.options, ['candidate', 'release-rehearsal']);
-  assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.options, ['none', 'core-project-task-macos', 'nested-git-isolation-windows', 'runtime-windows', 'failed-windows', 'package-consumer-windows', 'nested-lifecycle-windows', 'app-process-windows', 'task-lifecycle-windows', 'preview-lifecycle-windows', 'publication-effects-windows', 'package-pair-publisher']);
+  assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.options, ['none', 'core-project-task-macos', 'nested-git-isolation-windows', 'runtime-windows', 'failed-windows', 'package-consumer-windows', 'nested-lifecycle-windows', 'app-process-windows', 'readonly-files-windows', 'task-lifecycle-windows', 'preview-lifecycle-windows', 'publication-effects-windows', 'package-pair-publisher']);
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.default, 'none');
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.expected_source_tree.required, false);
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.rehearsal_identity.required, false);
@@ -577,7 +577,7 @@ test('Windows original-package diagnosis remains separate from complete Candidat
   assert.equal(diagnosis.steps.at(-1).with.name, 'diagnostic-${{ matrix.scenario }}');
 });
 
-test('Windows application source diagnosis proves current production without borrowing a previous package', () => {
+test('Windows source diagnosis keeps native owners isolated without borrowing a previous package', () => {
   const document: any = YAML.parse(fs.readFileSync(path.join(workspaceRoot, '.github/workflows/verify.yml'), 'utf8'));
   const diagnosis = document.jobs['diagnostic-app-process-windows'];
   assert.equal(diagnosis['runs-on'], 'windows-2025');
@@ -585,17 +585,20 @@ test('Windows application source diagnosis proves current production without bor
   assert.deepEqual(diagnosis.permissions, { contents: 'read' });
   assert.equal(diagnosis.needs, undefined);
   assert.match(diagnosis.if, /inputs.diagnostic_scope == 'app-process-windows'/u);
+  assert.match(diagnosis.if, /inputs.diagnostic_scope == 'readonly-files-windows'/u);
   const guard = diagnosis.steps[0];
   assert.equal(guard.shell, 'bash');
   assert.match(guard.run, /refs\/heads\/dev/u);
-  for (const input of ['release_packages', 'buildr_version', 'plugin_version', 'source_verification', 'diagnostic_candidate_run_id', 'diagnostic_candidate_source']) assert.ok(guard.env.EXTRA_INPUTS_PRESENT.includes(`inputs.${input} != ''`));
+  for (const input of ['release_packages', 'buildr_version', 'plugin_version', 'source_verification', 'artifact_verification', 'local_runner', 'repair_candidate_run_id', 'product_source', 'verification_source', 'diagnostic_candidate_run_id', 'diagnostic_candidate_source']) assert.ok(guard.env.EXTRA_INPUTS_PRESENT.includes(`inputs.${input} != ''`));
   const execution = diagnosis.steps.find((step: any) => step.run === 'node test/verification/release/windows-source-diagnosis.ts');
   assert.equal(execution.env.EXPECTED_SOURCE_TREE, '${{ inputs.expected_source_tree }}');
-  assert.equal(execution.env.DIAGNOSTIC_SCENARIO, 'app-process-windows');
+  assert.equal(execution.env.DIAGNOSTIC_SCENARIO, '${{ inputs.diagnostic_scope }}');
+  const preparation = diagnosis.steps.find((step: any) => step.name === 'Prepare the current Windows source environment');
+  assert.equal(preparation.run, "node tools/verification/candidate-environment.ts prepare --profile ${{ inputs.diagnostic_scope == 'readonly-files-windows' && 'base' || 'source-runtime' }}");
   assert.equal(execution.env.BUILDR_VERIFICATION_PROFILE, 'ci-workspace-limited');
   assert.equal(diagnosis.steps.some((step: any) => step.uses?.startsWith('actions/download-artifact@') || /candidate-ci\.ts|npm (?:pack|publish)|gh api/u.test(step.run || '')), false);
   assert.equal(diagnosis.steps.at(-1).if, 'always()');
-  assert.equal(diagnosis.steps.at(-1).with.name, 'diagnostic-app-process-windows');
+  assert.equal(diagnosis.steps.at(-1).with.name, 'diagnostic-${{ inputs.diagnostic_scope }}');
 });
 
 test('Windows nested Git diagnosis keeps closed inputs, original isolated assertions and honest cleanup evidence', () => {
