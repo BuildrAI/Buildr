@@ -8,7 +8,7 @@ import { sameFilesystemPath } from '../../../projects/product/services/buildr/sr
 import { parsePackageCompatibility, type CompatibilityArtifact } from './package-compatibility.ts';
 import { type PublishedPackageObservation } from './release-targets.ts';
 import { requestReleaseJson } from './release-observation.ts';
-import { readReleaseArtifact } from './release-artifact.ts';
+import { readReleaseArtifact, releaseArtifactSchemaVersion, releasePackMetadataName } from './release-artifact.ts';
 
 export const packageNames = { buildr: '@buildr-ai/buildr', 'dsh-plugin': '@buildr-ai/buildr-dsh-plugin' } as const;
 export const packageArtifactInputSchema = 'buildr.package-artifact-input/v1';
@@ -40,13 +40,14 @@ function extendedPath(bytes: Buffer): string | undefined {
 }
 
 /** Parse only bounded metadata; no file in the archive is extracted or loaded. */
-export function packageMetadataFromTarball(bytes: Buffer): Record<string, any> {
+function inspectPackageTarball(bytes: Buffer, releaseInputs = false): { metadata: Record<string, any>; inventory: any[]; release: Record<string, any> } {
   if (!Buffer.isBuffer(bytes) || !bytes.length || bytes.length > maximumBytes) throw new Error('Package archive byte size is invalid.');
   const archive = gunzipSync(bytes, { maxOutputLength: 512 * 1024 * 1024 });
   let offset = 0;
   let terminated = false;
   let nextPath: string | undefined;
   let metadata: Record<string, any> | undefined;
+  const inventory: any[] = [], release: Record<string, any> = {};
   const paths = new Set<string>();
   while (offset + 512 <= archive.length) {
     const header = archive.subarray(offset, offset + 512);
@@ -74,16 +75,40 @@ export function packageMetadataFromTarball(bytes: Buffer): Record<string, any> {
     if (kind === '5') continue;
     if (kind !== '0' || paths.has(name)) throw new Error('Package archive contains duplicate files, links or special entries.');
     paths.add(name);
-    if (name === 'package/package.json') {
+    if (releaseInputs) inventory.push({ path: name.slice('package/'.length), size, mode: archiveNumber(header.subarray(100, 108)) });
+    const releaseKey = releaseInputs ? ({ 'package/application-payload.json': 'payload', 'package/payload/build/generated-artifacts.json': 'generated' } as Record<string, string>)[name] : undefined;
+    if (name === 'package/package.json' || releaseKey) {
       if (body.length > 1024 * 1024) throw new Error('Package metadata is too large.');
       const value = JSON.parse(body.toString('utf8'));
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Package metadata is invalid.');
-      metadata = value;
+      if (releaseKey) release[releaseKey] = value; else metadata = value;
     }
   }
   if (!terminated || nextPath) throw new Error('Package archive is truncated or has incomplete trailing material.');
   if (!metadata) throw new Error('Package archive contains no unique package metadata.');
-  return metadata;
+  return { metadata, inventory, release };
+}
+
+export function packageMetadataFromTarball(bytes: Buffer): Record<string, any> {
+  return inspectPackageTarball(bytes).metadata;
+}
+
+/** Reconstruct every sidecar field from the exact archive, rather than trusting
+ * unbound local metadata when the original Candidate bytes are already present. */
+export function releaseManifestFromTarball(bytes: Buffer, filename: string): Record<string, any> {
+  if (!filename || path.basename(filename) !== filename) throw new Error('Release archive filename is invalid.');
+  const { metadata, inventory, release } = inspectPackageTarball(bytes, true);
+  const { payload, generated } = release;
+  if (!payload || !generated || metadata.name !== packageNames.buildr || metadata.private === true
+    || metadata.name !== payload.packageName || metadata.version !== payload.buildrVersion || metadata.engines?.node !== payload.enginesNode) {
+    throw new Error('Release archive metadata does not match its application payload.');
+  }
+  return { schemaVersion: releaseArtifactSchemaVersion, packageName: metadata.name, version: metadata.version, filename,
+    size: bytes.length, sha256: sha(bytes, 'sha256'), integrity: `sha512-${sha(bytes, 'sha512', 'base64')}`,
+    applicationPayloadDigest: payload.applicationPayloadDigest, generatedArtifactIdentity: generated.identity,
+    protocolIdentity: payload.protocolIdentity, sourceCommit: payload.sourceCommit, enginesNode: payload.enginesNode,
+    packMetadata: releasePackMetadataName,
+    inventory: inventory.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0) };
 }
 
 export function artifactFromTarball(bytes: Buffer, expected: { origin: 'registry' | 'candidate'; packageName: CompatibilityArtifact['packageName']; version: string; integrity: string; sourceCommit?: string }): CompatibilityArtifact {
