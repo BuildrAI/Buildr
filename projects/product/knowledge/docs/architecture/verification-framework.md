@@ -88,7 +88,7 @@ macOS 与 Windows 开发对称交换执行位置。两类平台节点独立选�
 | `integration-task-read-models` | 审查与任务读模型的版本冲突、历史、只读终态及回滚 | 本机通用组，必要时 GitHub 补缺项 | 可复用；运行范围输入变化会失效 | 应用组装；每案数据隔离 | 保留；无完整重复证据 |
 | `integration-task-coordination` | 父子任务、产品内发布结果的 SQLite 版本与隔离；不是 npm 发布 | 本机通用组，必要时 GitHub 补缺项 | 可复用；运行范围输入变化会失效 | 应用组装；每案数据隔离 | 保留；无完整重复证据 |
 | `integration-project-daily-progress` | 每日演进的观察范围、存储、汇总和失败边界 | 本机通用组，必要时 GitHub 补缺项 | 可复用；运行范围输入变化会失效 | 应用组装；每案数据隔离 | 保留；无完整重复证据 |
-| `integration-candidate-release` | 发布输入／包观察／权限／冷启动／逐包操作／恢复等 14 个文件；受控外部效果 | 本机通用组，必要时 GitHub 补缺项 | 可复用；全仓输入变化会失效 | 公共依赖；本项现场与清理独立 | 保留；无完整重复证据 |
+| `integration-candidate-release` | 发布输入／包观察／权限／冷启动／逐包操作／恢复等 15 个文件；受控外部效果 | 本机通用组，必要时 GitHub 补缺项 | 可复用；全仓输入变化会失效 | 公共依赖；本项现场与清理独立 | 保留；无完整重复证据 |
 | `integration-candidate-release-selection` | 冻结引用、源码基线、代次、重新选择与 main 来源 | 本机通用组，必要时 GitHub 补缺项 | 可复用；全仓输入变化会失效 | 公共依赖；本项现场与清理独立 | 保留；无完整重复证据 |
 | `integration-candidate-package-selection` | 独立包版本、对端、准备采用与禁止重复派发 | 本机通用组，必要时 GitHub 补缺项 | 可复用；全仓输入变化会失效 | 公共依赖；本项现场与清理独立 | 保留；无完整重复证据 |
 | `integration-candidate-release-effects` | 部分 Git／Registry 效果恢复，禁止重复公开或抹掉成功事实 | 本机通用组，必要时 GitHub 补缺项 | 可复用；运行范围输入变化会失效 | 公共依赖；本项现场与清理独立 | 保留；无完整重复证据 |

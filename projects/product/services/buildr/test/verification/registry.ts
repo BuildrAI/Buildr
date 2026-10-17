@@ -539,6 +539,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/connection-authoring-forward.test.ts',
     'test/integration/connection-instance-filenames.test.ts',
     'test/integration/connection-skill-definitions.test.ts',
+    'test/integration/connection-authorization.test.ts',
     'test/integration/connection-skills-cli.test.ts',
     'test/integration/connection-skills-package.test.ts',
     'test/integration/connection-skills-runtime.test.ts',
