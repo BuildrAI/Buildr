@@ -98,7 +98,8 @@ test('Candidate CI coverage is a closed projection of the full local Candidate',
   assert.deepEqual(distributed, local);
   const corePlans: any = CORE_MACOS_SHARDS.map((shard: any) => createCandidateCiShardPlan(shard.id, { externalArtifact: true }));
   assert.ok(corePlans.every((plan: any) => !plan.steps.some((item: any) => item.id === 'candidate-tarball')));
-  assert.ok(corePlans.some((plan: any) => plan.steps.some((item: any) => item.id === 'release-tarball-smoke')));
+  assert.ok(corePlans.every((plan: any) => !plan.steps.some((item: any) => item.id === 'release-tarball-smoke')));
+  assert.ok(createCandidateCiShardPlan('runtime-macos', { externalArtifact: true }).steps.some((item: any) => item.id === 'release-tarball-smoke'));
   assert.ok(corePlans.every((plan: any) => plan.steps.every((item: any) => !item.dependsOn.includes('candidate-tarball'))));
   const coreOwners: any = CORE_MACOS_SHARDS.flatMap((shard: any) => shard.stepIds);
   assert.deepEqual([...coreOwners].sort(), [...CORE_MACOS_STEP_IDS].sort());
@@ -148,11 +149,39 @@ test('Candidate CI coverage fails closed for unowned and duplicated steps', () =
   assert.ok(validateCandidateCiCoverage(verificationSteps, duplicated).findings.some((item: any) => item.step === 'unit' && item.code === 'candidate_step_duplicated'));
 });
 
-test('Candidate rejects undeclared Windows repeats and source checks hidden in artifact jobs', () => {
-  const windows = CANDIDATE_CI_SHARDS.map((shard: any) => shard.id === 'core-cli-contract-macos' ? { ...shard, runner: 'windows' } : shard);
-  assert.ok(validateCandidateCiCoverage(verificationSteps, windows).findings.some((item: any) => item.code === 'candidate_windows_boundary_undeclared'));
+test('Candidate rejects platform checks in a common owner and source checks hidden in artifact jobs', () => {
+  const windows = CANDIDATE_CI_SHARDS.map((shard: any) => shard.id === 'platform-boundaries-windows'
+    ? { ...shard, platformScope: { kind: 'common', runners: [] } } : shard);
+  assert.ok(validateCandidateCiCoverage(verificationSteps, windows).findings.some((item: any) => item.code === 'candidate_platform_check_in_common_shard'));
   const mixed = CANDIDATE_CI_SHARDS.map((shard: any) => shard.id === 'core-runtime-source-macos' ? { ...shard, requiresArtifact: true } : shard);
   assert.ok(validateCandidateCiCoverage(verificationSteps, mixed).findings.some((item: any) => item.code === 'candidate_source_in_artifact_shard'));
+});
+
+test('only the explicitly deferred original-package nodes can yield incomplete and cannot satisfy release coverage', async () => {
+  const { assertReleaseConsumptionCoverage } = await import('../verification/release/release-consumption.ts');
+  const deferredIds = ['runtime-macos', 'host-minimum-macos'];
+  const evidence = passedEvidence().filter((item: any) => !deferredIds.includes(item.id));
+  const awaiting = aggregateCandidateCiEvidence(evidence, candidateContext, null, { deferredIds });
+  assert.equal(awaiting.status, 'incomplete');
+  assert.deepEqual(awaiting.deferredIds, [...deferredIds].sort());
+  assert.throws(() => assertReleaseConsumptionCoverage(awaiting, candidateContext, artifact), /passed Candidate/);
+  assert.equal(aggregateCandidateCiEvidence(evidence.slice(1), candidateContext, null, { deferredIds }).status, 'failed');
+  evidence[0].status = 'failed';
+  assert.equal(aggregateCandidateCiEvidence(evidence, candidateContext, null, { deferredIds }).status, 'failed');
+  assert.equal(aggregateCandidateCiEvidence(passedEvidence(), candidateContext, null, { deferredIds }).status, 'passed');
+});
+
+test('aggregate revalidates local artifact records and never turns them into source or remote execution claims', () => {
+  const complete = passedEvidence({ runId: '52', runAttempt: '1' });
+  const owner = complete.find((item: any) => item.id === 'runtime-macos');
+  const original = structuredClone(owner); original.workflow = null;
+  owner.results[0].disposition = 'reused'; owner.results[0].artifactRecord = original;
+  assert.equal(aggregateCandidateCiEvidence(complete, candidateContext, { runId: '52', runAttempt: '1' }).status, 'failed');
+  const accepted = aggregateCandidateCiEvidence(complete, candidateContext, { runId: '52', runAttempt: '1' }, {
+    validateArtifactRecord(record: any, id: string, expected: any) { return record === original && id === owner.id && expected.sha256 === artifact.sha256; },
+  });
+  assert.equal(accepted.status, 'passed');
+  assert.equal(owner.results[0].artifactRecord.workflow, null);
 });
 
 test('Candidate aggregate accepts one current complete evidence set', () => {

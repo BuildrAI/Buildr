@@ -331,6 +331,18 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
     candidateConclusion = 'success';
     aggregate.workflow.aggregateAttempt = 2;
   }
+  const completeIds = aggregate.evidenceIds;
+  aggregate.status = 'incomplete';
+  aggregate.deferredIds = ['runtime-macos'];
+  aggregate.findings = [{ code: 'evidence-missing', id: 'runtime-macos', detail: null }];
+  aggregate.evidenceIds = completeIds.filter((id: string) => id !== 'runtime-macos');
+  const localRequired = await runReleaseOperation({ ...options, stopAfter: 'candidate' }, dependencies);
+  assert.equal(localRequired.status, 'local-artifact-verification-required', JSON.stringify(localRequired));
+  assert.deepEqual(localRequired.localArtifact.missingEvidenceIds, ['runtime-macos']);
+  assert.equal(merges, 0); assert.equal(pr, null);
+  assert.equal(dispatched, 1, 'local package handoff must not start another build or public action');
+  aggregate.status = 'passed'; aggregate.findings = []; aggregate.evidenceIds = completeIds;
+  delete aggregate.deferredIds;
   aggregate.sourceCommit = 'f'.repeat(40);
   const invalid = await runReleaseOperation({ ...options, stopAfter: 'candidate' }, dependencies);
   assert.equal(invalid.status, 'blocked');

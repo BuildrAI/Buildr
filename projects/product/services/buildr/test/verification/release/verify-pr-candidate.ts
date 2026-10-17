@@ -6,13 +6,14 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
-import { createCandidateSourceBinding, releaseBuildInputPaths } from '../../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
+import { assertCandidateSourceBinding, createCandidateSourceBinding, releaseBuildInputPaths } from '../../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
 import { isDeepStrictEqual } from 'node:util';
 import { parseReleaseCandidate, readReleaseCandidate, sourceSdkIdentityFromFiles, SOURCE_SDK_MANIFEST, PLUGIN_SERVICE_PATH } from '../../../../../../../skills/buildr-release/scripts/dsh-plugin/release-candidate.ts';
 import { MAIN_PACKAGE, compatibilityVersion, parseCompatibilityArtifact } from '../../../../../../../skills/buildr-release/scripts/package-compatibility.ts';
 import { normalizeReleaseTargets } from '../../../../../../../skills/buildr-release/scripts/release-targets.ts';
 import { readArtifactInput } from '../../../../dsh-plugin/tools/buildr-peer.ts';
 import { assertBoundVerificationManifest } from '../../../../dsh-plugin/tools/full-verification.ts';
+import { CANDIDATE_CI_AGGREGATE_SCHEMA } from './candidate-ci-contract.ts';
 
 function requireFact(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -133,7 +134,7 @@ export async function verifyReleasePullRequestCandidate(
   event: any,
   repository: string,
   requestJson: (endpoint: string) => Promise<any>,
-  scoped?: { git: GitRead; loadAggregate: (runId: number) => Promise<any> },
+  scoped?: { git: GitRead; loadAggregate: (runId: number) => Promise<any>; loadBuildrAggregate?: (runId: number) => Promise<{ aggregate: any; manifest: any }> },
 ): Promise<any> {
   const pullRequest = event?.pull_request;
   const branch = pullRequest?.head?.ref;
@@ -174,7 +175,7 @@ export async function verifyReleasePullRequestCandidate(
   requireFact(run.event === 'workflow_dispatch' && run.path?.split('@')[0] === '.github/workflows/verify.yml', 'Referenced run is not a dispatched Candidate verification.');
   requireFact(run.head_sha === sourceCommit && run.head_branch === branch, 'Candidate run source differs from the release pull request.');
   requireFact(run.status === 'completed' && run.conclusion === 'success', 'Matching Candidate verification has not passed.');
-  if (plan) requireFact(Number.isSafeInteger(run.run_attempt) && run.run_attempt >= 1 && run.run_attempt <= 100, 'Scoped Candidate run attempt is invalid.');
+  requireFact(Number.isSafeInteger(run.run_attempt) && run.run_attempt >= 1 && run.run_attempt <= 100, 'Candidate run attempt is invalid.');
 
   const jobs = await requestJson(`repos/${repository}/actions/runs/${runId}/jobs?per_page=100`);
   requireFact(Number.isSafeInteger(jobs?.total_count) && jobs.total_count >= 0 && jobs.total_count < 100 && jobs.jobs?.length === jobs.total_count, 'Candidate job list is incomplete.');
@@ -185,6 +186,28 @@ export async function verifyReleasePullRequestCandidate(
   if (plan?.requirements.plugin) names.push(`plugin-candidate-v${plan.selection.versions['dsh-plugin'] ?? JSON.parse(scoped!.git(['show', `${sourceCommit}:${PLUGIN_SERVICE_PATH}/package.json`, '--'])).version}`, 'plugin-candidate-aggregate');
   for (const name of names) {
     requireFact(artifacts?.artifacts?.filter((artifact: any) => artifact.name === name && artifact.expired === false && artifact.size_in_bytes > 0).length === 1, `Matching Candidate ${name} is unavailable or not unique.`);
+  }
+  if (!plan || plan.requirements.buildr) {
+    requireFact(scoped?.loadBuildrAggregate, 'Buildr Candidate requires its complete aggregate and original package proof.');
+    const { aggregate, manifest } = await scoped.loadBuildrAggregate(runId);
+    const sourceTree = plan?.sourceTree ?? scoped.git(['rev-parse', `${sourceCommit}^{tree}`]).trim();
+    const sourceVersion = plan?.selection?.versions.buildr
+      ?? JSON.parse(scoped.git(['show', `${sourceCommit}:projects/product/services/buildr/package.json`, '--'])).version;
+    requireFact(sha.test(sourceTree) && aggregate?.schemaVersion === CANDIDATE_CI_AGGREGATE_SCHEMA
+      && aggregate.status === 'passed' && aggregate.purpose === 'candidate' && !aggregate.rehearsalIdentity
+      && Array.isArray(aggregate.findings) && aggregate.findings.length === 0
+      && (!aggregate.deferredIds || Array.isArray(aggregate.deferredIds) && aggregate.deferredIds.length === 0),
+    'Buildr Candidate aggregate is incomplete or did not pass.');
+    requireFact(aggregate.sourceCommit === sourceCommit && aggregate.sourceTree === sourceTree
+      && String(aggregate.workflow?.runId) === String(runId) && aggregate.workflow?.aggregateAttempt === run.run_attempt,
+    'Buildr Candidate aggregate differs from the exact source or run attempt.');
+    requireFact(manifest?.packageName === MAIN_PACKAGE && manifest.version === sourceVersion && manifest.sourceCommit === sourceCommit,
+      'Buildr Candidate original package differs from the frozen source or version.');
+    const [{ assertReleaseConsumptionCoverage }, { candidateCiRegistryIdentity }] = await Promise.all([
+      import('./release-consumption.ts'), import('../candidate-ci-evidence.ts'),
+    ]);
+    requireFact(aggregate.registryIdentity === candidateCiRegistryIdentity(), 'Buildr Candidate aggregate registry is stale.');
+    assertReleaseConsumptionCoverage(aggregate, { sourceCommit, sourceTree }, manifest);
   }
   if (plan?.requirements.plugin) assertPluginSourceAggregate(await scoped!.loadAggregate(runId), plan, runId, run.run_attempt);
   return { status: 'passed', runId, sourceCommit, branch };
@@ -233,7 +256,40 @@ async function main(): Promise<void> {
         ? await (await import('../../../../../../../skills/buildr-release/scripts/release-executor-admission.ts')).verifyReleaseExecutorPullRequest(event, repository, repo)
         : await verifyReleasePullRequestCandidate(event, repository, async endpoint =>
         JSON.parse(execFileSync('gh', ['api', endpoint], { encoding: 'utf8', timeout: 30_000 })),
-        { git, loadAggregate: async runId => {
+        { git, loadBuildrAggregate: async runId => {
+          const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-main-source-proof-'));
+          const find = (root: string, name: string): string => {
+            const matches: string[] = [];
+            const visit = (parent: string) => {
+              for (const entry of fs.readdirSync(parent, { withFileTypes: true })) {
+                const file = path.join(parent, entry.name);
+                if (entry.isDirectory()) visit(file);
+                else if (entry.isFile() && entry.name === name) matches.push(file);
+              }
+            };
+            visit(root);
+            requireFact(matches.length === 1, `Buildr Candidate ${name} is missing or ambiguous.`);
+            return matches[0]!;
+          };
+          try {
+            for (const name of ['candidate-aggregate', 'candidate-package']) {
+              execFileSync('gh', ['run', 'download', String(runId), '--repo', repository, '--name', name, '--dir', path.join(directory, name)],
+                { stdio: 'pipe', timeout: name === 'candidate-package' ? 120_000 : 30_000 });
+            }
+            const aggregateFile = find(path.join(directory, 'candidate-aggregate'), 'candidate-ci-aggregate.json');
+            requireFact(fs.statSync(aggregateFile).size < 8 * 1024 * 1024, 'Buildr Candidate aggregate exceeds its byte budget.');
+            const aggregate = JSON.parse(fs.readFileSync(aggregateFile, 'utf8'));
+            const { readReleaseArtifact } = await import('../../../../../../../skills/buildr-release/scripts/release-artifact.ts');
+            const { manifest } = readReleaseArtifact(find(path.join(directory, 'candidate-package'), 'release-artifact.json'));
+            if (aggregate.sourceBinding) {
+              assertCandidateSourceBinding(repo, aggregate.sourceBinding);
+              requireFact(aggregate.sourceBinding.productSource === manifest.sourceCommit
+                && aggregate.verificationSource === aggregate.sourceBinding.verificationSource,
+              'Buildr Candidate verification source differs from its bound original package.');
+            }
+            return { aggregate, manifest };
+          } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+        }, loadAggregate: async runId => {
           const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-plugin-source-proof-'));
           try {
             execFileSync('gh', ['run', 'download', String(runId), '--repo', repository, '--name', 'plugin-candidate-aggregate', '--dir', directory], { stdio: 'pipe', timeout: 30_000 });

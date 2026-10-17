@@ -311,21 +311,21 @@ artifacts:
     kind: document
     path: knowledge/docs/flows/open-source-release.md
     objects: [product-release]
-    sources: [release-coordination-source, release-selection-source, release-publication-source, verification-source-reader, verification-candidate-repair]
+    sources: [release-coordination-source, release-selection-source, release-publication-source, verification-source-reader, verification-candidate-repair, verification-local-source, verification-platform-boundaries, verification-local-artifact, verification-artifact-reuse]
   - id: product-release-architecture
     title: Buildr 发布：谁负责什么
     kind: diagram
     path: knowledge/archify/flows/release-architecture.html
     graphSource: knowledge/archify/flows/release-architecture.json
     objects: [product-release]
-    sources: [release-coordination-source, release-selection-source, release-publication-source, verification-source-reader, verification-candidate-source-binding, verification-candidate-repair]
+    sources: [release-coordination-source, release-selection-source, release-publication-source, verification-source-reader, verification-candidate-source-binding, verification-candidate-repair, verification-local-source, verification-platform-boundaries, verification-local-artifact, verification-artifact-reuse]
   - id: product-release-workflow
     title: Buildr 发布：五步流程
     kind: diagram
     path: knowledge/archify/flows/release-workflow.html
     graphSource: knowledge/archify/flows/release-workflow.json
     objects: [product-release]
-    sources: [release-coordination-source, release-selection-source, release-publication-source, verification-candidate-repair]
+    sources: [release-coordination-source, release-selection-source, release-publication-source, verification-candidate-repair, verification-local-source, verification-platform-boundaries, verification-local-artifact, verification-artifact-reuse]
   - id: agent-integration-article
     title: 接入方式与职责
     kind: document
@@ -1161,12 +1161,16 @@ artifacts:
       - verification-file-bc346270
       - verification-file-e9222fb3
   - id: verification-product-architecture
-    title: Buildr 验证：现有检查与发布取舍
+    title: Buildr 验证框架
     kind: document
     path: knowledge/docs/architecture/verification-framework.md
     objects:
       - verification-product-tools
     sources:
+      - verification-local-source
+      - verification-platform-boundaries
+      - verification-local-artifact
+      - verification-artifact-reuse
       - verification-frontend-test-runner
       - verification-candidate-browser
       - verification-candidate-environment
@@ -1203,6 +1207,10 @@ artifacts:
     objects:
       - verification-product-tools
     sources:
+      - verification-local-source
+      - verification-platform-boundaries
+      - verification-local-artifact
+      - verification-artifact-reuse
       - verification-source-reader
       - verification-scoped-inputs
       - verification-candidate-repair
@@ -1452,6 +1460,26 @@ artifacts:
       - file-responsibility-graph
       - project-terms
 sources:
+  - id: verification-local-source
+    title: 通用与本机平台源码检查
+    kind: code
+    path: services/buildr/test/verification/source.ts
+    summary: 独立选择通用源码和本机平台源码，采用有效结果后只准备和执行缺项，不生产最终原包。
+  - id: verification-platform-boundaries
+    title: 两系统源码与原包真实边界
+    kind: code
+    path: services/buildr/test/verification/platform-boundaries.ts
+    summary: 记录 macOS 与 Windows 原生命令、路径、锁、文件描述符、进程和原包启动器的具体机制及最小断言。
+  - id: verification-local-artifact
+    title: 通用与本机平台原包检查
+    kind: code
+    path: services/buildr/test/verification/artifact.ts
+    summary: 显式消费同一原包，独立选择通用与本机平台检查，分别保存最低和当前 Node 的真实执行证明，不重新制包。
+  - id: verification-artifact-reuse
+    title: 原包检查证明交接与复用
+    kind: code
+    path: services/buildr/test/verification/candidate-artifact-reuse.ts
+    summary: 核验原包字节、检查输入、真实环境和原始来源，暂留应由本机补齐的缺项，已有有效证明不重复执行。
   - id: release-coordination-source
     title: 发布协调入口
     kind: skill
@@ -2934,7 +2962,7 @@ sources:
     observedDigest: eaa44bb44871878b56dadae21c8b9b7d2658b9ab2bb296a30c0f073eaff73644
   - id: verification-source-b5e167a6ea
     title: 产品验证步骤注册表
-    summary: 稳定步骤、集成分片、分类、主要证明责任、资源及候选分片
+    summary: 稳定步骤、集成分片、通用与平台归属、主要证明责任、资源及候选分片
     kind: code
     path: services/buildr/test/verification/registry.ts
     observedDigest: cabaca06c40afe232f5150011e7c4ebb0f62f99bac61c8c5f9f1346baad87efa
@@ -3137,7 +3165,7 @@ sources:
     summary: 本主题的可独立阅读或维护成果；事实来源见关联文章和实现地图。
     observedDigest: fb6051da600c470d8d245b897735b84c2b4cc68d3a1ed621852595f9177ea9eb
   - id: verification-file-9894349f
-    title: Buildr 验证：现有检查与发布取舍
+    title: Buildr 验证框架
     kind: evidence
     path: knowledge/docs/architecture/verification-framework.md
     observedDigest: 4c784fd3d8eee8ce6b7bfc60bef19d40c414d611183c18cf3b2e9871fbde51f4
@@ -3263,7 +3291,7 @@ sources:
     observedDigest: a5f284c3aaed1b1632f0f75fde7acfbf13f414270bfdba15292f3127dfa999f9
   - id: verification-ref-afecd484
     title: 跨平台候选编排入口
-    summary: 组织计划、平台分片、宿主Node.js检查与证据聚合。
+    summary: 按有效证明选择跨平台源码与原包缺项，组织真实宿主 Node 组合并汇总；源码全部通过后制包。
     kind: code
     path: services/buildr/test/verification/candidate-ci.ts
     observedDigest: 17ac8a16f50ae8768915914c154786002c4ef3114d5ad5a9765dd92230b1e86f

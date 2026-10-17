@@ -15,6 +15,7 @@ import { prepareCandidateRepair, materializeCandidateRepair } from '../verificat
 import { createReleaseArtifactFixture } from '../helpers/release-artifact-fixture.ts';
 import { createCandidateCiEvidence, candidateCiRegistryIdentity, aggregateCandidateCiEvidence, readCandidateCiEvidenceFiles } from '../verification/candidate-ci-evidence.ts';
 import { createVerificationSourceInputReader } from '../verification/verification-source-inputs.ts';
+import { candidateDependencyInputsIdentity } from '../verification/candidate-artifact-reuse.ts';
 
 test('shared candidate input reader resolves a real service directory once and preserves immutable historical identities', t => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'candidate-service-input-reader-'));
@@ -292,6 +293,30 @@ test('default repair preparation verifies real package bytes, retains partial pr
   assert.ok(matrices.host.length > 0, 'host environments still require fresh observations');
   assert.equal(matrices.host.find((item: any) => item.id === 'host-minimum-macos').preparation, 'publisher');
   assert.ok(matrices.host.every((item: any) => !item.id.includes('linux')), 'repair follows current supported hosts');
+  const fingerprinted = structuredClone(evidence);
+  const hash = (value: unknown) => 'sha256-' + crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  for (const item of fingerprinted.filter((item: any) => item.kind === 'host-node')) {
+    item.runner.nodeVersion = item.requestedNode === '24.15.0' ? '24.15.0' : '24.21.0';
+    const preparation = item.id === 'host-minimum-macos' ? 'publisher' : 'host';
+    const environment = { schemaVersion: 'buildr.candidate-execution-environment/v1', platform: item.runner.platform, arch: item.runner.arch,
+      preparation,
+      nodeVersion: item.runner.nodeVersion, nodeExecutable: '/fixture/exact-node', npmVersion: '11.19.0',
+      dependencyInputsIdentity: candidateDependencyInputsIdentity(path.join(repo, prefix), source, preparation), dependencyIdentity: hash('fixture installed dependencies'),
+      variablesIdentity: hash({}), inputsIdentity: hash(item.checkInputs) };
+    item.executionEnvironment = { ...environment, identity: hash(environment) };
+  }
+  const failedId = failedShard.results[0].id;
+  const localRecord = { identity: { stepId: failedId }, result: { id: failedId, status: 'passed', exitCode: 0, durationMs: 7 },
+    origin: { kind: 'local', runId: 'local-repair', sourceCommit: source }, environment: { platform: 'darwin', arch: process.arch, nodeVersion: process.versions.node } };
+  const adoptedPlan = createCandidateRepairPlan({ repo, repository: 'BuildrAI/Buildr', originalRun: run, artifact,
+    verificationSource: source, evidence: fingerprinted, registryIdentity }, {
+    sourceRecords: [localRecord], validateSourceRecord: (record, stepId) => record === localRecord && stepId === failedId,
+  });
+  const adoptedMatrices = materializeCandidateRepair(adoptedPlan, path.join(output, 'adopted'), workflow);
+  assert.equal(adoptedMatrices.host.length, 0, 'same original package and measured exact host environment are adopted before preparation');
+  assert.equal(adoptedMatrices.source.some((item: any) => item.shard === failedShard.id), false, 'fully adopted local repairs do not install a redundant source job');
+  const adoptedSource = readCandidateCiEvidenceFiles(path.join(output, 'adopted')).find((item: any) => item.id === failedShard.id);
+  assert.equal(adoptedSource.results.find((result: any) => result.id === failedId).candidateProof.origin.kind, 'local');
   const retained = readCandidateCiEvidenceFiles(path.join(output, 'reused'));
   const binding = prepared.plan.sourceBinding;
   for (const check of prepared.plan.checks.filter((item: any) => item.steps.some((step: any) => step.disposition === 'execute'))) {

@@ -73,6 +73,15 @@ on:
         description: Bounded runner-produced source results for the controlled Candidate entry
         required: false
         type: string
+      artifact_verification:
+        description: Bounded results from the same final package, retaining their actual execution origin
+        required: false
+        type: string
+      local_runner:
+        description: Reserve common and matching OS package checks for the local machine
+        required: false
+        type: choice
+        options: ['', macos, windows]
       repair_candidate_run_id:
         description: Completed controlled Candidate whose original package and valid checks are preserved
         required: false
@@ -110,6 +119,8 @@ env:
   BUILDR_BUILDR_PEER_VERSION: ${{ inputs.buildr_peer_version || '' }}
   BUILDR_BUILDR_PEER_INTEGRITY: ${{ inputs.buildr_peer_integrity || '' }}
   BUILDR_SOURCE_VERIFICATION: ${{ github.event_name == 'workflow_dispatch' && inputs.source_verification || '' }}
+  BUILDR_ARTIFACT_VERIFICATION: ${{ github.event_name == 'workflow_dispatch' && inputs.artifact_verification || '' }}
+  BUILDR_CANDIDATE_LOCAL_RUNNER: ${{ github.event_name == 'workflow_dispatch' && !inputs.repair_candidate_run_id && inputs.local_runner || '' }}
   BUILDR_CANDIDATE_REPAIR_RUN_ID: ${{ inputs.repair_candidate_run_id || '' }}
   BUILDR_CANDIDATE_PRODUCT_SOURCE: ${{ inputs.product_source || '' }}
   BUILDR_CANDIDATE_VERIFICATION_SOURCE: ${{ inputs.verification_source || '' }}
@@ -751,8 +762,8 @@ jobs:
 
   candidate-bootstrap:
     name: Candidate bootstrap
-    needs: candidate-plan
-    if: needs.candidate-plan.outputs.buildr == 'true'
+    needs: [candidate-plan, candidate-source]
+    if: always() && needs.candidate-plan.result == 'success' && needs.candidate-plan.outputs.buildr == 'true' && (needs.candidate-source.result == 'success' || needs.candidate-source.result == 'skipped')
     runs-on: macos-15
     timeout-minutes: 15
     defaults:

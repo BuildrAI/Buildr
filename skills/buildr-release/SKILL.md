@@ -13,6 +13,10 @@ description: 准备、检查、发布或恢复 Buildr 主包、DSH 插件或联�
 
 冻结所选包、独立版本、分支（Branch）、准确提交（Commit）、源码树和准确对端，正常准备不跟随 `dev`。全部检查及结果汇总交给产品既有验证框架；先查看有效旧结果、缺项、失效原因和耗时，再只执行必要部分。本机能充分证明的在本机完成，GitHub 只补真实平台、干净环境或受保护执行边界。不要在检查运行时改变其源码或共享 Git 比较事实。
 
+通用产品逻辑与功能只有一套，不按系统重复。操作系统相关的源码和原包检查是独立节点：本机是 macOS 就本机完成 macOS、远端补 Windows；本机是 Windows 则交换。源码入口 `test/verification/source.ts --scope common|platform|all` 使用同一检查登记；默认先满足本机源码，远端补另一系统源码，全部通过后 GitHub 生产唯一原包。
+
+新准备会把通用原包检查与本机系统验包留给本机。制包上传后，智能体可按返回目录下载同一原包，与另一系统的远端验包并行；运行 `tools/development/run-development-node test/verification/artifact.ts --artifact-dir <原包目录> --output <证据目录>`，默认检查通用原包、本机启动和当前 Node。最低 Node 另用准确 `24.15.0` 程序运行同一入口的 `--scope platform --node-tuple minimum`，不重复通用检查或启动器。实际程序与系统随结果保留。`local-artifact-verification-required` 或远端 `incomplete` 表示仍等本机缺项，不是完整候选通过；完成后继续原 `prepare --artifact-verification <证据目录>`，仅采用原包与有效结果、补缺项和完整汇总，不重新产包。远端发布始终另需准确授权。
+
 主包产包入口是 `scripts/candidate-package.ts`，插件发布代码在 `scripts/dsh-plugin/`；一般构建和验证工具仍归相应服务。每个包只生产一份准确原包，测试或汇总修复不默认重打；产品及真实构建输入变化才使相关原包和证明失效。正式补验绑定独立验证来源，不授予补验代码公开权限。
 
 只准备到验包时使用 `prepare --stop-after candidate`：完整候选与原包检查通过后返回 `candidate-verified`，不进入 `main` 采用或公开；已有公开授权或请求的旧选择不能用于此模式。

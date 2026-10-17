@@ -6,6 +6,10 @@ import { createHash } from 'node:crypto';
 import { createPluginSourceAggregate, createReleaseCandidatePlan, releaseCandidateRequirements, verifyReleasePullRequestCandidate } from '../verification/release/verify-pr-candidate.ts';
 import { parseReleaseCandidate } from '../../../../../../skills/buildr-release/scripts/dsh-plugin/release-candidate.ts';
 import { mainCompatibilityFixture, pluginCompatibilityFixture } from '../helpers/package-compatibility-fixtures.ts';
+import { CANDIDATE_CI_AGGREGATE_SCHEMA } from '../verification/release/candidate-ci-contract.ts';
+import { releaseConsumptionIdentity } from '../verification/release/release-consumption.ts';
+import { candidateCiRegistryIdentity } from '../verification/candidate-ci-evidence.ts';
+import { CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES } from '../verification/registry.ts';
 
 const repository = 'BuildrAI/Buildr';
 const branch = 'codex/release-main-0.1.0-rc.36-g3';
@@ -16,10 +20,25 @@ const sourceSdkManifest = fs.readFileSync(path.join(sourceSdkDirectory, 'dsh-v0.
 const sourceSdkPatch = fs.readFileSync(path.join(sourceSdkDirectory, 'dsh-v0.2.0-rc.2-event-sources-settings.patch'), 'utf8');
 const peerIntegrity = `sha512-${Buffer.alloc(64).toString('base64')}`;
 
+function buildrProof(version = '0.1.0-rc.36') {
+  const manifest = { packageName: '@buildr-ai/buildr', version, sourceCommit,
+    filename: `buildr-ai-buildr-${version}.tgz`, size: 100, sha256: '1'.repeat(64),
+    integrity: peerIntegrity, applicationPayloadDigest: 'sha256-' + '2'.repeat(64) };
+  const aggregate: any = { schemaVersion: CANDIDATE_CI_AGGREGATE_SCHEMA, status: 'passed', purpose: 'candidate',
+    sourceCommit, sourceTree: 'e'.repeat(40), rehearsalIdentity: null,
+    registryIdentity: candidateCiRegistryIdentity(), consumptionIdentity: releaseConsumptionIdentity(),
+    artifact: { sourceCommit, filename: manifest.filename, size: manifest.size, sha256: manifest.sha256,
+      integrity: manifest.integrity, applicationPayloadDigest: manifest.applicationPayloadDigest },
+    workflow: { runId: String(runId), aggregateAttempt: 1 }, findings: [],
+    evidenceIds: [...CANDIDATE_CI_SHARDS, ...CANDIDATE_CI_HOST_NODE_TUPLES].map(item => item.id) };
+  return { aggregate, manifest };
+}
+
 function fixture(overrides: any = {}) {
+  const mainProof = overrides.mainProof ?? buildrProof();
   const event = { pull_request: { base: { ref: 'main' }, head: { ref: branch, sha: sourceCommit }, body: `Release 0.1.0-rc.36.\n\nCandidate run ID: ${runId}`, ...overrides.event } };
   const responses: Record<string, any> = {
-    [`repos/${repository}/actions/runs/${runId}`]: { id: runId, repository: { full_name: repository }, event: 'workflow_dispatch', path: '.github/workflows/verify.yml', head_sha: sourceCommit, head_branch: branch, status: 'completed', conclusion: 'success', ...overrides.run },
+    [`repos/${repository}/actions/runs/${runId}`]: { id: runId, repository: { full_name: repository }, event: 'workflow_dispatch', path: '.github/workflows/verify.yml', head_sha: sourceCommit, head_branch: branch, status: 'completed', conclusion: 'success', run_attempt: 1, ...overrides.run },
     [`repos/${repository}/actions/runs/${runId}/jobs?per_page=100`]: { total_count: 1, jobs: [{ name: 'Candidate gate', conclusion: 'success' }], ...overrides.jobs },
     [`repos/${repository}/actions/runs/${runId}/artifacts?per_page=100`]: { total_count: 2, artifacts: [
       { name: 'candidate-package', expired: false, size_in_bytes: 100 },
@@ -28,6 +47,7 @@ function fixture(overrides: any = {}) {
   };
   const scoped = {
     git: (args: string[]) => {
+      if (args.join(' ') === `rev-parse ${sourceCommit}^{tree}`) return 'e'.repeat(40);
       if (args[1] === `${sourceCommit}:projects/product/services/buildr/package.json`) {
         assert.equal(args[0], 'show');
         assert.equal(args.at(-1), '--');
@@ -36,14 +56,52 @@ function fixture(overrides: any = {}) {
       assert.deepEqual(args, ['show', `${sourceCommit}:.github/workflows/verify.yml`, '--']);
       return overrides.sourceWorkflow ?? 'name: Verify Buildr\non:\n  workflow_dispatch:\n    inputs:\n      purpose: {}\n';
     },
+    loadBuildrAggregate: async () => mainProof,
     loadAggregate: async () => { throw new Error('A legacy source never loads plugin proof.'); },
   };
-  return { event, requestJson: async (endpoint: string) => responses[endpoint], scoped };
+  return { event, requestJson: async (endpoint: string) => responses[endpoint], scoped, mainProof };
 }
 
 test('release PR gate reuses the exact successful Candidate and its two artifacts', async () => {
   const { event, requestJson, scoped } = fixture();
   assert.deepEqual(await verifyReleasePullRequestCandidate(event, repository, requestJson, scoped), { status: 'passed', runId, sourceCommit, branch });
+});
+
+test('a green hosted handoff cannot replace complete main Candidate coverage, including legacy recovery', async () => {
+  for (const mutate of [
+    (proof: any) => { proof.aggregate.status = 'incomplete'; proof.aggregate.deferredIds = ['runtime-macos']; },
+    (proof: any) => { proof.aggregate.status = 'failed'; },
+    (proof: any) => { proof.aggregate.findings = [{ code: 'evidence-missing', id: 'runtime-macos' }]; },
+    (proof: any) => { proof.aggregate.deferredIds = ['host-minimum-macos']; },
+  ]) {
+    const value = fixture(); mutate(value.mainProof);
+    await assert.rejects(verifyReleasePullRequestCandidate(value.event, repository, value.requestJson, value.scoped), /aggregate is incomplete or did not pass/u);
+  }
+  const value = fixture();
+  const withoutMainProof: any = { ...value.scoped };
+  delete withoutMainProof.loadBuildrAggregate;
+  await assert.rejects(verifyReleasePullRequestCandidate(value.event, repository, value.requestJson, withoutMainProof), /complete aggregate and original package proof/u);
+});
+
+test('main Candidate admission binds the exact aggregate attempt, source tree, package and required consumption', async () => {
+  for (const [mutate, message] of [
+    [(proof: any) => { proof.aggregate.workflow.runId = String(runId + 1); }, /exact source or run attempt/u],
+    [(proof: any) => { proof.aggregate.workflow.aggregateAttempt = 2; }, /exact source or run attempt/u],
+    [(proof: any) => { proof.aggregate.sourceCommit = 'a'.repeat(40); }, /exact source or run attempt/u],
+    [(proof: any) => { proof.aggregate.sourceTree = 'f'.repeat(40); }, /exact source or run attempt/u],
+    [(proof: any) => { proof.manifest.sourceCommit = 'a'.repeat(40); }, /original package differs/u],
+    [(proof: any) => { proof.manifest.version = '0.1.0-rc.37'; }, /original package differs/u],
+    [(proof: any) => { proof.aggregate.artifact.sha256 = '3'.repeat(64); }, /artifact sha256 mismatches/u],
+    [(proof: any) => { proof.aggregate.evidenceIds = proof.aggregate.evidenceIds.filter((id: string) => id !== 'runtime-windows'); }, /missing release check platform-launcher/u],
+    [(proof: any) => { proof.aggregate.registryIdentity = 'sha256-' + '4'.repeat(64); }, /registry is stale/u],
+  ] as const) {
+    const value = fixture(); mutate(value.mainProof);
+    await assert.rejects(verifyReleasePullRequestCandidate(value.event, repository, value.requestJson, value.scoped), message);
+  }
+  const value = fixture({ run: { run_attempt: 2 } });
+  await assert.rejects(verifyReleasePullRequestCandidate(value.event, repository, value.requestJson, value.scoped), /exact source or run attempt/u);
+  value.mainProof.aggregate.workflow.aggregateAttempt = 2;
+  assert.equal((await verifyReleasePullRequestCandidate(value.event, repository, value.requestJson, value.scoped)).status, 'passed');
 });
 
 test('release PR gate rejects source drift, missing run identity and expired artifact', async () => {
@@ -158,8 +216,8 @@ function scopedFixture(changedPaths = ['projects/product/services/dsh-plugin/plu
     sourceBinding: { method: 'git-tree-content-equivalence', testedGitHead: verificationSource.observedCommit, testedWorkingTreeDirty: verificationSource.dirty, verifiedContentSha256: verificationSource.contentSha256, candidateSourceCommit: sourceCommit, candidateSourceTree: plan.serviceTree },
     pair, checks: ['unit', 'integration', 'source-ui', 'released-loader', 'development-loader', 'actual-package-pair'], variants: ['released', 'development'], runtimeActivated: false, desktopValidated: false };
   const aggregate = createPluginSourceAggregate(plan, candidate, full, { runId, runAttempt: 1 });
-  const base = fixture({ event: { base: { ref: 'main', sha: selection.main }, head: { ref: scopedBranch, sha: sourceCommit }, body: `Candidate run ID: ${runId}\nRelease selection: ${JSON.stringify(selection)}\nBuildr peer: ${JSON.stringify(peer)}` }, run: { head_branch: scopedBranch, run_attempt: 1 }, artifacts: { total_count: 2, artifacts: [{ name: 'plugin-candidate-v0.1.0-rc.1', expired: false, size_in_bytes: 100 }, { name: 'plugin-candidate-aggregate', expired: false, size_in_bytes: 100 }] } });
-  return { ...base, selection, env, git, plan, aggregate, scoped: { git, loadAggregate: async () => aggregate } };
+  const base = fixture({ mainProof: buildrProof('0.1.0-rc.38'), event: { base: { ref: 'main', sha: selection.main }, head: { ref: scopedBranch, sha: sourceCommit }, body: `Candidate run ID: ${runId}\nRelease selection: ${JSON.stringify(selection)}\nBuildr peer: ${JSON.stringify(peer)}` }, run: { head_branch: scopedBranch, run_attempt: 1 }, artifacts: { total_count: 2, artifacts: [{ name: 'plugin-candidate-v0.1.0-rc.1', expired: false, size_in_bytes: 100 }, { name: 'plugin-candidate-aggregate', expired: false, size_in_bytes: 100 }] } });
+  return { ...base, selection, env, git, plan, aggregate, scoped: { ...base.scoped, git, loadAggregate: async () => aggregate } };
 }
 
 test('pure plugin source carrier passes with its own aggregate and never needs a main package', async () => {
@@ -180,6 +238,9 @@ test('joint source carrier requires both independent proof sets', async () => {
     return endpoint.includes('/artifacts?') ? { total_count: 4, artifacts: [...response.artifacts, { name: 'candidate-package', expired: false, size_in_bytes: 100 }, { name: 'candidate-aggregate', expired: false, size_in_bytes: 100 }] } : response;
   };
   assert.equal((await verifyReleasePullRequestCandidate(value.event, repository, requestJson, value.scoped)).status, 'passed');
+  value.mainProof.aggregate.status = 'incomplete';
+  await assert.rejects(verifyReleasePullRequestCandidate(value.event, repository, requestJson, value.scoped), /aggregate is incomplete or did not pass/u);
+  value.mainProof.aggregate.status = 'passed';
   for (const name of ['candidate-package', 'candidate-aggregate', 'plugin-candidate-v0.1.0-rc.1', 'plugin-candidate-aggregate']) {
     await assert.rejects(verifyReleasePullRequestCandidate(value.event, repository, async endpoint => {
       const response = await requestJson(endpoint);

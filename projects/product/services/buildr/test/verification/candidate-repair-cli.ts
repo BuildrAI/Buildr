@@ -11,6 +11,10 @@ import { validateCandidateRepairRun } from './candidate-repair.ts';
 import { assertPluginSourceAggregate, createPluginSourceAggregate } from './release/verify-pr-candidate.ts';
 import { readReleaseCandidate } from '../../../../../../skills/buildr-release/scripts/dsh-plugin/release-candidate.ts';
 import { readArtifactInput } from '../../../dsh-plugin/tools/buildr-peer.ts';
+import { candidateArtifactImportFromEnvironment } from './candidate-artifact-reuse.ts';
+import { candidateSourceImportFromEnvironment } from './candidate-source-reuse.ts';
+import { collectVerificationReuseSnapshot, validateVerificationReuseRecord } from './verification-reuse.ts';
+import { verificationSteps } from './registry.ts';
 
 export function prepareCandidateRepair(options: { repo: string; output: string; runId: string; productSource: string; verificationSource: string; repository: string }, dependencies: any = {}): any {
   if (!/^[1-9]\d*$/u.test(options.runId) || options.repository !== 'BuildrAI/Buildr') throw new Error('Candidate repair requires one original Buildr controlled run.');
@@ -24,8 +28,19 @@ export function prepareCandidateRepair(options: { repo: string; output: string; 
   call(['run', 'download', options.runId, '--repo', options.repository, '--pattern', 'candidate-evidence-*', '--dir', evidenceRoot]);
   const artifact = readCandidateCiArtifact(packageRoot, options.productSource);
   const registryIdentity = candidateCiRegistryIdentity();
+  const productRoot = path.join(options.repo, 'projects/product/services/buildr'), projectRoot = path.join(options.repo, 'projects/product');
+  const sourceBundle = candidateSourceImportFromEnvironment(process.env);
+  const snapshot = sourceBundle.records.length > 0 ? collectVerificationReuseSnapshot({ productRoot, projectRoot }) : null;
   const plan = createCandidateRepairPlan({ repo: options.repo, repository: options.repository, originalRun, artifact: artifact.identity,
-    verificationSource: options.verificationSource, evidence: readCandidateCiEvidenceFiles(evidenceRoot), registryIdentity });
+    verificationSource: options.verificationSource, evidence: readCandidateCiEvidenceFiles(evidenceRoot), registryIdentity }, {
+    artifactEvidence: candidateArtifactImportFromEnvironment(process.env), sourceRecords: sourceBundle.records,
+    validateSourceRecord(record, stepId, runner) {
+      const step = verificationSteps.find((item: any) => item.id === stepId);
+      if (step?.platformScope?.kind === 'common' && !['darwin', 'win32'].includes(record.environment?.platform)) return false;
+      return validateVerificationReuseRecord(record, { productRoot, projectRoot, snapshot, stepId,
+        ...(step?.platformScope?.kind === 'common' ? {} : { runner }) });
+    },
+  });
   const serialized = JSON.stringify(plan);
   if (Buffer.byteLength(serialized) > 8 * 1024 * 1024) throw new Error('Candidate repair plan exceeds its evidence budget; no checks were dispatched.');
   fs.writeFileSync(path.join(options.output, 'candidate-repair-plan.json'), serialized + '\n');
@@ -53,6 +68,7 @@ export function materializeCandidateRepair(plan: any, directory: string, workflo
       primaryStepIds: check.kind === 'shard' ? check.steps.map((step: any) => step.id) : [],
       artifact: check.requiresArtifact ? plan.artifact : null, startedAt: now, finishedAt: now, durationMs: 0,
       status: 'passed', cleanupClean: true,
+      ...(original.executionEnvironment ? { executionEnvironment: original.executionEnvironment } : {}),
       checkInputs: Object.fromEntries(check.steps.map((step: any) => [step.id, step.inputIdentity])),
       results: check.steps.map((step: any) => reusedCandidateProofResult(step.proof)) });
     writeCandidateCiEvidence(path.join(directory, 'candidate-ci-evidence-' + check.id + '.json'), evidence);
@@ -94,7 +110,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const verificationSource = git(['rev-parse', 'HEAD']);
     if (verificationSource !== process.env.CANDIDATE_SOURCE_SHA || git(['status', '--porcelain', '--untracked-files=all'])) throw new Error('Candidate repair requires the exact clean verification checkout.');
     if (process.env.BUILDR_CANDIDATE_PRODUCT_SOURCE !== process.env.GITHUB_SHA) throw new Error('Candidate repair must retain the original workflow source.');
-    git(['merge-base', '--is-ancestor', verificationSource, 'origin/dev']);
+    if (verificationSource !== process.env.BUILDR_CANDIDATE_PRODUCT_SOURCE) git(['merge-base', '--is-ancestor', verificationSource, 'origin/dev']);
     if (process.argv[2] === 'plugin') {
       const result = preservePluginSourceCandidate({ repo, temporaryRoot: process.env.RUNNER_TEMP!, runId: process.env.BUILDR_CANDIDATE_REPAIR_RUN_ID || '', verificationSource,
         workflow: { runId: process.env.GITHUB_RUN_ID, runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT) } });

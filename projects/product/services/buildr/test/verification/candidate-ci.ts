@@ -9,8 +9,10 @@ import { enforceOfflineVerification } from '../../src/infrastructure/network/ver
 import { executePlan } from './plan-runner.ts';
 import { createCandidateCiShardPlan } from './planner.ts';
 import { candidateSourceImportFromEnvironment, planCandidateSourceReuse } from './candidate-source-reuse.ts';
+import { assertFrozenCandidateCheckout, candidateArtifactImportFromEnvironment, candidateDeferredArtifactIds, candidateDependencyInputsIdentity, createCandidateDeferredPlan,
+  createCandidateExecutionEnvironment, readCandidateDeferredPlan, reusedCandidateArtifactResult, validateCandidateArtifactEvidence } from './candidate-artifact-reuse.ts';
 import { collectVerificationReuseSnapshot, validateVerificationReuseRecord } from './verification-reuse.ts';
-import { CANDIDATE_CI_HOST_NODE_TUPLES, CANDIDATE_CI_SHARDS, resolveVerificationExecutionProfile } from './registry.ts';
+import { CANDIDATE_CI_HOST_NODE_TUPLES, CANDIDATE_CI_SHARDS, resolveVerificationExecutionProfile, verificationSteps } from './registry.ts';
 import { createCandidateCheckInputReader } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
 import { assertCandidateRepairPlan, candidateProofDefinition, candidateProofDescriptors, candidateRepairShardPlan, reusedCandidateProofResult, validateCandidateRepairProof } from './candidate-repair.ts';
 import {
@@ -68,7 +70,19 @@ function checkInputsFor(id: string, commit: string): any {
 let sourceSnapshot: any = null;
 function validateSourceRecord(record: any, stepId: string, runner: string): boolean {
   sourceSnapshot ??= collectVerificationReuseSnapshot({ productRoot, projectRoot });
-  return validateVerificationReuseRecord(record, { productRoot, projectRoot, snapshot: sourceSnapshot, stepId, runner });
+  const step = verificationSteps.find((item: any) => item.id === stepId);
+  if (step?.platformScope?.kind === 'common' && !['darwin', 'win32'].includes(record.environment?.platform)) return false;
+  return validateVerificationReuseRecord(record, { productRoot, projectRoot, snapshot: sourceSnapshot, stepId,
+    ...(step?.platformScope?.kind === 'common' ? {} : { runner }) });
+}
+
+function validateArtifactRecord(record: any, evidenceId: string, artifact?: any): boolean {
+  const verificationSource = resolveCandidateSourceCommit(productRoot, expectedSource);
+  const context = resolveCandidateExecutionContext(productRoot, verificationSource);
+  const descriptor = candidateProofDescriptors().find(item => item.id === evidenceId);
+  return Boolean(descriptor && validateCandidateArtifactEvidence(record, descriptor, context, checkInputsFor(evidenceId, verificationSource), artifact,
+    { dependencyInputsIdentity: candidateDependencyInputsIdentity(productRoot, verificationSource,
+      descriptor.preparation ?? (descriptor.kind === 'host-node' ? descriptor.id === 'host-minimum-macos' ? 'publisher' : 'host' : 'base')) }));
 }
 
 function artifactEnvironment(artifact: any): any  {
@@ -90,8 +104,9 @@ async function runShard(shardId: any): Promise<any>  {
   const shard: any = CANDIDATE_CI_SHARDS.find((item: any) => item.id === shardId);
   if (!shard) throw new Error(`Unknown Candidate CI shard: ${shardId}`);
   const runner: any = process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : process.platform;
-  if (runner !== shard.runner) throw new Error(`Candidate CI shard ${shardId} requires ${shard.runner}, active runner is ${runner}`);
+  if (runner !== shard.runner && !(shard.platformScope?.kind === 'common' && ['macos', 'windows'].includes(runner))) throw new Error(`Candidate CI shard ${shardId} requires ${shard.runner}, active runner is ${runner}`);
   const verificationSource = resolveCandidateSourceCommit(productRoot, expectedSource);
+  if (!workflowIdentity) assertFrozenCandidateCheckout(productRoot, verificationSource);
   const executionContext: any = resolveCandidateExecutionContext(productRoot, verificationSource);
   const sourceCommit = executionContext.sourceCommit;
   const registryIdentity: any = candidateCiRegistryIdentity();
@@ -161,6 +176,7 @@ async function runShard(shardId: any): Promise<any>  {
       const selected = repair.checks.find((item: any) => item.id === shardId);
       results = selected.steps.map((item: any) => item.disposition === 'reuse' ? reusedCandidateProofResult(item.proof) : results.find(result => result.id === item.id));
     }
+    if (!workflowIdentity) assertFrozenCandidateCheckout(productRoot, verificationSource);
     status = execution.passed ? 'passed' : 'failed';
   } catch (error: any) {
     failure = error;
@@ -192,6 +208,7 @@ async function runShard(shardId: any): Promise<any>  {
     status,
     results,
     checkInputs,
+    ...(shard.requiresArtifact ? { executionEnvironment: createCandidateExecutionEnvironment(productRoot, checkInputs, process.env, { preparation: shard.preparation }) } : {}),
     cleanupClean,
     contextLifecycle,
     fullPlanCoordination,
@@ -204,7 +221,10 @@ async function runShard(shardId: any): Promise<any>  {
 
 function assertHostNode(tuple: any): any  {
   if (tuple.expectation === 'minimum' && process.versions.node !== '24.15.0') throw new Error(`Host Node minimum tuple requires 24.15.0, active ${process.versions.node}`);
-  if (tuple.expectation === 'current') assertMinimumNodeVersion(process.versions.node, '24.15.0');
+  if (tuple.expectation === 'current') {
+    assertMinimumNodeVersion(process.versions.node, '24.15.0');
+    if (!/^24\.\d+\.\d+$/u.test(process.versions.node)) throw new Error(`This Host Node current compatibility tuple requires actual stable 24.x, active ${process.versions.node}`);
+  }
 }
 
 function runHostNode(tupleId: any): any  {
@@ -216,6 +236,7 @@ function runHostNode(tupleId: any): any  {
   assertHostNode(tuple);
   const exactNode: any = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env: process.env, requireNpm: true, minimumVersion: '24.15.0' });
   const verificationSource = resolveCandidateSourceCommit(productRoot, expectedSource);
+  if (!workflowIdentity) assertFrozenCandidateCheckout(productRoot, verificationSource);
   const executionContext: any = resolveCandidateExecutionContext(productRoot, verificationSource);
   const sourceCommit = executionContext.sourceCommit;
   const artifact: any = readCandidateCiArtifact(process.env.BUILDR_CANDIDATE_CI_ARTIFACT_DIR || path.join(outputRoot, 'candidate-package'), sourceCommit);
@@ -242,6 +263,7 @@ function runHostNode(tupleId: any): any  {
     if (publishCheck.status !== 0 || publishCheck.error) result.status = publishCheck.status || 1;
   }
   const finishedAtMs: any = Date.now();
+  if (!workflowIdentity) assertFrozenCandidateCheckout(productRoot, verificationSource);
   const evidence: any = createCandidateCiEvidence({
     kind: 'host-node',
     id: tupleId,
@@ -258,6 +280,9 @@ function runHostNode(tupleId: any): any  {
     status: result.status === 0 ? 'passed' : 'failed',
     results: [{ id: 'host-node-compatibility', status: result.status === 0 ? 'passed' : 'failed', exitCode: result.status ?? 1, durationMs: finishedAtMs - startedAtMs }],
     checkInputs: checkInputsFor(tupleId, verificationSource),
+    executionEnvironment: createCandidateExecutionEnvironment(productRoot, checkInputsFor(tupleId, verificationSource), process.env,
+      { preparation: tupleId === 'host-minimum-macos' ? 'publisher' : 'host' }),
+    cleanupClean: result.status === 0,
   });
   const output: any = writeCandidateCiEvidence(evidencePath(tupleId), evidence);
   process.stdout.write(`[candidate-ci] evidence=${output}\n`);
@@ -271,7 +296,8 @@ function aggregate(): any  {
   const evidenceRoot: any = path.resolve(process.env.BUILDR_CANDIDATE_CI_EVIDENCE_DIR || outputRoot);
   const repair = repairPlan();
   const result: any = aggregateCandidateCiEvidence(readCandidateCiEvidenceFiles(evidenceRoot), executionContext, workflowIdentity, {
-    validateSourceRecord, validateCandidateProof: (result: any, id: string) => repair && validateCandidateRepairProof(result, id, repair),
+    validateSourceRecord, validateArtifactRecord, validateCandidateProof: (result: any, id: string) => repair && validateCandidateRepairProof(result, id, repair),
+    deferredIds: repair ? [] : readCandidateDeferredPlan(evidenceRoot, executionContext, candidateCiRegistryIdentity(), workflowIdentity, candidateProofDescriptors()),
     preparations: readCandidateCiPreparationFiles(evidenceRoot),
   });
   result.timing.aggregation = { startedAt: new Date(startedAtMs).toISOString(), finishedAt: new Date().toISOString(), elapsedMs: Date.now() - startedAtMs };
@@ -279,7 +305,7 @@ function aggregate(): any  {
   fs.mkdirSync(path.dirname(output), { recursive: true });
   fs.writeFileSync(output, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n[candidate-ci] aggregate=${output}\n`);
-  if (result.status !== 'passed') process.exitCode = 1;
+  if (!['passed', 'incomplete'].includes(result.status)) process.exitCode = 1;
 }
 
 if (action === 'plan') {
@@ -303,15 +329,41 @@ if (action === 'plan') {
       writeCandidateCiEvidence(path.join(reuseRoot, `candidate-ci-evidence-${shard.id}.json`), evidence);
     }
   }
+  const verificationSource = resolveCandidateSourceCommit(productRoot, expectedSource);
+  const executionContext = resolveCandidateExecutionContext(productRoot, verificationSource);
+  const reuseRoot = path.resolve(process.env.BUILDR_CANDIDATE_CI_EVIDENCE_DIR || outputRoot);
+  const descriptors = candidateProofDescriptors();
+  const imports = candidateArtifactImportFromEnvironment(process.env);
+  const adoptedIds = new Set<string>();
+  for (const descriptor of descriptors.filter(item => item.requiresArtifact && !item.producesArtifact)) {
+    const original = imports.find(item => validateArtifactRecord(item, descriptor.id));
+    if (!original) continue;
+    const now = new Date().toISOString();
+    const evidence = createCandidateCiEvidence({ kind: descriptor.kind, id: descriptor.id, ...executionContext,
+      registryIdentity: candidateCiRegistryIdentity(), workflow: workflowIdentity, platform: original.runner.platform,
+      arch: original.runner.arch, nodeVersion: original.runner.nodeVersion, requestedNode: descriptor.requestedNode,
+      primaryStepIds: descriptor.kind === 'shard' ? descriptor.stepIds : [], artifact: original.artifact,
+      checkInputs: original.checkInputs, executionEnvironment: original.executionEnvironment,
+      startedAt: now, finishedAt: now, durationMs: 0, status: 'passed', cleanupClean: true,
+      results: descriptor.steps.map((step: any) => reusedCandidateArtifactResult(original, step.id)) });
+    writeCandidateCiEvidence(path.join(reuseRoot, `candidate-ci-evidence-${descriptor.id}.json`), evidence);
+    adoptedIds.add(descriptor.id);
+  }
+  const deferredIds = candidateDeferredArtifactIds(descriptors, process.env.BUILDR_CANDIDATE_LOCAL_RUNNER).filter(id => !adoptedIds.has(id));
+  if (deferredIds.length > 0) writeCandidateCiEvidence(path.join(reuseRoot, 'candidate-ci-deferred-plan.json'), createCandidateDeferredPlan({
+    ...executionContext, registryIdentity: candidateCiRegistryIdentity(), workflow: workflowIdentity,
+    localRunner: process.env.BUILDR_CANDIDATE_LOCAL_RUNNER, deferredIds }));
+  const selected = (id: string) => !adoptedIds.has(id) && !deferredIds.includes(id);
   const matrices = {
     source: reuse.sourceShards.map((shard: any) => ({ shard: shard.id, os: platforms[shard.runner], preparation: shard.preparation })),
-    artifact: CANDIDATE_CI_SHARDS.filter((shard: any) => shard.requiresArtifact).map((shard: any) => ({ shard: shard.id, os: platforms[shard.runner], preparation: shard.preparation })),
-    host: CANDIDATE_CI_HOST_NODE_TUPLES.map((tuple: any) => ({ id: tuple.id, os: platforms[tuple.runner], node: tuple.requestedNode, preparation: tuple.id === 'host-minimum-macos' ? 'publisher' : 'host' })),
+    artifact: CANDIDATE_CI_SHARDS.filter((shard: any) => shard.requiresArtifact && selected(shard.id)).map((shard: any) => ({ shard: shard.id, os: platforms[shard.runner], preparation: shard.preparation })),
+    host: CANDIDATE_CI_HOST_NODE_TUPLES.filter((tuple: any) => selected(tuple.id)).map((tuple: any) => ({ id: tuple.id, os: platforms[tuple.runner], node: tuple.requestedNode, preparation: tuple.id === 'host-minimum-macos' ? 'publisher' : 'host' })),
   };
   if (process.env.GITHUB_OUTPUT) for (const [key, include] of Object.entries(matrices)) fs.appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${JSON.stringify({ include })}\n`);
   if (process.env.GITHUB_OUTPUT) for (const [key, include] of Object.entries(matrices)) fs.appendFileSync(process.env.GITHUB_OUTPUT, `${key}_required=${include.length > 0}\n`);
   process.stdout.write(`${JSON.stringify({ schemaVersion: 'buildr.candidate-ci-plan/v1', registryIdentity: candidateCiRegistryIdentity(), matrices,
     reusedSourceShards: reuse.reusedShards.map(item => item.shard.id), reusedStepIds: reuse.reusedStepIds,
+    reusedArtifactIds: [...adoptedIds], deferredIds,
     shards: CANDIDATE_CI_SHARDS, hostNodeTuples: CANDIDATE_CI_HOST_NODE_TUPLES }, null, 2)}\n`);
 } else if (action === 'run' && id) await runShard(id);
 else if (action === 'host' && id) runHostNode(id);

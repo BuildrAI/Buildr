@@ -131,6 +131,7 @@ function resultProjection(results: any): any  {
     ...(item.disposition ? { disposition: item.disposition } : {}),
     ...(item.reusedFrom ? { reusedFrom: item.reusedFrom } : {}),
     ...(item.sourceRecord ? { sourceRecord: item.sourceRecord } : {}),
+    ...(item.artifactRecord ? { artifactRecord: item.artifactRecord } : {}),
     ...(item.candidateProof ? { candidateProof: item.candidateProof } : {}),
     ...(item.process ? { process: item.process } : {}),
     diagnostics: item.diagnostics ?? (item.stdoutPath || item.stderrPath ? {
@@ -217,6 +218,7 @@ export function createCandidateCiEvidence(input: any): any  {
     status: passed ? 'passed' : 'failed',
     results,
     ...(input.checkInputs ? { checkInputs: input.checkInputs } : {}),
+    ...(input.executionEnvironment ? { executionEnvironment: input.executionEnvironment } : {}),
     ...(input.cleanupClean !== undefined ? { cleanupClean: input.cleanupClean } : {}),
     ...(input.contextLifecycle ? { contextLifecycle: input.contextLifecycle } : {}),
     ...(input.fullPlanCoordination ? { fullPlanCoordination: input.fullPlanCoordination } : {}),
@@ -329,7 +331,7 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any
     findings.push(evidenceFinding('workflow-aggregate-attempt-invalid', 'Candidate gate', expectedWorkflow?.runAttempt ?? null));
   }
   const expected: any = new Map([
-    ...CANDIDATE_CI_SHARDS.map((item: any) => [item.id, { kind: 'shard', runner: item.runner, primaryStepIds: item.stepIds, requiresArtifact: item.requiresArtifact || item.producesArtifact }]),
+    ...CANDIDATE_CI_SHARDS.map((item: any) => [item.id, { kind: 'shard', runner: item.runner, platformScope: item.platformScope, primaryStepIds: item.stepIds, requiresArtifact: item.requiresArtifact || item.producesArtifact }]),
     ...CANDIDATE_CI_HOST_NODE_TUPLES.map((item: any) => [item.id, { kind: 'host-node', runner: item.runner, primaryStepIds: [], requiresArtifact: true, requestedNode: item.requestedNode }]),
   ]);
   const byId: any = new Map();
@@ -350,7 +352,8 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any
       continue;
     }
     if (item.kind !== expectation.kind) findings.push(evidenceFinding('kind-mismatch', id, item.kind));
-    if (item.runner?.os !== expectation.runner) findings.push(evidenceFinding('runner-mismatch', id, item.runner?.os));
+    if (expectation.platformScope?.kind === 'common' ? !['macos', 'windows'].includes(item.runner?.os)
+      : item.runner?.os !== expectation.runner) findings.push(evidenceFinding('runner-mismatch', id, item.runner?.os));
     if (item.sourceCommit !== expectedContext.sourceCommit) findings.push(evidenceFinding('source-mismatch', id, item.sourceCommit));
     if (item.sourceTree !== expectedContext.sourceTree) findings.push(evidenceFinding('source-tree-mismatch', id, item.sourceTree));
     if (item.purpose !== expectedContext.purpose) findings.push(evidenceFinding('purpose-mismatch', id, item.purpose));
@@ -375,6 +378,9 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any
       else if (stepResult.disposition === 'reused' && stepResult.candidateProof) {
         if (!options.validateCandidateProof?.(stepResult, id)) findings.push(evidenceFinding('candidate-repair-proof-invalid', id, stepId));
       }
+      else if (stepResult.disposition === 'reused' && stepResult.artifactRecord) {
+        if (!options.validateArtifactRecord?.(stepResult.artifactRecord, id, item.artifact)) findings.push(evidenceFinding('artifact-reuse-invalid', id, stepId));
+      }
       else if (stepResult.disposition === 'reused') {
         if (!stepResult.sourceRecord || !options.validateSourceRecord?.(stepResult.sourceRecord, stepId, expectation.runner)) {
           findings.push(evidenceFinding('source-reuse-invalid', id, stepId));
@@ -391,7 +397,9 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any
     }
     if (expectation.requestedNode && item.requestedNode !== expectation.requestedNode) findings.push(evidenceFinding('host-node-request-mismatch', id, item.requestedNode));
     if (expectation.kind === 'host-node') for (const result of item.results) {
-      if (result.disposition === 'reused' && !options.validateCandidateProof?.(result, id)) findings.push(evidenceFinding('candidate-repair-proof-invalid', id, result.id));
+      if (result.disposition === 'reused' && !(result.artifactRecord
+        ? options.validateArtifactRecord?.(result.artifactRecord, id, item.artifact)
+        : options.validateCandidateProof?.(result, id))) findings.push(evidenceFinding('candidate-repair-proof-invalid', id, result.id));
     }
     if (expectation.kind === 'host-node' && (item.results.length !== 1 || item.results[0]?.id !== 'host-node-compatibility')) findings.push(evidenceFinding('host-node-result-missing', id, null));
     if (expectedContext.sourceBinding && (item.verificationSource !== expectedContext.verificationSource
@@ -404,6 +412,12 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any
     }
   }
   for (const id of byId.keys()) if (!expected.has(id)) findings.push(evidenceFinding('unexpected-evidence', id, null));
+  const deferredIds = Array.isArray(options.deferredIds) ? [...new Set(options.deferredIds)] as string[] : [];
+  const validDeferred = deferredIds.every(id => {
+    const descriptor = expected.get(id);
+    return descriptor?.requiresArtifact && !CANDIDATE_CI_SHARDS.some((shard: any) => shard.id === id && shard.producesArtifact);
+  });
+  const awaitingLocal = validDeferred && findings.length > 0 && findings.every(item => item.code === 'evidence-missing' && deferredIds.includes(item.id));
   return {
     schemaVersion: CANDIDATE_CI_AGGREGATE_SCHEMA,
     purpose: expectedContext.purpose,
@@ -418,7 +432,8 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any
       aggregateAttempt: expectedRunAttempt,
       evidenceAttempts: evidenceAttempts.sort((left: any, right: any) => left.id.localeCompare(right.id)),
     },
-    status: findings.length === 0 ? 'passed' : 'failed',
+    status: findings.length === 0 ? 'passed' : awaitingLocal ? 'incomplete' : 'failed',
+    ...(awaitingLocal ? { deferredIds: findings.map(item => item.id).sort(), awaiting: 'local-artifact-verification' } : {}),
     evidenceIds: [...byId.keys()].sort(),
     findings,
     timing: candidateCiTiming([...byId.values()], options.preparations),

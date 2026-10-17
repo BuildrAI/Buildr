@@ -303,7 +303,7 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
     assert.ok(workspaceSuites.some((step: any) => step.id === suite), `Workspace E2E registry must retain ${suite}`);
   }
   assert.ok(candidatePlan.steps.some((step: any) => step.executor.file === 'test/capability-cli.integration.ts'));
-  const systemOwners: any = candidatePlan.steps.filter((step: any) => step.id.startsWith('system-') && step.id !== 'system-windows-platform');
+  const systemOwners: any = candidatePlan.steps.filter((step: any) => step.id.startsWith('system-') && step.platformScope.kind !== 'platform');
   assert.equal(systemOwners.length, 11);
   for (const owner of systemOwners) {
     assert.equal(owner.executor.file, 'test/verification/system.ts');
@@ -372,7 +372,7 @@ test('runtime adapter contract uses one run-unique temporary root with owner cle
 test('Candidate source work is independent and all consumers use the one immutable artifact', () => {
   const document = YAML.parse(read('../../../../.github/workflows/verify.yml'));
   assert.equal(document.jobs['candidate-source'].needs, 'candidate-plan');
-  assert.equal(document.jobs['candidate-bootstrap'].needs, 'candidate-plan');
+  assert.deepEqual(document.jobs['candidate-bootstrap'].needs, ['candidate-plan', 'candidate-source']);
   for (const id of ['candidate-artifact-consumers', 'candidate-host-node']) {
     assert.deepEqual(document.jobs[id].needs, ['candidate-plan', 'candidate-bootstrap']);
     assert.equal(document.jobs[id].steps.filter((step: any) => step.with?.name === 'candidate-package').length, 1);
@@ -380,7 +380,9 @@ test('Candidate source work is independent and all consumers use the one immutab
   for (const id of ['candidate-source', 'candidate-artifact-consumers', 'candidate-host-node']) assert.equal(document.jobs[id].strategy['fail-fast'], false);
   assert.equal(CANDIDATE_CI_SHARDS.some((shard: any) => shard.id === 'release-infrastructure-windows'), false);
   assert.deepEqual(document.jobs['candidate-gate'].needs, ['candidate-plan', 'candidate-bootstrap', 'candidate-source', 'candidate-artifact-consumers', 'candidate-host-node', 'plugin-source-candidate']);
-  assert.equal(document.jobs['candidate-bootstrap'].if, "needs.candidate-plan.outputs.buildr == 'true'");
+  assert.equal(document.jobs['candidate-bootstrap'].if, "always() && needs.candidate-plan.result == 'success' && needs.candidate-plan.outputs.buildr == 'true' && (needs.candidate-source.result == 'success' || needs.candidate-source.result == 'skipped')");
+  for (const input of ['artifact_verification', 'local_runner']) assert.ok(document.on.workflow_dispatch.inputs[input]);
+  assert.equal(document.env.BUILDR_ARTIFACT_VERIFICATION, "${{ github.event_name == 'workflow_dispatch' && inputs.artifact_verification || '' }}");
   for (const [id, key] of [['candidate-artifact-consumers', 'artifact'], ['candidate-host-node', 'host']]) {
     assert.equal(document.jobs[id!].if, `needs.candidate-plan.outputs.buildr == 'true' && needs.candidate-plan.outputs.${key}_required == 'true'`);
   }

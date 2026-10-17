@@ -1,4 +1,4 @@
-// Each Windows repeat must name the actual OS contract and its smallest proof.
+// Each platform-specific check names the actual OS contract and its smallest proof.
 // Selection paths are triggers, never a substitute for complete reuse inputs.
 export const WINDOWS_PLATFORM_BOUNDARIES = Object.freeze([
   { id: 'command-shim', stepId: 'system-windows-platform',
@@ -34,3 +34,31 @@ export const WINDOWS_SOURCE_BOUNDARY_INPUTS = Object.freeze([...new Set([
 ])]);
 
 export const WINDOWS_PLATFORM_REUSE = 'Complete success on actual Windows with matching check inputs and environment; installed checks additionally require identical package bytes. Other OS results never substitute.';
+
+export const MACOS_PLATFORM_BOUNDARIES = Object.freeze([
+  { id: 'descriptor-proof', stepId: 'system-macos-platform',
+    dependency: 'macOS directory descriptors, O_NOFOLLOW and bounded /usr/sbin/lsof kernel identity queries',
+    risk: 'Missing, replaced or untrusted descriptor records expose bytes outside the observed root.',
+    proof: 'test/platform/macos-readonly-boundaries.test.ts',
+    inputs: ['src/infrastructure/filesystem/verified-readonly-file.ts', 'test/helpers/verified-readonly-fixture.ts'] },
+  { id: 'development-shell-entry', stepId: 'system-macos-platform',
+    dependency: 'POSIX executable bits, shell wrappers, symbolic Node links and colon-separated PATH',
+    risk: 'Development wrappers choose another Node, lose arguments or overwrite the installed Buildr entry.',
+    proof: 'test/platform/macos-development-entry.test.ts',
+    inputs: ['tools/development/**', 'bin/**', 'src/modules/connection-skills/infrastructure/program.ts'] },
+  { id: 'development-launcher-shell', stepId: 'system-macos-platform',
+    dependency: 'macOS application shell wrapper and its private helper PATH',
+    risk: 'The generated application wrapper loses its selected Node or invokes another helper.',
+    proof: 'test/platform/macos-launcher-boundaries.test.ts',
+    inputs: ['tools/build/launcher/**', 'tools/development/**', 'src/modules/connection-skills/infrastructure/program.ts'] },
+  { id: 'installed-launcher', stepId: 'release-tarball-smoke',
+    dependency: 'Real macOS npm installation and /usr/bin/open application invocation',
+    risk: 'Installed bytes cannot launch, preserve their binding, reach readiness or shut down cleanly.',
+    proof: 'test/verification/release/release-smoke.ts --platform-launcher',
+    inputs: ['src/modules/installation/**', 'src/web/**', 'test/verification/release/**'] },
+]);
+
+export const MACOS_SOURCE_BOUNDARY_INPUTS = Object.freeze([...new Set([
+  'test/platform/macos-*.test.ts', 'test/verification/platform-boundaries.ts',
+  ...MACOS_PLATFORM_BOUNDARIES.filter(item => item.stepId === 'system-macos-platform').flatMap(item => item.inputs),
+])]);

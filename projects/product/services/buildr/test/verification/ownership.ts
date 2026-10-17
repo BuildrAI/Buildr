@@ -1,4 +1,4 @@
-import { WINDOWS_SOURCE_BOUNDARY_INPUTS } from './platform-boundaries.ts';
+import { MACOS_SOURCE_BOUNDARY_INPUTS, WINDOWS_SOURCE_BOUNDARY_INPUTS } from './platform-boundaries.ts';
 const freezeOwnership: any = (value: any) => Object.freeze({
   inputs: Object.freeze(value.inputs),
   inputExclusions: Object.freeze(value.inputExclusions),
@@ -87,6 +87,10 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "tools/development/run-development-cli"
     ],
     "inputExclusions": [
+      "test/integration/candidate-artifact-reuse.test.ts",
+      "test/integration/verification-reuse.test.ts",
+      "test/integration/verification-source-inputs.test.ts",
+      "test/integration/verification-artifact.test.ts",
       "test/integration/application-payload-release.test.ts",
       "test/integration/npm-launcher.test.ts",
       "test/integration/core-diagnostics-and-package.test.ts",
@@ -167,6 +171,10 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration-verification": {
     "inputs": [
+      "test/integration/candidate-artifact-reuse.test.ts",
+      "test/integration/verification-reuse.test.ts",
+      "test/integration/verification-source-inputs.test.ts",
+      "test/integration/verification-artifact.test.ts",
       "test/integration/verification-input-boundaries.test.ts",
       "test/verification/verification-input-discovery.ts",
       "test/verification/platform-boundaries.ts",
@@ -641,6 +649,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     ],
     "inputExclusions": []
   },
+  "system-macos-platform": { "inputs": MACOS_SOURCE_BOUNDARY_INPUTS, "inputExclusions": [] },
   "system-windows-platform": { "inputs": WINDOWS_SOURCE_BOUNDARY_INPUTS, "inputExclusions": [] },
   "cli-architecture": {
     "inputs": [

@@ -22,7 +22,7 @@ const repositoryRoot = path.resolve(serviceRoot, '../../../..');
 export const RELEASE_CHECKS = Object.freeze([
   { id: 'artifact-browser-core', phase: 'candidate', evidence: ['artifact-browser-macos'], operation: 'browser-core' },
   { id: 'package-contract', phase: 'candidate', evidence: ['core-package-runtime-release-macos'], operation: 'metadata' },
-  { id: 'platform-launcher', phase: 'candidate', evidence: ['core-package-runtime-release-macos', 'runtime-windows'], operation: 'platform' },
+  { id: 'platform-launcher', phase: 'candidate', evidence: ['runtime-macos', 'runtime-windows'], operation: 'platform' },
   { id: 'host-node', phase: 'candidate', evidence: ['host-minimum-macos', 'host-current-macos', 'host-minimum-windows', 'host-current-windows'], operation: 'host' },
   { id: 'publisher-cli', phase: 'candidate', evidence: ['host-minimum-macos'], operation: 'publisher' },
   { id: 'release-lifecycle', phase: 'candidate', evidence: ['release-infrastructure-macos'], operation: 'lifecycle' },
@@ -50,9 +50,11 @@ export const RELEASE_CONSUMER_COMMANDS = Object.freeze({
 
 // Kept only for a bound repair of an already-frozen transaction. These are
 // historical platform recipes, never new-scope results or current Linux support.
-const previousPlatformReleaseChecks = RELEASE_CHECKS.map(check => check.id === 'release-lifecycle'
+const previousMixedPackageReleaseChecks = RELEASE_CHECKS.map(check => check.id === 'platform-launcher'
+  ? { ...check, evidence: ['core-package-runtime-release-macos', 'runtime-windows'] } : check);
+const previousPlatformReleaseChecks = previousMixedPackageReleaseChecks.map(check => check.id === 'release-lifecycle'
   ? { ...check, evidence: ['release-infrastructure-macos', 'release-infrastructure-windows'] } : check);
-const historicalReleaseChecks = RELEASE_CHECKS.map(check => check.id === 'host-node'
+const historicalReleaseChecks = previousMixedPackageReleaseChecks.map(check => check.id === 'host-node'
   ? { ...check, evidence: ['host-minimum-macos', 'host-current-macos', 'host-minimum-windows', 'host-current-windows', 'host-minimum-linux', 'host-current-linux'] }
   : check.id === 'publisher-cli' ? { ...check, evidence: ['host-minimum-linux'] }
   : check.id === 'release-lifecycle' ? { ...check, evidence: ['release-infrastructure-macos', 'release-infrastructure-windows'] } : check);
@@ -81,7 +83,7 @@ export function assertReleaseConsumptionCoverage(aggregate: any, expected: { sou
   let checks: readonly any[] = RELEASE_CHECKS;
   if (aggregate.consumptionIdentity !== releaseConsumptionIdentity()) {
     const recovery = recoveryContext && validateReleaseExecutorRecovery(recoveryContext);
-    const historical = [previousPlatformReleaseChecks, historicalReleaseChecks].find(recipe => aggregate.consumptionIdentity === consumptionIdentity(recipe));
+    const historical = [previousMixedPackageReleaseChecks, previousPlatformReleaseChecks, historicalReleaseChecks].find(recipe => aggregate.consumptionIdentity === consumptionIdentity(recipe));
     if (!recovery || recoveryContext.release?.sourceCommit !== expected.sourceCommit
       || recoveryContext.candidate?.sourceCommit !== expected.sourceCommit
       || recoveryContext.artifact?.sha256 !== artifact?.sha256

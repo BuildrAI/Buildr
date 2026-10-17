@@ -2,12 +2,12 @@ import crypto from 'node:crypto';
 import { gzipSync, gunzipSync } from 'node:zlib';
 
 export const CANDIDATE_SOURCE_IMPORT_ENV = 'BUILDR_SOURCE_VERIFICATION';
-// Source shards declare an OS responsibility, not an untested CPU target.
-// The original CPU remains visible. Installed-package/Host Node checks run on
-// their actual targets and cannot use this source-only policy.
+// Common checks have one coverage owner across declared executable systems.
+// Platform checks require their real OS. Original OS/CPU remain visible;
+// installed-package/Host Node checks cannot use this source-only policy.
 export const CANDIDATE_SOURCE_REUSE_POLICY = Object.freeze({
-  schemaVersion: 'buildr.candidate-source-reuse-policy/v1',
-  platform: 'same-declared-os', architecture: 'retain-original', artifactResults: 'never',
+  schemaVersion: 'buildr.candidate-source-reuse-policy/v2',
+  platform: 'explicit-common-or-same-declared-os', architecture: 'retain-original', artifactResults: 'never',
 });
 export const MAX_SOURCE_IMPORT_CHARACTERS = 56_000;
 const MAX_DECODED_BYTES = 2 * 1024 * 1024;

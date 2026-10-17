@@ -7,7 +7,7 @@ testing:
       services:
         - buildr
         - buildr-web
-    purpose: 使用候选登记完成当前平台适用源码检查并复用有效结果；macOS 包含完整通用主证明，Windows 仅补真实系统差异，不证明最终发布包
+    purpose: 通用产品逻辑只有一套，默认选择通用检查和本机系统源码节点；另一系统只补真实系统差异，不证明最终发布包
     sourcePaths:
       - services/buildr/src/**
       - services/buildr/resources/**
@@ -28,6 +28,8 @@ testing:
       - 普通开发继续选择受影响检查；准备发布时按当前平台候选源码登记补齐有效结果
       - 按实际内容、配方、依赖和原环境复用；最终包和未覆盖平台仍单独验证
       - 传入 --json 只看计划；--force 强制重跑；--output 导出可搬运源码结果
+      - --scope common 只选通用逻辑；--scope platform 只选实际系统机制，不附带另一套功能检查
+      - Windows 严格来源文件读取尚有产品限制；真实功能失败不得跳过或冒充另一系统已验，按详细验证说明报告
     requirements:
       - 稳定版 Node >=24.15.0 与相邻 npm，通过项目 wrapper 执行
       - git
@@ -63,6 +65,55 @@ testing:
       - Windows；其他系统执行仅证明当地可适用部分，命令 shim 用例跳过必须如实报告
       - 稳定版 Node >=24.15.0 与相邻 npm
       - git
+  - id: buildr-macos-boundaries
+    title: Buildr macOS 真实系统差异
+    scope:
+      project: product
+      services:
+        - buildr
+    purpose: 验证目录描述符、系统文件句柄、开发壳入口和应用壳入口的真实系统机制；不重复产品逻辑或通用功能
+    sourcePaths:
+      - services/buildr/src/infrastructure/filesystem/verified-readonly-file.ts
+      - services/buildr/tools/development/**
+      - services/buildr/src/modules/installation/**
+    testRoots:
+      - services/buildr/test/platform/macos-*.test.ts
+    full:
+      kind: command
+      argv: [tools/development/run-development-npm, run, test:source, --, --scope, platform]
+      cwd: services/buildr
+    selection:
+      - 仅在真实 macOS 执行 system-macos-platform；只补此节点，不重跑通用检查
+      - 最终原包的应用启动入口由 runtime-macos 独立证明
+    requirements:
+      - macOS
+      - 稳定版 Node >=24.15.0 与相邻 npm
+      - git
+  - id: buildr-artifact
+    title: Buildr 通用原包与系统验包
+    scope:
+      project: product
+      services:
+        - buildr
+        - buildr-web
+    purpose: 对同一最终原包执行一次通用检查，并分别证明两个系统的原生启动及最低和当前 Node；本入口不制包、不公开
+    sourcePaths:
+      - services/buildr/**
+      - services/buildr-web/**
+    testRoots:
+      - services/buildr/test/verification/release/**
+      - services/buildr/test/verification/host-node/**
+    full:
+      kind: agent
+      instructions:
+        - 从发布入口取已核验来源和摘要的准确原包目录，用 tools/development/run-development-node 调用 test/verification/artifact.ts，显式提供 --artifact-dir 和 --output
+        - --scope common 只执行通用原包检查一次；--scope platform 只执行当前系统的 runtime-macos 或 runtime-windows 及当前 Node
+        - 最低 Node 使用实际 24.15.0 程序运行 --scope platform --node-tuple minimum，仅补宿主组合，不重复通用检查与启动器
+        - 有效结果保留原实际系统和程序；使用同一 prepare 的 --artifact-verification 导入，缺项不冒充完整通过
+    requirements:
+      - 明确冻结源码、同一原包及隔离检查目录
+      - 真实 macOS 或 Windows；另一个系统的证明不能由当前系统结果替代
+      - 实际最低 Node 24.15.0 与当前稳定版 Node >=24.15.0 分别执行
   - id: buildr-fast
     title: Buildr 后端低成本完整回归
     scope:

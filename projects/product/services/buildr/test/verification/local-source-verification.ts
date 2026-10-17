@@ -29,7 +29,8 @@ export async function prepareLocalSourceVerification(options: {
     ? bundle.records.filter((record: any) => isCurrent(record) && validate(record, { productRoot, projectRoot, snapshot, stepId: record.identity.stepId })) : [] };
   const required = (buildrRequired ? plan.steps : []).filter((step: any) => Boolean(step.reuse));
   const missingStepIds = required.filter((step: any) => !bundle.records.some((record: any) => record.identity.stepId === step.id
-    && validate(record, { productRoot, projectRoot, snapshot, stepId: step.id, runner: plan.runner }))).map((step: any) => step.id);
+    && validate(record, { productRoot, projectRoot, snapshot, stepId: step.id,
+      ...(step.platformScope?.kind === 'common' ? {} : { runner: plan.runner }) }))).map((step: any) => step.id);
   if (pluginRequired) {
     const collector = dependencies.collectPluginBundle ?? (await import(new URL('../../../dsh-plugin/tools/verify-all.ts', import.meta.url).href)).collectPluginSourceVerificationBundle;
     const plugin = await collector({ repo: options.repo, env: options.env, imports: providedBundle });

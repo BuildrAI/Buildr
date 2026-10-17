@@ -4,6 +4,7 @@ import {
   CANDIDATE_CI_PLATFORM_REPEATS,
   CANDIDATE_CI_SHARDS,
   VERIFICATION_CONCURRENCY,
+  VERIFICATION_PLATFORMS,
   VERIFICATION_CONTEXT_KEYS,
   VERIFICATION_DAILY_CORE_EXCLUSIONS,
   VERIFICATION_ENVIRONMENT_FOOTPRINTS,
@@ -241,7 +242,12 @@ export function validateCandidateCiCoverage(
       if (!byId.has(id)) findings.push({ step: shard.id, code: 'candidate_shard_unknown_step', value: id });
       else if (!candidateIds.has(id)) findings.push({ step: shard.id, code: 'candidate_shard_non_candidate_step', value: id });
       owners.set(id, [...(owners.get(id) ?? []), shard.id]);
-      if (shard.runner === 'windows' && !(byId.get(id)?.platformEvidence?.length > 0)) findings.push({ step: id, code: 'candidate_windows_boundary_undeclared' });
+      const step = byId.get(id);
+      if (shard.platformScope?.kind === 'platform') {
+        if (!(step?.platformEvidence?.length > 0)) findings.push({ step: id, code: 'candidate_platform_boundary_undeclared' });
+        if (step?.platformScope?.kind !== 'platform' || !step.platformScope.runners.includes(shard.runner)
+          || !shard.platformScope.runners.includes(shard.runner)) findings.push({ step: id, code: 'candidate_platform_runner_mismatch' });
+      } else if (step?.platformScope?.kind === 'platform') findings.push({ step: id, code: 'candidate_platform_check_in_common_shard' });
       if (shard.requiresArtifact && !byId.get(id)?.executor?.consumesArtifact) findings.push({ step: id, code: 'candidate_source_in_artifact_shard' });
       if (byId.get(id)?.executor?.consumesArtifact && !shard.requiresArtifact) {
         findings.push({ step: shard.id, code: 'candidate_shard_artifact_requirement_missing', value: id });
@@ -342,6 +348,16 @@ export function validateVerificationRegistry(steps: any = verificationSteps): an
         findings.push({ step: item.id, code: 'unknown_development_runner', value: runner });
       }
       if (item.developmentRunners.length > 0 && item.selection !== 'explicit-only') findings.push({ step: item.id, code: 'development_runner_owner_not_explicit' });
+    }
+    if (item.platformScope != null) {
+      const scope = item.platformScope;
+      if (!['common', 'platform'].includes(scope.kind) || !Array.isArray(scope.runners)
+        || new Set(scope.runners).size !== scope.runners.length
+        || scope.runners.some((runner: string) => !VERIFICATION_PLATFORMS.includes(runner))
+        || (scope.kind === 'common' ? scope.runners.length !== 0 : scope.runners.length === 0)) {
+        findings.push({ step: item.id, code: 'invalid_platform_scope' });
+      }
+      if (scope.kind === 'platform' && !(item.platformEvidence?.length > 0)) findings.push({ step: item.id, code: 'platform_scope_without_mechanism' });
     }
     if (item.inputExclusions != null && !Array.isArray(item.inputExclusions)) findings.push({ step: item.id, code: 'invalid_input_exclusions' });
     else for (const pattern of item.inputExclusions ?? []) {
@@ -854,6 +870,32 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
     productionOwnerGaps: productionOwnerAudit.gaps,
     steps: Object.freeze(orderedIds.map((id: any) => Object.freeze({ ...byId.get(id), reasons: Object.freeze(reasons.get(id) ?? []) }))),
   });
+}
+
+function createPlatformVerificationPlan(request: any, artifact: boolean, steps: any): any {
+  const runner = request.runner;
+  if (!VERIFICATION_PLATFORMS.includes(runner)) throw new Error(`Unknown verification platform: ${runner}`);
+  const stepIds = steps.filter((step: any) => step.profiles.includes('candidate')
+    && step.platformScope?.kind === 'platform' && step.platformScope.runners.includes(runner)
+    && Boolean(step.executor?.consumesArtifact) === artifact).map((step: any) => step.id);
+  const selected = createVerificationPlan({ stepIds }, steps);
+  const owned = new Set(stepIds);
+  return Object.freeze({
+    ...selected, source: artifact ? 'platform-artifact' : 'platform-source', runner,
+    requiresArtifact: artifact, applicable: stepIds.length > 0,
+    stepIds: Object.freeze(stepIds), admissionStepIds: Object.freeze([]),
+    steps: Object.freeze(selected.steps.filter((step: any) => owned.has(step.id)).map((step: any) => Object.freeze({
+      ...step, dependsOn: Object.freeze(step.dependsOn.filter((id: string) => owned.has(id))),
+    }))),
+  });
+}
+
+export function createPlatformSourceVerificationPlan(request: any, steps: any = verificationSteps): any {
+  return createPlatformVerificationPlan(request, false, steps);
+}
+
+export function createPlatformArtifactVerificationPlan(request: any, steps: any = verificationSteps): any {
+  return createPlatformVerificationPlan(request, true, steps);
 }
 
 export function createDevelopmentPlatformPlan(request: any = {}, steps: any = verificationSteps): any  {

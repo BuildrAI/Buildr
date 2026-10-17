@@ -296,8 +296,10 @@ export function createVerificationReuseStore(options: VerificationReuseOptions &
       let local: any = null;
       try { if (available) local = JSON.parse(fs.readFileSync(fileFor(identity.key), 'utf8')); } catch { /* Cache miss. */ }
       if (local && acceptsMarker(local) && validateVerificationReuseRecord(local, { ...options, snapshot, step, runner: snapshot.environment.platform, arch: snapshot.environment.arch, environment: snapshot.environment })) return local;
+      const portableCommon = options.portableImports && step.platformScope?.kind === 'common';
       const imported = (options.imports ?? []).flatMap(bundle => bundle.records).find(record => acceptsMarker(record)
-        && validateVerificationReuseRecord(record, { ...options, snapshot, step, runner: snapshot.environment.platform,
+        && (!portableCommon || ['darwin', 'win32'].includes(record.environment?.platform))
+        && validateVerificationReuseRecord(record, { ...options, snapshot, step, ...(portableCommon ? { runner: undefined } : { runner: snapshot.environment.platform }),
           ...(options.portableImports ? {} : { arch: snapshot.environment.arch, environment: snapshot.environment }) })) ?? null;
       if (imported) return imported;
       if (!historicalRecords) {

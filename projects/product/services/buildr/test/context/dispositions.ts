@@ -61,6 +61,7 @@ const entries: any[] = [
     'system-runtime-recovery',
     'system-app-process',
     'system-windows-platform',
+    'system-macos-platform',
     'concurrent-task-acceptance',
     'openspec-convergence-recovery',
     'runtime-adapter-parity',

@@ -1,20 +1,30 @@
 import { createCandidateSourceBinding } from './candidate-source-binding.ts';
 import { releaseDispatchRejected } from './release-failure.ts';
 import { isDeepStrictEqual } from 'node:util';
+import { createHash } from 'node:crypto';
+
+export function assertCandidateDispatchBudget(fields: string[]): void {
+  const inputs = Object.fromEntries(fields.map(field => { const split = field.indexOf('='); return [field.slice(0, split), field.slice(split + 1)]; }));
+  if (Buffer.byteLength(JSON.stringify({ ref: 'reserved-frozen-candidate-reference', inputs })) > 60_000) throw new Error('Combined Candidate inputs exceed the dispatch byte budget; no remote request was sent.');
+}
 
 /** Repairs checks on the original workflow/carrier. It neither changes the
  * frozen product selection nor creates another package or public effect. */
 export function continueCandidateRepair(options: {
-  repo: string; candidate: any; verificationSource: string; fields: string[]; sourceTransport?: string;
+  repo: string; candidate: any; verificationSource: string; fields: string[]; sourceTransport?: string; artifactTransport?: string;
 }, scope: { gh: (args: string[]) => string; git: (args: string[]) => string; save: () => void; ensureCarrier: () => void },
 dependencies: any = {}): any {
   const { candidate } = options;
   if (!candidate?.runId || !candidate.sourceCommit || !candidate.branch) throw new Error('Candidate repair requires an original completed candidate.');
   const source = scope.git(['rev-parse', '--verify', options.verificationSource + '^{commit}']).trim();
-  scope.git(['merge-base', '--is-ancestor', source, 'origin/dev']);
+  // Completing local package evidence on the original frozen checkout does
+  // not introduce executable code from another source.
+  if (source !== candidate.sourceCommit) scope.git(['merge-base', '--is-ancestor', source, 'origin/dev']);
   const binding = (dependencies.bind ?? createCandidateSourceBinding)(options.repo, candidate.sourceCommit, source);
   let pointer = candidate.repair;
-  if (pointer && pointer.verificationSource !== source) {
+  const hasImports = options.sourceTransport !== undefined || options.artifactTransport !== undefined;
+  const inputIdentity = hasImports ? createHash('sha256').update(JSON.stringify({ source: options.sourceTransport ?? null, artifact: options.artifactTransport ?? null })).digest('hex') : pointer?.inputIdentity ?? null;
+  if (pointer && (pointer.verificationSource !== source || hasImports && pointer.inputIdentity !== inputIdentity)) {
     if (!pointer.runId) throw new Error('Original candidate repair request is still unconfirmed.');
     const previous = JSON.parse(scope.gh(['api', 'repos/BuildrAI/Buildr/actions/runs/' + pointer.runId]));
     if (previous.status !== 'completed') return { status: 'candidate-running', run: previous, effects: [], nextActions: ['等待原补验运行结束；不替换其输入或重复派发。'] };
@@ -29,7 +39,7 @@ dependencies: any = {}): any {
     const original = JSON.parse(scope.gh(['api', 'repos/BuildrAI/Buildr/actions/runs/' + candidate.runId]));
     if (original.status !== 'completed' || original.head_sha !== candidate.sourceCommit || original.repository?.full_name !== 'BuildrAI/Buildr'
       || original.event !== 'workflow_dispatch' || original.path?.split('@')[0] !== '.github/workflows/verify.yml') throw new Error('Candidate repair requires the completed original product run.');
-    pointer = { originalRunId: candidate.runId, verificationSource: source, sourceBinding: binding, requested: false, runId: null };
+    pointer = { originalRunId: candidate.runId, verificationSource: source, sourceBinding: binding, inputIdentity, requested: false, runId: null };
     candidate.repair = pointer;
     scope.save();
   }
@@ -47,13 +57,15 @@ dependencies: any = {}): any {
   let found = find();
   if (!found && pointer.rejected) pointer.requested = false;
   if (!found && !pointer.requested) {
+    const fields = [...options.fields, 'purpose=candidate', 'repair_candidate_run_id=' + pointer.originalRunId,
+      'product_source=' + candidate.sourceCommit, 'verification_source=' + source,
+      ...(options.sourceTransport ? ['source_verification=' + options.sourceTransport] : []),
+      ...(options.artifactTransport ? ['artifact_verification=' + options.artifactTransport] : [])];
+    assertCandidateDispatchBudget(fields);
     scope.ensureCarrier();
     pointer.requested = true; pointer.rejected = false; scope.save();
     const effect = { type: 'candidate-repair-dispatched', sourceCommit: candidate.sourceCommit, verificationSource: source, state: 'unknown' };
     effects.push(effect);
-    const fields = [...options.fields, 'purpose=candidate', 'repair_candidate_run_id=' + pointer.originalRunId,
-      'product_source=' + candidate.sourceCommit, 'verification_source=' + source,
-      ...(options.sourceTransport ? ['source_verification=' + options.sourceTransport] : [])];
     try {
       scope.gh(['workflow', 'run', 'verify.yml', '--repo', 'BuildrAI/Buildr', '--ref', candidate.branch, ...fields.flatMap(field => ['-f', field])]);
       effect.state = 'confirmed';

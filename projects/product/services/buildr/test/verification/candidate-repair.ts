@@ -3,6 +3,8 @@ import { isDeepStrictEqual } from 'node:util';
 import { createCandidateSourceBinding, createCandidateCheckInputReader } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
 import { CANDIDATE_CI_EVIDENCE_SCHEMA } from './release/candidate-ci-contract.ts';
 import { CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES, verificationSteps, resolveVerificationExecutionProfile } from './registry.ts';
+import { candidateDependencyInputsIdentity, validateCandidateArtifactEvidence, validCandidateExecutionEnvironment } from './candidate-artifact-reuse.ts';
+import path from 'node:path';
 
 export const CANDIDATE_REPAIR_SCHEMA = 'buildr.candidate-repair-plan/v1';
 const digest = (value: unknown) => 'sha256-' + crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -37,7 +39,8 @@ export function validateCandidateRepairRun(run: any, repository: string, expecte
 export function createCandidateRepairPlan(input: {
   repo: string; repository: string; originalRun: any; artifact: any; verificationSource: string;
   evidence: any[]; registryIdentity: string;
-}, options: { descriptors?: any[]; inputIdentity?: (commit: string, step: any) => string } = {}): any {
+}, options: { descriptors?: any[]; inputIdentity?: (commit: string, step: any) => string;
+  artifactEvidence?: any[]; sourceRecords?: any[]; validateSourceRecord?: (record: any, stepId: string, runner: string) => boolean } = {}): any {
   validateCandidateRepairRun(input.originalRun, input.repository, input.originalRun.id);
   const productSource = input.artifact?.sourceCommit;
   if (input.originalRun.head_sha !== productSource) throw new Error('Candidate repair must preserve its original workflow source.');
@@ -63,12 +66,20 @@ export function createCandidateRepairPlan(input: {
   const descriptors = options.descriptors ?? candidateProofDescriptors();
   if ([...byId.keys()].some(id => !descriptors.some(descriptor => descriptor.id === id))) throw new Error('Candidate repair contains an undeclared evidence owner.');
   const checks = descriptors.map(descriptor => {
-    const original = byId.get(descriptor.id);
-    const platformMatches = original?.kind === descriptor.kind && original?.runner?.os === descriptor.runner
+    const checkInputs = Object.fromEntries(descriptor.steps.map((step: any) => [step.id, inputs(input.verificationSource, candidateProofDefinition(step))]));
+    const imported = options.artifactEvidence?.find(item => validateCandidateArtifactEvidence(item, descriptor,
+      { sourceCommit: productSource, sourceTree: binding.productTree }, checkInputs, input.artifact,
+      { dependencyInputsIdentity: candidateDependencyInputsIdentity(path.join(input.repo, 'projects/product/services/buildr'), input.verificationSource,
+        descriptor.preparation ?? (descriptor.kind === 'host-node' ? descriptor.id === 'host-minimum-macos' ? 'publisher' : 'host' : 'base')) }));
+    const original = imported ?? byId.get(descriptor.id);
+    const platformMatches = original?.kind === descriptor.kind && (descriptor.platformScope?.kind === 'common'
+      ? ['macos', 'windows'].includes(original?.runner?.os) : original?.runner?.os === descriptor.runner)
       && (!descriptor.requestedNode || original.requestedNode === descriptor.requestedNode);
     const packageMatches = !descriptor.requiresArtifact && !descriptor.producesArtifact || sameArtifact(original?.artifact, input.artifact);
     const steps = descriptor.steps.map((step: any) => {
       const currentIdentity = inputs(input.verificationSource, candidateProofDefinition(step));
+      const localSource = !descriptor.requiresArtifact && !descriptor.producesArtifact
+        ? options.sourceRecords?.find(record => record.identity?.stepId === step.id && options.validateSourceRecord?.(record, step.id, descriptor.runner)) : null;
       const result = original?.results?.find((value: any) => value.id === step.id);
       const priorIdentity = original?.checkInputs?.[step.id] ?? null;
       const definition = candidateProofDefinition(step);
@@ -80,26 +91,36 @@ export function createCandidateRepairPlan(input: {
       const producer = descriptor.producesArtifact && step.id === 'candidate-tarball';
       const complete = original?.status === 'passed' || original?.cleanupClean === true;
       const freshGit = Boolean(step.reuse?.git);
-      const reusable = descriptor.kind !== 'host-node' && !freshGit && platformMatches && packageMatches && complete && goodResult(result)
+      const actualHost = descriptor.kind !== 'host-node' || Boolean(validCandidateExecutionEnvironment(original, original?.checkInputs)
+        && original.executionEnvironment.preparation === (descriptor.id === 'host-minimum-macos' ? 'publisher' : 'host')
+        && original.executionEnvironment.dependencyInputsIdentity === candidateDependencyInputsIdentity(path.join(input.repo, 'projects/product/services/buildr'), input.verificationSource,
+          descriptor.id === 'host-minimum-macos' ? 'publisher' : 'host')
+        && (descriptor.expectation === 'minimum' ? original.runner.nodeVersion === '24.15.0' : /^24\.\d+\.\d+$/u.test(original.runner.nodeVersion)));
+      const reusable = Boolean(localSource) || actualHost && !freshGit && platformMatches && packageMatches && complete && goodResult(result)
         && (producer || matchingInputs);
-      const reason = descriptor.kind === 'host-node' ? 'actual-host-environment-required' : freshGit ? 'current-git-state-required' : !original ? 'missing-evidence' : !platformMatches ? 'platform-or-tuple-changed'
+      const reason = localSource ? 'matching-local-source-proof' : !actualHost ? 'actual-host-environment-required' : freshGit ? 'current-git-state-required' : !original ? 'missing-evidence' : !platformMatches ? 'platform-or-tuple-changed'
         : !packageMatches ? 'artifact-changed' : !complete || !goodResult(result) ? 'prior-check-not-passed'
           : !producer && !matchingInputs ? 'check-inputs-changed' : producer ? 'original-package-preserved' : 'matching-complete-proof';
-      const originalResult = result?.candidateProof?.originalResult ?? (result ? { ...result, durationMs: result.reusedFrom?.durationMs ?? result.durationMs } : null);
-      const origin = result?.candidateProof?.origin ?? (result?.sourceRecord ? { ...result.sourceRecord.origin, runner: result.sourceRecord.environment }
-        : { runId: String(input.originalRun.id), runAttempt: Number(original?.workflow.runAttempt),
+      const originalResult = localSource ? { ...localSource.result, sourceRecord: localSource } : result?.candidateProof?.originalResult ?? (result ? { ...result, durationMs: result.reusedFrom?.durationMs ?? result.durationMs } : null);
+      const origin = localSource ? { ...localSource.origin, runner: localSource.environment } : result?.candidateProof?.origin ?? (result?.sourceRecord ? { ...result.sourceRecord.origin, runner: result.sourceRecord.environment }
+        : { runId: String(input.originalRun.id), runAttempt: Number(original?.workflow?.runAttempt),
           verificationSource: original?.verificationSource ?? input.originalRun.head_sha, runner: original?.runner,
           startedAt: original?.startedAt, finishedAt: original?.finishedAt });
       return { id: step.id, disposition: reusable ? 'reuse' : 'execute', reason, inputIdentity: currentIdentity,
         ...(reusable ? { proof: { schemaVersion: 'buildr.candidate-check-proof/v1', id: step.id, evidenceId: descriptor.id,
-          origin, adoptedFrom: { runId: String(input.originalRun.id), runAttempt: Number(original.workflow.runAttempt) },
-          sourceBindingIdentity: binding.identity, artifact: original.artifact, inputIdentity: currentIdentity,
+          origin: imported ? { kind: original.workflow ? 'ci' : 'local', workflow: original.workflow, runner: original.runner,
+            verificationSource: original.verificationSource ?? original.sourceCommit, startedAt: original.startedAt, finishedAt: original.finishedAt } : origin,
+          adoptedFrom: imported ? { kind: 'imported-artifact' } : { runId: String(input.originalRun.id), runAttempt: Number(original?.workflow?.runAttempt ?? input.originalRun.run_attempt) },
+          sourceBindingIdentity: binding.identity, artifact: original?.artifact ?? null, inputIdentity: currentIdentity,
           originalResult } } : {}) };
     });
     if (descriptor.producesArtifact && steps.some((step: any) => step.disposition !== 'reuse')) throw new Error('Candidate repair requires an already verified original package; it never rebuilds.');
     return { id: descriptor.id, kind: descriptor.kind, runner: descriptor.runner, requestedNode: descriptor.requestedNode ?? null,
       requiresArtifact: Boolean(descriptor.requiresArtifact || descriptor.producesArtifact), producesArtifact: Boolean(descriptor.producesArtifact),
-      steps, original };
+      steps, original: original ?? (steps.every((step: any) => step.disposition === 'reuse') ? {
+        runner: { platform: steps[0].proof.origin.runner.platform, os: steps[0].proof.origin.runner.platform === 'darwin' ? 'macos' : 'windows',
+          arch: steps[0].proof.origin.runner.arch, nodeVersion: steps[0].proof.origin.runner.nodeVersion },
+      } : null) };
   });
   const value = { schemaVersion: CANDIDATE_REPAIR_SCHEMA, repository: input.repository, originalRun: input.originalRun,
     sourceBinding: binding, artifact: input.artifact, registryIdentity: input.registryIdentity, checks };

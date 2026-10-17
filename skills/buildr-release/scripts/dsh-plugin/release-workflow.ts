@@ -8,6 +8,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { assertPluginSourceAggregate, releaseCandidateRequirements } from '../../../../projects/product/services/buildr/test/verification/release/verify-pr-candidate.ts';
 import { assertReleaseExecutorSource } from '../release-executor-recovery.ts';
 import { containsCredentialMaterial } from '../release-authority.ts';
+import { assertReleaseConsumptionCoverage } from '../../../../projects/product/services/buildr/test/verification/release/release-consumption.ts';
 import { assertBoundVerification } from '../../../../projects/product/services/dsh-plugin/tools/full-verification.ts';
 import { parseReleaseCandidate, readReleaseCandidate, sourceSdkIdentityFromFiles, SOURCE_SDK_MANIFEST, PLUGIN_SERVICE_PATH, type ReleaseCandidate } from './release-candidate.ts';
 import { assertPluginCandidateAdoption, createPluginCandidateAdoption, PLUGIN_CANDIDATE_ADOPTION_FILE, type PluginCandidateAdoption, type PluginCandidateMain } from './candidate-adoption.ts';
@@ -22,7 +23,7 @@ export interface BuildrPeerCandidateSource { mainCommit: string; candidateCommit
 type Run = { id: number; workflow_id: number; path: string; event: string; head_branch: string; head_sha: string; status: string; conclusion: string | null; display_title: string; run_attempt: number; run_number: number; repository: { full_name: string } };
 type Job = { name: string; status: string; conclusion: string | null; steps?: Array<{ name: string; status: string; conclusion: string | null }> };
 export type GithubRead = ((path: string) => Promise<any>) & {
-  readArtifactJson?: (runId: number, artifactName: string, filename: 'candidate.json' | 'publication.json') => Promise<unknown>;
+  readArtifactJson?: (runId: number, artifactName: string, filename: 'candidate.json' | 'publication.json' | 'candidate-ci-aggregate.json') => Promise<unknown>;
 };
 // The fixed SDK patch exceeds execFileSync's default 1 MiB output limit.
 function readSourceGit(args: string[]): string {
@@ -120,6 +121,10 @@ export function validateBuildrPeerCandidateRun(run: Run, input: BuildrPeerInput,
   // The existing protected PR merge preserves the frozen selection as its second parent.
   if (source.mainParents.length !== 2 || source.mainParents[1] !== source.candidateCommit || source.mainTree !== source.candidateTree) fail('buildr-peer-protected-merge-mismatch');
 }
+export function validateBuildrPeerCandidateAggregate(aggregate: any, manifest: any, run: Pick<Run, 'id' | 'run_attempt'>, sourceTree: string): void {
+  if (String(aggregate?.workflow?.runId) !== String(run.id) || aggregate.workflow.aggregateAttempt !== run.run_attempt) fail('buildr-peer-candidate-aggregate-run-mismatch');
+  assertReleaseConsumptionCoverage(aggregate, { sourceCommit: manifest.sourceCommit, sourceTree }, manifest);
+}
 export async function verifyBuildrPeerCandidate(input: WorkflowInput, mainCommit: string, manifest: Record<string, any>, api: GithubRead): Promise<void> {
   const peer = input.buildrPeer;
   if (input.operation !== 'prepare' || peer?.origin !== 'candidate' || !peer.candidateRunId) fail('buildr-candidate-peer-required');
@@ -134,6 +139,9 @@ export async function verifyBuildrPeerCandidate(input: WorkflowInput, mainCommit
   if (parents[0] !== mainCommit) fail('buildr-peer-source-identity');
   validateBuildrPeerCandidateRun(run, peer, { mainCommit, candidateCommit: manifest.sourceCommit, mainParents: parents.slice(1),
     mainTree: git('rev-parse', `${mainCommit}^{tree}`), candidateTree: git('rev-parse', `${manifest.sourceCommit}^{tree}`), workflowId: workflow.id });
+  if (!api.readArtifactJson) fail('buildr-peer-candidate-aggregate-unavailable');
+  const aggregate = await api.readArtifactJson(run.id, 'candidate-aggregate', 'candidate-ci-aggregate.json');
+  validateBuildrPeerCandidateAggregate(aggregate, manifest, run, git('rev-parse', `${manifest.sourceCommit}^{tree}`));
 }
 function ownRun(run: Run): void {
   if (!run || run.repository?.full_name !== REPOSITORY || run.path !== WORKFLOW || run.event !== 'workflow_dispatch' || !Number.isSafeInteger(run.id) || !Number.isSafeInteger(run.workflow_id) || !Number.isSafeInteger(run.run_number) || !Number.isSafeInteger(run.run_attempt) || run.run_attempt < 1 || run.run_attempt > 100) fail('remote-workflow-identity');
@@ -244,8 +252,9 @@ export function githubReader(token: string, fetchImpl: typeof fetch = fetch): Gi
     return JSON.parse(body);
   };
   reader.readArtifactJson = async (runId, artifactName, filename) => {
-    if (!Number.isSafeInteger(runId) || runId < 1 || !/^plugin-(?:publication|candidate)-v[0-9A-Za-z.-]+$/u.test(artifactName)
-      || !['candidate.json', 'publication.json'].includes(filename)) fail('github-artifact-input');
+    const pluginDocument = /^plugin-(?:publication|candidate)-v[0-9A-Za-z.-]+$/u.test(artifactName) && ['candidate.json', 'publication.json'].includes(filename);
+    const buildrAggregate = artifactName === 'candidate-aggregate' && filename === 'candidate-ci-aggregate.json';
+    if (!Number.isSafeInteger(runId) || runId < 1 || !(pluginDocument || buildrAggregate)) fail('github-artifact-input');
     // Same owned, bounded gh artifact-download pattern used by the hosted plugin owner.
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'buildr-plugin-history-')));
     try {

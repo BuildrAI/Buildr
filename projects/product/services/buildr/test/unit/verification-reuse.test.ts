@@ -84,6 +84,7 @@ test('portable checks use the recorded runner and stable supported Node family, 
     assert.equal(validateVerificationReuseRecord({ ...value, environment: { ...value.environment, nodeVersion } }, { productRoot: '/unused', step, snapshot }), false, nodeVersion);
   }
 });
+
 test('incomplete atomic exit, cleanup drift and unbounded portable fields cannot become a passed proof', () => {
   const value = record(), options = { productRoot: '/unused', step, snapshot };
   assert.equal(validateVerificationReuseRecord(value, options), true);

@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import { isDeepStrictEqual } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
 import { sameFilesystemPath } from '../../../projects/product/services/buildr/src/infrastructure/filesystem/filesystem-path-identity.ts';
@@ -154,7 +155,7 @@ function findSingleFile(root: any, name: any): any  {
   return matches[0];
 }
 
-export function readCandidateEvidence({ candidateRunId, ghCommand, repo, execute, dependencies = {} }: any): any  {
+export function readCandidateEvidence({ candidateRunId, ghCommand, repo, execute, artifactDestination, dependencies = {} }: any): any  {
   if (dependencies.candidateEvidence) return dependencies.candidateEvidence;
   const root: any = (dependencies.makeTempDirectory ?? ((prefix: any) => fs.mkdtempSync(prefix)))(path.join(os.tmpdir(), 'buildr-release-candidate-'));
   try {
@@ -171,7 +172,14 @@ export function readCandidateEvidence({ candidateRunId, ghCommand, repo, execute
     const tarballBytes = fs.readFileSync(artifact.tarball);
     const packageArtifact = artifactFromTarball(tarballBytes, { origin: 'candidate', packageName: artifact.manifest.packageName,
       version: artifact.manifest.version, integrity: artifact.manifest.integrity, sourceCommit: artifact.manifest.sourceCommit });
-    return { aggregate, manifest: artifact.manifest, packageArtifact, tarballBytes };
+    if (artifactDestination) {
+      const directory = path.resolve(artifactDestination);
+      const manifest = path.join(directory, 'release-artifact.json');
+      if (fs.existsSync(directory)) {
+        if (!fs.existsSync(manifest) || !isDeepStrictEqual(readReleaseArtifact(manifest).manifest, artifact.manifest)) throw new Error('Local Candidate destination contains different or unconfirmed bytes.');
+      } else fs.cpSync(path.dirname(artifact.manifestPath), directory, { recursive: true, errorOnExist: true });
+    }
+    return { aggregate, manifest: artifact.manifest, packageArtifact, tarballBytes, ...(artifactDestination ? { artifactDirectory: path.resolve(artifactDestination) } : {}) };
   } finally {
     (dependencies.removeDirectory ?? ((directory: any) => fs.rmSync(directory, { recursive: true, force: true })))(root);
   }

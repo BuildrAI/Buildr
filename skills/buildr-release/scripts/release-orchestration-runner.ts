@@ -16,7 +16,7 @@ import { resolveReleaseExecutionBinding } from './release-execution-binding.ts';
 import { observeUnpublishedRelease } from './release-observation.ts';
 import { retryCandidateFailedShards, classifyCandidateFailure } from './candidate-failed-shard-retry.ts';
 import { releaseCommandDiagnostic, releaseDispatchRejected, releaseRecoveryPlan } from './release-failure.ts';
-import { continueCandidateRepair } from './candidate-repair-operation.ts';
+import { assertCandidateDispatchBudget, continueCandidateRepair } from './candidate-repair-operation.ts';
 import { containsCredentialMaterial, releasePublishAuthority } from './release-authority.ts';
 import { createReleaseLifecycle, projectReleaseLifecycleOrchestration } from './release-lifecycle.ts';
 import { compactReleasePhaseTimeline, createReleasePhaseTimeline, projectCandidateAttempts } from './release-phase-timeline.ts';
@@ -373,6 +373,21 @@ export function reconcilePublicationAfterPreparedContext(publication: any, conte
   };
 }
 
+export function localArtifactHandoff(repo: string, candidate: any): any {
+  if (!['macos', 'windows'].includes(candidate?.localRunner) || !/^[a-f0-9]{40,64}$/u.test(candidate?.sourceCommit ?? '')
+    || !Number.isSafeInteger(candidate.runId) || candidate.runId < 1) return null;
+  const root = path.join(repo, 'projects/product/services/buildr');
+  const directory = path.join(root, 'build/verification/candidates', candidate.sourceCommit);
+  const artifactDirectory = path.join(directory, 'candidate-package');
+  const evidenceDirectory = path.join(directory, 'local-evidence');
+  const args = [path.join(root, 'test/verification/artifact.ts'), '--artifact-dir', artifactDirectory, '--output', evidenceDirectory];
+  return { runner: candidate.localRunner, artifactDirectory, evidenceDirectory,
+    download: { command: 'gh', args: ['run', 'download', String(candidate.runId), '--repo', releasePublishAuthority.repository,
+      '--name', 'candidate-package', '--dir', artifactDirectory] },
+    checks: [{ node: '24.x-stable>=24.15.0', args }, { node: '24.15.0', args: [...args, '--scope', 'platform', '--node-tuple', 'minimum'] }],
+    nextAction: '确认制包作业已上传原包后下载并在隔离环境验包；不必等待另一系统验包结束，不重新打包。' };
+}
+
 function observeReleaseRun(pointer: any, readRun: (runId: number) => any): any {
   if (!pointer?.runId) return { status: pointer?.requested || pointer?.dispatchRequested ? 'dispatch-unconfirmed' : 'not-requested', run: null };
   try {
@@ -686,8 +701,13 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       if (observed !== sourceCommit) pushReleaseBranch({ repo, branch, commit: sourceCommit, before: observed }, { execute }, currentEffects);
     };
     if (!alreadyMerged) ensureCandidateBranch(`release-${key}`);
-    if (state.candidate?.sourceCommit !== sourceCommit) state.candidate = { sourceCommit, branch: carrier, runId: options.candidateRunId || null, dispatchRequested: false };
-    if (options.verificationSource || state.candidate.repair) {
+    if (state.candidate?.sourceCommit !== sourceCommit) {
+      const platform = dependencies.platform ?? process.platform;
+      const localRunner = platform === 'darwin' ? 'macos' : platform === 'win32' ? 'windows' : null;
+      state.candidate = { sourceCommit, branch: carrier, runId: options.candidateRunId || null, dispatchRequested: false,
+        ...(!options.candidateRunId && localRunner ? { localRunner } : {}) };
+    }
+    if (options.verificationSource || options.artifactVerification || state.candidate.repair) {
       phase = 'candidate-verification';
       const fields = scoped ? [`release_packages=${targets.packages.join(',')}`, `buildr_version=${JSON.parse(git(['show', `${sourceCommit}:projects/product/services/buildr/package.json`, '--'], repo)).version}`,
         `plugin_version=${plan.pluginVersion}`, `selection_id=${key}`, `selection_baseline=${baseline}`, `selection_main=${plan.selection.main}`,
@@ -699,8 +719,13 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
         const { encodeCandidateSourceImport } = await import('../../../projects/product/services/buildr/test/verification/candidate-source-reuse.ts');
         sourceTransport = encodeCandidateSourceImport(readVerificationReuseBundle(options.sourceVerification));
       }
+      let artifactTransport: string | undefined;
+      if (options.artifactVerification) {
+        const { readCandidateArtifactImports, encodeCandidateArtifactImport } = await import('../../../projects/product/services/buildr/test/verification/candidate-artifact-reuse.ts');
+        artifactTransport = encodeCandidateArtifactImport(readCandidateArtifactImports(options.artifactVerification));
+      }
       const repaired = continueCandidateRepair({ repo, candidate: state.candidate,
-        verificationSource: options.verificationSource ?? state.candidate.repair.verificationSource, fields, sourceTransport }, {
+        verificationSource: options.verificationSource ?? state.candidate.repair?.verificationSource ?? sourceCommit, fields, sourceTransport, artifactTransport }, {
         gh: args => gh(args, repo), git: args => git(args, repo), save, ensureCarrier: () => ensureCandidateBranch(carrier),
       });
       currentEffects.push(...repaired.effects);
@@ -722,16 +747,17 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
         }
         ensureCandidateBranch(carrier);
         phase = 'candidate-verification';
-        state.candidate.dispatchRequested = true;
-        state.candidate.dispatchRejected = false;
-        writeOperation(file, state);
-        const effect = { type: 'candidate-dispatched', branch: carrier, sourceCommit, state: 'unknown' };
-        currentEffects.push(effect);
         const fields = scoped ? [`release_packages=${targets.packages.join(',')}`, `buildr_version=${JSON.parse(git(['show', `${sourceCommit}:projects/product/services/buildr/package.json`, '--'], repo)).version}`,
           `plugin_version=${plan.pluginVersion}`, `selection_id=${key}`, `selection_baseline=${baseline}`, `selection_main=${plan.selection.main}`,
           `selection_identity=${selection.selectionIdentity}`, ...(!targets.packages.includes('buildr') && plan.requirements.plugin
             ? [`buildr_peer_version=${state.preparationPeer.version}`, `buildr_peer_integrity=${state.preparationPeer.integrity}`] : [])] : [];
         if (localSource.transport) fields.push(`source_verification=${localSource.transport}`);
+        if (state.candidate.localRunner) fields.push(`local_runner=${state.candidate.localRunner}`);
+        assertCandidateDispatchBudget(['purpose=candidate', ...fields]);
+        state.candidate.dispatchRequested = true;
+        state.candidate.dispatchRejected = false;
+        const effect = { type: 'candidate-dispatched', branch: carrier, sourceCommit, state: 'unknown' };
+        currentEffects.push(effect);
         state.candidate.sourceVerification = { recordCount: localSource.recordCount ?? 0, digest: identity(localSource.transport ?? '') };
         writeOperation(file, state);
         try { gh(['workflow', 'run', 'verify.yml', '--repo', releasePublishAuthority.repository, '--ref', carrier, '-f', 'purpose=candidate', ...fields.flatMap(field => ['-f', field])]); effect.state = 'confirmed'; }
@@ -757,7 +783,12 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     if (candidate.head_sha !== sourceCommit) throw new Error('Candidate run source differs from the frozen release.');
       if (candidate.repository?.full_name !== releasePublishAuthority.repository || candidate.path?.split('@')[0] !== '.github/workflows/verify.yml' || candidate.event !== 'workflow_dispatch' || (scoped && candidate.head_branch !== carrier)) throw new Error('Candidate run does not belong to the expected repository, carrier and verification workflow.');
     if (candidate.status !== 'completed' || candidate.conclusion !== 'success') ensureCandidateBranch(carrier);
-    if (candidate.status !== 'completed') return answer('candidate-running', ['等待当前候选终态，再继续同一prepare。'], { run: candidate });
+    if (candidate.status !== 'completed') {
+      const localArtifact = localArtifactHandoff(repo, state.candidate);
+      return answer('candidate-running', [localArtifact?.nextAction ?? '等待当前候选终态，再继续同一prepare。'], {
+        run: candidate, ...(localArtifact ? { localArtifact } : {}),
+      });
+    }
     if (candidate.conclusion !== 'success') {
       const previousRetry = state.candidate.retry;
       if (previousRetry?.runId === state.candidate.runId && Number(candidate.run_attempt) <= previousRetry.previousAttempt) {
@@ -769,7 +800,28 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       currentEffects.push(...retried.effects);
       return answer(retried.status === 'dispatched' ? 'candidate-running' : retried.status === 'unknown' ? 'candidate-retry-unconfirmed' : 'diagnosis-required', retried.nextActions, { retry: retried });
     }
-    const candidateEvidence = !scoped || plan.requirements.buildr ? readCandidateEvidence({ candidateRunId: state.candidate.runId, ghCommand: options.ghCommand || 'gh', repo, execute, dependencies: dependencies.candidateDependencies }) : null;
+    const artifactDestination = state.candidate.localRunner ? path.join(repo, 'projects/product/services/buildr/build/verification/candidates', sourceCommit, 'candidate-package') : undefined;
+    const candidateEvidence = !scoped || plan.requirements.buildr ? readCandidateEvidence({ candidateRunId: state.candidate.runId, ghCommand: options.ghCommand || 'gh', repo, execute,
+      artifactDestination, dependencies: dependencies.candidateDependencies }) : null;
+    if (candidateEvidence?.aggregate.status === 'incomplete') {
+      const aggregate = candidateEvidence.aggregate;
+      if (!state.candidate.localRunner || aggregate.sourceCommit !== sourceCommit || aggregate.sourceTree !== selection.releaseTree
+        || String(aggregate.workflow?.runId) !== String(state.candidate.runId) || Number(aggregate.workflow?.aggregateAttempt) !== Number(candidate.run_attempt)
+        || !Array.isArray(aggregate.deferredIds) || !aggregate.deferredIds.length
+        || aggregate.findings?.some((finding: any) => finding.code !== 'evidence-missing' || !aggregate.deferredIds.includes(finding.id))) {
+        throw new Error('Candidate local handoff differs from the frozen source or contains an unrelated failure.');
+      }
+      phase = 'artifact-verification';
+      const handoff = localArtifactHandoff(repo, state.candidate);
+      const evidenceDirectory = handoff.evidenceDirectory;
+      const localArtifact = { ...handoff, artifactDirectory: candidateEvidence.artifactDirectory ?? artifactDestination,
+        missingEvidenceIds: aggregate.deferredIds, artifact: candidateEvidence.manifest };
+      state.candidate.awaitingLocalArtifact = localArtifact; save();
+      return answer('local-artifact-verification-required', [
+        `在冻结源码的 buildr 服务使用 test/verification/artifact.ts：--artifact-dir ${localArtifact.artifactDirectory} --output ${evidenceDirectory}；通用原包与平台启动器只跑一次，最低24.15.0及实际稳定24.x分别补安装运行兼容。`,
+        `完成后继续同一 prepare，传入 --artifact-verification ${evidenceDirectory}；采用远端已通过结果，只补缺项和完整汇总，不重打包。`,
+      ], { localArtifact });
+    }
     if (candidateEvidence) {
       assertReleaseConsumptionCoverage(candidateEvidence.aggregate, { sourceCommit, sourceTree: selection.releaseTree }, candidateEvidence.manifest);
       if (String(candidateEvidence.aggregate.workflow?.runId) !== String(state.candidate.runId) || Number(candidateEvidence.aggregate.workflow?.aggregateAttempt) !== Number(candidate.run_attempt)) throw new Error('Candidate evidence belongs to a different run/attempt.');
@@ -849,6 +901,7 @@ function parseOptions(argv: any): any  {
     ...options, normalOperation: true, candidateRunId: options['candidate-run-id'] ? Number(options['candidate-run-id']) : null,
     pluginVersion: options['plugin-version'], selectionId: options['selection-id'],
     sourceVerification: options['source-verification'],
+    artifactVerification: options['artifact-verification'],
     verificationSource: options['verification-source'],
     stopAfter: options['stop-after'],
     supportTasks: options['support-tasks'] ? options['support-tasks'].split(',').filter(Boolean) : undefined,

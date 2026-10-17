@@ -8,21 +8,29 @@ import { assertMinimumNodeVersion } from '../../src/infrastructure/process.ts';
 import { enforceOfflineVerification } from '../../src/infrastructure/network/verification-network-policy.ts';
 import { prepareCandidateEnvironment } from '../../tools/verification/candidate-environment.ts';
 import { createVerificationAdmissionPlan, createVerificationPlan } from './planner.ts';
-import { CANDIDATE_CI_SHARDS, resolveVerificationExecutionProfile } from './registry.ts';
+import { CANDIDATE_CI_SHARDS, VERIFICATION_PLATFORMS, verificationSteps, resolveVerificationExecutionProfile } from './registry.ts';
 import { collectVerificationSourceIdentity, createVerificationEvidencePaths, writeVerificationTimingEvidence } from './timing/evidence.ts';
 import { inspectVerificationReusePlan } from './verification-reuse.ts';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const projectRoot = path.resolve(productRoot, '../..');
 
-export function parseSourceArgs(args: string[]): { help: boolean; json: boolean; force: boolean; output: string | null } {
-  const result = { help: false, json: false, force: false, output: null as string | null };
+export type SourceVerificationScope = 'all' | 'common' | 'platform';
+export function parseSourceArgs(args: string[]): { help: boolean; json: boolean; force: boolean; scope: SourceVerificationScope; output: string | null } {
+  const result = { help: false, json: false, force: false, scope: 'all' as SourceVerificationScope, output: null as string | null };
+  let scopeSupplied = false;
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     if (arg === '--help' || arg === '-h') result.help = true;
     else if (arg === '--json') result.json = true;
     else if (arg === '--force') result.force = true;
-    else if (arg === '--output') {
+    else if (arg === '--scope') {
+      const value = args[++index];
+      if (!value || !['all', 'common', 'platform'].includes(value)) throw new Error('--scope requires all, common or platform');
+      if (scopeSupplied) throw new Error('--scope may only be supplied once');
+      result.scope = value as SourceVerificationScope;
+      scopeSupplied = true;
+    } else if (arg === '--output') {
       const value = args[++index];
       if (!value || value.startsWith('-')) throw new Error('Missing value for --output');
       if (result.output !== null) throw new Error('--output may only be supplied once');
@@ -49,20 +57,25 @@ export function sourceOnlyVerificationSteps(steps: any[]): { steps: any[]; exclu
   return { steps: steps.filter(step => !excluded.has(step.id)), excludedStepIds: [...excluded].sort() };
 }
 
-export function createSourceVerificationPlan(platform: string = process.platform): any {
+export function createSourceVerificationPlan(platform: string = process.platform, options: { scope?: SourceVerificationScope } = {}): any {
   const runner = platform === 'darwin' ? 'macos' : platform === 'win32' ? 'windows' : platform;
-  const shardStepIds: string[] = [...new Set<string>(CANDIDATE_CI_SHARDS.filter((shard: any) => shard.runner === runner).flatMap((shard: any) => shard.stepIds))];
-  const selected = createVerificationPlan({ stepIds: shardStepIds });
-  const composed = shardStepIds.length > 0 ? createVerificationAdmissionPlan(selected) : selected;
+  const scope = options.scope ?? 'all';
+  if (!['all', 'common', 'platform'].includes(scope)) throw new Error(`Unknown source verification scope: ${scope}`);
+  const supported = VERIFICATION_PLATFORMS.includes(runner);
+  const stepIds: string[] = supported ? verificationSteps.filter((step: any) => step.profiles.includes('candidate')
+    && (step.platformScope.kind === 'common' ? scope !== 'platform'
+      : scope !== 'common' && step.platformScope.runners.includes(runner))).map((step: any) => step.id) : [];
+  const selected = createVerificationPlan({ stepIds });
+  const composed = stepIds.length > 0 && scope !== 'platform' ? createVerificationAdmissionPlan(selected) : selected;
   const source = sourceOnlyVerificationSteps(composed.steps);
   const ids = new Set(source.steps.map(step => step.id));
   return {
     ...composed,
     schemaVersion: 'buildr.verification-source-plan/v1',
-    source: 'candidate-source', runner,
-    status: source.steps.length > 0 ? composed.status : 'blocked',
-    diagnostic: source.steps.length > 0 ? composed.diagnostic : { code: 'source-runner-not-declared', message: `No Candidate source checks are declared for ${runner}.` },
-    stepIds: shardStepIds.filter(id => ids.has(id)),
+    source: 'candidate-source', runner, sourceScope: scope,
+    status: supported ? composed.status : 'blocked',
+    diagnostic: supported ? composed.diagnostic : { code: 'source-runner-not-declared', message: `No Candidate source checks are declared for ${runner}.` },
+    stepIds: stepIds.filter(id => ids.has(id)),
     admissionStepIds: (composed.admissionStepIds ?? []).filter((id: string) => ids.has(id)),
     excludedStepIds: source.excludedStepIds,
     steps: source.steps,
@@ -112,7 +125,7 @@ export function prepareSourceVerificationEnvironment(plan: any, options: any, de
 }
 
 function usage(): void {
-  process.stdout.write('Usage: npm run test:source -- [--json] [--force] [--output <source-bundle.json>]\n');
+  process.stdout.write('Usage: npm run test:source -- [--scope all|common|platform] [--json] [--force] [--output <source-bundle.json>]\n');
 }
 
 if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {
@@ -120,7 +133,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
     const args = parseSourceArgs(process.argv.slice(2));
     if (args.help) usage();
     else {
-      const plan = createSourceVerificationPlan();
+      const plan = createSourceVerificationPlan(process.platform, { scope: args.scope });
       const reuseOptions = { productRoot, projectRoot, force: sourceVerificationForce(args.force), env: enforceOfflineVerification({ ...process.env }) };
       if (args.json) {
         const reuse = inspectVerificationReusePlan(plan, reuseOptions);
