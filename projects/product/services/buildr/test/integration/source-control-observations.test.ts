@@ -40,7 +40,7 @@ function fixture(t: test.TestContext, options: { waitMs?: number; idleMs?: numbe
     }
     throw Error('Observation never became quiet.');
   };
-  const nextInvalidation = async (cursor: string, timeoutMs = 5000) => {
+  const nextInvalidation = async (cursor: string, timeoutMs = 5000, accepts: (value: SourceControlWatchResult) => boolean = value => Boolean(value.repositoryIds.length || value.refsRepositoryIds?.length || value.refreshAll || value.diagnostics?.length)) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -49,7 +49,7 @@ function fixture(t: test.TestContext, options: { waitMs?: number; idleMs?: numbe
       while (!controller.signal.aborted) {
         const current = await observations.watch(root, cursor, controller.signal);
         if (controller.signal.aborted) break;
-        if (current.repositoryIds.length || current.refsRepositoryIds?.length || current.refreshAll || current.diagnostics?.length) return current;
+        if (accepts(current)) return current;
         cursor = current.cursor;
       }
       throw Error(`Observation did not invalidate within ${timeoutMs} ms.`);
@@ -279,14 +279,24 @@ test('ignored local SQLite writes remain quiet beneath tracked .buildr assets wi
 
 test('unselected branch and packed refs changes are distinguished from index changes', async t => {
   const f = fixture(t); let state = await f.register();
+  const referencesChanged = (value: SourceControlWatchResult) => Boolean(value.refsRepositoryIds?.includes('repo-0'));
+  const watch = f.observations.watch.bind(f.observations);
+  let statusOnlyFirst = true;
+  t.mock.method(f.observations, 'watch', (...args: Parameters<typeof watch>) => {
+    if (statusOnlyFirst) {
+      statusOnlyFirst = false;
+      return Promise.resolve({ cursor: args[1]!, repositoryIds: ['repo-0'], refsRepositoryIds: [], refreshAll: false });
+    }
+    return watch(...args);
+  });
   const before = f.application.sourceControl(f.root, { repositoryId: 'repo-0' }).observedRevision;
   f.git(f.locations[0], 'branch', 'not-checked-out');
-  state = await f.nextInvalidation(state.cursor);
+  state = await f.nextInvalidation(state.cursor, 5000, referencesChanged);
   assert.deepEqual(state.refsRepositoryIds, ['repo-0']);
   assert.equal(f.application.sourceControl(f.root, { repositoryId: 'repo-0' }).observedRevision, before, 'status alone cannot detect an unselected branch');
   state = await f.quiet(state.cursor);
   f.git(f.locations[0], 'pack-refs', '--all');
-  state = await f.nextInvalidation(state.cursor);
+  state = await f.nextInvalidation(state.cursor, 5000, referencesChanged);
   assert.deepEqual(state.refsRepositoryIds, ['repo-0']);
   state = await f.quiet(state.cursor);
   f.write(0, 'staged change'); state = await f.nextInvalidation(state.cursor); state = await f.quiet(state.cursor);
