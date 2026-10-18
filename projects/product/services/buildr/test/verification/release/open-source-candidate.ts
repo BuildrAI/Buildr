@@ -107,8 +107,8 @@ export function inspectCandidateFile(relativePath: any, content: any, size: any 
     if (rule.pattern.test(content)) findings.push(finding(rule.id, relativePath, 'blocked content pattern detected; inspect and remove or explicitly redesign the fixture'));
   }
   const emails: any = content.match(/(?<![A-Za-z0-9._%+-\\])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) || [];
-  if (emails.some((email: any) => !email.endsWith('@example.com') && email !== 'git@github.com')) {
-    findings.push(finding('private.email-address', relativePath, 'non-fixture email address detected; replace it with a public project contact or example.com fixture'));
+  if (emails.some((email: any) => !email.endsWith('@example.com') && !email.endsWith('@example.invalid') && email !== 'git@github.com')) {
+    findings.push(finding('private.email-address', relativePath, 'non-fixture email address detected; replace it with a public project contact or reserved example domain fixture'));
   }
   return findings;
 }
@@ -194,7 +194,7 @@ async function packAndInspect(): Promise<any>  {
 function inspectReadmes(): any  {
   const findings: any[] = [];
   const readmes: any = ['README.md', 'README.en.md'].map((file: any) => [file, fs.readFileSync(path.join(workspaceRoot, file), 'utf8')]);
-  for (const token of ['https://github.com/BuildrAI/Buildr', '@buildr-ai/buildr', 'buildr runtime list --json']) {
+  for (const token of ['https://github.com/BuildrAI/Buildr', '@buildr-ai/buildr', 'projects/product/services/buildr/docs/cli-reference.md#首次使用']) {
     for (const [file, content] of readmes) {
       if (!content.includes(token)) findings.push(finding('readme.parity', file, `missing canonical token: ${token}`));
     }
@@ -202,8 +202,8 @@ function inspectReadmes(): any  {
   if (!readmes[0][1].includes('[English](README.en.md)')) findings.push(finding('readme.navigation', 'README.md', 'missing English navigation'));
   if (!readmes[1][1].includes('[中文](README.md)')) findings.push(finding('readme.navigation', 'README.en.md', 'missing Chinese navigation'));
   for (const [file, content, headings] of [
-    [readmes[0][0], readmes[0][1], ['## 为什么需要 Buildr', '## 可以怎样用', '## 开始使用', '## Buildr 自举（Self-Bootstrapping）', '## 深入了解']],
-    [readmes[1][0], readmes[1][1], ['## Why Buildr', '## What you can do', '## Get started', '## Self-bootstrapping: this repository is a workspace', '## Learn more']],
+    [readmes[0][0], readmes[0][1], ['## Buildr 有什么用', '## Buildr 怎样组织工作', '## 开始使用', '## 用 Buildr 开发 Buildr', '## 进一步了解']],
+    [readmes[1][0], readmes[1][1], ['## What Buildr helps you do', '## How Buildr organizes work', '## Get started', '## Develop Buildr with Buildr', '## Learn more']],
   ] as [string, string, string[]][]) {
     for (const heading of headings) {
       if (!content.includes(heading)) findings.push(finding('readme.structure', file, `missing section: ${heading}`));

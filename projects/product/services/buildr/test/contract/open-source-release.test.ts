@@ -45,6 +45,8 @@ test('open-source candidate content rules block secrets without echoing values',
   assert.equal(JSON.stringify(findings).includes(secret), false);
   assert.equal(inspectCandidateFile('README.md', 'https://github.com/BuildrAI/Buildr').length, 0);
   assert.equal(inspectCandidateFile('fixture.md', 'buildr@example.com').length, 0);
+  assert.equal(inspectCandidateFile('fixture.md', 'fixture@example.invalid').length, 0);
+  assert.equal(inspectCandidateFile('fixture.md', ['person', 'private.invalid'].join('@'))[0].rule, 'private.email-address');
   assert.equal(inspectCandidateFile('fixture.md', ['person', 'private.test'].join('@'))[0].rule, 'private.email-address');
 });
 
