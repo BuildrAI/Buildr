@@ -15,6 +15,7 @@ type HandoffDependencies = {
   assertNpmLauncherBinding?(file: string, identity: any): any;
   spawnProcess?: typeof spawn;
   readInstance?: typeof readBuildrWebInstance;
+  instanceRecordExists?: (profile: ReturnType<typeof resolveWebProfile>) => boolean;
   healthyInstance?: typeof healthyBuildrWebInstance;
   waitMs?: number;
   intervalMs?: number;
@@ -33,6 +34,7 @@ export async function handoffUpdatedBuildrWeb(input: NpmWebUpdateInput, dependen
   let previousPid: number | undefined;
   let child: ChildProcess | undefined;
   const read = dependencies.readInstance || readBuildrWebInstance;
+  const exists = dependencies.instanceRecordExists || (profile => fs.existsSync(buildrWebInstancePath(profile)));
   const healthy = dependencies.healthyInstance || healthyBuildrWebInstance;
   try {
     const { entry } = dependencies.readNpmUpdateHandoffInstallation(input);
@@ -40,7 +42,7 @@ export async function handoffUpdatedBuildrWeb(input: NpmWebUpdateInput, dependen
     const profile = resolveWebProfile(identity);
     const recorded = read(profile);
     if (!recorded) {
-      if (fs.existsSync(buildrWebInstancePath(profile))) throw handoffError('web_update_instance_invalid', '实例记录无法核实，未启动或接管网页。');
+      if (exists(profile)) throw handoffError('web_update_instance_invalid', '实例记录无法核实，未启动或接管网页。');
       return { status: 'not-running' };
     }
     previousPid = recorded.pid;
@@ -88,7 +90,7 @@ export async function handoffUpdatedBuildrWeb(input: NpmWebUpdateInput, dependen
         if (buildrWebInstanceObservationDigest(current) !== buildrWebInstanceObservationDigest(recorded) && !sameNpmProductIdentity(current.productIdentity, identity)) {
           throw handoffError('web_update_instance_changed', '交接期间实例记录已被其他实例替换，未确认新版就绪。');
         }
-      } else if (fs.existsSync(buildrWebInstancePath(profile))) throw handoffError('web_update_instance_invalid', '交接期间实例记录无法解析，已保留现场。');
+      } else if (exists(profile)) throw handoffError('web_update_instance_invalid', '交接期间实例记录无法解析，已保留现场。');
       if (diagnostic.failure) throw handoffError(diagnostic.failure.code, diagnostic.failure.message);
       await new Promise(resolve => setTimeout(resolve, dependencies.intervalMs ?? 100));
     } while (Date.now() < deadline);

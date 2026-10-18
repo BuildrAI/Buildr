@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import fs from 'node:fs';
 import test from 'node:test';
 import { handoffUpdatedBuildrWeb, updatedWebEnvironment } from '../../src/web/application/update-web-handoff.ts';
 import { resolveWebProfile } from '../../src/modules/installation/contracts/web-profile.ts';
@@ -22,6 +21,7 @@ function fixture() {
     readNpmUpdateHandoffInstallation: () => ({ entry: { origin, runtime, entryPath: '/registered/package/bin/buildr.mjs' } }),
     assertNpmUpdateHandoffTarget: (value: any) => { assertions.push(value); },
     readInstance: () => current,
+    instanceRecordExists: () => false,
     healthyInstance: async (value: any) => value,
     spawnProcess: (...args: any[]) => { spawns.push(args); current = next; return child; },
     intervalMs: 1, waitMs: 20,
@@ -34,12 +34,15 @@ test('更新子进程只移除旧产品和启动器环境，保留显式隔离�
   assert.deepEqual(env, { BUILDR_APP_DATA_DIR: '/isolated/web', BUILDR_PRODUCT_DATA_DIR: '/isolated/product', PATH: 'untrusted-node' });
 });
 
-test('没有运行实例不启动；当前实例核验归属后直接复用', async t => {
-  t.mock.method(fs, 'existsSync', () => false);
+test('没有运行实例不启动；损坏记录拒绝接管；当前实例核验归属后直接复用', async () => {
   const f = fixture();
   f.setCurrent(null);
   assert.deepEqual(await handoffUpdatedBuildrWeb(f.input, f.dependencies), { status: 'not-running' });
   assert.equal(f.spawns.length, 0);
+  f.dependencies.instanceRecordExists = () => true;
+  assert.equal((await handoffUpdatedBuildrWeb(f.input, f.dependencies)).code, 'web_update_instance_invalid');
+  assert.equal(f.spawns.length, 0);
+  f.dependencies.instanceRecordExists = () => false;
   f.setCurrent(f.next);
   assert.equal((await handoffUpdatedBuildrWeb(f.input, f.dependencies)).status, 'current');
   assert.equal(f.spawns.length, 0);
