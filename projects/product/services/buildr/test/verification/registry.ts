@@ -294,7 +294,7 @@ const RELEASE_NOTES_INDEPENDENT_CHECKS = new Set([...RUNTIME_REUSE_CHECKS,
   // fixture repositories. Their real entrypoints do not read root release notes.
   // Keep every other repository input and the shared reader's conservative guard.
   'openspec-spec-quality', 'integration-knowledge', 'integration-workspace-assets', 'integration-archify',
-  'integration-declarations', 'integration-openspec', 'integration-self-bootstrap', 'system-public-json-contracts',
+  'integration-declarations', 'integration-openspec', 'system-public-json-contracts',
   'system-openspec-contract-audit', 'concurrent-task-acceptance', 'npm-launcher-candidate', 'capability-cli-integration',
   'commands-cli-integration', 'remote-skill-timeout']);
 const NON_REUSABLE_CHECKS = new Set(['dsh-plugin', 'candidate-tarball', 'application-payload-release', 'release-tarball-smoke', 'artifact-browser-core', 'cli-package-parity', 'host-node-contract', 'host-node-boundaries']);

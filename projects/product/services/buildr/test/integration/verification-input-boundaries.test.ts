@@ -172,7 +172,7 @@ test('reviewed source checks keep results for a notes-only repair while binding 
   });
   const original = observe(), notes = observe('CHANGELOG.md');
   const ids = ['openspec-spec-quality', 'integration-knowledge', 'integration-workspace-assets', 'integration-archify',
-    'integration-declarations', 'integration-openspec', 'integration-self-bootstrap', 'system-public-json-contracts',
+    'integration-declarations', 'integration-openspec', 'system-public-json-contracts',
     'system-openspec-contract-audit', 'concurrent-task-acceptance', 'npm-launcher-candidate', 'capability-cli-integration',
     'commands-cli-integration', 'remote-skill-timeout'];
   const actualInputs = ['projects/product/services/buildr/package-lock.json', 'projects/product/services/buildr/src/bootstrap/cli/main.ts',
@@ -184,6 +184,9 @@ test('reviewed source checks keep results for a notes-only repair while binding 
     assert.deepEqual(notes.inputs(step, true), before, id + ': release-note content is independent');
     for (const [file, reader] of readers) assert.notDeepEqual(reader.inputs(step, true), before, id + ': ' + file);
   }
+  const projected = verificationSteps.find((item: any) => item.id === 'integration-self-bootstrap');
+  assert.notDeepEqual(notes.inputs(projected, true), original.inputs(projected, true),
+    'a computed projected-module import retains the conservative release-note input');
 });
 
 test('local and Git proofs isolate selected system contents while binding discovery membership and literal URL dependencies', t => {

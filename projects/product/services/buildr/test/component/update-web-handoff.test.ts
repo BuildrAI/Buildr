@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import fs from 'node:fs';
 import test from 'node:test';
 import { handoffUpdatedBuildrWeb, updatedWebEnvironment } from '../../src/web/application/update-web-handoff.ts';
 import { resolveWebProfile } from '../../src/modules/installation/contracts/web-profile.ts';
@@ -33,8 +34,8 @@ test('更新子进程只移除旧产品和启动器环境，保留显式隔离�
   assert.deepEqual(env, { BUILDR_APP_DATA_DIR: '/isolated/web', BUILDR_PRODUCT_DATA_DIR: '/isolated/product', PATH: 'untrusted-node' });
 });
 
-test('没有运行实例不启动；当前实例核验归属后直接复用', async () => {
-  assert.ok(process.env.BUILDR_APP_DATA_DIR, 'run through the isolated smoke runner');
+test('没有运行实例不启动；当前实例核验归属后直接复用', async t => {
+  t.mock.method(fs, 'existsSync', () => false);
   const f = fixture();
   f.setCurrent(null);
   assert.deepEqual(await handoffUpdatedBuildrWeb(f.input, f.dependencies), { status: 'not-running' });
