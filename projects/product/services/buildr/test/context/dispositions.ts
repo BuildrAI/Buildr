@@ -27,7 +27,6 @@ const entries: any[] = [
     'component',
     'contract',
     'cli-architecture',
-    'openspec-spec-quality',
     'openspec-strict',
     'host-node-contract',
     'open-source-candidate',

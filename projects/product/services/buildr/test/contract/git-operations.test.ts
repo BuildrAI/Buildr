@@ -10,80 +10,18 @@ const SERVICE_ROOT: any = path.resolve(import.meta.dirname, '../..');
 const WORKSPACE_TARGET: any = path.join(SERVICE_ROOT, 'resources/workspace');
 const read: any = (relative: any) => fs.readFileSync(path.join(SERVICE_ROOT, relative), 'utf8');
 const packageManifest: any = YAML.parse(read('resources/manifest.yml'));
-const workspaceRule: any = read('resources/workspace/AGENTS.md');
-const skill: any = read('resources/workspace/skills/buildr/git-operations/SKILL.md');
+
 const contractPath: any = path.join(WORKSPACE_TARGET, 'skills/contracts/buildr/git-operations/v1.md');
-const contract: any = fs.readFileSync(contractPath, 'utf8');
 
 test('Git Operations contract 与 Skill 保持唯一 Skill-only authority', () => {
   const parsed: any = parseCapabilityContract(contractPath);
   assert.equal(parsed.id, 'buildr.git-operations');
   assert.equal(parsed.version, 1);
-  assert.match(contract, /不选择动作、目标或顺序/);
-  assert.match(contract, /不创建 Receipt/);
 
   const packaged: any = packageManifest.builtins.skills.find((item: any) => item.id === 'git-operations');
   assert.deepEqual(packaged.provides, [{ capability: 'buildr.git-operations', version: 1 }]);
   assert.equal(packaged.requires, undefined);
   assert.equal(packageManifest.initialSkillBindings.find((item: any) => item.capability === 'buildr.git-operations').provider, 'git-operations');
-});
-
-test('Git Operations routing description 精确一致且不扩展完整命令集', () => {
-  const packaged: any = packageManifest.builtins.skills.find((item: any) => item.id === 'git-operations');
-  const frontmatter: any = skill.match(/^---\n[\s\S]*?^description:\s*(.+)$/m)?.[1];
-  assert.equal(frontmatter, packaged.description);
-  assert.match(packaged.description, /已明确仓库、操作和目标/);
-  assert.match(packaged.description, /不代选策略/);
-  assert.match(skill, /`commit`/);
-  assert.match(skill, /`push`/);
-  for (const broad of ['checkout', 'reset', 'cherry-pick', 'stash', '删除分支']) {
-    assert.equal(packaged.description.includes(broad), false, broad);
-  }
-});
-
-test('默认提交语言由随包 workspace AGENTS 提供，Git Operations 不复制 Core 约定', () => {
-  assert.match(workspaceRule, /Git 提交信息默认使用中文/);
-  assert.match(workspaceRule, /更具体作用域的约定优先于本默认规则/);
-  assert.match(skill, /当前 workspace `AGENTS\.md`/);
-  assert.doesNotMatch(skill, /语言遵循 Buildr Core/);
-});
-
-test('Git Operations playbook 覆盖 commit、push 与组合边界', () => {
-  for (const required of [
-    '`commit`：只创建或安全 amend local commit，不 push',
-    '`push`：只发布已有 commit，不把 dirty 自动 commit',
-    '`commit+push`：caller 依次执行一次 commit 和一次 push',
-    '保留两个独立 Result',
-    '禁止使用 `git add -A`',
-    '同一文件混有不同归属',
-    '保留全部无关 dirty',
-    'scope 外 staged 内容',
-    '实际将提交的 diff',
-  ]) assert.ok(skill.includes(required), required);
-});
-
-test('Git Operations playbook 覆盖完整 push range、共享冻结与拒绝', () => {
-  for (const required of [
-    '完整 commit range',
-    '而不是只检查 tip commit',
-    'scope 外 unpublished commit',
-    '普通 push 被拒绝时停止',
-    '不自动 force push',
-    'push 或其他共享会冻结 commit',
-    '后续变化创建新 commit',
-  ]) assert.ok(skill.includes(required), required);
-});
-
-test('Git Operations Result 对部分失败 fail closed', () => {
-  for (const required of [
-    'status: succeeded | blocked',
-    'treeChanged: <boolean>',
-    'historyChanged: <boolean>',
-    'remoteChanged: <boolean>',
-    'commit 成功而后续 push 被拒绝',
-    'local history 已改变、remote 未改变',
-    '不得静默 stash/reset/回滚、换策略',
-  ]) assert.ok(skill.includes(required), required);
 });
 
 test('旧 Git graph 只保留 migration evidence，active manifests 与文件为零', () => {

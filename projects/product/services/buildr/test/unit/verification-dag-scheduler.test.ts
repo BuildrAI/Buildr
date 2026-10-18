@@ -64,12 +64,12 @@ test('scheduler 遵守全局与 class 上限并按 plan 顺序返回', async () 
 
 test('scheduler 将失败依赖的传递后续标记 blocked 并保留无关结果', async () => {
   const results: any = await runVerificationDag(plan([
-    step('root'), step('child', ['root']), step('grandchild', ['child']), step('independent'),
+    step('root'), step('child', ['root']), step('grandchild', ['child']), step('independent'), step('independent-failure'),
   ]), {
     concurrency: { global: 4, classes: { default: 4, exclusive: 1 } },
-    execute: async (item: any) => ({ status: item.id === 'root' ? 'failed' : 'passed', exitCode: item.id === 'root' ? 7 : 0, durationMs: 1 }),
+    execute: async (item: any) => ({ status: ['root', 'independent-failure'].includes(item.id) ? 'failed' : 'passed', exitCode: ['root', 'independent-failure'].includes(item.id) ? 7 : 0, durationMs: 1 }),
   });
-  assert.deepEqual(results.map((item: any) => item.status), ['failed', 'blocked', 'blocked', 'passed']);
+  assert.deepEqual(results.map((item: any) => item.status), ['failed', 'blocked', 'blocked', 'passed', 'failed']);
   assert.equal(results[1].blockedBy, 'root');
   assert.equal(results[2].blockedBy, 'child');
   assert.match(results[1].queuedAt, /^\d{4}-/);

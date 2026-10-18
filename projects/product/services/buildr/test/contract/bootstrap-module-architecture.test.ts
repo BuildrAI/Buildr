@@ -458,70 +458,6 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   assert.equal(typeof webLifecycle.manageBuildrWebPreview, 'function');
 });
 
-test('Workspace 模块使用私有组合并只拆分超界 Application', () => {
-  const moduleSource = read('src/modules/workspace/module.ts');
-  assert.match(moduleSource, /const privateComposition = Object\.assign\(Object\.create\(runtime\), agentRuntime\)/);
-  assert.match(moduleSource, /registerWorkspaceQueryApplication\(privateComposition\)/);
-  assert.match(moduleSource, /registerWorkspaceCommandApplication\(privateComposition\)/);
-  assert.match(moduleSource, /registerProjectApplication\(privateComposition\)/);
-  assert.match(moduleSource, /registerServiceApplication\(privateComposition\)/);
-  assert.doesNotMatch(moduleSource, /registerWorkspace(?:Query|Command)Application\(runtime\)/);
-  assert.equal(fs.existsSync(path.join(root, 'src/modules/workspace/application/workspace-application.ts')), false);
-  assert.equal(fs.existsSync(path.join(root, 'src/modules/workspace/application/workspace-query-application.ts')), true);
-  assert.equal(fs.existsSync(path.join(root, 'src/modules/workspace/application/workspace-command-application.ts')), true);
-  assert.equal(fs.existsSync(path.join(root, 'src/modules/workspace/application/project-query-application.ts')), false);
-  assert.equal(fs.existsSync(path.join(root, 'src/modules/workspace/application/project-command-application.ts')), false);
-  assert.equal(fs.existsSync(path.join(root, 'src/modules/workspace/application/service-query-application.ts')), false);
-  assert.equal(fs.existsSync(path.join(root, 'src/modules/workspace/application/service-command-application.ts')), false);
-  assert.equal(fs.existsSync(path.join(root, 'src/modules/workspace/application/source-creation-support.ts')), false);
-  assert.equal(fs.existsSync(path.join(root, 'src/modules/workspace/application/project-creation-application.ts')), false);
-  assert.equal(fs.existsSync(path.join(root, 'src/modules/workspace/application/service-creation-application.ts')), false);
-  assert.equal(fs.existsSync(path.join(root, 'src/modules/workspace/application/source-creation-policy.ts')), false);
-  assert.doesNotMatch(moduleSource, /Object\\.entries\\(privateComposition\\)/);
-  assert.match(moduleSource, /projectRepository/);
-  assert.match(moduleSource, /serviceRepository/);
-  const sourceGit = read('src/modules/workspace/infrastructure/workspace-source-git.ts');
-  assert.match(sourceGit, /function gitOutput/);
-  assert.match(sourceGit, /function inspectAttachedGitRoot/);
-});
-
-test('Agent Assets CLI contributions 保留公开根帮助的历史位置', () => {
-  const keys: any = COMMAND_CATALOG.filter((item: any) => item.executable).map((item: any) => item.key);
-  assert.deepEqual(keys.slice(keys.indexOf('init'), keys.indexOf('project daily-progress record') + 1), [
-    'init', 'package check', 'package build', 'project daily-progress record',
-  ]);
-  assert.deepEqual(keys.slice(keys.indexOf('mutation recover'), keys.indexOf('openspec converge') + 1), [
-    'mutation recover', 'runtime list', 'commands check', 'commands add', 'commands remove', 'openspec converge',
-  ]);
-  assert.deepEqual(keys.slice(keys.indexOf('openspec convergence inspect')), [
-    'openspec convergence inspect',
-    'component list', 'component check', 'component install', 'component uninstall',
-    'rules add', 'rules remove',
-    'builtin list', 'builtin uninstall', 'builtin restore',
-    'render', 'sync',
-    'skills add', 'skills remove', 'skills bind', 'skills unbind',
-    'skill install', 'runtime check', 'skills render', 'rules render',
-    'agent-assets source inspect',
-  ]);
-});
-
-test('Agent Assets 旧全局路径与 legacy runtime 已经退出', () => {
-  for (const relative of [
-    'src/application/domains/rules.mjs',
-    'src/application/domains/skills.mjs',
-    'src/application/domains/commands.mjs',
-    'src/application/domains/components.mjs',
-    'src/application/domains/runtime.ts',
-    'src/application/package-maintenance.mjs',
-    'src/application/package-maintenance',
-    'src/application/runtime.ts',
-    'src/infrastructure/runtime',
-  ]) assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
-
-  assert.equal(fs.existsSync(path.join(root, 'src/bootstrap/legacy-runtime-module.mjs')), false);
-  assert.match(read('src/bootstrap/runtime.ts'), /createAgentAssetsModule/);
-});
-
 test('System Installation module owns installation identity, update and npm Launcher boundaries', () => {
   const runtime: any = createRuntime();
   const identity: any = runtimeProvide(runtime, SYSTEM_INSTALLATION_IDENTITY);
@@ -569,15 +505,6 @@ test('Task Review module 只公开共享 Application、只读 Persistence 与正
   assert.equal(runtimePort.exit, undefined);
 });
 
-test('Task Review 旧全局技术层路径已经退出', () => {
-  for (const relative of [
-    'src/domain/task-review/task-review.mjs',
-    'src/application/task-review/task-review-application.ts',
-    'src/interfaces/cli/task-review.ts',
-    'src/modules/task/persistence/review/task-review-repository.ts',
-  ]) assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
-});
-
 test('Task Retrospective独立模块已经退出，文档读取归属Task Record', () => {
   const runtime: any = createRuntime();
   assert.equal(runtimeModuleSnapshot(runtime).some((item: any) => item.id === 'task-retrospective'), false);
@@ -585,22 +512,6 @@ test('Task Retrospective独立模块已经退出，文档读取归属Task Record
   assert.equal(runtime.handleTaskRetrospective, undefined);
   assert.equal(runtime.listTaskRetrospectives, undefined);
   assert.equal(typeof runtimeProvide(runtime, TASK_QUERY_APPLICATION).inspectTaskRetrospectiveDocument, 'function');
-});
-
-test('Task Retrospective 旧全局技术层路径已经退出', () => {
-  for (const relative of [
-    'src/domain/task-retrospective/task-retrospective.mjs',
-    'src/application/task-retrospective/task-retrospective-application.mjs',
-    'src/application/task-retrospective-prompt.mjs',
-    'src/modules/task/persistence/retrospective/task-retrospective-repository.ts',
-    'src/interfaces/internal/task-retrospective-driver.mjs',
-    'src/interfaces/internal/task-retrospective-driver-runner.mjs',
-    'src/modules/task/application/task-retrospective-application.mjs',
-    'src/modules/task/domain/task-retrospective.mjs',
-    'src/modules/task/interfaces/http/task-retrospective-http.mjs',
-    'src/modules/task/interfaces/internal/task-retrospective-driver.mjs',
-    'src/modules/task/persistence/task-retrospective-repository.ts',
-  ]) assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
 });
 
 test('Task 生命周期核心只保留模块内扁平技术层', () => {

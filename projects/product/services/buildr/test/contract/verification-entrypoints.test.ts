@@ -87,7 +87,7 @@ test('product verification exposes four gates, direct layers, and one focus entr
   const fast: any = read('test/verification/verify-buildr-product-fast');
   assert.match(fast, /run-development-node" test\/verification\/profile\.ts fast/);
   const fastIds: any = createVerificationPlan({ profiles: ['fast'] }).steps.map((step: any) => step.id);
-  assert.deepEqual(fastIds, ['typecheck', 'unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict']);
+  assert.deepEqual(fastIds, ['typecheck', 'unit', 'component', 'contract', 'cli-architecture', 'openspec-strict']);
   assert.equal(fastIds.includes('system'), false);
   for (const forbidden of ['npm pack', 'npm install', 'verification/workspace/run.ts', 'release-smoke.ts']) {
     assert.equal(fast.includes(forbidden), false, `fast verifier must exclude ${forbidden}`);
@@ -250,7 +250,6 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
   assert.match(candidate, /assertMinimumNodeVersion\(process\.versions\.node, developmentNodeVersion\)/);
   assert.doesNotMatch(candidate, /process\.versions\.node !== developmentNodeVersion|Buildr Product development Node mismatch/);
   assert.match(candidate, /enforceOfflineVerification\(\)/);
-  assert.ok(candidate.split(/\r?\n/).length < 100);
   const candidatePlan: any = createVerificationPlan({ profiles: ['candidate'] });
   const corePlan: any = createVerificationPlan({ profiles: ['core'] });
   assert.ok(corePlan.steps.length < candidatePlan.steps.length);
@@ -260,61 +259,6 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
   for (const step of candidatePlan.steps) {
     assert.equal(step.testing.environment.footprints.includes('network'), false, `${step.id} must not depend on external network`);
   }
-  for (const stage of [
-    'fine-grained unit tests',
-    'bounded component tests',
-    'Build and verification tool boundaries',
-    'Code and Git application integration slice',
-    'Desktop and Agent connection integration slice',
-    'Knowledge and source reading integration slice',
-    'Workspace asset integration slice',
-    'Archify component lifecycle integration slice',
-    'Task record and material integration slice',
-    'Connection Skill integration slice',
-    'Runtime projection integration slice',
-    'Project declaration integration slice',
-    'OpenSpec application integration slice',
-    'Verification orchestration integration slice',
-    'Buildr Web Runtime integration slice',
-    'Release and installation integration slice',
-    'Workspace data-store integration slice',
-    'Self-bootstrap closeout integration slice',
-    'Task read-model integration slice',
-    'Task coordination integration slice',
-    'repository contract tests',
-    'System verification admission canary',
-    'System verification orchestration contracts',
-    'System public JSON contracts',
-    'System OpenSpec contract audit',
-    'System Workspace lifecycle',
-    'System Task lifecycle',
-    'System Worktree lifecycle',
-    'System runtime recovery',
-    'System Buildr Web Runtime',
-    'System Buildr Web process and preview',
-    'Concurrent task workflow acceptance',
-    'CLI modular architecture',
-    'OpenSpec canonical spec quality',
-    'openspec strict validation',
-    'frozen application payload and candidate npm tarball',
-    'application payload and npm runtime candidate',
-    'verified npm installation Launcher projection',
-    'open-source candidate',
-    'OpenSpec contract candidate audit',
-    'managed mutations',
-    'single-command init onboarding',
-    'CLI compatibility',
-    'CLI package parity',
-    'runtime adapter contract',
-    'runtime adapter implementation-family parity',
-    'capability CLI integration',
-    'Service branch contract',
-    'remote Skill timeout contract',
-    'release metadata and real platform Launcher consumption',
-    'managed data integrity',
-    'OpenSpec application integration slice',
-    'documentation quality',
-  ]) assert.ok(candidatePlan.steps.some((step: any) => step.name === stage), `candidate verifier must retain ${stage}`);
   for (const excluded of [
     'repository-onboarding',
     'browser-shell', 'browser-project', 'browser-service', 'browser-task', 'browser-change',

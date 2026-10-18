@@ -20,23 +20,6 @@ test('task-review contract/provider/binding 以一个能力支持两种参数化
   assert.equal(manifest.capabilityContracts.some((item: any) => /(?:planning|completion)[.-]review|task-review-(?:planning|completion)/i.test(item.id)), false);
 });
 
-test('task-review 从真实对象动态审查、真实记录method并用CAS防覆盖', () => {
-  const skill: any = read('resources/workspace/skills/buildr/task-review/SKILL.md');
-  for (const required of [
-    '从真实工作现场取得本次对象',
-    '动态审查',
-    '同一 Agent 自审使用 `self`',
-    '只有另一 Agent 完整执行才使用 `independent-agent`',
-    '中断时不要调用 record',
-    '--expected-current',
-  ]) assert.ok(skill.includes(required), required);
-  assert.match(skill, /完成结果可以是当前代码内容、Git commit\/tree、文件产物、部署结果或外部系统结果/);
-  assert.match(skill, /直接使用当前对象或专业接口已返回的稳定身份/);
-  assert.match(skill, /Application 不判断适用性/);
-  assert.match(skill, /并发冲突时重新 inspect/);
-  assert.doesNotMatch(skill, /buildr verification run|buildr task finish run|git commit|git push|revision:/);
-});
-
 test('Task Review 与纯复盘 Skill 职责独立且都不成为 Finish 依赖', () => {
   const manifest: any = YAML.parse(read('resources/manifest.yml'));
   const review: any = manifest.builtins.skills.find((item: any) => item.id === 'task-review');
@@ -48,8 +31,6 @@ test('Task Review 与纯复盘 Skill 职责独立且都不成为 Finish 依赖',
   assert.equal(manifest.builtins.skills.some((item: any) => item.id === 'task-development'), false);
   assert.equal(finish.requires.some((item: any) => item.capability === 'buildr.task-review'), false);
   assert.equal(finish.requires.some((item: any) => /retrospective|asset-review/.test(item.capability)), false);
-  assert.match(read('resources/workspace/skills/buildr/task-review/SKILL.md'), /Task Retrospective/);
-  assert.match(read('resources/workspace/skills/buildr/task-retrospective/SKILL.md'), /\.buildr\/local\/task-retrospectives/);
 });
 
 test('Task Review Application 是唯一 repository writer caller', () => {

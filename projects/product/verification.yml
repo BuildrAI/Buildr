@@ -25,7 +25,8 @@ testing:
         - test:source
       cwd: services/buildr
     selection:
-      - 普通开发继续选择受影响检查；准备发布时按当前平台候选源码登记补齐有效结果
+      - 普通开发选择受影响源码及独立源码包检查；dev 直接推送与开发合并请求沿用原有开发反馈，准备发布时只补当前缺项
+      - 文档链接、架构及规范静态检查不作候选必跑门槛；独立检查不挂在全局前置检查后，一轮收集失败，修复后只补失败及受影响项
       - 按实际内容、配方、依赖和原环境复用；最终包和未覆盖平台仍单独验证
       - 传入 --json 只看计划；--force 强制重跑；--output 导出可搬运源码结果
       - 发布准备返回的 --base 固定比较提交；同轮本机与远端共用，不追随开发分支移动
@@ -40,8 +41,8 @@ testing:
       project: product
       services:
         - buildr
-    purpose: 验证实际命令 shim、路径别名、目录链接、硬链接锁、严格文件句柄读取、进程树清理及一个 Git 换行转换用例；只在真实 Windows 执行时形成
-      Windows 证明
+    purpose: 验证实际命令 shim、路径别名、目录链接、硬链接锁、严格文件句柄读取、进程树清理及一个 Git 换行转换用例；只在真实 Windows
+      执行时形成 Windows 证明
     sourcePaths:
       - services/buildr/src/infrastructure/process.ts
       - services/buildr/src/infrastructure/filesystem/**
@@ -83,7 +84,13 @@ testing:
       - services/buildr/test/platform/macos-*.test.ts
     full:
       kind: command
-      argv: [tools/development/run-development-npm, run, test:source, --, --scope, platform]
+      argv:
+        - tools/development/run-development-npm
+        - run
+        - test:source
+        - --
+        - --scope
+        - platform
       cwd: services/buildr
     selection:
       - 仅在真实 macOS 执行 system-macos-platform；只补此节点，不重跑通用检查
@@ -109,9 +116,12 @@ testing:
     full:
       kind: agent
       instructions:
-        - 从发布入口取已核验来源和摘要的准确原包目录，用 tools/development/run-development-node 调用 test/verification/artifact.ts，显式提供 --artifact-dir 和 --output
-        - --scope common 只执行通用原包检查一次；--scope platform 只执行当前系统的 runtime-macos 或 runtime-windows 及当前 Node
-        - 最低 Node 使用实际 24.15.0 程序运行 --scope platform --node-tuple minimum，仅补宿主组合，不重复通用检查与启动器
+        - 从发布入口取已核验来源和摘要的准确原包目录，用 tools/development/run-development-node 调用
+          test/verification/artifact.ts，显式提供 --artifact-dir 和 --output
+        - --scope common 只执行通用原包检查一次；--scope platform 只执行当前系统的 runtime-macos 或
+          runtime-windows 及当前 Node
+        - 最低 Node 使用实际 24.15.0 程序运行 --scope platform --node-tuple
+          minimum，仅补宿主组合，不重复通用检查与启动器
         - 有效结果保留原实际系统和程序；使用同一 prepare 的 --artifact-verification 导入，缺项不冒充完整通过
     requirements:
       - 明确冻结源码、同一原包及隔离检查目录
@@ -331,6 +341,35 @@ testing:
         - 使用对应环境的 CLI、Browser 或 HTTP 工具检查关键入口并保存实际观察
     requirements:
       - explicit-target-environment
+  - id: dsh-plugin-source
+    title: DSH 插件独立源码单元检查
+    scope:
+      project: product
+      services:
+        - dsh-plugin
+    location:
+      kind: service
+      service: dsh-plugin
+    purpose: 只证明不依赖软件开发工具包（SDK）与主包对端的源码单元行为；不替代完整构建、装载及准确双包兼容
+    sourcePaths:
+      - plugin/**
+      - tools/**
+      - package.json
+    testRoots:
+      - test/unit/**
+    full:
+      kind: command
+      argv:
+        - node
+        - tools/verify-source.ts
+      cwd: .
+    selection:
+      - 发布本机预检只补此入口缺项，不先跑旧对端的完整验证
+      - 与完整候选使用同一单元配方及逐项证明；SDK 专属单元在完整入口执行
+      - --output 导出可搬运证明；源码、配方或真实环境变化使相应结果失效
+    requirements:
+      - node >=24.15.0
+      - git
   - id: dsh-plugin
     title: DSH 桌面插件构建与装载
     scope:

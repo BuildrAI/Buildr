@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EventEmitter } from 'node:events';
 import { createSourceVerificationPlan, parseSourceArgs, prepareSourceVerificationEnvironment, sourceOnlyVerificationSteps, sourceVerificationPreparation, sourceVerificationCancellation } from '../verification/source.ts';
-import { createPlatformArtifactVerificationPlan, createPlatformSourceVerificationPlan, validateCandidateCiCoverage, validateVerificationRegistry } from '../verification/planner.ts';
+import { createVerificationPlan, createVerificationAdmissionPlan, createPlatformArtifactVerificationPlan, createPlatformSourceVerificationPlan, validateCandidateCiCoverage, validateVerificationRegistry } from '../verification/planner.ts';
 import { CANDIDATE_CI_SHARDS, verificationSteps } from '../verification/registry.ts';
 
 for (const [signal, exitCode] of [['SIGINT', 130], ['SIGTERM', 143]] as const) test(`source ${signal} requests graceful cancellation and releases its signal listeners`, () => {
@@ -172,4 +172,28 @@ test('environment force prepares runtime checks even when their ordinary source 
   assert.deepEqual(prepared, ['source-runtime']);
   assert.deepEqual(result.preparation.stepIds, ['typecheck', 'system-app-process']);
   assert.deepEqual(env, { BUILDR_VERIFICATION_FORCE: '1' });
+});
+
+
+test('editorial and architecture checks remain selectable in development but are absent from release admission and shards', () => {
+  const developmentOnly = ['cli-architecture', 'openspec-strict', 'openspec-candidate-audit', 'docs-quality'];
+  const releasePlans = [createSourceVerificationPlan('darwin'), createSourceVerificationPlan('win32'),
+    createVerificationAdmissionPlan(createVerificationPlan({ profiles: ['candidate'] }))];
+  for (const id of developmentOnly) {
+    assert.equal(createVerificationPlan({ stepIds: [id] }).steps.some((step: any) => step.id === id), true, id);
+    for (const plan of releasePlans) assert.equal(plan.steps.some((step: any) => step.id === id), false, id);
+    assert.equal(CANDIDATE_CI_SHARDS.some((shard: any) => shard.stepIds.includes(id)), false, id);
+  }
+  for (const id of ['system-openspec-contract-audit', 'system-task-lifecycle', 'system-worktree-lifecycle']) {
+    assert.ok(releasePlans[0].steps.some((step: any) => step.id === id), `real product behavior retained: ${id}`);
+  }
+  const candidate = releasePlans[2];
+  assert.deepEqual(candidate.admissionStepIds, []);
+  assert.deepEqual(candidate.steps.find((step: any) => step.id === 'integration-workspace-assets').dependsOn, []);
+  assert.deepEqual(candidate.steps.find((step: any) => step.id === 'cli-package-parity').dependsOn, ['candidate-tarball']);
+  const affected = createVerificationPlan({ paths: ['tools/verification/package-check/static-validation.ts', 'src/bootstrap/cli/main.ts', 'src/modules/workspace/application/workspace-operations.ts'] });
+  for (const id of ['package-static', 'package-runtime', 'cli-compatibility']) {
+    assert.ok(affected.steps.some((step: any) => step.id === id), `source package checks belong in daily affected feedback: ${id}`);
+  }
+  assert.equal(affected.steps.some((step: any) => step.id === 'candidate-tarball'), false, 'daily feedback does not create a release package');
 });

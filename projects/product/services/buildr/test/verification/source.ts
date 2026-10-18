@@ -95,7 +95,7 @@ export function createSourceVerificationPlan(platform: string = process.platform
     && (step.platformScope.kind === 'common' ? scope !== 'platform'
       : scope !== 'common' && step.platformScope.runners.includes(runner))).map((step: any) => step.id) : [];
   const selected = createVerificationPlan({ stepIds });
-  const composed = stepIds.length > 0 && scope !== 'platform' ? createVerificationAdmissionPlan(selected) : selected;
+  const composed = stepIds.length > 0 && scope !== 'platform' ? createVerificationAdmissionPlan(selected, verificationSteps.filter((step: any) => step.profiles.includes('candidate'))) : selected;
   const source = sourceOnlyVerificationSteps(composed.steps);
   const ids = new Set(source.steps.map(step => step.id));
   return {

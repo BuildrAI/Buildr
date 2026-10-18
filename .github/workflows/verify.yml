@@ -96,6 +96,8 @@ on:
         type: string
   pull_request:
     branches: [dev, main]
+  push:
+    branches: [dev]
 
 permissions:
   contents: read
@@ -129,7 +131,7 @@ env:
 jobs:
   dev-feedback-macos:
     name: Development feedback (macOS affected and Browser)
-    if: github.event_name == 'pull_request' && github.base_ref == 'dev'
+    if: (github.event_name == 'pull_request' && github.base_ref == 'dev') || (github.event_name == 'push' && github.ref == 'refs/heads/dev')
     runs-on: macos-latest
     timeout-minutes: 30
     defaults:
@@ -227,7 +229,7 @@ jobs:
 
   dev-feedback-windows:
     name: Development feedback (Windows platform-sensitive)
-    if: github.event_name == 'pull_request' && github.base_ref == 'dev'
+    if: (github.event_name == 'pull_request' && github.base_ref == 'dev') || (github.event_name == 'push' && github.ref == 'refs/heads/dev')
     runs-on: windows-latest
     timeout-minutes: 30
     defaults:

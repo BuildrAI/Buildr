@@ -655,14 +655,6 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     ],
     "inputExclusions": []
   },
-  "openspec-spec-quality": {
-    "inputs": [
-      "openspec/**/*.md",
-      "openspec/**/*.yaml",
-      "test/verification/openspec/spec-quality.ts"
-    ],
-    "inputExclusions": []
-  },
   "openspec-strict": {
     "inputs": [
       "openspec/**"
@@ -1093,6 +1085,8 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "package-runtime": {
     "inputs": [
+      "src/modules/workspace/**",
+      "tools/verification/package-check/smoke-checks.ts",
       "resources/runtime/**",
       "resources/workspace/rules/**",
       "src/modules/agent-assets/infrastructure/runtime/**",

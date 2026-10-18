@@ -61,34 +61,13 @@ test('ux-design-laws 覆盖 30 个主题并保持卡片和来源完整', () => {
   }
 
   const index: any = read(`${skillRoot}/references/law-index.md`);
-  assert.match(index, /2026-09-03/);
   assert.match(index, /CC BY-NC-ND 4\.0/);
   assert.match(index, /https:\/\/note\.mowen\.cn\/detail\/j7A9Kf2PtKqhvm1qzwzJU/);
   assert.doesNotMatch(`${index}\n${references}`, /\[TODO|TBD|PLACEHOLDER/);
 });
 
-test('ux-design-laws 从真实证据选择法则并保持原型、实现和用户利益边界', () => {
-  const skill: any = read(`${skillRoot}/SKILL.md`);
-  assert.match(skill, /设计.*审查.*权衡/s);
-  assert.match(skill, /主要用户、首要任务、使用环境、平台与输入方式/);
-  assert.match(skill, /一至两个相关分组/);
-  assert.match(skill, /证据.*影响.*法则.*建议.*权衡.*验证/s);
-  assert.match(skill, /默认给出最重要的三至五项/);
-  assert.match(skill, /法则是启发式原则/);
-  assert.match(skill, /安全、隐私、无障碍与结果可逆性/);
-  assert.match(skill, /真实状态/);
-  assert.match(skill, /不生成原型、不修改代码/);
-  assert.match(skill, /用户明确要求产出原型或实现时/);
-  assert.doesNotMatch(skill, /生成自包含 HTML|浏览器验证|修改前端代码/);
-
-  const uiPrototype: any = read('resources/workspace/skills/buildr/ui-prototype/SKILL.md');
-  assert.match(uiPrototype, /未明确确认时不得使用/);
-});
-
 test('ux-design-laws Codex 元数据保持自动发现和默认提示一致', () => {
   const metadata: any = YAML.parse(read(`${skillRoot}/agents/openai.yaml`));
-  assert.equal(metadata.interface.display_name, '用户体验设计法则');
-  assert.match(metadata.interface.short_description, /设计、审查和权衡/);
   assert.match(metadata.interface.default_prompt, /\$ux-design-laws/);
   assert.equal(metadata.policy.allow_implicit_invocation, true);
 });

@@ -82,7 +82,8 @@ process.stdout.write(JSON.stringify({ output: process.env.BUILDR_CANDIDATE_PREPA
 test('reviewed runtime proof partitions unrelated tests while binding its real test and tool imports', t => {
   const f = fixture(t);
   const write = (name: string, value: string) => { const file = path.join(f.productRoot, name); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, value); };
-  write('test/integration/selected.test.ts', "import '../../tools/release/selected.ts';\n");
+  write('test/helpers/common.ts', 'export const common = 1;\n');
+  write('test/integration/selected.test.ts', "import '../../tools/release/selected.ts'; import '../helpers/common.ts';\n");
   write('tools/release/selected.ts', 'export const value = 1;\n');
   const step = { ...f.step, executor: { type: 'node-test', files: ['test/integration/selected.test.ts'] }, reuse: { scope: 'runtime' as const, inputMode: 'runtime-check' as const } };
   const observe = () => collectVerificationReuseSnapshot({ ...f.options, steps: [step] });

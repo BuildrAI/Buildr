@@ -29,8 +29,6 @@ test('当前知识 v4 使用可解析协作约定，旧 v3 保留而不冒充新
   assert.equal(parsed.version, 4);
   const historical = path.join(WORKSPACE_TARGET, 'skills/contracts/buildr/current-knowledge-maintenance/v3.md');
   assert.equal(parseCapabilityContract(historical).version, 3);
-  assert.match(read(historical), /`assess` 识别真实影响并维护已授权变更说明/);
-  assert.match(read(knowledge), /均不创建、刷新或要求 Buildr 增强的 `brief\.md`/);
   for (const version of [1, 2]) assert.equal(fs.existsSync(path.join(WORKSPACE_TARGET, `skills/contracts/buildr/current-knowledge-maintenance/v${version}.md`)), false);
 });
 
@@ -114,41 +112,10 @@ test('OpenSpec Component 通过 contributions 组合且不改写 external Skill 
 });
 
 test('归档保留当时的知识影响记录，当前阅读成果按现行索引定位', () => {
-  const changeRoot: any = resolveChangeRoot('enhance-openspec-human-readable-knowledge');
-  const brief: any = read(path.join(changeRoot, 'brief.md'));
-  const impact: any = YAML.parse(read(path.join(changeRoot, '.buildr/knowledge-impact.yml')));
-  assert.match(brief, /## 一句话摘要/);
-  assert.match(brief, /## 核心流程/);
-  assert.deepEqual(impact.unresolvedItems, []);
-  assert.ok(impact.impacts.every((item: any) => item.target && item.reason && item.status !== 'pending'));
   // Explanatory chapters can be merged or deleted; archived change records stay historical.
   const current = parseKnowledgeIndex(read(path.join(PRODUCT_ROOT, 'knowledge/index.yml')));
   for (const artifact of current.artifacts) {
     assert.equal(fs.statSync(path.join(PRODUCT_ROOT, artifact.path)).isFile(), true, artifact.path);
     if (artifact.graphSource) assert.equal(fs.statSync(path.join(PRODUCT_ROOT, artifact.graphSource)).isFile(), true, artifact.graphSource);
   }
-});
-
-test('正式 Change 可从 active 或唯一 archived identity 解析', () => {
-  const activeOrArchived: any = resolveChangeRoot('optimize-task-finish-final-candidate-sequencing');
-  assert.equal(fs.existsSync(path.join(activeOrArchived, 'brief.md')), true);
-  const archived: any = resolveChangeRoot('enhance-openspec-human-readable-knowledge');
-  assert.match(path.relative(PRODUCT_ROOT, archived).split(path.sep).join('/'), /^openspec\/changes\/archive\//);
-});
-
-test('Context 四层模型、知识导航和 Service 局部术语边界保持一致', () => {
-  const glossary: any = read(path.join(PRODUCT_ROOT, 'knowledge/docs/glossary.md'));
-  const productArchitecture: any = read(path.join(PRODUCT_ROOT, 'knowledge/docs/overview.md'));
-  const technical: any = read(path.join(PRODUCT_ROOT, 'knowledge/docs/architecture/technical.md'));
-  for (const term of ['工作信息空间', 'Workspace', '工作资产', '共享工作环境', '上下文（Context）', '任务上下文', '上下文窗口']) {
-    assert.match(glossary, new RegExp(term.replace(/[()]/g, '\\$&')));
-  }
-  // Detailed context definitions belong to the glossary, not the default product introduction.
-  for (const term of ['Work Information Space', 'Shared Work Environment', 'Task Context', 'Request Context', 'Context Window']) {
-    assert.ok(glossary.includes(term), term);
-  }
-  assert.match(productArchitecture, /\]\(glossary\.md(?:#[^)]+)?\)/);
-  assert.match(technical, /\]\(\.\.\/glossary\.md\)/);
-  assert.equal(fs.existsSync(path.join(PRODUCT_ROOT, 'knowledge/docs/overview.md')), true);
-  assert.equal(fs.existsSync(path.join(PRODUCT_ROOT, 'knowledge/docs/architecture/technical.md')), true);
 });

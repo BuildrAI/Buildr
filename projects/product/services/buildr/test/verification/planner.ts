@@ -325,7 +325,10 @@ function ownedStepInput(step: any, productPath: any): any  {
 }
 
 function matchedStepInput(step: any, productPath: any): any  {
-  if (step.testing?.primaryIntent === 'Delivery / Release') return null;
+  // Source package selectors already run against the checkout. Keep them in
+  // affected development feedback; only consumers of final bytes wait for a
+  // Candidate. Do not introduce another package or test entrypoint here.
+  if (step.testing?.primaryIntent === 'Delivery / Release' && step.executor?.type !== 'package-selector') return null;
   return ownedStepInput(step, productPath);
 }
 
@@ -926,7 +929,8 @@ export function createDevelopmentPlatformPlan(request: any = {}, steps: any = ve
 
 export function createVerificationAdmissionPlan(plan: any, steps: any = verificationSteps): any  {
   if (plan.steps.length === 0) return Object.freeze({ ...plan, admissionStepIds: Object.freeze([]) });
-  const fastPlan: any = createVerificationPlan({ profiles: ['fast'] }, steps);
+  const admissionSteps = plan.profiles?.includes('candidate') ? steps.filter((item: any) => item.profiles.includes('candidate')) : steps;
+  const fastPlan: any = createVerificationPlan({ profiles: ['fast'] }, admissionSteps);
   const admissionStepIds: any[] = [...new Set([
     ...fastPlan.steps.map((item: any) => item.id),
     ...plan.steps.filter((item: any) => item.admission === true).map((item: any) => item.id),
@@ -945,17 +949,13 @@ export function createVerificationAdmissionPlan(plan: any, steps: any = verifica
     ...admissionStepIds,
     ...plan.steps.map((item: any) => item.id).filter((id: any) => !admissionIds.has(id)),
   ];
-  const composedSteps: any = orderedIds.map((id: any) => {
-    const item: any = merged.get(id);
-    if (admissionIds.has(id)) return item;
-    return Object.freeze({
-      ...item,
-      dependsOn: Object.freeze([...new Set([...(item.dependsOn ?? []), ...admissionStepIds])]),
-    });
-  });
+  // Cheap feedback and verification-tool tests are checks, not prerequisites
+  // for unrelated assertions. The scheduler still blocks real dependents of
+  // failed producers (for example a consumer without its package).
+  const composedSteps: any = orderedIds.map((id: any) => merged.get(id));
   return Object.freeze({
     ...plan,
-    admissionStepIds: Object.freeze(admissionStepIds),
+    admissionStepIds: Object.freeze([]),
     steps: Object.freeze(composedSteps),
   });
 }

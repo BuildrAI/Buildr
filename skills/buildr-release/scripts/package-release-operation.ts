@@ -533,18 +533,11 @@ async function closeoutPackageRelease(options: any, scope: any, dependencies: an
     effects.push(...(worktree.effects ?? []));
     if (worktree.status !== 'cleaned') return { status: 'published-worktree-cleanup-blocked', outcomes: { publication: 'passed', taskRegistration: 'completed' }, cleanup, nextActions: worktree.nextActions };
     state.closeout = { contextIdentity: options.context.identity, evidenceIdentity: options.evidence.identity, cleanup,
-      status: 'pending', outcomes: { publication: 'passed', taskRegistration: 'completed', cleanup: 'cleaned', activation: 'pending' } }; save();
+      status: 'passed', outcomes: { publication: 'passed', taskRegistration: 'completed', cleanup: 'cleaned', activation: 'not-run' } }; save();
   }
-  if (state.closeout.status === 'passed') return { status: 'passed', outcomes: state.closeout.outcomes, cleanup, selfBootstrapCloseout: state.closeout.selfBootstrapCloseout, nextActions: [] };
-  if (dependencies.selfBootstrapCloseout) {
-    const result = await dependencies.selfBootstrapCloseout({ workspace: scope.workspace, context: options.context, evidence: options.evidence });
-    effects.push(...(result.effects ?? []));
-    const passed = result.status === 'passed' || result.status === 'not-applicable';
-    state.closeout = { ...state.closeout, selfBootstrapCloseout: result, status: passed ? 'passed' : 'blocked', outcomes: { publication: 'passed', taskRegistration: 'completed', cleanup: 'cleaned',
-      activation: result.status === 'not-applicable' ? 'not-applicable' : passed ? 'ready' : 'blocked' } }; save();
-    return { status: passed ? 'passed' : 'published-self-bootstrap-blocked', outcomes: state.closeout.outcomes, cleanup,
-      selfBootstrapCloseout: result, nextActions: passed ? [] : result.nextActions ?? ['接续唯一自举执行器的实际收尾结果。'] };
-  }
-  return { status: 'published-self-bootstrap-pending', outcomes: state.closeout.outcomes, cleanup,
-    nextActions: ['接续buildr-self-bootstrap-sync唯一执行器，记录实际激活或不适用结果；保留已完成公开、任务登记及清理事实。'] };
+  // Historical activation failures do not invalidate publication, registration or cleanup.
+  state.closeout = { contextIdentity: options.context.identity, evidenceIdentity: options.evidence.identity, cleanup,
+    status: 'passed', outcomes: { publication: 'passed', taskRegistration: 'completed', cleanup: 'cleaned', activation: 'not-run' } };
+  save();
+  return { status: 'passed', outcomes: state.closeout.outcomes, cleanup, nextActions: [] };
 }

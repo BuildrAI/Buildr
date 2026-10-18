@@ -9,7 +9,7 @@ const sharedRecipe = [
   'test/verification/dag-scheduler.ts', 'test/verification/verification-reuse.ts', 'test/verification/verification-inputs.ts',
   'test/verification/resource-coordinator.ts', 'test/verification/test-files.ts', 'test/verification/verification-input-discovery.ts',
 ];
-const sharedTrees = ['test/helpers/', 'test/context/', 'test/fixtures/', 'test/verification/timing/', 'test/verification/support/'];
+const sharedTrees = ['test/context/', 'test/fixtures/', 'test/verification/timing/', 'test/verification/support/'];
 type Entry = string[];
 
 export function scopedVerificationInputs(entries: Entry[], repositoryRoot: string, productRoot: string, step: any, options: { proof?: boolean; readText?: (file: string) => string } = {}): {
@@ -37,7 +37,8 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
   }
   for (const [file] of entries) {
     const relative = local(file!);
-    if (relative && sharedTrees.some(tree => relative.startsWith(tree))) selected.add(file!);
+    if (relative && (sharedTrees.some(tree => relative.startsWith(tree))
+      || relative.startsWith('test/helpers/') && !/\.[cm]?[jt]sx?$/u.test(relative))) selected.add(file!);
   }
   const discovery = discoveredVerificationFiles(step, entries.map(([file]) => local(file!)).filter((file): file is string => file !== null));
   for (const file of discovery.selected) add(prefix + file);
@@ -56,6 +57,12 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
     const file = pending.pop()!;
     if (!recipeFile(file) || !/\.[cm]?[jt]sx?$/u.test(file) || !byPath.has(file)) continue;
     const text = options.readText ? options.readText(file) : fs.readFileSync(path.resolve(repositoryRoot, file), 'utf8');
+    // Imported helpers belong to their consumers, rather than every check.
+    // Directory-based helper discovery retains the entire namespace; computed
+    // module loading below still falls back to the complete read scope.
+    if (/(['"])(?:[^'"\n]*\/)?helpers\/?\1/u.test(text)) {
+      for (const [candidate] of entries) if (local(candidate!)?.startsWith('test/helpers/')) add(candidate!);
+    }
     // Reviewed checks can exclude the checkout's release notes without
     // excluding other Product materials. A direct reader outgrows that claim.
     if (/\bCHANGELOG\.md\b/iu.test(text)

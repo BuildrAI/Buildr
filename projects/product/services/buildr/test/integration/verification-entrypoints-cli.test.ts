@@ -122,14 +122,13 @@ test('candidate full plan only uses Candidate profile and rejects changed-path o
   assert.equal(payload.source, 'candidate-profile');
   assert.deepEqual(payload.paths, []);
   assert.deepEqual(payload.preflightSteps, []);
-  assert.ok(payload.admissionStepIds.includes('system-verification-admission'));
-  assert.ok(payload.admissionStepIds.includes('integration-verification'));
+  assert.deepEqual(payload.admissionStepIds, []);
   assert.equal(new Set(payload.steps.map((step: any) => step.id)).size, payload.steps.length);
   assert.equal(payload.steps.some((step: any) => step.id === 'repository-onboarding'), false);
   for (const id of [
     'system-verification-admission', 'system-verification-contracts', 'system-public-json-contracts', 'system-openspec-contract-audit',
     'system-workspace-lifecycle', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-runtime-recovery',
-    'system-buildr-web-http', 'system-app-process', 'docs-quality',
+    'system-buildr-web-http', 'system-app-process',
   ]) {
     assert.equal(payload.steps.filter((step: any) => step.id === id).length, 1);
   }
@@ -214,14 +213,14 @@ test('changed verification exposes plan/json and rejects unknown options before 
   assert.equal(payload.scope.mode, 'affected');
   assert.deepEqual(payload.scope.reasons.map((reason: any) => reason.code), ['affected-owner']);
   assert.deepEqual(payload.unmapped, []);
-  assert.deepEqual(payload.admissionStepIds, ['typecheck', 'unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict']);
-  assert.deepEqual(payload.steps.map((step: any) => step.id), [...payload.admissionStepIds, 'docs-quality']);
+  assert.deepEqual(payload.admissionStepIds, []);
+  assert.deepEqual(payload.steps.map((step: any) => step.id), ['typecheck', 'unit', 'component', 'contract', 'cli-architecture', 'openspec-strict', 'docs-quality']);
+  assert.ok(payload.steps.every((step: any) => step.dependsOn.length === 0));
   assert.deepEqual(payload.selectionAudit.directMappings, [{
     code: 'affected-owner', path: 'knowledge/docs/overview.md', owners: ['docs-quality'],
   }]);
-  assert.deepEqual(payload.selectionAudit.layerCounts, { Static: 6, Unit: 1, Component: 1, Integration: 0, System: 0 });
   assert.equal(payload.selectionAudit.stepSelections.find((step: any) => step.stepId === 'docs-quality').selectionKinds.includes('direct-owner'), true);
-  assert.equal(payload.selectionAudit.stepSelections.find((step: any) => step.stepId === 'typecheck').selectionKinds.includes('admission'), true);
+  assert.equal(payload.selectionAudit.stepSelections.find((step: any) => step.stepId === 'typecheck').selectionKinds.includes('admission'), false);
 
   const full: any = spawnSync(process.execPath, [runner, '--json', 'test/verification/ownership.ts'], { cwd: productRoot, encoding: 'utf8', maxBuffer: 1024 * 1024, env: environment });
   assert.equal(full.status, 0, full.stderr);
@@ -230,7 +229,7 @@ test('changed verification exposes plan/json and rejects unknown options before 
   assert.equal(fullPayload.scope.reasons[0].code, 'ownership-authority-change');
   assert.equal(fullPayload.scope.reasons[0].pattern, 'test/verification/ownership.ts');
   assert.match(fullPayload.scope.reasons[0].explanation, /ownership/u);
-  assert.ok(fullPayload.selectionAudit.stepSelections.every((step: any) => step.selectionKinds.includes('full-scope') || step.selectionKinds.includes('admission')));
+  assert.ok(fullPayload.selectionAudit.stepSelections.every((step: any) => step.selectionKinds.includes('full-scope') || step.selectionKinds.includes('profile')));
 
   const fallback: any = spawnSync(process.execPath, [runner, '--json', 'new-area/contract.bin'], { cwd: productRoot, encoding: 'utf8', env: environment });
   assert.equal(fallback.status, 1, fallback.stderr);

@@ -42,7 +42,7 @@ export async function prepareLocalSourceVerification(options: {
   }
   const nextActions = missingStepIds.length ? [
     ...(missingStepIds.some((id: string) => !id.startsWith('dsh-plugin:')) ? [`在 ${productRoot} 执行 tools/development/run-development-npm run test:source${options.base ? ` -- --base ${options.base}` : ''}；仅补齐失效或缺失结果，再继续同一 prepare。`] : []),
-    ...(missingStepIds.some((id: string) => id.startsWith('dsh-plugin:')) ? ['在该冻结源码的 dsh-plugin 服务运行 verify-all.ts，显式消费固定 SDK 与真实 Buildr 对端，再继续同一 prepare。'] : []),
+    ...(missingStepIds.some((id: string) => id.startsWith('dsh-plugin:')) ? ['在该冻结源码的 dsh-plugin 服务运行 tools/verify-source.ts（无需 SDK 或对端），再继续同一 prepare。'] : []),
   ] : [];
   return {
     status: missingStepIds.length ? 'local-verification-required' : 'ready',

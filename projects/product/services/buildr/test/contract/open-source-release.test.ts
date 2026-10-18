@@ -468,12 +468,12 @@ test('CI and publish workflows use the supported Node runtime', () => {
   const publishWorkflow: any = fs.readFileSync(path.join(workspaceRoot, '.github/workflows/publish.yml'), 'utf8');
   const verifyDocument: any = YAML.parseDocument(verifyWorkflow, { uniqueKeys: true }).toJS();
   const hostNodeSmoke: any = fs.readFileSync(path.join(serviceRoot, 'test/verification/host-node/cli-smoke.ts'), 'utf8');
-  assert.deepEqual(Object.keys(verifyDocument.on).sort(), ['pull_request', 'workflow_dispatch']);
+  assert.deepEqual(Object.keys(verifyDocument.on).sort(), ['pull_request', 'push', 'workflow_dispatch']);
   assert.deepEqual(verifyDocument.on.pull_request.branches, ['dev', 'main']);
-  assert.equal(verifyDocument.on.push, undefined);
+  assert.deepEqual(verifyDocument.on.push.branches, ['dev']);
   assert.equal(verifyDocument.env.BUILDR_VERIFICATION_BASE, '${{ inputs.selection_baseline || \'\' }}', 'Candidate and formal repair share their already frozen selection baseline');
-  assert.equal(verifyDocument.jobs['dev-feedback-macos'].if, "github.event_name == 'pull_request' && github.base_ref == 'dev'");
-  assert.equal(verifyDocument.jobs['dev-feedback-windows'].if, "github.event_name == 'pull_request' && github.base_ref == 'dev'");
+  assert.equal(verifyDocument.jobs['dev-feedback-macos'].if, "(github.event_name == 'pull_request' && github.base_ref == 'dev') || (github.event_name == 'push' && github.ref == 'refs/heads/dev')");
+  assert.equal(verifyDocument.jobs['dev-feedback-windows'].if, "(github.event_name == 'pull_request' && github.base_ref == 'dev') || (github.event_name == 'push' && github.ref == 'refs/heads/dev')");
   assert.equal(verifyDocument.jobs['dev-feedback-macos']['runs-on'], 'macos-latest');
   assert.equal(verifyDocument.jobs['dev-feedback-windows']['runs-on'], 'windows-latest');
   assert.equal(verifyDocument.jobs['candidate-plan'].if, "(!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))");
@@ -654,17 +654,6 @@ test('Windows nested Git diagnosis keeps closed inputs, original isolated assert
   assert.ok(scenario.includes("process.argv[process.argv.indexOf('--section') + 1] : 'full'"));
   assert.ok(scenario.includes("section === 'full' || section === 'lifecycle' || section === 'safety'"));
   assert.ok(scenario.includes("sections.length <= 1"));
-});
-
-test('release convergence and self-bootstrap runner fail closed on unmatched authority evidence', () => {
-  const selfBootstrapRunner: any = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/scripts/closeout.mjs'), 'utf8');
-  const convergenceSource: any = fs.readFileSync(path.join(serviceRoot, '../../../../skills/buildr-release/scripts/release-git-convergence.ts'), 'utf8');
-  assert.match(selfBootstrapRunner, /self-bootstrap-closeout\.remote-drift/);
-  assert.match(convergenceSource, /Publication evidence is not a complete passed transaction/);
-  assert.match(convergenceSource, /published-but-dev-reconciliation-blocked/);
-  assert.match(convergenceSource, /reconcilePublishedReleaseWithDev/);
-  assert.match(convergenceSource, /authorizeRemoteDelete/);
-  assert.doesNotMatch(convergenceSource, /\['merge'|\['commit'|\['worktree', 'add'|\['reset', '--hard'/);
 });
 
 test('publisher workflow routes one bounded macOS pair with no Linux, SDK, Candidate gate or publication authority', () => {

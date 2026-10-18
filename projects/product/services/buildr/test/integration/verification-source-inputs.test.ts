@@ -75,12 +75,17 @@ test('a source run pins its Git base before shared refs move and passes the exac
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
 const base = process.env.BUILDR_VERIFICATION_BASE;
 console.log(JSON.stringify({ base, head: git('rev-parse', 'HEAD'), mergeBase: git('merge-base', base, 'HEAD') }));\n`);
-  const execute = createVerificationExecutor({ productRoot: repo, projectRoot: repo, env,
+  const execute = createVerificationExecutor({ productRoot: repo, projectRoot: repo, env: { ...env, NODE_TEST_CONTEXT: undefined },
     diagnosticsDirectory: path.join(repo, 'diagnostics') });
   const result = await execute({ id: 'comparison', name: 'Pinned comparison', timeoutMs: 10_000,
     executor: { type: 'node', file: 'comparison.mjs' } });
   assert.equal(result.status, 'passed', result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), { base, head, mergeBase: base });
+  const diagnostic = await execute({ id: 'comparison-diagnostic', name: 'Pinned comparison cases', timeoutMs: 10_000,
+    executor: { type: 'node-test', files: ['comparison.mjs'], args: ['--test-reporter=dot'] } });
+  assert.equal(diagnostic.status, 'passed', diagnostic.stderr);
+  assert.match(diagnostic.stdout, /comparison\.mjs/);
+  assert.match(diagnostic.stdout, /tests 1/);
   assert.equal(pinSourceVerificationBase(repo, original).BUILDR_VERIFICATION_BASE, head, 'a later ordinary run observes its own base');
   assert.equal(pinSourceVerificationBase(repo, original, base).BUILDR_VERIFICATION_BASE, base, 'candidate recovery retains the selected base');
   assert.throws(() => pinSourceVerificationBase(repo, original, 'missing-base'), /Unknown Git base/u);

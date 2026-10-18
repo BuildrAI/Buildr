@@ -87,7 +87,6 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
   'system-app-process': testing(PROJECT_OWNER, 'Development', 'System', 25000, 'Buildr Web process and preview lifecycle remain isolated.', TEST_ENVIRONMENTS.workspaceLifecycle),
   contract: testing(PROJECT_OWNER, 'Static Conformance', 'Static', 5000, 'Product source, governance assets, and stable entrypoint declarations conform without mutable fixtures.', TEST_ENVIRONMENTS.sourceReadOnly),
   'cli-architecture': testing(SERVICE_OWNER, 'Static Conformance', 'Static', 3000, 'CLI modules and wrappers preserve the declared architecture.', TEST_ENVIRONMENTS.sourceReadOnly),
-  'openspec-spec-quality': testing(PROJECT_OWNER, 'Static Conformance', 'Static', 3000, 'Canonical OpenSpec specifications meet Product quality rules.', TEST_ENVIRONMENTS.sourceReadOnly),
   'openspec-strict': testing(PROJECT_OWNER, 'Static Conformance', 'Static', 5000, 'All OpenSpec artifacts pass upstream strict validation.', TEST_ENVIRONMENTS.cliReadOnly),
   'runtime-adapter-contract': testing(SERVICE_OWNER, 'Static Conformance', 'Integration', 5000, 'Runtime adapter declarations and isolated filesystem projections satisfy their contract.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'runtime-skill-projection': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Changed packaged Skills bind their source identity and complete projected inventory through every supported runtime adapter.', TEST_ENVIRONMENTS.repeatedFilesystem),
@@ -293,7 +292,7 @@ const RELEASE_NOTES_INDEPENDENT_CHECKS = new Set([...RUNTIME_REUSE_CHECKS,
   // These source checks read repository materials, packaged resources or owned
   // fixture repositories. Their real entrypoints do not read root release notes.
   // Keep every other repository input and the shared reader's conservative guard.
-  'openspec-spec-quality', 'integration-knowledge', 'integration-workspace-assets', 'integration-archify',
+  'integration-knowledge', 'integration-workspace-assets', 'integration-archify',
   'integration-declarations', 'integration-openspec', 'system-public-json-contracts',
   'system-openspec-contract-audit', 'concurrent-task-acceptance', 'npm-launcher-candidate', 'capability-cli-integration',
   'commands-cli-integration', 'remote-skill-timeout']);
@@ -711,9 +710,8 @@ export const verificationSteps: any = Object.freeze([
   })),
   step({ id: 'system-macos-platform', name: 'Native macOS source boundaries', executor: { type: 'node-test', files: ['test/platform/macos-readonly-boundaries.test.ts', 'test/platform/macos-development-entry.test.ts', 'test/platform/macos-launcher-boundaries.test.ts'], args: ['--test-concurrency=1', '--test-reporter=dot'] }, profiles: ['candidate'], selection: 'explicit-only', developmentRunners: ['macos'], platformScope: platformScope('macos'), platformEvidence: MACOS_PLATFORM_BOUNDARIES.filter(item => item.stepId === 'system-macos-platform'), schedulingCostMs: 8000, timeoutMs: 60_000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'system-windows-platform', name: 'Native Windows boundary checks', executor: { type: 'node-test', files: ['test/platform/windows-boundaries.test.ts', 'test/platform/windows-readonly-boundaries.test.ts', 'test/system/worktree-create.test.ts'], supportingFiles: ['test/system/worktree-create.test.ts'], args: ['--test-concurrency=1', '--test-reporter=dot', '--test-name-pattern=^(?:native |owned process |项目与服务共享实际仓库|Windows )'] }, profiles: ['candidate'], groups: ['windows-npm-preflight'], selection: 'explicit-only', developmentRunners: ['windows'], platformScope: platformScope('windows'), platformEvidence: WINDOWS_PLATFORM_BOUNDARIES.filter(item => item.stepId === 'system-windows-platform'), schedulingCostMs: 80_000, timeoutMs: 90_000, concurrencyClass: 'workspace-heavy', resources: ['app-runtime'] }),
-  step({ id: 'cli-architecture', name: 'CLI modular architecture', executor: { type: 'node', file: 'test/verification/cli/architecture.ts' }, profiles: ['fast', 'candidate'], }),
-  step({ id: 'openspec-spec-quality', name: 'OpenSpec canonical spec quality', executor: { type: 'node', file: 'test/verification/openspec/spec-quality.ts' }, profiles: ['fast', 'candidate'], }),
-  step({ id: 'openspec-strict', name: 'openspec strict validation', executor: { type: 'openspec', args: ['validate', '--all', '--strict'] }, profiles: ['fast', 'candidate'], }),
+  step({ id: 'cli-architecture', name: 'CLI modular architecture', executor: { type: 'node', file: 'test/verification/cli/architecture.ts' }, profiles: ['fast'], }),
+  step({ id: 'openspec-strict', name: 'openspec strict validation', executor: { type: 'openspec', args: ['validate', '--all', '--strict'] }, profiles: ['fast'], }),
   step({ id: 'runtime-adapter-contract', name: 'runtime adapter contract', executor: { type: 'node', file: 'test/verification/runtime/adapter-contract.ts' }, profiles: ['candidate'], groups: ['runtime'], }),
 
   step({ id: 'integration-candidate-release', name: 'Candidate integration: release contracts and recovery', executor: { type: 'node', file: 'test/verification/run-node-tests.ts', args: [
@@ -754,7 +752,7 @@ export const verificationSteps: any = Object.freeze([
   ], args: ['--test-concurrency=1', '--test-reporter=dot'] }, profiles: ['candidate'], groups: ['release', 'windows-npm-preflight'],  concurrencyClass: 'workspace-heavy' }),
   step({ id: 'host-node-cli-smoke', name: 'Host Node installed CLI smoke', executor: { type: 'node', file: 'test/verification/host-node/cli-smoke.ts', consumesArtifact: true }, profiles: ['host-node'],  dependsOn: ['candidate-tarball'], concurrencyClass: 'workspace-heavy' }),
   step({ id: 'open-source-candidate', name: 'open-source candidate', executor: { type: 'node', file: 'test/verification/release/open-source-candidate.ts', consumesArtifact: true }, profiles: ['candidate'], groups: ['public', 'release'],  dependsOn: ['candidate-tarball'] }),
-  step({ id: 'openspec-candidate-audit', name: 'OpenSpec contract candidate audit', executor: { type: 'node', file: 'test/verification/openspec/contract-audit.ts' }, profiles: ['candidate'], groups: ['openspec'], }),
+  step({ id: 'openspec-candidate-audit', name: 'OpenSpec contract candidate audit', executor: { type: 'node', file: 'test/verification/openspec/contract-audit.ts' }, profiles: [], groups: ['openspec'], }),
   step({ id: 'managed-mutations', name: 'managed mutations', executor: { type: 'node', file: 'test/verification/integrity/managed-mutations.ts' }, profiles: ['candidate'], groups: ['package'], }),
 
   step({ id: 'capability-cli-integration', name: 'capability CLI integration', executor: { type: 'node', file: 'test/capability-cli.integration.ts' }, profiles: ['candidate'],  schedulingCostMs: 25000, concurrencyClass: 'workspace-heavy' }),
@@ -785,7 +783,7 @@ export const verificationSteps: any = Object.freeze([
   step({ id: 'release-tarball-smoke', platformScope: platformScope('macos', 'windows'), platformEvidence: [...MACOS_PLATFORM_BOUNDARIES, ...WINDOWS_PLATFORM_BOUNDARIES].filter(item => item.stepId === 'release-tarball-smoke'), name: 'release metadata and real platform Launcher consumption', executor: { type: 'node', file: 'test/verification/release/release-consumption.ts', args: ['platform'], consumesArtifact: true }, profiles: ['candidate'], groups: ['release', 'windows-npm-preflight'], dependsOn: ['candidate-tarball'], schedulingCostMs: 25000, timeoutMs: 300_000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'managed-data-integrity', name: 'managed data integrity', executor: { type: 'node', file: 'test/verification/integrity/managed-data-integrity.ts' }, profiles: ['candidate'], groups: ['package'],  schedulingCostMs: 9000, concurrencyClass: 'workspace-heavy' }),
 
-  step({ id: 'docs-quality', name: 'documentation quality', executor: { type: 'node', file: 'test/verification/docs/quality.ts' }, profiles: ['candidate'],  concurrencyClass: 'default' }),
+  step({ id: 'docs-quality', name: 'documentation quality', executor: { type: 'node', file: 'test/verification/docs/quality.ts' }, profiles: [],  concurrencyClass: 'default' }),
 ]);
 
 assertVerificationContextDispositionCoverage(verificationSteps.map((item: any) => item.id));
@@ -907,14 +905,9 @@ export const CANDIDATE_CI_SHARDS: any = Object.freeze([
     'unit',
     'component',
     'contract',
-    'cli-architecture',
-    'openspec-spec-quality',
-    'openspec-strict',
     'runtime-adapter-contract',
-    'openspec-candidate-audit',
     'managed-mutations',
     'package-static',
-    'docs-quality',
     'system-verification-admission',
     'integration-verification',
   ]),

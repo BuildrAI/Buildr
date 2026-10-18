@@ -94,7 +94,12 @@ export function createVerificationExecutor(options: any): any  {
       const files: any = resolveNodeTestFiles(productRoot, executor.files, `verification step ${step.id}`);
       return {
         command: exactNode.nodeExecutable,
-        args: ['--import', testPreload, '--test', ...nodeTestConcurrencyArguments(step, executionContext), ...(executor.args ?? []).filter((argument: any) => !argument.startsWith('--test-concurrency')), ...files.map(nodeTestFile)],
+        // Preserve case names and timings in the normal diagnostic log. A
+        // focused execution uses this same executor and produces reusable
+        // proof, so diagnosis need not be followed by a duplicate formal run.
+        args: ['--import', testPreload, '--test', ...nodeTestConcurrencyArguments(step, executionContext), ...(executor.args ?? [])
+          .filter((argument: any) => !argument.startsWith('--test-concurrency'))
+          .map((argument: any) => argument === '--test-reporter=dot' ? '--test-reporter=spec' : argument), ...files.map(nodeTestFile)],
       };
     }
     if (executor.type === 'node-context-test') {

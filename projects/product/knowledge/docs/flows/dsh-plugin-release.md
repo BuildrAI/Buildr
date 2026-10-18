@@ -17,7 +17,7 @@ node tools/verify-all.ts --source-sdk <prepared-source-sdk> --buildr-peer <exact
 
 压缩包必须只含预编译插件、默认启用的组合补丁和许可文件，不含本机路径、凭证或安装脚本。正式版包名是 `@buildr-ai/buildr-dsh-plugin`。开发版变体 `@buildr-ai/buildr-dsh-plugin-dev` 仅在开发者机器构建、安装，不公开发布。
 
-源码候选（Candidate）的单元和集成阶段按各自内容、配方及实际依赖复用有效结果；固定软件开发工具包（SDK）的装载、真实 Buildr 对端及最终压缩包检查仍绑定真实输入。受保护 main 准备直接接纳源码运行的原候选和完整聚合，核对合并双亲、整树、SDK、对端和原字节，保存 plugin-candidate-adoption.json；不重复完整验证、构建或打包。原候选的 sourceCommit 保持被测源码，接纳回执（Receipt）另记 mainCommit，开放身份连接（OIDC）仍绑定真实 main。既有 candidate_run_id 继续表示发布消费的主线接纳运行；旧准备记录沿原身份恢复，不伪造新回执。
+本机源码预检先运行 `node tools/verify-source.ts`，只执行不依赖软件开发工具包（SDK）和主包对端的单元阶段；可用 `--output <bundle.json>` 保存证明。不得为获得这项证明先跑一遍旧对端的完整验证。源码候选（Candidate）的单元阶段按实际内容、配方及依赖复用有效结果；集成阶段消费本轮真实构建，固定软件开发工具包（SDK）的装载、真实 Buildr 对端及最终压缩包检查仍绑定真实输入。受保护 main 准备直接接纳源码运行的原候选和完整聚合，核对合并双亲、整树、SDK、对端和原字节，保存 plugin-candidate-adoption.json；不重复完整验证、构建或打包。原候选的 sourceCommit 保持被测源码，接纳回执（Receipt）另记 mainCommit，开放身份连接（OIDC）仍绑定真实 main。既有 candidate_run_id 继续表示发布消费的主线接纳运行；旧准备记录沿原身份恢复，不伪造新回执。
 
 ## 官方应用与正常装卸
 

@@ -105,18 +105,10 @@ function timeline(options: any, state: any = {}): any  {
     const result: any = state[key];
     if (result) phases.push({ id: phase, phase, status: ['passed', 'completed', 'cleaned', 'ready'].includes(result.status) ? 'passed' : 'blocked', owner: { id: ownerId, identity: result.identity ?? result.recordDigest ?? result.receiptDigest ?? null }, startedAt: null, finishedAt: result.observedAt ?? null, waitType: 'machine-execution' });
   }
-  if (state.selfBootstrapCloseout) {
-    const activation = state.selfBootstrapCloseout;
-    phases.push({ id: 'self-bootstrap-activation', phase: 'self-bootstrap-activation',
-      status: ['passed', 'not-applicable'].includes(activation.status) ? 'passed' : activation.status === 'pending' ? 'pending' : 'blocked',
-      owner: { id: 'buildr-self-bootstrap-sync', identity: activation.identity ?? activation.receiptDigest ?? null },
-      startedAt: null, finishedAt: activation.observedAt ?? null, waitType: 'machine-execution' });
-  }
   return createReleasePhaseTimeline({
     version: options.version,
     generation: Number(context?.selection?.generation ?? options.generation ?? 0),
-    terminalStatus: ['passed', 'not-applicable'].includes(state.selfBootstrapCloseout?.status) ? 'closed'
-      : state.blocked || state.selfBootstrapCloseout && state.selfBootstrapCloseout.status !== 'pending' ? 'blocked' : 'active',
+    terminalStatus: state.lifecycle?.phase === 'closed' && state.worktreeCleanup?.status === 'cleaned' ? 'closed' : state.blocked ? 'blocked' : 'active',
     phases,
   });
 }
@@ -139,7 +131,7 @@ function result(options: any, action: any, status: any, state: any, steps: any, 
       publication: state.evidence?.status ?? state.dispatch?.evidence?.status ?? 'not-observed',
       taskRegistration: state.taskCompletion?.status ?? 'not-run',
       cleanup: state.worktreeCleanup?.status ?? state.gitCloseout?.status ?? 'not-run',
-      activation: state.selfBootstrapCloseout?.status === 'passed' ? 'ready' : state.selfBootstrapCloseout?.status ?? 'not-run',
+      activation: 'not-run',
     },
     ...(state.gitCloseout ? { cleanup: { status: state.gitCloseout.status, branches: state.gitCloseout.branches ?? [], findings: state.gitCloseout.findings ?? [], diagnostic: state.gitCloseout.diagnostic ?? null } } : {}),
     nextActions,
@@ -293,17 +285,10 @@ async function closeout(options: any, dependencies: any): Promise<any>  {
 
     lifecycle = createReleaseLifecycle({ ...activeLifecycle.facts, version: options.version, releaseTask: { taskId: options.releaseTask, status: 'completed', recordDigest: taskResult.recordDigest } });
   }
-  const previous = retained ? options.closeoutProgress.selfBootstrapCloseout : null;
-  const closeoutProgress = { contextIdentity: context.identity, evidenceIdentity: evidence.identity, reconciliation, gitCloseout, lifecycle, taskCompletion, worktreeCleanup,
-    ...(previous ? { selfBootstrapCloseout: previous } : {}) };
+  const closeoutProgress = { contextIdentity: context.identity, evidenceIdentity: evidence.identity, reconciliation, gitCloseout, lifecycle, taskCompletion, worktreeCleanup };
   dependencies.onCloseoutProgress?.(closeoutProgress);
-  const selfBootstrapCloseout = ['passed', 'not-applicable'].includes(previous?.status) ? previous : dependencies.selfBootstrapCloseout
-    ? await dependencies.selfBootstrapCloseout({ workspace: path.resolve(options.canonicalWorkspace ?? options.repo ?? workspaceRoot), context, evidence })
-    : { status: 'pending', effects: [], nextActions: ['接续buildr-self-bootstrap-sync唯一执行器，记录实际激活或不适用结果；保留已完成公开、任务登记及清理事实。'] };
-  steps.push(step('buildr-self-bootstrap-sync', 'closeout', previous === selfBootstrapCloseout ? { ...selfBootstrapCloseout, effects: [] } : selfBootstrapCloseout, previous === selfBootstrapCloseout ? 'reused' : 'executed'));
-  const passed = ['passed', 'not-applicable'].includes(selfBootstrapCloseout.status);
-  return result(options, 'closeout', passed ? 'passed' : selfBootstrapCloseout.status === 'pending' ? 'published-self-bootstrap-pending' : 'published-self-bootstrap-blocked',
-    { evidence, context, reconciliation, gitCloseout, lifecycle, taskCompletion, worktreeCleanup, selfBootstrapCloseout, closeoutProgress: { ...closeoutProgress, selfBootstrapCloseout } }, steps, passed ? [] : selfBootstrapCloseout.nextActions ?? ['接续唯一自举执行器。']);
+  return result(options, 'closeout', 'passed',
+    { evidence, context, reconciliation, gitCloseout, lifecycle, taskCompletion, worktreeCleanup, closeoutProgress }, steps);
 }
 
 export async function runReleaseOrchestration(options: any = {}, dependencies: any = {}): Promise<any>  {
@@ -1185,6 +1170,68 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
   }
 }
 
+const WAITING_RELEASE_STATUSES = new Set([
+  'candidate-running', 'candidate-dispatch-unconfirmed', 'candidate-retry-unconfirmed',
+  'plugin-preparation-running', 'plugin-preparation-unknown',
+  'publication-running', 'publication-dispatch-unconfirmed', 'publication-retry-unconfirmed',
+  'publication-readback-required', 'publication-unknown', 'main-merge-readback-required',
+]);
+
+/** Continue the same owner state; never infer a new dispatch from a lost response. */
+export async function runReleaseOperationUntilSettled(options: any, dependencies: any = {}): Promise<any> {
+  const timeoutMs = Number(options.waitTimeoutMs ?? 30 * 60_000), intervalMs = Number(options.waitIntervalMs ?? 30_000);
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 12 * 60 * 60_000
+    || !Number.isSafeInteger(intervalMs) || intervalMs < 1 || intervalMs > 60_000) throw new Error('Release wait timeout or interval is invalid.');
+  const now = dependencies.now ?? Date.now;
+  const sleep = dependencies.sleep ?? ((ms: number) => new Promise(resolve => setTimeout(resolve, ms)));
+  const run = dependencies.runReleaseOperation ?? runReleaseOperation;
+  const startedAt = now(), allEffects: any[] = [];
+  let polls = 0, previousPhase: string | null = null, action = options.action;
+  for (;;) {
+    const value = await run({ ...options, action, detail: 'full' }, dependencies);
+    allEffects.push(...(value.effects ?? [])); polls++;
+    const phase = `${value.status}:${value.package ?? ''}:${value.run?.id ?? ''}`;
+    if (phase !== previousPhase) { dependencies.onProgress?.({ status: value.status, package: value.package, runId: value.run?.id }); previousPhase = phase; }
+    const waiting = options.wait === true && WAITING_RELEASE_STATUSES.has(value.status);
+    const durationMs = now() - startedAt;
+    if (!waiting || durationMs >= timeoutMs || dependencies.signal?.aborted) return { ...value, effects: allEffects,
+      waiting: { status: dependencies.signal?.aborted ? 'cancelled' : waiting ? 'timed-out' : 'settled', polls, durationMs } };
+    // A public request has already been persisted by the owner. Only resume it.
+    if (action === 'publish') action = 'resume';
+    await sleep(Math.min(intervalMs, timeoutMs - durationMs));
+  }
+}
+
+export function compactReleaseOperation(value: any): any {
+  const keys = ['schemaVersion', 'action', 'status', 'version', 'selectionId', 'targets', 'sourceCommit', 'contextIdentity',
+    'package', 'stopAfter', 'outcomes', 'cleanup', 'cleanupPlan', 'diagnostic', 'nextActions', 'effects', 'waiting', 'operationDurationMs'];
+  const summary = Object.fromEntries(keys.filter(key => value[key] !== undefined).map(key => [key, value[key]]));
+  for (const key of ['candidate', 'publication', 'run']) {
+    const item = value[key];
+    if (item) summary[key] = Object.fromEntries(['runId', 'runAttempt', 'id', 'status', 'conclusion', 'url', 'sourceCommit'].filter(field => item[field] !== undefined).map(field => [field, item[field]]));
+  }
+  if (value.localSource) summary.localSource = { status: value.localSource.status, missingStepIds: value.localSource.missingStepIds,
+    nextActions: value.localSource.nextActions };
+  if (value.localArtifact) summary.localArtifact = { artifactDirectory: value.localArtifact.artifactDirectory,
+    evidenceDirectory: value.localArtifact.evidenceDirectory, missingEvidenceIds: value.localArtifact.missingEvidenceIds, nextAction: value.localArtifact.nextAction };
+  if (value.preparation) summary.preparation = { status: value.preparation.status, directory: value.preparation.directory };
+  if (value.preparationCloseout) summary.preparationCloseout = { status: value.preparationCloseout.status,
+    directory: value.preparationCloseout.directory, report: value.preparationCloseout.report,
+    taskRegistration: value.preparationCloseout.taskRegistration, cleanup: value.preparationCloseout.cleanup };
+  if (value.artifacts) summary.artifacts = Object.fromEntries(Object.entries(value.artifacts).map(([name, item]: any) => [name,
+    { packageName: item.packageName, version: item.version, directory: item.directory, sha256: item.sha256, artifactSha256: item.artifactSha256 }]));
+  if (value.packagePublications) summary.packagePublications = Object.fromEntries(Object.entries(value.packagePublications).map(([name, item]: any) => [name,
+    { status: item.status, requested: item.requested, runId: item.runId, evidenceIdentity: item.evidence?.identity }]));
+  if (value.ownerResult) summary.ownerResult = { status: value.ownerResult.status, diagnostic: value.ownerResult.diagnostic,
+    findings: value.ownerResult.findings, nextActions: value.ownerResult.nextActions };
+  if (value.retry) summary.retry = { status: value.retry.status, runId: value.retry.runId, runAttempt: value.retry.runAttempt,
+    failedShards: value.retry.failedShards, failureClass: value.retry.failureClass, findings: value.retry.findings, nextActions: value.retry.nextActions };
+  if (value.runObservation) summary.runObservation = { status: value.runObservation.status, diagnostic: value.runObservation.diagnostic };
+  if (value.compatibility) summary.compatibility = { status: value.compatibility.status, publicationOrder: value.compatibility.publicationOrder,
+    diagnostics: value.compatibility.diagnostics, pairDiagnostics: value.compatibility.pairDiagnostics };
+  return summary;
+}
+
 function parseOptions(argv: any): any  {
   if (argv.includes('--help')) return { help: true };
   const [action, ...rest]: any = argv;
@@ -1193,12 +1240,14 @@ function parseOptions(argv: any): any  {
     const key: any = rest[index];
     if (key === '--authorized') { options.authorized = true; continue; }
     if (key === '--recover-publication') { options.recoverPublication = true; continue; }
+    if (key === '--wait') { options.wait = true; continue; }
     const value: any = rest[index + 1];
     if (!key?.startsWith('--') || value === undefined) throw new Error(`Invalid argument: ${key || '<missing>'}`);
     if (key === '--source') options.sources.push(value);
     else options[key.slice(2)] = value;
     index++;
   }
+  if (!['compact', 'full'].includes(options.detail)) throw new Error('--detail must be compact or full.');
   if (!options.input && ['prepare', 'inspect', 'publish', 'resume'].includes(action)) return {
     ...options, normalOperation: true, candidateRunId: options['candidate-run-id'] ? Number(options['candidate-run-id']) : null,
     pluginVersion: options['plugin-version'], selectionId: options['selection-id'],
@@ -1206,6 +1255,8 @@ function parseOptions(argv: any): any  {
     artifactVerification: options['artifact-verification'],
     verificationSource: options['verification-source'],
     stopAfter: options['stop-after'],
+    waitTimeoutMs: options['wait-timeout-ms'] ? Number(options['wait-timeout-ms']) : undefined,
+    waitIntervalMs: options['wait-interval-ms'] ? Number(options['wait-interval-ms']) : undefined,
     supportTasks: options['support-tasks'] ? options['support-tasks'].split(',').filter(Boolean) : undefined,
   };
   if (options['stop-after'] !== undefined) throw new Error('--stop-after candidate is only supported by normal prepare, without --input.');
@@ -1221,13 +1272,15 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
   try {
     options = parseOptions(process.argv.slice(2));
     if (options.help) {
-      process.stdout.write('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--stop-after candidate] [--authorized] [--recover-publication]\n');
+      process.stdout.write('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--stop-after candidate] [--authorized] [--recover-publication] [--wait] [--wait-timeout-ms <ms>] [--wait-interval-ms <ms>] [--output <file>] [--detail compact|full]\n');
     } else {
-    const value: any = options.normalOperation ? await runReleaseOperation(options) : options.action === 'inspect'
+    const value: any = options.normalOperation ? await runReleaseOperationUntilSettled(options, {
+      onProgress: options.wait ? (progress: any) => process.stderr.write(`[release] ${progress.status}${progress.runId ? ` run=${progress.runId}` : ''}\n`) : undefined,
+    }) : options.action === 'inspect'
       ? inspectReleaseOrchestration(options.inspectedResult, options.expectedTimelineIdentity)
       : await runReleaseOrchestration(options);
     if (options.output) fs.writeFileSync(options.output, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-    process.stdout.write(`${JSON.stringify(options.normalOperation || options.detail === 'full' ? value : compactReleaseOrchestration(value), null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify(options.detail === 'full' ? value : options.normalOperation ? compactReleaseOperation(value) : compactReleaseOrchestration(value), null, 2)}\n`);
     if (value.status === 'blocked') process.exitCode = 1;
     }
   } catch (error: any) {

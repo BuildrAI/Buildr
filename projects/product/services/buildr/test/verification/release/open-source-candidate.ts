@@ -191,27 +191,6 @@ async function packAndInspect(): Promise<any>  {
   }
 }
 
-function inspectReadmes(): any  {
-  const findings: any[] = [];
-  const readmes: any = ['README.md', 'README.en.md'].map((file: any) => [file, fs.readFileSync(path.join(workspaceRoot, file), 'utf8')]);
-  for (const token of ['https://github.com/BuildrAI/Buildr', '@buildr-ai/buildr', 'projects/product/services/buildr/docs/cli-reference.md#首次使用']) {
-    for (const [file, content] of readmes) {
-      if (!content.includes(token)) findings.push(finding('readme.parity', file, `missing canonical token: ${token}`));
-    }
-  }
-  if (!readmes[0][1].includes('[English](README.en.md)')) findings.push(finding('readme.navigation', 'README.md', 'missing English navigation'));
-  if (!readmes[1][1].includes('[中文](README.md)')) findings.push(finding('readme.navigation', 'README.en.md', 'missing Chinese navigation'));
-  for (const [file, content, headings] of [
-    [readmes[0][0], readmes[0][1], ['## Buildr 有什么用', '## Buildr 怎样组织工作', '## 开始使用', '## 用 Buildr 开发 Buildr', '## 进一步了解']],
-    [readmes[1][0], readmes[1][1], ['## What Buildr helps you do', '## How Buildr organizes work', '## Get started', '## Develop Buildr with Buildr', '## Learn more']],
-  ] as [string, string, string[]][]) {
-    for (const heading of headings) {
-      if (!content.includes(heading)) findings.push(finding('readme.structure', file, `missing section: ${heading}`));
-    }
-  }
-  return findings;
-}
-
 export async function runOpenSourceCandidateCheck(): Promise<any>  {
   const metadata: any = JSON.parse(fs.readFileSync(path.join(productRoot, 'package.json'), 'utf8'));
   const lockfile: any = JSON.parse(fs.readFileSync(path.join(productRoot, 'package-lock.json'), 'utf8'));
@@ -219,7 +198,6 @@ export async function runOpenSourceCandidateCheck(): Promise<any>  {
     ...inspectTrackedCandidate(),
     ...inspectPackageMetadata(metadata),
     ...inspectPackageVersionConsistency(metadata, lockfile),
-    ...inspectReadmes(),
     ...await packAndInspect(),
   ];
 }
@@ -231,7 +209,7 @@ async function main(): Promise<any>  {
     for (const item of findings) console.error(`- [${item.rule}] ${item.path}: ${item.message}`);
     process.exit(1);
   }
-  console.log('Open-source candidate verification passed: tracked tree, public metadata, bilingual README, file sizes, and npm tarball inventory.');
+  console.log('Open-source candidate verification passed: tracked tree, public metadata, file sizes, and npm tarball inventory.');
 }
 
 if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) await main();

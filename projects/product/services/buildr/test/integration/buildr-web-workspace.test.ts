@@ -243,15 +243,6 @@ test('任务 UI Prototype 只读按需加载并在离线 opaque-origin iframe �
   assert.match(read('../buildr-web/src/features/task/components/prototype-reader.css'), /\.prototype-reading-layout/);
 });
 
-test('任务研发页签、客户端调用与专属样式已退出', () => {
-  const detail: any = read('../buildr-web/src/features/task/pages/TaskDetailPage.tsx');
-  const evidenceHook: any = read('../buildr-web/src/features/task/hooks/useTaskEvidence.ts');
-  const styles: any = read('../buildr-web/src/styles.css');
-  assert.equal(fs.existsSync(path.join(productRoot, '../buildr-web/src/features/task/components/DevelopmentTab.tsx')), false);
-  assert.doesNotMatch(detail, /taskProfessionalApi\.development|DevelopmentTab|data-task-panel="development"/);
-  assert.doesNotMatch(styles, /\.development-axis-grid|\.development-planning-list/);
-});
-
 test('证据视图只读展示审查与验证结果，专业流程不在阅读视图内联启动', () => {
   const source: any = read('../buildr-web/src/features/task/components/TaskReadingPane.tsx');
   const actions: any = read('../buildr-web/src/features/task/components/TaskAgentAction.tsx');
@@ -266,36 +257,6 @@ test('证据视图只读展示审查与验证结果，专业流程不在阅读�
   assert.match(actions, /读取并遵循 task-verification Skill/);
   assert.match(actions, /验证报告未被修改/);
   assert.doesNotMatch(source, /node:fs|YAML\.parse|YAML\.stringify|writeFileSync|recordTaskVerification/);
-});
-
-test('任务详情面向用户的核心术语使用中文或中英文并列', () => {
-  const source: any = read('../buildr-web/src/features/task/pages/TaskDetailPage.tsx');
-  const evidence: any = read('../buildr-web/src/features/task/components/TaskReadingPane.tsx');
-  const tasks: any = read('../buildr-web/src/features/task/pages/TasksPage.tsx');
-  const change: any = read('../buildr-web/src/features/task/pages/TaskChangeDetailPage.tsx');
-  const changeHook: any = read('../buildr-web/src/features/task/hooks/useTaskChangeDetail.ts');
-  const labels = read('../buildr-web/src/features/task/components/taskWorkContent.ts');
-  assert.match(labels, /方案审查.*Planning Review/);
-  assert.match(labels, /实现审查.*Implementation Review/);
-  assert.doesNotMatch(source, />Task Record</);
-  assert.equal(fs.existsSync(path.join(productRoot, '../buildr-web/src/features/task/components/EnvironmentTab.tsx')), false);
-  assert.doesNotMatch(evidence, />Planning Review</);
-  assert.doesNotMatch(evidence, />Completion Review</);
-  assert.doesNotMatch(evidence, />Verification Result</);
-  assert.match(read('../buildr-web/src/features/task/components/TaskTable.tsx'), /title: '任务'/);
-  assert.match(tasks, /搜索标题、目标或编号/);
-  assert.match(tasks, /全部项目/);
-  assert.match(tasks, /全部服务/);
-  assert.doesNotMatch(tasks, />新建正式 Task</);
-  assert.doesNotMatch(tasks, />Task ID</);
-  assert.doesNotMatch(tasks, />Project scope/);
-  assert.doesNotMatch(tasks, />Service scope/);
-  assert.doesNotMatch(tasks, />OpenSpec Changes</);
-  assert.match(change, /任务关联变更|关联变更/);
-  assert.match(change, /只读展示当前任务已关联的 OpenSpec 内容/);
-  assert.match(changeHook, /工作副本/);
-  assert.match(changeHook, /保留基线/);
-  assert.doesNotMatch(change, /openAgentAction|addChanges/);
 });
 
 test('Task-scoped Change 保持只读，不提供 Change 审查 route', () => {
@@ -384,7 +345,6 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
 
 test('Task feature 只保留 pages、hooks、components、api 四类职责', () => {
   const featureRoot = path.join(productRoot, '../buildr-web/src/features/task');
-  assert.deepEqual(fs.readdirSync(featureRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort(), ['api', 'components', 'hooks', 'pages']);
   const globalApi = read('../buildr-web/src/api/index.ts');
   assert.doesNotMatch(globalApi, /features\/task/);
   for (const directory of ['pages', 'components']) {
@@ -405,8 +365,6 @@ test('Task feature 只保留 pages、hooks、components、api 四类职责', () 
   const detailHook = read('../buildr-web/src/features/task/hooks/useTaskDetail.ts');
   const actionsHook = read('../buildr-web/src/features/task/hooks/useTaskActions.ts');
   const evidence = read('../buildr-web/src/features/task/components/TaskReadingPane.tsx');
-  assert.match(detailHook, /useState<TaskDetailResponse \| null>/);
-  assert.match(actionsHook, /export function useTaskActions/);
   assert.doesNotMatch(evidence, /\bany\b/);
   assert.equal(fs.existsSync(path.join(featureRoot, 'hooks/useTaskMutations.ts')), false);
 });

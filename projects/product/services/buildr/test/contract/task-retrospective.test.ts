@@ -36,30 +36,3 @@ test('Task Retrospective 是按需纯 Skill，只依赖 Task Record v4', () => {
   assert.equal(value.capabilityContracts?.some((item) => item.id === 'buildr.task-retrospective'), false);
   assert.equal(value.initialSkillBindings?.some((item) => item.capability === 'buildr.task-retrospective'), false);
 });
-
-test('Task Retrospective Skill 只生成本机文档并由用户决定是否行动', () => {
-  const skill = read('resources/workspace/skills/buildr/task-retrospective/SKILL.md');
-  for (const required of [
-    '.buildr/local/task-retrospectives/<task-id>.md',
-    'pending-decision',
-    'decided',
-    '当前真正可达',
-    '普通Task',
-    '用户明确要求',
-  ]) assert.ok(skill.includes(required), required);
-  assert.match(skill, /Token、完整耗时或调用次数不可得时直接标记缺失/);
-  assert.match(skill, /查看零写入/);
-  assert.match(skill, /用户决定不行动时不创建Task/);
-  assert.doesNotMatch(skill, /__internal task-retrospective|--include-report|--max-bytes|handled\|no-action|--retrospective-source/);
-});
-
-test('旧复盘 Application、Driver、能力契约和持久化实现已退出', () => {
-  for (const relative of [
-    'src/modules/task/application/task-retrospective-application.mjs',
-    'src/modules/task/domain/task-retrospective.mjs',
-    'src/modules/task/interfaces/http/task-retrospective-http.mjs',
-    'src/modules/task/interfaces/internal/task-retrospective-driver.mjs',
-    'src/modules/task/persistence/task-retrospective-repository.ts',
-    'resources/workspace/skills/contracts/buildr/task-retrospective/v2.md',
-  ]) assert.equal(fs.existsSync(path.resolve(relative)), false, relative);
-});

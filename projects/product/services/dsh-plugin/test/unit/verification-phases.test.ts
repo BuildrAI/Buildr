@@ -132,3 +132,27 @@ test('collector exports only real unit proof and ignores former SDK integration 
   writeFileSync(join(pluginRoot,'test/integration/fixture.test.ts'),readFileSync(join(pluginRoot,'test/integration/fixture.test.ts'),'utf8')+'// source changed\n');
   assert.equal((await collectPluginSourceVerificationBundle({pluginRoot,env,imports:bundle})).records.length,0);
 });
+
+test('standalone source phase executes and reuses real unit proof without any SDK or peer', async t => {
+  const { verifyPluginSourcePhase } = await import('../../tools/verify-all.ts');
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), 'buildr-plugin-source-only-')));
+  const cache = realpathSync(mkdtempSync(join(tmpdir(), 'buildr-plugin-source-cache-')));
+  t.after(() => { rmSync(repo, { recursive: true, force: true }); rmSync(cache, { recursive: true, force: true }); });
+  const pluginRoot = join(repo, 'projects/product/services/dsh-plugin'), backend = join(repo, 'projects/product/services/buildr');
+  mkdirSync(join(pluginRoot, 'test/unit'), { recursive: true }); mkdirSync(backend, { recursive: true });
+  writeFileSync(join(pluginRoot, 'test/unit/fixture.test.ts'), "import test from 'node:test'; test('portable source', () => {});\n");
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, stdio: ['ignore', 'pipe', 'pipe'] });
+  git('init', '-q'); git('config', 'user.name', 'Plugin test'); git('config', 'user.email', 'plugin@example.com'); git('add', '.'); git('commit', '-qm', 'source');
+  const env = { ...process.env, BUILDR_VERIFICATION_REUSE_DIR: cache, BUILDR_VERIFICATION_WORKER_BUDGET: '1' };
+  delete env.NODE_TEST_CONTEXT; delete env.BUILDR_DSH_SDK_ROOT; delete env.BUILDR_DSH_SOURCE_SDK_ROOT;
+  delete env.BUILDR_DSH_BUILDR_PEER_INPUT; delete env.BUILDR_DSH_BUILDR_PEER_MANIFEST;
+  const executed = await verifyPluginSourcePhase('unit', { pluginRoot, env });
+  assert.equal(executed.phase.status, 'passed'); assert.equal(executed.phase.disposition, 'executed');
+  assert.ok(executed.proof?.record);
+  const reused = await verifyPluginSourcePhase('unit', { pluginRoot, env });
+  assert.equal(reused.phase.disposition, 'reused');
+  assert.equal((await collectPluginSourceVerificationBundle({ pluginRoot, env })).records.length, 1);
+  writeFileSync(join(pluginRoot, 'test/unit/fixture.test.ts'), "import test from 'node:test'; test('first failure', () => { throw Error('one'); }); test('second failure', () => { throw Error('two'); });\n");
+  await assert.rejects(verifyPluginSourcePhase('unit', { pluginRoot, env }), /verification failed/u);
+  assert.equal((await collectPluginSourceVerificationBundle({ pluginRoot, env })).records.length, 0, 'failed or changed input cannot reuse the previous success');
+});

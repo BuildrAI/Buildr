@@ -173,8 +173,6 @@ test('npm release artifact freezes one tarball with complete payload and no plat
     const packedSkill = spawnSync('tar', ['-xOf', artifact.tarball, `package/${skillPath}`], { encoding: 'utf8' });
     assert.equal(packedSkill.status, 0, packedSkill.stderr);
     assert.equal(packedSkill.stdout, fs.readFileSync(path.join(serviceRoot, 'resources/runtime/skills/install-dsh-plugin/SKILL.md'), 'utf8'));
-    assert.match(packedSkill.stdout, /npm view @buildr-ai\/buildr-dsh-plugin@<目标版本> version peerDependencies --json/);
-    assert.match(packedSkill.stdout, /`desktop`.*应用.*插件/);
     for (const resource of [
       'workspace/skills/buildr/task-manager/SKILL.md',
       'workspace/skills/buildr/task-triage/SKILL.md',

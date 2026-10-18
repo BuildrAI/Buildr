@@ -171,7 +171,7 @@ test('reviewed source checks keep results for a notes-only repair while binding 
     unavailable: new Set(), readText: file => content.get(file)!,
   });
   const original = observe(), notes = observe('CHANGELOG.md');
-  const ids = ['openspec-spec-quality', 'integration-knowledge', 'integration-workspace-assets', 'integration-archify',
+  const ids = ['integration-knowledge', 'integration-workspace-assets', 'integration-archify',
     'integration-declarations', 'integration-openspec', 'system-public-json-contracts',
     'system-openspec-contract-audit', 'concurrent-task-acceptance', 'npm-launcher-candidate', 'capability-cli-integration',
     'commands-cli-integration', 'remote-skill-timeout'];
@@ -311,7 +311,11 @@ test('stable Integration slices bind their own explicit tests and preserve local
   const ids = ['integration', 'integration-code', 'integration-desktop', 'integration-knowledge', 'integration-workspace-assets', 'integration-archify',
     'integration-task-records', 'integration-connections', 'integration-runtime-projection', 'integration-runtime'];
   const steps = ids.map(id => verificationSteps.find((item: any) => item.id === id));
-  for (const step of steps) for (const file of step.executor.files) files.set(file, 'export const assertion=1;');
+  for (const step of steps) {
+    for (const file of step.executor.files) files.set(file, 'export const assertion=1;');
+    files.set(`test/helpers/${step.id}.ts`, 'export const helper=1;');
+    files.set(step.executor.files[0], `import '../helpers/${step.id}.ts'; export const assertion=1;`);
+  }
   const observe = (step: any) => {
     const inventory = [...files].map(([file, text]) => ({ path: prefix + file, mode: '100644', kind: 'blob', object: text }));
     const options = { proof: true, readText: (file: string) => files.get(file.slice(prefix.length))! };
@@ -326,14 +330,30 @@ test('stable Integration slices bind their own explicit tests and preserve local
     const before = files.get(unrelated)!; files.set(unrelated, '// repaired another owner');
     assert.deepEqual(observe(step), original, `${step.id}: another slice does not invalidate a result`);
     files.set(unrelated, before);
+    const helper = `test/helpers/${step.id}.ts`;
+    const unrelatedHelper = `test/helpers/${steps.find(other => other.id !== step.id).id}.ts`;
+    files.set(unrelatedHelper, 'export const helper=2;');
+    assert.deepEqual(observe(step), original, `${step.id}: an unrelated helper repair preserves this result`);
+    files.set(unrelatedHelper, 'export const helper=1;');
+    files.set(helper, 'export const helper=2;');
+    assert.notEqual(observe(step).local, original.local, 'its imported helper remains an actual input');
+    assert.notEqual(observe(step).immutable, original.immutable);
+    files.set(helper, 'export const helper=1;');
+    const selectedBefore = files.get(selected)!;
     files.set(selected, '// changed own assertion');
     assert.notEqual(observe(step).local, original.local, step.id);
     assert.notEqual(observe(step).immutable, original.immutable, step.id);
-    files.set(selected, 'export const assertion=1;');
+    files.set(selected, selectedBefore);
     const extended = { ...step, executor: { ...step.executor, files: [...step.executor.files, 'test/integration/new-member.test.ts'] } };
     files.set('test/integration/new-member.test.ts', 'export {};');
     assert.notEqual(observe(extended).local, original.local, `${step.id}: adding an executing member invalidates the prior recipe`);
     assert.notEqual(observe(extended).immutable, original.immutable, step.id);
     files.delete('test/integration/new-member.test.ts');
   }
+  const directoryReader = steps[0];
+  files.set(directoryReader.executor.files[0], "readdirSync(path.resolve(root, 'test/helpers'));");
+  const beforeDirectoryChange = observe(directoryReader);
+  files.set(`test/helpers/${steps[1].id}.ts`, 'export const helper=3;');
+  assert.notEqual(observe(directoryReader).local, beforeDirectoryChange.local, 'directory discovery still binds every helper');
+  assert.notEqual(observe(directoryReader).immutable, beforeDirectoryChange.immutable);
 });
