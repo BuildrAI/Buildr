@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { createSdkRequire } from './sdk-require.ts';
 import { newBuildOutput, validatePreparedSourceSdk, SOURCE_CLIENT_PLUGINS, sdkDeclarationPaths } from './prepare-source-sdk.ts';
 import { COMPOSITION_SCHEMA, COMPOSITION_OWNER_ID, PRESET_IDS, PRESET_MODULE, ROOT_MODULES } from '../plugin/composition/definition.ts';
+import { copyDshHostArtifacts, normalizeDshHostPeers } from './dsh-host-compatibility.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const hash = (bytes: Buffer | string): string => createHash('sha256').update(bytes).digest('hex');
@@ -56,10 +57,9 @@ export async function buildComposition(args: string[]): Promise<{ output: string
   await mkdir(path.dirname(output), { recursive: true });
   await mkdir(output);
   const entryDirectory = `runtime-entry-${hash(JSON.stringify(await treeFiles(entry))).slice(0, 16)}`;
-  const hostDirectory = `runtime-host-${hash(JSON.stringify(host.files)).slice(0, 16)}`;
   const compositionDirectory = 'runtime-composition';
   await cp(entry, path.join(output, entryDirectory), { recursive: true });
-  await cp(path.join(sdk, host.directory), path.join(output, hostDirectory), { recursive: true });
+  const { directory: hostDirectory } = await copyDshHostArtifacts(sdk, host, output);
   const trajectorySource = path.join(sdk, 'packages/client/ui-trajectory');
   const trajectoryDirectory = `runtime-trajectory-${hash(JSON.stringify(await treeFiles(path.join(trajectorySource, 'lib')))).slice(0, 16)}`;
   async function copyClient(source: string, directory: string): Promise<void> {
@@ -67,7 +67,7 @@ export async function buildComposition(args: string[]): Promise<{ output: string
     await cp(path.join(source, 'lib'), path.join(output, directory, 'lib'), { recursive: true });
     const original = JSON.parse(await readFile(path.join(source, 'package.json'), 'utf8'));
     delete original.scripts; delete original.devDependencies; delete original.dependencies;
-    original.peerDependencies = { '@deepseek-ai/cordis': '4.0.4', '@deepseek-ai/dsh': receipt.baseline.version };
+    original.peerDependencies = normalizeDshHostPeers({ ...original.peerDependencies, '@deepseek-ai/cordis': '4.0.4' });
     await writeFile(path.join(output, directory, 'package.json'), JSON.stringify(original, null, 2) + '\n');
     await cp(path.join(sdk, 'LICENSE'), path.join(output, directory, 'LICENSE'));
   }
@@ -117,11 +117,11 @@ export async function buildComposition(args: string[]): Promise<{ output: string
     // Loaders without internal.resolveSync read this public package boundary;
     // current native loaders resolve main and read the same declaration inside.
     exports, dsh: { bundle: { patch: 'cordis.patch.yml' }, client: metadata.dsh.client },
-    peerDependencies: { '@deepseek-ai/dsh': receipt.baseline.version, '@deepseek-ai/cordis': '4.0.4' },
+    peerDependencies: normalizeDshHostPeers({ '@deepseek-ai/cordis': '4.0.4' }),
     peerDependenciesMeta: { '@deepseek-ai/dsh': { optional: true } }, dependencies: metadata.dependencies };
   await writeFile(path.join(output, 'package.json'), JSON.stringify(manifest, null, 2) + '\n');
   await cp(path.join(root, 'LICENSE'), path.join(output, 'LICENSE'));
-  await writeFile(path.join(output, 'README.md'), '# Buildr DSH 增强插件\n\n通过官方插件管理器正常安装、停用和卸载。增强组件只在本组合层启用；根配置及预设从当前官方与用户声明在内存派生，不持久写入私有模块引用。停用恢复官方组件，已有会话和事件保持。DSH版本需要精确兼容验证。\n');
+  await writeFile(path.join(output, 'README.md'), '# Buildr DSH 增强插件\n\n通过官方插件管理器正常安装、停用和卸载。增强组件只在本组合层启用；根配置及预设从当前官方与用户声明在内存派生，不持久写入私有模块引用。停用恢复官方组件，已有会话和事件保持。支持 DSH 0.2.x 稳定版与预发布版；软件开发工具包（SDK）构建来源仍精确核验，版本范围不代表每个宿主版本均完成桌面验收。\n');
   await writeFile(path.join(output, 'composition.json'), JSON.stringify({ schemaVersion: COMPOSITION_SCHEMA, upstream: receipt.baseline,
     patchSha256: receipt.patchSha256, files: await treeFiles(output), runtimeValidated: false }, null, 2) + '\n');
   return { output, package: metadata.name };

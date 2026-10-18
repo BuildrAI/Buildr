@@ -4,6 +4,7 @@ import { cp, mkdir, readFile, readdir, lstat, writeFile } from 'node:fs/promises
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { newBuildOutput, validatePreparedSourceSdk, SOURCE_CLIENT_PLUGINS, type SourceHostArtifacts } from './prepare-source-sdk.ts';
+import { copyDshHostArtifacts, normalizeDshHostPeers } from './dsh-host-compatibility.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 function object(value: unknown, label: string): Record<string, unknown> {
@@ -153,12 +154,11 @@ const trajectoryDirectory = trajectoryCompositionDirectory(host !== undefined, a
 const out = newBuildOutput(root, option('--output'));
 await mkdir(out, { recursive: true });
 await cp(entry, path.join(out, entryDirectory), { recursive: true });
-const hostDirectory = host === undefined ? undefined : `runtime-host-${hash(Buffer.from(JSON.stringify(host.files))).slice(0, 16)}`;
-if (host !== undefined) await cp(path.join(sdk, host.directory), path.join(out, hostDirectory!), { recursive: true });
+const hostDirectory = host === undefined ? undefined : (await copyDshHostArtifacts(sdk, host, out)).directory;
 await mkdir(path.join(out, trajectoryDirectory), { recursive: true });
 await cp(path.join(trajectory, 'lib'), path.join(out, trajectoryDirectory, 'lib'), { recursive: true });
 // Normalize workspace-only dependency ranges in the packaged copy, not the immutable SDK.
-const packagedTrajectory: Record<string, unknown> = { ...trajectoryManifest, peerDependencies: { '@deepseek-ai/cordis': '4.0.4', '@deepseek-ai/dsh': receipt.baseline.version } };
+const packagedTrajectory: Record<string, unknown> = { ...trajectoryManifest, peerDependencies: normalizeDshHostPeers({ ...trajectoryManifest.peerDependencies as Record<string, string>, '@deepseek-ai/cordis': '4.0.4' }) };
 delete packagedTrajectory.devDependencies;
 delete packagedTrajectory.scripts;
 await writeFile(path.join(out, trajectoryDirectory, 'package.json'), JSON.stringify(packagedTrajectory, null, 2) + '\n');
@@ -172,7 +172,7 @@ for (const packagePath of receipt.clientPackages ?? []) {
   const directory = `runtime-client-${hash(Buffer.from(JSON.stringify(sourceFiles))).slice(0, 16)}`;
   await mkdir(path.join(out, directory));
   await cp(path.join(source, 'lib'), path.join(out, directory, 'lib'), { recursive: true });
-  const packaged: Record<string, unknown> = { ...metadata, peerDependencies: { '@deepseek-ai/cordis': '4.0.4', '@deepseek-ai/dsh': receipt.baseline.version } };
+  const packaged: Record<string, unknown> = { ...metadata, peerDependencies: normalizeDshHostPeers({ ...metadata.peerDependencies as Record<string, string>, '@deepseek-ai/cordis': '4.0.4' }) };
   delete packaged.devDependencies; delete packaged.scripts;
   await writeFile(path.join(out, directory, 'package.json'), JSON.stringify(packaged, null, 2) + '\n');
   await cp(path.join(sdk, 'LICENSE'), path.join(out, directory, 'LICENSE'));
@@ -196,7 +196,7 @@ await writeFile(path.join(out, 'package.json'), JSON.stringify({
   files: [entryDirectory, ...(hostDirectory === undefined ? [] : [hostDirectory]), ...clientEntries.map(entry => entry.directory), trajectoryDirectory, 'locale', 'cordis.patch.yml', 'composition.json', 'README.md', 'LICENSE'],
   exports: { './package.json': './package.json', './locale/*.json': './locale/*.json' },
   dsh: { bundle: { patch: 'cordis.patch.yml' } },
-  peerDependencies: { '@deepseek-ai/dsh': receipt.baseline.version, '@deepseek-ai/cordis': '4.0.4' },
+  peerDependencies: normalizeDshHostPeers({ '@deepseek-ai/cordis': '4.0.4' }),
   peerDependenciesMeta: { '@deepseek-ai/dsh': { optional: true } },
   dependencies: { '@deepseek-ai/cordis': '4.0.4', '@deepseek-ai/schemastery': '3.18.4', zod: '4.4.3' },
 }, null, 2) + '\n');
