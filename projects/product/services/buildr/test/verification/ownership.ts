@@ -205,6 +205,8 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration-verification": {
     "inputs": [
+      "test/register-development-entry.ts",
+      "tools/development/isolated-workspace-state.ts",
       "test/integration/candidate-artifact-reuse.test.ts",
       "test/integration/verification-reuse.test.ts",
       "test/integration/verification-source-inputs.test.ts",

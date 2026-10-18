@@ -609,6 +609,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/verification-source-inputs.test.ts',
     'test/integration/verification-artifact.test.ts',
     'test/integration/verification-input-boundaries.test.ts',
+    'test/integration/development-state-isolation.test.ts',
     'test/integration/verification-windows-inputs.test.ts',
     'test/integration/task-verification-report.test.ts',
     'test/integration/verification-resource-coordinator.test.ts',

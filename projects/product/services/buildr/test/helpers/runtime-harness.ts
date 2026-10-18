@@ -1,3 +1,4 @@
+import '../register-development-entry.ts';
 import { WORKBENCH_APPLICATION } from '../../src/modules/workbench/module.ts';
 import { TASK_WORK_CONTEXT_APPLICATION } from '../../src/modules/task/module.ts';
 import {

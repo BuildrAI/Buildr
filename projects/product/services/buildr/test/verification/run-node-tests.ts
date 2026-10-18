@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnCommandSync } from '../../src/infrastructure/process.ts';
 import { resolveNodeTestFiles } from './test-files.ts';
 import { resolveVerificationWorkerBudget } from './worker-budget.ts';
+import '../register-development-entry.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -21,7 +22,7 @@ try {
     reporters.push(`--test-reporter=${pathToFileURL(path.join(import.meta.dirname, 'integration-progress-reporter.ts')).href}`, '--test-reporter-destination=stderr');
   }
   process.stderr.write(`[managed-node-tests] files=${files.length} workerBudget=${workerBudget}\n`);
-  const result: any = spawnCommandSync(process.execPath, ['--test', `--test-concurrency=${workerBudget}`, ...reporters, ...files], { cwd: productRoot, stdio: 'inherit' });
+  const result: any = spawnCommandSync(process.execPath, ['--import', pathToFileURL(path.join(productRoot, 'test/register-development-entry.ts')).href, '--test', `--test-concurrency=${workerBudget}`, ...reporters, ...files], { cwd: productRoot, stdio: 'inherit' });
   if (result.error || result.status !== 0) process.stderr.write(`${JSON.stringify({ phase: 'node-test-process', exitCode: result.status, signal: result.signal, error: result.error?.message })}\n`);
   process.exitCode = result.status ?? 1;
 } catch (error: any) {
