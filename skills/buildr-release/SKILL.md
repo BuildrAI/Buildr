@@ -21,7 +21,7 @@ description: 准备、检查、发布或恢复 Buildr 主包、DSH 插件或联�
 
 README 固定标题、章节和编辑表达不作发布门槛。文档链接、架构及规范静态检查留在相关开发检查中，不加入候选必跑集合。插件本机源码预检使用 `tools/verify-source.ts`（可用 `--output <bundle.json>` 导出），无需准备软件开发工具包（SDK）或旧主包对端；准确候选配对仍保留完整检查。
 
-新准备会把通用原包检查与本机系统验包留给本机。制包上传后，智能体可按返回目录下载同一原包，与另一系统的远端验包并行；运行 `tools/development/run-development-node test/verification/artifact.ts --artifact-dir <原包目录> --output <证据目录>`，默认检查通用原包、本机启动和当前 Node。最低 Node 另用准确 `24.15.0` 程序运行同一入口的 `--scope platform --node-tuple minimum`，不重复通用检查或启动器。实际程序与系统随结果保留。`local-artifact-verification-required` 或远端 `incomplete` 表示仍等本机缺项，不是完整候选通过；完成后继续原 `prepare --artifact-verification <证据目录>`，仅采用原包与有效结果、补缺项和完整汇总，不重新产包。远端发布始终另需准确授权。
+新准备把通用原包检查与本机系统验包留给本机。制包上传后，下载同一原包，与另一系统的远端验包并行；使用实际 Node `24.15.0` 运行 `tools/development/run-development-node test/verification/artifact.ts --artifact-dir <原包目录> --output <证据目录>`，默认一次检查通用原包、本机启动和最低 Node，不另跑当前版本。`--scope common` 只检查通用原包，`--scope platform` 只检查本机系统；macOS 和 Windows 对称选择，互不附带另一系统或已完成的通用检查。实际程序与系统随结果保留。`local-artifact-verification-required` 或远端 `incomplete` 表示仍等本机缺项，不是完整候选通过；完成后继续原 `prepare --artifact-verification <证据目录>`，仅采用原包与有效结果、补缺项和完整汇总，不重新产包。远端发布始终另需准确授权。
 
 主包产包入口是 `scripts/candidate-package.ts`，插件发布代码在 `scripts/dsh-plugin/`；一般构建和验证工具仍归相应服务。每个包只生产一份准确原包，测试或汇总修复不默认重打；产品及真实构建输入变化才使相关原包和证明失效。正式补验绑定独立验证来源，不授予补验代码公开权限。
 

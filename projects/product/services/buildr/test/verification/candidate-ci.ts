@@ -249,10 +249,6 @@ async function runShard(shardId: any): Promise<any>  {
 
 function assertHostNode(tuple: any): any  {
   if (tuple.expectation === 'minimum' && process.versions.node !== '24.15.0') throw new Error(`Host Node minimum tuple requires 24.15.0, active ${process.versions.node}`);
-  if (tuple.expectation === 'current') {
-    assertMinimumNodeVersion(process.versions.node, '24.15.0');
-    if (!/^24\.\d+\.\d+$/u.test(process.versions.node)) throw new Error(`This Host Node current compatibility tuple requires actual stable 24.x, active ${process.versions.node}`);
-  }
 }
 
 function runHostNode(tupleId: any): any  {

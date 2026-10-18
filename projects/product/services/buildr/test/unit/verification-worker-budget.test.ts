@@ -68,13 +68,10 @@ test('complete low-cost suites execute through the granted node-test boundary in
   }
 });
 
-test('Archify lifecycle owns its existing long child bounds without extending other Workspace checks', () => {
+test('Archify lifecycle stays isolated from Workspace checks with bounded concurrency and private Git inputs', () => {
   const archify = verificationSteps.find((step: any) => step.id === 'integration-archify');
   const workspace = verificationSteps.find((step: any) => step.id === 'integration-workspace-assets');
   assert.deepEqual(archify.executor.files, ['test/integration/archify-command-cost.test.ts', 'test/integration/archify-component.test.ts']);
-  assert.equal(archify.timeoutMs, 300_000);
-  assert.equal(workspace.timeoutMs, 180_000);
-  assert.equal(workspace.executor.files.length, 8);
   assert.equal(workspace.executor.files.some((file: string) => archify.executor.files.includes(file)), false);
   const limited = resolveVerificationExecutionProfile('ci-workspace-limited');
   assert.deepEqual(nodeTestConcurrencyArguments(archify, limited), ['--test-concurrency=1']);

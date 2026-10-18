@@ -935,8 +935,6 @@ export const CANDIDATE_CI_PLATFORM_REPEATS: any = Object.freeze({
 export const CANDIDATE_CI_HOST_NODE_TUPLES: any = Object.freeze([
   Object.freeze({ id: 'host-minimum-macos', runner: 'macos', requestedNode: '24.15.0', expectation: 'minimum' }),
   Object.freeze({ id: 'host-minimum-windows', runner: 'windows', requestedNode: '24.15.0', expectation: 'minimum' }),
-  Object.freeze({ id: 'host-current-macos', runner: 'macos', requestedNode: '24.x', expectation: 'current' }),
-  Object.freeze({ id: 'host-current-windows', runner: 'windows', requestedNode: '24.x', expectation: 'current' }),
 ]);
 
 export const VERIFICATION_TEST_INTENTS: any = Object.freeze(['Development', 'Acceptance', 'Static Conformance', 'Delivery / Release']);

@@ -329,7 +329,7 @@ test('Host Node compatibility runs offline without a Workspace Node distribution
   assert.match(cliSmoke, /readiness\.productIdentity\?\.applicationPayloadDigest/);
   assert.doesNotMatch(cliSmoke, /npm pack|createReleaseArtifact|buildApplicationPayload/);
   assert.ok(CANDIDATE_CI_HOST_NODE_TUPLES.some((tuple: any) => tuple.id === 'host-minimum-macos' && tuple.requestedNode === '24.15.0'));
-  assert.ok(CANDIDATE_CI_HOST_NODE_TUPLES.some((tuple: any) => tuple.id === 'host-current-windows' && tuple.requestedNode === '24.x'));
+  assert.ok(CANDIDATE_CI_HOST_NODE_TUPLES.some((tuple: any) => tuple.id === 'host-minimum-windows' && tuple.requestedNode === '24.15.0'));
   assert.match(hostJob, /node test\/verification\/candidate-ci\.ts host \$\{\{ matrix\.id \}\}/);
   assert.match(hostJob, /name: candidate-package/);
 });

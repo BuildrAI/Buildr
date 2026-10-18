@@ -19,7 +19,7 @@
 | 通用源码 | 产品逻辑、声明、公共接口及发布工具本身正确 | 本机一次；不按系统复制整套 |
 | 平台源码 | 真实系统的命令、路径、锁、进程等差异正确 | 本机系统在本机；另一系统由 GitHub 补齐 |
 | 通用原包 | 最终原包内容、安装身份、公共命令及核心页面正确 | 本机一次，直接消费 GitHub 生产的原包 |
-| 平台原包 | 同一原包的系统启动器、进程与最低／当前 Node 组合正确 | 本机系统在本机；另一系统由 GitHub 补齐 |
+| 平台原包 | 同一原包的系统启动器、进程与最低 Node 组合正确 | 本机系统在本机；另一系统由 GitHub 补齐 |
 
 macOS 与 Windows 开发对称交换执行位置。两类平台节点独立选择、记录和恢复，不能把通用功能全部放进去。默认入口先完成本机源码，再由 GitHub 补另一系统，源码三部分全部通过后才制包。验包节点彼此独立，智能体（Agent）确认原包已上传后可先下载本机验包，与远端另一系统验包并行；不是默认自动同时执行全部节点。两系统结果只有各自真实系统可以提供，普通诊断不能冒充正式候选。
 
@@ -34,7 +34,7 @@ macOS 与 Windows 开发对称交换执行位置。两类平台节点独立选�
 | 看改动该测哪些／定向执行 | `test:changed -- --plan`；`test:focus -- <step-id>`。选择成功不等于检查成功 |
 | 日常快速／完整后端 | `test:fast`、`test:core`；不自动证明前端页面、最终原包或跨平台候选 |
 | 发布前源码证明 | `test:source -- --scope common` 选通用源码；`--scope platform` 只选本机系统，默认 `all` 合并两者；`--json` 只看计划，`--output <bundle.json>` 执行并保存证明；不制包 |
-| 本机原包证明 | `tools/development/run-development-node test/verification/artifact.ts --artifact-dir <原包目录> --output <证明目录>`；`--scope common\|platform\|all` 选择通用／平台，`--node-tuple current` 验当前 Node；最低 Node 使用 `--scope platform --node-tuple minimum`，只补对应宿主组合；从不隐式制包 |
+| 本机原包证明 | `tools/development/run-development-node test/verification/artifact.ts --artifact-dir <原包目录> --output <证明目录>`；`--scope common\|platform\|all` 选择通用／本机平台；系统验包使用实际 Node `24.15.0`，默认一次完成通用与本机平台，不再单独验当前版本；从不隐式制包 |
 | 把本机验包交回正式汇总 | 同一 `prepare` 传入 `--artifact-verification <证明目录>`；采用远端已通过结果、只补缺项和汇总，不重打包；等待本机缺项不表示候选已完整通过 |
 | 前端逻辑／源码页面 | 前端 `npm test`；后端 `test:browser:changed`、`test:browser:smoke`。页面按选择器执行 |
 | 当前机器候选／跨平台候选 | `test:candidate`；GitHub `verify.yml`。后者才组合平台、同一原包与宿主 Node 证据 |
@@ -162,13 +162,13 @@ macOS 与 Windows 开发对称交换执行位置。两类平台节点独立选�
 | `artifact-browser-core` | 原包内网页能完成核心工作空间／任务阅读旅程；不是全部页面或安装启动证明 | 本机通用原包组；GitHub 仅补缺项 | 非源码复用；正式补验按原包与检查输入另核验 | 同一原包；安装／页面现场独立 | 保留；无完整重复证据 |
 
 
-### 最低／当前 Node 与独立插件（4 项）
+### 最低 Node 与独立插件（4 项）
 
 | 检查 | 证明什么 | 当前在哪里跑 | 旧结果与重跑条件 | 能共享什么 | 讨论取舍 |
 | --- | --- | --- | --- | --- | --- |
-| `host-node-contract` | 实际 Node 满足包最低版本及稳定版约定 | 两系统 × 最低／当前 Node | 可复用同原包、准确 Node 及真实环境证明；组合不互替 | 依赖、生成物；无共享可变状态 | 保留；无完整重复证据 |
-| `host-node-boundaries` | 实际 Node 下进程、文件系统和 SQLite 的敏感边界 | 两系统 × 最低／当前 Node | 可复用同原包、准确 Node 及真实环境证明；组合不互替 | 公共依赖；本项现场与清理独立 | 保留；无完整重复证据 |
-| `host-node-cli-smoke` | 该 Node 安装同一原包，检查身份、帮助、初始化、网页健康与清理 | 两系统 × 最低／当前 Node | 可复用同原包、准确 Node 及真实环境证明；组合不互替 | 同一原包；安装／页面现场独立 | 保留独立干净安装；终止进程后确认退出再清理 |
+| `host-node-contract` | 实际 Node 满足包最低版本及稳定版约定 | 两系统 × 最低 Node | 可复用同原包、准确 Node 及真实环境证明；组合不互替 | 依赖、生成物；无共享可变状态 | 保留；无完整重复证据 |
+| `host-node-boundaries` | 实际 Node 下进程、文件系统和 SQLite 的敏感边界 | 两系统 × 最低 Node | 可复用同原包、准确 Node 及真实环境证明；组合不互替 | 公共依赖；本项现场与清理独立 | 保留；无完整重复证据 |
+| `host-node-cli-smoke` | 该 Node 安装同一原包，检查身份、帮助、初始化、网页健康与清理 | 两系统 × 最低 Node | 可复用同原包、准确 Node 及真实环境证明；组合不互替 | 同一原包；安装／页面现场独立 | 保留独立干净安装；终止进程后确认退出再清理 |
 | `dsh-plugin` | 两种插件变体的构建、逻辑、真实 SDK 装载与准确主包组合 | 插件本机；GitHub macOS | 普通源码复用仅 unit／integration；正式补验可核验采用原包及完整证明 | 固定 SDK／构建；组合数据独立 | 保留；无完整重复证据 |
 
 
@@ -180,7 +180,7 @@ macOS 源码的 `system-macos-platform` 只执行三组现有系统断言：`lso
 
 Windows 源码只补 `system-windows-platform` 中的原生命令、PATH／PATHEXT、路径大小写／junction、硬链接锁、taskkill 子树清理，以及 `worktree-create.test.ts` 的一个 Git／CRLF 用例；另有原生句柄读取，证明授权根、文件身份、并发替换拒绝和超时释放。具体机制和触发路径见[平台清单](../../../services/buildr/test/verification/platform-boundaries.ts)；触发路径不等于完整结果输入。结果使用 `platform-backend` 范围保留真实物化材料及公共声明，不随无关前端／发布技能源变化失效。`release-tarball-smoke` 另证明 macOS 原生应用与 Windows PowerShell 快捷方式的真实原包消费，不重复通用功能全套。
 
-四个宿主证据是 `host-minimum-macos`、`host-minimum-windows`、`host-current-macos`、`host-current-windows`。最低组合测试 `24.15.0`，当前组合取 `24.x`；各跑 `host-node-contract`、`host-node-boundaries`、`host-node-cli-smoke`，共同消费唯一原包。计划中的 `candidate-tarball` 在已注入原包时只是依赖节点，不是四次打包。外层结果名 `host-node-compatibility` 不是第五类测试。最低 macOS 还用固定 npm `11.5.1` 对同包执行发布干运行（Dry Run），不产生公开效果。
+两个宿主证据是 `host-minimum-macos`、`host-minimum-windows`，均使用实际 Node `24.15.0`，不再单独验当前版本。它们各跑 `host-node-contract`、`host-node-boundaries`、`host-node-cli-smoke`，共同消费唯一原包；已注入原包时的 `candidate-tarball` 只是依赖节点，不是重新打包。外层结果名 `host-node-compatibility` 不是另一类测试。最低 macOS 仍用固定 npm `11.5.1` 对同包执行发布干运行（Dry Run），不产生公开效果。
 
 这些检查都涉及安装／初始化，但证明对象不同。共享同“包＋系统＋Node”组合的下载和不可变准备，保留各自断言、失败与清理；没有断言包含证据前不整项删除。首次必须取得每个必要组合的真实证明；后续同包、同 Node、同依赖及执行输入的有效结果可复用，不能跨组合冒充。
 
@@ -271,7 +271,7 @@ Windows 开发机上，一个 Git 路径与换行（CRLF）场景会与通用工
 
 源码检查发现和分组仍由 `test-files.ts`、`system-suites.ts`、`registry.ts` 管理，改动选择由 `ownership.ts`／`planner.ts`，执行与资源由 `plan-runner.ts`／`executor.ts` 等管理；项目地图和正式任务报告应用只管理声明与结果，不执行产品测试。新增检查须接入真实文件发现、归属、定义、依赖和资源；本页仅解释，不新增一套状态或门禁。
 
-完整候选必须同时具备通用源码、两系统源码、同一最终原包的通用与两系统验包、最低／当前 Node 必要组合、完整汇总及适用的准确插件对端组合。每项绑定实际输入、原包和来源；历史原包、局部诊断及文档检查不能代替当前候选验收。实际执行范围、耗时和通过情况以对应任务报告为准，流程代码通过不表示已经准备或公开新版本。
+完整候选必须同时具备通用源码、两系统源码、同一最终原包的通用与两系统验包、最低 Node 必要组合、完整汇总及适用的准确插件对端组合。每项绑定实际输入、原包和来源；历史原包、局部诊断及文档检查不能代替当前候选验收。实际执行范围、耗时和通过情况以对应任务报告为准，流程代码通过不表示已经准备或公开新版本。
 
 ## 真实平台与外部环境边界
 

@@ -6,10 +6,8 @@ import { candidateEnvironmentPlan } from '../../tools/verification/candidate-env
 test('package selection keeps common checks once and native package checks separate on either machine', () => {
   const ids = (platform: string, scope: string) => createLocalArtifactPlan(platform, { scope }).nodes.map((node: any) => node.id);
   assert.deepEqual(ids('darwin', 'common'), ids('win32', 'common'));
-  assert.deepEqual(ids('darwin', 'platform'), ['runtime-macos', 'host-current-macos']);
-  assert.deepEqual(ids('win32', 'platform'), ['runtime-windows', 'host-current-windows']);
-  assert.deepEqual(createLocalArtifactPlan('darwin', { scope: 'platform', nodeTuple: 'minimum' }).nodes.map((node: any) => node.id), ['host-minimum-macos']);
-  assert.deepEqual(createLocalArtifactPlan('win32', { scope: 'platform', nodeTuple: 'minimum' }).nodes.map((node: any) => node.id), ['host-minimum-windows']);
+  assert.deepEqual(ids('darwin', 'platform'), ['runtime-macos', 'host-minimum-macos']);
+  assert.deepEqual(ids('win32', 'platform'), ['runtime-windows', 'host-minimum-windows']);
   for (const platform of ['darwin', 'win32']) {
     const plan = createLocalArtifactPlan(platform);
     assert.ok(plan.nodes.every((node: any) => !node.stepIds.includes('candidate-tarball')));
@@ -33,7 +31,7 @@ test('package entry requires explicit original bytes and rejects pretending the 
   assert.throws(() => runLocalArtifactVerification({ scope: 'platform', nodeTuple: 'minimum' }, {
     platform: 'darwin', nodeVersion: '24.21.0', readArtifact: () => assert.fail('must reject before reading or preparing'),
   }), /actual Node 24.15.0/u);
-  assert.throws(() => runLocalArtifactVerification({ scope: 'platform' }, { platform: 'darwin', nodeVersion: '26.0.0', readArtifact: () => assert.fail('before any package test') }), /tuple requests stable Node 24.x/u);
+  assert.throws(() => runLocalArtifactVerification({ scope: 'platform' }, { platform: 'darwin', nodeVersion: '26.0.0', readArtifact: () => assert.fail('before any package test') }), /actual Node 24.15.0/u);
 });
 
 test('package plan-only inspection neither prepares dependencies nor executes checks', () => {

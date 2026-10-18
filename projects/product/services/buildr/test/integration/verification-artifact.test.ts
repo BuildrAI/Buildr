@@ -10,7 +10,7 @@ test('local package execution preserves local identity and stops at a failed nod
   t.after(() => fs.rmSync(output, { recursive: true, force: true }));
   const calls: any[] = [];
   const result = runLocalArtifactVerification({ scope: 'platform', artifactDirectory: '/original', output }, {
-    platform: 'darwin', nodeVersion: '24.21.0', readArtifact: () => ({ identity: { sha256: 'original' } }),
+    platform: 'darwin', nodeVersion: '24.15.0', readArtifact: () => ({ identity: { sha256: 'original' } }),
     assertCheckout: () => {}, prepare: () => {},
     execute: (_command: string, args: string[], options: any) => {
       calls.push(args);
@@ -25,7 +25,7 @@ test('local package execution preserves local identity and stops at a failed nod
 
 test('a dirty checkout stops local verification before preparing or executing anything', () => {
   assert.throws(() => runLocalArtifactVerification({ scope: 'platform', artifactDirectory: '/original', output: '/unwritten' }, {
-    platform: 'darwin', nodeVersion: '24.21.0', readArtifact: () => ({ identity: {} }),
+    platform: 'darwin', nodeVersion: '24.15.0', readArtifact: () => ({ identity: {} }),
     assertCheckout: () => { throw new Error('dirty source'); },
     prepare: () => assert.fail('dirty source must not prepare'), execute: () => assert.fail('dirty source must not execute'),
   }), /dirty source/u);
@@ -37,17 +37,17 @@ test('restoring controller dependencies rechecks prior package proof before exec
   const preparations: string[] = [], observations: string[] = [];
   let activePreparation = 'source-runtime';
   const result = runLocalArtifactVerification({ artifactDirectory: '/original', output }, {
-    platform: 'darwin', nodeVersion: '24.21.0', readArtifact: () => ({ identity: { sha256: 'original' } }),
+    platform: 'darwin', nodeVersion: '24.15.0', readArtifact: () => ({ identity: { sha256: 'original' } }),
     assertCheckout: () => {},
     reusableEvidence: (node: any) => { observations.push(`${node.id}:${activePreparation}`); return node.preparation === activePreparation; },
     prepare: ({ profile }: any) => { preparations.push(profile); activePreparation = profile; },
     execute: () => assert.fail('restored valid proof must not execute again'),
   });
   assert.equal(result.status, 'passed');
-  assert.deepEqual(preparations, ['browser-artifact', 'base', 'consumer', 'host']);
+  assert.deepEqual(preparations, ['browser-artifact', 'base', 'consumer', 'publisher']);
   assert.ok(result.results.every((node: any) => node.disposition === 'reused'));
-  assert.ok(observations.includes('host-current-macos:host'));
-  assert.equal(activePreparation, 'host');
+  assert.ok(observations.includes('host-minimum-macos:publisher'));
+  assert.equal(activePreparation, 'publisher');
 });
 
 test('an invalid package proof remains a miss after preparation and still executes', t => {
@@ -55,7 +55,7 @@ test('an invalid package proof remains a miss after preparation and still execut
   t.after(() => fs.rmSync(output, { recursive: true, force: true }));
   let observations = 0, executions = 0;
   const result = runLocalArtifactVerification({ scope: 'platform', artifactDirectory: '/original', output }, {
-    platform: 'darwin', nodeVersion: '24.21.0', readArtifact: () => ({ identity: { sha256: 'original' } }),
+    platform: 'darwin', nodeVersion: '24.15.0', readArtifact: () => ({ identity: { sha256: 'original' } }),
     assertCheckout: () => {}, reusableEvidence: () => { observations++; return false; }, prepare: () => {},
     execute: () => { executions++; return { status: 1 }; },
   });

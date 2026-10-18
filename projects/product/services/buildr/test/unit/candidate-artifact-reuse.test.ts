@@ -73,14 +73,15 @@ test('only complete same-package, actual-platform, actual-Node and dependency fi
   assert.deepEqual(adopted.artifactRecord, original);
 });
 
-test('Host Node reuse keeps exact minimum and stable current tuple semantics', () => {
-  for (const expectation of ['minimum', 'current']) {
-    const host = { id: `host-${expectation}-macos`, kind: 'host-node', runner: 'macos', requiresArtifact: true,
-      requestedNode: expectation === 'minimum' ? '24.15.0' : '24.x', expectation, steps: [{ id: 'host-node-compatibility' }] };
-    const original = evidence(host, 'darwin', expectation === 'minimum' ? '24.15.0' : '24.21.0');
+test('Host Node reuse requires the exact minimum on each actual system', () => {
+  for (const runner of ['macos', 'windows']) {
+    const host = { id: `host-minimum-${runner}`, kind: 'host-node', runner, requiresArtifact: true,
+      requestedNode: '24.15.0', expectation: 'minimum', steps: [{ id: 'host-node-compatibility' }] };
+    const platform = runner === 'macos' ? 'darwin' : 'win32';
+    const original = evidence(host, platform, '24.15.0');
     assert.equal(validateCandidateArtifactEvidence(original, host, context, original.checkInputs, artifact), true);
-    for (const version of expectation === 'minimum' ? ['24.21.0', '24.14.0'] : ['24.14.0', '25.0.0', '26.0.0', '24.22.0-rc.1']) {
-      const changed = evidence(host, 'darwin', version);
+    for (const version of ['24.21.0', '24.14.0', '25.0.0']) {
+      const changed = evidence(host, platform, version);
       assert.equal(validateCandidateArtifactEvidence(changed, host, context, changed.checkInputs, artifact), false, version);
     }
   }

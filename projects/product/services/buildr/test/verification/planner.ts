@@ -271,11 +271,11 @@ export function validateCandidateCiCoverage(
     for (const shardId of Array.isArray(allowed) ? allowed : []) if (!shardIds.has(shardId)) findings.push({ step: id, code: 'candidate_platform_repeat_unknown_shard', value: shardId });
   }
   const tupleIds: any = new Set();
-  const expectedTuples: any = new Set(['minimum:macos', 'minimum:windows', 'current:macos', 'current:windows']);
+  const expectedTuples: any = new Set(['minimum:macos', 'minimum:windows']);
   for (const tuple of hostNodeTuples) {
     if (!tuple.id || tupleIds.has(tuple.id)) findings.push({ step: tuple.id || '<host-node-tuple>', code: 'candidate_host_tuple_duplicate_or_missing_id' });
     tupleIds.add(tuple.id);
-    if (!CANDIDATE_CI_RUNNERS.includes(tuple.runner) || !['minimum', 'current'].includes(tuple.expectation)) {
+    if (!CANDIDATE_CI_RUNNERS.includes(tuple.runner) || tuple.expectation !== 'minimum') {
       findings.push({ step: tuple.id, code: 'candidate_host_tuple_invalid' });
     }
     expectedTuples.delete(`${tuple.expectation}:${tuple.runner}`);

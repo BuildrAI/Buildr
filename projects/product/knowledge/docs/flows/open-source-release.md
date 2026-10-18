@@ -22,7 +22,7 @@
 | 4 验包 | 通用原包检查只跑一次；另验本机系统的原包节点 | 只补另一系统的原包节点；制包完成后可与本机并行 |
 | 5 获准发布 | 核对准确原包及授权，发起发布 | 经受保护入口公开已验原包，回读 npm 与 GitHub；不重新打包 |
 
-本机是 macOS，GitHub 补 Windows；本机是 Windows，GitHub 补 macOS。**只有操作系统相关检查分平台；通用功能和核心页面不因此两边重跑。** 最低／当前 Node 的必要系统组合仍须满足，同一原包贯穿全部验包。插件按实际发布范围另外核对准确双包组合，见[插件说明](dsh-plugin-release.md)。
+本机是 macOS，GitHub 补 Windows；本机是 Windows，GitHub 补 macOS。**只有操作系统相关检查分平台；通用功能和核心页面不因此两边重跑。`test:source --scope common` 只选通用源码，`--scope platform` 只选当前系统源码；原包入口的同名范围分别选择通用原包与当前系统验包。macOS 和 Windows 的源码、启动器与最低 Node 证明各自独立，本机不执行另一系统。** 两个系统只要求最低 Node `24.15.0` 的独立验包组合，不另跑当前版本，同一原包贯穿全部验包。插件桌面只在安装、加载、宿主兼容或卸载恢复改变时验对应操作，不例行重测功能、重装或卸载。插件按实际发布范围另外核对准确双包组合，见[插件说明](dsh-plugin-release.md)。
 
 `prepare --stop-after candidate` 停在验包：保全原包和证明，登记验证报告和结果材料，关联本轮过程报告，结束准备任务，并逐项清理或说明保留的临时资源。记录或清理失败只补相应动作。后续可明确接续同一冻结候选，再核对同树 `main`、准确对端、顺序及公开授权；纳入新源码仍须恢复活动准备。发布代码位于工作空间根的 `skills/buildr-release/scripts/`，检查明细和入口见[验证框架](../architecture/verification-framework.md)及[工具地图](../../code-map/product-verification-tools.md)。
 

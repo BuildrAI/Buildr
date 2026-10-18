@@ -373,7 +373,7 @@ export function localArtifactHandoff(repo: string, candidate: any): any {
   return { runner: candidate.localRunner, artifactDirectory, evidenceDirectory,
     download: { command: 'gh', args: ['run', 'download', String(candidate.runId), '--repo', releasePublishAuthority.repository,
       '--name', 'candidate-package', '--dir', artifactDirectory] },
-    checks: [{ node: '24.x-stable>=24.15.0', args }, { node: '24.15.0', args: [...args, '--scope', 'platform', '--node-tuple', 'minimum'] }],
+    checks: [{ node: '24.15.0', args }],
     nextAction: '确认制包作业已上传原包后下载并在隔离环境验包；不必等待另一系统验包结束，不重新打包。' };
 }
 

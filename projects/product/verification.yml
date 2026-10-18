@@ -87,10 +87,9 @@ testing:
       argv:
         - tools/development/run-development-npm
         - run
-        - test:source
+        - test:focus
         - --
-        - --scope
-        - platform
+        - system-macos-platform
       cwd: services/buildr
     selection:
       - 仅在真实 macOS 执行 system-macos-platform；只补此节点，不重跑通用检查
@@ -106,7 +105,7 @@ testing:
       services:
         - buildr
         - buildr-web
-    purpose: 对同一最终原包执行一次通用检查，并分别证明两个系统的原生启动及最低和当前 Node；本入口不制包、不公开
+    purpose: 对同一最终原包执行一次通用检查，并分别证明两个系统的原生启动及最低 Node；本入口不制包、不公开
     sourcePaths:
       - services/buildr/**
       - services/buildr-web/**
@@ -119,14 +118,14 @@ testing:
         - 从发布入口取已核验来源和摘要的准确原包目录，用 tools/development/run-development-node 调用
           test/verification/artifact.ts，显式提供 --artifact-dir 和 --output
         - --scope common 只执行通用原包检查一次；--scope platform 只执行当前系统的 runtime-macos 或
-          runtime-windows 及当前 Node
-        - 最低 Node 使用实际 24.15.0 程序运行 --scope platform --node-tuple
-          minimum，仅补宿主组合，不重复通用检查与启动器
+          runtime-windows 及最低 Node，不包含另一系统或通用功能
+        - 默认 all 使用实际 Node 24.15.0，一次完成通用原包和本机系统验包；分别执行 common 与 platform
+          时也只补缺项，不另跑当前版本组合
         - 有效结果保留原实际系统和程序；使用同一 prepare 的 --artifact-verification 导入，缺项不冒充完整通过
     requirements:
       - 明确冻结源码、同一原包及隔离检查目录
       - 真实 macOS 或 Windows；另一个系统的证明不能由当前系统结果替代
-      - 最低 Node 使用实际 24.15.0，当前兼容组合使用登记的 24.x；一般开发工具仍接受稳定版 >=24.15.0，不要求恰好最低版本
+      - 系统验包使用实际 Node 24.15.0；一般开发工具仍接受稳定版 >=24.15.0，不要求恰好最低版本
   - id: buildr-fast
     title: Buildr 后端低成本完整回归
     scope:
@@ -396,7 +395,7 @@ testing:
       cwd: .
     selection:
       - 开发中按改动选择对应单元、进程或装载测试；完成时运行完整入口
-      - 完整入口构建可安装组合并验证物理文件、自足引用及内层真实入口；组合生命周期测试覆盖停用恢复与配置保全，厂商发行应用的原生装卸另行验收
+      - 完整入口构建可安装组合并验证物理文件、自足引用及内层真实入口；组合生命周期测试覆盖停用恢复与配置保全；厂商发行应用的原生装卸仅在对应实现或兼容边界变化时验收
       - 增强源码完整入口必须显式提供 --source-sdk 或 BUILDR_DSH_SOURCE_SDK_ROOT，指向经
         prepare-source-sdk 重建并核对基线、补丁清单、生成声明与产物摘要的独占软件开发工具包（SDK）；普通未补丁 rc.2 或旧
         rc.1 不代表新接口支持，不自动修改共享检出或真实配置档（Profile）
@@ -408,7 +407,7 @@ testing:
         信任和公开发布仍需另外授权及验收
       - 新托管准备使用 prepare-release-sdk.ts，固定真实上游提交及补丁后的冻结依赖；必须显式提供对应 Node 和 pnpm
         入口，不复用本机认证配置
-      - 桌面应用的真实按钮与跨重启交互另行验收，不能由装载测试替代
+      - 只在安装、加载、宿主兼容或卸载恢复发生变化时执行对应桌面操作；有效功能证明不重复，未改变的安装卸载与跨重启交互不作每轮发布要求
       - 自动受影响选择通过 dsh-plugin 调用完整入口并准备固定 SDK 与 pnpm@11.7.0；本族不进入独立 Buildr
         主包候选（Candidate）集合
     requirements:

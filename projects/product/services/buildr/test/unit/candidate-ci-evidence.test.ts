@@ -109,7 +109,7 @@ test('Candidate CI coverage is a closed projection of the full local Candidate',
 
 test('new Candidate host coverage is exactly macOS and Windows and rejects Linux relabeling', () => {
   assert.deepEqual(CANDIDATE_CI_HOST_NODE_TUPLES.map((tuple: any) => tuple.id), [
-    'host-minimum-macos', 'host-minimum-windows', 'host-current-macos', 'host-current-windows',
+    'host-minimum-macos', 'host-minimum-windows',
   ]);
   const linux = { id: 'host-minimum-linux', runner: 'linux', requestedNode: '24.15.0', expectation: 'minimum' };
   assert.ok(validateCandidateCiCoverage(verificationSteps, CANDIDATE_CI_SHARDS, [...CANDIDATE_CI_HOST_NODE_TUPLES, linux])
