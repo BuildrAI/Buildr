@@ -1,6 +1,6 @@
 {
   "name": "@buildr-ai/buildr",
-  "version": "0.1.0-rc.43",
+  "version": "0.1.0-rc.44",
   "buildrCompatibility": {
     "schemaVersion": "buildr.package-compatibility/v1",
     "provides": [
