@@ -120,11 +120,13 @@ export function createWorkspaceCliContributions(applications: { workspace?: any;
     }),
     Object.freeze({
       key: 'init', surface: 'primary',
-      summary: '首次 onboarding 推荐传入 --agent：初始化源资产后复用完整 sync，并以最终 doctor 通过作为技术完成条件；随后由 Agent 根据真实 Project/Service 状态完成简短首次使用交接并邀请第一项工作。',
+      summary: '初始化源资产并登记到当前产品的本机 Buildr Web，再复用完整 sync 和最终 doctor；不会启动网页。随后由 Agent 根据真实 Project/Service 状态完成首次使用交接。',
       help: [
         'Usage: buildr init [--agent <runtime>] [--adapter <adapter>] [--source-only] [--target <dir>] [--name <name>] [--description <text>] [--profile <personal|team|company>]', '',
-        '首次 onboarding 推荐传入 --agent：初始化源资产后复用完整 sync，并以最终 doctor 通过作为技术完成条件；随后由 Agent 根据真实 Project/Service 状态完成简短首次使用交接并邀请第一项工作。',
-        '默认保留唯一既有接入方式，否则准备标准 runtime；--source-only 只初始化源资产，且不能与 --agent/--adapter 同用。',
+        '首次 onboarding 推荐传入 --agent：初始化源资产后登记到当前产品的本机 Buildr Web，再复用完整 sync 和最终 doctor；登记不启动网页服务或打开浏览器。',
+        '默认保留唯一既有接入方式，否则准备标准 runtime；--source-only 只初始化源资产，不登记本机列表或网页管理归属，且不能与 --agent/--adapter 同用。',
+        '已登记目录保留原身份与登记；登记失败保留源资产，后续 runtime 失败保留已成立登记，均不报告整体完成。',
+        '最终 doctor 通过后，由 Agent 根据真实 Project/Service 状态完成简短首次使用交接并邀请第一项工作。',
         '未提供 --description 时写入明确 TODO，并由 doctor 提示补全。',
         '--help 只输出帮助，不会写入文件。',
       ],
@@ -199,6 +201,7 @@ export function createWorkspaceModule(runtime: DynamicRuntime, { readProductIden
       registerWorkspaceQueryApplication(privateComposition);
       registerWorkspaceManagementFence(privateComposition, { oppositeWebProfile: webProfileContract?.oppositeWebProfile });
       registerWorkspaceCommandApplication(privateComposition);
+      privateComposition.ensureRegisteredTarget = (targetRoot: any) => ensureRegisteredTarget(privateComposition, targetRoot);
       registerWorkspaceOperations(privateComposition);
       registerWorkspaceSourceGit(privateComposition);
       registerProjectApplication(privateComposition);
@@ -223,8 +226,6 @@ export function createWorkspaceModule(runtime: DynamicRuntime, { readProductIden
         renderProjectsManifest: privateComposition.renderProjectsManifest, writeProjectRegistry: privateComposition.writeProjectRegistry,
       });
       privateComposition.convergeRegistryManifests = registryMaintenance.convergeRegistryManifests;
-
-      privateComposition.ensureRegisteredTarget = (targetRoot: any) => ensureRegisteredTarget(privateComposition, targetRoot);
 
       const workspace = Object.freeze({
         ...pick(privateComposition, WORKSPACE_METHODS),

@@ -22,6 +22,7 @@ import {
   releaseBuildrWebStartLock,
   clearBuildrWebInstance,
   buildrWebInstancePath,
+  buildrWebInstanceObservationDigest,
   buildrWebStartLockPath,
   openDefaultBrowser,
   readLauncherIdentityFromEnvironment,
@@ -390,4 +391,50 @@ test('HTTP Host uses the trusted runtime port and still gates a closing applicat
   const health = await closing.request({ url: '/api/v1/health' });
   assert.equal(health.status, 200);
   assert.equal(JSON.parse(health.body).status, 'stopping');
+});
+
+test('更新子进程拒绝损坏或健康身份不一致的receipt，保留字节且不启动服务', async (t) => {
+  assert.ok(process.env.BUILDR_APP_DATA_DIR, 'run through the isolated smoke runner');
+  const previousRoot = process.env.BUILDR_APP_DATA_DIR;
+  const root = fs.mkdtempSync(path.join(previousRoot, '..', 'handoff-malformed-'));
+  process.env.BUILDR_APP_DATA_DIR = root;
+  t.after(() => { process.env.BUILDR_APP_DATA_DIR = previousRoot; fs.rmSync(root, { recursive: true, force: true }); });
+  const identity = { package: '@buildr-ai/buildr', version: '0.0.2', protocolIdentity: 'buildr.web-protocol/v1', applicationPayloadDigest: 'new-payload', channel: 'npm', installationIdentity: 'new-origin', sourceCommit: 'new-source', runtime: { role: 'host', executable: '/registered/node', identity: 'registered-node' } };
+  const previous = { pid: 100, url: 'http://127.0.0.1:4458/', secret: 'old-secret', launcherIdentity: null, productIdentity: { ...identity, version: '0.0.1', installationIdentity: 'old-origin' }, webProfile: resolveWebProfile(identity) };
+  const f = { identity, previous, input: { productRoot: '/registered/package' } };
+  const file = path.join(root, 'instance.json');
+  const corrupted = '{a concurrent unparseable receipt';
+  let starts = 0;
+  const runtime: any = {
+    assertNoUnknownOptions() {},
+    optionValue: (args: string[], name: string, fallback: any) => args.includes(name) ? args[args.indexOf(name) + 1] : fallback,
+    productRoot: () => f.input.productRoot,
+  };
+  registerWebInstanceLifecycle(runtime, {
+    readProductIdentity: () => f.identity,
+    assertNpmLauncherBinding: () => { throw new Error('not used'); },
+    assertNpmUpdateHandoffTarget() {}, ensureRegisteredTarget: () => null,
+    createLocalWorkspaceServer: () => { starts += 1; throw new Error('must not start'); },
+  });
+  const args = ['--update-handoff', buildrWebInstanceObservationDigest(f.previous), '--no-open'];
+  fs.writeFileSync(file, corrupted);
+  await assert.rejects(runtime.startBuildrWeb(args), { code: 'web_update_instance_invalid' });
+  assert.equal(fs.readFileSync(file, 'utf8'), corrupted);
+  const original = JSON.stringify({ schemaVersion: 'buildr.local-app-instance/v2', ...f.previous });
+  fs.writeFileSync(file, original);
+  let damageDuringHealth = true;
+  let healthBody = { schemaVersion: 'buildr.local-app-health/v1', status: 'ready', ...f.previous };
+  t.mock.method(globalThis, 'fetch', async () => {
+    if (damageDuringHealth) fs.writeFileSync(file, corrupted);
+    return new Response(JSON.stringify(healthBody));
+  });
+  await assert.rejects(runtime.startBuildrWeb(args), { code: 'web_update_instance_invalid' });
+  assert.equal(fs.readFileSync(file, 'utf8'), corrupted);
+  damageDuringHealth = false;
+  healthBody = { ...healthBody, productIdentity: f.identity };
+  fs.writeFileSync(file, original);
+  await assert.rejects(runtime.startBuildrWeb(args), { code: 'web_update_instance_unconfirmed' });
+  assert.equal(fs.readFileSync(file, 'utf8'), original);
+  assert.equal(starts, 0);
+  assert.equal(fs.existsSync(path.join(root, 'instance-start.lock')), false);
 });

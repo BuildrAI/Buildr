@@ -73,12 +73,14 @@ export function createInstallationCliContributions(application: any = null) {
     {
       key: 'update',
       surface: 'primary',
-      summary: '更新 Buildr CLI 自身；npm installation 可显式选择 GA 或 RC。',
+      summary: '更新 Buildr，并自动交接同一 npm 安装中运行的旧版网页；可显式选择 GA 或 RC。',
       help: [
         'Usage: buildr update [--track <stable|candidate>] [--json]',
         '',
         'npm installation 使用 --track stable 选择 GA 正式版，使用 --track candidate 选择 RC 候选版。',
         '省略 --track 时，当前 RC 跟随 candidate，当前正式版跟随 stable；不会自动切轨或降级。',
+        'npm 更新后自动切换同一安装中运行的旧版 Buildr Web；没有运行实例则不启动，也不要求安装或打开 Launcher。',
+        '软件包已是当前版本时仍可恢复遗留网页交接；安装与网页切换分别报告，退出旧服务可能取消其未完成的生成。',
         '同步 workspace 请使用 buildr sync <agent> --target <dir>。',
       ],
       match: ({ domain }: any) => domain === 'update',
@@ -88,6 +90,13 @@ export function createInstallationCliContributions(application: any = null) {
 }
 
 function printPlan(plan: any, label: any) {
+  if (plan.webUpdate) {
+    const web = plan.webUpdate;
+    if (web.status === 'not-running') console.log('Buildr Web：未运行，保持未运行状态。');
+    else if (web.status === 'current') console.log(`Buildr Web：已运行当前版本 ${web.version}，保留现有实例（pid ${web.pid}）。`);
+    else if (web.status === 'restarted') console.log(`Buildr Web：已切换到版本 ${web.version}（pid ${web.pid}），地址：${web.url}。`);
+    else console.log(`Buildr Web：自动交接未完成${web.code ? ` [${web.code}]` : ''}：${web.message}；软件包安装结果保持，修复后可再次运行 buildr update 恢复交接。`);
+  }
   if (plan.tracks && plan.current?.version) {
     console.log(`当前安装：${plan.current.version}`);
     const candidate = plan.tracks.candidate;

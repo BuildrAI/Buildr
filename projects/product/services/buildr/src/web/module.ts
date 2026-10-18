@@ -6,7 +6,9 @@ import { TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER } from '../modules/task/
 import {
   SYSTEM_INSTALLATION_IDENTITY,
   SYSTEM_INSTALLATION_LAUNCHER,
+  type NpmWebUpdateInput,
 } from '../modules/installation/module.ts';
+import { handoffUpdatedBuildrWeb } from './application/update-web-handoff.ts';
 import type { WebInstanceLifecycleRuntime, WebLifecycleOptions } from './application/instance-lifecycle.ts';
 import { readBuildrWebInstance } from './infrastructure/instance-runtime.ts';
 
@@ -22,6 +24,8 @@ type WebModuleDependency = {
   resolveRegisteredWorkspace?: WebLifecycleOptions['resolveRegisteredWorkspace'];
   readCurrentProductIdentity?(): ReturnType<WebLifecycleOptions['readProductIdentity']>;
   assertCurrentNpmLauncherBinding?: WebLifecycleOptions['assertNpmLauncherBinding'];
+  readNpmUpdateHandoffInstallation?(input: NpmWebUpdateInput): any;
+  assertNpmUpdateHandoffTarget?(instance: any, options?: any): unknown;
   assertCanonicalTaskWorkspace?(root: string): string;
   inspectGitWorktrees?: WebInstanceLifecycleRuntime['inspectGitWorktrees'];
   readGitWorktreeEvidence?: WebInstanceLifecycleRuntime['readGitWorktreeEvidence'];
@@ -40,6 +44,7 @@ export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: {
       const taskQuery = requires[TASK_QUERY_APPLICATION];
       const worktreeProvider = requires[TASK_WORKTREE_PROVIDER];
       if (!identity?.readCurrentProductIdentity || !launcher?.assertCurrentNpmLauncherBinding || !workspace?.ensureRegisteredTarget || !workspace?.resolveRegisteredWorkspace
+        || !identity.readNpmUpdateHandoffInstallation || !identity.assertNpmUpdateHandoffTarget
         || typeof taskQuery?.assertCanonicalTaskWorkspace !== 'function'
         || typeof worktreeProvider?.inspectGitWorktrees !== 'function' || typeof worktreeProvider?.readGitWorktreeEvidence !== 'function') {
         throw new Error('Web module dependencies are incomplete.');
@@ -57,10 +62,16 @@ export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: {
         resolveRegisteredWorkspace: workspace.resolveRegisteredWorkspace,
         readProductIdentity: identity.readCurrentProductIdentity,
         assertNpmLauncherBinding: launcher.assertCurrentNpmLauncherBinding,
+        assertNpmUpdateHandoffTarget: instance => identity.assertNpmUpdateHandoffTarget!(instance),
       });
       const application = Object.freeze({
         startBuildrWeb: composition.startBuildrWeb,
         manageBuildrWebPreview: composition.manageBuildrWebPreview,
+        handoffUpdatedBuildrWeb: (input: NpmWebUpdateInput) => handoffUpdatedBuildrWeb(input, {
+          readNpmUpdateHandoffInstallation: identity.readNpmUpdateHandoffInstallation!,
+          assertNpmUpdateHandoffTarget: identity.assertNpmUpdateHandoffTarget!,
+          assertNpmLauncherBinding: launcher.assertCurrentNpmLauncherBinding,
+        }),
       });
       return Object.freeze({
         provides: { [WEB_INSTANCE_LIFECYCLE]: application },

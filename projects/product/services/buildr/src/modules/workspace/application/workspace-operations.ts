@@ -47,11 +47,12 @@ export type WorkspaceOperationsRuntime = Record<WorkspaceOperationMethod, (...ar
   SUPPORTED_AGENT_IDS: string[];
   UNSUPPORTED_AGENT_GUIDANCE: { message: string; nextStep: string };
   isSupportedAgent(agent: string): boolean;
+  ensureRegisteredTarget(targetRoot: string): string | null;
   syncRuntime(agent: string | null, args: string[]): void;
 };
 
 export type WorkspaceInitializationInput = { targetRoot: string; name: string; description: string; profile: string; agent: string | null; adapterId?: string | null; sourceOnly?: boolean };
-export type WorkspaceInitializationResult = WorkspaceInitializationInput & { created: string[]; changed: string[]; runtimeSelection: RuntimeSelection | null };
+export type WorkspaceInitializationResult = WorkspaceInitializationInput & { created: string[]; changed: string[]; runtimeSelection: RuntimeSelection | null; registeredWorkspaceId: string | null };
 
 export function registerWorkspaceOperations(runtime: WorkspaceOperationsRuntime) {
   const syncPackageComponents = (...args: any[]) => runtime.syncPackageComponents(...args);
@@ -234,13 +235,22 @@ export function registerWorkspaceOperations(runtime: WorkspaceOperationsRuntime)
     const gitignoreChanged = appendGitignoreEntries(path.join(targetRoot, '.gitignore'), [...WORKSPACE_ROOT_GITIGNORE_ENTRIES]);
     if (gitignoreChanged) changed.push('.gitignore');
 
-    const result = { targetRoot, name, description, profile, agent, sourceOnly, runtimeSelection, created, changed };
+    const result: WorkspaceInitializationResult = { targetRoot, name, description, profile, agent, sourceOnly, runtimeSelection, created, changed, registeredWorkspaceId: null };
     onAssetsReady(result);
     if (runtimeSelection !== null) {
       try {
+        result.registeredWorkspaceId = runtime.ensureRegisteredTarget(targetRoot);
+        if (result.registeredWorkspaceId === null) throw new Error('本机登记未返回可用的 Workspace identity。');
+      } catch (error: any) {
+        throw Object.assign(new Error(`Workspace 源资产已初始化，但本机 Buildr Web 登记未完成。\n请保留源资产，核对当前产品的本机登记及管理归属后重试初始化；不要改写身份或重复手动添加目录。\n原因：${error.message}`, { cause: error }), {
+          ...(error.code ? { code: error.code } : {}),
+          ...(error.nextAction ? { nextAction: error.nextAction } : {}),
+        });
+      }
+      try {
         runtime.syncRuntime(runtimeSelection.runtimeId, ['--target', targetRoot, '--adapter', runtimeSelection.adapterId]);
       } catch (error: any) {
-        throw new Error(`Workspace 源资产已初始化，但 ${runtimeSelection.runtimeId ?? runtimeSelection.adapterId} onboarding 未完成。\n修复问题后运行：buildr sync${runtimeCommandSelector(runtimeSelection)} --target ${targetRoot}\n原因：${error.message}`);
+        throw new Error(`Workspace 源资产已初始化，但 ${runtimeSelection.runtimeId ?? runtimeSelection.adapterId} onboarding 未完成。\n本机 Buildr Web 登记已完成；保留现有登记，无需重新初始化或手动添加目录。\n修复问题后运行：buildr sync${runtimeCommandSelector(runtimeSelection)} --target ${targetRoot}\n原因：${error.message}`, { cause: error });
       }
     }
     return result;

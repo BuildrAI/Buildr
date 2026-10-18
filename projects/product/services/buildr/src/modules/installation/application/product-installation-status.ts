@@ -8,13 +8,12 @@ import {
   readCurrentInstallationOrigin,
   runtimeIdentityForOrigin,
 } from '../infrastructure/installation-origin.ts';
-import { developmentInstanceMatchesInstallation } from '../infrastructure/current-product-identity.ts';
+import { developmentInstanceMatchesInstallation, registeredNpmInstallationSlot } from '../infrastructure/current-product-identity.ts';
 import { registeredProductInstallations } from '../infrastructure/installation-registry.ts';
 import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
 import { buildrWebDataRoot, parseWorkspaceManifest, readWorkspaceRegistryFile } from '../../workspace/module.ts';
 import { resolveApplicationPayloadRoot } from '../../../infrastructure/product-resources/index.ts';
 import { npmLauncherStatus } from '../infrastructure/npm-launcher.ts';
-import { npmLauncherInstallationSlotIdentity } from '../infrastructure/launcher-binding.ts';
 import { defaultWebDataRoot, oppositeWebProfile, resolveWebProfile } from '../contracts/web-profile.ts';
 
 function readJson(file: any) {
@@ -203,33 +202,13 @@ function annotateInstanceProfile(instance: any, profile: any) {
  * `slotOriginOwnerships` 中给出该槽位全部历史 origin，供无 launcherIdentity 的 CLI
  * 实例对照。外来实例保持 ready 身份事实，由消费方继续 fail closed。
  */
-function registeredNpmSlot(registered: any, currentOwnership: any) {
-  const entries = (registered?.installations || [])
-    .map((item: any) => item?.entry)
-    .filter((entry: any) => entry?.origin?.channel === 'npm');
-  const current = entries.find((entry: any) => entry.origin.ownershipIdentity === currentOwnership) || null;
-  if (!current?.updateAuthority?.prefix || !current?.productRoot || !current?.envelopePath) {
-    return { slotIdentity: null, slotOriginOwnerships: new Set() };
-  }
-  const { entryPath, productRoot } = current;
-  const siblings = entries.filter((entry: any) => sameFilesystemPath(entry.entryPath, entryPath) && sameFilesystemPath(entry.productRoot, productRoot));
-  return {
-    slotIdentity: npmLauncherInstallationSlotIdentity({
-      packageRoot: productRoot,
-      prefix: current.updateAuthority.prefix,
-      originEnvelope: current.envelopePath,
-    }),
-    slotOriginOwnerships: new Set(siblings.map((entry: any) => entry.origin.ownershipIdentity)),
-  };
-}
-
 function annotateInstanceVersion(instance: any, npm: any, registered: any) {
   if (!instance || instance.status !== 'ready') return instance;
   const identity = instance.identity || {};
   if ((identity.channel || 'npm') !== 'npm') return instance;
   const currentOwnership = npm?.identity?.ownershipIdentity;
   if (!currentOwnership || identity.ownershipIdentity === currentOwnership) return instance;
-  const slot = registeredNpmSlot(registered, currentOwnership);
+  const slot = registeredNpmInstallationSlot(registered, currentOwnership);
   const sameSlot = (identity.installationSlotIdentity && slot.slotIdentity === identity.installationSlotIdentity)
     || (!identity.installationSlotIdentity && slot.slotOriginOwnerships.has(identity.ownershipIdentity));
   if (!sameSlot) return instance;

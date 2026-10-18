@@ -558,6 +558,10 @@ artifacts:
       - connection-personal-secrets-ui
       - connection-authorization-ui
       - connection-authorization-state
+      - npm-update-application-source
+      - npm-update-identity-source
+      - web-update-handoff-source
+      - web-update-lifecycle-source
   - id: project-relations-article
     title: 项目、服务与代码库如何协作
     kind: document
@@ -1475,6 +1479,30 @@ artifacts:
       - file-responsibility-graph
       - project-terms
 sources:
+  - id: npm-update-application-source
+    title: 安装更新应用
+    kind: code
+    path: services/buildr/src/modules/installation/application/cli-update.ts
+    summary: 更新当前软件包后委托网页交接能力；保留安装结果，并分别报告网页切换状态。
+    observedDigest: f3a05fe1a7f6bc9278cca64827da339f0182042bc1f338f8b782f9693c44e721
+  - id: npm-update-identity-source
+    title: 更新安装归属
+    kind: code
+    path: services/buildr/src/modules/installation/infrastructure/current-product-identity.ts
+    summary: 重新读取已验证安装登记，比较同一安装槽位中的历史身份，提供新版精确运行入口。
+    observedDigest: 99edf1f72e36fc58724affa8b21fb466f03a816a411fea3fcbc7613ac7c1f7a3
+  - id: web-update-handoff-source
+    title: 网页更新交接
+    kind: code
+    path: services/buildr/src/web/application/update-web-handoff.ts
+    summary: 以新版独立进程发起同一安装的网页交接，并核对实际服务健康身份与失败结果。
+    observedDigest: ae16e70d33fb5500c36fbe0c00716ba55d4de0dbb531e2764394a0caa4a12184
+  - id: web-update-lifecycle-source
+    title: 网页实例生命周期
+    kind: code
+    path: services/buildr/src/web/application/instance-lifecycle.ts
+    summary: 唯一编排默认实例启动、复用和认证退出，在启动锁内核对更新目标并启动新版。
+    observedDigest: ac542c2657b6ff9245d60225fe9f972ad183ff3b78bb3ce4ceb60ae176594043
   - id: verification-local-source
     title: 通用与本机平台源码检查
     kind: code

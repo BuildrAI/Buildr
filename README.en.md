@@ -1,115 +1,114 @@
 # Buildr
 
-[中文](README.md) | English | [Documentation](docs/README.md)
+[中文](README.md) | English | [Get started](#get-started) | [Documentation](docs/README.md)
 
-## Shared work infrastructure for people, organizations, and agents
+**Buildr is intelligent work infrastructure for organizations.** It connects working environments, knowledge, methods, and tools so people can understand the situation and make decisions, while agents find the evidence they need and deliver results. Organizations can put existing materials to use and retain confirmed knowledge, methods, and results as work assets they own and reuse.
 
-Buildr brings together project knowledge, code locations, and proven working methods. People set goals, make decisions, and accept results. Agents use that foundation to understand and carry out the work. Buildr lets you configure your work, inspect materials and results, and participate in collaboration.
+Keep using your familiar agent tools, from discussing ideas and plans through implementation, verification, and delivery. Buildr makes the information and methods needed at each stage discoverable and reusable; people set goals, help make decisions, grant authorization, and accept results. Whether you are a one-person business or a larger team, you can start with your existing business and one real task.
 
-Keep using your familiar agent tool. The knowledge, methods, and results belong to you or your organization and remain useful across tasks, contributors, and agents.
+## What Buildr helps you do
 
-## Why Buildr
+Business materials are scattered, the relationships between frontend and backend code are unclear, and every new task starts with another explanation of the background. Effective methods stay in personal experience or chat history, so changing participants or agent tools means organizing everything again. Buildr helps you put what you already have to use and give future work a shared foundation.
 
-**Owning documents, code, and data does not automatically make them easy to put to work.** Background gets scattered across files and conversations; useful methods stay in someone's memory. A new task, contributor, or tool can mean explaining everything again.
-
-Buildr makes those accumulated materials available for future work. Agents work from current sources and maintain relevant results and confirmed methods in the workspace, giving the next task a better starting point.
-
-| Who it serves | What they gain |
+| For whom | What it provides |
 | --- | --- |
-| Individuals | Set goals, make key decisions, configure work visually, and inspect progress and results with less repeated organization and handoff work |
-| Organizations and teams | Retain ownership of project knowledge, code relationships, and professional methods so experience can be passed on and reused |
-| Agents | Discover relevant knowledge, methods, and tools; check the current state; continue work within explicit boundaries |
+| People | Access to materials, progress, and actual results; opportunities to make decisions and edit directly; less information to find and move between systems |
+| Agents | Ways to discover materials, methods, and system access points for a goal, verify the current situation, and keep the work moving |
+| Organizations | Confirmed knowledge and effective methods maintained as work assets they can own, share, and reuse, reducing reliance on personal memory and trial and error |
 
-## What you can do
+For example, you can start with work like this:
 
-- **Move from an idea to delivery.** Discuss requirements, develop a plan, implement, verify, and deliver using the same accumulated knowledge and methods.
-- **Collaborate across roles from shared sources.** Product, design, development, and testing participants maintain the materials they own; later work continues from those updated sources.
-- **Keep methods that work.** Turn proven release procedures, testing experience, or business practices into reusable Skills.
+- **Connect your existing business and code.** “Our business documentation, frontend code, and backend code are in different places. Help me map their relationships.” Product staff maintain business goals and constraints; designers, developers, testers, and their agents continue from the same current materials.
+- **Investigate and fix a problem.** “This order was paid successfully. Why does the page still show it as unpaid?” With the relevant materials and systems connected, the agent follows clues through documentation, code, logs, configuration, and data to find the cause, fix it, and verify the result. You inspect the evidence, help make decisions, and accept the result.
+- **Keep useful methods and continue the work.** “Save the approach that proved effective this time, so we can continue from these results next time.” After an interruption or a tool change, the agent rereads the goal, methods, and actual changes, checks the current situation, and continues. Experience worth reusing is confirmed before it is maintained for future work.
 
-## What stays useful
+## How Buildr organizes work
 
-```mermaid
-flowchart TB
-  person["People: goals and decisions"]
-  agent["Agent: understanding and execution"]
-  workspace["Buildr workspace<br/>Project knowledge and methods"]
-  result["Results: code, documents, and data"]
-  person -->|Set goals and make decisions| agent
-  person -->|Inspect and accept| result
-  workspace -->|Provide a working foundation| agent
-  agent -->|Execute and deliver| result
-  result -->|Update knowledge and result links| workspace
-```
+### Connect materials and code within a shared scope
 
-- **Project knowledge:** goals, business materials, and code locations.
-- **Working methods:** reusable Rules and Skills grounded in experience.
-- **Work results:** code, documents, data, and outcomes that others can inspect, locate, and continue.
+A workspace is a directory and discovery entry point where people and agents work together. Projects describe business goals and constraints, services describe implementation responsibilities, and repositories link to actual code sources and locations. Together, they help both people and agents move from “what needs to be done” to “where to do it.” Work without code can begin with materials alone.
 
-Results are delivered to people and become part of the workspace's and project's working foundation. As work is completed, the agent maintains relevant materials, result locations, and necessary records, without asking users to manually copy everything again. Code and business data stay in their own locations. Experience worth reusing is assessed before becoming a method; the next task starts from the updated results.
+### Keep progress and actual results tied to a goal
 
-## Mission and direction
+A task retains the goal, progress, and result locations for a piece of work and can link to multiple sessions. People read knowledge, edit files, and inspect code changes and commits in Buildr; agents work from the same sources and current tool results. Code, documents, and business data stay in their respective locations, and the current results are checked again when work resumes.
 
-**Mission:** Organize scattered work materials and professional methods so people and agents can work from shared evidence and get work done.
+![A real Buildr task: goals, linked sessions, and documented results](docs/images/task-workspace.png)
 
-**Vision:** Help individuals expand their capabilities with agents and help organizations turn accumulated experience into lasting, growing organizational capability.
+*The screenshot shows real work on Buildr in the development version.*
 
-The near-term focus is on starting work, finding useful materials, delivering results, and continuing after interruptions. Later directions include connecting more work systems and improving reuse across projects, guided by real needs. See [future directions](projects/product/knowledge/docs/overview.md#后续方向); these are possibilities, not claims of available features.
+### Reuse facts, working methods, and system access points
 
-Buildr currently focuses on local work. File-based materials can be shared through Git; local work records do not automatically synchronize across machines. See [About Buildr](projects/product/knowledge/docs/overview.md) for current capabilities and boundaries.
+Work assets maintained for the long term mainly include **facts about the work** and **working methods**: facts describe the current situation, such as business constraints and project composition; methods explain how to execute, check, and deliver work. Rules express boundaries, and skills retain reusable methods.
+
+Connections link methods to specific systems. Buildr currently offers optional connection methods for MySQL, Kibana, Nacos, and XXL-JOB, and supports creating your organization's own connection methods. The actions available depend on configuration, permissions, specialized methods, and authorization. Materials, query results, and new deliverables are assessed and confirmed before the parts worth long-term reuse are maintained as work assets.
+
+### Connect your familiar agent tools
+
+Buildr currently supports Codex and DSH integration and native session linking. It prepares the necessary rule and skill entry points for each tool's adapter; project materials and code continue to be read from their original locations. Agents understand goals, choose evidence, reason, and execute; Buildr organizes long-term materials, methods, and access points.
 
 ## Get started
 
-### 1. Ask your agent to install Buildr
+The official package is `@buildr-ai/buildr`, currently supported on macOS and Windows. You can use it through the launcher or a browser. Regular use does not require cloning this repository or learning commands first.
 
-Share this project link with your agent:
+### 1. Install Buildr
 
-> Use https://github.com/BuildrAI/Buildr to install Buildr and its launcher for me. Explain workspaces, projects, services, and repositories, then open Buildr and guide me through configuration.
+In an agent tool that can work with local files and run commands, such as Codex or DSH, give it the following request:
 
-The official package is `@buildr-ai/buildr`. Your agent follows the [installation reference](projects/product/services/buildr/docs/cli-reference.md#首次使用) and handles environment preparation. Regular users do not need to clone this repository or learn commands first. Buildr currently supports macOS and Windows, using either the launcher or a browser. Linux support is not currently promised.
+> Refer to https://github.com/BuildrAI/Buildr to install Buildr and its launcher for me.
 
-### 2. Configure your work
+The agent checks the environment and installs Buildr. See the [installation reference](projects/product/services/buildr/docs/cli-reference.md#首次使用) for installation and manual recovery details.
 
-With your agent's guidance, configure your workspace, projects, services, and repositories in Buildr. Fill in what your work needs. You can also continue asking the agent to help configure them through conversation.
+### 2. Choose a directory and initialize a workspace
 
-### 3. Open the workspace in your agent tool
+After installation, choose a directory to organize your business materials, working methods, and code references. You can use an existing directory or create a new one. Open the selected directory in your agent tool. For an existing workspace, check its current state and continue without initializing it again.
 
-Open the configured directory in your agent tool, state your goal, and work as usual. The agent reads project materials and applicable methods; you can inspect progress and results in Buildr.
+If the directory has not been initialized, ask your agent:
 
-When the work is complete, ask the agent to close it out and finish authorized delivery and cleanup.
+> Initialize the current directory as a Buildr workspace, then open Buildr.
 
-### Updating later
+Normal initialization registers this directory with the local Buildr Web by default, so you do not need to add it manually. For a workspace initialized earlier but not yet registered, use “添加已有工作空间” (Add existing workspace) on the selection page to add it to the list.
 
-In the relevant workspace, tell your agent:
+### 3. Configure your work in Buildr Web
 
-> Update Buildr and the workspace. Once the updates are complete, close out the work.
+Enter this workspace in Buildr Web. If the workspace selection page appears, select it from the list first. Open “项目” (Projects) and use an existing project if appropriate. To add one, click “新增项目” (New project) and enter business goals and constraints, or choose “登记已有项目” (Register existing project) for an existing project directory.
 
-Your agent updates the product, checks its launch entry, and synchronizes the workspace's work assets and the current agent's entry points.
+For work involving code, use “服务” (Services) and “代码库” (Repositories) to register implementation responsibilities and actual code locations, then associate the relevant services with the project. Configure what you need now; work without code can begin with a project alone.
 
-## Self-bootstrapping: this repository is a workspace
+### 4. Start your first real task
 
-**Buildr uses itself to organize development.** This repository is a working Buildr workspace. Its `projects/product/` project holds product knowledge, designs, and specifications and connects three services:
+Confirm that Buildr shows the intended workspace, the materials and any required code locations are correct, and your agent tool has **the same directory** open and can use the applicable methods. Then give it a specific goal, for example:
 
-- `projects/product/services/buildr/`: the package, CLI, and local runtime.
-- `projects/product/services/buildr-web/`: the current product interface.
-- `projects/product/services/dsh-plugin/`: the DSH desktop plugin, with its own build, verification, and release boundary.
+> Add a status filter to the order list, following the existing interface and testing approach. When finished, explain the changes, verification results, and any unresolved issues, and update the affected materials.
 
-The three services reference the same repository instance. Each module path locates one of the directories above; separate directories do not imply separate Git repositories.
+In Buildr, inspect registered tasks, progress, and results, and participate in decisions. After an interruption, provide the original task or result location so the agent can read the current situation and continue. When the work is complete, ask it to “close out” the work and complete authorized delivery and cleanup.
 
-The repository's Rules, Skills, knowledge, and code support everyday development and show how Buildr organizes real work.
+### Updating Buildr and your workspace
 
-To contribute, open the repository root in your agent tool and say:
+In the directory of the workspace you want to update, tell your agent:
 
-> I want to contribute to Buildr. Read the repository rules and product development documentation, then prepare the development environment.
+> Update Buildr and the current workspace. Preserve existing materials and local records.
 
-This workspace already exists; do not initialize it again. Development uses the repository's `projects/product/buildr` entry; run `projects/product/buildr runtime list --json` from the repository root to list the supported agent runtimes. See [product development](projects/product/README.md) and [contributing](CONTRIBUTING.md).
+Updating Buildr also updates the bundled Buildr Web and automatically switches an older running instance from the same installation to the new version. You do not need to reopen the launcher. The web interface is briefly interrupted during the switch. The workspace also needs its applicable work assets and agent entry points synchronized. When finished, the agent reports the product version, whether Buildr Web has switched to the new version, and the workspace update result.
+
+See the [user guide](projects/product/knowledge/docs/guides/getting-started.md) for daily use, updates, and recovery, and [updates and data protection](projects/product/knowledge/docs/guides/getting-started.md#更新与数据保护) for what to know before updating.
+
+Buildr currently focuses on local work. File-based materials can be shared through Git, but local records such as tasks do not automatically synchronize across machines. Full enterprise access control and cloud collaboration are not currently available. Completing changes, passing checks, and confirming that a deployment has taken effect each require their own actual results. See [known limitations](projects/product/services/buildr/docs/known-limitations.md).
 
 ## Learn more
 
-| Your goal | Start here |
-| --- | --- |
-| Get started and work day to day | [Documentation directory](docs/README.md) · [User guide](projects/product/knowledge/docs/guides/getting-started.md) |
-| Understand the product | [About Buildr](projects/product/knowledge/docs/overview.md) · [Future directions](projects/product/knowledge/docs/overview.md#后续方向) |
-| Install and maintain with an agent | [Buildr Skill](projects/product/services/buildr/resources/runtime/skills/buildr/SKILL.md) · [Installation and commands](projects/product/services/buildr/docs/cli-reference.md) · [Adapters](projects/product/services/buildr/docs/agent-runtime-adapters.md) |
-| Contribute | [Product development](projects/product/README.md) · [Current knowledge](projects/product/knowledge/README.md) · [Contributing](CONTRIBUTING.md) |
+- [About Buildr](projects/product/knowledge/docs/overview.md): product uses, collaboration, and future directions.
+- [Work objects and code relationships](projects/product/knowledge/docs/architecture/project-service-repositories.md) · [From discussion to delivery](projects/product/knowledge/docs/architecture/task-system.md): understand how work is organized and resumed.
+- [Skill system](projects/product/knowledge/docs/architecture/buildr-skill-system.md) · [External system connections](projects/product/knowledge/docs/architecture/external-connections.md) · [Agent tool adapters](projects/product/services/buildr/docs/agent-runtime-adapters.md): learn about reusable methods and tool integration as needed.
+- [Documentation index](docs/README.md): find more usage, design, and technical documentation.
+
+## Develop Buildr with Buildr
+
+**This repository is a self-bootstrapping workspace.** Buildr uses itself to organize product materials, working methods, and development work. `projects/product/` holds product knowledge, designs, and specifications and links to the actual implementations. Explore this real example to see how Buildr supports everyday development.
+
+To contribute, open the repository root in your agent tool and ask:
+
+> I want to contribute to Buildr development. Please read the repository rules and product development documentation, then prepare the development environment.
+
+This is an existing workspace and does not need to be initialized again. Use the repository's `projects/product/buildr` entry point for development. Continue with [product development](projects/product/README.md) for the implementation structure, environment setup, and checks, and see the [contributing guide](CONTRIBUTING.md) for how to contribute.
 
 [Issues](https://github.com/BuildrAI/Buildr/issues) · [Security reporting](SECURITY.md) · [MIT License](LICENSE)

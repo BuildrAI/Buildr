@@ -98,6 +98,7 @@ import {
   SYSTEM_INSTALLATION_APPLICATION,
   SYSTEM_INSTALLATION_IDENTITY,
   SYSTEM_INSTALLATION_LAUNCHER,
+  SYSTEM_INSTALLATION_WEB_BINDER,
 } from '../../src/modules/installation/module.ts';
 import { WEB_INSTANCE_LIFECYCLE } from '../../src/web/module.ts';
 import {
@@ -338,7 +339,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   }, {
     id: 'system-installation',
     requires: [],
-    provides: [SYSTEM_INSTALLATION_IDENTITY, SYSTEM_INSTALLATION_LAUNCHER, SYSTEM_INSTALLATION_APPLICATION],
+    provides: [SYSTEM_INSTALLATION_IDENTITY, SYSTEM_INSTALLATION_LAUNCHER, SYSTEM_INSTALLATION_APPLICATION, SYSTEM_INSTALLATION_WEB_BINDER],
     contributions: {
       cli: [
         'installation status', 'update check', 'update',
@@ -527,12 +528,13 @@ test('System Installation module owns installation identity, update and npm Laun
   const launcher: any = runtimeProvide(runtime, SYSTEM_INSTALLATION_LAUNCHER);
   const application: any = runtimeProvide(runtime, SYSTEM_INSTALLATION_APPLICATION);
 
-  assert.deepEqual(Object.keys(identity), ['readCurrentProductIdentity']);
+  assert.deepEqual(Object.keys(identity), ['readCurrentProductIdentity', 'readNpmUpdateHandoffInstallation', 'assertNpmUpdateHandoffTarget']);
   assert.deepEqual(Object.keys(launcher), [
     'assertCurrentNpmLauncherBinding', 'refreshInstalledNpmLauncher', 'validateNpmLauncherBinding',
   ]);
   assert.equal(typeof application.releaseAwareness, 'function');
   assert.equal(typeof application.buildInstallationInventory, 'function');
+  assert.equal(typeof runtimeProvide(runtime, SYSTEM_INSTALLATION_WEB_BINDER).bindWebUpdates, 'function');
 
   const cliHost: any = read('src/bootstrap/cli/registry.ts');
   assert.match(cliHost, /from '..\/..\/modules\/installation\/module\.ts'/);

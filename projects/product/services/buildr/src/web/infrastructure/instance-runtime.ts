@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
+import crypto from 'node:crypto';
 import { acquireExclusiveFileLock, releaseExclusiveFileLock } from '../../infrastructure/filesystem/index.ts';
 
 import { readCurrentProductIdentity, validateNpmLauncherBinding } from '../../modules/installation/module.ts';
@@ -9,6 +10,28 @@ import { resolveWebProfile } from '../../modules/installation/contracts/web-prof
 
 export const INSTANCE_SCHEMA = 'buildr.local-app-instance/v2';
 const LEGACY_INSTANCE_SCHEMA = 'buildr.local-app-instance/v1';
+
+export function buildrWebInstanceObservationDigest(instance: any): string {
+  return `sha256-${crypto.createHash('sha256').update(JSON.stringify({
+    pid: instance.pid, url: instance.url, secret: instance.secret,
+    productIdentity: instance.productIdentity ?? null, launcherIdentity: instance.launcherIdentity ?? null, webProfile: instance.webProfile ?? null,
+  })).digest('hex')}`;
+}
+
+export function sameNpmProductIdentity(left: any, right: any): boolean {
+  return left?.channel === 'npm' && right?.channel === 'npm' && left?.runtime?.role === 'host' && right?.runtime?.role === 'host'
+    && typeof left.installationIdentity === 'string'
+    && ['package', 'version', 'protocolIdentity', 'applicationPayloadDigest', 'sourceCommit', 'installationIdentity'].every(field => left[field] === right[field])
+    && left.runtime.identity === right.runtime.identity;
+}
+
+export function assertUpdateHandoffInstanceAddress(instance: any): URL {
+  let address;
+  try { address = new URL(instance?.url); } catch { throw new Error('更新交接实例地址无法核实。'); }
+  if (address.protocol !== 'http:' || address.hostname !== '127.0.0.1' || !address.port || address.username || address.password || address.pathname !== '/' || address.search || address.hash
+      || !Number.isInteger(instance?.pid) || instance.pid <= 0 || typeof instance?.secret !== 'string' || !instance.secret) throw new Error('更新交接只接受具有准确身份的本机回环实例。');
+  return address;
+}
 
 function resolvedProfile(profile: any = null) {
   return profile || resolveWebProfile(readCurrentProductIdentity());
@@ -86,7 +109,7 @@ export function clearBuildrWebInstance(expected: any = null, profile: any = expe
   return true;
 }
 
-export async function healthyBuildrWebInstance(instance: any = readBuildrWebInstance()) {
+export async function healthyBuildrWebInstance(instance: any = readBuildrWebInstance(), { strictIdentity = false }: { strictIdentity?: boolean } = {}) {
   if (!instance) return null;
   try {
     const response = await fetch(`${instance.url}/api/v1/health`, {
@@ -95,12 +118,13 @@ export async function healthyBuildrWebInstance(instance: any = readBuildrWebInst
     });
     if (!response.ok) return null;
     const body = await response.json();
-    return body.schemaVersion === 'buildr.local-app-health/v1' && body.status === 'ready'
+    if (strictIdentity && (!body.productIdentity || !body.webProfile || !Object.hasOwn(body, 'launcherIdentity'))) return null;
+    return body.schemaVersion === 'buildr.local-app-health/v1' && body.status === 'ready' && body.pid === instance.pid
       ? {
           ...instance,
-          launcherIdentity: body.launcherIdentity ?? instance.launcherIdentity ?? null,
-          productIdentity: body.productIdentity ?? instance.productIdentity ?? null,
-          webProfile: body.webProfile ?? instance.webProfile ?? null,
+          launcherIdentity: strictIdentity ? body.launcherIdentity : body.launcherIdentity ?? instance.launcherIdentity ?? null,
+          productIdentity: strictIdentity ? body.productIdentity : body.productIdentity ?? instance.productIdentity ?? null,
+          webProfile: strictIdentity ? body.webProfile : body.webProfile ?? instance.webProfile ?? null,
         }
       : null;
   } catch {

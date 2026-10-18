@@ -143,4 +143,6 @@ OpenSpec 只通过 `AGENT_ASSETS_OPENSPEC_SUPPORT` 获取所需资产能力，�
 
 [诊断应用](../../services/buildr/src/modules/diagnostics/application/doctor-application.ts)组合检查，[结果模型](../../services/buildr/src/modules/diagnostics/application/result-model.ts)表达发现、健康和修复计划；[安装状态](../../services/buildr/src/modules/installation/application/product-installation-status.ts)与[更新应用](../../services/buildr/src/modules/installation/application/cli-update.ts)分别保存实际观察和更新结果。诊断、安装成功与当前运行实例已采用仍是不同事实。
 
+npm 软件包更新后，安装模块通过窄端口（Port）委托[网页更新交接](../../services/buildr/src/web/application/update-web-handoff.ts)，以新登记的精确 Node.js 与软件包入口启动独立进程并核对运行身份；[实例生命周期](../../services/buildr/src/web/application/instance-lifecycle.ts)唯一拥有启动锁、同一安装实例的认证退出和新版启动。引导装配（Bootstrap）只连接能力，不复制交接策略。网页未运行时不启动，切换失败保留已经成立的安装更新结果。
+
 任务与每日演进可属于同一模块而使用不同存储；SQLite 协作记录和本机 YAML 摘要的区别见[任务地图](task-system.md)与[每日演进](../docs/flows/project-daily-progress.md)。工程包检查仍在 `tools/verification/`，不归资产应用或诊断所有。

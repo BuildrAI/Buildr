@@ -1,3 +1,5 @@
+import process from 'node:process';
+
 type WebCliRuntime = {
   manageBuildrWebPreview(action: string, args: string[]): unknown;
   startBuildrWeb(args: string[]): unknown;
@@ -12,6 +14,24 @@ type WebCliContribution = {
   match(input: WebCliMatch): boolean;
   run(runtime: WebCliRuntime, context: WebCliContext): unknown;
 };
+
+async function startWeb(application: WebCliRuntime, args: string[]): Promise<unknown> {
+  try {
+    return await application.startBuildrWeb(args);
+  } catch (cause: any) {
+    // The detached updater has no standard streams. Flush only its startup
+    // failure through the private channel before ordinary CLI error reporting.
+    if (args.includes('--update-handoff') && process.send && process.connected) {
+      await new Promise<void>(resolve => {
+        const timer = setTimeout(resolve, 250);
+        try {
+          process.send!({ type: 'buildr.web-update-handoff-failed', code: typeof cause?.code === 'string' ? cause.code : 'web_update_process_failed', message: String(cause?.message || cause).slice(0, 4096) }, () => { clearTimeout(timer); resolve(); });
+        } catch { clearTimeout(timer); resolve(); }
+      });
+    }
+    throw cause;
+  }
+}
 
 export function createWebCliContributions(application: WebCliRuntime | null = null): readonly WebCliContribution[] {
   const contributions: WebCliContribution[] = [
@@ -70,7 +90,7 @@ export function createWebCliContributions(application: WebCliRuntime | null = nu
       "任务验证工作区的并行验收可使用 web preview；每个 preview 具有独立状态和 loopback URL，不会改变默认 Buildr Web 或 Buildr Web Dev.app。"
     ],
     match: ({ domain }) => domain === 'web',
-    run: (r, c) => (application || r).startBuildrWeb(c.argv.slice(3)),
+    run: (r, c) => startWeb(application || r, c.argv.slice(3)),
   },
   ];
   return Object.freeze(contributions.map((contribution) => Object.freeze(contribution)));

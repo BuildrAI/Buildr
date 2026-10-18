@@ -33,9 +33,9 @@ import {
   createParentCoordinationModule,
 } from '../modules/task/module.ts';
 import { createModuleRegistry } from './module-registry.ts';
-import { createWebModule, readCurrentBuildrWebOrigin } from '../web/module.ts';
+import { createWebModule, readCurrentBuildrWebOrigin, WEB_INSTANCE_LIFECYCLE } from '../web/module.ts';
 import { createWorkspaceModule, WORKSPACE_AGENT_ASSETS_BINDER, WORKSPACE_APPLICATION, WORKSPACE_QUERY } from '../modules/workspace/module.ts';
-import { createSystemInstallationModule, readCurrentProductIdentity, SYSTEM_INSTALLATION_APPLICATION } from '../modules/installation/module.ts';
+import { createSystemInstallationModule, readCurrentProductIdentity, SYSTEM_INSTALLATION_APPLICATION, SYSTEM_INSTALLATION_WEB_BINDER } from '../modules/installation/module.ts';
 import { createSystemDoctorModule, SYSTEM_DOCTOR_APPLICATION } from '../modules/diagnostics/module.ts';
 import { registerInfrastructure } from '../infrastructure/index.ts';
 import { registerProjectGitObserver } from '../infrastructure/git/project-git-observer.ts';
@@ -96,6 +96,7 @@ export function createRuntime(): any  {
     registry.provide(DSH_PAGE_OBSERVATIONS).close();
     await Promise.all([registry.provide(DSH_DESKTOP_APPLICATION).close(), registry.provide(AGENT_OPERATIONS_APPLICATION).close()]);
   } }));
+  registry.provide(SYSTEM_INSTALLATION_WEB_BINDER).bindWebUpdates(registry.provide(WEB_INSTANCE_LIFECYCLE));
   registry.install(createSystemDoctorModule(runtime, {
     diagnosticContributions: registry.contributions('diagnostics'),
     agentRuntimeCapability: AGENT_ASSETS_RUNTIME,

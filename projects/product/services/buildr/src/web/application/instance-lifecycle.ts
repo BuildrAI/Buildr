@@ -21,6 +21,10 @@ import {
   waitForBuildrWebInstanceExit,
   writeBuildrWebInstance,
   readLauncherIdentityFromEnvironment,
+  buildrWebInstanceObservationDigest,
+  sameNpmProductIdentity,
+  assertUpdateHandoffInstanceAddress,
+  buildrWebInstancePath,
 } from '../infrastructure/instance-runtime.ts';
 import {
   listPreviews,
@@ -92,6 +96,7 @@ export type WebLifecycleOptions = {
   resolveRegisteredWorkspace?: (workspaceId: string, options: { touch: boolean }) => { rootPath: string };
   readProductIdentity(): ProductIdentity;
   assertNpmLauncherBinding(file: string, productIdentity: ProductIdentity): LauncherBinding;
+  assertNpmUpdateHandoffTarget?(instance: WebInstance): unknown;
 };
 
 type BuildrError = Error & { code?: string; status?: number; details?: unknown };
@@ -101,7 +106,7 @@ const resolveProfile: (identity: ProductIdentity, options?: { dataRoot?: string 
 const profilesMatch: (left: WebProfile | null, right: WebProfile) => boolean = sameWebProfile;
 const assertProfile: (launcher: LauncherIdentity | null, profile: WebProfile, options: { productIdentity: ProductIdentity; productRoot: string }) => void = assertLauncherWebProfile;
 const readInstance = (profile?: WebProfile): WebInstance | null => Reflect.apply(readBuildrWebInstance, undefined, [profile]);
-const healthyInstance: (instance: WebInstance | null) => Promise<WebInstance | null> = healthyBuildrWebInstance;
+const healthyInstance: (instance: WebInstance | null, options?: { strictIdentity: boolean }) => Promise<WebInstance | null> = healthyBuildrWebInstance;
 const acquireLock = (profile: WebProfile): StartLock => Reflect.apply(acquireBuildrWebStartLock, undefined, [profile]);
 const releaseLock: (lock: StartLock | null) => void = releaseBuildrWebStartLock;
 const clearInstance = (expected: WebInstance | null, profile: WebProfile): boolean => Reflect.apply(clearBuildrWebInstance, undefined, [expected, profile]);
@@ -152,22 +157,33 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
   const httpContributions = options.httpContributions || runtime.__bootstrapContributions?.('http') || [];
 
   async function startBuildrWeb(args: string[]): Promise<unknown> {
-    runtime.assertNoUnknownOptions(args, new Set(['--target', '--port', '--no-open', '--launcher-binding']), new Set(['--no-open']));
+    runtime.assertNoUnknownOptions(args, new Set(['--target', '--port', '--no-open', '--launcher-binding', '--update-handoff']), new Set(['--no-open']));
+    const updateObservation = runtime.optionValue(args, '--update-handoff', null);
+    if (args.includes('--update-handoff') && (typeof updateObservation !== 'string' || !/^sha256-[a-f0-9]{64}$/.test(updateObservation) || args.includes('--target'))) throw new Error('更新交接需要准确的实例观察摘要，且不能改变工作空间登记。');
+    const observeInstance = async (instance: WebInstance | null): Promise<WebInstance | null> => {
+      if (updateObservation && instance) {
+        assertUpdateHandoffInstanceAddress(instance);
+        if (!profilesMatch(instance.webProfile, webProfile)) throw codedError('更新交接实例属于其他网页配置范围，已保留现场。', 'web_update_profile_conflict');
+      }
+      const ready = await healthyInstance(instance, { strictIdentity: Boolean(updateObservation) });
+      return updateObservation && instance && ready && buildrWebInstanceObservationDigest(ready) !== buildrWebInstanceObservationDigest(instance) ? null : ready;
+    };
     const targetValue = runtime.optionValue(args, '--target', null);
     const targetRoot = targetValue ? path.resolve(targetValue) : null;
     const rawPort = runtime.optionValue(args, '--port', '0') || '0';
     const port = Number(rawPort);
     if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`Invalid app port: ${rawPort}`);
     const launcherBindingPath = runtime.optionValue(args, '--launcher-binding', null);
-    if (launcherBindingPath && args.includes('--port')) throw new Error('--port cannot be combined with --launcher-binding; the npm Launcher binding owns its port policy.');
-    const noOpen = args.includes('--no-open') || Boolean(launcherBindingPath && process.env.BUILDR_LAUNCHER_NO_OPEN === '1');
+    if (launcherBindingPath && args.includes('--port') && !updateObservation) throw new Error('--port cannot be combined with --launcher-binding; the npm Launcher binding owns its port policy.');
+    const noOpen = Boolean(updateObservation) || args.includes('--no-open') || Boolean(launcherBindingPath && process.env.BUILDR_LAUNCHER_NO_OPEN === '1');
     const productIdentity = options.readProductIdentity();
     const npmLauncherBinding = launcherBindingPath ? options.assertNpmLauncherBinding(path.resolve(launcherBindingPath), productIdentity) : null;
-    const launcherIdentity = npmLauncherBinding || launcherFromEnvironment();
-    const previewIdentity = readPreviewIdentityFromEnvironment();
+    const launcherIdentity = npmLauncherBinding || (updateObservation ? null : launcherFromEnvironment());
+    const previewIdentity = updateObservation ? null : readPreviewIdentityFromEnvironment();
     const webProfile = resolveProfile(productIdentity);
     const handoffWait = handoffWaitBudget();
     assertProfile(launcherIdentity, webProfile, { productIdentity, productRoot: runtime.productRoot() });
+    if (updateObservation && (productIdentity.channel !== 'npm' || productIdentity.runtime?.role !== 'host')) throw codedError('更新交接只适用于 npm 安装。', 'web_update_channel_conflict');
     prepareTaskPreviewStructuredStore(runtime, targetRoot, previewIdentity);
     const initialWorkspaceId = targetRoot ? options.ensureRegisteredTarget(targetRoot) : null;
 
@@ -210,13 +226,36 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
       { pid: healthy.pid, disposition: disposition.disposition },
     );
 
+    const matchesUpdated = (instance: WebInstance, ownState: WebInstance | null = null): boolean => {
+      if (!profilesMatch(instance.webProfile, webProfile) || !sameNpmProductIdentity(instance.productIdentity, productIdentity)) return false;
+      if (ownState?.pid === process.pid && instance.pid === process.pid && buildrWebInstanceObservationDigest(instance) === buildrWebInstanceObservationDigest(ownState)) return true;
+      if (!options.assertNpmUpdateHandoffTarget) throw codedError('更新交接缺少安装归属核验能力。', 'web_update_ownership_port_unavailable');
+      options.assertNpmUpdateHandoffTarget(instance);
+      return true;
+    };
+    const assertUpdateTarget = (instance: WebInstance): void => {
+      assertUpdateHandoffInstanceAddress(instance);
+      if (buildrWebInstanceObservationDigest(instance) !== updateObservation) throw codedError('更新交接期间实例已变化，未停止后来出现的实例。', 'web_update_instance_changed');
+      if (!options.assertNpmUpdateHandoffTarget) throw codedError('更新交接缺少安装归属核验能力。', 'web_update_ownership_port_unavailable');
+      options.assertNpmUpdateHandoffTarget(instance);
+    };
+
     const recorded = readInstance(webProfile);
-    const healthy = await healthyInstance(recorded);
+    if (updateObservation && !recorded && fs.existsSync(buildrWebInstancePath(webProfile))) throw codedError('更新交接实例记录无法解析，已保留现场。', 'web_update_instance_invalid');
+    if (updateObservation && recorded) assertUpdateHandoffInstanceAddress(recorded);
+    const healthy = await observeInstance(recorded);
     if (healthy) {
       assertCompatibleInstance(healthy);
-      if (!npmLauncherBinding) return reuseInstance(healthy);
-      const disposition = instanceDisposition(healthy, npmLauncherBinding);
-      if (disposition.disposition === 'reuse') return reuseInstance(healthy);
+      if (updateObservation) {
+        if (matchesUpdated(healthy)) return reuseInstance(healthy);
+        assertUpdateTarget(healthy);
+      } else {
+        if (!npmLauncherBinding) return reuseInstance(healthy);
+        const disposition = instanceDisposition(healthy, npmLauncherBinding);
+        if (disposition.disposition === 'reuse') return reuseInstance(healthy);
+      }
+    } else if (updateObservation && recorded) {
+      throw codedError('更新交接无法确认旧实例健康，已保留实例记录。', 'web_update_instance_unconfirmed');
     }
     if (recorded?.webProfile && !profilesMatch(recorded.webProfile, webProfile)) {
       throw codedError('当前Data Root中的Buildr Web receipt属于另一产品身份，已保留现场；请先确认并退出旧实例。', 'web_instance_profile_conflict', 409, { expected: webProfile, actual: recorded.webProfile });
@@ -225,12 +264,12 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
     let startLock = acquireLock(webProfile);
     if (!startLock.owner) {
       let started: WebInstance | null = null;
-      if (npmLauncherBinding) {
+      if (npmLauncherBinding || updateObservation) {
         // The lock may still belong to a CLI that has published its receipt.
         // After it releases, one waiting Launcher must become the handoff owner.
         for (let attempt = 0; attempt < handoffWait.attempts; attempt += 1) {
-          const observed = await healthyInstance(readInstance(webProfile));
-          if (observed && matchesBinding(observed, npmLauncherBinding)) {
+          const observed = await observeInstance(readInstance(webProfile));
+          if (observed && (updateObservation ? matchesUpdated(observed) : matchesBinding(observed, npmLauncherBinding!))) {
             started = observed;
             break;
           }
@@ -254,13 +293,19 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
     let fallbackPort: number | null = null;
     try {
       const currentRecorded = readInstance(webProfile);
-      const currentHealthy = await healthyInstance(currentRecorded);
+      if (updateObservation && !currentRecorded && fs.existsSync(buildrWebInstancePath(webProfile))) throw codedError('启动锁内实例记录无法解析，已保留现场。', 'web_update_instance_invalid');
+      const currentHealthy = await observeInstance(currentRecorded);
       if (currentHealthy) {
         assertCompatibleInstance(currentHealthy);
-        if (!npmLauncherBinding) return reuseInstance(currentHealthy, startLock);
-        const disposition = instanceDisposition(currentHealthy, npmLauncherBinding);
-        if (disposition.disposition === 'reuse') return reuseInstance(currentHealthy, startLock);
-        if (!['handoff-cli', 'handoff-launcher'].includes(disposition.disposition)) throw launcherConflict(disposition, currentHealthy);
+        if (updateObservation) {
+          if (matchesUpdated(currentHealthy)) return reuseInstance(currentHealthy, startLock);
+          assertUpdateTarget(currentHealthy);
+        } else {
+          if (!npmLauncherBinding) return reuseInstance(currentHealthy, startLock);
+          const disposition = instanceDisposition(currentHealthy, npmLauncherBinding);
+          if (disposition.disposition === 'reuse') return reuseInstance(currentHealthy, startLock);
+          if (!['handoff-cli', 'handoff-launcher'].includes(disposition.disposition)) throw launcherConflict(disposition, currentHealthy);
+        }
         await shutdownInstance(currentHealthy);
         const exit = await waitForExit(currentHealthy, { profile: webProfile, ...handoffWait });
         if (exit.status !== 'exited') throw codedError(
@@ -269,12 +314,14 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
           undefined,
           { pid: currentHealthy.pid, status: exit.status },
         );
+      } else if (updateObservation && currentRecorded) {
+        throw codedError('启动锁内无法确认旧实例健康，未清理其他实例记录。', 'web_update_instance_unconfirmed');
       } else if (currentRecorded?.webProfile && !profilesMatch(currentRecorded.webProfile, webProfile)) {
         throw codedError('当前Data Root中的Buildr Web receipt属于另一产品身份，已保留现场；请先确认并退出旧实例。', 'web_instance_profile_conflict', 409, { expected: webProfile, actual: currentRecorded.webProfile });
       } else if (currentRecorded) clearInstance(currentRecorded, webProfile);
 
-      const preferredPort = npmLauncherBinding ? npmLauncherBinding.webPort.preferred : port;
-      const attempts = npmLauncherBinding && preferredPort > 0 ? [preferredPort, 0] : [preferredPort];
+      const preferredPort = updateObservation ? port : npmLauncherBinding ? npmLauncherBinding.webPort.preferred : port;
+      const attempts = (npmLauncherBinding || updateObservation) && preferredPort > 0 ? [preferredPort, 0] : [preferredPort];
       let ready: ServerReady | null = null;
       for (const [attemptIndex, attemptPort] of attempts.entries()) {
         try {
@@ -307,15 +354,15 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
           const canFallback = attemptIndex === 0 && attempts.length === 2 && details.code === 'EADDRINUSE';
           if (!canFallback) throw error;
           fallbackPort = preferredPort;
-          console.warn(`Buildr Web Launcher 首选端口 ${preferredPort} 已被占用，回退到随机 loopback 端口。`);
+          console.warn(`Buildr Web ${updateObservation ? '更新交接原端口' : 'Launcher 首选端口'} ${preferredPort} 已被占用，回退到随机 loopback 端口。`);
         }
       }
       if (!ready || !instance) throw new Error('Buildr Web server did not become ready.');
       state = { url: ready.url, secret, pid: process.pid, launcherIdentity, productIdentity, webProfile };
       writeInstance(runtime, state);
-      if (npmLauncherBinding) {
-        const verified = await healthyInstance(state);
-        if (!verified || !matchesBinding(verified, npmLauncherBinding)) throw codedError('新 Buildr Web health 未返回当前 Launcher binding identity，已停止启动。', 'launcher_handoff_readiness_identity_mismatch');
+      if (npmLauncherBinding || updateObservation) {
+        const verified = await observeInstance(state);
+        if (!verified || (updateObservation ? !matchesUpdated(verified, state) : !matchesBinding(verified, npmLauncherBinding!))) throw codedError('新 Buildr Web health 未返回当前安装身份，已停止启动。', 'launcher_handoff_readiness_identity_mismatch');
       }
       const cleanupReceipt = (): void => { if (state) clearInstance(state, webProfile); };
       const closeForSignal = (): void => {
