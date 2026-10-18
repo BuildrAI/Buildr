@@ -272,6 +272,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     "inputs": [
       "test/integration/open-source-release-filesystem.test.ts",
       "test/integration/product-installation-identity.test.ts",
+      "test/integration/development-runtime-inputs.test.ts",
       "test/integration/product-installation-registry.test.ts",
       "test/integration/workspace-cli-routing.test.ts",
       "skills/buildr-release/scripts/**",
@@ -297,6 +298,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   "integration-self-bootstrap": {
     "inputs": [
       "test/integration/self-bootstrap-closeout.test.ts",
+      "src/modules/installation/infrastructure/development-runtime-inputs.ts",
       "skills/buildr-self-bootstrap-sync/**",
       "resources/workspace/skills/buildr/buildr-self-bootstrap-sync/**",
       "src/modules/installation/application/release-awareness.ts"
@@ -611,6 +613,9 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "system-app-process": {
     "inputs": [
+      "src/modules/installation/infrastructure/development-runtime-inputs.ts",
+      "src/modules/installation/infrastructure/current-product-identity.ts",
+      "src/modules/installation/infrastructure/installation-origin.ts",
       "test/system/development-workspace-smoke-isolation.test.ts",
       "test/system/buildr-web-channel-isolation.test.ts",
       "test/system/buildr-web-launcher.test.ts",

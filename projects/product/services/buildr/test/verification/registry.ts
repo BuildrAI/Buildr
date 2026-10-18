@@ -624,6 +624,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
   integrationSlice('integration-release', [
     'test/integration/open-source-release-filesystem.test.ts',
     'test/integration/product-installation-identity.test.ts',
+    'test/integration/development-runtime-inputs.test.ts',
     'test/integration/product-installation-registry.test.ts',
     'test/integration/workspace-cli-routing.test.ts',
   ], { schedulingCostMs: 2000, args: ['--test-concurrency=2'] }),

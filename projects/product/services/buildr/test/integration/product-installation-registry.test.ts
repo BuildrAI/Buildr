@@ -806,13 +806,15 @@ test('development status separates health from current source, commit, and legac
     channel: 'development', package: '@buildr-ai/buildr', version: currentOrigin.version,
     protocolIdentity: currentOrigin.protocolIdentity, applicationPayloadDigest: null,
     installationIdentity: currentOrigin.ownershipIdentity, sourceCommit,
+    sourceRoot: currentOrigin.sourceRoot, developmentRuntimeIdentity: currentOrigin.developmentRuntimeIdentity,
     runtime: { role: 'development', identity: 'running-node' },
   };
   for (const [name, productInput, match] of [
     ['matched', matchedProduct, true],
-    ['old-commit', { ...matchedProduct, sourceCommit: 'd'.repeat(40), installationIdentity: createInstallationOrigin({ ...currentOrigin, sourceCommit: 'd'.repeat(40) }).ownershipIdentity }, false],
-    ['other-source-root', { ...matchedProduct, installationIdentity: createInstallationOrigin({ ...currentOrigin, installUnit: path.join(root, 'other-source') }).ownershipIdentity }, false],
-    ['legacy', { ...matchedProduct, installationIdentity: undefined }, null],
+    ['unrelated-commit', { ...matchedProduct, sourceCommit: 'd'.repeat(40), installationIdentity: createInstallationOrigin({ ...currentOrigin, sourceCommit: 'd'.repeat(40) }).ownershipIdentity }, true],
+    ['changed-runtime', { ...matchedProduct, developmentRuntimeIdentity: 'sha256-' + 'd'.repeat(64) }, false],
+    ['other-source-root', { ...matchedProduct, sourceRoot: path.join(root, 'other-source') }, false],
+    ['legacy', { ...matchedProduct, developmentRuntimeIdentity: undefined, installationIdentity: undefined }, null],
   ] as const) {
     const product = JSON.parse(JSON.stringify(productInput));
     const receipt = {
@@ -853,6 +855,7 @@ test('development status separates health from current source, commit, and legac
   const advancedProduct = {
     ...matchedProduct, version: advancedOrigin.version, sourceCommit: advancedOrigin.sourceCommit,
     installationIdentity: advancedOrigin.ownershipIdentity,
+    developmentRuntimeIdentity: advancedOrigin.developmentRuntimeIdentity,
   };
   for (const [name, product, match] of [
     ['old-running-with-old-launcher', matchedProduct, false],

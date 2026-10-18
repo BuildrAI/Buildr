@@ -266,6 +266,7 @@ function observeCurrentInstance(options: any = {}) {
       installationIdentity: product?.installationIdentity || null,
       sourceCommit: product?.sourceCommit || null,
       sourceRoot: product?.sourceRoot || launcher?.sourceRoot || null,
+      ...(developmentProduct && Object.hasOwn(product, 'developmentRuntimeIdentity') ? { developmentRuntimeIdentity: product.developmentRuntimeIdentity } : {}),
       runtime: product?.runtime || null,
       webProfile: value.webProfile || null,
     },

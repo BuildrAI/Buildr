@@ -6,6 +6,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 export const SELF_BOOTSTRAP_CLOSEOUT_RESULT_SCHEMA = 'buildr.self-bootstrap-closeout-result/v1';
 export const SELF_BOOTSTRAP_SYNC_RESUME_SCHEMA = 'buildr.self-bootstrap-sync-resume/v1';
@@ -117,7 +118,9 @@ function matches(pathname, exact, prefixes = []) {
   return exact.includes(pathname) || prefixes.some((prefix) => pathname.startsWith(prefix));
 }
 
-function classifications(changedPaths) {
+function classifications(changedPaths, workspaceRoot) {
+  // A projected Skill resolves the single product-owned policy from the verified root.
+  const { isDevelopmentRuntimeInput } = createRequire(import.meta.url)(path.join(workspaceRoot, SERVICE_ROOT, 'src/modules/installation/infrastructure/development-runtime-inputs.ts'));
   const sync = [];
   const cli = [];
   const buildrWeb = [];
@@ -138,12 +141,7 @@ function classifications(changedPaths) {
       `${SERVICE_ROOT}/tools/development/run-development-cli`,
       `${SERVICE_ROOT}/scripts/uninstall-buildr-cli`,
     ], [`${SERVICE_ROOT}/bin/`, `${SERVICE_ROOT}/src/`])) cli.push(pathname);
-    if (matches(pathname, [
-      `${SERVICE_ROOT}/src/interfaces/cli/launcher.mjs`,
-      `${SERVICE_ROOT}/package.json`,
-      `${SERVICE_ROOT}/package-lock.json`,
-      `${SERVICE_ROOT}/LICENSE`,
-    ], [`${SERVICE_ROOT}/src/`, `${SERVICE_ROOT}/bin/`, `${SERVICE_ROOT}/web-dist/`, `${PRODUCT_ROOT}/services/buildr-web/`, `${SERVICE_ROOT}/tools/build/launcher/`])) buildrWeb.push(pathname);
+    if (isDevelopmentRuntimeInput(pathname)) buildrWeb.push(pathname);
   }
   return {
     'sync-retained-workspace': [...new Set(sync)].sort(),
@@ -293,6 +291,8 @@ function recoverDevelopmentWebContinuity({ execute, root, nodeExecutable, succes
   requirePassed(restarted, 'self-bootstrap-closeout.development-web-restart-failed', `Development Web未能迁移到固定端口 ${DEFAULT_DEVELOPMENT_WEB_PORT}。`);
   const payload = parseJson(restarted, 'self-bootstrap-closeout.development-web-restart-invalid', 'Development Web恢复结果不是合法JSON。');
   const identity = payload?.launcherIdentity;
+  const { readDevelopmentRuntimeIdentity } = createRequire(import.meta.url)(path.join(root, SERVICE_ROOT, 'src/modules/installation/infrastructure/development-runtime-inputs.ts'));
+  const runtimeIdentity = readDevelopmentRuntimeIdentity(expectedSourceRoot, root);
   if (payload?.schemaVersion !== 'buildr.development-web-continuity/v1'
     || payload.action !== 'restart'
     || payload.status !== 'passed'
@@ -302,6 +302,8 @@ function recoverDevelopmentWebContinuity({ execute, root, nodeExecutable, succes
     || !Number.isInteger(payload.instance?.pid)
     || payload.instance.pid <= 0
     || payload.instance.pid === previous.pid
+    || !runtimeIdentity
+    || payload.instance?.productIdentity?.developmentRuntimeIdentity !== runtimeIdentity
     || identity?.channel !== 'development'
     || !sameFilesystemPath(identity.sourceRoot, expectedSourceRoot)
     || !sameFilesystemPath(identity.developmentRuntime?.executable, nodeExecutable)
@@ -566,7 +568,7 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
     requirePassed(git(execute, root, ['check-ref-format', `refs/heads/${targetBranch}`], 'target-ref', active), 'self-bootstrap-closeout.target-invalid', '目标分支无效。');
     if (!sameFilesystemPath(read(['rev-parse', '--show-toplevel'], 'workspace-root'), root)) throw closeoutError('self-bootstrap-closeout.workspace-mismatch', '目标必须是工作空间的真实 Git 根。');
     const scopedPaths = zeroList(read(['diff', '--name-only', '-z', baseRef, deliveredRef, '--'], 'activation-paths'));
-    const actions = classifications(scopedPaths);
+    const actions = classifications(scopedPaths, root);
     if (resume && !actions['sync-retained-workspace'].length) throw closeoutError('self-bootstrap-closeout.resume-input-mismatch', '本次交付范围不包含可恢复的同步动作。');
     if (!Object.values(actions).some((paths) => paths.length)) return result('not-applicable');
     // A short-lived lock belongs to this runner; it is not delivery evidence.

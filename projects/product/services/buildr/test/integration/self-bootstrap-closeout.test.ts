@@ -8,6 +8,7 @@ import test from 'node:test';
 import { runDirectSelfBootstrapCloseout, runSelfBootstrapCloseoutCommand, SELF_BOOTSTRAP_SYNC_RESUME_SCHEMA } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs';
 import { DEFAULT_DEVELOPMENT_WEB_PORT } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs';
 import { parseTaskCommitTrailer } from '../../src/modules/task/commits/domain/task-commit.ts';
+import { readDevelopmentRuntimeIdentity } from '../../src/modules/installation/infrastructure/development-runtime-inputs.ts';
 
 function run(executable: any, args: any, cwd: any, binary = false): any  {
   const result: any = spawnSync(executable, args, { cwd, encoding: binary ? null : 'utf8' });
@@ -35,6 +36,9 @@ function fixture(t: any): any  {
   const launcher: any = path.join(root, 'projects', 'product', 'services', 'buildr', 'tools', 'development', 'run-development-cli');
   const cliEntry: any = path.join(root, 'projects', 'product', 'services', 'buildr', 'bin', 'buildr.mjs');
   const sourceServiceRoot: any = path.resolve(import.meta.dirname, '../..');
+  const policy = 'src/modules/installation/infrastructure/development-runtime-inputs.ts';
+  fs.mkdirSync(path.dirname(path.join(root, 'projects/product/services/buildr', policy)), { recursive: true });
+  fs.copyFileSync(path.join(sourceServiceRoot, policy), path.join(root, 'projects/product/services/buildr', policy));
   const defaultBin: any = path.join(base, 'default-bin');
   fs.writeFileSync(path.join(root, 'components', 'workspace', 'buildr-self-bootstrap', 'component.yml'), 'schemaVersion: buildr.component/v1\nid: buildr-self-bootstrap\n');
   fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'resources', 'manifest.yml'), 'schemaVersion: buildr.package/v1\n');
@@ -240,7 +244,7 @@ function executor(root: any, options: any = {}): any  {
               port,
               pid: options.restartedDevelopmentPid || previousPid + 1,
               launcherIdentity: { channel: 'development' },
-              productIdentity: null,
+              productIdentity: { developmentRuntimeIdentity: options.observedRestartRuntimeIdentity || readDevelopmentRuntimeIdentity(path.join(canonicalRoot, 'projects/product/services/buildr'), canonicalRoot) },
             },
             launcherIdentity: {
               schemaVersion: 'buildr.launcher-identity/v1',
@@ -653,4 +657,46 @@ test('workspace-owned release Skill changes activate the same retained projectio
   assert.equal(result.status, 'passed', JSON.stringify(result));
   assert.ok(performed.some(args => args.includes('sync')));
   assert.equal(fs.readFileSync(path.join(current.root, 'skills', 'generated', 'SKILL.md'), 'utf8'), 'v2\n');
+});
+
+for (const relative of ['projects/product/services/buildr-web/test/runtime.test.ts', 'projects/product/services/dsh-plugin/plugin/bridge.ts', 'projects/product/services/buildr/docs/runtime.md']) {
+  test(`non-runtime ${relative} does not install or restart the development app`, t => {
+    const f = fixture(t), file = path.join(f.root, relative);
+    fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, 'documentation or independent work\n');
+    git(f.root, 'add', '--', relative); git(f.root, 'commit', '-m', 'unrelated change'); git(f.root, 'push', 'origin', 'dev');
+    const calls: string[][] = [], perform = executor(f.root, { runningDevelopmentInstance: true });
+    const result = runDirectSelfBootstrapCloseout({ workspaceRoot: f.root, baseRef: f.baseRef, deliveredRef: git(f.root, 'rev-parse', 'HEAD'), targetBranch: 'dev', remote: 'origin', agent: 'codex', nodeExecutable: process.execPath, environment: f.environment,
+      execute: (command: string, args: string[], context: any) => { calls.push(args); return perform(command, args, context); } });
+    assert.equal(result.status, 'not-applicable');
+    assert.equal(calls.some(args => args.includes('restart') || args.includes('--channel')), false);
+  });
+}
+for (const relative of ['projects/product/services/buildr/package-lock.json', 'projects/product/services/buildr-web/vite.config.ts', 'projects/product/services/buildr-web/tsconfig.app.json', 'projects/product/services/buildr/tools/development/prepare-development-web.ts']) {
+  test(`shared runtime policy restarts for ${relative}`, t => {
+    const f = fixture(t), file = path.join(f.root, relative);
+    fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, 'runtime input changed\n');
+    git(f.root, 'add', '--', relative); git(f.root, 'commit', '-m', 'runtime input change'); git(f.root, 'push', 'origin', 'dev');
+    const result = runDirectSelfBootstrapCloseout({ workspaceRoot: f.root, baseRef: f.baseRef, deliveredRef: git(f.root, 'rev-parse', 'HEAD'), targetBranch: 'dev', remote: 'origin', agent: 'codex', nodeExecutable: process.execPath, environment: f.environment, execute: executor(f.root, { runningDevelopmentInstance: true }) });
+    assert.equal(result.status, 'passed', JSON.stringify(result));
+    assert.ok(result.phases.some((phase: any) => phase.id === 'install-buildr-web' && phase.status === 'passed'));
+  });
+}
+
+test('a projected closeout script loads runtime policy from the explicit product root', async t => {
+  const f = fixture(t), projected = path.join(path.dirname(f.root), 'agent-runtime', 'closeout.mjs');
+  fs.mkdirSync(path.dirname(projected), { recursive: true });
+  fs.copyFileSync(path.resolve(import.meta.dirname, '../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs'), projected);
+  const { runDirectSelfBootstrapCloseout: runProjected } = await import((await import('node:url')).pathToFileURL(projected).href);
+  fs.writeFileSync(path.join(f.root, 'README.md'), 'documentation\n');
+  git(f.root, 'add', '.'); git(f.root, 'commit', '-m', 'documentation'); git(f.root, 'push', 'origin', 'dev');
+  const result = runProjected({ workspaceRoot: f.root, baseRef: f.baseRef, deliveredRef: git(f.root, 'rev-parse', 'HEAD'), targetBranch: 'dev', remote: 'origin', agent: 'codex', nodeExecutable: process.execPath, environment: f.environment, execute: executor(f.root) });
+  assert.equal(result.status, 'not-applicable', JSON.stringify(result));
+});
+
+test('a restarted instance with a different runtime proof cannot pass closeout', t => {
+  const f = fixture(t), file = path.join(f.root, 'projects/product/services/buildr/package-lock.json');
+  fs.writeFileSync(file, '{}\n'); git(f.root, 'add', '.'); git(f.root, 'commit', '-m', 'dependency change'); git(f.root, 'push', 'origin', 'dev');
+  const result = runDirectSelfBootstrapCloseout({ workspaceRoot: f.root, baseRef: f.baseRef, deliveredRef: git(f.root, 'rev-parse', 'HEAD'), targetBranch: 'dev', remote: 'origin', agent: 'codex', nodeExecutable: process.execPath, environment: f.environment, execute: executor(f.root, { runningDevelopmentInstance: true, observedRestartRuntimeIdentity: 'sha256-' + '0'.repeat(64) }) });
+  assert.equal(result.diagnostic?.code, 'self-bootstrap-closeout.development-web-restart-identity-mismatch');
+  assert.equal(result.phases.some((phase: any) => phase.id === 'finalize'), false);
 });

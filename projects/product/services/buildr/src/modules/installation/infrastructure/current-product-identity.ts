@@ -79,6 +79,18 @@ export function assertNpmUpdateHandoffTarget(instance: any, options: any = {}) {
 
 /** Compare source origins, never launcher build IDs or the querying process's Node runtime. */
 export function developmentInstanceMatchesInstallation(expected: any, running: any): boolean | null {
+  const validDigest = (value: any) => typeof value === 'string' && /^sha256-[a-f0-9]{64}$/.test(value);
+  if (Object.hasOwn(expected || {}, 'developmentRuntimeIdentity') && !validDigest(expected.developmentRuntimeIdentity)) return null;
+  if (Object.hasOwn(running || {}, 'developmentRuntimeIdentity')) {
+    if (expected?.channel !== 'development' || running?.channel !== 'development'
+      || !validDigest(expected.developmentRuntimeIdentity) || !validDigest(running.developmentRuntimeIdentity)
+      || typeof expected.sourceRoot !== 'string' || typeof running.sourceRoot !== 'string'
+      || !expected.version || !running.version || !expected.protocolIdentity || !running.protocolIdentity) return null;
+    return expected.developmentRuntimeIdentity === running.developmentRuntimeIdentity
+      && sameFilesystemPath(expected.sourceRoot, running.sourceRoot)
+      && expected.version === running.version
+      && expected.protocolIdentity === running.protocolIdentity;
+  }
   const expectedOwnership = expected?.installationIdentity ?? expected?.ownershipIdentity;
   const runningOwnership = running?.installationIdentity;
   const validOwnership = (value: any) => typeof value === 'string' && /^sha256-[a-f0-9]{64}$/.test(value);
@@ -113,6 +125,7 @@ export function readCurrentProductIdentity() {
     runtime,
     installationIdentity: origin.ownershipIdentity,
     sourceCommit: origin.channel === 'development' || formal ? origin.sourceCommit : payload?.sourceCommit || origin.sourceCommit,
+    ...(origin.channel === 'development' ? { developmentRuntimeIdentity: origin.developmentRuntimeIdentity } : {}),
     ...(origin.channel === 'development' ? { sourceRoot: origin.sourceRoot || origin.installUnit } : {}),
   });
 }
