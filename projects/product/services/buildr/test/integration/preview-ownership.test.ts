@@ -99,7 +99,7 @@ else {
       if (req.method === 'POST') {
         res.writeHead(202).end();
         server.close(() => process.exit(0));
-      } else { res.end(JSON.stringify({ schemaVersion: 'buildr.local-app-health/v1', status: mode === 'unhealthy' ? 'starting' : 'ready' })); }
+      } else { res.end(JSON.stringify({ schemaVersion: 'buildr.local-app-health/v1', status: mode === 'unhealthy' ? 'starting' : 'ready', pid: process.pid })); }
     });
     server.listen(0, '127.0.0.1', () => {
       fs.writeFileSync(path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json'), JSON.stringify({
@@ -241,7 +241,7 @@ fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
 const server = http.createServer((req, res) => {
   if (req.headers['x-buildr-instance'] !== 'fixture-secret') { res.writeHead(403).end(); return; }
   if (req.method === 'POST') { res.writeHead(202).end(); server.close(() => process.exit(0)); }
-  else res.end(JSON.stringify({ schemaVersion: 'buildr.local-app-health/v1', status: 'ready' }));
+  else res.end(JSON.stringify({ schemaVersion: 'buildr.local-app-health/v1', status: 'ready', pid: process.pid }));
 });
 server.listen(0, '127.0.0.1', () => {
   fs.writeFileSync(path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json'), JSON.stringify({

@@ -25,7 +25,10 @@ if (!selector || selector === '--help' || selector === '-h') {
 } else {
   try {
     selectPackageVerifiers(selector);
-    const result: any = spawnSync(process.execPath, [path.join(productRoot, 'bin', 'buildr.mjs'), 'package', 'check'], {
+    const result: any = spawnSync(process.execPath, [
+      path.join(productRoot, 'tools/development/run-isolated-workspace-smoke.ts'),
+      '--script', path.join(productRoot, 'bin', 'buildr.mjs'), '--', 'package', 'check',
+    ], {
       cwd: productRoot,
       env: { ...process.env, [PACKAGE_VERIFIER_ENV]: selector },
       encoding: 'utf8',

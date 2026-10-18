@@ -180,18 +180,22 @@ test('development start reuses the current source and preserves a healthy instan
   const reused = await runtime.startBuildrWeb(['--port', '0', '--no-open']);
   assert.equal(reused.reused, true);
   assert.equal(reused.url, first.url);
-  for (const changedOrigin of [
-    createInstallationOrigin({ ...currentOrigin, sourceCommit: 'd'.repeat(40) }),
-    createInstallationOrigin({ ...currentOrigin, installUnit: path.join(base, 'other-source') }),
+  const traceOnlyOrigin = createInstallationOrigin({ ...currentOrigin, sourceCommit: 'd'.repeat(40) });
+  expected = { ...currentProduct, installationIdentity: traceOnlyOrigin.ownershipIdentity, sourceCommit: traceOnlyOrigin.sourceCommit };
+  assert.equal((await runtime.startBuildrWeb(['--port', '0', '--no-open'])).reused, true,
+    'a trace commit change preserves identical running content');
+  for (const changed of [
+    { developmentRuntimeIdentity: `sha256-${'d'.repeat(64)}` },
+    { sourceRoot: path.join(base, 'other-source') },
   ]) {
-    expected = { ...currentProduct, installationIdentity: changedOrigin.ownershipIdentity, sourceCommit: changedOrigin.sourceCommit };
+    expected = { ...currentProduct, ...changed };
     await assert.rejects(runtime.startBuildrWeb(['--port', '0', '--no-open']), (error: any) => {
       assert.equal(error.code, 'web_instance_development_source_conflict');
       assert.match(error.message, /退出.*重新启动/);
       return true;
     });
   }
-  expected = { ...currentProduct, installationIdentity: undefined };
+  expected = { ...currentProduct, developmentRuntimeIdentity: undefined };
   await assert.rejects(runtime.startBuildrWeb(['--port', '0', '--no-open']), (error: any) => error.code === 'web_instance_development_source_conflict');
   assert.equal(fs.readFileSync(file, 'utf8'), before, 'rejected reuse preserves the running receipt');
   assert.equal(fs.existsSync(path.join(process.env.BUILDR_APP_DATA_DIR, 'instance-start.lock')), false);
@@ -394,11 +398,14 @@ test('HTTP Host uses the trusted runtime port and still gates a closing applicat
 });
 
 test('更新子进程拒绝损坏或健康身份不一致的receipt，保留字节且不启动服务', async (t) => {
-  assert.ok(process.env.BUILDR_APP_DATA_DIR, 'run through the isolated smoke runner');
   const previousRoot = process.env.BUILDR_APP_DATA_DIR;
-  const root = fs.mkdtempSync(path.join(previousRoot, '..', 'handoff-malformed-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'handoff-malformed-'));
   process.env.BUILDR_APP_DATA_DIR = root;
-  t.after(() => { process.env.BUILDR_APP_DATA_DIR = previousRoot; fs.rmSync(root, { recursive: true, force: true }); });
+  t.after(() => {
+    if (previousRoot === undefined) delete process.env.BUILDR_APP_DATA_DIR;
+    else process.env.BUILDR_APP_DATA_DIR = previousRoot;
+    fs.rmSync(root, { recursive: true, force: true });
+  });
   const identity = { package: '@buildr-ai/buildr', version: '0.0.2', protocolIdentity: 'buildr.web-protocol/v1', applicationPayloadDigest: 'new-payload', channel: 'npm', installationIdentity: 'new-origin', sourceCommit: 'new-source', runtime: { role: 'host', executable: '/registered/node', identity: 'registered-node' } };
   const previous = { pid: 100, url: 'http://127.0.0.1:4458/', secret: 'old-secret', launcherIdentity: null, productIdentity: { ...identity, version: '0.0.1', installationIdentity: 'old-origin' }, webProfile: resolveWebProfile(identity) };
   const f = { identity, previous, input: { productRoot: '/registered/package' } };

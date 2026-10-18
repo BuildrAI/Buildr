@@ -8,7 +8,8 @@ export function createBuildrSelfInvoker({ currentProductInvocation, productInvoc
     return runner(command, invocationArgs, options);
   };
   return Object.freeze({
-    exec: (args: any, options: any) => invoke(execFileSync, args, options),
+    // Keep successful smoke output quiet without losing a failing child's diagnostics.
+    exec: (args: any, options: any) => invoke(execFileSync, args, options?.stdio === 'ignore' ? { ...options, stdio: 'pipe' } : options),
     spawn: (args: any, options: any) => invoke(spawnSync, args, options),
   });
 }
