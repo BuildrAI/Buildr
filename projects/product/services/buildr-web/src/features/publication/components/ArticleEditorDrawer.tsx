@@ -14,12 +14,12 @@ import { ArticleWritingDrawer } from './ArticleWritingDrawer';
 import '../publication.css';
 
 type Props = {
-  workspaceId: string; projectCode: string; publicationId: string;
+  workspaceId: string; projectCode: string; publicationId: string; sourceTaskId?: string;
   onClose: () => void; onSaved?: (detail: PublicationDetail) => void;
 };
 
-export function ArticleEditorDrawer({ workspaceId, projectCode, publicationId, onClose, onSaved }: Props) {
-  const read = usePublication(workspaceId, projectCode, publicationId, false);
+export function ArticleEditorDrawer({ workspaceId, projectCode, publicationId, sourceTaskId, onClose, onSaved }: Props) {
+  const read = usePublication(workspaceId, projectCode, publicationId, false, sourceTaskId);
   const [base, setBase] = useState<PublicationDetail | null>(null), [draft, setDraft] = useState<PublicationDraft | null>(null), [assets, setAssets] = useState<PublicationAsset[]>([]);
   const [mode, setMode] = useState('edit'), [busy, setBusy] = useState(false), [saveError, setSaveError] = useState(''), [conflict, setConflict] = useState(false), [comparing, setComparing] = useState(false), [latest, setLatest] = useState<PublicationDetail | null>(null), [compareLoading, setCompareLoading] = useState(false), [compareError, setCompareError] = useState('');
   const [writing, setWriting] = useState<string | null>(null), [leave, setLeave] = useState(false);
@@ -73,7 +73,7 @@ export function ArticleEditorDrawer({ workspaceId, projectCode, publicationId, o
     exitState.current.busy = true; resetExit();
     setBusy(true); setSaveError('');
     try {
-      const saved = await publicationApi.update(projectCode, publicationId, base.revision, { ...draft, title: draft.title.trim() });
+      const saved = await publicationApi.update(projectCode, publicationId, base.revision, { ...draft, title: draft.title.trim() }, sourceTaskId);
       setBase(saved); setDraft(articleDraft(saved)); setAssets(saved.assets || []); setConflict(false);
       onSaved?.(saved); onClose();
     } catch (err) {
@@ -83,7 +83,7 @@ export function ArticleEditorDrawer({ workspaceId, projectCode, publicationId, o
   };
   const compare = async () => {
     setComparing(true); setCompareLoading(true); setCompareError('');
-    try { setLatest(await publicationApi.detail(publicationId, undefined, projectCode)); }
+    try { setLatest(await publicationApi.detail(publicationId, undefined, projectCode, sourceTaskId)); }
     catch (err) { setCompareError(err instanceof Error ? err.message : '最新稿件读取失败'); }
     finally { setCompareLoading(false); }
   };
@@ -98,9 +98,10 @@ export function ArticleEditorDrawer({ workspaceId, projectCode, publicationId, o
     width="min(1120px, 90vw)" rootClassName="publication-editor-drawer" onClose={cancel}
     closeAriaLabel="关闭文章编辑" closeDisabled={busy} maskClosable={!busy} keyboard
     footer={<div className="publication-editor-footer"><span id="article-edit-state" role="status">{busy ? '正在保存…' : dirty ? '有尚未保存的修改' : draft ? '当前稿件已保存' : '正在读取稿件'}</span><Space><Button autoInsertSpace={false} onClick={cancel} disabled={busy}>取消</Button><Button id="article-save" type="primary" icon={<SaveOutlined />} loading={busy} disabled={!draft || !base} onClick={() => void save()}>保存修改</Button></Space></div>}>
-    <div id="article-editor" className="publication-page publication-editor" data-project-code={projectCode} data-publication-id={publicationId}>{holder}
+    <div id="article-editor" className="publication-page publication-editor" data-project-code={projectCode} data-publication-id={publicationId} data-source-task-id={sourceTaskId}>{holder}
     {read.error && <Alert type="error" message="文章读取失败" description={read.error} action={<Button size="small" onClick={read.reload}>重试</Button>} />}
     {!draft || !base || !article ? read.loading ? <div className="publication-loading"><Spin /><p>正在读取当前稿件…</p></div> : <Empty description="当前稿件不可用" /> : <>
+      {article.sourceTask && <Alert type="info" message={`正在编辑来源任务的草稿：${article.sourceTask.title}`} />}
       {saveError && <Alert type="error" message={conflict ? '文章已被其他入口修改，你的输入已保留。' : '修改尚未保存，输入已保留。'} description={saveError} action={conflict ? <Space wrap><Button size="small" onClick={() => void compare()}>查看最新稿件</Button><Button size="small" onClick={() => { void navigator.clipboard.writeText(currentText).then(() => messages.success('当前修改已复制')).catch(() => messages.error('自动复制失败')); }}>复制我的修改</Button></Space> : undefined} />}
       {base.assetDiagnostics.length > 0 && <Alert type="warning" message="部分文章资源暂时不可用，正文仍可编辑。" description={base.assetDiagnostics.map(item => item.message).join('；')} />}
       <div className="publication-editor-layout"><main className="publication-editor-main"><Form layout="vertical">
@@ -108,11 +109,11 @@ export function ArticleEditorDrawer({ workspaceId, projectCode, publicationId, o
         <Form.Item label="摘要"><Input.TextArea id="article-edit-summary" rows={2} maxLength={1000} value={draft.summary} onChange={event => change('summary', event.target.value)} placeholder="用一两句话说明文章的主题" disabled={busy} /></Form.Item>
       </Form><div className="publication-editor-toolbar"><label htmlFor="article-edit-content">正文</label><Space><Button size="small" type={mode === 'edit' ? 'primary' : 'default'} icon={<EditOutlined />} onClick={() => setMode('edit')}>编辑</Button><Button size="small" type={mode === 'preview' ? 'primary' : 'default'} icon={<EyeOutlined />} onClick={() => setMode('preview')}>预览</Button></Space></div>
         <div hidden={mode !== 'edit'}><Input.TextArea ref={textarea} id="article-edit-content" aria-label="文章正文" className="publication-writing-area" value={draft.content} onChange={event => { const node = event.currentTarget; selection.current = { start: node.selectionStart, end: node.selectionEnd }; change('content', node.value); }} onSelect={event => { const node = event.currentTarget; selection.current = { start: node.selectionStart, end: node.selectionEnd }; }} disabled={busy} /></div>
-        {mode === 'preview' && <div className="publication-editor-preview" id="article-edit-preview"><ArticleBody content={draft.content} workspaceId={workspaceId || ''} projectCode={projectCode} publicationId={publicationId} /></div>}
-        <p className="publication-hint">支持 Markdown 标题、列表、链接和图片。上传完成后插入资源引用，保存后正文才会更新。</p>
-      </main><aside className="publication-edit-aside"><section className="publication-edit-info"><Form layout="vertical"><Form.Item label="所属项目"><Input value={article.projectName} disabled /></Form.Item><Form.Item label="稿件状态"><Select id="article-edit-status" value={draft.status} disabled={busy} onChange={value => change('status', value)} options={[...Object.entries(publicationStatus).map(([value, label]) => ({ value, label })), ...(!publicationStatus[draft.status] ? [{ value: draft.status, label: draft.status }] : [])]} /></Form.Item></Form><p className="publication-hint">平台发布记录保持原样，不会自动同步。</p></section>
-        <ArticleAssetsPanel workspaceId={workspaceId || ''} projectCode={projectCode} publicationId={publicationId} revision={base.revision} content={draft.content} assets={assets} disabled={busy} onAssets={setAssets} onInsert={insert} onConflict={text => { setSaveError(text); setConflict(true); }} />
-        <section className="publication-edit-methods"><h2>让智能体（Agent）帮一把</h2>{writingMethods.slice(1).map(method => <Button type="text" block key={method.value} onClick={() => setWriting(method.value)}>{method.value}<span>→</span></Button>)}<p className="publication-hint">保存编辑后，可带上最新内容准备写作请求。</p></section>
+        {mode === 'preview' && <div className="publication-editor-preview" id="article-edit-preview"><ArticleBody content={draft.content} workspaceId={workspaceId || ''} projectCode={projectCode} publicationId={publicationId} sourceTaskId={sourceTaskId} /></div>}
+        <p className="publication-hint">{sourceTaskId ? '支持修改标题、摘要和 Markdown 正文，保存到来源任务的稿件。' : '支持 Markdown 标题、列表、链接和图片。上传完成后插入资源引用，保存后正文才会更新。'}</p>
+      </main><aside className="publication-edit-aside"><section className="publication-edit-info"><Form layout="vertical"><Form.Item label="所属项目"><Input value={article.projectName} disabled /></Form.Item><Form.Item label="稿件状态"><Select id="article-edit-status" value={draft.status} disabled={busy || Boolean(sourceTaskId)} onChange={value => change('status', value)} options={[...Object.entries(publicationStatus).map(([value, label]) => ({ value, label })), ...(!publicationStatus[draft.status] ? [{ value: draft.status, label: draft.status }] : [])]} /></Form.Item></Form>{!sourceTaskId && <p className="publication-hint">平台发布记录保持原样，不会自动同步。</p>}</section>
+        <ArticleAssetsPanel workspaceId={workspaceId || ''} projectCode={projectCode} publicationId={publicationId} sourceTaskId={sourceTaskId} revision={base.revision} content={draft.content} assets={assets} disabled={busy} onAssets={setAssets} onInsert={insert} onConflict={text => { setSaveError(text); setConflict(true); }} />
+        {!sourceTaskId && <section className="publication-edit-methods"><h2>让智能体（Agent）帮一把</h2>{writingMethods.slice(1).map(method => <Button type="text" block key={method.value} onClick={() => setWriting(method.value)}>{method.value}<span>→</span></Button>)}<p className="publication-hint">保存编辑后，可带上最新内容准备写作请求。</p></section>}
       </aside></div>
       {writing && <ArticleWritingDrawer projects={[{ code: projectCode, name: article.projectName }]} article={article} revision={base.revision} initialMethod={writing} hasUnsavedChanges={dirty} onClose={() => setWriting(null)} />}
       <Modal open={leave || (blocker.state === 'blocked' && !busy && !savingExit.current)} title="放弃尚未保存的修改？" okText="放弃修改" cancelText="继续编辑" onCancel={resetExit} onOk={discard}><p>已上传的资源文件会保留，正文改动尚未保存。</p></Modal>

@@ -925,7 +925,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await capture(page, 'navigation-project-desktop.png');
   });
 
-  if (selected('articles')) await runPublicationJourney({ t, page, workspaceRoot, workspaceUrl, otherWorkspaceUrl: `${url}/workspaces/${otherWorkspaceId}`, expectedBrowserErrors, selectAntdOption, capture });
+  if (selected('articles')) await runPublicationJourney({ t, page, runtime, workspaceRoot, workspaceUrl, otherWorkspaceUrl: `${url}/workspaces/${otherWorkspaceId}`, expectedBrowserErrors, selectAntdOption, capture });
 
   if (selected('shell')) await t.test('偏好存储拒绝时仍可启动、浏览并在内存中调整侧栏', async () => {
     const context = await browser.newContext({ locale: 'zh-CN', viewport: { width: 1280, height: 720 } });

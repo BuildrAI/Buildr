@@ -25,8 +25,8 @@
 .publication-state.planned.ant-tag { color:#9a7b41; background:#faf3e6; }
 .publication-list-foot { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:18px 0; font-size:11px; color:var(--soft-muted); }
 .publication-loading { min-height:220px; display:flex; flex-direction:column; gap:16px; align-items:center; justify-content:center; color:var(--soft-muted); }
-.publication-reader { container:publication-reader / inline-size; }
-.pane-right .publication-reader { max-width:calc(var(--reading-content-width) + 210px); margin-inline:auto; }
+.publication-reader { --publication-reading-width:900px; container:publication-reader / inline-size; width:100%; }
+.publication-reader,.pane-right .publication-reader { max-width:calc(var(--publication-reading-width) + 210px); margin-inline:auto; }
 .publication-reader-head { padding-bottom:24px; margin-bottom:26px; border-bottom:1px solid var(--soft-line); }
 .publication-reader-topline { display:flex; align-items:center; flex-wrap:wrap; gap:10px; color:var(--soft-muted); font-size:12px; margin-bottom:14px; }
 .publication-reader-head h1 { margin:0 0 12px; font-size:29px; line-height:1.45; letter-spacing:-.4px; overflow-wrap:anywhere; }
@@ -44,16 +44,20 @@
 .publication-record-summary h2 { font-size:12px; font-weight:500; margin:0 0 13px; }
 .publication-record-summary #publication-targets > div { display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:12px; font-size:11px; }
 .publication-record-summary .ant-btn { padding:0; font-size:12px; }
-.publication-reading-content { min-width:0; width:100%; max-width:var(--reading-content-width); }
+.publication-reading-content { min-width:0; width:100%; max-width:var(--publication-reading-width); }
 .publication-content-actions { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:22px; }
 .publication-content-actions .ant-segmented { margin-right:auto; }
-.publication-body .markdown-body { font-size:15px; line-height:1.95; overflow-wrap:anywhere; }
+.publication-body { width:100%; max-width:var(--publication-reading-width,900px); margin-inline:auto; }
+.publication-body .markdown-body { width:100%; max-width:100%; font-size:15px; line-height:1.95; overflow-wrap:anywhere; }
 .publication-body .markdown-body p { margin:0 0 20px; }
 .publication-body .markdown-body h2 { margin:32px 0 14px; font-size:22px; line-height:1.65; }
 .publication-body .markdown-body h3 { margin:26px 0 10px; font-size:18px; }
 .publication-body [data-article-heading] { scroll-margin-top:20px; }
-.publication-body img { max-width:100%; height:auto; }
+.publication-body .markdown-body img { display:block; width:100%; max-width:100%; height:auto; margin:20px 0; border:0; border-radius:0; }
 .publication-source,.publication-prepared pre,.publication-compare pre { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; padding:18px; border:1px solid var(--soft-line); border-radius:9px; background:#f8faf9; font-size:12px; line-height:1.9; }
+.publication-source-toolbar { position:sticky; top:0; z-index:1; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; padding:10px 0; background:var(--soft-panel,#fff); color:var(--soft-muted); font-size:12px; }
+.publication-source-input.ant-input { padding:18px; margin-top:10px; background:#f8faf9; font-family:var(--font-mono,monospace); font-size:13px; line-height:1.9; }
+.publication-source-editor > .ant-alert { margin:10px 0; }
 .publication-mobile-toc { display:none; }
 .publication-related { border-top:1px solid var(--soft-line); padding-top:24px; margin-top:34px; }
 .publication-related h2,.publication-reading-assets h2 { color:var(--soft-muted); font-size:13px; font-weight:500; margin:0 0 14px; }
@@ -139,4 +143,7 @@
 .publication-compact-meta > a { max-width:100%; overflow-wrap:anywhere; }
 .publication-table.is-compact .ant-table-tbody > tr > td { padding:14px 10px; vertical-align:top; }
 .publication-table.is-compact .publication-title-cell > a { overflow-wrap:anywhere; }
-.publication-table.is-compact .publication-title-cell > p { -webkit-line-clamp:2; overflow-wrap:anywhere; }
+.publication-table.is-compact .publication-title-cell > p { overflow-wrap:anywhere; }
+
+.publication-draft-source { margin:10px 0; overflow-wrap:anywhere; }
+.publication-title-cell .publication-task-source { display:block; margin-top:7px; color:var(--soft-muted); font-size:12px; font-weight:400; line-height:1.6; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

@@ -35,12 +35,7 @@ function statOrNull(file: string) {
   catch (error: any) { if (error.code === 'ENOENT') return null; throw error; }
 }
 
-export function readPublicationFile(scope: PublicationScope, file: string) {
-  safePublicationPath(scope, file);
-  const stat = statOrNull(file);
-  if (!stat?.isFile()) return null;
-  const bytes = fs.readFileSync(file);
-  const source = bytes.toString('utf8');
+export function parsePublicationText(source: string) {
   const match = source.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
   if (!match) return null;
   const document = YAML.parseDocument(match[1]);
@@ -48,6 +43,18 @@ export function readPublicationFile(scope: PublicationScope, file: string) {
   let metadata: any;
   try { metadata = document.toJS(); } catch { return null; }
   if (!metadata || typeof metadata !== 'object' || typeof metadata.id !== 'string' || !PUBLICATION_ID.test(metadata.id) || typeof metadata.title !== 'string' || !metadata.title.trim()) return null;
+  return { document, metadata, content: source.slice(match[0].length) };
+}
+
+export function readPublicationFile(scope: PublicationScope, file: string) {
+  safePublicationPath(scope, file);
+  const stat = statOrNull(file);
+  if (!stat?.isFile()) return null;
+  const bytes = fs.readFileSync(file);
+  const source = bytes.toString('utf8');
+  const parsed = parsePublicationText(source);
+  if (!parsed) return null;
+  const { document, metadata, content } = parsed;
   const targets = Array.isArray(metadata.targets)
     ? metadata.targets.filter((target: any) => target && typeof target === 'object' && typeof target.platform === 'string' && typeof target.status === 'string')
       .map((target: any) => ({ platform: canonicalPublicationPlatform(target.platform), status: target.status, ...(typeof target.url === 'string' && target.url ? { url: target.url } : {}) }))
@@ -60,11 +67,11 @@ export function readPublicationFile(scope: PublicationScope, file: string) {
     projectCode: scope.projectCode, projectName: scope.projectName,
     targets, updatedAt: stat.mtime.toISOString(), revision: `sha256-${crypto.createHash('sha256').update(bytes).digest('hex')}`,
     sourcePath: path.relative(scope.root, file).split(path.sep).join('/'),
-    file, document, source, content: source.slice(match[0].length),
+    file, document, source, content,
   };
 }
 
-export type PublicationRecord = NonNullable<ReturnType<typeof readPublicationFile>>;
+export type PublicationRecord = NonNullable<ReturnType<typeof readPublicationFile>> & { sourceTask?: { id: string; title: string } };
 
 export function publicPublication(article: PublicationRecord) {
   const { file: _file, document: _document, source: _source, content: _content, ...publication } = article;

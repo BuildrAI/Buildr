@@ -85,6 +85,12 @@ test('跨项目文章身份、CRUD、元数据保留与过期版本零覆盖', (
   assert.equal(metadata.published_at, '2026-07-25');
   assert.match(saved.source, /# keep comment/);
 
+  const rawSaved = runtime.updatePublication(root, 'product', 'article', { revision: saved.revision, source: saved.source.replace('改后的标题', '原文内校准的标题') });
+  assert.equal(rawSaved.publication.title, '原文内校准的标题');
+  assert.equal(rawSaved.publication.status, 'planned');
+  assert.match(rawSaved.source, /# keep comment/);
+  assert.deepEqual(YAML.parse(rawSaved.source.match(/^---\n([\s\S]*?)\n---/)[1]).targets, metadata.targets);
+
   fs.appendFileSync(file, '\n外部新增内容\n');
   const externallyEdited = fs.readFileSync(file, 'utf8');
   const stale = { revision: saved.revision, title: '旧页面', summary: '', status: 'draft', content: 'overwrite' };

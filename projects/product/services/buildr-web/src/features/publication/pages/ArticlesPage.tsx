@@ -28,7 +28,7 @@ export function ArticlesPage() {
   const [data, setData] = useState<PublicationList | null>(null), [projects, setProjects] = useState<ArticleProject[]>([]);
   const [loading, setLoading] = useState(true), [error, setError] = useState(''), [projectError, setProjectError] = useState(''), [readAt, setReadAt] = useState('');
   const openEditor = useArticleEditor();
-  const editArticle = (article: Publication) => openEditor({ projectCode: article.projectCode, publicationId: article.id });
+  const editArticle = (article: Publication) => openEditor({ projectCode: article.projectCode, publicationId: article.id, sourceTaskId: article.sourceTask?.id });
   const [refresh, setRefresh] = useState(0), [creating, setCreating] = useState(false), [writing, setWriting] = useState(false), [deleting, setDeleting] = useState<Publication | null>(null), [saving, setSaving] = useState('');
   const [messages, holder] = message.useMessage();
   const tableRef = useRef<HTMLDivElement>(null);
@@ -42,7 +42,7 @@ export function ArticlesPage() {
   const href = (path: string) => workspaceHref(workspaceId, path);
   const returnState = { articleListSearch: location.search };
   const openArticle = (article: Publication, view?: 'source') => {
-    const path = href(articlePath(article)) + (view ? '?view=source' : '');
+    const path = href(articlePath(article)) + (view ? `${article.sourceTask ? '&' : '?'}view=source` : '');
     if (!previews?.open(location.pathname, path)) navigate(path, { state: { ...returnState, articleView: view } });
   };
   const change = (name: string, value: string) => { const next = new URLSearchParams(params); if (value) next.set(name, value); else next.delete(name); setParams(next, { replace: true }); };
@@ -87,7 +87,7 @@ export function ArticlesPage() {
     finally { setSaving(''); }
   };
   const exportArticle = async (article: Publication) => {
-    try { const detail = await publicationApi.detail(article.id, undefined, article.projectCode); downloadMarkdown(detail.source || detail.content, article.sourcePath); }
+    try { const detail = await publicationApi.detail(article.id, undefined, article.projectCode, article.sourceTask?.id); downloadMarkdown(detail.source || detail.content, article.sourcePath); }
     catch (err) { messages.error(err instanceof Error ? err.message : '导出失败'); }
   };
   return <WorkspaceStage pageTabs={tabs.tabs} onClosePageTab={tabs.close}><div className="publication-page publication-directory">
@@ -99,11 +99,11 @@ export function ArticlesPage() {
     {projectError && <Alert type="warning" message="暂时无法读取可写项目，新建与写作入口稍后重试。" description={projectError} />}
     {Boolean(data?.diagnostics?.length) && <Alert type="warning" message="部分项目的文章暂时不可用" description={data?.diagnostics?.map(item => `${item.projectCode || '项目'}：${item.message}`).join('；')} />}
     <div ref={tableRef} id="publications-list" className={`publication-table${compact ? ' is-compact' : ''}`}><Table<Publication> loading={loading && !data} dataSource={visible} rowKey={articleResourceKey} pagination={false} size="middle" tableLayout="fixed" onRow={article => ({ onClick: event => { if (!(event.target as HTMLElement).closest('button,a')) openArticle(article); } })} locale={{ emptyText: <div id="publications-empty"><Empty description={publications.length ? '没有找到匹配的文章' : '暂无文章'} />{publications.length ? <Button onClick={() => setParams({}, { replace: true })}>清除筛选</Button> : <Button type="primary" disabled={!projects.length} onClick={() => setCreating(true)}>新建文章</Button>}</div> }} columns={[
-      { title: '文章 / 摘要', key: 'article', render: (_, article) => <div className="publication-title-cell"><Link to={href(articlePath(article))} state={returnState}>{article.title}</Link><p>{article.summary || '暂无摘要'}</p>{compact && <div className="publication-compact-meta"><Link className="publication-project-label" to={href(`/projects/${encodeURIComponent(article.projectCode)}`)}>{article.projectName}</Link><Tag className={`publication-state ${article.status}`}>{publicationStatus[article.status] || article.status}</Tag><span>{displayArticleDate(article.updatedAt || article.publishedAt)}</span></div>}</div> },
+      { title: '文章', key: 'article', render: (_, article) => <div className="publication-title-cell"><Link to={href(articlePath(article))} state={returnState}>{article.title}</Link><p>{article.summary || '暂无摘要'}</p>{article.sourceTask && <Link className="publication-task-source" to={href(`/tasks/${encodeURIComponent(article.sourceTask.id)}`)} title={article.sourceTask.title}>来自任务 · {article.sourceTask.title}</Link>}{compact && <div className="publication-compact-meta"><Link className="publication-project-label" to={href(`/projects/${encodeURIComponent(article.projectCode)}`)}>{article.projectName}</Link><Tag className={`publication-state ${article.status}`}>{article.sourceTask ? '工作树草稿' : publicationStatus[article.status] || article.status}</Tag><span>{displayArticleDate(article.updatedAt || article.publishedAt)}</span></div>}</div> },
       { title: '所属项目', hidden: compact, width: 150, key: 'project', render: (_, article) => <Link className="publication-project-label" to={href(`/projects/${encodeURIComponent(article.projectCode)}`)}>{article.projectName}</Link> },
-      { title: '稿件状态', hidden: compact, width: 95, key: 'status', render: (_, article) => <Tag className={`publication-state ${article.status}`}>{publicationStatus[article.status] || article.status}</Tag> },
+      { title: '稿件状态', hidden: compact, width: 110, key: 'status', render: (_, article) => <Tag className={`publication-state ${article.status}`}>{article.sourceTask ? '工作树草稿' : publicationStatus[article.status] || article.status}</Tag> },
       { title: '最近更新', hidden: compact, width: 120, key: 'updated', render: (_, article) => <span className="publication-muted">{displayArticleDate(article.updatedAt || article.publishedAt)}</span> },
-      { title: '操作', width: compact ? 76 : 94, align: 'right', key: 'actions', render: (_, article) => <Space size={0}><Button type="text" icon={isSaved(articleResourceKey(article)) ? <StarFilled /> : <StarOutlined />} loading={saving === articleResourceKey(article)} disabled={preferences.loading} aria-label={`${isSaved(articleResourceKey(article)) ? '取消收藏' : '收藏'}：${article.title}`} onClick={() => void toggleSaved(article)} /><Dropdown trigger={['click']} menu={{ items: [{ key: 'edit', label: '编辑文章', icon: <EditOutlined /> }, { key: 'source', label: '查看原文' }, { key: 'copy', label: '复制链接' }, { key: 'export', label: '导出 Markdown' }, { type: 'divider' }, { key: 'delete', label: '删除文章', danger: true }], onClick: ({ key }) => {
+      { title: '操作', width: compact ? 76 : 94, align: 'right', key: 'actions', render: (_, article) => <Space size={0}><Button type="text" icon={isSaved(articleResourceKey(article)) ? <StarFilled /> : <StarOutlined />} loading={saving === articleResourceKey(article)} disabled={preferences.loading} aria-label={`${isSaved(articleResourceKey(article)) ? '取消收藏' : '收藏'}：${article.title}`} onClick={() => void toggleSaved(article)} /><Dropdown trigger={['click']} menu={{ items: [{ key: 'edit', label: '编辑文章', icon: <EditOutlined /> }, { key: 'source', label: '查看原文' }, { key: 'copy', label: '复制链接' }, { key: 'export', label: '导出 Markdown' }, ...(article.sourceTask ? [] : [{ type: 'divider' as const }, { key: 'delete', label: '删除文章', danger: true }])], onClick: ({ key }) => {
         if (key === 'edit') editArticle(article);
         if (key === 'source') openArticle(article, 'source');
         if (key === 'delete') setDeleting(article);

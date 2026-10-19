@@ -66,7 +66,6 @@ export function createRuntime(): any  {
   registry.provide(WORKSPACE_AGENT_ASSETS_BINDER).bindAgentAssets(registry.provide(AGENT_ASSETS_INTERNAL));
   registerProjectGitObserver(runtime);
   registry.install(createKnowledgeModule());
-  registry.install(createPublicationModule(runtime));
   registry.install(createOpenSpecModule(runtime));
   registry.install(TASK_MODULE);
   registry.install(createDailyProgressModule(runtime));
@@ -75,6 +74,7 @@ export function createRuntime(): any  {
   registry.install(TASK_COMMITS_MODULE);
   registry.install(TASK_CHANGED_FILES_MODULE);
   registry.install(TASK_MATERIALS_MODULE);
+  registry.install(createPublicationModule(runtime));
   registry.install(AGENT_ASSETS_SOURCE_MODULE);
   registry.install(createChangeModule(runtime));
   registry.install(createAgentOperationsModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile }));

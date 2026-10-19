@@ -5,17 +5,18 @@ import type { TestContext } from 'node:test';
 import type { Locator, Page, Request } from 'playwright-core';
 import { composeKnowledgeSearch, continueKnowledgeSearch, toggleFilteredKnowledgeBranch, waitKnowledgeBranchExpanded } from './knowledge-navigation-input.ts';
 import { openKnowledgeTopicDirectory, selectKnowledgeChildTopic, verifyKnowledgeQuestionHandoff } from './knowledge-local-reading-journey.ts';
+import { runWorktreePublicationJourney } from './publication-worktree-journey.ts';
 
 export const publicationTestPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN1sAAAAASUVORK5CYII=', 'base64');
 
 type Context = {
-  t: TestContext; page: Page; workspaceRoot: string; workspaceUrl: string; otherWorkspaceUrl: string;
+  t: TestContext; page: Page; runtime: any; workspaceRoot: string; workspaceUrl: string; otherWorkspaceUrl: string;
   expectedBrowserErrors: Set<string>;
   selectAntdOption(page: Page, id: string, text: string): Promise<unknown>;
   capture(page: Page, name: string): Promise<unknown>;
 };
 
-export async function runPublicationJourney({ t, page, workspaceRoot, workspaceUrl, otherWorkspaceUrl, expectedBrowserErrors, selectAntdOption, capture }: Context) {
+export async function runPublicationJourney({ t, page, runtime, workspaceRoot, workspaceUrl, otherWorkspaceUrl, expectedBrowserErrors, selectAntdOption, capture }: Context) {
   const root = path.join(workspaceRoot, 'projects/product/docs/publications');
   const apiBase = `${new URL(workspaceUrl).origin}/api/v1${new URL(workspaceUrl).pathname}`;
   const visible = () => page.locator('.workspace-page:not([hidden])');
@@ -562,7 +563,17 @@ export async function runPublicationJourney({ t, page, workspaceRoot, workspaceU
     await selectAntdOption(page, 'article-create-project', 'Buildr Product');
     await page.locator('#article-create-title').fill('文章资源浏览器验证');
     await page.getByRole('button', { name: '创建草稿', exact: true }).click();
-    await editor().locator('#article-edit-content').waitFor({ state: 'visible' });
+    try {
+      await editor().locator('#article-edit-content').waitFor({ state: 'visible' });
+    } catch (error) {
+      await capture(page, 'article-create-editor-unavailable.png');
+      assert.fail(`创建后编辑器未就绪：${JSON.stringify({
+        url: page.url(),
+        dialogs: await page.locator('.ant-modal-body:visible').allTextContents(),
+        editor: await editor().allTextContents(),
+        notices: await page.locator('.ant-message-notice-content:visible').allTextContents(),
+      })}; ${String(error)}`);
+    }
     assert.equal(page.url(), `${workspaceUrl}/articles`);
     const createdId = (await page.locator('#article-editor').getAttribute('data-publication-id'))!;
     const createdFile = path.join(root, `${createdId}.md`);
@@ -647,6 +658,7 @@ export async function runPublicationJourney({ t, page, workspaceRoot, workspaceU
     await page.goto(`${workspaceUrl}/articles/missing`);
     await visible().getByText('文章不可用', { exact: true }).waitFor({ state: 'visible' });
   });
+  await runWorktreePublicationJourney({ t, page, runtime, workspaceRoot, workspaceUrl, otherWorkspaceUrl, expectedBrowserErrors, capture });
 }
 
 

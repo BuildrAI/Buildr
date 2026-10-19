@@ -1,0 +1,200 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import type { TestContext } from 'node:test';
+import type { Page } from 'playwright-core';
+
+export async function runWorktreePublicationJourney({ t, page, runtime, workspaceRoot, workspaceUrl, otherWorkspaceUrl, expectedBrowserErrors, capture }: {
+  t: TestContext; page: Page; runtime: any; workspaceRoot: string; workspaceUrl: string; otherWorkspaceUrl: string;
+  expectedBrowserErrors: Set<string>;
+  capture(page: Page, name: string): Promise<unknown>;
+}) {
+  await t.test('文章页支持已完成任务的真实工作树草稿阅读、人工校准与冲突对照，来源始终一致', async () => {
+    const git = (args: string[]) => {
+      const result = spawnSync('git', args, { cwd: workspaceRoot, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr);
+    };
+    const relative = 'projects/product/docs/publications/worktree-preview.md';
+    const source = '---\nid: worktree-preview\ntitle: 工作树预览示例\nstatus: published\n---\n\n# 正文来源\n\n## 证据与结果\n\n主目录内容\n\n![工作树配图](assets/cover.png)\n';
+    fs.writeFileSync(path.join(workspaceRoot, relative), source);
+    if (!fs.existsSync(path.join(workspaceRoot, '.git'))) git(['init', '-q']);
+    git(['config', 'user.name', 'Browser Fixture']); git(['config', 'user.email', 'fixture@example.com']);
+    git(['add', 'projects/product']); git(['commit', '-qm', 'article worktree baseline']);
+    const checkouts = new Map<string, string>();
+    for (const [taskId, title, text] of [['article-draft-one', '文章第一来源任务', '工作树第一版内容'], ['article-draft-two', '文章第二来源任务', '工作树第二版内容']]) {
+      const created = runtime.createTask(workspaceRoot, { taskId, title, intent: '验证文章工作树预览', projects: ['product'], services: [], changes: [] });
+      const prepared = runtime.prepareGitWorktrees({ workspaceRoot, taskId, branch: `codex/${taskId}`, startPoint: 'HEAD', includes: ['workspace'] });
+      assert.equal(prepared.status, 'ready', JSON.stringify(prepared.diagnostic));
+      const checkout = prepared.repositories.find((item: any) => item.selector === 'workspace').checkoutPath;
+      checkouts.set(taskId, checkout);
+      fs.writeFileSync(path.join(checkout, relative), source.replace('主目录内容', text));
+      runtime.completeTask(workspaceRoot, taskId, { expectedRecordDigest: created.recordDigest, summary: '已完成文章草稿，保留工作树供预览。' });
+    }
+    await page.goto(`${workspaceUrl}/articles?q=${encodeURIComponent('工作树预览示例')}`);
+    const list = page.locator('.publication-directory:visible');
+    const row = list.getByRole('row').filter({ hasText: '文章第一来源任务' });
+    await row.waitFor({ state: 'visible' });
+    assert.equal(await list.getByRole('link', { name: '工作树预览示例', exact: true }).count(), 3);
+    await row.getByRole('link', { name: '来自任务 · 文章第一来源任务', exact: true }).waitFor({ state: 'visible' });
+    assert.equal(await row.locator('.publication-title-cell .ant-tag').count(), 0, '文章信息不重复堆叠状态标签');
+    await row.getByRole('cell', { name: '工作树草稿', exact: true }).waitFor({ state: 'visible' });
+    await row.getByRole('link', { name: '工作树预览示例', exact: true }).click();
+    const reader = page.locator('.publication-reader:visible');
+    await reader.getByText('工作树第一版内容', { exact: true }).waitFor({ state: 'visible' });
+    assert.match(await reader.getByRole('link', { name: '来源任务：文章第一来源任务', exact: true }).getAttribute('href') || '', /\/tasks\/article-draft-one$/);
+    assert.equal(await reader.getByRole('button', { name: '编辑文章', exact: true }).count(), 0, '工作树阅读页不重复展示编辑入口，直接使用原文');
+    const image = reader.getByRole('img', { name: '工作树配图', exact: true });
+    assert.match(await image.getAttribute('src') || '', /\/tasks\/article-draft-one\/projects\/product\/publications\/worktree-preview\/assets\//);
+    await image.evaluate(image => (image as HTMLImageElement).decode());
+    assert.ok(await image.evaluate(image => (image as HTMLImageElement).naturalWidth > 0));
+    await capture(page, 'publication-worktree-draft.png');
+    await page.goto(`${workspaceUrl}/articles/product/worktree-preview?task=article-draft-two`);
+    await page.locator('.publication-reader:visible').getByText('工作树第二版内容', { exact: true }).waitFor({ state: 'visible' });
+    await page.reload();
+    await page.locator('.publication-reader:visible').getByRole('link', { name: '来源任务：文章第二来源任务', exact: true }).waitFor({ state: 'visible' });
+    await page.goto(`${workspaceUrl}/articles/product/worktree-preview`);
+    await page.locator('.publication-reader:visible').getByText('主目录内容', { exact: true }).waitFor({ state: 'visible' });
+    assert.equal(fs.readFileSync(path.join(workspaceRoot, relative), 'utf8'), source);
+    for (const width of [1920, 1440, 390]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto(`${workspaceUrl}/articles/product/worktree-preview?task=article-draft-one`);
+      const currentReader = page.locator('.publication-reader:visible');
+      await currentReader.getByText('工作树第一版内容', { exact: true }).waitFor({ state: 'visible' });
+      if (width > 900) {
+        const collapse = page.getByRole('button', { name: '收起页面', exact: true });
+        if (await collapse.isVisible()) await collapse.click();
+      }
+      const geometry = await currentReader.evaluate(element => {
+        const text = element.querySelector('.publication-body .markdown-body > p')!.getBoundingClientRect();
+        const image = element.querySelector('.publication-body img')!.getBoundingClientRect();
+        const content = element.querySelector('.publication-reading-content')!.getBoundingClientRect();
+        return { text: { left: text.left, width: text.width }, image: { left: image.left, width: image.width }, contentWidth: content.width, pageWidth: document.documentElement.scrollWidth };
+      });
+      assert.ok(geometry.contentWidth <= 901, `${width}px 展开后正文仍受900px上限约束：${JSON.stringify(geometry)}`);
+      assert.ok(Math.abs(geometry.text.left - geometry.image.left) <= 1 && Math.abs(geometry.text.width - geometry.image.width) <= 1, '正文与配图同宽且左对齐');
+      assert.ok(geometry.pageWidth <= width + 1, '窄屏及展开阅读均无页面横向溢出');
+      if (width > 900) {
+        const chapter = currentReader.locator('.publication-toc:visible').getByRole('button', { name: '证据与结果', exact: true });
+        await chapter.click();
+        await currentReader.getByRole('heading', { name: '证据与结果', exact: true }).waitFor({ state: 'visible' });
+      }
+      await capture(page, `publication-reading-width-${width}.png`);
+    }
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(`${workspaceUrl}/articles/product/worktree-preview?task=article-draft-one`);
+    const currentReader = page.locator('.publication-reader:visible');
+    const openWorktreeEditorFromList = async () => {
+      const expand = page.getByRole('button', { name: '展开页面', exact: true });
+      if (await expand.isVisible()) await expand.click();
+      const sourceRow = page.locator('.publication-directory:visible').getByRole('row').filter({ hasText: '文章第一来源任务' });
+      await sourceRow.getByRole('button', { name: /更多操作/ }).click();
+      await page.getByRole('menuitem', { name: /编辑文章/ }).click();
+    };
+    const worktreeUpdateUrl = `${workspaceUrl.replace('/workspaces/', '/api/v1/workspaces/')}/tasks/article-draft-one/projects/product/publications/worktree-preview`;
+    expectedBrowserErrors.add(worktreeUpdateUrl);
+    await openWorktreeEditorFromList();
+    const editor = page.locator('#article-editor');
+    await editor.locator('#article-edit-content').waitFor({ state: 'visible' });
+    assert.equal(await editor.getAttribute('data-source-task-id'), 'article-draft-one');
+    assert.equal(await editor.locator('#article-asset-upload').count(), 0);
+    await editor.locator('#article-edit-title').fill('工作树预览示例（校准）');
+    await editor.locator('#article-edit-summary').fill('用户校准后的摘要');
+    const editedContent = `${await editor.locator('#article-edit-content').inputValue()}\n用户校准后的措辞\n`;
+    await editor.locator('#article-edit-content').fill(editedContent);
+    await editor.getByRole('button', { name: /预览$/ }).click();
+    const previewImage = editor.locator('#article-edit-preview').getByRole('img', { name: '工作树配图', exact: true });
+    assert.match(await previewImage.getAttribute('src') || '', /\/tasks\/article-draft-one\//);
+    await previewImage.evaluate(image => (image as HTMLImageElement).decode());
+    await page.locator('#article-save').click();
+    await editor.waitFor({ state: 'hidden' });
+    await currentReader.getByRole('heading', { name: '工作树预览示例（校准）', exact: true }).waitFor({ state: 'visible' });
+    await currentReader.getByText('用户校准后的措辞', { exact: true }).waitFor({ state: 'visible' });
+    const firstFile = path.join(checkouts.get('article-draft-one')!, relative);
+    assert.match(fs.readFileSync(firstFile, 'utf8'), /用户校准后的措辞/);
+    assert.match(fs.readFileSync(firstFile, 'utf8'), /status: published/);
+    assert.equal(fs.readFileSync(path.join(workspaceRoot, relative), 'utf8'), source);
+    assert.equal(fs.readFileSync(path.join(checkouts.get('article-draft-two')!, relative), 'utf8'), source.replace('主目录内容', '工作树第二版内容'));
+
+    await openWorktreeEditorFromList();
+    await editor.locator('#article-edit-content').waitFor({ state: 'visible' });
+    const pendingContent = `${await editor.locator('#article-edit-content').inputValue()}\n尚未保存的用户修改\n`;
+    await editor.locator('#article-edit-content').fill(pendingContent);
+    fs.appendFileSync(firstFile, '\n智能体刚刚补充的内容\n');
+    await page.locator('#article-save').click();
+    await editor.getByText('文章已被其他入口修改，你的输入已保留。', { exact: true }).waitFor({ state: 'visible' });
+    assert.equal(await editor.locator('#article-edit-content').inputValue(), pendingContent);
+    assert.match(fs.readFileSync(firstFile, 'utf8'), /智能体刚刚补充的内容/);
+    assert.doesNotMatch(fs.readFileSync(firstFile, 'utf8'), /尚未保存的用户修改/);
+    await editor.getByRole('button', { name: '查看最新稿件', exact: true }).click();
+    const comparison = page.getByRole('dialog', { name: '对照最新稿件', exact: true });
+    await comparison.getByText(/智能体刚刚补充的内容/).waitFor({ state: 'visible' });
+    await capture(page, 'publication-worktree-edit-conflict.png');
+    await comparison.getByRole('button', { name: '已完成对照，保留我的输入继续编辑', exact: true }).click();
+    const latest = runtime.worktreePublicationDetail(workspaceRoot, 'article-draft-one', 'product', 'worktree-preview');
+    await editor.locator('#article-edit-content').fill(`${latest.content}\n尚未保存的用户修改\n`);
+    await page.locator('#article-save').click();
+    await editor.waitFor({ state: 'hidden' });
+    await currentReader.getByText('尚未保存的用户修改', { exact: true }).waitFor({ state: 'visible' });
+    assert.match(fs.readFileSync(firstFile, 'utf8'), /智能体刚刚补充的内容/);
+    assert.match(fs.readFileSync(firstFile, 'utf8'), /尚未保存的用户修改/);
+    assert.equal(fs.readFileSync(path.join(workspaceRoot, relative), 'utf8'), source);
+    await capture(page, 'publication-worktree-edited.png');
+
+    await currentReader.getByText('原文', { exact: true }).click();
+    const sourceInput = currentReader.locator('#article-source-content');
+    await sourceInput.waitFor({ state: 'visible' });
+    const rawBefore = await sourceInput.inputValue();
+    const rawEdited = rawBefore.replace('尚未保存的用户修改', '原文内直接校准的表述');
+    await sourceInput.fill(rawEdited);
+    await currentReader.getByText('正文', { exact: true }).click();
+    await currentReader.getByText('原文', { exact: true }).click();
+    assert.equal(await sourceInput.inputValue(), rawEdited, '切换阅读与原文保留未保存修改');
+    fs.appendFileSync(firstFile, '\n智能体同步新增的原文内容\n');
+    await currentReader.locator('#article-source-save').click();
+    await currentReader.getByText('原文已被其他入口修改，你的输入已保留。', { exact: true }).waitFor({ state: 'visible' });
+    assert.equal(await sourceInput.inputValue(), rawEdited);
+    await currentReader.getByRole('button', { name: '对照最新原文', exact: true }).click();
+    const rawComparison = page.getByRole('dialog', { name: '对照最新原文', exact: true });
+    await rawComparison.getByText(/智能体同步新增的原文内容/).waitFor({ state: 'visible' });
+    await rawComparison.getByRole('button', { name: '已完成对照，保留输入继续编辑', exact: true }).click();
+    const merged = runtime.worktreePublicationDetail(workspaceRoot, 'article-draft-one', 'product', 'worktree-preview').source.replace('尚未保存的用户修改', '原文内直接校准的表述');
+    await sourceInput.fill(merged);
+    await currentReader.locator('#article-source-save').click();
+    await currentReader.getByText('原文内直接校准的表述', { exact: true }).waitFor({ state: 'visible' });
+    assert.match(fs.readFileSync(firstFile, 'utf8'), /智能体同步新增的原文内容/);
+    assert.equal(fs.readFileSync(path.join(workspaceRoot, relative), 'utf8'), source);
+    await currentReader.getByText('原文', { exact: true }).click();
+    await sourceInput.fill(`${await sourceInput.inputValue()}\n这段修改随后取消\n`);
+    await currentReader.getByRole('button', { name: '取消修改', exact: true }).click();
+    assert.doesNotMatch(await sourceInput.inputValue(), /这段修改随后取消/);
+    assert.doesNotMatch(fs.readFileSync(firstFile, 'utf8'), /这段修改随后取消/);
+    await capture(page, 'publication-worktree-inline-source.png');
+
+    await page.goto(`${otherWorkspaceUrl}/overview`);
+    await page.getByRole('button', { name: '切换工作空间', exact: true }).waitFor({ state: 'visible' });
+    const peerIndex = await page.evaluate(() => Number(history.state?.idx || 0));
+    await page.getByRole('button', { name: '切换工作空间', exact: true }).click();
+    await page.getByRole('menuitem').filter({ hasText: /^browser-smoke(?:-articles)?$/ }).click();
+    await page.waitForURL(`${workspaceUrl}/overview`);
+    await page.locator('[data-area="workspace"]').click();
+    await page.locator('[data-nav="articles"]').click();
+    await page.locator('.publication-directory:visible').getByRole('link', { name: '工作树预览示例（校准）', exact: true }).click();
+    await currentReader.getByText('原文', { exact: true }).click();
+    const beforeLeaving = fs.readFileSync(firstFile, 'utf8');
+    const pendingSource = `${await sourceInput.inputValue()}\n跨空间离开前的原文输入\n`;
+    await sourceInput.fill(pendingSource);
+    const steps = await page.evaluate(() => Number(history.state?.idx || 0)) - peerIndex;
+    assert.ok(steps > 0 && steps <= 6, `跨空间客户端导航索引差：${steps}`);
+    await page.evaluate(count => history.go(-count), steps);
+    const leave = page.getByRole('dialog', { name: '放弃尚未保存的原文修改？', exact: true });
+    await leave.waitFor({ state: 'visible' });
+    await leave.getByRole('button', { name: '继续编辑', exact: true }).click();
+    assert.equal(await sourceInput.inputValue(), pendingSource);
+    assert.equal(fs.readFileSync(firstFile, 'utf8'), beforeLeaving);
+    await page.evaluate(count => history.go(-count), steps);
+    await leave.getByRole('button', { name: '放弃修改', exact: true }).click();
+    await page.waitForURL(`${otherWorkspaceUrl}/overview`);
+    assert.equal(fs.readFileSync(firstFile, 'utf8'), beforeLeaving);
+  });
+}
