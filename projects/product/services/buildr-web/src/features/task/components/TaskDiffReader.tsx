@@ -6,13 +6,23 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ChangedFileList, changedFileKey, type ChangedFileEntry } from './TaskChangedFiles';
 import type { TaskCommit } from './task-commit-model';
 import { formatShortDateTime } from '../../../lib/taskLabels';
-import { diffContentRows, parseUnifiedDiff, pairForSplit } from './diff-text';
+import { diffContentRows, inlineChangePairs, inlineSegments, parseUnifiedDiff, pairForSplit, type InlineSegment } from './diff-text';
 import './task-diff-reader.css';
 
 type DiffMode = 'split' | 'unified';
 
 function fileName(path: string) { return path.split('/').at(-1) || path; }
 function fileDir(path: string) { const index = path.lastIndexOf('/'); return index < 0 ? '' : path.slice(0, index); }
+
+/** Render one diff line; changed segments carry the stronger tint, unchanged text keeps the row tint. */
+function lineText(text: string, segments?: InlineSegment[], marker?: string) {
+  return <>
+    {marker}
+    {segments && segments.length ? segments.map((segment, index) =>
+      segment.changed ? <mark key={index} className="task-diff-inline">{text.slice(segment.start, segment.end)}</mark> : <span key={index}>{text.slice(segment.start, segment.end)}</span>
+    ) : <span>{text}</span>}
+  </>;
+}
 
 export type RailCommit = { key: string; commit: Omit<TaskCommit, 'taskId' | 'taskTitle'> & { taskId?: string | null; taskTitle?: string | null }; files: ChangedFileEntry[] };
 export type RailRepository = {
@@ -141,6 +151,19 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
   const missingFinalNewline = compactFile && parsed?.rows.some(row => row.kind === 'meta' && row.text.startsWith('\\ No newline'));
   const rows = useMemo(() => parsed ? compactFile ? diffContentRows(parsed.rows) : parsed.rows : [], [parsed, compactFile]);
   const pairs = useMemo(() => pairForSplit(rows), [rows]);
+  // Intra-line ranges: unified rows use row-index pairs; split rows use the paired row objects.
+  const unifiedInline = useMemo(() => {
+    const map = new Map<number, { old: InlineSegment[]; new: InlineSegment[] }>();
+    const paired = inlineChangePairs(rows);
+    for (const [index, other] of paired) {
+      const row = rows[index], counterpart = rows[other];
+      if (!row || !counterpart) continue;
+      const segments = row.kind === 'del' ? inlineSegments(row.text, counterpart.text) : inlineSegments(counterpart.text, row.text);
+      map.set(index, segments);
+    }
+    return map;
+  }, [rows]);
+  const splitInline = useMemo(() => pairs.map(pair => pair.left?.kind === 'del' && pair.right?.kind === 'add' ? inlineSegments(pair.left.text, pair.right.text) : null), [pairs]);
   const changes = useMemo(() => rows.flatMap((row, index) => (row.kind === 'add' || row.kind === 'del') && !['add', 'del'].includes(rows[index - 1]?.kind) ? [index] : []), [rows]);
   const [changePosition, setChangePosition] = useState({identity: '', index: 0});
   const selectedChange = Math.min(changePosition.identity === selectionIdentity ? changePosition.index : 0, Math.max(0, changes.length - 1));
@@ -307,15 +330,19 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
         {!commitEntry && current && renderDiff?.(mode)}
         {!commitEntry && current && !renderDiff && previewContent === undefined && !parsed && <p className="task-diff-empty">{current.status === 'deleted' ? '文件已删除，不提供差异预览。' : current.status === 'renamed' ? '重命名文件内容未变化时不提供差异预览。' : '暂无可展示的差异预览。'}</p>}
         {!commitEntry && current && !renderDiff && previewContent === undefined && parsed && mode === 'unified' && <pre className="task-diff-text" aria-label="上下差异">
-          {rows.map((row, index) => <span key={index} className={`task-diff-line line-${row.kind}`}>
-            <i className="task-diff-gutter">{(row.kind === 'del' ? row.oldNo : row.newNo) ?? ''}</i>
-            <em>{(mode === 'unified' && (row.kind === 'add' || row.kind === 'del')) ? (row.kind === 'add' ? '+' : '−') : ''}{row.text}</em>
-          </span>)}
+          {rows.map((row, index) => {
+            const inline = unifiedInline.get(index);
+            const changed = row.kind === 'del' ? inline?.old : row.kind === 'add' ? inline?.new : undefined;
+            return <span key={index} className={`task-diff-line line-${row.kind}`}>
+              <i className="task-diff-gutter">{(row.kind === 'del' ? row.oldNo : row.newNo) ?? ''}</i>
+              <em>{lineText(row.text, changed, (row.kind === 'add' || row.kind === 'del') ? (row.kind === 'add' ? '+' : '−') : '')}</em>
+            </span>;
+          })}
         </pre>}
         {!commitEntry && current && !renderDiff && previewContent === undefined && parsed && mode === 'split' && <div className="task-diff-split" role="region" aria-label="并排差异">
           <div ref={splitLeftRef} className="task-diff-split-side" aria-label="旧版本">
             <div className="task-diff-version-head">旧版本{isAddOnly ? ' · 文件不存在' : ''}</div>
-            {pairs.map((pair, index) => <div key={index} data-diff-row={index} className={`task-diff-row ${pair.left?.kind === 'del' ? 'is-del' : pair.left?.kind === 'ctx' || pair.left?.kind === 'hunk' || pair.left?.kind === 'meta' ? 'is-plain' : 'is-empty'}`}><em>{pair.left ? pair.left.text : ''}</em></div>)}
+            {pairs.map((pair, index) => <div key={index} data-diff-row={index} className={`task-diff-row ${pair.left?.kind === 'del' ? 'is-del' : pair.left?.kind === 'ctx' || pair.left?.kind === 'hunk' || pair.left?.kind === 'meta' ? 'is-plain' : 'is-empty'}`}><em>{pair.left ? lineText(pair.left.text, splitInline[index]?.old) : ''}</em></div>)}
           </div>
           <div ref={splitGutterRef} className="task-diff-split-gutter" aria-label="行号对照">
             <div className="task-diff-version-head">行号</div>
@@ -323,7 +350,7 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
           </div>
           <div ref={splitRightRef} className="task-diff-split-side" aria-label="新版本">
             <div className="task-diff-version-head">新版本</div>
-            {pairs.map((pair, index) => <div key={index} data-diff-row={index} className={`task-diff-row ${pair.right?.kind === 'add' ? 'is-add' : pair.right?.kind === 'ctx' || pair.right?.kind === 'hunk' || pair.right?.kind === 'meta' ? 'is-plain' : pair.right?.kind === 'del' ? 'is-del' : 'is-empty'}`}><em>{pair.right ? pair.right.text : ''}</em></div>)}
+            {pairs.map((pair, index) => <div key={index} data-diff-row={index} className={`task-diff-row ${pair.right?.kind === 'add' ? 'is-add' : pair.right?.kind === 'ctx' || pair.right?.kind === 'hunk' || pair.right?.kind === 'meta' ? 'is-plain' : pair.right?.kind === 'del' ? 'is-del' : 'is-empty'}`}><em>{pair.right ? lineText(pair.right.text, pair.right.kind === 'add' ? splitInline[index]?.new : undefined) : ''}</em></div>)}
           </div>
         </div>}
         {!commitEntry && current && !renderDiff && previewContent === undefined && missingFinalNewline && <p className="task-diff-hint">所比较的内容包含文件末尾没有换行的版本。</p>}
