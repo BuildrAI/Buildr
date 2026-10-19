@@ -312,7 +312,7 @@ test('HTTP contracts, bounded worker dispatch and CLI share all source-control a
     assert.equal(response.status, 200); const checked = CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS[method].$id, response.body); assert.equal(checked.valid, true, JSON.stringify(checked));
     let dispatched = '';
     await http.handle({ request: { method: 'GET' }, root: f.root, suffix: '/code/' + operation, searchParams: new URLSearchParams(input), submitTaskRead: async (name, _id, payload) => { dispatched = name; return f.app[method](f.root, JSON.parse(payload.input)); } });
-    assert.equal(dispatched, 'code-' + operation);
+    assert.equal(dispatched, operation === 'source-control-inventory' ? '' : 'code-' + operation, 'registration-only inventory stays local; Git reads keep the bounded worker path');
     const cli = createCodeCliContributions(f.app).find(contribution => contribution.match({ domain: 'code', action: operation })); assert.ok(cli);
     const cliFlags: Record<string,string> = {repositoryId:'--repository',filePath:'--path',commitHash:'--commit',area:'--area'};
     let printed = ''; const originalWrite=process.stdout.write.bind(process.stdout);const capture = t.mock.method(process.stdout, 'write', (chunk: any,...rest:any[]) => { if(typeof chunk==='string'){printed += chunk; return true;}return (originalWrite as (...args:any[])=>boolean)(chunk,...rest); });

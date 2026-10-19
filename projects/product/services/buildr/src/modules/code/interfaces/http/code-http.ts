@@ -97,7 +97,9 @@ export function createCodeHttpContribution(application:CodeApplication, observat
     const {filePath,page,line,limit,...query}=values;
     const input=(operation==='sourceControlInventory'?values:{...query,path:filePath,showIgnored:values.showIgnored==='true',...(page===undefined?{}:{page:Number(page)}),...(line===undefined?{}:{line:Number(line)}),...(limit===undefined?{}:{limit:Number(limit)})}) as CodeInput;
     const observationTicket=operation==='sourceControl'?observations?.beginRead(root):undefined;
-    const body=await(submitTaskRead?submitTaskRead('code-'+CODE_HTTP_PATHS[operation],'code-files',{input:JSON.stringify(input)}):operation==='repositories'?application.repositories(root,values.taskId):application[operation](root,input));
+    // Registration-only inventory performs no Git reads. Keep it lightweight so
+    // the first two real status reads can start their bounded workers together.
+    const body=await(operation==='sourceControlInventory'?application.sourceControlInventory(root,input):submitTaskRead?submitTaskRead('code-'+CODE_HTTP_PATHS[operation],'code-files',{input:JSON.stringify(input)}):operation==='repositories'?application.repositories(root,values.taskId):application[operation](root,input));
     if(!CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS[operation].$id,body).valid)throw codeFailure('code_response_invalid','代码读取结果不符合契约。',500);
     // Watcher discovery must not delay or invalidate a successful authoritative read.
     if(operation==='sourceControl'&&observations&&observationTicket)void observations.observe(root,body as CodeSourceControlResponse,Boolean(values.repositoryId),observationTicket).catch(()=>{});

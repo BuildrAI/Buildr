@@ -525,7 +525,8 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/workspace-agent-assets-http-contract.test.ts',
     'test/integration/workspace-composition.test.ts',
     'test/integration/workspace-mutation-recovery.test.ts',
-  // This eight-file group includes two bounded 85s CLI scenarios. Its cap must
+    'test/integration/workspace-read-reuse.test.ts',
+  // This group includes two bounded 85s CLI scenarios. Its cap must
   // include the other files sharing two workers, not truncate a valid child.
   ], { schedulingCostMs: 5000, timeoutMs: 300_000, args: ['--test-concurrency=2'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
   integrationSlice('integration-archify', [

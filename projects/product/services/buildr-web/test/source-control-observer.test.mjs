@@ -7,15 +7,56 @@ const deferred = () => { let resolve,reject; const promise=new Promise((a,b)=>{r
 const until = async condition => { const limit=Date.now()+1500; while(!condition()){assert.ok(Date.now()<limit,'异步观察应及时完成'); await new Promise(resolve=>setTimeout(resolve,5));} };
 const repository = (id,revision='first') => ({id,name:id,branch:'main',gitId:'git-'+id,observedRevision:revision,worktreeCount:1,worktreeCoverage:{limit:128,total:1,read:1,truncated:false},diagnostics:[],worktrees:[{worktreeId:id+'-main',isRegistered:true,branch:'main',head:'head',readAt:'2026-10-15T10:00:00.000Z',observedRevision:revision,fileCount:1,changes:[],diagnostics:[],coverage:{fileLimit:1000,truncated:false}}]});
 const response = (...repositories) => ({readAt:'2026-10-15T10:00:00.000Z',repositories,selectedRepositoryIds:repositories.map(item=>item.id),selectedWorktrees:[],scopeReason:'all',diagnostics:[],coverage:{limit:128,truncated:false,nextCursor:null},worktreeCoverage:{limit:128,total:repositories.length,read:repositories.length,truncated:false}});
-function fixture() {
+function fixture(options = {}) {
   const requests=[],watches=[]; let receive,live=0,maximum=0;
-  const observer=createSourceControlObserver({workspaceId:'workspace',debounceMs:5,retryMs:5,fallbackMs:60000,
+  const observer=createSourceControlObserver({workspaceId:'workspace',debounceMs:5,retryMs:5,fallbackMs:60000,...options,
     subscribe:listener=>{receive=listener;return()=>{receive=undefined;};},
     load:(taskId,repositoryId,signal)=>{const pending=deferred(); live++;maximum=Math.max(maximum,live);requests.push({...pending,taskId,repositoryId,signal});return pending.promise.finally(()=>{live--;});},
     watch:(cursor,signal)=>{const pending=deferred();watches.push({...pending,cursor,signal});signal.addEventListener('abort',()=>pending.reject(Error('aborted')),{once:true});return pending.promise;},
   });
   return {observer,requests,watches,maximum:()=>maximum,notice:notice=>receive?.({workspaceId:'workspace',...notice})};
 }
+
+test('initial background scan yields to the page and watch initialization cannot bypass the delay', async t => {
+  t.mock.timers.enable({apis:['setTimeout','Date'],now:1000});
+  const f=fixture({initialDelayMs:750});
+  try {
+    f.observer.start();
+    f.watches[0].resolve({cursor:'epoch:1',repositoryIds:[],refreshAll:true});
+    await Promise.resolve(); await Promise.resolve();
+    t.mock.timers.tick(749);
+    assert.equal(f.requests.length,0);
+    t.mock.timers.tick(1);
+    assert.equal(f.requests.length,1);
+    f.requests[0].resolve(response(repository('a')));
+  } finally {f.observer.dispose();}
+});
+
+test('disposal cancels the deferred scan and observation', t => {
+  t.mock.timers.enable({apis:['setTimeout','Date'],now:1000});
+  const f=fixture({initialDelayMs:60000});
+  f.observer.start();
+  assert.equal(f.requests.length,0);
+  f.observer.dispose();
+  t.mock.timers.tick(60000);
+  assert.equal(f.watches[0].signal.aborted,true);
+  assert.equal(f.requests.length,0);
+});
+
+test('a code view retained before or after shell startup does not wait for background initialization', async t => {
+  t.mock.timers.enable({apis:['setTimeout','Date'],now:1000});
+  for(const before of [true,false]) {
+    const f=fixture({initialDelayMs:750});let release;
+    try {
+      if(before)release=f.observer.retain();
+      f.observer.start();
+      if(!before)release=f.observer.retain();
+      t.mock.timers.tick(5);
+      assert.equal(f.requests.length,1);
+      f.requests[0].resolve(response(repository('a')));
+    } finally {release?.();f.observer.dispose();}
+  }
+});
 async function initialized() {
   const value=fixture();value.observer.start();
   value.watches[0].resolve({cursor:'epoch:1',repositoryIds:[],refreshAll:true});

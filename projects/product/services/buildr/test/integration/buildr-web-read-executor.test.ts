@@ -57,6 +57,19 @@ function fakeWorkerFactory({ delayMs = 20, failFirst = false, metrics }: any): a
 
 const input: any = (taskId: any, signal: any) => ({ targetRoot: '/tmp/buildr-read-executor', taskId, signal });
 
+test('registration-only inventory does not start a read worker; Git status still uses the bounded executor', async t => {
+  const { root } = copyPreparedWorkspace(t, 'inventory-no-worker');
+  const runtime = createRuntime(), application = runtimeProvide(runtime, CODE_APPLICATION);
+  const http = createCodeHttpContribution(application);
+  let submitted = 0;
+  const context = { request: { method: 'GET' }, root, searchParams: new URLSearchParams(), submitTaskRead: async () => { submitted++; throw Error('status worker'); } };
+  const result = await http.handle({ ...context, suffix: '/code/source-control-inventory' });
+  assert.equal(result?.status, 200);
+  assert.equal(submitted, 0);
+  await assert.rejects(http.handle({ ...context, suffix: '/code/source-control' }), /status worker/);
+  assert.equal(submitted, 1);
+});
+
 test('固定容量与 FIFO 队列限制并发且不重复派发', async () => {
   const metrics: any = { calls: 0, active: 0, maxActive: 0, started: [] };
   const executor: any = createBoundedBuildrWebReadExecutor({ workerCount: 2, queueLimit: 1, workerFactory: fakeWorkerFactory({ metrics }) });

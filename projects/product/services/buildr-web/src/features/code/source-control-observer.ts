@@ -9,7 +9,7 @@ type Options = {
   load(taskId: string | undefined, repositoryId: string | undefined, signal: AbortSignal, onProgress?: SourceControlProgress): Promise<CodeSourceControlResponse>;
   watch(cursor: string | undefined, signal: AbortSignal): Promise<CodeSourceControlWatchResponse>;
   subscribe?(listener: (notice: SourceControlChangeNotice) => void): () => void;
-  debounceMs?: number; fallbackMs?: number; retryMs?: number; concurrency?: number;
+  debounceMs?: number; fallbackMs?: number; retryMs?: number; concurrency?: number; initialDelayMs?: number;
 };
 type Job = {scope: string; repositoryId?: string; catalog: Catalog};
 const jobKey = (scope: string, repositoryId?: string) => JSON.stringify([scope, repositoryId || '']);
@@ -22,6 +22,7 @@ export function createSourceControlObserver(options: Options) {
   const debounceMs = options.debounceMs ?? 180, fallbackMs = options.fallbackMs ?? 120000;
   const concurrency = Math.max(1, options.concurrency ?? 2);
   let started = false, visible = true, disposed = false, cursor: string | undefined;
+  let initialNotBefore = 0;
   let scheduled: ReturnType<typeof setTimeout> | undefined, fallback: ReturnType<typeof setTimeout> | undefined;
   let watchController: AbortController | undefined, unsubscribe: (() => void) | undefined;
   let state = {diagnostics: [] as string[]};
@@ -42,6 +43,12 @@ export function createSourceControlObserver(options: Options) {
   const stopSharing = defaultCatalog.subscribe(() => {
     for (const [scope, entry] of catalogs) if (scope) entry.catalog.adopt(defaultCatalog.snapshot());
   });
+  function scheduleDrain() {
+    if (started && visible && !scheduled && !disposed) {
+      const delay = defaultCatalog.snapshot().data ? debounceMs : Math.max(debounceMs, initialNotBefore - Date.now());
+      scheduled = setTimeout(drain, delay);
+    }
+  }
   function drain() {
     scheduled = undefined;
     if (!started || !visible || disposed) return;
@@ -67,7 +74,7 @@ export function createSourceControlObserver(options: Options) {
     if (!target) for (const [key, job] of queued) { if (job.scope === scope) queued.delete(key); }
     else if (queued.has(jobKey(scope)) && !running.has(jobKey(scope))) return;
     queued.set(jobKey(scope, target), {scope, repositoryId: target, catalog});
-    if (started && visible && !scheduled) scheduled = setTimeout(drain, debounceMs);
+    scheduleDrain();
   }
   function check(taskId?: string, repositoryIds?: string[]) {
     const scope = taskId || '';
@@ -139,6 +146,12 @@ export function createSourceControlObserver(options: Options) {
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     retain(taskId?: string) {
       const scope = taskId || ''; getCatalog(scope); catalogs.get(scope)!.users++;
+      // A code view needs observations now; navigation badges can wait for the
+      // initial page to finish. Retaining before start is covered by users below.
+      if (started && !defaultCatalog.snapshot().data && initialNotBefore > Date.now()) {
+        initialNotBefore = 0; clearTimeout(scheduled); scheduled = undefined;
+        scheduleDrain();
+      }
       if (!catalogs.get(scope)!.catalog.snapshot().data && !queued.has(jobKey(scope)) && !running.has(jobKey(scope))) enqueue(scope);
       return () => {
         const entry = catalogs.get(scope); if (!entry) return;
@@ -157,6 +170,7 @@ export function createSourceControlObserver(options: Options) {
     start(initialVisible = true) {
       if (started || disposed) return;
       started = true; visible = initialVisible;
+      initialNotBefore = Date.now() + ([...catalogs.values()].some(entry => entry.users > 0) ? 0 : Math.max(0, options.initialDelayMs ?? 0));
       unsubscribe = (options.subscribe || subscribeSourceControlChanges)(notice => {
         if (notice.workspaceId !== options.workspaceId) return;
         const ids = notice.repositoryIds?.length ? notice.repositoryIds : notice.repositoryId ? [notice.repositoryId] : undefined;
