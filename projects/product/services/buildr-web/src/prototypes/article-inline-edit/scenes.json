@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "pages": [
+    {
+      "id": "article-reader",
+      "title": "文章页 · 阅读",
+      "notes": [
+        {
+          "id": "mode-switch",
+          "title": "「编辑文章」不再开抽屉",
+          "text": "正文上方的分段控件收敛为「正文 | 编辑」两段；切到编辑时当前页面就地换成 Markdown 输入，目录、面包屑和右侧记录保持原位。",
+          "position": "modebar"
+        },
+        {
+          "id": "meta-strip",
+          "title": "项目、状态、更新日期移进页面头",
+          "text": "抽屉里那个狭窄的右栏信息被压扁成一行元信息条：所属项目、稿件状态、更新时间并列展示，不再占用固定侧边栏。",
+          "position": "meta-strip"
+        },
+        {
+          "id": "tools-column",
+          "title": "资源与智能体工具成为右侧常驻栏",
+          "text": "抽屉里藏在右侧的「图片与附件」「让智能体帮一把」移入文章的阅读页右侧，阅读时也能看到资源列表；编辑时直接展示上传入口。",
+          "position": "tools-aside"
+        },
+        {
+          "id": "overflow-menu",
+          "title": "低频操作收进「更多」菜单",
+          "text": "「复制原文 / 导出 Markdown / 发布记录 / 删除」统一收在分段条右侧的「⋯」里；不再有单独的「原文」视图——要改内容走「编辑」，要拿到整份文件用「复制原文」。",
+          "position": "overflow-menu"
+        }
+      ],
+      "states": []
+    },
+    {
+      "id": "article-editor",
+      "title": "文章页 · 编辑",
+      "notes": [
+        {
+          "id": "inline-canvas",
+          "title": "正文在主区直接编辑",
+          "text": "正文区域换成 Markdown 编辑框，高度随内容走；标题、摘要也在同一页面内，不再有抽屉遮罩。页面顶部模式条上随时可切回正文。",
+          "position": "editor-body"
+        },
+        {
+          "id": "edit-toolbar",
+          "title": "保存与退出放在页面头",
+          "text": "编辑态下右侧出现「保存修改 / 取消」；再切回「正文」只是改变当前视图，不经过遮罩层和阻断确认，离开页脚提示是否有未保存修改。",
+          "position": "editor-actions"
+        },
+        {
+          "id": "aside-sticky",
+          "title": "右栏在长文写作时始终可见",
+          "text": "沿用已修好的 sticky 行为：正文滚动时右侧的项目信息、资源、发布记录、写作方法不离开视口。",
+          "position": "tools-aside"
+        }
+      ],
+      "states": [
+        {
+          "id": "dirty",
+          "title": "未保存修改",
+          "notes": [
+            {
+              "id": "dirty-badge",
+              "title": "有改动时提示，不再弹窗确认",
+              "text": "正文框下方出现「有尚未保存的修改」状态行；切换分段或离开页面由 toast/提示条表达，而不是用一个模态挡住页面。",
+              "position": "dirty-hint"
+            }
+          ]
+        },
+        {
+          "id": "preview",
+          "title": "预览正文",
+          "notes": [
+            {
+              "id": "preview-area",
+              "title": "编辑与预览共用同一位置",
+              "text": "分段切到「预览」把 Markdown 编辑框替换为渲染结果，保持原页面布局。",
+              "position": "editor-preview"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

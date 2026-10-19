@@ -38,7 +38,7 @@ export function resourcePreview(workspaceId: string, path: string): ResourcePrev
       const sourceTaskId = search.get('task') || undefined;
       if (sourceTaskId && !/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/.test(sourceTaskId)) return null;
       return { kind: 'article', id: `${projectCode}:${publicationId}${sourceTaskId ? `:task:${sourceTaskId}` : ''}`, projectCode, publicationId, ...(sourceTaskId ? { sourceTaskId } : {}), title: '文章详情', path,
-        ...(search.get('view') === 'source' ? { view: 'source' as const } : {}), ...(action === 'edit' && !sourceTaskId ? { edit: true } : {}) };
+        ...(search.get('view') === 'source' ? { view: 'source' as const } : {}), ...(action === 'edit' ? { edit: true } : {}) };
     }
     if (area === 'knowledge' && first === 'service' && parts.length === 3) {
       return { kind: 'service', id: second, title: '服务详情', path, knowledge: {

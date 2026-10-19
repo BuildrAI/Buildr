@@ -11,7 +11,7 @@ export function ArticleSourceEditor({ detail, projectCode, publicationId, source
   const key = JSON.stringify([projectCode, publicationId, sourceTaskId || null]);
   const current = editor.draft?.key === key ? editor.draft : null;
   const source = current?.source ?? detail.source;
-  const blocked = editor.blocked || Boolean(editor.draft && !current);
+  const blocked = Boolean(editor.draft && !current);
   const busy = Boolean(current?.busy), dirty = Boolean(current && source !== current.base.source);
   const [error, setError] = useState(''), [conflict, setConflict] = useState(false), [latest, setLatest] = useState<PublicationDetail | null>(null), [comparing, setComparing] = useState(false), [reading, setReading] = useState(false);
   const saving = useRef(false);
