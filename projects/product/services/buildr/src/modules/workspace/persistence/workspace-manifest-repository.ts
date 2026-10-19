@@ -108,6 +108,12 @@ export function workspaceManifestRevision(content: any) {
 }
 
 export function createWorkspaceManifestRepository(runtime: WorkspaceManifestRepositoryRuntime) {
+  // Reuse parsing only after reading current bytes. Never cache filesystem identity
+  // or share mutable documents with callers (migration code may edit skills).
+  const parsed = new Map<string, {
+    metadataContent: string; skillsContent: string | null;
+    metadata: ReturnType<typeof parseWorkspaceManifest>; skills: any; revision: string;
+  }>();
   function workspaceMetadataPath(targetRoot: any) {
     return path.join(path.resolve(targetRoot), '.buildr', 'workspace.yml');
   }
@@ -137,11 +143,22 @@ export function createWorkspaceManifestRepository(runtime: WorkspaceManifestRepo
     const skillsPath = workspaceSkillsManifestPath(root);
     const decode = (relative: string) => new TextDecoder('utf-8', { fatal: true }).decode(readVerifiedReadonlyBytes(root, relative, 512 * 1024));
     const metadataContent = options.requireRootProof ? decode('.buildr/workspace.yml') : fs.readFileSync(metadataPath, 'utf8');
-    const metadata = parseWorkspaceManifest(metadataContent);
+    let current = parsed.get(root);
+    const currentMetadata = current?.metadataContent === metadataContent ? current.metadata : parseWorkspaceManifest(metadataContent);
     const skillsContent = runtime.existsFile(skillsPath) ? (options.requireRootProof ? decode('skills/manifest.yml') : fs.readFileSync(skillsPath, 'utf8')) : null;
-    const skills = skillsContent === null
-      ? { schemaVersion: 'buildr.skills/v3', workspaceId: null, skills: [] }
-      : runtime.parseYamlDocument(skillsContent, 'skills/manifest.yml');
+    if (!current || current.metadataContent !== metadataContent || current.skillsContent !== skillsContent) {
+      const skills = skillsContent === null
+        ? { schemaVersion: 'buildr.skills/v3', workspaceId: null, skills: [] }
+        : runtime.parseYamlDocument(skillsContent, 'skills/manifest.yml');
+      current = { metadataContent, skillsContent, metadata: currentMetadata, skills: { ...skills, workspaceId: skills.workspaceId ?? null }, revision: workspaceManifestRevision(metadataContent) };
+      parsed.delete(root);
+      // Oversized inputs still read normally, without retaining unbounded documents.
+      if (metadataContent.length + (skillsContent?.length || 0) <= 512 * 1024) {
+        parsed.set(root, current);
+        if (parsed.size > 32) parsed.delete(parsed.keys().next().value!);
+      }
+    }
+    const { metadata, skills } = structuredClone({ metadata: current.metadata, skills: current.skills });
     return {
       root,
       metadataPath,
@@ -149,8 +166,8 @@ export function createWorkspaceManifestRepository(runtime: WorkspaceManifestRepo
       metadataContent,
       metadata,
       skillsContent,
-      skills: { ...skills, workspaceId: skills.workspaceId ?? null },
-      revision: workspaceManifestRevision(metadataContent),
+      skills,
+      revision: current.revision,
     };
   }
 

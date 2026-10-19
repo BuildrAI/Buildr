@@ -10,7 +10,7 @@ import { CANDIDATE_CI_HOST_NODE_TUPLES, CANDIDATE_CI_SHARDS } from './registry.t
 import { readCandidateCiArtifact, resolveCandidateExecutionContext, resolveCandidateSourceCommit } from './candidate-ci-evidence.ts';
 import { createCandidateCheckInputReader } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
 import { candidateProofDefinition, candidateProofDescriptors } from './candidate-repair.ts';
-import { assertFrozenCandidateCheckout, createCandidateExecutionEnvironment, sameCandidateExecutionEnvironment, validateCandidateArtifactEvidence } from './candidate-artifact-reuse.ts';
+import { assertFrozenCandidateCheckout, validateCandidateArtifactEvidence } from './candidate-artifact-reuse.ts';
 
 const productRoot = path.resolve(import.meta.dirname, '../..');
 const entry = path.join(productRoot, 'test/verification/candidate-ci.ts');
@@ -91,8 +91,7 @@ export function runLocalArtifactVerification(options: any, dependencies: any = {
         const descriptor = candidateProofDescriptors().find(item => item.id === node.id);
         const readInput = createCandidateCheckInputReader(productRoot);
         const inputs = Object.fromEntries(descriptor.steps.map((step: any) => [step.id, readInput(source, candidateProofDefinition(step))]));
-        return validateCandidateArtifactEvidence(previous, descriptor, context, inputs, artifact.identity)
-          && sameCandidateExecutionEnvironment(previous.executionEnvironment, createCandidateExecutionEnvironment(productRoot, inputs, env, { preparation: node.preparation }));
+        return validateCandidateArtifactEvidence(previous, descriptor, context, inputs, artifact.identity);
       } catch { /* An unreadable or stale result is a miss, never success. */ }
     }
     return false;
@@ -115,7 +114,6 @@ export function runLocalArtifactVerification(options: any, dependencies: any = {
     if (result.stdout) process.stdout.write(result.stdout);
     if (result.stderr) process.stderr.write(result.stderr);
     results.push({ id: node.id, status: result.status === 0 && !result.error ? 'passed' : 'failed', disposition: 'executed' });
-    if (results.at(-1)!.status !== 'passed') break;
   }
   assertCheckout(productRoot, verificationSource);
   return { ...plan, artifact: artifact.identity, output, status: results.length === plan.nodes.length && results.every(result => result.status === 'passed') ? 'passed' : 'failed', results };

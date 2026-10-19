@@ -57,6 +57,8 @@
 
 ### 通用接入与执行
 
+连接页面的后台目录请求由 [在途共享读取（directory-reads.ts）](../../services/buildr/src/modules/connection-skills/application/directory-reads.ts) 合并到已有有界读取池；[后台入口（read-worker.ts）](../../services/buildr/src/web/http/read-worker.ts) 只加载目录源读取，其他完整应用在 [按需应用入口（read-worker-applications.ts）](../../services/buildr/src/web/http/read-worker-applications.ts) 中加载。实例与认证的当前投影继续由连接应用负责。
+
 接入方法使用普通技能（Skill）源。`agent-assets` 的公开端口 `AGENT_ASSETS_SOURCE_READ` 提供清单及有界、安全的文件读取；连接目录（Connection Catalog）读取当前声明，不启动程序、不探测版本、不复制技能正文。`connectionDefinitions` 透传已有登记、资源交付及投射链，来源方法与程序安装分别观察。实例以技能源身份、定义编号、来源及配置版本绑定，类别（Category）不推导业务动作。共享文件和本机认证的边界以当前实例规范为准。
 
 连接技能源统一登记 `path: connections/<skill-id>`，完整目录为 `skills/connections/<skill-id>/`。新增本地源与受管资源使用同一规范；非标准位置登记给出明确诊断。它是已有技能（Skill）树的专用分组，不增加加载器。
@@ -124,6 +126,8 @@ OpenSpec 只通过 `AGENT_ASSETS_OPENSPEC_SUPPORT` 获取所需资产能力，�
 ## 前端技术层
 
 前端不复制后端所有层次。[`features/`](../../services/buildr-web/src/features/) 内的业务客户端、请求状态、组件和页面按需要建立；共享传输在 [`api/client.ts`](../../services/buildr-web/src/api/client.ts)，协议类型来自生成目录。应用壳与功能各自持有状态，不互相复制。
+
+后台代码观察的[跨页面共享等待](../../services/buildr-web/src/features/code/api/shared-source-control-watch.ts)在浏览器支持相关能力时，使用浏览器跨页面互斥锁（Web Locks）和同源广播通道（BroadcastChannel），让同一工作空间（Workspace）只占用一个等待连接；仅相同观察游标（Cursor）共享通知，关闭持有页面后由其他页面接续。通用请求在发出前禁用浏览器缓存（Browser Cache），避免当前读取在缓存入口排队。
 
 - **共同展示与入口隔离**：[`AppShellView.tsx`](../../services/buildr-web/src/app/AppShellView.tsx) 和 [`AppNavigationItem.tsx`](../../services/buildr-web/src/app/AppNavigationItem.tsx) 提供展示；正式入口接入真实数据，已授权原型可复用展示并注入模拟数据，不能调用真实写入。
 - **连续阅读与当前事实**：已访问页面保留筛选、滚动和局部输入；[项目资料阅读钩子（Hook）](../../services/buildr-web/src/lib/useMarkdownDocumentViewer.ts)只接受当前请求世代，重置、切换项目和卸载使先前读取失效，历史从实际初始文档开始。本地存储（localStorage）只保存偏好，不可用时不应阻断工作；保留页面不等于业务数据最新，保存仍需版本检查。

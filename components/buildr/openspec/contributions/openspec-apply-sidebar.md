@@ -10,7 +10,7 @@
 
 若 artifacts 表明会产生用户可见界面变化，只在用户明确要求后使用界面原型（UI Prototype）。已有原型且未被明确忽略时，正式前端编辑前应读取它；原型不是审查、实现、验证、收敛或收尾门禁。
 
-进入实现前，确认 apply-required artifacts 已完成，并核对已有 `openspec validate <change> --strict` 和 `buildr openspec convergence preflight` 结果。材料与检查规则未变时复用严格验证；冲突预检还需核对相关进行中变更及规范现场。结果缺失、相关输入变化或无法确认适用性时补跑对应检查，不因阶段切换或每次编辑重复执行。Agent 根据当前诊断处理依赖、修订 artifacts 或请求必要的用户决定；Application不另存规划快照，也不把 preflight 变成统一许可层。方案审查（Planning Review）、实现审查（Implementation Review）与任务验证（Task Verification）分别按任务目标、真实方案、范围、风险和证明需要判断，不机械继承 `change-flow`。所需方案审查尚未完成时补做或说明实际缺口；缺少记录不自动形成门禁，也不能推断不适用或已通过。
+进入实现前，确认 apply-required artifacts 已完成，并核对已有 `openspec validate <change> --strict` 和 `buildr openspec convergence preflight` 结果。材料与检查规则未变时复用严格验证；冲突预检还需核对相关进行中变更及规范现场。结果缺失、相关输入变化或无法确认适用性时补跑对应检查，不因阶段切换或每次编辑重复执行。Agent 根据当前诊断处理依赖、修订 artifacts 或请求必要的用户决定；Application不另存规划快照，也不把 preflight 变成统一许可层。方案审查（Planning Review）、实现审查（Implementation Review）与任务验证（Task Verification）分别按任务目标、真实方案、范围、风险和证明需要判断，不机械继承 `change-flow`。所需方案审查尚未完成时补做或说明实际缺口；不适用或需要的结论必须通过工作摘要（Work Context）`checks` 显式留痕，不只写在对话中；缺少记录不自动形成门禁，也不能推断不适用或已通过。
 
 写入前执行 `task-triage` 的默认隔离策略，使用已确认的实际工作位置。Git 文件默认复用当前任务工作树（Worktree）；只有用户明确要求在主开发分支修改时使用该位置。已确认的非 Git 资料在已授权实际位置维护，不要求工作树或初始化仓库；身份未明只停止依赖该身份的写入。核对相关项目（Project）和服务（Service）登记、真实资料路径、身份、版本与授权范围；仅对 Git 对象核对检出位置（Checkout）、引用（Ref）与适用工作树证据（Worktree Evidence）；不得从cwd、branch、路径相似、旧Receipt或同一HEAD猜ownership。实现期间只编辑Change artifacts与实现内容，不预写canonical specs。
 

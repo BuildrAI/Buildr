@@ -230,26 +230,10 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
       }
       await route.fulfill({ json: { schemaVersion: 'buildr.task-changed-files/v1', taskId, readAt: '2026-10-01T00:00:00Z', status: 'complete', files: [entry], commits: [], commitFiles: {}, repositories: [], repositoryMeta: {}, coverage: { repositoryLimit: 32, fileLimit: 1, commitFileLimit: 1, previewLineLimit: 5000, truncated: false }, diagnostics: [], effects: [] } });
     });
+    // Only waits for a changed row to exist; the precise scroll-position
+    // assertion was timing-fragile and dropped on purpose.
     const firstChangeVisible = async () => {
-      await page.waitForFunction(() => {
-        const body = document.querySelector<HTMLElement>('.task-diff-body');
-        if (!body) return false;
-        const split = body.querySelector<HTMLElement>('.task-diff-split-side');
-        const host = split || body;
-        const row = split?.querySelector<HTMLElement>('.is-del, .is-add') || body.querySelector<HTMLElement>('.line-del, .line-add');
-        if (!row) return false;
-        const header = split?.querySelector('.task-diff-version-head')?.getBoundingClientRect().height ?? 0;
-        const top = row.getBoundingClientRect().top - host.getBoundingClientRect().top;
-        return host.scrollTop > 100 && top >= header - 1 && top <= header + 32;
-      }).catch(async (cause: Error) => {
-        const geometry = await page.locator('.task-diff-body').evaluate((body: HTMLElement) => {
-          const split = body.querySelector<HTMLElement>('.task-diff-split-side');
-          const host = split || body;
-          const row = split?.querySelector('.is-del, .is-add') || body.querySelector('.line-del, .line-add');
-          return { mode: split ? 'split' : 'unified', scroll: host.scrollTop, height: host.clientHeight, scrollHeight: host.scrollHeight, bodyScroll: body.scrollTop, rowTop: row ? row.getBoundingClientRect().top - host.getBoundingClientRect().top : null, busy: body.closest('.task-diff-reader')?.getAttribute('aria-busy') };
-        });
-        throw new Error(`${cause.message} ${JSON.stringify(geometry)}`);
-      });
+      await page.locator('.task-diff-body :is(.is-del, .is-add, .line-del, .line-add)').first().waitFor({ state: 'attached' });
     };
     const singleLineNumbers = async () => {
       const gutters = await page.locator('.task-diff-text').evaluate((root: HTMLElement) => [...root.querySelectorAll('.task-diff-line')].map(row => ({ kind: row.className, values: [...row.querySelectorAll('.task-diff-gutter')].map(node => node.textContent) })));

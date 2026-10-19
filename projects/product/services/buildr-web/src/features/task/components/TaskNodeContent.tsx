@@ -2,14 +2,16 @@ import { prototypeEntries, prototypeSourceLabel, type UiPrototypeData } from './
 import type { ReactNode } from 'react';
 import { Alert, Menu, Spin, type MenuProps } from 'antd';
 import type { TaskRecord } from '../../../../build/generated/task-dto';
+import type { TaskWorkContext } from '../../../../build/generated/workbench-dto';
 import type { ReviewsResponse, VerificationResponse } from '../../../../build/generated/task-professional-http-dto';
 import type { TaskChangeState } from '../hooks/useTaskArtifacts';
 import { reviewRecords, taskDocumentLabel, taskDocumentTarget, type TaskDocumentItem, type TaskNodeStage, type TaskReadTarget } from './taskWorkContent';
 import { hasDeliveryFiles } from './task-delivery-files';
 
 type ContentOption = { key: string; label: ReactNode; target: TaskReadTarget; group?: string; path?: string };
-export function TaskNodeContent({ selected, record, documents, changes, changesLoading = false, reviews, verification, reviewError, verificationError, reviewLoading, verificationLoading, prototypeData, prototypeError, choices, onChoose, renderContent, hasRetrospective, hasCoordination, materialsLoading, materialsError, materialDiagnostics = [] }: {
+export function TaskNodeContent({ selected, record, documents, changes, changesLoading = false, reviews, verification, reviewError, verificationError, reviewLoading, verificationLoading, prototypeData, prototypeError, choices, onChoose, renderContent, hasRetrospective, hasCoordination, materialsLoading, materialsError, materialDiagnostics = [], context = null }: {
   selected: TaskNodeStage; record: TaskRecord; documents: TaskDocumentItem[]; changes: TaskChangeState[]; changesLoading?: boolean;
+  context?: TaskWorkContext | null;
   reviews: ReviewsResponse | null; verification: VerificationResponse | null; reviewError: string | null; verificationError: string | null; reviewLoading: boolean; verificationLoading: boolean;
   prototypeData: UiPrototypeData | null; prototypeError: string | null; choices: Record<string, string>; onChoose(key: string, value: string): void;
   hasRetrospective: boolean; hasCoordination: boolean; renderContent(target: TaskReadTarget): ReactNode;
@@ -27,15 +29,18 @@ export function TaskNodeContent({ selected, record, documents, changes, changesL
   if (selected === 'design') prototypeEntries(prototypeData).forEach(entry => options.push({key:`prototype:${entry.key}`,group:'界面原型',label:<span className="task-directory-label">{entry.scene.title}{(prototypeData?.prototypes.length || 0) > 1 && <small>{prototypeSourceLabel(entry.file)}</small>}</span>,target:{kind:'prototype',title:entry.scene.title,prototypeKey:entry.key}}));
   if (selected === 'design' || selected === 'implementation') {
     const reviewType = selected === 'design' ? 'planning' : 'completion';
+    const checkKey = selected === 'design' ? 'planning-review' : 'implementation-review';
     const title = selected === 'design' ? '方案审查' : '实现审查';
+    const applicability = (check: string) => context?.checks?.find(item => item.check === check);
+    const absentLabel = (check: string) => { const conclusion = applicability(check); return conclusion?.status === 'not-applicable' ? '不适用' : '未执行'; };
     const records = reviewRecords(reviews?.slots[reviewType]);
-    if (!records.length) options.push({key:'review',group:title,label:'暂无记录',target:{kind:'review',title,reviewType,digest:''}});
+    if (!records.length) options.push({key:'review',group:title,label:absentLabel(checkKey),target:{kind:'review',title,reviewType,digest:''}});
     [...records].reverse().forEach((entry,index) => options.push({
       key:index === 0 ? 'review' : `review:${entry.resultDigest}`, group:title,
       label:<span className="task-review-nav-label"><span>第 {records.length-index} 次<span className={entry.result.conclusion.outcome === 'accepted' ? 'task-review-outcome accepted' : 'task-review-outcome'}>{entry.result.conclusion.outcome === 'accepted' ? '通过' : '需修改'}</span></span><small>{new Date(entry.result.completedAt).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false})}{index === 0 ? ' · 最新' : ''}</small></span>,
       target:{kind:'review',title,reviewType,digest:entry.resultDigest},
     }));
-    if (selected === 'implementation') options.push({key:'verification',label:'开发验证',target:{kind:'verification',title:'开发验证'}});
+    if (selected === 'implementation') options.push({key:'verification',label:`开发验证 · ${verification?.slot.report ? '已有结果' : absentLabel('verification')}`,target:{kind:'verification',title:'开发验证'}});
   }
   if (selected === 'closeout') {
     // 常驻「用户确认」目录项已移除：验收入口由后续真实设计决定，当前收尾只展示交付结果与适用内容。

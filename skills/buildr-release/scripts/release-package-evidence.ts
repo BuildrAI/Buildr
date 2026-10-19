@@ -125,10 +125,13 @@ export function validatePackageOwnerPublication(context: any, name: string, publ
   const candidate = context.packages[name];
   const artifact = parseCompatibilityArtifact(publication?.registryArtifact);
   const run = publication?.run;
+  const pluginReadback = name === 'dsh-plugin' && run?.conclusion === 'failure'
+    && publication.ownerEvidence?.attempted === true && publication.ownerEvidence.status === 'blocked'
+    && publication.ownerEvidence.action === 'readback-required' && publication.ownerEvidence.code === 'plugin-publication-attempt-unconfirmed';
   const recoveredOwner = name === 'buildr' ? validateReleaseTransactionEvidence(publication?.ownerEvidence) : null;
   const executionCommit = recoveredOwner ? releaseExecutionCommit(recoveredOwner.context) : packageExecutionCommit(context, name);
   if (artifact.origin !== 'registry' || !sameArtifactIdentity(candidate.artifact, artifact)) fail('Selected package publication has not been confirmed from the same registry bytes.');
-  if (run?.repository?.full_name !== repository || run.event !== 'workflow_dispatch' || run.status !== 'completed' || run.conclusion !== 'success'
+  if (run?.repository?.full_name !== repository || run.event !== 'workflow_dispatch' || run.status !== 'completed' || (run.conclusion !== 'success' && !pluginReadback)
       || run.head_sha !== executionCommit || run.head_branch !== 'main'
       || !Number.isSafeInteger(run.id) || run.id < 1 || !Number.isSafeInteger(run.run_attempt) || run.run_attempt < 1) fail('Selected package publication run is unknown or mismatched.');
   let ownerEvidence: any;
@@ -145,8 +148,8 @@ export function validatePackageOwnerPublication(context: any, name: string, publ
   } else {
     ownerEvidence = publication.ownerEvidence;
     if (run.path?.split('@')[0] !== '.github/workflows/publish-dsh-plugin.yml' || run.run_attempt !== 1
-        || ownerEvidence?.schemaVersion !== 'buildr.dsh-plugin-publication/v1' || ownerEvidence.status !== 'passed'
-        || ownerEvidence.registry !== 'present' || ownerEvidence.publishedObserved !== true
+        || ownerEvidence?.schemaVersion !== 'buildr.dsh-plugin-publication/v1'
+        || (!pluginReadback && (ownerEvidence.status !== 'passed' || ownerEvidence.registry !== 'present' || ownerEvidence.publishedObserved !== true))
         || ownerEvidence.packageName !== artifact.packageName || ownerEvidence.version !== artifact.version
         || ownerEvidence.integrity !== artifact.integrity || ownerEvidence.sha256 !== artifact.artifactSha256
         || ownerEvidence.sourceCommit !== candidate.artifact.sourceCommit || ownerEvidence.sourceTree !== candidate.candidate.sourceTree
@@ -154,7 +157,8 @@ export function validatePackageOwnerPublication(context: any, name: string, publ
         || ownerEvidence.request.runAttempt !== 1
         || !Number.isSafeInteger(ownerEvidence.request.runId) || ownerEvidence.request.runId < 1
         || (publication.recoveryRunId !== undefined && (!Number.isSafeInteger(publication.recoveryRunId) || publication.recoveryRunId < 1))
-        || (ownerEvidence.request.runId !== run.id && ownerEvidence.request.runId !== publication.recoveryRunId)) fail('Plugin publication journal is incomplete or belongs to different bytes.');
+        || (ownerEvidence.request.runId !== run.id && ownerEvidence.request.runId !== publication.recoveryRunId)
+        || (pluginReadback && ownerEvidence.request.runId !== run.id)) fail('Plugin publication journal is incomplete or belongs to different bytes.');
   }
   return { registryArtifact: artifact, run: { id: run.id, repository: { full_name: run.repository.full_name }, path: run.path, event: run.event, head_branch: run.head_branch, head_sha: run.head_sha, status: run.status, conclusion: run.conclusion, run_attempt: run.run_attempt }, ownerEvidence, ...(publication.recoveryRunId ? { recoveryRunId: publication.recoveryRunId } : {}) };
 }

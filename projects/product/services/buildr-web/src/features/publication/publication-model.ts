@@ -2,17 +2,18 @@ import type { Publication, PublicationAsset, PublicationDraft } from './api/publ
 
 export const publicationStatus: Record<string, string> = { draft: '草稿', planned: '待发布', published: '已发布' };
 export const publicationPlatform: Record<string, string> = { mowen: '墨问', wechat: '微信公众号', 'buildr-web': 'Buildr Web', 'local-app': 'Buildr Web' };
-export const articleResourceKey = (article: Pick<Publication, 'id' | 'projectCode'>) => article.projectCode === 'product' ? `article:${article.id}` : `article:${article.projectCode}:${article.id}`;
-export const articlePath = (article: Pick<Publication, 'id' | 'projectCode'>) => `/articles/${encodeURIComponent(article.projectCode)}/${encodeURIComponent(article.id)}`;
+type ArticleIdentity = Pick<Publication, 'id' | 'projectCode' | 'sourceTask'>;
+export const articleResourceKey = (article: ArticleIdentity) => article.sourceTask ? `article:task:${article.sourceTask.id}:${article.projectCode}:${article.id}` : article.projectCode === 'product' ? `article:${article.id}` : `article:${article.projectCode}:${article.id}`;
+export const articlePath = (article: ArticleIdentity) => `/articles/${encodeURIComponent(article.projectCode)}/${encodeURIComponent(article.id)}${article.sourceTask ? `?task=${encodeURIComponent(article.sourceTask.id)}` : ''}`;
 export function publicationAssetPath(value: string): string | null {
   let path: string;
   try { path = decodeURIComponent(value); } catch { return null; }
   if (!path.startsWith('assets/') || /[\\\u0000-\u001f?#]/.test(path) || path.split('/').some(part => !part || part === '.' || part === '..')) return null;
   return path;
 }
-export function publicationAssetUrl(workspaceId: string, projectCode: string, id: string, value: string): string | null {
+export function publicationAssetUrl(workspaceId: string, projectCode: string, id: string, value: string, sourceTaskId?: string): string | null {
   const path = publicationAssetPath(value);
-  return path ? `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectCode)}/publications/${encodeURIComponent(id)}/assets/${encodeURIComponent(path)}` : null;
+  return path ? `/api/v1/workspaces/${encodeURIComponent(workspaceId)}${sourceTaskId ? `/tasks/${encodeURIComponent(sourceTaskId)}` : ''}/projects/${encodeURIComponent(projectCode)}/publications/${encodeURIComponent(id)}/assets/${encodeURIComponent(path)}` : null;
 }
 export function referencedAssets(content: string): string[] {
   return [...new Set([...content.matchAll(/!?\[[^\]]*\]\(([^)]+)\)/g)].map(match => publicationAssetPath(match[1])).filter((path): path is string => Boolean(path)))];

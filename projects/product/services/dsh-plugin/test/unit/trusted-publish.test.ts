@@ -70,6 +70,21 @@ function dependencies(overrides: Partial<PublishDependencies> = {}): PublishDepe
 }
 const options = (f: ReturnType<typeof fixture>) => ({ manifestPath: f.manifestPath, verificationPath: f.verificationPath, version, sourceCommit, output: join(f.root, 'publication.json') });
 
+test('publication uses the shared propagation budget without a second upload and records the numeric outcome', async t => {
+  const f = fixture(t), current = peer();
+  let elapsed = 0, writes = 0;
+  const result = await publishPluginCandidate(options(f), dependencies({
+    registryWait: undefined, now: () => now + elapsed, sleep: async ms => { elapsed += ms; },
+    registry: async () => elapsed >= 80_000 ? { published: true, integrity: f.manifest.integrity } : { published: false },
+    observePeer: async () => ({ observation: { status: 'present', artifact: current.artifact }, bytes: current.bytes }),
+    verifyPair: request => pair(request.consumer.artifact, request.provider.artifact),
+    publish: async () => { writes++; return { status: 0 }; },
+  }));
+  assert.equal(result.status, 'passed'); assert.equal(result.action, 'published'); assert.equal(writes, 1);
+  assert.ok(elapsed > 55_000); assert.deepEqual(result.command, { exitCode: 0 });
+  assert.deepEqual(JSON.parse(readFileSync(options(f).output, 'utf8')).command, { exitCode: 0 });
+});
+
 test('declared candidate requires original prepare evidence before any new npm write', async t => {
   const f = fixture(t); let writes = 0, observations = 0;
   const result = await publishPluginCandidate({ ...options(f), verificationPath: undefined }, dependencies({ registry: async () => ({ published: false }), publish: async () => { writes++; return { status: 0 }; }, observePeer: async () => { observations++; throw new Error('unreachable'); } }));

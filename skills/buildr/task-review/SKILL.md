@@ -28,7 +28,7 @@ Review 是可选证据。Task Verification、任务收尾和 Parent 管理都不
 - `planning` 审方案选择：核对问题、目标、边界和完成依据是否被真实方案覆盖，检查完整性、合理性、一致性、关键取舍与风险。方案可来自任务文档、设计、清单或专业产物；OpenSpec artifacts 只是来源之一。需要时在方案对象可读、取舍尚可调整时执行。
 - `completion` 审实现兑现：实现对象稳定后，对照当前任务说明与适用方案核对真实成果；没有正式方案或未执行 `planning` 也可独立执行，不补造方案或假设方案已通过。
 
-需要但未完成、材料缺失、未执行、确实不适用、发现问题与已接受分别如实说明。需要或不适用的理由记录在既有材料或工作摘要（Work Context），不新增专业状态库；专业应用只保存已形成的真实结论。记录缺失、`changes-requested` 或旧对象不形成自动门禁，但必要目标或风险尚未解决时不得报整体完成；未完成不能称不适用或已通过。
+需要但未完成、材料缺失、未执行、确实不适用、发现问题与已接受分别如实说明。需要或不适用的理由必须通过工作摘要（Work Context）的 `checks` 结论显式留痕（`task work-context record --check planning-review|implementation-review --check-status needed|not-applicable --check-reason <理由>`），不只留在对话或临时文本中，不新增专业状态库；专业应用只保存已形成的真实结论。记录缺失、`changes-requested` 或旧对象不形成自动门禁，但必要目标或风险尚未解决时不得报整体完成；未完成不能称不适用或已通过。
 
 ## 2. 动态审查
 

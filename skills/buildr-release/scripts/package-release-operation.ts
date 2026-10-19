@@ -138,14 +138,14 @@ export async function preparePackageRelease(options: any, scope: any, dependenci
   return { status: 'awaiting-publication-authorization', context, compatibility, nextActions: ['对展示的准确包版本、原字节和顺序明确授权后调用publish --authorized。'] };
 }
 
-async function candidateBytes(context: any, state: any, scope: any, dependencies: any): Promise<any> {
-  const values: any = {};
-  if (context.targets.packages.includes('buildr')) {
+async function candidateBytes(context: any, state: any, scope: any, dependencies: any, names: string[] = context.targets.packages): Promise<any> {
+  const values: any = Object.fromEntries(Object.entries(context.packages).map(([name, item]: any) => [name, { artifact: item.artifact }]));
+  if (names.includes('buildr')) {
     const owned = (dependencies.readCandidateEvidence)(state.candidate.runId);
     if (!owned.packageArtifact || !sameArtifactIdentity(owned.packageArtifact, context.packages.buildr.artifact)) throw new Error('Frozen main Candidate bytes changed.');
     values.buildr = { artifact: owned.packageArtifact, bytes: owned.tarballBytes, candidateEvidence: owned };
   }
-  if (context.targets.packages.includes('dsh-plugin')) {
+  if (names.includes('dsh-plugin')) {
     const owned = (dependencies.readHostedPluginCandidate ?? readHostedPluginCandidate)({ repo: state.transactions?.buildr?.repo ?? state.executionRoot, runId: context.packages['dsh-plugin'].prepareRunId,
       version: context.targets.versions['dsh-plugin'], sourceCommit: context.convergence.mainCommit, sourceTree: context.convergence.pluginTree, peer: context.packages['dsh-plugin'].buildrPeer, ghCommand: scope.ghCommand }, { ...dependencies.pluginDependencies, execute: scope.execute });
     if (!sameArtifactIdentity(owned.artifact, context.packages['dsh-plugin'].artifact)) throw new Error('Frozen plugin Candidate bytes changed.');
@@ -395,7 +395,12 @@ export async function continuePackageRelease(options: any, scope: any, dependenc
     const pointer = state.packagePublications[name];
     if (!pointer?.requested) break;
     if (pointer.contextIdentity !== context.identity || state.publicationAuthorization?.contextIdentity !== context.identity) throw new Error('Package publication pointer or authorization belongs to a different frozen context.');
+    if (pointer.status === 'passed' && pointer.evidence) {
+      validatePackageOwnerPublication(context, name, pointer.evidence);
+      continue;
+    }
     let result: any;
+    let exact: any;
     if (name === 'buildr') {
       if (!pointer.runId) {
         const title = `Release ${context.targets.versions.buildr} (${pointer.releaseId || context.packages.buildr.ownerContext.identity.slice(7, 31)})`;
@@ -427,33 +432,24 @@ export async function continuePackageRelease(options: any, scope: any, dependenc
         pointer, ghCommand: options.ghCommand }, { ...dependencies.pluginDependencies, execute: scope.execute, onPointer: save });
       effects.push(...(observed.effects ?? [])); save();
       if (observed.status !== 'passed') {
-        // Recover a terminal owner journal through a new bound request. The
-        // owner's previous attempted=true journal suppresses npm publication.
-        // Unknown journals or missing/conflicting public bytes never resend.
-        if (observed.status === 'blocked' && observed.run?.status === 'completed' && observed.journal && !pointer.recoveryRequested) {
-          const exact = await (dependencies.observePublishedPackageArtifact ?? observePublishedPackageArtifact)(name, { ...dependencies.observationOptions,
+        // Public bytes confirm the existing write. Keep its original failed
+        // journal rather than dispatching another workflow to rewrite it.
+        if (observed.status === 'blocked' && observed.run?.status === 'completed'
+            && observed.journal?.attempted === true && observed.journal.action === 'readback-required'
+            && observed.journal.code === 'plugin-publication-attempt-unconfirmed') {
+          exact = await (dependencies.observePublishedPackageArtifact ?? observePublishedPackageArtifact)(name, { ...dependencies.observationOptions,
             version: context.targets.versions[name], expectedIntegrity: context.packages[name].artifact.integrity });
           if (exact.observation.status === 'present') {
             validatePluginRecovery(context, observed, exact.observation.artifact);
-            await candidateBytes(context, state, scope, dependencies);
-            const currentMain = git(['rev-parse', 'origin/main']);
-            if (currentMain !== packageExecutionCommit(context, 'dsh-plugin')) return { status: 'publication-source-drift', package: name, nextActions: ['准确包已公开，保留原记录；当前main改变，核对原来源的恢复路径。'] };
-            Object.assign(pointer, { recoveryRunId: observed.run.id, previousRunIds: [...(pointer.previousRunIds ?? []), observed.run.id],
-              recoveryRequested: true, requested: false, runId: null }); save();
-            const recovered = (dependencies.runPluginHostedOperation ?? runPluginHostedOperation)({ operation: 'publish', authorized: true, repo: state.executionRoot,
-              version: context.targets.versions[name], sourceCommit: packageExecutionCommit(context, 'dsh-plugin'),
-              originalSourceCommit: context.convergence.mainCommit, candidateRunId: context.packages[name].prepareRunId,
-              pointer, ghCommand: options.ghCommand }, { ...dependencies.pluginDependencies, execute: scope.execute, onPointer: save });
-            effects.push(...(recovered.effects ?? [])); save();
-            return { status: recovered.status === 'passed' ? 'publication-readback-required' : `publication-${recovered.status}`, package: name,
-              run: recovered.run, nextActions: recovered.nextActions ?? ['继续回读原包恢复请求；不重复npm发布。'] };
-          }
+          } else return { status: exact.observation.status === 'absent' || exact.observation.status === 'unknown' ? 'publication-readback-required' : 'publication-blocked',
+            package: name, run: observed.run, publicState: exact.observation, nextActions: ['继续回读同版本原包；尚未公开可见不授权重发，也不新增远端恢复运行。'] };
+        } else {
+          return { status: `publication-${observed.status}`, package: name, run: observed.run, nextActions: observed.nextActions ?? [] };
         }
-        return { status: `publication-${observed.status}`, package: name, run: observed.run, nextActions: observed.nextActions ?? [] };
       }
       result = { run: observed.run, ownerEvidence: observed.journal, ...(pointer.recoveryRunId ? { recoveryRunId: pointer.recoveryRunId } : {}) };
     }
-    const exact = await (dependencies.observePublishedPackageArtifact ?? observePublishedPackageArtifact)(name, { ...dependencies.observationOptions,
+    exact ??= await (dependencies.observePublishedPackageArtifact ?? observePublishedPackageArtifact)(name, { ...dependencies.observationOptions,
       version: context.targets.versions[name], expectedIntegrity: context.packages[name].artifact.integrity });
     if (exact.observation.status !== 'present') return { status: 'publication-readback-required', package: name, publicState: exact.observation, nextActions: ['核对原请求的准确公开字节，不重发已可能成立的包。'] };
     pointer.evidence = validatePackageOwnerPublication(context, name, { ...result, registryArtifact: exact.observation.artifact });
@@ -470,7 +466,8 @@ export async function continuePackageRelease(options: any, scope: any, dependenc
   git(['fetch', '--no-tags', 'origin', 'refs/heads/main:refs/remotes/origin/main', 'refs/heads/dev:refs/remotes/origin/dev']);
   const currentMain = git(['rev-parse', 'origin/main']);
   if (currentMain !== packageExecutionCommit(context, next)) return { status: 'publication-source-drift', nextActions: ['保留原包与请求；当前main与授权来源不同，核对原来源的发布路径。'] };
-  const candidates = recoveredCandidates ?? await candidateBytes(context, state, scope, dependencies);
+  const neededBytes = context.targets.packages.filter((name: string) => name === next || !context.packages[name].artifact.compatibility);
+  const candidates = recoveredCandidates ?? await candidateBytes(context, state, scope, dependencies, neededBytes);
   const completed = originalOrder.filter((name: string) => state.packagePublications[name]?.status === 'passed');
   const peerVersion = context.packages['dsh-plugin']?.buildrPeer?.version;
   const counterpartOptions = completed.includes('buildr') && peerVersion ? { buildr: { distTag: peerVersion.includes('-') ? 'next' : 'latest' } } : {};

@@ -10,9 +10,10 @@ export const WorkspaceSourceControlContext = createContext<{workspaceId: string;
 export function WorkspaceSourceControlProvider({workspaceId, children}: {workspaceId?: string | null; children: ReactNode}) {
   const value = useMemo(() => workspaceId ? {workspaceId, sourceSelection:createCodeSourceSelectionStore(), observer: createSourceControlObserver({
     workspaceId,
-    load: (taskId, repositoryId, signal, onProgress) => createSourceControlRefreshLoader({
+    initialDelayMs: 750,
+    load: (taskId, repositoryId, signal, onProgress, shared) => createSourceControlRefreshLoader({
       inventory:readSignal => codeApi.sourceControlInventory(workspaceId, {taskId}, readSignal),
-      repository:(id, readSignal) => codeApi.sourceControl(workspaceId, {taskId, repositoryId:id}, readSignal),
+      repository:(id, readSignal) => codeApi.sourceControl(workspaceId, {taskId, repositoryId:id, ...(shared ? {observation:'shared' as const} : {})}, readSignal),
     })(repositoryId, signal, onProgress),
     watch: (cursor, signal) => codeApi.watchSourceControl(workspaceId, cursor, signal),
   })} : null, [workspaceId]);

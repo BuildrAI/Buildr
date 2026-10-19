@@ -1,16 +1,18 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
+import { createPublicationWorktreeReader } from './publication-worktree-reader.ts';
 import { assertPublicationId, decodePublicationUpload, publicationError, validatePublicationFields } from '../domain/publication.ts';
 import {
   inside, listPublicationAssets, publicationAsset, publicPublication, publicPublicationAsset,
-  readPublicationEntries, renderNewPublication, renderPublicationUpdate, safePublicationPath,
+  parsePublicationText, readPublicationEntries, renderNewPublication, renderPublicationUpdate, safePublicationPath,
   type PublicationRecord, type PublicationScope,
 } from '../persistence/publication-repository.ts';
 
 export { canonicalPublicationPlatform, PUBLICATION_PLATFORM_ALIASES, publicationError } from '../domain/publication.ts';
 
-export function registerPublicationApplication(runtime: any, { projectQuery }: any = {}) {
+export function registerPublicationApplication(runtime: any, { projectQuery, taskQuery, worktreeQuery, materialsQuery }: any = {}) {
   if (!projectQuery || typeof projectQuery.readProjectRegistryRecord !== 'function' || typeof projectQuery.resolveSourceRoot !== 'function') throw publicationError('publication_project_query_missing', 'Publication Application requires the Project Query capability.', 500);
 
   function projectScope(targetRoot: string, projectCode = 'product'): PublicationScope {
@@ -24,6 +26,8 @@ export function registerPublicationApplication(runtime: any, { projectQuery }: a
     safePublicationPath(scope, scope.root);
     return scope;
   }
+
+  const worktrees = taskQuery && worktreeQuery && materialsQuery ? createPublicationWorktreeReader({ taskQuery, worktreeQuery, materialsQuery }, projectScope) : null;
 
   function findArticle(scope: PublicationScope, id: unknown): PublicationRecord {
     assertPublicationId(id);
@@ -60,6 +64,11 @@ export function registerPublicationApplication(runtime: any, { projectQuery }: a
         diagnostics.push({ projectCode: code, code: error.code || 'publication_source_unavailable', message: error.code ? error.message : '该项目文章来源暂时不可读取。' });
       }
     }
+    if (worktrees) {
+      const candidates = worktrees.list(targetRoot, projectCode);
+      publications.push(...candidates.publications);
+      diagnostics.push(...candidates.diagnostics);
+    }
     publications.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || left.title.localeCompare(right.title, 'zh-CN'));
     return { schemaVersion: 'buildr.publications/v1', publications, empty: publications.length === 0, diagnostics };
   }
@@ -69,21 +78,34 @@ export function registerPublicationApplication(runtime: any, { projectQuery }: a
     return detail(scope, findArticle(scope, id));
   }
 
+  function sourceArticle(targetRoot: string, projectCode: string, id: string, sourceTaskId?: string) {
+    if (sourceTaskId) {
+      if (!worktrees) throw publicationError('publication_worktree_unavailable', '工作树稿件来源当前不可用。', 409);
+      assertPublicationId(id);
+      return worktrees.resolve(targetRoot, sourceTaskId, projectCode, id);
+    }
+    const scope = projectScope(targetRoot, projectCode);
+    return { scope, article: findArticle(scope, id) };
+  }
+
   /** Re-read inside the shared mutation lock. A pre-write conflict commits no writes, avoiding rollback over an external edit. */
-  function mutateArticle(targetRoot: string, projectCode: string, id: string, revision: unknown, operation: string, affected: string[], action: (scope: PublicationScope, current: PublicationRecord) => any) {
-    const before = findArticle(projectScope(targetRoot, projectCode), id);
-    assertRevision(before, revision);
-    const result = runtime.withWorkspaceMutation(targetRoot, `publication.${operation}:${projectCode}/${id}`, affected, () => {
+  function mutateArticle(targetRoot: string, projectCode: string, id: string, revision: unknown, operation: string, affected: string[], action: (scope: PublicationScope, current: PublicationRecord) => any, sourceTaskId?: string) {
+    const before = sourceArticle(targetRoot, projectCode, id, sourceTaskId);
+    assertRevision(before.article, revision);
+    const observeCurrent = () => {
+      const current = sourceArticle(targetRoot, projectCode, id, sourceTaskId);
+      assertRevision(current.article, revision);
+      if (current.article.file !== before.article.file || current.scope.workspaceRoot !== before.scope.workspaceRoot || current.scope.root !== before.scope.root) throw publicationError('publication_revision_conflict', '文章来源或位置已变化，请重新读取。', 409);
+      return current;
+    };
+    const result = runtime.withWorkspaceMutation(before.scope.workspaceRoot, `publication.${operation}:${projectCode}/${id}${sourceTaskId ? `:task:${sourceTaskId}` : ''}`, affected, () => {
       let scope: PublicationScope;
       let current: PublicationRecord;
       try {
-        scope = projectScope(targetRoot, projectCode);
-        current = findArticle(scope, id);
-        assertRevision(current, revision);
-        if (current.file !== before.file) throw publicationError('publication_revision_conflict', '文章位置已变化，请重新读取。', 409);
+        ({ scope, article: current } = observeCurrent());
       } catch (error) { return { error }; }
       return { value: action(scope, current) };
-    }, { preSnapshot: () => assertRevision(findArticle(projectScope(targetRoot, projectCode), id), revision) });
+    }, { preSnapshot: observeCurrent });
     if (result.error) throw result.error;
     return result.value;
   }
@@ -113,14 +135,25 @@ export function registerPublicationApplication(runtime: any, { projectQuery }: a
     return result.value;
   }
 
-  function updatePublication(targetRoot: string, projectCode: string, id: string, input: any) {
-    const before = findArticle(projectScope(targetRoot, projectCode), id);
-    const fields = validatePublicationFields(input, before.status);
+  function updatePublication(targetRoot: string, projectCode: string, id: string, input: any, sourceTaskId?: string) {
+    const { article: before } = sourceArticle(targetRoot, projectCode, id, sourceTaskId);
+    assertRevision(before, input.revision);
+    let editable = input;
+    let sourceDocument: PublicationRecord['document'] | undefined;
+    if (typeof input.source === 'string') {
+      const parsed = parsePublicationText(input.source);
+      if (!parsed) throw publicationError('publication_source_invalid', '原文格式不正确，请保留有效的文章信息与 Markdown 正文。');
+      const preserved = (metadata: any) => Object.fromEntries(Object.entries(metadata).filter(([key]) => !['title', 'summary', 'updated_at'].includes(key)));
+      if (!isDeepStrictEqual(preserved(parsed.metadata), preserved(before.document.toJS()))) throw publicationError('publication_metadata_readonly', '原文可校准标题、摘要和正文；文章标识、状态及发布记录请保持原样。');
+      editable = { title: parsed.metadata.title, summary: parsed.metadata.summary ?? '', content: parsed.content, status: before.status };
+      sourceDocument = parsed.document;
+    }
+    const fields = validatePublicationFields(sourceTaskId ? { ...editable, status: before.status } : editable, before.status);
     return mutateArticle(targetRoot, projectCode, id, input.revision, 'update', [before.file], (scope, current) => {
       safePublicationPath(scope, current.file);
-      runtime.atomicWriteFile(current.file, renderPublicationUpdate(current, fields));
-      return detail(scope, findArticle(scope, id));
-    });
+      runtime.atomicWriteFile(current.file, renderPublicationUpdate(sourceDocument ? { ...current, document: sourceDocument } : current, fields));
+      return sourceTaskId ? worktrees!.detail(targetRoot, sourceTaskId, projectCode, id) : detail(scope, findArticle(scope, id));
+    }, sourceTaskId);
   }
 
   function deletePublication(targetRoot: string, projectCode: string, id: string, input: any) {
@@ -157,6 +190,17 @@ export function registerPublicationApplication(runtime: any, { projectQuery }: a
     return publicationAsset(scope, assetPath);
   }
 
-  Object.assign(runtime, { publicationRoot: (targetRoot: string, projectCode = 'product') => projectScope(targetRoot, projectCode).root, listPublications, publicationDetail, createPublication, updatePublication, deletePublication, publicationAssets, uploadPublicationAsset, readPublicationAsset });
+  const worktreePublicationDetail = (root: string, task: string, project: string, id: string) => {
+    if (!worktrees) throw publicationError('publication_worktree_unavailable', '工作树草稿读取能力不可用。', 409);
+    assertPublicationId(id);
+    return worktrees.detail(root, task, project, id);
+  };
+  const readWorktreePublicationAsset = (root: string, task: string, project: string, id: string, relative: string) => {
+    if (!worktrees) throw publicationError('publication_worktree_unavailable', '工作树草稿读取能力不可用。', 409);
+    assertPublicationId(id);
+    return worktrees.asset(root, task, project, id, relative);
+  };
+  const updateWorktreePublication = (root: string, task: string, project: string, id: string, input: any) => updatePublication(root, project, id, input, task);
+  Object.assign(runtime, { publicationRoot: (targetRoot: string, projectCode = 'product') => projectScope(targetRoot, projectCode).root, listPublications, publicationDetail, createPublication, updatePublication, deletePublication, publicationAssets, uploadPublicationAsset, readPublicationAsset, worktreePublicationDetail, readWorktreePublicationAsset, updateWorktreePublication });
   return runtime;
 }

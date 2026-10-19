@@ -1,0 +1,36 @@
+/* 原型专用的局部覆盖：把"阅读 + 就地编辑"放进页面，不再走抽屉。 */
+
+.proto-article-page { padding:24px var(--main-content-gutter) 56px; }
+.proto-article-page > * { max-width:calc(var(--main-content-width) - 2 * var(--main-content-gutter)); margin-left:auto; margin-right:auto; }
+
+/* 模式条：分段控件 + 右侧动作，sticky 方便长文时切换 */
+.proto-modebar { position:sticky; top:0; z-index:2; display:flex; align-items:center; gap:14px; padding:10px 0; margin-bottom:22px; background:var(--soft-panel,#fff); border-bottom:1px solid var(--soft-line); }
+.proto-mode-actions { display:flex; align-items:center; gap:10px; margin-left:auto; }
+
+/* 阅读态：目录 + 正文 + 右栏工具 */
+.proto-article-page .publication-reading-layout { display:grid; grid-template-columns:170px minmax(0,1fr) 240px; gap:32px; align-items:start; }
+.proto-article-page .publication-reading-layout .publication-tools-aside { display:flex; }
+
+/* 编辑态：正文 + 工具栏 */
+.proto-editor-layout { display:grid; grid-template-columns:minmax(0,1fr) 280px; gap:28px; align-items:start; }
+.proto-editor-main { min-width:0; }
+.proto-field { margin-bottom:18px; }
+.proto-field > label { display:block; font-size:12px; color:var(--soft-muted); margin-bottom:6px; }
+
+/* 右侧工具栏样式：沿用抽屉里的卡片外观，但脱离抽屉宽度限制 */
+.publication-tools-aside { position:sticky; top:24px; align-self:start; display:flex; flex-direction:column; gap:18px; max-height:calc(100vh - 48px); overflow:auto; }
+.publication-tools-card { padding:18px; background:#f8faf9; border:1px solid #e7ede9; border-radius:10px; }
+.publication-tools-card h2 { margin:0 0 12px; font-size:13px; }
+.publication-tools-card .publication-hint { margin:8px 0 12px; }
+.publication-tools-card .ant-btn { font-size:12px; }
+.publication-tools-card .publication-assets-list { margin-top:14px; max-height:none; }
+.publication-edit-methods .ant-btn { display:flex; justify-content:space-between; padding:0; }
+
+/* 元信息条压缩阅读页头部 */
+.publication-reader-meta { gap:14px; }
+
+/* 原型内演示提示 */
+.proto-hint { color:var(--soft-muted); font-size:12px; }
+
+@media(max-width:1250px){ .proto-editor-layout { grid-template-columns:minmax(0,1fr) 240px; } .proto-article-page .publication-reading-layout { grid-template-columns:145px minmax(0,1fr); } }
+@media(max-width:980px){ .proto-editor-layout { grid-template-columns:1fr; } .publication-tools-aside { position:static; max-height:none; } }

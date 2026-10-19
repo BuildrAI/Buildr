@@ -1,4 +1,10 @@
 .workspace-pane-host { position:absolute; inset:0; display:flex; flex-direction:column; min-height:0; }
+/* Page tab row: scrollable strip plus a fixed trailing slot for the collapse toggle. */
+.workspace-pane-host > .workspace-page-tabs, .workspace-pages > .workspace-page-tabs { display:flex; align-items:center; overflow:hidden; }
+.workspace-pane-host > .workspace-page-tabs > .workspace-tabstrip, .workspace-pages > .workspace-page-tabs > .workspace-tabstrip { flex:1; min-width:0; overflow-x:auto; scrollbar-width:none; }
+.workspace-pane-host > .workspace-page-tabs > .workspace-tabstrip::-webkit-scrollbar, .workspace-pages > .workspace-page-tabs > .workspace-tabstrip::-webkit-scrollbar { display:none; }
+/* Slot keeps a 10px air gap on both sides so tabs never sit under the button. */
+.workspace-pane-host > .workspace-page-tabs > .pane-toggle-button, .workspace-pages > .workspace-page-tabs > .pane-toggle-button { flex:none; margin-left:10px; margin-right:10px; }
 .workspace-pane-host[hidden] { display:none !important; }
 .workspace-pane-stage { flex:1; min-height:0; }
 .workspace-pane-mount[hidden],.workspace-pane-mount > [hidden] { display:none !important; }

@@ -16,7 +16,8 @@ export function createConnectionSkillsCli(application: ConnectionSkillsApplicati
       'Usage: buildr connection-skill <definitions list|definitions inspect|list|get|create|update|remove|auth authorize|auth set|auth clear|auth use-team|auth migrate|auth relocate|check|help|test|discover|run> [--target <workspace>] [--json]',
       'get/update/remove/check/help/test/run --connection <id>; definitions inspect --asset <assetIdentity> --definition <definitionId>',
       'create/update/auth/test/discover --file <json-file|->; config/auth 仅从文件或标准输入读取，不在参数中传密码。',
-      'run --connection <id> --expected-revision <revision> --program <id> [--context compare=<id>@<revision>] -- <专业参数...>',
+      'run --connection <id> --expected-revision <revision> --program <id> [--context compare=<id>@<revision>] [--timeout-ms <10..300000>] -- <专业参数...>',
+      'run 默认时限60000毫秒；专业等待窗口须为请求、清理和输出预留时间，结果仍在程序退出后完整遮蔽。',
       'run 的标准输入完整交给专业程序；多个上下文分别明确编号和观察版本。',
       'help 来自所选程序，不交付认证；list/get 仅返回遮蔽认证的观察，源已登记不代表程序已安装或连接已验证。',
       'auth migrate 仅在进程内转移完整组；auth relocate 将本 profile 的旧个人密文迁入工作空间 .buildr/local，均以 --file 提供准确观察，不输出秘密。',
@@ -29,7 +30,7 @@ export function createConnectionSkillsCli(application: ConnectionSkillsApplicati
       let professional: string[] = [];
       const actionFlags: Record<string, string[]> = {
         definitions: ['--asset', '--definition'], list: [], get: ['--connection'], create: ['--file'], update: ['--connection', '--file'], remove: ['--connection', '--file', '--expected-revision'],
-        auth: ['--connection', '--file'], check: ['--connection', '--program'], help: ['--connection', '--program'], test: ['--connection', '--file'], discover: ['--connection', '--file', '--hook'], run: ['--connection', '--expected-revision', '--program', '--context'],
+        auth: ['--connection', '--file'], check: ['--connection', '--program'], help: ['--connection', '--program'], test: ['--connection', '--file'], discover: ['--connection', '--file', '--hook'], run: ['--connection', '--expected-revision', '--program', '--context', '--timeout-ms'],
       };
       if (!actionFlags[action] || action === 'definitions' && !['list', 'inspect'].includes(subaction || '') || action === 'auth' && !['authorize', 'set', 'clear', 'use-team', 'migrate', 'relocate'].includes(subaction || '')) throw failure('connection_skill_cli_invalid', '未知连接技能动作。', 400);
       const allowed = ['--target', '--json', ...actionFlags[action]!];
@@ -43,6 +44,8 @@ export function createConnectionSkillsCli(application: ConnectionSkillsApplicati
         else flags.set(flag, value);
       }
       const root = path.resolve(flags.get('--target') || process.cwd()), id = flags.get('--connection') || '', program = flags.get('--program') || 'cli';
+      const timeout = flags.get('--timeout-ms');
+      if (timeout !== undefined && (!/^\d+$/.test(timeout) || !Number.isSafeInteger(Number(timeout)) || Number(timeout) < 10 || Number(timeout) > 300_000)) throw failure('connection_skill_cli_invalid', '--timeout-ms 必须为10到300000的整数毫秒。', 400);
       let input: Record<string, unknown> = {};
       if (flags.has('--file')) { try { input = object(JSON.parse(readInput(flags.get('--file')!, 256 * 1024).toString('utf8'))); } catch { throw failure('connection_skill_cli_input_invalid', '连接输入必须是有界的 JSON 对象。', 400); } }
       if (['create', 'update', 'auth'].includes(action) && !flags.has('--file')) throw failure('connection_skill_cli_invalid', '此动作需要 --file 提供完整输入。', 400);
@@ -92,7 +95,7 @@ export function createConnectionSkillsCli(application: ConnectionSkillsApplicati
         result = await application.hook(root, input, action);
       } else if (action === 'run') {
         if (!flags.get('--expected-revision')) throw failure('connection_skill_cli_invalid', '运行需要已观察的 --expected-revision。', 400);
-        result = await application.run(root, { id, expectedRevision: flags.get('--expected-revision')!, program, args: professional, contexts, input: process.stdin.isTTY ? undefined : readInput('-') });
+        result = await application.run(root, { id, expectedRevision: flags.get('--expected-revision')!, program, args: professional, contexts, ...(timeout === undefined ? {} : { timeoutMs: Number(timeout) }), input: process.stdin.isTTY ? undefined : readInput('-') });
       } else throw failure('connection_skill_cli_invalid', '未知连接技能动作。', 400);
       const output = { schemaVersion: 'buildr.connection-skill-result/v1', operation: action, ...object(result) };
       process.stdout.write(JSON.stringify(output, null, 2) + '\n'); return output;

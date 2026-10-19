@@ -14,6 +14,6 @@ export function createConnectionSkillsModule(options: { readProductIdentity(): u
     const dataRoot = options.resolveWebProfile(options.readProductIdentity()).dataRoot;
     const application = new ConnectionSkillsApplication({ dataRoot, catalog: createConnectionCatalog({ assets: requires[AGENT_ASSETS_SOURCE_READ] }), resolveScope: root => resolveConnectionSkillWorkspace(root, workspace), retire: scope => retireLegacyConnections(scope, dataRoot, requires[WORKSPACE_TASK_SUPPORT]) });
     requires[AGENT_ASSETS_CONNECTION_IMPACT_BINDER].bindConnectionImpacts((root: string, assetIdentity: string) => application.impacts(root, assetIdentity));
-    return Object.freeze({ provides: { [CONNECTION_SKILLS_APPLICATION]: application }, contributions: { cli: createConnectionSkillsCli(application), http: [createConnectionSkillsHttp(application)] } });
+    return Object.freeze({ provides: { [CONNECTION_SKILLS_APPLICATION]: application }, lifecycle: { start() {}, stop() { application.close(); } }, contributions: { cli: createConnectionSkillsCli(application), http: [createConnectionSkillsHttp(application)] } });
   } });
 }

@@ -24,7 +24,8 @@ export const WORKBENCH_MODULE = Object.freeze({
       workContext: requires[TASK_WORK_CONTEXT_APPLICATION],
       tasks,
       projects: workspace.readProjectRegistryRecord,
-      dailyProgress: { list: dailyProgress.listProjectDailyProgress, inspect: dailyProgress.inspectProjectDailyProgress },
+      followedProjects: preferences.inspectWorkbenchFollowedProjectKeys,
+      dailyProgress: { list: dailyProgress.listProjectDailyProgress, inspect: dailyProgress.inspectProjectDailyProgressSummary },
     }) });
     return Object.freeze({ provides: { [WORKBENCH_APPLICATION]: application }, contributions: { http: [createWorkbenchHttpContribution(application)], cli: createWorkbenchCliContributions(application) } });
   },

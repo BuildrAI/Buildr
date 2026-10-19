@@ -10,11 +10,13 @@ const publication = closed({
   id: text, title: text, summary: { type: 'string' }, kind: text, status: text, publishedAt: nullableText,
   projectCode: text, projectName: text, updatedAt: text, revision: text,
   targets: { type: 'array', items: closed({ platform: text, status: text, url: text }, ['platform', 'status']) }, sourcePath: text,
+  sourceTask: closed({ id: text, title: text }, ['id', 'title']),
 }, ['id', 'title', 'summary', 'kind', 'status', 'publishedAt', 'projectCode', 'projectName', 'updatedAt', 'revision', 'targets', 'sourcePath']);
 const asset = closed({ name: text, relativePath: text, contentType: text, size: { type: 'integer', minimum: 0 }, isImage: { type: 'boolean' } }, ['name', 'relativePath', 'contentType', 'size', 'isImage']);
 const assets = { type: 'array', items: asset };
 const identity = { projectCode: text, id: text };
 const fields = { title: { type: 'string', minLength: 1, maxLength: 150 }, summary: { type: 'string', maxLength: 2000 }, content: { type: 'string' }, status: text };
+const sourceUpdate = closed({ revision: text, source: { type: 'string' } }, ['revision', 'source']);
 
 export const PUBLICATION_HTTP_SCHEMAS: Readonly<Record<string, any>> = Object.freeze({
   listRequest: schema('list/request', 'PublicationListRequest', closed({})),
@@ -23,13 +25,16 @@ export const PUBLICATION_HTTP_SCHEMAS: Readonly<Record<string, any>> = Object.fr
   projectDetailRequest: schema('project-detail/request', 'PublicationProjectDetailRequest', closed(identity, ['projectCode', 'id'])),
   assetRequest: schema('asset/request', 'PublicationAssetRequest', closed({ id: text, assetPath: text }, ['id', 'assetPath'])),
   projectAssetRequest: schema('project-asset/request', 'PublicationProjectAssetRequest', closed({ ...identity, assetPath: text }, ['projectCode', 'id', 'assetPath'])),
+  worktreeDetailRequest: schema('worktree-detail/request', 'PublicationWorktreeDetailRequest', closed({ ...identity, taskId: text }, ['projectCode', 'id', 'taskId'])),
+  worktreeAssetRequest: schema('worktree-asset/request', 'PublicationWorktreeAssetRequest', closed({ ...identity, taskId: text, assetPath: text }, ['projectCode', 'id', 'taskId', 'assetPath'])),
   createRequest: schema('create/request', 'PublicationCreateRequest', closed({ id: text, ...fields }, ['title'])),
-  updateRequest: schema('update/request', 'PublicationUpdateRequest', closed({ revision: text, ...fields }, ['revision', 'title', 'summary', 'content', 'status'])),
+  updateRequest: schema('update/request', 'PublicationUpdateRequest', { oneOf: [closed({ revision: text, ...fields }, ['revision', 'title', 'summary', 'content', 'status']), sourceUpdate] }),
+  worktreeUpdateRequest: schema('worktree-update/request', 'PublicationWorktreeUpdateRequest', { oneOf: [closed({ revision: text, title: fields.title, summary: fields.summary, content: fields.content }, ['revision', 'title', 'summary', 'content']), sourceUpdate] }),
   deleteRequest: schema('delete/request', 'PublicationDeleteRequest', closed({ revision: text }, ['revision'])),
   uploadRequest: schema('upload/request', 'PublicationUploadRequest', closed({ revision: text, filename: { type: 'string', minLength: 1, maxLength: 240 }, contentBase64: text }, ['revision', 'filename', 'contentBase64'])),
   listResponse: schema('list/response', 'PublicationListResponse', closed({
     schemaVersion: { const: 'buildr.publications/v1' }, publications: { type: 'array', items: publication }, empty: { type: 'boolean' },
-    diagnostics: { type: 'array', items: closed({ projectCode: text, code: text, message: text }, ['projectCode', 'code', 'message']) },
+    diagnostics: { type: 'array', items: closed({ projectCode: text, code: text, message: text, taskId: text }, ['projectCode', 'code', 'message']) },
   }, ['schemaVersion', 'publications', 'empty', 'diagnostics'])),
   detailResponse: schema('detail/response', 'PublicationDetailResponse', closed({
     schemaVersion: { const: 'buildr.publication-detail/v1' }, publication, content: { type: 'string' }, source: { type: 'string' }, revision: text, assets,
@@ -62,6 +67,9 @@ export const PUBLICATION_HTTP_OPERATIONS = Object.freeze([
   json('system-publication.assets', 'GET', `${projectPath}/:publicationId/assets`, 'projectDetailRequest', 'assetsResponse'),
   json('system-publication.upload', 'POST', `${projectPath}/:publicationId/assets`, 'uploadRequest', 'uploadResponse'),
   binary('system-publication.project-asset', `${projectPath}/:publicationId/assets/:assetPath`, 'projectAssetRequest'),
+  json('system-publication.worktree-detail', 'GET', '/tasks/:taskId/projects/:projectCode/publications/:publicationId', 'worktreeDetailRequest', 'detailResponse'),
+  json('system-publication.worktree-update', 'PUT', '/tasks/:taskId/projects/:projectCode/publications/:publicationId', 'worktreeUpdateRequest', 'detailResponse'),
+  binary('system-publication.worktree-asset', '/tasks/:taskId/projects/:projectCode/publications/:publicationId/assets/:assetPath', 'worktreeAssetRequest'),
 ]);
 
 export const PUBLICATION_HTTP_VALIDATORS = compileJsonSchemaCatalog(Object.values(PUBLICATION_HTTP_SCHEMAS));

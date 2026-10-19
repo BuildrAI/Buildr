@@ -16,6 +16,23 @@ export function createPublicationHttpContribution(application: any) {
   return Object.freeze({
     id: 'publication.http', operations: PUBLICATION_HTTP_OPERATIONS, schemas: PUBLICATION_HTTP_SCHEMAS,
     async handle({ request, suffix, root, respond, authorizeWrite, readJsonBody }: any) {
+      const worktree = suffix.match(new RegExp(`^/tasks/(${PUBLICATION_ID})/projects/(${PROJECT_CODE})/publications/(${PUBLICATION_ID})(?:/assets/(.+))?$`));
+      if (worktree) {
+        const [, taskId, projectCode, id, asset] = worktree;
+        if (request.method === 'PUT' && !asset) {
+          authorizeWrite();
+          validateRequest('system-publication.worktree-detail', { taskId, projectCode, id });
+          const input = validateRequest('system-publication.worktree-update', await readJsonBody(MAX_PUBLICATION_JSON_BYTES));
+          return success('system-publication.worktree-update', application.updateWorktreePublication(root, taskId, projectCode, id, input));
+        }
+        if (request.method !== 'GET') throw publicationError('publication_worktree_operation_forbidden', '工作树稿件支持阅读和文字编辑，不支持此操作。', 405);
+        const op = asset ? 'system-publication.worktree-asset' : 'system-publication.worktree-detail';
+        const input = validateRequest(op, { taskId, projectCode, id, ...(asset ? { assetPath: decodeAssetPath(asset) } : {}) });
+        if (!asset) return success(op, application.worktreePublicationDetail(root, input.taskId, input.projectCode, input.id));
+        const value = application.readWorktreePublicationAsset(root, input.taskId, input.projectCode, input.id, input.assetPath);
+        respond.binary(fs.readFileSync(value.file), value.contentType, { disposition: value.isImage ? 'inline' : 'attachment', filename: value.name });
+        return true;
+      }
       if (request.method === 'GET' && suffix === '/publications') {
         validateRequest('system-publication.list', {});
         return success('system-publication.list', application.listPublications(root));

@@ -5,7 +5,7 @@ import { publicationApi, type PublicationAsset } from '../api/publication-api';
 import { assetMarkdown, publicationAssetUrl, referencedAssets } from '../publication-model';
 
 type Props = {
-  workspaceId: string; projectCode: string; publicationId: string; revision: string;
+  workspaceId: string; projectCode: string; publicationId: string; revision: string; sourceTaskId?: string;
   content: string; assets: PublicationAsset[]; disabled?: boolean;
   onAssets: (assets: PublicationAsset[]) => void; onInsert: (markdown: string) => void;
   onConflict: (message: string) => void;
@@ -21,7 +21,7 @@ function readBase64(file: File): Promise<string> {
     reader.readAsDataURL(file);
   });
 }
-export function ArticleAssetsPanel({ workspaceId, projectCode, publicationId, revision, content, assets, disabled, onAssets, onInsert, onConflict }: Props) {
+export function ArticleAssetsPanel({ workspaceId, projectCode, publicationId, sourceTaskId, revision, content, assets, disabled, onAssets, onInsert, onConflict }: Props) {
   const input = useRef<HTMLInputElement>(null);
   const [scope, setScope] = useState('referenced'), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('');
   const [messages, holder] = message.useMessage();
@@ -34,11 +34,12 @@ export function ArticleAssetsPanel({ workspaceId, projectCode, publicationId, re
   };
   const refresh = async () => {
     setBusy(true); setError('');
-    try { const result = await publicationApi.assets(projectCode, publicationId); onAssets(result.assets); }
+    try { const result = await publicationApi.assets(projectCode, publicationId, undefined, sourceTaskId); onAssets(result.assets); }
     catch (err) { handleError(err); }
     finally { setBusy(false); }
   };
   const upload = async (file: File) => {
+    if (sourceTaskId) return;
     const suffix = `.${file.name.split('.').at(-1)?.toLowerCase()}`;
     if (!accepted.split(',').includes(suffix)) { setError('请选择 PNG、JPEG、GIF、WebP 图片或 PDF、TXT、Markdown、CSV、JSON、ZIP、Office 附件。'); return; }
     const limit = imagePattern.test(file.name) ? 5 * 1024 * 1024 : 10 * 1024 * 1024;
@@ -52,16 +53,16 @@ export function ArticleAssetsPanel({ workspaceId, projectCode, publicationId, re
     finally { setBusy(false); if (input.current) input.current.value = ''; }
   };
   return <section className="publication-assets-panel" aria-label="文章图片与附件">{holder}<div className="publication-aside-heading"><h2>图片与附件</h2><Tooltip title="刷新资源"><Button size="small" type="text" icon={<ReloadOutlined />} aria-label="刷新文章资源" loading={busy} disabled={disabled} onClick={() => void refresh()} /></Tooltip></div>
-    <p className="publication-hint">文件保存在项目 <code>assets/</code> 中，通过引用加入文章。</p>
-    <input ref={input} type="file" id="article-asset-file" aria-label="上传文章图片或附件" accept={accepted} hidden onChange={event => { const file = event.target.files?.[0]; if (file) void upload(file); }} />
+    <p className="publication-hint">{sourceTaskId ? '使用来源任务中的图片与附件，可插入已有资源引用。' : <>文件保存在项目 <code>assets/</code> 中，通过引用加入文章。</>}</p>
+    {!sourceTaskId && <><input ref={input} type="file" id="article-asset-file" aria-label="上传文章图片或附件" accept={accepted} hidden onChange={event => { const file = event.target.files?.[0]; if (file) void upload(file); }} />
     <Button id="article-asset-upload" block icon={<UploadOutlined />} loading={busy} disabled={disabled} onClick={() => input.current?.click()}>上传图片或附件</Button>
-    <p className="publication-hint">图片最大 5 MB，附件最大 10 MB。</p>
+    <p className="publication-hint">图片最大 5 MB，附件最大 10 MB。</p></>}
     {error && <Alert type="error" message={error} closable onClose={() => setError('')} />}
     {notice && <Alert type="success" message={notice} closable onClose={() => setNotice('')} />}
     <Segmented block value={scope} onChange={value => setScope(String(value))} options={[{ label: `本文引用 ${referenced.length}`, value: 'referenced' }, { label: `项目资源 ${assets.length}`, value: 'project' }]} />
     {scope === 'referenced' && missing.length > 0 && <Alert type="warning" message="部分引用资源未找到" description={missing.join('、')} />}
     <div className="publication-assets-list">{shown.length ? [...shown].sort((a, b) => Number(used.has(b.relativePath)) - Number(used.has(a.relativePath))).map(asset => {
-      const url = publicationAssetUrl(workspaceId, projectCode, publicationId, asset.relativePath) || '';
+      const url = publicationAssetUrl(workspaceId, projectCode, publicationId, asset.relativePath, sourceTaskId) || '';
       return <article className="publication-asset" key={asset.relativePath} data-article-asset={asset.relativePath}>
         {asset.isImage ? <Image src={url} alt={asset.name} width="100%" /> : <a className="publication-attachment" href={url} target="_blank" rel="noopener noreferrer"><FileOutlined /><span>{asset.name}</span><small>下载附件 ↗</small></a>}
         <div className="publication-asset-title"><strong title={asset.name}>{asset.name}</strong>{used.has(asset.relativePath) && <Tag>已引用</Tag>}</div><code>{asset.relativePath}</code><small>{fileSize(asset.size)}</small>

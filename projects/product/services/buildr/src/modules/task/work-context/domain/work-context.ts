@@ -8,13 +8,18 @@ const expected = { anyOf: [digest, { const: 'absent' }] };
 export const TASK_WORK_STAGES = ['requirements', 'design', 'planning-review', 'implementation', 'implementation-review', 'verification', 'acceptance', 'closeout'] as const;
 const stage = nullable({ enum: TASK_WORK_STAGES });
 const kind = { enum: ['decision', 'acceptance', 'question'] };
+export const TASK_WORK_CHECK_NAMES = ['planning-review', 'implementation-review', 'verification'] as const;
+export type TaskWorkCheckName = (typeof TASK_WORK_CHECK_NAMES)[number];
+const check = { check: { enum: TASK_WORK_CHECK_NAMES }, status: { enum: ['needed', 'not-applicable'] }, reason: text };
+const checks = { anyOf: [{ type: 'null' }, { type: 'array', maxItems: 3, items: closed(check) }] };
 export const TASK_WORK_CONTEXT_DEFINITIONS = {
   TaskWorkAttention: closed({ id: shortText, kind, reason: text, state: { enum: ['pending', 'resolved'] }, createdAt: text, response: nullable(closed({ text, recordedAt: text })) }),
-  TaskWorkContext: closed({ progress: text, nextStep: text, updatedAt: text, attention: nullable(ref('TaskWorkAttention')), stage }, ['progress', 'nextStep', 'updatedAt', 'attention']),
+  TaskWorkCheck: closed(check),
+  TaskWorkContext: closed({ progress: text, nextStep: text, updatedAt: text, attention: nullable(ref('TaskWorkAttention')), stage, checks: nullable({ type: 'array', maxItems: 3, items: ref('TaskWorkCheck') }) }, ['progress', 'nextStep', 'updatedAt', 'attention']),
   TaskWorkContextResponse: closed({ schemaVersion: { const: 'buildr.task-work-context/v1' }, taskId: { type: 'string', pattern: '^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$' }, context: nullable(ref('TaskWorkContext')), contextDigest: nullable(digest) }),
   TaskWorkContextsRequest: closed({ ids: { type: 'string', maxLength: 30000 } }),
   TaskWorkContextsResponse: closed({ schemaVersion: { const: 'buildr.task-work-context-list/v1' }, items: { type: 'array', items: ref('TaskWorkContextResponse') } }),
-  TaskWorkContextRecordRequest: closed({ expectedContextDigest: expected, progress: text, nextStep: text, stage, attention: nullable(closed({ kind, reason: text })) }, ['expectedContextDigest', 'progress', 'nextStep']),
+  TaskWorkContextRecordRequest: closed({ expectedContextDigest: expected, progress: text, nextStep: text, stage, attention: nullable(closed({ kind, reason: text })), checks }, ['expectedContextDigest', 'progress', 'nextStep']),
   TaskWorkContextRespondRequest: closed({ expectedContextDigest: digest, attentionId: shortText, response: text }),
 };
 export function taskWorkContextError(code: string, message: string, status = 400, details?: unknown): Error { return Object.assign(new Error(message), { code, status, details }); }
@@ -32,12 +37,25 @@ function stageValue(input: Record<string, unknown>): void {
   if (Object.hasOwn(input, 'stage') && input.stage !== null && !TASK_WORK_STAGES.some(stage => stage === input.stage)) invalid('stage');
 }
 function attentionInput(value: unknown): void { const input = object(value, ['kind', 'reason']); if (!['decision', 'acceptance', 'question'].includes(input.kind)) invalid('attention.kind'); nonempty(input.reason, 'attention.reason'); }
+function checkInput(value: unknown): void {
+  const input = object(value, ['check', 'status', 'reason']);
+  if (!TASK_WORK_CHECK_NAMES.includes(input.check)) invalid('checks.check');
+  if (!['needed', 'not-applicable'].includes(input.status)) invalid('checks.status');
+  nonempty(input.reason, 'checks.reason');
+}
+function checksInput(value: unknown): void {
+  if (value === null) return;
+  if (!Array.isArray(value) || value.length > TASK_WORK_CHECK_NAMES.length) invalid('checks');
+  const seen = new Set<string>();
+  for (const item of value) { checkInput(item); if (seen.has(item.check)) invalid('checks'); seen.add(item.check); }
+}
 export function validateTaskWorkContext(name: 'TaskWorkContextResponse' | 'TaskWorkContextRecordRequest' | 'TaskWorkContextRespondRequest', value: unknown): void {
   if (name === 'TaskWorkContextRecordRequest') {
-    const input = object(value, ['expectedContextDigest', 'progress', 'nextStep', 'attention', 'stage'], ['expectedContextDigest', 'progress', 'nextStep']);
+    const input = object(value, ['expectedContextDigest', 'progress', 'nextStep', 'attention', 'stage', 'checks'], ['expectedContextDigest', 'progress', 'nextStep']);
     stageValue(input);
     digestValue(input.expectedContextDigest, true); nonempty(input.progress, 'progress'); nonempty(input.nextStep, 'nextStep');
     if (Object.hasOwn(input, 'attention') && input.attention !== null) attentionInput(input.attention);
+    if (Object.hasOwn(input, 'checks')) checksInput(input.checks);
   } else if (name === 'TaskWorkContextRespondRequest') {
     const input = object(value, ['expectedContextDigest', 'attentionId', 'response']);
     digestValue(input.expectedContextDigest); nonempty(input.attentionId, 'attentionId', 300); nonempty(input.response, 'response');
@@ -46,9 +64,10 @@ export function validateTaskWorkContext(name: 'TaskWorkContextResponse' | 'TaskW
     if (input.schemaVersion !== 'buildr.task-work-context/v1' || typeof input.taskId !== 'string' || !/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/.test(input.taskId)) invalid('taskId');
     if (input.context === null) { if (input.contextDigest !== null) invalid('contextDigest'); return; }
     digestValue(input.contextDigest);
-    const context = object(input.context, ['progress', 'nextStep', 'updatedAt', 'attention', 'stage'], ['progress', 'nextStep', 'updatedAt', 'attention']);
+    const context = object(input.context, ['progress', 'nextStep', 'updatedAt', 'attention', 'stage', 'checks'], ['progress', 'nextStep', 'updatedAt', 'attention']);
     stageValue(context);
     nonempty(context.progress, 'progress'); nonempty(context.nextStep, 'nextStep'); nonempty(context.updatedAt, 'updatedAt');
+    if (Object.hasOwn(context, 'checks') && context.checks !== null && context.checks !== undefined) checksInput(context.checks);
     if (context.attention === null) return;
     const attention = object(context.attention, ['id', 'kind', 'reason', 'state', 'createdAt', 'response']);
     nonempty(attention.id, 'attention.id', 300); attentionInput({ kind: attention.kind, reason: attention.reason }); nonempty(attention.createdAt, 'attention.createdAt');

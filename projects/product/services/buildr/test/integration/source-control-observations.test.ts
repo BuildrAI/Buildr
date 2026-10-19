@@ -378,6 +378,7 @@ test('watch failures retain readable Git facts and return diagnostics instead of
   assert.equal(current.repositories.every(repository => repository.status === 'complete'), true);
   const state = await f.observations.watch(f.root);
   assert.ok(state.diagnostics?.some(message => message.includes('低频核对')));
+  assert.ok(state.diagnostics?.every(message => /^2 个代码库：/.test(message)), 'the same watch reason across repositories is aggregated once with a count');
   assert.equal(CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS.sourceControlWatch.$id, state).valid, true);
 });
 
@@ -401,4 +402,94 @@ test('persistent watch failure does not self-invalidate repeated reads, and a su
   assert.deepEqual(recovered.diagnostics, []);
   await f.observations.observe(f.root, snapshot);
   assert.equal((await deadline(f.observations.watch(f.root, recovered.cursor))).cursor, recovered.cursor);
+});
+
+test('uncloned repositories are not watched or reported until their directory appears', async t => {
+  const f = fixture(t);
+  const missing = path.join(f.root, 'missing'); f.catalog.repositories.push({ id: 'repo-missing', code: 'missing', name: 'Missing', source: { type: 'workspace', path: missing } });
+  const snapshot = f.application.sourceControl(f.root);
+  assert.equal(snapshot.repositories.find(repository => repository.id === 'repo-missing')?.status, 'unavailable');
+  await f.observations.observe(f.root, snapshot);
+  const baseline = await f.quiet((await f.observations.watch(f.root)).cursor);
+  assert.equal((baseline.diagnostics || []).some(message => message.includes('监听') || message.includes('低频核对')), false, 'an unreadable repository must not report watch diagnostics');
+  await f.observations.observe(f.root, snapshot);
+  const unchanged = await deadline(f.observations.watch(f.root, baseline.cursor));
+  assert.equal(unchanged.cursor, baseline.cursor, 'repeated reads of an unavailable repository must not self-invalidate');
+  // The directory appearing outside Buildr is found by the next read and watching resumes automatically.
+  fs.mkdirSync(missing); execFileSync('git', ['-C', missing, 'init', '--initial-branch=main']); execFileSync('git', ['-C', missing, 'config', 'user.email', 'watch@example.com']); execFileSync('git', ['-C', missing, 'config', 'user.name', 'Watch Fixture']); execFileSync('git', ['-C', missing, 'config', 'commit.gpgSign', 'false']);
+  fs.writeFileSync(path.join(missing, 'file.txt'), 'new\n'); execFileSync('git', ['-C', missing, 'add', '.']); execFileSync('git', ['-C', missing, 'commit', '-m', 'initial']);
+  const readable = f.application.sourceControl(f.root);
+  assert.equal(readable.repositories.find(repository => repository.id === 'repo-missing')?.status, 'complete');
+  await f.observations.observe(f.root, readable);
+  const quiet = await f.quiet((await f.observations.watch(f.root)).cursor);
+  fs.writeFileSync(path.join(missing, 'file.txt'), 'external change\n');
+  const noticed = await f.nextInvalidation(quiet.cursor);
+  assert.ok(noticed.repositoryIds.includes('repo-missing'), 'a repository that became readable resumes file watching');
+});
+
+test('shared background requests coalesce in flight and reuse observations; explicit reads and source changes remain fresh', async t => {
+  const f = fixture(t); await f.register();
+  const contribution = createCodeHttpContribution(f.application, f.observations);
+  let scans = 0;
+  const read = (id = 'repo-0', shared = true) => contribution.handle({request:{method:'GET'},suffix:'/code/source-control',root:f.root,
+    searchParams:new URLSearchParams({repositoryId:id,...(shared ? {observation:'shared'} : {})}),
+    submitTaskRead:async (_operation,_task,input,signal) => {
+      scans++; assert.equal(Boolean(signal),shared);
+      await pause(25); return f.application.sourceControl(f.root,JSON.parse(input.input));
+    }});
+  const first = await Promise.all([read(),read(),read()]);
+  assert.equal(scans,1); assert.deepEqual(first[0],first[2]);
+  await read(); assert.equal(scans,1);
+  await read('repo-1'); assert.equal(scans,2);
+  await read('repo-0',false); assert.equal(scans,3);
+  await read(); assert.equal(scans,4);
+  f.observations.invalidateReads(f.root,['repo-0']);
+  await read('repo-1'); assert.equal(scans,4,'unrelated repository keeps its observation');
+  await read(); assert.equal(scans,5);
+  f.catalog.repositories[0].name = 'Renamed';
+  const renamed = await read(); assert.equal(scans,6); assert.equal(renamed!.body.repositories[0].name,'Renamed');
+  const replaced = f.locations[0] + '-retired';
+  fs.renameSync(f.locations[0],replaced); fs.cpSync(replaced,f.locations[0],{recursive:true});
+  await read(); assert.equal(scans,7,'directory identity replacement invalidates before notification delivery');
+  const before = await f.quiet((await f.observations.watch(f.root)).cursor);
+  f.write(0,'external shared change\n'); await f.nextInvalidation(before.cursor);
+  const changed = await read(); assert.equal(scans,8); assert.equal(changed!.body.repositories[0].fileCount,1);
+});
+
+test('shared reads fence changes during execution, isolate scopes, expire and cancel on owner shutdown', async () => {
+  const {SourceControlSharedReads} = await import('../../src/modules/code/application/source-control-shared-reads.ts');
+  const reads = new SourceControlSharedReads(10);
+  const value = {diagnostics:[],readAt:new Date().toISOString()} as any;
+  let calls = 0, finish!: (value:any) => void;
+  const first = reads.read('scope/a','a','v1',async () => { calls++; return new Promise(resolve => { finish=resolve; }); });
+  const same = reads.read('scope/a','a','v1',async () => { throw Error('duplicate'); });
+  await pause(0); assert.equal(calls,1);
+  reads.invalidate(['a']);
+  const next = reads.read('scope/a','a','v1',async () => { calls++; return value; });
+  finish(value); await Promise.all([first,same,next]); assert.equal(calls,2);
+  await reads.read('scope/a','a','v1',async () => { throw Error('not expired'); });
+  await reads.read('other/a','a','v1',async () => { calls++; return value; }); assert.equal(calls,3);
+  await pause(15);
+  await reads.read('scope/a','a','v1',async () => { calls++; return value; }); assert.equal(calls,4);
+  await assert.rejects(reads.read('bad','b','v1',async () => { throw Error('failed'); }));
+  await reads.read('bad','b','v1',async () => { calls++; return value; }); assert.equal(calls,5,'failed reads never poison later reads');
+  let signal!: AbortSignal;
+  const pending = reads.read('pending','c','v1',async current => { signal=current; return new Promise((_resolve,reject) => current.addEventListener('abort',() => reject(Error('owner closed')),{once:true})); });
+  await pause(0); reads.close(); assert.equal(signal.aborted,true); await assert.rejects(pending,/owner closed/);
+});
+
+test('shared observations bound completed entries and bytes rather than retaining every status forever', async () => {
+  const {SourceControlSharedReads} = await import('../../src/modules/code/application/source-control-shared-reads.ts');
+  const reads = new SourceControlSharedReads();
+  const value = {diagnostics:[],readAt:'observed'} as any;
+  for(let i=0;i<129;i++) await reads.read(String(i),String(i),'v1',async()=>value);
+  let repeated=0; await reads.read('0','0','v1',async()=>{repeated++;return value;}); assert.equal(repeated,1);
+  const large={...value,payload:'x'.repeat(3*1024*1024)};
+  await reads.read('large-a','a','v1',async()=>large); await reads.read('large-b','b','v1',async()=>large);
+  await reads.read('large-a','a','v1',async()=>{repeated++;return large;}); assert.equal(repeated,2);
+  const concurrent = new SourceControlSharedReads();
+  await Promise.all(['x','y'].map(key=>concurrent.read(key,key,'v1',async()=>large)));
+  await concurrent.read('x','x','v1',async()=>{repeated++;return large;}); assert.equal(repeated,3,'simultaneously completing reads also respect the byte budget');
+  concurrent.close();
+  reads.close();
 });

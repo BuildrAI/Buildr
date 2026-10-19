@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { diffContentRows, parseUnifiedDiff, pairForSplit } from '../src/features/task/components/diff-text.ts';
+import { diffContentRows, inlineChangePairs, inlineSegments, parseUnifiedDiff, pairForSplit } from '../src/features/task/components/diff-text.ts';
 
 test('统一差异按行号解析：hunk、上下文、删除、新增各归其位', () => {
   const text = [
@@ -71,4 +71,29 @@ test('单侧空区块之后连续显示的代码不产生虚假省略提示', ()
   const rows = diffContentRows(parsed.rows);
   assert.deepEqual(rows.map(row => row.kind), ['del', 'ctx']);
   assert.deepEqual([rows[1].oldNo, rows[1].newNo], [3, 2]);
+});
+
+const changedText = (segments, text) => segments.filter(segment => segment.changed).map(segment => text.slice(segment.start, segment.end)).join('');
+
+test('行内差异只标出真正变化的片段，公用前后缀保持原样', () => {
+  const { old, new: next } = inlineSegments('const value = readConfig(name, options);', 'const value = readConfig(name, extra, options);');
+  assert.equal(changedText(old, 'const value = readConfig(name, options);'), '');
+  assert.equal(changedText(next, 'const value = readConfig(name, extra, options);'), 'extra, ');
+});
+
+test('行内差异支持中文逐字变化，整行重写时词元全部标记、仅空格保持原样', () => {
+  const { old, new: next } = inlineSegments('同意实施、开始或继续修改只授权实施范围内的持久修改。', '同意实施、开始或继续修改只授权实施范围内的临时修改。');
+  assert.equal(changedText(old, '同意实施、开始或继续修改只授权实施范围内的持久修改。'), '持久');
+  assert.equal(changedText(next, '同意实施、开始或继续修改只授权实施范围内的临时修改。'), '临时');
+  const rewrite = inlineSegments('completely different old content', 'totally new line here');
+  assert.ok(rewrite.old.filter(segment => !segment.changed).every(segment => /^\s+$/u.test('completely different old content'.slice(segment.start, segment.end))));
+  assert.ok(rewrite.new.filter(segment => !segment.changed).every(segment => /^\s+$/u.test('totally new line here'.slice(segment.start, segment.end))));
+});
+
+test('行内配对跟随同一删除新增块的位置，超出部分行保持整行标记', () => {
+  const { rows } = parseUnifiedDiff('@@ -1,2 +1,3 @@\n-old one\n-old two\n+new one\n+new two\n+new three\n ctx');
+  const pairs = inlineChangePairs(rows);
+  const indexes = [...pairs.entries()].sort((a, b) => a[0] - b[0]);
+  assert.deepEqual(indexes, [[1, 3], [2, 4], [3, 1], [4, 2]]);
+  assert.ok(!pairs.has(5), '第三个新增行没有配对删除行，保持整行新增色');
 });

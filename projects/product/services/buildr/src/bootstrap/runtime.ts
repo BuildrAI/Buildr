@@ -1,5 +1,5 @@
 import { AGENT_ASSETS_SOURCE_MODULE } from '../modules/agent-assets/source/module.ts';
-import { createConnectionSkillsModule } from '../modules/connection-skills/module.ts';
+import { createConnectionSkillsModule, CONNECTION_SKILLS_APPLICATION } from '../modules/connection-skills/module.ts';
 import { createMySqlQueryModule } from '../modules/mysql-query/module.ts';
 import { CODE_MODULE, CODE_SOURCE_CONTROL_OBSERVATIONS } from '../modules/code/module.ts';
 import { AGENT_OPERATIONS_APPLICATION, createAgentOperationsModule } from '../modules/agent-operations/module.ts';
@@ -66,7 +66,6 @@ export function createRuntime(): any  {
   registry.provide(WORKSPACE_AGENT_ASSETS_BINDER).bindAgentAssets(registry.provide(AGENT_ASSETS_INTERNAL));
   registerProjectGitObserver(runtime);
   registry.install(createKnowledgeModule());
-  registry.install(createPublicationModule(runtime));
   registry.install(createOpenSpecModule(runtime));
   registry.install(TASK_MODULE);
   registry.install(createDailyProgressModule(runtime));
@@ -75,6 +74,7 @@ export function createRuntime(): any  {
   registry.install(TASK_COMMITS_MODULE);
   registry.install(TASK_CHANGED_FILES_MODULE);
   registry.install(TASK_MATERIALS_MODULE);
+  registry.install(createPublicationModule(runtime));
   registry.install(AGENT_ASSETS_SOURCE_MODULE);
   registry.install(createChangeModule(runtime));
   registry.install(createAgentOperationsModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile }));
@@ -93,6 +93,7 @@ export function createRuntime(): any  {
   registry.install(createSystemInstallationModule(runtime));
   registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http'), closeResources: async () => {
     registry.provide(CODE_SOURCE_CONTROL_OBSERVATIONS).close();
+    registry.provide(CONNECTION_SKILLS_APPLICATION).close();
     registry.provide(DSH_PAGE_OBSERVATIONS).close();
     await Promise.all([registry.provide(DSH_DESKTOP_APPLICATION).close(), registry.provide(AGENT_OPERATIONS_APPLICATION).close()]);
   } }));

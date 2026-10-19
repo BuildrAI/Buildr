@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { articleResourceKey, assetMarkdown, buildWritingRequest, insertMarkdown, publicationAssetPath, publicationAssetUrl, referencedAssets, selectPublications } from '../src/features/publication/publication-model.ts';
+import { articleResourceKey, articlePath, assetMarkdown, buildWritingRequest, insertMarkdown, publicationAssetPath, publicationAssetUrl, referencedAssets, selectPublications } from '../src/features/publication/publication-model.ts';
 
 const publication = (projectCode, id, title, summary, updatedAt, status = 'draft') => ({ projectCode, id, title, summary, updatedAt, status, projectName: projectCode, revision: 'r1', sourcePath: `${id}.md`, kind: 'article', publishedAt: null, targets: [] });
 
@@ -45,4 +45,15 @@ test('写作请求携带真实来源版本并明确未执行与未保存修改�
   for (const fragment of ['practice', 'docs/publications/same.md', 'observed-version', '核对事实', '当前项目知识', '未保存修改', '不代表已执行', '已安装且适用']) assert.ok(request.includes(fragment), fragment);
   assert.throws(() => buildWritingRequest({ ...args, goal: '  ' }), /目标/);
   assert.throws(() => buildWritingRequest({ ...args, projectCode: '' }), /项目/);
+});
+
+test('主目录和多个任务的同名文章使用独立链接、收藏键与图片地址', () => {
+  const main = publication('product', 'same', '相同标题', '', '2026-10-19');
+  const a = { ...main, sourceTask: { id: 'first', title: '第一任务' } };
+  const b = { ...main, sourceTask: { id: 'second', title: '第二任务' } };
+  assert.equal(new Set([main,a,b].map(articleResourceKey)).size, 3);
+  assert.equal(articlePath(a), '/articles/product/same?task=first');
+  assert.equal(articlePath(b), '/articles/product/same?task=second');
+  assert.match(publicationAssetUrl('w', 'product', 'same', 'assets/图.png', 'first'), /\/tasks\/first\/projects\/product\/publications\/same\/assets\//);
+  assert.deepEqual(selectPublications([main,a,b], { query:'', project:'', status:'', sort:'updated', saved:true }, key => key === articleResourceKey(b)), [b]);
 });

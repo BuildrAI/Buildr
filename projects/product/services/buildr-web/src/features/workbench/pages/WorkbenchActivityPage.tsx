@@ -4,7 +4,7 @@ import { Alert, Button, DatePicker, Select, Skeleton } from 'antd';
 import { RefreshButton } from '../../../components/RefreshButton';
 import dayjs from 'dayjs';
 import { useAppShell } from '../../../app/AppShellContext';
-import { useWorkbench } from '../hooks/useWorkbench';
+import { useWorkbenchActivity } from '../hooks/useWorkbench';
 import { WorkbenchDailyProgress } from '../components/WorkbenchDailyProgress';
 import { DailyProgressPanel } from '../../project-daily-progress/components/DailyProgressPanel';
 import { dailyProgressActionContext, dailyProgressGroup, isDailyProgressDate } from '../../project-daily-progress/dailyProgressNavigation';
@@ -19,7 +19,7 @@ export function WorkbenchActivityPage() {
   const group = dailyProgressGroup(params.get('group'));
   const [detailRefresh, setDetailRefresh] = useState(0);
   const showDetail = Boolean(project && date);
-  const { data, error, loading, refresh } = useWorkbench(workspaceId, project, date);
+  const { data, error, loading, refresh } = useWorkbenchActivity(workspaceId, project, date);
   useEffect(() => { setBreadcrumbParts([workspace?.name || '工作空间', '动态']); }, [workspace?.name, setBreadcrumbParts]);
   const update = (field: string, value: string) => { const next = new URLSearchParams(params); if (value) next.set(field, value); else next.delete(field); setParams(next); };
   const showLatest = () => { const next = new URLSearchParams(params); next.delete('date'); next.delete('group'); setParams(next); };

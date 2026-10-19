@@ -236,6 +236,6 @@ export function createTaskMaterialsApplication({ taskQuery, projectQuery, worktr
       return { result, materialsDigest: documentDigest(bytes) };
     });
   }
-  return Object.freeze({ inspectTaskMaterials, inspectTaskMaterial, recordTaskMaterials, writeTaskMaterialDocument, inspectLegacyTaskBrief, migrateLegacyTaskBrief, releaseLegacyTaskBrief, taskProjectDocument: reader.taskProjectDocument, taskProjectDocumentImage: reader.taskProjectDocumentImage, taskMaterialImage });
+  return Object.freeze({ inspectTaskMaterials, inspectTaskMaterial, recordTaskMaterials, writeTaskMaterialDocument, inspectLegacyTaskBrief, migrateLegacyTaskBrief, releaseLegacyTaskBrief, resolveTaskProjectDocument: reader.resolveTaskProjectDocument, taskProjectDocument: reader.taskProjectDocument, taskProjectDocumentImage: reader.taskProjectDocumentImage, taskMaterialImage });
 }
 export type TaskMaterialsApplication = ReturnType<typeof createTaskMaterialsApplication>;

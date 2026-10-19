@@ -1187,6 +1187,7 @@ artifacts:
       - verification-product-tools
     sources:
       - verification-local-source
+      - verification-candidate-round
       - verification-platform-boundaries
       - verification-local-artifact
       - verification-artifact-reuse
@@ -1507,7 +1508,12 @@ sources:
     title: 通用与本机平台源码检查
     kind: code
     path: services/buildr/test/verification/source.ts
-    summary: 独立选择通用源码和本机平台源码，采用有效结果后只准备和执行缺项，不生产最终原包。
+    summary: 独立选择通用源码和本机平台源码，同轮保留成功后只准备和执行失败及未执行项，不生产最终原包。
+  - id: verification-candidate-round
+    title: 同轮候选普通结果日志
+    kind: code
+    path: services/buildr/test/verification/candidate-round.ts
+    summary: 同轮成功保留，只补失败及未执行项；不按文件、配方或依赖摘要使成功失效。
   - id: verification-platform-boundaries
     title: 两系统源码与原包真实边界
     kind: code
@@ -1552,7 +1558,7 @@ sources:
     title: 原包正式补验计划
     kind: code
     path: services/buildr/test/verification/candidate-repair.ts
-    summary: 核验原运行、包身份及逐项检查输入，保留有效证明并选择必要补验，保持完整覆盖与原始来源。
+    summary: 核验原运行、包身份及真实平台；同轮成功保留，只补失败及未执行项，保留原始来源。
   - id: verification-candidate-repair-entry
     title: 受控补验入口与插件原包采用
     kind: code

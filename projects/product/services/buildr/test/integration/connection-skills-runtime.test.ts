@@ -609,3 +609,67 @@ test('retirement warnings stay separate from instance availability and offline h
     assert.deepEqual(beforeTeamRead, [3, 4], 'Each directory path retires once before reading team files.');
   } finally { list.mock.restore(); }
 });
+
+test('async directory shares only in-flight source proof and reads current private state locally', async t => {
+  const f = fixture(t), created = f.create();
+  f.app.saveAuth(f.workspace, created.id, { intent: 'replace', values: { username: 'person', password: 'async-private-secret' }, expected: f.expected() });
+  let calls = 0, release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const load = async (root: string, signal: AbortSignal) => { calls++; assert.equal(signal.aborted, false); await gate; return f.app.catalog.list(root); };
+  const reads = [f.app.directoryAsync(f.workspace, load), f.app.directoryAsync(f.workspace, load), f.app.directoryAsync(f.workspace, load)];
+  await Promise.resolve(); assert.equal(calls, 1);
+  release(); const values = await Promise.all(reads);
+  assert.equal(values[0]?.instances[0]?.id, created.id);
+  assert.deepEqual(values[0], values[1]); assert.deepEqual(values[1], values[2]);
+  assert.equal(JSON.stringify(values).includes('async-private-secret'), false);
+  const definition = structuredClone(f.definition); definition.name = 'Fresh async source'; fs.writeFileSync(f.declaration, YAML.stringify(definition));
+  const next = await f.app.directoryAsync(f.workspace, load);
+  assert.equal(calls, 2); assert.equal(next.definitions[0]?.definition.name, 'Fresh async source');
+  assert.notEqual(next.definitions[0]?.revision, values[0]?.definitions[0]?.revision);
+});
+
+test('async directory fences in-flight sharing before and after failed writes; HTTP keeps shared cancellation independent', async t => {
+  const f = fixture(t); f.create(); const http = createConnectionSkillsHttp(f.app);
+  let calls = 0, release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const submit = async (operation: string, taskId: string, input: Record<string, unknown>, signal: AbortSignal) => {
+    calls++; assert.equal(operation, 'connection-catalog'); assert.equal(taskId, 'connection-directory');
+    assert.deepEqual(Object.keys(input), ['targetRoot']); assert.equal(fs.realpathSync(String(input.targetRoot)), fs.realpathSync(f.workspace));
+    assert.equal(signal.aborted, false); await gate; return f.app.catalog.list(String(input.targetRoot));
+  };
+  const context = { root: f.workspace, suffix: '/connection-skills/directory', searchParams: new URLSearchParams(), request: { method: 'GET' }, authorizeWrite() {}, readJsonBody: async () => ({}), submitTaskRead: submit };
+  const first = http.handle(context); await Promise.resolve();
+  await assert.rejects(http.handle({ ...context, suffix: '/connection-skills/instances/missing', request: { method: 'PATCH' } }));
+  const second = http.handle(context); await Promise.resolve(); assert.equal(calls, 2, 'a failed write still fences the previous source check');
+  release(); await Promise.all([first, second]);
+});
+
+test('async directory rejects changed workspace identity and does not carry a previous failure forward', async t => {
+  const f = fixture(t); f.create(); let changed = false;
+  const app = new ConnectionSkillsApplication({ dataRoot: path.join(f.root, 'async-data'), catalog: f.app.catalog, resolveScope: () => ({ rootPath: f.workspace, workspaceId: changed ? 'changed-workspace' : 'original-workspace' }) });
+  let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+  const pending = app.directoryAsync(f.workspace, async root => { await gate; return app.catalog.list(root); });
+  changed = true; release(); await assert.rejects(pending, { code: 'connection_skill_context_changed' });
+  await assert.rejects(app.directoryAsync(f.workspace, async () => { throw new Error('source worker failed'); }), /source worker failed/);
+  const recovered = await app.directoryAsync(f.workspace, async root => app.catalog.list(root));
+  assert.equal(recovered.definitions.length, 1);
+});
+
+test('async directory close cancels owned checks and rejects new reads', async t => {
+  const f = fixture(t); let started!: () => void;
+  const ready = new Promise<void>(resolve => { started = resolve; });
+  const pending = f.app.directoryAsync(f.workspace, async (_root, signal) => new Promise((_, reject) => {
+    signal.addEventListener('abort', () => reject(Object.assign(new Error('cancelled'), { code: 'local_app_read_cancelled' })), { once: true }); started();
+  }));
+  await ready; f.app.close();
+  await assert.rejects(pending, { code: 'local_app_read_cancelled' });
+  await assert.rejects(f.app.directoryAsync(f.workspace, async root => f.app.catalog.list(root)), { code: 'local_app_read_executor_closed' });
+});
+
+test('async directory refuses a replaced source root even when its path and workspace ID stay the same', async t => {
+  const f = fixture(t); f.create(); const observed = f.app.catalog.list(f.workspace);
+  let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+  const pending = f.app.directoryAsync(f.workspace, async () => { await gate; return observed; });
+  fs.renameSync(f.workspace, f.workspace + '-previous'); fs.mkdirSync(f.workspace);
+  release(); await assert.rejects(pending, { code: 'connection_skill_context_changed' });
+});

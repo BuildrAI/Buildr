@@ -7,9 +7,9 @@ export function createWorkbenchHttpContribution(application: PreferencesApplicat
     id: 'workbench.http',
     async handle({ request, suffix, searchParams, root, authorizeWrite, readJsonBody }: any) {
       if (!suffix.startsWith('/workbench')) return null;
-      if (request.method === 'GET' && suffix === '/workbench') {
+      if (request.method === 'GET' && ['/workbench', '/workbench/activity'].includes(suffix)) {
         if ([...searchParams.keys()].some((key) => !['project', 'date'].includes(key) || searchParams.getAll(key).length !== 1)) throw Object.assign(new Error('工作台仅接受 project 和 date 查询。'), { code: 'workbench_query_forbidden', status: 400 });
-        return { status: 200, body: application.inspectWorkbench(root, Object.fromEntries(searchParams)) };
+        return { status: 200, body: suffix === '/workbench/activity' ? application.inspectWorkbenchActivity(root, Object.fromEntries(searchParams)) : application.inspectWorkbench(root, Object.fromEntries(searchParams)) };
       }
       if (searchParams.size) throw Object.assign(new Error('偏好接口不接受查询参数。'), { code: 'workbench_query_forbidden', status: 400 });
       if (request.method === 'GET' && suffix === '/workbench/preferences') return { status: 200, body: application.inspectWorkbenchPreferences(root) };

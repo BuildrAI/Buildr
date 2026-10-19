@@ -6,6 +6,8 @@ import { syncBuiltinESMExports } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { createBoundedBuildrWebReadExecutor } from '../../src/web/http/read-executor.ts';
+import { ConnectionDirectoryReads } from '../../src/modules/connection-skills/application/directory-reads.ts';
 import YAML from 'yaml';
 import { readConnectionSkillFile, readConnectionSkillFiles, readConnectionSkillSources } from '../../src/modules/agent-assets/application/connection-skill-source.ts';
 import { readSkillTexts } from '../../src/modules/agent-assets/persistence/skill-content-repository.ts';
@@ -86,4 +88,33 @@ test('large catalogs schedule bounded phases without retaining a failed source',
   assert.equal(batches.slice(2).flat().some(request => request.skillPath === f.skills[0]!.path), false);
   fs.writeFileSync(path.join(f.root, 'skills', f.skills[0]!.path!, 'SKILL.md'), `---\nname: ${f.skills[0]!.id}\ndescription: restored\n---\n`);
   batches.length = 0; result = catalog.list(f.root); assert.equal(result.definitions.length, 18); assert.equal(result.diagnostics.length, 0); assert.deepEqual(batches.map(batch => batch.length), [16, 2, 16, 2]);
+});
+
+
+test('real bounded worker keeps source proof, diagnostics and revisions without loading private state', async t => {
+  const f = fixture(t), executor = createBoundedBuildrWebReadExecutor({ workerCount: 1 });
+  const catalog = createConnectionCatalog({ assets: { readSkills: readConnectionSkillSources, readSkillFile: readConnectionSkillFile, readSkillFiles: readConnectionSkillFiles } });
+  try {
+    const first = await executor.run('connection-catalog', { targetRoot: f.root, taskId: 'connection-directory' });
+    assert.deepEqual(first, catalog.list(f.root)); assert.equal(first.definitions.length, 4);
+    fs.writeFileSync(path.join(f.root, 'skills', f.skills[0]!.path!, 'SKILL.md'), '---\nname: rejected\n---\n');
+    const next = await executor.run('connection-catalog', { targetRoot: f.root, taskId: 'connection-directory' });
+    assert.deepEqual(next, catalog.list(f.root)); assert.equal(next.definitions.length, 3);
+    assert.equal(next.diagnostics[0]?.code, 'connection_skill_entry_invalid');
+    await assert.rejects(executor.run('connection-catalog', { targetRoot: f.root, taskId: 'wrong-scope' }), { code: 'local_app_read_input_invalid' });
+    assert.equal(fs.existsSync(path.join(f.root, '.buildr')), false, 'source checks never create task or private credential stores');
+  } finally { await executor.close(); }
+});
+
+test('directory in-flight capacity includes invalidated work and isolates workspace identity', async () => {
+  const reads = new ConnectionDirectoryReads(2), scope = { rootPath: '/fixture/source', workspaceId: 'one' };
+  let finish!: () => void; const gate = new Promise<void>(resolve => { finish = resolve; });
+  const load = async () => { await gate; return { definitions: [], diagnostics: [] }; };
+  const first = reads.read(scope, 'inode', load);
+  assert.equal(reads.read(scope, 'inode', load), first);
+  const second = reads.read({ ...scope, workspaceId: 'two' }, 'inode', load);
+  reads.invalidate(scope);
+  await assert.rejects(reads.read(scope, 'inode', load), { code: 'local_app_read_queue_full' });
+  finish(); await Promise.all([first, second]);
+  assert.deepEqual(await reads.read(scope, 'inode', load), { definitions: [], diagnostics: [] }); reads.close();
 });

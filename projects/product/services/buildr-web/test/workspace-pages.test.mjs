@@ -130,3 +130,15 @@ test('组合任务与普通任务副屏身份独立，文档路径限制在相�
  assert.equal(doc.kind,'task-document'); assert.equal(doc.file,'docs/plan.md');
  for(const file of ['../secret.md','/secret.md','a/../../secret.md','a\\b.md']) assert.equal(resourcePreview('w',`/workspaces/w/tasks/parent/document?project=product&file=${encodeURIComponent(file)}`),null);
 });
+
+test('工作树文章深链接在副屏保留来源，编辑入口指向来源任务稿件', () => {
+  const a = resourcePreview('w', '/workspaces/w/articles/product/same?task=first&view=source');
+  const b = resourcePreview('w', '/workspaces/w/articles/product/same?task=second');
+  assert.equal(a.sourceTaskId, 'first');
+  assert.equal(a.view, 'source');
+  assert.notEqual(a.id, b.id);
+  const editing = resourcePreview('w', '/workspaces/w/articles/product/same/edit?task=first');
+  assert.equal(editing.edit, true);
+  assert.equal(editing.sourceTaskId, 'first');
+  assert.equal(resourcePreview('w', '/workspaces/w/articles/product/same?task=../escape'), null);
+});

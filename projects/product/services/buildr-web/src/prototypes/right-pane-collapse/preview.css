@@ -3,7 +3,9 @@
 .right-pane-demo-dirty{display:inline-block;width:6px;height:6px;margin-left:7px;border-radius:50%;background:#c18a36;vertical-align:middle}
 .right-pane-prototype .file-editing-pane{height:100%}
 .right-pane-prototype .file-editing-save-detail{display:none}
-.right-pane-prototype .page-tabs-can-collapse{padding-right:48px}
+.right-pane-prototype .workspace-page-tabs{display:flex;align-items:center;overflow:hidden}
+.right-pane-prototype .workspace-page-tabs > div{flex:1;min-width:0}
+.right-pane-prototype .workspace-page-tabs > .pane-toggle-button{flex:none;margin-right:10px}
 .right-pane-prototype .workspace-page-tabs > [hidden]{display:none!important}
 .right-pane-prototype .page-tabs-collapsed{border-right:1px solid var(--soft-line)}
 .right-pane-prototype .page-tabs-with-restore{padding-right:160px}

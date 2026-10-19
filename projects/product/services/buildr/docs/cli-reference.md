@@ -235,7 +235,7 @@ Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git comm
 | `buildr connection-skill auth authorize --connection <id> --file <json-file\|-> --json` | 显式启动所声明的个人授权程序，完整新组只经私有通道加密保存，不输出令牌；取消或提交前失败保留原组。 |
 | `buildr connection-skill remove --connection <id> --expected-revision <revision> --json` | 删除已观察实例，不操作外部数据。 |
 | `buildr connection-skill check\|help\|test --connection <id> --json` | 分别核对程序依赖、读取离线帮助及执行只读测试。 |
-| `buildr connection-skill run --connection <id> --expected-revision <revision> --program cli -- <专业参数>` | 向所选专业程序交接准确实例；认证不进入参数或普通输入。 |
+| `buildr connection-skill run --connection <id> --expected-revision <revision> --program cli [--timeout-ms <10..300000>] -- <专业参数>` | 向所选专业程序交接准确实例；默认时限60000毫秒，认证不进入参数或普通输入。 |
 
 所有命令可指定 `--target`。配置及认证只从受支持输入读取，不在参数中传密码；个人组存在时整组覆盖，失效不自动回退团队。执行前重读当前观察，冲突后重新判断。Nacos、Kibana 和 XXL-JOB 的详细动作查所选技能（Skill）及程序帮助，通用入口不维护另一份专业命令表。更多使用方法见[外部系统连接](../resources/runtime/skills/buildr/references/external-connections.md)。
 

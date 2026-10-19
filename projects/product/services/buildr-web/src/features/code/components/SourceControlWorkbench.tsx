@@ -74,6 +74,7 @@ export function SourceControlWorkbench({ active = true, repositories, scene, rea
   const [commitBaseHash, setCommitBaseHash] = useState<string | null>(null);
   const [returnScene, setReturnScene] = useState<SourceControlScene>('changes');
   const [readingExpanded, setReadingExpanded] = useState(false), [refreshToken, setRefreshToken] = useState(0);
+  const [diagnosticsExpanded, setDiagnosticsExpanded] = useState(false);
   const [filePage, setFilePage] = useState<{key: string; page: number; revision?: string}>({key: '', page: 0});
   const [fileReload, setFileReload] = useState({key: '', version: 0});
   const [diffMode, setDiffMode] = useState<'split' | 'unified'>('split');
@@ -327,7 +328,7 @@ export function SourceControlWorkbench({ active = true, repositories, scene, rea
         {associatedTask && <Tooltip title={'任务：' + associatedTask.title}><Button className="source-control-selected-task" type="text" size="small" icon={<ProjectOutlined />} aria-label={'打开工作树任务 ' + associatedTask.title} onClick={() => onOpenTask(associatedTask.id)} /></Tooltip>}
       </div>
       {sourceDetailsExpanded && <CodeLocationDetails {...sourceLocation} id={sourceDetailsId} onClose={() => setSourceDetailsExpanded(false)} />}
-      {(observation.error || observation.diagnostics.length || observation.truncated) && <Alert type="warning" showIcon message={observation.error ? '读取失败，保留已有内容。' : '部分范围未能完整读取。'} description={[observation.error, ...observation.diagnostics, observation.truncated ? '代码库读取达到上限。' : ''].filter(Boolean).join('；')} action={<Button size="small" onClick={() => void retry()}>重新读取</Button>} />}
+      {(() => { const notes = [...new Set([observation.error, ...observation.diagnostics, observation.truncated ? '代码库读取达到上限。' : ''].filter(Boolean))]; return notes.length ? <Alert type="warning" showIcon className="source-control-diagnostics" message={observation.error ? '读取失败，保留已有内容。' : notes.length > 1 ? `部分范围未能完整读取，共 ${notes.length} 条说明。` : '部分范围未能完整读取。'} description={notes.length > 1 && !diagnosticsExpanded ? notes[0] + ' 等…' : <ul className="source-control-diagnostic-list">{notes.map(note => <li key={note}>{note}</li>)}</ul>} action={<div className="source-control-diagnostic-actions">{notes.length > 1 && <Button size="small" type="text" aria-expanded={diagnosticsExpanded} aria-label={diagnosticsExpanded ? '收起说明' : '展开全部说明'} onClick={() => setDiagnosticsExpanded(value => !value)}>{diagnosticsExpanded ? '收起' : '展开'}</Button>}<Button size="small" onClick={() => void retry()}>重新读取</Button></div>} /> : null; })()}
       {history && historyRead.error && <Alert type="warning" showIcon message={historyRead.data ? '历史刷新失败，保留已读取记录。' : '历史暂不可读取。'} description={historyRead.error} action={<Button size="small" onClick={() => void historyRead.refresh()}>重试</Button>} />}
 
       {diffRead.error && scene !== 'full-file' && !(editableWorkspaceId && !listedFile && diffRead.data) && <Alert type="warning" showIcon message={diffRead.data ? '差异刷新失败，保留已读取内容。' : '差异暂不可读取。'} description={diffRead.error} action={<Button size="small" onClick={() => void diffRead.refresh()}>重试</Button>} />}

@@ -13,7 +13,7 @@ export type ResourcePreview =
   | (PreviewBase & { kind: 'composite-task' })
   | (PreviewBase & { kind: 'task-document'; taskId: string; projectCode: string; file: string })
   | (PreviewBase & { kind: 'service' | 'repository' | 'skill'; knowledge?: { artifactId?: string; objectId?: string }; edit?: boolean })
-  | (PreviewBase & { kind: 'article'; projectCode: string; publicationId: string; view?: 'source'; edit?: boolean });
+  | (PreviewBase & { kind: 'article'; projectCode: string; publicationId: string; sourceTaskId?: string; view?: 'source'; edit?: boolean });
 export type PreviewState = { items: ResourcePreview[]; active: string | null };
 
 /** Resolve only supported resource identities; query values never become file paths. */
@@ -35,7 +35,9 @@ export function resourcePreview(workspaceId: string, path: string): ResourcePrev
     if (area === 'articles' && (parts.length === 2 || parts.length === 3 || parts.length === 4 && action === 'edit')) {
       const projectCode = parts.length === 2 ? 'product' : first;
       const publicationId = parts.length === 2 ? first : second;
-      return { kind: 'article', id: `${projectCode}:${publicationId}`, projectCode, publicationId, title: '文章详情', path,
+      const sourceTaskId = search.get('task') || undefined;
+      if (sourceTaskId && !/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/.test(sourceTaskId)) return null;
+      return { kind: 'article', id: `${projectCode}:${publicationId}${sourceTaskId ? `:task:${sourceTaskId}` : ''}`, projectCode, publicationId, ...(sourceTaskId ? { sourceTaskId } : {}), title: '文章详情', path,
         ...(search.get('view') === 'source' ? { view: 'source' as const } : {}), ...(action === 'edit' ? { edit: true } : {}) };
     }
     if (area === 'knowledge' && first === 'service' && parts.length === 3) {

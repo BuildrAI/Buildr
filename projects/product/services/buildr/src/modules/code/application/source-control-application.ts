@@ -13,6 +13,14 @@ import type { CodeReadMeta, CodeReadDiagnostic, CodeSourceControlInput, CodeSour
 type Catalog = { repositories: Array<{ id: string; code: string; name: string; location: string; available: boolean; gitId: string | null }>; selectedRepositoryIds: string[]; scopeReason: string; diagnostics: CodeReadDiagnostic[] };
 type Dependencies = { repositories(root: string, taskId?: string, repositoryId?: string): Catalog; inventory(root:string,taskId?:string):Catalog; source(root: string, input: CodeSourceControlInput): CodeSource;worktrees(root:string,repositoryId:string,registered:Catalog['repositories'][number]):{worktrees:CodeGitWorktree[];source(worktreeId:string):CodeSource;verify(source:CodeSource):void}; taskAssociations?(root:string,repositories:CodeSourceControlRepository[],taskId?:string,deadline?:number):ReturnType<typeof readSourceControlTaskAssociations>; readTask?(root: string, taskId: string): { taskId: string; title: string } };
 const diagnostic = (error: unknown, repositoryId: string | null,worktreeId?:string): CodeReadDiagnostic => ({ code: (error as { code?: string })?.code || 'code_source_unavailable', message: error instanceof Error ? error.message : '代码来源暂不可读取。', repositoryId,...(worktreeId?{worktreeId}:{}) });
+// The inventory pass and the live worktree read can report one unavailable repository
+// through two layers; the same reason on the same source is one fact and the earlier
+// (more specific) message wins.
+const uniqueDiagnostics = (items: CodeReadDiagnostic[]): CodeReadDiagnostic[] => {
+  const seen = new Map<string, CodeReadDiagnostic>();
+  for (const item of items) { const key = item.code + ' ' + (item.repositoryId || '') + ' ' + (item.worktreeId || ''); if (!seen.has(key)) seen.set(key, item); }
+  return [...seen.values()];
+};
 function metadata(observedRevision: string, limit: number, truncated = false, diagnostics: CodeReadDiagnostic[] = [], nextCursor: string | null = null): CodeReadMeta {
   return { readAt: new Date().toISOString(), observedRevision, coverage: { limit, truncated, nextCursor }, diagnostics };
 }
@@ -88,7 +96,7 @@ export function createSourceControlApplication(dependencies: Dependencies) {
     }
     const selectedWorktrees=repositories.flatMap(repository=>repository.worktrees.filter(worktree=>selectedWorktreeIds.includes(worktree.worktreeId)).map(worktree=>({repositoryId:repository.id,worktreeId:worktree.worktreeId})));
     const worktreeCoverage={limit:SOURCE_CONTROL_LIMITS.totalWorktrees,total:repositories.every(repository=>repository.worktreeCount!==null)?repositories.reduce((total,repository)=>total+repository.worktreeCount!,0):null,read:repositories.reduce((total,repository)=>total+repository.worktreeCoverage.read,0),truncated:repositories.some(repository=>repository.worktreeCoverage.truncated)};
-    return { ...metadata(codeRevision(repositories.map(repository => [repository.id,repository.worktrees.map(worktree=>[worktree.worktreeId,worktree.observedRevision,worktree.status,worktree.taskId,worktree.taskTitle,worktree.taskDiagnostic]), repository.status])), SOURCE_CONTROL_LIMITS.repositories, truncated, diagnostics), repositories, selectedRepositoryIds,selectedWorktreeIds:[...new Set(selectedWorktreeIds)],selectedWorktrees,worktreeCoverage, scopeReason };
+    return { ...metadata(codeRevision(repositories.map(repository => [repository.id,repository.worktrees.map(worktree=>[worktree.worktreeId,worktree.observedRevision,worktree.status,worktree.taskId,worktree.taskTitle,worktree.taskDiagnostic]), repository.status])), SOURCE_CONTROL_LIMITS.repositories, truncated, uniqueDiagnostics(diagnostics)), repositories, selectedRepositoryIds,selectedWorktreeIds:[...new Set(selectedWorktreeIds)],selectedWorktrees,worktreeCoverage, scopeReason };
   }
 
   function decorate(root: string, commits: CodeHistoryCommit[], refs: ReturnType<typeof readSourceControlRefs>) {

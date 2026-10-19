@@ -18,6 +18,7 @@ test('DELETE without a body still requires the same local write session', async 
   assert.equal(requests[0].url, '/api/v1/workspaces/space-a/workbench/preferences/pinned-task/task-a');
   assert.equal(requests[0].init.headers.get('x-buildr-session'), 'local-session');
   await client('/api/v1/tasks');
+  assert.equal(requests[1].init.cache, 'no-store', 'live reads bypass the browser cache lock before reaching the server');
   assert.equal(headersRead, 1, 'read operations do not acquire a write session');
 });
 
@@ -30,6 +31,97 @@ test('missing write session fails before any preference deletion request', async
   });
   await assert.rejects(client('/api/v1/workbench/preferences/planned-task/task-a', { method: 'DELETE' }), /session expired/);
   assert.equal(requests, 0);
+});
+
+test('session_forbidden write failures refresh the session once and retry with the new token', async t => {
+  const requests = [];
+  let first = true;
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    requests.push({ url, init });
+    if (first) {
+      first = false;
+      return new Response(JSON.stringify({ error: { code: 'session_forbidden', message: 'Buildr Web session 已失效，请刷新页面。' } }), { status: 403 });
+    }
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  });
+  let refreshes = 0;
+  let token = 'stale-session';
+  const client = createApiClient({
+    getWorkspaceId: () => 'space-a',
+    sessionAdapter: {
+      writeHeaders() { return { 'x-buildr-session': token }; },
+      async refreshSession() { refreshes++; token = 'fresh-session'; return true; },
+    },
+  });
+  await client('/api/v1/tasks/task-a', { method: 'PATCH', body: '{}' });
+  assert.equal(refreshes, 1);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].init.headers.get('x-buildr-session'), 'stale-session');
+  assert.equal(requests[1].init.headers.get('x-buildr-session'), 'fresh-session');
+});
+
+test('session_forbidden retry shares one refresh across concurrent writes and never retries twice', async t => {
+  const requests = [];
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    requests.push({ url, token: init.headers.get('x-buildr-session') });
+    return new Response(JSON.stringify({ error: { code: 'session_forbidden', message: 'stale' } }), { status: 403 });
+  });
+  let refreshes = 0;
+  const sessionAdapter = {
+    writeHeaders() { return { 'x-buildr-session': 'token' }; },
+    async refreshSession() { refreshes++; return true; },
+  };
+  const client = createApiClient({ getWorkspaceId: () => 'space-a', sessionAdapter });
+  const [first, second] = await Promise.allSettled([
+    client('/api/v1/tasks/task-a', { method: 'PATCH', body: '{}' }),
+    client('/api/v1/tasks/task-b', { method: 'PATCH', body: '{}' }),
+  ]);
+  assert.equal(first.status, 'rejected');
+  assert.equal(second.status, 'rejected');
+  assert.equal(requests.length, 4, 'each write attempts at most one retry after refreshing');
+  assert.equal(refreshes, 2, 'adapters dedupe refreshes themselves; the client only awaits its own refresh');
+});
+
+test('non-session write failures and failed refreshes keep the original error', async t => {
+  let requests = 0;
+  t.mock.method(globalThis, 'fetch', async () => {
+    requests++;
+    return new Response(JSON.stringify({ error: { code: 'task_conflict', message: '冲突' } }), { status: 409 });
+  });
+  let refreshes = 0;
+  const client = createApiClient({
+    getWorkspaceId: () => 'space-a',
+    sessionAdapter: {
+      writeHeaders() { return { 'x-buildr-session': 'token' }; },
+      async refreshSession() { refreshes++; return false; },
+    },
+  });
+  await assert.rejects(client('/api/v1/tasks/task-a', { method: 'PATCH', body: '{}' }), error => error.code === 'task_conflict' && error.status === 409);
+  assert.equal(requests, 1);
+  assert.equal(refreshes, 0, 'non-session errors never attempt a refresh');
+});
+
+test('a missing local session refreshes before the first write attempt', async t => {
+  const requests = [];
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    requests.push({ url, init });
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  });
+  let token = null;
+  const sessionError = () => { const error = new Error('Buildr Web session 已失效，请刷新页面。'); error.code = 'session_forbidden'; return error; };
+  const client = createApiClient({
+    getWorkspaceId: () => 'space-a',
+    sessionAdapter: {
+      writeHeaders() {
+        if (!token) throw sessionError();
+        return { 'x-buildr-session': token };
+      },
+      async refreshSession() { token = 'recovered-session'; return true; },
+    },
+  });
+  await client('/api/v1/tasks/task-a', { method: 'DELETE' });
+  assert.equal(requests.length, 1, 'refresh happens before any write request is sent');
+  assert.equal(requests[0].init.headers.get('x-buildr-session'), 'recovered-session');
 });
 
 test('read errors retain HTTP status and code so unavailable sources are distinguished from transient failures', async t => {

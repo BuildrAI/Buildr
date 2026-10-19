@@ -10,7 +10,7 @@ import { CollapsedPaneTabs } from './CollapsedPaneTabs';
 import { usePanePeek } from './usePanePeek';
 import { ObjectTabStrip, type WorkspaceObjectTab } from './ObjectTabStrip';
 import { useWorkspacePageTabs, WorkspaceViewActiveContext, WorkspaceViewTransientContext, type WorkspacePageTab } from '../app/pageTabs';
-import { useWorkspacePaneRegistration } from '../app/WorkspacePaneContext';
+import { PageTabRowContext, useWorkspacePaneRegistration } from '../app/WorkspacePaneContext';
 
 import { InsideResourcePreview, ProjectPreviewContext, useResourcePreview } from '../app/resource-preview';
 import { paneDimensions } from '../app/workspace-pages';
@@ -258,6 +258,7 @@ export function WorkspacePaneStage({
   const previousContent = useRef<{ left: number; width: number } | null>(null);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const { ratio, setRatio, reportPaneWidth } = useWorkspacePageTabs();
+  const pageTabRow = useContext(PageTabRowContext);
   const [stageWidth, setStageWidth] = useState(0);
   const [expanded, setExpanded] = useState(false);
   useEffect(() => { if (!hasRight) setExpanded(false); }, [hasRight]);
@@ -574,7 +575,11 @@ export function WorkspacePaneStage({
           : <Button size="small" type="text" icon={<DoubleLeftOutlined />} aria-label="展开内容" title={`展开内容 · ${objectTabs?.length || 0} 个打开对象${objectCollapse?.dirty ? ' · 有未保存修改' : ''}`} aria-controls={panelId} data-prototype-position="content-restore" onClick={() => changeCollapsed(false)}>展开内容 <span className="pane-restore-count">{objectTabs?.length || 0}</span>{objectCollapse?.dirty && <span className="pane-restore-dirty" aria-label="有未保存修改">●</span>}</Button>}
       </div>}
       <section hidden={headerPresentation && !peekPresentation && pageCollapsed} className="pane-group pane-left" inert={!unified && overlay || undefined}>
-        {unified && (!headerPresentation || hasRight && !pageCollapsed && !collapsed) && <PaneToggleButton className="pane-page-toggle" collapsed={pageCollapsed} label="页面" disabled={!hasRight} controls={pagePanelId} position="page-toggle" onPointerDown={() => rememberPageState(true)} onToggle={() => changePageCollapsed(!pageCollapsed)} />}
+        {unified && (!headerPresentation || hasRight && !pageCollapsed && !collapsed) && (() => {
+          const toggle = <PaneToggleButton className="pane-page-toggle" collapsed={pageCollapsed} label="页面" disabled={!hasRight} controls={pagePanelId} position="page-toggle" onPointerDown={() => rememberPageState(true)} onToggle={() => changePageCollapsed(!pageCollapsed)} />;
+          // With a host-provided tab row the toggle takes a fixed trailing slot instead of floating over scrolling tabs.
+          return pageTabRow ? createPortal(toggle, pageTabRow) : toggle;
+        })()}
         {pageCollapsed && !headerPresentation && <div className="pane-page-rail" data-prototype-position="page-rail"><span className="pane-collapsed-title" title={pageTitle}>{pageTitle}</span></div>}
         {peekPresentation && pageCollapsed && <CollapsedPaneTabs railRef={pageRail} tabs={pageTabs.length ? pageTabs : [{ key: pageKey, title: pageTitle }]} active={pageKey} noun="页面" side="left" controls={pagePanelId} position="page-rail" peek={pagePeekState} onActivate={activatePage} onExpand={key => { activatePage(key); changePageCollapsed(false); }} />}
         <div ref={pageBody} id={pagePanelId} hidden={pageCollapsed && !peekOpen} inert={unified && (overlay && !pageCollapsed || pageCollapsed && !peekOpen) || undefined} className="pane-body"

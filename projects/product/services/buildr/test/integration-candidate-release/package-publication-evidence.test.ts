@@ -172,6 +172,24 @@ test('plugin owner journal binds original request, workflow, source, version and
   assert.equal(validatePackageOwnerPublication(data.context, 'dsh-plugin', recovered).ownerEvidence.request.runId, 20);
 });
 
+test('exact registry bytes may complete an attempted plugin readback without rewriting the failed owner record', () => {
+  const data = fixture(), publication = clone(data.publications['dsh-plugin']);
+  publication.run.conclusion = 'failure';
+  Object.assign(publication.ownerEvidence, { status: 'blocked', action: 'readback-required', code: 'plugin-publication-attempt-unconfirmed', registry: 'absent', publishedObserved: false });
+  const accepted = validatePackageOwnerPublication(data.context, 'dsh-plugin', publication);
+  assert.equal(accepted.run.conclusion, 'failure'); assert.deepEqual(accepted.ownerEvidence, publication.ownerEvidence);
+  for (const mutate of [
+    (value: any) => { value.ownerEvidence.attempted = false; },
+    (value: any) => { value.ownerEvidence.code = 'plugin-oidc-authority-mismatch'; },
+    (value: any) => { value.run.status = 'in_progress'; },
+    (value: any) => { value.ownerEvidence.request.runId = 99; value.recoveryRunId = 99; },
+    (value: any) => { value.registryArtifact.artifactSha256 = '9'.repeat(64); },
+  ]) {
+    const changed = clone(publication); mutate(changed);
+    assert.throws(() => validatePackageOwnerPublication(data.context, 'dsh-plugin', changed));
+  }
+});
+
 test('recovery must keep a positive integer original journal request identity', () => {
   const data = fixture();
   for (const invalid of [-1, 0, '20', 1.5]) {

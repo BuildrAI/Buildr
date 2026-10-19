@@ -193,6 +193,7 @@ test('目录一次请求交付实例、定义及局部诊断，旧独立读取�
     return url.endsWith('/instances') ? { instances: directory.instances, diagnostics: [] } : { definitions: directory.definitions, diagnostics: [] };
   }, 'chosen/workspace');
   assert.deepEqual(await client.directory(controller.signal), directory);
+  assert.equal(requests[0].init.cache, 'no-store', 'identical directory reads must bypass browser cache request serialization');
   assert.deepEqual(requests.map(request => request.url), ['/api/v1/workspaces/chosen%2Fworkspace/connection-skills/directory']);
   assert.equal(requests[0].init.signal, controller.signal);
   assert.deepEqual(await client.list(), { instances: [instance], diagnostics: [] });

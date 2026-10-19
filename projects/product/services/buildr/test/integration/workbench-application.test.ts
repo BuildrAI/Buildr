@@ -42,6 +42,26 @@ test('工作摘要独立维护、响应可回读、CAS拒绝覆盖且不改变�
   assert.throws(() => runtime.inspectTaskWorkContexts(root, Array(101).fill('context-task')));
 });
 
+test('检查适用性结论逐项合并替换，终态任务拒绝修改', (t) => {
+  const { root } = taskRecordFixture(t, 'work-context-checks');
+  const runtime = createRuntime();
+  record(runtime, root, 'check-task');
+  let value = runtime.recordTaskWorkContext(root, 'check-task', { expectedContextDigest: 'absent', progress: '方案已定', nextStep: '实现', checks: [{ check: 'planning-review', status: 'not-applicable', reason: '沿用既有接口形状，无方案选择' }] });
+  conforms('TaskWorkContextResponse', value);
+  assert.equal(value.context.checks.length, 1);
+  assert.equal(value.context.checks[0].reason, '沿用既有接口形状，无方案选择');
+  value = runtime.recordTaskWorkContext(root, 'check-task', { expectedContextDigest: value.contextDigest, progress: '实现中', nextStep: '验证', checks: [{ check: 'verification', status: 'needed', reason: '需要回归受影响测试' }] });
+  assert.equal(value.context.checks.length, 2);
+  assert.equal(value.context.checks.find((item: any) => item.check === 'planning-review').status, 'not-applicable');
+  value = runtime.recordTaskWorkContext(root, 'check-task', { expectedContextDigest: value.contextDigest, progress: '实现完成', nextStep: '验证', checks: [{ check: 'planning-review', status: 'needed', reason: '方案已变化需要复核' }] });
+  assert.equal(value.context.checks.length, 2);
+  assert.equal(value.context.checks.find((item: any) => item.check === 'planning-review').status, 'needed');
+  assert.throws(() => runtime.recordTaskWorkContext(root, 'check-task', { expectedContextDigest: 'absent', progress: 'x', nextStep: 'x', checks: [{ check: 'verification', status: 'done', reason: 'x' }] }), (error: any) => error.code === 'task_work_context_input_invalid');
+  const closed = record(runtime, root, 'closed-task');
+  runtime.updateTask(root, 'closed-task', { expectedRecordDigest: closed.recordDigest, status: 'completed', summary: '已完成' });
+  assert.throws(() => runtime.recordTaskWorkContext(root, 'closed-task', { expectedContextDigest: 'absent', progress: '说明', nextStep: '无', checks: [{ check: 'verification', status: 'not-applicable', reason: '无' }] }), (error: any) => error.code === 'task_work_context_task_terminal');
+});
+
 test('逐项偏好幂等与范围隔离，拒绝外部和逃逸链接，最近访问只留30项', (t) => {
   const { root } = taskRecordFixture(t, 'workbench-prefs');
   const other = taskRecordFixture(t, 'workbench-other').root;
@@ -163,8 +183,10 @@ test('命令行与应用读取相同摘要和偏好', (t) => {
   const { root } = taskRecordFixture(t, 'workbench-cli');
   const runtime = createRuntime();
   record(runtime, root, 'cli-task');
-  const value = runBuildrJson(['task', 'work-context', 'record', 'cli-task', '--target', root, '--expected-current', 'absent', '--progress', '已整理事实', '--next-step', '确认目标', '--attention-kind', 'decision', '--attention-reason', '请确认目标']);
+  const value = runBuildrJson(['task', 'work-context', 'record', 'cli-task', '--target', root, '--expected-current', 'absent', '--progress', '已整理事实', '--next-step', '确认目标', '--attention-kind', 'decision', '--attention-reason', '请确认目标', '--check', 'planning-review', '--check-status', 'not-applicable', '--check-reason', '沿用既有接口形状']);
   assert.deepEqual(runtime.inspectTaskWorkContext(root, 'cli-task'), value);
+  assert.equal(value.context.checks[0].check, 'planning-review');
+  assert.equal(value.context.checks[0].status, 'not-applicable');
   const response = runBuildrJson(['task', 'work-context', 'respond', 'cli-task', '--target', root, '--expected-current', value.contextDigest, '--attention', value.context.attention.id, '--response', '按方案继续']);
   assert.equal(response.context.attention.response.text, '按方案继续');
   runBuildrJson(['workbench', 'put', '--target', root, '--kind', 'pinned-task', '--key', 'cli-task']);
@@ -235,4 +257,24 @@ test('批量工作摘要保留顺序、空值、去重、任务存在性和损�
   try { db.prepare('UPDATE task_work_context_current SET context_json = ? WHERE task_id = ?').run('{}', 'batch-first'); }
   finally { db.close(); }
   assert.throws(() => runtime.inspectTaskWorkContexts(root, ['batch-first']), (error: any) => error.code === 'task_work_context_invalid');
+});
+
+
+test('动态及概览摘要不展开每日演进提交任务，动态不查询概览任务区', (t) => {
+  const {root} = taskRecordFixture(t,'workbench-summary-only');
+  const runtime = createRuntime();
+  record(runtime,root,'summary-task');
+  runtime.recordProjectDailyProgress(root,{project:'demo',date:'2026-10-19',payload:{daySummary:{added:'新增',updated:'更新',deleted:'无',drawbacks:'仅测试'},commits:[{sha:'a'.repeat(40),subject:'摘要来源',authorName:'Test',authorEmail:'test@example.com',authorship:'self',taskIds:['summary-task']}],files:[]}});
+  const original = DatabaseSync.prototype.prepare, statements: string[] = [];
+  let activity: any;
+  try {
+    DatabaseSync.prototype.prepare = function(sql: string) { statements.push(sql); return original.call(this,sql); };
+    activity = runtime.inspectWorkbenchActivity(root);
+  } finally { DatabaseSync.prototype.prepare = original; }
+  conforms('WorkbenchActivityResponse',activity);
+  assert.equal(activity.dailyProgress.items[0].commitCount,1);
+  assert.equal(activity.active,undefined);
+  assert.equal(statements.some(sql => /FROM task_records|FROM task_work_contexts/.test(sql)),false,statements.join('\n'));
+  const overview = runtime.inspectWorkbench(root);
+  assert.deepEqual(overview.dailyProgress,activity.dailyProgress);
 });

@@ -136,6 +136,10 @@ test('unborn repository and untracked file use actual new contents while unavail
   f.catalog.repositories.push({ id: 'invalid', code: 'invalid', name: 'Invalid', source: { type: 'workspace', path: '' } });
   const catalog = f.app.sourceControl(f.root); assert.equal(catalog.repositories.length, 3); assert.equal(catalog.repositories[0].head, null); assert.equal(catalog.repositories[0].fileCount, 2); assert.equal(catalog.repositories[1].fileCount, null); assert.equal(catalog.repositories[1].status, 'unavailable');
   assert.deepEqual(catalog.repositories[1].worktrees,[]);assert.equal(catalog.repositories[2].status,'unavailable');assert.deepEqual(catalog.repositories[2].worktrees,[], 'an invalid registered directory must not enumerate the process working directory');
+  const unavailable=catalog.diagnostics.filter(item=>item.code==='code_repository_unavailable');
+  assert.equal(unavailable.filter(item=>item.repositoryId==='missing').length,1,'one unavailable repository reports its reason exactly once');
+  assert.equal(unavailable.filter(item=>item.repositoryId==='invalid').length,1);
+  assert.match(unavailable.find(item=>item.repositoryId==='missing')!.message,/登记目录不存在/);
   assert.match((await f.app.diff(f.root, { ...f.input, area: 'staged', path: 'first.ts' })).patch!, /\+initial/);
   const untracked = await f.app.diff(f.root, { ...f.input, area: 'untracked', path: 'new.ts' }); assert.match(untracked.patch!, /\+fresh/); assert.equal(untracked.file.additions, 1);
   assert.deepEqual(f.app.history(f.root, f.input).commits, []);
@@ -312,7 +316,7 @@ test('HTTP contracts, bounded worker dispatch and CLI share all source-control a
     assert.equal(response.status, 200); const checked = CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS[method].$id, response.body); assert.equal(checked.valid, true, JSON.stringify(checked));
     let dispatched = '';
     await http.handle({ request: { method: 'GET' }, root: f.root, suffix: '/code/' + operation, searchParams: new URLSearchParams(input), submitTaskRead: async (name, _id, payload) => { dispatched = name; return f.app[method](f.root, JSON.parse(payload.input)); } });
-    assert.equal(dispatched, 'code-' + operation);
+    assert.equal(dispatched, operation === 'source-control-inventory' ? '' : 'code-' + operation, 'registration-only inventory stays local; Git reads keep the bounded worker path');
     const cli = createCodeCliContributions(f.app).find(contribution => contribution.match({ domain: 'code', action: operation })); assert.ok(cli);
     const cliFlags: Record<string,string> = {repositoryId:'--repository',filePath:'--path',commitHash:'--commit',area:'--area'};
     let printed = ''; const originalWrite=process.stdout.write.bind(process.stdout);const capture = t.mock.method(process.stdout, 'write', (chunk: any,...rest:any[]) => { if(typeof chunk==='string'){printed += chunk; return true;}return (originalWrite as (...args:any[])=>boolean)(chunk,...rest); });
@@ -543,6 +547,7 @@ test('SCM registry reads ignore unrelated retired-task evidence while Explorer a
   const explorer=app.repositories(f.root);assert.ok(explorer.diagnostics.some(item=>item.code==='code_task_location_unavailable'&&item.message.includes('retired-other')));assert.ok(explorer.worktrees.some(item=>item.taskId==='retired-other'&&!item.available));
   reads.length=0;associationDiscovery=0;const scoped=app.sourceControl(f.root,{taskId:'task-one'});assert.equal(scoped.repositories[0].status,'complete');assert.ok(scoped.diagnostics.some(item=>item.code==='code_task_location_unavailable'));assert.ok(scoped.diagnostics.every(item=>!item.message.includes('retired-other')));assert.deepEqual(reads,['task-one']);assert.equal(associationDiscovery,0);assert.deepEqual(scoped.selectedWorktrees,[{repositoryId:'repo-one',worktreeId:scoped.repositories[0].worktrees[0].worktreeId}]);assert.match(scoped.scopeReason,/登记目录/);assert.deepEqual(f.snapshot(),before);
   f.catalog.repositories.push({id:'unavailable',code:'unavailable',name:'Unavailable',source:{type:'workspace',path:path.join(f.base,'missing')}});const partial=app.sourceControl(f.root);assert.ok(partial.diagnostics.some(item=>item.code==='code_repository_unavailable'&&item.repositoryId==='unavailable'));assert.equal(partial.repositories[0].status,'complete');assert.equal(partial.repositories[1].status,'unavailable');
+  assert.equal(partial.diagnostics.filter(item=>item.code==='code_repository_unavailable'&&item.repositoryId==='unavailable').length,1,'the same unavailability is reported once, not per layer');
 });
 
 test('explicit repository reads filter before source resolution and retain the complete selected worktree inventory', async t => {
@@ -569,4 +574,25 @@ test('explicit repository reads filter before source resolution and retain the c
   const response=await http.handle({request:{method:'GET'},root:f.root,suffix:'/code/source-control',searchParams:new URLSearchParams({repositoryId:'repo-one'}),submitTaskRead:async(_operation,_readId,params)=>{forwarded=JSON.parse(params.input);return scoped;}});
   assert.equal(response?.status,200);assert.equal((forwarded as {repositoryId:string}).repositoryId,'repo-one');
   await assert.rejects(http.handle({request:{method:'GET'},root:f.root,suffix:'/code/source-control',searchParams:new URLSearchParams({repositoryId:'unknown'})}),hasCode('code_repository_not_registered'));
+});
+
+test('Explorer catalog reuses only this request common-directory proofs and still observes changed branches next read', t => {
+  const f=fixture(t); f.write('file.txt','base\n'); f.commit('base');
+  const linked=path.join(f.base,'linked-catalog');f.git('worktree','add','-b','catalog-task',linked);
+  f.setEvidence({evidence:{repositories:[{sourceRepository:f.root,checkoutPath:linked}]}});
+  const originalExec=childProcess.execFileSync,originalSpawn=childProcess.spawnSync;let calls=0;
+  const captureExec=t.mock.method(childProcess,'execFileSync',(...args:Parameters<typeof childProcess.execFileSync>)=>{if(args[0]==='git')calls++;return originalExec(...args);});
+  const captureSpawn=t.mock.method(childProcess,'spawnSync',(...args:Parameters<typeof childProcess.spawnSync>)=>{if(args[0]==='git')calls++;return originalSpawn(...args);});syncBuiltinESMExports();
+  try {
+    const first=f.app.repositories(f.root,'task-one');
+    assert.equal(calls,4,'one repository identity, one membership list, two checkout identities; evidence reuses the proven common directory');
+    assert.equal(first.worktrees.find(member=>member.path===fs.realpathSync(linked))?.taskId,'task-one');
+    assert.equal(CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS.repositories.$id,first).valid,true,'internal observations do not leak into the response');
+    f.git('switch','-c','catalog-new-branch');calls=0;
+    const next=f.app.repositories(f.root,'task-one');assert.equal(calls,4);
+    assert.equal(next.worktrees.find(member=>member.kind==='main')?.branch,'catalog-new-branch');
+    f.catalog.repositories[0].source.path=linked;
+    const selected=f.app.repositories(f.root);assert.equal(selected.repositories[0].location,fs.realpathSync(linked));
+    assert.equal(selected.worktrees.find(member=>member.path===fs.realpathSync(linked))?.kind,'main');
+  } finally {captureExec.mock.restore();captureSpawn.mock.restore();syncBuiltinESMExports();}
 });

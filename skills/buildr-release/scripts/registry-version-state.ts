@@ -13,6 +13,28 @@ import { requestReleaseJson, ReleaseObservationError, isTransientReleaseError } 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../projects/product/services/buildr');
 export const officialRegistry: any = 'https://registry.npmjs.org/';
 
+/** Shared publication propagation wait; observations are ordinary logs, not write permission. */
+export async function waitForRegistryPublication<T extends { published: boolean }>(read: () => Promise<T>, options: any = {}): Promise<T | { published: false }> {
+  const attempts = options.attempts ?? 24, delayMs = options.delayMs ?? 20_000;
+  if (!Number.isSafeInteger(attempts) || attempts < 1 || attempts > 24 || !Number.isFinite(delayMs) || delayMs < 0 || delayMs > 20_000) throw new Error('Invalid registry publication wait budget.');
+  const now = options.now ?? Date.now, startedAt = now();
+  const observe = options.onObservation ?? ((value: any) => process.stdout.write(`[release] registry-readback ${JSON.stringify(value)}\n`));
+  let last: T | { published: false } = { published: false };
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      last = await read();
+      observe({ attempt, attempts, status: last.published ? 'present' : 'absent', elapsedMs: now() - startedAt });
+      if (last.published) return last;
+    } catch (error: any) {
+      observe({ attempt, attempts, status: 'unknown', elapsedMs: now() - startedAt,
+        ...(typeof error?.code === 'string' && /^[a-zA-Z0-9_-]{1,80}$/u.test(error.code) ? { code: error.code } : {}) });
+      if (!isTransientReleaseError(error)) throw error;
+    }
+    if (attempt < attempts) await (options.sleep ?? ((ms: number) => new Promise(resolve => setTimeout(resolve, ms))))(delayMs);
+  }
+  return last;
+}
+
 async function responseJson(response: any, label: any): Promise<any>  {
   try {
     return await response.json();

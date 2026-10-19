@@ -70,6 +70,10 @@
 .task-diff-line.line-meta { color:var(--soft-muted); }
 .task-diff-gutter { flex:none; width:42px; text-align:right; font-style:normal; font-size:10.5px; color:var(--soft-muted); user-select:none; }
 .task-diff-line em { font-style:normal; min-width:0; }
+/* 行内差异片段：在同一行加深对比色，未变化片段保持行底色 */
+.task-diff-inline { background:transparent; border-radius:2px; padding:0 1px; }
+.line-add .task-diff-inline, .task-diff-row.is-add .task-diff-inline { background:#b6dfb6; }
+.line-del .task-diff-inline, .task-diff-row.is-del .task-diff-inline { background:#f0b3ab; }
 /* 并排：左右各为独立可滚动的显示框，中间是独立的对照行号缝 */
 .task-diff-split { --task-diff-row-height:22.2px; display:flex; min-height:0; height:100%; font:12px/1.85 ui-monospace,SFMono-Regular,Menlo,monospace; }
 .task-diff-split-side { flex:1 1 50%; min-width:0; overflow:auto; }

@@ -50,6 +50,6 @@ integrity:
   - components/buildr/openspec/contributions/openspec-explore-terminology.md=sha256-ca6a33bc8afad93f80865c2147832b214159639fca774568e8736959f009b66c
   - components/buildr/openspec/contributions/openspec-propose-sidebar.md=sha256-d856eea379af1cde80bda2ec4661f073ad0148b5c3ebf23edae789c6ec92c88f
   - components/buildr/openspec/contributions/openspec-update-sidebar.md=sha256-72712ca8e2e0b8174aeb9add20c3fe137cb62062b02e6ed1e2ea7d104fcc75b8
-  - components/buildr/openspec/contributions/openspec-apply-sidebar.md=sha256-397a8ea5822f44caf73f54b24cc767d07fb09a78a1d1c98b30654859d38bccfc
+  - components/buildr/openspec/contributions/openspec-apply-sidebar.md=sha256-fdfa68c02555eca5071645cda73e6987a6a00e11e068690cc43d7b424d04b3e6
   - components/buildr/openspec/contributions/openspec-sync-converge.md=sha256-34121c704785bfe6db81bfd73584763a95d6252cd5f51b3f7bc09cba14183363
   - components/buildr/openspec/contributions/openspec-archive-converge.md=sha256-baa7f9389a6914d9bdc46cea446721e76036cb020e7ded83eb53a5c6b4b72af7

@@ -190,12 +190,6 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     contributions: { cli: [], http: ['knowledge.http'], diagnostics: [] },
     lifecycle: 'none',
   }, {
-    id: 'publication',
-    requires: [WORKSPACE_QUERY],
-    provides: ['publication.application'],
-    contributions: { cli: [], http: ['publication.http'], diagnostics: [] },
-    lifecycle: 'none',
-  }, {
     id: 'openspec',
     requires: [WORKSPACE_QUERY, AGENT_ASSETS_OPENSPEC_SUPPORT],
     provides: ['openspec.application', 'openspec.query'],
@@ -251,6 +245,12 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     contributions: { cli: ['task materials inspect', 'task materials record', 'task materials write', 'task brief migrate'], http: ['task.materials.http'], diagnostics: [] },
     lifecycle: 'none',
   }, {
+    id: 'publication',
+    requires: [WORKSPACE_QUERY, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER, TASK_MATERIALS_APPLICATION],
+    provides: ['publication.application'],
+    contributions: { cli: [], http: ['publication.http'], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
     id: 'agent-assets-source',
     requires: [AGENT_ASSETS_SOURCE_READ, WORKSPACE_QUERY, TASK_BRIEF_QUERY, TASK_MATERIALS_APPLICATION],
     provides: [AGENT_ASSETS_SOURCE_QUERY],
@@ -297,7 +297,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, WORKSPACE_TASK_SUPPORT, AGENT_ASSETS_SOURCE_READ, AGENT_ASSETS_CONNECTION_IMPACT_BINDER],
     provides: ['connection-skills.application'],
     contributions: { cli: ['connection-skill'], http: ['connection-skills.http'], diagnostics: [] },
-    lifecycle: 'none',
+    lifecycle: 'managed',
   }, {
     id: 'mysql-query',
     requires: ['connection-skills.application', WORKSPACE_TASK_SUPPORT],
@@ -400,7 +400,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'doctor',
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item: any) => item.id), [
-    'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'publication.http', 'task-work-context.http', 'task.http', 'task.daily-progress.http', 'workbench.http', 'task.commits.http', 'task.changed-files.http', 'task.materials.http', 'change.http', 'agent-operations.http', 'native-session-links.http', 'codex-desktop.http', 'dsh-desktop.http', 'code.files.http', 'code.generation.http',
+    'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'task-work-context.http', 'task.http', 'task.daily-progress.http', 'workbench.http', 'task.commits.http', 'task.changed-files.http', 'task.materials.http', 'publication.http', 'change.http', 'agent-operations.http', 'native-session-links.http', 'codex-desktop.http', 'dsh-desktop.http', 'code.files.http', 'code.generation.http',
     'connection-skills.http', 'mysql-query.http',
     'task-review.http', 'task-verification.http',
     'task-parent-coordination.http', 'system-installation.release-awareness.http',
