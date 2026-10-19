@@ -216,14 +216,19 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
       host.scrollLeft = 0;
       host.scrollTop = row ? Math.max(0, row.getBoundingClientRect().top - host.getBoundingClientRect().top + host.scrollTop - headerHeight - 12) : 0;
     };
-    if (mode === 'unified') reveal(body, body.querySelectorAll<HTMLElement>('.task-diff-line')[changes[selectedChange]] ?? body.querySelector('.line-add, .line-del'));
-    else {
-      const targetRow = rows[changes[selectedChange]];
-      const first = pairs.findIndex(pair => pair.left === targetRow || pair.right === targetRow);
-      for (const host of [splitLeftRef.current, splitGutterRef.current, splitRightRef.current]) {
-        if (host) reveal(host, first < 0 ? null : host.querySelector(`[data-diff-row="${first}"]`), host.querySelector('.task-diff-version-head')?.getBoundingClientRect().height ?? 0);
+    // Rows may not be laid out when the effect first runs; defer the scroll to
+    // the next frame so the reveal still lands even on a newly mounted diff.
+    requestAnimationFrame(() => {
+      if (positioned.current !== key) return;
+      if (mode === 'unified') reveal(body, body.querySelectorAll<HTMLElement>('.task-diff-line')[changes[selectedChange]] ?? body.querySelector('.line-add, .line-del'));
+      else {
+        const targetRow = rows[changes[selectedChange]];
+        const first = pairs.findIndex(pair => pair.left === targetRow || pair.right === targetRow);
+        for (const host of [splitLeftRef.current, splitGutterRef.current, splitRightRef.current]) {
+          if (host) reveal(host, first < 0 ? null : host.querySelector(`[data-diff-row="${first}"]`), host.querySelector('.task-diff-version-head')?.getBoundingClientRect().height ?? 0);
+        }
       }
-    }
+    });
   }, [taskId, readScope, selected, fileCommit, selectedCommit, selectionVersion, mode, full.loading, pairs, rows, changes, selectedChange]);
   async function copyPath() {
     if (!current) return;

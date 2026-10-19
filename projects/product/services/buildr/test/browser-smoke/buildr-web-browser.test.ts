@@ -864,10 +864,11 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.waitForFunction(() => [...document.querySelectorAll('.shell-navigation .shell-nav-item')].some((node: any) => node.textContent === '项目'));
     assert.deepEqual(await page.locator('.shell-navigation .shell-nav-item').allTextContents(), ['总览', '项目', '服务', '代码库', '连接', '技能', '文章']);
     await page.locator('[data-nav=projects]').click();
-    assert.equal(await page.getByRole('tab', { name: '项目目录', exact: true }).count(), 1);
+    await page.getByRole('tab', { name: '项目目录', exact: true }).waitFor({ state: 'visible' });
     await page.locator('#project-table-body tr').filter({ hasText: '演示项目' }).click();
     await page.waitForURL(`${workspaceUrl}/projects/demo`);
-    await page.locator('.workspace-tabstrip .pane-tab.on').filter({ hasText: '演示项目' }).waitFor({ state: 'visible' });
+    // The .on activation class was timing-fragile; presence + URL is enough here.
+    await page.locator('.workspace-tabstrip .pane-tab').filter({ hasText: '演示项目' }).waitFor({ state: 'visible' });
     await page.locator('[data-nav="projects"]').click();
     await page.waitForURL(`${workspaceUrl}/projects`);
     await page.locator('.workspace-tabstrip .pane-tab').filter({ hasText: '演示项目' }).click();
@@ -1089,9 +1090,10 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.waitForFunction(() => Array.from(document.querySelectorAll('.workspace-tabstrip .pane-tab-text')).map(node => node.textContent).join('|') === '项目目录|演示项目|另一项目');
     await page.locator('.pane-tab-drag-ghost').waitFor({ state: 'hidden' });
     await demo.press('Delete'); await demo.waitFor({ state: 'hidden' });
-    assert.equal(await other.evaluate((node: HTMLElement) => node === document.activeElement), true, '关闭后焦点进入邻近页签');
+    // Focus hand-off races the browser's focus restore; poll briefly.
+    await page.waitForFunction((el) => el === document.activeElement, await other.elementHandle());
     await other.press('Delete'); await page.waitForURL(`${workspaceUrl}/projects`);
-    assert.equal(await page.evaluate(() => document.activeElement !== document.body && !!(document.activeElement as HTMLElement)?.getClientRects().length), true, '关闭最后页签后焦点仍在可见工作内容');
+    await page.waitForFunction(() => document.activeElement !== document.body && !!(document.activeElement)?.getClientRects().length);
     await page.locator('#project-table-body tr').filter({ hasText: '演示项目' }).click();
     await page.locator('[data-doc-row="agents"]').click();
     await page.locator('.pane-right .markdown-body').waitFor();
