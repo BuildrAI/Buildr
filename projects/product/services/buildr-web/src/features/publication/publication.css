@@ -93,7 +93,8 @@
 .publication-editor-main { min-width:0; }
 .publication-title-input.ant-input { font-size:20px; font-weight:550; padding:11px; }
 .publication-editor-toolbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; font-size:12px; color:var(--soft-muted); }
-.publication-writing-area.ant-input { min-height:510px; font:13px/1.85 ui-monospace,monospace; resize:vertical; padding:15px; }
+/* 正文编辑区不固定高度，交给 autoSize；避免内容少于 510px 时底部出现大留白。 */
+.publication-writing-area.ant-input { min-height:0; font:13px/1.85 ui-monospace,monospace; resize:vertical; padding:15px; }
 .publication-editor-preview { min-height:510px; padding:18px; border:1px solid var(--soft-line); border-radius:8px; }
 .publication-editor-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; color:var(--soft-muted); font-size:12px; }
 .publication-edit-aside { min-width:0; display:flex; flex-direction:column; gap:18px; }
@@ -137,7 +138,7 @@
   .publication-editor-drawer .ant-drawer-content-wrapper { width:100vw!important; }
   .publication-editor-drawer .ant-drawer-body { padding:18px 16px; }
   .publication-editor-drawer .drawer-shell-sub { max-width:calc(100vw - 90px); }
-  .publication-editor-drawer .publication-writing-area.ant-input { min-height:440px; }
+  .publication-editor-drawer .publication-writing-area.ant-input { min-height:0; }
   .publication-editor-footer { flex-wrap:wrap; gap:8px; }
   .publication-editor-footer > .ant-space { margin-left:auto; }
 }
