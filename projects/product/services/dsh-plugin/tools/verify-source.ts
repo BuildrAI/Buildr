@@ -1,21 +1,22 @@
 /** SDK-independent source proof, shared with the complete candidate verifier. */
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
+import crypto from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ownedBuildRoot } from './prepare-source-sdk.ts';
-import { collectPluginSourceVerificationBundle, verifyPluginSourcePhase } from './verify-all.ts';
+import { verifyPluginSourcePhase } from './verify-all.ts';
 
 export async function verifySource(args = process.argv.slice(2)) {
-  if (args.length && (args.length !== 2 || args[0] !== '--output' || !args[1] || args[1].startsWith('--'))) {
-    throw new Error('Usage: verify-source.ts [--output <source-bundle.json>]');
+  const values = new Map<string, string>();
+  for (let i = 0; i < args.length; i += 2) {
+    if (!['--round', '--output'].includes(args[i]) || !args[i + 1] || values.has(args[i])) throw new Error('Usage: verify-source.ts [--round <round-id>] [--output <round-log.json>]');
+    values.set(args[i], args[i + 1]);
   }
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
   const diagnosticsDirectory = mkdtempSync(join(ownedBuildRoot(root), 'dsh-source-'));
-  const { phase } = await verifyPluginSourcePhase('unit', { diagnosticsDirectory });
-  const bundle = await collectPluginSourceVerificationBundle();
-  if (bundle.records.length !== 1) throw new Error('Portable plugin source proof is missing or invalidated.');
-  const output = args[1] ? resolve(args[1]) : null;
-  if (output) { mkdirSync(dirname(output), { recursive: true }); writeFileSync(output, `${JSON.stringify(bundle, null, 2)}\n`); }
+  const output = values.has('--output') ? resolve(values.get('--output')!) : null;
+  const { phase } = await verifyPluginSourcePhase('unit', { diagnosticsDirectory,
+    round: { roundId: values.get('--round') ?? crypto.randomUUID(), ...(output ? { output } : {}) } });
   const summary = { status: 'passed', step: phase.id, disposition: phase.disposition, durationMs: phase.durationMs, output, diagnosticsDirectory };
   console.log(JSON.stringify(summary));
   return summary;

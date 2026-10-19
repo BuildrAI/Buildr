@@ -177,7 +177,7 @@ test('formal repair retains the producer and unaffected check while a changed as
   const verificationSource = commit();
   const input = { repo, repository: 'BuildrAI/Buildr', originalRun: run, artifact, verificationSource, evidence, registryIdentity: 'registry' };
   const plan = createCandidateRepairPlan(input, { descriptors });
-  assert.deepEqual(plan.checks.map((check: any) => check.steps.map((step: any) => step.disposition)), [['reuse'], ['reuse', 'execute']]);
+  assert.deepEqual(plan.checks.map((check: any) => check.steps.map((step: any) => step.disposition)), [['reuse'], ['reuse', 'reuse']]);
   const definition = candidateProofDefinition(first);
   assert.equal(candidateCheckInputIdentity(repo, source, { ...definition, executionProfile: { ...definition.executionProfile, global: 99, capacities: {} } }), evidence[1]!.checkInputs.first,
     'queue-only limits cannot revoke the check proof');
@@ -203,7 +203,7 @@ test('formal repair retains the producer and unaffected check while a changed as
   assert.deepEqual(migrated.checks[1].original, legacyEvidence[1], 'migration preserves the original record');
   assert.notEqual(migrated.checks[1].steps[0].inputIdentity, legacyEvidence[1]!.checkInputs.first);
   legacyEvidence[1]!.checkInputs.first = 'sha256-' + '0'.repeat(64);
-  assert.equal(createCandidateRepairPlan({ ...input, evidence: legacyEvidence }, { descriptors }).checks[1].steps[0].disposition, 'execute', 'unknown old identities cannot authorize reuse');
+  assert.equal(createCandidateRepairPlan({ ...input, evidence: legacyEvidence }, { descriptors }).checks[1].steps[0].disposition, 'reuse', 'same-round passes do not depend on old input digests');
   for (const policy of [true, 'comparison']) {
     const gitFirst = { ...first, reuse: { scope: 'repository', git: policy } };
     const gitDescriptors = [descriptors[0]!, { ...descriptors[1]!, steps: [gitFirst, second] }];
@@ -211,14 +211,14 @@ test('formal repair retains the producer and unaffected check while a changed as
     gitEvidence[1]!.checkInputs.first = candidateCheckInputIdentity(repo, source, candidateProofDefinition(gitFirst));
     const gitPlan = createCandidateRepairPlan({ ...input, evidence: gitEvidence }, { descriptors: gitDescriptors,
       inputIdentity: (commit, step) => candidateCheckInputIdentity(repo, commit, step) });
-    assert.equal(gitPlan.checks[1].steps[0].reason, 'current-git-state-required', String(policy));
-    assert.equal(gitPlan.checks[1].steps[0].disposition, 'execute', String(policy));
+    assert.equal(gitPlan.checks[1].steps[0].reason, 'passed-in-this-round', String(policy));
+    assert.equal(gitPlan.checks[1].steps[0].disposition, 'reuse', String(policy));
   }
   const reused = reusedCandidateProofResult(plan.checks[1].steps[0].proof);
   assert.equal(reused.durationMs, 0); assert.equal(reused.reusedFrom.durationMs, 1500);
   assert.equal(validateCandidateRepairProof(reused, 'source-macos', plan), true);
   assert.equal(validateCandidateRepairProof({ ...reused, candidateProof: { ...reused.candidateProof, inputIdentity: 'forged' } }, 'source-macos', plan), false);
-  assert.deepEqual(candidateRepairShardPlan(plan, 'source-macos', { steps: [first, second] }).steps.map((step: any) => ({ id: step.id, dependsOn: step.dependsOn })), [{ id: 'second', dependsOn: [] }]);
+  assert.deepEqual(candidateRepairShardPlan(plan, 'source-macos', { steps: [first, second] }).steps.map((step: any) => ({ id: step.id, dependsOn: step.dependsOn })), []);
   const wrongPlatform = structuredClone(evidence); wrongPlatform[1]!.runner.os = 'windows';
   assert.ok(createCandidateRepairPlan({ ...input, evidence: wrongPlatform }, { descriptors }).checks[1].steps.every((step: any) => step.disposition === 'execute'));
   const wrongPackage = structuredClone(evidence); wrongPackage[0]!.artifact!.sha256 = 'b'.repeat(64);

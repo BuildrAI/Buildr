@@ -12,7 +12,7 @@ import { createCandidateCiShardPlan } from './planner.ts';
 import { candidateSourceImportFromEnvironment, planCandidateSourceReuse } from './candidate-source-reuse.ts';
 import { assertFrozenCandidateCheckout, candidateArtifactImportFromEnvironment, candidateDeferredArtifactIds, candidateDependencyInputsIdentity, createCandidateDeferredPlan,
   createCandidateExecutionEnvironment, readCandidateDeferredPlan, reusableCandidateArtifactStepIds, reusedCandidateArtifactResult, validateCandidateArtifactEvidence } from './candidate-artifact-reuse.ts';
-import { collectVerificationReuseSnapshot, validateVerificationReuseRecord } from './verification-reuse.ts';
+import { passedRoundRecord } from './candidate-round.ts';
 import { CANDIDATE_CI_HOST_NODE_TUPLES, CANDIDATE_CI_SHARDS, resolveVerificationExecutionProfile, verificationSteps } from './registry.ts';
 import { createCandidateCheckInputReader, createCandidateSourceBinding } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
 import { assertCandidateRepairPlan, candidateProofDefinition, candidateProofDescriptors, candidateRepairShardPlan, reusedCandidateProofResult, validateCandidateRepairProof } from './candidate-repair.ts';
@@ -68,13 +68,9 @@ function checkInputsFor(id: string, commit: string): any {
   return Object.fromEntries(descriptor.steps.map((step: any) => [step.id, input(commit, candidateProofDefinition(step))]));
 }
 
-let sourceSnapshot: any = null;
 function validateSourceRecord(record: any, stepId: string, runner: string): boolean {
-  sourceSnapshot ??= collectVerificationReuseSnapshot({ productRoot, projectRoot });
   const step = verificationSteps.find((item: any) => item.id === stepId);
-  if (step?.platformScope?.kind === 'common' && !['darwin', 'win32'].includes(record.environment?.platform)) return false;
-  return validateVerificationReuseRecord(record, { productRoot, projectRoot, snapshot: sourceSnapshot, stepId,
-    ...(step?.platformScope?.kind === 'common' ? {} : { runner }) });
+  return Boolean(step && process.env.BUILDR_SELECTION_ID && passedRoundRecord(record, process.env.BUILDR_SELECTION_ID, step, runner));
 }
 
 function artifactRecordSourceMatches(record: any): boolean {
@@ -188,7 +184,9 @@ async function runShard(shardId: any): Promise<any>  {
       env: externalArtifact ? artifactEnvironment(externalArtifact) : {},
       runId: process.env.GITHUB_RUN_ID ? `${process.env.GITHUB_RUN_ID}-${shardId}` : `candidate-ci-${shardId}-${process.pid}`,
       taskId: `candidate-ci-${shardId}`,
-      reuse: { imports: candidateSourceImportFromEnvironment(process.env), portableImports: true },
+      reuse: false,
+      round: { roundId: process.env.BUILDR_SELECTION_ID ?? `ci-${process.env.GITHUB_RUN_ID ?? process.pid}`,
+        imports: process.env.BUILDR_SOURCE_VERIFICATION ? candidateSourceImportFromEnvironment(process.env) : undefined },
       onComplete(result: any): any  {
         completedResults.push(result);
         writeCheckpoint(result.status === 'passed' ? 'running' : 'failed');
