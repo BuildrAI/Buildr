@@ -130,7 +130,8 @@ export function listPublicationAssets(scope: PublicationScope) {
 }
 
 export function renderPublicationUpdate(article: PublicationRecord, input: { title: string; summary: string; status: string; content: string }) {
-  for (const key of ['title', 'summary', 'status'] as const) article.document.set(key, input[key]);
+  for (const key of ['title', 'status'] as const) article.document.set(key, input[key]);
+  if (input.summary.trim()) article.document.set('summary', input.summary); else article.document.delete('summary');
   article.document.set('updated_at', new Date().toISOString());
   return `---\n${article.document.toString()}---\n${input.content.replace(/\n*$/, '')}\n`;
 }
