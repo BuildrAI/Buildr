@@ -33,7 +33,7 @@ buildr worktree cleanup <task-id> --target <canonical-workspace> --expected-sour
 
 创建、检查与清理按当前有效能力绑定（Capability Binding）交给已选提供者（Provider）。接手智能体（Agent）须核对任务授权、实际归属及当前 Git 身份；更换智能体（Agent）或缺少历史登记不能成为放弃接续的理由。已有证据冲突时保留现场；仅缺少证据时使用下方当前对象输入重新核验，不另建同任务副本、迁移或补造创建历史。绑定变化本身不转移资源归属，也不授权混用不兼容入口。
 
-创建前完整预检全部repository，部分创建失败保留已完成效果并允许相同plan重试。清理前Agent先核验完整交付，再成对提供全部受管repository的source与delivered完整提交；provider复核source版本、dirty、registration和delivered提交仍由非任务retained ref持有。
+创建前完整预检全部repository，部分创建失败保留已完成效果并允许相同plan重试。预检发现已登记来源缺少真实代码时，只报告该代码库缺口并提醒用户是否按声明来源准备，不阻断其他健康来源的隔离。清理前Agent先核验完整交付，再成对提供全部受管repository的source与delivered完整提交；provider复核source版本、dirty、registration和delivered提交仍由非任务retained ref持有。
 
 本Skill不判断 Task 是否 ready、完成或业务成果是否等价，不准备 Runtime、CLI、依赖或 projection，不记录 Agent session，不管理Preview、容器或其他资源。验证交给`task-verification`，已选定Git Operation的写入安全交给`git-operations`，其他资源交给各自owner。
 
