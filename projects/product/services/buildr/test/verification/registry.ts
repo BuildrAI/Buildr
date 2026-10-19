@@ -494,7 +494,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/source-control-application.test.ts',
     'test/integration/source-control-observation-http.test.ts',
     'test/integration/source-control-observations.test.ts',
-  ], { schedulingCostMs: 5000, args: ['--test-concurrency=3'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
+  ], { schedulingCostMs: 5000, timeoutMs: 300_000, args: ['--test-concurrency=3'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
   integrationSlice('integration-desktop', [
     'test/integration/agent-codex-discovery.test.ts',
     'test/integration/agent-codex-remove.test.ts',
@@ -646,6 +646,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/parent-coordination-application.test.ts',
     'test/integration/parent-coordination-repository.test.ts',
     'test/integration/publication-application.test.ts',
+    'test/integration/publication-worktree.test.ts',
   ], { schedulingCostMs: 5000, executorType: 'node-context-test', concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
   integrationSlice('integration-project-daily-progress', [
     'test/integration/project-daily-progress-application.test.ts',

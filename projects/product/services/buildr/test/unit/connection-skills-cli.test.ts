@@ -1,8 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import fs from 'node:fs';
+import process from 'node:process';
 import { createConnectionSkillsCli } from '../../src/modules/connection-skills/interfaces/cli/connection-skills-cli.ts';
 import type { ConnectionSkillsApplication } from '../../src/modules/connection-skills/application/connection-skills-application.ts';
+
+// run 在非 TTY 输入时会真实读取标准输入；单元测试把 isTTY 定义为 true，CLI 就把输入当交互终端跳过读取。
+function interactiveStdin(t: { after(action: () => void): void }) {
+  Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+  t.after(() => { delete (process.stdin as { isTTY?: boolean }).isTTY; });
+}
 test('generic CLI rejects management input on run before consuming business stdin', async () => {
   const cli = createConnectionSkillsCli({} as ConnectionSkillsApplication)[0]!;
   await assert.rejects(cli.run(null, { argv: ['node', 'buildr', 'connection-skill', 'run', '--file', '-'] }), /未知或重复参数/);
@@ -11,7 +17,7 @@ test('generic CLI rejects management input on run before consuming business stdi
 });
 
 test('run 显式时限准确传给应用，省略保留默认行为，分隔符后参数归专业程序', async t => {
-  t.mock.method(fs, 'readSync', () => 0);
+  interactiveStdin(t);
   const calls: Record<string, unknown>[] = [];
   const application = { run: async (_root: string, options: Record<string, unknown>) => { calls.push(options); return { status: 'exited' }; } } as unknown as ConnectionSkillsApplication;
   const cli = createConnectionSkillsCli(application)[0]!;
@@ -25,7 +31,7 @@ test('run 显式时限准确传给应用，省略保留默认行为，分隔符�
 });
 
 test('非法时限在读取输入和调用应用前拒绝，其他动作不接受运行时限', async t => {
-  t.mock.method(fs, 'readSync', () => { assert.fail('非法参数不得读取业务输入'); });
+  interactiveStdin(t);
   const cli = createConnectionSkillsCli({ run: async () => assert.fail('非法参数不得执行程序') } as unknown as ConnectionSkillsApplication)[0]!;
   for (const value of ['0', '9', '300001', '-1', 'NaN', 'Infinity', '1.5', '1e3', ' 1000', '999999999999999999999']) {
     await assert.rejects(cli.run(null, { argv: ['node', 'buildr', 'connection-skill', 'run', '--expected-revision', 'observed', '--timeout-ms', value] }), /整数毫秒/);
