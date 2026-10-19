@@ -98,8 +98,10 @@ export function createVerificationExecutor(options: any): any  {
         // focused execution uses this same executor and produces reusable
         // proof, so diagnosis need not be followed by a duplicate formal run.
         args: ['--import', testPreload, '--test', ...nodeTestConcurrencyArguments(step, executionContext), ...(executor.args ?? [])
-          .filter((argument: any) => !argument.startsWith('--test-concurrency'))
-          .map((argument: any) => argument === '--test-reporter=dot' ? '--test-reporter=spec' : argument), ...files.map(nodeTestFile)],
+          .filter((argument: any) => !argument.startsWith('--test-concurrency') && !argument.startsWith('--test-reporter')),
+          '--test-reporter=spec',
+          '--test-reporter-destination=stdout',
+          `--test-reporter=${pathToFileURL(path.join(import.meta.dirname, 'integration-progress-reporter.ts')).href}`, '--test-reporter-destination=stderr', ...files.map(nodeTestFile)],
       };
     }
     if (executor.type === 'node-context-test') {

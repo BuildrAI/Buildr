@@ -24,7 +24,7 @@ const required = (env: NodeJS.ProcessEnv, key: string) => env[key] || fail(`publ
 
 export function validatePublisherPairDiagnosis(env: NodeJS.ProcessEnv, run: any, facts: GitFacts): void {
   if (env.DIAGNOSTIC_SCOPE !== PUBLISHER_PAIR_DIAGNOSIS_SCOPE || env.GITHUB_EVENT_NAME !== 'workflow_dispatch'
-    || env.GITHUB_REF !== 'refs/heads/dev' || env.BUILDR_CANDIDATE_PURPOSE !== 'candidate'
+    || env.BUILDR_CANDIDATE_PURPOSE !== 'candidate'
     || env.GITHUB_REPOSITORY !== 'BuildrAI/Buildr') fail('publisher-pair-dispatch-mismatch');
   if (!/^[1-9]\d*$/u.test(env.DIAGNOSTIC_CANDIDATE_RUN_ID ?? '') || !Number.isSafeInteger(Number(env.DIAGNOSTIC_CANDIDATE_RUN_ID))
     || String(run?.id) !== env.DIAGNOSTIC_CANDIDATE_RUN_ID

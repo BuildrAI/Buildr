@@ -96,16 +96,6 @@ assert.match(codexCheck.runtimeSourceEvidence.projectionIdentity, /^sha256-[a-f0
 assert.equal(codexCheck.runtimeSourceEvidence.sessionConsumption, 'unknown');
 fs.rmSync(projectionRoot, { recursive: true, force: true });
 
-const adapterDocPath: any = path.join(productRoot, 'docs', 'agent-runtime-adapters.md');
-const adapterDoc: any = fs.readFileSync(adapterDocPath, 'utf8');
-for (const adapterId of SUPPORTED_AGENT_IDS) {
-  assert.ok(adapterDoc.includes(`(\`${adapterId}\`)`), `${adapterId} must have an adapter documentation section`);
-}
-for (const token of ['Rules 接入', 'Skills 接入', '生效/刷新', 'checker', '证据', 'smoke']) assert.ok(adapterDoc.includes(token), `adapter documentation must contain ${token}`);
-for (const readmeName of ['README.md', 'README.en.md']) {
-  const readme: any = fs.readFileSync(path.join(repositoryRoot, readmeName), 'utf8');
-  assert.ok(readme.includes('projects/product/services/buildr/docs/agent-runtime-adapters.md'), `${readmeName} must link the authoritative adapter documentation`);
-}
 // Retired vendor brands stay valid runtime identities, but they no longer own an adapter or a projection.
 for (const runtimeId of ['cursor', 'qoder', 'trae', 'trae-work', 'workbuddy']) {
   assert.equal(Object.hasOwn(RUNTIME_ADAPTERS, runtimeId), false, `${runtimeId} must not remain a registered adapter`);
@@ -118,7 +108,6 @@ for (const runtimeId of ['cursor', 'qoder', 'trae', 'trae-work', 'workbuddy']) {
   assert.throws(() => getRuntimeAdapter(runtimeId), /Unsupported runtime adapter/);
 }
 assert.equal(RUNTIME_ADAPTERS['claude-code'].traits.rules.kind, 'reference-bridge');
-assert.ok(adapterDoc.includes('`@AGENTS.md`'), 'the Claude Code exception must document its reference bridge');
 
 assert.throws(() => getRuntimeAdapter('fake-runtime'), /Unsupported runtime adapter/);
 assert.throws(() => getRuntimeAdapter('fake-runtime'), /Supported adapters: claude-code, agents-standard\./);

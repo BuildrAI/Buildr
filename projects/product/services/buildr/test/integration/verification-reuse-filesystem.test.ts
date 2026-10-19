@@ -4,10 +4,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import test from 'node:test';
-import { collectVerificationReuseSnapshot, collectVerificationReuseBundle, createVerificationReuseIdentity, createVerificationReuseStore, createVerificationPlanReuse, inspectVerificationReusePlan, reusedVerificationResult, validateVerificationReuseRecord } from '../verification/verification-reuse.ts';
+import { collectVerificationReuseSnapshot, collectVerificationReuseBundle, verificationFileSteps, createVerificationReuseIdentity, createVerificationReuseStore, createVerificationPlanReuse, inspectVerificationReusePlan, reusedVerificationResult, validateVerificationReuseRecord } from '../verification/verification-reuse.ts';
 import { executePlan } from '../verification/plan-runner.ts';
 import { runVerificationStep } from '../verification/timing/parallel-runner.ts';
 import { createVerificationExecutor } from '../verification/executor.ts';
+import { collectVerificationSourceInputs } from '../verification/verification-source-inputs.ts';
 
 function fixture(t: test.TestContext) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-source-reuse-'));
@@ -145,7 +146,7 @@ test('node test runner arguments are recipe inputs rather than invisible child t
   assert.notEqual(createVerificationReuseIdentity(step, observe())!.key, key);
 });
 
-test('result policy changes preserve independent checks while assertions and execution machinery remain inputs', t => {
+test('result policy and runner repairs preserve prior facts while actual assertions remain inputs', t => {
   const f = fixture(t);
   const write = (file: string, content: string) => { const target = path.join(f.productRoot, file); fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, content); };
   write('test/selected.test.ts', '// independent assertion\n');
@@ -170,7 +171,7 @@ test('result policy changes preserve independent checks while assertions and exe
   assert.notEqual(key(selected), original);
   write('test/selected.test.ts', '// independent assertion\n');
   write('test/verification/executor.ts', '// changed execution machinery\n');
-  assert.notEqual(key(selected), original);
+  assert.equal(key(selected), original);
 });
 
 test('old complete proof is authenticated from Git, retained unchanged and cannot bypass a newer failure', async t => {
@@ -208,6 +209,31 @@ test('old complete proof is authenticated from Git, retained unchanged and canno
   assert.equal(createVerificationReuseStore({ ...options, snapshot: observe(), imports: [{ schemaVersion: 'buildr.verification-source-bundle/v1', records: [old] }], readOnly: true }).lookup(step), null);
 });
 function origin(sourceCommit: string) { return { kind: 'local' as const, runId: 'source-fixture', sourceCommit, startedAt: new Date().toISOString(), finishedAt: new Date().toISOString() }; }
+
+test('a pre-partition scoped proof survives an unrelated map edit without rewriting or reviving a failed result', t => {
+  const f = fixture(t);
+  fs.mkdirSync(path.join(f.productRoot, 'test'), { recursive: true });
+  fs.writeFileSync(path.join(f.productRoot, 'test/check.test.ts'), '// independent assertion\n');
+  const map = path.join(f.root, 'projects/product/verification.yml'); fs.writeFileSync(map, 'testing: []\n');
+  const git = (...args: string[]) => execFileSync('git', ['-C', f.root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  git('add', '.'); git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', 'commit', '-m', 'old scoped proof source');
+  const step = { ...f.step, executor: { type: 'node-test', files: ['test/check.test.ts'] } }, options = { ...f.options, steps: [step] };
+  const before = collectVerificationReuseSnapshot(options);
+  const legacy = { ...before, ...collectVerificationSourceInputs(f.root, f.productRoot, [step], before.sourceCommit, true) };
+  const store = createVerificationReuseStore({ ...options, snapshot: legacy });
+  store.stage(step, passed, origin(before.sourceCommit)); const old = store.commit(legacy, true).records[0]!;
+  assert.ok(old); const original = JSON.stringify(old);
+  fs.writeFileSync(map, 'testing: [changed]\n');
+  const current = () => collectVerificationReuseSnapshot(options);
+  assert.equal(validateVerificationReuseRecord(old, { ...options, snapshot: current(), step }), true);
+  assert.equal(JSON.stringify(createVerificationReuseStore({ ...options, snapshot: current(), readOnly: true }).lookup(step)), original);
+  fs.writeFileSync(path.join(f.productRoot, 'test/check.test.ts'), '// changed assertion\n');
+  assert.equal(validateVerificationReuseRecord(old, { ...options, snapshot: current(), step }), false);
+  fs.writeFileSync(path.join(f.productRoot, 'test/check.test.ts'), '// independent assertion\n');
+  createVerificationReuseStore({ ...options, snapshot: current() }).stage(step,
+    { ...passed, status: 'failed', exitCode: 1, childOutcome: 'failed', childExitCode: 1 }, origin(before.sourceCommit));
+  assert.equal(createVerificationReuseStore({ ...options, snapshot: current(), readOnly: true }).lookup(step), null);
+});
 
 test('reuse planning is read-only, explains input and recipe misses and removes reused work from its estimate', t => {
   const f = fixture(t), step = { ...f.step, testing: { targetDurationMs: 1200 }, dependsOn: [] };
@@ -440,6 +466,43 @@ test('executePlan automatically skips a second executor call and forced failure 
   assert.equal(forced.passed, false); assert.equal(calls, 2);
   await executePlan(plan, options);
   assert.equal(calls, 3);
+
+  const directory = path.join(f.productRoot, 'test/unit');
+  fs.mkdirSync(directory, { recursive: true });
+  const marker = path.join(f.root, '.cache', 'good-file-runs');
+  fs.writeFileSync(path.join(directory, 'good.test.mjs'), `import test from 'node:test'; import fs from 'node:fs'; test('independent success',()=>fs.appendFileSync(${JSON.stringify(marker)},'x'));`);
+  const badFile = path.join(directory, 'bad.test.mjs');
+  fs.writeFileSync(badFile, "import test from 'node:test'; import assert from 'node:assert/strict'; test('affected failure',()=>assert.fail('fixture'));");
+  const files = { ...f.step, id: 'file-fixture', platformScope: { kind: 'common' }, dependsOn: [], contexts: [], executor: { type: 'node-test', files: ['test/unit/*.test.mjs'] } };
+  const filePlan = { status: 'ready', paths: [], steps: [files] };
+  const childEnv = { ...f.options.env }; childEnv.NODE_TEST_CONTEXT = undefined;
+  const fileOptions = { ...f.options, env: childEnv, runId: 'file-fixture', concurrency: 1 };
+  const failedFiles = await executePlan(filePlan, fileOptions);
+  assert.equal(failedFiles.passed, false);
+  assert.ok(failedFiles.sourceBundle.records.some((record: any) => record.identity.stepId.endsWith(':test/unit/good.test.mjs')), JSON.stringify(failedFiles.results.map((r:any)=>({stderr:r.stderr,coverage:r.fileCoverage,cleanup:r.processCleanup,code:r.failureCode}))));
+  assert.equal(failedFiles.sourceBundle.records.some((record: any) => record.identity.stepId === files.id), false);
+  fs.writeFileSync(badFile, "import test from 'node:test'; test('affected failure',()=>{});");
+  const resumeOptions = { ...fileOptions, env: { ...childEnv, LANG: 'C' }, reuse: { imports: failedFiles.sourceBundle, portableImports: true } };
+  const recovered = await executePlan(filePlan, resumeOptions);
+  assert.equal(recovered.passed, true, JSON.stringify(recovered.results));
+  assert.equal(recovered.results[0].reusedFiles, 1);
+  assert.equal(recovered.results[0].executedFiles, 1);
+  assert.equal(fs.readFileSync(marker, 'utf8'), 'x', 'the passed independent file never runs again');
+  const complete = recovered.sourceBundle.records.find((record: any) => record.identity.stepId === files.id);
+  assert.equal(complete.files.length, 2, 'the complete result retains both actual file executions');
+  const unchanged = await executePlan(filePlan, resumeOptions);
+  assert.equal(unchanged.results[0].disposition, 'reused');
+  const leaf = verificationFileSteps(files, f.productRoot).find((step: any) => step.executor.files[0].endsWith('good.test.mjs'))!;
+  const later = createVerificationReuseStore({ ...resumeOptions, steps: [files, leaf] });
+  later.invalidate(complete.files.find((record: any) => record.identity.stepId === leaf.id).identity);
+  assert.equal(later.lookup(files), null, 'a later file failure also revokes the composed group proof');
+  const metadataPlan = { ...filePlan, steps: [{ ...files, id: 'metadata-unavailable' }] };
+  const metadata = await executePlan(metadataPlan, { ...fileOptions, executorFactory: (options: any) => {
+    const real = createVerificationExecutor(options);
+    return async (step: any, context: any) => ({ ...await real(step, context), stderr: '' });
+  } });
+  assert.equal(metadata.passed, true, 'missing internal diagnostics do not deny actual passed execution');
+  assert.equal(metadata.sourceBundle.records.length, 0, 'incomplete diagnostics cannot manufacture reusable file coverage');
 });
 
 for (const failure of ['context-cleanup', 'full-plan-release']) test(`executePlan ${failure} failure preserves prior reused success for the next run`, async t => {

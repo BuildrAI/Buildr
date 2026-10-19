@@ -110,7 +110,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const verificationSource = git(['rev-parse', 'HEAD']);
     if (verificationSource !== process.env.CANDIDATE_SOURCE_SHA || git(['status', '--porcelain', '--untracked-files=all'])) throw new Error('Candidate repair requires the exact clean verification checkout.');
     if (process.env.BUILDR_CANDIDATE_PRODUCT_SOURCE !== process.env.GITHUB_SHA) throw new Error('Candidate repair must retain the original workflow source.');
-    if (verificationSource !== process.env.BUILDR_CANDIDATE_PRODUCT_SOURCE) git(['merge-base', '--is-ancestor', verificationSource, 'origin/dev']);
     if (process.argv[2] === 'plugin') {
       const result = preservePluginSourceCandidate({ repo, temporaryRoot: process.env.RUNNER_TEMP!, runId: process.env.BUILDR_CANDIDATE_REPAIR_RUN_ID || '', verificationSource,
         workflow: { runId: process.env.GITHUB_RUN_ID, runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT) } });

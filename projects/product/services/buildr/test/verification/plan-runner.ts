@@ -110,7 +110,7 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   });
   const execute: any = (step: any, executionContext: any) => {
     const record = reuse?.hits.get(step.id);
-    return record ? reusedVerificationResult(record) : executeFresh(step, executionContext);
+    return record ? reusedVerificationResult(record) : reuse ? reuse.executeFiles(step, executeFresh, executionContext) : executeFresh(step, executionContext);
   };
   const heartbeat: any = setInterval(() => {
     const now: any = Date.now();

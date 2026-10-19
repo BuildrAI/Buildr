@@ -427,7 +427,7 @@ export const VERIFICATION_CONCURRENCY: any = VERIFICATION_EXECUTION_PROFILES.loc
 export function verificationStepExecutionInputs(definition: any, profiles: any = VERIFICATION_EXECUTION_PROFILES): any {
   if (!['node', 'node-test', 'node-context-test'].includes(definition.executor?.type)) return null;
   return { innerWorkers: Object.fromEntries(Object.entries(profiles).map(([id, profile]: [string, any]) =>
-    [id, profile.innerConcurrency?.[definition.id] ?? definition.resourceDemand?.workers ?? 1])) };
+    [id, profile.innerConcurrency?.[definition.parentId ?? definition.id] ?? definition.resourceDemand?.workers ?? 1])) };
 }
 
 export const VERIFICATION_ENVIRONMENT_FOOTPRINTS: any = Object.freeze(['filesystem', 'cli', 'git', 'loopback-network', 'network', 'workspace-lifecycle']);

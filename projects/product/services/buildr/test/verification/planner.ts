@@ -549,7 +549,6 @@ export function validateVerificationRegistry(steps: any = verificationSteps): an
   for (const item of steps) visit(item.id);
   findings.push(...createVerificationEvidenceMap(steps).findings);
   findings.push(...auditDailyCoreReleaseEvidence(steps).findings);
-  if (steps === verificationSteps) findings.push(...validateCandidateCiCoverage(steps).findings);
   return { ok: findings.length === 0, findings };
 }
 

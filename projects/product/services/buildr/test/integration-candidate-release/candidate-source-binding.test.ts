@@ -226,7 +226,8 @@ test('formal repair retains the producer and unaffected check while a changed as
   assert.throws(() => createCandidateRepairPlan({ ...input, originalRun: { ...run, event: 'pull_request' } }, { descriptors }), /controlled/u);
   const duplicate = structuredClone(evidence); duplicate[1]!.results.push(duplicate[1]!.results[0]!);
   assert.throws(() => createCandidateRepairPlan({ ...input, evidence: duplicate }, { descriptors }), /ambiguous results/u);
-  git('update-ref', 'refs/remotes/origin/dev', verificationSource);
+  assert.notEqual(spawnSync('git', ['show-ref', '--verify', 'refs/remotes/origin/dev'], { cwd: repo }).status, 0,
+    'verification dispatch does not need an integrated dev ref');
   const candidate: any = { runId: 42, sourceCommit: source, branch: 'codex/release-main-fixture-g1' };
   const snapshots: any[] = []; let requests = 0, lists = 0, carrierWrites = 0;
   const scope = { git: (args: string[]) => git(...args), save: () => snapshots.push(structuredClone(candidate)), ensureCarrier: () => { carrierWrites++; },
@@ -340,7 +341,7 @@ test('actual Candidate plan schedules no Linux and retains publisher preparation
   const planned = spawnSync(process.execPath, [cli, 'plan'], { env, encoding: 'utf8', timeout: 20_000, maxBuffer: 2 * 1024 * 1024 });
   assert.equal(planned.status, 0, planned.stderr);
   const plan = JSON.parse(planned.stdout);
-  assert.equal(plan.matrices.host.length, 4);
+  assert.deepEqual(plan.matrices.host.map((row: any) => row.id).sort(), ['host-minimum-macos', 'host-minimum-windows']);
   for (const matrix of Object.values(plan.matrices) as any[]) for (const row of matrix) assert.match(row.os, /^(?:macos-|windows-)/u);
   assert.deepEqual(plan.matrices.host.find((row: any) => row.id === 'host-minimum-macos'), {
     id: 'host-minimum-macos', os: 'macos-15', node: '24.15.0', preparation: 'publisher',

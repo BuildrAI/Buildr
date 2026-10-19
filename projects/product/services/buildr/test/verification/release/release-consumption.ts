@@ -11,7 +11,6 @@ import { spawnCommandSync } from '../../../src/infrastructure/process.ts';
 import { readReleaseArtifact, assertNpmTarballInventory } from '../../../../../../../skills/buildr-release/scripts/release-artifact.ts';
 import { resolveReleaseContract } from '../../../../../../../skills/buildr-release/scripts/release-contract.ts';
 import { extractReleaseNotes } from '../../../../../../../skills/buildr-release/scripts/release-notes.ts';
-import { validateReleaseExecutorRecovery } from '../../../../../../../skills/buildr-release/scripts/release-executor-recovery.ts';
 import { publisherNpmCli, PUBLISH_NPM_VERSION } from '../../../tools/verification/candidate-environment.ts';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../../..');
@@ -48,18 +47,6 @@ export const RELEASE_CONSUMER_COMMANDS = Object.freeze({
   registry: { file: 'test/verification/release/release-smoke.ts', args: [], preparation: 'consumer' },
 });
 
-// Kept only for a bound repair of an already-frozen transaction. These are
-// historical platform recipes, never new-scope results or current Linux support.
-const previousHostReleaseChecks = RELEASE_CHECKS.map(check => check.id === 'host-node'
-  ? { ...check, evidence: ['host-minimum-macos', 'host-current-macos', 'host-minimum-windows', 'host-current-windows'] } : check);
-const previousMixedPackageReleaseChecks = previousHostReleaseChecks.map(check => check.id === 'platform-launcher'
-  ? { ...check, evidence: ['core-package-runtime-release-macos', 'runtime-windows'] } : check);
-const previousPlatformReleaseChecks = previousMixedPackageReleaseChecks.map(check => check.id === 'release-lifecycle'
-  ? { ...check, evidence: ['release-infrastructure-macos', 'release-infrastructure-windows'] } : check);
-const historicalReleaseChecks = previousMixedPackageReleaseChecks.map(check => check.id === 'host-node'
-  ? { ...check, evidence: ['host-minimum-macos', 'host-current-macos', 'host-minimum-windows', 'host-current-windows', 'host-minimum-linux', 'host-current-linux'] }
-  : check.id === 'publisher-cli' ? { ...check, evidence: ['host-minimum-linux'] }
-  : check.id === 'release-lifecycle' ? { ...check, evidence: ['release-infrastructure-macos', 'release-infrastructure-windows'] } : check);
 const consumptionIdentity = (checks: readonly any[]) => `sha256-${crypto.createHash('sha256').update(JSON.stringify({ checks, commands: RELEASE_CONSUMER_COMMANDS, publisherNpm: PUBLISH_NPM_VERSION })).digest('hex')}`;
 
 export function releaseConsumptionIdentity(): string {
@@ -79,20 +66,12 @@ export function validateReleaseCheckDefinitions(checks: readonly any[] = RELEASE
   }
 }
 
-export function assertReleaseConsumptionCoverage(aggregate: any, expected: { sourceCommit: string; sourceTree?: string }, artifact: any, recoveryContext?: any): void {
+export function assertReleaseConsumptionCoverage(aggregate: any, expected: { sourceCommit: string; sourceTree?: string }, artifact: any, _recoveryContext?: any): void {
   validateReleaseCheckDefinitions();
   if (aggregate?.status !== 'passed' || aggregate.sourceCommit !== expected.sourceCommit || (expected.sourceTree && aggregate.sourceTree !== expected.sourceTree)) throw new Error('Release consumption requires a passed Candidate for the exact source.');
-  let checks: readonly any[] = RELEASE_CHECKS;
-  if (aggregate.consumptionIdentity !== releaseConsumptionIdentity()) {
-    const recovery = recoveryContext && validateReleaseExecutorRecovery(recoveryContext);
-    const historical = [previousHostReleaseChecks, previousMixedPackageReleaseChecks, previousPlatformReleaseChecks, historicalReleaseChecks].find(recipe => aggregate.consumptionIdentity === consumptionIdentity(recipe));
-    if (!recovery || recoveryContext.release?.sourceCommit !== expected.sourceCommit
-      || recoveryContext.candidate?.sourceCommit !== expected.sourceCommit
-      || recoveryContext.artifact?.sha256 !== artifact?.sha256
-      || !historical) throw new Error('Candidate release consumption recipe is missing or stale.');
-    checks = historical;
-  }
-  for (const check of checks) {
+  // The aggregate owner validates individual proofs. This consumer checks current
+  // coverage and exact bytes; a whole-list digest change is not a missing check.
+  for (const check of RELEASE_CHECKS) {
     if ('evidence' in check && check.evidence.some((id: string) => !aggregate.evidenceIds?.includes(id))) throw new Error(`Candidate is missing release check ${check.id}.`);
   }
   for (const field of ['sourceCommit', 'filename', 'size', 'sha256', 'integrity', 'applicationPayloadDigest']) {

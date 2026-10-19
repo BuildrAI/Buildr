@@ -542,7 +542,7 @@ test('Windows original-package diagnosis remains separate from complete Candidat
   assert.equal(diagnosis.env.DIAGNOSTIC_CANDIDATE_SOURCE, '${{ inputs.diagnostic_candidate_source }}');
   assert.equal(diagnosis.env.EXPECTED_SOURCE_TREE, '${{ inputs.expected_source_tree }}');
   assert.doesNotMatch(JSON.stringify(diagnosis.env), /runner\./u);
-  assert.match(diagnosis.steps[0].run, /refs\/heads\/dev/u);
+  assert.ok(diagnosis.steps[0].run.includes(`[[ "$DISPATCH_PURPOSE" == 'candidate' ]]`));
   assert.match(diagnosis.steps[0].env.EXTRA_INPUTS_PRESENT, /inputs.source_verification != ''/u);
   const download = diagnosis.steps.find((step: any) => step.uses?.startsWith('actions/download-artifact@'));
   assert.equal(download.with.name, 'candidate-package');
@@ -580,7 +580,7 @@ test('Windows source diagnosis keeps native owners isolated without borrowing a 
   assert.match(diagnosis.if, /inputs.diagnostic_scope == 'readonly-files-windows'/u);
   const guard = diagnosis.steps[0];
   assert.equal(guard.shell, 'bash');
-  assert.match(guard.run, /refs\/heads\/dev/u);
+  assert.ok(guard.run.includes(`[[ "$DISPATCH_PURPOSE" == 'candidate' ]]`));
   for (const input of ['release_packages', 'buildr_version', 'plugin_version', 'source_verification', 'artifact_verification', 'local_runner', 'repair_candidate_run_id', 'product_source', 'verification_source', 'diagnostic_candidate_run_id', 'diagnostic_candidate_source']) assert.ok(guard.env.EXTRA_INPUTS_PRESENT.includes(`inputs.${input} != ''`));
   const execution = diagnosis.steps.find((step: any) => step.run === 'node test/verification/release/windows-source-diagnosis.ts');
   assert.equal(execution.env.EXPECTED_SOURCE_TREE, '${{ inputs.expected_source_tree }}');
@@ -608,7 +608,7 @@ test('Windows nested Git diagnosis keeps closed inputs, original isolated assert
     assert.ok(guard.env.RELEASE_INPUTS_PRESENT.includes(`inputs.${input} != ''`), `Diagnosis must reject ${input}`);
   }
   assert.ok(guard.run.includes(`[[ "$DIAGNOSTIC_SCOPE" == 'nested-git-isolation-windows' ]] || fail`));
-  assert.ok(guard.run.includes(`[[ "$DISPATCH_REF" == 'refs/heads/dev' && "$DISPATCH_PURPOSE" == 'candidate' ]] || fail`));
+  assert.ok(guard.run.includes(`[[ "$DISPATCH_PURPOSE" == 'candidate' ]] || fail`));
   assert.ok(guard.run.includes(`[[ "$RELEASE_INPUTS_PRESENT" == 'false' ]] || fail`));
   assert.ok(guard.run.includes(`[[ "$EXPECTED_SOURCE_TREE" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]] || fail`));
   const checkout = diagnosis.steps.find((step: any) => step.uses?.startsWith('actions/checkout@'));

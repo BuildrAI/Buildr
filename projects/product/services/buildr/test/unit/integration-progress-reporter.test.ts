@@ -20,7 +20,7 @@ test('Integration failure and completed file diagnostics arrive before the remai
   assert.match(failed.value, /"causeCode":"ERR_ASSERTION"/);
   assert.equal(exhausted, false);
   const completed = await reporter.next();
-  assert.match(completed.value, /"file":"http.test.ts","name":"http.test.ts","status":"failed","durationMs":20/);
+  assert.match(completed.value, /"file":"http.test.ts","name":"http.test.ts".*"status":"failed","durationMs":20/);
   assert.equal(exhausted, false);
   assert.equal((await reporter.next()).done, true);
 });

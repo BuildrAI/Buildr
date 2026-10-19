@@ -10,6 +10,7 @@ import { preparationContentDigest } from '../../tools/verification/candidate-pre
 import { withExclusiveFileLock } from '../../src/infrastructure/filesystem/exclusive-file-lock.ts';
 import { collectVerificationSourceInputs } from './verification-source-inputs.ts';
 import { resolveVerificationBase } from './changed-paths.ts';
+import { resolveNodeTestFiles } from './test-files.ts';
 
 export type ReuseDigest = `sha256-${string}`;
 export type VerificationReuseScope = 'backend' | 'platform-backend' | 'web' | 'product' | 'repository' | 'plugin' | 'runtime';
@@ -25,7 +26,7 @@ export interface VerificationReuseSnapshot {
   inputIdentities?: Record<string, ReuseDigest>;
   stepInputs?: Record<string, { contentIdentity: ReuseDigest; recipeIdentity: ReuseDigest; fallback: boolean; unavailable: boolean; unresolved?: string[] }>;
   proofInputs?: Record<string, NonNullable<VerificationReuseSnapshot['stepInputs']>[string] & { selectionIdentity: ReuseDigest }>;
-  historicalInputs?: (commit: string) => ReturnType<typeof collectVerificationSourceInputs> | null;
+  historicalInputs?: (commit: string, legacyDeclarations?: boolean) => ReturnType<typeof collectVerificationSourceInputs> | null;
 }
 export interface VerificationReuseIdentity {
   key: ReuseDigest; stepId: string; contentIdentity: ReuseDigest; recipeIdentity: ReuseDigest; environmentIdentity: ReuseDigest; gitIdentity?: ReuseDigest;
@@ -37,7 +38,8 @@ export interface VerificationReuseOrigin {
 export interface VerificationReuseRecord {
   schemaVersion: 'buildr.verification-source-result/v1'; identity: VerificationReuseIdentity;
   environment: VerificationReuseEnvironment; origin: VerificationReuseOrigin; cleanup: 'clean'; identityAfter: ReuseDigest;
-  result: { id: string; status: 'passed'; exitCode: 0; durationMs: number; childOutcome: 'passed'; childExitCode: 0; childSignal: null };
+  result: { id: string; status: 'passed'; exitCode: 0; durationMs: number; childOutcome: 'passed'; childExitCode: 0; childSignal: null; durationSource?: 'parent-run-upper-bound' };
+  files?: VerificationReuseRecord[];
 }
 export interface VerificationReuseBundle { schemaVersion: 'buildr.verification-source-bundle/v1'; records: VerificationReuseRecord[] }
 export interface VerificationReuseOptions {
@@ -55,6 +57,16 @@ const sorted = (value: Record<string, string>) => Object.fromEntries(Object.entr
 const git = (root: string, args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
 const liveMysqlInput = 'BUILDR_TEST_MYSQL_CONNECTION_FILE';
 
+/** Existing node-test groups retain independent file outcomes. A filtered case
+ * run is never evidence for a complete file or group. No check IDs are added. */
+export function verificationFileSteps(step: VerificationReuseStep, productRoot: string): VerificationReuseStep[] {
+  if (!step.reuse || step.parentId || step.executor.type !== 'node-test' || step.executor.args?.some((value: string) => /--test-(?:name-pattern|skip-pattern|only|shard)/u.test(value))) return [];
+  return resolveNodeTestFiles(productRoot, step.executor.files, step.id).map((file: string) => {
+    const relative = path.relative(productRoot, file).split(path.sep).join('/');
+    return { ...step, id: `${step.id}:${relative}`, parentId: step.id, dependsOn: [], executor: { ...step.executor, files: [relative] } };
+  });
+}
+
 export function requiresFreshExternalVerification(step: VerificationReuseStep, snapshot: VerificationReuseSnapshot): boolean {
   // A mutable external database cannot be attested by source bytes or an old
   // skipped test. Only its owning group loses reuse; credentials stay unread.
@@ -66,16 +78,18 @@ export function requiresFreshExternalVerification(step: VerificationReuseStep, s
 export function collectVerificationReuseSnapshot(options: VerificationReuseOptions): VerificationReuseSnapshot {
   const productRoot = path.resolve(options.productRoot), repositoryRoot = git(productRoot, ['rev-parse', '--show-toplevel']).trim();
   const env = options.env ?? process.env;
-  const steps = [...(options.steps ?? verificationSteps), ...(options.step ? [options.step] : [])];
+  const declared = [...(options.steps ?? verificationSteps), ...(options.step ? [options.step] : [])];
+  const steps = [...declared, ...declared.filter(step => !step.parentId).flatMap(step => verificationFileSteps(step, productRoot))];
   const sourceInputs = collectVerificationSourceInputs(repositoryRoot, productRoot, steps);
   const history = new Map<string, ReturnType<typeof collectVerificationSourceInputs> | null>();
-  const historicalInputs = (commit: string) => {
-    if (!history.has(commit)) {
+  const historicalInputs = (commit: string, legacyDeclarations = false) => {
+    const key = commit + ':' + legacyDeclarations;
+    if (!history.has(key)) {
       if (history.size >= 16) return null;
-      try { history.set(commit, collectVerificationSourceInputs(repositoryRoot, productRoot, steps, commit)); }
-      catch { history.set(commit, null); }
+      try { history.set(key, collectVerificationSourceInputs(repositoryRoot, productRoot, steps, commit, legacyDeclarations)); }
+      catch { history.set(key, null); }
     }
-    return history.get(commit)!;
+    return history.get(key)!;
   };
   const inputNames = [...new Set([liveMysqlInput, ...[...(options.steps ?? verificationSteps), ...(options.step ? [options.step] : [])]
     .flatMap((step: VerificationReuseStep) => step.reuse && step.reuse.inputs || [])])].sort();
@@ -156,7 +170,7 @@ export function validateVerificationReuseRecord(record: unknown, options: Verifi
   try {
     const value = record as VerificationReuseRecord;
     const step = options.step ?? (options.steps ?? verificationSteps).find((item: VerificationReuseStep) => item.id === (options.stepId ?? value?.identity?.stepId));
-    if (!step || !closed(value, ['schemaVersion', 'identity', 'environment', 'origin', 'cleanup', 'identityAfter', 'result'])
+    if (!step || !closed(value, ['schemaVersion', 'identity', 'environment', 'origin', 'cleanup', 'identityAfter', 'result'], ['files'])
       || !closed(value.identity, ['key', 'stepId', 'contentIdentity', 'recipeIdentity', 'environmentIdentity'], ['gitIdentity'])
       || !closed(value.environment, ['platform', 'arch', 'nodeVersion', 'tools', 'variablesIdentity'])
       || value?.schemaVersion !== VERIFICATION_REUSE_RECORD_SCHEMA || !validEnvironment(value.environment) || value.cleanup !== 'clean'
@@ -165,14 +179,21 @@ export function validateVerificationReuseRecord(record: unknown, options: Verifi
     if (options.environment && (options.environment.variablesIdentity !== value.environment.variablesIdentity || requiredToolKeys(step).some(key => options.environment!.tools[key] !== value.environment.tools[key])
       || step.reuse && step.reuse.exactNode && options.environment.nodeVersion !== value.environment.nodeVersion)) return false;
     const result = value.result, origin = value.origin;
-    if (!closed(result, ['id', 'status', 'exitCode', 'durationMs', 'childOutcome', 'childExitCode', 'childSignal'])
+    if (!closed(result, ['id', 'status', 'exitCode', 'durationMs', 'childOutcome', 'childExitCode', 'childSignal'], ['durationSource'])
       || !closed(origin, ['kind', 'runId', 'sourceCommit', 'startedAt', 'finishedAt'], ['workflow'])
       || result.id !== step.id || result.status !== 'passed' || result.exitCode !== 0 || result.childOutcome !== 'passed' || result.childExitCode !== 0 || result.childSignal !== null
-      || !Number.isFinite(result.durationMs) || result.durationMs < 0 || !origin || !['local', 'ci'].includes(origin.kind)
+      || !Number.isFinite(result.durationMs) || result.durationMs < 0 || result.durationSource !== undefined && result.durationSource !== 'parent-run-upper-bound' || !origin || !['local', 'ci'].includes(origin.kind)
       || !/^[a-z0-9._:-]{1,180}$/iu.test(origin.runId) || !/^[a-f0-9]{40,64}$/u.test(origin.sourceCommit)
       || !Number.isFinite(Date.parse(origin.startedAt)) || !Number.isFinite(Date.parse(origin.finishedAt)) || Date.parse(origin.finishedAt) < Date.parse(origin.startedAt)) return false;
     if (origin.workflow && (!closed(origin.workflow, ['runId', 'runAttempt']) || !/^[1-9]\d*$/u.test(origin.workflow.runId) || !Number.isSafeInteger(origin.workflow.runAttempt) || origin.workflow.runAttempt < 1)) return false;
     const snapshot = options.snapshot ?? collectVerificationReuseSnapshot(options);
+    if (value.files) {
+      const files = verificationFileSteps(step, options.productRoot);
+      if (!Array.isArray(value.files) || files.length !== value.files.length || !files.length
+        || !files.every(file => value.files!.filter(record => record.identity?.stepId === file.id).length === 1
+          && validateVerificationReuseRecord(value.files!.find(record => record.identity?.stepId === file.id), { ...options, snapshot, step: file,
+            ...(step.platformScope?.kind === 'common' ? { environment: undefined, runner: undefined, arch: undefined } : {}) }))) return false;
+    }
     const identity = createVerificationReuseIdentity(step, { ...snapshot, environment: value.environment });
     if (identity !== null && JSON.stringify(identity) === JSON.stringify(value.identity)) return true;
     // Old records remain original execution evidence. Authenticate their broad
@@ -181,9 +202,14 @@ export function validateVerificationReuseRecord(record: unknown, options: Verifi
     const original = snapshot.historicalInputs(origin.sourceCommit);
     if (!original) return false;
     const historical = { ...snapshot, ...original, environment: value.environment };
-    const before = createVerificationReuseIdentity(step, historical, true);
-    return before !== null && JSON.stringify(before) === JSON.stringify(value.identity)
-      && JSON.stringify(createVerificationReuseIdentity(step, historical)) === JSON.stringify(identity);
+    if (JSON.stringify(createVerificationReuseIdentity(step, historical)) !== JSON.stringify(identity)) return false;
+    const authentic = (inputs: typeof historical) => [false, true].some(legacy =>
+      JSON.stringify(createVerificationReuseIdentity(step, inputs, legacy)) === JSON.stringify(value.identity));
+    if (authentic(historical)) return true;
+    // Authenticate pre-partition records against their immutable original map;
+    // compare applicability above using today's inputs, never rewrite the proof.
+    const legacy = snapshot.historicalInputs(origin.sourceCommit, true);
+    return Boolean(legacy && authentic({ ...snapshot, ...legacy, environment: value.environment }));
   } catch { return false; }
 }
 
@@ -260,8 +286,9 @@ export function createVerificationReuseStore(options: VerificationReuseOptions &
     const current = step && createVerificationReuseIdentity(step, snapshot);
     return [...new Set([identity.key, ...(current ? [current.key] : [])])];
   };
-  const acceptsMarker = (record: VerificationReuseRecord) => {
+  const acceptsMarker = (record: VerificationReuseRecord, depth = 0): boolean => {
     if (!record?.identity?.key) return false;
+    if (record.files && (depth > 0 || !Array.isArray(record.files) || !record.files.every(file => acceptsMarker(file, depth + 1)))) return false;
     // Foreign clocks never order executions. A local invalidation rejects every
     // imported older proof until this generation accepts a fresh real result.
     return applicableKeys(record.identity).every(key => {
@@ -317,7 +344,7 @@ export function createVerificationReuseStore(options: VerificationReuseOptions &
           for (const file of fs.readdirSync(directory).filter(file => /^sha256-[a-f0-9]{64}\.json$/u.test(file)).sort().slice(0, 4096)) {
             try {
               const target = path.join(directory, file);
-              if (fs.statSync(target).size <= 65536) historicalRecords.push(JSON.parse(fs.readFileSync(target, 'utf8')));
+              if (fs.statSync(target).size <= 2 * 1024 * 1024) historicalRecords.push(JSON.parse(fs.readFileSync(target, 'utf8')));
             } catch { /* Corrupt or concurrently removed records are not evidence. */ }
           }
         } catch { /* An unavailable cache cannot create an old proof. */ }
@@ -337,7 +364,9 @@ export function createVerificationReuseStore(options: VerificationReuseOptions &
       if (result.status !== 'passed' || result.exitCode !== 0 || result.childOutcome !== 'passed' || result.childExitCode !== 0 || result.childSignal !== null || result.processCleanup?.status !== 'clean') { invalidate(identity); return null; }
       observeGeneration(identity.key);
       const record: VerificationReuseRecord = { schemaVersion: VERIFICATION_REUSE_RECORD_SCHEMA, identity, environment: snapshot.environment, origin, cleanup: 'clean', identityAfter: identity.key,
-        result: { id: step.id, status: 'passed', exitCode: 0, durationMs: result.durationMs, childOutcome: 'passed', childExitCode: 0, childSignal: null } };
+        result: { id: step.id, status: 'passed', exitCode: 0, durationMs: result.durationMs, childOutcome: 'passed', childExitCode: 0, childSignal: null,
+          ...(result.durationSource === 'parent-run-upper-bound' ? { durationSource: result.durationSource } : {}) },
+        ...(result.fileRecords?.length ? { files: result.fileRecords } : {}) };
       staged.set(identity.key, record); return record;
     },
     commit(after: VerificationReuseSnapshot, cleanupClean: boolean): VerificationReuseBundle {
@@ -421,13 +450,15 @@ export function createVerificationPlanReuse(plan: any, options: any): any {
   const env = { ...process.env, ...options.env }, config = options.reuse ?? {};
   let declaredProfile: any = null;
   try { declaredProfile = resolveVerificationExecutionProfile(options.executionProfile?.id ?? env.BUILDR_VERIFICATION_PROFILE, env); } catch { /* Unknown custom profiles cannot create portable proof. */ }
-  const steps = plan.steps.map((step: VerificationReuseStep) => {
+  const checks = plan.steps.map((step: VerificationReuseStep) => {
     if (!verificationStepExecutionInputs(step)) return step;
     const actualWorkers = options.executionProfile?.limits?.innerConcurrency?.[step.id] ?? step.resourceDemand?.workers ?? 1;
     const registeredWorkers = declaredProfile?.limits?.innerConcurrency?.[step.id] ?? step.resourceDemand?.workers ?? 1;
     return !declaredProfile || actualWorkers !== registeredWorkers
       ? { ...step, reuse: false, reuseDisabledReason: 'custom-worker-budget-requires-fresh-proof' } : step;
   });
+  const filesByCheck = new Map<string, VerificationReuseStep[]>(checks.map((step: VerificationReuseStep) => [step.id, verificationFileSteps(step, options.productRoot)]));
+  const steps = [...checks, ...[...filesByCheck.values()].flat()];
   const imports = config.imports ? Array.isArray(config.imports) ? config.imports : [config.imports] : [];
   if (env.BUILDR_VERIFICATION_REUSE_IMPORT) imports.push(readVerificationReuseBundle(env.BUILDR_VERIFICATION_REUSE_IMPORT));
   const snapshotOptions = { productRoot: options.productRoot, projectRoot: options.projectRoot, env, steps };
@@ -443,19 +474,53 @@ export function createVerificationPlanReuse(plan: any, options: any): any {
   }
   return {
     hits,
-    explanation: inspectVerificationReusePlan({ ...plan, steps }, { ...snapshotOptions, snapshot, force, imports }),
+    explanation: inspectVerificationReusePlan({ ...plan, steps: checks }, { ...snapshotOptions, snapshot, force, imports }),
+    async executeFiles(step: VerificationReuseStep, execute: any, context: any): Promise<any> {
+      const files = filesByCheck.get(step.id) ?? [];
+      if (!files.length) return execute(step, context);
+      const missing = files.filter(file => !hits.has(file.id));
+      options.stream?.write(`[verification-reuse] ${step.id}: files execute=${missing.length} reuse=${files.length - missing.length}\n`);
+      const result = missing.length ? await execute({ ...step, executor: { ...step.executor, files: missing.flatMap(file => file.executor.files) } }, context)
+        : { status: 'passed', exitCode: 0, childOutcome: 'passed', childExitCode: 0, childSignal: null, durationMs: 0,
+          stdout: '', stderr: '', processCleanup: { status: 'clean', ownership: 'prior-file-executions' } };
+      const observations = new Map<string, any>();
+      for (const line of String(result.stderr ?? '').split('\n')) {
+        if (!line.startsWith('[buildr-integration-progress] ')) continue;
+        try {
+          const value = JSON.parse(line.slice('[buildr-integration-progress] '.length));
+          if (typeof value.entryFile === 'string' && ['passed', 'failed'].includes(value.status) && Number.isFinite(value.durationMs)) observations.set(value.entryFile, value);
+        } catch { /* Incomplete log lines cannot attest a file. */ }
+      }
+      return { ...result, fileCoverage: files.map(file => ({ step: file, prior: hits.get(file.id),
+        observation: missing.includes(file) ? observations.get(file.executor.files[0]) : undefined })),
+        reusedFiles: files.length - missing.length, executedFiles: missing.length };
+    },
     finish(results: any[], cleanupClean: boolean): VerificationReuseBundle {
       const after = collectVerificationReuseSnapshot(snapshotOptions);
       for (const result of results) {
         const step = steps.find((item: VerificationReuseStep) => item.id === result.id);
         if (!step || result.disposition === 'reused') continue;
         const start = result.startedAt ?? new Date().toISOString(), finish = result.finishedAt ?? start;
-        store.stage(step, result, { kind: env.GITHUB_RUN_ID ? 'ci' : 'local', runId: options.runId ?? `verification-${process.pid}`,
+        const origin: VerificationReuseOrigin = { kind: env.GITHUB_RUN_ID ? 'ci' : 'local', runId: options.runId ?? `verification-${process.pid}`,
           sourceCommit: snapshot.sourceCommit, startedAt: start, finishedAt: finish,
-          ...(env.GITHUB_RUN_ID ? { workflow: { runId: env.GITHUB_RUN_ID, runAttempt: Number(env.GITHUB_RUN_ATTEMPT || 1) } } : {}) });
+          ...(env.GITHUB_RUN_ID ? { workflow: { runId: env.GITHUB_RUN_ID, runAttempt: Number(env.GITHUB_RUN_ATTEMPT || 1) } } : {}) };
+        if (result.fileCoverage) {
+          result.fileRecords = [];
+          for (const file of result.fileCoverage) {
+            if (file.prior) { if (store.isCurrent(file.prior)) result.fileRecords.push(file.prior); continue; }
+            const passed = file.observation?.status === 'passed' && result.processCleanup?.status === 'clean' && result.childSignal === null;
+            const record = store.stage(file.step, { ...result, fileRecords: undefined, status: passed ? 'passed' : 'failed', exitCode: passed ? 0 : 1,
+              childOutcome: passed ? 'passed' : 'failed', childExitCode: passed ? 0 : 1, durationMs: file.observation?.durationMs ?? 0 }, origin);
+            if (record) result.fileRecords.push(record);
+          }
+        }
+        // Missing per-file diagnostics withhold reusable evidence; they cannot
+        // turn an actually passed child into a product/test failure.
+        if (!result.fileCoverage || result.fileRecords.length === result.fileCoverage.length) store.stage(step, result, origin);
       }
       const written = store.commit(after, cleanupClean);
       const records = new Map(written.records.map(record => [record.identity.key, record]));
+      for (const result of results) for (const file of result.fileCoverage ?? []) if (file.prior && store.isCurrent(file.prior)) records.set(file.prior.identity.key, file.prior);
       for (const result of results) {
         const step = steps.find((item: VerificationReuseStep) => item.id === result.id), prior = hits.get(result.id);
         if (!step || result.status === 'blocked' || result.status === 'skipped') continue;
@@ -489,7 +554,8 @@ export function createVerificationPlanReuse(plan: any, options: any): any {
         }
         const record = records.get(identity.key);
         if (record) result.sourceRecord = record;
-        else if (!prior && result.status === 'passed' && result.childOutcome === 'passed' && result.processCleanup?.status === 'clean') {
+        else if (!prior && result.status === 'passed' && result.childOutcome === 'passed' && result.processCleanup?.status === 'clean'
+          && (!result.fileCoverage || result.fileRecords?.length === result.fileCoverage.length)) {
           Object.assign(result, { status: 'failed', exitCode: 1, failureCode: 'verification-reuse-superseded', sourceRecord: undefined });
         }
       }

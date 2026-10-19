@@ -102,12 +102,12 @@ export function assertReleaseExecutionCheckout(repo: string, context: any): void
 
 type CandidateInputReader = { inventory: (commit: string) => GitSourceEntry[]; blob: (commit: string, file: string) => string };
 
-function checkSource(repo: string, commit: string, reader?: CandidateInputReader) {
+function checkSource(repo: string, commit: string, reader?: CandidateInputReader, legacyDeclarations = false) {
   const inventory = reader?.inventory(commit);
   const objects = inventory && new Map(inventory.map(entry => [entry.object, entry.path]));
   const source = inventory && verificationInputSourceFromGit(inventory.map(entry => ({ ...entry, file: entry.path })),
     object => Buffer.from(reader!.blob(commit, objects!.get(object)!)));
-  return createVerificationSourceInputReader(repo, path.join(repo, prefix), commit, source);
+  return createVerificationSourceInputReader(repo, path.join(repo, prefix), commit, source, { legacyDeclarations });
 }
 
 function checkIdentity(source: ReturnType<typeof checkSource>, step: any, legacyExecution = false): string {
@@ -199,6 +199,7 @@ export function createCandidateCheckInputReader(repo: string) {
     blob(commit: string, file: string) { const key = commit + ':' + file; if (!blobs.has(key)) blobs.set(key, gitRead(repo, ['show', key])); return blobs.get(key)!; },
   };
   const sources = new Map<string, ReturnType<typeof checkSource>>();
+  const legacySources = new Map<string, ReturnType<typeof checkSource>>();
   const current = (commit: string, step: any) => {
     if (!sources.has(commit)) sources.set(commit, checkSource(repo, commit));
     return checkIdentity(sources.get(commit)!, step);
@@ -208,6 +209,8 @@ export function createCandidateCheckInputReader(repo: string) {
     // digest before today's per-check execution policy compares applicability.
     if (current(commit, step) === identity) return true;
     if (checkIdentity(sources.get(commit)!, step, true) === identity) return true;
+    if (!legacySources.has(commit)) legacySources.set(commit, checkSource(repo, commit, undefined, true));
+    if ([false, true].some(legacy => checkIdentity(legacySources.get(commit)!, step, legacy) === identity)) return true;
     return legacyCandidateCheckInputIdentity(repo, commit, step, reader) === identity;
   } });
 }

@@ -22,12 +22,13 @@ const runtime = { platform: 'darwin', nodeVersion: '24.15.0', nodeExecutable: '/
 
 test('publisher pair diagnosis binds a successful original run and a separate exact clean diagnosis checkout', () => {
   assert.doesNotThrow(() => validatePublisherPairDiagnosis(env, run, facts));
+  assert.doesNotThrow(() => validatePublisherPairDiagnosis({ ...env, GITHUB_REF: 'refs/heads/codex/verification-fix' }, run, facts));
   assert.doesNotThrow(() => validatePublisherPairDiagnosis({ ...env, DIAGNOSTIC_CANDIDATE_RUN_ID: '456' }, { ...run, id: 456 }, facts));
   for (const changed of [{ id: 456 }, { repository: { full_name: 'other/repo' } }, { path: '.github/workflows/publish.yml' },
     { event: 'pull_request' }, { status: 'in_progress' }, { conclusion: 'failure' }, { head_sha: current }, { run_attempt: 0 }]) {
     assert.throws(() => validatePublisherPairDiagnosis(env, { ...run, ...changed }, facts), /publisher-pair-/u);
   }
-  for (const changed of [{ DIAGNOSTIC_SCOPE: 'none' }, { GITHUB_REF: 'refs/heads/main' }, { BUILDR_CANDIDATE_PURPOSE: 'release-rehearsal' },
+  for (const changed of [{ DIAGNOSTIC_SCOPE: 'none' }, { BUILDR_CANDIDATE_PURPOSE: 'release-rehearsal' },
     { DIAGNOSTIC_CANDIDATE_RUN_ID: 'HEAD' }, { DIAGNOSTIC_CANDIDATE_SOURCE: original.slice(0, 12) }, { GITHUB_SHA: original },
     { EXPECTED_SOURCE_TREE: current }, { BUILDR_RELEASE_PACKAGES: 'buildr' }, { BUILDR_SOURCE_VERIFICATION: 'old-proof' }]) {
     assert.throws(() => validatePublisherPairDiagnosis({ ...env, ...changed }, run, facts), /publisher-pair-/u);
