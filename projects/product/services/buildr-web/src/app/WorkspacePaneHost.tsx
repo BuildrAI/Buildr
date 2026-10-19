@@ -4,7 +4,7 @@ import type { WorkspaceObjectTab } from '../components/ObjectTabStrip';
 import { PageTabStrip } from './PageTabStrip';
 import { tabElementId, tabPanelId } from '../lib/tab-navigation';
 import type { WorkspacePageTab } from './workspace-pages';
-import { WorkspacePaneContext, type WorkspacePaneHostValue, type WorkspacePaneRegistration } from './WorkspacePaneContext';
+import { PageTabRowContext, WorkspacePaneContext, type WorkspacePaneHostValue, type WorkspacePaneRegistration } from './WorkspacePaneContext';
 import './workspace-pane-host.css';
 
 export { useWorkspacePaneHost, useWorkspacePaneRegistration } from './WorkspacePaneContext';
@@ -30,6 +30,7 @@ type Props = {
 type HostState = Props & {
   records: WorkspacePaneRegistration[];
   objects: GlobalObject[];
+  setPageTabRowRef: (node: HTMLElement | null) => void;
   displayedPage: string;
   displayedObject: GlobalObject | undefined;
   pageCollapsed: boolean;
@@ -67,6 +68,7 @@ export function WorkspacePaneHostProvider(props: Props) {
   const [contentCollapsed, setContentCollapsed] = useState(false);
   const [pagePeekOpen, setPagePeekOpen] = useState(false);
   const [objectPeekOpen, setObjectPeekOpen] = useState(false);
+  const [pageTabRow, setPageTabRow] = useState<HTMLElement | null>(null);
   const pendingReveal = useRef<{ ownerPath: string; localKey?: string } | null>(null);
   const latest = useRef({ currentPath: props.currentPath, pageVisiblePath: props.currentPath });
   latest.current = { currentPath: props.currentPath, pageVisiblePath: pageCollapsed && pagePeekOpen ? peekPage || props.currentPath : props.currentPath };
@@ -120,8 +122,19 @@ export function WorkspacePaneHostProvider(props: Props) {
   }, [publish]);
   const records = useMemo(() => [...registry.current.values()].map(entry => entry.snapshot), [revision]);
   const objects = records.flatMap(record => record.objectTabs.map(tab => ({ ...tab, key: objectKey({ ownerPath: record.ownerPath, localKey: tab.key }), ownerPath: record.ownerPath, localKey: tab.key })));
-  const selected = selection ? objects.find(tab => objectKey(tab) === objectKey(selection)) || objects.find(tab => tab.ownerPath === selection.ownerPath && tab.localKey === registry.current.get(selection.ownerPath)?.snapshot.activeObject) || objects.at(-1) : undefined;
-  const displayedObject = contentCollapsed && peekSelection ? objects.find(tab => objectKey(tab) === objectKey(peekSelection)) || selected : selected;
+  // The detail pane follows the docked page: object tabs belong to the routed
+  // page, not a hover-peeked one. A peek preview swaps the page body only.
+  const ownerPath = latest.current.currentPath;
+  const ownerRecord = registry.current.get(ownerPath);
+  const ownerTabs = ownerRecord ? objects.filter(tab => tab.ownerPath === ownerPath) : [];
+  const selected = ownerTabs.length
+    ? ownerTabs.find(tab => objectKey(tab) === objectKey({ ownerPath, localKey: ownerRecord!.snapshot.activeObject || '' }))
+      || ownerTabs.find(tab => selection ? objectKey(tab) === objectKey(selection) : false)
+      || ownerTabs.at(-1)
+    : undefined;
+  const displayedObject = contentCollapsed && peekSelection && peekSelection.ownerPath === ownerPath
+    ? objects.find(tab => objectKey(tab) === objectKey(peekSelection)) || selected
+    : selected;
   const lastHostedPage = useRef(props.currentPath);
   const hostedCurrent = props.enabled && records.some(record => record.ownerPath === props.currentPath);
   if (hostedCurrent) lastHostedPage.current = props.currentPath;
@@ -172,7 +185,7 @@ export function WorkspacePaneHostProvider(props: Props) {
     const tab = objects.find(item => item.key === key);
     if (tab) registry.current.get(tab.ownerPath)?.latest.current?.onCloseObject?.(tab.localKey);
   };
-  const closeAll = () => { for (const entry of registry.current.values()) entry.latest.current?.onCloseAll?.(); };
+  const closeAll = () => { const owner = displayedObject?.ownerPath; if (owner) registry.current.get(owner)?.latest.current?.onCloseAll?.(); };
   const viewFor = (ownerPath: string) => ({
     registered: registry.current.has(ownerPath),
     pageVisible: props.enabled && (pageCollapsed && pagePeekOpen ? peekPage || props.currentPath : props.currentPath) === ownerPath && (!pageCollapsed || pagePeekOpen),
@@ -182,7 +195,7 @@ export function WorkspacePaneHostProvider(props: Props) {
     transient: Boolean(props.enabled && contentCollapsed && objectPeekOpen && displayedObject?.ownerPath === ownerPath),
   });
   const publicValue: WorkspacePaneHostValue = { register, publish, revealContent, viewFor };
-  return <WorkspacePaneContext.Provider value={publicValue}><HostContext.Provider value={{ ...props, records, objects, displayedPage, displayedObject, pageCollapsed, contentCollapsed, pagePeekOpen, objectPeekOpen, selectPage, selectObject, collapsePage, collapseContent, setPagePeekOpen, setObjectPeekOpen, closeObject, closeAll }}>{props.children}</HostContext.Provider></WorkspacePaneContext.Provider>;
+  return <WorkspacePaneContext.Provider value={publicValue}><PageTabRowContext.Provider value={pageTabRow}><HostContext.Provider value={{ ...props, records, objects, setPageTabRowRef: setPageTabRow, displayedPage, displayedObject, pageCollapsed, contentCollapsed, pagePeekOpen, objectPeekOpen, selectPage, selectObject, collapsePage, collapseContent, setPagePeekOpen, setObjectPeekOpen, closeObject, closeAll }}>{props.children}</HostContext.Provider></PageTabRowContext.Provider></WorkspacePaneContext.Provider>;
 }
 
 function MountedContent({ target, hidden, id, labelledBy }: { target: HTMLElement; hidden: boolean; id?: string; labelledBy?: string }) {
@@ -199,18 +212,19 @@ export function WorkspacePaneHost() {
   const page = host.tabs.find(tab => tab.path === host.displayedPage);
   const objectRecord = host.records.find(record => record.ownerPath === host.displayedObject?.ownerPath);
   const tab = host.displayedObject;
+  const ownerObjects = tab ? host.objects.filter(item => item.ownerPath === tab.ownerPath) : [];
   const layout = tab?.contentLayout ?? objectRecord?.objectContentLayout;
   const headerWidth = host.pageCollapsed ? '48px' : `calc(100% - ${host.paneWidth}px)`;
   return <div className="workspace-pane-host" hidden={!host.enabled || !host.records.some(record => record.ownerPath === host.currentPath)} style={{ '--workspace-page-header-width': headerWidth } as CSSProperties}>
-    <div className="workspace-page-tabs" style={{ width: headerWidth }}>
+    <div ref={host.setPageTabRowRef} className="workspace-page-tabs" style={{ width: headerWidth }}>
       {!host.pageCollapsed && <PageTabStrip idPrefix={`workspace-${host.workspaceId}`} tabs={host.tabs} onClose={host.closePage} onReorder={host.reorderPage} />}
     </div>
     <div className="workspace-page workspace-pane-stage">
       <WorkspacePaneStage pageTabs={host.tabs} activePage={page?.key} onActivatePage={host.selectPage} onClosePageTab={host.closePage}
-        objectTabs={tab ? host.objects : []} activeObject={tab?.key || null} objectIdentity={tab ? JSON.stringify([tab.ownerPath, tab.identity || tab.localKey]) : undefined}
+        objectTabs={ownerObjects} activeObject={tab?.key || null} objectIdentity={tab ? JSON.stringify([tab.ownerPath, tab.identity || tab.localKey]) : undefined}
         onActivateObject={host.selectObject} onCloseObject={host.closeObject} onCloseAll={host.closeAll}
         objectContentLayout={layout} objectLabel={tab?.contentLabel ?? objectRecord?.objectLabel} retainObjectContent
-        objectCollapse={{ collapsed: host.contentCollapsed, onChange: host.collapseContent, dirty: host.objects.some(item => item.dirty) }}
+        objectCollapse={{ collapsed: host.contentCollapsed, onChange: host.collapseContent, dirty: ownerObjects.some(item => item.dirty) }}
         pageCollapse={{ collapsed: host.pageCollapsed, onChange: host.collapsePage, label: page?.title }} collapsePresentation="peek"
         pagePeek={{ open: host.pagePeekOpen, onChange: host.setPagePeekOpen }} objectPeek={{ open: host.objectPeekOpen, onChange: host.setObjectPeekOpen }}
         objectContent={<>{host.records.map(record => <MountedContent key={record.ownerPath} target={record.contentTarget} hidden={record.ownerPath !== tab?.ownerPath} />)}</>}>

@@ -34,6 +34,9 @@ export type WorkspacePaneHostValue = {
 
 export const WorkspacePaneContext = createContext<WorkspacePaneHostValue | null>(null);
 
+/** Page tab row element hosting the fixed page-collapse toggle as a trailing slot. */
+export const PageTabRowContext = createContext<HTMLElement | null>(null);
+
 /** Fixed portal targets register once; changing callbacks only update the latest reference. */
 export function useWorkspacePaneRegistration(registration: WorkspacePaneRegistration | null): WorkspacePaneView | null {
   const host = useContext(WorkspacePaneContext);

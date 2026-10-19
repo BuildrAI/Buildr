@@ -8,6 +8,7 @@ import { AppShellHeader, AppShellFrame } from '../../app/AppShellView';
 import { AppNavigationItem } from '../../app/AppNavigationItem';
 import { PageTabStrip } from '../../app/PageTabStrip';
 import { WorkspaceTabsContext, type WorkspacePageTab } from '../../app/pageTabs';
+import { PageTabRowContext } from '../../app/WorkspacePaneContext';
 import { reorderPageTabs } from '../../app/workspace-pages';
 import { useFileEditingController } from '../../app/FileEditingContext';
 import { WorkspaceStage } from '../../components/WorkspaceStage';
@@ -74,6 +75,7 @@ function Preview() {
   const [sidebarWidth, setSidebarWidth] = useState(192);
   const [ratio, setRatio] = useState<number | null>(0.58);
   const [paneWidth, setPaneWidth] = useState(0);
+  const [pageTabRow, setPageTabRow] = useState<HTMLElement | null>(null);
   const current = useRef({ page: 'project-docs', state: '' });
   const info = () => message.info('这里使用演示数据，只体验本次布局与阅读交互。');
   const visiblePageKey = pageCollapsed && pagePeekOpen ? peekPageKey || activePage?.key : activePage?.key;
@@ -168,7 +170,8 @@ function Preview() {
       <AppShellHeader development brandHref="/projects/product" workspaceName="Buildr" workspaceMenuItems={[{ key: 'demo', label: 'Buildr · 演示数据' }]} area="workspace" codeHref="/projects/product" workbenchHref="/projects/product" workspaceDestination={{ to: '/projects/product' }} actions={<><Button type="text" aria-label="搜索" icon={<SearchOutlined />} onClick={info} /><Button type="text" onClick={info}>退出</Button><Button type="primary" icon={<PlusOutlined />} onClick={info}>交给 Agent</Button></>} />
       <AppShellFrame sidebarCollapsed={sidebarCollapsed} sidebarWidth={sidebarWidth} onSidebarResize={setSidebarWidth} onToggleSidebar={() => setSidebarCollapsed(value => !value)} navigation={<nav className="shell-navigation" aria-label="工作空间导航" data-prototype-position="menu-navigation">{nav.map(([key, label, icon]) => <AppNavigationItem key={key} name={key} label={label} icon={icon} to={'/' + key} path={'/' + key} active={key === 'projects' ? location.pathname.startsWith('/projects') : pageForNavigation(key).path === location.pathname} onClick={event => { event.preventDefault(); openNavigationPage(key); }} />)}</nav>}>
         <div className="workspace-pages">
-          <div className={`workspace-page-tabs ${pageCollapsed && open.length ? 'page-tabs-collapsed' : 'page-tabs-can-collapse'}`} style={{ width: `calc(100% - ${paneWidth}px)` }}><div hidden={pageCollapsed && open.length > 0}><PageTabStrip tabs={pageTabs} onClose={closePage} onReorder={(key, index) => setPageTabs(previous => reorderPageTabs(previous, key, index))} /></div></div>
+          <PageTabRowContext.Provider value={pageTabRow}>
+          <div ref={setPageTabRow} className={`workspace-page-tabs ${pageCollapsed && open.length ? 'page-tabs-collapsed' : 'page-tabs-can-collapse'}`} style={{ width: `calc(100% - ${paneWidth}px)` }}><div hidden={pageCollapsed && open.length > 0}><PageTabStrip tabs={pageTabs} onClose={closePage} onReorder={(key, index) => setPageTabs(previous => reorderPageTabs(previous, key, index))} /></div></div>
           <div className="workspace-page-stack"><div className="workspace-page">
             <WorkspaceStage pageTabs={pageTabs} activePage={visiblePageKey} onActivatePage={selectPage} onClosePageTab={closePage}
               objectTabs={open.map(id => { const file = files.find(item => item.id === id)!; const pending = editing.sessions[id]?.content !== editing.sessions[id]?.diskContent; return { key: id, kind: 'doc' as const, title: file.path.split('/').at(-1)!, dirty: pending, label: <>{file.path.split('/').at(-1)}{pending && <span className="right-pane-demo-dirty" title="有尚未保存的输入" aria-label="尚未保存" />}</> }; })}
@@ -181,6 +184,7 @@ function Preview() {
               <div className="right-pane-demo-pages" data-prototype-position="middle-pages">{pageTabs.map(tab => <div key={tab.key} className="right-pane-demo-page" hidden={visiblePageKey !== tab.key}><PrototypePageContent pageKey={tab.key} files={files} onOpenFile={openFile} onOpenPage={openPage} onInfo={info} /></div>)}</div>
             </WorkspaceStage>
           </div></div>
+          </PageTabRowContext.Provider>
         </div>
       </AppShellFrame>
     </div>
