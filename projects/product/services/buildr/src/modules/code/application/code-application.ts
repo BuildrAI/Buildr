@@ -52,7 +52,17 @@ export function createCodeApplication(dependencies:CodeDependencies) {
     const gitReader=createGitCommitReader();
     const items=catalog.repositories.filter(repo=>repositoryId===undefined||repo.id===repositoryId).map(repo=>{
       let location='',available=false,gitId:string|null=null,commonDirectory:string|undefined;
-      try { location=dependencies.resolveSourceRoot(root,repo.source);if(readIdentity){available=fs.statSync(location).isDirectory();const gitRepository=gitReader.repository(location);gitId=gitRepository.id;location=gitRepository.root;commonDirectory=gitRepository.commonDir;} } catch { available=false;diagnostics.push({code:'code_repository_unavailable',message:repo.name+' 的本机目录或 Git 身份当前不可读取。',repositoryId:repo.id}); }
+      try {
+        location=dependencies.resolveSourceRoot(root,repo.source);
+        if(readIdentity){
+          if(!fs.statSync(location).isDirectory())throw codeFailure('code_repository_unavailable',repo.name+' 的登记目录不是有效目录。',404);
+          const gitRepository=gitReader.repository(location);gitId=gitRepository.id;location=gitRepository.root;commonDirectory=gitRepository.commonDir;available=true;
+        }
+      } catch (error) {
+        available=false;
+        if((error as {code?:string})?.code==='code_repository_unavailable')diagnostics.push({code:'code_repository_unavailable',message:(error as Error).message,repositoryId:repo.id});
+        else diagnostics.push({code:'code_repository_unavailable',message:location&&fs.existsSync(location)?repo.name+' 的 Git 身份当前不可读取。':repo.name+' 的登记目录不存在，代码库可能尚未克隆到本机。',repositoryId:repo.id});
+      }
       const item={id:repo.id,code:repo.code,name:repo.name,location,available,gitId};
       if(commonDirectory)repositoryCommonDirectories.set(item,commonDirectory);
       if(readIdentity)repositoryRegistrations.set(item,()=>{

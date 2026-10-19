@@ -106,6 +106,9 @@
 .source-control-checkout .ant-select { font-size:12px; min-width:95px; }
 .source-control-checkout>small { display:block; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--soft-muted); font-size:12px; }
 .source-control-reader>.ant-alert { flex:none; margin:9px 14px; font-size:12px; }
+.source-control-diagnostics .ant-alert-description { overflow-wrap:anywhere; }
+.source-control-diagnostic-list { margin:0; padding-left:16px; line-height:1.6; max-height:9.6em; overflow:auto; }
+.source-control-diagnostic-actions { display:flex; align-items:center; gap:4px; }
 .source-control-diff { flex:1; min-height:0; }
 .source-control-editable-diff { display:flex; flex:1; flex-direction:column; min-width:0; min-height:0; overflow:hidden; }
 .source-control-diff-loading { display:flex; justify-content:center; align-items:center; flex:1; gap:10px; font-size:12px; color:var(--soft-muted); }

@@ -378,6 +378,7 @@ test('watch failures retain readable Git facts and return diagnostics instead of
   assert.equal(current.repositories.every(repository => repository.status === 'complete'), true);
   const state = await f.observations.watch(f.root);
   assert.ok(state.diagnostics?.some(message => message.includes('低频核对')));
+  assert.ok(state.diagnostics?.every(message => /^2 个代码库：/.test(message)), 'the same watch reason across repositories is aggregated once with a count');
   assert.equal(CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS.sourceControlWatch.$id, state).valid, true);
 });
 
@@ -401,6 +402,29 @@ test('persistent watch failure does not self-invalidate repeated reads, and a su
   assert.deepEqual(recovered.diagnostics, []);
   await f.observations.observe(f.root, snapshot);
   assert.equal((await deadline(f.observations.watch(f.root, recovered.cursor))).cursor, recovered.cursor);
+});
+
+test('uncloned repositories are not watched or reported until their directory appears', async t => {
+  const f = fixture(t);
+  const missing = path.join(f.root, 'missing'); f.catalog.repositories.push({ id: 'repo-missing', code: 'missing', name: 'Missing', source: { type: 'workspace', path: missing } });
+  const snapshot = f.application.sourceControl(f.root);
+  assert.equal(snapshot.repositories.find(repository => repository.id === 'repo-missing')?.status, 'unavailable');
+  await f.observations.observe(f.root, snapshot);
+  const baseline = await f.quiet((await f.observations.watch(f.root)).cursor);
+  assert.equal((baseline.diagnostics || []).some(message => message.includes('监听') || message.includes('低频核对')), false, 'an unreadable repository must not report watch diagnostics');
+  await f.observations.observe(f.root, snapshot);
+  const unchanged = await deadline(f.observations.watch(f.root, baseline.cursor));
+  assert.equal(unchanged.cursor, baseline.cursor, 'repeated reads of an unavailable repository must not self-invalidate');
+  // The directory appearing outside Buildr is found by the next read and watching resumes automatically.
+  fs.mkdirSync(missing); execFileSync('git', ['-C', missing, 'init', '--initial-branch=main']); execFileSync('git', ['-C', missing, 'config', 'user.email', 'watch@example.com']); execFileSync('git', ['-C', missing, 'config', 'user.name', 'Watch Fixture']); execFileSync('git', ['-C', missing, 'config', 'commit.gpgSign', 'false']);
+  fs.writeFileSync(path.join(missing, 'file.txt'), 'new\n'); execFileSync('git', ['-C', missing, 'add', '.']); execFileSync('git', ['-C', missing, 'commit', '-m', 'initial']);
+  const readable = f.application.sourceControl(f.root);
+  assert.equal(readable.repositories.find(repository => repository.id === 'repo-missing')?.status, 'complete');
+  await f.observations.observe(f.root, readable);
+  const quiet = await f.quiet((await f.observations.watch(f.root)).cursor);
+  fs.writeFileSync(path.join(missing, 'file.txt'), 'external change\n');
+  const noticed = await f.nextInvalidation(quiet.cursor);
+  assert.ok(noticed.repositoryIds.includes('repo-missing'), 'a repository that became readable resumes file watching');
 });
 
 test('shared background requests coalesce in flight and reuse observations; explicit reads and source changes remain fresh', async t => {

@@ -108,6 +108,13 @@ export class SourceControlObservations {
       // A completed Worker response may arrive after registration retirement.
       // Only those older requests are fenced; fresh scoped reads can discover new registrations.
       if (newerInventory && state.inventoryIds && !state.inventoryIds.has(repository.id)) return;
+      // A repository the authoritative read already proved unreadable has no Git
+      // identity to anchor; watcher attach would only re-report it every cycle.
+      // The periodic fallback check still notices the directory once it appears.
+      if (repository.available === false && !repository.gitId) {
+        state.watchers.remove(repository.id); state.fingerprints.delete(repository.id); state.diagnostics.delete(repository.id);
+        return;
+      }
       const candidates = [...new Set([repository.location, ...repository.worktrees.map(value => value.location)].filter(Boolean))];
       const locations = candidates.slice(0, remainingLocations); remainingLocations -= locations.length;
       const fingerprint = JSON.stringify([repository.gitId, locations, repository.worktrees.map(value => value.worktreeId)]);
@@ -169,7 +176,11 @@ export class SourceControlObservations {
     const result = (): SourceControlWatchResult => ({ cursor: state.epoch + ':' + state.sequence,
       repositoryIds: refreshAll() ? [] : [...state.changed].filter(([, value]) => value > sequence).map(([id]) => id), refreshAll: refreshAll(),
       refsRepositoryIds: refreshAll() ? [] : [...state.refsChanged].filter(([, value]) => value > sequence).map(([id]) => id),
-      diagnostics: [...new Set([...state.diagnostics.values()].flatMap(messages => [...messages]))],
+      diagnostics: [...new Map([...state.diagnostics.values()].flatMap(messages => [...messages]).map(message => [message, 0])).keys()]
+        .map(message => {
+          const count = [...state.diagnostics.values()].filter(messages => messages.has(message)).length;
+          return count > 1 ? count + ' 个代码库：' + message : message;
+        }),
     });
     if (refreshAll() || signal?.aborted || [...state.changed.values()].some(value => value > sequence)) return result();
     if ([...this.states.values()].reduce((total, value) => total + value.waiters.size, 0) >= 128) throw codeFailure('code_watch_capacity', '代码状态等待数量已达上限。', 429);

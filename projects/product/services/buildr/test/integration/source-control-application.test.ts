@@ -136,6 +136,10 @@ test('unborn repository and untracked file use actual new contents while unavail
   f.catalog.repositories.push({ id: 'invalid', code: 'invalid', name: 'Invalid', source: { type: 'workspace', path: '' } });
   const catalog = f.app.sourceControl(f.root); assert.equal(catalog.repositories.length, 3); assert.equal(catalog.repositories[0].head, null); assert.equal(catalog.repositories[0].fileCount, 2); assert.equal(catalog.repositories[1].fileCount, null); assert.equal(catalog.repositories[1].status, 'unavailable');
   assert.deepEqual(catalog.repositories[1].worktrees,[]);assert.equal(catalog.repositories[2].status,'unavailable');assert.deepEqual(catalog.repositories[2].worktrees,[], 'an invalid registered directory must not enumerate the process working directory');
+  const unavailable=catalog.diagnostics.filter(item=>item.code==='code_repository_unavailable');
+  assert.equal(unavailable.filter(item=>item.repositoryId==='missing').length,1,'one unavailable repository reports its reason exactly once');
+  assert.equal(unavailable.filter(item=>item.repositoryId==='invalid').length,1);
+  assert.match(unavailable.find(item=>item.repositoryId==='missing')!.message,/登记目录不存在/);
   assert.match((await f.app.diff(f.root, { ...f.input, area: 'staged', path: 'first.ts' })).patch!, /\+initial/);
   const untracked = await f.app.diff(f.root, { ...f.input, area: 'untracked', path: 'new.ts' }); assert.match(untracked.patch!, /\+fresh/); assert.equal(untracked.file.additions, 1);
   assert.deepEqual(f.app.history(f.root, f.input).commits, []);
@@ -543,6 +547,7 @@ test('SCM registry reads ignore unrelated retired-task evidence while Explorer a
   const explorer=app.repositories(f.root);assert.ok(explorer.diagnostics.some(item=>item.code==='code_task_location_unavailable'&&item.message.includes('retired-other')));assert.ok(explorer.worktrees.some(item=>item.taskId==='retired-other'&&!item.available));
   reads.length=0;associationDiscovery=0;const scoped=app.sourceControl(f.root,{taskId:'task-one'});assert.equal(scoped.repositories[0].status,'complete');assert.ok(scoped.diagnostics.some(item=>item.code==='code_task_location_unavailable'));assert.ok(scoped.diagnostics.every(item=>!item.message.includes('retired-other')));assert.deepEqual(reads,['task-one']);assert.equal(associationDiscovery,0);assert.deepEqual(scoped.selectedWorktrees,[{repositoryId:'repo-one',worktreeId:scoped.repositories[0].worktrees[0].worktreeId}]);assert.match(scoped.scopeReason,/登记目录/);assert.deepEqual(f.snapshot(),before);
   f.catalog.repositories.push({id:'unavailable',code:'unavailable',name:'Unavailable',source:{type:'workspace',path:path.join(f.base,'missing')}});const partial=app.sourceControl(f.root);assert.ok(partial.diagnostics.some(item=>item.code==='code_repository_unavailable'&&item.repositoryId==='unavailable'));assert.equal(partial.repositories[0].status,'complete');assert.equal(partial.repositories[1].status,'unavailable');
+  assert.equal(partial.diagnostics.filter(item=>item.code==='code_repository_unavailable'&&item.repositoryId==='unavailable').length,1,'the same unavailability is reported once, not per layer');
 });
 
 test('explicit repository reads filter before source resolution and retain the complete selected worktree inventory', async t => {
