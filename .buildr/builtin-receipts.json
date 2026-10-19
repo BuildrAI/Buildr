@@ -397,11 +397,11 @@
       "type": "skill",
       "id": "task-finish",
       "target": "skills/buildr/task-finish",
-      "integrity": "sha256-e80390572d9061296c86a9e9d126e969afd6a1cfb0d0be3323e480dc81435c63",
+      "integrity": "sha256-076088d491de1c4acf8eb858f7eef11027885cd3a7fa0306b99daf72b94ac1cd",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-194c44b1ed7a93717e5aacdd1dd776e8ce84efd7220d9939c1f3e2c8601f42c5"
+          "integrity": "sha256-e01e4e87bc06d814223863541e60bb97a12dfd639e3f3571ff40c66c81f780e6"
         }
       ]
     },
@@ -441,11 +441,11 @@
       "type": "skill",
       "id": "task-review",
       "target": "skills/buildr/task-review",
-      "integrity": "sha256-640c81c0be89903124749ddf94e273b3811e47e14056c383e8bdd5b28f6f2af2",
+      "integrity": "sha256-2e945689066fe132bae22d4034a13a90b8890492e258f601bdecfca24958a7c8",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-0bcdd6f7b2e982c861cc799caafd6910ad5e4a14691aa3037c455633f4bb58fb"
+          "integrity": "sha256-e0d822c43fc1341e3a2b20e6d0895be421f3c40ad587d51ad09de3d715e67f0a"
         },
         {
           "path": "agents/openai.yaml",
@@ -457,15 +457,15 @@
       "type": "skill",
       "id": "task-triage",
       "target": "skills/buildr/task-triage",
-      "integrity": "sha256-cf5c6a5f135d9bd25547328937dc839c9c7abe763eff092c1129e0a3a8781c35",
+      "integrity": "sha256-496df337e3f2b29aeb1305f6358a7dfe7e8765d6c46e61f6585f28acf4af05cb",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-e042deae134381a8e4065e2cdc99229022600f7221031457c96fd5992c342bb6"
+          "integrity": "sha256-204973f50751a5d21185f232cc51a1b4673fcd63644d4c93cba2611f54ffebb3"
         },
         {
           "path": "references/structured-handoff.md",
-          "integrity": "sha256-cab5924583ab68b461e9230bc43a1b71e8f4b6334b3d232426e3c998b77aed24"
+          "integrity": "sha256-4a80538fa93cf95955e0d418f5b48d1baa70b6c1cd4e2ebe878d21093b8a6c5f"
         }
       ]
     },
@@ -473,11 +473,11 @@
       "type": "skill",
       "id": "task-verification",
       "target": "skills/buildr/task-verification",
-      "integrity": "sha256-67c75a789f652464b3dd0863771b88e6b1886a064273eb7d644f45f578e7b9d6",
+      "integrity": "sha256-673f00b1e2dfa92dc25e66a1f040b7d02fbcee6a3fcaecb1c46eae45c171ee3b",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-76dd11bb541d9884576bd428f67a4fb2f5817d66e2524d57a6a7a29c7eda2e53"
+          "integrity": "sha256-b9811e345fa96385928c9698482984466a274a3dfe6dda858b1aa7d8b181950e"
         },
         {
           "path": "references/frontend-verification.md",

@@ -62,11 +62,11 @@ authority 冲突、授权不明、实际 Git 操作所需的 repository set 不�
 
 分别判断并给出最小依据：
 
-- 方案审查（Planning Review）：是否存在需要核对完整性、合理性、一致性与风险的真实方案选择；方案可来自任务文档、清单、设计或专业产物，不要求 OpenSpec。
-- 实现审查（Implementation Review）：实际成果是否需要独立核对目标兑现与适用方案；没有方案审查也可需要实现审查。
-- 任务验证（Task Verification）：目标、影响范围、风险和完成依据需要哪些真实检查与证明；审查不代替验证。
+- 方案审查（Planning Review）：任务存在提案（proposal）、设计（design）或等价方案选择材料时即需要核对完整性、合理性、一致性与风险；方案可来自任务文档、清单、设计或专业产物，不要求 OpenSpec。
+- 实现审查（Implementation Review）：开发实现完成后核对实际成果是否兑现目标与适用方案；没有方案审查也可需要实现审查。
+- 任务验证（Task Verification）：目标、影响范围、风险和完成依据需要哪些真实检查与证明；实际执行过检查即登记验证报告，审查不代替验证。
 
-不机械按 `change-flow` 默认两次审查，不因 `code-only`、`spec-maintenance`、无 Change 或无方案跳过需要的检查。需要但未完成、材料缺失、未执行、确实不适用、失败与通过如实区分；把需要或不适用的事实理由放在已有材料或工作摘要（Work Context），不新增适用性状态库、审批或统一门禁。专业记录缺失不自动阻止其他动作，但目标所需检查或风险尚未解决不得报整体完成。
+不机械按 `change-flow` 默认两次审查，不因 `code-only`、`spec-maintenance`、无 Change 或无方案跳过需要的检查。需要但未完成、材料缺失、未执行、确实不适用、失败与通过如实区分；不适用或确有需要的事实理由必须通过工作摘要（Work Context）的 `checks` 结论显式留痕（`buildr task work-context record --check <名称> --check-status <needed|not-applicable> --check-reason <理由>`），不只留在对话或临时文本中，也不新增适用性状态库、审批或统一门禁。专业记录缺失不自动阻止其他动作，但目标所需检查或风险尚未解决不得报整体完成。
 
 ### 默认隔离
 

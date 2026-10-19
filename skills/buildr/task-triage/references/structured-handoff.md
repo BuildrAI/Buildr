@@ -7,9 +7,9 @@
 - 语义治理：code-only / spec-maintenance / change-flow / blocked
 - 执行形态：implementation / metadata-only / unknown
 - 材料深度：<唯一真实 Task Brief；必要方案、实施、交付材料及最小依据>
-- 方案审查：<需要/确实不适用、事实理由、真实结果或未完成缺口>
-- 实现审查：<独立需要/确实不适用、事实理由、真实结果或未完成缺口>
-- 任务验证：<目标范围风险与完成证明、实际检查或未覆盖理由>
+- 方案审查：<需要/确实不适用、事实理由、真实结果或未完成缺口；结论须通过 Work Context checks 显式留痕>
+- 实现审查：<独立需要/确实不适用、事实理由、真实结果或未完成缺口；留痕方式同上>
+- 任务验证：<目标范围风险与完成证明、实际检查或未覆盖理由；实际执行过的检查须登记报告>
 - Repository set：<真实 Git selectors / none（已确认非 Git）/ unresolved（身份未明）>
 - 代码更新：not-requested / succeeded / blocked（仅目标要求更新时报告实际引用与效果，不作为任务登记前置）
 - Task Record：create / inspect / none / blocked
