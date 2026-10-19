@@ -9,14 +9,15 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
 这些文件服务 Buildr 产品自己的工程验证。`changed.ts` 收集差异后调用规划器（Planner），组合前置检查并将执行交给 `executePlan()`；后者通过依赖调度和执行器（Executor）调用真实工具。依赖方向是项目工具消费测试及公共技术能力，不是通用项目地图模块反向执行这些脚本。
 
 - **`services/buildr/test/verification/`** — 产品自己的测试编排
-  - [source.ts](../../services/buildr/test/verification/source.ts) — 本机源码入口，分别选择通用检查与当前系统的原生源码检查；先核验有效结果、按缺项准备依赖并重新观察，不生产或消费最终原包
+  - [source.ts](../../services/buildr/test/verification/source.ts) — 本机源码入口，分别选择通用检查与当前系统的原生源码检查；按本轮普通结果保留成功，只准备和执行失败及未执行项，不生产或消费最终原包
   - [artifact.ts](../../services/buildr/test/verification/artifact.ts) — 本机原包入口，显式读取同一原包目录；通用原包与本机平台分别选择，按依赖档位排序并在准备后重新判断有效结果；不回退制包
-  - [candidate-artifact-reuse.ts](../../services/buildr/test/verification/candidate-artifact-reuse.ts) — 原包证明的有界交接、原字节／输入／真实环境核验、暂留本机缺项及原始来源保留；普通日志不能替代正式证据
-  - [verification-reuse.ts](../../services/buildr/test/verification/verification-reuse.ts) — 内容、配方、环境和必要 Git 身份，成功结果持久复用与可搬运证明；输入漂移或清理失败不得写成成功
+  - [candidate-artifact-reuse.ts](../../services/buildr/test/verification/candidate-artifact-reuse.ts) — 原包证明的有界交接、原字节及真实平台核验、暂留本机缺项及原始来源保留；同原包成功子项不按配方或依赖摘要失效
+  - [candidate-round.ts](../../services/buildr/test/verification/candidate-round.ts) — 读写本轮普通日志，按检查编号及实际平台保留成功、选择失败和未执行项；不比较文件、配方和依赖摘要
+  - [verification-reuse.ts](../../services/buildr/test/verification/verification-reuse.ts) — 非候选入口保留的历史摘要缓存；候选路径由 candidate-round.ts 独立接续，不消费该缓存的失效判定
   - [verification-inputs.ts](../../services/buildr/test/verification/verification-inputs.ts) — 已核验运行检查的产品与配方输入分离、静态依赖及子脚本读取；未知输入保守回退
   - [verification-source-inputs.ts](../../services/buildr/test/verification/verification-source-inputs.ts) — 本机与正式补验共享的源码读取、字节与权限规范化、范围及逐项输入；准确提交只读 Git 对象，不切换工作目录
-  - [local-source-verification.ts](../../services/buildr/test/verification/local-source-verification.ts) — 发布派发前核对冻结工作树的本机适用源码证明，合并合法插件阶段，缺项只返回必要补齐动作
-  - [candidate-source-reuse.ts](../../services/buildr/test/verification/candidate-source-reuse.ts) — 有界受控交接、源码分片（Shard）覆盖计算；实际身份由复用模块核验
+  - [local-source-verification.ts](../../services/buildr/test/verification/local-source-verification.ts) — 发布派发前读取同轮主包及插件普通日志，失败或未执行项只返回补齐动作
+  - [candidate-source-reuse.ts](../../services/buildr/test/verification/candidate-source-reuse.ts) — 有界受控交接、源码分片（Shard）覆盖计算；轮次及真实平台由普通结果入口核对
   - [test-files.ts](../../services/buildr/test/verification/test-files.ts) — 解析安全路径、展开文件匹配并去重，空集合失败
   - [system-suites.ts](../../services/buildr/test/verification/system-suites.ts) — 系统测试（System）分组、实际文件和有关资源
   - [ownership.ts](../../services/buildr/test/verification/ownership.ts) — 改动路径归属、排除项、委托与扩大范围的依据
@@ -32,7 +33,7 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
   - [candidate.ts](../../services/buildr/test/verification/candidate.ts) — 本机日常完整或候选（Candidate）集合入口；只执行当前机器上的注册步骤
   - [candidate-ci.ts](../../services/buildr/test/verification/candidate-ci.ts) — 按有效证明选择跨平台源码／原包缺项，执行宿主 Node.js（Host Node）组合并汇总；全部必需源码通过后才进入产包
   - [candidate-ci-evidence.ts](../../services/buildr/test/verification/candidate-ci-evidence.ts) — 检查证据齐全性以及源码、登记、作业和唯一压缩包身份
-  - [candidate-repair.ts](../../services/buildr/test/verification/candidate-repair.ts) — 原包正式补验的逐项适用性、完整覆盖和保留来源；宿主与必要 Git 事实重新观察
+  - [candidate-repair.ts](../../services/buildr/test/verification/candidate-repair.ts) — 同轮原包补验保留成功、只补失败及缺项；核对原字节、真实平台和最低宿主，保留原始来源
   - [candidate-repair-cli.ts](../../services/buildr/test/verification/candidate-repair-cli.ts) — 受控原运行、真实包读取，生成缺项矩阵及保留证据；采用不变 DSH 原包与精确对端证明
   - [browser-selector-dispatcher.ts](../../services/buildr/test/verification/browser-selector-dispatcher.ts) — 选择页面检查，准备隔离 `web-dist`，通过隔离执行器（Runner）启动浏览器（Browser）测试
   - `release/`
@@ -100,4 +101,4 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
     - [buildr-web-browser.test.ts](../../services/buildr/test/browser-smoke/buildr-web-browser.test.ts) — 隔离服务、浏览器（Browser）和测试现场的组装、选择与清理
     - [workbench-journey.ts](../../services/buildr/test/browser-smoke/workbench-journey.ts) — 实际页面回应、并发冲突后的重读保存、偏好恢复与资料阅读旅程
 
-跨平台编排由仓库根 `.github/workflows/verify.yml` 消费 `candidate-ci.ts` 和 `registry.ts` 的检查归属与宿主组合。通用源码与原包检查本机执行一次，平台源码与平台原包分别由本机系统和 GitHub 另一系统提供真实证明；最低／当前 Node 组合仍各自满足。历史分片名称中的 `macos` 不再代表通用检查只能在 macOS 执行，实际归属以 `platformScope` 为准。汇总由 `candidate-ci-evidence.ts` 核验原包、源码、环境与原始来源；普通本机日志不会自动成为正式跨平台证明。`main` 候选仍执行来源校验，不支持来源不能因跳过取得成功。
+跨平台编排由仓库根 `.github/workflows/verify.yml` 消费 `candidate-ci.ts` 和 `registry.ts` 的检查归属与宿主组合。通用源码与原包检查本机执行一次，平台源码与平台原包分别由本机系统和 GitHub 另一系统提供真实证明；最低 Node 要求仍按实际执行满足。历史分片名称中的 `macos` 不再代表通用检查只能在 macOS 执行，实际归属以 `platformScope` 为准。汇总由 `candidate-ci-evidence.ts` 核验原包、源码、环境与原始来源；同轮普通本机日志可用于接续已有成功，不能代替另一平台或尚未执行的原包检查。`main` 候选仍执行来源校验，不支持来源不能因跳过取得成功。

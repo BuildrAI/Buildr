@@ -42,3 +42,43 @@ test('package plan-only inspection neither prepares dependencies nor executes ch
   assert.equal(result.artifact.sha256, 'original');
   assert.ok(result.nodes.length > 0);
 });
+
+test('local package continuation retains passed groups without comparing environment fingerprints', async t => {
+  const fs = await import('node:fs'); const path = await import('node:path'); const os = await import('node:os');
+  const { execFileSync } = await import('node:child_process');
+  const { candidateProofDescriptors } = await import('../verification/candidate-repair.ts');
+  const productRoot = path.resolve(import.meta.dirname, '../..');
+  const git = (ref: string) => execFileSync('git', ['rev-parse', ref], { cwd: productRoot, encoding: 'utf8' }).trim();
+  const output = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-artifact-retained-'));
+  t.after(() => fs.rmSync(output, { recursive: true, force: true }));
+  const artifact = { sourceCommit: git('HEAD'), filename: 'original.tgz', size: 1, sha256: 'a'.repeat(64), integrity: 'sha512-YQ==', applicationPayloadDigest: `sha256-${'b'.repeat(64)}` };
+  const plan = createLocalArtifactPlan('darwin', { scope: 'common' });
+  for (const node of plan.nodes) {
+    const descriptor = candidateProofDescriptors().find(item => item.id === node.id);
+    fs.writeFileSync(path.join(output, `candidate-ci-evidence-${node.id}.json`), JSON.stringify({
+      schemaVersion: 'buildr.candidate-ci-evidence/v2', id: node.id, kind: descriptor.kind, sourceCommit: artifact.sourceCommit,
+      sourceTree: git('HEAD^{tree}'), purpose: 'candidate', rehearsalIdentity: null, status: 'passed', cleanupClean: true,
+      runner: { os: 'macos', platform: 'darwin', arch: 'arm64', nodeVersion: '24.15.0' }, artifact,
+      checkInputs: Object.fromEntries(descriptor.steps.map((step: any) => [step.id, 'original-check-input'])),
+      results: descriptor.steps.map((step: any) => ({ id: step.id, status: 'passed', exitCode: 0, durationMs: 10 })),
+    }));
+  }
+  const result = runLocalArtifactVerification({ scope: 'common', artifactDirectory: '/original', output }, {
+    platform: 'darwin', readArtifact: () => ({ identity: artifact }), assertCheckout() {},
+    prepare: () => assert.fail('retained success must not prepare'), execute: () => assert.fail('retained success must not execute'),
+  });
+  assert.equal(result.status, 'passed'); assert.ok(result.results.every((item: any) => item.disposition === 'reused'));
+});
+
+test('local package continuation collects every independent group after a failed group', async t => {
+  const fs = await import('node:fs'); const path = await import('node:path'); const os = await import('node:os');
+  const output = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-artifact-failures-'));
+  t.after(() => fs.rmSync(output, { recursive: true, force: true }));
+  const calls: string[] = [];
+  const result = runLocalArtifactVerification({ scope: 'common', artifactDirectory: '/original', output }, {
+    platform: 'darwin', readArtifact: () => ({ identity: {} }), assertCheckout() {}, reusableEvidence: () => false, prepare() {},
+    execute(_command: string, args: string[]) { calls.push(args[2]!); return { status: calls.length === 1 ? 1 : 0 }; },
+  });
+  assert.equal(result.status, 'failed'); assert.equal(result.results.length, result.nodes.length);
+  assert.equal(calls.length, result.nodes.length); assert.ok(result.results.some((item: any) => item.status === 'passed'));
+});
