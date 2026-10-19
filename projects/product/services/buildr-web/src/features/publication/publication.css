@@ -86,10 +86,10 @@
 .publication-record-card { border:1px solid var(--soft-line); border-radius:9px; padding:18px; margin:18px 0; }
 .publication-record-card > div { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:13px; font-size:13px; }
 .publication-record-card a { font-size:12px; }
-/* 就地编辑：模式条吸顶，保存/取消紧贴分段控件下方，编辑区与右侧工具栏同页。阅读态弱化分隔线，避免上下留白堆成空带。 */
-.publication-modebar { position:sticky; top:0; z-index:2; padding:0; margin-bottom:14px; background:var(--soft-panel,#fff); }
-.publication-modebar:has(~ .publication-editor) { padding:8px 0; margin-bottom:0; border-bottom:1px solid var(--soft-line); }
-.publication-editor-actions { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; padding-top:12px; margin-bottom:22px; }
+/* 就地编辑：两种模式共用同一模式条高度与分隔线，切换不跳动。 */
+.publication-modebar { position:sticky; top:0; z-index:2; padding:8px 0; margin-bottom:0; background:var(--soft-panel,#fff); border-bottom:1px solid var(--soft-line); }
+.publication-modebar + .publication-reading-layout { padding-top:18px; }
+.publication-editor-actions { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; padding:14px 0; margin-bottom:0; }
 .publication-editor-layout { display:grid; grid-template-columns:minmax(0,1fr) 280px; gap:28px; align-items:start; }
 .publication-editor-main { min-width:0; }
 .publication-title-input.ant-input { font-size:20px; font-weight:550; padding:11px; }
