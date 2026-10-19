@@ -96,7 +96,7 @@ test('OpenSpec capability dependencies 由 Component 与 fragments 原子维护'
   assert.equal(skills.get('task-finish').requires?.some((item: any) => item.capability === 'buildr.current-knowledge-maintenance' && item.mode === 'required') || false, false);
 });
 
-test('OpenSpec Component 通过 contributions 组合且不改写 external Skill source', () => {
+test('OpenSpec Component 通过声明的 contributions 组合', () => {
   const component: any = YAML.parse(read(path.join(WORKSPACE_TARGET, 'components/buildr/openspec/component.yml')));
   const fragments: any = component.contributions.skillFragments;
   assert.ok(fragments.some((item: any) => item.startsWith('openspec-explore@prepend=')));
@@ -104,11 +104,6 @@ test('OpenSpec Component 通过 contributions 组合且不改写 external Skill 
   assert.ok(fragments.some((item: any) => item.startsWith('openspec-archive-change@prepend=')));
   assert.equal(fragments.some((item: any) => item.startsWith('task-triage#change-ready=')), false);
   assert.equal(fragments.some((item: any) => item.startsWith('task-finish#')), false);
-  for (const id of ['openspec-explore', 'openspec-propose', 'openspec-update-change', 'openspec-apply-change', 'openspec-sync-specs', 'openspec-archive-change']) {
-    const source: any = read(path.join(WORKSPACE_TARGET, `skills/openspec/${id}/SKILL.md`));
-    assert.match(source, /generatedBy: "1\.13\.0"/);
-    assert.doesNotMatch(source, /current-knowledge-maintenance|terminology-governance/);
-  }
 });
 
 test('归档保留当时的知识影响记录，当前阅读成果按现行索引定位', () => {

@@ -19,7 +19,7 @@ description: 准备、检查、发布或恢复 Buildr 主包、DSH 插件或联�
 
 通用产品逻辑与功能只有一套，不按系统重复。操作系统相关的源码和原包检查是独立节点：本机是 macOS 就本机完成 macOS、远端补 Windows；本机是 Windows 则交换。源码入口 `test/verification/source.ts --scope common|platform|all` 使用同一检查登记；默认先满足本机源码，远端补另一系统源码，全部通过后 GitHub 生产唯一原包。
 
-README 固定标题、章节和编辑表达不作发布门槛。文档链接、架构及规范静态检查留在相关开发检查中，不加入候选必跑集合。插件本机源码预检使用 `tools/verify-source.ts`（可用 `--output <bundle.json>` 导出），无需准备软件开发工具包（SDK）或旧主包对端；准确候选配对仍保留完整检查。
+README 固定标题、章节和编辑表达不作发布门槛。检查失败先判断是否保护功能、安全或交付正确性，无独立价值的措辞检查直接删除；必要的文档链接、渲染、资源引用和敏感信息检查按实际影响选择，不因文档改动追加整组快速检查，也不为技能（Skill）正文另写措辞断言。架构及规范静态检查留在相关开发检查中，不加入候选必跑集合。插件本机源码预检使用 `tools/verify-source.ts`（可用 `--output <bundle.json>` 导出），无需准备软件开发工具包（SDK）或旧主包对端；准确候选配对仍保留完整检查。
 
 新准备把通用原包检查与本机系统验包留给本机。制包上传后，下载同一原包，与另一系统的远端验包并行；使用实际 Node `24.15.0` 运行 `tools/development/run-development-node test/verification/artifact.ts --artifact-dir <原包目录> --output <证据目录>`，默认一次检查通用原包、本机启动和最低 Node，不另跑当前版本。`--scope common` 只检查通用原包，`--scope platform` 只检查本机系统；macOS 和 Windows 对称选择，互不附带另一系统或已完成的通用检查。实际程序与系统随结果保留。`local-artifact-verification-required` 或远端 `incomplete` 表示仍等本机缺项，不是完整候选通过；完成后继续原 `prepare --artifact-verification <证据目录>`，仅采用原包与有效结果、补缺项和完整汇总，不重新产包。远端发布始终另需准确授权。
 

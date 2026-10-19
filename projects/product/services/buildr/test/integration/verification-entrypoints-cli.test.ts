@@ -214,13 +214,12 @@ test('changed verification exposes plan/json and rejects unknown options before 
   assert.deepEqual(payload.scope.reasons.map((reason: any) => reason.code), ['affected-owner']);
   assert.deepEqual(payload.unmapped, []);
   assert.deepEqual(payload.admissionStepIds, []);
-  assert.deepEqual(payload.steps.map((step: any) => step.id), ['typecheck', 'unit', 'component', 'contract', 'cli-architecture', 'openspec-strict', 'docs-quality']);
+  assert.deepEqual(payload.steps.map((step: any) => step.id), ['docs-quality']);
   assert.ok(payload.steps.every((step: any) => step.dependsOn.length === 0));
   assert.deepEqual(payload.selectionAudit.directMappings, [{
     code: 'affected-owner', path: 'knowledge/docs/overview.md', owners: ['docs-quality'],
   }]);
   assert.equal(payload.selectionAudit.stepSelections.find((step: any) => step.stepId === 'docs-quality').selectionKinds.includes('direct-owner'), true);
-  assert.equal(payload.selectionAudit.stepSelections.find((step: any) => step.stepId === 'typecheck').selectionKinds.includes('admission'), false);
 
   const full: any = spawnSync(process.execPath, [runner, '--json', 'test/verification/ownership.ts'], { cwd: productRoot, encoding: 'utf8', maxBuffer: 1024 * 1024, env: environment });
   assert.equal(full.status, 0, full.stderr);

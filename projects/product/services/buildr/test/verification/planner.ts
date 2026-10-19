@@ -927,7 +927,11 @@ export function createDevelopmentPlatformPlan(request: any = {}, steps: any = ve
 }
 
 export function createVerificationAdmissionPlan(plan: any, steps: any = verificationSteps): any  {
-  if (plan.steps.length === 0) return Object.freeze({ ...plan, admissionStepIds: Object.freeze([]) });
+  // Keep every actual owner and dependency of a document change, including
+  // executable consumers, without attaching an unrelated Fast baseline.
+  const documentsOnly = plan.scope?.mode === 'affected' && plan.paths?.length > 0
+    && plan.paths.every((file: string) => /\.(?:md|html)$/iu.test(file));
+  if (plan.steps.length === 0 || documentsOnly) return Object.freeze({ ...plan, admissionStepIds: Object.freeze([]) });
   const admissionSteps = plan.profiles?.includes('candidate') ? steps.filter((item: any) => item.profiles.includes('candidate')) : steps;
   const fastPlan: any = createVerificationPlan({ profiles: ['fast'] }, admissionSteps);
   const admissionStepIds: any[] = [...new Set([
