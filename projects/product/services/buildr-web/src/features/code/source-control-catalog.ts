@@ -140,7 +140,7 @@ export function createSourceControlCatalog(loader: SourceControlLoader) {
       publish({...state, data, versions, refsVersions:refVersions, repositoryErrors:errors, selectionReady:!target && !phase ? true : state.selectionReady});
     };
     try {
-      const value = await loader(target, request.signal, apply);
+      const value = await loader(target, request.signal, apply, !force);
       apply(value);
     } catch (error) {
       if (!current() || target && latest.get(target) !== version) return;

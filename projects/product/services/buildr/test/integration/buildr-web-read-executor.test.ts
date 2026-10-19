@@ -198,7 +198,7 @@ test('交付资料HTTP和有界读取器保留相对路径与已观察来源，�
   } finally { await executor.close(); }
 });
 
-test('Web 默认按需创建读取 Worker，首次交付资料 HTTP 读取正确并复用同一线程', async t => {
+test('Web 提前就绪固定轻量池，首次交付资料读取才加载应用并复用线程', async t => {
   const { base, root } = copyPreparedProjectWorkspace(t, 'change-asset-worker');
   const priorApp = process.env.BUILDR_APP_DATA_DIR, priorProduct = process.env.BUILDR_PRODUCT_DATA_DIR;
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'asset-app-data');
@@ -225,16 +225,16 @@ test('Web 默认按需创建读取 Worker，首次交付资料 HTTP 读取正确
   const instance = createLocalWorkspaceServer(runtime, { targetRoot: root });
   t.after(() => new Promise<void>(resolve => instance.server.close(() => resolve())));
   const { url, initialWorkspaceId, instanceSecret } = await instance.ready;
-  assert.equal(createdWorkers, 0, '监听就绪前没有任务读取，不得创建读取线程');
+  assert.equal(createdWorkers, 1, '提前就绪一个轻量线程，其余容量按需启动，不派发任务读取');
   const health = await fetch(`${url}/api/v1/health`, { headers: { 'x-buildr-instance': instanceSecret } });
   assert.equal(health.status, 200);
   assert.equal((await health.json() as any).status, 'ready');
-  assert.equal(createdWorkers, 0, '健康检查不得启动任务读取线程');
+  assert.equal(createdWorkers, 1, '健康检查不得新增线程');
   const prefix = `${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/asset-worker`;
   const detailResponse = await fetch(`${prefix}/changes/demo/worker-assets`);
   assert.equal(detailResponse.status, 200, await detailResponse.clone().text());
   const detail = await detailResponse.json() as any;
-  assert.equal(createdWorkers, 1, '首次读取才创建一个真实线程');
+  assert.equal(createdWorkers, 1, '首次读取复用已就绪的池');
   assert.equal(detail.resolution.workingCopy.change.assets.length, 3);
   for (const asset of detail.resolution.workingCopy.change.assets) {
     const endpoint = `${prefix}/changes/demo/worker-assets/assets/${asset.relativePath.split('/').map(encodeURIComponent).join('/')}`;
@@ -299,5 +299,17 @@ test('commit-context HTTP traverses the real bounded worker and resolves the reg
     assert.equal(syncResponse?.status, 200); assert.equal(syncResponse?.body.revision, syncContext.revision); assert.equal(syncResponse?.body.source.worktreeId, tree.worktreeId); assert.equal(syncResponse?.body.available, false);
     assert.throws(() => executor.run('code-sync', { targetRoot: root, taskId: 'code-files', input: JSON.stringify(location) }), (error: { code: string }) => error.code === 'local_app_read_operation_forbidden');
     assert.throws(() => executor.run('code-commit-changes', { targetRoot: root, taskId: 'code-files', input: JSON.stringify(location) }), (error: { code: string }) => error.code === 'local_app_read_operation_forbidden');
+  } finally { await executor.close(); }
+});
+
+test('one warm slot leaves the rest of the bounded pool lazy until concurrent work needs it', async () => {
+  const metrics: any = { calls: 0, active: 0, maxActive: 0, started: [] }, factory = fakeWorkerFactory({ metrics });
+  let created = 0;
+  const executor = createBoundedBuildrWebReadExecutor({ workerCount: 2, warm: 1, workerFactory: () => { created++; return factory(); } });
+  try {
+    assert.equal(created, 1); assert.equal(metrics.calls, 0);
+    await executor.run('coordination', input('one')); assert.equal(created, 1);
+    await Promise.all([executor.run('coordination', input('two')), executor.run('coordination', input('three'))]);
+    assert.equal(created, 2); assert.equal(metrics.maxActive, 2);
   } finally { await executor.close(); }
 });

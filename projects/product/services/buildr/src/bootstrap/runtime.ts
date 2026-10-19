@@ -1,5 +1,5 @@
 import { AGENT_ASSETS_SOURCE_MODULE } from '../modules/agent-assets/source/module.ts';
-import { createConnectionSkillsModule } from '../modules/connection-skills/module.ts';
+import { createConnectionSkillsModule, CONNECTION_SKILLS_APPLICATION } from '../modules/connection-skills/module.ts';
 import { createMySqlQueryModule } from '../modules/mysql-query/module.ts';
 import { CODE_MODULE, CODE_SOURCE_CONTROL_OBSERVATIONS } from '../modules/code/module.ts';
 import { AGENT_OPERATIONS_APPLICATION, createAgentOperationsModule } from '../modules/agent-operations/module.ts';
@@ -93,6 +93,7 @@ export function createRuntime(): any  {
   registry.install(createSystemInstallationModule(runtime));
   registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http'), closeResources: async () => {
     registry.provide(CODE_SOURCE_CONTROL_OBSERVATIONS).close();
+    registry.provide(CONNECTION_SKILLS_APPLICATION).close();
     registry.provide(DSH_PAGE_OBSERVATIONS).close();
     await Promise.all([registry.provide(DSH_DESKTOP_APPLICATION).close(), registry.provide(AGENT_OPERATIONS_APPLICATION).close()]);
   } }));

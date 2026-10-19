@@ -74,7 +74,7 @@ const allowedCrossModulePorts: any = new Set([
   'modules/task/materials/module.ts -> modules/task/module.ts',
   'modules/task/materials/module.ts -> modules/workspace/module.ts',
   'bootstrap/runtime.ts -> modules/task/changed-files/module.ts',
-  'web/http/read-worker.ts -> modules/task/changed-files/module.ts',
+  'web/http/read-worker-applications.ts -> modules/task/changed-files/module.ts',
 ]);
 
 export function isAllowedProductLayerImport(source: string, target: string): boolean {

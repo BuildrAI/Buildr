@@ -215,3 +215,10 @@ test('同身份工作树状态读取失败保留已知改动并明确过期，�
   assert.deepEqual(catalog.snapshot().data.repositories[0].worktrees[0].changes,[]);
   catalog.dispose();
 });
+
+test('自动核对选择共享观察，显式刷新绕过已完成观察',async()=>{
+  const modes=[];
+  const catalog=createSourceControlCatalog(async(_id,_signal,_progress,shared)=>{modes.push(shared);return response(repository('a'));});
+  await catalog.check(); await catalog.check('a'); await catalog.refresh('a');
+  assert.deepEqual(modes,[true,true,false]); catalog.dispose();
+});

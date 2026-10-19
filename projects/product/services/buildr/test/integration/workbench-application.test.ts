@@ -236,3 +236,23 @@ test('批量工作摘要保留顺序、空值、去重、任务存在性和损�
   finally { db.close(); }
   assert.throws(() => runtime.inspectTaskWorkContexts(root, ['batch-first']), (error: any) => error.code === 'task_work_context_invalid');
 });
+
+
+test('动态及概览摘要不展开每日演进提交任务，动态不查询概览任务区', (t) => {
+  const {root} = taskRecordFixture(t,'workbench-summary-only');
+  const runtime = createRuntime();
+  record(runtime,root,'summary-task');
+  runtime.recordProjectDailyProgress(root,{project:'demo',date:'2026-10-19',payload:{daySummary:{added:'新增',updated:'更新',deleted:'无',drawbacks:'仅测试'},commits:[{sha:'a'.repeat(40),subject:'摘要来源',authorName:'Test',authorEmail:'test@example.com',authorship:'self',taskIds:['summary-task']}],files:[]}});
+  const original = DatabaseSync.prototype.prepare, statements: string[] = [];
+  let activity: any;
+  try {
+    DatabaseSync.prototype.prepare = function(sql: string) { statements.push(sql); return original.call(this,sql); };
+    activity = runtime.inspectWorkbenchActivity(root);
+  } finally { DatabaseSync.prototype.prepare = original; }
+  conforms('WorkbenchActivityResponse',activity);
+  assert.equal(activity.dailyProgress.items[0].commitCount,1);
+  assert.equal(activity.active,undefined);
+  assert.equal(statements.some(sql => /FROM task_records|FROM task_work_contexts/.test(sql)),false,statements.join('\n'));
+  const overview = runtime.inspectWorkbench(root);
+  assert.deepEqual(overview.dailyProgress,activity.dailyProgress);
+});

@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../../api';
-import { createWorkbenchClient, type WorkbenchResponse } from '../api/workbench-api';
+import { WorkspaceViewActiveContext } from '../../../app/pageTabs';
+import { createWorkbenchClient, type WorkbenchResponse, type WorkbenchActivityResponse } from '../api/workbench-api';
 import { useWorkbenchPreferences } from './useWorkbenchPreferences';
 
-export function useWorkbench(workspaceId: string | null, project: string, date = '') {
-  const [data, setData] = useState<WorkbenchResponse | null>(null);
+function useWorkbenchData<T extends WorkbenchResponse | WorkbenchActivityResponse>(workspaceId: string | null, project: string, date: string, view: 'overview' | 'activity') {
+  const active = useContext(WorkspaceViewActiveContext);
+  const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const client = useMemo(() => createWorkbenchClient(api, workspaceId || undefined), [workspaceId]);
@@ -23,8 +25,8 @@ export function useWorkbench(workspaceId: string | null, project: string, date =
       const seq = ++generation.current;
       setLoading(true); setError('');
       try {
-        const next = await client.overview({ ...(project ? { project } : {}), ...(date ? { date } : {}) }, { signal: abort.signal });
-        if (!abort.signal.aborted && seq === generation.current) { loadedScope.current = scopeKey; setData(next); }
+        const next = await client[view]({ ...(project ? { project } : {}), ...(date ? { date } : {}) }, { signal: abort.signal });
+        if (!abort.signal.aborted && seq === generation.current) { loadedScope.current = scopeKey; setData(next as T); }
       } catch (err) {
         if (!abort.signal.aborted && seq === generation.current) setError(err instanceof Error ? err.message : '工作概览暂时不可用');
       } finally {
@@ -34,17 +36,21 @@ export function useWorkbench(workspaceId: string | null, project: string, date =
     pending.current = { scope: requestKey, promise };
     void promise.finally(() => { if (pending.current?.promise === promise) pending.current = null; });
     return promise;
-  }, [workspaceId, client, project, date, scopeKey, requestKey]);
+  }, [workspaceId, client, project, date, scopeKey, requestKey, view]);
   useEffect(() => {
     if (loadedScope.current !== scopeKey) setData(null);
-    void refresh();
+    if (active) void refresh();
     return () => { ++generation.current; pending.current = null; controller.current?.abort(); };
-  }, [refresh, scopeKey]);
+  }, [refresh, scopeKey, active]);
   useEffect(() => {
+    if (!active) return;
     const onFocus = () => { if (document.visibilityState === 'visible') void refresh(); };
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onFocus);
     return () => { window.removeEventListener('focus', onFocus); document.removeEventListener('visibilitychange', onFocus); };
-  }, [refresh]);
+  }, [refresh, active]);
   return { data: loadedScope.current === scopeKey ? data : null, loading, error, refresh };
 }
+
+export const useWorkbench = (workspaceId: string | null, project: string, date = '') => useWorkbenchData<WorkbenchResponse>(workspaceId,project,date,'overview');
+export const useWorkbenchActivity = (workspaceId: string | null, project: string, date = '') => useWorkbenchData<WorkbenchActivityResponse>(workspaceId,project,date,'activity');

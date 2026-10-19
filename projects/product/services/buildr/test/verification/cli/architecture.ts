@@ -172,7 +172,7 @@ for (const file of graph.keys()) visitCycle(file);
 
 const bootstrapRuntimeConsumers: any = new Set([
   'bootstrap/cli/registry.ts',
-  'web/http/read-worker.ts',
+  'web/http/read-worker-applications.ts',
 ]);
 for (const file of sourceFiles) {
   const relative: any = path.relative(sourceRoot, file).split(path.sep).join('/');

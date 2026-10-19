@@ -18,7 +18,7 @@ export function createConnectionSkillsClient(api: ApiClient, workspaceId: string
   const item = (id: string) => `${root}/instances/${encodeURIComponent(id)}`;
   const json = (method: string, body: unknown, signal?: AbortSignal): RequestInit => ({ method, body: JSON.stringify(body), signal });
   return {
-    directory: async (signal?: AbortSignal) => connectionDirectory(await api(`${root}/directory`, { signal })),
+    directory: async (signal?: AbortSignal) => connectionDirectory(await api(`${root}/directory`, { signal, cache: 'no-store' })),
     definitions: (signal?: AbortSignal) => api(`${root}/definitions`, { signal }) as Promise<{ definitions: CatalogEntry[]; diagnostics: unknown[] }>,
     list: (signal?: AbortSignal) => api(`${root}/instances`, { signal }) as Promise<{ instances: ConnectionInstance[]; diagnostics: unknown[] }>,
     get: (id: string, signal?: AbortSignal) => api(item(id), { signal }) as Promise<{ instance: ConnectionInstance }>,

@@ -1,7 +1,7 @@
 import { api } from '../../../api';
 import { beginSourceControlFetch, beginSourceControlSync, notifySourceControlChange } from '../source-control-events.ts';
 import type { CodeRepositoriesRepositories, CodeDirectoryDirectory, CodeFileFile, CodeSearchSearch, CodeSourceControlSourceControl, CodeHistoryHistory, CodeCommitCommit, CodeDiffDiff, CodeSourceFileSourceFile, CodeBranchesBranches, CodeAuthorsAuthors, CodeBranchSwitchBranchSwitch, CodeFetchFetch, CodeSyncContextSyncContext, CodeSyncSync, CodeEditorFileEditorFile, CodeSaveFileSaveFile } from '../../../../build/generated/code-http-dto';
-export type CodeSourceControlInput = { repositoryId?: string; worktreeId?: string; taskId?: string; commitHash?: string; path?: string; area?: 'unstaged' | 'staged' | 'untracked' | 'commit'; branch?: string; authorEmail?: string; query?: string; limit?: number; cursor?: string; expectedRevision?: string; page?: number; line?: number; matchQuery?: string };
+export type CodeSourceControlInput = { observation?: 'shared'; repositoryId?: string; worktreeId?: string; taskId?: string; commitHash?: string; path?: string; area?: 'unstaged' | 'staged' | 'untracked' | 'commit'; branch?: string; authorEmail?: string; query?: string; limit?: number; cursor?: string; expectedRevision?: string; page?: number; line?: number; matchQuery?: string };
 export type CodeSourceControlResponse = CodeSourceControlSourceControl;
 export type CodeSourceControlWatchResponse = {cursor: string; repositoryIds: string[]; refreshAll: boolean; refsRepositoryIds?: string[]; diagnostics?: string[]};
 export type CodeHistoryResponse = CodeHistoryHistory;

@@ -570,3 +570,24 @@ test('explicit repository reads filter before source resolution and retain the c
   assert.equal(response?.status,200);assert.equal((forwarded as {repositoryId:string}).repositoryId,'repo-one');
   await assert.rejects(http.handle({request:{method:'GET'},root:f.root,suffix:'/code/source-control',searchParams:new URLSearchParams({repositoryId:'unknown'})}),hasCode('code_repository_not_registered'));
 });
+
+test('Explorer catalog reuses only this request common-directory proofs and still observes changed branches next read', t => {
+  const f=fixture(t); f.write('file.txt','base\n'); f.commit('base');
+  const linked=path.join(f.base,'linked-catalog');f.git('worktree','add','-b','catalog-task',linked);
+  f.setEvidence({evidence:{repositories:[{sourceRepository:f.root,checkoutPath:linked}]}});
+  const originalExec=childProcess.execFileSync,originalSpawn=childProcess.spawnSync;let calls=0;
+  const captureExec=t.mock.method(childProcess,'execFileSync',(...args:Parameters<typeof childProcess.execFileSync>)=>{if(args[0]==='git')calls++;return originalExec(...args);});
+  const captureSpawn=t.mock.method(childProcess,'spawnSync',(...args:Parameters<typeof childProcess.spawnSync>)=>{if(args[0]==='git')calls++;return originalSpawn(...args);});syncBuiltinESMExports();
+  try {
+    const first=f.app.repositories(f.root,'task-one');
+    assert.equal(calls,4,'one repository identity, one membership list, two checkout identities; evidence reuses the proven common directory');
+    assert.equal(first.worktrees.find(member=>member.path===fs.realpathSync(linked))?.taskId,'task-one');
+    assert.equal(CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS.repositories.$id,first).valid,true,'internal observations do not leak into the response');
+    f.git('switch','-c','catalog-new-branch');calls=0;
+    const next=f.app.repositories(f.root,'task-one');assert.equal(calls,4);
+    assert.equal(next.worktrees.find(member=>member.kind==='main')?.branch,'catalog-new-branch');
+    f.catalog.repositories[0].source.path=linked;
+    const selected=f.app.repositories(f.root);assert.equal(selected.repositories[0].location,fs.realpathSync(linked));
+    assert.equal(selected.worktrees.find(member=>member.path===fs.realpathSync(linked))?.kind,'main');
+  } finally {captureExec.mock.restore();captureSpawn.mock.restore();syncBuiltinESMExports();}
+});

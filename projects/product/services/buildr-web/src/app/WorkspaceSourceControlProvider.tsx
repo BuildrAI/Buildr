@@ -11,9 +11,9 @@ export function WorkspaceSourceControlProvider({workspaceId, children}: {workspa
   const value = useMemo(() => workspaceId ? {workspaceId, sourceSelection:createCodeSourceSelectionStore(), observer: createSourceControlObserver({
     workspaceId,
     initialDelayMs: 750,
-    load: (taskId, repositoryId, signal, onProgress) => createSourceControlRefreshLoader({
+    load: (taskId, repositoryId, signal, onProgress, shared) => createSourceControlRefreshLoader({
       inventory:readSignal => codeApi.sourceControlInventory(workspaceId, {taskId}, readSignal),
-      repository:(id, readSignal) => codeApi.sourceControl(workspaceId, {taskId, repositoryId:id}, readSignal),
+      repository:(id, readSignal) => codeApi.sourceControl(workspaceId, {taskId, repositoryId:id, ...(shared ? {observation:'shared' as const} : {})}, readSignal),
     })(repositoryId, signal, onProgress),
     watch: (cursor, signal) => codeApi.watchSourceControl(workspaceId, cursor, signal),
   })} : null, [workspaceId]);

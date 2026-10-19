@@ -1,11 +1,11 @@
 import { api, type ApiClient } from '../../../api';
 import type {
   TaskWorkContextResponse, TaskWorkContextRecordRequest, TaskWorkContextRespondRequest,
-  WorkbenchResponse, WorkbenchQuery, WorkbenchPreference, WorkbenchPreferencesResponse,
+  WorkbenchActivityResponse, WorkbenchResponse, WorkbenchQuery, WorkbenchPreference, WorkbenchPreferencesResponse,
   WorkbenchPreferencePutRequest, WorkbenchVisitRequest,
 } from '../../../../build/generated/workbench-dto';
 
-export type { WorkbenchResponse, WorkbenchPreference, WorkbenchPreferencesResponse, WorkbenchVisitRequest };
+export type { WorkbenchActivityResponse, WorkbenchResponse, WorkbenchPreference, WorkbenchPreferencesResponse, WorkbenchVisitRequest };
 export type PreferenceKind = WorkbenchPreference['kind'];
 type ReadOptions = Pick<RequestInit, 'signal'>;
 
@@ -18,6 +18,12 @@ export function createWorkbenchClient(client: ApiClient, workspaceId?: string) {
       if (input.project) query.set('project', input.project);
       if (input.date) query.set('date', input.date);
       return client(path('/workbench') + (query.size ? '?' + query : ''), options) as Promise<WorkbenchResponse>;
+    },
+    activity(input: WorkbenchQuery = {}, options: ReadOptions = {}): Promise<WorkbenchActivityResponse> {
+      const query = new URLSearchParams();
+      if (input.project) query.set('project',input.project);
+      if (input.date) query.set('date',input.date);
+      return client(path('/workbench/activity') + (query.size ? '?' + query : ''),options) as Promise<WorkbenchActivityResponse>;
     },
     preferences(options: ReadOptions = {}): Promise<WorkbenchPreferencesResponse> {
       return client(path('/workbench/preferences'), options) as Promise<WorkbenchPreferencesResponse>;

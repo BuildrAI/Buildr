@@ -6,6 +6,7 @@ import { assertRevision, diagnostic, failure, identifier, object, text, type Aut
 import { normalizeHookOutput } from '../domain/hook-result.ts';
 import { publicFieldLabels, validatedFieldLabels } from '../domain/field-labels.ts';
 import { ConnectionFiles, digest } from '../persistence/files.ts';
+import { ConnectionDirectoryReads } from './directory-reads.ts';
 import { createConnectionCatalog, type ConnectionCatalogEntry, type ConnectionCatalogResult } from './catalog.ts';
 import { checkProgram, programRecipient, resolveProgram, runProgram } from '../infrastructure/program.ts';
 import { runAuthorizationProgram } from '../infrastructure/authorization-program.ts';
@@ -134,8 +135,28 @@ export class ConnectionSkillsApplication {
   list(root: string) {
     return this.listObserved(this.resolveScope(root));
   }
+  private readonly directoryReads = new ConnectionDirectoryReads();
+  close(): void { this.directoryReads.close(); }
+  invalidateDirectoryReads(root: string): void {
+    try { this.directoryReads.invalidate(this.resolveScope(root)); }
+    catch { this.directoryReads.invalidate(); }
+  }
   directory(root: string) {
-    const scope = this.resolveScope(root), observation = this.observe(scope);
+    const scope = this.resolveScope(root);
+    return this.directoryObserved(scope, this.catalog.list(scope.rootPath));
+  }
+  async directoryAsync(root: string, load: (root: string, signal: AbortSignal) => Promise<ConnectionCatalogResult>) {
+    const scope = this.resolveScope(root), before = fs.lstatSync(scope.rootPath);
+    const identity = `${before.dev}:${before.ino}`;
+    const catalog = await this.directoryReads.read(scope, identity, signal => load(scope.rootPath, signal));
+    const current = this.resolveScope(root), after = fs.lstatSync(current.rootPath);
+    if (current.rootPath !== scope.rootPath || current.workspaceId !== scope.workspaceId || after.dev !== before.dev || after.ino !== before.ino) {
+      throw failure('connection_skill_context_changed', '目录读取期间工作空间来源已变化。', 409);
+    }
+    return this.directoryObserved(current, catalog);
+  }
+  private directoryObserved(scope: ConnectionScope, catalog: ConnectionCatalogResult) {
+    const observation: ConnectionObservation = { catalog, programs: new Map() };
     const listing = this.listObserved(scope, observation);
     return { instances: listing.instances, definitions: observation.catalog.definitions, diagnostics: [...observation.catalog.diagnostics, ...listing.diagnostics] };
   }

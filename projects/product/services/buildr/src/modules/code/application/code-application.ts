@@ -38,6 +38,7 @@ export type CodeDependencies = {
 export function createCodeApplication(dependencies:CodeDependencies) {
   // Scope observations belong to one read, never to the lifetime of this application.
   const repositoryRegistrations = new WeakMap<object, () => Repository>();
+  const repositoryCommonDirectories = new WeakMap<object, string>();
   function sourceVersion(location: string) {
     try { return codeGit(location, ['symbolic-ref', '--short', 'HEAD']).toString().trim() + ' · 当前文件'; }
     catch { try { return codeGit(location, ['rev-parse', '--short', 'HEAD']).toString().trim() + ' · 当前文件'; } catch { return '当前文件'; } }
@@ -48,10 +49,12 @@ export function createCodeApplication(dependencies:CodeDependencies) {
     if(catalogVersion!==undefined&&dependencies.assetCatalogVersion!(root)!==catalogVersion)throw codeFailure('code_worktree_identity_changed','读取期间代码库登记已变化，请刷新后继续。',409);
     const diagnostics:Array<{code:string;message:string;repositoryId:string|null}>=[];
     if(repositoryId!==undefined&&!catalog.repositories.some(repo=>repo.id===repositoryId))throw codeFailure('code_repository_not_registered','代码库不在当前工作空间的登记范围内。',404);
+    const gitReader=createGitCommitReader();
     const items=catalog.repositories.filter(repo=>repositoryId===undefined||repo.id===repositoryId).map(repo=>{
-      let location='',available=false,gitId:string|null=null;
-      try { location=dependencies.resolveSourceRoot(root,repo.source);if(readIdentity){available=fs.statSync(location).isDirectory();const gitRepository=createGitCommitReader().repository(location);gitId=gitRepository.id;location=gitRepository.root;} } catch { available=false;diagnostics.push({code:'code_repository_unavailable',message:repo.name+' 的本机目录或 Git 身份当前不可读取。',repositoryId:repo.id}); }
+      let location='',available=false,gitId:string|null=null,commonDirectory:string|undefined;
+      try { location=dependencies.resolveSourceRoot(root,repo.source);if(readIdentity){available=fs.statSync(location).isDirectory();const gitRepository=gitReader.repository(location);gitId=gitRepository.id;location=gitRepository.root;commonDirectory=gitRepository.commonDir;} } catch { available=false;diagnostics.push({code:'code_repository_unavailable',message:repo.name+' 的本机目录或 Git 身份当前不可读取。',repositoryId:repo.id}); }
       const item={id:repo.id,code:repo.code,name:repo.name,location,available,gitId};
+      if(commonDirectory)repositoryCommonDirectories.set(item,commonDirectory);
       if(readIdentity)repositoryRegistrations.set(item,()=>{
         if(catalogVersion!==undefined&&dependencies.assetCatalogVersion!(root)!==catalogVersion)throw codeFailure('code_worktree_identity_changed','读取期间代码库登记已变化，请刷新后继续。',409);
         const repository=(catalogVersion===undefined?dependencies.assetCatalog(root):catalog).repositories.find(repository=>repository.id===repo.id);
@@ -83,7 +86,7 @@ export function createCodeApplication(dependencies:CodeDependencies) {
   }
   function repositories(root:string,taskId?:string) {
     const scope=repositoryScope(root,taskId);
-    const worktreeCatalog=readCodeWorktreeCatalog(root,scope.repositories,dependencies,taskId);
+    const worktreeCatalog=readCodeWorktreeCatalog(root,scope.repositories,{...dependencies,observedCommonDirectory:repository=>repositoryCommonDirectories.get(repository)},taskId);
     return {...scope,...worktreeCatalog,diagnostics:[...scope.diagnostics,...worktreeCatalog.diagnostics]};
   }
   function source(root:string,input:CodeInput):CodeSource {

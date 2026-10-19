@@ -57,6 +57,8 @@
 
 ### 通用接入与执行
 
+连接页面的后台目录请求由 [在途共享读取（directory-reads.ts）](../../services/buildr/src/modules/connection-skills/application/directory-reads.ts) 合并到已有有界读取池；[后台入口（read-worker.ts）](../../services/buildr/src/web/http/read-worker.ts) 只加载目录源读取，其他完整应用在 [按需应用入口（read-worker-applications.ts）](../../services/buildr/src/web/http/read-worker-applications.ts) 中加载。实例与认证的当前投影继续由连接应用负责。
+
 接入方法使用普通技能（Skill）源。`agent-assets` 的公开端口 `AGENT_ASSETS_SOURCE_READ` 提供清单及有界、安全的文件读取；连接目录（Connection Catalog）读取当前声明，不启动程序、不探测版本、不复制技能正文。`connectionDefinitions` 透传已有登记、资源交付及投射链，来源方法与程序安装分别观察。实例以技能源身份、定义编号、来源及配置版本绑定，类别（Category）不推导业务动作。共享文件和本机认证的边界以当前实例规范为准。
 
 连接技能源统一登记 `path: connections/<skill-id>`，完整目录为 `skills/connections/<skill-id>/`。新增本地源与受管资源使用同一规范；非标准位置登记给出明确诊断。它是已有技能（Skill）树的专用分组，不增加加载器。

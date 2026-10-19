@@ -3,7 +3,7 @@ import { Worker } from 'node:worker_threads';
 import { resolveProductResource } from '../../infrastructure/product-resources/index.ts';
 
 const TASK_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/u;
-const OPERATIONS = new Set(['reviews', 'verification', 'coordination', 'change', 'change-asset', 'documents', 'prototypes', 'prototype', 'commits', 'changed-file-count', 'changed-files', 'file-diff', 'materials', 'code-repositories', 'code-directory', 'code-file', 'code-editor-file', 'code-search', 'code-source-control', 'code-source-control-inventory', 'code-commit-context', 'code-sync-context', 'code-branches', 'code-authors', 'code-history', 'code-commit', 'code-diff', 'code-source-file']);
+const OPERATIONS = new Set(['connection-catalog', 'reviews', 'verification', 'coordination', 'change', 'change-asset', 'documents', 'prototypes', 'prototype', 'commits', 'changed-file-count', 'changed-files', 'file-diff', 'materials', 'code-repositories', 'code-directory', 'code-file', 'code-editor-file', 'code-search', 'code-source-control', 'code-source-control-inventory', 'code-commit-context', 'code-sync-context', 'code-branches', 'code-authors', 'code-history', 'code-commit', 'code-diff', 'code-source-file']);
 const DEFAULT_WORKER_COUNT = 2;
 const DEFAULT_QUEUE_LIMIT = 32;
 const WORKER_PATH = resolveProductResource('runtime/read-worker.cjs', {
@@ -57,6 +57,8 @@ function defaultWorkerFactory() {
 export function createBoundedBuildrWebReadExecutor({ workerCount = DEFAULT_WORKER_COUNT, queueLimit = DEFAULT_QUEUE_LIMIT, workerFactory = defaultWorkerFactory, warm = false }: any = {}) {
   if (!Number.isInteger(workerCount) || workerCount < 1) throw new TypeError('workerCount must be a positive integer.');
   if (!Number.isInteger(queueLimit) || queueLimit < 0) throw new TypeError('queueLimit must be a non-negative integer.');
+  const warmCount = warm === true ? workerCount : warm === false ? 0 : warm;
+  if (!Number.isInteger(warmCount) || warmCount < 0 || warmCount > workerCount) throw new TypeError('warm must be a boolean or a count within workerCount.');
 
   const workers: any[] = [];
   const queue: any[] = [];
@@ -186,9 +188,9 @@ export function createBoundedBuildrWebReadExecutor({ workerCount = DEFAULT_WORKE
   }
 
   for (let index = 0; index < workerCount; index += 1) workers.push({ id: index, worker: null, item: null, failed: false });
-  // Load the fixed pool while the Web shell starts, without reading any task.
+  // Prepare bounded capacity while the Web shell starts, without reading data.
   // A synchronous warm-up failure still permits the normal request-time retry.
-  if (warm) for (const state of workers) {
+  if (warmCount) for (const state of workers.slice(0, warmCount)) {
     try { spawn(state); } catch { state.worker = null; state.failed = false; }
   }
 

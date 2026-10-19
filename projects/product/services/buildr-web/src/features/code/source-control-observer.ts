@@ -6,7 +6,7 @@ import type { SourceControlProgress } from './source-control-refresh';
 type Catalog = ReturnType<typeof createSourceControlCatalog>;
 type Options = {
   workspaceId: string;
-  load(taskId: string | undefined, repositoryId: string | undefined, signal: AbortSignal, onProgress?: SourceControlProgress): Promise<CodeSourceControlResponse>;
+  load(taskId: string | undefined, repositoryId: string | undefined, signal: AbortSignal, onProgress?: SourceControlProgress, shared?: boolean): Promise<CodeSourceControlResponse>;
   watch(cursor: string | undefined, signal: AbortSignal): Promise<CodeSourceControlWatchResponse>;
   subscribe?(listener: (notice: SourceControlChangeNotice) => void): () => void;
   debounceMs?: number; fallbackMs?: number; retryMs?: number; concurrency?: number; initialDelayMs?: number;
@@ -34,7 +34,7 @@ export function createSourceControlObserver(options: Options) {
   function getCatalog(taskId = '') {
     let entry = catalogs.get(taskId);
     if (!entry) {
-      entry = {catalog: createSourceControlCatalog((repositoryId, signal, onProgress) => options.load(taskId || undefined, repositoryId, signal, onProgress)), users: 0};
+      entry = {catalog: createSourceControlCatalog((repositoryId, signal, onProgress, shared) => options.load(taskId || undefined, repositoryId, signal, onProgress, shared)), users: 0};
       catalogs.set(taskId, entry);
     }
     return entry.catalog;

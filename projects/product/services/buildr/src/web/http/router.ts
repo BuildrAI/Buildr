@@ -131,7 +131,7 @@ export function createLocalWorkspaceRequestRouter({
           authorizeWrite: () => assertWriteRequest(request, trustedOrigin, sessionToken),
           readBody: (allowed: any, label: any, maxBytes?: number) => readAllowedJsonBody(request, allowed, label, maxBytes),
           readJsonBody: (maxBytes?: number) => readJsonBody(request, maxBytes),
-          submitTaskRead: (operation: any, taskId: any, input: any = {}) => submitTaskRead(request, response, operation, root, taskId, input),
+          submitTaskRead: (operation: any, taskId: any, input: any = {}, signal?: AbortSignal) => submitTaskRead(request, response, operation, root, taskId, input, signal),
           respond: contributionRespond(response),
         });
         if (contributedResponse === true) return;

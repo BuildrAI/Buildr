@@ -12,6 +12,8 @@ export type CodeWorktreeGroup = { id: string; name: string; kind: CodeWorktreeKi
 type Diagnostic = { code: string; message: string; repositoryId: string | null };
 type Repository = { id: string; name: string; location: string; available: boolean };
 export type WorktreeCatalogDependencies = {
+  /** Only the current request may supply a previously verified registration observation. */
+  observedCommonDirectory?(repository: Repository): string | undefined;
   gitWorktreeEvidencePath?(root: string, taskId: string): string;
   gitWorktreeEvidenceDirectories?(root: string, options?: { requireComplete?: boolean }): string[];
   createGitWorktreeEvidenceReader?(root: string, options?: { requireComplete?: boolean }): { directories: readonly string[]; read(taskId: string, options: { optional: boolean }): ReturnType<WorktreeCatalogDependencies['readGitWorktreeEvidence']> };
@@ -135,6 +137,14 @@ export function readCodeWorktreeCatalog(root: string, repositories: Repository[]
   const deadline = Date.now() + CODE_LIMITS.readMs;
   const groups = new Map<string, CodeWorktreeGroup>();
   const commonDirectories = new Map<string, string>();
+  const sourceCommons = new Map<string, string | null>();
+  const commonKey = (location: string) => { try { return fs.realpathSync(location); } catch { return path.resolve(location); } };
+  const readCommon = (location: string) => {
+    const key = commonKey(location);
+    if (!sourceCommons.has(key)) { try { sourceCommons.set(key,gitCommonDirectory(location)); } catch { sourceCommons.set(key,null); } }
+    const value = sourceCommons.get(key); if (!value) throw Error('Git source identity is unavailable.'); return value;
+  };
+
   const addGroup = (id: string, name: string, kind: CodeWorktreeKind, task: string | null, repositoryId: string) => {
     let group = groups.get(id);
     if (!group) { group = { id, name, kind, taskId: task, repositoryIds: [] }; groups.set(id, group); }
@@ -144,7 +154,8 @@ export function readCodeWorktreeCatalog(root: string, repositories: Repository[]
     if (Date.now() >= deadline) { diagnostics.push({ code: 'code_worktrees_truncated', message: '目录发现达到本次时间上限，保留已确认的目录。', repositoryId: null }); break; }
     if (!repository.available) continue;
     try {
-      const common = gitCommonDirectory(repository.location); commonDirectories.set(repository.id, common);
+      const common = dependencies.observedCommonDirectory?.(repository) || readCommon(repository.location); commonDirectories.set(repository.id, common);
+      sourceCommons.set(commonKey(repository.location),common);
       const listed = listedWorktrees(repository.location);
       if (listed.length > 1000) diagnostics.push({ code: 'code_worktrees_truncated', message: repository.name + ' 的目录数量达到读取上限，保留前 1000 个目录。', repositoryId: repository.id });
       for (const entry of listed.slice(0, 1000)) {
@@ -201,7 +212,7 @@ export function readCodeWorktreeCatalog(root: string, repositories: Repository[]
     for (const recorded of evidence.evidence.repositories) {
       if (Date.now() >= deadline) { associationUniquenessUnknown = true; diagnostics.push({ code: 'code_worktree_associations_truncated', message: '任务 ' + id + ' 的目录关联达到本次时间上限，保留已确认的成员。', repositoryId: null }); break; }
       let common: string;
-      try { common = gitCommonDirectory(recorded.sourceRepository); } catch {
+      try { common = readCommon(recorded.sourceRepository); } catch {
         associationUniquenessUnknown = true;
         diagnostics.push({ code: 'code_worktree_source_unavailable', message: '任务 ' + id + ' 的一个代码库来源当前不可读取。', repositoryId: null }); continue;
       }

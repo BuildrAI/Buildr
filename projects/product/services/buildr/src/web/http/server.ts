@@ -32,7 +32,7 @@ export function createLocalWorkspaceServer(runtime: any, {
 
   const initialWorkspaceId = ensureRegisteredTarget(targetRoot);
   const ownsReadExecutor = !readExecutor;
-  const taskReadExecutor = readExecutor || createBoundedBuildrWebReadExecutor();
+  const taskReadExecutor = readExecutor || createBoundedBuildrWebReadExecutor({ warm: 1 });
   const sessionToken = crypto.randomBytes(32).toString('hex');
   const healthSecret = instanceSecret || crypto.randomBytes(32).toString('hex');
   let origin: any = null;
@@ -63,7 +63,8 @@ export function createLocalWorkspaceServer(runtime: any, {
     return shutdownPromise;
   }
 
-  function submitTaskRead(request: any, response: any, operation: any, root: any, taskId: any, input: any = {}) {
+  function submitTaskRead(request: any, response: any, operation: any, root: any, taskId: any, input: any = {}, sharedSignal?: AbortSignal) {
+    if (sharedSignal) return taskReadExecutor.run(operation, { targetRoot: root, taskId, ...input, signal: sharedSignal });
     const controller = new AbortController();
     const abort = () => controller.abort();
     request.once('aborted', abort);

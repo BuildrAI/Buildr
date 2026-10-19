@@ -32,7 +32,12 @@ test('工作台HTTP真实读写共享CLI事实并保护会话、输入、事项�
   };
   const databaseFile = path.join(root, '.buildr/local/workspace.sqlite');
   const beforeRead = fs.readFileSync(databaseFile);
-  for (const endpoint of ['/workbench', '/workbench/preferences', '/tasks/http-task/work-context', '/tasks/work-contexts?ids=http-task']) assert.equal((await get(endpoint)).status, 200);
+  const activity = await get('/workbench/activity');
+  assert.equal(activity.status,200); schema('WorkbenchActivityResponse',activity.body);
+  assert.equal(activity.body.active,undefined);
+  assert.equal((await get('/workbench/activity?project=missing')).status,404);
+  assert.equal((await get('/workbench/activity?unknown=1')).status,400);
+  for (const endpoint of ['/workbench', '/workbench/activity', '/workbench/preferences', '/tasks/http-task/work-context', '/tasks/work-contexts?ids=http-task']) assert.equal((await get(endpoint)).status, 200);
   assert.deepEqual(fs.readFileSync(databaseFile), beforeRead, '纯读取不得改变工作空间数据库');
   assert.equal((await get('/tasks/work-contexts')).body.record.taskId, 'work-contexts');
   let read = await get('/tasks/http-task/work-context');

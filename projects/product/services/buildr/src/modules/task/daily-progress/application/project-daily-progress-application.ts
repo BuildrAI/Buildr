@@ -180,6 +180,16 @@ export function createProjectDailyProgressApplication(runtime: ProjectDailyProgr
     return inspectPayload(project, date, group, read.document, commits, Boolean(read.incompatible));
   }
 
+  /** Summary consumers need no commit/task hydration or detail response validation. */
+  function inspectProjectDailyProgressSummary(targetRoot: string, input: {project: string; date: string}) {
+    const project = registeredProject(targetRoot, input.project);
+    const date = normalizeDailyProgressDate(input.date);
+    const read = runtime.dailyProgressRepository.readDailyProgressDocument(targetRoot, project.code, date);
+    const document = read.document;
+    return {date, recordedAt: document?.recordedAt ?? null, daySummary: document?.daySummary ?? null, commitCount: document?.commits.length ?? 0,
+      diagnostic: read.incompatible ? {code:'daily_progress_schema_incompatible', message:'当天文件仍是 v1 形状，需要 Agent 按 Git 提交重跑覆盖。'} : document ? null : {code:'daily_progress_not_found', message:'当天还没有每日演进文件。'}};
+  }
+
   function listProjectDailyProgress(targetRoot: any, input: any = {}) {
     assertFields(input, new Set(['project']), '每日演进 list');
     const project = registeredProject(targetRoot, input.project);
@@ -240,6 +250,7 @@ export function createProjectDailyProgressApplication(runtime: ProjectDailyProgr
   return Object.freeze({
     recordProjectDailyProgress,
     inspectProjectDailyProgress,
+    inspectProjectDailyProgressSummary,
     listProjectDailyProgress,
     inspectTaskDailyProgress,
   });

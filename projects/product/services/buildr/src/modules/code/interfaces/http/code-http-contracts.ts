@@ -23,7 +23,7 @@ export const CODE_HTTP_REQUESTS=Object.freeze({
   directory:query('CodeDirectoryQuery',{...locationQuery,filePath:string,showIgnored:{enum:['true','false']}},['repositoryId']),
   file:query('CodeFileQuery',{...locationQuery,filePath:text,page:{type:'string',pattern:'^(?:0|[1-9][0-9]*)$'},line:{type:'string',pattern:'^[1-9][0-9]*$'},matchQuery:{type:'string',minLength:1,maxLength:200},expectedRevision:{type:'string',minLength:1,maxLength:200}},['repositoryId','filePath']),
   search:query('CodeSearchQuery',{...locationQuery,query:{type:'string',minLength:1,maxLength:200},mode:{enum:['name','content']},showIgnored:{enum:['true','false']}},['repositoryId','query']),
-  sourceControl:query('CodeSourceControlQuery',{taskId:text,repositoryId:text},[]),
+  sourceControl:query('CodeSourceControlQuery',{taskId:text,repositoryId:text,observation:{enum:['shared']}},[]),
   sourceControlInventory:query('CodeSourceControlInventoryQuery',{taskId:text},[]),
   syncContext:query('CodeSyncContextQuery',{repositoryId:text,worktreeId},['repositoryId','worktreeId']),
   sync:schema('CodeSyncRequest',{repositoryId:text,worktreeId,expectedRevision:revision}),

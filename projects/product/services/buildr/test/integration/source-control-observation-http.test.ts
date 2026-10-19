@@ -53,3 +53,55 @@ test('real HTTP watch bypasses read Workers, removes an aborted wait and shutdow
   assert.equal((await active).status, 200); await closing;
   assert.equal(readCalls, 0);
 });
+
+test('one HTTP client disconnect cannot cancel the shared Git read awaited by another tab', async t => {
+  if (!process.env.BUILDR_SMOKE_ROOT) {
+    const output = execFileSync(process.execPath,[path.resolve(import.meta.dirname,'../../tools/development/run-isolated-workspace-smoke.ts'),'--script',import.meta.filename],{encoding:'utf8',timeout:30_000});
+    assert.match(output,/"status":"passed"/); assert.match(output,/"cleanup":"cleaned"/); return;
+  }
+  const fs = await import('node:fs');
+  const {createCodeApplication} = await import('../../src/modules/code/application/code-application.ts');
+  const root = process.env.BUILDR_SMOKE_WORKSPACE_ROOT!, location = path.join(root,'repo'), workspaceId = randomUUID();
+  fs.mkdirSync(location,{recursive:true}); execFileSync('git',['-C',location,'init','--initial-branch=main'],{stdio:'ignore'});
+  const app = createCodeApplication({assetCatalog:() => ({repositories:[{id:'repo',code:'repo',name:'Repository',source:{type:'workspace',path:location}}],services:[],projects:[]}),resolveSourceRoot:(_root,source) => source.path,readTaskScope:() => ({projects:[],services:[]}),readGitWorktreeEvidence:() => null});
+  const observations = new SourceControlObservations(); let scans = 0, signal!: AbortSignal, finish!: () => void;
+  const instance = createLocalWorkspaceServer({}, {ensureRegisteredTarget:() => workspaceId,resolveRegisteredWorkspace:() => ({rootPath:root}),httpContributions:[{taskIdSource:'[a-z0-9]+'},createCodeHttpContribution(app,observations)],
+    readExecutor:{run(_operation:string,input:any) { scans++; signal=input.signal; return new Promise(resolve => { finish = () => resolve(app.sourceControl(root,{repositoryId:'repo'})); }); }},beforeShutdown:() => observations.close()});
+  t.after(() => instance.shutdown());
+  const {url} = await instance.ready, endpoint = `${url}/api/v1/workspaces/${workspaceId}/code/source-control?repositoryId=repo&observation=shared`;
+  const cancel = new AbortController(), first = fetch(endpoint,{signal:cancel.signal});
+  while (!finish) await new Promise(resolve => setTimeout(resolve,5));
+  const second = fetch(endpoint); await new Promise(resolve => setTimeout(resolve,30));
+  cancel.abort(); await assert.rejects(first); assert.equal(signal.aborted,false); assert.equal(scans,1);
+  finish(); assert.equal((await deadline(second)).status,200); assert.equal(scans,1);
+});
+
+test('connection directory HTTP shares proof across disconnects and shutdown cancels the owned read', async t => {
+  if (!process.env.BUILDR_SMOKE_ROOT) {
+    const output = execFileSync(process.execPath, [path.resolve(import.meta.dirname, '../../tools/development/run-isolated-workspace-smoke.ts'), '--script', import.meta.filename], { encoding: 'utf8', timeout: 30_000 });
+    assert.match(output, /"status":"passed"/); assert.match(output, /"cleanup":"cleaned"/); return;
+  }
+  const fs = await import('node:fs');
+  const { ConnectionSkillsApplication } = await import('../../src/modules/connection-skills/application/connection-skills-application.ts');
+  const { createConnectionSkillsHttp } = await import('../../src/modules/connection-skills/interfaces/http/connection-skills-http.ts');
+  const root = fs.realpathSync(process.env.BUILDR_SMOKE_WORKSPACE_ROOT!), workspaceId = randomUUID();
+  const app = new ConnectionSkillsApplication({ dataRoot: path.join(root, 'private-app'), resolveScope: () => ({ rootPath: root, workspaceId }), catalog: { list: () => ({ definitions: [], diagnostics: [] }), resolve() { throw Error('No instances'); } } });
+  let calls = 0, signal!: AbortSignal, finish!: () => void;
+  const instance = createLocalWorkspaceServer({}, { ensureRegisteredTarget: () => workspaceId, resolveRegisteredWorkspace: () => ({ rootPath: root }), httpContributions: [{ taskIdSource: '[a-z0-9]+' }, createConnectionSkillsHttp(app)],
+    readExecutor: { run(operation: string, input: any) {
+      assert.equal(operation, 'connection-catalog'); calls++; signal = input.signal;
+      return new Promise((resolve, reject) => {
+        finish = () => resolve({ definitions: [], diagnostics: [] });
+        signal.addEventListener('abort', () => reject(Object.assign(Error('closed'), { code: 'local_app_read_cancelled', status: 499 })), { once: true });
+      });
+    } }, beforeShutdown: () => app.close() });
+  t.after(() => instance.shutdown());
+  const { url } = await instance.ready, endpoint = `${url}/api/v1/workspaces/${workspaceId}/connection-skills/directory`;
+  const cancel = new AbortController(), first = fetch(endpoint, { signal: cancel.signal });
+  while (!finish) await new Promise(resolve => setTimeout(resolve, 5));
+  const second = fetch(endpoint); await new Promise(resolve => setTimeout(resolve, 25));
+  cancel.abort(); await assert.rejects(first); assert.equal(signal.aborted, false); assert.equal(calls, 1);
+  finish(); assert.equal((await deadline(second)).status, 200);
+  const pending = fetch(endpoint); while (calls < 2) await new Promise(resolve => setTimeout(resolve, 5));
+  const closing = instance.shutdown(); assert.equal((await deadline(pending)).status, 499); await closing; assert.equal(signal.aborted, true);
+});

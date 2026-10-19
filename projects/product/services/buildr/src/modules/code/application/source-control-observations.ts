@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { SourceControlSharedReads } from './source-control-shared-reads.ts';
 import type { CodeSourceControlResponse } from './source-control-model.ts';
 import { SourceControlWatchers } from '../infrastructure/source-control-watcher.ts';
 import { codeFailure } from '../infrastructure/code-file-reader.ts';
@@ -8,7 +11,7 @@ type Waiter = { finish(): void };
 type ReadObservationTicket = { epoch: string; inventoryGeneration: number };
 type State = {
   epoch: string; sequence: number; changed: Map<string, number>; refsChanged: Map<string, number>; pending: Set<string>; pendingRefs: Set<string>; fingerprints: Map<string, string>;
-  inventoryGeneration: number; inventoryIds?: Set<string>;
+  inventoryGeneration: number; inventoryIds?: Set<string>; reads: SourceControlSharedReads;
   diagnostics: Map<string, Set<string>>; waiters: Set<Waiter>; watchers: SourceControlWatchers;
   batch?: ReturnType<typeof setTimeout>; lastUsed: number;
 };
@@ -41,8 +44,9 @@ export class SourceControlObservations {
         if (!idle) throw codeFailure('code_watch_capacity', '代码状态观察数量已达上限。', 429);
         this.release(...idle);
       }
-      const created: State = { epoch: randomUUID(), sequence: 0, changed: new Map(), refsChanged: new Map(), pending: new Set(), pendingRefs: new Set(), fingerprints: new Map(), inventoryGeneration: 0, diagnostics: new Map(), waiters: new Set(), lastUsed: Date.now(), watchers: null! };
+      const created: State = { epoch: randomUUID(), sequence: 0, changed: new Map(), refsChanged: new Map(), pending: new Set(), pendingRefs: new Set(), fingerprints: new Map(), reads: new SourceControlSharedReads(), inventoryGeneration: 0, diagnostics: new Map(), waiters: new Set(), lastUsed: Date.now(), watchers: null! };
       created.watchers = new SourceControlWatchers({ changed: (ids, refs) => this.invalidate(created, ids, refs), diagnostic: (id, message) => {
+        created.reads.invalidate([id]);
         const messages = created.diagnostics.get(id) ?? new Set<string>(); messages.add(message); created.diagnostics.set(id, messages);
       } });
       state = created; this.states.set(root, state);
@@ -52,6 +56,7 @@ export class SourceControlObservations {
 
   private invalidate(state: State, repositoryIds: string[], refsChanged = false) {
     if (this.closed || !repositoryIds.length) return;
+    state.reads.invalidate(repositoryIds);
     for (const id of repositoryIds) state.pending.add(id);
     if (refsChanged) for (const id of repositoryIds) state.pendingRefs.add(id);
     // Fixed from the first event: continuous writes cannot postpone delivery indefinitely.
@@ -117,6 +122,45 @@ export class SourceControlObservations {
     }));
   }
 
+  invalidateReads(root: string, repositoryIds?: string[]) {
+    this.states.get(root)?.reads.invalidate(repositoryIds);
+  }
+
+  async readShared(root: string, input: { taskId?: string; repositoryId: string }, inventory: CodeSourceControlResponse, load: (signal: AbortSignal) => Promise<CodeSourceControlResponse>): Promise<CodeSourceControlResponse> {
+    const state = this.state(root);
+    const repository = inventory.repositories.find(value => value.id === input.repositoryId);
+    // Verify registration and directory/Git entry identity without launching Git.
+    const identity = (location: string) => {
+      try {
+        const real = fs.realpathSync(location), stat = fs.statSync(real);
+        let directory = real;
+        for (;;) {
+          const git = path.join(directory, '.git');
+          if (fs.existsSync(git)) {
+            const entry = fs.lstatSync(git), target = fs.statSync(git);
+            if (target.isFile() && target.size > 4096) return null;
+            const content = target.isFile() ? fs.readFileSync(git,'utf8') : null;
+            const pointer = content?.match(/^gitdir: (.+)\s*$/);
+            const gitRoot = pointer ? fs.realpathSync(path.resolve(directory,pointer[1].trim())) : fs.realpathSync(git);
+            const gitStat = fs.statSync(gitRoot);
+            return [real, stat.dev, stat.ino, directory, entry.dev, entry.ino, target.dev, target.ino, content, gitRoot, gitStat.dev, gitStat.ino];
+          }
+          const parent = path.dirname(directory); if (parent === directory) break; directory = parent;
+        }
+        return [real, stat.dev, stat.ino];
+      } catch { return null; }
+    };
+    const proof = repository && identity(repository.location);
+    const signature = JSON.stringify([inventory.observedRevision, proof || randomUUID()]);
+    const ticket = this.beginRead(root);
+    return state.reads.read(JSON.stringify([input.taskId || '', input.repositoryId]), input.repositoryId, signature, async signal => {
+      const value = await load(signal);
+      if (ticket) await this.observe(root, value, true, ticket).catch(() => {});
+      if (state.diagnostics.size) state.reads.invalidate([input.repositoryId]);
+      return value;
+    });
+  }
+
   async watch(root: string, cursor?: string, signal?: AbortSignal): Promise<SourceControlWatchResult> {
     const state = this.state(root);
     const match = cursor?.match(/^([a-f0-9-]{36}):(\d+)$/);
@@ -143,7 +187,7 @@ export class SourceControlObservations {
 
   private release(root: string, state: State) {
     if (state.batch) clearTimeout(state.batch);
-    state.watchers.close(); for (const waiter of [...state.waiters]) waiter.finish(); this.states.delete(root);
+    state.reads.close(); state.watchers.close(); for (const waiter of [...state.waiters]) waiter.finish(); this.states.delete(root);
   }
 
   close() {

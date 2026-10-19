@@ -1,10 +1,10 @@
 import type { CodeSourceControlResponse } from './api/code-api';
 
 export type SourceControlProgress = (value: CodeSourceControlResponse, phase: 'inventory' | 'repository') => void;
-export type SourceControlLoader = (repositoryId: string | undefined, signal: AbortSignal, onProgress?: SourceControlProgress) => Promise<CodeSourceControlResponse>;
+export type SourceControlLoader = (repositoryId: string | undefined, signal: AbortSignal, onProgress?: SourceControlProgress, shared?: boolean) => Promise<CodeSourceControlResponse>;
 type Readers = {
   inventory(signal: AbortSignal): Promise<CodeSourceControlResponse>;
-  repository(repositoryId: string, signal: AbortSignal): Promise<CodeSourceControlResponse>;
+  repository(repositoryId: string, signal: AbortSignal, shared?: boolean): Promise<CodeSourceControlResponse>;
 };
 
 function failedRead(inventory: CodeSourceControlResponse, repositoryId: string, error: unknown, code = 'code_source_control_refresh_failed'): CodeSourceControlResponse {
@@ -15,8 +15,8 @@ function failedRead(inventory: CodeSourceControlResponse, repositoryId: string, 
 
 /** Discover once, then publish independent reads as they finish, with at most two requests in flight. */
 export function createSourceControlRefreshLoader(readers: Readers): SourceControlLoader {
-  return async (repositoryId, signal, onProgress) => {
-    if (repositoryId) return readers.repository(repositoryId, signal);
+  return async (repositoryId, signal, onProgress, shared = false) => {
+    if (repositoryId) return readers.repository(repositoryId, signal, shared);
     const inventory = await readers.inventory(signal);
     signal.throwIfAborted();
     onProgress?.(inventory, 'inventory');
@@ -37,7 +37,7 @@ export function createSourceControlRefreshLoader(readers: Readers): SourceContro
         const repository = scheduled[cursor++];
         let value: CodeSourceControlResponse;
         try {
-          value = await readers.repository(repository.id, signal);
+          value = await readers.repository(repository.id, signal, shared);
           if (!value.repositories.some(item => item.id === repository.id)) throw new Error('代码库局部读取未返回对应来源。');
           value = {...value, repositories:value.repositories.filter(item => item.id === repository.id)};
         } catch (error) {

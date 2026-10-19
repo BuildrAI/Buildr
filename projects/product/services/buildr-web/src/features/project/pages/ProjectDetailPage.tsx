@@ -27,7 +27,7 @@ import { updateMarkdownImageFailures, type MarkdownImageFailures, type MarkdownI
 import { workspaceHref } from '../../../lib/labels';
 import { dailyProgressActionContext, dailyProgressActivityPath, legacyDailyProgressPath, type DailyProgressGroup } from '../../project-daily-progress/dailyProgressNavigation';
 import { DailyProgressPanel } from '../../project-daily-progress/components/DailyProgressPanel';
-import { useWorkbench } from '../../workbench/hooks/useWorkbench';
+import { useWorkbenchActivity } from '../../workbench/hooks/useWorkbench';
 import { WorkbenchDailyProgress } from '../../workbench/components/WorkbenchDailyProgress';
 import { KnowledgeBrowser } from '../../knowledge/components/KnowledgeBrowser';
 import { useMarkdownDocumentViewer } from '../../../lib/useMarkdownDocumentViewer';
@@ -168,7 +168,7 @@ function ProjectActivityPane({ projectCode, workspaceId }: { projectCode: string
   const href = (path: string) => workspaceHref(workspaceId, path);
   const [date, setDate] = useState('');
   const [group, setGroup] = useState<DailyProgressGroup>('day');
-  const { data, error, loading, refresh } = useWorkbench(workspaceId, projectCode);
+  const { data, error, loading, refresh } = useWorkbenchActivity(workspaceId, projectCode);
   const openDay = (event: MouseEvent<HTMLElement>) => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const raw = (event.target as HTMLElement).closest('a[href]')?.getAttribute('href') || '';
