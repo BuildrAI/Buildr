@@ -50,7 +50,7 @@ export function createSharedSourceControlWatch(load: Watch, ports: Ports = {
         // released. Process it before issuing another identical HTTP request.
         await new Promise(resolve => setTimeout(resolve, 0));
         if (settled) return;
-        const value = await load(workspaceId, cursor, signal);
+        const value = await load(workspaceId, cursor, queue.signal);
         if (settled) return;
         channel.postMessage({ kind: 'result', from: cursor ?? null, value });
         finish(value);

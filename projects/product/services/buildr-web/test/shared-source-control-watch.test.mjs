@@ -56,6 +56,18 @@ test('a newer cursor cannot consume a reply covering a different observation ran
   assert.deepEqual((await second).repositoryIds, ['older', 'changed']);
 });
 
+test('a delayed peer reply cancels an already started redundant HTTP read', async () => {
+  const f = fixture();
+  const pending = f.watch(f.workspace, 'epoch:1');
+  await until(() => f.requests.length === 1);
+  const peer = new BroadcastChannel('buildr.source-control-watch.v1:' + f.workspace);
+  try {
+    peer.postMessage({kind: 'result', from: 'epoch:1', value: result('epoch:2')});
+    assert.equal((await pending).cursor, 'epoch:2');
+    assert.equal(f.requests[0].signal.aborted, true, 'a redundant network request must release its connection');
+  } finally { peer.close(); }
+});
+
 test('workspaces are isolated and a failed owner releases the lock for the next reader', async () => {
   const f = fixture();
   const first = f.watch(f.workspace, 'epoch:1');
