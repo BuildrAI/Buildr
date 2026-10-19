@@ -24,7 +24,7 @@ export function startDshPageObservation(browser: Window = window, client?: ApiCl
   const pageId = readDshPageId(browser.location.href);
   if (!pageId) return () => {};
   const origin = browser.location.origin;
-  const api = client ?? createApiClient({ sessionAdapter: new LocalSessionAdapter(() => readSessionTokenFromDocument(browser.document)), getWorkspaceId: () => null });
+  const api = client ?? createApiClient({ sessionAdapter: new LocalSessionAdapter(() => readSessionTokenFromDocument(browser.document), browser.document), getWorkspaceId: () => null });
   const controller = new AbortController();
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let retryResolve: (() => void) | undefined;
