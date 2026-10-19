@@ -3,7 +3,6 @@ import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import { createRuntime } from '../helpers/runtime-harness.ts';
@@ -49,12 +48,20 @@ async function waitForExit(child: any, timeoutMs: any = 10_000): Promise<any>  {
 }
 
 function startChild(root: any, releasedRoot: any, developmentRoot: any, identity: any): any  {
-  const child: any = spawn(process.execPath, [fileURLToPath(CHILD)], {
+  // Load the isolation owner before selecting this test's explicit profile.
+  // The fixture's runtime adapter then reuses the already loaded entry.
+  const entry = new URL('../register-development-entry.ts', import.meta.url);
+  const child: any = spawn(process.execPath, ['--input-type=module', '--eval', `
+    await import(${JSON.stringify(entry.href)});
+    process.env.BUILDR_APP_DATA_DIR = process.env.BUILDR_TEST_PROFILE_ROOT;
+    await import(${JSON.stringify(CHILD.href)});
+  `], {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
       ...process.env,
       BUILDR_APP_DATA_DIR: root,
       BUILDR_PRODUCT_DATA_DIR: path.join(path.dirname(root), 'product-data'),
+      BUILDR_TEST_PROFILE_ROOT: root,
       BUILDR_TEST_RELEASED_ROOT: releasedRoot,
       BUILDR_TEST_DEVELOPMENT_ROOT: developmentRoot,
       BUILDR_TEST_PRODUCT_IDENTITY: JSON.stringify(identity),

@@ -83,18 +83,18 @@ test('collector exports only real unit proof and ignores former SDK integration 
     const current=pluginSourcePhaseStep(group,pluginSourcePhaseFiles(group,pluginRoot),env);
     // Retain an authentic old-format integration record to prove it is no longer adopted.
     const step=group==='integration'?{...current,reuse:{scope:'plugin' as const,git:false,tools:['sdk']}}:current;
-    const snapshot=collectVerificationReuseSnapshot({productRoot:backend,env});snapshot.environment.tools.sdk=pluginSourceSdkKey(pluginRoot);
+    const snapshot=collectVerificationReuseSnapshot({productRoot:backend,env,steps:[]});snapshot.environment.tools.sdk=pluginSourceSdkKey(pluginRoot);
     const store=createVerificationReuseStore({productRoot:backend,env,snapshot,steps:[step]});
     const startedAt=new Date().toISOString();const result=await runVerificationStep({name:step.id,command:process.execPath,args:['--test',...step.executor.args,...step.executor.files],cwd:pluginRoot,env});
     assert.equal(result.status,'passed');assert.match(result.stdout,/\btests 1\b/u);assert.match(result.stdout,/\bpass 1\b/u);store.stage(step,result,{kind:'local',runId:'plugin-fixture',sourceCommit:snapshot.sourceCommit,startedAt,finishedAt:new Date().toISOString()});
-    const after=collectVerificationReuseSnapshot({productRoot:backend,env});after.environment.tools.sdk=pluginSourceSdkKey(pluginRoot);originalRecords.push(...store.commit(after,true).records);
+    const after=collectVerificationReuseSnapshot({productRoot:backend,env,steps:[]});after.environment.tools.sdk=pluginSourceSdkKey(pluginRoot);originalRecords.push(...store.commit(after,true).records);
   }
   const bundle=await collectPluginSourceVerificationBundle({repo,env});assert.deepEqual(bundle.records.map((value:any)=>value.identity.stepId).sort(),[...PLUGIN_SOURCE_PHASE_IDS].sort());
   rmSync(cache,{recursive:true,force:true});mkdirSync(cache);
   assert.equal((await collectPluginSourceVerificationBundle({repo,env,imports:{...bundle,records:originalRecords}})).records.length,1);
   assert.equal((await collectPluginSourceVerificationBundle({repo,env,imports:{...bundle,records:[null,...originalRecords]}})).records.length,1);
   const step=pluginSourcePhaseStep('unit',pluginSourcePhaseFiles('unit',pluginRoot),env);
-  const snapshot=collectVerificationReuseSnapshot({productRoot:backend,env});snapshot.environment.tools.sdk=pluginSourceSdkKey(pluginRoot);
+  const snapshot=collectVerificationReuseSnapshot({productRoot:backend,env,steps:[]});snapshot.environment.tools.sdk=pluginSourceSdkKey(pluginRoot);
   const options={productRoot:backend,env,snapshot,steps:[step],imports:[bundle],portableImports:true};
   const reading=createVerificationReuseStore(options),reused=reading.lookup(step);assert.ok(reused);
   const phase={...reused.result,disposition:'reused'};
@@ -126,7 +126,7 @@ test('collector exports only real unit proof and ignores former SDK integration 
   assert.equal(inMemoryPhase.childOutcome,'passed');assert.equal(inMemoryPhase.childExitCode,0);
   // The plugin content capture alone cannot detect a changed backend input.
   writeFileSync(join(backend,'runtime.ts'),'export const changed = true;\n');
-  const drifted=collectVerificationReuseSnapshot({productRoot:backend,env});drifted.environment.tools.sdk=pluginSourceSdkKey(pluginRoot);
+  const drifted=collectVerificationReuseSnapshot({productRoot:backend,env,steps:[]});drifted.environment.tools.sdk=pluginSourceSdkKey(pluginRoot);
   await assert.rejects(assertPluginSourcePhaseProof({productRoot:backend,step,store:fresh,record:accepted.records[0],snapshot,current:drifted,phase:freshPhase}),{code:'source-input-drift'});
   assert.equal(freshPhase.childOutcome,'passed');assert.equal(freshPhase.childExitCode,0);
   writeFileSync(join(pluginRoot,'test/integration/fixture.test.ts'),readFileSync(join(pluginRoot,'test/integration/fixture.test.ts'),'utf8')+'// source changed\n');
