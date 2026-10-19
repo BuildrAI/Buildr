@@ -718,9 +718,8 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       const snapshot = readCandidatePreparationSnapshot(workspace, key, state.preparation);
       let different = Boolean(options.verificationSource && git(['rev-parse', `${options.verificationSource}^{commit}`]) !== snapshot.verificationInputs.sourceCommit);
       if (options.sourceVerification) {
-        const { readVerificationReuseBundle } = await import('../../../projects/product/services/buildr/test/verification/verification-reuse.ts');
         const { encodeCandidateSourceImport } = await import('../../../projects/product/services/buildr/test/verification/candidate-source-reuse.ts');
-        different ||= identity(encodeCandidateSourceImport(readVerificationReuseBundle(options.sourceVerification))) !== snapshot.verificationInputs.source;
+        different ||= identity(encodeCandidateSourceImport(JSON.parse(fs.readFileSync(options.sourceVerification, 'utf8')))) !== snapshot.verificationInputs.source;
       }
       if (options.artifactVerification) {
         const { readCandidateArtifactImports, encodeCandidateArtifactImport } = await import('../../../projects/product/services/buildr/test/verification/candidate-artifact-reuse.ts');
@@ -969,9 +968,8 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
           ? [`buildr_peer_version=${state.preparationPeer.version}`, `buildr_peer_integrity=${state.preparationPeer.integrity}`] : [])] : [];
       let sourceTransport: string | undefined;
       if (options.sourceVerification) {
-        const { readVerificationReuseBundle } = await import('../../../projects/product/services/buildr/test/verification/verification-reuse.ts');
         const { encodeCandidateSourceImport } = await import('../../../projects/product/services/buildr/test/verification/candidate-source-reuse.ts');
-        sourceTransport = encodeCandidateSourceImport(readVerificationReuseBundle(options.sourceVerification));
+        sourceTransport = encodeCandidateSourceImport(JSON.parse(fs.readFileSync(options.sourceVerification, 'utf8')));
       }
       let artifactTransport: string | undefined;
       if (options.artifactVerification) {
@@ -1002,7 +1000,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       if (!existing && !state.candidate.dispatchRequested) {
         phase = 'source-verification';
         const localSource = await (dependencies.prepareLocalSourceVerification ?? prepareLocalSourceVerification)({
-          repo, sourceFile: options.sourceVerification, base: selection.devBaseline,
+          repo, sourceFile: options.sourceVerification ?? path.join(workspace, 'projects/product/services/buildr/build/verification/candidate-rounds', `${key}.json`), roundId: key, base: selection.devBaseline,
           packages: [...(!scoped || plan.requirements.buildr ? ['buildr'] : []), ...(scoped && plan.requirements.plugin ? ['dsh-plugin'] : [])],
         });
         if (localSource.status !== 'ready') {

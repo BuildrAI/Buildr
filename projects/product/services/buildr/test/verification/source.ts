@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { createCandidateRoundExecution } from './candidate-round.ts';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -32,8 +34,8 @@ export function sourceVerificationCancellation(signals: Pick<NodeJS.Process, 'on
     dispose: () => { signals.removeListener('SIGINT', interrupt); signals.removeListener('SIGTERM', terminate); } };
 }
 
-export function parseSourceArgs(args: string[]): { help: boolean; json: boolean; force: boolean; scope: SourceVerificationScope; base: string | null; output: string | null } {
-  const result = { help: false, json: false, force: false, scope: 'all' as SourceVerificationScope, base: null as string | null, output: null as string | null };
+export function parseSourceArgs(args: string[]): { help: boolean; json: boolean; force: boolean; scope: SourceVerificationScope; base: string | null; output: string | null; round: string | null } {
+  const result = { help: false, json: false, force: false, scope: 'all' as SourceVerificationScope, base: null as string | null, output: null as string | null, round: null as string | null };
   let scopeSupplied = false;
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
@@ -51,6 +53,10 @@ export function parseSourceArgs(args: string[]): { help: boolean; json: boolean;
       if (!value || value.startsWith('-')) throw new Error('Missing value for --base');
       if (result.base !== null) throw new Error('--base may only be supplied once');
       result.base = value;
+    } else if (arg === '--round') {
+      const value = args[++index];
+      if (!value || value.startsWith('-') || result.round !== null) throw new Error('--round requires one round id');
+      result.round = value;
     } else if (arg === '--output') {
       const value = args[++index];
       if (!value || value.startsWith('-')) throw new Error('Missing value for --output');
@@ -136,7 +142,8 @@ export function sourceVerificationPreparation(plan: any, reuse: any, shards: rea
  * checks require it. No preparation receipt is treated as a test result. */
 export function prepareSourceVerificationEnvironment(plan: any, options: any, dependencies: any = {}): any {
   options = { ...options, force: sourceVerificationForce(options.force, options.env ?? process.env) };
-  const inspect = dependencies.inspectReuse ?? inspectVerificationReusePlan;
+  const inspect = dependencies.inspectReuse ?? ((plan: any, options: any) => options.round
+    ? createCandidateRoundExecution(plan, options).explanation : inspectVerificationReusePlan(plan, options));
   const prepare = dependencies.prepareEnvironment ?? prepareCandidateEnvironment;
   const shards = dependencies.shards ?? CANDIDATE_CI_SHARDS;
   const preparations: any[] = [];
@@ -154,7 +161,7 @@ export function prepareSourceVerificationEnvironment(plan: any, options: any, de
 }
 
 function usage(): void {
-  process.stdout.write('Usage: npm run test:source -- [--scope all|common|platform] [--base <ref>] [--json] [--force] [--output <source-bundle.json>]\n');
+  process.stdout.write('Usage: npm run test:source -- [--scope all|common|platform] [--base <ref>] [--json] [--force] [--round <round-id>] [--output <round-log.json>]\n');
 }
 
 if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {
@@ -164,11 +171,12 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
     else {
       const plan = createSourceVerificationPlan(process.platform, { scope: args.scope });
       const comparisonRequired = plan.steps.some((step: any) => step.reuse?.git === 'comparison');
-      const reuseOptions = { productRoot, projectRoot, force: sourceVerificationForce(args.force),
+      const round = { roundId: args.round ?? process.env.BUILDR_VERIFICATION_ROUND ?? randomUUID(), ...(args.output ? { output: path.resolve(args.output) } : {}) };
+      const reuseOptions = { productRoot, projectRoot, round, force: sourceVerificationForce(args.force),
         env: enforceOfflineVerification(comparisonRequired || args.base
           ? pinSourceVerificationBase(productRoot, process.env, args.base) : { ...process.env }) };
       if (args.json) {
-        const reuse = inspectVerificationReusePlan(plan, reuseOptions);
+        const reuse = createCandidateRoundExecution(plan, reuseOptions).explanation;
         process.stdout.write(`${JSON.stringify({ ...plan, verificationBase: reuseOptions.env.BUILDR_VERIFICATION_BASE,
           reuse, preparation: sourceVerificationPreparation(plan, reuse) }, null, 2)}\n`);
         if (plan.status !== 'ready') process.exitCode = 1;
@@ -190,7 +198,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
             stream: process.stdout, errorStream: process.stderr, prefix: 'verify-source',
             concurrency: executionProfile.limits, executionProfile, runId: evidence.runId,
             taskId: process.env.BUILDR_TASK_ID ?? source.branch ?? 'source', signal: cancellation.signal,
-            reuse: { force: reuseOptions.force, ...(args.output ? { output: path.resolve(args.output) } : {}) },
+            reuse: false, round,
           });
         } finally { cancellation.dispose(); }
         writeVerificationTimingEvidence({

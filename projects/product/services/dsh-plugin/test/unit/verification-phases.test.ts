@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { assertPluginSourcePhaseProof, collectPluginSourceVerificationBundle, parseVerificationInputs, PLUGIN_PEER_PHASE_FILES, PLUGIN_SOURCE_PHASE_IDS, pluginSourcePhaseFiles, pluginSourcePhaseStep, pluginSourceSdkKey } from '../../tools/verify-all.ts';
+import { collectPluginSourceVerificationBundle, parseVerificationInputs, PLUGIN_PEER_PHASE_FILES, PLUGIN_SOURCE_PHASE_IDS, pluginSourcePhaseFiles, pluginSourcePhaseStep, pluginSourceSdkKey } from '../../tools/verify-all.ts';
 
 test('manual activation tests report the missing explicit SDK while formal full verification still rejects it', t => {
   const root = mkdtempSync(join(tmpdir(), 'buildr-plugin-no-sdk-'));
@@ -64,95 +64,23 @@ test('SDK-consuming integration has no reusable identity even with the former SD
   const step = pluginSourcePhaseStep('integration', pluginSourcePhaseFiles('integration'));
   assert.equal(createVerificationReuseIdentity(step, snapshot), null);
 });
-test('collector exports only real unit proof and ignores former SDK integration proof', async t => {
-  const repo=realpathSync(mkdtempSync(join(tmpdir(),'buildr-plugin-phase-')));t.after(()=>rmSync(repo,{recursive:true,force:true}));
-  const backend=join(repo,'projects/product/services/buildr'),pluginRoot=join(repo,'projects/product/services/dsh-plugin');
-  mkdirSync(backend,{recursive:true});mkdirSync(join(pluginRoot,'sdk-patches'),{recursive:true});
-  for(const name of ['dsh-v0.2.0-rc.2-event-sources-settings.json','dsh-v0.2.0-rc.2-event-sources-settings.patch']) copyFileSync(new URL('../../sdk-patches/'+name,import.meta.url),join(pluginRoot,'sdk-patches',name));
-  for(const group of ['unit','integration']){mkdirSync(join(pluginRoot,'test',group),{recursive:true});writeFileSync(join(pluginRoot,'test',group,'fixture.test.ts'),"import test from 'node:test';test('fixture',()=>{});\n");}
-  const git=(...args:string[])=>execFileSync('git',args,{cwd:repo,stdio:['ignore','pipe','pipe']});
-  git('init','-q');git('config','user.name','Plugin test');git('config','user.email','plugin@example.com');git('add','.');git('commit','-qm','source');
-  const env={...process.env,BUILDR_VERIFICATION_WORKER_BUDGET:'1',BUILDR_VERIFICATION_REUSE_DIR:join(repo,'cache')};
-  delete env.NODE_TEST_CONTEXT;
-  const {collectVerificationReuseSnapshot,createVerificationReuseStore,createVerificationReuseIdentity}=await import(new URL('../../../buildr/test/verification/verification-reuse.ts',import.meta.url).href);
-  const {runVerificationStep}=await import(new URL('../../../buildr/test/verification/timing/parallel-runner.ts',import.meta.url).href);
-  // Keep the cache outside the source identity, as the normal temporary cache is.
-  const cache=realpathSync(mkdtempSync(join(tmpdir(),'buildr-plugin-phase-cache-')));env.BUILDR_VERIFICATION_REUSE_DIR=cache;t.after(()=>rmSync(cache,{recursive:true,force:true}));
-  const originalRecords:any[]=[];
-  for(const group of ['unit','integration'] as const){
-    const current=pluginSourcePhaseStep(group,pluginSourcePhaseFiles(group,pluginRoot),env);
-    // Retain an authentic old-format integration record to prove it is no longer adopted.
-    const step=group==='integration'?{...current,reuse:{scope:'plugin' as const,git:false,tools:['sdk']}}:current;
-    const snapshot=collectVerificationReuseSnapshot({productRoot:backend,env,steps:[]});snapshot.environment.tools.sdk=pluginSourceSdkKey(pluginRoot);
-    const store=createVerificationReuseStore({productRoot:backend,env,snapshot,steps:[step]});
-    const startedAt=new Date().toISOString();const result=await runVerificationStep({name:step.id,command:process.execPath,args:['--test',...step.executor.args,...step.executor.files],cwd:pluginRoot,env});
-    assert.equal(result.status,'passed');assert.match(result.stdout,/\btests 1\b/u);assert.match(result.stdout,/\bpass 1\b/u);store.stage(step,result,{kind:'local',runId:'plugin-fixture',sourceCommit:snapshot.sourceCommit,startedAt,finishedAt:new Date().toISOString()});
-    const after=collectVerificationReuseSnapshot({productRoot:backend,env,steps:[]});after.environment.tools.sdk=pluginSourceSdkKey(pluginRoot);originalRecords.push(...store.commit(after,true).records);
-  }
-  const bundle=await collectPluginSourceVerificationBundle({repo,env});assert.deepEqual(bundle.records.map((value:any)=>value.identity.stepId).sort(),[...PLUGIN_SOURCE_PHASE_IDS].sort());
-  rmSync(cache,{recursive:true,force:true});mkdirSync(cache);
-  assert.equal((await collectPluginSourceVerificationBundle({repo,env,imports:{...bundle,records:originalRecords}})).records.length,1);
-  assert.equal((await collectPluginSourceVerificationBundle({repo,env,imports:{...bundle,records:[null,...originalRecords]}})).records.length,1);
-  const step=pluginSourcePhaseStep('unit',pluginSourcePhaseFiles('unit',pluginRoot),env);
-  const snapshot=collectVerificationReuseSnapshot({productRoot:backend,env,steps:[]});snapshot.environment.tools.sdk=pluginSourceSdkKey(pluginRoot);
-  const options={productRoot:backend,env,snapshot,steps:[step],imports:[bundle],portableImports:true};
-  const reading=createVerificationReuseStore(options),reused=reading.lookup(step);assert.ok(reused);
-  const phase={...reused.result,disposition:'reused'};
-  await assertPluginSourcePhaseProof({productRoot:backend,step,store:reading,record:reused,snapshot,current:snapshot,phase});
-  const failedResult={...reused.result,status:'failed',exitCode:1,childOutcome:'failed',childExitCode:1,processCleanup:{status:'clean'}};
-  const failing=createVerificationReuseStore(options);failing.stage(step,failedResult,reused.origin);
-  await assert.rejects(assertPluginSourcePhaseProof({productRoot:backend,step,store:reading,record:reused,snapshot,current:snapshot,phase}),{code:'verification-proof-invalidated'});
-  assert.equal(phase.childOutcome,'passed');assert.equal(phase.childExitCode,0);
-  assert.deepEqual((await collectPluginSourceVerificationBundle({repo,env,imports:bundle})).records,[]);
-  const executing=createVerificationReuseStore(options),freshPhase={...reused.result,disposition:'executed'};
-  executing.stage(step,{...reused.result,processCleanup:{status:'clean'}},reused.origin);
-  const newerFailure=createVerificationReuseStore(options);newerFailure.stage(step,failedResult,reused.origin);
-  const rejected=executing.commit(snapshot,true);assert.equal(rejected.records.length,0);
-  await assert.rejects(assertPluginSourcePhaseProof({productRoot:backend,step,store:executing,record:rejected.records[0],snapshot,current:snapshot,phase:freshPhase}),{code:'verification-proof-invalidated'});
-  assert.equal(freshPhase.childOutcome,'passed');assert.equal(freshPhase.childExitCode,0);
-  const fresh=createVerificationReuseStore(options);fresh.stage(step,{...reused.result,processCleanup:{status:'clean'}},reused.origin);
-  const accepted=fresh.commit(snapshot,true);assert.equal(accepted.records.length,1);
-  await assertPluginSourcePhaseProof({productRoot:backend,step,store:fresh,record:accepted.records[0],snapshot,current:snapshot,phase:freshPhase});
-  const blockedCache=join(cache,'cache-is-a-file');writeFileSync(blockedCache,'not a directory');
-  const unavailable=createVerificationReuseStore({...options,env:{...env,BUILDR_VERIFICATION_REUSE_DIR:blockedCache}});
-  assert.equal(unavailable.cacheAvailable(),false);assert.equal(unavailable.lookup(step),null);
-  unavailable.stage(step,{...reused.result,processCleanup:{status:'clean'}},reused.origin);
-  const inMemory=unavailable.commit(snapshot,true);assert.equal(inMemory.records.length,1);
-  const inMemoryPhase={...reused.result,disposition:'executed'};
-  await assertPluginSourcePhaseProof({productRoot:backend,step,store:unavailable,record:inMemory.records[0],snapshot,current:snapshot,phase:inMemoryPhase,fresh:true});
-  await assert.rejects(assertPluginSourcePhaseProof({productRoot:backend,step,store:unavailable,record:inMemory.records[0],snapshot,current:snapshot,phase:{...reused.result}}),{code:'verification-proof-invalidated'});
-  unavailable.stage(step,failedResult,reused.origin);
-  await assert.rejects(assertPluginSourcePhaseProof({productRoot:backend,step,store:unavailable,record:inMemory.records[0],snapshot,current:snapshot,phase:inMemoryPhase,fresh:true}),{code:'verification-proof-invalidated'});
-  assert.equal(inMemoryPhase.childOutcome,'passed');assert.equal(inMemoryPhase.childExitCode,0);
-  // The plugin content capture alone cannot detect a changed backend input.
-  writeFileSync(join(backend,'runtime.ts'),'export const changed = true;\n');
-  const drifted=collectVerificationReuseSnapshot({productRoot:backend,env,steps:[]});drifted.environment.tools.sdk=pluginSourceSdkKey(pluginRoot);
-  await assert.rejects(assertPluginSourcePhaseProof({productRoot:backend,step,store:fresh,record:accepted.records[0],snapshot,current:drifted,phase:freshPhase}),{code:'source-input-drift'});
-  assert.equal(freshPhase.childOutcome,'passed');assert.equal(freshPhase.childExitCode,0);
-  writeFileSync(join(pluginRoot,'test/integration/fixture.test.ts'),readFileSync(join(pluginRoot,'test/integration/fixture.test.ts'),'utf8')+'// source changed\n');
-  assert.equal((await collectPluginSourceVerificationBundle({pluginRoot,env,imports:bundle})).records.length,0);
-});
-
-test('standalone source phase executes and reuses real unit proof without any SDK or peer', async t => {
+test('standalone source phase retains a real passed result after edits and executes a new round fully', async t => {
   const { verifyPluginSourcePhase } = await import('../../tools/verify-all.ts');
   const repo = realpathSync(mkdtempSync(join(tmpdir(), 'buildr-plugin-source-only-')));
-  const cache = realpathSync(mkdtempSync(join(tmpdir(), 'buildr-plugin-source-cache-')));
-  t.after(() => { rmSync(repo, { recursive: true, force: true }); rmSync(cache, { recursive: true, force: true }); });
+  t.after(() => rmSync(repo, { recursive: true, force: true }));
   const pluginRoot = join(repo, 'projects/product/services/dsh-plugin'), backend = join(repo, 'projects/product/services/buildr');
   mkdirSync(join(pluginRoot, 'test/unit'), { recursive: true }); mkdirSync(backend, { recursive: true });
-  writeFileSync(join(pluginRoot, 'test/unit/fixture.test.ts'), "import test from 'node:test'; test('portable source', () => {});\n");
+  const file = join(pluginRoot, 'test/unit/fixture.test.ts');
+  writeFileSync(file, "import test from 'node:test'; test('portable source', () => {});\n");
   const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, stdio: ['ignore', 'pipe', 'pipe'] });
   git('init', '-q'); git('config', 'user.name', 'Plugin test'); git('config', 'user.email', 'plugin@example.com'); git('add', '.'); git('commit', '-qm', 'source');
-  const env = { ...process.env, BUILDR_VERIFICATION_REUSE_DIR: cache, BUILDR_VERIFICATION_WORKER_BUDGET: '1' };
-  delete env.NODE_TEST_CONTEXT; delete env.BUILDR_DSH_SDK_ROOT; delete env.BUILDR_DSH_SOURCE_SDK_ROOT;
-  delete env.BUILDR_DSH_BUILDR_PEER_INPUT; delete env.BUILDR_DSH_BUILDR_PEER_MANIFEST;
-  const executed = await verifyPluginSourcePhase('unit', { pluginRoot, env });
+  const env = { ...process.env, BUILDR_VERIFICATION_WORKER_BUDGET: '1' }; delete env.NODE_TEST_CONTEXT; delete env.BUILDR_SOURCE_VERIFICATION;
+  const round = { roundId: 'first', output: join(repo, 'first.json') };
+  const executed = await verifyPluginSourcePhase('unit', { pluginRoot, env, round });
   assert.equal(executed.phase.status, 'passed'); assert.equal(executed.phase.disposition, 'executed');
-  assert.ok(executed.proof?.record);
-  const reused = await verifyPluginSourcePhase('unit', { pluginRoot, env });
-  assert.equal(reused.phase.disposition, 'reused');
-  assert.equal((await collectPluginSourceVerificationBundle({ pluginRoot, env })).records.length, 1);
-  writeFileSync(join(pluginRoot, 'test/unit/fixture.test.ts'), "import test from 'node:test'; test('first failure', () => { throw Error('one'); }); test('second failure', () => { throw Error('two'); });\n");
-  await assert.rejects(verifyPluginSourcePhase('unit', { pluginRoot, env }), /verification failed/u);
-  assert.equal((await collectPluginSourceVerificationBundle({ pluginRoot, env })).records.length, 0, 'failed or changed input cannot reuse the previous success');
+  writeFileSync(file, "import test from 'node:test'; test('changed input', () => { throw Error('new failure'); });\n");
+  const retained = await verifyPluginSourcePhase('unit', { pluginRoot, env, round });
+  assert.equal(retained.phase.disposition, 'reused');
+  assert.equal(retained.phase.sourceRecord.origin.sourceCommit, executed.log.records[0].origin.sourceCommit);
+  await assert.rejects(verifyPluginSourcePhase('unit', { pluginRoot, env, round: { roundId: 'second', output: join(repo, 'second.json') } }), /verification failed/u);
 });

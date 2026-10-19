@@ -47,67 +47,38 @@ export function pluginSourceSdkKey(pluginRoot = root): string {
     readFileSync(join(pluginRoot, 'sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.patch')));
   return hash(Buffer.from(JSON.stringify(identity)));
 }
-/** A passed child remains a fact even when its proof can no longer authorize a candidate. */
-export async function assertPluginSourcePhaseProof(input: { productRoot: string; step: any; store: any; record: any; snapshot: any; current: any; phase: any; fresh?: boolean }) {
-  const { createVerificationReuseIdentity, validateVerificationReuseRecord } = await import(new URL('../../buildr/test/verification/verification-reuse.ts', import.meta.url).href);
-  const before = createVerificationReuseIdentity(input.step, input.snapshot), after = createVerificationReuseIdentity(input.step, input.current);
-  const code = !before || !after || before.key !== after.key ? 'source-input-drift'
-    : !input.record || !validateVerificationReuseRecord(input.record, { productRoot: input.productRoot, snapshot: input.current, step: input.step })
-      || !(input.fresh === true ? input.store.isCurrentFresh(input.record) : input.store.isCurrent(input.record))
-      ? 'verification-proof-invalidated' : null;
-  if (!code) return;
-  if (code === 'source-input-drift' && (input.record?.identity ?? before)) input.store.invalidate(input.record?.identity ?? before);
-  input.phase.proof = { status: 'invalidated', code };
-  throw Object.assign(new Error(`${input.step.id}: ${code}; the original child result is unchanged.`), { code, sourcePhase: input.phase });
-}
-export async function collectPluginSourceVerificationBundle(options: { env?: NodeJS.ProcessEnv; pluginRoot?: string; repo?: string; imports?: { schemaVersion: string; records: any[] } } = {}) {
-  const pluginRoot = options.pluginRoot ?? (options.repo ? resolve(options.repo, 'projects/product/services/dsh-plugin') : root);
-  const steps = [pluginSourcePhaseStep('unit', pluginSourcePhaseFiles('unit', pluginRoot), options.env)];
-  const { createVerificationReuseStore, collectVerificationReuseSnapshot, validateVerificationReuseRecord, VERIFICATION_REUSE_BUNDLE_SCHEMA } = await import(new URL('../../buildr/test/verification/verification-reuse.ts', import.meta.url).href);
-  const productRoot = resolve(pluginRoot, '../buildr');
-  // Plugin phases own service-relative files and retain their complete scope;
-  // backend test-file discovery is unrelated to this proof.
-  const snapshot = collectVerificationReuseSnapshot({ productRoot, env: options.env, steps: [] });
-  if (options.imports && (options.imports.schemaVersion !== VERIFICATION_REUSE_BUNDLE_SCHEMA || !Array.isArray(options.imports.records) || options.imports.records.length > 512)) throw new Error('Plugin source verification bundle is invalid.');
-  const imports = { schemaVersion: VERIFICATION_REUSE_BUNDLE_SCHEMA, records: (options.imports?.records ?? []).filter(record => {
-    const step = steps.find(item => item.id === record?.identity?.stepId);
-    return step && validateVerificationReuseRecord(record, { productRoot, snapshot, step });
-  }) };
-  const store = createVerificationReuseStore({ productRoot, snapshot, steps, env: options.env, imports: [imports], portableImports: true });
-  return { schemaVersion: VERIFICATION_REUSE_BUNDLE_SCHEMA, records: steps.map(step => store.lookup(step)).filter(Boolean) };
-}
-/** Shared portable source phase: no SDK preparation, package build or peer installation. */
-export async function verifyPluginSourcePhase(group: 'unit' | 'integration', options: { pluginRoot?: string; env?: NodeJS.ProcessEnv; diagnosticsDirectory?: string } = {}) {
-  const pluginRoot = options.pluginRoot ?? root, productRoot = resolve(pluginRoot, '../buildr');
-  const environment = options.env ?? process.env, diagnosticsDirectory = options.diagnosticsDirectory;
-  const { collectVerificationReuseSnapshot, createVerificationReuseStore } = await import(new URL('../../buildr/test/verification/verification-reuse.ts', import.meta.url).href);
+/** Shared SDK-independent unit result from the current candidate round. */
+export async function collectPluginSourceVerificationBundle(options: { env?: NodeJS.ProcessEnv; imports?: any } = {}) {
   const { candidateSourceImportFromEnvironment } = await import(new URL('../../buildr/test/verification/candidate-source-reuse.ts', import.meta.url).href);
+  const { assertCandidateRound, emptyCandidateRound } = await import(new URL('../../buildr/test/verification/candidate-round.ts', import.meta.url).href);
+  const environment = options.env ?? process.env;
+  const roundId = environment.BUILDR_VERIFICATION_ROUND ?? environment.BUILDR_SELECTION_ID;
+  const log = options.imports ?? (environment.BUILDR_SOURCE_VERIFICATION ? candidateSourceImportFromEnvironment(environment) : emptyCandidateRound(roundId ?? 'standalone'));
+  assertCandidateRound(log, roundId);
+  return { ...log, records: log.records.filter((record: any) => PLUGIN_SOURCE_PHASE_IDS.includes(record.identity.stepId) && record.result.status === 'passed') };
+}
+
+export async function verifyPluginSourcePhase(group: 'unit' | 'integration', options: { pluginRoot?: string; env?: NodeJS.ProcessEnv; diagnosticsDirectory?: string; round?: any } = {}) {
+  const pluginRoot = options.pluginRoot ?? root, productRoot = resolve(pluginRoot, '../buildr');
+  const environment = options.env ?? process.env;
+  const { candidateSourceImportFromEnvironment } = await import(new URL('../../buildr/test/verification/candidate-source-reuse.ts', import.meta.url).href);
+  const { createCandidateRoundExecution } = await import(new URL('../../buildr/test/verification/candidate-round.ts', import.meta.url).href);
+  const { reusedVerificationResult } = await import(new URL('../../buildr/test/verification/verification-reuse.ts', import.meta.url).href);
   const { runVerificationStep } = await import(new URL('../../buildr/test/verification/timing/parallel-runner.ts', import.meta.url).href);
-  const imported = candidateSourceImportFromEnvironment(environment);
-  const files = pluginSourcePhaseFiles(group, pluginRoot);
-  const step = pluginSourcePhaseStep(group, files, environment);
-  const snapshot = collectVerificationReuseSnapshot({ productRoot, env: environment, steps: [] });
-  const store = step.reuse ? createVerificationReuseStore({ productRoot, snapshot, steps: [step], env: environment, imports: [imported], portableImports: true }) : null;
-  const reused = environment.BUILDR_VERIFICATION_FORCE === '1' ? null : store?.lookup(step);
-  if (reused) {
-    const phase = { ...reused.result, id: step.id, durationMs: 0, disposition: 'reused', reusedFrom: { key: reused.identity.key, origin: reused.origin, environment: reused.environment, durationMs: reused.result.durationMs } };
-    const proof = { productRoot, step, store, record: reused, snapshot, phase };
-    await assertPluginSourcePhaseProof({ ...proof, current: snapshot });
-    console.error(`[dsh-source-phase] ${group} reused`); return { phase, proof };
-  }
+  const files = pluginSourcePhaseFiles(group, pluginRoot), step = { ...pluginSourcePhaseStep(group, files, environment), platformScope: { kind: 'common' } };
+  const imported = environment.BUILDR_SOURCE_VERIFICATION ? candidateSourceImportFromEnvironment(environment) : undefined;
+  const round = group === 'unit' ? options.round ?? (imported ? { roundId: imported.roundId, imports: imported } : undefined) : undefined;
+  const execution = createCandidateRoundExecution({ steps: [step] }, { productRoot, round });
+  const prior = execution?.hits.get(step.id);
+  if (prior) { const phase = reusedVerificationResult(prior); console.error(`[dsh-source-phase] ${group} retained from this round`); return { phase, proof: null, log: execution.finish() }; }
   console.error(`[dsh-source-phase] ${group} started`);
   const startedAt = new Date().toISOString();
-  const result = await runVerificationStep({ name: step.id, command: process.execPath, args: ['--test', ...step.executor.args, ...files], cwd: pluginRoot, env: environment, diagnosticsDirectory });
+  const result = await runVerificationStep({ name: step.id, command: process.execPath, args: ['--test', ...step.executor.args, ...files], cwd: pluginRoot, env: environment, diagnosticsDirectory: options.diagnosticsDirectory });
   if (result.status !== 'passed') { if (result.stdout) process.stdout.write(result.stdout); if (result.stderr) process.stderr.write(result.stderr); }
-  store?.stage(step, result, { kind: environment.GITHUB_RUN_ID ? 'ci' : 'local', runId: environment.GITHUB_RUN_ID ?? `dsh-${process.pid}-${Date.now()}`, sourceCommit: snapshot.sourceCommit, startedAt, finishedAt: new Date().toISOString() });
-  const after = store ? collectVerificationReuseSnapshot({ productRoot, env: environment, steps: [] }) : null;
-  const committed = store?.commit(after!, result.processCleanup?.status === 'clean');
-  const phase = { id: step.id, status: result.status, exitCode: result.exitCode, childOutcome: result.childOutcome, childExitCode: result.childExitCode, childSignal: result.childSignal,
-    diagnostics: { stdoutPath: result.stdoutPath, stderrPath: result.stderrPath }, disposition: 'executed', durationMs: result.durationMs, startedAt, finishedAt: new Date().toISOString(), environment: snapshot.environment };
-  if (result.status !== 'passed') throw new Error(`Plugin ${group} verification failed (${result.exitCode}).`);
-  if (!store) return { phase, proof: null };
-  const proof = { productRoot, step, store, record: committed!.records.find((record: any) => record.identity.stepId === step.id), snapshot, phase, fresh: true };
-  await assertPluginSourcePhaseProof({ ...proof, current: after }); return { phase, proof };
+  const phase = { ...result, id: step.id, disposition: 'executed', startedAt, finishedAt: new Date().toISOString() };
+  execution?.record(phase);
+  if (result.status !== 'passed') throw Object.assign(new Error(`Plugin ${group} verification failed (${result.exitCode}).`), { sourcePhase: phase });
+  return { phase, proof: null, log: execution?.finish() };
 }
 /** Transport the archive already consumed by the pair check, never run a second pack. */
 export function writeVerifiedPluginCandidate(input: { output: string; tarball: string; version: string; sourceCommit: string; sourceTree: string;
@@ -122,7 +93,6 @@ export function writeVerifiedPluginCandidate(input: { output: string; tarball: s
 }
 export async function verifyAll(args = process.argv.slice(2)) {
 const request = parseVerificationInputs(args), sdk = request.sourceSdk, sdkReceipt = validatePreparedSourceSdk(sdk, root);
-const { collectVerificationReuseSnapshot } = await import(new URL('../../buildr/test/verification/verification-reuse.ts', import.meta.url).href);
 const verificationSource = captureVerificationSource(root);
 const bundles = mkdtempSync(join(ownedBuildRoot(root), 'dsh-plugin-full-'));
 const peer = request.peerInput ? prepareBuildrPeer({ artifactManifest: request.peerInput, npmCli: request.npmCli, ownedRoot: bundles }) : readPreparedBuildrPeer(request.peerManifest!);
@@ -139,10 +109,9 @@ run('tools/build-plugin.ts', '--dev', '--source-sdk', sdk, '--output', join(bund
 run('tools/build-composition.ts', '--source-sdk', sdk, '--entry', join(bundles, 'dsh-plugin'), '--output', join(bundles, 'composition'));
 run('tools/build-composition.ts', '--source-sdk', sdk, '--entry', join(bundles, 'dsh-plugin-dev'), '--output', join(bundles, 'composition-dev'));
 const sourcePhases: any[] = [];
-const sourceProofs: any[] = [];
 for (const group of ['unit', 'integration'] as const) {
-  const { phase, proof } = await verifyPluginSourcePhase(group, { env: environment, diagnosticsDirectory: bundles });
-  sourcePhases.push(phase); if (proof) sourceProofs.push(proof);
+  const { phase } = await verifyPluginSourcePhase(group, { env: environment, diagnosticsDirectory: bundles });
+  sourcePhases.push(phase);
 }
 console.error('[dsh-source-phase] peer-gateway started');
 execFileSync(process.execPath, ['--test', ...PLUGIN_PEER_PHASE_FILES], { cwd: root, stdio: 'inherit', env: environment, shell: false });
@@ -160,8 +129,6 @@ const sourceTree = execFileSync('git', ['rev-parse', `${sourceCommit}:projects/p
 const consumer = { ...artifactFromTarball(bytes, { origin: 'candidate', packageName: '@buildr-ai/buildr-dsh-plugin', version: metadata.version, integrity: rows[0].integrity, sourceCommit }), sourceTree };
 const input = readArtifactInput(raw), pair = verifyBuildrPluginPair({ consumer: { artifact: consumer, tarball }, provider: { artifact: input.artifact, tarball: input.tarball }, npmCli: request.npmCli });
 if (pair.status !== 'passed') throw new Error(`Real plugin peer verification blocked: ${pair.diagnostic ?? 'feature failed'}`);
-const current = collectVerificationReuseSnapshot({ productRoot: resolve(root, '../buildr'), env: environment, steps: [] });
-for (const proof of sourceProofs) await assertPluginSourcePhaseProof({ ...proof, current });
 if (captureVerificationSource(root).contentSha256 !== verificationSource.contentSha256) throw new Error('验证期间插件来源内容发生变化；本次结果不能绑定其他来源。');
 const sourceSdk = { baseline: sdkReceipt.baseline, manifestSha256: sdkReceipt.sourceManifest.sha256, patchSha256: sdkReceipt.patchSha256, contracts: sdkReceipt.contracts };
 if (request.candidateOutput) {

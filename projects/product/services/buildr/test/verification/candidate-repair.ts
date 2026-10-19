@@ -46,8 +46,7 @@ export function createCandidateRepairPlan(input: {
   if (input.originalRun.head_sha !== productSource) throw new Error('Candidate repair must preserve its original workflow source.');
   const binding = createCandidateSourceBinding(input.repo, productSource, input.verificationSource);
   createCandidateSourceBinding(input.repo, productSource, input.originalRun.head_sha);
-  const sharedInputs = options.inputIdentity ? null : createCandidateCheckInputReader(input.repo);
-  const inputs = options.inputIdentity ?? sharedInputs!;
+  const inputs = options.inputIdentity ?? createCandidateCheckInputReader(input.repo);
   const byId = new Map<string, any>();
   for (const item of input.evidence) {
     if (item?.schemaVersion !== CANDIDATE_CI_EVIDENCE_SCHEMA || byId.has(item.id)) throw new Error('Candidate repair evidence schema or uniqueness differs.');
@@ -81,26 +80,13 @@ export function createCandidateRepairPlan(input: {
       const localSource = !descriptor.requiresArtifact && !descriptor.producesArtifact
         ? options.sourceRecords?.find(record => record.identity?.stepId === step.id && options.validateSourceRecord?.(record, step.id, descriptor.runner)) : null;
       const result = original?.results?.find((value: any) => value.id === step.id);
-      const priorIdentity = original?.checkInputs?.[step.id] ?? null;
-      const definition = candidateProofDefinition(step);
-      const priorSource = original?.verificationSource ?? productSource;
-      // Authenticate the original v2 digest before comparing both immutable
-      // snapshots under today's shared input policy. Keep the old record intact.
-      const matchingInputs = priorIdentity === currentIdentity || Boolean(sharedInputs && priorIdentity
-        && sharedInputs.matches(priorSource, definition, priorIdentity) && inputs(priorSource, definition) === currentIdentity);
       const producer = descriptor.producesArtifact && step.id === 'candidate-tarball';
-      const complete = original?.status === 'passed' || original?.cleanupClean === true;
-      const freshGit = Boolean(step.reuse?.git);
-      const actualHost = descriptor.kind !== 'host-node' || Boolean(validCandidateExecutionEnvironment(original, original?.checkInputs)
-        && original.executionEnvironment.preparation === (descriptor.id === 'host-minimum-macos' ? 'publisher' : 'host')
-        && original.executionEnvironment.dependencyInputsIdentity === candidateDependencyInputsIdentity(path.join(input.repo, 'projects/product/services/buildr'), input.verificationSource,
-          descriptor.id === 'host-minimum-macos' ? 'publisher' : 'host')
-        && (descriptor.expectation === 'minimum' ? original.runner.nodeVersion === '24.15.0' : /^24\.\d+\.\d+$/u.test(original.runner.nodeVersion)));
-      const reusable = Boolean(localSource) || actualHost && !freshGit && platformMatches && packageMatches && complete && goodResult(result)
-        && (producer || matchingInputs);
-      const reason = localSource ? 'matching-local-source-proof' : !actualHost ? 'actual-host-environment-required' : freshGit ? 'current-git-state-required' : !original ? 'missing-evidence' : !platformMatches ? 'platform-or-tuple-changed'
-        : !packageMatches ? 'artifact-changed' : !complete || !goodResult(result) ? 'prior-check-not-passed'
-          : !producer && !matchingInputs ? 'check-inputs-changed' : producer ? 'original-package-preserved' : 'matching-complete-proof';
+      const actualHost = descriptor.kind !== 'host-node' || Boolean(descriptor.expectation === 'minimum'
+        ? original?.runner?.nodeVersion === '24.15.0' : /^24\.\d+\.\d+$/u.test(original?.runner?.nodeVersion));
+      const reusable = Boolean(localSource) || actualHost && platformMatches && packageMatches && goodResult(result);
+      const reason = localSource ? 'passed-in-this-round' : !original ? 'not-run-in-this-round'
+        : !actualHost || !platformMatches ? 'platform-or-tuple-not-covered' : !packageMatches ? 'artifact-changed'
+          : !goodResult(result) ? 'prior-check-not-passed' : producer ? 'original-package-preserved' : 'passed-in-this-round';
       const originalResult = localSource ? { ...localSource.result, sourceRecord: localSource } : result?.candidateProof?.originalResult ?? (result ? { ...result, durationMs: result.reusedFrom?.durationMs ?? result.durationMs } : null);
       const origin = localSource ? { ...localSource.origin, runner: localSource.environment } : result?.candidateProof?.origin ?? (result?.sourceRecord ? { ...result.sourceRecord.origin, runner: result.sourceRecord.environment }
         : { runId: String(input.originalRun.id), runAttempt: Number(original?.workflow?.runAttempt),
