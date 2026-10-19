@@ -118,6 +118,8 @@ authority 冲突、授权不明、实际 Git 操作所需的 repository set 不�
 
 面向用户说明分流结论、实际影响与下一步；需要结构化交接时，读取[交接字段](references/structured-handoff.md)。
 
+本轮已授权交付实际完成、适用检查已通过且没有后续已授权动作时，答复末尾用一句话说明可通过"收尾"完成提交、集成与资源善后；用户继续提出新要求时直接接续，不把引导变成重复追问或完成门禁。
+
 ## Guardrails
 
 - 不为过去事实补造 Change 历史，不把 current knowledge 变成第二套规范。
