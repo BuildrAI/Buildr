@@ -127,6 +127,8 @@ OpenSpec 只通过 `AGENT_ASSETS_OPENSPEC_SUPPORT` 获取所需资产能力，�
 
 前端不复制后端所有层次。[`features/`](../../services/buildr-web/src/features/) 内的业务客户端、请求状态、组件和页面按需要建立；共享传输在 [`api/client.ts`](../../services/buildr-web/src/api/client.ts)，协议类型来自生成目录。应用壳与功能各自持有状态，不互相复制。
 
+后台代码观察的[跨页面共享等待](../../services/buildr-web/src/features/code/api/shared-source-control-watch.ts)在浏览器支持相关能力时，使用浏览器跨页面互斥锁（Web Locks）和同源广播通道（BroadcastChannel），让同一工作空间（Workspace）只占用一个等待连接；仅相同观察游标（Cursor）共享通知，关闭持有页面后由其他页面接续。通用请求在发出前禁用浏览器缓存（Browser Cache），避免当前读取在缓存入口排队。
+
 - **共同展示与入口隔离**：[`AppShellView.tsx`](../../services/buildr-web/src/app/AppShellView.tsx) 和 [`AppNavigationItem.tsx`](../../services/buildr-web/src/app/AppNavigationItem.tsx) 提供展示；正式入口接入真实数据，已授权原型可复用展示并注入模拟数据，不能调用真实写入。
 - **连续阅读与当前事实**：已访问页面保留筛选、滚动和局部输入；[项目资料阅读钩子（Hook）](../../services/buildr-web/src/lib/useMarkdownDocumentViewer.ts)只接受当前请求世代，重置、切换项目和卸载使先前读取失效，历史从实际初始文档开始。本地存储（localStorage）只保存偏好，不可用时不应阻断工作；保留页面不等于业务数据最新，保存仍需版本检查。
 - **共享内容区与来源身份**：[`WorkspacePages.tsx`](../../services/buildr-web/src/app/WorkspacePages.tsx)组合保留路由和 [`WorkspacePaneHost.tsx`](../../services/buildr-web/src/app/WorkspacePaneHost.tsx)；后者以页面来源 `ownerPath` 与局部对象键区分右侧标签，滚动身份则采用页面来源和真实资料 `identity`。[`WorkspaceStage.tsx`](../../services/buildr-web/src/components/WorkspaceStage.tsx)将原领域内容传送到固定目标，宿主在同一槽位挂载目标并切换显示，不复制数据或编辑器。菜单请求带递增序号，同一路径仍能恢复中间页面，右侧资料选择保持独立。

@@ -1,4 +1,5 @@
 import { api } from '../../../api';
+import { createSharedSourceControlWatch } from './shared-source-control-watch.ts';
 import { beginSourceControlFetch, beginSourceControlSync, notifySourceControlChange } from '../source-control-events.ts';
 import type { CodeRepositoriesRepositories, CodeDirectoryDirectory, CodeFileFile, CodeSearchSearch, CodeSourceControlSourceControl, CodeHistoryHistory, CodeCommitCommit, CodeDiffDiff, CodeSourceFileSourceFile, CodeBranchesBranches, CodeAuthorsAuthors, CodeBranchSwitchBranchSwitch, CodeFetchFetch, CodeSyncContextSyncContext, CodeSyncSync, CodeEditorFileEditorFile, CodeSaveFileSaveFile } from '../../../../build/generated/code-http-dto';
 export type CodeSourceControlInput = { observation?: 'shared'; repositoryId?: string; worktreeId?: string; taskId?: string; commitHash?: string; path?: string; area?: 'unstaged' | 'staged' | 'untracked' | 'commit'; branch?: string; authorEmail?: string; query?: string; limit?: number; cursor?: string; expectedRevision?: string; page?: number; line?: number; matchQuery?: string };
@@ -44,7 +45,7 @@ export const codeApi = {
   search:(id:string,input:CodeReadInput,signal?:AbortSignal)=>request<CodeSearch>(id,'search',input,signal),
   sourceControlInventory:(id:string,input:{taskId?:string}={},signal?:AbortSignal)=>request<CodeSourceControlResponse>(id,'source-control-inventory',input,signal),
   sourceControl:(id:string,input:CodeSourceControlInput={},signal?:AbortSignal)=>request<CodeSourceControlResponse>(id,'source-control',input,signal),
-  watchSourceControl:(id:string,cursor?:string,signal?:AbortSignal)=>request<CodeSourceControlWatchResponse>(id,'source-control-watch',{cursor},signal),
+  watchSourceControl:createSharedSourceControlWatch((id,cursor,signal)=>request<CodeSourceControlWatchResponse>(id,'source-control-watch',{cursor},signal)),
   history:(id:string,input:CodeSourceControlInput,signal?:AbortSignal)=>request<CodeHistoryResponse>(id,'history',input,signal),
   commit:(id:string,input:CodeSourceControlInput,signal?:AbortSignal)=>request<CodeCommitResponse>(id,'commit',input,signal),
   diff:(id:string,input:CodeSourceControlInput,signal?:AbortSignal)=>request<CodeDiffResponse>(id,'diff',input,signal),

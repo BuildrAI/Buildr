@@ -18,6 +18,7 @@ test('DELETE without a body still requires the same local write session', async 
   assert.equal(requests[0].url, '/api/v1/workspaces/space-a/workbench/preferences/pinned-task/task-a');
   assert.equal(requests[0].init.headers.get('x-buildr-session'), 'local-session');
   await client('/api/v1/tasks');
+  assert.equal(requests[1].init.cache, 'no-store', 'live reads bypass the browser cache lock before reaching the server');
   assert.equal(headersRead, 1, 'read operations do not acquire a write session');
 });
 

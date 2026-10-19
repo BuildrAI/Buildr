@@ -34,7 +34,9 @@ export function createApiClient(options: {
         if (!headers.has(key)) headers.set(key, value);
       }
     }
-    const response = await fetch(scopedResource(resource), { ...init, headers });
+    // JSON endpoints already return no-store. Bypass the browser's cache entry
+    // lock before sending too, especially for concurrent observation requests.
+    const response = await fetch(scopedResource(resource), { cache: 'no-store', ...init, headers });
     const body = await response.json() as { error?: { message?: string; code?: string; details?: unknown } };
     if (!response.ok) {
       const error: ApiError = new Error(body.error?.message || 'Buildr 请求失败。');
