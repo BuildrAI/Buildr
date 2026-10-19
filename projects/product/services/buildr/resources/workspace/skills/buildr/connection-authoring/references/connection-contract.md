@@ -134,7 +134,9 @@ Buildr 在 `connections/instances/` 管理一实例一文件。新建及保存�
 
 更新先读 `get --connection <id> --json`，提交完整当前绑定、配置及名称，使用 `update --connection <id> --file <input.json>`。`expected.teamRevision` 和 `expected.definitionRevision` 取刚读值；团队认证用 `intent: keep` 保持、`replace` 提交完整组、`remove` 移除。账号、认证目标或接收方变化不能仅保持旧组。未知或冲突后重读，不用旧输入盲目重试。
 
-运行先读取所选实例，再使用 `run --connection <完整id> --expected-revision <刚读revision> --program <程序编号> -- <专业参数>`。交付前在隔离现场创建两条同类同目标、不同 `id` 的实例，分别调用并核对上下文；用虚构配置及认证确认没有串用，不把认证值输出作证据。
+运行先读取所选实例，再使用 `run --connection <完整id> --expected-revision <刚读revision> --program <程序编号> -- <专业参数>`。需要等待外部状态变化时，由专业程序内部进行有界只读查询，仅在语义状态变化、失败、超时或完成时返回精简结果；可在 `--` 前通过 `--timeout-ms <10..300000>` 选择宿主运行时限，省略仍为60000毫秒。专业等待窗口应短于宿主时限，为单次请求、清理和输出预留余量，并通过准确对象身份及受限本机结果支持接续。宿主继续在程序退出后统一遮蔽完整输出，不把等待超时解释为外部业务失败，不自动再次执行外部写入。
+
+交付前在隔离现场创建两条同类同目标、不同 `id` 的实例，分别调用并核对上下文；用虚构配置及认证确认没有串用，不把认证值输出作证据。
 
 个人保存使用 `auth set --connection <id> --file <auth.json>`，输入 `{ "values": {"username": "EXAMPLE_USER", "password": "EXAMPLE_PASSWORD"}, "expected": {"teamRevision": "<observed-team-revision>", "localRevision": "<observed-local-revision>", "definitionRevision": "<observed-definition-revision>"} }`。显式恢复团队使用 `auth use-team`，提交同一 `expected`，不含 `values`；不存在个人组的观察值为 `absent`。个人组存在但不完整或失效时不自动恢复团队。
 

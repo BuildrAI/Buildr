@@ -35,6 +35,11 @@ fs.writeFileSync(file, JSON.stringify({ values: { username: 'personal-fixture', 
 assert.equal(command(['connection-skill', 'auth', 'set', '--connection', 'smoke-nacos', '--file', file]).instance.authentication.source, 'personal');
 const readAgain = command(['connection-skill', 'get', '--connection', 'smoke-nacos']).instance;
 assert.equal(readAgain.authentication.source, 'personal'); assert.ok(!JSON.stringify(readAgain).includes('local-fixture-password'));
+const bounded = spawnSync(process.execPath, [cli, 'connection-skill', 'run', '--connection', readAgain.id, '--expected-revision', readAgain.revision, '--timeout-ms', '300000', '--target', root, '--json', '--', 'help'], { input: '', encoding: 'utf8', env: process.env, timeout: 20_000 });
+assert.equal(bounded.status, 0, bounded.stderr || bounded.stdout);
+const boundedResult = JSON.parse(bounded.stdout);
+assert.equal(boundedResult.status, 'exited'); assert.equal(boundedResult.exitCode, 0); assert.match(boundedResult.stdout, /publish/);
+assert.ok(!bounded.stdout.includes('local-fixture-password'));
 fs.writeFileSync(file, JSON.stringify({ id: 'smoke-copy', name: 'Local transfer only', binding: readAgain.binding, config: readAgain.config, authentication: { intent: 'remove' }, expected: { teamRevision: 'absent', definitionRevision: readAgain.definitionRevision } }));
 const copiedTarget = command(['connection-skill', 'create', '--file', file]).instance;
 const expected = (view: any) => ({ teamRevision: view.teamRevision, definitionRevision: view.definitionRevision, localRevision: view.localRevision });
@@ -108,4 +113,4 @@ const uninstall = spawnSync(process.execPath, [cli, 'builtin', 'uninstall', 'nac
 assert.equal(uninstall.status, 0, uninstall.stderr || uninstall.stdout); assert.match(uninstall.stdout, /smoke-nacos/);
 assert.ok(fs.existsSync(path.join(root, created.instance.sourcePath)));
 assert.equal(command(['connection-skill', 'get', '--connection', 'smoke-nacos']).instance.authentication.personal.present, true);
-console.log(JSON.stringify({ status: 'passed', checks: ['installed source declarations', 'CLI private persistence across processes', 'professional help', 'explicit dependency check', 'old path separate', 'core rule distribution', 'replacement impact without capability declarations', 'lifecycle impact and preserved instances'], externalSystems: 'not-contacted' }));
+console.log(JSON.stringify({ status: 'passed', checks: ['installed source declarations', 'CLI private persistence across processes', 'professional help', 'bounded run through actual CLI and professional program', 'explicit dependency check', 'old path separate', 'core rule distribution', 'replacement impact without capability declarations', 'lifecycle impact and preserved instances'], externalSystems: 'not-contacted' }));
