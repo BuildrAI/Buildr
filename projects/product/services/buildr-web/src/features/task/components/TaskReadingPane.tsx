@@ -57,7 +57,14 @@ export function TaskReadingPane({ target, task, context, artifacts, evidence, wo
   if (target.kind === 'review') {
     const records = reviewRecords(evidence.reviewData?.slots[target.reviewType]);
     const entry = target.digest ? records.find(item => item.resultDigest === target.digest) : records.at(-1);
-    if (!entry) return evidence.reviewError ? <Alert type="warning" message={evidence.reviewError} /> : <p className="task-node-empty">暂无审查记录。</p>;
+    if (!entry) {
+      if (evidence.reviewError) return <Alert type="warning" message={evidence.reviewError} />;
+      const checkKey = target.reviewType === 'planning' ? 'planning-review' : 'implementation-review';
+      const conclusion = context?.checks?.find(item => item.check === checkKey);
+      return conclusion?.status === 'not-applicable'
+        ? <article className="task-reader"><div className="task-report-title"><h2>{target.title}</h2><Tag>不适用</Tag></div><p className="task-reader-conclusion">{conclusion.reason}</p><p className="task-report-applicability">这是登记的适用性结论，不替代真实审查结果。</p></article>
+        : <p className="task-node-empty">{conclusion?.status === 'needed' ? `需要${target.title}，尚未执行。` : '尚未执行，暂无审查记录。'}</p>;
+    }
     const result = entry.result;
     const latest = reviewRecords(evidence.reviewData?.slots[target.reviewType]).at(-1)?.resultDigest === entry.resultDigest;
     return <article className="task-reader" id="task-review-result">
@@ -73,7 +80,12 @@ export function TaskReadingPane({ target, task, context, artifacts, evidence, wo
     const slot = evidence.verificationData?.slot;
     const report = slot?.report;
     if (evidence.verificationError) return <Alert type="warning" message={evidence.verificationError} />;
-    if (!report) return <p className="task-node-empty">尚未保存验证结果。</p>;
+    if (!report) {
+      const conclusion = context?.checks?.find(item => item.check === 'verification');
+      return conclusion?.status === 'not-applicable'
+        ? <article className="task-reader"><div className="task-report-title"><h2>开发验证</h2><Tag>不适用</Tag></div><p className="task-reader-conclusion">{conclusion.reason}</p><p className="task-report-applicability">这是登记的适用性结论，不替代真实验证结果。</p></article>
+        : <p className="task-node-empty">{conclusion?.status === 'needed' ? '需要开发验证，尚未登记报告。' : '尚未保存验证结果。'}</p>;
+    }
     return <article className="task-reader" id="task-verification-result">
       <div className="task-report-title">{!inDrawer && <h2>开发验证</h2>}<Tag color={report.conclusion.outcome === 'passed' ? 'success' : report.conclusion.outcome === 'not-passed' ? 'error' : 'warning'}>{{ passed: '保存结论：通过', 'not-passed': '保存结论：未通过', incomplete: '保存结论：未完成' }[report.conclusion.outcome]}</Tag></div><p className="task-report-meta">最近一次验证 · {formatDateTime(report.completedAt)}</p>
       <p className="task-reader-conclusion">{report.conclusion.summary}</p>
