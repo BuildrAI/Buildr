@@ -9,6 +9,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { publisherNpmCli } from '../../../../projects/product/services/buildr/tools/verification/candidate-environment.ts';
 import { assertReleaseExecutorSource } from '../release-executor-recovery.ts';
 import { requestReleaseJson } from '../release-observation.ts';
+import { waitForRegistryPublication } from '../registry-version-state.ts';
 import { containsCredentialMaterial } from '../release-authority.ts';
 import { artifactFromTarball, observePublishedPackageArtifact } from '../package-artifact-observation.ts';
 import { evaluatePackageCompatibility, type CompatibilityArtifact } from '../package-compatibility.ts';
@@ -26,6 +27,7 @@ const serviceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../.
 const repositoryRoot = resolve(serviceRoot, '../../../..');
 interface SourceState { executionCommit?: string; sourceCommit: string; sourceTree: string; version: string; workflowSha256: string; sourceSdk: SourceSdkIdentity }
 interface RegistryState { published: boolean; integrity?: string }
+interface PublishCommandOutcome { status: number | null; signal?: string | null; timedOut?: boolean }
 interface AuthorityEvidence { status: 'ready'; expected: typeof PLUGIN_PUBLISH_AUTHORITY; workflowSha256: string; npm: { package: string; tokenType: string; created: string; expires: string } }
 export interface PublicationJournal {
   schemaVersion: typeof PUBLICATION_SCHEMA;
@@ -33,13 +35,14 @@ export interface PublicationJournal {
   attempted: boolean; status: 'running' | 'passed' | 'blocked'; action: 'publishing' | 'published' | 'reused' | 'readback-required' | 'blocked';
   publishedObserved: boolean;
   registry: 'present' | 'absent' | 'unknown'; authority?: AuthorityEvidence; code?: string; observedAt: string;
+  command?: { exitCode: number | null; signal?: string | null; timedOut?: boolean };
   request: { runId: number; runAttempt: number; workflowRef: string };
 }
 export interface PublishDependencies {
   env?: NodeJS.ProcessEnv; now?: () => number; fetchImpl?: typeof fetch;
   source?: () => SourceState; authority?: (source: SourceState) => Promise<AuthorityEvidence>;
   registry?: (candidate: ReleaseCandidate) => Promise<RegistryState>;
-  publish?: (tarball: string, candidate: ReleaseCandidate) => Promise<{ status: number }>;
+  publish?: (tarball: string, candidate: ReleaseCandidate) => Promise<PublishCommandOutcome>;
   observePeer?: typeof observePublishedPackageArtifact; verifyPair?: typeof verifyBuildrPluginPair;
   sleep?: (milliseconds: number) => Promise<void>; registryWait?: { attempts?: number; delayMs?: number };
   mainProof?: () => PluginCandidateMain;
@@ -113,7 +116,7 @@ export function isolatedPluginNpmEnvironment(env: NodeJS.ProcessEnv, configDirec
   isolated.NPM_CONFIG_CACHE = join(configDirectory, 'cache');
   return isolated;
 }
-async function publishIsolated(tarball: string, candidate: ReleaseCandidate, env: NodeJS.ProcessEnv, npmCli?: string): Promise<{ status: number }> {
+async function publishIsolated(tarball: string, candidate: ReleaseCandidate, env: NodeJS.ProcessEnv, npmCli?: string): Promise<PublishCommandOutcome> {
   const cli = npmCli ?? publisherNpmCli();
   if (!isAbsolute(cli) || !lstatSync(cli).isFile()) failure('plugin-publisher-npm-missing');
   const directory = mkdtempSync(join(tmpdir(), 'buildr-dsh-npm-publish-'));
@@ -128,7 +131,7 @@ async function publishIsolated(tarball: string, candidate: ReleaseCandidate, env
       cwd: directory, env: isolatedPluginNpmEnvironment(env, directory), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000,
     });
     // npm output may contain sensitive values. Only retain its numeric outcome.
-    return { status: result.status ?? 1 };
+    return { status: result.status, signal: result.signal, timedOut: (result.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT' };
   } finally { rmSync(directory, { recursive: true }); }
 }
 async function registryState(candidate: ReleaseCandidate, fetchImpl?: typeof fetch): Promise<RegistryState> {
@@ -241,21 +244,23 @@ export async function publishPluginCandidate(options: { manifestPath: string; ve
     if (!isDeepStrictEqual(currentSource, source)) failure('plugin-publish-source-drift');
     await verifyPluginPublishCompatibility({ candidate: refreshed, verificationPath: options.verificationPath, npmCli: options.npmCli }, dependencies);
     journal.attempted = true; journal.status = 'running'; journal.action = 'publishing'; save();
-    try { await (dependencies.publish ?? ((tarball: string, candidate: ReleaseCandidate) => publishIsolated(tarball, candidate, env, options.npmCli)))(artifact.tarball, manifest); }
-    catch { /* A lost response is still an attempted write. Only readback can establish its outcome. */ }
-    const attempts = dependencies.registryWait?.attempts ?? 12, delayMs = dependencies.registryWait?.delayMs ?? 5000;
-    if (!Number.isSafeInteger(attempts) || attempts < 1 || attempts > 24 || !Number.isFinite(delayMs) || delayMs < 0 || delayMs > 20_000) failure('plugin-registry-wait-invalid');
-    for (let attempt = 0; attempt < attempts; attempt++) {
-      let after: RegistryState | undefined;
-      try { after = await read(manifest); } catch { journal.registry = 'unknown'; }
-      if (after?.published) {
-        journal.registry = 'present';
-        if (after.integrity !== manifest.integrity) failure('plugin-registry-integrity-conflict');
-        journal.publishedObserved = true;
-        journal.status = 'passed'; journal.action = 'published'; return save();
-      }
-      if (after) journal.registry = 'absent';
-      if (attempt + 1 < attempts) await (dependencies.sleep ?? (ms => new Promise(resolve => setTimeout(resolve, ms))))(delayMs);
+    try {
+      const command = await (dependencies.publish ?? ((tarball: string, candidate: ReleaseCandidate) => publishIsolated(tarball, candidate, env, options.npmCli)))(artifact.tarball, manifest);
+      journal.command = { exitCode: Number.isInteger(command.status) ? command.status : null,
+        ...(command.signal === null || /^SIG[A-Z0-9]{1,16}$/u.test(command.signal ?? '') ? { signal: command.signal } : {}),
+        ...(typeof command.timedOut === 'boolean' ? { timedOut: command.timedOut } : {}) };
+    } catch { journal.command = { exitCode: null }; }
+    process.stdout.write(`[release] npm-publish ${JSON.stringify(journal.command)}\n`);
+    save();
+    const after = await waitForRegistryPublication(async () => {
+      const state = await read(manifest);
+      if (state.published && state.integrity !== manifest.integrity) failure('plugin-registry-integrity-conflict');
+      journal.registry = state.published ? 'present' : 'absent';
+      return state;
+    }, { ...dependencies.registryWait, sleep: dependencies.sleep, now: dependencies.now });
+    if (after.published) {
+      journal.publishedObserved = true;
+      journal.status = 'passed'; journal.action = 'published'; return save();
     }
     journal.status = 'blocked'; journal.action = 'readback-required'; journal.code = 'plugin-publication-attempt-unconfirmed'; return save();
   } catch (error: any) {

@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { ensureReleaseTag } from '../../../../../../skills/buildr-release/scripts/release-tag-ensure.ts';
 import { observeUnpublishedRelease, requestReleaseJson } from '../../../../../../skills/buildr-release/scripts/release-observation.ts';
-import { registryVersionState, waitForRegistryRelease } from '../../../../../../skills/buildr-release/scripts/registry-version-state.ts';
+import { registryVersionState, waitForRegistryRelease, waitForRegistryPublication } from '../../../../../../skills/buildr-release/scripts/registry-version-state.ts';
 import { ensureGitHubRelease } from '../../../../../../skills/buildr-release/scripts/github-release-ensure.ts';
 import { readCandidateCiPreparationFiles } from '../verification/candidate-ci-evidence.ts';
 
@@ -147,6 +147,21 @@ test('network deadlines and retry limits apply to actual HTTP requests', async t
   await assert.rejects(requestReleaseJson(api, { timeoutMs: 40, attempts: 2, sleep: async () => {} }), { code: 'release-request-timeout' });
   assert.equal(requests, 2);
   assert.ok(Date.now() - started < 2000);
+});
+
+test('publication wait tolerates visibility later than the old plugin window and logs every observation', async () => {
+  let elapsed = 0, reads = 0;
+  const observations: any[] = [];
+  const result = await waitForRegistryPublication(async () => { reads++; return { published: elapsed >= 80_000 }; }, {
+    now: () => elapsed, sleep: async (ms: number) => { elapsed += ms; }, onObservation: (value: any) => observations.push(value),
+  });
+  assert.equal(result.published, true); assert.ok(elapsed > 55_000);
+  assert.equal(observations.length, reads); assert.equal(observations.at(-1).status, 'present');
+  assert.equal(observations.at(-1).elapsedMs, elapsed);
+  const conflict = Object.assign(new Error('different bytes'), { code: 'registry-integrity-conflict' });
+  await assert.rejects(waitForRegistryPublication(async () => { throw conflict; }, {
+    sleep: () => assert.fail('a conflict cannot wait'), onObservation: () => {},
+  }), conflict);
 });
 
 test('registry integrity conflicts fail immediately without propagation retries', async t => {

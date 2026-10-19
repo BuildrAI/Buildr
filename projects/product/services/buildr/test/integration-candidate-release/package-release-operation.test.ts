@@ -364,19 +364,47 @@ test('frozen byte/context drift and unknown peer block only the next public acti
   await assert.rejects(() => continuePackageRelease({ action: 'resume' }, f.scope, f.dependencies), /different frozen context/u);
 });
 
-test('attempted plugin with exact public bytes uses one bound recovery request, never repeats its publication', async () => {
+test('attempted plugin with exact public bytes records the original failed run without another hosted request', async () => {
   const f = fixture();
   await continuePackageRelease({ action: 'publish', authorized: true }, f.scope, f.dependencies);
-  const original = f.dependencies.runPluginHostedOperation;
-  f.dependencies.runPluginHostedOperation = (input: any, deps: any) => input.pointer.runId === 202
-    ? { status: 'blocked', run: f.run('dsh-plugin', 202, 'failure'), journal: f.journal(202) } : original(input, deps);
-  f.setRecoveryJournalId(202);
+  const journal = { ...f.journal(202, 'blocked'), action: 'readback-required', code: 'plugin-publication-attempt-unconfirmed', registry: 'absent', publishedObserved: false };
+  f.dependencies.readHostedPluginCandidate = () => assert.fail('public bytes do not require downloading the candidate again');
+  f.dependencies.runPluginHostedOperation = (input: any) => {
+    assert.equal(input.pointer.runId, 202); assert.equal(input.pointer.requested, true);
+    return { status: 'blocked', run: f.run('dsh-plugin', 202, 'failure'), journal };
+  };
   const recovered = await continuePackageRelease({ action: 'resume' }, f.scope, f.dependencies);
-  assert.equal(recovered.status, 'publication-running'); assert.equal(f.counts().dispatches, 2);
-  assert.equal(f.state.packagePublications['dsh-plugin'].recoveryRunId, 202);
-  assert.deepEqual(f.state.packagePublications['dsh-plugin'].previousRunIds, [202]);
+  assert.equal(recovered.status, 'passed'); assert.equal(f.counts().dispatches, 1);
+  const publication = f.state.packagePublications['dsh-plugin'];
+  assert.equal(publication.runId, 202); assert.equal(publication.recoveryRunId, undefined);
+  assert.equal(publication.evidence.run.conclusion, 'failure'); assert.deepEqual(publication.evidence.ownerEvidence, journal);
+});
+
+test('a terminal publication still absent from the registry only waits for the original version', async () => {
+  const f = fixture();
+  await continuePackageRelease({ action: 'publish', authorized: true }, f.scope, f.dependencies);
+  const journal = { ...f.journal(202, 'blocked'), action: 'readback-required', code: 'plugin-publication-attempt-unconfirmed', registry: 'absent', publishedObserved: false };
+  f.dependencies.runPluginHostedOperation = () => ({ status: 'blocked', run: f.run('dsh-plugin', 202, 'failure'), journal });
+  f.dependencies.observePublishedPackageArtifact = async () => ({ observation: { status: 'absent' } });
+  assert.equal((await continuePackageRelease({ action: 'resume' }, f.scope, f.dependencies)).status, 'publication-readback-required');
+  assert.equal(f.counts().dispatches, 1); assert.equal(f.counts().cleanups, 0);
+  assert.equal(f.state.packagePublications['dsh-plugin'].runId, 202);
+});
+
+test('waiting for the plugin retains confirmed main evidence without querying or downloading it again', async () => {
+  const f = fixture('buildr,dsh-plugin');
+  await continuePackageRelease({ action: 'publish', authorized: true }, f.scope, f.dependencies);
+  f.dependencies.readCandidateEvidence = () => assert.fail('the completed main candidate is not downloaded for the plugin');
+  assert.equal((await continuePackageRelease({ action: 'resume' }, f.scope, f.dependencies)).status, 'publication-running');
+  const evidence = structuredClone(f.state.packagePublications.buildr.evidence);
+  f.scope.readRun = () => assert.fail('the completed main run is not queried');
+  f.dependencies.inspectHostedReleaseTransaction = () => assert.fail('the completed main evidence is not downloaded');
+  const observe = f.dependencies.observePublishedPackageArtifact;
+  f.dependencies.observePublishedPackageArtifact = (name: string, options: any) => {
+    assert.notEqual(name, 'buildr'); return observe(name, options);
+  };
   assert.equal((await continuePackageRelease({ action: 'resume' }, f.scope, f.dependencies)).status, 'passed');
-  assert.equal(f.counts().dispatches, 2);
+  assert.deepEqual(f.state.packagePublications.buildr.evidence, evidence);
 });
 
 test('unknown journal/public state cannot authorize a recovery; failed actual legacy proof remains local', async () => {
@@ -690,20 +718,14 @@ test('same-executor exchange failure retries once after explicit configuration r
   f.dependencies.observePublishedPackageArtifact = (name: string, input: any) => name === 'dsh-plugin'
     ? { observation: { status: 'present', artifact: { ...f.owned['dsh-plugin'].artifact, origin: 'registry' } }, bytes: Buffer.from('plugin') } : observe(name, input);
   f.dependencies.runPluginHostedOperation = (input: any, deps: any) => {
-    if (!input.pointer.requested) {
-      assert.equal(input.pointer.recoveryRunId, 400); assert.equal(input.pointer.recoveryRequested, true);
-      assert.ok(input.pointer.authorityRecovery); f.requests.push(input);
-      Object.assign(input.pointer, { requested: true, runId: 401 }); deps.onPointer(); return { status: 'running', run: { ...f.failed, id: 401, status: 'in_progress', conclusion: null } };
-    }
-    if (input.pointer.runId === 401) return { status: 'passed', run: { ...f.failed, id: 401, conclusion: 'success' },
-      journal: { ...attemptedJournal, status: 'passed', action: 'reused', registry: 'present', publishedObserved: true } };
+    assert.equal(input.pointer.requested, true, 'visible original bytes never dispatch another request');
     input.pointer.runId = 400; deps.onPointer(); return { status: 'blocked', run: { ...f.failed, id: 400 }, journal: attemptedJournal };
   };
-  assert.equal((await continuePackageRelease(options, f.scope, f.dependencies)).status, 'publication-running');
   assert.equal((await continuePackageRelease(options, f.scope, f.dependencies)).status, 'passed');
-  assert.equal(f.requests.length, 2); assert.deepEqual(f.state.context, before.context);
+  assert.equal(f.requests.length, 1); assert.deepEqual(f.state.context, before.context);
   assert.deepEqual(f.state.packagePublications.buildr.evidence, before.packagePublications.buildr.evidence);
-  assert.equal(f.state.packagePublications['dsh-plugin'].evidence.recoveryRunId, 400);
+  assert.equal(f.state.packagePublications['dsh-plugin'].evidence.run.id, 400);
+  assert.deepEqual(f.state.packagePublications['dsh-plugin'].evidence.ownerEvidence, attemptedJournal);
   assert.deepEqual(f.state.pluginPublicationRecoveryHistory, before.pluginPublicationRecoveryHistory);
 });
 
