@@ -109,3 +109,24 @@ test('Doctor保留未知品牌、标准适配器和宿主未确认事实', () =>
   assert.deepEqual(unspecified.agentRuntime.checkedAdapters, ['agents-standard']);
   assert.throws(() => doctorFixture().doctor({ targetRoot: '.', adapterId: 'typo' }), /Unsupported runtime adapter/);
 });
+
+test('更新CLI分别输出软件包成功与网页失败，tracks分支也保留底层原因且不改失败退出码', async (t) => {
+  const before = process.exitCode;
+  t.after(() => { process.exitCode = before; });
+  let output = '';
+  t.mock.method(process.stdout, 'write', (chunk: any) => { output += chunk; return true; });
+  const result = { status: 'updated', mode: 'npm', current: { version: '0.0.1' }, tracks: { candidate: { status: 'up-to-date', version: '0.0.2' }, stable: { status: 'absent' } }, notices: [], nextActions: ['CLI 已更新'], webUpdate: { status: 'failed', code: 'launcher_handoff_shutdown_rejected', message: 'HTTP 403' } };
+  const route = createInstallationCliContributions({ updateBuildr: async () => result }).find(value => value.key === 'update')!;
+  process.exitCode = 0;
+  await route.run(null, { argv: ['node', 'buildr', 'update', '--json'] });
+  assert.equal(JSON.parse(output).schemaVersion, 'buildr.update/v2');
+  assert.deepEqual(JSON.parse(output).webUpdate, result.webUpdate);
+  assert.equal(JSON.parse(output).status, 'updated');
+  assert.equal(process.exitCode, 0);
+  output = '';
+  await route.run(null, { argv: ['node', 'buildr', 'update'] });
+  assert.match(output, /HTTP 403/);
+  assert.match(output, /launcher_handoff_shutdown_rejected/);
+  assert.match(output, /CLI 已更新/);
+  assert.equal(process.exitCode, 0);
+});

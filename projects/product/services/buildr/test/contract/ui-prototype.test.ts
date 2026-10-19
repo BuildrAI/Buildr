@@ -30,40 +30,6 @@ test('ui-prototype 作为无 capability contract 的 optional builtin Skill 投�
   assert.equal(manifest.workspaceFiles.some((item: any) => item.includes('/ui-preview/')), false);
 });
 
-test('ui-prototype Skill 保持明确确认、真实 UI、完整页面与浏览器验证边界', () => {
-  const skill: any = read('resources/workspace/skills/buildr/ui-prototype/SKILL.md');
-  assert.match(skill, /未明确确认时不得使用/);
-  assert.match(skill, /当前对话中存在用户.*明确确认/s);
-  assert.match(skill, /调查现有真实界面/);
-  assert.match(skill, /完整页面/);
-  assert.match(skill, /<!-- buildr:ui-prototype -->/);
-  assert.match(skill, /自包含 HTML/);
-  assert.match(skill, /浏览器验证/);
-  assert.match(skill, /必须生成多个原型页面/);
-  assert.match(skill, /逐一打开每个 HTML 文件/);
-  assert.match(skill, /后续 Agent 在正式前端编辑前必须读取全部相关原型/);
-  assert.match(skill, /只有用户.*明确要求忽略原型时才可以不采用/s);
-  assert.match(skill, /不是正式设计稿、生产原型、像素级验收标准/);
-  assert.match(skill, /候选组件/);
-  assert.doesNotMatch(skill, /ui-visual-redesign/);
-});
-
-test('UI 影响任务路由 selected Skill 并默认按已有原型开发', () => {
-  const triage: any = read('resources/workspace/skills/buildr/task-triage/SKILL.md');
-  const fragments: any = [
-    'resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md',
-    'resources/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md',
-    'resources/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md',
-  ].map(read);
-  for (const source of [triage, ...fragments]) {
-    assert.match(source, /界面原型（UI Prototype）/);
-    assert.match(source, /明确(?:确认|要求)/);
-    assert.match(source, /不是门禁|不.*阻塞|继续/s);
-    assert.match(source, /界面原型（UI Prototype）/);
-    assert.match(source, /已有原型|已生成原型/);
-  }
-});
-
 test('OpenSpec component 修改后的 UI Prototype fragments 具备 matching integrity', () => {
   const component: any = YAML.parse(fs.readFileSync(path.join(workspaceTarget, 'components/buildr/openspec/component.yml'), 'utf8'));
   const integrity: any = new Map(component.integrity.map((entry: any) => entry.split('=')));

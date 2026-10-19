@@ -11,7 +11,7 @@ export interface DshSdkBaseline {
   readonly tag: string;
   /** Exact commit the tag must resolve to. */
   readonly commit: string;
-  /** Package version declared by that commit, and the peer version the plugin then requires. */
+  /** Exact package version declared by that commit; host compatibility is declared separately. */
   readonly version: string;
 }
 

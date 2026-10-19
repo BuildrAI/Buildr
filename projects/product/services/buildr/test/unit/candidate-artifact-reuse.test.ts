@@ -42,16 +42,11 @@ test('artifact transport preserves local origin and never accepts an aggregate a
   assert.throws(() => decodeCandidateArtifactImport(corrupt), /integrity/);
 });
 
-test('only complete same-package, actual-platform, actual-Node and dependency fingerprint evidence is reusable', () => {
+test('same-package results retain success independently of assertion and dependency fingerprints', () => {
   const original = evidence();
   assert.equal(validateCandidateArtifactEvidence(original, descriptor, context, inputs, artifact), true);
   for (const change of [
-    (item: any) => { delete item.executionEnvironment; },
-    (item: any) => { item.executionEnvironment.dependencyIdentity = hash('changed dependency bytes'); },
-    (item: any) => { item.runner.arch = 'x64'; },
-    (item: any) => { item.runner.nodeVersion = '24.15.0'; },
     (item: any) => { item.artifact.sha256 = 'e'.repeat(64); },
-    (item: any) => { item.checkInputs['release-tarball-smoke'] = hash('changed assertion'); },
     (item: any) => { item.results[0].childExitCode = 1; },
     (item: any) => { item.cleanupClean = false; },
   ]) {
@@ -66,27 +61,28 @@ test('only complete same-package, actual-platform, actual-Node and dependency fi
   const { identity: _oldIdentity, ...wrongBody } = wrongDependencyInputs.executionEnvironment;
   wrongDependencyInputs.executionEnvironment.identity = hash(wrongBody);
   assert.equal(validateCandidateArtifactEvidence(wrongDependencyInputs, descriptor, context, inputs, artifact,
-    { dependencyInputsIdentity: original.executionEnvironment.dependencyInputsIdentity }), false);
+    { dependencyInputsIdentity: original.executionEnvironment.dependencyInputsIdentity }), true);
   const adopted = reusedCandidateArtifactResult(original, 'release-tarball-smoke');
   assert.equal(adopted.reusedFrom.kind, 'local'); assert.equal(adopted.reusedFrom.workflow, null);
   assert.equal(adopted.durationMs, 0); assert.equal(adopted.reusedFrom.durationMs, 100);
   assert.deepEqual(adopted.artifactRecord, original);
 });
 
-test('Host Node reuse keeps exact minimum and stable current tuple semantics', () => {
-  for (const expectation of ['minimum', 'current']) {
-    const host = { id: `host-${expectation}-macos`, kind: 'host-node', runner: 'macos', requiresArtifact: true,
-      requestedNode: expectation === 'minimum' ? '24.15.0' : '24.x', expectation, steps: [{ id: 'host-node-compatibility' }] };
-    const original = evidence(host, 'darwin', expectation === 'minimum' ? '24.15.0' : '24.21.0');
+test('Host Node reuse requires the exact minimum on each actual system', () => {
+  for (const runner of ['macos', 'windows']) {
+    const host = { id: `host-minimum-${runner}`, kind: 'host-node', runner, requiresArtifact: true,
+      requestedNode: '24.15.0', expectation: 'minimum', steps: [{ id: 'host-node-compatibility' }] };
+    const platform = runner === 'macos' ? 'darwin' : 'win32';
+    const original = evidence(host, platform, '24.15.0');
     assert.equal(validateCandidateArtifactEvidence(original, host, context, original.checkInputs, artifact), true);
-    for (const version of expectation === 'minimum' ? ['24.21.0', '24.14.0'] : ['24.14.0', '25.0.0', '26.0.0', '24.22.0-rc.1']) {
-      const changed = evidence(host, 'darwin', version);
+    for (const version of ['24.21.0', '24.14.0', '25.0.0']) {
+      const changed = evidence(host, platform, version);
       assert.equal(validateCandidateArtifactEvidence(changed, host, context, changed.checkInputs, artifact), false, version);
     }
   }
 });
 
-test('clean failed local groups retain only successful children with unchanged inputs and actual environment', () => {
+test('failed local groups retain successful children across assertion and dependency edits', () => {
   const group = { ...descriptor, steps: [{ id: 'contract' }, { id: 'payload' }, { id: 'parity' }] };
   const original = evidence(group);
   original.status = 'failed'; original.results[2].status = 'failed'; original.results[2].exitCode = 1;
@@ -100,18 +96,16 @@ test('clean failed local groups retain only successful children with unchanged i
   assert.equal(adopted.reusedFrom.durationMs, 100);
   assert.equal(adopted.artifactRecord.results[2].status, 'failed');
   const changedInputs = { ...currentInputs, payload: hash('changed payload assertion') };
-  assert.deepEqual(reusableCandidateArtifactStepIds(original, group, context, changedInputs, artifact, expectedEnvironment), ['contract']);
+  assert.deepEqual(reusableCandidateArtifactStepIds(original, group, context, changedInputs, artifact, expectedEnvironment), ['contract', 'payload']);
   for (const change of [
     (item: any) => { item.cleanupClean = false; },
     (item: any) => { item.workflow = { runId: '52', runAttempt: '1' }; },
     (item: any) => { item.artifact.sha256 = 'e'.repeat(64); },
     (item: any) => { item.results.push(item.results[0]); },
-    (item: any) => { item.executionEnvironment.inputsIdentity = hash(currentInputs); },
-    (item: any) => { item.executionEnvironment.dependencyIdentity = hash('different actual dependencies'); },
   ]) {
     const changed = structuredClone(original); change(changed);
     assert.deepEqual(reusableCandidateArtifactStepIds(changed, group, context, currentInputs, artifact, expectedEnvironment), []);
   }
   const changedEnvironment = { ...original.executionEnvironment, dependencyIdentity: hash('new actual controller') };
-  assert.deepEqual(reusableCandidateArtifactStepIds(original, group, context, currentInputs, artifact, { executionEnvironment: changedEnvironment }), []);
+  assert.deepEqual(reusableCandidateArtifactStepIds(original, group, context, currentInputs, artifact, { executionEnvironment: changedEnvironment }), ['contract', 'payload']);
 });

@@ -15,6 +15,7 @@ import { PEER_INPUT_SCHEMA } from '../../../dsh-plugin/tools/buildr-peer.ts';
 import { createReleaseCandidate, PLUGIN_SERVICE_PATH, SOURCE_SDK_MANIFEST, sourceSdkIdentityFromFiles } from '../../../../../../skills/buildr-release/scripts/dsh-plugin/release-candidate.ts';
 import { archiveTreeIdentity } from '../../../dsh-plugin/tools/verify-all.ts';
 import { identity } from '../../../dsh-plugin/tools/verify-buildr-plugin-pair.ts';
+import { preparationRecordFixture } from '../helpers/release-artifact-fixture.ts';
 
 const pluginVersion = '0.1.0-rc.7', mainVersion = '0.1.0-rc.41';
 const selectionId = 'dsh-plugin-' + pluginVersion;
@@ -161,7 +162,10 @@ function fixture(t: any, changes: { mainRuntime?: boolean; omitSourcePatch?: boo
   const state = () => JSON.parse(fs.readFileSync(file, 'utf8'));
   let task: any = null, worktreeCreated = false, candidateVisible = false, candidateDispatches = 0, pluginDispatches = 0;
   let merges = 0, mainReads = 0, unpublishedReads = 0, pluginSourceReads = 0, postMainReads = 0, pr: any = null, postMainSource = '';
+  let mainGate = 'ready', mainReadbackFailed = false, loseMergeResponse = false, elapsed = 0;
+  let closeoutFailure: string | null = null, taskCompletions = 0, cleanupCalls = 0;
   const events: string[] = [], requests: any[] = [];
+  const preparationRecords = preparationRecordFixture(workspace, taskId);
   const runtime = {
     inspectTask(target: string, id: string) {
       assert.equal(target, workspace); assert.equal(id, taskId);
@@ -170,6 +174,7 @@ function fixture(t: any, changes: { mainRuntime?: boolean; omitSourcePatch?: boo
     },
     inspectGitWorktrees({ workspaceRoot, taskId: id }: any) {
       assert.equal(workspaceRoot, workspace); assert.equal(id, taskId);
+      if (worktreeCreated && !fs.existsSync(repo)) return { status: 'blocked', taskId, evidencePath: providerFile, repositories: [] };
       return worktreeCreated ? { status: 'ready', taskId, evidencePath: providerFile, repositories: [{ selector: 'workspace', checkoutPath: repo, branch,
         head: git(repo, ['rev-parse', 'HEAD']), state: 'ready' }] } : { status: 'absent' };
     },
@@ -199,6 +204,10 @@ function fixture(t: any, changes: { mainRuntime?: boolean; omitSourcePatch?: boo
         display_title: plugin ? 'DSH prepare ' + pluginVersion : 'Candidate', run_attempt: 1, status: 'completed', conclusion: 'success' });
     }
     if (args[0] === 'pr' && args[1] === 'list') return body(pr ? [pr] : []);
+    if (args[0] === 'pr' && args[1] === 'view') return mainReadbackFailed ? { status: 1, stderr: 'HTTP 503 readback unavailable' }
+      : body({ ...pr, mergeStateStatus: mainGate === 'ready' ? 'CLEAN' : 'BLOCKED', mergeable: 'MERGEABLE', isDraft: false });
+    if (args[0] === 'pr' && args[1] === 'checks') return body([{ name: 'protected-gate', state: mainGate === 'ready' ? 'SUCCESS' : 'IN_PROGRESS',
+      bucket: mainGate === 'ready' ? 'pass' : mainGate === 'failed' ? 'fail' : 'pending' }]);
     if (args[0] === 'pr' && args[1] === 'create') {
       assert.ok(events.includes('source-proof')); events.push('pr-created');
       pr = { number: 1, state: 'OPEN', headRefOid: state().sourceCommit, headRefName: args[args.indexOf('--head') + 1], baseRefName: 'main', url: 'https://github.com/BuildrAI/Buildr/pull/1' };
@@ -210,15 +219,36 @@ function fixture(t: any, changes: { mainRuntime?: boolean; omitSourcePatch?: boo
       git(workspace, ['worktree', 'add', '--detach', merger, 'origin/main']); git(merger, ['merge', '--no-ff', state().sourceCommit, '-m', 'release merge']);
       const merged = git(merger, ['rev-parse', 'HEAD']); git(merger, ['push', 'origin', 'HEAD:main']); git(workspace, ['worktree', 'remove', merger]);
       git(workspace, ['push', 'origin', ':refs/heads/' + pr.headRefName, ':refs/heads/release-' + selectionId]);
-      pr = { ...pr, state: 'MERGED', mergedAt: new Date().toISOString(), mergeCommit: { oid: merged } }; return { status: 0, stdout: '' };
+      pr = { ...pr, state: 'MERGED', mergedAt: new Date().toISOString(), mergeCommit: { oid: merged } };
+      return loseMergeResponse ? { status: 1, stderr: 'lost merge response' } : { status: 0, stdout: '' };
     }
     assert.fail('Unexpected fixture host command ' + args.join(' '));
   };
-  const dependencies = { prepareLocalSourceVerification: () => ({status:'ready',transport:null,missingStepIds:[]}), execute, runtime, resolveRetainedController: () => ({ workspaceRoot: workspace }),
+  const dependencies = { prepareLocalSourceVerification: (input: any) => {
+    assert.equal(input.base, baseline, 'source verification receives the immutable release baseline');
+    return {status:'ready',transport:null,missingStepIds:[]};
+  }, execute, runtime, now: () => elapsed, sleep: async (ms: number) => { elapsed += ms; }, resolveRetainedController: () => ({ workspaceRoot: workspace }),
     invokeRetainedController(_controller: any, args: string[]) {
+      const recorded = preparationRecords.invoke(args); if (recorded) return recorded;
+      if (args[0] === 'task' && args[1] === 'complete') {
+        taskCompletions++; task.status = 'completed';
+        if (closeoutFailure === 'task-response') { closeoutFailure = null; return { status: 'blocked', diagnostic: { message: 'lost task completion response' } }; }
+        return { status: 'completed', effects: [] };
+      }
+      if (args[0] === 'worktree' && args[1] === 'cleanup') {
+        cleanupCalls++;
+        if (closeoutFailure === 'cleanup') { closeoutFailure = null; return { status: 'blocked', diagnostic: { message: 'injected cleanup failure' } }; }
+        if (fs.existsSync(repo)) git(workspace, ['worktree', 'remove', repo]);
+        if (git(workspace, ['for-each-ref', '--format=%(objectname)', 'refs/heads/' + branch])) git(workspace, ['branch', '-D', branch]);
+        if (closeoutFailure === 'cleanup-evidence') { closeoutFailure = null; return { status: 'blocked', diagnostic: { message: 'provider evidence removal failed' } }; }
+        fs.rmSync(providerFile); worktreeCreated = false;
+        return { status: 'cleaned', effects: [] };
+      }
       if (args[0] === 'task' && args[1] === 'create') { task = { taskId, status: 'active', title: 'Plugin release' }; return { status: 'created', record: task, effects: [] }; }
-      assert.deepEqual(args.slice(0, 2), ['worktree', 'create']); assert.equal(args[args.indexOf('--start-point') + 1], baseline);
-      git(workspace, ['worktree', 'add', '-b', branch, repo, baseline]);
+      assert.deepEqual(args.slice(0, 2), ['worktree', 'create']);
+      const startPoint = task.status === 'completed' ? state().sourceCommit : baseline;
+      assert.equal(args[args.indexOf('--start-point') + 1], startPoint);
+      git(workspace, ['worktree', 'add', '-b', branch, repo, startPoint]);
       fs.mkdirSync(path.dirname(providerFile), { recursive: true }); fs.writeFileSync(providerFile, JSON.stringify({ schemaVersion: 'buildr.git-worktree-evidence/v1',
         taskId, workspaceRoot: workspace, branch, planDigest: 'sha256-' + '2'.repeat(64), status: 'ready', repositories: [{ selector: 'workspace', checkoutPath: repo, branch }], effects: [] }));
       worktreeCreated = true; return runtime.inspectGitWorktrees({ workspaceRoot: workspace, taskId });
@@ -228,7 +258,7 @@ function fixture(t: any, changes: { mainRuntime?: boolean; omitSourcePatch?: boo
     pluginSourceDependencies: { readSourceCandidate(input: any) {
       pluginSourceReads++; const owned = pluginCandidate(input.plan.sourceCommit, input.plan.serviceTree, peer);
       const aggregate = createPluginSourceAggregate(input.plan, owned.candidate, owned.verification, { runId: input.runId, runAttempt: input.runAttempt });
-      changes.mutateAggregate?.(aggregate); events.push('source-proof'); return { aggregate };
+      changes.mutateAggregate?.(aggregate); events.push('source-proof'); return { aggregate, candidate: owned.candidate, tarballBytes: owned.tarballBytes };
     } },
     packageDependencies: {
       observePublishedPackageArtifact(name: string) { return name === 'buildr' ? { observation: { status: 'present', artifact: peer }, bytes: peerBytes }
@@ -241,12 +271,130 @@ function fixture(t: any, changes: { mainRuntime?: boolean; omitSourcePatch?: boo
     },
   };
   const options = { action: 'prepare', workspace, packages: 'dsh-plugin', pluginVersion, baseline, sources: [selectedSource], detail: 'full' };
-  return { workspace, repo, baseline, peer, state, options, dependencies, events, requests,
+  return { workspace, repo, providerFile, baseline, peer, state, options, dependencies, events, requests, preparationRecords, task: () => task,
+    failCloseout(stage: string) { closeoutFailure = stage; }, closeoutCounts: () => ({ taskCompletions, cleanupCalls }),
     revealCandidate() { candidateVisible = true; },
+    setMainGate(value: string) { mainGate = value; },
+    setMainReadbackFailed(value: boolean) { mainReadbackFailed = value; },
+    loseMergeResponse() { loseMergeResponse = true; },
     counts: () => ({ candidateDispatches, pluginDispatches, merges, mainReads, unpublishedReads, pluginSourceReads, postMainReads }),
     remoteRef: (name: string) => git(workspace, ['ls-remote', 'origin', 'refs/heads/' + name]),
   };
 }
+
+releaseSelectionTest('protected main waiting, failed checks and unknown reads resume the same PR without rerunning the Candidate', async t => {
+  const data = fixture(t);
+  assertReleaseStatus(await runReleaseOperation(data.options, data.dependencies), 'candidate-dispatch-unconfirmed'); data.revealCandidate();
+  data.setMainGate('pending');
+  const pending = await runReleaseOperation(data.options, data.dependencies);
+  assertReleaseStatus(pending, 'main-merge-pending'); assert.equal(pending.mainPullRequest.durationMs, 30_000);
+  assert.equal(pending.recovery.stage, 'adoption-readiness'); assert.equal(pending.recovery.automaticFullRerun, false);
+  assert.equal(data.counts().merges, 0); assert.equal(data.counts().pluginDispatches, 0);
+  const frozenSource = data.state().sourceCommit, candidateRunId = data.state().candidate.runId;
+  data.setMainGate('failed');
+  const failed = await runReleaseOperation(data.options, data.dependencies);
+  assertReleaseStatus(failed, 'blocked'); assert.equal(failed.diagnostic.code, 'release-main-required-check-failed');
+  assert.equal(data.counts().merges, 0);
+  data.setMainReadbackFailed(true);
+  const unknown = await runReleaseOperation(data.options, data.dependencies);
+  assertReleaseStatus(unknown, 'main-merge-readback-required'); assert.equal(unknown.recovery.action, 'read-original-request');
+  assert.equal(data.counts().merges, 0);
+  data.setMainReadbackFailed(false); data.setMainGate('ready');
+  assertReleaseStatus(await runReleaseOperation(data.options, data.dependencies), 'awaiting-publication-authorization');
+  assert.equal(data.state().sourceCommit, frozenSource); assert.equal(data.state().candidate.runId, candidateRunId);
+  assert.equal(data.counts().candidateDispatches, 1); assert.equal(data.counts().merges, 1); assert.equal(data.counts().pluginDispatches, 1);
+  assert.equal(data.requests.filter((args: string[]) => args[0] === 'pr' && args[1] === 'create').length, 1);
+  const merge = data.requests.find((args: string[]) => args[0] === 'pr' && args[1] === 'merge');
+  assert.ok(merge.includes('--match-head-commit')); assert.ok(merge.includes('--merge'));
+  assert.ok(data.requests.every((args: string[]) => !args.includes('--admin') && !args.includes('--auto')));
+});
+
+releaseSelectionTest('unknown main merge response is read back before continuation and does not merge or create a PR twice', async t => {
+  const data = fixture(t);
+  assertReleaseStatus(await runReleaseOperation(data.options, data.dependencies), 'candidate-dispatch-unconfirmed'); data.revealCandidate();
+  data.loseMergeResponse();
+  const unknown = await runReleaseOperation(data.options, data.dependencies);
+  assertReleaseStatus(unknown, 'main-merge-readback-required'); assert.equal(data.counts().merges, 1);
+  assert.equal(unknown.effects.find((effect: any) => effect.type === 'release-main-merge').state, 'unknown');
+  assertReleaseStatus(await runReleaseOperation(data.options, data.dependencies), 'awaiting-publication-authorization');
+  assert.equal(data.counts().candidateDispatches, 1); assert.equal(data.counts().merges, 1); assert.equal(data.counts().pluginDispatches, 1);
+  assert.equal(data.requests.filter((args: string[]) => args[0] === 'pr' && args[1] === 'create').length, 1);
+});
+
+releaseSelectionTest('candidate-only closeout resumes failed record owners and cleanup without another Candidate read or execution', async t => {
+  for (const stage of ['materials-write', 'materials-record', 'verification-record', 'task-response', 'cleanup', 'cleanup-evidence']) await t.test(stage, async () => {
+    const data = fixture(t);
+    assertReleaseStatus(await runReleaseOperation(data.options, data.dependencies), 'candidate-dispatch-unconfirmed'); data.revealCandidate();
+    if (stage.startsWith('materials-') || stage === 'verification-record') data.preparationRecords.fail(stage, stage !== 'verification-record');
+    else data.failCloseout(stage);
+    const failed = await runReleaseOperation({ ...data.options, stopAfter: 'candidate' }, data.dependencies);
+    assert.match(failed.status, /^candidate-(?:materials|report|task|cleanup)-closeout-required$/u);
+    const reads = data.counts().pluginSourceReads, source = data.state().sourceCommit;
+    const recovered = await runReleaseOperation({ ...data.options, action: 'resume' }, data.dependencies);
+    assertReleaseStatus(recovered, 'candidate-verified'); assert.equal(data.task().status, 'completed');
+    assert.equal(data.state().sourceCommit, source); assert.equal(data.counts().pluginSourceReads, reads);
+    assert.equal(data.counts().candidateDispatches, 1); assert.equal(data.counts().merges, 0); assert.equal(data.counts().pluginDispatches, 0);
+    assert.equal(data.closeoutCounts().taskCompletions, 1); assert.equal(fs.existsSync(data.repo), false);
+    assert.equal(data.state().preparation.cleanup, 'cleaned');
+    assert.equal(fs.existsSync(data.providerFile), false);
+    if (stage === 'cleanup-evidence') assert.equal(data.closeoutCounts().cleanupCalls, 2, 'orphaned provider evidence must be cleaned by its owner');
+    assert.equal(data.preparationRecords.calls.filter((args: string[]) => args[1] === 'verification' && args[2] === 'record').length, stage === 'verification-record' ? 2 : 1);
+    assert.equal(data.preparationRecords.calls.filter((args: string[]) => args[1] === 'materials' && args[2] === 'write').length, 1);
+    assert.equal(data.preparationRecords.calls.filter((args: string[]) => args[1] === 'materials' && args[2] === 'record').length, 1);
+    const inspected = await runReleaseOperation({ ...data.options, action: 'inspect' }, data.dependencies);
+    assertReleaseStatus(inspected, 'inspected'); assert.equal(data.counts().candidateDispatches, 1);
+  });
+});
+
+releaseSelectionTest('candidate closeout refuses an aliased controller input without changing the outside document', async t => {
+  const data = fixture(t);
+  assertReleaseStatus(await runReleaseOperation(data.options, data.dependencies), 'candidate-dispatch-unconfirmed'); data.revealCandidate();
+  data.preparationRecords.fail('materials-write');
+  assertReleaseStatus(await runReleaseOperation({ ...data.options, stopAfter: 'candidate' }, data.dependencies), 'candidate-materials-closeout-required');
+  const directory = data.state().preparation.directory;
+  const input = path.join(directory, fs.readdirSync(directory).find(name => name.startsWith('preparation-material.md-'))!);
+  const outside = path.join(data.workspace, 'outside.md'); fs.writeFileSync(outside, 'user document'); fs.unlinkSync(input); fs.symlinkSync(outside, input);
+  const rejected = await runReleaseOperation({ ...data.options, action: 'resume' }, data.dependencies);
+  assertReleaseStatus(rejected, 'candidate-materials-closeout-required'); assert.match(rejected.diagnostic.message, /alias/u);
+  assert.equal(fs.readFileSync(outside, 'utf8'), 'user document'); assert.equal(data.task().status, 'active'); assert.equal(data.closeoutCounts().cleanupCalls, 0);
+  fs.unlinkSync(input);
+  assertReleaseStatus(await runReleaseOperation({ ...data.options, action: 'resume' }, data.dependencies), 'candidate-verified');
+  assert.equal(data.counts().candidateDispatches, 1);
+});
+
+releaseSelectionTest('candidate preservation refuses worktree aliases before records or cleanup and detects retained byte drift', async t => {
+  const data = fixture(t);
+  assertReleaseStatus(await runReleaseOperation(data.options, data.dependencies), 'candidate-dispatch-unconfirmed'); data.revealCandidate();
+  const alias = path.join(data.workspace, 'projects/product/services/buildr/build/verification/candidates');
+  const target = path.join(data.repo, 'build/unsafe-preservation'); fs.mkdirSync(target, { recursive: true });
+  fs.mkdirSync(path.dirname(alias), { recursive: true }); fs.symlinkSync(target, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  const unsafe = await runReleaseOperation({ ...data.options, stopAfter: 'candidate' }, data.dependencies);
+  assertReleaseStatus(unsafe, 'blocked'); assert.match(unsafe.diagnostic.message, /independent|aliases/u);
+  assert.equal(data.task().status, 'active'); assert.equal(data.preparationRecords.calls.length, 0); assert.equal(data.closeoutCounts().cleanupCalls, 0);
+  fs.unlinkSync(alias);
+  const completed = await runReleaseOperation({ ...data.options, stopAfter: 'candidate' }, data.dependencies);
+  assertReleaseStatus(completed, 'candidate-verified');
+  const prepared = data.state().preparation, manifest = prepared.artifacts['dsh-plugin'];
+  fs.appendFileSync(path.join(prepared.directory, 'dsh-plugin', manifest.filename), 'different');
+  const drifted = await runReleaseOperation({ ...data.options, stopAfter: 'candidate' }, data.dependencies);
+  assertReleaseStatus(drifted, 'blocked'); assert.match(drifted.diagnostic.message, /bytes changed/u);
+  assert.equal(data.task().status, 'completed'); assert.equal(data.counts().candidateDispatches, 1);
+});
+
+releaseSelectionTest('completed candidate preparation resumes the same pending main adoption and never derives public authorization', async t => {
+  const data = fixture(t);
+  assertReleaseStatus(await runReleaseOperation(data.options, data.dependencies), 'candidate-dispatch-unconfirmed'); data.revealCandidate();
+  assertReleaseStatus(await runReleaseOperation({ ...data.options, stopAfter: 'candidate' }, data.dependencies), 'candidate-verified');
+  assert.equal(data.task().status, 'completed'); assert.equal(fs.existsSync(data.repo), false);
+  data.setMainGate('pending');
+  assertReleaseStatus(await runReleaseOperation(data.options, data.dependencies), 'main-merge-pending');
+  data.setMainGate('ready');
+  assertReleaseStatus(await runReleaseOperation({ ...data.options, action: 'resume' }, data.dependencies), 'awaiting-publication-authorization');
+  assert.equal(data.task().status, 'completed'); assert.equal(data.counts().candidateDispatches, 1); assert.equal(data.counts().merges, 1);
+  const publicRequest = await runReleaseOperation({ ...data.options, action: 'publish' }, data.dependencies);
+  assertReleaseStatus(publicRequest, 'authorization-required');
+  assert.ok(data.requests.every((args: string[]) => !args.includes('operation=publish')));
+});
 
 releaseSelectionTest('plugin-only prepare recovers one lost source dispatch, admits exact peer proof, and prepares separate main bytes without resurrecting refs', async t => {
   const data = fixture(t);

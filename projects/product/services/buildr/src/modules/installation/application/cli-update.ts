@@ -262,7 +262,14 @@ export function executeCliUpdatePlan(plan: any, options: any = {}) {
   ], options);
 }
 
-export function registerApplicationCliUpdate(dependencies: { productRoot(): string }) {
+export type NpmWebUpdateInput = { productRoot: string; expectedVersion: string; previousInstallationIdentity: string };
+export type NpmWebUpdateResult = {
+  status: 'not-running' | 'current' | 'restarted' | 'failed';
+  version?: string; pid?: number; url?: string; previousPid?: number; code?: string; message?: string;
+};
+export type NpmWebUpdatePort = { handoffUpdatedBuildrWeb(input: NpmWebUpdateInput): Promise<NpmWebUpdateResult> };
+
+export function registerApplicationCliUpdate(dependencies: { productRoot(): string; handoffUpdatedBuildrWeb?: NpmWebUpdatePort['handoffUpdatedBuildrWeb'] }) {
   const { productRoot } = dependencies;
 
   function releaseAwareness(options: any = {}) {
@@ -275,22 +282,13 @@ export function registerApplicationCliUpdate(dependencies: { productRoot(): stri
     return plan;
   }
 
-  /**
-   * npm 更新成功后，同一安装槽位仍运行的旧版本实例会被 installation status 报告为
-   * stale；更新结果如实给出经 Launcher 重启完成实例切换的指引，而不在本命令内终止
-   * 运行中的实例（执行方可能就是该实例内的 Agent）。
-   */
-  async function staleInstanceGuidance(): Promise<string[]> {
+  async function completeWebUpdate(source: any, version: string): Promise<NpmWebUpdateResult> {
     try {
-      const { buildInstallationStatusInventory } = await import('./product-installation-status.ts');
-      const inventory: any = await buildInstallationStatusInventory(productRoot());
-      const instance = inventory?.instances?.released;
-      if (instance?.status === 'stale' && instance?.identity?.pid) {
-        const running = instance.identity.version || '旧版本';
-        return [`旧版本 Buildr Web 实例仍在运行（版本 ${running}，pid ${instance.identity.pid}）：启动已安装的 Buildr Web Launcher 即可自动完成旧实例退出与新版本交接；本次 update 不会自动终止运行中的实例。`];
-      }
-    } catch { /* 实例状态只是提示性信息，status 读取失败不改变更新结果。 */ }
-    return [];
+      if (!dependencies.handoffUpdatedBuildrWeb) throw Object.assign(new Error('网页更新交接能力尚未接入。'), { code: 'web_update_port_unavailable' });
+      return await dependencies.handoffUpdatedBuildrWeb({ productRoot: source.productRoot, expectedVersion: version, previousInstallationIdentity: source.installationIdentity });
+    } catch (error: any) {
+      return { status: 'failed', code: error.code || 'web_update_failed', message: error.message };
+    }
   }
 
   async function updateBuildr(input: { track?: 'stable' | 'candidate' | null } = {}) {
@@ -302,6 +300,7 @@ export function registerApplicationCliUpdate(dependencies: { productRoot(): stri
       return plan;
     }
     if (plan.strategy === 'none') {
+      if (plan.mode === 'npm' && plan.status === 'up-to-date') return { ...plan, webUpdate: await completeWebUpdate(source, source.version) };
       return plan;
     }
     const result = executeCliUpdatePlan(plan);
@@ -309,8 +308,12 @@ export function registerApplicationCliUpdate(dependencies: { productRoot(): stri
       const failed = { ...plan, status: 'blocked', blockingReasons: [`CLI 更新失败：${result.stderr || result.error || 'unknown error'}`], nextActions: plan.mode === 'development' && plan.strategy === 'rebase' ? ['检查 Git rebase 状态并决定继续或中止；Buildr 不会自动解决冲突。'] : ['处理安装错误后重新运行 buildr update。'] };
       return failed;
     }
-    const instanceGuidance = plan.mode === 'npm' ? await staleInstanceGuidance() : [];
-    const completed = { ...plan, status: 'updated', blockingReasons: [], nextActions: ['CLI 已更新；已存在的同 ownership Buildr Web Launcher 会由 npm lifecycle 刷新。', ...instanceGuidance] };
+    const npmPlan = plan as { target?: { version?: string }; available?: { version?: string } };
+    const webUpdate = plan.mode === 'npm' ? await completeWebUpdate(source, npmPlan.target?.version || npmPlan.available?.version || source.version) : undefined;
+    const completed = { ...plan, status: 'updated', blockingReasons: [], ...(webUpdate ? { webUpdate } : {}), nextActions: [
+      'CLI 已更新；已存在的同 ownership Buildr Web Launcher 会由 npm lifecycle 刷新。',
+      ...(webUpdate?.status === 'failed' ? ['软件包已更新，但网页自动交接未完成；核对以上原因后再次运行 buildr update，可只恢复交接而不重复安装。'] : []),
+    ] };
     return completed;
   }
 

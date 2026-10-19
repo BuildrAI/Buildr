@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { assertCandidateRound, ROUND_SCHEMA } from './candidate-round.ts';
 import { gzipSync, gunzipSync } from 'node:zlib';
 
 export const CANDIDATE_SOURCE_IMPORT_ENV = 'BUILDR_SOURCE_VERIFICATION';
@@ -6,18 +7,19 @@ export const CANDIDATE_SOURCE_IMPORT_ENV = 'BUILDR_SOURCE_VERIFICATION';
 // Platform checks require their real OS. Original OS/CPU remain visible;
 // installed-package/Host Node checks cannot use this source-only policy.
 export const CANDIDATE_SOURCE_REUSE_POLICY = Object.freeze({
-  schemaVersion: 'buildr.candidate-source-reuse-policy/v2',
-  platform: 'explicit-common-or-same-declared-os', architecture: 'retain-original', artifactResults: 'never',
+  schemaVersion: 'buildr.candidate-source-reuse-policy/v3',
+  platform: 'explicit-common-or-same-declared-os', architecture: 'retain-original', artifactResults: 'never', candidateRound: 'passed-results-only-no-input-invalidation',
 });
 export const MAX_SOURCE_IMPORT_CHARACTERS = 56_000;
 const MAX_DECODED_BYTES = 2 * 1024 * 1024;
 const BUNDLE_SCHEMA = 'buildr.verification-source-bundle/v1';
 const PACKET_SCHEMA = 'buildr.candidate-source-import/v1';
 
-export type SourceBundle = { schemaVersion: string; records: any[] };
+export type SourceBundle = { schemaVersion: string; records: any[]; roundId?: string };
 const digest = (value: string) => `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
 
 export function assertSourceBundle(value: any): asserts value is SourceBundle {
+  if (value?.schemaVersion === ROUND_SCHEMA) { assertCandidateRound(value); return; }
   if (value?.schemaVersion !== BUNDLE_SCHEMA || !Array.isArray(value.records) || value.records.length > 512) {
     throw new Error('Source verification bundle is invalid or exceeds its record budget.');
   }
@@ -67,7 +69,9 @@ export function candidateSourceImportFromEnvironment(env: Record<string, string 
   if (env.GITHUB_EVENT_NAME && env.GITHUB_EVENT_NAME !== 'workflow_dispatch') {
     throw new Error('Imported source verification requires the controlled manual Candidate entry.');
   }
-  return decodeCandidateSourceImport(input);
+  const log = decodeCandidateSourceImport(input);
+  if (log.schemaVersion === ROUND_SCHEMA) assertCandidateRound(log, env.BUILDR_SELECTION_ID ?? env.BUILDR_VERIFICATION_ROUND);
+  return log;
 }
 
 export function planCandidateSourceReuse(shards: any[], bundle: SourceBundle,

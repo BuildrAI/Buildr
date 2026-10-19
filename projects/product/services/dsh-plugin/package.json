@@ -1,6 +1,6 @@
 {
   "name": "@buildr-ai/buildr-dsh-plugin-source",
-  "version": "0.1.0-rc.2",
+  "version": "0.1.0-rc.3",
   "buildrCompatibility": {
     "schemaVersion": "buildr.package-compatibility/v1",
     "provides": [],
@@ -35,6 +35,7 @@
     "release:status": "node ../../../../skills/buildr-release/scripts/dsh-plugin/release.ts status",
     "release:prepare": "node ../../../../skills/buildr-release/scripts/dsh-plugin/release.ts prepare",
     "test": "node --test --test-concurrency=2 test/unit/*.test.ts test/integration/*.test.ts",
+    "test:source": "node tools/verify-source.ts",
     "test:full": "node tools/verify-all.ts"
   }
 }

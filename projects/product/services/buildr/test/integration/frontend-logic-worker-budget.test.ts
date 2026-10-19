@@ -75,6 +75,8 @@ test('the real complete unit executor obeys granted workers without an unbounded
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(path.join(root, 'test/unit'), { recursive: true });
   fs.copyFileSync(path.join(serviceRoot, 'test/register-development-entry.ts'), path.join(root, 'test/register-development-entry.ts'));
+  fs.mkdirSync(path.join(root, 'tools/development'), { recursive: true });
+  fs.copyFileSync(path.join(serviceRoot, 'tools/development/isolated-workspace-state.ts'), path.join(root, 'tools/development/isolated-workspace-state.ts'));
   for (const name of ['first', 'second']) {
     fs.writeFileSync(path.join(root, 'test/unit', `${name}.test.ts`), `import test from 'node:test';
 import fs from 'node:fs'; import path from 'node:path';

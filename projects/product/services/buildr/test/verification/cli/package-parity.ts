@@ -47,14 +47,32 @@ function snapshot(directory: any): any  {
   return result;
 }
 
-function normalizeWorkspaceSnapshot(value: any): any  {
+function normalizeWorkspaceSnapshot(value: any, workspace: string, packaged: boolean): any  {
   const workspaceId: any = value['.buildr/workspace.yml']?.match(/^id:\s*([0-9a-f-]{36})$/m)?.[1];
   const skillsWorkspaceId: any = value['skills/manifest.yml']?.match(/^workspaceId:\s*([0-9a-f-]{36})$/m)?.[1];
   assert.ok(workspaceId, 'Workspace metadata must contain a UUID');
   assert.doesNotMatch(value['.buildr/workspace.yml'], /^runtime:/m, 'Workspace metadata must not contain a runtime declaration');
   assert.equal(skillsWorkspaceId, workspaceId, 'Workspace and Skills manifests must share one UUID');
-  return Object.fromEntries(Object.entries(value).map(([file, content]: any) => [file, content
-    .replaceAll(workspaceId, '<workspace-id>')]));
+  // Default init claims the local Web channel. Validate that claim separately:
+  // its root, owner and timestamp are local facts, not projected source assets.
+  const managementFile = '.buildr/local/web-management.json';
+  const management = JSON.parse(value[managementFile]);
+  assert.deepEqual(Object.keys(management).sort(), ['canonicalRoot', 'claimedAt', 'owner', 'schemaVersion', 'workspaceId']);
+  assert.equal(management.schemaVersion, 'buildr.workspace-web-management/v1');
+  assert.equal(management.workspaceId, workspaceId);
+  assert.equal(management.canonicalRoot, fs.realpathSync.native(workspace));
+  assert.ok(Number.isFinite(Date.parse(management.claimedAt)), 'Default init must record a valid claim time');
+  assert.deepEqual(Object.keys(management.owner).sort(), ['channel', 'profile', 'profileIdentity', 'runtimeRole', 'schemaVersion']);
+  assert.deepEqual({ ...management.owner, profileIdentity: '<profile-identity>' }, {
+    schemaVersion: 'buildr.workspace-web-management-owner/v1',
+    profile: packaged ? 'released' : 'development',
+    channel: packaged ? 'npm' : 'development',
+    runtimeRole: packaged ? 'host' : 'development',
+    profileIdentity: '<profile-identity>',
+  });
+  assert.match(management.owner.profileIdentity, /^sha256-[a-f0-9]{64}$/);
+  return Object.fromEntries(Object.entries(value).filter(([file]) => file !== managementFile)
+    .map(([file, content]: any) => [file, content.replaceAll(workspaceId, '<workspace-id>')]));
 }
 
 try {
@@ -146,7 +164,7 @@ try {
       assert.equal(report.agentRuntime.runtimeId, runtimeId);
       assert.equal(report.agentRuntime.adapterId, 'agents-standard');
     }
-    assert.deepEqual(normalizeWorkspaceSnapshot(snapshot(packagedWorkspace)), normalizeWorkspaceSnapshot(snapshot(checkoutWorkspace)));
+    assert.deepEqual(normalizeWorkspaceSnapshot(snapshot(packagedWorkspace), packagedWorkspace, true), normalizeWorkspaceSnapshot(snapshot(checkoutWorkspace), checkoutWorkspace, false));
   }
 
   console.log('CLI package parity verification passed: representative output and init mutation match checkout and npm tarball entrypoints.');

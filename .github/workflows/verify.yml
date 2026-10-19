@@ -96,6 +96,8 @@ on:
         type: string
   pull_request:
     branches: [dev, main]
+  push:
+    branches: [dev]
 
 permissions:
   contents: read
@@ -114,6 +116,7 @@ env:
   BUILDR_PLUGIN_VERSION: ${{ inputs.plugin_version || '' }}
   BUILDR_SELECTION_ID: ${{ inputs.selection_id || '' }}
   BUILDR_SELECTION_BASELINE: ${{ inputs.selection_baseline || '' }}
+  BUILDR_VERIFICATION_BASE: ${{ inputs.selection_baseline || '' }}
   BUILDR_SELECTION_MAIN: ${{ inputs.selection_main || '' }}
   BUILDR_SELECTION_IDENTITY: ${{ inputs.selection_identity || '' }}
   BUILDR_BUILDR_PEER_VERSION: ${{ inputs.buildr_peer_version || '' }}
@@ -128,7 +131,7 @@ env:
 jobs:
   dev-feedback-macos:
     name: Development feedback (macOS affected and Browser)
-    if: github.event_name == 'pull_request' && github.base_ref == 'dev'
+    if: (github.event_name == 'pull_request' && github.base_ref == 'dev') || (github.event_name == 'push' && github.ref == 'refs/heads/dev')
     runs-on: macos-latest
     timeout-minutes: 30
     defaults:
@@ -226,7 +229,7 @@ jobs:
 
   dev-feedback-windows:
     name: Development feedback (Windows platform-sensitive)
-    if: github.event_name == 'pull_request' && github.base_ref == 'dev'
+    if: (github.event_name == 'pull_request' && github.base_ref == 'dev') || (github.event_name == 'push' && github.ref == 'refs/heads/dev')
     runs-on: windows-latest
     timeout-minutes: 30
     defaults:
@@ -372,14 +375,13 @@ jobs:
         shell: bash
         env:
           DIAGNOSTIC_SCOPE: ${{ inputs.diagnostic_scope }}
-          DISPATCH_REF: ${{ github.ref }}
           DISPATCH_PURPOSE: ${{ inputs.purpose }}
           EXPECTED_SOURCE_TREE: ${{ inputs.expected_source_tree }}
           RELEASE_INPUTS_PRESENT: ${{ inputs.release_packages != '' || inputs.buildr_version != '' || inputs.plugin_version != '' || inputs.buildr_peer_version != '' || inputs.buildr_peer_integrity != '' || inputs.selection_id != '' || inputs.selection_baseline != '' || inputs.selection_main != '' || inputs.selection_identity != '' || inputs.rehearsal_identity != '' || inputs.diagnostic_candidate_run_id != '' || inputs.diagnostic_candidate_source != '' }}
         run: |
           fail() { printf '%s\n' "$1" >&2; exit 1; }
           [[ "$DIAGNOSTIC_SCOPE" == 'core-project-task-macos' ]] || fail 'Unsupported source diagnosis scope.'
-          [[ "$DISPATCH_REF" == 'refs/heads/dev' && "$DISPATCH_PURPOSE" == 'candidate' ]] || fail 'Source diagnosis requires the dev Candidate entry.'
+          [[ "$DISPATCH_PURPOSE" == 'candidate' ]] || fail 'Source diagnosis requires the Candidate entry.'
           [[ "$RELEASE_INPUTS_PRESENT" == 'false' ]] || fail 'Source diagnosis does not accept release selection or rehearsal inputs.'
           [[ "$EXPECTED_SOURCE_TREE" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]] || fail 'Source diagnosis requires an exact source tree.'
       - uses: actions/checkout@v7
@@ -437,14 +439,13 @@ jobs:
         working-directory: .
         env:
           DIAGNOSTIC_SCOPE: ${{ inputs.diagnostic_scope }}
-          DISPATCH_REF: ${{ github.ref }}
           DISPATCH_PURPOSE: ${{ inputs.purpose }}
           EXPECTED_SOURCE_TREE: ${{ inputs.expected_source_tree }}
           RELEASE_INPUTS_PRESENT: ${{ inputs.release_packages != '' || inputs.buildr_version != '' || inputs.plugin_version != '' || inputs.buildr_peer_version != '' || inputs.buildr_peer_integrity != '' || inputs.selection_id != '' || inputs.selection_baseline != '' || inputs.selection_main != '' || inputs.selection_identity != '' || inputs.rehearsal_identity != '' || inputs.diagnostic_candidate_run_id != '' || inputs.diagnostic_candidate_source != '' }}
         run: |
           fail() { printf '%s\n' "$1" >&2; exit 1; }
           [[ "$DIAGNOSTIC_SCOPE" == 'nested-git-isolation-windows' ]] || fail 'Unsupported source diagnosis scope.'
-          [[ "$DISPATCH_REF" == 'refs/heads/dev' && "$DISPATCH_PURPOSE" == 'candidate' ]] || fail 'Source diagnosis requires the dev Candidate entry.'
+          [[ "$DISPATCH_PURPOSE" == 'candidate' ]] || fail 'Source diagnosis requires the Candidate entry.'
           [[ "$RELEASE_INPUTS_PRESENT" == 'false' ]] || fail 'Source diagnosis does not accept release selection or rehearsal inputs.'
           [[ "$EXPECTED_SOURCE_TREE" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]] || fail 'Source diagnosis requires an exact source tree.'
       - uses: actions/checkout@v7
@@ -562,12 +563,11 @@ jobs:
         shell: bash
         working-directory: .
         env:
-          DISPATCH_REF: ${{ github.ref }}
           DISPATCH_PURPOSE: ${{ inputs.purpose }}
           EXTRA_INPUTS_PRESENT: ${{ inputs.release_packages != '' || inputs.buildr_version != '' || inputs.plugin_version != '' || inputs.buildr_peer_version != '' || inputs.buildr_peer_integrity != '' || inputs.selection_id != '' || inputs.selection_baseline != '' || inputs.selection_main != '' || inputs.selection_identity != '' || inputs.rehearsal_identity != '' || inputs.source_verification != '' }}
         run: |
           set -euo pipefail
-          [[ "$DISPATCH_REF" == 'refs/heads/dev' && "$DISPATCH_PURPOSE" == 'candidate' ]] || { echo 'Runtime diagnosis requires the dev Candidate entry.' >&2; exit 1; }
+          [[ "$DISPATCH_PURPOSE" == 'candidate' ]] || { echo 'Runtime diagnosis requires the Candidate entry.' >&2; exit 1; }
           [[ "$EXTRA_INPUTS_PRESENT" == 'false' ]] || { echo 'Runtime diagnosis does not accept release or source-result inputs.' >&2; exit 1; }
           [[ "$DIAGNOSTIC_CANDIDATE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || { echo 'An exact original Candidate run is required.' >&2; exit 1; }
           [[ "$DIAGNOSTIC_CANDIDATE_SOURCE" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ && "$EXPECTED_SOURCE_TREE" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]] || { echo 'Exact original source and diagnosis tree are required.' >&2; exit 1; }
@@ -662,12 +662,11 @@ jobs:
       - name: Verify closed publisher diagnosis inputs
         working-directory: .
         env:
-          DISPATCH_REF: ${{ github.ref }}
           DISPATCH_PURPOSE: ${{ inputs.purpose }}
           EXTRA_INPUTS_PRESENT: ${{ inputs.release_packages != '' || inputs.buildr_version != '' || inputs.plugin_version != '' || inputs.buildr_peer_version != '' || inputs.buildr_peer_integrity != '' || inputs.selection_id != '' || inputs.selection_baseline != '' || inputs.selection_main != '' || inputs.selection_identity != '' || inputs.rehearsal_identity != '' || inputs.source_verification != '' }}
         run: |
           set -euo pipefail
-          [[ "$DISPATCH_REF" == 'refs/heads/dev' && "$DISPATCH_PURPOSE" == 'candidate' ]] || { echo 'Publisher diagnosis requires the dev Candidate entry.' >&2; exit 1; }
+          [[ "$DISPATCH_PURPOSE" == 'candidate' ]] || { echo 'Publisher diagnosis requires the Candidate entry.' >&2; exit 1; }
           [[ "$EXTRA_INPUTS_PRESENT" == 'false' ]] || { echo 'Publisher diagnosis does not accept release or source-result inputs.' >&2; exit 1; }
           [[ "$DIAGNOSTIC_CANDIDATE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || { echo 'An exact original Candidate run is required.' >&2; exit 1; }
           [[ "$DIAGNOSTIC_CANDIDATE_SOURCE" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ && "$EXPECTED_SOURCE_TREE" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]] || { echo 'Exact original source and diagnosis tree are required.' >&2; exit 1; }
@@ -722,13 +721,12 @@ jobs:
         working-directory: .
         shell: bash
         env:
-          DISPATCH_REF: ${{ github.ref }}
           DISPATCH_PURPOSE: ${{ inputs.purpose }}
           EXPECTED_SOURCE_TREE: ${{ inputs.expected_source_tree }}
           EXTRA_INPUTS_PRESENT: ${{ inputs.release_packages != '' || inputs.buildr_version != '' || inputs.plugin_version != '' || inputs.buildr_peer_version != '' || inputs.buildr_peer_integrity != '' || inputs.selection_id != '' || inputs.selection_baseline != '' || inputs.selection_main != '' || inputs.selection_identity != '' || inputs.rehearsal_identity != '' || inputs.source_verification != '' || inputs.artifact_verification != '' || inputs.local_runner != '' || inputs.repair_candidate_run_id != '' || inputs.product_source != '' || inputs.verification_source != '' || inputs.diagnostic_candidate_run_id != '' || inputs.diagnostic_candidate_source != '' }}
         run: |
           set -euo pipefail
-          [[ "$DISPATCH_REF" == 'refs/heads/dev' && "$DISPATCH_PURPOSE" == 'candidate' ]] || { echo 'Source diagnosis requires the dev Candidate entry.' >&2; exit 1; }
+          [[ "$DISPATCH_PURPOSE" == 'candidate' ]] || { echo 'Source diagnosis requires the Candidate entry.' >&2; exit 1; }
           [[ "$EXTRA_INPUTS_PRESENT" == 'false' ]] || { echo 'Source diagnosis does not accept release, source-result or previous artifact inputs.' >&2; exit 1; }
           [[ "$EXPECTED_SOURCE_TREE" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]] || { echo 'An exact current source tree is required.' >&2; exit 1; }
       - uses: actions/checkout@v7

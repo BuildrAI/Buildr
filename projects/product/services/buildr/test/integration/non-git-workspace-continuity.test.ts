@@ -124,6 +124,26 @@ async function scenario({ nestedGit = false } = {}) {
   const created = json(['task', 'create', 'document-work', '--title', '资料接续', '--intent', '维护真实非 Git 资料', '--project', 'documents', '--brief-file', brief, ...target]);
   assert.equal(created.record.status, 'active');
   assert.deepEqual(created.record.changes, []);
+  if (nestedGit) {
+    // The pure-document scenario below owns HTTP, conflict and local-material coverage.
+    // This variant proves only that a registered code repository remains untouched.
+    const relative = 'knowledge/docs/continuity.md';
+    const document = path.join(projectRoot, relative);
+    fs.mkdirSync(path.dirname(document), { recursive: true });
+    fs.writeFileSync(document, '# 当前资料\n');
+    const references = input('mixed-materials.json', JSON.stringify({ schemaVersion: 'buildr.task-materials/v2', documents: [
+      { id: 'project-document', role: 'implementation', title: '当前资料', source: { kind: 'project', project: 'documents', path: relative } },
+    ] }));
+    json(['task', 'materials', 'record', 'document-work', '--materials', references, '--expected-current', 'absent', ...target]);
+    fs.appendFileSync(document, '\n外部变化需要原地保留。\n');
+    const materials = json(['task', 'materials', 'inspect', 'document-work', ...target]);
+    assert.equal(materials.documents[0].content, fs.readFileSync(document, 'utf8'));
+    const completed = json(['task', 'complete', 'document-work', '--summary', '资料已回读，代码库未改变。', '--expected-record', created.recordDigest, ...target]);
+    assert.equal(completed.record.status, 'completed');
+    assertNoGit();
+    process.stdout.write('Mixed-root document lifecycle preserves unrelated registered code.\n');
+    return;
+  }
   const updatedBrief = input('brief-update.md', '# 资料维护目标\n\n已明确实际文件与验收范围。\n');
   const updated = json(['task', 'update', 'document-work', '--brief-file', updatedBrief, '--expected-record', created.recordDigest, ...target]);
   const stale = json(['task', 'update', 'document-work', '--title', '不得覆盖当前任务', '--expected-record', created.recordDigest, ...target], 1);

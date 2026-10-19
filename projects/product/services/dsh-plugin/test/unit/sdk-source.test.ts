@@ -9,6 +9,7 @@ import { DSH_SDK_BASELINES, DSH_SDK_DEFAULT_BASELINE } from '../../tools/sdk-bas
 import { parseReleaseInput, releasePrepareCommands } from '../../../../../../skills/buildr-release/scripts/dsh-plugin/release.ts';
 import { applySourcePatch, archiveSourceDigests, buildSourceHostArtifacts, mirrorSdkDependencies, newBuildOutput, ownedBuildRoot, parseSourcePatchManifest, parseSourceSdkReceipt, parseSourceHostArtifacts, sdkDeclarationPaths, sha256, SOURCE_EVENT_CONTRACT, sourceRelativePath, trajectoryBundleTool, validatePreparedSourceSdk, verifySourcePatchInput, verifySourceSdkApi } from '../../tools/prepare-source-sdk.ts';
 import { clientCompositionPatch, hostCompositionPatch, parseHostConfigurations, stageHostCompositionPatch, trajectoryCompositionDirectory } from '../../tools/build-development-composition.ts';
+import { copyDshHostArtifacts, DSH_HOST_VERSION_RANGE, normalizeDshHostPeers } from '../../tools/dsh-host-compatibility.ts';
 
 const service = resolve(import.meta.dirname, '../..');
 const trajectory = 'packages/client/ui-trajectory';
@@ -117,10 +118,54 @@ test('receipt JSON requires actual contributor strings and exact annotation obli
 test('source metadata refuses a version-only, shortened-hash or different-commit claim', () => {
   const wrongCommit = manifest(); wrongCommit.upstream.commit = '0'.repeat(40);
   assert.throws(() => parseSourcePatchManifest(wrongCommit), /exact verified rc.2/);
+  const compatibilityRange = manifest(); compatibilityRange.upstream.version = DSH_HOST_VERSION_RANGE;
+  assert.throws(() => parseSourcePatchManifest(compatibilityRange), /exact verified rc.2/);
   const short = manifest(); short.patch.sha256 = 'a'.repeat(12);
   assert.throws(() => parseSourcePatchManifest(short), /full lowercase SHA256/);
   const noApi = manifest(); delete (noApi as Partial<typeof noApi>).api;
   assert.throws(() => parseSourcePatchManifest(noApi), /api must be an object/);
+});
+
+test('Host compatibility normalizes every DSH peer without changing unrelated package constraints', () => {
+  const original = { '@deepseek-ai/dsh': baseline.version, '@deepseek-ai/dsh-session': baseline.version, '@deepseek-ai/dsh-client-ui-slots': baseline.version, '@deepseek-ai/cordis': '4.0.4', zod: '^4.4.3' };
+  const before = structuredClone(original);
+  assert.equal(DSH_HOST_VERSION_RANGE, '>=0.2.0-0 <0.3.0-0');
+  assert.deepEqual(normalizeDshHostPeers(original), { ...original,
+    '@deepseek-ai/dsh': DSH_HOST_VERSION_RANGE, '@deepseek-ai/dsh-session': DSH_HOST_VERSION_RANGE, '@deepseek-ai/dsh-client-ui-slots': DSH_HOST_VERSION_RANGE });
+  assert.deepEqual(original, before, 'normalization cannot mutate source package metadata');
+  assert.deepEqual(normalizeDshHostPeers(), { '@deepseek-ai/dsh': DSH_HOST_VERSION_RANGE });
+});
+
+test('copying a previously prepared exact-version Host normalizes the packaged closure and keeps SDK attestation bytes intact', async t => {
+  const root = directory(t), sdk = join(root, 'sdk'), output = join(root, 'composition');
+  mkdirSync(sdk); mkdirSync(output);
+  const original = {
+    name: '@deepseek-ai/dsh-tools', version: baseline.version, type: 'module',
+    peerDependencies: { '@deepseek-ai/dsh': baseline.version, '@deepseek-ai/dsh-session': baseline.version, '@deepseek-ai/cordis': '4.0.4' },
+  };
+  const contents: Record<string, string> = {
+    '.buildr-host/packages/tools/package.json': JSON.stringify(original),
+    '.buildr-host/packages/tools/lib/index.js': "export {value} from '../../../chunks/shared.js';\n",
+    '.buildr-host/chunks/shared.js': 'export const value = 1;\n',
+  };
+  for (const [path, bytes] of Object.entries(contents)) { mkdirSync(dirname(join(sdk, path)), { recursive: true }); writeFileSync(join(sdk, path), bytes); }
+  const host = parseSourceHostArtifacts({ ...hostArtifacts(), files: Object.entries(contents).map(([path, bytes]) => ({ path, sha256: sha256(bytes) })) });
+  const sourceIndex = structuredClone(host);
+  const copied = await copyDshHostArtifacts(sdk, host, output);
+  assert.match(copied.directory, /^runtime-host-[a-f0-9]{16}$/);
+  assert.notEqual(copied.directory, `runtime-host-${sha256(JSON.stringify(host.files)).slice(0, 16)}`, 'changed package bytes must receive a new module directory');
+  const packaged = JSON.parse(readFileSync(join(output, copied.directory, 'packages/tools/package.json'), 'utf8'));
+  assert.deepEqual(packaged, { ...original, peerDependencies: { ...original.peerDependencies, '@deepseek-ai/dsh': DSH_HOST_VERSION_RANGE, '@deepseek-ai/dsh-session': DSH_HOST_VERSION_RANGE } });
+  for (const file of copied.files) assert.equal(file.sha256, sha256(readFileSync(join(output, copied.directory, file.path.slice(host.directory.length + 1)))));
+  assert.equal(copied.directory, `runtime-host-${sha256(JSON.stringify(copied.files)).slice(0, 16)}`, 'the directory identity covers the actual copied bytes');
+  assert.deepEqual(host, sourceIndex, 'the exact source receipt remains unchanged');
+  for (const [path, bytes] of Object.entries(contents)) assert.equal(readFileSync(join(sdk, path), 'utf8'), bytes, 'the immutable SDK keeps its original attested package bytes');
+  const secondOutput = join(root, 'second-composition'); mkdirSync(secondOutput);
+  assert.deepEqual(await copyDshHostArtifacts(sdk, host, secondOutput), copied, 'identical SDK inputs produce the same packaged identity');
+  writeFileSync(join(sdk, host.entries[0]!.entry), 'export const changed = true;\n');
+  const refusedOutput = join(root, 'refused-composition'); mkdirSync(refusedOutput);
+  await assert.rejects(copyDshHostArtifacts(sdk, host, refusedOutput), /Source Host artifact changed/);
+  assert.equal(existsSync(join(refusedOutput, copied.directory)), false, 'source drift is refused before producing a packaged closure');
 });
 test('all source targets and required declarations are explicit and bounded', () => {
   const allowed = manifest(); allowed.files.push({ path: 'pnpm-lock.yaml', baseSha256: 'b'.repeat(64), patchedSha256: 'c'.repeat(64) });
@@ -339,7 +384,9 @@ test('producer build shares selected runtime state across entries and preserves 
     ['packages/core/agent-loop', '@deepseek-ai/dsh-agent-loop', "import {next} from '@deepseek-ai/dsh-tools';export default function loop(){return next()}"],
   ]) {
     mkdirSync(join(root, path, 'lib/types'), { recursive: true });
-    writeFileSync(join(root, path, 'package.json'), JSON.stringify({ name, version: baseline.version, exports: { '.': { types: './lib/types/index.d.ts', default: './lib/index.js' } } }));
+    writeFileSync(join(root, path, 'package.json'), JSON.stringify({ name, version: baseline.version,
+      peerDependencies: { '@deepseek-ai/dsh': baseline.version, '@deepseek-ai/dsh-session': baseline.version, '@deepseek-ai/cordis': '4.0.4', zod: '^4.4.3' },
+      exports: { '.': { types: './lib/types/index.d.ts', default: './lib/index.js' } } }));
     writeFileSync(join(root, path, 'lib/types/index.js'), code); writeFileSync(join(root, path, 'lib/types/index.d.ts'), 'export default function run():number;');
   }
   const artifacts = await buildSourceHostArtifacts(root, parseSourcePatchManifest(captureManifest()));
@@ -349,7 +396,12 @@ test('producer build shares selected runtime state across entries and preserves 
   const loop = await import(join(root, artifacts.entries[1].entry));
   assert.equal(tools.runtimeName, 'capture');
   assert.equal(tools.default(), 1); assert.equal(loop.default(), 2); assert.equal(tools.default(), 3);
-  for (const entry of artifacts.entries) assert.equal(JSON.parse(readFileSync(join(root, artifacts.directory, 'packages', entry.entryId, 'package.json'), 'utf8')).name, entry.name);
+  for (const entry of artifacts.entries) {
+    const packaged = JSON.parse(readFileSync(join(root, artifacts.directory, 'packages', entry.entryId, 'package.json'), 'utf8'));
+    assert.equal(packaged.name, entry.name);
+    assert.equal(packaged.version, baseline.version, 'package source identity remains exact');
+    assert.deepEqual(packaged.peerDependencies, { '@deepseek-ai/dsh': DSH_HOST_VERSION_RANGE, '@deepseek-ai/dsh-session': DSH_HOST_VERSION_RANGE, '@deepseek-ai/cordis': '4.0.4', zod: '^4.4.3' });
+  }
 });
 test('archive source hashes preserve declared CRLF bytes and symlink contents', { skip: !compilerPresent }, t => {
   const root = directory(t); writeFileSync(join(root, 'package.json'), '{}'); mkdirSync(join(root, 'node_modules'));

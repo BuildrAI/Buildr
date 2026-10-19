@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import '../../register-development-entry.ts';
+
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -191,7 +193,7 @@ assert.equal(versionJson.status, 0);
 const versionIdentity: any = JSON.parse(versionJson.stdout);
 assert.deepEqual(Object.keys(versionIdentity), [
   'schemaVersion', 'package', 'version', 'protocolIdentity', 'applicationPayloadDigest',
-  'channel', 'runtime', 'installationIdentity', 'sourceCommit', 'sourceRoot',
+  'channel', 'runtime', 'installationIdentity', 'sourceCommit', 'developmentRuntimeIdentity', 'sourceRoot',
 ]);
 assert.equal(versionIdentity.schemaVersion, 'buildr.version/v1');
 assert.equal(versionIdentity.package, '@buildr-ai/buildr');
@@ -202,6 +204,7 @@ assert.equal(versionIdentity.channel, 'development');
 assert.equal(versionIdentity.sourceRoot, fs.realpathSync(productRoot));
 assert.match(versionIdentity.installationIdentity, /^sha256-[a-f0-9]{64}$/);
 assert.match(versionIdentity.sourceCommit, /^[a-f0-9]{40}$/);
+assert.match(versionIdentity.developmentRuntimeIdentity, /^sha256-[a-f0-9]{64}$/);
 assert.deepEqual(Object.keys(versionIdentity.runtime), [
   'role', 'executable', 'version', 'platform', 'architecture', 'identity',
 ]);

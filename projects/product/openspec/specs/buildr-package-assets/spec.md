@@ -1212,3 +1212,20 @@ Buildr package manifest MUST 将 `ux-design-laws` 声明为无 capability contra
 - **WHEN** Agent 运行 Buildr package check 或对应内置技能契约测试
 - **THEN** 验证 MUST 确认 manifest/source/target/description/runtime 一致、30 个主题完整、参考文件可达且没有未完成脚手架
 - **AND** 验证 MUST 确认 `ux-design-laws` 不生成原型、不修改代码、不依赖 `ui-prototype` capability，并保留心理学法则的证据、验证和非操纵性边界
+
+### Requirement: 开发版来源校验与自举重启共享运行输入定义
+
+Buildr 开发版来源内容证明与自举重启选择 MUST 使用安装身份责任主体维护的同一运行输入定义。后端、入口、依赖声明、前端生产构建输入、启动工具及实际网页产物变化 MUST 被识别；文档、测试及独立 DSH 插件变化 MUST NOT 仅因整仓提交变化导致失配或重启。真实来源目录、产品版本与协议身份 MUST 继续校验。
+
+#### Scenario: 已交付运行输入更新
+- **WHEN** 已交付变化命中运行输入且当前有可认证的健康开发实例
+- **THEN** 唯一自举执行器 MUST 重新构建适用内容并正常退出、重启开发版，核对恢复后的运行内容证明
+- **AND** MUST NOT 强制结束或误管其他实例
+
+#### Scenario: 无关更新
+- **WHEN** 交付只改变文档、测试或独立 DSH 插件，当前运行内容相同
+- **THEN** 自举 MUST 不执行开发应用安装或重启，来源比较 MUST 继续接受具有匹配运行内容证明的开发实例
+
+#### Scenario: 旧实例迁移
+- **WHEN** 旧实例缺少新的运行内容证明
+- **THEN** 系统 MUST 保留严格旧来源校验，不从当前文件追认旧启动内容；首次运行更新正常重启后 MUST 记录新证明

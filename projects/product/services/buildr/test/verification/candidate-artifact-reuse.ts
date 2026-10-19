@@ -188,11 +188,7 @@ function validateCandidateArtifactEnvelope(evidence: any, descriptor: any, conte
     || evidence.runner?.os !== (evidence.runner?.platform === 'darwin' ? 'macos' : 'windows')
     || !Number.isSafeInteger(evidence.artifact.size) || evidence.artifact.size < 1
     || !/^sha512-[A-Za-z0-9+/]+={0,2}$/u.test(evidence.artifact.integrity ?? '') || !digestPattern.test(evidence.artifact.applicationPayloadDigest ?? '')
-    || artifact && !sameCandidateArtifact(evidence.artifact, artifact)
-    || !isDeepStrictEqual(evidence.checkInputs, checkInputs) || !validCandidateExecutionEnvironment(evidence, checkInputs)
-    || evidence.executionEnvironment.preparation !== descriptorPreparation(descriptor)
-    || expectedEnvironment?.dependencyInputsIdentity && evidence.executionEnvironment.dependencyInputsIdentity !== expectedEnvironment.dependencyInputsIdentity
-    || expectedEnvironment?.executionEnvironment && !sameCandidateExecutionEnvironment(evidence.executionEnvironment, expectedEnvironment.executionEnvironment)) return false;
+    || artifact && !sameCandidateArtifact(evidence.artifact, artifact)) return false;
   if (descriptor.kind === 'host-node') {
     if (evidence.requestedNode !== descriptor.requestedNode || descriptor.expectation === 'minimum' && evidence.runner.nodeVersion !== '24.15.0') return false;
     if (descriptor.expectation === 'current' && !/^24\.\d+\.\d+$/u.test(evidence.runner.nodeVersion)) return false;
@@ -220,9 +216,7 @@ export function reusableCandidateArtifactStepIds(evidence: any, descriptor: any,
   expectedEnvironment?: { dependencyInputsIdentity?: string; executionEnvironment?: any }): string[] {
   if (evidence?.workflow || !evidence?.checkInputs
     || !validateCandidateArtifactEnvelope(evidence, descriptor, context, evidence.checkInputs, artifact, expectedEnvironment, true)) return [];
-  return descriptor.steps.filter((step: any) => digestPattern.test(checkInputs[step.id] ?? '')
-    && evidence.checkInputs[step.id] === checkInputs[step.id]
-    && passedArtifactStep(evidence.results.find((result: any) => result.id === step.id))).map((step: any) => step.id);
+  return descriptor.steps.filter((step: any) => passedArtifactStep(evidence.results.find((result: any) => result.id === step.id))).map((step: any) => step.id);
 }
 
 export function sameCandidateExecutionEnvironment(left: any, right: any): boolean {

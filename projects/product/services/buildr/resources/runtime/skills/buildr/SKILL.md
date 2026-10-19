@@ -21,7 +21,7 @@ Agent 是 Buildr 功能的默认操作入口。在用户目标和已有授权内
 |---|---|
 | 安装、检查或更新 Buildr | [安装与更新](references/asset-maintenance.md#安装与更新)；不猜目标工作空间（Workspace） |
 | 将本机 Codex 或 DSH 接入 Buildr，或查看当前接入与默认选择 | [本机智能体接入](references/agent-operations.md)；登记真实可调用入口，不让用户填写安装路径 |
-| 初始化工作空间（Workspace） | `buildr init --agent <agent> --target <dir> --name <name> --profile <personal\|team\|company>`；身份未知可省略 `--agent`，默认完整准备标准或唯一既有方式，使用内置最终 Doctor。仅源资产使用 `init --source-only`；首次使用交接见 [资产维护](references/asset-maintenance.md#workspace--organization-root) |
+| 初始化工作空间（Workspace） | `buildr init --agent <agent> --target <dir> --name <name> --profile <personal\|team\|company>`；普通初始化默认登记到当前产品的本机 Buildr Web，随后完整准备标准或唯一既有方式并使用内置最终 Doctor；身份未知可省略 `--agent`。仅源资产使用 `init --source-only`，该模式不登记本机列表。登记不等于网页已打开；首次使用交接见 [资产维护](references/asset-maintenance.md#workspace--organization-root) |
 | 更新或同步工作空间（Workspace），或处理检出内容变化 | [工作空间更新与检出变化](references/asset-maintenance.md#工作空间更新与检出变化) |
 | 项目（Project）、服务（Service）、代码库实例（Repository Instance）、规则（Rule）、技能（Skill）、命令（Command）、组件（Component）或内置能力（Builtin）维护 | 按对象读取 [资产维护](references/asset-maintenance.md) 中对应小节；涉及组件（Component）成员时先核对整体所有权 |
 | 投射、发现或适配器（Adapter）问题 | 读取 [运行时维护](references/runtime.md)；只检查当前目标运行时（Runtime） |

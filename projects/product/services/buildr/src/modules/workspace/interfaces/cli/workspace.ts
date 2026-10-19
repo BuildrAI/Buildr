@@ -46,11 +46,12 @@ export function workspaceCommand(application: WorkspaceCliApplication, operation
     printResult(ready.created, ready.changed);
     if (ready.runtimeSelection !== null) {
       console.log('');
-      console.log(`正在准备 ${ready.runtimeSelection.runtimeId ?? ready.runtimeSelection.adapterId} runtime；该步骤复用 buildr sync${runtimeCommandSelector(ready.runtimeSelection)} 并执行最终 doctor。`);
+      console.log(`接下来登记到当前产品的本机 Buildr Web，再准备 ${ready.runtimeSelection.runtimeId ?? ready.runtimeSelection.adapterId} runtime；运行时准备复用 buildr sync${runtimeCommandSelector(ready.runtimeSelection)} 并执行最终 doctor。`);
     }
   });
   const { runtimeSelection } = result;
   if (runtimeSelection !== null) {
+    console.log(`已登记到本机 Buildr Web：${result.registeredWorkspaceId}；登记未启动网页服务或打开浏览器。`);
     console.log(`Buildr onboarding 已完成：${runtimeSelection.runtimeId ?? runtimeSelection.adapterId}（包含 sync 与最终 doctor）。`);
     console.log('下一步：请由当前 Agent 完成一次首次使用交接。');
     console.log('用普通语言说明工作空间（Workspace）承载共同事实，项目（Project）承载业务目标，服务（Service）承担实现职责，代码库实例（Repository Instance）定位实际代码；多个服务可共用一份代码。');
@@ -58,6 +59,7 @@ export function workspaceCommand(application: WorkspaceCliApplication, operation
     return result;
   }
   console.log('');
+  console.log('本次仅初始化源资产，未新增或改变本机 Buildr Web 登记或网页管理归属。');
   console.log('仅初始化源资产的后续步骤：');
   console.log('  buildr runtime list --json');
   console.log(`  buildr sync <agent> --target ${targetRoot}`);

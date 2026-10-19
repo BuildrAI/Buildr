@@ -1,4 +1,7 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 export const RELEASE_TASK_EVIDENCE_CORRELATION_SCHEMA = 'buildr.release-task-evidence-correlation/v5';
 
@@ -18,6 +21,71 @@ const DIGEST = /^sha256-[a-f0-9]{64}$/u;
 const TASK = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/u;
 const SHA = /^[a-f0-9]{40}$/u;
 const digest = (value: unknown): string => `sha256-${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
+
+export function candidatePreparationDirectory(workspace: string, key: string, prepared: any, create = false): string {
+  if (!SHA.test(prepared.sourceCommit ?? '') || !TASK.test(key) || !Number.isSafeInteger(prepared.generation) || prepared.generation < 0
+      || !Number.isSafeInteger(prepared.run?.id) || prepared.run.id < 1 || !Number.isSafeInteger(prepared.run?.attempt) || prepared.run.attempt < 1) throw new Error('Candidate preservation identity is invalid.');
+  const relative = path.join('projects/product/services/buildr/build/verification/candidates', prepared.sourceCommit,
+    `preparation-${digest({ key, generation: prepared.generation, run: prepared.run }).slice(7, 39)}`);
+  let current = workspace;
+  if (fs.realpathSync(workspace) !== workspace) throw new Error('Candidate preservation needs the canonical Workspace.');
+  for (const name of relative.split(path.sep)) {
+    current = path.join(current, name);
+    if (create && !fs.lstatSync(current, { throwIfNoEntry: false })) fs.mkdirSync(current);
+    const stat = fs.lstatSync(current, { throwIfNoEntry: false });
+    if (!stat?.isDirectory() || stat.isSymbolicLink()) throw new Error('Candidate preservation directory must be independent of worktree aliases.');
+  }
+  return current;
+}
+
+export function readCandidatePreparationSnapshot(workspace: string, key: string, prepared: any): any {
+  const directory = candidatePreparationDirectory(workspace, key, prepared);
+  if (prepared.directory !== directory) throw new Error('Retained Candidate directory identity changed.');
+  const read = (file: string) => {
+    const stat = fs.lstatSync(file);
+    if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('Retained Candidate evidence must be a regular file.');
+    return fs.readFileSync(file);
+  };
+  const snapshot = JSON.parse(read(path.join(directory, 'preparation-evidence.json')).toString('utf8'));
+  if (digest(snapshot) !== prepared.snapshotIdentity || snapshot.selection.identity !== prepared.identity
+      || snapshot.selection.sourceCommit !== prepared.sourceCommit || snapshot.selection.sourceTree !== prepared.sourceTree
+      || snapshot.selection.generation !== prepared.generation || snapshot.selection.mainCommit !== prepared.mainCommit || JSON.stringify(snapshot.run) !== JSON.stringify(prepared.run)
+      || JSON.stringify(snapshot.artifacts) !== JSON.stringify(prepared.artifacts)) throw new Error('Retained Candidate proof identity changed.');
+  for (const [name, manifest] of Object.entries(snapshot.artifacts) as Array<[string, any]>) {
+    if (!['buildr', 'dsh-plugin'].includes(name) || typeof manifest.filename !== 'string' || path.basename(manifest.filename) !== manifest.filename) throw new Error('Retained Candidate artifact identity is invalid.');
+    const folder = fs.lstatSync(path.join(directory, name));
+    if (!folder.isDirectory() || folder.isSymbolicLink()) throw new Error('Retained Candidate package directory is an alias.');
+    const bytes = read(path.join(directory, name, manifest.filename));
+    read(path.join(directory, name, name === 'buildr' ? 'release-artifact.json' : 'candidate.json'));
+    if (crypto.createHash('sha256').update(bytes).digest('hex') !== manifest.sha256
+        || `sha512-${crypto.createHash('sha512').update(bytes).digest('base64')}` !== manifest.integrity) throw new Error('Retained Candidate original bytes changed.');
+  }
+  return snapshot;
+}
+
+/** Read the release owner's completed preparation; caller status alone is not proof. */
+export function readCompletedReleasePreparation(input: { workspace: string; taskId: string; candidateRunId: number }): any {
+  const workspace = fs.realpathSync(input.workspace), key = input.taskId.replace(/^release-/u, '');
+  if (input.taskId !== `release-${key}` || !TASK.test(key)) throw new Error('Completed preparation Task identity is invalid.');
+  const git = (args: string[]) => {
+    const run = spawnSync('git', args, { cwd: workspace, encoding: 'utf8', timeout: 30_000 });
+    if (run.status !== 0) throw new Error('Completed preparation Git identity cannot be read.');
+    return run.stdout.trim();
+  };
+  const common = git(['rev-parse', '--path-format=absolute', '--git-common-dir']);
+  const state = JSON.parse(fs.readFileSync(path.join(common, 'buildr/release-operations', `${key}.json`), 'utf8'));
+  const prepared = state.preparation;
+  if (state.workspace !== workspace || (state.targets?.selectionId ?? state.version) !== key || prepared?.status !== 'completed'
+      || prepared.taskRegistration !== 'completed' || prepared.report !== 'recorded' || prepared.materials !== 'recorded'
+      || prepared.run?.id !== input.candidateRunId || state.candidate?.runId !== input.candidateRunId
+      || state.candidate?.sourceCommit !== prepared.sourceCommit || !SHA.test(prepared.sourceCommit ?? '')) {
+    throw new Error('Completed Task has no matching completed Candidate preparation.');
+  }
+  if (git(['rev-parse', `refs/buildr/release/${key}/frozen`]) !== prepared.sourceCommit
+      || git(['rev-parse', `${prepared.sourceCommit}^{tree}`]) !== prepared.sourceTree) throw new Error('Completed preparation frozen source changed.');
+  readCandidatePreparationSnapshot(workspace, key, prepared);
+  return prepared;
+}
 
 function record(value: unknown, label: string): Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object.`);

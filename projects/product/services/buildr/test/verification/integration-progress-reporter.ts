@@ -149,6 +149,8 @@ export default async function* integrationProgressReporter(source: any): Promise
       ...label(data),
       status: data.details.passed === true ? 'passed' : 'failed',
       durationMs: Math.round(data.details.duration_ms),
+      ...(isFileEvent(data) && !path.relative(process.cwd(), data.file).startsWith('..')
+        ? { entryFile: path.relative(process.cwd(), data.file).split(path.sep).join('/') } : {}),
       ...(data.details.passed === false ? { error: failureIdentity(data.details.error, data.file) } : {}),
     })}\n`;
   }

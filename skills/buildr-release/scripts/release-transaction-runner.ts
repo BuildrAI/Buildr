@@ -22,7 +22,7 @@ import { assertReleaseConsumptionCoverage } from '../../../projects/product/serv
 import { readReleaseArtifact } from './release-artifact.ts';
 import { createReleaseContext, evaluateReleaseReadiness, releaseContextIdentity, validateReleaseContext } from './release-readiness.ts';
 import { inspectReleaseSelection } from './release-selection.ts';
-import { createReleaseTaskEvidenceCorrelationFromRuntime, releaseTaskAssociationProjection } from './release-task-evidence-correlation.ts';
+import { createReleaseTaskEvidenceCorrelationFromRuntime, releaseTaskAssociationProjection, readCompletedReleasePreparation } from './release-task-evidence-correlation.ts';
 import { inspectHostedReleaseTransaction } from './release-transaction-evidence.ts';
 import { artifactFromTarball, releaseManifestFromTarball } from './package-artifact-observation.ts';
 import { releaseExecutionCommit, validateReleaseExecutorRecovery } from './release-executor-recovery.ts';
@@ -268,7 +268,9 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
     const releaseTaskResult: any = runtime.inspectTask(canonicalWorkspace, options.releaseTask);
     const releaseTask: any = releaseTaskResult?.record;
     const supportTasks: any = (options.supportTasks ?? []).map((taskId: any) => taskContextProjection(runtime.inspectTask(canonicalWorkspace, taskId)?.record));
-    if (releaseTask?.status !== 'active') throw new Error('Release Task must be active before publication.');
+    const completedPreparation = releaseTask?.status === 'completed'
+      ? readCompletedReleasePreparation({ workspace: canonicalWorkspace, taskId: options.releaseTask, candidateRunId }) : null;
+    if (!completedPreparation && releaseTask?.status !== 'active') throw new Error('Release Task must be active or have matching completed preparation before publication.');
     const candidateRun: any = parseJson(invoke(execute, ghCommand, ['api', `repos/${releasePublishAuthority.repository}/actions/runs/${candidateRunId}`], repo), 'Candidate run readback');
     const candidateActual: any = {
       repository: candidateRun?.repository?.full_name ?? null,
@@ -293,12 +295,14 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
       runtime,
       root: canonicalWorkspace,
       releaseTask: options.releaseTask,
-      releaseTaskStatus: 'active',
+      releaseTaskStatus: releaseTask.status,
       supportTasks: options.supportTasks ?? [],
       source: { sourceCommit, sourceTree: actualTree, remoteRef: remoteMain },
     });
     const inspectSelection: any = dependencies.inspectSelection ?? inspectReleaseSelection;
     const selection: any = inspectSelection({ version, ...(options.selectionId ? { selectionId: options.selectionId, targets: options.targets } : {}), repo, devRef: options.devCommit || 'origin/dev' }, { execute: rawExecute });
+    if (completedPreparation && (selection.selectionIdentity !== completedPreparation.identity || selection.generation !== completedPreparation.generation
+        || selection.releaseHead !== completedPreparation.sourceCommit || selection.releaseTree !== completedPreparation.sourceTree)) throw new Error('Completed preparation no longer matches the exact frozen selection identity and generation.');
     const mainParents: any = commitParents(execute, repo, sourceCommit);
     if (selection.status !== 'frozen' || selection.releaseHead !== candidateBase) throw new Error(`Candidate base ${candidateBase} does not match current frozen release generation ${selection.releaseHead ?? '<missing>'}.`);
     if (candidateSourceCommit !== selection.releaseHead) throw new Error(`Candidate run source ${candidateSourceCommit} is stale; current final release source is ${selection.releaseHead}.`);

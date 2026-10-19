@@ -5,6 +5,7 @@ import process from 'node:process';
 
 import { spawnCommandSync } from '../../../infrastructure/process.ts';
 import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
+import { readDevelopmentRuntimeIdentity } from './development-runtime-inputs.ts';
 import {
   readApplicationPayloadManifest,
   validateApplicationPayloadManifest,
@@ -146,6 +147,7 @@ function developmentOrigin(productRoot: any, metadata: any, { includeWorkingTree
     ...createInstallationOrigin(base),
     sourceRoot: canonicalProductRoot,
     gitRoot: canonicalGitRoot,
+    developmentRuntimeIdentity: readDevelopmentRuntimeIdentity(canonicalProductRoot, canonicalGitRoot),
     ...(includeWorkingTree ? { dirty: Boolean(git(productRoot, ['status', '--porcelain=v1', '--untracked-files=normal'])) } : {}),
   };
 }

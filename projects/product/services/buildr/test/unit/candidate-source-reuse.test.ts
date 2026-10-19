@@ -15,12 +15,16 @@ const record = (stepId: string, runner = 'macos', passed = true) => ({
 });
 const bundle = (records: any[] = []) => ({ schemaVersion: 'buildr.verification-source-bundle/v1', records });
 
-test('complete reusable macOS source proof including type checking leaves only actual Windows boundaries', () => {
-  const source = CANDIDATE_CI_SHARDS.filter((shard: any) => !shard.requiresArtifact && !shard.producesArtifact && shard.runner === 'macos');
-  const records = source.flatMap((shard: any) => shard.stepIds.filter((id: string) => verificationStepById(id).reuse).map((id: string) => record(id)));
-  const plan = planCandidateSourceReuse(CANDIDATE_CI_SHARDS, bundle(records), (item, _id, runner) => item.environment.runner === runner);
-  assert.deepEqual(plan.sourceShards.map((shard: any) => shard.id), ['platform-boundaries-windows']);
-  assert.deepEqual(plan.reusedShards.map(item => item.shard.id), source.map((shard: any) => shard.id));
+test('complete reusable local source proof leaves only the other system native boundaries on either machine', () => {
+  for (const local of ['macos', 'windows']) {
+    const source = CANDIDATE_CI_SHARDS.filter((shard: any) => !shard.requiresArtifact && !shard.producesArtifact
+      && (shard.platformScope.kind === 'common' || shard.runner === local));
+    const records = source.flatMap((shard: any) => shard.stepIds.filter((id: string) => verificationStepById(id).reuse).map((id: string) => record(id, local)));
+    const plan = planCandidateSourceReuse(CANDIDATE_CI_SHARDS, bundle(records), (item, id, runner) =>
+      verificationStepById(id).platformScope.kind === 'common' || item.environment.runner === runner);
+    assert.deepEqual(plan.sourceShards.map((shard: any) => shard.id), [`platform-boundaries-${local === 'macos' ? 'windows' : 'macos'}`]);
+    assert.deepEqual(plan.reusedShards.map(item => item.shard.id), source.map((shard: any) => shard.id));
+  }
 });
 
 test('source transport preserves the portable records and rejects modified or oversized input', () => {

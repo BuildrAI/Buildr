@@ -35,8 +35,10 @@ import {
   writeBuildrWebInstance,
 } from '../../src/web/infrastructure/instance-runtime.ts';
 import { resolveWebProfile } from '../../src/modules/installation/contracts/web-profile.ts';
+import { APPLICATION_PAYLOAD_MANIFEST, canonicalApplicationPayloadIdentity } from '../../src/infrastructure/product-resources/index.ts';
 
 const SOURCE_COMMIT: any = 'd4361952d7111f131b5923fedcf4b58077719eb6';
+const fixtureCleanups = new WeakMap<object, Array<() => Promise<void>>>();
 
 function digest(value: any): any  {
   return `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
@@ -60,12 +62,18 @@ test.beforeEach((t: any) => {
   const appData: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-npm-launcher-test-app-data-'));
   process.env.BUILDR_APP_DATA_DIR = appData;
   process.env.BUILDR_PRODUCT_DATA_DIR = appData;
-  t.after(() => {
-    if (previousAppData === undefined) delete process.env.BUILDR_APP_DATA_DIR;
-    else process.env.BUILDR_APP_DATA_DIR = previousAppData;
-    if (previousProductData === undefined) delete process.env.BUILDR_PRODUCT_DATA_DIR;
-    else process.env.BUILDR_PRODUCT_DATA_DIR = previousProductData;
-    fs.rmSync(appData, { recursive: true, force: true });
+  const pending: Array<() => Promise<void>> = [];
+  fixtureCleanups.set(t, pending);
+  t.after(async () => {
+    try {
+      for (const cleanup of [...pending].reverse()) await cleanup();
+      fs.rmSync(appData, { recursive: true, force: true });
+    } finally {
+      if (previousAppData === undefined) delete process.env.BUILDR_APP_DATA_DIR;
+      else process.env.BUILDR_APP_DATA_DIR = previousAppData;
+      if (previousProductData === undefined) delete process.env.BUILDR_PRODUCT_DATA_DIR;
+      else process.env.BUILDR_PRODUCT_DATA_DIR = previousProductData;
+    }
   });
 });
 
@@ -88,6 +96,138 @@ async function fixture(): Promise<any>  {
     updateAuthority,
   }, { file: path.join(root, 'product-installations.json') });
   return { root, prefix, packageRoot, registration: { status: 'installed', entry: enrolled.entry } };
+}
+
+function setFixturePayloadVersion(payloadRoot: string, version: string) {
+  const metadataFile = path.join(payloadRoot, 'resources', 'product', 'package.json');
+  const metadata = JSON.parse(fs.readFileSync(metadataFile, 'utf8'));
+  fs.writeFileSync(metadataFile, `${JSON.stringify({ ...metadata, version }, null, 2)}\n`);
+  const manifestFile = path.join(payloadRoot, APPLICATION_PAYLOAD_MANIFEST);
+  const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+  const metadataBytes = fs.readFileSync(metadataFile);
+  const entry = manifest.files.find((file: any) => file.path === 'resources/product/package.json');
+  assert.ok(entry, 'fixture version metadata must be bound by the payload manifest');
+  Object.assign(entry, { size: metadataBytes.length, sha256: crypto.createHash('sha256').update(metadataBytes).digest('hex') });
+  manifest.buildrVersion = version;
+  manifest.applicationPayloadDigest = canonicalApplicationPayloadIdentity(manifest);
+  fs.writeFileSync(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
+async function updateFixture(t: any, { launcher = false }: { launcher?: boolean } = {}) {
+  const staged = await fixture();
+  const value = { ...staged, root: fs.realpathSync(staged.root), prefix: fs.realpathSync(staged.prefix), packageRoot: fs.realpathSync(staged.packageRoot) };
+  const oldVersion = '0.0.1', newVersion = '0.0.2';
+  const payloadRoot = path.join(value.root, 'payload');
+  const nextPayloadRoot = path.join(value.root, 'next-payload');
+  const nextPackageRoot = path.join(value.root, 'next-package');
+  const testContextRoot = path.join(value.root, 'generated', 'test-context');
+  const npmCliPath = path.join(value.prefix, 'npm-cli.js');
+  const npmLog = path.join(value.root, 'npm-commands.jsonl');
+  const entryLog = path.join(value.root, 'entry-invocations.jsonl');
+  const launcherTarget = launcher ? path.join(value.root, 'Applications', 'Buildr Web.app') : null;
+  const appData = process.env.BUILDR_APP_DATA_DIR!;
+  const receiptFile = path.join(appData, 'instance.json');
+  fs.cpSync(payloadRoot, nextPayloadRoot, { recursive: true });
+  setFixturePayloadVersion(payloadRoot, oldVersion);
+  setFixturePayloadVersion(nextPayloadRoot, newVersion);
+  fs.rmSync(value.packageRoot, { recursive: true, force: true });
+  createNpmPackStaging(payloadRoot, value.packageRoot, { testContextRoot });
+  createNpmPackStaging(nextPayloadRoot, nextPackageRoot, { testContextRoot });
+  const entry = path.join(value.packageRoot, 'bin', 'buildr.mjs');
+  const nextEntry = path.join(nextPackageRoot, 'bin', 'buildr.mjs');
+  fs.writeFileSync(nextEntry, `import fs from 'node:fs';\nfs.appendFileSync(${JSON.stringify(entryLog)}, JSON.stringify({ node: process.execPath, entry: process.argv[1], args: process.argv.slice(2), version: ${JSON.stringify(newVersion)} }) + '\\n');\n${fs.readFileSync(nextEntry, 'utf8').replace(/^#![^\n]*\n/u, '')}`);
+  fs.writeFileSync(npmCliPath, `import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(npmLog)}, JSON.stringify(args) + '\\n');
+if (args[0] === 'view') {
+  process.stdout.write(JSON.stringify({ latest: ${JSON.stringify(newVersion)}, next: ${JSON.stringify(newVersion)} }) + '\\n');
+} else if (args[0] === 'install') {
+  assert.deepEqual(args, ['install', '--global', '--prefix', ${JSON.stringify(value.prefix)}, '@buildr-ai/buildr@${newVersion}']);
+  fs.rmSync(${JSON.stringify(value.packageRoot)}, { recursive: true, force: true });
+  fs.cpSync(${JSON.stringify(nextPackageRoot)}, ${JSON.stringify(value.packageRoot)}, { recursive: true });
+  const result = spawnSync(process.execPath, [path.join(${JSON.stringify(value.packageRoot)}, 'scripts/postinstall.mjs')], {
+    encoding: 'utf8',
+    env: { ...process.env, npm_lifecycle_event: 'postinstall', npm_config_global: 'true', npm_package_json: path.join(${JSON.stringify(value.packageRoot)}, 'package.json'), npm_config_prefix: ${JSON.stringify(value.prefix)}, npm_execpath: ${JSON.stringify(npmCliPath)}, npm_node_execpath: process.execPath },
+  });
+  if (result.status !== 0) { process.stderr.write(result.stderr || result.stdout || String(result.error)); process.exit(result.status ?? 1); }
+  ${launcherTarget ? `const repaired = spawnSync(process.execPath, [${JSON.stringify(entry)}, 'web', 'launcher', 'repair', '--target', ${JSON.stringify(launcherTarget)}, '--json'], { encoding: 'utf8', env: process.env });
+  if (repaired.status !== 0) { process.stderr.write(repaired.stderr || repaired.stdout || String(repaired.error)); process.exit(repaired.status ?? 1); }` : ''}
+} else { throw new Error('Unexpected fixture npm command: ' + args.join(' ')); }
+`);
+  const enrolled = enrollProductInstallation({
+    envelopePath: path.join(value.packageRoot, 'installation-origin.json'),
+    productRoot: path.join(value.packageRoot, 'payload', 'product'), entryPath: entry,
+    runtimeExecutable: process.execPath,
+    updateAuthority: createProductUpdateAuthority({ nodeExecutable: process.execPath, npmCliPath, prefix: value.prefix }),
+  });
+  const registration = { status: 'installed', entry: enrolled.entry };
+  const installedLauncher = launcherTarget ? installNpmLauncher({ registration, platform: 'darwin', target: launcherTarget, port: 0 }) : null;
+  const children = new Set<any>();
+  const webPids = new Set<number>();
+  const pending = fixtureCleanups.get(t);
+  assert.ok(pending, 'update fixtures require the suite-owned cleanup queue');
+  pending.push(async () => {
+    const failures: unknown[] = [];
+    try {
+      if (fs.existsSync(receiptFile)) {
+        const current = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
+        webPids.add(current.pid);
+        const stopped = await fetch(`${current.url}/api/v1/app/quit-instance`, { method: 'POST', headers: { 'x-buildr-instance': current.secret }, signal: AbortSignal.timeout(2_000) });
+        assert.equal(stopped.status, 202, 'fixture cleanup must authenticate the current Web shutdown');
+        await waitFor(() => !fs.existsSync(receiptFile), { attempts: 400, intervalMs: 25, message: 'updated fixture Web receipt cleanup' });
+      }
+    } catch (error) {
+      failures.push(error);
+    } finally {
+      for (const child of children) {
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+        try { await waitForChildExit(child, 'fixture child cleanup'); } catch (error) { failures.push(error); }
+      }
+    }
+    for (const pid of webPids) {
+      try {
+        await waitFor(() => {
+          try { process.kill(pid, 0); return false; }
+          catch (error: any) { if (error.code === 'ESRCH') return true; throw error; }
+        }, { attempts: 400, intervalMs: 25, message: `fixture Web PID ${pid} exit` });
+      } catch (error) { failures.push(error); }
+    }
+    if (failures.length) throw new AggregateError(failures, `Update fixture cleanup incomplete; preserved diagnostic files at ${appData} and ${value.root}.`);
+    fs.rmSync(value.root, { recursive: true, force: true });
+  });
+  async function startOld() {
+    const child = spawnInstalledWeb(entry, installedLauncher ? ['--no-open', '--launcher-binding', installedLauncher.bindingPath] : ['--no-open', '--port', '0']);
+    children.add(child);
+    const receipt = await waitFor(() => {
+      if (!fs.existsSync(receiptFile)) return null;
+      const observed = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
+      return observed.pid === child.pid ? observed : null;
+    }, { message: 'old installed Web receipt', diagnostic: () => child.output.join('') });
+    assert.equal(receipt.productIdentity.version, oldVersion);
+    webPids.add(receipt.pid);
+    return { child, receipt };
+  }
+  async function update() {
+    const child = spawn(process.execPath, [entry, 'update', '--track', 'stable', '--json'], {
+      cwd: value.root,
+      env: { ...process.env, PATH: '', BUILDR_LAUNCHER_NO_OPEN: '1', BUILDR_LAUNCHER_HANDOFF_WAIT_MS: '500' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    children.add(child);
+    const stdout: string[] = [], stderr: string[] = [];
+    child.stdout.on('data', (chunk) => stdout.push(String(chunk)));
+    child.stderr.on('data', (chunk) => stderr.push(String(chunk)));
+    (child as any).output = stderr;
+    await waitForChildExit(child, 'installed update command');
+    assert.equal(child.exitCode, 0, `${stdout.join('')}\n${stderr.join('')}`);
+    const result = JSON.parse(stdout.join(''));
+    if (result.webUpdate?.pid) webPids.add(result.webUpdate.pid);
+    return result;
+  }
+  return { ...value, entry, registration, installedLauncher, oldVersion, newVersion, receiptFile, npmLog, entryLog, startOld, update };
 }
 
 function productIdentityFor(binding: any): any  {
@@ -422,6 +562,134 @@ test('npm Launcher takes over CLI ownership, serializes concurrent opens, reuses
   assert.equal(stopped.status, 202);
   await waitForChildExit(replacement, 'updated Launcher');
   assert.equal(fs.existsSync(receiptFile), false);
+});
+
+for (const launcher of [true, false]) {
+  test(`installed npm update automatically hands off an old ${launcher ? 'Launcher' : 'CLI'} Web to the new version`, async (t: any) => {
+    const value = await updateFixture(t, { launcher });
+    const { child, receipt: previous } = await value.startOld();
+    const updated = await value.update();
+    assert.equal(updated.status, 'updated');
+    assert.equal(updated.webUpdate.status, 'restarted');
+    assert.equal(updated.webUpdate.version, value.newVersion);
+    assert.equal(updated.webUpdate.previousPid, previous.pid);
+    await waitForChildExit(child, 'old Web after npm update');
+    const current = JSON.parse(fs.readFileSync(value.receiptFile, 'utf8'));
+    assert.notEqual(current.pid, previous.pid);
+    assert.equal(current.pid, updated.webUpdate.pid);
+    assert.equal(current.url, updated.webUpdate.url);
+    assert.equal(new URL(current.url).port, new URL(previous.url).port, 'update handoff should preserve the original browser address');
+    const health = await fetch(`${current.url}/api/v1/health`, { headers: { 'x-buildr-instance': current.secret } }).then((response) => response.json());
+    assert.equal(health.productIdentity.version, value.newVersion);
+    assert.equal(health.productIdentity.channel, 'npm');
+    assert.equal(health.productIdentity.runtime.executable, fs.realpathSync(process.execPath));
+    const invocations = fs.readFileSync(value.entryLog, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+    const handoff = invocations.find((entry: any) => entry.args[0] === 'web' && entry.args.includes('--update-handoff'));
+    assert.ok(handoff, 'the update command must invoke the newly installed entry for handoff');
+    assert.equal(handoff.version, value.newVersion);
+    assert.equal(fs.realpathSync(handoff.node), fs.realpathSync(process.execPath));
+    assert.equal(fs.realpathSync(handoff.entry), fs.realpathSync(value.entry));
+    assert.match(handoff.args[handoff.args.indexOf('--update-handoff') + 1], /^sha256-[a-f0-9]{64}$/u);
+    assert.ok(handoff.args.includes('--no-open'), 'automatic update must not reopen the browser');
+    if (value.installedLauncher) {
+      const binding = JSON.parse(fs.readFileSync(value.installedLauncher.bindingPath, 'utf8'));
+      assert.equal(binding.version, value.newVersion, 'the existing temporary Launcher binding follows the new installation');
+    } else {
+      assert.equal(fs.existsSync(path.join(value.root, 'Applications')), false, 'CLI handoff must not install a Launcher');
+    }
+    const repeated = await value.update();
+    assert.equal(repeated.status, 'up-to-date');
+    assert.equal(repeated.webUpdate.status, 'current');
+    assert.equal(JSON.parse(fs.readFileSync(value.receiptFile, 'utf8')).pid, current.pid, 'an already current Web must not restart');
+    const npmCommands = fs.readFileSync(value.npmLog, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+    assert.equal(npmCommands.filter((args: string[]) => args[0] === 'install').length, 1, 'rechecking an updated installation must not reinstall');
+  });
+}
+
+test('installed npm update protects another prefix running the identical published origin', async (t: any) => {
+  const first = await updateFixture(t);
+  const second = await updateFixture(t);
+  assert.notEqual(first.prefix, second.prefix);
+  assert.equal(first.registration.entry.origin.installUnit, `@buildr-ai/buildr@${first.oldVersion}`);
+  assert.equal(second.registration.entry.origin.installUnit, first.registration.entry.origin.installUnit);
+  assert.equal(second.registration.entry.origin.ownershipIdentity, first.registration.entry.origin.ownershipIdentity, 'identical published package bytes must retain the same origin identity across prefixes');
+  assert.ok(first.registration.entry.runtime.identity);
+  assert.equal(second.registration.entry.runtime.identity, first.registration.entry.runtime.identity);
+  const { child, receipt: running } = await first.startOld();
+  assert.equal(running.launcherIdentity, null, 'the old CLI receipt intentionally has no Launcher slot identity');
+  const before = fs.readFileSync(first.receiptFile, 'utf8');
+  const updated = await second.update();
+  assert.equal(updated.status, 'updated', 'the selected second installation still completes its package update');
+  assert.equal(updated.webUpdate.status, 'failed', 'shared origin identity alone cannot identify the running installation slot');
+  assert.equal(updated.webUpdate.code, 'web_update_instance_ownership_ambiguous');
+  assert.ok(updated.webUpdate.message);
+  assert.equal(child.exitCode, null, 'updating another prefix must not stop the first installation');
+  assert.equal(child.signalCode, null);
+  assert.equal(fs.readFileSync(first.receiptFile, 'utf8'), before, 'the other prefix instance receipt must remain unchanged');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(first.packageRoot, 'package.json'), 'utf8')).version, first.oldVersion);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(second.packageRoot, 'package.json'), 'utf8')).version, second.newVersion);
+  const health = await fetch(`${running.url}/api/v1/health`, { headers: { 'x-buildr-instance': running.secret } }).then((response) => response.json());
+  assert.equal(health.pid, running.pid);
+  assert.equal(health.productIdentity.version, first.oldVersion);
+  assert.equal(health.productIdentity.installationIdentity, first.registration.entry.origin.ownershipIdentity);
+});
+
+test('installed npm update retains an unopened Web when no instance is running', async (t: any) => {
+  const value = await updateFixture(t);
+  assert.equal(fs.existsSync(value.receiptFile), false);
+  const updated = await value.update();
+  assert.equal(updated.status, 'updated');
+  assert.equal(updated.webUpdate.status, 'not-running');
+  assert.equal(fs.existsSync(value.receiptFile), false, 'updating an unused installation must not start Web');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(value.packageRoot, 'package.json'), 'utf8')).version, value.newVersion);
+  const invocations = fs.readFileSync(value.entryLog, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+  assert.equal(invocations.some((entry: any) => entry.args.includes('--update-handoff')), false);
+  assert.equal(fs.existsSync(path.join(value.root, 'Applications')), false);
+});
+
+test('installed npm update preserves package success and the old receipt when authenticated quit is refused', async (t: any) => {
+  const value = await updateFixture(t);
+  const origin = value.registration.entry.origin;
+  const productIdentity = {
+    package: origin.package, version: origin.version, channel: 'npm',
+    protocolIdentity: origin.protocolIdentity, applicationPayloadDigest: origin.applicationPayloadDigest,
+    sourceCommit: origin.sourceCommit, installationIdentity: origin.ownershipIdentity,
+    runtime: { role: 'host', executable: fs.realpathSync(process.execPath), version: process.versions.node },
+  };
+  const profile = resolveWebProfile(productIdentity);
+  const secret = crypto.randomBytes(32).toString('hex');
+  let quitRequests = 0;
+  const fake = http.createServer((request, response) => {
+    if (request.headers['x-buildr-instance'] !== secret) { response.writeHead(403).end(); return; }
+    if (request.url === '/api/v1/health') {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ schemaVersion: 'buildr.local-app-health/v1', status: 'ready', pid: process.pid, launcherIdentity: null, productIdentity, webProfile: profile }));
+    } else if (request.url === '/api/v1/app/quit-instance') {
+      quitRequests += 1;
+      response.writeHead(403, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ error: { code: 'fixture_quit_refused', message: 'Fixture refused authenticated quit.' } }));
+    } else response.writeHead(404).end();
+  });
+  await new Promise<void>((resolve, reject) => { fake.once('error', reject); fake.listen(0, '127.0.0.1', resolve); });
+  const address = fake.address() as net.AddressInfo;
+  const previous = { url: `http://127.0.0.1:${address.port}`, secret, pid: process.pid, launcherIdentity: null, productIdentity, webProfile: profile };
+  writeBuildrWebInstance(createRuntime(), previous);
+  const before = fs.readFileSync(value.receiptFile, 'utf8');
+  try {
+    const updated = await value.update();
+    assert.equal(updated.status, 'updated', 'Web handoff failure must not erase successful package installation');
+    assert.equal(updated.webUpdate.status, 'failed');
+    assert.equal(updated.webUpdate.code, 'launcher_handoff_shutdown_rejected');
+    assert.match(updated.webUpdate.message, /HTTP 403/u);
+    assert.equal(quitRequests, 1, 'the authenticated handoff must try the existing graceful shutdown path');
+    assert.equal(fs.readFileSync(value.receiptFile, 'utf8'), before, 'refused shutdown must preserve the original instance receipt');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(value.packageRoot, 'package.json'), 'utf8')).version, value.newVersion);
+    const health = await fetch(`${previous.url}/api/v1/health`, { headers: { 'x-buildr-instance': secret } }).then((response) => response.json());
+    assert.equal(health.productIdentity.version, value.oldVersion, 'a failed handoff must leave the old instance identifiable');
+  } finally {
+    clearBuildrWebInstance(previous, profile);
+    await new Promise<void>((resolve) => fake.close(() => resolve()));
+  }
 });
 
 test('npm Launcher preserves foreign ownership and a non-stopping handoff receipt', async (t: any) => {

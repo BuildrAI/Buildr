@@ -52,6 +52,7 @@ let result: any = null;
 let cleanupError: any = null;
 try {
   result = spawnSync(process.execPath, [
+    '--import', pathToFileURL(path.join(productRoot, 'test/register-development-entry.ts')).href,
     '--test',
     `--test-concurrency=${workerBudget}`,
     '--test-reporter=dot',

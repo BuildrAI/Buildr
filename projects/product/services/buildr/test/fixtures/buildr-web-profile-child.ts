@@ -1,6 +1,7 @@
 import path from 'node:path';
 
 import { createRuntime } from '../helpers/runtime-harness.ts';
+import { createWebStaticFixture } from '../helpers/web-static-fixture.ts';
 import { createWorkspaceRegistryRepository } from '../../src/modules/workspace/persistence/workspace-registry-repository.ts';
 import { registerWorkspaceManagementFence } from '../../src/modules/workspace/infrastructure/workspace-management-fence.ts';
 import { oppositeWebProfile, resolveWebProfile } from '../../src/modules/installation/contracts/web-profile.ts';
@@ -18,6 +19,10 @@ const profiles: any = {
 const runtime: any = createRuntime();
 Object.assign(runtime, createWorkspaceRegistryRepository(runtime, { productIdentity: identity, webProfile: current, resolveWebProfile }));
 registerWorkspaceManagementFence(runtime, { peerProfiles: profiles, oppositeWebProfile });
-registerWebInstanceLifecycle(runtime, { readProductIdentity: () => identity, assertNpmLauncherBinding: assertCurrentNpmLauncherBinding, createLocalWorkspaceServer, ensureRegisteredTarget });
+registerWebInstanceLifecycle(runtime, {
+  readProductIdentity: () => identity, assertNpmLauncherBinding: assertCurrentNpmLauncherBinding,
+  createLocalWorkspaceServer: (runtime: any, options: any) => createLocalWorkspaceServer(runtime, { ...options, staticRoot: createWebStaticFixture(path.join(current.dataRoot, 'test-web')) }),
+  ensureRegisteredTarget,
+});
 await runtime.startBuildrWeb(['--no-open', '--port', '0']);
 process.stdout.write(`PROFILE_CHILD_READY ${current.profile} ${path.join(current.dataRoot, 'instance.json')}\n`);

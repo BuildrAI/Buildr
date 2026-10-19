@@ -6,6 +6,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DSH_SDK_BASELINES, DSH_SDK_COMMIT_MARKER, type DshSdkBaseline } from './sdk-baselines.ts';
 import { createSdkRequire } from './sdk-require.ts';
+import { normalizeDshHostPeers } from './dsh-host-compatibility.ts';
 
 export const SOURCE_SDK_RECEIPT = '.buildr-dsh-source-sdk.json';
 export const SOURCE_SDK_SLOTS = ['conversation.trajectory.column', 'conversation.trajectory.inspector.objects'] as const;
@@ -601,7 +602,7 @@ export async function buildSourceHostArtifacts(sdk: string, manifest: SourcePatc
     if (entryPoints[`packages/${plugin.entryId}/lib/index`] === undefined) fail('selected Host package has no compiled root entry');
     const pkg = join(out, 'packages', plugin.entryId);
     mkdirSync(pkg, { recursive: true });
-    const packaged: Record<string, unknown> = { ...value, type: 'module', exports: packagedExports, peerDependencies: { '@deepseek-ai/cordis': '4.0.4', '@deepseek-ai/dsh': manifest.upstream.version } };
+    const packaged: Record<string, unknown> = { ...value, type: 'module', exports: packagedExports, peerDependencies: normalizeDshHostPeers({ ...value.peerDependencies as Record<string, string>, '@deepseek-ai/cordis': '4.0.4' }) };
     for (const key of ['scripts', 'devDependencies', 'dependencies', 'files']) delete packaged[key];
     writeFileSync(join(pkg, 'package.json'), JSON.stringify(packaged, null, 2) + '\n');
     for (const file of ['LICENSE', 'README.md']) {

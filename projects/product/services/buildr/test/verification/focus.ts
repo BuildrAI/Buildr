@@ -72,7 +72,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
       else {
         temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-focus-verification-'));
         const executionProfile: any = resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE);
-        const evidence: any = createVerificationEvidencePaths('focus', { temporaryRoot });
+        const evidence: any = createVerificationEvidencePaths('focus');
         const source: any = collectVerificationSourceIdentity(productRoot, { projectRoot });
         const startedAt: any = Date.now();
         fs.rmSync(evidence.diagnosticsOutput, { recursive: true, force: true });

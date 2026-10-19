@@ -63,6 +63,7 @@ test('native Windows proof shares complete backend inputs across working and imm
   for (const file of [
     'projects/product/services/buildr-web/src/style.css', 'projects/product/services/dsh-plugin/src/main.ts',
     'AGENTS.md', 'skills/buildr-release/SKILL.md', 'skills/buildr-release/scripts/release-readiness.ts', 'tools/native-platform.ts',
+    'projects/product/verification.yml',
   ]) {
     write(file, files.get(file)! + '\n// unrelated change'); source = commit();
     assert.deepEqual(observe(), original, file);
@@ -71,7 +72,7 @@ test('native Windows proof shares complete backend inputs across working and imm
     prefix + 'src/platform.ts', prefix + 'package.json', prefix + 'package-lock.json',
     prefix + 'resources/runtime.yml', prefix + 'tools/development/prepare.ts',
     'projects/product/.node-version', 'projects/product/buildr',
-    'projects/product/preparation.yml', 'projects/product/verification.yml',
+    'projects/product/preparation.yml',
     prefix + 'test/platform/actual-dependency.ts',
   ]) {
     const before = observe();

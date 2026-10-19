@@ -17,9 +17,8 @@ dependencies: any = {}): any {
   const { candidate } = options;
   if (!candidate?.runId || !candidate.sourceCommit || !candidate.branch) throw new Error('Candidate repair requires an original completed candidate.');
   const source = scope.git(['rev-parse', '--verify', options.verificationSource + '^{commit}']).trim();
-  // Completing local package evidence on the original frozen checkout does
-  // not introduce executable code from another source.
-  if (source !== candidate.sourceCommit) scope.git(['merge-base', '--is-ancestor', source, 'origin/dev']);
+  // Verification is bound to an exact source and original package below; it
+  // does not require integration into dev or grant publication authority.
   const binding = (dependencies.bind ?? createCandidateSourceBinding)(options.repo, candidate.sourceCommit, source);
   let pointer = candidate.repair;
   const hasImports = options.sourceTransport !== undefined || options.artifactTransport !== undefined;

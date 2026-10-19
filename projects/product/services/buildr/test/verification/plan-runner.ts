@@ -1,4 +1,5 @@
 import os from 'node:os';
+import { createCandidateRoundExecution } from './candidate-round.ts';
 import path from 'node:path';
 import { createTestContextPool } from '../context/runtime.ts';
 import { runVerificationDag } from './dag-scheduler.ts';
@@ -37,7 +38,7 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   let completed: any = 0;
   const heartbeatIntervalMs: any = Number.isFinite(options.heartbeatIntervalMs) && options.heartbeatIntervalMs > 0 ? options.heartbeatIntervalMs : 15_000;
   const concurrency: any = options.concurrency ?? VERIFICATION_CONCURRENCY;
-  const reuse = createVerificationPlanReuse(plan, options);
+  const reuse = createCandidateRoundExecution(plan, options) ?? createVerificationPlanReuse(plan, options);
   if (reuse?.explanation) {
     const estimate = reuse.explanation.estimate;
     options.stream?.write(`[${prefix}] plan: execute=${estimate.executedCount} reuse=${estimate.reusedCount} remaining-work=${estimate.remainingWorkMs}ms dependency-path=${estimate.dependencyCriticalPathMs}ms (history/declared targets; queue/preparation excluded)\n`);
@@ -110,7 +111,7 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   });
   const execute: any = (step: any, executionContext: any) => {
     const record = reuse?.hits.get(step.id);
-    return record ? reusedVerificationResult(record) : executeFresh(step, executionContext);
+    return record ? reusedVerificationResult(record) : reuse ? reuse.executeFiles(step, executeFresh, executionContext) : executeFresh(step, executionContext);
   };
   const heartbeat: any = setInterval(() => {
     const now: any = Date.now();
@@ -149,6 +150,7 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
         const reused = result.reusedFrom ? ` reused=${result.reusedFrom.origin.runId} original=${result.reusedFrom.durationMs}ms` : '';
         options.stream?.write(`[${prefix}] ${result.status}: ${result.id} (${result.durationMs} ms, pid=${processIdentity.pid ?? 'n/a'}, pgid=${processIdentity.processGroupId ?? 'n/a'})${reused}${evidence}\n`);
         if (result.status === 'blocked') options.stream?.write(`  ${result.reason}\n`);
+        reuse?.record?.(result);
         options.onComplete?.(result, step);
       },
     });

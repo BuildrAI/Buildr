@@ -17,7 +17,7 @@ node tools/verify-all.ts --source-sdk <prepared-source-sdk> --buildr-peer <exact
 
 压缩包必须只含预编译插件、默认启用的组合补丁和许可文件，不含本机路径、凭证或安装脚本。正式版包名是 `@buildr-ai/buildr-dsh-plugin`。开发版变体 `@buildr-ai/buildr-dsh-plugin-dev` 仅在开发者机器构建、安装，不公开发布。
 
-源码候选（Candidate）的单元和集成阶段按各自内容、配方及实际依赖复用有效结果；固定软件开发工具包（SDK）的装载、真实 Buildr 对端及最终压缩包检查仍绑定真实输入。受保护 main 准备直接接纳源码运行的原候选和完整聚合，核对合并双亲、整树、SDK、对端和原字节，保存 plugin-candidate-adoption.json；不重复完整验证、构建或打包。原候选的 sourceCommit 保持被测源码，接纳回执（Receipt）另记 mainCommit，开放身份连接（OIDC）仍绑定真实 main。既有 candidate_run_id 继续表示发布消费的主线接纳运行；旧准备记录沿原身份恢复，不伪造新回执。
+本机源码预检先运行 `node tools/verify-source.ts`，只执行不依赖软件开发工具包（SDK）和主包对端的单元阶段；可用 `--output <bundle.json>` 保存证明。不得为获得这项证明先跑一遍旧对端的完整验证。源码候选（Candidate）的单元阶段按实际内容、配方及依赖复用有效结果；集成阶段消费本轮真实构建，固定软件开发工具包（SDK）的装载、真实 Buildr 对端及最终压缩包检查仍绑定真实输入。受保护 main 准备直接接纳源码运行的原候选和完整聚合，核对合并双亲、整树、SDK、对端和原字节，保存 plugin-candidate-adoption.json；不重复完整验证、构建或打包。原候选的 sourceCommit 保持被测源码，接纳回执（Receipt）另记 mainCommit，开放身份连接（OIDC）仍绑定真实 main。既有 candidate_run_id 继续表示发布消费的主线接纳运行；旧准备记录沿原身份恢复，不伪造新回执。
 
 ## 官方应用与正常装卸
 
@@ -111,7 +111,7 @@ npm 网站需为 **`@buildr-ai/buildr-dsh-plugin` 单独配置可信发布者（
 
 公开后，智能体（Agent）在目标 DSH 配置档（Profile）中使用受支持入口安装 `@buildr-ai/buildr-dsh-plugin`。`desktop` 仍由 Electron 桌面应用管理；当前已安装官方桌面运行时（Desktop Runtime）的 `runtime/cli/bin/dsh` 通过桌面主机入口启用 `manageDesktopProfile: true`，支持其插件管理。通用／npm 命令行（CLI）入口不具该能力，仍拒绝 `desktop`；不能仅凭命令名称相同推定支持，也不手改配置档（Profile）、自行开权限或增加兼容豁免。普通用户可使用应用插件界面，其他非受管配置档使用各自已核对入口。
 
-预编译包不需要 `prepare` 安装钩子或先运行 Buildr。命令行（CLI）退出 0、已装包和选择项回读只证明安装，不等待热更新（HMR）或装载器（Loader）就绪；同一宿主（Host）仍运行也不能证明新模块生效。按受支持入口结果与运行事实核对激活，必要时重启后再验收按钮、三入口和重复点击，不另起宿主（Host）掩盖状态。临时隔离配置档（Profile）结果不冒充真实桌面验收。当前入口校准依据及本机安装／激活边界见[插件说明](<../../../services/dsh-plugin/plugin/README.md#构建与安装>)与[实际安装回执索引](<../../../openspec/changes/archive/2026-10-05-add-dsh-buildr-provenance/implementation-progress.md>)；发布授权与包字节仍独立核对。
+预编译包不需要 `prepare` 安装钩子或先运行 Buildr。命令行（CLI）退出 0、已装包和选择项回读只证明安装，不等待热更新（HMR）或装载器（Loader）就绪；同一宿主（Host）仍运行也不能证明新模块生效。桌面验收只覆盖本轮变化的安装、加载、宿主兼容或卸载恢复边界；相关变化才做对应实际操作，加载或兼容变化先确认真实宿主能加载新包。不例行重走已验证的按钮、三入口、重复点击、跨重启交互或完整卸载重装；卸载恢复仅在相关实现或组合配置变化时验。临时隔离配置档（Profile）结果不冒充真实桌面验收。当前入口校准依据及本机安装／激活边界见[插件说明](<../../../services/dsh-plugin/plugin/README.md#构建与安装>)与[实际安装回执索引](<../../../openspec/changes/archive/2026-10-05-add-dsh-buildr-provenance/implementation-progress.md>)；发布授权与包字节仍独立核对。
 
 验收跨重启标签复用时，分别检查标签数量与网页内容：当前 DSH 会保留浏览器标签，但页面需用户点击「恢复页面」或刷新后加载。Buildr 插件只聚焦已复认标签；不能把未自动加载说成标签复用失败，也不能为消除恢复提示而无条件刷新可能含未保存内容的页面。
 

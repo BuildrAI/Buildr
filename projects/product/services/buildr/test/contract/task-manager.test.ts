@@ -23,7 +23,6 @@ test('Task Record v4 保留历史契约而只声明当前正文能力与所有�
   const predecessor = contract.replaces.find((item: any) => item.id === 'buildr.task-record' && item.version === 3);
   const historical = fs.readFileSync('test/fixtures/legacy-task-record-contract-v3.md');
   assert.equal(predecessor.integrity, `sha256-${crypto.createHash('sha256').update(historical).digest('hex')}`);
-  assert.match(historical.toString('utf8'), /无正文持久化/);
   for (const skill of manifest.builtins.skills) {
     for (const reference of [...skill.provides || [], ...skill.requires || []]) {
       if (reference.capability === 'buildr.task-record') assert.equal(reference.version, 4, skill.id);

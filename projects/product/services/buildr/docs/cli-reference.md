@@ -67,7 +67,9 @@ buildr runtime list --json
 buildr init --agent "<agent>" --target "<dir>" --name "<name>" --description "<description>" --profile "<profile>"
 ```
 
-`init` 默认先初始化源资产，再复用完整 `sync`，安装或更新 Buildr 技能（Skill）、投射当前工作空间（Workspace）的内容并给出最终诊断。已知身份使用 `--agent`；未知身份可省略，保留唯一既有接入方式，没有既有方式时采用 `agents-standard`。多个不等价方式要求明确选择。仅需源资产时使用 `buildr init --source-only --target "<dir>"`；`--source-only` 与 `--agent`、`--adapter` 互斥。
+`init` 默认先初始化源资产，将工作空间（Workspace）登记到当前产品对应的本机 Buildr Web 列表，再复用完整 `sync`，安装或更新 Buildr 技能（Skill）、投射当前工作空间（Workspace）的内容并给出最终诊断。登记无需网页正在运行，不启动服务或打开浏览器；同一目录已有登记时直接复用，不重复添加，也不转移另一产品渠道的管理归属。已知身份使用 `--agent`；未知身份可省略，保留唯一既有接入方式，没有既有方式时采用 `agents-standard`。多个不等价方式要求明确选择。仅需源资产时使用 `buildr init --source-only --target "<dir>"`；该模式不登记本机列表、不建立网页管理归属，且与 `--agent`、`--adapter` 互斥。
+
+登记失败时，源资产仍保留，命令明确报告本机登记未完成及原因，不继续宣称整体初始化成功；按诊断修复后重新执行原初始化命令即可接续。登记成功后的同步或最终诊断失败，不撤销登记或源资产，按输出的 `buildr sync` 指引恢复，无需重复初始化或手动添加目录。
 
 `--adapter <adapter-id>` 显式选择文件约定，不替换真实品牌身份；未知适配器（Adapter）、非法品牌或互斥参数都在写入前失败。已选实现失败时保留错误，不切换其他实现，也不以纯源资产结果冒充完整初始化。根据最终结果继续项目（Project）、服务（Service）和第一项工作。`init` 与 `sync` 不隐式安装用户级技能（Skill），文件准备成功也不证明当前会话已加载。
 
@@ -79,6 +81,8 @@ buildr init --agent "<agent>" --target "<dir>" --name "<name>" --description "<d
 buildr web --target "<dir>"
 ```
 
+也可以通过启动器（Launcher）打开 Buildr Web，从本机列表选择已登记的工作空间（Workspace），再配置项目（Project）、服务（Service）和代码库（Repository）。此前已初始化但尚未登记的目录，可以在选择页使用“添加已有工作空间”；上述带 `--target` 的打开命令也会按既有保护补齐登记。
+
 启动器（Launcher）的状态检查、修复或卸载使用 `buildr web launcher status|repair|uninstall`。
 
 工具支持情况与使用注意事项见[运行时适配参考](agent-runtime-adapters.md)。
@@ -89,7 +93,11 @@ buildr web --target "<dir>"
 
 标准技能（Skill）目标采用一级 `.agents/skills/<skill-id>/SKILL.md`，保留源目录及随附文件的相对路径。所有权回执（Ownership Receipt）属于 `.buildr/agent-runtime/<workspace|user>/<ownership-id>/skill-projection-ownership-receipts/` 本机控制状态；标准共享根（包括 Cursor/TRAE 技能）统一归属 `agents-standard`，专用规则（Rule）保持独立。旧品牌或旧运行时根内回执（Receipt）及嵌套受管目录仅在身份、完整内容、权限和目标安全均可证明时迁移；冲突、漂移、额外未知文件时整组零写入。迁移后不要用旧版 Buildr 继续管理；回退需要完整的操作前文件与回执（Receipt）备份。
 
-`buildr update` 只更新安装回执（Installation Receipt）证明的当前 npm 安装或开发检出（Development Checkout）：前者更新同一安装位置中的软件包，后者按 Git 状态更新源码；来源不明时停止。它不接收 `--target`，不负责同步工作空间（Workspace）。
+`buildr update` 只更新安装回执（Installation Receipt）证明的当前 npm 安装或开发检出（Development Checkout）：前者更新同一安装位置中的软件包，并自动将该安装中正在运行的旧版 Buildr Web 切换到新版；后者按 Git 状态更新源码，开发版正式激活仍由自举执行器负责。来源不明时停止。它不接收 `--target`，不负责同步工作空间（Workspace）。
+
+npm 更新后的网页交接由新版独立进程执行，复用认证退出、启动锁与健康检查；无需重新打开或安装启动器（Launcher），没有运行实例时不额外启动。切换时网页短暂中断，旧服务中未完成的生成可能取消。安装更新与网页切换分别报告；退出被拒绝、超时、归属冲突或新版未就绪时，保留已成功的安装并报告交接原因。软件包已经更新、网页仍旧时，可再次运行同轨道更新恢复交接，不重复安装软件包。
+
+结果中的 `webUpdate.status` 分别用 `not-running`、`current`、`restarted`、`failed` 表达未运行、已是当前版、已切换和切换失败；失败带具体原因。只有核对新版服务健康身份后才报告 `restarted`，不据此宣称浏览器已加载的前端代码也已刷新。包更新成功时，网页切换失败不会抹去顶层 `status: updated` 的安装事实。
 
 用户要求“更新工作空间”或“同步工作空间”时，智能体（Agent）先判断根目录是否由 Git 管理：受 Git 管理时，按 `buildr.git-operations/v1` 能力绑定（Capability Binding）选择提供者（Provider），明确目标目录、上游和更新动作，成功后执行 `buildr sync <agent> --target <workspace>`；不受 Git 管理时直接同步。所需提供者（Provider）不可用，或遇到本地改动、分叉、冲突等需要决定的情况时，停止相关更新与同步并保留现场，不自动执行 `stash`、`reset`、`rebase`、`merge` 或覆盖文件。Git 更新成功后不重复询问同步。
 

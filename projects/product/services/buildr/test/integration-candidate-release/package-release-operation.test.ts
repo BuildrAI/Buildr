@@ -579,42 +579,21 @@ test('plugin executor replacement rejects attempted, unknown, active, drifted or
   });
 });
 
-test('release closeout consumes the unique runner not-applicable result without invoking a second Doctor', async () => {
-  const f = fixture(); let calls = 0;
-  f.dependencies.selfBootstrapCloseout = async (input: any) => {
-    calls++; assert.equal(input.workspace, f.scope.workspace); assert.equal(input.context.identity, f.context.identity);
-    assert.equal(input.evidence.status, 'passed'); assert.equal(f.counts().cleanups, 1);
-    return { status: 'not-applicable', reason: 'No self-bootstrap inputs changed.' };
-  };
-  f.dependencies.invokeRetainedController = (_controller: any, args: string[]) => {
-    assert.notEqual(args[0], 'doctor', 'only the unique runner may perform the final Doctor');
-    return { status: 'cleaned' };
-  };
-  await continuePackageRelease({ action: 'publish', authorized: true }, f.scope, f.dependencies);
-  const result = await continuePackageRelease({ action: 'resume' }, f.scope, f.dependencies);
-  assert.equal(result.status, 'passed'); assert.equal(result.outcomes.activation, 'not-applicable'); assert.equal(calls, 1);
-  assert.equal(f.state.closeout.outcomes.activation, 'not-applicable');
-});
-
-test('default release closeout waits for its unique runner and resume preserves completed effects', async () => {
-  const f = fixture(); delete f.dependencies.selfBootstrapCloseout;
-  let worktreeCleanups = 0;
+test('package release completes independently of developer activation and resumes without repeating effects', async () => {
+  const f = fixture(); let worktreeCleanups = 0;
+  f.dependencies.selfBootstrapCloseout = () => assert.fail('release must not activate the developer app');
   f.dependencies.invokeRetainedController = (_controller: any, args: string[]) => {
     assert.notEqual(args[0], 'doctor'); worktreeCleanups++; return { status: 'cleaned' };
   };
   await continuePackageRelease({ action: 'publish', authorized: true }, f.scope, f.dependencies);
-  const pending = await continuePackageRelease({ action: 'resume' }, f.scope, f.dependencies);
-  assert.equal(pending.status, 'published-self-bootstrap-pending');
-  assert.deepEqual(pending.outcomes, { publication: 'passed', taskRegistration: 'completed', cleanup: 'cleaned', activation: 'pending' });
-  const again = await continuePackageRelease({ action: 'resume' }, f.scope, f.dependencies);
-  assert.equal(again.status, 'published-self-bootstrap-pending'); assert.equal(worktreeCleanups, 1);
-  assert.equal(f.counts().cleanups, 1); assert.equal(f.counts().dispatches, 1);
-  let ownerCalls = 0;
-  f.dependencies.selfBootstrapCloseout = async () => { ownerCalls++; return { status: 'passed', effects: [] }; };
   const completed = await continuePackageRelease({ action: 'resume' }, f.scope, f.dependencies);
-  assert.equal(completed.status, 'passed'); assert.equal(completed.outcomes.activation, 'ready');
-  await continuePackageRelease({ action: 'resume' }, f.scope, f.dependencies);
-  assert.equal(ownerCalls, 1); assert.equal(worktreeCleanups, 1); assert.equal(f.counts().cleanups, 1);
+  assert.equal(completed.status, 'passed');
+  assert.deepEqual(completed.outcomes, { publication: 'passed', taskRegistration: 'completed', cleanup: 'cleaned', activation: 'not-run' });
+  f.state.closeout.status = 'blocked';
+  f.state.closeout.selfBootstrapCloseout = { status: 'blocked', effects: [] };
+  const again = await continuePackageRelease({ action: 'resume' }, f.scope, f.dependencies);
+  assert.equal(again.status, 'passed'); assert.equal(again.outcomes.activation, 'not-run');
+  assert.equal(worktreeCleanups, 1); assert.equal(f.counts().cleanups, 1); assert.equal(f.counts().dispatches, 1);
 });
 
 test('a repaired plugin executor advances once more only with official skipped-upload proof while retaining the C1 package anchor', async () => {

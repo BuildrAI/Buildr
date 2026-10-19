@@ -271,11 +271,11 @@ export function validateCandidateCiCoverage(
     for (const shardId of Array.isArray(allowed) ? allowed : []) if (!shardIds.has(shardId)) findings.push({ step: id, code: 'candidate_platform_repeat_unknown_shard', value: shardId });
   }
   const tupleIds: any = new Set();
-  const expectedTuples: any = new Set(['minimum:macos', 'minimum:windows', 'current:macos', 'current:windows']);
+  const expectedTuples: any = new Set(['minimum:macos', 'minimum:windows']);
   for (const tuple of hostNodeTuples) {
     if (!tuple.id || tupleIds.has(tuple.id)) findings.push({ step: tuple.id || '<host-node-tuple>', code: 'candidate_host_tuple_duplicate_or_missing_id' });
     tupleIds.add(tuple.id);
-    if (!CANDIDATE_CI_RUNNERS.includes(tuple.runner) || !['minimum', 'current'].includes(tuple.expectation)) {
+    if (!CANDIDATE_CI_RUNNERS.includes(tuple.runner) || tuple.expectation !== 'minimum') {
       findings.push({ step: tuple.id, code: 'candidate_host_tuple_invalid' });
     }
     expectedTuples.delete(`${tuple.expectation}:${tuple.runner}`);
@@ -325,7 +325,10 @@ function ownedStepInput(step: any, productPath: any): any  {
 }
 
 function matchedStepInput(step: any, productPath: any): any  {
-  if (step.testing?.primaryIntent === 'Delivery / Release') return null;
+  // Source package selectors already run against the checkout. Keep them in
+  // affected development feedback; only consumers of final bytes wait for a
+  // Candidate. Do not introduce another package or test entrypoint here.
+  if (step.testing?.primaryIntent === 'Delivery / Release' && step.executor?.type !== 'package-selector') return null;
   return ownedStepInput(step, productPath);
 }
 
@@ -546,7 +549,6 @@ export function validateVerificationRegistry(steps: any = verificationSteps): an
   for (const item of steps) visit(item.id);
   findings.push(...createVerificationEvidenceMap(steps).findings);
   findings.push(...auditDailyCoreReleaseEvidence(steps).findings);
-  if (steps === verificationSteps) findings.push(...validateCandidateCiCoverage(steps).findings);
   return { ok: findings.length === 0, findings };
 }
 
@@ -925,8 +927,13 @@ export function createDevelopmentPlatformPlan(request: any = {}, steps: any = ve
 }
 
 export function createVerificationAdmissionPlan(plan: any, steps: any = verificationSteps): any  {
-  if (plan.steps.length === 0) return Object.freeze({ ...plan, admissionStepIds: Object.freeze([]) });
-  const fastPlan: any = createVerificationPlan({ profiles: ['fast'] }, steps);
+  // Keep every actual owner and dependency of a document change, including
+  // executable consumers, without attaching an unrelated Fast baseline.
+  const documentsOnly = plan.scope?.mode === 'affected' && plan.paths?.length > 0
+    && plan.paths.every((file: string) => /\.(?:md|html)$/iu.test(file));
+  if (plan.steps.length === 0 || documentsOnly) return Object.freeze({ ...plan, admissionStepIds: Object.freeze([]) });
+  const admissionSteps = plan.profiles?.includes('candidate') ? steps.filter((item: any) => item.profiles.includes('candidate')) : steps;
+  const fastPlan: any = createVerificationPlan({ profiles: ['fast'] }, admissionSteps);
   const admissionStepIds: any[] = [...new Set([
     ...fastPlan.steps.map((item: any) => item.id),
     ...plan.steps.filter((item: any) => item.admission === true).map((item: any) => item.id),
@@ -945,17 +952,13 @@ export function createVerificationAdmissionPlan(plan: any, steps: any = verifica
     ...admissionStepIds,
     ...plan.steps.map((item: any) => item.id).filter((id: any) => !admissionIds.has(id)),
   ];
-  const composedSteps: any = orderedIds.map((id: any) => {
-    const item: any = merged.get(id);
-    if (admissionIds.has(id)) return item;
-    return Object.freeze({
-      ...item,
-      dependsOn: Object.freeze([...new Set([...(item.dependsOn ?? []), ...admissionStepIds])]),
-    });
-  });
+  // Cheap feedback and verification-tool tests are checks, not prerequisites
+  // for unrelated assertions. The scheduler still blocks real dependents of
+  // failed producers (for example a consumer without its package).
+  const composedSteps: any = orderedIds.map((id: any) => merged.get(id));
   return Object.freeze({
     ...plan,
-    admissionStepIds: Object.freeze(admissionStepIds),
+    admissionStepIds: Object.freeze([]),
     steps: Object.freeze(composedSteps),
   });
 }

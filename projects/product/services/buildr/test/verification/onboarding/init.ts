@@ -12,16 +12,34 @@ import { useLegacyAssetCatalog } from '../../helpers/legacy-asset-catalog.ts';
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const cli: any = path.join(productRoot, 'bin', 'buildr.mjs');
 const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-init-onboarding-'));
+const appData = path.join(root, 'app-data');
+const registryFile = path.join(appData, 'workspace-registry.json');
 
-function run(args: any): any  {
+function run(args: any, environment: Record<string, string> = {}): any  {
   return spawnSync(process.execPath, [cli, ...args], {
     cwd: productRoot,
     encoding: 'utf8',
+    env: { ...process.env, BUILDR_APP_DATA_DIR: appData, BUILDR_PRODUCT_DATA_DIR: path.join(root, 'product-data'), ...environment },
   });
 }
 
 function output(result: any): any  {
   return `${result.stdout || ''}${result.stderr || ''}`;
+}
+
+function registry() {
+  return JSON.parse(fs.readFileSync(registryFile, 'utf8'));
+}
+
+function assertRegistered(target: string) {
+  const actual = registry();
+  assert.equal(actual.roots.filter((entry: string) => entry === target).length, 1, 'ordinary init must register the actual directory exactly once');
+  const workspace = YAML.parse(fs.readFileSync(path.join(target, '.buildr', 'workspace.yml'), 'utf8'));
+  const claim = JSON.parse(fs.readFileSync(path.join(target, '.buildr', 'local', 'web-management.json'), 'utf8'));
+  assert.equal(claim.workspaceId, workspace.id);
+  assert.equal(claim.canonicalRoot, fs.realpathSync(target));
+  assert.equal(fs.existsSync(path.join(appData, 'instance.json')), false, 'registration must not start Buildr Web');
+  return { actual, workspace, claim };
 }
 
 function freshCatalog(target: string): any {
@@ -57,15 +75,20 @@ try {
   assert.notEqual(result.status, 0, 'explicit unknown adapter must fail');
   assert.equal(fs.existsSync(unsupported), false, 'unknown adapter must fail before workspace writes');
   assert.match(output(result), /Unsupported runtime adapter: unsupported/);
+  result = run(['init', '--agent', 'invalid runtime', '--target', unsupported]);
+  assert.notEqual(result.status, 0, 'invalid Agent identity must fail');
+  assert.equal(fs.existsSync(unsupported), false, 'invalid Agent identity must fail before workspace writes');
   result = run(['init', '--source-only', '--agent', 'dsh', '--target', unsupported]);
   assert.notEqual(result.status, 0);
   assert.equal(fs.existsSync(unsupported), false, 'mutually exclusive inputs must fail before writes');
   assert.match(output(result), /--source-only cannot be combined/);
+  assert.equal(fs.existsSync(registryFile), false, 'invalid initialization must not create a local registry');
 
   for (const identity of [null, 'dsh', 'new-host']) {
     const standardRoot = path.join(root, identity ?? 'default');
     result = run(['init', ...(identity === null ? [] : ['--agent', identity]), '--target', standardRoot, '--name', 'standard', '--description', 'Standard onboarding fixture']);
     assert.equal(result.status, 0, output(result));
+    assertRegistered(standardRoot);
     freshCatalog(standardRoot);
     assert.ok(fs.existsSync(path.join(standardRoot, '.agents', 'skills', 'buildr', 'SKILL.md')));
     assert.ok(fs.existsSync(path.join(standardRoot, '.agents', 'skills', 'task-triage', 'SKILL.md')));
@@ -78,8 +101,11 @@ try {
   }
 
   const sourceOnly: any = path.join(root, 'source-only');
+  const beforeSourceOnly = fs.readFileSync(registryFile, 'utf8');
   result = run(['init', '--source-only', '--target', sourceOnly, '--name', 'source-only', '--profile', 'personal']);
   assert.equal(result.status, 0, output(result));
+  assert.equal(fs.readFileSync(registryFile, 'utf8'), beforeSourceOnly, 'source-only init must leave the existing local registry unchanged');
+  assert.equal(fs.existsSync(path.join(sourceOnly, '.buildr', 'local', 'web-management.json')), false, 'source-only init must not claim Web management');
   const sourceOnlyCatalog = freshCatalog(sourceOnly);
   assert.equal(fs.existsSync(path.join(sourceOnly, 'projects', 'manifest.yml')), true);
   const workspace: any = YAML.parse(fs.readFileSync(path.join(sourceOnly, '.buildr', 'workspace.yml'), 'utf8'));
@@ -123,8 +149,16 @@ try {
   const onboarded: any = path.join(root, 'onboarded');
   result = run(['init', '--agent', 'codex', '--target', onboarded, '--name', 'onboarded', '--profile', 'team']);
   assert.equal(result.status, 0, output(result));
+  const onboardedRegistration = assertRegistered(onboarded);
+  const beforeInvalidInput = fs.readFileSync(registryFile, 'utf8');
+  const beforeInvalidClaim = fs.readFileSync(path.join(onboarded, '.buildr', 'local', 'web-management.json'), 'utf8');
+  const invalidInputResult = run(['init', '--adapter', 'unsupported', '--target', onboarded]);
+  assert.notEqual(invalidInputResult.status, 0);
+  assert.equal(fs.readFileSync(registryFile, 'utf8'), beforeInvalidInput, 'invalid inputs must preserve existing registration');
+  assert.equal(fs.readFileSync(path.join(onboarded, '.buildr', 'local', 'web-management.json'), 'utf8'), beforeInvalidClaim);
   const onboardedCatalog = freshCatalog(onboarded);
   assert.match(result.stdout, /Buildr onboarding 已完成：codex/);
+  assert.match(result.stdout, /已登记到本机 Buildr Web/);
   assert.match(result.stdout, /doctor 通过/);
   assert.match(result.stdout, /首次使用交接/);
   assert.match(result.stdout, /第一项真实工作/);
@@ -149,8 +183,15 @@ try {
     assert.equal(fs.existsSync(path.join(legacySourceOnly, 'projects', 'synced', relative)), true, `sync must generate missing ${relative}`);
   }
 
+  const beforeRepeatedInit = fs.readFileSync(registryFile, 'utf8');
+  const beforeRepeatedInitMtime = fs.statSync(registryFile).mtimeMs;
+  const beforeRepeatedClaim = fs.readFileSync(path.join(onboarded, '.buildr', 'local', 'web-management.json'), 'utf8');
   result = run(['init', '--agent', 'codex', '--target', onboarded, '--name', 'onboarded', '--profile', 'team']);
   assert.equal(result.status, 0, `idempotent init --agent failed:\n${output(result)}`);
+  assert.equal(fs.readFileSync(registryFile, 'utf8'), beforeRepeatedInit, 'repeated init must preserve the existing registry');
+  assert.equal(fs.statSync(registryFile).mtimeMs, beforeRepeatedInitMtime, 'repeated init must not rewrite the registry');
+  assert.equal(fs.readFileSync(path.join(onboarded, '.buildr', 'local', 'web-management.json'), 'utf8'), beforeRepeatedClaim);
+  assert.equal(assertRegistered(onboarded).workspace.id, onboardedRegistration.workspace.id);
   const doctorResult: any = run(['doctor', '--agent', 'codex', '--target', onboarded, '--json', '--detail', 'full']);
   assert.equal(doctorResult.status, 0, output(doctorResult));
   const doctor: any = JSON.parse(doctorResult.stdout);
@@ -166,10 +207,47 @@ try {
   assert.notEqual(result.status, 0, 'runtime conflict must leave onboarding incomplete');
   assert.equal(fs.existsSync(path.join(conflicted, 'projects', 'manifest.yml')), true, 'source initialization must remain available');
   assert.equal(fs.readFileSync(conflictSkill, 'utf8'), '# User-owned Buildr\n', 'runtime conflict must preserve user-owned file');
+  assertRegistered(conflicted);
   assert.match(output(result), /Workspace 源资产已初始化，但 codex onboarding 未完成/);
+  assert.match(output(result), /本机 Buildr Web 登记已完成/);
+  assert.doesNotMatch(output(result), /Buildr onboarding 已完成/);
   assert.match(output(result), new RegExp(`buildr sync codex --adapter agents-standard --target ${conflicted.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
 
-  console.log('Init onboarding verification passed: preflight, fresh catalog and first project, source-only compatibility, full runtime, idempotency, and recovery guidance.');
+  const duplicate = path.join(root, 'duplicate-identity');
+  fs.cpSync(onboarded, duplicate, {
+    recursive: true,
+    filter(source) {
+      const relative = path.relative(onboarded, source);
+      return ![path.join('.buildr', 'local'), '.agents'].some((excluded) => relative === excluded || relative.startsWith(`${excluded}${path.sep}`));
+    },
+  });
+  const beforeDuplicate = fs.readFileSync(registryFile, 'utf8');
+  result = run(['init', '--agent', 'codex', '--target', duplicate]);
+  assert.notEqual(result.status, 0, 'duplicate identity must leave registration incomplete');
+  assert.equal(fs.existsSync(path.join(duplicate, 'projects', 'manifest.yml')), true, 'registration failure must preserve initialized source assets');
+  assert.equal(fs.readFileSync(registryFile, 'utf8'), beforeDuplicate, 'registration conflict must not change existing entries');
+  assert.equal(fs.existsSync(path.join(duplicate, '.buildr', 'local', 'web-management.json')), false, 'failed registration must not retain a management claim');
+  assert.equal(fs.existsSync(path.join(duplicate, '.agents')), false, 'runtime preparation must not run after registration failure');
+  assert.match(output(result), /源资产已初始化，但本机 Buildr Web 登记未完成/);
+  assert.match(output(result), /同一 Workspace identity 已登记在另一个目录/);
+  assert.doesNotMatch(output(result), /Buildr onboarding 已完成/);
+
+  const invalidRegistryData = path.join(root, 'invalid-registry-data');
+  const invalidRegistryFile = path.join(invalidRegistryData, 'workspace-registry.json');
+  fs.mkdirSync(invalidRegistryData);
+  fs.writeFileSync(invalidRegistryFile, '{broken\n');
+  const registrationFailure = path.join(root, 'registration-failure');
+  result = run(['init', '--agent', 'codex', '--target', registrationFailure], { BUILDR_APP_DATA_DIR: invalidRegistryData });
+  assert.notEqual(result.status, 0, 'unreadable registry must leave initialization incomplete');
+  assert.equal(fs.existsSync(path.join(registrationFailure, 'projects', 'manifest.yml')), true);
+  assert.equal(fs.existsSync(path.join(registrationFailure, '.agents')), false);
+  assert.equal(fs.readFileSync(invalidRegistryFile, 'utf8'), '{broken\n', 'registration failure must not overwrite corrupt local state');
+  assert.match(output(result), /源资产已初始化，但本机 Buildr Web 登记未完成/);
+  assert.match(output(result), /workspace-registry.json is invalid JSON/);
+  assert.doesNotMatch(output(result), /Buildr onboarding 已完成/);
+  assert.equal(fs.existsSync(path.join(appData, '.peer')), false, 'init must not create another channel registry');
+
+  console.log('Init onboarding verification passed: preflight, source-only compatibility, local registration, idempotency, identity protection, staged failures, and full runtime recovery guidance.');
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
 }

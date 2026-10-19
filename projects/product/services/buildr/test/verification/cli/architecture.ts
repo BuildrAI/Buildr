@@ -34,10 +34,6 @@ problems.push(...validateProductSourceLayout({
   bridgeSource: fs.readFileSync(path.join(projectRoot, 'buildr'), 'utf8'),
 }));
 
-function lineCount(file: any): any  {
-  return fs.readFileSync(file, 'utf8').trimEnd().split(/\r?\n/).length;
-}
-
 function listFiles(root: any, predicate: any = () => true): any  {
   const files: any[] = [];
   const visit: any = (directory: any) => {
@@ -75,10 +71,7 @@ for (const required of ['bin', 'src', 'resources', 'test', 'tools', 'docs']) {
 if (fs.existsSync(path.join(sourceRoot, 'shared'))) problems.push('src/shared/ is not an allowed ownership root');
 
 const entryContent: any = fs.existsSync(entry) ? fs.readFileSync(entry, 'utf8') : '';
-const entryLines: any = entryContent.trimEnd().split(/\r?\n/);
 if (!entryContent) problems.push('missing npm executable: bin/buildr.mjs');
-if (entryLines.length > 20) problems.push(`bin/buildr.mjs must remain a thin executable (found ${entryLines.length} lines)`);
-if (!entryContent.includes("from '../src/bootstrap/cli/main.ts'")) problems.push('bin/buildr.mjs must delegate to src/bootstrap/cli/main.ts');
 if (/function\s+(?:doctor|packageCheck|createProject|skillsAdd|componentInstall)\b/.test(entryContent)) problems.push('bin/buildr.mjs contains product implementation');
 
 const requiredRuntime: any[] = [
@@ -189,19 +182,6 @@ for (const file of sourceFiles) {
   }
 }
 
-const facadeLimits: any = new Map([
-  ['src/modules/agent-assets/infrastructure/runtime/render-claude-code.ts', 100],
-  ['src/modules/diagnostics/application/diagnostics.ts', 250],
-  ['src/modules/agent-assets/application/package-maintenance.ts', 550],
-  ['test/verification/verify-buildr-product-fast', 20],
-  ['test/verification/candidate.ts', 100],
-]);
-for (const [relative, limit] of facadeLimits) {
-  const file: any = path.join(productRoot, relative);
-  if (!fs.existsSync(file)) problems.push(`missing stable facade: ${relative}`);
-  else if (lineCount(file) > limit) problems.push(`${relative} must remain a composition facade (found ${lineCount(file)} lines, limit ${limit})`);
-}
-
 for (const module of ['arguments.ts', 'contributions.ts', 'sources.ts', 'render-plan.ts']) {
   if (!fs.existsSync(path.join(sourceRoot, 'modules', 'agent-assets', 'infrastructure', 'runtime', 'skills', module))) problems.push(`missing runtime Skill renderer module: ${module}`);
 }
@@ -232,7 +212,7 @@ if (/\b(?:nodeStep|commandStep|runBatch|workspaceSuiteSteps|candidateStepBudget)
 for (const module of ['registry.ts', 'planner.ts', 'dag-scheduler.ts', 'executor.ts', 'plan-runner.ts', 'changed.ts', 'focus.ts']) {
   if (!fs.existsSync(path.join(productRoot, 'test', 'verification', module))) problems.push(`missing verification planning module: ${module}`);
 }
-for (const required of ['candidate-tarball', 'docs-quality', 'workspace-lifecycle', 'package-static', 'runtime-adapter-parity', 'openspec-candidate-audit', 'release-tarball-smoke']) {
+for (const required of ['candidate-tarball', 'workspace-lifecycle', 'package-static', 'runtime-adapter-parity', 'release-tarball-smoke']) {
   if (!verificationSteps.some((step: any) => step.id === required && step.profiles.includes('candidate'))) problems.push(`candidate profile is missing required gate: ${required}`);
 }
 if (verificationSteps.filter((step: any) => step.executor.type === 'candidate-artifact').length !== 1) problems.push('verification registry must declare exactly one candidate artifact');

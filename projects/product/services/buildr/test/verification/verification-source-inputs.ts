@@ -83,12 +83,13 @@ export function verificationInputSourceFromGit(inventory: GitEntry[], blob: (obj
 
 /** One source reader and one input-selection policy serve local execution and
  * formal candidate repair. A reader snapshots its source once. */
-export function createVerificationSourceInputReader(repositoryRoot: string, productRoot: string, commit?: string, suppliedSource?: VerificationInputSource) {
+export function createVerificationSourceInputReader(repositoryRoot: string, productRoot: string, commit?: string, suppliedSource?: VerificationInputSource, options: { legacyDeclarations?: boolean } = {}) {
   repositoryRoot = fs.realpathSync(repositoryRoot);
   productRoot = fs.realpathSync(productRoot);
   const source = suppliedSource ?? (commit ? committedSource(repositoryRoot, commit) : workingSource(repositoryRoot));
   const prefix = 'projects/product/services/', backend = `${prefix}buildr/`, web = `${prefix}buildr-web/`, plugin = `${prefix}dsh-plugin/`;
-  const common = (file: string) => ['projects/product/.node-version', 'projects/product/buildr', 'projects/product/preparation.yml', 'projects/product/verification.yml'].includes(file);
+  const common = (file: string) => ['projects/product/.node-version', 'projects/product/buildr', 'projects/product/preparation.yml', 'projects/product/verification.yml'].includes(file)
+    || !options.legacyDeclarations && file === '.github/workflows/verify.yml';
   const inBackend = (file: string) => file.startsWith(backend) || file.startsWith('skills/buildr-release/') || common(file);
   const selected: Record<VerificationReuseScope, Entry[]> = {
     backend: source.entries.filter(([file]) => inBackend(file!)),
@@ -104,8 +105,8 @@ export function createVerificationSourceInputReader(repositoryRoot: string, prod
   const inputs = (step: VerificationReuseStep, proof: boolean) => {
     const scope = step.reuse && step.reuse.scope;
     if (!scope) throw new Error('Expected a reusable source check.');
-    let value = scopedVerificationInputs(selected[scope], repositoryRoot, productRoot, step, { proof, readText: source.readText });
-    if (scope === 'platform-backend') {
+    let value = scopedVerificationInputs(selected[scope], repositoryRoot, productRoot, step, { ...options, proof, readText: source.readText });
+    if (value.unresolved.some(item => item.includes(':module:'))) {
       const scopedPaths = new Set(selected[scope].map(([file]) => file!));
       const sourcePaths = new Set(source.entries.map(([file]) => file!));
       const outside = value.unresolved.flatMap(item => {
@@ -117,9 +118,14 @@ export function createVerificationSourceInputReader(repositoryRoot: string, prod
       if (outside.length) {
         // A real import outgrows the reviewed scope. Re-run the shared selector
         // against all immutable/source bytes; an absent marker cannot prove it.
-        value = scopedVerificationInputs(source.entries, repositoryRoot, productRoot, step, { proof, readText: source.readText });
-        value.fallback = true;
-        value.unresolved = [...new Set([...value.unresolved, ...outside.map(file => `platform-backend:module-outside-scope:${file}`)])].sort();
+        const roots = outside.map(file => file.match(/^(?:projects\/product\/services\/[^/]+|skills\/[^/]+)\//u)?.[0] ?? '');
+        const expanded = scope === 'platform-backend' || roots.includes('') ? source.entries
+          : source.entries.filter(([file]) => scopedPaths.has(file!) || roots.some(root => file!.startsWith(root)));
+        value = scopedVerificationInputs(expanded, repositoryRoot, productRoot, step, { ...options, proof, readText: source.readText });
+        if (scope === 'platform-backend') {
+          value.fallback = true;
+          value.unresolved = [...new Set([...value.unresolved, ...outside.map(file => `platform-backend:module-outside-scope:${file}`)])].sort();
+        }
       }
     }
     return { contentIdentity: digest(value.content), recipeIdentity: digest(value.recipe), fallback: value.fallback, unresolved: value.unresolved,
@@ -132,8 +138,8 @@ export function createVerificationSourceInputReader(repositoryRoot: string, prod
   };
 }
 
-export function collectVerificationSourceInputs(repositoryRoot: string, productRoot: string, steps: VerificationReuseStep[], commit?: string) {
-  const reader = createVerificationSourceInputReader(repositoryRoot, productRoot, commit);
+export function collectVerificationSourceInputs(repositoryRoot: string, productRoot: string, steps: VerificationReuseStep[], commit?: string, legacyDeclarations = false) {
+  const reader = createVerificationSourceInputReader(repositoryRoot, productRoot, commit, undefined, { legacyDeclarations });
   return {
     contentIdentities: reader.contentIdentities, unavailableScopes: reader.unavailableScopes,
     stepInputs: Object.fromEntries(steps.filter(step => step.reuse && step.reuse.inputMode === 'runtime-check').map(step => [step.id, reader.inputs(step, false)])),

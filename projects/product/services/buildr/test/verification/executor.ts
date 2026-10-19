@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { pathToFileURL } from 'node:url';
 import { buildCommandInvocation, createExactNodeExecutionEnvironment } from '../../src/infrastructure/process.ts';
 import {
   createCandidatePackage,
@@ -11,6 +12,9 @@ import {
 } from '../../../../../../skills/buildr-release/scripts/candidate-package.ts';
 import { runVerificationStep, writeVerificationDiagnostics } from './timing/parallel-runner.ts';
 import { resolveNodeTestFiles } from './test-files.ts';
+import { createIsolatedWorkspaceState } from '../../tools/development/isolated-workspace-state.ts';
+
+const testPreload = pathToFileURL(path.resolve(import.meta.dirname, '../register-development-entry.ts')).href;
 
 function innerConcurrencyBudget(step: any, executionContext: any = {}): any  {
   const executionProfile: any = executionContext.executionProfile ?? executionContext;
@@ -90,7 +94,14 @@ export function createVerificationExecutor(options: any): any  {
       const files: any = resolveNodeTestFiles(productRoot, executor.files, `verification step ${step.id}`);
       return {
         command: exactNode.nodeExecutable,
-        args: ['--test', ...nodeTestConcurrencyArguments(step, executionContext), ...(executor.args ?? []).filter((argument: any) => !argument.startsWith('--test-concurrency')), ...files.map(nodeTestFile)],
+        // Preserve case names and timings in the normal diagnostic log. A
+        // focused execution uses this same executor and produces reusable
+        // proof, so diagnosis need not be followed by a duplicate formal run.
+        args: ['--import', testPreload, '--test', ...nodeTestConcurrencyArguments(step, executionContext), ...(executor.args ?? [])
+          .filter((argument: any) => !argument.startsWith('--test-concurrency') && !argument.startsWith('--test-reporter')),
+          '--test-reporter=spec',
+          '--test-reporter-destination=stdout',
+          `--test-reporter=${pathToFileURL(path.join(import.meta.dirname, 'integration-progress-reporter.ts')).href}`, '--test-reporter-destination=stderr', ...files.map(nodeTestFile)],
       };
     }
     if (executor.type === 'node-context-test') {
@@ -149,16 +160,24 @@ export function createVerificationExecutor(options: any): any  {
       [CANDIDATE_PACK_METADATA_ENV]: artifacts.candidate.metadataPath,
       [CANDIDATE_RELEASE_MANIFEST_ENV]: artifacts.candidate.manifestPath,
     } : {};
-    const result: any = await runVerificationStep({
-      ...step,
-      ...resolved,
-      cwd: resolved.cwd ?? productRoot,
+    const state = createIsolatedWorkspaceState({
       env: { ...baseEnv, ...executionContext.resourceEnvironment, ...artifactEnv, ...workerBudgetEnvironment(step, executionContext) },
-      diagnosticsDirectory: options.diagnosticsDirectory,
-    }, {
-      signal: options.signal,
-      onSpawn: (processIdentity: any) => options.onProcessStart?.(step, processIdentity),
     });
+    let result: any;
+    try {
+      result = await runVerificationStep({
+        ...step,
+        ...resolved,
+        cwd: resolved.cwd ?? productRoot,
+        env: state.env,
+        diagnosticsDirectory: options.diagnosticsDirectory,
+      }, {
+        signal: options.signal,
+        onSpawn: (processIdentity: any) => options.onProcessStart?.(step, processIdentity),
+      });
+    } finally {
+      state.cleanup();
+    }
     const testContextRuntime: any = step.executor.type === 'node-context-test' ? parseNodeTestContextSummary(result.stdout) : null;
     return testContextRuntime ? { ...result, testContextRuntime } : result;
   };

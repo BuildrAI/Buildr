@@ -109,7 +109,7 @@ test('Candidate CI coverage is a closed projection of the full local Candidate',
 
 test('new Candidate host coverage is exactly macOS and Windows and rejects Linux relabeling', () => {
   assert.deepEqual(CANDIDATE_CI_HOST_NODE_TUPLES.map((tuple: any) => tuple.id), [
-    'host-minimum-macos', 'host-minimum-windows', 'host-current-macos', 'host-current-windows',
+    'host-minimum-macos', 'host-minimum-windows',
   ]);
   const linux = { id: 'host-minimum-linux', runner: 'linux', requestedNode: '24.15.0', expectation: 'minimum' };
   assert.ok(validateCandidateCiCoverage(verificationSteps, CANDIDATE_CI_SHARDS, [...CANDIDATE_CI_HOST_NODE_TUPLES, linux])
@@ -169,6 +169,20 @@ test('only the explicitly deferred original-package nodes can yield incomplete a
   evidence[0].status = 'failed';
   assert.equal(aggregateCandidateCiEvidence(evidence, candidateContext, null, { deferredIds }).status, 'failed');
   assert.equal(aggregateCandidateCiEvidence(passedEvidence(), candidateContext, null, { deferredIds }).status, 'passed');
+});
+
+test('release coverage adopts complete prior results without a whole-list recipe gate and still rejects missing checks or different bytes', async () => {
+  const { assertReleaseConsumptionCoverage } = await import('../verification/release/release-consumption.ts');
+  const aggregate = aggregateCandidateCiEvidence(passedEvidence(), candidateContext);
+  aggregate.consumptionIdentity = 'sha256-2fc8b0b1a666e3fb619d88a8550271e5bae1323d25a3165d431409e079f075b7';
+  aggregate.evidenceIds.push('host-current-macos', 'host-current-windows');
+  assert.doesNotThrow(() => assertReleaseConsumptionCoverage(aggregate, candidateContext, artifact));
+  delete aggregate.consumptionIdentity;
+  assert.doesNotThrow(() => assertReleaseConsumptionCoverage(aggregate, candidateContext, artifact));
+  const missing = { ...aggregate, evidenceIds: aggregate.evidenceIds.filter((id: string) => id !== 'host-minimum-windows') };
+  assert.throws(() => assertReleaseConsumptionCoverage(missing, candidateContext, artifact), /missing release check host-node/);
+  assert.throws(() => assertReleaseConsumptionCoverage(aggregate, { ...candidateContext, sourceCommit: 'e'.repeat(40) }, artifact), /exact source/);
+  assert.throws(() => assertReleaseConsumptionCoverage(aggregate, candidateContext, { ...artifact, sha256: 'd'.repeat(64) }), /artifact sha256 mismatches/);
 });
 
 test('aggregate revalidates local artifact records and never turns them into source or remote execution claims', () => {

@@ -25,9 +25,11 @@ testing:
         - test:source
       cwd: services/buildr
     selection:
-      - 普通开发继续选择受影响检查；准备发布时按当前平台候选源码登记补齐有效结果
+      - 普通开发选择受影响源码及独立源码包检查；dev 直接推送与开发合并请求沿用原有开发反馈，准备发布时只补当前缺项
+      - 文档链接、架构及规范静态检查不作候选必跑门槛；独立检查不挂在全局前置检查后，一轮收集失败，修复后只补失败及受影响项
       - 按实际内容、配方、依赖和原环境复用；最终包和未覆盖平台仍单独验证
       - 传入 --json 只看计划；--force 强制重跑；--output 导出可搬运源码结果
+      - 发布准备返回的 --base 固定比较提交；同轮本机与远端共用，不追随开发分支移动
       - --scope common 只选通用逻辑；--scope platform 只选实际系统机制，不附带另一套功能检查
       - 严格来源文件读取的系统差异由原生平台节点验证；真实失败不得跳过或冒充另一系统已验
     requirements:
@@ -39,8 +41,8 @@ testing:
       project: product
       services:
         - buildr
-    purpose: 验证实际命令 shim、路径别名、目录链接、硬链接锁、严格文件句柄读取、进程树清理及一个 Git 换行转换用例；只在真实 Windows 执行时形成
-      Windows 证明
+    purpose: 验证实际命令 shim、路径别名、目录链接、硬链接锁、严格文件句柄读取、进程树清理及一个 Git 换行转换用例；只在真实 Windows
+      执行时形成 Windows 证明
     sourcePaths:
       - services/buildr/src/infrastructure/process.ts
       - services/buildr/src/infrastructure/filesystem/**
@@ -82,7 +84,12 @@ testing:
       - services/buildr/test/platform/macos-*.test.ts
     full:
       kind: command
-      argv: [tools/development/run-development-npm, run, test:source, --, --scope, platform]
+      argv:
+        - tools/development/run-development-npm
+        - run
+        - test:focus
+        - --
+        - system-macos-platform
       cwd: services/buildr
     selection:
       - 仅在真实 macOS 执行 system-macos-platform；只补此节点，不重跑通用检查
@@ -98,7 +105,7 @@ testing:
       services:
         - buildr
         - buildr-web
-    purpose: 对同一最终原包执行一次通用检查，并分别证明两个系统的原生启动及最低和当前 Node；本入口不制包、不公开
+    purpose: 对同一最终原包执行一次通用检查，并分别证明两个系统的原生启动及最低 Node；本入口不制包、不公开
     sourcePaths:
       - services/buildr/**
       - services/buildr-web/**
@@ -108,14 +115,17 @@ testing:
     full:
       kind: agent
       instructions:
-        - 从发布入口取已核验来源和摘要的准确原包目录，用 tools/development/run-development-node 调用 test/verification/artifact.ts，显式提供 --artifact-dir 和 --output
-        - --scope common 只执行通用原包检查一次；--scope platform 只执行当前系统的 runtime-macos 或 runtime-windows 及当前 Node
-        - 最低 Node 使用实际 24.15.0 程序运行 --scope platform --node-tuple minimum，仅补宿主组合，不重复通用检查与启动器
+        - 从发布入口取已核验来源和摘要的准确原包目录，用 tools/development/run-development-node 调用
+          test/verification/artifact.ts，显式提供 --artifact-dir 和 --output
+        - --scope common 只执行通用原包检查一次；--scope platform 只执行当前系统的 runtime-macos 或
+          runtime-windows 及最低 Node，不包含另一系统或通用功能
+        - 默认 all 使用实际 Node 24.15.0，一次完成通用原包和本机系统验包；分别执行 common 与 platform
+          时也只补缺项，不另跑当前版本组合
         - 有效结果保留原实际系统和程序；使用同一 prepare 的 --artifact-verification 导入，缺项不冒充完整通过
     requirements:
       - 明确冻结源码、同一原包及隔离检查目录
       - 真实 macOS 或 Windows；另一个系统的证明不能由当前系统结果替代
-      - 最低 Node 使用实际 24.15.0，当前兼容组合使用登记的 24.x；一般开发工具仍接受稳定版 >=24.15.0，不要求恰好最低版本
+      - 系统验包使用实际 Node 24.15.0；一般开发工具仍接受稳定版 >=24.15.0，不要求恰好最低版本
   - id: buildr-fast
     title: Buildr 后端低成本完整回归
     scope:
@@ -330,6 +340,35 @@ testing:
         - 使用对应环境的 CLI、Browser 或 HTTP 工具检查关键入口并保存实际观察
     requirements:
       - explicit-target-environment
+  - id: dsh-plugin-source
+    title: DSH 插件独立源码单元检查
+    scope:
+      project: product
+      services:
+        - dsh-plugin
+    location:
+      kind: service
+      service: dsh-plugin
+    purpose: 只证明不依赖软件开发工具包（SDK）与主包对端的源码单元行为；不替代完整构建、装载及准确双包兼容
+    sourcePaths:
+      - plugin/**
+      - tools/**
+      - package.json
+    testRoots:
+      - test/unit/**
+    full:
+      kind: command
+      argv:
+        - node
+        - tools/verify-source.ts
+      cwd: .
+    selection:
+      - 发布本机预检只补此入口缺项，不先跑旧对端的完整验证
+      - 与完整候选使用同一单元配方及逐项证明；SDK 专属单元在完整入口执行
+      - --output 导出可搬运证明；源码、配方或真实环境变化使相应结果失效
+    requirements:
+      - node >=24.15.0
+      - git
   - id: dsh-plugin
     title: DSH 桌面插件构建与装载
     scope:
@@ -356,7 +395,7 @@ testing:
       cwd: .
     selection:
       - 开发中按改动选择对应单元、进程或装载测试；完成时运行完整入口
-      - 完整入口构建可安装组合并验证物理文件、自足引用及内层真实入口；组合生命周期测试覆盖停用恢复与配置保全，厂商发行应用的原生装卸另行验收
+      - 完整入口构建可安装组合并验证物理文件、自足引用及内层真实入口；组合生命周期测试覆盖停用恢复与配置保全；厂商发行应用的原生装卸仅在对应实现或兼容边界变化时验收
       - 增强源码完整入口必须显式提供 --source-sdk 或 BUILDR_DSH_SOURCE_SDK_ROOT，指向经
         prepare-source-sdk 重建并核对基线、补丁清单、生成声明与产物摘要的独占软件开发工具包（SDK）；普通未补丁 rc.2 或旧
         rc.1 不代表新接口支持，不自动修改共享检出或真实配置档（Profile）
@@ -368,7 +407,7 @@ testing:
         信任和公开发布仍需另外授权及验收
       - 新托管准备使用 prepare-release-sdk.ts，固定真实上游提交及补丁后的冻结依赖；必须显式提供对应 Node 和 pnpm
         入口，不复用本机认证配置
-      - 桌面应用的真实按钮与跨重启交互另行验收，不能由装载测试替代
+      - 只在安装、加载、宿主兼容或卸载恢复发生变化时执行对应桌面操作；有效功能证明不重复，未改变的安装卸载与跨重启交互不作每轮发布要求
       - 自动受影响选择通过 dsh-plugin 调用完整入口并准备固定 SDK 与 pnpm@11.7.0；本族不进入独立 Buildr
         主包候选（Candidate）集合
     requirements:

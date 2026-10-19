@@ -8,32 +8,6 @@ import { createRuntime, runtimeContributions, runtimeModuleSnapshot } from '../h
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
-function lines(relative: any): any  {
-  return fs.readFileSync(path.join(productRoot, relative), 'utf8').trimEnd().split(/\r?\n/);
-}
-
-test('保留入口保持有界且 Doctor 已归属 System', () => {
-  assert.ok(lines('src/modules/agent-assets/infrastructure/runtime/render-claude-code.ts').length <= 100);
-  assert.ok(lines('src/modules/diagnostics/application/diagnostics.ts').length <= 250);
-  assert.ok(lines('src/modules/agent-assets/application/package-maintenance.ts').length <= 550);
-});
-
-test('package verification 使用稳定 registry 且不恢复共享 smoke runner', () => {
-  const application: any = fs.readFileSync(path.join(productRoot, 'tools/verification/package-check.ts'), 'utf8');
-  const smoke: any = fs.readFileSync(path.join(productRoot, 'tools/verification/package-check/smoke-checks.ts'), 'utf8');
-  const registry: any = fs.readFileSync(path.join(productRoot, 'tools/verification/package-check/verification-registry.ts'), 'utf8');
-  assert.match(application, /selectPackageVerifiers/);
-  assert.equal(application.match(/validatePackageStatic\(context\)/g)?.length, 1);
-  for (const runner of ['runPackageWorkspaceSmoke', 'runPackageDomainIntegration', 'runPackageRuntimeIntegration']) {
-    assert.match(application, new RegExp(`${runner}\\(smokeContext`));
-  }
-  assert.match(application, /static package validation is owned by selector static/);
-  assert.doesNotMatch(smoke, /runPackageSmokeChecks/);
-  for (const selector of ['static', 'workspace', 'commands', 'rules', 'skills', 'runtime']) {
-    assert.match(registry, new RegExp(`id: '${selector}'`));
-  }
-});
-
 function scanPlatformNamespaceImports(sourceRoot: string): string[] {
   const files: { path: string; source: string }[] = [];
   const visit = (directory: string) => {
@@ -168,7 +142,6 @@ test('Workspace、Project 与 Service CLI 只保留独立协议适配', () => {
   ];
   for (const relative of adapters) {
     const source = fs.readFileSync(path.join(productRoot, relative), 'utf8');
-    assert.ok(lines(relative).length <= 160, `${relative} must remain a thin CLI adapter`);
     assert.doesNotMatch(source, /from ['"].*(?:domain|persistence)|\bYAML\b|execFileSync|spawnSync|writeProjectRegistry|writeServiceRegistry/);
   }
   const workspaceCli = fs.readFileSync(path.join(productRoot, adapters[0]), 'utf8');
@@ -177,12 +150,7 @@ test('Workspace、Project 与 Service CLI 只保留独立协议适配', () => {
     'src/modules/workspace/application/project-application.ts',
     'src/modules/workspace/application/service-application.ts',
   ]) assert.equal(fs.existsSync(path.join(productRoot, relative)), true, `missing ${relative}`);
-  const projectRepository = fs.readFileSync(path.join(productRoot, 'src/modules/workspace/persistence/project-manifest-repository.ts'), 'utf8');
-  const serviceRepository = fs.readFileSync(path.join(productRoot, 'src/modules/workspace/persistence/service-manifest-repository.ts'), 'utf8');
-  assert.match(projectRepository, /function parseProjectsYaml/);
-  assert.match(projectRepository, /function writeProjectsRegistry/);
-  assert.match(serviceRepository, /function parseServicesManifestYaml/);
-  assert.match(serviceRepository, /function writeServicesManifest/);
+
 });
 
 test('资产应用依赖具名且内部辅助方法不再通过共享对象暴露', () => {

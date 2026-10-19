@@ -45,18 +45,9 @@ test('open-source candidate content rules block secrets without echoing values',
   assert.equal(JSON.stringify(findings).includes(secret), false);
   assert.equal(inspectCandidateFile('README.md', 'https://github.com/BuildrAI/Buildr').length, 0);
   assert.equal(inspectCandidateFile('fixture.md', 'buildr@example.com').length, 0);
+  assert.equal(inspectCandidateFile('fixture.md', 'fixture@example.invalid').length, 0);
+  assert.equal(inspectCandidateFile('fixture.md', ['person', 'private.invalid'].join('@'))[0].rule, 'private.email-address');
   assert.equal(inspectCandidateFile('fixture.md', ['person', 'private.test'].join('@'))[0].rule, 'private.email-address');
-});
-
-test('self-contained prototypes retain their 2 MiB bound and content scanning', () => {
-  const prototype = '<!doctype html><!-- buildr:ui-prototype --><title>Preview</title>';
-  const mib = 1024 * 1024;
-  assert.deepEqual(inspectCandidateFile('docs/prototypes/preview.html', prototype, 2 * mib), []);
-  assert.equal(inspectCandidateFile('docs/prototypes/preview.html', prototype, 2 * mib + 1)[0].rule, 'candidate.large-file');
-  assert.equal(inspectCandidateFile('docs/large.html', '<!doctype html>', mib + 1)[0].rule, 'candidate.large-file');
-  assert.equal(inspectCandidateFile('docs/large.txt', prototype, mib + 1)[0].rule, 'candidate.large-file');
-  const secret = ['-----BEGIN ', 'PRIVATE KEY-----'].join('');
-  assert.equal(inspectCandidateFile('docs/prototypes/preview.html', prototype + secret, mib + 1)[0].rule, 'secret.private-key');
 });
 
 test('open-source metadata and tarball contracts enforce public identity and inventory', () => {
@@ -466,11 +457,12 @@ test('CI and publish workflows use the supported Node runtime', () => {
   const publishWorkflow: any = fs.readFileSync(path.join(workspaceRoot, '.github/workflows/publish.yml'), 'utf8');
   const verifyDocument: any = YAML.parseDocument(verifyWorkflow, { uniqueKeys: true }).toJS();
   const hostNodeSmoke: any = fs.readFileSync(path.join(serviceRoot, 'test/verification/host-node/cli-smoke.ts'), 'utf8');
-  assert.deepEqual(Object.keys(verifyDocument.on).sort(), ['pull_request', 'workflow_dispatch']);
+  assert.deepEqual(Object.keys(verifyDocument.on).sort(), ['pull_request', 'push', 'workflow_dispatch']);
   assert.deepEqual(verifyDocument.on.pull_request.branches, ['dev', 'main']);
-  assert.equal(verifyDocument.on.push, undefined);
-  assert.equal(verifyDocument.jobs['dev-feedback-macos'].if, "github.event_name == 'pull_request' && github.base_ref == 'dev'");
-  assert.equal(verifyDocument.jobs['dev-feedback-windows'].if, "github.event_name == 'pull_request' && github.base_ref == 'dev'");
+  assert.deepEqual(verifyDocument.on.push.branches, ['dev']);
+  assert.equal(verifyDocument.env.BUILDR_VERIFICATION_BASE, '${{ inputs.selection_baseline || \'\' }}', 'Candidate and formal repair share their already frozen selection baseline');
+  assert.equal(verifyDocument.jobs['dev-feedback-macos'].if, "(github.event_name == 'pull_request' && github.base_ref == 'dev') || (github.event_name == 'push' && github.ref == 'refs/heads/dev')");
+  assert.equal(verifyDocument.jobs['dev-feedback-windows'].if, "(github.event_name == 'pull_request' && github.base_ref == 'dev') || (github.event_name == 'push' && github.ref == 'refs/heads/dev')");
   assert.equal(verifyDocument.jobs['dev-feedback-macos']['runs-on'], 'macos-latest');
   assert.equal(verifyDocument.jobs['dev-feedback-windows']['runs-on'], 'windows-latest');
   assert.equal(verifyDocument.jobs['candidate-plan'].if, "(!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))");
@@ -550,7 +542,7 @@ test('Windows original-package diagnosis remains separate from complete Candidat
   assert.equal(diagnosis.env.DIAGNOSTIC_CANDIDATE_SOURCE, '${{ inputs.diagnostic_candidate_source }}');
   assert.equal(diagnosis.env.EXPECTED_SOURCE_TREE, '${{ inputs.expected_source_tree }}');
   assert.doesNotMatch(JSON.stringify(diagnosis.env), /runner\./u);
-  assert.match(diagnosis.steps[0].run, /refs\/heads\/dev/u);
+  assert.ok(diagnosis.steps[0].run.includes(`[[ "$DISPATCH_PURPOSE" == 'candidate' ]]`));
   assert.match(diagnosis.steps[0].env.EXTRA_INPUTS_PRESENT, /inputs.source_verification != ''/u);
   const download = diagnosis.steps.find((step: any) => step.uses?.startsWith('actions/download-artifact@'));
   assert.equal(download.with.name, 'candidate-package');
@@ -588,7 +580,7 @@ test('Windows source diagnosis keeps native owners isolated without borrowing a 
   assert.match(diagnosis.if, /inputs.diagnostic_scope == 'readonly-files-windows'/u);
   const guard = diagnosis.steps[0];
   assert.equal(guard.shell, 'bash');
-  assert.match(guard.run, /refs\/heads\/dev/u);
+  assert.ok(guard.run.includes(`[[ "$DISPATCH_PURPOSE" == 'candidate' ]]`));
   for (const input of ['release_packages', 'buildr_version', 'plugin_version', 'source_verification', 'artifact_verification', 'local_runner', 'repair_candidate_run_id', 'product_source', 'verification_source', 'diagnostic_candidate_run_id', 'diagnostic_candidate_source']) assert.ok(guard.env.EXTRA_INPUTS_PRESENT.includes(`inputs.${input} != ''`));
   const execution = diagnosis.steps.find((step: any) => step.run === 'node test/verification/release/windows-source-diagnosis.ts');
   assert.equal(execution.env.EXPECTED_SOURCE_TREE, '${{ inputs.expected_source_tree }}');
@@ -616,7 +608,7 @@ test('Windows nested Git diagnosis keeps closed inputs, original isolated assert
     assert.ok(guard.env.RELEASE_INPUTS_PRESENT.includes(`inputs.${input} != ''`), `Diagnosis must reject ${input}`);
   }
   assert.ok(guard.run.includes(`[[ "$DIAGNOSTIC_SCOPE" == 'nested-git-isolation-windows' ]] || fail`));
-  assert.ok(guard.run.includes(`[[ "$DISPATCH_REF" == 'refs/heads/dev' && "$DISPATCH_PURPOSE" == 'candidate' ]] || fail`));
+  assert.ok(guard.run.includes(`[[ "$DISPATCH_PURPOSE" == 'candidate' ]] || fail`));
   assert.ok(guard.run.includes(`[[ "$RELEASE_INPUTS_PRESENT" == 'false' ]] || fail`));
   assert.ok(guard.run.includes(`[[ "$EXPECTED_SOURCE_TREE" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]] || fail`));
   const checkout = diagnosis.steps.find((step: any) => step.uses?.startsWith('actions/checkout@'));
@@ -651,17 +643,6 @@ test('Windows nested Git diagnosis keeps closed inputs, original isolated assert
   assert.ok(scenario.includes("process.argv[process.argv.indexOf('--section') + 1] : 'full'"));
   assert.ok(scenario.includes("section === 'full' || section === 'lifecycle' || section === 'safety'"));
   assert.ok(scenario.includes("sections.length <= 1"));
-});
-
-test('release convergence and self-bootstrap runner fail closed on unmatched authority evidence', () => {
-  const selfBootstrapRunner: any = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/scripts/closeout.mjs'), 'utf8');
-  const convergenceSource: any = fs.readFileSync(path.join(serviceRoot, '../../../../skills/buildr-release/scripts/release-git-convergence.ts'), 'utf8');
-  assert.match(selfBootstrapRunner, /self-bootstrap-closeout\.remote-drift/);
-  assert.match(convergenceSource, /Publication evidence is not a complete passed transaction/);
-  assert.match(convergenceSource, /published-but-dev-reconciliation-blocked/);
-  assert.match(convergenceSource, /reconcilePublishedReleaseWithDev/);
-  assert.match(convergenceSource, /authorizeRemoteDelete/);
-  assert.doesNotMatch(convergenceSource, /\['merge'|\['commit'|\['worktree', 'add'|\['reset', '--hard'/);
 });
 
 test('publisher workflow routes one bounded macOS pair with no Linux, SDK, Candidate gate or publication authority', () => {

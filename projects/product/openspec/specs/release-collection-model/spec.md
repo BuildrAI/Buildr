@@ -214,14 +214,14 @@ Buildr MUST让`pre-candidate`、`pre-main`、`dispatch-check`与hosted`pre-tag`�
 - **AND** hosted workflow MUST逐字节消费并重新计算同一digest，不得接受后续重建的近似context
 
 ### Requirement: Release lifecycle 必须维持唯一协调Task与稳定恢复身份
-协调任务（Task）SHALL 按选择身份定位；旧仅主包默认保留 `release-<version>`，其它目标 SHALL 使用独立身份。仅插件（Plugin）选择 MUST 等待插件自身公开事实与适用收尾，不要求主包公开事实。联合选择 MUST 保留逐包事实及恢复身份，在全部已选择发布和必需共享收尾完成前保持同一任务（Task）进行中。以下主包单独场景（Scenario）继续适用原义务。
+协调任务（Task）SHALL 按选择身份定位；旧仅主包默认保留 `release-<version>`，其它目标 SHALL 使用独立身份。仅插件（Plugin）选择 MUST 等待插件自身公开事实与适用收尾，不要求主包公开事实。目标包含公开发布时，联合选择 MUST 保留逐包事实及恢复身份，在全部已选择发布和必需共享收尾完成前保持同一任务（Task）进行中；明确只准备到验包的目标适用独立准备结束边界。以下主包单独场景（Scenario）继续适用原义务。
 
-Buildr MUST从current release owner facts派生version-scoped lifecycle read model，并 MUST让同一`release-<version>`协调Task从selection持续保持active到Publication、post-publication dev provenance reconciliation与必需closeout完成。阶段与恢复身份 MUST绑定version、Task ID、selection generation/identity、frozen context digest和适用publish run，不得写入Task Record新状态字段或建立旁路workflow store。
+Buildr MUST从current release owner facts派生version-scoped lifecycle read model，并 MUST让包含公开发布目标的同一`release-<version>`协调Task从selection持续保持active到Publication、post-publication dev provenance reconciliation与必需closeout完成；已经按只准备目标完成的Task仅作为同冻结选择的已完成准备事实被消费，不自动重开或另建协调任务。阶段与恢复身份 MUST绑定version、Task ID、selection generation/identity、frozen context digest和适用publish run，不得写入Task Record新状态字段或建立旁路workflow store。
 
 #### Scenario: readiness完成并等待publication授权
 - **WHEN** Candidate、唯一artifact、release→main tree equality与无副作用readiness全部current，但维护者尚未授权publication
-- **THEN** lifecycle MUST返回`awaiting-publication-authorization`并保持同一release Task active
-- **AND** MUST NOT完成Task、创建第二协调Task或把历史授权当作当前publication授权
+- **THEN** lifecycle MUST返回`awaiting-publication-authorization`并保持同一包含公开目标的release Task active；已独立完成的准备Task保持其真实终态
+- **AND** MUST NOT仅因等待授权完成尚有公开目标的Task、创建第二协调Task或把历史授权当作当前publication授权
 
 #### Scenario: Candidate或publication暂态失败
 - **WHEN** 同一version的Candidate失败、同SHA job暂态失败或protected transaction需要同context恢复
@@ -232,6 +232,12 @@ Buildr MUST从current release owner facts派生version-scoped lifecycle read mod
 - **WHEN** Publication、matching dev provenance reconciliation与全部必需本地/中间资源closeout均通过，且正式远端release ref已按本轮授权完成保留或安全清理并核验
 - **THEN** lifecycle MUST返回`closed`并允许Release Skill完成唯一协调Task
 - **AND** 历史授权未包含正式远端release ref删除时 MUST保留其原政策，不自动扩大授权，也不因此阻止Task完成
+
+#### Scenario: 已完成准备随后获准公开同一候选
+- **WHEN** 仅验包准备已完成，随后用户明确授权公开同一冻结候选，准确来源、原包及当前主线条件仍匹配
+- **THEN** 工具 MUST 消费已完成准备并允许不改变冻结内容的同树主线采用、就绪核验及受保护公开，准备任务保持已完成
+- **AND** 公开状态及局部恢复 MUST 继续由现有发布事实表达，不自动重开准备任务或创建第二协调任务
+- **AND** 需要改变发布内容的选择、重新冻结或源码收敛仍 MUST 满足活动准备的原写入边界
 
 ### Requirement: Release Git owner 必须管理generation carrier与幂等closeout
 载体（Carrier）SHALL 由 `selectionId` 与代次（Generation）稳定派生；旧仅主包默认名称继续兼容。以下按主包版本及官方标签（Tag）判断的场景（Scenario）仅适用于主包路径。新目标 MUST 核验同一选择归属、受保护历史及全部已选择包用途；MUST NOT 因一包成功删除另一个包仍需恢复的共享引用（Ref）。
@@ -436,3 +442,65 @@ Release MUST将dev、origin/dev和完整SHA解析为精确提交，分别记录�
 #### Scenario: 同身份输入发生变化
 - **WHEN** 恢复请求改变目标包或版本而未形成新的明确选择
 - **THEN** 系统 MUST 返回身份冲突并保留原现场
+
+### Requirement: 只准备到验包必须独立结束并保全成果
+
+明确停在验包的准备 SHALL 在完整必需覆盖及准确原包已核验后，使用既有任务材料与验证报告入口保存真实结果，再完成对应准备任务。原包、源码、检查及原执行来源 MUST 保全到不依赖待清理工作树的位置；登记失败 MUST 仅恢复登记，不得重测或重新制包。临时资源 MUST 逐项说明已清理或因后续用途而保留，工作树清理不得删除原包和证明。
+
+#### Scenario: 仅验包目标完成
+- **WHEN** 固定选择的完整验包通过，用户明确不进入公开
+- **THEN** 准备 MUST 保存原字节、完整汇总及真实来源，在活动任务上登记报告和材料后完成任务
+- **AND** MUST NOT 创建公开标签、派发公开运行或等待公开后才登记完成
+
+#### Scenario: 登记或清理失败后恢复
+- **WHEN** 验包已通过但报告登记、任务结束或资源清理未完成
+- **THEN** 恢复 MUST 回读同冻结选择和已保全结果，只补未完成动作并保留已成功登记
+- **AND** MUST NOT 因登记失败使原包或已通过检查失效，或把资源待处理冒充全部已清理
+
+#### Scenario: 已完成准备的准确接续
+- **WHEN** 用户检查或明确接续已完成准备，包、版本、源码及冻结选择未变
+- **THEN** 工具 MUST 允许读取并消费其真实结果，不自动重开任务或再次执行候选
+- **AND** 源码选择、重新冻结及改变发布内容的收敛写入仍 MUST 满足活动任务的既有边界，身份漂移必须明确返回恢复动作
+- **AND** 公开操作 MUST 继续核对准确授权和受保护执行条件
+
+### Requirement: 发布只承担必要动作和真实交付证明
+发布 SHALL 保留准确版本、来源、原字节、公开授权、公开结果和安全清理核对，MUST NOT 把 README 固定标题、章节、审查材料统一文件大小上限或本机开发应用激活作为发布完成条件。有独立价值的文档、架构和规范静态开发检查 SHALL 保持可按需要选择，MUST NOT 无条件加入候选必跑集合；真实产品功能、数据安全、安装启动、支持系统与 Node 以及准确插件对端兼容检查 MUST 保留。
+
+#### Scenario: 编辑说明或本机激活未完成
+- **WHEN** 准确公开事实及必要交付证明成立，README 编排改变或本机开发应用未更新
+- **THEN** 发布 MUST 保留已成立结果，不因这些事项重做候选或阻止发布完成
+- **AND** 未完成的登记或清理 MUST 只恢复相应动作
+
+### Requirement: 发布接续应复用逐项结果并减少智能体轮询
+发布 SHALL 使用现有验证框架集中收集失败并复用仍适用于当前输入的成功结果，修复后只补失败及受影响检查。插件本机源码证明 SHALL 能独立执行无需 SDK 或真实对端的单元测试；准确候选配对仍 MUST 执行完整适用验证。发布程序 SHALL 提供有界持续等待及简洁摘要，完整证据 MUST 可读取；MUST NOT 因等待或模型接续重复派发已存在的公开副作用。
+
+#### Scenario: 一轮测试出现多个失败
+- **WHEN** 一轮检查完成且存在多个失败
+- **THEN** 程序 MUST 集中返回这些失败并保留其余有效成功证明
+- **AND** 下一轮 MUST 依据实际输入变化重跑必要检查，不仅因进入新阶段而全量重跑
+
+#### Scenario: 远端候选尚未结束
+- **WHEN** 同一发布命令选择持续等待且远端运行仍在进行
+- **THEN** 程序 SHALL 在时限内等待同一运行并在结束时返回摘要
+- **AND** 真实失败、缺少必要证明、授权或达到时限 MUST 如实返回，保留准确接续身份
+
+#### Scenario: 日常交付与独立失败收集
+- **WHEN** 相关改动直接交付 `dev` 或通过开发合并请求验证
+- **THEN** 现有受影响检查 MUST 包含无需最终原包的相关源码包检查
+- **AND** 无关检查失败 MUST NOT 阻断可独立执行的检查，真实环境及生产依赖失败仍 MUST 阻断其消费者
+
+#### Scenario: 修复辅助代码或定向诊断
+- **WHEN** 修复仅影响某组导入的辅助测试代码，或使用既有正式入口单独诊断该组
+- **THEN** 未消费该辅助代码且输入仍有效的结果 MUST 保留；未知动态输入 MUST 继续保守绑定
+- **AND** 同条件正式定向检查通过且清理成功后 MUST 能直接复用，不要求额外重复执行取得相同证明
+
+#### Scenario: 任一系统开发并由远端补齐差异
+- **WHEN** macOS 或 Windows 开发者已经取得有效通用证明及本机系统证明
+- **THEN** 本机 MUST NOT 执行另一系统的源码或原包节点，远端 MUST 只补缺少的系统证明及必要正式制包和汇总
+- **AND** 两个系统的独立 Node 验包 MUST 只要求实际最低版本 `24.15.0`，MUST NOT 另要求当前版本组合
+- **AND** 通用功能和页面 MUST 采用仍适用的结果，源码、依赖或原包变化只使实际受影响证明失效
+
+#### Scenario: 插件功能已验证且桌面交付边界未变化
+- **WHEN** 插件功能已有有效证明，安装、加载、宿主兼容及卸载恢复边界未变化
+- **THEN** 发布 MUST NOT 例行要求完整桌面功能回归或卸载重装
+- **AND** 相关边界变化时 MUST 只执行对应必要操作，未执行的真实桌面操作 MUST 如实保留未知

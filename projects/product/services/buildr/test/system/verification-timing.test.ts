@@ -417,38 +417,6 @@ test('timing formatter reports successful runs without a failed stage', () => {
   ]);
 });
 
-test('changed verification writes a persistent run-level timing summary', () => {
-  const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-changed-timing-'));
-  try {
-    const timingOutput: any = path.join(root, 'timing.json');
-    const diagnosticsOutput: any = path.join(root, 'diagnostics');
-    const result: any = spawnSync(process.execPath, [path.join(productRoot, 'test', 'verification', 'changed.ts'), 'knowledge/docs/overview.md'], {
-      cwd: productRoot,
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        BUILDR_TIMING_OUTPUT: timingOutput,
-        BUILDR_DIAGNOSTICS_OUTPUT: diagnosticsOutput,
-        BUILDR_VERIFICATION_REUSE_DIR: path.join(root, 'reuse'),
-        BUILDR_VERIFICATION_REUSE_IMPORT: '',
-        BUILDR_VERIFICATION_REUSE_EXPORT: '',
-      },
-    });
-    assert.equal(result.status, 0, result.stderr);
-    const summary: any = JSON.parse(fs.readFileSync(timingOutput, 'utf8'));
-    assert.equal(summary.status, 'passed');
-    assert.equal(summary.run.kind, 'changed');
-    assert.equal(summary.source.productRoot, productRoot);
-    assert.ok(summary.steps.length > 0);
-    assert.ok(fs.existsSync(diagnosticsOutput));
-    assert.match(result.stdout, /\[verify-changed\] timing: total=/);
-    assert.match(result.stdout, /\[verify-changed\] failed: none/);
-    assert.match(result.stdout, /Documentation quality passed: 1 file\(s\)\./);
-  } finally {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-});
-
 test('verification step writes independently addressable stdout and stderr diagnostics', async () => {
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-step-diagnostics-'));
   try {

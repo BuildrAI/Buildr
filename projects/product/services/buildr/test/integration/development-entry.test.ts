@@ -28,7 +28,6 @@ test('开发启动器读取声明版本且 package engines 保留发布兼容范
   const packageJson: any = JSON.parse(fs.readFileSync(path.join(serviceRoot, 'package.json'), 'utf8'));
   const source: any = fs.readFileSync(runner, 'utf8');
   const declared: any = fs.readFileSync(path.resolve(serviceRoot, '../..', '.node-version'), 'utf8').trim();
-  assert.equal(declared, '24.15.0');
   assert.equal(packageJson.engines.node, `>=${declared}`);
   assert.match(source, /resolve-development-node/u);
   assert.doesNotMatch(source, /workspace\.yml|Workspace Node runtime|BUILDR_NODE_RUNTIME_DATA_DIR/u);

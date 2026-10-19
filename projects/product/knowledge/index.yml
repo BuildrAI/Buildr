@@ -417,9 +417,24 @@ artifacts:
       - task-source-work-context-application-11bb91
       - task-source-task-command-application-aba2e8
       - data-sqlite-source
-    observedDigest: 498d4cda478ed281b1747d41b5ebc22486936ddab337838f0fb40dd4506f1d09
+    observedDigest: f28dca21afb9ed6d47ebba0ea98d559a55eb0a3f8998a575b7f1e01b9a5acf72
     files:
       - overview-file
+  - id: work-collaboration-diagram
+    title: Buildr：把工作的环境、方法和工具接起来
+    kind: diagram
+    path: knowledge/archify/system/buildr-work-collaboration.html
+    objects:
+      - product-overview
+    sources:
+      - scope-rules
+      - overview-positioning-spec
+    graphSource: knowledge/archify/system/buildr-work-collaboration.json
+    graphDigest: d9219a623bf211db6970abd129c9864e7a93491c15ce38bb19d1e46c28a257d9
+    observedDigest: 2249ed8bba420a9552c259fb3e51e90d91ec217e44497f7a0d84a644ec81f306
+    files:
+      - file-work-collaboration
+      - file-work-collaboration-graph
   - id: system
     title: Buildr 系统全景
     kind: diagram
@@ -543,6 +558,10 @@ artifacts:
       - connection-personal-secrets-ui
       - connection-authorization-ui
       - connection-authorization-state
+      - npm-update-application-source
+      - npm-update-identity-source
+      - web-update-handoff-source
+      - web-update-lifecycle-source
   - id: project-relations-article
     title: 项目、服务与代码库如何协作
     kind: document
@@ -1460,6 +1479,30 @@ artifacts:
       - file-responsibility-graph
       - project-terms
 sources:
+  - id: npm-update-application-source
+    title: 安装更新应用
+    kind: code
+    path: services/buildr/src/modules/installation/application/cli-update.ts
+    summary: 更新当前软件包后委托网页交接能力；保留安装结果，并分别报告网页切换状态。
+    observedDigest: f3a05fe1a7f6bc9278cca64827da339f0182042bc1f338f8b782f9693c44e721
+  - id: npm-update-identity-source
+    title: 更新安装归属
+    kind: code
+    path: services/buildr/src/modules/installation/infrastructure/current-product-identity.ts
+    summary: 重新读取已验证安装登记，比较同一安装槽位中的历史身份，提供新版精确运行入口。
+    observedDigest: 99edf1f72e36fc58724affa8b21fb466f03a816a411fea3fcbc7613ac7c1f7a3
+  - id: web-update-handoff-source
+    title: 网页更新交接
+    kind: code
+    path: services/buildr/src/web/application/update-web-handoff.ts
+    summary: 以新版独立进程发起同一安装的网页交接，并核对实际服务健康身份与失败结果。
+    observedDigest: ae16e70d33fb5500c36fbe0c00716ba55d4de0dbb531e2764394a0caa4a12184
+  - id: web-update-lifecycle-source
+    title: 网页实例生命周期
+    kind: code
+    path: services/buildr/src/web/application/instance-lifecycle.ts
+    summary: 唯一编排默认实例启动、复用和认证退出，在启动锁内核对更新目标并启动新版。
+    observedDigest: ac542c2657b6ff9245d60225fe9f972ad183ff3b78bb3ce4ceb60ae176594043
   - id: verification-local-source
     title: 通用与本机平台源码检查
     kind: code
@@ -2391,6 +2434,18 @@ sources:
     path: knowledge/code-map/knowledge-maintenance.md
     summary: 这份文件保存《知识建设与维护的实现组织》的职责、规范和实现位置地图，与网页阅读使用同一正文。它是理解事实的成果，不替代规范或源码。
     observedDigest: 252927fd1c694351e91659dd7fd5ce9d4fa663db2d3310fa45b81fae31fa71a5
+  - id: file-work-collaboration
+    title: 工作条件、执行与企业积累 · 展示文件
+    kind: evidence
+    path: knowledge/archify/system/buildr-work-collaboration.html
+    summary: 展开 Buildr 衔接的资料、方法和工具，展示人的参与、智能体（Agent）的执行，以及交付与企业积累。
+    observedDigest: 2249ed8bba420a9552c259fb3e51e90d91ec217e44497f7a0d84a644ec81f306
+  - id: file-work-collaboration-graph
+    title: 工作条件、执行与企业积累 · 可维护图源
+    kind: evidence
+    path: knowledge/archify/system/buildr-work-collaboration.json
+    summary: 保存职责、关系、布局和已核对的来源，由 Archify 生成配套展示。
+    observedDigest: d9219a623bf211db6970abd129c9864e7a93491c15ce38bb19d1e46c28a257d9
   - id: file-system
     title: Buildr 系统全景 · 展示文件
     kind: evidence
@@ -3603,6 +3658,7 @@ sources:
     path: services/buildr-web/src/features/task/components/PrototypeReaderLayout.tsx
     summary: 独立任务阅读与离线预览共用页面目录和阅读布局，页面选择由入口接入。
 relations:
+  - { from: product-overview-article, to: work-collaboration-diagram, kind: guides }
   - { from: product-release-flow, to: product-release-architecture, kind: contains }
   - { from: product-release-flow, to: product-release-workflow, kind: contains }
   - { from: product-release-flow, to: verification-product-architecture, kind: guides }

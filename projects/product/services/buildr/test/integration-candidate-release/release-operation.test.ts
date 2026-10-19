@@ -5,15 +5,96 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { reconcilePublicationAfterPreparedContext, resolveRetainedController, runReleaseOperation } from '../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts';
-import { readCandidateEvidence } from '../../../../../../skills/buildr-release/scripts/release-transaction-runner.ts';
-import { createReleaseArtifactFixture } from '../helpers/release-artifact-fixture.ts';
+import { reconcilePublicationAfterPreparedContext, resolveRetainedController, runReleaseOperation, waitForReleaseMainPullRequest } from '../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts';
+import { readCandidateEvidence, runHostedReleaseTransaction } from '../../../../../../skills/buildr-release/scripts/release-transaction-runner.ts';
+import { inspectReleaseSelection } from '../../../../../../skills/buildr-release/scripts/release-selection.ts';
+import { createReleaseArtifactFixture, preparationRecordFixture } from '../helpers/release-artifact-fixture.ts';
 import { aggregateCandidateCiEvidence, candidateCiRegistryIdentity, createCandidateCiEvidence, CANDIDATE_CI_AGGREGATE_SCHEMA } from '../verification/candidate-ci-evidence.ts';
 import { CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES } from '../verification/registry.ts';
 import { createCandidateSourceBinding } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
 import { normalizeReleaseTargets } from '../../../../../../skills/buildr-release/scripts/release-targets.ts';
 
 const sourceRoot = path.resolve(import.meta.dirname, '../..');
+
+function protectedMainFixture(): any {
+  const sourceCommit = 'a'.repeat(40), branch = 'codex/release-main-1.0.0-rc.1-g1';
+  const options = { repo: '/isolated-release', url: 'https://github.com/BuildrAI/Buildr/pull/1', sourceCommit, branch };
+  const pullRequest = { state: 'OPEN', headRefOid: sourceCommit, headRefName: branch, baseRefName: 'main', url: options.url,
+    mergeStateStatus: 'CLEAN', mergeable: 'MERGEABLE', isDraft: false };
+  let elapsed = 0;
+  const requests: string[][] = [], waits: number[] = [];
+  return { options, pullRequest, requests, waits, elapsed: () => elapsed,
+    dependencies(read: (args: string[]) => any) { return { now: () => elapsed,
+      sleep: async (ms: number) => { elapsed += ms; waits.push(ms); },
+      execute: (command: string, args: string[], config: any) => {
+        assert.equal(command, 'gh'); assert.equal(config.cwd, options.repo);
+        assert.ok(config.timeout > 0 && config.timeout <= 30_000);
+        assert.ok(args[0] === 'pr' && ['view', 'checks'].includes(args[1]!), 'waiting is read-only');
+        if (args[1] === 'checks') assert.ok(args.includes('--required'));
+        requests.push(args); return read(args);
+      } }; },
+  };
+}
+
+test('protected main waits through an uncomputed state and missing checks, then admits the same ready PR', async () => {
+  const f = protectedMainFixture();
+  const result = await waitForReleaseMainPullRequest(f.options, f.dependencies((args: string[]) => args[1] === 'view'
+    ? { status: 0, stdout: JSON.stringify({ ...f.pullRequest, ...(f.elapsed() === 0 ? { mergeStateStatus: 'UNKNOWN', mergeable: 'UNKNOWN' } : {}) }) }
+    : f.elapsed() === 0 ? { status: 1, stdout: '', stderr: `no checks reported on the '${f.options.branch}' branch` }
+      : { status: 0, stdout: JSON.stringify([{ name: 'protected-gate', bucket: 'pass', state: 'SUCCESS' }]) }));
+  assert.equal(result.status, 'ready'); assert.equal(result.pullRequest.url, f.options.url);
+  assert.equal(result.durationMs, 3_000); assert.deepEqual(f.waits, [3_000]);
+});
+
+test('protected main waiting stops at its bounded deadline without a failed merge or repeated work', async () => {
+  const f = protectedMainFixture();
+  const result = await waitForReleaseMainPullRequest(f.options, f.dependencies((args: string[]) => ({ status: args[1] === 'checks' ? 8 : 0,
+    stdout: JSON.stringify(args[1] === 'view' ? { ...f.pullRequest, mergeStateStatus: 'BLOCKED' }
+      : [{ name: 'protected-gate', bucket: 'pending', state: 'IN_PROGRESS' }]) })));
+  assert.equal(result.status, 'pending'); assert.equal(result.durationMs, 30_000);
+  assert.equal(f.requests.length, 20); assert.equal(f.waits.length, 10);
+  assert.equal(result.checks[0].name, 'protected-gate');
+});
+
+test('a clean new PR still waits for its required check to register', async () => {
+  const f = protectedMainFixture();
+  const result = await waitForReleaseMainPullRequest(f.options, f.dependencies((args: string[]) => ({ status: 0,
+    stdout: JSON.stringify(args[1] === 'view' ? f.pullRequest
+      : f.elapsed() === 0 ? [] : [{ name: 'Candidate gate', bucket: 'pass', state: 'SUCCESS' }]) })));
+  assert.equal(result.status, 'ready');
+  assert.deepEqual(f.waits, [3_000], 'an initially empty required-check list is not permission to merge');
+});
+
+for (const bucket of ['fail', 'cancel']) test(`protected main reports required ${bucket} without waiting or touching unrelated checks`, async () => {
+  const f = protectedMainFixture();
+  const result = await waitForReleaseMainPullRequest(f.options, f.dependencies((args: string[]) => ({ status: args[1] === 'checks' ? 1 : 0,
+    stdout: JSON.stringify(args[1] === 'view' ? { ...f.pullRequest, mergeStateStatus: 'BLOCKED' } : [{ name: 'protected-gate', bucket }]) })));
+  assert.equal(result.status, 'blocked'); assert.equal(result.diagnostic.code, 'release-main-required-check-failed');
+  assert.deepEqual(f.waits, []);
+});
+
+test('protected main readback failures are unknown and credential-shaped diagnostics are redacted', async () => {
+  const f = protectedMainFixture();
+  const result = await waitForReleaseMainPullRequest(f.options, f.dependencies(() => ({ status: 1,
+    stderr: 'HTTP 503 Bearer private-value' })));
+  assert.equal(result.status, 'unknown'); assert.equal(result.diagnostic.httpStatus, 503);
+  assert.doesNotMatch(JSON.stringify(result), /private-value/u); assert.deepEqual(f.waits, []);
+});
+
+for (const condition of ['head-drift', 'closed', 'draft', 'DIRTY', 'BEHIND']) test(`protected main rejects ${condition} before any merge`, async () => {
+  const f = protectedMainFixture();
+  const changed = condition === 'head-drift' ? { headRefOid: 'b'.repeat(40) } : condition === 'closed' ? { state: 'CLOSED' }
+    : condition === 'draft' ? { isDraft: true } : { mergeStateStatus: condition };
+  const result = await waitForReleaseMainPullRequest(f.options, f.dependencies(() => ({ status: 0, stdout: JSON.stringify({ ...f.pullRequest, ...changed }) })));
+  assert.equal(result.status, 'blocked'); assert.equal(f.requests.length, 1); assert.deepEqual(f.waits, []);
+});
+
+test('protected main readback adopts an externally completed merge without requesting another merge', async () => {
+  const f = protectedMainFixture();
+  const result = await waitForReleaseMainPullRequest(f.options, f.dependencies(() => ({ status: 0,
+    stdout: JSON.stringify({ ...f.pullRequest, state: 'MERGED' }) })));
+  assert.equal(result.status, 'ready'); assert.equal(result.pullRequest.state, 'MERGED'); assert.equal(f.requests.length, 1);
+});
 
 test('retained release controller accepts a newer Node and rejects an unmet source minimum', t => {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-retained-controller-node-'));
@@ -341,9 +422,11 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
   let candidateComplete = false;
   let candidateConclusion = 'success', candidateAttempt = 1, retryRequests = 0;
   let verificationSource: string | null = null, repairRequested = false;
+  let repairVisible = repairTools;
   let lateSourceVerification: string | null = null;
   const repairRequests: string[][] = [];
   let pr: any = null;
+  const preparationRecords = preparationRecordFixture(workspace, taskId);
   const providerFile = path.join(workspace, '.git/buildr/task-worktrees', `${taskId}.json`);
   const runtime = {
     inspectTask: (target: string, id: string) => {
@@ -377,9 +460,11 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
     ] });
     if (args[0] === 'run' && args[1] === 'list') return body(dispatched ? [
       { databaseId: 700, headSha: sourceCommit, status: candidateComplete ? 'completed' : 'queued', conclusion: candidateComplete ? 'success' : null },
-      ...(repairRequested ? [{ databaseId: 701, headSha: sourceCommit, displayTitle: 'Candidate repair 700 ' + verificationSource, status: 'completed', conclusion: 'success' }] : [])] : []);
+      ...(repairRequested && repairVisible ? [{ databaseId: 701, headSha: sourceCommit, displayTitle: 'Candidate repair 700 ' + verificationSource, status: 'completed', conclusion: 'success' }] : [])] : []);
     if (args[0] === 'api') return body({ id: args[1]?.endsWith('/701') ? 701 : 700, head_sha: sourceCommit, run_attempt: candidateAttempt, path: '.github/workflows/verify.yml', repository: { full_name: 'BuildrAI/Buildr' }, event: 'workflow_dispatch', status: candidateComplete ? 'completed' : 'queued', conclusion: candidateComplete ? candidateConclusion : null });
     if (args[0] === 'pr' && args[1] === 'list') return body(pr ? [pr] : []);
+    if (args[0] === 'pr' && args[1] === 'view') return body({ ...pr, mergeStateStatus: 'CLEAN', mergeable: 'MERGEABLE', isDraft: false });
+    if (args[0] === 'pr' && args[1] === 'checks') return body([{ name: 'protected-gate', state: 'SUCCESS', bucket: 'pass' }]);
     if (args[0] === 'pr' && args[1] === 'create') {
       pr = { number: 1, state: 'OPEN', headRefOid: sourceCommit, headRefName: args[args.indexOf('--head') + 1], baseRefName: 'main', url: 'https://github.com/BuildrAI/Buildr/pull/1' };
       return { status: 0, stdout: pr.url };
@@ -397,17 +482,25 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
     }
     return { status: 1, stderr: `unexpected local service command ${args.join(' ')}` };
   };
-  const candidateEvidence = { aggregate, manifest: artifact.manifest };
+  const candidateEvidence = { aggregate, manifest: artifact.manifest, tarballBytes: fs.readFileSync(artifact.tarball) };
   const dependencies = { execute, runtime, observationOptions: { githubApi: api, registry: api }, candidateDependencies: { candidateEvidence },
     // This fixture owns orchestration and uses a local proof owner in place of
     // running every source check inside its deliberately minimal repository.
     prepareLocalSourceVerification: async (input: any) => {
       assert.equal(input.repo, repo);
+      assert.equal(input.base, sourceCommit, 'local source checks use the immutable selected baseline');
       assert.deepEqual(input.packages, ['buildr']);
       return { status: 'ready', transport: 'owned-source-proof', recordCount: 1, missingStepIds: [] };
     },
     resolveRetainedController: () => ({ workspaceRoot: workspace }),
     invokeRetainedController: (_controller: any, args: string[]) => {
+      const recorded = preparationRecords.invoke(args); if (recorded) return recorded;
+      if (args[0] === 'task' && args[1] === 'complete') { task.status = 'completed'; return { status: 'completed', effects: [{ type: 'task-completed' }] }; }
+      if (args[0] === 'worktree' && args[1] === 'cleanup') {
+        assert.equal(git(repo, ['rev-parse', 'HEAD']), args[args.indexOf('--expected-source') + 1].slice('workspace='.length));
+        git(workspace, ['worktree', 'remove', repo]); git(workspace, ['branch', '-D', branch]); fs.rmSync(providerFile); worktreeCreated = false;
+        return { status: 'cleaned', effects: [{ type: 'worktree-cleaned' }] };
+      }
       if (args[0] === 'task' && args[1] === 'create') { task = { taskId, title: 'Release fixture', status: 'active' }; return { status: 'created', record: task, effects: [{ type: 'task-created' }] }; }
       if (args[0] === 'worktree' && args[1] === 'create') {
         git(workspace, ['worktree', 'add', '-b', branch, repo, sourceCommit]);
@@ -498,11 +591,19 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
     aggregate.verificationSource = sourceCommit; aggregate.workflow.runId = '701';
   }
   const boundedOptions = { ...options, stopAfter: 'candidate', ...(repairTools ? { verificationSource } : { sourceVerification: lateSourceVerification }) };
-  const verified = await runReleaseOperation(boundedOptions, dependencies);
+  if (!repairTools) {
+    const unconfirmedImport = await runReleaseOperation(boundedOptions, dependencies);
+    assert.equal(unconfirmedImport.status, 'candidate-repair-dispatch-unconfirmed', JSON.stringify(unconfirmedImport));
+    repairVisible = true;
+  }
+  const verified = await runReleaseOperation(repairTools ? boundedOptions : { ...options, stopAfter: 'candidate' }, dependencies);
   assert.equal(verified.status, 'candidate-verified', JSON.stringify(verified));
   assert.equal(verified.action, 'prepare'); assert.equal(verified.stopAfter, 'candidate');
   assert.equal(verified.sourceCommit, sourceCommit); assert.equal(verified.sourceTree, sourceTree);
   assert.equal(verified.artifacts.buildr.sha256, artifact.manifest.sha256);
+  assert.equal(task.status, 'completed'); assert.equal(worktreeCreated, false);
+  assert.equal(verified.preparationCloseout.cleanup, 'cleaned');
+  assert.ok(fs.existsSync(path.join(verified.preparationCloseout.directory, 'buildr', artifact.manifest.filename)));
   if (!repairTools) {
     assert.equal(repairRequests.length, 1, 'a late source bundle alone must enter formal repair instead of being ignored');
     assert.ok(repairRequests[0].some(field => field.startsWith('source_verification=')));
@@ -513,6 +614,12 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
   assert.equal((await runReleaseOperation(boundedOptions, dependencies)).status, 'candidate-verified');
   assert.equal(dispatched, dispatchesAfterVerification, 'rechecking the bounded result retains the original candidate and bytes');
   assert.equal(pr, null); assert.equal(merges, 0);
+  const beforeChangedVerifier = fs.readFileSync(path.join(workspace, '.git/buildr/release-operations', `${version}.json`), 'utf8');
+  const changedVerifier = await runReleaseOperation({ ...boundedOptions, verificationSource: 'origin/main' }, dependencies);
+  assert.equal(changedVerifier.status, 'blocked'); assert.equal(changedVerifier.diagnostic.code, 'completed-preparation-verification-changed');
+  assert.equal(fs.readFileSync(path.join(workspace, '.git/buildr/release-operations', `${version}.json`), 'utf8'), beforeChangedVerifier);
+  const changed = await runReleaseOperation({ ...boundedOptions, sources: ['origin/main'] }, dependencies);
+  assert.equal(changed.status, 'blocked'); assert.match(changed.diagnostic.message, /Completed preparation|restore active/u);
   const ready = await runReleaseOperation({ ...options, ...(repairTools ? { verificationSource } : {}) }, dependencies);
   assert.equal(ready.status, 'awaiting-publication-authorization', JSON.stringify(ready));
   assert.equal(merges, 1); assert.equal(dispatched, 2);
@@ -531,6 +638,44 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
   assert.equal(record.context.artifact.sha256, artifact.manifest.sha256);
   assert.equal(record.context.release.sourceCommit, sourceCommit);
   assert.equal(record.sources.length, 0);
+  if (!repairTools) {
+    await assert.rejects(() => runHostedReleaseTransaction({ ...record.transaction, action: 'readiness' }, {
+      ...dependencies.orchestrationDependencies.transactionDependencies,
+      inspectSelection: (input: any) => { const current = inspectReleaseSelection(input); return { ...current, generation: current.generation + 1 }; },
+    }), /selection identity and generation/u);
+    let publicDispatches = 0, closeouts = 0;
+    const publishedEvidence = { status: 'passed', identity: `sha256-${'d'.repeat(64)}`, context: record.context,
+      publish: { runId: 84, runAttempt: 1 }, observedAt: '2026-10-17T12:00:00.000Z' };
+    const publicationDependencies = { ...dependencies,
+      execute: (command: string, args: string[], config: any) => command === 'gh' && args[0] === 'api' && args[1]?.endsWith('/84')
+        ? { status: 0, stdout: JSON.stringify({ id: 84, status: 'completed', conclusion: 'success', head_sha: record.context.convergence.mainCommit }) }
+        : execute(command, args, config),
+      orchestrationDependencies: { ...dependencies.orchestrationDependencies,
+        runHostedReleaseTransaction: async (input: any, ownerDependencies: any) => {
+          if (input.action === 'readiness') return { status: 'ready', context: record.context, effects: [] };
+          publicDispatches++; ownerDependencies.onDispatchIntent({ releaseId: 'completed-preparation', contextIdentity: record.context.identity });
+          ownerDependencies.onDispatchObserved({ runId: 84 });
+          return { status: 'running', github: { runId: 84 }, context: record.context, effects: [] };
+        },
+        inspectHostedReleaseTransaction: async () => ({ status: 'passed', evidence: publishedEvidence }),
+        reconcilePublishedReleaseWithDev: () => ({ status: 'passed', identity: `sha256-${'a'.repeat(64)}`, recoveryIdentity: `sha256-${'b'.repeat(64)}`, effects: [] }),
+        closeoutReleaseGitResources: () => { closeouts++; return { status: 'passed', identity: `sha256-${'c'.repeat(64)}`,
+          formalReleaseRef: { disposition: 'retained-and-verified' }, effects: [] }; },
+        inspectTask: () => runtime.inspectTask(workspace, taskId),
+        resolveRetainedController: dependencies.resolveRetainedController,
+        invokeRetainedController: dependencies.invokeRetainedController,
+        selfBootstrapCloseout: async () => ({ status: 'not-applicable', effects: [] }),
+      },
+    };
+    assert.equal((await runReleaseOperation({ action: 'publish', workspace, version }, publicationDependencies)).status, 'authorization-required');
+    assert.equal(publicDispatches, 0);
+    const dispatchedPublication = await runReleaseOperation({ action: 'publish', workspace, version, authorized: true }, publicationDependencies);
+    assert.equal(dispatchedPublication.status, 'running', JSON.stringify(dispatchedPublication));
+    const closed = await runReleaseOperation({ action: 'resume', workspace, version }, publicationDependencies);
+    assert.equal(closed.status, 'passed', JSON.stringify(closed)); assert.equal(task.status, 'completed');
+    assert.equal(closed.outcomes.taskRegistration, 'completed'); assert.equal(publicDispatches, 1); assert.equal(closeouts, 1);
+    assert.equal(dispatched, 2, 'public continuation must not dispatch another Candidate');
+  }
 });
 
 

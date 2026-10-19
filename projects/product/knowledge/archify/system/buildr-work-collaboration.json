@@ -1,0 +1,371 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Buildr：把工作的环境、方法和工具接起来",
+    "locale": "zh-CN",
+    "output": "projects/product/knowledge/archify/system/buildr-work-collaboration.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/BuildrAI/Buildr.git",
+      "revision": "6b1e99e2d1187212134ec5bf1f65c7a572df3756",
+      "link_mode": "local-only"
+    },
+    "legend": {
+      "mode": "hidden"
+    }
+  },
+  "components": [
+    {
+      "id": "buildr",
+      "type": "frontend",
+      "icon": "briefcase",
+      "label": "Buildr · 接好工作条件",
+      "sublabel": "组织资料、方法和工具的使用入口",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        250,
+        100
+      ],
+      "sources": [
+        {
+          "path": "projects/product/openspec/specs/agent-first-product-positioning/spec.md",
+          "line": 21,
+          "end_line": 28,
+          "label": "组织工作资产与发现入口"
+        },
+        {
+          "path": "projects/product/knowledge/docs/architecture/external-connections.md",
+          "line": 3,
+          "end_line": 14,
+          "label": "系统接入与专业方法"
+        },
+        {
+          "path": "projects/product/services/buildr/resources/workspace/AGENTS.md",
+          "line": 17,
+          "end_line": 23,
+          "label": "共同现场与成果入口"
+        }
+      ]
+    },
+    {
+      "id": "human",
+      "type": "external",
+      "icon": "person",
+      "label": "人：掌握情况，参与工作",
+      "sublabel": "目标、查看、修改、判断、授权与验收",
+      "pos": [
+        460,
+        40
+      ],
+      "size": [
+        340,
+        90
+      ],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/resources/workspace/AGENTS.md",
+          "line": 12,
+          "end_line": 23,
+          "label": "人的职责与直接参与"
+        }
+      ]
+    },
+    {
+      "id": "work-knowledge",
+      "type": "frontend",
+      "icon": "briefcase",
+      "label": "资料与知识",
+      "sublabel": "业务场景、文档、代码与数据",
+      "pos": [
+        40,
+        200
+      ],
+      "size": [
+        250,
+        80
+      ],
+      "sources": [
+        {
+          "path": "projects/product/openspec/specs/agent-first-product-positioning/spec.md",
+          "line": 21,
+          "end_line": 28,
+          "label": "可发现的工作信息与资产"
+        },
+        {
+          "path": "projects/product/services/buildr/resources/workspace/AGENTS.md",
+          "line": 17,
+          "end_line": 23,
+          "label": "实际工作现场及共同事实"
+        }
+      ]
+    },
+    {
+      "id": "team-methods",
+      "type": "frontend",
+      "icon": "briefcase",
+      "label": "团队的工作方法",
+      "sublabel": "技能（Skill）、操作方法与验证标准",
+      "pos": [
+        40,
+        330
+      ],
+      "size": [
+        250,
+        80
+      ],
+      "sources": [
+        {
+          "path": "projects/product/openspec/specs/agent-first-product-positioning/spec.md",
+          "line": 31,
+          "end_line": 35,
+          "label": "工作事实与工作方法"
+        },
+        {
+          "path": "projects/product/openspec/specs/agent-first-product-positioning/spec.md",
+          "line": 61,
+          "end_line": 73,
+          "label": "交给智能体使用的专业方法"
+        }
+      ]
+    },
+    {
+      "id": "systems-and-tools",
+      "type": "frontend",
+      "icon": "backend",
+      "label": "工具与业务系统",
+      "sublabel": "数据库、日志、配置与已接入工具",
+      "pos": [
+        40,
+        460
+      ],
+      "size": [
+        250,
+        80
+      ],
+      "sources": [
+        {
+          "path": "projects/product/knowledge/docs/architecture/external-connections.md",
+          "line": 3,
+          "end_line": 14,
+          "label": "接入信息和专业方法"
+        },
+        {
+          "path": "projects/product/knowledge/docs/architecture/external-connections.md",
+          "line": 20,
+          "end_line": 35,
+          "label": "现有系统操作及授权边界"
+        }
+      ]
+    },
+    {
+      "id": "agent",
+      "type": "backend",
+      "icon": "active",
+      "label": "智能体（Agent）",
+      "sublabel": "查找与理解 → 执行与验证",
+      "tag": "按需选用资料、方法和工具",
+      "pos": [
+        460,
+        320
+      ],
+      "size": [
+        250,
+        110
+      ],
+      "sources": [
+        {
+          "path": "projects/product/openspec/specs/agent-first-product-positioning/spec.md",
+          "line": 21,
+          "end_line": 28,
+          "label": "按目标形成工作依据"
+        },
+        {
+          "path": "projects/product/services/buildr/resources/workspace/AGENTS.md",
+          "line": 12,
+          "end_line": 18,
+          "label": "执行与成果职责"
+        }
+      ]
+    },
+    {
+      "id": "work-results",
+      "type": "cloud",
+      "icon": "success",
+      "label": "本次交付",
+      "sublabel": "代码、文档与实际业务结果",
+      "pos": [
+        900,
+        270
+      ],
+      "size": [
+        250,
+        95
+      ],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/resources/workspace/AGENTS.md",
+          "line": 17,
+          "end_line": 23,
+          "label": "可查看、修改和接续的成果"
+        },
+        {
+          "path": "projects/product/openspec/specs/agent-first-product-positioning/spec.md",
+          "line": 98,
+          "end_line": 107,
+          "label": "交付与企业价值"
+        }
+      ]
+    },
+    {
+      "id": "enterprise-assets",
+      "type": "database",
+      "icon": "briefcase",
+      "label": "企业持续积累",
+      "sublabel": "知识、方法与可接续成果",
+      "tag": "跨人员、跨智能体（Agent）",
+      "pos": [
+        900,
+        480
+      ],
+      "size": [
+        250,
+        110
+      ],
+      "sources": [
+        {
+          "path": "projects/product/openspec/specs/agent-first-product-positioning/spec.md",
+          "line": 98,
+          "end_line": 107,
+          "label": "共享、传承和复用的组织资产"
+        },
+        {
+          "path": "projects/product/openspec/specs/agent-first-product-positioning/spec.md",
+          "line": 43,
+          "end_line": 52,
+          "label": "明确选择可长期复用的内容"
+        },
+        {
+          "path": "projects/product/knowledge/docs/architecture/task-system.md",
+          "line": 18,
+          "end_line": 24,
+          "label": "长期知识与实际成果各自保留"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "共同使用的工作基础",
+      "wraps": [
+        "buildr",
+        "work-knowledge",
+        "team-methods",
+        "systems-and-tools"
+      ],
+      "pad": 20
+    },
+    {
+      "kind": "region",
+      "label": "企业拥有的成果与积累",
+      "wraps": [
+        "work-results",
+        "enterprise-assets"
+      ],
+      "pad": 20
+    }
+  ],
+  "connections": [
+    {
+      "id": "human-guides-agent",
+      "from": "human",
+      "to": "agent",
+      "label": "目标、判断与授权"
+    },
+    {
+      "id": "human-accepts-results",
+      "from": "human",
+      "to": "work-results",
+      "label": "查看、修改与验收"
+    },
+    {
+      "id": "knowledge-supports-work",
+      "from": "work-knowledge",
+      "to": "agent",
+      "label": "工作依据",
+      "variant": "emphasis"
+    },
+    {
+      "id": "methods-support-work",
+      "from": "team-methods",
+      "to": "agent",
+      "label": "可用方法",
+      "variant": "emphasis"
+    },
+    {
+      "id": "tools-support-work",
+      "from": "systems-and-tools",
+      "to": "agent",
+      "label": "已接入能力",
+      "variant": "emphasis"
+    },
+    {
+      "id": "agent-delivers",
+      "from": "agent",
+      "to": "work-results",
+      "label": "执行与交付",
+      "variant": "emphasis"
+    },
+    {
+      "id": "maintain-reusable-assets",
+      "from": "work-results",
+      "to": "enterprise-assets",
+      "label": "确认后维护可复用内容"
+    },
+    {
+      "id": "reuse-next-work",
+      "from": "enterprise-assets",
+      "to": "work-knowledge",
+      "label": "用于下一次工作",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "via": [
+        [
+          1025,
+          680
+        ],
+        [
+          5,
+          680
+        ],
+        [
+          5,
+          240
+        ]
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "共同使用工作条件",
+      "items": [
+        "Buildr 组织资料、方法和工具的发现与使用入口。",
+        "智能体（Agent）按目标取用，人能查看和直接参与。"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "工作形成企业积累",
+      "items": [
+        "确认后值得复用的知识、方法和成果由人和智能体（Agent）维护。",
+        "原有资料得到利用，新的积累继续用于后续工作。"
+      ]
+    }
+  ]
+}

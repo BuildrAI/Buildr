@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import { createRuntime } from '../helpers/runtime-harness.ts';
@@ -14,6 +13,7 @@ import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { ensureRegisteredTarget } from '../../src/modules/workspace/module.ts';
 import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.ts';
 import { assertCurrentNpmLauncherBinding } from '../../src/modules/installation/module.ts';
+import { readCurrentInstallationOrigin } from '../../src/modules/installation/infrastructure/installation-origin.ts';
 
 const CHILD: any = new URL('../fixtures/buildr-web-profile-child.ts', import.meta.url);
 
@@ -48,11 +48,20 @@ async function waitForExit(child: any, timeoutMs: any = 10_000): Promise<any>  {
 }
 
 function startChild(root: any, releasedRoot: any, developmentRoot: any, identity: any): any  {
-  const child: any = spawn(process.execPath, [fileURLToPath(CHILD)], {
+  // Load the isolation owner before selecting this test's explicit profile.
+  // The fixture's runtime adapter then reuses the already loaded entry.
+  const entry = new URL('../register-development-entry.ts', import.meta.url);
+  const child: any = spawn(process.execPath, ['--input-type=module', '--eval', `
+    await import(${JSON.stringify(entry.href)});
+    process.env.BUILDR_APP_DATA_DIR = process.env.BUILDR_TEST_PROFILE_ROOT;
+    await import(${JSON.stringify(CHILD.href)});
+  `], {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
       ...process.env,
       BUILDR_APP_DATA_DIR: root,
+      BUILDR_PRODUCT_DATA_DIR: path.join(path.dirname(root), 'product-data'),
+      BUILDR_TEST_PROFILE_ROOT: root,
       BUILDR_TEST_RELEASED_ROOT: releasedRoot,
       BUILDR_TEST_DEVELOPMENT_ROOT: developmentRoot,
       BUILDR_TEST_PRODUCT_IDENTITY: JSON.stringify(identity),
@@ -166,4 +175,49 @@ test('released Root中的健康legacy development实例不会被released启动�
   assert.deepEqual(fs.readFileSync(file), before);
   const health: any = await fetch(`${ready.url}/api/v1/health`, { headers: { 'x-buildr-instance': ready.instanceSecret } });
   assert.equal(health.status, 200);
+});
+
+test('development server reuses unrelated commits, rejects runtime changes and recovers after graceful restart', async t => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-reuse-'));
+  const source = path.join(base, 'source'), product = path.join(source, 'projects/product/services/buildr');
+  fs.mkdirSync(path.join(product, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(product, 'package.json'), '{"name":"@buildr-ai/buildr","version":"1.2.3"}\n');
+  fs.writeFileSync(path.join(product, 'src/runtime.ts'), 'export const value = 1;\n');
+  const git = (...args: string[]) => execFileSync('git', ['-C', source, ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+  git('init', '-q'); git('config', 'user.name', 'Buildr Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+  const commit = () => { git('add', '.'); git('commit', '-qm', 'source update'); };
+  commit();
+  const developmentRoot = path.join(base, 'development'), releasedRoot = path.join(base, 'released');
+  const file = path.join(developmentRoot, 'instance.json');
+  const identity = () => { const origin = readCurrentInstallationOrigin(product); return { ...origin, installationIdentity: origin.ownershipIdentity, runtime: { role: 'development' } }; };
+  const children: any[] = [];
+  t.after(async () => {
+    for (const item of children) if (item.child.exitCode === null) item.child.kill('SIGTERM');
+    await Promise.all(children.map(item => waitForExit(item.child).catch(() => {})));
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+  const first = startChild(developmentRoot, releasedRoot, developmentRoot, identity()); children.push(first);
+  const initial = await waitForInstance(file, { child: first.child, stderr: first.stderr });
+  const before = fs.readFileSync(file);
+  fs.writeFileSync(path.join(source, 'README.md'), 'documentation update\n'); commit();
+  const reused = startChild(developmentRoot, releasedRoot, developmentRoot, identity()); children.push(reused);
+  assert.equal(await waitForExit(reused.child), 0, reused.stderr());
+  assert.deepEqual(fs.readFileSync(file), before, 'reuse preserves the original running receipt');
+  fs.writeFileSync(path.join(product, 'src/runtime.ts'), 'export const value = 2;\n'); commit();
+  const refused = startChild(developmentRoot, releasedRoot, developmentRoot, identity()); children.push(refused);
+  assert.notEqual(await waitForExit(refused.child), 0);
+  assert.match(refused.stderr(), /当前来源不同|来源证明/);
+  assert.deepEqual(fs.readFileSync(file), before, 'source mismatch does not stop or overwrite the healthy server');
+  const stopped = await fetch(initial.url + '/api/v1/app/quit-instance', { method: 'POST', headers: { 'x-buildr-instance': initial.secret } });
+  assert.equal(stopped.status, 202);
+  assert.equal(await waitForExit(first.child), 0, first.stderr());
+  assert.equal(fs.existsSync(file), false);
+  const restarted = startChild(developmentRoot, releasedRoot, developmentRoot, identity()); children.push(restarted);
+  const current = await waitForInstance(file, { child: restarted.child, stderr: restarted.stderr });
+  assert.notEqual(current.pid, initial.pid);
+  assert.equal(current.productIdentity.developmentRuntimeIdentity, identity().developmentRuntimeIdentity);
+  const health = await fetch(current.url + '/api/v1/health', { headers: { 'x-buildr-instance': current.secret } });
+  assert.equal(health.status, 200);
+  await fetch(current.url + '/api/v1/app/quit-instance', { method: 'POST', headers: { 'x-buildr-instance': current.secret } });
+  assert.equal(await waitForExit(restarted.child), 0, restarted.stderr());
 });

@@ -6,6 +6,7 @@ import { dirname, resolve, join } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import type * as Esbuild from 'esbuild';
 import { newBuildOutput, ownedBuildRoot, sdkDeclarationPaths, validatePreparedSourceSdk } from './prepare-source-sdk.ts';
+import { normalizeDshHostPeers } from './dsh-host-compatibility.ts';
 
 /** SDK TypeScript 6 compiler API used at this isolated build boundary; Buildr uses TypeScript 7. */
 interface CompilerProgram { emit(): { emitSkipped: boolean } }
@@ -96,12 +97,8 @@ const manifest = {
   version: sourceMetadata.version,
   buildrCompatibility: sourceMetadata.buildrCompatibility,
   name: VARIANT.name,
-  // Exact candidate target version, not proof that an unpatched runtime exposes the optional slots.
-  peerDependencies: {
-    ...template.peerDependencies,
-    '@deepseek-ai/dsh': baseline.version,
-    '@deepseek-ai/dsh-typert-protocol': baseline.version,
-  },
+  // Host range permits the supported series; optional runtime contracts remain checked separately.
+  peerDependencies: normalizeDshHostPeers(template.peerDependencies),
   buildrDshSourceSdk: {
     upstream: baseline,
     sourceManifestSha256: sourceReceipt.sourceManifest.sha256,

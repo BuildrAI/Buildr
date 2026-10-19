@@ -4,6 +4,7 @@
 
 - Workspace 是 Buildr 组织（Organization/Root）源资产根；`--target` 始终指向 Buildr workspace root，不指向 Service 代码仓。
 - 工作空间（Workspace）必须完成 `buildr init`；身份已知时运行 `buildr init --agent <agent> --target <dir> --name <name> --profile <personal|team|company>` 一次完成源资产、运行时（Runtime）文件和最终诊断（Doctor）。身份未知可省略 `--agent`，保留唯一既有受管方式，无既有方式时默认 `agents-standard`；多个不等价方式要求明确选择。仅源资产使用 `init --source-only`，不能与 `--agent` 或 `--adapter` 混用，执行失败也不退回纯源流程。完整初始化的最终诊断（Doctor）通过后继续首次使用交接，而不是默认让用户执行 `project create`：用普通语言说明工作空间（Workspace）承载共同事实，项目（Project）承载业务目标，服务（Service）承担实现职责，代码库实例（Repository Instance）定位实际代码；多个服务可共用一份代码。没有 Project 时询问要管理的业务、产品、系统、长期工作或已有 repo；唯一 Project 没有 Service 时说明 Service 只在代码仓、应用、模块或可执行资产存在时需要，并询问接入还是直接开始；唯一范围时直接邀请第一项工作目标；多个候选时只问消除范围歧义的最少问题。不要创建 `WELCOME.md`、持久 checklist 或固定教学 Rule。用户已经给出明确目标时连续推进，不为展示教学中断工作。
+- 普通初始化在源资产准备完成后，默认登记到当前产品对应的本机 Buildr Web，再执行运行时（Runtime）准备；已有登记直接复用，不启动网页或转移另一渠道的归属。`init --source-only` 不登记本机列表或建立网页管理归属。登记失败保留源资产，按具体原因修复后重试原初始化；后续运行时（Runtime）失败保留已成立登记，使用输出的 `sync` 指引接续，不要求重复初始化或手动添加。用户需要网页配置时，打开已登记的工作空间（Workspace），先选择工作空间（Workspace），再在“项目”“服务”“代码库”页面维护相应范围；用户只在智能体（Agent）工具中工作时无需打开网页。
 - 根 `AGENTS.md` 是规则入口，其受管区块（Managed Block）内联核心规则；专业规则通过 `rules/manifest.yml` 按需发现，`projects/manifest.yml` 是项目清单（Project Registry）。
 
 ## Project
@@ -129,7 +130,7 @@
 
 按用户选择运行 `buildr update --track stable|candidate`；成功后重新解析当前入口，再执行 `buildr skill install <agent> --target <dir>`。用户明确要求“只更新 CLI”时不追加技能安装、工作空间（Workspace）同步或诊断。更新受阻时保留实际效果，不用旧 CLI 继续安装技能（Skill）。产品更新包含包内 Buildr Web；工作空间（Workspace）采用新版源资产与投射还需在已授权范围继续 `sync`，分别确认产品版本、网页和最终诊断（Doctor）。
 
-npm 更新完成后运行 `buildr installation status --json` 核对实例：released 实例报 `stale` 且 reason 说明版本落后时，同一安装槽位的旧版本仍在运行。此时告知用户旧版本仍在运行，并按 update 的 nextActions 指引启动已安装的 Buildr Web 启动器（Launcher），由其完成旧实例的优雅退出与新版本交接；不要使用 kill 等强杀方式。当前会话正运行在该旧实例内部或本机未安装 Launcher 时，只如实说明需要重启应用或下次经 Launcher 启动时自动交接，不代用户杀进程、不声称已切换。
+npm 更新会自动将同一安装槽位（Installation Slot）中正在运行的旧版 Buildr Web 切换到新版，无需让用户再次打开启动器（Launcher），也不为交接安装启动器（Launcher）。交接由新版独立进程完成；没有运行实例时不额外启动，开发版与其他安装实例保持独立。更新前说明网页会短暂中断，旧服务中未完成的生成可能取消。读取更新结果中的 `webUpdate`：`not-running` 表示未运行，`current` 表示已是当前版，`restarted` 表示已核实新版服务就绪，`failed` 表示交接失败；再运行 `buildr installation status --json` 核对实际运行版本，安装成功与交接成功分别报告。旧版仍在运行或结果未确认时，保留已成功的安装，按原因恢复交接；同轨道再次更新可恢复遗留交接，不重复安装已是当前版本的软件包。不使用 kill 等强杀方式，不把交接已发起、调用方中断或服务已更新当成浏览器页面代码已刷新。
 
 ## 工作空间更新与检出变化
 

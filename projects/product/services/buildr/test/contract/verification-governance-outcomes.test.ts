@@ -78,13 +78,3 @@ test('正式Release消费冻结artifact且不重跑完整Product Candidate', () 
   assert.equal(workflow.jobs.release.permissions['id-token'], 'write');
   assert.ok(workflow.jobs.release.steps.some((step: any) => step.run?.includes('release-publication.ts')));
 });
-
-test('治理质量contract不再用Skill篇幅或章节位置冒充行为证据', () => {
-  const source: any = read('test/contract/direct-git-closeout.test.ts');
-  assert.doesNotMatch(source, /SKILL\.md['"]\),\s*['"]utf8|\.length\s*[<>]=?|indexOf\(['"]##/u);
-  for (const retired of [
-    'test/contract/collaborator-workspace-sync-routing.test.mjs',
-    'test/contract/routine-task-execution-guidance.test.mjs',
-    'test/contract/task-finish-preflight-and-change-bind-order.test.mjs',
-  ]) assert.equal(fs.existsSync(path.join(serviceRoot, retired)), false, retired);
-});

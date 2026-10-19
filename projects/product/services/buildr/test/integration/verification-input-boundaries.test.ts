@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import test from 'node:test';
 import { scopedVerificationInputs } from '../verification/verification-inputs.ts';
 import { candidateCheckInputIdentity } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
-import { discoveredVerificationFiles, executableModuleInputs } from '../verification/verification-input-discovery.ts';
+import { discoveredVerificationFiles, executableModuleInputs, verificationModuleSlice } from '../verification/verification-input-discovery.ts';
 import { createVerificationSourceInputReader } from '../verification/verification-source-inputs.ts';
 import { INTEGRATION_GENERAL_EXCLUDED_FILES, verificationSteps } from '../verification/registry.ts';
 
@@ -80,6 +80,33 @@ test('registered unit and contract proofs bind the Web, knowledge and root files
   }
 });
 
+test('verification map edits affect its readers and unknown inputs rather than every source check', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-map-inputs-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const prefix = 'projects/product/services/buildr/', productRoot = path.join(root, prefix);
+  fs.mkdirSync(productRoot, { recursive: true });
+  const files = new Map([
+    [prefix + 'src/main.ts', 'export const value=1;'],
+    [prefix + 'test/check.test.ts', "import '../src/main.ts';"],
+    ['projects/product/verification.yml', 'testing: []'],
+    ['.github/workflows/verify.yml', 'jobs: {}'],
+  ]);
+  const step = { id: 'check', executor: { type: 'node-test', files: ['test/check.test.ts'] }, reuse: { scope: 'backend' as const } };
+  const observe = () => createVerificationSourceInputReader(root, productRoot, undefined, {
+    entries: [...files].map(([file, text]) => [file, text]), unavailable: new Set(), readText: file => files.get(file)!,
+  }).inputs(step, true);
+  const original = observe(); files.set('projects/product/verification.yml', 'testing: [changed]');
+  files.set('.github/workflows/verify.yml', 'jobs: {changed: {}}');
+  assert.deepEqual(observe(), original);
+  for (const [reader, file] of [["readFileSync('projects/product/verification.yml');", 'projects/product/verification.yml'],
+    ["readFileSync('.github/workflows/verify.yml');", '.github/workflows/verify.yml'],
+    ['await import(process.env.UNKNOWN_MODULE);', 'projects/product/verification.yml']] as const) {
+    files.set(prefix + 'test/check.test.ts', reader);
+    const before = observe(); files.set(file, files.get(file) + '\nchanged');
+    assert.notDeepEqual(observe(), before, reader);
+  }
+});
+
 test('module discovery distinguishes generated source and comments from actual imports and template expressions', () => {
   const source = [
     "import actual from '../actual.ts';",
@@ -98,6 +125,14 @@ test('module discovery distinguishes generated source and comments from actual i
     assert.equal(executableModuleInputs(statement).computed, true, statement);
   }
   assert.deepEqual(executableModuleInputs("await import(/* comment */ '../literal.ts')").imports, ['../literal.ts']);
+  const helper = 'const dependency=1; export function used(){return dependency;} export function unrelated(){return 2;}';
+  const before = verificationModuleSlice(helper, new Set(['used']));
+  assert.deepEqual(verificationModuleSlice(helper.replace('return 2', 'return 3'), new Set(['used'])), before);
+  assert.notDeepEqual(verificationModuleSlice(helper.replace('dependency=1', 'dependency=2'), new Set(['used'])), before);
+  assert.match(verificationModuleSlice(helper + '\nmutateGlobal();', new Set(['used'])).text, /mutateGlobal/);
+  assert.equal(executableModuleInputs("const root=new URL('../assets/', import.meta.url); await import(new URL('entry.mjs', root).href)").computed, false);
+  assert.equal(executableModuleInputs("const root=process.env.UNKNOWN; await import(new URL('entry.mjs', root).href)").computed, true);
+  assert.deepEqual(executableModuleInputs('await import(`../renderer.ts?test=${Date.now()}-${Math.random()}`)').imports, ['../renderer.ts']);
 });
 
 test('reviewed release-note independence preserves real readers, unknown roots and local/Git agreement', t => {
@@ -126,7 +161,7 @@ test('reviewed release-note independence preserves real readers, unknown roots a
   const original = observe();
   files.set('CHANGELOG.md', '# Changelog\n- Release note repair\n');
   assert.deepEqual(observe(), original, 'only the reviewed independent material is excluded');
-  for (const file of [prefix + 'package.json', prefix + 'src/product.ts', 'projects/product/knowledge/current.md', 'projects/product/openspec/specs/current/spec.md']) {
+  for (const file of [prefix + 'package.json', prefix + 'src/product.ts']) {
     const before = files.get(file)!; files.set(file, before + '\nchanged actual input');
     const changed = observe();
     assert.notEqual(changed.local.contentIdentity, original.local.contentIdentity, file);
@@ -171,19 +206,21 @@ test('reviewed source checks keep results for a notes-only repair while binding 
     unavailable: new Set(), readText: file => content.get(file)!,
   });
   const original = observe(), notes = observe('CHANGELOG.md');
-  const ids = ['openspec-spec-quality', 'integration-knowledge', 'integration-workspace-assets', 'integration-archify',
-    'integration-declarations', 'integration-openspec', 'integration-self-bootstrap', 'system-public-json-contracts',
+  const ids = ['integration-knowledge', 'integration-workspace-assets', 'integration-archify',
+    'integration-declarations', 'integration-openspec', 'system-public-json-contracts',
     'system-openspec-contract-audit', 'concurrent-task-acceptance', 'npm-launcher-candidate', 'capability-cli-integration',
     'commands-cli-integration', 'remote-skill-timeout'];
   const actualInputs = ['projects/product/services/buildr/package-lock.json', 'projects/product/services/buildr/src/bootstrap/cli/main.ts',
-    'projects/product/knowledge/docs/overview.md', 'projects/product/openspec/specs/task-record/spec.md',
-    'projects/product/services/buildr/test/verification/executor.ts'];
+    'projects/product/services/buildr/resources/workspace/AGENTS.md'];
   const readers = actualInputs.map(file => { assert.ok(content.has(file), file); return [file, observe(file)] as const; });
   for (const id of ids) {
     const step = verificationSteps.find((item: any) => item.id === id), before = original.inputs(step, true);
     assert.deepEqual(notes.inputs(step, true), before, id + ': release-note content is independent');
     for (const [file, reader] of readers) assert.notDeepEqual(reader.inputs(step, true), before, id + ': ' + file);
   }
+  const projected = verificationSteps.find((item: any) => item.id === 'integration-self-bootstrap');
+  assert.deepEqual(notes.inputs(projected, true), original.inputs(projected, true),
+    'the copied module binds its original source, not unrelated release notes');
 });
 
 test('local and Git proofs isolate selected system contents while binding discovery membership and literal URL dependencies', t => {
@@ -228,7 +265,7 @@ test('local and Git proofs isolate selected system contents while binding discov
   for (const file of ['test/verification/executor.ts', 'test/verification/plan-runner.ts', 'test/verification/dag-scheduler.ts', 'test/verification/resource-coordinator.ts']) {
     files.set(file, '// shared execution behavior changed');
     const changed = observe();
-    assert.notEqual(changed.local, original.local, file); assert.notEqual(changed.git, original.git, file);
+    assert.equal(changed.local, original.local, file); assert.equal(changed.git, original.git, file);
     files.delete(file);
   }
   files.set('test/system/new.test.ts', '// new member');
@@ -308,7 +345,11 @@ test('stable Integration slices bind their own explicit tests and preserve local
   const ids = ['integration', 'integration-code', 'integration-desktop', 'integration-knowledge', 'integration-workspace-assets', 'integration-archify',
     'integration-task-records', 'integration-connections', 'integration-runtime-projection', 'integration-runtime'];
   const steps = ids.map(id => verificationSteps.find((item: any) => item.id === id));
-  for (const step of steps) for (const file of step.executor.files) files.set(file, 'export const assertion=1;');
+  for (const step of steps) {
+    for (const file of step.executor.files) files.set(file, 'export const assertion=1;');
+    files.set(`test/helpers/${step.id}.ts`, 'export const helper=1;');
+    files.set(step.executor.files[0], `import '../helpers/${step.id}.ts'; export const assertion=1;`);
+  }
   const observe = (step: any) => {
     const inventory = [...files].map(([file, text]) => ({ path: prefix + file, mode: '100644', kind: 'blob', object: text }));
     const options = { proof: true, readText: (file: string) => files.get(file.slice(prefix.length))! };
@@ -323,14 +364,30 @@ test('stable Integration slices bind their own explicit tests and preserve local
     const before = files.get(unrelated)!; files.set(unrelated, '// repaired another owner');
     assert.deepEqual(observe(step), original, `${step.id}: another slice does not invalidate a result`);
     files.set(unrelated, before);
+    const helper = `test/helpers/${step.id}.ts`;
+    const unrelatedHelper = `test/helpers/${steps.find(other => other.id !== step.id).id}.ts`;
+    files.set(unrelatedHelper, 'export const helper=2;');
+    assert.deepEqual(observe(step), original, `${step.id}: an unrelated helper repair preserves this result`);
+    files.set(unrelatedHelper, 'export const helper=1;');
+    files.set(helper, 'export const helper=2;');
+    assert.notEqual(observe(step).local, original.local, 'its imported helper remains an actual input');
+    assert.notEqual(observe(step).immutable, original.immutable);
+    files.set(helper, 'export const helper=1;');
+    const selectedBefore = files.get(selected)!;
     files.set(selected, '// changed own assertion');
     assert.notEqual(observe(step).local, original.local, step.id);
     assert.notEqual(observe(step).immutable, original.immutable, step.id);
-    files.set(selected, 'export const assertion=1;');
+    files.set(selected, selectedBefore);
     const extended = { ...step, executor: { ...step.executor, files: [...step.executor.files, 'test/integration/new-member.test.ts'] } };
     files.set('test/integration/new-member.test.ts', 'export {};');
     assert.notEqual(observe(extended).local, original.local, `${step.id}: adding an executing member invalidates the prior recipe`);
     assert.notEqual(observe(extended).immutable, original.immutable, step.id);
     files.delete('test/integration/new-member.test.ts');
   }
+  const directoryReader = steps[0];
+  files.set(directoryReader.executor.files[0], "readdirSync(path.resolve(root, 'test/helpers'));");
+  const beforeDirectoryChange = observe(directoryReader);
+  files.set(`test/helpers/${steps[1].id}.ts`, 'export const helper=3;');
+  assert.notEqual(observe(directoryReader).local, beforeDirectoryChange.local, 'directory discovery still binds every helper');
+  assert.notEqual(observe(directoryReader).immutable, beforeDirectoryChange.immutable);
 });
