@@ -30,8 +30,11 @@ export function ArticleEditorPanel({ workspaceId, projectCode, publicationId, so
   const exitState = useRef({ dirty, busy });
   const savingExit = useRef(false);
   exitState.current = { dirty, busy };
+  const exiting = useRef(false);
   const blocker = useBlocker(({ nextLocation }) => {
-    const blocked = (exitState.current.dirty || exitState.current.busy) && nextLocation.pathname !== location.pathname;
+    // 预览面板在同一 pathname 上用 location state 堆叠；任何导航（含同路径后退）
+    // 都可能弹出面板，必须以 location key 区分而不是只看 pathname。
+    const blocked = !exiting.current && (exitState.current.dirty || exitState.current.busy) && nextLocation.key !== location.key;
     savingExit.current = blocked && exitState.current.busy;
     return blocked;
   });
@@ -59,6 +62,7 @@ export function ArticleEditorPanel({ workspaceId, projectCode, publicationId, so
   };
   const discard = () => {
     if (exitState.current.busy || savingExit.current) { resetExit(); messages.info('文章正在保存，请稍候再离开。'); return; }
+    exiting.current = true;
     if (blocker.state === 'blocked') blocker.proceed();
     setLeave(false); onCancel();
   };
@@ -73,6 +77,8 @@ export function ArticleEditorPanel({ workspaceId, projectCode, publicationId, so
     try {
       const saved = await publicationApi.update(projectCode, publicationId, base.revision, { ...draft, title: draft.title.trim() }, sourceTaskId);
       setBase(saved); setDraft(articleDraft(saved)); setAssets(saved.assets || []); setConflict(false);
+      // Mark the exit clean before the parent navigates; React state commits later.
+      exitState.current.dirty = false; exiting.current = true;
       onSaved?.(saved);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : '保存失败，输入已保留');

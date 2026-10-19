@@ -119,7 +119,7 @@ try {
         await reader.getByRole('img', { name: '来源图片', exact: true }).evaluate(image => (image as HTMLImageElement).decode());
       }
       await page.goto(`${health.url}/workspaces/${workspaceId}/articles/article-check/article?task=draft-a`);
-      await page.locator('.publication-reader:visible').getByRole('button', { name: '编辑文章', exact: true }).click();
+      await page.locator('.publication-reader:visible .publication-modebar .ant-segmented-item').filter({ hasText: '编辑' }).click();
       const editor = page.locator('#article-editor');
       await editor.locator('#article-edit-content').waitFor({ state: 'visible' });
       await editor.locator('#article-edit-content').fill('## 检查章节\n\n用户校准后的正文\n\n![来源图片](assets/chart.png)\n');
