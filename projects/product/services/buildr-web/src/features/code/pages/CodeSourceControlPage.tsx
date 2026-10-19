@@ -1,6 +1,6 @@
 import { useContext, useEffect, useId, useState } from 'react';
 import { Button, Dropdown } from 'antd';
-import { CloudDownloadOutlined, MoreOutlined } from '@ant-design/icons';
+import { CloudDownloadOutlined, MoreOutlined, SyncOutlined } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppShell } from '../../../app/AppShellContext';
 import { WorkspaceViewActiveContext } from '../../../app/pageTabs';
@@ -34,7 +34,7 @@ export function CodeSourceControlPage() {
   const fetchActions = useSourceControlFetch(workspaceId || '');
   const syncActions = useSourceControlSync(workspaceId || '');
   const branches = useSourceControlBranches(workspaceId || '', fetchActions, syncActions);
-  const fetching = Object.values(fetchActions.pending).some(Boolean), syncing = Object.values(syncActions.pending).some(Boolean);
+  const fetching = Object.values(fetchActions.pending).some(Boolean), syncing = syncActions.runningAll || Object.values(syncActions.pending).some(Boolean);
   const [scene, setScene] = useState<SourceControlScene>('changes');
   useEffect(() => { setBreadcrumbParts(['代码', '源代码管理']); }, [setBreadcrumbParts]);
   const href = (path: string) => workspaceHref(workspaceId, path);
@@ -55,7 +55,10 @@ export function CodeSourceControlPage() {
     <SourceControlWorkbench sourceEntryKey={entry ? workspaceId+':'+(entry.nonce||location.key) : undefined} currentSourceSelection={currentSource.selection ? {key:workspaceId+':'+currentSource.selection.sequence,targets:currentSource.selection.targets,preferredTarget:currentSource.selection.preferredTarget} : undefined} onCurrentSourceSelect={(target:CodeSourceTarget)=>currentSource.select('source-control',[target],target)} active={viewActive} repositories={observation.repositories} reader={observation.reader} readKey={observation.readKey}
       editableWorkspaceId={workspaceId || undefined}
       observation={observation.observation} onRefresh={observation.refresh} onRetry={observation.refresh}
-      catalogActions={<Dropdown open={viewActive && catalogMenuOpen} onOpenChange={setCatalogMenuOpen} trigger={['click']} placement="bottomRight" menu={{'aria-label':'源代码管理操作菜单', items:[{key:'fetch', icon:<CloudDownloadOutlined aria-hidden />, label:'全部获取远程', disabled:fetching || syncing || !observation.repositories.length}], onClick:() => {setCatalogMenuOpen(false); void fetchActions.run(observation.repositories);}}}><Button type="text" size="small" icon={<MoreOutlined rotate={90} />} loading={fetching} aria-label="源代码管理操作菜单" title="源代码管理操作菜单" aria-expanded={catalogMenuOpen} aria-haspopup="menu" /></Dropdown>}
+      catalogActions={<Dropdown open={viewActive && catalogMenuOpen} onOpenChange={setCatalogMenuOpen} trigger={['click']} placement="bottomRight" menu={{'aria-label':'源代码管理操作菜单', items:[
+        {key:'sync', icon:<SyncOutlined aria-hidden spin={syncing} />, label:syncing ? '正在同步…' : '全部同步', disabled:fetching || syncing || !observation.repositories.length},
+        {key:'fetch', icon:<CloudDownloadOutlined aria-hidden spin={fetching} />, label:fetching ? '正在获取远程…' : '全部获取远程', disabled:fetching || syncing || !observation.repositories.length},
+      ], onClick:({key}) => {setCatalogMenuOpen(false); if (key === 'sync') void syncActions.runAll(observation.repositories); else void fetchActions.run(observation.repositories);}}}><Button type="text" size="small" icon={<MoreOutlined rotate={90} />} loading={fetching || syncing} aria-label="源代码管理操作菜单" title="源代码管理操作菜单" aria-expanded={catalogMenuOpen} aria-haspopup="menu" /></Dropdown>}
       scene={scene} onScene={setScene} onOpenTask={openTask}
       task={entry ? {id: entry.taskId, title: entry.taskTitle || entry.taskId} : undefined}
       scopeSelection={entry && observation.selection ? {...observation.selection, key: workspaceId + ':' + (entry.nonce || location.key)} : undefined}

@@ -9,7 +9,7 @@ import { sourceControlWorktreeKey, type SourceControlRepository, type SourceCont
 import { formatShortDateTime } from '../../../lib/taskLabels';
 import { useSourceControlRead } from './useSourceControlRead';
 import type { SourceControlFetchActions } from './useSourceControlFetch';
-import type { SourceControlSyncActions } from './useSourceControlSync';
+import { sourceControlSyncUnavailableReason, type SourceControlSyncActions } from './useSourceControlSync';
 import { SourceControlWorktreeMenu } from '../components/SourceControlWorktreeMenu';
 
 const observationNote = (data: CodeBranchesResponse | CodeAuthorsResponse | null) => data ? [data.coverage.truncated ? '读取范围达到上限，当前记录不完整。' : '', ...data.diagnostics.map(item => item.message)].filter(Boolean).join('；') : '';
@@ -106,11 +106,7 @@ export function useSourceControlBranches(workspaceId: string, fetchActions?: Sou
       onOpenPosition={worktreeId => openPosition(repository.id, worktreeId, 'history')} onViewChanges={() => openPosition(repository.id, worktree.worktreeId, 'changes')} />,
     rowActions: fetchActions && syncActions ? (repository, worktree, ready, context) => {
       const available = ready && worktree.status !== 'offline' && Boolean(repository.gitId && repository.checkoutId);
-      const unavailableReason = !available ? '当前来源尚未就绪，请刷新后重试'
-        : !worktree.branch ? '当前工作树没有可同步的本地分支'
-        : !worktree.head ? '当前分支还没有提交'
-        : worktree.upstream === null ? '当前分支未设置远端跟踪分支'
-        : !worktree.upstream ? '尚未确认当前分支的远端跟踪关系，请刷新后重试' : undefined;
+      const unavailableReason = !available ? '当前来源尚未就绪，请刷新后重试' : sourceControlSyncUnavailableReason(repository, worktree);
       return <SourceControlWorktreeMenu sourceKey={JSON.stringify([key(repository, worktree), worktree.branch, worktree.head, worktree.upstream])} open={openMenu === key(repository, worktree)} onOpenChange={next => setOpenMenu(previous => next ? key(repository, worktree) : previous === key(repository, worktree) ? '' : previous)} repositoryName={repository.name} worktreeName={worktree.isMain ? '主工作树' : worktree.name} worktree={worktree} visible={context.rowVisible} ready={available} unavailableReason={unavailableReason} fetching={Boolean(fetchActions.pending[repository.id])} syncing={syncing(repository)} onManageBranch={() => setBranchRequest(previous => ({key:key(repository, worktree), serial:previous.serial + 1}))} onOpenTask={context.onOpenTask} onFetch={() => {void fetchActions.run([repository]);}} onSync={() => {void syncActions.run(repository, worktree);}} />;
     } : undefined,
     syncAction: syncActions ? (repository, worktree) => ({pending:syncing(repository) || Boolean(fetchActions?.pending[repository.id]), run:() => {if (!fetchActions?.pending[repository.id]) void syncActions.run(repository, worktree);}}) : undefined,
