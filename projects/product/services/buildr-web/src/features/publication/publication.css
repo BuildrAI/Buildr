@@ -48,12 +48,15 @@
 .publication-content-actions { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:22px; }
 .publication-content-actions .ant-segmented { margin-right:auto; }
 .publication-body { width:100%; max-width:var(--publication-reading-width,900px); margin-inline:auto; }
-.publication-body .markdown-body { width:100%; max-width:100%; font-size:15px; line-height:1.95; overflow-wrap:anywhere; }
-.publication-body .markdown-body p { margin:0 0 20px; }
-.publication-body .markdown-body h2 { margin:32px 0 14px; font-size:22px; line-height:1.65; }
-.publication-body .markdown-body h3 { margin:26px 0 10px; font-size:18px; }
+/* markdown-body 是带 gap:12px 的 grid 容器；段落等块级 margin 与 gap 叠加形成双倍空白，正文节奏统一交给 gap 与单向 margin。 */
+.publication-body .markdown-body { width:100%; max-width:100%; gap:14px; font-size:15px; line-height:1.8; overflow-wrap:anywhere; }
+.publication-body .markdown-body p { margin:0; }
+.publication-body .markdown-body ul, .publication-body .markdown-body ol { gap:5px; }
+.publication-body .markdown-body li { font-size:15px; }
+.publication-body .markdown-body h2 { margin:10px 0 0; font-size:21px; line-height:1.6; }
+.publication-body .markdown-body h3 { margin:8px 0 0; font-size:17px; }
 .publication-body [data-article-heading] { scroll-margin-top:20px; }
-.publication-body .markdown-body img { display:block; width:100%; max-width:100%; height:auto; margin:20px 0; border:0; border-radius:0; }
+.publication-body .markdown-body img { display:block; width:100%; max-width:100%; height:auto; margin:4px 0; border:0; border-radius:0; }
 .publication-source,.publication-prepared pre,.publication-compare pre { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; padding:18px; border:1px solid var(--soft-line); border-radius:9px; background:#f8faf9; font-size:12px; line-height:1.9; }
 .publication-source-toolbar { position:sticky; top:0; z-index:1; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; padding:10px 0; background:var(--soft-panel,#fff); color:var(--soft-muted); font-size:12px; }
 .publication-source-input.ant-input { padding:18px; margin-top:10px; background:#f8faf9; font-family:var(--font-mono,monospace); font-size:13px; line-height:1.9; }
