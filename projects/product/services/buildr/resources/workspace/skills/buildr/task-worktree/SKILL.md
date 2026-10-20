@@ -27,13 +27,23 @@ buildr worktree cleanup <task-id> --target <canonical-workspace> --expected-sour
 
 同一任务涉及多个代码库（Repository）时，沿用同一任务标识（Task ID）作为工作树（Worktree）组的统一名称，不为每个代码库（Repository）另起任务标识（Task ID）。创建时各代码库（Repository）使用同一次任务计划已明确的分支（Branch）名称；实际检出目录（Checkout Path）仍保留登记源的规范相对层级，如 `<workspace-root>/.worktrees/<task-id>/<sourcePath>`，不把每个检出目录（Checkout Path）的末级名称改为任务标识（Task ID）。跨库关联由任务标识（Task ID）及已核对的提供者证据（Provider Evidence）确定，不能仅凭目录或分支（Branch）名称建立。接续已有外部工作树（Worktree）时保留已核对的实际路径与分支（Branch），不为统一名称自动迁移或重命名。
 
+## 同一任务追加来源
+
+先写方案、后进入多仓实现时，沿用同一任务标识（Task ID）和分支（Branch），再次调用 `worktree create`，通过 `--include` 明确新增来源即可。提供者（Provider）会保留已有成员，未重复列出的旧成员不会移除；只创建缺少的工作树（Worktree），保留原创建起点和未提交成果。不要为了追加删除登记、清空目录或另建同目标任务（Task）。
+
+```bash
+buildr worktree create <task-id> --target <canonical-workspace> --branch <existing-branch> --include service:<project>/<new-service> --json
+```
+
+同源选择按实际 Git 身份去重；显式选择完整项目（Project）时保留其完整语义。起点参数只作用于新建成员，不重设已有目录。真实来源、路径、远端或分支（Branch）冲突及目标占用仍须核对，`planDigest` 变化本身不表示冲突。部分追加失败后检查逐项结果，再次创建会保留完整成员并补齐未完成部分；不要回滚已成功成果。
+
 ## 结果与边界
 
-结果只包含 repository selector、source/checkout path、branch、start point、HEAD、clean/registered/remote、精确Git effects与diagnostic；长期只保留 Git provider evidence。evidence位于Git common-dir的`buildr/task-worktrees/<task-id>.json`，不是Task状态或交付证明。已有 Git 根继续在根的公共目录（Common Directory）保存；非 Git 根按规范来源路径顺序在首个实际参与的代码库（Repository）保存同一完整组证据。提供者（Provider）从登记来源发现证据，发现不扩大任务参与范围；多份记录或身份冲突必须明确处理，不建立第二份索引。
+结果只包含 repository selector、source/checkout path、branch、start point、HEAD、clean/registered/remote、精确Git effects与diagnostic；长期只保留 Git provider evidence。evidence位于Git common-dir的`buildr/task-worktrees/<task-id>.json`，不是Task状态或交付证明。已有 Git 根继续在根的公共目录（Common Directory）保存；非 Git 根首次按规范来源路径顺序选择首个参与来源保存完整组证据，后续追加沿用原登记位置。提供者（Provider）从登记来源发现证据，发现不扩大任务参与范围；多份记录或身份冲突必须明确处理，不建立第二份索引。
 
 创建、检查与清理按当前有效能力绑定（Capability Binding）交给已选提供者（Provider）。接手智能体（Agent）须核对任务授权、实际归属及当前 Git 身份；更换智能体（Agent）或缺少历史登记不能成为放弃接续的理由。已有证据冲突时保留现场；仅缺少证据时使用下方当前对象输入重新核验，不另建同任务副本、迁移或补造创建历史。绑定变化本身不转移资源归属，也不授权混用不兼容入口。
 
-创建前完整预检全部repository，部分创建失败保留已完成效果并允许相同plan重试。预检发现已登记来源缺少真实代码时，只报告该代码库缺口并提醒用户是否按声明来源准备，不阻断其他健康来源的隔离。清理前Agent先核验完整交付，再成对提供全部受管repository的source与delivered完整提交；provider复核source版本、dirty、registration和delivered提交仍由非任务retained ref持有。
+创建前完整预检全部repository，部分创建失败保留完整成员与已完成效果，再次调用补齐未完成部分。预检发现已登记来源缺少真实代码时，只报告该代码库缺口并提醒用户是否按声明来源准备，不阻断其他健康来源的隔离。清理前Agent先核验完整交付，再成对提供全部受管repository的source与delivered完整提交；provider复核source版本、dirty、registration和delivered提交仍由非任务retained ref持有。
 
 本Skill不判断 Task 是否 ready、完成或业务成果是否等价，不准备 Runtime、CLI、依赖或 projection，不记录 Agent session，不管理Preview、容器或其他资源。验证交给`task-verification`，已选定Git Operation的写入安全交给`git-operations`，其他资源交给各自owner。
 

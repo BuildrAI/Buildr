@@ -561,6 +561,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/file-editing-application.test.ts',
     'test/integration/git-checkout-identity.test.ts',
     'test/integration/git-worktree-evidence-reader.test.ts',
+    'test/integration/git-worktree-incremental.test.ts',
     'test/integration/source-control-application.test.ts',
     'test/integration/source-control-observation-http.test.ts',
     'test/integration/source-control-observations.test.ts',

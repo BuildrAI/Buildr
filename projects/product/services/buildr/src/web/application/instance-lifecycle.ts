@@ -460,8 +460,8 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
       let caller = null;
       if (target || taskId) {
         if (!target || !taskId) throw new Error('Task preview stop requires --target and --task together.');
-        const context = resolveTaskPreviewWorktree(runtime, fs.realpathSync(path.resolve(target)), taskId);
-        caller = { taskId: context.taskId, workspaceRoot: context.workspaceRoot, worktree: context.worktree, worktreeEvidencePath: context.evidencePath, worktreePlanDigest: context.planDigest };
+        const context = resolveTaskPreviewWorktree(runtime, fs.realpathSync(path.resolve(target)), taskId, { allowPartial: true });
+        caller = { taskId: context.taskId, workspaceRoot: context.workspaceRoot, worktree: context.worktree, worktreeEvidencePath: context.evidencePath, worktreePlanDigest: context.planDigest, repositorySet: context.repositorySet };
       }
       const result = await stopPreview(name, { caller });
       if (commandOptions.includes('--json')) console.log(JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.localAppPreview, result), null, 2));

@@ -50,6 +50,7 @@ export type PreviewCaller = {
   worktree: string;
   worktreeEvidencePath: string;
   worktreePlanDigest: string;
+  repositorySet?: PreviewRepository[];
 };
 
 type PreviewInstance = { schemaVersion: string; url: string; secret: string; pid: number; [key: string]: unknown };
@@ -236,14 +237,20 @@ export function previewOwnerForWorktree(name: string, targetRoot: string, produc
   };
 }
 
+function preservesPreviewRepositories(owner: PreviewOwner, digest: string | null, repositories?: PreviewRepository[]): boolean {
+  if (!repositories) return owner.worktreePlanDigest === digest;
+  return owner.repositorySet.length > 0 && owner.repositorySet.every((previous) => repositories.some((current) => sameFilesystemPath(current.checkoutPath, previous.checkoutPath) && current.branch === previous.branch));
+}
+
 function samePreviewOwner(left: PreviewOwner | null, right: PreviewOwner): boolean {
   return Boolean(left
     && sameFilesystemPath(left.worktree, right.worktree)
     && (left.productCheckout === right.productCheckout || sameFilesystemPath(left.productCheckout, right.productCheckout))
     && left.taskId === right.taskId
+    && left.identityMode === right.identityMode
     && left.workspaceRoot === right.workspaceRoot
     && left.worktreeEvidencePath === right.worktreeEvidencePath
-    && left.worktreePlanDigest === right.worktreePlanDigest);
+    && (left.identityMode !== 'task-worktree-v1' || preservesPreviewRepositories(left, right.worktreePlanDigest, right.repositorySet)));
 }
 
 export function assertPreviewStopOwner(owner: PreviewOwner, caller: PreviewCaller | null): void {
@@ -254,7 +261,7 @@ export function assertPreviewStopOwner(owner: PreviewOwner, caller: PreviewCalle
     || !sameFilesystemPath(caller.workspaceRoot, owner.workspaceRoot)
     || !sameFilesystemPath(caller.worktree, owner.worktree)
     || caller.worktreeEvidencePath !== owner.worktreeEvidencePath
-    || caller.worktreePlanDigest !== owner.worktreePlanDigest) {
+    || !preservesPreviewRepositories(owner, caller.worktreePlanDigest, caller.repositorySet)) {
     throw codedError(`预览实例 ${owner.instance} 的 Task Worktree owner 不匹配。`, 'preview_stop_owner_mismatch', {
       instance: owner.instance,
       expected: { taskId: owner.taskId, workspaceRoot: owner.workspaceRoot, worktree: owner.worktree, worktreeEvidencePath: owner.worktreeEvidencePath, worktreePlanDigest: owner.worktreePlanDigest },
@@ -326,9 +333,9 @@ export function readPreviewIdentityFromEnvironment(env: NodeJS.ProcessEnv = proc
   try { return parsePreviewOwner(JSON.parse(raw)); } catch { return null; }
 }
 
-export function resolveTaskPreviewWorktree(runtime: PreviewRuntime, workspaceRoot: string, taskId: string): TaskPreviewWorktree {
+export function resolveTaskPreviewWorktree(runtime: PreviewRuntime, workspaceRoot: string, taskId: string, { allowPartial = false }: { allowPartial?: boolean } = {}): TaskPreviewWorktree {
   const inspected = runtime.inspectGitWorktrees({ workspaceRoot, taskId });
-  if (inspected.status !== 'ready') {
+  if (inspected.status !== 'ready' && !allowPartial) {
     throw codedError(inspected.diagnostic?.message || `Task Worktree 未 ready：${taskId}。`, inspected.diagnostic?.code || 'preview_worktree_not_ready');
   }
   const workspace = inspected.repositories.find((repository) => repository.selector === 'workspace');
@@ -341,7 +348,7 @@ export function resolveTaskPreviewWorktree(runtime: PreviewRuntime, workspaceRoo
     worktree: workspace.checkoutPath,
     evidencePath: stored.file,
     planDigest: stored.evidence.planDigest,
-    repositorySet: inspected.repositories.map((repository) => ({ selector: repository.selector, checkoutPath: repository.checkoutPath || '', branch: repository.branch, head: repository.head })),
+    repositorySet: inspected.repositories.filter((repository) => repository.state === 'ready').map((repository) => ({ selector: repository.selector, checkoutPath: repository.checkoutPath || '', branch: repository.branch, head: repository.head })),
   };
 }
 
