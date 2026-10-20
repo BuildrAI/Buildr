@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, Checkbox, Empty, Input, Popover } from 'antd';
-import { SearchOutlined, SettingOutlined } from '@ant-design/icons';
+import { DownOutlined, RightOutlined, SearchOutlined, SettingOutlined, TableOutlined } from '@ant-design/icons';
+import type { DatabaseCatalog } from '../editor/database-catalog';
 
-type Props = { databases: string[]; visible: string[]; current: string; loading: boolean; saving: boolean; writable: boolean; active: boolean; onCurrent(database: string): void; onVisible(databases: string[]): void };
+type Props = { databases: string[]; visible: string[]; catalog: DatabaseCatalog | null; loading: boolean; saving: boolean; writable: boolean; active: boolean; onVisible(databases: string[]): void };
 
-export function DatabaseResources({ databases, visible, current, loading, saving, writable, active, onCurrent, onVisible }: Props) {
+export function DatabaseResources({ databases, visible, catalog, loading, saving, writable, active, onVisible }: Props) {
   const [open, setOpen] = useState(false), [draft, setDraft] = useState(visible), [search, setSearch] = useState('');
+  const [expanded, setExpanded] = useState<string[]>([]), [, setCatalogVersion] = useState(0);
   const openRef = useRef(false), draftRef = useRef(visible), baselineRef = useRef(visible);
   const triggerRef = useRef<HTMLButtonElement>(null), contentRef = useRef<HTMLDivElement>(null);
   const editable = active && writable && !loading && !saving;
+  const browsable = active && !loading && Boolean(catalog);
   function discard() { openRef.current = false; setOpen(false); }
   function changeOpen(value: boolean) {
     if (value === openRef.current) return;
@@ -26,6 +29,8 @@ export function DatabaseResources({ databases, visible, current, loading, saving
   const latestChangeOpen = useRef(changeOpen);
   latestChangeOpen.current = changeOpen;
   useEffect(() => { if (!editable) discard(); }, [editable]);
+  useEffect(() => { if (loading) setExpanded([]); }, [loading]);
+  useEffect(() => catalog?.subscribe(() => setCatalogVersion(value => value + 1)), [catalog]);
   useEffect(() => {
     const document = triggerRef.current?.ownerDocument;
     if (!open || !editable || !document) return;
@@ -40,7 +45,15 @@ export function DatabaseResources({ databases, visible, current, loading, saving
     document.addEventListener('click', closeOutside, true);
     return () => { document.removeEventListener('click', closeOutside, true); clearTimeout(pending); };
   }, [open, editable]);
-  function toggle(database: string, checked: boolean) {
+  function toggle(database: string) {
+    if (!browsable) return;
+    setExpanded(current => current.includes(database) ? current.filter(value => value !== database) : [...current, database]);
+  }
+  function retry(database: string) {
+    catalog?.retry(database);
+    setCatalogVersion(value => value + 1);
+  }
+  function toggleSelection(database: string, checked: boolean) {
     if (!editable) return;
     const selected = draftRef.current;
     const next = checked ? selected.includes(database) ? selected : [...selected, database] : selected.filter(value => value !== database);
@@ -51,12 +64,22 @@ export function DatabaseResources({ databases, visible, current, loading, saving
     <header><strong>启用数据库</strong><span>已选 {draft.length} / {databases.length}</span></header>
     <div className="buildr-database-search"><Input aria-label="搜索数据库" placeholder="搜索数据库" prefix={<SearchOutlined />} allowClear value={search} onChange={event => setSearch(event.target.value)} /></div>
     <div className="buildr-database-options" role="group" aria-label="启用的数据库">
-      {matches.length ? matches.map(database => <Checkbox key={database} className={`buildr-database-option${draft.includes(database) ? ' is-selected' : ''}`} checked={draft.includes(database)} disabled={!editable} onChange={event => toggle(database, event.target.checked)}><span className="buildr-database-name" title={database}>{database}</span></Checkbox>) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有匹配的数据库" />}
+      {matches.length ? matches.map(database => <Checkbox key={database} className={`buildr-database-option${draft.includes(database) ? ' is-selected' : ''}`} checked={draft.includes(database)} disabled={!editable} onChange={event => toggleSelection(database, event.target.checked)}><span className="buildr-database-name" title={database}>{database}</span></Checkbox>) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有匹配的数据库" />}
     </div>
     <footer><span>仅影响资源列表和当前库选项</span><small>关闭后自动保存</small></footer>
   </div>;
-  return <aside className="buildr-database-resources" aria-label="数据库资源管理器">
-    <header><strong>数据库</strong><Popover placement="bottom" classNames={{ root: 'buildr-database-popover' }} trigger={[]} content={options} open={open && editable} onOpenChange={changeOpen}><Button ref={triggerRef} id="enable-mysql-databases" type="text" size="small" aria-label="启用数据库" aria-expanded={open && editable} icon={<SettingOutlined />} loading={saving} disabled={!editable || !databases.length} onClick={() => changeOpen(!openRef.current)} /></Popover></header>
-    {loading ? <p>正在读取…</p> : visible.length ? visible.map(database => <Button type="text" key={database} disabled={!writable} aria-pressed={database === current} onClick={() => onCurrent(database)} title={database}>{database}</Button>) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={databases.length ? '请先启用数据库' : '没有可访问的数据库'} />}
+  return <aside className="buildr-database-resources" aria-label="库表浏览器">
+    <header><strong>库表</strong><Popover placement="bottom" classNames={{ root: 'buildr-database-popover' }} trigger={[]} content={options} open={open && editable} onOpenChange={changeOpen}><Button ref={triggerRef} id="enable-mysql-databases" type="text" size="small" aria-label="启用数据库" aria-expanded={open && editable} icon={<SettingOutlined />} loading={saving} disabled={!editable || !databases.length} onClick={() => changeOpen(!openRef.current)} /></Popover></header>
+    {loading ? <p>正在读取…</p> : visible.length ? <div className="buildr-database-browser" role="list">{visible.map((database, index) => {
+      const isExpanded = expanded.includes(database), state = isExpanded && browsable ? catalog?.read(database) : null, listId = `mysql-database-tables-${index}`;
+      return <section key={database} className="buildr-database-node" role="listitem">
+        <button type="button" className="buildr-database-toggle" data-database={database} aria-expanded={isExpanded} aria-controls={isExpanded ? listId : undefined} disabled={!browsable} onClick={() => toggle(database)} title={database}>
+          {isExpanded ? <DownOutlined aria-hidden /> : <RightOutlined aria-hidden />}<span className="buildr-database-name">{database}</span>
+        </button>
+        {isExpanded && <div id={listId} className="buildr-database-schema">
+          {!browsable ? <p role="status">页面恢复后继续读取。</p> : !state || state.status === 'loading' ? <p role="status">正在读取表…</p> : state.status === 'error' ? <div className="buildr-database-schema-error" role="alert"><span>{state.error || '读取表失败。'}</span><Button type="link" size="small" onClick={() => retry(database)}>重试</Button></div> : state.tables.length ? <ul aria-label={`${database} 中的表`}>{state.tables.map(table => <li key={table.name} data-table={table.name}><TableOutlined aria-hidden /><span title={table.name}>{table.name}</span></li>)}</ul> : <p role="status">没有可访问的表</p>}
+        </div>}
+      </section>;
+    })}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={databases.length ? '请先启用数据库' : '没有可访问的数据库'} />}
   </aside>;
 }

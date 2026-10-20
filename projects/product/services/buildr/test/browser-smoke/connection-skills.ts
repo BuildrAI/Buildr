@@ -53,7 +53,7 @@ fs.mkdirSync(screenshots, { recursive: true });
 try {
   const { url, initialWorkspaceId } = await host.ready;
   page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-  const browserErrors: string[] = []; page.on('pageerror', error => browserErrors.push(error.message));
+  const browserErrors: string[] = []; let journeyScene = 'start'; page.on('pageerror', error => browserErrors.push(`${journeyScene}: ${error.stack || error.message}`));
   const legacyRequests: string[] = []; page.on('request', request => { if (/\/api\/v1\/workspaces\/[^/]+\/connections(?:\/|$)/u.test(new URL(request.url()).pathname)) legacyRequests.push(request.url()); });
   const queryRequests: { path: string; method: string; body: Record<string, unknown> | null }[] = [];
   const queryDatabases = ['orders', 'billing', 'analytics', 'inventory', 'reporting', 'saas_biz_common', 'saas_erp', 'saas_freshx', 'saasx_config', 'saasx_job', 'sys', 'test', 'trading_business', 'wvp', '__recycle_bin__', 'warehouse_reporting_archive_with_a_long_database_name'];
@@ -75,7 +75,7 @@ try {
       const database = target.searchParams.get('database')!;
       tableReads.set(database, (tableReads.get(database) || 0) + 1);
       if (failNextTables) { failNextTables = false; await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'fixture_metadata_failure', message: '模拟表列表读取失败' } }) }); return; }
-      result = { connectionId: queryInstance.id, database, tables: (database === 'billing' ? ['invoice_headers', 'invoice_lines'] : ['order_headers', 'order_lines']).map(name => ({ name, type: 'BASE TABLE' })) };
+      result = { connectionId: queryInstance.id, database, tables: (database === 'billing' ? ['invoice_headers', 'invoice_lines'] : ['order_headers', 'order_lines', 'orders_with_a_very_long_name_for_layout_verification']).map(name => ({ name, type: 'BASE TABLE' })) };
     }
     else if (operation === 'query-preferences') {
       if (request.method() === 'PUT') {
@@ -88,7 +88,7 @@ try {
       result = queryPreferences;
     }
     else {
-      assert.equal(operation, 'query', 'The UI fixture only supports database discovery, preferences and a read query.');
+      assert.equal(operation, 'query', 'The UI fixture supports database discovery, tables, preferences and a read query.');
       if (queryGate) await queryGate;
       if (failNextQuery) { failNextQuery = false; await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'fixture_query_failure', message: '模拟查询失败' } }) }); return; }
       result = { connectionId: queryInstance.id, database: 'orders', submittedSql: body!.sql, executedSql: body!.sql, columns: [{ name: 'id', type: 'BIGINT' }, { name: 'amount', type: 'DECIMAL' }], rows: [['9007199254740993123', '123456789012345.123456789']], rowCount: 1, rowLimit: 100, elapsedMs: 1, limitReached: false };
@@ -138,6 +138,7 @@ try {
     const tabs = JSON.parse(localStorage.getItem(`buildr.web.page-tabs.${workspaceId}`) || '[]');
     return tabs.length === 1 && tabs[0].key === 'dir:connection-skills' && tabs[0].title === '连接' && tabs[0].path === `/workspaces/${workspaceId}/connection-skills`;
   }, initialWorkspaceId);
+  journeyScene = 'query-open';
   await page.locator('#connection-skills-table').locator(`[data-row-key="${queryInstance.id}"]`).getByRole('button', { name: '查询', exact: true }).click();
   const databasePicker = page.locator('#mysql-database-picker');
   const databaseSearch = databasePicker.getByRole('textbox', { name: '搜索数据库', exact: true });
@@ -190,16 +191,31 @@ try {
   assert.deepEqual(queryPreferences.enabledDatabases, ['billing']);
   assert.equal(queryPreferences.currentDatabase, null, 'Disabling the current database clears the confirmed query target.');
   assert.equal(await page.locator('.buildr-mysql-toolbar .ant-select-selection-item').innerText(), '未选择');
-  assert.equal(await page.locator('.buildr-database-resources').getByRole('button', { name: 'orders', exact: true }).count(), 0);
+  assert.equal(await page.locator('.buildr-database-toggle[data-database="orders"]').count(), 0);
   await openDatabasePicker();
   await databasePicker.getByRole('checkbox', { name: 'orders', exact: true }).check();
   await closeAndSaveDatabasePicker(3);
+  const preferenceWritesBeforeBrowse = preferenceWrites().length;
+  journeyScene = 'schema-browse';
+  failNextTables = true;
+  await page.locator('.buildr-database-toggle[data-database="orders"]').click();
+  await page.getByRole('alert').filter({ hasText: '模拟表列表读取失败' }).waitFor();
+  assert.equal(await page.locator('.buildr-mysql-toolbar .ant-select-selection-item').innerText(), '未选择', 'A table read failure does not change the current database.');
+  assert.equal(preferenceWrites().length, preferenceWritesBeforeBrowse, 'Table failures never write query preferences.');
+  await page.getByRole('alert').getByRole('button', { name: '重试', exact: true }).click();
+  await page.locator('[data-table="order_headers"]').waitFor();
+  assert.equal(preferenceWrites().length, preferenceWritesBeforeBrowse, 'Table retries never write query preferences.');
+  assert.equal(await page.locator('.buildr-mysql-toolbar .ant-select-selection-item').innerText(), '未选择', 'Browsing tables never changes the current database.');
+  journeyScene = 'current-database-select';
   const selectedCurrentDatabase = page.waitForResponse(response => new URL(response.url()).pathname.endsWith(`/mysql-query/connections/${queryInstance.id}/query-preferences`) && response.request().method() === 'PUT');
-  await page.locator('.buildr-database-resources').getByRole('button', { name: 'orders', exact: true }).click();
+  await page.locator('.buildr-mysql-toolbar .ant-select').click();
+  await page.keyboard.type('orders');
+  await page.keyboard.press('Enter');
   assert.equal((await selectedCurrentDatabase).status(), 200);
   await page.locator('#enable-mysql-databases:not([disabled])').waitFor();
   assert.equal(queryPreferences.currentDatabase, 'orders');
   const databaseReadsBeforeRefresh = queryRequests.filter(request => request.path.endsWith('/databases')).length;
+  journeyScene = 'refresh';
   await openDatabasePicker();
   await databasePicker.getByRole('checkbox', { name: 'billing', exact: true }).uncheck();
   const refreshedDatabases = page.waitForResponse(response => new URL(response.url()).pathname.endsWith(`/mysql-query/connections/${queryInstance.id}/databases`) && response.request().method() === 'GET');
@@ -209,6 +225,8 @@ try {
   await page.locator('#enable-mysql-databases:not([disabled])').waitFor();
   assert.equal(queryRequests.filter(request => request.path.endsWith('/databases')).length, databaseReadsBeforeRefresh + 1, 'Clicking refresh while editing still performs database discovery.');
   assert.equal(preferenceWrites().length, 4, 'Refresh discards an invalidated picker draft without saving it.');
+  assert.equal(await page.locator('.buildr-database-toggle[data-database="orders"]').getAttribute('aria-expanded'), 'false', 'Refresh clears expanded schema browsing.');
+  assert.equal(await page.locator('[data-table="orders_with_a_very_long_name_for_layout_verification"]').count(), 0, 'Refresh clears cached tables.');
   await openDatabasePicker();
   assert.equal(await databasePicker.getByRole('checkbox', { name: 'billing', exact: true }).isChecked(), true, 'After refresh the picker uses the saved selection.');
   await databasePicker.getByRole('checkbox', { name: 'billing', exact: true }).uncheck();
@@ -217,6 +235,7 @@ try {
   await databasePicker.waitFor({ state: 'hidden' });
   await page.locator('#connection-skills-table').locator(`[data-row-key="${queryInstance.id}"]`).getByRole('button', { name: '查询', exact: true }).waitFor();
   assert.equal(preferenceWrites().length, 4, 'Closing the query view discards its picker draft without saving it.');
+  journeyScene = 'query-open';
   await page.locator('#connection-skills-table').locator(`[data-row-key="${queryInstance.id}"]`).getByRole('button', { name: '查询', exact: true }).click();
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 900 });
@@ -230,8 +249,18 @@ try {
     await databaseSearch.press('Escape');
     await databasePicker.waitFor({ state: 'hidden' });
   }
+  await page.setViewportSize({ width: 390, height: 900 });
+  journeyScene = 'narrow-schema-browse';
+  const longTable = '[data-table="orders_with_a_very_long_name_for_layout_verification"]';
+  await page.locator('.buildr-database-toggle[data-database="orders"]').click();
+  await page.locator(longTable).waitFor();
+  assert.equal(await page.locator(longTable).locator('span[title]').getAttribute('title'), 'orders_with_a_very_long_name_for_layout_verification', 'The full table name remains available.');
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'Schema browsing does not overflow the narrow viewport.');
+  await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'mysql-query-schema-browser-390.png') });
+  await page.locator('.buildr-database-toggle[data-database="orders"]').click();
   await page.setViewportSize({ width: 1280, height: 900 });
   assert.equal(preferenceWrites().length, 4, 'Opening and closing for layout checks never creates extra writes.');
+  journeyScene = 'editor-completion';
   const sqlEditor = page.locator('#mysql-query-editor .cm-content');
   const option = (name: string) => page!.locator('.cm-tooltip-autocomplete [role="option"]').filter({ has: page!.getByText(name, { exact: true }) });
   const sqlText = async () => (await sqlEditor.innerText()).replaceAll('\n', '');
@@ -992,7 +1021,7 @@ try {
   await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-browser-authorization.png') });
   await page.locator('#close-connection-skill-editor').click();
   assert.deepEqual(browserErrors, []);
-  process.stdout.write(JSON.stringify({ schemaVersion: 'buildr.workspace-smoke-scenario/v1', status: 'passed', checks: ['category-order-initial-search-refresh-local-updates', 'website-fallback-and-explicit-override', 'system-and-explicit-method-selection', 'dependency-ordered-discovery', 'progressive-fields-and-authentication', 'explicit-production-flag', 'legacy-route-redirect', 'legacy-tabs-merge', 'single-connection-navigation', 'no-legacy-api-requests', 'mysql-query-ui-fixture', 'mysql-database-picker-search-and-hidden-selection', 'mysql-database-picker-close-save-once', 'mysql-database-picker-unchanged-no-write', 'mysql-database-picker-current-cleared', 'mysql-database-picker-refresh-and-close-discard', 'mysql-database-picker-reopen-and-viewport', 'query-observed-revision-and-original-sql', 'query-precision-display', 'separate-save', 'unsaved-switch', 'explicit-candidate', 'failed-test-save-independent', 'independent-draft-revisions', 'revision-conflict', 'narrow-and-keyboard', 'missing-skill-personal-removal', 'main-save-closes-and-updates-row', 'failed-save-retains-draft', 'main-save-preserves-personal-draft', 'reread-authentication-identity', 'optional-program-failure-isolated', 'nacos-api-and-website-distinct', 'focus-and-retained-page-no-read', 'test-discovery-check-no-directory-read', 'explicit-refresh-only', 'local-save-delete', 'interrupted-first-read-retried', 'late-list-cannot-rollback-save', 'combined-directory-and-local-diagnostics', 'failed-or-malformed-directory-retains-snapshot', 'personal-only-new-discovery-and-test', 'personal-two-step-partial-save-preserves-draft', 'explicit-personal-secret-reveal-no-store-and-keyboard', 'revealed-secret-close-and-late-response-discard', 'personal-upgrade-preserves-and-migrates-old-group', 'browser-authorization-hidden-environment-and-internal-fields', 'browser-authorization-explicit-create-save-closes-without-auth', 'browser-authorization-explicit-create-and-edit-failures-retain-draft', 'browser-authorization-main-save-and-reopened-edit-close-update-row', 'browser-authorization-partial-shell-save-and-safe-private-result', 'browser-reauthorization-saved-config-cancel-close-and-late-response'], realExternalSystem: false, queryBackend: 'intercepted-ui-fixture' }) + '\n');
+  process.stdout.write(JSON.stringify({ schemaVersion: 'buildr.workspace-smoke-scenario/v1', status: 'passed', checks: ['category-order-initial-search-refresh-local-updates', 'website-fallback-and-explicit-override', 'system-and-explicit-method-selection', 'dependency-ordered-discovery', 'progressive-fields-and-authentication', 'explicit-production-flag', 'legacy-route-redirect', 'legacy-tabs-merge', 'single-connection-navigation', 'no-legacy-api-requests', 'mysql-query-ui-fixture', 'mysql-query-schema-browser-expand-and-decouple', 'mysql-query-schema-browser-local-error-retry', 'mysql-query-schema-browser-refresh-clears', 'mysql-query-schema-browser-narrow-layout', 'mysql-database-picker-search-and-hidden-selection', 'mysql-database-picker-close-save-once', 'mysql-database-picker-unchanged-no-write', 'mysql-database-picker-current-cleared', 'mysql-database-picker-refresh-and-close-discard', 'mysql-database-picker-reopen-and-viewport', 'query-observed-revision-and-original-sql', 'query-precision-display', 'separate-save', 'unsaved-switch', 'explicit-candidate', 'failed-test-save-independent', 'independent-draft-revisions', 'revision-conflict', 'narrow-and-keyboard', 'missing-skill-personal-removal', 'main-save-closes-and-updates-row', 'failed-save-retains-draft', 'main-save-preserves-personal-draft', 'reread-authentication-identity', 'optional-program-failure-isolated', 'nacos-api-and-website-distinct', 'focus-and-retained-page-no-read', 'test-discovery-check-no-directory-read', 'explicit-refresh-only', 'local-save-delete', 'interrupted-first-read-retried', 'late-list-cannot-rollback-save', 'combined-directory-and-local-diagnostics', 'failed-or-malformed-directory-retains-snapshot', 'personal-only-new-discovery-and-test', 'personal-two-step-partial-save-preserves-draft', 'explicit-personal-secret-reveal-no-store-and-keyboard', 'revealed-secret-close-and-late-response-discard', 'personal-upgrade-preserves-and-migrates-old-group', 'browser-authorization-hidden-environment-and-internal-fields', 'browser-authorization-explicit-create-save-closes-without-auth', 'browser-authorization-explicit-create-and-edit-failures-retain-draft', 'browser-authorization-main-save-and-reopened-edit-close-update-row', 'browser-authorization-partial-shell-save-and-safe-private-result', 'browser-reauthorization-saved-config-cancel-close-and-late-response'], realExternalSystem: false, queryBackend: 'intercepted-ui-fixture' }) + '\n');
 } catch (error) {
   if (page) { process.stderr.write(JSON.stringify({ body: (await page.locator('body').innerText()).slice(-5000) }) + '\n'); await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-failure.png') }); }
   throw error;

@@ -1,6 +1,6 @@
-import type { MySqlQueryClient } from '../query-types';
+import type { MySqlQueryClient, MySqlTable } from '../query-types';
 
-export type TableCatalogEntry = { status: 'loading' | 'ready' | 'error'; tables: { name: string; type: string }[]; error?: string };
+export type TableCatalogEntry = { status: 'loading' | 'ready' | 'error'; tables: MySqlTable[]; error?: string };
 type Read = { entry: TableCatalogEntry; controller: AbortController };
 
 /** One instance belongs to one observed client/connection revision. No credentials or cross-target state. */
