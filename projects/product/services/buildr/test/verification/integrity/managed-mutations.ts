@@ -74,6 +74,8 @@ const allowed: any = new Map([
   ['src/modules/workspace/infrastructure/repository-clone-supervisor.ts', new Set(['ensure'])],
   ['src/modules/workspace/infrastructure/workspace-source-filesystem.ts', new Set(['withStaging', 'createWorkspaceSourceFilesystem'])],
   ['src/modules/workspace/application/workspace-operations.ts', new Set(['recoverWorkspaceMutation'])],
+  // Directory moves are snapshotted by withWorkspaceMutation; both endpoints are affected paths.
+  ['src/modules/workspace/application/asset-relationships-application.ts', new Set(['mutate'])],
   ['src/modules/agent-assets/infrastructure/runtime/runtime-reconciler.ts', new Set(['reconcileRuntimePlan'])],
   ['src/modules/agent-assets/infrastructure/runtime/skills/render-plan.ts', new Set(['applySkillRenderPlan'])],
   ['src/modules/agent-assets/infrastructure/runtime/rule-projection.ts', new Set(['applyRulesRenderPlan'])],
