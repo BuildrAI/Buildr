@@ -1,0 +1,212 @@
+## REMOVED Requirements
+### Requirement: 每日演进必须按 Project 落在本机文件目录
+Buildr MUST 将 Project 每日演进（Project Daily Progress）的权威存储为 canonical Workspace 根下的本机 YAML 文件 `.buildr/daily-progress/<project-code>/<YYYY-MM-DD>.yml`。`<project-code>` MUST 是当前 Workspace 已登记 Project code。该目录 MUST 被 root `.gitignore` 忽略，MUST NOT 进入 Git、Work Asset publication、Content Target 或跨机器同步，也 MUST NOT 被描述为 Buildr Server/Cloud 协作 authority。
+
+#### Scenario: 为已登记 Project 写入当天文件
+- **WHEN** Agent 对已登记 Project 提交合法当天 record payload
+- **THEN** Buildr MUST 只在 `.buildr/daily-progress/<project-code>/` 创建或原子替换 `<YYYY-MM-DD>.yml`
+- **AND** MUST NOT 写入 Task SQLite、其他 Project 目录或 Git 跟踪路径
+
+#### Scenario: Project 未登记
+- **WHEN** record 引用的 Project code 在当前 Workspace registry 中不存在
+- **THEN** Buildr MUST fail closed 且零文件写入
+- **AND** MUST NOT 创建对应子目录
+
+#### Scenario: Git 检查每日演进目录
+- **WHEN** Git scope 或 Work Asset discovery 遇到 `.buildr/daily-progress/`
+- **THEN** Buildr MUST 将其保持为 machine-local ignored data
+- **AND** MUST NOT stage、commit、push 或把目录缺失解释为远端数据丢失
+
+**Reason:** 用户确认每日演进功能无实际用处，明确删除整个能力；未来需求将重新设计。
+
+**Migration:** `buildr project daily-progress` 命令、对应只读 HTTP API 与该 Skill 一并移除；`.buildr/daily-progress/` 下既有本机文件保留在用户机器上但不再被产品读写。
+
+### Requirement: 每天一份且允许覆盖重跑
+每个 Project 的每个本机日历日 MUST 最多有一份 current 文件。显式 `--date` 或 payload 日期 MUST 使用 `YYYY-MM-DD`。省略日期时 MUST 使用本机本地时区日历日。对同一 Project 与同一日期再次成功 record MUST 原子覆盖该文件，MUST NOT 追加 run 历史或保留旧摘要副本。
+
+#### Scenario: 同一天重复执行
+- **WHEN** 同一 Project 在同一日期已有文件，且新的 record payload 校验通过
+- **THEN** Buildr MUST 用新文件完整替换旧文件
+- **AND** 旧推进项与旧 Task 关联 MUST 不再作为 current
+
+#### Scenario: 另一天的文件不受影响
+- **WHEN** record 写入 `2026-08-18.yml`
+- **THEN** 同目录下其他日期文件 MUST 保持不变
+
+**Reason:** 用户确认每日演进功能无实际用处，明确删除整个能力；未来需求将重新设计。
+
+**Migration:** `buildr project daily-progress` 命令、对应只读 HTTP API 与该 Skill 一并移除；`.buildr/daily-progress/` 下既有本机文件保留在用户机器上但不再被产品读写。
+
+### Requirement: 产品不得生成摘要或内置定时器
+Buildr 产品核心 MUST NOT 在 inspect、list 或 HTTP GET 时扫描 Git 提交、读取 `git config user.email`、推断 commit author、根据 Task updatedAt 自动撰写摘要，也 MUST NOT 提供每日演进 cron。record 的日摘要、提交列表、作者归属与 Task 关联 MUST 来自调用方已构造的 payload。是否定时再次调用由 Agent 宿主决定。产品 Skill MUST 在写入前收集 Git，但这不属于产品读取路径。
+
+#### Scenario: 用户要求展示今天的演进但当天文件不存在
+- **WHEN** Web 或 inspect 读取某 Project 的当天文件且文件不存在
+- **THEN** Buildr MUST 返回明确空态或 not-found
+- **AND** MUST NOT 根据 Git 或 Task 列表合成一份日报
+
+#### Scenario: 读取到 v1 旧文件
+- **WHEN** inspect 遇到 `buildr.project-daily-progress/v1` 文件
+- **THEN** Buildr MUST 返回 incompatible 或等价不可展示结果
+- **AND** MUST NOT 把旧推进项改写成提交列表
+
+**Reason:** 用户确认每日演进功能无实际用处，明确删除整个能力；未来需求将重新设计。
+
+**Migration:** `buildr project daily-progress` 命令、对应只读 HTTP API 与该 Skill 一并移除；`.buildr/daily-progress/` 下既有本机文件保留在用户机器上但不再被产品读写。
+
+### Requirement: Skill 必须按明确提交观察范围生成日报
+产品 Skill MUST 在生成前明确目标日期、时区和相关仓库，默认从当前本地引用收集当日提交及更改文件，固定每个引用的完整提交标识与观察时点。Skill MUST 使用本机用户邮箱按去空白、大小写不敏感比较确定 authorship，构造四问摘要与合法 Task 关联。引用、截至时间及未覆盖范围 MUST 写入现有 daySummary.drawbacks；未确认远端时 MUST 明确本地范围，MUST NOT 宣称覆盖远端最新或所有分支。生成 MUST NOT 以本地工作目录干净、Git 更新、资产同步或全局 Doctor ready 为前置；无法取得真实提交或用户必需的数据范围时 MUST 保留旧日报。
+
+#### Scenario: 本地有未提交内容
+- **WHEN** 本地提交可读取但工作目录有未提交内容
+- **THEN** Skill MUST 使用已提交内容生成日报，并说明未提交内容未纳入
+- **AND** MUST NOT 为日报执行 stash、rebase 或覆盖工作目录
+
+#### Scenario: 离线或无关诊断异常
+- **WHEN** 本地引用可读取，远端不可用或全局诊断存在与日报无关的问题
+- **THEN** Skill MUST 可生成明确标注本地观察范围的日报，不调用资产同步
+
+#### Scenario: 按需取得远端最新信息
+- **WHEN** 用户明确要求远端最新数据且相关授权成立
+- **THEN** Skill MUST 独立获取所选远端引用并直接从该引用收集提交，不要求检出或变基
+- **AND** 获取失败且用户只接受远端最新时 MUST 保留旧日报；允许本地范围时 MUST 明确降级范围
+
+#### Scenario: 无法取得提交事实
+- **WHEN** 目标无可读 Git 提交、引用不明确或数据不能满足用户必需范围
+- **THEN** Skill MUST 报告缺口且不调用 record，不伪造提交或静默缩小必需范围
+
+#### Scenario: 重复生成同一天日报
+- **WHEN** 新观察范围与已保存日报不同，准备覆盖同一天文件
+- **THEN** Skill MUST 明确范围变化，保留此前约定范围或已获授权的新范围，不静默丢失已包含仓库或引用
+
+**Reason:** 用户确认每日演进功能无实际用处，明确删除整个能力；未来需求将重新设计。
+
+**Migration:** `buildr project daily-progress` 命令、对应只读 HTTP API 与该 Skill 一并移除；`.buildr/daily-progress/` 下既有本机文件保留在用户机器上但不再被产品读写。
+
+### Requirement: init 与 sync 必须忽略每日演进目录
+Git 管理的 Workspace 在 `init`、`update` 或 `sync` 时 MUST 幂等确保 root `.gitignore` 包含 `/.buildr/daily-progress/`。重复执行 MUST NOT 产生重复条目或改写无关 ignore 规则，也 MUST NOT 因此忽略整个 `/.buildr/`。
+
+#### Scenario: 初始化新 Workspace
+- **WHEN** Buildr 初始化 Git 管理的 Workspace
+- **THEN** root `.gitignore` MUST 包含 `/.buildr/daily-progress/`
+
+#### Scenario: 更新旧 Workspace
+- **WHEN** `sync` 或 `update` 处理缺少该 ignore 条目的旧 Workspace
+- **THEN** Buildr MUST 通过受管 source transaction 幂等补齐
+- **AND** 已有每日演进文件 MUST 保持 ignored
+
+**Reason:** 用户确认每日演进功能无实际用处，明确删除整个能力；未来需求将重新设计。
+
+**Migration:** `buildr project daily-progress` 命令、对应只读 HTTP API 与该 Skill 一并移除；`.buildr/daily-progress/` 下既有本机文件保留在用户机器上但不再被产品读写。
+
+### Requirement: CLI 与 JSON 必须提供 record、inspect 与 list
+Buildr MUST 提供 Agent-machine CLI，至少支持对明确 Project 的 `record`、`inspect` 与 `list`，并 MUST 在 `--json` 时使用稳定 schema identity。`record` MUST 只写调用方提供的 closed payload（日摘要、提交、变更文件、可选 Task）；`inspect`/`list` MUST 只读已保存文件并解析仍存在的 Task 摘要。输出 MUST NOT 暴露本机绝对路径或 SQLite 路径。
+
+#### Scenario: Agent 记录当天演进
+- **WHEN** Agent 对已登记 Project 运行 JSON `record` 且 payload 合法
+- **THEN** stdout MUST 返回单一 JSON 对象，包含 schema identity、Project、日期、提交计数与 Task 关联计数
+- **AND** 对应 YAML 文件 MUST 成为该日 current
+
+#### Scenario: 读取不存在的日期
+- **WHEN** inspect 指定的 Project/日期没有文件
+- **THEN** JSON MUST 返回 not-found 或等价空结果
+- **AND** MUST NOT 创建文件
+
+**Reason:** 用户确认每日演进功能无实际用处，明确删除整个能力；未来需求将重新设计。
+
+**Migration:** `buildr project daily-progress` 命令、对应只读 HTTP API 与该 Skill 一并移除；`.buildr/daily-progress/` 下既有本机文件保留在用户机器上但不再被产品读写。
+
+### Requirement: Buildr Web 必须只读展示每日演进
+Buildr Web MUST 在统一动态页面提供项目每日演进完整视图，按所选项目与日期读取，并 MUST 支持按日、按人、按任务切换。项目主页和工作概览 MUST 到达该视图，具体摘要入口 MUST 传递摘要日期，旧项目入口未提供日期时 MUST 沿用本机今天。按日 MUST 展示日摘要四问与提交列表，MUST NOT 展示变更文件列表。自己的、已关联 Task 的提交 MUST 提供可导航 Task 芯片；自己的未关联提交 MUST 展示且无 Task 芯片；他人提交 MUST 展示作者且无 Task 芯片。Task 详情 MUST 只展示引用了该 Task 的条目。页面 MUST NOT 提供写入、删除或编辑控件；生成或重跑 MUST 交给 Agent。本机 HTTP API MUST 只读、Project-scoped 或 Task-scoped，MUST NOT 接受文件系统路径。
+
+#### Scenario: 项目页按日查看
+- **WHEN** 用户打开已有当天 v2 文件的 Project 每日演进视图
+- **THEN** 页面 MUST 展示四问摘要与提交列表
+- **AND** 页面 MUST NOT 展示变更文件列表或「变更文件」标题
+- **AND** MUST NOT 修改文件或现场扫描 Git
+
+#### Scenario: 项目页按人查看
+- **WHEN** 用户在同一天切换到按人分组
+- **THEN** 页面 MUST 按 commit author 分组提交
+- **AND** MUST NOT 为他人提交显示 Task 芯片
+- **AND** MUST NOT 展示变更文件列表
+
+#### Scenario: Task 详情反查
+- **WHEN** 某 Task 被当天一或多条自己的提交引用
+- **THEN** Task 详情 MUST 展示这些条目的日期、摘要与所属 Project
+- **AND** MUST NOT 把条目当作 Task 状态或进度 authority
+
+#### Scenario: 当天尚无文件
+- **WHEN** 用户打开没有当天文件的 Project 每日演进视图
+- **THEN** 页面 MUST 展示空态并说明需要 Agent 生成
+- **AND** MUST NOT 根据 Git 或 Task 列表自动填充
+
+**Reason:** 用户确认每日演进功能无实际用处，明确删除整个能力；未来需求将重新设计。
+
+**Migration:** `buildr project daily-progress` 命令、对应只读 HTTP API 与该 Skill 一并移除；`.buildr/daily-progress/` 下既有本机文件保留在用户机器上但不再被产品读写。
+
+### Requirement: 日摘要必须回答项目当日四问
+一份每日演进文件 MUST 包含非空日摘要 `daySummary`，字段为 `added`（新增了什么）、`updated`（更新了什么）、`deleted`（删除了什么）、`drawbacks`（有什么弊端）。这些正文 MUST 来自调用方已构造的 payload。Buildr MUST NOT 在读取路径根据 Git 或 Task 列表撰写这些字段。
+
+#### Scenario: 合法日摘要写入
+- **WHEN** Agent 提交包含四个非空摘要字段的合法 record payload
+- **THEN** 写入后的文件 MUST 保留这四个字段
+- **AND** inspect MUST 原样返回它们
+
+#### Scenario: 缺少四问之一
+- **WHEN** record payload 的 `daySummary` 缺少任一必填字段或字段为空
+- **THEN** Buildr MUST fail closed 且不覆盖当天文件
+
+**Reason:** 用户确认每日演进功能无实际用处，明确删除整个能力；未来需求将重新设计。
+
+**Migration:** `buildr project daily-progress` 命令、对应只读 HTTP API 与该 Skill 一并移除；`.buildr/daily-progress/` 下既有本机文件保留在用户机器上但不再被产品读写。
+
+### Requirement: 提交可与已有 Task 做 0..N 关联
+一份每日演进文件 MUST 包含 0..N 条提交（Commit Entry）。每条提交 MUST 包含稳定 identity、subject、author name、author email、`authorship`（`self` 或 `other`），以及 0..N 个 Task ID。Application 在写入前 MUST 对非空 Task ID 通过 Task Record Application 确认存在于同一 canonical Workspace。Daily Progress Application MUST NOT 创建、激活、修改或结束 Task，MUST NOT 因 `taskIds` 为空拒绝合法提交。
+
+#### Scenario: 自己的提交不关联 Task
+- **WHEN** Agent 提交 `authorship=self` 且 `taskIds` 为空的提交
+- **THEN** Buildr MUST 接受并写入
+- **AND** inspect MUST 展示该提交且不含可导航 Task
+
+#### Scenario: 自己的提交关联多个 Task
+- **WHEN** Agent 提交 `authorship=self` 且包含两个已存在 Task ID
+- **THEN** 写入后的文件 MUST 保留这两个引用
+- **AND** 按 Task 读取时两个 Task 都 MUST 能看到该提交
+
+#### Scenario: Task ID 不存在
+- **WHEN** record payload 包含当前 Workspace 中不存在的 Task ID
+- **THEN** Buildr MUST fail closed 且不覆盖当天文件
+
+**Reason:** 用户确认每日演进功能无实际用处，明确删除整个能力；未来需求将重新设计。
+
+**Migration:** `buildr project daily-progress` 命令、对应只读 HTTP API 与该 Skill 一并移除；`.buildr/daily-progress/` 下既有本机文件保留在用户机器上但不再被产品读写。
+
+### Requirement: 他人提交必须展示且禁止关联 Task
+`authorship=other` 的提交 MUST 被写入并在项目每日演进中展示。此类提交的 `taskIds` MUST 为空。Buildr MUST NOT 把他人提交绑定到本机 Task，也 MUST NOT 在 Web 上为他人提交渲染可导航 Task 芯片。
+
+#### Scenario: 他人提交带 Task
+- **WHEN** 某条提交声明 `authorship=other` 且 `taskIds` 非空
+- **THEN** Buildr MUST 拒绝整次 record
+- **AND** MUST NOT 写入部分提交
+
+#### Scenario: 他人提交合法写入
+- **WHEN** 某条提交声明 `authorship=other` 且 `taskIds` 为空
+- **THEN** 文件 MUST 保留其 subject 与作者
+- **AND** Task 反向查询 MUST NOT 返回该提交
+
+**Reason:** 用户确认每日演进功能无实际用处，明确删除整个能力；未来需求将重新设计。
+
+**Migration:** `buildr project daily-progress` 命令、对应只读 HTTP API 与该 Skill 一并移除；`.buildr/daily-progress/` 下既有本机文件保留在用户机器上但不再被产品读写。
+
+### Requirement: 变更文件必须随提交一并保存
+一份每日演进文件 MUST 包含当天更改过的文件列表（path 与变更类型）。该列表 MUST 来自调用方 payload，MUST NOT 由 inspect/GET 现场扫描 working tree。
+
+#### Scenario: 写入包含变更文件
+- **WHEN** Agent 提交含非空或空 `files` 数组的合法 payload
+- **THEN** inspect MUST 返回同一文件列表
+- **AND** MUST NOT 暴露本机绝对路径
+
+**Reason:** 用户确认每日演进功能无实际用处，明确删除整个能力；未来需求将重新设计。
+
+**Migration:** `buildr project daily-progress` 命令、对应只读 HTTP API 与该 Skill 一并移除；`.buildr/daily-progress/` 下既有本机文件保留在用户机器上但不再被产品读写。

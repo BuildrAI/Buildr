@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { codeRepositoryLabel } from '../../src/features/code/code-source-labels.ts';
 
 /** Real branch data and physical snapshots are supplied by the isolated host. */
 export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, capture, fixture, expectedBrowserErrors, scenario = (name: string, action: () => Promise<void>) => t.test(name, action) }: any) {
@@ -36,7 +37,7 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
     const response = await page.request.get(api + '/code/source-control'); assert.equal(response.status(), 200);
     const catalog = await response.json(), repository = catalog.repositories.find((item: any) => item.worktrees.some((worktree: any) => worktree.location === branches.location));
     assert.ok(repository);
-    const adapt = (worktree: any) => ({ ...worktree, repositoryId: repository.id, repositoryName: repository.name });
+    const adapt = (worktree: any) => ({ ...worktree, repositoryId: repository.id, repositoryName: repository.name, repositoryLabel: codeRepositoryLabel(repository) });
     const worktree = adapt(repository.worktrees.find((item: any) => item.location === branches.location));
     const main = adapt(repository.worktrees.find((item: any) => item.isMain));
     const fold = root().locator('[data-source-repository="' + repository.id + '"] > .source-control-repository .source-control-repository-fold');
@@ -60,10 +61,10 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
   };
   const manage = async (worktree: any, name: string, fromMenu = false) => {
     const label = worktree.isMain ? '主工作树' : worktree.name;
-    const branch = row(worktree).getByRole('button', { name: '管理分支 · ' + worktree.repositoryName + ' · ' + label, exact: true });
+    const branch = row(worktree).getByRole('button', { name: '管理分支 · ' + worktree.repositoryLabel + ' · ' + label, exact: true });
     if (!fromMenu && await branch.isVisible()) await branch.click();
     else {const menu = await openOperations(worktree); await menu.getByRole('menuitem', {name:'管理分支', exact:true}).click();}
-    const manager = page.getByRole('region', { name: '分支管理 · ' + worktree.repositoryName + ' · ' + label, exact: true });
+    const manager = page.getByRole('region', { name: '分支管理 · ' + worktree.repositoryLabel + ' · ' + label, exact: true });
     await manager.waitFor();
     await manager.getByRole('button', { name: '管理 ' + name, exact: true }).click();
     const action = page.getByRole('region', { name: '分支操作 · ' + name, exact: true }); await action.waitFor();
@@ -156,9 +157,9 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
     }
   };
   const noOverflow = async () => assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
-  const operationMenu = (worktree?:any) => page.getByRole('menu', {name:worktree ? '操作菜单 · ' + worktree.repositoryName + ' · ' + (worktree.isMain ? '主工作树' : worktree.name) : '源代码管理操作菜单', exact:true});
+  const operationMenu = (worktree?:any) => page.getByRole('menu', {name:worktree ? '操作菜单 · ' + worktree.repositoryLabel + ' · ' + (worktree.isMain ? '主工作树' : worktree.name) : '源代码管理操作菜单', exact:true});
   const openOperations = async (worktree:any) => {
-    const trigger = row(worktree).getByRole('button', {name:'操作菜单 · ' + worktree.repositoryName + ' · ' + (worktree.isMain ? '主工作树' : worktree.name), exact:true});
+    const trigger = row(worktree).getByRole('button', {name:'操作菜单 · ' + worktree.repositoryLabel + ' · ' + (worktree.isMain ? '主工作树' : worktree.name), exact:true});
     if (await trigger.getAttribute('aria-expanded') !== 'true') await trigger.click();
     await row(worktree).locator('.source-control-row-menu-button[aria-expanded="true"]').waitFor();
     await operationMenu(worktree).waitFor(); return operationMenu(worktree);
@@ -377,7 +378,7 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
           if (refreshMode === 'failed') {
             const outcome = await refreshed; if (outcome.error) throw outcome.error;
             assert.equal(outcome.response.status(), 503);
-            await root().getByText(new RegExp(worktree.repositoryName + '：浏览器回归：目录读取暂不可用。')).waitFor();
+            await root().getByText(new RegExp(worktree.repositoryLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '.*：浏览器回归：目录读取暂不可用。')).waitFor();
             assert.equal(await row(worktree).locator('.source-control-row-action-button').getAttribute('title'), branches.remoteName + ' · 管理分支', '刷新失败也不能退回旧分支名称');
             await page.unrouteAll({behavior:'wait'});
             await root().getByRole('button', {name:'刷新源代码管理', exact:true}).click();
@@ -579,7 +580,7 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
       const observed = {...actual, repositories:actual.repositories.map((repository:any) => ({...repository, worktrees:repository.worktrees.map((tree:any) => tree.branch && tree.status !== 'unavailable' ? {...tree, upstream:tree.upstream || 'browser-observed/' + tree.branch, ahead:tree.ahead ?? 0, behind:tree.behind ?? 0} : tree)}))};
       const peer = observed.repositories.find((item: any) => item.id !== worktree.repositoryId && item.source?.checkoutId);
       assert.ok(peer, '并发回归需要第二个真实可观察代码库');
-      const peerTree = {...peer.worktrees.find((item: any) => item.isRegistered), repositoryId:peer.id, repositoryName:peer.name};
+      const peerTree = {...peer.worktrees.find((item: any) => item.isRegistered), repositoryId:peer.id, repositoryName:peer.name, repositoryLabel:codeRepositoryLabel(peer)};
       const reads: string[] = [], contentReads: string[] = [];
       const gates = new Map<string, {gate:Promise<void>; release():void}>();
       for (const id of [worktree.repositoryId, peer.id]) for (const phase of ['full', 'local']) {

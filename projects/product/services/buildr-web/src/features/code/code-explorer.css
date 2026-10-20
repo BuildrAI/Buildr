@@ -43,8 +43,9 @@
 .code-explorer-notices .ant-alert-action { grid-column:2; grid-row:2; margin-inline-start:0; }
 .code-explorer-notice-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:4px; }
 .code-explorer-notice-details { margin:8px 0 0; padding-left:16px; font-size:12px; line-height:1.6; overflow-wrap:anywhere; }
+.code-source-picker-popup.ant-select-dropdown { border:1px solid var(--soft-line); background:var(--soft-surface); box-shadow:0 8px 24px color-mix(in srgb,var(--soft-ink) 12%,transparent); }
 .code-worktree-option { min-width:0; display:flex; flex-direction:column; gap:2px; }
-.code-worktree-option>span { white-space:normal; overflow-wrap:anywhere; }
+.code-worktree-option>span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .code-worktree-option>small { color:var(--soft-muted); font-size:11px; font-weight:400; }
 .code-scm-pending { height:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:12px; padding:24px; text-align:center; }
 .code-scm-pending>.anticon { font-size:32px; color:var(--soft-primary); }

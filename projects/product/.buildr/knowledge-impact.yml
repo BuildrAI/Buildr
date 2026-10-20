@@ -1,27 +1,24 @@
 schemaVersion: buildr.knowledge-impact/v1
-task: relax-node-version
-operation: reconcile
+task: service-create-repo-modulepath
+operation: assess
 impacts:
   - type: reference
-    target: knowledge/docs/flows/open-source-release.md
-    reason: 开发、候选和发布准备改用稳定版 Node >=24.15.0，执行身份一致性继续保留。
-    status: updated
+    target: knowledge/code-map/project-service-repositories.md
+    reason: 本次只修订新增服务表单的代码位置表达，登记模型（repositoryId + modulePath）不变，地图描述仍然成立。
+    status: aligned
     sourceIdentities:
-      - services/buildr/src/infrastructure/process.ts
-      - services/buildr/tools/verification/candidate-environment.ts
-      - services/buildr/tools/release/release-orchestration-runner.ts
+      - services/buildr-web/src/features/service/components/ServiceCreateDrawer.tsx
+      - services/buildr/src/modules/workspace/application/asset-relationships-application.ts
   - type: reference
-    target: knowledge/docs/flows/dsh-plugin-release.md
-    reason: 插件准备接受最低稳定版本，CI选定基准与实际版本证据分别说明。
-    status: updated
+    target: knowledge/docs/glossary.md
+    reason: 术语定义本来就是"引用一个代码库实例并以 modulePath 定位代码"，与表单修订后的可达路径一致。
+    status: aligned
     sourceIdentities:
-      - services/dsh-plugin/package.json
-      - services/dsh-plugin/tools/prepare-release-sdk.ts
+      - services/buildr-web/src/features/service/components/ServiceCreateDrawer.tsx
   - type: reference
-    target: services/buildr/docs/cli-reference.md
-    reason: 公开运行要求及关联README、限制说明同步为 >=24.15.0。
-    status: updated
+    target: knowledge/docs/architecture/buildr-data-design.md
+    reason: 数据设计文档只描述全局登记模型，不表达表单字段组合，不受交互修订影响。
+    status: aligned
     sourceIdentities:
-      - services/buildr/package.json
-      - services/buildr/tools/release/release-artifact.ts
+      - services/buildr-web/src/features/service/components/ServiceCreateDrawer.tsx
 unresolvedItems: []

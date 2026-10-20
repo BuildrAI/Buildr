@@ -7,7 +7,7 @@ import test from 'node:test';
 import { execFileSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 
-import { assertPreviewStopOwner, previewDataRoot, readPreviewOwner, startPreview, stopPreview, type PreviewCaller, type PreviewOwner, type PreviewRuntime } from '../../src/web/application/preview-lifecycle.ts';
+import { assertPreviewStopOwner, previewDataRoot, readPreviewOwner, resolveTaskPreviewWorktree, startPreview, stopPreview, type PreviewCaller, type PreviewOwner, type PreviewRuntime } from '../../src/web/application/preview-lifecycle.ts';
 
 const head = 'a'.repeat(40);
 const owner: PreviewOwner = {
@@ -50,6 +50,31 @@ test('task preview ownership uses exact Task Worktree evidence', () => {
     caller({ worktreeEvidencePath: '/tmp/other.json' }),
     caller({ worktreePlanDigest: 'sha256-other' }),
   ]) assert.throws(() => assertPreviewStopOwner(owner, mismatched), (error) => coded(error, 'preview_stop_owner_mismatch'));
+});
+
+test('追加来源后的预览停止核对原成员而非冻结集合摘要', () => {
+  const repositorySet = [...owner.repositorySet.map(item => ({ ...item, head: 'b'.repeat(40) })), { selector: 'service:demo/api', checkoutPath: '/tmp/task-a/repositories/api', branch: owner.branch, head }];
+  assert.doesNotThrow(() => assertPreviewStopOwner(owner, caller({ worktreePlanDigest: 'expanded-plan', repositorySet })));
+  for (const changed of [[], repositorySet.slice(1), [{ ...repositorySet[0], branch: 'codex/other' }], [{ ...repositorySet[0], checkoutPath: '/tmp/other' }]]) {
+    assert.throws(() => assertPreviewStopOwner(owner, caller({ repositorySet: changed })), error => coded(error, 'preview_stop_owner_mismatch'));
+  }
+});
+
+test('失败的新成员不阻止核验和清理原有预览成员', async t => {
+  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-preview-expanded-'));
+  t.after(() => fs.rmSync(dataRoot, { recursive: true, force: true }));
+  const runtime = {
+    inspectGitWorktrees: () => ({ status: 'blocked', repositories: [{ ...owner.repositorySet[0], state: 'ready' }, { selector: 'service:demo/api', state: 'blocked' }], diagnostic: { code: 'git_worktree_identity_drift', message: 'new member not created' } }),
+    readGitWorktreeEvidence: () => ({ file: owner.worktreeEvidencePath, evidence: { workspaceRoot: owner.workspaceRoot, planDigest: 'expanded-plan' } }),
+  } as unknown as PreviewRuntime;
+  assert.throws(() => resolveTaskPreviewWorktree(runtime, owner.workspaceRoot!, owner.taskId!), error => coded(error, 'git_worktree_identity_drift'));
+  const current = resolveTaskPreviewWorktree(runtime, owner.workspaceRoot!, owner.taskId!, { allowPartial: true });
+  assert.equal(current.repositorySet.length, 1);
+  const directory = previewDataRoot(owner.instance, dataRoot);
+  fs.mkdirSync(directory, { recursive: true });
+  fs.writeFileSync(path.join(directory, 'preview.json'), JSON.stringify(owner));
+  const stopped = await stopPreview(owner.instance, { dataRoot, caller: caller({ worktreePlanDigest: current.planDigest, repositorySet: current.repositorySet }) });
+  assert.equal(stopped.status, 'stale_cleaned');
 });
 
 test('Task preview 由预览能力直接清除 owner，不等待 Environment Receipt', async (t) => {
@@ -307,6 +332,21 @@ test('task preview seeds the workspace store into the worktree once and reuses i
       worktreeEvidencePath: path.join(fixture.target, 'evidence.json'), worktreePlanDigest: 'sha256-' + 'b'.repeat(64),
     },
   });
+});
+
+test('正在运行的预览在安全扩展后复用并继续拒绝原成员漂移', { timeout: 20_000 }, async t => {
+  const fixture = taskStoreFixture(t);
+  const started = await fixture.start();
+  const repositories = [...started.owner.repositorySet, { selector: 'service:demo/api', checkoutPath: path.join(fixture.worktree, 'repositories/api'), branch: 'codex/demo-task', head }];
+  const previousEvidence = fixture.runtime.readGitWorktreeEvidence(fixture.canonical, 'demo-task');
+  fixture.runtime.readGitWorktreeEvidence = () => ({ ...previousEvidence, evidence: { ...previousEvidence.evidence, planDigest: 'expanded-plan' } });
+  fixture.runtime.inspectGitWorktrees = () => ({ status: 'ready', repositories: repositories.map(item => ({ ...item, state: 'ready' })), diagnostic: null });
+  const reused = await fixture.start();
+  assert.equal(reused.status, 'reused');
+  assert.equal(reused.url, started.url);
+  fixture.runtime.inspectGitWorktrees = () => ({ status: 'ready', repositories: repositories.map(item => ({ ...item, branch: 'codex/other', state: 'ready' })), diagnostic: null });
+  await assert.rejects(fixture.start(), error => coded(error, 'preview_owner_conflict'));
+  await stopPreview('task-demo', { dataRoot: fixture.dataRoot, caller: { taskId: 'demo-task', workspaceRoot: fixture.canonical, worktree: fixture.worktree, worktreeEvidencePath: previousEvidence.file, worktreePlanDigest: 'expanded-plan', repositorySet: repositories } });
 });
 
 test('task preview fails closed when the canonical workspace store is unreadable', async (t) => {

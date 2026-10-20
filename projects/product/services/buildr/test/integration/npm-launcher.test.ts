@@ -38,7 +38,49 @@ import { resolveWebProfile } from '../../src/modules/installation/contracts/web-
 import { APPLICATION_PAYLOAD_MANIFEST, canonicalApplicationPayloadIdentity } from '../../src/infrastructure/product-resources/index.ts';
 
 const SOURCE_COMMIT: any = 'd4361952d7111f131b5923fedcf4b58077719eb6';
-const fixtureCleanups = new WeakMap<object, Array<() => Promise<void>>>();
+type FixtureCleanup = () => void | Promise<void>;
+const fixtureCleanups = new WeakMap<object, FixtureCleanup[]>();
+let suite: { root: string; payload: string; packageRoot: string; testContextRoot: string };
+let suiteRoot: string | undefined;
+let updatePackages: { old: string; next: string } | undefined;
+
+// Build real release bytes once per file. Tests mutate independent copies;
+// these templates never become an enrolled or running installation.
+test.before(async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-npm-launcher-suite-'));
+  suiteRoot = root;
+  const generated = createGeneratedReleaseInputs(path.join(root, 'generated'), SOURCE_COMMIT);
+  const payload = path.join(root, 'payload');
+  const packageRoot = path.join(root, 'package');
+  await buildApplicationPayload(payload, SOURCE_COMMIT, { generatedArtifactManifest: generated.manifest, webDistRoot: generated.webDistRoot });
+  createNpmPackStaging(payload, packageRoot, { testContextRoot: generated.testContextRoot });
+  suite = { root, payload, packageRoot, testContextRoot: generated.testContextRoot };
+});
+test.after(() => { if (suiteRoot) fs.rmSync(suiteRoot, { recursive: true, force: true }); });
+
+function copyFixture(source: string, destination: string) {
+  // Copy-on-write when available, regular copies elsewhere; never hard links.
+  fs.cpSync(source, destination, { recursive: true, mode: fs.constants.COPYFILE_FICLONE });
+}
+
+function onFixtureCleanup(t: object, cleanup: FixtureCleanup) {
+  const pending = fixtureCleanups.get(t);
+  assert.ok(pending, 'fixture cleanup requires the suite-owned cleanup queue');
+  pending.push(cleanup);
+}
+
+function prepareUpdatePackages() {
+  if (updatePackages) return updatePackages;
+  const old = path.join(suite.root, 'old-package');
+  const next = path.join(suite.root, 'next-package');
+  setFixturePayloadVersion(suite.payload, '0.0.1');
+  createNpmPackStaging(suite.payload, old, { testContextRoot: suite.testContextRoot });
+  setFixturePayloadVersion(suite.payload, '0.0.2');
+  createNpmPackStaging(suite.payload, next, { testContextRoot: suite.testContextRoot });
+  updatePackages = { old, next };
+  fs.rmSync(suite.payload, { recursive: true, force: true });
+  return updatePackages;
+}
 
 function digest(value: any): any  {
   return `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
@@ -62,11 +104,15 @@ test.beforeEach((t: any) => {
   const appData: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-npm-launcher-test-app-data-'));
   process.env.BUILDR_APP_DATA_DIR = appData;
   process.env.BUILDR_PRODUCT_DATA_DIR = appData;
-  const pending: Array<() => Promise<void>> = [];
+  const pending: FixtureCleanup[] = [];
   fixtureCleanups.set(t, pending);
   t.after(async () => {
     try {
-      for (const cleanup of [...pending].reverse()) await cleanup();
+      const failures: unknown[] = [];
+      for (const cleanup of [...pending].reverse()) {
+        try { await cleanup(); } catch (error) { failures.push(error); }
+      }
+      if (failures.length) throw new AggregateError(failures, `Fixture cleanup failed at ${appData}.`);
       fs.rmSync(appData, { recursive: true, force: true });
     } finally {
       if (previousAppData === undefined) delete process.env.BUILDR_APP_DATA_DIR;
@@ -77,14 +123,21 @@ test.beforeEach((t: any) => {
   });
 });
 
-async function fixture(): Promise<any>  {
-  const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-npm-launcher-'));
+async function fixture({ runnable = false, template = suite.packageRoot } = {}): Promise<any>  {
+  // Allocate below this test's state before preparation, so failures clean up too.
+  const root: any = fs.mkdtempSync(path.join(process.env.BUILDR_APP_DATA_DIR!, 'installation-'));
   const prefix: any = path.join(root, 'prefix');
   const packageRoot: any = path.join(prefix, 'lib', 'node_modules', '@buildr-ai', 'buildr');
-  const payload: any = path.join(root, 'payload');
-  const generated: any = createGeneratedReleaseInputs(path.join(root, 'generated'), SOURCE_COMMIT);
-  await buildApplicationPayload(payload, SOURCE_COMMIT, { generatedArtifactManifest: generated.manifest, webDistRoot: generated.webDistRoot });
-  createNpmPackStaging(payload, packageRoot, { testContextRoot: generated.testContextRoot });
+  if (runnable) copyFixture(template, packageRoot);
+  else {
+    // Binding and in-process lifecycle checks need real identity/entry bytes,
+    // not the runtime, dependencies, skills and other installed resources.
+    for (const relative of ['application-payload.json', 'installation-origin.json', 'bin/buildr.mjs', 'payload/product/package.json']) {
+      const target = path.join(packageRoot, relative);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.copyFileSync(path.join(template, relative), target);
+    }
+  }
   const npmCliPath: any = path.join(prefix, 'npm-cli.js');
   fs.writeFileSync(npmCliPath, '// test npm authority\n');
   const updateAuthority: any = createProductUpdateAuthority({ nodeExecutable: process.execPath, npmCliPath, prefix });
@@ -114,25 +167,18 @@ function setFixturePayloadVersion(payloadRoot: string, version: string) {
 }
 
 async function updateFixture(t: any, { launcher = false }: { launcher?: boolean } = {}) {
-  const staged = await fixture();
+  const templates = prepareUpdatePackages();
+  const staged = await fixture({ runnable: true, template: templates.old });
   const value = { ...staged, root: fs.realpathSync(staged.root), prefix: fs.realpathSync(staged.prefix), packageRoot: fs.realpathSync(staged.packageRoot) };
   const oldVersion = '0.0.1', newVersion = '0.0.2';
-  const payloadRoot = path.join(value.root, 'payload');
-  const nextPayloadRoot = path.join(value.root, 'next-payload');
   const nextPackageRoot = path.join(value.root, 'next-package');
-  const testContextRoot = path.join(value.root, 'generated', 'test-context');
   const npmCliPath = path.join(value.prefix, 'npm-cli.js');
   const npmLog = path.join(value.root, 'npm-commands.jsonl');
   const entryLog = path.join(value.root, 'entry-invocations.jsonl');
   const launcherTarget = launcher ? path.join(value.root, 'Applications', 'Buildr Web.app') : null;
   const appData = process.env.BUILDR_APP_DATA_DIR!;
   const receiptFile = path.join(appData, 'instance.json');
-  fs.cpSync(payloadRoot, nextPayloadRoot, { recursive: true });
-  setFixturePayloadVersion(payloadRoot, oldVersion);
-  setFixturePayloadVersion(nextPayloadRoot, newVersion);
-  fs.rmSync(value.packageRoot, { recursive: true, force: true });
-  createNpmPackStaging(payloadRoot, value.packageRoot, { testContextRoot });
-  createNpmPackStaging(nextPayloadRoot, nextPackageRoot, { testContextRoot });
+  copyFixture(templates.next, nextPackageRoot);
   const entry = path.join(value.packageRoot, 'bin', 'buildr.mjs');
   const nextEntry = path.join(nextPackageRoot, 'bin', 'buildr.mjs');
   fs.writeFileSync(nextEntry, `import fs from 'node:fs';\nfs.appendFileSync(${JSON.stringify(entryLog)}, JSON.stringify({ node: process.execPath, entry: process.argv[1], args: process.argv.slice(2), version: ${JSON.stringify(newVersion)} }) + '\\n');\n${fs.readFileSync(nextEntry, 'utf8').replace(/^#![^\n]*\n/u, '')}`);
@@ -183,8 +229,7 @@ if (args[0] === 'view') {
       failures.push(error);
     } finally {
       for (const child of children) {
-        if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
-        try { await waitForChildExit(child, 'fixture child cleanup'); } catch (error) { failures.push(error); }
+        try { await stopFixtureChild(child); } catch (error) { failures.push(error); }
       }
     }
     for (const pid of webPids) {
@@ -278,6 +323,15 @@ async function waitForChildExit(child: any, label: any): Promise<any>  {
   } finally { if (timer) clearTimeout(timer); }
 }
 
+async function stopFixtureChild(child: any) {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const force = setTimeout(() => child.kill('SIGKILL'), 2_000);
+  try {
+    child.kill('SIGTERM');
+    await waitForChildExit(child, 'fixture child cleanup');
+  } finally { clearTimeout(force); }
+}
+
 test('macOS npm Launcher is an owned projection and repair refreshes drift without copying product bytes', async () => {
   const value: any = await fixture();
   const target: any = path.join(value.root, 'Applications', 'Buildr Web.app');
@@ -349,6 +403,7 @@ test('macOS npm Launcher is an owned projection and repair refreshes drift witho
   const entry: any = value.registration.entry.entryPath;
   const original: any = fs.readFileSync(entry);
   fs.appendFileSync(entry, '\n// drift\n');
+  assert.deepEqual(fs.readFileSync(path.join(suite.packageRoot, 'bin', 'buildr.mjs')), original, 'fixture writes must not change the shared package template');
   assert.equal(npmLauncherStatus({ platform: 'darwin', target }).status, 'stale');
   const refreshed: any = refreshInstalledNpmLauncher({ registration: value.registration, platform: 'darwin', target });
   assert.equal(refreshed.status, 'ready');
@@ -420,7 +475,7 @@ test('released npm Launcher falls back once from an occupied preferred port whil
     occupied.once('error', reject);
     occupied.listen(0, '127.0.0.1', resolve);
   });
-  t.after(() => new Promise((resolve: any) => occupied.close(resolve)));
+  onFixtureCleanup(t, () => new Promise((resolve: any) => occupied.close(resolve)));
   const preferred: any = occupied.address().port;
   const installed: any = installNpmLauncher({ registration: value.registration, platform: 'darwin', target, port: preferred });
   const productIdentity: any = {
@@ -438,9 +493,10 @@ test('released npm Launcher falls back once from an occupied preferred port whil
   const warnings: any[] = [];
   const originalWarn: any = console.warn;
   console.warn = (message: any) => warnings.push(String(message));
-  t.after(() => { console.warn = originalWarn; });
+  onFixtureCleanup(t, () => { console.warn = originalWarn; });
 
   const started: any = await runtime.startBuildrWeb(['--no-open', '--launcher-binding', installed.bindingPath]);
+  onFixtureCleanup(t, async () => { if (started.server.listening) await new Promise<void>(resolve => started.server.close(() => resolve())); });
   const actualPort: any = Number(new URL(started.url).port);
   assert.notEqual(actualPort, preferred);
   assert.match(warnings.join('\n'), new RegExp(`首选端口 ${preferred} 已被占用`));
@@ -470,19 +526,19 @@ test('concurrent npm Launchers retry ownership after an old CLI releases its sta
   registerWebInstanceLifecycle(runtime, { readProductIdentity: () => productIdentity, assertNpmLauncherBinding: assertCurrentNpmLauncherBinding, createLocalWorkspaceServer, ensureRegisteredTarget });
   const originalWait = process.env.BUILDR_LAUNCHER_HANDOFF_WAIT_MS;
   process.env.BUILDR_LAUNCHER_HANDOFF_WAIT_MS = '500';
-  t.after(() => {
+  onFixtureCleanup(t, () => {
     if (originalWait === undefined) delete process.env.BUILDR_LAUNCHER_HANDOFF_WAIT_MS;
     else process.env.BUILDR_LAUNCHER_HANDOFF_WAIT_MS = originalWait;
   });
   const cli: any = await runtime.startBuildrWeb(['--no-open', '--port', '0']);
   const lock: any = acquireBuildrWebStartLock(resolveWebProfile(productIdentity));
-  t.after(() => { releaseBuildrWebStartLock(lock); if (cli.server.listening) cli.server.close(); });
+  onFixtureCleanup(t, async () => { releaseBuildrWebStartLock(lock); if (cli.server.listening) await new Promise<void>(resolve => cli.server.close(() => resolve())); });
   const starts = [runtime.startBuildrWeb(['--no-open', '--launcher-binding', installed.bindingPath]), runtime.startBuildrWeb(['--no-open', '--launcher-binding', installed.bindingPath])];
   const releaseTimer = setTimeout(() => releaseBuildrWebStartLock(lock), 100);
-  t.after(() => clearTimeout(releaseTimer));
+  onFixtureCleanup(t, () => clearTimeout(releaseTimer));
   const results: any[] = await Promise.all(starts);
   const managed: any = results.find(result => !result.reused);
-  t.after(() => { if (managed?.server.listening) managed.server.close(); });
+  onFixtureCleanup(t, async () => { if (managed?.server.listening) await new Promise<void>(resolve => managed.server.close(() => resolve())); });
   assert.equal(results.filter(result => !result.reused).length, 1);
   assert.equal(results.filter(result => result.reused).length, 1);
   assert.equal(results[0].url, results[1].url);
@@ -492,7 +548,7 @@ test('concurrent npm Launchers retry ownership after an old CLI releases its sta
 });
 
 test('npm Launcher takes over CLI ownership, serializes concurrent opens, reuses exact binding and replaces an old same-slot binding', async (t: any) => {
-  const value: any = await fixture();
+  const value: any = await fixture({ runnable: true });
   const target: any = path.join(value.root, 'Applications', 'Buildr Web.app');
   const installed: any = installNpmLauncher({ registration: value.registration, platform: 'darwin', target, port: 0 });
   const entry: any = value.registration.entry.entryPath;
@@ -504,8 +560,8 @@ test('npm Launcher takes over CLI ownership, serializes concurrent opens, reuses
     child.once('exit', () => children.delete(child));
     return child;
   };
-  t.after(() => {
-    for (const child of children) child.kill('SIGTERM');
+  onFixtureCleanup(t, async () => {
+    await Promise.all([...children].map(stopFixtureChild));
   });
 
   const cli: any = launch(['--no-open', '--port', '0']);
@@ -701,6 +757,7 @@ test('npm Launcher preserves foreign ownership and a non-stopping handoff receip
   const foreignRuntime: any = createRuntime();
   registerWebInstanceLifecycle(foreignRuntime, { readProductIdentity: () => foreignIdentity, assertNpmLauncherBinding: assertCurrentNpmLauncherBinding, createLocalWorkspaceServer, ensureRegisteredTarget });
   const foreign: any = await foreignRuntime.startBuildrWeb(['--no-open', '--port', '0']);
+  onFixtureCleanup(t, async () => { if (foreign.server.listening) await new Promise<void>(resolve => foreign.server.close(() => resolve())); });
   const receiptFile: any = path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json');
   const foreignReceipt: any = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
   const currentRuntime: any = createRuntime();
@@ -732,7 +789,7 @@ test('npm Launcher preserves foreign ownership and a non-stopping handoff receip
     fake.once('error', reject);
     fake.listen(0, '127.0.0.1', resolve);
   });
-  t.after(() => { if (fake.listening) fake.close(); });
+  onFixtureCleanup(t, async () => { if (fake.listening) await new Promise<void>(resolve => fake.close(() => resolve())); });
   const fakeState: any = { url: `http://127.0.0.1:${fake.address().port}`, secret: fakeSecret, pid: process.pid, launcherIdentity: null, productIdentity, webProfile: profile };
   writeBuildrWebInstance(currentRuntime, fakeState);
   await assert.rejects(
@@ -746,10 +803,10 @@ test('npm Launcher preserves foreign ownership and a non-stopping handoff receip
 
 test('non-Windows foreground Web clears its receipt on SIGHUP', async (t: any) => {
   if (process.platform === 'win32') return;
-  const value: any = await fixture();
+  const value: any = await fixture({ runnable: true });
   const receiptFile: any = path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json');
   const child: any = spawnInstalledWeb(value.registration.entry.entryPath, ['--no-open', '--port', '0']);
-  t.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM'); });
+  onFixtureCleanup(t, () => stopFixtureChild(child));
   await waitFor(() => fs.existsSync(receiptFile) ? JSON.parse(fs.readFileSync(receiptFile, 'utf8')).pid === child.pid : false, { message: 'SIGHUP test receipt' });
   child.kill('SIGHUP');
   await waitForChildExit(child, 'SIGHUP Web process');
@@ -806,7 +863,7 @@ test('macOS Launcher 默认目标不可写时 fail closed 并指引 --target', a
   const homedir: any = path.join(value.root, 'home');
   fs.mkdirSync(systemApplications, { recursive: true });
   fs.chmodSync(systemApplications, 0o555);
-  t.after(() => fs.chmodSync(systemApplications, 0o755));
+  onFixtureCleanup(t, () => fs.chmodSync(systemApplications, 0o755));
   const legacyTarget: any = path.join(homedir, 'Applications', 'Buildr Web.app');
   try {
     installNpmLauncher({ registration: value.registration, platform: 'darwin', homedir, systemApplications });

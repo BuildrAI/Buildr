@@ -1,7 +1,7 @@
 import { AppNavigationItem } from './AppNavigationItem';
 import type { ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { UnorderedListOutlined, FileTextOutlined, FolderOutlined, BranchesOutlined, AppstoreOutlined, ThunderboltOutlined, HistoryOutlined, HomeOutlined, RightOutlined, DatabaseOutlined } from '@ant-design/icons';
+import { UnorderedListOutlined, FileTextOutlined, FolderOutlined, BranchesOutlined, AppstoreOutlined, ThunderboltOutlined, HomeOutlined, RightOutlined, DatabaseOutlined } from '@ant-design/icons';
 import { useWorkbenchPreferences } from '../features/workbench/hooks/useWorkbenchPreferences';
 import { useAppShell } from './AppShellContext';
 import { navigationState } from './navigation';
@@ -24,7 +24,6 @@ export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
     tasks: <UnorderedListOutlined />,
     overview: <HomeOutlined />,
     'workspace-overview': <HomeOutlined />,
-    activity: <HistoryOutlined />,
     articles: <FileTextOutlined />,
     projects: <FolderOutlined />,
     services: <AppstoreOutlined />,
@@ -45,7 +44,6 @@ export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
         <>
           {item('/overview', '概览', 'overview')}
           {item('/tasks', '任务', 'tasks')}
-          {item('/activity', '动态', 'activity')}
           <div className="workbench-followed-navigation">
             <p className="shell-nav-caption">我关注的项目</p>
             {(preferences?.items || []).filter(entry => entry.kind === 'followed-project').map(entry => (

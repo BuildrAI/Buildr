@@ -8,10 +8,10 @@ import { parseTaskCommitTrailer } from '../../task/commits/domain/task-commit.ts
 import type { CodeGitWorktree } from '../infrastructure/code-worktree-reader.ts';
 import { codeWorktreeTaskKey, type readSourceControlTaskAssociations } from '../infrastructure/code-worktree-catalog.ts';
 import { SOURCE_CONTROL_LIMITS, assertCodeRevision, assertSourceControlPath, codeRevision, observeSourceControl, readIndexEntry, readSourceControlRefs, sourceControlHistoryTips, readRawCodeCommit, readRawCodeCommits, listCodeCommitIds, readCodeCommitFiles, readCodePatch } from '../infrastructure/source-control-git-reader.ts';
-import type { CodeReadMeta, CodeReadDiagnostic, CodeSourceControlInput, CodeSourceControlResponse, CodeSourceControlRepository, CodeHistoryCommit, CodeHistoryResponse, CodeAuthorsResponse, CodeCommitResponse, CodeDiffResponse, CodeSourceFileResponse } from './source-control-model.ts';
+import type { CodeReadMeta, CodeReadDiagnostic, CodeSourceControlInput, CodeSourceControlResponse, CodeSourceControlRepository, CodeRepositoryCloneStatus, CodeRepositoryCloneResult, CodeHistoryCommit, CodeHistoryResponse, CodeAuthorsResponse, CodeCommitResponse, CodeDiffResponse, CodeSourceFileResponse } from './source-control-model.ts';
 
 type Catalog = { repositories: Array<{ id: string; code: string; name: string; location: string; available: boolean; gitId: string | null }>; selectedRepositoryIds: string[]; scopeReason: string; diagnostics: CodeReadDiagnostic[] };
-type Dependencies = { repositories(root: string, taskId?: string, repositoryId?: string): Catalog; inventory(root:string,taskId?:string):Catalog; source(root: string, input: CodeSourceControlInput): CodeSource;worktrees(root:string,repositoryId:string,registered:Catalog['repositories'][number]):{worktrees:CodeGitWorktree[];source(worktreeId:string):CodeSource;verify(source:CodeSource):void}; taskAssociations?(root:string,repositories:CodeSourceControlRepository[],taskId?:string,deadline?:number):ReturnType<typeof readSourceControlTaskAssociations>; readTask?(root: string, taskId: string): { taskId: string; title: string } };
+type Dependencies = { repositories(root: string, taskId?: string, repositoryId?: string): Catalog; inventory(root:string,taskId?:string):Catalog; source(root: string, input: CodeSourceControlInput): CodeSource;worktrees(root:string,repositoryId:string,registered:Catalog['repositories'][number]):{worktrees:CodeGitWorktree[];source(worktreeId:string):CodeSource;verify(source:CodeSource):void}; taskAssociations?(root:string,repositories:CodeSourceControlRepository[],taskId?:string,deadline?:number):ReturnType<typeof readSourceControlTaskAssociations>; readTask?(root: string, taskId: string): { taskId: string; title: string }; repositoryCloneStatus?(root: string, repositoryId: string): CodeRepositoryCloneStatus; repositoryCloneRequest?(root: string, repositoryId: string): CodeRepositoryCloneResult };
 const diagnostic = (error: unknown, repositoryId: string | null,worktreeId?:string): CodeReadDiagnostic => ({ code: (error as { code?: string })?.code || 'code_source_unavailable', message: error instanceof Error ? error.message : '代码来源暂不可读取。', repositoryId,...(worktreeId?{worktreeId}:{}) });
 // The inventory pass and the live worktree read can report one unavailable repository
 // through two layers; the same reason on the same source is one fact and the earlier
@@ -34,11 +34,20 @@ function validateInput(input: CodeSourceControlInput) {
 }
 
 export function createSourceControlApplication(dependencies: Dependencies) {
+  function cloneState(root:string,repositoryId:string):CodeRepositoryCloneStatus|null{
+    try{return dependencies.repositoryCloneStatus?.(root,repositoryId)||null;}catch{return null;}
+  }
+  function repositoryClone(root:string,repositoryId:string):CodeRepositoryCloneResult{
+    if(!repositoryId)throw codeFailure('code_repository_required','必须选择已登记代码库。');
+    const result=dependencies.repositoryCloneRequest?.(root,repositoryId);
+    if(!result)throw codeFailure('code_clone_unavailable','克隆能力不可用。',503);
+    return result;
+  }
   function sourceControlInventory(root:string,input:CodeSourceControlInput={}):CodeSourceControlResponse{
     if(Object.entries(input).some(([key,value])=>key!=='taskId'&&value!==undefined))throw codeFailure('code_inventory_input_invalid','代码库清单只接受任务范围参数。');
     if(input.taskId!==undefined&&(typeof input.taskId!=='string'||!input.taskId))throw codeFailure('code_inventory_input_invalid','任务范围必须指定有效任务。');
     const catalog=dependencies.inventory(root,input.taskId);
-    const repositories:CodeSourceControlRepository[]=[...new Map(catalog.repositories.map(repository=>[repository.id,repository])).values()].map(repository=>({...repository,available:false,source:null,status:'unavailable',branch:null,head:null,upstream:null,ahead:null,behind:null,fileCount:null,changes:[],observedRevision:null,diagnostics:[{code:'code_source_control_pending',message:'代码库已登记，状态正在读取。',repositoryId:repository.id}],worktrees:[],worktreeCount:null,worktreeCoverage:{limit:SOURCE_CONTROL_LIMITS.worktrees,total:null,read:0,truncated:false}}));
+    const repositories:CodeSourceControlRepository[]=[...new Map(catalog.repositories.map(repository=>[repository.id,repository])).values()].map(repository=>{const clone=cloneState(root,repository.id);return{...repository,available:false,source:null,status:'unavailable',clone:clone?.state?{state:clone.state,diagnostic:clone.diagnostic,startedAt:clone.startedAt}:null,branch:null,head:null,upstream:null,ahead:null,behind:null,fileCount:null,changes:[],observedRevision:null,diagnostics:[{code:'code_source_control_pending',message:'代码库已登记，状态正在读取。',repositoryId:repository.id}],worktrees:[],worktreeCount:null,worktreeCoverage:{limit:SOURCE_CONTROL_LIMITS.worktrees,total:null,read:0,truncated:false}};});
     return {...metadata(codeRevision(repositories.map(repository=>[repository.id,repository.code,repository.name,repository.location])),SOURCE_CONTROL_LIMITS.repositories,false,[...catalog.diagnostics,...repositories.flatMap(repository=>repository.diagnostics)]),repositories,selectedRepositoryIds:catalog.selectedRepositoryIds,selectedWorktreeIds:[],selectedWorktrees:[],worktreeCoverage:{limit:SOURCE_CONTROL_LIMITS.totalWorktrees,total:repositories.length?null:0,read:0,truncated:false},scopeReason:catalog.scopeReason};
   }
   function verifySource(root:string,input:CodeSourceControlInput,source:CodeSource){
@@ -50,7 +59,8 @@ export function createSourceControlApplication(dependencies: Dependencies) {
     const catalog = dependencies.repositories(root,undefined,input.repositoryId), repositories: CodeSourceControlRepository[] = [];
     const diagnostics = [...catalog.diagnostics]; let truncated = false,statusAttempts=0;const deadline=Date.now()+SOURCE_CONTROL_LIMITS.statusReadMs;
     for (const [index, registered] of [...new Map(catalog.repositories.map(repository => [repository.id, repository])).values()].entries()) {
-      const output: CodeSourceControlRepository = { ...registered, source: null, status: 'unavailable', branch: null, head: null, upstream: null, ahead: null, behind: null, fileCount: null, changes: [], observedRevision: null, diagnostics: [],worktrees:[],worktreeCount:null,worktreeCoverage:{limit:SOURCE_CONTROL_LIMITS.worktrees,total:null,read:0,truncated:false} };
+      const clone=cloneState(root,registered.id);
+      const output: CodeSourceControlRepository = { ...registered, source: null, status: 'unavailable', clone:clone?.state?{state:clone.state,diagnostic:clone.diagnostic,startedAt:clone.startedAt}:null, branch: null, head: null, upstream: null, ahead: null, behind: null, fileCount: null, changes: [], observedRevision: null, diagnostics: [],worktrees:[],worktreeCount:null,worktreeCoverage:{limit:SOURCE_CONTROL_LIMITS.worktrees,total:null,read:0,truncated:false} };
       repositories.push(output);
       try {
         const reading=dependencies.worktrees(root,registered.id,registered),worktrees=reading.worktrees;output.worktreeCount=worktrees.length;output.worktreeCoverage.total=worktrees.length;
@@ -72,6 +82,7 @@ export function createSourceControlApplication(dependencies: Dependencies) {
         output.available=output.worktrees.some(worktree=>worktree.available);
         output.fileCount=output.worktrees.every(worktree=>worktree.fileCount!==null)?output.worktrees.reduce((total,worktree)=>total+worktree.fileCount!,0):null;
         output.status=output.worktrees.every(worktree=>worktree.status==='complete')?'complete':output.available?'partial':'unavailable';
+        if(output.available)output.clone=null;
       } catch (error) { output.available = false; output.diagnostics.push(diagnostic(error, registered.id)); }
       diagnostics.push(...output.diagnostics);
     }
@@ -226,5 +237,5 @@ export function createSourceControlApplication(dependencies: Dependencies) {
     verifySource(root,input,source);
     return { ...result, ...metadata(result.revision, result.limitBytes, result.truncated) };
   }
-  return Object.freeze({ sourceControl, sourceControlInventory, history, authors, commit, diff, sourceFile });
+  return Object.freeze({ sourceControl, sourceControlInventory, repositoryClone, history, authors, commit, diff, sourceFile });
 }

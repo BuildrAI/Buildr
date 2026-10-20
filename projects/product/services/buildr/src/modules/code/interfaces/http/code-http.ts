@@ -78,6 +78,16 @@ export function createCodeHttpContribution(application:CodeApplication, observat
       if (!CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS.fetch.$id,body).valid) throw codeFailure('code_response_invalid','获取远程结果不符合契约。',500);
       return {status:200,body};
     }
+    if (request.method === 'POST' && suffix === '/code/repository-clone') {
+      if (!authorizeWrite || !readJsonBody) throw codeFailure('code_write_unauthorized','克隆请求缺少本机会话（Session）授权。',403);
+      authorizeWrite();
+      if (searchParams.size) throw codeFailure('code_query_invalid','克隆接口不接受查询参数。');
+      const input = await readJsonBody();
+      if (!CODE_HTTP_VALIDATORS.validate(CODE_HTTP_REQUESTS.repositoryClone.$id,input).valid) throw codeFailure('code_clone_input_invalid','克隆请求不符合契约。');
+      const body = application.repositoryClone(root,(input as { repositoryId: string }).repositoryId);
+      if (!CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS.repositoryClone.$id,body).valid) throw codeFailure('code_response_invalid','克隆结果不符合契约。',500);
+      return {status:200,body};
+    }
     if (request.method === 'POST' && suffix === '/code/branch-switch') {
       if (!authorizeWrite || !readJsonBody) throw codeFailure('code_branch_write_unauthorized','切换请求缺少本机会话（Session）授权。',403);
       authorizeWrite();

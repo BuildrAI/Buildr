@@ -1,0 +1,119 @@
+import { createContext } from 'react';
+import { isolateHistory } from '@codemirror/commands';
+import { Prec, type Extension } from '@codemirror/state';
+import { EditorView, keymap } from '@codemirror/view';
+import { acceptCompletion, autocompletion, closeCompletion, completionKeymap, completionStatus, startCompletion, type Completion, type CompletionContext } from '@codemirror/autocomplete';
+
+const catalog: Record<string, string[]> = {
+  saas_freshx: ['p_product', 'p_product_category', 'pigs_purchase_plan', 'pigs_purchase_plan_detail', 'purchase_plan', 'purchase_plan_detail', 'business_subject', 'adjustment_order', 'adjustment_order_detail'],
+  saasx: ['sys_user', 'sys_social_details', 'bid', 'tender', 'sys_log', 'contract_account', 'intention_collection', 'merchant_onboarding_application', 'sys_dept', 'sys_dept_relation'],
+  trading_business: ['sales_order', 'sales_order_detail', 'customer', 'customer_address', 'settlement'],
+};
+
+type EditPlan = { text: string; cursor: number; next?: 'relation' };
+type Shortcut = { id: string; trigger: string; title: string; plan(): EditPlan };
+/** Declarative operations. The editor adapter applies plans; catalog lookup never executes SQL. */
+export const shortcutActions: Shortcut[] = [
+  { id: 'select-all', trigger: 'sel', title: '查询整张表', plan: () => ({ text: 'SELECT *\nFROM ;', cursor: 14, next: 'relation' }) },
+];
+type CatalogState = { status: 'loading' | 'ready' | 'error'; tables: string[] };
+
+export class PrototypeSession {
+  connection = 'demo-qa'; database = 'saas_freshx'; enabledDatabases = Object.keys(catalog);
+  private view: EditorView | null = null;
+  private cache = new Map<string, CatalogState>();
+  private epoch = 0;
+  private pending = new Set<ReturnType<typeof setTimeout>>();
+  private failed = false;
+  constructor(readonly scene = '') {}
+  attach(view: EditorView | null) {
+    this.view = view;
+    if (view && this.scene !== 'blank') queueMicrotask(() => { if (this.view === view) { view.focus(); startCompletion(view); } });
+  }
+  scope(connection: string, database: string, enabled = this.enabledDatabases) {
+    if (connection === this.connection && database === this.database && enabled.join() === this.enabledDatabases.join()) return;
+    this.epoch++; this.cache.clear(); this.connection = connection; this.database = database; this.enabledDatabases = enabled;
+    if (this.view) closeCompletion(this.view);
+  }
+  dispose() { this.epoch++; this.view = null; this.pending.forEach(clearTimeout); this.pending.clear(); }
+  readTables(database: string): CatalogState {
+    const existing = this.cache.get(database); if (existing) return existing;
+    const state: CatalogState = { status: 'loading', tables: [] }; this.cache.set(database, state);
+    const observed = this.epoch;
+    const timer = setTimeout(() => {
+      this.pending.delete(timer);
+      if (observed !== this.epoch) return;
+      if (this.scene === 'error' && !this.failed) { this.failed = true; state.status = 'error'; }
+      else { state.status = 'ready'; state.tables = this.scene === 'empty' ? [] : [...(catalog[database] || [])]; }
+      const view = this.view;
+      if (view?.hasFocus && completionStatus(view.state) !== null) { closeCompletion(view); startCompletion(view); }
+    }, this.scene === 'loading' ? 1800 : 160);
+    this.pending.add(timer); return state;
+  }
+  retry(database: string, view: EditorView) { this.cache.delete(database); closeCompletion(view); startCompletion(view); }
+}
+export const ShortcutContext = createContext<PrototypeSession | null>(null);
+
+/** Only the prototype recognizes FROM / JOIN and statement starts. Formal work needs SQL syntax context. */
+function completionContext(context: CompletionContext) {
+  const before = context.state.sliceDoc(0, context.pos);
+  // Avoid suggesting names inside a quoted value or a comment in the demonstrated subset.
+  const code = before.replace(/'(?:''|[^'])*'|"(?:""|[^"])*"|\/\*[\s\S]*?\*\/|--[^\n]*/g, ' ');
+  if (/(?:'[^']*|"[^"]*|\/\*[^]*|--[^\n]*)$/.test(code)) return null;
+  const relation = before.match(/\b(?:FROM|JOIN)\s+(?:(`?\w+`?)\.)?(`?\w*)$/i);
+  if (relation) return { kind: 'relation' as const, database: relation[1]?.replaceAll('`', ''), query: relation[2].replaceAll('`', ''), from: context.pos - relation[2].length };
+  const action = before.match(/(?:^|;)\s*([a-z]+)$/i);
+  if (action) return { kind: 'action' as const, query: action[1], from: context.pos - action[1].length };
+  return null;
+}
+const quote = (name: string) => '`' + name.replaceAll('`', '``') + '`';
+function replace(view: EditorView, from: number, to: number, text: string, cursor = text.length, next = false) {
+  view.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from + cursor }, userEvent: 'input.complete', annotations: isolateHistory.of('full') });
+  view.focus();
+  if (next) queueMicrotask(() => startCompletion(view));
+}
+function status(label: string, detail: string, apply: Completion['apply'] = () => {}): Completion { return { label, detail, type: 'text', apply, section: '读取状态' }; }
+function source(session: PrototypeSession, context: CompletionContext) {
+  const target = completionContext(context); if (!target) return null;
+  if (target.kind === 'action') {
+    const options: Completion[] = shortcutActions.filter(action => action.trigger.startsWith(target.query.toLowerCase())).map(action => ({
+      label: action.trigger, detail: action.title, type: 'keyword',
+      apply(view, _completion, from, to) { const plan = action.plan(); replace(view, from, to, plan.text, plan.cursor, plan.next === 'relation'); },
+    }));
+    return options.length ? { from: target.from, options, filter: false } : null;
+  }
+  const database = target.database || session.database;
+  const options: Completion[] = [];
+  const query = target.query.toLowerCase();
+  if (database) {
+    const state = session.readTables(database);
+    if (state.status === 'loading') options.push(status('正在读取表…', database));
+    else if (state.status === 'error') options.push(status('读取失败，按回车重试', database, view => session.retry(database, view)));
+    else {
+      const tables = state.tables.filter(name => name.toLowerCase().includes(query)).sort((a, b) => Number(b.toLowerCase().startsWith(query)) - Number(a.toLowerCase().startsWith(query)));
+      options.push(...tables.map(name => ({ label: name, detail: database, type: 'class', section: { name: '表', rank: 0 }, apply(view: EditorView, _item: Completion, from: number, to: number) { replace(view, from, to, quote(name)); } })));
+      if (!tables.length) options.push(status(query ? '没有匹配的表' : '此数据库没有可选的表', database));
+    }
+  }
+  if (!target.database) options.push(...session.enabledDatabases.filter(name => name !== session.database && name.toLowerCase().includes(query)).map(name => ({
+    label: name, detail: '数据库 · 进入选表', type: 'namespace', section: { name: '其他已启用数据库', rank: 1 },
+    apply(view: EditorView, _item: Completion, from: number, to: number) { replace(view, from, to, quote(name) + '.', undefined, true); },
+  })));
+  if (!database && !options.length) options.push(status('请先选择数据库', '在页面上方或左侧选择'));
+  return { from: target.from, options, filter: false };
+}
+
+/** One adapter owns key priority, editing and completion UI; operations only return an edit plan. */
+export function shortcutExtension(session: PrototypeSession | null): Extension {
+  if (!session) return [];
+  return [
+    autocompletion({ override: [context => source(session, context)], defaultKeymap: false, activateOnTypingDelay: 25, interactionDelay: 0, maxRenderedOptions: 30, tooltipClass: () => 'sql-shortcut-popup' }),
+    Prec.highest(keymap.of([
+      { key: 'Tab', run: view => completionStatus(view.state) === 'active' && acceptCompletion(view) },
+      ...completionKeymap,
+    ])),
+    EditorView.contentAttributes.of({ 'aria-description': '输入 sel 后按回车展开查询；继续输入筛选表或数据库；上下键选择，回车或 Tab 确认，Esc 关闭，Ctrl+Space 重新打开。' }),
+  ];
+}
+
+export function initialSql(scene: string) { return scene === 'blank' ? '' : scene === '' ? 'sel' : scene === 'cross' ? 'SELECT *\nFROM `saasx`.;' : 'SELECT *\nFROM ;'; }

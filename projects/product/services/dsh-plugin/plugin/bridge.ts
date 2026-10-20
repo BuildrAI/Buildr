@@ -32,6 +32,13 @@ type ObservedInstance = ReadyInstance | { ready: false; channel: 'released' | 'd
 export interface BridgeDependencies {
   query(signal: AbortSignal): Promise<unknown>;
   launch(channel: BuildrChannel, status: unknown, signal: AbortSignal): Promise<void>;
+  /**
+   * Optional development-channel recovery: the open click is the user's explicit request, so a
+   * healthy instance that fails the provenance check may be restarted through Buildr's own
+   * lifecycle. The bridge keeps polling while the replacement comes up; Buildr owns the actual
+   * graceful shutdown — this hook only asks it to start.
+   */
+  recover?(channel: BuildrChannel, status: unknown, signal: AbortSignal): Promise<void>;
   timeoutMs?: number;
   pollMs?: number;
   wait?(ms: number, signal: AbortSignal): Promise<void>;
@@ -122,7 +129,7 @@ function delay(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 /** Share concurrent clicks; every new operation re-queries the public address. Disposal never stops Buildr. */
-export function createBuildrBridge(binding: BindingIdentity, { query, launch, timeoutMs = 30_000, pollMs = 300, wait = delay }: BridgeDependencies) {
+export function createBuildrBridge(binding: BindingIdentity, { query, launch, recover, timeoutMs = 30_000, pollMs = 300, wait = delay }: BridgeDependencies) {
   if (!['npm', 'development'].includes(binding?.channel)
       || typeof binding.nodeExecutable !== 'string' || !binding.nodeExecutable
       || typeof binding.cliEntry !== 'string' || !binding.cliEntry) {
@@ -134,6 +141,18 @@ export function createBuildrBridge(binding: BindingIdentity, { query, launch, ti
   }
   const lifetime = new AbortController();
   let pending: Promise<ReadyInstance> | undefined;
+
+  /** A recoverable development mismatch keeps polling; anything else surfaces to the caller. */
+  function observe(status: unknown, recovering: boolean): ObservedInstance | null {
+    try {
+      return observeBoundInstance(status, binding.channel);
+    } catch (error) {
+      if (error instanceof BuildrBridgeError && error.code === 'instance-mismatch'
+          && binding.channel === 'development' && (recover || recovering)) return null;
+      throw error;
+    }
+  }
+
   async function run(): Promise<ReadyInstance> {
     const deadline = new AbortController();
     const timer = setTimeout(() => deadline.abort(new BuildrBridgeError('timeout', 'Buildr 启动等待超时，请重试。')), timeoutMs);
@@ -142,17 +161,28 @@ export function createBuildrBridge(binding: BindingIdentity, { query, launch, ti
       signal.throwIfAborted();
       let status = await query(signal);
       signal.throwIfAborted();
-      let observed = observeBoundInstance(status, binding.channel);
-      if (observed.ready) return observed;
-      await launch(binding.channel, status, signal);
+      let observed = observe(status, false);
+      if (observed?.ready) return observed;
+      let recovering = false;
+      if (observed === null && binding.channel === 'development' && recover) {
+        try {
+          await recover(binding.channel, status, signal);
+        } catch (error) {
+          if (signal.aborted) throw signal.reason;
+          fail('recovery-failed', `Buildr 开发版未能退出旧实例：${error instanceof BuildrBridgeError ? error.message : '请通过 Buildr 入口正常退出旧实例后重试。'}`);
+        }
+        recovering = true;
+      } else {
+        await launch(binding.channel, status, signal);
+      }
       signal.throwIfAborted();
       for (;;) {
         await wait(pollMs, signal);
         signal.throwIfAborted();
         status = await query(signal);
         signal.throwIfAborted();
-        observed = observeBoundInstance(status, binding.channel);
-        if (observed.ready) return observed;
+        observed = observe(status, recovering);
+        if (observed?.ready) return observed;
       }
     } catch (error) {
       if (signal.aborted) throw signal.reason;

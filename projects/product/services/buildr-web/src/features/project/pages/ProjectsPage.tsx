@@ -1,7 +1,8 @@
 import { AssetDeleteDialog } from '../../workspace/components/AssetDeleteDialog';
 import { ProjectCreateDrawer } from '../components/ProjectCreateDrawer';
 import { ResourceDirectory } from '../../../components/ResourceDirectory';
-import { ProjectEditDrawer } from '../components/ProjectEditDrawer';
+import { AssetEditDrawer } from '../../workspace/components/AssetEditDrawer';
+import { useAssetCatalog } from '../../workspace/components/useAssetCatalog';
 import { workspaceApi } from '../../workspace/api/workspace-api';
 import { type ProjectResponse, projectApi } from '../api/project-api';
 import { useEffect, useState } from 'react';
@@ -29,6 +30,8 @@ export function ProjectsPage() {
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const pageTabs = useWorkspacePageTabs(workspaceId);
+  const catalog = useAssetCatalog(Boolean(editing));
+  const editingProject = editing ? catalog.data?.projects.find(item => item.code === editing) : undefined;
 
   useEffect(() => {
     pageTabs.register({ key: 'dir:projects', kind: 'dir', title: '项目目录', path: href('/projects') });
@@ -68,11 +71,11 @@ export function ProjectsPage() {
       loading={state === '正在读取'} error={error || undefined} rowKey={p => p.id} name={p => p.name} summary={p => p.description}
       searchText={p => `${p.name} ${p.code} ${p.description}`} href={p => href(`/projects/${p.code}`)} onOpen={p => navigate(href(`/projects/${p.code}`))} onEdit={p => setEditing(p.code)} onDelete={p => setDeleting(p.code)}
       tableId="project-table-wrap" bodyId="project-table-body" countId="projects-state" searchId="projects-search"
-      columns={[{ title: '项目标识', width: 160, render: (_, p) => <code className="resource-code">{p.code}</code> }]}
+      columns={[{ title: '项目编码', width: 160, render: (_, p) => <code className="resource-code">{p.code}</code> }]}
       notice={migrationMessage ? <Alert type="warning" message={migrationMessage} /> : null}
       actions={<Button id="project-directory-create-button" type="primary" onClick={() => setCreating(true)}>新增项目</Button>} />
     {deleting && <AssetDeleteDialog kind="project" id={deleting} onClose={() => setDeleting(null)} onDeleted={() => setRefresh(v => v + 1)} />}
     {creating && <ProjectCreateDrawer onClose={() => { setCreating(false); setRefresh(value => value + 1); }} />}
-    {editing && <ProjectEditDrawer open projectCode={editing} onClose={() => setEditing(null)} onSaved={saved => setProjects(items => items.map(item => item.code === saved.code ? { ...item, name: saved.name, description: saved.description } : item))} />}
+    {catalog.data && editingProject && <AssetEditDrawer key={editingProject.id} catalog={catalog.data} kind="project" id={editingProject.id} onClose={() => { setEditing(null); setRefresh(value => value + 1); }} />}
   </WorkspaceStage>;
 }

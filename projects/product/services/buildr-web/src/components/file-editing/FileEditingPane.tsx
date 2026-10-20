@@ -44,7 +44,9 @@ export function FileEditingPane({ file, editing, active = true, markdownOptions,
   useEffect(() => {
     if (!active) return;
     const release = editing.watch(file.id);
-    void editing.refresh(file.id);
+    // The opening request already verified this snapshot. Later activation and
+    // regular observations still refresh it; do not immediately reread fresh bytes.
+    if(!file.observedAt||Date.now()-Date.parse(file.observedAt)>1000)void editing.refresh(file.id);
     return release;
   }, [file.id, active, editing.watch, editing.refresh]);
   useEffect(() => { setPreview(false); setSelectedLines(null); }, [file.id]);

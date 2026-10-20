@@ -1,12 +1,13 @@
 import { useContext, type ReactElement, type ReactNode } from 'react';
 import { App, Button, Empty, Space, Tooltip } from 'antd';
-import { BookOutlined, BranchesOutlined, CopyOutlined, DownOutlined, FileOutlined, InfoCircleOutlined, ProjectOutlined, RightOutlined } from '@ant-design/icons';
+import { BookOutlined, BranchesOutlined, CloudDownloadOutlined, CopyOutlined, DownOutlined, FileOutlined, InfoCircleOutlined, LoadingOutlined, ProjectOutlined, RightOutlined } from '@ant-design/icons';
 import { SelectableHoverCard } from '../../../components/SelectableHoverCard';
 import { copyText } from '../../../lib/copyText';
 import { ChangedFileList, changedFileKey, type ChangedFileEntry } from '../../task/components/TaskChangedFiles';
 import { sourceControlFileKey, sourceControlFileTooltip, sourceControlFilePathHints, sourceControlVisibleWorktrees, sourceControlWorktreeKey, type SourceControlChange, type SourceControlRepository, type SourceControlWorktree } from '../source-control-model';
 import { SourceControlWorktreeStatus } from './SourceControlWorktreeStatus';
 import { SourceControlSourceRow } from './SourceControlSourceRow';
+import { codeRepositoryLabel } from '../code-source-labels';
 import { WorkspaceViewActiveContext } from '../../../app/pageTabs';
 import '../source-control-row-actions.css';
 
@@ -28,7 +29,7 @@ function WorktreeLocationCard({repository, worktree, children, visible}: {reposi
   };
   return <WorkspaceViewActiveContext.Provider value={viewActive && visible}><SelectableHoverCard sideBoundary=".source-control-sidebar" focusTrigger="keyboard" closeOnTriggerClick content={<article className="source-control-worktree-info" aria-label="工作树来源信息">
     <p className="source-control-worktree-info-task"><strong>任务：{taskLabel}</strong></p>
-    <p className="source-control-worktree-info-location">{repository.name} · 工作树 · {worktree ? worktreeLabel(worktree) : '未读取'}</p>
+    <p className="source-control-worktree-info-location">{codeRepositoryLabel(repository)} · 工作树 · {worktree ? worktreeLabel(worktree) : '未读取'}</p>
     <dl><dt>路径</dt><dd><code>{location || '目录不可读取'}</code></dd><dt>{worktree?.branch ? '分支' : '提交'}</dt><dd><code>{branch}</code></dd><dt>目录角色</dt><dd>{worktree ? [worktree.isRegistered && '工作空间登记目录', worktree.isMain && 'Git 主工作树'].filter(Boolean).join('、') || '独立工作树' : '尚未确认'}</dd></dl>
     {!worktree?.taskId && worktree?.taskDiagnostic && <p className="source-control-worktree-diagnostic">{worktree.taskDiagnostic}</p>}
     {!!worktree?.diagnostics.length && <p className="source-control-worktree-diagnostic">{worktree.diagnostics.join('；')}</p>}
@@ -44,11 +45,17 @@ export type SourceControlRowContext = { branchVisible: boolean; rowVisible:boole
 export type TreeProps = FoldProps & {
   repositories: SourceControlRepository[]; ready: boolean; active: boolean; selectedWorktreeKey: string;
   onPick(repository: SourceControlRepository, worktree: SourceControlWorktree): void; onOpenTask(taskId: string): void;
+  onClone?(repositoryId: string): void;
   renderWorktreeControl?(repository: SourceControlRepository, worktree: SourceControlWorktree, ready: boolean, context: SourceControlRowContext): ReactNode;
   renderWorktreeActions?(repository: SourceControlRepository, worktree: SourceControlWorktree, ready: boolean, context: SourceControlRowContext): ReactNode;
   syncAction?(repository: SourceControlRepository, worktree: SourceControlWorktree): {pending: boolean; run(): void};
 };
-export function SourceControlRepositoryTree({repositories, ready, active, selectedWorktreeKey, onPick, onOpenTask, renderWorktreeControl, renderWorktreeActions, syncAction, ...fold}: TreeProps) {
+function RepositoryCloneControl({repository, onClone}: {repository: SourceControlRepository; onClone(repositoryId: string): void}) {
+  const clone = repository.clone, label = codeRepositoryLabel(repository);
+  if (clone?.state === 'cloning') return <Tooltip title="正在后台克隆代码库"><Button type="text" size="small" className="source-control-row-menu-button" icon={<LoadingOutlined aria-hidden spin />} aria-label={'正在克隆代码库 ' + label} aria-busy="true" /></Tooltip>;
+  return <Tooltip title={clone?.state === 'failed' ? `克隆失败：${clone.diagnostic || '原因未确认'}，可重试` : '克隆代码库到登记位置'}><Button type="text" size="small" className="source-control-row-menu-button" icon={<CloudDownloadOutlined aria-hidden />} aria-label={'克隆代码库 ' + label} onClick={() => onClone(repository.id)} /></Tooltip>;
+}
+export function SourceControlRepositoryTree({repositories, ready, active, selectedWorktreeKey, onPick, onOpenTask, onClone, renderWorktreeControl, renderWorktreeActions, syncAction, ...fold}: TreeProps) {
   const hasWorktreeActions = Boolean(renderWorktreeControl || renderWorktreeActions);
   function worktreeControl(repository: SourceControlRepository, worktree: SourceControlWorktree, branchVisible: boolean, rowVisible:boolean) {
     if (renderWorktreeControl) return <span className="source-control-row-branch-slot" data-prototype-position="worktree-row-branch" aria-hidden={!branchVisible || undefined} inert={!branchVisible} onClick={event => event.stopPropagation()}>{renderWorktreeControl(repository, worktree, ready, {branchVisible, rowVisible, onOpenTask})}</span>;
@@ -63,21 +70,21 @@ export function SourceControlRepositoryTree({repositories, ready, active, select
     {repositories.map(repository => {
       const main = repository.worktrees.find(worktree => worktree.isMain);
       const children = repository.worktrees.filter(worktree => !worktree.isMain);
-      const group = 'catalog-repo:' + repository.id, isOpen = open(fold.expanded, group);
+      const group = 'catalog-repo:' + repository.id, isOpen = open(fold.expanded, group), repositoryLabel = codeRepositoryLabel(repository);
       return <section key={repository.id} data-source-repository={repository.id}>
-      <SourceControlSourceRow className={'source-control-repository' + (main && selectedWorktreeKey === sourceControlWorktreeKey(repository.id, main.worktreeId) ? ' is-selected' : '')} worktreeId={main?.worktreeId} active={active} measureKey={measurement(repository.name, main)}>{({branchVisible, shortcutsVisible}) => <>
-        <button type="button" className="source-control-fold source-control-repository-fold" aria-label={(isOpen ? '折叠' : '展开') + '代码库 ' + repository.name} aria-expanded={isOpen} onClick={() => fold.onToggle(group)}><span className="source-control-repository-chevron" aria-hidden="true">{isOpen ? <DownOutlined /> : <RightOutlined />}</span><BookOutlined /></button>
-        <div className="source-control-row-copy"><WorktreeLocationCard repository={repository} worktree={main} visible={active}><button type="button" className="source-control-repository-copy" disabled={!main} onClick={() => main && onPick(repository, main)} aria-label={'查看主工作树 · ' + repository.name} aria-pressed={Boolean(main && selectedWorktreeKey === sourceControlWorktreeKey(repository.id, main.worktreeId))}>
-          <strong><span className="source-control-row-name-text">{repository.name}{repository.simulated && <small>模拟</small>}</span></strong>
+      <SourceControlSourceRow className={'source-control-repository' + (main && selectedWorktreeKey === sourceControlWorktreeKey(repository.id, main.worktreeId) ? ' is-selected' : '')} worktreeId={main?.worktreeId} active={active} measureKey={measurement(repositoryLabel, main)}>{({branchVisible, shortcutsVisible}) => <>
+        <button type="button" className="source-control-fold source-control-repository-fold" aria-label={(isOpen ? '折叠' : '展开') + '代码库 ' + repositoryLabel} aria-expanded={isOpen} onClick={() => fold.onToggle(group)}><span className="source-control-repository-chevron" aria-hidden="true">{isOpen ? <DownOutlined /> : <RightOutlined />}</span><BookOutlined /></button>
+        <div className="source-control-row-copy"><WorktreeLocationCard repository={repository} worktree={main} visible={active}><button type="button" className="source-control-repository-copy" disabled={!main} onClick={() => main && onPick(repository, main)} aria-label={'查看主工作树 · ' + repositoryLabel} aria-pressed={Boolean(main && selectedWorktreeKey === sourceControlWorktreeKey(repository.id, main.worktreeId))}>
+          <strong><span className="source-control-row-name-text">{repositoryLabel}{repository.simulated && <small>模拟</small>}</span></strong>
         </button></WorktreeLocationCard>{main && worktreeControl(repository, main, branchVisible, active)}</div>
-        <span className="source-control-row-shortcuts" aria-hidden={!shortcutsVisible || undefined} inert={!shortcutsVisible}><SourceControlWorktreeStatus worktree={main} name={repository.name} visible={active && shortcutsVisible} syncAction={main && syncAction?.(repository, main)} /><TaskLink worktree={main} onOpenTask={onOpenTask} /></span>
-        {worktreeActions(repository, main, branchVisible, active)}
+        <span className="source-control-row-shortcuts" aria-hidden={!shortcutsVisible || undefined} inert={!shortcutsVisible}><SourceControlWorktreeStatus worktree={main} name={repositoryLabel} visible={active && shortcutsVisible} syncAction={main && syncAction?.(repository, main)} /><TaskLink worktree={main} onOpenTask={onOpenTask} /></span>
+        {main ? worktreeActions(repository, main, branchVisible, active) : onClone && <span className="source-control-row-action-slot" onClick={event => event.stopPropagation()}><RepositoryCloneControl repository={repository} onClone={onClone} /></span>}
       </>}</SourceControlSourceRow>
       <div hidden={!isOpen} className="source-control-worktree-children">
         {children.map(worktree => <div key={worktree.worktreeId} data-source-worktree={worktree.worktreeId}>
           <SourceControlSourceRow className={'source-control-worktree' + (selectedWorktreeKey === sourceControlWorktreeKey(repository.id, worktree.worktreeId) ? ' is-selected' : '')} active={active && isOpen} measureKey={measurement(worktreeLabel(worktree), worktree)}>{({branchVisible, shortcutsVisible}) => <>
             <span className="source-control-worktree-icon" aria-hidden="true"><BranchesOutlined /></span>
-            <div className="source-control-row-copy"><WorktreeLocationCard repository={repository} worktree={worktree} visible={active && isOpen}><button type="button" className="source-control-repository-copy" onClick={() => onPick(repository, worktree)} aria-label={'查看工作树 ' + worktreeLabel(worktree) + ' · ' + repository.name} aria-pressed={selectedWorktreeKey === sourceControlWorktreeKey(repository.id, worktree.worktreeId)}>
+            <div className="source-control-row-copy"><WorktreeLocationCard repository={repository} worktree={worktree} visible={active && isOpen}><button type="button" className="source-control-repository-copy" onClick={() => onPick(repository, worktree)} aria-label={'查看工作树 ' + worktreeLabel(worktree) + ' · ' + repositoryLabel} aria-pressed={selectedWorktreeKey === sourceControlWorktreeKey(repository.id, worktree.worktreeId)}>
               <strong><span className="source-control-row-name-text">{worktreeLabel(worktree)}</span></strong>
             </button></WorktreeLocationCard>{worktreeControl(repository, worktree, branchVisible, active && isOpen)}</div><span className="source-control-row-shortcuts" aria-hidden={!shortcutsVisible || undefined} inert={!shortcutsVisible}><SourceControlWorktreeStatus worktree={worktree} name={worktreeLabel(worktree)} visible={active && isOpen && shortcutsVisible} syncAction={syncAction?.(repository, worktree)} /><TaskLink worktree={worktree} onOpenTask={onOpenTask} /></span>
             {worktreeActions(repository, worktree, branchVisible, active && isOpen)}
@@ -92,10 +99,10 @@ export function SourceControlRepositoryTree({repositories, ready, active, select
 
 type ChangesProps = FoldProps & { repositories: SourceControlRepository[]; names: string[]; exact: string[]; selectedKey: string | null; onPick(key: string): void; onRetry(id: string): void };
 export function SourceControlChanges({repositories, names, exact, selectedKey, onPick, onRetry, ...fold}: ChangesProps) {
-  const visible = repositories.map(repository => ({repository, worktrees: sourceControlVisibleWorktrees(repository, names, exact)})).filter(item => item.worktrees.length || item.repository.worktreeCount === null);
+  const visible = repositories.map(repository => ({repository, label: codeRepositoryLabel(repository), worktrees: sourceControlVisibleWorktrees(repository, names, exact)})).filter(item => item.worktrees.length || item.repository.worktreeCount === null);
   const single = visible.length === 1 && visible[0].worktrees.length === 1;
-  return <>{!visible.length && <div className="source-control-list-state"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前没有可查看的工作树" /></div>}{visible.map(({repository, worktrees}) => <section className={'source-control-change-group' + (single ? ' is-single-worktree' : '')} key={repository.id} data-change-repository={repository.id}>
-    {!single && <button type="button" className="source-control-change-heading" aria-label={(open(fold.expanded, 'change-repo:' + repository.id) ? '折叠' : '展开') + '变更代码库 ' + repository.name} aria-expanded={open(fold.expanded, 'change-repo:' + repository.id)} onClick={() => fold.onToggle('change-repo:' + repository.id)}>{open(fold.expanded, 'change-repo:' + repository.id) ? <DownOutlined /> : <RightOutlined />}<strong>{repository.name}</strong><span>{repository.worktreeCount === null ? worktrees.length ? '已读 ' + worktrees.length + ' 个工作树 · 总数未知' : '数量未知' : worktrees.length + ' 个工作树'}</span></button>}
+  return <>{!visible.length && <div className="source-control-list-state"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前没有可查看的工作树" /></div>}{visible.map(({repository, label, worktrees}) => <section className={'source-control-change-group' + (single ? ' is-single-worktree' : '')} key={repository.id} data-change-repository={repository.id}>
+    {!single && <button type="button" className="source-control-change-heading" aria-label={(open(fold.expanded, 'change-repo:' + repository.id) ? '折叠' : '展开') + '变更代码库 ' + label} aria-expanded={open(fold.expanded, 'change-repo:' + repository.id)} onClick={() => fold.onToggle('change-repo:' + repository.id)}>{open(fold.expanded, 'change-repo:' + repository.id) ? <DownOutlined /> : <RightOutlined />}<strong>{label}</strong><span>{repository.worktreeCount === null ? worktrees.length ? '已读 ' + worktrees.length + ' 个工作树 · 总数未知' : '数量未知' : worktrees.length + ' 个工作树'}</span></button>}
     <div hidden={!single && !open(fold.expanded, 'change-repo:' + repository.id)}>{repository.worktreeCount === null && !worktrees.length && <div className="source-control-local-failure"><p>工作树清单尚未确认。</p>{repository.diagnostics?.length ? <p>{repository.diagnostics.join('；')}</p> : null}<Button type="link" size="small" onClick={() => onRetry(repository.id)}>重新读取</Button></div>}{worktrees.map(worktree => {
       const identity = sourceControlWorktreeKey(repository.id, worktree.worktreeId), group = 'change-wt:' + identity;
       return <section className="source-control-change-worktree" key={identity} data-change-worktree={worktree.worktreeId}>

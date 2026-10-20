@@ -250,11 +250,11 @@ Workspace 模块 MUST 在 `src/modules/workspace` 的扁平技术层中维护纯
 #### Scenario: 按职责拆分源文件
 - **WHEN** Workspace Application 文件同时包含独立变化的读取、写入、Prompt生成或diagnostic职责
 - **THEN** 实现 MUST同时依据层边界、文件变化原因和实际体量决定拆分或合并
-- **AND** Project、Service、Fence或Daily Progress文件在领域独立、职责单一且体量可维护时 MUST保留完整用例而不机械细拆
+- **AND** Project、Service或Fence文件在领域独立、职责单一且体量可维护时 MUST保留完整用例而不机械细拆
 
 #### Scenario: 过渡 CLI 边界
 - **WHEN** Bootstrap 构建 Workspace 命令目录
-- **THEN** Workspace、Project、Service命令 MUST只来自 `modules/workspace` 的 Interface contribution；Daily Progress命令 MUST来自 `modules/task/daily-progress` 的 Interface contribution
+- **THEN** Workspace、Project、Service命令 MUST只来自 `modules/workspace` 的 Interface contribution
 - **AND** 旧 `src/workspace` 路径或共享 runtime method 注入 MUST不再存在
 
 ### Requirement: Workspace CLI必须按独立领域调用Application
@@ -282,7 +282,7 @@ Buildr 自身源码布局、包静态验证和场景检查 MUST位于 `tools/ver
 
 #### Scenario: 检查模块装配
 - **WHEN** 创建工作空间、资产和诊断模块
-- **THEN** Workspace 资产 support MUST不包含任务方法、每日演进方法或测试专用 writer
+- **THEN** Workspace 资产 support MUST不包含任务方法或测试专用 writer
 - **AND** 诊断 MUST不取得内置资产同步写入入口，必需方法缺失 MUST在装配时显式失败
 
 #### Scenario: 开发者执行包检查

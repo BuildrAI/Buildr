@@ -38,11 +38,13 @@ export function createLocalWorkspaceRequestRouter({
   origin,
   isClosing,
   shutdown,
+  restart,
+  restartRequested,
   submitTaskRead,
   staticRoot,
 }: any) {
   const validateRequest = (id: any, value: any) => validateBuildrWebHttp(buildrWebOperation(id).requestSchemaId, value, id);
-  const workspaceAppRoute = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/codex|/code(?:/(?:explorer|source-control))?|/overview|/workspace-overview|/activity|/connections|/connection-skills|/settings|/knowledge/(?:project|service)/[A-Za-z0-9][A-Za-z0-9._-]*|/skills(?:/[A-Za-z0-9%][A-Za-z0-9%._-]*)?|/repositories(?:/[A-Za-z0-9][A-Za-z0-9._-]*)?|/articles(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/${taskIdPattern})?(?:/edit)?)?|/tasks(?:/${taskIdPattern}(?:/prototypes|/document|/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${taskIdPattern})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?)?)?/?$`);
+  const workspaceAppRoute = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/codex|/code(?:/(?:explorer|source-control))?|/overview|/workspace-overview|/connections|/connection-skills|/settings|/knowledge/(?:project|service)/[A-Za-z0-9][A-Za-z0-9._-]*|/skills(?:/[A-Za-z0-9%][A-Za-z0-9%._-]*)?|/repositories(?:/[A-Za-z0-9][A-Za-z0-9._-]*)?|/articles(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/${taskIdPattern})?(?:/edit)?)?|/tasks(?:/${taskIdPattern}(?:/prototypes|/document|/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${taskIdPattern})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?)?)?/?$`);
 
   return async function routeLocalWorkspaceRequest(request: any, response: any) {
     const trustedOrigin = origin();
@@ -94,6 +96,25 @@ export function createLocalWorkspaceRequestRouter({
       validateRequest('local-app.quit', await readJsonBody(request));
       jsonResponse(response, 202, { status: 'stopping' });
       shutdown();
+      return;
+    }
+    if (request.method === 'POST' && pathname === '/api/v1/app/restart') {
+      assertWriteRequest(request, trustedOrigin, sessionToken);
+      validateRequest('local-app.restart', await readJsonBody(request));
+      if (previewIdentity) {
+        const error: Error & Record<string, any> = new Error('开发预览实例不支持重启，请使用 preview stop 后重新启动。');
+        error.code = 'restart_preview_unsupported';
+        error.status = 409;
+        throw error;
+      }
+      if (restartRequested?.()) {
+        const error: Error & Record<string, any> = new Error('Buildr Web 重启已在进行。');
+        error.code = 'restart_in_progress';
+        error.status = 409;
+        throw error;
+      }
+      jsonResponse(response, 202, { status: 'restarting' });
+      restart?.();
       return;
     }
     if (request.method === 'POST' && pathname === '/api/v1/app/quit-instance') {

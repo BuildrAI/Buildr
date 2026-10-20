@@ -270,20 +270,6 @@ skills:
     required: false
     state: installed
     runtimePath: declaration-intake
-  - id: project-daily-progress
-    assetIdentity: buildr:skill:project-daily-progress
-    sourceIdentity: package:skills/buildr/project-daily-progress
-    source: buildr
-    path: buildr/project-daily-progress
-    description: 查看、生成或重跑项目每日演进，或询问定时执行时使用；按明确提交范围生成四问摘要，说明观察时间与未覆盖范围。
-    enabled: true
-    required: false
-    state: installed
-    runtimePath: project-daily-progress
-    requires:
-      - capability: buildr.git-operations
-        version: 1
-        mode: optional
   - id: ui-prototype
     assetIdentity: buildr:skill:ui-prototype
     sourceIdentity: package:skills/buildr/ui-prototype

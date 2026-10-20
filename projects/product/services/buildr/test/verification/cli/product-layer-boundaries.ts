@@ -2,7 +2,7 @@ export const productLayerOf = (relative: string): string => {
   if (relative === 'infrastructure/contracts/public-json.ts') return 'infrastructure';
   const parts: any = relative.split('/');
   if (parts[0] === 'infrastructure') return 'infrastructure';
-  const registeredSubmodule = parts[0] === 'modules' && ((parts[1] === 'task' && ['change', 'commits', 'changed-files', 'daily-progress', 'work-context', 'materials'].includes(parts[2])) || (parts[1] === 'agent-assets' && parts[2] === 'source'));
+  const registeredSubmodule = parts[0] === 'modules' && ((parts[1] === 'task' && ['change', 'commits', 'changed-files', 'work-context', 'materials'].includes(parts[2])) || (parts[1] === 'agent-assets' && parts[2] === 'source'));
   const moduleOffset: any = registeredSubmodule ? 3 : parts[0] === 'modules' ? 2 : 1;
   if (!['modules', 'web'].includes(parts[0])) return parts[0];
   if (parts.length === moduleOffset + 1 && /^module\.(?:mjs|ts)$/.test(parts[moduleOffset])) return 'module';
@@ -64,6 +64,8 @@ const allowedCrossModulePorts: any = new Set([
   'modules/task/change/module.ts -> modules/openspec/module.ts',
   'modules/task/change/module.ts -> modules/workspace/module.ts',
   'modules/publication/module.ts -> modules/workspace/module.ts',
+  'modules/publication/module.ts -> modules/task/module.ts',
+  'modules/publication/module.ts -> modules/task/materials/module.ts',
   'modules/project-testing/module.ts -> modules/workspace/module.ts',
   'modules/task/module.ts -> modules/workspace/module.ts',
   'modules/task/change/module.ts -> modules/task/module.ts',

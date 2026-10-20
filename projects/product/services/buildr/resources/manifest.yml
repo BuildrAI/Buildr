@@ -308,15 +308,6 @@ builtins:
       target: skills/buildr/ux-design-laws
       description: 设计或审查界面、交互与信息层级时使用，按真实问题选择体验法则；不用于单纯实现既定设计。
       required: false
-    - id: project-daily-progress
-      path: resources/workspace/skills/buildr/project-daily-progress
-      target: skills/buildr/project-daily-progress
-      description: 查看、生成或重跑项目每日演进，或询问定时执行时使用；按明确提交范围生成四问摘要，说明观察时间与未覆盖范围。
-      required: false
-      requires:
-        - capability: buildr.git-operations
-          version: 1
-          mode: optional
     - id: task-retrospective
       path: resources/workspace/skills/buildr/task-retrospective
       target: skills/buildr/task-retrospective
@@ -528,7 +519,6 @@ workspaceFiles:
   - resources/workspace/skills/buildr/ux-design-laws/references/visual-perception-and-layout.md => skills/buildr/ux-design-laws/references/visual-perception-and-layout.md copy
   - resources/workspace/skills/buildr/ux-design-laws/references/actions-and-feedback.md => skills/buildr/ux-design-laws/references/actions-and-feedback.md copy
   - resources/workspace/skills/buildr/ux-design-laws/references/journey-motivation-and-memory.md => skills/buildr/ux-design-laws/references/journey-motivation-and-memory.md copy
-  - resources/workspace/skills/buildr/project-daily-progress/SKILL.md => skills/buildr/project-daily-progress/SKILL.md copy
   - resources/workspace/skills/buildr/task-retrospective/SKILL.md => skills/buildr/task-retrospective/SKILL.md copy
   - resources/workspace/skills/buildr/task-retrospective/agents/openai.yaml => skills/buildr/task-retrospective/agents/openai.yaml copy
   - resources/workspace/skills/buildr/task-worktree/SKILL.md => skills/buildr/task-worktree/SKILL.md copy

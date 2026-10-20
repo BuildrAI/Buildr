@@ -1,8 +1,7 @@
 import type { MouseEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { ReadOutlined, FileTextOutlined, HistoryOutlined, RightOutlined } from '@ant-design/icons';
-import { dailyProgressActivityPath } from '../../project-daily-progress/dailyProgressNavigation';
-export type ProjectHomeEntryRef = 'knowledge' | 'articles' | 'activity';
+import { ReadOutlined, FileTextOutlined, RightOutlined } from '@ant-design/icons';
+export type ProjectHomeEntryRef = 'knowledge' | 'articles';
 type Props = { projectCode:string; href(path:string):string; needsKnowledge?:boolean; onEntry?:(ref:ProjectHomeEntryRef, event:MouseEvent<HTMLAnchorElement>) => void };
 export function ProjectHomeEntries({projectCode,href,needsKnowledge,onEntry}:Props) { return (
         <nav className="project-home-entries" aria-label="项目内容">
@@ -16,11 +15,6 @@ export function ProjectHomeEntries({projectCode,href,needsKnowledge,onEntry}:Pro
           <Link className="project-home-entry" to={href('/articles?project=' + encodeURIComponent(projectCode))} onClick={event => onEntry?.('articles', event)}>
             <span className="project-home-entry-icon"><FileTextOutlined /></span>
             <span><strong>项目文章</strong><small>继续写作，整理与分享项目成果</small></span>
-            <RightOutlined />
-          </Link>
-          <Link id="project-activity-link" className="project-home-entry" to={href(dailyProgressActivityPath(projectCode))} onClick={event => onEntry?.('activity', event)}>
-            <span className="project-home-entry-icon"><HistoryOutlined /></span>
-            <span><strong>项目动态</strong><small>查看每日演进、提交与变化影响</small></span>
             <RightOutlined />
           </Link>
         </nav>

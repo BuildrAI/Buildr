@@ -3,7 +3,6 @@ import { AGENT_ASSETS_SOURCE_QUERY } from '../../src/modules/agent-assets/source
 import { TASK_BRIEF_QUERY } from '../../src/modules/task/module.ts';
 import { TASK_MATERIALS_APPLICATION } from '../../src/modules/task/materials/module.ts';
 import { AGENT_ASSETS_DIAGNOSTICS_READ } from '../../src/modules/agent-assets/module.ts';
-import { PROJECT_DAILY_PROGRESS_APPLICATION } from '../../src/modules/task/module.ts';
 import { AGENT_ASSETS_PACKAGE_CHECK_SUPPORT } from '../../src/modules/agent-assets/module.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -209,14 +208,8 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     },
     lifecycle: 'none',
   }, {
-    id: 'task-daily-progress',
-    requires: [WORKSPACE_QUERY, TASK_QUERY_APPLICATION],
-    provides: [PROJECT_DAILY_PROGRESS_APPLICATION],
-    contributions: { cli: ['project daily-progress record', 'project daily-progress inspect', 'project daily-progress list'], http: ['task.daily-progress.http'], diagnostics: [] },
-    lifecycle: 'none',
-  }, {
     id: 'workbench',
-    requires: [TASK_QUERY_APPLICATION, 'task.work-context-application', PROJECT_DAILY_PROGRESS_APPLICATION, WORKSPACE_QUERY, WORKSPACE_TASK_SUPPORT],
+    requires: [TASK_QUERY_APPLICATION, 'task.work-context-application', WORKSPACE_QUERY, WORKSPACE_TASK_SUPPORT],
     provides: ['workbench.application'],
     contributions: { cli: ['workbench'], http: ['workbench.http'], diagnostics: [] },
     lifecycle: 'none',
@@ -379,7 +372,6 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'openspec converge', 'openspec convergence preflight', 'openspec convergence inspect',
     'task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon',
     'task work-context inspect', 'task work-context record', 'task work-context respond',
-    'project daily-progress record', 'project daily-progress inspect', 'project daily-progress list',
     'workbench',
     'worktree create', 'worktree cleanup', 'worktree inspect',
     'task commits', 'task changed-files',
@@ -400,7 +392,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'doctor',
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item: any) => item.id), [
-    'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'task-work-context.http', 'task.http', 'task.daily-progress.http', 'workbench.http', 'task.commits.http', 'task.changed-files.http', 'task.materials.http', 'publication.http', 'change.http', 'agent-operations.http', 'native-session-links.http', 'codex-desktop.http', 'dsh-desktop.http', 'code.files.http', 'code.generation.http',
+    'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'task-work-context.http', 'task.http', 'workbench.http', 'task.commits.http', 'task.changed-files.http', 'task.materials.http', 'publication.http', 'change.http', 'agent-operations.http', 'native-session-links.http', 'codex-desktop.http', 'dsh-desktop.http', 'code.files.http', 'code.generation.http',
     'connection-skills.http', 'mysql-query.http',
     'task-review.http', 'task-verification.http',
     'task-parent-coordination.http', 'system-installation.release-awareness.http',
@@ -408,7 +400,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
 
   const workspace: any = runtimeProvide(runtime, WORKSPACE_APPLICATION);
   const assetSupport = runtimeProvide(runtime, WORKSPACE_ASSET_SUPPORT);
-  for (const name of ['inspectTask', 'recordProjectDailyProgress', 'writeDailyProgressDocument', 'withWorkspaceRegistryMutation']) {
+  for (const name of ['inspectTask', 'withWorkspaceRegistryMutation']) {
     assert.equal(name in assetSupport, false, `asset support must not expose ${name}`);
   }
   const assetDiagnostics = runtimeProvide(runtime, AGENT_ASSETS_DIAGNOSTICS_READ);

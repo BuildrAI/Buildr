@@ -28,7 +28,7 @@ Agent 在 `product` Project 中的最小运行规则。
 | 服务登记（Service Registry） | 工作空间（Workspace）根 `services/manifest.yml` | 全局服务（Service）登记；产品项目（Product Project）通过根 `projects/manifest.yml` 的 `serviceIds` 引用 |
 | 代码库登记（Repository Registry） | 工作空间（Workspace）根 `repositories/manifest.yml` | 代码库实例（Repository Instance）来源；服务（Service）使用 `repositoryId` 与 `modulePath` 定位代码 |
 | 旧服务登记（Legacy Service Registry） | 产品项目（Product Project）的 `services/manifest.yml` | `buildr.services/v2` 兼容清单不得替代全局登记 |
-| 服务资产（Service Assets） | `services/<service>/` | 服务（Service）的实现位置；Git 边界以被引用代码库实例（Repository Instance）的来源和实际仓库为准 |
+| 服务资产（Service Assets） | `services/<service>/` | 服务（Service）级规则与文档的可选根，仅在实际存在时生效；实现代码由服务的 `repositoryId` 与 `modulePath` 定位，Git 边界以被引用代码库实例（Repository Instance）的来源和实际仓库为准 |
 
 ## 产品边界
 

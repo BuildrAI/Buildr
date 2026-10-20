@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { Alert, App, Button, Empty, Input, Modal, Segmented, Space, Spin, Tag, Tooltip, Tree } from 'antd';
-import { CopyOutlined, DownOutlined, FileImageOutlined, FileTextOutlined, FolderOpenOutlined, FolderOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ReloadOutlined, RightOutlined, SearchOutlined } from '@ant-design/icons';
+import { Alert, App, Button, Empty, Input, Modal, Segmented, Select, Space, Spin, Tag, Tooltip, Tree } from 'antd';
+import { CopyOutlined, DownOutlined, EyeInvisibleOutlined, EyeOutlined, FileImageOutlined, FileTextOutlined, FolderOpenOutlined, FolderOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ReloadOutlined, RightOutlined, SearchOutlined } from '@ant-design/icons';
 import type { DataNode } from 'antd/es/tree';
 import { MarkdownHost } from '../../../components/MarkdownHost';
 import { ReadOnlyFileCodeEditor } from '../../../components/file-editing/ReadOnlyFileCodeEditor';
@@ -48,6 +48,8 @@ type Props = {
   resetKey?: number;
   searchSeed?: string;
   onRetry(): void | Promise<void>;
+  onRefreshDirectories?(): void | Promise<void>;
+  onDirectoryExpansionChange?(keys:string[]): void;
   onViewCurrent(): void;
   onChanges?(path: string): void;
   onScene?(state: string): void;
@@ -79,7 +81,6 @@ type Props = {
   observedAt?: string;
   selectionKey?: string;
   defaultCollapsedTree?: boolean;
-  collapseTreeKey?: string;
   revealSelectionRequest?: number;
   markdownOptions?: MarkdownRenderOptions;
   markdownRevision?: string;
@@ -150,9 +151,6 @@ export function RepositoryFileBrowser(props: Props) {
     setRaw(false);
     setRange(null);
   }, [props.resetKey]);
-  useEffect(() => {
-    if (props.global && props.defaultCollapsedTree && props.collapseTreeKey !== undefined) setExpanded([]);
-  }, [props.global, props.defaultCollapsedTree, props.collapseTreeKey]);
   useEffect(() => {
     setOpenPaths(paths => paths.includes(props.selectedPath) ? paths : [...paths, props.selectedPath]);
     setRange(null);
@@ -245,10 +243,11 @@ export function RepositoryFileBrowser(props: Props) {
     try { await navigator.clipboard.writeText(text); message.success('已复制'); }
     catch { message.info('可在下方选中文字复制。'); }
   }
-  async function refresh() {
+  useEffect(()=>{props.onDirectoryExpansionChange?.(expanded);},[expanded,props.onDirectoryExpansionChange]);
+  async function refresh(directories=false) {
     setRefreshing(true);
     if(!props.global){window.setTimeout(() => { setRefreshing(false); void props.onRetry(); message.success('已重新读取模拟文件'); }, 450);return;}
-    try{await props.onRetry();}
+    try{await (directories&&props.onRefreshDirectories?props.onRefreshDirectories():props.onRetry());}
     catch(error){message.error(error instanceof Error?error.message:'文件暂不可重新读取。');}
     finally{setRefreshing(false);}
   }
@@ -263,11 +262,11 @@ export function RepositoryFileBrowser(props: Props) {
   const prompt = [
     request === 'modify' ? '请修改以下文件，先核对当前内容，再根据我的目标实施并提供改动与验证依据。' : '请解释以下文件或选中内容的职责、行为和相关影响。',
     '', props.taskTitle ? '任务：'+props.taskTitle : '', '代码库：' + (props.repositoryName || 'Buildr 源码库'),
-    props.repositoryId ? '代码库标识：'+props.repositoryId : '',
-    props.checkoutId ? '检出目录标识：'+props.checkoutId : '',
+    props.repositoryId ? '代码库编码：'+props.repositoryId : '',
+    props.checkoutId ? '检出目录编码：'+props.checkoutId : '',
     '查看位置：' + props.location, '查看版本：' + props.version, '文件：' + (file?.path || ''),
     props.observedDigest ? '已读内容摘要：'+props.observedDigest : '',
-    props.observedRevision ? '文件修订标识：'+props.observedRevision : '',
+    props.observedRevision ? '文件修订编码：'+props.observedRevision : '',
     props.observedAt ? '观察时间：'+props.observedAt : '',
     props.readPage ? '读取片段：第 '+(props.readPage.index+1)+' / '+props.readPage.total+' 段，字节 '+(props.readPage.offset+1)+'–'+props.readPage.endOffset+' / '+props.sizeBytes+'，第 '+props.readPage.startLine+'–'+props.readPage.endLine+' 行'+(props.readPage.startsMidLine||props.readPage.endsMidLine?'（包含续行）':'') : '',
     selectedRange ? '范围：第 ' + selectedRange[0] + '–' + selectedRange[1] + ' 行'+(props.readPage?'（仅限本段可见内容）':'') : props.readMessage ? '范围：当前可见内容（'+props.readMessage+'）' : '范围：完整文件',
@@ -280,21 +279,20 @@ export function RepositoryFileBrowser(props: Props) {
       {!props.treeRepositories && <code title={props.location}>{props.location}</code>}
       {props.global && !props.treeRepositories && <small className="repository-context-version">{props.version}</small>}
       {props.historical && !props.treeRepositories && <Tag color="gold">历史版本</Tag>}
-      <Tooltip title="重新读取当前查看位置"><Button type="text" size="small" aria-label="重新读取文件" loading={refreshing} icon={<ReloadOutlined />} onClick={refresh} /></Tooltip>
+      <Tooltip title={props.onRefreshDirectories?"刷新当前展开的目录，收起目录下次展开时更新":"重新读取当前查看位置"}><Button type="text" size="small" aria-label={props.onRefreshDirectories?"刷新展开目录":"重新读取文件"} loading={refreshing} icon={<ReloadOutlined />} onClick={()=>void refresh(true)} /></Tooltip>
     </header>
 </>;
   const tree = <>      <aside className="repository-browser-tree" data-prototype-position="source-tree">
-        <div className="repository-tree-heading"><strong>文件</strong>{!props.global&&<Tooltip title={treeHidden ? '展开目录' : '收起目录'}><Button type="text" size="small" aria-label={treeHidden ? '展开目录' : '收起目录'} icon={treeHidden ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => setTreeHidden(!treeHidden)} /></Tooltip>}</div>
+        <div className="repository-tree-heading"><strong>文件</strong><div className="repository-tree-heading-actions">{(props.global || !treeHidden) && <Tooltip title="包含当前目录中被 Git 忽略规则或常见构建目录排除的文件；点号开头不代表忽略。不会显示其他目录中的文件，Git 管理目录始终隐藏。"><Button size="small" type="text" aria-label={showIgnored ? '隐藏忽略文件' : '显示忽略文件'} icon={showIgnored ? <EyeInvisibleOutlined /> : <EyeOutlined />} onClick={() => {setShowIgnored(value => !value);props.onShowIgnored?.(!showIgnored);}} /></Tooltip>}{!props.global&&<Tooltip title={treeHidden ? '展开目录' : '收起目录'}><Button type="text" size="small" aria-label={treeHidden ? '展开目录' : '收起目录'} icon={treeHidden ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => setTreeHidden(!treeHidden)} /></Tooltip>}</div></div>
         {(props.global || !treeHidden) && <>
           <div className="repository-file-search" data-prototype-position="file-search">
-            <Input allowClear prefix={<SearchOutlined />} placeholder={searchMode==='name'?'搜索文件名，至少 2 个字符':'搜索内容，至少 2 个字符'} aria-label="搜索文件" value={query} onChange={event => changeQuery(event.target.value)} />
-            <div className="repository-search-options"><Segmented className="repository-search-mode" size="small" value={searchMode} options={[{ label: '文件名', value: 'name' }, { label: '内容', value: 'content' }]} onChange={value => setSearchMode(value as 'name' | 'content')} /><Tooltip title="包含当前目录中被 Git 忽略规则或常见构建目录排除的文件；点号开头不代表忽略。不会显示其他目录中的文件，Git 管理目录始终隐藏。"><Button size="small" type="text" onClick={() => {setShowIgnored(value => !value);props.onShowIgnored?.(!showIgnored);}}>{showIgnored ? '隐藏忽略文件' : '显示忽略文件'}</Button></Tooltip></div>
+            <Input allowClear prefix={<SearchOutlined />} suffix={<span className="repository-search-scope" onMouseDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}><Select aria-label="搜索范围" classNames={{ popup: { root: 'repository-search-scope-popup' } }} variant="borderless" size="small" style={{ width: searchMode === 'name' ? 58 : 48 }} value={searchMode} placement="bottomRight" popupMatchSelectWidth={false} options={[{ label: '文件名', value: 'name' }, { label: '内容', value: 'content' }]} onChange={value => setSearchMode(value as 'name' | 'content')} /></span>} placeholder={searchMode === 'name' ? '搜索文件名' : '搜索内容'} aria-label="搜索文件" value={query} onChange={event => changeQuery(event.target.value)} />
           </div>
           <div className="repository-tree-body">
             {props.treeNotice}
             {props.unavailable ? <Alert type="warning" showIcon message="当前目录暂不可读取" description="其他文件入口仍可使用。" action={<Button size="small" onClick={()=>void refresh()}>重试</Button>} /> : searchTooShort ? <p className="repository-search-hint" role="status">输入至少 2 个字符开始搜索</p> : needle ? <div className="repository-search-results">
-              <p>{props.searchLoading ? '正在搜索…' : searchFiles.length+' 个匹配文件'+(searchMode==='content'?' · '+searchFiles.reduce((count,item)=>count+(item.occurrences?.length||0),0)+' 条匹配':'')+(props.searchIncomplete?'（搜索未完成）':'')}</p>
-              {!(props.searchResults || matches).length && !props.searchLoading && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={props.searchIncomplete ? '当前没有取得匹配结果' : '没有匹配文件'} />}
+              <p>{props.searchLoading ? (searchMode === 'name' ? '正在按文件名搜索…' : '正在按内容搜索…') : (searchMode === 'name' ? '文件名匹配 · ' : '内容匹配 · ') + searchFiles.length + ' 个文件' + (searchMode === 'content' ? ' · ' + searchFiles.reduce((count,item)=>count+(item.occurrences?.length||0),0) + ' 处' : '') + (props.searchIncomplete ? '（搜索未完成）' : '')}</p>
+              {!(props.searchResults || matches).length && !props.searchLoading && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={props.searchIncomplete ? '当前没有取得匹配结果' : searchMode === 'name' ? '没有匹配的文件名' : '没有匹配的内容'}>{searchMode === 'name' && <Button size="small" type="link" title={'在内容中搜索“' + searchQuery + '”'} onClick={() => setSearchMode('content')}>在内容中搜索</Button>}</Empty>}
               {searchFiles.map(item=>{
                 const key=treeKey(item.path,item.repositoryId),occurrences=item.occurrences||[],expanded=expandedMatches[key]??true;
                 const selected=item.path===props.selectedPath&&item.repositoryId===props.selectedRepositoryId;
@@ -307,7 +305,8 @@ export function RepositoryFileBrowser(props: Props) {
                   {occurrences.length>0&&expanded&&<div className="repository-search-occurrences">{occurrences.map(match=><button type="button" key={match.line} className={'repository-search-occurrence'+(selected&&match.line===props.focusLine?' selected':'')} data-match-line={match.line} title={match.line+': '+match.excerpt} onClick={()=>selectTreeFile(item,match.line)}><span className="repository-match-line">{match.line}</span><code><RepositorySearchText text={match.excerpt} query={searchQuery} /></code></button>)}</div>}
                 </section>;
               })}
-            </div> : <Tree.DirectoryTree expandAction="click" blockNode showIcon loadedKeys={props.loadedDirectoryKeys} loadData={props.onLoadDirectory ? node => {const [repositoryId,...rest]=String(node.key).split('::');return props.onLoadDirectory!(repositoryId,rest.join('::'));} : undefined} expandedKeys={expanded} onExpand={keys => setExpanded(keys.map(String))} selectedKeys={[treeKey(props.selectedPath, props.selectedRepositoryId)]} treeData={treeData} onSelect={keys => { const item = visible.find(item => treeKey(item.path, item.repositoryId) === String(keys[0] || '')); if (item && !item.directory && !item.link) selectTreeFile(item); }} />}
+            </div> : null}
+            <Tree.DirectoryTree motion={props.global?{motionName:'',motionAppear:false,motionEnter:false,motionLeave:false}:undefined} style={props.unavailable || searchTooShort || needle ? {display:'none'} : undefined} expandAction="click" blockNode showIcon loadedKeys={props.loadedDirectoryKeys} loadData={props.onLoadDirectory ? node => {const [repositoryId,...rest]=String(node.key).split('::');return props.onLoadDirectory!(repositoryId,rest.join('::'));} : undefined} expandedKeys={expanded} onExpand={keys => setExpanded(keys.map(String))} selectedKeys={[treeKey(props.selectedPath, props.selectedRepositoryId)]} treeData={treeData} onSelect={keys => { const item = visible.find(item => treeKey(item.path, item.repositoryId) === String(keys[0] || '')); if (item && !item.directory && !item.link) selectTreeFile(item); }} />
           </div>
           <footer className="repository-tree-footer">{props.treeRepositories ? new Set(props.treeRepositories.map(repo=>repo.repositoryId||repo.id)).size + ' 个代码库 · '+props.treeRepositories.length+' 个目录 · ' : ''}{visible.filter(item=>!item.directory).length} 个已加载文件 · {props.readerSurface ? props.historical ? '历史只读' : '当前文本可编辑' : '只读'}</footer>
         </>}
@@ -338,7 +337,7 @@ export function RepositoryFileBrowser(props: Props) {
           {(visibleMatch?.continuesAfter||visibleMatch?.continuesBefore)&&<p className="repository-file-match-continuation">{visibleMatch.continuesAfter?'匹配文字跨段，下一段继续':'匹配文字续自上一段'}</p>}
         </section>}
         <div className="repository-reader-content" ref={codeRef} onScroll={event=>scrolls.current.set(readingKey,event.currentTarget.scrollTop)}>
-          {props.readError ? <div className="repository-reading-empty"><h3>文件暂不可读取</h3><p>{props.readError}</p><Button onClick={()=>void refresh()}>重新读取</Button>{props.historical && <Button onClick={props.onViewCurrent}>查看当前文件</Button>}</div> : refreshing || props.readLoading ? <div className="repository-reading-empty"><Spin /><p>正在重新读取…</p></div> : props.unavailable ? <div className="repository-reading-empty"><FolderOpenOutlined /><h3>当前工作目录暂不可读取</h3><p>保留查看位置，恢复后可继续浏览。</p><Button onClick={()=>void refresh()}>重新读取</Button></div> : !file ? <Empty description="从目录选择一个文件" /> : file.kind === 'unsupported' ? <Empty description="此文件类型暂不支持阅读" /> : file.kind === 'image' ? <div className="repository-image-preview"><img src={file.image} alt={shortName(file.path)} /><p>{shortName(file.path)} · 图片预览</p></div> : file.kind === 'markdown' && !raw && !props.readPage ? <MarkdownHost markdown={file.content} className="markdown-body repository-markdown" renderVersion={props.markdownRevision} options={props.markdownOptions || { allowRelativeLinks: true, onRelativeLinkClick: () => message.info('相关文件可从目录打开。') }} /> : <ReadOnlyFileCodeEditor key={readingKey} documentId={readingKey} path={file.path} content={file.content}
+          {props.readError ? <div className="repository-reading-empty"><h3>文件暂不可读取</h3><p>{props.readError}</p><Button onClick={()=>void refresh()}>重新读取</Button>{props.historical && <Button onClick={props.onViewCurrent}>查看当前文件</Button>}</div> : refreshing && !props.onRefreshDirectories || props.readLoading ? <div className="repository-reading-empty"><Spin /><p>正在重新读取…</p></div> : props.unavailable ? <div className="repository-reading-empty"><FolderOpenOutlined /><h3>当前工作目录暂不可读取</h3><p>保留查看位置，恢复后可继续浏览。</p><Button onClick={()=>void refresh()}>重新读取</Button></div> : !file ? <Empty description="从目录选择一个文件" /> : file.kind === 'unsupported' ? <Empty description="此文件类型暂不支持阅读" /> : file.kind === 'image' ? <div className="repository-image-preview"><img src={file.image} alt={shortName(file.path)} /><p>{shortName(file.path)} · 图片预览</p></div> : file.kind === 'markdown' && !raw && !props.readPage ? <MarkdownHost markdown={file.content} className="markdown-body repository-markdown" renderVersion={props.markdownRevision} options={props.markdownOptions || { allowRelativeLinks: true, onRelativeLinkClick: () => message.info('相关文件可从目录打开。') }} /> : <ReadOnlyFileCodeEditor key={readingKey} documentId={readingKey} path={file.path} content={file.content}
             startLine={firstLine} omitTrailingEmpty={omitTrailingEmpty} startsMidLine={props.readPage?.startsMidLine} endsMidLine={props.readPage?.endsMidLine}
             selectedLines={range} query={searchMode==='content'?searchQuery:''} observedMatch={visibleMatch}
             active={!props.global || props.readerActive} focusLine={props.focusLine} focusRequest={props.focusRequest}

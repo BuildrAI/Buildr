@@ -1,22 +1,34 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { codeWorktreeLabel, codeWorktreeGroupLabel } from '../src/features/code/code-source-labels.ts';
+import { codeRepositoryLabel, codeWorktreeLabel, codeWorktreeGroupLabel } from '../src/features/code/code-source-labels.ts';
 
-const member = (id, repositoryId, path, extra = {}) => ({id, repositoryId, groupId:'main', path, branch:'dev', kind:'main', taskId:null, available:true, ...extra});
+const member = (id, repositoryId, path, extra = {}) => ({id, repositoryId, groupId:'main', path, branch:'dev', kind:'main', isMain:extra.kind ? false : true, taskId:null, available:true, ...extra});
+
+test('代码库名称后补充编码，名称等于编码或缺失时不重复', () => {
+  assert.equal(codeRepositoryLabel({name:'通用业务',code:'business-common'}),'通用业务（business-common）');
+  assert.equal(codeRepositoryLabel({name:'pork-link',code:'pork-link'}),'pork-link');
+  assert.equal(codeRepositoryLabel({name:'',code:'api'}),'api');
+  assert.equal(codeRepositoryLabel({name:'API',code:''}),'API');
+});
+
 const catalog = worktrees => ({worktrees, worktreeGroups:[{id:'main',name:'主目录',kind:'main',taskId:null,repositoryIds:['api','web']} ]});
 
 test('登记目录的主名称使用实际工作树名，角色与分支路径单独说明且不改身份', () => {
-  const source = member('registered-linked','api','/workspace/.worktrees/checkout-r143');
+  const source = member('registered-linked','api','/workspace/.worktrees/checkout-r143',{isMain:false});
   const before = structuredClone(source);
   assert.deepEqual(codeWorktreeLabel(source), {
-    name:'checkout-r143', role:'工作空间登记目录', description:'dev · /workspace/.worktrees/checkout-r143',
+    name:'checkout-r143', role:'', description:'dev · /workspace/.worktrees/checkout-r143',
   });
   assert.deepEqual(source, before);
+  assert.equal(codeWorktreeLabel(member('actual-main','api','/workspace/Buildr')).role,'主工作库');
+  assert.equal(codeWorktreeLabel({...source,isMain:undefined}).role,'');
 });
 
 test('多库同组列出各自真实目录名，并按代码库范围重新计算', () => {
   const sources = catalog([member('api-main','api','/workspace/api-tree'),member('web-main','web','/workspace/web-tree')]);
   assert.equal(codeWorktreeGroupLabel(sources).name,'api-tree、web-tree');
+  assert.equal(codeWorktreeGroupLabel(sources).role,'主工作库');
+  assert.equal(codeWorktreeGroupLabel(catalog([sources.worktrees[0],{...sources.worktrees[1],isMain:false}])).role,'');
   assert.equal(codeWorktreeGroupLabel(sources,'main',['api']).name,'api-tree');
   assert.equal(codeWorktreeGroupLabel(sources,'main',['web']).name,'web-tree');
   assert.equal(codeWorktreeGroupLabel(sources).description,'dev · /workspace/api-tree；dev · /workspace/web-tree');
@@ -38,8 +50,10 @@ test('不同工作树组选项的同名目录仍可区分，但不借未选代�
   const web=member('web-only','web','/workspace/web/shared',{groupId:'worktree:web',kind:'worktree'});
   const sources={worktrees:[one,two,web],worktreeGroups:[one,two,web].map(source=>({id:source.groupId,name:'shared',kind:'worktree',taskId:null,repositoryIds:[source.repositoryId]}))};
   assert.equal(codeWorktreeGroupLabel(sources,one.groupId,['api']).name,'shared（/workspace/one/shared）');
+  assert.equal(codeWorktreeGroupLabel(sources,one.groupId,['api']).role,'');
   assert.equal(codeWorktreeGroupLabel(sources,two.groupId,['api']).name,'shared（/workspace/two/shared）');
   assert.equal(codeWorktreeGroupLabel(sources,web.groupId,['web']).name,'shared');
+  assert.equal(codeWorktreeGroupLabel(sources,web.groupId,['web']).role,'');
   assert.equal(codeWorktreeGroupLabel(sources,web.groupId).name,'shared（/workspace/web/shared）');
 });
 
@@ -54,13 +68,13 @@ test('任务角色与任务标题只作补充，失效成员仍保留已知目�
   const source = member('task-checkout','api','/workspace/.worktrees/feature-task',{groupId:'task:feature',kind:'task',taskId:'feature',branch:null,available:false});
   const sources = {worktrees:[source],worktreeGroups:[{id:'task:feature',name:'实现需求',kind:'task',taskId:'feature',repositoryIds:['api']}]};
   assert.deepEqual(codeWorktreeGroupLabel(sources,'task:feature',['api']), {
-    name:'feature-task',role:'任务工作树',description:'实现需求；/workspace/.worktrees/feature-task',
+    name:'feature-task',role:'',description:'实现需求；/workspace/.worktrees/feature-task',
   });
 });
 
 test('没有实际成员时不将角色或其他范围的目录冒充为当前工作树名', () => {
   const sources = catalog([member('api-main','api','/workspace/api-tree')]);
-  assert.deepEqual(codeWorktreeGroupLabel(sources,'main',['missing']), {name:'目录暂不可确认',role:'工作空间登记目录',description:''});
+  assert.deepEqual(codeWorktreeGroupLabel(sources,'main',['missing']), {name:'目录暂不可确认',role:'',description:''});
   assert.equal(codeWorktreeGroupLabel(null).name,'目录暂不可确认');
   assert.equal(codeWorktreeGroupLabel(sources,'unknown').name,'目录暂不可确认');
 });

@@ -14,7 +14,6 @@
 | Codex 原生会话（Session）关联 | [codex-desktop/module.ts](../../services/buildr/src/modules/codex-desktop/module.ts) | 确认稳定配置范围、任务（Task）与原生会话（Session）多对多关联及双向定位；不安装插件（Plugin）或等待握手，独立生成仍由 `agent-operations` 执行，见[智能体（Agent）接入架构](../docs/architecture/agent-integration.md) |
 | DSH 桌面连接与导航 | [dsh-desktop/module.ts](../../services/buildr/src/modules/dsh-desktop/module.ts) | 维护已确认安装、配置和渠道的桌面连接，核验准确会话（Session）与任务（Task）页面的导航回执；断开与退出只释放自己的连接，保留原聊天和关系 |
 | 任务（Task）、答复、审查、验证与工作树（Worktree） | [task/module.ts](../../services/buildr/src/modules/task/module.ts) | 各项独立协作事实及 Git 位置；见[任务地图](task-system.md) |
-| 项目每日演进 | [task/daily-progress/](../../services/buildr/src/modules/task/daily-progress/) | 同一任务装配入口中的独立能力；保存本机摘要并关联提交和任务，见[使用与边界](../docs/flows/project-daily-progress.md) |
 | 工作台（Workbench） | [workbench/module.ts](../../services/buildr/src/modules/workbench/module.ts) | 有界组合已有事实，独立保存个人计划、关注、收藏与最近访问 |
 | 任务关联变更 | [task/change/module.ts](../../services/buildr/src/modules/task/change/module.ts) | 核对任务关联与受信任副本，委托 OpenSpec 读取，不拥有规范正文 |
 | OpenSpec | [openspec/module.ts](../../services/buildr/src/modules/openspec/module.ts) | 变更读取、冲突检查、上游归档接入与恢复；见[接入边界](technical-layers.md#openspec-接入与恢复) |
@@ -32,7 +31,7 @@
 - **[`services/buildr/src/`](../../services/buildr/src/)**：产品源码。
   - [`bootstrap/`](../../services/buildr/src/bootstrap/) 创建技术运行时（Runtime）、装配模块、汇集命令与诊断入口。
   - [`modules/`](../../services/buildr/src/modules/) 按上表的业务职责组织。
-  - [`web/`](../../services/buildr/src/web/) 管理本机实例与预览生命周期、会话（Session）、静态托管和请求分发。
+  - [`web/`](../../services/buildr/src/web/) 管理本机实例与预览生命周期、会话（Session）、静态托管和请求分发；同身份重启由 `web/http` 的重启端口交给 `web/application` 的后继进程编排，复用更新交接的启动锁、观察摘要与认证退出，不执行 npm 安装归属断言。
   - [`infrastructure/`](../../services/buildr/src/infrastructure/) 提供文件、SQLite、Git、进程、网络与资源定位，不接管业务规则。
 - **[`resources/`](../../services/buildr/resources/)**：文件型交付来源。清单声明工作空间（Workspace）及运行时（Runtime）映射，安装资源和文本契约各自维护；[资源职责](../../services/buildr/docs/cli-architecture.md#文件型交付资源)集中解释。
 - **[`tools/`](../../services/buildr/tools/)**：进入 Git 的工程程序，包括构建、协议生成、固定环境、验证准备及性能基准。独立性能基准不默认执行。

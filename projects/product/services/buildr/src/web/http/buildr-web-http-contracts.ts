@@ -10,6 +10,7 @@ const schema = (id: any, title: any, body: any) => Object.freeze({ $schema: DRAF
 export const BUILDR_WEB_HTTP_SCHEMAS: Readonly<Record<string, any>> = Object.freeze({
   emptyRequest: schema('empty/request', 'BuildrWebEmptyRequest', closed({})),
   quitRequest: schema('quit/request', 'BuildrWebQuitRequest', closed({})),
+  restartRequest: schema('restart/request', 'BuildrWebRestartRequest', closed({})),
   healthResponse: schema('health/response', 'BuildrWebHealthResponse', closed({
     schemaVersion: { const: 'buildr.local-app-health/v1' },
     status: { enum: ['ready', 'stopping'] },
@@ -20,6 +21,7 @@ export const BUILDR_WEB_HTTP_SCHEMAS: Readonly<Record<string, any>> = Object.fre
     previewIdentity: nullable({ type: 'object', additionalProperties: true }),
   }, ['schemaVersion', 'status', 'pid'])),
   stoppingResponse: schema('stopping/response', 'BuildrWebStoppingResponse', closed({ status: { const: 'stopping' } }, ['status'])),
+  restartingResponse: schema('restarting/response', 'BuildrWebRestartingResponse', closed({ status: { const: 'restarting' } }, ['status'])),
   errorResponse: schema('error/response', 'BuildrWebErrorResponse', closed({
     error: closed({ code: text, message: text, details: true }, ['code', 'message']),
   }, ['error'])),
@@ -36,6 +38,7 @@ export const BUILDR_WEB_HTTP_OPERATIONS = Object.freeze([
   jsonOperation('local-app.health', 'GET', '/api/v1/health', 'emptyRequest', 'healthResponse'),
   jsonOperation('local-app.quit', 'POST', '/api/v1/app/quit', 'quitRequest', 'stoppingResponse'),
   jsonOperation('local-app.quit-instance', 'POST', '/api/v1/app/quit-instance', 'emptyRequest', 'stoppingResponse'),
+  jsonOperation('local-app.restart', 'POST', '/api/v1/app/restart', 'restartRequest', 'restartingResponse'),
 ]);
 
 export const BUILDR_WEB_HTTP_VALIDATORS = compileJsonSchemaCatalog(Object.values(BUILDR_WEB_HTTP_SCHEMAS));

@@ -61,7 +61,7 @@ export function ResourceActions({ resource, projectCode, size = 'small' }: { res
   };
   return <span ref={anchor} className="workbench-resource-actions">
     {noticeHolder}
-    {projectCode ? <Tooltip title="在工作台快速进入此项目，并优先查看其每日演进"><Button size={size} disabled={loading} loading={busy} onClick={() => void toggle(true)} icon={following ? <PushpinFilled /> : <PushpinOutlined />} data-follow-project={projectCode}>{following ? '已关注项目' : '关注项目'}</Button></Tooltip> : null}
+    {projectCode ? <Tooltip title="在工作台快速进入此项目"><Button size={size} disabled={loading} loading={busy} onClick={() => void toggle(true)} icon={following ? <PushpinFilled /> : <PushpinOutlined />} data-follow-project={projectCode}>{following ? '已关注项目' : '关注项目'}</Button></Tooltip> : null}
     {!projectCode && <Tooltip title={saved ? '从常用入口取消收藏' : '加入工作台常用入口'}>
       <Button size={size} disabled={loading} loading={busy} onClick={() => void toggle()} icon={saved ? <StarFilled /> : <StarOutlined />} aria-label={saved ? '取消收藏当前资料' : '收藏当前资料'} data-save-resource={resource.key}>{saved ? '已收藏' : '收藏'}</Button>
     </Tooltip>}

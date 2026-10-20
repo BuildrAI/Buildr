@@ -145,7 +145,7 @@
     - [module.ts](../../services/buildr/src/modules/task/module.ts) — 装配各独立能力及公开接口
   - **`services/buildr/src/modules/workbench/`** — 日常关注的组合阅读
     - [module.ts](../../services/buildr/src/modules/workbench/module.ts) — 工作台及偏好统一接入任务摘要端口，单任务关注项不加载说明正文
-    - [application/workbench-application.ts](../../services/buildr/src/modules/workbench/application/workbench-application.ts) — 读取明确事项、任务和已有每日演进，不推断任务正在执行
+    - [application/workbench-application.ts](../../services/buildr/src/modules/workbench/application/workbench-application.ts) — 读取明确事项与任务，不推断任务正在执行
     - [application/preferences-application.ts](../../services/buildr/src/modules/workbench/application/preferences-application.ts) — 单独维护置顶、接下来和资料偏好
   - **`services/buildr/src/infrastructure/sqlite/`** — 通用存储安全
     - [workspace-sqlite.ts](../../services/buildr/src/infrastructure/sqlite/workspace-sqlite.ts) — 真实工作空间（Workspace）和合法写入来源

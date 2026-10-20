@@ -9,6 +9,7 @@ import { sameArtifactIdentity } from './package-compatibility.ts';
 import { observePublishedPackageArtifact } from './package-artifact-observation.ts';
 import { createPackageReleaseContext, createPackagePublicationEvidence, validatePackageReleaseContext, validatePackagePublicationEvidence, validatePackageOwnerPublication, packageExecutionCommit, pluginExecutorRecoverySchema, assertUnattemptedPluginPublication } from './release-package-evidence.ts';
 import { runPluginHostedOperation, readHostedPluginCandidate, reconcilePluginPreparationPointer, readHostedPluginNoWriteProof, validatePluginNoWriteProof, validatePluginHostedRun } from './plugin-hosted-release.ts';
+import { approvePendingEnvironmentDeployments } from './environment-approval.ts';
 import { runHostedReleaseTransaction } from './release-transaction-runner.ts';
 import { inspectHostedReleaseTransaction, validateReleaseTransactionEvidence } from './release-transaction-evidence.ts';
 import { createReleaseContext, releaseContextIdentity } from './release-readiness.ts';
@@ -373,7 +374,7 @@ async function recoverPluginPublication(options: any, context: any, scope: any, 
 /** Continue only the first unfinished package in the original safe order. */
 export async function continuePackageRelease(options: any, scope: any, dependencies: any = {}): Promise<any> {
   const { state, save, effects, readRun, gh, git } = scope;
-  if (!state.context) return { status: 'preparation-required', nextActions: ['先prepare准确选择与各包候选。'] };
+  if (!state.context) return { status: 'preparation-required', nextActions: ['先以不带 --stop-after 的 prepare 构建准确选择与逐包发布上下文，再调用 publish --authorized。'] };
   let context = validatePackageReleaseContext(state.context);
   if (state.publicationEvidence && state.closeout?.contextIdentity === context.identity
       && state.closeout?.outcomes?.cleanup === 'cleaned' && state.closeout?.outcomes?.taskRegistration === 'completed') {
@@ -412,7 +413,14 @@ export async function continuePackageRelease(options: any, scope: any, dependenc
         pointer.runId = found.databaseId; save();
       }
       const run = readRun(pointer.runId);
-      if (run.status !== 'completed') return { status: 'publication-running', package: name, run, nextActions: ['等待原受保护运行，不重复派发。'] };
+      if (run.status !== 'completed') {
+        if (run.status === 'waiting') {
+          const environment = context.packages.buildr?.ownerContext?.workflow?.environment ?? 'npm-production';
+          approvePendingEnvironmentDeployments(Number(run.id), 'BuildrAI/Buildr', environment, args => gh(args), effects);
+          save();
+        }
+        return { status: 'publication-running', package: name, run, nextActions: ['等待原受保护运行，不重复派发。'] };
+      }
       if (run.conclusion !== 'success') {
         if (pointer.retryRequested && Number(run.run_attempt) < 2) return { status: 'publication-retry-unconfirmed', package: name, run };
         const failure = classifyCandidateFailure(gh(['run', 'view', String(run.id), '--repo', 'BuildrAI/Buildr', '--log-failed']));

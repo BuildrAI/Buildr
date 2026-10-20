@@ -17,9 +17,13 @@ export type QueryPreferences = {
   revision: string;
 };
 
+export type MySqlTable = { name: string; type: string };
+export type MySqlDatabaseTables = { connectionId: string; database: string; tables: MySqlTable[] };
+
 export type MySqlQueryTarget = { id: string; name: string; environment: string; revision: string };
 export type MySqlQueryClient = {
   databases(id: string, signal?: AbortSignal): Promise<{ connectionId: string; databases: string[] }>;
+  tables(id: string, database: string, signal?: AbortSignal): Promise<MySqlDatabaseTables>;
   queryPreferences(id: string, signal?: AbortSignal): Promise<QueryPreferences>;
   saveQueryPreferences(id: string, input: { enabledDatabases: string[]; currentDatabase: string | null; expectedRevision: string }, signal?: AbortSignal): Promise<QueryPreferences>;
   query(id: string, input: { sql: string; database?: string | null }, signal?: AbortSignal): Promise<MySqlQueryResult>;

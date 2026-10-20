@@ -1,5 +1,5 @@
 import { useContext, useEffect, useId, useState } from 'react';
-import { Button, Dropdown } from 'antd';
+import { App, Button, Dropdown } from 'antd';
 import { CloudDownloadOutlined, MoreOutlined, SyncOutlined } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppShell } from '../../../app/AppShellContext';
@@ -18,6 +18,7 @@ import { useSourceControlBranches } from '../hooks/useSourceControlBranches';
 import { useSourceControlFetch } from '../hooks/useSourceControlFetch';
 import { useSourceControlSync } from '../hooks/useSourceControlSync';
 import { SourceControlOperationNotices } from '../components/SourceControlOperationNotices';
+import { codeApi } from '../api/code-api';
 import type { SourceControlFileTarget, SourceControlScene } from '../source-control-model';
 
 export function CodeSourceControlPage() {
@@ -25,6 +26,7 @@ export function CodeSourceControlPage() {
   const viewActive = useContext(WorkspaceViewActiveContext);
   const [catalogMenuOpen, setCatalogMenuOpen] = useState(false);
   const {workspaceId, setBreadcrumbParts} = useAppShell();
+  const {message} = App.useApp();
   useEffect(() => {setCatalogMenuOpen(false);}, [workspaceId, viewActive]);
   const location = useLocation(), navigate = useNavigate();
   const entry = location.state?.sourceControlEntry as {origin?: 'task'; nonce?: string; taskId: string; taskTitle?: string; from: {pathname: string; search: string; hash: string; state: unknown}} | undefined;
@@ -55,6 +57,10 @@ export function CodeSourceControlPage() {
     <SourceControlWorkbench sourceEntryKey={entry ? workspaceId+':'+(entry.nonce||location.key) : undefined} currentSourceSelection={currentSource.selection ? {key:workspaceId+':'+currentSource.selection.sequence,targets:currentSource.selection.targets,preferredTarget:currentSource.selection.preferredTarget} : undefined} onCurrentSourceSelect={(target:CodeSourceTarget)=>currentSource.select('source-control',[target],target)} active={viewActive} repositories={observation.repositories} reader={observation.reader} readKey={observation.readKey}
       editableWorkspaceId={workspaceId || undefined}
       observation={observation.observation} onRefresh={observation.refresh} onRetry={observation.refresh}
+      onClone={workspaceId ? (repositoryId => { void codeApi.repositoryClone(workspaceId, repositoryId).then(result => {
+        if (result.status === 'unavailable') message.warning(result.diagnostic || '仅 Git 来源的代码库支持克隆。');
+        void observation.refresh(repositoryId);
+      }).catch(error => { message.error(error instanceof Error ? error.message : '克隆请求未能完成。'); void observation.refresh(repositoryId); }); }) : undefined}
       catalogActions={<Dropdown open={viewActive && catalogMenuOpen} onOpenChange={setCatalogMenuOpen} trigger={['click']} placement="bottomRight" menu={{'aria-label':'源代码管理操作菜单', items:[
         {key:'sync', icon:<SyncOutlined aria-hidden spin={syncing} />, label:syncing ? '正在同步…' : '全部同步', disabled:fetching || syncing || !observation.repositories.length},
         {key:'fetch', icon:<CloudDownloadOutlined aria-hidden spin={fetching} />, label:fetching ? '正在获取远程…' : '全部获取远程', disabled:fetching || syncing || !observation.repositories.length},

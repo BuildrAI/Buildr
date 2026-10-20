@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ApiError } from '../../../api';
 import type { FileEditingDocument, FileEditingOperations } from '../../../components/file-editing/file-editing-types';
 import { codeApi, type EditableFileSelector, type EditableFileSnapshot } from '../api/code-api';
@@ -47,11 +47,11 @@ export function fileEditingOperations(workspaceId: string): FileEditingOperation
 }
 
 /** Read only a precise current-file selector; stale replies from a previous selection are discarded. */
-export function useEditableFile(workspaceId: string | null, selector: EditableFileSelector | null, refreshKey?: unknown) {
+export function useEditableFile(workspaceId: string | null, selector: EditableFileSelector | null, refreshKey?: unknown, snapshot?: EditableFileSnapshot) {
   const key = JSON.stringify([workspaceId, selector]);
   const [state, setState] = useState<{ key: string; file?: FileEditingDocument; error?: string }>({ key: '' });
   useEffect(() => {
-    if (!workspaceId || !selector) return;
+    if (!workspaceId || !selector || snapshot) return;
     const abort = new AbortController();
     setState(previous => previous.key === key ? previous : {key});
     void codeApi.editorFile(workspaceId, selector, abort.signal).then(snapshot => {
@@ -60,6 +60,8 @@ export function useEditableFile(workspaceId: string | null, selector: EditableFi
       if (!abort.signal.aborted) setState({ key, error: error instanceof Error ? error.message : '无法打开文件。' });
     });
     return () => abort.abort();
-  }, [key, refreshKey]);
+  }, [key, refreshKey, snapshot]);
+  const supplied = useMemo(() => workspaceId && snapshot ? {key, file:editableDocument(workspaceId,snapshot), error:undefined} : undefined, [key, snapshot]);
+  if (supplied) return supplied;
   return state.key === key ? state : { key };
 }

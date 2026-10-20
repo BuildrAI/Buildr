@@ -31,11 +31,46 @@ function textContent(node) {
   return React.isValidElement(node) ? React.Children.toArray(node.props.children).map(textContent).join('') : String(node ?? '');
 }
 
+function fakeCatalog() {
+  const entries = new Map(), listeners = new Set(), reads = [];
+  let serial = 0;
+  function notify(database) { for (const listener of listeners) listener(database); }
+  function start(database) {
+    const controller = new AbortController(), entry = { status: 'loading', tables: [] };
+    entries.set(database, { database, entry, controller, serial: ++serial });
+    reads.push(entries.get(database));
+    return entry;
+  }
+  const catalog = {
+    reads,
+    read(database) { return entries.get(database)?.entry ?? start(database); },
+    retry(database) { entries.delete(database); return catalog.read(database); },
+    subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
+    invalidate() { for (const read of entries.values()) read.controller.abort(); entries.clear(); notify(''); },
+    dispose() { catalog.invalidate(); listeners.clear(); },
+    resolve(database, tables) {
+      const read = entries.get(database);
+      if (!read || read.controller.signal.aborted) return;
+      read.entry.status = 'ready'; read.entry.tables = tables; notify(database);
+    },
+    reject(database, message) {
+      const read = entries.get(database);
+      if (!read || read.controller.signal.aborted) return;
+      read.entry.status = 'error'; read.entry.error = message; notify(database);
+    },
+  };
+  return catalog;
+}
+
 // Exercise the real component's events and effects, replacing React scheduling only.
 function resourceHarness(overrides = {}) {
-  const slots = [], effects = [], writes = [];
+  const slots = [], effects = [], writes = [], catalog = overrides.catalog ?? fakeCatalog();
   let cursor = 0, dirty = false, node;
-  let props = { databases: ['orders', 'billing'], visible: ['orders'], current: '', loading: false, saving: false, writable: true, active: true, onCurrent() {}, onVisible: values => writes.push(values), ...overrides };
+  let props = {
+    databases: ['orders', 'billing'], visible: ['orders'], catalog, loading: false, saving: false, writable: true, active: true,
+    onVisible: values => writes.push(values),
+    ...overrides,
+  };
   const hooks = {
     useState(initial) {
       const index = cursor++;
@@ -68,6 +103,7 @@ function resourceHarness(overrides = {}) {
     const group = controls.find(element => element.props.role === 'group' && element.props['aria-label'] === '启用的数据库');
     assert.ok(group, '数据库选择具有明确分组');
     return {
+      node,
       popover: popover.props,
       trigger: descendants(node).find(element => element.props.id === 'enable-mysql-databases').props,
       search: controls.find(element => element.props['aria-label'] === '搜索数据库').props,
@@ -76,7 +112,17 @@ function resourceHarness(overrides = {}) {
       controls,
     };
   }
-  return { render, writes };
+  return { render, writes, catalog };
+}
+
+function toggleFor(view, database) {
+  const result = descendants(view.node).find(element => element.type === 'button' && element.props.className === 'buildr-database-toggle' && element.props.title === database);
+  assert.ok(result, `${database} 可供展开浏览`);
+  return result.props;
+}
+
+function bodyText(view) {
+  return textContent(view.node);
 }
 
 function choice(view, database) {
@@ -179,4 +225,97 @@ test('不可编辑状态不能打开或通过残留的选择处理器保存', ()
     assert.equal(h.render().popover.open, false);
     assert.deepEqual(h.writes, []);
   }
+});
+
+test('展开数据库按需读取表，只切换展开状态且不保存当前库选择', () => {
+  const h = resourceHarness(), initial = h.render();
+  assert.equal(toggleFor(initial, 'orders')['aria-expanded'], false);
+  toggleFor(initial, 'orders').onClick();
+  const loading = h.render();
+  assert.equal(toggleFor(loading, 'orders')['aria-expanded'], true);
+  assert.match(bodyText(loading), /正在读取表/);
+  assert.deepEqual(h.writes, [], '展开数据库不写入查询偏好');
+  assert.deepEqual(h.catalog.reads.map(read => read.database), ['orders']);
+  h.catalog.resolve('orders', [{ name: 'orders_table', type: 'BASE TABLE' }]);
+  const loaded = h.render();
+  assert.match(bodyText(loaded), /orders_table/);
+  toggleFor(loaded, 'orders').onClick();
+  const collapsed = h.render();
+  assert.equal(toggleFor(collapsed, 'orders')['aria-expanded'], false);
+  assert.deepEqual(h.writes, [], '收起数据库不写入查询偏好');
+});
+
+test('收起后再次展开复用目录中已读取的表', () => {
+  const h = resourceHarness();
+  toggleFor(h.render(), 'orders').onClick();
+  h.render();
+  h.catalog.resolve('orders', [{ name: 'orders_table', type: 'BASE TABLE' }]);
+  toggleFor(h.render(), 'orders').onClick();
+  toggleFor(h.render(), 'orders').onClick();
+  const reopened = h.render();
+  assert.equal(h.catalog.reads.length, 1, '已读取的数据库不重复请求表');
+  assert.match(bodyText(reopened), /orders_table/);
+});
+
+test('表读取失败显示局部错误与重试，重试成功后显示表', () => {
+  const h = resourceHarness();
+  toggleFor(h.render(), 'orders').onClick();
+  h.render();
+  h.catalog.reject('orders', '表读取失败夹具');
+  const failed = h.render();
+  assert.match(bodyText(failed), /表读取失败夹具/);
+  const retry = descendants(failed.node).find(element => element.props.onClick && textContent(element) === '重试');
+  assert.ok(retry, '失败后提供重试');
+  retry.props.onClick();
+  const loading = h.render();
+  assert.match(bodyText(loading), /正在读取表/);
+  h.catalog.resolve('orders', [{ name: 'orders_table', type: 'BASE TABLE' }]);
+  const loaded = h.render();
+  assert.equal(h.catalog.reads.length, 2);
+  assert.match(bodyText(loaded), /orders_table/);
+  assert.doesNotMatch(bodyText(loaded), /表读取失败夹具/);
+});
+
+test('空表数据库显示明确空态', () => {
+  const h = resourceHarness();
+  toggleFor(h.render(), 'orders').onClick();
+  h.render();
+  h.catalog.resolve('orders', []);
+  const empty = h.render();
+  assert.match(bodyText(empty), /没有可访问的表/);
+});
+
+test('刷新数据库列表会清空展开和库表缓存，再次展开重新读取', () => {
+  const h = resourceHarness();
+  toggleFor(h.render(), 'orders').onClick();
+  h.render();
+  h.catalog.resolve('orders', [{ name: 'orders_table', type: 'BASE TABLE' }]);
+  h.catalog.invalidate();
+  const refreshing = h.render({ loading: true });
+  assert.doesNotMatch(bodyText(refreshing), /orders/, '刷新时库表区显示读取状态');
+  const refreshed = h.render({ loading: false });
+  assert.equal(toggleFor(refreshed, 'orders')['aria-expanded'], false, '刷新后收起旧库表');
+  toggleFor(refreshed, 'orders').onClick();
+  const reloading = h.render();
+  assert.equal(h.catalog.reads.length, 2, '刷新后重新读取表');
+  assert.match(bodyText(reloading), /正在读取表/);
+  h.catalog.resolve('orders', [{ name: 'orders_table', type: 'BASE TABLE' }]);
+  assert.match(bodyText(h.render()), /orders_table/);
+});
+
+test('页面停用取消未完成的表读取，恢复后按当前目标重新读取', () => {
+  const h = resourceHarness();
+  toggleFor(h.render(), 'orders').onClick();
+  h.render();
+  assert.equal(h.catalog.reads.length, 1);
+  h.catalog.invalidate();
+  const inactive = h.render({ active: false });
+  assert.equal(h.catalog.reads[0].controller.signal.aborted, true, '页面停用时取消未完成读取');
+  assert.equal(toggleFor(inactive, 'orders')['aria-expanded'], true, '恢复后保留展开痕迹');
+  assert.equal(h.catalog.reads.length, 1, '页面停用期间不发起读取');
+  assert.match(bodyText(inactive), /页面恢复后继续读取/);
+  const restored = h.render({ active: true });
+  assert.equal(h.catalog.reads.length, 2, '恢复后重新读取当前目标');
+  h.catalog.resolve('orders', [{ name: 'orders_table', type: 'BASE TABLE' }]);
+  assert.match(bodyText(h.render()), /orders_table/);
 });

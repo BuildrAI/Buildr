@@ -4,7 +4,7 @@ const closed = (properties: any, required: string[] = Object.keys(properties)) =
 export const WORKBENCH_INPUT_DEFINITIONS = {
   WorkbenchPreferencePutRequest: closed({ label: text, href }, []),
   WorkbenchVisitRequest: closed({ kind: { enum: ['task', 'project', 'knowledge', 'article', 'skill', 'service', 'repository'] }, key: text, label: text, href }, ['key', 'label', 'href']),
-  WorkbenchQuery: closed({ project: text, date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' } }, []),
+  WorkbenchQuery: closed({ project: text }, []),
 };
 export function workbenchError(code: string, message: string, status = 400): Error { return Object.assign(new Error(message), { code, status }); }
 function invalid(field: string): never { throw workbenchError('workbench_input_invalid', `工作台字段无效：${field}。`); }
@@ -19,11 +19,6 @@ export function validateWorkbenchInput(name: keyof typeof WORKBENCH_INPUT_DEFINI
     if (typeof text !== 'string' || !text.trim() || (rule.maxLength && text.length > rule.maxLength) || (rule.enum && !rule.enum.includes(text))) invalid(field);
   }
   for (const field of definition.required) if (!Object.hasOwn(input, field)) invalid(field);
-  if (name === 'WorkbenchQuery' && input.date !== undefined) {
-    const date = String(input.date);
-    const instant = new Date(`${date}T12:00:00.000Z`);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(instant.getTime()) || instant.toISOString().slice(0, 10) !== date) invalid('date');
-  }
 }
 const kinds = new Set(['pinned-task', 'planned-task', 'followed-project', 'saved-resource', 'recent-resource']);
 export function validatePreferenceIdentity(kind: string, key: string): void {
@@ -36,7 +31,7 @@ export function validateResourceHref(href: string, workspaceId: string): string 
   const url = new URL(href, 'http://buildr.local');
   const suffix = url.pathname.slice(`/workspaces/${workspaceId}`.length);
   const code = '[A-Za-z0-9%][A-Za-z0-9%._-]*';
-  const route = new RegExp(`^/(?:overview|activity|settings|tasks(?:/${code}(?:/changes/${code}/${code})?)?|projects(?:/${code})?|services(?:/${code}(?:/${code})?)?|repositories(?:/${code})?|skills(?:/${code})?|articles(?:/${code}(?:/${code})?)?|knowledge/(?:project|service)/${code})/?$`);
+  const route = new RegExp(`^/(?:overview|settings|tasks(?:/${code}(?:/changes/${code}/${code})?)?|projects(?:/${code})?|services(?:/${code}(?:/${code})?)?|repositories(?:/${code})?|skills(?:/${code})?|articles(?:/${code}(?:/${code})?)?|knowledge/(?:project|service)/${code})/?$`);
   if (!route.test(suffix) || ['root', 'target', 'path', 'workspaceId'].some((key) => url.searchParams.has(key))) throw workbenchError('workbench_resource_forbidden', '资源地址不属于可收藏的站内页面。');
   return href;
 }

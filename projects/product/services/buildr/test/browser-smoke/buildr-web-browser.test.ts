@@ -372,7 +372,7 @@ async function capture(page: any, name: any): Promise<any>  {
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, name), fullPage: true, animations: 'disabled' });
 }
 
-// Dispatcher splits code into independent Explorer/SCM parents (240/480 seconds)
+// Dispatcher splits code into independent Explorer/SCM parents (240/540 seconds)
 // and reserves 15 seconds outside each parent for its isolated cleanup.
 test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('code') && codeGroup ? codeGroup.nodeTimeoutMs : SELECTORS.has('code') || SELECTORS.has('task') ? 480_000 : SELECTORS.has('all') ? 300_000 : SELECTORS.has('task-materials') ? 240_000 : SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
   const requestedSmokeRoot: any = process.env.BUILDR_SMOKE_ROOT;
@@ -802,7 +802,11 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#preview-identity').waitFor({ state: 'attached' });
     assert.equal(await page.locator('#preview-identity').isHidden(), true);
     assert.match(await page.locator('#preview-identity').getAttribute('data-preview') || '', /开发预览：browser-preview · preview-branch · 0123456789ab · 有未提交修改/);
+    assert.equal(await page.locator('#quit-buildr').isVisible(), true, 'Preview 实例回退为仅退出按钮');
+    assert.equal(await page.locator('#restart-buildr').count(), 0, 'Preview 实例不提供重启入口');
     await page.goto(url);
+    assert.equal(await page.locator('#restart-buildr').isVisible(), true, '默认实例的主按钮是重启');
+    assert.equal(await page.locator('#quit-buildr').count(), 0, '退出入口收进下拉菜单，未展开时不存在');
     await page.locator('#workspace-grid .workspace-card').first().waitFor({ state: 'visible' });
     assert.equal(await page.locator('#workspace-grid .workspace-card').count(), 2);
     const target: any = page.locator('#workspace-grid .workspace-card').filter({ has: page.locator('h2').filter({ hasText: /^browser-smoke$/ }) });
@@ -1035,6 +1039,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.unroute(registryUrl, failRemove);
     const failQuit = async (route: any) => { quits++; await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'quit_unavailable', message: '宿主暂时不能退出' } }) }); };
     await page.route(quitUrl, failQuit);
+    await page.locator('.ant-dropdown-button:has(#restart-buildr) .ant-dropdown-trigger').click();
     await page.locator('#quit-buildr').click();
     await page.getByRole('dialog', { name: '退出 Buildr Web？', exact: true }).waitFor({ state: 'visible' });
     await confirmAntModal(page);
@@ -1045,9 +1050,50 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     const retried = page.waitForResponse((response: any) => response.url() === quitUrl && response.request().method() === 'POST');
     await page.getByRole('button', { name: '重试退出', exact: true }).click();
     assert.equal((await retried).status(), 500);
-    await page.waitForFunction(() => !document.getElementById('quit-buildr')?.classList.contains('ant-btn-loading'));
     assert.equal(quits, 2);
     assert.equal(await page.locator('#workspace-grid').isVisible(), true);
+  });
+
+  if (selected('shell')) await t.test('重启入口确认后进入重启屏，宿主令牌轮换触发自动刷新', async () => {
+    await page.goto(`${url}/?catalog=1`);
+    await page.locator('#restart-buildr').waitFor({ state: 'visible' });
+    const restartUrl = `${url}/api/v1/app/restart`;
+    expectedBrowserErrors.add(restartUrl);
+    const failRestart = async (route: any) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'restart_unavailable', message: '宿主暂时不能重启' } }) });
+    await page.route(restartUrl, failRestart);
+    await page.locator('#restart-buildr').click();
+    const confirmDialog = page.getByRole('dialog', { name: '重启 Buildr Web？', exact: true });
+    await confirmDialog.waitFor({ state: 'visible' });
+    assert.match(await confirmDialog.innerText(), /进行中的生成与任务验证将被取消/);
+    await confirmAntModal(page);
+    await page.locator('#restart-buildr-error').waitFor();
+    assert.match(await page.locator('#restart-buildr-error').innerText(), /尚未重启/);
+    assert.equal(await page.locator('#workspace-grid').isVisible(), true);
+    assert.equal(await page.locator('#restart-screen').count(), 0);
+    await page.unroute(restartUrl, failRestart);
+    let restarts = 0;
+    const accepted = async (route: any) => { restarts++; await route.fulfill({ status: 202, contentType: 'application/json', body: '{"status":"restarting"}' }); };
+    await page.route(restartUrl, accepted);
+    const restartedDoc = '<!doctype html><html><head><meta name="buildr-session" content="a1b2c3d4e5f60718"></head><body><p id="restarted-marker">RESTARTED</p></body></html>';
+    let documentPolls = 0;
+    await page.route('**', async (route: any) => {
+      const requestUrl = route.request().url();
+      if (requestUrl === `${url}/` || requestUrl === url) {
+        documentPolls++;
+        // The first observation hits the stopping old process; the restarted
+        // document with a rotated session token arrives on a later poll.
+        if (documentPolls === 1) return route.abort();
+        return route.fulfill({ contentType: 'text/html', body: restartedDoc });
+      }
+      return route.fallback();
+    });
+    await page.locator('#restart-buildr').click();
+    await page.getByRole('dialog', { name: '重启 Buildr Web？', exact: true }).waitFor({ state: 'visible' });
+    await confirmAntModal(page);
+    await page.locator('#restart-screen').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#restart-screen').innerText(), /正在重启/);
+    await page.waitForSelector('#restarted-marker', { timeout: 20_000 });
+    assert.equal(restarts, 1, '一次重启只请求一次交接');
   });
 
   if (selected('shell')) await t.test('页面与对象页签手动激活、关闭焦点和面板关联保持一致', async () => {
@@ -1311,7 +1357,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.deepEqual([before.projects, before.services, before.repositories], [[], [], []]);
     await page.goto(`${url}/workspaces/${otherWorkspaceId}/projects/new`);
     await page.getByRole('textbox', { name: '项目名称', exact: true }).fill('首次网页项目');
-    await page.getByRole('textbox', { name: '项目标识', exact: true }).fill('first-browser-project');
+    await page.getByRole('textbox', { name: '项目编码', exact: true }).fill('first-browser-project');
     assert.equal(await page.getByRole('button', { name: '迁移登记', exact: true }).count(), 0);
     await page.getByRole('dialog').getByRole('button', { name: '创建项目', exact: true }).click();
     await page.waitForURL(`${url}/workspaces/${otherWorkspaceId}/projects/first-browser-project`);
@@ -1353,6 +1399,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   });
 
   if (selected('project')) await t.test('项目列表展示标题与说明，详情展示基础事实与文档', async () => {
+    const beforeProjectEdit = runtime.assetCatalog(workspaceRoot);
+    if (beforeProjectEdit.migrationRequired) runtime.migrateAssetCatalog(workspaceRoot, { revision: beforeProjectEdit.revision });
     await page.goto(`${workspaceUrl}/projects`);
     const row: any = page.locator('#project-table-body tr').filter({ hasText: '演示项目' });
     await row.waitFor({ state: 'visible' });
@@ -1368,10 +1416,9 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.locator('#app-view textarea:visible').count(), 0);
     assert.equal(await page.getByText('操作', { exact: true }).filter({ visible: true }).count(), 0);
     assert.equal(await page.locator('.overview-strip, .related-resource-links').count(), 0);
-    assert.equal(await page.locator('.project-home-entries .project-home-entry').count(), 3);
+    assert.equal(await page.locator('.project-home-entries .project-home-entry').count(), 2);
     await page.locator('.project-home-entries [data-knowledge-initialize-action]:visible').waitFor({ state: 'visible' });
-    assert.deepEqual(await page.locator('.project-home-entry strong').allTextContents(), ['建立项目知识', '项目文章', '项目动态']);
-    assert.equal(await page.locator('[data-doc-row="daily"]').count(), 0, '每日演进不再作为项目资料');
+    assert.deepEqual(await page.locator('.project-home-entry strong').allTextContents(), ['建立项目知识', '项目文章']);
     assert.equal(await page.locator('[data-doc-row="readme"], [data-doc-row="agents"]').count(), 2);
     assert.equal(await page.getByRole('button', { name: '查看项目工作', exact: false }).count(), 1);
     assert.equal(await page.getByRole('button', { name: /^移\s*除$/ }).count(), 0);
@@ -1492,50 +1539,39 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#service-detail-name:visible').waitFor({ state: 'visible' });
     assert.equal(await page.getByRole('tab', { name: '服务详情', exact: true }).count(), 1, '目录重入复用项目页并保留已开服务对象');
     assert.equal(await page.getByRole('tab', { name: 'AGENTS.md', exact: true }).count(), 1, '目录重入保留已有文档标签');
-    await page.locator('#project-activity-link').click();
-    assert.equal(page.url(), `${workspaceUrl}/projects/demo`, '项目动态在项目主页副屏打开，不离开当前页');
-    await page.getByRole('tab', { name: '项目动态', exact: true }).waitFor({ state: 'visible' });
-    assert.equal(await page.getByRole('button', { name: '关闭 项目动态', exact: true }).count(), 1, '对象关闭是独立可访问控件');
-    await page.locator('.pane-right:visible .project-activity-controls').waitFor({ state: 'visible' });
-    await page.locator('.pane-right:visible').getByRole('link', { name: '打开动态页', exact: true }).click();
-    await page.waitForURL(current => current.pathname === new URL(`${workspaceUrl}/activity`).pathname && current.searchParams.get('project') === 'demo' && !current.searchParams.has('date'));
-    await page.locator('#workbench-activity').waitFor({ state: 'visible' });
-    await page.locator('#workbench-activity #workbench-daily-progress').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('[data-nav="activity"]').evaluate((element: HTMLElement) => element.classList.contains('active')), true);
-    assert.equal(await page.locator('.pane-right #progress-body').count(), 0, '项目主页进入统一动态页，不挂载旧侧栏详情');
-    await page.goBack();
-    await page.waitForURL(`${workspaceUrl}/projects/demo`);
-    await page.locator('#project-detail-name:visible').waitFor({ state: 'visible' });
     await page.getByRole('button', { name: '编辑项目', exact: true }).click();
-    await page.locator('#project-edit-form').waitFor({ state: 'visible' });
+    await page.locator('#catalog-edit').waitFor({ state: 'visible' });
     assert.equal(await page.url(), `${workspaceUrl}/projects/demo`);
-    await page.locator('#project-description').fill('已在抽屉中更新');
-    await page.locator('#project-name').fill('演示项目（已更新）');
+    await page.getByRole('textbox', { name: '说明', exact: true }).fill('已在抽屉中更新');
+    await page.getByRole('textbox', { name: '名称', exact: true }).fill('演示项目（已更新）');
     await page.getByRole('button', { name: '取消', exact: true }).click();
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
     assert.equal(await page.locator('#project-detail-description').innerText(), '浏览器测试项目');
     await page.getByRole('button', { name: '编辑项目', exact: true }).click();
-    await page.locator('#project-edit-form').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#project-description').inputValue(), '浏览器测试项目');
-    await page.locator('#project-description').fill('已在抽屉中更新');
-    await page.locator('#project-name').fill('演示项目（已更新）');
-    const projectUpdateUrl = `${url}/api/v1/workspaces/${initialWorkspaceId}/projects/demo`;
+    await page.locator('#catalog-edit').waitFor({ state: 'visible' });
+    assert.equal(await page.getByRole('textbox', { name: '说明', exact: true }).inputValue(), '浏览器测试项目');
+    await page.getByRole('textbox', { name: '说明', exact: true }).fill('已在抽屉中更新');
+    await page.getByRole('textbox', { name: '名称', exact: true }).fill('演示项目（已更新）');
+    const demoId = runtime.assetCatalog(workspaceRoot).projects.find((item: any) => item.code === 'demo').id;
+    const catalogUrl = `${url}/api/v1/workspaces/${initialWorkspaceId}/asset-catalog`;
+    const projectUpdateUrl = `${catalogUrl}/project/${demoId}`;
     expectedBrowserErrors.add(projectUpdateUrl);
     const failProjectSave = async (route: any) => {
-      if (route.request().method() === 'PUT') return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'project_revision_conflict', message: '内容已变化' } }) });
+      if (route.request().method() === 'PUT') return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'asset_revision_conflict', message: '内容已变化' } }) });
       return route.continue();
     };
     await page.route(projectUpdateUrl, failProjectSave);
     await page.getByRole('button', { name: '保存修改', exact: true }).click();
-    await page.locator('#project-edit-alert').waitFor({ state: 'visible' });
-    assert.match(await page.locator('#project-edit-alert').innerText(), /你的输入已保留/);
-    assert.equal(await page.locator('#project-description').inputValue(), '已在抽屉中更新');
+    const editAlert = page.locator('.metadata-edit-drawer .metadata-conflict').first();
+    await editAlert.waitFor({ state: 'visible' });
+    assert.match(await editAlert.innerText(), /输入已保留/);
+    assert.equal(await page.getByRole('textbox', { name: '说明', exact: true }).inputValue(), '已在抽屉中更新');
     await page.unroute(projectUpdateUrl, failProjectSave);
-    const freshProject = page.waitForResponse((response: any) => response.url() === projectUpdateUrl && response.request().method() === 'GET');
+    const freshProject = page.waitForResponse((response: any) => response.url() === catalogUrl && response.request().method() === 'GET');
     await page.getByRole('button', { name: '读取最新内容', exact: true }).click();
     assert.equal((await freshProject).status(), 200);
     await page.locator('.metadata-conflict dl').waitFor();
-    assert.equal(await page.locator('#project-description').inputValue(), '已在抽屉中更新');
+    assert.equal(await page.getByRole('textbox', { name: '说明', exact: true }).inputValue(), '已在抽屉中更新');
     await capture(page, 'project-edit-drawer-desktop.png');
     let releaseSave: () => void = () => {}, saveCaptured: () => void = () => {}, writes = 0;
     const saveGate = new Promise<void>(resolve => { releaseSave = resolve; });
@@ -1549,13 +1585,13 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       const saved = page.waitForResponse((response: any) => response.url() === projectUpdateUrl && response.request().method() === 'PUT');
       await page.getByRole('button', { name: '保留修改并按最新版本保存', exact: true }).click();
       await capturedSave;
-      for (const selector of ['#project-name', '#project-description']) assert.equal(await page.locator(selector).isDisabled(), true, '保存期间字段不能接受未提交的新输入');
+      for (const name of ['名称', '说明']) assert.equal(await page.locator(`#catalog-edit [aria-label="${name}"]`).isDisabled(), true, '保存期间字段不能接受未提交的新输入');
       assert.equal(await page.getByRole('button', { name: '关闭编辑', exact: true }).isDisabled(), true);
       assert.equal(await page.getByRole('button', { name: '取消', exact: true }).isDisabled(), true);
-      await page.evaluate(() => { const form = document.getElementById('project-edit-form') as HTMLFormElement; form.requestSubmit(); form.requestSubmit(); });
+      await page.evaluate(() => { const form = document.getElementById('catalog-edit') as HTMLFormElement; form.requestSubmit(); form.requestSubmit(); });
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       assert.equal(writes, 1, '等待中的重复表单提交不能生成第二次 PUT');
-      assert.equal(await page.locator('#project-description').inputValue(), '已在抽屉中更新');
+      assert.equal(await page.getByRole('textbox', { name: '说明', exact: true }).inputValue(), '已在抽屉中更新');
       releaseSave(); assert.equal((await saved).status(), 200);
     } finally { releaseSave(); await page.unroute(projectUpdateUrl, delaySave); }
     await page.waitForFunction(() => document.getElementById('project-detail-description')?.textContent === '已在抽屉中更新');
@@ -1566,15 +1602,20 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   });
 
   if (selected('project')) await t.test('元信息最新读取失败保留输入，旧编辑迟到响应不能解锁新保存', async () => {
+    const beforeRecoveryEdit = runtime.assetCatalog(workspaceRoot);
+    if (beforeRecoveryEdit.migrationRequired) runtime.migrateAssetCatalog(workspaceRoot, { revision: beforeRecoveryEdit.revision });
     await page.goto(`${workspaceUrl}/projects/demo`);
     await page.locator('#project-detail-name').waitFor();
-    const target = `${url}/api/v1/workspaces/${initialWorkspaceId}/projects/demo`;
-    const original = await (await page.request.get(target)).json();
+    const demoProjectId = runtime.assetCatalog(workspaceRoot).projects.find((item: any) => item.code === 'demo').id;
+    const catalogReadUrl = `${url}/api/v1/workspaces/${initialWorkspaceId}/asset-catalog`;
+    const target = `${catalogReadUrl}/project/${demoProjectId}`;
+    expectedBrowserErrors.add(catalogReadUrl);
+    const original = { project: runtime.assetCatalog(workspaceRoot).projects.find((item: any) => item.code === 'demo'), revision: runtime.assetCatalog(workspaceRoot).revision };
     const session = await page.locator('meta[name="buildr-session"]').getAttribute('content');
     const headers = { origin: url, 'x-buildr-session': session!, 'content-type': 'application/json' };
     await page.getByRole('button', { name: '编辑项目', exact: true }).click();
-    await page.locator('#project-edit-form').waitFor();
-    await page.locator('#project-description').fill('旧编辑输入');
+    await page.locator('#catalog-edit').waitFor();
+    await page.getByRole('textbox', { name: '说明', exact: true }).fill('旧编辑输入');
     let reads = 0, writes = 0;
     let releaseRead: () => void = () => {}, captureRead: () => void = () => {}, finishRead: () => void = () => {};
     let releaseWrite: () => void = () => {}, captureWrite: () => void = () => {};
@@ -1594,7 +1635,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       }
       if (route.request().method() === 'PUT') {
         writes++;
-        if (writes === 1) return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'project_revision_conflict', message: '内容已变化' } }) });
+        if (writes === 1) return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'asset_revision_conflict', message: '内容已变化' } }) });
         captureWrite(); await writeGate;
       }
       await route.continue();
@@ -1603,7 +1644,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     const saveRequests: Array<{ method: string; url: string; status: number | null; migrationRequired?: boolean; revision?: string; errorCode?: string }> = [];
     const saveRequestEntries = new Map<any, (typeof saveRequests)[number]>();
     const observeSaveRequest = (request: any) => {
-      if (request.url() !== target || saveRequests.length >= 16) return;
+      if (![target, catalogReadUrl].includes(request.url()) || saveRequests.length >= 16) return;
       const observation = { method: request.method(), url: request.url(), status: null };
       saveRequests.push(observation); saveRequestEntries.set(request, observation);
     };
@@ -1619,52 +1660,53 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       } catch { /* Status and identity remain useful if the body is unavailable. */ }
     };
     page.on('request', observeSaveRequest); page.on('response', observeSaveResponse);
+    await page.route(catalogReadUrl, injected);
     await page.route(target, injected);
     try {
       await page.getByRole('button', { name: '保存修改', exact: true }).click();
       await page.getByRole('button', { name: '读取最新内容', exact: true }).click();
       await page.locator('.metadata-conflict').getByText('最新读取暂不可用', { exact: true }).waitFor();
-      assert.equal(await page.locator('#project-description').inputValue(), '旧编辑输入');
+      assert.equal(await page.getByRole('textbox', { name: '说明', exact: true }).inputValue(), '旧编辑输入');
       assert.equal(await page.getByRole('button', { name: '保留修改并按最新版本保存', exact: true }).count(), 0);
       await page.getByRole('button', { name: '读取最新内容', exact: true }).click(); await readCaptured;
       await page.getByRole('button', { name: '关闭编辑', exact: true }).click();
       await page.getByRole('dialog').waitFor({ state: 'hidden' });
       await page.getByRole('button', { name: '编辑项目', exact: true }).click();
-      await page.locator('#project-description').waitFor();
-      assert.equal(await page.locator('#project-description').inputValue(), original.project.description);
-      await page.locator('#project-description').fill('新编辑输入');
-      const saved = page.waitForResponse((response: any) => response.url() === target && response.request().method() === 'PUT');
+      await page.getByRole('textbox', { name: '说明', exact: true }).waitFor();
+      assert.equal(await page.getByRole('textbox', { name: '说明', exact: true }).inputValue(), original.project.description);
+      await page.getByRole('textbox', { name: '说明', exact: true }).fill('新编辑输入');
+      const saved = page.waitForResponse((response: any) => response.url() === target && response.request() .method() === 'PUT');
       await page.getByRole('button', { name: '保存修改', exact: true }).click(); await writeCaptured;
       releaseRead(); await readFinished;
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-      await page.evaluate(() => (document.getElementById('project-edit-form') as HTMLFormElement).requestSubmit());
+      await page.evaluate(() => (document.getElementById('catalog-edit') as HTMLFormElement).requestSubmit());
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       assert.equal(writes, 2, '旧读取完成不能解锁新编辑正在执行的保存');
-      assert.equal(await page.locator('#project-description').inputValue(), '新编辑输入');
-      assert.equal(await page.locator('#project-description').isDisabled(), true);
+      assert.equal(await page.getByRole('textbox', { name: '说明', exact: true }).inputValue(), '新编辑输入');
+      assert.equal(await page.getByRole('textbox', { name: '说明', exact: true }).isDisabled(), true);
       releaseWrite(); assert.equal((await saved).status(), 200);
       await page.getByRole('dialog').waitFor({ state: 'hidden' });
     } catch (error) {
       console.error('[project-metadata-recovery-scene]', JSON.stringify({
         target, reads, writes, requests: saveRequests,
-        original: { migrationRequired: original.migrationRequired, revision: original.revision },
+        original: { migrationRequired: false, revision: original.revision },
         scene: await page.evaluate(() => {
           const visible = (node: Element) => node.getClientRects().length > 0 && getComputedStyle(node).visibility !== 'hidden';
-          const form = document.querySelector<HTMLElement>('#project-edit-form');
-          const save = document.querySelector<HTMLButtonElement>('#project-save-button');
-          const alert = document.querySelector<HTMLElement>('#project-edit-alert');
+          const form = document.querySelector<HTMLElement>('#catalog-edit');
+          const save = document.querySelector<HTMLButtonElement>('#catalog-edit-save');
+          const alert = document.querySelector<HTMLElement>('.metadata-edit-drawer .ant-alert-error');
           return {
             url: location.href, formVisible: Boolean(form && visible(form)),
             save: save ? { disabled: save.disabled, loading: save.classList.contains('ant-btn-loading'), text: save.innerText.slice(0, 120) } : null,
-            fields: ['project-name', 'project-description'].map(id => { const field = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | null; return { id, disabled: field?.disabled ?? null, value: field?.value.slice(0, 240) ?? null }; }),
+            fields: ['名称', '说明'].map(name => { const field = form?.querySelector(`[aria-label="${name}"]`) as HTMLInputElement | HTMLTextAreaElement | null | undefined; return { id: name, disabled: field?.disabled ?? null, value: field?.value.slice(0, 240) ?? null }; }),
             alert: alert ? { visible: visible(alert), text: alert.innerText.slice(0, 1200) } : null,
             recoveryButtons: [...document.querySelectorAll<HTMLButtonElement>('.metadata-conflict button')].filter(visible).slice(0, 8).map(button => ({ text: button.innerText.slice(0, 120), disabled: button.disabled, loading: button.classList.contains('ant-btn-loading') })),
           };
         }),
       }));
       throw error;
-    } finally { releaseRead(); releaseWrite(); await page.unroute(target, injected); page.off('request', observeSaveRequest); page.off('response', observeSaveResponse); }
-    const current = await (await page.request.get(target)).json();
+    } finally { releaseRead(); releaseWrite(); await page.unroute(catalogReadUrl, injected); await page.unroute(target, injected); page.off('request', observeSaveRequest); page.off('response', observeSaveResponse); }
+    const current = runtime.assetCatalog(workspaceRoot);
     const restored = await page.request.put(target, { headers, data: { revision: current.revision, name: original.project.name, description: original.project.description } });
     assert.equal(restored.status(), 200, await restored.text());
   });
@@ -1695,15 +1737,15 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     if (current.migrationRequired) { await migration.click(); await migration.waitFor({ state: 'hidden' }); }
     assert.equal(await page.getByRole('tab', { name: '创建项目', exact: true }).count(), 0);
     await page.getByRole('textbox', { name: '项目名称', exact: true }).fill('嵌套创建项目');
-    await page.getByRole('textbox', { name: '项目标识', exact: true }).fill('nested-project');
+    await page.getByRole('textbox', { name: '项目编码', exact: true }).fill('nested-project');
     await page.getByRole('combobox', { name: '关联服务', exact: true }).click();
     await page.getByRole('textbox', { name: '过滤服务', exact: true }).fill('不存在的服务');
     await page.getByRole('button', { name: '新增服务', exact: true }).click();
     await page.getByRole('textbox', { name: '服务名称', exact: true }).fill('嵌套业务服务');
-    await page.getByRole('textbox', { name: '服务标识', exact: true }).fill('nested-business');
+    await page.getByRole('textbox', { name: '服务编码', exact: true }).fill('nested-business');
     await page.getByRole('combobox', { name: '代码库', exact: true }).click();
     await page.getByRole('button', { name: '新增代码库', exact: true }).click();
-    await page.getByRole('textbox', { name: '代码库标识', exact: true }).fill('nested-code');
+    await page.getByRole('textbox', { name: '代码库编码', exact: true }).fill('nested-code');
     await page.getByRole('textbox', { name: 'Git 地址', exact: true }).fill('https://example.com/nested.git');
     await page.getByRole('textbox', { name: '集成分支', exact: true }).fill('dev');
     await page.getByRole('button', { name: '添加服务', exact: true }).click();
@@ -1719,10 +1761,12 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     const repository = saved.repositories.find((r: any) => r.code === 'nested-code');
     assert.deepEqual(project.serviceIds, [service.id]);
     assert.equal(service.repositoryId, repository.id);
-    assert.equal(repository.present, true);
-    assert.equal(repository.source.path, 'projects/nested-project/services/nested-business');
+    assert.equal(repository.present, false);
+    assert.equal(repository.source.path, 'repositories/nested-code');
     assert.equal(runtime.catalogRepositoryStatus(workspaceRoot, repository.id).available, false);
-    assert.ok(fs.existsSync(path.join(workspaceRoot, repository.source.path, 'AGENTS.md')));
+    assert.ok(!fs.existsSync(path.join(workspaceRoot, repository.source.path)));
+    assert.equal(fs.existsSync(path.join(workspaceRoot, 'projects/nested-project/services/nested-business')), false);
+    assert.equal(fs.existsSync(path.join(workspaceRoot, 'services/nested-business')), false);
     await page.getByRole('button', { name: '解除关联 嵌套业务服务', exact: true }).click();
     await page.getByRole('link', { name: '嵌套业务服务', exact: true }).waitFor({ state: 'hidden' });
     assert.equal(await page.locator('#project-service-count').innerText(), '0');
@@ -1889,7 +1933,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     for (let round = 0; round < 2; round++) {
       await page.getByRole('button', { name: '新增服务', exact: true }).click();
       await page.getByRole('textbox', { name: '服务名称', exact: true }).fill('目录登记服务');
-      await page.getByRole('textbox', { name: '服务标识', exact: true }).fill('retained-browser');
+      await page.getByRole('textbox', { name: '服务编码', exact: true }).fill('retained-browser');
       await page.getByRole('combobox', { name: '已有服务目录', exact: true }).click();
       await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: directoryPath }).click();
       await page.getByRole('button', { name: '添加服务', exact: true }).click();
@@ -1904,15 +1948,16 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     }
     await page.getByRole('button', { name: '新增服务', exact: true }).click();
     await page.getByRole('textbox', { name: '服务名称', exact: true }).fill('新目录服务');
-    await page.getByRole('textbox', { name: '服务标识', exact: true }).fill('new-directory-browser');
-    await page.getByRole('combobox', { name: '所在项目', exact: true }).click();
+    await page.getByRole('textbox', { name: '服务编码', exact: true }).fill('new-directory-browser');
+    await page.getByRole('combobox', { name: '所属项目', exact: true }).click();
     await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: runtime.assetCatalog(workspaceRoot).projects.find((item: any) => item.code === 'demo').name }).click();
     await page.getByRole('button', { name: '添加服务', exact: true }).click();
     await page.locator('#catalog-service-create').waitFor({ state: 'detached' });
-    assert.ok(fs.existsSync(path.join(workspaceRoot, 'projects/demo/services/new-directory-browser/AGENTS.md')));
+    assert.ok(fs.statSync(path.join(workspaceRoot, 'projects/demo/services/new-directory-browser')).isDirectory());
+    assert.equal(fs.existsSync(path.join(workspaceRoot, 'projects/demo/services/new-directory-browser/AGENTS.md')), false);
     await page.goto(`${workspaceUrl}/skills`);
     await page.locator('#skills-add').click();
-    await page.getByRole('textbox', { name: '技能标识', exact: true }).fill('retained-browser-skill');
+    await page.getByRole('textbox', { name: '技能编码', exact: true }).fill('retained-browser-skill');
     await page.getByRole('textbox', { name: '技能描述', exact: true }).fill('保留文件');
     await page.getByRole('textbox', { name: '技能正文', exact: true }).fill('# 浏览器保留技能\n\n正文不改写。');
     await page.getByRole('button', { name: '保存技能', exact: true }).click();
@@ -1961,7 +2006,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     c = runtime.assetCatalog(workspaceRoot);
     assert.ok(!c.services.some((s: any) => s.id === service.id));
     assert.ok(c.repositories.some((r: any) => r.id === service.repositoryId));
-    assert.ok(fs.existsSync(path.join(workspaceRoot, 'services/delete-browser-api/AGENTS.md')));
+    assert.equal(fs.existsSync(path.join(workspaceRoot, 'services/delete-browser-api')), false);
     await page.goto(`${workspaceUrl}/projects/delete-browser`);
     await page.getByRole('button', { name: '更多项目操作', exact: true }).click();
     await page.getByRole('menuitem', { name: /^移\s*除$/ }).click();
@@ -2036,7 +2081,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
         await page.getByRole('button', { name: '保留修改并按最新版本保存', exact: true }).click();
         await pending;
         for (const name of ['名称', '说明', '模块目录']) assert.equal(await page.getByRole('textbox', { name, exact: true }).isDisabled(), true);
-        assert.equal(await page.locator('#catalog-edit').getByRole('combobox').isDisabled(), true);
+        for (const label of ['所属项目', '代码库']) assert.equal(await page.locator('#catalog-edit').getByRole('combobox', { name: label, exact: true }).isDisabled(), true);
         assert.equal(await page.getByRole('button', { name: '关闭编辑', exact: true }).isDisabled(), true);
         await page.evaluate(() => { const form = document.getElementById('catalog-edit') as HTMLFormElement; form.requestSubmit(); form.requestSubmit(); });
         await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -2197,7 +2242,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     });
     await create.click();
     assert.equal(await page.getByRole('dialog').count(), 1);
-    await page.getByRole('textbox', { name: '代码库标识', exact: true }).fill('inline-picker-code');
+    await page.getByRole('textbox', { name: '代码库编码', exact: true }).fill('inline-picker-code');
     await page.getByRole('textbox', { name: 'Git 地址', exact: true }).fill('https://example.com/inline-picker.git');
     await page.getByRole('textbox', { name: '集成分支', exact: true }).fill('dev');
     assert.equal(runtime.assetCatalog(workspaceRoot).repositories.length, count);
@@ -2206,14 +2251,14 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(runtime.assetCatalog(workspaceRoot).repositories.length, count);
     await page.getByRole('combobox', { name: '代码库', exact: true }).press('ArrowDown');
     await create.click();
-    assert.equal(await page.getByRole('textbox', { name: '代码库标识', exact: true }).inputValue(), 'inline-picker-code');
+    assert.equal(await page.getByRole('textbox', { name: '代码库编码', exact: true }).inputValue(), 'inline-picker-code');
     const updateUrl = `${url}/api/v1/workspaces/${initialWorkspaceId}/asset-catalog/service/${service.id}`;
     expectedBrowserErrors.add(updateUrl);
     const conflict = (route: any) => route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'asset_revision_conflict', message: '清单版本已变化' } }) });
     await page.route(updateUrl, conflict);
     await page.locator('#catalog-edit-save').click();
     await page.getByRole('dialog').getByText('清单版本已变化', { exact: true }).waitFor();
-    assert.equal(await page.getByRole('textbox', { name: '代码库标识', exact: true }).inputValue(), 'inline-picker-code');
+    assert.equal(await page.getByRole('textbox', { name: '代码库编码', exact: true }).inputValue(), 'inline-picker-code');
     assert.equal(runtime.assetCatalog(workspaceRoot).repositories.length, count);
     await page.unroute(updateUrl, conflict);
     assert.equal(await page.locator('#catalog-edit-save').isDisabled(), true, '版本冲突后不能跳过最新内容核对');
@@ -2221,7 +2266,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     const keep = page.getByRole('button', { name: '保留修改并按最新版本保存', exact: true });
     await keep.waitFor();
     assert.equal(await page.getByRole('textbox', { name: '名称', exact: true }).inputValue(), '保留服务名称草稿');
-    assert.equal(await page.getByRole('textbox', { name: '代码库标识', exact: true }).inputValue(), 'inline-picker-code');
+    assert.equal(await page.getByRole('textbox', { name: '代码库编码', exact: true }).inputValue(), 'inline-picker-code');
     assert.equal(runtime.assetCatalog(workspaceRoot).repositories.length, count, '读取最新内容仍不登记内联代码库');
     await keep.click();
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
@@ -2229,24 +2274,24 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.ok(repository); assert.equal(saved.repositories.length, count + 1);
     assert.equal(saved.services.find((s: any) => s.id === service.id).repositoryId, repository.id);
     assert.equal(saved.services.find((s: any) => s.id === service.id).name, '保留服务名称草稿');
-    assert.equal(repository.source.path, 'repositories/inline-picker');
+    assert.equal(repository.source.path, 'repositories/inline-picker-code');
     assert.equal(fs.existsSync(path.join(workspaceRoot, 'repositories/inline-picker-code')), false);
   });
 
-  if (selected('service')) await t.test('新增代码库从地址自动填入标识目录并分别保护手动值', async () => {
+  if (selected('service')) await t.test('新增代码库从地址自动填入编码目录并分别保护手动值', async () => {
     const count = runtime.assetCatalog(workspaceRoot).repositories.length;
     await page.goto(`${workspaceUrl}/repositories`);
     await page.getByRole('button', { name: '新增代码库', exact: true }).click();
     await page.getByRole('textbox', { name: 'Git 地址', exact: true }).fill('https://example.com/team/Automatic.git/');
-    assert.equal(await page.getByRole('textbox', { name: '代码库标识', exact: true }).inputValue(), 'Automatic');
+    assert.equal(await page.getByRole('textbox', { name: '代码库编码', exact: true }).inputValue(), 'Automatic');
     assert.equal(await page.getByRole('textbox', { name: '仓库目录', exact: true }).inputValue(), 'repositories/Automatic');
-    await page.getByRole('textbox', { name: '代码库标识', exact: true }).fill('manual-code');
+    await page.getByRole('textbox', { name: '代码库编码', exact: true }).fill('manual-code');
     await page.getByRole('textbox', { name: 'Git 地址', exact: true }).fill('git@example.com:team/Next.git');
-    assert.equal(await page.getByRole('textbox', { name: '代码库标识', exact: true }).inputValue(), 'manual-code');
-    assert.equal(await page.getByRole('textbox', { name: '仓库目录', exact: true }).inputValue(), 'repositories/Next');
+    assert.equal(await page.getByRole('textbox', { name: '代码库编码', exact: true }).inputValue(), 'manual-code');
+    assert.equal(await page.getByRole('textbox', { name: '仓库目录', exact: true }).inputValue(), 'repositories/manual-code');
     await page.getByRole('textbox', { name: '仓库目录', exact: true }).fill('custom/location');
     await page.getByRole('textbox', { name: 'Git 地址', exact: true }).fill('ssh://git@example.com/team/Third.git');
-    assert.equal(await page.getByRole('textbox', { name: '代码库标识', exact: true }).inputValue(), 'manual-code');
+    assert.equal(await page.getByRole('textbox', { name: '代码库编码', exact: true }).inputValue(), 'manual-code');
     assert.equal(await page.getByRole('textbox', { name: '仓库目录', exact: true }).inputValue(), 'custom/location');
     await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
     assert.equal(runtime.assetCatalog(workspaceRoot).repositories.length, count);

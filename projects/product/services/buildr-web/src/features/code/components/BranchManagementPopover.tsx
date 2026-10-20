@@ -4,6 +4,7 @@ import { Button, Input, Popover, Spin } from 'antd';
 import { BranchesOutlined, CheckOutlined, CloudOutlined, RightOutlined, SearchOutlined, SyncOutlined } from '@ant-design/icons';
 import type { BranchSwitchFailure, BranchSwitchImpact, SourceControlBranch } from '../source-control-branches';
 import type { SourceControlRepository, SourceControlWorktree } from '../source-control-model';
+import { codeRepositoryLabel } from '../code-source-labels';
 import { WorkspaceViewActiveContext } from '../../../app/pageTabs';
 import './branch-management-popover.css';
 
@@ -112,7 +113,7 @@ export function BranchManagementPopover({ repository, worktree, entries, ready, 
         <ul className="branch-management-affected-files">{failure!.affectedFiles.map(path => <li key={path} title={path}>{path}</li>)}</ul>
         <Button type="text" block className="branch-management-primary-action" onClick={() => { onViewChanges(); close(); }}>查看现有改动</Button>
       </> : impact.blockedReason ? <p className="branch-management-warning">{impact.blockedReason}</p> : <>
-        {impact.needsLocalName && <label className="branch-management-local-name">本地分支（Local Branch）名称<Input size="small" value={localName} onChange={event => { setLocalName(event.target.value); onTargetChange(); }} aria-label="切换使用的本地分支（Local Branch）名称" onPressEnter={() => { if (targetName) void use(entry, targetName); }} /></label>}
+        {impact.needsLocalName && <label className="branch-management-local-name">本地分支（Local Branch）名称<Input size="small" value={localName} onChange={event => { setLocalName(event.target.value.replace(/\s+/g, '')); onTargetChange(); }} aria-label="切换使用的本地分支（Local Branch）名称" onPressEnter={() => { if (targetName) void use(entry, targetName); }} /></label>}
         <Button type="text" block className="branch-management-primary-action" disabled={!targetName || reading} loading={pending} title={actionLabel} onClick={() => void use(entry, impact.needsLocalName ? targetName : undefined)}>{actionLabel}</Button>
       </>}
     </section>;
@@ -130,8 +131,9 @@ export function BranchManagementPopover({ repository, worktree, entries, ready, 
       </Popover>;
     }) : <p className="branch-management-none">{query.trim() ? '没有匹配项' : '暂无本地记录'}</p>}
   </section>;
-  const content = <section role="region" aria-label={`分支管理 · ${repository.name} · ${worktreeName}`} className="branch-management-panel" style={{ maxHeight }} onClick={event => event.stopPropagation()} data-prototype-position="work-position-branch-manager">
-    <header className="branch-management-scope" title={worktree.location}>{repository.name} · {worktreeName}</header>
+  const repositoryLabel = codeRepositoryLabel(repository);
+  const content = <section role="region" aria-label={`分支管理 · ${repositoryLabel} · ${worktreeName}`} className="branch-management-panel" style={{ maxHeight }} onClick={event => event.stopPropagation()} data-prototype-position="work-position-branch-manager">
+    <header className="branch-management-scope" title={worktree.location}>{repositoryLabel} · {worktreeName}</header>
     <div className="branch-management-search"><Input ref={searchRef} size="small" value={query} allowClear onChange={event => { setQuery(event.target.value); setActiveRef(null); }} prefix={<SearchOutlined />} placeholder="搜索分支名称" aria-label="搜索可用分支（Branch）" /></div>
     <div className="branch-management-list">
       {reading && !entries.length && <p className="branch-management-none" role="status"><Spin size="small" /> 正在读取…</p>}
@@ -143,6 +145,6 @@ export function BranchManagementPopover({ repository, worktree, entries, ready, 
       {remoteError && <p role="alert">{remoteError}</p>}{readNote && <p>{readNote}</p>}</footer>
   </section>;
   return <Popover open={viewActive && open} afterOpenChange={next => {if (next && triggerRef.current?.closest('[inert]')) searchRef.current?.focus();}} onOpenChange={next => { if (next && viewActive) { measure(); setOpen(true); onOpenChange(true); } else close(); }} trigger="click" placement="rightTop" autoAdjustOverflow content={content} overlayClassName="branch-management-popover" destroyOnHidden>
-    <Button ref={triggerRef} type="text" size="small" className="source-control-row-action-button" disabled={!ready || pending} title={`${currentName} · 管理分支`} aria-label={`管理分支 · ${repository.name} · ${worktreeName}`} aria-expanded={open} aria-haspopup="menu" onClick={event => event.stopPropagation()}><span className="source-control-row-branch-name">{currentName}</span><span className="source-control-row-branch-measure" aria-hidden="true">{currentName}</span></Button>
+    <Button ref={triggerRef} type="text" size="small" className="source-control-row-action-button" disabled={!ready || pending} title={`${currentName} · 管理分支`} aria-label={`管理分支 · ${repositoryLabel} · ${worktreeName}`} aria-expanded={open} aria-haspopup="menu" onClick={event => event.stopPropagation()}><span className="source-control-row-branch-name">{currentName}</span><span className="source-control-row-branch-measure" aria-hidden="true">{currentName}</span></Button>
   </Popover>;
 }

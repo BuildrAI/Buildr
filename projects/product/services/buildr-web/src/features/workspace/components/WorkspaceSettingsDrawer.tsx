@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Alert, App, Button, Form, Input, Skeleton } from 'antd';
 import { FolderOutlined } from '@ant-design/icons';
 import { DrawerShell } from '../../../components/DrawerShell';
+import { textFieldTrim } from '../../../lib/input-trim';
 import { workspaceApi, type WorkspaceResponse } from '../api/workspace-api';
 import '../workspace-settings.css';
 
@@ -186,7 +187,7 @@ export function WorkspaceSettingsDrawer({ open, workspaceId, onClose, onSaved }:
             <Form layout="vertical" component={false}>
               <Form.Item label="名称" htmlFor="workspace-name" required>
                 <Input id="workspace-name" name="name" autoComplete="off" required
-                  disabled={!editable || saving} value={name} onChange={event => updateDraft(event.target.value, description)} />
+                  disabled={!editable || saving} value={name} {...textFieldTrim(text => updateDraft(text, description))} />
               </Form.Item>
               <Form.Item label="说明" htmlFor="workspace-description-input" required>
                 <Input.TextArea id="workspace-description-input" name="description" required rows={5}

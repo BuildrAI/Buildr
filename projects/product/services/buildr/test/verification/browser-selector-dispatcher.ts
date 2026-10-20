@@ -29,7 +29,7 @@ export function planCodeBrowserGroups(env: any = process.env): any[] {
     throw error;
   }
   const explorer = { id: 'explorer', focus: explorerFocus || 'all', nodeTimeoutMs: 240_000, processTimeoutMs: 255_000 };
-  const sourceControl = { id: 'source-control', focus: sourceControlFocus || 'all', nodeTimeoutMs: 480_000, processTimeoutMs: 495_000 };
+  const sourceControl = { id: 'source-control', focus: sourceControlFocus || 'all', nodeTimeoutMs: 540_000, processTimeoutMs: 555_000 };
   return explorerFocus ? [explorer] : sourceControlFocus ? [sourceControl] : [explorer, sourceControl];
 }
 
@@ -150,7 +150,7 @@ export function selectBrowserSelectors(changedPaths: any): any  {
       }
       if (originalValue.includes('/features/code/') || originalValue.includes('RepositoryFileBrowser') || originalValue.includes('repository-file-browser')) add(plan, 'code', originalValue, 'Code scope, file reader and task file navigation changed.');
       else if (originalValue.includes('/features/connection-skills/') || originalValue.includes('/features/mysql-query/')) add(plan, 'connection-skills', originalValue, 'Connection configuration or the independent query tool changed.');
-      else if (originalValue.includes('/features/workbench/')) add(plan, 'workbench', originalValue, 'Daily workbench overview, preferences or activity interaction changed.');
+      else if (originalValue.includes('/features/workbench/')) add(plan, 'workbench', originalValue, 'Daily workbench overview, preferences or task interaction changed.');
       else if (originalValue.includes('/features/knowledge/')) {
         for (const selector of ['project', 'service', 'articles']) add(plan, selector, originalValue, 'Knowledge reading is shared by project, service and article journeys.');
       }

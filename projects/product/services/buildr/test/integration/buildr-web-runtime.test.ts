@@ -203,6 +203,76 @@ test('development start reuses the current source and preserves a healthy instan
   assert.equal(health.status, 200, 'rejected reuse never stops the existing server');
 });
 
+test('development start with explicit replace flag gracefully restarts a mismatched instance', async (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-development-replace-'));
+  const previousDataRoot = process.env.BUILDR_APP_DATA_DIR;
+  const previousPreview = process.env.BUILDR_LOCAL_APP_PREVIEW;
+  process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
+  delete process.env.BUILDR_LOCAL_APP_PREVIEW;
+  let server: any;
+  t.after(async () => {
+    if (server) await new Promise<void>(resolve => server.close(() => resolve()));
+    if (previousDataRoot === undefined) delete process.env.BUILDR_APP_DATA_DIR;
+    else process.env.BUILDR_APP_DATA_DIR = previousDataRoot;
+    if (previousPreview === undefined) delete process.env.BUILDR_LOCAL_APP_PREVIEW;
+    else process.env.BUILDR_LOCAL_APP_PREVIEW = previousPreview;
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+  const runtime = createRuntime();
+  const currentProduct = readCurrentProductIdentity();
+  assert.equal(currentProduct.channel, 'development');
+  let expected: any = currentProduct;
+  registerWebInstanceLifecycle(runtime, {
+    readProductIdentity: () => expected,
+    assertNpmLauncherBinding: assertCurrentNpmLauncherBinding,
+    createLocalWorkspaceServer, ensureRegisteredTarget,
+  });
+  const first = await runtime.startBuildrWeb(['--port', '0', '--no-open']);
+  server = first.server;
+  const file = path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json');
+  const oldReceipt = JSON.parse(fs.readFileSync(file, 'utf8'));
+
+  // A matching instance is reused, never restarted, even when the flag is present.
+  const reused = await runtime.startBuildrWeb(['--port', '0', '--no-open', '--replace-mismatched-development']);
+  assert.equal(reused.reused, true);
+  assert.equal(reused.url, first.url);
+
+  expected = { ...currentProduct, developmentRuntimeIdentity: `sha256-${'e'.repeat(64)}` };
+  const replaced = await runtime.startBuildrWeb(['--port', '0', '--no-open', '--replace-mismatched-development']);
+  assert.equal(replaced.reused, false);
+  assert.notEqual(replaced.url, first.url, 'replacement serves a new instance address');
+  server = replaced.server;
+  const newReceipt = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.notEqual(newReceipt.secret, oldReceipt.secret, 'receipt belongs to the new instance');
+  assert.equal(newReceipt.productIdentity.developmentRuntimeIdentity, `sha256-${'e'.repeat(64)}`);
+  await assert.rejects(fetch(`${first.url}/api/v1/health`, { headers: { 'x-buildr-instance': oldReceipt.secret } }),
+    'the old instance completed its authenticated shutdown');
+  const health = await fetch(`${replaced.url}/api/v1/health`, { headers: { 'x-buildr-instance': newReceipt.secret } });
+  assert.equal(health.status, 200, 'the replacement is healthy after restart');
+});
+
+test('--replace-mismatched-development refuses non-development profiles and conflicting options', async (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-development-replace-scope-'));
+  const previousDataRoot = process.env.BUILDR_APP_DATA_DIR;
+  process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
+  t.after(() => {
+    if (previousDataRoot === undefined) delete process.env.BUILDR_APP_DATA_DIR;
+    else process.env.BUILDR_APP_DATA_DIR = previousDataRoot;
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+  const runtime = createRuntime();
+  const currentProduct = readCurrentProductIdentity();
+  registerWebInstanceLifecycle(runtime, {
+    readProductIdentity: () => ({ ...currentProduct, channel: 'npm', runtime: { role: 'host' } }),
+    assertNpmLauncherBinding: assertCurrentNpmLauncherBinding,
+    createLocalWorkspaceServer, ensureRegisteredTarget,
+  });
+  await assert.rejects(runtime.startBuildrWeb(['--port', '0', '--no-open', '--replace-mismatched-development']),
+    /只适用于 development/);
+  await assert.rejects(runtime.startBuildrWeb(['--port', '0', '--no-open', '--replace-mismatched-development', '--update-handoff', 'sha256-' + 'a'.repeat(64)]),
+    /不能/);
+});
+
 
 test('Web start lock preserves incomplete/live owners, recovers a dead legacy PID, and cannot release a successor', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-web-start-lock-'));

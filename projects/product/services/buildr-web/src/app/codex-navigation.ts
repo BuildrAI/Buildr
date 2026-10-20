@@ -7,8 +7,8 @@ export type CodexTarget = { workspaceId: string; route: RouteLocation; error: st
 const safeSegment = (value: string) => Boolean(value) && value !== '.' && value !== '..' && !/[/?#\\\u0000-\u001f]/u.test(value);
 const isRoute = (value: unknown): value is RouteLocation => Boolean(value) && typeof value === 'object' && ['pathname', 'search', 'hash'].every(key => typeof (value as Record<string, unknown>)[key] === 'string');
 const queryKeys: Record<string, string[]> = {
-  overview: ['project'], activity: ['project', 'date', 'group'], tasks: ['q', 'status', 'project', 'service', 'type', 'retrospective', 'group', 'taskType', 'file', 'page', 'state'],
-  projects: ['q', 'project', 'document', 'date', 'group', 'view'], services: ['q', 'project', 'edit'], repositories: ['q'], skills: ['q'],
+  overview: ['project'], tasks: ['q', 'status', 'project', 'service', 'type', 'retrospective', 'group', 'taskType', 'file', 'page', 'state'],
+  projects: ['q', 'project', 'document', 'view'], services: ['q', 'project', 'edit'], repositories: ['q'], skills: ['q'],
   articles: ['q', 'project', 'status', 'sort', 'scope', 'view'], knowledge: ['object', 'artifact', 'document', 'reading', 'fromProject', 'q', 'browse', 'type', 'view'],
   code: [], connections: [], 'connection-skills': [], settings: [], 'workspace-overview': [],
 };

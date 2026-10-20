@@ -116,7 +116,6 @@ OpenSpec 的 `specs/` 保存当前承诺，`changes/` 保存一次变更的提�
 | --- | --- |
 | `W/.buildr/local/workspace.sqlite` | 任务（Task）及相关协作记录；Git 提交不能替代它 |
 | `W/.buildr/local/task-retrospectives/` | 复盘原文；数据库没有正文副本 |
-| `W/.buildr/daily-progress/` | 已保存的每日摘要；重新分析提交不保证重建同一份说明 |
 | `P/product-installations.json` | 安装来源、入口、Node 身份与更新依据；丢失不删除程序，但影响发现和管理 |
 | `A/workspace-registry.json` | 已登记工作目录与最近选择，不保存业务正文 |
 | `W/.buildr/local/web-management.json` | 目录身份和应用管理归属，缺失不能直接解释为无人管理 |
@@ -158,7 +157,7 @@ SQLite 的一次事务（Transaction）只保护其内的表更新。文件变�
 | --- | --- |
 | 资料、规则（Rule）、技能（Skill）与代码 | 保留实际来源、各 Git 仓库、未提交成果和独立工作树（Worktree） |
 | 任务（Task）、审查（Review）与验证（Verification）记录 | `.buildr/local/workspace.sqlite`；停止全部写入后复制，保留当时仍存在的 `-wal`、`-shm` |
-| 复盘正文与每日演进 | `.buildr/local/task-retrospectives/`、`.buildr/daily-progress/`；SQLite 没有这些正文副本，重新生成不等于恢复 |
+| 复盘正文 | `.buildr/local/task-retrospectives/`；SQLite 没有正文副本，重新生成不等于恢复 |
 | 未完成操作 | `.buildr/mutations/` 及相关恢复记录；同时保留记录、备份与当前文件 |
 | 安装及目录归属 | 核对实际应用数据目录与管理记录；不能当作跨机器通用配置 |
 

@@ -119,8 +119,8 @@ test('code runs complete Explorer and SCM in separate isolated processes sharing
   const webDistRoot = '/tmp/buildr-browser-contract/immutable-web-dist';
   const commands = planBrowserCommands(['code'], webDistRoot, {});
   assert.deepEqual(commands.map(command => command.id), ['browser:code:explorer', 'browser:code:source-control']);
-  assert.deepEqual(commands.map(command => command.timeoutMs), [255_000, 495_000]);
-  assert.deepEqual(planCodeBrowserGroups({}).map(group => group.nodeTimeoutMs), [240_000, 480_000]);
+  assert.deepEqual(commands.map(command => command.timeoutMs), [255_000, 555_000]);
+  assert.deepEqual(planCodeBrowserGroups({}).map(group => group.nodeTimeoutMs), [240_000, 540_000]);
   for (const command of commands) {
     assert.equal(command.argv[0], process.execPath);
     assert.match(command.argv[1], /run-isolated-workspace-smoke\.ts$/);

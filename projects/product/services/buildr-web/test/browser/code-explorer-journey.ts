@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { assertEditorText, assertVisibleSearchHit, codeEditor, codeMarkdown, createCodeReadAssertions, editorPosition, editorScroll } from './code-editor-assertions.ts';
+import { codeRepositoryLabel } from '../../src/features/code/code-source-labels.ts';
 export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,codeFixture}:any){
   const read = createCodeReadAssertions(page, workspaceUrl);
   t.after(() => read.dispose());
@@ -8,8 +9,16 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
   const fileResult=(filePath:string)=>page.locator('.repository-search-result[data-file-path="'+filePath+'"]');
   const matchResult=(filePath:string,line:number)=>page.locator('.repository-search-group[data-file-path="'+filePath+'"] .repository-search-occurrence[data-match-line="'+line+'"]');
   const search=async(query:string)=>{await page.getByRole('textbox',{name:'搜索文件',exact:true}).fill(query);await page.locator('.repository-search-result').first().waitFor();};
+  const selectSearchMode=async(mode:string)=>{await page.locator('.repository-search-scope').click();await page.locator('.ant-select-dropdown:visible').getByText(mode,{exact:true}).click();};
   const resultPath=async(filePath:string)=>{const line=fileResult(filePath).locator('.repository-search-file-path');await line.waitFor();assert.equal(await line.innerText(),filePath);assert.equal(await line.getAttribute('title'),filePath);};
-  const fileResponse=(filePath:string,accept:(url:URL)=>boolean=()=>true)=>page.waitForResponse((response:any)=>{const url=new URL(response.url());return url.pathname.endsWith('/code/file')&&url.searchParams.get('filePath')===filePath&&accept(url);});
+  const fileResponse=async(filePath:string,accept:(url:URL)=>boolean=()=>true)=>{
+    const response=await page.waitForResponse(async(response:any)=>{const url=new URL(response.url());if(!/\/code\/(?:file|editor-file)$/u.test(url.pathname)||url.searchParams.get('filePath')!==filePath||!accept(url))return false;return !url.pathname.endsWith('/editor-file')||response.status()>=400||(await response.json()).kind!=='unsupported';});
+    return {status:()=>response.status(),url:()=>response.url(),json:async()=>{
+      const file=await response.json();if(!file.selector)return file;
+      const catalog=await readCatalog(),member=catalog.worktrees.find((item:any)=>item.id===file.selector.checkoutId);
+      return {...file,page:null,truncated:false,message:'',source:{repositoryId:file.selector.repositoryId,checkoutId:file.selector.checkoutId,commitHash:null,kind:member?.groupId==='main'?'default':member?.kind,location:file.rootPath}};
+    }};
+  };
   const assertPart=async(file:any,content:string)=>{
     assert.ok(file.page);assert.ok(file.sizeBytes>5*1024*1024);assert.ok(Buffer.byteLength(file.content)<=512*1024+4);assert.equal(file.truncated,true);assert.ok(!file.content.includes('\ufffd'));
     assert.equal(file.content,Buffer.from(content).subarray(file.page.offset,file.page.endOffset).toString('utf8'));
@@ -58,7 +67,9 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
   const selectFilter=async(index:number,name:string)=>{
     await page.locator('.code-root-selectors .ant-select').nth(index).locator('.ant-select-selector').click();
     const dropdown=await filterDropdown(index);
-    await(index===1?dropdown.locator('[data-code-worktree-group="'+name+'"]'):dropdown.getByText(name,{exact:true})).click();
+    const catalog=index===1?await readCatalog():null,repositoryId=index===1?await page.locator('.repository-root-name').first().getAttribute('data-repository-id'):null;
+    const id=catalog?.worktrees.find((member:any)=>member.repositoryId===repositoryId&&(member.id===name||member.groupId===name))?.id;
+    await(index===1?dropdown.locator('[data-code-worktree-id="'+id+'"]'):dropdown.getByText(name,{exact:true})).click();
     await page.locator('.code-root-selectors .ant-select').nth(index).getByRole('combobox').press('Escape');await page.getByRole('textbox',{name:'搜索文件',exact:true}).click();
   };
   const clearFilter=async(index:number)=>{
@@ -71,45 +82,48 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
   };
   const filterGroupIds=async()=>{
     await page.locator('.code-root-selectors .ant-select').nth(1).locator('.ant-select-selector').click();
-    const ids=await(await filterDropdown(1)).locator('[data-code-worktree-group]').evaluateAll((elements:HTMLElement[])=>elements.map(element=>element.dataset.codeWorktreeGroup));await page.locator('.code-root-selectors .ant-select').nth(1).getByRole('combobox').press('Escape');await page.getByRole('textbox',{name:'搜索文件',exact:true}).click();return ids;
+    const ids=await(await filterDropdown(1)).locator('[data-code-worktree-id]').evaluateAll((elements:HTMLElement[])=>elements.map(element=>element.dataset.codeWorktreeId));await page.locator('.code-root-selectors .ant-select').nth(1).getByRole('combobox').press('Escape');await page.getByRole('textbox',{name:'搜索文件',exact:true}).click();return ids;
   };
-  await t.test('默认工作空间目录、代码库多选和工作树单选始终可见，刷新同行对齐且关闭文件不改变范围',async()=>{
-    let reads=0;const count=(request:any)=>{if(new URL(request.url()).pathname.endsWith('/code/file'))reads++;};page.on('request',count);
+  await t.test('全部代码库禁用工作树，根按需读取，单库目录逐项单选',async()=>{
+    const requests:URL[]=[];const count=(request:any)=>requests.push(new URL(request.url()));page.on('request',count);
     try{
       await page.setViewportSize({width:1440,height:900});await page.goto(workspaceUrl+'/code/explorer');await page.locator('.repository-root-name').first().waitFor();
-      const controls=page.getByRole('region',{name:'代码库与工作树筛选',exact:true});await controls.waitFor();
-      assert.equal(await controls.getByRole('combobox').count(),2);assert.equal(reads,0);
-      assert.equal(await page.locator('.code-location-explanation').count(),0);
-      const catalog=await readCatalog();assert.equal(await page.locator('.repository-root-name').count(),catalog.repositories.length);
-      assert.equal(await controls.locator('.ant-select').nth(1).locator('.ant-select-selection-item').innerText(),groupName(catalog));
-      assert.equal(await expandedRoots().count(),0);assert.equal(await page.locator('.repository-tree-file:visible').count(),0);
-      for(const repo of catalog.repositories){const root=rootFor(repo.id);assert.equal(await root.getAttribute('data-location'),repo.location);assert.equal(await root.locator('small').count(),0);}await registeredRoots(catalog);
-      for(const width of [1440,900]){
-        await page.setViewportSize({width,height:900});
-        const geometry=await page.locator('.global-source-sidebar .repository-browser-context').evaluate((el:HTMLElement)=>{
-          const select=el.querySelector('.code-root-selectors > .ant-select')!.getBoundingClientRect(),refresh=el.querySelector(':scope > .ant-btn')!.getBoundingClientRect();
-          return {selectHeight:select.height,refreshHeight:refresh.height,centerGap:Math.abs(select.top+select.height/2-refresh.top-refresh.height/2),horizontalGap:refresh.left-select.right};
-        });
-        assert.equal(geometry.selectHeight,32);assert.equal(geometry.refreshHeight,32);assert.ok(geometry.centerGap<1,JSON.stringify(geometry));assert.ok(geometry.horizontalGap>=0,JSON.stringify(geometry));await noOverflow();
-      }
-      await page.setViewportSize({width:1440,height:900});await capture(page,'code-worktree-empty-alignment.png');
-      await expandRoot(codeFixture.secondRepositoryId);await page.locator('.ant-tree-title').filter({hasText:/^src$/}).click();await page.locator('.repository-tree-file[data-file-path="src/main.ts"]').click();await read.text('secondRepository = true');
-      const openedReads=reads;assert.ok(openedReads>0);await page.getByRole('button',{name:'关闭文件 src/main.ts',exact:true}).click();
-      await page.locator('.repository-reader-content').getByText('从目录选择一个文件',{exact:true}).waitFor();assert.equal(await controls.locator('.ant-select').nth(1).locator('.ant-select-selection-item').innerText(),groupName(catalog));assert.equal(reads,openedReads);
+      const controls=page.getByRole('region',{name:'代码库与工作树筛选',exact:true}),catalog=await readCatalog();
+      assert.equal(await controls.getByRole('combobox').count(),2);assert.equal(await controls.getByRole('combobox').nth(1).isDisabled(),true);
+      assert.equal(requests.filter(url=>url.pathname.endsWith('/code/directory')).length,0);await registeredRoots(catalog);
+      const secondary=catalog.repositories.find((repo:any)=>repo.id===codeFixture.secondRepositoryId);await selectFilter(0,codeRepositoryLabel(secondary));
+      assert.equal(await controls.getByRole('combobox').nth(1).isEnabled(),true);
+      const ids=await filterGroupIds();assert.deepEqual(new Set(ids),new Set(catalog.worktrees.filter((member:any)=>member.repositoryId===secondary.id&&member.available).map((member:any)=>member.id)));
+      await expandRoot(secondary.id);await page.locator('.ant-tree-title').filter({hasText:/^src$/}).click();
+      requests.length=0;await page.locator('.repository-tree-file[data-file-path="src/main.ts"]').click();await read.text('secondRepository = true');
+      assert.equal(requests.filter(url=>/\/code\/(?:file|editor-file)$/u.test(url.pathname)).length,1,'普通文本打开只有一个正文请求');
+      await page.getByRole('button',{name:'关闭文件 src/main.ts',exact:true}).click();assert.equal(await controls.getByRole('combobox').nth(1).isEnabled(),true);
+      for(const width of [1440,900]){await page.setViewportSize({width,height:900});await noOverflow();await capture(page,'code-worktree-options-'+width+'.png');}
     }finally{page.off('request',count);}
   });
-  await t.test('普通返回保留阅读并折叠全部目录，刷新保留手动展开，同文件再次定位只展开相关根',async()=>{
+  await t.test('普通返回保留手动展开和折叠，刷新保留目录现场，同文件再次定位展开相关根',async()=>{
     await page.setViewportSize({width:1440,height:900});await page.goto(workspaceUrl+'/code/explorer');await page.locator('.repository-root-name').first().waitFor();
+    const expandedState=()=>page.locator('.repository-tree-body .ant-tree-treenode[aria-expanded="true"]').evaluateAll((nodes:HTMLElement[])=>nodes.map(node=>node.querySelector('.ant-tree-title')?.textContent).sort());
+    const roundTrip=async()=>{await page.locator('.shell-navigation [data-nav="source-control"]').click();await page.locator('.code-source-control-page:visible').waitFor();await page.locator('.shell-navigation [data-nav="explorer"]').click();await page.locator('.code-explorer-stage:visible').waitFor();};
+    assert.equal(await expandedRoots().count(),0);
+    await expandRoot(codeFixture.secondRepositoryId);await page.locator('.ant-tree-title').filter({hasText:/^src$/}).click();
+    await page.locator('.repository-tree-file[data-file-path="src/main.ts"]').waitFor();
+    const repeatedReads:any[]=[],countRepeated=(request:any)=>{const url=new URL(request.url());if(url.pathname.endsWith('/code/directory')&&url.searchParams.get('repositoryId')===codeFixture.secondRepositoryId&&url.searchParams.get('filePath')==='src')repeatedReads.push(url);};page.on('request',countRepeated);
+    const srcFolder=page.locator('.ant-tree-title').filter({hasText:/^src$/});await srcFolder.click();await page.locator('.repository-tree-file[data-file-path="src/main.ts"]').waitFor({state:'hidden'});
+    const warmExpand=await srcFolder.evaluate(async(element:HTMLElement)=>{const started=performance.now();element.click();await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);const file=document.querySelector<HTMLElement>('.repository-tree-file[data-file-path="src/main.ts"]');return {elapsedMs:performance.now()-started,visible:Boolean(file?.getBoundingClientRect().height),motion:document.querySelectorAll('.repository-tree-body .ant-tree-treenode-motion').length};});
+    assert.equal(warmExpand.visible,true,'已读取目录应在下一次绘制直接显示');assert.equal(warmExpand.motion,0,'不应等待收展动画');assert.equal(repeatedReads.length,0,'重新展开有效目录不重复读取');page.off('request',countRepeated);process.stderr.write('[explorer-warm-expand] '+JSON.stringify(warmExpand)+'\n');
+    const manual=await expandedState();assert.ok(manual.length>=2);await roundTrip();assert.deepEqual(await expandedState(),manual,'尚未打开文件时也保留手动展开');
+    await rootFor(codeFixture.secondRepositoryId).locator('xpath=ancestor::*[contains(@class,"ant-tree-treenode")][1]').locator('> .ant-tree-switcher').click();await page.waitForFunction((id:string)=>document.querySelector('.repository-root-name[data-repository-id="'+id+'"]')?.closest('.ant-tree-treenode')?.getAttribute('aria-expanded')==='false',codeFixture.secondRepositoryId);
+    await page.waitForFunction(()=>!document.querySelector('.repository-tree-body .ant-tree-treenode-motion'));
+    const folded=await expandedState();await roundTrip();assert.deepEqual(await expandedState(),folded,'用户折叠的根也保持折叠');assert.equal(await expandedRoots().count(),0);
     const path='projects/demo/services/api/src/main.ts';await search('main.ts');await fileResult(path).click();await read.text('explorerAnswer = 2');
     await page.getByRole('textbox',{name:'搜索文件',exact:true}).fill('');
     assert.equal(await expandedRoots().count(),1);assert.equal(await expandedRoots().locator('.repository-root-name').getAttribute('data-repository-id'),codeFixture.primaryRepositoryId);
     await page.locator('.repository-tree-file[data-file-path="'+path+'"]').waitFor();
-    await page.locator('.shell-navigation [data-nav="source-control"]').click();await page.locator('.code-source-control-page:visible').waitFor();
-    await page.locator('.shell-navigation [data-nav="explorer"]').click();await page.locator('.code-explorer-stage:visible').waitFor();
-    assert.equal(await expandedRoots().count(),0);assert.equal(await page.locator('.repository-tree-file:visible').count(),0);await read.text('explorerAnswer = 2');
+    const opened=await expandedState();await roundTrip();assert.deepEqual(await expandedState(),opened);await page.locator('.repository-tree-file[data-file-path="'+path+'"]').waitFor();await read.text('explorerAnswer = 2');
     await expandRoot(codeFixture.primaryRepositoryId);const before=await page.locator('.repository-tree-body .ant-tree-treenode[aria-expanded="true"]').count();
-    const refreshed=fileResponse(path);await page.getByRole('button',{name:'重新读取文件',exact:true}).click();await refreshed;
-    await page.waitForFunction(()=>!document.querySelector('button[aria-label="重新读取文件"]')?.classList.contains('ant-btn-loading')&&!document.querySelector('.repository-tree-body .ant-tree-treenode-motion'));
+    const refreshed=page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith('/code/directory'));await page.getByRole('button',{name:'刷新展开目录',exact:true}).click();await refreshed;
+    await page.waitForFunction(()=>!document.querySelector('button[aria-label="刷新展开目录"]')?.classList.contains('ant-btn-loading')&&!document.querySelector('.repository-tree-body .ant-tree-treenode-motion'));
     assert.equal(await page.locator('.repository-tree-body .ant-tree-treenode[aria-expanded="true"]').count(),before);
     await rootFor(codeFixture.primaryRepositoryId).click();await page.waitForFunction(()=>![...document.querySelectorAll('.repository-tree-body .ant-tree-treenode[aria-expanded="true"]')].some(node=>node.querySelector('.repository-root-name')));assert.equal(await expandedRoots().count(),0);
     await search('main.ts');await fileResult(path).click();await page.getByRole('textbox',{name:'搜索文件',exact:true}).fill('');
@@ -118,7 +132,7 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
   await t.test('代码库根单行展示，悬停路径可移入选字复制且键盘聚焦可操作',async()=>{
     await page.context().grantPermissions(['clipboard-read','clipboard-write']);await page.setViewportSize({width:1440,height:900});await page.goto(workspaceUrl+'/code/explorer');await page.locator('.repository-root-name').first().waitFor();
     const catalog=await readCatalog(),repository=catalog.repositories.find((repo:any)=>repo.id===codeFixture.primaryRepositoryId),root=rootFor(repository.id);
-    const info=page.getByRole('article',{name:'代码库完整路径',exact:true});
+    const info=page.getByRole('article',{name:'代码库完整路径',exact:true}).filter({has:page.getByText(repository.location,{exact:true})});
     for(const width of [1440,900]){
       await page.setViewportSize({width,height:900});await root.hover();await info.waitFor();await info.hover();
       const path=info.locator('.repository-root-location');assert.equal(await path.innerText(),repository.location);assert.equal(await root.locator('small').count(),0);
@@ -134,42 +148,31 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     let reads=0;const requests:URL[]=[];const count=(request:any)=>{const url=new URL(request.url());if(url.pathname.endsWith('/code/file'))reads++;if(url.pathname.endsWith('/code/directory'))requests.push(url);};page.on('request',count);
     try{
       await page.goto(workspaceUrl+'/tasks/browser-task');await page.locator('#task-source-files').waitFor();await page.locator('#task-source-files').click();
-      const controls=page.getByRole('region',{name:'代码库与工作树筛选',exact:true});await controls.getByText('任务没有独立工作树，默认查看登记目录。',{exact:true}).waitFor();
+      const controls=page.getByRole('region',{name:'代码库与工作树筛选',exact:true});await controls.getByText('任务没有独立目录，可在上方选择其他目录。',{exact:true}).waitFor();
       const catalog=await readCatalog('browser-task'),taskGroup=catalog.worktreeGroups.find((group:any)=>group.id===codeFixture.worktreeGroupId),taskMember=catalog.worktrees.find((member:any)=>member.groupId===taskGroup.id&&member.repositoryId===codeFixture.primaryRepositoryId);
       assert.equal(reads,0);assert.equal(await page.getByRole('tab',{name:/main\.ts/}).count(),0);assert.equal(await controls.locator('.ant-select').nth(1).locator('.ant-select-selection-item').innerText(),groupName(catalog,'main',catalog.selectedRepositoryIds));
       await clearFilter(1);const before=requests.length;
-      await selectFilter(1,taskGroup.id);await page.waitForFunction((location:string)=>Array.from(document.querySelectorAll('.repository-root-name')).some(el=>el.getAttribute('data-location')?.includes(location)),taskMember.path);
-      const refreshResponse=page.waitForResponse((response:any)=>{const url=new URL(response.url());return url.pathname.endsWith('/code/directory')&&url.searchParams.get('checkoutId')===taskMember.id&&url.searchParams.get('filePath')==='';});await page.getByRole('button',{name:'重新读取文件',exact:true}).click();await refreshResponse;
+      await selectFilter(1,taskGroup.id);await page.waitForFunction((location:string)=>Array.from(document.querySelectorAll('.repository-root-name')).some(el=>el.getAttribute('data-location')?.includes(location)),taskMember.path);await expandRoot(taskMember.repositoryId);
+      const refreshResponse=page.waitForResponse((response:any)=>{const url=new URL(response.url());return url.pathname.endsWith('/code/directory')&&url.searchParams.get('checkoutId')===taskMember.id&&url.searchParams.get('filePath')==='';});await page.getByRole('button',{name:'刷新展开目录',exact:true}).click();await refreshResponse;
       assert.ok(requests.slice(before).some(url=>url.searchParams.get('checkoutId')===taskMember.id));assert.equal(reads,0);assert.equal(await page.getByRole('tab',{name:/main\.ts/}).count(),0);await noOverflow();
     }finally{page.off('request',count);}
   });
-  await t.test('代码库多选和工作树单选双向限制候选，切换同库目录保留实际文件来源',async()=>{
+  await t.test('代码库限定实际工作树，同库切换保留已打开文件来源',async()=>{
     await page.goto(workspaceUrl+'/code/explorer');await page.locator('.repository-root-name').first().waitFor();const catalog=await readCatalog();
-    const primary=catalog.repositories.find((repo:any)=>repo.id===codeFixture.primaryRepositoryId),secondary=catalog.repositories.find((repo:any)=>repo.id===codeFixture.secondRepositoryId),taskGroup=catalog.worktreeGroups.find((group:any)=>group.id===codeFixture.worktreeGroupId);
-    const nativeMember=catalog.worktrees.find((member:any)=>member.repositoryId===secondary.id&&member.kind==='worktree'),nativeGroup=catalog.worktreeGroups.find((group:any)=>group.id===nativeMember.groupId);
-    assert.ok((await page.locator('.code-root-selectors .ant-select').first().getAttribute('class')).includes('ant-select-multiple'));
-    assert.ok(!(await page.locator('.code-root-selectors .ant-select').nth(1).getAttribute('class')).includes('ant-select-multiple'));
-    await selectFilter(0,primary.name);assert.ok(!(await filterGroupIds()).includes(nativeGroup.id));
-    await clearFilter(0);await clearFilter(1);assert.equal(await page.locator('.repository-root-name').count(),catalog.repositories.length);assert.equal(await page.locator('.code-root-selectors .ant-select').nth(1).locator('.ant-select-selection-placeholder').innerText(),'选择工作树');
-    await registeredRoots(catalog);
-    await selectFilter(1,nativeGroup.id);assert.deepEqual(await filterOptionNames(0),[secondary.name]);await selectFilter(0,secondary.name);assert.equal(await page.locator('.repository-root-name').count(),1);
-    await page.locator('.repository-search-options').getByText('内容',{exact:true}).click();await search('WorktreeFilterNeedle');
-    const responses:any[]=[];
-    for(const group of [nativeGroup,taskGroup]){
-      if(group===taskGroup){await selectFilter(1,taskGroup.id);await read.text(codeFixture.nativeWorktree.content);}
-      assert.ok((await page.locator('.repository-tree-footer').innerText()).startsWith('1 个代码库 · 1 个目录'));
-      const member=catalog.worktrees.find((item:any)=>item.repositoryId===secondary.id&&item.groupId===group.id);assert.ok(member);
-      const result=page.locator('.repository-search-group').filter({hasText:memberName(catalog,member)});await result.locator('.repository-search-occurrence').waitFor();assert.equal(await page.locator('.repository-search-group').count(),1);
-      const response=fileResponse(codeFixture.worktreeFiles[secondary.id].path);assert.equal(await result.getAttribute('data-repository-id'),secondary.id);await result.locator('.repository-search-occurrence').click();responses.push(await(await response).json());
-      await read.text(group.id===nativeGroup.id?codeFixture.nativeWorktree.content:codeFixture.worktreeFiles[secondary.id].content);
+    const secondary=catalog.repositories.find((repo:any)=>repo.id===codeFixture.secondRepositoryId);
+    await selectFilter(0,codeRepositoryLabel(secondary));
+    const members=catalog.worktrees.filter((member:any)=>member.repositoryId===secondary.id),native=members.find((member:any)=>member.kind==='worktree'),task=members.find((member:any)=>member.groupId===codeFixture.worktreeGroupId);
+    assert.ok(native&&task);assert.equal((await filterOptionNames(0)).length,catalog.repositories.length);
+    await selectSearchMode('内容');
+    for(const member of [native,task]){
+      await selectFilter(1,member.id);await search('WorktreeFilterNeedle');const result=page.locator('.repository-search-group');await result.locator('.repository-search-occurrence').waitFor();
+      const response=fileResponse(codeFixture.worktreeFiles[secondary.id].path);await result.locator('.repository-search-occurrence').click();const file=await(await response).json();assert.equal(file.source.checkoutId,member.id);
+      await read.text(member===native?codeFixture.nativeWorktree.content:codeFixture.worktreeFiles[secondary.id].content);
     }
-    assert.notEqual(responses[0].source.checkoutId,responses[1].source.checkoutId);assert.equal(responses[0].source.repositoryId,responses[1].source.repositoryId);
-    assert.equal(await page.getByRole('tab',{name:/worktree-filter\.ts/}).count(),2);assert.ok((await page.locator('.repository-tree-footer').innerText()).startsWith('1 个代码库 · 1 个目录'));
-    await clearFilter(1);await page.getByRole('textbox',{name:'搜索文件',exact:true}).fill('');assert.equal(await page.locator('.repository-root-name').count(),1);assert.equal(await page.locator('.code-range-outside').filter({hasText:'当前文件不在筛选范围内'}).count(),1);await read.text(codeFixture.worktreeFiles[secondary.id].content);
-    await page.getByRole('button',{name:'加入范围',exact:true}).click();await page.getByRole('textbox',{name:'搜索文件',exact:true}).fill('');
-    await page.waitForFunction((name:string)=>document.querySelector('.code-root-selectors .ant-select:nth-child(2) .ant-select-selection-item')?.textContent===name,groupName(catalog,taskGroup.id,[secondary.id]));
-    const taskMember=catalog.worktrees.find((item:any)=>item.repositoryId===secondary.id&&item.groupId===taskGroup.id);assert.ok(taskMember);
-    assert.equal(await page.locator('.repository-root-name').count(),1);assert.equal(await page.locator('.repository-root-name').getAttribute('data-location-label'),memberName(catalog,taskMember));await noOverflow();await capture(page,'code-worktree-combined-filters.png');
+    assert.equal(await page.getByRole('tab',{name:/worktree-filter\.ts/}).count(),2);
+    await clearFilter(1);await page.getByRole('textbox',{name:'搜索文件',exact:true}).fill('');await read.text(codeFixture.worktreeFiles[secondary.id].content);assert.equal(await page.locator('.code-range-outside').count(),1);
+    await page.getByRole('button',{name:'加入范围',exact:true}).click();assert.equal(await page.locator('.repository-root-name').count(),1);assert.equal(await page.locator('.repository-root-name').getAttribute('data-location'),task.path);
+    await clearFilter(0);assert.equal(await page.getByRole('combobox',{name:'筛选工作树',exact:true}).isDisabled(),true);await noOverflow();
   });
   await t.test('真实初始目录响应迟到不会覆盖后续刷新发现的新工作树',async()=>{
     let release:()=>void=()=>{},captured:()=>void=()=>{};const gate=new Promise<void>(resolve=>{release=resolve;}),oldCaptured=new Promise<void>(resolve=>{captured=resolve;});let count=0;
@@ -179,12 +182,12 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     };
     await page.route('**/code/repositories**',delayOld);
     try{
-      await page.goto(workspaceUrl+'/code/explorer');await oldCaptured;assert.equal(await page.locator('.code-root-selectors .ant-select').nth(1).locator('.ant-select-selection-item').innerText(),'正在读取工作树…');
+      await page.goto(workspaceUrl+'/code/explorer');await oldCaptured;assert.equal(await page.getByRole('combobox',{name:'筛选工作树',exact:true}).isDisabled(),true);
       const added=codeFixture.createNativeWorktree();const freshResponse=page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith('/code/repositories'));
-      await page.getByRole('button',{name:'重新读取文件',exact:true}).click();const fresh=await(await freshResponse).json();assert.ok(fresh.worktrees.some((member:any)=>member.id===added.id));
-      const lateMember=fresh.worktrees.find((member:any)=>member.id===added.id),lateGroup=fresh.worktreeGroups.find((group:any)=>group.id===lateMember.groupId);
+      await page.getByRole('button',{name:'刷新展开目录',exact:true}).click();const fresh=await(await freshResponse).json();assert.ok(fresh.worktrees.some((member:any)=>member.id===added.id));
+      const lateMember=fresh.worktrees.find((member:any)=>member.id===added.id);
       const oldResponse=page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith('/code/repositories'));release();await oldResponse;
-      assert.ok((await filterGroupIds()).includes(lateGroup.id));await noOverflow();
+      const repo=fresh.repositories.find((repo:any)=>repo.id===lateMember.repositoryId);await selectFilter(0,codeRepositoryLabel(repo));assert.ok((await filterGroupIds()).includes(lateMember.id));await noOverflow();
     }finally{release();await page.unroute('**/code/repositories**',delayOld);}
   });
   await t.test('真实代码页面：目录读取、完整文件、内容搜索、文档链接与图片',async()=>{
@@ -194,8 +197,8 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     const width=await page.getByRole('complementary',{name:'资源管理器文件树',exact:true}).evaluate((el:HTMLElement)=>el.getBoundingClientRect().width);assert.ok(width>=240&&width<=420);
     const divider=page.getByRole('separator',{name:'调整资源管理器宽度'});await divider.press('ArrowRight');assert.ok(await divider.getAttribute('aria-valuenow')>width);
     await page.getByRole('button',{name:'展开阅读',exact:true}).click();await page.getByRole('button',{name:'恢复分屏',exact:true}).click();
-    await page.locator('.repository-search-options').getByText('内容',{exact:true}).click();await search('explorerAnswer');await matchResult('projects/demo/services/api/src/main.ts',1).click();
-    await page.locator('.repository-search-options').getByText('文件名',{exact:true}).click();await search('README.md');const readmeResponse=fileResponse('projects/demo/services/api/README.md');await fileResult('projects/demo/services/api/README.md').click();const readme=await(await readmeResponse).json();await read.markdown('Explorer document');
+    await selectSearchMode('内容');await search('explorerAnswer');await matchResult('projects/demo/services/api/src/main.ts',1).click();
+    await selectSearchMode('文件名');await search('README.md');const readmeResponse=fileResponse('projects/demo/services/api/README.md');await fileResult('projects/demo/services/api/README.md').click();const readme=await(await readmeResponse).json();await read.markdown('Explorer document');
     await page.locator(codeMarkdown).getByRole('img').waitFor();assert.ok((await page.locator(codeMarkdown).getByRole('img').getAttribute('src')).startsWith('data:image/png;base64,'));
     const codeUrl=page.url(),resourceViews=await page.evaluate(()=>history.state?.usr?.resourceViews??null),parentPath='projects/demo/services/services/foo';
     const parentResponse=fileResponse(parentPath,url=>url.searchParams.get('checkoutId')===readme.source.checkoutId);await page.getByRole('link',{name:'同库父级资料',exact:true}).click();const parent=await(await parentResponse).json();
@@ -206,7 +209,7 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     await page.getByRole('button',{name:'请智能体解释',exact:true}).click();assert.ok((await page.getByRole('textbox',{name:'文件协作指令'}).inputValue()).includes('src/main.ts'));await page.getByRole('button',{name:'返回文件',exact:true}).click();
     await capture(page,'code-explorer-1440.png');
     const largePath='projects/demo/services/api/large-text.txt';await search('large-text.txt');await resultPath(largePath);
-    const largeResponse=page.waitForResponse((response:any)=>{const url=new URL(response.url());return url.pathname.endsWith('/code/file')&&url.searchParams.get('filePath')===largePath;});await fileResult(largePath).click();const large=(await(await largeResponse).json());
+    const largeResponse=fileResponse(largePath);await fileResult(largePath).click();const large=(await(await largeResponse).json());
     assert.ok(large.sizeBytes>2*1024*1024&&large.sizeBytes<5*1024*1024);assert.equal(large.truncated,false);assert.equal(large.page,null);assert.equal(large.message,'');assert.equal(large.content.length,large.sizeBytes);
     await read.text('large text end');await assertEditorText(page,large.content);assert.equal(await page.getByRole('alert').filter({hasText:/文件超过完整读取上限|当前内容不完整/}).count(),0);await noOverflow();
     await page.locator('.code-open-files').getByRole('tab',{name:'README.md',exact:true}).click();await read.markdown('Explorer document');
@@ -255,13 +258,13 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     await page.setViewportSize({width:1440,height:900});await page.goto(workspaceUrl+'/code/explorer');
     let searches=0;const count=(request:any)=>{if(new URL(request.url()).pathname.endsWith('/code/search'))searches++;};page.on('request',count);
     try{
-      await page.locator('.repository-search-options').getByText('内容',{exact:true}).click();await search('cachedFile');await page.waitForFunction(()=>document.querySelectorAll('.repository-search-result').length===9);
+      await selectSearchMode('内容');await search('cachedFile');await page.waitForFunction(()=>document.querySelectorAll('.repository-search-result').length===9);
       const initial=searches;assert.ok(initial>0);
       await matchResult('src/file1.ts',1).click();await read.text('cachedFile1 = true');
       await matchResult('src/file2.ts',1).click();await read.text('cachedFile2 = true');
       await page.getByRole('tab',{name:'file1.ts',exact:true}).click();await read.text('cachedFile1 = true');
       await new Promise(resolve=>setTimeout(resolve,700));assert.equal(searches,initial);assert.equal(await page.locator('.repository-search-result').count(),9);
-      const refreshed=page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith('/code/search'));await page.getByRole('button',{name:'重新读取文件',exact:true}).click();await refreshed;await page.waitForFunction(()=>document.querySelectorAll('.repository-search-result').length===9);assert.ok(searches>initial);
+      const refreshed=page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith('/code/search'));await page.getByRole('button',{name:'刷新展开目录',exact:true}).click();await refreshed;await page.waitForFunction(()=>document.querySelectorAll('.repository-search-result').length===9);assert.ok(searches>initial);
       const beforeScope=searches;await page.locator('.code-root-selectors .ant-select-selector').first().click();await page.locator('.ant-select-dropdown .ant-select-item-option').filter({hasText:'另一个代码库'}).click();await page.getByRole('textbox',{name:'搜索文件',exact:true}).click();
       await page.waitForFunction(()=>document.querySelectorAll('.repository-search-result').length===9);assert.ok(searches>beforeScope);await capture(page,'code-content-search-retained.png');
     }finally{page.off('request',count);}
@@ -272,7 +275,7 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     let searches=0;const count=(request:any)=>{if(new URL(request.url()).pathname.endsWith('/code/search'))searches++;};page.on('request',count);
     try{
       for(const [mode,query] of [['文件名','ma'],['内容','ex']]){
-        await input.fill('');await page.locator('.repository-search-options').getByText(mode,{exact:true}).click();const before=searches;
+        await input.fill('');await selectSearchMode(mode);const before=searches;
         await input.fill('m');await page.locator('.repository-search-hint').waitFor();await new Promise(resolve=>setTimeout(resolve,700));assert.equal(searches,before);assert.equal(await page.locator('.repository-search-result').count(),0);
         await search(query);assert.ok(searches>before);const afterAscii=searches;
         await input.fill('m');await page.locator('.repository-search-hint').waitFor();await page.waitForFunction(()=>document.querySelectorAll('.repository-search-result').length===0);await new Promise(resolve=>setTimeout(resolve,700));assert.equal(searches,afterAscii);
@@ -283,17 +286,30 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
       assert.equal(await page.locator('.repository-search-hint').innerText(),'输入至少 2 个字符开始搜索');await capture(page,'code-search-minimum-characters.png');
     }finally{page.off('request',count);}
   });
+  await t.test('文件名无结果时可直接切换到内容搜索，摘要说明当前范围',async()=>{
+    await page.setViewportSize({width:1440,height:900});await page.goto(workspaceUrl+'/code/explorer');await page.locator('.repository-root-name').first().waitFor();
+    assert.equal(await page.locator('.repository-search-scope .ant-select-selection-item').innerText(),'文件名');
+    await page.getByRole('textbox',{name:'搜索文件',exact:true}).fill('explorerAnswer');
+    await page.getByText('文件名匹配 · 0 个文件',{exact:true}).waitFor();
+    await page.getByRole('button',{name:'在内容中搜索',exact:true}).click();
+    await page.locator('.repository-search-result').first().waitFor();
+    assert.equal(await page.locator('.repository-search-scope .ant-select-selection-item').innerText(),'内容');
+    assert.match(await page.locator('.repository-search-results > p').innerText(),/^内容匹配 · \d+ 个文件 · \d+ 处$/);
+    await noOverflow();await capture(page,'code-search-empty-to-content.png');
+  });
   await t.test('代码库筛选聚焦只有一层描边，搜索方式有清楚的选中样式',async()=>{
     await page.setViewportSize({width:1440,height:900});await page.goto(workspaceUrl+'/code/explorer');await page.locator('.repository-root-name').first().waitFor();
     const select=page.locator('.code-root-selectors .ant-select').first();await select.locator('.ant-select-selector').click();await page.locator('.ant-select-dropdown:visible').waitFor();
     const focusPaint=await select.evaluate((el:HTMLElement)=>[el,el.querySelector('.ant-select-selector')!,el.querySelector('input')!].map(node=>{const style=getComputedStyle(node);return {outline:style.outlineStyle!=='none'&&parseFloat(style.outlineWidth)>0,shadow:style.boxShadow!=='none'};}));
     assert.equal(focusPaint.at(-1).outline,false,JSON.stringify(focusPaint));assert.equal(focusPaint.at(-1).shadow,false,JSON.stringify(focusPaint));assert.ok(focusPaint.filter((paint:any)=>paint.outline||paint.shadow).length<=1,JSON.stringify(focusPaint));
     await page.keyboard.press('Escape');
-    const segmented=page.locator('.repository-search-options .repository-search-mode');
+    assert.equal(await page.locator('.repository-file-search .ant-input-affix-wrapper .repository-search-scope').count(),1);
     for(const mode of ['文件名','内容']){
-      await segmented.getByText(mode,{exact:true}).click();const selected=segmented.locator('.ant-segmented-item-selected');assert.equal(await selected.innerText(),mode);
-      const paint=await selected.evaluate((el:HTMLElement)=>{const style=getComputedStyle(el),other=getComputedStyle(el.parentElement!.querySelector('.ant-segmented-item:not(.ant-segmented-item-selected)')!);return {background:style.backgroundColor,otherBackground:other.backgroundColor,weight:Number(style.fontWeight)};});
-      assert.notEqual(paint.background,paint.otherBackground,JSON.stringify(paint));assert.notEqual(paint.background,'rgba(0, 0, 0, 0)');assert.ok(paint.weight>=600,JSON.stringify(paint));
+      await selectSearchMode(mode);assert.equal(await page.locator('.repository-search-scope .ant-select-selection-item').innerText(),mode);
+      await page.locator('.repository-search-scope').click();const selected=page.locator('.ant-select-dropdown:visible .ant-select-item-option-selected');assert.equal(await selected.innerText(),mode);
+      const paint=await selected.evaluate((el:HTMLElement)=>{const style=getComputedStyle(el);return {weight:Number(style.fontWeight),color:style.color,background:style.backgroundColor};});
+      assert.ok(paint.weight>=600,JSON.stringify(paint));assert.notEqual(paint.background,'rgba(0, 0, 0, 0)',JSON.stringify(paint));
+      await page.keyboard.press('Escape');
     }
     await noOverflow();await capture(page,'code-search-control-focus.png');
   });
@@ -308,9 +324,9 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
   });
   await t.test('内容结果按文件与代码库分组，逐行定位并高亮大小写不敏感的字面字串',async()=>{
     await page.setViewportSize({width:1440,height:900});await page.goto(workspaceUrl+'/code/explorer');
-    let searches=0,reads=0;const count=(request:any)=>{const path=new URL(request.url()).pathname;if(path.endsWith('/code/search'))searches++;if(path.endsWith('/code/file'))reads++;};page.on('request',count);
+    let searches=0,reads=0;const count=(request:any)=>{const path=new URL(request.url()).pathname;if(path.endsWith('/code/search'))searches++;if(/\/code\/(?:file|editor-file)$/u.test(path))reads++;};page.on('request',count);
     try{
-      await page.locator('.repository-search-options').getByText('内容',{exact:true}).click();await search('search.hit[0]');await page.waitForFunction(()=>document.querySelectorAll('.repository-search-group').length===2);
+      await selectSearchMode('内容');await search('search.hit[0]');await page.waitForFunction(()=>document.querySelectorAll('.repository-search-group').length===2);
       const firstPath='projects/demo/services/api/src/search-matches.ts',secondPath='src/search-matches.ts';
       const first=page.locator('.repository-search-group[data-file-path="'+firstPath+'"]'),second=page.locator('.repository-search-group[data-file-path="'+secondPath+'"]');
       assert.equal(await first.count(),1);assert.equal(await second.count(),1);assert.notEqual(await first.getAttribute('data-repository-id'),await second.getAttribute('data-repository-id'));
@@ -365,7 +381,7 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
   });
   await t.test('可搜索页面中的真实源码，右上角展开与恢复保留搜索、宽度和阅读位置',async()=>{
     await page.setViewportSize({width:1440,height:900});await page.goto(workspaceUrl+'/code/explorer');
-    await page.locator('.repository-search-options').getByText('内容',{exact:true}).click();await search('registerApplicationDoctor');
+    await selectSearchMode('内容');await search('registerApplicationDoctor');
     await matchResult('projects/demo/services/api/src/main.ts',2).click();await read.text('registerApplicationDoctor');
     assert.equal(await page.locator('.code-tree-coverage').count(),0);const count=await page.locator('.repository-search-result').count();
     const divider=page.getByRole('separator',{name:'调整资源管理器宽度'}),width=await divider.getAttribute('aria-valuenow');
@@ -388,7 +404,7 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
       const previous=fileResponse(path,url=>url.searchParams.get('page')==='0');await page.getByRole('button',{name:'上一段',exact:true}).click();const restored=await(await previous).json();assert.equal(restored.revision,first.revision);assert.deepEqual(restored.page,first.page);await assertPart(restored,codeFixture.current);
       const otherResponse=fileResponse('zz-segmented-text.txt');await fileResult('zz-segmented-text.txt').click();const other=await(await otherResponse).json();assert.notEqual(other.source.repositoryId,first.source.repositoryId);assert.equal(other.page,null);await read.text('second repository isolated text');assert.equal(await page.locator('.repository-file-pagination').count(),0);
       await(await registeredFileTab(path)).click();await assertPart(restored,codeFixture.current);
-      await page.locator('.repository-search-options').getByText('内容',{exact:true}).click();await search('AfterBoundaryNeedle');const beforeLongLine=requests.length;
+      await selectSearchMode('内容');await search('AfterBoundaryNeedle');const beforeLongLine=requests.length;
       const longLineResponse=fileResponse(path,url=>url.searchParams.get('line')==='2'&&url.searchParams.get('matchQuery')==='AfterBoundaryNeedle');await matchResult(path,2).click();const longLine=await(await longLineResponse).json();assert.equal(requests.length,beforeLongLine+1);assert.equal(longLine.page.index,1);await assertPart(longLine,codeFixture.current);await page.locator('.repository-source-row.selected-line[data-line="2"] mark.repository-search-hit').waitFor();assert.equal(await page.locator('.repository-source-row.selected-line mark.repository-search-hit').innerText(),'AfterBoundaryNeedle');
       const beforeSearchPosition=await editorPosition(page);assert.ok(beforeSearchPosition.from>0,'已定位当前分段内的真实匹配，不能用行首空选区冒充保留');
       const farSearch=page.waitForResponse((response:any)=>{const url=new URL(response.url());return url.pathname.endsWith('/code/search')&&url.searchParams.get('query')==='FarSegmentNeedle'&&url.searchParams.get('repositoryId')===longLine.source.repositoryId&&url.searchParams.get('checkoutId')===longLine.source.checkoutId;});
@@ -434,7 +450,7 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     const main=catalog.worktrees.find((member:any)=>member.repositoryId===codeFixture.primaryRepositoryId&&member.groupId==='main');assert.equal(taskMembers.length,2);
     await page.goto(workspaceUrl+'/tasks/'+codeFixture.worktreeTaskId);await page.locator('#task-source-files').click();await page.locator('.repository-root-name').first().waitFor();
     await page.waitForFunction((paths:string[])=>paths.every(path=>Array.from(document.querySelectorAll('.repository-root-name')).some(el=>el.getAttribute('data-location')?.includes(path))),taskMembers.map((member:any)=>member.path));
-    assert.equal(await page.locator('.repository-root-name').count(),2);assert.equal(await page.getByRole('tab').count(),0);assert.equal(await page.locator('.code-root-selectors .ant-select').nth(1).locator('.ant-select-selection-item').count(),1);
+    assert.equal(await page.locator('.repository-root-name').count(),2);assert.equal(await page.getByRole('tab').count(),0);assert.equal(await page.locator('.code-root-selectors .ant-select').nth(1).getByRole('combobox').isDisabled(),true);
     await page.getByRole('button',{name:'返回任务',exact:true}).click();
     const diffRequests:URL[]=[];const observe=(request:any)=>{const url=new URL(request.url());if(url.pathname.endsWith('/file-diff'))diffRequests.push(url);};page.on('request',observe);
     try{
@@ -442,7 +458,7 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
       const row=page.locator('.task-changed-row').filter({has:page.locator('strong').filter({hasText:/^main\.ts$/})});await row.click();
       await page.waitForFunction(()=>document.querySelector('.task-diff-reader')?.textContent?.includes('explorerAnswer = 2'));
       const path='projects/demo/services/api/src/main.ts',request=diffRequests.filter(url=>url.searchParams.get('filePath')===path).at(-1);assert.ok(request);assert.equal(request.searchParams.get('checkoutId'),main.id);
-      const response=fileResponse(path,url=>url.searchParams.get('checkoutId')===main.id);await page.getByRole('button',{name:'查看完整文件',exact:true}).click();const file=await(await response).json();assert.equal(file.source.checkoutId,main.id);assert.equal(file.source.kind,'default');assert.ok(file.content.includes('explorerAnswer = 2'));await page.waitForFunction((name:string)=>document.querySelector('.code-root-selectors .ant-select:nth-child(2) .ant-select-selection-item')?.textContent===name,groupName(catalog,'main',catalog.selectedRepositoryIds));await registeredRoots(catalog);
+      const response=fileResponse(path,url=>url.searchParams.get('checkoutId')===main.id);await page.getByRole('button',{name:'查看完整文件',exact:true}).click();const file=await(await response).json();assert.equal(file.source.checkoutId,main.id);assert.equal(file.source.kind,'default');assert.ok(file.content.includes('explorerAnswer = 2'));assert.equal(await page.getByRole('combobox',{name:'筛选工作树',exact:true}).isDisabled(),true);await registeredRoots(catalog);
       await read.text('explorerAnswer = 2');await page.getByRole('button',{name:'返回任务',exact:true}).click();await page.getByRole('button',{name:'查看完整文件',exact:true}).waitFor();assert.ok((await page.locator('.task-diff-reader').innerText()).includes('explorerAnswer = 2'));assert.ok((await row.locator('..').getAttribute('class')).includes('is-selected'));await capture(page,'code-task-main-source.png');
     }finally{page.off('request',observe);}
   });
@@ -456,15 +472,15 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
   await t.test('一个代码库目录读取失败保留其他文件，重试恢复目录',async()=>{
     const api=workspaceUrl.replace('/workspaces/','/api/v1/workspaces/');const catalog=await (await page.request.get(api+'/code/repositories')).json();const second=catalog.repositories.find((r:any)=>r.code==='second-code');expectedBrowserErrors.add('/code/directory?repositoryId='+second.id);
     await page.route('**/code/directory?**',async(route:any)=>{const url=new URL(route.request().url());if(url.searchParams.get('repositoryId')===second.id)return route.fulfill({status:404,contentType:'application/json',body:JSON.stringify({error:{code:'code_directory_missing',message:'fixture directory unavailable'}})});return route.continue();});
-    await page.goto(workspaceUrl+'/code/explorer');await page.getByText('fixture directory unavailable',{exact:false}).waitFor();await search('main.ts');await fileResult('projects/demo/services/api/src/main.ts').click();await page.locator(codeEditor+':visible').waitFor();
-    await page.unroute('**/code/directory?**');await page.getByRole('button',{name:'重新读取文件',exact:true}).click();await page.waitForFunction(()=>!document.body.textContent?.includes('fixture directory unavailable'));
+    await page.goto(workspaceUrl+'/code/explorer');await expandRoot(second.id);await page.getByRole('button',{name:'查看原因 · 部分目录暂不可读取',exact:true}).click();await page.getByText('fixture directory unavailable',{exact:false}).waitFor();await search('main.ts');await fileResult('projects/demo/services/api/src/main.ts').click();await page.locator(codeEditor+':visible').waitFor();
+    await page.unroute('**/code/directory?**');await page.getByRole('button',{name:'刷新展开目录',exact:true}).click();await page.waitForFunction(()=>!document.body.textContent?.includes('fixture directory unavailable'));
   });
   await t.test('快速切换代码库不会被迟到的另一来源正文覆盖',async()=>{
-    await page.route('**/code/file?**',async(route:any)=>{const url=new URL(route.request().url());if(url.searchParams.get('filePath')==='projects/demo/services/api/src/main.ts')await new Promise(resolve=>setTimeout(resolve,400));return route.continue();});
+    await page.route('**/code/editor-file?**',async(route:any)=>{const url=new URL(route.request().url());if(url.searchParams.get('filePath')==='projects/demo/services/api/src/main.ts')await new Promise(resolve=>setTimeout(resolve,400));if(!page.isClosed())await route.continue().catch((error:Error)=>{if(!/already handled|closed/iu.test(error.message))throw error;});});
     await page.goto(workspaceUrl+'/code/explorer');await search('main.ts');await fileResult('projects/demo/services/api/src/main.ts').click();await page.locator('.repository-search-result').filter({hasText:'另一个代码库'}).click();
     await read.text('secondRepository = true');await new Promise(resolve=>setTimeout(resolve,500));await read.text('secondRepository = true');
     await(await registeredFileTab('projects/demo/services/api/src/main.ts')).click();await read.text('explorerAnswer = 2');
-    await page.unroute('**/code/file?**');
+    await page.unroute('**/code/editor-file?**',undefined,{behavior:'wait'});
   });
   await t.test('正文缓存淘汰后保留全部文件页签并正确重新读取',async()=>{
     await page.goto(workspaceUrl+'/code/explorer');await search('src/file');
@@ -476,8 +492,8 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     await page.locator('.code-explorer-stage').waitFor();await capture(page,'code-initial-'+width+'.png');
     if(width<680)await page.getByRole('button',{name:'恢复分屏',exact:true}).click();
     await search('main.ts');await resultPath('projects/demo/services/api/src/main.ts');await resultPath('src/main.ts');await noOverflow();
-    await page.locator('.repository-search-options').getByText('内容',{exact:true}).click();await search('search.hit[0]');await resultPath('projects/demo/services/api/src/search-matches.ts');await resultPath('src/search-matches.ts');await noOverflow();await capture(page,'code-search-paths-'+width+'.png');
-    await page.locator('.repository-search-options').getByText('文件名',{exact:true}).click();await search('main.ts');await fileResult('projects/demo/services/api/src/main.ts').click();await read.text('explorerAnswer = 2');
+    await selectSearchMode('内容');await search('search.hit[0]');await resultPath('projects/demo/services/api/src/search-matches.ts');await resultPath('src/search-matches.ts');await noOverflow();await capture(page,'code-search-paths-'+width+'.png');
+    await selectSearchMode('文件名');await search('main.ts');await fileResult('projects/demo/services/api/src/main.ts').click();await read.text('explorerAnswer = 2');
     assert.equal(await page.locator(codeEditor+':visible .cm-content').getAttribute('contenteditable'),'true');await page.getByRole('button',{name:'请智能体解释',exact:true}).click({trial:true});await noOverflow();await capture(page,'code-explorer-'+width+'.png');
   });
   await t.test('选中工作树消失后刷新保留旧身份的失败，另一代码库继续读取且不回退工作空间目录',async()=>{
@@ -486,11 +502,11 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     const path=codeFixture.worktreeFiles[retired.repositoryId].path;await search('worktree-filter.ts');await fileResult(path).click();await read.text(codeFixture.worktreeFiles[retired.repositoryId].content.trim());
     const requests:URL[]=[];const observe=(request:any)=>{const url=new URL(request.url());if(url.pathname.includes('/code/'))requests.push(url);};page.on('request',observe);
     const retiredEditorRead=(url:URL)=>url.pathname===new URL(workspaceUrl).pathname.replace('/workspaces/','/api/v1/workspaces/')+'/code/editor-file'&&url.searchParams.get('kind')==='code'&&url.searchParams.get('repositoryId')===retired.repositoryId&&url.searchParams.get('checkoutId')===retired.id&&url.searchParams.get('filePath')===path;
-    const observeRetiredEditorFailure=(response:any)=>{if(response.request().method()==='GET'&&response.status()===404&&retiredEditorRead(new URL(response.url())))expectedBrowserErrors.add(response.url());};page.on('response',observeRetiredEditorFailure);
+    const observeRetiredEditorFailure=(response:any)=>{if(response.request().method()==='GET'&&response.status()>=400&&retiredEditorRead(new URL(response.url())))expectedBrowserErrors.add(response.url());};page.on('response',observeRetiredEditorFailure);
     expectedBrowserErrors.add('/code/directory?repositoryId='+retired.repositoryId);expectedBrowserErrors.add('/code/search?repositoryId='+retired.repositoryId);expectedBrowserErrors.add('/code/file?repositoryId='+retired.repositoryId);
     try{
       const retiredEditorResponse=page.waitForResponse((response:any)=>response.request().method()==='GET'&&response.status()>=400&&retiredEditorRead(new URL(response.url())));void retiredEditorResponse.catch(()=>{});
-      codeFixture.retireWorktree(retired.id);const response=fileResponse(path,url=>url.searchParams.get('checkoutId')===retired.id);await page.getByRole('button',{name:'重新读取文件',exact:true}).click();const failure=await response;assert.equal(failure.status(),404);const editorFailure=await retiredEditorResponse;assert.equal(editorFailure.status(),404,'编辑器重新核对同一退役来源也必须明确失败');assert.equal(new URL(editorFailure.url()).searchParams.get('checkoutId'),retired.id);
+      codeFixture.retireWorktree(retired.id);const response=fileResponse(path,url=>url.searchParams.get('checkoutId')===retired.id);await page.getByRole('button',{name:'刷新当前文件',exact:true}).click();const failure=await response;assert.ok(failure.status()>=400);const editorFailure=await retiredEditorResponse;assert.ok(editorFailure.status()>=400,'编辑器重新核对同一退役来源也必须明确失败');assert.equal(new URL(editorFailure.url()).searchParams.get('checkoutId'),retired.id);
       await page.getByRole('heading',{name:'文件暂不可读取',exact:true}).waitFor();assert.equal(await page.locator(codeEditor+':visible').count(),0);assert.equal(await page.getByRole('tab',{name:/worktree-filter\.ts/}).count(),1);
       const reads=requests.filter(url=>url.searchParams.get('repositoryId')===retired.repositoryId&&/\/code\/(?:directory|file|editor-file|search)$/u.test(url.pathname));assert.ok(reads.length>0);assert.ok(reads.every(url=>url.searchParams.get('checkoutId')===retired.id),'退役来源仍带原checkoutId，不能改读工作空间目录或占位身份');
       await fileResult(codeFixture.worktreeFiles[codeFixture.primaryRepositoryId].path).click();await read.text(codeFixture.worktreeFiles[codeFixture.primaryRepositoryId].content.trim());await capture(page,'code-worktree-retired-local-failure.png');

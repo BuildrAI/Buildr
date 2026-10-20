@@ -148,7 +148,7 @@ a {
 .app-shell .topbar-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-shrink: 0;
   margin-left: auto;
 }
@@ -198,14 +198,22 @@ a {
 .workspace-switcher-option-check { display:flex; justify-content:center; width:16px; flex:none; color:var(--soft-primary); }
 
 .app-shell .nav-quit,
-.app-shell .nav-quit.ant-btn {
+.app-shell .nav-quit.ant-btn,
+.app-shell .nav-more,
+.app-shell .nav-more.ant-btn {
   height: 32px;
   padding: 0 8px;
   color: var(--soft-muted);
   box-shadow: none;
 }
 
-.app-shell .nav-quit:hover {
+.app-shell .nav-more.ant-btn {
+  min-width: 30px;
+  padding: 0;
+}
+
+.app-shell .nav-quit:hover,
+.app-shell .nav-more:hover {
   color: var(--soft-ink);
 }
 
@@ -1797,7 +1805,7 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
   .app-shell .topbar .workspace-switcher .context-label { display: none; }
   .app-shell .topbar .top-nav { height: 44px; }
   .app-shell .topbar .top-nav a { height: 30px; padding: 0 9px; }
-  .app-shell .topbar-actions { gap: 5px; }
+  .app-shell .topbar-actions { gap: 4px; }
   .app-shell .topbar #open-agent-action { padding-inline: 8px; }
   .app-shell .topbar .nav-quit { padding-inline: 5px; }
 }

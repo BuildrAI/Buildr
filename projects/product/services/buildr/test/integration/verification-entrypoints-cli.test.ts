@@ -150,7 +150,7 @@ test('core full plan uses the daily core profile without Candidate-only owners',
   assert.equal(payload.schemaVersion, 'buildr.verification-full-plan/v1');
   assert.equal(payload.source, 'core-profile');
   assert.equal(payload.scope.mode, 'full');
-  assert.equal(payload.estimate.declaredBudgetMs, 360_000);
+  assert.equal(payload.estimate.declaredBudgetMs, 1_250_000);
   assert.equal(payload.estimate.feasible, true);
   for (const id of ['candidate-tarball', 'application-payload-release', 'npm-launcher-candidate', 'package-static', 'cli-package-parity', 'system-fresh-build', 'init-onboarding', 'release-tarball-smoke']) {
     assert.equal(payload.steps.some((step: any) => step.id === id), false, id);

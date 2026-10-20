@@ -20,7 +20,6 @@ import {
 } from '../modules/agent-assets/module.ts';
 import {
   TASK_RUNTIME_PORT,
-  createDailyProgressModule,
   TASK_CHANGE_BINDER,
   TASK_QUERY_APPLICATION,
   TASK_MODULE,
@@ -68,7 +67,6 @@ export function createRuntime(): any  {
   registry.install(createKnowledgeModule());
   registry.install(createOpenSpecModule(runtime));
   registry.install(TASK_MODULE);
-  registry.install(createDailyProgressModule(runtime));
   registry.install(WORKBENCH_MODULE);
   registry.install(createWorktreeProviderModule(runtime));
   registry.install(TASK_COMMITS_MODULE);

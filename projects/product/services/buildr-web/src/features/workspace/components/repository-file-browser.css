@@ -11,15 +11,19 @@
 .repository-file-browser.is-resizing { user-select:none; cursor:col-resize; }
 .repository-tree-heading { display:flex; align-items:center; justify-content:space-between; padding:10px 12px 7px 16px; min-height:42px; }
 .repository-tree-heading strong { font-size:12px; }
+.repository-tree-heading-actions { display:flex; align-items:center; gap:2px; }
+.repository-tree-heading-actions .ant-btn { color:var(--soft-muted,#77817e); }
 .repository-file-search { padding:0 12px 12px; }
 .repository-file-search .ant-input-affix-wrapper { background:#fff; }
-.repository-search-options { display:flex; align-items:center; justify-content:space-between; gap:6px; margin-top:8px; }
-.repository-search-options .ant-btn { padding-inline:3px; font-size:10px; color:var(--soft-muted,#77817e); }
-.repository-search-options .repository-search-mode { flex:none; padding:2px; border:1px solid var(--soft-line,#e3e9e7); background:#edf1f2; color:var(--soft-muted,#77817e); }
-.repository-search-options .repository-search-mode .ant-segmented-item { min-width:54px; font-weight:400; }
-.repository-search-options .repository-search-mode .ant-segmented-item-selected { background:var(--soft-primary,#397d74); color:#fff; font-weight:600; box-shadow:none; }
-.repository-search-options .repository-search-mode .ant-segmented-thumb { background:var(--soft-primary,#397d74); box-shadow:none; }
-.repository-search-options .repository-search-mode .ant-segmented-item-label { padding-inline:8px; line-height:24px; }
+.repository-search-scope { display:inline-flex; align-items:center; margin-left:8px; }
+.repository-search-scope .ant-select-selector { padding-inline:0 !important; }
+.repository-search-scope .ant-select-selection-item { padding-inline-end:14px; font-size:11px; font-weight:500; color:var(--soft-muted,#68717b); transition:color .15s ease; }
+.repository-search-scope .ant-select:hover .ant-select-selection-item,.repository-search-scope .ant-select-open .ant-select-selection-item { color:var(--soft-primary,#397d74); }
+.repository-search-scope .ant-select-arrow { inset-inline-end:0; font-size:9px; color:var(--soft-muted,#68717b); }
+.repository-search-scope-popup.ant-select-dropdown { padding:4px; border:1px solid var(--soft-line,#e1e5e9); border-radius:10px; background:var(--soft-surface,#fff); box-shadow:0 8px 24px color-mix(in srgb,var(--soft-ink,#252a31) 12%,transparent); }
+.repository-search-scope-popup .ant-select-item { min-height:32px; padding:6px 10px; border-radius:6px; color:var(--soft-ink,#252a31); font-size:12px; }
+.repository-search-scope-popup.ant-select-dropdown .ant-select-item-option-active:not(.ant-select-item-option-selected):not(.ant-select-item-option-disabled) { background:var(--soft-bg,#f7f8f9); }
+.repository-search-scope-popup.ant-select-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled) { color:var(--soft-primary,#397d74); background:color-mix(in srgb,var(--soft-primary,#397d74) 8%,var(--soft-surface,#fff)); font-weight:600; }
 .repository-search-hint { margin:2px 8px; color:var(--soft-muted,#77817e); font-size:11px; line-height:1.6; }
 .repository-tree-body { flex:1; overflow:auto; padding:0 8px 12px; min-height:0; }
 .repository-tree-body .ant-tree { background:transparent; font-size:12px; min-width:max-content; }
@@ -77,6 +81,7 @@
 .repository-reading-empty { height:100%; min-height:260px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; color:var(--soft-muted,#77817e); text-align:center; padding:24px; }
 .repository-reading-empty > .anticon { font-size:28px; color:#a0b7af; }.repository-reading-empty h3 { margin:0; font-size:15px; color:#4c5a54; }.repository-reading-empty p { margin:0 0 8px; }
 .repository-search-results > p { color:var(--soft-muted,#77817e); font-size:11px; padding:0 8px; }
+.repository-search-results .ant-empty-footer { display:flex; justify-content:center; }
 .repository-search-result { display:flex; width:100%; gap:8px; padding:10px 8px; border:0; border-radius:5px; text-align:left; background:transparent; color:#48544e; cursor:pointer; }
 .repository-search-result:hover,.repository-search-result.selected { background:#e8f1ec; }
 .repository-search-result > .anticon { padding-top:3px; flex:none; }.repository-search-result > span:not(.anticon) { min-width:0; flex:1; }

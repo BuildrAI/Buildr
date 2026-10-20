@@ -11,6 +11,7 @@ import { insideFilesystemPath } from '../../../infrastructure/filesystem/filesys
 import { observeGitRepositoryRoot as sourceGitRoot } from '../../../infrastructure/git/repository-boundary.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.ts';
 import { controlMetadataPath } from '../../../infrastructure/git/control-metadata-path.ts';
+import { withExclusiveFileLock } from '../../../infrastructure/filesystem/exclusive-file-lock.ts';
 
 export const GIT_WORKTREE_PROVIDER_CAPABILITY = 'buildr.git-worktree-provider/v1';
 export const GIT_WORKTREE_EVIDENCE_SCHEMA = 'buildr.git-worktree-evidence/v1';
@@ -510,9 +511,9 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
   function writeGitWorktreeEvidence(workspaceRoot: string, evidence: GitWorktreeEvidence): { file: string; evidence: GitWorktreeEvidence } {
     const canonicalRoot = canonicalEvidenceWorkspaceRoot(workspaceRoot);
     const normalized = validateEvidence(evidence, canonicalRoot, evidence.taskId);
-    const file = evidencePathForRepositories(evidence.taskId, normalized.repositories);
     const current = readGitWorktreeEvidence(canonicalRoot, evidence.taskId, { optional: true });
-    if (current && !sameFilesystemPath(path.dirname(current.file), path.dirname(file))) throw Object.assign(new Error('工作树证据锚点与当前组来源不符，不能迁移或覆盖。'), { code: 'git_worktree_evidence_conflict' });
+    const file = current?.file ?? evidencePathForRepositories(evidence.taskId, normalized.repositories);
+    if (current && !normalized.repositories.some((item) => sameFilesystemPath(path.dirname(file), path.join(sharedGitDir(item.sourceRepository), 'buildr', 'task-worktrees')))) throw Object.assign(new Error('工作树证据锚点与当前组来源不符，不能迁移或覆盖。'), { code: 'git_worktree_evidence_conflict' });
     assertLiteralWorktreePath(file);
     runtime.atomicWriteJson(file, normalized);
     return { file, evidence: normalized };
@@ -527,20 +528,24 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
     checkoutRoot: string;
     branch: string;
     startPoint?: string;
+    existingRepositories?: RepositoryEvidence[];
   }): RepositoryDescriptor {
     const sourceRepository = fs.realpathSync(path.resolve(input.workspaceRoot, input.sourcePath));
     const actualRoot = sourceGitRoot(sourceRepository);
     if (!actualRoot || !sameFilesystemPath(actualRoot, sourceRepository)) throw new Error(`${input.selector} source is not an independent Git repository: ${input.sourcePath}`);
+    const previous = input.existingRepositories?.find((item) => sameFilesystemPath(item.sourceRepository, sourceRepository));
+    const selected = input.existingRepositories?.find((item) => item.selector === input.selector);
+    if (selected && (!sameFilesystemPath(selected.sourceRepository, sourceRepository) || selected.sourcePath !== input.sourcePath.split(path.sep).join('/'))) throw Object.assign(new Error(`${input.selector} 来源与已有登记不符。`), { code: 'git_worktree_identity_mismatch' });
     const remote = input.source.git?.remote ?? null;
     const remoteUrl = remote ? gitText(sourceRepository, ['remote', 'get-url', remote]) : null;
     if (remote && !remoteUrl) throw new Error(`${input.selector} declared remote is missing: ${remote}`);
     if (input.source.git?.url && !runtime.sameGitIdentity(input.source.git.url, remoteUrl)) throw new Error(`${input.selector} remote identity conflicts with its registry declaration.`);
-    let resolvedStart = input.startPoint ?? input.source.integrationBranch ?? input.source.git?.integrationBranch ?? 'HEAD';
-    if (git(sourceRepository, ['rev-parse', '--verify', `${resolvedStart}^{commit}`]).status !== 0 && remote) {
+    let resolvedStart = previous?.startPoint ?? input.startPoint ?? input.source.integrationBranch ?? input.source.git?.integrationBranch ?? 'HEAD';
+    if (!previous && git(sourceRepository, ['rev-parse', '--verify', `${resolvedStart}^{commit}`]).status !== 0 && remote) {
       const remoteStart = `${remote}/${resolvedStart}`;
       if (git(sourceRepository, ['rev-parse', '--verify', `${remoteStart}^{commit}`]).status === 0) resolvedStart = remoteStart;
     }
-    if (git(sourceRepository, ['rev-parse', '--verify', `${resolvedStart}^{commit}`]).status !== 0) throw new Error(`${input.selector} start point is unavailable: ${resolvedStart}`);
+    if (!previous && git(sourceRepository, ['rev-parse', '--verify', `${resolvedStart}^{commit}`]).status !== 0) throw new Error(`${input.selector} start point is unavailable: ${resolvedStart}`);
     return {
       selector: input.selector,
       entityType: input.entityType,
@@ -572,9 +577,13 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
     if (!TASK_ID_PATTERN.test(taskId)) throw new Error(`Invalid task id: ${taskId}`);
     if (!branch) throw new Error('Git worktree plan requires branch.');
     if (git(root, ['check-ref-format', `refs/heads/${branch}`]).status !== 0) throw new Error(`Invalid task branch: ${branch}`);
+    const existing = readGitWorktreeEvidence(root, taskId, { optional: true });
+    const existingRepositories = existing?.evidence.repositories ?? [];
+    if (existing && existing.evidence.branch !== branch) throw Object.assign(new Error(`任务分支与已有登记不符：${existing.evidence.branch} → ${branch}。`), { code: 'git_worktree_identity_mismatch' });
+    includes = [...new Set([...existingRepositories.filter((item) => item.selector !== 'workspace').map((item) => item.selector), ...includes])];
     const checkoutRoot = path.join(root, '.worktrees', taskId);
     const repositories: RepositoryDescriptor[] = workspaceGitRoot(root)
-      ? [sourceDescriptor({ selector: 'workspace', entityType: 'workspace', sourcePath: '.', source: { type: 'git' }, workspaceRoot: root, checkoutRoot, branch, startPoint })]
+      ? [sourceDescriptor({ selector: 'workspace', entityType: 'workspace', sourcePath: '.', source: { type: 'git' }, workspaceRoot: root, checkoutRoot, branch, startPoint, existingRepositories })]
       : [];
     const seen = new Set(repositories.map((item) => item.selector));
     const projects = runtime.readProjectRegistryRecord(root);
@@ -599,7 +608,7 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
         const project = projects.projects[code];
         if (!project) throw new Error(`Unknown Git worktree selector: ${selector}`);
         if (!selectedSourceHasGit(selector, project.source, root, repositories)) continue;
-        addDescriptor(sourceDescriptor({ selector, entityType: 'project', sourcePath: requiredString(project.source.path, 'project.source.path'), source: project.source, workspaceRoot: root, checkoutRoot, branch }), project.source);
+        addDescriptor(sourceDescriptor({ selector, entityType: 'project', sourcePath: requiredString(project.source.path, 'project.source.path'), source: project.source, workspaceRoot: root, checkoutRoot, branch, existingRepositories }), project.source);
         continue;
       }
       if (selector.startsWith('service:')) {
@@ -612,11 +621,23 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
         if (!service) throw new Error(`Unknown Git worktree selector: ${selector}`);
         const source = service.repositorySource || service.source;
         if (!selectedSourceHasGit(selector, source, root, repositories)) continue;
-        const descriptor = sourceDescriptor({ selector, entityType: 'service', sourcePath: requiredString(source.path, 'service.source.path'), source, workspaceRoot: root, checkoutRoot, branch, startPoint: sameFilesystemPath(path.resolve(root, source.path!), root) ? startPoint : undefined });
+        const descriptor = sourceDescriptor({ selector, entityType: 'service', sourcePath: requiredString(source.path, 'service.source.path'), source, workspaceRoot: root, checkoutRoot, branch, startPoint: sameFilesystemPath(path.resolve(root, source.path!), root) ? startPoint : undefined, existingRepositories });
         addDescriptor(descriptor, source);
         continue;
       }
       throw new Error(`Unsupported Git worktree selector: ${selector}`);
+    }
+    for (const previous of existingRepositories) {
+      const index = repositories.findIndex((item) => sameFilesystemPath(item.sourceRepository, previous.sourceRepository));
+      const current = repositories[index];
+      if (!current || !sameFilesystemPath(current.checkoutPath, previous.checkoutPath) || current.sourcePath !== previous.sourcePath || current.branch !== previous.branch) throw Object.assign(new Error(`${previous.selector} 路径或分支与已有登记不符。`), { code: 'git_worktree_identity_mismatch' });
+      if (previous.remote) {
+        const observedUrl = gitText(previous.sourceRepository, ['remote', 'get-url', previous.remote]);
+        if (!observedUrl || !runtime.sameGitIdentity(observedUrl, previous.remoteUrl)) throw Object.assign(new Error(`${previous.selector} 远端身份与已有登记不符。`), { code: 'git_worktree_identity_mismatch' });
+      }
+      if (previous.remoteUrl && current.remoteUrl && !runtime.sameGitIdentity(previous.remoteUrl, current.remoteUrl)) throw Object.assign(new Error(`${previous.selector} 远端声明与已有登记不符。`), { code: 'git_worktree_identity_mismatch' });
+      const promoteProject = previous.entityType === 'service' && current.entityType === 'project';
+      repositories[index] = { ...current, selector: promoteProject ? current.selector : previous.selector, entityType: promoteProject ? current.entityType : previous.entityType, startPoint: previous.startPoint!, remote: previous.remote, remoteUrl: previous.remoteUrl };
     }
     if (!repositories.length) throw Object.assign(new Error('工作空间根没有 Git；请明确选择实际独立 Git 项目或服务来源。'), { code: 'git_worktree_repository_selection_required' });
     repositories.sort(repositorySourceOrder);
@@ -636,6 +657,11 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
     assertLiteralWorktreePath(plan.checkoutRoot);
     for (const item of plan.repositories) {
       assertLiteralWorktreePath(item.checkoutPath);
+      const parent = plan.repositories.filter((candidate) => candidate !== item && inside(candidate.checkoutPath, item.checkoutPath)).sort((left, right) => right.checkoutPath.length - left.checkoutPath.length)[0];
+      if (parent && fs.existsSync(parent.checkoutPath)) {
+        const relative = path.relative(parent.checkoutPath, item.checkoutPath).split(path.sep).join('/');
+        if (git(parent.checkoutPath, ['ls-files', '--error-unmatch', '--', relative]).status === 0) throw new Error(`${item.selector} target is tracked by task repository ${parent.selector}: ${relative}`);
+      }
       const listed = git(item.sourceRepository, ['worktree', 'list', '--porcelain']);
       if (listed.status !== 0) throw new Error(`Unable to inspect Git worktrees: ${item.selector}`);
       const worktrees = parseGitWorktreeList(listed.stdout);
@@ -644,10 +670,16 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
       if (atTarget && atTarget.branch !== item.branch) throw new Error(`${item.selector} target is registered to branch ${atTarget.branch || '(detached)'}.`);
       if (!atTarget && branchOwner) throw new Error(`${item.selector} branch is already checked out at ${branchOwner.path}.`);
       if (!atTarget && fs.existsSync(item.checkoutPath)) throw new Error(`${item.selector} target is occupied but not registered: ${item.checkoutPath}`);
+      assertCurrentCheckoutIdentity(item, git, parseGitWorktreeList);
       item.preflightState = atTarget ? 'reused' : 'create';
     }
-    const existing = readGitWorktreeEvidence(plan.workspaceRoot, plan.taskId, { optional: true });
-    if (existing && existing.evidence.planDigest !== plan.digest) throw new Error('Git worktree evidence exists with a different repository plan.');
+  }
+
+  function withTaskWorktreeLock<T>(workspaceRoot: string, taskId: string, action: () => T): T {
+    const root = canonicalEvidenceWorkspaceRoot(runtime.assertCanonicalTaskWorkspace(workspaceRoot));
+    if (!TASK_ID_PATTERN.test(taskId)) throw new Error(`Invalid task id: ${taskId}`);
+    const file = path.join(root, '.buildr', 'local', 'task-worktree-locks', `${taskId}.lock`);
+    return withExclusiveFileLock(file, root, action, { assertSafe: () => assertLiteralWorktreePath(file) });
   }
 
   function repositoryEvidence(item: RepositoryDescriptor, state: RepositoryState, identity: WorktreeIdentity | null = null, diagnostic: string | null = null): RepositoryEvidence {
@@ -664,48 +696,57 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
   }
 
   function prepareGitWorktrees(input: PrepareInput): WorktreeResult {
-    let plan: GitWorktreePlan | null = null;
+    const planning: { plan?: GitWorktreePlan } = {};
     const effects: WorktreeEffect[] = [];
     const repositories: RepositoryEvidence[] = [];
     try {
-      plan = planGitWorktrees(input);
-      preflight(plan);
-      for (const item of plan.repositories) {
-        const plannedState = item.preflightState;
-        let state: RepositoryState = plannedState === 'reused' ? 'reused' : 'blocked';
-        if (plannedState === 'create') {
-          assertLiteralWorktreePath(item.checkoutPath);
-          fs.mkdirSync(path.dirname(item.checkoutPath), { recursive: true });
-          assertLiteralWorktreePath(item.checkoutPath);
-          const branchExists = git(item.sourceRepository, ['show-ref', '--verify', '--quiet', `refs/heads/${item.branch}`]).status === 0;
-          const args = branchExists ? ['worktree', 'add', item.checkoutPath, item.branch] : ['worktree', 'add', '-b', item.branch, item.checkoutPath, item.startPoint];
-          const added: CommandResult = process.env.BUILDR_FAULT_WORKTREE_ADD_SELECTOR === item.selector
-            ? { status: 1, stdout: '', stderr: `Injected worktree add failure: ${item.selector}` }
-            : git(item.sourceRepository, args);
-          if (added.status !== 0) {
-            repositories.push(repositoryEvidence(item, 'blocked', null, (added.stderr || added.stdout || 'git worktree add failed').trim()));
+      return withTaskWorktreeLock(input.workspaceRoot, input.taskId, () => {
+        const plan = planGitWorktrees(input);
+        planning.plan = plan;
+        preflight(plan);
+        const currentPlan = plan;
+        for (const item of currentPlan.repositories) {
+          const identity = item.preflightState === 'reused' ? worktreeIdentity(item.checkoutPath) : null;
+          if (item.preflightState === 'reused' && !identity) throw Object.assign(new Error(`${item.selector} 已有检出身份不可读取。`), { code: 'git_worktree_identity_mismatch' });
+          repositories.push(repositoryEvidence(item, identity ? 'reused' : 'blocked', identity, identity ? null : '尚未创建。'));
+        }
+        for (const [index, item] of currentPlan.repositories.entries()) {
+          const plannedState = item.preflightState;
+          let state: RepositoryState = plannedState === 'reused' ? 'reused' : 'blocked';
+          if (plannedState === 'create') {
+            assertLiteralWorktreePath(item.checkoutPath);
+            fs.mkdirSync(path.dirname(item.checkoutPath), { recursive: true });
+            assertLiteralWorktreePath(item.checkoutPath);
+            const branchExists = git(item.sourceRepository, ['show-ref', '--verify', '--quiet', `refs/heads/${item.branch}`]).status === 0;
+            const args = branchExists ? ['worktree', 'add', item.checkoutPath, item.branch] : ['worktree', 'add', '-b', item.branch, item.checkoutPath, item.startPoint];
+            const added: CommandResult = process.env.BUILDR_FAULT_WORKTREE_ADD_SELECTOR === item.selector
+              ? { status: 1, stdout: '', stderr: `Injected worktree add failure: ${item.selector}` }
+              : git(item.sourceRepository, args);
+            if (added.status !== 0) {
+              repositories[index] = repositoryEvidence(item, 'blocked', null, (added.stderr || added.stdout || 'git worktree add failed').trim());
+              const evidence: GitWorktreeEvidence = { schemaVersion: GIT_WORKTREE_EVIDENCE_SCHEMA, taskId: plan.taskId, workspaceRoot: plan.workspaceRoot, branch: plan.branch, planDigest: plan.digest, status: 'blocked', repositories, effects: effects.filter((effect): effect is PersistedEffect => effect.type === 'worktree-created'), updatedAt: new Date().toISOString() };
+              const written = writeGitWorktreeEvidence(plan.workspaceRoot, evidence);
+              return result('create', 'blocked', plan.taskId, written.file, repositories, effects, { code: 'git_worktree_partial_create_failed', message: repositories[index].diagnostic ?? 'git worktree add failed' }, [`检查 ${item.checkoutPath} 后重试，已有成员继续保留。`]);
+            }
+            effects.push({ type: 'worktree-created', selector: item.selector, checkoutPath: item.checkoutPath, branch: item.branch });
+            state = 'created';
+          }
+          const identity = worktreeIdentity(item.checkoutPath);
+          if (!identity || !sameFilesystemPath(identity.repository, item.checkoutPath) || identity.branch !== item.branch || !identity.registered) {
+            repositories[index] = repositoryEvidence(item, 'blocked', identity, 'Checkout identity does not match the Git worktree plan.');
             const evidence: GitWorktreeEvidence = { schemaVersion: GIT_WORKTREE_EVIDENCE_SCHEMA, taskId: plan.taskId, workspaceRoot: plan.workspaceRoot, branch: plan.branch, planDigest: plan.digest, status: 'blocked', repositories, effects: effects.filter((effect): effect is PersistedEffect => effect.type === 'worktree-created'), updatedAt: new Date().toISOString() };
             const written = writeGitWorktreeEvidence(plan.workspaceRoot, evidence);
-            return result('create', 'blocked', plan.taskId, written.file, repositories, effects, { code: 'git_worktree_partial_create_failed', message: repositories.at(-1)?.diagnostic ?? 'git worktree add failed' }, [`检查 ${item.checkoutPath} 后重试同一计划。`]);
+            return result('create', 'blocked', plan.taskId, written.file, repositories, effects, { code: 'git_worktree_identity_mismatch', message: `${item.selector} checkout identity is invalid.` }, [`检查 ${item.checkoutPath}。`]);
           }
-          effects.push({ type: 'worktree-created', selector: item.selector, checkoutPath: item.checkoutPath, branch: item.branch });
-          state = 'created';
+          repositories[index] = repositoryEvidence(item, state, identity);
         }
-        const identity = worktreeIdentity(item.checkoutPath);
-        if (!identity || !sameFilesystemPath(identity.repository, item.checkoutPath) || identity.branch !== item.branch || !identity.registered) {
-          repositories.push(repositoryEvidence(item, 'blocked', identity, 'Checkout identity does not match the Git worktree plan.'));
-          const evidence: GitWorktreeEvidence = { schemaVersion: GIT_WORKTREE_EVIDENCE_SCHEMA, taskId: plan.taskId, workspaceRoot: plan.workspaceRoot, branch: plan.branch, planDigest: plan.digest, status: 'blocked', repositories, effects: effects.filter((effect): effect is PersistedEffect => effect.type === 'worktree-created'), updatedAt: new Date().toISOString() };
-          const written = writeGitWorktreeEvidence(plan.workspaceRoot, evidence);
-          return result('create', 'blocked', plan.taskId, written.file, repositories, effects, { code: 'git_worktree_identity_mismatch', message: `${item.selector} checkout identity is invalid.` }, [`检查 ${item.checkoutPath}。`]);
-        }
-        repositories.push(repositoryEvidence(item, state, identity));
-      }
-      const evidence: GitWorktreeEvidence = { schemaVersion: GIT_WORKTREE_EVIDENCE_SCHEMA, taskId: plan.taskId, workspaceRoot: plan.workspaceRoot, branch: plan.branch, planDigest: plan.digest, status: 'ready', repositories, effects: effects.filter((effect): effect is PersistedEffect => effect.type === 'worktree-created'), updatedAt: new Date().toISOString() };
-      const written = writeGitWorktreeEvidence(plan.workspaceRoot, evidence);
-      return result('create', 'ready', plan.taskId, written.file, repositories, effects);
+        const evidence: GitWorktreeEvidence = { schemaVersion: GIT_WORKTREE_EVIDENCE_SCHEMA, taskId: plan.taskId, workspaceRoot: plan.workspaceRoot, branch: plan.branch, planDigest: plan.digest, status: 'ready', repositories, effects: effects.filter((effect): effect is PersistedEffect => effect.type === 'worktree-created'), updatedAt: new Date().toISOString() };
+        const written = writeGitWorktreeEvidence(plan.workspaceRoot, evidence);
+        return result('create', 'ready', plan.taskId, written.file, repositories, effects);
+      });
     } catch (error) {
       let file: string | null = null;
-      try { if (plan) file = evidencePathForRepositories(plan.taskId, plan.repositories); } catch { /* Preserve the original failure and any completed effects. */ }
+      try { if (planning.plan) file = findGitWorktreeEvidenceFile(planning.plan.workspaceRoot, planning.plan.taskId) ?? evidencePathForRepositories(planning.plan.taskId, planning.plan.repositories); } catch { /* Preserve the original failure and any completed effects. */ }
       const code = error instanceof Error && typeof Reflect.get(error, 'code') === 'string' ? String(Reflect.get(error, 'code')) : effects.length ? 'git_worktree_create_failed' : 'git_worktree_preflight_failed';
       return result('create', 'blocked', input.taskId, file, repositories, effects, { code, message: errorMessage(error) }, [effects.length ? '保留已完成的 Git 效果，核对来源与证据后重试同一计划。' : '修正 Git plan 后重试；preflight 失败时未执行新的 Git mutation。']);
     }
@@ -762,107 +803,109 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
   function cleanupGitWorktrees({ workspaceRoot, taskId, integratedRefs = {}, allowDirty = false, allowNoChange = false, allowCompleted = false, cleanupDelivery = {}, observedCheckouts }: CleanupInput): WorktreeResult {
     const effects: WorktreeEffect[] = [];
     try {
-      const root = canonicalEvidenceWorkspaceRoot(runtime.assertCanonicalTaskWorkspace(workspaceRoot));
-      const stored = currentRepositories(root, taskId, observedCheckouts);
-      const reviewedDeliveries = normalizeGitWorktreeCleanupDelivery(cleanupDelivery, stored.repositories.map((record) => record.selector));
-      if (stored.evidenceSource === 'observed' && (!Object.keys(reviewedDeliveries).length || allowDirty || allowNoChange)) throw Object.assign(new Error('依据当前对象清理必须提供完整源与交付提交，不能绕过未保存内容保护。'), { code: 'git_worktree_cleanup_delivery_invalid' });
-      if (Object.keys(reviewedDeliveries).length && !allowCompleted) return result('cleanup', 'blocked', taskId, stored.file, [], [], { code: 'git_worktree_cleanup_unauthorized', message: '已核验交付输入需要调用方明确允许completed cleanup。' });
-      const checks: CleanupCheck[] = [];
-      const controlMetadataOnly = new Set<string>();
-      const retainedTargets = new Map<string, { kind: 'refs'; targetHead: string; refs: string[] } | { kind: 'worktree'; branch: string; head: string }>();
-      assertNoUnlistedNestedRepositories(stored.repositories, git);
-      for (const record of stored.repositories) {
-        assertCurrentCheckoutIdentity(record, git, parseGitWorktreeList, { cleanup: true });
-        const reviewedDelivery = reviewedDeliveries[record.selector] ?? null;
-        const checkoutExists = fs.existsSync(record.checkoutPath);
-        const identity = checkoutExists ? worktreeIdentity(record.checkoutPath) : null;
-        if (checkoutExists && (!identity || !sameFilesystemPath(identity.repository, record.checkoutPath) || identity.branch !== record.branch || !identity.registered)) {
-          return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_identity_mismatch', message: `Checkout identity does not match evidence: ${record.selector}.` }, ['核对 ownership 后重试。']);
-        }
-        if (!checkoutExists) {
-          const listed = git(record.sourceRepository, ['worktree', 'list', '--porcelain']);
-          const registration = listed.status === 0 ? parseGitWorktreeList(listed.stdout).find((item) => sameFilesystemPath(item.path, record.checkoutPath)) : null;
-          if (registration) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_checkout_missing_registered', message: `Task checkout 路径缺失但仍保留 Git registration：${record.selector}。` });
-          const branchHead = gitText(record.sourceRepository, ['rev-parse', '--verify', `refs/heads/${record.branch}^{commit}`]);
-          if (branchHead && branchHead !== (reviewedDelivery?.sourceHead ?? record.head)) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_branch_drift', message: `Task checkout 已缺失，且本地任务分支已漂移：${record.selector}。` });
-        }
-        if (reviewedDelivery && identity && (identity.head !== reviewedDelivery.sourceHead || !identity.clean)) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_source_changed', message: `交付核验后源提交或未保存内容已变化：${record.selector}。` });
-        if (allowNoChange && identity?.head !== record.head) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_no_change_head_drift', message: `Task声明no-change，但checkout HEAD已偏离evidence：${record.selector}。` });
-        let retainedRef: string | null = null;
-        if (reviewedDelivery) {
-          const refs = retainedDeliveryRefs(record.sourceRepository, reviewedDelivery.targetHead, record.branch);
-          if (!refs?.length) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_delivery_target_mismatch', message: `已核验的交付提交没有由非任务分支持有：${record.selector}。` });
-          retainedRef = reviewedDelivery.targetHead;
-          retainedTargets.set(record.selector, { kind: 'refs', targetHead: reviewedDelivery.targetHead, refs });
-        } else if (allowCompleted) {
-          const retained = worktreeIdentity(record.sourceRepository);
-          if (!retained || retained.branch === record.branch || !retained.branch) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_retained_target_unavailable', message: `Retained repository needs a non-task branch: ${record.selector}.` });
-          retainedRef = retained.head;
-          retainedTargets.set(record.selector, { kind: 'worktree', branch: retained.branch, head: retained.head });
-        }
-        const integratedRef = allowNoChange ? record.head : retainedRef ?? integratedRefs[record.selector] ?? null;
-        if (!allowDirty && identity && !identity.clean) {
-          const changed = changedWorktreePaths(record.checkoutPath);
-          if (!changed || changed.source.length > 0) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_dirty', message: `Task checkout source is dirty: ${record.selector}.` });
-          controlMetadataOnly.add(path.resolve(record.checkoutPath));
-        }
-        if (!allowDirty) {
-          if (!integratedRef) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_integrated_ref_missing', message: `Missing integrated ref: ${record.selector}.` });
-          const target = gitText(record.sourceRepository, ['rev-parse', '--verify', `${integratedRef}^{commit}`]);
-          const taskHead = identity?.head ?? record.head;
-          const ancestor = !reviewedDelivery && Boolean(target && taskHead && git(record.sourceRepository, ['merge-base', '--is-ancestor', taskHead, target]).status === 0);
-          if (!reviewedDelivery && !ancestor) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_not_integrated', message: `${record.selector} HEAD is not contained by ${integratedRef}.` });
-        }
-        const currentIdentity: WorktreeIdentity = identity ?? {
-          repository: record.checkoutPath,
-          branch: record.branch,
-          head: reviewedDelivery?.sourceHead ?? record.head ?? '',
-          clean: record.clean ?? false,
-          registered: false,
-        };
-        checks.push({ ...record, ...currentIdentity, reviewedDelivery, integratedRef, checkoutExists, state: 'ready', diagnostic: null });
-      }
-      const removed: Array<Record<string, unknown>> = [];
-      for (const record of [...checks].sort((left, right) => right.checkoutPath.split(path.sep).length - left.checkoutPath.split(path.sep).length)) {
-        assertCurrentCheckoutIdentity(record, git, parseGitWorktreeList, { cleanup: true });
-        assertNoUnlistedNestedRepositories(checks.filter((item) => item.checkoutPath === record.checkoutPath || inside(record.checkoutPath, item.checkoutPath)), git);
-        const retainedTarget = retainedTargets.get(record.selector);
-        if (retainedTarget?.kind === 'refs') {
-          const currentRefs = retainedDeliveryRefs(record.sourceRepository, retainedTarget.targetHead, record.branch);
-          if (!currentRefs || !retainedTarget.refs.some((ref) => currentRefs.includes(ref))) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_retained_target_drift', message: `Delivered target lost its retained ref before cleanup: ${record.selector}.` });
-        } else if (retainedTarget?.kind === 'worktree') {
-          const currentTarget = worktreeIdentity(record.sourceRepository);
-          if (!currentTarget || currentTarget.branch !== retainedTarget.branch || currentTarget.head !== retainedTarget.head) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_retained_target_drift', message: `Retained repository changed before cleanup: ${record.selector}.` });
-        }
-        if (record.reviewedDelivery && record.checkoutExists) {
-          const currentSource = worktreeIdentity(record.checkoutPath);
-          if (!currentSource || currentSource.head !== record.head || currentSource.branch !== record.branch || !currentSource.clean || !currentSource.registered) return result('cleanup', 'blocked', taskId, stored.file, removed, effects, { code: 'git_worktree_source_changed', message: `删除前源版本或工作树状态已变化：${record.selector}。` });
-        }
-        if (record.checkoutExists) {
-          const args = ['worktree', 'remove', ...(allowDirty || controlMetadataOnly.has(path.resolve(record.checkoutPath)) ? ['--force'] : []), record.checkoutPath];
-          const removal = git(record.sourceRepository, args);
-          if (removal.status !== 0) return result('cleanup', 'blocked', taskId, stored.file, removed, effects, { code: 'git_worktree_remove_failed', message: (removal.stderr || removal.stdout).trim() });
-          effects.push({ type: 'worktree-removed', selector: record.selector, checkoutPath: record.checkoutPath });
-        } else effects.push({ type: 'worktree-absence-confirmed', selector: record.selector, checkoutPath: record.checkoutPath });
-        removed.push({ ...record, state: 'removed' });
-        const branchRef = `refs/heads/${record.branch}`;
-        const branchPresence = git(record.sourceRepository, ['show-ref', '--verify', '--quiet', branchRef]);
-        if (branchPresence.status === 1) effects.push({ type: 'local-branch-absence-confirmed', selector: record.selector, branch: record.branch, head: record.head });
-        else if (branchPresence.status !== 0) return result('cleanup', 'blocked', taskId, stored.file, removed, effects, { code: 'git_worktree_branch_inspect_failed', message: (branchPresence.stderr || branchPresence.stdout).trim() });
-        else {
+      return withTaskWorktreeLock(workspaceRoot, taskId, () => {
+        const root = canonicalEvidenceWorkspaceRoot(runtime.assertCanonicalTaskWorkspace(workspaceRoot));
+        const stored = currentRepositories(root, taskId, observedCheckouts);
+        const reviewedDeliveries = normalizeGitWorktreeCleanupDelivery(cleanupDelivery, stored.repositories.map((record) => record.selector));
+        if (stored.evidenceSource === 'observed' && (!Object.keys(reviewedDeliveries).length || allowDirty || allowNoChange)) throw Object.assign(new Error('依据当前对象清理必须提供完整源与交付提交，不能绕过未保存内容保护。'), { code: 'git_worktree_cleanup_delivery_invalid' });
+        if (Object.keys(reviewedDeliveries).length && !allowCompleted) return result('cleanup', 'blocked', taskId, stored.file, [], [], { code: 'git_worktree_cleanup_unauthorized', message: '已核验交付输入需要调用方明确允许completed cleanup。' });
+        const checks: CleanupCheck[] = [];
+        const controlMetadataOnly = new Set<string>();
+        const retainedTargets = new Map<string, { kind: 'refs'; targetHead: string; refs: string[] } | { kind: 'worktree'; branch: string; head: string }>();
+        assertNoUnlistedNestedRepositories(stored.repositories, git);
+        for (const record of stored.repositories) {
           assertCurrentCheckoutIdentity(record, git, parseGitWorktreeList, { cleanup: true });
-          const branchRemoval: CommandResult = process.env.BUILDR_FAULT_WORKTREE_BRANCH_REMOVE_SELECTOR === record.selector
-            ? { status: 1, stdout: '', stderr: `Injected branch removal failure: ${record.selector}` }
-            : git(record.sourceRepository, ['update-ref', '-d', branchRef, record.head]);
-          if (branchRemoval.status !== 0) return result('cleanup', 'blocked', taskId, stored.file, removed, effects, { code: 'git_worktree_branch_remove_failed', message: (branchRemoval.stderr || branchRemoval.stdout).trim() });
-          effects.push({ type: 'local-branch-removed', selector: record.selector, branch: record.branch, head: record.head });
+          const reviewedDelivery = reviewedDeliveries[record.selector] ?? null;
+          const checkoutExists = fs.existsSync(record.checkoutPath);
+          const identity = checkoutExists ? worktreeIdentity(record.checkoutPath) : null;
+          if (checkoutExists && (!identity || !sameFilesystemPath(identity.repository, record.checkoutPath) || identity.branch !== record.branch || !identity.registered)) {
+            return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_identity_mismatch', message: `Checkout identity does not match evidence: ${record.selector}.` }, ['核对 ownership 后重试。']);
+          }
+          if (!checkoutExists) {
+            const listed = git(record.sourceRepository, ['worktree', 'list', '--porcelain']);
+            const registration = listed.status === 0 ? parseGitWorktreeList(listed.stdout).find((item) => sameFilesystemPath(item.path, record.checkoutPath)) : null;
+            if (registration) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_checkout_missing_registered', message: `Task checkout 路径缺失但仍保留 Git registration：${record.selector}。` });
+            const branchHead = gitText(record.sourceRepository, ['rev-parse', '--verify', `refs/heads/${record.branch}^{commit}`]);
+            if (branchHead && branchHead !== (reviewedDelivery?.sourceHead ?? record.head)) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_branch_drift', message: `Task checkout 已缺失，且本地任务分支已漂移：${record.selector}。` });
+          }
+          if (reviewedDelivery && identity && (identity.head !== reviewedDelivery.sourceHead || !identity.clean)) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_source_changed', message: `交付核验后源提交或未保存内容已变化：${record.selector}。` });
+          if (allowNoChange && identity?.head !== record.head) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_no_change_head_drift', message: `Task声明no-change，但checkout HEAD已偏离evidence：${record.selector}。` });
+          let retainedRef: string | null = null;
+          if (reviewedDelivery) {
+            const refs = retainedDeliveryRefs(record.sourceRepository, reviewedDelivery.targetHead, record.branch);
+            if (!refs?.length) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_delivery_target_mismatch', message: `已核验的交付提交没有由非任务分支持有：${record.selector}。` });
+            retainedRef = reviewedDelivery.targetHead;
+            retainedTargets.set(record.selector, { kind: 'refs', targetHead: reviewedDelivery.targetHead, refs });
+          } else if (allowCompleted) {
+            const retained = worktreeIdentity(record.sourceRepository);
+            if (!retained || retained.branch === record.branch || !retained.branch) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_retained_target_unavailable', message: `Retained repository needs a non-task branch: ${record.selector}.` });
+            retainedRef = retained.head;
+            retainedTargets.set(record.selector, { kind: 'worktree', branch: retained.branch, head: retained.head });
+          }
+          const integratedRef = allowNoChange ? record.head : retainedRef ?? integratedRefs[record.selector] ?? null;
+          if (!allowDirty && identity && !identity.clean) {
+            const changed = changedWorktreePaths(record.checkoutPath);
+            if (!changed || changed.source.length > 0) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_dirty', message: `Task checkout source is dirty: ${record.selector}.` });
+            controlMetadataOnly.add(path.resolve(record.checkoutPath));
+          }
+          if (!allowDirty) {
+            if (!integratedRef) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_integrated_ref_missing', message: `Missing integrated ref: ${record.selector}.` });
+            const target = gitText(record.sourceRepository, ['rev-parse', '--verify', `${integratedRef}^{commit}`]);
+            const taskHead = identity?.head ?? record.head;
+            const ancestor = !reviewedDelivery && Boolean(target && taskHead && git(record.sourceRepository, ['merge-base', '--is-ancestor', taskHead, target]).status === 0);
+            if (!reviewedDelivery && !ancestor) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_not_integrated', message: `${record.selector} HEAD is not contained by ${integratedRef}.` });
+          }
+          const currentIdentity: WorktreeIdentity = identity ?? {
+            repository: record.checkoutPath,
+            branch: record.branch,
+            head: reviewedDelivery?.sourceHead ?? record.head ?? '',
+            clean: record.clean ?? false,
+            registered: false,
+          };
+          checks.push({ ...record, ...currentIdentity, reviewedDelivery, integratedRef, checkoutExists, state: 'ready', diagnostic: null });
         }
-      }
-      if (stored.evidenceSource === 'stored') {
-        runtime.removePath(stored.file);
-        effects.push({ type: 'provider-evidence-removed', path: stored.file });
-      }
-      return { ...result('cleanup', 'cleaned', taskId, stored.file, removed, effects), evidenceSource: stored.evidenceSource };
+        const removed: Array<Record<string, unknown>> = [];
+        for (const record of [...checks].sort((left, right) => right.checkoutPath.split(path.sep).length - left.checkoutPath.split(path.sep).length)) {
+          assertCurrentCheckoutIdentity(record, git, parseGitWorktreeList, { cleanup: true });
+          assertNoUnlistedNestedRepositories(checks.filter((item) => item.checkoutPath === record.checkoutPath || inside(record.checkoutPath, item.checkoutPath)), git);
+          const retainedTarget = retainedTargets.get(record.selector);
+          if (retainedTarget?.kind === 'refs') {
+            const currentRefs = retainedDeliveryRefs(record.sourceRepository, retainedTarget.targetHead, record.branch);
+            if (!currentRefs || !retainedTarget.refs.some((ref) => currentRefs.includes(ref))) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_retained_target_drift', message: `Delivered target lost its retained ref before cleanup: ${record.selector}.` });
+          } else if (retainedTarget?.kind === 'worktree') {
+            const currentTarget = worktreeIdentity(record.sourceRepository);
+            if (!currentTarget || currentTarget.branch !== retainedTarget.branch || currentTarget.head !== retainedTarget.head) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_retained_target_drift', message: `Retained repository changed before cleanup: ${record.selector}.` });
+          }
+          if (record.reviewedDelivery && record.checkoutExists) {
+            const currentSource = worktreeIdentity(record.checkoutPath);
+            if (!currentSource || currentSource.head !== record.head || currentSource.branch !== record.branch || !currentSource.clean || !currentSource.registered) return result('cleanup', 'blocked', taskId, stored.file, removed, effects, { code: 'git_worktree_source_changed', message: `删除前源版本或工作树状态已变化：${record.selector}。` });
+          }
+          if (record.checkoutExists) {
+            const args = ['worktree', 'remove', ...(allowDirty || controlMetadataOnly.has(path.resolve(record.checkoutPath)) ? ['--force'] : []), record.checkoutPath];
+            const removal = git(record.sourceRepository, args);
+            if (removal.status !== 0) return result('cleanup', 'blocked', taskId, stored.file, removed, effects, { code: 'git_worktree_remove_failed', message: (removal.stderr || removal.stdout).trim() });
+            effects.push({ type: 'worktree-removed', selector: record.selector, checkoutPath: record.checkoutPath });
+          } else effects.push({ type: 'worktree-absence-confirmed', selector: record.selector, checkoutPath: record.checkoutPath });
+          removed.push({ ...record, state: 'removed' });
+          const branchRef = `refs/heads/${record.branch}`;
+          const branchPresence = git(record.sourceRepository, ['show-ref', '--verify', '--quiet', branchRef]);
+          if (branchPresence.status === 1) effects.push({ type: 'local-branch-absence-confirmed', selector: record.selector, branch: record.branch, head: record.head });
+          else if (branchPresence.status !== 0) return result('cleanup', 'blocked', taskId, stored.file, removed, effects, { code: 'git_worktree_branch_inspect_failed', message: (branchPresence.stderr || branchPresence.stdout).trim() });
+          else {
+            assertCurrentCheckoutIdentity(record, git, parseGitWorktreeList, { cleanup: true });
+            const branchRemoval: CommandResult = process.env.BUILDR_FAULT_WORKTREE_BRANCH_REMOVE_SELECTOR === record.selector
+              ? { status: 1, stdout: '', stderr: `Injected branch removal failure: ${record.selector}` }
+              : git(record.sourceRepository, ['update-ref', '-d', branchRef, record.head]);
+            if (branchRemoval.status !== 0) return result('cleanup', 'blocked', taskId, stored.file, removed, effects, { code: 'git_worktree_branch_remove_failed', message: (branchRemoval.stderr || branchRemoval.stdout).trim() });
+            effects.push({ type: 'local-branch-removed', selector: record.selector, branch: record.branch, head: record.head });
+          }
+        }
+        if (stored.evidenceSource === 'stored') {
+          runtime.removePath(stored.file);
+          effects.push({ type: 'provider-evidence-removed', path: stored.file });
+        }
+        return { ...result('cleanup', 'cleaned', taskId, stored.file, removed, effects), evidenceSource: stored.evidenceSource };
+      });
     } catch (error) {
       const code = error instanceof Error && typeof Reflect.get(error, 'code') === 'string' ? String(Reflect.get(error, 'code')) : 'git_worktree_cleanup_failed';
       return result('cleanup', 'blocked', taskId, null, [], effects, { code, message: errorMessage(error) }, ['重新核对当前 Git 身份、交付版本与占用；缺少历史登记时显式提供 --observed-checkouts。']);

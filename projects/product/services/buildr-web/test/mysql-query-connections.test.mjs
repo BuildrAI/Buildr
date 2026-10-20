@@ -22,19 +22,30 @@ test('query client pins each request to its target and never receives credential
   const targets = [mysqlQueryTarget(instance)], client = createMySqlQueryClient(api, 'workspace/id', targets);
   const controller = new AbortController();
   await client.databases('qa-db', controller.signal);
+  await client.tables('qa-db', 'order db', controller.signal);
   await client.queryPreferences('qa-db');
   await client.query('qa-db', { sql: 'SELECT 1', database: null });
   await client.saveQueryPreferences('qa-db', { expectedRevision: 'preference-v1', enabledDatabases: ['orders'], currentDatabase: 'orders' });
   assert.match(calls[0].url, /workspaces\/workspace%2Fid\/mysql-query\/connections\/qa-db\/databases\?revision=opaque-/);
   assert.equal(calls[0].options.signal, controller.signal);
-  assert.equal(JSON.parse(calls[2].options.body).connectionRevision, revision);
-  assert.deepEqual(JSON.parse(calls[3].options.body), { expectedRevision: 'preference-v1', enabledDatabases: ['orders'], currentDatabase: 'orders', connectionRevision: revision });
+  assert.equal(calls[1].url, '/api/v1/workspaces/workspace%2Fid/mysql-query/connections/qa-db/tables?revision=' + encodeURIComponent(revision) + '&database=order%20db');
+  assert.equal(calls[1].options.signal, controller.signal);
+  assert.equal(JSON.parse(calls[3].options.body).connectionRevision, revision);
+  assert.deepEqual(JSON.parse(calls[4].options.body), { expectedRevision: 'preference-v1', enabledDatabases: ['orders'], currentDatabase: 'orders', connectionRevision: revision });
   targets[0].revision = 'new-observation';
   await client.query('qa-db', { sql: 'SELECT 2' });
-  assert.equal(JSON.parse(calls[4].options.body).connectionRevision, revision);
+  assert.equal(JSON.parse(calls[5].options.body).connectionRevision, revision);
   assert.throws(() => client.query('different', { sql: 'SELECT 1' }), /连接已变化/);
   assert.doesNotMatch(JSON.stringify(calls), /password|username|authentication/);
   assert.ok(calls.every(call => call.url.startsWith('/api/v1/workspaces/workspace%2Fid/mysql-query/connections/')), 'Every operation uses the independent query API.');
+});
+
+test('table discovery passes failures to the caller without changing the observed target', async () => {
+  const failure = Object.assign(new Error('数据库不可访问。'), { code: 'mysql_database_missing' });
+  const calls = [], api = async (url, options) => { calls.push({ url, options }); throw failure; };
+  const client = createMySqlQueryClient(api, 'workspace', [mysqlQueryTarget(instance)]);
+  await assert.rejects(client.tables('qa-db', 'orders'), error => error === failure);
+  assert.match(calls[0].url, /\/tables\?revision=/);
 });
 
 test('结果显示保留NULL、小数、大整数文本和JSON值，不再次转成浮点数', () => {

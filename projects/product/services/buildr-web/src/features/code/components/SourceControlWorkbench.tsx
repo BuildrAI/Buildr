@@ -17,6 +17,7 @@ import { formatShortDateTime } from '../../../lib/taskLabels';
 import { useSourceControlRead } from '../hooks/useSourceControlRead';
 import { sourceControlAbsolutePath, sourceControlDefaultSource, sourceControlChange, sourceControlCommit, sourceControlFileKey as fileIdentity, sourceControlWorktreeKey, type SourceControlCommit, type SourceControlFileTarget, type SourceControlWorktree, type SourceControlObservation, type SourceControlReader, type SourceControlRepository, type SourceControlScene, type SourceControlScopeSelection } from '../source-control-model';
 import type { CodeSourceControlInput } from '../api/code-api';
+import { codeRepositoryLabel } from '../code-source-labels';
 import type { CodeSourceTarget } from '../code-source-selection';
 import '../source-control.css';
 export type { SourceControlChange, SourceControlCommit, SourceControlRepository, SourceControlFileTarget, SourceControlScene, SourceControlState } from '../source-control-model';
@@ -34,7 +35,7 @@ export type SourceControlBranchExtension = {
 type Props = {
   active?: boolean;
   repositories: SourceControlRepository[]; scene: SourceControlScene; reader: SourceControlReader; readKey: string;
-  observation: SourceControlObservation; onRefresh(): void | Promise<void>; onRetry?(repositoryId?: string): void | Promise<void>;
+  observation: SourceControlObservation; onRefresh(): void | Promise<void>; onRetry?(repositoryId?: string): void | Promise<void>; onClone?(repositoryId: string): void;
   catalogActions?: ReactNode; catalogFeedback?: ReactNode;
   onScene(scene: SourceControlScene): void; onOpenTask(taskId: string): void;
   onOpenFile?(target: SourceControlFileTarget): void; onViewCurrent?(target: SourceControlFileTarget): void;
@@ -59,7 +60,7 @@ function readingPositions(root: HTMLElement | null): ReadingPosition[] {
 }
 
 /** Shared view: all observed facts and reads come from the caller, including in the offline prototype. */
-export function SourceControlWorkbench({ active = true, repositories, scene, reader, readKey, observation, onRefresh, onRetry, onScene, onOpenTask, onOpenFile, onViewCurrent, task, scopeSelection, sourceEntryKey, currentSourceSelection, onCurrentSourceSelect, layoutStorageKey, branchExtension, renderChangeActions, catalogActions, catalogFeedback, editableWorkspaceId }: Props) {
+export function SourceControlWorkbench({ active = true, repositories, scene, reader, readKey, observation, onRefresh, onRetry, onClone, onScene, onOpenTask, onOpenFile, onViewCurrent, task, scopeSelection, sourceEntryKey, currentSourceSelection, onCurrentSourceSelect, layoutStorageKey, branchExtension, renderChangeActions, catalogActions, catalogFeedback, editableWorkspaceId }: Props) {
   const workbench = useRef<HTMLElement>(null);
   const [selectedWorktreeKey, setSelectedWorktreeKey] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -224,7 +225,7 @@ export function SourceControlWorkbench({ active = true, repositories, scene, rea
   const fullImage = imagePreview?.after === null && imagePreview.before?.kind === 'image' ? imagePreview.before : undefined;
   const displayedFile = currentFile && diffRead.data ? { ...currentFile, ...sourceControlChange(diffRead.data.file), area: currentFile.area, preview: diffRead.data.patch } : currentFile;
   const effectiveFileKey = displayedFile ? changedFileKey(layerFile(displayedFile, history ? selectedCommit?.hash : undefined)) : null;
-  const rail: RailRepository[] = selectedRepository ? [{ id: selectedRepository.id, label: selectedRepository.name, root: location,
+  const rail: RailRepository[] = selectedRepository ? [{ id: selectedRepository.id, label: codeRepositoryLabel(selectedRepository), root: location,
     branch: selectedWorktree?.branch ?? null, ahead: selectedWorktree?.ahead ?? null, status: selectedWorktree?.status === 'offline' ? 'unavailable' : 'complete',
     changes: displayedFile ? [layerFile(displayedFile, history ? selectedCommit?.hash : undefined)] : [], commits: [] }] : [];
   const continuingPage = filePage.key === targetKey && Boolean(filePage.revision);
@@ -272,7 +273,7 @@ export function SourceControlWorkbench({ active = true, repositories, scene, rea
   }, [active, selectedIdentity, changeFileKey, historyFileKey, commitHash, commitSummary, commitBaseHash, historyReaderMode, scene, returnScene, query, searchQuery, filePage, diffMode, sourceDetailsExpanded]);
   const fullFiles: RepositoryPreviewFile[] = file ? [{ path: file.path, kind: file.kind, content: file.content, image: file.kind === 'image' ? file.content : undefined }] : [];
   const observedSource = scene === 'full-file' ? file?.source : diffRead.data?.source;
-  const sourceLocation = {repositoryName: selectedRepository?.name || '全部代码库', location: observedSource?.location || location,
+  const sourceLocation = {repositoryName: selectedRepository ? codeRepositoryLabel(selectedRepository) : '全部代码库', location: observedSource?.location || location,
     branch: selectedWorktree?.branch, worktreeName: selectedWorktree ? worktreeLabel(selectedWorktree) : undefined,
     taskId: selectedWorktree?.taskId || observedSource?.taskId || undefined, area: target.area, kind: observedSource?.kind,
     commitHash: scene === 'full-file' && file?.source.commitHash ? file.source.commitHash : history ? selectedCommit?.hash : undefined};
@@ -287,6 +288,13 @@ export function SourceControlWorkbench({ active = true, repositories, scene, rea
     switchSource(sourceControlWorktreeKey(repository.id, worktree.worktreeId));
   }
   function toggle(key: string, defaultExpanded = true) { setExpanded(value => ({...value, [key]: !(value[key] ?? defaultExpanded)})); }
+  // A running clone finishes outside this view; poll lightly while any is in flight.
+  const cloningIds = repositories.filter(repository => repository.clone?.state === 'cloning').map(repository => repository.id).sort().join(',');
+  useEffect(() => {
+    if (!cloningIds) return;
+    const timer = setInterval(() => void (onRetry ? onRetry() : onRefresh()), 3000);
+    return () => clearInterval(timer);
+  }, [cloningIds]);
   async function retry(repositoryId?: string) { await (onRetry ? onRetry(repositoryId) : onRefresh()); setRefreshToken(value => value + 1); }
   async function refresh() { await onRefresh(); setFilePage({key: '', page: 0}); setRefreshToken(value => value + 1); }
   function openFullFile() {
@@ -303,7 +311,7 @@ export function SourceControlWorkbench({ active = true, repositories, scene, rea
         first={<div className="source-control-catalog-pane">
         {catalogFeedback}
         <SourceControlRepositoryTree repositories={repositories} ready={Boolean(observation.readAt)} active={catalogExpanded && !readingExpanded} expanded={expanded} onToggle={toggle}
-          selectedWorktreeKey={selectedIdentity} onPick={pickWorktree} onOpenTask={onOpenTask} renderWorktreeControl={branchExtension?.rowControl} renderWorktreeActions={branchExtension?.rowActions} syncAction={branchExtension?.syncAction} />
+          selectedWorktreeKey={selectedIdentity} onPick={pickWorktree} onOpenTask={onOpenTask} onClone={onClone} renderWorktreeControl={branchExtension?.rowControl} renderWorktreeActions={branchExtension?.rowActions} syncAction={branchExtension?.syncAction} />
         {task && <div className="source-control-task-origin" data-prototype-position="task-link"><span>来自任务 · {task.title}</span><Button type="link" size="small" onClick={() => onOpenTask(task.id)}>返回任务 <ArrowRightOutlined /></Button></div>}
         </div>}
         second={<div className="source-control-browser">      <div className="source-control-browse-tabs"><Segmented block value={history ? 'history' : 'changes'} options={[{ label: '未提交变更', value: 'changes' }, { label: '提交历史', value: 'history' }]} onChange={value => changeScene(value as SourceControlScene)} /></div>
@@ -334,7 +342,7 @@ export function SourceControlWorkbench({ active = true, repositories, scene, rea
       {diffRead.error && scene !== 'full-file' && !(editableWorkspaceId && !listedFile && diffRead.data) && <Alert type="warning" showIcon message={diffRead.data ? '差异刷新失败，保留已读取内容。' : '差异暂不可读取。'} description={diffRead.error} action={<Button size="small" onClick={() => void diffRead.refresh()}>重试</Button>} />}
       {observation.loading && !repositories.length ? <div className="source-control-reader-state"><Spin /><p>正在读取代码库…</p></div> : <>
         {history && selectedCommit && historyReaderMode === 'detail' ? <div className="source-control-commit-detail"><CommitInfoContent commit={selectedCommit} onOpenTask={onOpenTask} /></div> : !currentFile ? <div className="source-control-reader-state"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={history ? '选择提交查看详情，展开后选择文件查看差异' : selectedWorktree?.status === 'offline' ? '当前工作树暂不可读取' : selectedWorktree && fileKey ? '所选文件已不在当前改动列表中' : selectedWorktree ? '当前工作树没有未提交文件' : selectedWorktreeKey ? '所选工作树已不可用，请重新选择' : '选择代码库或工作树查看内容'} /></div> : <>
-        {scene === 'full-file' && currentFile ? <div className="source-control-full-file"><header><strong>{imagePreview?.after === null && fullImage ? '删除前图片' : '完整文件'}</strong><Button size="small" onClick={() => changeScene(returnScene)}>返回差异</Button></header><RepositoryFileBrowser global readerActive files={fullFiles} selectedPath={currentFile.path} onSelect={() => {}} repositoryName={selectedRepository?.name} repositoryId={selectedRepository?.id} checkoutId={selectedWorktree?.worktreeId} context={null} location={file?.source.location || location} version={fileVersion} historical={Boolean(file?.source.commitHash || history)} onRetry={() => { if (fullImage) { changeScene(returnScene); setRefreshToken(value => value + 1); } else { setFilePage({key: '', page: 0}); setFileReload(value => ({key: targetKey, version: value.version + 1})); } }} onViewCurrent={() => onViewCurrent?.({repositoryId: selectedRepository!.id, worktreeId: selectedWorktree?.worktreeId, path: currentFile.path, location, area: 'unstaged'})} canModify={false} observedRevision={file?.revision} observedDigest={file?.digest} observedAt={file?.observedAt} readLoading={!fullImage && fullRead.loading} readError={fullImage ? undefined : fullRead.error} readMessage={[file?.message, readNote(file)].filter(Boolean).join('；')} readPage={file?.page} sizeBytes={file?.sizeBytes} selectionKey={targetKey} onReadPage={page => setFilePage({key: targetKey, page, revision: file?.revision})} /></div> : <div className={'source-control-diff' + (history ? ' is-history' : '')}>{diffRead.loading && !diffRead.data && <div className="source-control-read-status" role="status"><Spin size="small" /> 正在读取差异…</div>}{diffRead.data?.file.previewTruncated && <Alert type="warning" showIcon message="差异达到读取上限，当前内容不完整。" />}{diffRead.data?.binary && !imagePreview && <Alert type="info" showIcon message="非文本内容，不提供文本差异。" />}<TaskDiffReader key={(selectedRepository?.id || '') + ':' + (selectedWorktree?.worktreeId || '') + ':' + (history ? selectedCommit?.hash || 'empty' : 'current')} repositories={rail} filePresentation={filePresentation} viewMode={diffMode} onViewModeChange={setDiffMode} readOnlyReason={readonlyDiffReason} renderDiff={liveDiff ? mode => <SourceControlDiffEditor workspaceId={editableWorkspaceId!} diff={liveDiff} reader={reader} mode={mode} /> : undefined} previewContent={imagePreview ? <SourceControlImagePreview key={targetKey} preview={imagePreview} area={diffRead.data!.area} /> : undefined} selected={effectiveFileKey} onSelect={key => { const selected = candidateFiles.find(candidate => changedFileKey(layerFile(candidate, history ? selectedCommit?.hash : undefined)) === key); if (selected) setFileKey(fileIdentity(selected)); }} onOpenFile={openFullFile} notice={readNote(diffRead.data)} /></div>}
+        {scene === 'full-file' && currentFile ? <div className="source-control-full-file"><header><strong>{imagePreview?.after === null && fullImage ? '删除前图片' : '完整文件'}</strong><Button size="small" onClick={() => changeScene(returnScene)}>返回差异</Button></header><RepositoryFileBrowser global readerActive files={fullFiles} selectedPath={currentFile.path} onSelect={() => {}} repositoryName={selectedRepository ? codeRepositoryLabel(selectedRepository) : undefined} repositoryId={selectedRepository?.id} checkoutId={selectedWorktree?.worktreeId} context={null} location={file?.source.location || location} version={fileVersion} historical={Boolean(file?.source.commitHash || history)} onRetry={() => { if (fullImage) { changeScene(returnScene); setRefreshToken(value => value + 1); } else { setFilePage({key: '', page: 0}); setFileReload(value => ({key: targetKey, version: value.version + 1})); } }} onViewCurrent={() => onViewCurrent?.({repositoryId: selectedRepository!.id, worktreeId: selectedWorktree?.worktreeId, path: currentFile.path, location, area: 'unstaged'})} canModify={false} observedRevision={file?.revision} observedDigest={file?.digest} observedAt={file?.observedAt} readLoading={!fullImage && fullRead.loading} readError={fullImage ? undefined : fullRead.error} readMessage={[file?.message, readNote(file)].filter(Boolean).join('；')} readPage={file?.page} sizeBytes={file?.sizeBytes} selectionKey={targetKey} onReadPage={page => setFilePage({key: targetKey, page, revision: file?.revision})} /></div> : <div className={'source-control-diff' + (history ? ' is-history' : '')}>{diffRead.loading && !diffRead.data && <div className="source-control-read-status" role="status"><Spin size="small" /> 正在读取差异…</div>}{diffRead.data?.file.previewTruncated && <Alert type="warning" showIcon message="差异达到读取上限，当前内容不完整。" />}{diffRead.data?.binary && !imagePreview && <Alert type="info" showIcon message="非文本内容，不提供文本差异。" />}<TaskDiffReader key={(selectedRepository?.id || '') + ':' + (selectedWorktree?.worktreeId || '') + ':' + (history ? selectedCommit?.hash || 'empty' : 'current')} repositories={rail} filePresentation={filePresentation} viewMode={diffMode} onViewModeChange={setDiffMode} readOnlyReason={readonlyDiffReason} renderDiff={liveDiff ? mode => <SourceControlDiffEditor workspaceId={editableWorkspaceId!} diff={liveDiff} reader={reader} mode={mode} /> : undefined} previewContent={imagePreview ? <SourceControlImagePreview key={targetKey} preview={imagePreview} area={diffRead.data!.area} /> : undefined} selected={effectiveFileKey} onSelect={key => { const selected = candidateFiles.find(candidate => changedFileKey(layerFile(candidate, history ? selectedCommit?.hash : undefined)) === key); if (selected) setFileKey(fileIdentity(selected)); }} onOpenFile={openFullFile} notice={readNote(diffRead.data)} /></div>}
         </>}
       </>}
     </section>} />

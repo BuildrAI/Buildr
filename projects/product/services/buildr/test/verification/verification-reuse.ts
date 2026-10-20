@@ -219,10 +219,11 @@ export function reusedVerificationResult(record: VerificationReuseRecord): any {
 }
 
 export function resolveVerificationReuseDirectory(options: VerificationReuseOptions): string {
-  const override = (options.env ?? process.env).BUILDR_VERIFICATION_REUSE_DIR;
+  const env = options.env ?? process.env;
+  const override = env.BUILDR_VERIFICATION_REUSE_DIR;
   if (override) { if (!path.isAbsolute(override)) throw new Error('BUILDR_VERIFICATION_REUSE_DIR must be absolute'); return override; }
   const common = fs.realpathSync(path.resolve(options.productRoot, git(options.productRoot, ['rev-parse', '--git-common-dir']).trim()));
-  return path.join(os.tmpdir(), 'buildr-verification-reuse', digest(common).slice(7, 31), 'v1');
+  return path.join(env.BUILDR_TEST_SHARED_TEMP_ROOT || os.tmpdir(), 'buildr-verification-reuse', digest(common).slice(7, 31), 'v1');
 }
 
 export function readVerificationReuseBundle(file: string): VerificationReuseBundle {

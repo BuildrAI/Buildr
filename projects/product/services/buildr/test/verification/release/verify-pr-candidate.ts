@@ -254,8 +254,19 @@ async function main(): Promise<void> {
       requireFact(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(repository), 'GitHub repository is unavailable.');
       const result = /^codex\/release-executor-/u.test(event?.pull_request?.head?.ref ?? '')
         ? await (await import('../../../../../../../skills/buildr-release/scripts/release-executor-admission.ts')).verifyReleaseExecutorPullRequest(event, repository, repo)
-        : await verifyReleasePullRequestCandidate(event, repository, async endpoint =>
-        JSON.parse(execFileSync('gh', ['api', endpoint], { encoding: 'utf8', timeout: 30_000 })),
+        : await verifyReleasePullRequestCandidate(event, repository, async endpoint => {
+          // The Candidate gate reads GitHub objects for an already-verified
+          // run; a transient 5xx from `gh api` must not fail an otherwise
+          // complete Candidate. Retry twice with a short pause before
+          // surfacing the original failure. Atomics.wait pauses without a
+          // platform sleep binary.
+          let lastError: unknown;
+          for (let attempt = 0; attempt < 3; attempt += 1) {
+            try { return JSON.parse(execFileSync('gh', ['api', endpoint], { encoding: 'utf8', timeout: 30_000 })); }
+            catch (error: any) { lastError = error; if (attempt < 2) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5_000); }
+          }
+          throw lastError;
+        },
         { git, loadBuildrAggregate: async runId => {
           const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-main-source-proof-'));
           const find = (root: string, name: string): string => {

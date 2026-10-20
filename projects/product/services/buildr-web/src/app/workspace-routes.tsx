@@ -18,7 +18,6 @@ import { ServicesPage } from '../features/service/pages/ServicesPage';
 import { TaskChangeDetailPage } from '../features/task/pages/TaskChangeDetailPage';
 import { TaskDetailPage } from '../features/task/pages/TaskDetailPage';
 import { TasksSection } from '../features/task/pages/TasksSection';
-import { WorkbenchActivityPage } from '../features/workbench/pages/WorkbenchActivityPage';
 import { WorkbenchPage } from '../features/workbench/pages/WorkbenchPage';
 import { AssetHome } from '../features/workspace/components/AssetHome';
 import { SettingsPage } from '../features/workspace/pages/SettingsPage';
@@ -30,7 +29,6 @@ export const workspaceRoutes: RouteObject[] = [
   { path: 'workspace-overview', element: <WorkspaceOverviewPage /> },
   { path: 'overview', element: <WorkbenchPage /> },
   { path: 'codex', element: <CodexEntryNotice /> },
-  { path: 'activity', element: <WorkbenchActivityPage /> },
   { path: 'settings', element: <SettingsPage /> },
   { path: 'code', element: <Navigate to="source-control" replace /> },
   { path: 'code/explorer', element: <CodeExplorerPage /> },

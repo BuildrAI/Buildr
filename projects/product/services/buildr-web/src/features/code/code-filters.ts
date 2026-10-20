@@ -8,7 +8,7 @@ export function codeFilterMembers(catalog: CodeCatalog | null, repositoryIds: st
   const group = codeWorktreeGroupScope(groupId);
   return (catalog?.worktrees || []).filter(member =>
     (!repositoryIds.length || repositoryIds.includes(member.repositoryId)) &&
-    member.groupId === group);
+    (group.startsWith('checkout:') ? member.id === group.slice(9) : member.groupId === group));
 }
 export function codeFilterOptions(catalog: CodeCatalog | null, repositoryIds: string[], groupId?: string) {
   const repositoryCandidates = new Set(codeFilterMembers(catalog, [], groupId).map(member => member.repositoryId));
@@ -16,9 +16,14 @@ export function codeFilterOptions(catalog: CodeCatalog | null, repositoryIds: st
   const groupCandidates = new Set((catalog?.worktrees || []).filter(member => member.available &&
     (!repositoryIds.length || repositoryIds.includes(member.repositoryId))).map(member => member.groupId));
   if (!repositoryIds.length || catalog?.repositories.some(repository => repositoryIds.includes(repository.id))) groupCandidates.add('main');
+  const groups = (catalog?.worktreeGroups || []).filter(group => groupCandidates.has(group.id));
+  const mainGroups = new Set(groups.filter(group => {
+    const members = codeFilterMembers(catalog, repositoryIds, group.id);
+    return members.length > 0 && members.every(member => member.isMain === true);
+  }).map(group => group.id));
   return {
     repositories: (catalog?.repositories || []).filter(repository => repositoryCandidates.has(repository.id)),
-    groups: (catalog?.worktreeGroups || []).filter(group => groupCandidates.has(group.id)),
+    groups: groups.sort((left, right) => Number(mainGroups.has(right.id)) - Number(mainGroups.has(left.id))),
   };
 }
 
@@ -27,7 +32,7 @@ export function retainCodeSelections(next: CodeCatalog, previous: CodeCatalog | 
   if (!previous) return next;
   const group = codeWorktreeGroupScope(groupId);
   const missing = previous.worktrees.filter(member =>
-    member.groupId === group && !next.worktrees.some(current => current.id === member.id));
+    (group.startsWith('checkout:') ? member.id === group.slice(9) : member.groupId === group) && !next.worktrees.some(current => current.id === member.id));
   const missingGroups = new Set(missing.map(member => member.groupId));
   const replacement = (member: CodeWorktree) => missing.some(observed =>
     observed.repositoryId === member.repositoryId && observed.groupId === member.groupId && observed.path === member.path);

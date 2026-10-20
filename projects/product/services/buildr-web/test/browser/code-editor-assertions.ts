@@ -102,6 +102,7 @@ export function createCodeReadAssertions(page: any, workspaceUrl: string) {
         if (url.pathname.endsWith('/code/editor-file')) {
           const previous = editors.get(workspaceId + ':' + payload.fileId);
           if (!previous || payload.observedAt >= previous.observedAt) editors.set(workspaceId + ':' + payload.fileId, payload);
+          if(payload.selector?.kind==='code'){const key=JSON.stringify([payload.selector.repositoryId,payload.selector.checkoutId,'',''])+':'+payload.path;files.set(key,{...payload,source:{repositoryId:payload.selector.repositoryId,checkoutId:payload.selector.checkoutId,commitHash:null},page:null});}
         } else {
           const source = payload.source, checkoutId = url.searchParams.get('checkoutId') || source.checkoutId || '';
           const key = JSON.stringify([url.searchParams.get('repositoryId') || source.repositoryId, checkoutId, checkoutId ? '' : url.searchParams.get('taskId') || source.taskId || '', url.searchParams.get('commitHash') || source.commitHash || '']) + ':' + payload.path;

@@ -7,12 +7,11 @@ import { WorkbenchSearch } from '../features/workbench/components/WorkbenchSearc
 import type { ResourcePreview } from './resource-preview';
 import { WorkspacePages } from './WorkspacePages';
 import type { WorkspacePageNavigationRequest } from './WorkspacePaneHost';
-import { workspacePageSearch } from './workspace-pages';
 import { runtimeSystemApi } from './api/runtime-system-api';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { Alert, Button, Drawer, Tooltip, Typography } from 'antd';
-import { AppstoreOutlined, CheckOutlined, MenuOutlined, PlusOutlined, RobotOutlined, SettingOutlined } from '@ant-design/icons';
+import { Alert, Button, Dropdown, Drawer, Tooltip, Typography } from 'antd';
+import { AppstoreOutlined, CheckOutlined, CloseCircleOutlined, EllipsisOutlined, MenuOutlined, PlusOutlined, PoweroffOutlined, RobotOutlined, SettingOutlined } from '@ant-design/icons';
 import { api, setWorkspaceId } from '../api';
 import { AppShellContext, type WorkspaceShellInfo } from './AppShellContext';
 import { AppNavigation } from './AppNavigation';
@@ -27,6 +26,7 @@ import { ArticleEditorProvider } from '../features/publication/components/Articl
 import { WorkspaceFileEditingProvider, useFileEditingDraftProtection } from './WorkspaceFileEditingProvider';
 import { WorkspaceSourceControlProvider } from './WorkspaceSourceControlProvider';
 import { readOptionalPreference, writeOptionalPreference } from '../lib/optional-preferences';
+import { waitForRestart } from './restart-watch';
 
 type PreviewIdentity = {
   instance: string;
@@ -79,7 +79,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
   activeWorkspaceId.current = workspaceId;
   const isGlobal = !workspaceId;
   const area = navigationState(location.pathname, location.search, workspaceId).area;
-  const retainedSearch = workspaceId ? workspacePageSearch(workspaceId, location.pathname, location.search) : location.search;
+  const retainedSearch = location.search;
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => readOptionalPreference('buildr.sidebar-collapsed') === 'true');
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = Number(readOptionalPreference('buildr.sidebar-width'));
@@ -125,6 +125,9 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
   const [quitting, setQuitting] = useState(false);
   const [quitError, setQuitError] = useState('');
   const quitPending = useRef(false);
+  const [restartPhase, setRestartPhase] = useState<null | 'watching' | 'timed-out'>(null);
+  const [restartError, setRestartError] = useState('');
+  const restartPending = useRef(false);
   const [taskListResetToken, setTaskListResetToken] = useState(0);
   const [navigationRevision, setNavigationRevision] = useState(0);
   const refreshNavigation = useCallback(() => setNavigationRevision((value) => value + 1), []);
@@ -248,6 +251,46 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
     }
   };
 
+  const watchRestart = useCallback(async () => {
+    const status = await waitForRestart({
+      url: window.location.origin + '/',
+      previousToken: document.querySelector('meta[name="buildr-session"]')?.getAttribute('content') ?? null,
+    });
+    if (status === 'ready') {
+      window.location.reload();
+      return;
+    }
+    setRestartPhase('timed-out');
+  }, []);
+
+  const restart = async () => {
+    if (restartPending.current || quitPending.current) return;
+    restartPending.current = true;
+    try {
+      const ok = await confirmModal({
+        title: '重启 Buildr Web？',
+        content: '重启将停止当前实例并启动新实例，进行中的生成与任务验证将被取消。确定重启吗？',
+        okText: '重启',
+        okButtonProps: { danger: true },
+      });
+      if (!ok) return;
+      setRestartError(''); agents.setOpen(false);
+      await runtimeSystemApi.restart();
+      setRestartPhase('watching');
+      void watchRestart();
+    } catch (error) {
+      setRestartError(error instanceof Error ? error.message : '重启失败，请重试。');
+    } finally {
+      restartPending.current = false;
+    }
+  };
+
+  const retryRestartWatch = () => {
+    if (restartPhase !== 'timed-out') return;
+    setRestartPhase('watching');
+    void watchRestart();
+  };
+
   const shellValue = {
     requestWorkspacePage,
     workspaceId,
@@ -311,6 +354,22 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
     );
   }
 
+  if (restartPhase) {
+    return (
+      <div className="exit-screen" id="restart-screen">
+        <Typography.Title level={2}>{restartPhase === 'watching' ? '正在重启 Buildr Web…' : '重启仍在进行'}</Typography.Title>
+        <Typography.Paragraph type="secondary">
+          {restartPhase === 'watching'
+            ? '页面将在新实例就绪后自动刷新，请稍候。'
+            : '等待超过预期仍未检测到新实例就绪。你可以继续等待，或稍后重新打开 Buildr Web。'}
+        </Typography.Paragraph>
+        {restartPhase === 'timed-out' ? (
+          <Button id="restart-retry" type="primary" onClick={retryRestartWatch}>继续等待</Button>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <AppShellContext.Provider value={shellValue}>
       <WorkspaceSourceControlProvider workspaceId={workspaceId}>
@@ -320,9 +379,24 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
             {!isGlobal ? <WorkbenchSearch key={workspaceId} /> : null}
             {!isGlobal ? <Button className="shell-menu-toggle" aria-label="打开导航菜单" icon={<MenuOutlined />} onClick={() => setNavigationOpen(true)} /> : null}
             <Tooltip title={defaultAgent ? defaultAgent.label + ' · ' + agentStatusLabel(defaultAgent) : agents.error || '查看或接入智能体'}><Button id="global-agents-entry" aria-label="智能体" type="text" icon={<RobotOutlined />} onClick={() => agents.setOpen(true)}><span className="global-agent-label">{defaultAgent?.label || '智能体'} <span className={'global-agent-status' + (defaultAgent?.availability === 'available' ? ' is-available' : '')} /></span></Button></Tooltip>
-            <Button id="quit-buildr" className="nav-quit" type="text" loading={quitting} onClick={() => { void quit(); }}>
-              退出
-            </Button>
+            {preview ? (
+              <Button id="quit-buildr" className="nav-quit" type="text" loading={quitting} onClick={() => { void quit(); }}>
+                退出
+              </Button>
+            ) : (
+              <Dropdown
+                menu={{
+                  items: [
+                    { key: 'restart', icon: <PoweroffOutlined />, label: <span id="restart-buildr">重启 Buildr Web</span>, onClick: () => { void restart(); } },
+                    { key: 'quit', danger: true, icon: <CloseCircleOutlined />, label: <span id="quit-buildr">退出 Buildr Web</span>, onClick: () => { void quit(); } },
+                  ],
+                }}
+                trigger={['hover']}
+                placement="bottomRight"
+              >
+                <Button id="more-actions" className="nav-more" aria-label="更多操作" type="text" icon={<EllipsisOutlined />} loading={quitting} />
+              </Dropdown>
+            )}
             <div
               id="preview-identity"
               className="preview-identity hidden"
@@ -349,6 +423,8 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
         <ReleaseAwarenessBanner openAgentAction={openAgentAction} />
         {quitError && <Alert id="quit-buildr-error" type="error" showIcon message="Buildr Web 尚未退出" description={quitError}
           action={<Button size="small" loading={quitting} onClick={() => void quit(false)}>重试退出</Button>} />}
+        {restartError && <Alert id="restart-buildr-error" type="error" showIcon message="Buildr Web 尚未重启" description={restartError}
+          action={<Button size="small" onClick={() => { setRestartError(''); void restart(); }}>重试重启</Button>} />}
         <AppShellFrame isGlobal={isGlobal} compactNavigation={compactNavigation} sidebarCollapsed={sidebarCollapsed} sidebarWidth={sidebarWidth} onSidebarResize={width => { setSidebarWidth(width); writeOptionalPreference('buildr.sidebar-width', String(Math.round(width))); }} onToggleSidebar={() => { setSidebarCollapsed(value => !value); writeOptionalPreference('buildr.sidebar-collapsed', String(!sidebarCollapsed)); }} navigation={<AppNavigation key={workspaceId} />}>{/* Business content stays in the live adapter. */}<>{workspaceId ? <WorkspaceFileEditingProvider key={workspaceId} workspaceId={workspaceId}><ArticleEditorProvider workspaceId={workspaceId}><WorkspacePages workspaceId={workspaceId} renderResource={renderResource} navigationRequest={pageNavigationRequest} /></ArticleEditorProvider></WorkspaceFileEditingProvider> : <Outlet />}</></AppShellFrame>
       </div>
 

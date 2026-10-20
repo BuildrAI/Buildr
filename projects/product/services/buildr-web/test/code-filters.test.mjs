@@ -15,6 +15,10 @@ test('代码库多选与单工作树联动，工作树不选时主目录',()=>{
   assert.deepEqual(codeFilterMembers(catalog,['web']).map(item=>item.id),['web-main']);
   assert.deepEqual(codeFilterOptions(catalog,[]).groups.map(item=>item.id),['main','task:feature','native']);
   assert.deepEqual(codeFilterMembers(catalog,['api'],'native'),[]);
+  const preview={...catalog,worktrees:catalog.worktrees.map(item=>({...item,isMain:item.groupId==='native'}))};
+  assert.deepEqual(codeFilterOptions(preview,[]).groups.map(item=>item.id),['native','main','task:feature']);
+  assert.deepEqual(codeFilterOptions(preview,['api']).groups.map(item=>item.id),['main','task:feature']);
+  assert.deepEqual(catalog.worktreeGroups.map(item=>item.id),['main','task:feature','native']);
 });
 test('同库多个目录与历史版本的浏览键不混用，树键不会含路径分隔符',()=>{
   const sources=[{repositoryId:'api',checkoutId:'api-main'},{repositoryId:'api',checkoutId:'api-task'},{repositoryId:'api',checkoutId:'api-task',commitHash:'a'.repeat(40)}];
@@ -51,4 +55,15 @@ test('已选目录消失或同路径重建保留旧身份的失败，不接受�
   const reselected=selectCodeWorktreeGroup(next,removed,'native','task:feature');
   assert.equal(reselected.worktrees.some(item=>item.id===rebuilt.id),true);
   assert.equal(reselected.worktrees.some(item=>item.id===old.id),false);
+});
+
+test('具体检出目录即使共享任务组也只选择一项，并保留失效身份',()=>{
+  const sibling={...member('api-task-two','api','task:feature')};
+  const expanded={...catalog,worktrees:[...catalog.worktrees,sibling]};
+  assert.deepEqual(codeFilterMembers(expanded,['api'],'checkout:api-task').map(item=>item.id),['api-task']);
+  assert.deepEqual(codeFilterMembers(expanded,['web'],'checkout:api-task'),[]);
+  const next={...expanded,worktrees:expanded.worktrees.filter(item=>item.id!=='api-task')};
+  const retained=retainCodeSelections(next,expanded,'checkout:api-task');
+  assert.equal(codeFilterMembers(retained,['api'],'checkout:api-task')[0].available,false);
+  assert.equal(codeFilterMembers(selectCodeWorktreeGroup(next,retained,'checkout:api-task','checkout:api-task-two'),['api'],'checkout:api-task-two')[0].id,sibling.id);
 });

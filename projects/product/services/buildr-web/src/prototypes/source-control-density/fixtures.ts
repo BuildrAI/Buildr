@@ -28,7 +28,7 @@ export function densityRepositories(state = ''):SourceControlRepository[] {
         taskId:task ? 'demo-' + sample.id : null, taskTitle:task ? (sample.id === 'farm' ? '农牧客户服务优化' : '优化服务工作能力') : null, taskDiagnostic:item.unknown ? '模拟任务证据尚未确认。' : null};
     };
     const main = tree(sample, true), worktrees = [main, ...(sample.child ? [tree(sample.child, false)] : [])];
-    return {id:sample.id, name:sample.name, location:main.location, branch:main.branch, branches:[sample.branch, 'dev', 'main'], ahead:main.ahead, behind:main.behind,
+    return {id:sample.id, code:sample.id, name:sample.name, location:main.location, branch:main.branch, branches:[sample.branch, 'dev', 'main'], ahead:main.ahead, behind:main.behind,
       gitId:'demo-git:' + sample.id, checkoutId:main.worktreeId, status:main.status, simulated:false, services:[], worktrees, worktreeCount:worktrees.length,
       changes:main.changes, commits:main.commits, fileCount:main.fileCount, head:main.head, observedRevision:main.observedRevision};
   });

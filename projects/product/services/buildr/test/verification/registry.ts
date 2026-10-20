@@ -54,83 +54,85 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
   unit: testing(SERVICE_OWNER, 'Development', 'Unit', 5000, 'Pure Buildr logic behaves correctly with collaborators replaced.', TEST_ENVIRONMENTS.pure),
   component: testing(SERVICE_OWNER, 'Development', 'Component', 3000, 'A bounded Buildr application assembly behaves correctly with fake collaborators.', TEST_ENVIRONMENTS.pure),
   integration: testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Generated inputs and verification tools preserve their process, build and compatibility boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
-  'integration-code': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Code browsing, editing, observation and Git operations preserve the actual checkout and mutation boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
-  'integration-desktop': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Desktop and Agent connections preserve their isolated registration, lifecycle, Git read roots and HTTP boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
-  'integration-knowledge': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Knowledge and Agent source reading preserve current content, provenance and HTTP results.', TEST_ENVIRONMENTS.repeatedCli),
-  'integration-workspace-assets': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Workspace assets preserve composition, registration, mutation and user content.', TEST_ENVIRONMENTS.repeatedGitCli),
-  'integration-archify': testing(SERVICE_OWNER, 'Development', 'Integration', 60000, 'Archify installation, rendering, upgrade, user content protection, removal and bounded diagnostics retain their real isolated lifecycle.', TEST_ENVIRONMENTS.repeatedCli),
-  'integration-task-records': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Task records, materials and workbench views preserve filesystem, Git, SQLite and HTTP behavior.', TEST_ENVIRONMENTS.repeatedGitCli),
-  'integration-connections': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Connection Skills preserve definitions, credential handling, Git workspaces, process and local protocol boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-code': testing(SERVICE_OWNER, 'Development', 'Integration', 215000, 'Code browsing, editing, observation and Git operations preserve the actual checkout and mutation boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-desktop': testing(SERVICE_OWNER, 'Development', 'Integration', 45000, 'Desktop and Agent connections preserve their isolated registration, lifecycle, Git read roots and HTTP boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-knowledge': testing(SERVICE_OWNER, 'Development', 'Integration', 35000, 'Knowledge and Agent source reading preserve current content, provenance and HTTP results.', TEST_ENVIRONMENTS.repeatedCli),
+  'integration-workspace-assets': testing(SERVICE_OWNER, 'Development', 'Integration', 240000, 'Workspace assets preserve composition, registration, mutation and user content.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-archify': testing(SERVICE_OWNER, 'Development', 'Integration', 90000, 'Archify installation, rendering, upgrade, user content protection, removal and bounded diagnostics retain their real isolated lifecycle.', TEST_ENVIRONMENTS.repeatedCli),
+  'integration-task-records': testing(SERVICE_OWNER, 'Development', 'Integration', 125000, 'Task records, materials and workbench views preserve filesystem, Git, SQLite and HTTP behavior.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-connections': testing(SERVICE_OWNER, 'Development', 'Integration', 135000, 'Connection Skills preserve definitions, credential handling, Git workspaces, process and local protocol boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-runtime-projection': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Runtime projections preserve declarations, ownership, executable Git modes and installed Skill content.', TEST_ENVIRONMENTS.repeatedGitCli),
-  'integration-declarations': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Project verification declarations preserve diagnostics and package registry boundaries.', TEST_ENVIRONMENTS.repeatedFilesystem),
-  'integration-openspec': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Change and OpenSpec convergence applications preserve real filesystem and Git boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
-  'integration-verification': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Project testing maps and Task completion reports remain coherent.', TEST_ENVIRONMENTS.repeatedCli),
-  'integration-runtime': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Buildr Web Runtime preserves read, instance, private Git preview and generated Web boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
-  'integration-release': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Release filesystem and installation identity boundaries remain coherent without publishing.', TEST_ENVIRONMENTS.repeatedFilesystem),
-  'integration-data-store': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Workspace SQLite authority, migration, and checkout isolation remain coherent.', TEST_ENVIRONMENTS.repeatedFilesystem),
+  'integration-declarations': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Project verification declarations preserve diagnostics and package registry boundaries.', TEST_ENVIRONMENTS.repeatedFilesystem),
+  'integration-openspec': testing(SERVICE_OWNER, 'Development', 'Integration', 35000, 'Change and OpenSpec convergence applications preserve real filesystem and Git boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
+  // Admission steps carry a role ceiling, not a measured duration: keep the
+  // declared target inside the 15s admission bound instead of backfilling to
+  // measured cost. The step's slice still reports actual duration separately.
+  'integration-verification': testing(SERVICE_OWNER, 'Development', 'Integration', 15000, 'Project testing maps and Task completion reports remain coherent.', TEST_ENVIRONMENTS.repeatedCli),
+  'integration-runtime': testing(SERVICE_OWNER, 'Development', 'Integration', 40000, 'Buildr Web Runtime preserves read, instance, private Git preview and generated Web boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-release': testing(SERVICE_OWNER, 'Development', 'Integration', 15000, 'Release filesystem and installation identity boundaries remain coherent without publishing.', TEST_ENVIRONMENTS.repeatedFilesystem),
+  'integration-data-store': testing(SERVICE_OWNER, 'Development', 'Integration', 80000, 'Workspace SQLite authority, migration, and checkout isolation remain coherent.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-self-bootstrap': testing(SERVICE_OWNER, 'Development', 'Integration', 45000, 'The single self-bootstrap closeout lifecycle preserves retained checkout and runtime synchronization boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'integration-task-read-models': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Task entry and read-model applications preserve their SQLite and Application boundaries.', TEST_ENVIRONMENTS.repeatedFilesystem),
-  'integration-task-coordination': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Parent coordination and publication applications preserve their real repository boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
-  'integration-project-daily-progress': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Project daily progress Application, store, and CLI boundaries remain coherent without synthesizing Git.', TEST_ENVIRONMENTS.repeatedFilesystem),
-  'system-macos-platform': testing(PROJECT_OWNER, 'Development', 'Integration', 8000, 'Existing macOS descriptor proofs and POSIX development entries preserve their native contracts.', TEST_ENVIRONMENTS.repeatedFilesystem),
+  'integration-task-read-models': testing(SERVICE_OWNER, 'Development', 'Integration', 15000, 'Task entry and read-model applications preserve their SQLite and Application boundaries.', TEST_ENVIRONMENTS.repeatedFilesystem),
+  'integration-task-coordination': testing(SERVICE_OWNER, 'Development', 'Integration', 30000, 'Parent coordination and publication applications preserve their real repository boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'system-macos-platform': testing(PROJECT_OWNER, 'Development', 'Integration', 30000, 'Existing macOS descriptor proofs and POSIX development entries preserve their native contracts.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'system-windows-platform': testing(PROJECT_OWNER, 'Development', 'Integration', 80_000, 'Native Windows command shims, path aliases, locks and process cleanup preserve their OS contracts.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'system-buildr-web-http': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Buildr Web Runtime HTTP routes preserve read, error, session and cleanup boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'system-buildr-web-http': testing(PROJECT_OWNER, 'Development', 'System', 55000, 'Buildr Web Runtime HTTP routes preserve read, error, session and cleanup boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-verification-admission': testing(PROJECT_OWNER, 'Static Conformance', 'System', 10000, 'Changed-path collection remains trustworthy before broad project verification.', TEST_ENVIRONMENTS.repeatedCli),
   'system-verification-contracts': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Verification orchestration, timing, resource, and Workspace contracts hold through public entrypoints.', TEST_ENVIRONMENTS.repeatedCli),
-  'system-public-json-contracts': testing(PROJECT_OWNER, 'Static Conformance', 'System', 25000, 'Public JSON outputs remain closed, versioned, and stable through real CLI entrypoints.', TEST_ENVIRONMENTS.repeatedCli),
+  'system-public-json-contracts': testing(PROJECT_OWNER, 'Static Conformance', 'System', 75000, 'Public JSON outputs remain closed, versioned, and stable through real CLI entrypoints.', TEST_ENVIRONMENTS.repeatedCli),
   'system-openspec-contract-audit': testing(PROJECT_OWNER, 'Static Conformance', 'System', 8000, 'OpenSpec public audit remains complete through its real project entrypoint.', TEST_ENVIRONMENTS.repeatedCli),
-  'system-workspace-lifecycle': testing(PROJECT_OWNER, 'Development', 'System', 55000, 'Project, Service, Workspace catalog, and package capability journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'system-task-lifecycle': testing(PROJECT_OWNER, 'Development', 'System', 25000, 'Task Record, Change, Development, Review, and Verification journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'system-worktree-lifecycle': testing(PROJECT_OWNER, 'Development', 'System', 45000, 'Real Git Worktree create, inspect, and cleanup journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'system-nested-git-isolation': testing(PROJECT_OWNER, 'Development', 'System', 45000, 'A non-Git Workspace isolates registered Git sources and preserves its retained materials through the public lifecycle.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'system-workspace-lifecycle': testing(PROJECT_OWNER, 'Development', 'System', 200000, 'Project, Service, Workspace catalog, and package capability journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'system-task-lifecycle': testing(PROJECT_OWNER, 'Development', 'System', 140000, 'Task Record, Change, Development, Review, and Verification journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'system-worktree-lifecycle': testing(PROJECT_OWNER, 'Development', 'System', 115000, 'Real Git Worktree create, inspect, and cleanup journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'system-nested-git-isolation': testing(PROJECT_OWNER, 'Development', 'System', 140000, 'A non-Git Workspace isolates registered Git sources and preserves its retained materials through the public lifecycle.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-runtime-recovery': testing(PROJECT_OWNER, 'Development', 'System', 30000, 'Runtime installation and recovery journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'system-app-process': testing(PROJECT_OWNER, 'Development', 'System', 25000, 'Buildr Web process and preview lifecycle remain isolated.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'system-app-process': testing(PROJECT_OWNER, 'Development', 'System', 65000, 'Buildr Web process and preview lifecycle remain isolated.', TEST_ENVIRONMENTS.workspaceLifecycle),
   contract: testing(PROJECT_OWNER, 'Static Conformance', 'Static', 5000, 'Product source, governance assets, and stable entrypoint declarations conform without mutable fixtures.', TEST_ENVIRONMENTS.sourceReadOnly),
   'cli-architecture': testing(SERVICE_OWNER, 'Static Conformance', 'Static', 3000, 'CLI modules and wrappers preserve the declared architecture.', TEST_ENVIRONMENTS.sourceReadOnly),
   'openspec-strict': testing(PROJECT_OWNER, 'Static Conformance', 'Static', 5000, 'All OpenSpec artifacts pass upstream strict validation.', TEST_ENVIRONMENTS.cliReadOnly),
   'runtime-adapter-contract': testing(SERVICE_OWNER, 'Static Conformance', 'Integration', 5000, 'Runtime adapter declarations and isolated filesystem projections satisfy their contract.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'runtime-skill-projection': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Changed packaged Skills bind their source identity and complete projected inventory through every supported runtime adapter.', TEST_ENVIRONMENTS.repeatedFilesystem),
-  'integration-candidate-release': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 15000, 'Release contract cold-start and branch convergence behave correctly.', TEST_ENVIRONMENTS.repeatedGitCli),
-  'integration-candidate-release-selection': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 15000, 'Release source selection and frozen generation identities remain isolated.', TEST_ENVIRONMENTS.repeatedGitCli),
-  'integration-candidate-package-selection': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 15000, 'Independent package selection binds its exact source, peer and preparation without repeating dispatch.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-candidate-release': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 150000, 'Release contract cold-start and branch convergence behave correctly.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-candidate-release-selection': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 60000, 'Release source selection and frozen generation identities remain isolated.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-candidate-package-selection': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 150000, 'Independent package selection binds its exact source, peer and preparation without repeating dispatch.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-candidate-release-effects': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 150000, 'Release publication effects recover external partial results without repeating publication.', TEST_ENVIRONMENTS.repeatedGitCli),
-  'integration-candidate-git-convergence': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 60000, 'Release Git convergence, closeout, and generation cleanup behave correctly.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-candidate-git-convergence': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 100000, 'Release Git convergence, closeout, and generation cleanup behave correctly.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-candidate-git-selection': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 60000, 'Release Git selection, main integration and recovery preserve the frozen source and independent dev history.', TEST_ENVIRONMENTS.repeatedGitCli),
   'concurrent-task-acceptance': testing(PROJECT_OWNER, 'Acceptance', 'System', 40000, 'Concurrent Task workflows satisfy the declared acceptance contract.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'candidate-tarball': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 15000, 'One frozen application payload produces the single npm candidate tarball consumed by later verification.', TEST_ENVIRONMENTS.isolatedGitCli),
   'application-payload-release': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 30000, 'The frozen application payload is deterministic, complete, host-Node compatible, and serves Buildr Web only on demand.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'npm-launcher-candidate': testing(PROJECT_OWNER, 'Delivery / Release', 'Integration', 15000, 'The explicit local Launcher binds one verified npm installation without copying Node or Buildr and fails closed on identity drift.', TEST_ENVIRONMENTS.repeatedFilesystem),
+  'npm-launcher-candidate': testing(PROJECT_OWNER, 'Delivery / Release', 'Integration', 60000, 'The explicit local Launcher binds one verified npm installation without copying Node or Buildr and fails closed on identity drift.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'host-node-contract': testing(SERVICE_OWNER, 'Static Conformance', 'Static', 2000, 'The active Host Node satisfies the bounded package engine contract.', TEST_ENVIRONMENTS.sourceReadOnly),
   'host-node-boundaries': testing(SERVICE_OWNER, 'Development', 'Integration', 15000, 'Node-sensitive SQLite, process, and filesystem boundaries work on the active Host Node.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'host-node-cli-smoke': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 15000, 'The candidate tarball installs on the active Host Node and executes CLI and Web.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'open-source-candidate': testing(PROJECT_OWNER, 'Delivery / Release', 'Static', 10000, 'The candidate contains the required public release materials.', TEST_ENVIRONMENTS.sourceReadOnly),
   'openspec-candidate-audit': testing(PROJECT_OWNER, 'Static Conformance', 'Static', 5000, 'Candidate OpenSpec contracts are current and internally consistent.', TEST_ENVIRONMENTS.sourceReadOnly),
   'managed-mutations': testing(SERVICE_OWNER, 'Static Conformance', 'Static', 5000, 'Production filesystem mutations remain behind declared owners.', TEST_ENVIRONMENTS.sourceReadOnly),
-  'capability-cli-integration': testing(SERVICE_OWNER, 'Development', 'Integration', 35000, 'Capability CLI operations integrate with package and runtime assets.', TEST_ENVIRONMENTS.repeatedCli),
-  'commands-cli-integration': testing(SERVICE_OWNER, 'Development', 'Integration', 15000, 'Commands context CLI operations integrate with managed workspace assets.', TEST_ENVIRONMENTS.repeatedCli),
+  'capability-cli-integration': testing(SERVICE_OWNER, 'Development', 'Integration', 85000, 'Capability CLI operations integrate with package and runtime assets.', TEST_ENVIRONMENTS.repeatedCli),
+  'commands-cli-integration': testing(SERVICE_OWNER, 'Development', 'Integration', 75000, 'Commands context CLI operations integrate with managed workspace assets.', TEST_ENVIRONMENTS.repeatedCli),
   'openspec-contract-fixtures': testing(PROJECT_OWNER, 'Development', 'Integration', 20000, 'OpenSpec application contracts hold across isolated fixture repositories.', TEST_ENVIRONMENTS.repeatedGitCli),
   'openspec-convergence-recovery': testing(PROJECT_OWNER, 'Development', 'System', 60000, 'OpenSpec convergence and recovery complete through the public lifecycle.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'package-static': testing(SERVICE_OWNER, 'Delivery / Release', 'Static', 5000, 'The Buildr package structure is valid.', TEST_ENVIRONMENTS.sourceReadOnly),
-  'package-workspace': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 10000, 'Packaged Workspace assets install and check correctly.', TEST_ENVIRONMENTS.repeatedFilesystem),
-  'package-commands': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 7000, 'Packaged Commands assets integrate correctly.', TEST_ENVIRONMENTS.repeatedFilesystem),
-  'package-rules': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 8000, 'Packaged Rules assets integrate correctly.', TEST_ENVIRONMENTS.repeatedFilesystem),
-  'package-skills': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 12000, 'Packaged Skills assets integrate correctly.', TEST_ENVIRONMENTS.repeatedFilesystem),
-  'package-runtime': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 10000, 'Packaged runtime assets integrate correctly.', TEST_ENVIRONMENTS.repeatedFilesystem),
-  'runtime-adapter-parity': testing(SERVICE_OWNER, 'Development', 'System', 40000, 'All supported runtime implementation families remain behaviorally aligned.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'workspace-lifecycle': testing(PROJECT_OWNER, 'Development', 'System', 20000, 'A complete Workspace lifecycle succeeds through public entrypoints.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'ownership-recovery': testing(PROJECT_OWNER, 'Development', 'System', 20000, 'Workspace ownership conflicts recover without losing user state.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'runtime-reconciliation': testing(PROJECT_OWNER, 'Development', 'System', 30000, 'Workspace runtime projections reconcile across supported adapters.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'package-static': testing(SERVICE_OWNER, 'Delivery / Release', 'Static', 10000, 'The Buildr package structure is valid.', TEST_ENVIRONMENTS.sourceReadOnly),
+  'package-workspace': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 45000, 'Packaged Workspace assets install and check correctly.', TEST_ENVIRONMENTS.repeatedFilesystem),
+  'package-commands': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 30000, 'Packaged Commands assets integrate correctly.', TEST_ENVIRONMENTS.repeatedFilesystem),
+  'package-rules': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 50000, 'Packaged Rules assets integrate correctly.', TEST_ENVIRONMENTS.repeatedFilesystem),
+  'package-skills': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 35000, 'Packaged Skills assets integrate correctly.', TEST_ENVIRONMENTS.repeatedFilesystem),
+  'package-runtime': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 40000, 'Packaged runtime assets integrate correctly.', TEST_ENVIRONMENTS.repeatedFilesystem),
+  'runtime-adapter-parity': testing(SERVICE_OWNER, 'Development', 'System', 175000, 'All supported runtime implementation families remain behaviorally aligned.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'workspace-lifecycle': testing(PROJECT_OWNER, 'Development', 'System', 40000, 'A complete Workspace lifecycle succeeds through public entrypoints.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'ownership-recovery': testing(PROJECT_OWNER, 'Development', 'System', 30000, 'Workspace ownership conflicts recover without losing user state.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'runtime-reconciliation': testing(PROJECT_OWNER, 'Development', 'System', 45000, 'Workspace runtime projections reconcile across supported adapters.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'repository-onboarding': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 90000, 'A clean repository can use the explicit development entry without mutating the PATH default CLI.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'init-onboarding': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'A user can initialize a Workspace through the public CLI.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'cli-compatibility': testing(SERVICE_OWNER, 'Development', 'System', 15000, 'Documented CLI commands remain compatible.', TEST_ENVIRONMENTS.repeatedCli),
+  'init-onboarding': testing(PROJECT_OWNER, 'Development', 'System', 120000, 'A user can initialize a Workspace through the public CLI.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'cli-compatibility': testing(SERVICE_OWNER, 'Development', 'System', 190000, 'Documented CLI commands remain compatible.', TEST_ENVIRONMENTS.repeatedCli),
   'cli-package-parity': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 20000, 'Representative source and packaged CLI outputs and one init mutation remain equivalent.', TEST_ENVIRONMENTS.repeatedCli),
   'artifact-browser-core': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 20000, 'The exact Candidate tarball Web payload serves the existing representative Task list and reading journey in an isolated real browser.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'frontend-logic': testing('service:product/buildr-web', 'Development', 'Unit', 10000, 'The complete Buildr Web logic suite preserves state transitions, navigation, requests and input conversion.', TEST_ENVIRONMENTS.sourceReadOnly),
+  'frontend-logic': testing('service:product/buildr-web', 'Development', 'Unit', 20000, 'The complete Buildr Web logic suite preserves state transitions, navigation, requests and input conversion.', TEST_ENVIRONMENTS.sourceReadOnly),
   'dsh-plugin': testing('service:product/dsh-plugin', 'Development', 'System', 60000, 'Both plugin variants build against the pinned SDK and pass logic, coexistence and real DSH loader checks.', environment(['filesystem', 'cli'], 'shared', 'none')),
-  'service-branch-contract': testing(PROJECT_OWNER, 'Development', 'System', 10000, 'Service branch configuration works in an isolated repository.', TEST_ENVIRONMENTS.isolatedGitCli),
-  'remote-skill-timeout': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Remote Skill reads fail within the declared timeout boundary.', TEST_ENVIRONMENTS.loopbackNetwork),
+  'service-branch-contract': testing(PROJECT_OWNER, 'Development', 'System', 25000, 'Service branch configuration works in an isolated repository.', TEST_ENVIRONMENTS.isolatedGitCli),
+  'remote-skill-timeout': testing(SERVICE_OWNER, 'Development', 'Integration', 20000, 'Remote Skill reads fail within the declared timeout boundary.', TEST_ENVIRONMENTS.loopbackNetwork),
   'release-tarball-smoke': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 25000, 'The shared release tarball installs, keeps ordinary CLI HTTP-free, and serves healthy Buildr Web on demand.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'managed-data-integrity': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Managed mutations remain atomic and preserve nested repositories.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'managed-data-integrity': testing(PROJECT_OWNER, 'Development', 'System', 125000, 'Managed mutations remain atomic and preserve nested repositories.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'docs-quality': testing(PROJECT_OWNER, 'Static Conformance', 'Static', 5000, 'Product documentation links and required content remain valid.', TEST_ENVIRONMENTS.sourceReadOnly),
 });
 
@@ -247,6 +249,66 @@ export const VERIFICATION_STEP_EVIDENCE: any = Object.freeze({
     'A managed mutation that is non-atomic or damages a nested repository must fail integrity checks.',
     'real filesystem mutation and nested Git repository preservation',
   ),
+  'integration-code': primaryEvidence(
+    'A Code or Git application that mutates the wrong checkout, loses mutation isolation, or crosses its declared read roots must fail.',
+    'real checkout filesystem, Git read/write roots and repeated CLI boundaries',
+  ),
+  'integration-desktop': primaryEvidence(
+    'A Desktop or Agent connection that leaks registration state, crosses lifecycle ownership, or corrupts Git read roots must fail.',
+    'real isolated registration, connection lifecycle, Git read roots and HTTP boundaries',
+  ),
+  'integration-knowledge': primaryEvidence(
+    'A Knowledge or Agent source read that returns stale content, loses provenance, or misprojects HTTP results must fail.',
+    'real content sources, provenance records and HTTP read boundaries',
+  ),
+  'integration-workspace-assets': primaryEvidence(
+    'A Workspace asset composition, registration, mutation or user-content boundary that loses or overwrites user content must fail.',
+    'real Workspace assets, composition registry, mutation lifecycle and user content',
+  ),
+  'integration-task-records': primaryEvidence(
+    'A Task Record, material or workbench view that crosses filesystem, Git, SQLite or HTTP authority boundaries must fail.',
+    'real filesystem, Git, SQLite and HTTP Task Record boundaries',
+  ),
+  'integration-connections': primaryEvidence(
+    'A Connection Skill that mishandles credentials, Git workspaces, process boundaries or local protocol contracts must fail.',
+    'real connection definitions, credential handling, Git workspaces and local protocol boundaries',
+  ),
+  'integration-runtime': primaryEvidence(
+    'A Buildr Web Runtime read, instance, private Git preview or generated Web boundary that leaks or misprojects state must fail.',
+    'real runtime read, instance lifecycle, private Git preview and generated Web boundaries',
+  ),
+  'integration-openspec': primaryEvidence(
+    'A Change or OpenSpec convergence application that corrupts real filesystem or Git state must fail.',
+    'real filesystem and Git OpenSpec boundaries',
+  ),
+  'integration-verification': primaryEvidence(
+    'A project testing map or Task completion report that becomes incoherent with its verification authority must fail.',
+    'real testing map and Task completion report boundaries',
+  ),
+  'integration-release': primaryEvidence(
+    'A release filesystem or installation identity boundary that drifts from its declared source must fail.',
+    'real release filesystem and installation identity boundaries',
+  ),
+  'integration-data-store': primaryEvidence(
+    'A Workspace SQLite authority, migration or checkout isolation that loses or crosses its boundary must fail.',
+    'real SQLite authority, migration and checkout isolation boundaries',
+  ),
+  'integration-task-read-models': primaryEvidence(
+    'A Task entry or read-model application that crosses SQLite or Application boundaries must fail.',
+    'real Task entry and read-model SQLite/Application boundaries',
+  ),
+  'integration-task-coordination': primaryEvidence(
+    'A parent coordination or publication application that crosses its real repository boundary must fail.',
+    'real repository boundaries for coordination and publication applications',
+  ),
+  'service-branch-contract': primaryEvidence(
+    'A Service branch configuration that misprojects its repository, ref or ownership in an isolated repository must fail.',
+    'real isolated repository branch configuration and ownership',
+  ),
+  'remote-skill-timeout': primaryEvidence(
+    'A remote Skill read that exceeds or ignores its declared timeout boundary must fail.',
+    'real loopback network and declared timeout boundary',
+  ),
 });
 
 export const VERIFICATION_DAILY_CORE_EXCLUSIONS: any = Object.freeze({
@@ -279,7 +341,7 @@ export const VERIFICATION_DAILY_CORE_EXCLUSIONS: any = Object.freeze({
 const BACKEND_REUSE_CHECKS = new Set(['component', 'managed-mutations', 'cli-compatibility']);
 // These bounded fixture suites read runtime/source assets, not this Product's governance records.
 const RUNTIME_REUSE_CHECKS = new Set(['integration-runtime', 'integration-code', 'integration-desktop', 'integration-task-records', 'integration-connections', 'integration-runtime-projection', 'integration-data-store', 'integration-task-read-models', 'integration-task-coordination',
-  'integration-project-daily-progress', 'system-buildr-web-http', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation',
+  'system-buildr-web-http', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation',
   'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection',
   'system-runtime-recovery', 'system-app-process', 'system-workspace-lifecycle']);
 // These reviewed entries do not consume this checkout's release notes. Package
@@ -336,9 +398,12 @@ const step: any = (definition: any) => {
   const profiles: any = declaredProfiles.includes('candidate') && !Object.hasOwn(VERIFICATION_DAILY_CORE_EXCLUSIONS, definition.id)
     ? [...declaredProfiles, 'core']
     : [...declaredProfiles];
+  // targetDurationMs is a reporting budget, never a kill switch. Hard timeouts
+  // are explicit on the step or derived only from what the step must survive:
+  // workspace-lifecycle environments and Delivery / Release responsibilities.
   const timeoutMs: any = definition.timeoutMs ?? (
     classification?.environment.footprints.includes('workspace-lifecycle') ? 360_000
-      : classification?.primaryIntent === 'Delivery / Release' || (classification?.targetDurationMs ?? 0) >= 25_000 ? 300_000
+      : classification?.primaryIntent === 'Delivery / Release' ? 300_000
         : 180_000
   );
   const contexts: any[] = [...(definition.contexts ?? [])];
@@ -476,6 +541,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/verification-entrypoints-cli.test.ts',
     'test/integration/verification-process-executor.test.ts',
     'test/integration/verification-reuse-filesystem.test.ts',
+    'test/integration/verification-inputs.test.ts',
     'test/integration/windows-artifact-diagnosis.test.ts',
   ], { schedulingCostMs: 5000, timeoutMs: 300_000, concurrencyClass: 'exclusive', args: ['--test-concurrency=4'] }),
   integrationSlice('integration-code', [
@@ -491,6 +557,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/file-editing-application.test.ts',
     'test/integration/git-checkout-identity.test.ts',
     'test/integration/git-worktree-evidence-reader.test.ts',
+    'test/integration/git-worktree-incremental.test.ts',
     'test/integration/source-control-application.test.ts',
     'test/integration/source-control-observation-http.test.ts',
     'test/integration/source-control-observations.test.ts',
@@ -585,6 +652,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
   integrationSlice('integration-runtime', [
     'test/integration/buildr-web-read-executor.test.ts',
     'test/integration/buildr-web-runtime.test.ts',
+    'test/integration/restart-web-handoff.test.ts',
     'test/integration/buildr-web-workspace.test.ts',
     'test/integration/preview-ownership.test.ts',
     'test/integration/runtime-system-http-contract.test.ts',
@@ -648,9 +716,6 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/publication-application.test.ts',
     'test/integration/publication-worktree.test.ts',
   ], { schedulingCostMs: 5000, executorType: 'node-context-test', concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
-  integrationSlice('integration-project-daily-progress', [
-    'test/integration/project-daily-progress-application.test.ts',
-  ], { schedulingCostMs: 5000, executorType: 'node-context-test', concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
 ]);
 
 // The compatibility general entry aggregates every source Integration owner.
@@ -688,7 +753,6 @@ export const verificationSteps: any = Object.freeze([
       'integration-self-bootstrap': 'Self-bootstrap closeout integration slice',
       'integration-task-read-models': 'Task read-model integration slice',
       'integration-task-coordination': 'Task coordination integration slice',
-      'integration-project-daily-progress': 'Project daily progress integration slice',
     } as Record<string, string>)[slice.id],
     executor: { type: slice.executorType, files: [...slice.files], args: [...slice.args] },
     profiles: ['candidate'],
@@ -821,7 +885,6 @@ export const CORE_MACOS_STEP_IDS: any = Object.freeze([
   'integration-self-bootstrap',
   'integration-task-read-models',
   'integration-task-coordination',
-  'integration-project-daily-progress',
   'system-verification-contracts',
   'system-public-json-contracts',
   'system-openspec-contract-audit',
@@ -862,7 +925,6 @@ export const CORE_MACOS_SHARDS: any = Object.freeze([
     'integration-data-store',
     'integration-task-read-models',
     'integration-task-coordination',
-    'integration-project-daily-progress',
     'system-verification-contracts',
     'system-public-json-contracts',
     'system-openspec-contract-audit',

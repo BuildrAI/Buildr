@@ -1,5 +1,5 @@
 import type { ApiClient } from '../../../api/client';
-import type { MySqlQueryClient, MySqlQueryResult, MySqlQueryTarget, QueryPreferences } from '../query-types';
+import type { MySqlDatabaseTables, MySqlQueryClient, MySqlQueryResult, MySqlQueryTarget, QueryPreferences } from '../query-types';
 
 /** Each client owns one observed target set. Late calls never pick up another target's revision. */
 export function createMySqlQueryClient(api: ApiClient, workspaceId: string, targets: MySqlQueryTarget[]): MySqlQueryClient {
@@ -15,6 +15,10 @@ export function createMySqlQueryClient(api: ApiClient, workspaceId: string, targ
     databases(id, signal) {
       const target = selected(id);
       return api(`${target.url}/databases?revision=${encodeURIComponent(target.revision)}`, { signal }) as Promise<{ connectionId: string; databases: string[] }>;
+    },
+    tables(id, database, signal) {
+      const target = selected(id);
+      return api(`${target.url}/tables?revision=${encodeURIComponent(target.revision)}&database=${encodeURIComponent(database)}`, { signal }) as Promise<MySqlDatabaseTables>;
     },
     queryPreferences(id, signal) {
       const target = selected(id);

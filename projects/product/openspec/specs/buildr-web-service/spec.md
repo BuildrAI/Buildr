@@ -52,7 +52,7 @@ Buildr Product Project MUST 通过工作空间（Workspace）根 `projects/manif
 - **THEN** 构建 MUST 产出可被 `buildr` 消费的静态资产集合
 - **AND** 构建 MUST NOT 要求运行时启动 Vite 开发服务器才能生成可托管产物
 
-### Requirement: Workspace前端必须按独立领域Feature组织
+### Requirement: Workspace、Project、Service 前端必须按领域独立组织
 Buildr Web MUST让Workspace、Project、Service分别拥有独立前端Feature。每个Feature MUST拥有本领域路由页面、页面局部组件和确有复杂状态的Hook；公共`pages/`与`components/` MUST NOT继续保存这些领域的第二份页面或局部组件。Workspace、Project、Service客户端 MUST归属各自Feature且每个业务请求只保留一个实现；`src/api/` MUST只提供共享传输、会话与请求上下文。
 
 #### Scenario: 路由装配三个领域页面
@@ -70,9 +70,9 @@ Buildr Web MUST让Workspace、Project、Service分别拥有独立前端Feature�
 - **THEN**两个领域 MUST共享同一Markdown文档导航Hook
 - **AND**领域请求URL、Tab、缺失文案、事实展示和DOM身份 MUST继续由所属页面拥有
 
-#### Scenario: Project Daily Progress组合
-- **WHEN**Project详情展示每日演进
-- **THEN**Daily Progress MUST保持独立Feature并由Project详情组合
+#### Scenario: Project独立组合领域功能
+- **WHEN**Project详情组合独立领域功能
+- **THEN**对应能力 MUST保持独立Feature并由Project详情组合
 - **AND**MUST NOT并入Project CRUD Hook或提升为无领域语义的通用组件
 
 ### Requirement: Buildr Web 剩余页面必须按完整功能归位

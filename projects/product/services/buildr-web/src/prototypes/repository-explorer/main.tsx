@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { App, Button, ConfigProvider, Empty, Select, Space, Tag, Tooltip } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
-import { AppstoreOutlined, BranchesOutlined, FileTextOutlined, FolderOpenOutlined, FolderOutlined, HistoryOutlined, HomeOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, UnorderedListOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, BranchesOutlined, FileTextOutlined, FolderOpenOutlined, FolderOutlined, HomeOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { AppShellHeader, AppShellFrame } from '../../app/AppShellView';
 import { AppNavigationItem } from '../../app/AppNavigationItem';
 import { ObjectTabStrip } from '../../components/ObjectTabStrip';
@@ -135,7 +135,7 @@ function Preview() {
   }
   const nav: Array<[string, string, ReactNode]> = area === 'code'
     ? [['explorer', '资源管理器', <FolderOpenOutlined />], ['source-control', '源代码管理', <BranchesOutlined />]]
-    : area === 'workbench' ? [['overview', '概览', <HomeOutlined />], ['tasks', '任务', <UnorderedListOutlined />], ['activity', '动态', <HistoryOutlined />]]
+    : area === 'workbench' ? [['overview', '概览', <HomeOutlined />], ['tasks', '任务', <UnorderedListOutlined />]]
     : [['overview', '总览', <HomeOutlined />], ['projects', '项目', <FolderOutlined />], ['services', '服务', <AppstoreOutlined />], ['repositories', '代码库', <BranchesOutlined />], ['knowledge', '文章', <FileTextOutlined />]];
   const navigation = <nav className="shell-navigation" aria-label={area === 'code' ? '代码导航' : area === 'workbench' ? '工作台导航' : '工作空间导航'} data-prototype-position="code-menu"><p className="shell-nav-caption">{area === 'code' ? '代码' : area === 'workbench' ? '工作台' : '工作空间'}</p>{nav.map(([key, label, icon]) => <AppNavigationItem key={key} name={key} label={label} icon={icon} to={key === 'source-control' ? scmRoute : area === 'code' ? lastCodePath : area === 'workbench' ? taskRoute : repositoryRoute} path={'/' + key} active={key === (area === 'code' ? isSCM ? 'source-control' : 'explorer' : area === 'workbench' ? 'tasks' : 'repositories')} onClick={event => { if (!['explorer', 'source-control', 'tasks', 'repositories'].includes(key)) { event.preventDefault(); info(); } }} />)}</nav>;
   return <div className={'app-shell repository-explorer-preview area-' + area}>

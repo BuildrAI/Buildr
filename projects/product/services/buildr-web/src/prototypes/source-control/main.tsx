@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { App, Button, ConfigProvider, Tag } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
-import { BranchesOutlined, FolderOpenOutlined, HistoryOutlined, HomeOutlined, PlusOutlined, SearchOutlined, UnorderedListOutlined } from '@ant-design/icons';
+import { BranchesOutlined, FolderOpenOutlined, HomeOutlined, PlusOutlined, SearchOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { AppShellHeader, AppShellFrame } from '../../app/AppShellView';
 import { AppShellContext, type AppShellContextValue } from '../../app/AppShellContext';
 import { AppNavigationItem } from '../../app/AppNavigationItem';
@@ -86,7 +86,7 @@ function Preview() {
   };
   const nav: Array<[string, string, ReactNode]> = isCode
     ? [['explorer', '资源管理器', <FolderOpenOutlined />], ['source-control', '源代码管理', <BranchesOutlined />]]
-    : [['overview', '概览', <HomeOutlined />], ['tasks', '任务', <UnorderedListOutlined />], ['activity', '动态', <HistoryOutlined />]];
+    : [['overview', '概览', <HomeOutlined />], ['tasks', '任务', <UnorderedListOutlined />]];
   const codePage = isCode && !isTaskFile ? page : previousCode.current.page;
   const scene = (codePage === 'task-source' ? 'task' : codePage) as SourceControlScene;
   return <AppShellContext.Provider value={shell}><div className={'app-shell source-control-preview area-' + (isCode ? 'code' : 'workbench')}>

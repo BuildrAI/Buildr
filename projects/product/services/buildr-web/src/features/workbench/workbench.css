@@ -62,15 +62,6 @@
 .workbench-more{margin-top:10px}
 .workbench-rail-card{border:1px solid var(--soft-line);border-radius:10px;padding:16px;margin-bottom:17px;background:#fff}
 .workbench-rail-card h2{font-size:13px}
-.workbench-daily-empty{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;color:var(--soft-muted);font-size:12px}
-.workbench-daily-compact .workbench-activity-item{padding:0 0 16px;margin-bottom:16px;border-bottom:1px solid var(--soft-line)}
-.workbench-daily-compact .workbench-activity-item:last-child{padding-bottom:0;margin-bottom:0;border-bottom:0}
-.workbench-daily-compact .workbench-activity-point,.workbench-daily-compact .workbench-activity-item:before{display:none}
-.workbench-daily-compact .workbench-section-heading h3{font-size:12px;min-width:0;overflow-wrap:anywhere}
-.workbench-daily-compact .workbench-day-summary>div{gap:6px}
-.workbench-daily-compact .workbench-day-summary dd,.workbench-daily-compact .workbench-day-drawbacks{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-line}
-.workbench-daily-compact .workbench-coverage{margin-top:6px}
-.workbench-daily-detail{margin-top:8px}
 .workbench-resource-list{margin-top:8px}
 .workbench-resource-row{display:flex;gap:10px;align-items:center;padding:12px 0;border-bottom:1px solid #edf1ee}
 .workbench-resource-row:last-child{border:0}
@@ -96,13 +87,6 @@
 .workbench-rail-empty .ant-empty{margin:15px 0 5px}
 .workbench-rail-empty p{color:var(--soft-muted);font-size:11px}
 .workbench-rail-empty .ant-empty-image{height:32px}
-.workbench-activity-item{padding:0 0 20px 24px;position:relative}
-.workbench-activity-item:before{content:"";position:absolute;left:4px;top:17px;bottom:0;border-left:1px solid #e0e9e2}
-.workbench-activity-item:last-child:before{display:none}
-.workbench-activity-point{position:absolute;left:0;top:7px;width:9px;height:9px;border:2px solid white;border-radius:50%;background:#b4cdbb;box-shadow:0 0 0 1px #d9e6dc}
-.workbench-activity-item .workbench-section-heading{margin-bottom:8px}
-.workbench-activity-item .workbench-section-heading h3{flex-wrap:wrap}
-.workbench-activity-item .workbench-section-heading h3>a{color:var(--soft-ink)}
 .workbench-day-summary{margin:0}
 .workbench-day-summary>div{display:flex;align-items:baseline;gap:10px;font-size:12px;line-height:1.85;margin:4px 0}
 .workbench-day-summary dt{font-size:10px;color:var(--soft-muted);flex:0 0 26px}
@@ -110,11 +94,6 @@
 .workbench-coverage{font-size:10px;line-height:1.9;color:var(--soft-muted);margin:8px 0 0;overflow-wrap:anywhere}
 .workbench-coverage strong{font-weight:450}
 .workbench-coverage .anticon{margin-right:5px}
-.workbench-activity-items.full .workbench-activity-item{border:1px solid var(--soft-line);border-radius:10px;padding:20px 24px;margin-bottom:18px}
-.workbench-activity-items.full .workbench-activity-point,.workbench-activity-items.full .workbench-activity-item:before{display:none}
-.workbench-activity-items.full .workbench-day-summary dt{flex-basis:64px;font-size:11px}
-.workbench-activity-items.full .workbench-day-summary>div{margin:10px 0;font-size:13px}
-.workbench-activity-toolbar{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-bottom:25px}
 .workbench-recent-results>.workbench-task-row{padding-inline:0}
 .workbench-resource-actions{display:inline-flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:7px}
 .workbench-resource-actions .anticon-star{color:#789c86}
@@ -129,9 +108,9 @@
 .workbench-search-result small{display:block;font-size:11px;color:var(--soft-muted);margin-top:3px}
 @media(min-width:1600px){.workbench-home-grid{gap:36px;grid-template-columns:minmax(0,1fr) 296px}}
 @media(max-width:1250px){.workbench-home-grid{gap:20px;grid-template-columns:minmax(0,1fr) 240px}.workbench-attention-card{padding:14px}.workbench-attention-card footer{flex-wrap:wrap}.workbench-attention-card footer>a{margin-left:auto}}
-@media(max-width:1100px){.workbench-home-grid{grid-template-columns:minmax(0,1fr)}.workbench-rail{display:grid;grid-template-columns:1fr 1fr;gap:18px}.workbench-rail-card{margin-bottom:0}.workbench-daily-card,.workbench-observed{grid-column:1/-1}}
+@media(max-width:1100px){.workbench-home-grid{grid-template-columns:minmax(0,1fr)}.workbench-rail{display:grid;grid-template-columns:1fr 1fr;gap:18px}.workbench-rail-card{margin-bottom:0}}
 @media(max-width:800px){.workbench-attention-grid{grid-template-columns:1fr}.workbench-attention-card{padding:16px 18px}.workbench-attention-card footer{flex-wrap:nowrap}.workbench-attention-card>p{margin-bottom:12px}.workbench-heading-actions{padding-top:2px}.workbench-page h1{font-size:24px}}
-@media(max-width:520px){.workbench-page-heading{flex-wrap:wrap;gap:14px}.workbench-heading-actions{width:100%}.workbench-rail{grid-template-columns:1fr}.workbench-task-row{padding:13px 10px;gap:8px}.workbench-task-row-actions{flex-direction:column;gap:5px}.workbench-task-row-actions>a{display:none}.workbench-task-meta{gap:6px}.workbench-section-heading{align-items:baseline;flex-wrap:wrap;gap:7px}.workbench-section-heading h2{font-size:15px}.workbench-activity-item{padding-left:18px}.workbench-activity-items.full .workbench-activity-item{padding:15px}.workbench-activity-items.full .workbench-day-summary>div{display:block}.workbench-activity-toolbar{flex-wrap:wrap}}
+@media(max-width:520px){.workbench-page-heading{flex-wrap:wrap;gap:14px}.workbench-heading-actions{width:100%}.workbench-rail{grid-template-columns:1fr}.workbench-task-row{padding:13px 10px;gap:8px}.workbench-task-row-actions{flex-direction:column;gap:5px}.workbench-task-row-actions>a{display:none}.workbench-task-meta{gap:6px}.workbench-section-heading{align-items:baseline;flex-wrap:wrap;gap:7px}.workbench-section-heading h2{font-size:15px}}
 @media(prefers-reduced-motion:reduce){.workbench-attention-card{transition:none}}
 
 .workbench-project-work-link{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 15px;border:1px solid #e0eae3;border-radius:8px;color:var(--soft-primary);font-size:13px}
@@ -140,7 +119,6 @@
 .app-frame > #app-view > .workbench-page { max-width:none; padding-inline:32px; container:workbench / inline-size; }
 .workbench-task-copy > p,
 .workbench-day-summary,
-.workbench-activity-item > p { max-width:var(--reading-content-width,880px); }
 @container workbench (min-width:1600px) {
   .workbench-main-stack { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; gap:32px; }
 }

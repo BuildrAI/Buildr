@@ -93,7 +93,6 @@ macOS 与 Windows 开发对称交换执行位置。两类平台节点独立选�
 | `integration-self-bootstrap` | 隔离 Git 中唯一自举的同步、恢复、Node／入口和应用更新顺序；不等于本机正式激活 | 本机通用组，必要时 GitHub 补缺项 | 同轮成功保留；失败及未执行项执行；新轮完整运行 | 公共依赖；本项现场与清理独立 | 保留；无完整重复证据 |
 | `integration-task-read-models` | 审查与任务读模型的版本冲突、历史、只读终态及回滚 | 本机通用组，必要时 GitHub 补缺项 | 同轮成功保留；失败及未执行项执行；新轮完整运行 | 应用组装；每案数据隔离 | 保留；无完整重复证据 |
 | `integration-task-coordination` | 父子任务、产品内发布结果的 SQLite 版本与隔离；不是 npm 发布 | 本机通用组，必要时 GitHub 补缺项 | 同轮成功保留；失败及未执行项执行；新轮完整运行 | 应用组装；每案数据隔离 | 保留；无完整重复证据 |
-| `integration-project-daily-progress` | 每日演进的观察范围、存储、汇总和失败边界 | 本机通用组，必要时 GitHub 补缺项 | 同轮成功保留；失败及未执行项执行；新轮完整运行 | 应用组装；每案数据隔离 | 保留；无完整重复证据 |
 | `integration-candidate-release` | 发布输入／包观察／权限／冷启动／逐包操作／恢复等 15 个文件；受控外部效果 | 本机通用组，必要时 GitHub 补缺项 | 同轮成功保留；失败及未执行项执行；新轮完整运行 | 公共依赖；本项现场与清理独立 | 保留；无完整重复证据 |
 | `integration-candidate-release-selection` | 冻结引用、源码基线、代次、重新选择与 main 来源 | 本机通用组，必要时 GitHub 补缺项 | 同轮成功保留；失败及未执行项执行；新轮完整运行 | 公共依赖；本项现场与清理独立 | 保留；无完整重复证据 |
 | `integration-candidate-package-selection` | 独立包版本、对端、准备采用与禁止重复派发 | 本机通用组，必要时 GitHub 补缺项 | 同轮成功保留；失败及未执行项执行；新轮完整运行 | 公共依赖；本项现场与清理独立 | 保留；无完整重复证据 |
@@ -248,7 +247,7 @@ Windows 开发机上，一个 Git 路径与换行（CRLF）场景会与通用工
 | `publisher` | 生产依赖和固定发布 npm | 保留真实发布工具与权限边界，不能由开发 npm 代替 |
 | 插件开发工具包（SDK） | 固定 DSH 源码、补丁、依赖与构建，供插件编译及真实加载检查 | 缓存只存依赖下载内容，冻结安装、完整性核验、编译和真实加载照常执行。GitHub 缓存命中受分支可见性限制，首次准备仍需下载与编译 |
 
-已有共享：`integration-runtime`、`system-verification-admission`、`system-task-lifecycle`、`system-buildr-web-http` 使用不变任务种子；三个任务读模型／协调／每日演进组可在工作进程（Worker）内共享应用组装，案例数据隔离。部分系统组使用 workspace／project／Git 基础种子，真实创建、迁移和清理仍执行。适配器脚本仅在单项内部共享种子；多数静态／源码资源项没有跨项共享上下文，不能把“可考虑共享”写成“已共享”。
+已有共享：`integration-runtime`、`system-verification-admission`、`system-task-lifecycle`、`system-buildr-web-http` 使用不变任务种子；三个任务读模型／协调组可在工作进程（Worker）内共享应用组装，案例数据隔离。部分系统组使用 workspace／project／Git 基础种子，真实创建、迁移和清理仍执行。适配器脚本仅在单项内部共享种子；多数静态／源码资源项没有跨项共享上下文，不能把“可考虑共享”写成“已共享”。
 
 智能体（Agent）临时执行工作空间 CLI／HTTP 开发冒烟应经过 `tools/development/run-isolated-workspace-smoke.ts`；现有自动检查由各自夹具隔离工作目录和两类应用数据，不能污染真实用户状态。初始化、迁移、自举、卸载、恢复和清理本身就是证明内容时，不能用预热后的成品现场替代。
 

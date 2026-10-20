@@ -14,9 +14,12 @@ export type CodeSourceControlWorktree = {
   taskId:string|null;taskTitle:string|null;taskDiagnostic:string|null;
   fileCount:number|null;changes:CodeChange[];observedRevision:string|null;readAt:string;coverage:{fileLimit:number;truncated:boolean};diagnostics:CodeReadDiagnostic[];
 };
+export type CodeRepositoryCloneStatus = { state: 'cloning' | 'failed' | null; diagnostic: string | null; startedAt: string | null };
+export type CodeRepositoryCloneResult = { status: 'started' | 'already-running' | 'ready' | 'unavailable'; diagnostic: string | null };
 export type CodeSourceControlRepository = {
   id: string; code: string; name: string; location: string; available: boolean; gitId: string | null;
   source: CodeSource | null; status: 'complete' | 'partial' | 'unavailable';
+  clone: { state: 'cloning' | 'failed'; diagnostic: string | null; startedAt: string | null } | null;
   branch: string | null; head: string | null; upstream: string | null; ahead: number | null; behind: number | null;
   fileCount: number | null; changes: CodeChange[]; observedRevision: string | null; diagnostics: CodeReadDiagnostic[];
   worktrees:CodeSourceControlWorktree[];worktreeCount:number|null;worktreeCoverage:{limit:number;total:number|null;read:number;truncated:boolean};
