@@ -15,11 +15,15 @@
 .repository-tree-heading-actions .ant-btn { color:var(--soft-muted,#77817e); }
 .repository-file-search { padding:0 12px 12px; }
 .repository-file-search .ant-input-affix-wrapper { background:#fff; }
-.repository-search-scope { display:inline-flex; align-items:center; width:80px; margin-left:4px; padding-left:6px; border-left:1px solid var(--soft-line,#e3e9e7); }
-.repository-search-scope .ant-select { width:100%; }
+.repository-search-scope { display:inline-flex; align-items:center; margin-left:8px; }
 .repository-search-scope .ant-select-selector { padding-inline:0 !important; }
-.repository-search-scope .ant-select-selection-item { font-size:11px; font-weight:600; color:var(--soft-primary,#397d74); }
-.repository-search-scope .ant-select-arrow { inset-inline-end:0; font-size:9px; color:var(--soft-muted,#77817e); }
+.repository-search-scope .ant-select-selection-item { padding-inline-end:14px; font-size:11px; font-weight:500; color:var(--soft-muted,#68717b); transition:color .15s ease; }
+.repository-search-scope .ant-select:hover .ant-select-selection-item,.repository-search-scope .ant-select-open .ant-select-selection-item { color:var(--soft-primary,#397d74); }
+.repository-search-scope .ant-select-arrow { inset-inline-end:0; font-size:9px; color:var(--soft-muted,#68717b); }
+.repository-search-scope-popup.ant-select-dropdown { padding:4px; border:1px solid var(--soft-line,#e1e5e9); border-radius:10px; background:var(--soft-surface,#fff); box-shadow:0 8px 24px color-mix(in srgb,var(--soft-ink,#252a31) 12%,transparent); }
+.repository-search-scope-popup .ant-select-item { min-height:32px; padding:6px 10px; border-radius:6px; color:var(--soft-ink,#252a31); font-size:12px; }
+.repository-search-scope-popup.ant-select-dropdown .ant-select-item-option-active:not(.ant-select-item-option-selected):not(.ant-select-item-option-disabled) { background:var(--soft-bg,#f7f8f9); }
+.repository-search-scope-popup.ant-select-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled) { color:var(--soft-primary,#397d74); background:color-mix(in srgb,var(--soft-primary,#397d74) 8%,var(--soft-surface,#fff)); font-weight:600; }
 .repository-search-hint { margin:2px 8px; color:var(--soft-muted,#77817e); font-size:11px; line-height:1.6; }
 .repository-tree-body { flex:1; overflow:auto; padding:0 8px 12px; min-height:0; }
 .repository-tree-body .ant-tree { background:transparent; font-size:12px; min-width:max-content; }

@@ -162,7 +162,7 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     await selectFilter(0,secondary.name);
     const members=catalog.worktrees.filter((member:any)=>member.repositoryId===secondary.id),native=members.find((member:any)=>member.kind==='worktree'),task=members.find((member:any)=>member.groupId===codeFixture.worktreeGroupId);
     assert.ok(native&&task);assert.equal((await filterOptionNames(0)).length,catalog.repositories.length);
-    await selectSearchMode('文件内容');
+    await selectSearchMode('内容');
     for(const member of [native,task]){
       await selectFilter(1,member.id);await search('WorktreeFilterNeedle');const result=page.locator('.repository-search-group');await result.locator('.repository-search-occurrence').waitFor();
       const response=fileResponse(codeFixture.worktreeFiles[secondary.id].path);await result.locator('.repository-search-occurrence').click();const file=await(await response).json();assert.equal(file.source.checkoutId,member.id);
@@ -196,7 +196,7 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     const width=await page.getByRole('complementary',{name:'资源管理器文件树',exact:true}).evaluate((el:HTMLElement)=>el.getBoundingClientRect().width);assert.ok(width>=240&&width<=420);
     const divider=page.getByRole('separator',{name:'调整资源管理器宽度'});await divider.press('ArrowRight');assert.ok(await divider.getAttribute('aria-valuenow')>width);
     await page.getByRole('button',{name:'展开阅读',exact:true}).click();await page.getByRole('button',{name:'恢复分屏',exact:true}).click();
-    await selectSearchMode('文件内容');await search('explorerAnswer');await matchResult('projects/demo/services/api/src/main.ts',1).click();
+    await selectSearchMode('内容');await search('explorerAnswer');await matchResult('projects/demo/services/api/src/main.ts',1).click();
     await selectSearchMode('文件名');await search('README.md');const readmeResponse=fileResponse('projects/demo/services/api/README.md');await fileResult('projects/demo/services/api/README.md').click();const readme=await(await readmeResponse).json();await read.markdown('Explorer document');
     await page.locator(codeMarkdown).getByRole('img').waitFor();assert.ok((await page.locator(codeMarkdown).getByRole('img').getAttribute('src')).startsWith('data:image/png;base64,'));
     const codeUrl=page.url(),resourceViews=await page.evaluate(()=>history.state?.usr?.resourceViews??null),parentPath='projects/demo/services/services/foo';
@@ -257,7 +257,7 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     await page.setViewportSize({width:1440,height:900});await page.goto(workspaceUrl+'/code/explorer');
     let searches=0;const count=(request:any)=>{if(new URL(request.url()).pathname.endsWith('/code/search'))searches++;};page.on('request',count);
     try{
-      await selectSearchMode('文件内容');await search('cachedFile');await page.waitForFunction(()=>document.querySelectorAll('.repository-search-result').length===9);
+      await selectSearchMode('内容');await search('cachedFile');await page.waitForFunction(()=>document.querySelectorAll('.repository-search-result').length===9);
       const initial=searches;assert.ok(initial>0);
       await matchResult('src/file1.ts',1).click();await read.text('cachedFile1 = true');
       await matchResult('src/file2.ts',1).click();await read.text('cachedFile2 = true');
@@ -273,7 +273,7 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     const input=page.getByRole('textbox',{name:'搜索文件',exact:true});
     let searches=0;const count=(request:any)=>{if(new URL(request.url()).pathname.endsWith('/code/search'))searches++;};page.on('request',count);
     try{
-      for(const [mode,query] of [['文件名','ma'],['文件内容','ex']]){
+      for(const [mode,query] of [['文件名','ma'],['内容','ex']]){
         await input.fill('');await selectSearchMode(mode);const before=searches;
         await input.fill('m');await page.locator('.repository-search-hint').waitFor();await new Promise(resolve=>setTimeout(resolve,700));assert.equal(searches,before);assert.equal(await page.locator('.repository-search-result').count(),0);
         await search(query);assert.ok(searches>before);const afterAscii=searches;
@@ -290,9 +290,9 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     assert.equal(await page.locator('.repository-search-scope .ant-select-selection-item').innerText(),'文件名');
     await page.getByRole('textbox',{name:'搜索文件',exact:true}).fill('explorerAnswer');
     await page.getByText('文件名匹配 · 0 个文件',{exact:true}).waitFor();
-    await page.getByRole('button',{name:'在文件内容中搜索',exact:true}).click();
+    await page.getByRole('button',{name:'在内容中搜索',exact:true}).click();
     await page.locator('.repository-search-result').first().waitFor();
-    assert.equal(await page.locator('.repository-search-scope .ant-select-selection-item').innerText(),'文件内容');
+    assert.equal(await page.locator('.repository-search-scope .ant-select-selection-item').innerText(),'内容');
     assert.match(await page.locator('.repository-search-results > p').innerText(),/^内容匹配 · \d+ 个文件 · \d+ 处$/);
     await noOverflow();await capture(page,'code-search-empty-to-content.png');
   });
@@ -303,10 +303,12 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     assert.equal(focusPaint.at(-1).outline,false,JSON.stringify(focusPaint));assert.equal(focusPaint.at(-1).shadow,false,JSON.stringify(focusPaint));assert.ok(focusPaint.filter((paint:any)=>paint.outline||paint.shadow).length<=1,JSON.stringify(focusPaint));
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('.repository-file-search .ant-input-affix-wrapper .repository-search-scope').count(),1);
-    for(const mode of ['文件名','文件内容']){
-      await selectSearchMode(mode);const selected=page.locator('.repository-search-scope .ant-select-selection-item');assert.equal(await selected.innerText(),mode);
-      const paint=await selected.evaluate((el:HTMLElement)=>{const style=getComputedStyle(el);return {weight:Number(style.fontWeight),color:style.color};});
-      assert.ok(paint.weight>=600,JSON.stringify(paint));
+    for(const mode of ['文件名','内容']){
+      await selectSearchMode(mode);assert.equal(await page.locator('.repository-search-scope .ant-select-selection-item').innerText(),mode);
+      await page.locator('.repository-search-scope').click();const selected=page.locator('.ant-select-dropdown:visible .ant-select-item-option-selected');assert.equal(await selected.innerText(),mode);
+      const paint=await selected.evaluate((el:HTMLElement)=>{const style=getComputedStyle(el);return {weight:Number(style.fontWeight),color:style.color,background:style.backgroundColor};});
+      assert.ok(paint.weight>=600,JSON.stringify(paint));assert.notEqual(paint.background,'rgba(0, 0, 0, 0)',JSON.stringify(paint));
+      await page.keyboard.press('Escape');
     }
     await noOverflow();await capture(page,'code-search-control-focus.png');
   });
@@ -323,7 +325,7 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     await page.setViewportSize({width:1440,height:900});await page.goto(workspaceUrl+'/code/explorer');
     let searches=0,reads=0;const count=(request:any)=>{const path=new URL(request.url()).pathname;if(path.endsWith('/code/search'))searches++;if(/\/code\/(?:file|editor-file)$/u.test(path))reads++;};page.on('request',count);
     try{
-      await selectSearchMode('文件内容');await search('search.hit[0]');await page.waitForFunction(()=>document.querySelectorAll('.repository-search-group').length===2);
+      await selectSearchMode('内容');await search('search.hit[0]');await page.waitForFunction(()=>document.querySelectorAll('.repository-search-group').length===2);
       const firstPath='projects/demo/services/api/src/search-matches.ts',secondPath='src/search-matches.ts';
       const first=page.locator('.repository-search-group[data-file-path="'+firstPath+'"]'),second=page.locator('.repository-search-group[data-file-path="'+secondPath+'"]');
       assert.equal(await first.count(),1);assert.equal(await second.count(),1);assert.notEqual(await first.getAttribute('data-repository-id'),await second.getAttribute('data-repository-id'));
@@ -378,7 +380,7 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
   });
   await t.test('可搜索页面中的真实源码，右上角展开与恢复保留搜索、宽度和阅读位置',async()=>{
     await page.setViewportSize({width:1440,height:900});await page.goto(workspaceUrl+'/code/explorer');
-    await selectSearchMode('文件内容');await search('registerApplicationDoctor');
+    await selectSearchMode('内容');await search('registerApplicationDoctor');
     await matchResult('projects/demo/services/api/src/main.ts',2).click();await read.text('registerApplicationDoctor');
     assert.equal(await page.locator('.code-tree-coverage').count(),0);const count=await page.locator('.repository-search-result').count();
     const divider=page.getByRole('separator',{name:'调整资源管理器宽度'}),width=await divider.getAttribute('aria-valuenow');
@@ -401,7 +403,7 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
       const previous=fileResponse(path,url=>url.searchParams.get('page')==='0');await page.getByRole('button',{name:'上一段',exact:true}).click();const restored=await(await previous).json();assert.equal(restored.revision,first.revision);assert.deepEqual(restored.page,first.page);await assertPart(restored,codeFixture.current);
       const otherResponse=fileResponse('zz-segmented-text.txt');await fileResult('zz-segmented-text.txt').click();const other=await(await otherResponse).json();assert.notEqual(other.source.repositoryId,first.source.repositoryId);assert.equal(other.page,null);await read.text('second repository isolated text');assert.equal(await page.locator('.repository-file-pagination').count(),0);
       await(await registeredFileTab(path)).click();await assertPart(restored,codeFixture.current);
-      await selectSearchMode('文件内容');await search('AfterBoundaryNeedle');const beforeLongLine=requests.length;
+      await selectSearchMode('内容');await search('AfterBoundaryNeedle');const beforeLongLine=requests.length;
       const longLineResponse=fileResponse(path,url=>url.searchParams.get('line')==='2'&&url.searchParams.get('matchQuery')==='AfterBoundaryNeedle');await matchResult(path,2).click();const longLine=await(await longLineResponse).json();assert.equal(requests.length,beforeLongLine+1);assert.equal(longLine.page.index,1);await assertPart(longLine,codeFixture.current);await page.locator('.repository-source-row.selected-line[data-line="2"] mark.repository-search-hit').waitFor();assert.equal(await page.locator('.repository-source-row.selected-line mark.repository-search-hit').innerText(),'AfterBoundaryNeedle');
       const beforeSearchPosition=await editorPosition(page);assert.ok(beforeSearchPosition.from>0,'已定位当前分段内的真实匹配，不能用行首空选区冒充保留');
       const farSearch=page.waitForResponse((response:any)=>{const url=new URL(response.url());return url.pathname.endsWith('/code/search')&&url.searchParams.get('query')==='FarSegmentNeedle'&&url.searchParams.get('repositoryId')===longLine.source.repositoryId&&url.searchParams.get('checkoutId')===longLine.source.checkoutId;});
@@ -489,7 +491,7 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     await page.locator('.code-explorer-stage').waitFor();await capture(page,'code-initial-'+width+'.png');
     if(width<680)await page.getByRole('button',{name:'恢复分屏',exact:true}).click();
     await search('main.ts');await resultPath('projects/demo/services/api/src/main.ts');await resultPath('src/main.ts');await noOverflow();
-    await selectSearchMode('文件内容');await search('search.hit[0]');await resultPath('projects/demo/services/api/src/search-matches.ts');await resultPath('src/search-matches.ts');await noOverflow();await capture(page,'code-search-paths-'+width+'.png');
+    await selectSearchMode('内容');await search('search.hit[0]');await resultPath('projects/demo/services/api/src/search-matches.ts');await resultPath('src/search-matches.ts');await noOverflow();await capture(page,'code-search-paths-'+width+'.png');
     await selectSearchMode('文件名');await search('main.ts');await fileResult('projects/demo/services/api/src/main.ts').click();await read.text('explorerAnswer = 2');
     assert.equal(await page.locator(codeEditor+':visible .cm-content').getAttribute('contenteditable'),'true');await page.getByRole('button',{name:'请智能体解释',exact:true}).click({trial:true});await noOverflow();await capture(page,'code-explorer-'+width+'.png');
   });
