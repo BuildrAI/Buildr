@@ -393,6 +393,7 @@ const legacyTaskRecordConsumers: any = new Set([
   'modules/task/infrastructure/git-worktree-provider.ts',
   'modules/task/persistence/task-retrospective-document.ts',
   'modules/task/persistence/task-verification-repository.ts',
+  'modules/publication/application/publication-worktree-reader.ts',
   'web/http/server.ts',
   'web/application/preview-lifecycle.ts',
 ]);

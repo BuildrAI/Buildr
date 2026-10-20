@@ -64,6 +64,8 @@ const allowedCrossModulePorts: any = new Set([
   'modules/task/change/module.ts -> modules/openspec/module.ts',
   'modules/task/change/module.ts -> modules/workspace/module.ts',
   'modules/publication/module.ts -> modules/workspace/module.ts',
+  'modules/publication/module.ts -> modules/task/module.ts',
+  'modules/publication/module.ts -> modules/task/materials/module.ts',
   'modules/project-testing/module.ts -> modules/workspace/module.ts',
   'modules/task/module.ts -> modules/workspace/module.ts',
   'modules/task/change/module.ts -> modules/task/module.ts',
