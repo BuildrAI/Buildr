@@ -24,5 +24,5 @@
 
 ## 5. 验证
 
-- [ ] `npm run contracts:prepare` + `npm test` + `tsc`.
-- [ ] buildr-dev-preview 浏览器端到端：新增 git 库→清单克隆中→可读；人为失败（无效 URL）→诊断+重试入口。
+- [x] `npm run contracts:prepare` + `npm test` + `tsc`.
+- [x] buildr-dev-preview 浏览器端到端：新增 git 库→清单克隆中→可读；人为失败（无效 URL）→诊断+重试入口。
