@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {assertEditorText, editorPosition, editorScroll} from './code-editor-assertions.ts';
+import { codeRepositoryLabel } from '../../src/features/code/code-source-labels.ts';
 
 /** Successes use actual checkout/catalog data; only the exact status/watch failures are injected. */
 export async function runSourceControlSourceFeedbackJourney({t,page,workspaceUrl,capture,fixture,expectedBrowserErrors,scenario=(name:string,action:()=>Promise<void>)=>t.test(name,action)}:any) {
@@ -18,7 +19,7 @@ export async function runSourceControlSourceFeedbackJourney({t,page,workspaceUrl
   const choose=async(repository:any,worktree:any)=>{
     const group=scm().locator('[data-source-repository="'+repository.id+'"]'),fold=group.locator('> .source-control-repository .source-control-repository-fold');
     if(await fold.getAttribute('aria-expanded')==='false')await fold.click();
-    await(worktree.isMain?group.getByRole('button',{name:'查看主工作树 · '+repository.name,exact:true}):group.locator('[data-source-worktree="'+worktree.worktreeId+'"] .source-control-repository-copy')).click();
+    await(worktree.isMain?group.getByRole('button',{name:'查看主工作树 · '+codeRepositoryLabel(repository),exact:true}):group.locator('[data-source-worktree="'+worktree.worktreeId+'"] .source-control-repository-copy')).click();
     await currentSource(repository.id,worktree.worktreeId);
   };
   const chooseFilter=async(index:number,label:string)=>{
@@ -48,7 +49,7 @@ export async function runSourceControlSourceFeedbackJourney({t,page,workspaceUrl
         await page.setViewportSize({width:1440,height:900});await page.goto(workspaceUrl+'/code/explorer');await rootAt(registered.repositoryId,registered.location).waitFor();
         const catalog=await read('repositories'),members=catalog.worktrees.filter((member:any)=>member.groupId==='main');
         assert.equal(await explorer().getByRole('combobox',{name:'筛选工作树',exact:true}).isDisabled(),true,'多库不显示拼接工作树选项');
-        const repository=catalog.repositories.find((repository:any)=>repository.id===registered.repositoryId);await chooseFilter(0,repository.name);
+        const repository=catalog.repositories.find((repository:any)=>repository.id===registered.repositoryId);await chooseFilter(0,codeRepositoryLabel(repository));
         const label=explorer().locator('.code-root-selectors .ant-select').nth(1).locator('.ant-select-selection-item');
         const groupSelect=explorer().locator('.code-root-selectors .ant-select').nth(1);await groupSelect.locator('.ant-select-selector').click();
         const popupId=await groupSelect.getByRole('combobox').getAttribute('aria-controls'),popup=page.locator('.ant-select-dropdown').filter({has:page.locator('[id="'+popupId+'"]')});

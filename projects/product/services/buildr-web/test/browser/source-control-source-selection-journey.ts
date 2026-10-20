@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { assertEditorText, editorScroll } from './code-editor-assertions.ts';
+import { codeRepositoryLabel } from '../../src/features/code/code-source-labels.ts';
 
 /** Source identities come from the isolated host's real Git/registry observations. */
 export async function runSourceControlSourceSelectionJourney({t,page,workspaceUrl,capture,fixture,expectedBrowserErrors=new Set(),scenario=(name:string,action:()=>Promise<void>)=>t.test(name,action)}:any) {
@@ -21,7 +22,7 @@ export async function runSourceControlSourceSelectionJourney({t,page,workspaceUr
     const group=scm().locator('[data-source-repository="'+repository.id+'"]');
     const fold=group.locator('> .source-control-repository .source-control-repository-fold');
     if(await fold.getAttribute('aria-expanded')==='false')await fold.click();
-    await(worktree.isMain?group.getByRole('button',{name:'查看主工作树 · '+repository.name,exact:true}):row(repository.id,worktree.worktreeId)).click();
+    await(worktree.isMain?group.getByRole('button',{name:'查看主工作树 · '+codeRepositoryLabel(repository),exact:true}):row(repository.id,worktree.worktreeId)).click();
     await selected(repository.id,worktree.worktreeId);
   };
   const navigate=async(name:'source-control'|'explorer')=>{
@@ -94,8 +95,8 @@ export async function runSourceControlSourceSelectionJourney({t,page,workspaceUr
         await choose(repository,main);
         // Picking a source closes its hover card; move out before a fresh hover.
         await page.mouse.move(5,5);
-        await scm().getByRole('button',{name:'查看主工作树 · '+repository.name,exact:true}).hover();
-        const mainCard=page.getByRole('article',{name:'工作树来源信息',exact:true}).filter({has:page.getByText(main.location,{exact:true})});await mainCard.waitFor().catch(async(error:any)=>{process.stderr.write('[source-selection-main-card-failure] '+JSON.stringify({cards:await page.locator('.source-control-location-card').allTextContents(),button:await scm().getByRole('button',{name:'查看主工作树 · '+repository.name,exact:true}).evaluate((element:any)=>element.outerHTML),main,bundles:await page.locator('script[src]').evaluateAll((nodes:any[])=>nodes.map(node=>node.src))})+'\n');await capture(page,'source-selection-main-card-failure.png');throw error;});assert.equal(await mainCard.locator('dd').last().innerText(),'Git 主工作树');
+        await scm().getByRole('button',{name:'查看主工作树 · '+codeRepositoryLabel(repository),exact:true}).hover();
+        const mainCard=page.getByRole('article',{name:'工作树来源信息',exact:true}).filter({has:page.getByText(main.location,{exact:true})});await mainCard.waitFor().catch(async(error:any)=>{process.stderr.write('[source-selection-main-card-failure] '+JSON.stringify({cards:await page.locator('.source-control-location-card').allTextContents(),button:await scm().getByRole('button',{name:'查看主工作树 · '+codeRepositoryLabel(repository),exact:true}).evaluate((element:any)=>element.outerHTML),main,bundles:await page.locator('script[src]').evaluateAll((nodes:any[])=>nodes.map(node=>node.src))})+'\n');await capture(page,'source-selection-main-card-failure.png');throw error;});assert.equal(await mainCard.locator('dd').last().innerText(),'Git 主工作树');
         await page.mouse.move(5,5);await mainCard.waitFor({state:'hidden'});
         await navigate('explorer');await explorerSource(repository.id,main.location);
         await navigate('source-control');await selected(repository.id,main.worktreeId);

@@ -1,8 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { codeWorktreeLabel, codeWorktreeGroupLabel } from '../src/features/code/code-source-labels.ts';
+import { codeRepositoryLabel, codeWorktreeLabel, codeWorktreeGroupLabel } from '../src/features/code/code-source-labels.ts';
 
 const member = (id, repositoryId, path, extra = {}) => ({id, repositoryId, groupId:'main', path, branch:'dev', kind:'main', isMain:extra.kind ? false : true, taskId:null, available:true, ...extra});
+
+test('代码库名称后补充编码，名称等于编码或缺失时不重复', () => {
+  assert.equal(codeRepositoryLabel({name:'通用业务',code:'business-common'}),'通用业务（business-common）');
+  assert.equal(codeRepositoryLabel({name:'pork-link',code:'pork-link'}),'pork-link');
+  assert.equal(codeRepositoryLabel({name:'',code:'api'}),'api');
+  assert.equal(codeRepositoryLabel({name:'API',code:''}),'API');
+});
+
 const catalog = worktrees => ({worktrees, worktreeGroups:[{id:'main',name:'主目录',kind:'main',taskId:null,repositoryIds:['api','web']} ]});
 
 test('登记目录的主名称使用实际工作树名，角色与分支路径单独说明且不改身份', () => {

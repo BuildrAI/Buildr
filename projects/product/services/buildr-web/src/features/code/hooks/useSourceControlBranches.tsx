@@ -11,6 +11,7 @@ import { useSourceControlRead } from './useSourceControlRead';
 import type { SourceControlFetchActions } from './useSourceControlFetch';
 import { sourceControlSyncUnavailableReason, type SourceControlSyncActions } from './useSourceControlSync';
 import { SourceControlWorktreeMenu } from '../components/SourceControlWorktreeMenu';
+import { codeRepositoryLabel } from '../code-source-labels';
 
 const observationNote = (data: CodeBranchesResponse | CodeAuthorsResponse | null) => data ? [data.coverage.truncated ? '读取范围达到上限，当前记录不完整。' : '', ...data.diagnostics.map(item => item.message)].filter(Boolean).join('；') : '';
 type LocationProps = { workspaceId: string; repository: SourceControlRepository; worktree: SourceControlWorktree; version: string };
@@ -107,7 +108,7 @@ export function useSourceControlBranches(workspaceId: string, fetchActions?: Sou
     rowActions: fetchActions && syncActions ? (repository, worktree, ready, context) => {
       const available = ready && worktree.status !== 'offline' && Boolean(repository.gitId && repository.checkoutId);
       const unavailableReason = !available ? '当前来源尚未就绪，请刷新后重试' : sourceControlSyncUnavailableReason(repository, worktree);
-      return <SourceControlWorktreeMenu sourceKey={JSON.stringify([key(repository, worktree), worktree.branch, worktree.head, worktree.upstream])} open={openMenu === key(repository, worktree)} onOpenChange={next => setOpenMenu(previous => next ? key(repository, worktree) : previous === key(repository, worktree) ? '' : previous)} repositoryName={repository.name} worktreeName={worktree.isMain ? '主工作树' : worktree.name} worktree={worktree} visible={context.rowVisible} ready={available} unavailableReason={unavailableReason} fetching={Boolean(fetchActions.pending[repository.id])} syncing={syncing(repository)} onManageBranch={() => setBranchRequest(previous => ({key:key(repository, worktree), serial:previous.serial + 1}))} onOpenTask={context.onOpenTask} onFetch={() => {void fetchActions.run([repository]);}} onSync={() => {void syncActions.run(repository, worktree);}} />;
+      return <SourceControlWorktreeMenu sourceKey={JSON.stringify([key(repository, worktree), worktree.branch, worktree.head, worktree.upstream])} open={openMenu === key(repository, worktree)} onOpenChange={next => setOpenMenu(previous => next ? key(repository, worktree) : previous === key(repository, worktree) ? '' : previous)} repositoryName={codeRepositoryLabel(repository)} worktreeName={worktree.isMain ? '主工作树' : worktree.name} worktree={worktree} visible={context.rowVisible} ready={available} unavailableReason={unavailableReason} fetching={Boolean(fetchActions.pending[repository.id])} syncing={syncing(repository)} onManageBranch={() => setBranchRequest(previous => ({key:key(repository, worktree), serial:previous.serial + 1}))} onOpenTask={context.onOpenTask} onFetch={() => {void fetchActions.run([repository]);}} onSync={() => {void syncActions.run(repository, worktree);}} />;
     } : undefined,
     syncAction: syncActions ? (repository, worktree) => ({pending:syncing(repository) || Boolean(fetchActions?.pending[repository.id]), run:() => {if (!fetchActions?.pending[repository.id]) void syncActions.run(repository, worktree);}}) : undefined,
     viewChanges:(repositoryId, worktreeId) => openPosition(repositoryId, worktreeId, 'changes'),

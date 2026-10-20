@@ -10,6 +10,12 @@ const worktreeName = (path: string) => {
 };
 const sourceRole = (isMain?: boolean) => isMain === true ? '主工作库' : '';
 
+/** The code disambiguates similarly named repositories; an identical name needs no repetition. */
+export function codeRepositoryLabel(repository: {name: string; code?: string | null}): string {
+  const name = repository.name || '', code = repository.code || '';
+  return name && code && code !== name ? name + '（' + code + '）' : name || code;
+}
+
 /** Names describe actual directories; only confirmed Git main worktrees receive a role. */
 export function codeWorktreeLabel(member: CodeWorktree, peers: readonly CodeWorktree[] = []): CodeSourceLabel {
   const name = worktreeName(member.path);

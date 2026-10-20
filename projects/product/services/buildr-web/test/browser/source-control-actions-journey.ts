@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { codeRepositoryLabel } from '../../src/features/code/code-source-labels.ts';
 
 /** Model protocol is an external collaborator; catalog, exact context and Git writes use production HTTP. */
 export async function runSourceControlActionsJourney({t, page, workspaceUrl, capture, fixture, scenario = (name: string, action: () => Promise<void>) => t.test(name, action)}: any) {
@@ -161,7 +162,7 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
         await page.setViewportSize({width: 1440, height: 900}); const {repository, tree} = await open(branches);
         const row = root().locator('[data-source-repository="' + repository.id + '"] [data-source-worktree="' + tree.worktreeId + '"]');
         await row.locator('.source-control-row-action-button').click();
-        const manager = page.getByRole('region', {name: '分支管理 · ' + repository.name + ' · ' + (tree.isMain ? '主工作树' : tree.name), exact: true});
+        const manager = page.getByRole('region', {name: '分支管理 · ' + codeRepositoryLabel(repository) + ' · ' + (tree.isMain ? '主工作树' : tree.name), exact: true});
         await manager.getByRole('button', {name: '管理 ' + branches.remote + '/' + branches.remoteName, exact: true}).click();
         const action = page.getByRole('region', {name: '分支操作 · ' + branches.remote + '/' + branches.remoteName, exact: true});
         const switched = page.waitForResponse((reply: any) => reply.request().method() === 'POST' && new URL(reply.url()).pathname.endsWith('/code/branch-switch'));

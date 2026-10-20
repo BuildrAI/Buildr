@@ -1,5 +1,6 @@
 import type { CodeSourceControlResponse } from './api/code-api';
 import type { SourceControlCatalogState } from './source-control-catalog';
+import { codeRepositoryLabel } from './code-source-labels.ts';
 
 type Repository = CodeSourceControlResponse['repositories'][number];
 type Worktree = Repository['worktrees'][number];
@@ -9,7 +10,7 @@ const pending = (diagnostics: Diagnostic[]) => diagnostics.some(item => item.cod
 const sourceName = (repository: Repository, worktree?: Worktree) => {
   const location = worktree?.location || repository.location;
   const name = worktree?.name || location.split(/[\\/]/u).filter(Boolean).at(-1) || location;
-  return [repository.name || repository.id, name, location].filter(Boolean).join(' · ');
+  return [codeRepositoryLabel(repository) || repository.id, name, location].filter(Boolean).join(' · ');
 };
 
 /** A successful HTTP response can still contain failed or budget-limited Git reads. */

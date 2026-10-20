@@ -46,7 +46,7 @@ export type SourceControlState = '' | 'empty' | 'partial' | 'loading' | 'failure
 export type SourceControlChange = ChangedFileEntry & { worktreeId?: string | null; area: 'unstaged' | 'staged' | 'untracked'; content: string; previousContent?: string };
 export type SourceControlCommit = Omit<TaskCommit, 'taskId' | 'taskTitle'> & { worktreeId?: string | null; files: SourceControlChange[]; branches: string[]; tags: string[]; taskId?: string | null; taskTitle?: string | null; taskDiagnostic?: string | null };
 export type SourceControlRepository = {
-  id: string; name: string; location: string; taskLocation?: string; taskBranch?: string | null; readonly pending?: boolean;
+  id: string; code: string; name: string; location: string; taskLocation?: string; taskBranch?: string | null; readonly pending?: boolean;
   gitId?: string | null; checkoutId?: string | null; readVersion?: string; refsVersion?: string;
   branch: string | null; branches: string[]; ahead: number | null; behind: number | null;
   status: 'ready' | 'clean' | 'offline' | 'partial'; simulated: boolean; services: string[];
@@ -98,7 +98,7 @@ export function sourceControlWorktree(worktree: CodeSourceControlWorktree): Sour
 }
 export function sourceControlRepository(repository: CodeSourceControlRepository): SourceControlRepository {
   const taskLocation = repository.source?.kind === 'task' ? repository.source.location : undefined;
-  return { id: repository.id, name: repository.name, location: repository.source?.location || repository.location, gitId:repository.gitId, checkoutId:repository.source?.checkoutId || null,
+  return { id: repository.id, code: repository.code, name: repository.name, location: repository.source?.location || repository.location, gitId:repository.gitId, checkoutId:repository.source?.checkoutId || null,
     branch: repository.branch, branches: [], ahead: repository.ahead, behind: repository.behind,
     status: repository.status === 'unavailable' ? 'offline' : repository.status === 'partial' ? 'partial' : repository.fileCount === 0 ? 'clean' : 'ready',
     clone: repository.clone ?? null,

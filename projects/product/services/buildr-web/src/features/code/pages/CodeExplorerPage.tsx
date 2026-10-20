@@ -17,7 +17,7 @@ import { WorkspaceViewActiveContext } from '../../../app/pageTabs';
 import { FileEditingPane } from '../../../components/file-editing/FileEditingPane';
 import { codeBrowserKey, codeLocationKey, codeReturnTarget, relativeCodeLink, type CodeTaskEntry } from '../code-navigation';
 import { sourceControlDecorations } from '../source-control-decorations';
-import { codeWorktreeLabel } from '../code-source-labels';
+import { codeRepositoryLabel, codeWorktreeLabel } from '../code-source-labels';
 import { workspaceHref } from '../../../lib/labels';
 import type { MarkdownRenderOptions } from '../../../markdown';
 import '../code-explorer.css';
@@ -50,8 +50,8 @@ export function CodeExplorerPage() {
     const decoration=sourceControlDecorations(state.sourceControl.data,source.repositoryId,source.checkoutId,Boolean(source.commitHash));
     for(const directory of directories)for(const item of directory.entries)items.set(item.path,{path:item.path,content:'',kind:'text',directory:item.kind==='directory',link:item.kind==='link',ignored:item.ignored,status:item.kind==='directory'?undefined:decoration.files.get(item.path),hasChanges:item.kind==='directory'&&decoration.directories.has(item.path)});
     const observed=directories.find(dir=>dir.path===''),label=codeWorktreeLabel(member,state.catalog?.worktrees);
-    const locationLabel=(source.commitHash?'历史提交 · ':'')+label.name;
-    return {id,repositoryId:member.repositoryId,name:state.catalog?.repositories.find(r=>r.id===member.repositoryId)?.name||member.repositoryId,
+    const locationLabel=(source.commitHash?'历史提交 · ':'')+label.name,repository=state.catalog?.repositories.find(r=>r.id===member.repositoryId);
+    return {id,repositoryId:member.repositoryId,name:repository?codeRepositoryLabel(repository):member.repositoryId,
       location:observed?.source.location||member.path,locationLabel,version:source.commitHash||observed?.source.version,files:[...items.values()],hasChanges:decoration.hasChanges};
   }),[state.sources.map(item=>item.id+':'+item.member.available).join(','),state.catalog,state.directories,state.showIgnored,state.directoryKey,state.sourceControl.data]);
   const loadedKeys=state.sources.flatMap(({id,source})=>{
@@ -61,7 +61,7 @@ export function CodeExplorerPage() {
   const files:RepositoryPreviewFile[]=file?[{path:file.path,kind:file.kind,content:file.content,image:file.kind==='image'?file.content:undefined}]:[];
   const sourceName=(browserId:string)=>{
     const item=state.sources.find(source=>source.id===browserId),repo=state.catalog?.repositories.find(r=>r.id===item?.source.repositoryId);
-    return (repo?.name||'')+(item?' · '+codeWorktreeLabel(item.member,state.catalog?.worktrees).name:'')+(item?.source.commitHash?' · '+item.source.commitHash.slice(0,7):'');
+    return (repo?codeRepositoryLabel(repo):'')+(item?' · '+codeWorktreeLabel(item.member,state.catalog?.worktrees).name:'')+(item?.source.commitHash?' · '+item.source.commitHash.slice(0,7):'');
   };
   const searchResults=state.searchResults.flatMap(result=>result.matches.map(match=>({path:match.path,kind:'text' as const,content:'',repositoryId:result.browserId,sourceRepositoryId:result.repositoryId,repositoryName:sourceName(result.browserId),line:match.line||undefined,excerpt:match.excerpt,occurrences:match.occurrences})));
   const searchPartial=state.searchResults.some(result=>result.truncated);
@@ -98,11 +98,11 @@ export function CodeExplorerPage() {
     const member=state.catalog?.worktrees.find(item=>item.id===tab.checkoutId),worktreeName=member?codeWorktreeLabel(member,state.catalog?.worktrees).name:'未知工作树';
     const sourceLabel=duplicate?(repo?.code||repo?.name||tab.repositoryId)+' · '+worktreeName+(tab.commitHash?' · '+tab.commitHash.slice(0,7):''):tab.commitHash?tab.commitHash.slice(0,7):'';
     return {key:tab.key,kind:/\.md$/i.test(tab.path)?'doc' as const:'svc' as const,
-      title:(repo?.name||'')+' / '+tab.path+' · '+worktreeName+' · '+(tab.commitHash||member?.path||'当前文件'),
+      title:(repo?codeRepositoryLabel(repo):'')+' / '+tab.path+' · '+worktreeName+' · '+(tab.commitHash||member?.path||'当前文件'),
       label:<>{name}{sourceLabel&&<Tag color={tab.commitHash?'gold':undefined}>{sourceLabel}</Tag>}</>,
       accessibleLabel:name+(sourceLabel?' '+sourceLabel:''),closeLabel:'关闭文件 '+tab.path};
   });
-  const repositoryOptions=(state.catalog?.repositories||[]).map(repo=>({value:repo.id,label:repo.name}));
+  const repositoryOptions=(state.catalog?.repositories||[]).map(repo=>({value:repo.id,label:codeRepositoryLabel(repo)}));
   const singleRepository=state.scope.length===1;
   const worktreeMembers=(state.catalog?.worktrees||[]).filter(member=>singleRepository&&member.repositoryId===state.scope[0]);
   const selectedWorktree=singleRepository&&state.sources.length===1?state.sources[0].member:undefined;
@@ -136,7 +136,7 @@ export function CodeExplorerPage() {
       {state.catalog?.repositories.length===0&&<Empty description="工作空间尚未登记代码库" />}
       {state.catalog&&state.catalog.repositories.length>0&&!state.sources.length&&<div className="code-range-outside" role="status">所选代码库与工作树没有共同目录，请调整筛选。</div>}
       <div className="object-tab-panel" id={panelId} role={active ? 'tabpanel' : undefined} aria-labelledby={active ? tabElementId(panelId, active.key) : undefined} tabIndex={active ? 0 : undefined}>
-      <RepositoryFileBrowser global readerActive={viewActive} defaultCollapsedTree revealSelectionRequest={state.selectionRequest} sidebarHost={host} treeRepositories={treeRepositories} files={files} repositoryName={selectedRepo?.name} repositoryId={active?.repositoryId} checkoutId={active?.checkoutId||undefined} observedDigest={currentText?undefined:file?.digest} observedRevision={currentText?editorSession?.file.revision||editable.file?.revision:file?.revision} observedAt={currentText?editorSession?.file.observedAt||editable.file?.observedAt:file?.observedAt} selectedRepositoryId={active?codeBrowserKey(active):undefined} selectedPath={active?.path||''} selectionKey={active?.key}
+      <RepositoryFileBrowser global readerActive={viewActive} defaultCollapsedTree revealSelectionRequest={state.selectionRequest} sidebarHost={host} treeRepositories={treeRepositories} files={files} repositoryName={selectedRepo?codeRepositoryLabel(selectedRepo):undefined} repositoryId={active?.repositoryId} checkoutId={active?.checkoutId||undefined} observedDigest={currentText?undefined:file?.digest} observedRevision={currentText?editorSession?.file.revision||editable.file?.revision:file?.revision} observedAt={currentText?editorSession?.file.observedAt||editable.file?.observedAt:file?.observedAt} selectedRepositoryId={active?codeBrowserKey(active):undefined} selectedPath={active?.path||''} selectionKey={active?.key}
         readerSurface={currentText ? editable.file ? <FileEditingPane file={{...editable.file,locationLabel:selectedMember?codeWorktreeLabel(selectedMember,state.catalog?.worktrees).name:editable.file.locationLabel}} editing={editing} active={viewActive} focusLine={active?.line} focusRequest={active?.focusRequest}
           toolbarEnd={<Button size="small" type="text" aria-label="刷新当前文件" icon={<ReloadOutlined />} loading={Boolean(active&&state.loading.includes(active.key))} onClick={()=>void state.refreshFile()} />}
           searchQuery={readQuery} onSelectLines={lines=>{if(active)setSelection({key:active.key,lines});}}

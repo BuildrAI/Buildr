@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { assertEditorText, assertVisibleSearchHit, codeEditor, codeMarkdown, createCodeReadAssertions, editorPosition, editorScroll } from './code-editor-assertions.ts';
+import { codeRepositoryLabel } from '../../src/features/code/code-source-labels.ts';
 export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,codeFixture}:any){
   const read = createCodeReadAssertions(page, workspaceUrl);
   t.after(() => read.dispose());
@@ -90,7 +91,7 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
       const controls=page.getByRole('region',{name:'代码库与工作树筛选',exact:true}),catalog=await readCatalog();
       assert.equal(await controls.getByRole('combobox').count(),2);assert.equal(await controls.getByRole('combobox').nth(1).isDisabled(),true);
       assert.equal(requests.filter(url=>url.pathname.endsWith('/code/directory')).length,0);await registeredRoots(catalog);
-      const secondary=catalog.repositories.find((repo:any)=>repo.id===codeFixture.secondRepositoryId);await selectFilter(0,secondary.name);
+      const secondary=catalog.repositories.find((repo:any)=>repo.id===codeFixture.secondRepositoryId);await selectFilter(0,codeRepositoryLabel(secondary));
       assert.equal(await controls.getByRole('combobox').nth(1).isEnabled(),true);
       const ids=await filterGroupIds();assert.deepEqual(new Set(ids),new Set(catalog.worktrees.filter((member:any)=>member.repositoryId===secondary.id&&member.available).map((member:any)=>member.id)));
       await expandRoot(secondary.id);await page.locator('.ant-tree-title').filter({hasText:/^src$/}).click();
@@ -159,7 +160,7 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
   await t.test('代码库限定实际工作树，同库切换保留已打开文件来源',async()=>{
     await page.goto(workspaceUrl+'/code/explorer');await page.locator('.repository-root-name').first().waitFor();const catalog=await readCatalog();
     const secondary=catalog.repositories.find((repo:any)=>repo.id===codeFixture.secondRepositoryId);
-    await selectFilter(0,secondary.name);
+    await selectFilter(0,codeRepositoryLabel(secondary));
     const members=catalog.worktrees.filter((member:any)=>member.repositoryId===secondary.id),native=members.find((member:any)=>member.kind==='worktree'),task=members.find((member:any)=>member.groupId===codeFixture.worktreeGroupId);
     assert.ok(native&&task);assert.equal((await filterOptionNames(0)).length,catalog.repositories.length);
     await selectSearchMode('内容');
@@ -186,7 +187,7 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
       await page.getByRole('button',{name:'刷新展开目录',exact:true}).click();const fresh=await(await freshResponse).json();assert.ok(fresh.worktrees.some((member:any)=>member.id===added.id));
       const lateMember=fresh.worktrees.find((member:any)=>member.id===added.id);
       const oldResponse=page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith('/code/repositories'));release();await oldResponse;
-      const repo=fresh.repositories.find((repo:any)=>repo.id===lateMember.repositoryId);await selectFilter(0,repo.name);assert.ok((await filterGroupIds()).includes(lateMember.id));await noOverflow();
+      const repo=fresh.repositories.find((repo:any)=>repo.id===lateMember.repositoryId);await selectFilter(0,codeRepositoryLabel(repo));assert.ok((await filterGroupIds()).includes(lateMember.id));await noOverflow();
     }finally{release();await page.unroute('**/code/repositories**',delayOld);}
   });
   await t.test('真实代码页面：目录读取、完整文件、内容搜索、文档链接与图片',async()=>{

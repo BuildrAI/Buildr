@@ -6,6 +6,7 @@ import { runSourceControlLiveRefreshJourney } from './source-control-live-refres
 import { runSourceControlSourceSelectionJourney } from './source-control-source-selection-journey.ts';
 import { runSourceControlSourceFeedbackJourney } from './source-control-source-feedback-journey.ts';
 import { runSourceControlRefreshIntegrationJourney } from './source-control-refresh-integration-journey.ts';
+import { codeRepositoryLabel } from '../../src/features/code/code-source-labels.ts';
 
 /** The host owns isolated Git data; every successful read below comes from production HTTP. */
 export async function runSourceControlJourney({t, page, workspaceUrl, capture, fixture, expectedBrowserErrors}: any) {
@@ -154,7 +155,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     const observed = await catalog();
     const repository = observed.repositories.find((item: any) => item.worktrees.some((worktree: any) => worktree.location === fixture.location));
     assert.ok(repository); mainRepositoryId = repository.id; mainWorktreeId = repository.worktrees.find((item: any) => item.location === fixture.location).worktreeId;
-    await root().getByRole('button', {name: '查看主工作树 · ' + repository.name, exact: true}).click();
+    await root().getByRole('button', {name: '查看主工作树 · ' + codeRepositoryLabel(repository), exact: true}).click();
   };
   const areaValue: Record<string,string> = {'未暂存': 'unstaged', '已暂存': 'staged', '未跟踪': 'untracked'};
   const checkoutGroup = (id: string) => root().locator('[data-change-worktree="' + id + '"]');
@@ -208,7 +209,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     const observed = await catalog();
     const repository = observed.repositories.find((item: any) => item.worktrees.some((worktree: any) => worktree.worktreeId === mainWorktreeId));
     assert.ok(repository, '两层改动必须属于实际登记实例');
-    await root().locator('.source-control-repository-copy').filter({has: page.getByText(repository.name, {exact: true})}).click();
+    await root().locator('.source-control-repository-copy').filter({has: page.getByText(codeRepositoryLabel(repository), {exact: true})}).click();
     await root().locator('.source-control-browse-tabs').getByText('提交历史', {exact: true}).click();
     await openCommitFile(fixture.commitHash, fixture.path);
     await diff().getByText('export const explorerAnswer = 1;', {exact: false}).waitFor();
@@ -371,7 +372,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
       await open(); const imageCatalog = await catalog();
       const identify = (checkout: any) => {
         const repository = imageCatalog.repositories.find((item: any) => item.worktrees.some((worktree: any) => worktree.location === checkout.location)); assert.ok(repository);
-        return {...checkout,repositoryId:repository.id,repositoryName:repository.name,worktreeId:repository.worktrees.find((worktree: any) => worktree.location === checkout.location).worktreeId};
+        return {...checkout,repositoryId:repository.id,repositoryName:repository.name,repositoryLabel:codeRepositoryLabel(repository),worktreeId:repository.worktrees.find((worktree: any) => worktree.location === checkout.location).worktreeId};
       };
       const primary = identify(images.primary), peerImage = identify(images.peer), versions = images.versions;
       const preview = () => root().getByRole('region', {name: '图片差异', exact: true});
@@ -734,7 +735,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
       const repository = observed.repositories.find((repo: any) => repo.worktrees.some((worktree: any) => worktree.location === item.location));
       assert.ok(repository, '真实 linked 工作树应被所属登记库发现');
       const worktree = repository.worktrees.find((value: any) => value.location === item.location);
-      return {...item, repositoryId: repository.id, repositoryName: repository.name, worktreeId: worktree.worktreeId, observed: worktree};
+      return {...item, repositoryId: repository.id, repositoryName: repository.name, repositoryLabel: codeRepositoryLabel(repository), worktreeId: worktree.worktreeId, observed: worktree};
     });
   };
   const expanded = async (button: any) => { if (await button.getAttribute('aria-expanded') === 'false') await button.click(); };
@@ -742,7 +743,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     const restore = root().getByRole('button', {name: '展开代码库列表', exact: true});
     if (await restore.count()) await restore.click();
     const repository = root().locator('[data-source-repository="' + worktree.repositoryId + '"]');
-    if (worktree.worktreeId === mainWorktreeId) await repository.getByRole('button', {name: '查看主工作树 · ' + worktree.repositoryName, exact: true}).click();
+    if (worktree.worktreeId === mainWorktreeId) await repository.getByRole('button', {name: '查看主工作树 · ' + worktree.repositoryLabel, exact: true}).click();
     else {
       await expanded(repository.locator('.source-control-repository-fold'));
       await repository.locator('[data-source-worktree="' + worktree.worktreeId + '"] .source-control-repository-copy').click();
@@ -842,7 +843,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
       }
       await capture(page, 'source-control-branch-progressive-clipping.png');
       await branch.click();
-      const clippedManager = page.getByRole('region', {name:'分支管理 · ' + value.repositoryName + ' · ' + sourceName, exact:true}); await clippedManager.waitFor();
+      const clippedManager = page.getByRole('region', {name:'分支管理 · ' + value.repositoryLabel + ' · ' + sourceName, exact:true}); await clippedManager.waitFor();
       await clippedManager.getByRole('button', {name:'管理 ' + value.branch, exact:true}).waitFor();
       await branch.press('Escape'); await clippedManager.waitFor({state:'hidden'}); assert.equal(await branch.getAttribute('aria-expanded'), 'false', '省略后的原分支按钮仍打开同一真实来源管理层');
       assert.equal((await setWidth(Math.ceil(required.full) + 12, 'full')).nameComplete, true);
@@ -871,7 +872,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
       await menuButton.focus(); await menuButton.press('Enter'); await menu().waitFor();
       for (const label of ['管理分支', '查看状态', '打开关联任务', '同步', '获取远程']) assert.equal(await menu().getByRole('menuitem', {name:label, exact:true}).count(), 1);
       await menu().getByRole('menuitem', {name:'管理分支', exact:true}).focus(); await page.keyboard.press('Enter');
-      const manager = page.getByRole('region', {name:'分支管理 · ' + value.repositoryName + ' · ' + sourceName, exact:true}); await manager.waitFor();
+      const manager = page.getByRole('region', {name:'分支管理 · ' + value.repositoryLabel + ' · ' + sourceName, exact:true}); await manager.waitFor();
       const branchSearch = manager.getByRole('textbox', {name:'搜索可用分支（Branch）', exact:true});
       await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '搜索可用分支（Branch）');
       assert.equal(await branchSearch.evaluate((element:HTMLElement) => document.activeElement === element), true, '隐藏分支的键盘菜单进入真实管理层');
@@ -1008,7 +1009,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
       await separator.dblclick();
     });
     await open();
-    const main = {...fixture, repositoryId: repository.id, repositoryName: repository.name, worktreeId: mainWorktreeId, branch: repository.worktrees.find((item: any) => item.worktreeId === mainWorktreeId).branch};
+    const main = {...fixture, repositoryId: repository.id, repositoryName: repository.name, repositoryLabel: codeRepositoryLabel(repository), worktreeId: mainWorktreeId, branch: repository.worktrees.find((item: any) => item.worktreeId === mainWorktreeId).branch};
     for (const value of [main, ...values]) {
       await selectFile(value, 'staged'); await assertFullVersion(value, 'staged', value.indexText);
       await selectFile(value, 'unstaged'); await assertFullVersion(value, 'unstaged', value.workingText);
@@ -1023,7 +1024,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     const movingRepository = root().locator('[data-source-repository="' + alpha.repositoryId + '"]');
     const alphaName = movingRepository.locator('[data-source-worktree="' + alpha.worktreeId + '"] .source-control-repository-copy');
     const betaName = movingRepository.locator('[data-source-worktree="' + beta.worktreeId + '"] .source-control-repository-copy');
-    const mainName = movingRepository.getByRole('button', {name: '查看主工作树 · ' + alpha.repositoryName, exact: true});
+    const mainName = movingRepository.getByRole('button', {name: '查看主工作树 · ' + alpha.repositoryLabel, exact: true});
     const locationCard = (location: string) => page.getByRole('article', {name: '工作树来源信息', exact: true}).filter({has: page.getByText(location, {exact: true})});
     const movementSeparator = root().getByRole('separator', {name: '调整源代码管理与阅读区宽度', exact: true});
     await root().locator('.code-location-summary').click();
@@ -1057,7 +1058,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     const locationInfo = page.getByRole('article', {name: '工作树来源信息', exact: true}); await locationInfo.waitFor(); await enterHoverCard(locationInfo);
     await assertHoverBesideList(locationInfo);
     assert.equal(await locationInfo.locator('.source-control-worktree-info-task').innerText(), '任务：浏览器任务');
-    assert.equal(await locationInfo.locator('.source-control-worktree-info-location').innerText(), alpha.repositoryName + ' · 工作树 · ' + alpha.observed.name);
+    assert.equal(await locationInfo.locator('.source-control-worktree-info-location').innerText(), alpha.repositoryLabel + ' · 工作树 · ' + alpha.observed.name);
     const path = locationInfo.locator('dd code').filter({hasText: alpha.location});
     assert.equal(await path.innerText(), alpha.location); await selectHoverText(path);
     await capture(page, 'source-control-fixture-worktree-text-selection.png');
@@ -1333,7 +1334,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await checkoutGroup(alpha.worktreeId).waitFor(); assert.equal(await root().locator('[data-change-worktree]:visible').count(), 1, '精确任务范围来自已核对evidence');
     await selectFile(alpha, 'unstaged');
     const repository = (await catalog()).repositories.find((item: any) => item.id === alpha.repositoryId);
-    await root().getByRole('button', {name: '查看主工作树 · ' + repository.name, exact: true}).click();
+    await root().getByRole('button', {name: '查看主工作树 · ' + codeRepositoryLabel(repository), exact: true}).click();
     assert.equal(await root().locator('[data-change-worktree]:visible').count(), 1);
     assert.equal(await checkoutGroup(mainWorktreeId).isVisible(), true);
     // Task preselection is retained locally; explicit refresh reconciles the shared
