@@ -70,6 +70,8 @@ const allowed: any = new Map([
     'verifyExistingAgentsCompatibility', 'runPackageWorkspaceSmoke', 'runPackageDomainIntegration',
     'runPackageAggregateSmoke',
   ])],
+  // ensure owns isolated clone staging, failure cleanup, and guarded publication to the repository source root.
+  ['src/modules/workspace/infrastructure/repository-clone-supervisor.ts', new Set(['ensure'])],
   ['src/modules/workspace/infrastructure/workspace-source-filesystem.ts', new Set(['withStaging', 'createWorkspaceSourceFilesystem'])],
   ['src/modules/workspace/application/workspace-operations.ts', new Set(['recoverWorkspaceMutation'])],
   ['src/modules/agent-assets/infrastructure/runtime/runtime-reconciler.ts', new Set(['reconcileRuntimePlan'])],

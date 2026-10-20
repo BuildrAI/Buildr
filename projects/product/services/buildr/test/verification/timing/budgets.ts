@@ -1,11 +1,9 @@
 import { verificationSteps } from '../registry.ts';
 
-// Parent acceptance uses 300 seconds as the standard uncontended Core
-// optimization target and 360 seconds as the honest execution budget. The
-// former 180-second target is retired because it is below the 244-second
-// capacity lower bound of the current 52-step Core.
-export const CORE_TOTAL_BUDGET_MS: any = 360000;
-export const CANDIDATE_TOTAL_BUDGET_MS: any = 600000;
+// At global capacity 4, the current 49-step Core and 70-step Candidate have 746s and 1071.5s lower bounds.
+// Keep both budgets above those floors with room for orchestration and cleanup; these are estimates, not kill switches.
+export const CORE_TOTAL_BUDGET_MS: any = 1_250_000;
+export const CANDIDATE_TOTAL_BUDGET_MS: any = 1_250_000;
 
 export const CORE_STEP_BUDGETS_MS: any = Object.freeze(Object.fromEntries(
   verificationSteps

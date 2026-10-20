@@ -652,6 +652,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     state.compatibility = compatibility; save();
     return compatibility.status === 'passed';
   };
+  let devDrift: any[] = [];
   const answer = (status: string, nextActions: string[] = [], extra: any = {}) => {
     if (options.detail !== 'full') {
       const { result: _result, run, selection, ...rest } = extra;
@@ -691,7 +692,6 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       run: runObservation.status === 'observed' ? runObservation.run : null, runObservation,
       ...(packagePublications ? { packagePublications } : {}) });
   }
-  let devDrift: any[] = [];
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const lock = `${file}.lock`;
   try { fs.writeFileSync(lock, `${process.pid}\n`, { flag: 'wx', mode: 0o600 }); }

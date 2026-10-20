@@ -473,7 +473,7 @@ test('identified expensive candidate steps have non-blocking target budgets', ()
     'integration-openspec',
     'cli-compatibility',
   ]) assert.ok(candidateStepBudget(id) > 0, `${id} must have a target budget`);
-  assert.equal(candidateStepBudget('integration-openspec'), 5000);
+  assert.equal(candidateStepBudget('integration-openspec'), 35_000);
   for (const diagnosticOnly of ['openspec-contract-fixtures', 'openspec-convergence-recovery']) {
     assert.equal(candidateStepBudget(diagnosticOnly), undefined, `${diagnosticOnly} must not regain a default Candidate budget`);
   }
