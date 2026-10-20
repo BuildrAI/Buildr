@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { Alert, App, Button, Empty, Input, Modal, Segmented, Space, Spin, Tag, Tooltip, Tree } from 'antd';
-import { CopyOutlined, DownOutlined, FileImageOutlined, FileTextOutlined, FolderOpenOutlined, FolderOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ReloadOutlined, RightOutlined, SearchOutlined } from '@ant-design/icons';
+import { Alert, App, Button, Empty, Input, Modal, Segmented, Select, Space, Spin, Tag, Tooltip, Tree } from 'antd';
+import { CopyOutlined, DownOutlined, EyeInvisibleOutlined, EyeOutlined, FileImageOutlined, FileTextOutlined, FolderOpenOutlined, FolderOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ReloadOutlined, RightOutlined, SearchOutlined } from '@ant-design/icons';
 import type { DataNode } from 'antd/es/tree';
 import { MarkdownHost } from '../../../components/MarkdownHost';
 import { ReadOnlyFileCodeEditor } from '../../../components/file-editing/ReadOnlyFileCodeEditor';
@@ -280,17 +280,16 @@ export function RepositoryFileBrowser(props: Props) {
     </header>
 </>;
   const tree = <>      <aside className="repository-browser-tree" data-prototype-position="source-tree">
-        <div className="repository-tree-heading"><strong>文件</strong>{!props.global&&<Tooltip title={treeHidden ? '展开目录' : '收起目录'}><Button type="text" size="small" aria-label={treeHidden ? '展开目录' : '收起目录'} icon={treeHidden ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => setTreeHidden(!treeHidden)} /></Tooltip>}</div>
+        <div className="repository-tree-heading"><strong>文件</strong><div className="repository-tree-heading-actions">{(props.global || !treeHidden) && <Tooltip title="包含当前目录中被 Git 忽略规则或常见构建目录排除的文件；点号开头不代表忽略。不会显示其他目录中的文件，Git 管理目录始终隐藏。"><Button size="small" type="text" aria-label={showIgnored ? '隐藏忽略文件' : '显示忽略文件'} icon={showIgnored ? <EyeInvisibleOutlined /> : <EyeOutlined />} onClick={() => {setShowIgnored(value => !value);props.onShowIgnored?.(!showIgnored);}} /></Tooltip>}{!props.global&&<Tooltip title={treeHidden ? '展开目录' : '收起目录'}><Button type="text" size="small" aria-label={treeHidden ? '展开目录' : '收起目录'} icon={treeHidden ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => setTreeHidden(!treeHidden)} /></Tooltip>}</div></div>
         {(props.global || !treeHidden) && <>
           <div className="repository-file-search" data-prototype-position="file-search">
-            <Input allowClear prefix={<SearchOutlined />} placeholder={searchMode==='name'?'搜索文件名，至少 2 个字符':'搜索内容，至少 2 个字符'} aria-label="搜索文件" value={query} onChange={event => changeQuery(event.target.value)} />
-            <div className="repository-search-options"><Segmented className="repository-search-mode" size="small" value={searchMode} options={[{ label: '文件名', value: 'name' }, { label: '内容', value: 'content' }]} onChange={value => setSearchMode(value as 'name' | 'content')} /><Tooltip title="包含当前目录中被 Git 忽略规则或常见构建目录排除的文件；点号开头不代表忽略。不会显示其他目录中的文件，Git 管理目录始终隐藏。"><Button size="small" type="text" onClick={() => {setShowIgnored(value => !value);props.onShowIgnored?.(!showIgnored);}}>{showIgnored ? '隐藏忽略文件' : '显示忽略文件'}</Button></Tooltip></div>
+            <Input allowClear prefix={<SearchOutlined />} suffix={<span className="repository-search-scope" onMouseDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}><Select aria-label="搜索范围" variant="borderless" size="small" value={searchMode} popupMatchSelectWidth={false} options={[{ label: '文件名', value: 'name' }, { label: '文件内容', value: 'content' }]} onChange={value => setSearchMode(value as 'name' | 'content')} /></span>} placeholder={searchMode === 'name' ? '搜索文件名' : '搜索文件内容'} aria-label="搜索文件" value={query} onChange={event => changeQuery(event.target.value)} />
           </div>
           <div className="repository-tree-body">
             {props.treeNotice}
             {props.unavailable ? <Alert type="warning" showIcon message="当前目录暂不可读取" description="其他文件入口仍可使用。" action={<Button size="small" onClick={()=>void refresh()}>重试</Button>} /> : searchTooShort ? <p className="repository-search-hint" role="status">输入至少 2 个字符开始搜索</p> : needle ? <div className="repository-search-results">
-              <p>{props.searchLoading ? '正在搜索…' : searchFiles.length+' 个匹配文件'+(searchMode==='content'?' · '+searchFiles.reduce((count,item)=>count+(item.occurrences?.length||0),0)+' 条匹配':'')+(props.searchIncomplete?'（搜索未完成）':'')}</p>
-              {!(props.searchResults || matches).length && !props.searchLoading && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={props.searchIncomplete ? '当前没有取得匹配结果' : '没有匹配文件'} />}
+              <p>{props.searchLoading ? (searchMode === 'name' ? '正在按文件名搜索…' : '正在按文件内容搜索…') : (searchMode === 'name' ? '文件名匹配 · ' : '内容匹配 · ') + searchFiles.length + ' 个文件' + (searchMode === 'content' ? ' · ' + searchFiles.reduce((count,item)=>count+(item.occurrences?.length||0),0) + ' 处' : '') + (props.searchIncomplete ? '（搜索未完成）' : '')}</p>
+              {!(props.searchResults || matches).length && !props.searchLoading && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={props.searchIncomplete ? '当前没有取得匹配结果' : searchMode === 'name' ? '没有匹配的文件名' : '没有匹配的文件内容'}>{searchMode === 'name' && <Button size="small" type="link" title={'在文件内容中搜索“' + searchQuery + '”'} onClick={() => setSearchMode('content')}>在文件内容中搜索</Button>}</Empty>}
               {searchFiles.map(item=>{
                 const key=treeKey(item.path,item.repositoryId),occurrences=item.occurrences||[],expanded=expandedMatches[key]??true;
                 const selected=item.path===props.selectedPath&&item.repositoryId===props.selectedRepositoryId;
