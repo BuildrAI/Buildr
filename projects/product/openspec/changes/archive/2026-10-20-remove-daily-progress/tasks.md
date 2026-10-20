@@ -45,6 +45,6 @@
 
 ## 验证
 
-- [ ] 全仓库搜索确认活跃引用清零（归档历史除外）
+- [x] 全仓库搜索确认活跃引用清零（归档历史除外）
 - [x] `services/buildr` 受影响测试与 `services/buildr-web` 测试通过；构建与类型检查通过
 - [x] `openspec validate remove-daily-progress --strict` 与 convergence preflight 通过
