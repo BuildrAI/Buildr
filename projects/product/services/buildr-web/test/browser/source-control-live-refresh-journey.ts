@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { codeRepositoryLabel } from '../../src/features/code/code-source-labels.ts';
 
 /** External filesystem/Git writes belong to the isolated host fixture. All UI observations use production HTTP. */
 export async function runSourceControlLiveRefreshJourney({t, page, workspaceUrl, capture, fixture, expectedBrowserErrors, scenario = (name: string, action: () => Promise<void>) => t.test(name, action)}: any) {
@@ -57,6 +58,20 @@ export async function runSourceControlLiveRefreshJourney({t, page, workspaceUrl,
       return view?.state.doc.toString() === expected && view.state.readOnly;
     }, text);
   };
+  const selectWorktree = async (repositories: any, member: any) => {
+    const repository = repositories.repositories.find((item: any) => item.id === member.repositoryId);
+    assert.ok(repository);
+    const repositorySelect = page.locator('.code-root-selectors .ant-select').nth(0);
+    await repositorySelect.locator('.ant-select-selector').click();
+    const repositoryListId = await repositorySelect.getByRole('combobox').getAttribute('aria-controls');
+    await page.locator('.ant-select-dropdown').filter({has: page.locator('[id="' + repositoryListId + '"]')}).getByText(codeRepositoryLabel(repository), {exact: true}).click();
+    await repositorySelect.getByRole('combobox').press('Escape');
+    const worktreeSelect = page.locator('.code-root-selectors .ant-select').nth(1);
+    await worktreeSelect.locator('.ant-select-selector').click();
+    const worktreeListId = await worktreeSelect.getByRole('combobox').getAttribute('aria-controls');
+    await page.locator('.ant-select-dropdown').filter({has: page.locator('[id="' + worktreeListId + '"]')}).locator('[data-code-worktree-id="' + member.id + '"]').click();
+    await worktreeSelect.getByRole('combobox').press('Escape');
+  };
 
   await scenario('自动刷新：未打开源代码管理时外部保存更新入口、文件和祖先提示且只读取受影响库', async () => {
     await fixture.withBranches(async (branches: any) => {
@@ -70,14 +85,7 @@ export async function runSourceControlLiveRefreshJourney({t, page, workspaceUrl,
       const repositories = await response.json();
       const member = repositories.worktrees.find((item: any) => item.path === branches.location);
       assert.ok(member);
-      const group = repositories.worktreeGroups.find((item: any) => item.id === member.groupId);
-      assert.ok(group);
-      const selector = page.locator('.code-root-selectors .ant-select').nth(1);
-      await selector.locator('.ant-select-selector').click();
-      const listId = await selector.getByRole('combobox').getAttribute('aria-controls');
-      const options = page.locator('.ant-select-dropdown').filter({has: page.locator('[id="' + listId + '"]')});
-      await options.getByText(group.name, {exact: true}).click();
-      await selector.getByRole('combobox').press('Escape');
+      await selectWorktree(repositories, member);
       await page.getByRole('textbox', {name: '搜索文件', exact: true}).click();
       const root = page.locator('.repository-root-name[data-repository-id="' + member.repositoryId + '"]');
       await root.waitFor();
@@ -122,12 +130,7 @@ export async function runSourceControlLiveRefreshJourney({t, page, workspaceUrl,
       const response=await page.request.get(api+'/code/repositories');assert.equal(response.status(),200);
       const repositories=await response.json(),member=repositories.worktrees.find((item:any)=>item.path===branches.location);
       assert.ok(member);
-      const group=repositories.worktreeGroups.find((item:any)=>item.id===member.groupId);assert.ok(group);
-      const selector=page.locator('.code-root-selectors .ant-select').nth(1);
-      await selector.locator('.ant-select-selector').click();
-      const listId=await selector.getByRole('combobox').getAttribute('aria-controls');
-      await page.locator('.ant-select-dropdown').filter({has:page.locator('[id="'+listId+'"]')}).getByText(group.name,{exact:true}).click();
-      await selector.getByRole('combobox').press('Escape');
+      await selectWorktree(repositories,member);
       await page.getByRole('textbox',{name:'搜索文件',exact:true}).click();
       const root=page.locator('.repository-root-name[data-repository-id="'+member.repositoryId+'"]');
       const rootNode=root.locator('xpath=ancestor::*[contains(@class,"ant-tree-treenode")][1]');
