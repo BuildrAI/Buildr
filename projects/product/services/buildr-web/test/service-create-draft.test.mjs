@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { serviceCreateDraft, serviceCreatePayload } from '../src/features/service/components/service-create-draft.ts';
+import { serviceCreateDraft, serviceCreatePayload } from '../src/features/workspace/components/service-create-draft.ts';
 
 const base = { name: ' 原奶小程序供应商端 ', code: 'fe-milk-supplier-miniprogram', description: '', type: 'service', directoryMode: 'create', projectCode: 'milk' };
 
@@ -14,6 +14,7 @@ test('repositoryId 已选：只携带 repositoryId + modulePath，剥离目录�
   assert.equal(payload.projectCode, undefined);
   assert.equal(payload.repository, undefined);
   assert.equal(payload.name, '原奶小程序供应商端');
+  assert.equal(payload.projectIds, undefined);
 });
 
 test('repositoryId 已选：模块路径保留库内相对路径', () => {
@@ -41,6 +42,18 @@ test('代码库留空：维持目录模式与项目语义', () => {
   assert.equal(payload.projectCode, 'milk');
   assert.equal(payload.modulePath, undefined);
   assert.equal(payload.repository, undefined);
+  assert.deepEqual(payload.projectIds, ['milk']);
+});
+
+test('上一级项目并入 projectIds 且去重，显式空数组表达不关联', () => {
+  const payload = serviceCreatePayload({ ...base, repositoryId: 'repo-1', projectIds: ['shared'] }, { newRepository: false, repository: {}, projectCode: 'milk' });
+  assert.deepEqual(payload.projectIds, ['milk', 'shared']);
+  const duplicate = serviceCreatePayload({ ...base, repositoryId: 'repo-1', projectIds: ['milk'] }, { newRepository: false, repository: {}, projectCode: 'milk' });
+  assert.deepEqual(duplicate.projectIds, ['milk']);
+  const none = serviceCreatePayload({ ...base, repositoryId: 'repo-1', projectIds: [] }, { newRepository: false, repository: {}, projectCode: 'milk' });
+  assert.deepEqual(none.projectIds, ['milk']);
+  const explicit = serviceCreatePayload({ ...base, repositoryId: 'repo-1', projectIds: [] }, { newRepository: false, repository: {} });
+  assert.deepEqual(explicit.projectIds, []);
 });
 
 test('取消草稿：归一输入但保留隐藏区域选择', () => {

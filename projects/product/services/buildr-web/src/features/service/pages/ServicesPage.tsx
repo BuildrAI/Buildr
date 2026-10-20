@@ -12,7 +12,7 @@ import { workspaceHref } from '../../../lib/labels';
 import { useAssetCatalog } from '../../workspace/components/useAssetCatalog';
 import { AssetEditDrawer } from '../../workspace/components/AssetEditDrawer';
 import { assetCatalogApi, type ServiceDraft } from '../../workspace/api/asset-catalog-api';
-import { ServiceCreateDrawer } from '../components/ServiceCreateDrawer';
+import { ServiceCreateDrawer } from '../../workspace/components/ServiceCreateDrawer';
 export function ServicesPage() {
   const { workspaceId } = useAppShell(), navigate = useNavigate(), tabs = useWorkspacePageTabs(workspaceId), listing = useAssetList('services');
   const [editing, setEditing] = useState<string | null>(null), [creating, setCreating] = useState(false), [draft, setDraft] = useState<ServiceDraft>();

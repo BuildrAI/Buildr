@@ -26,7 +26,7 @@ import { updateMarkdownImageFailures, type MarkdownImageFailures, type MarkdownI
 import { workspaceHref } from '../../../lib/labels';
 import { KnowledgeBrowser } from '../../knowledge/components/KnowledgeBrowser';
 import { useMarkdownDocumentViewer } from '../../../lib/useMarkdownDocumentViewer';
-import { ProjectEditDrawer } from '../components/ProjectEditDrawer';
+import { AssetEditDrawer } from '../../workspace/components/AssetEditDrawer';
 import { useWorkspacePageTabs, WorkspaceViewActiveContext, WorkspaceViewTransientContext } from '../../../app/pageTabs';
 import { useWorkspacePaneHost } from '../../../app/WorkspacePaneHost';
 import { useKnowledgeNavigation } from '../../knowledge/useKnowledgeNavigation';
@@ -363,21 +363,26 @@ export function ProjectDetailPage() {
         </div>
       </WorkspaceStage>
 
-      <ProjectEditDrawer
-        open={editOpen}
-        projectCode={editOpen ? projectCode : null}
+      {data && editOpen && <AssetEditDrawer
+        catalog={data}
+        kind="project"
+        id={data.projects.find(item => item.code === projectCode)?.id || projectCode}
         onClose={() => setEditOpen(false)}
         onSaved={(saved) => {
           reload();
-          setBreadcrumbParts([workspaceName || '工作空间', '项目', saved.name]);
+          const updated = saved.projects.find(item => item.id === project?.id || item.code === projectCode);
+          const nextCode = updated?.code || projectCode;
+          const nextName = updated?.name || project?.name || projectCode;
+          setBreadcrumbParts([workspaceName || '工作空间', '项目', nextName]);
           pageTabs.register({
-            key: `proj:${projectCode}`,
+            key: `proj:${nextCode}`,
             kind: 'proj',
-            title: saved.name,
-            path: href(`/projects/${encodeURIComponent(projectCode)}`),
+            title: nextName,
+            path: href(`/projects/${encodeURIComponent(nextCode)}`),
           });
+          if (nextCode !== projectCode) navigate(href(`/projects/${encodeURIComponent(nextCode)}`), { replace: true });
         }}
-      />
+      />}
     </>
   );
 }

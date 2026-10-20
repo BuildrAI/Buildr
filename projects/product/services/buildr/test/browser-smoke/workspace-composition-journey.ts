@@ -50,8 +50,10 @@ export async function runWorkspaceCompositionJourney({ t, page, runtime, workspa
     assert.equal(await page.getByRole('combobox', { name: '关联服务', exact: true }).count(), 1, '关联操作保留在组成图工具栏');
     await graph.getByRole('button', { name: '总览共享服务，查看详情', exact: true }).click();
     await page.locator('.pane-right:visible').getByRole('heading', { name: '总览共享服务', exact: true }).waitFor();
+    const sourceControlRead = page.waitForResponse((response: any) => response.url().includes(`/code/source-control?repositoryId=${repositoryId}&observation=shared`));
     await graph.getByRole('button', { name: '总览代码，查看详情', exact: true }).click();
     await page.locator('.pane-right:visible').getByRole('heading', { name: '总览代码', exact: true }).waitFor();
+    assert.equal((await sourceControlRead).status(), 200, '代码库共享观察应在项目清单冲突注入前完成');
     assert.equal(await page.locator('.pane-right:visible [role=tab]').count(), 2);
     const file = path.join(workspaceRoot, 'projects/manifest.yml');
     fs.appendFileSync(file, '\n');

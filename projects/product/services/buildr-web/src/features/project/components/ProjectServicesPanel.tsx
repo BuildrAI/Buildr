@@ -5,7 +5,7 @@ import { useAppShell } from '../../../app/AppShellContext';
 import { workspaceHref } from '../../../lib/labels';
 import { assetCatalogApi, type AssetCatalog, type ServiceDraft } from '../../workspace/api/asset-catalog-api';
 import { CatalogMigration } from '../../workspace/components/CatalogMigration';
-import { ServiceCreateDrawer } from '../../service/components/ServiceCreateDrawer';
+import { ServiceCreateDrawer } from '../../workspace/components/ServiceCreateDrawer';
 import './project-services-panel.css';
 type Props = { projectCode: string; data: AssetCatalog; setData: (catalog: AssetCatalog) => void; compact?: boolean; onReload?(): void };
 export function ProjectServicesPanel({ projectCode, data, setData, compact, onReload }: Props) {

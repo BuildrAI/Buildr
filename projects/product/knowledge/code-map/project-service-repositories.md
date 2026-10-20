@@ -8,7 +8,7 @@
 
 **修改路径**：页面或命令行（CLI）表达操作 → 接口解析输入 → 应用重读版本与登记 → 领域规则检查引用 → 数据访问保存唯一清单 → 页面重新读取。
 
-**代码定位**：项目中的服务标识 → 全局服务身份 → 唯一代码库实例 → 实例目录加模块路径。声明修改不隐式克隆、搬移文件或切换 Git 分支。
+**代码定位**：项目中的服务标识 → 全局服务身份 → 唯一代码库实例 → 实例目录加模块路径。代码库来源、路径和分支声明修改不隐式克隆、搬移文件或切换 Git 分支；项目/服务改编码会在安全条件满足时事务性移动相应的受管目录，目标占用时拒绝且不覆盖。项目目录移动会改写目录内已登记代码库的 `source.path` 前缀；祖先代码库中指向移动项目的服务 `modulePath` 前缀也会同步改写，随项目移动的嵌套代码库则保留相对模块路径。
 
 | 职责 | 具体负责什么 |
 | --- | --- |
@@ -16,7 +16,7 @@
 | 应用服务（Application） | 组织创建、关联、修改、删除和来源解析，检查当前版本与其他引用方，决定本次事务范围。 |
 | 领域模型（Domain） | 校验项目、服务、代码库身份及关系；服务必须指向一个实例，模块路径保持在合法范围。 |
 | 数据访问（Persistence） | 读取并保存三个唯一登记清单，保留兼容读取。当前是文件持久化，没有对象关系映射（ORM）数据库表。 |
-| 前端 | 关联面板表达当前项目的服务选择；对象详情展示职责与代码来源。页面不自行推断身份或访问本机代码。 |
+| 前端 | `ProjectServicesPanel` 展示项目服务关联；工作空间资产目录拥有统一 `AssetEditDrawer`、项目服务多选与新增草稿、服务新增表单。页面复用同一目录客户端，不自行推断身份或直接访问本机代码。 |
 
 ## 到哪里看具体实现？
 
@@ -46,6 +46,9 @@
       - `components/` — 资产交互组件
         - [WorkspaceComposition.tsx](../../services/buildr-web/src/features/workspace/components/WorkspaceComposition.tsx) — 真实和模拟入口共用组成展示、搜索、聚焦和关联强调
         - [useWorkspaceComposition.ts](../../services/buildr-web/src/features/workspace/components/useWorkspaceComposition.ts) — 当前工作空间读取、更新通知及局部失败保留
+        - [AssetEditDrawer.tsx](../../services/buildr-web/src/features/workspace/components/AssetEditDrawer.tsx) — 项目、服务与代码库共用的版本保护编辑入口
+        - [ProjectServiceSelection.tsx](../../services/buildr-web/src/features/workspace/components/ProjectServiceSelection.tsx) — 项目服务多选与同事务新增草稿
+        - [ServiceCreateDrawer.tsx](../../services/buildr-web/src/features/workspace/components/ServiceCreateDrawer.tsx) — 服务单项目归属与代码库选择
         - [AssetHome.tsx](../../services/buildr-web/src/features/workspace/components/AssetHome.tsx) — 服务与代码库的同一详情
 
 实际登记保存在用户工作空间根的 `projects/manifest.yml`、`services/manifest.yml` 和 `repositories/manifest.yml`；它们不属于这里展示的产品源码目录。上面的数据访问文件解释如何读写这些清单，不复制某台机器的内容。
@@ -55,7 +58,6 @@
 改变引用规则先核对规范、领域校验和应用用例；修改存储兼容看数据访问；调整展示看对应前端组件。解除一方引用应保留共享身份和代码，删除登记也不等于删除源码。代表行为见[关系与分支回归](../../services/buildr/test/integration/asset-relationships.test.ts)。
 
 代码职责组织由[代码架构（code-architecture）](../../services/buildr/resources/workspace/skills/buildr/code-architecture/SKILL.md)指导，地图表达由[代码地图制作（code-map）](../../services/buildr/resources/workspace/skills/buildr/code-map/SKILL.md)负责，事实变化后的相关表达由[当前知识维护（current-knowledge-maintenance）](../../services/buildr/resources/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md)组织核对。这里说明专业方法，不声称每个历史文件都由这些方法产生。
-
 
 ## 这个主题的成果文件
 

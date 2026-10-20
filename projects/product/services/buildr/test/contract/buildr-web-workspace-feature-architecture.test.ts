@@ -15,10 +15,11 @@ test('Workspace、Project与Service前端保持独立Feature并共享唯一Works
     'features/workspace/pages/WorkspacesPage.tsx',
     'features/project/pages/ProjectsPage.tsx',
     'features/project/pages/ProjectDetailPage.tsx',
-    'features/project/components/ProjectEditDrawer.tsx',
+    'features/workspace/components/AssetEditDrawer.tsx',
     'features/service/pages/ServicesPage.tsx',
     'features/service/pages/ServiceDetailPage.tsx',
-    'features/service/components/ServiceEditDrawer.tsx',
+    'features/workspace/components/ServiceCreateDrawer.tsx',
+    'features/workspace/components/ProjectServiceSelection.tsx',
     'lib/useMarkdownDocumentViewer.ts',
     'features/workspace/api/workspace-api.ts',
     'features/project/api/project-api.ts',
@@ -31,6 +32,10 @@ test('Workspace、Project与Service前端保持独立Feature并共享唯一Works
     'pages/ProjectEditPage.tsx', 'pages/ProjectsSection.tsx', 'pages/ServicesPage.tsx',
     'pages/ServiceDetailPage.tsx', 'pages/ServiceEditPage.tsx',
     'components/ProjectEditModal.tsx', 'components/ServiceEditModal.tsx',
+    'features/service/components/ServiceEditDrawer.tsx',
+    'features/service/components/ServiceCreateDrawer.tsx',
+    'features/service/components/service-create-draft.ts',
+    'features/project/components/ProjectServiceSelection.tsx',
   ];
   for (const relative of retired) assert.equal(fs.existsSync(path.join(webSource, relative)), false, `legacy owner remains: ${relative}`);
 
