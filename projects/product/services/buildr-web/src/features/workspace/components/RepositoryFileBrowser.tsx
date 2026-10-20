@@ -79,7 +79,6 @@ type Props = {
   observedAt?: string;
   selectionKey?: string;
   defaultCollapsedTree?: boolean;
-  collapseTreeKey?: string;
   revealSelectionRequest?: number;
   markdownOptions?: MarkdownRenderOptions;
   markdownRevision?: string;
@@ -150,9 +149,6 @@ export function RepositoryFileBrowser(props: Props) {
     setRaw(false);
     setRange(null);
   }, [props.resetKey]);
-  useEffect(() => {
-    if (props.global && props.defaultCollapsedTree && props.collapseTreeKey !== undefined) setExpanded([]);
-  }, [props.global, props.defaultCollapsedTree, props.collapseTreeKey]);
   useEffect(() => {
     setOpenPaths(paths => paths.includes(props.selectedPath) ? paths : [...paths, props.selectedPath]);
     setRange(null);
@@ -307,7 +303,8 @@ export function RepositoryFileBrowser(props: Props) {
                   {occurrences.length>0&&expanded&&<div className="repository-search-occurrences">{occurrences.map(match=><button type="button" key={match.line} className={'repository-search-occurrence'+(selected&&match.line===props.focusLine?' selected':'')} data-match-line={match.line} title={match.line+': '+match.excerpt} onClick={()=>selectTreeFile(item,match.line)}><span className="repository-match-line">{match.line}</span><code><RepositorySearchText text={match.excerpt} query={searchQuery} /></code></button>)}</div>}
                 </section>;
               })}
-            </div> : <Tree.DirectoryTree expandAction="click" blockNode showIcon loadedKeys={props.loadedDirectoryKeys} loadData={props.onLoadDirectory ? node => {const [repositoryId,...rest]=String(node.key).split('::');return props.onLoadDirectory!(repositoryId,rest.join('::'));} : undefined} expandedKeys={expanded} onExpand={keys => setExpanded(keys.map(String))} selectedKeys={[treeKey(props.selectedPath, props.selectedRepositoryId)]} treeData={treeData} onSelect={keys => { const item = visible.find(item => treeKey(item.path, item.repositoryId) === String(keys[0] || '')); if (item && !item.directory && !item.link) selectTreeFile(item); }} />}
+            </div> : null}
+            <Tree.DirectoryTree motion={props.global?{motionName:'',motionAppear:false,motionEnter:false,motionLeave:false}:undefined} style={props.unavailable || searchTooShort || needle ? {display:'none'} : undefined} expandAction="click" blockNode showIcon loadedKeys={props.loadedDirectoryKeys} loadData={props.onLoadDirectory ? node => {const [repositoryId,...rest]=String(node.key).split('::');return props.onLoadDirectory!(repositoryId,rest.join('::'));} : undefined} expandedKeys={expanded} onExpand={keys => setExpanded(keys.map(String))} selectedKeys={[treeKey(props.selectedPath, props.selectedRepositoryId)]} treeData={treeData} onSelect={keys => { const item = visible.find(item => treeKey(item.path, item.repositoryId) === String(keys[0] || '')); if (item && !item.directory && !item.link) selectTreeFile(item); }} />
           </div>
           <footer className="repository-tree-footer">{props.treeRepositories ? new Set(props.treeRepositories.map(repo=>repo.repositoryId||repo.id)).size + ' 个代码库 · '+props.treeRepositories.length+' 个目录 · ' : ''}{visible.filter(item=>!item.directory).length} 个已加载文件 · {props.readerSurface ? props.historical ? '历史只读' : '当前文本可编辑' : '只读'}</footer>
         </>}

@@ -101,7 +101,7 @@ export function createCodeApplication(dependencies:CodeDependencies) {
     const worktreeCatalog=readCodeWorktreeCatalog(root,scope.repositories,{...dependencies,observedCommonDirectory:repository=>repositoryCommonDirectories.get(repository)},taskId);
     return {...scope,...worktreeCatalog,diagnostics:[...scope.diagnostics,...worktreeCatalog.diagnostics]};
   }
-  function source(root:string,input:CodeInput):CodeSource {
+  function source(root:string,input:CodeInput,registeredRead=false):CodeSource {
     const catalog=dependencies.assetCatalog(root),repo=catalog.repositories.find(r=>r.id===input.repositoryId);
     if(!repo)throw codeFailure('code_repository_not_registered','代码库不在当前工作空间的登记范围内。',404);
     let location=dependencies.resolveSourceRoot(root,repo.source),kind:CodeSource['kind']='default';
@@ -118,15 +118,22 @@ export function createCodeApplication(dependencies:CodeDependencies) {
       checkoutId=member.worktreeId;worktreeGroupId=member.isRegistered?'main':'worktree:'+member.worktreeId;sourceTaskId=null;
     }else if(input.checkoutId!==undefined&&!input.commitHash){
       if(!/^checkout-[a-f0-9]{64}$/.test(input.checkoutId))throw codeFailure('code_checkout_invalid','检出目录身份无效。');
-      const catalog=readCodeWorktreeCatalog(root,[{id:repo.id,name:repo.name,location,available:true}],dependencies,input.taskId);
-      const member=catalog.worktrees.find(item=>item.id===input.checkoutId);
-      if(!member?.available){
-        const incomplete=catalog.diagnostics.some(item=>['code_worktrees_truncated','code_worktrees_unavailable','code_worktree_unavailable','code_worktree_identity_changed'].includes(item.code));
-        if(incomplete)throw codeFailure('code_checkout_unconfirmed','本次目录观察未完成或达到上限，尚未确认所选检出目录；请重试后再判断目录是否存在。',503);
-        throw codeFailure('code_checkout_unavailable','所选检出目录已不存在或身份已变化，请重新选择目录。',404);
+      // An exact registered read needs this checkout's current identity, not a
+      // fresh discovery of every peer and unrelated task. Writes keep their path.
+      const registeredCheckoutId=registeredRead&&!input.taskId?gitCheckoutReadId(registeredLocation):null;
+      if(input.checkoutId===registeredCheckoutId){
+        checkoutId=registeredCheckoutId;worktreeGroupId='main';sourceTaskId=null;
+      }else{
+        const catalog=readCodeWorktreeCatalog(root,[{id:repo.id,name:repo.name,location,available:true}],dependencies,input.taskId);
+        const member=catalog.worktrees.find(item=>item.id===input.checkoutId);
+        if(!member?.available){
+          const incomplete=catalog.diagnostics.some(item=>['code_worktrees_truncated','code_worktrees_unavailable','code_worktree_unavailable','code_worktree_identity_changed'].includes(item.code));
+          if(incomplete)throw codeFailure('code_checkout_unconfirmed','本次目录观察未完成或达到上限，尚未确认所选检出目录；请重试后再判断目录是否存在。',503);
+          throw codeFailure('code_checkout_unavailable','所选检出目录已不存在或身份已变化，请重新选择目录。',404);
+        }
+        location=member.path;kind=member.kind==='main'?'default':member.kind;
+        checkoutId=member.id;worktreeGroupId=member.groupId;sourceTaskId=member.taskId;
       }
-      location=member.path;kind=member.kind==='main'?'default':member.kind;
-      checkoutId=member.id;worktreeGroupId=member.groupId;sourceTaskId=member.taskId;
     }else if(input.taskId){
       dependencies.readTaskScope(root,taskActionId(input.taskId,'taskId'));
       // A pinned commit belongs to the registered Git object store; a retired task checkout cannot invalidate it.
@@ -225,9 +232,9 @@ export function createCodeApplication(dependencies:CodeDependencies) {
     syncContext: syncApplication.syncContext,
     sync: syncApplication.sync,
     repositories,
-    directory:(root:string,input:CodeInput)=>{const current=source(root,input),result=readCodeDirectory(current,input.path||'',Boolean(input.showIgnored));assertReadSource(current);return result;},
-    file:async(root:string,input:CodeInput)=>{const current=source(root,input),result=await readCodeFile(current,input.path||'',input);assertReadSource(current);return result;},
-    search:(root:string,input:CodeInput)=>{const current=source(root,input),result=searchCode(current,input.query||'',input.mode||'name',Boolean(input.showIgnored));assertReadSource(current);return result;},
+    directory:(root:string,input:CodeInput)=>{const current=source(root,input,true),result=readCodeDirectory(current,input.path||'',Boolean(input.showIgnored));assertReadSource(current);return result;},
+    file:async(root:string,input:CodeInput)=>{const current=source(root,input,true),result=await readCodeFile(current,input.path||'',input);assertReadSource(current);return result;},
+    search:(root:string,input:CodeInput)=>{const current=source(root,input,true),result=searchCode(current,input.query||'',input.mode||'name',Boolean(input.showIgnored));assertReadSource(current);return result;},
   });
 }
 export type CodeApplication = ReturnType<typeof createCodeApplication>;

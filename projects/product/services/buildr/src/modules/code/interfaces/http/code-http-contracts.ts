@@ -43,7 +43,7 @@ export const CODE_HTTP_REQUESTS=Object.freeze({
 const CODE_FILE_SCHEMAS = Object.freeze({
   repositories: schema('CodeRepositories', {
     repositories: { type: 'array', items: closed({ id: text, code: text, name: text, location: string, available: { type:'boolean' }, gitId:{type:['string','null']} }) },
-    worktrees:{type:'array',items:closed({id:checkoutId,repositoryId:text,groupId:text,path:text,branch:{type:['string','null']},kind:{enum:['main','task','worktree']},taskId:{type:['string','null']},available:{type:'boolean'}})},
+    worktrees:{type:'array',items:closed({id:checkoutId,repositoryId:text,groupId:text,path:text,branch:{type:['string','null']},kind:{enum:['main','task','worktree']},isMain:{type:'boolean'},taskId:{type:['string','null']},available:{type:'boolean'}},['id','repositoryId','groupId','path','branch','kind','taskId','available'])},
     worktreeGroups:{type:'array',items:closed({id:text,name:text,kind:{enum:['main','task','worktree']},taskId:{type:['string','null']},repositoryIds:{type:'array',items:text}})},
     selectedRepositoryIds: { type:'array',items:text },selectedWorktreeGroupIds:{type:'array',items:text},scopeReason: string, diagnostics: {type:'array',items:diagnostic} }),
   directory: schema('CodeDirectory', { source, path: string, entries: {type:'array',items:entry}, truncated: {type:'boolean'}, limit: {type:'integer'}, observedAt: text }),

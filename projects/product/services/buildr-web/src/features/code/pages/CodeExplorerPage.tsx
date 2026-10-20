@@ -107,7 +107,7 @@ export function CodeExplorerPage() {
   const groupOptions=[...state.filterOptions.groups.map(group=>{
     const label=codeWorktreeGroupLabel(state.catalog,group.id,state.scope);
     const count=state.catalog?.worktrees.filter(member=>member.groupId===group.id&&(!state.scope.length||state.scope.includes(member.repositoryId))).length||0;
-    return {value:group.id,label:label.name,role:label.role+(count>1?' · '+count+' 个目录':''),title:label.description};
+    return {value:group.id,label:label.name,role:[label.role,count>1?count+' 个目录':''].filter(Boolean).join(' · '),title:label.description};
   }),...(state.worktreeScope&&!state.filterOptions.groups.some(group=>group.id===state.worktreeScope)?[state.worktreeScope]:[]).map(id=>({value:id,label:id.startsWith('unavailable:')?'所选工作树暂不可用':state.catalog?codeWorktreeGroupLabel(state.catalog,id).name+'（不在所选代码库中）':'正在读取工作树…',role:'',title:'',disabled:true}))];
   const taskFallback=Boolean(state.entry?.taskId&&state.catalog&&!state.catalog.worktreeGroups.some(group=>group.kind==='task'&&group.taskId===state.entry!.taskId));
   const inScope=Boolean(active&&state.sources.some(item=>codeLocationKey(item.source)===codeLocationKey(active)));
@@ -117,10 +117,10 @@ export function CodeExplorerPage() {
     state.setSourceFilters(state.scope.length&&!state.scope.includes(active.repositoryId)?[...state.scope,active.repositoryId]:state.scope,member.groupId);
   };
   const context=<section className="code-root-selectors" aria-label="代码库与工作树筛选">
-    <Select mode="multiple" allowClear maxTagCount={1} aria-label="筛选代码库" placeholder="全部代码库" value={state.scope} onChange={state.setScope} options={repositoryOptions} />
-    <Select allowClear showSearch optionFilterProp="label" aria-label="筛选工作树" placeholder="选择工作树" value={state.worktreeScope} onChange={state.setWorktreeScope} options={groupOptions} optionRender={option=><div className="code-worktree-option" data-code-worktree-group={option.value} title={option.data.title}><span>{option.data.label}</span><small>{option.data.role}</small></div>} />
-    <small title={currentGroupLabel.description}>{currentGroupLabel.role}{state.sources.length>1?' · '+state.sources.length+' 个目录':''}</small>
-    <small>{taskFallback?'任务没有独立工作树，默认查看登记目录。':'代码库不选时查看全部；工作树不选时查看登记目录'}</small>
+    <Select mode="multiple" allowClear maxTagCount={1} classNames={{popup:{root:'code-source-picker-popup'}}} aria-label="筛选代码库" placeholder="全部代码库" value={state.scope} onChange={state.setScope} options={repositoryOptions} />
+    <Select allowClear showSearch optionFilterProp="label" classNames={{popup:{root:'code-source-picker-popup'}}} aria-label="筛选工作树" placeholder="选择工作树" value={state.worktreeScope} onChange={state.setWorktreeScope} options={groupOptions} optionRender={option=><div className="code-worktree-option" data-code-worktree-group={option.value} title={option.data.title}><span>{option.data.label}</span>{option.data.role&&<small>{option.data.role}</small>}</div>} />
+    {(currentGroupLabel.role||state.sources.length>1)&&<small className="code-source-summary" title={currentGroupLabel.description}>{[currentGroupLabel.role,state.sources.length>1?state.sources.length+' 个目录':''].filter(Boolean).join(' · ')}</small>}
+    <small>{taskFallback?'任务没有独立目录，可在上方选择其他目录。':'选择代码库和工作树，查看对应文件'}</small>
   </section>;
   return <div className="code-explorer-stage">
     <CodeTreePane hidden={treeHidden} onHost={setHost} storageKey={`buildr.code.tree-width.${workspaceId}`} />
@@ -136,7 +136,7 @@ export function CodeExplorerPage() {
       {state.catalog?.repositories.length===0&&<Empty description="工作空间尚未登记代码库" />}
       {state.catalog&&state.catalog.repositories.length>0&&!state.sources.length&&<div className="code-range-outside" role="status">所选代码库与工作树没有共同目录，请调整筛选。</div>}
       <div className="object-tab-panel" id={panelId} role={active ? 'tabpanel' : undefined} aria-labelledby={active ? tabElementId(panelId, active.key) : undefined} tabIndex={active ? 0 : undefined}>
-      <RepositoryFileBrowser global readerActive={viewActive} defaultCollapsedTree collapseTreeKey={viewActive && !location.state?.codeEntry?.file ? location.key : undefined} revealSelectionRequest={state.selectionRequest} sidebarHost={host} treeRepositories={treeRepositories} files={files} repositoryName={selectedRepo?.name} repositoryId={active?.repositoryId} checkoutId={active?.checkoutId||undefined} observedDigest={currentText?undefined:file?.digest} observedRevision={currentText?editorSession?.file.revision||editable.file?.revision:file?.revision} observedAt={currentText?editorSession?.file.observedAt||editable.file?.observedAt:file?.observedAt} selectedRepositoryId={active?codeBrowserKey(active):undefined} selectedPath={active?.path||''} selectionKey={active?.key}
+      <RepositoryFileBrowser global readerActive={viewActive} defaultCollapsedTree revealSelectionRequest={state.selectionRequest} sidebarHost={host} treeRepositories={treeRepositories} files={files} repositoryName={selectedRepo?.name} repositoryId={active?.repositoryId} checkoutId={active?.checkoutId||undefined} observedDigest={currentText?undefined:file?.digest} observedRevision={currentText?editorSession?.file.revision||editable.file?.revision:file?.revision} observedAt={currentText?editorSession?.file.observedAt||editable.file?.observedAt:file?.observedAt} selectedRepositoryId={active?codeBrowserKey(active):undefined} selectedPath={active?.path||''} selectionKey={active?.key}
         readerSurface={currentText ? editable.file ? <FileEditingPane file={{...editable.file,locationLabel:selectedMember?codeWorktreeLabel(selectedMember,state.catalog?.worktrees).name:editable.file.locationLabel}} editing={editing} active={viewActive} focusLine={active?.line} focusRequest={active?.focusRequest}
           searchQuery={readQuery} onSelectLines={lines=>{if(active)setSelection({key:active.key,lines});}}
           markdownRevision={Object.keys(media).join(',')} markdownOptions={markdownOptions} /> : editable.error ? <Alert type="error" showIcon message={editable.error} action={<Button onClick={()=>void state.refresh()}>重试</Button>} /> : <div className="repository-reading-empty"><Spin />正在读取文件…</div> : undefined}

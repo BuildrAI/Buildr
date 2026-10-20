@@ -16,9 +16,14 @@ export function codeFilterOptions(catalog: CodeCatalog | null, repositoryIds: st
   const groupCandidates = new Set((catalog?.worktrees || []).filter(member => member.available &&
     (!repositoryIds.length || repositoryIds.includes(member.repositoryId))).map(member => member.groupId));
   if (!repositoryIds.length || catalog?.repositories.some(repository => repositoryIds.includes(repository.id))) groupCandidates.add('main');
+  const groups = (catalog?.worktreeGroups || []).filter(group => groupCandidates.has(group.id));
+  const mainGroups = new Set(groups.filter(group => {
+    const members = codeFilterMembers(catalog, repositoryIds, group.id);
+    return members.length > 0 && members.every(member => member.isMain === true);
+  }).map(group => group.id));
   return {
     repositories: (catalog?.repositories || []).filter(repository => repositoryCandidates.has(repository.id)),
-    groups: (catalog?.worktreeGroups || []).filter(group => groupCandidates.has(group.id)),
+    groups: groups.sort((left, right) => Number(mainGroups.has(right.id)) - Number(mainGroups.has(left.id))),
   };
 }
 

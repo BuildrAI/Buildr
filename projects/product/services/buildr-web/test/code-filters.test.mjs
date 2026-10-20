@@ -15,6 +15,10 @@ test('代码库多选与单工作树联动，工作树不选时主目录',()=>{
   assert.deepEqual(codeFilterMembers(catalog,['web']).map(item=>item.id),['web-main']);
   assert.deepEqual(codeFilterOptions(catalog,[]).groups.map(item=>item.id),['main','task:feature','native']);
   assert.deepEqual(codeFilterMembers(catalog,['api'],'native'),[]);
+  const preview={...catalog,worktrees:catalog.worktrees.map(item=>({...item,isMain:item.groupId==='native'}))};
+  assert.deepEqual(codeFilterOptions(preview,[]).groups.map(item=>item.id),['native','main','task:feature']);
+  assert.deepEqual(codeFilterOptions(preview,['api']).groups.map(item=>item.id),['main','task:feature']);
+  assert.deepEqual(catalog.worktreeGroups.map(item=>item.id),['main','task:feature','native']);
 });
 test('同库多个目录与历史版本的浏览键不混用，树键不会含路径分隔符',()=>{
   const sources=[{repositoryId:'api',checkoutId:'api-main'},{repositoryId:'api',checkoutId:'api-task'},{repositoryId:'api',checkoutId:'api-task',commitHash:'a'.repeat(40)}];

@@ -11,18 +11,32 @@ import {CODE_LIMITS} from '../../src/modules/code/infrastructure/code-file-reade
 import {gitCheckoutReadId} from '../../src/infrastructure/git/checkout-read-identity.ts';
 import {createCodeCliContributions} from '../../src/modules/code/interfaces/cli/code-cli.ts';
 import {readCodeWorktreeCatalog} from '../../src/modules/code/infrastructure/code-worktree-catalog.ts';
-function fixture(t:any){
+function fixture(t:any,overrides:Partial<Parameters<typeof createCodeApplication>[0]>={}){
   const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-code-explorer-'));t.after(()=>fs.rmSync(temporary,{recursive:true,force:true}));
   const root=path.join(temporary,'repo');fs.mkdirSync(root);const git=(...args:string[])=>execFileSync('git',['-C',root,...args],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim();
   git('init');git('config','user.email','fixture@example.com');git('config','user.name','Fixture');
   fs.mkdirSync(path.join(root,'src'));fs.writeFileSync(path.join(root,'src','main.ts'),'export const answer = 1;\n');fs.writeFileSync(path.join(root,'README.md'),'# Code\n');fs.writeFileSync(path.join(root,'.gitignore'),'ignored.txt\n');fs.writeFileSync(path.join(root,'ignored.txt'),'ignored content');fs.writeFileSync(path.join(root,'wild*.txt'),'literal');fs.writeFileSync(path.join(root,'wild-other.txt'),'other');git('add','.');git('commit','-m','initial');const hash=git('rev-parse','HEAD');
   const repo={id:'repo-id',code:'repo',name:'Repo',source:{type:'local',path:root}};
   let evidence:any=null;
-  const app=createCodeApplication({assetCatalog:()=>({repositories:[repo],services:[{id:'s1',code:'one',repositoryId:repo.id,legacyRefs:['p/one']},{id:'s2',code:'two',repositoryId:repo.id,legacyRefs:['p/two']}],projects:[{id:'p-id',code:'p',serviceIds:['s1','s2']}]}),resolveSourceRoot:(_root,source)=>source.path,readTaskScope:(_root,id)=>(id==='empty'?{projects:[],services:[]}:id==='project'?{projects:['p'],services:[]}:id==='broken'?{projects:['p'],services:[{project:'p',service:'missing'}]}:{projects:['p'],services:[{project:'p',service:'one'},{project:'p',service:'two'}]}),readGitWorktreeEvidence:()=>evidence});
+  const app=createCodeApplication({assetCatalog:()=>({repositories:[repo],services:[{id:'s1',code:'one',repositoryId:repo.id,legacyRefs:['p/one']},{id:'s2',code:'two',repositoryId:repo.id,legacyRefs:['p/two']}],projects:[{id:'p-id',code:'p',serviceIds:['s1','s2']}]}),resolveSourceRoot:(_root,source)=>source.path,readTaskScope:(_root,id)=>(id==='empty'?{projects:[],services:[]}:id==='project'?{projects:['p'],services:[]}:id==='broken'?{projects:['p'],services:[{project:'p',service:'missing'}]}:{projects:['p'],services:[{project:'p',service:'one'},{project:'p',service:'two'}]}),readGitWorktreeEvidence:()=>evidence,...overrides});
   return {temporary,root,git,hash,app,input:{repositoryId:repo.id},setEvidence:(value:any)=>{evidence=value;}};
 }
 test('task preselection deduplicates services, expands project-only and leaves empty scope at all',async t=>{
   const f=fixture(t);assert.deepEqual(f.app.repositories(f.root,'task').selectedRepositoryIds,['repo-id']);assert.deepEqual(f.app.repositories(f.root,'project').selectedRepositoryIds,['repo-id']);assert.deepEqual(f.app.repositories(f.root,'empty').selectedRepositoryIds,[]);assert.equal(f.app.repositories(f.root,'broken').diagnostics[0].code,'code_task_service_unresolved');assert.ok(f.app.repositories(f.root).repositories[0].gitId?.startsWith('sha256-'));
+});
+test('exact default reads avoid unrelated task discovery and still reject a replaced checkout',async t=>{
+  let associationReads=0;
+  const f=fixture(t,{gitWorktreeEvidenceDirectories:()=>{associationReads++;return [];}}),checkoutId=gitCheckoutReadId(f.root);
+  const directory=f.app.directory(f.root,{...f.input,checkoutId,path:'src'});
+  assert.equal(directory.source.checkoutId,checkoutId);assert.equal(directory.source.worktreeGroupId,'main');assert.equal(directory.source.taskId,null);assert.equal(directory.source.kind,'default');
+  assert.ok(directory.entries.some(entry=>entry.path==='src/main.ts'));
+  assert.equal((await f.app.file(f.root,{...f.input,checkoutId,path:'src/main.ts'})).content,'export const answer = 1;\n');
+  assert.ok(f.app.search(f.root,{...f.input,checkoutId,query:'answer',mode:'content'}).matches.some(match=>match.path==='src/main.ts'));
+  assert.equal(associationReads,0,'明确默认目录读取不应扫描无关任务关联');
+  f.app.directory(f.root,{...f.input,checkoutId,taskId:'task'});assert.ok(associationReads>0,'明确任务继续核对其关联');
+  fs.renameSync(path.join(f.root,'.git'),path.join(f.temporary,'retired-git'));f.git('init');f.git('config','user.email','fixture@example.com');f.git('config','user.name','Fixture');f.git('add','.');f.git('commit','-m','replacement');
+  assert.throws(()=>f.app.directory(f.root,{...f.input,checkoutId,path:'src'}),(error:any)=>error.code==='code_checkout_unavailable');
+  const replacement=gitCheckoutReadId(f.root);assert.notEqual(replacement,checkoutId);assert.equal(f.app.directory(f.root,{...f.input,checkoutId:replacement,path:'src'}).source.checkoutId,replacement);
 });
 test('lazy tree, ignored toggle and complete text/Markdown/image reads preserve Git and bytes',async t=>{
   const f=fixture(t),before=f.git('status','--porcelain');const tree=f.app.directory(f.root,f.input);
@@ -278,6 +292,7 @@ test('workspace directory follows a registered linked checkout and shares its id
   const catalog=f.app.repositories(f.temporary),workspace=catalog.worktrees.find(item=>item.repositoryId==='one'&&item.groupId==='main')!;
   assert.deepEqual(catalog.selectedWorktreeGroupIds,['main']);
   assert.equal(catalog.worktreeGroups.find(group=>group.id==='main')?.name,'工作空间目录');
+  assert.equal(workspace.isMain,false);assert.equal(catalog.worktrees.find(item=>item.repositoryId==='one'&&item.isMain)?.path,fs.realpathSync(f.locations[0].root));
   assert.equal(workspace.kind,'main');assert.equal(workspace.path,fs.realpathSync(registered));assert.equal(workspace.id,gitCheckoutReadId(registered));
   const observed=f.app.sourceControl(f.temporary),repository=observed.repositories.find(item=>item.id==='one')!,current=repository.worktrees.find(item=>item.isRegistered)!,gitMain=repository.worktrees.find(item=>item.isMain)!;
   assert.equal(current.worktreeId,workspace.id);assert.equal(current.location,workspace.path);assert.equal(current.isMain,false);assert.equal(current.branch,'native-shared');

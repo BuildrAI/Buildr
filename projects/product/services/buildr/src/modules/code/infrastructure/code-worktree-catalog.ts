@@ -7,7 +7,7 @@ import { CODE_LIMITS, codeGit, gitCommonDirectory } from './code-file-reader.ts'
 import type { CodeGitWorktree } from './code-worktree-reader.ts';
 
 export type CodeWorktreeKind = 'main' | 'task' | 'worktree';
-export type CodeWorktree = { id: string; repositoryId: string; groupId: string; path: string; branch: string | null; kind: CodeWorktreeKind; taskId: string | null; available: boolean };
+export type CodeWorktree = { id: string; repositoryId: string; groupId: string; path: string; branch: string | null; kind: CodeWorktreeKind; isMain?: boolean; taskId: string | null; available: boolean };
 export type CodeWorktreeGroup = { id: string; name: string; kind: CodeWorktreeKind; taskId: string | null; repositoryIds: string[] };
 type Diagnostic = { code: string; message: string; repositoryId: string | null };
 type Repository = { id: string; name: string; location: string; available: boolean };
@@ -169,7 +169,7 @@ export function readCodeWorktreeCatalog(root: string, repositories: Repository[]
         }
         const main = sameFilesystemPath(identity.root, repository.location);
         const groupId = main ? 'main' : 'worktree:' + identity.id;
-        const member: CodeWorktree = { id: identity.id, repositoryId: repository.id, groupId, path: identity.root, branch: entry.branch, kind: main ? 'main' : 'worktree', taskId: null, available: true };
+        const member: CodeWorktree = { id: identity.id, repositoryId: repository.id, groupId, path: identity.root, branch: entry.branch, isMain: entry === listed[0], kind: main ? 'main' : 'worktree', taskId: null, available: true };
         worktrees.push(member);
       }
     } catch { diagnostics.push({ code: 'code_worktrees_unavailable', message: repository.name + ' 的 Git 目录列表当前不可读取，保留其他代码库。', repositoryId: repository.id }); }

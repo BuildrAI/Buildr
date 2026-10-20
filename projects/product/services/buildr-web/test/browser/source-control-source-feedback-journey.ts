@@ -52,8 +52,17 @@ export async function runSourceControlSourceFeedbackJourney({t,page,workspaceUrl
         const actual=await label.innerText();for(const name of names)assert.ok(actual.includes(name),'多库选择完整展示真实名字：'+actual);
         assert.notEqual(actual,names[0],'不能把第一个工作树名字当作整个多库组');
         const registeredCount=new Set(members.map((member:any)=>member.path)).size;
-        assert.equal((await explorer().locator('.code-root-selectors > small').first().innerText()).replace(/\s/gu,''),'工作空间登记目录·'+registeredCount+'个目录');
+        assert.equal((await explorer().locator('.code-root-selectors > small').first().innerText()).replace(/\s/gu,''),registeredCount+'个目录');
         const groupSelect=explorer().locator('.code-root-selectors .ant-select').nth(1);await groupSelect.locator('.ant-select-selector').click();
+        const popupId=await groupSelect.getByRole('combobox').getAttribute('aria-controls');
+        const popup=page.locator('.ant-select-dropdown').filter({has:page.locator('[id="'+popupId+'"]')});
+        assert.ok((await popup.locator('[data-code-worktree-group]').first().innerText()).includes('主工作库'),'真实主工作库排在预览登记目录前面');
+        for(const group of catalog.worktreeGroups){
+          const option=page.locator('.ant-select-dropdown:visible [data-code-worktree-group="'+group.id+'"]');
+          const members=catalog.worktrees.filter((member:any)=>member.groupId===group.id);
+          if(members.length&&members.every((member:any)=>member.isMain))assert.ok((await option.locator('> small').innerText()).startsWith('主工作库'));
+          else if(members.length===1)assert.equal(await option.locator('> small').count(),0);
+        }
         await groupSelect.getByRole('combobox').fill(baseName(alpha.location));
         const optionsId=await groupSelect.getByRole('combobox').getAttribute('aria-controls'),options=page.locator('.ant-select-dropdown').filter({has:page.locator('[id="'+optionsId+'"]')});
         for(const source of [alpha,peer]){
@@ -63,7 +72,7 @@ export async function runSourceControlSourceFeedbackJourney({t,page,workspaceUrl
         await groupSelect.getByRole('combobox').fill('');await groupSelect.getByRole('combobox').press('Escape');
         const repository=catalog.repositories.find((repository:any)=>repository.id===registered.repositoryId);await chooseFilter(0,repository.name);
         await page.waitForFunction((name:string)=>document.querySelector('.code-explorer-stage .code-root-selectors .ant-select:nth-child(2) .ant-select-selection-item')?.textContent===name,baseName(registered.location));
-        assert.ok((await explorer().locator('.code-root-selectors').innerText()).includes('工作空间登记'));
+        assert.equal(await explorer().locator('.code-source-summary').count(),0,'登记的任务目录不冒称主工作库');
         const root=rootAt(repository.id,registered.location);assert.equal(await root.getAttribute('data-location-label'),baseName(registered.location));
         await explorer().getByRole('textbox',{name:'搜索文件',exact:true}).fill('history.ts');await explorer().locator('.repository-search-result[data-file-path="'+branches.liveRefresh.path+'"]').click();await assertEditorText(page,text);
         await explorer().locator('.cm-content:visible').evaluate((content:any)=>content.cmTile.root.view.dispatch({selection:{anchor:7,head:15}}));
