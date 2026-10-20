@@ -32,7 +32,7 @@
 - **[`services/buildr/src/`](../../services/buildr/src/)**：产品源码。
   - [`bootstrap/`](../../services/buildr/src/bootstrap/) 创建技术运行时（Runtime）、装配模块、汇集命令与诊断入口。
   - [`modules/`](../../services/buildr/src/modules/) 按上表的业务职责组织。
-  - [`web/`](../../services/buildr/src/web/) 管理本机实例与预览生命周期、会话（Session）、静态托管和请求分发。
+  - [`web/`](../../services/buildr/src/web/) 管理本机实例与预览生命周期、会话（Session）、静态托管和请求分发；同身份重启由 `web/http` 的重启端口交给 `web/application` 的后继进程编排，复用更新交接的启动锁、观察摘要与认证退出，不执行 npm 安装归属断言。
   - [`infrastructure/`](../../services/buildr/src/infrastructure/) 提供文件、SQLite、Git、进程、网络与资源定位，不接管业务规则。
 - **[`resources/`](../../services/buildr/resources/)**：文件型交付来源。清单声明工作空间（Workspace）及运行时（Runtime）映射，安装资源和文本契约各自维护；[资源职责](../../services/buildr/docs/cli-architecture.md#文件型交付资源)集中解释。
 - **[`tools/`](../../services/buildr/tools/)**：进入 Git 的工程程序，包括构建、协议生成、固定环境、验证准备及性能基准。独立性能基准不默认执行。

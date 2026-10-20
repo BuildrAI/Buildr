@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 import http from 'node:http';
+import process from 'node:process';
 
+import { spawnBuildrWebRestartSuccessor } from '../application/restart-web-handoff.ts';
 import { createBoundedBuildrWebReadExecutor } from './read-executor.ts';
 import { apiError } from './responses.ts';
 import { createLocalWorkspaceRequestRouter } from './router.ts';
@@ -15,6 +17,7 @@ export function createLocalWorkspaceServer(runtime: any, {
   previewIdentity = null,
   onShutdown = null,
   beforeShutdown = null,
+  spawnSuccessor = null,
   readExecutor = null,
   httpContributions = runtime.__bootstrapContributions?.('http') || [],
   ensureRegisteredTarget = runtime.ensureRegisteredTarget,
@@ -31,12 +34,14 @@ export function createLocalWorkspaceServer(runtime: any, {
   }
 
   const initialWorkspaceId = ensureRegisteredTarget(targetRoot);
+  const launchSuccessor = typeof spawnSuccessor === 'function' ? spawnSuccessor : spawnBuildrWebRestartSuccessor;
   const ownsReadExecutor = !readExecutor;
   const taskReadExecutor = readExecutor || createBoundedBuildrWebReadExecutor({ warm: 1 });
   const sessionToken = crypto.randomBytes(32).toString('hex');
   const healthSecret = instanceSecret || crypto.randomBytes(32).toString('hex');
   let origin: any = null;
   let closing = false;
+  let restartRequested = false;
   let routeRequest: any = null;
   let shutdownPromise: Promise<void> | null = null;
   let resourceShutdown: Promise<void> | null = null;
@@ -93,6 +98,27 @@ export function createLocalWorkspaceServer(runtime: any, {
     shutdown: () => {
       closing = true;
       setImmediate(() => { void shutdown().catch(error => { console.error('Buildr Web resource shutdown failed:', error); process.exitCode = 1; }); });
+    },
+    restartRequested: () => restartRequested,
+    restart: () => {
+      // A restart keeps health 'ready': the successor must be able to confirm
+      // this instance through its authenticated health proof until quit-instance.
+      // Only the restart action itself is gated here.
+      restartRequested = true;
+      setImmediate(() => {
+        try {
+          launchSuccessor({
+            url: origin,
+            secret: healthSecret,
+            pid: process.pid,
+            launcherIdentity,
+            productIdentity,
+            webProfile,
+          });
+        } catch (error) {
+          console.error('Buildr Web restart successor did not start:', error);
+        }
+      });
     },
     submitTaskRead,
     staticRoot,

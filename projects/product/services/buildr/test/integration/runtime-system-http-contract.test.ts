@@ -185,6 +185,72 @@ test('Runtime/System 真实 HTTP 契约覆盖 JSON、binary、错误与零副作
   assert.equal(shutdownCalls, 0);
 });
 
+test('Runtime/System restart 契约：认证、无字段副作用、Preview 拒绝与成功 202', async (t: any) => {
+  const { base, root }: any = fixture(t, 'runtime-system-restart-contract');
+  process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
+  t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
+  const runtime: any = createRuntime();
+
+  // Preview instances reject restart and keep running.
+  const previewSpawnCalls: any[] = [];
+  const previewInstance: any = createLocalWorkspaceServer(runtime, {
+    targetRoot: root,
+    httpContributions: runtimeContributions(runtime, 'http'),
+    previewIdentity: { instance: 'task-preview', branch: 'task/x', head: 'abc', worktree: root },
+    spawnSuccessor: (state: any) => { previewSpawnCalls.push(state); return null; },
+  });
+  const preview: any = await previewInstance.ready;
+  let response: any = await fetch(`${preview.url}/api/v1/app/restart`, {
+    method: 'POST', headers: { origin: preview.url, 'x-buildr-session': preview.sessionToken, 'content-type': 'application/json' }, body: '{}',
+  });
+  assert.equal(response.status, 409);
+  const previewError = await response.json();
+  validate(LOCAL_APP_HTTP_VALIDATORS, LOCAL_APP_HTTP_OPERATIONS, 'local-app.restart', 'error', previewError);
+  assert.equal(previewError.error.code, 'restart_preview_unsupported');
+  await new Promise((resolve: any) => setImmediate(resolve));
+  assert.equal(previewSpawnCalls.length, 0);
+  response = await fetch(`${preview.url}/api/v1/health`, { headers: { 'x-buildr-instance': preview.instanceSecret } });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).status, 'ready');
+  await new Promise((resolve: any) => previewInstance.server.close(resolve));
+
+  const spawnCalls: any[] = [];
+  const instance: any = createLocalWorkspaceServer(runtime, {
+    targetRoot: root,
+    httpContributions: runtimeContributions(runtime, 'http'),
+    spawnSuccessor: (state: any) => { spawnCalls.push(state); return null; },
+  });
+  t.after(() => new Promise((resolve: any) => instance.server.close(resolve)));
+  const { url, sessionToken, instanceSecret }: any = await instance.ready;
+
+  // Invalid restart requests must be rejected with stable errors and no side effects.
+  response = await fetch(`${url}/api/v1/app/restart`, {
+    method: 'POST', headers: { origin: url, 'x-buildr-session': 'wrong', 'content-type': 'application/json' }, body: '{}',
+  });
+  assert.equal(response.status, 403);
+  assert.equal((await response.json()).error.code, 'session_forbidden');
+  response = await fetch(`${url}/api/v1/app/restart`, {
+    method: 'POST', headers: { origin: url, 'x-buildr-session': sessionToken, 'content-type': 'application/json' }, body: JSON.stringify({ unexpected: true }),
+  });
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error.code, 'local_app_http_field_forbidden');
+  await new Promise((resolve: any) => setImmediate(resolve));
+  assert.equal(spawnCalls.length, 0);
+
+  // The accepted restart responds 202 before the successor is launched, once.
+  response = await fetch(`${url}/api/v1/app/restart`, {
+    method: 'POST', headers: { origin: url, 'x-buildr-session': sessionToken, 'content-type': 'application/json' }, body: '{}',
+  });
+  assert.equal(response.status, 202);
+  validate(LOCAL_APP_HTTP_VALIDATORS, LOCAL_APP_HTTP_OPERATIONS, 'local-app.restart', 'success', await response.json());
+  await new Promise((resolve: any) => setImmediate(resolve));
+  assert.equal(spawnCalls.length, 1);
+  assert.equal(spawnCalls[0].url, url);
+  assert.equal(spawnCalls[0].secret, instanceSecret);
+  assert.equal(typeof spawnCalls[0].pid, 'number');
+  assert.equal(spawnCalls[0].pid > 0, true);
+});
+
 test('Runtime/System validators 不变异输入且全局 operation coverage 闭合', () => {
   const input: any = { unexpected: true };
   const before: any = structuredClone(input);

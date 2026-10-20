@@ -151,6 +151,7 @@ export const SYSTEM_SUITES: any = Object.freeze([
       'test/system/development-workspace-smoke-isolation.test.ts',
       'test/system/buildr-web-channel-isolation.test.ts',
       'test/system/buildr-web-launcher.test.ts',
+      'test/system/buildr-web-restart.test.ts',
       'test/system/workspace-app-process.test.ts',
     ]),
   }),

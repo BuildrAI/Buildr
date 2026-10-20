@@ -21,7 +21,7 @@ async function startWeb(application: WebCliRuntime, args: string[]): Promise<unk
   } catch (cause: any) {
     // The detached updater has no standard streams. Flush only its startup
     // failure through the private channel before ordinary CLI error reporting.
-    if (args.includes('--update-handoff') && process.send && process.connected) {
+    if ((args.includes('--update-handoff') || args.includes('--restart')) && process.send && process.connected) {
       await new Promise<void>(resolve => {
         const timer = setTimeout(resolve, 250);
         try {

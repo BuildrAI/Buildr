@@ -38,6 +38,8 @@ export function createLocalWorkspaceRequestRouter({
   origin,
   isClosing,
   shutdown,
+  restart,
+  restartRequested,
   submitTaskRead,
   staticRoot,
 }: any) {
@@ -94,6 +96,25 @@ export function createLocalWorkspaceRequestRouter({
       validateRequest('local-app.quit', await readJsonBody(request));
       jsonResponse(response, 202, { status: 'stopping' });
       shutdown();
+      return;
+    }
+    if (request.method === 'POST' && pathname === '/api/v1/app/restart') {
+      assertWriteRequest(request, trustedOrigin, sessionToken);
+      validateRequest('local-app.restart', await readJsonBody(request));
+      if (previewIdentity) {
+        const error: Error & Record<string, any> = new Error('开发预览实例不支持重启，请使用 preview stop 后重新启动。');
+        error.code = 'restart_preview_unsupported';
+        error.status = 409;
+        throw error;
+      }
+      if (restartRequested?.()) {
+        const error: Error & Record<string, any> = new Error('Buildr Web 重启已在进行。');
+        error.code = 'restart_in_progress';
+        error.status = 409;
+        throw error;
+      }
+      jsonResponse(response, 202, { status: 'restarting' });
+      restart?.();
       return;
     }
     if (request.method === 'POST' && pathname === '/api/v1/app/quit-instance') {

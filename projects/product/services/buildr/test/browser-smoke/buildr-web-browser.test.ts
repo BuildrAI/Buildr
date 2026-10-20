@@ -802,7 +802,11 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#preview-identity').waitFor({ state: 'attached' });
     assert.equal(await page.locator('#preview-identity').isHidden(), true);
     assert.match(await page.locator('#preview-identity').getAttribute('data-preview') || '', /开发预览：browser-preview · preview-branch · 0123456789ab · 有未提交修改/);
+    assert.equal(await page.locator('#quit-buildr').isVisible(), true, 'Preview 实例回退为仅退出按钮');
+    assert.equal(await page.locator('#restart-buildr').count(), 0, 'Preview 实例不提供重启入口');
     await page.goto(url);
+    assert.equal(await page.locator('#restart-buildr').isVisible(), true, '默认实例的主按钮是重启');
+    assert.equal(await page.locator('#quit-buildr').count(), 0, '退出入口收进下拉菜单，未展开时不存在');
     await page.locator('#workspace-grid .workspace-card').first().waitFor({ state: 'visible' });
     assert.equal(await page.locator('#workspace-grid .workspace-card').count(), 2);
     const target: any = page.locator('#workspace-grid .workspace-card').filter({ has: page.locator('h2').filter({ hasText: /^browser-smoke$/ }) });
@@ -1035,6 +1039,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.unroute(registryUrl, failRemove);
     const failQuit = async (route: any) => { quits++; await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'quit_unavailable', message: '宿主暂时不能退出' } }) }); };
     await page.route(quitUrl, failQuit);
+    await page.locator('.ant-dropdown-button:has(#restart-buildr) .ant-dropdown-trigger').click();
     await page.locator('#quit-buildr').click();
     await page.getByRole('dialog', { name: '退出 Buildr Web？', exact: true }).waitFor({ state: 'visible' });
     await confirmAntModal(page);
@@ -1045,9 +1050,50 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     const retried = page.waitForResponse((response: any) => response.url() === quitUrl && response.request().method() === 'POST');
     await page.getByRole('button', { name: '重试退出', exact: true }).click();
     assert.equal((await retried).status(), 500);
-    await page.waitForFunction(() => !document.getElementById('quit-buildr')?.classList.contains('ant-btn-loading'));
     assert.equal(quits, 2);
     assert.equal(await page.locator('#workspace-grid').isVisible(), true);
+  });
+
+  if (selected('shell')) await t.test('重启入口确认后进入重启屏，宿主令牌轮换触发自动刷新', async () => {
+    await page.goto(`${url}/?catalog=1`);
+    await page.locator('#restart-buildr').waitFor({ state: 'visible' });
+    const restartUrl = `${url}/api/v1/app/restart`;
+    expectedBrowserErrors.add(restartUrl);
+    const failRestart = async (route: any) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'restart_unavailable', message: '宿主暂时不能重启' } }) });
+    await page.route(restartUrl, failRestart);
+    await page.locator('#restart-buildr').click();
+    const confirmDialog = page.getByRole('dialog', { name: '重启 Buildr Web？', exact: true });
+    await confirmDialog.waitFor({ state: 'visible' });
+    assert.match(await confirmDialog.innerText(), /进行中的生成与任务验证将被取消/);
+    await confirmAntModal(page);
+    await page.locator('#restart-buildr-error').waitFor();
+    assert.match(await page.locator('#restart-buildr-error').innerText(), /尚未重启/);
+    assert.equal(await page.locator('#workspace-grid').isVisible(), true);
+    assert.equal(await page.locator('#restart-screen').count(), 0);
+    await page.unroute(restartUrl, failRestart);
+    let restarts = 0;
+    const accepted = async (route: any) => { restarts++; await route.fulfill({ status: 202, contentType: 'application/json', body: '{"status":"restarting"}' }); };
+    await page.route(restartUrl, accepted);
+    const restartedDoc = '<!doctype html><html><head><meta name="buildr-session" content="a1b2c3d4e5f60718"></head><body><p id="restarted-marker">RESTARTED</p></body></html>';
+    let documentPolls = 0;
+    await page.route('**', async (route: any) => {
+      const requestUrl = route.request().url();
+      if (requestUrl === `${url}/` || requestUrl === url) {
+        documentPolls++;
+        // The first observation hits the stopping old process; the restarted
+        // document with a rotated session token arrives on a later poll.
+        if (documentPolls === 1) return route.abort();
+        return route.fulfill({ contentType: 'text/html', body: restartedDoc });
+      }
+      return route.fallback();
+    });
+    await page.locator('#restart-buildr').click();
+    await page.getByRole('dialog', { name: '重启 Buildr Web？', exact: true }).waitFor({ state: 'visible' });
+    await confirmAntModal(page);
+    await page.locator('#restart-screen').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#restart-screen').innerText(), /正在重启/);
+    await page.waitForSelector('#restarted-marker', { timeout: 20_000 });
+    assert.equal(restarts, 1, '一次重启只请求一次交接');
   });
 
   if (selected('shell')) await t.test('页面与对象页签手动激活、关闭焦点和面板关联保持一致', async () => {
