@@ -1,3 +1,5 @@
+import { normalizeCodeInput } from '../../../lib/code-input.ts';
+
 /** Derive only portable identifiers; invalid or incomplete addresses need manual input. */
 export function repositoryCodeFromUrl(value: string): string {
   const address = value.trim();
@@ -12,6 +14,6 @@ export function repositoryCodeFromUrl(value: string): string {
   }
   let segment = pathname.replace(/\/+$/, '').split('/').at(-1) || '';
   try { segment = decodeURIComponent(segment); } catch { return ''; }
-  segment = segment.replace(/\.git$/i, '');
+  segment = normalizeCodeInput(segment.replace(/\.git$/i, ''));
   return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment) ? segment : '';
 }

@@ -317,7 +317,7 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
       if (catalog.repositories.some(r => sameRepositoryLocation(root, r, repository))) throw assetError('repository_duplicate_path', '该目录已登记为代码库，请复用已有代码库。', 409);
       catalog.repositories.push(repository); repositoryId = repository.id;
     }
-    if (serviceDirectory) {
+    if (serviceDirectory && raw.directoryMode === 'existing') {
       const repository = catalog.repositories.find(r => r.id === repositoryId);
       if (!repository) throw assetError('repository_not_found', '代码库不存在。');
       const relative = path.relative(resolveSourceRoot(root, repository.source), path.resolve(root, serviceDirectory.path)).split(path.sep).join('/');

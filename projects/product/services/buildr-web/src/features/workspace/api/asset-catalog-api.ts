@@ -12,6 +12,14 @@ export type AssetKind = 'project' | 'service' | 'repository';
 export type ProjectCandidates = ProjectCandidatesProjectCandidatesResponse;
 const base = '/api/v1/asset-catalog';
 export const catalogChanged = 'buildr:asset-catalog-changed';
+/** Empty optional draft fields stay absent in the request; the backend applies its own defaults. */
+function repositoryInput<T extends RepositoryDraft>(draft: T): T {
+  const empty = (value?: string) => value === '' ? undefined : value;
+  return { ...draft, name: empty(draft.name), description: empty(draft.description), url: empty(draft.url), remote: empty(draft.remote), integrationBranch: empty(draft.integrationBranch), path: empty(draft.path), observation: empty(draft.observation) };
+}
+function serviceInput<T extends { repository?: RepositoryDraft }>(service: T): T {
+  return service.repository ? { ...service, repository: repositoryInput(service.repository) } : service;
+}
 async function write(path: string, method: string, input: unknown): Promise<AssetCatalog> {
   const result = await api(base + path, { method, body: JSON.stringify(input) }) as AssetCatalog;
   window.dispatchEvent(new CustomEvent(catalogChanged, { detail: result }));
@@ -27,14 +35,14 @@ export const assetCatalogApi = {
   serviceDocument: (id: string, file: string) => api(`${base}/services/${encodeURIComponent(id)}/documents/${encodeURIComponent(file)}`) as Promise<WorkspaceDocument>,
   read: (signal?: AbortSignal) => api(base, { signal }) as Promise<AssetCatalog>,
   migrate: (revision: string) => write('/migrate', 'POST', { revision }),
-  project: (input: ProjectCreateAssetProjectRequest) => write('/projects', 'POST', input),
+  project: (input: ProjectCreateAssetProjectRequest) => write('/projects', 'POST', { ...input, newServices: input.newServices?.map(serviceInput) }),
   directoryCandidates: (kind: 'service' | 'repository', signal?: AbortSignal) => api(`${base}/${kind}-candidates`, { signal }) as Promise<DirectoryCandidatesDirectoryCandidatesResponse>,
   projectCandidates: (signal?: AbortSignal) => api(`${base}/project-candidates`, { signal }) as Promise<ProjectCandidates>,
   registerProject: (input: ProjectRegisterProjectRegisterRequest) => write('/projects/register', 'POST', input),
-  service: (input: ServiceCreateAssetServiceRequest) => write('/services', 'POST', input),
-  repository: (input: RepositoryCreateAssetRepositoryRequest) => write('/repositories', 'POST', input),
-  associate: (id: string, input: ProjectServicesAssetAssociateRequest) => write(`/projects/${encodeURIComponent(id)}/services`, 'PUT', input),
-  update: (kind: AssetKind, id: string, input: AssetUpdateAssetUpdateRequest) => write(`/${kind}/${encodeURIComponent(id)}`, 'PUT', input),
+  service: (input: ServiceCreateAssetServiceRequest) => write('/services', 'POST', { ...input, service: serviceInput(input.service) }),
+  repository: (input: RepositoryCreateAssetRepositoryRequest) => write('/repositories', 'POST', repositoryInput(input)),
+  associate: (id: string, input: ProjectServicesAssetAssociateRequest) => write(`/projects/${encodeURIComponent(id)}/services`, 'PUT', { ...input, newServices: input.newServices?.map(serviceInput) }),
+  update: (kind: AssetKind, id: string, input: AssetUpdateAssetUpdateRequest) => write(`/${kind}/${encodeURIComponent(id)}`, 'PUT', { ...input, repository: input.repository ? repositoryInput(input.repository) : undefined }),
   preparePrompt: (id: string) => api(`${base}/repositories/${encodeURIComponent(id)}/prepare-prompt`) as Promise<{ prompt: string }>,
 };
 export function repositoryBranch(repository: CatalogRepository): string {

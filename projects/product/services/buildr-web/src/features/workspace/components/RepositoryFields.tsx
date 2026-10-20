@@ -2,6 +2,7 @@ import { DirectoryCandidateSelect } from './DirectoryCandidateSelect';
 import { useRef } from 'react';
 import { repositoryCodeFromUrl } from './repository-defaults';
 import { codeFieldTrim } from '../../../lib/input-trim';
+import { CODE_INPUT_TITLE, normalizeCodeInput } from '../../../lib/code-input';
 import { Form, Input } from 'antd';
 import type { RepositoryDraft } from '../api/asset-catalog-api';
 export function RepositoryFields({ value, onChange, editing = false, disabled = false }: { value: RepositoryDraft; onChange: (value: RepositoryDraft) => void; editing?: boolean; disabled?: boolean }) {
@@ -14,7 +15,9 @@ export function RepositoryFields({ value, onChange, editing = false, disabled = 
     if (key === 'url' && !editing) {
       const code = repositoryCodeFromUrl(text);
       if (!manualCode.current) next.code = code;
-      if (!manualPath.current) next.path = code ? `repositories/${code}` : '';
+      if (!manualPath.current) next.path = (manualCode.current ? next.code : code) ? `repositories/${manualCode.current ? next.code : code}` : '';
+    } else if (!editing && key === 'code' && !manualPath.current) {
+      next.path = text ? `repositories/${text}` : '';
     }
     onChange(next);
   };
@@ -22,7 +25,7 @@ export function RepositoryFields({ value, onChange, editing = false, disabled = 
   return <>
     {!editing && <Form.Item label="已有代码库目录"><DirectoryCandidateSelect disabled={disabled} kind="repository" value={value.observation ? value.path : undefined} onChange={candidate => { if (candidate) { manualPath.current = true; onChange({ ...value, path: candidate.path, observation: candidate.observation, code: value.code || candidate.code, url: value.url || candidate.url || '' }); } else onChange({ ...value, path: undefined, observation: undefined }); }} /></Form.Item>}
     {!editing && addressField}
-    {!editing && <Form.Item label="代码库编码" required help="根据 Git 地址自动填写，可手动修改"><Input disabled={disabled} aria-label="代码库编码" required value={value.code} {...codeFieldTrim(text => update('code', text))} /></Form.Item>}
+    {!editing && <Form.Item label="代码库编码" required help="根据 Git 地址自动填写，可手动修改"><Input disabled={disabled} aria-label="代码库编码" required title={CODE_INPUT_TITLE} value={value.code} {...codeFieldTrim(text => update('code', normalizeCodeInput(text)))} /></Form.Item>}
     <Form.Item label="仓库目录" required={editing}><Input disabled={disabled} required={editing} aria-label="仓库目录" value={value.path || ''} {...codeFieldTrim(text => update('path', text))} placeholder={`默认 repositories/${value.code || '<编码>'}`} /></Form.Item>
     <p className="page-copy">填写 . 引用工作空间根仓库；也可填写内部相对目录或外部绝对路径。已有目录必须是 Git 仓库根目录。</p>
 
