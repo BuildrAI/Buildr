@@ -62,3 +62,16 @@
 .buildr-mysql-null{color:var(--soft-muted);font-style:italic}
 @media(max-width:900px){.buildr-mysql-target>span{margin-left:0}.buildr-mysql-toolbar .ant-select{width:150px}.buildr-mysql-toolbar>small{display:none}}
 @media(max-width:600px){.buildr-mysql-target>label{width:100%}.buildr-mysql-target .ant-select{flex:1;width:auto}.buildr-mysql-toolbar>label{align-items:flex-start;flex-direction:column;gap:4px;width:100%}.buildr-mysql-toolbar .ant-select{width:100%}}
+/* CodeMirror renders this portal near the caret; scope all overrides to SQL completion. */
+.buildr-sql-completion.cm-tooltip-autocomplete{font:13px/1.8 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;border:1px solid var(--soft-line);border-radius:8px;background:var(--soft-surface,#fff);color:var(--soft-ink);box-shadow:0 8px 28px color-mix(in srgb,var(--soft-ink) 15%,transparent);min-width:min(390px,calc(100vw - 36px));max-width:min(560px,calc(100vw - 36px));overflow:hidden}
+.buildr-sql-completion.cm-tooltip-autocomplete>ul{max-height:240px!important;padding:4px!important}
+.buildr-sql-completion.cm-tooltip-autocomplete>ul>li{padding:5px 8px;border-radius:4px;display:flex;gap:6px;align-items:center}
+.buildr-sql-completion.cm-tooltip-autocomplete>ul>li[aria-selected]{background:color-mix(in srgb,var(--soft-primary) 12%,var(--soft-surface,#fff));color:var(--soft-primary)}
+.buildr-sql-completion .cm-completionLabel{flex:1;overflow:hidden;text-overflow:ellipsis}
+.buildr-sql-completion .cm-completionDetail{font:11px/1.8 system-ui,sans-serif;color:var(--soft-muted);margin-left:18px;max-width:180px;overflow:hidden;text-overflow:ellipsis}
+.buildr-sql-completion .cm-completionIcon{opacity:.65}
+.buildr-sql-completion .cm-completionIcon-class:after{content:'▦'}
+.buildr-sql-completion .cm-completionIcon-namespace:after{content:'▤'}
+.buildr-sql-completion .cm-completionIcon-keyword:after{content:'↪'}
+.buildr-sql-completion .cm-completion-section{color:var(--soft-muted);font:11px/1.8 system-ui,sans-serif;padding:5px 10px 2px!important;border:0!important;background:var(--soft-bg,#fafcfb)}
+.buildr-sql-completion.cm-tooltip-autocomplete::after{content:'↑↓ 选择   Enter / Tab 确认   Esc 关闭';display:block;padding:7px 12px;background:var(--soft-bg,#f8faf9);border-top:1px solid var(--soft-line);color:var(--soft-muted);font:11px/1.6 system-ui,sans-serif}

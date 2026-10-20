@@ -20,6 +20,7 @@ export type QueryPreferences = {
 export type MySqlQueryTarget = { id: string; name: string; environment: string; revision: string };
 export type MySqlQueryClient = {
   databases(id: string, signal?: AbortSignal): Promise<{ connectionId: string; databases: string[] }>;
+  tables(id: string, database: string, signal?: AbortSignal): Promise<{ connectionId: string; database: string; tables: { name: string; type: string }[] }>;
   queryPreferences(id: string, signal?: AbortSignal): Promise<QueryPreferences>;
   saveQueryPreferences(id: string, input: { enabledDatabases: string[]; currentDatabase: string | null; expectedRevision: string }, signal?: AbortSignal): Promise<QueryPreferences>;
   query(id: string, input: { sql: string; database?: string | null }, signal?: AbortSignal): Promise<MySqlQueryResult>;

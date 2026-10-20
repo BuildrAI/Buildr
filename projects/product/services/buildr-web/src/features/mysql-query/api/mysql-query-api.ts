@@ -16,6 +16,10 @@ export function createMySqlQueryClient(api: ApiClient, workspaceId: string, targ
       const target = selected(id);
       return api(`${target.url}/databases?revision=${encodeURIComponent(target.revision)}`, { signal }) as Promise<{ connectionId: string; databases: string[] }>;
     },
+    tables(id, database, signal) {
+      const target = selected(id);
+      return api(`${target.url}/tables?revision=${encodeURIComponent(target.revision)}&database=${encodeURIComponent(database)}`, { signal }) as ReturnType<MySqlQueryClient['tables']>;
+    },
     queryPreferences(id, signal) {
       const target = selected(id);
       return api(`${target.url}/query-preferences?revision=${encodeURIComponent(target.revision)}`, { signal }) as Promise<QueryPreferences>;

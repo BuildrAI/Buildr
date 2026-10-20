@@ -57,6 +57,9 @@ try {
   const legacyRequests: string[] = []; page.on('request', request => { if (/\/api\/v1\/workspaces\/[^/]+\/connections(?:\/|$)/u.test(new URL(request.url()).pathname)) legacyRequests.push(request.url()); });
   const queryRequests: { path: string; method: string; body: Record<string, unknown> | null }[] = [];
   const queryDatabases = ['orders', 'billing', 'analytics', 'inventory', 'reporting', 'saas_biz_common', 'saas_erp', 'saas_freshx', 'saasx_config', 'saasx_job', 'sys', 'test', 'trading_business', 'wvp', '__recycle_bin__', 'warehouse_reporting_archive_with_a_long_database_name'];
+  let failNextTables = false;
+  let queryGate: Promise<void> | null = null, failNextQuery = false;
+  const tableReads = new Map<string, number>();
   let preferenceVersion = 0;
   let queryPreferences: { enabledDatabases: string[]; currentDatabase: string | null; revision: string } = { enabledDatabases: ['orders'], currentDatabase: 'orders', revision: 'fixture-query-preferences-0' };
   // This fixture proves the query UI contract only; no database or real query backend is contacted.
@@ -68,6 +71,12 @@ try {
     assert.equal(body?.connectionRevision ?? target.searchParams.get('revision'), queryInstance.revision, 'The UI pins every query operation to the observed instance revision.');
     let result: unknown;
     if (operation === 'databases') result = { connectionId: queryInstance.id, databases: queryDatabases };
+    else if (operation === 'tables') {
+      const database = target.searchParams.get('database')!;
+      tableReads.set(database, (tableReads.get(database) || 0) + 1);
+      if (failNextTables) { failNextTables = false; await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'fixture_metadata_failure', message: '模拟表列表读取失败' } }) }); return; }
+      result = { connectionId: queryInstance.id, database, tables: (database === 'billing' ? ['invoice_headers', 'invoice_lines'] : ['order_headers', 'order_lines']).map(name => ({ name, type: 'BASE TABLE' })) };
+    }
     else if (operation === 'query-preferences') {
       if (request.method() === 'PUT') {
         assert.equal(body!.expectedRevision, queryPreferences.revision, 'Every preference save uses the last confirmed preference revision.');
@@ -80,6 +89,8 @@ try {
     }
     else {
       assert.equal(operation, 'query', 'The UI fixture only supports database discovery, preferences and a read query.');
+      if (queryGate) await queryGate;
+      if (failNextQuery) { failNextQuery = false; await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'fixture_query_failure', message: '模拟查询失败' } }) }); return; }
       result = { connectionId: queryInstance.id, database: 'orders', submittedSql: body!.sql, executedSql: body!.sql, columns: [{ name: 'id', type: 'BIGINT' }, { name: 'amount', type: 'DECIMAL' }], rows: [['9007199254740993123', '123456789012345.123456789']], rowCount: 1, rowLimit: 100, elapsedMs: 1, limitReached: false };
     }
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(result) });
@@ -221,6 +232,51 @@ try {
   }
   await page.setViewportSize({ width: 1280, height: 900 });
   assert.equal(preferenceWrites().length, 4, 'Opening and closing for layout checks never creates extra writes.');
+  const sqlEditor = page.locator('#mysql-query-editor .cm-content');
+  const option = (name: string) => page!.locator('.cm-tooltip-autocomplete [role="option"]').filter({ has: page!.getByText(name, { exact: true }) });
+  const sqlText = async () => (await sqlEditor.innerText()).replaceAll('\n', '');
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
+  await sqlEditor.fill('sel');
+  await option('sel').waitFor(); await sqlEditor.press('Enter');
+  await option('order_headers').waitFor();
+  assert.equal(await sqlText(), 'SELECT *FROM ;');
+  await sqlEditor.press('ArrowDown'); await sqlEditor.press('Enter');
+  assert.equal(await sqlText(), 'SELECT *FROM `order_lines`;');
+  await sqlEditor.press(`${mod}+z`);
+  assert.equal(await sqlText(), 'SELECT *FROM ;');
+  await sqlEditor.press('Control+Space'); await option('order_headers').waitFor();
+  const readsBeforeFilter = tableReads.get('orders');
+  await sqlEditor.pressSequentially('billing'); await option('billing').waitFor(); await sqlEditor.press('Tab');
+  await option('invoice_headers').waitFor();
+  await sqlEditor.pressSequentially('LINES'); await option('invoice_lines').waitFor(); await sqlEditor.press('Enter');
+  assert.equal(await sqlText(), 'SELECT *FROM `billing`.`invoice_lines`;');
+  assert.equal(preferenceWrites().length, 4, 'Choosing a database completion does not write query preferences.');
+  assert.equal(tableReads.get('orders'), readsBeforeFilter, 'Typing filters reuse the same table metadata.');
+  assert.equal(tableReads.get('billing'), 1);
+  await sqlEditor.press(`${mod}+z`); await sqlEditor.press('Control+Space'); await option('invoice_lines').waitFor();
+  await sqlEditor.press('Escape'); await page.locator('.cm-tooltip-autocomplete').waitFor({ state: 'hidden' });
+  failNextTables = true;
+  const refreshedCatalog = page.waitForResponse(response => new URL(response.url()).pathname.endsWith(`/mysql-query/connections/${queryInstance.id}/databases`) && response.request().method() === 'GET');
+  const refreshedPreferences = page.waitForResponse(response => new URL(response.url()).pathname.endsWith(`/mysql-query/connections/${queryInstance.id}/query-preferences`) && response.request().method() === 'GET');
+  await page.getByRole('button', { name: '刷新数据库列表', exact: true }).click();
+  await Promise.all([refreshedCatalog, refreshedPreferences]);
+  await page.locator('#enable-mysql-databases:not([disabled])').waitFor();
+  // Wait for the ready scope to reach the editor; refresh deliberately closes stale completion.
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await sqlEditor.fill('SELECT * FROM '); await sqlEditor.press('Control+Space');
+  await option('读取失败，按回车重试').waitFor(); await option('读取失败，按回车重试').click();
+  await option('order_headers').waitFor();
+  assert.ok((tableReads.get('orders') || 0) >= 3, 'Explicit refresh and retry issue fresh metadata reads.');
+  await sqlEditor.pressSequentially('no_matching_table'); await option('没有匹配的表').waitFor();
+  await sqlEditor.press('Enter');
+  assert.doesNotMatch(await sqlText(), /没有匹配的表/, 'Pure notices never become SQL.');
+  assert.ok((await sqlEditor.innerText()).includes('\n'), 'A notice does not swallow normal newline editing.');
+  await sqlEditor.fill('SELECT * FROM `ord` o JOIN order_lines l ON o.id = l.id;');
+  await sqlEditor.press('Home');
+  for (let index = 0; index < 'SELECT * FROM `or'.length; index++) await sqlEditor.press('ArrowRight');
+  await sqlEditor.press('Control+Space'); await option('order_headers').waitFor(); await sqlEditor.press('Enter');
+  assert.equal(await sqlText(), 'SELECT * FROM `order_headers` o JOIN order_lines l ON o.id = l.id;', 'Mid-identifier completion replaces the full identifier and preserves aliases and the rest of the query.');
+  await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'mysql-query-shortcuts.png') });
   await page.locator('#mysql-query-editor .cm-content').fill('SELECT id, amount FROM orders LIMIT 1;');
   await page.locator('#run-mysql-query').click();
   await page.locator('#mysql-query-results').getByText('9007199254740993123', { exact: true }).waitFor();
@@ -228,6 +284,145 @@ try {
   const submittedQueries = queryRequests.filter(request => request.path.endsWith('/query'));
   assert.equal(submittedQueries.length, 1);
   assert.deepEqual(submittedQueries[0].body, { sql: 'SELECT id, amount FROM orders LIMIT 1;', database: 'orders', connectionRevision: queryInstance.revision });
+  const highlights = page.locator('#mysql-query-editor .cm-sql-target');
+  const frame = (from: number, to: number, state = 'current') => page!.locator(`#mysql-query-editor .cm-sql-target[data-sql-target-from="${from}"][data-sql-target-to="${to}"][data-sql-target-state="${state}"]`).first();
+  const moveCaret = async (position: number) => {
+    await sqlEditor.press(`${mod}+a`); await sqlEditor.press('ArrowLeft');
+    for (let index = 0; index < position; index++) await sqlEditor.press('ArrowRight');
+  };
+  const firstSql = "SELECT ';' AS text;", secondSql = '-- comment;\nSELECT id,\n amount FROM orders LIMIT 1;', lastSql = 'SELECT 3;';
+  const document = `  ${firstSql}\n\n${secondSql}\n\n${lastSql}  \n`;
+  await sqlEditor.fill(document);
+  const secondFrom = document.indexOf('-- comment'), secondTo = secondFrom + secondSql.length;
+  const lastFrom = document.indexOf(lastSql), lastTo = lastFrom + lastSql.length;
+  await frame(lastFrom, lastTo).waitFor();
+  const requestsBeforeCaret = queryRequests.length;
+  await moveCaret(document.indexOf('SELECT id') + 7);
+  await frame(secondFrom, secondTo).waitFor();
+  assert.equal(await sqlEditor.locator('.cm-line').evaluateAll(lines => lines.some(line => line.querySelectorAll('.cm-sql-target').length > 1)), false, 'Syntax and selection styling must not split a single line into separate framed tokens.');
+  const outline = page.locator('#mysql-query-editor .cm-sql-statement-outline');
+  await outline.waitFor();
+  assert.equal(await outline.locator('path').count(), 1, 'The entire multiline statement has one outline, not a frame per line.');
+  const shape = await outline.locator('path').getAttribute('d');
+  assert.equal(shape!.match(/M/g)!.length, 1); assert.equal(shape!.match(/Z/g)!.length, 1);
+  const outlineBounds = (await outline.boundingBox())!, firstBounds = (await highlights.first().boundingBox())!, lastBounds = (await highlights.last().boundingBox())!;
+  assert.ok(outlineBounds.y < firstBounds.y && outlineBounds.y + outlineBounds.height > lastBounds.y + lastBounds.height, 'The shared perimeter covers the complete line height and connects the spaces between lines.');
+  assert.equal(await highlights.first().evaluate(mark => getComputedStyle(mark).outlineStyle), 'none', 'Text fragments no longer draw their own row borders.');
+  assert.equal(queryRequests.length, requestsBeforeCaret, 'Moving the caret and painting the frame does not request database data.');
+  let releaseQuery!: () => void;
+  queryGate = new Promise<void>(resolve => { releaseQuery = resolve; });
+  await page.locator('#run-mysql-query').click();
+  await frame(secondFrom, secondTo, 'running').waitFor();
+  await moveCaret(document.length);
+  await frame(secondFrom, secondTo, 'running').waitFor();
+  assert.equal(queryRequests.filter(request => request.path.endsWith('/query')).at(-1)!.body!.sql, document.slice(secondFrom, secondTo), 'The exact framed range is submitted, including comment and multiline SQL.');
+  await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'mysql-query-running-statement.png') });
+  releaseQuery(); queryGate = null;
+  await frame(lastFrom, lastTo).waitFor();
+  assert.equal(await page.locator('[data-sql-target-state="running"]').count(), 0);
+  await moveCaret(lastFrom);
+  for (let index = 0; index < 'SELECT 3'.length; index++) await sqlEditor.press('Shift+ArrowRight');
+  await frame(lastFrom, lastFrom + 'SELECT 3'.length).waitFor();
+  assert.equal(await highlights.first().getAttribute('data-sql-target-mode'), 'selection');
+  await page.locator('#run-mysql-query').click();
+  await page.locator('#run-mysql-query:not(.ant-btn-loading)').waitFor();
+  assert.equal(queryRequests.filter(request => request.path.endsWith('/query')).at(-1)!.body!.sql, document.slice(lastFrom, lastFrom + 'SELECT 3'.length), 'Running a selection submits precisely the selected, framed text without adding a semicolon.');
+  await sqlEditor.press(`${mod}+a`);
+  await highlights.waitFor({ state: 'hidden' });
+  const countBeforeInvalid = queryRequests.filter(request => request.path.endsWith('/query')).length;
+  await page.locator('#run-mysql-query').click();
+  await page.locator('#mysql-query-error').getByText('一次只能执行一条语句，请只选择一条。').waitFor();
+  assert.equal(queryRequests.filter(request => request.path.endsWith('/query')).length, countBeforeInvalid);
+  await moveCaret(4);
+  await frame(2, 2 + firstSql.length).waitFor();
+  queryGate = new Promise<void>(resolve => { releaseQuery = resolve; }); failNextQuery = true;
+  await sqlEditor.press(`${mod}+Enter`);
+  await frame(2, 2 + firstSql.length, 'running').waitFor();
+  await moveCaret(lastFrom);
+  releaseQuery(); queryGate = null;
+  await page.locator('#mysql-query-error').getByText('模拟查询失败').waitFor();
+  await frame(lastFrom, lastTo).waitFor();
+  for (const text of ["SELECT 'unclosed", '-- comment;', '  \n']) {
+    await sqlEditor.fill(text); await highlights.waitFor({ state: 'hidden' });
+  }
+  await sqlEditor.fill(document); await moveCaret(document.indexOf('SELECT id') + 7);
+  await frame(secondFrom, secondTo).waitFor();
+  await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'mysql-query-current-statement.png') });
+  const insertionBase = 'SELECT 1;\n\nSELECT 3;', inserted = 'SELECT *\nFROM `p_product_category`;';
+  await sqlEditor.fill(insertionBase); await moveCaret('SELECT 1;\n'.length);
+  await page.keyboard.insertText(inserted);
+  const insertedFrom = 'SELECT 1;\n'.length, insertedTo = insertedFrom + inserted.length;
+  await frame(insertedFrom, insertedTo).waitFor();
+  const submittedInsertion = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/query') && response.request().method() === 'POST');
+  await sqlEditor.press(`${mod}+Enter`); await submittedInsertion;
+  await frame(insertedFrom, insertedTo).waitFor();
+  assert.equal(queryRequests.filter(request => request.path.endsWith('/query')).at(-1)!.body!.sql, inserted, 'A caret after the inserted semicolon frames and runs the inserted statement, not the following SELECT 3.');
+  await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'mysql-query-inserted-statement.png') });
+  await sqlEditor.press('ArrowLeft'); await frame(insertedFrom, insertedTo).waitFor();
+  await sqlEditor.press('ArrowRight'); await frame(insertedFrom, insertedTo).waitFor();
+  await sqlEditor.press('ArrowDown');
+  const finalFrom = insertedTo + 1;
+  await frame(finalFrom, finalFrom + 'SELECT 3;'.length).waitFor();
+  const complexQueries = [
+    'SELECT id, name\nFROM `saasx`.`sys_user`',
+    'SELECT id FROM orders WHERE EXISTS (SELECT 1 FROM billing WHERE billing.id = orders.id)\nUNION ALL SELECT id FROM billing',
+    'WITH RECURSIVE a(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM a WHERE n < 3),\nb AS (SELECT n FROM a)\nSELECT n FROM b UNION SELECT 9',
+    'SELECT id, count(*) FROM orders GROUP BY id WITH ROLLUP',
+    'SELECT 3;',
+  ];
+  const implicitDocument = complexQueries.join('\n\n');
+  await sqlEditor.fill(implicitDocument);
+  let implicitFrom = 0;
+  for (const query of complexQueries) {
+    const implicitTo = implicitFrom + query.length;
+    const requestsBeforeMove = queryRequests.length;
+    await moveCaret(implicitFrom + query.lastIndexOf('SELECT') + 3);
+    await frame(implicitFrom, implicitTo).waitFor();
+    assert.equal(queryRequests.length, requestsBeforeMove, 'Local grammar analysis and caret movement do not request database metadata or run a query.');
+    const response = page.waitForResponse(item => new URL(item.url()).pathname.endsWith('/query') && item.request().method() === 'POST');
+    await sqlEditor.press(`${mod}+Enter`); await response;
+    await frame(implicitFrom, implicitTo).waitFor();
+    assert.equal(queryRequests.filter(request => request.path.endsWith('/query')).at(-1)!.body!.sql, implicitDocument.slice(implicitFrom, implicitTo), 'Semicolon-free framing and submission match exactly, preserving nested SELECT, UNION and WITH.');
+    if (query.startsWith('WITH')) await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'mysql-query-implicit-complex.png') });
+    implicitFrom = implicitTo + 2;
+  }
+  await sqlEditor.fill('SELECT * FROM\nSELECT 2');
+  await highlights.waitFor({ state: 'hidden' });
+  const countBeforeAmbiguous = queryRequests.filter(request => request.path.endsWith('/query')).length;
+  await sqlEditor.press(`${mod}+Enter`);
+  await page.locator('#mysql-query-error').getByText('无法确定当前语句边界，请选中要运行的查询，或补充分号并检查语法。').waitFor();
+  assert.equal(queryRequests.filter(request => request.path.endsWith('/query')).length, countBeforeAmbiguous, 'An uncertain inferred boundary never sends a larger query.');
+  await moveCaret('SELECT * FROM\n'.length);
+  for (let index = 0; index < 'SELECT 2'.length; index++) await sqlEditor.press('Shift+ArrowRight');
+  await frame('SELECT * FROM\n'.length, 'SELECT * FROM\nSELECT 2'.length).waitFor();
+  const explicitResponse = page.waitForResponse(item => new URL(item.url()).pathname.endsWith('/query') && item.request().method() === 'POST');
+  await sqlEditor.press(`${mod}+Enter`); await explicitResponse;
+  assert.equal(queryRequests.filter(request => request.path.endsWith('/query')).at(-1)!.body!.sql, 'SELECT 2', 'Explicit selection remains an exact fallback when the surrounding document is incomplete.');
+  const beforeShortcut = 'SELECT 0\n\nWITH RECURSIVE a(n) AS (\n  SELECT 1\n  UNION ALL\n  SELECT n + 1 FROM a WHERE n < 3\n), b AS (SELECT n FROM a)\nSELECT n FROM b\nUNION SELECT 9';
+  const shortcutFrom = beforeShortcut.length + 2;
+  const shortcutDocument = beforeShortcut + '\n\nsel\n\nSELECT 3;';
+  const noImplicitRun = queryRequests.filter(request => request.path.endsWith('/query')).length;
+  await sqlEditor.fill(beforeShortcut + '\n\n\n\nSELECT 3;'); await moveCaret(shortcutFrom);
+  await sqlEditor.pressSequentially('sel'); await option('sel').waitFor();
+  await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'mysql-query-implicit-shortcut.png') });
+  await sqlEditor.press('Enter'); await option('order_headers').waitFor();
+  await sqlEditor.pressSequentially('order_l'); await option('order_lines').waitFor(); await sqlEditor.press('Enter');
+  const shortcutQuery = 'SELECT *\nFROM `order_lines`;';
+  await frame(shortcutFrom, shortcutFrom + shortcutQuery.length).waitFor();
+  assert.equal(await sqlText(), (beforeShortcut + '\n\n' + shortcutQuery + '\n\nSELECT 3;').replaceAll('\n', ''), 'Expanding a shortcut after a semicolon-free WITH keeps both neighboring queries unchanged.');
+  assert.equal(queryRequests.filter(request => request.path.endsWith('/query')).length, noImplicitRun, 'Expanding and selecting a table never runs a query.');
+  const shortcutResponse = page.waitForResponse(item => new URL(item.url()).pathname.endsWith('/query') && item.request().method() === 'POST');
+  await sqlEditor.press(`${mod}+Enter`); await shortcutResponse;
+  await frame(shortcutFrom, shortcutFrom + shortcutQuery.length).waitFor();
+  assert.equal(queryRequests.filter(request => request.path.endsWith('/query')).at(-1)!.body!.sql, shortcutQuery, 'The frame and execution select only the expanded new query, not the preceding CTE or the following SELECT.');
+  await sqlEditor.press(`${mod}+z`);
+  assert.equal(await sqlText(), (beforeShortcut + '\n\nSELECT *\nFROM order_l;\n\nSELECT 3;').replaceAll('\n', ''), 'The table choice undoes independently from the typed filter.');
+  await sqlEditor.press(`${mod}+z`);
+  assert.equal(await sqlText(), (beforeShortcut + '\n\nSELECT *\nFROM ;\n\nSELECT 3;').replaceAll('\n', ''), 'The typed filter undoes independently from the shortcut expansion.');
+  await sqlEditor.press(`${mod}+z`);
+  assert.equal(await sqlText(), shortcutDocument.replaceAll('\n', ''), 'Undo restores the typed shortcut without changing neighboring statements.');
+  await sqlEditor.press('Control+Space'); await option('sel').waitFor(); await sqlEditor.press('Tab');
+  await option('order_headers').waitFor(); await sqlEditor.press('Escape');
   assert.doesNotMatch(JSON.stringify(queryRequests), /fixture-query-reader|fixture-query-password/);
   await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-query-fixture.png') });
   await page.getByRole('button', { name: '关闭 MySQL 查询', exact: true }).click();
