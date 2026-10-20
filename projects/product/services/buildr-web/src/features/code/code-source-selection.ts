@@ -29,5 +29,5 @@ export function codeSourceSelectionFilter(catalog: import('./api/code-api').Code
   const member = catalog.worktrees.find(member => member.repositoryId === target.repositoryId && member.id === target.checkoutId);
   if (!member) return null;
   const repositoryIds = [...new Set(selection.targets.filter(target => catalog.worktrees.some(candidate => candidate.repositoryId === target.repositoryId && candidate.id === target.checkoutId && candidate.groupId === member.groupId)).map(target => target.repositoryId))];
-  return {repositoryIds, groupId:member.groupId};
+  return {repositoryIds, groupId:repositoryIds.length===1?'checkout:'+member.id:member.groupId};
 }

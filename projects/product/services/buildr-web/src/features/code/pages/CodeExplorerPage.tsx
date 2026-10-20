@@ -1,6 +1,6 @@
 import { useCallback, useContext, useEffect, useId, useMemo, useState } from 'react';
 import { Alert, App, Button, Empty, Select, Spin, Tag } from 'antd';
-import { InfoCircleOutlined } from '@ant-design/icons';
+import { InfoCircleOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppShell } from '../../../app/AppShellContext';
 import { ReadingToggle } from '../../../components/ReadingToggle';
@@ -17,7 +17,7 @@ import { WorkspaceViewActiveContext } from '../../../app/pageTabs';
 import { FileEditingPane } from '../../../components/file-editing/FileEditingPane';
 import { codeBrowserKey, codeLocationKey, codeReturnTarget, relativeCodeLink, type CodeTaskEntry } from '../code-navigation';
 import { sourceControlDecorations } from '../source-control-decorations';
-import { codeWorktreeLabel, codeWorktreeGroupLabel } from '../code-source-labels';
+import { codeWorktreeLabel } from '../code-source-labels';
 import { workspaceHref } from '../../../lib/labels';
 import type { MarkdownRenderOptions } from '../../../markdown';
 import '../code-explorer.css';
@@ -37,7 +37,7 @@ export function CodeExplorerPage() {
   const active=state.active,file=active?state.files[active.key]:undefined;
   const editing=useFileEditingContext();
   const currentText=Boolean(active?.checkoutId&&!active.commitHash&&file&&!file.page&&!file.truncated&&(file.kind==='markdown'||file.kind==='text')&&!state.fileErrors[active.key]);
-  const editable=useEditableFile(workspaceId,currentText&&active?.checkoutId?{kind:'code',repositoryId:active.repositoryId,checkoutId:active.checkoutId,path:active.path}:null,file?.observedAt);
+  const editable=useEditableFile(workspaceId,currentText&&active?.checkoutId?{kind:'code',repositoryId:active.repositoryId,checkoutId:active.checkoutId,path:active.path}:null,file?.observedAt,file?.editorSnapshot);
   const editorSession=editable.file?editing.sessions[editable.file.id]:undefined;
   const markdownContent=editorSession?.content??file?.content??'';
   const imageHrefs=useMemo(()=>[...new Set([...markdownContent.matchAll(/!\[[^\]]*\]\(([^\s)]+)(?:\s+[^)]*)?\)/g)].map(match=>match[1]))].slice(0,8),[markdownContent]);
@@ -102,24 +102,24 @@ export function CodeExplorerPage() {
       label:<>{name}{sourceLabel&&<Tag color={tab.commitHash?'gold':undefined}>{sourceLabel}</Tag>}</>,
       accessibleLabel:name+(sourceLabel?' '+sourceLabel:''),closeLabel:'关闭文件 '+tab.path};
   });
-  const repositoryOptions=[...state.filterOptions.repositories.map(repo=>({value:repo.id,label:repo.name})),...state.scope.filter(id=>!state.filterOptions.repositories.some(repo=>repo.id===id)).map(id=>({value:id,label:state.catalog?(state.catalog.repositories.find(repo=>repo.id===id)?.name||id)+'（不在所选工作树中）':'正在读取代码库…',disabled:true}))];
-  const currentGroupLabel=codeWorktreeGroupLabel(state.catalog,state.worktreeScope,state.scope);
-  const groupOptions=[...state.filterOptions.groups.map(group=>{
-    const label=codeWorktreeGroupLabel(state.catalog,group.id,state.scope);
-    const count=state.catalog?.worktrees.filter(member=>member.groupId===group.id&&(!state.scope.length||state.scope.includes(member.repositoryId))).length||0;
-    return {value:group.id,label:label.name,role:[label.role,count>1?count+' 个目录':''].filter(Boolean).join(' · '),title:label.description};
-  }),...(state.worktreeScope&&!state.filterOptions.groups.some(group=>group.id===state.worktreeScope)?[state.worktreeScope]:[]).map(id=>({value:id,label:id.startsWith('unavailable:')?'所选工作树暂不可用':state.catalog?codeWorktreeGroupLabel(state.catalog,id).name+'（不在所选代码库中）':'正在读取工作树…',role:'',title:'',disabled:true}))];
+  const repositoryOptions=(state.catalog?.repositories||[]).map(repo=>({value:repo.id,label:repo.name}));
+  const singleRepository=state.scope.length===1;
+  const worktreeMembers=(state.catalog?.worktrees||[]).filter(member=>singleRepository&&member.repositoryId===state.scope[0]);
+  const selectedWorktree=singleRepository&&state.sources.length===1?state.sources[0].member:undefined;
+  const worktreeOptions=worktreeMembers.map(member=>{
+    const label=codeWorktreeLabel(member,worktreeMembers);
+    return {value:member.id,label:label.name,role:[label.role,member.branch,member.available?'':'暂不可用'].filter(Boolean).join(' · '),title:member.path,disabled:!member.available};
+  });
   const taskFallback=Boolean(state.entry?.taskId&&state.catalog&&!state.catalog.worktreeGroups.some(group=>group.kind==='task'&&group.taskId===state.entry!.taskId));
   const inScope=Boolean(active&&state.sources.some(item=>codeLocationKey(item.source)===codeLocationKey(active)));
   const includeActive=()=>{
     if(!active)return;const member=state.catalog?.worktrees.find(item=>item.id===active.checkoutId);
     if(!member){message.info('此文件的工作树暂不可确认，请从目录选择实际来源。');return;}
-    state.setSourceFilters(state.scope.length&&!state.scope.includes(active.repositoryId)?[...state.scope,active.repositoryId]:state.scope,member.groupId);
+    state.setSourceFilters([active.repositoryId],'checkout:'+member.id);
   };
   const context=<section className="code-root-selectors" aria-label="代码库与工作树筛选">
-    <Select mode="multiple" allowClear maxTagCount={1} classNames={{popup:{root:'code-source-picker-popup'}}} aria-label="筛选代码库" placeholder="全部代码库" value={state.scope} onChange={state.setScope} options={repositoryOptions} />
-    <Select allowClear showSearch optionFilterProp="label" classNames={{popup:{root:'code-source-picker-popup'}}} aria-label="筛选工作树" placeholder="选择工作树" value={state.worktreeScope} onChange={state.setWorktreeScope} options={groupOptions} optionRender={option=><div className="code-worktree-option" data-code-worktree-group={option.value} title={option.data.title}><span>{option.data.label}</span>{option.data.role&&<small>{option.data.role}</small>}</div>} />
-    {(currentGroupLabel.role||state.sources.length>1)&&<small className="code-source-summary" title={currentGroupLabel.description}>{[currentGroupLabel.role,state.sources.length>1?state.sources.length+' 个目录':''].filter(Boolean).join(' · ')}</small>}
+    <Select mode="multiple" optionFilterProp="label" allowClear maxTagCount={1} classNames={{popup:{root:'code-source-picker-popup'}}} aria-label="筛选代码库" placeholder="全部代码库" value={state.scope} onChange={state.setScope} options={repositoryOptions} />
+    <Select allowClear showSearch optionFilterProp="label" classNames={{popup:{root:'code-source-picker-popup'}}} aria-label="筛选工作树" placeholder={singleRepository?"选择工作树":"先选择一个代码库"} disabled={!singleRepository} value={selectedWorktree?.id} onChange={id=>state.setWorktreeScope(id?'checkout:'+id:undefined)} options={worktreeOptions} optionRender={option=><div className="code-worktree-option" data-code-worktree-id={option.value} data-code-worktree-group={worktreeMembers.find(member=>member.id===option.value)?.groupId} title={option.data.title}><span>{option.data.label}</span>{option.data.role&&<small>{option.data.role}</small>}</div>} />
     <small>{taskFallback?'任务没有独立目录，可在上方选择其他目录。':'选择代码库和工作树，查看对应文件'}</small>
   </section>;
   return <div className="code-explorer-stage">
@@ -130,7 +130,7 @@ export function CodeExplorerPage() {
         {returnTarget&&<Button size="small" type="text" onClick={returnToSource}>{returnTarget.label}</Button>}
         <ReadingToggle className="code-reading-toggle" expanded={treeHidden} onToggle={()=>setTreeHidden(value=>!value)} />
       </div>
-      {state.catalogError&&<Alert type="warning" message={state.catalogError} action={<Button onClick={()=>void state.refresh().catch(error=>message.error(String(error)))}>重试</Button>} />}
+      {state.catalogError&&<Alert type="warning" message={state.catalogError} action={<Button onClick={()=>void state.refreshCatalog().catch(error=>message.error(String(error)))}>重试</Button>} />}
       {active&&!inScope&&<div className="code-range-outside">当前文件不在筛选范围内。<Button type="link" size="small" onClick={includeActive}>加入范围</Button></div>}
       {!state.catalog&&!state.catalogError&&<div className="repository-reading-empty"><Spin />正在读取代码库…</div>}
       {state.catalog?.repositories.length===0&&<Empty description="工作空间尚未登记代码库" />}
@@ -138,13 +138,14 @@ export function CodeExplorerPage() {
       <div className="object-tab-panel" id={panelId} role={active ? 'tabpanel' : undefined} aria-labelledby={active ? tabElementId(panelId, active.key) : undefined} tabIndex={active ? 0 : undefined}>
       <RepositoryFileBrowser global readerActive={viewActive} defaultCollapsedTree revealSelectionRequest={state.selectionRequest} sidebarHost={host} treeRepositories={treeRepositories} files={files} repositoryName={selectedRepo?.name} repositoryId={active?.repositoryId} checkoutId={active?.checkoutId||undefined} observedDigest={currentText?undefined:file?.digest} observedRevision={currentText?editorSession?.file.revision||editable.file?.revision:file?.revision} observedAt={currentText?editorSession?.file.observedAt||editable.file?.observedAt:file?.observedAt} selectedRepositoryId={active?codeBrowserKey(active):undefined} selectedPath={active?.path||''} selectionKey={active?.key}
         readerSurface={currentText ? editable.file ? <FileEditingPane file={{...editable.file,locationLabel:selectedMember?codeWorktreeLabel(selectedMember,state.catalog?.worktrees).name:editable.file.locationLabel}} editing={editing} active={viewActive} focusLine={active?.line} focusRequest={active?.focusRequest}
+          toolbarEnd={<Button size="small" type="text" aria-label="刷新当前文件" icon={<ReloadOutlined />} loading={Boolean(active&&state.loading.includes(active.key))} onClick={()=>void state.refreshFile()} />}
           searchQuery={readQuery} onSelectLines={lines=>{if(active)setSelection({key:active.key,lines});}}
           markdownRevision={Object.keys(media).join(',')} markdownOptions={markdownOptions} /> : editable.error ? <Alert type="error" showIcon message={editable.error} action={<Button onClick={()=>void state.refresh()}>重试</Button>} /> : <div className="repository-reading-empty"><Spin />正在读取文件…</div> : undefined}
         readerContent={currentText?editorSession?.content:undefined} readerSelectedLines={selection.key===active?.key?selection.lines:null}
         onSelect={(path,line,matchQuery)=>active&&state.open(active,path,line,false,matchQuery)} onSelectRepositoryFile={openFile} context={context}
         location={file?.source.location||selectedMember?.path||''} version={file?.source.version||active?.commitHash||'当前文件'} historical={Boolean(active?.commitHash)} focusLine={active?.line} focusRequest={active?.focusRequest}
         readLoading={Boolean(active&&state.loading.includes(active.key))} readError={active?state.fileErrors[active.key]:undefined} readMessage={file?.message||undefined} readPage={file?.page} readMatchQuery={file?.observedMatch?.query} sizeBytes={file?.sizeBytes} onReadPage={state.readPage} canModify={Boolean(file&&!file.truncated&&file.kind!=='unsupported'&&!state.fileErrors[active?.key||''])} taskTitle={state.entry?.taskTitle}
-        onLoadDirectory={state.loadDirectory} loadedDirectoryKeys={loadedKeys} onSearch={onSearch} onShowIgnored={state.setShowIgnored} searchResults={searchResults} searchLoading={state.searchLoading} searchIncomplete={searchPartial||state.searchErrors.length>0}
+        onLoadDirectory={state.loadDirectory} onDirectoryExpansionChange={state.setExpandedDirectories} loadedDirectoryKeys={loadedKeys} onSearch={onSearch} onShowIgnored={state.setShowIgnored} searchResults={searchResults} searchLoading={state.searchLoading} searchIncomplete={searchPartial||state.searchErrors.length>0}
         treeNotice={<>
           {(searchPartial||partial)&&<div className="code-tree-coverage" role="status"><InfoCircleOutlined /><span>{searchPartial?'搜索未完整返回。每个工作树最多 100 个文件、200 条匹配行，请缩小关键词或范围。':'目录达到读取上限，显示部分文件。'}</span></div>}
           <CodeExplorerNotices notices={[
@@ -155,10 +156,11 @@ export function CodeExplorerPage() {
             {kind:'directories',title:'部分目录暂不可读取',details:directoryFailures},
           ]} onRetry={kind=>{
             if(kind==='updates'||kind==='status')state.sourceControl.retry();
+            else if(kind==='sources')void state.refreshCatalog().catch(error=>message.error(String(error)));
             else void state.refresh().catch(error=>message.error(String(error)));
           }} />
         </>}
-        onRetry={()=>state.refresh()} onViewCurrent={()=>{if(!active)return;if(!active.checkoutId){message.info('此历史文件的当前工作树尚未确认，请从目录选择实际来源。');return;}state.open({repositoryId:active.repositoryId,checkoutId:active.checkoutId},active.path);}} onHideTree={()=>setTreeHidden(true)}
+        onRefreshDirectories={state.refresh} onRetry={state.refreshFile} onViewCurrent={()=>{if(!active)return;if(!active.checkoutId){message.info('此历史文件的当前工作树尚未确认，请从目录选择实际来源。');return;}state.open({repositoryId:active.repositoryId,checkoutId:active.checkoutId},active.path);}} onHideTree={()=>setTreeHidden(true)}
         markdownRevision={Object.keys(media).join(',')} markdownOptions={markdownOptions} />
       </div>
     </div>

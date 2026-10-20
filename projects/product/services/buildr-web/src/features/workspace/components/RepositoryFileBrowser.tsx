@@ -48,6 +48,8 @@ type Props = {
   resetKey?: number;
   searchSeed?: string;
   onRetry(): void | Promise<void>;
+  onRefreshDirectories?(): void | Promise<void>;
+  onDirectoryExpansionChange?(keys:string[]): void;
   onViewCurrent(): void;
   onChanges?(path: string): void;
   onScene?(state: string): void;
@@ -241,10 +243,11 @@ export function RepositoryFileBrowser(props: Props) {
     try { await navigator.clipboard.writeText(text); message.success('已复制'); }
     catch { message.info('可在下方选中文字复制。'); }
   }
-  async function refresh() {
+  useEffect(()=>{props.onDirectoryExpansionChange?.(expanded);},[expanded,props.onDirectoryExpansionChange]);
+  async function refresh(directories=false) {
     setRefreshing(true);
     if(!props.global){window.setTimeout(() => { setRefreshing(false); void props.onRetry(); message.success('已重新读取模拟文件'); }, 450);return;}
-    try{await props.onRetry();}
+    try{await (directories&&props.onRefreshDirectories?props.onRefreshDirectories():props.onRetry());}
     catch(error){message.error(error instanceof Error?error.message:'文件暂不可重新读取。');}
     finally{setRefreshing(false);}
   }
@@ -276,7 +279,7 @@ export function RepositoryFileBrowser(props: Props) {
       {!props.treeRepositories && <code title={props.location}>{props.location}</code>}
       {props.global && !props.treeRepositories && <small className="repository-context-version">{props.version}</small>}
       {props.historical && !props.treeRepositories && <Tag color="gold">历史版本</Tag>}
-      <Tooltip title="重新读取当前查看位置"><Button type="text" size="small" aria-label="重新读取文件" loading={refreshing} icon={<ReloadOutlined />} onClick={refresh} /></Tooltip>
+      <Tooltip title={props.onRefreshDirectories?"刷新当前展开的目录，收起目录下次展开时更新":"重新读取当前查看位置"}><Button type="text" size="small" aria-label={props.onRefreshDirectories?"刷新展开目录":"重新读取文件"} loading={refreshing} icon={<ReloadOutlined />} onClick={()=>void refresh(true)} /></Tooltip>
     </header>
 </>;
   const tree = <>      <aside className="repository-browser-tree" data-prototype-position="source-tree">
@@ -334,7 +337,7 @@ export function RepositoryFileBrowser(props: Props) {
           {(visibleMatch?.continuesAfter||visibleMatch?.continuesBefore)&&<p className="repository-file-match-continuation">{visibleMatch.continuesAfter?'匹配文字跨段，下一段继续':'匹配文字续自上一段'}</p>}
         </section>}
         <div className="repository-reader-content" ref={codeRef} onScroll={event=>scrolls.current.set(readingKey,event.currentTarget.scrollTop)}>
-          {props.readError ? <div className="repository-reading-empty"><h3>文件暂不可读取</h3><p>{props.readError}</p><Button onClick={()=>void refresh()}>重新读取</Button>{props.historical && <Button onClick={props.onViewCurrent}>查看当前文件</Button>}</div> : refreshing || props.readLoading ? <div className="repository-reading-empty"><Spin /><p>正在重新读取…</p></div> : props.unavailable ? <div className="repository-reading-empty"><FolderOpenOutlined /><h3>当前工作目录暂不可读取</h3><p>保留查看位置，恢复后可继续浏览。</p><Button onClick={()=>void refresh()}>重新读取</Button></div> : !file ? <Empty description="从目录选择一个文件" /> : file.kind === 'unsupported' ? <Empty description="此文件类型暂不支持阅读" /> : file.kind === 'image' ? <div className="repository-image-preview"><img src={file.image} alt={shortName(file.path)} /><p>{shortName(file.path)} · 图片预览</p></div> : file.kind === 'markdown' && !raw && !props.readPage ? <MarkdownHost markdown={file.content} className="markdown-body repository-markdown" renderVersion={props.markdownRevision} options={props.markdownOptions || { allowRelativeLinks: true, onRelativeLinkClick: () => message.info('相关文件可从目录打开。') }} /> : <ReadOnlyFileCodeEditor key={readingKey} documentId={readingKey} path={file.path} content={file.content}
+          {props.readError ? <div className="repository-reading-empty"><h3>文件暂不可读取</h3><p>{props.readError}</p><Button onClick={()=>void refresh()}>重新读取</Button>{props.historical && <Button onClick={props.onViewCurrent}>查看当前文件</Button>}</div> : refreshing && !props.onRefreshDirectories || props.readLoading ? <div className="repository-reading-empty"><Spin /><p>正在重新读取…</p></div> : props.unavailable ? <div className="repository-reading-empty"><FolderOpenOutlined /><h3>当前工作目录暂不可读取</h3><p>保留查看位置，恢复后可继续浏览。</p><Button onClick={()=>void refresh()}>重新读取</Button></div> : !file ? <Empty description="从目录选择一个文件" /> : file.kind === 'unsupported' ? <Empty description="此文件类型暂不支持阅读" /> : file.kind === 'image' ? <div className="repository-image-preview"><img src={file.image} alt={shortName(file.path)} /><p>{shortName(file.path)} · 图片预览</p></div> : file.kind === 'markdown' && !raw && !props.readPage ? <MarkdownHost markdown={file.content} className="markdown-body repository-markdown" renderVersion={props.markdownRevision} options={props.markdownOptions || { allowRelativeLinks: true, onRelativeLinkClick: () => message.info('相关文件可从目录打开。') }} /> : <ReadOnlyFileCodeEditor key={readingKey} documentId={readingKey} path={file.path} content={file.content}
             startLine={firstLine} omitTrailingEmpty={omitTrailingEmpty} startsMidLine={props.readPage?.startsMidLine} endsMidLine={props.readPage?.endsMidLine}
             selectedLines={range} query={searchMode==='content'?searchQuery:''} observedMatch={visibleMatch}
             active={!props.global || props.readerActive} focusLine={props.focusLine} focusRequest={props.focusRequest}

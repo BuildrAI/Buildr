@@ -63,7 +63,7 @@ export function FileCodeEditor(props: Props) {
     const start = () => { if (current.current.documentId === documentId) current.current.onComposing?.(true); };
     const end = () => { if (current.current.documentId === documentId) current.current.onComposing?.(false); };
     const blur = () => { if (current.current.documentId === documentId) current.current.onBlur?.(); };
-    const scroll = () => { if (current.current.documentId === documentId) current.current.onScroll?.(editor.scrollDOM.scrollTop); };
+    const scroll = () => { if (current.current.documentId === documentId && current.current.active !== false && editor.dom.getClientRects().length) current.current.onScroll?.(editor.scrollDOM.scrollTop); };
     editor.contentDOM.addEventListener('compositionstart', start, true);
     editor.contentDOM.addEventListener('compositionend', end, true);
     editor.contentDOM.addEventListener('blur', blur);
@@ -83,7 +83,7 @@ export function FileCodeEditor(props: Props) {
 
   useEffect(() => {
     const editor = view.current;
-    if (!editor || incoming.current === props.state) return;
+    if (!editor || props.active === false || incoming.current === props.state) return;
     incoming.current = props.state;
     if (editor.state === props.state) return;
     // Restore through CodeMirror so its own layout anchoring cannot move the viewport
@@ -93,7 +93,18 @@ export function FileCodeEditor(props: Props) {
     if (scroll) editor.dispatch({ effects: scroll, annotations: Transaction.addToHistory.of(false) });
     presentation(editor, false);
     current.current.onViewReady?.(editor);
-  }, [props.state]);
+  }, [props.state, props.active]);
+  const previousActive = useRef(props.active);
+  useEffect(() => {
+    const resumed = previousActive.current === false && props.active !== false;
+    previousActive.current = props.active;
+    const editor = view.current, top = current.current.initialScrollTop;
+    if (!resumed || !editor || top === undefined) return;
+    const focus=appliedFocus.current;
+    if((props.focusLine||props.focusPosition!==undefined)&&(!focus||focus.line!==props.focusLine||focus.position!==props.focusPosition||focus.request!==props.focusRequest))return;
+    const restore = requestAnimationFrame(() => { editor.scrollDOM.scrollTop = top; });
+    return () => cancelAnimationFrame(restore);
+  }, [props.active]);
   useEffect(() => { if (view.current) presentation(view.current); }, [props.searchQuery, props.selectedLines?.[0], props.selectedLines?.[1]]);
   useEffect(() => { if (props.autoFocus) view.current?.focus(); }, [props.autoFocus]);
   useEffect(() => {

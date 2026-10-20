@@ -56,3 +56,14 @@ test('已选目录消失或同路径重建保留旧身份的失败，不接受�
   assert.equal(reselected.worktrees.some(item=>item.id===rebuilt.id),true);
   assert.equal(reselected.worktrees.some(item=>item.id===old.id),false);
 });
+
+test('具体检出目录即使共享任务组也只选择一项，并保留失效身份',()=>{
+  const sibling={...member('api-task-two','api','task:feature')};
+  const expanded={...catalog,worktrees:[...catalog.worktrees,sibling]};
+  assert.deepEqual(codeFilterMembers(expanded,['api'],'checkout:api-task').map(item=>item.id),['api-task']);
+  assert.deepEqual(codeFilterMembers(expanded,['web'],'checkout:api-task'),[]);
+  const next={...expanded,worktrees:expanded.worktrees.filter(item=>item.id!=='api-task')};
+  const retained=retainCodeSelections(next,expanded,'checkout:api-task');
+  assert.equal(codeFilterMembers(retained,['api'],'checkout:api-task')[0].available,false);
+  assert.equal(codeFilterMembers(selectCodeWorktreeGroup(next,retained,'checkout:api-task','checkout:api-task-two'),['api'],'checkout:api-task-two')[0].id,sibling.id);
+});

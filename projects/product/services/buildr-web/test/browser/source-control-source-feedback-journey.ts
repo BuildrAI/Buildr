@@ -47,30 +47,16 @@ export async function runSourceControlSourceFeedbackJourney({t,page,workspaceUrl
       await fixture.withRegisteredSource(branches.location,async(registered:any)=>{
         await page.setViewportSize({width:1440,height:900});await page.goto(workspaceUrl+'/code/explorer');await rootAt(registered.repositoryId,registered.location).waitFor();
         const catalog=await read('repositories'),members=catalog.worktrees.filter((member:any)=>member.groupId==='main');
-        const names=[...new Set(members.map((member:any)=>baseName(member.path)))];assert.ok(names.length>=2,'夹具必须确有不同名字的登记工作树');
-        const label=explorer().locator('.code-root-selectors .ant-select').nth(1).locator('.ant-select-selection-item');
-        const actual=await label.innerText();for(const name of names)assert.ok(actual.includes(name),'多库选择完整展示真实名字：'+actual);
-        assert.notEqual(actual,names[0],'不能把第一个工作树名字当作整个多库组');
-        const registeredCount=new Set(members.map((member:any)=>member.path)).size;
-        assert.equal((await explorer().locator('.code-root-selectors > small').first().innerText()).replace(/\s/gu,''),registeredCount+'个目录');
-        const groupSelect=explorer().locator('.code-root-selectors .ant-select').nth(1);await groupSelect.locator('.ant-select-selector').click();
-        const popupId=await groupSelect.getByRole('combobox').getAttribute('aria-controls');
-        const popup=page.locator('.ant-select-dropdown').filter({has:page.locator('[id="'+popupId+'"]')});
-        assert.ok((await popup.locator('[data-code-worktree-group]').first().innerText()).includes('主工作库'),'真实主工作库排在预览登记目录前面');
-        for(const group of catalog.worktreeGroups){
-          const option=page.locator('.ant-select-dropdown:visible [data-code-worktree-group="'+group.id+'"]');
-          const members=catalog.worktrees.filter((member:any)=>member.groupId===group.id);
-          if(members.length&&members.every((member:any)=>member.isMain))assert.ok((await option.locator('> small').innerText()).startsWith('主工作库'));
-          else if(members.length===1)assert.equal(await option.locator('> small').count(),0);
-        }
-        await groupSelect.getByRole('combobox').fill(baseName(alpha.location));
-        const optionsId=await groupSelect.getByRole('combobox').getAttribute('aria-controls'),options=page.locator('.ant-select-dropdown').filter({has:page.locator('[id="'+optionsId+'"]')});
-        for(const source of [alpha,peer]){
-          const member=catalog.worktrees.find((member:any)=>member.path===source.location);assert.ok(member);
-          const option=options.locator('[data-code-worktree-group="'+member.groupId+'"] > span');await option.waitFor();assert.ok((await option.innerText()).includes(source.location),'不同组的同名工作树也须显示各自真实完整路径');
-        }
-        await groupSelect.getByRole('combobox').fill('');await groupSelect.getByRole('combobox').press('Escape');
+        assert.equal(await explorer().getByRole('combobox',{name:'筛选工作树',exact:true}).isDisabled(),true,'多库不显示拼接工作树选项');
         const repository=catalog.repositories.find((repository:any)=>repository.id===registered.repositoryId);await chooseFilter(0,repository.name);
+        const label=explorer().locator('.code-root-selectors .ant-select').nth(1).locator('.ant-select-selection-item');
+        const groupSelect=explorer().locator('.code-root-selectors .ant-select').nth(1);await groupSelect.locator('.ant-select-selector').click();
+        const popupId=await groupSelect.getByRole('combobox').getAttribute('aria-controls'),popup=page.locator('.ant-select-dropdown').filter({has:page.locator('[id="'+popupId+'"]')});
+        for(const member of catalog.worktrees.filter((member:any)=>member.repositoryId===repository.id&&member.available)){
+          const option=popup.locator('[data-code-worktree-id="'+member.id+'"]');await option.waitFor();assert.equal(await option.getAttribute('title'),member.path);
+          if(member.isMain)assert.ok((await option.locator('> small').innerText()).startsWith('主工作库'));
+        }
+        await groupSelect.getByRole('combobox').press('Escape');
         await page.waitForFunction((name:string)=>document.querySelector('.code-explorer-stage .code-root-selectors .ant-select:nth-child(2) .ant-select-selection-item')?.textContent===name,baseName(registered.location));
         assert.equal(await explorer().locator('.code-source-summary').count(),0,'登记的任务目录不冒称主工作库');
         const root=rootAt(repository.id,registered.location);assert.equal(await root.getAttribute('data-location-label'),baseName(registered.location));
@@ -168,10 +154,12 @@ export async function runSourceControlSourceFeedbackJourney({t,page,workspaceUrl
     await page.setViewportSize({width:1440,height:900});await page.goto(workspaceUrl+'/code/explorer');await explorer().locator('.repository-root-name').first().waitFor();
     const catalog=await read('repositories'),peer=catalog.repositories.find((repository:any)=>repository.code==='second-code'),member=catalog.worktrees.find((tree:any)=>tree.repositoryId===peer.id&&tree.groupId==='main');assert.ok(member);
     await explorer().getByRole('textbox',{name:'搜索文件',exact:true}).fill('main.ts');await explorer().locator('.repository-search-result[data-file-path="'+fixture.path+'"]').click();await assertEditorText(page,fixture.workingText);
+    await explorer().getByRole('textbox',{name:'搜索文件',exact:true}).fill('');
+    const peerRoot=rootAt(peer.id,member.path);await peerRoot.click();await explorer().locator('.ant-tree-treenode-loading').waitFor({state:'hidden'});
     let failureMessage='';
     await fixture.withUnavailableRepository(async()=>{
       const failed=handled(page.waitForResponse((response:any)=>{const url=new URL(response.url());return url.pathname===operation('directory')&&url.searchParams.get('repositoryId')===peer.id&&url.searchParams.get('checkoutId')===member.id&&response.status()>=400;}));
-      await explorer().getByRole('button',{name:'重新读取文件',exact:true}).click();const response=await result(failed),body=await response.json();
+      await explorer().getByRole('button',{name:'刷新展开目录',exact:true}).click();const response=await result(failed),body=await response.json();
       assert.equal(response.status(),404);assert.equal(body.error.code,'code_repository_unavailable');failureMessage=body.error.message;assert.ok(failureMessage.trim());expectErrorConsole(response,404,'Not Found');
       const warning=notice('directories');await warning.waitFor();assert.ok((await warning.innerText()).includes('部分目录暂不可读取'));
       const expand=warning.getByRole('button',{name:'查看原因 · 部分目录暂不可读取',exact:true});assert.equal(await expand.getAttribute('aria-expanded'),'false');
@@ -182,7 +170,7 @@ export async function runSourceControlSourceFeedbackJourney({t,page,workspaceUrl
       await capture(page,'source-feedback-real-directory-failure.png');
     });
     const recovered=handled(page.waitForResponse((response:any)=>{const url=new URL(response.url());return url.pathname===operation('directory')&&url.searchParams.get('repositoryId')===peer.id&&url.searchParams.get('checkoutId')===member.id&&response.status()===200;}));
-    await explorer().getByRole('button',{name:'重新读取文件',exact:true}).click();await result(recovered);await notice('directories').waitFor({state:'hidden'});await assertEditorText(page,fixture.workingText);
+    await explorer().getByRole('button',{name:'刷新展开目录',exact:true}).click();await result(recovered);await notice('directories').waitFor({state:'hidden'});await assertEditorText(page,fixture.workingText);
     assert.equal(await explorer().getByText(failureMessage,{exact:false}).count(),0);
   });
 

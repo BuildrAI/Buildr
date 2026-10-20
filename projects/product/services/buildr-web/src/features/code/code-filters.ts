@@ -8,7 +8,7 @@ export function codeFilterMembers(catalog: CodeCatalog | null, repositoryIds: st
   const group = codeWorktreeGroupScope(groupId);
   return (catalog?.worktrees || []).filter(member =>
     (!repositoryIds.length || repositoryIds.includes(member.repositoryId)) &&
-    member.groupId === group);
+    (group.startsWith('checkout:') ? member.id === group.slice(9) : member.groupId === group));
 }
 export function codeFilterOptions(catalog: CodeCatalog | null, repositoryIds: string[], groupId?: string) {
   const repositoryCandidates = new Set(codeFilterMembers(catalog, [], groupId).map(member => member.repositoryId));
@@ -32,7 +32,7 @@ export function retainCodeSelections(next: CodeCatalog, previous: CodeCatalog | 
   if (!previous) return next;
   const group = codeWorktreeGroupScope(groupId);
   const missing = previous.worktrees.filter(member =>
-    member.groupId === group && !next.worktrees.some(current => current.id === member.id));
+    (group.startsWith('checkout:') ? member.id === group.slice(9) : member.groupId === group) && !next.worktrees.some(current => current.id === member.id));
   const missingGroups = new Set(missing.map(member => member.groupId));
   const replacement = (member: CodeWorktree) => missing.some(observed =>
     observed.repositoryId === member.repositoryId && observed.groupId === member.groupId && observed.path === member.path);

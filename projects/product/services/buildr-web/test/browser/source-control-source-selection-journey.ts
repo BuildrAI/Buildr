@@ -67,7 +67,7 @@ export async function runSourceControlSourceSelectionJourney({t,page,workspaceUr
     const member=value.worktrees.find((item:any)=>item.id===checkoutId);assert.ok(member);const group=value.worktreeGroups.find((item:any)=>item.id===member.groupId);assert.ok(group);
     const select=explorer().locator('.code-root-selectors .ant-select').nth(1);await select.locator('.ant-select-selector').click();
     const id=await select.getByRole('combobox').getAttribute('aria-controls');
-    await page.locator('.ant-select-dropdown').filter({has:page.locator('[id="'+id+'"]')}).locator('[data-code-worktree-group="'+group.id+'"]').click();
+    await page.locator('.ant-select-dropdown').filter({has:page.locator('[id="'+id+'"]')}).locator('[data-code-worktree-id="'+member.id+'"]').click();
     await select.getByRole('combobox').press('Escape');await explorer().getByRole('textbox',{name:'搜索文件',exact:true}).click();
     return member;
   };
@@ -192,7 +192,7 @@ export async function runSourceControlSourceSelectionJourney({t,page,workspaceUr
         // pending, so the newer hand selection must win when that response arrives.
         await page.goBack();await page.waitForURL(workspaceUrl+'/code/source-control');await scm().waitFor();
         release();const outcome=await returned;if(outcome.error)throw outcome.error;const observed=await outcome.response.json();
-        assert.ok(observed.selectedWorktrees.some((item:any)=>item.repositoryId===taskSource.repository.id&&item.worktreeId===taskSource.worktree.worktreeId),'迟到的真实任务响应仍指向A，不能借替身把其改成C');
+        assert.ok(observed.selectedWorktrees.some((item:any)=>item.repositoryId===taskSource.repository.id&&item.worktreeId===taskSource.worktree.worktreeId),'迟到的真实任务响应仍指向A，不能借替身把其改成C：'+JSON.stringify({expected:taskSource,selected:observed.selectedWorktrees}));
         await selected(repository.id,main.worktreeId);
         const updated=page.waitForResponse((response:any)=>{const url=new URL(response.url());return url.pathname===new URL(api+'/code/source-control').pathname&&url.searchParams.get('repositoryId')===repository.id;});
         branches.liveRefresh.write(longText(91));await updated;await selected(repository.id,main.worktreeId);

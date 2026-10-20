@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { codeApi, type CodeCatalog, type CodeDirectory, type CodeFile, type CodeLocation, type CodeSearch } from '../api/code-api';
+import { codeApi, type CodeCatalog, type CodeDirectory, type CodeLocation, type CodeSearch } from '../api/code-api';
 import { codeBrowserKey, codeCheckoutKey, codeFileKey, codeLocationKey, canonicalCodeLocation, type CodeFileTab, type CodeTaskEntry } from '../code-navigation';
 import { codeFilterMembers, codeFilterOptions, retainCodeSelections, selectCodeWorktreeGroup } from '../code-filters';
 import { repositorySearchQuery } from '../../workspace/components/repository-search-query';
 import { useCodeSourceSelection } from './useCodeSourceSelection';
 import { codeSourceSelectionFilter, codeSourceTargetKey } from '../code-source-selection';
 import { useSourceControlSummary } from './useSourceControl';
+import { visibleCodeDirectoryKeys } from '../code-expanded-directories';
+import { readExplorerFile, type ExplorerCodeFile } from '../code-file-read';
 import { planCodeDirectoryRefresh, removedCodeDirectoryPaths, type CodeDirectoryObservation } from '../code-directory-refresh';
 const failure=(error:unknown)=>error instanceof Error?error.message:'当前内容不可读取。';
-type CachedCodeFile=CodeFile & {observedMatch?:{line:number;query:string}};
+type CachedCodeFile=ExplorerCodeFile;
 export function useCodeExplorer(workspaceId:string,viewActive=true,entryKey?:string) {
   const sourceChoice=useCodeSourceSelection(workspaceId);
   const appliedSourceSequence=useRef(0),explicitEntry=useRef<string|undefined>(undefined);
@@ -37,6 +39,8 @@ export function useCodeExplorer(workspaceId:string,viewActive=true,entryKey?:str
   const focusSequence=useRef(0);
   const observedVersions=useRef(new Map<string,number>()),directoryObservations=useRef(new Map<string,CodeDirectoryObservation>());
   const automaticQueue=useRef(new Map<string,{source:CodeLocation;paths:Set<string>;readFile:boolean}>()),automaticRunning=useRef(false);
+  const expandedDirectories=useRef<string[]>([]);
+  const setExpandedDirectories=useCallback((keys:string[])=>{expandedDirectories.current=visibleCodeDirectoryKeys(keys);},[]);
   const latestCatalog=useRef<CodeCatalog|null>(null);
   const members=codeFilterMembers(catalog,scope,worktreeScope);
   const sources=members.map(member=>{
@@ -117,7 +121,6 @@ export function useCodeExplorer(workspaceId:string,viewActive=true,entryKey?:str
     }).catch(error=>{if(version===epoch.current&&directorySequence.current.get(key)===sequence&&!String(error).includes('AbortError'))setDirectoryErrors(previous=>({...previous,[key]:failure(error)}));}).finally(()=>{if(pending.current.get(key)===promise)pending.current.delete(key);});
     pending.current.set(key,promise);return promise;
   },[workspaceId,locationFor,directoryKey,showIgnored,run]);
-  useEffect(()=>{for(const item of sources)void loadDirectory(item.id,'',false,item.source);},[selectedLocationsKey,loadDirectory]);
   const loadFile=useCallback(async(tab:CodeFileTab,force=false,page?:number)=>{
     const cached=current.current.files[tab.key];
     const cachedTarget=cached?.page&&tab.line&&tab.line>=cached.page.startLine&&tab.line<=cached.page.endLine;
@@ -127,7 +130,7 @@ export function useCodeExplorer(workspaceId:string,viewActive=true,entryKey?:str
     const version=epoch.current,sequence=(fileSequence.current.get(tab.key)||0)+1;fileSequence.current.set(tab.key,sequence);setLoading(previous=>[...new Set([...previous,tab.key])]);
     const isCurrent=()=>version===epoch.current&&fileSequence.current.get(tab.key)===sequence;
     try{
-      const value:CachedCodeFile=await run(signal=>codeApi.file(workspaceId,{repositoryId:tab.repositoryId,checkoutId:tab.checkoutId,taskId:tab.taskId,commitHash:tab.commitHash,path:tab.path,page,line:page===undefined?tab.line:undefined,matchQuery:page===undefined&&tab.line?tab.matchQuery:undefined,expectedRevision:!force&&cached?cached.revision:undefined},signal));
+      const value:CachedCodeFile=await run(signal=>readExplorerFile(workspaceId,{repositoryId:tab.repositoryId,checkoutId:tab.checkoutId,taskId:tab.taskId,commitHash:tab.commitHash,path:tab.path,page,line:page===undefined?tab.line:undefined,matchQuery:page===undefined&&tab.line?tab.matchQuery:undefined,expectedRevision:!force&&cached?cached.revision:undefined},signal,codeApi));
       if(page!==undefined&&value.page&&cached?.page&&value.revision===cached.revision){value.page={...value.page,matchOffset:cached.page.matchOffset,matchEndOffset:cached.page.matchEndOffset};value.observedMatch=cached.observedMatch;}
       else if(tab.line&&tab.matchQuery)value.observedMatch={line:tab.line,query:tab.matchQuery};
       if(isCurrent()&&current.current.tabs.some(t=>t.key===tab.key)){setFiles(previous=>Object.fromEntries([...Object.entries(previous).filter(([key])=>key!==tab.key).slice(-7),[tab.key,value]]));setFileErrors(previous=>{const next={...previous};delete next[tab.key];return next;});}
@@ -205,24 +208,33 @@ export function useCodeExplorer(workspaceId:string,viewActive=true,entryKey?:str
   },[active,loadFile]);
   useEffect(()=>{const keys=new Set(tabs.map(tab=>tab.key));setFiles(previous=>Object.fromEntries(Object.entries(previous).filter(([key])=>keys.has(key))));},[tabs.map(tab=>tab.key).join('|')]);
   useEffect(()=>{
-    for(const item of current.current.sources){
-      const prefix=codeLocationKey(item.source)+':';
-      const paths=new Set(['',...Object.keys(current.current.directories).filter(key=>key.startsWith(prefix)).map(key=>key.slice(prefix.length).replace(/^(?:true|false):/,''))]);
-      for(const path of paths)void loadDirectory(item.id,path,false,item.source);
-    }
+    for(const item of current.current.sources)for(const key of expandedDirectories.current)if(key.startsWith(item.id+'::'))void loadDirectory(item.id,key.slice(item.id.length+2),false,item.source);
   },[showIgnored,loadDirectory]);
-  const refresh=useCallback(async()=>{
+  const refreshCatalog=useCallback(async()=>{
     const version=epoch.current,sequence=entrySequence.current,catalogRequest=++catalogSequence.current;
-    const value=await run(signal=>codeApi.repositories(workspaceId,entry?.taskId,signal));if(version!==epoch.current||sequence!==entrySequence.current||catalogRequest!==catalogSequence.current)return;
+    const value=await run(signal=>codeApi.repositories(workspaceId,current.current.entry?.taskId,signal));
+    if(version!==epoch.current||sequence!==entrySequence.current||catalogRequest!==catalogSequence.current)return;
     latestCatalog.current=value;setCatalog(previous=>retainCodeSelections(value,previous,current.current.worktreeScope));setCatalogError('');
-    setSearchRefresh(previous=>previous+1);
-    await Promise.allSettled(current.current.sources.flatMap(item=>{
+  },[workspaceId,run]);
+  const refresh=useCallback(async()=>{
+    if(!current.current.catalog){await refreshCatalog();return;}
+    const visible=new Set(expandedDirectories.current),jobs:Array<()=>Promise<void>>=[];
+    const invalid=new Set<string>();
+    for(const item of current.current.sources){
       const prefix=directoryKey(item.source,'');
-      const paths=new Set(['',...Object.keys(current.current.directories).filter(key=>key.startsWith(prefix)).map(key=>key.slice(prefix.length)),...Object.keys(directoryErrors).filter(key=>key.startsWith(prefix)).map(key=>key.slice(prefix.length))]);
-      return [...paths].map(path=>loadDirectory(item.id,path,true,item.source));
-    }));
-    if(active)await loadFile(active,true);
-  },[workspaceId,entry?.taskId,active,loadDirectory,loadFile,run,directoryErrors,directoryKey]);
+      for(const key of new Set([...Object.keys(current.current.directories),...directorySequence.current.keys()])){
+        if(!key.startsWith(prefix)||visible.has(item.id+'::'+key.slice(prefix.length)))continue;
+        invalid.add(key);directorySequence.current.set(key,(directorySequence.current.get(key)||0)+1);pending.current.delete(key);
+      }
+      for(const key of visible)if(key.startsWith(item.id+'::'))jobs.push(()=>loadDirectory(item.id,key.slice(item.id.length+2),true,item.source));
+    }
+    const remove=<T,>(previous:Record<string,T>)=>Object.fromEntries(Object.entries(previous).filter(([key])=>!invalid.has(key)));
+    current.current.directories=remove(current.current.directories);setDirectories(remove);setDirectoryErrors(remove);
+    setSearchRefresh(previous=>previous+1);
+    // Parent reads remove disappeared descendants before those descendants can be requested.
+    for(const job of jobs)await job();
+  },[directoryKey,loadDirectory,refreshCatalog]);
+  const refreshFile=useCallback(async()=>{const tab=current.current.tabs.find(tab=>tab.key===current.current.activeKey);if(tab)await loadFile(tab,true);},[loadFile]);
   useEffect(()=>{
     if(!viewActive)return;
     for(const item of sources){
@@ -260,7 +272,7 @@ export function useCodeExplorer(workspaceId:string,viewActive=true,entryKey?:str
     })().finally(()=>{automaticRunning.current=false;});
   },[viewActive,selectedLocationsKey,sourceControl.versions,loadDirectory,loadFile,directoryKey,directories]);
   return {catalog,catalogError,scope,worktreeScope,origin,locations,sources,filterOptions,directories,directoryErrors,tabs,active,selectionRequest,files,fileErrors,loading,showIgnored,searchResults,searchLoading,searchErrors,entry,selectedIds,sourceControl,
-    locationFor,directoryKey,loadDirectory,open,applyEntry,clearEntry,search,setShowIgnored,refresh,readPage,
+    locationFor,directoryKey,loadDirectory,open,applyEntry,clearEntry,search,setShowIgnored,refresh,refreshCatalog,refreshFile,setExpandedDirectories,readPage,
     setSourceFilters:(ids:string[],id:string)=>{
       ++entrySequence.current;++sourceIntentSequence.current;
       const latest=latestCatalog.current||current.current.catalog;
@@ -273,7 +285,7 @@ export function useCodeExplorer(workspaceId:string,viewActive=true,entryKey?:str
       if(latest)setCatalog(observed=>selectCodeWorktreeGroup(latest,observed,previousId,id));
       setWorktreeScope(id);publishFilters(latest||current.current.catalog,current.current.scope,id);
     },
-    setScope:(ids:string[])=>{++entrySequence.current;++sourceIntentSequence.current;setScope(ids);setOrigin(ids.length?'自选 '+ids.length+' 个代码库':'显示全部代码库');publishFilters(current.current.catalog,ids,current.current.worktreeScope);},
+    setScope:(ids:string[])=>{++entrySequence.current;++sourceIntentSequence.current;setScope(ids);setWorktreeScope('main');setOrigin(ids.length?'自选 '+ids.length+' 个代码库':'显示全部代码库');publishFilters(current.current.catalog,ids,'main');},
     activate:(tab:CodeFileTab)=>open(tab,tab.path),
     close:(key:string)=>{const remaining=tabs.filter(tab=>tab.key!==key);setTabs(remaining);setFiles(previous=>{const next={...previous};delete next[key];return next;});if(key===activeKey)setActiveKey(remaining.at(-1)?.key||'');},
   };

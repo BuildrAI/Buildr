@@ -27,8 +27,8 @@ test('检出身份映射资源管理器范围，不按同名分支或路径替�
   const catalog={worktrees:[{id:'registered',repositoryId:'repo',groupId:'main',path:'/repo',branch:'same'},
     {id:'linked',repositoryId:'repo',groupId:'worktree:linked',path:'/same/path',branch:'same'},
     {id:'linked',repositoryId:'other',groupId:'task:shared',path:'/same/path',branch:'same'}]};
-  assert.deepEqual(codeSourceSelectionFilter(catalog,{targets:[{repositoryId:'repo',checkoutId:'registered'}]}),{repositoryIds:['repo'],groupId:'main'});
-  assert.deepEqual(codeSourceSelectionFilter(catalog,{targets:[{repositoryId:'other',checkoutId:'linked'}]}),{repositoryIds:['other'],groupId:'task:shared'});
+  assert.deepEqual(codeSourceSelectionFilter(catalog,{targets:[{repositoryId:'repo',checkoutId:'registered'}]}),{repositoryIds:['repo'],groupId:'checkout:registered'});
+  assert.deepEqual(codeSourceSelectionFilter(catalog,{targets:[{repositoryId:'other',checkoutId:'linked'}]}),{repositoryIds:['other'],groupId:'checkout:linked'});
   assert.equal(codeSourceSelectionFilter(catalog,{targets:[{repositoryId:'repo',checkoutId:'retired'}]}),null);
   assert.equal(codeSourceSelectionFilter(catalog,{targets:[{repositoryId:'repo',checkoutId:'retired'},{repositoryId:'repo',checkoutId:'linked'}],preferredTarget:{repositoryId:'repo',checkoutId:'retired'}}),null,'首选失效不能回退集合中另一来源');
 });
