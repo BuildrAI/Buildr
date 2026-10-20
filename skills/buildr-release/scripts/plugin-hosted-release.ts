@@ -11,6 +11,7 @@ import { assertBoundPluginVerification } from '../../../projects/product/service
 import { assertPluginCandidateAdoption, PLUGIN_CANDIDATE_ADOPTION_FILE } from './dsh-plugin/candidate-adoption.ts';
 import { parseCompatibilityArtifact } from './package-compatibility.ts';
 import { releaseCommandDiagnostic, releaseDispatchRejected } from './release-failure.ts';
+import { approvePendingEnvironmentDeployments } from './environment-approval.ts';
 
 const repository = 'BuildrAI/Buildr';
 const workflow = 'publish-dsh-plugin.yml';
@@ -276,7 +277,13 @@ export function runPluginHostedOperation(options: any, dependencies: any = {}): 
   dependencies.onPointer?.(pointer);
   const run = JSON.parse(gh(['api', `repos/${repository}/actions/runs/${pointer.runId}`]));
   validatePluginHostedRun(run, { operation: options.operation, version: options.version, sourceCommit: options.sourceCommit, runId: pointer.runId });
-  if (run.status !== 'completed') return { status: 'running', run, effects, nextActions: ['等待同一插件运行终态，再继续原操作。'] };
+  if (run.status !== 'completed') {
+    if (run.status === 'waiting' && options.operation === 'publish') {
+      approvePendingEnvironmentDeployments(Number(run.id), repository, 'npm-production', args => gh(args), effects);
+      dependencies.onPointer?.(pointer);
+    }
+    return { status: 'running', run, effects, nextActions: ['等待同一插件运行终态，再继续原操作。'] };
+  }
   if (options.operation === 'prepare') {
     if (run.conclusion !== 'success') return { status: 'blocked', run, effects, nextActions: ['诊断原插件准备运行；不派发公开发布。'] };
     const candidate = readHostedPluginCandidate({ ...options, runId: run.id }, dependencies);

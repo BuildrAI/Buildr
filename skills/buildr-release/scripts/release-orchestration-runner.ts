@@ -669,7 +669,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       remoteBranches: [`release-${key}`, scoped || !state.publication?.requested || state.publication.cleanupAuthorization?.policy === 'delete-owned-release-branches/v2'
         ? `codex/release-main-${key}-g*` : releaseCarrierBranchFor(key, state.context.selection.generation)],
       retainedTag: targets.packages.includes('buildr') ? `v${targets.versions.buildr}` : null } : null,
-    effects: currentEffects, nextActions, ...extra,
+    effects: currentEffects, nextActions, ...(devDrift.length ? { devDrift } : {}), ...extra,
     recovery: releaseRecoveryPlan(phase, status, state, nextActions), operationDurationMs: Date.now() - operationStartedAt,
     };
   };
@@ -691,6 +691,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       run: runObservation.status === 'observed' ? runObservation.run : null, runObservation,
       ...(packagePublications ? { packagePublications } : {}) });
   }
+  let devDrift: any[] = [];
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const lock = `${file}.lock`;
   try { fs.writeFileSync(lock, `${process.pid}\n`, { flag: 'wx', mode: 0o600 }); }
@@ -914,6 +915,16 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     selection = inspectReleaseSelection({ ...selectionArgs, repo, devRef: 'origin/dev' });
     if (selection.status !== 'frozen') throw new Error('Final release selection is no longer frozen.');
     const sourceCommit = selection.releaseHead;
+    // Surface dev commits that landed after the frozen head but were never
+    // selected. They are valid release content only through an explicit
+    // --source selection; warning early avoids discovering them one frozen
+    // generation and one remote run later. Read-only, never blocks.
+    devDrift = !completedPreparation
+      ? git(['rev-list', `${sourceCommit}..origin/dev`, '--format=%H %s'], repo)
+          .split('\n').filter((line: string) => /^[0-9a-f]{40} /u.test(line))
+          .map((line: string) => ({ commit: line.slice(0, 40), subject: line.slice(41) }))
+          .filter((entry: any) => !state.sources.includes(entry.commit))
+      : [];
     if (state.preparation && state.preparation.sourceCommit !== sourceCommit) {
       state.preparationHistory = [...(state.preparationHistory ?? []), state.preparation]; state.preparation = null; save();
     }
@@ -1015,6 +1026,15 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
             ? [`buildr_peer_version=${state.preparationPeer.version}`, `buildr_peer_integrity=${state.preparationPeer.integrity}`] : [])] : [];
         if (localSource.transport) fields.push(`source_verification=${localSource.transport}`);
         if (state.candidate.localRunner) fields.push(`local_runner=${state.candidate.localRunner}`);
+        const { lintCandidateStepTimeouts } = await import('./candidate-step-timings.ts');
+        const { verificationSteps: registrySteps } = await import('../../../projects/product/services/buildr/test/verification/registry.ts').catch(() => ({ verificationSteps: [] }));
+        const capacityWarnings = lintCandidateStepTimeouts(path.join(workspace, 'projects/product/services/buildr'), registrySteps ?? []);
+        if (capacityWarnings.length > 0) {
+          currentEffects.push({ type: 'candidate-capacity-warnings', warnings: capacityWarnings });
+          for (const warning of capacityWarnings) {
+            console.warn(`candidate-capacity-warning: ${warning.stepId} observed ${Math.round(warning.maxObservedMs / 1000)}s on ${warning.runner}, ${Math.round(warning.ratio * 100)}% of its ${Math.round(warning.timeoutMs / 1000)}s timeout`);
+          }
+        }
         assertCandidateDispatchBudget(['purpose=candidate', ...fields]);
         state.candidate.dispatchRequested = true;
         state.candidate.dispatchRejected = false;
@@ -1066,6 +1086,11 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       : state.candidate.localRunner ? path.join(repo, 'projects/product/services/buildr/build/verification/candidates', sourceCommit, 'candidate-package') : undefined;
     const candidateEvidence = !scoped || plan.requirements.buildr ? readCandidateEvidence({ candidateRunId: state.candidate.runId, ghCommand: options.ghCommand || 'gh', repo, execute,
       artifactDestination, dependencies: dependencies.candidateDependencies }) : null;
+    if (candidateEvidence?.aggregate) {
+      const { recordCandidateStepTimings } = await import('./candidate-step-timings.ts');
+      const recorded = recordCandidateStepTimings(path.join(workspace, 'projects/product/services/buildr'), candidateEvidence.aggregate, state.candidate.runId);
+      if (recorded > 0) currentEffects.push({ type: 'candidate-step-timings-recorded', runId: state.candidate.runId, steps: recorded });
+    }
     if (candidateEvidence?.aggregate.status === 'incomplete') {
       const aggregate = candidateEvidence.aggregate;
       if (!state.candidate.localRunner || aggregate.sourceCommit !== sourceCommit || aggregate.sourceTree !== selection.releaseTree
