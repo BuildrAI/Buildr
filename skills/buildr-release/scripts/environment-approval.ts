@@ -32,15 +32,14 @@ export function approvePendingEnvironmentDeployments(runId: number, repository: 
   if (targets.length === 0) return false;
   let approved = false;
   for (const item of targets) {
-    const effect: EnvironmentApproval = { type: 'environment-deployment-approved', runId, environment, deploymentId: 0, state: 'unconfirmed' };
+    let effect: EnvironmentApproval = { type: 'environment-deployment-approved', runId, environment, deploymentId: 0, state: 'unconfirmed' };
     try {
       const response = JSON.parse(gh(['api', '-X', 'POST', `repos/${repository}/actions/runs/${runId}/pending_deployments`,
         '-F', `environment_ids[]=${item.environment.id}`, '-F', 'state=approved',
         '-F', `comment=Approved by authorized release operation for ${environment}`]));
       const deployments = Array.isArray(response) ? response : [response];
       const deployment = deployments.find((entry: any) => entry?.environment === environment || Number.isSafeInteger(entry?.id));
-      effect.deploymentId = deployment?.id ?? item.environment.id;
-      effect.state = 'confirmed';
+      effect = { ...effect, deploymentId: deployment?.id ?? item.environment.id, state: 'confirmed' };
       approved = true;
     } catch { /* keep unconfirmed; the run remains observable */ }
     effects.push(effect);
