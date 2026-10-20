@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Button, Form, Input, Select, Space } from 'antd';
+import { textFieldTrim } from '../../../lib/input-trim';
 import { assetCatalogApi, type AssetCatalog, type ProjectCandidates } from '../../workspace/api/asset-catalog-api';
 
 type Props = { catalog: AssetCatalog; busy: boolean; onBusy: (busy: boolean) => void; onReady: (ready: boolean) => void; onCatalog: (catalog: AssetCatalog) => void; onRegistered: (code: string) => void };
@@ -28,7 +29,7 @@ export function ProjectRegistrationForm({ catalog, busy, onBusy, onReady, onCata
     if (!candidate || !candidates) return;
     onBusy(true); setError('');
     try {
-      await assetCatalogApi.registerProject({ revision: candidates.revision, observation: candidate.observation, code, name, description, serviceIds });
+      await assetCatalogApi.registerProject({ revision: candidates.revision, observation: candidate.observation, code, name: name.trim(), description, serviceIds });
       onRegistered(code);
     } catch (err) { setError(`${(err as Error).message} 当前输入已保留，请重新核对目录后再提交。`); }
     finally { onBusy(false); }
@@ -40,8 +41,8 @@ export function ProjectRegistrationForm({ catalog, busy, onBusy, onReady, onCata
     </Form.Item>
     {candidates?.diagnostics.map(item => <Alert key={item.code} type="warning" message={`${item.path}：${item.message}`} />)}
     {candidate && <Form.Item label="登记位置"><div>{candidate.path}</div>{git && <div>Git 地址：{git.url}<br />集成分支：{git.integrationBranch}</div>}</Form.Item>}
-    <Form.Item label="项目标识"><Input aria-label="项目标识" value={code} readOnly /></Form.Item>
-    <Form.Item label="项目名称" required><Input aria-label="项目名称" required value={name} onChange={event => setName(event.target.value)} /></Form.Item>
+    <Form.Item label="项目编码"><Input aria-label="项目编码" value={code} readOnly /></Form.Item>
+    <Form.Item label="项目名称" required><Input aria-label="项目名称" required value={name} {...textFieldTrim(setName)} /></Form.Item>
     <Form.Item label="业务目标"><Input.TextArea aria-label="业务目标" rows={3} value={description} onChange={event => setDescription(event.target.value)} /></Form.Item>
     <Form.Item label="关联服务（可选）"><Select aria-label="关联已有服务" mode="multiple" showSearch optionFilterProp="label" placeholder="明确选择本次要关联的服务" value={serviceIds} onChange={setServiceIds} options={catalog.services.map(service => ({ value: service.id, label: service.name }))} /></Form.Item>
   </Form></form>;

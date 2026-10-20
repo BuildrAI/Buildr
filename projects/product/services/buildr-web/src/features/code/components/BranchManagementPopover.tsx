@@ -112,7 +112,7 @@ export function BranchManagementPopover({ repository, worktree, entries, ready, 
         <ul className="branch-management-affected-files">{failure!.affectedFiles.map(path => <li key={path} title={path}>{path}</li>)}</ul>
         <Button type="text" block className="branch-management-primary-action" onClick={() => { onViewChanges(); close(); }}>查看现有改动</Button>
       </> : impact.blockedReason ? <p className="branch-management-warning">{impact.blockedReason}</p> : <>
-        {impact.needsLocalName && <label className="branch-management-local-name">本地分支（Local Branch）名称<Input size="small" value={localName} onChange={event => { setLocalName(event.target.value); onTargetChange(); }} aria-label="切换使用的本地分支（Local Branch）名称" onPressEnter={() => { if (targetName) void use(entry, targetName); }} /></label>}
+        {impact.needsLocalName && <label className="branch-management-local-name">本地分支（Local Branch）名称<Input size="small" value={localName} onChange={event => { setLocalName(event.target.value.replace(/\s+/g, '')); onTargetChange(); }} aria-label="切换使用的本地分支（Local Branch）名称" onPressEnter={() => { if (targetName) void use(entry, targetName); }} /></label>}
         <Button type="text" block className="branch-management-primary-action" disabled={!targetName || reading} loading={pending} title={actionLabel} onClick={() => void use(entry, impact.needsLocalName ? targetName : undefined)}>{actionLabel}</Button>
       </>}
     </section>;

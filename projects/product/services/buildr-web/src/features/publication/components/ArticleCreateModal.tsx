@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Alert, Form, Input, Modal, Select } from 'antd';
+import { textFieldTrim } from '../../../lib/input-trim';
 import { publicationApi, type ArticleProject, type PublicationDetail } from '../api/publication-api';
 type Props = { projects: ArticleProject[]; defaultProject?: string; onClose: () => void; onCreated: (detail: PublicationDetail) => void };
 export function ArticleCreateModal({ projects, defaultProject, onClose, onCreated }: Props) {
@@ -16,7 +17,7 @@ export function ArticleCreateModal({ projects, defaultProject, onClose, onCreate
     {error && <Alert type="error" message={error} />}
     <Form layout="vertical">
       <Form.Item label="所属项目" required><Select id="article-create-project" value={project || undefined} onChange={setProject} options={projects.map(item => ({ value: item.code, label: item.name }))} /></Form.Item>
-      <Form.Item label="文章标题" required><Input id="article-create-title" autoFocus maxLength={150} value={title} onChange={event => setTitle(event.target.value)} onPressEnter={() => void create()} placeholder="例如：一次工作空间实践" /></Form.Item>
+      <Form.Item label="文章标题" required><Input id="article-create-title" autoFocus maxLength={150} value={title} {...textFieldTrim(setTitle)} onPressEnter={() => void create()} placeholder="例如：一次工作空间实践" /></Form.Item>
     </Form><p className="publication-hint">先创建一篇草稿，直接编写，也可以交给智能体（Agent）接着写。</p>
   </Modal>;
 }

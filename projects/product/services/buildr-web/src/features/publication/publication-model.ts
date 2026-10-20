@@ -61,7 +61,7 @@ export function buildWritingRequest(input: { projectCode: string; projectName: s
   const article = input.article;
   return [
     `请协助${input.method}。`, `所属项目：${input.projectName}（${input.projectCode}）`,
-    ...(article ? [`文章：${article.title}`, `文章标识：${article.id}`, `项目内来源：docs/publications/${article.sourcePath}`, `已观察版本：${input.revision || article.revision}`, '请按项目登记定位当前文件，先读取真实稿件并核对版本，保留已有修改和平台记录。'] : ['请按项目登记定位 docs/publications/，创建文章草稿。']),
+    ...(article ? [`文章：${article.title}`, `文章编码：${article.id}`, `项目内来源：docs/publications/${article.sourcePath}`, `已观察版本：${input.revision || article.revision}`, '请按项目登记定位当前文件，先读取真实稿件并核对版本，保留已有修改和平台记录。'] : ['请按项目登记定位 docs/publications/，创建文章草稿。']),
     ...(input.hasUnsavedChanges ? ['浏览器中还有未保存修改；本请求不包含这些修改，请先与用户核对后接续，不要覆盖。'] : []),
     `目标：${input.goal.trim()}`, `参考材料：${input.materials.trim() || '使用当前项目内可核实的资料'}`,
     '根据目标选择已安装且适用的技能（Skill），核实事实、引用与图片附件。图片和附件放在项目 docs/publications/assets/，使用相对路径引用。',

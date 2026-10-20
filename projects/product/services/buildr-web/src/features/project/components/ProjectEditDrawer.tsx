@@ -4,6 +4,7 @@ import { useAppShell } from '../../../app/AppShellContext';
 import { MetadataEditDrawer } from '../../../components/MetadataEditDrawer';
 import { MetadataConflictNotice } from '../../../components/MetadataConflictNotice';
 import { rebaseEditedFields } from '../../../lib/metadata-recovery';
+import { textFieldTrim } from '../../../lib/input-trim';
 import { Alert, Form, Input } from 'antd';
 
 
@@ -89,7 +90,7 @@ export function ProjectEditDrawer({ open, projectCode, onClose, onSaved }: Props
       if (scope.current === observedScope) { busy.current = false; setReadingLatest(false); }
     }
   };
-  const save = async (base: ProjectEditPayload, draft = { name, description }) => {
+  const save = async (base: ProjectEditPayload, draft = { name: name.trim(), description }) => {
     if (!projectCode || busy.current || base.migrationRequired || !draft.name.trim() || !draft.description.trim()) return;
     const observedScope = scope.current;
     busy.current = true;
@@ -175,7 +176,7 @@ export function ProjectEditDrawer({ open, projectCode, onClose, onSaved }: Props
                   required
                   disabled={readOnly || saving}
                   value={name}
-                  onChange={(event) => setName(event.target.value)}
+                  {...textFieldTrim(setName)}
                 />
               </Form.Item>
               <Form.Item label="说明" required>

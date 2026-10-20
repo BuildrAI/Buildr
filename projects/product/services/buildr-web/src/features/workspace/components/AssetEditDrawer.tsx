@@ -3,6 +3,7 @@ import { assetEditDraft } from './asset-edit-draft';
 import { useAppShell } from '../../../app/AppShellContext';
 import { MetadataConflictNotice } from '../../../components/MetadataConflictNotice';
 import { rebaseEditedFields } from '../../../lib/metadata-recovery';
+import { codeFieldTrim, textFieldTrim } from '../../../lib/input-trim';
 import { RepositoryFields } from './RepositoryFields';
 import { CreatableResourceSelect } from '../../../components/CreatableResourceSelect';
 import { useEffect, useRef, useState } from 'react';
@@ -42,7 +43,7 @@ export function AssetEditDrawer({ catalog: initialCatalog, kind, id, onClose }: 
   if (scope.current.workspaceId !== workspaceId || scope.current.kind !== kind || scope.current.id !== id) scope.current = { workspaceId, kind, id };
   useEffect(() => () => { scope.current = { ...scope.current }; }, []);
   const baseDraft = assetEditDraft(observed, kind, id)!;
-  const draft = { name, description, repositoryId, modulePath, path: source.path ?? '.', url: source.url ?? '', remote: source.remote ?? 'origin', integrationBranch: source.integrationBranch ?? '' };
+  const draft = { name: name.trim(), description, repositoryId, modulePath: modulePath.trim(), path: (source.path ?? '.').replace(/\s+/g, ''), url: (source.url ?? '').replace(/\s+/g, ''), remote: (source.remote ?? 'origin').replace(/\s+/g, ''), integrationBranch: (source.integrationBranch ?? '').replace(/\s+/g, '') };
   const latestDraft = latest ? assetEditDraft(latest, kind, id) : null;
   const readOnly = Boolean(observed.migrationRequired || latest?.migrationRequired);
   const applyDraft = (next: typeof draft) => {
@@ -105,8 +106,8 @@ export function AssetEditDrawer({ catalog: initialCatalog, kind, id, onClose }: 
         {kind === 'repository' && <><dt>仓库目录</dt><dd>{latestDraft.path}</dd><dt>Git 地址</dt><dd>{latestDraft.url || '未填写'}</dd><dt>远端名称（Remote）</dt><dd>{latestDraft.remote}</dd><dt>集成分支</dt><dd>{latestDraft.integrationBranch || '未填写'}</dd></>}
       </dl>} onRead={() => void readLatest()} onUseLatest={useLatest} onKeep={keepChanges} onCopy={() => void copy()} />}
     <form ref={form} id="catalog-edit" onSubmit={event => { event.preventDefault(); if (!conflict) void save(observed); }}>
-      <Form layout="vertical" component={false} disabled={busy || readOnly}><Form.Item label="名称" required><Input aria-label="名称" value={name} required onChange={e => setName(e.target.value)} /></Form.Item><Form.Item label="说明"><Input.TextArea aria-label="说明" value={description} onChange={e => setDescription(e.target.value)} rows={4} /></Form.Item>
-      {kind === 'service' && <><Form.Item label="代码库" required><CreatableResourceSelect label="代码库" disabled={busy || readOnly} value={creatingRepository ? undefined : repositoryId} placeholder={creatingRepository ? '正在新增代码库' : '选择代码库'} onChange={value => { setCreatingRepository(false); setRepositoryId(value as string); }} onCreate={() => setCreatingRepository(true)} options={catalog.repositories.map(r => ({ value: r.id, label: `${r.name} · ${repositoryBranch(r)}` }))} /></Form.Item>{creatingRepository && <section className="resource-section" data-inline-repository><div className="resource-section-head"><h3>新增代码库</h3><Button type="text" disabled={busy || readOnly} onClick={() => setCreatingRepository(false)}>取消新增代码库</Button></div><RepositoryFields disabled={busy || readOnly} value={repositoryDraft} onChange={setRepositoryDraft} /><p className="page-copy">保存服务时一并登记代码库，关闭编辑不会留下登记。</p></section>}<Form.Item label="模块目录"><Input aria-label="模块目录" value={modulePath} onChange={e => setModulePath(e.target.value)} placeholder="留空表示代码库根目录" /></Form.Item></>}
+      <Form layout="vertical" component={false} disabled={busy || readOnly}><Form.Item label="名称" required><Input aria-label="名称" value={name} required {...textFieldTrim(setName)} /></Form.Item><Form.Item label="说明"><Input.TextArea aria-label="说明" value={description} onChange={e => setDescription(e.target.value)} rows={4} /></Form.Item>
+      {kind === 'service' && <><Form.Item label="代码库" required><CreatableResourceSelect label="代码库" disabled={busy || readOnly} value={creatingRepository ? undefined : repositoryId} placeholder={creatingRepository ? '正在新增代码库' : '选择代码库'} onChange={value => { setCreatingRepository(false); setRepositoryId(value as string); }} onCreate={() => setCreatingRepository(true)} options={catalog.repositories.map(r => ({ value: r.id, label: `${r.name} · ${repositoryBranch(r)}` }))} /></Form.Item>{creatingRepository && <section className="resource-section" data-inline-repository><div className="resource-section-head"><h3>新增代码库</h3><Button type="text" disabled={busy || readOnly} onClick={() => setCreatingRepository(false)}>取消新增代码库</Button></div><RepositoryFields disabled={busy || readOnly} value={repositoryDraft} onChange={setRepositoryDraft} /><p className="page-copy">保存服务时一并登记代码库，关闭编辑不会留下登记。</p></section>}<Form.Item label="模块目录"><Input aria-label="模块目录" value={modulePath} {...codeFieldTrim(setModulePath)} placeholder="留空表示代码库根目录" /></Form.Item></>}
       {kind === 'repository' && <><RepositoryFields editing disabled={busy || readOnly} value={source} onChange={changeSource} />
         {local.loading && <p className="page-copy">正在读取本地 Git 配置…</p>}
         {(local.error || local.data?.diagnostic) && <Alert type="warning" message={local.error || local.data?.diagnostic} />}

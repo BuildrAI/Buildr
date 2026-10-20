@@ -68,7 +68,7 @@ export function ProjectsPage() {
       loading={state === '正在读取'} error={error || undefined} rowKey={p => p.id} name={p => p.name} summary={p => p.description}
       searchText={p => `${p.name} ${p.code} ${p.description}`} href={p => href(`/projects/${p.code}`)} onOpen={p => navigate(href(`/projects/${p.code}`))} onEdit={p => setEditing(p.code)} onDelete={p => setDeleting(p.code)}
       tableId="project-table-wrap" bodyId="project-table-body" countId="projects-state" searchId="projects-search"
-      columns={[{ title: '项目标识', width: 160, render: (_, p) => <code className="resource-code">{p.code}</code> }]}
+      columns={[{ title: '项目编码', width: 160, render: (_, p) => <code className="resource-code">{p.code}</code> }]}
       notice={migrationMessage ? <Alert type="warning" message={migrationMessage} /> : null}
       actions={<Button id="project-directory-create-button" type="primary" onClick={() => setCreating(true)}>新增项目</Button>} />
     {deleting && <AssetDeleteDialog kind="project" id={deleting} onClose={() => setDeleting(null)} onDeleted={() => setRefresh(v => v + 1)} />}

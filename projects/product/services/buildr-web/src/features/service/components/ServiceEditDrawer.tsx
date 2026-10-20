@@ -3,6 +3,7 @@ import { serviceApi } from '../api/service-api';
 import { useEffect, useState, type FormEvent } from 'react';
 import { useAppShell } from '../../../app/AppShellContext';
 import { MetadataEditDrawer } from '../../../components/MetadataEditDrawer';
+import { textFieldTrim } from '../../../lib/input-trim';
 import { Alert, Form, Input, Select } from 'antd';
 
 import { SERVICE_TYPE_OPTIONS } from '../../../lib/labels';
@@ -84,7 +85,7 @@ export function ServiceEditDrawer({ open, projectCode, serviceCode, onClose, onS
     try {
       const updated = await serviceApi.updateService(projectCode, serviceCode, {
         revision: current.revision,
-        name,
+        name: name.trim(),
         description,
         type: serviceType,
       }) as ServiceEditPayload;
@@ -141,7 +142,7 @@ export function ServiceEditDrawer({ open, projectCode, serviceCode, onClose, onS
                   required
                   disabled={readOnly || saving}
                   value={name}
-                  onChange={(event) => setName(event.target.value)}
+                  {...textFieldTrim(setName)}
                 />
               </Form.Item>
               <Form.Item label="说明" required>
