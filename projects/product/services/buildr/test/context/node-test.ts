@@ -1,7 +1,17 @@
 import { createTestContextPool } from './runtime.ts';
 import { TEST_CONTEXT_PROVIDERS } from './registry.ts';
+import process from 'node:process';
 
 let defaultPool: any = null;
+
+// This owner must finish before the preload removes its enclosing state root.
+process.prependOnceListener('exit', () => {
+  try { cleanupDefaultTestContextPool(); }
+  catch (error: any) {
+    process.stderr.write(`Default test context cleanup failed: ${error.message}\n`);
+    process.exitCode = 1;
+  }
+});
 
 export function defaultTestContextPool(options: any = {}): any  {
   defaultPool ??= createTestContextPool({ providers: TEST_CONTEXT_PROVIDERS, ...options });
@@ -17,7 +27,7 @@ export function acquireNodeTestContext(t: any, key: any, options: any = {}): any
 
 export function cleanupDefaultTestContextPool(): any  {
   if (!defaultPool) return { status: 'not-owned' };
-  const result: any = defaultPool.cleanup();
+  const pool = defaultPool;
   defaultPool = null;
-  return result;
+  return pool.cleanup();
 }

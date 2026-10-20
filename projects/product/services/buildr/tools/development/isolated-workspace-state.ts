@@ -10,11 +10,18 @@ import path from 'node:path';
 export function createIsolatedWorkspaceState(options: { env?: NodeJS.ProcessEnv; prefix?: string } = {}) {
   const env = options.env ?? process.env;
   const root = fs.mkdtempSync(path.join(env.BUILDR_TEST_LOCAL_STATE_ROOT || os.tmpdir(), options.prefix ?? 'buildr-test-state-'));
+  const temp = path.join(root, 'tmp');
+  fs.mkdirSync(temp);
   return {
     root,
     env: {
       ...env,
       BUILDR_TEST_LOCAL_STATE_ROOT: root,
+      // Reusable verification evidence outlives disposable test files.
+      BUILDR_TEST_SHARED_TEMP_ROOT: env.BUILDR_TEST_SHARED_TEMP_ROOT || os.tmpdir(),
+      TMPDIR: temp,
+      TMP: temp,
+      TEMP: temp,
       BUILDR_APP_DATA_DIR: path.join(root, 'app-data'),
       BUILDR_PRODUCT_DATA_DIR: path.join(root, 'product-data'),
     },

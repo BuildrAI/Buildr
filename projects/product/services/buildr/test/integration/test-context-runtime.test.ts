@@ -1,9 +1,44 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
+import process from 'node:process';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import { createTestContextPool, TEST_CONTEXTS_ENV } from '../context/runtime.ts';
+
+for (const mode of ['success', 'assertion-failure', 'cleanup-failure', 'explicit-cleanup']) test(`default context pool cleans its external seed on worker exit: ${mode}`, t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-default-pool-proof-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const observation = path.join(root, 'observation.json');
+  const adapter = new URL('../context/node-test.ts', import.meta.url).href;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', `
+import fs from 'node:fs';
+import path from 'node:path';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { defaultTestContextPool, cleanupDefaultTestContextPool } from ${JSON.stringify(adapter)};
+const pool = defaultTestContextPool({ temporaryRoot: ${JSON.stringify(root)}, providers: [{
+  key: 'sample/v1', isolationMode: 'sandbox', resetStrategy: 'recreate', parallelSafety: 'worker-safe',
+  prepare({seedRoot}) { fs.writeFileSync(path.join(seedRoot, 'fixture'), 'owned seed'); }, inspect() {},
+  cleanup() { ${mode === 'cleanup-failure' ? "throw new Error('injected_default_pool_cleanup_failure');" : ''} },
+}] });
+test('uses a seed', t => {
+  const lease = pool.acquire('sample/v1');
+  fs.writeFileSync(${JSON.stringify(observation)}, JSON.stringify({ pool: path.dirname(lease.context.root), sandbox: lease.base }));
+  t.after(() => lease.release());
+  ${mode === 'assertion-failure' ? 'assert.fail("injected assertion failure");' : ''}
+  ${mode === 'explicit-cleanup' ? "lease.release(); assert.equal(cleanupDefaultTestContextPool().status, 'cleaned'); assert.equal(cleanupDefaultTestContextPool().status, 'not-owned');" : ''}
+});
+`], { encoding: 'utf8', timeout: 10_000, env: { ...process.env, NODE_TEST_CONTEXT: undefined } });
+  assert.ifError(result.error);
+  assert.equal(result.status, ['assertion-failure', 'cleanup-failure'].includes(mode) ? 1 : 0, result.stderr || result.stdout);
+  const observed = JSON.parse(fs.readFileSync(observation, 'utf8'));
+  assert.equal(fs.existsSync(observed.sandbox), false);
+  assert.equal(fs.existsSync(observed.pool), false, 'default seed pool must be removed without relying on the test preload root');
+  if (mode === 'cleanup-failure') assert.match(result.stderr, /injected_default_pool_cleanup_failure/);
+});
 
 function provider(overrides: any = {}): any  {
   return {

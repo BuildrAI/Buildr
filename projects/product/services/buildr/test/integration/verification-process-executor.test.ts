@@ -4,9 +4,86 @@ import process from 'node:process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { executeVerificationCommand } from '../verification/support/process-executor.ts';
+import { spawnSupervised, parseSuccessfulJson } from '../helpers/child-process-supervisor.ts';
+import { stopOwnedChildProcess } from '../verification/support/owned-process.ts';
+
+test('supervised output stays bounded while receiving data and preserves the head and failure tail', async () => {
+  let largestObserved = 0;
+  const execution = spawnSupervised(process.execPath, ['-e', `
+process.stdout.write('START\\n' + 'x'.repeat(2 * 1024 * 1024) + '\\nEND\\n');
+process.stderr.write('ERROR-START\\n' + 'y'.repeat(2 * 1024 * 1024) + '\\nERROR-END\\n');
+`], { outputLimit: 1024, readiness: (stdout: string) => {
+    largestObserved = Math.max(largestObserved, Buffer.byteLength(stdout));
+    return stdout.includes('END');
+  } });
+  const result = await execution.completed;
+  assert.equal(result.exitCode, 0);
+  assert.ok(largestObserved <= 1152, `live output retained ${largestObserved} bytes`);
+  for (const [output, head, tail] of [[result.stdout, 'START\n', 'END\n'], [result.stderr, 'ERROR-START\n', 'ERROR-END\n']]) {
+    assert.ok(Buffer.byteLength(output) <= 1152);
+    assert.ok(output.startsWith(head));
+    assert.ok(output.endsWith(tail));
+    assert.match(output, /truncated/);
+  }
+});
+
+async function waitForFile(file: string) {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (fs.existsSync(file)) return;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  throw new Error(`fixture did not create ${file}`);
+}
+
+for (const mode of ['timeout', 'cancel', 'parent-exit']) test(`supervised ${mode} reaps owned descendants and preserves an unrelated process`, async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-supervisor-proof-'));
+  const pidFile = path.join(root, 'descendant.json');
+  const unrelated = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+  t.after(async () => { await stopOwnedChildProcess(unrelated); fs.rmSync(root, { recursive: true, force: true }); });
+  const controller = new AbortController();
+  const execution = spawnSupervised(process.execPath, ['-e', `
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+process.on('SIGTERM', () => {});
+const child = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { stdio: ['ignore', 'inherit', 'inherit'] });
+fs.writeFileSync(${JSON.stringify(pidFile)}, JSON.stringify({ pid: child.pid }));
+${mode === 'parent-exit' ? 'setTimeout(() => process.exit(0), 150);' : 'setInterval(() => {}, 1000);'}
+`], { timeoutMs: mode === 'timeout' ? 300 : 5000, signal: controller.signal, terminationGraceMs: 20, terminationConfirmMs: 500 });
+  let guardFired = false;
+  const guard = setTimeout(() => {
+    guardFired = true;
+    execution.child.kill('SIGKILL');
+    if (fs.existsSync(pidFile)) {
+      try { process.kill(JSON.parse(fs.readFileSync(pidFile, 'utf8')).pid, 'SIGKILL'); } catch {}
+    }
+  }, 1500);
+  t.after(() => clearTimeout(guard));
+  await waitForFile(pidFile);
+  if (mode === 'cancel') {
+    await new Promise(resolve => setTimeout(resolve, 100));
+    controller.abort();
+  }
+  const result = await execution.completed;
+  clearTimeout(guard);
+  assert.equal(guardFired, false, 'supervisor must finish without the independent test watchdog');
+  assert.equal(result.processCleanup.status, 'clean');
+  assert.equal(result.timedOut, mode === 'timeout');
+  assert.equal(result.cancelled, mode === 'cancel');
+  if (mode === 'parent-exit') assert.equal(result.exitCode, 0);
+  assert.equal(unrelated.exitCode, null);
+  assert.doesNotThrow(() => process.kill(unrelated.pid!, 0));
+  const { pid } = JSON.parse(fs.readFileSync(pidFile, 'utf8'));
+  assert.throws(() => process.kill(pid, 0), (error: any) => error.code === 'ESRCH');
+});
+
+test('supervised spawn failure resolves and cannot be parsed as a successful command', async () => {
+  const result = await spawnSupervised(path.join(os.tmpdir(), 'buildr-no-such-executable'), []).completed;
+  assert.notEqual(result.exitCode, 0);
+  assert.throws(() => parseSuccessfulJson(result), /failed/);
+});
 
 test('formal command executor returns passed with clean owned cleanup', async () => {
   const result: any = await executeVerificationCommand({ name: 'process-success', command: { argv: [process.execPath, '-e', 'process.stdout.write("ok")'], timeoutMs: 1_000 } });
