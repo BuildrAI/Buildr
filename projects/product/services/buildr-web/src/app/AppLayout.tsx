@@ -12,7 +12,7 @@ import { runtimeSystemApi } from './api/runtime-system-api';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Alert, Button, Dropdown, Drawer, Tooltip, Typography } from 'antd';
-import { AppstoreOutlined, CheckOutlined, MenuOutlined, PlusOutlined, RobotOutlined, SettingOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, CheckOutlined, CloseCircleOutlined, EllipsisOutlined, MenuOutlined, PlusOutlined, PoweroffOutlined, RobotOutlined, SettingOutlined } from '@ant-design/icons';
 import { api, setWorkspaceId } from '../api';
 import { AppShellContext, type WorkspaceShellInfo } from './AppShellContext';
 import { AppNavigation } from './AppNavigation';
@@ -385,17 +385,18 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
                 退出
               </Button>
             ) : (
-              <Dropdown.Button
-                className="nav-quit"
-                type="text"
+              <Dropdown
                 menu={{
-                  items: [{ key: 'quit', danger: true, label: <span id="quit-buildr">退出 Buildr Web</span> }],
-                  onClick: () => { void quit(); },
+                  items: [
+                    { key: 'restart', icon: <PoweroffOutlined />, label: <span id="restart-buildr">重启 Buildr Web</span>, onClick: () => { void restart(); } },
+                    { key: 'quit', danger: true, icon: <CloseCircleOutlined />, label: <span id="quit-buildr">退出 Buildr Web</span>, onClick: () => { void quit(); } },
+                  ],
                 }}
-                onClick={() => { void restart(); }}
+                trigger={['click']}
+                placement="bottomRight"
               >
-                <span id="restart-buildr">重启</span>
-              </Dropdown.Button>
+                <Tooltip title="更多操作"><Button id="more-actions" className="nav-more" aria-label="更多操作" type="text" icon={<EllipsisOutlined />} loading={quitting} /></Tooltip>
+              </Dropdown>
             )}
             <div
               id="preview-identity"
