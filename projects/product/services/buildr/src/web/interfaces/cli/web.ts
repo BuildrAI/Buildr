@@ -77,9 +77,10 @@ export function createWebCliContributions(application: WebCliRuntime | null = nu
     surface: "primary",
     summary: "启动或复用只监听 127.0.0.1 的全局本机 Web 应用，并默认打开浏览器；--no-open 只启动服务。",
     help: [
-      "Usage: buildr web [--target <workspace>] [--port <port>] [--no-open]",
+      "Usage: buildr web [--target <workspace>] [--port <port>] [--no-open] [--replace-mismatched-development]",
       "",
       "启动或复用只监听 127.0.0.1 的全局本机 Web 应用，并默认打开浏览器；--no-open 只启动服务。",
+      "--replace-mismatched-development 仅 development 实例使用：运行中的开发版与当前来源不匹配或缺少来源证明时，先正常退出旧实例再按当前来源启动；来源仍匹配的实例照常复用。",
       "--target 验证并登记指定 Workspace，然后打开该 Workspace；不提供时显示本机已登记 Workspace。",
       "关闭浏览器不会退出服务；通过页面“退出 Buildr”或终止进程停止服务。",
       "Workspace 页面帮助理解 Workspace → Project → Service 工作范围，只允许修改 name 和 description；创建、迁移和修复只生成可复制 Agent 指令。",

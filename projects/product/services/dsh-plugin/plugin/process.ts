@@ -1,5 +1,5 @@
 /** Host-only subprocess adapter: discovery, public status queries, and launcher reuse. */
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import type { ExecFileOptionsWithStringEncoding } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
@@ -27,6 +27,8 @@ export interface Binding {
 
 export interface ProcessDependencies {
   exec?(file: string, args: string[], options: ExecFileOptionsWithStringEncoding): Promise<{ stdout: string; stderr?: string }>;
+  /** Detached starter for development recovery; the bridge's own polling confirms readiness. */
+  spawn?: typeof spawn;
   environment?: NodeJS.ProcessEnv;
   platform?: string;
   executable?: string;
@@ -243,6 +245,28 @@ function launcherTarget(status: unknown, channel: BuildrChannel, environment: No
   return launcherIdentityCandidates(channel, environment, platform).at(-1)?.root;
 }
 
+/**
+ * The open click is the user's explicit request to reach the current development source, so a
+ * healthy instance that fails the provenance check is restarted through Buildr's own lifecycle:
+ * the registered development entry runs `web --replace-mismatched-development --no-open`, which
+ * gracefully quits the old instance inside the start lock. This only asks Buildr to start the
+ * replacement; the bridge's own polling confirms the new instance before opening.
+ */
+export function restartMismatchedDevelopment(
+  binding: Binding, status: unknown, signal: AbortSignal,
+  { environment = process.env, spawn: spawnProcess = spawn }: ProcessDependencies = {},
+): void {
+  signal.throwIfAborted();
+  const command = channelCommand(binding, 'development', status);
+  const child = spawnProcess(command.executable, [...command.argv, 'web', '--replace-mismatched-development', '--no-open'], {
+    cwd: path.dirname(command.executable),
+    env: childEnvironment(environment, binding, 'development'),
+    detached: true, stdio: 'ignore', windowsHide: true,
+  });
+  child.unref();
+  signal.throwIfAborted();
+}
+
 /** Reuse Buildr's own launcher for the requested channel rather than opening the app through a browser. */
 export async function launchInstallation(
   binding: Binding, channel: BuildrChannel, status: unknown, signal: AbortSignal,
@@ -279,6 +303,11 @@ export function createInstalledBuildrBridge(
   return createBuildrBridge({ ...binding, channel }, {
     query: signal => queryInstallation(binding, signal, dependencies),
     launch: (target, status, signal) => launchInstallation(binding, target, status, signal, dependencies),
+    ...(channel === 'development' ? {
+      recover: async (_target: BuildrChannel, status: unknown, signal: AbortSignal) => {
+        restartMismatchedDevelopment(binding, status, signal, dependencies);
+      },
+    } : {}),
     timeoutMs: config.timeoutMs ?? 30_000, pollMs: config.pollMs ?? 300,
   });
 }

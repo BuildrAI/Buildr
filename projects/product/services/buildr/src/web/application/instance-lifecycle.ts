@@ -157,7 +157,7 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
   const httpContributions = options.httpContributions || runtime.__bootstrapContributions?.('http') || [];
 
   async function startBuildrWeb(args: string[]): Promise<unknown> {
-    runtime.assertNoUnknownOptions(args, new Set(['--target', '--port', '--no-open', '--launcher-binding', '--update-handoff', '--restart']), new Set(['--no-open']));
+    runtime.assertNoUnknownOptions(args, new Set(['--target', '--port', '--no-open', '--launcher-binding', '--update-handoff', '--restart', '--replace-mismatched-development']), new Set(['--no-open', '--replace-mismatched-development']));
     const updateObservation = runtime.optionValue(args, '--update-handoff', null);
     const restartObservation = runtime.optionValue(args, '--restart', null);
     const observationPattern = /^sha256-[a-f0-9]{64}$/;
@@ -165,6 +165,8 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
     if (args.includes('--restart') && (typeof restartObservation !== 'string' || !observationPattern.test(restartObservation) || args.includes('--target'))) throw new Error('同身份重启需要准确的实例观察摘要，且不能改变工作空间登记。');
     const handoffObservation = updateObservation || restartObservation;
     const handoffMode: 'update' | 'restart' | null = updateObservation ? 'update' : restartObservation ? 'restart' : null;
+    const replaceDevelopment = args.includes('--replace-mismatched-development');
+    if (replaceDevelopment && (handoffObservation || args.includes('--launcher-binding'))) throw new Error('--replace-mismatched-development 不能与更新交接、同身份重启或 Launcher binding 组合。');
     const observeInstance = async (instance: WebInstance | null): Promise<WebInstance | null> => {
       if (handoffObservation && instance) {
         assertUpdateHandoffInstanceAddress(instance);
@@ -186,6 +188,7 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
     const launcherIdentity = npmLauncherBinding || (handoffObservation ? null : launcherFromEnvironment());
     const previewIdentity = handoffObservation ? null : readPreviewIdentityFromEnvironment();
     const webProfile = resolveProfile(productIdentity);
+    if (replaceDevelopment && webProfile.profile !== 'development') throw new Error('--replace-mismatched-development 只适用于 development 实例。');
     const handoffWait = handoffWaitBudget();
     assertProfile(launcherIdentity, webProfile, { productIdentity, productRoot: runtime.productRoot() });
     if (handoffMode === 'update' && (productIdentity.channel !== 'npm' || productIdentity.runtime?.role !== 'host')) throw codedError('更新交接只适用于 npm 安装。', 'web_update_channel_conflict');
@@ -214,6 +217,17 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
         });
       }
       return healthy;
+    };
+
+    /** A healthy development instance whose source no longer matches may be replaced only on explicit request. */
+    const developmentReplaceRequested = (healthy: WebInstance): boolean => {
+      try {
+        assertCompatibleInstance(healthy);
+        return false;
+      } catch (error) {
+        if (replaceDevelopment && errorDetails(error).code === 'web_instance_development_source_conflict') return true;
+        throw error;
+      }
     };
 
     const reuseInstance = (healthy: WebInstance, startLock: StartLock | null = null): { reused: true; url: string } => {
@@ -259,8 +273,9 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
     if (handoffObservation && recorded) assertUpdateHandoffInstanceAddress(recorded);
     const healthy = await observeInstance(recorded);
     if (healthy) {
-      assertCompatibleInstance(healthy);
-      if (handoffObservation) {
+      if (developmentReplaceRequested(healthy)) {
+        // Fall through to the start lock; the mismatched development instance is stopped inside it.
+      } else if (handoffObservation) {
         if (matchesHandoffOwner(healthy)) return reuseInstance(healthy);
         assertHandoffTarget(healthy);
       } else {
@@ -310,11 +325,11 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
       if (handoffObservation && !currentRecorded && fs.existsSync(buildrWebInstancePath(webProfile))) throw codedError('启动锁内实例记录无法解析，已保留现场。', 'web_update_instance_invalid');
       const currentHealthy = await observeInstance(currentRecorded);
       if (currentHealthy) {
-        assertCompatibleInstance(currentHealthy);
+        const replaceDevelopmentInstance = developmentReplaceRequested(currentHealthy);
         if (handoffObservation) {
           if (matchesHandoffOwner(currentHealthy)) return reuseInstance(currentHealthy, startLock);
           assertHandoffTarget(currentHealthy);
-        } else {
+        } else if (!replaceDevelopmentInstance) {
           if (!npmLauncherBinding) return reuseInstance(currentHealthy, startLock);
           const disposition = instanceDisposition(currentHealthy, npmLauncherBinding);
           if (disposition.disposition === 'reuse') return reuseInstance(currentHealthy, startLock);
@@ -323,8 +338,12 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
         await shutdownInstance(currentHealthy);
         const exit = await waitForExit(currentHealthy, { profile: webProfile, ...handoffWait });
         if (exit.status !== 'exited') throw codedError(
-          exit.status === 'replaced' ? 'Launcher 交接期间实例 receipt 被另一实例替换，已保留现场并停止启动。' : '旧 Buildr Web 未在预期时间内完成认证退出，已保留现场并停止启动。',
-          exit.status === 'replaced' ? 'launcher_handoff_receipt_replaced' : 'launcher_handoff_shutdown_timeout',
+          replaceDevelopmentInstance
+            ? exit.status === 'replaced' ? '替换旧 Buildr 开发版期间实例 receipt 被另一实例替换，已保留现场并停止启动。' : '旧 Buildr 开发版未在预期时间内完成认证退出，已保留现场并停止启动。'
+            : exit.status === 'replaced' ? 'Launcher 交接期间实例 receipt 被另一实例替换，已保留现场并停止启动。' : '旧 Buildr Web 未在预期时间内完成认证退出，已保留现场并停止启动。',
+          replaceDevelopmentInstance
+            ? exit.status === 'replaced' ? 'web_dev_replace_receipt_replaced' : 'web_dev_replace_shutdown_timeout'
+            : exit.status === 'replaced' ? 'launcher_handoff_receipt_replaced' : 'launcher_handoff_shutdown_timeout',
           undefined,
           { pid: currentHealthy.pid, status: exit.status },
         );

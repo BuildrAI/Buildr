@@ -1,27 +1,19 @@
 schemaVersion: buildr.knowledge-impact/v1
-task: relax-node-version
+task: dsh-dev-entry-restart-on-mismatch
 operation: reconcile
 impacts:
   - type: reference
-    target: knowledge/docs/flows/open-source-release.md
-    reason: 开发、候选和发布准备改用稳定版 Node >=24.15.0，执行身份一致性继续保留。
-    status: updated
-    sourceIdentities:
-      - services/buildr/src/infrastructure/process.ts
-      - services/buildr/tools/verification/candidate-environment.ts
-      - services/buildr/tools/release/release-orchestration-runner.ts
-  - type: reference
-    target: knowledge/docs/flows/dsh-plugin-release.md
-    reason: 插件准备接受最低稳定版本，CI选定基准与实际版本证据分别说明。
-    status: updated
-    sourceIdentities:
-      - services/dsh-plugin/package.json
-      - services/dsh-plugin/tools/prepare-release-sdk.ts
-  - type: reference
     target: services/buildr/docs/cli-reference.md
-    reason: 公开运行要求及关联README、限制说明同步为 >=24.15.0。
+    reason: buildr web 增加仅 development 的 --replace-mismatched-development，来源不匹配时认证退出旧实例再按当前来源启动，公开命令表同步说明适用范围与组合拒绝。
     status: updated
     sourceIdentities:
-      - services/buildr/package.json
-      - services/buildr/tools/release/release-artifact.ts
+      - services/buildr/src/web/application/instance-lifecycle.ts
+      - services/buildr/src/web/interfaces/cli/web.ts
+  - type: reference
+    target: services/dsh-plugin/plugin/README.md
+    reason: 插件兼容边界改述打开动作驱动的有界恢复：来源不匹配经 Buildr 公开替换入口认证退出后重启，不再停留于手动退出诊断；来源比较补充既有运行输入内容指纹。
+    status: updated
+    sourceIdentities:
+      - services/dsh-plugin/plugin/bridge.ts
+      - services/dsh-plugin/plugin/process.ts
 unresolvedItems: []

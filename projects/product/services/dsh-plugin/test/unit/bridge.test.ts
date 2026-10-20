@@ -151,6 +151,51 @@ test('DSH bridge launch failure is sanitized, retryable and has no shutdown effe
   bridge.dispose();
 });
 
+test('development source mismatch recovers through Buildr restart instead of the prompt card', async () => {
+  const devBinding = { channel: 'development' as const, nodeExecutable: '/node', cliEntry: '/buildr.mjs' };
+  const mismatched = status('ready', 'http://127.0.0.1:49001', 'development');
+  mismatched.instances.development.matchesCurrentInstallation = false;
+  let recovers = 0;
+  let launches = 0;
+  let queries = 0;
+  const bridge = createBuildrBridge(devBinding, {
+    query: async () => ++queries < 3 ? mismatched : status('ready', 'http://127.0.0.1:49002', 'development'),
+    launch: async () => { launches++; },
+    recover: async () => { recovers++; },
+    wait: immediate,
+  });
+  assert.equal((await bridge.open()).url, 'http://127.0.0.1:49002');
+  assert.equal(recovers, 1, 'the open click asks Buildr to restart the mismatched instance once');
+  assert.equal(launches, 0, 'recovery replaces the launcher path, never runs both');
+  bridge.dispose();
+});
+
+test('recovery failure reports a clear restart diagnostic and does not pretend the old instance is current', async () => {
+  const devBinding = { channel: 'development' as const, nodeExecutable: '/node', cliEntry: '/buildr.mjs' };
+  const mismatched = status('ready', 'http://127.0.0.1:49001', 'development');
+  mismatched.instances.development.matchesCurrentInstallation = false;
+  const bridge = createBuildrBridge(devBinding, {
+    query: async () => mismatched,
+    launch: () => assert.fail('must not launch'),
+    recover: async () => { throw new Error('private reason'); },
+    wait: immediate, timeoutMs: 40, pollMs: 1,
+  });
+  await assert.rejects(bridge.open(), (error: any) => error.code === 'recovery-failed' && error.message.includes('退出旧实例'));
+  bridge.dispose();
+});
+
+test('npm channel keeps the plain mismatch diagnostic with no auto-restart', async () => {
+  const current = status();
+  current.instances.released.identity.ownershipIdentity = 'installation-B';
+  const bridge = createBuildrBridge(binding, {
+    query: async () => current,
+    launch: () => assert.fail('must not launch'),
+    wait: immediate, timeoutMs: 40, pollMs: 1,
+  });
+  await assert.rejects(bridge.open(), (error: any) => error.code === 'instance-mismatch');
+  bridge.dispose();
+});
+
 test('DSH bridge cancellation reaches its owned query and prevents launch', async () => {
   let launched = 0;
   let aborted = 0;
