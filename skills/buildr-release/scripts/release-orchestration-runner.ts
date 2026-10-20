@@ -843,6 +843,19 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     if (state.baseline && state.baseline !== baseline) throw new Error('Existing release baseline differs; select a deliberate replacement before changing it.');
     state.baseline = baseline;
     const sources = (options.sources || []).map((ref: string) => git(['rev-parse', '--verify', `${ref}^{commit}`]));
+    // Reject a source that cannot become release content before it enters
+    // state: selectReleaseCommit applies the same baseline rule much later,
+    // after the operation has already recorded the invalid selection.
+    for (const source of sources) {
+      // merge-base --is-ancestor exits 1 when the source is not a descendant;
+      // the command helper throws on any non-zero exit, so observe it.
+      let isDescendant = true;
+      try { git(['merge-base', '--is-ancestor', baseline, source], workspace); }
+      catch { isDescendant = false; }
+      if (source === baseline || !isDescendant) {
+        throw new Error(`Selected source ${source} must be a commit after release baseline ${baseline}; it was not recorded.`);
+      }
+    }
     state.sources = [...new Set([...state.sources, ...sources])];
     state.supportTasks = options.supportTasks || state.supportTasks || [];
     writeOperation(file, state);
@@ -899,6 +912,32 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       selection = take(createReleaseSelection({ ...selectionArgs, repo, baseline, devRef: 'origin/dev', executionBinding: binding() }));
     }
     if (selection.devBaseline !== baseline) throw new Error('The existing release baseline differs from the explicit selection.');
+    // A fix committed directly on the Task worktree branch puts HEAD ahead of
+    // the frozen release head. The old contract blocked on
+    // release_selection_target_mismatch and required a manual reset; absorb
+    // those commits instead when they are already reachable dev commits, then
+    // let the normal reopen → cherry-pick → refreeze path re-select them.
+    // Only a strictly linear advance over the frozen head qualifies: anything
+    // else (divergence, commits not on dev) keeps the explicit error.
+    if (!completedPreparation) {
+      let linearAdvance = true;
+      try { git(['merge-base', '--is-ancestor', selection.releaseHead, 'HEAD'], repo); }
+      catch { linearAdvance = false; }
+      if (linearAdvance) {
+        const ahead = git(['rev-list', '--reverse', `${selection.releaseHead}..HEAD`], repo)
+          .split('\n').filter(Boolean);
+        const notOnDev = ahead.filter((commit: string) => {
+          try { git(['merge-base', '--is-ancestor', commit, 'origin/dev'], repo); return false; }
+          catch { return true; }
+        });
+        if (ahead.length && notOnDev.length === 0) {
+          state.sources = [...new Set([...state.sources, ...ahead])];
+          git(['reset', '--hard', selection.releaseHead], repo);
+          currentEffects.push({ type: 'worktree-fix-commits-absorbed', commits: ahead, releaseHead: selection.releaseHead });
+          save();
+        }
+      }
+    }
     state.sources = [...new Set([...selection.selectionChain.map((entry: any) => entry.sourceDevCommit), ...state.sources])];
     const unselected = state.sources.filter((source: string) => !selection.selectionChain.some((entry: any) => entry.sourceDevCommit === source));
     if (!completedPreparation) {
