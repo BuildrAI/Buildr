@@ -1,19 +1,24 @@
 schemaVersion: buildr.knowledge-impact/v1
-task: dsh-dev-entry-restart-on-mismatch
-operation: reconcile
+task: service-create-repo-modulepath
+operation: assess
 impacts:
   - type: reference
-    target: services/buildr/docs/cli-reference.md
-    reason: buildr web 增加仅 development 的 --replace-mismatched-development，来源不匹配时认证退出旧实例再按当前来源启动，公开命令表同步说明适用范围与组合拒绝。
-    status: updated
+    target: knowledge/code-map/project-service-repositories.md
+    reason: 本次只修订新增服务表单的代码位置表达，登记模型（repositoryId + modulePath）不变，地图描述仍然成立。
+    status: aligned
     sourceIdentities:
-      - services/buildr/src/web/application/instance-lifecycle.ts
-      - services/buildr/src/web/interfaces/cli/web.ts
+      - services/buildr-web/src/features/service/components/ServiceCreateDrawer.tsx
+      - services/buildr/src/modules/workspace/application/asset-relationships-application.ts
   - type: reference
-    target: services/dsh-plugin/plugin/README.md
-    reason: 插件兼容边界改述打开动作驱动的有界恢复：来源不匹配经 Buildr 公开替换入口认证退出后重启，不再停留于手动退出诊断；来源比较补充既有运行输入内容指纹。
-    status: updated
+    target: knowledge/docs/glossary.md
+    reason: 术语定义本来就是"引用一个代码库实例并以 modulePath 定位代码"，与表单修订后的可达路径一致。
+    status: aligned
     sourceIdentities:
-      - services/dsh-plugin/plugin/bridge.ts
-      - services/dsh-plugin/plugin/process.ts
+      - services/buildr-web/src/features/service/components/ServiceCreateDrawer.tsx
+  - type: reference
+    target: knowledge/docs/architecture/buildr-data-design.md
+    reason: 数据设计文档只描述全局登记模型，不表达表单字段组合，不受交互修订影响。
+    status: aligned
+    sourceIdentities:
+      - services/buildr-web/src/features/service/components/ServiceCreateDrawer.tsx
 unresolvedItems: []
