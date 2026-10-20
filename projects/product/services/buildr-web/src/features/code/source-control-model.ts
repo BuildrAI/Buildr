@@ -50,6 +50,7 @@ export type SourceControlRepository = {
   gitId?: string | null; checkoutId?: string | null; readVersion?: string; refsVersion?: string;
   branch: string | null; branches: string[]; ahead: number | null; behind: number | null;
   status: 'ready' | 'clean' | 'offline' | 'partial'; simulated: boolean; services: string[];
+  clone?: { state: 'cloning' | 'failed'; diagnostic: string | null; startedAt: string | null } | null;
   worktrees: SourceControlWorktree[]; worktreeCount?: number | null;
   changes: SourceControlChange[]; taskChanges?: SourceControlChange[]; commits: SourceControlCommit[];
   fileCount?: number | null; head?: string | null; observedRevision?: string | null; diagnostics?: string[];
@@ -100,6 +101,7 @@ export function sourceControlRepository(repository: CodeSourceControlRepository)
   return { id: repository.id, name: repository.name, location: repository.source?.location || repository.location, gitId:repository.gitId, checkoutId:repository.source?.checkoutId || null,
     branch: repository.branch, branches: [], ahead: repository.ahead, behind: repository.behind,
     status: repository.status === 'unavailable' ? 'offline' : repository.status === 'partial' ? 'partial' : repository.fileCount === 0 ? 'clean' : 'ready',
+    clone: repository.clone ?? null,
     pending: repository.diagnostics.some(item => item.code === 'code_source_control_pending'), simulated: false, services: [], worktrees: repository.worktrees.map(sourceControlWorktree), worktreeCount: repository.worktreeCount, changes: repository.changes.map(sourceControlChange), commits: [],
     fileCount: repository.fileCount, head: repository.head, observedRevision: repository.observedRevision,
     diagnostics: repository.diagnostics.map(item => item.message), ...(taskLocation ? { taskLocation, taskBranch: repository.branch } : {}) };

@@ -34,6 +34,8 @@ export type CodeDependencies = {
   projectDetail?(root:string,code:string):{project:{id:string;code:string;source:unknown};sourceLocation:{path:string;identity:string}};
   builtinManagedFiles?(root:string,relative?:string):string[];
   projectDocumentImageContext?(root:string,code:string,path:string,content:string):MarkdownImageContext|undefined;
+  repositoryCloneStatus?(root:string,repositoryId:string):{state:'cloning'|'failed'|null;diagnostic:string|null;startedAt:string|null};
+  repositoryCloneRequest?(root:string,repositoryId:string):{status:'started'|'already-running'|'ready'|'unavailable';diagnostic:string|null};
 };
 export function createCodeApplication(dependencies:CodeDependencies) {
   // Scope observations belong to one read, never to the lifetime of this application.
@@ -184,7 +186,7 @@ export function createCodeApplication(dependencies:CodeDependencies) {
       },
     };
   }
-  const sourceControlApplication=createSourceControlApplication({repositories:repositoryScope,inventory:(root,taskId)=>repositoryScope(root,taskId,undefined,false),source:(root,input)=>source(root,input as CodeInput),worktrees:sourceControlWorktrees,taskAssociations:(root,repositories,taskId,deadline)=>readSourceControlTaskAssociations(root,repositories,dependencies,taskId,deadline),readTask:dependencies.readTask});
+  const sourceControlApplication=createSourceControlApplication({repositories:repositoryScope,inventory:(root,taskId)=>repositoryScope(root,taskId,undefined,false),source:(root,input)=>source(root,input as CodeInput),worktrees:sourceControlWorktrees,taskAssociations:(root,repositories,taskId,deadline)=>readSourceControlTaskAssociations(root,repositories,dependencies,taskId,deadline),readTask:dependencies.readTask,repositoryCloneStatus:dependencies.repositoryCloneStatus,repositoryCloneRequest:dependencies.repositoryCloneRequest});
   const syncApplication = createCodeSyncApplication({ source: (root, input) => source(root, input as CodeInput), observation: (root, input) => {
     const location = input as CodeInput;
     if (location.taskId || location.commitHash || location.checkoutId !== undefined) return undefined;

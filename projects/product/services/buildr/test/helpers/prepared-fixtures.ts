@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { createRuntime } from './runtime-harness.ts';
 import { useLegacyAssetCatalog } from './legacy-asset-catalog.ts';
+import { repositoryClonesIdle } from '../../src/modules/workspace/infrastructure/repository-clone-supervisor.ts';
 
 import { defaultTestContextPool } from '../context/node-test.ts';
 import {
@@ -11,6 +12,8 @@ import {
 
 function acquire(t: any, key: any, name: any): any  {
   const lease: any = defaultTestContextPool().acquire(key, { name });
+  // Registered in order: in-flight repository clones settle before the sandbox is removed.
+  t.after(async () => { await repositoryClonesIdle(); });
   t.after(() => lease.release());
   return lease;
 }

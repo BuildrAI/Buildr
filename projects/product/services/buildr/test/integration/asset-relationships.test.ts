@@ -14,11 +14,15 @@ import { createWorkspaceHttpContribution } from '../../src/modules/workspace/int
 function setup(t: any) {
   const { root } = copyPreparedProjectWorkspace(t, 'asset-relationships');
   const runtime: any = createRuntime();
+  // Async clones may still run when the test finishes; drain before the sandbox is removed.
+  t.after(async () => { if (runtime.repositoryCloneIdle) await runtime.repositoryCloneIdle(); });
   return { root, runtime };
 }
 function setupLegacy(t: any) {
   const { root } = copyPreparedLegacyProjectWorkspace(t, 'legacy-asset-relationships');
-  return { root, runtime: createRuntime() };
+  const runtime: any = createRuntime();
+  t.after(async () => { if (runtime.repositoryCloneIdle) await runtime.repositoryCloneIdle(); });
+  return { root, runtime };
 }
 function ready(runtime: any, root: string) {
   const before = runtime.assetCatalog(root);
@@ -26,6 +30,25 @@ function ready(runtime: any, root: string) {
 }
 function addRepo(runtime: any, root: string, revision: string, code: string, branch: string) {
   return runtime.createCatalogRepository(root, { revision, code, url: 'https://example.com/freshx.git', integrationBranch: branch });
+}
+async function waitFor(predicate: () => boolean, message: string, attempts = 200, intervalMs = 50) {
+  for (let index = 0; index < attempts; index += 1) {
+    if (predicate()) return;
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
+  }
+  throw new Error(message);
+}
+function makeOriginRepository(t: any, name: string): string {
+  const origin = fs.mkdtempSync(path.join(os.tmpdir(), `buildr-${name}-`));
+  t.after(() => fs.rmSync(origin, { recursive: true, force: true }));
+  const run = (args: string[]) => spawnSync('git', args, { cwd: origin, encoding: 'utf8' });
+  assert.equal(run(['init', '-b', 'main']).status, 0);
+  assert.equal(run(['config', 'user.email', 'test@example.com']).status, 0);
+  assert.equal(run(['config', 'user.name', 'Test']).status, 0);
+  fs.writeFileSync(path.join(origin, 'README.md'), '# demo\n');
+  assert.equal(run(['add', 'README.md']).status, 0);
+  assert.equal(run(['commit', '-m', 'init']).status, 0);
+  return origin;
 }
 test('自然显示名在初始化和编辑间一致，空白名称在写入前拒绝', (t: any) => {
   const runtime: any = createRuntime();
@@ -291,7 +314,7 @@ test('public asset CLI reads and writes the same catalog with version protection
   assert.deepEqual(fs.readdirSync(directory), []);
 });
 
-test('assets help examples execute through the public CLI and retired guide stays unavailable', (t: any) => {
+test('assets help examples execute through the public CLI and retired guide stays unavailable', async (t: any) => {
   const { root, runtime } = setup(t);
   let catalog = ready(runtime, root);
   const cli = path.resolve(import.meta.dirname, '../../bin/buildr.mjs');
@@ -320,7 +343,10 @@ test('assets help examples execute through the public CLI and retired guide stay
   const serviceId = catalog.services.find((service: any) => service.code === 'api').id;
   catalog = write(['associate', 'help-project'], { ...examples[2], revision: catalog.revision, serviceIds: [serviceId] });
   assert.deepEqual(catalog.projects.find((p: any) => p.code === 'help-project').serviceIds, [serviceId]);
-  assert.equal(fs.existsSync(path.join(root, 'repositories/help-code')), false, 'registration must not clone code');
+  await waitFor(() => runtime.repositoryCloneStatus(root, repositoryId).state !== 'cloning', 'repository clone must finish');
+  const cloned = runtime.repositoryCloneStatus(root, repositoryId);
+  assert.equal(cloned.state, 'failed', `unreachable git url must surface a failed clone state, got ${JSON.stringify(cloned)}`);
+  assert.equal(fs.existsSync(path.join(root, 'repositories/help-code')), false, 'failed clone must leave no directory');
   const before = ['projects/manifest.yml', 'services/manifest.yml', 'repositories/manifest.yml'].map(file => fs.readFileSync(path.join(root, file)));
   const directoryBefore = fs.readdirSync(root);
   for (const args of [['bootstrap', 'guide'], ['bootstrap', 'guide', '--help'], ['help', 'bootstrap', 'guide']]) {
@@ -332,6 +358,27 @@ test('assets help examples execute through the public CLI and retired guide stay
   }
   assert.deepEqual(fs.readdirSync(root), directoryBefore);
   ['projects/manifest.yml', 'services/manifest.yml', 'repositories/manifest.yml'].forEach((file, index) => assert.deepEqual(fs.readFileSync(path.join(root, file)), before[index]));
+});
+
+test('git repository registration clones asynchronously; explicit request retries after failure', async (t: any) => {
+  const { root, runtime } = setup(t);
+  let catalog = ready(runtime, root);
+  const origin = makeOriginRepository(t, 'clone-origin');
+  catalog = runtime.createCatalogRepository(root, { revision: catalog.revision, code: 'cloned-code', url: `file://${origin}`, integrationBranch: 'main' });
+  const repositoryId = catalog.repositories.find((r: any) => r.code === 'cloned-code').id;
+  await waitFor(() => fs.existsSync(path.join(root, 'repositories/cloned-code/.git')), 'registration clone must materialize the repository');
+  assert.equal(fs.readFileSync(path.join(root, 'repositories/cloned-code/README.md'), 'utf8'), '# demo\n');
+  assert.equal(runtime.repositoryCloneStatus(root, repositoryId).state, null, 'successful clone clears transient state');
+  assert.equal(runtime.repositoryCloneRequest(root, repositoryId).status, 'ready', 'cloning an existing directory is a no-op');
+  // A clone that cannot reach its remote keeps the registration and stays retryable.
+  catalog = runtime.createCatalogRepository(root, { revision: catalog.revision, code: 'missing-code', url: 'file:///nonexistent-origin-path', integrationBranch: 'main' });
+  const missingId = catalog.repositories.find((r: any) => r.code === 'missing-code').id;
+  await waitFor(() => runtime.repositoryCloneStatus(root, missingId).state === 'failed', 'failed clone must surface failed state');
+  assert.ok(fs.existsSync(path.join(root, 'repositories/manifest.yml')), 'registration survives clone failure');
+  const retry = runtime.repositoryCloneRequest(root, missingId);
+  assert.ok(['started', 'already-running'].includes(retry.status), `retry must start a new clone, got ${retry.status}`);
+  await waitFor(() => runtime.repositoryCloneStatus(root, missingId).state === 'failed', 'retried clone reports its own outcome');
+  assert.equal(runtime.repositoryCloneRequest(root, 'unknown-id').status, 'unavailable');
 });
 
 test('partial nested catalog write rolls back all manifests and newly created roots', (t: any) => {

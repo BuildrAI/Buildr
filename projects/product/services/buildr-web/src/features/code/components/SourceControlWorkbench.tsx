@@ -34,7 +34,7 @@ export type SourceControlBranchExtension = {
 type Props = {
   active?: boolean;
   repositories: SourceControlRepository[]; scene: SourceControlScene; reader: SourceControlReader; readKey: string;
-  observation: SourceControlObservation; onRefresh(): void | Promise<void>; onRetry?(repositoryId?: string): void | Promise<void>;
+  observation: SourceControlObservation; onRefresh(): void | Promise<void>; onRetry?(repositoryId?: string): void | Promise<void>; onClone?(repositoryId: string): void;
   catalogActions?: ReactNode; catalogFeedback?: ReactNode;
   onScene(scene: SourceControlScene): void; onOpenTask(taskId: string): void;
   onOpenFile?(target: SourceControlFileTarget): void; onViewCurrent?(target: SourceControlFileTarget): void;
@@ -59,7 +59,7 @@ function readingPositions(root: HTMLElement | null): ReadingPosition[] {
 }
 
 /** Shared view: all observed facts and reads come from the caller, including in the offline prototype. */
-export function SourceControlWorkbench({ active = true, repositories, scene, reader, readKey, observation, onRefresh, onRetry, onScene, onOpenTask, onOpenFile, onViewCurrent, task, scopeSelection, sourceEntryKey, currentSourceSelection, onCurrentSourceSelect, layoutStorageKey, branchExtension, renderChangeActions, catalogActions, catalogFeedback, editableWorkspaceId }: Props) {
+export function SourceControlWorkbench({ active = true, repositories, scene, reader, readKey, observation, onRefresh, onRetry, onClone, onScene, onOpenTask, onOpenFile, onViewCurrent, task, scopeSelection, sourceEntryKey, currentSourceSelection, onCurrentSourceSelect, layoutStorageKey, branchExtension, renderChangeActions, catalogActions, catalogFeedback, editableWorkspaceId }: Props) {
   const workbench = useRef<HTMLElement>(null);
   const [selectedWorktreeKey, setSelectedWorktreeKey] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -287,6 +287,13 @@ export function SourceControlWorkbench({ active = true, repositories, scene, rea
     switchSource(sourceControlWorktreeKey(repository.id, worktree.worktreeId));
   }
   function toggle(key: string, defaultExpanded = true) { setExpanded(value => ({...value, [key]: !(value[key] ?? defaultExpanded)})); }
+  // A running clone finishes outside this view; poll lightly while any is in flight.
+  const cloningIds = repositories.filter(repository => repository.clone?.state === 'cloning').map(repository => repository.id).sort().join(',');
+  useEffect(() => {
+    if (!cloningIds) return;
+    const timer = setInterval(() => void (onRetry ? onRetry() : onRefresh()), 3000);
+    return () => clearInterval(timer);
+  }, [cloningIds]);
   async function retry(repositoryId?: string) { await (onRetry ? onRetry(repositoryId) : onRefresh()); setRefreshToken(value => value + 1); }
   async function refresh() { await onRefresh(); setFilePage({key: '', page: 0}); setRefreshToken(value => value + 1); }
   function openFullFile() {
@@ -303,7 +310,7 @@ export function SourceControlWorkbench({ active = true, repositories, scene, rea
         first={<div className="source-control-catalog-pane">
         {catalogFeedback}
         <SourceControlRepositoryTree repositories={repositories} ready={Boolean(observation.readAt)} active={catalogExpanded && !readingExpanded} expanded={expanded} onToggle={toggle}
-          selectedWorktreeKey={selectedIdentity} onPick={pickWorktree} onOpenTask={onOpenTask} renderWorktreeControl={branchExtension?.rowControl} renderWorktreeActions={branchExtension?.rowActions} syncAction={branchExtension?.syncAction} />
+          selectedWorktreeKey={selectedIdentity} onPick={pickWorktree} onOpenTask={onOpenTask} onClone={onClone} renderWorktreeControl={branchExtension?.rowControl} renderWorktreeActions={branchExtension?.rowActions} syncAction={branchExtension?.syncAction} />
         {task && <div className="source-control-task-origin" data-prototype-position="task-link"><span>来自任务 · {task.title}</span><Button type="link" size="small" onClick={() => onOpenTask(task.id)}>返回任务 <ArrowRightOutlined /></Button></div>}
         </div>}
         second={<div className="source-control-browser">      <div className="source-control-browse-tabs"><Segmented block value={history ? 'history' : 'changes'} options={[{ label: '未提交变更', value: 'changes' }, { label: '提交历史', value: 'history' }]} onChange={value => changeScene(value as SourceControlScene)} /></div>

@@ -63,7 +63,7 @@ export const WORKSPACE_DIAGNOSTICS = 'workspace.diagnostics';
 
 const WORKSPACE_METHODS = Object.freeze([
   'listCatalogDirectoryCandidates', 'catalogRepositoryLocalConfig', 'listCatalogServices', 'listCatalogRepositories', 'catalogRepositoryStatus', 'normalizeCatalogRepositories', 'deleteCatalogAsset',
-  'workspaceComposition', 'catalogServiceDocument', 'assetCatalog', 'assetCatalogVersion', 'migrateAssetCatalog', 'createCatalogRepository', 'createCatalogService', 'createCatalogProject', 'listProjectRegistrationCandidates', 'registerCatalogProject', 'updateProjectServices', 'updateCatalogAsset', 'repositoryPreparePrompt',
+  'workspaceComposition', 'catalogServiceDocument', 'assetCatalog', 'assetCatalogVersion', 'migrateAssetCatalog', 'createCatalogRepository', 'createCatalogService', 'createCatalogProject', 'listProjectRegistrationCandidates', 'registerCatalogProject', 'updateProjectServices', 'updateCatalogAsset', 'repositoryPreparePrompt', 'repositoryCloneStatus', 'repositoryCloneRequest',
   'getWorkspace', 'listRegisteredWorkspaces', 'registerLocalWorkspace', 'removeRegisteredWorkspace',
   'resolveRegisteredWorkspace', 'workspaceMigrationPlan', 'migrateWorkspaceMetadata', 'updateWorkspaceMetadata',
   'generateWorkspaceCreatePrompt', 'inspectLocalWorkspaceCandidate', 'getWorkspaceGettingStarted',
@@ -97,7 +97,7 @@ const LEGACY_RUNTIME_METHODS = Object.freeze([
   'initBuildr', 'mutationRecover',
 ]);
 const TEST_SUPPORT_METHODS = Object.freeze([
-  'readWorkspaceRegistryPersistence', 'withWorkspaceRegistryMutation',
+  'readWorkspaceRegistryPersistence', 'withWorkspaceRegistryMutation', 'repositoryCloneIdle',
 ]);
 
 const WORKSPACE_ASSET_METHODS = ["convergeRegistryManifests","workspaceMigrationPlan","migrateWorkspaceMetadata","readProjectRegistryRecord","projectMigrationPlan","migrateProjectRegistry","projectsManifestPath","writeProjectRegistry","renderProjectsManifest","parseProjectsYaml","renderProjectsYaml","validateProjectsRegistry","writeProjectsRegistry","writeServiceRegistry","parseServicesManifest","renderServicesDomainManifest","parseServicesYaml","parseServicesManifestYaml","renderServicesManifestYaml","servicesManifestPath","writeServicesManifest","defaultAssetDescription","sourceIdentity","gitDefaultBranch","inferRepoKind","gitBoundaryFor","ensureGitBoundaries"] as const;
