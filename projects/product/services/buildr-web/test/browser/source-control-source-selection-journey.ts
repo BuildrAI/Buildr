@@ -171,34 +171,54 @@ export async function runSourceControlSourceSelectionJourney({t,page,workspaceUr
     });
   });
 
-  await scenario('来源对齐：冷任务入口延迟期间的新手选优先，三种真实身份不互相冒充',async()=>{
+  for(const targetFirst of [true,false])await scenario('来源对齐：冷任务入口延迟期间的新手选优先，三种真实身份不互相冒充 · '+(targetFirst?'目标代码库先返回':'无关代码库先返回'),async()=>{
     await fixture.withBranches(async(branches:any)=>{
       const values=await fixture.prepareWorktrees(),alpha=values.find((item:any)=>item.name==='alpha');assert.ok(alpha);
       await page.setViewportSize({width:1440,height:900});const{repository,worktree}=await open(branches),main=repository.worktrees.find((item:any)=>item.isMain);
-      const taskSource=identify(await catalog(),alpha.location);
+      const value=await catalog(),taskSource=identify(value,alpha.location),peer=values.find((item:any)=>item.name==='peer');assert.ok(peer);
+      const peerSource=identify(value,peer.location);assert.notEqual(peerSource.repository.id,taskSource.repository.id);
       assert.equal(new Set([worktree.worktreeId,main.worktreeId,taskSource.worktree.worktreeId]).size,3,'旧来源、显式任务和较新手选必须三者不同');
       await navigate('explorer');await explorerSource(repository.id,worktree.location);await navigate('source-control');
       await row(taskSource.repository.id,taskSource.worktree.worktreeId).locator('xpath=ancestor::*[@data-source-worktree][1]').getByRole('button',{name:'打开任务 浏览器任务',exact:true}).click();
       const task=page.locator('#task-detail-main:visible');await task.waitFor();
       const matches=(url:URL)=>url.pathname===new URL(api+'/code/source-control').pathname&&url.searchParams.get('taskId')==='browser-task';
-      let release=()=>{};const gate=new Promise<void>(resolve=>{release=resolve;});const requests=new Set<any>();
-      const hold=async(route:any)=>{requests.add(route.request());await gate;await route.continue();};await page.route(matches,hold);
-      const started=page.waitForRequest((request:any)=>matches(new URL(request.url()))).then((request:any)=>({request}),(error:any)=>({error}));
-      const returned=page.waitForResponse((response:any)=>requests.has(response.request())&&response.status()===200).then((response:any)=>({response}),(error:any)=>({error}));
+      const firstId=targetFirst?taskSource.repository.id:peerSource.repository.id,secondId=targetFirst?peerSource.repository.id:taskSource.repository.id;
+      let release=()=>{},releaseFollowing=()=>{};
+      const gate=new Promise<void>(resolve=>{release=resolve;}),firstCompleted=new Promise<void>(resolve=>{releaseFollowing=resolve;});
+      const requests=new Set<any>(),responseOrder:string[]=[];
+      // Delay transport only: both bodies still come from production HTTP. The
+      // second repository waits for the first response to finish, not a timer.
+      const hold=async(route:any)=>{
+        requests.add(route.request());await gate;
+        if(new URL(route.request().url()).searchParams.get('repositoryId')!==firstId)await firstCompleted;
+        await route.continue();
+      };
+      await page.route(matches,hold);
+      const started=Promise.all([firstId,secondId].map(id=>page.waitForRequest((request:any)=>{const url=new URL(request.url());return matches(url)&&url.searchParams.get('repositoryId')===id;}))).then((requests:any)=>({requests}),(error:any)=>({error}));
+      const returned=(repositoryId:string)=>page.waitForResponse((response:any)=>requests.has(response.request())&&new URL(response.url()).searchParams.get('repositoryId')===repositoryId&&response.status()===200).then(async(response:any)=>{
+        const error=await response.finished();if(error)return {error};
+        responseOrder.push(repositoryId);if(repositoryId===firstId)releaseFollowing();return {response};
+      },(error:any)=>({error}));
+      const targetReturned=returned(taskSource.repository.id),peerReturned=returned(peerSource.repository.id);
       try{
         await task.locator('[data-task-source-control="browser-task"]').click();const pending=await started;if(pending.error)throw pending.error;
         await navigate('explorer');await selectExplorerGroup(main.worktreeId);await explorerSource(repository.id,main.location);
         // Browser Back returns the same explicit-entry nonce. Its metadata is still
         // pending, so the newer hand selection must win when that response arrives.
         await page.goBack();await page.waitForURL(workspaceUrl+'/code/source-control');await scm().waitFor();
-        release();const outcome=await returned;if(outcome.error)throw outcome.error;const observed=await outcome.response.json();
+        release();const [outcome,peerOutcome]=await Promise.all([targetReturned,peerReturned]);if(outcome.error)throw outcome.error;if(peerOutcome.error)throw peerOutcome.error;
+        assert.deepEqual(responseOrder,[firstId,secondId],'两种返回顺序均由真实响应完成事件确认');
+        const observed=await outcome.response.json(),peerObserved=await peerOutcome.response.json();
+        assert.deepEqual(observed.repositories.map((item:any)=>item.id),[taskSource.repository.id]);
+        assert.deepEqual(peerObserved.repositories.map((item:any)=>item.id),[peerSource.repository.id]);
+        assert.deepEqual(peerObserved.selectedWorktrees,[],'无关代码库的空预选是正常结果，不能作为任务来源断言的输入');
         assert.ok(observed.selectedWorktrees.some((item:any)=>item.repositoryId===taskSource.repository.id&&item.worktreeId===taskSource.worktree.worktreeId),'迟到的真实任务响应仍指向A，不能借替身把其改成C：'+JSON.stringify({expected:taskSource,selected:observed.selectedWorktrees}));
         await selected(repository.id,main.worktreeId);
         const updated=page.waitForResponse((response:any)=>{const url=new URL(response.url());return url.pathname===new URL(api+'/code/source-control').pathname&&url.searchParams.get('repositoryId')===repository.id;});
         branches.liveRefresh.write(longText(91));await updated;await selected(repository.id,main.worktreeId);
         await navigate('explorer');await explorerSource(repository.id,main.location);await navigate('source-control');await selected(repository.id,main.worktreeId);
-        await capture(page,'source-selection-cold-task-intent-order.png');
-      }finally{release();await page.unrouteAll({behavior:'wait'});}
+        await capture(page,'source-selection-cold-task-intent-order-'+(targetFirst?'target-first':'peer-first')+'.png');
+      }finally{release();releaseFollowing();await page.unrouteAll({behavior:'wait'});}
     });
   });
 
