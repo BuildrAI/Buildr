@@ -33,6 +33,8 @@ export function materializeCleanProductSource(sourceRoot: any, targetRoot: any):
   const sourceModules: any = path.join(sourceRoot, 'node_modules');
   if (fs.existsSync(sourceModules)) fs.symlinkSync(sourceModules, path.join(productRoot, 'node_modules'), 'dir');
   git(repositoryRoot, ['init', '--quiet', '--initial-branch=retained']);
+  // Windows temp roots push product resource paths past MAX_PATH; Git needs long-path support to index them.
+  git(repositoryRoot, ['config', 'core.longpaths', 'true']);
   git(repositoryRoot, ['config', 'user.name', 'Buildr Test']);
   git(repositoryRoot, ['config', 'user.email', 'buildr-test@example.com']);
   const trackedEntries: any = PRODUCT_SOURCE_ENTRIES
