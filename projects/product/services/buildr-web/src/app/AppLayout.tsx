@@ -392,10 +392,10 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
                     { key: 'quit', danger: true, icon: <CloseCircleOutlined />, label: <span id="quit-buildr">退出 Buildr Web</span>, onClick: () => { void quit(); } },
                   ],
                 }}
-                trigger={['click']}
+                trigger={['hover']}
                 placement="bottomRight"
               >
-                <Tooltip title="更多操作"><Button id="more-actions" className="nav-more" aria-label="更多操作" type="text" icon={<EllipsisOutlined />} loading={quitting} /></Tooltip>
+                <Button id="more-actions" className="nav-more" aria-label="更多操作" type="text" icon={<EllipsisOutlined />} loading={quitting} />
               </Dropdown>
             )}
             <div
