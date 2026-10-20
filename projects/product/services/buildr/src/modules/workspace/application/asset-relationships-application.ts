@@ -222,7 +222,7 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
     const newProjects = next.projects.filter(p => !before.catalog.projects.some(old => old.id === p.id));
     const newServices = next.services.filter(s => !before.catalog.services.some(old => old.id === s.id));
     const createdProjects = newProjects.filter(p => p.code !== registration?.code);
-    const roots = [...createdProjects.map(p => `projects/${p.code}`), ...newServices.filter(s => !directories.some(d => d.serviceId === s.id)).map(s => `services/${s.code}`), ...directories.filter(d => !d.observation).map(d => d.path)];
+    const roots = [...createdProjects.map(p => `projects/${p.code}`), ...directories.filter(d => !d.observation).map(d => d.path)];
     for (const relative of roots) {
       assertCatalogFile(root, relative);
       if (fs.existsSync(path.join(root, relative))) throw assetError('asset_directory_occupied', `目录已存在，不能覆盖：${relative}。`, 409);
@@ -251,8 +251,7 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
         runtime.trackWrite(root, path.join(destination, 'capabilities.yml'), runtime.renderProjectCapabilitiesYaml(), []);
         runtime.trackWrite(root, path.join(destination, 'commands.yml'), runtime.renderProjectCommandsYaml(), []);
       }
-      for (const directory of directories.filter(d => !d.observation)) runtime.atomicWriteFile(path.join(root, directory.path, 'AGENTS.md'), `# ${next.services.find(s => s.id === directory.serviceId)!.name}\n`);
-      for (const service of newServices.filter(s => !directories.some(d => d.serviceId === s.id))) runtime.atomicWriteFile(path.join(root, 'services', service.code, 'AGENTS.md'), `# ${service.name}\n\n服务（Service）：${service.code}。代码库实例（Repository Instance）：${service.repositoryId}。\n按任务明确选择项目（Project）上下文，并读取被引用代码库目录中的适用规则。\n`);
+      for (const directory of directories.filter(d => !d.observation)) runtime.ensureDirectory(path.join(root, directory.path));
       for (const file of CATALOG_FILES) { assertCatalogFile(root, file); runtime.atomicWriteFile(path.join(root, file), content[file]); }
       return assetCatalog(root);
     });

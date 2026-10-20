@@ -174,7 +174,7 @@ test('distinct branches and services share repository identity without duplicate
   assert.equal(new Set(catalog.services.map((s: any) => s.repositoryId)).size, 1);
   assert.equal(catalog.repositories[0].available, false);
   assert.equal(fs.existsSync(path.join(root, 'repositories/freshx-pigs')), false);
-  assert.ok(fs.existsSync(path.join(root, 'services/pig-business/AGENTS.md')));
+  assert.equal(fs.existsSync(path.join(root, 'services/pig-business')), false);
 });
 test('project association is many-to-many; unlink keeps service, code and other project intact', (t: any) => {
   const { root, runtime } = setup(t);
@@ -259,6 +259,7 @@ test('shared code repository yields one task worktree and module directories do 
   const plan = runtime.planGitWorktrees({ workspaceRoot: root, taskId: 'shared-code', branch: 'codex/shared-code', includes: ['service:demo/pig-api', 'service:demo/egg-api'] });
   assert.equal(plan.repositories.length, 2); // workspace plus one shared Git checkout
   assert.equal(plan.repositories[1].sourcePath, 'repositories/shared');
+  fs.mkdirSync(path.join(root, 'services/pig-api'), { recursive: true });
   assert.equal(resolveRuleScope(root, 'services/pig-api').projectRoot, null);
   assert.equal(resolveRuleScope(root, 'repositories/shared/modules/pig').scopeRoot, path.join(codeRoot, 'modules/pig'));
 });
@@ -287,7 +288,11 @@ test('global service documents preserve rule access and reject escaping symlinks
   const { root, runtime } = setup(t);
   let c = ready(runtime, root); c = addRepo(runtime, root, c.revision, 'code', 'dev');
   c = runtime.createCatalogService(root, { revision: c.revision, service: { code: 'api', name: 'API', repositoryId: c.repositories[0].id } });
-  assert.match(runtime.catalogServiceDocument(root, c.services[0].id, 'AGENTS.md').content, /Repository Instance/);
+  const document = runtime.catalogServiceDocument(root, c.services[0].id, 'AGENTS.md');
+  assert.equal(document.exists, false); assert.equal(document.content, null);
+  fs.mkdirSync(path.join(root, 'services/api'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'services/api/AGENTS.md'), '# API\n\n服务级规则占位。\n');
+  assert.match(runtime.catalogServiceDocument(root, c.services[0].id, 'AGENTS.md').content, /服务级规则占位/);
   assert.throws(() => runtime.catalogServiceDocument(root, c.services[0].id, '../manifest.yml'), /范围内/);
   fs.symlinkSync(path.join(root, 'projects/demo/AGENTS.md'), path.join(root, 'services/api/README.md'));
   assert.throws(() => runtime.catalogServiceDocument(root, c.services[0].id, 'README.md'), (e: any) => e.code === 'service_document_path_forbidden');
@@ -430,7 +435,8 @@ test('delete service and project uses observed revision and preserves all physic
   c = runtime.updateCatalogAsset(root, 'service', serviceId, { revision: c.revision, name: 'Changed' });
   assert.throws(() => runtime.deleteCatalogAsset(root, 'service', serviceId, { revision: stale }), (e: any) => e.code === 'asset_revision_conflict');
   assert.equal(runtime.assetCatalog(root).services.length, 1);
-  const file = path.join(root, 'services/delete-api/AGENTS.md'), bytes = fs.readFileSync(file);
+  const directory = path.join(root, 'services/delete-api'); fs.mkdirSync(directory, { recursive: true });
+  const file = path.join(directory, 'AGENTS.md'); fs.writeFileSync(file, '# Delete\n\n人工服务规则。\n'); const bytes = fs.readFileSync(file);
   const http = createWorkspaceHttpContribution(runtime); let authorization = 0;
   const result: any = await http.handle({ request: { method: 'DELETE' }, suffix: `/asset-catalog/service/${serviceId}`, root, authorizeWrite: () => { authorization++; }, readJsonBody: async () => ({ revision: c.revision }) });
   assert.equal(authorization, 1); assert.equal(result.status, 200); c = result.body;
@@ -823,7 +829,8 @@ test('service directories register existing code, remove without writes and regi
 test('new nested services create in project and transaction failure leaves no directory', (t: any) => {
   const { root, runtime } = setup(t); let c = ready(runtime, root);
   c = runtime.createCatalogProject(root, { revision: c.revision, code: 'new-directory-project', name: '新项目', newServices: [{ code: 'api', name: 'API', directoryMode: 'create' }] });
-  assert.ok(fs.existsSync(path.join(root, 'projects/new-directory-project/services/api/AGENTS.md')));
+  assert.ok(fs.statSync(path.join(root, 'projects/new-directory-project/services/api')).isDirectory());
+  assert.equal(fs.existsSync(path.join(root, 'projects/new-directory-project/services/api/AGENTS.md')), false);
   const project = c.projects.find((p: any) => p.code === 'new-directory-project');
   assert.equal(project.serviceIds.length, 1);
   assert.throws(() => runtime.createCatalogService(root, { revision: c.revision, service: { code: 'api', name: '重复', directoryMode: 'create', projectCode: project.code } }), /已存在|重复/);

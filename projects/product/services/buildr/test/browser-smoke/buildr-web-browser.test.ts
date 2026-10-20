@@ -1769,7 +1769,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(repository.source.path, 'repositories/nested-code');
     assert.equal(runtime.catalogRepositoryStatus(workspaceRoot, repository.id).available, false);
     assert.ok(!fs.existsSync(path.join(workspaceRoot, repository.source.path)));
-    assert.ok(fs.existsSync(path.join(workspaceRoot, 'projects/nested-project/services/nested-business/AGENTS.md')));
+    assert.equal(fs.existsSync(path.join(workspaceRoot, 'projects/nested-project/services/nested-business')), false);
+    assert.equal(fs.existsSync(path.join(workspaceRoot, 'services/nested-business')), false);
     await page.getByRole('button', { name: '解除关联 嵌套业务服务', exact: true }).click();
     await page.getByRole('link', { name: '嵌套业务服务', exact: true }).waitFor({ state: 'hidden' });
     assert.equal(await page.locator('#project-service-count').innerText(), '0');
@@ -1956,7 +1957,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: runtime.assetCatalog(workspaceRoot).projects.find((item: any) => item.code === 'demo').name }).click();
     await page.getByRole('button', { name: '添加服务', exact: true }).click();
     await page.locator('#catalog-service-create').waitFor({ state: 'detached' });
-    assert.ok(fs.existsSync(path.join(workspaceRoot, 'projects/demo/services/new-directory-browser/AGENTS.md')));
+    assert.ok(fs.statSync(path.join(workspaceRoot, 'projects/demo/services/new-directory-browser')).isDirectory());
+    assert.equal(fs.existsSync(path.join(workspaceRoot, 'projects/demo/services/new-directory-browser/AGENTS.md')), false);
     await page.goto(`${workspaceUrl}/skills`);
     await page.locator('#skills-add').click();
     await page.getByRole('textbox', { name: '技能编码', exact: true }).fill('retained-browser-skill');
@@ -2008,7 +2010,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     c = runtime.assetCatalog(workspaceRoot);
     assert.ok(!c.services.some((s: any) => s.id === service.id));
     assert.ok(c.repositories.some((r: any) => r.id === service.repositoryId));
-    assert.ok(fs.existsSync(path.join(workspaceRoot, 'services/delete-browser-api/AGENTS.md')));
+    assert.equal(fs.existsSync(path.join(workspaceRoot, 'services/delete-browser-api')), false);
     await page.goto(`${workspaceUrl}/projects/delete-browser`);
     await page.getByRole('button', { name: '更多项目操作', exact: true }).click();
     await page.getByRole('menuitem', { name: /^移\s*除$/ }).click();
