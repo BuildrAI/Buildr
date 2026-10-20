@@ -20,9 +20,7 @@ export const WORKBENCH_HTTP_DEFINITIONS = {
   WorkbenchPreferencesResponse: closed({ schemaVersion: { const: 'buildr.workbench-preferences/v1' }, items: array(ref('WorkbenchPreference')) }),
   WorkbenchTaskItem: closed({ task: ref('StoredTaskView'), workContext: ref('TaskWorkContextResponse') }),
   WorkbenchTaskSection: closed({ items: array(ref('WorkbenchTaskItem')), total: { type: 'integer', minimum: 0 }, hasMore: { type: 'boolean' }, diagnostic: nullable(ref('WorkbenchDiagnostic')) }),
-  WorkbenchDailyProgressItem: closed({ project: shortText, projectName: shortText, date: text, recordedAt: text, daySummary: closed({ added: text, updated: text, deleted: text, drawbacks: text }), commitCount: { type: 'integer', minimum: 0 }, coverage: text }),
-  WorkbenchResponse: closed({ schemaVersion: { const: 'buildr.workbench/v1' }, observedAt: text, project: nullable(shortText), date: nullable(text), projects: array(closed({ code: shortText, name: shortText })), attention: ref('WorkbenchTaskSection'), active: ref('WorkbenchTaskSection'), planned: ref('WorkbenchTaskSection'), recentResults: ref('WorkbenchTaskSection'), preferences: ref('WorkbenchPreferencesResponse'), dailyProgress: closed({ items: array(ref('WorkbenchDailyProgressItem')), diagnostics: array(ref('WorkbenchDiagnostic')), missingProjects: array(shortText), hasMore: { type: 'boolean' } }) }),
-  WorkbenchActivityResponse: closed({schemaVersion:{const:'buildr.workbench-activity/v1'}, observedAt:text, project:nullable(shortText), date:nullable(text), projects:array(closed({code:shortText,name:shortText})), dailyProgress:closed({items:array(ref('WorkbenchDailyProgressItem')),diagnostics:array(ref('WorkbenchDiagnostic')),missingProjects:array(shortText),hasMore:{type:'boolean'}})}),
+  WorkbenchResponse: closed({ schemaVersion: { const: 'buildr.workbench/v1' }, observedAt: text, project: nullable(shortText), projects: array(closed({ code: shortText, name: shortText })), attention: ref('WorkbenchTaskSection'), active: ref('WorkbenchTaskSection'), planned: ref('WorkbenchTaskSection'), recentResults: ref('WorkbenchTaskSection'), preferences: ref('WorkbenchPreferencesResponse') }),
   WorkbenchErrorResponse: closed({ error: closed({ code: text, message: text, details: true }, ['code', 'message']) }),
 };
 const schema = (name: keyof typeof WORKBENCH_HTTP_DEFINITIONS) => ({ $schema: 'https://json-schema.org/draft/2020-12/schema', $id: `https://schemas.buildr.ai/http/workbench/${name}/v1`, title: name, ...ref(name), $defs: WORKBENCH_HTTP_DEFINITIONS });
@@ -39,7 +37,6 @@ export const WORKBENCH_HTTP_OPERATIONS = [
   ['task-work-context.record', 'PUT', '/tasks/:taskId/work-context', 'TaskWorkContextRecordRequest', 'TaskWorkContextResponse'],
   ['task-work-context.respond', 'POST', '/tasks/:taskId/work-context/respond', 'TaskWorkContextRespondRequest', 'TaskWorkContextResponse'],
   ['workbench.overview', 'GET', '/workbench', 'WorkbenchQuery', 'WorkbenchResponse'],
-  ['workbench.activity', 'GET', '/workbench/activity', 'WorkbenchQuery', 'WorkbenchActivityResponse'],
   ['workbench.preferences', 'GET', '/workbench/preferences', null, 'WorkbenchPreferencesResponse'],
   ['workbench.preference.put', 'PUT', '/workbench/preferences/:kind/:key', 'WorkbenchPreferencePutRequest', 'WorkbenchPreferencesResponse'],
   ['workbench.preference.delete', 'DELETE', '/workbench/preferences/:kind/:key', null, 'WorkbenchPreferencesResponse'],

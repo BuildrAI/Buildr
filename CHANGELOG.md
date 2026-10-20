@@ -2,6 +2,10 @@
 
 本项目遵循语义化版本。正式发布前的变更可以在 `0.1.x` 内调整，但会在 release notes 中说明用户可观察差异。
 
+## Unreleased
+
+- 移除“每日演进”（Project Daily Progress）功能：`buildr project daily-progress` 命令、只读网页接口、工作台“动态”页签与项目主页入口一并删除；已存在的 `.buildr/daily-progress/` 文件保留在本机但不再被产品读取。对应 Agent 技能与公开 JSON 契约标识同步移除。
+
 ## 0.1.0-rc.46 - 2026-10-19
 
 - 文章详情页改为就地编辑并统一阅读/编辑态模式条，空摘要不再写入 frontmatter；编辑抽屉正文随内容高度自适应。

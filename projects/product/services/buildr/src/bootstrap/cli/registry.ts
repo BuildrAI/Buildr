@@ -7,7 +7,6 @@ import { printCliError } from './diagnostics.ts';
 import { createGitWorktreeCliContributions, createTaskCliContributions, createTaskReviewCliContributions } from '../../modules/task/module.ts';
 import { createOpenSpecCliContributions } from '../../modules/openspec/module.ts';
 import { createWorkspaceCliContributions } from '../../modules/workspace/module.ts';
-import { createDailyProgressCliContributions } from '../../modules/task/module.ts';
 import { createInstallationCliContributions, createLauncherCliContributions } from '../../modules/installation/module.ts';
 import { createAgentAssetsCliContributions } from '../../modules/agent-assets/interfaces/cli/agent-assets.ts';
 import { WEB_CLI_GROUPS } from '../../web/interfaces/cli/web.ts';
@@ -16,7 +15,6 @@ import { createProjectVerificationCliContributions } from '../../modules/project
 const TASK_MODULE_COMMAND_SLOT = Symbol('task-module-command-contributions');
 const WORKSPACE_INIT_COMMAND_SLOT = Symbol('workspace-init-command-contribution');
 const WORKSPACE_MUTATION_COMMAND_SLOT = Symbol('workspace-mutation-command-contribution');
-const WORKSPACE_DAILY_PROGRESS_COMMAND_SLOT = Symbol('workspace-daily-progress-command-contributions');
 const AGENT_ASSETS_PACKAGE_COMMAND_SLOT = Symbol('agent-assets-package-command-contributions');
 const AGENT_ASSETS_RUNTIME_COMMAND_SLOT = Symbol('agent-assets-runtime-command-contributions');
 const AGENT_ASSETS_SOURCE_COMMAND_SLOT = Symbol('agent-assets-source-command-contributions');
@@ -56,7 +54,6 @@ const WORKSPACE_PRIMARY_COMMANDS = new Set(['init', 'mutation recover']);
 const COMMAND_ROUTES: any[] = [
   WORKSPACE_INIT_COMMAND_SLOT,
   AGENT_ASSETS_PACKAGE_COMMAND_SLOT,
-  WORKSPACE_DAILY_PROGRESS_COMMAND_SLOT,
   TASK_MODULE_COMMAND_SLOT,
   WORKSPACE_MUTATION_COMMAND_SLOT,
   AGENT_ASSETS_RUNTIME_COMMAND_SLOT,
@@ -65,17 +62,6 @@ const COMMAND_ROUTES: any[] = [
 ];
 
 const COMMAND_GROUPS: any[] = [
-  {
-    key: "project daily-progress",
-    surface: "agent-machine",
-    summary: "记录、查看或列出 Project 本机每日演进；写本机文件，Task 关联可选，不进入 Git 或 Task SQLite。",
-    help: [
-      "Usage: buildr project daily-progress <record|inspect|list> --project <code> ...",
-      "",
-      "记录、查看或列出 Project 本机每日演进。这些命令写本机 YAML 并可关联本机 Task Record，不进入 Git 或 Task SQLite，不扫描 Git，也不是 primary 人类主路径，不提供定时调度。"
-    ],
-    executable: false,
-  },
   {
     key: "task",
     surface: "primary",
@@ -150,14 +136,12 @@ function createCommandRegistry(moduleContributions: any): any  {
   const agentAssetsPackageContributions = moduleContributions.filter((route: any) => AGENT_ASSETS_PACKAGE_COMMANDS.has(route.key));
   const agentAssetsRuntimeContributions = moduleContributions.filter((route: any) => AGENT_ASSETS_RUNTIME_COMMANDS.has(route.key));
   const agentAssetsSourceContributions = moduleContributions.filter((route: any) => AGENT_ASSETS_SOURCE_COMMANDS.has(route.key));
-  const workspaceDailyProgressContributions = moduleContributions.filter((route: any) => route.key.startsWith('project daily-progress '));
   const nonAgentAssetsContributions = moduleContributions.filter((route: any) => (
     !AGENT_ASSETS_PACKAGE_COMMANDS.has(route.key)
     && !AGENT_ASSETS_RUNTIME_COMMANDS.has(route.key)
     && !AGENT_ASSETS_SOURCE_COMMANDS.has(route.key)
     && !OPENSPEC_MODULE_COMMANDS.has(route.key)
     && !WORKSPACE_PRIMARY_COMMANDS.has(route.key)
-    && !route.key.startsWith('project daily-progress ')
   ));
   const routes = COMMAND_ROUTES.flatMap((route: any) => {
     if (route === WORKSPACE_INIT_COMMAND_SLOT) return moduleContributions.filter((item: any) => item.key === 'init');
@@ -165,7 +149,6 @@ function createCommandRegistry(moduleContributions: any): any  {
     if (route === AGENT_ASSETS_PACKAGE_COMMAND_SLOT) return agentAssetsPackageContributions;
     if (route === AGENT_ASSETS_RUNTIME_COMMAND_SLOT) return agentAssetsRuntimeContributions;
     if (route === AGENT_ASSETS_SOURCE_COMMAND_SLOT) return agentAssetsSourceContributions;
-    if (route === WORKSPACE_DAILY_PROGRESS_COMMAND_SLOT) return workspaceDailyProgressContributions;
     if (route === OPENSPEC_MODULE_COMMAND_SLOT) return moduleContributions.filter((item: any) => OPENSPEC_MODULE_COMMANDS.has(item.key));
     if (route === TASK_MODULE_COMMAND_SLOT) return nonAgentAssetsContributions;
     return [route];
@@ -179,7 +162,6 @@ function createCommandCatalog(commandRegistry: any): any  {
 
 export const COMMAND_REGISTRY = createCommandRegistry([
   ...createWorkspaceCliContributions(),
-  ...createDailyProgressCliContributions(null),
   ...createAgentAssetsCliContributions(),
   createSourceInspectCli(null),
   ...createGitWorktreeCliContributions(),

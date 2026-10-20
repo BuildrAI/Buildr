@@ -14,7 +14,6 @@
 | Codex 原生会话（Session）关联 | [codex-desktop/module.ts](../../services/buildr/src/modules/codex-desktop/module.ts) | 确认稳定配置范围、任务（Task）与原生会话（Session）多对多关联及双向定位；不安装插件（Plugin）或等待握手，独立生成仍由 `agent-operations` 执行，见[智能体（Agent）接入架构](../docs/architecture/agent-integration.md) |
 | DSH 桌面连接与导航 | [dsh-desktop/module.ts](../../services/buildr/src/modules/dsh-desktop/module.ts) | 维护已确认安装、配置和渠道的桌面连接，核验准确会话（Session）与任务（Task）页面的导航回执；断开与退出只释放自己的连接，保留原聊天和关系 |
 | 任务（Task）、答复、审查、验证与工作树（Worktree） | [task/module.ts](../../services/buildr/src/modules/task/module.ts) | 各项独立协作事实及 Git 位置；见[任务地图](task-system.md) |
-| 项目每日演进 | [task/daily-progress/](../../services/buildr/src/modules/task/daily-progress/) | 同一任务装配入口中的独立能力；保存本机摘要并关联提交和任务，见[使用与边界](../docs/flows/project-daily-progress.md) |
 | 工作台（Workbench） | [workbench/module.ts](../../services/buildr/src/modules/workbench/module.ts) | 有界组合已有事实，独立保存个人计划、关注、收藏与最近访问 |
 | 任务关联变更 | [task/change/module.ts](../../services/buildr/src/modules/task/change/module.ts) | 核对任务关联与受信任副本，委托 OpenSpec 读取，不拥有规范正文 |
 | OpenSpec | [openspec/module.ts](../../services/buildr/src/modules/openspec/module.ts) | 变更读取、冲突检查、上游归档接入与恢复；见[接入边界](technical-layers.md#openspec-接入与恢复) |

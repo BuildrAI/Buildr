@@ -19,7 +19,6 @@ test('Workspace、Project与Service前端保持独立Feature并共享唯一Works
     'features/service/pages/ServicesPage.tsx',
     'features/service/pages/ServiceDetailPage.tsx',
     'features/service/components/ServiceEditDrawer.tsx',
-    'features/project-daily-progress/components/DailyProgressPanel.tsx',
     'lib/useMarkdownDocumentViewer.ts',
     'features/workspace/api/workspace-api.ts',
     'features/project/api/project-api.ts',
@@ -32,7 +31,6 @@ test('Workspace、Project与Service前端保持独立Feature并共享唯一Works
     'pages/ProjectEditPage.tsx', 'pages/ProjectsSection.tsx', 'pages/ServicesPage.tsx',
     'pages/ServiceDetailPage.tsx', 'pages/ServiceEditPage.tsx',
     'components/ProjectEditModal.tsx', 'components/ServiceEditModal.tsx',
-    'pages/project-detail/DailyProgressPanel.tsx',
   ];
   for (const relative of retired) assert.equal(fs.existsSync(path.join(webSource, relative)), false, `legacy owner remains: ${relative}`);
 
@@ -46,7 +44,6 @@ test('Workspace、Project与Service前端保持独立Feature并共享唯一Works
   assert.match(source('features/project/pages/ProjectDetailPage.tsx'), /useMarkdownDocumentViewer/);
   assert.match(source('features/workspace/components/AssetHome.tsx'), /ResourceDocumentPane/);
   assert.doesNotMatch(source('features/service/pages/ServiceDetailPage.tsx'), /MarkdownHost|renderMarkdown/);
-  assert.match(source('features/project/pages/ProjectDetailPage.tsx'), /project-daily-progress/);
 });
 
 test('领域Feature不形成相互反向依赖', () => {

@@ -328,18 +328,6 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     ],
     "inputExclusions": []
   },
-  "integration-project-daily-progress": {
-    "inputs": [
-      "test/integration/project-daily-progress-application.test.ts",
-      "src/modules/task/daily-progress/domain/project-daily-progress.ts",
-      "src/modules/task/daily-progress/application/project-daily-progress-application.ts",
-      "src/modules/task/daily-progress/persistence/project-daily-progress-repository.ts",
-      "src/modules/task/daily-progress/interfaces/cli/project-daily-progress.ts",
-      "src/modules/workspace/interfaces/http/workspace-http.ts",
-      "src/modules/workspace/module.ts"
-    ],
-    "inputExclusions": []
-  },
   "contract": {
     "inputs": [
       "knowledge/index.yml",

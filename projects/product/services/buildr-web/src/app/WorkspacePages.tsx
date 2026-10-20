@@ -6,7 +6,7 @@ import { InsideResourcePreview, ResourcePreviewContext, resourcePreview, type Pr
 import { dshResourceDestination, dshTaskResource } from './dsh-resource-navigation';
 import { PageTabStrip } from './PageTabStrip';
 import { tabElementId, tabPanelId } from '../lib/tab-navigation';
-import { reorderPageTabs, parseTabs, previewOwnerPath, previewOwnerSearch, ratioStorageKey, readRatio, tabForPath, tabsStorageKey, workspacePageSearch, workspacePageLayout, type WorkspacePageTab } from './workspace-pages';
+import { reorderPageTabs, parseTabs, previewOwnerPath, previewOwnerSearch, ratioStorageKey, readRatio, tabForPath, tabsStorageKey, workspacePageLayout, type WorkspacePageTab } from './workspace-pages';
 import { WorkspacePaneHostProvider, WorkspacePaneHost, useWorkspacePaneHost, type WorkspacePageNavigationRequest } from './WorkspacePaneHost';
 import { RetainedWorkspaceRoute } from './workspace-routes';
 
@@ -125,7 +125,7 @@ export function WorkspacePages({ workspaceId, renderResource, navigationRequest 
     previousPagePath.current = location.pathname;
     if (!current || resourcePreview(workspaceId, location.pathname)) return;
     if (fromDirectory) setPreviews(prev => ({ ...prev, [location.pathname]: { items: [], active: null } }));
-    const search = workspacePageSearch(workspaceId, location.pathname, location.search);
+    const search = location.search;
     setTabs((prev) => {
       const old = prev.find(t => t.key === current.key);
       if (old?.path === current.path && old.search === search) return prev;

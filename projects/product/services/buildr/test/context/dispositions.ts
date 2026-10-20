@@ -18,7 +18,6 @@ const entries: any[] = [
   ...disposition('hybrid', 'shared-application-with-real-sandbox', 'The owner reuses one Application assembly per Worker Host while retaining its real per-case filesystem, SQLite, CLI, or process sandbox.', [
     'integration-task-read-models',
     'integration-task-coordination',
-    'integration-project-daily-progress',
   ]),
   ...disposition('full-lifecycle', 'stateless-direct-evidence', 'The owner is a bounded static or stateless check and has no reusable mutable Context.', [
     'frontend-logic',

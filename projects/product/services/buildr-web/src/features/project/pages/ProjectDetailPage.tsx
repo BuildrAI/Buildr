@@ -8,8 +8,7 @@ import { useAssetCatalog } from '../../workspace/components/useAssetCatalog';
 import { projectApi, projectDocumentImage, type ProjectDocument } from '../api/project-api';
 import { useCallback, useContext, useEffect, useRef, useState, type MouseEvent, type SyntheticEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Alert, App, Button, DatePicker, Dropdown, Skeleton, Tabs } from 'antd';
-import dayjs from 'dayjs';
+import { Alert, App, Button, Dropdown, Tabs } from 'antd';
 import { WorkspaceComposition } from '../../workspace/components/WorkspaceComposition';
 import { useWorkspaceComposition } from '../../workspace/components/useWorkspaceComposition';
 import { useResourcePreview } from '../../../app/resource-preview';
@@ -25,10 +24,6 @@ import { editableDocument, fileSnapshot } from '../../code/hooks/useEditableFile
 import { encodeProjectDocumentPath, resolveProjectMarkdownHref } from '../../../lib/projectDocuments';
 import { updateMarkdownImageFailures, type MarkdownImageFailures, type MarkdownImageContext } from '../../../lib/markdownImages';
 import { workspaceHref } from '../../../lib/labels';
-import { dailyProgressActionContext, dailyProgressActivityPath, legacyDailyProgressPath, type DailyProgressGroup } from '../../project-daily-progress/dailyProgressNavigation';
-import { DailyProgressPanel } from '../../project-daily-progress/components/DailyProgressPanel';
-import { useWorkbenchActivity } from '../../workbench/hooks/useWorkbench';
-import { WorkbenchDailyProgress } from '../../workbench/components/WorkbenchDailyProgress';
 import { KnowledgeBrowser } from '../../knowledge/components/KnowledgeBrowser';
 import { useMarkdownDocumentViewer } from '../../../lib/useMarkdownDocumentViewer';
 import { ProjectEditDrawer } from '../components/ProjectEditDrawer';
@@ -51,7 +46,7 @@ const DOC_ROWS: { ref: string; name: string; hint: string }[] = [
   { ref: 'agents', name: 'AGENTS.md', hint: '规则与授权边界' },
 ];
 
-const ENTRY_TITLES: Record<ProjectHomeEntryRef, string> = { knowledge: '项目知识', articles: '项目文章', activity: '项目动态' };
+const ENTRY_TITLES: Record<ProjectHomeEntryRef, string> = { knowledge: '项目知识', articles: '项目文章' };
 
 /** 右组项目文档对象。 */
 function ProjectDocObjectView({ workspaceId, projectCode, objectKey, documentRef, position, positions, navigationRequest, onPosition, onPaneState }: { workspaceId: string | null; projectCode: string; objectKey: string; documentRef: ProjectDocumentRef; position?: ProjectDocumentPosition; positions: ProjectDocumentPositions; navigationRequest: number; onPosition(ref: ProjectDocumentRef, position: ProjectDocumentPosition): void; onPaneState(key: string, state: ProjectDocumentPaneState): void }) {
@@ -162,42 +157,6 @@ function ProjectDocObjectView({ workspaceId, projectCode, objectKey, documentRef
   );
 }
 
-/** 右组项目动态：默认展示该项目最近演进，点选日期后在同一副屏查看当天详情。 */
-function ProjectActivityPane({ projectCode, workspaceId }: { projectCode: string; workspaceId: string | null }) {
-  const { openAgentAction } = useAppShell();
-  const href = (path: string) => workspaceHref(workspaceId, path);
-  const [date, setDate] = useState('');
-  const [group, setGroup] = useState<DailyProgressGroup>('day');
-  const { data, error, loading, refresh } = useWorkbenchActivity(workspaceId, projectCode);
-  const openDay = (event: MouseEvent<HTMLElement>) => {
-    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    const raw = (event.target as HTMLElement).closest('a[href]')?.getAttribute('href') || '';
-    const [path, query = ''] = raw.split('?');
-    if (!path.endsWith('/activity')) return;
-    const params = new URLSearchParams(query);
-    if (params.get('project') && params.get('project') !== projectCode) return;
-    event.preventDefault();
-    setDate(params.get('date') || '');
-  };
-  return <>
-    <div className="ws-obj-head"><h2>项目动态 {date ? <code>{date}</code> : null}</h2></div>
-    <p className="ws-obj-sub">查看每日演进、提交与变化影响。<Link to={href(dailyProgressActivityPath(projectCode))}>打开动态页</Link></p>
-    <div className="daily-progress-date-controls project-activity-controls">
-      {date ? <Button onClick={() => setDate(dayjs(date).subtract(1, 'day').format('YYYY-MM-DD'))}>前一天</Button> : null}
-      <DatePicker aria-label="演进日期" inputReadOnly value={date && dayjs(date).isValid() ? dayjs(date) : null} onChange={value => setDate(value ? value.format('YYYY-MM-DD') : '')} placeholder="选择日期" />
-      {date ? <Button onClick={() => setDate(dayjs(date).add(1, 'day').format('YYYY-MM-DD'))}>后一天</Button> : null}
-      {date ? <Button type="link" onClick={() => setDate('')}>最近演进</Button> : null}
-    </div>
-    {date ? <DailyProgressPanel projectCode={projectCode} workspaceId={workspaceId} date={date} group={group} refreshKey={0}
-      onGroupChange={setGroup} onAskAgent={() => openAgentAction('daily-progress', dailyProgressActionContext(projectCode, date))} /> :
-      <div onClickCapture={openDay}>
-        {error ? <Alert type="error" message={error} action={<Button onClick={() => void refresh()}>重试</Button>} /> : null}
-        {loading && !data ? <Skeleton active /> : null}
-        {data ? <WorkbenchDailyProgress data={data.dailyProgress} full project={projectCode} onRefresh={() => void refresh()} /> : null}
-      </div>}
-  </>;
-}
-
 export function ProjectDetailPage() {
   const { projectCode = '' } = useParams();
   const navigate = useNavigate();
@@ -273,10 +232,6 @@ export function ProjectDetailPage() {
     setActiveObj(tab.key);
     paneHost?.revealContent(editLocation.pathname, tab.key);
   };
-  useEffect(() => {
-    const activityPath = legacyDailyProgressPath(projectCode, editLocation.search);
-    if (activityPath) navigate(workspaceHref(workspaceId, activityPath), { replace: true });
-  }, [editLocation.search, projectCode, workspaceId, navigate]);
   const closeObject = (key: string) => {
     setDocumentPaneStates(current => { if (!(key in current)) return current; const next = { ...current }; delete next[key]; return next; });
     const ref = objects.find(tab => tab.key === key)?.ref;
@@ -350,8 +305,6 @@ export function ProjectDetailPage() {
               onBack={() => closeObject(tab.key)}
               backLabel="返回项目"
             />
-        ) : tab.ref === 'activity' ? (
-            <ProjectActivityPane projectCode={projectCode} workspaceId={workspaceId} />
         ) : (
             <ProjectDocObjectView
               workspaceId={workspaceId}

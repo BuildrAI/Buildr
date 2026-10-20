@@ -67,7 +67,8 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
   const unresolved = new Set<string>();
   while (pending.length) {
     const file = pending.pop()!;
-    if (!recipeFile(file) || !/\.[cm]?[jt]sx?$/u.test(file) || !byPath.has(file)) continue;
+    const sourceEntry = byPath.get(file);
+    if (!recipeFile(file) || !/\.[cm]?[jt]sx?$/u.test(file) || !sourceEntry || sourceEntry[1] === 'absent') continue;
     const source = options.readText ? options.readText(file) : fs.readFileSync(path.resolve(repositoryRoot, file), 'utf8');
     const slice = narrow ? verificationModuleSlice(source, members.get(file) ?? null) : null;
     const text = slice?.text ?? source;

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { navigationState } from '../src/app/navigation.ts';
 
-test('daily overview and task deep links stay within the workbench', () => {
-  for (const path of ['overview', 'activity', 'tasks/id/changes/product/change']) {
+test('overview and task deep links stay within the workbench', () => {
+  for (const path of ['overview', 'tasks/id/changes/product/change']) {
     assert.equal(navigationState(`/workspaces/w/${path}`, '', 'w').area, 'workbench');
   }
 });

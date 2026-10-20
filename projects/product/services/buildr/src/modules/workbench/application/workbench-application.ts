@@ -1,4 +1,4 @@
-import type { WorkbenchActivityResponse, WorkbenchResponse, WorkbenchTaskItem, WorkbenchTaskSection, WorkbenchQuery, WorkbenchDiagnostic } from '../../../../build/generated/workbench-dto.ts';
+import type { WorkbenchResponse, WorkbenchTaskItem, WorkbenchTaskSection, WorkbenchQuery, WorkbenchDiagnostic } from '../../../../build/generated/workbench-dto.ts';
 import type { TaskWorkContextApplication } from '../../task/module.ts';
 import type { PreferencesApplication } from './preferences-application.ts';
 import { validateWorkbenchInput } from '../domain/workbench.ts';
@@ -8,8 +8,6 @@ export type WorkbenchDependencies = {
   workContext: Pick<TaskWorkContextApplication, 'inspectTaskWorkContext' | 'queryPendingTaskWorkContexts'>;
   tasks: { list(root: string, query: any): any; inspect(root: string, taskId: string): any };
   projects(root: string): any;
-  followedProjects(root: string): string[];
-  dailyProgress: { list(root: string, query: { project: string }): any; inspect(root: string, query: { project: string; date: string }): any };
 };
 const LIMIT = 12;
 const diagnostic = (failure: unknown): WorkbenchDiagnostic => ({ code: failure && typeof failure === 'object' && 'code' in failure ? String(failure.code) : 'workbench_source_failed', message: failure instanceof Error ? failure.message : String(failure) });
@@ -45,31 +43,7 @@ export function createWorkbenchApplication(dependencies: WorkbenchDependencies) 
     });
     const planned = readSection(() => section(preferenceTasks('planned-task', 'todo')));
     const recentResults = readSection(() => { const queried = dependencies.tasks.list(root, { status: 'completed', pageSize: '12', ...(input.project ? { project: input.project } : {}) }); return section(queried.tasks.map((view: any) => item(view.record.taskId, view)), queried.matchingTaskCount); });
-    const dailyProgress = readDailyProgress(root, input, projects, new Set(preferences.items.filter(value => value.kind === 'followed-project').map(value => value.key)));
-    return { schemaVersion: 'buildr.workbench/v1', observedAt: new Date().toISOString(), project: input.project || null, date: input.date || null, projects, attention, active, planned, recentResults, preferences, dailyProgress };
+    return { schemaVersion: 'buildr.workbench/v1', observedAt: new Date().toISOString(), project: input.project || null, projects, attention, active, planned, recentResults, preferences };
   }
-  function readDailyProgress(root: string, input: WorkbenchQuery, projects: WorkbenchResponse['projects'], followed: Set<string>) {
-    const dailyProgress: WorkbenchResponse['dailyProgress'] = { items: [], diagnostics: [], missingProjects: [], hasMore: false };
-    const relevantProjects = projects.filter((project) => !input.project || project.code === input.project).sort((a, b) => Number(followed.has(b.code)) - Number(followed.has(a.code)) || a.code.localeCompare(b.code));
-    dailyProgress.hasMore = relevantProjects.length > 20;
-    for (const project of relevantProjects.slice(0, 20)) {
-      try {
-        const date = input.date || dependencies.dailyProgress.list(root, { project: project.code }).dates[0];
-        if (!date) { dailyProgress.missingProjects.push(project.code); continue; }
-        const read = dependencies.dailyProgress.inspect(root, { project: project.code, date });
-        if (!read.daySummary) { dailyProgress.missingProjects.push(project.code); if (read.diagnostic) dailyProgress.diagnostics.push({ ...read.diagnostic, project: project.code }); continue; }
-        dailyProgress.items.push({ project: project.code, projectName: project.name, date: read.date, recordedAt: read.recordedAt, daySummary: read.daySummary, commitCount: read.commitCount, coverage: read.daySummary.drawbacks });
-      } catch (failure) { dailyProgress.diagnostics.push({ ...diagnostic(failure), project: project.code }); }
-    }
-    dailyProgress.items.sort((a, b) => b.date.localeCompare(a.date) || b.recordedAt.localeCompare(a.recordedAt) || a.project.localeCompare(b.project));
-    return dailyProgress;
-  }
-  function inspectWorkbenchActivity(root: string, input: WorkbenchQuery = {}): WorkbenchActivityResponse {
-    validateWorkbenchInput('WorkbenchQuery', input);
-    const projects = Object.values<any>(dependencies.projects(root).projects).map(project => ({code:project.code, name:project.name}));
-    if (input.project && !projects.some(project => project.code === input.project)) throw Object.assign(new Error('所选项目不存在。'), {code:'workbench_project_not_found', status:404});
-    const dailyProgress = readDailyProgress(root, input, projects, new Set(dependencies.followedProjects(root)));
-    return {schemaVersion:'buildr.workbench-activity/v1', observedAt:new Date().toISOString(), project:input.project || null, date:input.date || null, projects, dailyProgress};
-  }
-  return Object.freeze({ inspectWorkbench, inspectWorkbenchActivity });
+  return Object.freeze({ inspectWorkbench });
 }

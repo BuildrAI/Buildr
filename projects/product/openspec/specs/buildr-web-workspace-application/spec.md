@@ -568,7 +568,7 @@ Buildr MUST 提供解释 Workspace 心智的全局 Workspace 页面，并 MUST �
 
 #### Scenario: 展示核心导航层级
 - **WHEN** 用户在选定 Workspace 中浏览
-- **THEN** App Shell MUST 在顶栏依次展示“工作台”“工作空间”，概览、任务和动态位于工作台导航，项目、服务、代码库、技能和文章位于工作空间导航；设置 MUST 位于顶部工作空间选择菜单及工作空间卡片
+- **THEN** App Shell MUST 在顶栏依次展示“工作台”“工作空间”，概览和任务位于工作台导航，项目、服务、代码库、技能和文章位于工作空间导航；设置 MUST 位于顶部工作空间选择菜单及工作空间卡片
 - **AND** MUST NOT 将“开始”作为常驻主导航项
 - **AND** 用户 MUST 能通过品牌标识或工作空间切换到达当前 Workspace 的工作概览
 - **AND** `/workspaces/:workspaceId/` MUST 到达工作概览，`/workspaces/:workspaceId/overview` MUST 展示工作概览
@@ -1158,19 +1158,6 @@ Buildr Web Runtime MUST 提供不依赖 Workspace 的全局只读 Release Awaren
 - **WHEN** 客户端尝试通过 Release Awareness API提交 npm 更新
 - **THEN** Buildr Web Runtime MUST不登记对应写路由
 - **AND** 用户只能复制命令或把选择交给 Agent
-
-### Requirement: 本机 HTTP 必须提供只读每日演进 API
-Buildr Web Runtime MUST 提供 Project-scoped 与 Task-scoped 只读每日演进 API，在解析已登记 Workspace 后读取 `.buildr/daily-progress/` 中已保存 YAML，并解析本机 Task Record 摘要。API MUST 复用既有同源、session 与未知字段拒绝边界，MUST NOT 接受文件系统路径、MUST NOT 写入或删除演进文件，MUST NOT 创建 Task，也 MUST NOT 在 GET 时扫描 Git 或读取 `git config user.email`。
-
-#### Scenario: 读取某 Project 某日演进
-- **WHEN** 已认证请求读取已登记 Project 的存在日期
-- **THEN** HTTP interface MUST 调用 Daily Progress Application inspect
-- **AND** 响应 MUST 包含日摘要、提交、变更文件与可导航 Task 摘要
-
-#### Scenario: 按 Task 反查
-- **WHEN** 已认证请求读取某 Task 关联的每日演进
-- **THEN** API MUST 只返回本机文件中引用该 Task ID 的提交或摘要条目
-- **AND** MUST NOT 扫描 Git 或合成不存在的日期文件
 
 ### Requirement: Web HTTP Host 必须按职责拆分
 Buildr Web HTTP MUST保留 `server.ts` 作为唯一 server lifecycle/组装入口，并 MUST将请求路由、session/request security、静态资源处理和 response mapping 拆为独立窄模块。拆分后的依赖 MUST从 server 单向指向这些模块，router MUST不拥有 listen、Secret 生成或 resource cleanup。

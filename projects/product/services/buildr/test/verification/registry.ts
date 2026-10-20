@@ -74,7 +74,6 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
   'integration-self-bootstrap': testing(SERVICE_OWNER, 'Development', 'Integration', 45000, 'The single self-bootstrap closeout lifecycle preserves retained checkout and runtime synchronization boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'integration-task-read-models': testing(SERVICE_OWNER, 'Development', 'Integration', 15000, 'Task entry and read-model applications preserve their SQLite and Application boundaries.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-task-coordination': testing(SERVICE_OWNER, 'Development', 'Integration', 30000, 'Parent coordination and publication applications preserve their real repository boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
-  'integration-project-daily-progress': testing(SERVICE_OWNER, 'Development', 'Integration', 55000, 'Project daily progress Application, store, and CLI boundaries remain coherent without synthesizing Git.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'system-macos-platform': testing(PROJECT_OWNER, 'Development', 'Integration', 30000, 'Existing macOS descriptor proofs and POSIX development entries preserve their native contracts.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'system-windows-platform': testing(PROJECT_OWNER, 'Development', 'Integration', 80_000, 'Native Windows command shims, path aliases, locks and process cleanup preserve their OS contracts.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-buildr-web-http': testing(PROJECT_OWNER, 'Development', 'System', 55000, 'Buildr Web Runtime HTTP routes preserve read, error, session and cleanup boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle),
@@ -302,10 +301,6 @@ export const VERIFICATION_STEP_EVIDENCE: any = Object.freeze({
     'A parent coordination or publication application that crosses its real repository boundary must fail.',
     'real repository boundaries for coordination and publication applications',
   ),
-  'integration-project-daily-progress': primaryEvidence(
-    'A project daily progress Application, store or CLI boundary that becomes incoherent must fail.',
-    'real daily progress Application, store and CLI boundaries',
-  ),
   'service-branch-contract': primaryEvidence(
     'A Service branch configuration that misprojects its repository, ref or ownership in an isolated repository must fail.',
     'real isolated repository branch configuration and ownership',
@@ -346,7 +341,7 @@ export const VERIFICATION_DAILY_CORE_EXCLUSIONS: any = Object.freeze({
 const BACKEND_REUSE_CHECKS = new Set(['component', 'managed-mutations', 'cli-compatibility']);
 // These bounded fixture suites read runtime/source assets, not this Product's governance records.
 const RUNTIME_REUSE_CHECKS = new Set(['integration-runtime', 'integration-code', 'integration-desktop', 'integration-task-records', 'integration-connections', 'integration-runtime-projection', 'integration-data-store', 'integration-task-read-models', 'integration-task-coordination',
-  'integration-project-daily-progress', 'system-buildr-web-http', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation',
+  'system-buildr-web-http', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation',
   'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection',
   'system-runtime-recovery', 'system-app-process', 'system-workspace-lifecycle']);
 // These reviewed entries do not consume this checkout's release notes. Package
@@ -546,6 +541,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/verification-entrypoints-cli.test.ts',
     'test/integration/verification-process-executor.test.ts',
     'test/integration/verification-reuse-filesystem.test.ts',
+    'test/integration/verification-inputs.test.ts',
     'test/integration/windows-artifact-diagnosis.test.ts',
   ], { schedulingCostMs: 5000, timeoutMs: 300_000, concurrencyClass: 'exclusive', args: ['--test-concurrency=4'] }),
   integrationSlice('integration-code', [
@@ -719,9 +715,6 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/publication-application.test.ts',
     'test/integration/publication-worktree.test.ts',
   ], { schedulingCostMs: 5000, executorType: 'node-context-test', concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
-  integrationSlice('integration-project-daily-progress', [
-    'test/integration/project-daily-progress-application.test.ts',
-  ], { schedulingCostMs: 5000, executorType: 'node-context-test', concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
 ]);
 
 // The compatibility general entry aggregates every source Integration owner.
@@ -759,7 +752,6 @@ export const verificationSteps: any = Object.freeze([
       'integration-self-bootstrap': 'Self-bootstrap closeout integration slice',
       'integration-task-read-models': 'Task read-model integration slice',
       'integration-task-coordination': 'Task coordination integration slice',
-      'integration-project-daily-progress': 'Project daily progress integration slice',
     } as Record<string, string>)[slice.id],
     executor: { type: slice.executorType, files: [...slice.files], args: [...slice.args] },
     profiles: ['candidate'],
@@ -892,7 +884,6 @@ export const CORE_MACOS_STEP_IDS: any = Object.freeze([
   'integration-self-bootstrap',
   'integration-task-read-models',
   'integration-task-coordination',
-  'integration-project-daily-progress',
   'system-verification-contracts',
   'system-public-json-contracts',
   'system-openspec-contract-audit',
@@ -933,7 +924,6 @@ export const CORE_MACOS_SHARDS: any = Object.freeze([
     'integration-data-store',
     'integration-task-read-models',
     'integration-task-coordination',
-    'integration-project-daily-progress',
     'system-verification-contracts',
     'system-public-json-contracts',
     'system-openspec-contract-audit',

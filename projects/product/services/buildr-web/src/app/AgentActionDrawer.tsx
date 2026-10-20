@@ -6,7 +6,6 @@ import { WorkspaceAgentAction } from '../features/workspace/components/Workspace
 import { ProjectAgentAction } from '../features/project/components/ProjectAgentAction';
 import { ServiceAgentAction } from '../features/service/components/ServiceAgentAction';
 import { TaskAgentAction } from '../features/task/components/TaskAgentAction';
-import { DailyProgressAgentAction } from '../features/project-daily-progress/components/DailyProgressAgentAction';
 
 type Props = { initialAction?: string; initialContext?: Record<string, unknown> };
 const EMPTY_CONTEXT: Record<string, unknown> = {};
@@ -29,7 +28,6 @@ export function AgentActionDrawer({ initialAction, initialContext = EMPTY_CONTEX
   if (action === 'workspace') return <WorkspaceAgentAction key={generation} {...props} />;
   if (action === 'project') return <ProjectAgentAction key={generation} {...props} />;
   if (action === 'service') return <ServiceAgentAction key={generation} {...props} />;
-  if (action === 'daily-progress') return <DailyProgressAgentAction key={generation} {...props} />;
   if (action && ['start', 'task-review', 'task-verification', 'task-continue'].includes(action)) return <TaskAgentAction key={`${generation}:${action}`} action={action} {...props} />;
   if (action === 'workspace-recovery' && typeof context.prompt === 'string') {
     return (
@@ -114,11 +112,6 @@ export function AgentActionDrawer({ initialAction, initialContext = EMPTY_CONTEX
           <Button className="action-choice" type="default" block onClick={() => { setAction('service'); }}>
             <span className="action-symbol">◫</span>
             <span><strong>接入服务</strong><small>按需接入代码仓、应用、模块或可执行资产</small></span>
-            <span>→</span>
-          </Button>
-          <Button className="action-choice secondary-choice" type="default" block onClick={() => setAction('daily-progress')}>
-            <span className="action-symbol">◉</span>
-            <span><strong>生成每日演进</strong><small>先同步最新代码，再记录当天推进项</small></span>
             <span>→</span>
           </Button>
         </div>

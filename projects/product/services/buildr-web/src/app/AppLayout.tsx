@@ -7,7 +7,6 @@ import { WorkbenchSearch } from '../features/workbench/components/WorkbenchSearc
 import type { ResourcePreview } from './resource-preview';
 import { WorkspacePages } from './WorkspacePages';
 import type { WorkspacePageNavigationRequest } from './WorkspacePaneHost';
-import { workspacePageSearch } from './workspace-pages';
 import { runtimeSystemApi } from './api/runtime-system-api';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -80,7 +79,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
   activeWorkspaceId.current = workspaceId;
   const isGlobal = !workspaceId;
   const area = navigationState(location.pathname, location.search, workspaceId).area;
-  const retainedSearch = workspaceId ? workspacePageSearch(workspaceId, location.pathname, location.search) : location.search;
+  const retainedSearch = location.search;
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => readOptionalPreference('buildr.sidebar-collapsed') === 'true');
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = Number(readOptionalPreference('buildr.sidebar-width'));

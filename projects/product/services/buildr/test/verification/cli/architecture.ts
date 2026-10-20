@@ -342,11 +342,7 @@ else {
   if (!moduleSource.includes("WORKSPACE_MODULE_ID = 'workspace-core'") || !moduleSource.includes('createWorkspaceCliContributions') || !moduleSource.includes('createWorkspaceHttpContribution')) {
     problems.push('Workspace Core module must explicitly contribute CLI and HTTP adapters');
   }
-  if (moduleSource.includes('WORKSPACE_TASK_BINDER') || moduleSource.includes('PROJECT_DAILY_PROGRESS_APPLICATION')) problems.push('Workspace must not own Task daily progress');
-  const taskModuleSource = fs.readFileSync(path.join(sourceRoot, 'modules/task/module.ts'), 'utf8');
-  for (const required of ['PROJECT_DAILY_PROGRESS_APPLICATION', 'createProjectDailyProgressRepository', 'createProjectDailyProgressApplication', 'createDailyProgressCliContributions']) {
-    if (!taskModuleSource.includes(required)) problems.push(`Task module must own Daily Progress ${required}`);
-  }
+  if (moduleSource.includes('WORKSPACE_TASK_BINDER')) problems.push('Workspace must not own Task capabilities');
 }
 for (const legacy of [
   'application/domains/workspace.mjs',
@@ -360,10 +356,6 @@ for (const legacy of [
   'infrastructure/filesystem/service-manifest-repository.mjs',
   'infrastructure/filesystem/workspace-manifest-repository.mjs',
   'infrastructure/filesystem/workspace-registry-repository.mjs',
-  'domain/project-daily-progress/project-daily-progress.mjs',
-  'application/project-daily-progress/project-daily-progress-application.mjs',
-  'infrastructure/filesystem/project-daily-progress-store.mjs',
-  'interfaces/cli/project-daily-progress.mjs',
 ]) {
   if (fs.existsSync(path.join(sourceRoot, legacy))) problems.push(`legacy Workspace Core entry must be removed: ${legacy}`);
 }
@@ -387,7 +379,6 @@ const legacyTaskRecordConsumers: any = new Set([
   'application/change/change-application.mjs',
   'modules/task/change/module.ts',
   'modules/task/change/interfaces/http/change-http.ts',
-  'modules/task/daily-progress/application/project-daily-progress-application.ts',
   'modules/workspace/module.ts',
   'modules/task/application/task-verification-application.ts',
   'modules/task/infrastructure/git-worktree-provider.ts',
@@ -440,26 +431,6 @@ if (fs.existsSync(taskVerificationInterface)) {
   if (!source.includes('export function taskVerificationCommand') || !source.includes('runtime.inspectTaskVerification') || !source.includes('runtime.recordTaskVerification')) {
     problems.push('Task Verification CLI interface must adapt both actions to the shared Application');
   }
-}
-const dailyProgressApplication: any = path.join(sourceRoot, 'modules', 'task', 'daily-progress', 'application', 'project-daily-progress-application.ts');
-const dailyProgressInterface: any = path.join(sourceRoot, 'modules', 'task', 'daily-progress', 'interfaces', 'cli', 'project-daily-progress.ts');
-if (fs.existsSync(dailyProgressApplication)) {
-  const source: any = fs.readFileSync(dailyProgressApplication, 'utf8');
-  if (/node:process|process\.(?:stdout|stderr|exitCode)|projectDailyProgressCommand/.test(source)) {
-    problems.push('Daily Progress Application must not own CLI parsing, output, or process exit state');
-  }
-  if (!source.includes('runtime.dailyProgressRepository.writeDailyProgressDocument') || !source.includes('runtime.inspectTask')) {
-    problems.push('Daily Progress Application must write files through the store and only inspect Task Record');
-  }
-}
-if (fs.existsSync(dailyProgressInterface)) {
-  const source: any = fs.readFileSync(dailyProgressInterface, 'utf8');
-  if (!source.includes('export function projectDailyProgressCommand') || !source.includes('runtime.recordProjectDailyProgress')) {
-    problems.push('Daily Progress CLI interface must adapt registry actions to the shared Application');
-  }
-}
-if ([buildrWebServer, buildrWebRouter].some((file: any) => fs.existsSync(file) && /inspect(?:Project|Task)DailyProgress/.test(fs.readFileSync(file, 'utf8')))) {
-  problems.push('Buildr Web HTTP Host must not own Daily Progress routes');
 }
 
 const gitWorktreeProvider: any = path.join(sourceRoot, 'application', 'worktree', 'git-worktree-provider.mjs');

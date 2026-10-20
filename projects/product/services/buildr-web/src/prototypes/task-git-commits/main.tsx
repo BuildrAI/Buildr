@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import { App, Button, ConfigProvider, Dropdown } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
-import { HistoryOutlined, HomeOutlined, MoreOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, UnorderedListOutlined } from '@ant-design/icons';
+import { HomeOutlined, MoreOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { AppShellHeader, AppShellFrame } from '../../app/AppShellView';
 import { AppNavigationItem } from '../../app/AppNavigationItem';
 import { PageTabStrip } from '../../app/PageTabStrip';
@@ -49,7 +49,7 @@ function Preview() {
   }
   const info = () => message.info('本原型仅演示任务与提交关联。此入口沿用现有页面，不执行真实操作。');
   const tabs = [{ key: 'dir:tasks', kind: 'dir' as const, title: '任务', path: '/tasks' }];
-  const nav: Array<[string, string, ReactNode]> = [['overview', '概览', <HomeOutlined />], ['tasks', '任务', <UnorderedListOutlined />], ['activity', '动态', <HistoryOutlined />]];
+  const nav: Array<[string, string, ReactNode]> = [['overview', '概览', <HomeOutlined />], ['tasks', '任务', <UnorderedListOutlined />]];
   const stageCopy: Record<TaskNodeStage, string> = {
     requirements: record.intent,
     design: '在提交说明末尾记录任务编码，在任务中按时间查看关联提交。一个任务可以对应多次提交；通常一次提交只属于一个任务。',

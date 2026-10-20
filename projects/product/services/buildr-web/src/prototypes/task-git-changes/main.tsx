@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import { App, Button, ConfigProvider, Dropdown } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
-import { HistoryOutlined, HomeOutlined, MoreOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, UnorderedListOutlined } from '@ant-design/icons';
+import { HomeOutlined, MoreOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { AppShellHeader, AppShellFrame } from '../../app/AppShellView';
 import { AppNavigationItem } from '../../app/AppNavigationItem';
 import { PageTabStrip } from '../../app/PageTabStrip';
@@ -64,7 +64,7 @@ function Preview() {
   }
   const info = () => message.info('本原型仅演示任务中查看改动与提交。此入口沿用现有页面，不执行真实操作。');
   const tabs = [{ key: 'dir:tasks', kind: 'dir' as const, title: '任务', path: '/tasks' }];
-  const nav: Array<[string, string, ReactNode]> = [['overview', '概览', <HomeOutlined />], ['tasks', '任务', <UnorderedListOutlined />], ['activity', '动态', <HistoryOutlined />]];
+  const nav: Array<[string, string, ReactNode]> = [['overview', '概览', <HomeOutlined />], ['tasks', '任务', <UnorderedListOutlined />]];
   const stageCopy: Record<TaskNodeStage, string> = {
     requirements: record.intent,
     design: '改动与提交合并为一个内容标签：左侧仓库树常驻导航，右侧差异面并排或统一自适应。',

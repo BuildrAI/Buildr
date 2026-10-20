@@ -165,7 +165,7 @@
 ## 工作空间本机数据存储（Workspace Local Data Store）
 
 - 定义：一个工作空间（Workspace）中仅保存在本机的协作数据及控制记录范围。
-- 适用范围：SQLite、复盘正文、每日演进及明确声明的本机文件。
+- 适用范围：SQLite、复盘正文及明确声明的本机文件。
 - 避免混用：不是单个数据库，也不表示这些内容都可丢弃或已被 Git 备份。
 - 来源：[数据设计](architecture/buildr-data-design.md)。
 
@@ -180,7 +180,7 @@
 
 - 定义：每个工作空间（Workspace）独立的 SQLite，用于结构化协作数据、关系和事务（Transaction）。
 - 适用范围：`.buildr/local/workspace.sqlite` 中的任务（Task）及相关记录。
-- 避免混用：不是跨机器同步协议；每日演进与复盘正文不保存在其中。
+- 避免混用：不是跨机器同步协议；复盘正文不保存在其中。
 - 来源：[数据设计](architecture/buildr-data-design.md)。
 
 ## 正式任务（Formal Task）
@@ -245,13 +245,6 @@
 - 适用范围：用户明确要求后的复盘正文，以及任务（Task）上的文档摘要与决定状态。
 - 避免混用：不是审查（Review）或完成门禁；“已决定”不表示改进已实施，也不自动创建后续任务（Task）。
 - 来源：[任务复盘规范](../../openspec/specs/task-retrospectives/spec.md)。
-
-## 项目每日演进（Project Daily Progress）
-
-- 定义：按项目（Project）和日期保存、基于明确 Git 提交范围生成的本机每日汇总。
-- 适用范围：新增、更新、删除和弊端四类说明，以及可关联的已有任务（Task）。
-- 避免混用：不是任务（Task）状态或长期知识；产品读取不自动生成摘要，文件不跨机器共享。
-- 来源：[每日演进规范](../../openspec/specs/project-daily-progress/spec.md)。
 
 ## 项目环境准备声明（Project Environment Preparation Declaration）
 

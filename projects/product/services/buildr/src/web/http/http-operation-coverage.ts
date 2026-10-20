@@ -8,7 +8,6 @@ export const NON_HTTP_SYSTEM_DISPOSITIONS = Object.freeze([
 
 export const DEFERRED_HTTP_OPERATIONS = Object.freeze([
   Object.freeze({ id: 'workspace.getting-started', owner: 'workspace', disposition: 'deferred', reason: 'Existing read model remains outside the migrated Workspace contract catalog.' }),
-  Object.freeze({ id: 'workspace.daily-progress', owner: 'workspace', disposition: 'deferred', reason: 'Project Daily Progress retains its dedicated public JSON contract.' }),
   Object.freeze({ id: 'workspace.documents', owner: 'workspace', disposition: 'deferred', reason: 'Document reads retain path-specific security and existing response contracts.' }),
   Object.freeze({ id: 'workspace.prompts', owner: 'workspace', disposition: 'deferred', reason: 'Agent prompt generation remains an Application-specific payload.' }),
   Object.freeze({ id: 'task.change-and-ui-prototypes', owner: 'task-change', disposition: 'deferred', reason: 'Change detail and sandboxed UI prototype responses retain their dedicated authority.' }),

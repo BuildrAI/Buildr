@@ -62,7 +62,6 @@ test('React App 路由覆盖 workspace 深链并回退未知路径', () => {
   assert.match(routes, /path: 'tasks', element: <TasksSection \/>/);
   assert.match(routes, /index: true, element: <Navigate to="overview" replace \/>/);
   assert.match(routes, /path: 'overview', element: <WorkbenchPage \/>/);
-  assert.match(routes, /path: 'activity', element: <WorkbenchActivityPage \/>/);
   assert.doesNotMatch(routes, /\bOverviewPage\b/);
   assert.match(routes, /path: 'workspace-overview', element: <WorkspaceOverviewPage \/>/);
   assert.match(routes, /path: ':taskId'/);
@@ -152,7 +151,6 @@ test('Buildr Web 在工作空间提供独立文章入口、只读内容视图和
   assert.match(navigation, /<AppNavigationItem/);
   assert.match(navigation, /item\('\/articles', '文章', 'articles'\)/);
   assert.match(navigation, /item\('\/overview', '概览', 'overview'\)/);
-  assert.match(navigation, /item\('\/activity', '动态', 'activity'\)/);
   assert.match(routes, /path: 'articles', element: <ArticlesPage \/>/);
   assert.match(routes, /path: 'articles\/:publicationId', element: <ArticleDetailPage \/>/);
   assert.match(routes, /path: 'articles\/:projectCode\/:publicationId', element: <ArticleDetailPage \/>/);

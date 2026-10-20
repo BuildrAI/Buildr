@@ -200,26 +200,6 @@ suiteTest('manifest-registry', 'Skill 投射所有权回执 runtime state 在 pa
   assert.equal(lines.includes('custom-user-entry'), true);
 });
 
-suiteTest('manifest-registry', '项目每日演进目录在 package、init 与 sync 中整体忽略', (t: any) => {
-  const entry: any = '/.buildr/daily-progress/';
-  const packageGitignore: any = fs.readFileSync(path.join(PRODUCT_ROOT, 'resources', 'workspace', 'gitignore'), 'utf8').split(/\r?\n/);
-  assert.equal(packageGitignore.filter((line: any) => line === entry).length, 1);
-  assert.equal(packageGitignore.includes('/.buildr/'), false);
-
-  const root: any = initWorkspaceViaCli(t);
-  const gitignore: any = path.join(root, '.gitignore');
-  let lines: any = fs.readFileSync(gitignore, 'utf8').split(/\r?\n/);
-  assert.equal(lines.filter((line: any) => line === entry).length, 1);
-
-  fs.writeFileSync(gitignore, `${lines.filter((line: any) => line !== entry).join('\n').replace(/\n*$/u, '')}\ncustom-user-entry\n`);
-  const result: any = runBuildr(['sync', 'codex', '--target', root]);
-  assert.equal(result.status, 0, result.stderr || result.stdout);
-  lines = fs.readFileSync(gitignore, 'utf8').split(/\r?\n/);
-  assert.equal(lines.filter((line: any) => line === entry).length, 1);
-  assert.equal(lines.includes('custom-user-entry'), true);
-  assert.equal(lines.includes('/.buildr/'), false);
-});
-
 suiteTest('runtime-recovery', 'legacy runtime.node 不影响健康，sync 移除声明且不删除已有本机文件', (t: any) => {
   const appData: any = path.join(temporaryRoot(t), 'node-app-data');
   const root: any = path.join(temporaryRoot(t), 'workspace');

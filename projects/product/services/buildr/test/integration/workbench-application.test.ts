@@ -105,7 +105,7 @@ test('文章收藏保留项目身份和旧Product地址，并拒绝越界资源'
   }
 });
 
-test('首批外置顶和事项按身份查得，跨项目任务不重复，日报局部错误', (t) => {
+test('首批外置顶和事项按身份查得，跨项目任务不重复', (t) => {
   const { root } = taskRecordFixture(t, 'workbench-overview');
   const runtime = createRuntime();
   record(runtime, root, 'old-important', 'active', ['demo', 'other']);
@@ -115,9 +115,6 @@ test('首批外置顶和事项按身份查得，跨项目任务不重复，日�
   runtime.putWorkbenchPreference(root, 'pinned-task', 'old-important');
   runtime.putWorkbenchPreference(root, 'planned-task', 'next-important');
   runtime.recordTaskWorkContext(root, 'old-important', { expectedContextDigest: 'absent', progress: '等待明确判断', nextStep: '处理意见', attention: { kind: 'question', reason: '选择实施范围' } });
-  runtime.recordProjectDailyProgress(root, { project: 'demo', date: '2026-09-18', payload: { daySummary: { added: '阅读入口', updated: '相关关系', deleted: '无', drawbacks: '仅本地已提交内容，未覆盖远端' }, commits: [], files: [] } });
-  const broken = path.join(root, '.buildr/daily-progress/other/2026-09-19.yml');
-  fs.mkdirSync(path.dirname(broken), { recursive: true }); fs.writeFileSync(broken, 'invalid: [');
   const overview = runtime.inspectWorkbench(root);
   conforms('WorkbenchResponse', overview);
   assert.equal(overview.active.items[0].task.record.taskId, 'old-important');
@@ -126,13 +123,8 @@ test('首批外置顶和事项按身份查得，跨项目任务不重复，日�
   assert.equal(overview.active.hasMore, true);
   assert.equal(overview.attention.items[0].task.record.taskId, 'old-important');
   assert.equal(overview.planned.items[0].task.record.taskId, 'next-important');
-  assert.equal(overview.dailyProgress.items[0].date, '2026-09-18');
-  assert.equal(overview.dailyProgress.items[0].coverage, '仅本地已提交内容，未覆盖远端');
-  assert.equal(overview.dailyProgress.diagnostics[0].project, 'other');
   assert.equal(runtime.inspectWorkbench(root, { project: 'other' }).active.items.filter((item: any) => item.task.record.taskId === 'old-important').length, 1);
-  const requested = runtime.inspectWorkbench(root, { date: '2026-09-17' });
-  assert.equal(requested.dailyProgress.items.length, 0);
-  assert.deepEqual(requested.dailyProgress.missingProjects, ['demo', 'other']);
+  assert.equal(runtime.inspectWorkbench(root, { project: 'other' }).project, 'other');
 });
 
 test('工作台的置顶与待处理任务只读取摘要，不扫描长任务正文', (t) => {
@@ -257,24 +249,4 @@ test('批量工作摘要保留顺序、空值、去重、任务存在性和损�
   try { db.prepare('UPDATE task_work_context_current SET context_json = ? WHERE task_id = ?').run('{}', 'batch-first'); }
   finally { db.close(); }
   assert.throws(() => runtime.inspectTaskWorkContexts(root, ['batch-first']), (error: any) => error.code === 'task_work_context_invalid');
-});
-
-
-test('动态及概览摘要不展开每日演进提交任务，动态不查询概览任务区', (t) => {
-  const {root} = taskRecordFixture(t,'workbench-summary-only');
-  const runtime = createRuntime();
-  record(runtime,root,'summary-task');
-  runtime.recordProjectDailyProgress(root,{project:'demo',date:'2026-10-19',payload:{daySummary:{added:'新增',updated:'更新',deleted:'无',drawbacks:'仅测试'},commits:[{sha:'a'.repeat(40),subject:'摘要来源',authorName:'Test',authorEmail:'test@example.com',authorship:'self',taskIds:['summary-task']}],files:[]}});
-  const original = DatabaseSync.prototype.prepare, statements: string[] = [];
-  let activity: any;
-  try {
-    DatabaseSync.prototype.prepare = function(sql: string) { statements.push(sql); return original.call(this,sql); };
-    activity = runtime.inspectWorkbenchActivity(root);
-  } finally { DatabaseSync.prototype.prepare = original; }
-  conforms('WorkbenchActivityResponse',activity);
-  assert.equal(activity.dailyProgress.items[0].commitCount,1);
-  assert.equal(activity.active,undefined);
-  assert.equal(statements.some(sql => /FROM task_records|FROM task_work_contexts/.test(sql)),false,statements.join('\n'));
-  const overview = runtime.inspectWorkbench(root);
-  assert.deepEqual(overview.dailyProgress,activity.dailyProgress);
 });

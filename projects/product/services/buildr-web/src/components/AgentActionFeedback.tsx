@@ -10,7 +10,6 @@ export const ACTION_LABELS: Record<string, string> = {
   'task-review': '任务审查',
   'task-verification': '任务验证',
   'release-update': 'Buildr 版本更新',
-  'daily-progress': '项目每日演进',
 };
 
 /** 动作表单共用的结果、错误和复制反馈；领域输入与请求留在所属组件。 */

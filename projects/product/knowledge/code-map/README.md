@@ -57,8 +57,6 @@ projects/product/                         项目（Project）：跨服务产品�
 - Buildr 自身构建、生成、包检查：`tools/`；测试案例及选择执行：`test/`。
 - 普通生成结果：服务 `build/`；前端构建兼后端托管产物：`buildr/web-dist/`。两者均被 Git 忽略，发布时仍包含运行必需内容。
 
-每日演进属于 `task/daily-progress/`，当前单机版以 Git 提交为主再关联本地任务；未来企业版任务主导汇总不是当前实现。
-
 ## 有界模块地图
 
 - [项目与服务测试验证框架](verification-framework.md)：Buildr 提供的测试建设方法、项目地图与任务报告；产品自身的实现另见[采用实例工具地图](product-verification-tools.md)。

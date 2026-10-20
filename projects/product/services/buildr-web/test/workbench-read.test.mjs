@@ -11,7 +11,7 @@ registerHooks({resolve(specifier,context,next){
   if(specifier==='../../../api' && context.parentURL?.includes('/workbench/')) return {url:'data:text/javascript,export const api=(...args)=>globalThis.__workbenchRequest(...args);',shortCircuit:true};
   return next(specifier,context);
 }});
-const {useWorkbench,useWorkbenchActivity}=await import('../src/features/workbench/hooks/useWorkbench.ts');
+const {useWorkbench}=await import('../src/features/workbench/hooks/useWorkbench.ts');
 const settle=async()=>{for(let i=0;i<8;i++)await Promise.resolve();};
 function harness(hook) {
   const slots=[],effects=[],requests=[];let cursor=0,active=true;
@@ -40,11 +40,11 @@ test('隐藏的工作台保留页面不响应聚焦或偏好变化，重新可�
   } finally {h.dispose();}
 });
 
-test('动态真实客户端只访问摘要接口，范围切换取消旧读取并拒绝晚回复',async()=>{
-  const h=harness(useWorkbenchActivity);
+test('概览真实客户端只访问概览接口，范围切换取消旧读取并拒绝晚回复',async()=>{
+  const h=harness(useWorkbench);
   try {
-    h.render();assert.match(h.requests[0].url,/\/workbench\/activity$/);
-    h.render(true,'B','project-b');assert.equal(h.requests[0].signal.aborted,true);assert.match(h.requests[1].url,/workspaces\/B\/workbench\/activity\?project=project-b$/);
+    h.render();assert.match(h.requests[0].url,/\/workbench$/);
+    h.render(true,'B','project-b');assert.equal(h.requests[0].signal.aborted,true);assert.match(h.requests[1].url,/workspaces\/B\/workbench\?project=project-b$/);
     h.requests[1].resolve({observedAt:'B'});await settle();h.requests[0].resolve({observedAt:'late A'});await settle();
     assert.equal(h.render(true,'B','project-b').data.observedAt,'B');
   } finally {h.dispose();}

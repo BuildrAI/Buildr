@@ -24,8 +24,6 @@ export const WORKSPACE_ROOT_GITIGNORE_ENTRIES = Object.freeze([
   '/.buildr/asset-review/',
   '# Task machine-local state',
   '/.buildr/tasks/',
-  '# Project daily progress machine-local state',
-  '/.buildr/daily-progress/',
   '# Task worktrees',
   '/.worktrees/',
 ]);

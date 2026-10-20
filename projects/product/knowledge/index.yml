@@ -78,10 +78,6 @@ documentSections:
         title: "怎样建设和维护项目知识"
         summary: "把调查组织成可理解的说明、图示与目录，并随真实变化维护。"
       - location: scope
-        path: knowledge/docs/flows/project-daily-progress.md
-        title: "项目每日演进"
-        summary: "按明确提交范围查看、生成或重跑每日摘要，了解其数据边界。"
-      - location: scope
         path: knowledge/code-map/project-service-repositories.md
         title: "工作范围与代码关联的实现位置"
         summary: "从对象登记、关系写入和代码定位找到对应实现。"
@@ -1014,7 +1010,6 @@ artifacts:
       - data-installation-observation-source
       - data-mutation-source
       - data-convergence-source
-      - data-daily-source
       - connection-skills-files
       - mysql-query-preferences-source
       - connection-skills-application
@@ -1971,10 +1966,6 @@ sources:
     title: 开始使用 Buildr
     kind: evidence
     path: knowledge/docs/guides/getting-started.md
-  - id: product-reference-daily-progress
-    title: 项目每日演进
-    kind: evidence
-    path: knowledge/docs/flows/project-daily-progress.md
   - id: product-reference-limitations
     title: 已知限制
     kind: evidence
@@ -2087,10 +2078,6 @@ sources:
     title: OpenSpec 归档恢复记录
     kind: code
     path: services/buildr/src/modules/openspec/application/openspec-converge.ts
-  - id: data-daily-source
-    title: 每日演进文件持久化
-    kind: code
-    path: services/buildr/src/modules/task/daily-progress/persistence/project-daily-progress-repository.ts
   - id: data-sqlite-evidence
     title: Buildr 数据库表与实体关系
     kind: evidence
@@ -2533,7 +2520,7 @@ sources:
     title: 工作概览读取
     kind: code
     path: services/buildr/src/modules/workbench/application/workbench-application.ts
-    summary: 有界组合明确待处理事项、任务、偏好及已有每日演进；按身份去重并局部报告来源失败。
+    summary: 有界组合明确待处理事项、任务和偏好；按身份去重并局部报告来源失败。
     observedDigest: ca03dcfdd690015cc3b50b20bec2662e06bac402f28d1e86c1451e203744795e
   - id: task-source-taskagentaction-7a3c7f
     title: 开始与接续指令

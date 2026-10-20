@@ -64,7 +64,6 @@ export function createPreferencesApplication(dependencies: PreferenceDependencie
     validateWorkbenchInput('WorkbenchVisitRequest', input);
     return putWorkbenchPreference(root, 'recent-resource', input.key, { label: input.label, href: input.href });
   }
-  const inspectWorkbenchFollowedProjectKeys = (root: string) => repository.list(root).filter(value => value.kind === 'followed-project').map(value => value.key);
-  return Object.freeze({ inspectWorkbenchFollowedProjectKeys, inspectWorkbenchPreferences, putWorkbenchPreference, removeWorkbenchPreference, recordWorkbenchVisit });
+  return Object.freeze({ inspectWorkbenchPreferences, putWorkbenchPreference, removeWorkbenchPreference, recordWorkbenchVisit });
 }
 export type PreferencesApplication = ReturnType<typeof createPreferencesApplication>;

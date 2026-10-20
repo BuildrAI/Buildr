@@ -32,7 +32,7 @@
     - [`workspace-source-git.ts`](../../services/buildr/src/modules/workspace/infrastructure/workspace-source-git.ts)：明确来源的 Git 操作。
     - [`workspace-management-fence.ts`](../../services/buildr/src/modules/workspace/infrastructure/workspace-management-fence.ts)：管理身份、锁与冲突保护。
 
-工作空间（Workspace）不拥有每日演进，也不反向绑定全部任务查询。资产模块只取得明确的 `WORKSPACE_ASSET_SUPPORT`，不取得全部业务和测试方法。
+工作空间（Workspace）不反向绑定全部任务查询。资产模块只取得明确的 `WORKSPACE_ASSET_SUPPORT`，不取得全部业务和测试方法。
 
 项目文档图片由[项目应用](../../services/buildr/src/modules/workspace/application/project-application.ts)复读登记与来源，任务图片由[材料应用](../../services/buildr/src/modules/task/materials/application/task-materials-application.ts)及[项目读取器](../../services/buildr/src/modules/task/materials/application/task-project-document-reader.ts)选择同一本机或候选根。共享[图片文件读取](../../services/buildr/src/infrastructure/filesystem/markdown-images.ts)只负责真实正文引用、有界普通文件、类型签名与前后观察，不拥有任务作用域或登记。前端[图片链接与失败状态](../../services/buildr-web/src/lib/markdownImages.ts)提前过滤明确非法路径，实际身份和权限仍由应用决定。
 
@@ -134,7 +134,7 @@ OpenSpec 只通过 `AGENT_ASSETS_OPENSPEC_SUPPORT` 获取所需资产能力，�
 - **共享内容区与来源身份**：[`WorkspacePages.tsx`](../../services/buildr-web/src/app/WorkspacePages.tsx)组合保留路由和 [`WorkspacePaneHost.tsx`](../../services/buildr-web/src/app/WorkspacePaneHost.tsx)；后者以页面来源 `ownerPath` 与局部对象键区分右侧标签，滚动身份则采用页面来源和真实资料 `identity`。[`WorkspaceStage.tsx`](../../services/buildr-web/src/components/WorkspaceStage.tsx)将原领域内容传送到固定目标，宿主在同一槽位挂载目标并切换显示，不复制数据或编辑器。菜单请求带递增序号，同一路径仍能恢复中间页面，右侧资料选择保持独立。
 - **暂看与领域操作**：[`WorkspacePaneContext.tsx`](../../services/buildr-web/src/app/WorkspacePaneContext.tsx)分开临时显示与正式选择；领域的 `objectContent` 适配显示对象、原选择和可见性，已打开对象按稳定身份保留挂载。[`pageTabs.tsx`](../../services/buildr-web/src/app/pageTabs.tsx)的 `WorkspaceViewTransientContext`将暂看语义传入领域，[`FileEditingPane.tsx`](../../services/buildr-web/src/components/file-editing/FileEditingPane.tsx)据此抑制自动聚焦，保留用户明确编辑、原保存与冲突处理。悬停不提交正式选择，局部展开及明确打开资料通过原回调生效；代码区内部布局不由此宿主替换。
 - **文件搜索与位置保留**：[`file-code-search.ts`](../../services/buildr-web/src/components/file-editing/file-code-search.ts)只为当前编辑视图提供匹配高亮和选中行，不修改正文或撤销记录。[`FileCodeEditor.tsx`](../../services/buildr-web/src/components/file-editing/FileCodeEditor.tsx)处理明确的字符定位请求，重新显示同一视图不会重放旧锚点；[`ReadOnlyFileCodeEditor.tsx`](../../services/buildr-web/src/components/file-editing/ReadOnlyFileCodeEditor.tsx)保留分段真实行号与匹配字符偏移，显示状态已初始化时避免重复重建。正文相对链接由原文件来源解析，代码页面的工作对象链接进入真实目标页面。
-- **路由与文章编辑退出**：[启动入口](../../services/buildr-web/src/main.tsx)通过单个数据路由器（Data Router）继续装配原有 [App 地址树](../../services/buildr-web/src/App.tsx)，不增加加载器或路由数据缓存。[文章导航边界](../../services/buildr-web/src/features/publication/publication-navigation.ts)按实际路由判断同一工作空间壳是否保留；独立原型页属于释放边界。[文章编辑抽屉](../../services/buildr-web/src/features/publication/components/ArticleEditorDrawer.tsx)持有唯一草稿与保存状态，离开释放现场的位置前复用放弃确认，保存中取消退出且不重放；同工作空间普通导航保持抽屉。浏览器刷新或关闭只请求原生离开提醒，不承诺未保存内容持久恢复。
+- **路由与文章编辑退出**：[启动入口](../../services/buildr-web/src/main.tsx)通过单个数据路由器（Data Router）继续装配原有 [App 地址树](../../services/buildr-web/src/App.tsx)，不增加加载器或路由数据缓存。[文章导航边界](../../services/buildr-web/src/features/publication/publication-navigation.ts)按实际路由判断同一工作空间壳是否保留；独立原型页属于释放边界。[文章编辑面板](../../services/buildr-web/src/features/publication/components/ArticleEditorPanel.tsx)持有唯一草稿与保存状态，离开释放现场的位置前复用放弃确认，保存中取消退出且不重放；同工作空间普通导航保持面板。浏览器刷新或关闭只请求原生离开提醒，不承诺未保存内容持久恢复。
 - **指令与请求时效**：生成的智能体（Agent）指令只对应当前输入。目标或范围变化后旧指令失效，迟到请求不能恢复旧结果；上下文切换释放旧表单，生成失败也不回退到旧指令。
 - **局部失败与草稿**：任务材料按需读取，某项失败不隐藏其他可读成果。共用抽屉外观不代表所有表单已经具有相同草稿保护；保存、错误和保留输入仍由各功能负责。
 - **原型与侧读**：原型以 `sandbox="allow-scripts"` 隔离，不能继承主页面会话（Session）。说明和清单共用 [`SideReadingPanel.tsx`](../../services/buildr-web/src/components/SideReadingPanel.tsx) 及[阅读状态](../../services/buildr-web/src/components/useSideReading.ts)；任务内、独立阅读及可选说明解析见[任务地图](task-system.md#原型阅读怎样落到实现)，不新增一份业务状态。
@@ -149,4 +149,4 @@ OpenSpec 只通过 `AGENT_ASSETS_OPENSPEC_SUPPORT` 获取所需资产能力，�
 
 npm 软件包更新后，安装模块通过窄端口（Port）委托[网页更新交接](../../services/buildr/src/web/application/update-web-handoff.ts)，以新登记的精确 Node.js 与软件包入口启动独立进程并核对运行身份；[实例生命周期](../../services/buildr/src/web/application/instance-lifecycle.ts)唯一拥有启动锁、同一安装实例的认证退出和新版启动。引导装配（Bootstrap）只连接能力，不复制交接策略。网页未运行时不启动，切换失败保留已经成立的安装更新结果。
 
-任务与每日演进可属于同一模块而使用不同存储；SQLite 协作记录和本机 YAML 摘要的区别见[任务地图](task-system.md)与[每日演进](../docs/flows/project-daily-progress.md)。工程包检查仍在 `tools/verification/`，不归资产应用或诊断所有。
+任务协作记录保存在 SQLite，恢复、迁移与边界见[任务地图](task-system.md)与[数据设计](../docs/architecture/buildr-data-design.md)。工程包检查仍在 `tools/verification/`，不归资产应用或诊断所有。
