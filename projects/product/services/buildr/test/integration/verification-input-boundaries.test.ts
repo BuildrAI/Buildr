@@ -343,7 +343,7 @@ test('stable Integration slices bind their own explicit tests and preserve local
   fs.mkdirSync(path.join(root, prefix), { recursive: true });
   const files = new Map<string, string>([['package.json', '{}'], ['src/product.ts', 'export const product=1;']]);
   const ids = ['integration', 'integration-code', 'integration-desktop', 'integration-knowledge', 'integration-workspace-assets', 'integration-archify',
-    'integration-task-records', 'integration-connections', 'integration-runtime-projection', 'integration-runtime'];
+    'integration-task-records', 'integration-connections', 'integration-connections-cli', 'integration-runtime-projection', 'integration-runtime'];
   const steps = ids.map(id => verificationSteps.find((item: any) => item.id === id));
   for (const step of steps) {
     for (const file of step.executor.files) files.set(file, 'export const assertion=1;');

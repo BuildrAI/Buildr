@@ -61,6 +61,7 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
   'integration-archify': testing(SERVICE_OWNER, 'Development', 'Integration', 90000, 'Archify installation, rendering, upgrade, user content protection, removal and bounded diagnostics retain their real isolated lifecycle.', TEST_ENVIRONMENTS.repeatedCli),
   'integration-task-records': testing(SERVICE_OWNER, 'Development', 'Integration', 125000, 'Task records, materials and workbench views preserve filesystem, Git, SQLite and HTTP behavior.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-connections': testing(SERVICE_OWNER, 'Development', 'Integration', 135000, 'Connection Skills preserve definitions, credential handling, Git workspaces, process and local protocol boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-connections-cli': testing(SERVICE_OWNER, 'Development', 'Integration', 180000, 'The connection CLI smoke preserves credential handling, isolated workspaces, real process boundaries and cleanup.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-runtime-projection': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Runtime projections preserve declarations, ownership, executable Git modes and installed Skill content.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-declarations': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Project verification declarations preserve diagnostics and package registry boundaries.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-openspec': testing(SERVICE_OWNER, 'Development', 'Integration', 35000, 'Change and OpenSpec convergence applications preserve real filesystem and Git boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
@@ -273,6 +274,10 @@ export const VERIFICATION_STEP_EVIDENCE: any = Object.freeze({
     'A Connection Skill that mishandles credentials, Git workspaces, process boundaries or local protocol contracts must fail.',
     'real connection definitions, credential handling, Git workspaces and local protocol boundaries',
   ),
+  'integration-connections-cli': primaryEvidence(
+    'A connection CLI chain that mishandles credentials, isolated workspaces, real process boundaries or cleanup must fail.',
+    'the real isolated connection CLI chain, credential handling and cleanup',
+  ),
   'integration-runtime': primaryEvidence(
     'A Buildr Web Runtime read, instance, private Git preview or generated Web boundary that leaks or misprojects state must fail.',
     'real runtime read, instance lifecycle, private Git preview and generated Web boundaries',
@@ -340,7 +345,7 @@ export const VERIFICATION_DAILY_CORE_EXCLUSIONS: any = Object.freeze({
 // Reuse scopes describe complete check inputs, independently of changed-path ownership.
 const BACKEND_REUSE_CHECKS = new Set(['component', 'managed-mutations', 'cli-compatibility']);
 // These bounded fixture suites read runtime/source assets, not this Product's governance records.
-const RUNTIME_REUSE_CHECKS = new Set(['integration-runtime', 'integration-code', 'integration-desktop', 'integration-task-records', 'integration-connections', 'integration-runtime-projection', 'integration-data-store', 'integration-task-read-models', 'integration-task-coordination',
+const RUNTIME_REUSE_CHECKS = new Set(['integration-runtime', 'integration-code', 'integration-desktop', 'integration-task-records', 'integration-connections', 'integration-connections-cli', 'integration-runtime-projection', 'integration-data-store', 'integration-task-read-models', 'integration-task-coordination',
   'system-buildr-web-http', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation',
   'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection',
   'system-runtime-recovery', 'system-app-process', 'system-workspace-lifecycle']);
@@ -624,7 +629,6 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/connection-instance-filenames.test.ts',
     'test/integration/connection-skill-definitions.test.ts',
     'test/integration/connection-authorization.test.ts',
-    'test/integration/connection-skills-cli.test.ts',
     'test/integration/connection-skills-package.test.ts',
     'test/integration/connection-skills-runtime.test.ts',
     'test/integration/connection-skills-safety.test.ts',
@@ -639,6 +643,11 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/retired-connections.test.ts',
     'test/integration/xxl-job-connection-skill.test.ts',
   ], { schedulingCostMs: 5000, timeoutMs: 240_000, args: ['--test-concurrency=3'] }),
+  // This scenario spawns dozens of real CLI processes. Keep it isolated from
+  // the heavier authoring scenario so one worker covers its actual runtime.
+  integrationSlice('integration-connections-cli', [
+    'test/integration/connection-skills-cli.test.ts',
+  ], { schedulingCostMs: 5000, timeoutMs: 180_000, args: ['--test-concurrency=1'] }),
   integrationSlice('integration-runtime-projection', [
     'test/integration/capability-contracts.test.ts',
     'test/integration/capability-runtime.test.ts',
@@ -737,6 +746,7 @@ export const verificationSteps: any = Object.freeze([
     name: ({
       'integration-runtime-projection': 'Runtime projection integration slice',
       'integration-connections': 'Connection Skill integration slice',
+      'integration-connections-cli': 'Connection CLI smoke',
       'integration-task-records': 'Task record and material integration slice',
       'integration-workspace-assets': 'Workspace asset integration slice',
       'integration-archify': 'Archify component lifecycle integration slice',
@@ -876,6 +886,7 @@ export const CORE_MACOS_STEP_IDS: any = Object.freeze([
   'integration-task-records',
   'integration-desktop',
   'integration-connections',
+  'integration-connections-cli',
   'integration-runtime-projection',
   'integration-declarations',
   'integration-openspec',
@@ -933,6 +944,7 @@ export const CORE_MACOS_SHARDS: any = Object.freeze([
     'integration-runtime',
     'integration-desktop',
     'integration-connections',
+    'integration-connections-cli',
     'integration-runtime-projection',
     'integration-release',
     'system-buildr-web-http',

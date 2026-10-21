@@ -162,6 +162,18 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     ],
     "inputExclusions": []
   },
+  "integration-connections-cli": {
+    "inputs": [
+      "src/modules/connection-skills/**",
+      "resources/workspace/skills/connections/**",
+      "test/fixtures/connection-skills-cli-smoke.ts",
+      "test/helpers/child-process-supervisor.ts",
+      "test/verification/support/verification-deadline.ts",
+      "tools/development/run-isolated-workspace-smoke.ts",
+      "tools/development/isolated-workspace-state.ts"
+    ],
+    "inputExclusions": []
+  },
   "integration-runtime-projection": {
     "inputs": [
       "src/modules/agent-assets/infrastructure/runtime/**",
@@ -332,6 +344,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     "inputs": [
       "knowledge/index.yml",
       "test/contract/**",
+      "test/helpers/clean-product-source.ts",
       "test/helpers/legacy-asset-catalog.ts",
       "test/verification/http-contract-fresh-build-inventory.ts",
       "test/fixtures/**",
@@ -538,6 +551,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/modules/task/infrastructure/**",
       "src/infrastructure/git/**",
       "test/helpers/workspace-product-suite.ts",
+      "test/helpers/clean-product-source.ts",
       "test/verification/system-suites.ts",
       "test/verification/system.ts",
       "test/helpers/task-lifecycle-system-context.ts",
@@ -1196,7 +1210,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     "inputExclusions": []
   },
   "artifact-browser-core": {
-    "inputs": ["test/verification/release/browser-candidate.ts"],
+    "inputs": ["test/verification/release/browser-candidate.ts", "test/helpers/clean-product-source.ts"],
     "inputExclusions": []
   },
   "frontend-logic": {

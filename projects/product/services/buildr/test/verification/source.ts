@@ -34,8 +34,8 @@ export function sourceVerificationCancellation(signals: Pick<NodeJS.Process, 'on
     dispose: () => { signals.removeListener('SIGINT', interrupt); signals.removeListener('SIGTERM', terminate); } };
 }
 
-export function parseSourceArgs(args: string[]): { help: boolean; json: boolean; force: boolean; scope: SourceVerificationScope; base: string | null; output: string | null; round: string | null } {
-  const result = { help: false, json: false, force: false, scope: 'all' as SourceVerificationScope, base: null as string | null, output: null as string | null, round: null as string | null };
+export function parseSourceArgs(args: string[]): { help: boolean; json: boolean; force: boolean; scope: SourceVerificationScope; base: string | null; output: string | null; round: string | null; invalidate: string[] } {
+  const result = { help: false, json: false, force: false, scope: 'all' as SourceVerificationScope, base: null as string | null, output: null as string | null, round: null as string | null, invalidate: [] as string[] };
   let scopeSupplied = false;
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
@@ -62,6 +62,13 @@ export function parseSourceArgs(args: string[]): { help: boolean; json: boolean;
       if (!value || value.startsWith('-')) throw new Error('Missing value for --output');
       if (result.output !== null) throw new Error('--output may only be supplied once');
       result.output = value;
+    } else if (arg === '--invalidate') {
+      const value = args[++index];
+      if (!value || value.startsWith('-')) throw new Error('Missing value for --invalidate');
+      if (result.invalidate.length) throw new Error('--invalidate may only be supplied once');
+      const ids = value.split(',').map(id => id.trim()).filter(Boolean);
+      if (!ids.length || ids.some(id => !/^[a-z0-9][a-z0-9:-]*$/u.test(id))) throw new Error('--invalidate requires comma-separated step ids');
+      result.invalidate = ids;
     } else throw new Error(`Unknown test:source option: ${arg}`);
   }
   if (result.help && args.length !== 1) throw new Error('--help cannot be combined with other arguments');
@@ -161,7 +168,7 @@ export function prepareSourceVerificationEnvironment(plan: any, options: any, de
 }
 
 function usage(): void {
-  process.stdout.write('Usage: npm run test:source -- [--scope all|common|platform] [--base <ref>] [--json] [--force] [--round <round-id>] [--output <round-log.json>]\n');
+  process.stdout.write('Usage: npm run test:source -- [--scope all|common|platform] [--base <ref>] [--json] [--force] [--round <round-id>] [--output <round-log.json>] [--invalidate <step-id,...>]\n');
 }
 
 if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {
@@ -171,7 +178,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
     else {
       const plan = createSourceVerificationPlan(process.platform, { scope: args.scope });
       const comparisonRequired = plan.steps.some((step: any) => step.reuse?.git === 'comparison');
-      const round = { roundId: args.round ?? process.env.BUILDR_VERIFICATION_ROUND ?? randomUUID(), ...(args.output ? { output: path.resolve(args.output) } : {}) };
+      const round = { roundId: args.round ?? process.env.BUILDR_VERIFICATION_ROUND ?? randomUUID(), ...(args.output ? { output: path.resolve(args.output) } : {}), ...(args.invalidate.length ? { invalidStepIds: args.invalidate } : {}) };
       const reuseOptions = { productRoot, projectRoot, round, force: sourceVerificationForce(args.force),
         env: enforceOfflineVerification(comparisonRequired || args.base
           ? pinSourceVerificationBase(productRoot, process.env, args.base) : { ...process.env }) };

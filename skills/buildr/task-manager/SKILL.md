@@ -103,7 +103,7 @@ buildr task brief migrate --all --target <canonical-workspace> --json
 
 终态导入通过既有更正动作保存本次真实原因，保留原状态、结果与历史，不改写旧说明文件、归档、专业报告或过去时间。分别核对记录写入与关联释放；局部失败不否定已成立的写入，也不能报告整项迁移完成。
 
-任务记录（Task Record）写入使用已观察的当前 `recordDigest`，应用（Application）继续校验版本。成功响应已包含完整记录与新版本时，直接核对并作为下一动作的输入；仅在响应缺失、发生冲突、工作中断后继续或已知相关事实变化时重读。冲突后重新判断，不静默重放旧输入。完成只保存已成立的结果，不执行Git、部署、验证或清理。复盘正文由Agent按用户要求写入`.buildr/local/task-retrospectives/<task-id>.md`，Task Record只登记摘要与`pending-decision|decided`。
+任务记录（Task Record）写入使用已观察的当前 `recordDigest`，应用（Application）继续校验版本。成功响应已包含完整记录与新版本时，直接核对并作为下一动作的输入；仅在响应缺失、发生冲突、工作中断后继续或已知相关事实变化时重读。冲突后重新判断，不静默重放旧输入。完成只保存已成立的结果，不执行Git、部署、验证或清理；任务存在工作树、任务分支或一次性输入文件时，完成摘要需说明其已按 `task-finish` 处置或保留原因。复盘正文由Agent按用户要求写入`.buildr/local/task-retrospectives/<task-id>.md`，Task Record只登记摘要与`pending-decision|decided`。
 
 ## 记录进展与接续人的答复
 
@@ -172,4 +172,4 @@ buildr task work-context respond <id> --expected-current <digest> --attention <�
 
 ## 报告
 
-说明实际改变的对象、当前状态、成果与必要遗留；不要把记录成功称为业务交付成功。任务已完整结束时明确报告完成。只有用户明确要求复盘时才使用`task-retrospective`；完成或放弃本身不自动提示、生成或登记复盘。
+说明实际改变的对象、当前状态、成果与必要遗留；不要把记录成功称为业务交付成功。任务已完整结束时明确报告完成。任务记录完成不自动清理工作树或临时资源；若本任务存在工作树、任务分支或一次性输入文件，完成前后按 `task-finish` 和所选工作树提供者核验处置，或在结果中明确保留原因，避免资源静默遗留。只有用户明确要求复盘时才使用`task-retrospective`；完成或放弃本身不自动提示、生成或登记复盘。

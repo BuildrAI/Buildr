@@ -46,6 +46,7 @@ export function createCandidateRoundExecution(plan: any, options: any): any {
   const config = options.round;
   if (!config) return null;
   const roundId = config.roundId;
+  const invalidStepIds = new Set<string>(config.invalidStepIds ?? []);
   let log = readCandidateRound(config.output, roundId);
   const imports = config.imports ? (Array.isArray(config.imports) ? config.imports : [config.imports]) : [];
   const records = new Map<string, any>();
@@ -56,11 +57,12 @@ export function createCandidateRoundExecution(plan: any, options: any): any {
   }
   const hits = new Map<string, any>();
   for (const step of plan.steps) {
+    if (invalidStepIds.has(step.id)) continue;
     const record = [...records.values()].find(record => passedRoundRecord(record, roundId, step, plan.runner ?? process.platform));
     if (record) hits.set(step.id, record);
   }
   const steps = plan.steps.map((step: any) => ({ id: step.id, disposition: hits.has(step.id) ? 'reuse' : 'execute',
-    reasons: [hits.has(step.id) ? 'passed-in-this-round' : 'failed-or-not-run-in-this-round'], inputScope: 'candidate-round' }));
+    reasons: [hits.has(step.id) ? 'passed-in-this-round' : invalidStepIds.has(step.id) ? 'source-inputs-changed' : 'failed-or-not-run-in-this-round'], inputScope: 'candidate-round' }));
   let sourceCommit: string | null = null;
   try { sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: options.productRoot, encoding: 'utf8' }).trim(); } catch { /* Diagnostic only. */ }
   const persist = () => { log = { ...log, records: [...records.values()] }; if (config.output) writeCandidateRound(config.output, log); return log; };
