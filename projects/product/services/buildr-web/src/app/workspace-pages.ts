@@ -1,3 +1,5 @@
+import { navigationState } from './navigation.ts';
+
 export type PageTabKind = "dir" | "proj" | "svc";
 export type WorkspacePageTab = {
   key: string;
@@ -91,6 +93,7 @@ export function tabForPath(
       return { key: "dir:connection-skills", kind: "dir", title: "连接", path: `${prefix}connection-skills` };
     if(area==='code'&&parts.length===2&&['explorer','source-control'].includes(project))return {key:`dir:code:${project}`,kind:'dir',title:project==='explorer'?'资源管理器':'源代码管理',path};
     const names: Record<string, string> = {
+      overview: "概览",
       "workspace-overview": "工作空间总览",
       projects: "项目目录",
       services: "服务目录",
@@ -123,10 +126,26 @@ export function tabForPath(
   return null;
 }
 
-/** Query and code tools use their panel; document-oriented pages retain a reading measure. */
+export type WorkspaceArea = 'workbench' | 'workspace' | 'code';
+
+/** Each entry opens its own default page tab; the tab set itself stays shared. */
+export function defaultTabForArea(workspaceId: string, area: WorkspaceArea): WorkspacePageTab {
+  const path = area === 'workbench'
+    ? `/workspaces/${workspaceId}/overview`
+    : area === 'code'
+      ? `/workspaces/${workspaceId}/code/source-control`
+      : `/workspaces/${workspaceId}/workspace-overview`;
+  return tabForPath(workspaceId, path)!;
+}
+
+export function defaultTabForPath(workspaceId: string, pathname: string): WorkspacePageTab {
+  return defaultTabForArea(workspaceId, navigationState(pathname, '', workspaceId).area);
+}
+
+/** Query, code tools and the workbench overview use their panel; document-oriented pages retain a reading measure. */
 export function workspacePageLayout(workspaceId: string, path: string): 'functional' | 'reading' {
   const key = tabForPath(workspaceId, path)?.key;
-  return key === 'dir:connection-skills' || key?.startsWith('dir:code:') ? 'functional' : 'reading';
+  return key === 'dir:connection-skills' || key === 'dir:overview' || key?.startsWith('dir:code:') ? 'functional' : 'reading';
 }
 
 export function parseTabs(id: string, raw: string | null): WorkspacePageTab[] {
@@ -168,11 +187,9 @@ export function moveTab<T extends { key: string }>(
   return next;
 }
 
-/** The shared strip includes resource directories; code views retain their own internal tabs. */
+/** Page tabs from all three entries share one strip; code files remain tabs inside the code page. */
 export function reorderPageTabs(tabs: WorkspacePageTab[], key: string, index: number): WorkspacePageTab[] {
-  const visible = moveTab(tabs.filter(tab => !tab.key.startsWith('dir:code:')), key, index);
-  let next = 0;
-  return tabs.map(tab => tab.key.startsWith('dir:code:') ? tab : visible[next++]);
+  return moveTab(tabs, key, index);
 }
 
 export function readRatio(raw: string | null): number | null {

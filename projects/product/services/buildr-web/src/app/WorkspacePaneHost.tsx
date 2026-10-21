@@ -215,10 +215,11 @@ export function WorkspacePaneHost() {
   const ownerObjects = tab ? host.objects.filter(item => item.ownerPath === tab.ownerPath) : [];
   const layout = tab?.contentLayout ?? objectRecord?.objectContentLayout;
   const headerWidth = host.pageCollapsed ? '48px' : `calc(100% - ${host.paneWidth}px)`;
-  return <div className="workspace-pane-host" hidden={!host.enabled || !host.records.some(record => record.ownerPath === host.currentPath)} style={{ '--workspace-page-header-width': headerWidth } as CSSProperties}>
-    <div ref={host.setPageTabRowRef} className="workspace-page-tabs" style={{ width: headerWidth }}>
+  const hostHidden = !host.enabled || !host.records.some(record => record.ownerPath === host.currentPath);
+  return <div className="workspace-pane-host" hidden={hostHidden} style={{ '--workspace-page-header-width': headerWidth } as CSSProperties}>
+    {!hostHidden && <div ref={host.setPageTabRowRef} className="workspace-page-tabs" style={{ width: headerWidth }}>
       {!host.pageCollapsed && <PageTabStrip idPrefix={`workspace-${host.workspaceId}`} tabs={host.tabs} onClose={host.closePage} onReorder={host.reorderPage} />}
-    </div>
+    </div>}
     <div className="workspace-page workspace-pane-stage">
       <WorkspacePaneStage pageTabs={host.tabs} activePage={page?.key} onActivatePage={host.selectPage} onClosePageTab={host.closePage}
         objectTabs={ownerObjects} activeObject={tab?.key || null} objectIdentity={tab ? JSON.stringify([tab.ownerPath, tab.identity || tab.localKey]) : undefined}
