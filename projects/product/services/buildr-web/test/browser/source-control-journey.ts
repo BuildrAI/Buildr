@@ -6,7 +6,7 @@ import { runSourceControlLiveRefreshJourney } from './source-control-live-refres
 import { runSourceControlSourceSelectionJourney } from './source-control-source-selection-journey.ts';
 import { runSourceControlSourceFeedbackJourney } from './source-control-source-feedback-journey.ts';
 import { runSourceControlRefreshIntegrationJourney } from './source-control-refresh-integration-journey.ts';
-import { codeRepositoryLabel } from '../../src/features/code/code-source-labels.ts';
+import { codeRepositoryCode, codeRepositoryLabel } from '../../src/features/code/code-source-labels.ts';
 
 /** The host owns isolated Git data; every successful read below comes from production HTTP. */
 export async function runSourceControlJourney({t, page, workspaceUrl, capture, fixture, expectedBrowserErrors}: any) {
@@ -71,7 +71,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
   const hoverThenVerticalClick = async (from: any, target: any, card: any, screenshot: string) => {
     const start = await from.boundingBox(), end = await target.boundingBox(); assert.ok(start && end);
     const left = Math.max(start.x, end.x), right = Math.min(start.x + start.width, end.x + end.width);
-    assert.ok(right > left + 2, '两行有共同的鼠标文字列');
+    assert.ok(right > left + 2, '两行有共同的鼠标文字列：' + JSON.stringify({from: start, target: end}));
     const x = left + Math.min(20, (right - left) / 2), fromY = start.y + start.height / 2, toY = end.y + end.height / 2;
     // Enter the row anew after any previous click; the tested open-card movement remains strictly vertical.
     await page.mouse.move(start.x - 3, fromY, {steps: 2});
@@ -209,7 +209,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     const observed = await catalog();
     const repository = observed.repositories.find((item: any) => item.worktrees.some((worktree: any) => worktree.worktreeId === mainWorktreeId));
     assert.ok(repository, '两层改动必须属于实际登记实例');
-    await root().locator('.source-control-repository-copy').filter({has: page.getByText(codeRepositoryLabel(repository), {exact: true})}).click();
+    await root().locator('.source-control-repository-copy').filter({has: page.getByText(codeRepositoryCode(repository), {exact: true})}).click();
     await root().locator('.source-control-browse-tabs').getByText('提交历史', {exact: true}).click();
     await openCommitFile(fixture.commitHash, fixture.path);
     await diff().getByText('export const explorerAnswer = 1;', {exact: false}).waitFor();
@@ -239,7 +239,11 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
         assert.equal(await firstButton.isDisabled(), true, '首库仍在等待读取');
         assert.equal(await root().locator('.source-control-repository-copy[aria-pressed="true"]').count(), 0, '后库先完成也不自动选中');
         if (explicit) {await fastButton.click(); assert.equal(await fastButton.getAttribute('aria-pressed'), 'true');}
-        release(); await root().locator('.source-control-title .anticon-spin').waitFor({state:'hidden'});
+        release();
+        await page.waitForFunction((id:string) => {const button = document.querySelector('[data-source-repository="' + id + '"] .source-control-repository-copy');return button && !button.hasAttribute('disabled');}, first.id);
+        if (!explicit) await page.waitForFunction((id:string) => document.querySelector('[data-source-repository="' + id + '"] .source-control-repository-copy')?.getAttribute('aria-pressed') === 'true', first.id);
+        else await page.evaluate(() => new Promise(requestAnimationFrame));
+        await root().locator('.source-control-title .anticon-spin').waitFor({state:'hidden'});
         assert.equal(await (explicit ? fastButton : firstButton).getAttribute('aria-pressed'), 'true', explicit ? '首库后到不能抢回用户主动选择' : '没有主动选择时首库完成才提供确定默认来源');
       }
     } finally {release(); await page.unroute(/\/code\/source-control(?:\?|$)/, delayed);}

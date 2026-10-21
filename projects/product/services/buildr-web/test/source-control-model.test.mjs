@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {sourceControlDefaultSource,sourceControlRepository,sourceControlFileCount,sourceControlFileKey,sourceControlVisibleWorktrees,sourceControlWorktreeKey,sourceControlFilePathHints,sourceControlAbsolutePath,sourceControlFileTooltip} from '../src/features/code/source-control-model.ts';
+import {sourceControlDefaultSource,sourceControlRepository,sourceControlFileCount,sourceControlFileKey,sourceControlVisibleWorktrees,sourceControlWorktreeKey,sourceControlFilePathHints,sourceControlAbsolutePath,sourceControlFileTooltip,sourceControlRepositoryHasChanges} from '../src/features/code/source-control-model.ts';
 const change=(worktreeId,area='unstaged')=>({repositoryId:'repo',worktreeId,path:'same.ts',area,previousPath:null,kind:'tracked',status:'modified',additions:null,deletions:null,preview:null,previewTruncated:false});
 const worktree=(worktreeId,name,isMain=false)=>({worktreeId,name,location:'/actual/'+worktreeId,isMain,isRegistered:isMain,status:'complete',branch:isMain?'main':'feature',head:'a'.repeat(40),upstream:null,ahead:null,behind:null,taskId:null,taskTitle:null,taskDiagnostic:null,fileCount:1,changes:[change(worktreeId)],observedRevision:'scm:'+worktreeId,readAt:'now',coverage:{fileLimit:1000,truncated:false},diagnostics:[]});
 const catalog=(id='repo')=>({id,name:id,code:id,location:'/registered',source:null,status:'complete',branch:'compatibility-only',ahead:99,behind:99,fileCount:2,changes:[],head:null,observedRevision:'scm:registered',diagnostics:[],worktrees:[worktree(id+'-main','main',true),worktree(id+'-linked','same-task-name')],worktreeCount:2});
@@ -18,6 +18,16 @@ test('catalog uses all checkout observations and keeps unknown synchronization d
   assert.equal(sourceControlFileCount(files),2,'same path across checkouts counts twice but comparison layers count once');
   assert.equal(new Set(files.map(sourceControlFileKey)).size,3,'same path comparison layers remain separate selection identities');
 });
+test('任一工作树的已确认改动都会让代码库进入改动组，未知读取不冒充改动',()=>{
+  const clean=sourceControlRepository({...catalog(),worktrees:[{...worktree('main','main',true),fileCount:0,changes:[]}],fileCount:0});
+  assert.equal(sourceControlRepositoryHasChanges(clean),false);
+  const taskChanged=sourceControlRepository({...catalog(),worktrees:[{...worktree('main','main',true),fileCount:0,changes:[]},worktree('task','task')]});
+  assert.equal(sourceControlRepositoryHasChanges(taskChanged),true);
+  const pending=sourceControlRepository({...catalog(),status:'unavailable',fileCount:null,worktreeCount:null,worktrees:[]});
+  assert.equal(sourceControlRepositoryHasChanges(pending),false);
+  assert.equal(sourceControlRepositoryHasChanges(sourceControlRepository({...catalog(),worktrees:[],fileCount:2})),true);
+});
+
 test('same-name filtering spans repositories without guessing tasks and exact task hints remain independent',()=>{
   const repositories=[sourceControlRepository(catalog('a')),sourceControlRepository(catalog('b'))];
   const sameName=repositories.flatMap(repository=>sourceControlVisibleWorktrees(repository,['same-task-name']));

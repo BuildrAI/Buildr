@@ -16,6 +16,11 @@ export function codeRepositoryLabel(repository: {name: string; code?: string | n
   return name && code && code !== name ? name + '（' + code + '）' : name || code;
 }
 
+/** Lists scan by stable code; the full label stays available in hover and accessible text. */
+export function codeRepositoryCode(repository: {name: string; code?: string | null}): string {
+  return repository.code || repository.name;
+}
+
 /** Names describe actual directories; only confirmed Git main worktrees receive a role. */
 export function codeWorktreeLabel(member: CodeWorktree, peers: readonly CodeWorktree[] = []): CodeSourceLabel {
   const name = worktreeName(member.path);

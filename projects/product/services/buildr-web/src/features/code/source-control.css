@@ -19,7 +19,7 @@
 .source-control-repository:hover,.source-control-worktree:hover { background:color-mix(in srgb,var(--soft-primary) 4%,var(--soft-surface)); }
 .source-control-repository.is-selected,.source-control-worktree.is-selected { background:var(--soft-primary-soft,color-mix(in srgb,var(--soft-primary) 8%,var(--soft-surface))); box-shadow:inset 2px 0 var(--soft-primary); }
 .source-control-row-copy { display:flex; align-items:center; gap:6px; flex:1 1 0; min-width:0; }
-.source-control-row-copy>.selectable-hover-trigger { display:block; flex:0 1 auto; min-width:0; }
+.source-control-row-copy>.selectable-hover-trigger { display:block; flex:1 1 auto; min-width:0; }
 .source-control-row-name-text { display:inline-block; width:max-content; }
 .source-control-row-shortcuts { display:flex; align-items:center; flex:none; width:max-content; gap:4px; }
 /* Keep the same controls measurable and remove hidden controls from keyboard navigation. */

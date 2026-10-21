@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { codeRepositoryLabel } from '../../src/features/code/code-source-labels.ts';
+import { codeRepositoryCode } from '../../src/features/code/code-source-labels.ts';
 
 /** External filesystem/Git writes belong to the isolated host fixture. All UI observations use production HTTP. */
 export async function runSourceControlLiveRefreshJourney({t, page, workspaceUrl, capture, fixture, expectedBrowserErrors, scenario = (name: string, action: () => Promise<void>) => t.test(name, action)}: any) {
@@ -62,9 +62,9 @@ export async function runSourceControlLiveRefreshJourney({t, page, workspaceUrl,
     const repository = repositories.repositories.find((item: any) => item.id === member.repositoryId);
     assert.ok(repository);
     const repositorySelect = page.locator('.code-root-selectors .ant-select').nth(0);
-    await repositorySelect.locator('.ant-select-selector').click();
+    await repositorySelect.getByRole('combobox').focus();await repositorySelect.getByRole('combobox').press('ArrowDown');
     const repositoryListId = await repositorySelect.getByRole('combobox').getAttribute('aria-controls');
-    await page.locator('.ant-select-dropdown').filter({has: page.locator('[id="' + repositoryListId + '"]')}).getByText(codeRepositoryLabel(repository), {exact: true}).click();
+    await page.locator('.ant-select-dropdown').filter({has: page.locator('[id="' + repositoryListId + '"]')}).getByText(codeRepositoryCode(repository), {exact: true}).click();
     await repositorySelect.getByRole('combobox').press('Escape');
     const worktreeSelect = page.locator('.code-root-selectors .ant-select').nth(1);
     await worktreeSelect.locator('.ant-select-selector').click();

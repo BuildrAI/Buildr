@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { codeRepositoryLabel, codeWorktreeLabel, codeWorktreeGroupLabel } from '../src/features/code/code-source-labels.ts';
+import { codeRepositoryCode, codeRepositoryLabel, codeWorktreeLabel, codeWorktreeGroupLabel } from '../src/features/code/code-source-labels.ts';
 
 const member = (id, repositoryId, path, extra = {}) => ({id, repositoryId, groupId:'main', path, branch:'dev', kind:'main', isMain:extra.kind ? false : true, taskId:null, available:true, ...extra});
 
@@ -9,6 +9,12 @@ test('代码库名称后补充编码，名称等于编码或缺失时不重复',
   assert.equal(codeRepositoryLabel({name:'pork-link',code:'pork-link'}),'pork-link');
   assert.equal(codeRepositoryLabel({name:'',code:'api'}),'api');
   assert.equal(codeRepositoryLabel({name:'API',code:''}),'API');
+});
+
+test('列表主标签优先使用编码，缺少编码时回退名称', () => {
+  assert.equal(codeRepositoryCode({name:'通用业务',code:'business-common'}),'business-common');
+  assert.equal(codeRepositoryCode({name:'API',code:''}),'API');
+  assert.equal(codeRepositoryCode({name:'API',code:null}),'API');
 });
 
 const catalog = worktrees => ({worktrees, worktreeGroups:[{id:'main',name:'主目录',kind:'main',taskId:null,repositoryIds:['api','web']} ]});

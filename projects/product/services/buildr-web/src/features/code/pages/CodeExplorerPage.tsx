@@ -17,17 +17,17 @@ import { WorkspaceViewActiveContext } from '../../../app/pageTabs';
 import { FileEditingPane } from '../../../components/file-editing/FileEditingPane';
 import { codeBrowserKey, codeLocationKey, codeReturnTarget, relativeCodeLink, type CodeTaskEntry } from '../code-navigation';
 import { sourceControlDecorations } from '../source-control-decorations';
-import { codeRepositoryLabel, codeWorktreeLabel } from '../code-source-labels';
+import { codeRepositoryCode, codeRepositoryLabel, codeWorktreeLabel } from '../code-source-labels';
 import { workspaceHref } from '../../../lib/labels';
 import type { MarkdownRenderOptions } from '../../../markdown';
 import '../code-explorer.css';
 
 export function CodeExplorerPage() {
   const panelId = useId();
-  const {workspaceId,setBreadcrumbParts}=useAppShell();
+  const {workspaceId,workspace,setBreadcrumbParts}=useAppShell();
   const viewActive=useContext(WorkspaceViewActiveContext);
   const location=useLocation(),navigate=useNavigate(),{message}=App.useApp();
-  const state=useCodeExplorer(workspaceId||'',viewActive,location.state?.codeEntry?location.key:undefined);
+  const state=useCodeExplorer(workspaceId||'',workspace?.rootPath,viewActive,location.state?.codeEntry?location.key:undefined);
   const [host,setHost]=useState<HTMLDivElement|null>(null),[treeHidden,setTreeHidden]=useState(()=>window.innerWidth<680);
   const [processed,setProcessed]=useState(''),[media,setMedia]=useState<Record<string,string>>({});
   const [selection,setSelection]=useState<{key:string;lines:[number,number]|null}>({key:'',lines:null});
@@ -51,7 +51,7 @@ export function CodeExplorerPage() {
     for(const directory of directories)for(const item of directory.entries)items.set(item.path,{path:item.path,content:'',kind:'text',directory:item.kind==='directory',link:item.kind==='link',ignored:item.ignored,status:item.kind==='directory'?undefined:decoration.files.get(item.path),hasChanges:item.kind==='directory'&&decoration.directories.has(item.path)});
     const observed=directories.find(dir=>dir.path===''),label=codeWorktreeLabel(member,state.catalog?.worktrees);
     const locationLabel=(source.commitHash?'历史提交 · ':'')+label.name,repository=state.catalog?.repositories.find(r=>r.id===member.repositoryId);
-    return {id,repositoryId:member.repositoryId,name:repository?codeRepositoryLabel(repository):member.repositoryId,
+    return {id,repositoryId:member.repositoryId,name:repository?codeRepositoryCode(repository):member.repositoryId,fullName:repository?codeRepositoryLabel(repository):member.repositoryId,
       location:observed?.source.location||member.path,locationLabel,version:source.commitHash||observed?.source.version,files:[...items.values()],hasChanges:decoration.hasChanges};
   }),[state.sources.map(item=>item.id+':'+item.member.available).join(','),state.catalog,state.directories,state.showIgnored,state.directoryKey,state.sourceControl.data]);
   const loadedKeys=state.sources.flatMap(({id,source})=>{
@@ -102,7 +102,7 @@ export function CodeExplorerPage() {
       label:<>{name}{sourceLabel&&<Tag color={tab.commitHash?'gold':undefined}>{sourceLabel}</Tag>}</>,
       accessibleLabel:name+(sourceLabel?' '+sourceLabel:''),closeLabel:'关闭文件 '+tab.path};
   });
-  const repositoryOptions=(state.catalog?.repositories||[]).map(repo=>({value:repo.id,label:codeRepositoryLabel(repo)}));
+  const repositoryOptions=(state.catalog?.repositories||[]).map(repo=>({value:repo.id,label:codeRepositoryCode(repo),title:codeRepositoryLabel(repo)}));
   const singleRepository=state.scope.length===1;
   const worktreeMembers=(state.catalog?.worktrees||[]).filter(member=>singleRepository&&member.repositoryId===state.scope[0]);
   const selectedWorktree=singleRepository&&state.sources.length===1?state.sources[0].member:undefined;
@@ -118,7 +118,7 @@ export function CodeExplorerPage() {
     state.setSourceFilters([active.repositoryId],'checkout:'+member.id);
   };
   const context=<section className="code-root-selectors" aria-label="代码库与工作树筛选">
-    <Select mode="multiple" optionFilterProp="label" allowClear maxTagCount={1} classNames={{popup:{root:'code-source-picker-popup'}}} aria-label="筛选代码库" placeholder="全部代码库" value={state.scope} onChange={state.setScope} options={repositoryOptions} />
+    <Select mode="multiple" optionFilterProp="title" allowClear maxTagCount={1} classNames={{popup:{root:'code-source-picker-popup'}}} aria-label="筛选代码库" placeholder="全部代码库" value={state.scope} onChange={state.setScope} options={repositoryOptions} />
     <Select allowClear showSearch optionFilterProp="label" classNames={{popup:{root:'code-source-picker-popup'}}} aria-label="筛选工作树" placeholder={singleRepository?"选择工作树":"先选择一个代码库"} disabled={!singleRepository} value={selectedWorktree?.id} onChange={id=>state.setWorktreeScope(id?'checkout:'+id:undefined)} options={worktreeOptions} optionRender={option=><div className="code-worktree-option" data-code-worktree-id={option.value} data-code-worktree-group={worktreeMembers.find(member=>member.id===option.value)?.groupId} title={option.data.title}><span>{option.data.label}</span>{option.data.role&&<small>{option.data.role}</small>}</div>} />
     <small>{taskFallback?'任务没有独立目录，可在上方选择其他目录。':'选择代码库和工作树，查看对应文件'}</small>
   </section>;
@@ -136,7 +136,7 @@ export function CodeExplorerPage() {
       {state.catalog?.repositories.length===0&&<Empty description="工作空间尚未登记代码库" />}
       {state.catalog&&state.catalog.repositories.length>0&&!state.sources.length&&<div className="code-range-outside" role="status">所选代码库与工作树没有共同目录，请调整筛选。</div>}
       <div className="object-tab-panel" id={panelId} role={active ? 'tabpanel' : undefined} aria-labelledby={active ? tabElementId(panelId, active.key) : undefined} tabIndex={active ? 0 : undefined}>
-      <RepositoryFileBrowser global readerActive={viewActive} defaultCollapsedTree revealSelectionRequest={state.selectionRequest} sidebarHost={host} treeRepositories={treeRepositories} files={files} repositoryName={selectedRepo?codeRepositoryLabel(selectedRepo):undefined} repositoryId={active?.repositoryId} checkoutId={active?.checkoutId||undefined} observedDigest={currentText?undefined:file?.digest} observedRevision={currentText?editorSession?.file.revision||editable.file?.revision:file?.revision} observedAt={currentText?editorSession?.file.observedAt||editable.file?.observedAt:file?.observedAt} selectedRepositoryId={active?codeBrowserKey(active):undefined} selectedPath={active?.path||''} selectionKey={active?.key}
+      <RepositoryFileBrowser global readerActive={viewActive} defaultCollapsedTree revealSelectionRequest={state.selectionRequest} sidebarHost={host} treeRepositories={treeRepositories} files={files} repositoryName={selectedRepo?codeRepositoryCode(selectedRepo):undefined} repositoryTitle={selectedRepo?codeRepositoryLabel(selectedRepo):undefined} repositoryId={active?.repositoryId} checkoutId={active?.checkoutId||undefined} observedDigest={currentText?undefined:file?.digest} observedRevision={currentText?editorSession?.file.revision||editable.file?.revision:file?.revision} observedAt={currentText?editorSession?.file.observedAt||editable.file?.observedAt:file?.observedAt} selectedRepositoryId={active?codeBrowserKey(active):undefined} selectedPath={active?.path||''} selectionKey={active?.key}
         readerSurface={currentText ? editable.file ? <FileEditingPane file={{...editable.file,locationLabel:selectedMember?codeWorktreeLabel(selectedMember,state.catalog?.worktrees).name:editable.file.locationLabel}} editing={editing} active={viewActive} focusLine={active?.line} focusRequest={active?.focusRequest}
           toolbarEnd={<Button size="small" type="text" aria-label="刷新当前文件" icon={<ReloadOutlined />} loading={Boolean(active&&state.loading.includes(active.key))} onClick={()=>void state.refreshFile()} />}
           searchQuery={readQuery} onSelectLines={lines=>{if(active)setSelection({key:active.key,lines});}}

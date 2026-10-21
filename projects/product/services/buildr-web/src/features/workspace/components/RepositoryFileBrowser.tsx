@@ -25,7 +25,7 @@ export type RepositoryPreviewFile = {
   link?: boolean;
 };
 
-export type RepositoryTreeScope = { id: string; repositoryId?: string; name: string; location?: string; locationLabel?: string; version?: string; files: RepositoryPreviewFile[]; hasChanges?: boolean };
+export type RepositoryTreeScope = { id: string; repositoryId?: string; name: string; fullName?: string; location?: string; locationLabel?: string; version?: string; files: RepositoryPreviewFile[]; hasChanges?: boolean };
 type TreeFile = RepositoryPreviewFile & { repositoryId?: string; sourceRepositoryId?: string; repositoryName?: string };
 type SearchResult = RepositoryPreviewFile & {repositoryId?:string;sourceRepositoryId?:string;repositoryName?:string;line?:number;excerpt?:string;occurrences?:Array<{line:number;excerpt:string}>};
 function treeKey(path: string, repositoryId?: string) { return repositoryId ? repositoryId + '::' + path : path; }
@@ -35,6 +35,7 @@ type Props = {
   treeRepositories?: RepositoryTreeScope[];
   selectedRepositoryId?: string;
   repositoryName?: string;
+  repositoryTitle?: string;
   onSelectRepositoryFile?(repositoryId: string, path: string, line?: number, matchQuery?: string): void;
   selectedPath: string;
   onSelect(path: string, line?: number, matchQuery?: string): void;
@@ -209,16 +210,20 @@ export function RepositoryFileBrowser(props: Props) {
         }
         siblings.push({ key: treeKey(item.path, item.repositoryId), isLeaf: true, disabled:item.link, icon: fileIcon(item), title: <span className="repository-tree-file" data-file-path={item.path} data-code-status={item.status}><span>{shortName(item.path)}</span>{item.status && <i className={'repository-status repository-status-' + item.status}>{item.status}</i>}</span> });
       }
-      sort(roots); return props.global && !props.onLoadDirectory ? compact(roots) : roots;
+      // Repository roots follow the caller's workspace/change/code order; only files sort inside each root.
+      if (props.treeRepositories) {
+        for (const root of roots) if (root.children) sort(root.children);
+      } else sort(roots);
+      return props.global && !props.onLoadDirectory ? compact(roots) : roots;
     }
     return props.treeRepositories ? props.treeRepositories.map(repo => ({
       key: treeKey('', repo.id), isLeaf:false, icon: <FolderOpenOutlined />,
-      title: <SelectableHoverCard closeOnTriggerClick title={repo.name} content={<article className="repository-root-info" aria-label="代码库完整路径" onClick={event => event.stopPropagation()} onPointerDown={event => event.stopPropagation()}>
+      title: <SelectableHoverCard closeOnTriggerClick title={repo.fullName || repo.name} content={<article className="repository-root-info" aria-label="代码库完整路径" onClick={event => event.stopPropagation()} onPointerDown={event => event.stopPropagation()}>
         {repo.locationLabel && <p className="repository-root-location-label">{repo.locationLabel}</p>}
         <code className="repository-root-location">{repo.location}</code>
         {repo.version && <p className="repository-root-version">版本：{repo.version}</p>}
         {repo.location && <Button type="text" size="small" icon={<CopyOutlined />} aria-label="复制代码库完整路径" onClick={() => void copy(repo.location!)}>复制路径</Button>}
-      </article>}><span tabIndex={0} className="repository-root-name" data-location={repo.location} data-location-label={repo.locationLabel} data-version={repo.version} data-repository-id={repo.repositoryId || repo.id} data-has-changes={repo.hasChanges || undefined}><strong>{repo.name}</strong>{repo.hasChanges && <i className="repository-directory-change-dot" title="包含未提交变更" aria-label="包含未提交变更" />}</span></SelectableHoverCard>,
+      </article>}><span tabIndex={0} className="repository-root-name" aria-label={repo.fullName || repo.name} data-location={repo.location} data-location-label={repo.locationLabel} data-version={repo.version} data-repository-id={repo.repositoryId || repo.id} data-has-changes={repo.hasChanges || undefined}><strong>{repo.name}</strong>{repo.hasChanges && <i className="repository-directory-change-dot" title="包含未提交变更" aria-label="包含未提交变更" />}</span></SelectableHoverCard>,
       children: build(visible.filter(item => item.repositoryId === repo.id)),
     })) : build(visible);
   }, [props.files, props.treeRepositories, showIgnored, props.global]);
@@ -322,7 +327,7 @@ export function RepositoryFileBrowser(props: Props) {
           {openPaths.map(path => <div key={path} className={'repository-file-tab' + (path === props.selectedPath ? ' active' : '')}><button type="button" role="tab" aria-selected={path === props.selectedPath} title={path} onClick={() => select(path)}>{shortName(path)}</button>{openPaths.length > 1 && <button className="repository-file-close" type="button" aria-label={'关闭文件 ' + shortName(path)} onClick={() => { const next = openPaths.filter(item => item !== path); setOpenPaths(next); if (path === props.selectedPath) select(next.at(-1)!); }}>×</button>}</div>)}
         </div>}
         {props.readerSurface ?? <>{file && <header className="repository-reader-toolbar">
-          <div className="repository-file-identity"><strong>{shortName(file.path)}</strong><small title={props.location + ' / ' + file.path}>{props.repositoryName ? props.repositoryName + ' · ' : ''}{file.path}</small><small className="repository-reading-location">{props.location} · {props.version}</small></div>
+          <div className="repository-file-identity"><strong>{shortName(file.path)}</strong><small title={(props.repositoryTitle ? props.repositoryTitle + ' · ' : '') + props.location + ' / ' + file.path}>{props.repositoryName ? props.repositoryName + ' · ' : ''}{file.path}</small><small className="repository-reading-location">{props.location} · {props.version}</small></div>
           <Space wrap size={4}>
             {props.onReturnTask && <Button size="small" onClick={props.onReturnTask} data-prototype-position="return-task">返回任务</Button>}
             {file.kind === 'markdown' && !props.readPage && <Segmented size="small" value={raw ? 'raw' : 'read'} options={[{ label: '阅读', value: 'read' }, { label: '原文', value: 'raw' }]} onChange={value => setRaw(value === 'raw')} />}

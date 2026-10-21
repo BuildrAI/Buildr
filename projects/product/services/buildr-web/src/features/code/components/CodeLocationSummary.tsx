@@ -2,13 +2,13 @@ import { App, Button } from 'antd';
 import { CloseOutlined, CopyOutlined, DownOutlined } from '@ant-design/icons';
 import { copyText } from '../../../lib/copyText';
 
-type LocationProps = { repositoryName: string; location: string; branch?: string | null; taskId?: string; commitHash?: string; area?: 'unstaged' | 'staged' | 'untracked' | 'commit'; worktreeName?: string; kind?: 'default' | 'task' | 'worktree' | 'commit' };
+type LocationProps = { repositoryName: string; repositoryTitle?: string; location: string; branch?: string | null; taskId?: string; commitHash?: string; area?: 'unstaged' | 'staged' | 'untracked' | 'commit'; worktreeName?: string; kind?: 'default' | 'task' | 'worktree' | 'commit' };
 
 /** Keep the reading identity visible; disclose location details only on request. */
-export function CodeLocationSummary({ repositoryName, branch, taskId, commitHash, area, worktreeName, kind, expanded, detailsId, onToggle }: LocationProps & {expanded: boolean; detailsId: string; onToggle(): void}) {
+export function CodeLocationSummary({ repositoryName, repositoryTitle, branch, taskId, commitHash, area, worktreeName, kind, expanded, detailsId, onToggle }: LocationProps & {expanded: boolean; detailsId: string; onToggle(): void}) {
   const taskLocation = kind === 'task' || !kind && Boolean(taskId);
   const label = commitHash ? '历史版本' : area === 'staged' ? '已暂存版本' : taskLocation ? '任务目录' : '本机目录';
-  return <Button type="text" size="small" className="code-location-summary" aria-label={'查看位置信息 ' + repositoryName} aria-expanded={expanded} aria-controls={detailsId} onClick={onToggle} onKeyDown={event => { if (expanded && event.key === 'Escape') onToggle(); }}>
+  return <Button type="text" size="small" className="code-location-summary" title={repositoryTitle || repositoryName} aria-label={'查看位置信息 ' + (repositoryTitle || repositoryName)} aria-expanded={expanded} aria-controls={detailsId} onClick={onToggle} onKeyDown={event => { if (expanded && event.key === 'Escape') onToggle(); }}>
     <span className="code-location-summary-content"><strong>{repositoryName}</strong><span>· {worktreeName || label}</span>{worktreeName && area === 'staged' && <span>· 已暂存</span>}<code>{commitHash ? commitHash.slice(0, 8) : branch || ''}</code><DownOutlined className="code-location-summary-caret" /></span>
   </Button>;
 }

@@ -3,6 +3,7 @@ import { codeApi } from '../api/code-api';
 import { sourceControlRepository, type SourceControlReader, type SourceControlScopeSelection } from '../source-control-model';
 import { createSourceControlCatalog, type SourceControlCatalogState } from '../source-control-catalog';
 import { sourceControlReadDiagnostics } from '../source-control-summary';
+import { codeRepositoryLabel } from '../code-source-labels';
 import { createSourceControlRefreshLoader } from '../source-control-refresh';
 import { WorkspaceSourceControlContext } from '../../../app/WorkspaceSourceControlProvider';
 
@@ -59,5 +60,5 @@ export function useSourceControl(workspaceId: string, taskId?: string, active = 
     diagnostics:[...repository.diagnostics.filter(item => item.code !== 'code_source_control_pending').map(item => item.message), ...(state.repositoryErrors[repository.id] ? [state.repositoryErrors[repository.id]] : [])]})) || [], [state]);
   return { repositories, reader, readKey: workspaceId, selection: completedSelection.current?.catalog === catalog ? completedSelection.current.value : undefined, refresh,
     observation: { loading: state.loading, error: state.error, readAt: state.data?.readAt || '',
-      diagnostics: [...watch.diagnostics, ...(state.data?.diagnostics.filter(item => item.code !== 'code_source_control_pending').map(item => item.message) || []), ...Object.entries(state.repositoryErrors).filter(([, error]) => error).map(([id, error]) => (state.data?.repositories.find(item => item.id === id)?.name || id) + '：' + error)], truncated: state.data?.coverage.truncated || false } };
+      diagnostics: [...watch.diagnostics, ...(state.data?.diagnostics.filter(item => item.code !== 'code_source_control_pending').map(item => item.message) || []), ...Object.entries(state.repositoryErrors).filter(([, error]) => error).map(([id, error]) => { const repository = state.data?.repositories.find(item => item.id === id); return (repository ? codeRepositoryLabel(repository) : id) + '：' + error; })], truncated: state.data?.coverage.truncated || false } };
 }
