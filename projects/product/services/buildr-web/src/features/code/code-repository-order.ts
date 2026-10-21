@@ -10,7 +10,7 @@ const canonicalRoot = (value?: string | null) => {
   return /^[A-Za-z]:\//u.test(path) || path.startsWith('//') ? path.toLowerCase() : path;
 };
 
-/** The workspace's own repository is registered at the canonical workspace root. */
+/** Known limit: location arrives realpath-resolved while workspaceRoot keeps the registered spelling, so a symlinked root loses only its first position until the workspace contract carries a resolved root. */
 export function codeRepositoryIsWorkspace(repository: CodeRepositoryOrderItem, workspaceRoot?: string | null): boolean {
   if (!workspaceRoot || !repository.location) return false;
   return canonicalRoot(repository.location) === canonicalRoot(workspaceRoot);
