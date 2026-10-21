@@ -1,24 +1,26 @@
 schemaVersion: buildr.knowledge-impact/v1
-task: service-create-repo-modulepath
+task: service-edit-project-multiselect
 operation: assess
 impacts:
   - type: reference
     target: knowledge/code-map/project-service-repositories.md
-    reason: 本次只修订新增服务表单的代码位置表达，登记模型（repositoryId + modulePath）不变，地图描述仍然成立。
+    reason: 地图只说明服务新增表单仍为单项目归属；本次只把服务编辑改为多选，不改变新增流程、关系模型或代码定位。
     status: aligned
     sourceIdentities:
-      - services/buildr-web/src/features/service/components/ServiceCreateDrawer.tsx
-      - services/buildr/src/modules/workspace/application/asset-relationships-application.ts
+      - services/buildr-web/src/features/workspace/components/AssetEditDrawer.tsx
+      - services/buildr-web/src/features/workspace/components/ServiceCreateDrawer.tsx
+      - openspec/changes/service-edit-project-multiselect/specs/workspace-asset-management-interactions/spec.md
   - type: reference
-    target: knowledge/docs/glossary.md
-    reason: 术语定义本来就是"引用一个代码库实例并以 modulePath 定位代码"，与表单修订后的可达路径一致。
+    target: knowledge/archify/flows/project-service-repositories.json
+    reason: 关系图表达项目、服务与代码库的共享关系，不表达编辑控件；多对多与多对一关系均未改变。
     status: aligned
     sourceIdentities:
-      - services/buildr-web/src/features/service/components/ServiceCreateDrawer.tsx
+      - openspec/specs/workspace-asset-relationships/spec.md
+      - services/buildr/src/modules/workspace/domain/asset-relationships.ts
   - type: reference
-    target: knowledge/docs/architecture/buildr-data-design.md
-    reason: 数据设计文档只描述全局登记模型，不表达表单字段组合，不受交互修订影响。
+    target: knowledge/docs/architecture/project-service-repositories.md
+    reason: 文章解释对象关系和代码位置，不描述服务编辑抽屉的项目选择控件；本次没有长期事实变化。
     status: aligned
     sourceIdentities:
-      - services/buildr-web/src/features/service/components/ServiceCreateDrawer.tsx
+      - services/buildr/src/modules/workspace/domain/asset-relationships.ts
 unresolvedItems: []
