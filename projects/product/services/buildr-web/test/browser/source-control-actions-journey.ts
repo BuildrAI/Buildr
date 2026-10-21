@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { codeRepositoryLabel } from '../../src/features/code/code-source-labels.ts';
+import { selectSourceControlView } from './source-control-view-controls.ts';
 
 /** Model protocol is an external collaborator; catalog, exact context and Git writes use production HTTP. */
 export async function runSourceControlActionsJourney({t, page, workspaceUrl, capture, fixture, scenario = (name: string, action: () => Promise<void>) => t.test(name, action)}: any) {
@@ -120,7 +121,7 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
         await page.waitForFunction(() => (document.querySelector('#commit-message-text')?.getBoundingClientRect().height || 100) <= 40);
         await assertCommitSplit(panel);
         assert.equal(branches.observe(branches.location).head, result.commit.hash); assert.equal(branches.observe(branches.location).status, ''); assert.deepEqual(branches.otherPositions(branches.location), otherPositions);
-        await root().locator('.source-control-browse-tabs').getByText('提交历史', {exact: true}).click(); await root().getByText('feat: 用户修改生成说明后提交', {exact: true}).waitFor();
+        await selectSourceControlView(root(), 'history'); await root().getByText('feat: 用户修改生成说明后提交', {exact: true}).waitFor();
         await capture(page, 'source-control-real-agent-message-commit.png');
       } finally {await protocol.dispose();}
     });

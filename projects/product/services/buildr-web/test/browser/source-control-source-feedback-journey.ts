@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {assertEditorText, editorPosition, editorScroll} from './code-editor-assertions.ts';
 import { codeRepositoryCode, codeRepositoryLabel } from '../../src/features/code/code-source-labels.ts';
+import { selectSourceControlView } from './source-control-view-controls.ts';
 
 /** Successes use actual checkout/catalog data; only the exact status/watch failures are injected. */
 export async function runSourceControlSourceFeedbackJourney({t,page,workspaceUrl,capture,fixture,expectedBrowserErrors,scenario=(name:string,action:()=>Promise<void>)=>t.test(name,action)}:any) {
@@ -133,7 +134,7 @@ export async function runSourceControlSourceFeedbackJourney({t,page,workspaceUrl
         }finally{page.off('request',observe);}
 
         await navigate('source-control');await currentSource(repository.id,worktree.worktreeId);
-        await scm().locator('.source-control-browse-tabs').getByText('未提交变更',{exact:true}).click();
+        await selectSourceControlView(scm(), 'changes');
         await scm().locator('[data-change-worktree="'+worktree.worktreeId+'"] [data-change-area="unstaged"] .task-changed-row').filter({has:page.locator('.task-changed-path[data-file-path="'+branches.liveRefresh.path+'"]')}).click();
         const comparison=scm().locator('.file-diff-editor:visible');await comparison.waitFor();const comparisonId=await comparison.getAttribute('data-file-id');assert.equal(comparisonId,fileId);
         const matchesDiff=(url:URL)=>url.pathname===operation('diff')&&url.searchParams.get('repositoryId')===repository.id&&url.searchParams.get('worktreeId')===worktree.worktreeId&&url.searchParams.get('filePath')===branches.liveRefresh.path;

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { selectSourceControlView } from './source-control-view-controls.ts';
 
 /** Only the host's disposable checkout is prepared here; user edits use real HTTP. */
 function prepareFiles(branches: any) {
@@ -74,7 +75,7 @@ export async function runSourceControlEditableDiffJourney({t, page, workspaceUrl
     if (await fold.getAttribute('aria-expanded') === 'false') await fold.click();
     await beforeSelection?.();
     await parent.locator('[data-source-worktree="' + tree.worktreeId + '"] .source-control-repository-copy').click();
-    await root().locator('.source-control-browse-tabs').getByText('未提交变更', {exact: true}).click();
+    await selectSourceControlView(root(), 'changes');
     const file = (area: string, filePath: string) => root().locator('[data-change-worktree="' + tree.worktreeId + '"] [data-change-area="' + area + '"] .task-changed-row')
       .filter({has: page.locator('.task-changed-path[data-file-path="' + filePath + '"]')});
     return {repository, tree, file};
@@ -226,7 +227,7 @@ export async function runSourceControlEditableDiffJourney({t, page, workspaceUrl
 
       await file('staged', files.changedPath).click(); await assertReadOnly();
       await root().getByRole('region', {name: '差异内容', exact: true}).getByText('editableLine3 = 103', {exact: false}).waitFor();
-      await root().locator('.source-control-browse-tabs').getByText('提交历史', {exact: true}).click();
+      await selectSourceControlView(root(), 'history');
       const commit = root().locator('.source-control-graph > li[data-source-commit="' + files.commitHash + '"]'); await commit.waitFor();
       const toggle = commit.locator('.source-control-commit-toggle'); if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
       await commit.locator('.source-control-commit-children .task-changed-row').filter({has: page.locator('.task-changed-path[data-file-path="' + files.changedPath + '"]')}).click();
@@ -241,7 +242,7 @@ export async function runSourceControlEditableDiffJourney({t, page, workspaceUrl
       await editor.press('ControlOrMeta+Shift+z'); await waitForDisk(files.absolute, restored);
       await explorer.getByRole('button', {name: '返回源代码管理', exact: true}).click();
       await root().getByRole('button', {name: '返回差异', exact: true}).click();
-      await root().locator('.source-control-browse-tabs').getByText('未提交变更', {exact: true}).click();
+      await selectSourceControlView(root(), 'changes');
       await file('untracked', files.newPath).click(); await pane().waitFor();
       await restore().click(); await waitForDisk(files.newAbsolute, '');
       assert.equal(fs.existsSync(files.newAbsolute), true, '未跟踪全部恢复为空正文，文件对象仍存在');

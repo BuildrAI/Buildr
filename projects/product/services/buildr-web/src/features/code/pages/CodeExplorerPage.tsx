@@ -128,7 +128,7 @@ export function CodeExplorerPage() {
       <div className="code-file-tabstrip">
         <ObjectTabStrip panelId={panelId} className="code-open-files" label="打开的文件" tabs={fileTabs} active={active?.key} onActivate={key=>{const tab=state.tabs.find(item=>item.key===key);if(tab)state.activate(tab);}} onClose={state.close} />
         {returnTarget&&<Button size="small" type="text" onClick={returnToSource}>{returnTarget.label}</Button>}
-        <ReadingToggle className="code-reading-toggle" expanded={treeHidden} onToggle={()=>setTreeHidden(value=>!value)} />
+        {(state.tabs.length > 0 || treeHidden) && <ReadingToggle iconOnly className="code-reading-toggle" expanded={treeHidden} onToggle={()=>setTreeHidden(value=>!value)} />}
       </div>
       {state.catalogError&&<Alert type="warning" message={state.catalogError} action={<Button onClick={()=>void state.refreshCatalog().catch(error=>message.error(String(error)))}>重试</Button>} />}
       {active&&!inScope&&<div className="code-range-outside">当前文件不在筛选范围内。<Button type="link" size="small" onClick={includeActive}>加入范围</Button></div>}

@@ -231,6 +231,7 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     await search('README.md');await fileResult('projects/demo/services/api/README.md').click();await read.markdown('Explorer document');
     const files=page.locator('.code-open-files.pane-tabstrip[role="tablist"]');await files.waitFor();
     assert.equal(await files.getAttribute('aria-label'),'打开的文件');assert.equal(await files.locator('.pane-tab').count(),2);assert.equal(await files.locator('.pane-tab.on').count(),1);
+    assert.equal((await page.locator('.code-tree-pane-title').innerText()).trim(),'目录','左栏标题不再重复资源管理器页面名称');
     const headerGeometry=await page.locator('.code-explorer-stage').evaluate((el:HTMLElement)=>{
       const tabs=el.querySelector('.code-file-tabstrip')!.getBoundingClientRect(),tree=el.querySelector('.code-tree-pane-title')!.getBoundingClientRect(),marker=el.querySelector('.global-source-divider > .split-divider-header-marker')!.getBoundingClientRect();
       return {tabsHeight:tabs.height,treeHeight:tree.height,topGap:Math.abs(tabs.top-tree.top),markerHeight:marker.height,markerTop:marker.top-tree.top};
@@ -391,7 +392,7 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     assert.equal(await page.locator('.code-tree-coverage').count(),0);const count=await page.locator('.repository-search-result').count();
     const divider=page.getByRole('separator',{name:'调整资源管理器宽度'}),width=await divider.getAttribute('aria-valuenow');
     await read.line(2);const top=await editorScroll(page,400);assert.ok(top>300,'真实编辑器承担长源码的滚动');
-    const toggle=page.getByRole('button',{name:'展开阅读',exact:true});const toggleBox=await toggle.boundingBox(),readerBox=await page.locator('.code-file-stage').boundingBox();assert.ok(toggleBox.x>readerBox.x+readerBox.width-150);
+    const toggle=page.getByRole('button',{name:'展开阅读',exact:true});const toggleBox=await toggle.boundingBox(),readerBox=await page.locator('.code-file-stage').boundingBox();assert.ok(toggleBox.x>readerBox.x+readerBox.width-150);assert.equal((await toggle.innerText()).trim(),'','展开阅读只显示图标');
     await toggle.click();await page.getByRole('complementary',{name:'资源管理器文件树',exact:true}).waitFor({state:'hidden'});await capture(page,'code-expanded-reading.png');
     await page.getByRole('button',{name:'恢复分屏',exact:true}).click();assert.equal(await divider.getAttribute('aria-valuenow'),width);assert.equal(await page.getByRole('textbox',{name:'搜索文件',exact:true}).inputValue(),'registerApplicationDoctor');assert.equal(await page.locator('.repository-search-result').count(),count);assert.equal(await editorScroll(page),top);await capture(page,'code-restored-reading.png');
     const beforeMenuPosition=await editorPosition(page),codeUrl=page.url(),workspaceMenu=page.locator('.top-nav [data-area="workspace"]'),workspaceTarget=await workspaceMenu.getAttribute('href');assert.ok(workspaceTarget);

@@ -24,7 +24,7 @@ export function CodeTreePane({ hidden, onHost, storageKey }: Props) {
     };
   }, [dragging]);
   return <aside hidden={hidden} className={'global-source-dock' + (dragging ? ' is-resizing' : '')} style={{ width, flexBasis: width }} aria-label="资源管理器文件树" data-prototype-position="explorer-tree-pane">
-    <div className="global-source-sidebar"><header className="code-tree-pane-title">资源管理器</header><div className="code-tree-host" ref={onHost} /></div>
+    <div className="global-source-sidebar"><header className="code-tree-pane-title">目录</header><div className="code-tree-host" ref={onHost} /></div>
     <SplitDivider className="global-source-divider" children={<span className="split-divider-header-marker" aria-hidden="true" />} aria-label="调整资源管理器宽度" aria-orientation="vertical" aria-valuemin={240} aria-valuemax={420} aria-valuenow={width}
       onPointerDown={event => { event.preventDefault(); origin.current = { x: event.clientX, width }; setDragging(true); }}
       onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); setWidth(value => Math.max(240, Math.min(420, value + (event.key === 'ArrowRight' ? 16 : -16)))); } }}

@@ -1,11 +1,9 @@
-import { useContext, useEffect, useId, useMemo, useState } from 'react';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import { App, Button, Dropdown } from 'antd';
 import { CloudDownloadOutlined, MoreOutlined, SyncOutlined } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppShell } from '../../../app/AppShellContext';
 import { WorkspaceViewActiveContext } from '../../../app/pageTabs';
-import { tabElementId } from '../../../lib/tab-navigation';
-import { ObjectTabStrip } from '../../../components/ObjectTabStrip';
 import { workspaceHref } from '../../../lib/labels';
 import { SourceControlWorkbench } from '../components/SourceControlWorkbench';
 import { codeReturnTarget } from '../code-navigation';
@@ -23,7 +21,6 @@ import { orderCodeRepositories } from '../code-repository-order';
 import { sourceControlRepositoryHasChanges, type SourceControlFileTarget, type SourceControlScene } from '../source-control-model';
 
 export function CodeSourceControlPage() {
-  const panelId = useId();
   const viewActive = useContext(WorkspaceViewActiveContext);
   const [catalogMenuOpen, setCatalogMenuOpen] = useState(false);
   const {workspaceId, workspace, setBreadcrumbParts} = useAppShell();
@@ -54,8 +51,6 @@ export function CodeSourceControlPage() {
   };
   return <div className="code-source-control-page">
     <SourceControlOperationNotices workspaceId={workspaceId || ''} repositories={observation.repositories} fetchResults={fetchActions.feedback} syncResults={syncActions.results} onViewChanges={(repositoryId, worktreeId) => branches.viewChanges?.(repositoryId, worktreeId)} />
-    <ObjectTabStrip panelId={panelId} className="code-source-control-tab" tabs={[{key: 'source-control', kind: 'svc', title: '源代码管理'}]} active="source-control" closable={false} onActivate={() => {}} />
-    <div className="object-tab-panel" id={panelId} role="tabpanel" aria-labelledby={tabElementId(panelId, 'source-control')} tabIndex={0}>
     <SourceControlWorkbench sourceEntryKey={entry ? workspaceId+':'+(entry.nonce||location.key) : undefined} currentSourceSelection={currentSource.selection ? {key:workspaceId+':'+currentSource.selection.sequence,targets:currentSource.selection.targets,preferredTarget:currentSource.selection.preferredTarget} : undefined} onCurrentSourceSelect={(target:CodeSourceTarget)=>currentSource.select('source-control',[target],target)} active={viewActive} repositories={repositories} defaultRepositories={observation.repositories} reader={observation.reader} readKey={observation.readKey}
       editableWorkspaceId={workspaceId || undefined}
       observation={observation.observation} onRefresh={observation.refresh} onRetry={observation.refresh}
@@ -72,6 +67,5 @@ export function CodeSourceControlPage() {
       scopeSelection={entry && observation.selection ? {...observation.selection, key: workspaceId + ':' + (entry.nonce || location.key)} : undefined}
       renderChangeActions={(repository, worktree, active) => workspaceId ? <SourceControlCommitPanel active={active} workspaceId={workspaceId} repository={repository} worktree={worktree} actions={actions} version={repository.readVersion || ''} /> : null}
       onViewCurrent={openCurrent} branchExtension={branches} layoutStorageKey={'buildr:source-control:' + workspaceId} />
-    </div>
   </div>;
 }

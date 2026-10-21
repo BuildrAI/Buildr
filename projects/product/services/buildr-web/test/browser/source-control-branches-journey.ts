@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { codeRepositoryLabel } from '../../src/features/code/code-source-labels.ts';
+import { selectSourceControlView } from './source-control-view-controls.ts';
 
 /** Real branch data and physical snapshots are supplied by the isolated host. */
 export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, capture, fixture, expectedBrowserErrors, scenario = (name: string, action: () => Promise<void>) => t.test(name, action) }: any) {
@@ -43,7 +44,7 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
     const fold = root().locator('[data-source-repository="' + repository.id + '"] > .source-control-repository .source-control-repository-fold');
     if (await fold.getAttribute('aria-expanded') === 'false') await fold.click();
     await row(worktree).locator('.source-control-repository-copy').click();
-    await root().locator('.source-control-browse-tabs').getByText('提交历史', { exact: true }).click();
+    await selectSourceControlView(root(), 'history');
     await commit(branches.tip).waitFor();
     return { worktree, main };
   };
@@ -343,7 +344,7 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
     await fixture.withBranches(async (branches: any) => {
       await page.setViewportSize({width:1440, height:1000});
       const {worktree} = await open(branches);
-      await root().locator('.source-control-browse-tabs').getByText('未提交变更', {exact:true}).click();
+      await selectSourceControlView(root(), 'changes');
       const retainedFile = () => root().locator('.source-control-change-area .task-changed-row').filter({has:page.locator('.task-changed-path[data-file-path="' + branches.keepPath + '"]')});
       await retainedFile().waitFor();
       assert.equal(await row(worktree).locator('.source-control-status-count[data-status-kind="files"]').innerText(), '1', '切换前确实存在旧分支的已读文件数量');
