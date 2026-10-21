@@ -77,6 +77,44 @@ test('root evidence still discovers retired sources and refuses duplicate record
   fs.rmSync(duplicate); assert.equal(reading.read('retired-task')?.evidence.repositories.length, 2);
 });
 
+test('filesystem enumeration lists stored evidence without spawning Git', t => {
+  const f = fixture(t);
+  f.write('task-one'); f.write('task-two', path.join(f.root, 'trees', 'task-two'), f.service);
+  const original = childProcess.spawnSync;
+  let gitCalls = 0;
+  const capture = t.mock.method(childProcess, 'spawnSync', (file: any, args: any, options: any) => { if (file === 'git') gitCalls += 1; return original(file, args, options); });
+  syncBuiltinESMExports();
+  try {
+    const listed = f.provider.listGitWorktreeEvidence(f.root);
+    assert.deepEqual(listed.map(item => item.evidence.taskId).sort(), ['task-one', 'task-two']);
+    const retired = path.join(f.service, '.git', 'buildr', 'task-worktrees', 'task-two.json');
+    assert.throws(() => { fs.mkdirSync(path.dirname(retired), { recursive: true }); fs.copyFileSync(listed.find(item => item.evidence.taskId === 'task-two')!.file, retired); f.provider.listGitWorktreeEvidence(f.root); }, (error: unknown) => error instanceof Error && Reflect.get(error, 'code') === 'git_worktree_evidence_conflict');
+  } finally { capture.mock.restore(); syncBuiltinESMExports(); }
+  assert.equal(gitCalls, 0);
+});
+
+test('filesystem checkout probe accepts only recorded linked worktrees on their recorded branch', t => {
+  const f = fixture(t);
+  const checkout = path.join(f.root, 'trees', 'topic');
+  f.git(f.root, 'worktree', 'add', '-b', 'task/topic', checkout);
+  const record = { sourceRepository: f.root, checkoutPath: checkout, branch: 'task/topic' };
+  assert.equal(f.provider.probeGitWorktreeCheckoutFs(record), true);
+  assert.equal(f.provider.probeGitWorktreeCheckoutFs({ ...record, branch: 'other' }), false);
+  assert.equal(f.provider.probeGitWorktreeCheckoutFs({ ...record, sourceRepository: f.service }), false);
+  assert.equal(f.provider.probeGitWorktreeCheckoutFs({ ...record, checkoutPath: f.root }), false);
+  const moved = checkout + '.moved';
+  fs.renameSync(checkout, moved);
+  assert.equal(f.provider.probeGitWorktreeCheckoutFs(record), false);
+  fs.renameSync(moved, checkout);
+  const gitdir = fs.readFileSync(path.join(checkout, '.git'), 'utf8').replace(/^gitdir:[ \t]*/m, '').trim();
+  fs.renameSync(path.join(checkout, '.git'), path.join(checkout, '.git.held'));
+  assert.equal(f.provider.probeGitWorktreeCheckoutFs(record), false);
+  fs.renameSync(path.join(checkout, '.git.held'), path.join(checkout, '.git'));
+  assert.equal(f.provider.probeGitWorktreeCheckoutFs(record), true);
+  fs.writeFileSync(path.join(gitdir, 'HEAD'), 'ref: refs/heads/hijacked\n');
+  assert.equal(f.provider.probeGitWorktreeCheckoutFs(record), false);
+});
+
 test('SCM associations share the provider reader and strict discovery gaps never assert uniqueness', t => {
   const f = fixture(t), checkout = path.join(f.root, 'topic'); fs.mkdirSync(checkout); f.write('topic', checkout);
   const member = { worktreeId: 'checkout-' + 'a'.repeat(64), name: 'topic', location: checkout, isMain: false, isRegistered: false, branch: 'topic', head: null, available: true };

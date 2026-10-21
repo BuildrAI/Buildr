@@ -2,12 +2,17 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { publicationError } from '../domain/publication.ts';
-import { listPublicationAssets, publicationAsset, publicPublication, readPublicationEntries, safePublicationPath, type PublicationScope, type PublicationRecord } from '../persistence/publication-repository.ts';
+import { inside, listPublicationAssets, publicationAsset, publicPublication, readPublicationEntries, safePublicationPath, type PublicationScope, type PublicationRecord } from '../persistence/publication-repository.ts';
 
 type SourceTask = { id: string; title: string };
+type EvidenceRepository = { selector: string; entityType: string; sourcePath: string; sourceRepository: string; checkoutPath: string; branch: string; state: string };
+type WorktreeEvidence = { taskId: string; repositories: EvidenceRepository[] };
 type Dependencies = {
   taskQuery: { readTask(root: string, id: string): { record: { title: string; scope: { projects: string[]; services: Array<{ project: string }> }; changes: Array<{ project: string }> } } };
-  worktreeQuery: { gitWorktreeEvidenceDirectories(root: string): string[] };
+  worktreeQuery: {
+    listGitWorktreeEvidence(root: string): Array<{ file: string; evidence: WorktreeEvidence }>;
+    probeGitWorktreeCheckoutFs(record: { sourceRepository: string; checkoutPath: string; branch: string }): boolean;
+  };
   materialsQuery: { resolveTaskProjectDocument(root: string, task: string, project: string, file: string): { root: string; path: string; provenance: string } };
 };
 type Diagnostic = { projectCode: string; code: string; message: string; taskId?: string };
@@ -53,33 +58,77 @@ export function createPublicationWorktreeReader(dependencies: Dependencies, reta
     }
     return true;
   }
-  function list(root: string, projectCode?: string) {
-    const publications: ReturnType<typeof publicPublication>[] = [], diagnostics: Diagnostic[] = [];
-    const taskIds = new Set<string>();
-    try {
-      for (const directory of worktreeQuery.gitWorktreeEvidenceDirectories(root)) {
-        if (!fs.existsSync(directory)) continue;
-        if (fs.lstatSync(directory).isSymbolicLink()) throw publicationError('publication_worktree_unavailable', '工作树登记目录不可读取。', 409);
-        for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-          if (entry.isFile() && /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?\.json$/.test(entry.name)) taskIds.add(entry.name.slice(0, -5));
+  /**
+   * Evidence-recorded project source for list discovery. Resolution follows the
+   * selector precedence of resolveTaskProjectDocument: direct project evidence,
+   * then the workspace checkout, then a covering service checkout. A recorded
+   * source whose checkout fails the filesystem probe reports a local diagnostic;
+   * a project with no recorded source yields no candidate and no retained copy.
+   */
+  function candidateScope(root: string, evidence: WorktreeEvidence, project: string, retained: PublicationScope): { scope: PublicationScope } | { diagnostic: { code: string; message: string } } | null {
+    const retainedProjectRoot = path.dirname(path.dirname(retained.root));
+    const drifted = () => ({ diagnostic: { code: 'publication_worktree_unavailable', message: '登记的工作树检出已变化，草稿暂不列入。' } });
+    let record: EvidenceRepository | null = evidence.repositories.find(item => item.selector === `project:${project}`) || null;
+    if (record && record.sourcePath !== path.relative(path.resolve(root), retainedProjectRoot).split(path.sep).join('/')) return drifted();
+    // boundary mirrors resolveTaskProjectDocument: workspaceRoot stays the project or
+    // service checkout root so the observed revision matches the fully verified paths.
+    let boundary = record ? record.checkoutPath : null;
+    let base = record ? record.checkoutPath : null;
+    if (!record) {
+      const workspace = evidence.repositories.find(item => item.selector === 'workspace' && item.sourcePath === '.');
+      if (workspace) {
+        const candidate = path.resolve(workspace.checkoutPath, path.relative(path.resolve(root), retainedProjectRoot));
+        if (inside(workspace.checkoutPath, candidate)) {
+          record = workspace;
+          boundary = candidate;
+          base = candidate;
         }
       }
+      if (!record) {
+        const service = evidence.repositories
+          .filter(item => item.selector.startsWith(`service:${project}/`) && item.sourcePath && inside(path.resolve(root, item.sourcePath), retainedProjectRoot))
+          .sort((left, right) => right.sourcePath.length - left.sourcePath.length)[0];
+        if (!service) return null;
+        record = service;
+        boundary = service.checkoutPath;
+        // scope.root maps the retained publications directory itself, not its parent.
+        base = path.dirname(path.resolve(service.checkoutPath, path.relative(path.resolve(root, service.sourcePath), retained.root)));
+      }
+    }
+    if (!worktreeQuery.probeGitWorktreeCheckoutFs(record)) return drifted();
+    return { scope: { ...retained, workspaceRoot: boundary!, root: path.join(base!, 'docs', 'publications') } };
+  }
+
+  function list(root: string, projectCode?: string) {
+    const publications: ReturnType<typeof publicPublication>[] = [], diagnostics: Diagnostic[] = [];
+    let evidences: WorktreeEvidence[] = [];
+    try {
+      evidences = worktreeQuery.listGitWorktreeEvidence(root).map(item => item.evidence);
     } catch (error: any) {
       diagnostics.push({ projectCode: projectCode || '*', code: error.code || 'publication_worktree_unavailable', message: '部分工作树草稿来源暂时无法发现。' });
     }
     const baselines = new Map<string, { scope: PublicationScope; articles: Map<string, PublicationRecord> }>();
-    for (const taskId of taskIds) {
+    for (const evidence of evidences) {
+      const taskId = evidence.taskId;
       try {
         const { record } = taskQuery.readTask(root, taskId);
         const projects = new Set([...record.scope.projects, ...record.scope.services.map(item => item.project), ...record.changes.map(item => item.project)]);
         for (const project of projects) {
           if (projectCode && project !== projectCode) continue;
           try {
-            const { scope } = taskScope(root, taskId, project, { id: taskId, title: record.title });
+            const retained = retainedScope(root, project);
+            const candidateScopeResult = candidateScope(root, evidence, project, retained);
+            if (!candidateScopeResult) continue;
+            if ('diagnostic' in candidateScopeResult) {
+              const { code, message } = candidateScopeResult.diagnostic;
+              diagnostics.push({ projectCode: project, taskId, code, message });
+              continue;
+            }
+            const { scope } = candidateScopeResult;
+            safePublicationPath(scope, scope.root);
             let baseline = baselines.get(project);
             if (!baseline) {
-              const baseScope = retainedScope(root, project);
-              baseline = { scope: baseScope, articles: new Map(readPublicationEntries(baseScope).map(article => [article.id, article])) };
+              baseline = { scope: retained, articles: new Map(readPublicationEntries(retained).map(article => [article.id, article])) };
               baselines.set(project, baseline);
             }
             const errors: { code: string; message: string }[] = [];
@@ -89,8 +138,7 @@ export function createPublicationWorktreeReader(dependencies: Dependencies, reta
             }
             diagnostics.push(...errors.map(error => ({ ...error, projectCode: project, taskId })));
           } catch (error: any) {
-            // Service-only groups may have no project article root; no unrelated retained copy is substituted.
-            if (error.code !== 'publication_worktree_unavailable') diagnostics.push({ projectCode: project, taskId, code: error.code || 'publication_worktree_unavailable', message: `${record.title}：工作树草稿暂时不可读取。` });
+            diagnostics.push({ projectCode: project, taskId, code: error.code || 'publication_worktree_unavailable', message: `${record.title}：工作树草稿暂时不可读取。` });
           }
         }
       } catch (error: any) {

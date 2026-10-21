@@ -21,8 +21,15 @@ function fixture(t: { after(action: () => void): void }) {
     if (!tasks.includes(id)) throw Object.assign(new Error('task missing'), { code: 'task_record_not_found' });
     return { record: { taskId: id, title: `来源 ${id}`, status: 'completed', scope: { projects: ['app'], services: [] }, changes: [] } };
   } };
-  let available = true, checkoutRoot = path.join(root, 'trees');
-  const worktreeQuery = { gitWorktreeEvidenceDirectories: () => [evidence], inspectGitWorktrees: ({ taskId }: { taskId: string }) => ({ status: 'ready', repositories: [{ selector: 'workspace', entityType: 'workspace', sourcePath: '.', checkoutPath: path.join(checkoutRoot, taskId), state: available ? 'ready' : 'missing' }] }) };
+  let available = true, checkoutRoot = path.join(root, 'trees'), inspectCalls = 0;
+  const worktreeQuery = {
+    inspectGitWorktrees: ({ taskId }: { taskId: string }) => { inspectCalls += 1; return { status: 'ready', repositories: [{ selector: 'workspace', entityType: 'workspace', sourcePath: '.', checkoutPath: path.join(checkoutRoot, taskId), state: available ? 'ready' : 'missing' }] }; },
+    listGitWorktreeEvidence: () => (fs.existsSync(evidence) ? fs.readdirSync(evidence) : []).filter(name => name.endsWith('.json')).map(name => ({
+      file: path.join(evidence, name),
+      evidence: { taskId: name.slice(0, -5), repositories: [{ selector: 'workspace', entityType: 'workspace', sourcePath: '.', sourceRepository: root, checkoutPath: path.join(checkoutRoot, name.slice(0, -5)), branch: `task/${name.slice(0, -5)}`, state: 'ready' }] },
+    })),
+    probeGitWorktreeCheckoutFs: () => available,
+  };
   const materialsQuery = createTaskProjectDocumentReader(taskQuery, projectQuery, worktreeQuery);
   const runtime: any = {};
   registerWorkspaceInfrastructure(runtime);
@@ -32,7 +39,7 @@ function fixture(t: { after(action: () => void): void }) {
     const directory = folder(task); fs.mkdirSync(path.join(directory, 'assets'), { recursive: true });
     fs.writeFileSync(path.join(directory, `${id}.md`), `---\nid: ${id}\ntitle: ${id}\nstatus: published\ntargets:\n  - platform: buildr-web\n    status: published\n---\n${content}\n`);
   };
-  return { root, runtime, folder, write, setAvailable: (next: boolean) => { available = next; }, setCheckoutRoot: (next: string) => { checkoutRoot = next; } };
+  return { root, runtime, folder, write, inspectCalls: () => inspectCalls, setAvailable: (next: boolean) => { available = next; }, setCheckoutRoot: (next: string) => { checkoutRoot = next; } };
 }
 
 test('文章聚合完成任务的新稿、多来源修改，排除正文与图片均相同的副本', t => {
@@ -43,6 +50,7 @@ test('文章聚合完成任务的新稿、多来源修改，排除正文与图�
   f.write('same', '第一任务', 'finished'); f.write('same', '第二任务', 'other'); f.write('new', '新文章', 'finished');
   const list = f.runtime.listPublications(f.root);
   assert.equal(list.publications.length, 5);
+  assert.equal(f.inspectCalls(), 0);
   const drafts = list.publications.filter((article: any) => article.sourceTask);
   assert.equal(drafts.length, 3);
   assert.deepEqual(new Set(drafts.map((article: any) => article.sourceTask.id)), new Set(['finished', 'other']));
