@@ -9,6 +9,7 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
+    "types": ["node"],
     "noEmit": true,
     "strict": true,
     "noUnusedLocals": true,
