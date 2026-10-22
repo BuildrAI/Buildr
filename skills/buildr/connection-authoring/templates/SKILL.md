@@ -12,7 +12,7 @@ connectionDefinitions: [assets/connection.yml]
 
 按 [命令与结果](references/commands-and-results.md) 执行无认证离线检查，或使用虚构实例经 Buildr 运行只读测试和发现。帮助使用 `buildr connection-skill help --connection <id> --program cli`；真实专业操作实现后通过通用 `run` 将专业参数交给所选程序。
 
-接入 CI/CD 时保留 `deploy` 程序与 `scripts/deployment-adapter.mjs`，按 [命令与结果](references/commands-and-results.md) 的部署适配器契约实现远端分支发现与提交：服务运行与部署（Service Runtime & Deployment）直接用该程序提交 QA 及用户自定义环境部署，无需 Buildr 侧改动。非 CI/CD 接入删除这两处，不保留未实现的部署程序。
+需要持续集成与交付（CI/CD）等专业操作时，在声明中增加实际程序并通过通用 `buildr connection-skill run` 调用，按该系统说明对象定位、授权、结果核验和未知结果调查。不依赖服务本地运行模块提供部署入口，不保留未实现的专业程序。
 
 先用 `list`、`get --connection <完整id>` 核对绑定来源、目标范围和用途，运行使用该 `id` 与刚读取的 `revision`。同类或同目标连接有多个同等候选时请用户明确选择，不按列表顺序取第一个。文件名由 Buildr 生成，实际位置取 `sourcePath`，不手拼路径或用文件名选择认证。
 

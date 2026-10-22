@@ -69,19 +69,19 @@
       "type": "skill",
       "id": "connection-authoring",
       "target": "skills/buildr/connection-authoring",
-      "integrity": "sha256-1b27a3177193d0f3f1d19e842e0f22b98dfbdc06624cf64b2720c131daf36800",
+      "integrity": "sha256-e37b790ad147402396033bb1d5028d245dc02a93f5f3233a94ae4032fb4cd1e3",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-12760cc05ec52c89df3cdfa4df32e2e462cc0cb9dc14b944c7e66e2decb6f8a4"
+          "integrity": "sha256-bc7a6352345f56d606387c6c35dbb94abb42d09399c6f8e8517dc7828e06f9e6"
         },
         {
           "path": "references/connection-contract.md",
-          "integrity": "sha256-0576762619d8bbf7cf266e9fe2c0c5cfa9744c054d3747b8cfc367ea393acfab"
+          "integrity": "sha256-eac591e3c008138831a901cd3686f31f90c3454be778a669856478b0eeb7e97b"
         },
         {
           "path": "templates/SKILL.md",
-          "integrity": "sha256-c3ccad0eefe20d054fc11106486faa52cc2eb8fbf54a96111de2452d0d1ccf5f"
+          "integrity": "sha256-e50dd39b74b83f5dcec99dc16628be3a27221b87cea7f984a06e2150b05ca254"
         },
         {
           "path": "templates/client.mjs",
@@ -89,15 +89,11 @@
         },
         {
           "path": "templates/commands-and-results.md",
-          "integrity": "sha256-42818b68031fb9f561bbd47a47562abc6f95ba701df70a5bebb9bbdfe4619d02"
+          "integrity": "sha256-48c5923afd2c3beb5bcd2d19d6c35292ab6c9133c8106c54ce4f82380f2e251d"
         },
         {
           "path": "templates/connection.yml",
-          "integrity": "sha256-365595b05a9510decb2416d6d7ed5b6daf1d4ccc3be36bbc7780fbd44e9eb287"
-        },
-        {
-          "path": "templates/deployment-adapter.mjs",
-          "integrity": "sha256-fa6cbdd7903b70ecfcc94137a43d0e0eb24382bd92f633f661eb6c5f06e8105f"
+          "integrity": "sha256-8522146a481c43a9937eeabdbca76e183b6487146f0cc7342d31af9293a3aee5"
         }
       ]
     },
@@ -465,11 +461,11 @@
       "type": "skill",
       "id": "task-verification",
       "target": "skills/buildr/task-verification",
-      "integrity": "sha256-673f00b1e2dfa92dc25e66a1f040b7d02fbcee6a3fcaecb1c46eae45c171ee3b",
+      "integrity": "sha256-c3e65904c074e61afc0ba583e25d167049303a01131048b2ac762ffa958f9fcf",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-b9811e345fa96385928c9698482984466a274a3dfe6dda858b1aa7d8b181950e"
+          "integrity": "sha256-6dab195569a54580c010520dd83d43e17fb915758fb60d0cf9cc067ad23b7d93"
         },
         {
           "path": "references/frontend-verification.md",

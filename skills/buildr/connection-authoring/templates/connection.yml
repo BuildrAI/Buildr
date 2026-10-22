@@ -21,13 +21,6 @@ programs:
     runtime: node
     entry: scripts/client.mjs
     contextProtocol: buildr.connection-context/v1
-  # CI/CD 接入才需要部署程序：服务运行定义 environments.<env>.program 引用该编号，提交与远端分支发现都经它执行。
-  # 契约见 references/connection-contract.md 的“服务部署适配器”；非 CI/CD 接入删除本段与 scripts/deployment-adapter.mjs。
-  deploy:
-    kind: bundled
-    runtime: node
-    entry: scripts/deployment-adapter.mjs
-    contextProtocol: buildr.connection-context/v1
 hooks:
   test: { program: cli, args: [test], effect: read }
   scopes: { program: cli, args: [discover], effect: read, inputs: [config.website] }
