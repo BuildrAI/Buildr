@@ -78,7 +78,7 @@ test('单库观察绑定repositoryId，获取远程只提交已观察实例身�
     finish(result); assert.equal(await pending, result); unsubscribe();
     assert.equal(requests[1][0], '/api/v1/workspaces/ws%2Fid/code/fetch');
     assert.deepEqual(JSON.parse(requests[1][1].body), input); assert.equal(requests[1][1].signal, undefined);
-    assert.deepEqual(notices.map(({fetchSequences, ...notice}) => notice), [{workspaceId:'ws/id', repositoryId:'a', repositoryIds:['a', 'b'], fetchResults:result.repositories}], '全部获取只通知一次，避免逐库重复严格来源发现');
+    assert.deepEqual(notices.map(({fetchSequences, ...notice}) => notice), [{workspaceId:'ws/id', repositoryId:'a', repositoryIds:['a', 'b'], fetchResults:result.repositories, fetchReadAt:result.readAt}], '全部获取只通知一次，避免逐库重复严格来源发现');
     assert.equal(typeof notices[0].fetchSequences.a, 'number'); assert.equal(notices[0].fetchSequences.a, notices[0].fetchSequences.b);
   } finally {delete globalThis.__branchApi;}
 });
@@ -90,7 +90,7 @@ test('获取请求失联逐库表达未知并重新观察，不重发写入', as
     const result = await codeApi.fetch('original', {repositories:[{repositoryId:'a', expectedGitId:'git-a', expectedCheckoutId:'checkout-a'}]});
     assert.equal(requests, 1); assert.equal(result.repositories[0].status, 'unknown');
     assert.match(result.repositories[0].message, /结果未知/);
-    assert.deepEqual(notices.map(({fetchSequences, ...notice}) => notice), [{workspaceId:'original', repositoryId:'a', repositoryIds:['a'], fetchResults:result.repositories}]);
+    assert.deepEqual(notices.map(({fetchSequences, ...notice}) => notice), [{workspaceId:'original', repositoryId:'a', repositoryIds:['a'], fetchResults:result.repositories, fetchReadAt:result.readAt}]);
   } finally {unsubscribe(); delete globalThis.__branchApi;}
 });
 

@@ -169,6 +169,51 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
   const fetchAll = async () => {await root().getByRole('button', {name:'源代码管理操作菜单', exact:true}).click(); await operationMenu().getByRole('menuitem', {name:'全部获取远程', exact:true}).click();};
 
 
+  await scenario('分支浮层直接获取远程并保留成功时间与失败现场', async () => {
+    await fixture.withBranches(async (branches: any) => {
+      await page.setViewportSize({width:1440,height:1000});
+      const {worktree} = await open(branches);
+      let writes = 0, reads = 0, status = 'succeeded', release = () => {};
+      let gate = new Promise<void>(resolve => {release = resolve;});
+      const observe = (request:any) => {if (new URL(request.url()).pathname.endsWith('/code/branches')) reads++;};
+      const intercept = async (route:any) => {
+        writes++;
+        const input = route.request().postDataJSON();
+        assert.deepEqual(input.repositories.map((entry:any) => entry.repositoryId),[worktree.repositoryId]);
+        await gate;
+        await route.fulfill({json:{readAt:status === 'succeeded' ? '2026-10-22T08:00:00.000Z' : '2026-10-22T09:00:00.000Z',repositories:input.repositories.map((entry:any)=>({repositoryId:entry.repositoryId,gitId:entry.expectedGitId,status,message:status === 'succeeded' ? '已获取' : '部分获取失败',remotes:[{name:'origin',status,message:status === 'succeeded' ? '已获取' : '认证失败'}]}))}});
+      };
+      await page.route('**/code/fetch',intercept);page.on('request',observe);
+      try {
+        const {manager} = await manage(worktree,branches.branch);
+        const button = manager.getByRole('button',{name:'获取远程（Fetch）',exact:true});
+        await button.waitFor({state:'visible'});
+        assert.equal(writes,0,'打开弹层不联网');
+        assert.match(await manager.locator('footer').innerText(),/尚无成功获取记录/);
+        const existing = await manager.locator('.branch-management-entry').count();
+        const read = page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith('/code/branches'));
+        const sent = page.waitForRequest('**/code/fetch');
+        await button.click();await sent;
+        assert.equal(await button.isDisabled(),true);
+        assert.match(await manager.locator('footer').innerText(),/正在获取远程/);
+        const before = reads;release();await read;
+        await page.waitForFunction(()=>document.querySelector('.branch-management-panel footer')?.textContent?.includes('上次获取时间'));
+        assert.equal(writes,1);assert.ok(reads>before,'获取完成即使引用未变化也重读');
+        const time = await manager.locator('footer > span').innerText();
+        assert.equal(await manager.getByRole('button',{name:'重新读取本机分支记录',exact:true}).count(),0);
+        await capture(page,'branch-picker-fetch-success.png');
+        status='failed';gate=Promise.resolve();
+        const failed = page.waitForResponse('**/code/fetch');
+        await button.click();await failed;
+        await manager.getByRole('alert').filter({hasText:'认证失败'}).waitFor();
+        assert.equal(await manager.locator('footer > span').innerText(),time,'失败不覆盖成功时间');
+        assert.equal(await manager.locator('.branch-management-entry').count(),existing,'失败保留已有列表');
+        await capture(page,'branch-picker-fetch-failure.png');
+        await page.keyboard.press('Escape');await page.keyboard.press('Escape');
+      } finally {release();page.off('request',observe);await page.unroute('**/code/fetch',intercept);}
+    });
+  });
+
   await scenario('分支与同名作者组合过滤只读，窄区同排重置恢复当前范围', async () => {
     await fixture.withBranches(async (branches: any) => {
       await page.setViewportSize({ width: 1440, height: 1000 });
@@ -559,8 +604,8 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
           const buttons = [...footer.querySelectorAll('button')].map(button => button.getBoundingClientRect());
           return {contained:buttons.every(button => button.left >= bounds.left && button.right <= bounds.right), distinct:buttons.every((button, index) => buttons.slice(index + 1).every(other => button.right <= other.left || other.right <= button.left || button.bottom <= other.top || other.bottom <= button.top))};
         });
-        assert.deepEqual(geometry, {contained:true, distinct:true}, '窄栏分支底部只读刷新可达');
-        assert.equal(await narrow.manager.getByRole('button', {name:/获取远程/}).count(), 0, '分支浮窗不重复放置获取远程');
+        assert.deepEqual(geometry, {contained:true, distinct:true}, '窄栏分支底部获取远程可达');
+        assert.equal(await narrow.manager.getByRole('button', {name:'获取远程（Fetch）', exact:true}).count(), 1, '分支浮窗直接提供单库获取远程');
         const menu = await openOperations(worktree);
         await menu.getByRole('menuitem', {name:'获取远程', exact:true}).click({trial:true});
         await noOverflow(); await capture(page, 'source-control-fetch-single-260px.png');

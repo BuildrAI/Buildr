@@ -70,7 +70,7 @@ export const codeApi = {
       result = {readAt:new Date().toISOString(), repositories:input.repositories.map(repository => ({repositoryId:repository.repositoryId, gitId:repository.expectedGitId, status:'unknown', message:'获取结果未知，请重新读取核对。' + (error instanceof Error ? ' ' + error.message : ''), remotes:[]}))};
     }
     // An issued Git write outlives the row or page that started it. Never retry it here.
-    if (repositoryIds.length) notifySourceControlChange({workspaceId:id, repositoryId:repositoryIds[0], repositoryIds, fetchResults:result.repositories, fetchSequences});
+    if (repositoryIds.length) notifySourceControlChange({workspaceId:id, repositoryId:repositoryIds[0], repositoryIds, fetchResults:result.repositories, fetchReadAt:result.readAt, fetchSequences});
     return result;
   },
   syncContext:(id:string,input:{repositoryId:string;worktreeId:string})=>request<CodeSyncContextResponse>(id,'sync-context',input),
