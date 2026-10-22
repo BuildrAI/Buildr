@@ -271,6 +271,8 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration-runtime": {
     "inputs": [
+      "src/modules/service-runtime/**",
+      "test/helpers/service-runtime-fixture.ts",
       "src/bootstrap/**",
       "src/web/**",
       "src/modules/workspace/**",

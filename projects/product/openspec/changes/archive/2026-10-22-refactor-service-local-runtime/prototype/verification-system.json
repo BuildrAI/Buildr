@@ -1,0 +1,41 @@
+{
+  "status": "generated",
+  "task": null,
+  "change": null,
+  "location": "temporary-discussion",
+  "version": "system-revision",
+  "files": [
+    {
+      "path": "/private/tmp/buildr-local-runtime-prototype-SLeuvz/index.html",
+      "bytes": 1232392,
+      "sha256": "9485c892e2ea91326beaee4e4a736017efe97e640df03b773b897790de09efec"
+    },
+    {
+      "path": "/private/tmp/buildr-local-runtime-prototype-SLeuvz/local-runtime.html",
+      "bytes": 1310326,
+      "sha256": "f0c509afbca43a4a1e25267774dc49a1e5ef38a68e9d0588c5064a6bc1347c29"
+    }
+  ],
+  "browser": "ChatGPT in-app browser",
+  "viewports": [
+    {
+      "width": 1440,
+      "height": 1000,
+      "entry": "reader"
+    },
+    {
+      "width": 1280,
+      "height": 900,
+      "entry": "standalone"
+    }
+  ],
+  "details": "REVIEW.md",
+  "productionCodeChanged": false,
+  "realServicesStarted": false,
+  "formalTaskReaderVerified": false,
+  "preserved": [
+    "previous-v1",
+    "previous-v2",
+    "previous-v3-minimal"
+  ]
+}

@@ -8,7 +8,7 @@ import { taskMaterialSourceLabel, type TaskMaterialDocument, type TaskMaterialsR
 
 export type TaskStage = NonNullable<TaskWorkContext['stage']>;
 export type TaskNodeStage = 'requirements' | 'design' | 'implementation' | 'closeout';
-export type TaskReadingTab = TaskNodeStage | 'changes';
+export type TaskReadingTab = TaskNodeStage | 'changes' | 'local-runtime';
 export const taskStageLabels: Record<TaskStage, { title: string; english: string; description: string }> = {
   requirements: { title: '任务说明', english: 'Task Brief', description: '任务说明读取任务记录中的 Markdown 正文，intent 只提供一句话目标。' },
   design: { title: '方案设计', english: 'Solution Design', description: '提案说明改什么，设计说明怎么做，规范说明应满足的行为。' },

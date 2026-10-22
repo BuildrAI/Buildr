@@ -2385,10 +2385,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.setViewportSize({ width: 1280, height: 720 });
   });
 
-  if (selected('service')) await t.test('运行与部署状态列、受管启动、日志与 QA 边界使用真实进程', async () => {
-    const service = runtime.assetCatalog(workspaceRoot).services.find((item: any) => item.name === '演示服务');
-    assert.ok(service, '运行与部署旅程需要真实登记的演示服务');
-    await runServiceRuntimeJourney({ page, workspaceRoot, workspaceUrl, service, capture });
+  if (selected('service')) await t.test('本地运行主工作库与任务动线、单项选择、真实连接、日志及新页签', async () => {
+    await runServiceRuntimeJourney({ page, runtime, workspaceRoot, workspaceUrl, expectedBrowserErrors, capture });
   });
 
   if (selected('change')) await t.test('Change 详情展示任务关联事实与 OpenSpec 只读内容', async () => {

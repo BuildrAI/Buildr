@@ -5,7 +5,7 @@ export type ServiceWorktree = {
   main: boolean;
   branch: string | null;
   head: string | null;
-  dirty: boolean;
+  dirty: boolean | null;
   taskId: string | null;
   taskTitle: string | null;
 };

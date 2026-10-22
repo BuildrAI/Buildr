@@ -246,6 +246,25 @@ Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git comm
 
 旧 `buildr connection` 已退役并提示现行入口，旧网页地址跳转到连接目录，旧应用接口返回退役结果。旧数据直接清理，不迁移为团队实例或新个人认证；按需要在现行入口自行建立实例。
 
+## 服务本地运行
+
+服务目录、详情、任务本地验证和命令行接口（CLI）共享本机运行实例。`--target` 指向规范工作空间（Workspace）；代码目录从已观察的服务工作树（Worktree）选择，不接受任意路径。
+
+| 命令 | 用途 |
+| --- | --- |
+| `buildr service-runtime overview --target <workspace> --json` | 全部服务的本地状态；单服务定义与实例使用 `show --service <code>`。 |
+| `buildr service-runtime worktrees --service <code> --target <workspace> --json` | 读取真实目录、主检出或任务归属、分支（Branch）、提交（Commit）和改动。 |
+| `buildr service-runtime start --service <code> --worktree <id> --connection local\|remote --origin agent --target <workspace> --json` | 启动单项并等待就绪；连接二选一，仅对有已验证连接声明的前端生效。 |
+| `buildr service-runtime restart --run <id> --connection local\|remote --target <workspace> --json` | 先核对原实例代码来源和新目标，再重启该前端；目标不可用时保留原前端。 |
+| `buildr service-runtime task-show --task <id> --target <workspace> --json` | 读取任务范围服务、对应目录及实例；不回落主工作库。 |
+| `buildr service-runtime task-start --task <id> --services <code1>,<code2> --connection local\|remote --origin agent --target <workspace> --json` | 只启动或复用明确选中的任务服务，逐项返回结果；一个编码即可独立启动。 |
+| `buildr service-runtime log --run <id> --max-bytes 65536 --target <workspace> --json` | 按运行编号有界读取本机日志。 |
+| `buildr service-runtime stop --run <id> --target <workspace> --json` | 停止准确受管实例，任务停止逐项核对该任务运行编号。 |
+
+任务默认本地后端，主工作库前端默认固定远程测试后端；本地连接只使用同任务或主工作库匹配的唯一已就绪后端及其实际地址。独立前端缺目标时界面禁选；任务同时选中后端时先等待其就绪，不暗中启动未选服务。运行定义缺失时由智能体（Agent）在授权范围实际验证后保存；连接快照和进程就绪均不等于业务验证完成。具体选择、失败接续与定义字段见[服务本地运行指引](../resources/runtime/skills/buildr/references/local-services.md)。
+
+本模块已暂停 QA 部署，`plan`、`deploy` 及对应网页入口移除；旧 `environments` 兼容忽略，用户已有配置、连接及历史不自动删除。独立外部系统操作继续走通用连接程序。
+
 ## 独立 MySQL 查询
 
 通过 `buildr connection-skill definitions list`、`list` 及 `get` 选择准确的内置 `mysql-connection` 实例及当前 `revision`。连接配置与完整认证继续由通用连接入口维护；`buildr-mysql` 随主包安装，只通过私有进程间通信（IPC）执行测试与数据库发现，查询工具使用独立 `buildr mysql-query`。

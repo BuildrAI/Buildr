@@ -1,6 +1,6 @@
 ---
 name: buildr
-description: 安装或更新 Buildr、接入本机智能体、同步工作空间、诊断或维护工作资产、管理外部系统连接、获取任务所需的外部系统信息，以及采用组织工作方式时使用；任务执行使用对应专业技能。
+description: 安装或更新 Buildr、接入本机智能体、同步工作空间、诊断或维护工作资产、启动或停止服务本地运行、管理外部系统连接、获取任务所需的外部系统信息，以及采用组织工作方式时使用；任务执行使用对应专业技能。
 ---
 # Buildr Skill
 
@@ -27,6 +27,7 @@ Agent 是 Buildr 功能的默认操作入口。在用户目标和已有授权内
 | 投射、发现或适配器（Adapter）问题 | 读取 [运行时维护](references/runtime.md)；只检查当前目标运行时（Runtime） |
 | 查看任务、测试或交付事实 | 下方专业入口；只读查看不创建记录，也不补造过去历史 |
 | 查看全部代码库改动、提交历史及对应文件 | [只读代码观察](references/code-observation.md)；按登记实例、比较层与真实版本查看，网页与命令行接口（CLI）共享应用 |
+| 启动、查看或停止本地服务，使用任务代码或主工作库做本地验证 | [服务本地运行](references/local-services.md)；按真实目录选择单个或多个服务，前端单选本地后端或远程测试环境，就绪后继续真实业务验证 |
 | 任务需要外部系统信息，或管理外部系统连接（Connection） | [外部系统连接](references/external-connections.md)；按实际实例来源发现精确绑定及专业技能（Skill），使用 `buildr connection-skill --help`，专业参数以所选程序帮助为准 |
 | 制作组织自有的外部系统接入 | 加载 `connection-authoring`，在 `skills/connections/<skill-id>/` 交付完整技能源、声明及必要程序，复用已有登记和投射；不预定义公司专业命令 |
 | 授权开始或继续持久修改 | `task-triage` 分流并由 `task-manager` 在首次文件写入前登记或接续任务 |

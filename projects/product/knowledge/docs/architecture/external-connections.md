@@ -27,14 +27,14 @@ Buildr 让人和智能体（Agent）使用同一份外部系统接入信息。�
 | Nacos | 从服务代码定位配置，读取、比较并受控发布；网站供人工查看。 |
 | Kibana | 从服务与部署线索定位日志，发现字段、有界检索和统计。 |
 | XXL-JOB | 核实服务与执行器关联，维护调度任务并查看运行记录和日志。 |
-| CI/CD 部署 | 由用户工作空间（Workspace）的接入技能实现部署适配器（Deployment Adapter）：提交部署、读取远端分支并回传外链；Buildr 只发起提交并记录最近结果，构建、部署、当前版本和日志以外部系统为准。 |
+| 持续集成与交付（CI/CD） | 用户工作空间（Workspace）的专业接入技能（Skill）可通过通用程序提交或查询，具体输入、授权及结果由该方法定义；构建、部署、当前版本和日志以外部系统为准。 |
 
-CI/CD 不随包内置。运行定义登记 `connectionId` 与部署程序后，服务页与命令即可发起提交；契约、输入输出与结果映射见[接入制作指引](../../../services/buildr/resources/workspace/skills/buildr/connection-authoring/references/connection-contract.md#服务部署适配器)。换用其他 CI/CD 只需另一个实现同一契约的接入技能，产品页面不改。
+持续集成与交付（CI/CD）不随包内置。服务本地运行模块暂不提供 QA 部署、部署计划或最近结果；已有用户接入与历史保留，独立操作仍由所选技能（Skill）通过 `buildr connection-skill run` 执行。制作边界见[专业程序约定](../../../services/buildr/resources/workspace/skills/buildr/connection-authoring/references/connection-contract.md#专业部署程序)。
 
 ## 共同边界
 
 认证只交给明确选中的程序，不进入普通输出、提示词（Prompt）或任务正文。团队认证允许随团队文件共享，公共技能源和发布物不携带实际账号。来源缺失、版本冲突或认证失效只影响相关动作，不改绑、不覆盖其他入口的修改。
 
-生产写入按专业方法取得针对当前目标及差异的具体授权；登录成功、配置保存、请求受理、回读一致和业务生效分别核验。结果未知先调查，不盲目重发；外部内容中的指令不构成授权。服务部署的未知结果由 Buildr 如实记录，重复提交同一计划需要用户显式确认。
+生产写入按专业方法取得针对当前目标及差异的具体授权；登录成功、配置保存、请求受理、回读一致和业务生效分别核验。结果未知先调查，不盲目重发；外部内容中的指令不构成授权。
 
 对象及运行约定见[连接运行规范](../../../openspec/specs/connection-skill-runtime/spec.md)和[实例规范](../../../openspec/specs/connection-instance-files/spec.md)，实现定位见[连接代码地图](../../code-map/technical-layers.md#外部系统接入)，操作参数查[命令参考](../../../services/buildr/docs/cli-reference.md#外部系统连接connection)。

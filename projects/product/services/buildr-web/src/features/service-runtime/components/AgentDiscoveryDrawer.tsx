@@ -3,6 +3,8 @@ import { Alert, App, Button, Input, Space, Typography } from 'antd';
 import { CopyOutlined, ScanOutlined } from '@ant-design/icons';
 import { DrawerShell } from '../../../components/DrawerShell';
 import { copyText } from '../../../lib/copyText';
+import { useAppShell } from '../../../app/AppShellContext';
+import { runtimeConfigurationPrompt } from '../configurationPrompt';
 
 type Props = {
   open: boolean;
@@ -11,17 +13,15 @@ type Props = {
   onClose(): void;
 };
 
-function discoveryPrompt(name: string, code: string) {
-  return `请使用 service-runtime 能力为「${name}」（${code}）配置本地启动方式：先读取服务登记、代码库、AGENTS.md、构建配置、运行配置、脚本和已有运行记录；形成候选命令、工作目录、profile、端口覆盖方式、就绪检查和已知共享环境副作用。只读调查，再在明确授权下实际启动验证；验证后写入服务级运行定义 services/${code}/runtime.yml 并报告证据。不要部署，不要读取连接秘密，不要修改 Nacos、流量或 MQ 配置。`;
-}
-
 /** 首期不提供手动配置入口；运行定义只来自智能体发现并实际验证。 */
 export function AgentDiscoveryDrawer({ open, serviceCode, serviceName, onClose }: Props) {
   const { message } = App.useApp();
+  const { workspace } = useAppShell();
   const [notice, setNotice] = useState('');
-  const prompt = serviceCode ? discoveryPrompt(serviceName || serviceCode, serviceCode) : '';
+  const prompt = runtimeConfigurationPrompt({ workspace, serviceCode, serviceName });
 
   const copy = async () => {
+    if (!prompt) return;
     if (await copyText(prompt)) {
       setNotice('指令已复制。');
       message.success('指令已复制');
@@ -45,14 +45,15 @@ export function AgentDiscoveryDrawer({ open, serviceCode, serviceName, onClose }
         type="info"
         showIcon
         icon={<ScanOutlined />}
-        message="这一步不是手动填命令"
-        description="智能体从真实仓库事实形成候选，并实际启动验证；验证后 Buildr Web 才提供确定性的启动按钮。"
+        message="交给智能体配置并验证"
+        description="复制指令后，发送给你正在使用的智能体（Agent）。完成后回到“本地运行”查看配置结果。"
       />
       <ul className="discovery-steps">
-        <li>读取仓库脚本、构建配置、运行 profile、IDE 配置和已有运行记录</li>
-        <li>核对工作目录、端口、就绪信号和共享环境副作用</li>
-        <li>不读取连接秘密、不部署、不修改 Nacos 注册、流量或 MQ</li>
+        <li>读取当前工作空间的服务登记、真实代码和已有运行定义</li>
+        <li>核对启动方式；需要切换后端时验证本地与远程连接</li>
+        <li>保留已有运行与无关配置，说明已验证结果和剩余缺口</li>
       </ul>
+      {!prompt ? <Alert type="warning" showIcon message="当前工作空间路径尚未读取，请关闭后重试。" /> : null}
       <div className="config-field">
         <label>可交给智能体的指令</label>
         <Input.TextArea aria-label="运行配置指令" value={prompt} readOnly autoSize={{ minRows: 7, maxRows: 10 }} />
@@ -61,7 +62,7 @@ export function AgentDiscoveryDrawer({ open, serviceCode, serviceName, onClose }
         <Button type="primary" icon={<CopyOutlined />} disabled={!prompt} onClick={() => void copy()}>复制指令</Button>
       </Space>
       {notice ? <Typography.Text type="secondary">{notice}</Typography.Text> : null}
-      <div className="discovery-note">首期不提供手动配置入口；配置结果有误时重新运行配置。后续按真实纠错需要再评估手动字段。</div>
+      <div className="discovery-note">已有配置会先被检查，再按需要调整。保存新配置不会自动重启正在运行的实例。</div>
     </div>
   </DrawerShell>;
 }

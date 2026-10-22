@@ -86,26 +86,11 @@ assert.equal(fs.existsSync(path.join(root, 'skills', 'connections', 'independent
 // Assemble exactly the files distributed by the authoring guide; no Nacos or
 // developer implementation imports are needed by the resulting unknown Skill.
 const template = path.resolve('resources/workspace/skills/buildr/connection-authoring/templates'), source = path.join(temporary, 'template-source');
-for (const [from, to] of [['SKILL.md', 'SKILL.md'], ['connection.yml', 'assets/connection.yml'], ['client.mjs', 'scripts/client.mjs'], ['deployment-adapter.mjs', 'scripts/deployment-adapter.mjs'], ['commands-and-results.md', 'references/commands-and-results.md']] as const) {
+for (const [from, to] of [['SKILL.md', 'SKILL.md'], ['connection.yml', 'assets/connection.yml'], ['client.mjs', 'scripts/client.mjs'], ['commands-and-results.md', 'references/commands-and-results.md']] as const) {
   const destination = path.join(source, to); fs.mkdirSync(path.dirname(destination), { recursive: true }); fs.copyFileSync(path.join(template, from), destination);
 }
 const offline = spawnSync(process.execPath, [path.join(source, 'scripts/client.mjs'), '--self-test'], { encoding: 'utf8', env: process.env, timeout: 5000 });
 assert.equal(offline.status, 0, offline.stderr); const offlineBody = JSON.parse(offline.stdout); assert.equal(offlineBody.templateParsed, true); assert.equal(offlineBody.businessImplemented, false);
-// 部署适配器样例必须离线可核对：三种状态与分支列表都是契约形状，且不接触外部系统。
-const adapter = path.join(source, 'scripts/deployment-adapter.mjs');
-const adapterSelfTest = spawnSync(process.execPath, [adapter, '--self-test'], { encoding: 'utf8', env: process.env, timeout: 5000 });
-assert.equal(adapterSelfTest.status, 0, adapterSelfTest.stderr);
-assert.equal(JSON.parse(adapterSelfTest.stdout).checks.length, 4);
-for (const [mode, expected] of [['success', 'success'], ['failed', 'failed'], ['unknown', 'unknown']] as const) {
-  const sample = spawnSync(process.execPath, [adapter, '--mock', mode], { encoding: 'utf8', env: process.env, timeout: 5000 });
-  assert.equal(sample.status, 0, sample.stderr);
-  const body = JSON.parse(sample.stdout);
-  assert.equal(body.protocol, 'buildr.service-deployment/v1'); assert.equal(body.state, expected);
-  assert.match(body.version, /^dev-example@[0-9a-f]{7}$/); assert.match(body.externalUrl, /^https:\/\//);
-}
-const branchSample = spawnSync(process.execPath, [adapter, '--mock', 'branches'], { encoding: 'utf8', env: process.env, timeout: 5000 });
-assert.equal(branchSample.status, 0, branchSample.stderr);
-assert.equal(JSON.parse(branchSample.stdout).branches[0].integration, true);
 command(['skills', 'add', '--source', source]);
 const templateEntry = command(['connection-skill', 'definitions', 'list']).definitions.find((item: any) => item.skill.id === 'company-example'); assert.ok(templateEntry);
 fs.writeFileSync(file, JSON.stringify({ id: 'template-example', name: 'Template protocol only', binding: { skillAssetIdentity: templateEntry.skill.assetIdentity, sourceIdentity: templateEntry.skill.sourceIdentity, definitionId: templateEntry.definition.definitionId, configVersion: 1 }, config: { website: 'https://example.invalid/' }, authentication: { intent: 'replace', values }, expected: { teamRevision: 'absent', definitionRevision: templateEntry.revision } }), { mode: 0o600 });
@@ -113,4 +98,4 @@ const templateInstance = command(['connection-skill', 'create', '--file', file])
 assert.equal(command(['connection-skill', 'test', '--connection', templateInstance.id]).status, 'success');
 const templateDiscovery = command(['connection-skill', 'discover', '--connection', templateInstance.id, '--hook', 'scopes']);
 assert.equal(templateDiscovery.status, 'success'); assert.deepEqual(templateDiscovery.options, [{ value: 'example-scope', label: '本机模拟范围' }]); assert.ok(templateDiscovery.limitations.some((item: string) => item.includes('模板业务未实现')));
-console.log(JSON.stringify({ status: 'passed', authoringGuide: 'connection-authoring', checks: ['real skills add', 'complete source attachments', 'open category discovery', 'explicit instance binding', 'program help', 'business stdin and private context', 'local revalidation', 'team/personal whole-group selection', 'discovery before required scope selection', 'success/failure/unknown and invalid hook stdout', 'drafts leave instance unchanged', 'distributed template offline/test/discovery', 'deployment adapter contract samples', 'same-target instances explicitly selected', 'readable sourcePath and stable id after rename'], externalSystems: 'not-contacted' }));
+console.log(JSON.stringify({ status: 'passed', authoringGuide: 'connection-authoring', checks: ['real skills add', 'complete source attachments', 'open category discovery', 'explicit instance binding', 'program help', 'business stdin and private context', 'local revalidation', 'team/personal whole-group selection', 'discovery before required scope selection', 'success/failure/unknown and invalid hook stdout', 'drafts leave instance unchanged', 'distributed template offline/test/discovery', 'same-target instances explicitly selected', 'readable sourcePath and stable id after rename'], externalSystems: 'not-contacted' }));

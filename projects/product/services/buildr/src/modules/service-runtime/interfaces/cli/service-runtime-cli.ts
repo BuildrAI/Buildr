@@ -1,79 +1,85 @@
 import path from 'node:path';
-import type { ServiceDeploymentApplication } from '../../application/service-deployment-application.ts';
+import type { ServiceTaskRuntimeApplication } from '../../application/service-task-runtime-application.ts';
 import type { ServiceRuntimeApplication } from '../../application/service-runtime-application.ts';
 import type { ServiceRuntimeView } from '../../application/service-runtime-view.ts';
 
-const FLAGS = ['--target', '--json', '--service', '--worktree', '--run', '--branch', '--commit', '--environment', '--max-bytes', '--acknowledge-unknown'];
-const ACTIONS = ['overview', 'show', 'worktrees', 'start', 'stop', 'log', 'plan', 'deploy'];
-
-export function createServiceRuntimeCliContributions(deps: { view: ServiceRuntimeView; runtime: ServiceRuntimeApplication; deployment: ServiceDeploymentApplication }) {
+const FLAGS = ['--target', '--json', '--service', '--worktree', '--run', '--max-bytes', '--task', '--origin', '--connection', '--services', '--expected-backend-run'];
+const ACTIONS = ['overview', 'show', 'worktrees', 'start', 'restart', 'stop', 'log', 'task-show', 'task-start'];
+export function createServiceRuntimeCliContributions(deps: { view: ServiceRuntimeView; runtime: ServiceRuntimeApplication; taskRuntime?: ServiceTaskRuntimeApplication }) {
   return [Object.freeze({
-    key: 'service-runtime',
-    surface: 'agent-machine',
-    summary: '读取服务运行定义与受管运行，启动或停止本地运行，读取日志，核对并提交 QA 部署。',
+    key: 'service-runtime', surface: 'agent-machine',
+    summary: '查看服务本地运行与代码来源，启动、切换连接或停止指定实例并读取日志。',
     help: [
-      'Usage: buildr service-runtime <overview|show|worktrees|start|stop|log|plan|deploy> [--service <code>] [--worktree <id>] [--run <id>] [--branch <name>] [--commit <sha>] [--environment qa] [--max-bytes <n>] [--acknowledge-unknown] [--target <workspace>] [--json]',
+      'Usage: buildr service-runtime <overview|show|worktrees|start|restart|stop|log|task-show|task-start> [--service <code>] [--services <code,code>] [--worktree <id>] [--run <id>] [--task <id>] [--origin agent|human] [--connection local|remote] [--expected-backend-run <id>] [--max-bytes <n>] [--target <workspace>] [--json]',
       '',
-      'overview 汇总全部服务的本地运行与最近部署结果；show/worktrees 读取单个服务的运行定义与检出目录。',
-      'start 需要 --service 与 --worktree；stop/log 需要 --run；plan 只读部署计划；deploy 需要 --service、--branch 与 --commit。',
-      '结果为 unknown 时不会自动重试；核对外部系统实际记录后用 --acknowledge-unknown 才可以再次提交同一计划。',
+      'start 需要 --service 与 --worktree，默认记录为智能体（Agent）启动，等待就绪或失败后返回；服务独立运行。',
+      '--connection 只适用于已有后端连接声明的前端；local 只连接同任务或主工作库的已就绪后端。',
+      '--expected-backend-run 可在 local 启动或切换时传入已观察的后端实例编号；实例变化时拒绝操作。',
+      'restart 需要精确 --run，可用 --connection local|remote 切换；先校验新连接与代码来源，再停止并重启，等待就绪后返回。',
+      'stop/log 需要精确 --run；overview/show/worktrees 不会更新代码或切换分支。',
+      'task-show 需要 --task；task-start 需要 --task 和 --services，按任务实际目录逐项启动并返回成功/复用/错误，不启动未选服务。',
     ],
     match: ({ domain }: any) => domain === 'service-runtime',
-    run: (_runtime: unknown, context: any) => {
+    run: async (_runtime: unknown, context: any) => {
       const [action = 'overview', ...args] = context.argv.slice(3);
       if (!ACTIONS.includes(action)) throw new Error(`Unknown service-runtime action: ${action}`);
       const values = new Map<string, string>();
       for (let index = 0; index < args.length; index += 1) {
-        const key = args[index];
-        if (!FLAGS.includes(key) || values.has(key)) throw new Error(`Unknown or duplicate argument: ${key}`);
-        if (key === '--json' || key === '--acknowledge-unknown') values.set(key, 'true');
-        else {
-          const value = args[++index];
-          if (value === undefined) throw new Error(`Missing value: ${key}`);
-          values.set(key, value);
-        }
+        const flag = args[index];
+        if (!FLAGS.includes(flag) || values.has(flag)) throw new Error(`Unknown or duplicate argument: ${flag}`);
+        if (flag === '--json') values.set(flag, 'true');
+        else { const value = args[++index]; if (value === undefined) throw new Error(`Missing value: ${flag}`); values.set(flag, value); }
       }
       const root = path.resolve(values.get('--target') || process.cwd());
-      const required = (...flags: string[]) => {
-        for (const flag of flags) if (!values.has(flag)) throw new Error(`${action} 需要 ${flag}。`);
-        return undefined;
-      };
-      const environment = values.get('--environment') ?? 'qa';
+      const required = (...flags: string[]) => { for (const flag of flags) if (!values.has(flag)) throw new Error(`${action} 需要 ${flag}。`); };
       let result: unknown;
-      if (action === 'overview') result = deps.view.overview(root);
-      else if (action === 'show') { required('--service'); result = deps.view.detail(root, values.get('--service')!); }
-      else if (action === 'worktrees') { required('--service'); result = deps.runtime.listWorktrees(root, values.get('--service')!); }
-      else if (action === 'start') { required('--service', '--worktree'); result = deps.runtime.startRun(root, { serviceCode: values.get('--service')!, worktreeId: values.get('--worktree')! }); }
-      else if (action === 'stop') { required('--run'); result = deps.runtime.stopRun(root, values.get('--run')!); }
-      else if (action === 'log') {
+      if (action === 'task-show' || action === 'task-start') {
+        required('--task');
+        if (!deps.taskRuntime) throw new Error('任务本地运行入口当前不可用。');
+        const taskId = values.get('--task')!;
+        if (action === 'task-show') result = await deps.taskRuntime.detail(root, taskId);
+        else {
+          required('--services');
+          const origin = values.get('--origin') ?? 'agent';
+          const connection = values.get('--connection');
+          if (origin !== 'agent' && origin !== 'human') throw new Error('--origin 必须为 agent 或 human。');
+          if (connection !== undefined && connection !== 'local' && connection !== 'remote') throw new Error('--connection 必须单选 local 或 remote。');
+          const codes = values.get('--services')!.split(',').map(code => code.trim());
+          if (codes.some(code => !code) || new Set(codes).size !== codes.length) throw new Error('--services 必须是非空且不重复的服务编码列表。');
+          const observed = await deps.taskRuntime.detail(root, taskId);
+          const selected = codes.map(serviceCode => {
+            const item = observed.services.find(item => item.service.code === serviceCode);
+            return { serviceCode, worktreeId: item?.worktree?.id ?? '', ...(connection !== 'remote' && item?.connectionTarget?.target && !codes.includes(item.service.definition?.local.backend?.serviceCode ?? '') ? { expectedBackendRunId: item.connectionTarget.target.runId } : {}), ...(item?.worktree ? { expectedWorktree: { path: item.worktree.path, branch: item.worktree.branch, head: item.worktree.head, dirty: item.worktree.dirty } } : {}) };
+          });
+          result = await deps.taskRuntime.start(root, { taskId, selected, origin, ...(connection ? { connection } : {}) });
+        }
+      } else if (action === 'overview') result = await deps.view.overview(root);
+      else if (action === 'show') { required('--service'); result = await deps.view.detail(root, values.get('--service')!); }
+      else if (action === 'worktrees') { required('--service'); result = deps.runtime.listWorktrees(root, values.get('--service')!, values.get('--task')); }
+      else if (action === 'start') {
+        required('--service', '--worktree');
+        const origin = values.get('--origin') ?? 'agent';
+        const connection = values.get('--connection');
+        if (origin !== 'agent' && origin !== 'human') throw new Error('--origin 必须为 agent 或 human。');
+        if (connection !== undefined && connection !== 'local' && connection !== 'remote') throw new Error('--connection 必须单选 local 或 remote。');
+        const started = await deps.runtime.startRun(root, { serviceCode: values.get('--service')!, worktreeId: values.get('--worktree')!, origin, ...(connection ? { connection } : {}), ...(values.has('--expected-backend-run') ? { expectedBackendRunId: values.get('--expected-backend-run')! } : {}), ...(values.has('--task') ? { taskId: values.get('--task')! } : {}) });
+        result = await deps.runtime.waitForRun(root, started.id);
+      } else if (action === 'restart') {
         required('--run');
-        const rawMaxBytes = values.get('--max-bytes');
-        const maxBytes = rawMaxBytes === undefined ? undefined : Number(rawMaxBytes);
+        for (const flag of values.keys()) if (!['--run', '--connection', '--expected-backend-run', '--target', '--json'].includes(flag)) throw new Error(`restart 不接受 ${flag}，代码来源由当前实例确定。`);
+        const connection = values.get('--connection');
+        if (connection !== undefined && connection !== 'local' && connection !== 'remote') throw new Error('--connection 必须单选 local 或 remote。');
+        const started = await deps.runtime.restartRun(root, values.get('--run')!, { origin: 'agent', ...(connection ? { connection } : {}), ...(values.has('--expected-backend-run') ? { expectedBackendRunId: values.get('--expected-backend-run')! } : {}) });
+        result = await deps.runtime.waitForRun(root, started.id);
+      } else if (action === 'stop') { required('--run'); result = await deps.runtime.stopRun(root, values.get('--run')!); }
+      else {
+        required('--run');
+        const maxBytes = values.has('--max-bytes') ? Number(values.get('--max-bytes')) : undefined;
         if (maxBytes !== undefined && (!Number.isInteger(maxBytes) || maxBytes < 1024)) throw new Error('--max-bytes 必须是不小于 1024 的整数。');
         result = deps.runtime.readLog(root, values.get('--run')!, maxBytes === undefined ? {} : { maxBytes });
       }
-      else if (action === 'plan') {
-        required('--service');
-        result = deps.deployment.plan(root, {
-          serviceCode: values.get('--service')!,
-          environment,
-          ...(values.has('--branch') ? { branch: values.get('--branch') } : {}),
-          ...(values.has('--worktree') ? { worktreeId: values.get('--worktree') } : {}),
-        });
-      } else {
-        required('--service', '--branch', '--commit');
-        result = deps.deployment.submit(root, {
-          serviceCode: values.get('--service')!,
-          environment,
-          branch: values.get('--branch')!,
-          commit: values.get('--commit')!,
-          ...(values.has('--acknowledge-unknown') ? { acknowledgeUnknown: true } : {}),
-        });
-      }
-      return Promise.resolve(result).then(value => {
-        console.log(JSON.stringify(value, null, 2));
-        return value;
-      });
+      console.log(JSON.stringify(result, null, 2));
+      return result;
     },
   })];
 }

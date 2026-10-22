@@ -262,24 +262,17 @@
 
 ## 服务运行定义（Service Runtime Definition）
 
-- 定义：`services/<service-code>/runtime.yml` 中按服务保存的本地启动方式与远程环境部署目标，只接受智能体（Agent）发现并实际启动验证过的来源。
-- 适用范围：同一服务（Service）的全部检出目录；本地受管运行、部署准备与页面展示都读它。
+- 定义：`services/<service-code>/runtime.yml` 中按服务保存的本地启动方式及可选前端连接声明，只接受智能体（Agent）发现并实际启动验证过的来源。
+- 适用范围：同一服务（Service）的全部检出目录；本地受管运行、连接解析与页面展示都读它，旧部署环境字段兼容忽略。
 - 避免混用：不是某次运行的实例状态，也不是手动命令入口；单个服务定义不合法只降级该服务，不影响其他服务读取。
-- 来源：[服务运行与部署](../code-map/technical-layers.md#服务运行与部署)。
+- 来源：[服务本地运行](../code-map/technical-layers.md#服务本地运行)。
 
 ## 受管运行（Managed Run）
 
-- 定义：Buildr 按运行定义在某个检出目录启动并托管的本地进程实例，包含端口分配、就绪判断、标准输出与错误输出日志及停止。
+- 定义：Buildr 按运行定义在某个检出目录启动并托管的本地进程实例，包含启动时代码与任务归属、实际端口及连接快照、就绪判断、输出日志及停止。
 - 适用范围：`.buildr/local/service-runtime/` 中的运行记录与日志；页面、命令和智能体（Agent）读取同一事实。
 - 避免混用：不管理 Nacos 注册、流量或 MQ；日志只保存本机，不是外部日志系统，也不是任务验证结论。
-- 来源：[服务运行与部署](../code-map/technical-layers.md#服务运行与部署)。
-
-## 部署适配器（Deployment Adapter）
-
-- 定义：连接技能（Skill）中实现 `buildr.service-deployment/v1` 的部署程序，接收部署计划输入，返回受理结果、远端分支列表与外部系统入口。
-- 适用范围：QA 等已登记远程环境的部署提交；换用其他 CI/CD 由新连接技能实现同一契约。
-- 避免混用：请求受理不等于部署成功；超时、无法启动或输出不符合契约记为结果未知，不自动重试，重复提交同一计划需要用户显式确认。
-- 来源：[部署适配器契约](../../services/buildr/resources/workspace/skills/buildr/connection-authoring/references/connection-contract.md#服务部署适配器)。
+- 来源：[服务本地运行](../code-map/technical-layers.md#服务本地运行)。
 
 ## Git 工作树提供方（Git Worktree Provider）
 

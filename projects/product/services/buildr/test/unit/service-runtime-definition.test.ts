@@ -6,77 +6,45 @@ const valid = `version: 1
 source: agent
 verifiedAt: '2026-10-21T14:02:00+08:00'
 local:
-  command: [mvnd, -pl, saas-freshx-biz, spring-boot:run]
-  cwd: saas-freshx-biz
+  command: [node, server.js]
+  cwd: app
   profile: local
   preferredPort: 8080
-  portOverride: --server.port
+  portOverride: --port
   readiness:
     kind: log
-    pattern: Started FreshXApplication
+    pattern: Started App
   timeoutSeconds: 180
-environments:
-  qa:
-    connectionId: jixian-yunque
-    target: 农牧后端业务服务
-    targetRef: JX-FRESHX-PIGS-QA
-    integrationBranch: dev-pigs
 `;
 
-test('解析合法运行定义', () => {
-  const definition = parseRuntimeDefinition(valid);
-  assert.equal(definition.source, 'agent');
-  assert.deepEqual(definition.local.command, ['mvnd', '-pl', 'saas-freshx-biz', 'spring-boot:run']);
-  assert.equal(definition.local.preferredPort, 8080);
-  assert.deepEqual(definition.local.readiness, { kind: 'log', pattern: 'Started FreshXApplication' });
-  assert.equal(definition.environments.qa?.integrationBranch, 'dev-pigs');
-});
-
-test('环境集合由运行定义登记，可增加其他环境', () => {
-  const definition = parseRuntimeDefinition(valid + `  prod:
-    connectionId: jixian-yunque
-    program: deploy
-    args: [--env, prod]
-    target: 农牧后端业务服务
-    targetRef: JX-FRESHX-PIGS-PROD
-    integrationBranch: main
-    timeoutSeconds: 300
+test('解析与渲染本地定义，保留已验证前端连接声明', () => {
+  const definition = parseRuntimeDefinition(valid + `  backend:
+    serviceCode: business
+    environmentVariable: VITE_PROXY_URL
+    remoteUrl: https://test.example/api
 `);
-  assert.deepEqual(Object.keys(definition.environments).sort(), ['prod', 'qa']);
-  assert.equal(definition.environments.prod?.targetRef, 'JX-FRESHX-PIGS-PROD');
-  assert.equal(definition.environments.prod?.timeoutSeconds, 300);
+  assert.deepEqual(definition.local.backend, { serviceCode: 'business', environmentVariable: 'VITE_PROXY_URL', remoteUrl: 'https://test.example/api' });
+  assert.deepEqual(parseRuntimeDefinition(renderRuntimeDefinition(definition)), definition);
 });
 
-test('拒绝非法环境编号', () => {
-  const invalid = valid + `  Prod_QA:
-    connectionId: jixian-yunque
-    target: 农牧后端业务服务
-    targetRef: JX-FRESHX-PIGS-PROD
-    integrationBranch: main
-`;
-  assert.throws(() => parseRuntimeDefinition(invalid), (error: unknown) => error instanceof RuntimeDefinitionError && error.problems.some(item => item.includes('Prod_QA')));
+test('旧部署字段即使损坏也忽略，不要求修复退役配置', () => {
+  for (const legacy of ['environments: broken\n', 'environments:\n  qa:\n    connectionId: null\n', 'environments: [unknown]\n']) {
+    const parsed = parseRuntimeDefinition(valid + legacy);
+    assert.equal(parsed.local.preferredPort, 8080);
+    assert.equal('environments' in parsed, false);
+    assert.doesNotMatch(renderRuntimeDefinition(parsed), /environments/);
+  }
 });
 
-test('渲染后可再次解析', () => {
-  const definition = parseRuntimeDefinition(valid);
-  const reparsed = parseRuntimeDefinition(renderRuntimeDefinition(definition));
-  assert.deepEqual(reparsed, definition);
+test('拒绝未知来源、目录逃逸、非法端口和就绪声明', () => {
+  for (const content of [valid.replace('source: agent', 'source: manual'), valid.replace('cwd: app', 'cwd: /etc'), valid.replace('cwd: app', 'cwd: ../outside'), valid.replace('preferredPort: 8080', 'preferredPort: 70000'), valid.replace('kind: log', 'kind: tcp')]) assert.throws(() => parseRuntimeDefinition(content), RuntimeDefinitionError);
 });
 
-test('拒绝手动来源与非法字段', () => {
-  const manual = valid.replace('source: agent', 'source: manual');
-  assert.throws(() => parseRuntimeDefinition(manual), (error: unknown) => error instanceof RuntimeDefinitionError && error.problems.some(item => item.includes('source')));
-  const absolute = valid.replace('cwd: saas-freshx-biz', 'cwd: /etc');
-  assert.throws(() => parseRuntimeDefinition(absolute), RuntimeDefinitionError);
-  const port = valid.replace('preferredPort: 8080', 'preferredPort: 70000');
-  assert.throws(() => parseRuntimeDefinition(port), RuntimeDefinitionError);
-  const readiness = valid.replace(/readiness:\n\s+kind: log\n\s+pattern: .*\n/, 'readiness:\n    kind: tcp\n');
-  assert.throws(() => parseRuntimeDefinition(readiness), RuntimeDefinitionError);
-  const qa = valid.replace('connectionId: jixian-yunque', 'connectionId: ""');
-  assert.throws(() => parseRuntimeDefinition(qa), RuntimeDefinitionError);
-});
-
-test('环境集合可省略', () => {
-  const definition = parseRuntimeDefinition(valid.replace(/environments:\n(?: +.*\n)+/, ''));
-  assert.deepEqual(definition.environments, {});
+test('前端连接只接受服务编号、显式环境变量和无认证的网页地址', () => {
+  for (const backend of [
+    { serviceCode: '../other', environmentVariable: 'VITE_PROXY_URL', remoteUrl: 'https://test.example' },
+    { serviceCode: 'business', environmentVariable: 'A=B', remoteUrl: 'https://test.example' },
+    { serviceCode: 'business', environmentVariable: 'VITE_PROXY_URL', remoteUrl: 'https://user:secret@test.example' },
+    { serviceCode: 'business', environmentVariable: 'VITE_PROXY_URL', remoteUrl: 'file:///tmp/a' },
+  ]) assert.throws(() => parseRuntimeDefinition(valid + `  backend: ${JSON.stringify(backend)}\n`), RuntimeDefinitionError);
 });

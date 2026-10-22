@@ -178,6 +178,7 @@ test('npm release artifact freezes one tarball with complete payload and no plat
       'workspace/skills/buildr/task-triage/SKILL.md',
       'workspace/skills/buildr/task-triage/references/structured-handoff.md',
       'runtime/skills/buildr/SKILL.md',
+      'runtime/skills/buildr/references/local-services.md',
     ]) {
       const packed = spawnSync('tar', ['-xOf', artifact.tarball, `package/payload/product/resources/${resource}`], { encoding: 'utf8' });
       assert.equal(packed.status, 0, packed.stderr);

@@ -5,6 +5,7 @@ import { useAppShell } from '../../../app/AppShellContext';
 import { workspaceHref } from '../../../lib/labels';
 import { formatShortDateTime } from '../../../lib/taskLabels';
 import { useServiceRuntimeOverview } from '../hooks/useServiceRuntime';
+import { sourceLabel } from '../model';
 
 /** 工作台只读汇总：本地受管运行实例与跳转；启动、停止和日志在服务页操作。 */
 export function WorkbenchLocalRuns() {
@@ -23,17 +24,17 @@ export function WorkbenchLocalRuns() {
     {runs.length ? runs.map(run => {
       const service = serviceOf(run.serviceCode);
       return <div className="workbench-run-row" key={run.id}>
-        <Link to={href('/services/' + encodeURIComponent(service?.id ?? run.serviceCode))}>
+        <Link to={href('/services/' + encodeURIComponent(service?.id ?? run.serviceCode) + '?view=runtime')}>
           <span className="run-dot" aria-hidden="true" />
           <span className="workbench-run-main">
             <strong>{service?.name ?? run.serviceCode}</strong>
-            <small>{run.worktreeLabel} · {run.branch ?? '—'} · {formatShortDateTime(run.startedAt)}</small>
+            <small>{overview.data?.runs.find(item => item.id === run.id) ? sourceLabel(overview.data.runs.find(item => item.id === run.id)!) : run.worktreeLabel} · {run.branch ?? '—'} · {formatShortDateTime(run.startedAt)}</small>
           </span>
           <span className="workbench-run-port">:{run.actualPort}</span>
         </Link>
         {run.status === 'starting' ? <Tag color="processing">启动中</Tag> : null}
       </div>;
     }) : <p className="workbench-muted">{overview.data ? '本地没有运行中的服务。去服务目录启动。' : '正在读取本地运行状态…'}</p>}
-    <p className="workbench-muted workbench-local-note">只读状态；启动、停止和日志在服务页管理。</p>
+    <p className="workbench-muted workbench-local-note">只读状态；可进入服务页或对应任务查看和管理。</p>
   </section>;
 }

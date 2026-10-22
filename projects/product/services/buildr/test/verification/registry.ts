@@ -69,7 +69,7 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
   // declared target inside the 15s admission bound instead of backfilling to
   // measured cost. The step's slice still reports actual duration separately.
   'integration-verification': testing(SERVICE_OWNER, 'Development', 'Integration', 15000, 'Project testing maps and Task completion reports remain coherent.', TEST_ENVIRONMENTS.repeatedCli),
-  'integration-runtime': testing(SERVICE_OWNER, 'Development', 'Integration', 40000, 'Buildr Web Runtime preserves read, instance, private Git preview and generated Web boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-runtime': testing(SERVICE_OWNER, 'Development', 'Integration', 40000, 'Buildr Web Runtime and local service runs preserve actual filesystem, process, Git, loopback HTTP, source identity and cleanup boundaries.', environment(['filesystem', 'cli', 'git', 'loopback-network'], 'unique-temporary-root', 'repeated-cleanup')),
   'integration-release': testing(SERVICE_OWNER, 'Development', 'Integration', 15000, 'Release filesystem and installation identity boundaries remain coherent without publishing.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-data-store': testing(SERVICE_OWNER, 'Development', 'Integration', 80000, 'Workspace SQLite authority, migration, and checkout isolation remain coherent.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-self-bootstrap': testing(SERVICE_OWNER, 'Development', 'Integration', 45000, 'The single self-bootstrap closeout lifecycle preserves retained checkout and runtime synchronization boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle),
@@ -665,6 +665,13 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/buildr-web-workspace.test.ts',
     'test/integration/preview-ownership.test.ts',
     'test/integration/runtime-system-http-contract.test.ts',
+    'test/integration/service-runtime-connections.test.ts',
+    'test/integration/service-runtime-http.test.ts',
+    'test/integration/service-runtime-lifecycle.test.ts',
+    'test/integration/service-runtime-module.test.ts',
+    'test/integration/service-runtime-persistence.test.ts',
+    'test/integration/service-runtime-process.test.ts',
+    'test/integration/service-task-runtime-http.test.ts',
     'test/integration/web-dist-verification.test.ts',
     'test/integration/web-resource-shutdown.test.ts',
   ], { schedulingCostMs: 4000, args: ['--test-concurrency=2'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),

@@ -32,6 +32,10 @@ test('正式包在独立目录消费完整接入资源、投射附件并运行�
   const definition = parseConnectionDefinition(fs.readFileSync(definitionPath, 'utf8')); assert.equal(definition.definitionId, 'nacos'); assert.equal(definition.configVersion, 2);
   for (const relative of ['scripts/nacos-client.mjs', 'scripts/lib/context.mjs', 'references/commands-and-results.md']) assert.equal(fs.existsSync(path.join(workspace, 'skills/connections/nacos-connection', relative)), true, relative);
   assert.equal(fs.existsSync(path.join(workspace, 'skills/buildr/connection-authoring/templates/client.mjs')), true);
+  const authoring = path.join(workspace, 'skills/buildr/connection-authoring');
+  assert.equal(fs.existsSync(path.join(authoring, 'templates/deployment-adapter.mjs')), false);
+  const template = parseConnectionDefinition(fs.readFileSync(path.join(authoring, 'templates/connection.yml'), 'utf8'));
+  assert.deepEqual(Object.keys(template.programs), ['cli']);
   assert.match(fs.readFileSync(path.join(workspace, 'AGENTS.md'), 'utf8'), /少即是多/);
   run(['skills', 'render', 'codex', '--target', workspace]);
   assert.equal(fs.readFileSync(path.join(workspace, '.agents/skills/nacos-connection/assets/connection.yml'), 'utf8'), fs.readFileSync(definitionPath, 'utf8'));

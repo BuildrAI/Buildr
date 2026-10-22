@@ -1,4 +1,18 @@
+import type { RuntimeReadiness } from './runtime-definition.ts';
+
 export type RunStatus = 'starting' | 'running' | 'stopped' | 'failed';
+
+export type RunConnection = { mode: 'local' | 'remote'; url: string; serviceCode: string; runId: string | null };
+export type RunLaunch = {
+  command: string[];
+  cwd: string;
+  profile: string | null;
+  readiness: RuntimeReadiness;
+  timeoutSeconds: number;
+  definitionPath: string;
+  verifiedAt: string;
+};
+export type ProcessIdentity = { pid: number; groupId: number; startTime: string };
 
 export type ManagedRunRecord = {
   id: string;
@@ -18,15 +32,25 @@ export type ManagedRunRecord = {
   stoppedAt: string | null;
   failure: string | null;
   logPath: string;
+  main: boolean | null;
+  dirty: boolean | null;
+  taskId: string | null;
+  taskTitle: string | null;
+  origin: 'human' | 'agent' | 'unknown';
+  url: string;
+  connection: RunConnection | null;
+  launch: RunLaunch | null;
+  processIdentity: ProcessIdentity | null;
 };
 
-export function isActiveRun(run: ManagedRunRecord): boolean {
-  return run.status === 'starting' || run.status === 'running';
+export function isActiveRun(run: Pick<ManagedRunRecord, 'status'> & Partial<Pick<ManagedRunRecord, 'pid' | 'stoppedAt'>>): boolean {
+  return run.status === 'starting' || run.status === 'running'
+    || run.status === 'failed' && run.stoppedAt === null && typeof run.pid === 'number' && run.pid > 0;
 }
 
 export function nextAvailablePort(preferred: number, used: ReadonlySet<number>): number {
   let port = preferred;
-  while (used.has(port)) port += 1;
+  while (port <= 65535 && used.has(port)) port += 1;
   return port;
 }
 

@@ -27,7 +27,7 @@ import { ServiceRuntimeSection } from '../../service-runtime/components/ServiceR
 import '../../service-runtime/service-runtime.css';
 import './asset-home.css';
 
-export function AssetHome({ kind, previewId, knowledge, initialEditing }: { kind: 'service' | 'repository'; previewId?: string; knowledge?: { artifactId?: string; objectId?: string }; initialEditing?: boolean }) {
+export function AssetHome({ kind, previewId, knowledge, initialEditing, initialView }: { kind: 'service' | 'repository'; previewId?: string; knowledge?: { artifactId?: string; objectId?: string }; initialEditing?: boolean; initialView?: 'detail' | 'runtime' }) {
   const projectContext = useContext(ProjectPreviewContext);
   const embedded = useContext(InsideResourcePreview);
   const previews = useResourcePreview(), location = useLocation();
@@ -38,6 +38,9 @@ export function AssetHome({ kind, previewId, knowledge, initialEditing }: { kind
   const assetId = previewId ?? params.assetId ?? '';
   const { workspaceId } = useAppShell();
   const catalog = useAssetCatalog(), tabs = useWorkspacePageTabs(workspaceId);
+  const requestedView = initialView ?? (new URLSearchParams(location.search).get('view') === 'runtime' ? 'runtime' : 'detail');
+  const [view, setView] = useState<'detail' | 'runtime'>(requestedView);
+  useEffect(() => { setView(requestedView); }, [assetId, requestedView]);
   const [deleting, setDeleting] = useState(false);
   const [editing, setEditing] = useState(false), [prepareOpen, setPrepareOpen] = useState(false);
   useEffect(() => { if (initialEditing) setEditing(true); }, [initialEditing]);
@@ -74,7 +77,7 @@ export function AssetHome({ kind, previewId, knowledge, initialEditing }: { kind
     objectTabs={documents.map(file => ({ key: file, kind: 'doc', title: file, identity: `${kind}:${assetId}:${file}`, contentLayout: 'reading', contentLabel: file }))} activeObject={knowledge ? null : activeDocument} onActivateObject={setActiveDocument} onCloseObject={closeDocument}
     objectContent={({ displayedKey, visible, transient }: WorkspaceObjectContentState) => <WorkspaceViewTransientContext.Provider value={inheritedTransient || transient}>{documents.map(file => <WorkspaceViewActiveContext.Provider key={file} value={visible && displayedKey === file}><div hidden={file !== displayedKey}><ResourceDocumentPane file={file} load={loadDocument} onOpen={openDocument} /></div></WorkspaceViewActiveContext.Provider>)}</WorkspaceViewTransientContext.Provider>}>
     {lastKnowledge.current && <div hidden={!knowledge}><KnowledgeBrowser workspaceId={workspaceId || ''} scope={{ kind: 'service', id: assetId }} initialArtifactId={lastKnowledge.current.artifactId} initialObjectId={lastKnowledge.current.objectId} onBack={() => previews?.open(location.pathname, href(`/services/${encodeURIComponent(assetId)}`))} backLabel="返回服务" /></div>}
-    <AssetHomeView kind={kind} item={item} hidden={Boolean(knowledge)} hideRelated={Boolean(kind === 'service' && projectContext)} related={related} relationHref={object => href(kind === 'service' ? `/projects/${object.code}` : `/services/${object.id}`)} actions={<Space wrap className="resource-home-actions"><ResourceActions size="middle" resource={{ kind: kind === "service" ? "service" : "repository", key: kind + ":" + item.id, label: item.name, href: workspaceHref(workspaceId, "/" + (kind === "service" ? "services" : "repositories") + "/" + encodeURIComponent(item.id)) }} /><Button disabled={data.migrationRequired} onClick={() => setDeleting(true)}>移除</Button><Button disabled={data.migrationRequired} onClick={() => setEditing(true)}>编辑{label}</Button></Space>} runtimeContent={kind === 'service' && service ? <ServiceRuntimeSection serviceCode={service.code} serviceName={service.name} /> : null} notices={<>      <CatalogMigration catalog={data} onSaved={catalog.setData} />
+    <AssetHomeView view={view} onViewChange={next => { setView(next); if (kind === 'service' && embedded) previews?.open(location.pathname, href(`/services/${encodeURIComponent(assetId)}?view=${next}`)); }} kind={kind} item={item} hidden={Boolean(knowledge)} hideRelated={Boolean(kind === 'service' && projectContext)} related={related} relationHref={object => href(kind === 'service' ? `/projects/${object.code}` : `/services/${object.id}`)} actions={<Space wrap className="resource-home-actions"><ResourceActions size="middle" resource={{ kind: kind === "service" ? "service" : "repository", key: kind + ":" + item.id, label: item.name, href: workspaceHref(workspaceId, "/" + (kind === "service" ? "services" : "repositories") + "/" + encodeURIComponent(item.id)) }} /><Button disabled={data.migrationRequired} onClick={() => setDeleting(true)}>移除</Button><Button disabled={data.migrationRequired} onClick={() => setEditing(true)}>编辑{label}</Button></Space>} runtimeContent={kind === 'service' && service ? <ServiceRuntimeSection serviceCode={service.code} serviceName={service.name} /> : null} notices={<>      <CatalogMigration catalog={data} onSaved={catalog.setData} />
       {data.diagnostics.filter(d => d.objectId === item.id || d.objectId === repository?.id).map(d => <Alert key={d.code + d.objectId} type="warning" showIcon message={d.message} />)}
 </>} documents={<>      {service && <section className="resource-section" data-service-knowledge-state={knowledgeRead.loading ? 'loading' : knowledgeDiagnostic ? 'unavailable' : knowledgeCount ? 'available' : 'empty'}><div className="resource-section-head"><h2>文档</h2></div>
         <AssetDocumentList active={activeDocument} onOpen={openDocument} />

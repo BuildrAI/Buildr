@@ -13,7 +13,7 @@ test('declared builtin directories own their complete connection and authoring a
     `${connection.path}/SKILL.md`, `${connection.path}/assets/connection.yml`,
     `${root}/skills/connections/nacos-connection/scripts/lib/workflow.mjs`,
     `${root}/skills/buildr/connection-authoring/templates/client.mjs`,
-    `${root}/skills/buildr/connection-authoring/templates/deployment-adapter.mjs`,
+    `${root}/skills/buildr/connection-authoring/templates/commands-and-results.md`,
   ]) assert.equal(builtinSkillOwnsSourceFile(file, skills, root, includes), true, file);
 });
 test('undeclared neighbours, traversal and invalid builtin targets cannot claim published files', () => {

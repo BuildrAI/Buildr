@@ -283,7 +283,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     id: 'code',
     requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER, AGENT_OPERATIONS_APPLICATION, AGENT_ASSETS_SOURCE_READ],
     provides: [CODE_APPLICATION, CODE_GENERATION_APPLICATION, CODE_SOURCE_CONTROL_OBSERVATIONS],
-    contributions: {cli:['code repositories','code directory','code file','code search','code source-control','code source-control-inventory','code commit-context','code sync-context','code branches','code authors','code history','code commit','code diff','code source-file'],http:['code.files.http', 'code.generation.http'],diagnostics:[]},
+    contributions: {cli:['code repositories','code directory','code file','code search','code source-control','code source-control-inventory','code discard-context','code commit-context','code sync-context','code branches','code authors','code history','code commit','code diff','code source-file'],http:['code.files.http', 'code.generation.http'],diagnostics:[]},
     lifecycle: 'managed',
   }, {
     id: 'connection-skills',
@@ -293,8 +293,8 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'managed',
   }, {
     id: 'service-runtime',
-    requires: [WORKSPACE_APPLICATION, CODE_APPLICATION, 'connection-skills.application'],
-    provides: ['service-runtime.application', 'service-runtime.deployment', 'service-runtime.view'],
+    requires: [WORKSPACE_APPLICATION, CODE_APPLICATION, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER],
+    provides: ['service-runtime.application', 'service-runtime.view', 'service-runtime.task-application'],
     contributions: { cli: ['service-runtime'], http: ['service-runtime.http'], diagnostics: [] },
     lifecycle: 'none',
   }, {
@@ -386,7 +386,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'agent', 'agent list', 'agent register', 'agent select',
     'dsh', 'dsh link', 'dsh sessions', 'dsh open-task',
     'codex connections', 'codex link', 'codex sessions', 'codex',
-    'code repositories', 'code directory', 'code file', 'code search', 'code source-control','code source-control-inventory', 'code commit-context', 'code sync-context', 'code branches', 'code authors', 'code history', 'code commit', 'code diff', 'code source-file',
+    'code repositories', 'code directory', 'code file', 'code search', 'code source-control','code source-control-inventory', 'code discard-context', 'code commit-context', 'code sync-context', 'code branches', 'code authors', 'code history', 'code commit', 'code diff', 'code source-file',
     'connection-skill', 'service-runtime', 'mysql-query',
     'project verification inspect', 'project verification validate', 'project verification update',
     'task review inspect', 'task review record',

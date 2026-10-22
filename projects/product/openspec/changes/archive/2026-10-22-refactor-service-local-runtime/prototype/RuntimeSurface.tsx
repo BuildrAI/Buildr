@@ -1,0 +1,38 @@
+import {Button,Collapse,Empty,Space,Tag} from 'antd';
+import {BranchesOutlined,CheckCircleFilled,FileTextOutlined,LinkOutlined,LoadingOutlined,PlayCircleOutlined,ReloadOutlined,SettingOutlined,StopOutlined,WarningOutlined} from '@ant-design/icons';
+import {services,type Run,type RuntimeService,type ServiceId} from './model';
+import '@product/features/service-runtime/service-runtime.css';
+import './runtime-surface.css';
+export const live=(r:Run)=>['starting','running','stopping'].includes(r.status);
+const names:Record<Run['status'],string>={starting:'启动中',running:'已就绪',stopping:'停止中',stopped:'已停止',failed:'启动失败'};
+const colors:Record<Run['status'],string|undefined>={starting:'processing',running:'success',stopping:'warning',stopped:undefined,failed:'error'};
+export function RunStatus({run}:{run:Run}){return <Tag color={colors[run.status]} icon={run.status==='running'?<CheckCircleFilled/>:run.status==='failed'?<WarningOutlined/>:['starting','stopping'].includes(run.status)?<LoadingOutlined/>:undefined}>{names[run.status]}</Tag>}
+const serviceOf=(id:ServiceId)=>services.find(s=>s.id===id)!;
+const sourceOf=(r:Run)=>serviceOf(r.serviceId).worktrees.find(w=>w.id===r.worktreeId)!;
+const remote='https://saas-gateway-qa.jixiansc.com';
+export type RuntimeSurfaceProps={scope:'service'|'task';service?:RuntimeService;runs:Run[];allRuns:Run[];onStart():void;onLogs(r:Run):void;onStop(r:Run):void;onRestart(r:Run):void;onOpen(r:Run):void;onConnection(r:Run):void;onConfig(id:ServiceId):void;onService(id:ServiceId):void;onTask():void;onStopGroup?():void;};
+export function RuntimeSurface(p:RuntimeSurfaceProps){
+ const current=p.runs.filter(r=>live(r)||r.status==='failed'),history=p.runs.filter(r=>!live(r)&&r.status!=='failed');
+ const task=p.scope==='task';
+ if(task)current.sort((a,b)=>Number(a.serviceId!=='frontend')-Number(b.serviceId!=='frontend'));
+ const taskFront=p.allRuns.find(r=>r.worktreeId==='frontend-task'&&(live(r)||r.status==='failed'));
+ const taskBack=p.allRuns.find(r=>r.id===taskFront?.backendRunId)||p.allRuns.find(r=>r.worktreeId==='backend-task'&&live(r));
+ const linked=Boolean(taskFront?.status==='running'&&(taskFront.connection==='remote'||taskBack?.status==='running'));
+ const target=(r:Run)=>r.connection==='remote'?remote:`http://localhost:${p.allRuns.find(b=>b.id===r.backendRunId)?.port||'—'}`;
+ const card=(r:Run,compact=false)=>{const s=serviceOf(r.serviceId),w=sourceOf(r),backend=p.allRuns.find(b=>b.id===r.backendRunId),broken=s.kind==='frontend'&&r.connection==='local'&&backend?.status!=='running';return <article className={`rs-run ${compact?'rs-history-run':''}`} key={r.id} data-prototype-position="run-instance">
+  <header className="rs-run-head"><div><div className="rs-run-title">{task?<button onClick={()=>p.onService(s.id)}>{s.name}</button>:<strong>{w.kind==='main'?'主工作库':w.taskTitle||'任务目录'}</strong>}<RunStatus run={r}/>{w.kind==='task'?<Tag className="rs-kind">任务目录</Tag>:<Tag className="rs-kind">主工作库</Tag>}</div><p>{r.origin==='agent'?'智能体（Agent）启动':'手动启动'}<span>·</span>{r.startedAt.includes('T')?new Date(r.startedAt).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Shanghai'}):r.startedAt}<span>·</span>进程 {r.port+41000}</p></div><Space size={4}>{s.kind==='frontend'&&r.status==='running'?<Button size="small" icon={<LinkOutlined/>} onClick={()=>p.onOpen(r)}>打开</Button>:null}<Button size="small" icon={<FileTextOutlined/>} onClick={()=>p.onLogs(r)}>日志</Button>{r.status==='failed'?<Button size="small" onClick={()=>p.onRestart(r)}>重试</Button>:live(r)?<Button size="small" icon={<StopOutlined/>} disabled={r.status==='stopping'} onClick={()=>p.onStop(r)}>{r.status==='starting'?'取消启动':'停止'}</Button>:<Button size="small" onClick={()=>p.onRestart(r)}>再次启动</Button>}</Space></header>
+  <div className="rs-code" data-prototype-position="code-source"><div><BranchesOutlined/><code>{w.branch}</code><code className="rs-commit">{w.commit}</code>{r.dirtyAtStart?<Tag color="gold">含未提交改动</Tag>:<span>无未提交改动</span>}</div><code className="rs-directory">{w.path}</code></div>
+  {r.status==='failed'?<div className="rs-error"><WarningOutlined/>{r.failure||'服务未通过就绪检查，可查看日志后重试。'}</div>:null}
+  {r.status==='starting'?<div className="rs-wait"><LoadingOutlined/> 正在启动，等待{s.kind==='frontend'?'页面响应':'健康检查通过'}；此时可查看日志。</div>:null}
+  {!compact?<div className="rs-facts"><div><label>{s.kind==='frontend'?'访问地址':'本地地址'}</label><strong className="rs-url">http://localhost:{r.port}</strong><small>{r.status==='running'?'就绪检查通过':r.status==='starting'?'等待服务响应':names[r.status]}{r.port!==s.preferredPort?` · 首选 ${s.preferredPort} 被占用`:' · 使用首选端口'}</small></div><div data-prototype-position="backend-connection"><label>{s.kind==='frontend'?'实际后端连接':'共享依赖'}</label>{s.kind==='frontend'?<><strong className={broken?'rs-broken':''}>{broken?'本地后端未就绪':r.connection==='remote'?'远程测试后端':w.kind==='task'?'本任务本地后端':'主工作库本地后端'}</strong><code>{target(r)}</code><Button type="link" size="small" onClick={()=>p.onConnection(r)}>切换连接</Button></>:<><strong>测试配置中心与业务依赖</strong><small>本地进程仍使用已配置的共享依赖</small></>}</div></div>:null}
+  <Collapse ghost size="small" className="rs-launch-details" items={[{key:'details',label:'目录与启动信息',children:<dl className="rs-launch-facts"><div><dt>启动命令</dt><dd><code>{s.kind==='frontend'?'node node_modules/vite/bin/vite.js --mode dev --port '+r.port:'按 freshx-pigs/runtime.yml 的已验证命令启动'}</code></dd></div><div><dt>运行定义</dt><dd><code>services/{s.code}/runtime.yml</code></dd></div><div><dt>就绪检查</dt><dd>{s.kind==='frontend'?'HTTP /favicon.ico 返回成功 · 180 秒内':'健康检查返回成功'}</dd></div><div><dt>启动时代码</dt><dd><code>{w.commit}</code> · {r.dirtyAtStart?'包含未提交文件':'无未提交改动'}</dd></div></dl>}]}/>
+ </article>};
+ return <section className="rs-surface" data-prototype-position={task?'task-runtime':'service-runtime'}>
+  <div className="rs-toolbar"><div><h2>{task?'本任务的本地服务':'本地运行'} <span>{current.length} 个实例</span></h2><p>{task?'运行本任务目录中的相关服务，前端默认连接本地后端。':p.service?.kind==='frontend'?'在这里查看这个服务的所有本地实例，测试默认使用主工作库连接测试环境。':'查看这个服务在各个代码目录中的本地实例。'}</p></div><Space>{task&&current.some(live)?<Button onClick={p.onStopGroup}>停止本任务服务</Button>:null}<Button type="primary" icon={<PlayCircleOutlined/>} onClick={p.onStart}>{task?'启动任务服务':'启动本地'}</Button></Space></div>
+  {task?<div className={`rs-link-summary ${linked?'is-ready':''}`} data-prototype-position="group-connection"><div><LinkOutlined/><strong>运营端 {taskFront?':'+taskFront.port:''}</strong><span>→</span><strong>{taskFront?.connection==='remote'?'远程测试后端':`本任务后端 ${taskBack?':'+taskBack.port:''}`}</strong><Tag color={linked?'success':undefined}>{linked?'已连接':'待就绪'}</Tag></div><Space><span>{linked?'服务就绪，业务验证仍待执行':'等待相关服务就绪'}</span>{taskFront?.status==='running'?<Button size="small" icon={<LinkOutlined/>} onClick={()=>p.onOpen(taskFront)}>打开前端</Button>:null}</Space></div>:null}
+  {current.length?<div className="rs-instances">{current.map(r=>card(r))}</div>:<div className="rs-empty"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前没有运行实例"/><p>{task?'启动本任务前后端后，可在这里查看同一组运行状态。':'选择代码来源与后端连接后启动本地服务。'}</p><Button onClick={p.onStart}>选择目录启动</Button></div>}
+  {!task&&p.service?<div className="runtime-source rs-config-source"><Tag>运行配置</Tag><code>services/{p.service.code}/runtime.yml</code><span>已验证</span><Button size="small" icon={<SettingOutlined/>} onClick={()=>p.onConfig(p.service!.id)}>查看配置</Button></div>:null}
+  {history.length?<Collapse ghost className="rs-history" items={[{key:'history',label:`已结束的运行 · ${history.length} 次`,children:history.map(r=>card(r,true))}]}/>:null}
+  {!task&&current.some(r=>sourceOf(r).kind==='task')?<Button type="link" className="rs-task-link" onClick={p.onTask}>查看关联任务：生猪订单流程验证</Button>:null}
+ </section>;
+}

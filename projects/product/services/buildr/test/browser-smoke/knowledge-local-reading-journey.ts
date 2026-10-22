@@ -166,6 +166,10 @@ export async function runKnowledgeLocalReadingJourney({ page, workspaceRoot, ser
     const linked = browser().locator('[data-knowledge-reference]:visible');
     await linked.getByRole('heading', { name: '引用章节', exact: true }).waitFor();
     assert.match(await linked.innerText(), /真实章节内容/);
+    // Heading visibility precedes the reader's anchor-scroll effect.
+    const referenceHeading = await linked.locator('#引用章节').elementHandle();
+    assert.ok(referenceHeading);
+    await page.waitForFunction((element: HTMLElement) => { const top = element.getBoundingClientRect().top; return top >= 0 && top < innerHeight; }, referenceHeading);
     assert.ok(await linked.locator('#引用章节').evaluate((element: HTMLElement) => element.getBoundingClientRect().top >= 0 && element.getBoundingClientRect().top < innerHeight));
     await linked.getByRole('button', { name: '查看原文', exact: true }).click();
     assert.match(await linked.locator('pre').innerText(), /## 引用章节/);

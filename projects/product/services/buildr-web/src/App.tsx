@@ -15,7 +15,7 @@ function renderResource(item: ResourcePreview) {
   if (item.kind === 'task' || item.kind === 'composite-task') return <TaskDetailPage taskId={item.id} />;
   if (item.kind === 'article') return <ArticleDetailPage preview={{ projectCode: item.projectCode, publicationId: item.publicationId, sourceTaskId: item.sourceTaskId }} initialView={item.view} initialEditing={item.edit} />;
   if (item.kind === 'skill') return <SkillsPage previewId={item.id} />;
-  return <AssetHome kind={item.kind} previewId={item.id} knowledge={item.knowledge} initialEditing={item.edit} />;
+  return <AssetHome kind={item.kind} previewId={item.id} knowledge={item.knowledge} initialEditing={item.edit} initialView={item.kind === 'service' && new URLSearchParams(item.path.split('?')[1] || '').get('view') === 'runtime' ? 'runtime' : 'detail'} />;
 }
 
 const routes: RouteObject[] = [
