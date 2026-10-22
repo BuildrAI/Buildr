@@ -69,19 +69,19 @@
       "type": "skill",
       "id": "connection-authoring",
       "target": "skills/buildr/connection-authoring",
-      "integrity": "sha256-4e66077ce6f88f9f7da4faade95706bdb28797f305a724bba7c7c0ba0f203b01",
+      "integrity": "sha256-1b27a3177193d0f3f1d19e842e0f22b98dfbdc06624cf64b2720c131daf36800",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-47d71b50ffdd88bd09cf39a8897543de1ef5690e238acf854efb3742f8405fa4"
+          "integrity": "sha256-12760cc05ec52c89df3cdfa4df32e2e462cc0cb9dc14b944c7e66e2decb6f8a4"
         },
         {
           "path": "references/connection-contract.md",
-          "integrity": "sha256-98ceb81bdde543be34f30c254cdaff4ff5a365b427f6985b86c1f45a449308e6"
+          "integrity": "sha256-0576762619d8bbf7cf266e9fe2c0c5cfa9744c054d3747b8cfc367ea393acfab"
         },
         {
           "path": "templates/SKILL.md",
-          "integrity": "sha256-5cd584a7c2621e821461eba648f46975bc9a5afca30e438f5a0200381fd013e4"
+          "integrity": "sha256-c3ccad0eefe20d054fc11106486faa52cc2eb8fbf54a96111de2452d0d1ccf5f"
         },
         {
           "path": "templates/client.mjs",
@@ -89,11 +89,15 @@
         },
         {
           "path": "templates/commands-and-results.md",
-          "integrity": "sha256-3241c7d87a1283cac7d00478febced546c31322bcd036dd1241719bf2dd96998"
+          "integrity": "sha256-42818b68031fb9f561bbd47a47562abc6f95ba701df70a5bebb9bbdfe4619d02"
         },
         {
           "path": "templates/connection.yml",
-          "integrity": "sha256-8522146a481c43a9937eeabdbca76e183b6487146f0cc7342d31af9293a3aee5"
+          "integrity": "sha256-365595b05a9510decb2416d6d7ed5b6daf1d4ccc3be36bbc7780fbd44e9eb287"
+        },
+        {
+          "path": "templates/deployment-adapter.mjs",
+          "integrity": "sha256-fa6cbdd7903b70ecfcc94137a43d0e0eb24382bd92f633f661eb6c5f06e8105f"
         }
       ]
     },

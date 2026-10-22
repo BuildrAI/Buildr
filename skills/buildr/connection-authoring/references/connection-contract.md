@@ -107,6 +107,62 @@ Node.js 随附程序通过独立进程间通信（IPC）接收 `{type: 'buildr.c
 
 Node.js 程序及进程间通信（IPC）模板提供本轮已验证的路径；其他语言的私有通道适配、独立程序内部依赖及其他操作系统（Operating System）应记录实际验证范围，未实测不能根据声明或安装状态推断已经可用。
 
+## 服务部署适配器
+
+服务运行与部署（Service Runtime & Deployment）的 QA 及用户自定义环境提交，来自连接技能声明的部署程序（Program）；Buildr 不内置任何 CI/CD 客户端。槽位（Hook）限定只读效果，因此提交必须走 `programs` 中声明的普通程序，由 `buildr connection-skill run` 经私有通道调用。
+
+| 声明位置 | 内容 |
+| --- | --- |
+| `assets/connection.yml` `programs.<id>` | 部署程序，`contextProtocol: buildr.connection-context/v1` |
+| `services/<service>/runtime.yml` `environments.<env>.program` | 上述程序编号，省略时为 `deploy`；首期预置 `qa`，其他环境由工作空间自行登记 |
+| 同上 `environments.<env>.connectionId` | 明确绑定的连接实例完整 `id` |
+| 同上 `environments.<env>.target`、`targetRef` | 部署目标显示名与外部系统准确对象标识 |
+| 同上 `environments.<env>.integrationBranch` | 登记集成分支（Integration Branch），部署确认的默认分支 |
+
+输入由 Buildr 经标准输入（Standard Input）交付单个 JSON 对象；认证只走私有上下文（Context），不出现在输入或程序参数中。
+
+| 输入字段 | 约定 |
+| --- | --- |
+| `protocol` | 必需，固定 `buildr.service-deployment/v1` |
+| `action` | 必需，`submit` 或 `list-branches` |
+| `service.code`、`environment`、`target`、`targetRef` | 本次对象身份；`environment` 首期为 `qa` |
+| `plan.branch`、`plan.commit` | 仅 `submit`；用户已确认的远端分支与远端提交 |
+
+标准输出只能有一个 JSON 对象，诊断日志走标准错误（Standard Error）。
+
+| 输出字段 | 约定 |
+| --- | --- |
+| `state` | `submit` 必需：`success`（远端已确认完成）、`submitted`（已受理，构建中）、`failed`（确认未成功）、`unknown`（无法确认） |
+| `version` | 可选；省略时 Buildr 记为 `分支@提交前 7 位` |
+| `at` | 可选 ISO 时间；省略时使用 Buildr 的提交时间 |
+| `externalUrl` | 可选；只接受 `http`/`https`，用于“打开外部系统”，其他协议被丢弃 |
+| `diagnostics` | 可选字符串数组；宿主最多保留 20 项、每项 1024 字符 |
+| `branches` | `list-branches` 必需：`{branch, commit, integration?}` 数组，最多 200 项；只读发现不提交任何内容 |
+
+| 程序与输出 | Buildr 最近结果 |
+| --- | --- |
+| 退出码 0，合法 `state: submitted`/`failed`/`unknown` | 按声明状态保存；受理不等于成功 |
+| 退出码 0，合法 `state: success` | 保存 `success` |
+| 非零退出码但声明 `success` | 保存 `unknown`，并附退出码诊断 |
+| 超时、输出超限、无法启动或输出无法解析 | 保存 `unknown`；部分输出不作为接续依据 |
+| 程序未启动（依赖缺失、认证不完整、实例停用） | 记为 `failed`，诊断写明“提交未发出”，可重新提交 |
+
+秘密与日志边界：程序不打印令牌、密码或认证回显，宿主在保存前统一遮蔽已认证秘密。外部构建阶段、历史与远端日志留在外部系统；Buildr 只展示归一化最近结果与 `externalUrl`，不镜像 CI/CD 页面。
+
+未知结果语义：`unknown` 表示提交可能已发出。Buildr 不自动重试；同一“服务＋环境＋分支＋提交”计划在 `unknown` 之后再次提交会被拒绝，用户到外部系统核对实际记录并明确确认后才可再次提交。程序内部等待必须有界且短于宿主运行时限（`--timeout-ms`，最长 300000 毫秒）。
+
+可离线核对的样例不接收上下文或认证，也不访问外部系统：
+
+```text
+node scripts/deployment-adapter.mjs --mock success
+node scripts/deployment-adapter.mjs --mock failed
+node scripts/deployment-adapter.mjs --mock unknown
+node scripts/deployment-adapter.mjs --mock branches
+node scripts/deployment-adapter.mjs --self-test
+```
+
+真实适配替换 `deploy` 分支中的业务调用：`list-branches` 按 `target`/`targetRef` 只读查询远端分支与提交；`submit` 先 `await revalidate(context)`，再按远端对象版本提交，未发出提交时报 `failed`，可能已发出时报 `unknown`。模板默认返回空分支列表与 `unknown`，不把模拟输出冒充真实能力。更换 CI/CD 提供者只需新连接技能实现同一程序与输出结构，Buildr 的运行模型、页面与运行定义不变。
+
 ## 实例身份与文件定位
 
 Buildr 在 `connections/instances/` 管理一实例一文件。新建及保存时，文件名使用 `<系统>-<环境>--<唯一后缀>.yml`，例如 `nacos-qa--<12位后缀>.yml`；系统取声明的 `systemId`，未声明时取 `definitionId`，环境为空或清理后为空时用 `default`。片段会规范化并限制长度，保留中文；后缀由完整 `id` 的 SHA-256 摘要前 12 位生成。命名和路径整理属于通用应用，不由专业技能（Skill）或程序实现。
