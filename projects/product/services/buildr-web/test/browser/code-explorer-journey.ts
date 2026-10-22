@@ -170,8 +170,8 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     assert.ok(native&&task);assert.equal((await filterOptionNames(0)).length,catalog.repositories.length);
     await selectSearchMode('内容');
     for(const member of [native,task]){
-      await selectFilter(1,member.id);await search('WorktreeFilterNeedle');const result=page.locator('.repository-search-group');await result.locator('.repository-search-occurrence').waitFor();
-      const response=fileResponse(codeFixture.worktreeFiles[secondary.id].path);await result.locator('.repository-search-occurrence').click();const file=await(await response).json();assert.equal(file.source.checkoutId,member.id);
+      await selectFilter(1,member.id);await search('WorktreeFilterNeedle');const result=page.locator('.repository-search-group[data-source-id*="'+member.id+'"]');await result.locator('.repository-search-occurrence').waitFor();
+      const response=fileResponse(codeFixture.worktreeFiles[secondary.id].path,url=>url.searchParams.get('checkoutId')===member.id);await result.locator('.repository-search-occurrence').click();const file=await(await response).json();assert.equal(file.source.checkoutId,member.id);
       await read.text(member===native?codeFixture.nativeWorktree.content:codeFixture.worktreeFiles[secondary.id].content);
     }
     assert.equal(await page.getByRole('tab',{name:/worktree-filter\.ts/}).count(),2);

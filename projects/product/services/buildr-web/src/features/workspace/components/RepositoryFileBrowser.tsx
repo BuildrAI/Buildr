@@ -9,6 +9,7 @@ import type { MarkdownRenderOptions } from '../../../markdown';
 import { RepositorySearchText } from './RepositorySearchText';
 import { SelectableHoverCard } from '../../../components/SelectableHoverCard';
 import { repositorySearchQuery } from './repository-search-query';
+import { selectPopupGuard } from '../../../lib/select-popup';
 import { repositorySourceLines, visibleRepositoryMatch, type RepositoryFilePage } from './repository-file-page';
 export type { RepositoryFilePage } from './repository-file-page';
 import './repository-file-browser.css';
@@ -291,7 +292,7 @@ export function RepositoryFileBrowser(props: Props) {
         <div className="repository-tree-heading"><strong>文件</strong><div className="repository-tree-heading-actions">{(props.global || !treeHidden) && <Tooltip title="包含当前目录中被 Git 忽略规则或常见构建目录排除的文件；点号开头不代表忽略。不会显示其他目录中的文件，Git 管理目录始终隐藏。"><Button size="small" type="text" aria-label={showIgnored ? '隐藏忽略文件' : '显示忽略文件'} icon={showIgnored ? <EyeInvisibleOutlined /> : <EyeOutlined />} onClick={() => {setShowIgnored(value => !value);props.onShowIgnored?.(!showIgnored);}} /></Tooltip>}{!props.global&&<Tooltip title={treeHidden ? '展开目录' : '收起目录'}><Button type="text" size="small" aria-label={treeHidden ? '展开目录' : '收起目录'} icon={treeHidden ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => setTreeHidden(!treeHidden)} /></Tooltip>}</div></div>
         {(props.global || !treeHidden) && <>
           <div className="repository-file-search" data-prototype-position="file-search">
-            <Input allowClear prefix={<SearchOutlined />} suffix={<span className="repository-search-scope" onMouseDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}><Select aria-label="搜索范围" classNames={{ popup: { root: 'repository-search-scope-popup' } }} variant="borderless" size="small" style={{ width: searchMode === 'name' ? 58 : 48 }} value={searchMode} placement="bottomRight" popupMatchSelectWidth={false} options={[{ label: '文件名', value: 'name' }, { label: '内容', value: 'content' }]} onChange={value => setSearchMode(value as 'name' | 'content')} /></span>} placeholder={searchMode === 'name' ? '搜索文件名' : '搜索内容'} aria-label="搜索文件" value={query} onChange={event => changeQuery(event.target.value)} />
+            <Input allowClear prefix={<SearchOutlined />} suffix={<span className="repository-search-scope" onMouseDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}><Select aria-label="搜索范围" classNames={{ popup: { root: 'repository-search-scope-popup' } }} variant="borderless" size="small" style={{ width: searchMode === 'name' ? 58 : 48 }} value={searchMode} placement="bottomRight" popupMatchSelectWidth={false} popupRender={selectPopupGuard} options={[{ label: '文件名', value: 'name' }, { label: '内容', value: 'content' }]} onChange={value => setSearchMode(value as 'name' | 'content')} /></span>} placeholder={searchMode === 'name' ? '搜索文件名' : '搜索内容'} aria-label="搜索文件" value={query} onChange={event => changeQuery(event.target.value)} />
           </div>
           <div className="repository-tree-body">
             {props.treeNotice}

@@ -19,6 +19,7 @@ import { codeBrowserKey, codeLocationKey, codeReturnTarget, relativeCodeLink, ty
 import { sourceControlDecorations } from '../source-control-decorations';
 import { codeRepositoryCode, codeRepositoryLabel, codeWorktreeLabel } from '../code-source-labels';
 import { workspaceHref } from '../../../lib/labels';
+import { selectPopupGuard } from '../../../lib/select-popup';
 import type { MarkdownRenderOptions } from '../../../markdown';
 import '../code-explorer.css';
 
@@ -118,8 +119,8 @@ export function CodeExplorerPage() {
     state.setSourceFilters([active.repositoryId],'checkout:'+member.id);
   };
   const context=<section className="code-root-selectors" aria-label="代码库与工作树筛选">
-    <Select mode="multiple" optionFilterProp="title" allowClear maxTagCount={1} classNames={{popup:{root:'code-source-picker-popup'}}} aria-label="筛选代码库" placeholder="全部代码库" value={state.scope} onChange={state.setScope} options={repositoryOptions} />
-    <Select allowClear showSearch optionFilterProp="label" classNames={{popup:{root:'code-source-picker-popup'}}} aria-label="筛选工作树" placeholder={singleRepository?"选择工作树":"先选择一个代码库"} disabled={!singleRepository} value={selectedWorktree?.id} onChange={id=>state.setWorktreeScope(id?'checkout:'+id:undefined)} options={worktreeOptions} optionRender={option=><div className="code-worktree-option" data-code-worktree-id={option.value} data-code-worktree-group={worktreeMembers.find(member=>member.id===option.value)?.groupId} title={option.data.title}><span>{option.data.label}</span>{option.data.role&&<small>{option.data.role}</small>}</div>} />
+    <Select mode="multiple" optionFilterProp="title" allowClear maxTagCount={1} classNames={{popup:{root:'code-source-picker-popup'}}} aria-label="筛选代码库" placeholder="全部代码库" value={state.scope} onChange={state.setScope} options={repositoryOptions} popupRender={selectPopupGuard} />
+    <Select allowClear showSearch optionFilterProp="label" classNames={{popup:{root:'code-source-picker-popup'}}} aria-label="筛选工作树" placeholder={singleRepository?"选择工作树":"先选择一个代码库"} disabled={!singleRepository} value={selectedWorktree?.id} onChange={id=>state.setWorktreeScope(id?'checkout:'+id:undefined)} options={worktreeOptions} popupRender={selectPopupGuard} optionRender={option=><div className="code-worktree-option" data-code-worktree-id={option.value} data-code-worktree-group={worktreeMembers.find(member=>member.id===option.value)?.groupId} title={option.data.title}><span>{option.data.label}</span>{option.data.role&&<small>{option.data.role}</small>}</div>} />
     <small>{taskFallback?'任务没有独立目录，可在上方选择其他目录。':'选择代码库和工作树，查看对应文件'}</small>
   </section>;
   return <div className="code-explorer-stage">
