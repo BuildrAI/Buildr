@@ -52,7 +52,8 @@ export function createWorkContextRepository(runtime: WorkContextStoreRuntime) {
     return runtime.runWorkspaceSqliteRead(root, (transaction) => {
       const db = sqliteContextDatabaseOrNull(transaction);
       if (!available(db)) return { taskIds: [], total: 0 };
-      const where = "WHERE attention_state = 'pending'" + (project ? ' AND EXISTS (SELECT 1 FROM task_projects p WHERE p.task_id = c.task_id AND p.project = ?)' : '');
+      // 已结束任务不再等待回应；事项记录本身保留供详情阅读。
+      const where = "WHERE attention_state = 'pending' AND EXISTS (SELECT 1 FROM tasks t WHERE t.task_id = c.task_id AND t.status IN ('todo', 'active'))" + (project ? ' AND EXISTS (SELECT 1 FROM task_projects p WHERE p.task_id = c.task_id AND p.project = ?)' : '');
       const parameters = project ? [project] : [];
       return { total: Number(db.prepare(`SELECT COUNT(*) AS n FROM task_work_context_current c ${where}`).get(...parameters)?.n || 0), taskIds: db.prepare(`SELECT task_id FROM task_work_context_current c ${where} ORDER BY updated_at DESC, task_id LIMIT ?`).all(...parameters, limit).map((row) => String(row.task_id)) };
     });

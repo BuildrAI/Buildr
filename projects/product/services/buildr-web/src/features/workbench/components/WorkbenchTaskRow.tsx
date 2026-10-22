@@ -27,7 +27,8 @@ export function WorkbenchTaskRow({ item, projectNames, compact = false, onError 
     navigate(href, { state: { from } });
   };
   const summary = context?.progress || record.result?.summary || record.intent;
-  const attention = context?.attention?.state === 'pending' ? context.attention : null;
+  const openable = record.status === 'todo' || record.status === 'active';
+  const attention = openable && context?.attention?.state === 'pending' ? context.attention : null;
   const pin = async () => {
     setSaving(true);
     try { if (pinned) await remove('pinned-task', record.taskId); else await set('pinned-task', record.taskId); }

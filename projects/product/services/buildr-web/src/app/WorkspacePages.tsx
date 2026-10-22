@@ -225,10 +225,18 @@ export function WorkspacePages({ workspaceId, renderResource, navigationRequest 
 
 function HostedResources({ workspaceId, value, children }: { workspaceId: string; value: NonNullable<React.ContextType<typeof ResourcePreviewContext>>; children: ReactNode }) {
   const host = useWorkspacePaneHost();
+  const navigate = useNavigate();
+  const { search } = useLocation();
   return <ResourcePreviewContext.Provider value={{ ...value, open(owner, path, intent) {
+    const item = resourcePreview(workspaceId, path);
+    // Pages without a pane cannot host resources; follow the deep link so the canonical owner takes over.
+    if (item && !host?.viewFor(owner).registered) {
+      const taskBrief = intent?.taskBrief && ['task', 'composite-task'].includes(item.kind);
+      navigate(dshResourceDestination(workspaceId, path, search), { state: taskBrief ? { taskBriefId: item.id } : undefined });
+      return true;
+    }
     const opened = value.open(owner, path, intent);
-    const item = opened && resourcePreview(workspaceId, path);
-    if (item) host?.revealContent(owner, `preview:${item.kind}`);
+    if (opened && item) host?.revealContent(owner, `preview:${item.kind}`);
     return opened;
   } }}>{children}</ResourcePreviewContext.Provider>;
 }
