@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import { WorkspacePaneStage } from '../components/WorkspaceStage';
 import type { WorkspaceObjectTab } from '../components/ObjectTabStrip';
 import { PageTabStrip } from './PageTabStrip';
-import { tabElementId, tabPanelId } from '../lib/tab-navigation';
+import { activateTabKey, tabsInOrder, tabElementId, tabPanelId } from '../lib/tab-navigation';
 import type { WorkspacePageTab } from './workspace-pages';
 import { PageTabRowContext, WorkspacePaneContext, type WorkspacePaneHostValue, type WorkspacePaneRegistration } from './WorkspacePaneContext';
 import './workspace-pane-host.css';
@@ -59,6 +59,7 @@ export function WorkspacePaneHostProvider(props: Props) {
   const registry = useRef(new Map<string, RecordEntry>());
   const [revision, updateRevision] = useState(0);
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [objectOrder, setObjectOrder] = useState<string[]>([]);
   const selectionRef = useRef(selection); selectionRef.current = selection;
   const [peekSelection, setPeekSelection] = useState<Selection | null>(null);
   const peekSelectionRef = useRef(peekSelection); peekSelectionRef.current = peekSelection;
@@ -74,6 +75,7 @@ export function WorkspacePaneHostProvider(props: Props) {
   latest.current = { currentPath: props.currentPath, pageVisiblePath: pageCollapsed && pagePeekOpen ? peekPage || props.currentPath : props.currentPath };
 
   const commitSelection = useCallback((next: Selection | null) => {
+    if (next) setObjectOrder(previous => activateTabKey(previous, objectKey(next)));
     selectionRef.current = next;
     setSelection(previous => sameSelection(previous, next) ? previous : next);
   }, []);
@@ -121,12 +123,13 @@ export function WorkspacePaneHostProvider(props: Props) {
     };
   }, [publish]);
   const records = useMemo(() => [...registry.current.values()].map(entry => entry.snapshot), [revision]);
-  const objects = records.flatMap(record => record.objectTabs.map(tab => ({ ...tab, key: objectKey({ ownerPath: record.ownerPath, localKey: tab.key }), ownerPath: record.ownerPath, localKey: tab.key })));
+  const registeredObjects = records.flatMap(record => record.objectTabs.map(tab => ({ ...tab, key: objectKey({ ownerPath: record.ownerPath, localKey: tab.key }), ownerPath: record.ownerPath, localKey: tab.key })));
+  const objects = tabsInOrder(registeredObjects, objectOrder);
   // The detail pane follows the docked page: object tabs belong to the routed
   // page, not a hover-peeked one. A peek preview swaps the page body only.
   const ownerPath = latest.current.currentPath;
   const ownerRecord = registry.current.get(ownerPath);
-  const ownerTabs = ownerRecord ? objects.filter(tab => tab.ownerPath === ownerPath) : [];
+  const ownerTabs = ownerRecord ? registeredObjects.filter(tab => tab.ownerPath === ownerPath) : [];
   const selected = ownerTabs.length
     ? ownerTabs.find(tab => objectKey(tab) === objectKey({ ownerPath, localKey: ownerRecord!.snapshot.activeObject || '' }))
       || ownerTabs.find(tab => selection ? objectKey(tab) === objectKey(selection) : false)
@@ -218,7 +221,7 @@ export function WorkspacePaneHost() {
   const hostHidden = !host.enabled || !host.records.some(record => record.ownerPath === host.currentPath);
   return <div className="workspace-pane-host" hidden={hostHidden} style={{ '--workspace-page-header-width': headerWidth } as CSSProperties}>
     {!hostHidden && <div ref={host.setPageTabRowRef} className="workspace-page-tabs" style={{ width: headerWidth }}>
-      {!host.pageCollapsed && <PageTabStrip idPrefix={`workspace-${host.workspaceId}`} tabs={host.tabs} onClose={host.closePage} onReorder={host.reorderPage} />}
+      {!host.pageCollapsed && <PageTabStrip activationVersion={host.navigationRequest?.sequence} idPrefix={`workspace-${host.workspaceId}`} tabs={host.tabs} onClose={host.closePage} onReorder={host.reorderPage} />}
     </div>}
     <div className="workspace-page workspace-pane-stage">
       <WorkspacePaneStage pageTabs={host.tabs} activePage={page?.key} onActivatePage={host.selectPage} onClosePageTab={host.closePage}

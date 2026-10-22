@@ -5,7 +5,7 @@ import { WorkspaceTabsContext, WorkspaceViewActiveContext, WorkspaceViewTransien
 import { InsideResourcePreview, ResourcePreviewContext, resourcePreview, type PreviewState, type ResourcePreview } from './resource-preview';
 import { dshResourceDestination, dshTaskResource } from './dsh-resource-navigation';
 import { PageTabStrip } from './PageTabStrip';
-import { tabElementId, tabPanelId } from '../lib/tab-navigation';
+import { tabElementId, tabPanelId, type TabCloseFocus } from '../lib/tab-navigation';
 import { defaultTabForPath, reorderPageTabs, parseTabs, previewOwnerPath, previewOwnerSearch, ratioStorageKey, readRatio, tabForPath, tabsStorageKey, workspacePageLayout, type WorkspacePageTab } from './workspace-pages';
 import { WorkspacePaneHostProvider, WorkspacePaneHost, useWorkspacePaneHost, type WorkspacePageNavigationRequest } from './WorkspacePaneHost';
 import { RetainedWorkspaceRoute } from './workspace-routes';
@@ -22,7 +22,8 @@ export function WorkspacePages({ workspaceId, renderResource, navigationRequest 
   const outlet = useOutlet();
   const location = useLocation();
   const navigationType = useNavigationType();
-  const previousPagePath = useRef(location.pathname);
+  const previousPagePath = useRef('');
+  const previousPageNavigation = useRef<number | undefined>(undefined);
   const previousPreviewLocation = useRef({ pathname: location.pathname, hadViews: location.state?.resourceViews !== undefined });
   const locationValue = useContext(UNSAFE_LocationContext);
   const navigate = useNavigate();
@@ -109,6 +110,7 @@ export function WorkspacePages({ workspaceId, renderResource, navigationRequest 
   const [tabs, setTabs] = useState(() => parseTabs(workspaceId, read(tabsStorageKey(workspaceId))));
   const closingPage = useRef<string | null>(null);
   const forgottenPages = useRef<string[]>([]);
+  const pendingCloseFocus = useRef<TabCloseFocus | null>(null);
   const previousClosedPath = useRef(location.pathname);
   const forgetPage = useRef(forgetWorkspacePage);
   forgetPage.current = forgetWorkspacePage;
@@ -129,7 +131,9 @@ export function WorkspacePages({ workspaceId, renderResource, navigationRequest 
     const directory = '/workspaces/' + workspaceId + '/projects';
     const fromDirectory = [directory,`/workspaces/${workspaceId}/workspace-overview`].includes(previousPagePath.current) && navigationType !== 'POP'
       && location.pathname.startsWith(directory + '/') && !location.pathname.slice(directory.length + 1).includes('/') && !visitedRef.current.some(entry => entry.path === location.pathname);
+    const activated = previousPagePath.current !== location.pathname || previousPageNavigation.current !== navigationRequest?.sequence;
     previousPagePath.current = location.pathname;
+    previousPageNavigation.current = navigationRequest?.sequence;
     if (closingPage.current && closingPage.current !== location.pathname) closingPage.current = null;
     if (!current || resourcePreview(workspaceId, location.pathname)) return;
     // The close action already removed this page; do not let the route effect add it back before navigation settles.
@@ -138,9 +142,10 @@ export function WorkspacePages({ workspaceId, renderResource, navigationRequest 
     const search = location.search;
     setTabs((prev) => {
       const old = prev.find(t => t.key === current.key);
-      if (old?.path === current.path && old.search === search) return prev;
+      if (old?.path === current.path && old.search === search) return activated ? reorderPageTabs(prev, current.key, 0) : prev;
       const next = {...current, title: old?.title || current.title, search};
-      return old ? prev.map(t => t.key === current.key ? next : t) : [...prev, next];
+      const updated = old ? prev.map(t => t.key === current.key ? next : t) : [...prev, next];
+      return activated || !old ? reorderPageTabs(updated, current.key, 0) : updated;
     });
     setVisited((prev) => {
       const old = prev.find((entry) => entry.path === location.pathname);
@@ -148,7 +153,7 @@ export function WorkspacePages({ workspaceId, renderResource, navigationRequest 
       const entry = { path: location.pathname, location: locationValue, instance: old?.instance || location.key };
       return old ? prev.map((p) => p.path === entry.path ? entry : p) : [...prev, entry];
     });
-  }, [location, locationValue, current?.key, navigationType, workspaceId]);
+  }, [location, locationValue, current?.key, navigationType, workspaceId, navigationRequest?.sequence]);
 
   useLayoutEffect(() => { write(tabsStorageKey(workspaceId), JSON.stringify(tabs)); }, [tabs, workspaceId]);
   useLayoutEffect(() => {
@@ -211,9 +216,9 @@ export function WorkspacePages({ workspaceId, renderResource, navigationRequest 
     navigate({ pathname: tab.path, search: tab.search || retained?.search || '', hash: retained?.hash || '' }, { state: retained?.state });
   };
   const resources = { navigationType, navigationKey: location.key, taskBriefId: location.state?.taskBriefId, render: renderResource, states: previews, open: openPreview, identifyTask, activate: activatePreview, close: closePreview, clear: clearPreview, remove: removePreviewResource };
-  return <WorkspaceTabsContext.Provider value={{ tabs: displayTabs, register, close, reorder, ratio, setRatio, reportPaneWidth }}><WorkspacePaneHostProvider workspaceId={workspaceId} currentPath={location.pathname} enabled={Boolean(current && !current.key.startsWith('dir:code:'))} tabs={sharedTabs} paneWidth={paneWidths[location.pathname] || 0} navigationRequest={navigationRequest} ensurePage={ensurePage} activatePage={activatePage} closePage={close} reorderPage={reorder}><HostedResources workspaceId={workspaceId} value={resources}>
+  return <WorkspaceTabsContext.Provider value={{ tabs: displayTabs, pendingCloseFocus, register, close, reorder, ratio, setRatio, reportPaneWidth }}><WorkspacePaneHostProvider workspaceId={workspaceId} currentPath={location.pathname} enabled={Boolean(current && !current.key.startsWith('dir:code:'))} tabs={sharedTabs} paneWidth={paneWidths[location.pathname] || 0} navigationRequest={navigationRequest} ensurePage={ensurePage} activatePage={activatePage} closePage={close} reorderPage={reorder}><HostedResources workspaceId={workspaceId} value={resources}>
     <div className="workspace-pages" hidden={!current}>
-      <FallbackPageHeader path={location.pathname} tabPrefix={tabPrefix} tabs={sharedTabs} close={close} reorder={reorder} />
+      <FallbackPageHeader activationVersion={navigationRequest?.sequence} path={location.pathname} tabPrefix={tabPrefix} tabs={sharedTabs} close={close} reorder={reorder} />
       <WorkspacePageStack workspaceId={workspaceId} ownerPath={location.pathname}>
         {entries.map(entry => <RetainedPage key={entry.path + ':' + entry.instance} entry={entry} workspaceId={workspaceId} currentPath={location.pathname} current={Boolean(current)} tabPrefix={tabPrefix} />)}
         <WorkspacePaneHost />
@@ -267,10 +272,10 @@ function WorkspacePageStack({ workspaceId, ownerPath, className = 'workspace-pag
   return <div className={className} onClickCapture={capture}>{children}</div>;
 }
 
-function FallbackPageHeader({ path, tabPrefix, tabs, close, reorder }: { path: string; tabPrefix: string; tabs: WorkspacePageTab[]; close: (key: string) => void; reorder: (key: string, index: number) => void }) {
+function FallbackPageHeader({ activationVersion, path, tabPrefix, tabs, close, reorder }: { activationVersion?: number; path: string; tabPrefix: string; tabs: WorkspacePageTab[]; close: (key: string) => void; reorder: (key: string, index: number) => void }) {
   const host = useWorkspacePaneHost();
   if (host?.viewFor(path).registered) return null;
-  return <div className="workspace-page-tabs"><PageTabStrip idPrefix={tabPrefix} tabs={tabs} onClose={close} onReorder={reorder} /></div>;
+  return <div className="workspace-page-tabs"><PageTabStrip activationVersion={activationVersion} idPrefix={tabPrefix} tabs={tabs} onClose={close} onReorder={reorder} /></div>;
 }
 
 function RetainedPage({ entry, workspaceId, currentPath, current, tabPrefix }: { entry: Visited; workspaceId: string; currentPath: string; current: boolean; tabPrefix: string }) {

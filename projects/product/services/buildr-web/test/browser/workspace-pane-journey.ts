@@ -2,6 +2,71 @@ import assert from 'node:assert/strict';
 
 /** Exercises the production host against the layout journey's isolated workspace. */
 export async function runWorkspacePaneJourney({ t, page, workspaceUrl, capture }: any) {
+  await t.test('中右屏激活页签置首、稳定顺延并滚回最左，各来源独立保留', async () => {
+    await page.setViewportSize({width:1440,height:900});
+    await page.goto(`${workspaceUrl}/projects/demo`);
+    await page.locator('#project-detail-name:visible').waitFor();
+    const middle = () => page.getByRole('tablist',{name:'打开的页面',exact:true});
+    const names = (strip:any) => strip.locator('.pane-tab-text').allTextContents();
+    const front = async (strip:any,title:string,previous:string[]) => {
+      await strip.getByRole('tab',{name:title,exact:true}).click();
+      await page.waitForFunction(({label,title}:any) => {
+        const strip=[...document.querySelectorAll<HTMLElement>('[role="tablist"]')].find(node=>node.getAttribute('aria-label')===label&&node.getClientRects().length);
+        return strip?.querySelector('.pane-tab-text')?.textContent===title&&strip.scrollLeft===0;
+      },{label:await strip.getAttribute('aria-label'),title});
+      assert.deepEqual(await names(strip),[title,...previous.filter(item=>item!==title)]);
+    };
+    for (const [title,path] of [['服务','services'],['代码库','repositories'],['技能','skills'],['文章','articles'],['项目','projects']]) {
+      await page.locator('.shell-navigation').getByRole('link',{name:title,exact:true}).click();
+      await page.waitForURL(`${workspaceUrl}/${path}`);
+      await page.waitForFunction(()=>document.querySelector('.workspace-tabstrip [role="tab"]')?.getAttribute('aria-selected')==='true');
+    }
+    await middle().evaluate((element:HTMLElement)=>{element.style.maxWidth='220px';element.scrollLeft=element.scrollWidth;});
+    assert.ok(await middle().evaluate((element:HTMLElement)=>element.scrollWidth>element.clientWidth&&element.scrollLeft>0));
+    await front(middle(),'演示项目',await names(middle()));
+    const demo=middle().getByRole('tab',{name:'演示项目',exact:true});
+    await demo.press('Alt+ArrowRight');
+    await page.waitForFunction(()=>document.querySelector('.workspace-tabstrip .pane-tab-text')?.textContent!=='演示项目');
+    const moved=await names(middle());
+    await demo.click();
+    await page.waitForFunction(()=>document.querySelector('.workspace-tabstrip .pane-tab-text')?.textContent==='演示项目');
+    assert.deepEqual(await names(middle()),['演示项目',...moved.filter((name:string)=>name!=='演示项目')],'点击当前活动页签也置首');
+    await middle().evaluate((element:HTMLElement)=>{element.scrollLeft=element.scrollWidth;});
+    await demo.dispatchEvent('click');
+    assert.equal(await middle().evaluate((element:HTMLElement)=>element.scrollLeft),0,'重复激活当前页签复位滚动');
+    await page.locator('[data-doc-row="readme"]:visible').click();
+    await page.locator('.pane-right:visible .file-editing-pane:visible').waitFor();
+    await page.locator('[data-doc-row="agents"]:visible').click();
+    await page.locator('.pane-right:visible .markdown-body:visible').waitFor();
+    await page.locator('[data-service-card="api"]:visible').click();
+    await page.locator('#service-detail-name:visible').waitFor();
+    const right=page.locator('.pane-right:visible').getByRole('tablist',{name:'打开的对象',exact:true});
+    assert.deepEqual(await names(right),['服务详情','AGENTS.md','项目文档']);
+    await right.evaluate((element:HTMLElement)=>{element.style.maxWidth='190px';element.scrollLeft=element.scrollWidth;});
+    assert.ok(await right.evaluate((element:HTMLElement)=>element.scrollWidth>element.clientWidth&&element.scrollLeft>0));
+    const middleBefore=await names(middle());
+    await front(right,'项目文档',await names(right));
+    await front(right,'AGENTS.md',await names(right));
+    assert.deepEqual(await names(middle()),middleBefore,'右侧对象激活不重排中屏');
+    const rightBefore=await names(right);
+    await right.evaluate((element:HTMLElement)=>{element.scrollLeft=element.scrollWidth;});
+    await right.getByRole('tab',{name:'AGENTS.md',exact:true}).dispatchEvent('click');
+    assert.equal(await right.evaluate((element:HTMLElement)=>element.scrollLeft),0);
+    await capture(page,'active-tab-first-both-panes.png');
+    await middle().getByRole('tab',{name:'服务目录',exact:true}).click();
+    await page.waitForURL(`${workspaceUrl}/services`);
+    await middle().getByRole('tab',{name:'演示项目',exact:true}).click();
+    await page.waitForURL(`${workspaceUrl}/projects/demo`);
+    assert.deepEqual(await names(right),rightBefore,'返回同来源页面保留对象激活顺序');
+    await right.getByRole('button',{name:'关闭 AGENTS.md',exact:true}).click();
+    await page.waitForFunction(()=>{
+      const strip=[...document.querySelectorAll<HTMLElement>('[aria-label="打开的对象"]')].find(node=>node.getClientRects().length);
+      return strip?.querySelector('[role="tab"]')?.getAttribute('aria-selected')==='true'&&strip.scrollLeft===0;
+    });
+    await page.reload();await page.locator('#project-detail-name:visible').waitFor();
+    assert.equal((await names(middle()))[0],'演示项目','刷新后的中屏当前页签仍为首位');
+  });
+
   await t.test('共享中右内容区：暂看不导航，菜单恢复，局部展开保留实例和滚动', async () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`${workspaceUrl}/projects`);

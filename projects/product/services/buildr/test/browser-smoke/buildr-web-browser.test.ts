@@ -819,7 +819,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.locator('#quit-buildr').isVisible(), true, 'Preview 实例回退为仅退出按钮');
     assert.equal(await page.locator('#restart-buildr').count(), 0, 'Preview 实例不提供重启入口');
     await page.goto(url);
-    assert.equal(await page.locator('#restart-buildr').isVisible(), true, '默认实例的主按钮是重启');
+    assert.equal(await page.locator('#more-actions').isVisible(), true, '默认实例通过更多操作菜单提供重启和退出');
     assert.equal(await page.locator('#quit-buildr').count(), 0, '退出入口收进下拉菜单，未展开时不存在');
     await page.locator('#workspace-grid .workspace-card').first().waitFor({ state: 'visible' });
     assert.equal(await page.locator('#workspace-grid .workspace-card').count(), 2);
@@ -899,6 +899,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('[data-area="workbench"]').click();
     await page.waitForURL(/\/(?:overview|tasks)/);
     await page.locator('[data-area="workspace"]').click();
+    await page.waitForURL(`${workspaceUrl}/workspace-overview`);
+    await page.getByRole('tab', {name:'服务目录',exact:true}).click();
     await page.waitForURL(`${workspaceUrl}/services`);
     await page.locator('.pane-right:visible #service-detail-name').waitFor({ state: 'visible' });
     await page.locator('[data-nav="skills"]').click();
@@ -915,9 +917,10 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.locator('.workspace-page:not([hidden])').count(), 1);
     await page.getByRole('tab', { name: '演示项目', exact: true }).press('Alt+ArrowLeft');
     const order = await page.locator('.workspace-tabstrip .pane-tab-text').allTextContents();
+    const activeTitle = await page.locator('.workspace-tabstrip [aria-selected="true"] .pane-tab-text').innerText();
     await page.reload();
     await page.locator('#skills-list').waitFor({ state: 'visible' });
-    assert.deepEqual(await page.locator('.workspace-tabstrip .pane-tab-text').allTextContents(), order.filter((title: string) => title !== '演示服务'));
+    assert.deepEqual(await page.locator('.workspace-tabstrip .pane-tab-text').allTextContents(), [activeTitle, ...order.filter((title: string) => title !== '演示服务' && title !== activeTitle)]);
     assert.equal(await page.locator('[data-area="workspace"]').getAttribute('class'), 'active');
     assert.equal(await page.locator('[data-nav="services"]').innerText(), '服务');
     assert.equal(await page.getByText('环境维护', { exact: true }).count(), 0);
@@ -1053,7 +1056,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.unroute(registryUrl, failRemove);
     const failQuit = async (route: any) => { quits++; await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'quit_unavailable', message: '宿主暂时不能退出' } }) }); };
     await page.route(quitUrl, failQuit);
-    await page.locator('.ant-dropdown-button:has(#restart-buildr) .ant-dropdown-trigger').click();
+    await page.locator('#more-actions').hover();
     await page.locator('#quit-buildr').click();
     await page.getByRole('dialog', { name: '退出 Buildr Web？', exact: true }).waitFor({ state: 'visible' });
     await confirmAntModal(page);
@@ -1070,11 +1073,12 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
 
   if (selected('shell')) await t.test('重启入口确认后进入重启屏，宿主令牌轮换触发自动刷新', async () => {
     await page.goto(`${url}/?catalog=1`);
-    await page.locator('#restart-buildr').waitFor({ state: 'visible' });
+    await page.locator('#more-actions').waitFor({ state: 'visible' });
     const restartUrl = `${url}/api/v1/app/restart`;
     expectedBrowserErrors.add(restartUrl);
     const failRestart = async (route: any) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'restart_unavailable', message: '宿主暂时不能重启' } }) });
     await page.route(restartUrl, failRestart);
+    await page.locator('#more-actions').hover();
     await page.locator('#restart-buildr').click();
     const confirmDialog = page.getByRole('dialog', { name: '重启 Buildr Web？', exact: true });
     await confirmDialog.waitFor({ state: 'visible' });
@@ -1092,15 +1096,16 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     let documentPolls = 0;
     await page.route('**', async (route: any) => {
       const requestUrl = route.request().url();
-      if (requestUrl === `${url}/` || requestUrl === url) {
+      if (new URL(requestUrl).origin === url && new URL(requestUrl).pathname === '/') {
         documentPolls++;
         // The first observation hits the stopping old process; the restarted
         // document with a rotated session token arrives on a later poll.
-        if (documentPolls === 1) return route.abort();
+        if (documentPolls === 1) { expectedBrowserErrors.add(`[${url}/]: Failed to load resource: net::ERR_FAILED`); return route.abort(); }
         return route.fulfill({ contentType: 'text/html', body: restartedDoc });
       }
       return route.fallback();
     });
+    await page.locator('#more-actions').hover();
     await page.locator('#restart-buildr').click();
     await page.getByRole('dialog', { name: '重启 Buildr Web？', exact: true }).waitFor({ state: 'visible' });
     await confirmAntModal(page);
@@ -1111,6 +1116,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   });
 
   if (selected('shell')) await t.test('页面与对象页签手动激活、关闭焦点和面板关联保持一致', async () => {
+    await page.setViewportSize({width:1440,height:900});
     await page.goto(`${workspaceUrl}/projects`);
     await page.locator('#project-table-body tr').filter({ hasText: '演示项目' }).click();
     await page.locator('#project-detail-name').waitFor();
@@ -1136,22 +1142,29 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       return panel && !panel.hasAttribute('hidden') && panel.getClientRects().length > 0 && tab?.getAttribute('aria-selected') === 'true';
     }, { control, tabId });
     assert.deepEqual(await page.evaluate((id: string) => { const panel = document.getElementById(id)!; return { role: panel.getAttribute('role'), label: panel.getAttribute('aria-labelledby'), hidden: panel.hasAttribute('hidden') }; }, control), { role: 'tabpanel', label: tabId, hidden: false });
-    await demo.press('End'); assert.equal(await other.evaluate((node: HTMLElement) => node === document.activeElement), true);
-    await other.press('Home'); assert.equal(await strip.getByRole('tab', { name: '项目目录', exact: true }).evaluate((node: HTMLElement) => node === document.activeElement), true);
+    assert.deepEqual(await strip.locator('.pane-tab-text').allTextContents(), ['演示项目', '另一项目', '项目目录']);
+    const directory = strip.getByRole('tab', { name: '项目目录', exact: true });
+    await demo.press('End'); assert.equal(await directory.evaluate((node: HTMLElement) => node === document.activeElement), true);
+    await directory.press('Home'); assert.equal(await demo.evaluate((node: HTMLElement) => node === document.activeElement), true);
     await demo.press('Alt+ArrowRight');
-    await page.waitForFunction(() => Array.from(document.querySelectorAll('.workspace-tabstrip .pane-tab-text')).map(node => node.textContent).join('|') === '项目目录|另一项目|演示项目');
-    assert.deepEqual(await strip.locator('.pane-tab-text').allTextContents(), ['项目目录', '另一项目', '演示项目'], '目录与页面使用同一可见重排索引');
+    await page.waitForFunction(() => Array.from(document.querySelectorAll('.workspace-tabstrip .pane-tab-text')).map(node => node.textContent).join('|') === '另一项目|演示项目|项目目录');
+    assert.deepEqual(await strip.locator('.pane-tab-text').allTextContents(), ['另一项目', '演示项目', '项目目录'], '目录与页面使用同一可见重排索引');
     const demoBox = await demo.boundingBox(), otherBox = await other.boundingBox();
     assert.ok(demoBox && otherBox);
     await page.mouse.move(demoBox.x + demoBox.width / 2, demoBox.y + demoBox.height / 2);
     await page.mouse.down();
     await page.mouse.move(otherBox.x + 8, otherBox.y + otherBox.height / 2, { steps: 8 });
     await page.mouse.up();
-    await page.waitForFunction(() => Array.from(document.querySelectorAll('.workspace-tabstrip .pane-tab-text')).map(node => node.textContent).join('|') === '项目目录|演示项目|另一项目');
+    await page.waitForFunction(() => Array.from(document.querySelectorAll('.workspace-tabstrip .pane-tab-text')).map(node => node.textContent).join('|') === '演示项目|另一项目|项目目录');
     await page.locator('.pane-tab-drag-ghost').waitFor({ state: 'hidden' });
     await demo.press('Delete'); await demo.waitFor({ state: 'hidden' });
     // Focus hand-off races the browser's focus restore; poll briefly.
-    await page.waitForFunction((el) => el === document.activeElement, await other.elementHandle());
+    try { await page.waitForFunction((id) => document.getElementById(id) === document.activeElement, await other.getAttribute('id')); }
+    catch (error) {
+      await capture(page, 'active-tab-first-close-focus.png');
+      const observed = await page.evaluate(() => ({active:{tag:document.activeElement?.tagName,id:document.activeElement?.id,key:(document.activeElement as HTMLElement)?.dataset.tabKey}, tabs:[...document.querySelectorAll('.workspace-tabstrip')].map(node=>({visible:node.getClientRects().length,keys:[...node.querySelectorAll<HTMLElement>('[data-tab-key]')].map(tab=>tab.dataset.tabKey)})),url:location.href}));
+      throw new Error('关闭后焦点观察：' + JSON.stringify(observed), {cause:error});
+    }
     await other.press('Delete'); await page.waitForURL(`${workspaceUrl}/projects`);
     await page.waitForFunction(() => document.activeElement !== document.body && !!(document.activeElement)?.getClientRects().length);
     await page.locator('#project-table-body tr').filter({ hasText: '演示项目' }).click();
@@ -1161,10 +1174,13 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#service-detail-name:visible').waitFor();
     const objects = page.locator('.pane-right:visible').getByRole('tablist', { name: '打开的对象', exact: true });
     const service = objects.getByRole('tab', { name: '服务详情', exact: true }), agents = objects.getByRole('tab', { name: 'AGENTS.md', exact: true });
-    await service.focus(); await service.press('Home');
+    await service.focus(); await service.press('End');
     assert.equal(await agents.evaluate((node: HTMLElement) => node === document.activeElement), true);
     assert.equal(await service.getAttribute('aria-selected'), 'true');
+    await page.getByRole('tablist', { name: '打开的页面', exact: true }).getByRole('tab', {name:'演示项目',exact:true}).press('Alt+ArrowRight');
+    const middleOrder = await strip.locator('.pane-tab-text').allTextContents();
     await agents.press('Enter'); await page.locator('.pane-right .markdown-body:visible').waitFor();
+    assert.deepEqual(await strip.locator('.pane-tab-text').allTextContents(), middleOrder, '右侧对象激活不重新排列手动调整的中屏');
     const objectControl = await agents.getAttribute('aria-controls');
     assert.equal(await page.evaluate((id: string) => document.getElementById(id)?.getAttribute('aria-labelledby'), objectControl), await agents.getAttribute('id'));
     assert.equal(await objects.locator('[role="tab"][tabindex="0"]').count(), 1);
