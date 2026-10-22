@@ -321,7 +321,7 @@ export function ProjectDetailPage() {
       >
         <div className="project-home">
         {deleting && <AssetDeleteDialog kind="project" id={deleting} onClose={() => setDeleting(null)} />}
-        <ProjectHomeHeader project={project} workspaceName={workspaceName} serviceCount={composition.data?.sources.projects !== 'complete' && !data ? null : project.serviceIds?.length || 0} href={href} onWork={() => navigate(href('/tasks?project=' + encodeURIComponent(projectCode)))} actions={<>
+        <ProjectHomeHeader project={project} href={href} onWork={() => navigate(href('/tasks?project=' + encodeURIComponent(projectCode)))} actions={<>
               <ResourceActions size="middle" projectCode={projectCode} resource={{ kind: "project", key: "project:" + projectCode, label: project.name, href: href("/projects/" + encodeURIComponent(projectCode)) }} />
               <Button id="project-edit-button" onClick={() => setEditOpen(true)}>编辑项目</Button>
               <Dropdown trigger={['click']} menu={{ items: [{ key: 'delete', label: '移除' }], onClick: () => setDeleting(projectCode) }}>
