@@ -1,0 +1,172 @@
+{
+  "version": 1,
+  "title": "服务运行与部署",
+  "pages": [
+    {
+      "id": "workbench",
+      "title": "工作台 · 本地运行",
+      "notes": [
+        {
+          "id": "workbench-local",
+          "title": "工作台先看本地状态",
+          "text": "工作台右侧只读展示运行中的服务、工作树和端口，点击进入服务详情。启动、停止和日志仍在服务目录管理，避免工作台承担第二套操作入口。",
+          "position": "workbench-local"
+        },
+        {
+          "id": "workbench-scope",
+          "title": "工作台不是运行管理页",
+          "text": "这里只回答“本地现在开着什么”。需要启动其他工作树、停止实例或查看日志时，进入服务目录或服务详情。",
+          "position": "workbench-local"
+        }
+      ],
+      "states": []
+    },
+    {
+      "id": "directory",
+      "title": "服务目录 · 本地运行总览",
+      "notes": [
+        {
+          "id": "directory-overview",
+          "title": "按服务聚合多个工作树实例",
+          "text": "同一服务可以在多个任务工作树中各跑一份。目录按服务聚合，状态列用本地和 QA 前缀标签合并显示；显示不完整时悬停或点击状态列弹出浮窗查看完整运行与部署情况。",
+          "position": "directory"
+        },
+        {
+          "id": "directory-filter",
+          "title": "只看运行中",
+          "text": "并发开发时用“只看运行中”收起未运行服务，集中看当前占用的端口和工作树。",
+          "position": "directory-filter"
+        },
+        {
+          "id": "directory-start",
+          "title": "启动前先选工作树",
+          "text": "已配置服务可以直接启动；启动时需要选择工作树，每个工作树最多一个受管实例。智能体在自己的任务工作树启动时也会出现在这里。",
+          "position": "directory-actions"
+        },
+        {
+          "id": "directory-qa",
+          "title": "环境状态收进同一列",
+          "text": "本地运行和各环境最近结果都在“运行与部署”列；以后新增环境只增加状态数据，不新增表格列。QA 只显示最近一次提交，构建进度和历史仍在云雀查看。",
+          "position": "directory-qa"
+        }
+      ],
+      "states": []
+    },
+    {
+      "id": "service",
+      "title": "服务详情 · 运行与 QA",
+      "notes": [
+        {
+          "id": "service-tabs",
+          "title": "详情在前，运行与部署在后",
+          "text": "服务详情页与项目详情一致，用顶层页签切换“详情”和“运行与部署”；运行与部署内部再用本地运行/各环境切换，避免所有内容纵向堆叠。",
+          "position": "runtime-tab"
+        },
+        {
+          "id": "service-config",
+          "title": "配置跟服务走",
+          "text": "运行定义保存在服务级 runtime.yml，不按项目或工作树复制。工作目录相对于每个检出根目录解析，启动时再结合具体工作树和实际端口。",
+          "position": "runs"
+        },
+        {
+          "id": "service-start",
+          "title": "启动时先选工作树",
+          "text": "人工启动先选择工作树；智能体在自己的任务工作树启动时，也会出现在同一份运行记录里。每个工作树最多保留一个受管实例。",
+          "position": "start-action"
+        },
+        {
+          "id": "service-qa",
+          "title": "QA 部署独立页签",
+          "text": "本地运行与各环境部署在同一区块内用页签切换，避免纵向堆叠。服务页发起 QA 部署并确认只读计划；提交后只显示最近结果和打开云雀。构建进度、历史、当前版本和日志仍以云雀为准。",
+          "position": "qa-tab"
+        },
+        {
+          "id": "service-source",
+          "title": "配置只由智能体写入",
+          "text": "运行定义保存在服务级 runtime.yml，由智能体发现并实际验证后写入；页面只读展示来源和验证时间，配置有误时重新配置。首期不提供手动配置入口。",
+          "position": "config-action"
+        },
+        {
+          "id": "service-scope",
+          "title": "首期范围",
+          "text": "首期只做本地启动和 QA 部署。生产、回归、Ops 等环境以后由用户自行定义；本模块不管理 Nacos 注册、流量、服务发现或 MQ。",
+          "position": "service-runtime"
+        }
+      ],
+      "states": [
+        {
+          "id": "start",
+          "title": "选择工作树",
+          "notes": [
+            {
+              "id": "start-state",
+              "title": "同一个服务，不同工作树，不同端口",
+              "text": "已运行的工作树显示实际端口并禁止重复启动；选择空闲工作树后，Buildr 分配下一个可用端口。",
+              "position": "start-worktree"
+            }
+          ]
+        },
+        {
+          "id": "qa",
+          "title": "QA 部署确认",
+          "notes": [
+            {
+              "id": "qa-state",
+              "title": "确认的是一次具体计划",
+              "text": "计划绑定目标、连接、远端分支和提交；默认登记集成分支，可改选其他远端分支。本地未提交改动不会部署；请求受理不等于部署成功，Buildr 不自动重试未知结果。",
+              "position": "qa-plan"
+            }
+          ]
+        },
+        {
+          "id": "qa-submitted",
+          "title": "QA 已提交",
+          "notes": [
+            {
+              "id": "qa-submitted-state",
+              "title": "只保留最近结果",
+              "text": "服务页显示“已提交，构建中”和打开云雀；不在 Buildr 内展示阶段进度、历史或远端日志。",
+              "position": "qa-status"
+            }
+          ]
+        },
+        {
+          "id": "logs",
+          "title": "本地日志",
+          "notes": [
+            {
+              "id": "logs-state",
+              "title": "日志是托管进程的标准输出",
+              "text": "本地日志来自 Buildr 托管进程的标准输出与错误输出，智能体通过托管启动的运行同样在这里；日志只保留在本机。Buildr 不管理 Nacos 注册、流量或 MQ。",
+              "position": "logs"
+            }
+          ]
+        },
+        {
+          "id": "unconfigured",
+          "title": "尚未配置",
+          "notes": [
+            {
+              "id": "unconfigured-state",
+              "title": "没有运行定义时不猜命令",
+              "text": "Buildr Web 不提供命令主入口，首期也不提供手动配置；先让智能体读取仓库并实际启动验证，验证后才出现确定性的启动按钮。",
+              "position": "unconfigured"
+            }
+          ]
+        },
+        {
+          "id": "discovery",
+          "title": "智能体配置",
+          "notes": [
+            {
+              "id": "discovery-state",
+              "title": "发现交给智能体，重复执行留给按钮",
+              "text": "指令明确只读调查、验证后写入运行定义，不部署、不读连接秘密、不修改 Nacos/流量/MQ。配置完成后再提供确定性的启动按钮。",
+              "position": "discovery"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -292,6 +292,12 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     contributions: { cli: ['connection-skill'], http: ['connection-skills.http'], diagnostics: [] },
     lifecycle: 'managed',
   }, {
+    id: 'service-runtime',
+    requires: [WORKSPACE_APPLICATION, CODE_APPLICATION, 'connection-skills.application'],
+    provides: ['service-runtime.application', 'service-runtime.deployment', 'service-runtime.view'],
+    contributions: { cli: ['service-runtime'], http: ['service-runtime.http'], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
     id: 'mysql-query',
     requires: ['connection-skills.application', WORKSPACE_TASK_SUPPORT],
     provides: ['mysql-query.application'],
@@ -381,7 +387,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'dsh', 'dsh link', 'dsh sessions', 'dsh open-task',
     'codex connections', 'codex link', 'codex sessions', 'codex',
     'code repositories', 'code directory', 'code file', 'code search', 'code source-control','code source-control-inventory', 'code commit-context', 'code sync-context', 'code branches', 'code authors', 'code history', 'code commit', 'code diff', 'code source-file',
-    'connection-skill', 'mysql-query',
+    'connection-skill', 'service-runtime', 'mysql-query',
     'project verification inspect', 'project verification validate', 'project verification update',
     'task review inspect', 'task review record',
     'task verification inspect', 'task verification record',
@@ -393,7 +399,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item: any) => item.id), [
     'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'task-work-context.http', 'task.http', 'workbench.http', 'task.commits.http', 'task.changed-files.http', 'task.materials.http', 'publication.http', 'change.http', 'agent-operations.http', 'native-session-links.http', 'codex-desktop.http', 'dsh-desktop.http', 'code.files.http', 'code.generation.http',
-    'connection-skills.http', 'mysql-query.http',
+    'connection-skills.http', 'service-runtime.http', 'mysql-query.http',
     'task-review.http', 'task-verification.http',
     'task-parent-coordination.http', 'system-installation.release-awareness.http',
     'system-installation.update-flow.http',

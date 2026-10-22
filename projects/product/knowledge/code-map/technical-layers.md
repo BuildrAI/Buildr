@@ -95,6 +95,22 @@
 
 实际操作为“智能体（Agent）发现绑定 → 读取专业技能（Skill）及程序帮助 → 通用入口启动程序 → 所选程序访问真实系统”。程序写前请求本机上下文再次校验，通用宿主不审批业务；Nacos 随附程序另维护远端版本、授权及结果。MySQL 另由独立查询应用消费同一明确实例，所有入口保留观察版本及只读边界。
 
+## 服务运行与部署
+
+一个服务保存一份运行定义，服务的所有检出目录共用它；每次启动是一个独立运行实例。模块只组织运行与部署事实，代码观察交给 `code`，部署动作交给连接程序。
+
+- **[`src/modules/service-runtime/`](../../services/buildr/src/modules/service-runtime/)** — 运行定义、受管本地运行、部署准备与最近结果。
+  - [模块装配（module.ts）](../../services/buildr/src/modules/service-runtime/module.ts) — 只取工作空间资产目录、代码观察与连接端口（`get`/`run`）；把已登记代码库的检出目录解析成服务工作树列表，工作目录由服务端解析，不接受调用方传入路径。
+  - **`domain/`** — [运行定义（runtime-definition.ts）](../../services/buildr/src/modules/service-runtime/domain/runtime-definition.ts)：`runtime.yml` 字段与校验，首期只接受 `source: agent`；[运行记录（runs.ts）](../../services/buildr/src/modules/service-runtime/domain/runs.ts)：状态、活跃判断、端口避让与就绪匹配；[部署契约（deployment.ts）](../../services/buildr/src/modules/service-runtime/domain/deployment.ts)：`buildr.service-deployment/v1` 的输入、输出解析与结果归一化，受理不等于成功，超时、超出输出上限、无法启动或无法解析一律记为未知。
+  - **`application/`** — [运行应用（service-runtime-application.ts）](../../services/buildr/src/modules/service-runtime/application/service-runtime-application.ts)：启动、停止、pid 对账与日志尾部有界读取；[部署应用（service-deployment-application.ts）](../../services/buildr/src/modules/service-runtime/application/service-deployment-application.ts)：只读计划准备（远端分支、有效期、诊断）与提交，结果未知时同一计划必须显式确认才可再次提交；[读取视图（service-runtime-view.ts）](../../services/buildr/src/modules/service-runtime/application/service-runtime-view.ts)：合成目录概览与服务详情，单个服务的定义损坏只降级该服务。
+  - **`persistence/`** — 运行定义写在工作空间 `services/<service-code>/runtime.yml`；运行记录、进程日志与最近部署结果写在 `.buildr/local/service-runtime/` 的 [runs-repository.ts](../../services/buildr/src/modules/service-runtime/persistence/runs-repository.ts) 与 [deployments-repository.ts](../../services/buildr/src/modules/service-runtime/persistence/deployments-repository.ts)。
+  - [托管进程（infrastructure/managed-process.ts）](../../services/buildr/src/modules/service-runtime/infrastructure/managed-process.ts) — 启动、输出捕获、终止、存活探测及端口与 HTTP 就绪检查。
+  - [命令入口（service-runtime-cli.ts）](../../services/buildr/src/modules/service-runtime/interfaces/cli/service-runtime-cli.ts) 与 [网页入口（service-runtime-http.ts）](../../services/buildr/src/modules/service-runtime/interfaces/http/service-runtime-http.ts) — 同一应用的输入输出适配；写入经统一来源与会话核对，领域错误码映射状态码。
+
+部署不由本模块实现：运行定义 `environments.<env>.connectionId` 指向连接技能提供的部署程序，Buildr 经[通用程序执行](../../services/buildr/src/modules/connection-skills/infrastructure/program.ts)传入计划并解析契约输出，秘密不进入运行日志。制作要求与随包样例见[部署适配器契约](../../services/buildr/resources/workspace/skills/buildr/connection-authoring/references/connection-contract.md#服务部署适配器)和[适配器样例程序](../../services/buildr/resources/workspace/skills/buildr/connection-authoring/templates/deployment-adapter.mjs)；换用其他 CI/CD 只需另一个实现同一契约的连接技能，页面与模块不改。
+
+前端 [`features/service-runtime/`](../../services/buildr-web/src/features/service-runtime/) 用一个客户端服务三个入口：目录合并状态列与浮窗（[ServiceRuntimeStatusCell.tsx](../../services/buildr-web/src/features/service-runtime/components/ServiceRuntimeStatusCell.tsx)）、服务详情（服务主页顶层用“详情/运行与部署”页签，运行区块内部再切换本地与各环境，[ServiceRuntimeSection.tsx](../../services/buildr-web/src/features/service-runtime/components/ServiceRuntimeSection.tsx)）和工作台只读汇总（[WorkbenchLocalRuns.tsx](../../services/buildr-web/src/features/service-runtime/components/WorkbenchLocalRuns.tsx)）；启动、日志、识别与 QA 提交都是抽屉。状态文案与环境集合由数据驱动（[model.ts](../../services/buildr-web/src/features/service-runtime/model.ts)），[读取钩子（useServiceRuntime.ts）](../../services/buildr-web/src/features/service-runtime/hooks/useServiceRuntime.ts)按请求世代隔离迟到响应，只在存在受管运行时轮询。首期不提供手动命令入口，运行定义只来自智能体识别并实际验证。
+
 ## 对象装配与跨模块依赖
 
 | 入口 | 代表职责 |
