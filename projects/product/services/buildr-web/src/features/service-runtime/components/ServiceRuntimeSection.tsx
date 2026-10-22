@@ -7,7 +7,7 @@ import { formatShortDateTime } from '../../../lib/taskLabels';
 import { AgentDiscoveryDrawer } from './AgentDiscoveryDrawer';
 import { LocalLogsDrawer } from './LocalLogsDrawer';
 import { QaDeployDrawer } from './QaDeployDrawer';
-import { StartWorktreeDrawer } from './StartWorktreeDrawer';
+import { StartWorktreeModal } from './StartWorktreeModal';
 import { useServiceRuntimeDetail } from '../hooks/useServiceRuntime';
 import {
   DEPLOYMENT_STATE_COLOR,
@@ -190,7 +190,7 @@ export function ServiceRuntimeSection({ serviceCode, serviceName }: Props) {
 
     <p className="runtime-scope-note">首期页面只提供本地运行与 QA 部署提交。生产、回归、Ops 等环境由用户在工作空间定义后显示最近结果，提交使用 <code>buildr service-runtime deploy --environment &lt;环境&gt;</code>。</p>
 
-    <StartWorktreeDrawer open={startOpen} serviceCode={serviceCode} serviceName={serviceName} onClose={() => setStartOpen(false)} onStarted={() => void detail.refresh({ silent: true })} />
+    <StartWorktreeModal open={startOpen} serviceCode={serviceCode} serviceName={serviceName} onClose={() => setStartOpen(false)} onStarted={() => void detail.refresh({ silent: true })} />
     <AgentDiscoveryDrawer open={discoveryOpen} serviceCode={serviceCode} serviceName={serviceName} onClose={() => setDiscoveryOpen(false)} />
     <LocalLogsDrawer open={Boolean(logRun)} run={logRun} serviceName={serviceName} onClose={() => setLogRun(null)} />
     <QaDeployDrawer open={qaOpen} serviceCode={serviceCode} serviceName={serviceName} onClose={() => setQaOpen(false)} onSubmitted={() => void detail.refresh({ silent: true })} />

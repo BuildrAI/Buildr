@@ -62,14 +62,13 @@ function useServiceRuntimeRead<T>(workspaceId: string | null, scope: string, rea
 
 export function useServiceRuntimeOverview(workspaceId: string | null) {
   const state = useServiceRuntimeRead<ServiceRuntimeOverview>(workspaceId, 'overview', (client, signal) => client.overview({ signal }));
-  const running = state.data?.local.activeCount ?? 0;
   const { refresh, active } = state;
-  // 只有存在受管运行时轮询；启动中的实例需要跟进就绪结果。
+  // 视图激活期间持续轮询，后台启动、外部操作与失败变化都能在页面自动反映。
   useEffect(() => {
-    if (!active || !running) return;
+    if (!active) return;
     const timer = setInterval(() => void refresh({ silent: true }), POLL_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [active, running, refresh]);
+  }, [active, refresh]);
   return state;
 }
 
@@ -79,12 +78,11 @@ export function useServiceRuntimeDetail(workspaceId: string | null, serviceCode:
     serviceCode ?? 'none',
     (client, signal) => (serviceCode ? client.detail(serviceCode, { signal }) : Promise.resolve(null)),
   );
-  const running = state.data?.service.local.activeCount ?? 0;
   const { refresh, active } = state;
   useEffect(() => {
-    if (!active || !running) return;
+    if (!active) return;
     const timer = setInterval(() => void refresh({ silent: true }), POLL_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [active, running, refresh]);
+  }, [active, refresh]);
   return state;
 }

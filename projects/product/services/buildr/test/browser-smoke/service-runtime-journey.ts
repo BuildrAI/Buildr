@@ -122,7 +122,11 @@ environments:
     await page.getByRole('tab', { name: '运行与部署', exact: true }).click();
     await section().waitFor({ state: 'visible' });
   };
-  const filter = (label: string) => page.locator('#service-runtime-filter').getByText(label, { exact: true });
+  const filter = async (label: string) => {
+    await page.locator('.ant-select:has(#service-runtime-filter)').click();
+    await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: label }).click();
+  };
+  const modalFooter = () => page.locator('.ant-modal-footer');
   // 抽屉 id 落在正文节点上，底部操作按当前打开的抽屉定位。
   const footer = () => page.locator('.ant-drawer-open .ant-drawer-footer');
   let started: Run | null = null;
@@ -146,16 +150,16 @@ environments:
     assert.match(await popover().innerText(), /还没有提交过部署/);
     await capture(page, 'service-runtime-directory-popover.png');
 
-    await filter('只看运行中').click();
+    await filter('只看运行中');
     await page.getByRole('button', { name: '清除筛选', exact: true }).waitFor({ state: 'visible' });
     assert.match(await page.locator('.resource-directory-count').innerText(), /^0 \/ \d+ 个服务$/);
-    await page.getByText('当前没有运行中的服务', { exact: true }).waitFor({ state: 'visible' });
-    await filter('全部服务').click();
+    await page.getByText('没有匹配的结果', { exact: true }).waitFor({ state: 'visible' });
+    await page.getByRole('button', { name: '清除筛选', exact: true }).click();
     await cell().waitFor({ state: 'visible' });
 
     await row().getByRole('button', { name: '启动' }).click();
-    const startDrawer = page.locator('#service-runtime-start-drawer');
-    const worktreeRow = startDrawer.locator(`[data-worktree-id="${main.id}"]`);
+    const startModal = page.locator('#service-runtime-start-drawer');
+    const worktreeRow = startModal.locator(`[data-worktree-id="${main.id}"]`);
     await worktreeRow.waitFor({ state: 'visible' });
     assert.match(await worktreeRow.innerText(), /主检出/);
     assert.match(await worktreeRow.innerText(), new RegExp(integrationBranch));
@@ -163,21 +167,21 @@ environments:
     await capture(page, 'service-runtime-start-drawer.png');
     await worktreeRow.getByRole('button', { name: '启动' }).click();
     await page.locator('.ant-message').getByText(/已启动 主检出，端口 :/).waitFor({ state: 'visible' });
-    await worktreeRow.getByRole('button', { name: '已在运行', exact: true }).waitFor({ state: 'visible' });
+    await worktreeRow.locator('.start-worktree-status').getByText(/运行中 :/).waitFor({ state: 'visible' });
     const afterStart = await read(detailUrl);
     started = afterStart.service.runs.find((item: Run) => item.worktreeLabel === '主检出' && item.status !== 'stopped' && item.status !== 'failed') ?? null;
     assert.ok(started, '启动后必须能读到受管运行记录');
     assert.ok(started.actualPort >= preferredPort, '端口由 Buildr 分配，首选被占用时避让');
-    await footer().getByRole('button', { name: /取\s*消/ }).click();
-    await startDrawer.waitFor({ state: 'hidden' });
+    await modalFooter().getByRole('button', { name: /取\s*消/ }).click();
+    await startModal.waitFor({ state: 'hidden' });
 
     await cell().locator('.run-dot').waitFor({ state: 'visible' });
     assert.match(await cell().innerText(), /1 个运行中/);
     assert.match(await cell().innerText(), new RegExp(`:${started.actualPort}`));
-    await filter('只看运行中').click();
+    await filter('只看运行中');
     await page.waitForFunction(() => document.querySelectorAll('#service-table-body tr.resource-directory-row').length === 1);
     assert.match(await page.locator('.resource-directory-count').innerText(), /^1 \/ \d+ 个服务$/);
-    await filter('全部服务').click();
+    await filter('全部服务');
     await cell().waitFor({ state: 'visible' });
 
     await cell().hover();

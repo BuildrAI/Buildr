@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { Alert, App, Button, Space, Tag } from 'antd';
+import { Alert, App, Button, Modal, Space, Tag } from 'antd';
 import { PlayCircleOutlined } from '@ant-design/icons';
-import { DrawerShell } from '../../../components/DrawerShell';
 import { useAppShell } from '../../../app/AppShellContext';
 import { useServiceRuntimeDetail } from '../hooks/useServiceRuntime';
 import { isActiveRun, shortCommit } from '../model';
@@ -15,8 +14,8 @@ type Props = {
   onStarted?(): void;
 };
 
-/** 每个工作树最多一个受管运行实例；端口由 Buildr 在启动时分配。 */
-export function StartWorktreeDrawer({ open, serviceCode, serviceName, onClose, onStarted }: Props) {
+/** 每个工作树最多一个受管运行实例；端口由 Buildr 在启动时分配。确认性质的动作使用弹窗。 */
+export function StartWorktreeModal({ open, serviceCode, serviceName, onClose, onStarted }: Props) {
   const { workspaceId } = useAppShell();
   const { message } = App.useApp();
   const detail = useServiceRuntimeDetail(workspaceId, open ? serviceCode : null);
@@ -41,17 +40,14 @@ export function StartWorktreeDrawer({ open, serviceCode, serviceName, onClose, o
     }
   };
 
-  return <DrawerShell
+  return <Modal
     open={open}
-    onClose={onClose}
-    eyebrow="本地运行"
-    title="选择工作树启动"
-    sub={serviceName && serviceCode ? `${serviceName} · ${serviceCode}` : ''}
-    width={520}
-    id="service-runtime-start-drawer"
-    footer={<Space style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}><Button onClick={onClose}>取消</Button></Space>}
+    onCancel={onClose}
+    title={<div className="start-worktree-heading"><span className="start-worktree-eyebrow">本地运行</span><span>选择工作树启动</span>{serviceName && serviceCode ? <span className="start-worktree-sub">{serviceName} · {serviceCode}</span> : null}</div>}
+    width={640}
+    footer={<Button onClick={onClose}>取消</Button>}
   >
-    <div className="start-worktree-list">
+    <div className="start-worktree-list" id="service-runtime-start-drawer">
       <p className="start-worktree-note">每个工作树最多保留一个受管运行实例。智能体在其任务工作树中启动的运行也会出现在这里。</p>
       {error ? <Alert type="error" showIcon message={error} closable onClose={() => setError('')} /> : null}
       {detail.error ? <Alert type="warning" showIcon message={detail.error} action={<Button size="small" onClick={() => void detail.refresh()}>重试</Button>} /> : null}
@@ -70,11 +66,11 @@ export function StartWorktreeDrawer({ open, serviceCode, serviceName, onClose, o
             </Space>
           </div>
           {run
-            ? <div className="start-worktree-running"><Tag color={run.status === 'running' ? 'success' : 'processing'}>{run.status === 'running' ? `运行中 :${run.actualPort}` : `启动中 :${run.actualPort}`}</Tag><Button size="small" disabled>已在运行</Button></div>
+            ? <Tag className="start-worktree-status" color={run.status === 'running' ? 'success' : 'processing'}>{run.status === 'running' ? `运行中 :${run.actualPort}` : `启动中 :${run.actualPort}`}</Tag>
             : <Button type="primary" icon={<PlayCircleOutlined />} loading={starting === worktree.id} disabled={Boolean(starting)} onClick={() => void start(worktree.id)}>启动</Button>}
         </div>;
       })}
       <p className="start-worktree-note">端口在启动时分配；首选端口被占用且运行定义声明了覆盖方式时，Buildr 会避让并记录实际端口。</p>
     </div>
-  </DrawerShell>;
+  </Modal>;
 }
