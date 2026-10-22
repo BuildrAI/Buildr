@@ -11,6 +11,11 @@ export const WORKSPACE_REGISTRY_SCHEMA = 'buildr.local-workspace-registry/v1';
 
 type ProductIdentity = Record<string, any>;
 type WebProfile = { dataRoot: string } & Record<string, any>;
+type WorkspaceRegistry = {
+  schemaVersion: typeof WORKSPACE_REGISTRY_SCHEMA;
+  roots: string[];
+  lastOpenedRoot: string | null;
+};
 
 export type WorkspaceRegistryRepositoryRuntime = {
   atomicWriteJson(file: string, value: unknown): void;
@@ -35,11 +40,11 @@ export function buildrWebDataRoot({ respectOverride = true }: any = {}) {
   return productDataRoot({ respectOverride: false });
 }
 
-function emptyRegistry() {
+function emptyRegistry(): WorkspaceRegistry {
   return { schemaVersion: WORKSPACE_REGISTRY_SCHEMA, roots: [], lastOpenedRoot: null };
 }
 
-function canonicalRegistry(value: any, label: any) {
+function canonicalRegistry(value: any, label: any): WorkspaceRegistry {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be a JSON object.`);
   for (const field of Object.keys(value)) {
     if (!new Set(['schemaVersion', 'roots', 'lastOpenedRoot']).has(field)) throw new Error(`${label}.${field} is not supported.`);
