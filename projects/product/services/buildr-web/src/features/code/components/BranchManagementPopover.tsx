@@ -66,6 +66,10 @@ export function BranchManagementPopover({ repository, worktree, entries, ready, 
   useEffect(() => {
     if (!open) return;
     measure();
+    const onScroll = (event: Event) => {
+      const target = event.target;
+      if (target === document || target === window || (target instanceof Element && triggerRef.current && target.contains(triggerRef.current))) close();
+    };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.stopPropagation();
@@ -75,11 +79,11 @@ export function BranchManagementPopover({ repository, worktree, entries, ready, 
       }
     };
     window.addEventListener('resize', measure);
-    window.addEventListener('scroll', measure, true);
+    window.addEventListener('scroll', onScroll, true);
     window.addEventListener('keydown', onKeyDown);
     return () => {
       window.removeEventListener('resize', measure);
-      window.removeEventListener('scroll', measure, true);
+      window.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('keydown', onKeyDown);
     };
   }, [open, activeRef, measure, close]);
