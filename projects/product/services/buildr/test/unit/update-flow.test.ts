@@ -32,7 +32,7 @@ function fixture(options: any = {}): any  {
     identifySource: () => options.source || source(),
     inspectAuthority: () => options.authorityResult || { status: 'ready', authority: AUTHORITY },
     releaseAwareness: () => options.awareness || awareness(),
-    handoffUpdatedBuildrWeb: async (input: any) => { handoffs.push(input); return options.handoff || { status: 'restarted' }; },
+    handoffUpdatedBuildrWeb: async (input: any) => { handoffs.push(input); return options.handoff || { status: 'restarted', version: '1.1.0' }; },
     spawnProcess: async (executable: any, args: any) => {
       spawnCalls.push({ executable, args });
       if (pending) return pending.promise;
@@ -70,7 +70,8 @@ test('update-flow：prepare 钉住版本并后台下载，就绪后可 apply 并
   assert.equal(handoffs.length, 1);
   assert.equal(handoffs[0].expectedVersion, '1.1.0');
   assert.equal(handoffs[0].previousInstallationIdentity, 'install-identity-1');
-  assert.equal(flow.webUpdateStatus().status, 'completed');
+  assert.equal(flow.webUpdateStatus().status, 'partial');
+  assert.equal(flow.webUpdateStatus().runningVersion, '1.0.0');
 });
 
 test('update-flow：registry 当前版本与请求版本不一致时拒绝并返回 409', () => {
@@ -101,7 +102,7 @@ function devFixture(overrides: any = {}): any  {
     identifySource: () => ({ mode: 'development', version: '0.1.0', productRoot: '/fixture/product' }),
     inspectAuthority: () => { throw new Error('development 来源不应检查 npm authority'); },
     releaseAwareness: () => { awarenessCalls += 1; throw new Error('development 来源不应查询 registry'); },
-    handoffUpdatedBuildrWeb: async (input: any) => { handoffs.push(input); return { status: 'restarted' }; },
+    handoffUpdatedBuildrWeb: async (input: any) => { handoffs.push(input); return { status: 'restarted', version: '1.1.0' }; },
     spawnProcess: async (executable: any, args: any) => { spawnCalls.push({ executable, args }); return { ok: true, status: 0 }; },
     devTiming: { downloadMs: 0, installMs: 0 },
     now: () => '2026-08-23T00:00:00.000Z',
@@ -165,7 +166,7 @@ test('update-flow：apply 校验钉住版本，安装失败与交接失败转为
     identifySource: () => source(),
     inspectAuthority: () => ({ status: 'ready', authority: AUTHORITY }),
     releaseAwareness: () => awareness(),
-    handoffUpdatedBuildrWeb: async () => ({ status: 'restarted' }),
+    handoffUpdatedBuildrWeb: async () => ({ status: 'restarted', version: '1.1.0' }),
     spawnProcess: async () => { calls += 1; return calls === 1 ? { ok: true, status: 0 } : { ok: false, status: 1, stderr: 'EACCES' }; },
   });
   staged.webUpdatePrepare({ track: 'stable', expectedVersion: '1.1.0' });
@@ -189,6 +190,17 @@ test('update-flow：apply 校验钉住版本，安装失败与交接失败转为
   handoffFailed.webUpdateApply({ expectedVersion: '1.1.0' });
   await new Promise((resolve) => setImmediate(resolve));
   const handoff = handoffFailed.webUpdateStatus();
-  assert.equal(handoff.status, 'failed');
+  assert.equal(handoff.status, 'partial');
+  assert.equal(handoff.installedVersion, '1.1.0');
   assert.equal(handoff.error.code, 'web_update_no_healthy_instance');
+});
+
+test('update-flow：下载后安装身份变化拒绝确认，不安装也不交接', async () => {
+  const selected = source();
+  const { flow, spawnCalls, handoffs } = fixture({ source: selected });
+  flow.webUpdatePrepare({ track: 'stable', expectedVersion: '1.1.0' });
+  await new Promise(resolve => setImmediate(resolve));
+  selected.installationIdentity = 'other-installation';
+  assert.throws(() => flow.webUpdateApply({ expectedVersion: '1.1.0' }), (e: any) => e.code === 'update_flow_installation_changed');
+  assert.equal(spawnCalls.length, 1); assert.equal(handoffs.length, 0);
 });

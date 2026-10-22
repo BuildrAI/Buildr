@@ -1,0 +1,14 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {gzipSync} from 'node:zlib';
+import {build} from 'vite';
+const root=path.resolve(import.meta.dirname,'..');
+const [body,output]=process.argv.slice(2);
+if(!body||!output)throw Error('Provide body.html and reader.html');
+const html=await fs.readFile(body,'utf8');
+const result=await build({root,configFile:false,define:{'process.env.NODE_ENV':'"production"',__PROTOTYPE_DOCUMENT_GZIP__:JSON.stringify(gzipSync(html).toString('base64')),__PROTOTYPE_DOCUMENT_BYTES__:String(Buffer.byteLength(html)),__PROTOTYPE_OBSERVED_AT__:JSON.stringify(new Date().toISOString())},build:{write:false,minify:true,assetsInlineLimit:Infinity,lib:{entry:path.join(root,'src/prototypes/software-update-flow/viewer.tsx'),name:'BuildrUpdateReader',formats:['iife']},rollupOptions:{onwarn(warning,warn){if(warning.code!=='MODULE_LEVEL_DIRECTIVE')warn(warning);},output:{inlineDynamicImports:true}}}});
+const chunks=(Array.isArray(result)?result:[result]).flatMap(r=>r.output);
+const script=chunks.filter(c=>c.type==='chunk').map(c=>c.code).join('\n');
+const css=chunks.filter(c=>c.type==='asset'&&c.fileName.endsWith('.css')).map(c=>c.source).join('\n');
+await fs.writeFile(output,'<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Buildr 软件更新 · 原型阅读</title><style>'+css+'</style></head><body><div id="root"></div><script>'+script.replaceAll('</script','<\\/script')+'</script></body></html>\n');
+console.log(JSON.stringify({output,bytes:(await fs.stat(output)).size}));

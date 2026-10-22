@@ -525,6 +525,10 @@ artifacts:
       - system-structure
     sources:
       - product-reference-code-map
+      - web-update-store-source
+      - web-update-launcher-source
+      - web-update-dialog-source
+      - web-update-view-source
       - product-reference-technical-architecture
       - code-architecture
       - task-source-module-19a342
@@ -1487,36 +1491,56 @@ sources:
     path: services/buildr/src/modules/installation/infrastructure/current-product-identity.ts
     summary: 重新读取已验证安装登记，比较同一安装槽位中的历史身份，提供新版精确运行入口。
     observedDigest: 99edf1f72e36fc58724affa8b21fb466f03a816a411fea3fcbc7613ac7c1f7a3
+  - id: web-update-store-source
+    title: 本机更新记录
+    kind: code
+    path: services/buildr/src/modules/installation/infrastructure/update-flow-store.ts
+    summary: 按安装路径隔离更新观察，校验内容并以独占锁、记录版本和原子替换防止覆盖。
+  - id: web-update-launcher-source
+    title: 更新启动入口
+    kind: code
+    path: services/buildr/src/modules/installation/application/update-launcher.ts
+    summary: 核对精确安装及历史槽位，仅检查和修复已有启动入口，缺失时跳过。
+  - id: web-update-dialog-source
+    title: 更新弹窗
+    kind: code
+    path: services/buildr-web/src/features/installation/components/UpdateDialog.tsx
+    summary: 正式页面与原型共用的更新弹窗，表达下载、确认、阶段结果和局部恢复。
+  - id: web-update-view-source
+    title: 更新视图状态
+    kind: code
+    path: services/buildr-web/src/features/installation/lib/update-view.ts
+    summary: 按真实版本、阶段和连接事实选择显示内容；区分启动入口、重连和安装核验失败。
   - id: web-update-flow-application-source
     title: 页面分阶段更新任务
     kind: code
     path: services/buildr/src/modules/installation/application/update-flow.ts
-    summary: 进程内单例更新任务；npm 来源 prepare 钉住版本后台下载更新包、apply 经同一 receipt authority 安装并委托网页交接，development 来源仅模拟状态流转且零外部副作用。
-    observedDigest: 718c3cf5862583594eea3715582f6b0e77a5dd2601804ab1b33e12dc0ed0c563
+    summary: 按安装隔离的持久更新任务，钉住版本下载和安装，分别核验启动入口与网页；仅恢复失败环节，开发来源零安装副作用。
+    observedDigest: 303044dff95fba2bd6a28dac31b70b964f7b9b2e1e304841d03fa868817d0a5d
   - id: web-update-flow-http-source
     title: 页面更新任务 HTTP 接口
     kind: code
     path: services/buildr/src/modules/installation/interfaces/http/update-flow-http.ts
-    summary: 提供更新任务状态只读、后台准备与确认应用三个顶层路由；写操作复用同实例会话与来源授权，Preview 实例拒绝写入口。
-    observedDigest: de1f357c60d99d23d4e38c34828763d15af248c3fc4c8a8b4d90728acf03ec81
+    summary: 提供状态读取、准备、应用及恢复四个路由；写操作复用会话授权，预览拒绝写入。
+    observedDigest: 7efd07da43de2dfaffaf7a2bf28318eb47eb3263615ba29952526bea129fe76a
   - id: web-update-flow-contracts-source
     title: 页面更新任务 HTTP 契约
     kind: code
     path: services/buildr/src/modules/installation/interfaces/http/update-flow-http-contracts.ts
     summary: 声明更新任务请求、任务快照与错误 Schema 并编译校验器，operation 覆盖登记随契约闭合。
-    observedDigest: 1f6bf994a1f8fd337d7b3244a8505900519c6da08e315f44ec0eaa32aca2619b
+    observedDigest: 1ea338860118aa6c7473fa7eac53934a880cb649d0cd8af1d0e0e370c70fb006
   - id: web-update-entry-source
     title: 页面检查更新入口
     kind: code
     path: services/buildr-web/src/features/installation/components/UpdateEntry.tsx
-    summary: 顶栏更新图标与详情弹层；周期检查发布轨道，发起后台下载并在就绪后经二次确认安装重启，失败展示真实原因可重试；development 渠道展示开发模拟视图并在完成后真实重启实例。
-    observedDigest: bedf2f3f853835ae48d96c7751e62ca2b867b46d73eb8c4b37630ba72577b7b6
+    summary: 更多菜单主动检查；有更新或待恢复事项才显示图标，弹窗组织下载、确认、安装和恢复。
+    observedDigest: e22c0050970a893d0d522ab287979b6089680a9a19073646ec3cffe6bae33321
   - id: web-update-flow-hook-source
     title: 页面更新任务轮询
     kind: code
     path: services/buildr-web/src/features/installation/hooks/useUpdateFlow.ts
-    summary: 可见时约一分钟周期检查发布轨道与任务状态；applying 期间加速轮询，实例不可达或任务重置时交给既有重启观察恢复页面；development 渠道在任务完成后回调真实重启。
-    observedDigest: 2096848fc950be83edb877abdc578eda5703b0b131dca73c6b67319991085c98
+    summary: 周期检查版本与任务，活动任务加速轮询；断开保留弹窗，等待新会话并核验实际运行版本。
+    observedDigest: 729f1328015a64e70c3d23c2a8db465a38c1511a08b50826d054a68056c925e0
   - id: web-update-simulated-target-source
     title: 开发模拟更新目标
     kind: code

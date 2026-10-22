@@ -144,14 +144,15 @@ if (command === 'install') {
   const applying: any = flow.webUpdateApply({ expectedVersion: '1.1.0' });
   assert.equal(applying.status, 'applying');
   await waitFor(() => flow.webUpdateStatus().status !== 'applying', '任务离开 applying');
-  assert.equal(flow.webUpdateStatus().status, 'completed');
+  assert.equal(flow.webUpdateStatus().status, 'partial');
+  assert.equal(flow.webUpdateStatus().error.code, 'update_running_version_mismatch');
   const installLog: any = fs.readFileSync(npmLog, 'utf8');
   assert.ok(installLog.includes(`install --global --prefer-offline --prefix ${prefix} @buildr-ai/buildr@1.1.0`), `npm install 应复用同一 authority：${installLog}`);
   assert.equal(JSON.parse(fs.readFileSync(path.join(productRoot, 'package.json'), 'utf8')).version, '1.1.0');
   assert.equal(handoffs.length, 1);
   assert.equal(handoffs[0].expectedVersion, '1.1.0');
   assert.equal(handoffs[0].previousInstallationIdentity, origin.ownershipIdentity);
-  assert.equal(flow.webUpdateStatus().currentVersion, '1.1.0');
+  assert.equal(flow.webUpdateStatus().currentVersion, '1.0.0', '原进程仍运行旧版本，不以磁盘 package.json 冒充启动版本');
 });
 
 // 开发版模拟流程：真实 development checkout 夹具 + 真实 identifyCliSource 判出

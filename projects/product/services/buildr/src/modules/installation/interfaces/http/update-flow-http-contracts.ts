@@ -8,14 +8,22 @@ const closed = (properties: any, required: any = []) => ({ type: 'object', addit
 const schema = (id: any, title: any, body: any) => Object.freeze({ $schema: DRAFT, $id: `${ROOT}/${id}/v1`, title, ...body });
 
 const jobSnapshot = closed({
-  schemaVersion: { const: 'buildr.web-update-flow/v1' },
-  status: { enum: ['idle', 'preparing', 'ready', 'failed', 'applying', 'completed'] },
+  schemaVersion: { const: 'buildr.web-update-flow/v2' },
+  id: nullableText,
+  revision: { type: 'integer', minimum: 0 },
+  stage: { enum: ['idle', 'download', 'ready', 'install', 'launcher', 'restart', 'verify', 'completed'] },
+  runningVersion: nullableText,
+  installedVersion: nullableText,
+  simulated: { type: 'boolean' },
+  steps: closed(Object.fromEntries(['install', 'launcher', 'restart', 'verify'].map(key => [key, { enum: ['pending', 'running', 'done', 'failed', 'skipped'] }])), ['install', 'launcher', 'restart', 'verify']),
+  launcherError: { type: ['object', 'null'], additionalProperties: true },
+  status: { enum: ['idle', 'preparing', 'ready', 'failed', 'applying', 'partial', 'completed'] },
   track: { enum: ['stable', 'candidate', null] },
   version: nullableText,
   currentVersion: nullableText,
   error: { type: ['object', 'null'], additionalProperties: true },
   updatedAt: nullableText,
-}, ['schemaVersion', 'status', 'track', 'version', 'currentVersion', 'error', 'updatedAt']);
+}, ['schemaVersion', 'id', 'revision', 'status', 'stage', 'track', 'version', 'currentVersion', 'runningVersion', 'installedVersion', 'simulated', 'steps', 'launcherError', 'error', 'updatedAt']);
 
 export const UPDATE_FLOW_HTTP_SCHEMAS = Object.freeze({
   prepareRequest: schema('update-flow/prepare-request', 'UpdateFlowPrepareRequest', closed({
@@ -25,12 +33,21 @@ export const UPDATE_FLOW_HTTP_SCHEMAS = Object.freeze({
   applyRequest: schema('update-flow/apply-request', 'UpdateFlowApplyRequest', closed({
     expectedVersion: text,
   }, ['expectedVersion'])),
+  recoveryRequest: schema('update-flow/recovery-request', 'UpdateFlowRecoveryRequest', closed({
+    expectedJobId: text, expectedVersion: text, action: { enum: ['install', 'launcher', 'restart'] },
+  }, ['expectedJobId', 'expectedVersion', 'action'])),
   statusRequest: schema('update-flow/status-request', 'UpdateFlowStatusRequest', closed({})),
   jobResponse: schema('update-flow/job-response', 'UpdateFlowJobResponse', jobSnapshot),
   errorResponse: schema('update-flow/error-response', 'UpdateFlowHttpErrorResponse', closed({ error: closed({ code: text, message: text, details: true }, ['code', 'message']) }, ['error'])),
 });
 
 export const UPDATE_FLOW_HTTP_OPERATIONS = Object.freeze([
+  Object.freeze({
+    id: 'system-installation.update-flow.recover', owner: 'system-installation', method: 'POST', path: '/api/v1/update/recover',
+    disposition: 'migrated-json', responseKind: 'json',
+    requestSchemaId: UPDATE_FLOW_HTTP_SCHEMAS.recoveryRequest.$id,
+    successSchemaId: UPDATE_FLOW_HTTP_SCHEMAS.jobResponse.$id, errorSchemaId: UPDATE_FLOW_HTTP_SCHEMAS.errorResponse.$id,
+  }),
   Object.freeze({
     id: 'system-installation.update-flow.status', owner: 'system-installation', method: 'GET', path: '/api/v1/update/status',
     disposition: 'migrated-json', responseKind: 'json',

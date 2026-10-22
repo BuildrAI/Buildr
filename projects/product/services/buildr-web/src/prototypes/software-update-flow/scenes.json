@@ -1,0 +1,578 @@
+{
+  "version": 1,
+  "pages": [
+    {
+      "id": "update",
+      "title": "软件更新",
+      "notes": [
+        {
+          "id": "menu",
+          "title": "手动检查收进更多菜单",
+          "text": "点击右上角“…”选择“检查更新”。没有新版本时不显示独立更新图标。",
+          "position": "menu"
+        },
+        {
+          "id": "entry",
+          "title": "只在需要更新时提示",
+          "text": "更新图标只在有更新或更新尚需处理时出现，不添加额外的绿点。下载中与失败时图标本身表达状态。",
+          "position": "entry"
+        },
+        {
+          "id": "flow",
+          "title": "一次只突出当前步骤",
+          "text": "下载完成后确认安装。安装包含软件包、已安装的启动入口、重新连接与版本核验；仅连接恢复不算更新完成。",
+          "position": "flow"
+        },
+        {
+          "id": "launcher",
+          "title": "启动入口一起更新",
+          "text": "已安装的桌面启动入口随软件包更新。没有安装时跳过；启动入口故障不否定新版网页已经恢复的事实。",
+          "position": "flow"
+        },
+        {
+          "id": "layout",
+          "title": "更新信息与操作分区",
+          "text": "标题与图标同排，当前版本和目标版本分列；其他方式在按钮上方的独立区域展开，不在窗口底部散落说明文字。",
+          "position": "flow"
+        }
+      ],
+      "states": [
+        {
+          "id": "checking",
+          "title": "检查中",
+          "notes": [
+            {
+              "id": "status",
+              "title": "检查中",
+              "text": "清楚展示当前状态与下一步。原型中的全部更新操作均为模拟。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "latest",
+          "title": "已是最新",
+          "notes": [
+            {
+              "id": "status",
+              "title": "已是最新",
+              "text": "检查完成显示最新状态，关闭后顶部不保留更新图标。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "check-error",
+          "title": "检查失败",
+          "notes": [
+            {
+              "id": "status",
+              "title": "检查失败",
+              "text": "清楚展示当前状态与下一步。原型中的全部更新操作均为模拟。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "downloading",
+          "title": "下载中",
+          "notes": [
+            {
+              "id": "status",
+              "title": "下载中",
+              "text": "进度仅为演示。正式流程只能展示真实进度；没有总量时使用不定进度。可后台下载，完成后等待确认。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "ready",
+          "title": "确认安装",
+          "notes": [
+            {
+              "id": "status",
+              "title": "确认安装",
+              "text": "确认会更新软件包和已有桌面启动入口，随后重启。用户可以稍后安装。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "installing",
+          "title": "安装中",
+          "notes": [
+            {
+              "id": "status",
+              "title": "安装中",
+              "text": "确认后依次安装 Buildr、更新桌面启动入口、重新连接并核验运行版本。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "restarting",
+          "title": "重新连接",
+          "notes": [
+            {
+              "id": "status",
+              "title": "重新连接",
+              "text": "等待应用重新连接，恢复后显示实际版本。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "completed",
+          "title": "更新完成",
+          "notes": [
+            {
+              "id": "status",
+              "title": "更新完成",
+              "text": "实际运行版本和已安装的桌面启动入口均核验通过后才显示完成。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "download-error",
+          "title": "下载失败",
+          "notes": [
+            {
+              "id": "status",
+              "title": "下载失败",
+              "text": "下载失败保留当前版本，可重新下载。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "install-error",
+          "title": "安装失败",
+          "notes": [
+            {
+              "id": "status",
+              "title": "安装失败",
+              "text": "展示真实安装失败信息并允许重试，不把失败显示成成功。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "launcher-updating",
+          "title": "更新启动入口",
+          "notes": [
+            {
+              "id": "status",
+              "title": "更新启动入口",
+              "text": "软件包已安装，正在刷新已安装的桌面启动入口。 本原型的更新和恢复均为模拟，正式实现需要接入实际结果。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "verifying",
+          "title": "核验结果",
+          "notes": [
+            {
+              "id": "status",
+              "title": "核验结果",
+              "text": "重新连接后核实实际运行版本与启动入口，不能只凭新会话判定成功。 本原型的更新和恢复均为模拟，正式实现需要接入实际结果。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "launcher-error",
+          "title": "启动入口更新失败",
+          "notes": [
+            {
+              "id": "status",
+              "title": "启动入口更新失败",
+              "text": "新版网页已运行，启动入口仍需修复。点击修复仅处理入口，不重新下载或安装软件包。 本原型的更新和恢复均为模拟，正式实现需要接入实际结果。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "launcher-repairing",
+          "title": "修复启动入口中",
+          "notes": [
+            {
+              "id": "status",
+              "title": "修复启动入口中",
+              "text": "保留新版网页，只修复桌面启动入口，修复后重新核验。 本原型的更新和恢复均为模拟，正式实现需要接入实际结果。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "launcher-repair-error",
+          "title": "启动入口修复失败",
+          "notes": [
+            {
+              "id": "status",
+              "title": "启动入口修复失败",
+              "text": "保留可用的新版本网页；允许重试，并提供明确的手动恢复命令。 本原型的更新和恢复均为模拟，正式实现需要接入实际结果。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "reconnect-error",
+          "title": "网页未恢复",
+          "notes": [
+            {
+              "id": "status",
+              "title": "网页未恢复",
+              "text": "软件包和启动入口已更新，但网页不可达。继续等待只重试连接；手动恢复在终端执行，不依赖不可用的本机服务。 本原型的更新和恢复均为模拟，正式实现需要接入实际结果。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "combined-error",
+          "title": "启动入口与网页均需恢复",
+          "notes": [
+            {
+              "id": "status",
+              "title": "启动入口与网页均需恢复",
+              "text": "两项故障分别展示；按顺序修复启动入口、恢复网页。保全已安装的软件包，不将两项故障合并成重新下载。 本原型的更新和恢复均为模拟，正式实现需要接入实际结果。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "verification-error",
+          "title": "连接到了旧版",
+          "notes": [
+            {
+              "id": "status",
+              "title": "连接到了旧版",
+              "text": "页面已连接但实际运行仍是旧版，不报完成；重新启动新版后再次核验。 本原型的更新和恢复均为模拟，正式实现需要接入实际结果。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "completed-no-launcher",
+          "title": "未安装启动入口",
+          "notes": [
+            {
+              "id": "status",
+              "title": "未安装启动入口",
+              "text": "没有安装桌面启动入口时跳过该项，不阻止更新完成，也不自动创建入口。 本原型的更新和恢复均为模拟，正式实现需要接入实际结果。",
+              "position": "flow"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stable",
+      "title": "候选版发现正式版",
+      "notes": [
+        {
+          "id": "menu",
+          "title": "手动检查收进更多菜单",
+          "text": "点击右上角“…”选择“检查更新”。没有新版本时不显示独立更新图标。",
+          "position": "menu"
+        },
+        {
+          "id": "entry",
+          "title": "只在需要更新时提示",
+          "text": "更新图标只在有更新或更新尚需处理时出现，不添加额外的绿点。下载中与失败时图标本身表达状态。",
+          "position": "entry"
+        },
+        {
+          "id": "flow",
+          "title": "一次只突出当前步骤",
+          "text": "下载完成后确认安装。安装包含软件包、已安装的启动入口、重新连接与版本核验；仅连接恢复不算更新完成。",
+          "position": "flow"
+        },
+        {
+          "id": "launcher",
+          "title": "启动入口一起更新",
+          "text": "已安装的桌面启动入口随软件包更新。没有安装时跳过；启动入口故障不否定新版网页已经恢复的事实。",
+          "position": "flow"
+        },
+        {
+          "id": "layout",
+          "title": "更新信息与操作分区",
+          "text": "标题与图标同排，当前版本和目标版本分列；其他方式在按钮上方的独立区域展开，不在窗口底部散落说明文字。",
+          "position": "flow"
+        },
+        {
+          "id": "release",
+          "title": "可升级到正式版",
+          "text": "同时检查正式版和候选版。例：0.1.0-rc.47 可以升级到 0.1.0；如果正式版低于当前版本则不提示升级。下载与命令跟随用户看到的目标版本通道。",
+          "position": "version"
+        }
+      ],
+      "states": [
+        {
+          "id": "checking",
+          "title": "检查中",
+          "notes": [
+            {
+              "id": "status",
+              "title": "检查中",
+              "text": "清楚展示当前状态与下一步。原型中的全部更新操作均为模拟。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "latest",
+          "title": "已是最新",
+          "notes": [
+            {
+              "id": "status",
+              "title": "已是最新",
+              "text": "检查完成显示最新状态，关闭后顶部不保留更新图标。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "check-error",
+          "title": "检查失败",
+          "notes": [
+            {
+              "id": "status",
+              "title": "检查失败",
+              "text": "清楚展示当前状态与下一步。原型中的全部更新操作均为模拟。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "downloading",
+          "title": "下载中",
+          "notes": [
+            {
+              "id": "status",
+              "title": "下载中",
+              "text": "进度仅为演示。正式流程只能展示真实进度；没有总量时使用不定进度。可后台下载，完成后等待确认。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "ready",
+          "title": "确认安装",
+          "notes": [
+            {
+              "id": "status",
+              "title": "确认安装",
+              "text": "确认会更新软件包和已有桌面启动入口，随后重启。用户可以稍后安装。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "installing",
+          "title": "安装中",
+          "notes": [
+            {
+              "id": "status",
+              "title": "安装中",
+              "text": "确认后依次安装 Buildr、更新桌面启动入口、重新连接并核验运行版本。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "restarting",
+          "title": "重新连接",
+          "notes": [
+            {
+              "id": "status",
+              "title": "重新连接",
+              "text": "等待应用重新连接，恢复后显示实际版本。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "completed",
+          "title": "更新完成",
+          "notes": [
+            {
+              "id": "status",
+              "title": "更新完成",
+              "text": "实际运行版本和已安装的桌面启动入口均核验通过后才显示完成。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "download-error",
+          "title": "下载失败",
+          "notes": [
+            {
+              "id": "status",
+              "title": "下载失败",
+              "text": "下载失败保留当前版本，可重新下载。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "install-error",
+          "title": "安装失败",
+          "notes": [
+            {
+              "id": "status",
+              "title": "安装失败",
+              "text": "展示真实安装失败信息并允许重试，不把失败显示成成功。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "launcher-updating",
+          "title": "更新启动入口",
+          "notes": [
+            {
+              "id": "status",
+              "title": "更新启动入口",
+              "text": "软件包已安装，正在刷新已安装的桌面启动入口。 本原型的更新和恢复均为模拟，正式实现需要接入实际结果。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "verifying",
+          "title": "核验结果",
+          "notes": [
+            {
+              "id": "status",
+              "title": "核验结果",
+              "text": "重新连接后核实实际运行版本与启动入口，不能只凭新会话判定成功。 本原型的更新和恢复均为模拟，正式实现需要接入实际结果。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "launcher-error",
+          "title": "启动入口更新失败",
+          "notes": [
+            {
+              "id": "status",
+              "title": "启动入口更新失败",
+              "text": "新版网页已运行，启动入口仍需修复。点击修复仅处理入口，不重新下载或安装软件包。 本原型的更新和恢复均为模拟，正式实现需要接入实际结果。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "launcher-repairing",
+          "title": "修复启动入口中",
+          "notes": [
+            {
+              "id": "status",
+              "title": "修复启动入口中",
+              "text": "保留新版网页，只修复桌面启动入口，修复后重新核验。 本原型的更新和恢复均为模拟，正式实现需要接入实际结果。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "launcher-repair-error",
+          "title": "启动入口修复失败",
+          "notes": [
+            {
+              "id": "status",
+              "title": "启动入口修复失败",
+              "text": "保留可用的新版本网页；允许重试，并提供明确的手动恢复命令。 本原型的更新和恢复均为模拟，正式实现需要接入实际结果。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "reconnect-error",
+          "title": "网页未恢复",
+          "notes": [
+            {
+              "id": "status",
+              "title": "网页未恢复",
+              "text": "软件包和启动入口已更新，但网页不可达。继续等待只重试连接；手动恢复在终端执行，不依赖不可用的本机服务。 本原型的更新和恢复均为模拟，正式实现需要接入实际结果。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "combined-error",
+          "title": "启动入口与网页均需恢复",
+          "notes": [
+            {
+              "id": "status",
+              "title": "启动入口与网页均需恢复",
+              "text": "两项故障分别展示；按顺序修复启动入口、恢复网页。保全已安装的软件包，不将两项故障合并成重新下载。 本原型的更新和恢复均为模拟，正式实现需要接入实际结果。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "verification-error",
+          "title": "连接到了旧版",
+          "notes": [
+            {
+              "id": "status",
+              "title": "连接到了旧版",
+              "text": "页面已连接但实际运行仍是旧版，不报完成；重新启动新版后再次核验。 本原型的更新和恢复均为模拟，正式实现需要接入实际结果。",
+              "position": "flow"
+            }
+          ]
+        },
+        {
+          "id": "completed-no-launcher",
+          "title": "未安装启动入口",
+          "notes": [
+            {
+              "id": "status",
+              "title": "未安装启动入口",
+              "text": "没有安装桌面启动入口时跳过该项，不阻止更新完成，也不自动创建入口。 本原型的更新和恢复均为模拟，正式实现需要接入实际结果。",
+              "position": "flow"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "header",
+      "title": "顶部入口与连接状态",
+      "notes": [
+        {
+          "id": "agent",
+          "title": "图标表达连接状态",
+          "text": "已连接使用点亮的原轮廓的绿色点和线，未连接使用灰色轮廓图标。保留相同的图形与点击范围，不额外添加状态点。",
+          "position": "agent"
+        },
+        {
+          "id": "entry",
+          "title": "更新入口按需出现",
+          "text": "有可安装更新时出现单个更新图标；没有更新时隐藏。按钮尺寸和间距与更多菜单对齐。",
+          "position": "menu"
+        }
+      ],
+      "states": [
+        {
+          "id": "offline",
+          "title": "智能体未连接",
+          "notes": []
+        },
+        {
+          "id": "no-update",
+          "title": "没有可用更新",
+          "notes": []
+        },
+        {
+          "id": "offline-no-update",
+          "title": "未连接且没有更新",
+          "notes": []
+        }
+      ]
+    }
+  ]
+}

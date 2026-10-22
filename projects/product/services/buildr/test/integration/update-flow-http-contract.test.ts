@@ -36,9 +36,10 @@ test('Update Flow HTTP 契约：状态只读、写保护、Schema 校验与无�
   }
 
   const calls: any[] = [];
-  const idle: any = { schemaVersion: 'buildr.web-update-flow/v1', status: 'idle', track: null, version: null, currentVersion: '1.0.0', error: null, updatedAt: null };
+  const idle: any = { schemaVersion: 'buildr.web-update-flow/v2', id: null, revision: 0, stage: 'idle', runningVersion: '1.0.0', installedVersion: null, simulated: false, steps: { install: 'pending', launcher: 'pending', restart: 'pending', verify: 'pending' }, launcherError: null, status: 'idle', track: null, version: null, currentVersion: '1.0.0', error: null, updatedAt: null };
   const application: any = {
     webUpdateStatus: () => idle,
+    webUpdateRecover: (input: any) => { calls.push(['recover', input]); return { ...idle, status: 'applying' }; },
     webUpdatePrepare: (input: any) => { calls.push(['prepare', input]); return { ...idle, status: 'preparing', track: input.track, version: input.expectedVersion, updatedAt: '2026-08-23T00:00:00.000Z' }; },
     webUpdateApply: (input: any) => { calls.push(['apply', input]); return { ...idle, status: 'applying', track: 'stable', version: input.expectedVersion, updatedAt: '2026-08-23T00:00:00.000Z' }; },
   };
@@ -74,6 +75,10 @@ test('Update Flow HTTP 契约：状态只读、写保护、Schema 校验与无�
   response = await fetch(`${url}/api/v1/update/apply`, { method: 'POST', headers, body: JSON.stringify({ unexpected: true }) });
   assert.equal(response.status, 400);
   assert.equal((await response.json()).error.code, 'update_flow_http_request_invalid');
+  response = await fetch(`${url}/api/v1/update/recover`, { method: 'POST', headers, body: JSON.stringify({ expectedJobId: 'job', expectedVersion: '1.1.0', action: 'all' }) });
+  assert.equal(response.status, 400);
+  response = await fetch(`${url}/api/v1/update/recover`, { method: 'POST', headers: { origin: url, 'content-type': 'application/json' }, body: JSON.stringify({ expectedJobId: 'job', expectedVersion: '1.1.0', action: 'launcher' }) });
+  assert.equal(response.status, 403);
   assert.equal(calls.length, 0, '非法请求不得产生 Application 副作用');
 
   response = await fetch(`${url}/api/v1/update/prepare`, { method: 'POST', headers, body: JSON.stringify({ track: 'stable', expectedVersion: '1.1.0' }) });
@@ -82,9 +87,13 @@ test('Update Flow HTTP 契约：状态只读、写保护、Schema 校验与无�
   response = await fetch(`${url}/api/v1/update/apply`, { method: 'POST', headers, body: JSON.stringify({ expectedVersion: '1.1.0' }) });
   assert.equal(response.status, 202);
   validate('system-installation.update-flow.apply', 'success', await response.json());
+  response = await fetch(`${url}/api/v1/update/recover`, { method: 'POST', headers, body: JSON.stringify({ expectedJobId: 'job', expectedVersion: '1.1.0', action: 'launcher' }) });
+  assert.equal(response.status, 202);
+  validate('system-installation.update-flow.recover', 'success', await response.json());
   assert.deepEqual(calls, [
     ['prepare', { track: 'stable', expectedVersion: '1.1.0' }],
     ['apply', { expectedVersion: '1.1.0' }],
+    ['recover', { expectedJobId: 'job', expectedVersion: '1.1.0', action: 'launcher' }],
   ]);
 });
 
@@ -102,9 +111,10 @@ test('Update Flow HTTP 契约：Preview 实例拒绝写入口，状态仍只读�
   }
 
   const calls: any[] = [];
-  const idle: any = { schemaVersion: 'buildr.web-update-flow/v1', status: 'idle', track: null, version: null, currentVersion: '1.0.0', error: null, updatedAt: null };
+  const idle: any = { schemaVersion: 'buildr.web-update-flow/v2', id: null, revision: 0, stage: 'idle', runningVersion: '1.0.0', installedVersion: null, simulated: false, steps: { install: 'pending', launcher: 'pending', restart: 'pending', verify: 'pending' }, launcherError: null, status: 'idle', track: null, version: null, currentVersion: '1.0.0', error: null, updatedAt: null };
   const application: any = {
     webUpdateStatus: () => idle,
+    webUpdateRecover: (input: any) => { calls.push(['recover', input]); return { ...idle, status: 'applying' }; },
     webUpdatePrepare: (input: any) => { calls.push(['prepare', input]); return { ...idle, status: 'preparing' }; },
     webUpdateApply: (input: any) => { calls.push(['apply', input]); return { ...idle, status: 'applying' }; },
   };
@@ -119,7 +129,7 @@ test('Update Flow HTTP 契约：Preview 实例拒绝写入口，状态仍只读�
   assert.equal(response.status, 200);
 
   const headers = { origin: url, 'x-buildr-session': sessionToken, 'content-type': 'application/json' };
-  for (const [pathname, body] of [['/api/v1/update/prepare', { track: 'stable', expectedVersion: '1.1.0' }], ['/api/v1/update/apply', { expectedVersion: '1.1.0' }]] as any) {
+  for (const [pathname, body] of [['/api/v1/update/prepare', { track: 'stable', expectedVersion: '1.1.0' }], ['/api/v1/update/apply', { expectedVersion: '1.1.0' }], ['/api/v1/update/recover', { expectedJobId: 'job', expectedVersion: '1.1.0', action: 'launcher' }]] as any) {
     response = await fetch(`${url}${pathname}`, { method: 'POST', headers, body: JSON.stringify(body) });
     assert.equal(response.status, 409, pathname);
     assert.equal((await response.json()).error.code, 'update_flow_preview_unsupported');

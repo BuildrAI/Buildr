@@ -34,6 +34,12 @@ export function createUpdateFlowHttpContribution(application: any) {
         const body = validateUpdateFlowHttp(UPDATE_FLOW_HTTP_SCHEMAS.applyRequest.$id, await readJsonBody(), 'request', 'system-installation.update-flow.apply');
         return { status: 202, body: application.webUpdateApply(body) };
       }
+      if (request.method === 'POST' && pathname === '/api/v1/update/recover') {
+        authorizeWrite();
+        previewRejected(previewIdentity);
+        const body = validateUpdateFlowHttp(UPDATE_FLOW_HTTP_SCHEMAS.recoveryRequest.$id, await readJsonBody(), 'request', 'system-installation.update-flow.recover');
+        return { status: 202, body: application.webUpdateRecover(body) };
+      }
       return null;
     },
   });

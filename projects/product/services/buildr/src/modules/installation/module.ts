@@ -4,6 +4,8 @@ import { createInstallationCliContributions } from './interfaces/cli/installatio
 import { createLauncherCliContributions, registerLauncherInterface } from './interfaces/cli/launcher.ts';
 import { createReleaseAwarenessHttpContribution } from './interfaces/http/release-awareness-http.ts';
 import { createUpdateFlowHttpContribution } from './interfaces/http/update-flow-http.ts';
+import { createUpdateFlowStore } from './infrastructure/update-flow-store.ts';
+import { createUpdateLauncher } from './application/update-launcher.ts';
 import { createWebUpdateFlow } from './application/update-flow.ts';
 import { readCurrentProductIdentity } from './infrastructure/current-product-identity.ts';
 import { assertNpmUpdateHandoffTarget, readNpmUpdateHandoffInstallation } from './infrastructure/current-product-identity.ts';
@@ -36,6 +38,7 @@ const APPLICATION_METHODS = Object.freeze([
   'webUpdatePrepare',
   'webUpdateStatus',
   'webUpdateApply',
+  'webUpdateRecover',
   'buildInstallationInventory',
   'buildInstallationStatusInventory',
   'installationStatus',
@@ -59,6 +62,8 @@ export function createSystemInstallationModule(runtime: any) {
       } }));
       Object.assign(composition, createWebUpdateFlow({
         productRoot: runtime.productRoot,
+        store: createUpdateFlowStore(runtime.productRoot()),
+        launcher: createUpdateLauncher(),
         releaseAwareness: (options: any) => composition.releaseAwareness(options),
         handoffUpdatedBuildrWeb: (input: any) => {
           if (!webUpdates) throw new Error('Web update lifecycle port is not bound.');

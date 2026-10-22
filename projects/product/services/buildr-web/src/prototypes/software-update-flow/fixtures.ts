@@ -1,0 +1,3 @@
+export const registry = {revision:'preview', workspaces:[{rootPath:'/Users/chenjun/workspaces/BuildrAI/Buildr',status:'ready',workspace:{id:'buildr',name:'Buildr',description:'Buildr 产品的自举 Workspace，用 Buildr 开发 Buildr。'}},{rootPath:'/Users/chenjun/workspaces/Jixian',status:'ready',workspace:{id:'jixian',name:'Jixian',description:'业务项目与日常工作。'}}]};
+export const workspaceApi = {listRegistered:async()=>registry,remove:async()=>registry,pick:async()=>({canceled:true})};
+export const useAppShell=()=>({openAgentAction:()=>{},setBreadcrumbParts:()=>{},openWorkspaceSettings:()=>{},workspaceRegistryRevision:0});
