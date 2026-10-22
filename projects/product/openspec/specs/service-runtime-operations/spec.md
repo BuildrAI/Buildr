@@ -1,0 +1,51 @@
+# service-runtime-operations Specification
+
+## Purpose
+TBD - created by archiving change add-service-runtime-deployment. Update Purpose after archive.
+
+## Requirements
+
+### Requirement: 服务级运行定义
+Buildr MUST 将服务运行定义保存为服务级文件（工作空间服务资产目录 `services/<service-code>/runtime.yml`），一份定义服务所有工作树（Worktree），字段至少包含启动命令、相对检出根的工作目录、profile、首选端口、端口覆盖方式、就绪检查、启动超时与部署环境目标引用（首期预置 qa，其他环境由工作空间在同一映射登记）。运行定义 MUST 记录来源（智能体发现）与验证时间；Buildr Web MUST 只读展示定义内容与来源，首期 MUST NOT 提供手动命令编辑入口。
+
+#### Scenario: 智能体验证后写入
+WHEN 智能体完成只读调查并在明确授权下实际启动验证后提交运行定义 THEN Buildr 校验字段完整性与路径归属，写入 `runtime.yml` 并记录来源与验证时间。
+
+#### Scenario: 页面只读
+WHEN 用户在服务详情查看运行定义 THEN 页面展示命令、工作目录、profile、首选端口、就绪检查与来源验证时间，且不存在编辑或保存控件。
+
+#### Scenario: 未识别服务不猜命令
+WHEN 服务尚无运行定义 THEN Buildr Web 展示“尚未配置启动方式”并提供智能体运行配置入口，MUST NOT 展示任何命令输入框或猜测的启动按钮。
+
+### Requirement: 本地受管运行生命周期
+Buildr MUST 以工作树为粒度管理本地运行实例：每个工作树最多一个受管实例；启动 MUST 由用户或智能体选择工作树；Buildr MUST 分配实际端口（首选端口被占用时避让并记录说明）、执行就绪检查并在超时时停止进程并报告失败；停止 MUST 只终止 Buildr 托管的进程。运行记录 MUST 保存工作树身份、分支与提交、实际端口、启动时间与端口说明。
+
+#### Scenario: 重复启动被拒绝
+WHEN 用户对已有受管实例的工作树再次启动 THEN Buildr 拒绝启动并提示该工作树已有受管运行实例，不停止既有实例。
+
+#### Scenario: 端口避让
+WHEN 首选端口已被其他进程或受管实例占用 THEN Buildr 选择下一个可用端口启动，并在运行记录与界面展示“首选端口被占用，已避让”及实际端口。
+
+#### Scenario: 就绪超时
+WHEN 进程在定义超时内未通过就绪检查 THEN Buildr 停止该进程，将运行标记为失败并保留日志供排查。
+
+#### Scenario: 智能体托管启动同账
+WHEN 智能体通过 Buildr 托管入口在其任务工作树启动服务 THEN 该实例出现在同一服务的运行记录中，端口由 Buildr 统一分配。
+
+### Requirement: 本地运行日志
+Buildr MUST 捕获每个受管运行进程的标准输出与标准错误输出，按运行保存在本机日志文件；Buildr Web 日志抽屉 MUST 展示工作树、端口、分支、启动时间与日志内容。日志 MUST NOT 包含连接秘密；未经 Buildr 托管的运行 MUST NOT 被采集；日志 MUST NOT 包含智能体对话记录。
+
+#### Scenario: 查看运行日志
+WHEN 用户在服务详情对运行实例点击日志 THEN 抽屉展示该运行的托管进程输出与运行元信息，并说明日志只保存在本机。
+
+#### Scenario: 秘密不进入日志
+WHEN Buildr 启动受管进程或经连接程序提交部署 THEN Buildr MUST NOT 把连接认证注入本地进程参数、环境或日志；部署程序输出由连接运行时在返回前遮蔽已认证秘密，Buildr 只保存遮蔽后的诊断与归一化结果。
+
+### Requirement: 本地运行视图
+Buildr Web MUST 在工作台提供只读本地运行汇总（运行中服务、工作树与端口，点击进服务详情，不提供启动/停止）；MUST 在服务目录以单一“运行与部署”状态列合并本地运行与各环境最近结果，本地行与环境行 MUST 使用一致的前缀标签样式；状态列显示不完整时 MUST 支持悬停或点击浮窗查看本地与 QA 明细；MUST 在服务详情以紧凑行展示运行实例并提供启动、日志、停止与识别入口。
+
+#### Scenario: 目录状态列浮窗
+WHEN 用户悬停或点击目录状态列 THEN 浮窗展示该服务本地运行明细（工作树、端口、分支、启动时间、端口说明）与 QA 最近结果，并提供查看服务详情入口。
+
+#### Scenario: 工作台只读
+WHEN 用户在工作台查看本地运行卡片 THEN 卡片只展示状态与跳转入口，MUST NOT 出现启动、停止或日志操作按钮。
