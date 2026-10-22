@@ -22,6 +22,8 @@ export type WorkspaceRegistryRepositoryOptions = {
   readProductIdentity?: () => ProductIdentity;
   resolveWebProfile?: (identity: ProductIdentity, options: WorkspaceRegistryRepositoryOptions) => WebProfile;
   webProfile?: WebProfile;
+  /** 预览实例读取的共享 Profile 登记文件；null 表示本实例登记列表不合并共享条目。 */
+  sharedRegistryFile?: string | null;
 };
 
 function registryRevision(content: any) {
@@ -73,15 +75,50 @@ export function readWorkspaceRegistryFile(file: any) {
   }
 }
 
+/**
+ * 预览实例由 preview-lifecycle 注入 BUILDR_LOCAL_APP_PREVIEW，并把数据根隔离到
+ * <共享数据根>/previews/<instance>；此处从该约定推导共享 Profile 的登记文件。
+ * 返回 null 表示当前实例不读共享登记列表。
+ */
+export function resolvePreviewSharedRegistryFile(webProfile: WebProfile, env: NodeJS.ProcessEnv = process.env): string | null {
+  const raw = env.BUILDR_LOCAL_APP_PREVIEW;
+  if (!raw || !webProfile.overridden) return null;
+  let instance: string | null = null;
+  try {
+    const owner = JSON.parse(raw);
+    if (owner && typeof owner.instance === 'string') instance = owner.instance;
+  } catch { return null; }
+  if (!instance) return null;
+  const resolved = path.resolve(webProfile.dataRoot);
+  const previewsRoot = path.dirname(resolved);
+  const sharedRoot = path.dirname(previewsRoot);
+  if (resolved !== path.join(previewsRoot, instance) || path.basename(previewsRoot) !== 'previews') return null;
+  return path.join(sharedRoot, 'workspace-registry.json');
+}
+
 export function createWorkspaceRegistryRepository(runtime: WorkspaceRegistryRepositoryRuntime, options: WorkspaceRegistryRepositoryOptions = {}) {
   const productIdentity = options.productIdentity || options.readProductIdentity?.();
   if (!productIdentity) throw new Error('Workspace registry repository requires the System Installation identity port.');
   if (typeof options.resolveWebProfile !== 'function') throw new Error('Workspace registry repository requires the System Installation Web Profile contract.');
   const resolveWebProfile = options.resolveWebProfile;
   const webProfile = options.webProfile || resolveWebProfile(productIdentity, options);
+  const sharedRegistryFile = options.sharedRegistryFile !== undefined ? options.sharedRegistryFile : resolvePreviewSharedRegistryFile(webProfile);
 
   function workspaceRegistryPath() {
     return path.join(webProfile.dataRoot, 'workspace-registry.json');
+  }
+
+  /** 当前实例是否写入共享 Profile 登记列表（未隔离数据根）。预览与显式覆盖都不算共享。 */
+  function isSharedRegistryScope() {
+    return webProfile.overridden !== true;
+  }
+
+  /** 预览上下文读取共享 Profile 的 roots；共享文件缺失或损坏时返回空列表，不阻断本实例读取。 */
+  function readSharedRegistryRoots() {
+    if (!sharedRegistryFile) return { file: null, roots: [] as string[] };
+    const observed = readWorkspaceRegistryFile(sharedRegistryFile);
+    if (observed.status !== 'ready' || !observed.registry) return { file: sharedRegistryFile, roots: [] as string[] };
+    return { file: observed.file, roots: observed.registry.roots };
   }
 
   function readWorkspaceRegistryPersistence() {
@@ -136,6 +173,9 @@ export function createWorkspaceRegistryRepository(runtime: WorkspaceRegistryRepo
     writeWorkspaceRegistry,
     withWorkspaceRegistryMutation,
     workspaceRegistryRevision: registryRevision,
+    isSharedRegistryScope,
+    readSharedRegistryRoots,
+    sharedRegistryFile: () => sharedRegistryFile,
   });
 }
 
