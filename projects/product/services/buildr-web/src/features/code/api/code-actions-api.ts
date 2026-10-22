@@ -1,7 +1,7 @@
 import { api } from '../../../api';
 import type { ApiClient } from '../../../api/client';
 import { createAgentOperationsClient } from '../../agents/api/agent-operations-api';
-import type { CodeCommitContextCommitContext, CodeGitMutationResultCommitChanges, CodePushResultPush } from '../../../../build/generated/code-http-dto';
+import type { CodeDiscardContextDiscardContext, CodeDiscardChangesDiscardChanges, CodeCommitContextCommitContext, CodeGitMutationResultCommitChanges, CodePushResultPush } from '../../../../build/generated/code-http-dto';
 
 import type { CodeCommitMessageRunRun } from '../../../../build/generated/code-generation-http-dto';
 
@@ -19,6 +19,8 @@ export function createCodeActionsClient(client: ApiClient) {
     generate(source: CodeActionSource, expectedRevision: string, agentId: string): Promise<CodeCommitMessageRunRun> { return client(resource(source, 'commit-message'), {method: 'POST', body: JSON.stringify({...location(source), expectedRevision, agentId})}) as Promise<CodeCommitMessageRunRun>; },
     commit(source: CodeActionSource, expectedRevision: string, message: string, mode: CommitMode): Promise<GitMutationResult> { return client(resource(source, 'commit-changes'), {method: 'POST', body: JSON.stringify({...location(source), expectedRevision, message, mode})}) as Promise<GitMutationResult>; },
     push(source: CodeActionSource, retry: PushRetry): Promise<CodePushResultPush> { return client(resource(source, 'push'), {method: 'POST', body: JSON.stringify({...location(source), ...retry})}) as Promise<CodePushResultPush>; },
+    discardContext(source: CodeActionSource, path?: string): Promise<CodeDiscardContextDiscardContext> { return client(resource(source, 'discard-context') + '?' + new URLSearchParams({...location(source), ...(path === undefined ? {} : {filePath: path})})) as Promise<CodeDiscardContextDiscardContext>; },
+    discard(source: CodeActionSource, expectedRevision: string, path?: string): Promise<CodeDiscardChangesDiscardChanges> { return client(resource(source, 'discard-changes'), {method: 'POST', body: JSON.stringify({...location(source), expectedRevision, ...(path === undefined ? {} : {path})})}) as Promise<CodeDiscardChangesDiscardChanges>; },
     run: agents.run,
     cancel: agents.cancel,
   };

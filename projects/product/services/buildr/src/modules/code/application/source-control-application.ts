@@ -7,7 +7,7 @@ import { readCodeConfiguredAuthor } from '../infrastructure/code-author-identity
 import { parseTaskCommitTrailer } from '../../task/commits/domain/task-commit.ts';
 import type { CodeGitWorktree } from '../infrastructure/code-worktree-reader.ts';
 import { codeWorktreeTaskKey, type readSourceControlTaskAssociations } from '../infrastructure/code-worktree-catalog.ts';
-import { SOURCE_CONTROL_LIMITS, assertCodeRevision, assertSourceControlPath, codeRevision, observeSourceControl, readIndexEntry, readSourceControlRefs, sourceControlHistoryTips, readRawCodeCommit, readRawCodeCommits, listCodeCommitIds, readCodeCommitFiles, readCodePatch } from '../infrastructure/source-control-git-reader.ts';
+import { SOURCE_CONTROL_LIMITS, assertCodeRevision, assertSourceControlPath, codeRevision, observeSourceControl, readIndexEntry, readSourceControlRefs, sourceControlHistoryTips, readRawCodeCommit, readRawCodeCommits, listCodeCommitIds, readCodeCommitFiles, readCodePatch, workingCodeChange } from '../infrastructure/source-control-git-reader.ts';
 import type { CodeReadMeta, CodeReadDiagnostic, CodeSourceControlInput, CodeSourceControlResponse, CodeSourceControlRepository, CodeRepositoryCloneStatus, CodeRepositoryCloneResult, CodeHistoryCommit, CodeHistoryResponse, CodeAuthorsResponse, CodeCommitResponse, CodeDiffResponse, CodeSourceFileResponse } from './source-control-model.ts';
 
 type Catalog = { repositories: Array<{ id: string; code: string; name: string; location: string; available: boolean; gitId: string | null }>; selectedRepositoryIds: string[]; scopeReason: string; diagnostics: CodeReadDiagnostic[] };
@@ -30,7 +30,7 @@ function validateInput(input: CodeSourceControlInput) {
   if (input.query !== undefined && (typeof input.query !== 'string' || input.query.length > 200 || input.query.includes('\0'))) throw codeFailure('code_query_invalid', '历史关键词最长 200 个字符。');
   if (input.authorEmail !== undefined && (typeof input.authorEmail !== 'string' || !input.authorEmail || input.authorEmail.length > 320 || /[\0\r\n]/.test(input.authorEmail))) throw codeFailure('code_author_invalid', '作者（Author）邮箱身份无效。');
   if (input.branch !== undefined && (typeof input.branch !== 'string' || !input.branch || input.branch.length > 1024 || /[\0\r\n]/.test(input.branch))) throw codeFailure('code_branch_invalid', '历史分支（Branch）范围无效。');
-  if (input.area !== undefined && !['unstaged', 'staged', 'untracked', 'commit'].includes(input.area)) throw codeFailure('code_area_invalid', '比较层无效。');
+  if (input.area !== undefined && !['unstaged', 'staged', 'untracked', 'working', 'commit'].includes(input.area)) throw codeFailure('code_area_invalid', '比较层无效。');
 }
 
 export function createSourceControlApplication(dependencies: Dependencies) {
@@ -186,7 +186,8 @@ export function createSourceControlApplication(dependencies: Dependencies) {
     } else {
       if (input.commitHash) throw codeFailure('code_area_commit_conflict', '未提交比较层不能同时指定历史提交。');
       const status = observeSourceControl(source); revision = status.observedRevision; assertCodeRevision(revision, input.expectedRevision);
-      file = status.files.find(file => file.path === input.path && file.area === input.area); baseHash = input.area === 'staged' ? status.head : null;
+      if (input.area === 'working') { const comparison = workingCodeChange(source, status, input.path!); file = comparison?.file; baseHash = comparison?.hasBase ? status.head : null; }
+      else { file = status.files.find(file => file.path === input.path && file.area === input.area); baseHash = input.area === 'staged' ? status.head : null; }
     }
     if (!file) throw codeFailure('code_changed_file_missing', '所选文件不在当前比较层，请刷新列表。', 404);
     let patch: string | null, binary = false, truncated = false, untrackedContent:CodeImageFile|undefined;
@@ -194,7 +195,9 @@ export function createSourceControlApplication(dependencies: Dependencies) {
     if (file.status === 'conflicted') {
       patch = null;
       diagnostics.push({code:'code_file_conflicted',message:'文件仍有冲突，没有唯一索引基线，不能作普通双向比较；可查看当前全文。',repositoryId:source.repositoryId});
-    } else if (input.area === 'untracked') {
+    } else if (input.area === 'working' && file.status === 'deleted' && !baseHash) {
+      patch = ''; file = {...file, additions: 0, deletions: 0};
+    } else if (input.area === 'untracked' || input.area === 'working' && file.status === 'added') {
       assertSourceControlPath(source, file.path);
       const stat = fs.lstatSync(path.join(source.location, file.path));
       if (!stat.isFile()) throw codeFailure('code_file_type_unsupported', '未跟踪文件不是可读取的普通文件。', 415);

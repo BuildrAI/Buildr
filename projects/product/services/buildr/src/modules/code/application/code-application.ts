@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { createCodeDiscardApplication } from './code-discard-application.ts';
 import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
 import { codeFailure, codeGit, gitCommonDirectory, readCodeDirectory, type CodeSource } from '../infrastructure/code-file-reader.ts';
 import { readCodeFile } from '../infrastructure/code-file-content.ts';
@@ -212,6 +213,7 @@ export function createCodeApplication(dependencies:CodeDependencies) {
     // catalogs, but must not be rediscovered around each complete file read.
     ...createFileEditingApplication({codeSource:(root,input)=>source(root,{repositoryId:input.repositoryId,worktreeId:input.checkoutId}),projectSource:dependencies.projectDetail,builtinManagedFiles:dependencies.builtinManagedFiles,projectDocumentImageContext:dependencies.projectDocumentImageContext}),
     ...sourceControlApplication,
+    ...createCodeDiscardApplication({ source: (root, input) => source(root, input as CodeInput) }),
     ...createCodeBranchApplication({ source: (root, input) => source(root, input as CodeInput), observation: (root,input) => {
       if(!input.repositoryId||!input.worktreeId||!/^checkout-[a-f0-9]{64}$/.test(input.worktreeId||'')||input.taskId||input.commitHash||input.checkoutId!==undefined)return undefined;
       const repository=dependencies.assetCatalog(root).repositories.find(item=>item.id===input.repositoryId);

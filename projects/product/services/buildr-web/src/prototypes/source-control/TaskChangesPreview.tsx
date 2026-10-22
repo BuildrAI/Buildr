@@ -10,7 +10,7 @@ type Props = {
   onOpenFile(file: SourceControlChange, repository: RailRepository, commit?: RailCommit): void;
 };
 type PreviewRepository = { rail: RailRepository; changes: SourceControlChange[]; commits: SourceControlCommit[] };
-const layerOrder = { staged: 0, unstaged: 1, untracked: 2 };
+const layerOrder = { staged: 0, unstaged: 1, untracked: 2, working: 3 };
 const lines = (text: string) => text ? (text.endsWith('\n') ? text.slice(0, -1) : text).split('\n') : [];
 
 /** Task changes compare HEAD with the resulting working file, rather than listing index layers twice. */

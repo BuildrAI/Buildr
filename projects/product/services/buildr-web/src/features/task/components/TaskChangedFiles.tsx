@@ -26,7 +26,8 @@ export function changedFileKey(file: ChangedFileEntry) { return `${file.reposito
 function domId(key: string) { return `changed-${key.replace(/[^a-zA-Z0-9_-]/g, '_')}`; }
 
 /** File rows with expandable diff preview; shared by the working-tree pane, commit details and the diff rail. */
-export function ChangedFileList({ files, expanded, onExpand, compact = false, onOpenDiff, selectedKey, selectable = false, fileTooltipPath, filePathHint }: {
+export function ChangedFileList({ files, expanded, onExpand, compact = false, onOpenDiff, selectedKey, selectable = false, fileTooltipPath, filePathHint, renderFileAction }: {
+  renderFileAction?(file: ChangedFileEntry): ReactNode;
   files: ChangedFileEntry[]; expanded: string | null; onExpand(key: string | null): void; compact?: boolean; onOpenDiff?(file: ChangedFileEntry): void; selectedKey?: string | null; selectable?: boolean; fileTooltipPath?(file: ChangedFileEntry): string | undefined; filePathHint?(file: ChangedFileEntry): string | undefined;
 }) {
   const { message } = App.useApp();
@@ -56,6 +57,7 @@ export function ChangedFileList({ files, expanded, onExpand, compact = false, on
         </button>;
       return <li key={key} className={`${open ? 'is-open' : ''}${selectedKey === key ? ' is-selected' : ''}`}>
         {fileTooltipPath ? <Tooltip title={fileTooltipPath(file) || '完整绝对路径暂不可读取'} rootClassName="task-changed-path-tooltip" placement="right" align={{offset: [0, 0]}} styles={{root: {maxWidth: tooltipWidth}}} trigger={['hover', 'focus']} mouseEnterDelay={0.08} mouseLeaveDelay={0}>{row}</Tooltip> : row}
+        {renderFileAction && <span className="task-changed-row-action">{renderFileAction(file)}</span>}
         {onOpenDiff && <Tooltip title="查看全文差异"><button type="button" className="task-changed-open" aria-label={`查看 ${fileName(file.path)} 全文差异`} onClick={event => { event.stopPropagation(); onOpenDiff(file); }}><ExpandOutlined /></button></Tooltip>}
         {open && <div className="task-commits-detail task-changed-detail" id={domId(key)} data-prototype-position="changes-diff">
           <div className="task-commits-detail-title"><h3>差异预览（Diff Preview）</h3><span className="task-changed-detail-actions">{onOpenDiff && <Button size="small" type="text" icon={<ExpandOutlined />} onClick={() => onOpenDiff(file)}>查看全文差异</Button>}{copied === `${key}-path` ? <Button size="small" type="text" icon={<CheckOutlined />}>已复制路径</Button> : <Button size="small" type="text" aria-label="复制路径" icon={<CopyOutlined />} onClick={() => void copy(file.path, `${key}-path`)}>复制路径</Button>}</span></div>

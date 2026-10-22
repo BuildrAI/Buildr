@@ -1,3 +1,4 @@
+import type { CodeDiscardInput } from '../../application/code-discard-application.ts';
 import type { CodeApplication, CodeInput } from '../../application/code-application.ts';
 import { CODE_HTTP_SCHEMAS, CODE_HTTP_REQUESTS, CODE_HTTP_OPERATIONS, CODE_HTTP_VALIDATORS, CODE_HTTP_PATHS } from './code-http-contracts.ts';
 import { codeFailure } from '../../infrastructure/code-file-reader.ts';
@@ -46,6 +47,16 @@ export function createCodeHttpContribution(application:CodeApplication, observat
       const save = input as SaveEditorFileInput;
       const body=await write(root,save.selector.kind === 'code' ? [save.selector.repositoryId] : undefined,() => application.saveFile(root,save));
       if(!CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS.saveFile.$id,body).valid)throw codeFailure('code_response_invalid','文件保存结果不符合契约。',500);
+      return {status:200,body};
+    }
+    if (request.method === 'POST' && suffix === '/code/discard-changes') {
+      if (!authorizeWrite || !readJsonBody) throw codeFailure('code_write_unauthorized','丢弃请求缺少本机会话（Session）授权。',403);
+      authorizeWrite();
+      if (searchParams.size) throw codeFailure('code_query_invalid','丢弃接口不接受查询参数。');
+      const input = await readJsonBody();
+      if (!CODE_HTTP_VALIDATORS.validate(CODE_HTTP_REQUESTS.discardChanges.$id,input).valid) throw codeFailure('code_discard_input_invalid','丢弃请求不符合契约。');
+      const body = await write(root,[(input as CodeDiscardInput).repositoryId],() => application.discardChanges(root,input as CodeDiscardInput));
+      if (!CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS.discardChanges.$id,body).valid) throw codeFailure('code_response_invalid','丢弃结果不符合契约。',500);
       return {status:200,body};
     }
     if (request.method === 'POST' && ['/code/commit-changes','/code/push'].includes(suffix)) {

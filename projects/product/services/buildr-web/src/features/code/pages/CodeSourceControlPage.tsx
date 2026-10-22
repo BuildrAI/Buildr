@@ -8,6 +8,7 @@ import { workspaceHref } from '../../../lib/labels';
 import { SourceControlWorkbench } from '../components/SourceControlWorkbench';
 import { codeReturnTarget } from '../code-navigation';
 import { SourceControlCommitPanel } from '../components/SourceControlCommitPanel';
+import { useSourceControlDiscard } from '../hooks/useSourceControlDiscard';
 import { useSourceControlActions } from '../hooks/useSourceControlActions';
 import type { CodeSourceTarget } from '../code-source-selection';
 import { useCodeSourceSelection } from '../hooks/useCodeSourceSelection';
@@ -32,6 +33,7 @@ export function CodeSourceControlPage() {
   const repositories = useMemo(() => orderCodeRepositories(observation.repositories, workspace?.rootPath, sourceControlRepositoryHasChanges), [observation.repositories, workspace?.rootPath]);
   const currentSource = useCodeSourceSelection(workspaceId);
   const actions = useSourceControlActions(workspaceId || '', observation.refresh);
+  const discard = useSourceControlDiscard(workspaceId || '', observation.refresh, viewActive);
   const fetchActions = useSourceControlFetch(workspaceId || '');
   const syncActions = useSourceControlSync(workspaceId || '');
   const branches = useSourceControlBranches(workspaceId || '', fetchActions, syncActions);
@@ -52,6 +54,7 @@ export function CodeSourceControlPage() {
   return <div className="code-source-control-page">
     <SourceControlOperationNotices workspaceId={workspaceId || ''} repositories={observation.repositories} fetchResults={fetchActions.feedback} syncResults={syncActions.results} onViewChanges={(repositoryId, worktreeId) => branches.viewChanges?.(repositoryId, worktreeId)} />
     <SourceControlWorkbench sourceEntryKey={entry ? workspaceId+':'+(entry.nonce||location.key) : undefined} currentSourceSelection={currentSource.selection ? {key:workspaceId+':'+currentSource.selection.sequence,targets:currentSource.selection.targets,preferredTarget:currentSource.selection.preferredTarget} : undefined} onCurrentSourceSelect={(target:CodeSourceTarget)=>currentSource.select('source-control',[target],target)} active={viewActive} repositories={repositories} defaultRepositories={observation.repositories} reader={observation.reader} readKey={observation.readKey}
+      onDiscard={(repository, worktree, file) => void discard.run(repository, worktree, file)} discardPending={discard.pending}
       editableWorkspaceId={workspaceId || undefined}
       observation={observation.observation} onRefresh={observation.refresh} onRetry={observation.refresh}
       onClone={workspaceId ? (repositoryId => { void codeApi.repositoryClone(workspaceId, repositoryId).then(result => {

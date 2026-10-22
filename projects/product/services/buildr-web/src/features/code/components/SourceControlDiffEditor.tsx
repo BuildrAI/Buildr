@@ -27,7 +27,9 @@ export function SourceControlDiffEditor({ workspaceId, diff, reader, mode }: Pro
   const [reload, setReload] = useState(0);
   const [restoreError, setRestoreError] = useState('');
   const current = useEditableFile(workspaceId, source.checkoutId ? { kind: 'code', repositoryId: source.repositoryId, checkoutId: source.checkoutId, path: diff.file.path } : null, reload);
-  const baseInput: CodeSourceControlInput = { repositoryId: source.repositoryId, worktreeId: source.worktreeId || source.checkoutId || undefined, path: diff.file.previousPath || diff.file.path, area: 'staged' };
+  const working = diff.area === 'working';
+  const emptyBase = diff.area === 'untracked' || working && (!diff.baseHash || diff.file.status === 'added');
+  const baseInput: CodeSourceControlInput = { repositoryId: source.repositoryId, worktreeId: source.worktreeId || source.checkoutId || undefined, path: diff.file.previousPath || diff.file.path, area: working ? 'commit' : 'staged', ...(working && diff.baseHash ? {commitHash: diff.baseHash} : {}) };
   const readBaseline = useCallback(async (input: CodeSourceControlInput, signal: AbortSignal) => {
     const value = await reader.sourceFile(input, signal);
     if (!value.truncated && !value.page && ['text', 'markdown'].includes(value.kind)) {
@@ -40,13 +42,13 @@ export function SourceControlDiffEditor({ workspaceId, diff, reader, mode }: Pro
     }
     return value;
   }, [reader]);
-  const baseline = useSourceControlRead(key, baseInput, readBaseline, diff.area === 'unstaged', diff.observedRevision + ':' + reload);
+  const baseline = useSourceControlRead(key, baseInput, readBaseline, !emptyBase && (working || diff.area === 'unstaged'), diff.observedRevision + ':' + reload);
   useEffect(() => {
     setRestoreError('');
     return () => { restoring.current?.abort(); restoring.current = null; };
   }, [key]);
   useEffect(() => {
-    if (!active || diff.area !== 'unstaged') return;
+    if (!active || emptyBase || !working && diff.area !== 'unstaged') return;
     const refresh = () => { if (document.visibilityState === 'visible') void baseline.refresh(); };
     const interval = window.setInterval(refresh, 5000);
     window.addEventListener('focus', refresh);
@@ -56,7 +58,7 @@ export function SourceControlDiffEditor({ workspaceId, diff, reader, mode }: Pro
   const completeBase = (value: CodeSourceFileResponse) => value.source.repositoryId === source.repositoryId
     && value.source.checkoutId === source.checkoutId && value.source.location === source.location
     && (value.source.worktreeId || value.source.checkoutId) === (source.worktreeId || source.checkoutId)
-    && !value.source.commitHash && value.path === baseInput.path && !value.truncated && !value.page
+    && (working ? value.source.commitHash === diff.baseHash : !value.source.commitHash) && value.path === baseInput.path && !value.truncated && !value.page
     && (value.kind === 'text' || value.kind === 'markdown');
   const file = current.file;
   const snapshot = file ? fileSnapshot(file) : undefined;
@@ -64,8 +66,8 @@ export function SourceControlDiffEditor({ workspaceId, diff, reader, mode }: Pro
   const validCurrent = snapshot && selector?.kind === 'code' && selector.repositoryId === source.repositoryId
     && selector.checkoutId === source.checkoutId && selector.path === diff.file.path
     && snapshot.rootPath === source.location && (snapshot.kind === 'text' || snapshot.kind === 'markdown');
-  const original = diff.area === 'untracked' ? '' : baseline.data?.content;
-  const validBase = diff.area === 'untracked' || baseline.data && completeBase(baseline.data);
+  const original = emptyBase ? '' : baseline.data?.content;
+  const validBase = emptyBase || baseline.data && completeBase(baseline.data);
 
   async function beforeRestore(): Promise<boolean> {
     restoring.current?.abort();
@@ -73,17 +75,21 @@ export function SourceControlDiffEditor({ workspaceId, diff, reader, mode }: Pro
     const observedKey = key;
     setRestoreError('');
     try {
-      if (diff.area === 'untracked') {
+      if (working) {
+        const latest = await reader.diff({repositoryId: source.repositoryId, worktreeId: source.worktreeId || source.checkoutId || undefined, path: diff.file.path, area: 'working'}, request.signal);
+        if (latest.baseHash !== diff.baseHash || latest.file.previousPath !== diff.file.previousPath || latest.source.location !== source.location || latest.source.checkoutId !== source.checkoutId || latest.file.status !== diff.file.status) throw new Error('最近提交或文件来源已变化，请刷新后重新核对。');
+      }
+      if (emptyBase) {
         // A formerly untracked file may have entered the index in another entry.
-        const latest = await reader.diff({ repositoryId: source.repositoryId, worktreeId: source.worktreeId || source.checkoutId || undefined, path: diff.file.path, area: 'untracked' }, request.signal);
-        if (latest.area !== 'untracked' || latest.source.repositoryId !== source.repositoryId || latest.source.location !== source.location || latest.source.checkoutId !== source.checkoutId || latest.file.path !== diff.file.path || latest.binary || latest.file.previewTruncated) throw new Error('文件已不在原来的未跟踪比较中，请刷新后重新核对。');
+        const latest = await reader.diff({ repositoryId: source.repositoryId, worktreeId: source.worktreeId || source.checkoutId || undefined, path: diff.file.path, area: working ? 'working' : 'untracked' }, request.signal);
+        if ((!working && latest.area !== 'untracked') || latest.source.repositoryId !== source.repositoryId || latest.source.location !== source.location || latest.source.checkoutId !== source.checkoutId || latest.file.path !== diff.file.path || latest.binary || latest.file.previewTruncated) throw new Error('文件已不在原来的未跟踪比较中，请刷新后重新核对。');
       } else {
         const latest = await readBaseline(baseInput, request.signal);
         if (!completeBase(latest)) throw new Error('无法确认完整且相同来源的比较基线，请刷新后重新核对。');
         if (request.signal.aborted || selected.current !== observedKey) return false;
         if (latest.revision !== baseline.data?.revision || latest.content !== original) {
           baseline.update(() => latest);
-          message.info('暂存内容已变化，已更新比较；请核对后再次恢复。');
+          message.info('比较基线已变化，已更新比较；请核对后再次恢复。');
           return false;
         }
       }
@@ -102,6 +108,6 @@ export function SourceControlDiffEditor({ workspaceId, diff, reader, mode }: Pro
   return <div className="source-control-editable-diff">
     {baseline.error && <Alert type="warning" showIcon message="暂时无法刷新比较基线" description={baseline.error} />}
     {restoreError && <Alert type="warning" showIcon message="本次恢复未执行，输入已保留" description={restoreError} />}
-    <FileDiffEditor file={file} editing={editing} original={original} mode={mode} active={active} beforeRestore={beforeRestore} originalLabel={diff.area === 'untracked' ? '旧版本 · 文件不存在' : '暂存版本'} currentLabel="当前文件" />
+    <FileDiffEditor file={file} editing={editing} original={original} mode={mode} active={active} beforeRestore={beforeRestore} originalLabel={emptyBase ? '旧版本 · 文件不存在' : working ? '最近一次提交（Commit）' : '暂存版本'} currentLabel="当前文件" />
   </div>;
 }

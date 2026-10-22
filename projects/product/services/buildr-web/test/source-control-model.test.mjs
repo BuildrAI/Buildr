@@ -1,3 +1,4 @@
+import { sourceControlWorkingChanges } from '../src/features/code/source-control-model.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {sourceControlDefaultSource,sourceControlRepository,sourceControlFileCount,sourceControlFileKey,sourceControlVisibleWorktrees,sourceControlWorktreeKey,sourceControlFilePathHints,sourceControlAbsolutePath,sourceControlFileTooltip,sourceControlRepositoryHasChanges} from '../src/features/code/source-control-model.ts';
@@ -83,4 +84,14 @@ test('首登记库完成后优先其实际登记工作树，Git主工作树角�
   const first=sourceControlRepository(observed),next=sourceControlRepository(catalog('next'));
   assert.equal(sourceControlDefaultSource([first,next]).repository,first);
   assert.equal(sourceControlDefaultSource([first,next]).worktree.worktreeId,'first-linked');
+});
+
+
+test('统一更改按工作树与路径去重，保留重命名和冲突，暂存变化不改变选择身份', () => {
+  const file = {repositoryId:'repo',worktreeId:'checkout',path:'one',area:'staged',status:'renamed',previousPath:'old',kind:'tracked',content:'',additions:3,deletions:1};
+  const files = sourceControlWorkingChanges([file,{...file,area:'unstaged',status:'modified',previousPath:null},{...file,worktreeId:'other'},{...file,path:'new',area:'untracked',status:'untracked',kind:'untracked',previousPath:null}]);
+  assert.equal(files.length,3); assert.equal(files[0].area,'working'); assert.equal(files[0].previousPath,'old'); assert.equal(files[0].additions,null);
+  assert.equal(sourceControlFileKey(files[0]),sourceControlFileKey(sourceControlWorkingChanges([{...file,area:'unstaged',status:'modified'}])[0]));
+  assert.notEqual(sourceControlFileKey(files[0]),sourceControlFileKey(files[1]));
+  assert.equal(sourceControlWorkingChanges([file,{...file,area:'unstaged',status:'conflicted'}])[0].status,'conflicted');
 });

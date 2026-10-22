@@ -2,7 +2,7 @@ import { App, Button } from 'antd';
 import { CloseOutlined, CopyOutlined, DownOutlined } from '@ant-design/icons';
 import { copyText } from '../../../lib/copyText';
 
-type LocationProps = { repositoryName: string; repositoryTitle?: string; location: string; branch?: string | null; taskId?: string; commitHash?: string; area?: 'unstaged' | 'staged' | 'untracked' | 'commit'; worktreeName?: string; kind?: 'default' | 'task' | 'worktree' | 'commit' };
+type LocationProps = { repositoryName: string; repositoryTitle?: string; location: string; branch?: string | null; taskId?: string; commitHash?: string; area?: 'unstaged' | 'staged' | 'untracked' | 'working' | 'commit'; worktreeName?: string; kind?: 'default' | 'task' | 'worktree' | 'commit' };
 
 /** Keep the reading identity visible; disclose location details only on request. */
 export function CodeLocationSummary({ repositoryName, repositoryTitle, branch, taskId, commitHash, area, worktreeName, kind, expanded, detailsId, onToggle }: LocationProps & {expanded: boolean; detailsId: string; onToggle(): void}) {
