@@ -148,9 +148,8 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
   const owner = selection;
   const commitEntry = commitEntries.find(item => item.entry.key === selectedCommit);
   const parsed = useMemo(() => current?.preview ? parseUnifiedDiff(current.preview) : null, [current?.preview]);
-  const compactFile = Boolean(filePresentation);
-  const missingFinalNewline = compactFile && parsed?.rows.some(row => row.kind === 'meta' && row.text.startsWith('\\ No newline'));
-  const rows = useMemo(() => parsed ? compactFile ? diffContentRows(parsed.rows) : parsed.rows : [], [parsed, compactFile]);
+  const missingFinalNewline = parsed?.rows.some(row => row.kind === 'meta' && row.text.startsWith('\\ No newline'));
+  const rows = useMemo(() => parsed ? diffContentRows(parsed.rows) : [], [parsed]);
   const pairs = useMemo(() => pairForSplit(rows), [rows]);
   // Intra-line ranges: unified rows use row-index pairs; split rows use the paired row objects.
   const unifiedInline = useMemo(() => {
