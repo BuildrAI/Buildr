@@ -21,7 +21,7 @@ import { WorkspaceSettingsDrawer } from '../features/workspace/components/Worksp
 import { AgentActionDrawer } from './AgentActionDrawer';
 import { DrawerShell } from '../components/DrawerShell';
 import { confirmModal } from '../lib/confirm';
-import { ReleaseAwarenessBanner } from '../features/installation/components/ReleaseAwarenessBanner';
+import { UpdateEntry } from '../features/installation/components/UpdateEntry';
 import { ArticleEditorProvider } from '../features/publication/components/ArticleEditorProvider';
 import { WorkspaceFileEditingProvider, useFileEditingDraftProtection } from './WorkspaceFileEditingProvider';
 import { WorkspaceSourceControlProvider } from './WorkspaceSourceControlProvider';
@@ -292,6 +292,15 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
     }
   };
 
+  const beginRestartWatch = useCallback(() => {
+    setRestartPhase('watching');
+    void watchRestart();
+  }, [watchRestart]);
+
+  const devUpdateCompleted = useCallback(() => {
+    void runtimeSystemApi.restart().catch(() => {}).then(beginRestartWatch);
+  }, [beginRestartWatch]);
+
   const retryRestartWatch = () => {
     if (restartPhase !== 'timed-out') return;
     setRestartPhase('watching');
@@ -388,6 +397,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
             {!isGlobal ? <WorkbenchSearch key={workspaceId} /> : null}
             {!isGlobal ? <Button className="shell-menu-toggle" aria-label="打开导航菜单" icon={<MenuOutlined />} onClick={() => setNavigationOpen(true)} /> : null}
             <Tooltip title={defaultAgent ? defaultAgent.label + ' · ' + agentStatusLabel(defaultAgent) : agents.error || '查看或接入智能体'}><Button id="global-agents-entry" aria-label="智能体" type="text" icon={<RobotOutlined />} onClick={() => agents.setOpen(true)}><span className="global-agent-label">{defaultAgent?.label || '智能体'} <span className={'global-agent-status' + (defaultAgent?.availability === 'available' ? ' is-available' : '')} /></span></Button></Tooltip>
+            <UpdateEntry enabled={!preview} openAgentAction={openAgentAction} onRestarting={beginRestartWatch} onCompleted={webProfile === 'development' ? devUpdateCompleted : undefined} />
             {preview ? (
               <Button id="quit-buildr" className="nav-quit" type="text" loading={quitting} onClick={() => { void quit(); }}>
                 退出
@@ -429,7 +439,6 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
               </Tooltip>
             ) : null}
 </>} />
-        <ReleaseAwarenessBanner openAgentAction={openAgentAction} />
         {quitError && <Alert id="quit-buildr-error" type="error" showIcon message="Buildr Web 尚未退出" description={quitError}
           action={<Button size="small" loading={quitting} onClick={() => void quit(false)}>重试退出</Button>} />}
         {restartError && <Alert id="restart-buildr-error" type="error" showIcon message="Buildr Web 尚未重启" description={restartError}

@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 
 export { execFileSync, spawnSync };
 
@@ -52,6 +52,27 @@ export function spawnCommandSync(executable: any, args: any, options: any = {}):
   return spawnSync(invocation.executable, invocation.args, {
     ...spawnOptions,
     shell: invocation.shell,
+  });
+}
+
+export function spawnCommand(executable: any, args: any, options: any = {}): Promise<any>  {
+  const { platform = process.platform, ...spawnOptions } = options;
+  const invocation = buildCommandInvocation(executable, args, { platform });
+  return new Promise((resolve: any) => {
+    const child = spawn(invocation.executable, invocation.args, {
+      ...spawnOptions,
+      shell: invocation.shell,
+    });
+    const stdout: any[] = [];
+    const stderr: any[] = [];
+    child.stdout?.on('data', (chunk: any) => stdout.push(chunk));
+    child.stderr?.on('data', (chunk: any) => stderr.push(chunk));
+    child.on('error', (error: any) => {
+      resolve({ ok: false, status: null, stdout: Buffer.concat(stdout).toString().trim(), stderr: Buffer.concat(stderr).toString().trim(), error: error.message });
+    });
+    child.on('close', (status: any) => {
+      resolve({ ok: status === 0, status, stdout: Buffer.concat(stdout).toString().trim(), stderr: Buffer.concat(stderr).toString().trim(), error: null });
+    });
   });
 }
 

@@ -86,6 +86,7 @@ export function createLocalWorkspaceRequestRouter({
         authorizeWrite: () => assertWriteRequest(request, trustedOrigin, sessionToken),
         readJsonBody: () => readJsonBody(request),
         pickWorkspaceDirectory,
+        previewIdentity,
         respond: contributionRespond(response),
       });
       if (contributedResponse === true) return;

@@ -338,7 +338,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
         'installation status', 'update check', 'update',
         'web launcher install', 'web launcher status', 'web launcher repair', 'web launcher uninstall',
       ],
-      http: ['system-installation.release-awareness.http'],
+      http: ['system-installation.release-awareness.http', 'system-installation.update-flow.http'],
       diagnostics: ['system-installation.diagnostics'],
     },
     lifecycle: 'none',
@@ -396,6 +396,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'connection-skills.http', 'mysql-query.http',
     'task-review.http', 'task-verification.http',
     'task-parent-coordination.http', 'system-installation.release-awareness.http',
+    'system-installation.update-flow.http',
   ]);
 
   const workspace: any = runtimeProvide(runtime, WORKSPACE_APPLICATION);

@@ -221,56 +221,81 @@ a {
   flex-shrink: 0;
 }
 
-.release-awareness-banner {
+.update-details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.update-current {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 10px var(--page-gutter);
-  border-bottom: 1px solid #f2d59b;
-  background: #fff8e8;
+  gap: 8px;
   color: var(--soft-ink);
 }
 
-.release-awareness-copy {
+.update-tracks {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  min-width: 190px;
+  gap: 8px;
 }
 
-.release-awareness-copy span,
-#release-copy-state {
+.update-track {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--soft-line);
+}
+
+.update-track-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.update-track-info span {
   color: var(--soft-muted);
   font-size: 12px;
 }
 
-.release-awareness-actions,
-.release-update-item {
+.update-track-command {
+  color: var(--soft-muted);
+  font-size: 12px;
+}
+
+.update-track-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-}
-
-.release-awareness-actions {
   justify-content: flex-end;
 }
 
-.release-update-item {
-  padding-left: 10px;
-  border-left: 1px solid #ead39f;
+.update-job {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--soft-bg);
+  color: var(--soft-ink);
 }
 
-@media (max-width: 900px) {
-  .release-awareness-banner {
-    align-items: flex-start;
-    flex-direction: column;
-  }
+.update-job-ready,
+.update-job-failed {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
 
-  .release-awareness-actions {
-    justify-content: flex-start;
-  }
+.update-footer {
+  display: flex;
+  justify-content: flex-end;
 }
 
 #app-view {

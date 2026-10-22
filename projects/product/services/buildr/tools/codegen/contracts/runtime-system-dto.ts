@@ -5,6 +5,7 @@ import path from 'node:path';
 import { compile } from 'json-schema-to-typescript';
 import { BUILDR_WEB_HTTP_SCHEMAS } from '../../../src/web/http/buildr-web-http-contracts.ts';
 import { RELEASE_AWARENESS_HTTP_SCHEMAS } from '../../../src/modules/installation/interfaces/http/release-awareness-http-contracts.ts';
+import { UPDATE_FLOW_HTTP_SCHEMAS } from '../../../src/modules/installation/interfaces/http/update-flow-http-contracts.ts';
 import { PUBLICATION_HTTP_SCHEMAS } from '../../../src/modules/publication/interfaces/http/publication-http-contracts.ts';
 import { cliOutputRoot, contractOutputPaths } from './output-paths.ts';
 
@@ -14,6 +15,7 @@ const defaultOutputs: any = contractOutputPaths('runtime-system-http-dto.ts');
 const catalogs: any = Object.freeze([
   ['buildrWeb', BUILDR_WEB_HTTP_SCHEMAS],
   ['releaseAwareness', RELEASE_AWARENESS_HTTP_SCHEMAS],
+  ['updateFlow', UPDATE_FLOW_HTTP_SCHEMAS],
   ['publication', PUBLICATION_HTTP_SCHEMAS],
 ]);
 

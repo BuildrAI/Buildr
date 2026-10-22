@@ -149,4 +149,6 @@ OpenSpec 只通过 `AGENT_ASSETS_OPENSPEC_SUPPORT` 获取所需资产能力，�
 
 npm 软件包更新后，安装模块通过窄端口（Port）委托[网页更新交接](../../services/buildr/src/web/application/update-web-handoff.ts)，以新登记的精确 Node.js 与软件包入口启动独立进程并核对运行身份；[实例生命周期](../../services/buildr/src/web/application/instance-lifecycle.ts)唯一拥有启动锁、同一安装实例的认证退出和新版启动。引导装配（Bootstrap）只连接能力，不复制交接策略。网页未运行时不启动，切换失败保留已经成立的安装更新结果。
 
+Buildr Web 页面内的分阶段更新由[更新任务应用](../../services/buildr/src/modules/installation/application/update-flow.ts)承载：进程内单例任务经 `prepare` 核对 receipt authority 与 registry 版本后后台下载更新包，经 `apply` 在用户二次确认后用同一 authority 安装并委托上述交接；development checkout 来源只按同一状态机做本地模拟，不查询 registry、不执行安装子进程也不触发交接，Preview 实例拒绝写入口；[更新 HTTP 接口](../../services/buildr/src/modules/installation/interfaces/http/update-flow-http.ts)暴露状态只读与两个写路由。前端[检查更新入口](../../services/buildr-web/src/features/installation/components/UpdateEntry.tsx)在全局壳层周期检查发布轨道，applying 期间仍由页面既有重启观察恢复；development 渠道展示模拟更新并在任务完成后经既有重启接口真实重启实例。
+
 任务协作记录保存在 SQLite，恢复、迁移与边界见[任务地图](task-system.md)与[数据设计](../docs/architecture/buildr-data-design.md)。工程包检查仍在 `tools/verification/`，不归资产应用或诊断所有。
