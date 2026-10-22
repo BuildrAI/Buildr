@@ -5,6 +5,7 @@ import { CloudDownloadOutlined, SyncOutlined } from '@ant-design/icons';
 import type { ReleaseAwareness } from '../api/release-awareness-api';
 import { useUpdateFlow } from '../hooks/useUpdateFlow';
 import { simulatedTargetVersion } from '../lib/simulated-update';
+import { copyText } from '../../../lib/copyText';
 
 type ReleaseTrack = ReleaseAwareness['tracks']['stable'];
 
@@ -66,12 +67,8 @@ export function UpdateEntry({ enabled, openAgentAction, onRestarting, onComplete
 
   const copy = useCallback(async (track: ReleaseTrack) => {
     const value = `buildr update --track ${track.track}`;
-    try {
-      await navigator.clipboard.writeText(value);
-      void message.success('更新命令已复制。');
-    } catch {
-      void message.warning(`请手动复制：${value}`);
-    }
+    if (await copyText(value)) void message.success('更新命令已复制。');
+    else void message.warning(`请手动复制：${value}`);
   }, [message]);
 
   const handToAgent = useCallback((track: ReleaseTrack) => {

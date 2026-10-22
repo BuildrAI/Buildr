@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createPromptRequest } from '../lib/promptRequest';
+import { copyText } from '../lib/copyText';
 import { Alert, Button, Input } from 'antd';
 
 export const ACTION_LABELS: Record<string, string> = {
@@ -34,12 +35,10 @@ export function useAgentActionFeedback(backToChooser: () => void) {
   const copyPrompt = async (noun: string, unchangedState: string) => {
     if (!prompt) return;
     const current = request.observe();
-    try {
-      await navigator.clipboard.writeText(prompt);
-      if (current()) setCopyState(`指令已复制。${unchangedState || `${noun}尚未创建。`}`);
-    } catch {
-      if (current()) setCopyState(`自动复制失败，请选择指令手动复制。${unchangedState || `${noun}尚未创建。`}`);
-    }
+    const copied = await copyText(prompt);
+    if (current()) setCopyState(copied
+      ? `指令已复制。${unchangedState || `${noun}尚未创建。`}`
+      : `自动复制失败，请选择指令手动复制。${unchangedState || `${noun}尚未创建。`}`);
   };
 
   const showResult = (nextPrompt: string, noun: string, unchangedState = '') => {
@@ -56,12 +55,10 @@ export function useAgentActionFeedback(backToChooser: () => void) {
 
   const copyProvidedPrompt = async (value: string, unchangedState: string) => {
     const current = request.observe();
-    try {
-      await navigator.clipboard.writeText(value);
-      if (current()) setCopyState(`指令已复制。${unchangedState}`);
-    } catch {
-      if (current()) setCopyState(`自动复制失败，请选择指令手动复制。${unchangedState}`);
-    }
+    const copied = await copyText(value);
+    if (current()) setCopyState(copied
+      ? `指令已复制。${unchangedState}`
+      : `自动复制失败，请选择指令手动复制。${unchangedState}`);
   };
 
 

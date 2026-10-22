@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Alert, App, Button, Input, Space, Typography } from 'antd';
 import { CopyOutlined, ScanOutlined } from '@ant-design/icons';
 import { DrawerShell } from '../../../components/DrawerShell';
+import { copyText } from '../../../lib/copyText';
 
 type Props = {
   open: boolean;
@@ -21,11 +22,10 @@ export function AgentDiscoveryDrawer({ open, serviceCode, serviceName, onClose }
   const prompt = serviceCode ? discoveryPrompt(serviceName || serviceCode, serviceCode) : '';
 
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(prompt);
+    if (await copyText(prompt)) {
       setNotice('指令已复制。');
       message.success('指令已复制');
-    } catch {
+    } else {
       setNotice('自动复制失败，请选择文本复制。');
     }
   };

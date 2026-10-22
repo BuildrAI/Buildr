@@ -8,6 +8,7 @@ import { useWorkspacePaneHost } from '../../../app/WorkspacePaneHost';
 import { InsideResourcePreview, useResourcePreview } from '../../../app/resource-preview';
 import { WorkspaceStage, type WorkspaceObjectContentState } from '../../../components/WorkspaceStage';
 import { workspaceHref } from '../../../lib/labels';
+import { copyText } from '../../../lib/copyText';
 import { ResourceActions } from '../../workbench/components/ResourceActions';
 import { knowledgeApi } from '../../knowledge/api/knowledge-api';
 import { publicationApi } from '../api/publication-api';
@@ -80,7 +81,7 @@ export function ArticleDetailPage({ preview, initialView, initialEditing = false
     });
     return () => controller.abort();
   }, [workspaceId, projectCode, publicationId]);
-  const copy = (text: string) => { void navigator.clipboard.writeText(text).then(() => messages.success('已复制')).catch(() => messages.error('自动复制失败，请选择文本复制')); };
+  const copy = (text: string) => { void copyText(text).then(copied => copied ? messages.success('已复制') : messages.error('自动复制失败，请选择文本复制')); };
   const openRelated = (item: ArticleRelated) => { setPanes(current => current.some(pane => pane.key === item.key) ? current : [...current, item]); setActivePane(item.key); paneHost?.revealContent(location.pathname, embedded ? undefined : item.key); };
   const jump = (index: number) => { setView('rendered'); requestAnimationFrame(() => scrollTo.current(index)); };
   const toc = <nav className="publication-toc-links" aria-label="本文目录">{headings.length ? headings.map(heading => <button type="button" key={heading.index} className={heading.level > 2 ? 'nested' : ''} onClick={() => jump(heading.index)}>{heading.text}</button>) : <span className="publication-muted">本文暂无章节标题</span>}</nav>;

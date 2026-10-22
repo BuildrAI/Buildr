@@ -2,6 +2,7 @@ import { App, Alert, Button, Spin, Tooltip } from 'antd';
 import { BranchesOutlined, CheckOutlined, CopyOutlined, DownOutlined, ExpandOutlined, FileAddOutlined, FileSearchOutlined, FolderOpenOutlined, ReloadOutlined, RightOutlined, SwapOutlined } from '@ant-design/icons';
 import { useState, type ReactNode } from 'react';
 import { formatShortDateTime } from '../../../lib/taskLabels';
+import { copyText } from '../../../lib/copyText';
 import './task-changed-files.css';
 
 import type { TaskChangedFilesResult as TaskChangedFilesResultDto } from '../../../../build/generated/task-dto';
@@ -35,23 +36,10 @@ export function ChangedFileList({ files, expanded, onExpand, compact = false, on
     if (fileTooltipPath) setTooltipWidth(Math.min(720, Math.max(120, row.ownerDocument.documentElement.clientWidth - row.getBoundingClientRect().right)));
   }
   async function copy(value: string, key: string) {
-    try {
-      if (!navigator.clipboard?.writeText) throw Error('clipboard unavailable');
-      await navigator.clipboard.writeText(value);
+    if (await copyText(value)) {
       setCopied(key);
       message.success('已复制');
-    } catch {
-      const area = document.createElement('textarea');
-      area.value = value;
-      area.style.position = 'fixed';
-      area.style.opacity = '0';
-      document.body.append(area);
-      area.select();
-      const done = document.execCommand('copy');
-      area.remove();
-      if (done) { setCopied(key); message.success('已复制'); }
-      else message.info('当前环境不允许访问剪贴板，请选中文字复制。');
-    }
+    } else message.info('当前环境不允许访问剪贴板，请选中文字复制。');
   }
   return <ol className={`task-changed-list${compact ? ' is-compact' : ''}`}>
     {files.map(file => {

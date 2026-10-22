@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPromptRequest } from "../../../lib/promptRequest";
+import { copyText } from "../../../lib/copyText";
 import { Alert, Button, Input, Radio, Space } from "antd";
 import {
   buildKnowledgeRequest,
@@ -55,14 +56,12 @@ export function KnowledgeAgentAction({
   };
   const copy = async () => {
     const current = request.observe();
-    try {
-      await navigator.clipboard.writeText(shownPrompt);
-      if (current()) setCopyState(readOnly
+    const copied = await copyText(shownPrompt);
+    if (current()) setCopyState(copied
+      ? (readOnly
         ? "已复制；此处尚未执行调查。交给智能体后继续了解，不会自动修改知识内容。"
-        : "已复制；此处未执行建设。交给智能体后，刷新查看实际成果。");
-    } catch {
-      if (current()) setCopyState("自动复制失败，请在下方选择指令手动复制；尚未执行。");
-    }
+        : "已复制；此处未执行建设。交给智能体后，刷新查看实际成果。")
+      : "自动复制失败，请在下方选择指令手动复制；尚未执行。");
   };
   return (
     <div className="knowledge-action">

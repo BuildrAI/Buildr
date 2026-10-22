@@ -3,6 +3,7 @@ import { Alert, Button, Empty, Image, Segmented, Space, Tag, Tooltip, message } 
 import { CopyOutlined, FileOutlined, PlusOutlined, ReloadOutlined, UploadOutlined } from '@ant-design/icons';
 import { publicationApi, type PublicationAsset } from '../api/publication-api';
 import { assetMarkdown, publicationAssetUrl, referencedAssets } from '../publication-model';
+import { copyText } from '../../../lib/copyText';
 
 type Props = {
   workspaceId: string; projectCode: string; publicationId: string; revision: string; sourceTaskId?: string;
@@ -66,7 +67,7 @@ export function ArticleAssetsPanel({ workspaceId, projectCode, publicationId, so
       return <article className="publication-asset" key={asset.relativePath} data-article-asset={asset.relativePath}>
         {asset.isImage ? <Image src={url} alt={asset.name} width="100%" /> : <a className="publication-attachment" href={url} target="_blank" rel="noopener noreferrer"><FileOutlined /><span>{asset.name}</span><small>下载附件 ↗</small></a>}
         <div className="publication-asset-title"><strong title={asset.name}>{asset.name}</strong>{used.has(asset.relativePath) && <Tag>已引用</Tag>}</div><code>{asset.relativePath}</code><small>{fileSize(asset.size)}</small>
-        <Space><Button size="small" icon={<PlusOutlined />} disabled={disabled} data-insert-asset={asset.relativePath} onClick={() => { onInsert(assetMarkdown(asset)); setNotice('引用已插入正文，保存文章后生效。'); }}>插入引用</Button><Tooltip title="复制相对路径"><Button size="small" type="text" icon={<CopyOutlined />} aria-label={`复制资源路径：${asset.name}`} onClick={() => { void navigator.clipboard.writeText(asset.relativePath).then(() => messages.success('资源路径已复制')).catch(() => messages.error('自动复制失败，请选择路径文本复制')); }} /></Tooltip></Space>
+        <Space><Button size="small" icon={<PlusOutlined />} disabled={disabled} data-insert-asset={asset.relativePath} onClick={() => { onInsert(assetMarkdown(asset)); setNotice('引用已插入正文，保存文章后生效。'); }}>插入引用</Button><Tooltip title="复制相对路径"><Button size="small" type="text" icon={<CopyOutlined />} aria-label={`复制资源路径：${asset.name}`} onClick={() => { void copyText(asset.relativePath).then(copied => copied ? messages.success('资源路径已复制') : messages.error('自动复制失败，请选择路径文本复制')); }} /></Tooltip></Space>
       </article>;
     }) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={scope === 'referenced' ? '正文还没有引用本地资源' : '项目还没有资源'} />}</div>
   </section>;

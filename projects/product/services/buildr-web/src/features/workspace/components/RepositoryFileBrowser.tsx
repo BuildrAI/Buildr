@@ -10,6 +10,7 @@ import { RepositorySearchText } from './RepositorySearchText';
 import { SelectableHoverCard } from '../../../components/SelectableHoverCard';
 import { repositorySearchQuery } from './repository-search-query';
 import { selectPopupGuard } from '../../../lib/select-popup';
+import { copyText } from '../../../lib/copyText';
 import { repositorySourceLines, visibleRepositoryMatch, type RepositoryFilePage } from './repository-file-page';
 export type { RepositoryFilePage } from './repository-file-page';
 import './repository-file-browser.css';
@@ -246,8 +247,8 @@ export function RepositoryFileBrowser(props: Props) {
     props.onScene?.(value ? 'search' : '');
   }
   async function copy(text: string) {
-    try { await navigator.clipboard.writeText(text); message.success('已复制'); }
-    catch { message.info('可在下方选中文字复制。'); }
+    if (await copyText(text)) message.success('已复制');
+    else message.info('可在下方选中文字复制。');
   }
   useEffect(()=>{props.onDirectoryExpansionChange?.(expanded);},[expanded,props.onDirectoryExpansionChange]);
   async function refresh(directories=false) {

@@ -758,7 +758,20 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.getByRole('button', { name: '编辑技能', exact: true }).waitFor({ state: 'visible' });
     await page.getByRole('button', { name: '编辑技能', exact: true }).click();
     assert.equal(await page.locator('#skill-action-input').inputValue(), '优先五个问题');
-    await page.evaluate(() => { Object.defineProperty(navigator.clipboard, 'writeText', { configurable: true, value: () => Promise.reject(new Error('fixture denied')) }); });
+    await page.evaluate(() => {
+      Object.defineProperty(navigator.clipboard, 'writeText', { configurable: true, value: () => Promise.reject(new Error('fixture denied')) });
+      (window as any).__copiedPrompt = '';
+      Object.defineProperty(document, 'execCommand', { configurable: true, value: (command: string) => {
+        if (command !== 'copy') return false;
+        (window as any).__copiedPrompt = (document.activeElement as HTMLTextAreaElement | null)?.value || '';
+        return true;
+      } });
+    });
+    await page.getByRole('button', { name: '复制指令', exact: true }).click();
+    await page.getByRole('button', { name: '已复制', exact: true }).waitFor({ state: 'visible' });
+    assert.equal(await page.evaluate(() => (window as any).__copiedPrompt), await page.locator('#skill-prompt').inputValue());
+    await page.locator('#skill-action-input').fill('优先六个问题');
+    await page.evaluate(() => { Object.defineProperty(document, 'execCommand', { configurable: true, value: () => false }); });
     await page.getByRole('button', { name: '复制指令', exact: true }).click();
     await page.getByRole('alert').filter({ hasText: '无法自动复制' }).waitFor({ state: 'visible' });
     assert.equal(await page.locator('#skill-prompt').evaluate((el: any) => el.selectionEnd - el.selectionStart === el.value.length), true);

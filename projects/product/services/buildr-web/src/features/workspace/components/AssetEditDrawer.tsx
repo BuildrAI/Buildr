@@ -3,6 +3,7 @@ import { assetEditDraft } from './asset-edit-draft';
 import { useAppShell } from '../../../app/AppShellContext';
 import { MetadataConflictNotice } from '../../../components/MetadataConflictNotice';
 import { rebaseEditedFields } from '../../../lib/metadata-recovery';
+import { copyText } from '../../../lib/copyText';
 import { codeFieldTrim, textFieldTrim } from '../../../lib/input-trim';
 import { CODE_INPUT_PATTERN, CODE_INPUT_TITLE, normalizeCodeInput } from '../../../lib/code-input';
 import { RepositoryFields } from './RepositoryFields';
@@ -101,8 +102,7 @@ export function AssetEditDrawer({ catalog: initialCatalog, kind, id, onClose, on
     if (latest && latestDraft) void save(latest, rebaseEditedFields(baseDraft, draft, latestDraft));
   };
   const copy = async () => {
-    try { await navigator.clipboard.writeText(JSON.stringify({ ...draft, ...(creatingRepository ? { repository: repositoryDraft } : {}) }, null, 2)); }
-    catch { setRecoveryError('自动复制失败，请直接选择并复制输入内容。'); }
+    if (!await copyText(JSON.stringify({ ...draft, ...(creatingRepository ? { repository: repositoryDraft } : {}) }, null, 2))) setRecoveryError('自动复制失败，请直接选择并复制输入内容。');
   };
   const label = { project: '项目', service: '服务', repository: '代码库' }[kind];
   const serviceName = (value: string) => (latest || catalog).services.find(entry => entry.id === value)?.name || value;

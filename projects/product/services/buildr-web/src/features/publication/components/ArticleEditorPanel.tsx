@@ -5,6 +5,7 @@ import { Alert, Button, Form, Input, Modal, Select, Space, Spin, message } from 
 import { CopyOutlined, EyeOutlined, EditOutlined, SaveOutlined } from '@ant-design/icons';
 import { publicationApi, type PublicationAsset, type PublicationDetail, type PublicationDraft } from '../api/publication-api';
 import { articleDraft, insertMarkdown, publicationStatus, writingMethods } from '../publication-model';
+import { copyText } from '../../../lib/copyText';
 import { ArticleAssetsPanel } from './ArticleAssetsPanel';
 import { ArticleBody } from './ArticleBody';
 import { ArticleWritingDrawer } from './ArticleWritingDrawer';
@@ -101,7 +102,7 @@ export function ArticleEditorPanel({ workspaceId, projectCode, publicationId, so
   return <div id="article-editor" className="publication-page publication-editor" data-project-code={projectCode} data-publication-id={publicationId} data-source-task-id={sourceTaskId}>{holder}
     <div className="publication-editor-actions"><span id="article-edit-state" role="status" className="publication-muted">{busy ? '正在保存…' : dirty ? '有尚未保存的修改' : '当前稿件已保存'}</span><Space><Button autoInsertSpace={false} onClick={cancel} disabled={busy}>取消</Button><Button id="article-save" type="primary" icon={<SaveOutlined />} loading={busy} disabled={!draft || !base} onClick={() => void save()}>保存修改</Button></Space></div>
     {article.sourceTask && <Alert type="info" message={`正在编辑来源任务的草稿：${article.sourceTask.title}`} />}
-    {saveError && <Alert type="error" message={conflict ? '文章已被其他入口修改，你的输入已保留。' : '修改尚未保存，输入已保留。'} description={saveError} action={conflict ? <Space wrap><Button size="small" onClick={() => void compare()}>查看最新稿件</Button><Button size="small" onClick={() => { void navigator.clipboard.writeText(currentText).then(() => messages.success('当前修改已复制')).catch(() => messages.error('自动复制失败')); }}>复制我的修改</Button></Space> : undefined} />}
+    {saveError && <Alert type="error" message={conflict ? '文章已被其他入口修改，你的输入已保留。' : '修改尚未保存，输入已保留。'} description={saveError} action={conflict ? <Space wrap><Button size="small" onClick={() => void compare()}>查看最新稿件</Button><Button size="small" onClick={() => { void copyText(currentText).then(copied => copied ? messages.success('当前修改已复制') : messages.error('自动复制失败')); }}>复制我的修改</Button></Space> : undefined} />}
     {base.assetDiagnostics.length > 0 && <Alert type="warning" message="部分文章资源暂时不可用，正文仍可编辑。" description={base.assetDiagnostics.map(item => item.message).join('；')} />}
     <div className="publication-editor-layout"><main className="publication-editor-main"><Form layout="vertical">
       <Form.Item label="标题" required><Input id="article-edit-title" className="publication-title-input" maxLength={150} value={draft.title} onChange={event => change('title', event.target.value)} disabled={busy} /></Form.Item>
@@ -116,7 +117,7 @@ export function ArticleEditorPanel({ workspaceId, projectCode, publicationId, so
     </aside></div>
     {writing && <ArticleWritingDrawer projects={[{ code: projectCode, name: article.projectName }]} article={article} revision={base.revision} initialMethod={writing} hasUnsavedChanges={dirty} onClose={() => setWriting(null)} />}
     <Modal open={leave || (blocker.state === 'blocked' && !busy && !savingExit.current)} title="放弃尚未保存的修改？" okText="放弃修改" cancelText="继续编辑" onCancel={resetExit} onOk={discard}><p>已上传的资源文件会保留，正文改动尚未保存。</p></Modal>
-    <Modal open={comparing} width={940} title="对照最新稿件" onCancel={() => setComparing(false)} footer={<Space wrap><Button onClick={() => setComparing(false)}>继续查看</Button><Button icon={<CopyOutlined />} onClick={() => { void navigator.clipboard.writeText(currentText).then(() => messages.success('当前修改已复制')).catch(() => messages.error('自动复制失败')); }}>复制我的修改</Button><Button type="primary" disabled={!latest || compareLoading} onClick={() => { if (!latest) return; setBase(latest); setAssets(latest.assets || []); setComparing(false); setConflict(false); setSaveError(''); }}>已完成对照，保留我的输入继续编辑</Button></Space>}>
+    <Modal open={comparing} width={940} title="对照最新稿件" onCancel={() => setComparing(false)} footer={<Space wrap><Button onClick={() => setComparing(false)}>继续查看</Button><Button icon={<CopyOutlined />} onClick={() => { void copyText(currentText).then(copied => copied ? messages.success('当前修改已复制') : messages.error('自动复制失败')); }}>复制我的修改</Button><Button type="primary" disabled={!latest || compareLoading} onClick={() => { if (!latest) return; setBase(latest); setAssets(latest.assets || []); setComparing(false); setConflict(false); setSaveError(''); }}>已完成对照，保留我的输入继续编辑</Button></Space>}>
       <Alert type="warning" message="请将需要保留的最新内容合入编辑框。确认后仍保留你的输入；下次保存将以当前编辑内容更新这份最新稿件。" />
       {compareLoading ? <Spin /> : compareError ? <Alert type="error" message={compareError} /> : latest && <div className="publication-compare"><section><h3>最新稿件</h3><strong>{latest.publication.title}</strong><p>{latest.publication.summary}</p><pre>{latest.content}</pre></section><section><h3>我的修改</h3><strong>{draft.title}</strong><p>{draft.summary}</p><pre>{draft.content}</pre></section></div>}
     </Modal>

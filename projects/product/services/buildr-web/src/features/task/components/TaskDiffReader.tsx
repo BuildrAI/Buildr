@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ChangedFileList, changedFileKey, type ChangedFileEntry } from './TaskChangedFiles';
 import type { TaskCommit } from './task-commit-model';
 import { formatShortDateTime } from '../../../lib/taskLabels';
+import { copyText } from '../../../lib/copyText';
 import { diffContentRows, inlineChangePairs, inlineSegments, parseUnifiedDiff, pairForSplit, type InlineSegment } from './diff-text';
 import './task-diff-reader.css';
 
@@ -234,16 +235,14 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
     if (!current) return;
     const path = filePresentation ? filePresentation.absolutePath : current.path;
     if (!path) { message.info('完整绝对路径暂不可读取。'); return; }
-    try {
-      if (!navigator.clipboard?.writeText) throw Error('clipboard unavailable');
-      await navigator.clipboard.writeText(path);
+    if (await copyText(path)) {
       setCopied(true);
       message.success('已复制');
-    } catch { message.info('当前环境不允许访问剪贴板，请选中文字复制。'); }
+    } else message.info('当前环境不允许访问剪贴板，请选中文字复制。');
   }
   async function copyCommit(value: string) {
-    try { await navigator.clipboard.writeText(value); message.success('已复制'); }
-    catch { message.info('当前环境不允许访问剪贴板，请选中文字复制。'); }
+    if (await copyText(value)) message.success('已复制');
+    else message.info('当前环境不允许访问剪贴板，请选中文字复制。');
   }
   const isAddOnly = current?.status === 'added' || current?.status === 'untracked';
   const hasAny = repositories.some(repository => repository.changes.length > 0 || repository.commits.length > 0 || repository.status === 'unavailable');
