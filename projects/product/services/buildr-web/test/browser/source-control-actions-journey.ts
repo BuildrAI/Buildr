@@ -110,7 +110,8 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
         await page.waitForFunction(() => {const input = document.querySelector<HTMLTextAreaElement>('#commit-message-text'); return input && input.getBoundingClientRect().height >= 120 && input.getBoundingClientRect().height <= 252 && input.scrollHeight > input.clientHeight && getComputedStyle(input).overflowY === 'auto';});
         await input.fill('feat: 用户修改生成说明后提交');
         const before = branches.observe(branches.location), otherPositions = branches.otherPositions(branches.location);
-        const written = page.waitForResponse((reply: any) => reply.request().method() === 'POST' && new URL(reply.url()).pathname.endsWith('/code/commit-changes'));
+        // commit/push/sync 串联真实 Git 写调用，按操作成本放宽响应预算。
+        const written = page.waitForResponse((reply: any) => reply.request().method() === 'POST' && new URL(reply.url()).pathname.endsWith('/code/commit-changes'), {timeout: 30_000});
         await panel.locator('#commit-changes').click();
         const response = await written; assert.equal(response.status(), 200); const result = await response.json();
         assert.equal(response.request().postDataJSON().mode, 'commit', '主按钮固定直接发起提交');
@@ -135,7 +136,8 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
         await page.setViewportSize({width: 1280, height: 900}); await open(branches);
         const panel = root().locator('.source-control-commit-panel'); await panel.getByRole('textbox', {name: '提交说明内容', exact: true}).fill('chore: 无智能体手写提交');
         assert.equal(await panel.locator('#generate-commit-message').isDisabled(), true);
-        const written = page.waitForResponse((reply: any) => reply.request().method() === 'POST' && new URL(reply.url()).pathname.endsWith('/code/commit-changes'));
+        // commit/push/sync 串联真实 Git 写调用，按操作成本放宽响应预算。
+        const written = page.waitForResponse((reply: any) => reply.request().method() === 'POST' && new URL(reply.url()).pathname.endsWith('/code/commit-changes'), {timeout: 30_000});
         await (await commitMenu(panel)).getByRole('menuitem', {name: '提交并推送', exact: true}).click();
         const response = await written; assert.equal(response.status(), 200); const result = await response.json();
         assert.equal(response.request().postDataJSON().mode, 'commit-push', '菜单点击直接发起提交并推送');
@@ -162,7 +164,15 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
       try {
         await page.setViewportSize({width: 1440, height: 900}); const {repository, tree} = await open(branches);
         const row = root().locator('[data-source-repository="' + repository.id + '"] [data-source-worktree="' + tree.worktreeId + '"]');
-        await row.locator('.source-control-row-action-button').click();
+        // 密度布局收窄时分支入口收进行内“…”菜单；行内按钮可见用行内，否则走同一菜单路径。
+        if (await row.locator('.source-control-row-action-button').isVisible()) await row.locator('.source-control-row-action-button').click();
+        else {
+          const label = codeRepositoryLabel(repository) + ' · ' + (tree.isMain ? '主工作树' : tree.name);
+          const trigger = row.getByRole('button', {name: '操作菜单 · ' + label, exact: true});
+          if (await trigger.getAttribute('aria-expanded') !== 'true') await trigger.click();
+          const rowMenu = page.getByRole('menu', {name: '操作菜单 · ' + label, exact: true}); await rowMenu.waitFor();
+          await rowMenu.getByRole('menuitem', {name: '管理分支', exact: true}).click();
+        }
         const manager = page.getByRole('region', {name: '分支管理 · ' + codeRepositoryLabel(repository) + ' · ' + (tree.isMain ? '主工作树' : tree.name), exact: true});
         await manager.getByRole('button', {name: '管理 ' + branches.remote + '/' + branches.remoteName, exact: true}).click();
         const action = page.getByRole('region', {name: '分支操作 · ' + branches.remote + '/' + branches.remoteName, exact: true});
@@ -175,7 +185,8 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
         const before = branches.observe(branches.location), otherPositions = branches.otherPositions(branches.location);
         page.on('request', observe); await page.route('**/code/commit-changes', delay);
         const started = page.waitForRequest((request: any) => request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/code/commit-changes'));
-        const written = page.waitForResponse((reply: any) => reply.request().method() === 'POST' && new URL(reply.url()).pathname.endsWith('/code/commit-changes'));
+        // commit/push/sync 串联真实 Git 写调用，按操作成本放宽响应预算。
+        const written = page.waitForResponse((reply: any) => reply.request().method() === 'POST' && new URL(reply.url()).pathname.endsWith('/code/commit-changes'), {timeout: 30_000});
         await (await commitMenu(panel)).getByRole('menuitem', {name: '提交并同步', exact: true}).click(); await started;
         await page.getByRole('menu').waitFor({state: 'hidden'});
         assert.equal(await panel.locator('#commit-changes').innerText(), '正在提交并同步…');
@@ -207,7 +218,8 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
         await page.setViewportSize({width: 1280, height: 900}); await open(branches);
         const panel = root().locator('.source-control-commit-panel'), input = panel.getByRole('textbox', {name: '提交说明内容', exact: true});
         await input.fill('chore: 无上游提交并同步');
-        const written = page.waitForResponse((reply: any) => reply.request().method() === 'POST' && new URL(reply.url()).pathname.endsWith('/code/commit-changes'));
+        // commit/push/sync 串联真实 Git 写调用，按操作成本放宽响应预算。
+        const written = page.waitForResponse((reply: any) => reply.request().method() === 'POST' && new URL(reply.url()).pathname.endsWith('/code/commit-changes'), {timeout: 30_000});
         await (await commitMenu(panel)).getByRole('menuitem', {name: '提交并同步', exact: true}).click();
         const response = await written; assert.equal(response.status(), 200); const result = await response.json();
         assert.equal(result.commit.completed, true); assert.equal(result.sync.status, 'unavailable'); assert.equal(result.sync.upstream, null);

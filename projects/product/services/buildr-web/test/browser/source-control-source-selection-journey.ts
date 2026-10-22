@@ -30,6 +30,17 @@ export async function runSourceControlSourceSelectionJourney({t,page,workspaceUr
     await page.locator('.shell-navigation [data-nav="'+name+'"]').click();
     await(name==='source-control'?scm():explorer()).waitFor();
   };
+  // 密度布局收窄时任务入口收进行内“…”菜单，按用户路径取菜单项，不要求行内图标一定展开。
+  const openTask=async(repository:any,worktree:any)=>{
+    const tree=row(repository.id,worktree.worktreeId).locator('xpath=ancestor::*[@data-source-worktree][1]');
+    const link=tree.getByRole('button',{name:'打开任务 浏览器任务',exact:true});
+    if(await link.isVisible()){await link.click();return;}
+    const label=codeRepositoryLabel(repository)+' · '+(worktree.isMain?'主工作树':worktree.name);
+    const trigger=tree.getByRole('button',{name:'操作菜单 · '+label,exact:true});
+    if(await trigger.getAttribute('aria-expanded')!=='true')await trigger.click();
+    const menu=page.getByRole('menu',{name:'操作菜单 · '+label,exact:true});await menu.waitFor();
+    await menu.getByRole('menuitem',{name:'打开关联任务',exact:true}).click();
+  };
   const open=async(branches:any)=>{
     await page.goto(workspaceUrl+'/code/source-control');await scm().locator('.source-control-repository-copy').first().waitFor();
     const source=identify(await catalog(),branches.location);await choose(source.repository,source.worktree);return source;
@@ -183,7 +194,7 @@ export async function runSourceControlSourceSelectionJourney({t,page,workspaceUr
     await fixture.withBranches(async(branches:any)=>{
       const values=await fixture.prepareWorktrees(),alpha=values.find((item:any)=>item.name==='alpha');assert.ok(alpha);
       branches.liveRefresh.write(longText(81));await page.setViewportSize({width:1440,height:900});const{repository,worktree}=await open(branches);
-      const taskSource=identify(await catalog(),alpha.location);await row(taskSource.repository.id,taskSource.worktree.worktreeId).locator('xpath=ancestor::*[@data-source-worktree][1]').getByRole('button',{name:'打开任务 浏览器任务',exact:true}).click();
+      const taskSource=identify(await catalog(),alpha.location);await openTask(taskSource.repository,taskSource.worktree);
       const task=page.locator('#task-detail-main:visible');await task.locator('[data-task-source-control="browser-task"]').click();await selected(taskSource.repository.id,taskSource.worktree.worktreeId);
       await choose(repository,worktree);await selectSourceControlView(scm(), 'changes');await changedFile(worktree.worktreeId,branches.liveRefresh.path).click();await settledDiff('sourceSelectionLine1 = 81');
       branches.liveRefresh.write(longText(82));await settledDiff('sourceSelectionLine1 = 82');await selected(repository.id,worktree.worktreeId);
@@ -205,7 +216,7 @@ export async function runSourceControlSourceSelectionJourney({t,page,workspaceUr
       const peerSource=identify(value,peer.location);assert.notEqual(peerSource.repository.id,taskSource.repository.id);
       assert.equal(new Set([worktree.worktreeId,main.worktreeId,taskSource.worktree.worktreeId]).size,3,'旧来源、显式任务和较新手选必须三者不同');
       await navigate('explorer');await explorerSource(repository.id,worktree.location);await navigate('source-control');
-      await row(taskSource.repository.id,taskSource.worktree.worktreeId).locator('xpath=ancestor::*[@data-source-worktree][1]').getByRole('button',{name:'打开任务 浏览器任务',exact:true}).click();
+      await openTask(taskSource.repository,taskSource.worktree);
       const task=page.locator('#task-detail-main:visible');await task.waitFor();
       const matches=(url:URL)=>url.pathname===new URL(api+'/code/source-control').pathname&&url.searchParams.get('taskId')==='browser-task';
       const firstId=targetFirst?taskSource.repository.id:peerSource.repository.id,secondId=targetFirst?peerSource.repository.id:taskSource.repository.id;
@@ -254,7 +265,7 @@ export async function runSourceControlSourceSelectionJourney({t,page,workspaceUr
       await page.setViewportSize({width:1440,height:900});const{repository,worktree}=await open(branches),main=repository.worktrees.find((item:any)=>item.isMain);
       const taskSource=identify(await catalog(),alpha.location);
       assert.equal(new Set([worktree.worktreeId,main.worktreeId,taskSource.worktree.worktreeId]).size,3);
-      await row(taskSource.repository.id,taskSource.worktree.worktreeId).locator('xpath=ancestor::*[@data-source-worktree][1]').getByRole('button',{name:'打开任务 浏览器任务',exact:true}).click();
+      await openTask(taskSource.repository,taskSource.worktree);
       const task=page.locator('#task-detail-main:visible');await task.locator('#task-source-files').waitFor();
       const matches=(url:URL)=>url.pathname===new URL(api+'/code/repositories').pathname&&url.searchParams.get('taskId')==='browser-task';
       let release=()=>{};const gate=new Promise<void>(resolve=>{release=resolve;});const requests=new Set<any>();
@@ -302,7 +313,7 @@ export async function runSourceControlSourceSelectionJourney({t,page,workspaceUr
     await fixture.withBranches(async(branches:any)=>{
       const values=await fixture.prepareWorktrees(),alpha=values.find((item:any)=>item.name==='alpha');assert.ok(alpha);
       branches.liveRefresh.write(longText(121));await page.setViewportSize({width:1440,height:900});const{repository,worktree}=await open(branches),taskSource=identify(await catalog(),alpha.location);
-      await row(taskSource.repository.id,taskSource.worktree.worktreeId).locator('xpath=ancestor::*[@data-source-worktree][1]').getByRole('button',{name:'打开任务 浏览器任务',exact:true}).click();
+      await openTask(taskSource.repository,taskSource.worktree);
       const task=page.locator('#task-detail-main:visible');await task.locator('[data-task-content=changes]').click();
       await task.locator('.task-rail-commit').filter({hasText:'code fixture'}).click();
       await task.locator('.task-rail-commit-files .task-changed-row').filter({has:page.locator('.task-changed-path[data-file-path="'+fixture.path+'"]')}).click();
@@ -328,7 +339,7 @@ export async function runSourceControlSourceSelectionJourney({t,page,workspaceUr
     await fixture.withBranches(async(branches:any)=>{
       const values=await fixture.prepareWorktrees(),alpha=values.find((item:any)=>item.name==='alpha');assert.ok(alpha);
       await page.setViewportSize({width:1440,height:900});const{repository}=await open(branches),main=repository.worktrees.find((item:any)=>item.isMain),taskSource=identify(await catalog(),alpha.location);
-      await row(taskSource.repository.id,taskSource.worktree.worktreeId).locator('xpath=ancestor::*[@data-source-worktree][1]').getByRole('button',{name:'打开任务 浏览器任务',exact:true}).click();
+      await openTask(taskSource.repository,taskSource.worktree);
       const task=page.locator('#task-detail-main:visible');await task.locator('#task-source-files').waitFor();
       const matches=(url:URL)=>url.pathname===new URL(api+'/code/repositories').pathname&&url.searchParams.get('taskId')==='browser-task';
       let release=()=>{};const gate=new Promise<void>(resolve=>{release=resolve;});const requests=new Set<any>();
