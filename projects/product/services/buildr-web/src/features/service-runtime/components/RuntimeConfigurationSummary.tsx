@@ -7,7 +7,7 @@ type Props = { definition: RuntimeDefinitionView; onView: () => void; onConfigur
 
 /** 摘要只呈现已声明的连接，不据此推断服务类型或连接状态。 */
 export function RuntimeConfigurationSummary({ definition, onView, onConfigure }: Props) {
-  const backend = definition.local.backend;
+  const backends = definition.local.backends ?? [];
   return <div className="runtime-source runtime-configuration-summary" id="service-runtime-configuration">
     <div className="runtime-configuration-heading">
       <h3>启动与连接配置</h3>
@@ -16,9 +16,11 @@ export function RuntimeConfigurationSummary({ definition, onView, onConfigure }:
         <Button size="small" icon={<SettingOutlined />} onClick={onConfigure}>配置启动与连接</Button>
       </div>
     </div>
-    {backend ? <dl className="runtime-configuration-connections">
-      <div><dt>本地后端</dt><dd><code>{backend.serviceCode}</code></dd></div>
-      <div><dt>远程测试地址</dt><dd><code>{backend.remoteUrl}</code></dd></div>
+    {backends.length ? <dl className="runtime-configuration-connections">
+      {backends.flatMap(backend => [
+        <div key={`${backend.serviceCode}-service`}><dt>本地后端</dt><dd><code>{backend.serviceCode}</code></dd></div>,
+        <div key={`${backend.serviceCode}-remote`}><dt>远程测试地址</dt><dd><code>{backend.remoteUrl}</code></dd></div>,
+      ])}
     </dl> : <p className="runtime-connection-note">未声明可切换的后端连接，按现有启动配置运行。</p>}
     <div className="runtime-configuration-source"><Tag>智能体（Agent）验证</Tag><span>运行定义 <code>{definition.path}</code></span><span>验证于 {formatShortDateTime(definition.verifiedAt)}</span></div>
   </div>;

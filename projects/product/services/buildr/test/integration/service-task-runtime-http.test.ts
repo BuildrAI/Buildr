@@ -24,7 +24,7 @@ async function fixture(t: test.TestContext) {
   const view = createServiceRuntimeView({ catalog, runtime });
   const taskRuntime = createServiceTaskRuntimeApplication({ readTaskScope: () => ({ taskId: 'task', title: '本地验证', scope: { projects: ['p'], services: [] } }), runtime, view, catalog });
   const http = createServiceRuntimeHttp({ runtime, view, taskRuntime });
-  for (const code of codes) await runtime.writeDefinition(root, code, `version: 1\nsource: agent\nverifiedAt: '2026-10-22'\nlocal:\n  command: [${JSON.stringify(process.execPath)}, -e, ${JSON.stringify(script)}, --]\n  cwd: .\n  preferredPort: ${code === 'front' ? 24201 : 24202}\n  portOverride: --port\n  readiness: {kind: log, pattern: ready}\n  timeoutSeconds: 10\n${code === 'front' ? '  backend: {serviceCode: back, environmentVariable: BUILDR_TEST_BACKEND, remoteUrl: https://test.example.com}\n' : ''}`);
+  for (const code of codes) await runtime.writeDefinition(root, code, `version: 1\nsource: agent\nverifiedAt: '2026-10-22'\nlocal:\n  command: [${JSON.stringify(process.execPath)}, -e, ${JSON.stringify(script)}, --]\n  cwd: .\n  preferredPort: ${code === 'front' ? 24201 : 24202}\n  portOverride: --port\n  readiness: {kind: log, pattern: ready}\n  timeoutSeconds: 10\n${code === 'front' ? '  backends: [{serviceCode: back, environmentVariable: BUILDR_TEST_BACKEND, remoteUrl: https://test.example.com}]\n' : ''}`);
   t.after(async () => {
     for (const run of await runtime.listRuns(root)) if (run.status === 'starting' || run.status === 'running') await runtime.stopRun(root, run.id);
     fs.rmSync(root, { recursive: true, force: true });
@@ -40,7 +40,7 @@ test('task HTTP serves scoped selection and real local/remote injected target wi
   const f = await fixture(t);
   const observed = await f.call('GET', '/service-runtime/tasks/task');
   assert.equal(observed?.status, 200); assert.equal(observed!.body.services.length, 2);
-  assert.equal(observed!.body.services.find((s: any) => s.service.code === 'front').connectionTarget.target, null);
+  assert.equal(observed!.body.services.find((s: any) => s.service.code === 'front').connectionTarget[0].target, null);
   assert.equal(observed!.body.services.find((s: any) => s.service.code === 'back').connectionTarget, null);
   assert.ok(observed!.body.services.every((s: any) => s.worktree.taskId === 'task' && !s.worktree.main));
   await assert.rejects(f.call('POST', '/service-runtime/tasks/task/runs', { selected: [{ serviceCode: 'front', worktreeId: 'front-task' }] }, false));
@@ -53,8 +53,8 @@ test('task HTTP serves scoped selection and real local/remote injected target wi
   const local = await f.call('POST', '/service-runtime/tasks/task/runs', { selected: [{ serviceCode: 'front', worktreeId: 'front-task', expectedBackendRunId: 'stale-ui-backend' }, { serviceCode: 'back', worktreeId: 'back-task' }], connection: 'local' });
   const front = local!.body.results[0].run, back = local!.body.results[1].run;
   const connected = await f.call('GET', '/service-runtime/tasks/task');
-  assert.equal(connected.body.services.find((s: any) => s.service.code === 'front').connectionTarget.target.url, back.url);
-  assert.equal(connected.body.services.find((s: any) => s.service.code === 'front').connectionTarget.target.runId, back.id);
+  assert.equal(connected.body.services.find((s: any) => s.service.code === 'front').connectionTarget[0].target.url, back.url);
+  assert.equal(connected.body.services.find((s: any) => s.service.code === 'front').connectionTarget[0].target.runId, back.id);
   assert.equal(front.connection.runId, back.id); assert.equal(await (await fetch(front.url)).text(), back.url);
   assert.equal(front.taskId, 'task'); assert.equal(back.taskId, 'task');
   const staleOnlyFront = await f.call('POST', '/service-runtime/tasks/task/runs', { selected: [{ serviceCode: 'front', worktreeId: 'front-task', expectedBackendRunId: 'stale-ui-backend' }], connection: 'local' });

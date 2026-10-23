@@ -4,6 +4,8 @@ export type RuntimeReadiness =
   | { kind: 'log'; pattern: string }
   | { kind: 'http'; path: string };
 
+export type RuntimeBackendDeclaration = { serviceCode: string; environmentVariable: string; remoteUrl: string };
+
 export type RuntimeLocalDefinition = {
   command: string[];
   cwd: string;
@@ -12,7 +14,7 @@ export type RuntimeLocalDefinition = {
   portOverride: string | null;
   readiness: RuntimeReadiness;
   timeoutSeconds: number;
-  backend?: { serviceCode: string; environmentVariable: string; remoteUrl: string };
+  backends?: RuntimeBackendDeclaration[];
 };
 
 export type ServiceRuntimeDefinition = {
@@ -93,20 +95,34 @@ export function parseRuntimeDefinition(content: string): ServiceRuntimeDefinitio
     }
     if (command && cwd && relativePath(cwd) && preferredPort !== null && timeoutSeconds !== null && readiness) {
       localDefinition = { command, cwd, profile, preferredPort, portOverride, readiness, timeoutSeconds };
-      if (local.backend !== undefined) {
-        const backend = local.backend;
-        const serviceCode = text(backend?.serviceCode);
-        const environmentVariable = text(backend?.environmentVariable);
-        const remoteUrl = text(backend?.remoteUrl);
-        if (!serviceCode || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(serviceCode)) problems.push('local.backend.serviceCode 必须是已登记服务编号。');
-        if (!environmentVariable || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(environmentVariable)) problems.push('local.backend.environmentVariable 必须是环境变量名称。');
-        let validUrl = false;
-        try {
-          const url = new URL(remoteUrl ?? '');
-          validUrl = ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.hash;
-        } catch {}
-        if (!validUrl) problems.push('local.backend.remoteUrl 必须是不含认证和片段的 HTTP/HTTPS 地址。');
-        if (serviceCode && environmentVariable && remoteUrl && validUrl) localDefinition.backend = { serviceCode, environmentVariable, remoteUrl };
+      if (local.backend !== undefined && local.backends !== undefined) problems.push('local.backend 与 local.backends 不能同时声明。');
+      else if (local.backends !== undefined && !Array.isArray(local.backends)) problems.push('local.backends 必须是数组。');
+      else {
+        const declared: unknown[] = Array.isArray(local.backends) ? local.backends : local.backend !== undefined ? [local.backend] : [];
+        const backends: RuntimeBackendDeclaration[] = [];
+        const seenServices = new Set<string>();
+        const seenVariables = new Set<string>();
+        declared.forEach((backend, index) => {
+          const label = Array.isArray(local.backends) ? `local.backends[${index}]` : 'local.backend';
+          const serviceCode = text((backend as any)?.serviceCode);
+          const environmentVariable = text((backend as any)?.environmentVariable);
+          const remoteUrl = text((backend as any)?.remoteUrl);
+          if (!serviceCode || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(serviceCode)) problems.push(`${label}.serviceCode 必须是已登记服务编号。`);
+          else if (seenServices.has(serviceCode)) problems.push(`${label}.serviceCode 重复声明：${serviceCode}。`);
+          if (!environmentVariable || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(environmentVariable)) problems.push(`${label}.environmentVariable 必须是环境变量名称。`);
+          else if (seenVariables.has(environmentVariable)) problems.push(`${label}.environmentVariable 重复声明：${environmentVariable}。`);
+          let validUrl = false;
+          try {
+            const url = new URL(remoteUrl ?? '');
+            validUrl = ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.hash;
+          } catch {}
+          if (!validUrl) problems.push(`${label}.remoteUrl 必须是不含认证和片段的 HTTP/HTTPS 地址。`);
+          if (serviceCode && !seenServices.has(serviceCode) && environmentVariable && !seenVariables.has(environmentVariable) && remoteUrl && validUrl) {
+            seenServices.add(serviceCode); seenVariables.add(environmentVariable);
+            backends.push({ serviceCode, environmentVariable, remoteUrl });
+          }
+        });
+        if (backends.length) localDefinition.backends = backends;
       }
     }
   }
@@ -129,7 +145,7 @@ export function renderRuntimeDefinition(definition: ServiceRuntimeDefinition): s
       ...(definition.local.portOverride ? { portOverride: definition.local.portOverride } : {}),
       readiness: definition.local.readiness,
       timeoutSeconds: definition.local.timeoutSeconds,
-      ...(definition.local.backend ? { backend: definition.local.backend } : {}),
+      ...(definition.local.backends?.length ? { backends: definition.local.backends } : {}),
     },
   }, { lineWidth: 0 });
 }

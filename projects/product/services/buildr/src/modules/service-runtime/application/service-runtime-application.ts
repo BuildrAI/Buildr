@@ -11,20 +11,27 @@ import { appendRunLog, listRunRecords, readRunLogTail, readRunRecord, runLogPath
 
 export { ServiceRuntimeError, RuntimeDefinitionError };
 export type ExpectedWorktree = { path: string; branch: string | null; head: string | null; dirty: boolean | null };
+export type BackendTarget = { serviceCode: string; target: 'auto' | 'remote' | 'run'; runId?: string };
 export type StartRunInput = {
   serviceCode: string;
   worktreeId: string;
   origin?: 'human' | 'agent';
   taskId?: string;
   connection?: 'local' | 'remote';
+  backendTargets?: BackendTarget[];
   expectedWorktree?: ExpectedWorktree;
   expectedBackendRunId?: string;
 };
+export type BackendCandidate = { runId: string; url: string; worktreeLabel: string; branch: string | null; sameScope: boolean };
 export type LocalBackendAvailability = {
+  serviceCode: string;
+  environmentVariable: string;
+  remoteUrl: string;
+  candidates: BackendCandidate[];
   target: { runId: string; serviceCode: string; url: string; worktreeLabel: string; branch: string | null } | null;
   reason: string | null;
 };
-export type RestartRunInput = Pick<StartRunInput, 'connection' | 'expectedWorktree' | 'expectedBackendRunId' | 'origin'>;
+export type RestartRunInput = Pick<StartRunInput, 'connection' | 'backendTargets' | 'expectedWorktree' | 'expectedBackendRunId' | 'origin'>;
 export type ServiceRuntimeDeps = {
   resolveService(targetRoot: string, serviceCode: string): { id: string; code: string } | null;
   listWorktrees(targetRoot: string, serviceCode: string, taskId?: string): ServiceWorktree[];
@@ -148,34 +155,91 @@ export function createServiceRuntimeApplication(deps: ServiceRuntimeDeps) {
     return listRunRecords(root);
   }
 
-  function localBackendAvailability(root: string, worktree: ServiceWorktree, definition: ServiceRuntimeDefinition): LocalBackendAvailability | null {
-    const backend = definition.local.backend;
-    if (!backend) return null;
-    const candidates = listRunRecords(root).filter(run => run.serviceCode === backend.serviceCode && run.status === 'running' && matchesProcessIdentity(run.processIdentity) && (worktree.taskId ? run.main === false && run.taskId === worktree.taskId : worktree.main && run.main === true && !run.taskId));
-    if (candidates.length !== 1) return { target: null, reason: candidates.length ? '同范围存在多个本地后端，请核对后再选择。' : '同任务或主工作库没有已就绪的本地后端，请先启动后端。' };
-    const run = candidates[0]!;
-    return { target: { runId: run.id, serviceCode: backend.serviceCode, url: run.url, worktreeLabel: run.worktreeLabel, branch: run.branch }, reason: null };
+  function readyBackendRuns(root: string, serviceCode: string): ManagedRunRecord[] {
+    return listRunRecords(root).filter(run => run.serviceCode === serviceCode && run.status === 'running' && matchesProcessIdentity(run.processIdentity));
   }
 
-  function resolveConnection(root: string, worktree: ServiceWorktree, definition: ServiceRuntimeDefinition, mode: StartRunInput['connection'], expectedTarget?: { runId: string; url?: string }): RunConnection | null {
-    const backend = definition.local.backend;
-    if (!backend) {
-      if (mode) throw new ServiceRuntimeError('service_runtime_connection_undefined', '该服务尚未声明前端连接方式，请先由智能体（Agent）验证配置。');
+  function sameScope(run: ManagedRunRecord, worktree: ServiceWorktree): boolean {
+    return worktree.taskId ? run.main === false && run.taskId === worktree.taskId : worktree.main && run.main === true && !run.taskId;
+  }
+
+  function localBackendAvailabilities(root: string, worktree: ServiceWorktree, definition: ServiceRuntimeDefinition): LocalBackendAvailability[] {
+    return (definition.local.backends ?? []).map(backend => {
+      const runs = readyBackendRuns(root, backend.serviceCode);
+      const scoped = runs.filter(run => sameScope(run, worktree));
+      const candidates = [...runs].sort((left, right) => Number(sameScope(right, worktree)) - Number(sameScope(left, worktree)) || left.startedAt.localeCompare(right.startedAt))
+        .map(run => ({ runId: run.id, url: run.url, worktreeLabel: run.worktreeLabel, branch: run.branch, sameScope: sameScope(run, worktree) }));
+      const target = scoped.length === 1 ? scoped[0]! : null;
+      return {
+        serviceCode: backend.serviceCode,
+        environmentVariable: backend.environmentVariable,
+        remoteUrl: backend.remoteUrl,
+        candidates,
+        target: target ? { runId: target.id, serviceCode: backend.serviceCode, url: target.url, worktreeLabel: target.worktreeLabel, branch: target.branch } : null,
+        reason: target ? null : scoped.length > 1 ? '同范围存在多个本地后端实例，请显式选择目标。' : '同任务或主工作库没有已就绪的本地后端，请先启动后端。',
+      };
+    });
+  }
+
+  function resolveConnections(root: string, worktree: ServiceWorktree, definition: ServiceRuntimeDefinition, input: Pick<StartRunInput, 'connection' | 'backendTargets' | 'expectedBackendRunId'>): RunConnection[] | null {
+    const backends = definition.local.backends ?? [];
+    if (!backends.length) {
+      if (input.connection || input.backendTargets?.length || input.expectedBackendRunId) throw new ServiceRuntimeError('service_runtime_connection_undefined', '该服务尚未声明前端连接方式，请先由智能体（Agent）验证配置。');
       return null;
     }
-    const selected = mode ?? (worktree.main ? 'remote' : 'local');
-    if (selected === 'remote') return { mode: selected, url: backend.remoteUrl, serviceCode: backend.serviceCode, runId: null };
-    const availability = localBackendAvailability(root, worktree, definition)!;
-    if (!availability.target) throw new ServiceRuntimeError('service_runtime_backend_unavailable', availability.reason!);
-    const target = availability.target;
-    if (expectedTarget && (expectedTarget.runId !== target.runId || expectedTarget.url !== undefined && expectedTarget.url !== target.url)) throw new ServiceRuntimeError('service_runtime_backend_changed', '本地后端实例已变化，请刷新后重新选择。');
-    return { mode: 'local', url: target.url, serviceCode: backend.serviceCode, runId: target.runId };
+    const explicit = new Map<string, BackendTarget>();
+    for (const target of input.backendTargets ?? []) explicit.set(target.serviceCode, target);
+    // 旧的 expectedBackendRunId 观察映射为所属声明后端的显式实例目标；显式目标已覆盖该后端时让位，观察不到已就绪实例则拒绝。
+    if (input.expectedBackendRunId) {
+      const owner = backends.find(backend => readyBackendRuns(root, backend.serviceCode).some(run => run.id === input.expectedBackendRunId));
+      if (!owner) throw new ServiceRuntimeError('service_runtime_backend_changed', '已观察的本地后端实例已变化，请刷新后重新选择。');
+      if (!explicit.has(owner.serviceCode)) explicit.set(owner.serviceCode, { serviceCode: owner.serviceCode, target: 'run', runId: input.expectedBackendRunId });
+    }
+    const availabilities = localBackendAvailabilities(root, worktree, definition);
+    return backends.map((backend, index) => {
+      const selected = explicit.get(backend.serviceCode);
+      const availability = availabilities[index]!;
+      if (selected?.target === 'run') {
+        const run = readyBackendRuns(root, backend.serviceCode).find(item => item.id === selected.runId);
+        if (!run) throw new ServiceRuntimeError('service_runtime_backend_changed', `本地后端 ${backend.serviceCode} 的所选实例已变化或不可用，请刷新后重新选择。`);
+        return { mode: 'local', url: run.url, serviceCode: backend.serviceCode, runId: run.id };
+      }
+      if (selected?.target === 'remote' || (!selected && input.connection === 'remote')) return { mode: 'remote', url: backend.remoteUrl, serviceCode: backend.serviceCode, runId: null };
+      if (input.connection === 'local' && !selected) {
+        if (!availability.target) throw new ServiceRuntimeError('service_runtime_backend_unavailable', availability.reason!);
+        return { mode: 'local', url: availability.target.url, serviceCode: backend.serviceCode, runId: availability.target.runId };
+      }
+      return availability.target
+        ? { mode: 'local', url: availability.target.url, serviceCode: backend.serviceCode, runId: availability.target.runId }
+        : { mode: 'remote', url: backend.remoteUrl, serviceCode: backend.serviceCode, runId: null };
+    });
   }
 
-  function validateInput(input: Pick<StartRunInput, 'origin' | 'connection' | 'expectedBackendRunId'>) {
+  function revalidateConnections(root: string, worktree: ServiceWorktree, definition: ServiceRuntimeDefinition, resolved: RunConnection[] | null) {
+    if (!resolved) return;
+    const backendTargets: BackendTarget[] = resolved.map(connection => connection.mode === 'local'
+      ? { serviceCode: connection.serviceCode, target: 'run', runId: connection.runId! }
+      : { serviceCode: connection.serviceCode, target: 'remote' });
+    const again = resolveConnections(root, worktree, definition, { backendTargets });
+    if (JSON.stringify(again) !== JSON.stringify(resolved)) throw new ServiceRuntimeError('service_runtime_backend_changed', '本地后端实例已变化，请刷新后重新选择。');
+  }
+
+  function validateInput(input: Pick<StartRunInput, 'origin' | 'connection' | 'backendTargets' | 'expectedBackendRunId'>) {
     if (input.origin !== undefined && input.origin !== 'human' && input.origin !== 'agent') throw new ServiceRuntimeError('service_runtime_input_invalid', '启动入口必须为 human 或 agent。');
     if (input.expectedBackendRunId !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(input.expectedBackendRunId)) throw new ServiceRuntimeError('service_runtime_input_invalid', '已观察的本地后端编号无效。');
     if (input.connection !== undefined && input.connection !== 'local' && input.connection !== 'remote') throw new ServiceRuntimeError('service_runtime_input_invalid', '前端连接必须单选 local 或 remote。');
+    if (input.backendTargets !== undefined) {
+      if (!Array.isArray(input.backendTargets)) throw new ServiceRuntimeError('service_runtime_input_invalid', '后端目标必须是数组。');
+      const seen = new Set<string>();
+      for (const target of input.backendTargets) {
+        if (!target || typeof target !== 'object' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(target.serviceCode ?? '')) throw new ServiceRuntimeError('service_runtime_input_invalid', '后端目标的服务编码无效。');
+        if (seen.has(target.serviceCode)) throw new ServiceRuntimeError('service_runtime_input_invalid', `后端目标重复：${target.serviceCode}。`);
+        seen.add(target.serviceCode);
+        if (!['auto', 'remote', 'run'].includes(target.target)) throw new ServiceRuntimeError('service_runtime_input_invalid', `后端 ${target.serviceCode} 的目标方式无效。`);
+        if (target.target === 'run' && (typeof target.runId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(target.runId))) throw new ServiceRuntimeError('service_runtime_input_invalid', `后端 ${target.serviceCode} 的所选实例编号无效。`);
+        if (target.target !== 'run' && target.runId !== undefined) throw new ServiceRuntimeError('service_runtime_input_invalid', `后端 ${target.serviceCode} 未选择实例时不能携带实例编号。`);
+      }
+    }
   }
 
   function prepareStart(root: string, input: StartRunInput) {
@@ -202,7 +266,7 @@ export function createServiceRuntimeApplication(deps: ServiceRuntimeDeps) {
   }
 
   // Callers hold the workspace runtime lock through preflight, stop and replacement launch.
-  async function startRunLocked(root: string, input: StartRunInput, expectedTarget?: { runId: string; url?: string }, expectedDefinition?: ServiceRuntimeDefinition): Promise<ManagedRunRecord> {
+  async function startRunLocked(root: string, input: StartRunInput, expectedConnections?: RunConnection[] | null, expectedDefinition?: ServiceRuntimeDefinition): Promise<ManagedRunRecord> {
     const prepared = prepareStart(root, input);
     const { service, existing, cwd } = prepared;
     let { worktree } = prepared;
@@ -212,7 +276,8 @@ export function createServiceRuntimeApplication(deps: ServiceRuntimeDeps) {
     const records = listRunRecords(root);
     const duplicate = records.find(record => record.serviceCode === input.serviceCode && path.resolve(record.worktreePath) === selectedPath && isActiveRun(record));
     if (duplicate) throw new ServiceRuntimeError('service_runtime_worktree_busy', `所选目录已有受管运行实例（:${duplicate.actualPort}）。`);
-    const connection = resolveConnection(root, worktree, definition, input.connection, expectedTarget ?? (input.expectedBackendRunId ? { runId: input.expectedBackendRunId } : undefined));
+    const connections = resolveConnections(root, worktree, definition, input);
+    if (expectedConnections && JSON.stringify(connections) !== JSON.stringify(expectedConnections)) throw new ServiceRuntimeError('service_runtime_backend_changed', '本地后端实例已变化，请刷新后重新选择。');
     const used = new Set(records.filter(isActiveRun).map(record => record.actualPort));
     const preferred = definition.local.preferredPort;
     let actualPort = nextAvailablePort(preferred, used);
@@ -226,8 +291,8 @@ export function createServiceRuntimeApplication(deps: ServiceRuntimeDeps) {
     worktree = current;
     if (assertService(root, input.serviceCode).id !== service.id) throw new ServiceRuntimeError('service_runtime_source_changed', '启动前服务身份已变化，请刷新。');
     if (serviceDirectory(worktree, definition.local.cwd) !== cwd) throw new ServiceRuntimeError('service_runtime_source_changed', '启动前真实目录已变化，请刷新。');
-    // Port probing yielded to other processes; the selected local target must still be the same ready instance.
-    if (connection?.mode === 'local') resolveConnection(root, worktree, definition, 'local', { runId: connection.runId!, url: connection.url });
+    // Port probing yielded to other processes; the selected local targets must still be the same ready instances.
+    revalidateConnections(root, worktree, definition, connections);
     const command = [...definition.local.command];
     if (definition.local.portOverride) command.push(`${definition.local.portOverride}=${actualPort}`);
     let record: ManagedRunRecord = {
@@ -238,14 +303,19 @@ export function createServiceRuntimeApplication(deps: ServiceRuntimeDeps) {
       pid: -1, processIdentity: null, preferredPort: preferred, actualPort,
       portNote: actualPort === preferred ? '使用首选端口' : `首选 ${preferred} 被占用，已避让`,
       status: 'starting', startedAt: now(), stoppedAt: null, failure: null, logPath: '',
-      url: `http://127.0.0.1:${actualPort}`, connection,
+      url: `http://127.0.0.1:${actualPort}`, connection: connections?.[0] ?? null, connections: connections ?? [],
       launch: { command, cwd, profile: definition.local.profile, readiness: definition.local.readiness, timeoutSeconds: definition.local.timeoutSeconds, definitionPath: existing.path, verifiedAt: definition.verifiedAt },
     };
     record.logPath = runLogPath(root, record.id);
     await writeRunRecord(root, record);
     try {
       if (input.taskId) deps.assertTaskScope?.(root, input.taskId, input.serviceCode);
-      const managed = await startProcess({ command, cwd, logPath: record.logPath, ...(connection && definition.local.backend ? { env: { [definition.local.backend.environmentVariable]: connection.url } } : {}) });
+      const env: Record<string, string> = {};
+      for (const connection of connections ?? []) {
+        const declaration = (definition.local.backends ?? []).find(backend => backend.serviceCode === connection.serviceCode);
+        if (declaration) env[declaration.environmentVariable] = connection.url;
+      }
+      const managed = await startProcess({ command, cwd, logPath: record.logPath, ...(Object.keys(env).length ? { env } : {}) });
       owned.set(key(root, record.id), managed);
       record = { ...record, pid: managed.pid, processIdentity: managed.identity };
       // 即使身份观察失败，也先保留确切进程号；清理错误不能丢掉已经发生的启动。
@@ -288,10 +358,11 @@ export function createServiceRuntimeApplication(deps: ServiceRuntimeDeps) {
     },
     listWorktrees(root: string, code: string, taskId?: string) { assertService(root, code); return deps.listWorktrees(root, code, taskId); },
     async listRuns(root: string, code?: string) { const records = await reconcile(root); return code ? records.filter(record => record.serviceCode === code) : records; },
-    connectionTarget(root: string, code: string, worktree: ServiceWorktree): LocalBackendAvailability | null {
+    connectionTarget(root: string, code: string, worktree: ServiceWorktree): LocalBackendAvailability[] | null {
       assertService(root, code);
       const existing = readRuntimeDefinition(root, code);
-      return existing ? localBackendAvailability(root, worktree, existing.definition) : null;
+      const availabilities = existing ? localBackendAvailabilities(root, worktree, existing.definition) : [];
+      return availabilities.length ? availabilities : null;
     },
     async startRun(root: string, input: StartRunInput): Promise<ManagedRunRecord> {
       validateInput(input);
@@ -306,18 +377,23 @@ export function createServiceRuntimeApplication(deps: ServiceRuntimeDeps) {
         const current = readRunRecord(root, runId);
         if (!current) throw new ServiceRuntimeError('service_runtime_run_unknown', `运行记录不存在：${runId}`);
         if (!isActiveRun(current) || !matchesProcessIdentity(current.processIdentity)) throw new ServiceRuntimeError('service_runtime_run_not_active', '当前实例已停止或进程身份已变化，请刷新后重新启动。');
+        // 未显式给连接时按当前逐后端连接原样承接，保持各后端原有目标语义。
+        const carry: BackendTarget[] | undefined = !input.connection && !input.backendTargets?.length && current.connections.length
+          ? current.connections.map(connection => ({ serviceCode: connection.serviceCode, target: connection.mode === 'local' ? 'run' : 'remote', ...(connection.runId ? { runId: connection.runId } : {}) }))
+          : input.backendTargets;
         const start: StartRunInput = { serviceCode: current.serviceCode, worktreeId: current.worktreeId, origin: input.origin ?? 'human',
-          ...(current.taskId ? { taskId: current.taskId } : {}), connection: input.connection ?? current.connection?.mode,
+          ...(current.taskId ? { taskId: current.taskId } : {}), connection: input.connection ?? (carry ? undefined : current.connection?.mode),
+          backendTargets: carry,
           expectedBackendRunId: input.expectedBackendRunId,
           expectedWorktree: input.expectedWorktree ?? { path: current.worktreePath, branch: current.branch, head: current.head, dirty: current.dirty } };
         const prepared = prepareStart(root, start);
         if (start.taskId) deps.assertTaskScope?.(root, start.taskId, start.serviceCode);
         if (prepared.service.id !== current.serviceId || prepared.worktree.path !== current.worktreePath) throw new ServiceRuntimeError('service_runtime_source_changed', '当前运行的服务或代码目录身份已变化，请刷新后核对。');
-        const connection = resolveConnection(root, prepared.worktree, prepared.existing.definition, start.connection, input.expectedBackendRunId ? { runId: input.expectedBackendRunId } : undefined);
+        const connections = resolveConnections(root, prepared.worktree, prepared.existing.definition, start);
         // Everything above is read-only: invalid targets and stale source observations preserve the current frontend.
         await stopRunLocked(root, runId);
         try {
-          const replacement = await startRunLocked(root, start, connection?.runId ? { runId: connection.runId, url: connection.url } : undefined, prepared.existing.definition);
+          const replacement = await startRunLocked(root, start, connections, prepared.existing.definition);
           if (replacement.status === 'failed') {
             const failed = { ...replacement, failure: `原实例已停止；${replacement.failure || '新实例启动失败，请查看日志。'}` };
             await writeRunRecord(root, failed);

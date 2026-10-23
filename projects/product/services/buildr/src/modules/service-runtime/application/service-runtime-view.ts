@@ -4,16 +4,16 @@ import type { ServiceWorktree } from '../domain/worktrees.ts';
 import { readRuntimeDefinition } from '../persistence/runtime-definition-repository.ts';
 import type { LocalBackendAvailability, ServiceRuntimeApplication } from './service-runtime-application.ts';
 
-export type ServiceRuntimeCatalogEntry = { id: string; code: string; name: string; modulePath: string; repositoryId: string | null; projects: string[] };
+export type ServiceRuntimeCatalogEntry = { id: string; code: string; name: string; type: string; modulePath: string; repositoryId: string | null; projects: string[] };
 export type ServiceRuntimeCatalogPort = { listServices(targetRoot: string): ServiceRuntimeCatalogEntry[] };
 export type ServiceRuntimeSummary = {
-  id: string; code: string; name: string; projects: string[]; repositoryId: string | null;
+  id: string; code: string; name: string; type: string; projects: string[]; repositoryId: string | null;
   definition: { source: 'agent'; verifiedAt: string; path: string; local: RuntimeLocalDefinition } | null;
   definitionDiagnostic: string | null;
   runs: ManagedRunRecord[];
   local: { activeCount: number; activePorts: number[] };
 };
-export type ServiceRuntimeDetail = { service: ServiceRuntimeSummary; worktrees: ServiceWorktree[]; connectionTargets: Record<string, LocalBackendAvailability>; diagnostics: string[] };
+export type ServiceRuntimeDetail = { service: ServiceRuntimeSummary; worktrees: ServiceWorktree[]; connectionTargets: Record<string, LocalBackendAvailability[]>; diagnostics: string[] };
 
 export function createServiceRuntimeView(deps: { catalog: ServiceRuntimeCatalogPort; runtime: ServiceRuntimeApplication; now?(): string }) {
   const now = deps.now ?? (() => new Date().toISOString());
@@ -51,11 +51,11 @@ export function createServiceRuntimeView(deps: { catalog: ServiceRuntimeCatalogP
         worktrees = taskId ? observed.filter(worktree => worktree.taskId === taskId && !worktree.main) : observed;
       }
       catch (cause) { diagnostics.push(`读取代码目录失败：${(cause as Error).message}`); }
-      const connectionTargets: Record<string, LocalBackendAvailability> = {};
+      const connectionTargets: Record<string, LocalBackendAvailability[]> = {};
       for (const worktree of worktrees) {
         try {
           const availability = deps.runtime.connectionTarget(root, code, worktree);
-          if (availability) connectionTargets[worktree.id] = availability;
+          if (availability?.length) connectionTargets[worktree.id] = availability;
         } catch (cause) { diagnostics.push(`读取本地后端失败：${(cause as Error).message}`); break; }
       }
       return { service: summarize(entry, runs, root), worktrees, connectionTargets, diagnostics };

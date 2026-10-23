@@ -9,9 +9,9 @@ export type RuntimeTask = {
   title: string;
   scope: { projects: string[]; services: Array<{ project: string; service: string }> };
 };
-export type TaskRuntimeService = { service: ServiceRuntimeSummary; worktree: ServiceWorktree | null; connectionTarget: LocalBackendAvailability | null; diagnostics: string[] };
+export type TaskRuntimeService = { service: ServiceRuntimeSummary; worktree: ServiceWorktree | null; connectionTarget: LocalBackendAvailability[] | null; diagnostics: string[] };
 export type TaskRuntimeDetail = { taskId: string; title: string; services: TaskRuntimeService[]; runs: ManagedRunRecord[]; diagnostics: string[] };
-export type TaskRunSelection = Pick<StartRunInput, 'serviceCode' | 'worktreeId' | 'expectedWorktree' | 'expectedBackendRunId'>;
+export type TaskRunSelection = Pick<StartRunInput, 'serviceCode' | 'worktreeId' | 'expectedWorktree' | 'expectedBackendRunId' | 'backendTargets'>;
 export type TaskRunResult = {
   serviceCode: string;
   worktreeId: string;
@@ -52,7 +52,7 @@ export function createServiceTaskRuntimeApplication(deps: {
       if (candidates.length === 0) diagnostics.push('本任务尚无可用代码目录，请先准备相关工作树。');
       else if (candidates.length > 1) diagnostics.push('本任务有多个代码目录，无法确定唯一来源，请核对工作树归属。');
       const worktree = candidates.length === 1 ? candidates[0]! : null;
-      let connectionTarget: LocalBackendAvailability | null = null;
+      let connectionTarget: LocalBackendAvailability[] | null = null;
       try { if (worktree) connectionTarget = deps.runtime.connectionTarget(root, service.code, worktree); }
       catch (cause) { diagnostics.push((cause as Error).message); }
       return { service, worktree, connectionTarget, diagnostics };
@@ -95,15 +95,18 @@ export function createServiceTaskRuntimeApplication(deps: {
         if (!taskServices(root, task).some(service => service.code === selection.serviceCode)) throw new ServiceRuntimeError('service_runtime_task_scope_mismatch', '任务服务范围已变化，请刷新后重选。');
         const definition = deps.runtime.readDefinition(root, selection.serviceCode)?.definition;
         if (!definition) throw new ServiceRuntimeError('service_runtime_definition_missing', `服务 ${selection.serviceCode} 尚无已验证的运行定义。`);
-        const backend = definition.local.backend;
-        const mode = backend ? input.connection ?? 'local' : undefined;
-        let expectedBackendRunId = selection.expectedBackendRunId;
-        if (backend && mode === 'local') {
-          const dependency = selectedByCode.get(backend.serviceCode);
-          if (dependency) {
+        const backends = definition.local.backends ?? [];
+        const mode = backends.length ? input.connection ?? 'local' : undefined;
+        const backendTargets: NonNullable<StartRunInput['backendTargets']> = [...(selection.backendTargets ?? [])];
+        if (mode === 'local') {
+          for (const backend of backends) {
+            const dependency = selectedByCode.get(backend.serviceCode);
+            if (!dependency) continue;
             const result = await startSelected(dependency);
             if (result.error || result.run?.status !== 'running') throw new ServiceRuntimeError('service_runtime_backend_unavailable', `所选本地后端 ${backend.serviceCode} 未就绪，前端未启动。`);
-            expectedBackendRunId = result.run.id;
+            const index = backendTargets.findIndex(target => target.serviceCode === backend.serviceCode);
+            const target = { serviceCode: backend.serviceCode, target: 'run' as const, runId: result.run.id };
+            if (index >= 0) backendTargets[index] = target; else backendTargets.push(target);
           }
         }
         // Dependency readiness may take time; re-read scope before the next service starts.
@@ -122,17 +125,34 @@ export function createServiceTaskRuntimeApplication(deps: {
         if (existing) {
           const ready = existing.status === 'starting' ? await deps.runtime.waitForRun(root, existing.id) : existing;
           await deps.runtime.listRuns(root);
-          const target = backend && mode === 'local' ? deps.runtime.connectionTarget(root, selection.serviceCode, item.worktree)?.target : null;
+          const availabilities = deps.runtime.connectionTarget(root, selection.serviceCode, item.worktree) ?? [];
           const source = currentSource();
-          if (mode === 'local' && expectedBackendRunId && target?.runId !== expectedBackendRunId) throw new ServiceRuntimeError('service_runtime_backend_changed', '本地后端实例已变化，请刷新后重新选择。');
-          const targetMatches = !backend || (mode === 'remote' ? ready.connection?.mode === 'remote' && ready.connection.url === backend.remoteUrl : target && ready.connection?.mode === 'local' && ready.connection.runId === target.runId && ready.connection.url === target.url);
+          // 每个声明后端逐一核对：显式实例目标失效即所选变化，其余按连接模式比对实际连接。
+          for (const backend of backends) {
+            const expected = backendTargets.find(target => target.serviceCode === backend.serviceCode);
+            const actual = ready.connections.find(connection => connection.serviceCode === backend.serviceCode);
+            if (expected?.target === 'run' && (actual?.mode !== 'local' || actual.runId !== expected.runId)) throw new ServiceRuntimeError('service_runtime_backend_changed', `本地后端 ${backend.serviceCode} 实例已变化，请刷新后重新选择。`);
+          }
+          if (mode === 'local' && selection.expectedBackendRunId && !backendTargets.some(target => target.target === 'run')) {
+            const owner = availabilities.find(availability => availability.candidates.some(candidate => candidate.runId === selection.expectedBackendRunId));
+            if (owner?.target?.runId !== selection.expectedBackendRunId) throw new ServiceRuntimeError('service_runtime_backend_changed', '本地后端实例已变化，请刷新后重新选择。');
+          }
           if (ready.status !== 'running') throw new ServiceRuntimeError('service_runtime_existing_run_failed', ready.failure || '已有实例未就绪，请查看日志后单独重试。');
-          if (!targetMatches) throw new ServiceRuntimeError('service_runtime_connection_conflict', '该目录已有不同连接的运行，请明确切换连接后重试。');
+          const mismatched = backends.find(backend => {
+            const expected = backendTargets.find(target => target.serviceCode === backend.serviceCode);
+            if (expected?.target === 'run') return false;
+            const actual = ready.connections.find(connection => connection.serviceCode === backend.serviceCode);
+            if (mode === 'remote' || expected?.target === 'remote') return actual?.mode !== 'remote' || actual.url !== backend.remoteUrl;
+            const target = availabilities.find(availability => availability.serviceCode === backend.serviceCode)?.target;
+            return !target || actual?.mode !== 'local' || actual.runId !== target.runId || actual.url !== target.url;
+          });
+          if (mismatched) throw new ServiceRuntimeError('service_runtime_connection_conflict', `该目录已有与 ${mismatched.serviceCode} 不同连接的运行，请明确切换连接后重试。`);
           if (ready.head !== source.head || ready.branch !== source.branch || ready.dirty !== source.dirty) throw new ServiceRuntimeError('service_runtime_worktree_changed', '已有实例的启动时代码与当前目录不同，请核对后重新启动。');
           run = ready; reused = true;
         } else {
           if (!taskServices(root, deps.readTaskScope(root, input.taskId)).some(service => service.code === selection.serviceCode)) throw new ServiceRuntimeError('service_runtime_task_scope_mismatch', '任务服务范围已变化，请刷新后重选。');
-          run = await deps.runtime.startRun(root, { ...selection, expectedBackendRunId, taskId: input.taskId, origin: input.origin ?? 'agent', ...(mode ? { connection: mode } : {}) });
+          const { backendTargets: _declared, expectedBackendRunId: legacyExpected, ...rest } = selection;
+          run = await deps.runtime.startRun(root, { ...rest, ...(backendTargets.length ? {} : { expectedBackendRunId: legacyExpected }), backendTargets, taskId: input.taskId, origin: input.origin ?? 'agent', ...(mode ? { connection: mode } : {}) });
           run = await deps.runtime.waitForRun(root, run.id);
         }
         const result: TaskRunResult = { serviceCode: selection.serviceCode, worktreeId: selection.worktreeId, run, reused,

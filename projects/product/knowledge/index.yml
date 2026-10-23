@@ -1664,12 +1664,12 @@ sources:
     title: 已验证本地运行定义
     kind: code
     path: services/buildr/src/modules/service-runtime/domain/runtime-definition.ts
-    summary: 校验启动方式与可选后端连接声明，旧部署环境字段兼容忽略。
+    summary: 校验启动方式与 local.backends 逐后端连接声明，旧 backend 单声明与部署环境字段兼容读取。
   - id: local-runtime-runs
     title: 本地运行实例及快照
     kind: code
     path: services/buildr/src/modules/service-runtime/domain/runs.ts
-    summary: 表达状态、启动时代码及任务归属、真实地址、连接与受管进程身份。
+    summary: 表达状态、启动时代码及任务归属、真实地址、逐后端连接与受管进程身份，归一读取旧单连接记录。
   - id: local-runtime-worktrees
     title: 服务检出目录身份
     kind: code
@@ -1679,7 +1679,7 @@ sources:
     title: 单服务本地运行
     kind: code
     path: services/buildr/src/modules/service-runtime/application/service-runtime-application.ts
-    summary: 核对来源、启动、等待就绪、停止和读取实例日志，解析实际前端连接。
+    summary: 核对来源、启动、等待就绪、停止和读取实例日志，逐后端按显式实例、同范围唯一或远程回落解析前端连接。
   - id: local-runtime-task-application
     title: 任务服务选择与组合
     kind: code
@@ -1689,7 +1689,7 @@ sources:
     title: 本地运行读取视图
     kind: code
     path: services/buildr/src/modules/service-runtime/application/service-runtime-view.ts
-    summary: 合成服务目录摘要和详情，单项配置错误不阻塞其他服务。
+    summary: 合成服务目录摘要和详情，透传服务类型并按声明后端分组候选目标，单项配置错误不阻塞其他服务。
   - id: local-runtime-repository
     title: 本机运行记录存储
     kind: code
@@ -1709,7 +1709,7 @@ sources:
     title: 本地运行命令入口
     kind: code
     path: services/buildr/src/modules/service-runtime/interfaces/cli/service-runtime-cli.ts
-    summary: 适配单项及任务本地运行，命令等待就绪；停止只使用准确运行编号。
+    summary: 适配单项及任务本地运行，支持逐后端 --backend-target 实例选择；命令等待就绪，停止只使用准确运行编号。
   - id: local-runtime-task-checkout
     title: 当前任务检出证据关联
     kind: code
@@ -1739,7 +1739,7 @@ sources:
     title: 智能体本地运行方法
     kind: code
     path: services/buildr/resources/runtime/skills/buildr/references/local-services.md
-    summary: 说明授权、准确目录与服务选择、前端连接、部分结果、停止及真实业务验证边界。
+    summary: 说明授权、准确目录与服务选择、多后端声明与逐后端实例连接、部分结果、停止及真实业务验证边界。
   - id: connection-runtime-spec
     title: 连接通用运行约定
     kind: spec

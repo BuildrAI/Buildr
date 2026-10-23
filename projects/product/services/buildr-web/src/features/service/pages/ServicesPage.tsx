@@ -1,6 +1,6 @@
 import { AssetDeleteDialog } from '../../workspace/components/AssetDeleteDialog';
 import { useAssetList } from '../../workspace/components/useAssetList';
-import { Alert, Select, Space } from 'antd';
+import { Alert, Select, Space, Tag } from 'antd';
 import { ResourceDirectory } from '../../../components/ResourceDirectory';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -9,7 +9,7 @@ import { PlayCircleOutlined, SettingOutlined, UnorderedListOutlined } from '@ant
 import { useAppShell } from '../../../app/AppShellContext';
 import { useWorkspacePageTabs } from '../../../app/pageTabs';
 import { WorkspaceStage } from '../../../components/WorkspaceStage';
-import { workspaceHref } from '../../../lib/labels';
+import { workspaceHref, serviceTypeTagLabel } from '../../../lib/labels';
 import { useAssetCatalog } from '../../workspace/components/useAssetCatalog';
 import { AssetEditDrawer } from '../../workspace/components/AssetEditDrawer';
 import { assetCatalogApi, type ServiceDraft } from '../../workspace/api/asset-catalog-api';
@@ -55,6 +55,7 @@ export function ServicesPage() {
         <Select id="service-runtime-filter" aria-label="运行状态筛选" value={statusFilter} options={[{ label: '全部服务', value: 'all' }, { label: '只看运行中', value: 'running' }]} onChange={value => setStatusFilter(value as 'all' | 'running')} />
       </>}
       columns={[
+        { title: '类型', width: 80, render: (_, s) => serviceTypeTagLabel(s.type) ? <Tag>{serviceTypeTagLabel(s.type)}</Tag> : null },
         { title: '关联项目', width: 170, render: (_, s) => s.projects.map(p => p.name).join('、') || '尚未关联' },
         { title: '代码库', width: 180, render: (_, s) => { const r = s.repository; return r ? <Link to={workspaceHref(workspaceId, `/repositories/${r.id}`)}>{r.name}</Link> : '引用缺失'; } },
         {

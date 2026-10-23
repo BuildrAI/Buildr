@@ -6,7 +6,7 @@ import { workspaceHref } from '../../../lib/labels';
 import { confirmModal } from '../../../lib/confirm';
 import { createServiceRuntimeClient, type BackendMode, type ManagedRun, type ServiceRuntimeSummary, type TaskStartResult } from '../api/service-runtime-api';
 import { useTaskRuntime } from '../hooks/useServiceRuntime';
-import { availableTaskServices, canUseLocalConnection, isActiveRun, sourceLabel, taskSelections } from '../model';
+import { availableTaskServices, canUseLocalConnection, isActiveRun, runConnections, sourceLabel, taskSelections } from '../model';
 import { LocalRuntimeSurface } from './LocalRuntimeSurface';
 import { LocalLogsDrawer } from './LocalLogsDrawer';
 import { RuntimeStartOptions } from './RuntimeStartOptions';
@@ -32,7 +32,7 @@ export function TaskLocalRuntime({ taskId }: { taskId: string }) {
   const services = runtime.data?.services || [];
   const runs = runtime.data?.runs.filter(run => run.taskId === taskId) || [];
   const connectionBlocked = connection === 'local' && !canUseLocalConnection(services, selected, true);
-  const openStart = (run?: ManagedRun) => { if (starting) { setStartOpen(true); return; } setSelected(run ? [run.serviceCode] : availableTaskServices(services).map(item => item.service.code)); setConnection(run?.connection?.mode || 'local'); setStartResult(null); setError(''); setStartOpen(true); };
+  const openStart = (run?: ManagedRun) => { if (starting) { setStartOpen(true); return; } setSelected(run ? [run.serviceCode] : availableTaskServices(services).map(item => item.service.code)); setConnection(run ? runConnections(run)[0]?.mode || 'local' : 'local'); setStartResult(null); setError(''); setStartOpen(true); };
   const start = async () => {
     const choices = taskSelections(services, selected, connection);
     if (!choices.length || connectionBlocked) return;
@@ -49,7 +49,7 @@ export function TaskLocalRuntime({ taskId }: { taskId: string }) {
   };
   const stop = async (targets: ManagedRun[]) => {
     const ids = new Set(targets.map(run => run.id));
-    const affected = runs.some(run => isActiveRun(run) && run.connection?.runId && ids.has(run.connection.runId) && !ids.has(run.id));
+    const affected = runs.some(run => isActiveRun(run) && !ids.has(run.id) && runConnections(run).some(connection => connection.runId && ids.has(connection.runId)));
     if (!await confirmModal({ centered: true, title: targets.length > 1 ? '停止本任务服务？' : `停止 ${sourceLabel(targets[0])} 的本地运行？`, content: <><p>仅停止以下实例，主工作库和其他任务保持运行。</p><ul>{targets.map(run => <li key={run.id}>{services.find(item => item.service.code === run.serviceCode)?.service.name || run.serviceCode} · :{run.actualPort} · {run.id}</li>)}</ul>{affected ? <p>仍有前端连接所选后端，停止后需要重新启动后端或切换前端连接。</p> : null}</>, okText: '停止运行', cancelText: '取消' })) return;
     setBusyIds([...ids]); setError('');
     const results = await Promise.allSettled(targets.map(run => client.stop(run.id)));

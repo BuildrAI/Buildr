@@ -18,10 +18,12 @@
 
 ## 选择服务与前端连接
 
-可只启动后端、只启动前端，或显式选择相关前后端。前端已验证定义中的 `local.backend` 声明后端服务编码、目标注入变量及远程测试地址；`--connection local|remote` 二选一，服务端解析实际地址并注入已声明变量，不接受任意远程地址或环境变量。
+可只启动后端、只启动前端，或显式选择相关前后端。前端已验证定义中的 `local.backends` 逐项声明后端服务编码、目标注入变量及远程测试地址，可声明多个后端（旧 `local.backend` 单对象声明仍可读取）；服务端逐个后端解析实际地址并注入对应声明变量，不接受任意远程地址或环境变量。
 
+- `--connection local|remote` 对未显式指定的后端整体生效：`local` 为同范围唯一已就绪实例，`remote` 为远程测试地址。
 - `local`：任务前端连接同一任务已就绪后端；主工作库前端连接主工作库后端。使用返回实例的实际地址，不猜首选端口。独立前端的本地选项仅在目标唯一且就绪时可选，并显示来源和实际地址；缺失或歧义先处理对应后端，不隐式启动未选服务。任务明确同时选择后端时，仍可一次提交，由系统等待后端就绪后连接。
 - `remote`：只启动所选前端也可验证，连接定义中已验证的固定远程测试地址，不启动本地业务后端。先核对前端已有环境配置、代理路径与最终目标；日常启动只选择模式，不重复填写域名。
+- 逐后端指定：`show` 返回的 `connectionTargets` 按声明后端分组，列出每个后端当前全部已就绪实例（来源、分支、实际地址、是否同范围）及默认目标。需要连某个具体实例（含跨任务/跨范围）时，用 `--backend-target <serviceCode>:<runId>` 显式指定，可重复传入多个后端；服务端重新校验该实例存在、已就绪且属于声明后端，不接受任意地址。界面中按后端服务分组单选实例或远程测试环境，语义相同。
 
 单项启动使用已读取的工作树（Worktree）编号：
 
@@ -29,7 +31,7 @@
 buildr service-runtime start --service <code> --worktree <worktree-id> --connection local --origin agent --target <workspace> --json
 ```
 
-`show` 返回每个代码来源的 `connectionTargets`；已观察本地目标时，启动或重启可携带 `--expected-backend-run <backend-run-id>`，目标被替换则重新核对，不静默连接后来出现的实例。前后端一起启动时实际目标尚未产生，由组合能力等待并确定。
+`show` 返回每个代码来源的 `connectionTargets`（逐声明后端分组）；已观察本地目标时，启动或重启可携带 `--expected-backend-run <backend-run-id>`，目标被替换则重新核对，不静默连接后来出现的实例。前后端一起启动时实际目标尚未产生，由组合能力等待并确定；`task-start` 同样接受 `--backend-target <serviceCode>:<runId>`，为未同时选择启动的声明后端显式指定实例。
 
 任务启动的 `--services` 是明确选择的逗号分隔服务编码；只选一个编码即可独立启动。以下命令等待所选后端就绪，再以其实际端口启动本地连接前端：
 
@@ -55,7 +57,7 @@ buildr service-runtime stop --run <run-id> --target <workspace> --json
 
 ## 首次配置与检查已有配置
 
-从当前工作空间（Workspace）的服务编码开始，使用上面的 `show` 和 `worktrees` 读取现有定义、真实代码目录及诊断。服务名、目录名和分支（Branch）名不证明它是前端或后端。沿实际请求和启动代码判断是否需要切换后端；普通后端或无需切换的服务只配置启动方式，不添加 `local.backend`。用户无需了解内部命令或手填字段，由智能体（Agent）完成调查、验证和保存；只有现场无法查明的目标地址、业务决定或缺少的授权才请用户补充。
+从当前工作空间（Workspace）的服务编码开始，使用上面的 `show` 和 `worktrees` 读取现有定义、真实代码目录及诊断。服务名、目录名和分支（Branch）名不证明它是前端或后端，以服务登记中的 `type`（`frontend`/`backend`，界面显示「前端」「后端」）为准。沿实际请求和启动代码判断是否需要切换后端；普通后端或无需切换的服务只配置启动方式，不添加 `local.backends` 声明。用户无需了解内部命令或手填字段，由智能体（Agent）完成调查、验证和保存；只有现场无法查明的目标地址、业务决定或缺少的授权才请用户补充。
 
 读取服务规则、实际代码、项目脚本、启动文档、构建与运行配置，核实依赖及副作用。已有启动和本次验证授权继续有效，不逐步骤重复确认；未授权启动时先完成只读调查并说明需要启动的具体对象和影响。不得将本地运行授权扩展成远程业务写入、部署、共享配置修改或读取凭证。
 
@@ -99,13 +101,16 @@ local:
 ```yaml
 local:
   # 保留已验证的 command、cwd、端口、就绪与超时字段
-  backend:
-    serviceCode: "business-api"
-    environmentVariable: "BACKEND_URL"
-    remoteUrl: "https://test.example.com"
+  backends:
+    - serviceCode: "business-api"
+      environmentVariable: "BACKEND_URL"
+      remoteUrl: "https://test.example.com"
+    - serviceCode: "upms"
+      environmentVariable: "UPMS_URL"
+      remoteUrl: "https://test.example.com/upms"
 ```
 
-`serviceCode` 必须对应已登记的真实后端；`environmentVariable` 必须由启动后的进程或开发代理实际读取，构建时固化的变量不能假定在启动时生效。`remoteUrl` 是已核实的远程测试后端地址，不得含认证和片段。
+`serviceCode` 必须对应已登记的真实后端，同一列表内不得重复；`environmentVariable` 必须由启动后的进程或开发代理实际读取，各后端注入变量互不相同，构建时固化的变量不能假定在启动时生效。`remoteUrl` 是已核实的远程测试后端地址，不得含认证和片段。`backend` 与 `backends` 不能并存；旧 `backend` 单对象声明读取时归一为一项 `backends`。
 
 按已有授权分别验证本地与远程模式。确认环境变量被正确注入，并用项目适用的只读路径验证请求实际到达所选目标；可根据真实响应、代理行为或目标日志核对，不能仅看到变量存在、页面可打开或前端已就绪就宣称连接成功。验证本地模式时使用匹配任务或主工作库的后端实际地址与端口；远程模式不得暗中启动本地后端，也不得默认获准远程业务写入。仅验证一个模式时如实保留另一模式的缺口，不把新的双模式声明写成全部已验证。
 

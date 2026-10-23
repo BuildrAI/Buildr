@@ -19,12 +19,12 @@ export async function freeRuntimePort(): Promise<number> {
     server.listen(0, '127.0.0.1', () => { const port = (server.address() as net.AddressInfo).port; server.close(() => resolve(port)); });
   });
 }
-export function runtimeDefinition(port: number, options: { backend?: boolean; script?: string; readiness?: { kind: 'log'; pattern: string } | { kind: 'http'; path: string }; portOverride?: string | null; cwd?: string; command?: string[] } = {}): string {
+export function runtimeDefinition(port: number, options: { backend?: boolean; backends?: { serviceCode: string; environmentVariable: string; remoteUrl: string }[]; script?: string; readiness?: { kind: 'log'; pattern: string } | { kind: 'http'; path: string }; portOverride?: string | null; cwd?: string; command?: string[] } = {}): string {
   return YAML.stringify({ version: 1, source: 'agent', verifiedAt: '2026-10-22T08:00:00Z', local: {
     command: options.command ?? [process.execPath, '-e', options.script ?? runtimeServerScript, '--'], cwd: options.cwd ?? '.', preferredPort: port,
     portOverride: options.portOverride === undefined ? '--port' : options.portOverride,
     readiness: options.readiness ?? { kind: 'log', pattern: 'Started Fixture' }, timeoutSeconds: 10,
-    ...(options.backend ? { backend: { serviceCode: 'backend', environmentVariable: 'VITE_PROXY_URL', remoteUrl: 'https://test.example/api' } } : {}),
+    ...(options.backends?.length ? { backends: options.backends } : options.backend ? { backend: { serviceCode: 'backend', environmentVariable: 'VITE_PROXY_URL', remoteUrl: 'https://test.example/api' } } : {}),
   } });
 }
 export async function runtimeFixture(t: test.TestContext, options: { frontendConnection?: boolean } = {}) {

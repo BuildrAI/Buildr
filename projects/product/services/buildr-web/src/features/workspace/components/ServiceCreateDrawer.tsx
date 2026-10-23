@@ -8,8 +8,9 @@ import { codeFieldTrim, textFieldTrim } from '../../../lib/input-trim';
 import { CODE_INPUT_PATTERN, CODE_INPUT_TITLE, normalizeCodeInput } from '../../../lib/code-input';
 import { repositoryBranch, type AssetCatalog, type RepositoryDraft, type ServiceDraft } from '../api/asset-catalog-api';
 import { serviceCreateDraft, serviceCreatePayload } from './service-create-draft';
+import { SERVICE_TYPE_OPTIONS } from '../../../lib/labels';
 export function ServiceCreateDrawer({ catalog, onClose, onSave, initial, projectCode }: { catalog: AssetCatalog; onClose: (draft?: ServiceDraft) => void; onSave: (draft: ServiceDraft) => Promise<void> | void; initial?: ServiceDraft; projectCode?: string }) {
-  const [draft, setDraft] = useState<ServiceDraft>(initial || { name: '', code: '', description: '', type: 'service', directoryMode: 'create', projectCode, projectIds: projectCode ? [projectCode] : undefined });
+  const [draft, setDraft] = useState<ServiceDraft>(initial || { name: '', code: '', description: '', directoryMode: 'create', projectCode, projectIds: projectCode ? [projectCode] : undefined });
   const parentProject = projectCode ? catalog.projects.find(p => p.code === projectCode) : undefined;
   const [newRepository, setNewRepository] = useState(Boolean(initial?.repository)), [repository, setRepository] = useState<RepositoryDraft>(initial?.repository || { code: '', url: '', integrationBranch: '' });
   const [error, setError] = useState(''), [busy, setBusy] = useState(false);
@@ -19,13 +20,14 @@ export function ServiceCreateDrawer({ catalog, onClose, onSave, initial, project
   const selectedProject = draft.projectIds?.[0] ?? (draft.projectIds === undefined ? draft.projectCode : undefined);
   const setProject = (value?: string) => setDraft(s => ({ ...s, projectIds: value ? [value] : [], ...(!existingRepository && !newRepository && s.directoryMode !== 'existing' ? { projectCode: value } : {}) }));
   const current = () => serviceCreateDraft(draft, { newRepository, repository, projectCode });
-  const submit = async () => { if (createsServiceDirectory && !projectCode && !draft.projectCode) { setError('请选择新建服务目录所属项目。'); return; } setBusy(true); setError(''); try { await onSave(serviceCreatePayload(draft, { newRepository, repository, projectCode })); } catch (err) { setError((err as Error).message); } finally { setBusy(false); } };
+  const submit = async () => { if (draft.type !== 'frontend' && draft.type !== 'backend') { setError('请选择服务类型（前端或后端）。'); return; } if (createsServiceDirectory && !projectCode && !draft.projectCode) { setError('请选择新建服务目录所属项目。'); return; } setBusy(true); setError(''); try { await onSave(serviceCreatePayload(draft, { newRepository, repository, projectCode })); } catch (err) { setError((err as Error).message); } finally { setBusy(false); } };
   return <DrawerShell open title="新增服务" sub="选择承载代码的代码库，或在工作空间中登记、新建服务目录。" onClose={() => { if (!busy) onClose(current()); }} closeDisabled={busy} width="min(580px,100vw)" footer={<Space style={{ display: 'flex', justifyContent: 'flex-end' }}><Button disabled={busy} onClick={() => onClose(current())}>取消</Button><Button type="primary" loading={busy} htmlType="submit" form="catalog-service-create">添加服务</Button></Space>}>
     <form id="catalog-service-create" onSubmit={e => { e.preventDefault(); e.stopPropagation(); void submit(); }}><Form layout="vertical" component={false}>
       {error && <Alert type="error" message={error} />}
       <Form.Item label="服务名称" required><Input aria-label="服务名称" required value={draft.name} {...textFieldTrim(text => update('name', text))} /></Form.Item>
       <Form.Item label="服务编码" required><Input aria-label="服务编码" required pattern={CODE_INPUT_PATTERN} title={CODE_INPUT_TITLE} value={draft.code} {...codeFieldTrim(text => update('code', normalizeCodeInput(text)))} placeholder="例如 egg-business" /></Form.Item>
       <Form.Item label="实现职责"><Input.TextArea aria-label="实现职责" rows={3} value={draft.description} onChange={e => update('description', e.target.value)} /></Form.Item>
+      <Form.Item label="服务类型" required help="用于本地运行等能力判断服务角色。"><Select aria-label="服务类型" value={draft.type === 'frontend' || draft.type === 'backend' ? draft.type : undefined} onChange={value => update('type', value as string | undefined)} options={SERVICE_TYPE_OPTIONS.map(option => ({ ...option }))} placeholder="选择服务类型" /></Form.Item>
       {projectCode
         ? <Form.Item label="所属项目" required={createsServiceDirectory} help={createsServiceDirectory ? '新建服务目录同时落在入口项目中。' : '新增服务归属于入口项目，归属随服务提交生效。'}><span>{parentProject ? `${parentProject.name}（${parentProject.code}）` : projectCode}</span></Form.Item>
         : <Form.Item label="所属项目" required={createsServiceDirectory} help={createsServiceDirectory ? '新建目录落在所选项目下；选择已有目录时，此处维护服务归属。' : '单选已有项目；留空的服务显示为尚未关联，可稍后补充。'}><Select aria-label="所属项目" allowClear value={selectedProject} onChange={value => setProject(value as string | undefined)} options={catalog.projects.map(p => ({ label: p.name, value: p.code }))} placeholder="选择服务所属项目" /></Form.Item>}

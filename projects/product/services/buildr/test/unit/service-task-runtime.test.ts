@@ -9,11 +9,14 @@ import type { ServiceWorktree } from '../../src/modules/service-runtime/domain/w
 function fixture(options: { backend?: boolean; failFrontend?: boolean; ambiguous?: boolean } = {}) {
   const worktree = (code: string): ServiceWorktree => ({ id: code + '-task', path: '/task/' + code, label: '任务', main: false, branch: 'task', head: code + '-head', dirty: false, taskId: 'task', taskTitle: '测试任务' });
   const local = (code: string) => ({ command: ['node', 'server.js'], cwd: '.', profile: null, preferredPort: code === 'back' ? 8080 : 3000, portOverride: '--port', readiness: { kind: 'http' as const, path: '/' }, timeoutSeconds: 10,
-    ...(code === 'front' ? { backend: { serviceCode: 'back', environmentVariable: 'PROXY_TARGET', remoteUrl: 'https://test.example.com' } } : {}) });
+    ...(code === 'front' ? { backends: [{ serviceCode: 'back', environmentVariable: 'PROXY_TARGET', remoteUrl: 'https://test.example.com' }] } : {}) });
   const summary = (code: string): ServiceRuntimeSummary => ({ id: code, code, name: code, projects: ['project'], repositoryId: code, definition: { source: 'agent', verifiedAt: '2026-10-22', path: code + '/runtime.yml', local: local(code) }, definitionDiagnostic: null, runs: [], local: { activeCount: 0, activePorts: [] } });
   const services = ['front', 'back'].map(summary), runs: ManagedRunRecord[] = [], calls: string[] = [];
   const worktrees = Object.fromEntries(['front', 'back'].map(code => [code, options.ambiguous && code === 'front' ? [worktree(code), { ...worktree(code), id: 'another' }] : [worktree(code), { ...worktree(code), id: code + '-other', taskId: 'other' }, { ...worktree(code), id: code + '-main', main: true, taskId: null }]]));
-  const createRun = (code: string, mode?: 'local' | 'remote'): ManagedRunRecord => ({ id: code + '-' + (runs.length + 1), serviceId: code, serviceCode: code, worktreeId: code + '-task', worktreePath: '/task/' + code, worktreeLabel: '任务', branch: 'task', head: code + '-head', main: false, dirty: false, taskId: 'task', taskTitle: '测试任务', origin: 'agent', pid: 12345, preferredPort: 8080, actualPort: code === 'back' ? 8081 : 3001, portNote: '', status: 'running', startedAt: '2026-10-22', stoppedAt: null, failure: null, logPath: '', launch: null, url: code === 'back' ? 'http://127.0.0.1:8081' : 'http://127.0.0.1:3001', connection: code === 'front' ? { mode: mode || 'local', url: mode === 'remote' ? 'https://test.example.com' : 'http://127.0.0.1:8081', serviceCode: 'back', runId: mode === 'remote' ? null : runs.find(run => run.serviceCode === 'back' && run.taskId === 'task')?.id || null } : null, processIdentity: null });
+  const createRun = (code: string, mode?: 'local' | 'remote'): ManagedRunRecord => {
+    const connections = code === 'front' ? [{ mode: mode || 'local' as const, url: mode === 'remote' ? 'https://test.example.com' : 'http://127.0.0.1:8081', serviceCode: 'back', runId: mode === 'remote' ? null : runs.find(run => run.serviceCode === 'back' && run.taskId === 'task')?.id || null }] : [];
+    return { id: code + '-' + (runs.length + 1), serviceId: code, serviceCode: code, worktreeId: code + '-task', worktreePath: '/task/' + code, worktreeLabel: '任务', branch: 'task', head: code + '-head', main: false, dirty: false, taskId: 'task', taskTitle: '测试任务', origin: 'agent', pid: 12345, preferredPort: 8080, actualPort: code === 'back' ? 8081 : 3001, portNote: '', status: 'running', startedAt: '2026-10-22', stoppedAt: null, failure: null, logPath: '', launch: null, url: code === 'back' ? 'http://127.0.0.1:8081' : 'http://127.0.0.1:3001', connection: connections[0] ?? null, connections, processIdentity: null };
+  };
   const runtime = {
     listWorktrees: (_root: string, code: string) => worktrees[code] || [],
     readDefinition: (_root: string, code: string) => ({ definition: { version: 1, source: 'agent', verifiedAt: 'now', local: local(code) }, path: code + '/runtime.yml' }),
@@ -22,7 +25,9 @@ function fixture(options: { backend?: boolean; failFrontend?: boolean; ambiguous
       if (code !== 'front') return null;
       // This fake supplies the runtime collaborator's result; real target selection is covered by integration tests.
       const backend = runs.find(run => run.serviceCode === 'back' && run.taskId === source.taskId && run.status === 'running');
-      return backend ? { target: { runId: backend.id, serviceCode: backend.serviceCode, url: backend.url, worktreeLabel: backend.worktreeLabel, branch: backend.branch }, reason: null } : { target: null, reason: '本地后端未就绪' };
+      return [backend
+        ? { serviceCode: 'back', environmentVariable: 'PROXY_TARGET', remoteUrl: 'https://test.example.com', candidates: [{ runId: backend.id, url: backend.url, worktreeLabel: backend.worktreeLabel, branch: backend.branch, sameScope: true }], target: { runId: backend.id, serviceCode: backend.serviceCode, url: backend.url, worktreeLabel: backend.worktreeLabel, branch: backend.branch }, reason: null }
+        : { serviceCode: 'back', environmentVariable: 'PROXY_TARGET', remoteUrl: 'https://test.example.com', candidates: [], target: null, reason: '本地后端未就绪' }];
     },
     waitForRun: async (_root: string, id: string) => runs.find(run => run.id === id)!,
     startRun: async (_root: string, input: { serviceCode: string; connection?: 'local' | 'remote' }) => {

@@ -39,6 +39,7 @@ export type ManagedRunRecord = {
   origin: 'human' | 'agent' | 'unknown';
   url: string;
   connection: RunConnection | null;
+  connections: RunConnection[];
   launch: RunLaunch | null;
   processIdentity: ProcessIdentity | null;
 };

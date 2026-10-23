@@ -33,6 +33,7 @@ export const SERVICE_RUNTIME_MODULE = Object.freeze({
             id: service.id as string,
             code: service.code as string,
             name: service.name as string,
+            type: (service.type as string) || 'service',
             modulePath: (service.modulePath as string) || '',
             repositoryId: repository?.id ?? null,
             projects: (catalog.projects as any[]).filter(project => project.serviceIds?.includes(service.id)).map(project => project.code as string),

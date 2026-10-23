@@ -2,6 +2,9 @@ import { api, type ApiClient } from '../../../api';
 
 export type RunStatus = 'starting' | 'running' | 'stopped' | 'failed';
 export type BackendMode = 'local' | 'remote';
+export type BackendTarget = { serviceCode: string; target: 'auto' | 'remote' | 'run'; runId?: string };
+export type RuntimeBackendDeclaration = { serviceCode: string; environmentVariable: string; remoteUrl: string };
+export type BackendCandidate = { runId: string; url: string; worktreeLabel: string; branch: string | null; sameScope: boolean };
 export type RuntimeReadiness = { kind: 'log'; pattern: string } | { kind: 'http'; path: string };
 export type RuntimeLaunch = {
   command: string[];
@@ -30,6 +33,7 @@ export type ManagedRun = {
   origin: 'human' | 'agent' | 'unknown';
   url: string;
   connection: RunConnection | null;
+  connections?: RunConnection[];
   launch: RuntimeLaunch | null;
   pid: number;
   preferredPort: number;
@@ -66,13 +70,14 @@ export type RuntimeDefinitionView = {
     portOverride: string | null;
     readiness: RuntimeReadiness;
     timeoutSeconds: number;
-    backend?: { serviceCode: string; environmentVariable: string; remoteUrl: string };
+    backends?: RuntimeBackendDeclaration[];
   };
 };
 export type ServiceRuntimeSummary = {
   id: string;
   code: string;
   name: string;
+  type: string;
   projects: string[];
   repositoryId: string | null;
   definition: RuntimeDefinitionView | null;
@@ -88,15 +93,19 @@ export type ServiceRuntimeOverview = {
   services: ServiceRuntimeSummary[];
 };
 export type LocalBackendAvailability = {
+  serviceCode: string;
+  environmentVariable: string;
+  remoteUrl: string;
+  candidates: BackendCandidate[];
   target: { runId: string; serviceCode: string; url: string; worktreeLabel: string; branch: string | null } | null;
   reason: string | null;
 };
-export type ServiceRuntimeDetail = { service: ServiceRuntimeSummary; worktrees: ServiceWorktree[]; connectionTargets: Record<string, LocalBackendAvailability>; diagnostics: string[] };
-export type TaskRuntimeService = { service: ServiceRuntimeSummary; worktree: ServiceWorktree | null; connectionTarget: LocalBackendAvailability | null; diagnostics: string[] };
+export type ServiceRuntimeDetail = { service: ServiceRuntimeSummary; worktrees: ServiceWorktree[]; connectionTargets: Record<string, LocalBackendAvailability[]>; diagnostics: string[] };
+export type TaskRuntimeService = { service: ServiceRuntimeSummary; worktree: ServiceWorktree | null; connectionTarget: LocalBackendAvailability[] | null; diagnostics: string[] };
 export type TaskRuntimeView = { taskId: string; title: string; services: TaskRuntimeService[]; runs: ManagedRun[]; diagnostics: string[] };
-export type StartOptions = { connection?: BackendMode; origin?: 'human' | 'agent'; taskId?: string; expectedWorktree?: ExpectedWorktree; expectedBackendRunId?: string };
-export type RestartOptions = { connection?: BackendMode; expectedWorktree?: ExpectedWorktree; expectedBackendRunId?: string };
-export type TaskStartSelection = { serviceCode: string; worktreeId: string; expectedWorktree?: ExpectedWorktree; expectedBackendRunId?: string };
+export type StartOptions = { connection?: BackendMode; backendTargets?: BackendTarget[]; origin?: 'human' | 'agent'; taskId?: string; expectedWorktree?: ExpectedWorktree; expectedBackendRunId?: string };
+export type RestartOptions = { connection?: BackendMode; backendTargets?: BackendTarget[]; expectedWorktree?: ExpectedWorktree; expectedBackendRunId?: string };
+export type TaskStartSelection = { serviceCode: string; worktreeId: string; expectedWorktree?: ExpectedWorktree; expectedBackendRunId?: string; backendTargets?: BackendTarget[] };
 export type TaskStartResult = { taskId: string; results: Array<{ serviceCode: string; worktreeId: string; run: ManagedRun | null; reused: boolean; error: { code: string; message: string } | null }> };
 export type RunLogResponse = { record: ManagedRun; log: string; truncated: boolean; size: number; maxBytes: number };
 type ReadOptions = Pick<RequestInit, 'signal'>;

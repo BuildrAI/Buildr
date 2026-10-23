@@ -13,7 +13,7 @@ test('网页单项启动与共享视图、真实连接、日志和停止，旧QA
   const overview = await call('GET', '/service-runtime/overview');
   assert.equal(overview.body.services.length, 1);
   assert.equal('environments' in overview.body.services[0], false);
-  assert.equal(overview.body.services[0].definition.local.backend.environmentVariable, 'VITE_PROXY_URL');
+  assert.equal(overview.body.services[0].definition.local.backends[0].environmentVariable, 'VITE_PROXY_URL');
   assert.equal(await call('GET', '/service-runtime/services/frontend/deployment-plan'), null);
   assert.equal(await call('POST', '/service-runtime/services/frontend/deployments', { branch: 'qa', commit: 'head' }), null);
   assert.equal(writes, 0);
@@ -31,7 +31,7 @@ test('网页单项启动与共享视图、真实连接、日志和停止，旧QA
   assert.equal(detail.body.service.runs[0].connection.url, 'https://test.example/api');
   assert.equal(detail.body.service.runs[0].branch, 'qa');
   assert.equal(detail.body.service.runs[0].main, true);
-  assert.equal(detail.body.connectionTargets[source.id].target, null);
+  assert.equal(detail.body.connectionTargets[source.id][0].target, null);
   await assert.rejects(call('POST', `/service-runtime/runs/${ready.id}/restart`, { connection: 'local' }, true), (error: any) => error.code === 'service_runtime_backend_unavailable' && error.status === 409);
   assert.equal((await call('GET', '/service-runtime/services/frontend')).body.service.runs[0].status, 'running');
   await assert.rejects(call('POST', `/service-runtime/runs/${ready.id}/restart`, { connection: 'arbitrary' }, true), (error: any) => error.status === 400);

@@ -24,11 +24,13 @@ export function projectListSourceLabel(type: string): string {
 export const SERVICE_TYPE_OPTIONS = [
   { value: 'backend', label: '后端' },
   { value: 'frontend', label: '前端' },
-  { value: 'application', label: '应用' },
-  { value: 'library', label: '库' },
-  { value: 'tool', label: '工具' },
 ] as const;
 
 export function serviceTypeLabel(type: string): string {
   return SERVICE_TYPE_OPTIONS.find((option) => option.value === type)?.label || type;
+}
+
+/** 只有前端/后端参与界面呈现；其他既有登记值不显示类型标签。 */
+export function serviceTypeTagLabel(type: string | undefined): string | null {
+  return type === 'frontend' ? '前端' : type === 'backend' ? '后端' : null;
 }

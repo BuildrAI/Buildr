@@ -1,4 +1,4 @@
-import type { ManagedRun, RunStatus, ServiceRuntimeSummary, ServiceWorktree, ExpectedWorktree, TaskRuntimeService, BackendMode, StartOptions, LocalBackendAvailability } from './api/service-runtime-api';
+import type { ManagedRun, RunStatus, RunConnection, RuntimeBackendDeclaration, ServiceRuntimeSummary, ServiceWorktree, ExpectedWorktree, TaskRuntimeService, BackendMode, StartOptions, LocalBackendAvailability } from './api/service-runtime-api';
 
 export const RUN_STATUS_LABEL: Record<RunStatus, string> = { starting: '启动中', running: '已就绪', stopped: '已停止', failed: '启动失败' };
 export const RUN_STATUS_COLOR: Record<RunStatus, string | undefined> = { starting: 'processing', running: 'success', stopped: undefined, failed: 'error' };
@@ -18,21 +18,44 @@ export function startRunOptions(worktree: ServiceWorktree, initialRun?: Pick<Man
   const taskId = initialRun?.worktreeId === worktree.id ? initialRun.taskId ?? worktree.taskId : worktree.taskId;
   return { origin: 'human', expectedWorktree: expectedWorktree(worktree), ...(taskId ? { taskId } : {}), ...(connection ? { connection } : {}) };
 }
+/** 旧记录只有单条 connection；新记录按声明顺序保存 connections。 */
+export function runConnections(run: Pick<ManagedRun, 'connection' | 'connections'>): RunConnection[] {
+  return run.connections ?? (run.connection ? [run.connection] : []);
+}
 export function availableTaskServices(services: TaskRuntimeService[]): TaskRuntimeService[] { return services.filter(item => item.worktree && !item.worktree.main && item.service.definition); }
 export function taskSelections(services: TaskRuntimeService[], selected: string[], connection?: BackendMode) {
   const wanted = new Set(selected);
-  return availableTaskServices(services).filter(item => wanted.has(item.service.code)).map(item => ({ serviceCode: item.service.code, worktreeId: item.worktree!.id, expectedWorktree: expectedWorktree(item.worktree!), ...(connection === 'local' && item.connectionTarget?.target && !wanted.has(item.service.definition?.local.backend?.serviceCode ?? '') ? { expectedBackendRunId: item.connectionTarget.target.runId } : {}) }));
+  return availableTaskServices(services).filter(item => wanted.has(item.service.code)).map(item => {
+    const backendTargets = connection === 'local' ? (item.service.definition?.local.backends ?? [])
+      .filter(backend => !wanted.has(backend.serviceCode))
+      .flatMap(backend => {
+        const target = item.connectionTarget?.find(entry => entry.serviceCode === backend.serviceCode)?.target;
+        return target ? [{ serviceCode: backend.serviceCode, target: 'run' as const, runId: target.runId }] : [];
+      }) : [];
+    return { serviceCode: item.service.code, worktreeId: item.worktree!.id, expectedWorktree: expectedWorktree(item.worktree!), ...(backendTargets.length ? { backendTargets } : {}) };
+  });
 }
-type ConnectionItem = { service: ServiceRuntimeSummary; worktree: ServiceWorktree | null; connectionTarget?: LocalBackendAvailability | null };
-/** 本地选项来自服务器观察；任务明确选中的后端可先启动，再把就绪地址交给前端。 */
-export function backendConnectionChoices(items: ConnectionItem[], selected: string[], taskScope = false) {
+type ConnectionItem = { service: ServiceRuntimeSummary; worktree: ServiceWorktree | null; connectionTarget?: LocalBackendAvailability[] | null };
+export type BackendConnectionChoice = {
+  frontendCode: string;
+  backend: RuntimeBackendDeclaration;
+  availability: LocalBackendAvailability | null;
+  target: LocalBackendAvailability['target'];
+  startsBackend: boolean;
+  available: boolean;
+  reason: string | null;
+};
+/** 每个声明后端独立解析；任务明确选中的后端可先启动，再把就绪地址交给前端。 */
+export function backendConnectionChoices(items: ConnectionItem[], selected: string[], taskScope = false): BackendConnectionChoice[] {
   const wanted = new Set(selected);
   return items.flatMap(item => {
-    const backend = item.service.definition?.local.backend;
-    if (!wanted.has(item.service.code) || !backend) return [];
-    const target = item.connectionTarget?.target ?? null;
-    const paired = taskScope ? items.find(candidate => candidate.service.code === backend.serviceCode && wanted.has(candidate.service.code) && candidate.worktree && !candidate.worktree.main && candidate.service.definition) : null;
-    return [{ frontendCode: item.service.code, backend, target, startsBackend: !target && Boolean(paired), available: Boolean(target || paired), reason: target || paired ? null : item.connectionTarget?.reason || `请先启动所选代码来源的 ${backend.serviceCode} 后端并等待就绪。` }];
+    if (!wanted.has(item.service.code)) return [];
+    return (item.service.definition?.local.backends ?? []).map(backend => {
+      const availability = item.connectionTarget?.find(entry => entry.serviceCode === backend.serviceCode) ?? null;
+      const target = availability?.target ?? null;
+      const paired = taskScope ? items.find(candidate => candidate.service.code === backend.serviceCode && wanted.has(candidate.service.code) && candidate.worktree && !candidate.worktree.main && candidate.service.definition) : null;
+      return { frontendCode: item.service.code, backend, availability, target, startsBackend: !target && Boolean(paired), available: Boolean(target || paired), reason: target || paired ? null : availability?.reason || `请先启动所选代码来源的 ${backend.serviceCode} 后端并等待就绪。` };
+    });
   });
 }
 export function canUseLocalConnection(items: ConnectionItem[], selected: string[], taskScope = false): boolean {

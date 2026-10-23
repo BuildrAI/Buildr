@@ -23,8 +23,30 @@ test('解析与渲染本地定义，保留已验证前端连接声明', () => {
     environmentVariable: VITE_PROXY_URL
     remoteUrl: https://test.example/api
 `);
-  assert.deepEqual(definition.local.backend, { serviceCode: 'business', environmentVariable: 'VITE_PROXY_URL', remoteUrl: 'https://test.example/api' });
+  assert.deepEqual(definition.local.backends, [{ serviceCode: 'business', environmentVariable: 'VITE_PROXY_URL', remoteUrl: 'https://test.example/api' }]);
   assert.deepEqual(parseRuntimeDefinition(renderRuntimeDefinition(definition)), definition);
+});
+
+test('多后端声明列表逐项解析，渲染为同一列表形态', () => {
+  const definition = parseRuntimeDefinition(valid + `  backends:
+    - serviceCode: business
+      environmentVariable: VITE_PROXY_URL
+      remoteUrl: https://test.example/api
+    - serviceCode: upms
+      environmentVariable: UPMS_URL
+      remoteUrl: https://test.example/upms
+`);
+  assert.equal(definition.local.backends?.length, 2);
+  assert.equal(definition.local.backends?.[1]?.serviceCode, 'upms');
+  assert.deepEqual(parseRuntimeDefinition(renderRuntimeDefinition(definition)), definition);
+});
+
+test('拒绝重复的后端服务、重复的注入变量与新旧字段并存', () => {
+  for (const extra of [
+    `  backends:\n    - serviceCode: business\n      environmentVariable: A_URL\n      remoteUrl: https://test.example/a\n    - serviceCode: business\n      environmentVariable: B_URL\n      remoteUrl: https://test.example/b\n`,
+    `  backends:\n    - serviceCode: business\n      environmentVariable: SAME_URL\n      remoteUrl: https://test.example/a\n    - serviceCode: upms\n      environmentVariable: SAME_URL\n      remoteUrl: https://test.example/b\n`,
+    `  backend: { serviceCode: business, environmentVariable: A_URL, remoteUrl: https://test.example/a }\n  backends: [{ serviceCode: upms, environmentVariable: B_URL, remoteUrl: https://test.example/b }]\n`,
+  ]) assert.throws(() => parseRuntimeDefinition(valid + extra), RuntimeDefinitionError);
 });
 
 test('旧部署字段即使损坏也忽略，不要求修复退役配置', () => {
@@ -47,4 +69,7 @@ test('前端连接只接受服务编号、显式环境变量和无认证的网�
     { serviceCode: 'business', environmentVariable: 'VITE_PROXY_URL', remoteUrl: 'https://user:secret@test.example' },
     { serviceCode: 'business', environmentVariable: 'VITE_PROXY_URL', remoteUrl: 'file:///tmp/a' },
   ]) assert.throws(() => parseRuntimeDefinition(valid + `  backend: ${JSON.stringify(backend)}\n`), RuntimeDefinitionError);
+  for (const backend of [
+    { serviceCode: 'business', environmentVariable: 'VITE_PROXY_URL', remoteUrl: 'notaurl' },
+  ]) assert.throws(() => parseRuntimeDefinition(valid + `  backends: [${JSON.stringify(backend)}]\n`), RuntimeDefinitionError);
 });

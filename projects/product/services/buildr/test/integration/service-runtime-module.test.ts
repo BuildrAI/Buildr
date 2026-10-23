@@ -114,8 +114,8 @@ test('无关服务仓库缺失不阻塞当前任务的真实目录、启动和�
   assert.equal(frontSource.taskId, task.taskId);
   assert.equal(frontSource.main, false);
   assert.equal(frontSource.path, source.path);
-  assert.equal(scoped.body.connectionTargets[frontSource.id].target.runId, result.results[0].run.id);
-  assert.equal(scoped.body.connectionTargets[frontSource.id].target.url, result.results[0].run.url);
+  assert.equal(scoped.body.connectionTargets[frontSource.id][0].target.runId, result.results[0].run.id);
+  assert.equal(scoped.body.connectionTargets[frontSource.id][0].target.url, result.results[0].run.url);
   const foreign = await query('taskId=other');
   assert.deepEqual(foreign.body.worktrees, [], 'another task without its own provider evidence must not borrow the current checkout');
   assert.deepEqual(foreign.body.connectionTargets, {});

@@ -1,9 +1,10 @@
 import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Tabs } from 'antd';
+import { Tabs, Tag } from 'antd';
+import { serviceTypeTagLabel } from '../../../lib/labels';
 import { AppstoreOutlined, FolderOutlined, RightOutlined } from '@ant-design/icons';
 import './asset-home.css';
-type ObjectSummary = { id:string;code:string;name:string;description?:string };
+type ObjectSummary = { id:string;code:string;name:string;description?:string;type?:string };
 type Props = { view?:'detail'|'runtime';onViewChange?(view:'detail'|'runtime'):void;kind:'service'|'repository';item:ObjectSummary;hidden?:boolean;hideRelated?:boolean;related:ObjectSummary[];relationHref(object:ObjectSummary):string;onRelation?(object:ObjectSummary):void;actions:ReactNode;notices?:ReactNode;runtimeContent?:ReactNode;documents?:ReactNode;repositoryContent:ReactNode };
 export function AssetHomeView({kind,item,hidden,hideRelated,related,relationHref,onRelation,actions,notices,runtimeContent,documents,repositoryContent,view:controlledView,onViewChange}:Props) {
   const label = kind === 'service' ? '服务' : '代码库';
@@ -19,7 +20,7 @@ export function AssetHomeView({kind,item,hidden,hideRelated,related,relationHref
   </>;
   return (
     <div hidden={hidden}><div className="resource-home asset-home">
-      <header className="resource-home-head"><div className="asset-home-summary"><p className="resource-eyebrow">{label} <span> / {item.code}</span></p><h1 id={kind === 'service' ? 'service-detail-name' : 'repository-detail-name'}>{item.name}</h1><p id={kind === 'service' ? 'service-detail-description' : 'repository-detail-description'}>{item.description || '尚未填写说明。'}</p></div>{actions}</header>
+      <header className="resource-home-head"><div className="asset-home-summary"><p className="resource-eyebrow">{label} <span> / {item.code}</span>{serviceTypeTagLabel(item.type) ? <Tag className="asset-home-type">{serviceTypeTagLabel(item.type)}</Tag> : null}</p><h1 id={kind === 'service' ? 'service-detail-name' : 'repository-detail-name'}>{item.name}</h1><p id={kind === 'service' ? 'service-detail-description' : 'repository-detail-description'}>{item.description || '尚未填写说明。'}</p></div>{actions}</header>
       {notices}
       {runtimeContent ? <>
         <Tabs className="asset-home-tabs" activeKey={view} onChange={setView} items={[{ key: 'detail', label: '详情' }, { key: 'runtime', label: '本地运行' }]} />

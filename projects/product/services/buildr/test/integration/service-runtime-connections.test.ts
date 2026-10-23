@@ -1,7 +1,9 @@
 import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { runtimeFixture } from '../helpers/service-runtime-fixture.ts';
+import { freeRuntimePort, runtimeDefinition, runtimeFixture } from '../helpers/service-runtime-fixture.ts';
 import { createServiceRuntimeView } from '../../src/modules/service-runtime/application/service-runtime-view.ts';
 import { readRunRecord, writeRunRecord } from '../../src/modules/service-runtime/persistence/runs-repository.ts';
 import { processAlive, startManagedProcess } from '../../src/modules/service-runtime/infrastructure/managed-process.ts';
@@ -70,22 +72,24 @@ test('可选本地后端只暴露唯一同范围就绪实例和实际避让地�
   const f = await runtimeFixture(t, { frontendConnection: true });
   const view = createServiceRuntimeView({ runtime: f.runtime, catalog: { listServices: () => [{ id: 'frontend', code: 'frontend', name: '前端', repositoryId: 'repo', modulePath: '', projects: [] }] } });
   const missing = await view.detail(f.root, 'frontend');
-  assert.equal(missing.connectionTargets['frontend-main']?.target, null);
-  assert.match(missing.connectionTargets['frontend-main']!.reason!, /先启动后端/);
+  assert.equal(missing.connectionTargets['frontend-main']?.[0]?.target, null);
+  assert.match(missing.connectionTargets['frontend-main']![0]!.reason!, /先启动后端/);
   const other = await f.runtime.waitForRun(f.root, (await f.runtime.startRun(f.root, { serviceCode: 'backend', worktreeId: 'backend-other' })).id);
   const backend = await f.runtime.waitForRun(f.root, (await f.runtime.startRun(f.root, { serviceCode: 'backend', worktreeId: 'backend-task' })).id);
   assert.notEqual(backend.actualPort, f.ports.backend);
   const scoped = await view.detail(f.root, 'frontend');
-  assert.deepEqual(scoped.connectionTargets['frontend-task']?.target, { runId: backend.id, serviceCode: 'backend', url: backend.url, worktreeLabel: backend.worktreeLabel, branch: backend.branch });
-  assert.equal(scoped.connectionTargets['frontend-main']?.target, null);
-  assert.equal(scoped.connectionTargets['frontend-other']?.target?.runId, other.id);
+  assert.deepEqual(scoped.connectionTargets['frontend-task']?.[0]?.target, { runId: backend.id, serviceCode: 'backend', url: backend.url, worktreeLabel: backend.worktreeLabel, branch: backend.branch });
+  assert.equal(scoped.connectionTargets['frontend-main']?.[0]?.target, null);
+  assert.equal(scoped.connectionTargets['frontend-other']?.[0]?.target?.runId, other.id);
+  // 跨范围实例作为显式候选列出：frontend-task 能看到 other 范围实例但默认目标仍为 null。
+  assert.ok(scoped.connectionTargets['frontend-task']?.[0]?.candidates.some(candidate => candidate.runId === other.id && !candidate.sameScope));
   await writeRunRecord(f.root, { ...backend, id: 'duplicate-backend' });
-  assert.match((await view.detail(f.root, 'frontend')).connectionTargets['frontend-task']!.reason!, /多个/);
+  assert.match((await view.detail(f.root, 'frontend')).connectionTargets['frontend-task']![0]!.reason!, /多个/);
   await writeRunRecord(f.root, { ...backend, id: 'duplicate-backend', status: 'stopped', stoppedAt: new Date().toISOString() });
   await f.runtime.stopRun(f.root, backend.id);
-  assert.equal((await view.detail(f.root, 'frontend')).connectionTargets['frontend-task']?.target, null);
+  assert.equal((await view.detail(f.root, 'frontend')).connectionTargets['frontend-task']?.[0]?.target, null);
   await writeRunRecord(f.root, { ...backend, id: 'unverified-backend', pid: process.pid, processIdentity: null });
-  assert.equal((await view.detail(f.root, 'frontend')).connectionTargets['frontend-task']?.target, null);
+  assert.equal((await view.detail(f.root, 'frontend')).connectionTargets['frontend-task']?.[0]?.target, null);
   await writeRunRecord(f.root, { ...backend, id: 'unverified-backend', status: 'stopped', stoppedAt: new Date().toISOString() });
 });
 
@@ -145,6 +149,45 @@ test('用户观察后端A后已换为B时拒绝启动与切换，原前端保持
   await assert.rejects(f.runtime.startRun(f.root, { serviceCode: 'frontend', worktreeId: 'frontend-main', connection: 'local', expectedBackendRunId: first.id }), (error: any) => error.code === 'service_runtime_backend_changed');
   const connected = await f.runtime.waitForRun(f.root, (await f.runtime.startRun(f.root, { serviceCode: 'frontend', worktreeId: 'frontend-main', connection: 'local', expectedBackendRunId: second.id })).id);
   assert.equal(connected.connection?.runId, second.id);
+});
+
+test('多后端声明逐组列出候选，可显式选择跨范围实例，未选择后端按规则回落', async t => {
+  const f = await runtimeFixture(t);
+  for (const source of ['main', 'task', 'other']) fs.mkdirSync(path.join(f.root, `backend2-${source}`), { recursive: true });
+  const worktrees = { ...f.worktrees, backend2: f.worktrees.backend!.map(worktree => ({ ...worktree, id: worktree.id.replace('backend', 'backend2'), path: path.join(f.root, worktree.id.replace('backend', 'backend2')) })) };
+  const runtime = createServiceRuntimeApplication({ resolveService: (_root, code) => ['frontend', 'backend', 'backend2'].includes(code) ? { id: code, code } : null, listWorktrees: (_root, code) => worktrees[code] ?? [] });
+  t.after(async () => { for (const record of await runtime.listRuns(f.root)) if (record.status === 'starting' || record.status === 'running') await runtime.stopRun(f.root, record.id); });
+  await runtime.writeDefinition(f.root, 'frontend', runtimeDefinition(f.ports.frontend, { backends: [
+    { serviceCode: 'backend', environmentVariable: 'VITE_PROXY_URL', remoteUrl: 'https://test.example/api' },
+    { serviceCode: 'backend2', environmentVariable: 'UPMS_URL', remoteUrl: 'https://upms.example/api' },
+  ] }));
+  await runtime.writeDefinition(f.root, 'backend2', runtimeDefinition(await freeRuntimePort()));
+  const taskBack = await runtime.waitForRun(f.root, (await runtime.startRun(f.root, { serviceCode: 'backend', worktreeId: 'backend-task' })).id);
+  const otherBack2 = await runtime.waitForRun(f.root, (await runtime.startRun(f.root, { serviceCode: 'backend2', worktreeId: 'backend2-other' })).id);
+  const view = createServiceRuntimeView({ runtime, catalog: { listServices: () => [{ id: 'frontend', code: 'frontend', name: '前端', type: 'frontend', repositoryId: null, modulePath: '', projects: [] }] } });
+  const groups = (await view.detail(f.root, 'frontend')).connectionTargets['frontend-task']!;
+  assert.deepEqual(groups.map(group => group.serviceCode), ['backend', 'backend2']);
+  assert.equal(groups[0]!.target?.runId, taskBack.id);
+  assert.equal(groups[1]!.target, null, '跨范围实例不作为默认目标');
+  assert.deepEqual(groups[1]!.candidates.map(candidate => [candidate.runId, candidate.sameScope]), [[otherBack2.id, false]]);
+  // backend 自动解析同范围实例；backend2 显式选择跨范围实例。
+  const started = await runtime.startRun(f.root, { serviceCode: 'frontend', worktreeId: 'frontend-task', backendTargets: [{ serviceCode: 'backend2', target: 'run', runId: otherBack2.id }] });
+  const ready = await runtime.waitForRun(f.root, started.id);
+  assert.equal(ready.status, 'running');
+  assert.deepEqual(ready.connections, [
+    { mode: 'local', url: taskBack.url, serviceCode: 'backend', runId: taskBack.id },
+    { mode: 'local', url: otherBack2.url, serviceCode: 'backend2', runId: otherBack2.id },
+  ]);
+  await runtime.stopRun(f.root, ready.id);
+  // backend2 显式远程，backend 无同范围目标时自动回落远程。
+  const remoteBoth = await runtime.waitForRun(f.root, (await runtime.startRun(f.root, { serviceCode: 'frontend', worktreeId: 'frontend-task', backendTargets: [{ serviceCode: 'backend2', target: 'remote' }] })).id);
+  assert.deepEqual(remoteBoth.connections.map(connection => [connection.serviceCode, connection.mode]), [['backend', 'local'], ['backend2', 'remote']]);
+  await runtime.stopRun(f.root, remoteBoth.id);
+  // 严格 local 任一声明后端缺失即整体拒绝。
+  await runtime.stopRun(f.root, taskBack.id);
+  await assert.rejects(runtime.startRun(f.root, { serviceCode: 'frontend', worktreeId: 'frontend-task', connection: 'local' }), (error: any) => error.code === 'service_runtime_backend_unavailable');
+  // 显式实例属于其他声明后端时拒绝。
+  await assert.rejects(runtime.startRun(f.root, { serviceCode: 'frontend', worktreeId: 'frontend-task', backendTargets: [{ serviceCode: 'backend', target: 'run', runId: otherBack2.id }] }), (error: any) => error.code === 'service_runtime_backend_changed');
 });
 
 test('预停校验通过后目标地址漂移也不会静默采用，失败明确原实例已停止', async t => {

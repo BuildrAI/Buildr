@@ -18,7 +18,11 @@ export function RuntimeDefinitionDrawer({ service, onClose, onConfigure }: { ser
         <div><dt>端口覆盖</dt><dd>{definition.local.portOverride ? <code>{definition.local.portOverride}</code> : '未配置覆盖方式'}</dd></div>
         <div><dt>就绪检查</dt><dd>{definition.local.readiness.kind === 'log' ? <>日志出现 <code>{definition.local.readiness.pattern}</code></> : <>HTTP <code>{definition.local.readiness.path}</code> 返回成功</>}</dd></div>
         <div><dt>等待超时</dt><dd>{definition.local.timeoutSeconds} 秒</dd></div>
-        {definition.local.backend ? <><div><dt>后端服务</dt><dd><code>{definition.local.backend.serviceCode}</code></dd></div><div><dt>目标注入</dt><dd><code>{definition.local.backend.environmentVariable}</code></dd></div><div><dt>远程测试环境</dt><dd><code>{definition.local.backend.remoteUrl}</code></dd></div></> : null}
+        {(definition.local.backends ?? []).flatMap(backend => [
+          <div key={`${backend.serviceCode}-service`}><dt>后端服务</dt><dd><code>{backend.serviceCode}</code></dd></div>,
+          <div key={`${backend.serviceCode}-env`}><dt>目标注入</dt><dd><code>{backend.environmentVariable}</code></dd></div>,
+          <div key={`${backend.serviceCode}-remote`}><dt>远程测试环境</dt><dd><code>{backend.remoteUrl}</code></dd></div>,
+        ])}
       </dl>
       <p className="runtime-section-note">这是当前已验证配置；已启动实例展示各自的启动快照。页面只读，不直接编辑命令。</p>
     </div> : <p>{service?.definitionDiagnostic || '尚未配置已验证的启动方式。'}</p>}

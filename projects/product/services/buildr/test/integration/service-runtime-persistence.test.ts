@@ -33,6 +33,7 @@ function record(overrides: Partial<ManagedRunRecord> = {}): ManagedRunRecord {
     origin: 'human',
     url: 'http://127.0.0.1:8081',
     connection: null,
+    connections: [],
     launch: null,
     processIdentity: null,
     ...overrides,

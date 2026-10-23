@@ -4,6 +4,9 @@ import { atomicWriteJson } from '../../../infrastructure/filesystem/atomic-files
 import type { ManagedRunRecord } from '../domain/runs.ts';
 
 function normalize(record: ManagedRunRecord): ManagedRunRecord {
+  const connections = Array.isArray(record.connections)
+    ? record.connections
+    : record.connection ? [record.connection] : [];
   return {
     ...record,
     main: typeof record.main === 'boolean' ? record.main : null,
@@ -12,7 +15,8 @@ function normalize(record: ManagedRunRecord): ManagedRunRecord {
     taskTitle: record.taskTitle ?? null,
     origin: record.origin === 'human' || record.origin === 'agent' ? record.origin : 'unknown',
     url: record.url || `http://127.0.0.1:${record.actualPort}`,
-    connection: record.connection ?? null,
+    connection: connections[0] ?? null,
+    connections,
     launch: record.launch ?? null,
     processIdentity: record.processIdentity ?? null,
   };
