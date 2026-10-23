@@ -1,4 +1,4 @@
-import type { ManagedRun, RunStatus, RunConnection, RuntimeBackendDeclaration, ServiceRuntimeSummary, ServiceWorktree, ExpectedWorktree, TaskRuntimeService, BackendMode, StartOptions, LocalBackendAvailability } from './api/service-runtime-api';
+import type { ManagedRun, RunStatus, RunConnection, RuntimeBackendDeclaration, ServiceRuntimeSummary, ServiceWorktree, ExpectedWorktree, TaskRuntimeService, BackendMode, StartOptions, LocalBackendAvailability, BackendTarget, ConnectionSelection } from './api/service-runtime-api';
 
 export const RUN_STATUS_LABEL: Record<RunStatus, string> = { starting: '启动中', running: '已就绪', stopped: '已停止', failed: '启动失败' };
 export const RUN_STATUS_COLOR: Record<RunStatus, string | undefined> = { starting: 'processing', running: 'success', stopped: undefined, failed: 'error' };
@@ -23,17 +23,40 @@ export function runConnections(run: Pick<ManagedRun, 'connection' | 'connections
   return run.connections ?? (run.connection ? [run.connection] : []);
 }
 export function availableTaskServices(services: TaskRuntimeService[]): TaskRuntimeService[] { return services.filter(item => item.worktree && !item.worktree.main && item.service.definition); }
-export function taskSelections(services: TaskRuntimeService[], selected: string[], connection?: BackendMode) {
+export function backendSelectionTargets(backends: RuntimeBackendDeclaration[], selections: Record<string, string>, available: LocalBackendAvailability[] = []): BackendTarget[] {
+  return backends.map(backend => {
+    const value = selections[backend.serviceCode] ?? 'auto';
+    if (value === 'remote') return { serviceCode: backend.serviceCode, target: 'remote' };
+    if (value !== 'auto') return { serviceCode: backend.serviceCode, target: 'run', runId: value.slice(4) };
+    const observed = available.find(item => item.serviceCode === backend.serviceCode);
+    return { serviceCode: backend.serviceCode, target: 'auto', ...(backend.kind === 'service-discovery' && (observed?.target || observed?.state === 'missing')
+      ? { expectedRunId: observed.target?.runId ?? null } : {}) };
+  });
+}
+export function taskSelections(services: TaskRuntimeService[], selected: string[], connection?: ConnectionSelection) {
   const wanted = new Set(selected);
   return availableTaskServices(services).filter(item => wanted.has(item.service.code)).map(item => {
-    const backendTargets = connection === 'local' ? (item.service.definition?.local.backends ?? [])
+    const backendTargets: BackendTarget[] = connection === 'local' || connection === 'auto' ? (item.service.definition?.local.backends ?? [])
       .filter(backend => !wanted.has(backend.serviceCode))
       .flatMap(backend => {
-        const target = item.connectionTarget?.find(entry => entry.serviceCode === backend.serviceCode)?.target;
-        return target ? [{ serviceCode: backend.serviceCode, target: 'run' as const, runId: target.runId }] : [];
+        const availability = item.connectionTarget?.find(entry => entry.serviceCode === backend.serviceCode);
+        if (availability?.target) return [{ serviceCode: backend.serviceCode, target: 'run' as const, runId: availability.target.runId }];
+        if (connection !== 'auto') return [];
+        return backend.kind === 'service-discovery'
+          ? backendSelectionTargets([backend], {}, item.connectionTarget ?? [])
+          : [{ serviceCode: backend.serviceCode, target: 'remote' as const }];
       }) : [];
     return { serviceCode: item.service.code, worktreeId: item.worktree!.id, expectedWorktree: expectedWorktree(item.worktree!), ...(backendTargets.length ? { backendTargets } : {}) };
   });
+}
+export function connectionAddress(connection: RunConnection): string {
+  return connection.kind === 'service-discovery' ? connection.serviceId : connection.url;
+}
+export function routingObservationLabel(run: ManagedRun): string {
+  const observation = run.routing?.observation;
+  if (observation?.status === 'unavailable') return `观察不可用：${observation.error || '尚未确认当前运行身份'}`;
+  if (observation?.status !== 'observed') return '尚无当前运行观察';
+  return Object.keys(observation.targets ?? {}).length ? '已读取下游发现观察，业务验证仍需执行' : '上下文已核对，下游发现状态尚无观察';
 }
 type ConnectionItem = { service: ServiceRuntimeSummary; worktree: ServiceWorktree | null; connectionTarget?: LocalBackendAvailability[] | null };
 export type BackendConnectionChoice = {

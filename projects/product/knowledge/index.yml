@@ -535,6 +535,7 @@ artifacts:
       - local-runtime-view
       - local-runtime-repository
       - local-runtime-process
+      - local-runtime-routing-context
       - local-runtime-lock
       - local-runtime-task-checkout
       - local-runtime-cli
@@ -1664,7 +1665,7 @@ sources:
     title: 已验证本地运行定义
     kind: code
     path: services/buildr/src/modules/service-runtime/domain/runtime-definition.ts
-    summary: 校验启动方式与 local.backends 逐后端连接声明，旧 backend 单声明与部署环境字段兼容读取。
+    summary: 校验版本 1/2 启动方式、直接地址与发现连接及自身 local.routing；兼容旧 backend 与部署字段。
   - id: local-runtime-runs
     title: 本地运行实例及快照
     kind: code
@@ -1679,12 +1680,12 @@ sources:
     title: 单服务本地运行
     kind: code
     path: services/buildr/src/modules/service-runtime/application/service-runtime-application.ts
-    summary: 核对来源、启动、等待就绪、停止和读取实例日志，逐后端按显式实例、同范围唯一或远程回落解析前端连接。
+    summary: 核对来源、启动、等待就绪、停止和读取实例日志，逐后端按声明解析直接地址或同任务发现目标，已选失效拒绝接替，切换核对上下文摘要。
   - id: local-runtime-task-application
     title: 任务服务选择与组合
     kind: code
     path: services/buildr/src/modules/service-runtime/application/service-task-runtime-application.ts
-    summary: 从任务范围及对应目录组合已选服务，等待本地后端，保留每项成功、复用或错误。
+    summary: 从任务范围及对应目录组合已选服务，预分配发现运行身份，仅等待直接地址前置边，保留每项成功、复用或错误。
   - id: local-runtime-view
     title: 本地运行读取视图
     kind: code
@@ -1700,6 +1701,11 @@ sources:
     kind: code
     path: services/buildr/src/modules/service-runtime/infrastructure/managed-process.ts
     summary: 维护可验证进程身份、独立进程组、直接日志输出与有界停止及就绪检查。
+  - id: local-runtime-routing-context
+    title: 本机泳道上下文与专业观察
+    kind: code
+    path: services/buildr/src/modules/service-runtime/infrastructure/local-routing-context.ts
+    summary: 从受管身份与声明派生文件及摘要，安全注入路径；按声明只读观察并核对运行身份，不内置专业发现客户端。
   - id: local-runtime-lock
     title: 本地实例与端口互斥
     kind: code

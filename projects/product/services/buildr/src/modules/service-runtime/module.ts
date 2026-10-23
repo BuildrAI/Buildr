@@ -31,6 +31,7 @@ export const SERVICE_RUNTIME_MODULE = Object.freeze({
           const repository = (catalog.repositories as any[]).find(item => item.id === service.repositoryId) ?? null;
           return {
             id: service.id as string,
+            workspaceId: service.workspaceId as string,
             code: service.code as string,
             name: service.name as string,
             type: (service.type as string) || 'service',

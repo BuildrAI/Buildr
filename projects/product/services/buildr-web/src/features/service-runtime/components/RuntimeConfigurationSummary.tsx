@@ -19,7 +19,7 @@ export function RuntimeConfigurationSummary({ definition, onView, onConfigure }:
     {backends.length ? <dl className="runtime-configuration-connections">
       {backends.flatMap(backend => [
         <div key={`${backend.serviceCode}-service`}><dt>本地后端</dt><dd><code>{backend.serviceCode}</code></dd></div>,
-        <div key={`${backend.serviceCode}-remote`}><dt>远程测试地址</dt><dd><code>{backend.remoteUrl}</code></dd></div>,
+        <div key={`${backend.serviceCode}-remote`}><dt>{backend.kind === 'service-discovery' ? '服务发现（Service Discovery）' : '远程测试地址'}</dt><dd><code>{backend.kind === 'service-discovery' ? `${backend.serviceId} · QA` : backend.remoteUrl}</code></dd></div>,
       ])}
     </dl> : <p className="runtime-connection-note">未声明可切换的后端连接，按现有启动配置运行。</p>}
     <div className="runtime-configuration-source"><Tag>智能体（Agent）验证</Tag><span>运行定义 <code>{definition.path}</code></span><span>验证于 {formatShortDateTime(definition.verifiedAt)}</span></div>

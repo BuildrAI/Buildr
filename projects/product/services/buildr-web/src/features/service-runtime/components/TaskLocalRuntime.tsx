@@ -4,7 +4,7 @@ import { useAppShell } from '../../../app/AppShellContext';
 import { api } from '../../../api';
 import { workspaceHref } from '../../../lib/labels';
 import { confirmModal } from '../../../lib/confirm';
-import { createServiceRuntimeClient, type BackendMode, type ManagedRun, type ServiceRuntimeSummary, type TaskStartResult } from '../api/service-runtime-api';
+import { createServiceRuntimeClient, type ConnectionSelection, type ManagedRun, type ServiceRuntimeSummary, type TaskStartResult } from '../api/service-runtime-api';
 import { useTaskRuntime } from '../hooks/useServiceRuntime';
 import { availableTaskServices, canUseLocalConnection, isActiveRun, runConnections, sourceLabel, taskSelections } from '../model';
 import { LocalRuntimeSurface } from './LocalRuntimeSurface';
@@ -21,7 +21,7 @@ export function TaskLocalRuntime({ taskId }: { taskId: string }) {
   const client = useMemo(() => createServiceRuntimeClient(api, workspaceId || undefined), [workspaceId]);
   const [startOpen, setStartOpen] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
-  const [connection, setConnection] = useState<BackendMode>('local');
+  const [connection, setConnection] = useState<ConnectionSelection>('local');
   const [starting, setStarting] = useState(false);
   const [startResult, setStartResult] = useState<TaskStartResult | null>(null);
   const [error, setError] = useState('');
@@ -32,13 +32,13 @@ export function TaskLocalRuntime({ taskId }: { taskId: string }) {
   const services = runtime.data?.services || [];
   const runs = runtime.data?.runs.filter(run => run.taskId === taskId) || [];
   const connectionBlocked = connection === 'local' && !canUseLocalConnection(services, selected, true);
-  const openStart = (run?: ManagedRun) => { if (starting) { setStartOpen(true); return; } setSelected(run ? [run.serviceCode] : availableTaskServices(services).map(item => item.service.code)); setConnection(run ? runConnections(run)[0]?.mode || 'local' : 'local'); setStartResult(null); setError(''); setStartOpen(true); };
+  const openStart = (run?: ManagedRun) => { if (starting) { setStartOpen(true); return; } setSelected(run ? [run.serviceCode] : availableTaskServices(services).map(item => item.service.code)); setConnection(services.some(item => item.service.definition?.local.routing) ? 'auto' : run ? runConnections(run)[0]?.mode || 'local' : 'local'); setStartResult(null); setError(''); setStartOpen(true); };
   const start = async () => {
     const choices = taskSelections(services, selected, connection);
     if (!choices.length || connectionBlocked) return;
     setStarting(true); setError(''); setStartResult(null);
     try {
-      const result = await client.startTask(taskId, { selected: choices, connection, origin: 'human' });
+      const result = await client.startTask(taskId, { selected: choices, ...(connection === 'auto' ? {} : { connection }), origin: 'human' });
       setStartResult(result);
       await runtime.refresh({ silent: true });
       const failures = result.results.filter(item => item.error);

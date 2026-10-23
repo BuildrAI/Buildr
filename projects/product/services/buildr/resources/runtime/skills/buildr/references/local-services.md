@@ -1,6 +1,6 @@
 # 服务本地运行
 
-智能体（Agent）、开发和测试使用同一组本地运行事实。任务入口默认该任务目录及本地后端；服务入口可选择主工作库当前代码，前端默认远程测试环境。主工作库由实际主检出身份判断，不从分支（Branch）名猜测，不自动切换分支（Branch）、拉取或覆盖未提交改动。
+智能体（Agent）、开发和测试使用同一组本地运行事实。任务入口默认该任务目录；发现调用默认同任务优先，直接地址的任务组合沿用本地后端策略；服务入口可选择主工作库当前代码，直接地址按逐项目标自动选择同范围唯一实例或固定远程测试环境。主工作库由实际主检出身份判断，不从分支（Branch）名猜测，不自动切换分支（Branch）、拉取或覆盖未提交改动。
 
 ## 先确认目标与当前事实
 
@@ -41,6 +41,38 @@ buildr service-runtime task-start --task <task-id> --services <backend-code>,<fr
 
 只启动任务前端并连接远程时，使用 `--services <frontend-code> --connection remote`。命令行接口（CLI）默认启动来源为智能体（Agent）；使用 `--origin agent` 明确本次入口。任务组合逐项返回启动、复用或错误，已有成功项保留；局部失败先读该项日志，不重启无关成功实例或把整组表述为成功。
 
+## 任务内服务发现（Service Discovery）
+
+版本 2 复用 `local.backends`，发现条目声明真实应用名称及固定 QA 回落；混合列表的直接地址条目须显式使用 `kind: direct-url`。旧 `local.backend` 和版本 1 列表继续可读。以下是协议结构示例，应用名称与入口必须沿真实代码验证，不能照抄后填验证时间：
+
+```yaml
+version: 2
+# source、verifiedAt 和启动字段须来自真实验证
+local:
+  routing:
+    serviceId: business-app
+    environmentVariable: LOCAL_SERVICE_ROUTING_FILE
+    format: buildr.local-service-routing/v1
+    observationPath: /actuator/local-service-routing
+  backends:
+    - kind: service-discovery
+      serviceCode: upms
+      serviceId: upms-app
+      fallback: {kind: existing-discovery, context: qa}
+```
+
+`local.routing.serviceId` 是调用方真实发现名称，不能从服务编码猜测。声明变量仅接收 Buildr 生成的本机上下文文件路径；文件包含任务、工作空间、本机、泳道（Lane）和运行身份及已声明目标，不包含认证、密钥或任意 URL。Buildr 不内置 Spring Cloud 或 Nacos 客户端。智能体（Agent）须沿实际依赖版本、自动装配（Auto-configuration）、负载均衡（Load Balancing）、请求及启动链核实应用组件如何消费文件、隔离注册、选择目标、拒绝旧接收方身份和提供只读观察。无接入组件时在已有修改授权内完成接入并验证，或明确报告具体缺口，不为过校验伪造 `verifiedAt`。
+
+发现模式只支持明确任务目录及同任务本机候选，不能借用主库或其他任务。`task-start` 省略 `--connection` 时，已选参与者使用预分配的运行编号，允许发现关系成环；只有直接地址的前置边等待就绪。未选本地下游时按声明回落 QA；严格 `--connection local` 缺少目标报错，`remote` 明确使用 QA。已选目标未就绪、消失、发现异常或歧义不能偷偷回落 QA，也不能采用后来出现的同名或同端口实例。局部失败保留其他成功项；进入 QA 后的调用留在 QA。
+
+显式连接使用 `--backend-target <serviceCode>:<runId>` 固定已观察目标。切换发现调用方还须携带其当前 `routing.contextDigest`：
+
+```text
+buildr service-runtime restart --run <caller-run-id> --backend-target <service-code>:<observed-run-id> --expected-routing-digest <digest> --target <workspace> --json
+```
+
+界面自动选择也提交观察到的目标编号或明确的缺失事实。当前版本在重启时应用新上下文，不热更新。注册受理、当前可发现、实际请求到达及完整业务验收是不同事实：结合 `routing.observation`、逐下游调用及日志分别说明；观察缺失或不可用不能表述为成功。旧运行没有这些事实时保持未知。接收方必须拒绝不匹配的运行编号，防止同端口替换接收旧请求。
+
 ## 就绪后完成真实验证
 
 启动命令等待就绪或失败后返回；进程独立运行，命令退出不等于服务停止。核对返回的运行编号、启动时代码快照、实际端口、地址和连接目标。首选端口被占用时使用实际返回端口，不沿用默认值。连接快照表示启动目标，进程就绪表示启动检查通过，两者均不证明业务请求已联通。
@@ -57,7 +89,7 @@ buildr service-runtime stop --run <run-id> --target <workspace> --json
 
 ## 首次配置与检查已有配置
 
-从当前工作空间（Workspace）的服务编码开始，使用上面的 `show` 和 `worktrees` 读取现有定义、真实代码目录及诊断。服务名、目录名和分支（Branch）名不证明它是前端或后端，以服务登记中的 `type`（`frontend`/`backend`，界面显示「前端」「后端」）为准。沿实际请求和启动代码判断是否需要切换后端；普通后端或无需切换的服务只配置启动方式，不添加 `local.backends` 声明。用户无需了解内部命令或手填字段，由智能体（Agent）完成调查、验证和保存；只有现场无法查明的目标地址、业务决定或缺少的授权才请用户补充。
+从当前工作空间（Workspace）的服务编码开始，使用上面的 `show` 和 `worktrees` 读取现有定义、真实代码目录及诊断。服务名、目录名和分支（Branch）名不证明它是前端或后端，以服务登记中的 `type`（`frontend`/`backend`，界面显示「前端」「后端」）为准。沿实际请求和启动代码判断是否需要切换后端；没有下游切换需求的服务只配置启动方式；后端之间的发现调用也可声明，不能根据前后端名称排除。用户无需了解内部命令或手填字段，由智能体（Agent）完成调查、验证和保存；只有现场无法查明的目标地址、业务决定或缺少的授权才请用户补充。
 
 读取服务规则、实际代码、项目脚本、启动文档、构建与运行配置，核实依赖及副作用。已有启动和本次验证授权继续有效，不逐步骤重复确认；未授权启动时先完成只读调查并说明需要启动的具体对象和影响。不得将本地运行授权扩展成远程业务写入、部署、共享配置修改或读取凭证。
 
@@ -116,7 +148,7 @@ local:
 
 ### 保存并读回
 
-实际验证通过后，用普通文件编辑将已证明字段保存到规范工作空间（Workspace）的 `services/<service-code>/runtime.yml`；定义使用 `version: 1`、`source: agent` 和真实 `verifiedAt`。当前命令行接口（CLI）没有配置 `validate` 或 `save` 命令，不编造这些入口。
+实际验证通过后，用普通文件编辑将已证明字段保存到规范工作空间（Workspace）的 `services/<service-code>/runtime.yml`；定义使用与字段匹配的 `version: 1` 或 `version: 2`、`source: agent` 和真实 `verifiedAt`。当前命令行接口（CLI）没有配置 `validate` 或 `save` 命令，不编造这些入口。
 
 重配已有定义时，写入前重读并对照当前内容，按差异保留未知字段、旧 `environments` 及无关配置；发生他人修改时重新核对，不静默覆盖。只为本次确实重新验证的内容更新验证时间，不将旧证据冒充新验证。已有实例继续展示各自启动时的快照，修改定义不会自动重启它们；确需切换或重启时核对具体实例和已有授权。
 

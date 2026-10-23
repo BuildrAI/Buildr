@@ -73,3 +73,43 @@ test('前端连接只接受服务编号、显式环境变量和无认证的网�
     { serviceCode: 'business', environmentVariable: 'VITE_PROXY_URL', remoteUrl: 'notaurl' },
   ]) assert.throws(() => parseRuntimeDefinition(valid + `  backends: [${JSON.stringify(backend)}]\n`), RuntimeDefinitionError);
 });
+
+const routing = {
+  serviceId: 'caller-app', environmentVariable: 'LOCAL_SERVICE_ROUTING_FILE',
+  format: 'buildr.local-service-routing/v1', observationPath: '/actuator/local-service-routing',
+};
+const discovery = { kind: 'service-discovery', serviceCode: 'business', serviceId: 'business-app', fallback: { kind: 'existing-discovery', context: 'qa' } };
+const lane = () => valid.replace('version: 1', 'version: 2') + `  routing: ${JSON.stringify(routing)}\n  backends: [${JSON.stringify(discovery)}]\n`;
+
+test('版本 2 将自身发现名称、观察入口与发现目标完整往返，不制造 URL', () => {
+  const parsed = parseRuntimeDefinition(lane());
+  assert.equal(parsed.version, 2);
+  assert.deepEqual(parsed.local.routing, routing);
+  assert.deepEqual(parsed.local.backends, [discovery]);
+  assert.deepEqual(parseRuntimeDefinition(renderRuntimeDefinition(parsed)), parsed);
+  assert.doesNotMatch(renderRuntimeDefinition(parsed), /remoteUrl/);
+  assert.equal(parsed.verifiedAt, parseRuntimeDefinition(valid).verifiedAt);
+});
+
+test('发现声明拒绝错误回落、任意地址、自身名称缺失及不安全观察路径', () => {
+  for (const content of [
+    lane().replace('version: 2', 'version: 1'),
+    lane().replace('"context":"qa"', '"context":"other-task"'),
+    lane().replace('"kind":"service-discovery"', '"kind":"service-discovery","url":"http://other.invalid"'),
+    lane().replace('"serviceId":"caller-app",', ''),
+    lane().replace('/actuator/local-service-routing', '//other.invalid/read'),
+    lane().replace('/actuator/local-service-routing', '/safe/../outside'),
+    lane().replace('  routing:', '  missing-routing:'),
+  ]) assert.throws(() => parseRuntimeDefinition(content), RuntimeDefinitionError);
+});
+
+test('版本 2 混合声明保持直接地址类型，并拒绝发现名称或变量冲突', () => {
+  const direct = { kind: 'direct-url', serviceCode: 'web-backend', environmentVariable: 'PROXY_URL', remoteUrl: 'https://qa.example' };
+  const mixed = lane().replace(`[${JSON.stringify(discovery)}]`, JSON.stringify([discovery, direct]));
+  assert.deepEqual(parseRuntimeDefinition(renderRuntimeDefinition(parseRuntimeDefinition(mixed))), parseRuntimeDefinition(mixed));
+  for (const backends of [
+    [discovery, { ...discovery, serviceCode: 'another' }],
+    [discovery, { ...direct, environmentVariable: routing.environmentVariable }],
+    [{ ...direct, kind: undefined }],
+  ]) assert.throws(() => parseRuntimeDefinition(lane().replace(`[${JSON.stringify(discovery)}]`, JSON.stringify(backends))), RuntimeDefinitionError);
+});

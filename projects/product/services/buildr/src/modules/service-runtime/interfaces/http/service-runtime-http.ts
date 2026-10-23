@@ -30,13 +30,15 @@ export function parseStartRunInput(code: string, body: Record<string, unknown>):
   if (body.connection !== undefined && body.connection !== 'local' && body.connection !== 'remote') failure('service_runtime_input_invalid', '前端连接必须单选 local 或 remote。');
   if (body.taskId !== undefined && (typeof body.taskId !== 'string' || !IDENTIFIER.test(body.taskId))) failure('service_runtime_input_invalid', '任务编号无效。');
   if (body.expectedBackendRunId !== undefined && (typeof body.expectedBackendRunId !== 'string' || !IDENTIFIER.test(body.expectedBackendRunId))) failure('service_runtime_input_invalid', '已观察的本地后端编号无效。');
+  if (body.expectedRoutingDigest !== undefined && (typeof body.expectedRoutingDigest !== 'string' || !/^sha256-[a-f0-9]{64}$/.test(body.expectedRoutingDigest))) failure('service_runtime_input_invalid', '已观察的泳道上下文摘要无效。');
   if (body.backendTargets !== undefined) {
     if (!Array.isArray(body.backendTargets)) failure('service_runtime_input_invalid', '后端目标必须是数组。');
     const seen = new Set<string>();
     for (const item of body.backendTargets) {
       if (!item || typeof item !== 'object' || Array.isArray(item)) failure('service_runtime_input_invalid', '后端目标无效。');
       const target = item as Record<string, unknown>;
-      if (Object.keys(target).some(key => !['serviceCode', 'target', 'runId'].includes(key))) failure('service_runtime_input_invalid', '后端目标包含未知字段。');
+      if (Object.keys(target).some(key => !['serviceCode', 'target', 'runId', 'expectedRunId'].includes(key))) failure('service_runtime_input_invalid', '后端目标包含未知字段。');
+      if (target.expectedRunId !== undefined && (target.target !== 'auto' || target.expectedRunId !== null && (typeof target.expectedRunId !== 'string' || !IDENTIFIER.test(target.expectedRunId)))) failure('service_runtime_input_invalid', '自动发现目标观察无效。');
       if (typeof target.serviceCode !== 'string' || !IDENTIFIER.test(target.serviceCode)) failure('service_runtime_input_invalid', '后端目标的服务编码无效。');
       if (seen.has(target.serviceCode)) failure('service_runtime_input_invalid', `后端目标重复：${target.serviceCode}。`);
       seen.add(target.serviceCode);
@@ -99,9 +101,9 @@ export function createServiceRuntimeHttp(deps: { view: ServiceRuntimeView; runti
         const restart = suffix.match(/^\/service-runtime\/runs\/([^/]+)\/restart$/);
         if (restart && request.method === 'POST') {
           assertParams(searchParams, []); authorizeWrite();
-          const body = await readBody(new Set(['connection', 'expectedWorktree', 'expectedBackendRunId', 'backendTargets']), '切换本地运行连接');
+          const body = await readBody(new Set(['connection', 'expectedWorktree', 'expectedBackendRunId', 'backendTargets', 'expectedRoutingDigest']), '切换本地运行连接');
           const parsed = parseStartRunInput('', { ...body, worktreeId: 'current' });
-          return { status: 200, body: await deps.runtime.restartRun(root, identifier(restart[1], '运行编号'), { origin: 'human', connection: parsed.connection, backendTargets: parsed.backendTargets, expectedWorktree: parsed.expectedWorktree, expectedBackendRunId: parsed.expectedBackendRunId }) };
+          return { status: 200, body: await deps.runtime.restartRun(root, identifier(restart[1], '运行编号'), { origin: 'human', connection: parsed.connection, backendTargets: parsed.backendTargets, expectedWorktree: parsed.expectedWorktree, expectedBackendRunId: parsed.expectedBackendRunId, expectedRoutingDigest: parsed.expectedRoutingDigest }) };
         }
         const stop = suffix.match(/^\/service-runtime\/runs\/([^/]+)\/stop$/);
         if (stop && request.method === 'POST') { assertParams(searchParams, []); authorizeWrite(); await readBody(new Set([]), '停止本地运行'); return { status: 200, body: await deps.runtime.stopRun(root, identifier(stop[1], '运行编号')) }; }

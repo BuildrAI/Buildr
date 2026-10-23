@@ -3,6 +3,7 @@ import { isActiveRun, type ManagedRunRecord } from '../domain/runs.ts';
 import type { ServiceWorktree } from '../domain/worktrees.ts';
 import type { LocalBackendAvailability, ServiceRuntimeApplication, StartRunInput } from './service-runtime-application.ts';
 import type { ServiceRuntimeCatalogPort, ServiceRuntimeSummary, ServiceRuntimeView } from './service-runtime-view.ts';
+import type { RoutingStartPlan } from '../infrastructure/local-routing-context.ts';
 
 export type RuntimeTask = {
   taskId: string;
@@ -78,6 +79,14 @@ export function createServiceTaskRuntimeApplication(deps: {
     const servicesByCode = new Map(observed.services.map(item => [item.service.code, item]));
     const results = new Map<string, TaskRunResult>();
     const visiting = new Set<string>();
+    let routingPlan: RoutingStartPlan | null = null;
+    let routingPlanError: unknown = null;
+    const routingSelections = input.selected.filter(selection => {
+      const item = servicesByCode.get(selection.serviceCode);
+      return item?.worktree?.id === selection.worktreeId && Boolean(item.service.definition?.local.routing);
+    }).map(selection => ({ ...selection, taskId: input.taskId }));
+    try { if (routingSelections.length) routingPlan = await deps.runtime.prepareTaskRouting(root, routingSelections); }
+    catch (cause) { routingPlanError = cause; }
 
     const startSelected = async (selection: TaskRunSelection): Promise<TaskRunResult> => {
       const prior = results.get(selection.serviceCode);
@@ -96,10 +105,12 @@ export function createServiceTaskRuntimeApplication(deps: {
         const definition = deps.runtime.readDefinition(root, selection.serviceCode)?.definition;
         if (!definition) throw new ServiceRuntimeError('service_runtime_definition_missing', `服务 ${selection.serviceCode} 尚无已验证的运行定义。`);
         const backends = definition.local.backends ?? [];
-        const mode = backends.length ? input.connection ?? 'local' : undefined;
+        if (definition.local.routing && routingPlanError) throw routingPlanError;
+        const mode = backends.length ? definition.local.routing ? input.connection : input.connection ?? 'local' : undefined;
         const backendTargets: NonNullable<StartRunInput['backendTargets']> = [...(selection.backendTargets ?? [])];
-        if (mode === 'local') {
+        if (mode !== 'remote') {
           for (const backend of backends) {
+            if (backend.kind === 'service-discovery') continue;
             const dependency = selectedByCode.get(backend.serviceCode);
             if (!dependency) continue;
             const result = await startSelected(dependency);
@@ -127,8 +138,12 @@ export function createServiceTaskRuntimeApplication(deps: {
           await deps.runtime.listRuns(root);
           const availabilities = deps.runtime.connectionTarget(root, selection.serviceCode, item.worktree) ?? [];
           const source = currentSource();
-          // 每个声明后端逐一核对：显式实例目标失效即所选变化，其余按连接模式比对实际连接。
+          if (definition.local.routing) {
+            deps.runtime.assertRunConnections(root, ready, { ...selection, taskId: input.taskId, backendTargets, ...(mode ? { connection: mode } : {}) }, routingPlan ?? undefined);
+          }
+          // 旧直接地址逐项重验，新发现连接使用同一解析能力。
           for (const backend of backends) {
+            if (backend.kind === 'service-discovery') continue;
             const expected = backendTargets.find(target => target.serviceCode === backend.serviceCode);
             const actual = ready.connections.find(connection => connection.serviceCode === backend.serviceCode);
             if (expected?.target === 'run' && (actual?.mode !== 'local' || actual.runId !== expected.runId)) throw new ServiceRuntimeError('service_runtime_backend_changed', `本地后端 ${backend.serviceCode} 实例已变化，请刷新后重新选择。`);
@@ -139,6 +154,7 @@ export function createServiceTaskRuntimeApplication(deps: {
           }
           if (ready.status !== 'running') throw new ServiceRuntimeError('service_runtime_existing_run_failed', ready.failure || '已有实例未就绪，请查看日志后单独重试。');
           const mismatched = backends.find(backend => {
+            if (backend.kind === 'service-discovery') return false;
             const expected = backendTargets.find(target => target.serviceCode === backend.serviceCode);
             if (expected?.target === 'run') return false;
             const actual = ready.connections.find(connection => connection.serviceCode === backend.serviceCode);
@@ -152,7 +168,10 @@ export function createServiceTaskRuntimeApplication(deps: {
         } else {
           if (!taskServices(root, deps.readTaskScope(root, input.taskId)).some(service => service.code === selection.serviceCode)) throw new ServiceRuntimeError('service_runtime_task_scope_mismatch', '任务服务范围已变化，请刷新后重选。');
           const { backendTargets: _declared, expectedBackendRunId: legacyExpected, ...rest } = selection;
-          run = await deps.runtime.startRun(root, { ...rest, ...(backendTargets.length ? {} : { expectedBackendRunId: legacyExpected }), backendTargets, taskId: input.taskId, origin: input.origin ?? 'agent', ...(mode ? { connection: mode } : {}) });
+          const start = { ...rest, ...(backendTargets.length ? {} : { expectedBackendRunId: legacyExpected }), backendTargets, taskId: input.taskId, origin: input.origin ?? 'agent' as const, ...(mode ? { connection: mode } : {}) };
+          run = definition.local.routing && routingPlan
+            ? await deps.runtime.startRunWithRoutingPlan(root, start, routingPlan)
+            : await deps.runtime.startRun(root, start);
           run = await deps.runtime.waitForRun(root, run.id);
         }
         const result: TaskRunResult = { serviceCode: selection.serviceCode, worktreeId: selection.worktreeId, run, reused,

@@ -76,6 +76,7 @@ test('可选本地后端只暴露唯一同范围就绪实例和实际避让地�
   assert.match(missing.connectionTargets['frontend-main']![0]!.reason!, /先启动后端/);
   const other = await f.runtime.waitForRun(f.root, (await f.runtime.startRun(f.root, { serviceCode: 'backend', worktreeId: 'backend-other' })).id);
   const backend = await f.runtime.waitForRun(f.root, (await f.runtime.startRun(f.root, { serviceCode: 'backend', worktreeId: 'backend-task' })).id);
+  assert.equal(backend.status, 'running', backend.failure ?? '本测试需要真实就绪后端');
   assert.notEqual(backend.actualPort, f.ports.backend);
   const scoped = await view.detail(f.root, 'frontend');
   assert.deepEqual(scoped.connectionTargets['frontend-task']?.[0]?.target, { runId: backend.id, serviceCode: 'backend', url: backend.url, worktreeLabel: backend.worktreeLabel, branch: backend.branch });

@@ -54,9 +54,9 @@ function harness(component, data) {
 }
 const worktree = (code, main = false) => ({ id: code + '-tree', path: '/code/' + code, label: main ? '主工作库' : '订单验证', branch: main ? 'dev' : 'feature/order', head: 'a'.repeat(40), dirty: false, main, taskId: main ? null : 'task-one', taskTitle: main ? null : '订单验证' });
 const backend = { serviceCode: 'back', environmentVariable: 'BACKEND_URL', remoteUrl: 'https://test.example.com' };
-const service = code => ({ id: code, code, name: code, runs: [], definition: { local: { ...(code === 'front' ? { backend } : {}) } } });
-const ready = { target: { runId: 'back-ready', serviceCode: 'back', url: 'http://127.0.0.1:8189', worktreeLabel: '订单验证', branch: 'feature/order' }, reason: null };
-const missing = { target: null, reason: '请先启动本任务后端。' };
+const service = code => ({ id: code, code, name: code, runs: [], definition: { local: { ...(code === 'front' ? { backends: [backend] } : {}) } } });
+const ready = [{ serviceCode: 'back', candidates: [], target: { runId: 'back-ready', serviceCode: 'back', url: 'http://127.0.0.1:8189', worktreeLabel: '订单验证', branch: 'feature/order' }, reason: null }];
+const missing = [{ serviceCode: 'back', candidates: [], target: null, reason: '请先启动本任务后端。' }];
 const initialRun = { id: 'front-running', serviceCode: 'front', worktreeId: 'front-tree', status: 'running', pid: 42, actualPort: 3000, taskId: 'task-one', connection: { mode: 'remote' } };
 const primary = modal => find(modal.props.footer, 'button').find(button => button.props.type === 'primary');
 
@@ -67,16 +67,15 @@ test('切换连接携带已展示后端实例，目标变更失败不先停止�
   try {
     h.render(props); let tree = h.render(props);
     assert.deepEqual(h.detailArgs.at(-1), ['workspace-one', 'front', 'task-one'], '重开任务实例切换使用原实例的明确任务身份');
-    find(tree, 'RuntimeStartOptions')[0].props.onConnection('local'); tree = h.render(props);
+    find(tree, 'RuntimeStartOptions')[0].props.onBackendSelection('back', 'run:back-ready'); tree = h.render(props);
     assert.equal(primary(tree).props.disabled, false);
     primary(tree).props.onClick(); assert.equal(h.requests.length, 1);
     assert.match(h.requests[0].url, /\/runs\/front-running\/restart$/u);
-    assert.deepEqual(JSON.parse(h.requests[0].body), { connection: 'local', expectedBackendRunId: 'back-ready', expectedWorktree: { path: '/code/front', branch: 'feature/order', head: 'a'.repeat(40), dirty: false } });
-    h.read.data = { ...detail, connectionTargets: { 'front-tree': { target: { ...ready.target, runId: 'replacement-back', url: 'http://127.0.0.1:8190' }, reason: null } } };
+    assert.deepEqual(JSON.parse(h.requests[0].body), { backendTargets: [{ serviceCode: 'back', target: 'run', runId: 'back-ready' }], expectedWorktree: { path: '/code/front', branch: 'feature/order', head: 'a'.repeat(40), dirty: false } });
+    h.read.data = { ...detail, connectionTargets: { 'front-tree': [{ ...ready[0], target: { ...ready[0].target, runId: 'replacement-back', url: 'http://127.0.0.1:8190' } }] } };
     h.requests[0].reject(new Error('后端实例已变化，请重新确认；原前端保持运行。')); await settle(); tree = h.render(props);
     assert.equal(h.requests.length, 1); assert.equal(initialRun.status, 'running');
     assert.ok(find(tree, 'alert').some(alert => alert.props.message === '后端实例已变化，请重新确认；原前端保持运行。'));
-    assert.ok(find(tree, 'alert').some(alert => alert.props.message === '先校验连接，再重启当前前端'));
     assert.equal(h.refreshes(), 1);
   } finally { h.dispose(); }
 });
@@ -87,12 +86,11 @@ test('单服务本地启动固定已展示后端实例，远程启动不携带�
     const h = harness(StartWorktreeModal, detail);
     const props = { open: true, serviceCode: 'front', onClose() {} };
     try {
-      h.render(props); let tree = h.render(props); find(tree, 'RuntimeStartOptions')[0].props.onConnection(connection); tree = h.render(props);
+      h.render(props); let tree = h.render(props); find(tree, 'RuntimeStartOptions')[0].props.onBackendSelection('back', connection === 'local' ? 'run:back-ready' : 'remote'); tree = h.render(props);
       assert.deepEqual(h.detailArgs.at(-1), ['workspace-one', 'front', undefined], '普通服务启动仍读取全局详情');
       primary(tree).props.onClick(); assert.equal(h.requests.length, 1);
-      const body = JSON.parse(h.requests[0].body); assert.equal(body.connection, connection);
-      if (connection === 'local') assert.equal(body.expectedBackendRunId, 'back-ready');
-      else assert.equal(Object.hasOwn(body, 'expectedBackendRunId'), false);
+      const body = JSON.parse(h.requests[0].body);
+      assert.deepEqual(body.backendTargets, [connection === 'local' ? { serviceCode: 'back', target: 'run', runId: 'back-ready' } : { serviceCode: 'back', target: 'remote' }]);
       h.requests[0].resolve({ ...initialRun, status: 'starting' }); await settle();
     } finally { h.dispose(); }
   }
@@ -104,14 +102,14 @@ test('已选本地后端失去就绪或改选目录时保留选择并阻止提�
   const props = { open: true, serviceCode: 'front', onClose() {} };
   try {
     h.render(props); h.render(props); let tree = h.render(props);
-    let options = find(tree, 'RuntimeStartOptions')[0]; options.props.onWorktree('front-tree'); options.props.onConnection('local');
+    let options = find(tree, 'RuntimeStartOptions')[0]; options.props.onWorktree('front-tree'); options.props.onBackendSelection('back', 'run:back-ready');
     tree = h.render(props); assert.equal(primary(tree).props.disabled, false);
     h.read.data = { ...detail, connectionTargets: { ...detail.connectionTargets, 'front-tree': missing } };
-    tree = h.render(props); assert.equal(primary(tree).props.disabled, true); assert.equal(find(tree, 'RuntimeStartOptions')[0].props.connection, 'local');
+    tree = h.render(props); assert.equal(primary(tree).props.disabled, true); assert.equal(find(tree, 'RuntimeStartOptions')[0].props.backendSelections.back, 'run:back-ready');
     primary(tree).props.onClick(); assert.equal(h.requests.length, 0);
     h.read.data = detail; tree = h.render(props); assert.equal(primary(tree).props.disabled, false);
     find(tree, 'RuntimeStartOptions')[0].props.onWorktree('other-tree'); tree = h.render(props);
-    assert.equal(primary(tree).props.disabled, true); assert.equal(find(tree, 'RuntimeStartOptions')[0].props.connection, 'local');
+    assert.equal(primary(tree).props.disabled, true); assert.equal(find(tree, 'RuntimeStartOptions')[0].props.backendSelections.back, 'run:back-ready');
   } finally { h.dispose(); }
 });
 
@@ -163,7 +161,24 @@ test('任务只启动前端固定已有后端，同组明确选择后端时由�
     find(tree, 'LocalRuntimeSurface')[0].props.onStart(); tree = h.render({ taskId: 'task-one' });
     find(find(tree, 'modal')[0], 'RuntimeStartOptions')[0].props.onSelected(['front']); tree = h.render({ taskId: 'task-one' });
     primary(find(tree, 'modal')[0]).props.onClick(); selected = JSON.parse(h.requests[1].body).selected;
-    assert.deepEqual(selected.map(item => item.serviceCode), ['front']); assert.equal(selected[0].expectedBackendRunId, 'back-ready');
+    assert.deepEqual(selected.map(item => item.serviceCode), ['front']); assert.deepEqual(selected[0].backendTargets, [{ serviceCode: 'back', target: 'run', runId: 'back-ready' }]);
     h.requests[1].resolve({ taskId: 'task-one', results: [] }); await settle();
+  } finally { h.dispose(); }
+});
+
+test('发现调用方切换携带当前上下文摘要和自动选择的已观察编号', async () => {
+  const declaration = { kind: 'service-discovery', serviceCode: 'back', serviceId: 'back-app', fallback: { kind: 'existing-discovery', context: 'qa' } };
+  const configured = { ...service('front'), definition: { local: { routing: { serviceId: 'front-app' }, backends: [declaration] } } };
+  const current = { ...initialRun, connection: null, connections: [{ ...declaration, mode: 'local', runId: 'back-ready' }], routing: { contextDigest: 'sha256-' + 'a'.repeat(64) } };
+  const h = harness(StartWorktreeModal, { service: { ...configured, runs: [current] }, worktrees: [worktree('front')], connectionTargets: { 'front-tree': ready }, diagnostics: [] });
+  const props = { open: true, serviceCode: 'front', initialRun: current, onClose() {} };
+  try {
+    h.render(props); let tree = h.render(props);
+    find(tree, 'RuntimeStartOptions')[0].props.onBackendSelection('back', 'auto'); tree = h.render(props);
+    primary(tree).props.onClick();
+    const body = JSON.parse(h.requests[0].body);
+    assert.equal(body.expectedRoutingDigest, current.routing.contextDigest);
+    assert.deepEqual(body.backendTargets, [{ serviceCode: 'back', target: 'auto', expectedRunId: 'back-ready' }]);
+    h.requests[0].resolve({ ...current, status: 'starting' }); await settle();
   } finally { h.dispose(); }
 });

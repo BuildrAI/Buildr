@@ -2,7 +2,7 @@ import { Button, Collapse, Space, Tag } from 'antd';
 import { BranchesOutlined, FileTextOutlined, LinkOutlined, LoadingOutlined, StopOutlined, WarningOutlined } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
 import { formatShortDateTime } from '../../../lib/taskLabels';
-import { RUN_STATUS_COLOR, RUN_STATUS_LABEL, dirtyLabel, isActiveRun, runConnections, runFailure, shortCommit, sourceLabel, visibleRunUrl } from '../model';
+import { RUN_STATUS_COLOR, RUN_STATUS_LABEL, dirtyLabel, isActiveRun, runConnections, runFailure, shortCommit, sourceLabel, visibleRunUrl, connectionAddress, routingObservationLabel } from '../model';
 import type { ManagedRun, ServiceRuntimeSummary } from '../api/service-runtime-api';
 
 type Props = {
@@ -52,7 +52,12 @@ export function LocalRunCard({ run, service, taskScope, history, busy, taskHref,
     {run.status === 'starting' ? <div className="local-run-feedback"><LoadingOutlined />正在启动并等待就绪，可查看日志。</div> : null}
     {!history ? <div className="local-run-facts">
       <div><span className="local-run-label">访问地址</span>{run.url ? <code>{run.url}</code> : <span>地址未记录</span>}<small>{run.status === 'running' ? '就绪检查通过，业务验证仍需执行' : RUN_STATUS_LABEL[run.status]}{run.portNote ? ` · ${run.portNote}` : ''}</small></div>
-      {hasBackend ? <div><span className="local-run-label">后端目标</span>{connections.length ? connections.map(connection => <div key={connection.serviceCode} className="local-run-connection"><strong>{connection.serviceCode}</strong><span>{connection.mode === 'local' ? '本地实例' : '远程测试环境'}</span><code>{connection.url}</code><small>{connection.mode === 'local' && connection.runId ? `实例 ${connection.runId}` : connection.mode === 'local' ? '实例未记录' : '启动时已注入此目标，业务请求需实际验证'}</small></div>) : <span>原记录未保存连接目标</span>}{declaredBackends > 0 && isActiveRun(run) ? <Button size="small" type="link" onClick={() => onConnection(run)}>切换连接</Button> : null}</div> : null}
+      {hasBackend ? <div><span className="local-run-label">后端目标</span>{connections.length ? connections.map(connection => <div key={connection.serviceCode} className="local-run-connection"><strong>{connection.serviceCode}</strong><span>{connection.mode === 'local' ? '本地实例' : connection.kind === 'service-discovery' ? 'QA' : '远程测试环境'}</span><code>{connectionAddress(connection)}</code><small>{connection.kind === 'service-discovery' ? connection.reason : connection.mode === 'local' && connection.runId ? `实例 ${connection.runId}` : connection.mode === 'local' ? '实例未记录' : '启动时已注入此目标，业务请求需实际验证'}</small></div>) : <span>原记录未保存连接目标</span>}{declaredBackends > 0 && isActiveRun(run) ? <Button size="small" type="link" onClick={() => onConnection(run)}>切换连接</Button> : null}</div> : null}
+    </div> : null}
+    {run.routing ? <div className="local-run-routing" data-lane-id={run.routing.laneId}>
+      <span className="local-run-label">泳道（Lane）</span><code>{run.routing.laneId}</code>
+      <small>{routingObservationLabel(run)}</small>
+      {run.routing.observation?.targets && Object.keys(run.routing.observation.targets).length ? <Collapse ghost size="small" items={[{ key: 'routing', label: '查看下游发现观察', children: <pre>{JSON.stringify(run.routing.observation.targets, null, 2)}</pre> }]} /> : null}
     </div> : null}
     <Collapse className="local-run-launch" ghost size="small" items={[{ key: 'launch', label: '目录与启动信息', children: launch ? <dl className="runtime-facts">
       <div><dt>启动命令</dt><dd><code>{launch.command.join(' ')}</code></dd></div>

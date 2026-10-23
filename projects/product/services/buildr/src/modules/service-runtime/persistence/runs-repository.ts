@@ -15,7 +15,7 @@ function normalize(record: ManagedRunRecord): ManagedRunRecord {
     taskTitle: record.taskTitle ?? null,
     origin: record.origin === 'human' || record.origin === 'agent' ? record.origin : 'unknown',
     url: record.url || `http://127.0.0.1:${record.actualPort}`,
-    connection: connections[0] ?? null,
+    connection: connections.find(connection => connection.kind !== 'service-discovery') ?? null,
     connections,
     launch: record.launch ?? null,
     processIdentity: record.processIdentity ?? null,

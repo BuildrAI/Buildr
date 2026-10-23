@@ -28,8 +28,8 @@ const { LocalRunCard } = await import('../src/features/service-runtime/component
 const { RuntimeStartOptions } = await import('../src/features/service-runtime/components/RuntimeStartOptions.tsx');
 const { RuntimeConfigurationSummary } = await import('../src/features/service-runtime/components/RuntimeConfigurationSummary.tsx');
 const worktree = (id, main = false) => ({ id, path: '/actual/' + id, label: id, main, branch: main ? 'qa' : 'topic', head: 'a'.repeat(40), dirty: true, taskId: main ? null : 'task-one', taskTitle: main ? null : '本次订单验证' });
-const definition = { source: 'agent', verifiedAt: '2026-10-22T01:00:00Z', path: 'services/front/runtime.yml', local: { command: ['node', 'dev.mjs'], cwd: '.', profile: 'dev', preferredPort: 3000, portOverride: '--port', readiness: { kind: 'http', path: '/' }, timeoutSeconds: 60, backend: { serviceCode: 'back', environmentVariable: 'BACKEND_URL', remoteUrl: 'https://test.example.com' } } };
-const service = (code, configured = true) => ({ id: code + '-id', code, name: code === 'front' ? '运营前端' : '业务后端', projects: ['pig'], repositoryId: code + '-repo', definition: configured ? code === 'front' ? definition : { ...definition, local: { ...definition.local, backend: undefined } } : null, definitionDiagnostic: null, runs: [], local: { activeCount: 0, activePorts: [] } });
+const definition = { source: 'agent', verifiedAt: '2026-10-22T01:00:00Z', path: 'services/front/runtime.yml', local: { command: ['node', 'dev.mjs'], cwd: '.', profile: 'dev', preferredPort: 3000, portOverride: '--port', readiness: { kind: 'http', path: '/' }, timeoutSeconds: 60, backends: [{ serviceCode: 'back', environmentVariable: 'BACKEND_URL', remoteUrl: 'https://test.example.com' }] } };
+const service = (code, configured = true) => ({ id: code + '-id', code, type: code === 'front' ? 'frontend' : 'backend', name: code === 'front' ? '运营前端' : '业务后端', projects: ['pig'], repositoryId: code + '-repo', definition: configured ? code === 'front' ? definition : { ...definition, local: { ...definition.local, backends: undefined } } : null, definitionDiagnostic: null, runs: [], local: { activeCount: 0, activePorts: [] } });
 const run = { id: 'run-one', serviceId: 'front-id', serviceCode: 'front', worktreeId: 'task-front', worktreePath: '/actual/task-front', worktreeLabel: 'topic', branch: 'main', head: 'b'.repeat(40), main: false, taskId: 'task-one', taskTitle: '本次订单验证', dirty: null, origin: 'unknown', url: 'http://127.0.0.1:3001', connection: { mode: 'remote', url: 'https://test.example.com', serviceCode: 'back', runId: null }, launch: null, pid: 3456, preferredPort: 3000, actualPort: 3001, portNote: '已避让首选端口', status: 'running', startedAt: '2026-10-22T01:00:00Z', stoppedAt: null, failure: null, logPath: '/actual/run.log' };
 const render = (component, props) => renderToStaticMarkup(React.createElement(MemoryRouter, null, React.createElement(component, props)));
 
@@ -83,18 +83,18 @@ test('客户端发送来源版本和明确服务选择，不提供部署客户�
 });
 
 test('本地连接必须有服务器确认的就绪地址，远程固定地址始终可见', () => {
-  const item = { service: service('front'), worktree: worktree('task-front'), connectionTarget: { target: null, reason: '本任务后端尚未就绪，请先启动后端。' } };
+  const item = { service: service('front'), worktree: worktree('task-front'), connectionTarget: [{ serviceCode: 'back', candidates: [], target: null, reason: '本任务后端尚未就绪，请先启动后端。' }] };
   const props = { items: [item], selected: ['front'], connection: 'local', onConnection() {} };
   let html = render(RuntimeStartOptions, props);
   assert.match(html, /<input(?=[^>]*type="radio")(?=[^>]*value="local")(?=[^>]*disabled="")[^>]*>/);
   assert.match(html, /本任务后端尚未就绪/); assert.match(html, /https:\/\/test\.example\.com/, '远程地址不随当前选择隐藏');
   assert.equal(model.canUseLocalConnection([item], ['front']), false);
-  const ready = { ...item, connectionTarget: { target: { runId: 'ready-back', serviceCode: 'back', url: 'http://127.0.0.1:8189', worktreeLabel: '本次订单验证', branch: 'feature/order' }, reason: null } };
+  const ready = { ...item, connectionTarget: [{ serviceCode: 'back', candidates: [], target: { runId: 'ready-back', serviceCode: 'back', url: 'http://127.0.0.1:8189', worktreeLabel: '本次订单验证', branch: 'feature/order' }, reason: null }] };
   html = render(RuntimeStartOptions, { ...props, items: [ready] });
   assert.match(html, /http:\/\/127\.0\.0\.1:8189/); assert.match(html, /本次订单验证/); assert.match(html, /feature\/order/);
   assert.doesNotMatch(html, /<input(?=[^>]*type="radio")(?=[^>]*value="local")(?=[^>]*disabled="")[^>]*>/);
   assert.equal(model.canUseLocalConnection([ready], ['front']), true);
-  assert.equal(model.taskSelections([ready], ['front'], 'local')[0].expectedBackendRunId, 'ready-back');
+  assert.deepEqual(model.taskSelections([ready], ['front'], 'local')[0].backendTargets, [{ serviceCode: 'back', target: 'run', runId: 'ready-back' }]);
   assert.equal(Object.hasOwn(model.taskSelections([ready], ['front'], 'remote')[0], 'expectedBackendRunId'), false);
   assert.equal(Object.hasOwn(model.taskSelections([item], ['front'], 'local')[0], 'expectedBackendRunId'), false, '整组后端尚未启动时不固定未知实例');
   assert.equal(model.canUseLocalConnection([item], ['front']), false, '轮询读到后端停止后不能继续提交旧目标');
@@ -190,4 +190,16 @@ test('启动与连接摘要展示真实声明和配置入口，普通服务不�
   const plain = render(RuntimeConfigurationSummary, { ...props, definition: service('back').definition });
   assert.match(plain, /未声明可切换的后端连接，按现有启动配置运行/); assert.match(plain, /配置启动与连接/);
   assert.doesNotMatch(plain, /远程测试地址|https:\/\/test\.example\.com|缺少配置|这是后端|这是前端/);
+});
+
+test('发现连接提交当前目标或明确缺失，展示泳道和 QA 原因而不为后端提供打开', () => {
+  const backend = { kind: 'service-discovery', serviceCode: 'back', serviceId: 'back-app', fallback: { kind: 'existing-discovery', context: 'qa' } };
+  assert.deepEqual(model.backendSelectionTargets([backend], {}, [{ serviceCode: 'back', state: 'missing', target: null }]), [{ serviceCode: 'back', target: 'auto', expectedRunId: null }]);
+  assert.deepEqual(model.backendSelectionTargets([backend], {}, [{ serviceCode: 'back', state: 'ready', target: { runId: 'observed' } }]), [{ serviceCode: 'back', target: 'auto', expectedRunId: 'observed' }]);
+  assert.deepEqual(model.backendSelectionTargets([backend], {}, [{ serviceCode: 'back', state: 'pending', target: null }]), [{ serviceCode: 'back', target: 'auto' }]);
+  const discovery = { ...run, connection: null, connections: [{ kind: 'service-discovery', serviceCode: 'back', serviceId: 'back-app', mode: 'remote', context: 'qa', url: null, runId: null, reason: '本次未选择本地下游' }], routing: { laneId: 'lane-test', contextDigest: 'digest', observation: { status: 'unknown' } } };
+  const html = render(LocalRunCard, { run: discovery, service: service('back'), onLogs() {}, onStop() {}, onStart() {}, onConnection() {} });
+  for (const text of ['lane-test', 'back-app', '本次未选择本地下游', '尚无当前运行观察']) assert.ok(html.includes(text), text);
+  assert.doesNotMatch(html, /target="_blank"|已连接|业务验证通过/);
+  assert.match(model.routingObservationLabel({ ...discovery, routing: { ...discovery.routing, observation: { status: 'observed', targets: {} } } }), /下游发现状态尚无观察/);
 });
