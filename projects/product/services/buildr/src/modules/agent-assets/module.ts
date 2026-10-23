@@ -420,6 +420,7 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
       const internal = Object.freeze({
         readPackageManifest: packageAssets.readPackageManifest,
         parseManifestFileEntry: packageAssets.parseManifestFileEntry,
+        keepPackageCustomizations: packageMaintenance.keepPackageCustomizations,
         syncPackageBuiltins: packageMaintenance.syncPackageBuiltins,
         syncPackageComponents: components.syncPackageComponents,
         renderSkillsManifestYaml: skills.renderSkillsManifestYaml,

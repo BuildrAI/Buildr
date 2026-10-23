@@ -132,3 +132,24 @@ test('重启核验：版本相同而安装归属变化，也不能报告更新�
   assert.equal(observed.stage, 'verify'); assert.equal(observed.steps.verify, 'failed');
   assert.equal(observed.error?.code, 'web_update_installation_slot_conflict');
 });
+
+test('完整更新：一次确认、跨实例准备全部空间、失败隔离，重试不再安装成功项', async t => {
+  let blocked = true; const prepared: string[] = [];
+  const entries = ['/space/a','/space/b','/space/c'].map((rootPath,index)=>({rootPath,workspaceId:`space-${index}`,name:rootPath,status:'pending',error:null}));
+  const f = fixture(t,{workspaces:{list:()=>entries,prepare:async(entry:any)=>{prepared.push(entry.rootPath);if(entry.rootPath==='/space/b'&&blocked)throw new Error('directory unavailable');}}});
+  f.fixLauncher();const old=f.create();old.webUpdatePrepare({track:'stable',expectedVersion:'1.1.0',autoApply:true});await tick();await tick();
+  assert.equal(f.calls.npm.length,2);assert.equal(prepared.length,0,'旧进程不使用旧能力准备空间');
+  f.setVersion('1.1.0');const next=f.create();next.webUpdateResume();await tick();await tick();
+  const partial=next.webUpdateStatus();assert.equal(partial.status,'partial');assert.equal(partial.stage,'workspaces');assert.deepEqual(partial.workspaces.map((entry:any)=>entry.status),['done','failed','done']);
+  assert.deepEqual(prepared,['/space/a','/space/b','/space/c']);
+  blocked=false;next.webUpdateRecover({expectedJobId:partial.id,expectedVersion:partial.version,action:'workspaces',rootPath:'/space/b'});await tick();await tick();
+  assert.equal(next.webUpdateStatus().status,'completed');assert.deepEqual(prepared,['/space/a','/space/b','/space/c','/space/b']);assert.equal(f.calls.npm.length,2);
+});
+
+test('共享资源准备失败可重试，失败不会被待处理空间掩盖或重复安装', async t => {
+  let damaged=true;let attempts=0;
+  const f=fixture(t,{workspaces:{list:()=>[{rootPath:'/space/a',workspaceId:'a',name:'a',status:'pending',error:null}],prepareResources:()=>{if(damaged)throw new Error('resource disk unavailable');},prepare:async()=>{attempts++;}}});
+  f.fixLauncher();const outgoing=f.create();outgoing.webUpdatePrepare({track:'stable',expectedVersion:'1.1.0',autoApply:true});await tick();await tick();
+  f.setVersion('1.1.0');const next=f.create();next.webUpdateResume();await tick();await tick();const failed=next.webUpdateStatus();assert.equal(failed.status,'partial');assert.equal(attempts,0);
+  damaged=false;next.webUpdateRecover({expectedJobId:failed.id,expectedVersion:failed.version,action:'workspaces'});await tick();await tick();assert.equal(next.webUpdateStatus().status,'completed');assert.equal(attempts,1);assert.equal(f.calls.npm.length,2);
+});

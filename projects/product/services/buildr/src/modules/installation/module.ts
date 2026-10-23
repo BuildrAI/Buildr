@@ -1,3 +1,4 @@
+import { createResourceLocation } from './application/resource-location.ts';
 import { registerApplicationCliUpdate } from './application/cli-update.ts';
 import { registerProductInstallationStatus } from './application/product-installation-status.ts';
 import { createInstallationCliContributions } from './interfaces/cli/installation.ts';
@@ -35,6 +36,7 @@ const APPLICATION_METHODS = Object.freeze([
   'releaseAwareness',
   'updateCheck',
   'updateBuildr',
+  'webUpdateResume',
   'webUpdatePrepare',
   'webUpdateStatus',
   'webUpdateApply',
@@ -55,6 +57,7 @@ export function createSystemInstallationModule(runtime: any) {
     requires: Object.freeze([]),
     create() {
       const composition = Object.create(runtime);
+      let workspaceUpdates: any = null;
       let webUpdates: NpmWebUpdatePort | null = null;
       Object.assign(composition, registerApplicationCliUpdate({ productRoot: runtime.productRoot, handoffUpdatedBuildrWeb: input => {
         if (!webUpdates) throw new Error('Web update lifecycle port is not bound.');
@@ -62,6 +65,7 @@ export function createSystemInstallationModule(runtime: any) {
       } }));
       Object.assign(composition, createWebUpdateFlow({
         productRoot: runtime.productRoot,
+        workspaces: { list: () => workspaceUpdates?.list() || [], prepareResources: () => workspaceUpdates.prepareResources(), prepare: (entry,options) => workspaceUpdates.prepare(entry,options) },
         store: createUpdateFlowStore(runtime.productRoot()),
         launcher: createUpdateLauncher(),
         releaseAwareness: (options: any) => composition.releaseAwareness(options),
@@ -84,7 +88,10 @@ export function createSystemInstallationModule(runtime: any) {
           [SYSTEM_INSTALLATION_IDENTITY]: identity,
           [SYSTEM_INSTALLATION_LAUNCHER]: launcher,
           [SYSTEM_INSTALLATION_APPLICATION]: application,
-          [SYSTEM_INSTALLATION_WEB_BINDER]: Object.freeze({ bindWebUpdates(port: NpmWebUpdatePort) {
+          [SYSTEM_INSTALLATION_WEB_BINDER]: Object.freeze({ bindWorkspaceUpdates(port: any) {
+            if (workspaceUpdates) throw new Error('Workspace update port is already bound.');
+            workspaceUpdates = port;
+          }, bindWebUpdates(port: NpmWebUpdatePort) {
             if (webUpdates || typeof port?.handoffUpdatedBuildrWeb !== 'function') throw new Error('Web update lifecycle port cannot be rebound or is invalid.');
             webUpdates = port;
           } }),
@@ -94,7 +101,7 @@ export function createSystemInstallationModule(runtime: any) {
             ...createInstallationCliContributions(application),
             ...createLauncherCliContributions(application),
           ]),
-          http: Object.freeze([createReleaseAwarenessHttpContribution(application), createUpdateFlowHttpContribution(application)]),
+          http: Object.freeze([createReleaseAwarenessHttpContribution(application), createUpdateFlowHttpContribution(application, createResourceLocation({ productRoot: runtime.productRoot }))]),
           diagnostics: Object.freeze([Object.freeze({ id: 'system-installation.diagnostics', readModel: application })]),
         },
       });

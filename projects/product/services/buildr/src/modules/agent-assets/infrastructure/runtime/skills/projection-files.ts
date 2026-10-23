@@ -355,7 +355,7 @@ export function listSkillProjectionOwnershipReceipts({ targetRoot, runtimeRoot, 
   return entries;
 }
 
-export function observeSkillProjectionOwnershipReceipt({ targetRoot, runtimeRoot, destination, adapterId, runtimePath, runtimeSkillDir, legacyRuntimePaths = [], skillId, assetIdentity, sourceIdentity, sourceWorkspaceId, receiptEntries }: any): any {
+export function observeSkillProjectionOwnershipReceipt({ targetRoot, runtimeRoot, destination, adapterId, runtimePath, runtimeSkillDir, legacyRuntimePaths = [], skillId, assetIdentity, sourceIdentity, previousSourceIdentity, sourceWorkspaceId, receiptEntries }: any): any {
   const ownerId = skillProjectionOwnerId(adapterId, runtimeRoot);
   const canonicalFile = historicalSkillProjectionOwnershipReceiptTarget(targetRoot, destination, ownerId, runtimePath);
   assertProjectionPath(targetRoot, canonicalFile);
@@ -373,7 +373,7 @@ export function observeSkillProjectionOwnershipReceipt({ targetRoot, runtimeRoot
   }
   for (const entry of entries) {
     const receipt = entry.receipt;
-    if (receipt.schemaVersion === RUNTIME_SKILL_PROJECTION_SCHEMA && ((skillId && receipt.skillId !== skillId) || (assetIdentity && receipt.assetIdentity !== assetIdentity) || (sourceIdentity && receipt.sourceIdentity !== sourceIdentity) || (destination === 'user' && sourceWorkspaceId && receipt.sourceWorkspaceId !== sourceWorkspaceId))) {
+    if (receipt.schemaVersion === RUNTIME_SKILL_PROJECTION_SCHEMA && ((skillId && receipt.skillId !== skillId) || (assetIdentity && receipt.assetIdentity !== assetIdentity) || (sourceIdentity && receipt.sourceIdentity !== sourceIdentity && !(destination === 'workspace' && sourceWorkspaceId === receipt.sourceWorkspaceId && assetIdentity === receipt.assetIdentity && previousSourceIdentity === receipt.sourceIdentity)) || (destination === 'user' && sourceWorkspaceId && receipt.sourceWorkspaceId !== sourceWorkspaceId))) {
       throw new Error(`Skill projection ownership identity conflict; no files were changed: ${entry.file}`);
     }
     if (preferred && !skillProjectionOwnershipReceiptsEquivalent(preferred.receipt, receipt, { ignoreRuntimePath: true })) {

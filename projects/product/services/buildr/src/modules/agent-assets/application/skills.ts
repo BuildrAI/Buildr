@@ -416,8 +416,9 @@ export function registerDomainsSkills(dependencies: SkillsDependencies) {
     const targetDir = path.join(scopeRoot, 'skills', targetRelative);
     assertSafeAssetTarget(targetRoot, targetDir, path.join(scopeRoot, 'skills'), 'Skill source target');
     const impacts = discloseReplacedSkillImpact(targetRoot, scope, existing, declarations);
+    if(existing?.resource&&componentOwnerForMember(targetRoot,`skills/${existing.path}`))throw new Error('此官方技能由组件管理，请使用组件维护入口。');
     copySupportedSkillSource(sourceDir, targetDir, source.entries, { replace });
-    const manifestEntry: any = { id: skillId, path: targetRelative };
+    const manifestEntry: any = { id: skillId, path: targetRelative, ...(existing?.resource ? { source:'workspace',customizedFrom:existing.id,customizedSourceIdentity:existing.sourceIdentity,...Object.fromEntries(['enabled','required','state','runtimePath','runtimes'].filter(key=>existing[key]!==undefined).map(key=>[key,existing[key]])) } : {}) };
     if (source.metadata.description) manifestEntry.description = source.metadata.description;
     applyCapabilityDeclarations(manifestEntry, existing, declarations);
     if (references !== undefined) manifestEntry.connectionDefinitions = [...references];
@@ -463,7 +464,8 @@ export function registerDomainsSkills(dependencies: SkillsDependencies) {
       const owner = componentOwnerForMember(targetRoot, `skills/${removed.path}`);
       if (owner) throw new Error(`Skill is managed by Component ${owner}: skills/${removed.path}. Use buildr component lifecycle commands.`);
     }
-    manifest.splice(existingIndex, 1);
+    if (removed.resource) manifest[existingIndex] = { ...removed, enabled: false, state: 'uninstalled' };
+    else manifest.splice(existingIndex, 1);
     const manifestPath = writeSkillsManifest(scopeRoot, manifest);
     return { action: '移除', targetRoot, id, updatedPaths: [manifestPath], skippedEntries: [], nextAction: '源目录和文件已保留；已有运行时投射需另行同步，不代表已经移除。', assetLabel: 'Skill 登记', deprecatedScope, impacts: impact?.impacts || [] };
   }

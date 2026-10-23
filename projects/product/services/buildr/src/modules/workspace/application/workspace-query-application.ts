@@ -1,3 +1,4 @@
+import { describePackageResources, readResourceAdoption, readSharedResourceSet } from '../../../infrastructure/product-resources/shared-resources.ts';
 import type { RegistryRepository } from '../persistence/workspace-registry-repository.ts';
 import type { WorkspaceRepository } from '../persistence/workspace-manifest-repository.ts';
 import { isWorkspaceId } from '../domain/workspace.ts';
@@ -97,7 +98,9 @@ export function registerWorkspaceQueryApplication(runtime: WorkspaceQueryApplica
       if (!record.workspace.id) {
         return { rootPath: root, status: 'migration_required', workspace: record.workspace, migrationRequired: true, registryScope: scope };
       }
-      return { rootPath: root, status: 'ready', workspace: record.workspace, migrationRequired: record.migrationRequired, registryScope: scope };
+      let readiness = 'pending';
+      try { const adopted=readResourceAdoption(root); if(adopted?.ready&&adopted.resourceSet===describePackageResources().id&&readSharedResourceSet().id===adopted.resourceSet)readiness='ready'; } catch { readiness='failed'; }
+      return { rootPath: root, status: 'ready', readiness, workspace: record.workspace, migrationRequired: record.migrationRequired, registryScope: scope };
     } catch (error: any) {
       return {
         rootPath: root,

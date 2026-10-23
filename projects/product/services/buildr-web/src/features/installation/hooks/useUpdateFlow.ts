@@ -25,7 +25,7 @@ export function useUpdateFlow({ enabled, onCompleted }: { enabled:boolean; onCom
     if(!expectingRestart.current||finished.current)return;
     if(next.simulated&&next.status==='completed'){
       finished.current=true;onCompleted?.();
-    }else if(!next.simulated&&next.installedVersion&&['partial','completed'].includes(next.status)){
+    }else if(!next.simulated&&next.installedVersion&&next.runningVersion!==next.version&&['partial','completed'].includes(next.status)){
       finished.current=true;
       // A new session and the successor's actual version are observed independently.
       void reconnect();
@@ -72,12 +72,12 @@ export function useUpdateFlow({ enabled, onCompleted }: { enabled:boolean; onCom
     finally{mutating.current=false;}
   },[accept]);
   return {awareness,job,checking,checkError,connection,check,reconnect,
-    prepare:(track:'stable'|'candidate',expectedVersion:string)=>mutate(()=>updateFlowApi.prepare({track,expectedVersion})),
+    prepare:(track:'stable'|'candidate',expectedVersion:string)=>mutate(()=>updateFlowApi.prepare({track,expectedVersion,autoApply:true}),true),
     apply:(expectedVersion:string)=>mutate(()=>updateFlowApi.apply({expectedVersion}),true),
-    recover:(action:'install'|'launcher'|'restart')=>{
+    recover:(action:'install'|'launcher'|'restart'|'workspaces',rootPath?:string,keepCustomizations=false)=>{
       const current=jobRef.current;
       if(!current?.id||!current.version)return Promise.reject(new Error('请重新读取本次更新。'));
-      return mutate(()=>updateFlowApi.recover({action,expectedJobId:current.id!,expectedVersion:current.version!}),action!=='launcher'||current.runningVersion!==current.version);
+      return mutate(()=>updateFlowApi.recover({action,...(rootPath?{rootPath}:{}),keepCustomizations,expectedJobId:current.id!,expectedVersion:current.version!}),action==='install'||action==='restart'||current.runningVersion!==current.version);
     },
   };
 }

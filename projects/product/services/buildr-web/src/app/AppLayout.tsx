@@ -1,3 +1,5 @@
+import { InstallationInfoDialog } from '../features/installation/components/InstallationInfoDialog';
+import { WorkspacePreparationNotice } from '../features/workspace/components/WorkspacePreparationNotice';
 import { AgentRuntimeProvider, useAgentRuntime } from './AgentRuntimeContext';
 import { AgentRegistryDrawer } from '../features/agents/components/AgentRegistryDrawer';
 import { agentStatusLabel } from '../features/agents/agent-model';
@@ -12,7 +14,7 @@ import { runtimeSystemApi } from './api/runtime-system-api';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Alert, Button, Dropdown, Drawer, Tooltip, Typography } from 'antd';
-import { AppstoreOutlined, CheckOutlined, CloseCircleOutlined, EllipsisOutlined, MenuOutlined, PlusOutlined, PoweroffOutlined, RobotOutlined, SettingOutlined, SyncOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, CheckOutlined, CloseCircleOutlined, EllipsisOutlined, InfoCircleOutlined, MenuOutlined, PlusOutlined, PoweroffOutlined, RobotOutlined, SettingOutlined, SyncOutlined } from '@ant-design/icons';
 import { api, setWorkspaceId } from '../api';
 import { AppShellContext, type WorkspaceShellInfo } from './AppShellContext';
 import { AppNavigation } from './AppNavigation';
@@ -133,6 +135,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
   const [quitting, setQuitting] = useState(false);
   const [quitError, setQuitError] = useState('');
   const quitPending = useRef(false);
+  const [installationInfoOpen, setInstallationInfoOpen] = useState(false);
   const updateEntryRef = useRef<UpdateEntryHandle>(null);
   const [restartPhase, setRestartPhase] = useState<null | 'watching' | 'timed-out'>(null);
   const [restartError, setRestartError] = useState('');
@@ -400,26 +403,19 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
             {!isGlobal ? <WorkbenchSearch key={workspaceId} /> : null}
             {!isGlobal ? <Button className="shell-menu-toggle" aria-label="打开导航菜单" icon={<MenuOutlined />} onClick={() => setNavigationOpen(true)} /> : null}
             <Tooltip title={defaultAgent ? defaultAgent.label + ' · ' + agentStatusLabel(defaultAgent) : agents.error || '查看或接入智能体'}><Button id="global-agents-entry" className={'shell-agent-entry'+(defaultAgent?.availability === 'available' ? ' is-connected' : ' is-offline')} aria-label="智能体" type="text" icon={<RobotOutlined />} onClick={() => agents.setOpen(true)}><span className="global-agent-label">{defaultAgent?.label || '智能体'}</span></Button></Tooltip>
-            <UpdateEntry ref={updateEntryRef} enabled={!preview} openAgentAction={openAgentAction} onCompleted={webProfile === 'development' ? devUpdateCompleted : undefined} />
-            {preview ? (
-              <Button id="quit-buildr" className="nav-quit" type="text" loading={quitting} onClick={() => { void quit(); }}>
-                退出
-              </Button>
-            ) : (
-              <Dropdown
-                menu={{
-                  items: [
-                    ...(!preview ? [{ key: 'check-update', icon: <SyncOutlined />, label: <span id="check-buildr-update">检查更新…</span>, onClick: () => updateEntryRef.current?.check() }] : []),
-                    { key: 'restart', icon: <PoweroffOutlined />, label: <span id="restart-buildr">重启 Buildr Web</span>, onClick: () => { void restart(); } },
-                    { key: 'quit', danger: true, icon: <CloseCircleOutlined />, label: <span id="quit-buildr">退出 Buildr Web</span>, onClick: () => { void quit(); } },
-                  ],
-                }}
-                trigger={['hover']}
-                placement="bottomRight"
-              >
-                <Button id="more-actions" className="nav-more" aria-label="更多操作" type="text" icon={<EllipsisOutlined />} loading={quitting} />
-              </Dropdown>
-            )}
+            <InstallationInfoDialog open={installationInfoOpen} onClose={() => setInstallationInfoOpen(false)} />
+            <UpdateEntry ref={updateEntryRef} enabled checkOnly={Boolean(preview)} openAgentAction={openAgentAction} onCompleted={webProfile === 'development' ? devUpdateCompleted : undefined} />
+            <Dropdown
+              menu={{ items: [
+                { key: 'installation-info', icon: <InfoCircleOutlined />, label: '安装信息', onClick: () => setInstallationInfoOpen(true) },
+                { key: 'check-update', icon: <SyncOutlined />, label: <span id="check-buildr-update">检查更新…</span>, onClick: () => updateEntryRef.current?.check() },
+                { key: 'restart', icon: <PoweroffOutlined />, disabled: Boolean(preview), title: preview ? '托管预览由开发工具重新启动' : undefined, label: <span id="restart-buildr">重启 Buildr Web</span>, onClick: () => { void restart(); } },
+                { key: 'quit', danger: true, icon: <CloseCircleOutlined />, label: <span id="quit-buildr">退出 Buildr Web</span>, onClick: () => { void quit(); } },
+              ] }}
+              trigger={['hover']} placement="bottomRight"
+            >
+              <Button id="more-actions" className="nav-more" aria-label="更多操作" type="text" icon={<EllipsisOutlined />} loading={quitting} />
+            </Dropdown>
             <div
               id="preview-identity"
               className="preview-identity hidden"
@@ -443,6 +439,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
               </Tooltip>
             ) : null}
 </>} />
+        {workspaceId&&!preview&&<WorkspacePreparationNotice key={workspaceId} workspaceId={workspaceId}/>}
         {quitError && <Alert id="quit-buildr-error" type="error" showIcon message="Buildr Web 尚未退出" description={quitError}
           action={<Button size="small" loading={quitting} onClick={() => void quit(false)}>重试退出</Button>} />}
         {restartError && <Alert id="restart-buildr-error" type="error" showIcon message="Buildr Web 尚未重启" description={restartError}

@@ -1,3 +1,4 @@
+import { SYSTEM_INSTALLATION_APPLICATION } from '../modules/installation/module.ts';
 import { registerWebInstanceLifecycle } from './application/instance-lifecycle.ts';
 import { createWebCliContributions } from './interfaces/cli/web.ts';
 import { createLocalWorkspaceServer } from './http/server.ts';
@@ -20,6 +21,7 @@ export function readCurrentBuildrWebOrigin(profile: { dataRoot: string }): strin
 }
 
 type WebModuleDependency = {
+  webUpdateResume?():void;
   ensureRegisteredTarget?(root: string | null): string | null;
   resolveRegisteredWorkspace?: WebLifecycleOptions['resolveRegisteredWorkspace'];
   readCurrentProductIdentity?(): ReturnType<WebLifecycleOptions['readProductIdentity']>;
@@ -36,8 +38,10 @@ export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: {
   const httpContributions = options.httpContributions || [];
   return Object.freeze({
     id: WEB_MODULE_ID,
-    requires: Object.freeze([WORKSPACE_APPLICATION, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER, SYSTEM_INSTALLATION_IDENTITY, SYSTEM_INSTALLATION_LAUNCHER]),
+    requires: Object.freeze([WORKSPACE_APPLICATION, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER, SYSTEM_INSTALLATION_IDENTITY, SYSTEM_INSTALLATION_LAUNCHER, SYSTEM_INSTALLATION_APPLICATION]),
     create(requires: WebModuleRequires) {
+      const resumeUpdate=requires[SYSTEM_INSTALLATION_APPLICATION]?.webUpdateResume;
+      if(typeof resumeUpdate!=='function')throw new Error('Web update continuation port is missing.');
       const identity = requires[SYSTEM_INSTALLATION_IDENTITY];
       const launcher = requires[SYSTEM_INSTALLATION_LAUNCHER];
       const workspace = requires[WORKSPACE_APPLICATION];
@@ -57,7 +61,7 @@ export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: {
       registerWebInstanceLifecycle(composition, {
         httpContributions,
         closeResources: options.closeResources,
-        createLocalWorkspaceServer: (webRuntime, serverOptions) => Reflect.apply(createLocalWorkspaceServer, undefined, [webRuntime, serverOptions]),
+        createLocalWorkspaceServer: (webRuntime, serverOptions) => Reflect.apply(createLocalWorkspaceServer, undefined, [webRuntime, { ...serverOptions, onReady: () => { if (!serverOptions.previewIdentity) resumeUpdate(); } }]),
         ensureRegisteredTarget: workspace.ensureRegisteredTarget,
         resolveRegisteredWorkspace: workspace.resolveRegisteredWorkspace,
         readProductIdentity: identity.readCurrentProductIdentity,

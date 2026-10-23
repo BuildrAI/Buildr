@@ -13,6 +13,8 @@ const skillSummary = closed({ id: text, title: text, description: { type: 'strin
 const skillFileEntry = closed({ path: text, size: { type: 'number' }, readable: { type: 'boolean' }, reason: nullableText }, ['path', 'size', 'readable', 'reason']);
 
 export const AGENT_ASSETS_HTTP_SCHEMAS: Readonly<Record<string, any>> = Object.freeze({
+  skillOpenRequest: schema('skills/open/request', 'SkillOpenRequest', closed({})),
+  skillOpenResponse: schema('skills/open/response', 'SkillOpenResponse', closed({requested:{const:true}}, ['requested'])),
   skillCandidatesRequest: schema('skills/candidates/request', 'SkillCandidatesRequest', closed({})),
   skillCandidatesResponse: schema('skills/candidates/response', 'SkillCandidatesResponse', closed({ revision: text, candidates: { type: 'array', items: closed({ id: text, path: text, description: { type: 'string' }, observation: text }, ['id', 'path', 'description', 'observation']) }, diagnostics: { type: 'array', items: text } }, ['revision', 'candidates', 'diagnostics'])),
   skillRegisterRequest: schema('skills/register/request', 'SkillRegisterRequest', closed({ revision: text, id: text, description: text, content: text, path: text, observation: text }, ['revision'])),
@@ -42,6 +44,7 @@ export const AGENT_ASSETS_HTTP_SCHEMAS: Readonly<Record<string, any>> = Object.f
 });
 
 export const AGENT_ASSETS_HTTP_OPERATIONS = Object.freeze([
+  ['agent-assets.skills.open', 'POST', '/agent-assets/skills/:id/open', 'skillOpenRequest', 'skillOpenResponse'],
   ['agent-assets.skills.candidates', 'GET', '/agent-assets/skill-candidates', 'skillCandidatesRequest', 'skillCandidatesResponse'],
   ['agent-assets.skills.register', 'POST', '/agent-assets/skills', 'skillRegisterRequest', 'skillMutationResponse'],
   ['agent-assets.skills.removal', 'GET', '/agent-assets/skills/:id/removal', 'skillDetailRequest', 'skillRemovalResponse'],

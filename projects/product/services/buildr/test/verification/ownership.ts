@@ -115,6 +115,8 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/infrastructure/filesystem/atomic-files.ts",
       "src/infrastructure/filesystem/workspace-mutation.ts",
       "src/infrastructure/filesystem/workspace-path.ts",
+      "src/infrastructure/product-resources/shared-resources.ts",
+      "src/modules/agent-assets/infrastructure/shared-skill-source.ts",
       "resources/workspace/AGENTS.md",
       "resources/workspace/components/**",
       "resources/workspace/skills/buildr/task-triage/**",

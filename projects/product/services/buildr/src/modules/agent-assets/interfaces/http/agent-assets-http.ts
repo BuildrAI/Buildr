@@ -27,6 +27,12 @@ export function createAgentAssetsHttpContribution(application: any): any  {
         authorizeWrite();
         return { status: 200, body: success('agent-assets.skills.register', application.registerLocalSkill(root, request('agent-assets.skills.register', await readJsonBody()))) };
       }
+      const openSource = suffix.match(/^\/agent-assets\/skills\/([^/]+)\/open$/);
+      if (httpRequest.method === 'POST' && openSource) {
+        authorizeWrite();
+        request('agent-assets.skills.open', await readJsonBody());
+        return { status: 200, body: success('agent-assets.skills.open', await application.openSkillSource(root, decodeURIComponent(openSource[1]))) };
+      }
       const removal = suffix.match(/^\/agent-assets\/skills\/([^/]+)\/removal$/);
       if (httpRequest.method === 'GET' && removal) return { status: 200, body: success('agent-assets.skills.removal', application.skillRemoval(root, decodeURIComponent(removal[1]))) };
       const removeSkill = suffix.match(/^\/agent-assets\/skills\/([^/]+)$/);

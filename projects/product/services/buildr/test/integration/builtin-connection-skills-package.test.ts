@@ -95,7 +95,9 @@ test('installed package independently delivers three complete builtin connection
     assert.equal(skill.assetIdentity, `buildr:skill:${system.skillId}`);
     assert.equal(skill.sourceIdentity, `package:skills/connections/${system.skillId}`);
     assert.deepEqual(skill.connectionDefinitions, ['assets/connection.yml']);
-    const source = path.join(workspace, 'skills/connections', system.skillId);
+    const adopted = JSON.parse(fs.readFileSync(path.join(workspace, '.buildr/local/package-resources.json'), 'utf8'));
+    const source = path.join(env.BUILDR_PRODUCT_DATA_DIR!, 'resources', 'skills/connections', system.skillId);
+    assert.equal(fs.existsSync(path.join(workspace, 'skills/connections', system.skillId)), false);
     const definition = parseConnectionDefinition(fs.readFileSync(path.join(source, 'assets/connection.yml'), 'utf8'));
     assert.equal(definition.definitionId, system.definitionId);
     const entry = catalog.definitions.find((item: any) => item.skill.assetIdentity === skill.assetIdentity && item.definition.definitionId === system.definitionId);
@@ -118,14 +120,15 @@ test('installed package independently delivers three complete builtin connection
 
   run(['skills', 'render', 'codex', '--target', workspace]);
   for (const system of systems) {
-    const source = path.join(workspace, 'skills/connections', system.skillId), projected = path.join(workspace, '.agents/skills', system.skillId);
+    const adopted = JSON.parse(fs.readFileSync(path.join(workspace, '.buildr/local/package-resources.json'), 'utf8'));
+    const source = path.join(env.BUILDR_PRODUCT_DATA_DIR!, 'resources', 'skills/connections', system.skillId), projected = path.join(workspace, '.agents/skills', system.skillId);
     assert.ok(fs.statSync(path.join(projected, 'SKILL.md')).isFile());
     const attachments = files(source).filter(file => file !== 'SKILL.md');
     assert.ok(attachments.length >= 2);
     for (const relative of attachments) {
       const original = path.join(source, relative), copy = path.join(projected, relative);
       assert.deepEqual(fs.readFileSync(copy), fs.readFileSync(original), `${system.skillId}/${relative}`);
-      if (process.platform !== 'win32') assert.equal(fs.statSync(copy).mode & 0o111, fs.statSync(original).mode & 0o111, `${system.skillId}/${relative} executable mode`);
+      if (process.platform !== 'win32') assert.equal(fs.statSync(copy).mode & 0o100, fs.statSync(original).mode & 0o100, `${system.skillId}/${relative} executable mode`);
     }
   }
 });

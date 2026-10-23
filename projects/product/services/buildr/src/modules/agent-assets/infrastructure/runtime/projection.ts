@@ -261,7 +261,7 @@ export function assembleRuntimeProjection(options: any): any  {
   const skillScope = '.';
   const skillConflicts: any[] = [];
   const workspaceSkills = selection.workspaceSkills ? resolveRenderSkills(repoRoot, skillScope, runtimeId, { adapterId: adapter.id }) : [];
-  const productSkill = selection.productSkill ? resolvePackageAgentSkill(runtimeId, 'buildr', { adapterId: adapter.id }) : null;
+  const productSkill = selection.productSkill ? resolvePackageAgentSkill(runtimeId, 'buildr', { adapterId: adapter.id, workspaceRoot: targetRoot }) : null;
   const productProjection = productSkill
     ? buildSkillRenderPlan(repoRoot, targetRoot, [productSkill], runtimeId, { adapterId: adapter.id, deferConflicts: true, conflicts: skillConflicts, destination: options.destination || 'workspace' })
     : { writes: [], removals: [] };

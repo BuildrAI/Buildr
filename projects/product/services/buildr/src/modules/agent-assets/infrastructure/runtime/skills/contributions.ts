@@ -1,3 +1,5 @@
+import { sharedSkillSource } from '../../shared-skill-source.ts';
+import { assetIntegrity } from '../../component-source.ts';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -96,6 +98,8 @@ function safeWorkspaceFile(organizationRoot: any, relativePath: any, label: any)
 }
 
 function workspaceAssetIntegrity(organizationRoot: any, relativePath: any, label: any): any  {
+  const shared = sharedSkillSource(organizationRoot, relativePath);
+  if (shared !== path.join(organizationRoot, relativePath)) return assetIntegrity(shared);
   const normalized = normalizeRelativePath(relativePath);
   const absolute = path.resolve(organizationRoot, normalized);
   const relative = path.relative(organizationRoot, absolute);

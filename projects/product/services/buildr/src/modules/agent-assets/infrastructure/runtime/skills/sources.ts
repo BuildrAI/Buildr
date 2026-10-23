@@ -1,3 +1,4 @@
+import { readResourceAdoption, resolveSharedResource } from '../../../../../infrastructure/product-resources/shared-resources.ts';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -109,6 +110,10 @@ export function resolvePackageAgentSkill(runtime: any, skillId: any = 'buildr', 
   const skill = readPackageAgentSkills(runtime).find((entry: any) => entry.id === skillId);
   if (!skill) {
     throw new Error(`Product Agent Skill not found for ${runtime}: ${skillId}`);
+  }
+  if (options.workspaceRoot && readResourceAdoption(options.workspaceRoot)) {
+    skill.sourceFile = resolveSharedResource(options.workspaceRoot, `${skill.displaySource}`);
+    skill.sourceDir = path.dirname(skill.sourceFile);
   }
   return withRuntimeSkillLayout(skill, runtime, options.adapterId);
 }
@@ -235,7 +240,7 @@ function loadLayer(manifestPath: any, options: any = {}): any  {
       return decorateResolvedSkill(resolved, skill, manifestPath, options.scope, document.workspaceId);
     }
     const skillPath = normalizeRelativePath(skill.path);
-    const sourceDir = path.join(manifestDir, skillPath);
+    const sourceDir = skill.resource ? path.dirname(resolveSharedResource(path.dirname(manifestDir), `${skill.resource}/SKILL.md`)) : path.join(manifestDir, skillPath);
     const sourceFile = path.join(sourceDir, 'SKILL.md');
     ensureFile(sourceFile, `Skill SKILL.md not found: ${sourceFile}`);
     const sourceName = parseSkillFrontmatterName(sourceFile);
@@ -260,6 +265,7 @@ function decorateResolvedSkill(resolved: any, manifestEntry: any, manifestPath: 
     ...(manifestEntry.runtimes !== undefined ? { runtimes: manifestEntry.runtimes } : {}),
     assetIdentity: manifestEntry.assetIdentity,
     sourceIdentity: manifestEntry.sourceIdentity,
+    previousSourceIdentity: manifestEntry.customizedFrom && manifestEntry.source === 'workspace' ? manifestEntry.customizedSourceIdentity : undefined,
     workspaceId,
     provides: manifestEntry.provides || [],
     requires: manifestEntry.requires || [],

@@ -1,3 +1,4 @@
+import { resolveSharedResource } from '../../src/infrastructure/product-resources/shared-resources.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -57,6 +58,7 @@ function scenario() {
   const target = ['--target', workspace];
   const source = path.join(serviceRoot, 'resources/workspace/skills/buildr/archify');
   const installed = path.join(workspace, 'skills/buildr/archify');
+  const sharedInstalled = () => path.dirname(resolveSharedResource(workspace,'resources/workspace/skills/buildr/archify/SKILL.md'));
   const projected = path.join(workspace, '.agents/skills/archify');
   const definitionPath = path.join(serviceRoot, 'resources/workspace/components/buildr/archify/component.yml');
   const definition = YAML.parse(fs.readFileSync(definitionPath, 'utf8'));
@@ -84,7 +86,8 @@ function scenario() {
   assert.equal(fs.readFileSync(path.join(external, 'SKILL.md'), 'utf8'), externalBody);
 
   run(['component', 'install', 'archify', '--agent', 'codex', ...target]);
-  assert.equal(assetIntegrity(installed), assetIntegrity(source));
+  assert.equal(fs.existsSync(installed), false);
+  assert.equal(assetIntegrity(sharedInstalled()), assetIntegrity(source));
   for (const relative of ['assets/archify/bin/archify.mjs', 'assets/archify/assets/template.html', 'assets/archify/LICENSE', 'assets/archify/skill-release.json']) {
     assert.deepEqual(fs.readFileSync(path.join(projected, relative)), fs.readFileSync(path.join(source, relative)));
   }
@@ -116,6 +119,9 @@ function scenario() {
 
   // Simulate a matching prior release: existing component update must replace it safely.
   const receiptPath = path.join(workspace, 'components/buildr/archify/component.yml');
+  fs.cpSync(sharedInstalled(),installed,{recursive:true});
+  const skillsFile=path.join(workspace,'skills/manifest.yml');
+  const legacySkills=YAML.parse(fs.readFileSync(skillsFile,'utf8'));delete legacySkills.skills.find((skill:any)=>skill.id==='archify').resource;fs.writeFileSync(skillsFile,YAML.stringify(legacySkills));
   const priorProgram = path.join(installed, 'assets/archify/bin/archify.mjs');
   fs.appendFileSync(priorProgram, '\n// prior-release fixture\n');
   const priorDefinition = YAML.parse(fs.readFileSync(receiptPath, 'utf8'));
@@ -123,8 +129,10 @@ function scenario() {
   priorDefinition.integrity = [`skills/buildr/archify=${assetIntegrity(installed)}`];
   fs.writeFileSync(receiptPath, YAML.stringify(priorDefinition));
   run(['sync', 'codex', ...target]);
-  assert.equal(assetIntegrity(installed), assetIntegrity(source));
+  assert.equal(fs.existsSync(installed), false);
+  assert.equal(assetIntegrity(sharedInstalled()), assetIntegrity(source));
 
+  fs.cpSync(sharedInstalled(),installed,{recursive:true});
   fs.appendFileSync(priorProgram, '\n// user modification\n');
   const modified = fs.readFileSync(priorProgram);
   run(['component', 'uninstall', 'archify', '--agent', 'codex', ...target], 1);

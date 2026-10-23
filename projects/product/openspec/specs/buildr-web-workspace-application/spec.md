@@ -57,18 +57,23 @@ Buildr MUST 返回基于 canonical Manifest bytes 的 revision，并对页面修
 - **AND** 页面 MUST 提示用户刷新后重新判断
 
 ### Requirement: 新增 Workspace 必须生成可复制 Agent prompt
-Buildr MUST 让 Workspace 新增页面生成完整 prompt，而不是直接初始化目标目录或声称 Workspace 已创建。
+Buildr SHALL 保留可复制智能体（Agent）指令作为可选能力，并提供选择本机目录后直接初始化、登记与准备的主要入口。普通添加 MUST NOT 要求用户复制指令、理解同步或运行时投射。
+
+#### Scenario: 添加普通目录
+- **WHEN** 用户选择目录并确认名称
+- **THEN** MUST 自动初始化、登记、准备入口和检查结果，成功后说明选择该目录即可开始新对话
+
+#### Scenario: 已有目录或准备失败
+- **WHEN** 目录已有身份或之前准备失败
+- **THEN** MUST 接续同一身份并允许重试，MUST NOT 重复登记或覆盖未知用户内容
 
 #### Scenario: 生成 Workspace 新增 prompt
-- **WHEN** 用户填写 Workspace 名称、说明和可选目标位置并请求生成
-- **THEN** Application MUST 返回可直接复制到 Agent 对话框的 prompt
-- **AND** prompt MUST 要求 Agent 读取 Buildr Skill、核对目标位置和授权、补充必要信息、执行 canonical init/sync 并验证结果
-- **AND** prompt MUST NOT 猜测用户未提供的路径、runtime 或权限
+- **WHEN** 用户选择可选智能体指令并填写名称、说明和位置
+- **THEN** MUST 返回可复制指令并保留目标核对与授权说明
 
 #### Scenario: 复制 prompt
-- **WHEN** 用户点击复制且浏览器复制成功
-- **THEN** 页面 MUST 显示复制成功反馈
-- **AND** 页面 MUST 明确说明复制不等于 Workspace 已创建
+- **WHEN** 指令复制成功
+- **THEN** MUST 说明复制不等于创建
 
 ### Requirement: 本地应用写 API 必须使用最小安全边界
 Buildr MUST 保护本地页面的写操作，避免其他网页或任意路径输入利用本地应用修改 Workspace。
@@ -344,22 +349,23 @@ Buildr MUST 为项目与服务提供独立管理视图和稳定的项目详情�
 - **THEN** HTTP API MUST 继续执行已有 session、Origin、JSON、body size、字段白名单和 revision conflict 约束
 
 ### Requirement: 新 Workspace 动作必须统一表达为交给 Agent
-Buildr MUST 在全局工作空间目录提供“让 Agent 创建工作空间”入口来生成新 Workspace prompt，并 MUST 明确该动作不会切换当前 Workspace 或直接完成创建。App Shell 顶栏的“交给 Agent”按钮 MUST 仅在已进入某个工作空间后显示。
+全局目录 SHALL 提供直接添加工作空间入口；可选智能体（Agent）指令仍不得把复制冒充创建。顶栏交给智能体按钮 SHALL 仅在进入某空间后显示。
+
+#### Scenario: 目录中添加
+- **WHEN** 用户打开全局目录
+- **THEN** MUST 能选择本机目录、确认并查看真实准备及失败重试结果
 
 #### Scenario: 生成新 Workspace prompt
-- **WHEN** 用户从全局工作空间目录打开创建工作空间 Agent Action 并填写名称、说明和可选目标位置
-- **THEN** 页面 MUST 调用现有 Workspace prompt Application 用例
-- **AND** MUST 展示可复制的完整 prompt
+- **WHEN** 用户选择可选指令入口
+- **THEN** MUST 调用既有指令生成能力并展示完整结果
 
 #### Scenario: 复制新 Workspace prompt
-- **WHEN** prompt 成功复制
-- **THEN** 页面 MUST 提示指令已复制但 Workspace 尚未创建
-- **AND** 当前 App Shell MUST 继续显示原 Workspace 上下文
+- **WHEN** 指令被复制
+- **THEN** MUST 保留当前空间上下文并说明尚未创建
 
 #### Scenario: 顶栏交给 Agent 仅在工作空间内显示
-- **WHEN** 用户停留在全局工作空间目录（未进入任一工作空间）
-- **THEN** App Shell 顶栏 MUST NOT 显示“交给 Agent”按钮
-- **AND** 全局工作空间目录 MUST 仍提供“让 Agent 创建工作空间”入口
+- **WHEN** 用户停留在全局目录
+- **THEN** MUST 隐藏顶栏交给智能体按钮并保留直接添加入口
 
 ### Requirement: 项目与服务创建必须使用抽屉式 Agent Action
 Buildr MUST 将直接对象登记与“交给 Agent”入口区分。创建项目使用抽屉并支持可选服务，新增服务使用抽屉，内联新增代码库；顶栏继续提供不产生登记副作用的智能体动作。

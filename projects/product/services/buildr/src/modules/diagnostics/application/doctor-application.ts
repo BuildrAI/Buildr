@@ -1,3 +1,4 @@
+import { describePackageResources, inspectSharedResources, readResourceAdoption } from '../../../infrastructure/product-resources/shared-resources.ts';
 import path from 'node:path';
 import { resolveRuntimeSelection } from '../../agent-assets/infrastructure/runtime/adapter-contract.ts';
 
@@ -208,6 +209,14 @@ export function registerSystemDoctorApplication(dependencies: DoctorDependencies
     if (result.workspace?.initialized) diagnoseSkillCapabilities(result, targetRoot, scopes, onlySelection ?? requestedSelection);
     if (result.workspace?.initialized) {
       try {
+        const adopted = readResourceAdoption(targetRoot);
+        const desired = describePackageResources();
+        if (!adopted || adopted.resourceSet !== desired.id) addDoctorFinding(result, 'warning', 'workspace.resources_outdated', '此工作空间尚未采用当前 Buildr 资源。', { path: '.buildr/local/package-resources.json', suggestion: '在 Buildr 中重试准备此工作空间。', userActionRequired: false });
+        const shared = inspectSharedResources();
+        if (shared.id !== desired.id) addDoctorFinding(result, 'warning', 'workspace.resources_store_outdated', '本机共享资源尚未匹配当前 Buildr，请重新准备。', { path: 'resources/resource-set.json', userActionRequired: false });
+        if (adopted && !adopted.ready) addDoctorFinding(result, 'warning', 'workspace.resources_pending', '工作空间尚未按固定共享目录完成入口检查。', { path: '.buildr/local/package-resources.json', userActionRequired: false });
+      } catch (error: any) { addDoctorFinding(result, 'error', 'workspace.resources_invalid', error.message, { path: '.buildr/local/package-resources.json', suggestion: '在 Buildr 中重试准备此工作空间。', userActionRequired: false }); }
+      try {
         const builtinStatus = inspectPackageBuiltins(targetRoot);
         result.builtins.items = builtinStatus.findings;
         for (const finding of builtinStatus.findings.filter((item: any) => !item.component)) {
@@ -221,7 +230,9 @@ export function registerSystemDoctorApplication(dependencies: DoctorDependencies
             });
             continue;
           }
-          if (finding.status === 'installed' || (finding.status === 'uninstalled' && !includeInfo)) continue;
+          if (finding.status === 'customized' || (finding.status === 'installed' && !finding.converge) || (finding.status === 'uninstalled' && !includeInfo)) continue;
+          if(finding.type==='contract'&&finding.status==='modified'){addDoctorFinding(result,'warning','workspace.contract_modified','此工作空间保留了本地方法约定，尚未确认采用方式。',{path:finding.path,suggestion:'在 Buildr 中准备此工作空间并核对是否保留定制。',userActionRequired:true});continue;}
+          if (finding.status === 'installed' && finding.converge) { addDoctorFinding(result, 'warning', 'builtin.outdated', `工作内容 ${finding.id} 尚未更新到当前 Buildr。`, {path:finding.path,suggestion:'在 Buildr 中重新准备此工作空间。',userActionRequired:false}); continue; }
           const status = finding.status === 'uninstalled' ? 'info' : 'warning';
           addDoctorFinding(result, status, `builtin.${finding.status}`, `Buildr builtin ${finding.type}:${finding.id} 状态为 ${finding.status}。`, {
             path: finding.path,

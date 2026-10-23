@@ -18,6 +18,7 @@ export function createPackageSyncPlan({
       path.join(targetRoot, 'skills', 'contracts', 'buildr'),
       path.join(targetRoot, 'commands', 'manifest.yml'),
       path.join(targetRoot, '.buildr', 'builtin-receipts.json'),
+      path.join(targetRoot, '.buildr', 'local', 'package-resources.json'),
       ...packageRegistryMutationPaths(targetRoot),
     ]);
     for (const builtin of [...manifest.builtins.rules, ...manifest.builtins.skills]) {

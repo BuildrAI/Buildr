@@ -6,12 +6,13 @@ import { useSideReading } from '../../../components/useSideReading';
 import { prototypeEntries, prototypeSourceLabel, validPrototypeMessage, type UiPrototypeData } from './prototype-content';
 import './prototype-reader.css';
 export type { UiPrototypePage, UiPrototypeData } from './prototype-content';
-type Props = { active:boolean; workspaceId:string|null; data:UiPrototypeData|null; loading:boolean; error:string|null; onRefresh():void; selectedKey?:string; onSelect?(key:string):void; standalone?:boolean; initialState?:string; onAuxiliaryOpen?():void; closeAuxiliaryToken?:number; documentHtml?:string };
-export function PrototypeTab({ active, workspaceId, data, loading, error, onRefresh, selectedKey, onSelect, standalone=false, initialState='', onAuxiliaryOpen, closeAuxiliaryToken, documentHtml }: Props) {
+type Props = { active:boolean; workspaceId:string|null; data:UiPrototypeData|null; loading:boolean; error:string|null; onRefresh():void; selectedKey?:string; onSelect?(key:string):void; standalone?:boolean; initialState?:string; onAuxiliaryOpen?():void; closeAuxiliaryToken?:number; documentHtml?:string; resetStateToken?:number; sourceLabel?:string };
+export function PrototypeTab({ active, workspaceId, data, loading, error, onRefresh, selectedKey, onSelect, standalone=false, initialState='', onAuxiliaryOpen, closeAuxiliaryToken, documentHtml, resetStateToken, sourceLabel }: Props) {
   const entries = useMemo(() => prototypeEntries(data),[data]);
   const [localKey,setLocalKey] = useState(selectedKey || '');
   const selected = entries.find(entry => entry.key === (selectedKey ?? localKey)) || entries[0];
   const [state,setState] = useState(initialState), [position,setPosition] = useState<string>();
+  useEffect(() => { if(resetStateToken !== undefined)setState(''); },[resetStateToken]);
   const rootRef = useRef<HTMLElement>(null), frameRef = useRef<HTMLIFrameElement>(null);
   const notes = useSideReading(data?.taskId || '',rootRef,'prototype-notes');
   const highlighted=useRef<string|undefined>(undefined);
@@ -66,7 +67,7 @@ export function PrototypeTab({ active, workspaceId, data, loading, error, onRefr
       {!standalone && selected && <Button id="task-prototype-open-window" size="small" onClick={() => window.open(`/workspaces/${encodeURIComponent(workspaceId || '')}/tasks/${encodeURIComponent(data?.taskId || '')}/prototypes?page=${encodeURIComponent(selected.key)}&state=${encodeURIComponent(effectiveState)}`,'_blank','noopener,noreferrer')}>单独查看</Button>}
       <Button id="prototype-notes-toggle" size="small" aria-expanded={notes.open} aria-controls="prototype-notes-panel" onPointerEnter={event => notes.enter('trigger',event.pointerType)} onPointerLeave={event => notes.exit('trigger',event.pointerType)} onFocus={notes.cancel} onBlur={notes.leave} onClick={notes.toggle} onKeyDown={event => { if(event.key === 'Escape') closeNotes(); }}>功能说明</Button>
     </div></div>
-    {selected && <details id="task-prototype-source" className="prototype-source"><summary>来源与范围</summary>{prototypeSourceLabel(selected.file)} · {selected.file.path}<p>关键页面的预期效果；模拟操作仅影响本次演示。</p></details>}
+    {selected && <details id="task-prototype-source" className="prototype-source"><summary>来源与范围</summary>{sourceLabel ?? prototypeSourceLabel(selected.file)} · {selected.file.path}<p>关键页面的预期效果；模拟操作仅影响本次演示。</p></details>}
     <div className={`prototype-reading-layout${notes.open && notes.pinned ? ' has-notes' : ''}`}>
       <div className="prototype-canvas">{selected && (src || documentHtml !== undefined) ? <div className="prototype-viewport"><iframe key={fileKey} ref={frameRef} id="task-prototype-frame" title={selected.scene.title} sandbox="allow-scripts" referrerPolicy="no-referrer" src={src} srcDoc={documentHtml} onLoad={() => { if(loaded.current)return; nonce.current ||= crypto.randomUUID(); loaded.current = true; send(); }} /></div> : <p id="task-prototype-empty">{loading ? '正在读取原型…' : '暂无可查看的界面原型。'}</p>}</div>
       <SideReadingPanel id="prototype-notes" title="功能说明" open={notes.open} pinned={notes.pinned} canPin={notes.canPin} onTogglePin={notes.togglePin} onClose={closeNotes} onPointerEnter={event => notes.enter('panel',event.pointerType)} onPointerLeave={event => notes.exit('panel',event.pointerType)} onFocusCapture={notes.cancel} onBlurCapture={notes.leave}>

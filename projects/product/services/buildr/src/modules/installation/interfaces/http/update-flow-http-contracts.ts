@@ -11,7 +11,8 @@ const jobSnapshot = closed({
   schemaVersion: { const: 'buildr.web-update-flow/v2' },
   id: nullableText,
   revision: { type: 'integer', minimum: 0 },
-  stage: { enum: ['idle', 'download', 'ready', 'install', 'launcher', 'restart', 'verify', 'completed'] },
+  stage: { enum: ['idle', 'download', 'ready', 'install', 'launcher', 'restart', 'verify', 'workspaces', 'completed'] },
+  workspaces: { type: 'array', items: closed({ rootPath: text, workspaceId: nullableText, name: text, status: { enum: ['pending','running','done','failed','skipped'] }, error: nullableText, details:{type:'string'}, customizations: {type:'array',items:closed({id:text,integrity:text},['id','integrity'])} }, ['rootPath','workspaceId','name','status','error']) },
   runningVersion: nullableText,
   installedVersion: nullableText,
   simulated: { type: 'boolean' },
@@ -26,15 +27,19 @@ const jobSnapshot = closed({
 }, ['schemaVersion', 'id', 'revision', 'status', 'stage', 'track', 'version', 'currentVersion', 'runningVersion', 'installedVersion', 'simulated', 'steps', 'launcherError', 'error', 'updatedAt']);
 
 export const UPDATE_FLOW_HTTP_SCHEMAS = Object.freeze({
+  resourceLocationRequest: schema('resources/request', 'ResourceLocationRequest', closed({})),
+  resourceLocationResponse: schema('resources/response', 'ResourceLocationResponse', closed({version:text,resourceSet:text,path:text,available:{type:'boolean'},issue:nullableText}, ['version','resourceSet','path','available','issue'])),
+  resourceOpenRequest: schema('resources/open/request', 'ResourceOpenRequest', closed({resourceSet:text}, ['resourceSet'])),
+  resourceOpenResponse: schema('resources/open/response', 'ResourceOpenResponse', closed({requested:{const:true}}, ['requested'])),
   prepareRequest: schema('update-flow/prepare-request', 'UpdateFlowPrepareRequest', closed({
     track: { enum: ['stable', 'candidate'] },
-    expectedVersion: text,
+    expectedVersion: text, autoApply: { type: 'boolean' },
   }, ['track', 'expectedVersion'])),
   applyRequest: schema('update-flow/apply-request', 'UpdateFlowApplyRequest', closed({
     expectedVersion: text,
   }, ['expectedVersion'])),
   recoveryRequest: schema('update-flow/recovery-request', 'UpdateFlowRecoveryRequest', closed({
-    expectedJobId: text, expectedVersion: text, action: { enum: ['install', 'launcher', 'restart'] },
+    expectedJobId: text, expectedVersion: text, action: { enum: ['install', 'launcher', 'restart', 'workspaces'] }, rootPath: text, keepCustomizations: {type:'boolean'},
   }, ['expectedJobId', 'expectedVersion', 'action'])),
   statusRequest: schema('update-flow/status-request', 'UpdateFlowStatusRequest', closed({})),
   jobResponse: schema('update-flow/job-response', 'UpdateFlowJobResponse', jobSnapshot),
@@ -42,6 +47,8 @@ export const UPDATE_FLOW_HTTP_SCHEMAS = Object.freeze({
 });
 
 export const UPDATE_FLOW_HTTP_OPERATIONS = Object.freeze([
+  {id:'system-installation.resources.location', owner:'system-installation', method:'GET', path:'/api/v1/installation/resources', requestSchemaId:UPDATE_FLOW_HTTP_SCHEMAS.resourceLocationRequest.$id, successSchemaId:UPDATE_FLOW_HTTP_SCHEMAS.resourceLocationResponse.$id, errorSchemaId:UPDATE_FLOW_HTTP_SCHEMAS.errorResponse.$id},
+  {id:'system-installation.resources.open', owner:'system-installation', method:'POST', path:'/api/v1/installation/resources/open', requestSchemaId:UPDATE_FLOW_HTTP_SCHEMAS.resourceOpenRequest.$id, successSchemaId:UPDATE_FLOW_HTTP_SCHEMAS.resourceOpenResponse.$id, errorSchemaId:UPDATE_FLOW_HTTP_SCHEMAS.errorResponse.$id},
   Object.freeze({
     id: 'system-installation.update-flow.recover', owner: 'system-installation', method: 'POST', path: '/api/v1/update/recover',
     disposition: 'migrated-json', responseKind: 'json',

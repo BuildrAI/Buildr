@@ -1,3 +1,4 @@
+import { adoptPackageResources, prepareWorkspaceResourceAdoption } from '../../../infrastructure/product-resources/shared-resources.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -315,6 +316,7 @@ export function registerApplicationRuntime(dependencies: RuntimeProjectionDepend
       return;
     }
     assertInitializedBuildrWorkspace(targetRoot);
+    prepareWorkspaceResourceAdoption(targetRoot);
     const preflight = buildSyncSourcePlan(targetRoot, adapterId);
     assertSyncSourcePlanReady(preflight);
     const structuredStoreMigration = migrateWorkspaceStructuredStore(targetRoot);
@@ -369,6 +371,8 @@ export function registerApplicationRuntime(dependencies: RuntimeProjectionDepend
       const detail = finalDoctor.classification.diagnostic ? `\n${finalDoctor.classification.diagnostic}` : '';
       throw new Error(`${runtimeId ?? adapterId} sync 未完成：${finalDoctor.classification.message}${detail}`);
     }
+    const hasPending = updated.findings.some((item:any)=>['modified','missing','blocked'].includes(item.status)&&!item.converge);
+    adoptPackageResources(targetRoot, !hasPending);
     console.log('doctor 通过。');
   }
 

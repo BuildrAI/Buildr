@@ -70,6 +70,7 @@ export function retireOrphanedBuiltinSkills({
   for (const receipt of orphanReceipts) {
     const manifestIndex = skillsManifest.findIndex((item: any) => item.id === receipt.id);
     const existing = manifestIndex === -1 ? null : skillsManifest[manifestIndex];
+    if(existing?.customizedFrom===receipt.id&&existing.source==='workspace'){findings.push({type:'skill',id:receipt.id,status:'customized',path:receipt.target});if(!checkOnly)removeReceipt('skill',{id:receipt.id});continue;}
     const expectedPath = receipt.target.replace(/^skills\//, '');
     const targetDir = path.join(targetRoot, receipt.target);
     const liveSnapshot = builtinSnapshot(targetDir, 'skill');

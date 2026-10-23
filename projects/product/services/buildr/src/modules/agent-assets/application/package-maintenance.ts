@@ -1,3 +1,4 @@
+import { adoptPackageResources, resolveSharedResource } from '../../../infrastructure/product-resources/shared-resources.ts';
 import { SUPPORTED_AGENT_IDS, getRuntimeAdapter, resolveRuntimeAdapter } from '../infrastructure/runtime/adapter-contract.ts';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
@@ -150,6 +151,7 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
     };
 
     if (!checkOnly) {
+      adoptPackageResources(targetRoot);
       ensureRootRequiredBlock(targetRoot, changed);
       changed.push(...convergeRegistryManifests(targetRoot));
       if (appendGitignoreEntries(path.join(targetRoot, '.gitignore'), [...WORKSPACE_ROOT_GITIGNORE_ENTRIES])) {
@@ -176,7 +178,7 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
       const liveSnapshot = builtinSnapshot(targetFile, 'rule');
       const state = resolveBuiltinState({ type: 'rule', builtin, liveSnapshot, newSnapshot, oldReceipt: receiptByKey.get(builtinReceiptKey('rule', builtin.id)), isRestore, required: builtin.required === true });
       const status = isUninstalled && !isRestore ? 'uninstalled' : state.status;
-      findings.push({ type: 'rule', id: builtin.id, required: builtin.required === true, status, path: builtin.target, converge: state.converge === true || (isNew && !liveSnapshot) });
+      findings.push({ type: 'rule', id: builtin.id, required: builtin.required === true, status, path: builtin.target, ...(liveSnapshot ? { liveIntegrity: liveSnapshot.integrity } : {}), converge: state.converge === true || (isNew && !liveSnapshot) });
 
       if (checkOnly) {
         if (isRestore) restoreOutcomes.push({ id: builtin.id, type: 'rule', status: 'ready', replacementFrom: null, path: builtin.target, reason: null });
@@ -218,16 +220,22 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
     const contracts: any[] = [...(skillsDocument.contracts || [])];
     const bindings: any[] = [...(skillsDocument.bindings || [])];
     applyCapabilityRetirements({ targetRoot, manifest, contracts, bindings, findings, changed, checkOnly });
+    for (const contract of manifest.capabilityContracts || []) {
+      const sourceFile = path.join(productRoot(), contract.path);
+      const targetFile = path.join(targetRoot, contract.target);
+      const index = contracts.findIndex((item:any)=>item.id===contract.id&&item.version===contract.version);
+      const existing = index>=0 ? contracts[index] : null;
+      const identity = `contract:${contract.id}@${contract.version}`;
+      if(existing?.customizedFrom===identity) {findings.push({type:'contract',id:identity,status:'customized',path:contract.target});continue;}
+      const bytes = existsFile(targetFile) ? fs.readFileSync(targetFile) : null;
+      const isOfficial = !bytes || bytes.equals(fs.readFileSync(sourceFile));
+      findings.push({type:'contract',id:identity,status:isOfficial?'installed':'modified',path:contract.target,converge:isOfficial&&!existing?.resource,...(bytes?{liveIntegrity:`sha256-${crypto.createHash('sha256').update(bytes).digest('hex')}`}:{})});
+      if(checkOnly)continue;
+      const desired:any={id:contract.id,version:contract.version,path:contract.target.replace(/^skills\//,''),description:contract.description,...(isOfficial?{resource:contract.path}:{})};
+      if(isOfficial&&bytes){fs.rmSync(targetFile);changed.push(contract.target);}
+      if(index===-1)contracts.push(desired);else contracts[index]=desired;
+    }
     if (!checkOnly) {
-      for (const contract of manifest.capabilityContracts || []) {
-        const sourceFile = path.join(productRoot(), contract.path);
-        const targetFile = path.join(targetRoot, contract.target);
-        if (copyFileIfChanged(sourceFile, targetFile)) changed.push(contract.target);
-        const desired: any = { id: contract.id, version: contract.version, path: contract.target.replace(/^skills\//, ''), description: contract.description };
-        const index = contracts.findIndex((item: any) => item.id === contract.id && item.version === contract.version);
-        if (index === -1) contracts.push(desired);
-        else contracts[index] = desired;
-      }
       if (contracts.length) skillsDocument.contracts = contracts;
       for (const binding of manifest.initialSkillBindings || []) {
         if (bindings.some((item: any) => item.capability === binding.capability && item.version === binding.version)) continue;
@@ -246,16 +254,17 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
       const targetDir = targetPathFromBuiltin(targetRoot, builtin);
       const existing = skillsById.get(builtin.id)?.skill || null;
       const isRestore = restoreId === builtin.id;
+      if (existing?.customizedFrom === builtin.id && existing.source === 'workspace' && !existing.resource && !isRestore) { if(!checkOnly)removeReceipt('skill',builtin); findings.push({type:'skill',id:builtin.id,status:'customized',path:builtin.target}); continue; }
       const isNew = !existing;
       const isUninstalled = existing?.state === 'uninstalled' || existing?.enabled === false;
       const predecessor = builtin.replaces ? skillsById.get(builtin.replaces.id)?.skill : null;
       const desired = builtinSkillEntry(builtin, existing || predecessor);
       const newSnapshot = builtinSnapshot(sourceDir, 'skill');
-      const liveSnapshot = builtinSnapshot(targetDir, 'skill');
+      const liveSnapshot = builtinSnapshot(existing?.resource ? path.dirname(resolveSharedResource(targetRoot, `${existing.resource}/SKILL.md`)) : targetDir, 'skill');
       if (handleSkillReplacement({ builtin, changed, checkOnly, desired, existing, findings, isRestore, liveSnapshot, newSnapshot, receiptByKey, removeDirectory: (directory: any) => fs.rmSync(directory, { recursive: true, force: true }), removeReceipt, restoreOutcomes, skillsById, skillsManifest, sourceDir, targetDir, updateReceipt, targetRoot })) continue;
       const state = resolveBuiltinState({ type: 'skill', builtin, liveSnapshot, newSnapshot, oldReceipt: receiptByKey.get(builtinReceiptKey('skill', builtin.id)), isRestore, required: builtin.required === true });
       const status = isUninstalled && !isRestore ? 'uninstalled' : state.status;
-      findings.push({ type: 'skill', id: builtin.id, required: builtin.required === true, status, path: builtin.target, converge: state.converge === true || (isNew && !liveSnapshot) });
+      findings.push({ type: 'skill', id: builtin.id, required: builtin.required === true, status, path: builtin.target, ...(liveSnapshot ? { liveIntegrity: liveSnapshot.integrity } : {}), converge: state.converge === true || (isNew && !liveSnapshot) });
 
       if (checkOnly) {
         if (isRestore) restoreOutcomes.push({ id: builtin.id, type: 'skill', status: 'ready', replacementFrom: null, path: builtin.target, reason: null });
@@ -274,8 +283,15 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
         continue;
       }
       if (builtin.required || isNew || isRestore || state.converge || state.adopt) {
-        if (state.converge && existsDirectory(targetDir)) fs.rmSync(targetDir, { recursive: true, force: true });
-        if (copyDirectoryIfChanged(sourceDir, targetDir)) changed.push(builtin.target);
+        // Only receipts or exact official bytes authorize retiring the old source.
+        const local = builtinSnapshot(targetDir, 'skill');
+        const trusted = !local || local.integrity === newSnapshot.integrity || local.integrity === receiptByKey.get(builtinReceiptKey('skill', builtin.id))?.integrity || (isNew && local.files.every((file:any)=>newSnapshot.files.some((official:any)=>official.path===file.path&&official.integrity===file.integrity)));
+        if (!trusted && !isRestore) { findings.push({ type: 'skill', id: builtin.id, status: 'modified', path: builtin.target }); continue; }
+        if (local) { fs.rmSync(targetDir, { recursive: true, force: true }); changed.push(builtin.target); }
+        desired.resource = builtin.path;
+        desired.enabled = existing?.enabled ?? desired.enabled;
+        // The path remains a portable ownership/display label; resource selects the source.
+
         if (skillsById.has(builtin.id)) {
           skillsManifest[skillsById.get(builtin.id).index] = desired;
         } else {
@@ -333,6 +349,28 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
 
     const affectedPaths = checkOnly ? packageBuiltinMutationPaths(targetRoot, manifest, receipts, findings) : [];
     return { targetRoot, changed: [...new Set(changed)], findings, ...(restoreId ? { restoreOutcomes } : {}), affectedPaths, signature: checkOnly ? builtinSyncPlanSignature(targetRoot, findings, affectedPaths) : null };
+  }
+
+  function keepPackageCustomizations(targetRoot: string, expected: Array<{id:string;integrity:string}>) {
+    const status = syncPackageBuiltins(targetRoot,{checkOnly:true});
+    const current = status.findings.filter((item:any)=>['skill','contract'].includes(item.type)&&!item.component&&item.status==='modified');
+    if (!expected.length || expected.some(item=>!current.some((live:any)=>live.id===item.id&&live.liveIntegrity===item.integrity))) throw new Error('定制内容已变化，请重新准备后核对。');
+    return withWorkspaceMutation(targetRoot,'builtin.keep-customizations',[path.join(targetRoot,'skills/manifest.yml'),path.join(targetRoot,'.buildr/builtin-receipts.json')],()=>{
+      const skills = readSkillsManifestForWrite(targetRoot);
+      for (const item of expected) {
+        if(item.id.startsWith('contract:')) {
+          const contract=manifestDocumentFor(skills).contracts.find((entry:any)=>`contract:${entry.id}@${entry.version}`===item.id);
+          const file=contract?path.join(targetRoot,'skills',contract.path):null;
+          if(!file||contract.resource||fs.lstatSync(file).isSymbolicLink()||`sha256-${crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')}`!==item.integrity)throw new Error('定制约定已变化，未修改。');
+          contract.customizedFrom=item.id;continue;
+        }
+        const entry = skills.find((skill:any)=>skill.id===item.id);
+        if (!entry || entry.resource || builtinSnapshot(path.join(targetRoot,'skills',entry.path),'skill')?.integrity!==item.integrity) throw new Error('定制来源已变化，未修改。');
+        entry.customizedFrom=entry.id;entry.customizedSourceIdentity=entry.sourceIdentity;entry.source='workspace';entry.sourceIdentity=`workspace:${manifestDocumentFor(skills).workspaceId}:${entry.path}`;entry.state='installed';
+      }
+      const receipts = readBuiltinReceipts(targetRoot);receipts.builtins=receipts.builtins.filter((item:any)=>!(item.type==='skill'&&expected.some(custom=>custom.id===item.id)));
+      writeSkillsManifest(targetRoot,skills);writeBuiltinReceipts(targetRoot,receipts);
+    });
   }
 
   function builtinList(args: any): any  {
@@ -408,6 +446,7 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
       return readBuiltinReceipts(targetRoot).builtins.flatMap((item: any) => item.type === 'skill' ? item.files.map((file: any) => path.posix.join(item.target, file.path)) : item.type === 'rule' ? [item.target] : []);
     },
     syncPackageBuiltins,
+    keepPackageCustomizations,
     builtinList,
     builtinUninstall,
     builtinRestore,

@@ -137,12 +137,12 @@ Buildr runtime projection MUST 区分产品内置 Agent Skills 与 workspace Ski
 
 #### Scenario: 保持 workspace Skill 解析
 - **WHEN** workspace 根定义了 `skills/manifest.yml`
-- **THEN** `buildr skills render <agent>` MUST 只从 workspace source authority 解析 enabled Skills
+- **THEN** `buildr skills render <agent>` MUST 从工作空间采用清单解析 enabled Skills，官方引用从已采用共享资源集读取，组织自有内容从本地源读取
 - **AND** Project `capabilities.yml` MUST 只提供 requirements、bindings 与 applicability context
 - **AND** Buildr MUST 根据 manifest 条目的本地源、远端 resolved 状态和 install mode 选择 render 方式
 
 #### Scenario: 渲染本地作者型 Skill
-- **WHEN** Skill manifest 条目使用 `path`
+- **WHEN** Skill manifest 条目使用 `path` 且没有官方 `resource` 引用
 - **THEN** `buildr skills render <agent>` MUST 从 workspace `skills/<skill-id>/SKILL.md` 读取源内容
 - **AND** Buildr MUST 将该 Skill 投射到显式选择的 user 或 workspace destination
 
@@ -178,6 +178,10 @@ Buildr runtime projection MUST 区分产品内置 Agent Skills 与 workspace Ski
 - **WHEN** Buildr 将产品内置 Agent Skill 或 workspace Skill 写入 user/workspace destination
 - **THEN** 写入结果 MUST 被视为 runtime 投射产物
 - **AND** Agent MUST NOT 将写入结果作为 Buildr 产品 Skill 或 workspace Skill 的源资产维护
+
+#### Scenario: 渲染共享官方技能
+- **WHEN** 空间清单使用官方 `resource` 引用
+- **THEN** MUST 从已校验共享资源集读取完整源和附件，并按当前空间选择生成入口，MUST NOT 按同名目录猜测来源
 
 ### Requirement: AGENTS.md 是 scope 规则入口
 Buildr MUST 将 `AGENTS.md` 定义为 Buildr scope 规则入口，同时允许支持它的 Agent 原生消费。
@@ -987,3 +991,10 @@ Buildr runtime 命令（`render`、`sync`、`runtime check`、`skill install`、
 - **WHEN** 执行 `buildr sync --target <dir>` 或 `buildr skill install --target <dir>`
 - **THEN** 运行时身份 MUST 为 `null`，`--target` 值 MUST 生效
 - **AND** 适配器 MUST 由同一选择规则决定
+
+### Requirement: 官方源共享且空间成品独立
+官方技能源 SHALL 从空间明确采用的共享资源集读取；组织自有源 SHALL 继续从空间读取。运行时生成 MUST 使用当前空间启停、绑定、组件片段及完整附件，MUST 保留现有适配器和所有权保护；共享源 MUST NOT 被当作用户级成品安装。
+
+#### Scenario: 不同空间采用不同提供者
+- **WHEN** 相同官方技能在两个空间有不同的有效绑定
+- **THEN** MUST 分别生成正确的绑定内容，且不改写共享原文

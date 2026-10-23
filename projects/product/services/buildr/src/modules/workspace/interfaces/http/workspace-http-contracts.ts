@@ -34,7 +34,7 @@ const serviceEntity = {
     code: text, name: text, description: { type: 'string' }, type: text, source: sourceEntity,
   },
 };
-const registryEntry = closed({ status: text, rootPath: text, updatedAt: text, workspace: { anyOf: [workspaceSummary, { type: 'null' }] }, error: { anyOf: [closed({ code: text, message: text }, ['message']), { type: 'null' }] }, migrationRequired: { type: 'boolean' }, registryScope: { type: 'string', enum: ['local', 'shared'] } }, ['status', 'rootPath']);
+const registryEntry = closed({ status: text, readiness:{enum:['ready','pending','failed']}, rootPath: text, updatedAt: text, workspace: { anyOf: [workspaceSummary, { type: 'null' }] }, error: { anyOf: [closed({ code: text, message: text }, ['message']), { type: 'null' }] }, migrationRequired: { type: 'boolean' }, registryScope: { type: 'string', enum: ['local', 'shared'] } }, ['status', 'rootPath']);
 const registryProjection = closed({ schemaVersion: text, revision: text, workspaces: { type: 'array', items: registryEntry }, lastOpenedWorkspaceId: { type: ['string', 'null'] } }, ['schemaVersion', 'revision', 'workspaces', 'lastOpenedWorkspaceId']);
 const response = (id: any, title: any, properties: any, required: any) => Object.freeze({
   $schema: DRAFT_2020_12,
@@ -53,6 +53,7 @@ const repositoryInstance = closed({ id: text, workspaceId: text, code: text, nam
 const compositionItem = {id:text,code:text,name:text,description:plainText};
 const compositionStatus = {type:'string',enum:['complete','partial','unavailable']};
 
+const preparationFields = { id: text, revision: { type: 'integer', minimum: 1 }, rootPath: text, name: text, workspaceId: {type:['string','null']}, status:{enum:['selected','preparing','ready','failed']}, error:{type:['string','null']}, details:{type:'string'}, customizations:{type:'array',items:closed({id:text,integrity:text},['id','integrity'])}, updatedAt:text };
 export const WORKSPACE_HTTP_SCHEMAS: Readonly<Record<string, any>> = Object.freeze({
   workspaceCompositionResponse: response('workspace-composition/response','WorkspaceComposition',{schemaVersion:text,workspaceId:text,projects:{type:'array',items:closed({...compositionItem,serviceIds:stringIds},['id','code','name','description','serviceIds'])},services:{type:'array',items:closed({...compositionItem,repositoryId:text},['id','code','name','description','repositoryId'])},repositories:{type:'array',items:closed(compositionItem,['id','code','name','description'])},sources:closed({projects:compositionStatus,services:compositionStatus,repositories:compositionStatus},['projects','services','repositories']),diagnostics:{type:'array',items:closed({source:{enum:['projects','services','repositories']},message:text},['source','message'])}},['schemaVersion','workspaceId','projects','services','repositories','sources','diagnostics']),
   assetCatalogResponse: response('asset-catalog/response', 'AssetCatalog', { schemaVersion: text, revision: text, migrationRequired: { type: 'boolean' }, projects: { type: 'array', items: { ...projectEntity, properties: { ...projectEntity.properties, serviceIds: stringIds } } }, services: { type: 'array', items: businessService }, repositories: { type: 'array', items: repositoryInstance }, diagnostics: { type: 'array', items: closed({ code: text, message: text, objectId: text }, ['code', 'message', 'objectId']) } }, ['schemaVersion', 'revision', 'migrationRequired', 'projects', 'services', 'repositories', 'diagnostics']),
@@ -70,6 +71,13 @@ export const WORKSPACE_HTTP_SCHEMAS: Readonly<Record<string, any>> = Object.free
   projectRegisterRequest: response('asset-catalog/project-register', 'ProjectRegister', { revision: text, code: text, name: text, description: plainText, serviceIds: stringIds, observation: text }, ['revision', 'code', 'name', 'observation']),
   assetAssociateRequest: response('asset-catalog/associate', 'ProjectServices', { revision: text, serviceIds: stringIds, newServices: { type: 'array', items: serviceDraft } }, ['revision', 'serviceIds']),
   assetUpdateRequest: response('asset-catalog/update', 'AssetUpdate', { revision: text, code: text, name: text, description: plainText, type: text, repositoryId: text, modulePath: plainText, repository: repositoryDraft, url: plainText, remote: plainText, integrationBranch: plainText, path: text, serviceIds: stringIds, projectIds: stringIds, newServices: { type: 'array', items: serviceDraft } }, ['revision']),
+  preparationOpenRequest: response('preparation/open-request','WorkspacePreparationOpenRequest',{workspaceId:text},['workspaceId']),
+  preparationOpenResponse: Object.freeze({$schema:DRAFT_2020_12,$id:`${ROOT}/preparation/open-response/v1`,title:'WorkspacePreparationOpenResponse',anyOf:[closed(preparationFields,Object.keys(preparationFields).filter(key=>!['customizations','details'].includes(key))),closed({ready:{const:true},workspaceId:text},['ready','workspaceId'])]}),
+  preparationChooseRequest: response('preparation/choose-request','WorkspacePreparationChooseRequest',{},[]),
+  preparationChooseResponse: Object.freeze({$schema:DRAFT_2020_12,$id:`${ROOT}/preparation/choose-response/v1`,title:'WorkspacePreparationChooseResponse',anyOf:[closed(preparationFields,Object.keys(preparationFields).filter(key=>!['customizations','details'].includes(key))),closed({canceled:{const:true}},['canceled'])]}),
+  preparationReadRequest: response('preparation/read-request','WorkspacePreparationReadRequest',{id:text},['id']),
+  preparationStartRequest: response('preparation/start-request','WorkspacePreparationStartRequest',{id:text,revision:{type:'integer',minimum:1},keepCustomizations:{type:'boolean'},name:{type:'string',minLength:1,maxLength:160}},['id','revision','name']),
+  preparationResponse: response('preparation/response','WorkspacePreparationResponse',preparationFields,Object.keys(preparationFields).filter(key=>!['customizations','details'].includes(key))),
   registryRequest: response('registry/request', 'WorkspaceRegistryRequest', {}, []),
   registerRequest: response('registry/register-request', 'WorkspaceRegisterRequest', {
     rootPath: text,
@@ -157,6 +165,10 @@ export const WORKSPACE_HTTP_OPERATIONS = Object.freeze([
   ['assets.projects.register', 'POST', '/asset-catalog/projects/register', 'projectRegisterRequest', 'assetCatalogResponse'],
   ['assets.associate', 'PUT', '/asset-catalog/projects/:projectId/services', 'assetAssociateRequest', 'assetCatalogResponse'],
   ['assets.update', 'PUT', '/asset-catalog/:kind/:id', 'assetUpdateRequest', 'assetCatalogResponse'],
+  ['workspace.preparation.open','POST','/workspaces/open','preparationOpenRequest','preparationOpenResponse'],
+  ['workspace.preparation.choose','POST','/workspaces/choose','preparationChooseRequest','preparationChooseResponse'],
+  ['workspace.preparation.read','GET','/workspaces/preparations/:id','preparationReadRequest','preparationResponse'],
+  ['workspace.preparation.start','POST','/workspaces/prepare','preparationStartRequest','preparationResponse'],
   ['workspace.registry.list', 'GET', '/workspaces', 'registryRequest', 'registryResponse'],
   ['workspace.registry.register', 'POST', '/workspaces', 'registerRequest', 'registryResponse'],
   ['workspace.registry.pick', 'POST', '/workspaces/pick', 'pickRequest', 'pickResponse'],

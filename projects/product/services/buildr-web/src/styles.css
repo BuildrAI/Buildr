@@ -2201,3 +2201,8 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .app-shell .shell-update-entry{color:var(--soft-primary,#397d74)}
 .app-shell .shell-update-entry.has-warning{color:#a97831}
 .app-shell .topbar-actions{gap:4px}
+
+.workspace-lifecycle-directory-summary { display:flex; align-items:flex-start; gap:12px; padding:16px; border:1px solid var(--soft-line); border-radius:8px; }
+.workspace-lifecycle-directory-summary > div { flex:1; min-width:0; }
+
+.workspace-preparation-details {max-height:180px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px;}

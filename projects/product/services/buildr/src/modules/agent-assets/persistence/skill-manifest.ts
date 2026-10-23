@@ -1,3 +1,4 @@
+import { resolveSharedResource } from '../../../infrastructure/product-resources/shared-resources.ts';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -158,9 +159,9 @@ export function validateSkillsManifestDocument(document: any, manifestPath: any,
     if (contracts.has(key)) throw new Error(`Duplicate capability contract in ${manifestPath}: ${key}`);
     contracts.add(key);
     if (options.validateContracts !== false) {
-      const contractPath = path.resolve(path.dirname(manifestPath), contract.path);
+      const contractPath = contract.resource ? resolveSharedResource(path.dirname(path.dirname(manifestPath)), contract.resource) : path.resolve(path.dirname(manifestPath), contract.path);
       const relative = path.relative(path.dirname(manifestPath), contractPath);
-      if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error(`Capability contract path must stay inside skills root: ${contract.path}`);
+      if (!contract.resource && (!relative || relative.startsWith('..') || path.isAbsolute(relative))) throw new Error(`Capability contract path must stay inside skills root: ${contract.path}`);
       parseCapabilityContract(contractPath, contract);
     }
   }

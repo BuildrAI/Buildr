@@ -1,3 +1,5 @@
+import { InfoCircleOutlined } from '@ant-design/icons';
+import { InstallationInfoDialog } from '../../installation/components/InstallationInfoDialog';
 import { SkillRegistrationDrawer } from '../components/SkillRegistrationDrawer';
 import { SkillRemoveDialog } from '../components/SkillRemoveDialog';
 import { useResourcePreview } from '../../../app/resource-preview';
@@ -27,6 +29,7 @@ function WorkspaceSkills({ previewId }: { previewId?: string }) {
   const href = (id?: string) => workspaceHref(workspaceId, id ? `/skills/${encodeURIComponent(id)}` : '/skills');
   const { workspace, setBreadcrumbParts } = useAppShell();
   const previews = useResourcePreview();
+  const [resourceInfoOpen, setResourceInfoOpen] = useState(false);
   const [creating, setCreating] = useState(false), [removing, setRemoving] = useState<SkillSummary>();
   const [skills, setSkills] = useState<SkillSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,7 +65,8 @@ function WorkspaceSkills({ previewId }: { previewId?: string }) {
       query={query} onQueryChange={setQuery} searchText={s => `${s.title} ${s.id} ${s.description}`} searchId="skills-search" listId="skills-list" rowAttributes={s => ({ 'data-skill-id': s.id } as React.HTMLAttributes<HTMLTableRowElement>)}
       columns={[{ title: '来源', width: 170, dataIndex: 'sourceLabel' }, { title: '启用情况', width: 130, render: (_, s) => <Tag color={s.enabled ? 'success' : 'default'}>{s.enabled ? '已启用' : '已停用'}</Tag> }]}
       filters={<Select aria-label="来源筛选" value={source} onChange={setSource} options={[{ label: '全部来源', value: '' }, ...[...new Set(skills.map(s => s.sourceLabel))].sort().map(label => ({ label, value: label }))]} />}
-      actions={<Button id="skills-add" type="primary" disabled={!workspace?.rootPath} onClick={() => setCreating(true)}>新增技能</Button>} />
+      actions={<><Button icon={<InfoCircleOutlined />} onClick={() => setResourceInfoOpen(true)}>安装信息</Button><Button id="skills-add" type="primary" disabled={!workspace?.rootPath} onClick={() => setCreating(true)}>新增技能</Button></>} />
+    <InstallationInfoDialog open={resourceInfoOpen} onClose={() => setResourceInfoOpen(false)} />
     {renderAction()}{maintenance}
   </WorkspaceStage>;
   function renderAction() {

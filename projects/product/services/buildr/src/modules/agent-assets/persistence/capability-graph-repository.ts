@@ -1,3 +1,4 @@
+import { resolveSharedResource } from '../../../infrastructure/product-resources/shared-resources.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
@@ -33,14 +34,14 @@ export function resolveSkillCapabilityGraph(organizationRoot: any, projectRoot: 
       if (definitions.has(key)) {
         throw new Error(`Capability contract identity conflict for ${key}: ${definitions.get(key).manifestPath} and ${layer.manifestPath}`);
       }
-      const contractPath = path.resolve(path.dirname(layer.manifestPath), contract.path);
+      const contractPath = contract.resource ? resolveSharedResource(organizationRoot, contract.resource) : path.resolve(path.dirname(layer.manifestPath), contract.path);
       const parsed = parseCapabilityContract(contractPath, contract);
       definitions.set(key, {
         ...contract,
         digest: parsed.digest,
         scope: layer.scope,
         manifestPath: relative(organizationRoot, layer.manifestPath),
-        contractPath: relative(organizationRoot, contractPath),
+        contractPath: contract.resource ? contractPath : relative(organizationRoot, contractPath),
         absolutePath: contractPath,
       });
     }

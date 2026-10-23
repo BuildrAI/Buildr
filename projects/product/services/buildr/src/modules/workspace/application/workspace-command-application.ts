@@ -47,7 +47,7 @@ export function ensureRegisteredTarget(runtime: WorkspaceCommandApplicationRunti
 }
 
 /** 共享 Profile 登记列表拒绝的一次性位置：系统临时目录、/tmp 与任务工作树检出。 */
-function ephemeralWorkspaceRootReason(root: string): string | null {
+export function ephemeralWorkspaceRootReason(root: string): string | null {
   const candidates = [os.tmpdir()];
   if (process.platform !== 'win32') candidates.push('/tmp');
   for (const candidate of candidates) {
