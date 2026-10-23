@@ -1,7 +1,8 @@
 # workspace-artifact-lifecycle Specification
 
 ## Purpose
-TBD - created by archiving change workspace-artifact-lifecycle. Update Purpose after archive.
+
+工作区中间产物（Artifact）——隔离构建目录、验证现场、临时输入——在创建时缺少归属、用途与处置策略的确定性记录，任务结束后成为无主的磁盘占用。本能力为 Buildr 提供产物登记、发现诊断、状态计算与有界清扫：Agent 在创建可观产物时登记归属任务与处置策略；`buildr artifact list/status` 依据当前事实报告各产物的大小、归属状态与可清扫依据；`buildr artifact clean` 只删除复核后仍失效或已显式释放的项。登记保持描述性可选，不成为普通工作的门禁；`.buildr/local/` 证据目录与其他所有者管理的目标只观察不删除。
 
 ## Requirements
 

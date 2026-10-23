@@ -25,6 +25,8 @@ const allowedTargets: any = {
   module: new Set(['interfaces', 'application', 'domain', 'infrastructure']),
 };
 const allowedCrossModulePorts: any = new Set([
+  'modules/artifact-lifecycle/module.ts -> modules/task/module.ts',
+  'modules/artifact-lifecycle/module.ts -> modules/workspace/module.ts',
   'modules/agent-assets/source/module.ts -> modules/agent-assets/module.ts',
   'modules/agent-assets/source/module.ts -> modules/workspace/module.ts',
   'modules/agent-assets/source/module.ts -> modules/task/module.ts',
