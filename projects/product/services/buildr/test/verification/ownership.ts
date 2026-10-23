@@ -966,6 +966,18 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     ],
     "inputExclusions": []
   },
+  "test-file-ownership": {
+    "inputs": [
+      "test/verification/integrity/test-file-ownership.ts",
+      "test/verification/test-inventory-ownership.ts",
+      "test/verification/test-files.ts",
+      "test/verification/registry.ts",
+      "test/verification/ownership.ts",
+      "package.json",
+      "test/**"
+    ],
+    "inputExclusions": []
+  },
   "managed-mutations": {
     "inputs": [
       "test/verification/integrity/managed-mutations.ts",

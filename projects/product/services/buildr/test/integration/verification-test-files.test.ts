@@ -6,6 +6,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { INTEGRATION_GENERAL_EXCLUDED_FILES, INTEGRATION_PRIMARY_SLICES, verificationSteps } from '../verification/registry.ts';
 import { auditNodeTestFileOwnership, resolveNodeTestFiles } from '../verification/test-files.ts';
+import { auditServiceTestOwnership } from '../verification/test-inventory-ownership.ts';
 
 const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -54,19 +55,7 @@ function inventoryTests(root: string): string[] {
 }
 
 test('complete Buildr test inventory has one primary owner, including wrapped release and Browser entries', () => {
-  const inventory = inventoryTests(path.join(serviceRoot, 'test'));
-  const scripts = JSON.parse(fs.readFileSync(path.join(serviceRoot, 'package.json'), 'utf8')).scripts;
-  const claims = verificationSteps.filter((step: any) => step.profiles.includes('candidate')).flatMap((step: any) => {
-    let selectors = step.executor.files ?? step.executor.discoveredFiles ?? [];
-    if (step.executor.type === 'npm') {
-      const script = scripts[step.executor.args?.[1]] ?? '';
-      selectors = script.match(/\btest\/[^\s"']+\.(?:test|spec)\.[cm]?[jt]sx?/gu) ?? [];
-    } else if (step.executor.file === 'test/verification/run-node-tests.ts') selectors = step.executor.args;
-    if (selectors.length === 0) return [];
-    const files = resolveNodeTestFiles(serviceRoot, selectors, step.id);
-    return [{ id: step.id, files, supportingFiles: (step.executor.supportingFiles ?? []).map((file: string) => path.resolve(serviceRoot, file)) }];
-  });
-  const audit = auditNodeTestFileOwnership(inventory, claims);
+  const audit = auditServiceTestOwnership(serviceRoot);
   assert.deepEqual(audit.findings, [], JSON.stringify(audit.findings));
   const browser = verificationSteps.find((step: any) => step.id === 'artifact-browser-core');
   const browserEntry = fs.readFileSync(path.join(serviceRoot, browser.executor.file), 'utf8');

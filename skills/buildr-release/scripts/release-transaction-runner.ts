@@ -156,12 +156,22 @@ function findSingleFile(root: any, name: any): any  {
   return matches[0];
 }
 
+const PACKAGE_DOWNLOAD_MINIMUM_RATE_BYTES_PER_SECOND = 128 * 1024;
+
+/** The aggregate declares the package byte size, so the download budget scales
+ * with the real artifact instead of a fixed limit that slow links exhaust. */
+export function packageDownloadTimeoutMs(sizeBytes: any): number {
+  const floor = 120_000, margin = 60_000, ceiling = 900_000;
+  if (!Number.isSafeInteger(sizeBytes) || sizeBytes <= 0) return floor;
+  return Math.max(floor, Math.min(ceiling, Math.ceil(sizeBytes / PACKAGE_DOWNLOAD_MINIMUM_RATE_BYTES_PER_SECOND) * 1000 + margin));
+}
+
 export function readCandidateEvidence({ candidateRunId, ghCommand, repo, execute, artifactDestination, dependencies = {} }: any): any  {
   if (dependencies.candidateEvidence) return dependencies.candidateEvidence;
   const root: any = (dependencies.makeTempDirectory ?? ((prefix: any) => fs.mkdtempSync(prefix)))(path.join(os.tmpdir(), 'buildr-release-candidate-'));
   try {
-    const download = (name: string) => invoke(execute, ghCommand, ['run', 'download', String(candidateRunId), '--repo', releasePublishAuthority.repository, '--name', name, '--dir', path.join(root, name)], repo, { timeout: name === 'candidate-package' ? 120_000 : 60_000 });
-    download('candidate-aggregate');
+    const download = (name: string, timeout: number) => invoke(execute, ghCommand, ['run', 'download', String(candidateRunId), '--repo', releasePublishAuthority.repository, '--name', name, '--dir', path.join(root, name)], repo, { timeout });
+    download('candidate-aggregate', 60_000);
     const aggregate: any = JSON.parse(fs.readFileSync(findSingleFile(path.join(root, 'candidate-aggregate'), 'candidate-ci-aggregate.json'), 'utf8'));
     const directory = artifactDestination ? path.resolve(artifactDestination) : null;
     const retained = directory ? fs.lstatSync(directory, { throwIfNoEntry: false }) : null;
@@ -183,7 +193,12 @@ export function readCandidateEvidence({ candidateRunId, ghCommand, repo, execute
         throw new Error('Local Candidate manifest differs from its original archive.');
       }
     } else {
-      download('candidate-package');
+      try {
+        download('candidate-package', packageDownloadTimeoutMs(aggregate.artifact?.size));
+      } catch (error: any) {
+        const reuse: any = directory ? ` A verified package placed at ${directory} is reused without downloading: fetch the same run's candidate-package artifact into that directory and retry.` : '';
+        throw new Error(`${error?.message ?? String(error)}${reuse}`);
+      }
       artifact = readReleaseArtifact(findSingleFile(path.join(root, 'candidate-package'), 'release-artifact.json'));
     }
     if (aggregate.sourceBinding) {

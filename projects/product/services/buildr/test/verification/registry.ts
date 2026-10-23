@@ -109,6 +109,7 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
   'open-source-candidate': testing(PROJECT_OWNER, 'Delivery / Release', 'Static', 10000, 'The candidate contains the required public release materials.', TEST_ENVIRONMENTS.sourceReadOnly),
   'openspec-candidate-audit': testing(PROJECT_OWNER, 'Static Conformance', 'Static', 5000, 'Candidate OpenSpec contracts are current and internally consistent.', TEST_ENVIRONMENTS.sourceReadOnly),
   'managed-mutations': testing(SERVICE_OWNER, 'Static Conformance', 'Static', 5000, 'Production filesystem mutations remain behind declared owners.', TEST_ENVIRONMENTS.sourceReadOnly),
+  'test-file-ownership': testing(SERVICE_OWNER, 'Static Conformance', 'Static', 5000, 'Every test file has exactly one primary verification owner.', TEST_ENVIRONMENTS.sourceReadOnly),
   'capability-cli-integration': testing(SERVICE_OWNER, 'Development', 'Integration', 85000, 'Capability CLI operations integrate with package and runtime assets.', TEST_ENVIRONMENTS.repeatedCli),
   'commands-cli-integration': testing(SERVICE_OWNER, 'Development', 'Integration', 75000, 'Commands context CLI operations integrate with managed workspace assets.', TEST_ENVIRONMENTS.repeatedCli),
   'openspec-contract-fixtures': testing(PROJECT_OWNER, 'Development', 'Integration', 20000, 'OpenSpec application contracts hold across isolated fixture repositories.', TEST_ENVIRONMENTS.repeatedGitCli),
@@ -846,6 +847,7 @@ export const verificationSteps: any = Object.freeze([
   step({ id: 'open-source-candidate', name: 'open-source candidate', executor: { type: 'node', file: 'test/verification/release/open-source-candidate.ts', consumesArtifact: true }, profiles: ['candidate'], groups: ['public', 'release'],  dependsOn: ['candidate-tarball'] }),
   step({ id: 'openspec-candidate-audit', name: 'OpenSpec contract candidate audit', executor: { type: 'node', file: 'test/verification/openspec/contract-audit.ts' }, profiles: [], groups: ['openspec'], }),
   step({ id: 'managed-mutations', name: 'managed mutations', executor: { type: 'node', file: 'test/verification/integrity/managed-mutations.ts' }, profiles: ['candidate'], groups: ['package'], }),
+  step({ id: 'test-file-ownership', name: 'test file primary ownership audit', executor: { type: 'node', file: 'test/verification/integrity/test-file-ownership.ts' }, profiles: ['fast', 'candidate'], groups: ['package'], }),
 
   step({ id: 'capability-cli-integration', name: 'capability CLI integration', executor: { type: 'node', file: 'test/capability-cli.integration.ts' }, profiles: ['candidate'],  schedulingCostMs: 25000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'commands-cli-integration', name: 'Commands context CLI integration', executor: { type: 'node', file: 'test/commands-cli.integration.ts' }, profiles: ['candidate'], groups: ['cli', 'package'],  schedulingCostMs: 12000, concurrencyClass: 'workspace-heavy' }),
@@ -999,6 +1001,7 @@ export const CANDIDATE_CI_SHARDS: any = Object.freeze([
     'contract',
     'runtime-adapter-contract',
     'managed-mutations',
+    'test-file-ownership',
     'package-static',
     'system-verification-admission',
     'integration-verification',

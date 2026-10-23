@@ -31,6 +31,7 @@ const entries: any[] = [
     'open-source-candidate',
     'openspec-candidate-audit',
     'managed-mutations',
+    'test-file-ownership',
     'package-static',
     'docs-quality',
   ]),
