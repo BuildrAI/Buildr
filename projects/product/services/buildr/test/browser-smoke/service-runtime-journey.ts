@@ -23,7 +23,10 @@ const argument = process.argv.find(item => item.startsWith('--port='));
 const port = Number(argument ? argument.slice('--port='.length) : 0);
 const target = process.env.RUNTIME_BACKEND_URL || '';
 http.createServer(async (request, response) => {
-  if (request.url === '/backend' && target) {
+  if (request.url === '/routing') {
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify({ routingFile: Boolean(process.env.RUNTIME_ROUTING_FILE) }));
+  } else if (request.url === '/backend' && target) {
     try {
       const backend = await fetch(new URL('/health', target));
       response.setHeader('content-type', 'application/json');
@@ -60,22 +63,37 @@ function portReleased(port: number): Promise<boolean> {
 }
 
 /** Modal placement is user-visible; oversized content may scroll instead of fitting vertically. */
-async function assertCentered(page: Page, dialog: Locator) {
+async function assertCentered(_page: Page, dialog: Locator) {
   await dialog.waitFor({ state: 'visible' });
-  await dialog.evaluate(async element => {
+  const sample = await dialog.evaluate(async element => {
     await new Promise(resolve => requestAnimationFrame(resolve));
     await Promise.all(element.getAnimations({ subtree: true }).filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => undefined)));
-    await new Promise(resolve => requestAnimationFrame(resolve));
+    const observe = () => {
+      const { x, y, width, height } = element.getBoundingClientRect();
+      const viewport = { width: innerWidth, height: innerHeight };
+      return { rect: { x, y, width, height }, viewport, connected: element.isConnected,
+        horizontal: Math.abs(x + width / 2 - viewport.width / 2),
+        vertical: Math.abs(y + height / 2 - viewport.height / 2) };
+    };
+    let previous = observe(), current = previous, stableFrames = 0;
+    const deadline = performance.now() + 3000;
+    while (performance.now() < deadline) {
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      current = observe();
+      const stable = Object.entries(current.rect).every(([key, value]) => Math.abs(value - previous.rect[key as keyof typeof previous.rect]) <= 0.5)
+        && current.viewport.width === previous.viewport.width && current.viewport.height === previous.viewport.height;
+      stableFrames = stable ? stableFrames + 1 : 0;
+      if (stableFrames >= 2 && current.connected && current.rect.width > 0 && current.rect.height > 0
+        && current.horizontal <= 20 && (current.rect.height > current.viewport.height - 48 || current.vertical <= 20)) return { ...current, stableFrames };
+      previous = current;
+    }
+    return { ...current, stableFrames };
   });
-  const handle = await dialog.elementHandle(); assert.ok(handle);
-  await page.waitForFunction(element => {
-    const rect = element.getBoundingClientRect();
-    const horizontal = Math.abs(rect.x + rect.width / 2 - innerWidth / 2) <= 20;
-    return horizontal && (rect.height > innerHeight - 48 || Math.abs(rect.y + rect.height / 2 - innerHeight / 2) <= 20);
-  }, handle, { timeout: 3000 });
-  const rect = await dialog.boundingBox(), viewport = page.viewportSize(); assert.ok(rect); assert.ok(viewport);
-  assert.ok(Math.abs(rect.x + rect.width / 2 - viewport.width / 2) <= 20, '弹窗应水平居中');
-  if (rect.height <= viewport.height - 48) assert.ok(Math.abs(rect.y + rect.height / 2 - viewport.height / 2) <= 20, '可容纳的弹窗应垂直居中');
+  const diagnostic = JSON.stringify(sample);
+  assert.ok(sample.connected && sample.rect.width > 0 && sample.rect.height > 0, `弹窗应保持可见：${diagnostic}`);
+  assert.ok(sample.stableFrames >= 2, `弹窗布局应稳定后检查居中：${diagnostic}`);
+  assert.ok(sample.horizontal <= 20, `弹窗应水平居中：${diagnostic}`);
+  if (sample.rect.height <= sample.viewport.height - 48) assert.ok(sample.vertical <= 20, `可容纳的弹窗应垂直居中：${diagnostic}`);
 }
 
 /** Real catalog, task and Git checkouts. Never fabricate API responses or run records. */
@@ -94,6 +112,8 @@ export async function createServiceRuntimeBrowserFixture(runtime: any, workspace
     fs.writeFileSync(path.join(repositoryRoot, directory, 'server.mjs'), SERVER_SOURCE);
   }
   git(repositoryRoot, ['add', 'backend/server.mjs', 'frontend/server.mjs']); git(repositoryRoot, ['commit', '-qm', 'runtime browser fixture']);
+  git(repositoryRoot, ['branch', 'fixture-service-start']);
+  git(repositoryRoot, ['branch', 'fixture-service-switch']);
   let catalog = runtime.assetCatalog(root);
   if (catalog.migrationRequired) catalog = runtime.migrateAssetCatalog(root, { revision: catalog.revision });
   catalog = runtime.createCatalogRepository(root, { revision: catalog.revision, code: 'runtime-browser-repository', name: '运行浏览器夹具代码', path: repositoryRelative });
@@ -111,6 +131,7 @@ export async function createServiceRuntimeBrowserFixture(runtime: any, workspace
     fs.writeFileSync(file, YAML.stringify({ version: 1, source: 'agent', verifiedAt: new Date().toISOString(), local: {
       command: [process.execPath, 'server.mjs', ...(withBackend ? [QUOTED_ARGUMENT] : [])], cwd: '.', profile: 'fixture', preferredPort: await freePort(), portOverride: '--port', readiness: { kind: 'log', pattern: 'Started RuntimeFixture on' }, timeoutSeconds: 30,
       ...(withBackend ? { backend: { serviceCode: BACKEND_CODE, environmentVariable: 'RUNTIME_BACKEND_URL', remoteUrl: REMOTE_URL } } : {}),
+      remoteEnvironments: [{ code: 'qa', name: '测试环境', variables: {} }],
     }, environments: { qa: 'retired-invalid-field', prod: { connectionId: 'unused-fixture' } } })); definitionFiles.push(file);
   }
   runtime.createTask(root, { taskId: TASK_ID, title: '任务本地运行夹具', intent: '使用任务真实代码目录验证服务选择及前后端连接', status: 'active', projects: ['demo'], services: [`demo/${BACKEND_CODE}`, `demo/${FRONTEND_CODE}`], changes: [] });
@@ -118,14 +139,19 @@ export async function createServiceRuntimeBrowserFixture(runtime: any, workspace
   assert.equal(prepared.status, 'ready', JSON.stringify(prepared));
   fs.writeFileSync(path.join(repositoryRoot, 'frontend/uncommitted.txt'), 'main checkout current files\n');
   const application = runtimeProvide(runtime, SERVICE_RUNTIME_APPLICATION) as ServiceRuntimeApplication;
-  const owned = (run: ManagedRunRecord) => [FRONTEND_CODE, BACKEND_CODE].includes(run.serviceCode)
-    && (run.worktreePath === path.join(repositoryRoot, run.serviceCode === FRONTEND_CODE ? 'frontend' : 'backend') || run.taskId === TASK_ID);
+  const owned = (run: ManagedRunRecord) => [FRONTEND_CODE, BACKEND_CODE].includes(run.serviceCode);
   return { frontend, backend, taskId: TASK_ID, definitionFiles, application,
     async cleanup() {
       // Production identity-checked stop still works if the browser/request is gone.
       for (const run of await application.listRuns(root)) if (owned(run) && isActiveRun(run)) await application.stopRun(root, run.id);
       const ownedRuns = (await application.listRuns(root)).filter(owned);
       assert.deepEqual(ownedRuns.filter(isActiveRun), [], '夹具运行必须全部安全停止后再清理目录');
+      const entries = git(repositoryRoot, ['worktree', 'list', '--porcelain']).split('\n\n');
+      for (const entry of entries) if (/branch refs\/heads\/fixture-service-(?:start|switch)(?:\n|$)/.test(entry)) {
+        const location = entry.split('\n').find(line => line.startsWith('worktree '))!.slice(9);
+        assert.ok(location.startsWith(path.join(root, '.buildr/local/service-worktrees') + path.sep));
+        git(repositoryRoot, ['worktree', 'remove', '--', location]);
+      }
       process.stderr.write(`[buildr-service-runtime-fixture] ${JSON.stringify({ taskId: TASK_ID, ownedRuns: ownedRuns.length, activeAfterStop: 0 })}\n`);
       const cleanup = runtime.cleanupGitWorktrees({ workspaceRoot: root, taskId: TASK_ID, allowNoChange: true });
       assert.equal(cleanup.status, 'cleaned', JSON.stringify(cleanup));
@@ -183,12 +209,71 @@ export async function runServiceRuntimeJourney({ page, runtime, workspaceRoot, w
   try {
     await page.setViewportSize({ width: 1680, height: 1000 });
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: scope.origin });
+    // A declared task routing adapter must not block an ordinary main backend start.
+    const backendDefinitionPath = fixture.definitionFiles.find(file => file === path.join(fs.realpathSync(workspaceRoot), 'services', backend.code, 'runtime.yml'))!;
+    assert.ok(backendDefinitionPath);
+    const backendDefinitionContent = fs.readFileSync(backendDefinitionPath, 'utf8');
+    const backendDefinition = YAML.parse(backendDefinitionContent);
+    fs.writeFileSync(backendDefinitionPath, YAML.stringify({ ...backendDefinition, version: 2, local: { ...backendDefinition.local,
+      routing: { serviceId: 'runtime-backend', environmentVariable: 'RUNTIME_ROUTING_FILE', format: 'buildr.local-service-routing/v1', observationPath: '/routing' },
+      backends: [{ kind: 'service-discovery', serviceCode: frontend.code, serviceId: 'runtime-web', fallback: { kind: 'existing-discovery', context: 'qa' } }],
+    } }));
+    await page.goto(`${workspaceUrl}/services?project=demo`);
+    const backendRow = page.locator('#service-table-body tr.resource-directory-row').filter({ has: page.locator(`a[href*="/services/${backend.id}"]`) });
+    await backendRow.getByRole('button', { name: /启\s*动$/ }).click();
+    const ordinaryStart = page.locator('#service-runtime-start-drawer'); await ordinaryStart.waitFor({ state: 'visible' });
+    assert.match(await ordinaryStart.innerText(), /仅启动当前服务/);
+    assert.equal(await ordinaryStart.getByRole('radio').count(), 0, '普通后端不要求逐下游联调选择');
+    await capture(page, 'service-runtime-ordinary-backend-start.png');
+    const ordinaryLaunched = page.waitForResponse(response => response.url() === `${apiBase}/services/${backend.code}/runs` && response.request().method() === 'POST');
+    await modal().getByRole('button', { name: '启动所选服务', exact: true }).click();
+    const ordinaryResponse = await ordinaryLaunched; assert.equal(ordinaryResponse.status(), 200);
+    const ordinaryInput = ordinaryResponse.request().postDataJSON();
+    assert.equal(Object.hasOwn(ordinaryInput, 'taskId'), false); assert.equal(Object.hasOwn(ordinaryInput, 'backendTargets'), false);
+    const ordinaryRun: ManagedRunRecord = await ordinaryResponse.json();
+    assert.equal(ordinaryRun.main, true); assert.equal(ordinaryRun.taskId, null); assert.equal(ordinaryRun.routing ?? null, null);
+    await ordinaryStart.waitFor({ state: 'hidden' });
+    await fixture.application.waitForRun(workspaceRoot, ordinaryRun.id);
+    const ordinaryProbe = await page.request.get(`${ordinaryRun.url}/routing`); assert.equal(ordinaryProbe.status(), 200); assert.deepEqual(await ordinaryProbe.json(), { routingFile: false });
+    await fixture.application.stopRun(workspaceRoot, ordinaryRun.id); assert.equal(await portReleased(ordinaryRun.actualPort), true);
+    fs.writeFileSync(backendDefinitionPath, backendDefinitionContent);
     const before = await detail(); assert.equal(Object.hasOwn(before.service, 'environments'), false);
     const main = before.worktrees.find((item: any) => item.main); assert.ok(main); assert.equal(main.branch, 'fixture-main'); assert.equal(main.dirty, true);
-    assert.equal(before.connectionTargets[main.id].target, null); assert.ok(before.connectionTargets[main.id].reason);
+    const mainTarget = before.connectionTargets[main.id].find((item: any) => item.serviceCode === backend.code);
+    assert.equal(mainTarget.target, null); assert.ok(mainTarget.reason);
     await page.goto(`${workspaceUrl}/services?project=demo`); await cell().waitFor({ state: 'visible' });
     assert.match(await cell().innerText(), /本地[\s\S]*未运行/); assert.equal(await cell().locator('.directory-env').count(), 1);
     await directoryAction(/启\s*动$/).waitFor({ state: 'visible' }); assert.equal(await directoryAction(/查看运行/).count(), 0);
+    // Common services reuse personal saved-resource identity, persist and sort first.
+    await row().getByRole('button', { name: '设为常用：' + frontend.name, exact: true }).click();
+    await row().getByRole('button', { name: '取消常用：' + frontend.name, exact: true }).waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#service-table-body tr.resource-directory-row').first().getAttribute('data-service-code'), frontend.code);
+    await page.getByRole('button', { name: /只看常用/ }).click();
+    assert.equal(await page.locator('#service-table-body tr.resource-directory-row').count(), 1);
+    await page.reload(); await cell().waitFor({ state: 'visible' });
+    await row().getByRole('button', { name: '取消常用：' + frontend.name, exact: true }).waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#service-table-body tr.resource-directory-row').first().getAttribute('data-service-code'), frontend.code);
+    await row().getByRole('button', { name: '取消常用：' + frontend.name, exact: true }).click();
+    await row().getByRole('button', { name: '设为常用：' + frontend.name, exact: true }).waitFor({ state: 'visible' });
+    // Delay only this cold read. The directory shows local progress, never an empty modal.
+    const startReadUrl = detailUrl + '?standalone=true';
+    let releaseRead!: () => void, startReads = 0;
+    const gate = new Promise<void>(resolve => { releaseRead = resolve; });
+    const holdRead = async (route: any) => { startReads++; await gate; await route.continue(); };
+    await page.route(startReadUrl, holdRead);
+    try {
+      const requested = page.waitForRequest(request => request.url() === startReadUrl);
+      await directoryAction(/启\s*动$/).click(); await requested;
+      assert.equal(await modal().count(), 0, '冷读不打开空弹窗');
+      assert.match(await directoryAction(/启\s*动$/).getAttribute('class') || '', /ant-btn-loading/);
+      releaseRead();
+      await page.locator('#service-runtime-start-drawer').waitFor({ state: 'visible' });
+      assert.equal(startReads, 1, '悬停与点击合并一个读取');
+      await modal().getByRole('button', { name: /取\s*消/ }).click(); await modal().waitFor({ state: 'hidden' });
+      await directoryAction(/启\s*动$/).click(); await page.locator('#service-runtime-start-drawer').waitFor({ state: 'visible' });
+      assert.equal(startReads, 1, '重开弹窗复用同范围的短时观察');
+      await modal().getByRole('button', { name: /取\s*消/ }).click(); await modal().waitFor({ state: 'hidden' });
+    } finally { releaseRead(); await page.unroute(startReadUrl, holdRead); }
     await cell().hover(); const popover = page.locator('.directory-popover:visible'); await popover.waitFor({ state: 'visible' });
     assert.deepEqual(await popover.locator('.directory-popover-section h4').allInnerTexts(), ['本地运行']); assert.doesNotMatch(await popover.innerText(), /QA|PROD|部署/);
     await capture(page, 'service-runtime-directory-popover.png');
@@ -203,7 +288,9 @@ export async function runServiceRuntimeJourney({ page, runtime, workspaceRoot, w
     await serviceTabs.getByRole('tab', { name: '本地运行', exact: true }).click(); await section().waitFor({ state: 'visible' });
     const configuration = section().locator('#service-runtime-configuration');
     assert.match(await configuration.innerText(), /启动与连接配置/);
-    assert.deepEqual(await configuration.locator('.runtime-configuration-connections dd').allInnerTexts(), [before.service.definition.local.backend.serviceCode, before.service.definition.local.backend.remoteUrl]);
+    assert.equal(await section().getByRole('button', { name: '选择目录启动', exact: true }).count(), 0);
+    assert.equal(await configuration.locator('.runtime-configuration-title .runtime-configuration-verification').count(), 1);
+    assert.match(await configuration.innerText(), /测试环境/); assert.deepEqual(await configuration.locator('.runtime-configuration-connections dd').allInnerTexts(), ['沿已验证配置']);
     await configuration.getByRole('button', { name: /配置启动与连接$/ }).click();
     const discoveryDrawer = page.locator('#service-runtime-discovery-drawer'); await discoveryDrawer.waitFor({ state: 'visible' });
     await discoveryDrawer.getByRole('button', { name: '关闭', exact: true }).click(); await discoveryDrawer.waitFor({ state: 'hidden' });
@@ -227,10 +314,9 @@ export async function runServiceRuntimeJourney({ page, runtime, workspaceRoot, w
     const source = start.locator(`[data-worktree-id="${main.id}"]`);
     assert.match(await source.innerText(), /主工作库[\s\S]*fixture-main[\s\S]*含未提交改动/);
     assert.equal(await source.locator('.runtime-start-path').getAttribute('title'), main.path);
-    assert.equal(await start.getByRole('radio', { name: '远程测试环境', exact: true }).isChecked(), true);
-    assert.equal(await start.getByRole('radio', { name: /本地后端/ }).isDisabled(), true, '没有已就绪本地后端时不能选择未知端口');
-    assert.match(await start.locator('[data-connection-option="remote"]').innerText(), new RegExp(REMOTE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-    assert.equal(await start.locator('.runtime-backend-options input:not([type="radio"])').count(), 0, '远程目标来自固定配置，不要求启动时输入地址');
+    assert.equal(await start.getByRole('combobox', { name: '连接环境', exact: true }).count(), 1);
+    assert.equal(await start.locator('input[type="radio"][value^="run:"]').count(), 0, '没有已就绪本地后端时不能选择未知端口');
+    assert.equal(await start.getByRole('textbox').count(), 0, '远程目标来自固定配置，不要求启动时输入地址');
     await capture(page, 'service-runtime-start-options.png');
     const launched = page.waitForResponse(response => response.url() === `${detailUrl}/runs` && response.request().method() === 'POST');
     await modal().getByRole('button', { name: '启动所选服务', exact: true }).click(); const launchResponse = await launched; assert.equal(launchResponse.status(), 200);
@@ -242,6 +328,41 @@ export async function runServiceRuntimeJourney({ page, runtime, workspaceRoot, w
     assert.match(await card(mainRun.id).innerText(), /业务验证仍需执行/);
     await directoryAction(/查看运行/).scrollIntoViewIfNeeded();
     await capture(page, 'service-runtime-active-service.png');
+    // Selecting a branch creates a separate real checkout; main files and running instance remain intact.
+    await section().getByRole('button', { name: /启动本地/ }).click(); await start.waitFor({ state: 'visible' });
+    await start.getByRole('button', { name: /^管理分支 ·/ }).click();
+    await page.getByRole('button', { name: '管理 fixture-service-start', exact: true }).click();
+    const prepareResponse = page.waitForResponse(response => response.url() === `${detailUrl}/worktrees` && response.request().method() === 'POST');
+    await page.getByRole('button', { name: '在独立工作树使用', exact: true }).click();
+    assert.equal((await prepareResponse).status(), 200);
+    await page.waitForFunction(() => document.querySelector('.runtime-source-branch-control .source-control-row-branch-name')?.textContent === 'fixture-service-start');
+    await capture(page, 'service-runtime-branch-start.png');
+    const branchStarted = page.waitForResponse(response => response.url() === `${detailUrl}/runs` && response.request().method() === 'POST');
+    await modal().getByRole('button', { name: '启动所选服务', exact: true }).click();
+    const branchResponse = await branchStarted; assert.equal(branchResponse.status(), 200);
+    const branchRun: ManagedRunRecord = await branchResponse.json(); await start.waitFor({ state: 'hidden' });
+    assert.equal(branchRun.branch, 'fixture-service-start'); assert.equal(branchRun.taskId, null); assert.notEqual(branchRun.worktreePath, main.path);
+    const originalRepository = path.dirname(main.path);
+    assert.equal(git(originalRepository, ['branch', '--show-current']), 'fixture-main');
+    assert.equal(fs.readFileSync(path.join(main.path, 'uncommitted.txt'), 'utf8'), 'main checkout current files\n');
+    assert.equal((await fixture.application.waitForRun(workspaceRoot, branchRun.id)).status, 'running');
+    await fixture.application.stopRun(workspaceRoot, branchRun.id);
+    // The same manager can also check out a branch in the selected real worktree.
+    await section().getByRole('button', { name: /启动本地/ }).click(); await start.waitFor({ state: 'visible' });
+    await start.locator('.ant-select').filter({ has: page.getByRole('combobox', { name: '代码目录', exact: true }) }).locator('.ant-select-selector').click();
+    await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: 'fixture-service-start' }).click();
+    await start.locator(`[data-worktree-id="${branchRun.worktreeId}"]`).waitFor({ state: 'visible' });
+    await start.getByRole('button', { name: /^管理分支 ·/ }).click();
+    await page.getByRole('button', { name: '管理 fixture-service-switch', exact: true }).click();
+    const branchSwitched = page.waitForResponse(response => response.url().includes('/code/branch-switch') && response.request().method() === 'POST');
+    await page.getByRole('button', { name: '切换到 fixture-service-switch', exact: true }).click();
+    const branchSwitchResponse = await branchSwitched; assert.equal(branchSwitchResponse.status(), 200);
+    const switchResult = await branchSwitchResponse.json(); assert.equal(switchResult.source.repositoryId, before.service.repositoryId); assert.equal(switchResult.source.worktreeId, branchRun.worktreeId);
+    await page.waitForFunction(() => document.querySelector('.runtime-source-branch-control .source-control-row-branch-name')?.textContent === 'fixture-service-switch');
+    assert.equal(git(branchRun.worktreePath, ['branch', '--show-current']), 'fixture-service-switch');
+    assert.equal(git(originalRepository, ['branch', '--show-current']), 'fixture-main');
+    assert.equal(fs.readFileSync(path.join(main.path, 'uncommitted.txt'), 'utf8'), 'main checkout current files\n');
+    await modal().getByRole('button', { name: /取\s*消/ }).click(); await start.waitFor({ state: 'hidden' });
     // The directory avoids duplicate starts; the detail still permits another actual checkout.
     await section().getByRole('button', { name: /启动本地/ }).click(); await start.waitFor({ state: 'visible' });
     await assertCentered(page, modal());
@@ -250,8 +371,7 @@ export async function runServiceRuntimeJourney({ page, runtime, workspaceRoot, w
     await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: alternate.branch }).click();
     await start.locator(`[data-worktree-id="${alternate.id}"]`).waitFor({ state: 'visible' });
     await page.locator('.ant-select-dropdown:visible').waitFor({ state: 'hidden' });
-    assert.equal(await start.getByRole('radio', { name: /本地后端/ }).isDisabled(), true);
-    await start.getByRole('radio', { name: '远程测试环境', exact: true }).check();
+    assert.equal(await start.locator('input[type="radio"][value^="run:"]').count(), 0);
     assert.equal(await modal().getByRole('button', { name: '启动所选服务', exact: true }).isEnabled(), true);
     await capture(page, 'service-runtime-alternate-worktree.png');
     await modal().getByRole('button', { name: /取\s*消/ }).click(); await start.waitFor({ state: 'hidden' });
@@ -272,8 +392,6 @@ export async function runServiceRuntimeJourney({ page, runtime, workspaceRoot, w
     // Frontend-only remote never implicitly launches a backend.
     await taskPanel().getByRole('button', { name: /启动任务服务/ }).click();
     await taskStart().getByRole('checkbox', { name: backend.name, exact: true }).uncheck();
-    assert.equal(await taskStart().getByRole('radio', { name: /本任务本地后端/ }).isDisabled(), true, '只启动前端时必须先有已就绪的本任务后端');
-    await taskStart().getByRole('radio', { name: '远程测试环境', exact: true }).check();
     const remote = await startTask(); assert.deepEqual(remote.results.map((item: any) => item.serviceCode), [frontend.code]);
     const remoteRun: ManagedRunRecord = remote.results[0].run; assert.equal(remoteRun.connection?.mode, 'remote'); assert.equal((await taskDetail()).runs.some((run: ManagedRunRecord) => run.serviceCode === backend.code), false);
     await stopInUi(remoteRun);
@@ -282,14 +400,12 @@ export async function runServiceRuntimeJourney({ page, runtime, workspaceRoot, w
     assert.equal(await taskStart().getByRole('radio').count(), 0); const backendOnly = await startTask(); assert.deepEqual(backendOnly.results.map((item: any) => item.serviceCode), [backend.code]);
     let backendRun: ManagedRunRecord = backendOnly.results[0].run;
     await page.locator(`.runtime-run-row:visible[data-run-id="${backendRun.id}"][data-run-status="running"]`).waitFor({ state: 'visible', timeout: 20_000 });
-    const readyTarget = (await taskDetail()).services.find((item: any) => item.service.code === frontend.code).connectionTarget;
+    const readyTarget = (await taskDetail()).services.find((item: any) => item.service.code === frontend.code).connectionTarget.find((item: any) => item.serviceCode === backend.code);
     assert.equal(readyTarget.target.runId, backendRun.id); assert.equal(readyTarget.target.url, backendRun.url); assert.equal(readyTarget.reason, null);
     // An independently started backend enables frontend-only local startup with its actual port.
     await taskPanel().getByRole('button', { name: /启动任务服务/ }).click();
-    assert.equal(await taskStart().getByRole('radio', { name: /本任务本地后端/ }).isChecked(), true);
     await taskStart().getByRole('checkbox', { name: backend.name, exact: true }).uncheck();
-    assert.equal(await taskStart().getByRole('radio', { name: /本任务本地后端/ }).isEnabled(), true);
-    assert.match(await taskStart().locator('[data-connection-option="local"]').innerText(), new RegExp(backendRun.url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), '本地选项应显示实际就绪实例地址');
+    assert.match(await taskStart().innerText(), /本任务已启动的后端自动连接本地实际端口/);
     await capture(page, 'service-runtime-task-options.png'); const local = await startTask(); assert.deepEqual(local.results.map((item: any) => item.serviceCode), [frontend.code]);
     assert.deepEqual((await taskDetail()).runs.filter((run: ManagedRunRecord) => run.serviceCode === backend.code && isActiveRun(run)).map((run: ManagedRunRecord) => run.id), [backendRun.id], '单独启动前端不隐式新增或重启后端');
     let taskRun: ManagedRunRecord = local.results.find((item: any) => item.serviceCode === frontend.code).run;
@@ -300,10 +416,10 @@ export async function runServiceRuntimeJourney({ page, runtime, workspaceRoot, w
     await card(previousTaskRun.id).getByRole('button', { name: '切换连接', exact: true }).click();
     const switchOptions = page.locator('#service-runtime-start-drawer'); await switchOptions.waitFor({ state: 'visible' });
     await assertCentered(page, modal());
-    assert.match(await switchOptions.innerText(), new RegExp(previousTaskRun.id));
-    await switchOptions.getByRole('radio', { name: '远程测试环境', exact: true }).check();
+    assert.match(await modal().innerText(), new RegExp(previousTaskRun.id));
+    await switchOptions.locator(`[data-backend="${backend.code}"] input[type="radio"][value="remote"]`).check();
     const switched = page.waitForResponse(response => response.url() === `${apiBase}/runs/${previousTaskRun.id}/restart` && response.request().method() === 'POST');
-    await modal().getByRole('button', { name: '应用并重启当前前端', exact: true }).click();
+    await modal().getByRole('button', { name: '应用并重启当前实例', exact: true }).click();
     const switchResponse = await switched; assert.equal(switchResponse.status(), 200); taskRun = await switchResponse.json();
     await switchOptions.waitFor({ state: 'hidden' });
     await page.locator(`.runtime-run-row:visible[data-run-id="${taskRun.id}"][data-run-status="running"]`).waitFor({ state: 'visible', timeout: 20_000 });
@@ -314,20 +430,20 @@ export async function runServiceRuntimeJourney({ page, runtime, workspaceRoot, w
     assert.equal(switchedTask.runs.find((run: ManagedRunRecord) => run.id === backendRun.id).status, 'running', '切换前端不停止后端');
     // A target disappearing after the user saw it must not stop an otherwise usable frontend.
     await card(taskRun.id).getByRole('button', { name: '切换连接', exact: true }).click(); await switchOptions.waitFor({ state: 'visible' });
-    await switchOptions.getByRole('radio', { name: /本地后端/ }).check();
-    assert.match(await switchOptions.locator('[data-connection-option="local"]').innerText(), new RegExp(backendRun.url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    await switchOptions.locator(`[data-backend="${backend.code}"] input[type="radio"][value="run:${backendRun.id}"]`).check();
+    assert.match(await switchOptions.locator(`[data-backend="${backend.code}"]`).innerText(), new RegExp(backendRun.url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
     const preserved = { id: taskRun.id, pid: taskRun.pid, actualPort: taskRun.actualPort };
     // Delay only this real mutation request; no response or run state is fabricated.
     // This keeps the race deterministic even when background refresh disables a stale option.
     await page.route(`${apiBase}/runs/${taskRun.id}/restart`, async route => {
-      assert.equal(route.request().postDataJSON().expectedBackendRunId, backendRun.id, '提交应校验弹窗已显示的具体后端实例');
+      assert.deepEqual(route.request().postDataJSON().backendTargets, [{ serviceCode: backend.code, target: 'run', runId: backendRun.id }], '提交应校验弹窗已显示的具体后端实例');
       await fixture.application.stopRun(workspaceRoot, backendRun.id);
       assert.equal(await portReleased(backendRun.actualPort), true);
       await route.continue();
     }, { times: 1 });
     expectedBrowserErrors.add(`${apiBase}/runs/${taskRun.id}/restart`);
     const rejectedRestart = page.waitForResponse(response => response.url() === `${apiBase}/runs/${taskRun.id}/restart` && response.request().method() === 'POST');
-    await modal().getByRole('button', { name: '应用并重启当前前端', exact: true }).click();
+    await modal().getByRole('button', { name: '应用并重启当前实例', exact: true }).click();
     const rejectedResponse = await rejectedRestart; assert.equal(rejectedResponse.status(), 409);
     await switchOptions.locator('.ant-alert-error').waitFor({ state: 'visible' });
     assert.equal(await switchOptions.isVisible(), true, '前置校验失败保留弹窗及可用前端');
@@ -336,14 +452,19 @@ export async function runServiceRuntimeJourney({ page, runtime, workspaceRoot, w
     assert.equal(afterRejected.status, 'running'); assert.equal(afterRejected.connection.mode, 'remote');
     const preservedResponse = await page.request.get(taskRun.url); assert.equal(preservedResponse.status(), 200); assert.match(await preservedResponse.text(), new RegExp(REMOTE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
     await capture(page, 'service-runtime-switch-target-disappeared.png');
-    await modal().getByRole('button', { name: /取\s*消/ }).click(); await switchOptions.waitFor({ state: 'hidden' });
+    await switchOptions.locator(`[data-backend="${backend.code}"] input[type="radio"][value="remote"]`).check();
+    assert.equal(await modal().getByRole('button', { name: '应用并重启当前实例', exact: true }).isEnabled(), true, '目标失效后仍可明确改选远程');
+    const remoteRetry = page.waitForResponse(response => response.url() === `${apiBase}/runs/${taskRun.id}/restart` && response.request().method() === 'POST');
+    await modal().getByRole('button', { name: '应用并重启当前实例', exact: true }).click();
+    const remoteRetryResponse = await remoteRetry; assert.equal(remoteRetryResponse.status(), 200); taskRun = await remoteRetryResponse.json();
+    assert.equal(taskRun.connection?.mode, 'remote');
+    await switchOptions.waitFor({ state: 'hidden' });
+    await page.locator(`.runtime-run-row:visible[data-run-id="${taskRun.id}"][data-run-status="running"]`).waitFor({ state: 'visible', timeout: 20_000 });
     await stopInUi(taskRun);
     // From zero, one group action starts and waits for the backend before launching the frontend.
     await taskPanel().getByRole('button', { name: /启动任务服务/ }).click();
     assert.equal(await taskStart().getByRole('checkbox', { name: backend.name, exact: true }).isChecked(), true);
     assert.equal(await taskStart().getByRole('checkbox', { name: frontend.name, exact: true }).isChecked(), true);
-    assert.equal(await taskStart().getByRole('radio', { name: /本任务本地后端/ }).isEnabled(), true, '整组启动仍可先启动所选后端');
-    await taskStart().getByRole('radio', { name: /本任务本地后端/ }).check();
     const group = await startTask(); assert.deepEqual(group.results.map((item: any) => item.serviceCode), [backend.code, frontend.code]);
     assert.equal(group.results.some((item: any) => item.reused), false);
     backendRun = group.results.find((item: any) => item.serviceCode === backend.code).run;

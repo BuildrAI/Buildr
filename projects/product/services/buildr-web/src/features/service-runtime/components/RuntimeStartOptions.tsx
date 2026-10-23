@@ -1,6 +1,6 @@
 import { Alert, Checkbox, Radio, Select, Space, Tag } from 'antd';
 import { BranchesOutlined } from '@ant-design/icons';
-import { backendConnectionChoices, dirtyLabel, shortCommit } from '../model';
+import { backendConnectionChoices, dirtyLabel, routingScopeError, shortCommit } from '../model';
 import type { ConnectionSelection, LocalBackendAvailability, ServiceRuntimeSummary, ServiceWorktree } from '../api/service-runtime-api';
 
 export type RuntimeStartItem = { service: ServiceRuntimeSummary; worktree: ServiceWorktree | null; connectionTarget?: LocalBackendAvailability[] | null; diagnostics?: string[]; worktrees?: ServiceWorktree[] };
@@ -15,12 +15,15 @@ type Props = {
   backendSelections?: Record<string, string>;
   onBackendSelection?(backendCode: string, value: string): void;
   taskScope?: boolean;
+  /** 重开已有任务路由实例时保留逐下游选择，普通后端启动不进入联调表单。 */
+  preserveTaskConnections?: boolean;
   disabled?: boolean;
 };
 
 /** 任务可选择服务，单服务可选择目录；后端目标只有经过验证的声明才提供单选。 */
-export function RuntimeStartOptions({ items, selected, onSelected, onWorktree, connection, onConnection, backendSelections, onBackendSelection, taskScope, disabled }: Props) {
-  const connections = backendConnectionChoices(items, selected, taskScope);
+export function RuntimeStartOptions({ items, selected, onSelected, onWorktree, connection, onConnection, backendSelections, onBackendSelection, taskScope, preserveTaskConnections, disabled }: Props) {
+  const ordinaryBackend = (service: ServiceRuntimeSummary) => service.type === 'backend' && !taskScope && !preserveTaskConnections;
+  const connections = backendConnectionChoices(items.filter(item => !ordinaryBackend(item.service)), selected, taskScope);
   const localAvailable = connections.every(choice => choice.available);
   const hasDiscovery = connections.some(choice => choice.backend.kind === 'service-discovery');
   return <div className="start-worktree-list">
@@ -31,19 +34,19 @@ export function RuntimeStartOptions({ items, selected, onSelected, onWorktree, c
       return <div className={`start-worktree-row runtime-start-choice${checked ? ' is-selected' : ''}`} key={service.code} data-worktree-id={worktree?.id} data-start-service={service.code}>
         <div className="start-worktree-main">
           <div className="runtime-start-name">{onSelected ? <Checkbox checked={checked} disabled={disabled || unavailable} onChange={event => onSelected(event.target.checked ? [...selected, service.code] : selected.filter(code => code !== service.code))}>{service.name}</Checkbox> : <strong>{service.name}</strong>}<Tag>{worktree?.main ? '主工作库' : worktree?.taskTitle || (taskScope ? '本任务目录' : '其他检出目录')}</Tag></div>
-          {worktrees && onWorktree ? <Select aria-label="代码目录" value={worktree?.id} disabled={disabled} onChange={onWorktree} options={[...worktrees].sort((left, right) => Number(right.main) - Number(left.main)).map(item => ({ value: item.id, disabled: Boolean(service.definition?.local.routing && (!item.taskId || item.main)), label: `${item.main ? '主工作库' : item.taskTitle || item.label} · ${item.branch || '分支未知'}` }))} /> : null}
+          {worktrees && onWorktree ? <Select aria-label="代码目录" value={worktree?.id} disabled={disabled} onChange={onWorktree} options={[...worktrees].sort((left, right) => Number(right.main) - Number(left.main)).map(item => ({ value: item.id, disabled: Boolean(service.definition?.local.routing && routingScopeError(item)), label: `${item.main ? '主工作库' : item.taskTitle || item.label} · ${item.branch || '分支未知'}` }))} /> : null}
           {worktree ? <><Space size={5} wrap><BranchesOutlined /><code>{worktree.branch || '分支未知'}</code><code>{shortCommit(worktree.head)}</code><Tag color={worktree.dirty ? 'gold' : undefined}>{dirtyLabel(worktree.dirty)}</Tag></Space><code className="runtime-start-path" title={worktree.path}>{worktree.path}</code></> : <span className="runtime-run-failure">没有唯一匹配的本任务代码目录，不会使用主工作库代替。</span>}
           {!service.definition ? <span className="runtime-run-failure">{service.definitionDiagnostic || '尚未配置已验证的启动方式'}</span> : null}
-          {checked && service.definition && !service.definition.local.backends?.length ? <p className="runtime-connection-note" role="note">未声明可切换的后端连接，将按现有启动配置运行。需要本地或远程选项时，请检查连接配置。</p> : null}
+          {checked && service.definition && ordinaryBackend(service) ? <p className="runtime-connection-note" role="note">沿应用现有配置启动；下游连接使用应用已有配置。</p> : checked && service.definition && !service.definition.local.backends?.length ? <p className="runtime-connection-note" role="note">未声明可切换的后端连接，将按现有启动配置运行。需要本地或远程选项时，请检查连接配置。</p> : null}
           {diagnostics.map(item => <small key={item} className="runtime-run-failure">{item}</small>)}
         </div>
       </div>;
     })}
-    {onBackendSelection ? connections.map(choice => {
+    {taskScope ? <p className="runtime-connection-note" role="note">一键启动所选前后端；本任务已启动的后端自动连接本地实际端口，其他请求继续使用远程测试环境。</p> : onBackendSelection ? connections.map(choice => {
       const availability = choice.availability;
       const value = backendSelections?.[choice.backend.serviceCode] ?? 'auto';
       return <div className="runtime-backend-group" key={`${choice.frontendCode}:${choice.backend.serviceCode}`} data-backend={choice.backend.serviceCode}>
-        <div className="runtime-backend-head"><strong>后端 {choice.backend.serviceCode}</strong><code title={choice.backend.kind === 'service-discovery' ? '服务发现（Service Discovery）名称' : '注入环境变量'}>{choice.backend.kind === 'service-discovery' ? choice.backend.serviceId : choice.backend.environmentVariable}</code></div>
+        <div className="runtime-backend-head"><strong>{items.find(item => item.service.code === choice.frontendCode)?.service.type === 'backend' ? '下游服务' : '后端'} {choice.backend.serviceCode}</strong><code title={choice.backend.kind === 'service-discovery' ? '服务发现（Service Discovery）名称' : '注入环境变量'}>{choice.backend.kind === 'service-discovery' ? choice.backend.serviceId : choice.backend.environmentVariable}</code></div>
         <Radio.Group className="runtime-backend-radio" value={value} disabled={disabled} onChange={event => onBackendSelection(choice.backend.serviceCode, event.target.value as string)}>
           <Radio value="auto"><span className="runtime-backend-option"><span className="runtime-backend-option-name">默认（自动）</span><small>{choice.target ? `${choice.target.worktreeLabel}${choice.target.branch ? ` · ${choice.target.branch}` : ''} · ${choice.target.url}` : choice.backend.kind === 'service-discovery' ? availability?.state === 'missing' ? '本任务没有本地目标，使用既有 QA' : '本地目标状态待确认；已选目标失效时不会回落' : '同范围无就绪实例时使用远程测试环境'}</small></span></Radio>
           {(availability?.candidates ?? []).map(candidate => <Radio key={candidate.runId} value={`run:${candidate.runId}`}><span className="runtime-backend-option"><span className="runtime-backend-option-name">{candidate.worktreeLabel}{candidate.branch ? ` · ${candidate.branch}` : ''}<code>{candidate.url}</code></span><Tag color={candidate.sameScope ? 'green' : undefined}>{candidate.sameScope ? '同范围' : '其他范围'}</Tag></span></Radio>)}

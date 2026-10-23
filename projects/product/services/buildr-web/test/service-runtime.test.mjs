@@ -32,6 +32,7 @@ const definition = { source: 'agent', verifiedAt: '2026-10-22T01:00:00Z', path: 
 const service = (code, configured = true) => ({ id: code + '-id', code, type: code === 'front' ? 'frontend' : 'backend', name: code === 'front' ? '运营前端' : '业务后端', projects: ['pig'], repositoryId: code + '-repo', definition: configured ? code === 'front' ? definition : { ...definition, local: { ...definition.local, backends: undefined } } : null, definitionDiagnostic: null, runs: [], local: { activeCount: 0, activePorts: [] } });
 const run = { id: 'run-one', serviceId: 'front-id', serviceCode: 'front', worktreeId: 'task-front', worktreePath: '/actual/task-front', worktreeLabel: 'topic', branch: 'main', head: 'b'.repeat(40), main: false, taskId: 'task-one', taskTitle: '本次订单验证', dirty: null, origin: 'unknown', url: 'http://127.0.0.1:3001', connection: { mode: 'remote', url: 'https://test.example.com', serviceCode: 'back', runId: null }, launch: null, pid: 3456, preferredPort: 3000, actualPort: 3001, portNote: '已避让首选端口', status: 'running', startedAt: '2026-10-22T01:00:00Z', stoppedAt: null, failure: null, logPath: '/actual/run.log' };
 const render = (component, props) => renderToStaticMarkup(React.createElement(MemoryRouter, null, React.createElement(component, props)));
+const elements = node => Array.isArray(node) ? node.flatMap(elements) : node && typeof node === 'object' ? [node, ...elements(node.props?.children)] : [];
 
 test('任务选择只发送已选可用任务目录，单前端不会扩大到后端或主库', () => {
   const choices = [{ service: service('front'), worktree: worktree('task-front'), diagnostics: [] }, { service: service('back'), worktree: worktree('task-back'), diagnostics: [] }, { service: service('main-only'), worktree: worktree('main', true), diagnostics: [] }, { service: service('missing'), worktree: null, diagnostics: [] }, { service: service('unconfigured', false), worktree: worktree('task-u'), diagnostics: [] }];
@@ -60,10 +61,66 @@ test('实际实例打开链接保留当前页，未知旧快照不冒充当前�
 });
 test('任务服务复选与连接单选保留单前端远程验证动线，不包含部署入口', () => {
   const html = render(RuntimeStartOptions, { items: [{ service: service('front'), worktree: worktree('task-front') }, { service: service('back'), worktree: worktree('task-back') }], selected: ['front'], onSelected() {}, connection: 'remote', onConnection() {}, taskScope: true });
-  assert.equal((html.match(/type="checkbox"/g) || []).length, 2); assert.equal((html.match(/type="radio"/g) || []).length, 2);
-  assert.match(html, /<input(?=[^>]*type="radio")(?=[^>]*value="remote")(?=[^>]*checked="")[^>]*>/); assert.match(html, /https:\/\/test\.example\.com/); assert.match(html, /未选择的服务不会启动/); assert.doesNotMatch(html, /QA 部署|部署到/);
+  assert.equal((html.match(/type="checkbox"/g) || []).length, 2); assert.equal((html.match(/type="radio"/g) || []).length, 0);
+  assert.match(html, /一键启动所选前后端/); assert.match(html, /未选择的服务不会启动/);
   const backendOnly = render(RuntimeStartOptions, { items: [{ service: service('front'), worktree: worktree('task-front') }, { service: service('back'), worktree: worktree('task-back') }], selected: ['back'], onSelected() {}, connection: 'local', onConnection() {}, taskScope: true });
   assert.doesNotMatch(backendOnly, /type="radio"/);
+});
+
+test('真实普通后端选项不展示下游控件，主库可选且不明路由目录禁选', () => {
+  const downstream = { kind: 'service-discovery', serviceCode: 'upms', serviceId: 'upms-app', fallback: { kind: 'existing-discovery', context: 'qa' } };
+  const configured = { ...service('back'), definition: { ...definition, local: { ...definition.local, routing: { serviceId: 'business-app', format: 'buildr.local-service-routing/v1' }, backends: [downstream] } } };
+  const main = worktree('main', true), task = worktree('task'), unknown = { ...worktree('unknown'), taskId: null }, conflicting = { ...main, id: 'conflicting', taskId: 'task-one' };
+  const directories = [];
+  const props = { items: [{ service: configured, worktree: main, worktrees: [task, main, unknown, conflicting], connectionTarget: [{ serviceCode: 'upms', candidates: [{ runId: 'task-upms', worktreeLabel: '任务', url: 'http://127.0.0.1:8189', sameScope: false }], target: null }] }], selected: ['back'], connection: 'remote', backendSelections: {}, onConnection() {}, onBackendSelection() { throw Error('普通后端不得要求下游选择'); }, onWorktree: id => directories.push(id) };
+  const tree = RuntimeStartOptions(props);
+  const nodes = elements(tree);
+  assert.equal(nodes.filter(node => node.props?.className === 'runtime-backend-group' || node.props?.className === 'runtime-backend-options').length, 0);
+  const select = nodes.find(node => node.props?.['aria-label'] === '代码目录');
+  assert.equal(select.props.options[0].value, main.id);
+  assert.equal(select.props.options.find(option => option.value === main.id).disabled, false);
+  assert.equal(select.props.options.find(option => option.value === task.id).disabled, false);
+  assert.equal(select.props.options.find(option => option.value === unknown.id).disabled, true);
+  assert.equal(select.props.options.find(option => option.value === conflicting.id).disabled, true);
+  select.props.onChange(main.id); assert.deepEqual(directories, [main.id]);
+  const html = render(RuntimeStartOptions, props);
+  assert.doesNotMatch(html, /type="radio"|请先启动|默认（自动）/);
+  assert.match(html, /沿应用现有配置启动/);
+});
+
+test('真实前端逐后端控件可分别选择跨范围实例，并从失效本地目标明确切回远程', () => {
+  const secondary = { serviceCode: 'auth', environmentVariable: 'AUTH_URL', remoteUrl: 'https://test.example.com' };
+  const configured = { ...service('front'), definition: { ...definition, local: { ...definition.local, backends: [...definition.local.backends, secondary] } } };
+  const selections = { back: 'remote', auth: 'remote' };
+  const props = { items: [{ service: configured, worktree: worktree('main', true), connectionTarget: [{ serviceCode: 'back', target: null, candidates: [{ runId: 'other-task-back', worktreeLabel: '另一任务', branch: 'another', url: 'http://127.0.0.1:8189', sameScope: false }] }, { serviceCode: 'auth', target: null, candidates: [] }] }], selected: ['front'], connection: 'remote', onConnection() {}, backendSelections: selections, onBackendSelection: (code, value) => { selections[code] = value; } };
+  let groups = elements(RuntimeStartOptions(props)).filter(node => node.props?.className === 'runtime-backend-radio');
+  assert.equal(groups.length, 2);
+  assert.deepEqual(groups.map(group => group.props.value), ['remote', 'remote']);
+  const offered = elements(groups[0]).filter(node => node.props?.value === 'run:other-task-back');
+  assert.equal(offered.length, 1, '直接地址已就绪候选可显式跨范围选择');
+  groups[0].props.onChange({ target: { value: 'run:other-task-back' } });
+  assert.deepEqual(model.backendSelectionTargets(configured.definition.local.backends, selections), [{ serviceCode: 'back', target: 'run', runId: 'other-task-back' }, { serviceCode: 'auth', target: 'remote' }]);
+  const stoppedProps = { ...props, items: [{ ...props.items[0], connectionTarget: [{ serviceCode: 'back', target: null, candidates: [] }, { serviceCode: 'auth', target: null, candidates: [] }] }] };
+  groups = elements(RuntimeStartOptions(stoppedProps)).filter(node => node.props?.className === 'runtime-backend-radio');
+  assert.equal(groups[0].props.value, 'run:other-task-back');
+  assert.ok(elements(groups[0]).some(node => node.props?.value === 'remote'), '失效目标不隐藏远程选项');
+  groups[0].props.onChange({ target: { value: 'remote' } });
+  assert.deepEqual(model.backendSelectionTargets(configured.definition.local.backends, selections), [{ serviceCode: 'back', target: 'remote' }, { serviceCode: 'auth', target: 'remote' }]);
+  assert.equal(elements(RuntimeStartOptions(stoppedProps)).filter(node => node.props?.className === 'runtime-backend-radio')[0].props.value, 'remote');
+});
+
+test('真实已有任务路由后端仍保留必要联调选择', () => {
+  const backend = { kind: 'service-discovery', serviceCode: 'upms', serviceId: 'upms-app', fallback: { kind: 'existing-discovery', context: 'qa' } };
+  const configured = { ...service('back'), definition: { ...definition, local: { ...definition.local, routing: { serviceId: 'business-app' }, backends: [backend] } } };
+  let selection = 'run:previous';
+  const props = { items: [{ service: configured, worktree: worktree('task'), connectionTarget: [{ serviceCode: 'upms', state: 'missing', target: null, candidates: [] }] }], selected: ['back'], preserveTaskConnections: true, connection: 'remote', onConnection() {}, backendSelections: { upms: selection }, onBackendSelection: (_code, value) => { selection = value; } };
+  const group = elements(RuntimeStartOptions(props)).find(node => node.props?.className === 'runtime-backend-radio');
+  assert.ok(group);
+  assert.equal(group.props.value, 'run:previous');
+  group.props.onChange({ target: { value: 'remote' } });
+  assert.equal(selection, 'remote');
+  const taskTree = RuntimeStartOptions({ ...props, preserveTaskConnections: undefined, taskScope: true, onBackendSelection: undefined, connection: 'auto' });
+  assert.ok(elements(taskTree).some(node => node.props?.role === 'note')); assert.equal(elements(taskTree).filter(node => node.props?.['data-connection-option']).length, 0);
 });
 test('客户端发送来源版本和明确服务选择，不提供部署客户端', async () => {
   const requests = [];
@@ -105,7 +162,7 @@ test('任务明确选择后端可一起启动，单选前端不隐式启动后�
   assert.equal(model.canUseLocalConnection(items, ['front'], true), false);
   assert.equal(model.canUseLocalConnection(items, ['front', 'back'], true), true);
   const html = render(RuntimeStartOptions, { items, selected: ['front', 'back'], connection: 'local', onConnection() {}, taskScope: true });
-  assert.match(html, /先启动 back，就绪后自动连接实际地址/); assert.match(html, /https:\/\/test\.example\.com/);
+  assert.match(html, /一键启动所选前后端/); assert.match(html, /其他请求继续使用远程测试环境/);
   assert.equal(model.canUseLocalConnection([{ ...items[0] }, { ...items[1], worktree: worktree('main-back', true) }], ['front', 'back'], true), false);
   assert.equal(model.canUseLocalConnection([{ ...items[0] }, { ...items[1], service: service('back', false) }], ['front', 'back'], true), false);
 });
@@ -164,7 +221,7 @@ test('启动配置按原始参数数组展示，长路径和引号不被shell拼
   assert.ok(nodes(tree).some(node => node.type === 'dl' && node.props.className === 'runtime-definition-paths'));
   assert.equal(tree.props.id, 'service-runtime-definition-drawer');
   const noConnection = render(RuntimeStartOptions, { items: [{ service: service('back'), worktree: worktree('back-task') }], selected: ['back'], connection: 'remote', onConnection() {} });
-  assert.match(noConnection, /未声明可切换的后端连接/); assert.match(noConnection, /将按现有启动配置运行/); assert.doesNotMatch(noConnection, /这是后端|这是前端/);
+  assert.match(noConnection, /沿应用现有配置启动/); assert.doesNotMatch(noConnection, /type="radio"|这是后端|这是前端/);
 });
 
 test('本模块确认框可显式居中，通用确认默认保持原值', async () => {

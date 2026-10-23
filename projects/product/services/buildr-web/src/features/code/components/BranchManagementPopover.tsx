@@ -28,6 +28,7 @@ export type BranchManagementPopoverProps = {
   onFetchRemote(): void;
   inspect(entry: SourceControlBranch): BranchSwitchImpact;
   onUse(entry: SourceControlBranch, localName?: string): Promise<boolean>;
+  onUseIndependent?(entry: SourceControlBranch): Promise<boolean>;
   onOpenPosition(worktreeId: string): void;
   onViewChanges(): void;
 };
@@ -44,7 +45,7 @@ function groupsFor(entries: SourceControlBranch[]): BranchGroup[] {
   ];
 }
 
-export function BranchManagementPopover({ repository, worktree, entries, ready, fetching, fetchDisabled, fetchedAt, fetchError, remoteError, reading, readNote, pending, failure, open:controlledOpen, onOpenChange, onTargetChange, onFetchRemote, inspect, onUse, onOpenPosition, onViewChanges }: BranchManagementPopoverProps) {
+export function BranchManagementPopover({ repository, worktree, entries, ready, fetching, fetchDisabled, fetchedAt, fetchError, remoteError, reading, readNote, pending, failure, open:controlledOpen, onOpenChange, onTargetChange, onFetchRemote, inspect, onUse, onUseIndependent, onOpenPosition, onViewChanges }: BranchManagementPopoverProps) {
   const viewActive = useContext(WorkspaceViewActiveContext);
   const triggerRef = useRef<ComponentRef<typeof Button>>(null);
   const searchRef = useRef<ComponentRef<typeof Input>>(null);
@@ -121,6 +122,7 @@ export function BranchManagementPopover({ repository, worktree, entries, ready, 
       </> : impact.blockedReason ? <p className="branch-management-warning">{impact.blockedReason}</p> : <>
         {impact.needsLocalName && <label className="branch-management-local-name">本地分支（Local Branch）名称<Input size="small" value={localName} onChange={event => { setLocalName(event.target.value.replace(/\s+/g, '')); onTargetChange(); }} aria-label="切换使用的本地分支（Local Branch）名称" onPressEnter={() => { if (targetName) void use(entry, targetName); }} /></label>}
         <Button type="text" block className="branch-management-primary-action" disabled={!targetName || reading} loading={pending} title={actionLabel} onClick={() => void use(entry, impact.needsLocalName ? targetName : undefined)}>{actionLabel}</Button>
+        {onUseIndependent && !impact.needsLocalName ? <Button type="text" block disabled={pending || reading} onClick={async () => { if (await onUseIndependent(entry)) close(); }}>在独立工作树使用</Button> : null}
       </>}
     </section>;
   };

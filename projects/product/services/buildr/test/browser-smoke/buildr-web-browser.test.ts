@@ -1964,6 +1964,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       await page.getByRole('button', { name: '新增服务', exact: true }).click();
       await page.getByRole('textbox', { name: '服务名称', exact: true }).fill('目录登记服务');
       await page.getByRole('textbox', { name: '服务编码', exact: true }).fill('retained-browser');
+      await page.getByRole('combobox', { name: '服务类型', exact: true }).click();
+      await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: /^后端$/ }).click();
       await page.getByRole('combobox', { name: '已有服务目录', exact: true }).click();
       await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: directoryPath }).click();
       await page.getByRole('button', { name: '添加服务', exact: true }).click();
@@ -1979,6 +1981,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.getByRole('button', { name: '新增服务', exact: true }).click();
     await page.getByRole('textbox', { name: '服务名称', exact: true }).fill('新目录服务');
     await page.getByRole('textbox', { name: '服务编码', exact: true }).fill('new-directory-browser');
+    await page.getByRole('combobox', { name: '服务类型', exact: true }).click();
+    await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: /^后端$/ }).click();
     await page.getByRole('combobox', { name: '所属项目', exact: true }).click();
     await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: runtime.assetCatalog(workspaceRoot).projects.find((item: any) => item.code === 'demo').name }).click();
     await page.getByRole('button', { name: '添加服务', exact: true }).click();

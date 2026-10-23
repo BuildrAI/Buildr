@@ -49,6 +49,8 @@ export type ManagedRunRecord = {
   connection: RunDirectConnection | null;
   connections: RunConnection[];
   routing?: RunRouting;
+  environment?: { code: string; name: string; url?: string };
+  standalone?: boolean;
   launch: RunLaunch | null;
   processIdentity: ProcessIdentity | null;
 };

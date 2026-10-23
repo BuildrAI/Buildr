@@ -39,6 +39,8 @@ export type ManagedRun = {
   connections?: RunConnection[];
   routing?: { laneId: string; workspaceId: string; hostId: string; serviceId: string; contextDigest: string; observationPath: string;
     observation?: { status: 'observed' | 'unknown' | 'unavailable'; observedAt?: string; targets?: Record<string, unknown>; error?: string } };
+  environment?: { code: string; name: string; url?: string };
+  standalone?: boolean;
   launch: RuntimeLaunch | null;
   pid: number;
   preferredPort: number;
@@ -76,6 +78,7 @@ export type RuntimeDefinitionView = {
     readiness: RuntimeReadiness;
     timeoutSeconds: number;
     backends?: RuntimeBackendDeclaration[];
+    remoteEnvironments?: Array<{ code: string; name: string; url?: string; variables: Record<string, string> }>;
     routing?: { serviceId: string; environmentVariable: string; format: 'buildr.local-service-routing/v1'; observationPath: string };
   };
 };
@@ -112,13 +115,13 @@ export type LocalBackendAvailability = {
 export type ServiceRuntimeDetail = { service: ServiceRuntimeSummary; worktrees: ServiceWorktree[]; connectionTargets: Record<string, LocalBackendAvailability[]>; diagnostics: string[] };
 export type TaskRuntimeService = { service: ServiceRuntimeSummary; worktree: ServiceWorktree | null; connectionTarget: LocalBackendAvailability[] | null; diagnostics: string[] };
 export type TaskRuntimeView = { taskId: string; title: string; services: TaskRuntimeService[]; runs: ManagedRun[]; diagnostics: string[] };
-export type StartOptions = { connection?: BackendMode; backendTargets?: BackendTarget[]; origin?: 'human' | 'agent'; taskId?: string; expectedWorktree?: ExpectedWorktree; expectedBackendRunId?: string };
-export type RestartOptions = { connection?: BackendMode; backendTargets?: BackendTarget[]; expectedWorktree?: ExpectedWorktree; expectedBackendRunId?: string; expectedRoutingDigest?: string };
+export type StartOptions = { connection?: ConnectionSelection; environment?: string; standalone?: boolean; backendTargets?: BackendTarget[]; origin?: 'human' | 'agent'; taskId?: string; expectedWorktree?: ExpectedWorktree; expectedBackendRunId?: string };
+export type RestartOptions = { connection?: ConnectionSelection; environment?: string; backendTargets?: BackendTarget[]; expectedWorktree?: ExpectedWorktree; expectedBackendRunId?: string; expectedRoutingDigest?: string };
 export type TaskStartSelection = { serviceCode: string; worktreeId: string; expectedWorktree?: ExpectedWorktree; expectedBackendRunId?: string; backendTargets?: BackendTarget[] };
 export type TaskStartResult = { taskId: string; results: Array<{ serviceCode: string; worktreeId: string; run: ManagedRun | null; reused: boolean; error: { code: string; message: string } | null }> };
 export type RunLogResponse = { record: ManagedRun; log: string; truncated: boolean; size: number; maxBytes: number };
 type ReadOptions = Pick<RequestInit, 'signal'>;
-type DetailReadOptions = ReadOptions & { taskId?: string };
+type DetailReadOptions = ReadOptions & { taskId?: string; standalone?: boolean };
 export const SERVICE_RUNTIME_CHANGED = 'buildr:service-runtime-changed';
 
 /** 所有入口复用工作空间范围的本地运行接口；写入沿用会话授权。 */
@@ -138,8 +141,11 @@ export function createServiceRuntimeClient(client: ApiClient, workspaceId?: stri
       return client(path('/service-runtime/overview'), options) as Promise<ServiceRuntimeOverview>;
     },
     detail(serviceCode: string, options: DetailReadOptions = {}): Promise<ServiceRuntimeDetail> {
-      const { taskId, ...readOptions } = options;
-      return client(service(serviceCode) + (taskId ? '?taskId=' + encodeURIComponent(taskId) : ''), readOptions) as Promise<ServiceRuntimeDetail>;
+      const { taskId, standalone, ...readOptions } = options;
+      const query = new URLSearchParams();
+      if (taskId) query.set('taskId', taskId);
+      if (standalone) query.set('standalone', 'true');
+      return client(service(serviceCode) + (query.size ? '?' + query : ''), readOptions) as Promise<ServiceRuntimeDetail>;
     },
     task(taskId: string, options: ReadOptions = {}): Promise<TaskRuntimeView> {
       return client(task(taskId), options) as Promise<TaskRuntimeView>;
@@ -150,10 +156,13 @@ export function createServiceRuntimeClient(client: ApiClient, workspaceId?: stri
     start(serviceCode: string, worktreeId: string, options: StartOptions = {}): Promise<ManagedRun> {
       return write<ManagedRun>(service(serviceCode) + '/runs', { worktreeId, ...options });
     },
+    prepareWorktree(serviceCode: string, input: { worktreeId: string; targetRef: string; expectedTargetHash: string; expectedRevision: string }): Promise<{ worktree: ServiceWorktree; created: boolean }> {
+      return write(service(serviceCode) + '/worktrees', input);
+    },
     restart(runId: string, options: RestartOptions = {}): Promise<ManagedRun> {
       return write<ManagedRun>(path('/service-runtime/runs/' + encodeURIComponent(runId) + '/restart'), options);
     },
-    startTask(taskId: string, input: { selected: TaskStartSelection[]; connection?: BackendMode; origin: 'human' | 'agent' }): Promise<TaskStartResult> {
+    startTask(taskId: string, input: { selected: TaskStartSelection[]; connection?: ConnectionSelection; origin: 'human' | 'agent' }): Promise<TaskStartResult> {
       return write<TaskStartResult>(task(taskId) + '/runs', input);
     },
     stop(runId: string): Promise<ManagedRun> {

@@ -19,7 +19,10 @@ export type StartRunInput = {
   worktreeId: string;
   origin?: 'human' | 'agent';
   taskId?: string;
-  connection?: 'local' | 'remote';
+  connection?: 'local' | 'remote' | 'auto';
+  environment?: string;
+  /** 单服务入口仅使用远程环境，不因来源目录属于任务而进入任务联调。 */
+  standalone?: boolean;
   backendTargets?: BackendTarget[];
   expectedWorktree?: ExpectedWorktree;
   expectedBackendRunId?: string;
@@ -37,7 +40,7 @@ export type LocalBackendAvailability = {
   target: { runId: string; serviceCode: string; url: string; worktreeLabel: string; branch: string | null } | null;
   reason: string | null;
 };
-export type RestartRunInput = Pick<StartRunInput, 'connection' | 'backendTargets' | 'expectedWorktree' | 'expectedBackendRunId' | 'expectedRoutingDigest' | 'origin'>;
+export type RestartRunInput = Pick<StartRunInput, 'connection' | 'backendTargets' | 'expectedWorktree' | 'expectedBackendRunId' | 'expectedRoutingDigest' | 'origin' | 'environment'>;
 export type ServiceRuntimeDeps = {
   resolveService(targetRoot: string, serviceCode: string): { id: string; code: string; workspaceId?: string } | null;
   listWorktrees(targetRoot: string, serviceCode: string, taskId?: string): ServiceWorktree[];
@@ -165,6 +168,12 @@ export function createServiceRuntimeApplication(deps: ServiceRuntimeDeps) {
     return listRunRecords(root).filter(run => run.serviceCode === serviceCode && run.status === 'running' && matchesProcessIdentity(run.processIdentity));
   }
 
+  function requiresTaskRouting(worktree: ServiceWorktree): boolean {
+    if (worktree.main && worktree.taskId === null) return false;
+    if (!worktree.main && worktree.taskId?.trim()) return true;
+    throw new ServiceRuntimeError('service_runtime_lane_scope_invalid', '代码目录身份无法确认为主工作库或任务目录，请刷新后核对归属。');
+  }
+
   function routingIdentity(root: string, worktree: ServiceWorktree, serviceCode: string): RoutingStartPlan {
     if (!worktree.taskId || worktree.main) throw new ServiceRuntimeError('service_runtime_lane_task_required', '服务发现泳道只支持明确任务的本地工作树。');
     const workspaceId = assertService(root, serviceCode).workspaceId;
@@ -188,9 +197,9 @@ export function createServiceRuntimeApplication(deps: ServiceRuntimeDeps) {
   function localBackendAvailabilities(root: string, worktree: ServiceWorktree, definition: ServiceRuntimeDefinition): LocalBackendAvailability[] {
     return (definition.local.backends ?? []).map(backend => {
       const discovery = backend.kind === 'service-discovery';
-      const runs = readyBackendRuns(root, backend.serviceCode).filter(run => !discovery || sameScope(run, worktree) && run.routing?.serviceId === backend.serviceId && run.routing.hostId === localRoutingHostId());
+      const runs = readyBackendRuns(root, backend.serviceCode).filter(run => !discovery || !worktree.main && sameScope(run, worktree) && run.routing?.serviceId === backend.serviceId && run.routing.hostId === localRoutingHostId());
       const scoped = runs.filter(run => sameScope(run, worktree));
-      const activeCount = discovery ? listRunRecords(root).filter(run => run.serviceCode === backend.serviceCode && sameScope(run, worktree) && isActiveRun(run)).length : 0;
+      const activeCount = discovery && !worktree.main ? listRunRecords(root).filter(run => run.serviceCode === backend.serviceCode && sameScope(run, worktree) && isActiveRun(run)).length : 0;
       const candidates = [...runs].sort((left, right) => Number(sameScope(right, worktree)) - Number(sameScope(left, worktree)) || left.startedAt.localeCompare(right.startedAt))
         .map(run => ({ runId: run.id, url: run.url, worktreeLabel: run.worktreeLabel, branch: run.branch, sameScope: sameScope(run, worktree) }));
       const target = scoped.length === 1 && (!discovery || activeCount === 1) ? scoped[0]! : null;
@@ -201,17 +210,22 @@ export function createServiceRuntimeApplication(deps: ServiceRuntimeDeps) {
         remoteUrl: discovery ? null : backend.remoteUrl,
         candidates,
         target: target ? { runId: target.id, serviceCode: backend.serviceCode, url: target.url, worktreeLabel: target.worktreeLabel, branch: target.branch } : null,
-        reason: target ? null : scoped.length > 1 ? '同范围存在多个本地后端实例，请显式选择目标。' : '同任务或主工作库没有已就绪的本地后端，请先启动后端。',
+        reason: discovery && worktree.main ? '主工作库普通启动沿应用既有 QA 配置运行；本地发现目标仅在任务目录中选择。'
+          : target ? null : scoped.length > 1 ? '同范围存在多个本地后端实例，请显式选择目标。' : '同任务或主工作库没有已就绪的本地后端，请先启动后端。',
       };
     });
   }
 
   function resolveDiscovery(root: string, worktree: ServiceWorktree, backend: RuntimeDiscoveryBackend,
     input: Pick<StartRunInput, 'connection'>, selected: BackendTarget | undefined, plan: RoutingStartPlan | undefined): RunDiscoveryConnection {
-    if (!plan || worktree.main || worktree.taskId !== plan.taskId) throw new ServiceRuntimeError('service_runtime_lane_task_required', '发现目标需要已核实的任务泳道。');
     assertService(root, backend.serviceCode);
     const qa = (reason: string): RunDiscoveryConnection => ({ kind: 'service-discovery', mode: 'remote', serviceCode: backend.serviceCode,
       serviceId: backend.serviceId, url: null, runId: null, context: 'qa', reason });
+    if (!plan && worktree.main && worktree.taskId === null) {
+      if (selected?.target === 'run' || input.connection === 'local') throw new ServiceRuntimeError('service_runtime_main_discovery_local_unsupported', '主工作库普通启动沿应用既有 QA 配置运行；本地发现目标请从对应任务启动，不能借用任务运行。');
+      return qa('主工作库按应用既有 QA 配置普通启动，未注入任务泳道上下文；实际调用仍需验证。');
+    }
+    if (!plan || worktree.main || worktree.taskId !== plan.taskId) throw new ServiceRuntimeError('service_runtime_lane_task_required', '发现目标需要已核实的任务泳道。');
     if (selected?.target === 'remote' || !selected && input.connection === 'remote') return qa('明确使用既有 QA 上下文。');
     if (selected?.target === 'auto' && selected.expectedRunId === null) {
       if (input.connection === 'local') throw new ServiceRuntimeError('service_runtime_backend_unavailable', '已观察到本地目标缺失，严格本地模式不采用后来实例或回落 QA。');
@@ -295,7 +309,8 @@ export function createServiceRuntimeApplication(deps: ServiceRuntimeDeps) {
     if (input.origin !== undefined && input.origin !== 'human' && input.origin !== 'agent') throw new ServiceRuntimeError('service_runtime_input_invalid', '启动入口必须为 human 或 agent。');
     if (input.expectedBackendRunId !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(input.expectedBackendRunId)) throw new ServiceRuntimeError('service_runtime_input_invalid', '已观察的本地后端编号无效。');
     if (input.expectedRoutingDigest !== undefined && !/^sha256-[a-f0-9]{64}$/.test(input.expectedRoutingDigest)) throw new ServiceRuntimeError('service_runtime_input_invalid', '已观察的泳道上下文摘要无效。');
-    if (input.connection !== undefined && input.connection !== 'local' && input.connection !== 'remote') throw new ServiceRuntimeError('service_runtime_input_invalid', '前端连接必须单选 local 或 remote。');
+    if (input.connection !== undefined && !['local', 'remote', 'auto'].includes(input.connection)) throw new ServiceRuntimeError('service_runtime_input_invalid', '连接方式无效。');
+    if ('standalone' in input && input.standalone !== undefined && typeof input.standalone !== 'boolean') throw new ServiceRuntimeError('service_runtime_input_invalid', '单服务启动标记无效。');
     if (input.backendTargets !== undefined) {
       if (!Array.isArray(input.backendTargets)) throw new ServiceRuntimeError('service_runtime_input_invalid', '后端目标必须是数组。');
       const seen = new Set<string>();
@@ -320,7 +335,15 @@ export function createServiceRuntimeApplication(deps: ServiceRuntimeDeps) {
     if (input.taskId && (worktree.main || worktree.taskId !== input.taskId)) throw new ServiceRuntimeError('service_runtime_task_mismatch', '所选工作树不属于当前任务，未启动其他目录。');
     const existing = readRuntimeDefinition(root, input.serviceCode);
     if (!existing) throw new ServiceRuntimeError('service_runtime_definition_missing', `服务 ${input.serviceCode} 尚无运行定义，先由智能体（Agent）识别并验证。`);
+    if (input.environment && !existing.definition.local.remoteEnvironments?.some(item => item.code === input.environment)) throw new ServiceRuntimeError('service_runtime_environment_unknown', '所选远程环境已不可用，请刷新后重选。');
+    if (input.standalone && (input.taskId || input.connection === 'local' || input.backendTargets?.some(item => item.target !== 'remote'))) throw new ServiceRuntimeError('service_runtime_input_invalid', '单服务启动只选择远程环境，本地联调请从开发任务启动。');
     return { service, worktree, existing, cwd: serviceDirectory(worktree, existing.definition.local.cwd) };
+  }
+
+  function remoteDefinition(definition: ServiceRuntimeDefinition, input: StartRunInput): ServiceRuntimeDefinition {
+    const environment = definition.local.remoteEnvironments?.find(item => item.code === input.environment) ?? definition.local.remoteEnvironments?.[0];
+    if (!input.standalone || !environment?.url) return definition;
+    return { ...definition, local: { ...definition.local, backends: definition.local.backends?.map(backend => backend.kind === 'service-discovery' ? backend : { ...backend, remoteUrl: environment.url! }) } };
   }
 
   async function stopRunLocked(root: string, runId: string): Promise<ManagedRunRecord> {
@@ -343,11 +366,14 @@ export function createServiceRuntimeApplication(deps: ServiceRuntimeDeps) {
     const { definition } = existing;
     if (expectedDefinition && JSON.stringify(definition) !== JSON.stringify(expectedDefinition)) throw new ServiceRuntimeError('service_runtime_source_changed', '启动与连接配置已变化，请刷新后重新核对。');
     const selectedPath = path.resolve(worktree.path);
+    const selectedScope = { main: worktree.main, taskId: worktree.taskId };
     const records = listRunRecords(root);
     const duplicate = records.find(record => record.serviceCode === input.serviceCode && path.resolve(record.worktreePath) === selectedPath && isActiveRun(record));
     if (duplicate) throw new ServiceRuntimeError('service_runtime_worktree_busy', `所选目录已有受管运行实例（:${duplicate.actualPort}）。`);
     let routingPlan: RoutingStartPlan | undefined;
-    if (definition.local.routing) {
+    const taskRouting = definition.local.routing && !input.standalone && requiresTaskRouting(worktree);
+    if (preparedRouting && !taskRouting) throw new ServiceRuntimeError('service_runtime_lane_scope_invalid', '预分配的任务泳道只能用于已确认的任务目录。');
+    if (definition.local.routing && taskRouting) {
       const identity = routingIdentity(root, worktree, service.code);
       const activeLane = records.find(run => run.taskId === worktree.taskId && isActiveRun(run) && run.routing)?.routing?.laneId;
       if (preparedRouting) {
@@ -361,7 +387,10 @@ export function createServiceRuntimeApplication(deps: ServiceRuntimeDeps) {
         routingPlan.members[service.code] = { runId: newId(), worktreeId: worktree.id, serviceId: definition.local.routing.serviceId, existing: false };
       }
     }
-    const connections = resolveConnections(root, worktree, definition, input, routingPlan);
+    const connectionWorktree = input.standalone ? { ...worktree, main: true, taskId: null, taskTitle: null } : worktree;
+    const connectionDefinition = remoteDefinition(definition, input);
+    const connections = input.standalone && !definition.local.backends?.length ? [] : resolveConnections(root, connectionWorktree, connectionDefinition, input.standalone ? { ...input, connection: 'remote' } : input, routingPlan);
+    const environment = definition.local.remoteEnvironments?.find(item => item.code === input.environment) ?? definition.local.remoteEnvironments?.[0];
     if (expectedConnections && !sameConnections(connections, expectedConnections)) throw new ServiceRuntimeError('service_runtime_backend_changed', '本地后端实例已变化，请刷新后重新选择。');
     const used = new Set(records.filter(isActiveRun).map(record => record.actualPort));
     const preferred = definition.local.preferredPort;
@@ -373,18 +402,21 @@ export function createServiceRuntimeApplication(deps: ServiceRuntimeDeps) {
     const current = deps.listWorktrees(root, input.serviceCode, input.taskId).find(item => item.id === input.worktreeId);
     if (!current) throw new ServiceRuntimeError('service_runtime_worktree_unknown', '启动前代码目录已不可用。');
     checkObservation(current, { path: worktree.path, branch: worktree.branch, head: worktree.head, dirty: worktree.dirty });
+    if (definition.local.routing && (current.main !== selectedScope.main || current.taskId !== selectedScope.taskId)) throw new ServiceRuntimeError('service_runtime_source_changed', '启动前代码目录的主工作库或任务身份已变化，请刷新后核对。');
     worktree = current;
     if (assertService(root, input.serviceCode).id !== service.id) throw new ServiceRuntimeError('service_runtime_source_changed', '启动前服务身份已变化，请刷新。');
     if (serviceDirectory(worktree, definition.local.cwd) !== cwd) throw new ServiceRuntimeError('service_runtime_source_changed', '启动前真实目录已变化，请刷新。');
     // Port probing yielded to other processes; the selected local targets must still be the same ready instances.
-    revalidateConnections(root, worktree, definition, connections, routingPlan);
-    const command = [...definition.local.command];
+    revalidateConnections(root, connectionWorktree, connectionDefinition, connections, routingPlan);
+    const command = definition.local.command.map(argument => argument.replaceAll('{workspaceRoot}', path.resolve(root)));
     if (definition.local.portOverride) command.push(`${definition.local.portOverride}=${actualPort}`);
     let record: ManagedRunRecord = {
       id: routingPlan?.members[service.code]?.runId ?? newId(), serviceId: service.id, serviceCode: service.code,
       worktreeId: worktree.id, worktreePath: worktree.path, worktreeLabel: worktree.label,
       branch: worktree.branch, head: worktree.head, main: worktree.main, dirty: worktree.dirty,
-      taskId: worktree.taskId, taskTitle: worktree.taskTitle, origin: input.origin ?? 'human',
+      taskId: input.standalone ? null : worktree.taskId, taskTitle: input.standalone ? null : worktree.taskTitle, origin: input.origin ?? 'human',
+      ...(environment ? { environment: { code: environment.code, name: environment.name, ...(environment.url ? { url: environment.url } : {}) } } : {}),
+      ...(input.standalone ? { standalone: true } : {}),
       pid: -1, processIdentity: null, preferredPort: preferred, actualPort,
       portNote: actualPort === preferred ? '使用首选端口' : `首选 ${preferred} 被占用，已避让`,
       status: 'starting', startedAt: now(), stoppedAt: null, failure: null, logPath: '',
@@ -400,12 +432,16 @@ export function createServiceRuntimeApplication(deps: ServiceRuntimeDeps) {
         await writeRunRecord(root, record);
       }
       if (input.taskId) deps.assertTaskScope?.(root, input.taskId, input.serviceCode);
-      const env: Record<string, string> = {};
+      const env: Record<string, string> = { ...environment?.variables };
+      env.BUILDR_WORKSPACE_ROOT = path.resolve(root);
+      env.BUILDR_SERVICE_ROOT = worktree.path;
+      env.BUILDR_SERVICE_CODE = service.code;
       for (const connection of connections ?? []) {
         const declaration = (definition.local.backends ?? []).find(backend => backend.serviceCode === connection.serviceCode);
         if (declaration && declaration.kind !== 'service-discovery' && connection.kind !== 'service-discovery') env[declaration.environmentVariable] = connection.url;
       }
-      if (definition.local.routing && record.routing) env[definition.local.routing.environmentVariable] = record.routing.contextPath;
+      // 普通主工作库不能继承宿主进程遗留的任务路由文件。
+      if (definition.local.routing) env[definition.local.routing.environmentVariable] = record.routing?.contextPath ?? '';
       const managed = await startProcess({ command, cwd, logPath: record.logPath, ...(Object.keys(env).length ? { env } : {}) });
       owned.set(key(root, record.id), managed);
       record = { ...record, pid: managed.pid, processIdentity: managed.identity };
@@ -509,16 +545,18 @@ export function createServiceRuntimeApplication(deps: ServiceRuntimeDeps) {
           ? current.connections.map(connection => ({ serviceCode: connection.serviceCode, target: connection.mode === 'local' ? 'run' : 'remote', ...(connection.runId ? { runId: connection.runId } : {}) }))
           : input.backendTargets;
         const start: StartRunInput = { serviceCode: current.serviceCode, worktreeId: current.worktreeId, origin: input.origin ?? 'human',
+          ...(current.standalone ? { standalone: true } : {}), environment: input.environment ?? current.environment?.code,
           ...(current.taskId ? { taskId: current.taskId } : {}), connection: input.connection ?? (carry ? undefined : current.connection?.mode),
           backendTargets: carry,
           expectedBackendRunId: input.expectedBackendRunId,
           expectedWorktree: input.expectedWorktree ?? { path: current.worktreePath, branch: current.branch, head: current.head, dirty: current.dirty } };
         const prepared = prepareStart(root, start);
         if (start.taskId) deps.assertTaskScope?.(root, start.taskId, start.serviceCode);
-        if (prepared.service.id !== current.serviceId || prepared.worktree.path !== current.worktreePath) throw new ServiceRuntimeError('service_runtime_source_changed', '当前运行的服务或代码目录身份已变化，请刷新后核对。');
-        const routingPlan = prepared.existing.definition.local.routing ? routingIdentity(root, prepared.worktree, current.serviceCode) : undefined;
+        if (prepared.service.id !== current.serviceId || prepared.worktree.path !== current.worktreePath
+          || current.routing && (prepared.worktree.main !== current.main || prepared.worktree.taskId !== current.taskId)) throw new ServiceRuntimeError('service_runtime_source_changed', '当前运行的服务或代码目录身份已变化，请刷新后核对。');
+        const routingPlan = prepared.existing.definition.local.routing && !start.standalone && requiresTaskRouting(prepared.worktree) ? routingIdentity(root, prepared.worktree, current.serviceCode) : undefined;
         if (routingPlan) routingPlan.members[current.serviceCode] = { runId: newId(), worktreeId: current.worktreeId, serviceId: prepared.existing.definition.local.routing!.serviceId, existing: false };
-        const connections = resolveConnections(root, prepared.worktree, prepared.existing.definition, start, routingPlan);
+        const connections = start.standalone && !prepared.existing.definition.local.backends?.length ? [] : resolveConnections(root, start.standalone ? { ...prepared.worktree, main: true, taskId: null } : prepared.worktree, remoteDefinition(prepared.existing.definition, start), start, routingPlan);
         // Everything above is read-only: invalid targets and stale source observations preserve the current frontend.
         await stopRunLocked(root, runId);
         try {

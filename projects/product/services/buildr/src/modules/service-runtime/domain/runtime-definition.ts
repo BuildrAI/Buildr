@@ -8,6 +8,7 @@ export type RuntimeDirectBackend = { kind?: 'direct-url'; serviceCode: string; e
 export type RuntimeDiscoveryBackend = { kind: 'service-discovery'; serviceCode: string; serviceId: string; fallback: { kind: 'existing-discovery'; context: 'qa' } };
 export type RuntimeBackendDeclaration = RuntimeDirectBackend | RuntimeDiscoveryBackend;
 export type RuntimeRoutingDeclaration = { serviceId: string; environmentVariable: string; format: 'buildr.local-service-routing/v1'; observationPath: string };
+export type RuntimeRemoteEnvironment = { code: string; name: string; url?: string; variables: Record<string, string> };
 
 export type RuntimeLocalDefinition = {
   command: string[];
@@ -19,6 +20,7 @@ export type RuntimeLocalDefinition = {
   timeoutSeconds: number;
   backends?: RuntimeBackendDeclaration[];
   routing?: RuntimeRoutingDeclaration;
+  remoteEnvironments?: RuntimeRemoteEnvironment[];
 };
 
 export type ServiceRuntimeDefinition = {
@@ -99,6 +101,22 @@ export function parseRuntimeDefinition(content: string): ServiceRuntimeDefinitio
     }
     if (command && cwd && relativePath(cwd) && preferredPort !== null && timeoutSeconds !== null && readiness) {
       localDefinition = { command, cwd, profile, preferredPort, portOverride, readiness, timeoutSeconds };
+      if (local.remoteEnvironments !== undefined) {
+        if (!Array.isArray(local.remoteEnvironments) || !local.remoteEnvironments.length) problems.push('local.remoteEnvironments 必须是非空环境列表。');
+        else {
+          const seen = new Set<string>();
+          localDefinition.remoteEnvironments = [];
+          for (const item of local.remoteEnvironments) {
+            const code = text(item?.code), name = text(item?.name), url = text(item?.url);
+            if (!code || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(code) || seen.has(code) || !name) { problems.push('远程环境需要唯一编号及名称。'); continue; }
+            seen.add(code);
+            if (url) { try { const parsed = new URL(url); if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) throw Error(); } catch { problems.push('远程环境 url 必须是不含业务路径或认证的网关根地址。'); } }
+            const variables = item.variables ?? {};
+            if (!variables || typeof variables !== 'object' || Array.isArray(variables) || Object.entries(variables).some(([key, value]) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || typeof value !== 'string' || value.includes('\0'))) { problems.push('远程环境 variables 必须是已验证的环境变量映射。'); continue; }
+            localDefinition.remoteEnvironments.push({ code, name, ...(url ? { url } : {}), variables });
+          }
+        }
+      }
       if (local.routing !== undefined) {
         const routing = local.routing;
         if (raw.version !== 2) problems.push('local.routing 必须使用 version 2。');
@@ -156,6 +174,7 @@ export function parseRuntimeDefinition(content: string): ServiceRuntimeDefinitio
         if (backends.length) localDefinition.backends = backends;
       }
       if (localDefinition.routing && localDefinition.backends?.some(item => item.kind !== 'service-discovery' && item.environmentVariable === localDefinition!.routing!.environmentVariable)) problems.push('local.routing.environmentVariable 与直接地址注入变量冲突。');
+      if (localDefinition.routing && localDefinition.remoteEnvironments?.some(item => Object.hasOwn(item.variables, localDefinition!.routing!.environmentVariable))) problems.push('远程环境不能覆盖任务路由上下文变量。');
     }
   }
 
@@ -179,6 +198,7 @@ export function renderRuntimeDefinition(definition: ServiceRuntimeDefinition): s
       timeoutSeconds: definition.local.timeoutSeconds,
       ...(definition.local.backends?.length ? { backends: definition.local.backends } : {}),
       ...(definition.local.routing ? { routing: definition.local.routing } : {}),
+      ...(definition.local.remoteEnvironments ? { remoteEnvironments: definition.local.remoteEnvironments } : {}),
     },
   }, { lineWidth: 0 });
 }

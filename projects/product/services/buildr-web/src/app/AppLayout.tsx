@@ -3,6 +3,7 @@ import { AgentRegistryDrawer } from '../features/agents/components/AgentRegistry
 import { agentStatusLabel } from '../features/agents/agent-model';
 import { AppShellHeader, AppShellFrame } from './AppShellView';
 import { WorkbenchPreferencesProvider } from '../features/workbench/hooks/useWorkbenchPreferences';
+import { WorkspaceReadCacheProvider } from '../components/WorkspaceReadCache';
 import { WorkbenchSearch } from '../features/workbench/components/WorkbenchSearch';
 import type { ResourcePreview } from './resource-preview';
 import { WorkspacePages } from './WorkspacePages';
@@ -392,6 +393,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
   return (
     <AppShellContext.Provider value={shellValue}>
       <WorkspaceSourceControlProvider workspaceId={workspaceId}>
+      <WorkspaceReadCacheProvider key={workspaceId || 'global'}>
       <WorkbenchPreferencesProvider key={workspaceId || "global"} workspaceId={workspaceId}>
       <div className={"app-shell area-" + area}>
         <AppShellHeader isGlobal={isGlobal} brandHref={isGlobal ? '/' : workspaceHref('/overview')} development={webProfile === 'development'} workspaceName={isGlobal ? '全部工作空间' : (workspace?.name || '正在读取…')} workspaceMenuItems={workspaceMenuItems} area={area} workbenchHref={workspaceHref('/overview')} codeHref={codeEntryPath} workspaceDestination={{to:workspaceDestination.current.path,state:workspaceDestination.current.state}} actions={<>
@@ -483,6 +485,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
       <WorkspaceSettingsDrawer open={settingsOpen} workspaceId={settingsWorkspaceId}
         onClose={() => setSettingsOpen(false)} onSaved={workspaceSettingsSaved} />
     </WorkbenchPreferencesProvider>
+    </WorkspaceReadCacheProvider>
     </WorkspaceSourceControlProvider>
     </AppShellContext.Provider>
   );

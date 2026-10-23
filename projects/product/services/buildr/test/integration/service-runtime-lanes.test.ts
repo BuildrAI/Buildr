@@ -17,16 +17,17 @@ import { freeRuntimePort } from '../helpers/service-runtime-fixture.ts';
 // 应用端协议替身；产品负责真实进程、文件与记录，不模拟 Nacos 或宣称业务验证。
 const server = `
 const fs=require('fs'), http=require('http');
-const value=JSON.parse(fs.readFileSync(process.env.LOCAL_SERVICE_ROUTING_FILE,'utf8'));
+const routingFile=process.env.LOCAL_SERVICE_ROUTING_FILE||null;
+const value=routingFile?JSON.parse(fs.readFileSync(routingFile,'utf8')):{};
 const port=Number(process.argv.find(x=>x.startsWith('--port=')).slice(7));
 http.createServer((req,res)=>{
  if(req.headers['x-buildr-expected-run'] && req.headers['x-buildr-expected-run']!==value.runId){res.statusCode=409;res.end('changed');return;}
  res.setHeader('content-type','application/json');
- res.end(JSON.stringify({...value,observations:{},digest:process.argv.includes('--wrong-observation')?'wrong':value.digest}));
+ res.end(JSON.stringify({...value,routingFile,environment:process.env.RUNTIME_TEST_GATEWAY,observations:{},digest:process.argv.includes('--wrong-observation')?'wrong':value.digest}));
 }).listen(port,'127.0.0.1');
 `;
 
-async function fixture(t: test.TestContext, options: { fail?: string; wrongObservation?: string } = {}) {
+async function fixture(t: test.TestContext, options: { fail?: string; wrongObservation?: string; onWorktreeRead?(serviceCode: string): void } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-lanes-'));
   const codes = ['a', 'b', 'c'];
   const worktrees = Object.fromEntries(codes.map(code => [code, ['task', 'other', 'main'].map(scope => {
@@ -37,7 +38,7 @@ async function fixture(t: test.TestContext, options: { fail?: string; wrongObser
   const catalog = { listServices: () => codes.map(code => ({ id: code, code, name: code, type: 'backend', modulePath: '', repositoryId: code, projects: ['project'] })) };
   const runtime = createServiceRuntimeApplication({
     resolveService: (_root, code) => codes.includes(code) ? { id: code, code, workspaceId: 'test-workspace' } : null,
-    listWorktrees: (_root, code) => worktrees[code] ?? [],
+    listWorktrees: (_root, code) => { options.onWorktreeRead?.(code); return worktrees[code] ?? []; },
     startProcess: async input => {
       if (options.fail && path.basename(input.cwd) === `${options.fail}-task`) throw new Error('fixture launch failed');
       return startManagedProcess(input);
@@ -57,9 +58,10 @@ async function fixture(t: test.TestContext, options: { fail?: string; wrongObser
   const tasks = createServiceTaskRuntimeApplication({ catalog, runtime, view,
     readTaskScope: (_root, taskId) => ({ taskId, title: taskId, scope: { projects: ['project'], services: [] } }),
   });
-  const source = (code: string, task = 'task') => worktrees[code]!.find(value => value.taskId === task)!;
+  const source = (code: string, task = 'task') => worktrees[code]!.find(value => task === 'main' ? value.main : value.taskId === task)!;
   const start = async (code: string, task = 'task') => {
-    const run = await runtime.startRun(root, { serviceCode: code, worktreeId: source(code, task).id, taskId: task });
+    const worktree = source(code, task);
+    const run = await runtime.startRun(root, { serviceCode: code, worktreeId: worktree.id, ...(worktree.taskId ? { taskId: worktree.taskId } : {}) });
     return runtime.waitForRun(root, run.id);
   };
   t.after(async () => {
@@ -68,6 +70,29 @@ async function fixture(t: test.TestContext, options: { fail?: string; wrongObser
   });
   return { root, runtime, view, tasks, worktrees, source, start };
 }
+
+test('单服务使用所选远程环境，任务目录与独立工作树均不注入任务上下文', async t => {
+  const f = await fixture(t);
+  const existing = f.runtime.readDefinition(f.root, 'a')!.definition;
+  existing.local.remoteEnvironments = [
+    { code: 'qa', name: '测试环境', url: 'https://qa.example.com', variables: { RUNTIME_TEST_GATEWAY: 'https://qa.example.com' } },
+    { code: 'stage', name: '联调环境', url: 'https://stage.example.com', variables: { RUNTIME_TEST_GATEWAY: 'https://stage.example.com' } },
+  ];
+  await f.runtime.writeDefinition(f.root, 'a', YAML.stringify(existing));
+  const source = f.source('a');
+  const running = await f.runtime.startRun(f.root, { serviceCode: 'a', worktreeId: source.id, standalone: true, environment: 'stage' });
+  const run = await f.runtime.waitForRun(f.root, running.id);
+  assert.equal(run.status, 'running'); assert.equal(run.taskId, null); assert.equal(run.routing, undefined); assert.equal(run.environment?.code, 'stage');
+  const response = await fetch(run.url).then(value => value.json()) as any;
+  assert.equal(response.routingFile, null); assert.equal(response.environment, 'https://stage.example.com');
+  await assert.rejects(f.runtime.restartRun(f.root, run.id, { environment: 'removed' }), { code: 'service_runtime_environment_unknown' });
+  assert.equal((await f.runtime.listRuns(f.root)).find(item => item.id === run.id)?.status, 'running');
+  await f.runtime.stopRun(f.root, run.id);
+  source.taskId = null;
+  const independent = await f.runtime.startRun(f.root, { serviceCode: 'a', worktreeId: source.id, standalone: true });
+  assert.equal((await f.runtime.waitForRun(f.root, independent.id)).status, 'running');
+  assert.equal(independent.routing, undefined); assert.equal(independent.environment?.code, 'qa');
+});
 
 test('发现缺失回落声明的 QA，文件不制造 URL；其他任务不会成为候选', async t => {
   const f = await fixture(t);
@@ -79,6 +104,9 @@ test('发现缺失回落声明的 QA，文件不制造 URL；其他任务不会�
   const file = JSON.parse(fs.readFileSync(caller.routing!.contextPath, 'utf8'));
   const { digest, ...body } = file;
   assert.equal(digest, routingDigest(body));
+  assert.equal(file.format, 'buildr.local-service-routing/v1');
+  assert.equal(file.taskId, 'task');
+  assert.equal('scope' in file, false);
   assert.deepEqual(file.targets, [{ serviceCode: 'b', serviceId: 'b-app', mode: 'qa' }]);
   assert.deepEqual(f.runtime.connectionTarget(f.root, 'a', f.source('a'))?.[0]?.candidates, []);
   assert.equal((await f.runtime.listRuns(f.root, 'a'))[0]?.routing?.observation?.status, 'observed');
@@ -137,7 +165,77 @@ test('严格本地与跨任务显式目标均拒绝；全部停止后创建新�
   await assert.rejects(f.runtime.startRun(f.root, { serviceCode: 'a', worktreeId: f.source('a').id, taskId: 'task', backendTargets: [{ serviceCode: 'b', target: 'run', runId: other.id }] }), /本任务泳道/);
   const one = await f.start('a'); await f.runtime.stopRun(f.root, one.id); const two = await f.start('a');
   assert.notEqual(one.routing?.laneId, two.routing?.laneId);
-  await assert.rejects(f.runtime.startRun(f.root, { serviceCode: 'c', worktreeId: f.worktrees.c!.find(value => value.main)!.id }), /明确任务/);
+});
+
+test('主工作库普通启动不进入任务泳道，并清空父进程遗留的路由文件变量', async t => {
+  const f = await fixture(t);
+  const taskBackend = await f.start('b');
+  const previous = process.env.LOCAL_SERVICE_ROUTING_FILE;
+  process.env.LOCAL_SERVICE_ROUTING_FILE = taskBackend.routing!.contextPath;
+  try {
+    const mainBackend = await f.start('b', 'main');
+    const caller = await f.runtime.startRun(f.root, { serviceCode: 'a', worktreeId: f.source('a', 'main').id,
+      backendTargets: [{ serviceCode: 'b', target: 'auto', expectedRunId: taskBackend.id }] });
+    await f.runtime.waitForRun(f.root, caller.id);
+    for (const run of [mainBackend, caller]) {
+      assert.equal(run.main, true); assert.equal(run.taskId, null); assert.equal(run.routing, undefined);
+      assert.equal((await (await fetch(run.url)).json()).routingFile, null);
+      assert.deepEqual(run.connections.map(value => [value.kind, value.mode, value.runId, value.context]), [['service-discovery', 'remote', null, 'qa']]);
+    }
+    assert.deepEqual(fs.readdirSync(path.dirname(taskBackend.routing!.contextPath)), [`${taskBackend.id}.json`]);
+    const availability = f.runtime.connectionTarget(f.root, 'a', f.source('a', 'main'))![0]!;
+    assert.equal(availability.target, null); assert.deepEqual(availability.candidates, []);
+    assert.doesNotMatch(availability.reason ?? '', /请先启动/);
+    const taskCaller = await f.start('a');
+    assert.equal(taskCaller.connections[0]?.runId, taskBackend.id);
+    assert.equal(taskCaller.routing?.laneId, taskBackend.routing?.laneId);
+    await f.runtime.stopRun(f.root, caller.id);
+    assert.equal((await f.runtime.listRuns(f.root)).find(run => run.id === taskCaller.id)?.status, 'running');
+  } finally {
+    if (previous === undefined) delete process.env.LOCAL_SERVICE_ROUTING_FILE;
+    else process.env.LOCAL_SERVICE_ROUTING_FILE = previous;
+  }
+});
+
+test('普通主工作库拒绝本地发现切换并保留原实例，无上下文重启不要求摘要', async t => {
+  const f = await fixture(t);
+  const target = await f.start('b'); const caller = await f.start('a', 'main');
+  for (const input of [{ connection: 'local' as const }, { backendTargets: [{ serviceCode: 'b', target: 'run' as const, runId: target.id }] }]) {
+    await assert.rejects(f.runtime.restartRun(f.root, caller.id, input), /主工作库.*应用.*配置/);
+    assert.equal((await f.runtime.listRuns(f.root)).find(run => run.id === caller.id)?.status, 'running');
+  }
+  const main = f.source('a', 'main');
+  main.taskId = 'task';
+  await assert.rejects(f.runtime.restartRun(f.root, caller.id, {}), /身份|归属/);
+  assert.equal((await f.runtime.listRuns(f.root)).find(run => run.id === caller.id)?.status, 'running');
+  main.taskId = null;
+  const replacement = await f.runtime.restartRun(f.root, caller.id, {});
+  assert.equal((await f.runtime.waitForRun(f.root, replacement.id)).status, 'running');
+  assert.equal(replacement.routing, undefined); assert.equal(replacement.taskId, null);
+  assert.equal((await f.runtime.listRuns(f.root)).find(run => run.id === caller.id)?.status, 'stopped');
+  assert.equal((await f.runtime.listRuns(f.root)).find(run => run.id === target.id)?.status, 'running');
+});
+
+test('不明或矛盾目录不进入普通启动，预分配任务计划不能用于主工作库', async t => {
+  const f = await fixture(t);
+  const source = f.source('a', 'main');
+  for (const identity of [{ main: false, taskId: null }, { main: true, taskId: 'task' }, { main: true, taskId: '' }]) {
+    Object.assign(source, identity);
+    await assert.rejects(f.runtime.startRun(f.root, { serviceCode: 'a', worktreeId: source.id }), /身份|归属/);
+  }
+  Object.assign(source, { main: true, taskId: null });
+  const plan = (await f.runtime.prepareTaskRouting(f.root, [{ serviceCode: 'a', worktreeId: f.source('a').id, taskId: 'task' }]))!;
+  await assert.rejects(f.runtime.startRunWithRoutingPlan(f.root, { serviceCode: 'a', worktreeId: source.id }, plan), /任务.*泳道/);
+  assert.deepEqual(await f.runtime.listRuns(f.root), []);
+});
+
+test('普通启动最终观察发现目录变成任务时拒绝，不带过期主库身份创建进程', async t => {
+  let reads = 0;
+  const f = await fixture(t, { onWorktreeRead: code => {
+    if (code === 'a' && ++reads === 2) Object.assign(f.source('a', 'main'), { main: false, taskId: 'task' });
+  } });
+  await assert.rejects(f.runtime.startRun(f.root, { serviceCode: 'a', worktreeId: f.source('a', 'main').id }), /身份已变化/);
+  assert.deepEqual(await f.runtime.listRuns(f.root), []);
 });
 
 test('错误观察不会采信或使已就绪进程失败', async t => {

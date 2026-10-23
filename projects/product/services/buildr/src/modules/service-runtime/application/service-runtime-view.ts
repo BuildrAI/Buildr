@@ -40,7 +40,7 @@ export function createServiceRuntimeView(deps: { catalog: ServiceRuntimeCatalogP
         services: deps.catalog.listServices(root).map(entry => summarize(entry, runs, root)),
       };
     },
-    async detail(root: string, code: string, taskId?: string): Promise<ServiceRuntimeDetail> {
+    async detail(root: string, code: string, taskId?: string, options: { standalone?: boolean } = {}): Promise<ServiceRuntimeDetail> {
       const entry = deps.catalog.listServices(root).find(item => item.code === code);
       if (!entry) throw Object.assign(new Error(`服务未登记：${code}`), { code: 'service_runtime_service_unknown', status: 404 });
       const runs = await deps.runtime.listRuns(root);
@@ -52,7 +52,9 @@ export function createServiceRuntimeView(deps: { catalog: ServiceRuntimeCatalogP
       }
       catch (cause) { diagnostics.push(`读取代码目录失败：${(cause as Error).message}`); }
       const connectionTargets: Record<string, LocalBackendAvailability[]> = {};
-      for (const worktree of worktrees) {
+      // Ordinary service startup only chooses a remote environment. Task callers
+      // retain the full availability read, including its exact instance checks.
+      for (const worktree of options.standalone ? [] : worktrees) {
         try {
           const availability = deps.runtime.connectionTarget(root, code, worktree);
           if (availability?.length) connectionTargets[worktree.id] = availability;

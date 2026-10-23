@@ -3,19 +3,22 @@ import type { ServiceTaskRuntimeApplication } from '../../application/service-ta
 import type { ServiceRuntimeApplication } from '../../application/service-runtime-application.ts';
 import type { ServiceRuntimeView } from '../../application/service-runtime-view.ts';
 
-const FLAGS = ['--target', '--json', '--service', '--worktree', '--run', '--max-bytes', '--task', '--origin', '--connection', '--services', '--expected-backend-run', '--backend-target', '--expected-routing-digest'];
-const ACTIONS = ['overview', 'show', 'worktrees', 'start', 'restart', 'stop', 'log', 'task-show', 'task-start'];
-export function createServiceRuntimeCliContributions(deps: { view: ServiceRuntimeView; runtime: ServiceRuntimeApplication; taskRuntime?: ServiceTaskRuntimeApplication }) {
+const FLAGS = ['--target', '--json', '--service', '--worktree', '--run', '--max-bytes', '--task', '--origin', '--connection', '--services', '--expected-backend-run', '--backend-target', '--expected-routing-digest', '--standalone', '--environment', '--branch', '--expected-target-hash', '--expected-revision'];
+const ACTIONS = ['overview', 'show', 'worktrees', 'prepare-source', 'start', 'restart', 'stop', 'log', 'task-show', 'task-start'];
+export function createServiceRuntimeCliContributions(deps: { view: ServiceRuntimeView; runtime: ServiceRuntimeApplication; taskRuntime?: ServiceTaskRuntimeApplication; sources?: { prepare(root: string, code: string, input: { worktreeId: string; targetRef: string; expectedTargetHash: string; expectedRevision: string }): unknown } }) {
   return [Object.freeze({
     key: 'service-runtime', surface: 'agent-machine',
     summary: '查看服务本地运行与代码来源，启动、切换连接或停止指定实例并读取日志。',
     help: [
       'Usage: buildr service-runtime <overview|show|worktrees|start|restart|stop|log|task-show|task-start> [--service <code>] [--services <code,code>] [--worktree <id>] [--run <id>] [--task <id>] [--origin agent|human] [--connection local|remote] [--expected-backend-run <id>] [--backend-target <code>:<runId>] [--expected-routing-digest <sha256>] [--max-bytes <n>] [--target <workspace>] [--json]',
       '',
+      '普通单服务使用 start --standalone [--environment <已声明环境编号>]，仅启动当前服务；本地联调使用 task-start --connection auto。',
+      'prepare-source --service <code> --worktree <观察来源id> --branch <完整ref> --expected-target-hash <hash> --expected-revision <观察版本>：复用目标分支工作树或新建独立检出，保留原目录和改动；分支观察使用 code branches。',
       'start 需要 --service 与 --worktree，默认记录为智能体（Agent）启动，等待就绪或失败后返回；服务独立运行。',
+      '主工作库可按应用既有配置普通启动，不要求 --task，也不创建任务泳道；发现类型的 local 或显式运行目标只用于已确认的任务目录。',
       '--connection 适用于已有下游声明的服务；直接地址的 local 连接同范围唯一就绪实例，发现类型的 local 只连接同任务；声明多个后端时可对每个后端用 --backend-target <code>:<runId> 显式指定实例（可重复）。',
       '--expected-backend-run 可在 local 启动或切换时传入已观察的后端实例编号；实例变化时拒绝操作。',
-      '发现类型仅使用同任务泳道；切换时必须提供 --expected-routing-digest <sha256>，从当前运行 routing.contextDigest 读取，不接受任意地址、文件或注入字段。',
+      '任务发现调用仅使用同任务泳道；切换该运行时必须提供 --expected-routing-digest <sha256>，从当前运行 routing.contextDigest 读取，不接受任意地址、文件或注入字段。',
       'restart 需要精确 --run，可用 --connection local|remote 切换；先校验新连接与代码来源，再停止并重启，等待就绪后返回。',
       'stop/log 需要精确 --run；overview/show/worktrees 不会更新代码或切换分支。',
       'task-show 需要 --task；task-start 需要 --task 和 --services，按任务实际目录逐项启动并返回成功/复用/错误，不启动未选服务。',
@@ -29,7 +32,7 @@ export function createServiceRuntimeCliContributions(deps: { view: ServiceRuntim
       for (let index = 0; index < args.length; index += 1) {
         const flag = args[index];
         if (!FLAGS.includes(flag) || flag !== '--backend-target' && values.has(flag)) throw new Error(`Unknown or duplicate argument: ${flag}`);
-        if (flag === '--json') { values.set(flag, 'true'); continue; }
+        if (flag === '--json' || flag === '--standalone') { values.set(flag, 'true'); continue; }
         const value = args[++index]; if (value === undefined) throw new Error(`Missing value: ${flag}`);
         if (flag === '--backend-target') { backendTargetArgs.push(value); continue; }
         values.set(flag, value);
@@ -54,7 +57,7 @@ export function createServiceRuntimeCliContributions(deps: { view: ServiceRuntim
           const origin = values.get('--origin') ?? 'agent';
           const connection = values.get('--connection');
           if (origin !== 'agent' && origin !== 'human') throw new Error('--origin 必须为 agent 或 human。');
-          if (connection !== undefined && connection !== 'local' && connection !== 'remote') throw new Error('--connection 必须单选 local 或 remote。');
+          if (connection !== undefined && connection !== 'local' && connection !== 'remote' && connection !== 'auto') throw new Error('--connection 必须单选 local、remote 或 auto。');
           const codes = values.get('--services')!.split(',').map(code => code.trim());
           if (codes.some(code => !code) || new Set(codes).size !== codes.length) throw new Error('--services 必须是非空且不重复的服务编码列表。');
           const observed = await deps.taskRuntime.detail(root, taskId);
@@ -76,20 +79,25 @@ export function createServiceRuntimeCliContributions(deps: { view: ServiceRuntim
       } else if (action === 'overview') result = await deps.view.overview(root);
       else if (action === 'show') { required('--service'); result = await deps.view.detail(root, values.get('--service')!); }
       else if (action === 'worktrees') { required('--service'); result = deps.runtime.listWorktrees(root, values.get('--service')!, values.get('--task')); }
+      else if (action === 'prepare-source') {
+        required('--service', '--worktree', '--branch', '--expected-target-hash', '--expected-revision');
+        if (!deps.sources) throw new Error('代码来源准备入口不可用。');
+        result = deps.sources.prepare(root, values.get('--service')!, { worktreeId: values.get('--worktree')!, targetRef: values.get('--branch')!, expectedTargetHash: values.get('--expected-target-hash')!, expectedRevision: values.get('--expected-revision')! });
+      }
       else if (action === 'start') {
         required('--service', '--worktree');
         const origin = values.get('--origin') ?? 'agent';
         const connection = values.get('--connection');
         if (origin !== 'agent' && origin !== 'human') throw new Error('--origin 必须为 agent 或 human。');
         if (connection !== undefined && connection !== 'local' && connection !== 'remote') throw new Error('--connection 必须单选 local 或 remote。');
-        const started = await deps.runtime.startRun(root, { serviceCode: values.get('--service')!, worktreeId: values.get('--worktree')!, origin, ...(connection ? { connection } : {}), ...(backendTargets.length ? { backendTargets } : {}), ...(values.has('--expected-backend-run') ? { expectedBackendRunId: values.get('--expected-backend-run')! } : {}), ...(values.has('--task') ? { taskId: values.get('--task')! } : {}) });
+        const started = await deps.runtime.startRun(root, { serviceCode: values.get('--service')!, worktreeId: values.get('--worktree')!, origin, ...(values.has('--standalone') ? { standalone: true } : {}), ...(values.has('--environment') ? { environment: values.get('--environment')! } : {}), ...(connection ? { connection } : {}), ...(backendTargets.length ? { backendTargets } : {}), ...(values.has('--expected-backend-run') ? { expectedBackendRunId: values.get('--expected-backend-run')! } : {}), ...(values.has('--task') ? { taskId: values.get('--task')! } : {}) });
         result = await deps.runtime.waitForRun(root, started.id);
       } else if (action === 'restart') {
         required('--run');
-        for (const flag of values.keys()) if (!['--run', '--connection', '--expected-backend-run', '--backend-target', '--expected-routing-digest', '--target', '--json'].includes(flag)) throw new Error(`restart 不接受 ${flag}，代码来源由当前实例确定。`);
+        for (const flag of values.keys()) if (!['--run', '--connection', '--expected-backend-run', '--backend-target', '--expected-routing-digest', '--target', '--json', '--environment'].includes(flag)) throw new Error(`restart 不接受 ${flag}，代码来源由当前实例确定。`);
         const connection = values.get('--connection');
         if (connection !== undefined && connection !== 'local' && connection !== 'remote') throw new Error('--connection 必须单选 local 或 remote。');
-        const started = await deps.runtime.restartRun(root, values.get('--run')!, { origin: 'agent', ...(connection ? { connection } : {}), ...(backendTargets.length ? { backendTargets } : {}), ...(values.has('--expected-backend-run') ? { expectedBackendRunId: values.get('--expected-backend-run')! } : {}), ...(values.has('--expected-routing-digest') ? { expectedRoutingDigest: values.get('--expected-routing-digest')! } : {}) });
+        const started = await deps.runtime.restartRun(root, values.get('--run')!, { origin: 'agent', ...(values.has('--environment') ? { environment: values.get('--environment')! } : {}), ...(connection ? { connection } : {}), ...(backendTargets.length ? { backendTargets } : {}), ...(values.has('--expected-backend-run') ? { expectedBackendRunId: values.get('--expected-backend-run')! } : {}), ...(values.has('--expected-routing-digest') ? { expectedRoutingDigest: values.get('--expected-routing-digest')! } : {}) });
         result = await deps.runtime.waitForRun(root, started.id);
       } else if (action === 'stop') { required('--run'); result = await deps.runtime.stopRun(root, values.get('--run')!); }
       else {

@@ -95,6 +95,17 @@ export const SERVICE_RUNTIME_MODULE = Object.freeze({
         },
       });
       const view = createServiceRuntimeView({ catalog: { listServices }, runtime });
+      const sources = {
+        prepare(root: string, serviceCode: string, input: { worktreeId: string; targetRef: string; expectedTargetHash: string; expectedRevision: string }) {
+          const service = resolveService(root, serviceCode);
+          if (!service?.repositoryId) throw new ServiceRuntimeError('service_runtime_repository_unregistered', '服务未关联可用代码库。');
+          if (!listWorktrees(root, serviceCode).some(item => item.id === input.worktreeId)) throw new ServiceRuntimeError('service_runtime_worktree_unknown', '所选代码目录已不可用。');
+          const result = code.prepareWorktree(root, { ...input, repositoryId: service.repositoryId, requiredPath: service.modulePath });
+          const worktree = listWorktrees(root, serviceCode).find(item => item.id === result.worktreeId);
+          if (!worktree) throw new ServiceRuntimeError('service_runtime_worktree_unknown', '目标分支未提供可用服务目录，未启动。');
+          return { worktree, created: result.created };
+        },
+      };
       const taskRuntime = createServiceTaskRuntimeApplication({
         runtime, view, catalog: { listServices }, readTaskScope,
       });
@@ -106,8 +117,8 @@ export const SERVICE_RUNTIME_MODULE = Object.freeze({
           [SERVICE_TASK_RUNTIME_APPLICATION]: taskRuntime,
         },
         contributions: {
-          http: [createServiceRuntimeHttp({ view, runtime, taskRuntime })],
-          cli: createServiceRuntimeCliContributions({ view, runtime, taskRuntime }),
+          http: [createServiceRuntimeHttp({ view, runtime, taskRuntime, sources })],
+          cli: createServiceRuntimeCliContributions({ view, runtime, taskRuntime, sources }),
         },
       });
     },

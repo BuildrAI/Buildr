@@ -13,6 +13,12 @@ export function sourceLabel(source: Pick<ManagedRun, 'main' | 'taskId' | 'taskTi
 }
 export function dirtyLabel(dirty: boolean | null | undefined): string { return dirty === true ? '含未提交改动' : dirty === false ? '无未提交改动' : '改动状态未记录'; }
 export function expectedWorktree(worktree: ServiceWorktree): ExpectedWorktree { const { path, branch, head, dirty } = worktree; return { path, branch, head, dirty }; }
+/** 普通主工作库无需任务身份；其他路由运行仍须有可核实的任务归属。 */
+export function routingScopeError(worktree: ServiceWorktree | null): string | null {
+  if (!worktree) return null;
+  if (worktree.main === true && worktree.taskId === null || worktree.main === false && typeof worktree.taskId === 'string' && worktree.taskId.trim()) return null;
+  return worktree.main ? '代码目录同时标记为主工作库和任务目录，请刷新后核对真实来源。' : '代码目录的任务归属尚未确认，请选择主工作库或已确认的任务目录。';
+}
 /** 切换同一实例时携带其明确任务，交由服务器重验；改选目录绝不继承旧任务。 */
 export function startRunOptions(worktree: ServiceWorktree, initialRun?: Pick<ManagedRun, 'worktreeId' | 'taskId'> | null, connection?: BackendMode): StartOptions {
   const taskId = initialRun?.worktreeId === worktree.id ? initialRun.taskId ?? worktree.taskId : worktree.taskId;

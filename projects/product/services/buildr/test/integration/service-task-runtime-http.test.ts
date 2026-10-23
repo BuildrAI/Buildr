@@ -75,10 +75,44 @@ test('task HTTP rejects malformed and foreign selections, keeping unrelated main
   assert.ok(foreign!.body.results[0].error);
 });
 
+test('task auto starts frontend-only against remote and reuses its observed connection', async t => {
+  const f = await fixture(t);
+  const input = { selected: [{ serviceCode: 'front', worktreeId: 'front-task', backendTargets: [{ serviceCode: 'back', target: 'remote' }] }], connection: 'auto', origin: 'human' };
+  const first = await f.call('POST', '/service-runtime/tasks/task/runs', input);
+  assert.equal(first.status, 200); assert.equal(first.body.results[0].run.status, 'running');
+  assert.equal(first.body.results[0].run.connection.mode, 'remote');
+  assert.equal(await (await fetch(first.body.results[0].run.url)).text(), 'https://test.example.com');
+  assert.equal((await f.runtime.listRuns(f.root)).length, 1);
+  const reused = await f.call('POST', '/service-runtime/tasks/task/runs', input);
+  assert.equal(reused.body.results[0].reused, true); assert.equal(reused.body.results[0].run.id, first.body.results[0].run.id);
+});
+
+test('standalone remote environment changes actual injected gateway and restart preserves source', async t => {
+  const f = await fixture(t), definition = f.runtime.readDefinition(f.root, 'front')!.definition;
+  definition.local.remoteEnvironments = [{ code: 'qa', name: 'QA', url: 'https://qa.example.com', variables: {} }, { code: 'stage', name: 'Stage', url: 'https://stage.example.com', variables: {} }];
+  await f.runtime.writeDefinition(f.root, 'front', JSON.stringify(definition));
+  const started = await f.runtime.startRun(f.root, { serviceCode: 'front', worktreeId: 'front-task', standalone: true, environment: 'stage' });
+  const first = await f.runtime.waitForRun(f.root, started.id);
+  assert.equal(first.taskId, null); assert.equal(first.environment?.code, 'stage'); assert.equal(await (await fetch(first.url)).text(), 'https://stage.example.com');
+  const replacement = await f.runtime.restartRun(f.root, first.id, { environment: 'qa' });
+  const second = await f.runtime.waitForRun(f.root, replacement.id);
+  assert.equal(second.worktreePath, first.worktreePath); assert.equal(second.environment?.code, 'qa'); assert.equal(await (await fetch(second.url)).text(), 'https://qa.example.com');
+});
+
 test('CLI task-start waits for real process and returns the same records as HTTP detail', async t => {
   const f = await fixture(t);
   const result: any = await f.cli.run(null, { argv: ['node', 'buildr', 'service-runtime', 'task-start', '--task', 'task', '--services', 'back', '--target', f.root, '--json'] });
   assert.equal(result.results.length, 1); assert.equal(result.results[0].run.status, 'running');
   const detail = await f.call('GET', '/service-runtime/tasks/task'); assert.equal(detail!.body.runs[0].id, result.results[0].run.id);
   await assert.rejects(f.cli.run(null, { argv: ['node', 'buildr', 'service-runtime', 'deploy', '--target', f.root] }), /Unknown/);
+});
+
+test('standalone service read omits downstream scans while task and legacy detail keep candidates', async t => {
+  const f = await fixture(t);
+  const standalone = await f.view.detail(f.root, 'front', undefined, { standalone: true });
+  assert.equal(standalone.worktrees.length, 2); assert.deepEqual(standalone.connectionTargets, {});
+  const legacy = await f.view.detail(f.root, 'front');
+  assert.equal(Object.keys(legacy.connectionTargets).length, 2);
+  const task = await f.taskRuntime.detail(f.root, 'task');
+  assert.equal(task.services.find(item => item.service.code === 'front')?.connectionTarget?.[0].serviceCode, 'back');
 });

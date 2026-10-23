@@ -7,6 +7,7 @@ import { assertCodeRevision, codeRevision, observeSourceControl } from '../infra
 import { readCodeBranchRefs, type CodeBranchSourceObservation } from '../infrastructure/code-branch-reader.ts';
 import { assertNoExternalCheckoutFilters, readCodeCheckoutFilterConfig, switchCodeBranch } from '../infrastructure/code-branch-switch.ts';
 import type { CodeBranchEntry, CodeLocalBranch } from '../domain/source-control.ts';
+import { prepareServiceWorktree } from '../infrastructure/code-service-worktree.ts';
 import type { CodeBranchesResponse, CodeBranchSwitchInput, CodeBranchSwitchResponse, CodeSourceControlInput } from './source-control-model.ts';
 
 const BRANCH_LIMIT = 1000;
@@ -147,5 +148,17 @@ export function createCodeBranchApplication(dependencies: Dependencies) {
     const release = acquireCodeGitOperation(current);
     try { return switchBranchUnlocked(root, input); } finally { release(); }
   }
-  return Object.freeze({ branches, switchBranch });
+  function prepareWorktree(root: string, input: { repositoryId: string; worktreeId: string; targetRef: string; expectedTargetHash: string; expectedRevision: string; requiredPath?: string }) {
+    if (!/^refs\/(?:heads|remotes)\/.+/.test(input.targetRef || '') || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(input.expectedTargetHash || '') || !input.expectedRevision) throw codeFailure('code_branch_target_invalid', '必须提供目标分支与已观察版本。');
+    const source = dependencies.source(root, { repositoryId: input.repositoryId, worktreeId: input.worktreeId });
+    const release = acquireCodeGitOperation(source);
+    try {
+      const before = observe(root, { repositoryId: input.repositoryId, worktreeId: input.worktreeId });
+      assertCodeRevision(before.observedRevision, input.expectedRevision);
+      const target = before.entries.find(entry => entry.ref === input.targetRef);
+      if (!target || target.hash !== input.expectedTargetHash) throw codeFailure('code_branch_target_changed', '目标分支已变化，请刷新后启动。', 409);
+      return prepareServiceWorktree(root, before.source, target, before.entries, input.requiredPath);
+    } finally { release(); }
+  }
+  return Object.freeze({ branches, switchBranch, prepareWorktree });
 }

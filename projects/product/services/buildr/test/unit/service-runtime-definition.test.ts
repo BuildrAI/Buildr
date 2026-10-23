@@ -17,6 +17,15 @@ local:
   timeoutSeconds: 180
 `;
 
+test('远程环境独立于完整后端清单，保留变量且拒绝重复环境与含业务路径的网关', () => {
+  const input = valid + '  remoteEnvironments:\n    - code: qa\n      name: 测试环境\n      url: https://gateway.example.com\n      variables: {API_BASE: https://gateway.example.com}\n';
+  const definition = parseRuntimeDefinition(input);
+  assert.equal(definition.local.backends, undefined); assert.equal(definition.local.remoteEnvironments?.[0]?.variables.API_BASE, 'https://gateway.example.com');
+  assert.deepEqual(parseRuntimeDefinition(renderRuntimeDefinition(definition)), definition);
+  assert.throws(() => parseRuntimeDefinition(input.replace('url: https://gateway.example.com', 'url: https://gateway.example.com/service')), RuntimeDefinitionError);
+  assert.throws(() => parseRuntimeDefinition(input + '    - code: qa\n      name: 重复\n'), RuntimeDefinitionError);
+});
+
 test('解析与渲染本地定义，保留已验证前端连接声明', () => {
   const definition = parseRuntimeDefinition(valid + `  backend:
     serviceCode: business

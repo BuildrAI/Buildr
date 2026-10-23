@@ -1,11 +1,11 @@
 import { AssetDeleteDialog } from '../../workspace/components/AssetDeleteDialog';
 import { useAssetList } from '../../workspace/components/useAssetList';
-import { Alert, Select, Space, Tag } from 'antd';
+import { Alert, App, Select, Space, Tag, Tooltip } from 'antd';
 import { ResourceDirectory } from '../../../components/ResourceDirectory';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from 'antd';
-import { PlayCircleOutlined, SettingOutlined, UnorderedListOutlined } from '@ant-design/icons';
+import { PlayCircleOutlined, SettingOutlined, StarFilled, StarOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { useAppShell } from '../../../app/AppShellContext';
 import { useWorkspacePageTabs } from '../../../app/pageTabs';
 import { WorkspaceStage } from '../../../components/WorkspaceStage';
@@ -17,12 +17,15 @@ import { ServiceCreateDrawer } from '../../workspace/components/ServiceCreateDra
 import { AgentDiscoveryDrawer } from '../../service-runtime/components/AgentDiscoveryDrawer';
 import { ServiceRuntimeStatusCell } from '../../service-runtime/components/ServiceRuntimeStatusCell';
 import { StartWorktreeModal } from '../../service-runtime/components/StartWorktreeModal';
-import { useServiceRuntimeOverview } from '../../service-runtime/hooks/useServiceRuntime';
+import { usePrepareServiceStart, useServiceRuntimeOverview } from '../../service-runtime/hooks/useServiceRuntime';
+import { useWorkbenchPreferences } from '../../workbench/hooks/useWorkbenchPreferences';
 import { activeRuns } from '../../service-runtime/model';
 import '../../service-runtime/service-runtime.css';
 
 export function ServicesPage() {
   const { workspaceId } = useAppShell(), navigate = useNavigate(), tabs = useWorkspacePageTabs(workspaceId), listing = useAssetList('services');
+  const { message } = App.useApp(), preferences = useWorkbenchPreferences(workspaceId);
+  const prepareStart = usePrepareServiceStart(workspaceId), startSequence = useRef(0);
   const [editing, setEditing] = useState<string | null>(null), [creating, setCreating] = useState(false), [draft, setDraft] = useState<ServiceDraft>();
   const [actionError, setActionError] = useState('');
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -30,6 +33,7 @@ export function ServicesPage() {
   const [discovering, setDiscovering] = useState<{ code: string; name: string } | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'running'>('all');
   const [projectFilter, setProjectFilter] = useState<string[]>([]);
+  const [onlyFrequent, setOnlyFrequent] = useState(false), [savingFrequent, setSavingFrequent] = useState(''), [preparing, setPreparing] = useState('');
   const catalog = useAssetCatalog(Boolean(editing || creating)), data = catalog.data, list = listing.data;
   const runtime = useServiceRuntimeOverview(workspaceId);
   const href = (id: string) => workspaceHref(workspaceId, `/services/${id}`);
@@ -41,18 +45,38 @@ export function ServicesPage() {
     return [...projects.values()].sort((a, b) => a.name.localeCompare(b.name)).map(project => ({ value: project.id, label: `${project.name}（${project.code}）` }));
   }, [list]);
   const selectedProjects = new Set(projectFilter);
+  const frequent = (id: string) => preferences.has('saved-resource', 'service:' + id);
+  const toggleFrequent = async (service: NonNullable<typeof list>['services'][number]) => {
+    setSavingFrequent(service.id);
+    try {
+      if (frequent(service.id)) await preferences.remove('saved-resource', 'service:' + service.id);
+      else await preferences.set('saved-resource', 'service:' + service.id, { label: service.name, href: href(service.id) });
+    } catch (cause) { message.error(cause instanceof Error ? cause.message : '常用服务未保存'); }
+    finally { setSavingFrequent(''); }
+  };
+  const openStart = async (service: { code: string; name: string }) => {
+    const sequence = ++startSequence.current; setPreparing(service.code);
+    try { await prepareStart(service.code); if (sequence === startSequence.current) setStarting(service); }
+    catch (cause) { if (sequence === startSequence.current) message.error(cause instanceof Error ? cause.message : '启动配置读取失败，请重试'); }
+    finally { if (sequence === startSequence.current) setPreparing(''); }
+  };
   const services = (list?.services || []).filter(service =>
     (statusFilter === 'all' || activeRuns(runtimeByCode.get(service.code)).length > 0)
-    && (!selectedProjects.size || service.projects.some(project => selectedProjects.has(project.id))));
+    && (!onlyFrequent || frequent(service.id))
+    && (!selectedProjects.size || service.projects.some(project => selectedProjects.has(project.id))))
+    .sort((a, b) => Number(frequent(b.id)) - Number(frequent(a.id)));
 
   return <WorkspaceStage pageTabs={tabs.tabs} onClosePageTab={tabs.close}>
     <ResourceDirectory onRefresh={() => { listing.reload(); void runtime.refresh(); }} refreshing={listing.loading || runtime.loading} title="服务" noun="服务" description="了解实现职责，连接业务与代码；查看服务在主工作库和任务目录中的本地运行。" data={services} loading={!list && !listing.error} error={listing.error || catalog.error || actionError}
       rowKey={s => s.id} name={s => s.name} summary={s => s.description} searchText={s => `${s.name} ${s.code} ${s.description}`} href={s => href(s.id)} onOpen={s => navigate(href(s.id))} onEdit={s => setEditing(s.id)} onDelete={s => setDeleting(s.id)} editDisabled={list?.migrationRequired}
+      nameContent={s => <div className="service-directory-name"><Tooltip title={frequent(s.id) ? '取消常用' : '设为常用，优先展示'}><Button className={'service-frequent-button' + (frequent(s.id) ? ' is-frequent' : '')} type="text" size="small" disabled={preferences.loading} loading={savingFrequent === s.id} icon={frequent(s.id) ? <StarFilled /> : <StarOutlined />} aria-label={`${frequent(s.id) ? '取消常用' : '设为常用'}：${s.name}`} aria-pressed={frequent(s.id)} onClick={() => void toggleFrequent(s)} /></Tooltip><div className="resource-name"><Link to={href(s.id)}>{s.name}</Link><span>{s.description || '尚未填写说明'}</span></div></div>}
+      rowAttributes={s => ({ 'data-service-code': s.code } as React.HTMLAttributes<HTMLTableRowElement>)}
       tableId="service-table-wrap" bodyId="service-table-body" searchId="services-search"
-      total={list?.services.length} filtered={statusFilter === 'running' || projectFilter.length > 0} onClearFilters={() => { setStatusFilter('all'); setProjectFilter([]); }}
+      total={list?.services.length} filtered={onlyFrequent || statusFilter === 'running' || projectFilter.length > 0} onClearFilters={() => { setOnlyFrequent(false); setStatusFilter('all'); setProjectFilter([]); }}
       filters={<>
         <Select id="service-project-filter" aria-label="所属项目筛选" mode="multiple" allowClear showSearch maxTagCount={1} placeholder="所属项目" value={projectFilter} options={projectOptions} onChange={setProjectFilter} filterOption={(input, option) => String(option?.label ?? '').toLocaleLowerCase().includes(input.trim().toLocaleLowerCase())} />
         <Select id="service-runtime-filter" aria-label="运行状态筛选" value={statusFilter} options={[{ label: '全部服务', value: 'all' }, { label: '只看运行中', value: 'running' }]} onChange={value => setStatusFilter(value as 'all' | 'running')} />
+        <Button id="service-frequent-filter" icon={onlyFrequent ? <StarFilled /> : <StarOutlined />} className={onlyFrequent ? 'service-frequent-filter is-active' : 'service-frequent-filter'} aria-pressed={onlyFrequent} onClick={() => setOnlyFrequent(value => !value)}>只看常用</Button>
       </>}
       columns={[
         { title: '类型', width: 80, render: (_, s) => serviceTypeTagLabel(s.type) ? <Tag>{serviceTypeTagLabel(s.type)}</Tag> : null },
@@ -70,11 +94,11 @@ export function ServicesPage() {
       actionWidth={196}
       rowActions={s => {
         const summary = runtimeByCode.get(s.code);
-        return <Space size={0} wrap>
+        return <Space size={4} wrap>
           {activeRuns(summary).length
             ? <Button type="text" icon={<UnorderedListOutlined />} onClick={() => navigate(href(s.id) + '?view=runtime')}>查看运行</Button>
             : summary?.definition
-            ? <Button type="text" icon={<PlayCircleOutlined />} disabled={list?.migrationRequired} onClick={() => setStarting({ code: s.code, name: s.name })}>启动</Button>
+            ? <Button className="service-directory-start" icon={<PlayCircleOutlined />} loading={preparing === s.code} disabled={list?.migrationRequired} onPointerEnter={() => { void prepareStart(s.code).catch(() => undefined); }} onFocus={() => { void prepareStart(s.code).catch(() => undefined); }} onClick={() => void openStart({ code: s.code, name: s.name })}>启动</Button>
             : <Button type="text" icon={<SettingOutlined />} disabled={list?.migrationRequired} onClick={() => setDiscovering({ code: s.code, name: s.name })}>运行配置</Button>}
           <Button type="text" disabled={list?.migrationRequired} onClick={() => setEditing(s.id)}>编辑</Button>
           <Button type="text" disabled={list?.migrationRequired} onClick={() => setDeleting(s.id)}>移除</Button>
