@@ -1,0 +1,19 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: local-run-backend-candidates
+operation: assess
+impacts:
+  - type: code-map
+    target: knowledge/code-map/technical-layers.md
+    reason: service-runtime 模块与前端特性段落描述单后端声明、唯一本地目标与单连接
+    status: updated
+    sourceIdentities: [specs/service-runtime-operations/spec.md, design.md]
+  - type: index
+    target: knowledge/index.yml
+    reason: local-runtime-definition/runs/application/task-application/view 摘要仍写单后端与单连接
+    status: updated
+    sourceIdentities: [design.md]
+  - type: agent-guide
+    target: services/buildr/resources/runtime/skills/buildr/references/local-services.md
+    reason: 多后端声明、实例级候选与逐后端连接的 Agent 方法需要同步
+    status: updated
+    sourceIdentities: [specs/service-runtime-operations/spec.md, design.md]

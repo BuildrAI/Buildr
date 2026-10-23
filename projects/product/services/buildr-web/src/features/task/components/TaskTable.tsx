@@ -63,7 +63,8 @@ export function TaskTable({ activeTaskId, tasks, prefetchTaskId, projectNames, c
     } },
     ...(width >= 570 && !grouped ? [{ title: '项目', key: 'project', width: 120, ellipsis: true, render: (_value: unknown, item: TaskListItem) => taskProjectGroup(item, projectNames) }] : []),
     { title: '状态', key: 'status', width: 88, render: (_value, item) => {
-      const attention = contexts[item.record.taskId]?.context?.attention;
+      const openable = item.record.status === 'todo' || item.record.status === 'active';
+      const attention = openable ? contexts[item.record.taskId]?.context?.attention : undefined;
       return <div className="task-compact-status"><span className={`lifecycle-badge ${item.record.status}`}>{taskStatusLabel(item.record.status)}</span>{attention?.state === 'pending' && <small className="task-attention-label">{attention.kind === 'acceptance' ? '等待验收' : attention.kind === 'question' ? '需要答复' : '等待决定'}</small>}{item.record.retrospective?.state === 'pending-decision' && <small className="task-attention-label">复盘待决定</small>}</div>;
     } },
     ...(width >= 740 ? [{ title: '更新', key: 'updated', width: 138, render: (_value: unknown, item: TaskListItem) => {

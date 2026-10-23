@@ -105,6 +105,11 @@ test('任务技能的自然意图描述从包同步到发现入口，升级不�
   for (const runtimeId of ['codex', 'dsh']) {
     const { plan } = assembleRuntimeProjection({ repoRoot: root, runtimeId, selection: { productSkill: true, workspaceSkills: true } });
     reconcileRuntimePlan(plan);
+    const productSkill = fs.readFileSync(path.join(root, '.agents/skills/buildr/SKILL.md'), 'utf8');
+    assert.match(YAML.parse(productSkill.split('---')[1]).description, /服务本地运行/);
+    const localGuide = path.join(root, '.agents/skills/buildr/references/local-services.md');
+    assert.equal(fs.readFileSync(localGuide, 'utf8'), fs.readFileSync(path.resolve(import.meta.dirname, '../../resources/runtime/skills/buildr/references/local-services.md'), 'utf8'));
+    assert.match(productSkill, /\]\(references\/local-services\.md\)/);
     for (const [id, sourceFile] of sources) {
       const source = fs.readFileSync(sourceFile, 'utf8');
       const projected = fs.readFileSync(path.join(root, '.agents/skills', id, 'SKILL.md'), 'utf8');

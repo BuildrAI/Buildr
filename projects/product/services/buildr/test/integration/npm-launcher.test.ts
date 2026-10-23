@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
+import { createUpdateLauncher } from '../../src/modules/installation/application/update-launcher.ts';
 import { createRuntime } from '../helpers/runtime-harness.ts';
 import { buildApplicationPayload } from '../../../../../../skills/buildr-release/scripts/application-payload.ts';
 import { createNpmPackStaging } from '../../../../../../skills/buildr-release/scripts/release-artifact.ts';
@@ -872,4 +873,25 @@ test('macOS Launcher 默认目标不可写时 fail closed 并指引 --target', a
     assert.match(error.message, /--target/);
     assert.equal(fs.existsSync(legacyTarget), false, '权限不足时不得静默写入 ~/Applications');
   }
+});
+
+
+test('页面更新启动入口：核对真实安装、不创建缺失入口、只修复本安装拥有的入口', async () => {
+  const value: any = await fixture({ runnable: true });
+  const target = path.join(value.root, 'Applications', 'Buildr Web.app');
+  const entry = value.registration.entry;
+  enrollProductInstallation({ envelopePath: entry.envelopePath, productRoot: entry.productRoot, entryPath: entry.entryPath, runtimeExecutable: entry.runtime.executable, updateAuthority: entry.updateAuthority });
+  const updater = createUpdateLauncher({ platform: 'darwin', target });
+  const job: any = { productRoot: value.registration.entry.productRoot, version: value.registration.entry.origin.version, previousInstallationIdentity: value.registration.entry.origin.ownershipIdentity };
+  assert.equal(updater.inspect(job).status, 'absent');
+  assert.equal(updater.repair(job).status, 'absent');
+  assert.equal(fs.existsSync(target), false);
+  installNpmLauncher({ registration: value.registration, platform: 'darwin', target });
+  assert.equal(updater.inspect(job).status, 'ready');
+  fs.rmSync(path.join(target, 'Contents', 'MacOS', 'Buildr Web'));
+  assert.equal(updater.inspect(job).status, 'failed');
+  assert.equal(updater.repair(job).status, 'ready');
+  const before = fs.readFileSync(path.join(target, 'Contents', 'Info.plist'), 'utf8');
+  assert.throws(() => updater.repair({ ...job, version: '999.0.0' }), (e: any) => e.code === 'web_update_installation_changed');
+  assert.equal(fs.readFileSync(path.join(target, 'Contents', 'Info.plist'), 'utf8'), before);
 });

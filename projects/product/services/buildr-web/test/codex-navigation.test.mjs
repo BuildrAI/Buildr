@@ -116,3 +116,23 @@ test('错误片段不复用旧state，关闭详情显式回列表，普通Web路
   assert.equal(readCodexLocation(target, {buildrCodex: {fragment: target.hash, route: {pathname: 42}}}).route.pathname, '/workspaces/w/tasks/t');
   assert.equal(readCodexLocation(target, {buildrCodex: {fragment: target.hash, route: {pathname: '/workspaces/w/tasks', search: '', hash: ''}}, usr: {resourceViews: {items: [null], active: undefined}}}).route.pathname, '/workspaces/w/tasks/t');
 });
+
+
+test('服务本地运行在Codex固定入口保留详情选择与刷新，只接受已知查看页签', () => {
+  for (const view of ['detail', 'runtime']) {
+    const target = `/services/pigs?view=${view}`;
+    const resolved = resolveCodexTarget('w', target);
+    assert.equal(resolved.error, null);
+    assert.equal(resolved.route.search, `?view=${view}`);
+    const views = { items: [{ kind: 'service', path: '/workspaces/w' + target }], active: 'service' };
+    assert.equal(codexRouteHref('w', { pathname: '/workspaces/w/services', search: '', hash: '' }, { resourceViews: views }), '/workspaces/w/codex#' + target);
+    const { browser } = browserAt('http://local/workspaces/w/codex#/services');
+    const adapted = createCodexNavigationWindow(browser);
+    adapted.history.pushState({ idx: 1, usr: { resourceViews: views } }, '', '/workspaces/w/services');
+    assert.equal(browser.location.hash, '#' + target);
+    const refreshed = createCodexNavigationWindow(browser);
+    assert.equal(refreshed.location.pathname, '/workspaces/w/services');
+    assert.deepEqual(refreshed.history.state.usr.resourceViews, views);
+  }
+  for (const target of ['/services/pigs?view=unknown', '/services/pigs?view=', '/services/pigs?view=runtime&view=detail', '/services/pigs?view=runtime&redirect=https://evil.example']) assert.ok(resolveCodexTarget('w', target).error, target);
+});

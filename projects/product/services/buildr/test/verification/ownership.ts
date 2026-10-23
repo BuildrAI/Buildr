@@ -162,6 +162,18 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     ],
     "inputExclusions": []
   },
+  "integration-connections-cli": {
+    "inputs": [
+      "src/modules/connection-skills/**",
+      "resources/workspace/skills/connections/**",
+      "test/fixtures/connection-skills-cli-smoke.ts",
+      "test/helpers/child-process-supervisor.ts",
+      "test/verification/support/verification-deadline.ts",
+      "tools/development/run-isolated-workspace-smoke.ts",
+      "tools/development/isolated-workspace-state.ts"
+    ],
+    "inputExclusions": []
+  },
   "integration-runtime-projection": {
     "inputs": [
       "src/modules/agent-assets/infrastructure/runtime/**",
@@ -259,6 +271,8 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration-runtime": {
     "inputs": [
+      "src/modules/service-runtime/**",
+      "test/helpers/service-runtime-fixture.ts",
       "src/bootstrap/**",
       "src/web/**",
       "src/modules/workspace/**",
@@ -276,6 +290,8 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/integration/product-installation-identity.test.ts",
       "test/integration/development-runtime-inputs.test.ts",
       "test/integration/product-installation-registry.test.ts",
+      "test/integration/update-flow-http-contract.test.ts",
+      "test/integration/update-flow-recovery.test.ts",
       "test/integration/workspace-cli-routing.test.ts",
       "skills/buildr-release/scripts/**",
       "src/modules/installation/application/product-installation-status.ts",
@@ -332,6 +348,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     "inputs": [
       "knowledge/index.yml",
       "test/contract/**",
+      "test/helpers/clean-product-source.ts",
       "test/helpers/legacy-asset-catalog.ts",
       "test/verification/http-contract-fresh-build-inventory.ts",
       "test/fixtures/**",
@@ -538,6 +555,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/modules/task/infrastructure/**",
       "src/infrastructure/git/**",
       "test/helpers/workspace-product-suite.ts",
+      "test/helpers/clean-product-source.ts",
       "test/verification/system-suites.ts",
       "test/verification/system.ts",
       "test/helpers/task-lifecycle-system-context.ts",
@@ -564,9 +582,14 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     "inputs": [
       "test/system/cli-update.test.ts",
       "test/system/runtime-target-authority.test.ts",
+      "test/system/web-update-flow.test.ts",
       "test/system/workspace-runtime-recovery.test.ts",
       "src/modules/installation/application/cli-update.ts",
       "src/modules/installation/application/release-awareness.ts",
+      "src/modules/installation/application/update-flow.ts",
+      "src/modules/installation/application/update-launcher.ts",
+      "src/modules/installation/domain/update-flow-state.ts",
+      "src/modules/installation/infrastructure/update-flow-store.ts",
       "src/modules/agent-assets/application/runtime-projection.ts",
       "src/infrastructure/filesystem/**",
       "src/infrastructure/network/**",
@@ -1196,7 +1219,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     "inputExclusions": []
   },
   "artifact-browser-core": {
-    "inputs": ["test/verification/release/browser-candidate.ts"],
+    "inputs": ["test/verification/release/browser-candidate.ts", "test/helpers/clean-product-source.ts"],
     "inputExclusions": []
   },
   "frontend-logic": {

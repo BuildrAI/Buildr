@@ -27,6 +27,9 @@ Buildr 让人和智能体（Agent）使用同一份外部系统接入信息。�
 | Nacos | 从服务代码定位配置，读取、比较并受控发布；网站供人工查看。 |
 | Kibana | 从服务与部署线索定位日志，发现字段、有界检索和统计。 |
 | XXL-JOB | 核实服务与执行器关联，维护调度任务并查看运行记录和日志。 |
+| 持续集成与交付（CI/CD） | 用户工作空间（Workspace）的专业接入技能（Skill）可通过通用程序提交或查询，具体输入、授权及结果由该方法定义；构建、部署、当前版本和日志以外部系统为准。 |
+
+持续集成与交付（CI/CD）不随包内置。服务本地运行模块暂不提供 QA 部署、部署计划或最近结果；已有用户接入与历史保留，独立操作仍由所选技能（Skill）通过 `buildr connection-skill run` 执行。制作边界见[专业程序约定](../../../services/buildr/resources/workspace/skills/buildr/connection-authoring/references/connection-contract.md#专业部署程序)。
 
 ## 共同边界
 

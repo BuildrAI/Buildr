@@ -1,3 +1,4 @@
+import { sourceControlWorkingChanges } from '../../features/code/source-control-model';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SourceControlWorkbench } from '../../features/code/components/SourceControlWorkbench';
 import type { SourceControlChange, SourceControlFileTarget, SourceControlReader, SourceControlRepository, SourceControlScene, SourceControlState } from '../../features/code/source-control-model';
@@ -42,7 +43,8 @@ export function MockSourceControlWorkbench({ repositories, scene, state = '', on
     };
     const currentFile = (repository: SourceControlRepository, input: CodeSourceControlInput): SourceControlChange => {
       const files = input.area === 'commit' && input.commitHash ? commit(repository, input.commitHash, input).files : checkout(repository, input).changes;
-      const file = files.find(item => item.path === input.path && (input.area === 'commit' || item.area === input.area));
+      const candidates = input.area === 'working' ? sourceControlWorkingChanges(files) : files;
+      const file = candidates.find(item => item.path === input.path && (input.area === 'commit' || item.area === input.area));
       if (!file) throw Error('模拟文件当前不可读取。');
       return file;
     };

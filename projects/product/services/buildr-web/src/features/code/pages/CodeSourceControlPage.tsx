@@ -1,15 +1,14 @@
-import { useContext, useEffect, useId, useState } from 'react';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import { App, Button, Dropdown } from 'antd';
 import { CloudDownloadOutlined, MoreOutlined, SyncOutlined } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppShell } from '../../../app/AppShellContext';
 import { WorkspaceViewActiveContext } from '../../../app/pageTabs';
-import { tabElementId } from '../../../lib/tab-navigation';
-import { ObjectTabStrip } from '../../../components/ObjectTabStrip';
 import { workspaceHref } from '../../../lib/labels';
 import { SourceControlWorkbench } from '../components/SourceControlWorkbench';
 import { codeReturnTarget } from '../code-navigation';
 import { SourceControlCommitPanel } from '../components/SourceControlCommitPanel';
+import { useSourceControlDiscard } from '../hooks/useSourceControlDiscard';
 import { useSourceControlActions } from '../hooks/useSourceControlActions';
 import type { CodeSourceTarget } from '../code-source-selection';
 import { useCodeSourceSelection } from '../hooks/useCodeSourceSelection';
@@ -19,20 +18,22 @@ import { useSourceControlFetch } from '../hooks/useSourceControlFetch';
 import { useSourceControlSync } from '../hooks/useSourceControlSync';
 import { SourceControlOperationNotices } from '../components/SourceControlOperationNotices';
 import { codeApi } from '../api/code-api';
-import type { SourceControlFileTarget, SourceControlScene } from '../source-control-model';
+import { orderCodeRepositories } from '../code-repository-order';
+import { sourceControlRepositoryHasChanges, type SourceControlFileTarget, type SourceControlScene } from '../source-control-model';
 
 export function CodeSourceControlPage() {
-  const panelId = useId();
   const viewActive = useContext(WorkspaceViewActiveContext);
   const [catalogMenuOpen, setCatalogMenuOpen] = useState(false);
-  const {workspaceId, setBreadcrumbParts} = useAppShell();
+  const {workspaceId, workspace, setBreadcrumbParts} = useAppShell();
   const {message} = App.useApp();
   useEffect(() => {setCatalogMenuOpen(false);}, [workspaceId, viewActive]);
   const location = useLocation(), navigate = useNavigate();
   const entry = location.state?.sourceControlEntry as {origin?: 'task'; nonce?: string; taskId: string; taskTitle?: string; from: {pathname: string; search: string; hash: string; state: unknown}} | undefined;
   const observation = useSourceControl(workspaceId || '', entry?.taskId, viewActive);
+  const repositories = useMemo(() => orderCodeRepositories(observation.repositories, workspace?.rootPath, sourceControlRepositoryHasChanges), [observation.repositories, workspace?.rootPath]);
   const currentSource = useCodeSourceSelection(workspaceId);
   const actions = useSourceControlActions(workspaceId || '', observation.refresh);
+  const discard = useSourceControlDiscard(workspaceId || '', observation.refresh, viewActive);
   const fetchActions = useSourceControlFetch(workspaceId || '');
   const syncActions = useSourceControlSync(workspaceId || '');
   const branches = useSourceControlBranches(workspaceId || '', fetchActions, syncActions);
@@ -52,9 +53,8 @@ export function CodeSourceControlPage() {
   };
   return <div className="code-source-control-page">
     <SourceControlOperationNotices workspaceId={workspaceId || ''} repositories={observation.repositories} fetchResults={fetchActions.feedback} syncResults={syncActions.results} onViewChanges={(repositoryId, worktreeId) => branches.viewChanges?.(repositoryId, worktreeId)} />
-    <ObjectTabStrip panelId={panelId} className="code-source-control-tab" tabs={[{key: 'source-control', kind: 'svc', title: '源代码管理'}]} active="source-control" closable={false} onActivate={() => {}} />
-    <div className="object-tab-panel" id={panelId} role="tabpanel" aria-labelledby={tabElementId(panelId, 'source-control')} tabIndex={0}>
-    <SourceControlWorkbench sourceEntryKey={entry ? workspaceId+':'+(entry.nonce||location.key) : undefined} currentSourceSelection={currentSource.selection ? {key:workspaceId+':'+currentSource.selection.sequence,targets:currentSource.selection.targets,preferredTarget:currentSource.selection.preferredTarget} : undefined} onCurrentSourceSelect={(target:CodeSourceTarget)=>currentSource.select('source-control',[target],target)} active={viewActive} repositories={observation.repositories} reader={observation.reader} readKey={observation.readKey}
+    <SourceControlWorkbench sourceEntryKey={entry ? workspaceId+':'+(entry.nonce||location.key) : undefined} currentSourceSelection={currentSource.selection ? {key:workspaceId+':'+currentSource.selection.sequence,targets:currentSource.selection.targets,preferredTarget:currentSource.selection.preferredTarget} : undefined} onCurrentSourceSelect={(target:CodeSourceTarget)=>currentSource.select('source-control',[target],target)} active={viewActive} repositories={repositories} defaultRepositories={observation.repositories} reader={observation.reader} readKey={observation.readKey}
+      onDiscard={(repository, worktree, file) => void discard.run(repository, worktree, file)} discardPending={discard.pending}
       editableWorkspaceId={workspaceId || undefined}
       observation={observation.observation} onRefresh={observation.refresh} onRetry={observation.refresh}
       onClone={workspaceId ? (repositoryId => { void codeApi.repositoryClone(workspaceId, repositoryId).then(result => {
@@ -70,6 +70,5 @@ export function CodeSourceControlPage() {
       scopeSelection={entry && observation.selection ? {...observation.selection, key: workspaceId + ':' + (entry.nonce || location.key)} : undefined}
       renderChangeActions={(repository, worktree, active) => workspaceId ? <SourceControlCommitPanel active={active} workspaceId={workspaceId} repository={repository} worktree={worktree} actions={actions} version={repository.readVersion || ''} /> : null}
       onViewCurrent={openCurrent} branchExtension={branches} layoutStorageKey={'buildr:source-control:' + workspaceId} />
-    </div>
   </div>;
 }

@@ -1,6 +1,6 @@
 import type { GitCommit } from '../../task/commits/domain/task-commit.ts';
 
-export type CodeChangeArea = 'unstaged' | 'staged' | 'untracked' | 'commit';
+export type CodeChangeArea = 'unstaged' | 'staged' | 'untracked' | 'working' | 'commit';
 export type CodeChange = {
   repositoryId: string; worktreeId: string | null; area: CodeChangeArea; path: string; previousPath: string | null;
   kind: 'tracked' | 'untracked'; status: 'modified' | 'untracked' | 'added' | 'deleted' | 'renamed' | 'conflicted';

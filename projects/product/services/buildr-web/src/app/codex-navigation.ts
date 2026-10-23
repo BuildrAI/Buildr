@@ -8,7 +8,7 @@ const safeSegment = (value: string) => Boolean(value) && value !== '.' && value 
 const isRoute = (value: unknown): value is RouteLocation => Boolean(value) && typeof value === 'object' && ['pathname', 'search', 'hash'].every(key => typeof (value as Record<string, unknown>)[key] === 'string');
 const queryKeys: Record<string, string[]> = {
   overview: ['project'], tasks: ['q', 'status', 'project', 'service', 'type', 'retrospective', 'group', 'taskType', 'file', 'page', 'state'],
-  projects: ['q', 'project', 'document', 'view'], services: ['q', 'project', 'edit'], repositories: ['q'], skills: ['q'],
+  projects: ['q', 'project', 'document', 'view'], services: ['q', 'project', 'edit', 'view'], repositories: ['q'], skills: ['q'],
   articles: ['q', 'project', 'status', 'sort', 'scope', 'view'], knowledge: ['object', 'artifact', 'document', 'reading', 'fromProject', 'q', 'browse', 'type', 'view'],
   code: [], connections: [], 'connection-skills': [], settings: [], 'workspace-overview': [],
 };
@@ -32,6 +32,7 @@ export function resolveCodexTarget(workspaceId: string, target: string): CodexTa
     if (area === 'tasks' && parts.length > 1 && !/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/u.test(first)) return invalid('任务链接的任务身份无效。');
     const url = new URL(target, 'http://buildr.local');
     if ([...url.searchParams.keys()].some(key => !queryKeys[area].includes(key) || url.searchParams.getAll(key).length !== 1) || [...url.searchParams.values()].some(value => /[\u0000-\u001f]/u.test(value))) return invalid('任务链接包含不支持的参数。');
+    if (area === 'services' && url.searchParams.has('view') && !['detail', 'runtime'].includes(url.searchParams.get('view')!)) return invalid('服务链接的查看内容无效。');
     if (url.searchParams.has('taskType') && url.searchParams.get('taskType') !== 'composite') return invalid('任务链接的任务类型无效。');
     const full = `/workspaces/${workspaceId}${path}${url.search}${url.hash}`;
     const resource = resourcePreview(workspaceId, full);

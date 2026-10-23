@@ -283,7 +283,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     id: 'code',
     requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER, AGENT_OPERATIONS_APPLICATION, AGENT_ASSETS_SOURCE_READ],
     provides: [CODE_APPLICATION, CODE_GENERATION_APPLICATION, CODE_SOURCE_CONTROL_OBSERVATIONS],
-    contributions: {cli:['code repositories','code directory','code file','code search','code source-control','code source-control-inventory','code commit-context','code sync-context','code branches','code authors','code history','code commit','code diff','code source-file'],http:['code.files.http', 'code.generation.http'],diagnostics:[]},
+    contributions: {cli:['code repositories','code directory','code file','code search','code source-control','code source-control-inventory','code discard-context','code commit-context','code sync-context','code branches','code authors','code history','code commit','code diff','code source-file'],http:['code.files.http', 'code.generation.http'],diagnostics:[]},
     lifecycle: 'managed',
   }, {
     id: 'connection-skills',
@@ -291,6 +291,12 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     provides: ['connection-skills.application'],
     contributions: { cli: ['connection-skill'], http: ['connection-skills.http'], diagnostics: [] },
     lifecycle: 'managed',
+  }, {
+    id: 'service-runtime',
+    requires: [WORKSPACE_APPLICATION, CODE_APPLICATION, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER],
+    provides: ['service-runtime.application', 'service-runtime.view', 'service-runtime.task-application'],
+    contributions: { cli: ['service-runtime'], http: ['service-runtime.http'], diagnostics: [] },
+    lifecycle: 'none',
   }, {
     id: 'mysql-query',
     requires: ['connection-skills.application', WORKSPACE_TASK_SUPPORT],
@@ -330,6 +336,16 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     },
     lifecycle: 'none',
   }, {
+    id: 'artifact-lifecycle',
+    requires: [WORKSPACE_TASK_SUPPORT, WORKSPACE_APPLICATION, TASK_QUERY_APPLICATION],
+    provides: ['artifact-lifecycle.application'],
+    contributions: {
+      cli: ['artifact register', 'artifact list', 'artifact status', 'artifact release', 'artifact clean'],
+      http: [],
+      diagnostics: [],
+    },
+    lifecycle: 'none',
+  }, {
     id: 'system-installation',
     requires: [],
     provides: [SYSTEM_INSTALLATION_IDENTITY, SYSTEM_INSTALLATION_LAUNCHER, SYSTEM_INSTALLATION_APPLICATION, SYSTEM_INSTALLATION_WEB_BINDER],
@@ -338,7 +354,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
         'installation status', 'update check', 'update',
         'web launcher install', 'web launcher status', 'web launcher repair', 'web launcher uninstall',
       ],
-      http: ['system-installation.release-awareness.http'],
+      http: ['system-installation.release-awareness.http', 'system-installation.update-flow.http'],
       diagnostics: ['system-installation.diagnostics'],
     },
     lifecycle: 'none',
@@ -380,12 +396,13 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'agent', 'agent list', 'agent register', 'agent select',
     'dsh', 'dsh link', 'dsh sessions', 'dsh open-task',
     'codex connections', 'codex link', 'codex sessions', 'codex',
-    'code repositories', 'code directory', 'code file', 'code search', 'code source-control','code source-control-inventory', 'code commit-context', 'code sync-context', 'code branches', 'code authors', 'code history', 'code commit', 'code diff', 'code source-file',
-    'connection-skill', 'mysql-query',
+    'code repositories', 'code directory', 'code file', 'code search', 'code source-control','code source-control-inventory', 'code discard-context', 'code commit-context', 'code sync-context', 'code branches', 'code authors', 'code history', 'code commit', 'code diff', 'code source-file',
+    'connection-skill', 'service-runtime', 'mysql-query',
     'project verification inspect', 'project verification validate', 'project verification update',
     'task review inspect', 'task review record',
     'task verification inspect', 'task verification record',
     'task parent inspect',
+    'artifact register', 'artifact list', 'artifact status', 'artifact release', 'artifact clean',
     'installation status', 'update check', 'update',
     'web launcher install', 'web launcher status', 'web launcher repair', 'web launcher uninstall',
     'web preview start', 'web preview list', 'web preview stop', 'web',
@@ -393,9 +410,10 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item: any) => item.id), [
     'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'task-work-context.http', 'task.http', 'workbench.http', 'task.commits.http', 'task.changed-files.http', 'task.materials.http', 'publication.http', 'change.http', 'agent-operations.http', 'native-session-links.http', 'codex-desktop.http', 'dsh-desktop.http', 'code.files.http', 'code.generation.http',
-    'connection-skills.http', 'mysql-query.http',
+    'connection-skills.http', 'service-runtime.http', 'mysql-query.http',
     'task-review.http', 'task-verification.http',
     'task-parent-coordination.http', 'system-installation.release-awareness.http',
+    'system-installation.update-flow.http',
   ]);
 
   const workspace: any = runtimeProvide(runtime, WORKSPACE_APPLICATION);

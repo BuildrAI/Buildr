@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { codeApi, type CodeCatalog, type CodeDirectory, type CodeLocation, type CodeSearch } from '../api/code-api';
 import { codeBrowserKey, codeCheckoutKey, codeFileKey, codeLocationKey, canonicalCodeLocation, type CodeFileTab, type CodeTaskEntry } from '../code-navigation';
 import { codeFilterMembers, codeFilterOptions, retainCodeSelections, selectCodeWorktreeGroup } from '../code-filters';
+import { orderCodeRepositories } from '../code-repository-order';
 import { repositorySearchQuery } from '../../workspace/components/repository-search-query';
 import { useCodeSourceSelection } from './useCodeSourceSelection';
 import { codeSourceSelectionFilter, codeSourceTargetKey } from '../code-source-selection';
@@ -11,7 +12,7 @@ import { readExplorerFile, type ExplorerCodeFile } from '../code-file-read';
 import { planCodeDirectoryRefresh, removedCodeDirectoryPaths, type CodeDirectoryObservation } from '../code-directory-refresh';
 const failure=(error:unknown)=>error instanceof Error?error.message:'当前内容不可读取。';
 type CachedCodeFile=ExplorerCodeFile;
-export function useCodeExplorer(workspaceId:string,viewActive=true,entryKey?:string) {
+export function useCodeExplorer(workspaceId:string,workspaceRoot:string|null|undefined,viewActive=true,entryKey?:string) {
   const sourceChoice=useCodeSourceSelection(workspaceId);
   const appliedSourceSequence=useRef(0),explicitEntry=useRef<string|undefined>(undefined);
   if(entryKey&&entryKey!==explicitEntry.current){appliedSourceSequence.current=sourceChoice.selection?.sequence||0;}
@@ -42,13 +43,19 @@ export function useCodeExplorer(workspaceId:string,viewActive=true,entryKey?:str
   const expandedDirectories=useRef<string[]>([]);
   const setExpandedDirectories=useCallback((keys:string[])=>{expandedDirectories.current=visibleCodeDirectoryKeys(keys);},[]);
   const latestCatalog=useRef<CodeCatalog|null>(null);
-  const members=codeFilterMembers(catalog,scope,worktreeScope);
+  const orderedCatalog=useMemo(()=>{
+    if(!catalog)return null;
+    const repositories=orderCodeRepositories(catalog.repositories,workspaceRoot);
+    const order=new Map(repositories.map((repository,index)=>[repository.id,index])),unranked=repositories.length;
+    return {...catalog,repositories,worktrees:[...catalog.worktrees].sort((left,right)=>(order.get(left.repositoryId)??unranked)-(order.get(right.repositoryId)??unranked))};
+  },[catalog,workspaceRoot]);
+  const members=codeFilterMembers(orderedCatalog,scope,worktreeScope);
   const sources=members.map(member=>{
     const observed={repositoryId:member.repositoryId,checkoutId:member.id};
     const source=locations[codeCheckoutKey(observed)]||observed;
     return {id:codeBrowserKey(source),source,member};
   });
-  const filterOptions=codeFilterOptions(catalog,scope,worktreeScope);
+  const filterOptions=codeFilterOptions(orderedCatalog,scope,worktreeScope);
   const selectedIds=[...new Set(sources.map(item=>item.source.repositoryId))];
   const selectedLocationsKey=JSON.stringify(sources.map(item=>item.id));
   const current=useRef({directories,files,catalog,tabs,sources,scope,worktreeScope,entry,activeKey,viewActive});current.current={directories,files,catalog,tabs,sources,scope,worktreeScope,entry,activeKey,viewActive};
@@ -271,7 +278,7 @@ export function useCodeExplorer(workspaceId:string,viewActive=true,entryKey?:str
       }
     })().finally(()=>{automaticRunning.current=false;});
   },[viewActive,selectedLocationsKey,sourceControl.versions,loadDirectory,loadFile,directoryKey,directories]);
-  return {catalog,catalogError,scope,worktreeScope,origin,locations,sources,filterOptions,directories,directoryErrors,tabs,active,selectionRequest,files,fileErrors,loading,showIgnored,searchResults,searchLoading,searchErrors,entry,selectedIds,sourceControl,
+  return {catalog:orderedCatalog,catalogError,scope,worktreeScope,origin,locations,sources,filterOptions,directories,directoryErrors,tabs,active,selectionRequest,files,fileErrors,loading,showIgnored,searchResults,searchLoading,searchErrors,entry,selectedIds,sourceControl,
     locationFor,directoryKey,loadDirectory,open,applyEntry,clearEntry,search,setShowIgnored,refresh,refreshCatalog,refreshFile,setExpandedDirectories,readPage,
     setSourceFilters:(ids:string[],id:string)=>{
       ++entrySequence.current;++sourceIntentSequence.current;

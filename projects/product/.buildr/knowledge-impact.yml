@@ -1,24 +1,26 @@
 schemaVersion: buildr.knowledge-impact/v1
-task: service-create-repo-modulepath
+task: workspace-artifact-lifecycle
 operation: assess
 impacts:
   - type: reference
-    target: knowledge/code-map/project-service-repositories.md
-    reason: 本次只修订新增服务表单的代码位置表达，登记模型（repositoryId + modulePath）不变，地图描述仍然成立。
-    status: aligned
+    target: knowledge/code-map
+    reason: 新增 artifact-lifecycle 模块需在代码地图登记其职责（产物登记、发现、处置清扫）与目录位置；CLI 命令族需补入命令入口说明。
+    status: applied
     sourceIdentities:
-      - services/buildr-web/src/features/service/components/ServiceCreateDrawer.tsx
-      - services/buildr/src/modules/workspace/application/asset-relationships-application.ts
+      - services/buildr/src/modules/artifact-lifecycle/
+      - services/buildr/src/bootstrap/cli/registry.ts
+      - openspec/changes/workspace-artifact-lifecycle/specs/workspace-artifact-lifecycle/spec.md
   - type: reference
-    target: knowledge/docs/glossary.md
-    reason: 术语定义本来就是"引用一个代码库实例并以 modulePath 定位代码"，与表单修订后的可达路径一致。
+    target: knowledge/docs/overview.md
+    reason: 产品能力边界说明不涉及单命令细节；产物清单属工作资产治理延伸，概览如已有工作资产章节可在实现完成后评估是否需一句话补充。
     status: aligned
     sourceIdentities:
-      - services/buildr-web/src/features/service/components/ServiceCreateDrawer.tsx
+      - openspec/specs/agent-first-product-positioning/spec.md
+      - openspec/changes/workspace-artifact-lifecycle/proposal.md
   - type: reference
-    target: knowledge/docs/architecture/buildr-data-design.md
-    reason: 数据设计文档只描述全局登记模型，不表达表单字段组合，不受交互修订影响。
-    status: aligned
+    target: knowledge/archify
+    reason: 产物处置流程（登记→分类→计划→执行）如已有收尾或资源流图可补充一条处置路径；无匹配图则不新建。
+    status: not-applicable
     sourceIdentities:
-      - services/buildr-web/src/features/service/components/ServiceCreateDrawer.tsx
+      - openspec/changes/workspace-artifact-lifecycle/design.md
 unresolvedItems: []

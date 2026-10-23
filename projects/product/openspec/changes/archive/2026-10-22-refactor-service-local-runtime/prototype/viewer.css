@@ -1,0 +1,7 @@
+#task-prototype-source { display: none; }
+
+/* Keep the existing product reader and floating feature notes within the viewport. */
+.prototype-standalone .prototype-reading-layout { height: calc(100vh - 180px); min-height: 480px; }
+.prototype-standalone .prototype-canvas { min-height: 0; }
+.prototype-standalone .prototype-viewport { height: 100%; }
+.prototype-standalone .side-reading { max-height: 100%; }

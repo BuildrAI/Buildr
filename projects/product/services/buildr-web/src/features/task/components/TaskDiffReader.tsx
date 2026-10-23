@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ChangedFileList, changedFileKey, type ChangedFileEntry } from './TaskChangedFiles';
 import type { TaskCommit } from './task-commit-model';
 import { formatShortDateTime } from '../../../lib/taskLabels';
+import { copyText } from '../../../lib/copyText';
 import { diffContentRows, inlineChangePairs, inlineSegments, parseUnifiedDiff, pairForSplit, type InlineSegment } from './diff-text';
 import './task-diff-reader.css';
 
@@ -13,6 +14,15 @@ type DiffMode = 'split' | 'unified';
 
 function fileName(path: string) { return path.split('/').at(-1) || path; }
 function fileDir(path: string) { const index = path.lastIndexOf('/'); return index < 0 ? '' : path.slice(0, index); }
+/** Absolute display path; API identities stay repository-relative. */
+function absoluteFileTooltip(root: string | undefined, file: ChangedFileEntry) {
+  if (!root) return undefined;
+  const separator = /^[A-Za-z]:\\|^\\\\/.test(root) ? '\\' : '/';
+  const base = root.replace(separator === '\\' ? /[\\/]+$/ : /\/+$/, '');
+  const join = (path: string) => base + separator + path.replaceAll('/', separator);
+  const current = join(file.path);
+  return file.previousPath ? `${join(file.previousPath)} → ${current}` : current;
+}
 
 /** Render one diff line; changed segments carry the stronger tint, unchanged text keeps the row tint. */
 function lineText(text: string, segments?: InlineSegment[], marker?: string) {
@@ -147,9 +157,8 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
   const owner = selection;
   const commitEntry = commitEntries.find(item => item.entry.key === selectedCommit);
   const parsed = useMemo(() => current?.preview ? parseUnifiedDiff(current.preview) : null, [current?.preview]);
-  const compactFile = Boolean(filePresentation);
-  const missingFinalNewline = compactFile && parsed?.rows.some(row => row.kind === 'meta' && row.text.startsWith('\\ No newline'));
-  const rows = useMemo(() => parsed ? compactFile ? diffContentRows(parsed.rows) : parsed.rows : [], [parsed, compactFile]);
+  const missingFinalNewline = parsed?.rows.some(row => row.kind === 'meta' && row.text.startsWith('\\ No newline'));
+  const rows = useMemo(() => parsed ? diffContentRows(parsed.rows) : [], [parsed]);
   const pairs = useMemo(() => pairForSplit(rows), [rows]);
   // Intra-line ranges: unified rows use row-index pairs; split rows use the paired row objects.
   const unifiedInline = useMemo(() => {
@@ -234,16 +243,14 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
     if (!current) return;
     const path = filePresentation ? filePresentation.absolutePath : current.path;
     if (!path) { message.info('完整绝对路径暂不可读取。'); return; }
-    try {
-      if (!navigator.clipboard?.writeText) throw Error('clipboard unavailable');
-      await navigator.clipboard.writeText(path);
+    if (await copyText(path)) {
       setCopied(true);
       message.success('已复制');
-    } catch { message.info('当前环境不允许访问剪贴板，请选中文字复制。'); }
+    } else message.info('当前环境不允许访问剪贴板，请选中文字复制。');
   }
   async function copyCommit(value: string) {
-    try { await navigator.clipboard.writeText(value); message.success('已复制'); }
-    catch { message.info('当前环境不允许访问剪贴板，请选中文字复制。'); }
+    if (await copyText(value)) message.success('已复制');
+    else message.info('当前环境不允许访问剪贴板，请选中文字复制。');
   }
   const isAddOnly = current?.status === 'added' || current?.status === 'untracked';
   const hasAny = repositories.some(repository => repository.changes.length > 0 || repository.commits.length > 0 || repository.status === 'unavailable');
@@ -266,7 +273,7 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
               {repository.status === 'unavailable' && <p className="task-changed-repo-error">{repository.message || '该仓库暂不可读取。'}</p>}
               {repository.status !== 'unavailable' && <>
                 {repository.changes.length > 0 && repository.commits.length > 0 && <p className="task-rail-group" data-prototype-position="rail-group">未提交改动</p>}
-                {repository.changes.length > 0 && <ChangedFileList selectable files={repository.changes} expanded={null} onExpand={key => { if (key) selectFile(key); }} selectedKey={!fileCommit && current ? changedFileKey(current) : null} />}
+                {repository.changes.length > 0 && <ChangedFileList selectable files={repository.changes} expanded={null} fileTooltipPath={file => absoluteFileTooltip(repository.root, file)} onExpand={key => { if (key) selectFile(key); }} selectedKey={!fileCommit && current ? changedFileKey(current) : null} />}
                 {repository.changes.length > 0 && repository.commits.length > 0 && <p className="task-rail-group">提交记录</p>}
                 <ol className="task-rail-commits">
                   {repository.commits.map(entry => {
@@ -277,7 +284,7 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
                         <span className="task-rail-commit-content"><strong>{entry.commit.subject}</strong><span className="task-commits-meta"><code>{entry.commit.shortHash}</code><time dateTime={entry.commit.committedAt}>{formatShortDateTime(entry.commit.committedAt)}</time></span>{showTaskSource && <small className="task-rail-commit-source" title={entry.commit.taskId || taskId}>来源：{entry.commit.taskTitle || entry.commit.taskId || taskId}</small>}</span>
                       </button>
                       {open && <div className="task-rail-commit-files" id={`task-commit-files-${encodeURIComponent(entry.key)}`}>
-                        {entry.files.length === 0 ? <p className="task-rail-empty">文件列表尚未读取或暂不可展示</p> : <ChangedFileList compact selectable files={entry.files} expanded={null} onExpand={key => { if (key) selectFile(key, entry.key); }} selectedKey={fileCommit === entry.key && current ? changedFileKey(current) : null} />}
+                        {entry.files.length === 0 ? <p className="task-rail-empty">文件列表尚未读取或暂不可展示</p> : <ChangedFileList compact selectable files={entry.files} expanded={null} fileTooltipPath={file => absoluteFileTooltip(repository.root, file)} onExpand={key => { if (key) selectFile(key, entry.key); }} selectedKey={fileCommit === entry.key && current ? changedFileKey(current) : null} />}
                       </div>}
                     </li>;
                   })}

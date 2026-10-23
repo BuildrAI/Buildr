@@ -5,12 +5,12 @@ import type { SourceControlRepository } from '../source-control-model';
 
 export type SourceControlFetchResult = CodeFetchResponse['repositories'][number];
 export type SourceControlFetchActions = {
-  pending: Record<string, boolean>; results: Record<string, SourceControlFetchResult>; feedback: Record<string, SourceControlFetchResult>;
+  successfulAt: Record<string, string>; pending: Record<string, boolean>; results: Record<string, SourceControlFetchResult>; feedback: Record<string, SourceControlFetchResult>;
   run(repositories: SourceControlRepository[]): Promise<void>;
 };
 
 export function useSourceControlFetch(workspaceId: string): SourceControlFetchActions {
-  const [state, setState] = useState<{workspaceId:string; pending:Record<string, boolean>; results:Record<string, SourceControlFetchResult>; feedback:Record<string, SourceControlFetchResult>}>({workspaceId, pending:{}, results:{}, feedback:{}});
+  const [state, setState] = useState<{workspaceId:string; successfulAt:Record<string, string>; pending:Record<string, boolean>; results:Record<string, SourceControlFetchResult>; feedback:Record<string, SourceControlFetchResult>}>({workspaceId, successfulAt:{}, pending:{}, results:{}, feedback:{}});
   const current = useRef(workspaceId); current.current = workspaceId;
   const inFlight = useRef(new Set<string>());
   useEffect(() => subscribeSourceControlChanges(notice => {
@@ -18,13 +18,13 @@ export function useSourceControlFetch(workspaceId: string): SourceControlFetchAc
     const results = currentSourceControlFetchResults(notice);
     if (!results.length) return;
     const external = results.filter(result => !inFlight.current.has(workspaceId + ':' + result.repositoryId));
-    setState(previous => ({workspaceId, pending:previous.workspaceId === workspaceId ? previous.pending : {}, results:{...(previous.workspaceId === workspaceId ? previous.results : {}), ...Object.fromEntries(results.map(result => [result.repositoryId, result]))}, feedback:external.length ? Object.fromEntries(external.map(result => [result.repositoryId, result])) : previous.workspaceId === workspaceId ? previous.feedback : {}}));
+    setState(previous => ({workspaceId, successfulAt:{...(previous.workspaceId === workspaceId ? previous.successfulAt : {}), ...Object.fromEntries(results.filter(result => result.status === 'succeeded' && notice.fetchReadAt).map(result => [JSON.stringify([result.repositoryId, result.gitId]), notice.fetchReadAt!]))}, pending:previous.workspaceId === workspaceId ? previous.pending : {}, results:{...(previous.workspaceId === workspaceId ? previous.results : {}), ...Object.fromEntries(results.map(result => [result.repositoryId, result]))}, feedback:external.length ? Object.fromEntries(external.map(result => [result.repositoryId, result])) : previous.workspaceId === workspaceId ? previous.feedback : {}}));
   }), [workspaceId]);
   const run = useCallback(async (repositories: SourceControlRepository[]) => {
     const targets = [...new Map(repositories.map(repository => [repository.id, repository])).values()];
     if (!workspaceId || !targets.length || targets.some(repository => inFlight.current.has(workspaceId + ':' + repository.id))) return;
     for (const repository of targets) inFlight.current.add(workspaceId + ':' + repository.id);
-    setState(previous => ({workspaceId, results:previous.workspaceId === workspaceId ? previous.results : {}, feedback:previous.workspaceId === workspaceId ? previous.feedback : {}, pending:{...(previous.workspaceId === workspaceId ? previous.pending : {}), ...Object.fromEntries(targets.map(repository => [repository.id, true]))}}));
+    setState(previous => ({workspaceId, successfulAt:previous.workspaceId === workspaceId ? previous.successfulAt : {}, results:previous.workspaceId === workspaceId ? previous.results : {}, feedback:previous.workspaceId === workspaceId ? previous.feedback : {}, pending:{...(previous.workspaceId === workspaceId ? previous.pending : {}), ...Object.fromEntries(targets.map(repository => [repository.id, true]))}}));
     const outcomes: SourceControlFetchResult[] = [];
     try {
       // Each batch is an explicit subset of the observed click target; no registration reread expands it.
@@ -42,5 +42,5 @@ export function useSourceControlFetch(workspaceId: string): SourceControlFetchAc
       });
     }
   }, [workspaceId]);
-  return {pending:state.workspaceId === workspaceId ? state.pending : {}, results:state.workspaceId === workspaceId ? state.results : {}, feedback:state.workspaceId === workspaceId ? state.feedback : {}, run};
+  return {successfulAt:state.workspaceId === workspaceId ? state.successfulAt : {}, pending:state.workspaceId === workspaceId ? state.pending : {}, results:state.workspaceId === workspaceId ? state.results : {}, feedback:state.workspaceId === workspaceId ? state.feedback : {}, run};
 }

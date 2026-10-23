@@ -1,5 +1,6 @@
 import { AGENT_ASSETS_SOURCE_MODULE } from '../modules/agent-assets/source/module.ts';
 import { createConnectionSkillsModule, CONNECTION_SKILLS_APPLICATION } from '../modules/connection-skills/module.ts';
+import { SERVICE_RUNTIME_MODULE } from '../modules/service-runtime/module.ts';
 import { createMySqlQueryModule } from '../modules/mysql-query/module.ts';
 import { CODE_MODULE, CODE_SOURCE_CONTROL_OBSERVATIONS } from '../modules/code/module.ts';
 import { AGENT_OPERATIONS_APPLICATION, createAgentOperationsModule } from '../modules/agent-operations/module.ts';
@@ -41,6 +42,7 @@ import { registerProjectGitObserver } from '../infrastructure/git/project-git-ob
 import { registerProductInvocation } from '../infrastructure/product-invocation/index.ts';
 import { createPublicationModule } from '../modules/publication/module.ts';
 import { createOpenSpecModule } from '../modules/openspec/module.ts';
+import { createArtifactLifecycleModule } from '../modules/artifact-lifecycle/module.ts';
 import { CHANGE_APPLICATION, createChangeModule } from '../modules/task/change/module.ts';
 import { TASK_COMMITS_MODULE } from '../modules/task/commits/module.ts';
 import { TASK_CHANGED_FILES_MODULE } from '../modules/task/changed-files/module.ts';
@@ -82,12 +84,14 @@ export function createRuntime(): any  {
   registry.provide(NATIVE_SESSION_LINKS_APPLICATION).bindDshDesktop(registry.provide(DSH_DESKTOP_APPLICATION));
   registry.install(CODE_MODULE);
   registry.install(createConnectionSkillsModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile }));
+  registry.install(SERVICE_RUNTIME_MODULE);
   registry.install(createMySqlQueryModule());
   registry.provide(TASK_CHANGE_BINDER).bindChangeResolver(registry.provide(CHANGE_APPLICATION));
   registry.install(createVerificationModule(runtime));
   registry.install(TASK_REVIEW_MODULE);
   registry.install(createTaskVerificationModule(runtime, { verificationDeclaration: VERIFICATION_DECLARATION }));
   registry.install(createParentCoordinationModule(runtime));
+  registry.install(createArtifactLifecycleModule(runtime));
   registry.install(createSystemInstallationModule(runtime));
   registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http'), closeResources: async () => {
     registry.provide(CODE_SOURCE_CONTROL_OBSERVATIONS).close();

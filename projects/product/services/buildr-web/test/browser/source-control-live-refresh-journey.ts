@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { codeRepositoryLabel } from '../../src/features/code/code-source-labels.ts';
+import { codeRepositoryCode } from '../../src/features/code/code-source-labels.ts';
+import { selectSourceControlView } from './source-control-view-controls.ts';
 
 /** External filesystem/Git writes belong to the isolated host fixture. All UI observations use production HTTP. */
 export async function runSourceControlLiveRefreshJourney({t, page, workspaceUrl, capture, fixture, expectedBrowserErrors, scenario = (name: string, action: () => Promise<void>) => t.test(name, action)}: any) {
@@ -28,7 +29,7 @@ export async function runSourceControlLiveRefreshJourney({t, page, workspaceUrl,
     const fold = group.locator('> .source-control-repository .source-control-repository-fold');
     if (await fold.getAttribute('aria-expanded') === 'false') await fold.click();
     await group.locator('[data-source-worktree="' + source.worktree.worktreeId + '"] .source-control-repository-copy').click();
-    await sourceControl().locator('.source-control-browse-tabs').getByText('未提交变更', {exact: true}).click();
+    await selectSourceControlView(sourceControl(), 'changes');
     return source;
   };
   const readRequests = () => {
@@ -62,9 +63,9 @@ export async function runSourceControlLiveRefreshJourney({t, page, workspaceUrl,
     const repository = repositories.repositories.find((item: any) => item.id === member.repositoryId);
     assert.ok(repository);
     const repositorySelect = page.locator('.code-root-selectors .ant-select').nth(0);
-    await repositorySelect.locator('.ant-select-selector').click();
+    await repositorySelect.getByRole('combobox').focus();await repositorySelect.getByRole('combobox').press('ArrowDown');
     const repositoryListId = await repositorySelect.getByRole('combobox').getAttribute('aria-controls');
-    await page.locator('.ant-select-dropdown').filter({has: page.locator('[id="' + repositoryListId + '"]')}).getByText(codeRepositoryLabel(repository), {exact: true}).click();
+    await page.locator('.ant-select-dropdown').filter({has: page.locator('[id="' + repositoryListId + '"]')}).getByText(codeRepositoryCode(repository), {exact: true}).click();
     await repositorySelect.getByRole('combobox').press('Escape');
     const worktreeSelect = page.locator('.code-root-selectors .ant-select').nth(1);
     await worktreeSelect.locator('.ant-select-selector').click();
@@ -158,6 +159,24 @@ export async function runSourceControlLiveRefreshJourney({t, page, workspaceUrl,
         if(url.pathname===new URL(api).pathname+'/code/directory')reads.push({repositoryId:url.searchParams.get('repositoryId'),checkoutId:url.searchParams.get('checkoutId'),path:url.searchParams.get('filePath')||''});
       };
       page.on('request',observe);
+      assert.ok(expectedBrowserErrors instanceof Set, '宿主必须提供精确浏览器错误登记');
+      // Deleting the directory outside the product makes its own reconciliation read
+      // disappear while it runs, so only reads for the just-removed subtree may be
+      // invalidated, and the window stays open until every such read has ended.
+      const removed=branches.liveRefresh.createdDirectory;let accepted=false,removedInFlight=0;const unexpectedDirectoryReads:unknown[]=[],directoryChecks=new Set<Promise<void>>();
+      const countsRemoved=(request:any)=>{const url=new URL(request.url());const filePath=url.searchParams.get('filePath');return url.pathname===new URL(api).pathname+'/code/directory'&&(filePath===removed||filePath?.startsWith(removed+'/'));};
+      const onStart=(request:any)=>{if(countsRemoved(request))removedInFlight++;};
+      const onEnd=(request:any)=>{if(countsRemoved(request))removedInFlight--;};
+      const observeDirectory=(response:any)=>{
+        if(!accepted||response.status()!==404||!countsRemoved(response.request()))return;
+        const check=(async()=>{
+          const body=await response.json().catch(()=>null);
+          if(body?.error?.code==='code_file_missing')expectedBrowserErrors.add('['+response.url()+']: Failed to load resource: the server responded with a status of 404 (Not Found)');
+          else unexpectedDirectoryReads.push({url:response.url(),body});
+        })();
+        directoryChecks.add(check);void check.finally(()=>directoryChecks.delete(check));
+      };
+      page.on('request',onStart);page.on('requestfinished',onEnd);page.on('requestfailed',onEnd);page.on('response',observeDirectory);
       try{
         branches.liveRefresh.write(longText(72));await explorerText(longText(72));
         branches.liveRefresh.write(longText(73));await explorerText(longText(73));
@@ -169,6 +188,7 @@ export async function runSourceControlLiveRefreshJourney({t, page, workspaceUrl,
         await expand(branches.liveRefresh.createdDirectory);await expand(branches.liveRefresh.createdDirectory+'/nested');
         await page.locator('.repository-tree-file[data-file-path="'+branches.liveRefresh.createdFile+'"][data-code-status="U"]').waitFor();
         reads.length=0;
+        accepted=true;
         branches.liveRefresh.removeDirectory();
         await directory(branches.liveRefresh.createdDirectory).waitFor({state:'hidden'});
         await page.locator('.repository-tree-file[data-file-path="'+branches.liveRefresh.createdFile+'"]').waitFor({state:'hidden'});
@@ -179,7 +199,14 @@ export async function runSourceControlLiveRefreshJourney({t, page, workspaceUrl,
         await explorerText(longText(73));
         await capture(page,'source-control-live-refresh-directory-scope.png');
         console.log('[live-refresh-directory-reads]',JSON.stringify({samePathSaves:0,removedDirectory:reads}));
-      }finally{page.off('request',observe);}
+      }finally{
+        for(let attempt=0;attempt<200&&removedInFlight>0;attempt++)await new Promise(resolve=>setTimeout(resolve,25));
+        page.off('request',onStart);page.off('requestfinished',onEnd);page.off('requestfailed',onEnd);page.off('response',observeDirectory);
+        page.off('request',observe);
+        await Promise.all([...directoryChecks]);
+        assert.equal(removedInFlight,0,'删除目录后仍有未结束的目录读取，竞态窗口无法判定');
+        assert.deepEqual(unexpectedDirectoryReads,[],'只有被删除目录子树的读取可以被外部删除作废');
+      }
     });
   });
 
@@ -325,7 +352,7 @@ export async function runSourceControlLiveRefreshJourney({t, page, workspaceUrl,
     await fixture.withBranches(async (branches: any) => {
       await page.setViewportSize({width: 1440, height: 900});
       const {repository, worktree} = await openWorktree(branches);
-      await sourceControl().locator('.source-control-browse-tabs').getByText('提交历史', {exact: true}).click();
+      await selectSourceControlView(sourceControl(), 'history');
       const selected = sourceControl().locator('.source-control-graph > li[data-source-commit="' + branches.second + '"]');
       await selected.getByRole('button', {name: '查看提交 filter shared second author', exact: true}).click();
       await selected.locator('.task-changed-row').filter({has: page.locator('.task-changed-path[data-file-path="' + branches.historyPath + '"]')}).click();

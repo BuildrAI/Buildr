@@ -3,7 +3,7 @@ import { Worker } from 'node:worker_threads';
 import { resolveProductResource } from '../../infrastructure/product-resources/index.ts';
 
 const TASK_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/u;
-const OPERATIONS = new Set(['connection-catalog', 'reviews', 'verification', 'coordination', 'change', 'change-asset', 'documents', 'prototypes', 'prototype', 'commits', 'changed-file-count', 'changed-files', 'file-diff', 'materials', 'code-repositories', 'code-directory', 'code-file', 'code-editor-file', 'code-search', 'code-source-control', 'code-source-control-inventory', 'code-commit-context', 'code-sync-context', 'code-branches', 'code-authors', 'code-history', 'code-commit', 'code-diff', 'code-source-file']);
+const OPERATIONS = new Set(['connection-catalog', 'reviews', 'verification', 'coordination', 'change', 'change-asset', 'documents', 'prototypes', 'prototype', 'commits', 'changed-file-count', 'changed-files', 'file-diff', 'materials', 'code-repositories', 'code-directory', 'code-file', 'code-editor-file', 'code-search', 'code-source-control', 'code-source-control-inventory', 'code-discard-context', 'code-commit-context', 'code-sync-context', 'code-branches', 'code-authors', 'code-history', 'code-commit', 'code-diff', 'code-source-file']);
 const DEFAULT_WORKER_COUNT = 2;
 const DEFAULT_QUEUE_LIMIT = 32;
 const WORKER_PATH = resolveProductResource('runtime/read-worker.cjs', {

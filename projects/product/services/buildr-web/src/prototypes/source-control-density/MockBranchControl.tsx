@@ -5,7 +5,7 @@ import type { SourceControlRepository, SourceControlWorktree } from '../../featu
 
 export function MockBranchControl({repository, worktree, onSwitch, onPosition}:{repository:SourceControlRepository; worktree:SourceControlWorktree; onSwitch(branch:string):void; onPosition(id:string):void}) {
   const [pending, setPending] = useState(false);
-  const [readTime, setReadTime] = useState('演示记录');
+  const [readTime, setReadTime] = useState('');
   const entries = useMemo<SourceControlBranch[]>(() => {
     const names = [...new Set([worktree.branch || '', 'dev', 'main', 'origin/dev'])].filter(Boolean);
     return names.map(name => {
@@ -14,8 +14,8 @@ export function MockBranchControl({repository, worktree, onSwitch, onPosition}:{
         worktreeId:occupied?.worktreeId || null,worktreeLocation:occupied?.location || null,current:name === worktree.branch,localBranch:null,remote:remote ? 'origin' : null};
     });
   }, [repository, worktree]);
-  return <BranchManagementPopover repository={repository} worktree={worktree} entries={entries} ready={worktree.status !== 'offline'} remoteLoading={false} remoteUpdatedAt={readTime} remoteError="" reading={false} readNote="" pending={pending} failure={null}
-    onOpenChange={() => {}} onTargetChange={() => {}} onRefreshRemote={() => setReadTime('刚刚读取（模拟）')} inspect={entry => branchSwitchImpact(repository, worktree, entries, entry)}
+  return <BranchManagementPopover repository={repository} worktree={worktree} entries={entries} ready={worktree.status !== 'offline'} fetching={false} fetchDisabled={pending} fetchedAt={readTime} fetchError="" remoteError="" reading={false} readNote="" pending={pending} failure={null}
+    onOpenChange={() => {}} onTargetChange={() => {}} onFetchRemote={() => setReadTime('刚刚获取（模拟）')} inspect={entry => branchSwitchImpact(repository, worktree, entries, entry)}
     onUse={async (entry, name) => {setPending(true); await new Promise(resolve => setTimeout(resolve, 220)); onSwitch(name || entry.name.replace(/^origin\//, '')); setPending(false); return true;}}
     onOpenPosition={onPosition} onViewChanges={() => {}} />;
 }

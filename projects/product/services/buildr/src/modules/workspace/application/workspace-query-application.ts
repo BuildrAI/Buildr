@@ -91,18 +91,19 @@ export function registerWorkspaceQueryApplication(runtime: WorkspaceQueryApplica
     return publicWorkspace(readWorkspaceRecord(targetRoot, options));
   }
 
-  function workspaceRegistryEntry(root: any) {
+  function workspaceRegistryEntry(root: any, scope: 'local' | 'shared' = 'local') {
     try {
       const record = readWorkspaceRecord(root);
       if (!record.workspace.id) {
-        return { rootPath: root, status: 'migration_required', workspace: record.workspace, migrationRequired: true };
+        return { rootPath: root, status: 'migration_required', workspace: record.workspace, migrationRequired: true, registryScope: scope };
       }
-      return { rootPath: root, status: 'ready', workspace: record.workspace, migrationRequired: record.migrationRequired };
+      return { rootPath: root, status: 'ready', workspace: record.workspace, migrationRequired: record.migrationRequired, registryScope: scope };
     } catch (error: any) {
       return {
         rootPath: root,
         status: runtime.existsDirectory(root) ? 'invalid' : 'unavailable',
         workspace: null,
+        registryScope: scope,
         error: { code: error.code || 'workspace_unavailable', message: error.message },
       };
     }
@@ -110,7 +111,14 @@ export function registerWorkspaceQueryApplication(runtime: WorkspaceQueryApplica
 
   function listRegisteredWorkspaces() {
     const persistence = runtime.registryRepository.readWorkspaceRegistryPersistence();
-    const entries = persistence.registry.roots.map(workspaceRegistryEntry);
+    const localRoots = persistence.registry.roots;
+    // 预览上下文把共享 Profile 的登记条目以只读来源并入列表；revision 仍指向本实例登记文件。
+    const sharedRoots = (runtime.registryRepository.readSharedRegistryRoots?.().roots || [])
+      .filter((root: any) => !localRoots.includes(root));
+    const entries = [
+      ...sharedRoots.map((root: any) => workspaceRegistryEntry(root, 'shared')),
+      ...localRoots.map((root: any) => workspaceRegistryEntry(root)),
+    ];
     const identities = new Map();
     for (const entry of entries) {
       if (!entry.workspace?.id) continue;

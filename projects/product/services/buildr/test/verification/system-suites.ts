@@ -123,6 +123,7 @@ export const SYSTEM_SUITES: any = Object.freeze([
     files: Object.freeze([
       'test/system/cli-update.test.ts',
       'test/system/runtime-target-authority.test.ts',
+      'test/system/web-update-flow.test.ts',
       'test/system/workspace-runtime-recovery.test.ts',
     ]),
   }),

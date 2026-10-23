@@ -26,20 +26,21 @@ type Props = {
   className?: string;
   label?: string;
   panelId?: string;
+  scrollToStartOnActivate?: boolean;
 };
 
 /** The same object tabs serve workspace side panes and full-file reading. */
-export function ObjectTabStrip({ tabs, active, onActivate, onClose, closable = true, className = '', label = '打开的对象', panelId }: Props) {
+export function ObjectTabStrip({ tabs, active, onActivate, onClose, closable = true, className = '', label = '打开的对象', panelId, scrollToStartOnActivate = false }: Props) {
   const generatedId = useId();
   const prefix = panelId || generatedId;
   const strip = useRef<HTMLDivElement>(null);
-  const navigation = useTabNavigation(tabs.map(tab => tab.key), active, strip);
+  const navigation = useTabNavigation(tabs.map(tab => tab.key), active, strip, scrollToStartOnActivate);
   return <div ref={strip} tabIndex={-1} className={`pane-tabstrip ${className}`} role={panelId ? 'tablist' : 'group'} aria-label={label}>
     {tabs.map(tab => <div key={tab.key} className={`pane-tab-wrap${closable ? '' : ' not-closable'}`}>
       <button type="button" role={panelId ? 'tab' : undefined} aria-selected={panelId ? tab.key === active : undefined} aria-pressed={panelId ? undefined : tab.key === active}
         id={tabElementId(prefix, tab.key)} aria-controls={panelId} data-tab-key={tab.key} tabIndex={navigation.focusKey === tab.key ? 0 : -1}
         onFocus={() => navigation.onFocus(tab.key)} onKeyDown={event => navigation.onKeyDown(event, tab.key, closable ? onClose : undefined)}
-        aria-label={tab.accessibleLabel} className={`pane-tab${tab.key === active ? ' on' : ''}`} title={tab.title} onClick={() => onActivate?.(tab.key)}>
+        aria-label={tab.accessibleLabel} className={`pane-tab${tab.key === active ? ' on' : ''}`} title={tab.title} onClick={() => { navigation.onActivate(tab.key); onActivate?.(tab.key); }}>
         <span className={`pane-tab-dot ${tab.kind}`} aria-hidden />
         <span className="pane-tab-text">{tab.label ?? tab.title}</span>
       </button>

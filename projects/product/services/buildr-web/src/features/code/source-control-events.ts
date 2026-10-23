@@ -1,6 +1,6 @@
 import type { CodeBranchSwitchResponse, CodeFetchResponse, CodeSyncResponse } from './api/code-api';
 
-export type SourceControlChangeNotice = { workspaceId: string; repositoryId: string; worktreeId?: string; cause?: 'file-save'; result?: CodeBranchSwitchResponse; fetchResults?: CodeFetchResponse['repositories']; repositoryIds?:string[]; fetchSequences?:Record<string, number>; syncResult?:CodeSyncResponse; syncError?:string; syncSequence?:number };
+export type SourceControlChangeNotice = { workspaceId: string; repositoryId: string; worktreeId?: string; cause?: 'file-save'; result?: CodeBranchSwitchResponse; fetchResults?: CodeFetchResponse['repositories']; fetchReadAt?: string; repositoryIds?:string[]; fetchSequences?:Record<string, number>; syncResult?:CodeSyncResponse; syncError?:string; syncSequence?:number };
 const changes = new EventTarget();
 let syncSequence = 0;
 const syncSequences = new Map<string, number>();

@@ -186,7 +186,10 @@ export function createSourceControlCatalog(loader: SourceControlLoader) {
     adopt(observation: SourceControlCatalogState) {
       if (disposed || !state.data || !state.selectionReady || !observation.data) return;
       if (observation.data === adoptedData || Date.parse(observation.data.readAt) < Date.parse(state.data.readAt)) {
-        if (state.error !== observation.error || JSON.stringify(state.repositoryErrors) !== JSON.stringify(observation.repositoryErrors)) publish({...state, error:observation.error, repositoryErrors:observation.repositoryErrors});
+        // The shared loading flag moves without data changing; the settle publish that
+        // turns it off must not be dropped by this early return, or a task-scoped view
+        // keeps its spinner running after the workspace refresh has finished.
+        if (state.loading !== observation.loading || state.error !== observation.error || JSON.stringify(state.repositoryErrors) !== JSON.stringify(observation.repositoryErrors)) publish({...state, loading:observation.loading, error:observation.error, repositoryErrors:observation.repositoryErrors});
         return;
       }
       const previous = state.data, observed = observation.data, version = ++serial;
@@ -203,7 +206,7 @@ export function createSourceControlCatalog(loader: SourceControlLoader) {
         if (refsVersion(before) !== refsVersion(repository) || adoptedRefs[repository.id] !== observation.refsVersions[repository.id]) refVersions[repository.id] = version;
       }
       adoptedData = observed; adoptedRefs = observation.refsVersions; adoptedVersions = observation.versions;
-      publish({...observation, selectionReady:state.selectionReady, data:{...value, selectedRepositoryIds:previous.selectedRepositoryIds, selectedWorktreeIds:previous.selectedWorktreeIds, selectedWorktrees:previous.selectedWorktrees, scopeReason:previous.scopeReason}, versions, refsVersions:refVersions});
+      publish({...observation, loading:observation.loading, selectionReady:state.selectionReady, data:{...value, selectedRepositoryIds:previous.selectedRepositoryIds, selectedWorktreeIds:previous.selectedWorktreeIds, selectedWorktrees:previous.selectedWorktrees, scopeReason:previous.scopeReason}, versions, refsVersions:refVersions});
     },
     changed(repositoryId: string, result?: CodeBranchSwitchResponse) {
       if (disposed) return;

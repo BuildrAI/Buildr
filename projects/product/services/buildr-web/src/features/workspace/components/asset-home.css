@@ -1,9 +1,12 @@
 .asset-home { container: asset-home / inline-size; min-width: 0; }
 .asset-home .resource-home-head { padding: 4px 0 22px; margin-bottom: 0; border: 0; border-radius: 0; background: none; gap: 20px; flex-wrap: wrap; }
 .asset-home-summary { flex: 1 1 320px; min-width: 0; }
+.asset-home-type { margin-inline:6px 0; font-size:11px; vertical-align:1px; }
 .asset-home .resource-home-head h1 { font-size: 24px; }
 .asset-home .resource-home-head p { overflow-wrap: anywhere; }
 .asset-home > .resource-section { margin: 0; padding: 22px 0; border: 0; border-top: 1px solid var(--soft-line); border-radius: 0; }
+.asset-home .asset-home-tabs .ant-tabs-nav { margin-bottom: 4px; }
+.asset-home .asset-home-tabs + .resource-section { border-top: 0; }
 .asset-home .resource-section-head { margin-bottom: 10px; }
 .asset-home .resource-document-row, .asset-home .resource-relation-row { padding-inline: 6px; }
 .asset-home .resource-row-text small { overflow-wrap: anywhere; }

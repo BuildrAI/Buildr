@@ -140,17 +140,30 @@ export function readCodeCommitFiles(source: CodeSource, hash: string, baseHash: 
   return { files: files.slice(0, SOURCE_CONTROL_LIMITS.files), truncated: files.length > SOURCE_CONTROL_LIMITS.files };
 }
 
+/** One current-file comparison, independently of how the index was prepared. */
+export function workingCodeChange(source: CodeSource, status: ReturnType<typeof observeSourceControl>, relative: string): {file: CodeChange; hasBase: boolean} | undefined {
+  const entries = status.files.filter(file => file.path === relative);
+  if (!entries.length) return undefined;
+  const selected = entries.find(file => file.area === 'unstaged') || entries[0];
+  const previousPath = entries.find(file => file.previousPath)?.previousPath || null;
+  const baselinePath = previousPath || relative;
+  const baseline = status.head ? codeGit(source.location, ['ls-tree', '-z', status.head, '--', baselinePath]).toString().split('\0').some(row => row.slice(row.indexOf('\t') + 1) === baselinePath) : false;
+  let exists = false;
+  try { fs.lstatSync(path.join(source.location, relative)); exists = true; } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  return { hasBase: baseline, file: { ...selected, area: 'working', previousPath, status: entries.some(file => file.status === 'conflicted') ? 'conflicted' : !exists ? 'deleted' : !baseline ? 'added' : previousPath ? 'renamed' : 'modified', additions: null, deletions: null } };
+}
+
 export function readCodePatch(source: CodeSource, file: CodeChange, baseHash: string | null, hash?: string) {
   if (file.area === 'commit') relativeCodePath(file.path); else assertSourceControlPath(source, file.path);
   if (file.previousPath) relativeCodePath(file.previousPath);
   const paths = ['--', ...new Set([file.path, ...(file.previousPath ? [file.previousPath] : [])])];
   const common = ['--no-ext-diff', '--no-textconv', '--find-renames', '--unified=2147483647'];
   const args = file.area === 'commit' ? baseHash ? ['diff', ...common, baseHash, hash!, ...paths] : ['diff-tree', '--root', '--no-commit-id', '-r', '-p', ...common, hash!, ...paths]
-    : ['diff', ...common, ...(file.area === 'staged' ? ['--cached'] : []), ...paths];
+    : ['diff', ...common, ...(file.area === 'staged' ? ['--cached'] : file.area === 'working' && baseHash ? [baseHash] : []), ...paths];
   const patch = text(source, args);
   const lines = patch.split('\n'), truncated = lines.length > SOURCE_CONTROL_LIMITS.patchLines;
   const binary = /(?:^|\n)(?:Binary files |GIT binary patch)/.test(patch);
-  const stat = text(source, file.area === 'commit' ? baseHash ? ['diff', '--no-ext-diff', '--no-textconv', '--numstat', '-z', baseHash, hash!, ...paths] : ['diff-tree', '--root', '--no-commit-id', '-r', '--no-ext-diff', '--no-textconv', '--numstat', '-z', hash!, ...paths] : ['diff', '--no-ext-diff', '--no-textconv', '--numstat', '-z', ...(file.area === 'staged' ? ['--cached'] : []), ...paths]);
+  const stat = text(source, file.area === 'commit' ? baseHash ? ['diff', '--no-ext-diff', '--no-textconv', '--numstat', '-z', baseHash, hash!, ...paths] : ['diff-tree', '--root', '--no-commit-id', '-r', '--no-ext-diff', '--no-textconv', '--numstat', '-z', hash!, ...paths] : ['diff', '--no-ext-diff', '--no-textconv', '--numstat', '-z', ...(file.area === 'staged' ? ['--cached'] : file.area === 'working' && baseHash ? [baseHash] : []), ...paths]);
   const match = /^(\d+|-)\t(\d+|-)\t/.exec(stat);
   return { patch: binary ? null : truncated ? lines.slice(0, SOURCE_CONTROL_LIMITS.patchLines).join('\n') + '\n' : patch, binary, truncated,
     additions: match && match[1] !== '-' ? Number(match[1]) : null, deletions: match && match[2] !== '-' ? Number(match[2]) : null };

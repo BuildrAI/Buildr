@@ -80,12 +80,16 @@ const allowed: any = new Map([
   ['src/modules/agent-assets/infrastructure/runtime/skills/render-plan.ts', new Set(['applySkillRenderPlan'])],
   ['src/modules/agent-assets/infrastructure/runtime/rule-projection.ts', new Set(['applyRulesRenderPlan'])],
   ['src/modules/code/application/code-commit-application.ts', new Set(['commitChanges'])],
+  // discardChanges follows the same owned index-lock, temporary index and rename protocol as commitChanges.
+  ['src/modules/code/application/code-discard-application.ts', new Set(['discardChanges'])],
   ['src/modules/code/infrastructure/code-fetch-refs.ts', new Set(['fetchCodeRemoteRefs'])],
   ['src/modules/code/infrastructure/editable-file.ts', new Set(['replaceEditableFile'])],
   // Removes only its own mkdtemp directory after matching its device and inode.
   ['src/modules/connection-skills/application/connection-skills-application.ts', new Set(['authorize'])],
   // relocateLocal exclusively writes the guarded personal-record destination and confirms durability before source removal.
   ['src/modules/connection-skills/persistence/files.ts', new Set(['key', 'writeTeam', 'writeLocal', 'relocateLocal'])],
+  // cleanArtifacts re-reads each registry record and re-observes its live disposal state immediately before removing only that recorded scratch path.
+  ['src/modules/artifact-lifecycle/application/artifact-application.ts', new Set(['cleanArtifacts'])],
 ]);
 
 const violations: any[] = [];

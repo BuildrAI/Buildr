@@ -141,6 +141,8 @@ export function createWorktreeProviderModule(runtime: GitWorktreeRuntime) {
         'createGitWorktreeEvidenceReader',
         'readGitWorktreeEvidence',
         'writeGitWorktreeEvidence',
+        'listGitWorktreeEvidence',
+        'probeGitWorktreeCheckoutFs',
         'planGitWorktrees',
         'prepareGitWorktrees',
         'inspectGitWorktrees',

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button, Input, Segmented } from 'antd';
 import { CopyOutlined, CheckOutlined } from '@ant-design/icons';
 import { DrawerShell } from '../../../components/DrawerShell';
+import { copyText } from '../../../lib/copyText';
 import type { SkillSummary } from '../api/agent-assets-api';
 import { skillActionPrompt, type SkillAction } from '../skill-presentation';
 
@@ -38,10 +39,9 @@ export function SkillActionDrawer({ open, action, skill, root, drafts, onDraftCh
     const value = prompt;
     setCopying(true); setCopyError('');
     try {
-      await navigator.clipboard.writeText(value);
-      if (mounted.current && latestPrompt.current === value) setCopiedPrompt(value);
-    } catch {
-      if (mounted.current && latestPrompt.current === value) {
+      if (await copyText(value)) {
+        if (mounted.current && latestPrompt.current === value) setCopiedPrompt(value);
+      } else if (mounted.current && latestPrompt.current === value) {
         setExpanded(true);
         setCopyError('无法自动复制，已选中完整指令，请手动复制。');
       }

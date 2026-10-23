@@ -3,6 +3,7 @@ import { assetEditDraft } from './asset-edit-draft';
 import { useAppShell } from '../../../app/AppShellContext';
 import { MetadataConflictNotice } from '../../../components/MetadataConflictNotice';
 import { rebaseEditedFields } from '../../../lib/metadata-recovery';
+import { copyText } from '../../../lib/copyText';
 import { codeFieldTrim, textFieldTrim } from '../../../lib/input-trim';
 import { CODE_INPUT_PATTERN, CODE_INPUT_TITLE, normalizeCodeInput } from '../../../lib/code-input';
 import { RepositoryFields } from './RepositoryFields';
@@ -12,6 +13,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Form, Input, Select } from 'antd';
 import { MetadataEditDrawer } from '../../../components/MetadataEditDrawer';
 import { assetCatalogApi, repositoryBranch, type AssetCatalog, type AssetKind, type RepositoryDraft, type ServiceDraft } from '../api/asset-catalog-api';
+import { SERVICE_TYPE_OPTIONS } from '../../../lib/labels';
 export function AssetEditDrawer({ catalog: initialCatalog, kind, id, onClose, onSaved }: { catalog: AssetCatalog; kind: AssetKind; id: string; onClose: () => void; onSaved?: (catalog: AssetCatalog) => void }) {
   const { workspaceId } = useAppShell();
   const [observed, setObserved] = useState(initialCatalog);
@@ -21,7 +23,7 @@ export function AssetEditDrawer({ catalog: initialCatalog, kind, id, onClose, on
   const project = catalog.projects.find(x => x.id === id);
   const [creatingRepository, setCreatingRepository] = useState(false);
   const [repositoryDraft, setRepositoryDraft] = useState<RepositoryDraft>({ code: '', url: '', integrationBranch: '' });
-  const [code, setCode] = useState(item.code), [name, setName] = useState(item.name), [description, setDescription] = useState(item.description), [repositoryId, setRepositoryId] = useState(service?.repositoryId), [modulePath, setModulePath] = useState(service?.modulePath || ''), [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const [code, setCode] = useState(item.code), [name, setName] = useState(item.name), [description, setDescription] = useState(item.description), [type, setType] = useState(service?.type || 'service'), [repositoryId, setRepositoryId] = useState(service?.repositoryId), [modulePath, setModulePath] = useState(service?.modulePath || ''), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const [projectIds, setProjectIds] = useState<string[]>(() => service ? catalog.projects.filter(entry => entry.serviceIds?.includes(service.id)).map(entry => entry.id) : []);
   const [serviceIds, setServiceIds] = useState<string[]>(() => project ? [...(project.serviceIds ?? [])] : catalog.services.filter(entry => entry.repositoryId === id).map(entry => entry.id));
   const [newServices, setNewServices] = useState<ServiceDraft[]>([]);
@@ -48,11 +50,11 @@ export function AssetEditDrawer({ catalog: initialCatalog, kind, id, onClose, on
   if (scope.current.workspaceId !== workspaceId || scope.current.kind !== kind || scope.current.id !== id) scope.current = { workspaceId, kind, id };
   useEffect(() => () => { scope.current = { ...scope.current }; }, []);
   const baseDraft = assetEditDraft(observed, kind, id)!;
-  const draft = { code: normalizeCodeInput(code.replace(/\s+/g, '')), name: name.trim(), description, repositoryId, modulePath: modulePath.trim(), projectIds, serviceIds, path: (source.path ?? '.').replace(/\s+/g, ''), url: (source.url ?? '').replace(/\s+/g, ''), remote: (source.remote ?? 'origin').replace(/\s+/g, ''), integrationBranch: (source.integrationBranch ?? '').replace(/\s+/g, '') };
+  const draft = { code: normalizeCodeInput(code.replace(/\s+/g, '')), name: name.trim(), description, type: type.trim() || 'service', repositoryId, modulePath: modulePath.trim(), projectIds, serviceIds, path: (source.path ?? '.').replace(/\s+/g, ''), url: (source.url ?? '').replace(/\s+/g, ''), remote: (source.remote ?? 'origin').replace(/\s+/g, ''), integrationBranch: (source.integrationBranch ?? '').replace(/\s+/g, '') };
   const latestDraft = latest ? assetEditDraft(latest, kind, id) : null;
   const readOnly = Boolean(observed.migrationRequired || latest?.migrationRequired);
   const applyDraft = (next: typeof draft) => {
-    setCode(next.code); setName(next.name); setDescription(next.description); setRepositoryId(next.repositoryId); setModulePath(next.modulePath);
+    setCode(next.code); setName(next.name); setDescription(next.description); setType(next.type); setRepositoryId(next.repositoryId); setModulePath(next.modulePath);
     setProjectIds(next.projectIds); setServiceIds(next.serviceIds);
     touchedSource.current = true;
     setSource(previous => ({ ...previous, path: next.path, url: next.url, remote: next.remote, integrationBranch: next.integrationBranch }));
@@ -79,7 +81,7 @@ export function AssetEditDrawer({ catalog: initialCatalog, kind, id, onClose, on
     setObserved(base); applyDraft(input);
     try {
       const updatedCatalog = await assetCatalogApi.update(kind, id, { revision: base.revision, name: input.name, description: input.description,
-        ...(kind === 'service' ? { code: input.code, projectIds: input.projectIds, ...(creatingRepository ? { repository: repositoryDraft } : { repositoryId: input.repositoryId }), modulePath: input.modulePath }
+        ...(kind === 'service' ? { code: input.code, type: input.type, projectIds: input.projectIds, ...(creatingRepository ? { repository: repositoryDraft } : { repositoryId: input.repositoryId }), modulePath: input.modulePath }
           : kind === 'project' ? { code: input.code, serviceIds: input.serviceIds, newServices }
           : { path: input.path, url: input.url, remote: input.remote, integrationBranch: input.integrationBranch, serviceIds: input.serviceIds }) });
       if (scope.current === observedScope) { onSaved?.(updatedCatalog); onClose(); }
@@ -101,8 +103,7 @@ export function AssetEditDrawer({ catalog: initialCatalog, kind, id, onClose, on
     if (latest && latestDraft) void save(latest, rebaseEditedFields(baseDraft, draft, latestDraft));
   };
   const copy = async () => {
-    try { await navigator.clipboard.writeText(JSON.stringify({ ...draft, ...(creatingRepository ? { repository: repositoryDraft } : {}) }, null, 2)); }
-    catch { setRecoveryError('自动复制失败，请直接选择并复制输入内容。'); }
+    if (!await copyText(JSON.stringify({ ...draft, ...(creatingRepository ? { repository: repositoryDraft } : {}) }, null, 2))) setRecoveryError('自动复制失败，请直接选择并复制输入内容。');
   };
   const label = { project: '项目', service: '服务', repository: '代码库' }[kind];
   const serviceName = (value: string) => (latest || catalog).services.find(entry => entry.id === value)?.name || value;
@@ -111,7 +112,7 @@ export function AssetEditDrawer({ catalog: initialCatalog, kind, id, onClose, on
     {error && <Alert type="error" showIcon message={error} description="修改尚未保存，当前输入已保留。" />}
     {conflict && <MetadataConflictNotice loading={readingLatest} busy={busy} error={recoveryError} canContinue={Boolean(latestDraft && !readOnly)} canSave={Boolean(name.trim())}
       latest={latestDraft && <dl><dt>名称</dt><dd>{latestDraft.name}</dd><dt>说明</dt><dd>{latestDraft.description || '尚未填写'}</dd>
-        {kind === 'service' && <><dt>服务编码</dt><dd>{latestDraft.code}</dd><dt>代码库</dt><dd>{latest?.repositories.find(item => item.id === latestDraft.repositoryId)?.name || latestDraft.repositoryId}</dd><dt>模块目录</dt><dd>{latestDraft.modulePath || '代码库根目录'}</dd><dt>所属项目</dt><dd>{latestDraft.projectIds.map(projectName).join('、') || '尚未关联'}</dd></>}
+        {kind === 'service' && <><dt>服务编码</dt><dd>{latestDraft.code}</dd><dt>服务类型</dt><dd>{latestDraft.type}</dd><dt>代码库</dt><dd>{latest?.repositories.find(item => item.id === latestDraft.repositoryId)?.name || latestDraft.repositoryId}</dd><dt>模块目录</dt><dd>{latestDraft.modulePath || '代码库根目录'}</dd><dt>所属项目</dt><dd>{latestDraft.projectIds.map(projectName).join('、') || '尚未关联'}</dd></>}
         {kind === 'project' && <><dt>项目编码</dt><dd>{latestDraft.code}</dd><dt>关联服务</dt><dd>{latestDraft.serviceIds.map(serviceName).join('、') || '无'}</dd></>}
         {kind === 'repository' && <><dt>仓库目录</dt><dd>{latestDraft.path}</dd><dt>Git 地址</dt><dd>{latestDraft.url || '未填写'}</dd><dt>远端名称（Remote）</dt><dd>{latestDraft.remote}</dd><dt>集成分支</dt><dd>{latestDraft.integrationBranch || '未填写'}</dd><dt>引用服务</dt><dd>{latestDraft.serviceIds.map(serviceName).join('、') || '无'}</dd></>}
       </dl>} onRead={() => void readLatest()} onUseLatest={useLatest} onKeep={keepChanges} onCopy={() => void copy()} />}
@@ -120,7 +121,8 @@ export function AssetEditDrawer({ catalog: initialCatalog, kind, id, onClose, on
       {kind !== 'repository' && <Form.Item label={`${label}编码`} required help={kind === 'project' ? '字母、数字、点、下划线与短横线；改编码会重写历史定位，并在目标空闲时迁移受管项目目录及其中已登记代码库路径；若代码库根位于上层，则同步调整受影响的服务模块路径；附接源不移动，目标占用时拒绝保存。' : '字母、数字、点、下划线与短横线；服务改码保留历史定位，已有服务文档目录会随清单在同一事务内改名；目标占用时拒绝保存，不移动代码库模块目录。'}><Input aria-label={`${label}编码`} required pattern={CODE_INPUT_PATTERN} title={CODE_INPUT_TITLE} value={code} {...codeFieldTrim(text => setCode(normalizeCodeInput(text)))} /></Form.Item>}
       <Form.Item label="说明"><Input.TextArea aria-label="说明" value={description} onChange={e => setDescription(e.target.value)} rows={4} /></Form.Item>
       {kind === 'project' && <Form.Item label="关联服务" help="全量维护本项目的服务成员，可在此直接新增服务；解除关联不会删除服务或代码。"><ProjectServiceSelection catalog={catalog} projectCode={code} ids={serviceIds} onIds={setServiceIds} drafts={newServices} onDrafts={setNewServices} /></Form.Item>}
-      {kind === 'service' && <><Form.Item label="所属项目"><Select aria-label="所属项目" allowClear value={projectIds[0]} onChange={value => setProjectIds(value ? [value] : [])} options={catalog.projects.map(entry => ({ label: entry.name, value: entry.id }))} placeholder="选择服务所属项目；留空显示为尚未关联" /></Form.Item><Form.Item label="代码库" required><CreatableResourceSelect label="代码库" disabled={busy || readOnly} value={creatingRepository ? undefined : repositoryId} placeholder={creatingRepository ? '正在新增代码库' : '选择代码库'} onChange={value => { setCreatingRepository(false); setRepositoryId(value as string); }} onCreate={() => setCreatingRepository(true)} options={catalog.repositories.map(r => ({ value: r.id, label: `${r.name} · ${repositoryBranch(r)}` }))} /></Form.Item>{creatingRepository && <section className="resource-section" data-inline-repository><div className="resource-section-head"><h3>新增代码库</h3><Button type="text" disabled={busy || readOnly} onClick={() => setCreatingRepository(false)}>取消新增代码库</Button></div><RepositoryFields disabled={busy || readOnly} value={repositoryDraft} onChange={setRepositoryDraft} /><p className="page-copy">保存服务时一并登记代码库，关闭编辑不会留下登记。</p></section>}<Form.Item label="模块目录" help="服务代码目录相对代码库根的路径，不是构建文件（如 pom）里的模块名；留空表示代码库根目录。"><Input aria-label="模块目录" value={modulePath} {...codeFieldTrim(setModulePath)} placeholder="留空表示代码库根目录" /></Form.Item></>}
+      {kind === 'service' && <Form.Item label="服务类型" help="用于本地运行等能力判断服务角色。"><Select aria-label="服务类型" value={type} onChange={setType} options={SERVICE_TYPE_OPTIONS.map(option => ({ ...option }))} placeholder="选择服务类型" /></Form.Item>}
+      {kind === 'service' && <><Form.Item label="所属项目" help="可多选；保存时按所选集合全量维护归属，取消某个项目只解除该项目的引用。"><Select aria-label="所属项目" mode="multiple" allowClear value={projectIds} onChange={value => setProjectIds(value ?? [])} options={catalog.projects.map(entry => ({ label: entry.name, value: entry.id }))} placeholder="选择服务所属项目；留空显示为尚未关联" /></Form.Item><Form.Item label="代码库" required><CreatableResourceSelect label="代码库" disabled={busy || readOnly} value={creatingRepository ? undefined : repositoryId} placeholder={creatingRepository ? '正在新增代码库' : '选择代码库'} onChange={value => { setCreatingRepository(false); setRepositoryId(value as string); }} onCreate={() => setCreatingRepository(true)} options={catalog.repositories.map(r => ({ value: r.id, label: `${r.name} · ${repositoryBranch(r)}` }))} /></Form.Item>{creatingRepository && <section className="resource-section" data-inline-repository><div className="resource-section-head"><h3>新增代码库</h3><Button type="text" disabled={busy || readOnly} onClick={() => setCreatingRepository(false)}>取消新增代码库</Button></div><RepositoryFields disabled={busy || readOnly} value={repositoryDraft} onChange={setRepositoryDraft} /><p className="page-copy">保存服务时一并登记代码库，关闭编辑不会留下登记。</p></section>}<Form.Item label="模块目录" help="服务代码目录相对代码库根的路径，不是构建文件（如 pom）里的模块名；留空表示代码库根目录。"><Input aria-label="模块目录" value={modulePath} {...codeFieldTrim(setModulePath)} placeholder="留空表示代码库根目录" /></Form.Item></>}
       {kind === 'repository' && <><RepositoryFields editing disabled={busy || readOnly} value={source} onChange={changeSource} />
         <Form.Item label="所属服务" help="勾选会把该服务的代码库引用改到本库并保留模块路径；当前成员不能在此移除，请先在目标代码库安置。"><Select aria-label="所属服务" mode="multiple" value={serviceIds} onChange={setServiceIds} options={catalog.services.map(entry => ({ label: entry.repositoryId === id ? `${entry.name}（当前）` : entry.name, value: entry.id, disabled: entry.repositoryId === id }))} placeholder="选择使用本代码库的服务" /></Form.Item>
         {local.loading && <p className="page-copy">正在读取本地 Git 配置…</p>}

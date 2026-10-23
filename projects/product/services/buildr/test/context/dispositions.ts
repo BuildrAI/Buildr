@@ -39,6 +39,7 @@ const entries: any[] = [
     'integration-desktop',
     'integration-knowledge',
     'integration-connections',
+    'integration-connections-cli',
     'integration-runtime-projection',
     'integration-declarations',
     'integration-openspec',

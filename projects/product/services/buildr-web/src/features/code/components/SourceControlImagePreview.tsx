@@ -9,7 +9,7 @@ const sizeLabel = (size:number) => size < 1024 ? `${size} B` : size < 1024 * 102
 /** Contents and missing sides are supplied by the same verified diff read. */
 export function SourceControlImagePreview({preview,area}:{preview:Preview;area:CodeDiffResponse['area']}) {
   const [failed,setFailed] = useState(new Set<string>());
-  const labels = area === 'staged' ? ['上次提交','暂存内容'] : area === 'unstaged' ? ['暂存内容','当前文件'] : area === 'commit' ? ['第一父提交','所选提交'] : ['文件不存在','新增图片'];
+  const labels = area === 'working' ? ['最近一次提交（Commit）','当前文件'] : area === 'staged' ? ['上次提交','暂存内容'] : area === 'unstaged' ? ['暂存内容','当前文件'] : area === 'commit' ? ['第一父提交','所选提交'] : ['文件不存在','新增图片'];
   const comparison = Boolean(preview.before && preview.after);
   function side(file:ImageFile,direction:'before'|'after',index:number) {
     const identity = JSON.stringify([direction,file.path,file.revision]);

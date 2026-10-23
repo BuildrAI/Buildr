@@ -19,12 +19,13 @@ for (const [signal, exitCode] of [['SIGINT', 130], ['SIGTERM', 143]] as const) t
 });
 
 test('source flags keep plan-only output, force and portable export explicit', () => {
-  assert.deepEqual(parseSourceArgs([]), { help: false, json: false, force: false, scope: 'all', base: null, output: null, round: null });
-  assert.deepEqual(parseSourceArgs(['--json', '--force', '--output', '/tmp/source.json']), { help: false, json: true, force: true, scope: 'all', base: null, output: '/tmp/source.json', round: null });
+  assert.deepEqual(parseSourceArgs([]), { help: false, json: false, force: false, scope: 'all', base: null, output: null, round: null, invalidate: [] });
+  assert.deepEqual(parseSourceArgs(['--json', '--force', '--output', '/tmp/source.json']), { help: false, json: true, force: true, scope: 'all', base: null, output: '/tmp/source.json', round: null, invalidate: [] });
   assert.equal(parseSourceArgs(['--scope', 'common']).scope, 'common');
   assert.equal(parseSourceArgs(['--scope', 'platform']).scope, 'platform');
   assert.equal(parseSourceArgs(['--base', 'origin/dev']).base, 'origin/dev');
-  for (const args of [['--scope'], ['--scope', 'windows'], ['--scope', 'common', '--scope', 'platform'], ['--base'], ['--base', '--json'], ['--base', 'one', '--base', 'two'], ['--output'], ['--output', '--force'], ['--unknown'], ['unit'], ['--help', '--json'], ['--output', 'one', '--output', 'two']]) assert.throws(() => parseSourceArgs(args));
+  assert.deepEqual(parseSourceArgs(['--invalidate', 'integration-connections-cli,dsh-plugin:unit']).invalidate, ['integration-connections-cli', 'dsh-plugin:unit']);
+  for (const args of [['--scope'], ['--scope', 'windows'], ['--scope', 'common', '--scope', 'platform'], ['--base'], ['--base', '--json'], ['--base', 'one', '--base', 'two'], ['--output'], ['--output', '--force'], ['--invalidate'], ['--invalidate', '--json'], ['--invalidate', 'a b'], ['--invalidate', 'a', '--invalidate', 'b'], ['--unknown'], ['unit'], ['--help', '--json'], ['--output', 'one', '--output', 'two']]) assert.throws(() => parseSourceArgs(args));
 });
 
 test('source selection removes artifact creation, consumption and all transitive dependants', () => {

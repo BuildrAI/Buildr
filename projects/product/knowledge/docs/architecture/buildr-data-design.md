@@ -22,6 +22,8 @@
 | 安装登记、投射回执、恢复现场 | 本机 JSON、YAML 与备份文件 | 说明归属和实际操作，不能从目录外观猜出 |
 | 外部系统的团队实例与团队认证 | `connections/instances/<系统>-<环境>--<唯一后缀>.yml`，可由团队 Git 共享 | 正文完整 `id` 是身份；只属于用户实际工作空间（Workspace），不进入公共技能源或发布物 |
 | 外部系统的个人认证及观察密钥 | 个人密文在规范工作空间 `.buildr/local/connection-skills/`；密钥留应用数据根 `connection-skills/` | 按当前本机应用身份隔离；私有忽略目录和本机密钥共同保护，不能由共享文件恢复 |
+| 服务运行定义 | 工作空间（Workspace）的 `services/<service-code>/runtime.yml`，可由 Git 管理 | 智能体（Agent）发现并实际验证的本地启动方式及可选前端连接声明，一份定义覆盖该服务的全部检出目录；不是运行实例状态，旧 `environments` 兼容忽略 |
+| 受管运行记录与进程日志 | `.buildr/local/service-runtime/` 的 `runs/` 与 `logs/` | 只属于本机；记录启动时代码、任务归属、入口、实际地址与连接快照，进程与端口继续重新观察；日志没有第二份副本，业务验证结论另行记录；旧部署历史保留但不展示为当前能力 |
 | 分支、未提交修改、进程和外部登录态 | Git、进程与外部工具 | 每次重新观察，不用旧记录替代 |
 
 ## 从业务身份找到实际位置
@@ -116,6 +118,7 @@ OpenSpec 的 `specs/` 保存当前承诺，`changes/` 保存一次变更的提�
 | --- | --- |
 | `W/.buildr/local/workspace.sqlite` | 任务（Task）及相关协作记录；Git 提交不能替代它 |
 | `W/.buildr/local/task-retrospectives/` | 复盘原文；数据库没有正文副本 |
+| `W/.buildr/local/service-runtime/` | 受管运行快照与进程标准输出、错误输出日志；删除记录不等于停止进程，旧部署历史不自动删除，日志没有第二份副本 |
 | `P/product-installations.json` | 安装来源、入口、Node 身份与更新依据；丢失不删除程序，但影响发现和管理 |
 | `A/workspace-registry.json` | 已登记工作目录与最近选择，不保存业务正文 |
 | `W/.buildr/local/web-management.json` | 目录身份和应用管理归属，缺失不能直接解释为无人管理 |

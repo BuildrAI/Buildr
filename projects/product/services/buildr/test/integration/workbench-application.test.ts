@@ -42,6 +42,25 @@ test('工作摘要独立维护、响应可回读、CAS拒绝覆盖且不改变�
   assert.throws(() => runtime.inspectTaskWorkContexts(root, Array(101).fill('context-task')));
 });
 
+test('已结束任务不再等待回应，事项记录本身保留可读', (t) => {
+  const { root } = taskRecordFixture(t, 'work-context-terminal-attention');
+  const runtime = createRuntime();
+  const task = record(runtime, root, 'finished-task');
+  const pending = runtime.recordTaskWorkContext(root, 'finished-task', { expectedContextDigest: 'absent', progress: '已交付成果', nextStep: '等待决定', attention: { kind: 'decision', reason: '请确认收尾方向' } });
+  assert.equal(runtime.inspectWorkbench(root).attention.total, 1);
+  runtime.updateTask(root, 'finished-task', { expectedRecordDigest: task.recordDigest, status: 'completed', summary: '已交付' });
+  const overview = runtime.inspectWorkbench(root);
+  conforms('WorkbenchResponse', overview);
+  assert.equal(overview.attention.total, 0);
+  assert.equal(overview.attention.items.length, 0);
+  const kept = runtime.inspectTaskWorkContext(root, 'finished-task');
+  assert.equal(kept.context.attention.state, 'pending');
+  assert.equal(kept.contextDigest, pending.contextDigest, '终态只是移出等待清单，不改写事项记录');
+  const restored = runtime.updateTask(root, 'finished-task', { expectedRecordDigest: runtime.inspectTask(root, 'finished-task').recordDigest, status: 'active', reason: '补充剩余工作后重新验收' });
+  assert.equal(restored.record.status, 'active');
+  assert.equal(runtime.inspectWorkbench(root).attention.total, 1);
+});
+
 test('检查适用性结论逐项合并替换，终态任务拒绝修改', (t) => {
   const { root } = taskRecordFixture(t, 'work-context-checks');
   const runtime = createRuntime();

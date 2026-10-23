@@ -1,0 +1,9 @@
+.source-control-discard-confirm > code { display:block; overflow-wrap:anywhere; }
+.source-control-discard-confirm ul { max-height:220px; overflow:auto; padding-inline-start:22px; }
+.source-control-discard-confirm li { overflow-wrap:anywhere; }
+.source-control-changes-heading { display:flex; align-items:center; padding-inline-end:4px; }
+.source-control-changes-heading .source-control-area-heading { flex:1; min-width:0; }
+.source-control-discard-icon.ant-btn { color:var(--ant-color-text-secondary); }
+.source-control-change-area .task-changed-list > li { position:relative; }
+.source-control-change-area .task-changed-list > li:has(.task-changed-row-action) .task-changed-row { padding-inline-end:34px; }
+.source-control-change-area .task-changed-row-action { position:absolute; right:2px; top:2px; }

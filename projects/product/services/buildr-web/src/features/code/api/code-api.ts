@@ -2,7 +2,7 @@ import { api } from '../../../api';
 import { createSharedSourceControlWatch } from './shared-source-control-watch.ts';
 import { beginSourceControlFetch, beginSourceControlSync, notifySourceControlChange } from '../source-control-events.ts';
 import type { CodeRepositoriesRepositories, CodeDirectoryDirectory, CodeFileFile, CodeSearchSearch, CodeSourceControlSourceControl, CodeHistoryHistory, CodeCommitCommit, CodeDiffDiff, CodeSourceFileSourceFile, CodeBranchesBranches, CodeAuthorsAuthors, CodeBranchSwitchBranchSwitch, CodeFetchFetch, CodeSyncContextSyncContext, CodeSyncSync, CodeEditorFileEditorFile, CodeSaveFileSaveFile, CodeRepositoryCloneRepositoryClone } from '../../../../build/generated/code-http-dto';
-export type CodeSourceControlInput = { observation?: 'shared'; repositoryId?: string; worktreeId?: string; taskId?: string; commitHash?: string; path?: string; area?: 'unstaged' | 'staged' | 'untracked' | 'commit'; branch?: string; authorEmail?: string; query?: string; limit?: number; cursor?: string; expectedRevision?: string; page?: number; line?: number; matchQuery?: string };
+export type CodeSourceControlInput = { observation?: 'shared'; repositoryId?: string; worktreeId?: string; taskId?: string; commitHash?: string; path?: string; area?: 'unstaged' | 'staged' | 'untracked' | 'working' | 'commit'; branch?: string; authorEmail?: string; query?: string; limit?: number; cursor?: string; expectedRevision?: string; page?: number; line?: number; matchQuery?: string };
 export type CodeSourceControlResponse = CodeSourceControlSourceControl;
 export type CodeSourceControlWatchResponse = {cursor: string; repositoryIds: string[]; refreshAll: boolean; refsRepositoryIds?: string[]; diagnostics?: string[]};
 export type CodeHistoryResponse = CodeHistoryHistory;
@@ -70,7 +70,7 @@ export const codeApi = {
       result = {readAt:new Date().toISOString(), repositories:input.repositories.map(repository => ({repositoryId:repository.repositoryId, gitId:repository.expectedGitId, status:'unknown', message:'获取结果未知，请重新读取核对。' + (error instanceof Error ? ' ' + error.message : ''), remotes:[]}))};
     }
     // An issued Git write outlives the row or page that started it. Never retry it here.
-    if (repositoryIds.length) notifySourceControlChange({workspaceId:id, repositoryId:repositoryIds[0], repositoryIds, fetchResults:result.repositories, fetchSequences});
+    if (repositoryIds.length) notifySourceControlChange({workspaceId:id, repositoryId:repositoryIds[0], repositoryIds, fetchResults:result.repositories, fetchReadAt:result.readAt, fetchSequences});
     return result;
   },
   syncContext:(id:string,input:{repositoryId:string;worktreeId:string})=>request<CodeSyncContextResponse>(id,'sync-context',input),

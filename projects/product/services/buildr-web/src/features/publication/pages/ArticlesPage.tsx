@@ -8,6 +8,7 @@ import { useWorkspacePageTabs } from '../../../app/pageTabs';
 import { useResourcePreview } from '../../../app/resource-preview';
 import { WorkspaceStage } from '../../../components/WorkspaceStage';
 import { workspaceHref } from '../../../lib/labels';
+import { copyText } from '../../../lib/copyText';
 import { projectApi } from '../../project/api/project-api';
 import { useWorkbenchPreferences } from '../../workbench/hooks/useWorkbenchPreferences';
 import { publicationApi, publicationsChanged, type ArticleProject, type Publication, type PublicationList } from '../api/publication-api';
@@ -109,7 +110,7 @@ export function ArticlesPage() {
         if (key === 'source') openArticle(article, 'source');
         if (key === 'delete') setDeleting(article);
         if (key === 'export') void exportArticle(article);
-        if (key === 'copy') void navigator.clipboard.writeText(new URL(href(articlePath(article)), window.location.origin).href).then(() => messages.success('文章链接已复制')).catch(() => messages.error('自动复制失败'));
+        if (key === 'copy') void copyText(new URL(href(articlePath(article)), window.location.origin).href).then(copied => copied ? messages.success('文章链接已复制') : messages.error('自动复制失败'));
       } }}><Button type="text" icon={<MoreOutlined />} aria-label={`更多操作：${article.title}`} /></Dropdown></Space> },
     ]} /></div>
     <footer className="publication-list-foot"><span>文章归属项目，工作空间统一汇总。</span><span>{readAt ? `读取于 ${readAt}` : '正在读取'}</span></footer>

@@ -34,7 +34,7 @@ const serviceEntity = {
     code: text, name: text, description: { type: 'string' }, type: text, source: sourceEntity,
   },
 };
-const registryEntry = closed({ status: text, rootPath: text, updatedAt: text, workspace: { anyOf: [workspaceSummary, { type: 'null' }] }, error: { anyOf: [closed({ code: text, message: text }, ['message']), { type: 'null' }] }, migrationRequired: { type: 'boolean' } }, ['status', 'rootPath']);
+const registryEntry = closed({ status: text, rootPath: text, updatedAt: text, workspace: { anyOf: [workspaceSummary, { type: 'null' }] }, error: { anyOf: [closed({ code: text, message: text }, ['message']), { type: 'null' }] }, migrationRequired: { type: 'boolean' }, registryScope: { type: 'string', enum: ['local', 'shared'] } }, ['status', 'rootPath']);
 const registryProjection = closed({ schemaVersion: text, revision: text, workspaces: { type: 'array', items: registryEntry }, lastOpenedWorkspaceId: { type: ['string', 'null'] } }, ['schemaVersion', 'revision', 'workspaces', 'lastOpenedWorkspaceId']);
 const response = (id: any, title: any, properties: any, required: any) => Object.freeze({
   $schema: DRAFT_2020_12,

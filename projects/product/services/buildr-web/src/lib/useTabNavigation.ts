@@ -1,10 +1,14 @@
 import { useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
-import { tabAfterClose, tabFocusTarget } from './tab-navigation';
+import { tabAfterClose, tabFocusTarget, type TabCloseFocus } from './tab-navigation';
 
 /** Manual activation keeps arrow-key exploration independent of network/navigation. */
-export function useTabNavigation(keys: string[], active: string | null | undefined, strip: RefObject<HTMLDivElement | null>) {
+export function useTabNavigation(keys: string[], active: string | null | undefined, strip: RefObject<HTMLDivElement | null>, scrollToStartOnActivate = false, activationVersion?: number, sharedCloseFocus?: RefObject<TabCloseFocus | null>) {
   const [focused, setFocused] = useState<string | undefined>(active || keys[0]);
-  const pendingClose = useRef<{ removed: string; next: string | null } | null>(null);
+  const previousActive = useRef(active);
+  const previousActivation = useRef(activationVersion);
+  const pendingScroll = useRef<string | null>(scrollToStartOnActivate ? active || null : null);
+  const localPendingClose = useRef<TabCloseFocus | null>(null);
+  const pendingClose = sharedCloseFocus || localPendingClose;
   const selected = active && keys.includes(active) ? active : keys[0];
   const focusKey = focused && keys.includes(focused) ? focused : selected;
   const focus = (key: string | null) => {
@@ -21,10 +25,27 @@ export function useTabNavigation(keys: string[], active: string | null | undefin
   useLayoutEffect(() => {
     const pending = pendingClose.current;
     if (!pending || keys.includes(pending.removed)) return;
+    // A page close can remove its tab before the route has switched to the successor.
+    if (keys.length > 0 && (!active || !keys.includes(active) || !strip.current?.getClientRects().length)) return;
     pendingClose.current = null;
     const target = pending.next && keys.includes(pending.next) ? pending.next : selected || null;
     setFocused(target || undefined); focus(target);
   });
+  useLayoutEffect(() => {
+    if (previousActive.current !== active || previousActivation.current !== activationVersion) {
+      previousActive.current = active; previousActivation.current = activationVersion; pendingScroll.current = scrollToStartOnActivate ? active || null : null;
+    }
+    // Wait for the owner to place the activated tab first; do not fight manual sorting or arrow-key focus.
+    if (!pendingClose.current && pendingScroll.current === active && active && keys[0] === active && strip.current) {
+      strip.current.scrollLeft = 0;
+      pendingScroll.current = null;
+    }
+  });
+  const onActivate = (key: string) => {
+    if (!scrollToStartOnActivate) return;
+    pendingScroll.current = key;
+    if (keys[0] === key && strip.current) { strip.current.scrollLeft = 0; pendingScroll.current = null; }
+  };
   const close = (key: string, onClose?: (key: string) => void) => {
     if (strip.current?.contains(document.activeElement)) pendingClose.current = { removed: key, next: tabAfterClose(keys, key) };
     onClose?.(key);
@@ -35,5 +56,5 @@ export function useTabNavigation(keys: string[], active: string | null | undefin
     if (target) { event.preventDefault(); setFocused(target); focus(target); }
     else if (event.key === 'Delete' && onClose) { event.preventDefault(); close(key, onClose); }
   };
-  return { focusKey, onFocus: setFocused, onKeyDown, close };
+  return { focusKey, onFocus: setFocused, onKeyDown, onActivate, close };
 }

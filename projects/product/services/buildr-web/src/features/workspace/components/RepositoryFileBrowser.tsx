@@ -9,6 +9,8 @@ import type { MarkdownRenderOptions } from '../../../markdown';
 import { RepositorySearchText } from './RepositorySearchText';
 import { SelectableHoverCard } from '../../../components/SelectableHoverCard';
 import { repositorySearchQuery } from './repository-search-query';
+import { selectPopupGuard } from '../../../lib/select-popup';
+import { copyText } from '../../../lib/copyText';
 import { repositorySourceLines, visibleRepositoryMatch, type RepositoryFilePage } from './repository-file-page';
 export type { RepositoryFilePage } from './repository-file-page';
 import './repository-file-browser.css';
@@ -25,7 +27,7 @@ export type RepositoryPreviewFile = {
   link?: boolean;
 };
 
-export type RepositoryTreeScope = { id: string; repositoryId?: string; name: string; location?: string; locationLabel?: string; version?: string; files: RepositoryPreviewFile[]; hasChanges?: boolean };
+export type RepositoryTreeScope = { id: string; repositoryId?: string; name: string; fullName?: string; location?: string; locationLabel?: string; version?: string; files: RepositoryPreviewFile[]; hasChanges?: boolean };
 type TreeFile = RepositoryPreviewFile & { repositoryId?: string; sourceRepositoryId?: string; repositoryName?: string };
 type SearchResult = RepositoryPreviewFile & {repositoryId?:string;sourceRepositoryId?:string;repositoryName?:string;line?:number;excerpt?:string;occurrences?:Array<{line:number;excerpt:string}>};
 function treeKey(path: string, repositoryId?: string) { return repositoryId ? repositoryId + '::' + path : path; }
@@ -35,6 +37,7 @@ type Props = {
   treeRepositories?: RepositoryTreeScope[];
   selectedRepositoryId?: string;
   repositoryName?: string;
+  repositoryTitle?: string;
   onSelectRepositoryFile?(repositoryId: string, path: string, line?: number, matchQuery?: string): void;
   selectedPath: string;
   onSelect(path: string, line?: number, matchQuery?: string): void;
@@ -209,16 +212,20 @@ export function RepositoryFileBrowser(props: Props) {
         }
         siblings.push({ key: treeKey(item.path, item.repositoryId), isLeaf: true, disabled:item.link, icon: fileIcon(item), title: <span className="repository-tree-file" data-file-path={item.path} data-code-status={item.status}><span>{shortName(item.path)}</span>{item.status && <i className={'repository-status repository-status-' + item.status}>{item.status}</i>}</span> });
       }
-      sort(roots); return props.global && !props.onLoadDirectory ? compact(roots) : roots;
+      // Repository roots follow the caller's workspace/change/code order; only files sort inside each root.
+      if (props.treeRepositories) {
+        for (const root of roots) if (root.children) sort(root.children);
+      } else sort(roots);
+      return props.global && !props.onLoadDirectory ? compact(roots) : roots;
     }
     return props.treeRepositories ? props.treeRepositories.map(repo => ({
       key: treeKey('', repo.id), isLeaf:false, icon: <FolderOpenOutlined />,
-      title: <SelectableHoverCard closeOnTriggerClick title={repo.name} content={<article className="repository-root-info" aria-label="代码库完整路径" onClick={event => event.stopPropagation()} onPointerDown={event => event.stopPropagation()}>
+      title: <SelectableHoverCard closeOnTriggerClick title={repo.fullName || repo.name} content={<article className="repository-root-info" aria-label="代码库完整路径" onClick={event => event.stopPropagation()} onPointerDown={event => event.stopPropagation()}>
         {repo.locationLabel && <p className="repository-root-location-label">{repo.locationLabel}</p>}
         <code className="repository-root-location">{repo.location}</code>
         {repo.version && <p className="repository-root-version">版本：{repo.version}</p>}
         {repo.location && <Button type="text" size="small" icon={<CopyOutlined />} aria-label="复制代码库完整路径" onClick={() => void copy(repo.location!)}>复制路径</Button>}
-      </article>}><span tabIndex={0} className="repository-root-name" data-location={repo.location} data-location-label={repo.locationLabel} data-version={repo.version} data-repository-id={repo.repositoryId || repo.id} data-has-changes={repo.hasChanges || undefined}><strong>{repo.name}</strong>{repo.hasChanges && <i className="repository-directory-change-dot" title="包含未提交变更" aria-label="包含未提交变更" />}</span></SelectableHoverCard>,
+      </article>}><span tabIndex={0} className="repository-root-name" aria-label={repo.fullName || repo.name} data-location={repo.location} data-location-label={repo.locationLabel} data-version={repo.version} data-repository-id={repo.repositoryId || repo.id} data-has-changes={repo.hasChanges || undefined}><strong>{repo.name}</strong>{repo.hasChanges && <i className="repository-directory-change-dot" title="包含未提交变更" aria-label="包含未提交变更" />}</span></SelectableHoverCard>,
       children: build(visible.filter(item => item.repositoryId === repo.id)),
     })) : build(visible);
   }, [props.files, props.treeRepositories, showIgnored, props.global]);
@@ -240,8 +247,8 @@ export function RepositoryFileBrowser(props: Props) {
     props.onScene?.(value ? 'search' : '');
   }
   async function copy(text: string) {
-    try { await navigator.clipboard.writeText(text); message.success('已复制'); }
-    catch { message.info('可在下方选中文字复制。'); }
+    if (await copyText(text)) message.success('已复制');
+    else message.info('可在下方选中文字复制。');
   }
   useEffect(()=>{props.onDirectoryExpansionChange?.(expanded);},[expanded,props.onDirectoryExpansionChange]);
   async function refresh(directories=false) {
@@ -286,7 +293,7 @@ export function RepositoryFileBrowser(props: Props) {
         <div className="repository-tree-heading"><strong>文件</strong><div className="repository-tree-heading-actions">{(props.global || !treeHidden) && <Tooltip title="包含当前目录中被 Git 忽略规则或常见构建目录排除的文件；点号开头不代表忽略。不会显示其他目录中的文件，Git 管理目录始终隐藏。"><Button size="small" type="text" aria-label={showIgnored ? '隐藏忽略文件' : '显示忽略文件'} icon={showIgnored ? <EyeInvisibleOutlined /> : <EyeOutlined />} onClick={() => {setShowIgnored(value => !value);props.onShowIgnored?.(!showIgnored);}} /></Tooltip>}{!props.global&&<Tooltip title={treeHidden ? '展开目录' : '收起目录'}><Button type="text" size="small" aria-label={treeHidden ? '展开目录' : '收起目录'} icon={treeHidden ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => setTreeHidden(!treeHidden)} /></Tooltip>}</div></div>
         {(props.global || !treeHidden) && <>
           <div className="repository-file-search" data-prototype-position="file-search">
-            <Input allowClear prefix={<SearchOutlined />} suffix={<span className="repository-search-scope" onMouseDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}><Select aria-label="搜索范围" classNames={{ popup: { root: 'repository-search-scope-popup' } }} variant="borderless" size="small" style={{ width: searchMode === 'name' ? 58 : 48 }} value={searchMode} placement="bottomRight" popupMatchSelectWidth={false} options={[{ label: '文件名', value: 'name' }, { label: '内容', value: 'content' }]} onChange={value => setSearchMode(value as 'name' | 'content')} /></span>} placeholder={searchMode === 'name' ? '搜索文件名' : '搜索内容'} aria-label="搜索文件" value={query} onChange={event => changeQuery(event.target.value)} />
+            <Input allowClear prefix={<SearchOutlined />} suffix={<span className="repository-search-scope" onMouseDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}><Select aria-label="搜索范围" classNames={{ popup: { root: 'repository-search-scope-popup' } }} variant="borderless" size="small" style={{ width: searchMode === 'name' ? 58 : 48 }} value={searchMode} placement="bottomRight" popupMatchSelectWidth={false} popupRender={selectPopupGuard} options={[{ label: '文件名', value: 'name' }, { label: '内容', value: 'content' }]} onChange={value => setSearchMode(value as 'name' | 'content')} /></span>} placeholder={searchMode === 'name' ? '搜索文件名' : '搜索内容'} aria-label="搜索文件" value={query} onChange={event => changeQuery(event.target.value)} />
           </div>
           <div className="repository-tree-body">
             {props.treeNotice}
@@ -322,7 +329,7 @@ export function RepositoryFileBrowser(props: Props) {
           {openPaths.map(path => <div key={path} className={'repository-file-tab' + (path === props.selectedPath ? ' active' : '')}><button type="button" role="tab" aria-selected={path === props.selectedPath} title={path} onClick={() => select(path)}>{shortName(path)}</button>{openPaths.length > 1 && <button className="repository-file-close" type="button" aria-label={'关闭文件 ' + shortName(path)} onClick={() => { const next = openPaths.filter(item => item !== path); setOpenPaths(next); if (path === props.selectedPath) select(next.at(-1)!); }}>×</button>}</div>)}
         </div>}
         {props.readerSurface ?? <>{file && <header className="repository-reader-toolbar">
-          <div className="repository-file-identity"><strong>{shortName(file.path)}</strong><small title={props.location + ' / ' + file.path}>{props.repositoryName ? props.repositoryName + ' · ' : ''}{file.path}</small><small className="repository-reading-location">{props.location} · {props.version}</small></div>
+          <div className="repository-file-identity"><strong>{shortName(file.path)}</strong><small title={(props.repositoryTitle ? props.repositoryTitle + ' · ' : '') + props.location + ' / ' + file.path}>{props.repositoryName ? props.repositoryName + ' · ' : ''}{file.path}</small><small className="repository-reading-location">{props.location} · {props.version}</small></div>
           <Space wrap size={4}>
             {props.onReturnTask && <Button size="small" onClick={props.onReturnTask} data-prototype-position="return-task">返回任务</Button>}
             {file.kind === 'markdown' && !props.readPage && <Segmented size="small" value={raw ? 'raw' : 'read'} options={[{ label: '阅读', value: 'read' }, { label: '原文', value: 'raw' }]} onChange={value => setRaw(value === 'raw')} />}

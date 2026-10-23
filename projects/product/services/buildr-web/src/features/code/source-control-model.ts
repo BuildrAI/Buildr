@@ -43,7 +43,7 @@ export function sourceControlFilePathHints(files: Array<Pick<ChangedFileEntry, '
 
 export type SourceControlScene = 'changes' | 'history' | 'task' | 'full-file';
 export type SourceControlState = '' | 'empty' | 'partial' | 'loading' | 'failure' | 'clean';
-export type SourceControlChange = ChangedFileEntry & { worktreeId?: string | null; area: 'unstaged' | 'staged' | 'untracked'; content: string; previousContent?: string };
+export type SourceControlChange = ChangedFileEntry & { worktreeId?: string | null; area: 'unstaged' | 'staged' | 'untracked' | 'working'; content: string; previousContent?: string };
 export type SourceControlCommit = Omit<TaskCommit, 'taskId' | 'taskTitle'> & { worktreeId?: string | null; files: SourceControlChange[]; branches: string[]; tags: string[]; taskId?: string | null; taskTitle?: string | null; taskDiagnostic?: string | null };
 export type SourceControlRepository = {
   id: string; code: string; name: string; location: string; taskLocation?: string; taskBranch?: string | null; readonly pending?: boolean;
@@ -76,6 +76,11 @@ export const sourceControlWorktreeKey = (repositoryId: string, worktreeId: strin
 export function sourceControlVisibleWorktrees(repository: SourceControlRepository, names: string[], exact: string[] = []) {
   return repository.worktrees.filter(worktree => (!names.length || names.includes(worktree.name)) && (!exact.length || exact.includes(sourceControlWorktreeKey(repository.id, worktree.worktreeId))));
 }
+/** A changed task worktree moves its repository ahead of clean and not-yet-read ones. */
+export function sourceControlRepositoryHasChanges(repository: SourceControlRepository): boolean {
+  return (repository.fileCount ?? 0) > 0 || repository.changes.length > 0
+    || repository.worktrees.some(worktree => (worktree.fileCount ?? 0) > 0 || worktree.changes.length > 0);
+}
 export type SourceControlFileTarget = { repositoryId: string; worktreeId?: string; path: string; location: string; commitHash?: string; taskId?: string; area?: CodeSourceControlInput['area']; expectedRevision?: string };
 export type SourceControlObservation = { loading: boolean; error: string; readAt: string; diagnostics: string[]; truncated?: boolean };
 export type SourceControlReader = {
@@ -85,6 +90,17 @@ export type SourceControlReader = {
   sourceFile(input: CodeSourceControlInput, signal: AbortSignal): Promise<CodeSourceFileResponse>;
 };
 export const sourceControlFileKey = (file: SourceControlChange) => JSON.stringify([file.repositoryId, file.worktreeId || '', file.area, file.path]);
+/** File identity remains stable when external tools stage or unstage the same path. */
+export function sourceControlWorkingChanges(files: SourceControlChange[]): SourceControlChange[] {
+  const groups = new Map<string, SourceControlChange[]>();
+  for (const file of files) { const key = JSON.stringify([file.repositoryId, file.worktreeId || '', file.path]); const group = groups.get(key) || []; group.push(file); groups.set(key, group); }
+  return [...groups.values()].map(group => {
+    const file = group.find(file => file.area === 'unstaged') || group[0];
+    return {...file, area: 'working' as const, previousPath: group.find(file => file.previousPath)?.previousPath || null,
+      status: group.some(file => file.status === 'conflicted') ? 'conflicted' as const : file.status,
+      additions: null, deletions: null};
+  });
+}
 export const sourceControlFileCount = (files: SourceControlChange[]) => new Set(files.map(file => JSON.stringify([file.worktreeId || '', file.path]))).size;
 export function sourceControlChange(file: CodeChange): SourceControlChange {
   return { ...file, area: file.area === 'commit' ? 'staged' : file.area, content: '' };

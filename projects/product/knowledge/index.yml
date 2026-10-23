@@ -517,6 +517,7 @@ artifacts:
       - code-source-control-read
       - code-source-control-image-read
       - code-source-control-image-preview
+      - local-runtime-module
   - id: technical-layers-map
     title: 技术层、对象与代表方法
     kind: code-map
@@ -525,6 +526,28 @@ artifacts:
       - system-structure
     sources:
       - product-reference-code-map
+      - local-runtime-module
+      - local-runtime-definition
+      - local-runtime-runs
+      - local-runtime-worktrees
+      - local-runtime-application
+      - local-runtime-task-application
+      - local-runtime-view
+      - local-runtime-repository
+      - local-runtime-process
+      - local-runtime-routing-context
+      - local-runtime-lock
+      - local-runtime-task-checkout
+      - local-runtime-cli
+      - local-runtime-http
+      - local-runtime-client
+      - local-runtime-read-hook
+      - local-runtime-agent-entry
+      - local-runtime-agent-guide
+      - web-update-store-source
+      - web-update-launcher-source
+      - web-update-dialog-source
+      - web-update-view-source
       - product-reference-technical-architecture
       - code-architecture
       - task-source-module-19a342
@@ -1487,6 +1510,62 @@ sources:
     path: services/buildr/src/modules/installation/infrastructure/current-product-identity.ts
     summary: 重新读取已验证安装登记，比较同一安装槽位中的历史身份，提供新版精确运行入口。
     observedDigest: 99edf1f72e36fc58724affa8b21fb466f03a816a411fea3fcbc7613ac7c1f7a3
+  - id: web-update-store-source
+    title: 本机更新记录
+    kind: code
+    path: services/buildr/src/modules/installation/infrastructure/update-flow-store.ts
+    summary: 按安装路径隔离更新观察，校验内容并以独占锁、记录版本和原子替换防止覆盖。
+  - id: web-update-launcher-source
+    title: 更新启动入口
+    kind: code
+    path: services/buildr/src/modules/installation/application/update-launcher.ts
+    summary: 核对精确安装及历史槽位，仅检查和修复已有启动入口，缺失时跳过。
+  - id: web-update-dialog-source
+    title: 更新弹窗
+    kind: code
+    path: services/buildr-web/src/features/installation/components/UpdateDialog.tsx
+    summary: 正式页面与原型共用的更新弹窗，表达下载、确认、阶段结果和局部恢复。
+  - id: web-update-view-source
+    title: 更新视图状态
+    kind: code
+    path: services/buildr-web/src/features/installation/lib/update-view.ts
+    summary: 按真实版本、阶段和连接事实选择显示内容；区分启动入口、重连和安装核验失败。
+  - id: web-update-flow-application-source
+    title: 页面分阶段更新任务
+    kind: code
+    path: services/buildr/src/modules/installation/application/update-flow.ts
+    summary: 按安装隔离的持久更新任务，钉住版本下载和安装，分别核验启动入口与网页；仅恢复失败环节，开发来源零安装副作用。
+    observedDigest: 303044dff95fba2bd6a28dac31b70b964f7b9b2e1e304841d03fa868817d0a5d
+  - id: web-update-flow-http-source
+    title: 页面更新任务 HTTP 接口
+    kind: code
+    path: services/buildr/src/modules/installation/interfaces/http/update-flow-http.ts
+    summary: 提供状态读取、准备、应用及恢复四个路由；写操作复用会话授权，预览拒绝写入。
+    observedDigest: 7efd07da43de2dfaffaf7a2bf28318eb47eb3263615ba29952526bea129fe76a
+  - id: web-update-flow-contracts-source
+    title: 页面更新任务 HTTP 契约
+    kind: code
+    path: services/buildr/src/modules/installation/interfaces/http/update-flow-http-contracts.ts
+    summary: 声明更新任务请求、任务快照与错误 Schema 并编译校验器，operation 覆盖登记随契约闭合。
+    observedDigest: 1ea338860118aa6c7473fa7eac53934a880cb649d0cd8af1d0e0e370c70fb006
+  - id: web-update-entry-source
+    title: 页面检查更新入口
+    kind: code
+    path: services/buildr-web/src/features/installation/components/UpdateEntry.tsx
+    summary: 更多菜单主动检查；有更新或待恢复事项才显示图标，弹窗组织下载、确认、安装和恢复。
+    observedDigest: e22c0050970a893d0d522ab287979b6089680a9a19073646ec3cffe6bae33321
+  - id: web-update-flow-hook-source
+    title: 页面更新任务轮询
+    kind: code
+    path: services/buildr-web/src/features/installation/hooks/useUpdateFlow.ts
+    summary: 周期检查版本与任务，活动任务加速轮询；断开保留弹窗，等待新会话并核验实际运行版本。
+    observedDigest: 729f1328015a64e70c3d23c2a8db465a38c1511a08b50826d054a68056c925e0
+  - id: web-update-simulated-target-source
+    title: 开发模拟更新目标
+    kind: code
+    path: services/buildr-web/src/features/installation/lib/simulated-update.ts
+    summary: development 渠道的模拟更新目标版本推算，只提升版本号末尾数字段，不访问真实 registry。
+    observedDigest: 35effccb7187291ef3bb77d3d513df418922e71d1c5d1ec39e7c2514351f36bb
   - id: web-update-handoff-source
     title: 网页更新交接
     kind: code
@@ -1577,6 +1656,96 @@ sources:
     skillId: buildr-release
     path: scripts/release-failure.ts
     summary: 保留有界命令错误，区分明确拒绝和未知效果，投影已成立事实与最小恢复动作。
+  - id: local-runtime-module
+    title: 服务本地运行装配
+    kind: code
+    path: services/buildr/src/modules/service-runtime/module.ts
+    summary: 组合服务定义、真实代码观察、任务范围与单项运行能力；不装配部署连接。
+  - id: local-runtime-definition
+    title: 已验证本地运行定义
+    kind: code
+    path: services/buildr/src/modules/service-runtime/domain/runtime-definition.ts
+    summary: 校验版本 1/2 启动方式、直接地址与发现连接及自身 local.routing；兼容旧 backend 与部署字段。
+  - id: local-runtime-runs
+    title: 本地运行实例及快照
+    kind: code
+    path: services/buildr/src/modules/service-runtime/domain/runs.ts
+    summary: 表达状态、启动时代码及任务归属、真实地址、逐后端连接与受管进程身份，归一读取旧单连接记录。
+  - id: local-runtime-worktrees
+    title: 服务检出目录身份
+    kind: code
+    path: services/buildr/src/modules/service-runtime/domain/worktrees.ts
+    summary: 表达服务检出目录的真实来源、主检出和任务归属。
+  - id: local-runtime-application
+    title: 单服务本地运行
+    kind: code
+    path: services/buildr/src/modules/service-runtime/application/service-runtime-application.ts
+    summary: 核对来源、启动、等待就绪、停止和读取实例日志，逐后端按声明解析直接地址或同任务发现目标，已选失效拒绝接替，切换核对上下文摘要。
+  - id: local-runtime-task-application
+    title: 任务服务选择与组合
+    kind: code
+    path: services/buildr/src/modules/service-runtime/application/service-task-runtime-application.ts
+    summary: 从任务范围及对应目录组合已选服务，预分配发现运行身份，仅等待直接地址前置边，保留每项成功、复用或错误。
+  - id: local-runtime-view
+    title: 本地运行读取视图
+    kind: code
+    path: services/buildr/src/modules/service-runtime/application/service-runtime-view.ts
+    summary: 合成服务目录摘要和详情，透传服务类型并按声明后端分组候选目标，单项配置错误不阻塞其他服务。
+  - id: local-runtime-repository
+    title: 本机运行记录存储
+    kind: code
+    path: services/buildr/src/modules/service-runtime/persistence/runs-repository.ts
+    summary: 保存和读取本机实例快照及日志位置，兼容旧记录中未知字段。
+  - id: local-runtime-process
+    title: 独立受管服务进程
+    kind: code
+    path: services/buildr/src/modules/service-runtime/infrastructure/managed-process.ts
+    summary: 维护可验证进程身份、独立进程组、直接日志输出与有界停止及就绪检查。
+  - id: local-runtime-routing-context
+    title: 本机泳道上下文与专业观察
+    kind: code
+    path: services/buildr/src/modules/service-runtime/infrastructure/local-routing-context.ts
+    summary: 从受管身份与声明派生文件及摘要，安全注入路径；按声明只读观察并核对运行身份，不内置专业发现客户端。
+  - id: local-runtime-lock
+    title: 本地实例与端口互斥
+    kind: code
+    path: services/buildr/src/modules/service-runtime/infrastructure/runtime-lock.ts
+    summary: 在共享实例和端口资源上协调并发，写入前重新读取当前事实。
+  - id: local-runtime-cli
+    title: 本地运行命令入口
+    kind: code
+    path: services/buildr/src/modules/service-runtime/interfaces/cli/service-runtime-cli.ts
+    summary: 适配单项及任务本地运行，支持逐后端 --backend-target 实例选择；命令等待就绪，停止只使用准确运行编号。
+  - id: local-runtime-task-checkout
+    title: 当前任务检出证据关联
+    kind: code
+    path: services/buildr/src/modules/service-runtime/infrastructure/task-worktree-association.ts
+    summary: 核对当前任务证据与真实Git目录、共同目录及分支，不受无关仓库缺目录影响。
+  - id: local-runtime-http
+    title: 本地运行网页接口
+    kind: code
+    path: services/buildr/src/modules/service-runtime/interfaces/http/service-runtime-http.ts
+    summary: 为服务和任务页面提供同一运行应用的读取与写入，沿用统一来源核对。
+  - id: local-runtime-client
+    title: 本地运行前端客户端
+    kind: code
+    path: services/buildr-web/src/features/service-runtime/api/service-runtime-api.ts
+    summary: 隔离服务和任务本地运行接口，承接单项及组合动作和日志读取。
+  - id: local-runtime-read-hook
+    title: 本地运行页面读取
+    kind: code
+    path: services/buildr-web/src/features/service-runtime/hooks/useServiceRuntime.ts
+    summary: 按页面范围及请求世代隔离迟到响应，在有受管运行时刷新状态。
+  - id: local-runtime-agent-entry
+    title: 智能体服务运行发现入口
+    kind: code
+    path: services/buildr/resources/runtime/skills/buildr/SKILL.md
+    summary: 让智能体从本地服务启动、查看和验证意图发现产品确定性能力。
+  - id: local-runtime-agent-guide
+    title: 智能体本地运行方法
+    kind: code
+    path: services/buildr/resources/runtime/skills/buildr/references/local-services.md
+    summary: 说明授权、准确目录与服务选择、多后端声明与逐后端实例连接、部分结果、停止及真实业务验证边界。
   - id: connection-runtime-spec
     title: 连接通用运行约定
     kind: spec

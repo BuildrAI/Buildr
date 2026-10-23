@@ -1,12 +1,30 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { tabForPath, parseTabs, paneDimensions, readRatio, moveTab, reorderPageTabs, ratioStorageKey, resourcePreview, previewOwnerPath, previewOwnerSearch, workspacePageLayout } from '../src/app/workspace-pages.ts';
+import { tabForPath, defaultTabForArea, defaultTabForPath, parseTabs, paneDimensions, readRatio, moveTab, reorderPageTabs, ratioStorageKey, resourcePreview, previewOwnerPath, previewOwnerSearch, workspacePageLayout } from '../src/app/workspace-pages.ts';
 
-test('连接查询和代码工具铺满功能面板，文档与跨工作空间路径保持阅读宽度', () => {
- for (const path of ['/connection-skills', '/connections', '/code/explorer', '/code/source-control']) assert.equal(workspacePageLayout('w', '/workspaces/w' + path), 'functional');
+test('连接查询、代码工具和工作台概览铺满功能面板，文档与跨工作空间路径保持阅读宽度', () => {
+ for (const path of ['/connection-skills', '/connections', '/code/explorer', '/code/source-control', '/overview']) assert.equal(workspacePageLayout('w', '/workspaces/w' + path), 'functional');
  for (const path of ['/projects/product', '/articles', '/services', '/tasks']) assert.equal(workspacePageLayout('w', '/workspaces/w' + path), 'reading');
  assert.equal(workspacePageLayout('w', '/workspaces/other/connections'), 'reading');
  assert.equal(workspacePageLayout('w', '/workspaces/w/connections/unknown'), 'reading');
+});
+
+test('三个入口各有默认页签，关闭全部页签时按当前入口兜底', () => {
+ assert.deepEqual(tabForPath('w', '/workspaces/w/overview'), { key: 'dir:overview', kind: 'dir', title: '概览', path: '/workspaces/w/overview' });
+ assert.equal(defaultTabForArea('w', 'workbench').key, 'dir:overview');
+ assert.equal(defaultTabForArea('w', 'workspace').key, 'dir:workspace-overview');
+ assert.equal(defaultTabForArea('w', 'code').key, 'dir:code:source-control');
+ assert.equal(defaultTabForPath('w', '/workspaces/w/tasks').key, 'dir:overview');
+ assert.equal(defaultTabForPath('w', '/workspaces/w/projects').key, 'dir:workspace-overview');
+ assert.equal(defaultTabForPath('w', '/workspaces/w/code/explorer').key, 'dir:code:source-control');
+});
+
+test('共享页签恢复到工作台概览与代码页', () => {
+ assert.deepEqual(parseTabs('w', JSON.stringify([
+  { path: '/workspaces/w/overview' },
+  { path: '/workspaces/w/code/explorer' },
+  { path: '/workspaces/w/code/source-control' },
+ ])).map(tab => tab.key), ['dir:overview', 'dir:code:explorer', 'dir:code:source-control']);
 });
 test('恢复页签只接受当前工作空间已支持的路由并去重', () => {
  const valid={path:'/workspaces/a/skills',title:'技能'};
@@ -90,12 +108,12 @@ test('标签移动保留身份与集合，支持向前向后和边界', () => {
  assert.deepEqual(tabs.map(t=>t.key),['a','b','c']);
 });
 
-test('页面和目录使用同一可见重排索引，代码内部布局保持独立', () => {
- const tabs=[{key:'dir:projects',kind:'dir'},{key:'a',kind:'proj'},{key:'dir:services',kind:'dir'},{key:'b',kind:'proj'}];
- assert.deepEqual(reorderPageTabs(tabs,'a',1).map(tab=>tab.key),['dir:projects','a','dir:services','b']);
- assert.deepEqual(reorderPageTabs(tabs,'b',0).map(tab=>tab.key),['b','dir:projects','a','dir:services']);
- assert.deepEqual(reorderPageTabs(tabs,'a',99).filter(tab=>tab.kind!=='dir').map(tab=>tab.key),['b','a']);
- assert.deepEqual(tabs.map(tab=>tab.key),['dir:projects','a','dir:services','b']);
+test('页面、目录和代码页签使用同一可见重排索引，代码文件仍留在页内', () => {
+ const tabs=[{key:'dir:projects',kind:'dir'},{key:'a',kind:'proj'},{key:'dir:code:explorer',kind:'dir'},{key:'dir:services',kind:'dir'},{key:'b',kind:'proj'}];
+ assert.deepEqual(reorderPageTabs(tabs,'a',1).map(tab=>tab.key),['dir:projects','a','dir:code:explorer','dir:services','b']);
+ assert.deepEqual(reorderPageTabs(tabs,'dir:code:explorer',0).map(tab=>tab.key),['dir:code:explorer','dir:projects','a','dir:services','b']);
+ assert.deepEqual(reorderPageTabs(tabs,'b',0).map(tab=>tab.key),['b','dir:projects','a','dir:code:explorer','dir:services']);
+ assert.deepEqual(tabs.map(tab=>tab.key),['dir:projects','a','dir:code:explorer','dir:services','b']);
 });
 
 test('项目详情与知识共享一个项目标签，恢复旧标签去重且保留检索上下文',()=>{

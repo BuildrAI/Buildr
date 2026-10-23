@@ -1,9 +1,11 @@
-import { createContext, useContext } from 'react';
+import { createContext, useContext, type RefObject } from 'react';
+import type { TabCloseFocus } from '../lib/tab-navigation';
 import type { WorkspacePageTab } from './workspace-pages';
 export type { WorkspacePageTab, PageTabKind } from './workspace-pages';
 export { PageTabStrip } from './PageTabStrip';
 export type WorkspaceTabsState = {
   tabs: WorkspacePageTab[];
+  pendingCloseFocus?: RefObject<TabCloseFocus | null>;
   register: (tab: WorkspacePageTab) => void;
   close: (key: string) => void;
   reorder: (key: string, index: number) => void;

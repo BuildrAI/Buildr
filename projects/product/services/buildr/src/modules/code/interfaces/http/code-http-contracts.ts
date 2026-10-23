@@ -9,7 +9,7 @@ const entry = closed({ name: text, path: text, kind: { enum: ['directory','file'
 const schema = (title: string, properties: Record<string, unknown>) => ({ $schema: 'https://json-schema.org/draft/2020-12/schema', $id: 'https://schemas.buildr.ai/http/code/' + title, title, ...closed(properties) });
 const query=(title:string,properties:Record<string,unknown>,required:string[])=>({...schema(title,properties),required});
 const locationQuery={repositoryId:text,checkoutId,worktreeId,taskId:text,commitHash:{type:'string',pattern:'^(?:[a-f0-9]{40}|[a-f0-9]{64})$'}};
-const area = {enum:['unstaged','staged','untracked','commit']};
+const area = {enum:['unstaged','staged','untracked','working','commit']};
 const revision = {type:'string',minLength:1,maxLength:200};
 const editorCodeSelector=closed({kind:{const:'code'},repositoryId:text,checkoutId,path:text});
 const editorProjectSelector=closed({kind:{const:'project'},projectCode:text,path:{type:'string',minLength:1,pattern:'\\.[mM][dD]$'}});
@@ -28,6 +28,8 @@ export const CODE_HTTP_REQUESTS=Object.freeze({
   syncContext:query('CodeSyncContextQuery',{repositoryId:text,worktreeId},['repositoryId','worktreeId']),
   sync:schema('CodeSyncRequest',{repositoryId:text,worktreeId,expectedRevision:revision}),
    repositoryClone:schema('CodeRepositoryCloneRequest',{repositoryId:text}),
+  discardContext:query('CodeDiscardContextQuery',{repositoryId:text,worktreeId,filePath:text},['repositoryId','worktreeId']),
+  discardChanges:{...schema('CodeDiscardChangesRequest',{repositoryId:text,worktreeId,path:text,expectedRevision:revision}),required:['repositoryId','worktreeId','expectedRevision']},
   commitContext:query('CodeCommitContextQuery',{repositoryId:text,worktreeId},['repositoryId','worktreeId']),
   branches:query('CodeBranchesQuery',{repositoryId:text,worktreeId},['repositoryId','worktreeId']),
   authors:query('CodeAuthorsQuery',{repositoryId:text,checkoutId,worktreeId,taskId:text,branch:{type:'string',minLength:1,maxLength:1024},expectedRevision:revision},['repositoryId']),
@@ -70,6 +72,8 @@ export const CODE_HTTP_SCHEMAS=Object.freeze({...CODE_FILE_SCHEMAS,
   syncContext:schema('CodeSyncContext',{source,revision:text,head:nullableText,branch:nullableText,target:nullableText,available:{type:'boolean'},reason:nullableText,ahead:nullableCount,behind:nullableCount,hasChanges:{type:'boolean'}}),
   sync:schema('CodeSync',syncResult.properties),
   repositoryClone:schema('CodeRepositoryClone',{status:{enum:['started','already-running','ready','unavailable']},diagnostic:nullableText}),
+  discardContext:schema('CodeDiscardContext',{source,revision:text,paths:{type:'array',items:text},removePaths:{type:'array',items:text}}),
+  discardChanges:schema('CodeDiscardChanges',{source,status:{enum:['succeeded','partial']},paths:{type:'array',items:text},message:string}),
   commitContext:schema('CodeCommitContext',{source,revision:text,head:nullableText,branch:nullableText,hasChanges:{type:'boolean'},fileCount:{type:'integer',minimum:0},push:closed({revision:text,target:nullableText,available:{type:'boolean'},reason:nullableText,ahead:{type:'integer',minimum:0}})}),
   commitChanges:schema('CodeGitMutationResult',gitMutation),
   push:schema('CodePushResult',gitMutation),
@@ -85,7 +89,7 @@ export const CODE_HTTP_SCHEMAS=Object.freeze({...CODE_FILE_SCHEMAS,
   sourceFile:schema('CodeSourceFile',{...CODE_FILE_SCHEMAS.file.properties,...readMeta}),
 });
 /** Only read operations participate in automatic CLI and read-worker routing. */
-export const CODE_HTTP_PATHS=Object.freeze({repositories:'repositories',directory:'directory',file:'file',search:'search',sourceControl:'source-control',sourceControlInventory:'source-control-inventory',commitContext:'commit-context',syncContext:'sync-context',branches:'branches',authors:'authors',history:'history',commit:'commit',diff:'diff',sourceFile:'source-file'});
+export const CODE_HTTP_PATHS=Object.freeze({repositories:'repositories',directory:'directory',file:'file',search:'search',sourceControl:'source-control',sourceControlInventory:'source-control-inventory',discardContext:'discard-context',commitContext:'commit-context',syncContext:'sync-context',branches:'branches',authors:'authors',history:'history',commit:'commit',diff:'diff',sourceFile:'source-file'});
 const CODE_EDITOR_OPERATIONS=([{name:'editorFile',method:'GET',path:'editor-file'},{name:'saveFile',method:'POST',path:'save-file'},{name:'sourceControlWatch',method:'GET',path:'source-control-watch'}] as const).map(({name,method,path})=>({id:'code.'+name,owner:'code',method,path:'/code/'+path,disposition:'migrated-json',responseKind:'json',requestSchemaId:CODE_HTTP_REQUESTS[name].$id,successSchemaId:CODE_HTTP_SCHEMAS[name].$id,errorSchemaId:'https://schemas.buildr.ai/http/local-app/error/response/v1'}));
-export const CODE_HTTP_OPERATIONS=Object.freeze([...CODE_EDITOR_OPERATIONS,...Object.entries(CODE_HTTP_PATHS).map(([name,operationPath])=>({id:'code.'+name,owner:'code',method:'GET',path:'/code/'+operationPath,disposition:'migrated-json',responseKind:'json',requestSchemaId:CODE_HTTP_REQUESTS[name as keyof typeof CODE_HTTP_PATHS].$id,successSchemaId:CODE_HTTP_SCHEMAS[name as keyof typeof CODE_HTTP_PATHS].$id,errorSchemaId:'https://schemas.buildr.ai/http/local-app/error/response/v1'})),...([{name:'branchSwitch',path:'branch-switch'},{name:'commitChanges',path:'commit-changes'},{name:'push',path:'push'},{name:'fetch',path:'fetch'},{name:'sync',path:'sync'},{name:'repositoryClone',path:'repository-clone'}] as const).map(({name,path})=>({id:'code.'+name,owner:'code',method:'POST',path:'/code/'+path,disposition:'migrated-json',responseKind:'json',requestSchemaId:CODE_HTTP_REQUESTS[name].$id,successSchemaId:CODE_HTTP_SCHEMAS[name].$id,errorSchemaId:'https://schemas.buildr.ai/http/local-app/error/response/v1'}))]);
+export const CODE_HTTP_OPERATIONS=Object.freeze([...CODE_EDITOR_OPERATIONS,...Object.entries(CODE_HTTP_PATHS).map(([name,operationPath])=>({id:'code.'+name,owner:'code',method:'GET',path:'/code/'+operationPath,disposition:'migrated-json',responseKind:'json',requestSchemaId:CODE_HTTP_REQUESTS[name as keyof typeof CODE_HTTP_PATHS].$id,successSchemaId:CODE_HTTP_SCHEMAS[name as keyof typeof CODE_HTTP_PATHS].$id,errorSchemaId:'https://schemas.buildr.ai/http/local-app/error/response/v1'})),...([{name:'discardChanges',path:'discard-changes'},{name:'branchSwitch',path:'branch-switch'},{name:'commitChanges',path:'commit-changes'},{name:'push',path:'push'},{name:'fetch',path:'fetch'},{name:'sync',path:'sync'},{name:'repositoryClone',path:'repository-clone'}] as const).map(({name,path})=>({id:'code.'+name,owner:'code',method:'POST',path:'/code/'+path,disposition:'migrated-json',responseKind:'json',requestSchemaId:CODE_HTTP_REQUESTS[name].$id,successSchemaId:CODE_HTTP_SCHEMAS[name].$id,errorSchemaId:'https://schemas.buildr.ai/http/local-app/error/response/v1'}))]);
 export const CODE_HTTP_VALIDATORS = compileJsonSchemaCatalog([...Object.values(CODE_HTTP_SCHEMAS),...Object.values(CODE_HTTP_REQUESTS)]);

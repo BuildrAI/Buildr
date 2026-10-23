@@ -19,7 +19,7 @@
 .source-control-repository:hover,.source-control-worktree:hover { background:color-mix(in srgb,var(--soft-primary) 4%,var(--soft-surface)); }
 .source-control-repository.is-selected,.source-control-worktree.is-selected { background:var(--soft-primary-soft,color-mix(in srgb,var(--soft-primary) 8%,var(--soft-surface))); box-shadow:inset 2px 0 var(--soft-primary); }
 .source-control-row-copy { display:flex; align-items:center; gap:6px; flex:1 1 0; min-width:0; }
-.source-control-row-copy>.selectable-hover-trigger { display:block; flex:0 1 auto; min-width:0; }
+.source-control-row-copy>.selectable-hover-trigger { display:block; flex:1 1 auto; min-width:0; }
 .source-control-row-name-text { display:inline-block; width:max-content; }
 .source-control-row-shortcuts { display:flex; align-items:center; flex:none; width:max-content; gap:4px; }
 /* Keep the same controls measurable and remove hidden controls from keyboard navigation. */
@@ -47,8 +47,6 @@
 .selectable-hover-card:has(.source-control-worktree-info) .source-control-worktree-diagnostic { padding:6px 8px; border-left:2px solid color-mix(in srgb,var(--soft-primary) 30%,var(--soft-line)); border-radius:3px; background:var(--soft-sidebar); font-size:11.5px; }
 .source-control-repository-copy:focus-visible,.source-control-fold:focus-visible { outline:2px solid var(--soft-primary); outline-offset:2px; border-radius:3px; }
 .source-control-catalog-note { margin:7px 14px 10px; color:var(--soft-muted); font-size:12px; line-height:1.7; }
-.source-control-browse-tabs { flex:none; padding:10px 12px; border-bottom:1px solid var(--soft-line); }
-.source-control-browse-tabs .ant-segmented { font-size:12px; }
 .source-control-list { flex:1; min-height:0; overflow:auto; }
 .source-control-change-group { border-bottom:1px solid var(--soft-line); padding-bottom:7px; }
 .source-control-change-heading { width:100%; display:flex; align-items:center; gap:8px; background:var(--soft-bg); border:0; padding:10px 13px; text-align:left; color:inherit; font:inherit; cursor:pointer; }
@@ -97,7 +95,15 @@
 .source-control-commit-children .task-changed-list>li.is-selected>.task-changed-row { background:var(--soft-primary-soft,color-mix(in srgb,var(--soft-primary) 8%,var(--soft-surface))); box-shadow:inset 2px 0 var(--soft-primary); }
 .source-control-commit-children .source-control-read-status { padding:7px 5px; }
 .source-control-commit-children .source-control-local-failure,.source-control-commit-children .source-control-clean { margin:7px 5px; }
+.source-control-browse-tabs { flex:none; padding:10px 12px; border-bottom:1px solid var(--soft-line); }
+.source-control-browse-tabs .ant-segmented { font-size:12px; }
 .source-control-reader { container-type:inline-size; width:100%; height:100%; flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; }
+.source-control-reader-tabs { flex:none; height:43px; min-height:43px; display:flex; align-items:stretch; background:#f4f6f7; border-bottom:1px solid var(--soft-line); padding:0 6px; }
+.source-control-reader-tabs .source-control-view-tabs { flex:1; min-width:0; height:100%; padding:6px 0 0; border-bottom:0; }
+.source-control-reader-tabs .pane-tab-wrap.not-closable > .pane-tab { padding:0 12px; }
+.source-control-reader-tabs .pane-tab-dot { display:none; }
+.source-control-reader-tabs .source-control-reading-toggle { align-self:center; margin-left:auto; }
+.source-control-reader-body { display:flex; flex:1; min-width:0; min-height:0; flex-direction:column; }
 .source-control-checkout { flex:none; min-height:43px; height:43px; padding:6px 14px; display:flex; align-items:center; gap:6px; border-bottom:1px solid var(--soft-line); }
 .source-control-checkout>div { display:flex; align-items:center; gap:9px; min-height:26px; }
 .source-control-checkout strong { font-size:12px; font-weight:550; }
@@ -105,7 +111,7 @@
 .source-control-checkout code { font-size:12px; color:var(--soft-primary); }
 .source-control-checkout .ant-select { font-size:12px; min-width:95px; }
 .source-control-checkout>small { display:block; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--soft-muted); font-size:12px; }
-.source-control-reader>.ant-alert { flex:none; margin:9px 14px; font-size:12px; }
+.source-control-reader-body>.ant-alert { flex:none; margin:9px 14px; font-size:12px; }
 .source-control-diagnostics .ant-alert-description { overflow-wrap:anywhere; }
 .source-control-diagnostic-list { margin:0; padding-left:16px; line-height:1.6; max-height:9.6em; overflow:auto; }
 .source-control-diagnostic-actions { display:flex; align-items:center; gap:4px; }
@@ -136,9 +142,8 @@
 .source-control-diff.is-history .task-diff-scope { display:none; }
 
 .source-control-sidebar[hidden] { display:none; }
-.source-control-reader { position:relative; }
-.source-control-reading-toggle { position:absolute; top:13px; right:13px; z-index:2; background:var(--soft-surface,#fff); }
-.source-control-checkout>div { padding-right:100px; }
+.source-control-reading-toggle { flex:none; width:28px; height:28px; color:var(--soft-muted); }
+.source-control-reading-toggle:hover { color:var(--soft-primary); }
 .source-control-change-area .task-changed-row-content { display:flex; flex-direction:column; align-items:flex-start; gap:3px; overflow:hidden; min-width:0; }
 .source-control-change-area .task-changed-row-content strong { display:block; max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .source-control-change-area .task-changed-path { max-width:100%; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
@@ -186,7 +191,6 @@
 .area-code .workspace-page:has(.code-source-control-page) { padding:0; max-width:none; }
 .area-code .workspace-page > .code-source-control-page { width:100%; max-width:none; margin:0; }
 .code-source-control-page { display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; height:100%; }
-.code-source-control-tab { min-height:43px; flex:none; }
 .source-control-read-status { display:flex; gap:8px; align-items:center; padding:8px 17px; flex:none; color:var(--soft-muted); font-size:12px; }
 .source-control-load-more { margin:0 14px 12px; }
 .source-control-fold { border:0; background:transparent; color:var(--soft-muted); display:flex; align-items:center; justify-content:center; width:22px; height:28px; padding:0; flex:none; cursor:pointer; }
@@ -210,8 +214,8 @@
 .source-control-change-area .task-changed-list { border:0; border-radius:0; }
 .source-control-change-area .task-changed-list>li+li { border:0; }
 .source-control-change-area .task-changed-list>li.is-selected>.task-changed-row { background:var(--soft-primary-soft,color-mix(in srgb,var(--soft-primary) 8%,var(--soft-surface))); box-shadow:inset 2px 0 var(--soft-primary); }
-.source-control-browse-tabs .ant-segmented { padding:2px; border:1px solid var(--soft-line); background:var(--soft-bg); color:var(--soft-muted); }
 /* Page retention can interrupt the thumb motion; checked inputs remain the current selection. */
+.source-control-browse-tabs .ant-segmented { padding:2px; border:1px solid var(--soft-line); background:var(--soft-bg); color:var(--soft-muted); }
 .source-control-workbench .ant-segmented-thumb { display:none; }
 .source-control-workbench .ant-segmented-item:has(input:checked) { background:var(--soft-primary); color:var(--ant-color-white,#fff); font-weight:600; box-shadow:none; }
 .source-control-workbench .ant-segmented-item:not(:has(input:checked)) { background:transparent; color:var(--soft-muted); box-shadow:none; }
@@ -225,7 +229,6 @@
 .source-control-catalog-toggle { display:flex; align-items:center; gap:8px; min-width:0; padding:0; border:0; background:transparent; color:inherit; font:inherit; cursor:pointer; }
 .source-control-catalog-toggle>.anticon { font-size:11px; color:var(--soft-muted); }
 .source-control-catalog-toggle:focus-visible { outline:2px solid var(--soft-primary); outline-offset:3px; border-radius:3px; }
-.source-control-checkout { padding-right:120px; }
 .source-control-checkout>.selectable-hover-trigger:first-child { max-width:none; }
 .source-control-selected-task.ant-btn { flex:none; width:26px; height:28px; padding:0; color:var(--soft-primary); }
 .source-control-selected-task .anticon { font-size:13px; }

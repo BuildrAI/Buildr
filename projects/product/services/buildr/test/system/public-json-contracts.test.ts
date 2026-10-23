@@ -105,6 +105,7 @@ test('schema registry 覆盖全部当前公开 JSON family', () => {
   assert.deepEqual(Object.keys(PUBLIC_JSON_SCHEMAS).sort(), [
     'agentAssetSourceObservations',
     'agentAssetSourceResult',
+    'artifactResult',
     'builtinList',
     'cliError',
     'commandsCheck',

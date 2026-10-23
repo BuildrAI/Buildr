@@ -10,7 +10,9 @@ import { useWorkbench } from '../hooks/useWorkbench';
 import { useWorkbenchPreferences } from '../hooks/useWorkbenchPreferences';
 import { WorkbenchTaskRow, attentionLabels } from '../components/WorkbenchTaskRow';
 import { WorkbenchResources } from '../components/WorkbenchResources';
+import { WorkbenchLocalRuns } from '../../service-runtime/components/WorkbenchLocalRuns';
 import '../workbench.css';
+import '../../service-runtime/service-runtime.css';
 
 export function WorkbenchPage() {
   const { workspaceId, setBreadcrumbParts, workspace, openAgentAction } = useAppShell();
@@ -89,6 +91,7 @@ export function WorkbenchPage() {
           </section> : null}
         </div>
         <aside className="workbench-rail">
+          <WorkbenchLocalRuns />
           <WorkbenchResources />
           <section className="workbench-rail-card">
             <div className="workbench-section-heading"><h2>关注的项目</h2><Link className="workbench-link" to={href('/projects')}>全部 <ArrowRightOutlined /></Link></div>

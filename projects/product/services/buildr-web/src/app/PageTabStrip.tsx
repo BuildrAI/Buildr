@@ -1,5 +1,6 @@
 import { useResourcePreview } from './resource-preview';
-import { useEffect, useId, useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
+import { WorkspaceTabsContext } from './pageTabs';
+import { useContext, useEffect, useId, useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { CloseOutlined } from '@ant-design/icons';
@@ -8,15 +9,16 @@ import { useTabNavigation } from '../lib/useTabNavigation';
 import { tabElementId, tabPanelId } from '../lib/tab-navigation';
 
 type Drag = { key: string; start: number; x: number; left: number; top: number; width: number; height: number; moved: boolean };
-type Props = { tabs: WorkspacePageTab[]; idPrefix?: string; onClose: (key: string) => void; onReorder: (key: string, index: number) => void };
-export function PageTabStrip({ tabs, idPrefix, onClose, onReorder }: Props) {
+type Props = { tabs: WorkspacePageTab[]; idPrefix?: string; activationVersion?: number; onClose: (key: string) => void; onReorder: (key: string, index: number) => void };
+export function PageTabStrip({ tabs, idPrefix, activationVersion, onClose, onReorder }: Props) {
   const location = useLocation();
   const generatedId = useId();
   const prefix = idPrefix || generatedId;
   const navigate = useNavigate();
   const previews = useResourcePreview();
+  const pageTabs = useContext(WorkspaceTabsContext);
   const strip = useRef<HTMLDivElement>(null);
-  const navigation = useTabNavigation(tabs.map(tab => tab.key), tabs.find(tab => tab.path === location.pathname)?.key, strip);
+  const navigation = useTabNavigation(tabs.map(tab => tab.key), tabs.find(tab => tab.path === location.pathname)?.key, strip, true, activationVersion, pageTabs?.pendingCloseFocus);
   const dragRef = useRef<Drag | null>(null);
   const positions = useRef(new Map<string, number>());
   const suppressed = useRef(false);
@@ -79,7 +81,7 @@ export function PageTabStrip({ tabs, idPrefix, onClose, onReorder }: Props) {
       {tabs.map((tab, index) => <div key={tab.key} data-page-tab={tab.key} className={`pane-tab-wrap${drag?.key === tab.key ? ' is-dragged' : ''}`} onPointerDown={(e) => start(e, tab)}>
         <button type="button" role={idPrefix ? 'tab' : undefined} aria-selected={idPrefix ? tab.path === location.pathname : undefined} aria-pressed={idPrefix ? undefined : tab.path === location.pathname} id={tabElementId(prefix, tab.key)} aria-controls={idPrefix ? tabPanelId(idPrefix, tab.path) : undefined}
           data-tab-key={tab.key} tabIndex={navigation.focusKey === tab.key ? 0 : -1} onFocus={() => navigation.onFocus(tab.key)} className={`pane-tab${tab.path === location.pathname ? ' on' : ''}`} title={`${tab.title}（Alt + 方向键调整顺序）`}
-          onClick={() => { if (!suppressed.current && tab.path !== location.pathname) navigate({pathname:tab.path,search:tab.search||""}, { state: { resourceViews: previews?.states[tab.path] } }); }}
+          onClick={() => { if (suppressed.current) return; navigation.onActivate(tab.key); onReorder(tab.key, 0); if (tab.path !== location.pathname) navigate({pathname:tab.path,search:tab.search||""}, { state: { resourceViews: previews?.states[tab.path] } }); }}
           onKeyDown={(e) => {
             if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { e.preventDefault(); onReorder(tab.key, index + (e.key === 'ArrowLeft' ? -1 : 1)); }
             else navigation.onKeyDown(e, tab.key, onClose);

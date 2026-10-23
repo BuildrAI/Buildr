@@ -30,6 +30,7 @@ export const PUBLIC_JSON_SCHEMAS = Object.freeze({
   taskVerificationOperationResult: 'buildr.task-verification-operation-result/v1',
   longRunningOperationSummary: 'buildr.long-running-operation-summary/v1',
   verificationEvidenceCleanup: 'buildr.verification-evidence-cleanup/v1',
+  artifactResult: 'buildr.artifact-result/v1',
 });
 
 export function withJsonSchema<T extends Record<string, unknown>>(schemaVersion: string, payload: T): { schemaVersion: string } & T {

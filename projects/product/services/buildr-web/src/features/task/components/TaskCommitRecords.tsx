@@ -3,6 +3,7 @@ import { BranchesOutlined, CheckOutlined, CopyOutlined, DownOutlined, FolderOpen
 import { useState, type ReactNode } from 'react';
 import type { TaskCommitsResult } from '../../../../build/generated/task-dto';
 import { formatShortDateTime } from '../../../lib/taskLabels';
+import { copyText } from '../../../lib/copyText';
 import { taskCommitKey, taskCommitsState } from './task-commit-model';
 import { ChangedFileList, type ChangedFileEntry } from './TaskChangedFiles';
 import './task-commit-records.css';
@@ -37,23 +38,10 @@ export function TaskCommitRecords({ taskId, data, loading = false, error = '', n
   const labels = data?.repositories.map(repository => repository.label).join('、') || '本机仓库';
   const example = `feat(task): 展示关联提交记录\n\n在任务中查看提交主题、完整说明与哈希值。\n\nBuildr-Task: ${taskId}`;
   async function copy(value: string, key: string) {
-    try {
-      if (!navigator.clipboard?.writeText) throw Error('clipboard unavailable');
-      await navigator.clipboard.writeText(value);
+    if (await copyText(value)) {
       setCopied(key);
       message.success('已复制');
-    } catch {
-      const area = document.createElement('textarea');
-      area.value = value;
-      area.style.position = 'fixed';
-      area.style.opacity = '0';
-      document.body.append(area);
-      area.select();
-      const done = document.execCommand('copy');
-      area.remove();
-      if (done) { setCopied(key); message.success('已复制'); }
-      else message.info('当前环境不允许访问剪贴板，请选中文字复制。');
-    }
+    } else message.info('当前环境不允许访问剪贴板，请选中文字复制。');
   }
   const copyButton = (value: string, key: string, label: string) => <Button size="small" type="text" aria-label={label} icon={copied === key ? <CheckOutlined /> : <CopyOutlined />} onClick={() => void copy(value, key)}>{copied === key ? '已复制' : label}</Button>;
   return <section className="task-commits" aria-label="任务提交记录" data-prototype-position="commit-records">

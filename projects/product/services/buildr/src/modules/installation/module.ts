@@ -3,6 +3,10 @@ import { registerProductInstallationStatus } from './application/product-install
 import { createInstallationCliContributions } from './interfaces/cli/installation.ts';
 import { createLauncherCliContributions, registerLauncherInterface } from './interfaces/cli/launcher.ts';
 import { createReleaseAwarenessHttpContribution } from './interfaces/http/release-awareness-http.ts';
+import { createUpdateFlowHttpContribution } from './interfaces/http/update-flow-http.ts';
+import { createUpdateFlowStore } from './infrastructure/update-flow-store.ts';
+import { createUpdateLauncher } from './application/update-launcher.ts';
+import { createWebUpdateFlow } from './application/update-flow.ts';
 import { readCurrentProductIdentity } from './infrastructure/current-product-identity.ts';
 import { assertNpmUpdateHandoffTarget, readNpmUpdateHandoffInstallation } from './infrastructure/current-product-identity.ts';
 import type { NpmWebUpdatePort } from './application/cli-update.ts';
@@ -31,6 +35,10 @@ const APPLICATION_METHODS = Object.freeze([
   'releaseAwareness',
   'updateCheck',
   'updateBuildr',
+  'webUpdatePrepare',
+  'webUpdateStatus',
+  'webUpdateApply',
+  'webUpdateRecover',
   'buildInstallationInventory',
   'buildInstallationStatusInventory',
   'installationStatus',
@@ -52,6 +60,16 @@ export function createSystemInstallationModule(runtime: any) {
         if (!webUpdates) throw new Error('Web update lifecycle port is not bound.');
         return webUpdates.handoffUpdatedBuildrWeb(input);
       } }));
+      Object.assign(composition, createWebUpdateFlow({
+        productRoot: runtime.productRoot,
+        store: createUpdateFlowStore(runtime.productRoot()),
+        launcher: createUpdateLauncher(),
+        releaseAwareness: (options: any) => composition.releaseAwareness(options),
+        handoffUpdatedBuildrWeb: (input: any) => {
+          if (!webUpdates) throw new Error('Web update lifecycle port is not bound.');
+          return webUpdates.handoffUpdatedBuildrWeb(input);
+        },
+      }));
       Object.assign(composition, registerProductInstallationStatus({ productRoot: runtime.productRoot }));
       registerLauncherInterface(composition);
       const application = methodPort(composition, APPLICATION_METHODS);
@@ -76,7 +94,7 @@ export function createSystemInstallationModule(runtime: any) {
             ...createInstallationCliContributions(application),
             ...createLauncherCliContributions(application),
           ]),
-          http: Object.freeze([createReleaseAwarenessHttpContribution(application)]),
+          http: Object.freeze([createReleaseAwarenessHttpContribution(application), createUpdateFlowHttpContribution(application)]),
           diagnostics: Object.freeze([Object.freeze({ id: 'system-installation.diagnostics', readModel: application })]),
         },
       });

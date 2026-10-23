@@ -55,6 +55,7 @@ export const HTTP_CONTRACT_FRESH_BUILD_FAMILIES: any = Object.freeze([
   family('runtime-system', 'tools/codegen/contracts/runtime-system-dto.ts', [
     'src/web/http/buildr-web-http-contracts.ts',
     'src/modules/installation/interfaces/http/release-awareness-http-contracts.ts',
+    'src/modules/installation/interfaces/http/update-flow-http-contracts.ts',
     'src/modules/publication/interfaces/http/publication-http-contracts.ts',
   ], [
     ['buildr', 'build/generated/runtime-system-http-dto.ts'],

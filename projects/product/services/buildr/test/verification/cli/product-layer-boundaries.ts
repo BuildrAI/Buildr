@@ -25,6 +25,8 @@ const allowedTargets: any = {
   module: new Set(['interfaces', 'application', 'domain', 'infrastructure']),
 };
 const allowedCrossModulePorts: any = new Set([
+  'modules/artifact-lifecycle/module.ts -> modules/task/module.ts',
+  'modules/artifact-lifecycle/module.ts -> modules/workspace/module.ts',
   'modules/agent-assets/source/module.ts -> modules/agent-assets/module.ts',
   'modules/agent-assets/source/module.ts -> modules/workspace/module.ts',
   'modules/agent-assets/source/module.ts -> modules/task/module.ts',
@@ -33,6 +35,9 @@ const allowedCrossModulePorts: any = new Set([
   'modules/code/module.ts -> modules/workspace/module.ts',
   'modules/connection-skills/module.ts -> modules/workspace/module.ts',
   'modules/connection-skills/module.ts -> modules/agent-assets/module.ts',
+  'modules/service-runtime/module.ts -> modules/workspace/module.ts',
+  'modules/service-runtime/module.ts -> modules/code/module.ts',
+  'modules/service-runtime/module.ts -> modules/task/module.ts',
   'modules/mysql-query/module.ts -> modules/connection-skills/module.ts',
   'modules/mysql-query/module.ts -> modules/workspace/module.ts',
   'modules/code/module.ts -> modules/agent-operations/module.ts',

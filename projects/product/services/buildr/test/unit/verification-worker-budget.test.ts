@@ -76,7 +76,7 @@ test('Archify lifecycle stays isolated from Workspace checks with bounded concur
   const limited = resolveVerificationExecutionProfile('ci-workspace-limited');
   assert.deepEqual(nodeTestConcurrencyArguments(archify, limited), ['--test-concurrency=1']);
   assert.deepEqual(nodeTestConcurrencyArguments(workspace, limited), ['--test-concurrency=2']);
-  for (const id of ['integration-code', 'integration-desktop', 'integration-workspace-assets', 'integration-task-records', 'integration-connections', 'integration-runtime-projection', 'integration-runtime']) {
+  for (const id of ['integration-code', 'integration-desktop', 'integration-workspace-assets', 'integration-task-records', 'integration-connections', 'integration-connections-cli', 'integration-runtime-projection', 'integration-runtime']) {
     const step = verificationSteps.find((item: any) => item.id === id);
     assert.ok(step.reuse.tools.includes('git'), `${id}: real fixture Git requires the observed Git executable version`);
     assert.equal(step.reuse.git, false, `${id}: private fixture Git must not bind the shared checkout HEAD`);

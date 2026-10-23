@@ -1,5 +1,10 @@
+import os from 'node:os';
+import path from 'node:path';
+import process from 'node:process';
+
 import type { RegistryRepository } from '../persistence/workspace-registry-repository.ts';
 import type { WorkspaceRepository } from '../persistence/workspace-manifest-repository.ts';
+import { insideFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
 import { createWorkspace, isWorkspaceId } from '../domain/workspace.ts';
 import { WORKSPACE_DESCRIPTION_TODO } from '../persistence/workspace-manifest-repository.ts';
 
@@ -41,6 +46,18 @@ export function ensureRegisteredTarget(runtime: WorkspaceCommandApplicationRunti
   return entry?.workspace?.id || null;
 }
 
+/** 共享 Profile 登记列表拒绝的一次性位置：系统临时目录、/tmp 与任务工作树检出。 */
+function ephemeralWorkspaceRootReason(root: string): string | null {
+  const candidates = [os.tmpdir()];
+  if (process.platform !== 'win32') candidates.push('/tmp');
+  for (const candidate of candidates) {
+    if (insideFilesystemPath(candidate, root)) return '系统临时目录';
+  }
+  const segments = path.resolve(root).split(path.sep);
+  if (segments.includes('.worktrees')) return '任务工作树（Worktree）检出';
+  return null;
+}
+
 export function registerWorkspaceCommandApplication(runtime: WorkspaceCommandApplicationRuntime) {
   const createWorkspaceId = () => runtime.crypto.randomUUID();
 
@@ -51,6 +68,15 @@ export function registerWorkspaceCommandApplication(runtime: WorkspaceCommandApp
     }
     if (typeof input.rootPath !== 'string' || !input.rootPath.trim()) throw workspaceError('workspace_registry_root_required', '请选择 Workspace 目录。');
     const root = runtime.path.resolve(input.rootPath);
+    if (runtime.registryRepository.isSharedRegistryScope?.()) {
+      const ephemeral = ephemeralWorkspaceRootReason(root);
+      if (ephemeral) throw workspaceError(
+        'workspace_registry_ephemeral_root',
+        `共享登记列表只保留长期真实 Workspace：${ephemeral}下的目录随会话或任务结束，请改用 buildr web preview 或隔离数据根登记。`,
+        409,
+        { rootPath: root, reason: ephemeral },
+      );
+    }
     try { runtime.canonicalWorkspaceManagementIdentity(root); }
     catch (error: any) { throw workspaceError(error.code || 'workspace_registry_root_invalid', `无法登记 Workspace：${error.message}`, 409, error.details); }
     let candidate;
@@ -62,7 +88,9 @@ export function registerWorkspaceCommandApplication(runtime: WorkspaceCommandApp
       runtime.registryRepository.withWorkspaceRegistryMutation(input.revision, (current: any) => {
         const roots = current.roots;
         if (!roots.includes(root)) {
-          for (const existingRoot of roots) {
+          // 预览上下文中共享 Profile 的 roots 参与 identity 去重，避免同一 Workspace 被登记两次。
+          const sharedRoots = runtime.registryRepository.readSharedRegistryRoots?.().roots || [];
+          for (const existingRoot of [...roots, ...sharedRoots]) {
             const existing = runtime.workspaceRegistryEntry(existingRoot);
             if (existing.workspace?.id === candidate.workspace.id) {
               throw workspaceError('workspace_registry_identity_conflict', '同一 Workspace identity 已登记在另一个目录。', 409, {
@@ -91,10 +119,15 @@ export function registerWorkspaceCommandApplication(runtime: WorkspaceCommandApp
     if (input.workspaceId === undefined && input.rootPath === undefined) throw workspaceError('workspace_registry_identity_invalid', 'Workspace 移除请求必须指定 workspaceId 或已登记 rootPath。');
     if (input.workspaceId !== undefined && !isWorkspaceId(input.workspaceId)) throw workspaceError('workspace_registry_identity_invalid', 'Workspace id 必须是 UUID。');
     const requestedRoot = input.rootPath === undefined ? null : runtime.path.resolve(input.rootPath);
+    const sharedRoots = runtime.registryRepository.readSharedRegistryRoots?.().roots || [];
     let removed: any = null;
     runtime.registryRepository.withWorkspaceRegistryMutation(input.revision, (current: any) => {
       const matches = current.roots.filter((root: any) => requestedRoot ? root === requestedRoot : runtime.workspaceRegistryEntry(root).workspace?.id === input.workspaceId);
-      if (!matches.length) throw workspaceError('workspace_registry_not_found', 'Workspace 未登记。', 404);
+      if (!matches.length) {
+        const sharedMatch = sharedRoots.find((root: any) => requestedRoot ? root === requestedRoot : runtime.workspaceRegistryEntry(root).workspace?.id === input.workspaceId);
+        if (sharedMatch) throw workspaceError('workspace_registry_shared_scope', '该 Workspace 属于共享登记列表，请在主实例中移除；预览只能移除本实例登记的条目。', 409, { rootPath: sharedMatch });
+        throw workspaceError('workspace_registry_not_found', 'Workspace 未登记。', 404);
+      }
       if (matches.length > 1) throw workspaceError('workspace_registry_identity_conflict', '同一 Workspace identity 对应多个目录，请按已登记 rootPath 移除。', 409);
       const entry = runtime.workspaceRegistryEntry(matches[0]);
       removed = { rootPath: matches[0], workspaceId: entry.workspace?.id || input.workspaceId || null };
@@ -113,7 +146,9 @@ export function registerWorkspaceCommandApplication(runtime: WorkspaceCommandApp
   function resolveRegisteredWorkspace(workspaceId: any, { touch = false }: any = {}) {
     if (!isWorkspaceId(workspaceId)) throw workspaceError('workspace_registry_identity_invalid', 'Workspace id 必须是 UUID。');
     const persistence = runtime.registryRepository.readWorkspaceRegistryPersistence();
-    const matches = persistence.registry.roots.filter((root: any) => runtime.workspaceRegistryEntry(root).workspace?.id === workspaceId);
+    // 预览上下文同样解析共享 Profile 登记的工作空间，保持列表与详情一致。
+    const roots = [...persistence.registry.roots, ...(runtime.registryRepository.readSharedRegistryRoots?.().roots || [])];
+    const matches = roots.filter((root: any) => runtime.workspaceRegistryEntry(root).workspace?.id === workspaceId);
     if (!matches.length) throw workspaceError('workspace_registry_not_found', 'Workspace 未登记或当前不可用。', 404);
     if (matches.length > 1) throw workspaceError('workspace_registry_identity_conflict', '同一 Workspace identity 对应多个已登记目录。', 409);
     const current = runtime.readWorkspaceRecord(matches[0]);

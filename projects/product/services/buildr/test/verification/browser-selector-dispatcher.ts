@@ -29,7 +29,7 @@ export function planCodeBrowserGroups(env: any = process.env): any[] {
     throw error;
   }
   const explorer = { id: 'explorer', focus: explorerFocus || 'all', nodeTimeoutMs: 240_000, processTimeoutMs: 255_000 };
-  const sourceControl = { id: 'source-control', focus: sourceControlFocus || 'all', nodeTimeoutMs: 540_000, processTimeoutMs: 555_000 };
+  const sourceControl = { id: 'source-control', focus: sourceControlFocus || 'all', nodeTimeoutMs: 900_000, processTimeoutMs: 915_000 };
   return explorerFocus ? [explorer] : sourceControlFocus ? [sourceControl] : [explorer, sourceControl];
 }
 

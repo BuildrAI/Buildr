@@ -54,7 +54,7 @@ export async function runWorkspaceCompositionJourney({ t, page, runtime, workspa
     await graph.getByRole('button', { name: '总览代码，查看详情', exact: true }).click();
     await page.locator('.pane-right:visible').getByRole('heading', { name: '总览代码', exact: true }).waitFor();
     assert.equal((await sourceControlRead).status(), 200, '代码库共享观察应在项目清单冲突注入前完成');
-    assert.equal(await page.locator('.pane-right:visible [role=tab]').count(), 2);
+    assert.equal(await page.locator('.pane-right:visible .pane-tabstrip [role=tab]').count(), 2);
     const file = path.join(workspaceRoot, 'projects/manifest.yml');
     fs.appendFileSync(file, '\n');
     expectedBrowserErrors.add(`/asset-catalog/projects/${project.id}/services`);

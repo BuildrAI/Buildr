@@ -260,6 +260,20 @@
 - 避免混用：不是逐个测试文件清单、执行计划或测试结果；地图存在不证明检查已运行。
 - 来源：[数据设计](architecture/buildr-data-design.md)。
 
+## 服务运行定义（Service Runtime Definition）
+
+- 定义：`services/<service-code>/runtime.yml` 中按服务保存的本地启动方式及可选前端连接声明，只接受智能体（Agent）发现并实际启动验证过的来源。
+- 适用范围：同一服务（Service）的全部检出目录；本地受管运行、连接解析与页面展示都读它，旧部署环境字段兼容忽略。
+- 避免混用：不是某次运行的实例状态，也不是手动命令入口；单个服务定义不合法只降级该服务，不影响其他服务读取。
+- 来源：[服务本地运行](../code-map/technical-layers.md#服务本地运行)。
+
+## 受管运行（Managed Run）
+
+- 定义：Buildr 按运行定义在某个检出目录启动并托管的本地进程实例，包含启动时代码与任务归属、实际端口及连接快照、就绪判断、输出日志及停止。
+- 适用范围：`.buildr/local/service-runtime/` 中的运行记录与日志；页面、命令和智能体（Agent）读取同一事实。
+- 避免混用：不管理 Nacos 注册、流量或 MQ；日志只保存本机，不是外部日志系统，也不是任务验证结论。
+- 来源：[服务本地运行](../code-map/technical-layers.md#服务本地运行)。
+
 ## Git 工作树提供方（Git Worktree Provider）
 
 - 定义：创建、检查和安全清理任务（Task）工作树（Worktree），核对真实仓库、分支与归属的能力。

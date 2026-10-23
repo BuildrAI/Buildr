@@ -11,4 +11,6 @@
 
 槽位（Hook）的标准输出（Standard Output）仅为单个 JSON 对象，必需 `status: success|failure|unknown`；说明数组使用 `checks/diagnostics/limitations/warnings`，发现另有 `options/truncated`。正常成功退出码为 0；失败返回非零退出码，未知不能冒充成功，超时先调查再判断，不盲目重试。
 
+需要持续集成与交付（CI/CD）等专业程序时，在 `programs` 中声明真实能力，通过通用 `buildr connection-skill run` 调用；业务输入与结果由专业方法定义。本模板不提供服务部署协议或可直接提交的部署样例。
+
 替换真实适配时，保留明确实例选择、完整认证组和写前上下文（Context）再核验，另行验证远端对象版本与授权。结果包含秘密、准确标识或写入依据时，提供调用方明确选择的受限本机产物（Artifact）；普通展示可能隐藏秘密，不能复制为原文或授权依据。参数和格式由真实系统方法定义。

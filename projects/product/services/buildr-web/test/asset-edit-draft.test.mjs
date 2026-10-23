@@ -17,3 +17,15 @@ test('recovery reads the exact catalog identity and complete editable service/so
   assert.equal(assetEditDraft(catalog, 'project', 's1'), null);
   assert.equal(assetEditDraft(catalog, 'repository', 'removed'), null);
 });
+
+test('service edit draft reads every linked project', () => {
+  const catalog = {
+    projects: [
+      { id: 'p1', code: 'demo', name: '项目一', description: '目标一', serviceIds: ['s1'] },
+      { id: 'p2', code: 'shared', name: '项目二', description: '目标二', serviceIds: ['s1'] },
+    ],
+    services: [{ id: 's1', code: 'api', name: '服务', description: '职责', repositoryId: 'r1', modulePath: 'src' }],
+    repositories: [{ id: 'r1', code: 'repo', name: '代码库', description: '来源', source: { path: '/repo' } }],
+  };
+  assert.deepEqual(assetEditDraft(catalog, 'service', 's1').projectIds, ['p1', 'p2']);
+});

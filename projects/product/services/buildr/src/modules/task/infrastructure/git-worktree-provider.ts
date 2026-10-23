@@ -50,6 +50,8 @@ export type GitWorktreeProviderRuntime = GitWorktreeRuntime & {
   gitWorktreeEvidencePath(workspaceRoot: string, taskId: string): string;
   readGitWorktreeEvidence: typeof readGitWorktreeEvidencePlaceholder;
   writeGitWorktreeEvidence: typeof writeGitWorktreeEvidencePlaceholder;
+  listGitWorktreeEvidence(workspaceRoot: string): Array<{ file: string; evidence: GitWorktreeEvidence }>;
+  probeGitWorktreeCheckoutFs(record: { sourceRepository: string; checkoutPath: string; branch: string }): boolean;
   planGitWorktrees: typeof planGitWorktreesPlaceholder;
   prepareGitWorktrees: typeof prepareGitWorktreesPlaceholder;
   inspectGitWorktrees: typeof inspectGitWorktreesPlaceholder;
@@ -508,6 +510,145 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
     return { file, evidence: validateEvidence(JSON.parse(fs.readFileSync(file, 'utf8')), root, taskId) };
   }
 
+  // Filesystem-only Git layout probes below exist for evidence discovery, never identity proof.
+  // They parse `.git` markers instead of spawning Git; unresolvable layouts read as "no evidence".
+
+  function fsGitdirTarget(location: string): string | null {
+    const marker = path.join(location, '.git');
+    const stat = fs.lstatSync(marker, { throwIfNoEntry: false });
+    if (!stat?.isFile() || stat.isSymbolicLink()) return null;
+    const match = /^gitdir:[ \t]*(.+?)[ \t\r]*$/m.exec(fs.readFileSync(marker, 'utf8'));
+    if (!match) return null;
+    const target = path.resolve(location, match[1]);
+    return fs.lstatSync(target, { throwIfNoEntry: false })?.isDirectory() ? target : null;
+  }
+
+  function fsCommonDirectory(repository: string): string | null {
+    const resolved = fs.realpathSync(repository);
+    const marker = path.join(resolved, '.git');
+    const stat = fs.lstatSync(marker, { throwIfNoEntry: false });
+    if (!stat || stat.isSymbolicLink()) return null;
+    if (stat.isDirectory()) return fs.realpathSync(marker);
+    const gitdir = fsGitdirTarget(resolved);
+    if (!gitdir) return null;
+    const commondirFile = path.join(gitdir, 'commondir');
+    const commondirStat = fs.lstatSync(commondirFile, { throwIfNoEntry: false });
+    if (!commondirStat?.isFile() || commondirStat.isSymbolicLink()) return fs.realpathSync(gitdir);
+    const target = path.resolve(gitdir, fs.readFileSync(commondirFile, 'utf8').trim());
+    return fs.lstatSync(target, { throwIfNoEntry: false })?.isDirectory() ? fs.realpathSync(target) : null;
+  }
+
+  function fsRepositoryRoot(root: string, location: string): string | null {
+    let current = fs.realpathSync(location);
+    if (!insideFilesystemPath(root, current)) return null;
+    while (true) {
+      const marker = fs.lstatSync(path.join(current, '.git'), { throwIfNoEntry: false });
+      if (marker && !marker.isSymbolicLink()) return current;
+      if (sameFilesystemPath(current, root)) return null;
+      current = path.dirname(current);
+    }
+  }
+
+  function canonicalEvidenceWorkspaceRootFs(root: string): string {
+    const resolved = fs.realpathSync(root);
+    const marker = fs.lstatSync(path.join(resolved, '.git'), { throwIfNoEntry: false });
+    if (marker?.isFile() && !marker.isSymbolicLink()) {
+      const gitdir = fsGitdirTarget(resolved);
+      if (gitdir) {
+        const commondirFile = path.join(gitdir, 'commondir');
+        const commondirStat = fs.lstatSync(commondirFile, { throwIfNoEntry: false });
+        if (commondirStat?.isFile() && !commondirStat.isSymbolicLink()) {
+          const common = path.resolve(gitdir, fs.readFileSync(commondirFile, 'utf8').trim());
+          try { return fs.realpathSync(path.dirname(common)); } catch { /* keep resolved root */ }
+        }
+      }
+    }
+    return resolved;
+  }
+
+  /** Filesystem evidence enumeration for readers; proof still belongs to inspect/prepare/cleanup. */
+  function listGitWorktreeEvidence(workspaceRoot: string): Array<{ file: string; evidence: GitWorktreeEvidence }> {
+    const root = canonicalEvidenceWorkspaceRootFs(workspaceRoot);
+    const directories: string[] = [];
+    const addRepository = (repository: string | null) => {
+      if (!repository) return;
+      const common = fsCommonDirectory(repository);
+      if (!common) return;
+      const directory = path.join(common, 'buildr', 'task-worktrees');
+      if (!directories.some((candidate) => sameFilesystemPath(candidate, directory))) directories.push(directory);
+    };
+    const addLocation = (sourcePath: string | undefined) => {
+      try {
+        if (!sourcePath) return;
+        const location = fs.realpathSync(path.resolve(root, sourcePath));
+        if (!insideFilesystemPath(root, location)) return;
+        addRepository(fsRepositoryRoot(root, location));
+      } catch { /* A single unavailable source cannot block evidence held by other repositories. */ }
+    };
+    addLocation('.');
+    // Mirrors discoverEvidenceDirectories: an unreadable registry is tolerated only
+    // while the workspace root itself is a Git repository that can anchor evidence.
+    const rootIsGit = fs.lstatSync(path.join(root, '.git'), { throwIfNoEntry: false }) && !fs.lstatSync(path.join(root, '.git'), { throwIfNoEntry: false })!.isSymbolicLink();
+    try {
+      const projects = runtime.readProjectRegistryRecord(root);
+      if (projects.registry.migrationRequired) throw new Error('Project registry migration is required.');
+      for (const [code, project] of Object.entries(projects.projects)) {
+        addLocation(project.source?.path);
+        try {
+          for (const service of Object.values(runtime.readServiceRegistryRecord(root, code).services)) addLocation((service.repositorySource || service.source)?.path);
+        } catch { /* Unreadable service registry only narrows discovery for that project. */ }
+      }
+    } catch (error) {
+      if (!rootIsGit) throw Object.assign(new Error(`工作树证据来源发现尚未完整：${errorMessage(error)}`), { code: 'git_worktree_evidence_discovery_incomplete' });
+    }
+    const found = new Map<string, { file: string; evidence: GitWorktreeEvidence }>();
+    const scanned = new Set<string>();
+    const scan = (directory: string) => {
+      const key = path.resolve(directory);
+      if (scanned.has(key)) return;
+      scanned.add(key);
+      const stat = fs.lstatSync(directory, { throwIfNoEntry: false });
+      if (!stat) return;
+      if (stat.isSymbolicLink() || !stat.isDirectory()) throw Object.assign(new Error(`工作树证据目录必须是普通目录：${directory}`), { code: 'git_worktree_evidence_discovery_incomplete' });
+      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        if (!entry.isFile() || !TASK_ID_PATTERN.test(entry.name.slice(0, -5)) || !entry.name.endsWith('.json')) continue;
+        const taskId = entry.name.slice(0, -5);
+        if (found.has(taskId)) throw Object.assign(new Error(`同一任务存在多份工作树证据，不能选择或覆盖：${taskId}。`), { code: 'git_worktree_evidence_conflict' });
+        found.set(taskId, readEvidenceFile(path.join(directory, entry.name), root, taskId));
+      }
+    };
+    for (const directory of directories) scan(directory);
+    // Evidence recorded under repositories outside current registries is still reachable
+    // through the group members it declares, mirroring findGitWorktreeEvidenceFile.
+    for (const { evidence } of [...found.values()]) {
+      for (const repository of evidence.repositories) {
+        try {
+          const common = fsCommonDirectory(repository.sourceRepository);
+          if (common) scan(path.join(common, 'buildr', 'task-worktrees'));
+        } catch { /* Recorded sources that no longer resolve narrow only their own evidence. */ }
+      }
+    }
+    return [...found.values()];
+  }
+
+  /**
+   * Filesystem checkout probe for discovery: the checkout exists without symlinks,
+   * its `.git` file resolves into the recorded source repository's common directory,
+   * and HEAD still names the recorded branch. Failure is "drifted", never "usable".
+   */
+  function probeGitWorktreeCheckoutFs(record: { sourceRepository: string; checkoutPath: string; branch: string }): boolean {
+    try {
+      const stat = fs.lstatSync(record.checkoutPath, { throwIfNoEntry: false });
+      if (!stat?.isDirectory() || stat.isSymbolicLink()) return false;
+      const checkout = fs.realpathSync(record.checkoutPath);
+      const gitdir = fsGitdirTarget(checkout);
+      if (!gitdir) return false;
+      const common = fsCommonDirectory(record.sourceRepository);
+      if (!common || !insideFilesystemPath(common, fs.realpathSync(gitdir))) return false;
+      return fs.readFileSync(path.join(gitdir, 'HEAD'), 'utf8').trim() === `ref: refs/heads/${record.branch}`;
+    } catch { return false; }
+  }
+
   function writeGitWorktreeEvidence(workspaceRoot: string, evidence: GitWorktreeEvidence): { file: string; evidence: GitWorktreeEvidence } {
     const canonicalRoot = canonicalEvidenceWorkspaceRoot(workspaceRoot);
     const normalized = validateEvidence(evidence, canonicalRoot, evidence.taskId);
@@ -918,6 +1059,8 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
     gitWorktreeEvidencePath,
     readGitWorktreeEvidence,
     writeGitWorktreeEvidence,
+    listGitWorktreeEvidence,
+    probeGitWorktreeCheckoutFs,
     planGitWorktrees,
     prepareGitWorktrees,
     inspectGitWorktrees,

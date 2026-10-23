@@ -6,6 +6,7 @@ import { EditorView } from '@codemirror/view';
 import { basicSetup } from 'codemirror';
 import { FileCodeEditor } from './FileCodeEditor';
 import { normalizeEditorText } from './file-editing-text';
+import { copyText } from '../../lib/copyText';
 import type { FileEditingController, FileEditingDocument, FileEditingSession } from './file-editing-types';
 
 const comparisonTheme = EditorView.theme({ '&': { height: '185px', fontSize: '12px' }, '.cm-scroller': { overflow: 'auto', lineHeight: '1.8', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }, '&.cm-focused': { outline: 'none' } });
@@ -37,7 +38,7 @@ export function FileConflictDialog({ file, session, editing, open, onClose }: Pr
       {session.mergeStale && <Alert type="warning" showIcon message="磁盘内容再次更新，合并草稿已保留" description="请重新对照左侧最新内容，再确认保存合并结果。" />}
       <div className="file-editing-compare">
         <section><header><strong>磁盘最新内容</strong><Tag bordered={false}>外部更新</Tag></header><ReadOnlyContent content={session.conflict?.disk || ''} label="磁盘最新内容" /></section>
-        <section><header><strong>我的输入</strong><Button size="small" type="text" icon={<CopyOutlined />} onClick={() => { void navigator.clipboard.writeText(session.content).then(() => setCopied(true)).catch(() => setCopied(false)); }}>{copied ? '已复制' : '复制输入'}</Button></header><ReadOnlyContent content={session.content} label="我的输入" /></section>
+        <section><header><strong>我的输入</strong><Button size="small" type="text" icon={<CopyOutlined />} onClick={() => { void copyText(session.content).then(setCopied); }}>{copied ? '已复制' : '复制输入'}</Button></header><ReadOnlyContent content={session.content} label="我的输入" /></section>
       </div>
       <Button className="file-editing-base-toggle" type="link" size="small" onClick={() => setShowBase(value => !value)}>{showBase ? '收起共同基线' : '查看共同基线'}</Button>
       {showBase && <ReadOnlyContent content={session.conflict?.base || ''} label="共同基线" />}

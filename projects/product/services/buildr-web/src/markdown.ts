@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { copyText } from './lib/copyText.ts';
 export type MarkdownRenderOptions = {
   document?: Document;
   headingOffset?: number;
@@ -218,8 +219,7 @@ function createCodeBlock(language, code, doc, sourcePath) {
   copy.setAttribute('data-copy-code', '');
   copy.textContent = '复制代码';
   copy.addEventListener?.('click', async () => {
-    try { await navigator.clipboard.writeText(code); copy.textContent = '已复制'; }
-    catch { copy.textContent = '复制失败，请选择代码复制'; }
+    copy.textContent = await copyText(code) ? '已复制' : '复制失败，请选择代码复制';
   });
   block.append(copy);
   if (language.toLowerCase() === 'mermaid') {

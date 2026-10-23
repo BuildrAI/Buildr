@@ -1,0 +1,7 @@
+#task-prototype-source { display:none; }
+
+/* The standalone reader owns the viewport; keep the canvas and notes panel inside it. */
+.prototype-standalone .prototype-reading-layout { height:calc(100vh - 190px); min-height:480px; }
+.prototype-standalone .prototype-canvas { min-height:0; }
+.prototype-standalone .prototype-viewport { height:100%; }
+.prototype-standalone .side-reading { max-height:100%; }

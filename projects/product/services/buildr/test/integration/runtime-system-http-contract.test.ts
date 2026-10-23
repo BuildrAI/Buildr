@@ -9,6 +9,7 @@ import { createRuntime, runtimeContributions } from '../helpers/runtime-harness.
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { LOCAL_APP_HTTP_OPERATIONS, LOCAL_APP_HTTP_VALIDATORS } from '../../src/web/http/buildr-web-http-contracts.ts';
 import { RELEASE_AWARENESS_HTTP_OPERATIONS, RELEASE_AWARENESS_HTTP_VALIDATORS } from '../../src/modules/installation/interfaces/http/release-awareness-http-contracts.ts';
+import { UPDATE_FLOW_HTTP_OPERATIONS } from '../../src/modules/installation/interfaces/http/update-flow-http-contracts.ts';
 import { createReleaseAwarenessHttpContribution } from '../../src/modules/installation/interfaces/http/release-awareness-http.ts';
 import { PUBLICATION_HTTP_OPERATIONS, PUBLICATION_HTTP_VALIDATORS } from '../../src/modules/publication/interfaces/http/publication-http-contracts.ts';
 import { TASK_HTTP_OPERATIONS } from '../../src/modules/task/interfaces/http/task-http-schema.ts';
@@ -267,6 +268,7 @@ test('Runtime/System validators 不变异输入且全局 operation coverage 闭�
     ownedHttpOperations('agent-assets', AGENT_ASSETS_HTTP_OPERATIONS),
     LOCAL_APP_HTTP_OPERATIONS,
     RELEASE_AWARENESS_HTTP_OPERATIONS,
+    UPDATE_FLOW_HTTP_OPERATIONS,
     PUBLICATION_HTTP_OPERATIONS,
   ]);
   assert.equal(coverage.status, 'aligned');

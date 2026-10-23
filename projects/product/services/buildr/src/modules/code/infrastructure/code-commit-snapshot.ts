@@ -7,7 +7,7 @@ import { assertCodeRevision, codeRevision, observeSourceControl } from './source
 export const COMMIT_SNAPSHOT_LIMITS = Object.freeze({ files: 1000, bytes: 16 * 1024 * 1024, diffBytes: 8 * 1024 * 1024, commits: 10_000 });
 export type CodeCommitSnapshotFile = { path: string; kind: 'text' | 'binary' | 'symlink' | 'deleted'; digest: string; mode: number | null; bytes: number; content?: string; untracked?: boolean; change?: 'added' | 'modified' | 'deleted' | 'type-changed'; previousBytes?: number; previousMode?: string; binaryDiff?: boolean };
 export type CodeCommitSnapshot = { source: CodeSource; revision: string; head: string | null; branch: string | null; branchRef: string | null; paths: string[]; files: CodeCommitSnapshotFile[]; diff: string; indexPath: string; indexDigest: string | null; indexRevision: string; configDigest: string; hasChanges: boolean };
-export type CodeCommitSnapshotOptions = { includeDiff?: boolean };
+export type CodeCommitSnapshotOptions = { includeDiff?: boolean; gitConfig?: string[] };
 export type CodePushSnapshot = { revision: string; target: string | null; available: boolean; reason: string | null; ahead: number; head: string | null; branchRef: string | null; remote: string | null; url: string | null; destinationRef: string | null; upstreamRef: string | null; upstreamHead: string | null; commits: string[]; configurationRevision: string };
 const digest = (value: Buffer | string) => crypto.createHash('sha256').update(value).digest('hex');
 const gitText = (source: CodeSource, args: string[], limit?: number) => codeGit(source.location, args, limit).toString('utf8').trim();
@@ -17,7 +17,7 @@ export function readCodeIndexDigest(indexPath: string): string | null { try { re
 /** No arbitrary path input: the application resolves and revalidates this registered source. */
 export function readCommitSnapshot(source: CodeSource, options: CodeCommitSnapshotOptions = {}): CodeCommitSnapshot {
   if (source.commitHash) throw codeFailure('code_commit_source_invalid', '提交必须选择当前工作位置。');
-  const status = observeSourceControl(source);
+  const status = observeSourceControl(source, { gitConfig: options.gitConfig });
   if (status.truncated) throw codeFailure('code_commit_observation_incomplete', '变更超过完整读取上限，无法核对全部提交内容。', 409);
   const gitDirectory = gitText(source, ['rev-parse', '--absolute-git-dir']);
   const progress = ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'REBASE_HEAD', 'rebase-merge', 'rebase-apply', 'sequencer', 'BISECT_START'];
@@ -71,7 +71,7 @@ export function readCommitSnapshot(source: CodeSource, options: CodeCommitSnapsh
     } catch { throw codeFailure('code_commit_observation_incomplete', '无法完整读取本次差异，或差异超过 8 MiB 读取上限；请缩小变更范围，或手写提交说明。', 409); }
     if (Buffer.byteLength(diff) > COMMIT_SNAPSHOT_LIMITS.diffBytes) throw codeFailure('code_commit_observation_incomplete', '本次差异超过 8 MiB 完整读取上限；请缩小变更范围，或手写提交说明。', 409);
   }
-  assertCodeRevision(observeSourceControl(source).observedRevision, status.observedRevision);
+  assertCodeRevision(observeSourceControl(source, { gitConfig: options.gitConfig }).observedRevision, status.observedRevision);
   if (digest(codeGit(source.location, ['ls-files', '--stage', '-v', '-z'])) !== indexRevision || digest(codeGit(source.location, ['config', '--null', '--list'])) !== configDigest) throw codeFailure('code_source_changed', '读取期间索引内容或配置已变化，请刷新。', 409);
   const indexDigest = readCodeIndexDigest(indexPath);
   const revision = codeRevision([source.repositoryId, source.worktreeId, source.location, branchRef, status.head, indexRevision, configDigest, status.files, files.map(({ content: _content, change: _change, previousBytes: _previousBytes, previousMode: _previousMode, binaryDiff: _binaryDiff, ...file }) => file)]);
