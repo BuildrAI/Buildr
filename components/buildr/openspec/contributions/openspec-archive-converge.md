@@ -8,4 +8,6 @@
 
 归档只移动该变更（Change）与已有附属材料；历史 `brief.md` 按原文件保留，不新建或刷新。任务说明（Task Brief）继续保存在任务记录（Task Record）的 `brief` 字段，不随归档移动、删除或复制。已有 `@task/<task-id>` 引用在当前工作空间归档后仍指向同一任务。共享项目材料与旧说明文件保留原位置及文件语义，普通相对链接继续按原规则读取；不批量改写旧说明或历史。
 
+归档同步新建主规范（Spec）时，上游为缺失 `## Purpose` 的增量写入占位文本 `TBD - created by archiving change ...`；交付前必须按现存 Requirement 直接改写主规范的 `## Purpose`——增量（Delta）中的 `## Purpose` 只在规范新建时播种，不能事后替换主规范内容。完成前以 `openspec validate --all --strict` 复核无占位遗留。
+
 只在命令返回 passed 且实际归档成立时报告成功；失败时保留已经发生的效果。使用 `buildr openspec convergence inspect` 检查中断现场，不用归档状态替代业务交付或测试结论。只同步请求由独立同步入口处理。
