@@ -347,15 +347,16 @@ skills:
     resource: resources/workspace/skills/buildr/code-map
   - id: archify
     assetIdentity: buildr:skill:archify
-    sourceIdentity: package:skills/buildr/archify
-    source: buildr
+    sourceIdentity: workspace:skills/buildr/archify
+    source: workspace
     path: buildr/archify
     description: 使用 Archify 生成和验证架构、流程、时序、数据流与状态图，并交付可独立查看的 HTML。
     enabled: true
     required: false
     state: installed
     runtimePath: archify
-    resource: resources/workspace/skills/buildr/archify
+    customizedFrom: archify
+    customizedSourceIdentity: package:skills/buildr/archify
   - id: frontend-development
     assetIdentity: buildr:skill:frontend-development
     sourceIdentity: package:skills/buildr/frontend-development
