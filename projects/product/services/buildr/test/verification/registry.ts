@@ -589,6 +589,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/skill-content-query.test.ts',
   ], { schedulingCostMs: 4000, args: ['--test-concurrency=2'] }),
   integrationSlice('integration-workspace-assets', [
+    'test/integration/artifact-lifecycle.test.ts',
     'test/integration/asset-catalog-version.test.ts',
     'test/integration/asset-relationships.test.ts',
     'test/integration/attached-project-services.test.ts',

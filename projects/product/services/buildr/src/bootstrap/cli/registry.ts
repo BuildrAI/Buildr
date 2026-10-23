@@ -11,6 +11,7 @@ import { createInstallationCliContributions, createLauncherCliContributions } fr
 import { createAgentAssetsCliContributions } from '../../modules/agent-assets/interfaces/cli/agent-assets.ts';
 import { WEB_CLI_GROUPS } from '../../web/interfaces/cli/web.ts';
 import { createProjectVerificationCliContributions } from '../../modules/project-testing/module.ts';
+import { createArtifactLifecycleCliContributions } from '../../modules/artifact-lifecycle/module.ts';
 
 const TASK_MODULE_COMMAND_SLOT = Symbol('task-module-command-contributions');
 const WORKSPACE_INIT_COMMAND_SLOT = Symbol('workspace-init-command-contribution');
@@ -171,6 +172,7 @@ export const COMMAND_REGISTRY = createCommandRegistry([
   ...createInstallationCliContributions(),
   ...createLauncherCliContributions(),
   ...createProjectVerificationCliContributions(),
+  ...createArtifactLifecycleCliContributions(),
 ]);
 export const COMMAND_CATALOG = createCommandCatalog(COMMAND_REGISTRY);
 

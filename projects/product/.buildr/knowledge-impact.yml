@@ -1,26 +1,26 @@
 schemaVersion: buildr.knowledge-impact/v1
-task: service-edit-project-multiselect
+task: workspace-artifact-lifecycle
 operation: assess
 impacts:
   - type: reference
-    target: knowledge/code-map/project-service-repositories.md
-    reason: 地图只说明服务新增表单仍为单项目归属；本次只把服务编辑改为多选，不改变新增流程、关系模型或代码定位。
-    status: aligned
+    target: knowledge/code-map
+    reason: 新增 artifact-lifecycle 模块需在代码地图登记其职责（产物登记、发现、处置清扫）与目录位置；CLI 命令族需补入命令入口说明。
+    status: applied
     sourceIdentities:
-      - services/buildr-web/src/features/workspace/components/AssetEditDrawer.tsx
-      - services/buildr-web/src/features/workspace/components/ServiceCreateDrawer.tsx
-      - openspec/changes/service-edit-project-multiselect/specs/workspace-asset-management-interactions/spec.md
+      - services/buildr/src/modules/artifact-lifecycle/
+      - services/buildr/src/bootstrap/cli/registry.ts
+      - openspec/changes/workspace-artifact-lifecycle/specs/workspace-artifact-lifecycle/spec.md
   - type: reference
-    target: knowledge/archify/flows/project-service-repositories.json
-    reason: 关系图表达项目、服务与代码库的共享关系，不表达编辑控件；多对多与多对一关系均未改变。
+    target: knowledge/docs/overview.md
+    reason: 产品能力边界说明不涉及单命令细节；产物清单属工作资产治理延伸，概览如已有工作资产章节可在实现完成后评估是否需一句话补充。
     status: aligned
     sourceIdentities:
-      - openspec/specs/workspace-asset-relationships/spec.md
-      - services/buildr/src/modules/workspace/domain/asset-relationships.ts
+      - openspec/specs/agent-first-product-positioning/spec.md
+      - openspec/changes/workspace-artifact-lifecycle/proposal.md
   - type: reference
-    target: knowledge/docs/architecture/project-service-repositories.md
-    reason: 文章解释对象关系和代码位置，不描述服务编辑抽屉的项目选择控件；本次没有长期事实变化。
-    status: aligned
+    target: knowledge/archify
+    reason: 产物处置流程（登记→分类→计划→执行）如已有收尾或资源流图可补充一条处置路径；无匹配图则不新建。
+    status: not-applicable
     sourceIdentities:
-      - services/buildr/src/modules/workspace/domain/asset-relationships.ts
+      - openspec/changes/workspace-artifact-lifecycle/design.md
 unresolvedItems: []

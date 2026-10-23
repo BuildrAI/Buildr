@@ -42,6 +42,7 @@ import { registerProjectGitObserver } from '../infrastructure/git/project-git-ob
 import { registerProductInvocation } from '../infrastructure/product-invocation/index.ts';
 import { createPublicationModule } from '../modules/publication/module.ts';
 import { createOpenSpecModule } from '../modules/openspec/module.ts';
+import { createArtifactLifecycleModule } from '../modules/artifact-lifecycle/module.ts';
 import { CHANGE_APPLICATION, createChangeModule } from '../modules/task/change/module.ts';
 import { TASK_COMMITS_MODULE } from '../modules/task/commits/module.ts';
 import { TASK_CHANGED_FILES_MODULE } from '../modules/task/changed-files/module.ts';
@@ -90,6 +91,7 @@ export function createRuntime(): any  {
   registry.install(TASK_REVIEW_MODULE);
   registry.install(createTaskVerificationModule(runtime, { verificationDeclaration: VERIFICATION_DECLARATION }));
   registry.install(createParentCoordinationModule(runtime));
+  registry.install(createArtifactLifecycleModule(runtime));
   registry.install(createSystemInstallationModule(runtime));
   registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http'), closeResources: async () => {
     registry.provide(CODE_SOURCE_CONTROL_OBSERVATIONS).close();

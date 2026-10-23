@@ -336,6 +336,16 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     },
     lifecycle: 'none',
   }, {
+    id: 'artifact-lifecycle',
+    requires: [WORKSPACE_TASK_SUPPORT, WORKSPACE_APPLICATION, TASK_QUERY_APPLICATION],
+    provides: ['artifact-lifecycle.application'],
+    contributions: {
+      cli: ['artifact register', 'artifact list', 'artifact status', 'artifact release', 'artifact clean'],
+      http: [],
+      diagnostics: [],
+    },
+    lifecycle: 'none',
+  }, {
     id: 'system-installation',
     requires: [],
     provides: [SYSTEM_INSTALLATION_IDENTITY, SYSTEM_INSTALLATION_LAUNCHER, SYSTEM_INSTALLATION_APPLICATION, SYSTEM_INSTALLATION_WEB_BINDER],
@@ -392,6 +402,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'task review inspect', 'task review record',
     'task verification inspect', 'task verification record',
     'task parent inspect',
+    'artifact register', 'artifact list', 'artifact status', 'artifact release', 'artifact clean',
     'installation status', 'update check', 'update',
     'web launcher install', 'web launcher status', 'web launcher repair', 'web launcher uninstall',
     'web preview start', 'web preview list', 'web preview stop', 'web',
