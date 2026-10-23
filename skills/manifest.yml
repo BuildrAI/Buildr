@@ -23,6 +23,7 @@ skills:
       - capability: buildr.git-worktree-provider
         version: 1
         mode: optional
+    resource: resources/workspace/skills/buildr/task-triage
   - id: task-worktree
     assetIdentity: buildr:skill:task-worktree
     sourceIdentity: package:skills/buildr/task-worktree
@@ -36,6 +37,7 @@ skills:
     provides:
       - capability: buildr.git-worktree-provider
         version: 1
+    resource: resources/workspace/skills/buildr/task-worktree
   - id: git-operations
     assetIdentity: buildr:skill:git-operations
     sourceIdentity: package:skills/buildr/git-operations
@@ -49,6 +51,7 @@ skills:
     provides:
       - capability: buildr.git-operations
         version: 1
+    resource: resources/workspace/skills/buildr/git-operations
   - id: task-finish
     assetIdentity: buildr:skill:task-finish
     sourceIdentity: package:skills/buildr/task-finish
@@ -72,6 +75,7 @@ skills:
       - capability: buildr.git-operations
         version: 1
         mode: optional
+    resource: resources/workspace/skills/buildr/task-finish
   - id: openspec-contract-guard
     assetIdentity: buildr:skill:openspec-contract-guard
     sourceIdentity: package:skills/buildr/openspec-contract-guard
@@ -82,6 +86,7 @@ skills:
     required: false
     state: installed
     runtimePath: openspec-contract-guard
+    resource: resources/workspace/skills/buildr/openspec-contract-guard
   - id: openspec-explore
     assetIdentity: buildr:skill:openspec-explore
     sourceIdentity: package:skills/openspec/openspec-explore
@@ -92,6 +97,7 @@ skills:
     required: false
     state: installed
     runtimePath: openspec-explore
+    resource: resources/workspace/skills/openspec/openspec-explore
   - id: openspec-propose
     assetIdentity: buildr:skill:openspec-propose
     sourceIdentity: package:skills/openspec/openspec-propose
@@ -102,6 +108,7 @@ skills:
     required: false
     state: installed
     runtimePath: openspec-propose
+    resource: resources/workspace/skills/openspec/openspec-propose
   - id: openspec-update-change
     assetIdentity: buildr:skill:openspec-update-change
     sourceIdentity: package:skills/openspec/openspec-update-change
@@ -112,6 +119,7 @@ skills:
     required: false
     state: installed
     runtimePath: openspec-update-change
+    resource: resources/workspace/skills/openspec/openspec-update-change
   - id: openspec-apply-change
     assetIdentity: buildr:skill:openspec-apply-change
     sourceIdentity: package:skills/openspec/openspec-apply-change
@@ -122,6 +130,7 @@ skills:
     required: false
     state: installed
     runtimePath: openspec-apply-change
+    resource: resources/workspace/skills/openspec/openspec-apply-change
   - id: openspec-sync-specs
     assetIdentity: buildr:skill:openspec-sync-specs
     sourceIdentity: package:skills/openspec/openspec-sync-specs
@@ -132,6 +141,7 @@ skills:
     required: false
     state: installed
     runtimePath: openspec-sync-specs
+    resource: resources/workspace/skills/openspec/openspec-sync-specs
   - id: openspec-archive-change
     assetIdentity: buildr:skill:openspec-archive-change
     sourceIdentity: package:skills/openspec/openspec-archive-change
@@ -142,6 +152,7 @@ skills:
     required: false
     state: installed
     runtimePath: openspec-archive-change
+    resource: resources/workspace/skills/openspec/openspec-archive-change
   - id: task-retrospective
     assetIdentity: buildr:skill:task-retrospective
     sourceIdentity: package:skills/buildr/task-retrospective
@@ -156,6 +167,7 @@ skills:
       - capability: buildr.task-record
         version: 4
         mode: required
+    resource: resources/workspace/skills/buildr/task-retrospective
   - id: capability-adaptation
     assetIdentity: buildr:skill:capability-adaptation
     sourceIdentity: package:skills/buildr/capability-adaptation
@@ -166,6 +178,7 @@ skills:
     required: false
     state: installed
     runtimePath: capability-adaptation
+    resource: resources/workspace/skills/buildr/capability-adaptation
   - id: buildr-release
     path: buildr-release
     description: 准备、检查、发布或恢复 Buildr 版本时使用；核对明确发布内容、完整候选与唯一产物，执行受保护发布并分别报告发布、登记、清理和自举结果。
@@ -184,6 +197,7 @@ skills:
     provides:
       - capability: buildr.task-verification
         version: 4
+    resource: resources/workspace/skills/buildr/task-verification
   - id: terminology-governance
     assetIdentity: buildr:skill:terminology-governance
     sourceIdentity: package:skills/buildr/terminology-governance
@@ -197,6 +211,7 @@ skills:
     provides:
       - capability: buildr.terminology-governance
         version: 1
+    resource: resources/workspace/skills/buildr/terminology-governance
   - id: current-knowledge-maintenance
     assetIdentity: buildr:skill:current-knowledge-maintenance
     sourceIdentity: package:skills/buildr/current-knowledge-maintenance
@@ -214,6 +229,7 @@ skills:
       - capability: buildr.terminology-governance
         version: 1
         mode: optional
+    resource: resources/workspace/skills/buildr/current-knowledge-maintenance
   - id: task-manager
     assetIdentity: buildr:skill:task-manager
     sourceIdentity: package:skills/buildr/task-manager
@@ -227,6 +243,7 @@ skills:
     provides:
       - capability: buildr.task-record
         version: 4
+    resource: resources/workspace/skills/buildr/task-manager
   - id: task-review
     assetIdentity: buildr:skill:task-review
     sourceIdentity: package:skills/buildr/task-review
@@ -240,6 +257,7 @@ skills:
     provides:
       - capability: buildr.task-review
         version: 2
+    resource: resources/workspace/skills/buildr/task-review
   - id: project-testing
     assetIdentity: buildr:skill:project-testing
     sourceIdentity: package:skills/buildr/project-testing
@@ -250,6 +268,7 @@ skills:
     required: false
     state: installed
     runtimePath: project-testing
+    resource: resources/workspace/skills/buildr/project-testing
   - id: buildr-self-bootstrap-sync
     path: buildr-self-bootstrap-sync
     description: Buildr 自举工作空间中的已交付改动涉及规则、技能、组件、命令或产品运行输入时使用；由唯一执行器完成适用同步、开发应用更新、入口验证与诊断。正式任务记录可选；无关改动和未安装自举组件的工作空间不适用。
@@ -270,6 +289,7 @@ skills:
     required: false
     state: installed
     runtimePath: declaration-intake
+    resource: resources/workspace/skills/buildr/declaration-intake
   - id: ui-prototype
     assetIdentity: buildr:skill:ui-prototype
     sourceIdentity: package:skills/buildr/ui-prototype
@@ -280,6 +300,7 @@ skills:
     required: false
     state: installed
     runtimePath: ui-prototype
+    resource: resources/workspace/skills/buildr/ui-prototype
   - id: agent-first-design
     assetIdentity: buildr:skill:agent-first-design
     sourceIdentity: package:skills/buildr/agent-first-design
@@ -290,6 +311,7 @@ skills:
     required: false
     state: installed
     runtimePath: agent-first-design
+    resource: resources/workspace/skills/buildr/agent-first-design
   - id: ux-design-laws
     assetIdentity: buildr:skill:ux-design-laws
     sourceIdentity: package:skills/buildr/ux-design-laws
@@ -300,6 +322,7 @@ skills:
     required: false
     state: installed
     runtimePath: ux-design-laws
+    resource: resources/workspace/skills/buildr/ux-design-laws
   - id: code-architecture
     assetIdentity: buildr:skill:code-architecture
     sourceIdentity: package:skills/buildr/code-architecture
@@ -310,6 +333,7 @@ skills:
     required: false
     state: installed
     runtimePath: code-architecture
+    resource: resources/workspace/skills/buildr/code-architecture
   - id: code-map
     assetIdentity: buildr:skill:code-map
     sourceIdentity: package:skills/buildr/code-map
@@ -320,6 +344,7 @@ skills:
     required: false
     state: installed
     runtimePath: code-map
+    resource: resources/workspace/skills/buildr/code-map
   - id: archify
     assetIdentity: buildr:skill:archify
     sourceIdentity: package:skills/buildr/archify
@@ -330,6 +355,7 @@ skills:
     required: false
     state: installed
     runtimePath: archify
+    resource: resources/workspace/skills/buildr/archify
   - id: frontend-development
     assetIdentity: buildr:skill:frontend-development
     sourceIdentity: package:skills/buildr/frontend-development
@@ -340,6 +366,7 @@ skills:
     required: false
     state: installed
     runtimePath: frontend-development
+    resource: resources/workspace/skills/buildr/frontend-development
   - id: project-composition-maintenance
     assetIdentity: buildr:skill:project-composition-maintenance
     sourceIdentity: package:skills/buildr/project-composition-maintenance
@@ -350,6 +377,7 @@ skills:
     required: false
     state: installed
     runtimePath: project-composition-maintenance
+    resource: resources/workspace/skills/buildr/project-composition-maintenance
   - id: feature-design
     assetIdentity: buildr:skill:feature-design
     sourceIdentity: package:skills/buildr/feature-design
@@ -360,6 +388,7 @@ skills:
     required: false
     state: installed
     runtimePath: feature-design
+    resource: resources/workspace/skills/buildr/feature-design
   - id: nacos-connection
     assetIdentity: buildr:skill:nacos-connection
     sourceIdentity: package:skills/connections/nacos-connection
@@ -372,6 +401,7 @@ skills:
     runtimePath: nacos-connection
     connectionDefinitions:
       - assets/connection.yml
+    resource: resources/workspace/skills/connections/nacos-connection
   - id: connection-authoring
     assetIdentity: buildr:skill:connection-authoring
     sourceIdentity: package:skills/buildr/connection-authoring
@@ -382,6 +412,7 @@ skills:
     required: false
     state: installed
     runtimePath: connection-authoring
+    resource: resources/workspace/skills/buildr/connection-authoring
   - id: mysql-connection
     assetIdentity: buildr:skill:mysql-connection
     sourceIdentity: package:skills/connections/mysql-connection
@@ -394,6 +425,7 @@ skills:
     runtimePath: mysql-connection
     connectionDefinitions:
       - assets/connection.yml
+    resource: resources/workspace/skills/connections/mysql-connection
   - id: kibana-connection
     assetIdentity: buildr:skill:kibana-connection
     sourceIdentity: package:skills/connections/kibana-connection
@@ -406,6 +438,7 @@ skills:
     runtimePath: kibana-connection
     connectionDefinitions:
       - assets/connection.yml
+    resource: resources/workspace/skills/connections/kibana-connection
   - id: xxl-job-connection
     assetIdentity: buildr:skill:xxl-job-connection
     sourceIdentity: package:skills/connections/xxl-job-connection
@@ -418,43 +451,53 @@ skills:
     runtimePath: xxl-job-connection
     connectionDefinitions:
       - assets/connection.yml
+    resource: resources/workspace/skills/connections/xxl-job-connection
 contracts:
   - id: buildr.terminology-governance
     version: 1
     path: contracts/buildr/terminology-governance/v1.md
     description: 调查、对齐并维护 Project 与 Service 的 canonical terminology。
+    resource: resources/workspace/skills/contracts/buildr/terminology-governance/v1.md
   - id: buildr.task-finish
     version: 1
     path: contracts/buildr/task-finish/v1.md
     description: 由智能体依据真实现场组合已有工具完成成果交付、已有任务结果登记与安全善后。
+    resource: resources/workspace/skills/contracts/buildr/task-finish/v1.md
   - id: buildr.git-worktree-provider
     version: 1
     path: contracts/buildr/git-worktree-provider/v1.md
     description: 管理 Task 的 Git worktree 并返回窄 Git provider evidence。
+    resource: resources/workspace/skills/contracts/buildr/git-worktree-provider/v1.md
   - id: buildr.git-operations
     version: 1
     path: contracts/buildr/git-operations/v1.md
     description: 为已选定的单次 Git Operation 提供授权、安全边界、前后 identity 与最小结果。
+    resource: resources/workspace/skills/contracts/buildr/git-operations/v1.md
   - id: buildr.task-verification
     version: 4
     path: contracts/buildr/task-verification/v4.md
     description: 维护 Project 测试地图，并保存开发完成后的 Task 验证报告。
+    resource: resources/workspace/skills/contracts/buildr/task-verification/v4.md
   - id: buildr.task-review
     version: 2
     path: contracts/buildr/task-review/v2.md
     description: 对正式 Task 的实际方案或完成结果执行可选语义审查，维护两类当前结果及完整审查历史。
+    resource: resources/workspace/skills/contracts/buildr/task-review/v2.md
   - id: buildr.current-knowledge-maintenance
     version: 3
     path: contracts/buildr/current-knowledge-maintenance/v3.md
     description: 按明确范围建设、检查与维护代码地图、技术图和解释文档。
+    resource: resources/workspace/skills/contracts/buildr/current-knowledge-maintenance/v3.md
   - id: buildr.task-record
     version: 4
     path: contracts/buildr/task-record/v4.md
     description: 管理主工作空间中的任务说明、顶层事实及本机复盘文档摘要与决定状态。
+    resource: resources/workspace/skills/contracts/buildr/task-record/v4.md
   - id: buildr.current-knowledge-maintenance
     version: 4
     path: contracts/buildr/current-knowledge-maintenance/v4.md
     description: 按明确范围建设、检查与维护代码地图、技术图和解释文档，不维护变更说明文件。
+    resource: resources/workspace/skills/contracts/buildr/current-knowledge-maintenance/v4.md
 bindings:
   - capability: buildr.terminology-governance
     version: 1
