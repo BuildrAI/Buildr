@@ -19,7 +19,7 @@ export async function runSourceControlLiveRefreshJourney({t, page, workspaceUrl,
     const worktree = repository.worktrees.find((item: any) => item.location === location);
     return {repository, worktree};
   };
-  const changedRow = (worktreeId: string, filePath: string) => sourceControl().locator('[data-change-worktree="' + worktreeId + '"] [data-change-area="unstaged"] .task-changed-row')
+  const changedRow = (worktreeId: string, filePath: string) => sourceControl().locator('[data-change-worktree="' + worktreeId + '"] [data-change-area="working"] .task-changed-row')
     .filter({has: page.locator('.task-changed-path[data-file-path="' + filePath + '"]')});
   const openWorktree = async (branches: any) => {
     await page.goto(workspaceUrl + '/code/source-control');
@@ -227,7 +227,8 @@ export async function runSourceControlLiveRefreshJourney({t, page, workspaceUrl,
       }, text);
       await editorText(longText(51));
       const fileId = await editor.getAttribute('data-file-id'); assert.ok(fileId, '目标必须连接真实可编辑文件身份');
-      const baselineResponse = await page.request.get(api + '/code/source-file?' + new URLSearchParams({repositoryId: repository.id, worktreeId: worktree.worktreeId, filePath: branches.liveRefresh.path, area: 'staged'}));
+      // 统一更改差异以最近一次提交（HEAD）为比较基线，用显式提交层读取完整基线正文。
+      const baselineResponse = await page.request.get(api + '/code/source-file?' + new URLSearchParams({repositoryId: repository.id, worktreeId: worktree.worktreeId, filePath: branches.liveRefresh.path, area: 'commit', commitHash: worktree.head}));
       assert.equal(baselineResponse.status(), 200);
       const baseline = await baselineResponse.json(); assert.equal(baseline.source.checkoutId, worktree.worktreeId);
       const scroller = editor.locator('.file-diff-current .cm-scroller');
@@ -241,12 +242,12 @@ export async function runSourceControlLiveRefreshJourney({t, page, workspaceUrl,
       });
       const originalScroll = await scroller.evaluate((element: HTMLElement) => {element.scrollTop = Math.min(720, element.scrollHeight - element.clientHeight); return element.scrollTop;});
       assert.ok(originalScroll > 200, '测试必须处于实际已滚动的长差异');
-      const expanded = await sourceControl().locator('[data-area-toggle="unstaged"]').getAttribute('aria-expanded');
+      const expanded = await sourceControl().locator('[data-area-toggle="working"]').getAttribute('aria-expanded');
       const otherPositions = branches.otherPositions(branches.location);
       const requests = readRequests();
       assert.ok(expectedBrowserErrors instanceof Set, '宿主必须提供精确浏览器错误登记');
       let restoreWindow = false;
-      const restoreDiffUrl = api + '/code/diff?' + new URLSearchParams({repositoryId: repository.id, worktreeId: worktree.worktreeId, filePath: branches.liveRefresh.path, area: 'unstaged'});
+      const restoreDiffUrl = api + '/code/diff?' + new URLSearchParams({repositoryId: repository.id, worktreeId: worktree.worktreeId, filePath: branches.liveRefresh.path, area: 'working'});
       const readChecks = new Set<Promise<void>>(), unexpectedReads: unknown[] = [];
       const observeComparison = (response: any) => {
         if (!new URL(response.url()).pathname.endsWith('/code/diff') || response.status() < 400) return;
@@ -274,8 +275,11 @@ export async function runSourceControlLiveRefreshJourney({t, page, workspaceUrl,
         assert.deepEqual(await draft.evaluate((element: HTMLTextAreaElement) => ({start: element.selectionStart, end: element.selectionEnd})), inputPosition);
         assert.ok(Math.abs(await scroller.evaluate((element: HTMLElement) => element.scrollTop) - originalScroll) <= 2, '同一文件自动更新保留差异阅读位置');
         assert.deepEqual(await current.evaluate((content: HTMLElement) => {const selection = (content as any).cmTile.root.view.state.selection.main; return {from: selection.from, to: selection.to};}), editorSelection, '自动更新保留可编辑正文选择');
-        assert.equal(await sourceControl().locator('[data-area-toggle="unstaged"]').getAttribute('aria-expanded'), expanded);
+        assert.equal(await sourceControl().locator('[data-area-toggle="working"]').getAttribute('aria-expanded'), expanded);
         assert.ok((await file.locator('xpath=..').getAttribute('class') || '').includes('is-selected'));
+        // The single-repository verification read can trail the in-place diff
+        // refresh; wait briefly instead of treating a slow notice as a missing read.
+        for (let attempt = 0; attempt < 100 && !requests.reads.some(read => read.repositoryId === repository.id); attempt++) await new Promise(resolve => setTimeout(resolve, 50));
         assertLocalReads(requests.reads, repository.id);
         assert.deepEqual(branches.otherPositions(branches.location), otherPositions, '自动观察不改变其他目录或索引');
         await capture(page, 'source-control-live-refresh-draft-scroll.png');

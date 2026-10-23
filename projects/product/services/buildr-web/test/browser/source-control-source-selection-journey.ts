@@ -45,7 +45,7 @@ export async function runSourceControlSourceSelectionJourney({t,page,workspaceUr
     await page.goto(workspaceUrl+'/code/source-control');await scm().locator('.source-control-repository-copy').first().waitFor();
     const source=identify(await catalog(),branches.location);await choose(source.repository,source.worktree);return source;
   };
-  const changedFile=(checkoutId:string,path:string)=>scm().locator('[data-change-worktree="'+checkoutId+'"] [data-change-area="unstaged"] .task-changed-row').filter({has:page.locator('.task-changed-path[data-file-path="'+path+'"]')});
+  const changedFile=(checkoutId:string,path:string)=>scm().locator('[data-change-worktree="'+checkoutId+'"] [data-change-area="working"] .task-changed-row').filter({has:page.locator('.task-changed-path[data-file-path="'+path+'"]')});
   const settledDiff=async(text:string)=>{
     await page.waitForFunction((expected:string)=>{
       const root=document.querySelector('.code-source-control-page:not([hidden]) [aria-label="差异内容"]');

@@ -11,7 +11,6 @@ import { codeRepositoryCode, codeRepositoryLabel } from '../code-source-labels';
 import { WorkspaceViewActiveContext } from '../../../app/pageTabs';
 import '../source-control-row-actions.css';
 
-export const areaLabels = { unstaged: '未暂存', staged: '已暂存', untracked: '未跟踪' };
 export const layerFile = (file: SourceControlChange, version?: string): ChangedFileEntry => ({ ...file, repositoryId: JSON.stringify([file.repositoryId, file.worktreeId || '', version || file.area]) });
 export const worktreeLabel = (worktree: SourceControlWorktree) => worktree.isMain ? '主工作树' : worktree.name;
 type FoldProps = { expanded: Record<string, boolean>; onToggle(key: string, defaultExpanded?: boolean): void };
