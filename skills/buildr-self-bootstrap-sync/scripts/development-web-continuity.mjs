@@ -66,6 +66,10 @@ export async function inspectDevelopmentInstance({
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) return { schemaVersion: DEVELOPMENT_WEB_CONTINUITY_SCHEMA, action: 'inspect', status: 'stale', reason: `health-${response.status}`, instance: null };
+    const health = await response.json();
+    if (health.schemaVersion !== 'buildr.local-app-health/v1' || health.status !== 'ready' || health.pid !== state.pid) {
+      return { schemaVersion: DEVELOPMENT_WEB_CONTINUITY_SCHEMA, action: 'inspect', status: 'stale', reason: 'health-identity-mismatch', instance: null };
+    }
   } catch {
     return { schemaVersion: DEVELOPMENT_WEB_CONTINUITY_SCHEMA, action: 'inspect', status: 'stale', reason: 'health-unreachable', instance: null };
   }
@@ -90,22 +94,28 @@ function assertRestartIdentity(identity, expected) {
   }
 }
 
-async function waitForRestart({ dataRoot, expected, previousPid, fetchImpl, timeoutMs, wait }) {
+function matchesRunningSource(instance, expected) {
+  return instance.port === expected.port
+    && instance.productIdentity?.developmentRuntimeIdentity === expected.runtimeIdentity
+    && samePath(instance.launcherIdentity?.sourceRoot, expected.sourceRoot)
+    && samePath(instance.launcherIdentity?.developmentRuntime?.executable, expected.nodeExecutable);
+}
+
+async function waitForRestart({ dataRoot, expected, fetchImpl, timeoutMs, wait, spawnError }) {
   const deadline = Date.now() + timeoutMs;
   do {
     const observed = await inspectDevelopmentInstance({ dataRoot, fetchImpl, timeoutMs: Math.min(1000, Math.max(1, timeoutMs)) });
     if (observed.status === 'healthy-development') {
       const { instance } = observed;
-      const identity = instance.launcherIdentity;
-      if (instance.port !== expected.port || instance.pid === previousPid) {
-        const error = new Error('Recovered Development Web instance did not preserve the requested port or replace the stopped PID.');
+      if (!matchesRunningSource(instance, expected)) {
+        const error = new Error('Recovered Development Web instance does not match the requested port and runtime source.');
         error.code = 'development-web-continuity.instance-mismatch';
-        error.details = { expected: { port: expected.port, previousPid }, actual: instance };
+        error.details = { expected, actual: instance };
         throw error;
       }
-      assertRestartIdentity(identity, expected);
       return instance;
     }
+    if (spawnError()) throw spawnError();
     if (Date.now() >= deadline) break;
     await wait(50);
   } while (Date.now() <= deadline);
@@ -121,6 +131,7 @@ export async function restartDevelopmentInstance({
   launcherIdentityPath,
   expectedSourceRoot,
   expectedHead,
+  expectedRuntimeIdentity,
   nodeExecutable,
   previousPid,
   dataRoot = developmentWebDataRoot(),
@@ -132,16 +143,51 @@ export async function restartDevelopmentInstance({
   wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration)),
 } = {}) {
   const identity = readJson(launcherIdentityPath);
-  const expected = { sourceRoot: expectedSourceRoot, head: expectedHead, nodeExecutable, port };
+  const expected = { sourceRoot: expectedSourceRoot, head: expectedHead, nodeExecutable, port, runtimeIdentity: expectedRuntimeIdentity };
   assertRestartIdentity(identity, expected);
+  if (!/^sha256-[a-f0-9]{64}$/.test(expectedRuntimeIdentity || '')) throw new Error('Development Web recovery requires the current runtime source proof.');
   if (port !== DEFAULT_DEVELOPMENT_WEB_PORT) throw new Error(`Development Web continuity port must be ${DEFAULT_DEVELOPMENT_WEB_PORT}: ${port}`);
   if (!Number.isInteger(previousPort) || previousPort <= 0 || previousPort > 65535) throw new Error(`Invalid previous Development Web port: ${previousPort}`);
   if (!Number.isInteger(previousPid) || previousPid <= 0) throw new Error(`Invalid previous Development Web PID: ${previousPid}`);
+  const before = await inspectDevelopmentInstance({ dataRoot, fetchImpl });
+  if (before.status === 'different-owner') throw Object.assign(new Error('The current instance belongs to a different owner.'), { code: 'development-web-continuity.owner-mismatch' });
+  if (before.status === 'healthy-development') {
+    if (matchesRunningSource(before.instance, expected)) {
+      return { schemaVersion: DEVELOPMENT_WEB_CONTINUITY_SCHEMA, action: 'restart', status: 'passed',
+        disposition: 'reused', previous: { pid: previousPid, port: previousPort }, instance: before.instance, launcherIdentity: identity, cleanup: null };
+    }
+    // Only the exact, authenticated observation may be stopped. Installing the
+    // new launcher no longer stops the app before its identity is validated.
+    const state = readJson(instanceFile(dataRoot));
+    if (before.instance.pid !== previousPid || state?.pid !== previousPid
+      || !samePath(state.launcherIdentity?.sourceRoot, expectedSourceRoot)
+      || !samePath(state.launcherIdentity?.developmentRuntime?.executable, nodeExecutable)) {
+      throw Object.assign(new Error('The running development instance changed; it has been preserved.'), { code: 'development-web-continuity.owner-mismatch' });
+    }
+    const response = await fetchImpl(`${state.url}/api/v1/app/quit-instance`, {
+      method: 'POST', headers: { 'x-buildr-instance': state.secret }, signal: AbortSignal.timeout(1000),
+    });
+    if (response.status !== 202) throw Object.assign(new Error('Development Web rejected the authenticated shutdown request.'), { code: 'development-web-continuity.shutdown-rejected' });
+    await response.arrayBuffer();
+    const deadline = Date.now() + timeoutMs;
+    while (true) {
+      // A transiently unreachable health endpoint does not prove exit. Wait
+      // for the exact receipt to be removed or for the observed process to die.
+      if (!fs.existsSync(instanceFile(dataRoot))) break;
+      const current = readJson(instanceFile(dataRoot));
+      if (!current || current.pid !== previousPid || current.secret !== state.secret) throw Object.assign(new Error('The development instance record changed during shutdown; it has been preserved.'), { code: 'development-web-continuity.owner-mismatch' });
+      try { killProcess(previousPid, 0); }
+      catch (error) { if (error.code === 'ESRCH') break; throw error; }
+      if (Date.now() >= deadline) throw Object.assign(new Error('The previous Development Web did not finish shutting down.'), { code: 'development-web-continuity.shutdown-timeout' });
+      await wait(50);
+    }
+  }
   fs.mkdirSync(dataRoot, { recursive: true });
   const logRoot = path.join(dataRoot, 'logs');
   fs.mkdirSync(logRoot, { recursive: true });
   const log = fs.openSync(path.join(logRoot, 'self-bootstrap-development-web.log'), 'a');
   let child;
+  let childError = null;
   try {
     child = spawnImpl(projectBridge, ['web', '--port', String(port), '--no-open'], {
       cwd: path.resolve(path.dirname(projectBridge), '../..'),
@@ -153,12 +199,13 @@ export async function restartDevelopmentInstance({
         BUILDR_LAUNCHER_IDENTITY: launcherIdentityPath,
       },
     });
+    child.once?.('error', (error) => { childError = error; });
     child.unref?.();
   } finally {
     fs.closeSync(log);
   }
   try {
-    const instance = await waitForRestart({ dataRoot, expected, previousPid, fetchImpl, timeoutMs, wait });
+    const instance = await waitForRestart({ dataRoot, expected, fetchImpl, timeoutMs, wait, spawnError: () => childError });
     return {
       schemaVersion: DEVELOPMENT_WEB_CONTINUITY_SCHEMA,
       action: 'restart',
@@ -170,7 +217,10 @@ export async function restartDevelopmentInstance({
     };
   } catch (error) {
     let cleanup = { pid: child?.pid || null, status: 'not-applicable', reason: 'spawn-pid-unavailable' };
-    if (Number.isInteger(child?.pid) && child.pid > 0) {
+    const observed = await inspectDevelopmentInstance({ dataRoot, fetchImpl });
+    if (Number.isInteger(child?.pid) && child.pid > 0 && observed.instance?.pid === child.pid) {
+      cleanup = { pid: child.pid, status: 'preserved', reason: 'authenticated-instance-still-running' };
+    } else if (Number.isInteger(child?.pid) && child.pid > 0) {
       try {
         killProcess(child.pid, 'SIGTERM');
         cleanup = { pid: child.pid, status: 'requested', reason: null };
@@ -202,6 +252,7 @@ async function main(args = process.argv.slice(2)) {
     launcherIdentityPath: option(args, '--launcher-identity'),
     expectedSourceRoot: option(args, '--expected-source-root'),
     expectedHead: option(args, '--expected-head'),
+    expectedRuntimeIdentity: option(args, '--expected-runtime-identity'),
     nodeExecutable: option(args, '--node-executable'),
     previousPid: Number(option(args, '--previous-pid')),
   });
