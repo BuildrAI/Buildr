@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { copyText } from './lib/copyText';
+import { copyText } from './lib/copyText.ts';
 export type MarkdownRenderOptions = {
   document?: Document;
   headingOffset?: number;

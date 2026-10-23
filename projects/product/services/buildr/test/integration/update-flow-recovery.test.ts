@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { createWebUpdateFlow } from '../../src/modules/installation/application/update-flow.ts';
 import { createUpdateFlowStore } from '../../src/modules/installation/infrastructure/update-flow-store.ts';
-import type { UpdateRecord } from '../../src/modules/installation/application/update-flow-state.ts';
+import type { UpdateRecord } from '../../src/modules/installation/domain/update-flow-state.ts';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 function fixture(t: any, overrides: any = {}) {

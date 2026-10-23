@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { atomicWriteJson, withExclusiveFileLock } from '../../../infrastructure/filesystem/index.ts';
 import { productDataRoot } from '../../../infrastructure/filesystem/product-data-root.ts';
 import { parseSemver } from '../domain/release-version.ts';
-import { updateError, type UpdateRecord, type UpdateStore } from '../application/update-flow-state.ts';
+import { updateError, type UpdateRecord, type UpdateStore } from '../domain/update-flow-state.ts';
 
 /** Local observations only. Installation authority is re-checked by the installation owner. */
 export function createUpdateFlowStore(productRoot: string, options: { dataRoot?: string } = {}): UpdateStore {

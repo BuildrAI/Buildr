@@ -1,6 +1,6 @@
 import { readNpmUpdateHandoffInstallation } from '../infrastructure/current-product-identity.ts';
 import { assertCurrentNpmLauncherBinding, npmLauncherStatus, refreshInstalledNpmLauncher } from '../infrastructure/npm-launcher.ts';
-import { updateError, type UpdateRecord } from './update-flow-state.ts';
+import { updateError, type UpdateRecord } from '../domain/update-flow-state.ts';
 
 export type LauncherResult = { status: 'ready' | 'absent' | 'failed'; error?: { code: string; message: string } };
 export type UpdateLauncher = { inspect(job: UpdateRecord): LauncherResult; repair(job: UpdateRecord): LauncherResult };

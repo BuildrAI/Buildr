@@ -1,7 +1,7 @@
 # service-deployment-adapters Specification
 
 ## Purpose
-TBD - created by archiving change add-service-runtime-deployment. Update Purpose after archive.
+规范部署适配器（Deployment Adapter）能力的当前边界：内置部署入口已暂停，服务运行页、目录、工作台与 service-runtime 命令及网页接口不暴露部署计划、提交和最近部署结果，本地运行不要求连接技能（Connection Skill）应用；用户已有部署配置、历史与通用连接程序（Program）保留，不因暂停部署能力自动删除。
 
 ## Requirements
 

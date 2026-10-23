@@ -1,7 +1,7 @@
 # service-runtime-operations Specification
 
 ## Purpose
-TBD - created by archiving change add-service-runtime-deployment. Update Purpose after archive.
+规范 Buildr 对服务本地运行（Local Runtime）的产品行为：服务级运行定义保存为 `services/<service-code>/runtime.yml` 并兼容读取旧版字段；每个检出目录至多一个受管实例，启动、就绪、日志、停止与退出由 Buildr 管理并保留可核验的运行记录；Buildr Web 只读展示定义与实例，按任务范围支持单项或组合启动、前端对后端的真实连接选择、任务内服务发现（Service Discovery）与本地泳道（Local Lane）的目标绑定、实际观察及副作用边界；身份不明、未验证或局部失败的事实如实表达，不以配置受理或进程就绪冒充业务验证完成。
 
 ## Requirements
 

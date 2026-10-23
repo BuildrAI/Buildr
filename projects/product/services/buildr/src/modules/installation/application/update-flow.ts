@@ -3,7 +3,7 @@ import { spawnCommand } from '../../../infrastructure/process.ts';
 import { identifyCliSource } from './cli-update.ts';
 import { inspectProductUpdateAuthority } from '../infrastructure/installation-registry.ts';
 import { RELEASE_TRACKS, compareVersions, parseSemver } from './release-awareness.ts';
-import { pendingSteps, updateError, type UpdateRecord, type UpdateStore, type UpdateStage } from './update-flow-state.ts';
+import { pendingSteps, updateError, type UpdateRecord, type UpdateStore, type UpdateStage } from '../domain/update-flow-state.ts';
 import type { UpdateLauncher, LauncherResult } from './update-launcher.ts';
 
 export const WEB_UPDATE_FLOW_SCHEMA = 'buildr.web-update-flow/v2';
