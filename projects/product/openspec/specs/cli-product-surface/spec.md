@@ -3,6 +3,7 @@
 ## Purpose
 
 定义 Buildr CLI 与关联数据标识的 public、legacy compatibility、internal/maintenance 分类、可见性和兼容边界。
+
 ## Requirements
 
 ### Requirement: Canonical 输出不得推荐 legacy 形式
@@ -545,3 +546,19 @@ Buildr MUST 删除 `buildr bootstrap guide` 的可执行路由、帮助主题、
 - **THEN** 帮助 MUST 说明现有动作的输入字段、当前 `revision` 与目录观察要求，并提供可替换实际身份后执行的最小示例
 - **AND** MUST 说明关联提交完整 `serviceIds`，移除只取消登记，登记代码来源不等于克隆
 - **AND** 帮助 MUST 可离线读取且不要求已初始化的工作空间（Workspace），MUST NOT 将旧 `service create` 描述为全局资产主入口
+
+### Requirement: `buildr artifact` 命令族进入命令目录与产品表面分类
+
+Buildr CLI MUST 在封闭可验证的 command metadata catalog 中登记 `buildr artifact register`、`buildr artifact list`、`buildr artifact status`、`buildr artifact release` 与 `buildr artifact clean`，并将该命令族归类为 `agent-machine` 产品表面；canonical help、主题帮助与 `--json` 输出 MUST 共享同一命令元数据 authority。未持有 workspace 目标时命令 MUST 返回稳定非零退出码与可执行下一步，不得默认输出完整 usage。
+
+#### Scenario: 命令目录可验证
+
+- **WHEN** 产品验证核对 command metadata catalog
+- **THEN** `artifact` 命令族 MUST 有 canonical key、`agent-machine` surface、summary、帮助与 JSON 契约声明
+- **AND** 不得出现在 `primary` 日常资产管理入口的推荐位置
+
+#### Scenario: 缺少 workspace 目标
+
+- **WHEN** 在不带 `--target` 且无法定位 canonical Workspace 的位置执行 `buildr artifact list`
+- **THEN** CLI MUST 返回稳定非零退出码与定位 workspace 的下一步提示
+- **AND** MUST NOT 在错误根下扫描或写入登记目录
