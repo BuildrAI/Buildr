@@ -2,7 +2,7 @@ import { createPackageManifestRepository } from '../../persistence/package-manif
 import fs from 'node:fs';
 import path from 'node:path';
 import { collectFiles } from '../../../../infrastructure/filesystem/tree-files.ts';
-import { BOOTSTRAP_CONTRACT_RESOURCE } from '../../../../infrastructure/product-layout.ts';
+import { BOOTSTRAP_CHECK_PATH } from '../../../../infrastructure/product-layout.ts';
 // Historical product defaults, not a list of currently supported runtime identities.
 const LEGACY_BUILTIN_RUNTIMES = new Set(['claude-code', 'codex', 'cursor', 'qoder', 'trae', 'trae-work', 'workbuddy']);
 
@@ -92,7 +92,7 @@ export function registerAgentAssetsPackageAssets(dependencies: PackageAssetsDepe
   function validateBootstrapContract(root: any, files: any, problems: any): any  {
     const contractPath = bootstrapContractPath();
     if (!existsFile(contractPath)) {
-      problems.push(`Bootstrap contract is missing: ${BOOTSTRAP_CONTRACT_RESOURCE}`);
+      problems.push(`Bootstrap contract is missing: ${BOOTSTRAP_CHECK_PATH}`);
       return;
     }
     files.push(contractPath);

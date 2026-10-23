@@ -112,10 +112,11 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   "integration-workspace-assets": {
     "inputs": [
       "src/modules/workspace/**",
+      "src/infrastructure/filesystem/finder-metadata.ts",
       "src/infrastructure/filesystem/atomic-files.ts",
       "src/infrastructure/filesystem/workspace-mutation.ts",
       "src/infrastructure/filesystem/workspace-path.ts",
-      "src/infrastructure/product-resources/shared-resources.ts",
+      "src/infrastructure/product-resources/**",
       "src/modules/agent-assets/infrastructure/shared-skill-source.ts",
       "resources/workspace/AGENTS.md",
       "resources/workspace/components/**",
@@ -126,10 +127,14 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration-archify": {
     "inputs": [
+      "src/infrastructure/filesystem/finder-metadata.ts",
       "src/modules/agent-assets/infrastructure/component-source.ts",
       "src/modules/agent-assets/infrastructure/runtime/**",
-      "resources/workspace/components/buildr/archify/**",
-      "resources/workspace/skills/buildr/archify/**",
+      "src/infrastructure/product-resources/**",
+      "src/modules/agent-assets/application/package-maintenance/archify-retirement.ts",
+      "src/modules/agent-assets/application/package-maintenance.ts",
+      "src/modules/agent-assets/application/components.ts",
+      "skills/buildr/archify/**",
       "test/helpers/archify-command-cost.ts",
       "tools/development/run-isolated-workspace-smoke.ts"
     ],
@@ -178,6 +183,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration-runtime-projection": {
     "inputs": [
+      "src/infrastructure/filesystem/finder-metadata.ts",
       "src/modules/agent-assets/infrastructure/runtime/**",
       "src/modules/agent-assets/application/runtime-selection.ts",
       "src/modules/agent-assets/persistence/skill-manifest.ts",
@@ -1100,6 +1106,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "package-skills": {
     "inputs": [
+      "src/infrastructure/filesystem/finder-metadata.ts",
       "resources/workspace/skills/**",
       "resources/runtime/skills/**",
       "src/modules/agent-assets/application/skills.ts",

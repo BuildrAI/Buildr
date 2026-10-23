@@ -139,6 +139,10 @@ module.ts → private composition
 | `resources/runtime/` | 直接安装到智能体运行时（Agent Runtime）的源，包括 Buildr 产品入口技能（Skill） |
 | `resources/installation/launcher/` | 启动器（Launcher）使用的无行为静态图标 |
 
-开发启动器（Launcher）工程属于 `tools/build/launcher/`，正式 npm 启动器（Launcher）行为属于 `src/modules/installation/`；生成的测试库在被 Git 忽略的 `build/test-context/`，均不属于文件资源目录。Archify 是默认不启用的随包可选组件（Component），保留完整上游发行；来源、使用与升级见[组件说明](archify-component.md)。
+开发启动器（Launcher）工程属于 `tools/build/launcher/`，正式 npm 启动器（Launcher）行为属于 `src/modules/installation/`；生成的测试库在被 Git 忽略的 `build/test-context/`，均不属于文件资源目录。Archify 已退出产品内置，完整发行仅作为 Buildr 自用技能（Skill）保留；来源与旧安装迁移见[维护说明](../../../knowledge/docs/reference/archify.md)。
+
+安装包资源和用户共享资源有不同范围：`~/.buildr/resources/` 只收录 `workspace/skills/` 的技能源与协作约定，以及 `runtime/skills/` 的产品入口技能（Skill）。技能附件整体保留；共享目录顶层为 `skills/`、`contracts/` 和内部清单 `resource-set.json`。`AGENTS.md`、项目初始化和 Git 模板、组件（Component）安装声明、命令（Command）声明、启动器图标、包源清单及内部检查配置继续从安装包读取，不再保存共享副本。
+
+共享集按完整文件清单、摘要和执行权限检查；普通 `.DS_Store` 不纳入内容身份，Finder 浏览不会造成损坏误报。同名符号链接或目录、其他未声明文件和真实官方文件损坏仍拒绝。旧宽泛共享集在下次准备时完整替换，沿用空间重新准备与失败重试，不逐文件合并。
 
 资源映射或交付内容变化时，按实际影响核对清单、初始化与同步解析、安装包及应用负载（Application Payload），选择相关运行时或浏览器检查。只改解释文字不要求重跑全部发布验证。正式运行闭包不加载开发工具；`buildr package check` 仍只适用于开发检出目录。

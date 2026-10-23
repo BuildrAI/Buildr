@@ -17,6 +17,13 @@ const first=app.selectWorkspaceDirectory(root);assert.equal(first.status,'select
 app.prepareSelectedWorkspace({id:first.id,revision:first.revision,name:'生命周期验证'});
 async function wait(id:string){for(let i=0;i<150;i++){const result=app.workspacePreparation(id);if(result.status!=='preparing')return result;await new Promise(resolve=>setTimeout(resolve,200));}throw new Error('Preparation timed out.');}
 const ready=await wait(first.id);assert.equal(ready.status,'ready',ready.error);assert.ok(ready.workspaceId);
+assert.deepEqual(fs.readdirSync(sharedResourcesRoot()).sort(),['contracts','resource-set.json','skills']);
+assert.ok(fs.existsSync(path.join(root,'AGENTS.md')),'Initialization still reads its installation-owned source.');
+// Merely viewing an official source in Finder must not invalidate preparation or Doctor.
+fs.writeFileSync(path.join(sharedResourcesRoot(),'.DS_Store'),'Finder metadata');
+fs.writeFileSync(path.join(sharedResourcesRoot(),'skills/.DS_Store'),'Finder metadata');
+fs.writeFileSync(path.join(sharedResourcesRoot(),'skills/buildr/task-manager/.DS_Store'),'Finder metadata');
+fs.writeFileSync(path.join(sharedResourcesRoot(),'skills/openspec/openspec-propose/.DS_Store'),'Finder metadata');
 assert.equal(fs.readFileSync(path.join(root,'user.txt'),'utf8'),'keep this');
 const selection=app.selectWorkspaceDirectory(root);assert.equal(selection.id,first.id);
 const manifest=fs.readFileSync(path.join(root,'skills/manifest.yml'),'utf8');assert.match(manifest,/resource:/);assert.match(manifest,/id: task-verification/);assert.doesNotMatch(manifest,new RegExp(sharedResourcesRoot().replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
@@ -30,6 +37,8 @@ assert.equal(readResourceAdoption(root)?.ready,false);
 const reopening=app.prepareWorkspaceForOpen(ready.workspaceId);assert.equal(reopening.status,'preparing');const reopened=await wait(reopening.id);assert.equal(reopened.status,'ready',reopened.error);assert.equal(JSON.parse(fs.readFileSync(legacyAdoptionFile,'utf8')).layout,'fixed');
 const assets:any=runtimeProvide(runtime,AGENT_ASSETS_APPLICATION);assert.ok(assets.skillFile(root,'task-manager','SKILL.md').content);
 await app.prepareRegisteredWorkspace({rootPath:root,workspaceId:ready.workspaceId});assert.equal(app.listRegisteredWorkspaces().workspaces.length,1);
+assert.equal(fs.existsSync(path.join(root,'.agents/skills/task-manager/.DS_Store')),false);
+assert.equal(fs.existsSync(path.join(root,'.agents/skills/openspec-propose/.DS_Store')),false);
 const removed=spawnSync(process.execPath,[process.env.BUILDR_NPM_ENTRY_PATH,'skills','remove','mysql-connection','--target',root],{encoding:'utf8'});assert.equal(removed.status,0,removed.stderr);
 await app.prepareRegisteredWorkspace({rootPath:root,workspaceId:ready.workspaceId});assert.match(fs.readFileSync(path.join(root,'skills/manifest.yml'),'utf8'),/id: mysql-connection[\s\S]*?enabled: false/);assert.equal(fs.existsSync(path.join(root,'.agents/skills/mysql-connection')),false);
 const moved=`${root}-offline`;fs.renameSync(root,moved);

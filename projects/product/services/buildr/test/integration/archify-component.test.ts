@@ -1,175 +1,93 @@
-import { resolveSharedResource } from '../../src/infrastructure/product-resources/shared-resources.ts';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import YAML from 'yaml';
-
+import { ensurePackageResources, sharedResourcesRoot, readPreservedArchify } from '../../src/infrastructure/product-resources/shared-resources.ts';
+import { preservedArchifyRoot } from '../../src/infrastructure/product-resources/preserved-archify.ts';
 import { assetIntegrity } from '../../src/modules/agent-assets/infrastructure/component-source.ts';
-import { skillDestinationRoot } from '../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
-import { archifyCostEnvironment } from '../helpers/archify-command-cost.ts';
-import { ARCHIFY_SCENARIO_LABELS, archifyScenarioTimings } from '../verification/integration-progress-reporter.ts';
+import { assembleRuntimeProjection } from '../../src/modules/agent-assets/infrastructure/runtime/projection.ts';
+import { reconcileRuntimePlan } from '../../src/modules/agent-assets/infrastructure/runtime/runtime-reconciler.ts';
 
-const file = fileURLToPath(import.meta.url);
-const serviceRoot = path.resolve(path.dirname(file), '../..');
-
-function scenario() {
-  const smokeRoot = process.env.BUILDR_SMOKE_ROOT;
-  const workspace = process.env.BUILDR_SMOKE_WORKSPACE_ROOT;
-  assert.ok(smokeRoot && workspace, 'Use the isolated Workspace smoke runner.');
-  assert.equal(process.env.BUILDR_APP_DATA_DIR, path.join(smokeRoot, 'app-data'));
-  assert.equal(process.env.BUILDR_PRODUCT_DATA_DIR, path.join(smokeRoot, 'product-data'));
-  const userHome = path.join(smokeRoot, 'user');
-  fs.mkdirSync(userHome, { recursive: true });
-  // Only these child processes use the fixture home; the host installation is untouched.
-  const env = { ...process.env, HOME: userHome, USERPROFILE: userHome };
-  const entry = path.join(serviceRoot, 'bin/buildr.mjs');
-  const commandTimeoutMs = 60_000;
-  const scenarioStartedAt = performance.now();
-  const wrapperStartedAt = Number(process.env.BUILDR_ARCHIFY_WRAPPER_STARTED_AT);
-  let step = 0;
-  let commandStartedAt = scenarioStartedAt;
-  function progress(label: string) {
-    process.stderr.write(`[archify-scenario] ${++step}: ${label}\n`);
-    const started = label.startsWith('start ');
-    const operationLabel = label.slice(started ? 6 : 7);
-    const operation = Object.hasOwn(ARCHIFY_SCENARIO_LABELS, operationLabel) ? ARCHIFY_SCENARIO_LABELS[operationLabel] : null;
-    const now = performance.now();
-    if (started) commandStartedAt = now;
-    if (operation) process.stderr.write(`[archify-scenario-timing] ${JSON.stringify({
-      step, operation, status: started ? 'started' : 'completed', elapsedMs: Math.round(now - scenarioStartedAt),
-      ...(Number.isSafeInteger(wrapperStartedAt) && wrapperStartedAt > 0
-        ? { wrapperElapsedMs: Math.max(0, Date.now() - wrapperStartedAt), commandTimeoutMs } : {}),
-      ...(started ? {} : { durationMs: Math.round(now - commandStartedAt) }),
-    })}\n`);
-  }
-  function run(args: string[], expected = 0) {
-    const label = args.slice(0, 3).join(' ');
-    progress(`start ${label}`);
-    const result = spawnSync(process.execPath, [entry, ...args], {
-      cwd: serviceRoot, env: archifyCostEnvironment(env, Math.ceil(step / 2)), encoding: 'utf8', timeout: commandTimeoutMs, maxBuffer: 8 * 1024 * 1024,
-    });
-    assert.equal(result.status, expected, `${args.join(' ')}\n${result.error?.message ?? ''}\n${result.stdout}\n${result.stderr}`);
-    progress(`passed ${label}`);
-    return result;
-  }
-  const target = ['--target', workspace];
-  const source = path.join(serviceRoot, 'resources/workspace/skills/buildr/archify');
-  const installed = path.join(workspace, 'skills/buildr/archify');
-  const sharedInstalled = () => path.dirname(resolveSharedResource(workspace,'resources/workspace/skills/buildr/archify/SKILL.md'));
-  const projected = path.join(workspace, '.agents/skills/archify');
-  const definitionPath = path.join(serviceRoot, 'resources/workspace/components/buildr/archify/component.yml');
-  const definition = YAML.parse(fs.readFileSync(definitionPath, 'utf8'));
-  assert.equal(definition.upstream.version, '3.1.0');
-  assert.equal(definition.integrity[0], `skills/buildr/archify=${assetIntegrity(source)}`);
-  assert.equal(fs.existsSync(path.join(source, 'node_modules')), false);
-  assert.match(fs.readFileSync(path.join(source, 'assets/archify/LICENSE'), 'utf8'), /MIT License/);
-
-  run(['init', '--name', 'archify-component', '--profile', 'personal', ...target]);
-  const listed = JSON.parse(run(['component', 'list', ...target, '--json']).stdout);
-  const available = listed.components.find((item: { id: string }) => item.id === 'archify');
-  assert.equal(available.status, 'available');
-  assert.equal(available.required, false);
-  assert.equal(available.defaultEnabled, false);
-  assert.equal(fs.existsSync(installed), false);
-  run(['sync', 'codex', ...target]);
-  assert.equal(fs.existsSync(projected), false);
-
-  // A same-name user installation remains externally owned throughout the lifecycle.
-  const external = path.join(skillDestinationRoot('codex', 'user', workspace, { userHome }), 'skills/archify');
-  fs.mkdirSync(external, { recursive: true });
-  const externalBody = '---\nname: archify\ndescription: User-owned drawing tool.\n---\nUser-owned content.\n';
-  fs.writeFileSync(path.join(external, 'SKILL.md'), externalBody);
-  run(['component', 'install', 'archify', '--agent', 'codex', ...target]);
-  assert.equal(fs.readFileSync(path.join(external, 'SKILL.md'), 'utf8'), externalBody);
-
-  run(['component', 'install', 'archify', '--agent', 'codex', ...target]);
-  assert.equal(fs.existsSync(installed), false);
-  assert.equal(assetIntegrity(sharedInstalled()), assetIntegrity(source));
-  for (const relative of ['assets/archify/bin/archify.mjs', 'assets/archify/assets/template.html', 'assets/archify/LICENSE', 'assets/archify/skill-release.json']) {
-    assert.deepEqual(fs.readFileSync(path.join(projected, relative)), fs.readFileSync(path.join(source, relative)));
-  }
-  assert.match(fs.readFileSync(path.join(projected, 'SKILL.md'), 'utf8'), /Generated by Buildr/);
-  const before = assetIntegrity(projected);
-  run(['sync', 'codex', ...target]);
-  assert.equal(assetIntegrity(projected), before);
-  const checked = JSON.parse(run(['component', 'check', 'archify', ...target, '--json']).stdout);
-  assert.equal(checked.components[0].status, 'installed');
-  assert.equal(checked.components[0].installedVersion, definition.version);
-
-  // Exercise the installed renderer, templates and validators, not the product source.
-  run(['project', 'create', 'example', ...target]);
-  const graphRoot = path.join(workspace, 'projects/example/knowledge/archify');
-  fs.mkdirSync(graphRoot, { recursive: true });
-  const graph = path.join(graphRoot, 'example.json');
-  const output = path.join(graphRoot, 'example.html');
-  fs.copyFileSync(path.join(projected, 'assets/archify/examples/brand-aware-delivery.architecture.json'), graph);
-  progress('start installed renderer');
-  const delivered = spawnSync(process.execPath, [path.join(projected, 'assets/archify/bin/archify.mjs'),
-    'deliver', 'architecture', graph, output, '--quality', 'showcase', '--json'], {
-    cwd: projected, env: archifyCostEnvironment(env, Math.ceil(step / 2)), encoding: 'utf8', timeout: commandTimeoutMs, maxBuffer: 4 * 1024 * 1024,
-  });
-  assert.equal(delivered.status, 0, `${delivered.error?.message ?? ''}\n${delivered.stdout}\n${delivered.stderr}`);
-  progress('passed installed renderer');
-  assert.match(fs.readFileSync(output, 'utf8'), /<svg[\s>]/);
-  const graphBytes = fs.readFileSync(graph);
-  const outputBytes = fs.readFileSync(output);
-
-  // Simulate a matching prior release: existing component update must replace it safely.
-  const receiptPath = path.join(workspace, 'components/buildr/archify/component.yml');
-  fs.cpSync(sharedInstalled(),installed,{recursive:true});
-  const skillsFile=path.join(workspace,'skills/manifest.yml');
-  const legacySkills=YAML.parse(fs.readFileSync(skillsFile,'utf8'));delete legacySkills.skills.find((skill:any)=>skill.id==='archify').resource;fs.writeFileSync(skillsFile,YAML.stringify(legacySkills));
-  const priorProgram = path.join(installed, 'assets/archify/bin/archify.mjs');
-  fs.appendFileSync(priorProgram, '\n// prior-release fixture\n');
-  const priorDefinition = YAML.parse(fs.readFileSync(receiptPath, 'utf8'));
-  priorDefinition.version = '2.16.0+buildr.1';
-  priorDefinition.integrity = [`skills/buildr/archify=${assetIntegrity(installed)}`];
-  fs.writeFileSync(receiptPath, YAML.stringify(priorDefinition));
-  run(['sync', 'codex', ...target]);
-  assert.equal(fs.existsSync(installed), false);
-  assert.equal(assetIntegrity(sharedInstalled()), assetIntegrity(source));
-
-  fs.cpSync(sharedInstalled(),installed,{recursive:true});
-  fs.appendFileSync(priorProgram, '\n// user modification\n');
-  const modified = fs.readFileSync(priorProgram);
-  run(['component', 'uninstall', 'archify', '--agent', 'codex', ...target], 1);
-  assert.deepEqual(fs.readFileSync(priorProgram), modified);
-  fs.copyFileSync(path.join(source, 'assets/archify/bin/archify.mjs'), priorProgram);
-  run(['component', 'uninstall', 'archify', '--agent', 'codex', ...target]);
-  assert.equal(fs.existsSync(installed), false);
-  assert.equal(fs.existsSync(projected), false);
-  assert.deepEqual(fs.readFileSync(graph), graphBytes);
-  assert.deepEqual(fs.readFileSync(output), outputBytes);
-  assert.equal(fs.readFileSync(path.join(external, 'SKILL.md'), 'utf8'), externalBody);
-  run(['sync', 'codex', ...target]);
-  assert.equal(fs.existsSync(installed), false, 'Explicit uninstall must survive sync.');
-  process.stdout.write('Archify optional component lifecycle and installed rendering passed.\n');
+const service = path.resolve(import.meta.dirname, '../..');
+const source = path.resolve(service, '../../../../skills/buildr/archify');
+const hash = (bytes: string | Buffer) => crypto.createHash('sha256').update(bytes).digest('hex');
+function files(directory: string): string[] {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap(entry => entry.isDirectory() ? files(path.join(directory, entry.name)) : [path.join(directory, entry.name)]);
 }
-
-if (process.argv.includes('--archify-scenario')) {
-  scenario();
-} else {
-  const caseOptions = { timeout: 180_000 };
-  test('Archify optional component installs, renders, updates and uninstalls without losing user content', caseOptions, () => {
-    const wrapperStartedAt = Date.now();
-    const wrapperOptions = {
-      cwd: serviceRoot, encoding: 'utf8' as const, timeout: 175_000, maxBuffer: 8 * 1024 * 1024,
-      env: { ...process.env, BUILDR_ARCHIFY_WRAPPER_STARTED_AT: String(wrapperStartedAt) },
-    };
-    const result = spawnSync(process.execPath, [path.join(serviceRoot, 'tools/development/run-isolated-workspace-smoke.ts'),
-      '--script', file, '--', '--archify-scenario'], wrapperOptions);
-    // Forward only validated numeric phase records, never arbitrary child output.
-    for (const timing of archifyScenarioTimings(result.stderr)) {
-      process.stderr.write(`[archify-scenario-timing] ${JSON.stringify(timing)}\n`);
-    }
-    process.stderr.write(`[archify-wrapper-timing] ${JSON.stringify({
-      elapsedMs: Date.now() - wrapperStartedAt, timeoutMs: wrapperOptions.timeout, caseTimeoutMs: caseOptions.timeout,
-      status: (result.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT' ? 'timed-out' : result.status === 0 ? 'passed' : 'failed',
-    })}\n`);
-    assert.equal(result.status, 0, `${result.error?.message ?? ''}\n${result.stdout}\n${result.stderr}`);
-    assert.match(result.stdout, /"cleanup":"cleaned"/);
-  });
+async function scenario() {
+  const root = process.env.BUILDR_SMOKE_ROOT!; assert.ok(root, 'Use the isolated workspace runner.');
+  const cli = path.join(service, 'bin/buildr.mjs');
+  const run = (args: string[]) => {
+    const result = spawnSync(process.execPath, [cli, ...args], { cwd: service, env: { ...process.env, BUILDR_DEBUG_STACK: '1' }, encoding: 'utf8', timeout: 60_000, maxBuffer: 4 * 1024 * 1024 });
+    assert.equal(result.status, 0, args.join(' ') + '\n' + result.stdout + result.stderr); return result.stdout;
+  };
+  const spaces = ['active', 'offline', 'custom', 'disabled'].map(name => path.join(root, name));
+  for (const workspace of spaces) run(['init', '--agent', 'codex', '--target', workspace, '--name', path.basename(workspace), '--profile', 'personal', '--description', 'Isolated Archify migration acceptance workspace']);
+  assert.equal(fs.existsSync(preservedArchifyRoot(sharedResourcesRoot())), false, 'Fresh installations must not create retained sources.');
+  assert.equal(fs.existsSync(path.join(sharedResourcesRoot(), 'skills/buildr/archify')), false);
+  const listed = JSON.parse(run(['component', 'list', '--target', spaces[0]!, '--json']));
+  assert.equal(listed.components.some((item: any) => item.id === 'archify'), false);
+  // Simulate a real old shared set and its three separately registered workspaces.
+  const old = ensurePackageResources(service);
+  for (const file of files(source).sort()) {
+    const relative = path.relative(source, file).split(path.sep).join('/');
+    const target = path.join(sharedResourcesRoot(), 'skills/buildr/archify', relative);
+    fs.mkdirSync(path.dirname(target), { recursive: true }); fs.copyFileSync(file, target);
+    old.files.push({ source: `workspace/skills/buildr/archify/${relative}`, path: `skills/buildr/archify/${relative}`, sha256: hash(fs.readFileSync(file)), mode: fs.statSync(file).mode & 0o777 });
+  }
+  old.id = `${old.version}-${hash(JSON.stringify(old.files))}`;
+  fs.writeFileSync(path.join(sharedResourcesRoot(), 'resource-set.json'), JSON.stringify(old));
+  for (const workspace of spaces) {
+    const skillsFile = path.join(workspace, 'skills/manifest.yml'), skills = YAML.parse(fs.readFileSync(skillsFile, 'utf8'));
+    skills.skills.push({ id: 'archify', assetIdentity: 'buildr:skill:archify', sourceIdentity: 'package:skills/buildr/archify', source: 'buildr', path: 'buildr/archify', runtimePath: 'archify', enabled: path.basename(workspace) !== 'disabled', required: false, state: 'installed', resource: 'resources/workspace/skills/buildr/archify' });
+    fs.writeFileSync(skillsFile, YAML.stringify(skills));
+    const registryFile = path.join(workspace, 'components/manifest.yml'), registry = YAML.parse(fs.readFileSync(registryFile, 'utf8'));
+    registry.components.push({ id: 'archify', source: 'buildr', path: 'components/buildr/archify', enabled: true, required: false, state: 'installed' });
+    fs.writeFileSync(registryFile, YAML.stringify(registry));
+    const definition = { schemaVersion: 'buildr.component/v1', id: 'archify', kind: 'integration', version: '3.1.0+buildr.1', source: 'buildr', members: { rules: [], skills: ['skills/buildr/archify'], commandCollections: [], skillContributions: [] }, integrity: [`skills/buildr/archify=${assetIntegrity(source)}`] };
+    fs.mkdirSync(path.join(workspace, 'components/buildr/archify'), { recursive: true });
+    fs.writeFileSync(path.join(workspace, 'components/buildr/archify/component.yml'), YAML.stringify(definition));
+    fs.writeFileSync(path.join(workspace, '.buildr/local/package-resources.json'), JSON.stringify({ schemaVersion: 'buildr.resource-adoption/v1', layout: 'fixed', ready: true, resourceSet: old.id }));
+    const { plan } = assembleRuntimeProjection({ repoRoot: workspace, runtimeId: 'codex', selection: { productSkill: true, workspaceSkills: true } });
+    reconcileRuntimePlan(plan);
+    fs.mkdirSync(path.join(workspace, 'diagrams')); fs.writeFileSync(path.join(workspace, 'diagrams/keep.json'), '{"keep":true}');
+  }
+  const custom = path.join(spaces[2]!, 'skills/buildr/archify'); fs.mkdirSync(path.dirname(custom), { recursive: true }); fs.cpSync(source, custom, { recursive: true });
+  fs.appendFileSync(path.join(custom, 'SKILL.md'), '\nWorkspace customization.\n');
+  const hidden = `${spaces[1]}-hidden`; fs.renameSync(spaces[1]!, hidden);
+  const current = ensurePackageResources(service); assert.notEqual(current.id, old.id);
+  assert.equal(fs.existsSync(path.join(sharedResourcesRoot(), 'skills/buildr/archify')), false);
+  const preserved = readPreservedArchify();
+  assert.equal(preserved.set.files.length, files(source).length);
+  for (const workspace of [spaces[0]!, spaces[2]!, spaces[3]!]) run(['sync', 'codex', '--target', workspace]);
+  fs.renameSync(hidden, spaces[1]!); run(['sync', 'codex', '--target', spaces[1]!]);
+  for (const workspace of spaces) {
+    const manifest = YAML.parse(fs.readFileSync(path.join(workspace, 'skills/manifest.yml'), 'utf8'));
+    const skill = manifest.skills.find((item: any) => item.id === 'archify');
+    assert.equal(skill.source, 'workspace'); assert.equal(skill.resource, undefined); assert.equal(skill.enabled, path.basename(workspace) !== 'disabled');
+    assert.equal(YAML.parse(fs.readFileSync(path.join(workspace, 'components/manifest.yml'), 'utf8')).components.some((item: any) => item.id === 'archify'), false);
+    assert.equal(fs.readFileSync(path.join(workspace, 'diagrams/keep.json'), 'utf8'), '{"keep":true}');
+    assert.equal(fs.existsSync(path.join(workspace, '.agents/skills/archify/assets/archify/bin/archify.mjs')), skill.enabled);
+    const doctor = JSON.parse(run(['doctor', '--agent', 'codex', '--target', workspace, '--json']));
+    assert.equal(doctor.health.ready, true, JSON.stringify({ health: doctor.health, findings: doctor.findings }));
+    const before = assetIntegrity(path.join(workspace, 'skills/buildr/archify'));
+    run(['sync', 'codex', '--target', workspace]);
+    assert.equal(assetIntegrity(path.join(workspace, 'skills/buildr/archify')), before);
+  }
+  assert.match(fs.readFileSync(path.join(custom, 'SKILL.md'), 'utf8'), /Workspace customization/);
+  const tool = path.join(source, 'assets/archify');
+  const graph = path.join(root, 'self-use.json'); fs.copyFileSync(path.join(tool, 'examples/brand-aware-delivery.architecture.json'), graph);
+  const rendered = spawnSync(process.execPath, [path.join(tool, 'bin/archify.mjs'), 'deliver', 'architecture', graph, path.join(root, 'self-use.html'), '--quality', 'showcase', '--json'], { cwd: tool, env: process.env, encoding: 'utf8', timeout: 30_000 });
+  assert.equal(rendered.status, 0, rendered.stdout + rendered.stderr);
+  assert.ok(fs.statSync(path.join(root, 'self-use.html')).size > 1000);
 }
+if (process.argv.includes('--archify-retirement-scenario')) await scenario();
+else test('Archify退出随包后保留旧安装、离线空间和定制，自用绘图仍正常', { timeout: 180_000 }, () => {
+  const result = spawnSync(process.execPath, [path.join(service, 'tools/development/run-isolated-workspace-smoke.ts'), '--script', fileURLToPath(import.meta.url), '--', '--archify-retirement-scenario'], { cwd: service, env: { ...process.env, BUILDR_DEBUG_STACK: '1' }, encoding: 'utf8', timeout: 175_000, maxBuffer: 4 * 1024 * 1024 });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /"status":"passed"/); assert.match(result.stdout, /"cleanup":"cleaned"/);
+});

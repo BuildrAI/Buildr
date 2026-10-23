@@ -17,6 +17,7 @@ export function createPackageSyncPlan({
       path.join(targetRoot, 'skills', 'manifest.yml'),
       path.join(targetRoot, 'skills', 'contracts', 'buildr'),
       path.join(targetRoot, 'commands', 'manifest.yml'),
+      path.join(targetRoot, 'components/manifest.yml'),
       path.join(targetRoot, '.buildr', 'builtin-receipts.json'),
       path.join(targetRoot, '.buildr', 'local', 'package-resources.json'),
       ...packageRegistryMutationPaths(targetRoot),
@@ -54,6 +55,12 @@ export function createPackageSyncPlan({
     }
     // Only proven-safe retirement targets participate in the write transaction.
     for (const finding of findings) {
+      if (finding.type === 'skill' && finding.id === 'archify' && finding.converge === true) {
+        affected.add(path.join(targetRoot, 'skills/buildr/archify'));
+        affected.add(path.join(targetRoot, 'skills/buildr/archify.buildr-stage'));
+        const missingParent = missingAncestorForMutation(targetRoot, path.join(targetRoot, 'skills/buildr'));
+        if (missingParent) affected.add(missingParent);
+      }
       if (finding.type === 'rule' && finding.id === 'buildr-core' && finding.status === 'retired') {
         affected.add(path.join(targetRoot, 'rules/buildr/core.md'));
       }

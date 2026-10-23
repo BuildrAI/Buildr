@@ -39,6 +39,9 @@ test('installed package independently delivers three complete builtin connection
   const unpack = spawnSync('tar', ['-xzf', artifact.tarball, '-C', extracted], { encoding: 'utf8', timeout: 60_000 });
   assert.equal(unpack.status, 0, unpack.stderr);
   const extractedPackage = path.join(extracted, 'package'), metadata = JSON.parse(fs.readFileSync(path.join(extractedPackage, 'package.json'), 'utf8'));
+  for (const relative of ['workspace/skills/buildr/archify', 'workspace/components/buildr/archify', 'contracts/bootstrap.yml', 'installation/launcher/buildr-icon.png']) {
+    assert.equal(fs.existsSync(path.join(extractedPackage, 'payload/product/resources', relative)), false, relative);
+  }
   assert.equal(metadata.bin['buildr-mysql'], 'bin/buildr-mysql.mjs');
   assert.ok(fs.statSync(path.join(extractedPackage, 'runtime/mysql-connection.cjs')).isFile());
   assert.equal(fs.existsSync(path.join(extractedPackage, 'node_modules')), false);
@@ -81,6 +84,7 @@ test('installed package independently delivers three complete builtin connection
   };
   const workspace = path.join(root, 'workspace'); fs.mkdirSync(workspace);
   run(['init', '--target', workspace, '--name', 'builtin-package-fixture', '--profile', 'personal', '--source-only']);
+  assert.equal(fs.existsSync(path.join(env.BUILDR_PRODUCT_DATA_DIR!, 'local/preserved-skills/archify')), false);
   const manifest = YAML.parse(fs.readFileSync(path.join(workspace, 'skills/manifest.yml'), 'utf8'));
   const systems = [
     { skillId: 'mysql-connection', definitionId: 'mysql', config: { host: 'database.example.invalid', port: 3306 }, help: /test[\s\S]*databases/u },

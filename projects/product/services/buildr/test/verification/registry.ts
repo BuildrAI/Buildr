@@ -58,7 +58,7 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
   'integration-desktop': testing(SERVICE_OWNER, 'Development', 'Integration', 45000, 'Desktop and Agent connections preserve their isolated registration, lifecycle, Git read roots and HTTP boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-knowledge': testing(SERVICE_OWNER, 'Development', 'Integration', 35000, 'Knowledge and Agent source reading preserve current content, provenance and HTTP results.', TEST_ENVIRONMENTS.repeatedCli),
   'integration-workspace-assets': testing(SERVICE_OWNER, 'Development', 'Integration', 240000, 'Workspace assets preserve composition, registration, mutation and user content.', TEST_ENVIRONMENTS.repeatedGitCli),
-  'integration-archify': testing(SERVICE_OWNER, 'Development', 'Integration', 90000, 'Archify installation, rendering, upgrade, user content protection, removal and bounded diagnostics retain their real isolated lifecycle.', TEST_ENVIRONMENTS.repeatedCli),
+  'integration-archify': testing(SERVICE_OWNER, 'Development', 'Integration', 90000, 'Retired Archify preserves old installations, offline and customized workspaces, self-use rendering and bounded diagnostics.', TEST_ENVIRONMENTS.repeatedCli),
   'integration-task-records': testing(SERVICE_OWNER, 'Development', 'Integration', 125000, 'Task records, materials and workbench views preserve filesystem, Git, SQLite and HTTP behavior.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-connections': testing(SERVICE_OWNER, 'Development', 'Integration', 135000, 'Connection Skills preserve definitions, credential handling, Git workspaces, process and local protocol boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-connections-cli': testing(SERVICE_OWNER, 'Development', 'Integration', 180000, 'The connection CLI smoke preserves credential handling, isolated workspaces, real process boundaries and cleanup.', TEST_ENVIRONMENTS.repeatedGitCli),
@@ -140,8 +140,8 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
 
 export const VERIFICATION_STEP_EVIDENCE: any = Object.freeze({
   'integration-archify': primaryEvidence(
-    'An Archify install, render, upgrade, removal or diagnostic command that loses user content, changes CLI behavior or leaks private inputs must fail.',
-    'real isolated Workspace and user home, component lifecycle, rendering and bounded CLI diagnostics',
+    'Archify retirement that loses installed content, re-enables disabled Skills, breaks self-use rendering or leaks diagnostic inputs must fail.',
+    'real isolated workspaces, retained legacy source migration, self-use rendering and bounded CLI diagnostics',
   ),
   'integration-candidate-release': primaryEvidence(
     'A release contract, selection, rehearsal, recovery, or Git convergence boundary that drifts from the frozen Candidate source must fail.',
@@ -766,7 +766,7 @@ export const verificationSteps: any = Object.freeze([
       'integration-connections-cli': 'Connection CLI smoke',
       'integration-task-records': 'Task record and material integration slice',
       'integration-workspace-assets': 'Workspace asset integration slice',
-      'integration-archify': 'Archify component lifecycle integration slice',
+      'integration-archify': 'Archify retirement and self-use integration slice',
       'integration-knowledge': 'Knowledge and source reading integration slice',
       'integration-desktop': 'Desktop and Agent connection integration slice',
       'integration-code': 'Code and Git application integration slice',

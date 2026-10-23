@@ -300,6 +300,7 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
         assertNoUnknownOptions: infrastructure.assertNoUnknownOptions,
         positionalArgs: infrastructure.positionalArgs,
         packageComponentsStatus: components.packageComponentsStatus,
+        retirePackagedArchify: components.retirePackagedArchify,
         readPackageManifest: (...args: Parameters<PackageMaintenanceDependencies['readPackageManifest']>) => packageAssets.readPackageManifest(...args),
         parseManifestFileEntry: (...args: Parameters<PackageMaintenanceDependencies['parseManifestFileEntry']>) => packageAssets.parseManifestFileEntry(...args),
         collectFiles: (...args: Parameters<PackageMaintenanceDependencies['collectFiles']>) => packageAssets.collectFiles(...args),

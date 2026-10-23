@@ -42,6 +42,6 @@ Buildr 提供两个相互连接的阅读入口，重合的正文只维护一份�
 
 开发从[产品开发入口](../../README.md)开始。准备与检查以产品目录的 [`preparation.yml`](../../preparation.yml)、[`verification.yml`](../../verification.yml)为准；具体运行和构建命令查所属服务（Service）的入口：[Buildr 主包](../../services/buildr/package.json)、[Buildr Web 前端](../../services/buildr-web/package.json)或 [DSH 桌面插件](../../services/dsh-plugin/package.json)。DSH 插件独立构建和发布；避免在多篇说明中抄写命令。
 
-专项问题按需查阅：[智能体（Agent）工具支持](../../services/buildr/docs/agent-runtime-adapters.md)、[命令架构](../../services/buildr/docs/cli-architecture.md)、[Archify 组件（Component）](../../services/buildr/docs/archify-component.md)、[OpenSpec 协作](architecture/task-system.md#openspec-变更怎样推进)。
+专项问题按需查阅：[智能体（Agent）工具支持](../../services/buildr/docs/agent-runtime-adapters.md)、[命令架构](../../services/buildr/docs/cli-architecture.md)、[Archify 自用与旧安装迁移](reference/archify.md)、[OpenSpec 协作](architecture/task-system.md#openspec-变更怎样推进)。
 
 人和智能体（Agent）使用同一份事实来源：正文解释目标、关系和理由，行为约定查[正式规范](../../openspec/specs/)，操作细节查当前命令帮助和对应接口。智能体（Agent）的授权与执行约束来自适用的 `AGENTS.md` 和技能（Skill）；本目录不另写一套执行规则。普通说明在原处维护，历史通过 Git 查找；服务（Service）内参考保留原位置，不为阅读入口复制正文。

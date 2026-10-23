@@ -1,5 +1,7 @@
 import { resolveSharedResource } from '../../../infrastructure/product-resources/shared-resources.ts';
+import { retirePackagedArchify as retireArchify } from './package-maintenance/archify-retirement.ts';
 import fs from 'node:fs';
+import { isDeepStrictEqual } from 'node:util';
 import path from 'node:path';
 import { runFinalDoctor } from '../../../infrastructure/final-doctor-process.ts';
 import { hasManagedSkillMarker } from '../infrastructure/runtime/render-claude-code.ts';
@@ -469,10 +471,12 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
       if (record.definition.members.rules.length || plan.oldDefinition?.members.rules.length) changed.push(toPosixRelative(targetRoot, writeRulesManifest(targetRoot, rulesManifest)));
       if (record.definition.members.skills.length || plan.oldDefinition?.members.skills.length) changed.push(toPosixRelative(targetRoot, writeSkillsManifest(targetRoot, skillsManifest)));
       const nextEntry: any = { id: record.entry.id, source: 'buildr', path: componentPath, enabled: true, required: record.entry.required === true, state: 'installed' };
-      const registryIndex = plan.registry.components.findIndex((entry: any) => entry.id === record.entry.id);
-      if (registryIndex === -1) plan.registry.components.push(nextEntry);
-      else plan.registry.components[registryIndex] = nextEntry;
-      changed.push(toPosixRelative(targetRoot, writeComponentsManifest(targetRoot, plan.registry)));
+      const registry = readComponentsManifestForWrite(targetRoot);
+      const registryIndex = registry.components.findIndex((entry: any) => entry.id === record.entry.id);
+      if (!isDeepStrictEqual(registryIndex === -1 ? null : registry.components[registryIndex], plan.existingEntry)) throw new Error(`Component registration changed after planning: ${record.entry.id}`);
+      if (registryIndex === -1) registry.components.push(nextEntry);
+      else registry.components[registryIndex] = nextEntry;
+      changed.push(toPosixRelative(targetRoot, writeComponentsManifest(targetRoot, registry)));
       atomicWriteFile(definitionTarget, fs.readFileSync(record.file));
       changed.push(toPosixRelative(targetRoot, definitionTarget));
       return { id: record.entry.id, status: 'installed', changed: [...new Set(changed)] };
@@ -866,6 +870,7 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
   }
 
   return Object.freeze({
+    retirePackagedArchify: (targetRoot: string, checkOnly: boolean) => retireArchify({ targetRoot, checkOnly, readSkills: readSkillsManifestForWrite, writeSkills: writeSkillsManifest, readComponents: readComponentsManifestForWrite, writeComponents: writeComponentsManifest, assertSafe: (root: string, file: string) => assertSafeSyncMutationPaths(root, [file]), readDefinition: readComponentDefinition }),
     componentRegistryPath,
     renderComponentsManifestYaml,
     readComponentsManifestForWrite,

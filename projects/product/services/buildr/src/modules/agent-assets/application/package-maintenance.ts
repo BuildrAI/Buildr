@@ -15,6 +15,7 @@ import { createBuiltinLifecycle } from './package-maintenance/builtin-lifecycle.
 import { createCapabilityRetirement } from './package-maintenance/capability-retirement.ts';
 import type { SkillConnectionImpactReader } from './connection-impact.ts';
 export interface PackageMaintenanceDependencies {
+  retirePackagedArchify: ReturnType<typeof import('./components.ts').registerDomainsComponents>['retirePackagedArchify'];
   connectionImpacts?: SkillConnectionImpactReader;
   WORKSPACE_ROOT_GITIGNORE_ENTRIES: readonly string[];
   isPlainObject: ReturnType<typeof import('./commands.ts').registerDomainsCommands>['isPlainObject'];
@@ -126,6 +127,9 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
     const restoreOutcomes: any[] = [];
     const restoreId = options.restoreId || null;
     const checkOnly = options.checkOnly === true;
+    if (!checkOnly) adoptPackageResources(targetRoot);
+    const retirement = manifest.components.some((entry: any) => entry.id === 'archify') ? { changed: [], findings: [] } : dependencies.retirePackagedArchify(targetRoot, checkOnly);
+    changed.push(...retirement.changed); findings.push(...retirement.findings);
     const componentStatusById: any = new Map(packageComponentsStatus(targetRoot, manifest).components.map((item: any) => [item.id, item.status]));
     const receipts = readBuiltinReceipts(targetRoot);
     const receiptByKey: any = new Map(receipts.builtins.map((item: any) => [builtinReceiptKey(item.type, item.id), item]));
@@ -151,7 +155,6 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
     };
 
     if (!checkOnly) {
-      adoptPackageResources(targetRoot);
       ensureRootRequiredBlock(targetRoot, changed);
       changed.push(...convergeRegistryManifests(targetRoot));
       if (appendGitignoreEntries(path.join(targetRoot, '.gitignore'), [...WORKSPACE_ROOT_GITIGNORE_ENTRIES])) {

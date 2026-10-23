@@ -246,6 +246,7 @@ export function assertNpmTarballInventory(inventory: any): any  {
   const forbidden: any = paths.filter((value: any) => (
     /(^|\/)(?:node|node\.exe|npm|npm\.cmd|npx|npx\.cmd)$/iu.test(value)
     || /^payload\/product\/package\/launchers\//u.test(value)
+    || /^payload\/product\/resources\/(?:workspace\/(?:skills|components)\/buildr\/archify(?:\/|$)|contracts\/bootstrap\.yml$|installation\/launcher\/buildr-icon\.png$)/u.test(value)
     || /\.(?:app|pkg|msi|vbs|map)$/iu.test(value)
     || /(^|\/)(?:test|tests|fixtures?)(\/|$)/iu.test(value)
     || /(^|\/)buildr-web(\/|$)/iu.test(value)

@@ -1,4 +1,6 @@
 import { withExclusiveFileLock } from '../filesystem/exclusive-file-lock.ts';
+import { isFinderMetadata } from '../filesystem/finder-metadata.ts';
+import { LEGACY_ARCHIFY_SOURCE, preserveArchifyBeforeReplacement, preservedArchifyRoot } from './preserved-archify.ts';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -8,6 +10,9 @@ import { resolveProductRoot } from './index.ts';
 type ResourceFile = { source: string; path: string; sha256: string; mode: number };
 export type ResourceSet = { schemaVersion: 'buildr.shared-resources/v1'; id: string; version: string; files: ResourceFile[] };
 const digest = (value: string | Buffer) => crypto.createHash('sha256').update(value).digest('hex');
+// Only capability sources are shared. Initialization, launcher and package checks
+// keep reading their installation-owned resources instead of a second copy.
+const SHARED_SOURCE_ROOTS = ['workspace/skills/', 'runtime/skills/'];
 const relativeFile = (value: string) => {
   if (!value || value.includes('\\') || value.includes('\0') || path.posix.normalize(value) !== value || value.startsWith('/') || value.split('/').includes('..')) throw new Error(`Invalid resource path: ${value}`);
   return value;
@@ -38,8 +43,13 @@ export function describePackageResources(product = resolveProductRoot()): Resour
     for (const name of fs.readdirSync(directory).sort()) {
       const file = path.join(directory, name); const stat = fs.lstatSync(file);
       if (stat.isSymbolicLink() || (!stat.isDirectory() && !stat.isFile())) throw new Error(`Unsupported package resource: ${file}`);
-      if (stat.isDirectory()) scan(file);
-      else { const source = path.relative(root, file).split(path.sep).join('/'); files.push({ source, path: destination(source), sha256: digest(fs.readFileSync(file)), mode: stat.mode & 0o777 }); }
+      if (isFinderMetadata(name, stat)) continue;
+      const source = path.relative(root, file).split(path.sep).join('/');
+      if (stat.isDirectory()) {
+        if (SHARED_SOURCE_ROOTS.some(prefix => prefix.startsWith(`${source}/`) || `${source}/`.startsWith(prefix))) scan(file);
+      } else if (SHARED_SOURCE_ROOTS.some(prefix => source.startsWith(prefix))) {
+        files.push({ source, path: destination(source), sha256: digest(fs.readFileSync(file)), mode: stat.mode & 0o777 });
+      }
     }
   }
   scan(root);
@@ -62,6 +72,7 @@ function inspectResourceDirectory(root: string, expectedId?: string): ResourceSe
     for (const name of fs.readdirSync(directory)) {
       const file = path.join(directory, name); const stat = fs.lstatSync(file);
       if (stat.isSymbolicLink() || (!stat.isFile() && !stat.isDirectory())) throw new Error(`Unsupported shared resource: ${file}`);
+      if (isFinderMetadata(name, stat)) continue;
       if (stat.isDirectory()) verifyInventory(file);
       else { const relative = path.relative(root, file).split(path.sep).join('/'); if (relative !== 'resource-set.json' && !seen.has(relative)) throw new Error(`Unexpected shared resource: ${relative}`); }
     }
@@ -91,6 +102,12 @@ export function ensurePackageResources(product = resolveProductRoot()): Resource
   return withExclusiveFileLock(path.join(parent, '.resources.lock'), target, () => {
     // A crash between the two renames must not strand the stable public path.
     if (!fs.existsSync(target) && fs.existsSync(previous)) fs.renameSync(previous, target);
+    if (!desired.files.some(file => file.source.startsWith(LEGACY_ARCHIFY_SOURCE))) {
+      let old: ResourceSet | null = null;
+      try { old = readDescriptor(target); }
+      catch (error) { if (fs.existsSync(path.join(target, 'skills/buildr/archify'))) throw error; }
+      if (old) preserveArchifyBeforeReplacement(target, old, inspectResourceDirectory, assertPlainPath);
+    }
     try {
       const existing = inspectResourceDirectory(target, desired.id);
       fs.rmSync(stage, { recursive: true, force: true });
@@ -148,10 +165,17 @@ export function adoptPackageResources(root: string, ready = false) {
 }
 export function resolveSharedResource(root: string, source: string): string {
   relativeFile(source);
-  const adoption = readResourceAdoption(root);
-  if (!adoption) throw new Error('工作空间资源尚未准备，请在 Buildr 中重试。');
+  const normalizedSource = source.replace(/^resources\//, '');
   const base = sharedResourcesRoot(); assertPlainPath(base);
   const descriptor = readDescriptor(base);
+  if (normalizedSource.startsWith(LEGACY_ARCHIFY_SOURCE) && !descriptor.files.some(item => item.source.startsWith(LEGACY_ARCHIFY_SOURCE))) {
+    const preserved = readPreservedArchify();
+    const entry = preserved.set.files.find(item => item.source === normalizedSource);
+    if (!entry) throw new Error(`Archify 历史来源未声明：${source}`);
+    return path.join(preserved.root, entry.path);
+  }
+  const adoption = readResourceAdoption(root);
+  if (!adoption) throw new Error('工作空间资源尚未准备，请在 Buildr 中重试。');
   if (descriptor.id !== adoption.resourceSet) throw new Error('共享资源已更新，此工作空间需要按最新版重新准备。');
   const entry = descriptor.files.find(item => item.source === source.replace(/^resources\//, ''));
   if (!entry) throw new Error(`Shared resource is not declared: ${source}`);
@@ -159,6 +183,12 @@ export function resolveSharedResource(root: string, source: string): string {
   const file = path.join(base, entry.path); assertPlainPath(file);
   if (digest(fs.readFileSync(file)) !== entry.sha256) throw new Error(`Shared resource damaged: ${source}`);
   return file;
+}
+export function readPreservedArchify(): { root: string; sourceRoot: string; set: ResourceSet } {
+  const root = preservedArchifyRoot(sharedResourcesRoot());
+  const set = inspectResourceDirectory(root);
+  if (!set.files.every(file => file.source.startsWith(LEGACY_ARCHIFY_SOURCE) && file.path === `files/${file.source.slice(LEGACY_ARCHIFY_SOURCE.length)}`)) throw new Error('Archify 保留来源映射无效。');
+  return { root, sourceRoot: path.join(root, 'files'), set };
 }
 /** Local references are rebuilt on another machine or after interrupted preparation. */
 export function prepareWorkspaceResourceAdoption(root: string) {
