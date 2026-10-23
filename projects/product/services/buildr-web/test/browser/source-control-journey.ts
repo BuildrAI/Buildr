@@ -1457,7 +1457,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     const reader = task.getByRole('region', {name: '改动与提交工作台', exact: true}); await reader.waitFor(); await assertTaskIdentity();
     const current = reader.locator('.task-rail-body > section > .task-changed-list .task-changed-row').filter({has: page.locator('.task-changed-path[data-file-path="' + fixture.path + '"]')}).first();
     await current.click(); await reader.getByRole('region', {name: '差异内容', exact: true}).getByText(alpha.workingText.trim(), {exact: false}).waitFor();
-    const selected = await reader.locator('.task-changed-list > .is-selected .task-changed-path').first().getAttribute('title');
+    const selected = await reader.locator('.task-changed-list > .is-selected .task-changed-path').first().getAttribute('data-file-path');
     // Task scope is observed per repository; only the read for the task's own repository carries its preselection.
     const response = page.waitForResponse((returned: any) => { const url = new URL(returned.url()); return url.pathname.endsWith('/code/source-control') && url.searchParams.get('taskId') === 'browser-task' && url.searchParams.get('repositoryId') === alpha.repositoryId; });
     await task.locator('[data-task-source-control="browser-task"]').click(); const observed = await (await response).json();
@@ -1487,7 +1487,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     const taskLink = root().locator('[data-source-repository="' + alpha.repositoryId + '"] [data-source-worktree="' + alpha.worktreeId + '"]').getByRole('button', {name: /^(打开|进入)任务 浏览器任务$/});
     await taskLink.click(); await reader.waitFor(); await assertTaskIdentity();
     assert.equal(await task.locator('[data-task-content=changes]').getAttribute('aria-selected'), 'true');
-    assert.equal(await reader.locator('.task-changed-list > .is-selected .task-changed-path').first().getAttribute('title'), selected);
+    assert.equal(await reader.locator('.task-changed-list > .is-selected .task-changed-path').first().getAttribute('data-file-path'), selected);
     assert.ok((await reader.getByRole('region', {name: '差异内容', exact: true}).innerText()).includes(alpha.workingText.trim()));
     await noOverflow(); await capture(page, 'source-control-fixture-task-worktree-return.png');
   });

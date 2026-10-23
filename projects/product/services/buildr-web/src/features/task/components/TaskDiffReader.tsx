@@ -14,6 +14,15 @@ type DiffMode = 'split' | 'unified';
 
 function fileName(path: string) { return path.split('/').at(-1) || path; }
 function fileDir(path: string) { const index = path.lastIndexOf('/'); return index < 0 ? '' : path.slice(0, index); }
+/** Absolute display path; API identities stay repository-relative. */
+function absoluteFileTooltip(root: string | undefined, file: ChangedFileEntry) {
+  if (!root) return undefined;
+  const separator = /^[A-Za-z]:\\|^\\\\/.test(root) ? '\\' : '/';
+  const base = root.replace(separator === '\\' ? /[\\/]+$/ : /\/+$/, '');
+  const join = (path: string) => base + separator + path.replaceAll('/', separator);
+  const current = join(file.path);
+  return file.previousPath ? `${join(file.previousPath)} → ${current}` : current;
+}
 
 /** Render one diff line; changed segments carry the stronger tint, unchanged text keeps the row tint. */
 function lineText(text: string, segments?: InlineSegment[], marker?: string) {
@@ -264,7 +273,7 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
               {repository.status === 'unavailable' && <p className="task-changed-repo-error">{repository.message || '该仓库暂不可读取。'}</p>}
               {repository.status !== 'unavailable' && <>
                 {repository.changes.length > 0 && repository.commits.length > 0 && <p className="task-rail-group" data-prototype-position="rail-group">未提交改动</p>}
-                {repository.changes.length > 0 && <ChangedFileList selectable files={repository.changes} expanded={null} onExpand={key => { if (key) selectFile(key); }} selectedKey={!fileCommit && current ? changedFileKey(current) : null} />}
+                {repository.changes.length > 0 && <ChangedFileList selectable files={repository.changes} expanded={null} fileTooltipPath={file => absoluteFileTooltip(repository.root, file)} onExpand={key => { if (key) selectFile(key); }} selectedKey={!fileCommit && current ? changedFileKey(current) : null} />}
                 {repository.changes.length > 0 && repository.commits.length > 0 && <p className="task-rail-group">提交记录</p>}
                 <ol className="task-rail-commits">
                   {repository.commits.map(entry => {
@@ -275,7 +284,7 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
                         <span className="task-rail-commit-content"><strong>{entry.commit.subject}</strong><span className="task-commits-meta"><code>{entry.commit.shortHash}</code><time dateTime={entry.commit.committedAt}>{formatShortDateTime(entry.commit.committedAt)}</time></span>{showTaskSource && <small className="task-rail-commit-source" title={entry.commit.taskId || taskId}>来源：{entry.commit.taskTitle || entry.commit.taskId || taskId}</small>}</span>
                       </button>
                       {open && <div className="task-rail-commit-files" id={`task-commit-files-${encodeURIComponent(entry.key)}`}>
-                        {entry.files.length === 0 ? <p className="task-rail-empty">文件列表尚未读取或暂不可展示</p> : <ChangedFileList compact selectable files={entry.files} expanded={null} onExpand={key => { if (key) selectFile(key, entry.key); }} selectedKey={fileCommit === entry.key && current ? changedFileKey(current) : null} />}
+                        {entry.files.length === 0 ? <p className="task-rail-empty">文件列表尚未读取或暂不可展示</p> : <ChangedFileList compact selectable files={entry.files} expanded={null} fileTooltipPath={file => absoluteFileTooltip(repository.root, file)} onExpand={key => { if (key) selectFile(key, entry.key); }} selectedKey={fileCommit === entry.key && current ? changedFileKey(current) : null} />}
                       </div>}
                     </li>;
                   })}

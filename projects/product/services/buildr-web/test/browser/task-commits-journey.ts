@@ -64,7 +64,13 @@ export async function runTaskCommitsJourney({ t, page, runtime, workspaceRoot, w
       await record.waitFor({ state: 'visible' }); await record.click();
       await body().locator('.task-commit-details pre').filter({ hasText: `Buildr-Task: ${workbenchId}` }).waitFor({ state: 'visible' });
       assert.match(await body().locator('.task-commit-details').innerText(), new RegExp(canaryHash));
-      await body().locator('.task-rail-commit-files .task-changed-row').filter({ hasText: canaryFile }).click();
+      const commitFile = body().locator('.task-rail-commit-files .task-changed-row').filter({ hasText: canaryFile });
+      await commitFile.hover();
+      const pathTooltip = page.getByRole('tooltip').filter({ hasText: canaryFile }).last();
+      await pathTooltip.waitFor({ state: 'visible' });
+      const pathTip = (await pathTooltip.innerText()).trim();
+      assert.ok(path.isAbsolute(pathTip) && pathTip.endsWith(path.sep + canaryFile), '悬停展示文件完整位置：' + pathTip);
+      await commitFile.click();
       await body().locator('.task-diff-body').getByText('真实提交文件的完整内容。', { exact: false }).waitFor({ state: 'visible' });
       assert.ok(fileReads.some(url => { const parameters = new URL(url).searchParams; return parameters.get('commitHash') === canaryHash && parameters.get('filePath') === canaryFile; }), '所选提交文件通过真实任务限定接口读取');
       await capture(page, 'task-workbench-real-commit-file.png');
