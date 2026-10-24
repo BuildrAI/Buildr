@@ -1,6 +1,6 @@
 import { AssetDeleteDialog } from '../../workspace/components/AssetDeleteDialog';
 import { useAssetList } from '../../workspace/components/useAssetList';
-import { Alert, App, Select, Space, Tag, Tooltip } from 'antd';
+import { Alert, App, Select, Tag, Tooltip } from 'antd';
 import { ResourceDirectory } from '../../../components/ResourceDirectory';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -91,10 +91,10 @@ export function ServicesPage() {
           },
         },
       ]}
-      actionWidth={196}
+      actionWidth={224}
       rowActions={s => {
         const summary = runtimeByCode.get(s.code);
-        return <Space size={4} wrap>
+        return <>
           {activeRuns(summary).length
             ? <Button type="text" icon={<UnorderedListOutlined />} onClick={() => navigate(href(s.id) + '?view=runtime')}>查看运行</Button>
             : summary?.definition
@@ -102,7 +102,7 @@ export function ServicesPage() {
             : <Button type="text" icon={<SettingOutlined />} disabled={list?.migrationRequired} onClick={() => setDiscovering({ code: s.code, name: s.name })}>运行配置</Button>}
           <Button type="text" disabled={list?.migrationRequired} onClick={() => setEditing(s.id)}>编辑</Button>
           <Button type="text" disabled={list?.migrationRequired} onClick={() => setDeleting(s.id)}>移除</Button>
-        </Space>;
+        </>;
       }}
       notice={<>{list?.migrationRequired && <Alert type="info" message="旧服务登记需要迁移" action={<Button onClick={async () => { try { await assetCatalogApi.migrate(list.revision); setActionError(''); } catch (err) { setActionError((err as Error).message); } }}>迁移登记</Button>} />}
         {runtime.error ? <Alert type="warning" showIcon message="本地运行状态暂时不可用" description={runtime.error} action={<Button size="small" onClick={() => void runtime.refresh()}>重试</Button>} /> : null}</>}

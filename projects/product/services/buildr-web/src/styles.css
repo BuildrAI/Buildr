@@ -2052,14 +2052,14 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .resource-directory-row-actions .ant-btn:not(:disabled):hover { color:var(--soft-primary); }
 .resource-directory-table .ant-table-thead > tr > th { padding:12px 18px; background:#f6f8f7; color:#6d7771; font-size:12px; font-weight:500; border-bottom:1px solid var(--soft-line); }
 .resource-directory-table .ant-table-thead > tr > th::before { display:none; }
-.resource-directory-table .ant-table-tbody > tr > td { padding:16px 18px; height:76px; font-size:13px; border-bottom:1px solid #edf0ee; }
+.resource-directory-table .ant-table-tbody > tr > td { padding:12px 18px; height:82px; font-size:13px; border-bottom:1px solid #edf0ee; }
 .resource-directory-table .ant-table-tbody > tr:last-child > td { border-bottom:0; }
 .resource-directory-row { cursor:pointer; }
 .resource-directory-table .ant-table-tbody > tr.ant-table-row:hover > td { background:#f3f8f5; }
-.resource-name { display:flex; flex-direction:column; gap:5px; min-width:0; }
-.resource-name a { font-weight:600; font-size:14px; color:var(--soft-ink); width:fit-content; }
+.resource-name { display:flex; flex-direction:column; height:58px; justify-content:center; gap:4px; min-width:0; }
+.resource-name a { font-weight:600; font-size:14px; line-height:20px; color:var(--soft-ink); width:fit-content; }
 .resource-name a:hover { color:var(--soft-primary); }
-.resource-name > span { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; color:var(--soft-muted); font-size:12px; line-height:1.6; }
+.resource-name > span { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; color:var(--soft-muted); font-size:12px; line-height:17px; max-height:34px; }
 .resource-code { color:#68766e; font-size:12px; background:#f3f6f4; padding:2px 6px; border-radius:4px; overflow-wrap:anywhere; }
 .resource-home-head { padding:22px 24px; margin-bottom:16px; border:1px solid var(--soft-line); border-radius:12px; background:linear-gradient(135deg,#f0f6f3,#fff 80%); }
 .resource-home-head > :first-child { min-width:0; }
@@ -2122,10 +2122,6 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 @media(prefers-reduced-motion:reduce) { .resource-relation-row,.resource-document-row { transition:none; } }
 .workspace-page .pane-stage { position:relative; }
 .app-shell .workspace-switcher .context-label { white-space:nowrap; flex:none; }
-.resource-directory-table .ant-table-tbody > tr > td { padding:12px 18px; height:82px; }
-.resource-name { height:58px; justify-content:center; gap:4px; }
-.resource-name a { line-height:20px; }
-.resource-name > span { line-height:17px; max-height:34px; }
 .workspace-page .resource-section .ant-list-item { padding:0; }
 .resource-section .ant-list-item .resource-relation-row { flex:1; min-width:0; }
 

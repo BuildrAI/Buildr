@@ -827,8 +827,9 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#preview-identity').waitFor({ state: 'attached' });
     assert.equal(await page.locator('#preview-identity').isHidden(), true);
     assert.match(await page.locator('#preview-identity').getAttribute('data-preview') || '', /开发预览：browser-preview · preview-branch · 0123456789ab · 有未提交修改/);
-    assert.equal(await page.locator('#quit-buildr').isVisible(), true, 'Preview 实例回退为仅退出按钮');
-    assert.equal(await page.locator('#restart-buildr').count(), 0, 'Preview 实例不提供重启入口');
+    await page.locator('#more-actions').hover();
+    await page.locator('#quit-buildr').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#restart-buildr').locator('xpath=ancestor::*[@role="menuitem"]').getAttribute('aria-disabled'), 'true', '托管预览在统一菜单中禁用重启');
     await page.goto(url);
     assert.equal(await page.locator('#more-actions').isVisible(), true, '默认实例通过更多操作菜单提供重启和退出');
     assert.equal(await page.locator('#quit-buildr').count(), 0, '退出入口收进下拉菜单，未展开时不存在');
@@ -1230,6 +1231,12 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       assert.equal(headers.at(-1), '操作');
       await page.getByRole('textbox', { name: `搜索${noun}`, exact: true }).waitFor({ state: 'visible' });
       heights.push(await page.locator('.resource-directory-table tbody tr[data-row-key]').first().evaluate((row: HTMLElement) => row.getBoundingClientRect().height));
+      const actions = page.locator('.resource-directory-table tbody tr[data-row-key]').first().locator('.resource-directory-row-actions');
+      assert.equal(await actions.evaluate((element: HTMLElement) => {
+        const buttons = [...element.querySelectorAll('button')].map(button => button.getBoundingClientRect());
+        const cell = element.closest('td')!.getBoundingClientRect();
+        return buttons.every(button => Math.abs(button.top - buttons[0].top) <= 1 && button.left >= cell.left && button.right <= cell.right);
+      }), true, `${area} 操作保持单行且完整位于操作列内`);
       await page.getByRole('button', { name: `新增${noun}`, exact: true }).waitFor({ state: 'visible' });
       await page.getByRole('textbox', { name: `搜索${noun}`, exact: true }).fill('保留搜索');
       await Promise.all([page.waitForResponse((response: any) => response.request().method() === 'GET' && response.url().includes('/api/')), page.getByRole('button', { name: `刷新${noun}`, exact: true }).click()]);
@@ -1804,6 +1811,11 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.getByRole('textbox', { name: 'Git 地址', exact: true }).fill('https://example.com/nested.git');
     await page.getByRole('textbox', { name: '集成分支', exact: true }).fill('dev');
     await page.getByRole('button', { name: '添加服务', exact: true }).click();
+    await page.getByText('请选择服务类型（前端或后端）。', { exact: true }).waitFor({ state: 'visible' });
+    assert.equal(runtime.assetCatalog(workspaceRoot).services.some((item: any) => item.code === 'nested-business'), false);
+    await page.getByRole('combobox', { name: '服务类型', exact: true }).click();
+    await page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option-content').getByText('后端', { exact: true }).click();
+    await page.getByRole('button', { name: '添加服务', exact: true }).click();
     await page.getByRole('dialog').filter({ has: page.getByText('新增服务', { exact: true }) }).waitFor({ state: 'hidden' });
     assert.equal(page.url(), `${workspaceUrl}/projects`);
     assert.equal(runtime.assetCatalog(workspaceRoot).projects.some((p: any) => p.code === 'nested-project'), false);
@@ -1815,6 +1827,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     const service = saved.services.find((s: any) => s.code === 'nested-business');
     const repository = saved.repositories.find((r: any) => r.code === 'nested-code');
     assert.deepEqual(project.serviceIds, [service.id]);
+    assert.equal(service.type, 'backend');
     assert.equal(service.repositoryId, repository.id);
     assert.equal(repository.present, false);
     assert.equal(repository.source.path, 'repositories/nested-code');

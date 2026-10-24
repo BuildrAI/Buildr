@@ -1,3 +1,4 @@
+import { showPrimaryNavigation } from '../../../buildr-web/test/browser/primary-navigation-controls.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -177,8 +178,8 @@ export async function runWorktreePublicationJourney({ t, page, runtime, workspac
     await page.getByRole('button', { name: '切换工作空间', exact: true }).click();
     await page.getByRole('menuitem').filter({ hasText: /^browser-smoke(?:-articles)?$/ }).click();
     await page.waitForURL(`${workspaceUrl}/overview`);
-    await page.locator('[data-area="workspace"]').click();
-    await page.locator('[data-nav="articles"]').click();
+    await showPrimaryNavigation(page, 'workspace');
+    await page.locator('.primary-secondary-navigation:visible [data-nav="articles"]').click();
     await page.locator('.publication-directory:visible').getByRole('link', { name: '工作树预览示例（校准）', exact: true }).click();
     await currentReader.getByText('原文', { exact: true }).click();
     const beforeLeaving = fs.readFileSync(firstFile, 'utf8');

@@ -5,6 +5,7 @@ import type { TestContext } from 'node:test';
 import type { Locator, Page, Request } from 'playwright-core';
 import { composeKnowledgeSearch, continueKnowledgeSearch, toggleFilteredKnowledgeBranch, waitKnowledgeBranchExpanded } from './knowledge-navigation-input.ts';
 import { openKnowledgeTopicDirectory, selectKnowledgeChildTopic, verifyKnowledgeQuestionHandoff } from './knowledge-local-reading-journey.ts';
+import { showPrimaryNavigation } from '../../../buildr-web/test/browser/primary-navigation-controls.ts';
 import { runWorktreePublicationJourney } from './publication-worktree-journey.ts';
 
 export const publicationTestPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN1sAAAAASUVORK5CYII=', 'base64');
@@ -24,6 +25,8 @@ export async function runPublicationJourney({ t, page, runtime, workspaceRoot, w
   const openInlineEditor = async () => { await visible().locator('.publication-modebar .ant-segmented-item').filter({ hasText: '编辑' }).click(); };
   const leaveDialog = () => page.getByRole('dialog', { name: '放弃尚未保存的修改？', exact: true });
   const primaryTabs = () => page.getByRole('tablist', { name: '打开的页面', exact: true }).getByRole('tab');
+  const expectedGuide = runtime.skillFile(workspaceRoot, 'current-knowledge-maintenance', 'references/architecture-knowledge.md').content;
+  assert.ok(expectedGuide.length > 0, '文章阅读测试使用当前已安装的真实建设指引');
   writeReadingFixture(workspaceRoot);
   const openEditorWithPeerHistory = async () => {
     await page.goto(`${otherWorkspaceUrl}/overview`);
@@ -32,8 +35,8 @@ export async function runPublicationJourney({ t, page, runtime, workspaceRoot, w
     await page.getByRole('button', { name: '切换工作空间', exact: true }).click();
     await page.getByRole('menuitem').filter({ hasText: /^browser-smoke(?:-articles)?$/ }).click();
     await page.waitForURL(`${workspaceUrl}/overview`);
-    await page.locator('[data-area="workspace"]').click();
-    await page.locator('[data-nav="articles"]').click();
+    await showPrimaryNavigation(page, 'workspace');
+    await page.locator('.primary-secondary-navigation:visible [data-nav="articles"]').click();
     await visible().getByRole('link', { name: '浏览器测试文章', exact: true }).click();
     await openInlineEditor();
     await editor().locator('#article-edit-summary').waitFor({ state: 'visible' });
@@ -114,7 +117,6 @@ export async function runPublicationJourney({ t, page, runtime, workspaceRoot, w
     const guideData = await openKnowledgeSource(rendered.getByRole('link', { name: '建设指引', exact: true }), 'architecture-guide');
     const guideSource = guideData.observations.find((item: { id: string }) => item.id === 'architecture-guide');
     assert.equal(guideSource?.path, 'references/architecture-knowledge.md');
-    const expectedGuide = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr/current-knowledge-maintenance/references/architecture-knowledge.md'), 'utf8');
     assert.equal(guideSource?.content, expectedGuide, '建设指引读取当前隔离工作空间已安装的真实参考文件');
     const guideHeading = expectedGuide.match(/^# (.+)$/m)?.[1];
     assert.ok(guideHeading, '当前建设指引有可阅读标题');
@@ -403,7 +405,8 @@ export async function runPublicationJourney({ t, page, runtime, workspaceRoot, w
       return Boolean(image?.complete && image.naturalWidth);
     });
     assert.match(decodeURIComponent((await image.getAttribute('src')) || ''), /\/projects\/product\/publications\/browser-article\/assets\/assets\/cover\.png$/);
-    await page.locator('[data-nav="articles"]').click();
+    await showPrimaryNavigation(page, 'workspace');
+    await page.locator('.primary-secondary-navigation:visible [data-nav="articles"]').click();
     await visible().locator('#articles-search').fill('浏览器测试');
     await visible().getByRole('link', { name: '浏览器测试文章', exact: true }).click();
     await visible().locator('#publication-title').waitFor({ state: 'visible' });
@@ -672,7 +675,6 @@ export async function runPublicationJourney({ t, page, runtime, workspaceRoot, w
 
 function writeReadingFixture(workspaceRoot: string) {
   const projectRoot = path.join(workspaceRoot, 'projects/product');
-  assert.equal(fs.existsSync(path.join(workspaceRoot, 'skills/buildr/current-knowledge-maintenance/references/architecture-knowledge.md')), true, '文章阅读测试使用已安装的真实建设指引');
   const guideLink = 'services/buildr/resources/workspace/skills/buildr/current-knowledge-maintenance/references/architecture-knowledge.md';
   const put = (file: string, content: string) => { const target = path.join(projectRoot, file); fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, content); };
   fs.appendFileSync(path.join(projectRoot, 'docs/publications/article.md'), '\n' + Array.from({ length: 80 }, (_, i) => `段落 ${i + 1}：阅读位置需要在展开、编辑和返回后保持。${'这是一段用于验证长文阅读布局的内容。'.repeat(8)}\n`).join('\n'));
