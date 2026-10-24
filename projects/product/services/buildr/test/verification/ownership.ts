@@ -984,7 +984,9 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "package.json",
       "test/**"
     ],
-    "inputExclusions": []
+    // Platform boundary suites stay delegated to their native runner owners;
+    // the candidate executors still claim them for the ownership audit.
+    "inputExclusions": ["test/platform/**"]
   },
   "managed-mutations": {
     "inputs": [

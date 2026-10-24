@@ -51,6 +51,13 @@ const codeGroup = selected('code') && codeFocusProvided ? planCodeBrowserGroups(
 const runCodeExplorer = !codeGroup || codeGroup.id === 'explorer';
 const runSourceControl = !codeGroup || codeGroup.id === 'source-control';
 const selectorLabel: any = [...SELECTORS].join(',') + (SELECTORS.has('code') && codeGroup ? ':' + codeGroup.id : '');
+// Optional scenario-name filter for long task journeys; same pipe-separated
+// semantics as BUILDR_SOURCE_CONTROL_FOCUS. Empty runs everything.
+const taskFocus: any = process.env.BUILDR_TASK_FOCUS || '';
+const taskFocused = (name: string) => !taskFocus || taskFocus === 'all' || taskFocus.split('|').some((part: string) => part && name.includes(part));
+const taskFocusedT = (t: any) => Object.assign(Object.create(t), {
+  test: async (name: string, action: any) => { if (taskFocused(name)) return t.test(name, action); },
+});
 
 function runBuildr(args: any, buildr: any = BUILDR): any  {
   const result: any = spawnSync(process.execPath, [buildr, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8' });
@@ -2409,7 +2416,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.getByRole('button', { name: /审查|继续推进/ }).count(), 0, 'Change 详情只读展示');
   });
 
-  if (selected('task')) await t.test('无关联变更的任务可从方案设计与单独查看阅读本机原型', async () => {
+  if (selected('task')) await taskFocusedT(t).test('无关联变更的任务可从方案设计与单独查看阅读本机原型', async () => {
     const taskId = 'browser-local-prototype';
     runtime.createTask(workspaceRoot, { taskId, title: '本机原型示例', intent: '验证未决定实施时也可阅读已归入原型', projects: [], services: [], changes: [] });
     const localRoot = path.join(workspaceRoot, '.buildr/local/task-prototypes', taskId);
@@ -2441,7 +2448,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     process.stderr.write('[buildr-browser] selector=task phase=task-local-prototype-verified\n');
   });
 
-  if (selected('task')) await t.test('任务列表筛选、编辑、冲突、终态确认与窄屏交互共享同一 Task Record', async () => {
+  if (selected('task')) await taskFocusedT(t).test('任务列表筛选、编辑、冲突、终态确认与窄屏交互共享同一 Task Record', async () => {
     page.setDefaultTimeout(15000);
     page.setDefaultNavigationTimeout(15000);
     const staleChangeRoot: any = path.join(workspaceRoot, 'projects', 'demo', 'openspec', 'changes', 'stale-history');
@@ -2974,16 +2981,16 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.setViewportSize({width:1280,height:720});
   });
 
-  if (selected('task')) await runTaskCommitsJourney({ t, page, runtime, workspaceRoot, workspaceUrl, expectedBrowserErrors, capture });
-  if (selected('task')) await runCodexNavigationJourney({ t, page, runtime, workspaceRoot, workspaceUrl, runBuildr, capture, expectedBrowserErrors });
+  if (selected('task')) await runTaskCommitsJourney({ t: taskFocusedT(t), page, runtime, workspaceRoot, workspaceUrl, expectedBrowserErrors, capture });
+  if (selected('task')) await runCodexNavigationJourney({ t: taskFocusedT(t), page, runtime, workspaceRoot, workspaceUrl, runBuildr, capture, expectedBrowserErrors });
 
-  if (selected('task') || selected('task-materials')) await runTaskMaterialsJourney({ t, page, runtime, workspaceRoot, workspaceUrl, runBuildr, runGit, capture, expectedBrowserErrors });
+  if (selected('task') || selected('task-materials')) await runTaskMaterialsJourney({ t: selected('task') ? taskFocusedT(t) : t, page, runtime, workspaceRoot, workspaceUrl, runBuildr, runGit, capture, expectedBrowserErrors });
 
   if (selected('workbench')) await runWorkbenchJourney({ t, page, runtime, workspaceRoot, otherWorkspaceRoot: otherRoot, workspaceUrl, otherWorkspaceUrl: `${url}/workspaces/${otherWorkspaceId}`, expectedBrowserErrors, selectAntdOption, capture });
 
   if (selected('project')) await runWorkspaceCompositionJourney({ t, page, runtime, workspaceRoot, workspaceUrl, expectedBrowserErrors });
 
-  if (selected('task')) await runCompositeTaskChildrenJourney({ t, page, runtime, workspaceRoot, workspaceUrl, capture });
+  if (selected('task')) await runCompositeTaskChildrenJourney({ t: taskFocusedT(t), page, runtime, workspaceRoot, workspaceUrl, capture });
 
   const unexpectedBrowserErrors: any = browserErrors.filter((error: any) => ![...expectedBrowserErrors].some((expected: any) => error.includes(expected)));
   assert.deepEqual(unexpectedBrowserErrors, [], unexpectedBrowserErrors.join('\n'));

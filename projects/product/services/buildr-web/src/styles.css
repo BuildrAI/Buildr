@@ -1907,6 +1907,9 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .drawer-shell .ant-drawer-body { padding: 18px 20px; }
 .drawer-shell .ant-drawer-footer { padding: 12px 20px; border-top: 1px solid var(--soft-line); background: #fff; }
 
+/* 接入菜单退出：窗口缩放会取消过渡使 transitionend 永不抵达，缩短退出过渡让其按时结束并卸载。 */
+.agent-connect-menu.ant-slide-up-leave-active { transition-duration: 0.01s !important; }
+
 /* 领域全景：hero + 统计带 + 服务卡 + 对象行。 */
 .ws-hero { margin-bottom: 16px; padding: 20px 22px 16px; border: 1px solid var(--soft-line); border-radius: 14px; background: linear-gradient(180deg, #eef4f2 0%, rgba(238, 244, 242, 0) 100%); }
 .ws-hero-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }

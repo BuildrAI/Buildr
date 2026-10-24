@@ -27,6 +27,7 @@ export async function runCompositeTaskChildrenJourney({ t, page, runtime, worksp
     const table = page.locator('.composite-task-list:visible');
     await table.getByRole('columnheader', { name: '操作', exact: true }).waitFor();
     const rows = table.locator('tbody tr.ant-table-row');
+    await rows.first().waitFor({ state: 'visible' });
     assert.deepEqual(await rows.evaluateAll((nodes: HTMLElement[]) => nodes.map(node => node.dataset.rowKey)), expectedOrder);
     assert.equal(await table.getByRole('button', { name: /^解除关联 / }).count(), fixtures.length);
     assert.equal(await table.locator('.anticon-close').count(), 0, 'The operation uses visible text rather than an unexplained close icon.');
@@ -43,7 +44,7 @@ export async function runCompositeTaskChildrenJourney({ t, page, runtime, worksp
           const taskCell = cells[0].getBoundingClientRect(), statusCell = cells[1].getBoundingClientRect(), actionCell = cells[2].getBoundingClientRect();
           return { taskWidth: taskCell.width, titleClipped: title.scrollWidth > title.clientWidth, statusFits: status.left >= statusCell.left && status.right <= statusCell.right, actionFits: action.left >= actionCell.left && action.right <= actionCell.right, distinct: taskCell.right <= statusCell.left + 1 && statusCell.right <= actionCell.left + 1, actionWidth: actionCell.width, viewportFits: document.documentElement.scrollWidth <= innerWidth + 1 };
         });
-        assert.ok(bounds.taskWidth > 70, `The task title keeps a readable column at width ${width}.`);
+        assert.ok(bounds.taskWidth > 70, `The task title keeps a readable column at width ${width}: ${JSON.stringify(bounds)}`);
         assert.ok(bounds.statusFits && bounds.actionFits && bounds.distinct && bounds.viewportFits, `Columns remain separate at width ${width}: ${JSON.stringify(bounds)}`);
         assert.ok(bounds.actionWidth >= 100, 'The unlink action keeps enough width for its label.');
         if (width === 390) assert.equal(bounds.titleClipped, true, 'Long titles shorten inside their own column.');
