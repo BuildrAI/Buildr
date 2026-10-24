@@ -253,3 +253,13 @@ test('工具只在明确声明可单独停止且未结束时提供单项停止�
   assert.equal(canStopConversationTool(tool),false);
   assert.equal(canStopConversationTool({...tool,status:'completed',canStop:true}),false);
 });
+
+test('历史图片按原对话身份携带认证头读取，认证轮换重试不暴露令牌且保留取消信号',async()=>{
+  let token='old';const calls=[];const bytes=new Uint8Array([137,80,78,71]);const signal=new AbortController().signal;
+  const api=createAgentConversationsClient(async()=>({}),{writeHeaders:()=>({'x-buildr-session':token}),refreshSession:async()=>{token='new';return true;}},async(url,init)=>{calls.push({url,init});return calls.length===1?new Response(JSON.stringify({error:{code:'session_forbidden'}}),{status:403,headers:{'content-type':'application/json'}}):new Response(bytes,{headers:{'content-type':'image/png'}});});
+  const blob=await api.readImage(conversation,'image/id',signal);
+  assert.deepEqual(new Uint8Array(await blob.arrayBuffer()),bytes);assert.equal(blob.type,'image/png');
+  assert.equal(calls.length,2);assert.equal(calls[0].url,'/api/v1/workspaces/saved%2Fws/agent-conversations/chat%2Fid/attachments/image%2Fid');
+  assert.equal(calls[0].init.headers['x-buildr-session'],'old');assert.equal(calls[1].init.headers['x-buildr-session'],'new');assert.equal(calls[1].init.signal,signal);assert.equal(calls[1].init.cache,'no-store');
+  assert.ok(calls.every(call=>!call.url.includes('old')&&!call.url.includes('new')));
+});

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import type { AccountObservation, AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorSendInput, ExecutorTitleInput, LoginObservation, PermissionMode } from '../../contracts.ts';
 import { NativeRpc, nativeBinding, bounded, closeOwnedProcess, findExecutable, inspectVersion, isolatedEnvironment, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories } from '../native-process.ts';
-const capabilities = { permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: false, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
+const capabilities = { permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 export function createQoderExecutor(): AgentExecutor { return { descriptor: { id: 'qoder', label: 'Qoder', capabilities }, open: options => QoderRuntime.open(options) }; }
 class QoderRuntime implements AgentRuntime {
   readonly capabilities = capabilities;
@@ -90,9 +90,9 @@ class QoderRuntime implements AgentRuntime {
   async resumeContext({ contextRef, cwd }: { contextRef: ContextRef; cwd: string }): Promise<void> { this.reference(contextRef, cwd); await this.rpc.call('resume', { contextId: contextRef.id, cwd }); }
   async readHistory({ contextRef, cwd }: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]> { this.reference(contextRef, cwd); return await this.rpc.call('history', { contextId: contextRef.id, cwd }); }
   async send(input: ExecutorSendInput): Promise<void> {
-    this.reference(input.contextRef, input.cwd); if (input.images.length) throw new Error('agent_images_unverified');
+    this.reference(input.contextRef, input.cwd);
     this.handlers.set(input.contextRef.id, input.onEvent);
-    try { await this.rpc.call('send', { contextId: input.contextRef.id, cwd: input.cwd, text: input.text, model: input.model, reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode, clientRequestId: input.clientRequestId }, 24 * 60 * 60 * 1000); }
+    try { await this.rpc.call('send', { contextId: input.contextRef.id, cwd: input.cwd, text: input.text, images: input.images, model: input.model, reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode, clientRequestId: input.clientRequestId }, 24 * 60 * 60 * 1000); }
     finally { this.handlers.delete(input.contextRef.id); }
   }
   async observe({ contextRef, executionRef }: { contextRef: ContextRef; executionRef?: ExecutionRef }): Promise<ExecutorObservation> {

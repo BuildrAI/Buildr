@@ -11,13 +11,16 @@ const cli = readFileSync(new URL('./fixtures/qoder-cli.mjs', import.meta.url), '
 async function eventually(condition: () => unknown, timeout = 3000) { const end = Date.now() + timeout; while (!condition()) { if (Date.now() > end) throw new Error('condition timeout'); await new Promise(resolve => setTimeout(resolve, 10)); } }
 test('Qoder SDK worker keeps control responsive and binds native input UUID while send waits', { timeout: 15000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-executor-qoder-')); const workspace = join(root, 'workspace'); await mkdir(workspace);
+  const imagePath = join(root, 'image.png'); await writeFile(imagePath, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII=', 'base64'));
   const executable = join(root, 'qoder.mjs'); await writeFile(executable, cli); let runtime: AgentRuntime | undefined;
   try {
     runtime = await createQoderExecutor().open({ connectionId: 'qoder', configRoot: join(root, 'config'), executable, environment: { PATH: process.env.PATH ?? '', QODER_PERSONAL_ACCESS_TOKEN: 'must-not-inherit' } });
     assert.equal((await runtime.inspectAccount()).status, 'ready');
+    assert.equal(runtime.capabilities.images,true);
     const contextRef = await runtime.createContext({ cwd: workspace }); const events: ExecutorEvent[] = [];
-    let failure: unknown; const sending = runtime.send({ contextRef, cwd: workspace, text: '继续处理', images: [], clientRequestId: '4d2b231e-3ddd-4e85-8b5c-6a18a623ac8d', onEvent: event => events.push(event) }); sending.catch(error => { failure = error; });
+    let failure: unknown; const sending = runtime.send({ contextRef, cwd: workspace, text: '继续处理', images: [{path:imagePath,mimeType:'image/png'}], clientRequestId: '4d2b231e-3ddd-4e85-8b5c-6a18a623ac8d', onEvent: event => events.push(event) }); sending.catch(error => { failure = error; });
     await eventually(() => { if (failure) throw failure; return events.some(event => event.type === 'request'); });
+    assert.ok(events.some(event=>event.type==='item'&&event.item.text==='图片已接收'));
     const accepted = events.find(event => event.type === 'accepted'); const request = events.find(event => event.type === 'request'); assert.equal(accepted?.type, 'accepted'); assert.equal(request?.type, 'request');
     assert.equal(accepted.inputItemId, '4d2b231e-3ddd-4e85-8b5c-6a18a623ac8d');
     await runtime.reply({ contextRef, executionRef: accepted.executionRef, requestId: request.request.id, answer: { '0': '蓝' } });

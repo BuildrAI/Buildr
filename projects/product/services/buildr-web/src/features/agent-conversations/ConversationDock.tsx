@@ -11,16 +11,17 @@ import { readOptionalPreference, writeOptionalPreference } from '../../lib/optio
 import './conversation-dock.css';
 
 type Props = { panel: ReactElement<HTMLAttributes<HTMLElement> & {ref?: Ref<HTMLElement>}>; portalTarget?: HTMLElement | null };
-const defaultWidth = 440;
+const minimumWidth = 560;
+const defaultWidth = 620;
 const maximumWidth = 800;
-const clampWidth = (width: number) => Math.min(maximumWidth, Math.max(320, width));
+const clampWidth = (width: number) => Math.min(maximumWidth, Math.max(minimumWidth, width));
 
 /** Keep the same conversation while it is temporarily shown or fixed beside the work. */
 export function ConversationDock({panel, portalTarget}: Props) {
   const context = useAgentConversations();
   const [width, setWidth] = useState(() => {
     const saved = Number(readOptionalPreference('buildr.agent-conversation-width'));
-    return Number.isFinite(saved) && saved >= 320 ? clampWidth(saved) : defaultWidth;
+    return Number.isFinite(saved) && saved > 0 ? clampWidth(saved) : defaultWidth;
   });
   const pane = useRef<HTMLElement>(null), rail = useRef<HTMLElement>(null);
   const peek = usePanePeek({enabled: !context.open, paneRef:pane, railRef:rail});
@@ -72,12 +73,12 @@ export function ConversationDock({panel, portalTarget}: Props) {
     onPointerEnter:event=>peek.enter('pane',event.pointerType), onPointerLeave:event=>peek.exit('pane',event.pointerType),
   }, <>{toggle}{panel.props.children}</>);
   const divider = <SplitDivider className="ac-divider" data-dock={context.side} aria-label="调整对话宽度" aria-controls="agent-conversation-panel"
-    aria-valuemin={320} aria-valuemax={maximumWidth} aria-valuenow={Math.round(width)} aria-valuetext={`对话宽度 ${Math.round(width)}px`} title="拖动调整对话宽度；方向键微调，双击恢复"
+    aria-valuemin={minimumWidth} aria-valuemax={maximumWidth} aria-valuenow={Math.round(width)} aria-valuetext={`对话宽度 ${Math.round(width)}px`} title="拖动调整对话宽度；方向键微调，双击恢复"
     onKeyDown={event => {
       if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
       event.preventDefault();
       const direction = (event.key === 'ArrowLeft' ? -1 : 1) * (context.side === 'left' ? 1 : -1);
-      resize(event.key === 'Home' ? 320 : event.key === 'End' ? maximumWidth : width + direction * (event.shiftKey ? 32 : 16), true);
+      resize(event.key === 'Home' ? minimumWidth : event.key === 'End' ? maximumWidth : width + direction * (event.shiftKey ? 32 : 16), true);
     }}
     onPointerDown={event => {
       if (event.button !== 0 || drag.current) return;

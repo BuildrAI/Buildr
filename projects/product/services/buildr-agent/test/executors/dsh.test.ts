@@ -1,3 +1,6 @@
+import {mkdtemp,writeFile,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DshRuntime } from '../../build/executors/dsh/index.js';
@@ -12,6 +15,7 @@ class Stream {
 }
 async function eventually(condition: () => unknown) { const deadline = Date.now() + 1000; while (!condition()) { if (Date.now() > deadline) throw new Error('condition timeout'); await new Promise(resolve => setTimeout(resolve, 5)); } }
 test('DSH stream shows accumulated text, answers the native question and observes cancellation', async () => {
+  const root=await mkdtemp(join(tmpdir(),'buildr-dsh-image-'));const imagePath=join(root,'image.png');const imageBytes=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII=','base64');await writeFile(imagePath,imageBytes);
   let runtime: AgentRuntime; let nativeAnswer: any;
   const streams: Stream[] = []; const events: any[] = []; const ok = (value: any) => ({ ok: true, value }); let cwd = '/synthetic/workspace';
   const publish = (event: any) => { event.seq = events.length + 1; events.push(event); for (const stream of streams) stream.push({ type: 'event', event }); };
@@ -20,7 +24,7 @@ test('DSH stream shows accumulated text, answers the native question and observe
     create: async (input: any) => { cwd = input.cwd; return ok({ sessionId: 'native-dsh' }); },
     follow: () => { const stream = new Stream(); streams.push(stream); stream.push({ type: 'snapshot', header: { id: 'native-dsh', cwd }, cursor: events.length, records: events.map(event => ({ event })), projections: { values: { permissions: { currentValue: selectedPermission } } } }); return stream; },
     page: async () => ok({ records: events.map(event => ({ event })), hasMore: false }),
-    prompt: async (input: any) => { setTimeout(() => {
+    prompt: async (input: any) => {const image=input.content.find((part:any)=>part.type==='image');assert.equal(image.mediaType,'image/png');assert.equal(image.data,imageBytes.toString('base64')); setTimeout(() => {
       publish({ type: 'turn/start', data: { turn: 1 } }); publish({ type: 'user/message', data: { id: 'user-dsh', content: input.content, source: { rpcId: input.requestId } } });
       for (const stream of streams) { stream.push({ type: 'assistant-stream', frame: { type: 'start', attemptId: 'a1', turn: 1, step: 1 } }); stream.push({ type: 'assistant-stream', frame: { type: 'chunk', attemptId: 'a1', index: 0, chunk: { type: 'text-delta', text: '正在' } } }); stream.push({ type: 'assistant-stream', frame: { type: 'chunk', attemptId: 'a1', index: 1, chunk: { type: 'reasoning-delta', text: 'private reasoning' } } }); stream.push({ type: 'assistant-stream', frame: { type: 'chunk', attemptId: 'a1', index: 2, chunk: { type: 'text-delta', text: '处理' } } }); }
       publish({ type: 'assistant/message', data: { turn: 1, step: 1, message: { content: [{ type: 'text', text: '正在处理' }] } } });
@@ -34,7 +38,7 @@ test('DSH stream shows accumulated text, answers the native question and observe
   runtime = Reflect.construct(DshRuntime, ['binding-fixture', host, client]) as AgentRuntime;
   try {
     const contextRef = await runtime.createContext({ cwd }); const visible: ExecutorEvent[] = [];
-    const sending = runtime.send({ contextRef, cwd, text: '处理工作', images: [], clientRequestId: 'request-exact', onEvent: event => visible.push(event) }); sending.catch(() => {});
+    const sending = runtime.send({ contextRef, cwd, text: '处理工作', images: [{path:imagePath,mimeType:'image/png'}], clientRequestId: 'request-exact', onEvent: event => visible.push(event) }); sending.catch(() => {});
     await eventually(() => visible.some(event => event.type === 'request'));
     const accepted = visible.find(event => event.type === 'accepted'); const request = visible.find(event => event.type === 'request'); assert.equal(accepted?.type, 'accepted'); assert.equal(request?.type, 'request');
     await runtime.reply({ contextRef, executionRef: accepted.executionRef, requestId: request.request.id, answer: { color: '蓝' } });
@@ -54,5 +58,5 @@ test('DSH stream shows accumulated text, answers the native question and observe
     const text = visible.filter(event => event.type === 'item' && event.item.role === 'assistant').map(event => event.type === 'item' ? event.item : null);
     assert.equal(new Set(text.map(item => item!.id)).size, 1); assert.equal(text.at(-1)?.text, '正在处理'); assert.ok(!JSON.stringify(visible).includes('private reasoning'));
     const history = await runtime.readHistory({ contextRef, cwd }); assert.equal(history.find(item => item.id === 'user-dsh')?.executionId, 'request-exact');
-  } finally { await runtime.close(); }
+  } finally { await runtime.close(); await rm(root,{recursive:true,force:true}); }
 });

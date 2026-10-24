@@ -1,7 +1,8 @@
-import { Select } from 'antd';
-import { DownOutlined } from '@ant-design/icons';
+import { useEffect, useRef, useState } from 'react';
+import { Button, Popover, Select, Slider } from 'antd';
+import { DownOutlined, ReloadOutlined } from '@ant-design/icons';
 import { providerNames, type ConnectionView } from './types';
-import {conversationReasoningOptions,reasoningEffortLabel,selectedConversationModel,type ConversationChoice} from './conversation-options';
+import {conversationReasoningSelection,reasoningEffortLabel,selectedConversationModel,type ConversationChoice} from './conversation-options';
 
 type Props = {
   connections:ConnectionView[];
@@ -11,29 +12,59 @@ type Props = {
 };
 
 export function ConversationOptions({connections,value,disabled,onChange}:Props) {
+  const [open,setOpen]=useState(false);
+  const trigger=useRef<HTMLButtonElement>(null);
+  const controlsRef=useRef<HTMLDivElement>(null);
   const connection=connections.find(item=>item.id===value.connectionId);
   const model=selectedConversationModel(connection,value.model);
   const defaultModel=selectedConversationModel(connection);
-  const reasoningOptions=conversationReasoningOptions(connection,value.model);
-  const defaultEffort=reasoningOptions.find(item=>item.id===model?.defaultReasoningEffort);
-  const defaultEffortLabel=defaultEffort?`默认 · ${reasoningEffortLabel(defaultEffort)}`:'默认深度';
-  const selectedEffort=reasoningOptions.find(item=>item.id===value.reasoningEffort);
-  const reasoningLabel=selectedEffort?reasoningEffortLabel(selectedEffort):value.reasoningEffort||(defaultEffort?reasoningEffortLabel(defaultEffort):'默认');
+  const reasoning=conversationReasoningSelection(connection,value);
+  const modelLabel=model?.label||value.model||defaultModel?.label||'默认模型';
+  const unavailable=disabled||!connection?.models.length;
+  useEffect(()=>{setOpen(false);},[value.connectionId,disabled]);
+  useEffect(()=>{
+    if(!open)return;
+    const frame=requestAnimationFrame(()=>controlsRef.current?.querySelector<HTMLElement>('[role="slider"],input')?.focus());
+    return()=>cancelAnimationFrame(frame);
+  },[open]);
+  const selectEffort=(index:number)=>{
+    const effort=reasoning.options[index];
+    if(effort)onChange({...value,reasoningEffort:effort.id});
+  };
+  const controls=<div ref={controlsRef} className="ac-model-controls" role="dialog" aria-label="模型与推理强度设置" onKeyDown={event=>{
+    if(event.key==='Escape'){event.stopPropagation();setOpen(false);trigger.current?.focus();}
+  }}>
+    <div className="ac-model-controls-heading">
+      <span aria-hidden="true"/>
+      <strong aria-live="polite">{reasoning.options.length?reasoning.label:'模型设置'}</strong>
+      <Button type="text" size="small" icon={<ReloadOutlined/>} aria-label="恢复默认推理强度" title="使用模型默认推理强度" disabled={disabled||!value.reasoningEffort} onClick={()=>onChange({...value,reasoningEffort:undefined})}/>
+    </div>
+    <Select className="ac-model-picker" aria-label="执行模型" title="模型" size="small" showSearch optionFilterProp="label"
+      value={value.model||''} labelRender={({label})=>value.model?label:defaultModel?.label||'默认模型'}
+      disabled={unavailable} popupMatchSelectWidth placement="topRight"
+      classNames={{popup:{root:'ac-panel-popup ac-choice-popup'}}}
+      options={[{value:'',label:defaultModel?`默认 · ${defaultModel.label}`:'默认模型'},...(connection?.models||[]).map(item=>({value:item.id,label:item.label}))]}
+      onChange={model=>onChange({...value,model:model||undefined,reasoningEffort:undefined})}/>
+    <div className="ac-effort-controls">
+      {reasoning.options.length>1&&reasoning.index>=0?<>
+        <Slider min={0} max={reasoning.options.length-1} step={1} dots value={reasoning.index} disabled={disabled}
+          ariaLabelForHandle="思考深度" ariaValueTextFormatterForHandle={index=>reasoningEffortLabel(reasoning.options[index]!)}
+          tooltip={{formatter:index=>index===undefined?'':reasoningEffortLabel(reasoning.options[index]!)}}
+          onChange={selectEffort}/>
+      </>:reasoning.options.length?<div className="ac-effort-presets" aria-label="思考深度">{reasoning.options.map((effort,index)=><Button key={effort.id} type={index===reasoning.index?'primary':'default'} size="small" disabled={disabled} onClick={()=>selectEffort(index)}>{reasoningEffortLabel(effort)}</Button>)}</div>:<p className="ac-effort-unavailable">此模型未提供可调节的推理强度</p>}
+    </div>
+  </div>;
   return <div className="ac-execution-options">
     <Select className="ac-choice ac-provider-select" aria-label="下一位智能体" title="智能体" variant="borderless" size="small" suffixIcon={<DownOutlined/>}
       value={value.connectionId||undefined} placeholder="选择智能体" disabled={disabled} popupMatchSelectWidth={false} placement="topRight"
       classNames={{popup:{root:'ac-panel-popup ac-choice-popup'}}}
       options={connections.map(item=>({value:item.id,label:providerNames[item.provider]||item.label}))}
       onChange={connectionId=>onChange({connectionId})}/>
-    <Select className="ac-choice ac-model-select" aria-label="执行模型" title="模型" variant="borderless" size="small" suffixIcon={<DownOutlined/>}
-      value={value.model||''} labelRender={({label})=>value.model?label:defaultModel?.label||'默认模型'}
-      disabled={disabled||!connection?.models.length} popupMatchSelectWidth={false} placement="topRight"
-      classNames={{popup:{root:'ac-panel-popup ac-choice-popup'}}}
-      options={[{value:'',label:defaultModel?`默认 · ${defaultModel.label}`:'默认模型'},...(connection?.models||[]).map(item=>({value:item.id,label:item.label}))]}
-      onChange={model=>onChange({...value,model:model||undefined,reasoningEffort:undefined})}/>
-    {reasoningOptions.length>0&&<Select className="ac-choice ac-reasoning-select" aria-label="思考深度" title="思考深度" variant="borderless" size="small" suffixIcon={<DownOutlined/>}
-      value={value.reasoningEffort||''} labelRender={()=>reasoningLabel} disabled={disabled} popupMatchSelectWidth={false}
-      classNames={{popup:{root:'ac-panel-popup ac-choice-popup'}}} options={[{value:'',label:defaultEffortLabel},...reasoningOptions.map(item=>({value:item.id,label:reasoningEffortLabel(item)}))]}
-      onChange={reasoningEffort=>onChange({...value,reasoningEffort:reasoningEffort||undefined})}/>}
+    <Popover rootClassName="ac-panel-popup ac-model-popover" trigger="click" placement="topRight" open={open&&!unavailable} onOpenChange={next=>setOpen(next&&!unavailable)} content={controls}>
+      <Button ref={trigger} type="text" size="small" className="ac-model-trigger" aria-label="模型与推理强度" aria-haspopup="dialog" aria-expanded={open&&!unavailable}
+        title={modelLabel+(reasoning.options.length?` · ${reasoning.label}${reasoning.inherited?'（默认）':''}`:'')} disabled={unavailable}>
+        <span className="ac-model-label">{modelLabel}</span>{reasoning.options.length>0&&<span className="ac-model-effort">{reasoning.label}</span>}<DownOutlined/>
+      </Button>
+    </Popover>
   </div>;
 }

@@ -1,5 +1,6 @@
 /** A dedicated process keeps SDK auth/history discovery out of the Buildr host environment. */
 import { createInterface } from 'node:readline';
+import { readFile } from 'node:fs/promises';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import type { ExecutorEvent, ExecutorItem, ExecutorObservation, ExecutorRequest, PermissionMode } from '../../contracts.ts';
@@ -95,7 +96,7 @@ async function execute(params: any): Promise<void> {
   const state: LiveQuery = { id: params.clientRequestId, contextId: params.contextId, permissionMode: resolvePermissionMode(params.permissionMode), q: undefined, accepted: false, stopping: false, tools: new Map(), pending: new Map(), texts: new Map() }; live.set(params.contextId, state);
   let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
   async function* input(): AsyncGenerator<any> {
-    yield { type: 'user', message: { role: 'user', content: [{ type: 'text', text: params.text }] }, parent_tool_use_id: null, uuid: state.id, session_id: state.contextId };
+    yield { type: 'user', message: { role: 'user', content: [{ type: 'text', text: params.text }, ...await Promise.all((params.images ?? []).map(async (image: {path:string;mimeType:string}) => ({ type: 'image', source: { type: 'base64', media_type: image.mimeType, data: (await readFile(image.path)).toString('base64') } })))] }, parent_tool_use_id: null, uuid: state.id, session_id: state.contextId };
     await gate;
   }
   const opts = { ...options(params.cwd, state), ...(info ? { resume: params.contextId } : { sessionId: params.contextId }), ...(params.model ? { model: params.model } : {}) };

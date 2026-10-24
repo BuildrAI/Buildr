@@ -47,6 +47,16 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
       if(!response.ok){const error:ApiError=new Error(body.error?.message||'图片上传失败。');error.status=response.status;error.code=body.error?.code;error.details=body.error?.details;throw error;}
       return body as AttachmentView;
     },
+    async readImage(conversation: ConversationView, id: string, signal?: AbortSignal): Promise<Blob> {
+      const send = () => fetcher(path(conversation.workspaceId, conversation.id) + '/attachments/' + encodeURIComponent(id), { cache: 'no-store', signal, headers: session.writeHeaders() });
+      let response = await send();
+      if (response.status === 403 && session.refreshSession) {
+        const body = await response.clone().json().catch(() => null);
+        if (body?.error?.code === 'session_forbidden' && await session.refreshSession()) response = await send();
+      }
+      if (!response.ok) throw new Error('图片读取失败，请重新加载。');
+      return response.blob();
+    },
     async subscribe(workspaceId: string, id: string, signal: AbortSignal, onEvent: (event: ConversationEvent) => void, cursor?: number) {
       const headers = {...session.writeHeaders(), accept:'text/event-stream', ...(cursor ? {'last-event-id':String(cursor)} : {})};
       const response = await fetcher(path(workspaceId, id) + '/events', {cache:'no-store', signal, headers});

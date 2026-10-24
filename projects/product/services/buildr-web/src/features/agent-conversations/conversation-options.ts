@@ -34,6 +34,14 @@ export function conversationReasoningOptions(connection:ConnectionView|undefined
   return model?.reasoningEfforts||[];
 }
 
+export function conversationReasoningSelection(connection:ConnectionView|undefined,choice:ConversationChoice) {
+  const model=selectedConversationModel(connection,choice.model);
+  const options=conversationReasoningOptions(connection,choice.model);
+  const id=choice.reasoningEffort ?? model?.defaultReasoningEffort;
+  const index=options.findIndex(option=>option.id===id);
+  return {options,index,inherited:choice.reasoningEffort===undefined,label:index>=0?reasoningEffortLabel(options[index]!):choice.reasoningEffort||'默认'};
+}
+
 export function reasoningEffortLabel(effort:{id:string;label:string}) {
   const labels:Record<string,string>={minimal:'最小',low:'低',medium:'中',high:'高',xhigh:'极高',max:'最高',ultra:'极致',none:'无',off:'关闭',auto:'自动'};
   return labels[effort.id]||effort.label;

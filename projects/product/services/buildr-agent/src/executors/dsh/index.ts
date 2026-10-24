@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
@@ -7,7 +8,7 @@ import { launchDshHost, dshValue, type DshClient } from './client.ts';
 import { dshItem, dshHistoryItems, dshExecutionObservation } from './protocol.ts';
 import { modelOptions } from '../model-options.ts';
 import { applyDshPermissions, dshPermissionCatalog } from './permissions.ts';
-const capabilities = { text: true, images: false, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
+const capabilities = { text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 interface ActiveTurn { id: string; input: ExecutorSendInput; nativeTurn?: number; terminal?: 'completed' | 'stopped' | 'failed'; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown' }>; pending: Map<string, { request: ExecutorRequest; resolve?: (value: string) => void; answer?: (value: { answers: any[] }) => void; reject?: (error: Error) => void; wait?: any }>; stream?: any; pump?: Promise<void>; streamAttempt?: { id: string; turn: number; step: number; nextIndex: number; text: string }; }
 export function createDshExecutor(): AgentExecutor { return { descriptor: { id: 'dsh', label: 'DSH', capabilities }, open: options => DshRuntime.open(options) }; }
 export class DshRuntime implements AgentRuntime {
@@ -135,7 +136,7 @@ export class DshRuntime implements AgentRuntime {
     return this.historyEvents.get(contextRef.id)?.findLast(event => event.type === 'session/title' && event.data?.source?.kind === 'provider' && typeof event.data.title === 'string')?.data.title;
   }
   async send(input: ExecutorSendInput): Promise<void> {
-    this.reference(input.contextRef, input.cwd); if (input.images.length) throw new Error('agent_images_unverified');
+    this.reference(input.contextRef, input.cwd);
     if (this.turns.has(input.contextRef.id) && !this.turns.get(input.contextRef.id)!.terminal) throw new Error('agent_native_turn_active');
     const previous = this.turns.get(input.contextRef.id); if (previous?.stream) { await previous.stream.dispose(); await previous.pump; }
     await applyDshPermissions(this.client.remote, input.contextRef.id, input.permissionMode, () => this.snapshot(input.contextRef.id));
@@ -162,7 +163,7 @@ export class DshRuntime implements AgentRuntime {
     })();
     turn.pump = pump;
     try {
-      await bounded(opening, 15000); dshValue(await bounded(this.client.remote.session.prompt({ sessionId: input.contextRef.id, requestId: input.clientRequestId, mode: 'queue', content: [{ type: 'text', text: input.text }] }), 5000));
+      await bounded(opening, 15000); dshValue(await bounded(this.client.remote.session.prompt({ sessionId: input.contextRef.id, requestId: input.clientRequestId, mode: 'queue', content: [{ type: 'text', text: input.text }, ...await Promise.all(input.images.map(async image => ({ type: 'image' as const, mediaType: image.mimeType as 'image/png'|'image/jpeg'|'image/webp'|'image/gif', data: (await readFile(image.path)).toString('base64') })))] }), 5000));
       input.onEvent({ type: 'accepted', executionRef: { id: turn.id } }); accepted = true;
       for (const event of buffer) { if (event.buildrStream) this.assistantFrame(turn, event.buildrStream); else this.event(turn, event); if (turn.terminal) finish(); }
       await terminal;
