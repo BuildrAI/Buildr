@@ -366,10 +366,19 @@ export function createPackageSmokeChecks(deps: any): any  {
       buildrSelf.exec(['skills', 'remove', 'package-check-remote', '--scope', '.', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
     }
     if (finalize) {
+      // Official builtin skills and contracts are projected from the fixed shared resource
+      // store after init instead of staying in the workspace; root files remain installed.
+      const skillsManifestPath = path.join(tempRoot, 'skills', 'manifest.yml');
+      const projectedSkills = existsFile(skillsManifestPath) ? readSkillManifest(skillsManifestPath) : [];
+      const projectedContracts = existsFile(skillsManifestPath) ? (YAML.parse(fs.readFileSync(skillsManifestPath, 'utf8'))?.contracts || []) : [];
       for (const rawEntry of manifest.workspaceFiles) {
         const entry = parseManifestFileEntry(rawEntry, 'workspaceFiles');
-        if (!existsFile(path.join(tempRoot, entry.target))) {
-        problems.push(`buildr init did not install workspace file: ${entry.target}`);
+        if (existsFile(path.join(tempRoot, entry.target))) continue;
+        const projected = entry.target.startsWith('skills/contracts/')
+          ? projectedContracts.some((contract: any) => contract.resource && `skills/${contract.path}` === entry.target)
+          : projectedSkills.some((skill: any) => skill.resource && entry.target.startsWith(`skills/${skill.path}/`));
+        if (!projected) {
+        problems.push(`buildr init did not install or project workspace file: ${entry.target}`);
       }
     }
     const doctorJson = buildrSelf.exec(['doctor', '--target', tempRoot, '--json'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });

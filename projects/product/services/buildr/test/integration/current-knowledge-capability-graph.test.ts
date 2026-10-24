@@ -6,6 +6,7 @@ import test from 'node:test';
 import YAML from 'yaml';
 import { createRuntime } from '../helpers/runtime-harness.ts';
 import { resolveSkillCapabilityGraph } from '../../src/modules/agent-assets/persistence/capability-graph-repository.ts';
+import { resolveSharedResource } from '../../src/infrastructure/product-resources/shared-resources.ts';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const capability = 'buildr.current-knowledge-maintenance';
@@ -74,7 +75,8 @@ function addLocalSkill(root: string, manifest: any, id: string, declaration: any
 test('v3 内置提供者升级后不改绑用户旧依赖，缺口只影响真实旧消费者', (t) => {
   const { root, runtime, file } = fixture(t);
   const manifest = YAML.parse(fs.readFileSync(file, 'utf8'));
-  const v3Path = path.join(root, 'skills/contracts/buildr/current-knowledge-maintenance/v3.md');
+  // Official contracts are projected from the fixed shared resource store after init.
+  const v3Path = resolveSharedResource(root, 'resources/workspace/skills/contracts/buildr/current-knowledge-maintenance/v3.md');
   const oldContract = fs.readFileSync(v3Path);
   const oldBinding = { capability, version: 3, provider: 'current-knowledge-maintenance' };
   manifest.bindings.push(oldBinding);

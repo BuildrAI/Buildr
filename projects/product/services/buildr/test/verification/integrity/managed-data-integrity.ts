@@ -54,8 +54,14 @@ function verifyOptionalBuiltinPreflight(mode: any): any  {
   run(['init', '--target', root, '--name', `optional-${mode}`]);
   const skillRoot: any = path.join(root, 'skills', 'buildr', 'task-retrospective');
   const skillFile: any = path.join(skillRoot, 'SKILL.md');
-  if (mode === 'modified') fs.appendFileSync(skillFile, '\nuser modification\n');
-  else fs.rmSync(skillRoot, { recursive: true, force: true });
+  // Official builtin sources are projected from the shared resource store; user drift is
+  // declared by dropping the resource projection and materializing local bytes (or none).
+  const manifestFile: any = path.join(root, 'skills', 'manifest.yml');
+  const document: any = YAML.parse(fs.readFileSync(manifestFile, 'utf8'));
+  const entry: any = document.skills.find((item: any) => item.id === 'task-retrospective');
+  delete entry.resource;
+  if (mode === 'modified') { fs.mkdirSync(skillRoot, { recursive: true }); fs.writeFileSync(skillFile, '---\nname: task-retrospective\ndescription: user modified copy\n---\n\nuser modification\n'); }
+  fs.writeFileSync(manifestFile, YAML.stringify(document));
   initializeGitBaseline(root);
   const beforeContent: any = mode === 'modified' ? fs.readFileSync(skillFile, 'utf8') : null;
   const result: any = run(['sync', 'codex', '--target', root]);
@@ -72,7 +78,15 @@ function verifyComponentConflictPreflight(): any  {
   fs.rmSync(path.join(root, 'components'), { recursive: true, force: true });
   fs.rmSync(path.join(root, 'commands', 'buildr', 'openspec'), { recursive: true, force: true });
   const skillFile: any = path.join(root, 'skills', 'openspec', 'openspec-propose', 'SKILL.md');
-  fs.appendFileSync(skillFile, '\nlegacy user edit\n');
+  // Component skill members are projected from the shared store; the legacy user edit is
+  // declared by dropping the resource projection and materializing local bytes.
+  const manifestFile: any = path.join(root, 'skills', 'manifest.yml');
+  const document: any = YAML.parse(fs.readFileSync(manifestFile, 'utf8'));
+  const entry: any = document.skills.find((item: any) => item.id === 'openspec-propose');
+  delete entry.resource;
+  fs.mkdirSync(path.dirname(skillFile), { recursive: true });
+  fs.writeFileSync(skillFile, '---\nname: openspec-propose\ndescription: legacy user edit\n---\n\nlegacy user edit\n');
+  fs.writeFileSync(manifestFile, YAML.stringify(document));
   initializeGitBaseline(root);
   const beforeContent: any = fs.readFileSync(skillFile, 'utf8');
   const result: any = run(['sync', 'codex', '--target', root]);
@@ -159,8 +173,16 @@ try {
   if (!fs.existsSync(path.join(workspace, 'components', 'buildr', 'openspec', 'component.yml'))) throw new Error('Component rollback lost installed definition.');
 
   const coreFile: any = path.join(workspace, 'skills', 'buildr', 'git-operations', 'SKILL.md');
-  const coreBeforeRestore: any = `${fs.readFileSync(coreFile, 'utf8')}\nuser restore fixture\n`;
+  // The official source is projected from the shared store; a user copy with the resource
+  // projection dropped declares local bytes that restore must retire and rollback must keep.
+  const coreManifestFile: any = path.join(workspace, 'skills', 'manifest.yml');
+  const coreDocument: any = YAML.parse(fs.readFileSync(coreManifestFile, 'utf8'));
+  const coreEntry: any = coreDocument.skills.find((item: any) => item.id === 'git-operations');
+  delete coreEntry.resource;
+  const coreBeforeRestore: any = '---\nname: git-operations\ndescription: user restore fixture\n---\n\nuser restore fixture\n';
+  fs.mkdirSync(path.dirname(coreFile), { recursive: true });
   fs.writeFileSync(coreFile, coreBeforeRestore);
+  fs.writeFileSync(coreManifestFile, YAML.stringify(coreDocument));
   const rollbackFailure: any = run(['builtin', 'restore', 'git-operations', '--target', workspace], { expectFailure: true, env: { BUILDR_FAULT_AFTER_MUTATION_WRITE: '1', BUILDR_FAULT_MUTATION_RESTORE_REMOVE: '1' } });
   if (!`${rollbackFailure.stdout}\n${rollbackFailure.stderr}`.includes('Rollback failed')) throw new Error('Injected restore removal failure did not preserve a rollback-failed transaction.');
   const failedTransaction: any = fs.readdirSync(path.join(workspace, '.buildr', 'mutations'), { withFileTypes: true }).find((entry: any) => entry.isDirectory());

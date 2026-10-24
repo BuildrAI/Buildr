@@ -212,7 +212,11 @@ async function verifyGuardedOrphan(seed: any): Promise<any>  {
   assert.match(`${result.stdout}\n${result.stderr}`, /非 Buildr 管理的额外文件/);
   assert.equal(fs.readFileSync(userFile, 'utf8'), 'user-owned\n');
   assert.ok(fs.existsSync(path.join(orphanDirectory, 'SKILL.md')), 'conflicted orphan cleanup must preserve managed files too');
-  assert.ok(fs.existsSync(path.join(workspace, 'skills', 'buildr', 'task-retrospective', 'SKILL.md')), 'failed uninstall must roll back source asset changes');
+  // The builtin source lives in the fixed shared resource store, so a failed uninstall
+  // keeps the workspace registration instead of rolling back local source files.
+  const guardedSkills: any = parseSkillsManifest(path.join(workspace, 'skills', 'manifest.yml'));
+  const guardedSkill: any = guardedSkills.find((skill: any) => skill.id === 'task-retrospective');
+  assert.ok(guardedSkill && guardedSkill.state !== 'uninstalled', 'failed uninstall must keep the builtin registered instead of retiring its shared source');
 }
 
 async function verifyRulesOrphanCleanup(seed: any): Promise<any>  {

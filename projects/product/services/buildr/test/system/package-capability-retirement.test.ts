@@ -218,7 +218,8 @@ test('sync 将 Task Record v3 的受管契约与绑定一并升级为 v4', (t: a
   assert.deepEqual(manifest.contracts.filter((item: any) => item.id === 'buildr.task-record').map((item: any) => item.version), [4]);
   assert.deepEqual(manifest.bindings.filter((item: any) => item.capability === 'buildr.task-record').map((item: any) => item.version), [4]);
   assert.equal(fs.existsSync(predecessor), false);
-  assert.equal(fs.existsSync(path.join(root, 'skills/contracts/buildr/task-record/v4.md')), true);
+  // Official contracts are projected from the shared resource store instead of workspace files.
+  assert.ok(manifest.contracts.find((item: any) => item.id === 'buildr.task-record' && item.version === 4)?.resource, 'the upgraded contract must carry its shared resource projection');
 });
 
 test('sync 在源资产 mutation 前升级 pending SQLite migrations', (t: any) => {

@@ -60,6 +60,8 @@ const privateSource = path.join(temporary, 'private-source'); fs.cpSync(entry.sk
 const privateSkill = path.join(privateSource, 'SKILL.md'); fs.writeFileSync(privateSkill, fs.readFileSync(privateSkill, 'utf8').replace(/^name: nacos-connection$/m, 'name: private-nacos'));
 if (process.platform !== 'win32') {
   const standardDirectory = path.join(root, 'skills/connections'), retainedDirectory = path.join(root, 'skills/connection-sources-retained'), outside = path.join(temporary, 'outside-skill-destination');
+  // Official connection sources no longer materialize a local directory after init; create it first for the symbolic-link guard.
+  fs.mkdirSync(standardDirectory, { recursive: true });
   fs.mkdirSync(outside); fs.renameSync(standardDirectory, retainedDirectory); fs.symlinkSync(outside, standardDirectory, 'dir');
   try {
     assert.throws(() => assets.skillsAdd({ targetRoot: root, sourceInput: privateSource, explicitId: 'private-nacos' }), /symbolic link/);
