@@ -606,8 +606,9 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/workspace-read-reuse.test.ts',
   // This group includes two bounded 85s CLI scenarios. Shared-resource preparation
   // grew workspace fixtures; the cap must absorb the full slice on two loaded
-  // workers (observed ~330s under concurrent candidate rounds), not truncate it.
-  ], { schedulingCostMs: 5000, timeoutMs: 420_000, args: ['--test-concurrency=2'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
+  // workers (observed ~330s under concurrent candidate rounds) within the
+  // candidate 360s ceiling, not truncate it.
+  ], { schedulingCostMs: 5000, timeoutMs: 360_000, args: ['--test-concurrency=2'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
   integrationSlice('integration-archify', [
     'test/integration/archify-command-cost.test.ts',
     'test/integration/archify-component.test.ts',
