@@ -30,6 +30,7 @@ function useWorkspaceCatalog({ stayOnCatalog, onOpenWorkspace, onRecoveryPrompt,
   const [refreshing, setRefreshing] = useState(false);
   const [failure, setFailure] = useState('');
   const mutation = useRef(false), readGeneration = useRef(0);
+  const automaticOpenBlocked = useRef(false);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; ++readGeneration.current; }; }, []);
 
@@ -45,9 +46,9 @@ function useWorkspaceCatalog({ stayOnCatalog, onOpenWorkspace, onRecoveryPrompt,
     const generation = readGeneration.current + 1;
     void load()
       .then((next) => {
-        if (!active || !mounted.current || readGeneration.current !== generation || stayOnCatalog || mutation.current) return;
+        if (!active || !mounted.current || readGeneration.current !== generation || stayOnCatalog || mutation.current || automaticOpenBlocked.current) return;
         const ready = (next.workspaces || []).filter((entry) => entry.status === 'ready' && entry.workspace?.id);
-        if (ready.length === 1 && ready[0].workspace?.id) void workspacePreparationApi.open(ready[0].workspace.id).then(result=>{if(!active)return;if('ready' in result)onOpenWorkspace(result.workspaceId,true);else onPreparationStart(result);}).catch(error=>{if(active)setFailure(error.message);});
+        if (ready.length === 1 && ready[0].workspace?.id) void workspacePreparationApi.open(ready[0].workspace.id).then(result=>{if(!active||automaticOpenBlocked.current)return;if('ready' in result)onOpenWorkspace(result.workspaceId,true);else onPreparationStart(result);}).catch(error=>{if(active&&!automaticOpenBlocked.current)setFailure(error.message);});
       })
       .catch((error: Error) => { if (active && mounted.current && readGeneration.current === generation) setFailure(error.message); });
     return () => { active = false; };
@@ -55,6 +56,9 @@ function useWorkspaceCatalog({ stayOnCatalog, onOpenWorkspace, onRecoveryPrompt,
 
   const remove = useCallback(async (entry: WorkspaceEntry, observed: WorkspaceRegistry) => {
     if (mutation.current) return;
+    // Removing a card is an explicit decision to stay in the catalog. Registry
+    // refreshes must not reuse the initial single-workspace auto-open behavior.
+    automaticOpenBlocked.current = true;
     mutation.current = true; setRemoving(entry.rootPath); setFailure(''); setMessage(null);
     try {
       const next = await workspaceApi.remove({ revision: observed.revision, rootPath: entry.rootPath });

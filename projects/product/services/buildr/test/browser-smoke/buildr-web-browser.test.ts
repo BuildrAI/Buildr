@@ -887,6 +887,9 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('.workspace-remove-dialog').waitFor({state:'visible'});
     await page.locator('.workspace-remove-dialog').getByRole('button',{name:/移\s*除/}).click();
     await page.waitForFunction(() => document.querySelectorAll('#workspace-grid .workspace-card').length === 1);
+    await page.waitForLoadState('networkidle');
+    assert.equal(new URL(page.url()).pathname, '/', '移除后留在工作空间列表，不自动进入剩下的工作空间');
+    assert.equal(await page.locator('#workspace-grid .workspace-card').count(), 1);
     assert.equal(runtime.listRegisteredWorkspaces().workspaces.some((entry: any) => entry.rootPath === firstRoot), false);
     current = runtime.listRegisteredWorkspaces();
     for (const entry of [...current.workspaces]) current = runtime.removeRegisteredWorkspace({ rootPath: entry.rootPath, revision: current.revision });

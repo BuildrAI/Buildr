@@ -276,12 +276,24 @@ export async function runPublicationJourney({ t, page, runtime, workspaceRoot, w
     const filter = (name: string) => main().getByRole('group', { name: '内容类型', exact: true }).getByRole('button', { name, exact: true });
     await page.goto(`${workspaceUrl}/knowledge/project/product`);
     await body().waitFor({ state: 'visible' });
-    const readingLayout = await body().evaluate((element: HTMLElement) => {
-      const pane = element.closest('.knowledge-navigation-content')!.getBoundingClientRect();
-      const article = element.getBoundingClientRect();
-      return { width: article.width, leftGap: article.left - pane.left, rightGap: pane.right - article.right };
-    });
-    assert.ok(readingLayout.width <= 961 && Math.abs(readingLayout.leftGap - readingLayout.rightGap) < 2, `知识正文居中且限宽：${JSON.stringify(readingLayout)}`);
+    for (const viewportWidth of [1440, 2160]) {
+      await page.setViewportSize({ width: viewportWidth, height: 1000 });
+      const readingLayout = await body().evaluate((element: HTMLElement) => {
+        // The prose wrapper is itself capped and centered. Measure against the
+        // available grid track so its outer margins are part of the assertion.
+        const layout = element.closest('.knowledge-navigation-layout')!;
+        const paneRight = layout.getBoundingClientRect().right;
+        const paneWidth = Number.parseFloat(getComputedStyle(layout).gridTemplateColumns.split(' ').at(-1)!);
+        const article = element.getBoundingClientRect();
+        const limit = Number.parseFloat(getComputedStyle(element).getPropertyValue('--reading-content-width'));
+        return { width: article.width, paneWidth, limit, leftGap: article.left - (paneRight - paneWidth), rightGap: paneRight - article.right };
+      });
+      assert.ok(Number.isFinite(readingLayout.limit) && readingLayout.limit > 0, '使用产品统一阅读宽度变量');
+      assert.ok(Math.abs(readingLayout.width - Math.min(readingLayout.paneWidth, readingLayout.limit)) < 2
+        && Math.abs(readingLayout.leftGap - readingLayout.rightGap) < 2, `知识正文随容器收缩、宽屏居中且限宽：${JSON.stringify(readingLayout)}`);
+      if (viewportWidth === 2160) assert.ok(readingLayout.leftGap > 0, '宽屏确实覆盖正文限宽后的居中留白');
+    }
+    await page.setViewportSize({ width: 1440, height: 1000 });
     const branch = () => main().locator('[data-knowledge-branch="topic:browser-reading"]:visible');
     if (await branch().getAttribute('aria-expanded') !== 'true') await branch().click();
     await composeKnowledgeSearch(page, search(), 'shen ru', '深入阅读', async () => {
