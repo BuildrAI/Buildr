@@ -129,6 +129,7 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
   'cli-compatibility': testing(SERVICE_OWNER, 'Development', 'System', 190000, 'Documented CLI commands remain compatible.', TEST_ENVIRONMENTS.repeatedCli),
   'cli-package-parity': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 20000, 'Representative source and packaged CLI outputs and one init mutation remain equivalent.', TEST_ENVIRONMENTS.repeatedCli),
   'artifact-browser-core': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 20000, 'The exact Candidate tarball Web payload serves the existing representative Task list and reading journey in an isolated real browser.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'agent-service': testing('service:product/buildr-agent', 'Development', 'Integration', 20000, 'The independent Agent service preserves storage, execution, recovery and public package boundaries with isolated fixtures.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'frontend-logic': testing('service:product/buildr-web', 'Development', 'Unit', 20000, 'The complete Buildr Web logic suite preserves state transitions, navigation, requests and input conversion.', TEST_ENVIRONMENTS.sourceReadOnly),
   'dsh-plugin': testing('service:product/dsh-plugin', 'Development', 'System', 60000, 'Both plugin variants build against the pinned SDK and pass logic, coexistence and real DSH loader checks.', environment(['filesystem', 'cli'], 'shared', 'none')),
   'service-branch-contract': testing(PROJECT_OWNER, 'Development', 'System', 25000, 'Service branch configuration works in an isolated repository.', TEST_ENVIRONMENTS.isolatedGitCli),
@@ -139,6 +140,10 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
 });
 
 export const VERIFICATION_STEP_EVIDENCE: any = Object.freeze({
+  'agent-service': primaryEvidence(
+    'A persisted conversation that loses native identity, repeats an uncertain send, or blocks a control reply must fail its isolated contract.',
+    'service-owned SQLite, stream, process protocol fixtures and the public compiled package',
+  ),
   'integration-archify': primaryEvidence(
     'Archify retirement that loses installed content, re-enables disabled Skills, breaks self-use rendering or leaks diagnostic inputs must fail.',
     'real isolated workspaces, retained legacy source migration, self-use rendering and bounded CLI diagnostics',
@@ -535,6 +540,8 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
   // Explicit stable owners replace the exclusive catch-all. The tool owner
   // remains exclusive because generated-artifact-set refreshes checkout DTOs.
   integrationSlice('integration', [
+    'test/integration/agent-service-delivery.test.ts',
+    'test/integration/agent-service-http.test.ts',
     'test/integration/browser-launch.test.ts',
     'test/integration/browser-selector-dispatcher-runtime.test.ts',
     'test/integration/development-entry.test.ts',
@@ -755,6 +762,7 @@ export const INTEGRATION_GENERAL_EXCLUDED_FILES: any = Object.freeze([...new Set
 
 export const verificationSteps: any = Object.freeze([
   step({ id: 'artifact-browser-core', name: 'Candidate tarball core Browser journey', executor: { type: 'node', file: 'test/verification/release/browser-candidate.ts', discoveredFiles: ['test/browser-smoke/buildr-web-browser.test.ts'], args: ['--selector', 'core'], consumesArtifact: true }, profiles: ['candidate'], groups: ['release'], dependsOn: ['candidate-tarball'], timeoutMs: 360_000, concurrencyClass: 'workspace-heavy', resources: ['app-runtime'] }),
+  step({ id: 'agent-service', name: 'Buildr Agent independent service verification', executor: { type: 'node', file: '../buildr-agent/tools/verify.ts' }, profiles: ['candidate'], concurrencyClass: 'cpu-heavy' }),
   step({ id: 'frontend-logic', name: 'Buildr Web complete logic suite', executor: { type: 'node', file: '../buildr-web/tools/run-logic-tests.mjs' }, profiles: ['candidate'], concurrencyClass: 'cpu-heavy' }),
   step({ id: 'dsh-plugin', name: 'DSH plugin complete build and loader verification', executor: { type: 'node', file: '../dsh-plugin/tools/verify-all.ts' }, timeoutMs: 360_000, concurrencyClass: 'exclusive' }),
   step({ id: 'typecheck', name: 'TypeScript static checking', executor: { type: 'npm', args: ['run', 'typecheck'] }, profiles: ['fast', 'candidate'], }),
@@ -997,6 +1005,7 @@ export const CORE_MACOS_SHARDS: any = Object.freeze([
 
 export const CANDIDATE_CI_SHARDS: any = Object.freeze([
   candidateShard('artifact-browser-macos', 'macos', 'verification', ['artifact-browser-core'], { requiresArtifact: true, preparation: 'browser-artifact' }),
+  candidateShard('agent-service-macos', 'macos', 'verification', ['agent-service']),
   candidateShard('frontend-logic-macos', 'macos', 'verification', ['frontend-logic'], { preparation: 'frontend' }),
   candidateShard('preflight-macos', 'macos', 'preflight', [
     'typecheck',

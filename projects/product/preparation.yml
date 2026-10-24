@@ -1,5 +1,21 @@
 schemaVersion: buildr.project-preparation/v1
 entries:
+  - id: buildr-agent.npm-ci
+    title: 安装独立智能体服务的锁定依赖
+    scope:
+      kind: service
+      service: buildr-agent
+    cwd: services/buildr-agent
+    executable: ../buildr/tools/development/run-development-npm
+    args: [ci, --ignore-scripts]
+  - id: buildr-agent.build
+    title: 编译独立智能体服务的公开包入口
+    scope:
+      kind: service
+      service: buildr-agent
+    cwd: services/buildr-agent
+    executable: ../buildr/tools/development/run-development-npm
+    args: [run, build]
   - id: buildr.npm-ci
     title: Install Buildr CLI dependencies
     scope:
@@ -7,7 +23,7 @@ entries:
       service: buildr
     cwd: services/buildr
     executable: tools/development/run-development-npm
-    args: [ci]
+    args: [ci, --install-links]
   - id: buildr-web.npm-ci
     title: Install Buildr Web dependencies
     scope:

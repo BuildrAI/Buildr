@@ -62,7 +62,10 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
     await page.goto(workspaceUrl);
     await page.waitForURL(`${workspaceUrl}/overview`);
     await page.locator(`[data-attention-task="${crossId}"]`).waitFor({ state: 'visible' });
-    assert.deepEqual(await page.locator('.shell-navigation [data-nav]').allTextContents(), ['概览', '任务']);
+    await page.locator('.primary-navigation-rail button[data-nav="workbench"]').hover();
+    await page.locator('.primary-secondary-navigation:visible').getByRole('link', {name: '概览', exact: true}).waitFor({state: 'visible'});
+    assert.deepEqual(await page.locator('.primary-secondary-navigation:visible .shell-navigation [data-nav]').allTextContents(), ['概览', '任务']);
+    await page.locator('.primary-navigation-rail button[data-nav="workbench"]').press('Escape');
     assert.equal(await page.locator('#workbench-attention [data-attention-task]').count(), 1, '只有明确登记的事项进入等我回应');
     assert.equal(await page.locator('#workbench-attention').getByRole('heading', { name: /等我回应/ }).count(), 1);
     assert.match(await page.locator('#workbench-attention').innerText(), /决定、验收或补充信息/);
@@ -257,7 +260,9 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
     await page.locator('#workbench-resources').getByRole('button', {name:`取消收藏：${nextTitle}`, exact:true}).waitFor({state:'visible'});
     await page.locator('#workbench-resources').getByText('已收藏', {exact:true}).click();
     await page.locator('#workbench-resources').getByRole('link').filter({ hasText: nextTitle }).waitFor({ state: 'visible' });
-    assert.equal(await page.locator(`.workbench-followed-navigation a[href="${workspacePath}/projects/demo"]`).innerText(), demoProjectName);
+    await page.locator('.primary-navigation-rail button[data-nav="workbench"]').hover();
+    assert.equal(await page.locator(`.primary-secondary-navigation:visible .workbench-followed-navigation a[href="${workspacePath}/projects/demo"]`).innerText(), demoProjectName);
+    await page.locator('.primary-navigation-rail button[data-nav="workbench"]').press('Escape');
   });
 
   await t.test('完整任务列表按项目分组不重复，打开资料后返回原筛选', async () => {

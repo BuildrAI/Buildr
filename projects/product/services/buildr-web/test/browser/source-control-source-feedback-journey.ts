@@ -1,3 +1,4 @@
+import { showPrimaryNavigation } from './primary-navigation-controls.ts';
 import assert from 'node:assert/strict';
 import {assertEditorText, editorPosition, editorScroll} from './code-editor-assertions.ts';
 import { codeRepositoryCode, codeRepositoryLabel } from '../../src/features/code/code-source-labels.ts';
@@ -15,7 +16,7 @@ export async function runSourceControlSourceFeedbackJourney({t,page,workspaceUrl
   const handled=(promise:Promise<any>)=>promise.then(value=>({value}),error=>({error}));
   const result=async(promise:Promise<any>)=>{const outcome=await promise;if(outcome.error)throw outcome.error;return outcome.value;};
   const read=async(name:string)=>{const response=await page.request.get(api+'/code/'+name);assert.equal(response.status(),200);return response.json();};
-  const navigate=async(name:'explorer'|'source-control')=>{await page.locator('.shell-navigation [data-nav="'+name+'"]').click();await(name==='explorer'?explorer():scm()).waitFor();};
+  const navigate=async(name:'explorer'|'source-control')=>{await showPrimaryNavigation(page, 'code');await page.locator('.primary-secondary-navigation:visible [data-nav="'+name+'"]').click();await(name==='explorer'?explorer():scm()).waitFor();};
   const currentSource=async(repositoryId:string,checkoutId:string)=>scm().locator('.source-control-workbench[data-current-repository="'+repositoryId+'"][data-current-checkout="'+checkoutId+'"]').waitFor();
   const choose=async(repository:any,worktree:any)=>{
     const group=scm().locator('[data-source-repository="'+repository.id+'"]'),fold=group.locator('> .source-control-repository .source-control-repository-fold');
@@ -107,7 +108,7 @@ export async function runSourceControlSourceFeedbackJourney({t,page,workspaceUrl
         assert.equal(await editor.locator('.file-editing-path').getAttribute('aria-label'),'文件路径：'+branches.liveRefresh.path);assert.equal(await editor.locator('.file-editing-path').getAttribute('title'),worktree.location+'/'+branches.liveRefresh.path);
         assert.equal(await explorer().getByRole('textbox',{name:'搜索文件',exact:true}).inputValue(),'history.ts');assert.deepEqual(await editorPosition(page),position);
         const refreshedTop=await editorScroll(page);assert.ok(Math.abs(refreshedTop-top)<=2,'同一文件外部正文刷新须保持阅读位置：before='+top+', after='+refreshedTop);
-        assert.equal(await notice('status').count(),0);assert.equal(await page.locator('.shell-navigation [data-nav="source-control"]').getAttribute('data-has-changes'),'true');
+        assert.equal(await notice('status').count(),0);await showPrimaryNavigation(page, 'code');assert.equal(await page.locator('.primary-secondary-navigation:visible [data-nav="source-control"]').getAttribute('data-has-changes'),'true');await page.locator('.primary-navigation-rail button[data-nav="code"]').press('Escape');
         release();const response=await result(returned),observed=await response.json();
         assert.equal(observed.repositories.length,1);assert.equal(observed.repositories[0].id,repository.id);
         assert.ok(observed.repositories[0].worktrees.find((tree:any)=>tree.worktreeId===worktree.worktreeId).changes.some((file:any)=>file.path===branches.liveRefresh.path));
@@ -194,7 +195,7 @@ export async function runSourceControlSourceFeedbackJourney({t,page,workspaceUrl
       await warning.getByRole('list',{name:'自动更新暂时中断的原因',exact:true}).getByText('自动更新暂时中断，保留上次读取结果；正在重新连接。',{exact:true}).waitFor();
       assert.equal(await notice('directories').count(),0);assert.equal(await explorer().getByText('部分内容不可读取',{exact:true}).count(),0);
       await explorer().getByRole('textbox',{name:'搜索文件',exact:true}).fill('main.ts');await explorer().locator('.repository-search-result[data-file-path="'+fixture.path+'"]').click();await assertEditorText(page,fixture.workingText);
-      assert.equal(await page.locator('.shell-navigation [data-nav="source-control"]').getAttribute('data-has-changes'),'true','观察连接失败保留已确认的全域未提交提示');
+      await showPrimaryNavigation(page, 'code');assert.equal(await page.locator('.primary-secondary-navigation:visible [data-nav="source-control"]').getAttribute('data-has-changes'),'true','观察连接失败保留已确认的全域未提交提示');await page.locator('.primary-navigation-rail button[data-nav="code"]').press('Escape');
       await retryStarted;release();await result(returned);await warning.waitFor({state:'hidden'});await assertEditorText(page,fixture.workingText);
       await capture(page,'source-feedback-watch-recovered.png');
     }finally{release();await page.unrouteAll({behavior:'wait'});}

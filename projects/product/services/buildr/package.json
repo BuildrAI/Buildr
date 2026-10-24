@@ -82,7 +82,7 @@
     "contracts:check:runtime-system": "node tools/codegen/contracts/runtime-system-dto.ts --check && node tools/codegen/contracts/workbench-dto.ts --check",
     "test-context:generate": "node tools/testing/test-context-build.ts generate",
     "test-context:check": "node tools/testing/test-context-build.ts check",
-    "artifacts:prepare": "npm run contracts:prepare && npm run test-context:generate",
+    "artifacts:prepare": "npm run agent:prepare && npm run contracts:prepare && npm run test-context:generate",
     "candidate:prepare": "node tools/verification/candidate-environment.ts prepare",
     "typecheck": "npm run artifacts:prepare && npm run contracts:check && npm run contracts:check:workspace && npm run test-context:check && tsc --project tsconfig.json && tsc --project tsconfig.test.json",
     "test:system": "node --import ./test/register-development-entry.ts test/verification/system.ts",
@@ -118,12 +118,15 @@
     "test:release": "node --import ./test/register-development-entry.ts test/verification/release/release-smoke.ts",
     "test:launcher-platform": "node --import ./test/register-development-entry.ts test/verification/release/release-smoke.ts --platform-launcher",
     "install:development": "./tools/development/install-buildr-development",
-    "pack:check": "npm pack --dry-run"
+    "pack:check": "npm pack --dry-run",
+    "agent:prepare": "node tools/development/prepare-development-agent.ts",
+    "postinstall": "node tools/development/prepare-development-agent.ts --no-build"
   },
   "engines": {
     "node": ">=24.15.0"
   },
   "dependencies": {
+    "@buildr-ai/buildr-agent": "file:../buildr-agent",
     "@vscode/ripgrep-universal": "1.18.0",
     "ajv": "8.18.0",
     "mysql2": "3.24.5",
@@ -135,7 +138,8 @@
     "ajv",
     "mysql2",
     "node-sql-parser",
-    "yaml"
+    "yaml",
+    "@buildr-ai/buildr-agent"
   ],
   "devDependencies": {
     "@fission-ai/openspec": "1.13.0",

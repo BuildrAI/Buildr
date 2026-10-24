@@ -10,6 +10,7 @@ import { readCurrentInstallationOrigin } from '../../src/modules/installation/in
 
 const service = 'projects/product/services/buildr';
 const frontend = 'projects/product/services/buildr-web';
+const agent = 'projects/product/services/buildr-agent';
 function fixture(t: any) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-inputs-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -17,7 +18,7 @@ function fixture(t: any) {
   const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   write(`${service}/package.json`, '{"name":"@buildr-ai/buildr","version":"1.2.3"}\n');
   write(`${service}/src/index.ts`, 'export const version = 1;\n');
-  write('.gitignore', 'node_modules/\nweb-dist/\n');
+  write('.gitignore', 'node_modules/\nweb-dist/\nbuild/\n');
   git('init', '-q'); git('config', 'user.name', 'Buildr Fixture'); git('config', 'user.email', 'fixture@example.invalid');
   const commit = () => { git('add', '.'); git('commit', '--allow-empty', '-qm', 'fixture change'); };
   commit();
@@ -30,7 +31,7 @@ test('documentation, test and independent plugin commits preserve running develo
   const f = fixture(t);
   const initial = readCurrentInstallationOrigin(f.product);
   const running = { ...initial, installationIdentity: initial.ownershipIdentity };
-  for (const name of ['README.md', `${service}/docs/start.md`, `${service}/tools/verification/package-check/bootstrap.yml`, `${service}/test/example.test.ts`, `${frontend}/test/example.test.ts`, 'projects/product/services/dsh-plugin/plugin/bridge.ts']) {
+  for (const name of ['README.md', `${agent}/README.md`, `${agent}/test/core.test.ts`, `${service}/docs/start.md`, `${service}/tools/verification/package-check/bootstrap.yml`, `${service}/test/example.test.ts`, `${frontend}/test/example.test.ts`, 'projects/product/services/dsh-plugin/plugin/bridge.ts']) {
     f.write(name, 'changed\n'); f.commit();
     const current = readCurrentInstallationOrigin(f.product);
     assert.notEqual(current.sourceCommit, initial.sourceCommit);
@@ -41,7 +42,7 @@ test('documentation, test and independent plugin commits preserve running develo
   }
 });
 
-for (const name of [`${service}/src/index.ts`, `${service}/package-lock.json`, `${frontend}/src/App.tsx`, `${frontend}/vite.config.ts`, `${frontend}/package-lock.json`, `${service}/tools/development/run-development-cli`, `${service}/tools/development/resolve-development-node`, 'projects/product/.node-version', `${service}/tools/codegen/contracts/task-dto.ts`, `${service}/web-dist/index.html`]) {
+for (const name of [`${service}/src/index.ts`, `${agent}/src/index.ts`, `${agent}/package-lock.json`, `${agent}/build/index.js`, `${service}/node_modules/@buildr-ai/buildr-agent/build/index.js`, `${service}/node_modules/@buildr-ai/buildr-agent/package.json`, `${service}/package-lock.json`, `${frontend}/src/App.tsx`, `${frontend}/vite.config.ts`, `${frontend}/package-lock.json`, `${service}/tools/development/run-development-cli`, `${service}/tools/development/resolve-development-node`, 'projects/product/.node-version', `${service}/tools/codegen/contracts/task-dto.ts`, `${service}/web-dist/index.html`]) {
   test(`runtime input ${name} changes identity before a commit`, t => {
     const f = fixture(t), initial = f.identity();
     assert.match(initial!, /^sha256-[a-f0-9]{64}$/);

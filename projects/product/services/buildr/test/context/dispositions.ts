@@ -54,6 +54,7 @@ const entries: any[] = [
     'openspec-contract-fixtures',
     'remote-skill-timeout',
     'dsh-plugin',
+    'agent-service',
     'service-branch-contract',
     'cli-compatibility',
   ]),

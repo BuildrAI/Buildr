@@ -1,8 +1,8 @@
 import process from 'node:process';
 
 import { pickWorkspaceDirectory } from '../infrastructure/directory-picker.ts';
-import { binaryResponse, jsonResponse, textResponse, uiPrototypeHtmlResponse, diagramHtmlResponse } from './responses.ts';
-import { assertRequestHost, assertWriteRequest, readAllowedJsonBody, readJsonBody } from './session.ts';
+import { binaryResponse, jsonResponse, textResponse, uiPrototypeHtmlResponse, diagramHtmlResponse, eventStreamResponse } from './responses.ts';
+import { assertRequestHost, assertReadRequest, assertWriteRequest, assertMutationRequest, readBinaryBody, readAllowedJsonBody, readJsonBody } from './session.ts';
 import { injectedIndexHtml, serveDistAsset } from './static-files.ts';
 import {
   BUILDR_WEB_HTTP_OPERATIONS,
@@ -22,6 +22,7 @@ function contributionRespond(response: any) {
     binary: (content: any, contentType: any, options?: { disposition: 'inline' | 'attachment'; filename: string }) => binaryResponse(response, 200, content, contentType, options),
     diagramHtml: (content: any) => diagramHtmlResponse(response, content),
     uiPrototypeHtml: (content: any) => uiPrototypeHtmlResponse(response, content),
+    stream: (subscription: { events: AsyncIterable<unknown>; close(): void }, validate: (event: unknown) => unknown) => eventStreamResponse(response, subscription, validate),
   });
 }
 
@@ -83,8 +84,9 @@ export function createLocalWorkspaceRequestRouter({
         request,
         pathname,
         searchParams: requestUrl.searchParams,
+        authorizeRead: () => assertReadRequest(request, trustedOrigin, sessionToken),
         authorizeWrite: () => assertWriteRequest(request, trustedOrigin, sessionToken),
-        readJsonBody: () => readJsonBody(request),
+        readJsonBody: (maxBytes?: number) => readJsonBody(request, maxBytes),
         pickWorkspaceDirectory,
         previewIdentity,
         respond: contributionRespond(response),
@@ -150,9 +152,13 @@ export function createLocalWorkspaceRequestRouter({
           suffix,
           searchParams: requestUrl.searchParams,
           root,
+          workspaceId,
+          authorizeRead: () => assertReadRequest(request, trustedOrigin, sessionToken),
+          authorizeMutation: () => assertMutationRequest(request, trustedOrigin, sessionToken),
           authorizeWrite: () => assertWriteRequest(request, trustedOrigin, sessionToken),
           readBody: (allowed: any, label: any, maxBytes?: number) => readAllowedJsonBody(request, allowed, label, maxBytes),
           readJsonBody: (maxBytes?: number) => readJsonBody(request, maxBytes),
+          readBinaryBody: (maxBytes: number) => readBinaryBody(request, maxBytes),
           submitTaskRead: (operation: any, taskId: any, input: any = {}, signal?: AbortSignal) => submitTaskRead(request, response, operation, root, taskId, input, signal),
           respond: contributionRespond(response),
         });

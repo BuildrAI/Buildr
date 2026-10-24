@@ -36,6 +36,24 @@
 
 项目文档图片由[项目应用](../../services/buildr/src/modules/workspace/application/project-application.ts)复读登记与来源，任务图片由[材料应用](../../services/buildr/src/modules/task/materials/application/task-materials-application.ts)及[项目读取器](../../services/buildr/src/modules/task/materials/application/task-project-document-reader.ts)选择同一本机或候选根。共享[图片文件读取](../../services/buildr/src/infrastructure/filesystem/markdown-images.ts)只负责真实正文引用、有界普通文件、类型签名与前后观察，不拥有任务作用域或登记。前端[图片链接与失败状态](../../services/buildr-web/src/lib/markdownImages.ts)提前过滤明确非法路径，实际身份和权限仍由应用决定。
 
+## 内部对话与原生执行
+
+[智能体接入架构](../docs/architecture/agent-integration.md)解释用户可见行为；这里定位新内部对话的实际边界。它与既有 `agent-operations` 的一次生成、`native-session-links` 的外部关联并列，不扩展或迁移旧数据。
+
+- **宿主（Host）适配**：[agent-service/module.ts](../../services/buildr/src/modules/agent-service/module.ts) 按公开包名装配 `createAgentService`，提供已登记工作空间（Workspace）解析和任务（Task）存在检查；[HTTP 入口](../../services/buildr/src/modules/agent-service/interfaces/http/agent-service-http.ts)接入本机认证和独立控制请求，不维护对话副本。
+- **独立服务（Service）**：[公开入口](../../services/buildr-agent/src/index.ts)创建账号应用、对话应用、事件与私有库；[contracts.ts](../../services/buildr-agent/src/contracts.ts)只公开宿主依赖、视图及执行器（Executor）协议，主包不导入私有源码。
+- **工具路径**：[工具环境](../../services/buildr-agent/src/executors/tool-environment.ts)仅提供原用户路径线索和官方浏览器缓存，账号 HOME 仍独立；[随包准备方法](../../services/buildr/resources/runtime/skills/buildr/references/browser-tools.md)由智能体发现、复用或按官方方式安装工具，不新增工具管理平台。
+  - [connection-application.ts](../../services/buildr-agent/src/application/connection-application.ts)：每家独立配置、官方登录、模型目录及真实程序绑定；运行中关闭、停止和授权可以独立响应。
+  - [conversation-application.ts](../../services/buildr-agent/src/application/conversation-application.ts)：按对话版本和模型能力生成发送预览，保存实际模型、思考深度（Reasoning Effort）、权限模式（Permission Mode）及请求身份后启动原生执行；按参与者和原生条目身份归并历史，协调独立短标题及手动名保护，保留受理、待确认、仍有工具和已结束的区别。单工具停止失败不改写整轮停止事实。
+  - [conversation-repository.ts](../../services/buildr-agent/src/persistence/conversation-repository.ts)：写入本机运行配置（Profile）的 `agent-service/conversations.sqlite`，与任务数据库分离；保存比较前一修订，不在模型执行期间持有数据库事务（Transaction）。
+  - [executors/](../../services/buildr-agent/src/executors/)：分别管理 Codex、DSH、Qoder 原生上下文、消息、工具、停止和资源，不将厂商协议放入公共应用或前端。
+  - [model-options.ts](../../services/buildr-agent/src/executors/model-options.ts)：保留原生逐模型默认值及合法思考档位，不建立品牌级虚构选项。[Codex 短标题](../../services/buildr-agent/src/executors/codex/title.ts)使用隔离的临时上下文，不复用工作线程或旧一次生成入口；Qoder 专用标题控制和 DSH 可信来源事件归各自适配器（Adapter）。
+  - [Codex 权限参数](../../services/buildr-agent/src/executors/codex/permissions.ts)与[DSH 权限预设](../../services/buildr-agent/src/executors/dsh/permissions.ts)：将本轮默认／完全访问映射为原生策略，创建、恢复与发送时明确应用；Qoder 在[独立工作进程](../../services/buildr-agent/src/executors/qoder/worker.ts)逐次设置查询权限，业务提问与工具审批分开。
+- **前端功能**：[AgentConversationsContext.tsx](../../services/buildr-web/src/features/agent-conversations/AgentConversationsContext.tsx)持有当前对话、接入和事件读取；[ConversationPanel.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationPanel.tsx)呈现消息、执行及发送预览；[ConversationRequest.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationRequest.tsx)响应准确本轮问题及授权；[ConversationHistory.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationHistory.tsx)按对话而非厂商组织历史；[TaskConversationEntry.tsx](../../services/buildr-web/src/features/agent-conversations/TaskConversationEntry.tsx)只关联内部对话身份，不重写任务目标、状态或成果。
+  - [ConversationDock.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationDock.tsx)：复用面板暂看（Pane Peek）与分隔器（SplitDivider），负责图标悬停、固定展开、左右停靠、320–800px宽度偏好和焦点恢复；保留同一内容节点与滚动，不持有模型执行状态。[ConversationAttention.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationAttention.tsx)在侧轨、标题栏和窄屏顶栏复用待回应入口，保持显式导航与焦点交接。[ConversationOptions.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationOptions.tsx)按实际模型能力呈现完整且可换行的选择器，不把显示默认项当成已生效参数。
+
+恢复先按原配置与程序恢复各参与者的原生上下文，再补它未收到的可见记录；超容量需要用户明确提供精简说明。网络失败或宿主（Host）重启后，未知输入不自动重发，旧授权句柄不复用。对话的任务关联、目录和发送预览为图形界面（GUI）与对话界面（Talk UI）提供最小明确输入；当前不会自动采集页面现场或注册任意业务写入。未来对象操作仍须交给原能力按对象身份和观察版本校验。
+
 ## 外部系统接入
 
 [外部系统连接](../docs/architecture/external-connections.md)解释声明、实例、账号和专业职责。本节定位这些职责的当前实现；约束见[通用运行规范](../../openspec/specs/connection-skill-runtime/spec.md)、[实例规范](../../openspec/specs/connection-instance-files/spec.md)及[独立查询规范](../../openspec/specs/mysql-query/spec.md)。

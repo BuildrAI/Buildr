@@ -67,7 +67,7 @@ test('same inputs create byte-identical payload and installed resource mapping d
       'resources/product/resources/installation/launcher/Buildr.ico',
     ]);
     assert.equal(first.manifest.files.some((entry: any) => entry.path.endsWith('.map')), false);
-    assert.equal(first.manifest.files.some((entry: any) => entry.path.endsWith('.ts')), false);
+    assert.equal(first.manifest.files.some((entry: any) => entry.path.endsWith('.ts') && !entry.path.endsWith('.d.ts')), false);
     assert.equal(first.manifest.files.some((entry: any) => /(?:^|\/)typescript(?:\/|$)/u.test(entry.path)), false);
     assert.equal(first.manifest.files.some((entry: any) => /(?:^|\/)@types\/node(?:\/|$)/u.test(entry.path)), false);
     assert.equal(first.manifest.files.some((entry: any) => entry.path.endsWith('/web-dist/index.html')), true);
@@ -81,7 +81,7 @@ test('same inputs create byte-identical payload and installed resource mapping d
     const runtimeMetadata: any = JSON.parse(fs.readFileSync(path.join(first.root, 'resources/product/package.json'), 'utf8'));
     assert.equal(runtimeMetadata.devDependencies, undefined);
     assert.equal(runtimeMetadata.scripts, undefined);
-    assert.deepEqual(Object.keys(runtimeMetadata.dependencies), ['@vscode/ripgrep-universal', 'ajv', 'mysql2', 'node-sql-parser', 'yaml']);
+    assert.deepEqual(Object.keys(runtimeMetadata.dependencies), ['@buildr-ai/buildr-agent', '@vscode/ripgrep-universal', 'ajv', 'mysql2', 'node-sql-parser', 'yaml']);
     for(const target of ['darwin-arm64/rg','darwin-x64/rg','linux-x64/rg','linux-arm64/rg','win32-x64/rg.exe','win32-arm64/rg.exe'])assert.ok(first.manifest.files.some((entry:any)=>entry.path==='resources/runtime/ripgrep/'+target),target);
     assert.equal(runtimeMetadata.devDependencies, undefined);
 
@@ -149,6 +149,7 @@ test('payload verify runs from a clean tree with no node_modules or esbuild', as
     ], {
       cwd: cleanRoot,
       encoding: 'utf8',
+      maxBuffer: 32 * 1024 * 1024,
       env: { ...process.env, NODE_PATH: '' },
     });
     assert.equal(result.status, 0, result.stderr || result.stdout);

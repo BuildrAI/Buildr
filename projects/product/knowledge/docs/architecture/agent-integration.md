@@ -1,12 +1,82 @@
-# Buildr 如何接入 Codex 与 DSH
+# Buildr 怎样接入智能体（Agent）
 
-Buildr 的“智能体”入口发现本机 Codex 和 DSH，用户确认候选后保存准确的安装与配置范围。Codex 登记程序和原生配置来源；DSH 登记当前渠道中已启用 Buildr 插件的桌面后台。发现、确认和检查接入都不发送模型请求。
+Buildr 提供三条并列链路：**内部对话与持续执行**、**按给定材料一次生成**、**外部原生会话（Session）与任务（Task）关联**。内部对话采用独立账号配置，不接管用户已有的桌面聊天；原有登记、一次生成和外部关联继续独立工作。
 
-接入支持两项独立能力：**按给定材料生成结果**，以及**关联原生会话（Session）与任务（Task）并双向打开**。会话（Session）是带身份与上下文的工作单元；一次生成的运行（Run）与原生会话（Session）关系分别管理。
+![内部对话与原有接入的职责边界](../../archify/system/agent-integration.html)
 
-![从确认接入到关联与调用](../../archify/system/agent-integration.html)
+图示与正文说明当前接入实现及职责，不代表已经发布。图的结构与浏览器检查不代替三家账号、模型、图片或各操作系统的真实验收。
 
-## 两条链路各管什么
+## 内部对话由谁维护
+
+`services/buildr-agent/` 是独立的智能体服务（Agent Service）代码单元，维护账号接入、统一对话、执行控制、原生上下文恢复和私有交互库。它作为私有库 `@buildr-ai/buildr-agent` 被 Buildr 本机宿主（Host）装配，与主包统一发行，首版不要求用户再安装一个 Buildr 后台服务。
+
+Buildr 宿主负责本机认证、HTTP 与事件流、已登记工作空间（Workspace）和任务（Task）身份；前端负责对话、草稿、历史、发送预览和授权答复。三家执行器（Executor）负责各自进程、官方登录、规则（Rule）与技能（Skill）发现、工具执行及原生历史。这里的服务（Service）边界也不等于未来自研的 Buildr 智能体（Agent）：未来自研执行者可以沿同一执行器（Executor）契约与 Codex 等并列接入，当前没有该实现。
+
+| 执行方 | 当前接入形态 | 配置与运行边界 |
+| --- | --- | --- |
+| Codex | `codex app-server --listen stdio://` | 每套独立配置一个应用服务（App Server），承载多个原生上下文；与桌面共享代码能力不等于复制桌面全部功能 |
+| DSH | `dsh web --no-open --port 0` 与官方客户端（Client） | 启动完整本机网页宿主（Web Host），使用其会话、工具与账号能力；不依赖既有 DSH 桌面插件 |
+| Qoder | 官方软件开发工具包（SDK）与独立 `qodercli` | 私有工作进程（Worker）隔离 SDK 环境；每次活跃执行由 SDK 管理原生命令行（CLI）进程 |
+
+原生程序由“准备并连接”发现并核验真实路径、实际版本及来源。软件开发工具包（SDK）和 DSH 客户端随主包携带；缺少原生程序时提供官方安装引导或显式的独立准备动作，不修改全局安装或自动升级。兼容版本由[统一程序策略](../../../services/buildr-agent/src/executors/program-policy.ts)维护，执行适配和准备使用同一策略，缺少一家不阻止其他已就绪接入。
+
+## 账号与配置怎样接入
+
+“准备并连接”依次发现本机程序、选择准确来源、核对兼容性、准备独立配置，再进入官方登录与账号模型验证。多个可用来源需要选择；指定程序或原绑定程序缺失不静默回退。Codex 优先引导安装含 Codex 的官方 ChatGPT App，核验应用标识、官方签名和内附程序版本，也允许独立安装 CLI。DSH 准备固定官方 CLI；Qoder 优先解析 SDK 配套程序，缺少时准备固定配套版本，用户无需手动安装 SDK 或单独下载 App Server。
+
+准备进度、来源、失败与取消在同一账号页显示；切换厂家、关闭面板或刷新可继续查询准确尝试。服务重启后重新观察安装和账号，不把旧尝试当作仍在运行。安装只作用于本应用配置域 `agent-service/programs/`；失败及取消清理本次暂存和进程，保留既有程序、登录和会话。兼容范围为 Codex `0.163.x`、DSH `0.2.x`、Qoder CLI `1.1.x`，包含系列内预发布版本；下载版本固定，发现和启动按系列及实际协议核验。同一程序来源及独立配置内的兼容更新保留账号、连接和原生会话；来源或配置身份改变、范围外版本及实际协议失败提供局部诊断，不能改用另一程序冒充恢复。浏览器操作工具继续由智能体（Agent）按技能（Skill）检查和准备，不属于 Buildr 原生程序安装器。
+
+首版每家一套 Buildr 独立配置，可服务多个工作空间（Workspace）。启用接入后检查程序与账号，用户通过官方登录页完成登录，再读取该账号的可用模型；连接成功、登录流程结束和模型实际执行成功是不同事实。没有从桌面复制令牌（Token）或默认配置，也不自动继承桌面插件、用户级技能（Skill）、工具连接或模型设置。
+
+配置保存在本机网页运行配置（Profile）的 `dataRoot/agent-service/connections/<provider>/`；统一对话保存在同根的 `conversations.sqlite`，图片保存在 `attachments/`。这些是私有运行数据，不写入工作空间（Workspace）源资产或 Git。页面显示可用状态、非秘密账号摘要及配置路径，登录地址仅属于当前登录尝试；凭据由各家原生配置保存，不通过消息或诊断返回。断开保留账号、配置和对话，停止及退出只释放本接入拥有的执行资源，不能以“已断开”冒充执行已确认停止。
+
+DSH 在对话中选择模型会改变这套独立配置的后续默认模型；因为配置独立，不改外部桌面的默认模型。首版界面不提供任意第三方模型凭据编辑，也不建立统一模型或技能配置中心。
+
+输入栏左侧呈现附件与权限，右侧依次为独立的智能体（Agent）、模型、思考档位和发送控件。切换执行方使用其默认模型并清除原模型和档位，切换模型清除原档位；选择只更新草稿，不因此开始执行。选择器保持一致行高、清晰正文色和白色背景，悬停与选中状态一致，菜单开合不改变输入栏高度；窄屏按完整控件换行，正常名称不省略。
+
+模型目录同时保留实际默认模型、逐模型支持的思考深度（Reasoning Effort）及默认档位。输入栏仅显示该模型支持的选项；发送预览和本轮执行保留实际模型与档位，刷新后按执行记录恢复。切换模型或执行方不会沿用不兼容的旧档位。DSH 选型后重新观察原生目录并通知对话重新读取连接，避免界面仍把旧默认值当成当前事实。
+
+输入区提供“默认权限／完全访问”。新对话从默认开始，完全访问由用户为当前对话显式选择，换家后分别应用各家的原生设置；它只影响后续执行，不自动回答业务问题或批准未知交互。发送预览及实际本轮保存模式，恢复时每轮重新应用，避免完全访问残留到后来的默认执行。只支持默认模式的接入不能静默接受完全访问。
+
+| 执行方 | 默认权限 | 完全访问 |
+| --- | --- | --- |
+| Codex | Buildr 明确使用 `on-request` 与 `workspace-write` | 原生 `never` 与 `danger-full-access` |
+| DSH | 原生权限预设目录给出的默认值 | 原生 `/permission danger-full-access`，读取会话权限快照确认 |
+| Qoder | 软件开发工具包（SDK）的 `default` | 原生 `bypassPermissions` 与 `allowDangerouslySkipPermissions` |
+
+这些名称不代表三家的操作系统隔离能力相同，也不改变外部桌面配置、旧一次生成策略或辅助标题的受限执行。单个活动工具只有具备准确原生停止身份时才提供单独停止；不支持时保留活动事实和观察入口，不能把局部停止失败标成整轮已经停止。
+
+## 怎样创建、执行和恢复对话
+
+全局“对话”入口在任意页面可用，默认停靠右侧，历史也在对话区域查看。新对话先确认所属工作空间（Workspace）及准确起始目录（Working Directory）。任务页的“打开对话”在没有内部对话时创建带该任务身份的对话，有一段时直接打开，多段时供选择；关联任务不会替代原生目录或自动修改任务状态。
+
+桌面不再保留重复的顶部对话按钮，侧边图标和面板边界只切换开合，恢复原对话或历史视图；待回应数量随收起侧轨或固定标题栏保留，仍是单独的明确入口，点击才定位相应对话。桌面收起后保留对话图标，悬停可临时操作同一对话，点击才固定展开；展示切换保留草稿、记录及执行，收起按钮放在标题栏右侧。手机通过全局按钮恢复。二级导航收起时，一级图标悬停预览，鼠标点击不跳页，浮层内展开才固定对应组；固定后不再生成悬停浮层，点击一级图标直接切换固定组，重复选择当前组保持展开，仍用原按钮收起。键盘和触屏也可在固定态切组。预览或固定组使用原选中底色，不跟随浏览路由，也不改变已打开的工作页签。导航浮层保持工作区全高。固定导航、对话和原工作双屏使用同款分隔手柄及标题栏标记。对话停靠宽度为320–800px，正文和输入使用面板宽度；底部执行者、模型及档位完整显示并可换行，账号与配置归入对话内部。
+
+对话标题用于定位主题。新对话首轮成功后，优先采用可信的原生摘要标题；Codex 和 Qoder 也可用独立有界请求生成短标题，不向工作上下文塞入起名指令。DSH 只接受来源明确的模型摘要事件，原生首句截取回退不冒充总结。自动生成失败不影响工作、重启不重复发起；手动名称优先。对没有可靠来源标记的旧标题不批量猜测覆盖，用户可在更多菜单对当前对话明确“生成简短标题”；当前执行方不能提供摘要时显示局部原因。
+
+起始目录是规则（Rule）、技能（Skill）发现及执行的起点，不是禁止跨目录的沙箱（Sandbox）。执行者依据原生权限与用户授权访问其他目录；Buildr 不把当前页面、所选对象或整个任务正文静默注入每条指令。实际执行始终重新核对文件、资料及当前现场。
+
+发送前核对对话版本、接入、模型、工作位置和实际交付内容；受理后立即记录本轮执行，流式展示回答、工具摘要、原生问题和授权请求。停止与答复走独立控制入口，不等待模型整轮结束。停止时区分模型中断、仍有命令运行、已确认停止和状态未知；工具摘要超长时明确标记截断，完整内容仍在准确原生历史中。
+
+重新打开先读 Buildr 统一历史，再对各参与者按原程序、独立配置、起始目录和原生上下文身份恢复。页面刷新或宿主（Host）重启不会自动重发原指令，也不重放旧授权；无法确认是否受理或执行是否结束时保留“待确认”（`unknown`），重新观察原执行。已完成和已停止的持久事实不因失去活跃连接被改写为未完成。
+
+浏览器验证工具由智能体按[随包方法](../../../services/buildr/resources/runtime/skills/buildr/references/browser-tools.md)发现和准备。账号 `HOME` 保持独立，`BUILDR_HOST_HOME` 提供原用户路径线索；`PLAYWRIGHT_BROWSERS_PATH` 保留明确覆盖或解析到原用户的官方默认缓存，允许三家复用已有浏览器。Buildr 不新增工具管理平台或统一安装目录。关于接入、自研与职责分层，见[责任边界](agent-boundaries.md)。
+
+## 同一对话怎样切换执行方
+
+历史按对话组织，消息标明参与者，不按 Agent 厂商分组。同一对话同一时刻只执行一轮；有未处理执行、问题、授权或未知状态时先处理，用户仍可写草稿。
+
+首次选择另一家时，为其新建原生上下文，将尚未交付给它的可见历史、来源、当前目录与本次要求组成接续输入；界面显示实际交付范围。切换回 Codex 等已有参与者时，恢复它原来的上下文，再补充它离开后尚未见到的可见记录。各家隐藏推理、工具内部状态和原生上下文不相互迁移；历史不是新的授权，也不会重放工具。
+
+超出已支持输入容量，或目标执行者不支持待交接图片时明确阻止本次发送，保留原历史和草稿。用户可以继续原执行方，或明确提供精简接续说明后重新预览；系统不静默截去旧消息来伪装完整接续。首版支持文本与按执行器（Executor）能力开放的图片输入、日常对话与工具执行闭环，暂不追求桌面应用全部功能、并行协作或自动分工。
+
+## 为图形与对话交互留下什么基础
+
+图形界面（GUI）和对话界面（Talk UI）共享工作空间（Workspace）、任务（Task）及实际成果身份；对话只保存交流和执行观察，不成为代码、文档或任务状态的唯一权威。首版将工作位置、任务关联、发送预览、观察版本与独立控制留在公开契约中；未来业务现场接入应传明确对象身份和已观察版本，由原业务能力保护写入，不能把页面焦点或历史消息当作写入许可。
+
+实现入口：[公开服务与契约](../../../services/buildr-agent/src/index.ts) · [账号应用](../../../services/buildr-agent/src/application/connection-application.ts) · [对话应用](../../../services/buildr-agent/src/application/conversation-application.ts) · [私有交互库](../../../services/buildr-agent/src/persistence/conversation-repository.ts) · [宿主装配](../../../services/buildr/src/modules/agent-service/module.ts) · [对话前端](../../../services/buildr-web/src/features/agent-conversations/) · [界面导航](../../../services/buildr-web/src/app/AppPrimaryNavigation.tsx)。
+
+## 原有的一次生成与外部会话关联
 
 | 链路 | Buildr 负责 | 原生程序负责 |
 | --- | --- | --- |
@@ -37,6 +107,6 @@ DSH 的关联身份来自目标原生执行直接提供的 `DSH_SESSION_ID`，�
 
 检查旧 DSH 登记时，只有安装、配置和渠道准确匹配，才保留原编号、名称及默认选择并确认新后台；不能唯一确认时保留旧事实、要求重新确认。移除接入仅移除调用登记、断开关联配置，不删除模型账号、原生历史或会话（Session）关系。
 
-## 实现与图示来源
+## 原有链路的实现来源
 
-本图展示接入、生成和关系三项职责，不展开完整原生聊天执行体系。当前事实入口：[Codex 发现](../../../services/buildr/src/modules/agent-operations/infrastructure/codex-discovery.ts) · [DSH 发现](../../../services/buildr/src/modules/agent-operations/infrastructure/dsh-discovery.ts) · [确认、排队与生命周期](../../../services/buildr/src/modules/agent-operations/application/agent-operations-application.ts) · [DSH 生成提供者](../../../services/buildr/src/modules/agent-operations/infrastructure/dsh-desktop-provider.ts) · [桌面插件桥](../../../services/dsh-plugin/plugin/desktop-server.ts) · [关系聚合](../../../services/buildr/src/modules/native-session-links/application/native-session-links-application.ts) · [DSH 桌面导航](../../../services/buildr/src/modules/dsh-desktop/application/dsh-desktop-application.ts) · [任务页入口](../../../services/buildr-web/src/features/task/components/TaskAgentSessions.tsx)。
+原有链路保持独立。当前事实入口：[Codex 发现](../../../services/buildr/src/modules/agent-operations/infrastructure/codex-discovery.ts) · [DSH 发现](../../../services/buildr/src/modules/agent-operations/infrastructure/dsh-discovery.ts) · [确认、排队与生命周期](../../../services/buildr/src/modules/agent-operations/application/agent-operations-application.ts) · [DSH 生成提供者](../../../services/buildr/src/modules/agent-operations/infrastructure/dsh-desktop-provider.ts) · [桌面插件桥](../../../services/dsh-plugin/plugin/desktop-server.ts) · [关系聚合](../../../services/buildr/src/modules/native-session-links/application/native-session-links-application.ts) · [DSH 桌面导航](../../../services/buildr/src/modules/dsh-desktop/application/dsh-desktop-application.ts) · [任务页入口](../../../services/buildr-web/src/features/task/components/TaskAgentSessions.tsx)。

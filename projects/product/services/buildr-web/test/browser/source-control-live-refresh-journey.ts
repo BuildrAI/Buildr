@@ -1,3 +1,4 @@
+import { showPrimaryNavigation } from './primary-navigation-controls.ts';
 import assert from 'node:assert/strict';
 import { codeRepositoryCode } from '../../src/features/code/code-source-labels.ts';
 import { selectSourceControlView } from './source-control-view-controls.ts';
@@ -107,13 +108,13 @@ export async function runSourceControlLiveRefreshJourney({t, page, workspaceUrl,
       try {
         branches.liveRefresh.write(longText(41));
         await page.locator('.repository-tree-file[data-file-path="' + branches.liveRefresh.path + '"][data-code-status="M"]').waitFor();
-        await page.locator('.shell-navigation [data-nav="source-control"][data-has-changes="true"] .shell-nav-change-dot').waitFor();
+        await showPrimaryNavigation(page, 'code');await page.locator('.primary-secondary-navigation:visible [data-nav="source-control"][data-has-changes="true"] .shell-nav-change-dot').waitFor();await page.locator('.primary-navigation-rail button[data-nav="code"]').press('Escape');
         await page.locator('.repository-tree-directory[data-directory-path="scm-browser-branches"][data-has-changes="true"] .repository-directory-change-dot').waitFor();
         assert.equal(await root.getAttribute('data-has-changes'), 'true', '同一资源树根也显示后代变化');
         assertLocalReads(requests.reads, member.repositoryId);
         assert.equal(await sourceControl().count(), 0, '状态传播无需挂载源代码管理页面');
         await capture(page, 'source-control-live-refresh-explorer.png');
-        await page.locator('.shell-navigation [data-nav="source-control"]').click();
+        await page.mouse.move(5,5);await showPrimaryNavigation(page, 'code');await page.locator('.primary-secondary-navigation:visible [data-nav="source-control"]').click();
         const source = identify(await catalog(), branches.location);
         await sourceControl().locator('[data-source-repository="' + source.repository.id + '"] [data-source-worktree="' + source.worktree.worktreeId + '"] .source-control-repository-copy').click();
         await changedRow(source.worktree.worktreeId, branches.liveRefresh.path).click();

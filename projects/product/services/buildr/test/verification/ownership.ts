@@ -59,6 +59,10 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration": {
     "inputs": [
+      "services/buildr-agent/**",
+      "test/integration/agent-service-delivery.test.ts",
+      "test/integration/agent-service-http.test.ts",
+      "src/modules/agent-service/**",
       "tools/build/**",
       "tools/codegen/**",
       "tools/testing/**",
@@ -1243,6 +1247,10 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "artifact-browser-core": {
     "inputs": ["test/verification/release/browser-candidate.ts", "test/helpers/clean-product-source.ts"],
+    "inputExclusions": []
+  },
+  "agent-service": {
+    "inputs": ["services/buildr-agent/**", "tools/development/prepare-development-agent.ts", "tools/build/agent-package.ts"],
     "inputExclusions": []
   },
   "frontend-logic": {

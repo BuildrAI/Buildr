@@ -69,6 +69,9 @@ export function usePanePeek({ enabled, paneRef, railRef, control, beforeClose }:
   }, []);
 
   const leave = useCallback(() => {
+    // A closing popup can release focus after the pointer has entered this
+    // rail. Its focusout must not cancel that still-valid delayed hover.
+    if (latest.current.enabled && openTimer.current !== null && hovered.current.size > 0) return;
     cancel();
     if (!latest.current.enabled || !latest.current.open || pinnedRef.current) return;
     const check = () => {

@@ -15,6 +15,7 @@ import { createRuntime as createProductRuntime } from '../../src/bootstrap/runti
 import { OPENSPEC_QUERY, createOpenSpecModule } from '../../src/modules/openspec/module.ts';
 import { CHANGE_APPLICATION } from '../../src/modules/task/change/module.ts';
 import { AGENT_OPERATIONS_APPLICATION } from '../../src/modules/agent-operations/module.ts';
+import { AGENT_SERVICE_APPLICATION } from '../../src/modules/agent-service/module.ts';
 import { CODEX_DESKTOP_APPLICATION } from '../../src/modules/codex-desktop/module.ts';
 import { NATIVE_SESSION_LINKS_APPLICATION } from '../../src/modules/native-session-links/module.ts';
 import { DSH_DESKTOP_APPLICATION, DSH_PAGE_OBSERVATIONS } from '../../src/modules/dsh-desktop/module.ts';
@@ -262,6 +263,12 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     contributions: { cli: ['agent', 'agent list', 'agent register', 'agent select'], http: ['agent-operations.http'], diagnostics: [] },
     lifecycle: 'none',
   }, {
+    id: 'agent-service',
+    requires: [WORKSPACE_APPLICATION, TASK_QUERY_APPLICATION],
+    provides: [AGENT_SERVICE_APPLICATION],
+    contributions: { cli: [], http: ['agent-service.http'], diagnostics: [] },
+    lifecycle: 'managed',
+  }, {
     id: 'native-session-links',
     requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, TASK_QUERY_APPLICATION],
     provides: [NATIVE_SESSION_LINKS_APPLICATION],
@@ -409,7 +416,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'doctor',
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item: any) => item.id), [
-    'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'task-work-context.http', 'task.http', 'workbench.http', 'task.commits.http', 'task.changed-files.http', 'task.materials.http', 'publication.http', 'change.http', 'agent-operations.http', 'native-session-links.http', 'codex-desktop.http', 'dsh-desktop.http', 'code.files.http', 'code.generation.http',
+    'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'task-work-context.http', 'task.http', 'workbench.http', 'task.commits.http', 'task.changed-files.http', 'task.materials.http', 'publication.http', 'change.http', 'agent-operations.http', 'agent-service.http', 'native-session-links.http', 'codex-desktop.http', 'dsh-desktop.http', 'code.files.http', 'code.generation.http',
     'connection-skills.http', 'service-runtime.http', 'mysql-query.http',
     'task-review.http', 'task-verification.http',
     'task-parent-coordination.http', 'system-installation.release-awareness.http',

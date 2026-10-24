@@ -69,7 +69,8 @@ export async function runWorkspaceCompositionJourney({ t, page, runtime, workspa
     await graph.getByRole('button', { name: '总览独立服务，查看详情', exact: true }).waitFor();
     await page.reload();
     await graph.getByRole('button', { name: '总览独立服务，查看详情', exact: true }).waitFor();
-    await page.getByRole('link', { name: '总览', exact: true }).click();
+    await page.locator('.primary-navigation-rail button[data-nav="workspace"]').hover();
+    await page.locator('.primary-secondary-navigation:visible').getByRole('link', { name: '总览', exact: true }).click();
     await graph.getByRole('button', { name: '总览项目甲，查看项目组成', exact: true }).waitFor();
     const repositoryFile = path.join(workspaceRoot, 'repositories/manifest.yml'), bytes = fs.readFileSync(repositoryFile);
     try {
@@ -80,7 +81,8 @@ export async function runWorkspaceCompositionJourney({ t, page, runtime, workspa
     } finally { fs.writeFileSync(repositoryFile, bytes); }
     await graph.getByRole('button', { name: /^重\s*试$/ }).click();
     await graph.getByRole('alert').waitFor({ state: 'hidden' });
-    await page.getByRole('link', { name: '项目', exact: true }).click();
+    await page.locator('.primary-navigation-rail button[data-nav="workspace"]').hover();
+    await page.locator('.primary-secondary-navigation:visible').getByRole('link', { name: '项目', exact: true }).click();
     await page.locator('#project-table-body:visible tr').filter({ hasText: '总览项目甲' }).locator('.resource-name a').click();
     try {
       await page.waitForURL(`${workspaceUrl}/projects/overview-a`);

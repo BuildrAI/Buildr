@@ -27,13 +27,19 @@ export async function runCompositeTaskChildrenJourney({ t, page, runtime, worksp
     const table = page.locator('.composite-task-list:visible');
     await table.getByRole('columnheader', { name: '操作', exact: true }).waitFor();
     const rows = table.locator('tbody tr.ant-table-row');
-    await rows.first().waitFor({ state: 'visible' });
+    await table.locator(`[data-row-key="${expectedOrder[0]}"]`).waitFor({ state: 'visible' });
     assert.deepEqual(await rows.evaluateAll((nodes: HTMLElement[]) => nodes.map(node => node.dataset.rowKey)), expectedOrder);
     assert.equal(await table.getByRole('button', { name: /^解除关联 / }).count(), fixtures.length);
     assert.equal(await table.locator('.anticon-close').count(), 0, 'The operation uses visible text rather than an unexplained close icon.');
     try {
       for (const width of [1280, 390]) {
         await page.setViewportSize({ width, height: 844 });
+        await page.waitForFunction(({parentId, narrow}: {parentId: string; narrow: boolean}) => {
+          const current = [...document.querySelectorAll<HTMLElement>('.composite-task-list')].find(node => node.getClientRects().length > 0 && !node.closest('[hidden]') && node.closest<HTMLElement>('#task-detail-main')?.dataset.taskId === parentId);
+          if (!current || current.classList.contains('is-narrow') !== narrow) return false;
+          const columns = current.querySelectorAll<HTMLElement>('colgroup col');
+          return columns.length === 3 && Number.parseFloat(columns[1].style.width) === (narrow ? 64 : 88) && Number.parseFloat(columns[2].style.width) === (narrow ? 100 : 112);
+        }, {parentId, narrow: width === 390});
         const longRow = table.locator(`[data-row-key="browser-child-actions-todo-first"]`);
         await longRow.waitFor({ state: 'visible' });
         const bounds = await longRow.evaluate((row: HTMLElement) => {

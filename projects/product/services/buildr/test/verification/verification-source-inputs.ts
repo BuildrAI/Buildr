@@ -90,7 +90,7 @@ export function createVerificationSourceInputReader(repositoryRoot: string, prod
   const prefix = 'projects/product/services/', backend = `${prefix}buildr/`, web = `${prefix}buildr-web/`, plugin = `${prefix}dsh-plugin/`;
   const common = (file: string) => ['projects/product/.node-version', 'projects/product/buildr', 'projects/product/preparation.yml', 'projects/product/verification.yml'].includes(file)
     || !options.legacyDeclarations && file === '.github/workflows/verify.yml';
-  const inBackend = (file: string) => file.startsWith(backend) || file.startsWith('skills/buildr-release/') || common(file);
+  const inBackend = (file: string) => file.startsWith(backend) || file.startsWith(`${prefix}buildr-agent/`) || file.startsWith('skills/buildr-release/') || common(file);
   const selected: Record<VerificationReuseScope, Entry[]> = {
     backend: source.entries.filter(([file]) => inBackend(file!)),
     // Windows boundary fixtures retain the entire backend runtime/materialized

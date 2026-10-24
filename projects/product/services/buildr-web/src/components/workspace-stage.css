@@ -102,7 +102,7 @@
 .workspace-page .pane-stage.unified-collapse.reading-overlay > .pane-right > .pane-overlay-heading { display:none; }
 .workspace-page .pane-stage.unified-collapse.reading-overlay > .pane-right > .pane-content-toggle { top:8px; }
 .workspace-page .pane-stage.unified-collapse.reading-overlay > .pane-left > .pane-page-toggle { left:10px; right:auto; }
-.workspace-page .pane-stage.unified-collapse.reading-overlay > .pane-right > .pane-tabstrip { padding-right:48px; }
+.workspace-page .pane-stage.unified-collapse.reading-overlay > .pane-right > .pane-tabstrip { padding-right:48px; margin-right:0; }
 .workspace-pages:has(.workspace-page:not([hidden]) > .pane-stage.unified-collapse.reading-overlay) > .workspace-page-tabs > *:not(.pane-toggle-button) { visibility:hidden; }
 .workspace-page .pane-stage.header-collapse { position:relative; }
 .workspace-page .pane-stage.header-collapse > .pane-restore-actions {

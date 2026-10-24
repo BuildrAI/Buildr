@@ -10,6 +10,7 @@ import { spawnCommandSync } from '../../../projects/product/services/buildr/src/
 import { sameFilesystemPath } from '../../../projects/product/services/buildr/src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { APPLICATION_PAYLOAD_MANIFEST, verifyApplicationPayload } from '../../../projects/product/services/buildr/src/infrastructure/product-resources/index.ts';
 import { assertGeneratedArtifactEntry } from '../../../projects/product/services/buildr/tools/build/generated-artifacts.ts';
+import { AGENT_PACKAGE_PATH, copyAgentRuntimePackage } from '../../../projects/product/services/buildr/tools/build/agent-package.ts';
 
 const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../projects/product/services/buildr');
 export const releaseArtifactSchemaVersion: any = 'buildr.release-artifact/v1';
@@ -107,6 +108,8 @@ function stagingPackageJson(payloadManifest: any, productMetadata: any): any  {
     },
     bin: { buildr: 'bin/buildr.mjs', 'buildr-mysql': 'bin/buildr-mysql.mjs' },
     scripts: { postinstall: 'node scripts/postinstall.mjs' },
+    dependencies: { '@buildr-ai/buildr-agent': payloadManifest.productionDependencies.find((dependency: any) => dependency.name === '@buildr-ai/buildr-agent')?.version ?? (() => { throw new Error('Agent runtime version is absent from the frozen payload.'); })() },
+    bundleDependencies: ['@buildr-ai/buildr-agent'],
     files: [
       'LICENSE',
       'README.md',
@@ -121,6 +124,7 @@ function stagingPackageJson(payloadManifest: any, productMetadata: any): any  {
       'runtime/workspace-cli-router.cjs',
       'runtime/mysql-connection.cjs',
       'payload/',
+      'node_modules/@buildr-ai/buildr-agent/',
     ],
     engines: { node: payloadManifest.enginesNode },
   };
@@ -198,6 +202,7 @@ export function createNpmPackStaging(payloadRoot: any, destination: any, options
     fs.copyFileSync(path.join(frozen.root, 'runtime/workspace-cli-router.cjs'), path.join(root, 'runtime/workspace-cli-router.cjs'));
     fs.copyFileSync(path.join(frozen.root, 'runtime/mysql-connection.cjs'), path.join(root, 'runtime/mysql-connection.cjs'));
     copyTree(path.join(frozen.root, 'resources'), path.join(root, 'payload'));
+    copyAgentRuntimePackage(frozen.root, root);
     const productMetadata: any = JSON.parse(fs.readFileSync(path.join(root, 'payload/product/package.json'), 'utf8'));
     fs.copyFileSync(path.join(root, 'payload/product/LICENSE'), path.join(root, 'LICENSE'));
     fs.copyFileSync(path.join(root, 'payload/product/README.md'), path.join(root, 'README.md'));
@@ -243,16 +248,22 @@ export function assertNpmTarballInventory(inventory: any): any  {
     'payload/licenses/dependencies/yaml-LICENSE',
   ];
   for (const requiredPath of required) if (!paths.includes(requiredPath)) throw new Error(`npm tarball inventory is missing: ${requiredPath}`);
-  const forbidden: any = paths.filter((value: any) => (
+  for (const requiredPath of [`${AGENT_PACKAGE_PATH}/package.json`, `${AGENT_PACKAGE_PATH}/build/index.js`, `${AGENT_PACKAGE_PATH}/node_modules/@qoder-ai/qoder-agent-sdk/dist/index.js`, `${AGENT_PACKAGE_PATH}/node_modules/@deepseek-ai/dsh-client-connection/lib/client.node.js`]) {
+    if (!paths.includes(requiredPath)) throw new Error(`npm tarball Agent runtime is missing: ${requiredPath}`);
+  }
+  const forbidden: any = paths.filter((value: any) => {
+    const agentRuntime = value.startsWith(`${AGENT_PACKAGE_PATH}/`);
+    return (
     /(^|\/)(?:node|node\.exe|npm|npm\.cmd|npx|npx\.cmd)$/iu.test(value)
     || /^payload\/product\/package\/launchers\//u.test(value)
     || /^payload\/product\/resources\/(?:workspace\/(?:skills|components)\/buildr\/archify(?:\/|$)|contracts\/bootstrap\.yml$|installation\/launcher\/buildr-icon\.png$)/u.test(value)
     || /\.(?:app|pkg|msi|vbs|map)$/iu.test(value)
     || /(^|\/)(?:test|tests|fixtures?)(\/|$)/iu.test(value)
     || /(^|\/)buildr-web(\/|$)/iu.test(value)
-    || /(^|\/)(?:vite\.config|node_modules)(?:\.|\/|$)/iu.test(value)
+    || /(^|\/)vite\.config(?:\.|\/|$)/iu.test(value)
+    || (!agentRuntime && /(^|\/)node_modules(?:\.|\/|$)/iu.test(value))
     || (value.endsWith('.ts') && !value.endsWith('.d.ts'))
-  ));
+  ); });
   if (forbidden.length) throw new Error(`npm tarball inventory contains platform/development content: ${forbidden.join(', ')}`);
   return inventory;
 }
@@ -264,16 +275,19 @@ export function createReleaseArtifact(payloadRoot: any, destination: any, option
   const stagingRoot: any = path.join(stagingBase, 'package');
   try {
     const staging: any = createNpmPackStaging(payloadRoot, stagingRoot, { testContextRoot: options.testContextRoot });
-    const result: any = spawnCommandSync(npmExecutable, ['pack', stagingRoot, '--ignore-scripts', '--pack-destination', destination, '--json'], {
+    // Pack the actual cwd tree: npm's directory-fetcher path form re-packs a
+    // normalized manifest and can omit already staged bundled dependencies.
+    const result: any = spawnCommandSync(npmExecutable, ['pack', '--ignore-scripts', '--pack-destination', destination, '--json'], {
       cwd: stagingRoot,
       encoding: 'utf8',
+      maxBuffer: 32 * 1024 * 1024,
       env: {
         ...process.env,
         npm_config_cache: path.join(stagingBase, 'npm-cache'),
         npm_config_update_notifier: 'false',
       },
     });
-    if (result.status !== 0) throw new Error(`npm pack failed with exit ${result.status}: ${(result.stderr || '').trim()}`);
+    if (result.error || result.status !== 0) throw new Error(`npm pack failed: ${result.error?.message || result.signal || result.status}: ${(result.stderr || '').trim()}`);
 
     const metadata: any = parsePackResult(result.stdout);
     assertNpmTarballInventory(metadata.files);

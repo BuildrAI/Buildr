@@ -10,7 +10,7 @@ import { executeVerificationCommand } from './support/process-executor.ts';
 
 import { collectChangedProductPaths } from './changed-paths.ts';
 
-export const BROWSER_SELECTORS: any = Object.freeze(['core', 'shell', 'workbench', 'project', 'service', 'change', 'task', 'task-materials', 'articles', 'layout', 'code', 'connection-skills']);
+export const BROWSER_SELECTORS: any = Object.freeze(['core', 'shell', 'workbench', 'project', 'service', 'change', 'task', 'task-materials', 'articles', 'layout', 'code', 'connection-skills', 'agent-conversations']);
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const projectRoot: any = path.resolve(productRoot, '../..');
@@ -148,7 +148,8 @@ export function selectBrowserSelectors(changedPaths: any): any  {
       if (originalValue.endsWith('.css') || originalValue.includes('/components/') || originalValue.includes('/app/') || originalValue.endsWith('/theme.ts')) {
         add(plan, 'layout', originalValue, 'Shared layout, reading or presentation changed; verify representative widths and retained state.');
       }
-      if (originalValue.includes('/features/code/') || originalValue.includes('RepositoryFileBrowser') || originalValue.includes('repository-file-browser')) add(plan, 'code', originalValue, 'Code scope, file reader and task file navigation changed.');
+      if (originalValue.includes('/features/agent-conversations/')) add(plan, 'agent-conversations', originalValue, 'Internal conversations, account login, execution control and handoff changed.');
+      else if (originalValue.includes('/features/code/') || originalValue.includes('RepositoryFileBrowser') || originalValue.includes('repository-file-browser')) add(plan, 'code', originalValue, 'Code scope, file reader and task file navigation changed.');
       else if (originalValue.includes('/features/connection-skills/') || originalValue.includes('/features/mysql-query/')) add(plan, 'connection-skills', originalValue, 'Connection configuration or the independent query tool changed.');
       else if (originalValue.includes('/features/workbench/')) add(plan, 'workbench', originalValue, 'Daily workbench overview, preferences or task interaction changed.');
       else if (originalValue.includes('/features/knowledge/')) {
@@ -156,7 +157,7 @@ export function selectBrowserSelectors(changedPaths: any): any  {
       }
       else if (originalValue.includes('/features/publication/')) add(plan, 'articles', originalValue, 'Article readers, editors, resources and publication state changed.');
       else if (originalValue.includes('/app/') || originalValue.includes('/components/WorkspaceStage')) {
-        for (const selector of ['shell', 'workbench', 'project', 'service', 'articles', 'task']) add(plan, selector, originalValue, 'Workspace navigation and split reading are shared across resource and task journeys.');
+        for (const selector of ['shell', 'workbench', 'project', 'service', 'articles', 'task', 'agent-conversations']) add(plan, selector, originalValue, 'Workspace navigation and split reading are shared across resource and task journeys.');
       }
       else if (/\/(?:pages\/)?(?:[Pp]roject|[Pp]rojects)/.test(originalValue) || originalValue.includes('/pages/Project')) add(plan, 'project', originalValue, 'Project page or interaction changed.');
       else if (/\/(?:pages\/)?(?:[Ss]ervice|[Ss]ervices)/.test(originalValue) || originalValue.includes('/pages/Service')) add(plan, 'service', originalValue, 'Service page or interaction changed.');

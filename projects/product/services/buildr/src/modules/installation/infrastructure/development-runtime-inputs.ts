@@ -6,6 +6,8 @@ import { spawnSync } from 'node:child_process';
 const product = 'projects/product';
 const service = `${product}/services/buildr`;
 const frontend = `${product}/services/buildr-web`;
+const agent = `${product}/services/buildr-agent`;
+const preparedAgent = `${service}/node_modules/@buildr-ai/buildr-agent`;
 
 // One definition for the running development product and its closeout restart.
 // Documentation, tests and the independently installed DSH plugin are not inputs.
@@ -18,6 +20,9 @@ export const DEVELOPMENT_RUNTIME_INPUTS = Object.freeze({
     `${service}/tools/development/run-development-node`, `${service}/tools/development/run-development-node.cmd`,
     `${service}/tools/development/resolve-development-node`, `${service}/tools/development/resolve-development-node.cmd`,
     `${service}/tools/development/prepare-development-web.ts`,
+    `${service}/tools/development/prepare-development-agent.ts`, `${service}/tools/build/agent-package.ts`,
+    `${agent}/package.json`, `${agent}/package-lock.json`, `${agent}/tsconfig.json`, `${agent}/tools/build.ts`,
+    `${preparedAgent}/package.json`,
     `${service}/tools/build/web-dist.ts`,
     `${frontend}/package.json`, `${frontend}/package-lock.json`, `${frontend}/index.html`,
     `${frontend}/vite.config.ts`, `${frontend}/tsconfig.json`,
@@ -27,6 +32,7 @@ export const DEVELOPMENT_RUNTIME_INPUTS = Object.freeze({
     `${service}/src/`, `${service}/bin/`, `${service}/web-dist/`,
     `${service}/tools/build/launcher/`, `${frontend}/src/`, `${frontend}/public/`,
     `${service}/tools/codegen/contracts/`,
+    `${agent}/src/`, `${agent}/build/`, `${preparedAgent}/build/`,
     `${service}/tools/development/programs/`, `${service}/resources/contracts/`, `${service}/resources/installation/launcher/`,
   ]),
 });
@@ -57,6 +63,9 @@ export function readDevelopmentRuntimeIdentity(productRoot: string, gitRoot: str
       }
     };
     visit(web);
+    visit(path.join(root, agent, 'build'));
+    visit(path.join(root, preparedAgent, 'build'));
+    if (fs.existsSync(path.join(root, preparedAgent, 'package.json'))) names.add(`${preparedAgent}/package.json`);
     const digest = crypto.createHash('sha256');
     digest.update(JSON.stringify({ schemaVersion: 'buildr.development-runtime/v1', sourceRoot: source, inputs: DEVELOPMENT_RUNTIME_INPUTS }));
     for (const name of [...names].sort()) {

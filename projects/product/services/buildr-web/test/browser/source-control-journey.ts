@@ -1,3 +1,4 @@
+import { showPrimaryNavigation } from './primary-navigation-controls.ts';
 import assert from 'node:assert/strict';
 import { runSourceControlActionsJourney } from './source-control-actions-journey.ts';
 import { runSourceControlBranchesJourney } from './source-control-branches-journey.ts';
@@ -158,6 +159,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     assert.notDeepEqual(activeStyle, inactiveStyle, '选中项的文字和背景应依据实际选中状态保持可区别');
   };
   const open = async () => {
+    await page.mouse.move(400, 4);
     await page.goto(workspaceUrl + '/code/source-control');
     await root().locator('.source-control-repository-copy').first().waitFor();
     await root().locator('.source-control-title .anticon-spin').waitFor({state:'hidden'});
@@ -614,10 +616,11 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await expand.click(); assert.equal(await root().locator('.source-control-sidebar').isVisible(), false);
     await root().getByRole('button', {name: '恢复分屏', exact: true}).click();
 
-    const nav = page.getByRole('navigation', {name: '主导航', exact: true});
-    await nav.getByRole('link', {name: '工作台', exact: true}).click();
+    await showPrimaryNavigation(page, 'workbench');
+    await page.locator('.primary-secondary-navigation:visible').getByRole('link', {name: '概览', exact: true}).click();
     await page.waitForURL(url => !url.pathname.includes('/code/'));
-    await nav.getByRole('link', {name: '代码', exact: true}).click();
+    await showPrimaryNavigation(page, 'code');
+    await page.locator('.primary-secondary-navigation:visible').getByRole('link', {name: '源代码管理', exact: true}).click();
     await page.locator('.code-source-control-page:visible').waitFor();
     await diff().getByText('export const sourceControlWorking = 34;', {exact: false}).waitFor();
     assert.equal(await root().locator('.source-control-open-files').count(), 0, '切换顶部入口后仍只保留当前差异');
@@ -779,18 +782,18 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await noOverflow();
   });
 
-  await scenario('代码主导航与默认路由始终进入源代码管理', async () => {
+  await scenario('代码二级入口与默认路由进入源代码管理', async () => {
     await page.goto(workspaceUrl + '/code'); await root().locator('.source-control-repository-copy').first().waitFor();
     assert.equal(new URL(page.url()).pathname, new URL(workspaceUrl + '/code/source-control').pathname);
-    await page.locator('.shell-navigation [data-nav="explorer"]').click(); await page.locator('.code-explorer-stage:visible').waitFor();
+    await showPrimaryNavigation(page, 'code');await page.locator('.primary-secondary-navigation:visible [data-nav="explorer"]').click(); await page.locator('.code-explorer-stage:visible').waitFor();
     const codeNav = page.getByRole('navigation', {name:'代码导航', exact:true});
-    await page.getByRole('navigation', {name:'主导航', exact:true}).getByRole('link', {name:'代码', exact:true}).click();
+    await showPrimaryNavigation(page, 'code');
     await page.locator('.code-explorer-stage:visible').waitFor();
-    assert.equal(new URL(page.url()).pathname, new URL(workspaceUrl + '/code/explorer').pathname, '代码入口回到上次代码页签');
+    assert.equal(new URL(page.url()).pathname, new URL(workspaceUrl + '/code/explorer').pathname, '悬停代码入口保持当前代码页签');
     await codeNav.getByRole('link', {name:'源代码管理', exact:true}).click();
     await root().locator('.source-control-repository-copy').first().waitFor();
-    await page.getByRole('navigation', {name:'主导航', exact:true}).getByRole('link', {name:'工作台', exact:true}).click();
-    await page.getByRole('navigation', {name:'主导航', exact:true}).getByRole('link', {name:'代码', exact:true}).click();
+    await showPrimaryNavigation(page, 'workbench');await page.getByRole('navigation',{name:'工作台导航',exact:true}).getByRole('link',{name:'概览',exact:true}).click();
+    await showPrimaryNavigation(page, 'code');await codeNav.getByRole('link',{name:'源代码管理',exact:true}).click();
     await root().locator('.source-control-repository-copy').first().waitFor();
     assert.equal(new URL(page.url()).pathname, new URL(workspaceUrl + '/code/source-control').pathname);
   });
@@ -798,7 +801,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
   await scenario('离开保留的源代码管理页面时悬浮信息层关闭', async () => {
     await page.setViewportSize({width: 1440, height: 900});
     await page.goto(workspaceUrl + '/code/explorer'); await page.locator('.code-explorer-stage').waitFor();
-    await page.getByRole('navigation', {name: '代码导航', exact: true}).getByRole('link', {name: '源代码管理', exact: true}).click();
+    await showPrimaryNavigation(page, 'code');await page.getByRole('navigation', {name: '代码导航', exact: true}).getByRole('link', {name: '源代码管理', exact: true}).click();
     await root().locator('.source-control-repository-copy').first().waitFor();
     await selectSourceControlView(root(), 'history');
     await root().locator('.source-control-graph li').first().waitFor();

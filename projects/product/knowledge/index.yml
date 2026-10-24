@@ -100,15 +100,19 @@ documentSections:
       - location: scope
         path: knowledge/docs/architecture/technical.md
         title: "Buildr 怎样实现"
-        summary: "理解三个服务（Service）、模块协作、运行和写入保护。"
+        summary: "理解四个服务（Service）、模块协作、运行和写入保护。"
       - location: scope
         path: knowledge/docs/architecture/external-connections.md
         title: "外部系统连接"
         summary: "理解声明、实例、账号和专业操作的分工与共同边界。"
       - location: scope
+        path: knowledge/docs/architecture/agent-boundaries.md
+        title: "Buildr 与智能体的责任边界"
+        summary: "理解采用原生接入的原因、上下文和工具分工，以及未来自研的责任。"
+      - location: scope
         path: knowledge/docs/architecture/agent-integration.md
         title: "接入方式与职责"
-        summary: "从检测、确认接入到原生会话关联与独立生成。"
+        summary: "理解内部对话、独立配置和跨执行方接续，以及原有外部关联与一次生成。"
       - location: scope
         path: knowledge/docs/architecture/agent-integration-generation.md
         title: "提交说明怎样生成"
@@ -300,7 +304,7 @@ objects:
   - id: agent-integration
     parent: system-structure
     title: 智能体接入与执行
-    summary: 从确认接入到关联原生会话与一次生成，理解 Codex 专用进程与 DSH 桌面后台的区别。
+    summary: 区分内部统一对话、三家独立配置和原生上下文，以及原有外部会话关联与一次生成。
 artifacts:
   - id: product-release-flow
     title: Buildr 发布
@@ -329,6 +333,19 @@ artifacts:
     objects:
       - agent-integration
     sources:
+      - agent-service-public-source
+      - agent-service-connections-source
+      - agent-service-preparation-source
+      - agent-service-programs-source
+      - agent-service-conversations-source
+      - agent-service-storage-source
+      - agent-service-codex-source
+      - agent-service-dsh-source
+      - agent-service-qoder-source
+      - agent-service-host-source
+      - agent-service-ui-source
+      - agent-service-task-ui-source
+      - agent-service-delivery-source
       - codex-discovery-source
       - dsh-discovery-source
       - native-session-links-source
@@ -353,12 +370,23 @@ artifacts:
       - dsh-desktop-generation-source
       - dsh-desktop-bridge-source
   - id: agent-integration-diagram
-    title: 接入关系图
+    title: 内部对话与原有接入图
     kind: diagram
     path: knowledge/archify/system/agent-integration.html
     objects:
       - agent-integration
     sources:
+      - agent-service-public-source
+      - agent-service-connections-source
+      - agent-service-conversations-source
+      - agent-service-storage-source
+      - agent-service-codex-source
+      - agent-service-dsh-source
+      - agent-service-qoder-source
+      - agent-service-host-source
+      - agent-service-ui-source
+      - agent-service-task-ui-source
+      - agent-service-delivery-source
       - codex-discovery-source
       - dsh-discovery-source
       - native-session-links-source
@@ -370,8 +398,8 @@ artifacts:
       - dsh-desktop-generation-source
       - dsh-desktop-bridge-source
     graphSource: knowledge/archify/system/agent-integration.json
-    graphDigest: 1f182285b3ec3ae91a26d5bbdc7b8204bef6d5664b2d994bae7f62386ecda41a
-    observedDigest: 0d1384691c7f5c73eb7e761b1b1681d995e8657e66d977a4dc4f5ae2229588d8
+    graphDigest: cd0724c2f9903c1f25f8ffca47670c991d2d3e5b8e091422649778ce578cdd48
+    observedDigest: ff5555df278ef82df38706380e5bb54630ff9c4abe4aff93a85fcc0232219a71
     files:
       - agent-integration-diagram-html
       - agent-integration-diagram-json
@@ -413,7 +441,7 @@ artifacts:
       - task-source-work-context-application-11bb91
       - task-source-task-command-application-aba2e8
       - data-sqlite-source
-    observedDigest: f28dca21afb9ed6d47ebba0ea98d559a55eb0a3f8998a575b7f1e01b9a5acf72
+    observedDigest: adb192358e8a16a486c8ac91170ce01748cc834d45233c4d13a236e34c1187c3
     files:
       - overview-file
   - id: work-collaboration-diagram
@@ -475,6 +503,9 @@ artifacts:
     objects:
       - system-structure
     sources:
+      - agent-service-public-source
+      - agent-service-host-source
+      - agent-service-delivery-source
       - technical-http-host-source
       - connection-skills-application
       - connection-skills-program
@@ -509,6 +540,12 @@ artifacts:
     objects:
       - system-structure
     sources:
+      - agent-service-public-source
+      - agent-service-connections-source
+      - agent-service-conversations-source
+      - agent-service-host-source
+      - agent-service-ui-source
+      - agent-service-delivery-source
       - product-reference-code-map
       - product-reference-technical-architecture
       - verification-source-23f06815b2
@@ -525,6 +562,11 @@ artifacts:
     objects:
       - system-structure
     sources:
+      - agent-service-public-source
+      - agent-service-storage-source
+      - agent-service-conversations-source
+      - agent-service-host-source
+      - agent-service-ui-source
       - product-reference-code-map
       - local-runtime-module
       - local-runtime-definition
@@ -905,6 +947,9 @@ artifacts:
     objects:
       - task-system
     sources:
+      - agent-service-task-ui-source
+      - agent-service-host-source
+      - agent-service-conversations-source
       - task-brief-storage-migration
       - task-workbench-summary-wiring
       - task-reading-history
@@ -1005,7 +1050,7 @@ artifacts:
       - task-git-method
       - task-commits-contract
       - public-json-contracts
-    observedDigest: 7d70c319e4e51c1332dc87138d06e399b693446268180add7641f3249d6f0608
+    observedDigest: c818f820d85299e8b8cd4d6f3c2e1d1109e981c78e2added1716e5db7d6666b0
     files:
       - task-source-2026-08-30-parent-child-task-audit-b28c38
       - task-file-task-system-md-d14898
@@ -1871,6 +1916,96 @@ sources:
     kind: code
     path: services/buildr/src/modules/agent-assets/application/connection-impact.ts
     summary: 一次绑定只读查询披露实例引用，故障局部报告，合法源操作保留连接及认证而继续。
+  - id: agent-service-public-source
+    title: 智能体服务公开边界
+    kind: code
+    path: services/buildr-agent/src/index.ts
+    summary: 私有库公开应用入口，装配独立接入、统一对话、事件、持久化与退出。
+  - id: agent-service-connections-source
+    title: 内部对话账号与配置
+    kind: code
+    path: services/buildr-agent/src/application/connection-application.ts
+    summary: 官方登录、账号模型检查、独立配置、真实程序绑定与资源关闭。
+  - id: agent-service-conversations-source
+    title: 统一对话与分别恢复
+    kind: code
+    path: services/buildr-agent/src/application/conversation-application.ts
+    summary: 创建与预览、受理去重、参与者增量接续、原生历史归并及未知不重发。
+  - id: agent-service-preparation-source
+    title: 准备并连接
+    kind: code
+    path: services/buildr-agent/src/application/preparation-application.ts
+    summary: 按准确尝试协调程序发现、选择、安装、取消和独立官方登录，不改绑已有上下文。
+  - id: agent-service-programs-source
+    title: 原生程序发现与安装
+    kind: code
+    path: services/buildr-agent/src/executors/program-manager.ts
+    summary: 核对本机路径、应用身份和固定版本，在独立目录准备官方程序并清理本次安装进程。
+  - id: agent-service-storage-source
+    title: 本机私有交互库
+    kind: code
+    path: services/buildr-agent/src/persistence/conversation-repository.ts
+    summary: 独立SQLite保存配置及统一对话，按修订比较写入，不拥有任务数据库。
+  - id: agent-service-codex-source
+    title: Codex内部对话执行器
+    kind: code
+    path: services/buildr-agent/src/executors/codex/index.ts
+    summary: 独立应用服务（App Server）、官方账号、原生上下文、流式输出与准确停止。
+  - id: agent-service-dsh-source
+    title: DSH内部对话执行器
+    kind: code
+    path: services/buildr-agent/src/executors/dsh/index.ts
+    summary: 完整本机网页宿主（Web Host）与官方客户端（Client），独立账号及原生会话恢复。
+  - id: agent-service-codex-permissions-source
+    title: Codex本轮权限参数
+    kind: code
+    path: services/buildr-agent/src/executors/codex/permissions.ts
+    summary: 显式默认与完全访问策略，逐轮复位而不继承旧上下文权限。
+  - id: agent-service-dsh-permissions-source
+    title: DSH原生权限预设
+    kind: code
+    path: services/buildr-agent/src/executors/dsh/permissions.ts
+    summary: 读取官方权限预设目录，应用本轮模式并核对准确会话权限快照。
+  - id: agent-service-qoder-source
+    title: Qoder内部对话执行器
+    kind: code
+    path: services/buildr-agent/src/executors/qoder/index.ts
+    summary: 隔离工作进程（Worker）使用官方软件开发工具包（SDK）与qodercli，恢复准确原生上下文。
+  - id: agent-service-host-source
+    title: 智能体服务宿主装配
+    kind: code
+    path: services/buildr/src/modules/agent-service/module.ts
+    summary: 按公开包名装配服务，交接工作空间与任务身份，不导入私有源码。
+  - id: agent-service-ui-source
+    title: 全局内部对话
+    kind: code
+    path: services/buildr-web/src/features/agent-conversations/ConversationPanel.tsx
+    summary: 统一历史、发送与接续预览、模型深度、授权问题、停止与标题操作。
+  - id: agent-service-ui-dock-source
+    title: 对话停靠与开合边界
+    kind: code
+    path: services/buildr-web/src/features/agent-conversations/ConversationDock.tsx
+    summary: 复用原面板暂看和分隔器，管理图标悬停、固定展开、宽度偏好、左右停靠及键盘焦点。
+  - id: agent-service-ui-options-source
+    title: 对话执行选项
+    kind: code
+    path: services/buildr-web/src/features/agent-conversations/ConversationOptions.tsx
+    summary: 按实际模型目录完整呈现智能体、模型与思考深度，支持自然换行并传递原生标识。
+  - id: agent-service-codex-title-source
+    title: Codex隔离短标题
+    kind: code
+    path: services/buildr-agent/src/executors/codex/title.ts
+    summary: 使用独立临时只读上下文生成有限文本标题，不污染工作上下文或允许工具副作用。
+  - id: agent-service-task-ui-source
+    title: 任务内部对话入口
+    kind: code
+    path: services/buildr-web/src/features/agent-conversations/TaskConversationEntry.tsx
+    summary: 按准确任务及起始目录新建或选择内部对话，不修改任务状态。
+  - id: agent-service-delivery-source
+    title: 智能体私有库交付
+    kind: code
+    path: services/buildr/tools/build/agent-package.ts
+    summary: 从主包已准备的公开包及其运行依赖复制负载，不回退相邻服务源码。
   - id: dsh-discovery-source
     title: DSH 桌面与插件发现
     kind: code
@@ -1905,14 +2040,14 @@ sources:
     title: 接入关系图 · 展示文件
     kind: evidence
     path: knowledge/archify/system/agent-integration.html
-    summary: 由 Archify 生成的独立图示，包含图形与阅读交互；表达设计及当前代码关系，不是运行日志。
-    observedDigest: 0d1384691c7f5c73eb7e761b1b1681d995e8657e66d977a4dc4f5ae2229588d8
+    summary: 由 Archify 生成的独立图示，包含图形与阅读交互；说明本轮候选架构设计；未固定为交付提交，不是运行日志或真实模型验收。
+    observedDigest: ff5555df278ef82df38706380e5bb54630ff9c4abe4aff93a85fcc0232219a71
   - id: agent-integration-diagram-json
     title: 接入关系图 · 可维护图源
     kind: evidence
     path: knowledge/archify/system/agent-integration.json
-    summary: 定义节点、关系、事实来源与布局；修改后重新生成配套展示并复核事实。
-    observedDigest: 1f182285b3ec3ae91a26d5bbdc7b8204bef6d5664b2d994bae7f62386ecda41a
+    summary: 定义本轮候选架构的节点、关系与布局；当前源码来源见配套文章，未冒充固定提交证据。
+    observedDigest: cd0724c2f9903c1f25f8ffca47670c991d2d3e5b8e091422649778ce578cdd48
   - id: agent-generation-chain-diagram-html
     title: 提交说明时序图 · 展示文件
     kind: evidence
@@ -3010,7 +3145,7 @@ sources:
     kind: evidence
     path: knowledge/code-map/task-system.md
     summary: 保存本主题当前解释或依据，网页与本地使用同一正文；不替代规范和代码。
-    observedDigest: 7d70c319e4e51c1332dc87138d06e399b693446268180add7641f3249d6f0608
+    observedDigest: c818f820d85299e8b8cd4d6f3c2e1d1109e981c78e2added1716e5db7d6666b0
   - id: task-file-task-system-html-80857d
     title: 完整过程与角色职责 · 独立展示
     kind: evidence
@@ -3117,10 +3252,10 @@ sources:
     observedDigest: 6c07e3b460c7067dc7622cd73f6ec40feacacf1e0c39e53c009e11f073a90798
   - id: verification-source-456f6be9e6
     title: Buildr 产品准备入口
-    summary: 主包与前端的依赖安装及产品准备入口；DSH 插件使用独立服务入口
+    summary: 主包、前端与私有智能体服务（Agent Service）的准备入口；先准备服务公开包再物化主包依赖，DSH 插件独立准备。
     kind: evidence
     path: preparation.yml
-    observedDigest: 6fbcc44cf7f75efd8553fd2d2f2722ecc79256ee270e54cc17f5d05c8decbb95
+    observedDigest: eb9c525b6c195760574a8b5103e880df09d80b1ef9ad1b7e5f202c45126c4f14
   - id: verification-source-c8ee7d9bf2
     title: 测试地图模块装配
     summary: 声明依赖、公开应用与声明能力、登记命令行（CLI）和诊断入口

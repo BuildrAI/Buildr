@@ -33,3 +33,14 @@ services:
     modulePath: projects/product/services/dsh-plugin
     legacyRefs:
       - product/dsh-plugin
+  buildr-agent:
+    id: 273cb348-2cf5-43ef-bd1a-2abe4d32cfdf
+    workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3
+    code: buildr-agent
+    name: Buildr 智能体服务
+    description: 独立维护账号接入、统一对话与执行者协调；由Buildr宿主装配并统一交付。
+    type: library
+    repositoryId: 40394b3d-d44d-5bb2-a59b-932a0dd6a597
+    modulePath: projects/product/services/buildr-agent
+    legacyRefs:
+      - product/buildr-agent

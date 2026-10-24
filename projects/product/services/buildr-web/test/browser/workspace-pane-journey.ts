@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 
 /** Exercises the production host against the layout journey's isolated workspace. */
 export async function runWorkspacePaneJourney({ t, page, workspaceUrl, capture }: any) {
+  const navigateWorkspace = async (name:string) => {
+    await page.locator('.primary-navigation-rail [data-nav="workspace"]').hover();
+    await page.locator('.primary-secondary-navigation:visible .shell-navigation').getByRole('link',{name,exact:true}).click();
+  };
   await t.test('中右屏激活页签置首、稳定顺延并滚回最左，各来源独立保留', async () => {
     await page.setViewportSize({width:1440,height:900});
     await page.goto(`${workspaceUrl}/projects/demo`);
@@ -17,7 +21,7 @@ export async function runWorkspacePaneJourney({ t, page, workspaceUrl, capture }
       assert.deepEqual(await names(strip),[title,...previous.filter(item=>item!==title)]);
     };
     for (const [title,path] of [['服务','services'],['代码库','repositories'],['技能','skills'],['文章','articles'],['项目','projects']]) {
-      await page.locator('.shell-navigation').getByRole('link',{name:title,exact:true}).click();
+      await navigateWorkspace(title);
       await page.waitForURL(`${workspaceUrl}/${path}`);
       await page.waitForFunction(()=>document.querySelector('.workspace-tabstrip [role="tab"]')?.getAttribute('aria-selected')==='true');
     }
@@ -57,6 +61,7 @@ export async function runWorkspacePaneJourney({ t, page, workspaceUrl, capture }
     await page.waitForURL(`${workspaceUrl}/services`);
     await middle().getByRole('tab',{name:'演示项目',exact:true}).click();
     await page.waitForURL(`${workspaceUrl}/projects/demo`);
+    await right.getByRole('tab',{name:rightBefore[0],exact:true}).waitFor({state:'visible'});
     assert.deepEqual(await names(right),rightBefore,'返回同来源页面保留对象激活顺序');
     await right.getByRole('button',{name:'关闭 AGENTS.md',exact:true}).click();
     await page.waitForFunction(()=>{
@@ -94,7 +99,7 @@ export async function runWorkspacePaneJourney({ t, page, workspaceUrl, capture }
     assert.equal(page.url(), `${workspaceUrl}/services`, '展开暂看页面回到服务目录');
     await page.locator('.pane-right:visible #service-detail-name').waitFor();
     assert.equal(await page.locator('.pane-page-toggle').count(), 1, '展开后折叠按钮仍在固定槽位');
-    await page.locator('.shell-navigation').getByRole('link', { name: '服务', exact: true }).click();
+    await navigateWorkspace('服务');
     await page.locator('.pane-right:visible #service-detail-name').waitFor();
     assert.equal(await page.getByRole('textbox', { name: '搜索服务', exact: true }).inputValue(), '演示', '同路径菜单请求恢复原页面而不清空筛选');
     await page.locator('.pane-right:visible [data-doc-row="readme"]').click();
@@ -166,7 +171,7 @@ export async function runWorkspacePaneJourney({ t, page, workspaceUrl, capture }
       assert.match(await editor.innerText(), /浮窗继续输入/);
       release();
       await pane.locator('[data-prototype-position="save-status"]').getByText('已保存', { exact: true }).waitFor();
-      await page.locator('.shell-navigation').getByRole('link', { name: '项目', exact: true }).click();
+      await navigateWorkspace('项目');
       await page.locator('#project-table-body tr').filter({ hasText: '另一项目' }).click();
       await page.waitForURL(`${workspaceUrl}/projects/other`);
       await page.locator('[data-doc-row="readme"]:visible').click();

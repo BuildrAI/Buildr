@@ -1,3 +1,4 @@
+import { showPrimaryNavigation } from '../../../buildr-web/test/browser/primary-navigation-controls.ts';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -22,6 +23,7 @@ import { planCodeBrowserGroups } from '../verification/browser-selector-dispatch
 import { runWorkspaceCompositionJourney } from './workspace-composition-journey.ts';
 import { runCodeExplorerJourney } from '../../../buildr-web/test/browser/code-explorer-journey.ts';
 import { runSourceControlJourney } from '../../../buildr-web/test/browser/source-control-journey.ts';
+import { runAgentConversationsJourney } from '../../../buildr-web/test/browser/agent-conversations-journey.ts';
 import { runLayoutJourney } from '../../../buildr-web/test/browser/layout-journey.ts';
 import { runTaskCommitsJourney } from '../../../buildr-web/test/browser/task-commits-journey.ts';
 import { runTaskMaterialsJourney } from '../../../buildr-web/test/browser/task-materials-journey.ts';
@@ -40,7 +42,7 @@ const SELECTOR_INPUT: any = process.argv[2] ?? 'all';
 const SCREENSHOT_DIR: any = process.env.BUILDR_SCREENSHOT_DIR;
 const BROWSER_WEB_DIST_ROOT: any = process.env.BUILDR_BROWSER_WEB_DIST_ROOT;
 if (!BROWSER_WEB_DIST_ROOT) throw new Error('Browser smoke requires BUILDR_BROWSER_WEB_DIST_ROOT from the Browser dispatcher staging build.');
-const KNOWN_SELECTORS: any = new Set(['all', 'core', 'shell', 'workbench', 'task', 'task-materials', 'project', 'service', 'change', 'articles', 'layout', 'code']);
+const KNOWN_SELECTORS: any = new Set(['all', 'core', 'shell', 'workbench', 'task', 'task-materials', 'project', 'service', 'change', 'articles', 'layout', 'code', 'agent-conversations']);
 const SELECTORS: any = new Set(SELECTOR_INPUT.split(',').map((item: any) => item.trim()).filter(Boolean));
 
 for (const selector of SELECTORS) if (!KNOWN_SELECTORS.has(selector)) throw new Error(`Unknown browser integration selector: ${selector}`);
@@ -246,7 +248,7 @@ function createSelectedFixture(root: any, controllerCli: any): any  {
   const selector: any = [...SELECTORS][0];
   if (selector === 'core') createCoreFixture(root);
   else if (selector === 'shell') createShellFixture(root);
-  else if (selector === 'workbench') createShellFixture(root);
+  else if (selector === 'workbench' || selector === 'agent-conversations') createShellFixture(root);
   else if (selector === 'code') {
     createShellFixture(root);
     const source=path.join(root,'projects/demo/services/api');fs.mkdirSync(path.join(source,'src'),{recursive:true});
@@ -382,7 +384,7 @@ async function capture(page: any, name: any): Promise<any>  {
 
 // Dispatcher splits code into independent Explorer/SCM parents (240/900 seconds)
 // and reserves 15 seconds outside each parent for its isolated cleanup.
-test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('code') && codeGroup ? codeGroup.nodeTimeoutMs : SELECTORS.has('code') || SELECTORS.has('task') ? 480_000 : SELECTORS.has('all') ? 300_000 : SELECTORS.has('task-materials') ? 240_000 : SELECTORS.has('service') ? 180_000 : SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
+test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('code') && codeGroup ? codeGroup.nodeTimeoutMs : SELECTORS.has('code') || SELECTORS.has('task') ? 480_000 : SELECTORS.has('all') ? 300_000 : SELECTORS.has('task-materials') ? 240_000 : SELECTORS.has('service') ? 180_000 : SELECTORS.has('agent-conversations') || SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
   const requestedSmokeRoot: any = process.env.BUILDR_SMOKE_ROOT;
   const managedSmokeRoot: any = requestedSmokeRoot && fs.existsSync(path.join(requestedSmokeRoot, '.buildr-smoke-owner')) ? requestedSmokeRoot : null;
   const base: any = managedSmokeRoot || fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-smoke-'));
@@ -689,6 +691,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await runSourceControlJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,fixture:{path:sourceControlPath,location:fs.realpathSync(workspaceRoot),commitHash:history.stdout.trim(),historyText:historicalSource.stdout,indexText,workingText,prepareWorktrees,prepareRemoteStatuses,withStatusDigits,withDuplicateFiles,withImages,withBranches,withRegisteredSource,cleanLocation:codeWorktreeFixture.nativeCheckoutLocation,baselineWorktrees,unrelatedRetiredTaskId:codeWorktreeFixture.worktreeTaskId,unavailableRepositoryLocation,withUnavailableRepository}});
     }
   }
+  if (selected('agent-conversations')) await runAgentConversationsJourney({t,page,workspaceUrl,capture});
   if (selected('layout')) await runLayoutJourney({ t, page, workspaceUrl, capture });
 
   if (SELECTORS.has('core')) await t.test('核心流程进入 Workspace、Task 路由并读取代表性 Tab', async () => {
@@ -784,6 +787,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.locator('#skill-prompt').evaluate((el: any) => el.selectionEnd - el.selectionStart === el.value.length), true);
     await page.getByRole('button', { name: '关闭技能操作', exact: true }).click();
     await page.locator('.skills-action-drawer').waitFor({ state: 'detached' });
+    await showPrimaryNavigation(page, 'workspace');
     await page.locator('[data-nav="skills"]').click();
     assert.equal(await page.locator('#skills-search').inputValue(), 'ux-design-laws');
     await page.locator('#skills-search').fill('');
@@ -837,7 +841,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#workbench-overview').waitFor({ state: 'visible' });
     assert.equal((await page.locator('#shell-workspace-name').innerText()).trim(), 'browser-smoke');
     assert.equal(await page.title(), 'browser-smoke · Buildr Web Dev');
-    assert.equal(await page.locator('[data-nav="overview"]').evaluate((item: any) => item.classList.contains('active')), true);
+    await showPrimaryNavigation(page, 'workbench');
+    assert.equal(await page.getByLabel('工作台二级导航',{exact:true}).locator('[data-nav="overview"]').evaluate((item: any) => item.classList.contains('active')), true);
     const expectedProjectCount: any = selected('articles') ? 3 : 2;
     await page.locator('#open-agent-action').click();
     await page.locator('#action-project').waitFor({ state: 'visible' });
@@ -883,8 +888,10 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
 
   if (selected('shell')) await t.test('平级导航、页面级页签与手机菜单保持真实范围', async () => {
     await page.goto(`${workspaceUrl}/tasks`);
-    assert.deepEqual(await page.locator('.top-nav a').allTextContents(), ['工作台', '工作空间', '代码']);
-    await page.locator('[data-area="workspace"]').click();
+    assert.deepEqual(await page.locator('.primary-navigation-rail button[data-nav]').allTextContents(), ['工作台', '工作空间', '代码']);
+    await showPrimaryNavigation(page, 'workspace');
+    await page.getByRole('button',{name:'展开导航',exact:true}).click();
+    await page.locator('.primary-secondary-navigation:visible [data-nav="workspace-overview"]').click();
     await page.waitForURL(`${workspaceUrl}/workspace-overview`);
     await page.waitForFunction(() => [...document.querySelectorAll('.shell-navigation .shell-nav-item')].some((node: any) => node.textContent === '项目'));
     assert.deepEqual(await page.locator('.shell-navigation .shell-nav-item').allTextContents(), ['总览', '项目', '服务', '代码库', '连接', '技能', '文章']);
@@ -903,9 +910,11 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('.pane-right:visible #service-detail-name').waitFor({ state: 'visible' });
     assert.equal(await page.getByRole('tab', { name: '演示服务', exact: true }).count(), 0);
     assert.equal(await page.locator('#service-table-wrap').isVisible(), true);
-    await page.locator('[data-area="workbench"]').click();
-    await page.waitForURL(/\/(?:overview|tasks)/);
-    await page.locator('[data-area="workspace"]').click();
+    await showPrimaryNavigation(page, 'workbench');
+    await page.locator('.primary-secondary-navigation:visible').getByRole('link',{name:'概览',exact:true}).click();
+    await page.waitForURL(`${workspaceUrl}/overview`);
+    await showPrimaryNavigation(page, 'workspace');
+    await page.locator('.primary-secondary-navigation:visible [data-nav="workspace-overview"]').click();
     await page.waitForURL(`${workspaceUrl}/workspace-overview`);
     await page.getByRole('tab', {name:'服务目录',exact:true}).click();
     await page.waitForURL(`${workspaceUrl}/services`);
@@ -928,23 +937,28 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.reload();
     await page.locator('#skills-list').waitFor({ state: 'visible' });
     assert.deepEqual(await page.locator('.workspace-tabstrip .pane-tab-text').allTextContents(), [activeTitle, ...order.filter((title: string) => title !== '演示服务' && title !== activeTitle)]);
-    assert.equal(await page.locator('[data-area="workspace"]').getAttribute('class'), 'active');
+    assert.equal(await page.locator('.primary-navigation-rail [data-nav="workspace"]').getAttribute('data-fixed'), 'true');
+    assert.equal(await page.locator('.primary-navigation-rail .active').count(), 0, '一级图标不使用路由active标记');
+    assert.equal(await page.locator('.primary-navigation-rail button[data-nav="workspace"]').getAttribute('data-highlighted'), 'true');
+    await page.waitForFunction(()=>getComputedStyle(document.querySelector('.primary-navigation-rail button[data-nav="workspace"]')!).backgroundColor==='rgb(231, 239, 236)');
+    assert.ok(['none','normal'].includes(await page.locator('.primary-navigation-rail button[data-nav="workspace"]').evaluate((node:HTMLElement)=>getComputedStyle(node,'::before').content)));
     assert.equal(await page.locator('[data-nav="services"]').innerText(), '服务');
     assert.equal(await page.getByText('环境维护', { exact: true }).count(), 0);
     assert.equal(await page.getByText('智能体配置', { exact: true }).count(), 0);
-    await page.getByRole('button', { name: '折叠菜单', exact: true }).click();
-    assert.equal(await page.locator('.app-sidebar').evaluate((el: HTMLElement) => Math.round(el.getBoundingClientRect().width)), 64);
-    await page.getByRole('button', { name: '展开菜单', exact: true }).click();
+    await page.getByRole('button', { name: '收起导航', exact: true }).click();
+    assert.equal(await page.locator('.primary-navigation').evaluate((el: HTMLElement) => Math.round(el.getBoundingClientRect().width)), 53);
+    await showPrimaryNavigation(page, 'workspace');
+    await page.getByRole('button', { name: '展开导航', exact: true }).click();
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.getByRole('button', { name: '打开导航菜单', exact: true }).click();
-    await page.getByRole('dialog').waitFor({ state: 'visible' });
-    assert.deepEqual(await page.getByRole('dialog').locator('.shell-nav-item').allTextContents(), ['总览', '项目', '服务', '代码库', '连接', '技能', '文章']);
-    await page.getByRole('dialog').locator('[data-nav="projects"]').click();
+    assert.deepEqual(await page.locator('.primary-secondary-navigation .shell-nav-item').allTextContents(), ['总览', '项目', '服务', '代码库', '连接', '技能', '文章']);
+    await page.locator('.primary-secondary-navigation [data-nav="projects"]').click();
     await page.waitForURL(`${workspaceUrl}/projects`);
-    await page.getByRole('dialog').waitFor({ state: 'hidden' });
+    await page.getByRole('button',{name:'收起导航',exact:true}).click();
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     await capture(page, 'navigation-project-mobile.png');
     await page.setViewportSize({ width: 1280, height: 720 });
+    await showPrimaryNavigation(page, 'workspace');
+    await page.getByRole('button',{name:'展开导航',exact:true}).click();
     await page.locator('#project-table-body tr').filter({ hasText: '演示项目' }).click();
     await page.locator('[data-nav="services"]').click();
     await page.getByRole('button', { name: '关闭 演示项目', exact: true }).click();
@@ -971,12 +985,14 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       await restricted.locator('#workspace-grid .workspace-card').first().waitFor();
       await restricted.goto(`${workspaceUrl}/projects/demo`);
       await restricted.locator('#project-detail-name').waitFor();
-      assert.equal(await restricted.locator('.app-sidebar').evaluate((node: HTMLElement) => Math.round(node.getBoundingClientRect().width)), 256);
-      await restricted.getByRole('button', { name: '折叠菜单', exact: true }).click();
-      assert.equal(await restricted.locator('.app-sidebar').evaluate((node: HTMLElement) => Math.round(node.getBoundingClientRect().width)), 64);
+      assert.equal(await restricted.locator('.primary-navigation').evaluate((node: HTMLElement) => Math.round(node.getBoundingClientRect().width)), 53);
+      await restricted.locator('.primary-navigation-rail [data-nav="workspace"]').hover();
+      await restricted.getByRole('button',{name:'展开导航',exact:true}).click();
+      assert.equal(await restricted.locator('.primary-navigation.is-pinned').count(),1);
+      await restricted.getByRole('button',{name:'收起导航',exact:true}).click();
       await restricted.reload();
       await restricted.locator('#project-detail-name').waitFor();
-      assert.equal(await restricted.locator('.app-sidebar').evaluate((node: HTMLElement) => Math.round(node.getBoundingClientRect().width)), 256, '无法持久化时重新使用默认值');
+      assert.equal(await restricted.locator('.primary-navigation.is-pinned').count(),0,'无法持久化时重新使用默认收起值');
       await restricted.goto(`${workspaceUrl}/tasks`);
       await restricted.locator('#task-filter-q').waitFor();
       await restricted.goto(`${workspaceUrl}/code/explorer`);
@@ -1127,6 +1143,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.goto(`${workspaceUrl}/projects`);
     await page.locator('#project-table-body tr').filter({ hasText: '演示项目' }).click();
     await page.locator('#project-detail-name').waitFor();
+    await showPrimaryNavigation(page, 'workspace');
     await page.locator('[data-nav="projects"]').click();
     await page.locator('#project-table-body tr').filter({ hasText: '另一项目' }).click();
     await page.waitForURL(`${workspaceUrl}/projects/other`);
@@ -1478,7 +1495,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await capture(page, 'project-home-mobile.png');
     await page.setViewportSize({ width: 1680, height: 900 });
-    assert.equal(await page.locator('[data-nav="projects"]').evaluate((item: any) => item.classList.contains('active')), true);
+    await showPrimaryNavigation(page, 'workspace');
+    assert.equal(await page.locator('.primary-secondary-navigation:visible [data-nav="projects"]').evaluate((item: any) => item.classList.contains('active')), true);
     await page.locator('[data-doc-row="readme"]').click();
     await page.locator('.pane-right .artifact-missing').waitFor({ state: 'visible' });
     const paneSize = () => page.locator('.workspace-page:not([hidden]) .pane-stage').evaluate((stage: any) => ({
@@ -1547,8 +1565,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-right .markdown-body:visible').innerText(), projectDocumentText);
     await page.goForward();
     await page.locator('#service-detail-name:visible').waitFor({ state: 'visible' });
-    await page.locator('[data-nav="skills"]').click();
-    await page.locator('[data-nav="projects"]').click();
+    await showPrimaryNavigation(page, 'workspace');await page.locator('.primary-secondary-navigation:visible [data-nav="skills"]').click();
+    await showPrimaryNavigation(page, 'workspace');await page.locator('.primary-secondary-navigation:visible [data-nav="projects"]').click();
     await page.waitForURL(`${workspaceUrl}/projects`);
     await page.getByRole('tab', { name: '演示项目', exact: true }).click();
     await page.waitForURL(`${workspaceUrl}/projects/demo`);
@@ -1923,7 +1941,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.locator('.workspace-page:not([hidden]) #service-table-wrap').isVisible(), true);
     assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-stage:visible').count(), 1);
     assert.deepEqual(await page.locator('.workspace-tabstrip .pane-tab-text').allTextContents(), mainTabs);
-    assert.equal(await page.locator('[data-nav="services"]').evaluate((item: any) => item.classList.contains('active')), true);
+    await showPrimaryNavigation(page, 'workspace');
+    assert.equal(await page.locator('.primary-secondary-navigation:visible [data-nav="services"]').evaluate((item: any) => item.classList.contains('active')), true);
     await page.locator('[data-doc-row="readme"]').click();
     await page.waitForFunction(() => {
       const body: any = document.querySelector('.pane-right .markdown-body')?.textContent || '';
@@ -2731,7 +2750,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#task-filter-clear').click();
     await applyTaskFilters(page);
     await page.waitForFunction((count: any) => document.querySelectorAll('#task-table-body tr.ant-table-row').length === count, defaultTaskCount);
-    assert.equal(await page.locator('[data-nav="tasks"]').evaluate((item: any) => item.classList.contains('active')), true);
+    await showPrimaryNavigation(page, 'workbench');
+    assert.equal(await page.locator('.primary-secondary-navigation:visible [data-nav="tasks"]').evaluate((item: any) => item.classList.contains('active')), true);
     assert.equal(await page.getByRole('columnheader', {name:'任务', exact:true}).isVisible(), true);
     assert.equal(await page.locator('#task-create-form').count(), 0);
     await openTaskFilterPanel(page);

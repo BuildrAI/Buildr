@@ -105,7 +105,10 @@ try {
   const pathSentinels: any[] = [path.join(installBin, 'buildr'), path.join(installBin, 'buildr.cmd')];
   for (const sentinel of pathSentinels) fs.writeFileSync(sentinel, `npm-owned sentinel: ${path.basename(sentinel)}\n`);
   const sentinelContents: any = new Map(pathSentinels.map((sentinel: any) => [sentinel, fs.readFileSync(sentinel, 'utf8')]));
-  run(developmentNode, [npmCliForNode(developmentNode), 'ci', '--omit=dev', '--no-audit', '--no-fund'], { cwd: copiedService, env });
+  const copiedAgent = path.join(copiedProduct, 'services/buildr-agent');
+  run(developmentNode, [npmCliForNode(developmentNode), 'ci', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: copiedAgent, env });
+  run(developmentNode, [path.join(copiedAgent, 'tools/build.ts')], { cwd: copiedAgent, env });
+  run(developmentNode, [npmCliForNode(developmentNode), 'ci', '--omit=dev', '--install-links', '--no-audit', '--no-fund'], { cwd: copiedService, env });
   const developmentIdentity: any = JSON.parse(runDevelopment([], {
     env: { ...env, BUILDR_INTERNAL_DEVELOPMENT_CLI_IDENTITY_JSON: '1' },
     capture: true,

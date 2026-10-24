@@ -276,7 +276,7 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
             const marker = divider.querySelector('.split-divider-header-marker')!.getBoundingClientRect();
             return Math.abs(marker.left + marker.width / 2 - bodyX);
           }));
-          assert.ok(boundaries.length >= 2 && boundaries.every(distance => distance < 1), '顶部短线与菜单、内容分屏的下方线严格对齐');
+          assert.ok(boundaries.length >= 1 && boundaries.every(distance => distance < 1), '固定图标导航不产生分隔条，内容分屏顶部短线与下方线严格对齐');
           await page.getByRole('button', { name: '收起页面', exact: true }).click();
           const modes = detail.locator('.task-diff-mode');
           await modes.getByText('上下对比', { exact: true }).click();
@@ -369,7 +369,12 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
       // after that positioning, so this case measures same-file refresh alone.
       await page.waitForFunction(() => document.querySelector('.task-diff-reader')?.getAttribute('aria-busy') === 'false');
       await firstChangeVisible();
-      await detail.locator('.task-diff-body').evaluate((node: HTMLElement) => { node.scrollTop = 600; });
+      await detail.locator('.task-diff-body').evaluate(async (node: HTMLElement) => {
+        // Initial diff positioning runs on the next animation frame. Measure a
+        // manual reading position only after that frame has actually painted.
+        await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));
+        node.scrollTop = 600;
+      });
       const arrived = new Promise<void>(resolve => { requested = resolve; });
       gate = new Promise<void>(resolve => { release = resolve; });
       await detail.locator('#task-detail-refresh').click();

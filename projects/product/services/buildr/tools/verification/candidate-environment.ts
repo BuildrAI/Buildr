@@ -27,9 +27,12 @@ function assertProfile(value: string): CandidateEnvironmentProfile {
 export function candidateEnvironmentPlan(profileValue: string, roots = { serviceRoot, webRoot }): Array<{ id: string; executable: 'npm' | 'node'; args: string[]; cwd: string }> {
   const profile = assertProfile(profileValue);
   const consumesArtifact = profile === 'host' || profile === 'consumer' || profile === 'publisher';
-  const plan: Array<{ id: string; executable: 'npm' | 'node'; args: string[]; cwd: string }> = [
-    { id: 'buildr-dependencies', executable: 'npm', args: consumesArtifact ? ['ci', '--omit=dev', '--ignore-scripts'] : ['ci'], cwd: roots.serviceRoot },
+  const agentRoot = path.resolve(roots.serviceRoot, '../buildr-agent');
+  const plan: Array<{ id: string; executable: 'npm' | 'node'; args: string[]; cwd: string }> = consumesArtifact ? [] : [
+    { id: 'buildr-agent-dependencies', executable: 'npm', args: ['ci', '--ignore-scripts'], cwd: agentRoot },
+    { id: 'buildr-agent-build', executable: 'node', args: ['tools/build.ts'], cwd: agentRoot },
   ];
+  plan.push({ id: 'buildr-dependencies', executable: 'npm', args: consumesArtifact ? ['ci', '--omit=dev', '--ignore-scripts', '--install-links'] : ['ci', '--install-links'], cwd: roots.serviceRoot });
   if (profile === 'publisher') plan.push({ id: 'publisher-npm', executable: 'npm', args: ['install', '--prefix', path.join(roots.serviceRoot, 'node_modules/.buildr-publisher'), '--ignore-scripts', '--no-save', '--no-package-lock', '--no-audit', '--no-fund', `npm@${PUBLISH_NPM_VERSION}`], cwd: roots.serviceRoot });
   if (consumesArtifact) return plan;
   if (profile === 'artifact' || profile === 'frontend' || profile === 'source-runtime') {

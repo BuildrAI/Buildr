@@ -1,9 +1,14 @@
+import { showPrimaryNavigation } from './primary-navigation-controls.ts';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { assertEditorText, assertVisibleSearchHit, codeEditor, codeMarkdown, createCodeReadAssertions, editorPosition, editorScroll } from './code-editor-assertions.ts';
 import { codeRepositoryCode } from '../../src/features/code/code-source-labels.ts';
 export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,codeFixture}:any){
   const read = createCodeReadAssertions(page, workspaceUrl);
+  const navigateCode = async (name:'source-control'|'explorer') => {
+    await showPrimaryNavigation(page, 'code');
+    await page.locator('.primary-secondary-navigation:visible [data-nav="'+name+'"]').click();
+  };
   t.after(() => read.dispose());
   const noOverflow=async()=>assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
   const fileResult=(filePath:string)=>page.locator('.repository-search-result[data-file-path="'+filePath+'"]');
@@ -55,13 +60,12 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     await page.waitForTimeout(250);
   };
   const returnToExplorer=async()=>{
-    await page.locator('.top-nav [data-area="code"]').click();
-    // The shared code entry returns the last visited code tab; the source-control read happens either way.
-    if(!new URL(page.url()).pathname.endsWith('/code/source-control'))await page.locator('.shell-navigation [data-nav="source-control"]').click();
+    await showPrimaryNavigation(page, 'code');
+    await page.locator('.primary-secondary-navigation:visible [data-nav="source-control"]').click();
     await page.waitForURL(workspaceUrl+'/code/source-control');const sourceControl=page.locator('.code-source-control-page:visible');await sourceControl.waitFor();
     // This fixture's default main.ts diff must finish before a later intentional source mutation.
     await sourceControl.locator('.source-control-diff').getByText('export const explorerAnswer = 2;',{exact:false}).waitFor();await sourceControl.locator('.source-control-read-status').waitFor({state:'hidden'});
-    await page.locator('.shell-navigation [data-nav="explorer"]').click();await page.waitForURL(workspaceUrl+'/code/explorer');await page.locator('.code-explorer-stage:visible').waitFor();
+    await showPrimaryNavigation(page, 'code');await navigateCode('explorer');await page.waitForURL(workspaceUrl+'/code/explorer');await page.locator('.code-explorer-stage:visible').waitFor();
   };
   const filterDropdown=async(index:number)=>{
     const listId=await page.locator('.code-root-selectors .ant-select').nth(index).getByRole('combobox').getAttribute('aria-controls');assert.ok(listId);
@@ -108,7 +112,7 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
   await t.test('普通返回保留手动展开和折叠，刷新保留目录现场，同文件再次定位展开相关根',async()=>{
     await page.setViewportSize({width:1440,height:900});await page.goto(workspaceUrl+'/code/explorer');await page.locator('.repository-root-name').first().waitFor();
     const expandedState=()=>page.locator('.repository-tree-body .ant-tree-treenode[aria-expanded="true"]').evaluateAll((nodes:HTMLElement[])=>nodes.map(node=>node.querySelector('.ant-tree-title')?.textContent).sort());
-    const roundTrip=async()=>{await page.locator('.shell-navigation [data-nav="source-control"]').click();await page.locator('.code-source-control-page:visible').waitFor();await page.locator('.shell-navigation [data-nav="explorer"]').click();await page.locator('.code-explorer-stage:visible').waitFor();};
+    const roundTrip=async()=>{await navigateCode('source-control');await page.locator('.code-source-control-page:visible').waitFor();await navigateCode('explorer');await page.locator('.code-explorer-stage:visible').waitFor();};
     assert.equal(await expandedRoots().count(),0);
     await expandRoot(codeFixture.secondRepositoryId);await page.locator('.ant-tree-title').filter({hasText:/^src$/}).click();
     await page.locator('.repository-tree-file[data-file-path="src/main.ts"]').waitFor();
@@ -146,7 +150,7 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
       await page.getByRole('textbox',{name:'搜索文件',exact:true}).click();await info.waitFor({state:'hidden'});await noOverflow();
     }
     await root.focus();await info.waitFor();await info.getByRole('button',{name:'复制代码库完整路径',exact:true}).focus();await page.keyboard.press('Enter');assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),repository.location);
-    await page.locator('.shell-navigation [data-nav="source-control"]').click();await info.waitFor({state:'hidden'});
+    await navigateCode('source-control');await info.waitFor({state:'hidden'});
   });
   await t.test('无独立工作树的任务预选工作空间目录，选择其他实际工作树只读取目录',async()=>{
     let reads=0;const requests:URL[]=[];const count=(request:any)=>{const url=new URL(request.url());if(url.pathname.endsWith('/code/file'))reads++;if(url.pathname.endsWith('/code/directory'))requests.push(url);};page.on('request',count);
@@ -197,7 +201,7 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
   });
   await t.test('真实代码页面：目录读取、完整文件、内容搜索、文档链接与图片',async()=>{
     await page.setViewportSize({width:1440,height:900});await page.goto(workspaceUrl+'/code/explorer');
-    await page.getByRole('navigation',{name:'代码导航'}).waitFor();await page.locator('.repository-root-name').first().waitFor();
+    await showPrimaryNavigation(page, 'code');await page.getByRole('navigation',{name:'代码导航',exact:true}).waitFor();await page.locator('.primary-navigation-rail button[data-nav="code"]').press('Escape');await page.getByLabel('代码二级导航',{exact:true}).waitFor({state:'hidden'});await page.locator('.repository-root-name').first().waitFor();
     await search('main.ts');await resultPath('projects/demo/services/api/src/main.ts');await resultPath('src/main.ts');await fileResult('projects/demo/services/api/src/main.ts').click();await read.text('explorerAnswer = 2');await noOverflow();
     const width=await page.getByRole('complementary',{name:'资源管理器文件树',exact:true}).evaluate((el:HTMLElement)=>el.getBoundingClientRect().width);assert.ok(width>=240&&width<=420);
     const divider=page.getByRole('separator',{name:'调整资源管理器宽度'});await divider.press('ArrowRight');assert.ok(await divider.getAttribute('aria-valuenow')>width);
@@ -245,7 +249,8 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     await folder.click();await page.locator('[data-file-path="src/file1.ts"]').waitFor();
     await folder.click();await page.locator('[data-file-path="src/file1.ts"]').waitFor({state:'hidden'});
     await folder.click();await page.locator('[data-file-path="src/file1.ts"]').waitFor();
-    await page.getByRole('button',{name:'折叠菜单',exact:true}).click();
+    await showPrimaryNavigation(page, 'code');await page.getByRole('button',{name:'展开导航',exact:true}).click();
+    await page.getByRole('button',{name:'收起导航',exact:true}).click();
     const geometry=await page.locator('.code-explorer-stage').evaluate((el:HTMLElement)=>{
       const stage=el.getBoundingClientRect(),parent=el.parentElement!.getBoundingClientRect(),tree=el.querySelector('.global-source-dock')!.getBoundingClientRect();
       const reader=el.querySelector('.code-file-stage')!.getBoundingClientRect();
@@ -258,7 +263,7 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     await page.locator('.file-editing-mode').getByText('编辑',{exact:true}).click();await read.text('# Explorer document');assert.equal(await page.locator(codeMarkdown+':visible').count(),0);
     const rawWidth=await page.locator(codeEditor+':visible').evaluate((el:HTMLElement)=>({width:el.getBoundingClientRect().width,parentWidth:el.parentElement!.clientWidth}));assert.ok(rawWidth.width>=rawWidth.parentWidth-1);
     await page.locator('.file-editing-mode').getByText('阅读',{exact:true}).click();await read.markdown('Explorer document');
-    await page.getByRole('button',{name:'展开菜单',exact:true}).click();
+    await showPrimaryNavigation(page, 'code');await page.getByRole('button',{name:'展开导航',exact:true}).click();
   });
   await t.test('打开搜索结果和切换文件不重搜，主动刷新与改变范围会重搜',async()=>{
     await page.setViewportSize({width:1440,height:900});await page.goto(workspaceUrl+'/code/explorer');
@@ -395,8 +400,9 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     const toggle=page.getByRole('button',{name:'展开阅读',exact:true});const toggleBox=await toggle.boundingBox(),readerBox=await page.locator('.code-file-stage').boundingBox();assert.ok(toggleBox.x>readerBox.x+readerBox.width-150);assert.equal((await toggle.innerText()).trim(),'','展开阅读只显示图标');
     await toggle.click();await page.getByRole('complementary',{name:'资源管理器文件树',exact:true}).waitFor({state:'hidden'});await capture(page,'code-expanded-reading.png');
     await page.getByRole('button',{name:'恢复分屏',exact:true}).click();assert.equal(await divider.getAttribute('aria-valuenow'),width);assert.equal(await page.getByRole('textbox',{name:'搜索文件',exact:true}).inputValue(),'registerApplicationDoctor');assert.equal(await page.locator('.repository-search-result').count(),count);assert.equal(await editorScroll(page),top);await capture(page,'code-restored-reading.png');
-    const beforeMenuPosition=await editorPosition(page),codeUrl=page.url(),workspaceMenu=page.locator('.top-nav [data-area="workspace"]'),workspaceTarget=await workspaceMenu.getAttribute('href');assert.ok(workspaceTarget);
-    await workspaceMenu.click();await page.waitForURL(new URL(workspaceTarget,codeUrl).href);await page.locator(codeEditor+':visible').waitFor({state:'hidden'});
+    const beforeMenuPosition=await editorPosition(page),codeUrl=page.url(),workspaceMenu=page.locator('.primary-navigation-rail [data-nav="workspace"]');
+    await workspaceMenu.hover();const workspaceTarget=page.locator('.primary-secondary-navigation:visible [data-nav="workspace-overview"]'),workspaceHref=await workspaceTarget.getAttribute('href');assert.ok(workspaceHref);
+    await workspaceTarget.click();await page.waitForURL(new URL(workspaceHref,codeUrl).href);await page.locator(codeEditor+':visible').waitFor({state:'hidden'});
     await returnToExplorer();assert.equal(page.url(),codeUrl);await read.text('registerApplicationDoctor');
     assert.equal(await editorScroll(page),top,'菜单切离再返回保留用户后续滚动，旧搜索行号不能重新定位');assert.deepEqual(await editorPosition(page),beforeMenuPosition,'菜单往返保留真实选区和横向阅读位置');assert.equal(await divider.getAttribute('aria-valuenow'),width);assert.equal(await page.getByRole('textbox',{name:'搜索文件',exact:true}).inputValue(),'registerApplicationDoctor');assert.equal(await page.locator('.repository-search-result').count(),count);
   });

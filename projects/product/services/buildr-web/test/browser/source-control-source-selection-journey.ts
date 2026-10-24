@@ -1,3 +1,4 @@
+import { showPrimaryNavigation } from './primary-navigation-controls.ts';
 import assert from 'node:assert/strict';
 import { assertEditorText, editorScroll } from './code-editor-assertions.ts';
 import { codeRepositoryLabel } from '../../src/features/code/code-source-labels.ts';
@@ -27,7 +28,7 @@ export async function runSourceControlSourceSelectionJourney({t,page,workspaceUr
     await selected(repository.id,worktree.worktreeId);
   };
   const navigate=async(name:'source-control'|'explorer')=>{
-    await page.locator('.shell-navigation [data-nav="'+name+'"]').click();
+    await showPrimaryNavigation(page, 'code');await page.locator('.primary-secondary-navigation:visible [data-nav="'+name+'"]').click();
     await(name==='source-control'?scm():explorer()).waitFor();
   };
   // 密度布局收窄时任务入口收进行内“…”菜单，按用户路径取菜单项，不要求行内图标一定展开。
@@ -94,10 +95,10 @@ export async function runSourceControlSourceSelectionJourney({t,page,workspaceUr
         assert.equal(await explorer().locator('.repository-root-name[data-repository-id="'+source.repositoryId+'"]').getAttribute('data-location-label'),registered.name);
         await navigate('source-control');await selected(repository.id,registered.worktreeId);
         assert.ok((await scm().locator('.code-location-summary').innerText()).includes(registered.branch));
-        const nav=page.locator('.shell-navigation [data-nav="source-control"]');
+        await showPrimaryNavigation(page, 'code');const nav=page.locator('.primary-secondary-navigation:visible [data-nav="source-control"]');
         assert.equal(await nav.getAttribute('data-has-changes'),'true','当前登记目录干净，其他来源的未提交改动仍保持全域圆点');
         const explanation='当前工作空间有未提交变更，包含其他代码库或工作树';
-        assert.ok((await nav.getAttribute('title')).includes(explanation));assert.equal(await nav.getAttribute('aria-description'),explanation);assert.equal(await nav.getAttribute('aria-label'),'源代码管理');
+        assert.ok((await nav.getAttribute('title')).includes(explanation));assert.equal(await nav.getAttribute('aria-description'),explanation);assert.equal(await nav.getAttribute('aria-label'),'源代码管理');await page.locator('.primary-navigation-rail button[data-nav="code"]').press('Escape');
         await row(repository.id,registered.worktreeId).hover();
         const card=page.getByRole('article',{name:'工作树来源信息',exact:true}).filter({has:page.getByText(registered.location,{exact:true})});await card.waitFor();
         assert.equal(await card.locator('dt').last().innerText(),'目录角色');assert.equal(await card.locator('dd').last().innerText(),'工作空间登记目录');
@@ -110,7 +111,7 @@ export async function runSourceControlSourceSelectionJourney({t,page,workspaceUr
         await page.mouse.move(5,5);await mainCard.waitFor({state:'hidden'});
         await navigate('explorer');await explorerSource(repository.id,main.location);
         await navigate('source-control');await selected(repository.id,main.worktreeId);
-        assert.equal(await nav.getAttribute('data-has-changes'),'true','切来源和打开页面不会将未提交改动当作已读清除');
+        await showPrimaryNavigation(page, 'code');assert.equal(await nav.getAttribute('data-has-changes'),'true','切来源和打开页面不会将未提交改动当作已读清除');await page.locator('.primary-navigation-rail button[data-nav="code"]').press('Escape');
         await capture(page,'source-selection-linked-registered.png');
       });
     });

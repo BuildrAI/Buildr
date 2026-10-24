@@ -104,7 +104,7 @@ test('Browser dispatcher covers shared reading and publication components', () =
   assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/publication/components/ArticleEditorPanel.tsx']).selectors, ['layout', 'articles']);
   assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/knowledge/components/KnowledgeBrowser.tsx']).selectors, ['layout', 'project', 'service', 'articles']);
   for (const file of ['app/WorkspacePages.tsx', 'app/WorkspacePaneHost.tsx', 'components/WorkspaceStage.tsx']) {
-    assert.deepEqual(selectBrowserSelectors([`services/buildr-web/src/${file}`]).selectors, ['layout', 'shell', 'workbench', 'project', 'service', 'articles', 'task']);
+    assert.deepEqual(selectBrowserSelectors([`services/buildr-web/src/${file}`]).selectors, ['layout', 'shell', 'workbench', 'project', 'service', 'articles', 'task', 'agent-conversations']);
   }
 });
 
@@ -165,4 +165,12 @@ test('code rejects conflicting or unsupported focus without changing unrelated s
   assert.throws(() => planBrowserCommands(['code'], '/tmp/web-dist', conflict), (error: any) => error.code === 'browser_code_focus_conflict');
   assert.throws(() => planBrowserCommands(['code'], '/tmp/web-dist', { BUILDR_CODE_EXPLORER_FOCUS: '1' }), (error: any) => error.code === 'browser_code_explorer_focus_invalid');
   assert.deepEqual(planBrowserCommands(['project'], '/tmp/web-dist', conflict).map(command => command.id), ['browser:project']);
+});
+
+
+test('internal conversation paths select the executable conversation journey and preserve layout applicability',()=>{
+  assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/agent-conversations/ConversationPanel.tsx']).selectors,['agent-conversations']);
+  assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/agent-conversations/agent-conversations.css']).selectors,['layout','agent-conversations']);
+  const commands=planBrowserCommands(['agent-conversations'],'/tmp/conversation-web-dist',{});
+  assert.equal(commands.length,1);assert.equal(commands[0].argv.at(-1),'agent-conversations');assert.equal(commands[0].env.BUILDR_BROWSER_WEB_DIST_ROOT,'/tmp/conversation-web-dist');
 });

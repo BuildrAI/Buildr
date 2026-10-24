@@ -2,306 +2,286 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "从确认接入到关联与调用",
+    "title": "内部对话与原有接入：本轮候选架构设计",
     "locale": "zh-CN",
     "quality_profile": "showcase",
-    "viewBox": [
-      1380,
-      760
-    ]
+    "output": "projects/product/knowledge/archify/system/agent-integration.html"
   },
   "components": [
     {
-      "id": "local-codex",
-      "type": "external",
-      "label": "本机 Codex 与 DSH 桌面",
-      "sublabel": "程序、配置与桌面桥发现",
+      "id": "conversation-ui",
+      "type": "frontend",
+      "label": "全局对话与本机宿主",
+      "sublabel": "界面交互 · 身份核验 · HTTP / 事件流",
       "pos": [
         40,
         40
       ],
       "size": [
-        310,
-        75
+        260,
+        76
       ]
     },
     {
-      "id": "connect",
-      "type": "frontend",
-      "label": "自动发现 · 用户确认",
-      "sublabel": "核对安装、版本与配置来源",
-      "pos": [
-        505,
-        40
-      ],
-      "size": [
-        300,
-        75
-      ]
-    },
-    {
-      "id": "registration",
-      "type": "database",
-      "label": "Buildr 接入登记",
-      "sublabel": "Codex / DSH 各自来源",
-      "pos": [
-        970,
-        40
-      ],
-      "size": [
-        300,
-        75
-      ]
-    },
-    {
-      "id": "chat-relations",
+      "id": "conversation-service",
       "type": "backend",
-      "label": "任务 ↔ 原生会话关系",
-      "sublabel": "提供者隔离 · 精确会话身份",
+      "label": "独立智能体服务（Agent Service）",
+      "sublabel": "buildr-agent · 统一对话与独立控制",
       "pos": [
-        135,
+        490,
+        40
+      ],
+      "size": [
+        260,
+        76
+      ]
+    },
+    {
+      "id": "native-executors",
+      "type": "external",
+      "label": "三家原生执行器（Executor）",
+      "sublabel": "各自进程 · 工具 · 原生上下文",
+      "pos": [
+        900,
+        40
+      ],
+      "size": [
+        260,
+        76
+      ]
+    },
+    {
+      "id": "conversation-store",
+      "type": "database",
+      "label": "Buildr 私有交互库",
+      "sublabel": "统一可见历史 · 参与者 · 执行观察",
+      "pos": [
+        490,
         250
       ],
       "size": [
-        320,
-        75
+        260,
+        76
       ]
     },
     {
-      "id": "task",
+      "id": "native-configs",
+      "type": "database",
+      "label": "各家独立配置与原生历史",
+      "sublabel": "官方账号 · 精确恢复原上下文",
+      "pos": [
+        900,
+        250
+      ],
+      "size": [
+        260,
+        76
+      ]
+    },
+    {
+      "id": "generation-ui",
       "type": "frontend",
-      "label": "Buildr 任务（Task）",
-      "sublabel": "查看关联 · 打开原生会话",
+      "label": "原有业务一次生成",
+      "sublabel": "源代码管理准备有界材料",
       "pos": [
-        50,
-        520
+        40,
+        480
       ],
       "size": [
-        270,
-        75
-      ]
-    },
-    {
-      "id": "native-chat",
-      "type": "external",
-      "label": "Codex / DSH 原生会话",
-      "sublabel": "桌面保有历史、工具与上下文",
-      "pos": [
-        350,
-        520
-      ],
-      "size": [
-        290,
-        75
+        260,
+        76
       ]
     },
     {
       "id": "agent-operations",
       "type": "backend",
-      "label": "统一操作层",
-      "sublabel": "生成 · 选择 · 取消 · 回收",
+      "label": "原有 agent-operations",
+      "sublabel": "单次生成 · 排队 · 取消 · 校验",
       "pos": [
-        850,
-        250
+        490,
+        480
       ],
       "size": [
-        300,
-        75
+        260,
+        76
       ]
     },
     {
-      "id": "codex-provider",
-      "type": "backend",
-      "label": "Codex 接入层",
-      "sublabel": "CodexAppServer",
-      "pos": [
-        690,
-        390
-      ],
-      "size": [
-        280,
-        65
-      ]
-    },
-    {
-      "id": "dsh-provider",
-      "type": "backend",
-      "label": "DSH 接入层",
-      "sublabel": "桌面桥调用与回执",
-      "pos": [
-        1040,
-        390
-      ],
-      "size": [
-        280,
-        65
-      ]
-    },
-    {
-      "id": "codex-process",
+      "id": "generation-native",
       "type": "external",
-      "label": "Codex 应用服务",
-      "sublabel": "App Server · 临时会话",
+      "label": "原有 Codex / DSH 调用",
+      "sublabel": "专用临时会话 / 桌面同宿主模型",
       "pos": [
-        690,
-        535
+        900,
+        480
       ],
       "size": [
-        280,
-        80
+        260,
+        76
       ]
     },
     {
-      "id": "dsh-bridge",
+      "id": "task-external",
+      "type": "frontend",
+      "label": "任务与外部会话关联入口",
+      "sublabel": "查看关系 · 双向打开",
+      "pos": [
+        40,
+        690
+      ],
+      "size": [
+        260,
+        76
+      ]
+    },
+    {
+      "id": "session-links",
       "type": "backend",
-      "label": "Buildr 桌面插件",
-      "sublabel": "同宿主（Host）桥接",
+      "label": "原有 native-session-links",
+      "sublabel": "各提供者关系 · 精确会话身份",
       "pos": [
-        1040,
-        535
+        490,
+        690
       ],
       "size": [
-        280,
-        70
+        260,
+        76
       ]
     },
     {
-      "id": "dsh-native",
+      "id": "external-desktop",
       "type": "external",
-      "label": "DSH 当前模型服务",
-      "sublabel": "当前默认模型与推理级别",
+      "label": "用户独立桌面聊天",
+      "sublabel": "Codex / DSH 保有历史与执行",
       "pos": [
-        1040,
-        665
+        900,
+        690
       ],
       "size": [
-        280,
-        65
+        260,
+        76
       ]
     }
   ],
   "boundaries": [
     {
       "kind": "region",
-      "label": "独立关系：双向打开原生会话与任务",
+      "label": "新增内部对话：私有库由 Buildr 宿主装配，随主包统一发行",
       "wraps": [
-        "chat-relations",
-        "task",
-        "native-chat"
+        "conversation-ui",
+        "conversation-service",
+        "native-executors",
+        "conversation-store",
+        "native-configs"
       ],
-      "pad": 22
+      "pad": 24
     },
     {
       "kind": "region",
-      "label": "Codex 专用进程：按需启动与复用",
+      "label": "原有一次生成：登记、账号来源与队列保持独立",
       "wraps": [
-        "codex-process"
+        "generation-ui",
+        "agent-operations",
+        "generation-native"
       ],
-      "pad": 22
+      "pad": 24
     },
     {
       "kind": "region",
-      "label": "DSH 现有桌面宿主：连接与断开",
+      "label": "原有外部关联：保存关系与导航，不复制或发送聊天",
       "wraps": [
-        "dsh-bridge",
-        "dsh-native"
+        "task-external",
+        "session-links",
+        "external-desktop"
       ],
-      "pad": 22
+      "pad": 24
     }
   ],
   "connections": [
     {
-      "id": "discover",
-      "from": "local-codex",
-      "to": "connect",
-      "label": "本机检测",
+      "id": "ui-to-service",
+      "from": "conversation-ui",
+      "to": "conversation-service",
+      "label": "公开应用入口",
       "variant": "emphasis"
     },
     {
-      "id": "confirm",
-      "from": "connect",
-      "to": "registration",
-      "label": "确认后保存",
+      "id": "service-executors",
+      "from": "conversation-service",
+      "to": "native-executors",
+      "label": "发送 / 恢复 / 控制",
       "variant": "emphasis"
     },
     {
-      "id": "prepare-relations",
-      "from": "registration",
-      "to": "chat-relations",
-      "label": "各自桌面：关联范围",
-      "variant": "default",
-      "fromSide": "bottom",
-      "toSide": "top"
+      "id": "service-store",
+      "from": "conversation-service",
+      "to": "conversation-store",
+      "label": "读取与保存",
+      "variant": "default"
     },
     {
-      "id": "generation-registration",
-      "from": "registration",
+      "id": "native-history",
+      "from": "native-executors",
+      "to": "native-configs",
+      "label": "各家维护与恢复",
+      "variant": "default"
+    },
+    {
+      "id": "prepare-generate",
+      "from": "generation-ui",
       "to": "agent-operations",
-      "label": "生成使用登记来源",
-      "variant": "default",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "labelDx": -10
+      "label": "材料与输出约束",
+      "variant": "default"
     },
     {
-      "id": "task-relations-read",
-      "from": "task",
-      "to": "chat-relations",
-      "label": "按任务查看",
-      "variant": "default",
-      "fromSide": "top",
-      "toSide": "bottom"
-    },
-    {
-      "id": "native-chat-link",
-      "from": "native-chat",
-      "to": "chat-relations",
-      "label": "原生会话显式关联",
-      "variant": "default",
-      "fromSide": "top",
-      "toSide": "bottom"
-    },
-    {
-      "id": "select-codex",
+      "id": "single-call",
       "from": "agent-operations",
-      "to": "codex-provider",
-      "label": "选择 Codex",
-      "variant": "default",
-      "fromSide": "bottom",
-      "toSide": "top"
+      "to": "generation-native",
+      "label": "一次无工具生成",
+      "variant": "default"
     },
     {
-      "id": "select-dsh",
-      "from": "agent-operations",
-      "to": "dsh-provider",
-      "label": "选择 DSH",
-      "variant": "default",
-      "fromSide": "bottom",
-      "toSide": "top"
+      "id": "task-links",
+      "from": "task-external",
+      "to": "session-links",
+      "label": "关联或读取关系",
+      "variant": "default"
     },
     {
-      "id": "codex-protocol",
-      "from": "codex-provider",
-      "to": "codex-process",
-      "label": "标准输入输出（stdio）",
-      "variant": "emphasis",
-      "labelDy": 24
+      "id": "open-native",
+      "from": "session-links",
+      "to": "external-desktop",
+      "label": "准确身份导航",
+      "variant": "default"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "三家接入方式",
+      "items": [
+        "Codex：codex app-server，以标准输入输出（stdio）通信。",
+        "DSH：dsh web 完整网页宿主（Web Host）与官方客户端（Client）。",
+        "Qoder：官方软件开发工具包（SDK）管理 qodercli 执行进程。"
+      ]
     },
     {
-      "id": "dsh-protocol",
-      "from": "dsh-provider",
-      "to": "dsh-bridge",
-      "label": "本机回环连接（Loopback TCP）",
-      "variant": "emphasis",
-      "labelDy": 24
+      "dot": "emerald",
+      "title": "同一对话，不同原生上下文",
+      "items": [
+        "历史按对话组织；换执行方补交未见的可见记录，换回恢复它原来的上下文。",
+        "同一对话一次只执行一轮；未知不重发，旧授权不重放。",
+        "工作目录是发现起点，实际文件和任务状态保持各自权威。"
+      ]
     },
     {
-      "id": "dsh-compose",
-      "from": "dsh-bridge",
-      "to": "dsh-native",
-      "label": "无会话单次模型调用",
-      "variant": "default",
-      "labelDy": 24
+      "dot": "amber",
+      "title": "候选范围与证据边界",
+      "items": [
+        "本图说明本轮候选架构设计；当前源码入口见配套接入文章。",
+        "源码尚未固定为交付提交；图不绑定伪造的提交或源码证据。",
+        "结构与浏览器检查不代表发布、真实账号、图片或全平台验收。"
+      ]
     }
   ]
 }

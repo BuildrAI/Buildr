@@ -10,6 +10,7 @@ import { writeTaskProfessionalHttpDto } from '../codegen/contracts/task-professi
 import { writeTaskRecordHttpDto } from '../codegen/contracts/task-dto.ts';
 import { writeWorkspaceAgentAssetsDtos } from '../codegen/contracts/workspace-agent-assets-dto.ts';
 import { buildWebDist } from '../build/web-dist.ts';
+import { prepareDevelopmentAgent } from './prepare-development-agent.ts';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 
@@ -28,11 +29,14 @@ export async function prepareDevelopmentWeb({
   outputRoot = path.join(serviceRoot, 'web-dist'),
   generateDtos = generateDevelopmentWebDtos,
   build = buildWebDist,
+  prepareAgent = prepareDevelopmentAgent,
 }: {
   outputRoot?: string;
   generateDtos?: () => Promise<string[]>;
   build?: (outputRoot: string) => string;
+  prepareAgent?: () => string;
 } = {}): Promise<{ schemaVersion: string; status: string; root: string; generatedDtos: string[] }> {
+  prepareAgent();
   const generatedDtos = await generateDtos();
   const root = build(path.resolve(outputRoot));
   return {

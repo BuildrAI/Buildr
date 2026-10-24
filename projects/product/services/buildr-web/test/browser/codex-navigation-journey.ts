@@ -53,7 +53,10 @@ export async function runCodexNavigationJourney({t, page, runtime, workspaceRoot
     const input = page.locator('#article-edit-content');
     await input.waitFor({state: 'visible'}); await input.fill('# 尚未保存的 Codex 编辑\n');
     await fragment(`/tasks/${first}`);
-    await visibleTask(first).waitFor({state: 'visible'});
+    await visibleTask(first).waitFor({state: 'visible'}).catch(async(error:unknown)=>{
+      const scene=await page.evaluate(()=>({url:location.href,title:document.title,dialogs:[...document.querySelectorAll<HTMLElement>('.ant-modal')].filter(node=>node.getClientRects().length&&getComputedStyle(node).visibility!=='hidden').map(node=>({text:node.innerText,rect:node.getBoundingClientRect().toJSON()})),editor:[...document.querySelectorAll<HTMLTextAreaElement>('#article-edit-content')].map(node=>({value:node.value,rect:node.getBoundingClientRect().toJSON(),hidden:Boolean(node.closest('[hidden]'))})),tasks:[...document.querySelectorAll<HTMLElement>('#task-detail-main')].map(node=>({taskId:node.dataset.taskId,rect:node.getBoundingClientRect().toJSON(),hidden:Boolean(node.closest('[hidden]'))})),body:document.body.innerText.slice(-4500)}));
+      process.stderr.write('[codex-draft-fragment-failure] '+JSON.stringify(scene)+'\n');await capture(page,'codex-draft-fragment-failure.png');throw error;
+    });
     assert.equal(await input.inputValue(), '# 尚未保存的 Codex 编辑\n', '同一工作空间切换沿用既有编辑器，不要求丢弃草稿');
     assert.equal(await page.getByRole('dialog', {name: '放弃尚未保存的修改？', exact: true}).count(), 0);
     const retainedUrl = page.url();

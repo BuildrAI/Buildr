@@ -1,3 +1,4 @@
+import { showPrimaryNavigation } from './primary-navigation-controls.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -44,10 +45,10 @@ export async function runSourceControlRefreshIntegrationJourney({t,page,workspac
       let observed=initial.repositories.find((repository:any)=>repository.id===fast.id).worktrees.find((tree:any)=>tree.worktreeId===fastTree.worktreeId);
       await page.waitForFunction((id:string)=>!!document.querySelector('[data-source-repository="'+id+'"] > .source-control-repository .source-control-repository-copy:not(:disabled)'),fast.id);
       await waitingDefault();
-      await page.locator('.shell-navigation [data-nav="explorer"]').click();await explorer().locator('.repository-root-name').first().waitFor();
+      await showPrimaryNavigation(page, 'code');await page.locator('.primary-secondary-navigation:visible [data-nav="explorer"]').click();await explorer().locator('.repository-root-name').first().waitFor();
       assert.equal(await explorer().locator('[data-code-notice-kind="status"]').count(),0,'未完成的inventory不制造状态读取失败');
       assert.equal(await explorer().getByText('部分内容不可读取',{exact:true}).count(),0);
-      await page.locator('.shell-navigation [data-nav="source-control"]').click();await scm().waitFor();await waitingDefault();
+      await showPrimaryNavigation(page, 'code');await page.locator('.primary-secondary-navigation:visible [data-nav="source-control"]').click();await scm().waitFor();await waitingDefault();
 
       const reads:string[]=[];
       const count=(request:any)=>{const url=new URL(request.url());if(status(url,fast.id))reads.push(request.url());};page.on('request',count);
@@ -64,7 +65,7 @@ export async function runSourceControlRefreshIntegrationJourney({t,page,workspac
           assert.ok(reads.length>start&&reads.length-start<=3,'快库连续写入有界补查，不能等待首库完成或无限自触发');
           assert.notEqual(observed.observedRevision,previousRevision);if(version===702)assert.equal(observed.fileCount,previousCount,'已有修改再次保存不能只按数量去重');
           const file=await read('editor-file',selector);assert.equal(file.fileId,originalFile.fileId);assert.equal(file.content,text);
-          await waitingDefault();assert.equal(await page.locator('.shell-navigation [data-nav="source-control"]').getAttribute('data-has-changes'),'true');
+          await waitingDefault();await showPrimaryNavigation(page, 'code');assert.equal(await page.locator('.primary-secondary-navigation:visible [data-nav="source-control"]').getAttribute('data-has-changes'),'true');await page.keyboard.press('Escape');
         }
       }finally{page.off('request',count);}
       await capture(page,'source-refresh-integration-fast-updated-pending-first.png');

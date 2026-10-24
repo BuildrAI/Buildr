@@ -1,3 +1,4 @@
+import { showPrimaryNavigation } from './primary-navigation-controls.ts';
 import assert from 'node:assert/strict';
 import { codeRepositoryLabel } from '../../src/features/code/code-source-labels.ts';
 import { selectSourceControlView } from './source-control-view-controls.ts';
@@ -32,6 +33,7 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
     assert.deepEqual(await graph().evaluateAll((elements: HTMLElement[]) => elements.map(element => element.getAttribute('data-source-commit'))), hashes);
   };
   const open = async (branches: any) => {
+    await page.mouse.move(400, 4);
     await page.goto(workspaceUrl + '/code/source-control');
     await root().locator('.source-control-repository-copy').first().waitFor();
     await root().locator('.source-control-title .anticon-spin').waitFor({state:'hidden'});
@@ -61,6 +63,8 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
     await option.waitFor(); assert.equal(await option.count(), 1, '同名作者可按邮箱明确区分'); await option.click();
   };
   const manage = async (worktree: any, name: string, fromMenu = false) => {
+    await page.mouse.move(400, 4);
+    await page.getByRole('article', { name: '工作树来源信息', exact: true }).waitFor({ state: 'hidden' });
     const label = worktree.isMain ? '主工作树' : worktree.name;
     const branch = row(worktree).getByRole('button', { name: '管理分支 · ' + worktree.repositoryLabel + ' · ' + label, exact: true });
     if (!fromMenu && await branch.isVisible()) await branch.click();
@@ -785,7 +789,9 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
       await page.setViewportSize({width:1440, height:1000});
       const {worktree} = await open(branches), before = branches.snapshot();
       await root().getByRole('separator', {name:'调整源代码管理与阅读区宽度', exact:true}).press('End');
-      assert.deepEqual(await page.locator('.shell-navigation [data-nav]').evaluateAll((items:HTMLElement[]) => items.map(item => item.dataset.nav)), ['source-control', 'explorer'], '代码导航交换显示顺序');
+      await showPrimaryNavigation(page, 'code');
+      await page.getByRole('navigation',{name:'代码导航',exact:true}).waitFor();
+      assert.deepEqual(await page.locator('.primary-secondary-navigation:visible .shell-navigation [data-nav]').evaluateAll((items:HTMLElement[]) => items.map(item => item.dataset.nav)), ['source-control', 'explorer'], '代码导航交换显示顺序');await page.locator('.primary-navigation-rail button[data-nav="code"]').press('Escape');
       const input = {repositoryId:worktree.repositoryId, worktreeId:worktree.worktreeId};
       const contextResponse = await page.request.get(api + '/code/sync-context?' + new URLSearchParams(input)); assert.equal(contextResponse.status(), 200);
       const actual = await contextResponse.json(), target = branches.remote + '/' + branches.remoteName;
@@ -874,10 +880,10 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
           await capture(page, 'source-control-sync-context-failure.png').catch(() => {});
           throw new Error('离页前同步上下文未发起：' + JSON.stringify({menuVisible:await delayed.isVisible(), disabled:await delayedSync.evaluateAll((elements:HTMLElement[]) => elements[0]?.getAttribute('aria-disabled') ?? null), menuState, reads, writes, contextRequests}) + '\n' + error);
         }
-        await page.locator('.shell-navigation [data-nav="explorer"]').click(); await page.locator('.code-explorer-stage:visible').waitFor();
+        await showPrimaryNavigation(page, 'code');await page.locator('.primary-secondary-navigation:visible [data-nav="explorer"]').click(); await page.locator('.code-explorer-stage:visible').waitFor();
         releaseContext(); const returned = await contextReturned!; if (returned.error) throw returned.error;
         await page.waitForFunction((id:string) => [...document.querySelectorAll('.code-source-control-page [data-source-worktree]')].find(element => element.getAttribute('data-source-worktree') === id)?.querySelector('.source-control-row-menu-button[aria-busy="false"]'), worktree.worktreeId);
-        await page.locator('.shell-navigation [data-nav="source-control"]').click(); await row(worktree).locator('.source-control-row-menu-button[aria-busy="false"]').waitFor();
+        await showPrimaryNavigation(page, 'code');await page.locator('.primary-secondary-navigation:visible [data-nav="source-control"]').click(); await row(worktree).locator('.source-control-row-menu-button[aria-busy="false"]').waitFor();
         assert.equal(writes.length, 2, '读取同步上下文期间离开页，迟到观察不发起新写入');
         assert.deepEqual(branches.snapshot(), before, '界面替身没有触发真实Git写入');
         await noOverflow();
@@ -905,7 +911,7 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
       await switchTo(worktree, branches.remote + '/' + branches.remoteName, branches.remoteName, true, false, {whileWriting:async () => {
         await switchWorkspace(other);
         await switchWorkspace(current);
-        await page.getByRole('navigation', {name:'主导航', exact:true}).getByRole('link', {name:'代码', exact:true}).click();
+        await showPrimaryNavigation(page, 'code');
         await page.getByRole('navigation', {name:'代码导航', exact:true}).getByRole('link', {name:'源代码管理', exact:true}).click();
         await row(worktree).locator('.source-control-row-action-button').waitFor();
         assert.equal(await row(worktree).locator('.source-control-row-action-button').getAttribute('title'), branches.branch + ' · 管理分支', '旧请求放行前，新页面实际读到原分支');
@@ -951,6 +957,7 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
       const filtered=historyResult(worktree.worktreeId,{branch:'refs/heads/'+branches.branch,authorEmail:branches.authorEmail,query:'shared'});
       await search().fill('shared'); await filtered; await waitRows([branches.first]);
       const navigate = async (name:string) => {
+        const primary=page.locator('.primary-navigation-rail button[data-nav="code"]');await primary.focus();await primary.press('ArrowRight');
         const link=page.getByRole('navigation',{name:'代码导航',exact:true}).getByRole('link',{name,exact:true});
         // Keyboard navigation does not dispatch an outside pointer click that
         // could accidentally hide a leaked portal before view deactivation.

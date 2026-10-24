@@ -5,6 +5,7 @@ import { SERVICE_RUNTIME_MODULE } from '../modules/service-runtime/module.ts';
 import { createMySqlQueryModule } from '../modules/mysql-query/module.ts';
 import { CODE_MODULE, CODE_SOURCE_CONTROL_OBSERVATIONS } from '../modules/code/module.ts';
 import { AGENT_OPERATIONS_APPLICATION, createAgentOperationsModule } from '../modules/agent-operations/module.ts';
+import { AGENT_SERVICE_APPLICATION, createAgentServiceModule } from '../modules/agent-service/module.ts';
 import { createCodexDesktopModule } from '../modules/codex-desktop/module.ts';
 import { createNativeSessionLinksModule, NATIVE_SESSION_LINKS_APPLICATION } from '../modules/native-session-links/module.ts';
 import { createDshDesktopModule, DSH_DESKTOP_APPLICATION, DSH_PAGE_OBSERVATIONS } from '../modules/dsh-desktop/module.ts';
@@ -79,6 +80,7 @@ export function createRuntime(): any  {
   registry.install(AGENT_ASSETS_SOURCE_MODULE);
   registry.install(createChangeModule(runtime));
   registry.install(createAgentOperationsModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile }));
+  registry.install(createAgentServiceModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile }));
   registry.install(createNativeSessionLinksModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile, readOrigin: readCurrentBuildrWebOrigin }));
   registry.install(createCodexDesktopModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile, readOrigin: readCurrentBuildrWebOrigin }));
   registry.install(createDshDesktopModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile, readOrigin: readCurrentBuildrWebOrigin }));
@@ -98,7 +100,7 @@ export function createRuntime(): any  {
     registry.provide(CODE_SOURCE_CONTROL_OBSERVATIONS).close();
     registry.provide(CONNECTION_SKILLS_APPLICATION).close();
     registry.provide(DSH_PAGE_OBSERVATIONS).close();
-    await Promise.all([registry.provide(DSH_DESKTOP_APPLICATION).close(), registry.provide(AGENT_OPERATIONS_APPLICATION).close()]);
+    await Promise.all([registry.provide(DSH_DESKTOP_APPLICATION).close(), registry.provide(AGENT_OPERATIONS_APPLICATION).close(), registry.provide(AGENT_SERVICE_APPLICATION).close()]);
   } }));
   registry.provide(SYSTEM_INSTALLATION_WEB_BINDER).bindWorkspaceUpdates({
     prepareResources: () => {try{return ensurePackageResources();}catch(error:any){throw Object.assign(new Error('新版工作内容尚未准备好，已安装的软件会保留。请重试。',{cause:error}),{code:'update_resources_failed',diagnostic:error.message});}},

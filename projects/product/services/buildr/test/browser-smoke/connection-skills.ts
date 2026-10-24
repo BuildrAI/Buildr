@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { showPrimaryNavigation } from '../../../buildr-web/test/browser/primary-navigation-controls.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -130,7 +131,10 @@ try {
   await originalEdit().waitFor();
   await assertRows([created.id, queryInstance.id], 'Initial display orders category keys instead of using directory input order.');
   assert.equal(await page.locator('[data-nav="connections"]').count(), 0, 'Retired connection navigation is removed.');
-  assert.equal(await page.locator('[data-nav="connection-skills"]').getAttribute('aria-label'), '连接');
+  await showPrimaryNavigation(page, 'workspace');
+  assert.equal(await page.locator('.primary-secondary-navigation:visible [data-nav="connection-skills"]').getAttribute('aria-label'), '连接');
+  await page.locator('.primary-navigation-rail [data-nav="workspace"]').press('Escape');
+  await page.mouse.move(400, 4);
   assert.equal(await page.getByRole('link', { name: '打开已有连接', exact: true }).count(), 0);
   assert.equal(await page.locator('[data-page-tab="dir:connections"]').count(), 0, 'Restored legacy tabs never mount a retired page.');
   assert.ok(await page.locator('[data-page-tab="dir:connection-skills"]').count() > 0);
@@ -465,7 +469,8 @@ try {
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   assertReads(initialReads, 'Window focus is not a connection-data change.');
-  await page.locator('.shell-navigation').getByRole('link', { name: '服务', exact: true }).click();
+  await showPrimaryNavigation(page, 'workspace');
+  await page.locator('.primary-secondary-navigation:visible').getByRole('link', { name: '服务', exact: true }).click();
   await page.waitForURL(`${base}/services`);
   await page.locator('[data-tab-key="dir:connection-skills"]:visible').click();
   await page.waitForURL(`${base}/connection-skills`);
@@ -487,7 +492,8 @@ try {
   try {
     await retryPage.goto(`${base}/connection-skills`, { waitUntil: 'domcontentloaded' });
     await initialRequestStarted;
-    await retryPage.locator('.shell-navigation').getByRole('link', { name: '服务', exact: true }).click();
+    await showPrimaryNavigation(retryPage, 'workspace');
+    await retryPage.locator('.primary-secondary-navigation:visible').getByRole('link', { name: '服务', exact: true }).click();
     await retryPage.waitForURL(`${base}/services`);
     await retryPage.locator('[data-tab-key="dir:connection-skills"]:visible').click();
     await retryPage.waitForURL(`${base}/connection-skills`);

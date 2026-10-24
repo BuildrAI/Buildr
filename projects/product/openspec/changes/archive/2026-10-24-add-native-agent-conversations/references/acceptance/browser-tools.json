@@ -1,0 +1,35 @@
+[
+  {
+    "provider": "codex",
+    "tool": "@playwright/cli@0.1.22",
+    "browser": "chromium_headless_shell-1247",
+    "mode": "headless",
+    "click": 1,
+    "input": "BUILDR_CODEX",
+    "passed": true,
+    "privateAccountHome": true,
+    "sharedOfficialCache": true
+  },
+  {
+    "provider": "dsh",
+    "tool": "@playwright/cli@0.1.22",
+    "browser": "chromium_headless_shell-1247",
+    "mode": "headless",
+    "click": 1,
+    "input": "BUILDR_DSH",
+    "passed": true,
+    "privateAccountHome": true,
+    "sharedOfficialCache": true
+  },
+  {
+    "provider": "qoder",
+    "tool": "@playwright/cli@0.1.22",
+    "browser": "chromium_headless_shell-1247",
+    "mode": "headless",
+    "click": 1,
+    "input": "BUILDR_QODER",
+    "passed": true,
+    "privateAccountHome": true,
+    "sharedOfficialCache": true
+  }
+]

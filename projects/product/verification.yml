@@ -7,6 +7,7 @@ testing:
       services:
         - buildr
         - buildr-web
+        - buildr-agent
     purpose: 通用产品逻辑只有一套，默认选择通用检查和本机系统源码节点；另一系统只补真实系统差异，不证明最终发布包
     sourcePaths:
       - services/buildr/src/**
@@ -14,9 +15,11 @@ testing:
       - services/buildr/tools/**
       - services/buildr-web/src/**
       - services/buildr-web/tools/**
+      - services/buildr-agent/**
     testRoots:
       - services/buildr/test/**
       - services/buildr-web/test/**
+      - services/buildr-agent/test/**
     full:
       kind: command
       argv:
@@ -105,10 +108,12 @@ testing:
       services:
         - buildr
         - buildr-web
+        - buildr-agent
     purpose: 对同一最终原包执行一次通用检查，并分别证明两个系统的原生启动及最低 Node；本入口不制包、不公开
     sourcePaths:
       - services/buildr/**
       - services/buildr-web/**
+      - services/buildr-agent/**
     testRoots:
       - services/buildr/test/verification/release/**
       - services/buildr/test/verification/host-node/**
@@ -326,10 +331,12 @@ testing:
       services:
         - buildr
         - buildr-web
+        - buildr-agent
     purpose: 在明确需要验证真实安装或发布环境时检查 CLI、Web 和关键入口
     sourcePaths:
       - services/buildr/**
       - services/buildr-web/**
+      - services/buildr-agent/**
     testRoots:
       - services/buildr/test/verification/host-node/**
       - services/buildr/test/verification/release/**
@@ -418,3 +425,27 @@ testing:
       - 经过完整性（Integrity）核验的准确公开主包或联合候选（Candidate）及其文件清单；基础公开入口、可选能力缺失和实际调用失败分别验证，不复用本机默认安装或认证
       - 已核验的来源增强软件开发工具包（SDK）、持久源码补丁清单及完整 SHA256；构建依赖通过冻结锁文件与 --ignore-scripts
         预先准备，准备器直接调用构建工具，不执行安装脚本或启用运行时（Runtime）
+  - id: buildr-agent
+    title: Buildr 智能体服务独立构建与执行检查
+    scope:
+      project: product
+      services:
+        - buildr-agent
+    purpose: 验证私有存储、会话和执行者契约、原生协议替身及独立公开包边界；不代表真实账号或模型验收
+    sourcePaths:
+      - services/buildr-agent/**
+    testRoots:
+      - services/buildr-agent/test/**
+    full:
+      kind: command
+      argv:
+        - ../buildr/tools/development/run-development-npm
+        - run
+        - verify
+      cwd: services/buildr-agent
+    selection:
+      - 独立入口先编译公开包再运行全部服务测试；主包受影响选择中的 agent-service 使用同一入口
+      - 真实厂家登录和模型执行单独验收，不由协议替身或静态构建证明
+    requirements:
+      - 稳定版 Node >=24.15.0 与相邻 npm，通过项目 wrapper 执行
+      - 按 buildr-agent.npm-ci 准备锁定依赖，禁用厂家安装脚本

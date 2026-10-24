@@ -686,7 +686,7 @@ for (const relative of ['projects/product/services/buildr-web/test/runtime.test.
     assert.equal(calls.some(args => args.includes('restart') || args.includes('--channel')), false);
   });
 }
-for (const relative of ['projects/product/services/buildr/package-lock.json', 'projects/product/services/buildr-web/vite.config.ts', 'projects/product/services/buildr-web/tsconfig.app.json', 'projects/product/services/buildr/tools/development/prepare-development-web.ts']) {
+for (const relative of ['projects/product/services/buildr-agent/src/index.ts', 'projects/product/services/buildr-agent/package-lock.json', 'projects/product/services/buildr/package-lock.json', 'projects/product/services/buildr-web/vite.config.ts', 'projects/product/services/buildr-web/tsconfig.app.json', 'projects/product/services/buildr/tools/development/prepare-development-web.ts']) {
   test(`shared runtime policy restarts for ${relative}`, t => {
     const f = fixture(t), file = path.join(f.root, relative);
     fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, 'runtime input changed\n');
