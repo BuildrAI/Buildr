@@ -902,3 +902,14 @@ for (const failFirstStart of [false, true]) {
     assert.equal(attempts, beforeReuse);
   });
 }
+
+test('自举技能源变更必须同步组件完整性声明', async () => {
+  const { assetIntegrity } = await import('../../src/modules/agent-assets/infrastructure/component-source.ts');
+  const { default: YAML } = await import('yaml');
+  const workspaceRoot = path.resolve(import.meta.dirname, '../../../../../..');
+  const definition = YAML.parse(fs.readFileSync(path.join(workspaceRoot, 'components/workspace/buildr-self-bootstrap/component.yml'), 'utf8'));
+  const expected = new Map(definition.integrity.map((item: string) => { const split=item.lastIndexOf('=');return [item.slice(0,split),item.slice(split+1)]; }));
+  for (const member of Object.values(definition.members).flat() as string[]) {
+    assert.equal(assetIntegrity(path.join(workspaceRoot,member)),expected.get(member),`组件成员摘要未跟随源文件更新：${member}`);
+  }
+});
