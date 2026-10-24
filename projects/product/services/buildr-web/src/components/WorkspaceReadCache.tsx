@@ -24,7 +24,7 @@ export function useCachedWorkspaceRead<T>(key: string, read: (signal: AbortSigna
   const refresh = useCallback(async (options: { silent?: boolean; force?: boolean; invalidate?: boolean } = {}) => {
     if (!enabled) return;
     if (options.invalidate) cache.invalidate(key);
-    try { return await cache.read<T>(key, signal => reader.current(signal), options.force ? 0 : maxAge); } catch { /* The shared snapshot owns the error. */ }
+    try { return await cache.read<T>(key, signal => reader.current(signal), options.force ? 0 : maxAge, Boolean(options.silent)); } catch { /* The shared snapshot owns the error. */ }
   }, [cache, key, enabled, maxAge]);
   useEffect(() => cache.subscribe(key, () => render(version => version + 1)), [cache, key]);
   useEffect(() => { if (enabled) void refresh(); }, [refresh, enabled]);

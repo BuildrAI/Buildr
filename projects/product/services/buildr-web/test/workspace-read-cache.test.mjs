@@ -29,6 +29,30 @@ test('a write invalidates in-flight observations; the previous response cannot r
   cache.dispose();
 });
 
+test('a silent refresh keeps the displayed observation and never publishes loading', async () => {
+  const cache = createWorkspaceReadCache(), pending = deferred();
+  await cache.read('workspace-a:front', async () => ({ branch: 'qa' }));
+  let notices = 0;
+  cache.subscribe('workspace-a:front', () => notices++);
+  const refresh = cache.read('workspace-a:front', () => pending.promise, 0, true);
+  await Promise.resolve();
+  assert.equal(cache.snapshot('workspace-a:front').loading, false);
+  assert.equal(notices, 0);
+  pending.resolve({ branch: 'main' }); await refresh;
+  assert.equal(notices, 1);
+  assert.deepEqual(cache.snapshot('workspace-a:front').data, { branch: 'main' });
+  cache.dispose();
+});
+
+test('a silent first read still publishes loading so mount spinners keep working', async () => {
+  const cache = createWorkspaceReadCache(), pending = deferred();
+  const first = cache.read('workspace-a:front', () => pending.promise, 0, true);
+  await Promise.resolve();
+  assert.equal(cache.snapshot('workspace-a:front').loading, true);
+  pending.resolve({ branch: 'qa' }); await first;
+  cache.dispose();
+});
+
 test('different workspaces and tasks never share an observation; disposing aborts pending work', async () => {
   const cache = createWorkspaceReadCache(), old = deferred(); let signal;
   await cache.read('workspace-a:front:task', async () => ({ path: '/task' }));

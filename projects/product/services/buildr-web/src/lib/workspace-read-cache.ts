@@ -30,7 +30,7 @@ export function createWorkspaceReadCache(now = Date.now) {
       const value = entry(key); value.controller?.abort(); value.pending = undefined; value.controller = undefined;
       publish(value, { ...value.snapshot, loading: false, readAt: 0 });
     },
-    read<T>(key: string, load: (signal: AbortSignal) => Promise<T>, maxAge = 0): Promise<T> {
+    read<T>(key: string, load: (signal: AbortSignal) => Promise<T>, maxAge = 0, silent = false): Promise<T> {
       const value = entry(key);
       if (value.pending) return value.pending as Promise<T>;
       if (value.snapshot.data !== null && now() - value.snapshot.readAt < maxAge) return Promise.resolve(value.snapshot.data as T);
@@ -43,7 +43,8 @@ export function createWorkspaceReadCache(now = Date.now) {
         throw cause;
       }).finally(() => { if (value.pending === pending) { value.pending = undefined; value.controller = undefined; } });
       value.pending = pending;
-      publish(value, { ...value.snapshot, loading: true, error: '' });
+      // 静默轮询已有观察时不公告 loading，避免挂载条件把已展示内容短暂卸下。
+      if (!(silent && value.snapshot.data !== null)) publish(value, { ...value.snapshot, loading: true, error: '' });
       return pending;
     },
     dispose() { for (const value of entries.values()) { value.controller?.abort(); value.listeners.clear(); } entries.clear(); },
