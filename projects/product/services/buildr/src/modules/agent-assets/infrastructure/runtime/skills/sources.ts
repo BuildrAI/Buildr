@@ -87,7 +87,9 @@ function readPackageSkillEntries(section: any, runtime: any): any  {
         origin: section === 'agentSkills' ? 'product' : 'package',
         runtime,
         ...(skill.runtimes !== undefined ? { runtimes: skill.runtimes } : {}),
-        displaySource: `${skillPath}/SKILL.md`,
+        // Keep the portable resource spelling posix: it is resolved against the shared
+        // resource set, whose path validation rejects windows separators.
+        displaySource: `${skillPath.split(path.sep).join('/')}/SKILL.md`,
       };
       if (section === 'agentSkills') result.workspaceId = 'buildr-product';
       if (section === 'skillSources') {
