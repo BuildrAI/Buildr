@@ -53,11 +53,11 @@ function useWorkspaceCatalog({ stayOnCatalog, onOpenWorkspace, onRecoveryPrompt,
     return () => { active = false; };
   }, [load, onOpenWorkspace, onPreparationStart, stayOnCatalog, workspaceRegistryRevision]);
 
-  const remove = useCallback(async (entry: WorkspaceEntry) => {
-    if (!registry || mutation.current) return;
+  const remove = useCallback(async (entry: WorkspaceEntry, observed: WorkspaceRegistry) => {
+    if (mutation.current) return;
     mutation.current = true; setRemoving(entry.rootPath); setFailure(''); setMessage(null);
     try {
-      const next = await workspaceApi.remove({ revision: registry.revision, rootPath: entry.rootPath });
+      const next = await workspaceApi.remove({ revision: observed.revision, rootPath: entry.rootPath });
       if (!mounted.current) return;
       ++readGeneration.current; setRegistry(next); onRegistryChanged();
       setMessage('已从 Buildr Web 移除，目录内容保留。');
@@ -71,7 +71,7 @@ function useWorkspaceCatalog({ stayOnCatalog, onOpenWorkspace, onRecoveryPrompt,
       mutation.current = false;
       if (mounted.current) setRemoving(null);
     }
-  }, [registry, onRegistryChanged]);
+  }, [onRegistryChanged]);
 
   const pick = useCallback(async () => {
     if (!registry || mutation.current) return;
@@ -102,7 +102,7 @@ function useWorkspaceCatalog({ stayOnCatalog, onOpenWorkspace, onRecoveryPrompt,
     catch (error) { if (mounted.current) setFailure(error instanceof Error ? error.message : '登记读取失败，请重试。'); }
     finally { mutation.current = false; if (mounted.current) setRefreshing(false); }
   };
-  return { registry, message, setMessage, adding, removing, refreshing, failure, setFailure, refresh, remove, pick };
+  return { registry, message, adding, removing, refreshing, failure, setFailure, refresh, remove, pick, readRegistry: load };
 }
 
 export function WorkspacesPage() {
@@ -121,7 +121,7 @@ export function WorkspacesPage() {
     openAgentAction('workspace-recovery', { prompt });
   }, [openAgentAction]);
   const onPreparationStart=useCallback((value:WorkspacePreparation)=>{setPreparation(null);setIncoming(value);setOpening(value.workspaceId);setAddOpen(true);},[]);
-  const { registry, message, setMessage, adding, removing, refreshing, failure, setFailure, refresh, remove } = useWorkspaceCatalog({
+  const { registry, message, adding, removing, refreshing, failure, setFailure, refresh, remove, readRegistry } = useWorkspaceCatalog({
     stayOnCatalog,
     onOpenWorkspace,
     onRecoveryPrompt,
@@ -138,14 +138,20 @@ export function WorkspacesPage() {
     if (confirming.current || adding || removing || refreshing) return;
     confirming.current = true;
     try {
+      const observed = await readRegistry();
+      const current = observed.workspaces.find(candidate => candidate.rootPath === entry.rootPath);
+      if (!current || current.workspace?.id !== entry.workspace?.id) {
+        setFailure('工作空间登记已变化，列表已更新。请核对后再决定是否移除。');
+        return;
+      }
       const ok = await confirmModal({
         title: '移除工作空间', icon: null, centered: true, width: 400, className: 'workspace-remove-dialog',
-        content: <><div>将「<strong>{entry.workspace?.name || entry.rootPath}</strong>」从列表移除。</div><div>目录和其中的内容会保留，之后可以重新添加。</div></>,
+        content: <><div>将「<strong>{current.workspace?.name || current.rootPath}</strong>」从列表移除。</div><div>目录和其中的内容会保留，之后可以重新添加。</div></>,
         okText: '移除',
         okButtonProps: { danger: true },
       });
       if (!ok) return;
-      await remove(entry);
+      await remove(current, observed);
     } catch (error) {
       setFailure(error instanceof Error ? error.message : '移除尚未执行，请重试。');
     } finally { confirming.current = false; }
@@ -189,9 +195,6 @@ export function WorkspacesPage() {
       </Button>
       <Button id="empty-create-workspace" onClick={() => openAgentAction('workspace')}>
         让 Agent 创建工作空间
-      </Button>
-      <Button id="empty-later" type="link" onClick={() => setMessage('没有登记任何工作空间。你可以直接退出 Buildr，稍后再次打开。')}>
-        稍后处理
       </Button>
     </Space>}
   /></>;

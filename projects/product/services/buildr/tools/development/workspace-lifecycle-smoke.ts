@@ -99,11 +99,16 @@ try {
   assert.equal(app.listRegisteredWorkspaces().workspaces.some((item:any)=>item.rootPath===second),false);
   response=await fetch(`${url}/api/v1/workspaces/prepare`,{method:'POST',headers,body:JSON.stringify({id:chosen.id,revision:chosen.revision,name:'HTTP validation'})});
   assert.equal(response.status,409);
+  const readdStarted = performance.now();
+  const previousEntry = process.env.BUILDR_NPM_ENTRY_PATH;
+  process.env.BUILDR_NPM_ENTRY_PATH = path.join(second, 'must-not-run-cli.mjs');
   response=await fetch(`${url}/api/v1/workspaces/prepare`,{method:'POST',headers,body:JSON.stringify({id:selectedAgain.id,revision:selectedAgain.revision,name:selectedAgain.name})});
   assert.equal(response.status,200);assert.equal((await response.json()).status,'preparing');
-  response=await fetch(`${url}/api/v1/workspaces/choose`,{method:'POST',headers,body:'{}'});
-  assert.equal(response.status,200);assert.equal((await response.json()).status,'preparing');
-  const restored=await wait(selectedAgain.id);assert.equal(restored.status,'ready',restored.error);
+  // The ready fast path may finish before another request reaches the server.
+  const restored=await wait(selectedAgain.id);
+  process.env.BUILDR_NPM_ENTRY_PATH = previousEntry;
+  assert.equal(restored.status,'ready',restored.error);
+  console.log(JSON.stringify({scenario:'ready-workspace-readd',durationMs:Math.round(performance.now()-readdStarted),cliSpawned:false}));
   assert.equal(restored.workspaceId,prepared.workspaceId);
   assert.equal(app.listRegisteredWorkspaces().workspaces.filter((item:any)=>item.rootPath===second).length,1);
 

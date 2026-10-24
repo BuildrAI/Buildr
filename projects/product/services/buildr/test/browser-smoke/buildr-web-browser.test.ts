@@ -877,12 +877,24 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     await page.setViewportSize({ width: 1280, height: 720 });
     let current: any = runtime.listRegisteredWorkspaces();
+    // A background request can update lastOpenedRoot after the cards were read.
+    // Removal must obtain a fresh snapshot before presenting confirmation.
+    const firstRoot = current.workspaces[0].rootPath;
+    const touchRoot = current.workspaces.find((entry: any) => entry.rootPath !== firstRoot).rootPath;
+    current = runtime.registerLocalWorkspace({ rootPath: firstRoot, revision: current.revision, open: true });
+    current = runtime.registerLocalWorkspace({ rootPath: touchRoot, revision: current.revision, open: true });
+    await page.locator('#workspace-grid .workspace-card').first().getByRole('button', { name: '移除', exact: true }).click();
+    await page.locator('.workspace-remove-dialog').waitFor({state:'visible'});
+    await page.locator('.workspace-remove-dialog').getByRole('button',{name:/移\s*除/}).click();
+    await page.waitForFunction(() => document.querySelectorAll('#workspace-grid .workspace-card').length === 1);
+    assert.equal(runtime.listRegisteredWorkspaces().workspaces.some((entry: any) => entry.rootPath === firstRoot), false);
+    current = runtime.listRegisteredWorkspaces();
     for (const entry of [...current.workspaces]) current = runtime.removeRegisteredWorkspace({ rootPath: entry.rootPath, revision: current.revision });
     await page.goto(url);
     await page.locator('#workspace-empty').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#empty-add-workspace').count(), 1);
     assert.equal(await page.locator('#empty-create-workspace').count(), 1);
-    assert.equal(await page.getByRole('button', { name: '稍后处理' }).count(), 1);
+    assert.equal(await page.getByRole('button', { name: '稍后处理' }).count(), 0);
     current = runtime.registerLocalWorkspace({ rootPath: workspaceRoot, revision: current.revision });
     runtime.registerLocalWorkspace({ rootPath: otherRoot, revision: current.revision });
   });
