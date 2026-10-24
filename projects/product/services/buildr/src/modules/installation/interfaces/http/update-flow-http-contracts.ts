@@ -47,8 +47,8 @@ export const UPDATE_FLOW_HTTP_SCHEMAS = Object.freeze({
 });
 
 export const UPDATE_FLOW_HTTP_OPERATIONS = Object.freeze([
-  {id:'system-installation.resources.location', owner:'system-installation', method:'GET', path:'/api/v1/installation/resources', requestSchemaId:UPDATE_FLOW_HTTP_SCHEMAS.resourceLocationRequest.$id, successSchemaId:UPDATE_FLOW_HTTP_SCHEMAS.resourceLocationResponse.$id, errorSchemaId:UPDATE_FLOW_HTTP_SCHEMAS.errorResponse.$id},
-  {id:'system-installation.resources.open', owner:'system-installation', method:'POST', path:'/api/v1/installation/resources/open', requestSchemaId:UPDATE_FLOW_HTTP_SCHEMAS.resourceOpenRequest.$id, successSchemaId:UPDATE_FLOW_HTTP_SCHEMAS.resourceOpenResponse.$id, errorSchemaId:UPDATE_FLOW_HTTP_SCHEMAS.errorResponse.$id},
+  {id:'system-installation.resources.location', owner:'system-installation', method:'GET', path:'/api/v1/installation/resources', disposition:'migrated-json', responseKind:'json', requestSchemaId:UPDATE_FLOW_HTTP_SCHEMAS.resourceLocationRequest.$id, successSchemaId:UPDATE_FLOW_HTTP_SCHEMAS.resourceLocationResponse.$id, errorSchemaId:UPDATE_FLOW_HTTP_SCHEMAS.errorResponse.$id},
+  {id:'system-installation.resources.open', owner:'system-installation', method:'POST', path:'/api/v1/installation/resources/open', disposition:'migrated-json', responseKind:'json', requestSchemaId:UPDATE_FLOW_HTTP_SCHEMAS.resourceOpenRequest.$id, successSchemaId:UPDATE_FLOW_HTTP_SCHEMAS.resourceOpenResponse.$id, errorSchemaId:UPDATE_FLOW_HTTP_SCHEMAS.errorResponse.$id},
   Object.freeze({
     id: 'system-installation.update-flow.recover', owner: 'system-installation', method: 'POST', path: '/api/v1/update/recover',
     disposition: 'migrated-json', responseKind: 'json',

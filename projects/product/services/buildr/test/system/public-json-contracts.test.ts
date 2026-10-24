@@ -52,9 +52,10 @@ function fixtureWorkspace(t: any, context: any): any  {
 before(async () => {
   await run(['init', '--source-only', '--target', fixtureContexts.plain, '--name', 'json-contracts', '--description', 'JSON contracts fixture', '--profile', 'team'], { json: false, env: fixtureEnv });
   fs.cpSync(fixtureContexts.plain, fixtureContexts.codex, { recursive: true });
-  fixtureRuntime.renderRuntime('codex', ['--target', fixtureContexts.codex], { productSkill: true });
+  // A full runtime sync (not a bare render) completes the shared-resource entry check.
+  fixtureRuntime.syncRuntime('codex', ['--target', fixtureContexts.codex]);
   fs.cpSync(fixtureContexts.codex, fixtureContexts.managed, { recursive: true });
-  fixtureRuntime.renderRuntime('claude-code', ['--target', fixtureContexts.managed], { productSkill: true });
+  fixtureRuntime.syncRuntime('claude-code', ['--target', fixtureContexts.managed]);
 });
 
 after(() => fs.rmSync(fixtureRoot, { recursive: true, force: true }));

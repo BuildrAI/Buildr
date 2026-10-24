@@ -268,9 +268,8 @@ test('real HTTP reads through the bounded worker, saves escaped large UTF-8, rep
   observed = conflict.error.details.current;
   // Control characters expand sixfold in JSON; the actual file remains within five MiB.
   const escaped = '\u0001'.repeat(64 * 1024) + '\n'; observed = await json(await save(body(escaped))); assert.equal(observed.content, escaped); assert.equal(fs.readFileSync(file, 'utf8'), escaped);
-  const receipts = JSON.parse(fs.readFileSync(path.join(root, '.buildr', 'builtin-receipts.json'), 'utf8'));
-  const skill = receipts.builtins.find((item: { type: string }) => item.type === 'skill');
-  if (skill) assert.equal(code.editorFile(root, { kind: 'code', repositoryId, checkoutId: gitCheckoutReadId(root), path: path.posix.join(skill.target, skill.files[0].path) }).readonlyReasonCode, 'file_generated');
+  // Official builtin sources now live in the fixed shared resource store; generated-file
+  // read-only semantics are asserted below on projected runtime files instead.
   const sourceDir = path.join(root, 'source-fixture'); fs.mkdirSync(path.join(sourceDir, 'references'), { recursive: true });
   fs.writeFileSync(path.join(sourceDir, 'SKILL.md'), '---\nname: editor-fixture\ndescription: Editor fixture\n---\n');
   fs.writeFileSync(path.join(sourceDir, 'references', 'guide.md'), '# A projected reference without a generated header\n');

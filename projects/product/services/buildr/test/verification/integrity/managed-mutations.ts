@@ -65,6 +65,12 @@ const allowed: any = new Map([
   ['src/modules/agent-assets/application/package-maintenance.ts', new Set(['syncPackageBuiltins'])],
   ['src/modules/agent-assets/application/package-maintenance/builtin-lifecycle.ts', new Set(['builtinUninstallUnsafe'])],
   ['src/modules/agent-assets/application/package-maintenance/output.ts', new Set(['buildPackageOutput', 'packageBuild'])],
+  // The shared resource set publishes atomically through staging/previous directories it exclusively owns,
+  // and workspace adoption writes only its own .buildr/local record.
+  ['src/infrastructure/product-resources/shared-resources.ts', new Set(['ensurePackageResources', 'adoptPackageResources', 'prepareWorkspaceResourceAdoption'])],
+  // Preserved Archify installs are relocated into Buildr-owned data before the shared set replaces them.
+  ['src/infrastructure/product-resources/preserved-archify.ts', new Set(['preserveArchifyBeforeReplacement'])],
+  ['src/modules/agent-assets/application/package-maintenance/archify-retirement.ts', new Set(['retirePackagedArchify'])],
   ['tools/verification/package-check/smoke-checks.ts', new Set([
     'verifyRecursiveRules', 'verifyWorkspaceAssetLifecycle', 'verifyInitializedWorkspace',
     'verifyExistingAgentsCompatibility', 'runPackageWorkspaceSmoke', 'runPackageDomainIntegration',

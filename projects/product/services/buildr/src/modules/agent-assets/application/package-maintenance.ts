@@ -292,7 +292,8 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
         if (!trusted && !isRestore) { findings.push({ type: 'skill', id: builtin.id, status: 'modified', path: builtin.target }); continue; }
         if (local) { fs.rmSync(targetDir, { recursive: true, force: true }); changed.push(builtin.target); }
         desired.resource = builtin.path;
-        desired.enabled = existing?.enabled ?? desired.enabled;
+        // An explicit restore also lifts the uninstall's enabled=false; plain sync keeps user choices.
+        desired.enabled = isRestore ? true : existing?.enabled ?? desired.enabled;
         // The path remains a portable ownership/display label; resource selects the source.
 
         if (skillsById.has(builtin.id)) {
