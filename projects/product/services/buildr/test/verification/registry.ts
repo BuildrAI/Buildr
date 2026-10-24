@@ -606,6 +606,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/inline-workspace-core-rules.test.ts',
     'test/integration/non-git-workspace-continuity.test.ts',
     'test/integration/shared-resources.test.ts',
+    'test/integration/shared-resource-coexistence.test.ts',
     'test/integration/workspace-lifecycle.test.ts',
     'test/integration/workspace-agent-assets-http-contract.test.ts',
     'test/integration/workspace-composition.test.ts',

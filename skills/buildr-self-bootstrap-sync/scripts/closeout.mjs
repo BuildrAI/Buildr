@@ -695,7 +695,7 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
     let ownedPaths = resume?.paths || [];
     if (actions['sync-retained-workspace'].length && !pendingSuccessor && !resume) {
       start('sync'); assertHead(successor);
-      requirePassed(productCommand(execute, root, nodeExecutable, ['sync', agent, '--target', root, '--json'], 'workspace-sync', active), 'self-bootstrap-closeout.sync-failed', '工作空间同步失败；保留已发生变更。');
+      requirePassed(productCommand(execute, root, nodeExecutable, ['sync', agent, '--publish-resources', '--target', root, '--json'], 'workspace-sync', active), 'self-bootstrap-closeout.sync-failed', '工作空间同步失败；保留已发生变更。');
       assertHead(successor);
       ownedPaths = changedPaths(execute, root, active, 'after-sync');
       markPassed(active, deliveredRef, successor, [{ type: 'workspace-sync', paths: ownedPaths }]);

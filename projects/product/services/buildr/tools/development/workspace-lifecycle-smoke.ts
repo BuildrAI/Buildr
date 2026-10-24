@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { createRuntime, runtimeProvide, runtimeContributions } from '../../src/bootstrap/runtime.ts';
 import { WORKSPACE_APPLICATION } from '../../src/modules/workspace/module.ts';
 import { AGENT_ASSETS_APPLICATION } from '../../src/modules/agent-assets/module.ts';
-import { readResourceAdoption, sharedResourcesRoot } from '../../src/infrastructure/product-resources/shared-resources.ts';
+import { readResourceAdoption, sharedResourcesRoot, publishPackageResources } from '../../src/infrastructure/product-resources/shared-resources.ts';
 let root=process.env.BUILDR_SMOKE_WORKSPACE_ROOT!;assert.ok(root,'Use isolated smoke runner.');
 const service=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 process.env.BUILDR_NPM_ENTRY_PATH=path.join(service,'bin/buildr.mjs');
@@ -88,6 +88,8 @@ try {
 const currentIdentity=readResourceAdoption(root)!.resourceSet;
 for(const workspace of [root,second]){const file=path.join(workspace,'.buildr/local/package-resources.json');const value=JSON.parse(fs.readFileSync(file,'utf8'));fs.writeFileSync(file,JSON.stringify({...value,resourceSet:value.resourceSet.replace(/^\d+/,'999')}));}
 fs.writeFileSync(path.join(sharedResourcesRoot(),'retired-official-file.md'),'must be removed');
+// Simulate the explicit installation update; ordinary Workspace preparation only consumes.
+publishPackageResources();
 fs.renameSync(root,moved);
 await assert.rejects(()=>app.prepareRegisteredWorkspace({rootPath:root,workspaceId:ready.workspaceId}));
 try {const result=await app.prepareRegisteredWorkspace({rootPath:second,workspaceId:secondWorkspaceId!});assert.notEqual(result.status,'removed');}finally{fs.renameSync(moved,root);}

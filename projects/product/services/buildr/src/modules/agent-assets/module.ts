@@ -444,6 +444,7 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
         runtimeImplementation: runtimeApplication.runtimeImplementation,
         assertRuntimeProjectionTarget: projection.assertRuntimeProjectionTarget,
         assertRuntimeSyncTarget: projection.assertRuntimeSyncTarget,
+        renderRuntime: projection.renderRuntime,
         syncRuntime: projection.syncRuntime,
         readSkillManifestSchemaVersion: skills.readSkillManifestSchemaVersion,
         skillsManifestPath: skills.skillsManifestPath,

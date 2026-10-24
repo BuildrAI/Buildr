@@ -30,6 +30,7 @@ export function createUpdateFlowStore(productRoot: string, options: { dataRoot?:
         || !['idle', 'download', 'ready', 'install', 'launcher', 'restart', 'verify', 'workspaces', 'completed'].includes(value.stage)
         || !['install', 'launcher', 'restart', 'verify'].every(key => ['pending', 'running', 'done', 'failed', 'skipped'].includes(value.steps?.[key]))
         || ![value.error, value.launcherError].every(error => error === null || (typeof error?.code === 'string' && typeof error?.message === 'string'))
+        || (value.resourceSetBefore !== undefined && value.resourceSetBefore !== null && typeof value.resourceSetBefore !== 'string')
         || (value.resources !== undefined && !['pending','running','done','failed','skipped'].includes(value.resources))
         || (value.workspaces !== undefined && (!Array.isArray(value.workspaces) || value.workspaces.some((item: any) => typeof item.rootPath !== 'string' || !path.isAbsolute(item.rootPath) || !(item.workspaceId === null || typeof item.workspaceId === 'string') || typeof item.name !== 'string' || !['pending','running','done','failed','skipped'].includes(item.status) || !(item.error === null || typeof item.error === 'string'))))
         || typeof value.updatedAt !== 'string') throw invalid();

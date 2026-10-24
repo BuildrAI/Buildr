@@ -1,4 +1,4 @@
-import { adoptPackageResources, prepareWorkspaceResourceAdoption } from '../../../infrastructure/product-resources/shared-resources.ts';
+import { adoptPackageResources, prepareWorkspaceResourceAdoption, publishPackageResources, readSharedResourceSet } from '../../../infrastructure/product-resources/shared-resources.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -297,13 +297,15 @@ export function registerApplicationRuntime(dependencies: RuntimeProjectionDepend
 
   function syncRuntime(agent: any, args: any): any  {
     const parsed = consumeRuntimeAdapterOption(args);
-    validateRuntimeOperationArgs(parsed.args, ['--target', '--scope', '--json'], ['--json']);
-    const syncArgs: any[] = parsed.args;
+    validateRuntimeOperationArgs(parsed.args, ['--target', '--scope', '--json', '--publish-resources'], ['--json', '--publish-resources']);
+    const publishResources = parsed.args.includes('--publish-resources');
+    const syncArgs: any[] = parsed.args.filter((arg: string) => arg !== '--publish-resources');
     if (!syncArgs.includes('--scope')) syncArgs.push('--scope', '.');
     const targetRoot = path.resolve(optionValue(syncArgs, '--target', process.cwd()));
     const selected = selectWorkspaceRuntime(targetRoot, { runtimeId: agent ?? null, adapterId: parsed.adapterId });
     const { runtimeId, adapterId } = selected;
     const authority = assertRuntimeSyncTarget(targetRoot, runtimeId, adapterId);
+    if (publishResources && authority.source?.linkedWorktree) throw new Error('候选工作树不能发布共享资源；请使用隔离验证目录。');
     if (authority.disposition === 'projection-only') {
       const rendered = renderRuntime(runtimeId, syncArgs, { productSkill: true, runtimeSelection: selected });
       console.warn(authority.diagnostic);
@@ -316,7 +318,9 @@ export function registerApplicationRuntime(dependencies: RuntimeProjectionDepend
       return;
     }
     assertInitializedBuildrWorkspace(targetRoot);
+    if (publishResources) publishPackageResources();
     prepareWorkspaceResourceAdoption(targetRoot);
+    const resourceSet = readSharedResourceSet().id;
     const preflight = buildSyncSourcePlan(targetRoot, adapterId);
     assertSyncSourcePlanReady(preflight);
     const structuredStoreMigration = migrateWorkspaceStructuredStore(targetRoot);
@@ -372,7 +376,7 @@ export function registerApplicationRuntime(dependencies: RuntimeProjectionDepend
       throw new Error(`${runtimeId ?? adapterId} sync 未完成：${finalDoctor.classification.message}${detail}`);
     }
     const hasPending = updated.findings.some((item:any)=>['modified','missing','blocked'].includes(item.status)&&!item.converge);
-    adoptPackageResources(targetRoot, !hasPending);
+    adoptPackageResources(targetRoot, !hasPending, resourceSet);
     console.log('doctor 通过。');
   }
 

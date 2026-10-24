@@ -22,7 +22,7 @@ export function createWebUpdateFlow(dependencies: {
   store?: UpdateStore;
   launcher?: UpdateLauncher;
   devTiming?: { downloadMs?: number; installMs?: number };
-  workspaces?: { list(): WorkspaceUpdate[]; prepareResources?(): unknown; prepare(entry: WorkspaceUpdate, options?: any): Promise<unknown> };
+  workspaces?: { list(): WorkspaceUpdate[]; observeResources?(): string | null; prepareResources?(expectedId?: string | null): unknown; prepare(entry: WorkspaceUpdate, options?: any): Promise<unknown> };
   now?(): string;
 }) {
   const spawnProcess = dependencies.spawnProcess || spawnCommand;
@@ -186,7 +186,7 @@ export function createWebUpdateFlow(dependencies: {
     }
     record({ id: randomUUID(), productRoot: selected.productRoot, mode: selected.mode, previousVersion: selected.version,
       previousInstallationIdentity: selected.installationIdentity || null, track, version: expectedVersion,
-      autoApply: input.autoApply === true, resources: selected.mode === 'npm' && dependencies.workspaces ? 'pending' : 'skipped', workspaces: selected.mode === 'npm' ? dependencies.workspaces?.list() || [] : [],
+      autoApply: input.autoApply === true, ...(selected.mode === 'npm' && dependencies.workspaces?.observeResources ? {resourceSetBefore:dependencies.workspaces.observeResources()} : {}), resources: selected.mode === 'npm' && dependencies.workspaces ? 'pending' : 'skipped', workspaces: selected.mode === 'npm' ? dependencies.workspaces?.list() || [] : [],
       status: 'preparing', stage: 'download', steps: pendingSteps(), installedVersion: null, error: null, launcherError: null }, true);
     if (selected.mode === 'development') void simulate('download');
     else void (async () => {
@@ -220,7 +220,7 @@ export function createWebUpdateFlow(dependencies: {
     try {
       launcher.inspect(job);
       record({ status: 'applying', stage: 'workspaces', steps: { ...job.steps, install: 'done', restart: 'done', verify: 'done' }, error: null });
-      if (job.resources !== 'done') { record({resources:'running'}); await dependencies.workspaces.prepareResources?.(); record({resources:'done'}); }
+      if (job.resources !== 'done') { record({resources:'running'}); await dependencies.workspaces.prepareResources?.(job.resourceSetBefore); record({resources:'done'}); }
       const known = new Set((job.workspaces || []).map(entry => entry.rootPath));
       const added = dependencies.workspaces.list().filter(entry => !known.has(entry.rootPath));
       if (added.length) record({ workspaces: [...(job.workspaces || []), ...added] });

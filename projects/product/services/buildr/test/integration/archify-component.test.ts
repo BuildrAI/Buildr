@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import YAML from 'yaml';
-import { ensurePackageResources, sharedResourcesRoot, readPreservedArchify } from '../../src/infrastructure/product-resources/shared-resources.ts';
+import { publishPackageResources as ensurePackageResources, sharedResourcesRoot, readPreservedArchify } from '../../src/infrastructure/product-resources/shared-resources.ts';
 import { preservedArchifyRoot } from '../../src/infrastructure/product-resources/preserved-archify.ts';
 import { assetIntegrity } from '../../src/modules/agent-assets/infrastructure/component-source.ts';
 import { assembleRuntimeProjection } from '../../src/modules/agent-assets/infrastructure/runtime/projection.ts';

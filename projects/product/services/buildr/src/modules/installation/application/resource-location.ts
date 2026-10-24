@@ -1,14 +1,16 @@
 import fs from 'node:fs';
-import { describePackageResources, inspectSharedResources, sharedResourcesRoot } from '../../../infrastructure/product-resources/shared-resources.ts';
+import { describePackageResources, inspectSharedResources, readSharedResourceSet, sharedResourcesRoot } from '../../../infrastructure/product-resources/shared-resources.ts';
 import { openDirectory } from '../../../infrastructure/filesystem/open-directory.ts';
 
 export function createResourceLocation({ open = openDirectory, productRoot }: { open?: typeof openDirectory; productRoot?: () => string } = {}) {
   function resourceLocation() {
-    const set = describePackageResources(productRoot?.());
+    let set;
+    try { set = readSharedResourceSet(); }
+    catch { set = describePackageResources(productRoot?.()); /* Display the intended location without installing. */ }
     const directory = sharedResourcesRoot();
     let available = false, issue: string | null = null;
     try { inspectSharedResources(set.id); available = true; }
-    catch { issue = fs.existsSync(directory) ? '当前版本的共享资源需要修复，可通过更新或工作空间准备恢复。' : '当前版本的共享资源尚未准备；添加工作空间或更新时会自动准备。'; }
+    catch { issue = fs.existsSync(directory) ? '共享资源需要修复，请通过显式更新恢复。' : '当前版本的共享资源尚未准备；添加工作空间或更新时会自动准备。'; }
     return { version: set.version, resourceSet: set.id, path: directory, available, issue };
   }
   return {

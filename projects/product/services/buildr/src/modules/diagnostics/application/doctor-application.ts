@@ -1,4 +1,4 @@
-import { describePackageResources, inspectSharedResources, readResourceAdoption } from '../../../infrastructure/product-resources/shared-resources.ts';
+import { inspectSharedResources, readResourceAdoption } from '../../../infrastructure/product-resources/shared-resources.ts';
 import path from 'node:path';
 import { resolveRuntimeSelection } from '../../agent-assets/infrastructure/runtime/adapter-contract.ts';
 
@@ -210,12 +210,10 @@ export function registerSystemDoctorApplication(dependencies: DoctorDependencies
     if (result.workspace?.initialized) {
       try {
         const adopted = readResourceAdoption(targetRoot);
-        const desired = describePackageResources();
-        if (!adopted || adopted.resourceSet !== desired.id) addDoctorFinding(result, 'warning', 'workspace.resources_outdated', '此工作空间尚未采用当前 Buildr 资源。', { path: '.buildr/local/package-resources.json', suggestion: '在 Buildr 中重试准备此工作空间。', userActionRequired: false });
         const shared = inspectSharedResources();
-        if (shared.id !== desired.id) addDoctorFinding(result, 'warning', 'workspace.resources_store_outdated', '本机共享资源尚未匹配当前 Buildr，请重新准备。', { path: 'resources/resource-set.json', userActionRequired: false });
+        if (!adopted || adopted.resourceSet !== shared.id) addDoctorFinding(result, 'warning', 'workspace.resources_outdated', '此工作空间的本机入口尚未刷新到当前共享资源。', { path: '.buildr/local/package-resources.json', suggestion: '在 Buildr 中重试准备此工作空间。', userActionRequired: false });
         if (adopted && !adopted.ready) addDoctorFinding(result, 'warning', 'workspace.resources_pending', '工作空间尚未按固定共享目录完成入口检查。', { path: '.buildr/local/package-resources.json', userActionRequired: false });
-      } catch (error: any) { addDoctorFinding(result, 'error', 'workspace.resources_invalid', error.message, { path: '.buildr/local/package-resources.json', suggestion: '在 Buildr 中重试准备此工作空间。', userActionRequired: false }); }
+      } catch (error: any) { addDoctorFinding(result, 'warning', 'workspace.resources_invalid', error.message, { path: '.buildr/local/package-resources.json', suggestion: '在 Buildr 中重试准备此工作空间。', userActionRequired: false }); }
       try {
         const builtinStatus = inspectPackageBuiltins(targetRoot);
         result.builtins.items = builtinStatus.findings;
