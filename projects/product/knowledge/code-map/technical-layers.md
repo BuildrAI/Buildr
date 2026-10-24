@@ -42,7 +42,7 @@
 
 - **宿主（Host）适配**：[agent-service/module.ts](../../services/buildr/src/modules/agent-service/module.ts) 按公开包名装配 `createAgentService`，提供已登记工作空间（Workspace）解析和任务（Task）存在检查；[HTTP 入口](../../services/buildr/src/modules/agent-service/interfaces/http/agent-service-http.ts)接入本机认证和独立控制请求，不维护对话副本。
 - **独立服务（Service）**：[公开入口](../../services/buildr-agent/src/index.ts)创建账号应用、对话应用、事件与私有库；[contracts.ts](../../services/buildr-agent/src/contracts.ts)只公开宿主依赖、视图及执行器（Executor）协议，主包不导入私有源码。
-- **工具路径**：[工具环境](../../services/buildr-agent/src/executors/tool-environment.ts)仅提供原用户路径线索和官方浏览器缓存，账号 HOME 仍独立；[随包准备方法](../../services/buildr/resources/runtime/skills/buildr/references/browser-tools.md)由智能体发现、复用或按官方方式安装工具，不新增工具管理平台。
+- **工具路径**：[工具环境](../../services/buildr-agent/src/executors/tool-environment.ts)仅提供原用户路径线索和官方浏览器缓存，账号 HOME 仍独立；[接入环境说明](../../services/buildr/resources/runtime/skills/buildr/references/agent-operations.md#内部对话与持续执行)由智能体发现、复用或按官方方式安装工具，不新增工具管理平台。
   - [connection-application.ts](../../services/buildr-agent/src/application/connection-application.ts)：每家独立配置、官方登录、模型目录及真实程序绑定；运行中关闭、停止和授权可以独立响应。
   - [conversation-application.ts](../../services/buildr-agent/src/application/conversation-application.ts)：按对话版本和模型能力生成发送预览，保存实际模型、思考深度（Reasoning Effort）、权限模式（Permission Mode）及请求身份后启动原生执行；按参与者和原生条目身份归并历史，协调独立短标题及手动名保护，保留受理、待确认、仍有工具和已结束的区别。单工具停止失败不改写整轮停止事实。
   - [conversation-repository.ts](../../services/buildr-agent/src/persistence/conversation-repository.ts)：写入本机运行配置（Profile）的 `agent-service/conversations.sqlite`，与任务数据库分离；保存比较前一修订，不在模型执行期间持有数据库事务（Transaction）。

@@ -60,7 +60,7 @@ DSH 在对话中选择模型会改变这套独立配置的后续默认模型；�
 
 重新打开先读 Buildr 统一历史，再对各参与者按原程序、独立配置、起始目录和原生上下文身份恢复。页面刷新或宿主（Host）重启不会自动重发原指令，也不重放旧授权；无法确认是否受理或执行是否结束时保留“待确认”（`unknown`），重新观察原执行。已完成和已停止的持久事实不因失去活跃连接被改写为未完成。
 
-浏览器验证工具由智能体按[随包方法](../../../services/buildr/resources/runtime/skills/buildr/references/browser-tools.md)发现和准备。账号 `HOME` 保持独立，`BUILDR_HOST_HOME` 提供原用户路径线索；`PLAYWRIGHT_BROWSERS_PATH` 保留明确覆盖或解析到原用户的官方默认缓存，允许三家复用已有浏览器。Buildr 不新增工具管理平台或统一安装目录。关于接入、自研与职责分层，见[责任边界](agent-boundaries.md)。
+浏览器验证工具由智能体按[接入环境说明](../../../services/buildr/resources/runtime/skills/buildr/references/agent-operations.md#内部对话与持续执行)发现和准备。账号 `HOME` 保持独立，`BUILDR_HOST_HOME` 提供原用户路径线索；`PLAYWRIGHT_BROWSERS_PATH` 保留明确覆盖或解析到原用户的官方默认缓存，允许三家复用已有浏览器。Buildr 不新增工具管理平台或统一安装目录。关于接入、自研与职责分层，见[责任边界](agent-boundaries.md)。
 
 ## 同一对话怎样切换执行方
 

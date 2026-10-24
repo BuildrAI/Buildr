@@ -127,8 +127,9 @@ test('the real frozen Buildr npm artifact installs the private runtime without s
     assert.equal(toolEnvironment({ HOME: '/users/clean' }, 'darwin').PLAYWRIGHT_BROWSERS_PATH, '/users/clean/Library/Caches/ms-playwright');
     assert.equal(toolEnvironment({ HOME: '/users/clean', PLAYWRIGHT_BROWSERS_PATH: '0' }).PLAYWRIGHT_BROWSERS_PATH, '0');
     const installedSkillRoot = path.join(process.cwd(), 'payload/product/resources/runtime/skills/buildr');
-    assert.ok(fs.existsSync(path.join(installedSkillRoot, 'references/browser-tools.md')), 'the installed package must deliver preparation instructions without experimental files');
-    assert.match(fs.readFileSync(path.join(installedSkillRoot, 'SKILL.md'), 'utf8'), /references\\/browser-tools\\.md/);
+    const connectionGuide = fs.readFileSync(path.join(installedSkillRoot, 'references/agent-operations.md'), 'utf8');
+    assert.ok(connectionGuide.includes('BUILDR_HOST_HOME'), 'the installed connection guide must explain host tool discovery');
+    assert.ok(connectionGuide.includes('PLAYWRIGHT_BROWSERS_PATH'), 'the installed connection guide must explain browser cache reuse');
     const dependencies = JSON.parse(fs.readFileSync(path.join(agentRoot, 'package.json'), 'utf8')).dependencies;
     const permissionRemote = await import(agentRequire.resolve('@deepseek-ai/dsh-permission-presets/remote'));
     const sdk = await import(agentRequire.resolve('@qoder-ai/qoder-agent-sdk'));
