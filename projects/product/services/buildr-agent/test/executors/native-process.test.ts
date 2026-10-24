@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm, rename } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, rename, realpath, stat } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { NativeRpc, bindingFingerprint, nativeBinding, isolatedEnvironment, opaqueReference, parseReference } from '../../build/executors/native-process.js';
@@ -48,7 +49,7 @@ test('native context binding rejects another provider, directory or configuratio
 test('compatible binary replacement preserves each native binding, while other sources and configs cannot adopt it', async () => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-native-upgrade-'));
   try {
-    for (const [provider, before, after] of [['codex','0.163.0-alpha.11.2','0.163.1'],['dsh','0.2.1-rc.2','0.2.1-rc.3'],['qoder','1.1.75','1.1.76']]) {
+    for (const [provider, before, after] of [['codex','0.163.0-alpha.11.2','0.164.0-alpha.11.1'],['dsh','0.2.1-rc.2','0.3.0-rc.1'],['qoder','1.1.75','1.2.0']]) {
       const connection = join(root, provider); await mkdir(connection);
       const config = join(connection,'native-home'); await mkdir(config);
       const executable = join(root,`${provider}.js`); await writeFile(executable,'old program');
@@ -66,6 +67,25 @@ test('compatible binary replacement preserves each native binding, while other s
       await assert.rejects(nativeBinding(provider!,executable,'9.9.9',config,binding),/version_unsupported/);
     }
   } finally { await rm(root,{recursive:true,force:true}); }
+});
+test('major admission preserves v2 fingerprints saved under the old minor-series policy', async () => {
+  const root=await mkdtemp(join(tmpdir(),'buildr-native-v2-admission-'));
+  try {
+    for (const [provider,series,before,after] of [['codex','0.163','0.163.0','0.164.0-alpha.11.1'],['dsh','0.2','0.2.1-rc.2','0.3.0'],['qoder','1.1','1.1.75','1.2.0']]) {
+      const executable=join(root,`${provider}.js`);await writeFile(executable,'program');
+      const configRoot=join(root,provider!);await mkdir(configRoot);const config=await realpath(configRoot),info=await stat(config);
+      // Construct the bytes persisted before this change, without the new policy.
+      const provenance={format:'buildr-native-binding/v2',provider,executable:await realpath(executable),config,dev:info.dev,ino:info.ino,series};
+      const identity=createHash('sha256').update(JSON.stringify(provenance)).digest('hex');
+      const prior={identity,data:{...provenance,observedVersion:before}};
+      const reference=opaqueReference(provider!,'existing-native-context',root,identity);
+      const actual=await nativeBinding(provider!,executable,after!,configRoot,prior);
+      assert.equal(actual.identity,identity);assert.equal(actual.data.series,series);
+      assert.equal((await nativeBinding(provider!,executable,after!,configRoot)).identity,identity);
+      assert.equal(parseReference(reference,provider!,root,actual.identity).nativeSessionId,'existing-native-context');
+      await assert.rejects(nativeBinding(provider!,executable,after!,configRoot,{...prior,data:{...prior.data,series:'other'}}),/binding_mismatch/);
+    }
+  } finally {await rm(root,{recursive:true,force:true});}
 });
 test('pre-provenance bindings retain their native identity only at recorded legacy locations', async () => {
   const root=await mkdtemp(join(tmpdir(),'buildr-native-legacy-'));

@@ -21,9 +21,9 @@ export function safeDiagnostic(error: unknown): string {
   const code = error instanceof Error ? error.message.split(':')[0] : '';
   const messages: Record<string, string> = {
     agent_program_missing: '未找到原生程序，请选择已安装程序的准确绝对路径。',
-    codex_version_unsupported: '当前接入兼容 Codex 0.163.x，包含该系列预发布版本。',
-    dsh_version_unsupported: '当前接入兼容 DSH 0.2.x，包含该系列预发布版本。',
-    qoder_version_unsupported: '当前接入兼容 Qoder CLI 1.1.x，包含该系列预发布版本，并需通过内置 SDK 的实际连接检查。',
+    codex_version_unsupported: '当前接入接受 Codex 0.x.x，包含有效预发布版本，仍需通过实际连接检查。',
+    dsh_version_unsupported: '当前接入接受 DSH 0.x.x，包含有效预发布版本，仍需通过实际连接检查。',
+    qoder_version_unsupported: '当前接入接受 Qoder CLI 1.x.x，包含有效预发布版本，仍需通过内置 SDK 的实际连接检查。',
     agent_context_binding_mismatch: '原生上下文与当前目录或配置身份不匹配，原记录已保留。',
     agent_native_timeout: '原生程序响应超时，请重新观察；不会自动重发工作指令。',
     agent_request_stale: '原生问题或授权已失效，请重新观察。',

@@ -1,4 +1,4 @@
-import { isCompatibleProgram } from '../program-policy.ts';
+import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import type { AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorRequest, ExecutorSendInput, LoginObservation, PermissionMode } from '../../contracts.ts';
@@ -30,7 +30,7 @@ export class DshRuntime implements AgentRuntime {
     await privateDirectories(options.configRoot, home, temporary, config, agents);
     const env = isolatedEnvironment(options.environment, home, temporary, { DSH_HOME: config, DSH_AGENTS_HOME: agents, DSH_TOOLS_MODE: 'native' });
     const executable = await findExecutable(options.executable, ['dsh', 'dsh.exe'], env); const version = await inspectVersion(executable, env, options.signal);
-    if (!isCompatibleProgram('dsh', version)) throw new Error('dsh_version_unsupported: requires 0.2.x');
+    if (!isCompatibleProgram('dsh', version)) throw new Error(`dsh_version_unsupported: requires ${nativeProgramPolicy('dsh').compatibility}`);
     const binding = await nativeBinding('dsh', executable, version, config, options.binding);
     const host = await launchDshHost(executable, env, options.configRoot, options.signal);
     const runtime = new DshRuntime(binding.identity, host, host.client);

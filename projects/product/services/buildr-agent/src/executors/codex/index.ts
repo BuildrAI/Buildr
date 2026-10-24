@@ -1,4 +1,4 @@
-import { isCompatibleProgram } from '../program-policy.ts';
+import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
 import { join } from 'node:path';
 import type { AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorRequest, ExecutorSendInput, ExecutorTitleInput, LoginObservation, PermissionMode } from '../../contracts.ts';
 import { NativeRpc, nativePreview, nativeBinding, bounded, findExecutable, inspectVersion, isolatedEnvironment, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories, visibleText, type RpcMessage } from '../native-process.ts';
@@ -30,7 +30,7 @@ class CodexRuntime implements AgentRuntime {
     const env = isolatedEnvironment(options.environment, home, temporary, { CODEX_HOME: config });
     const executable = await findExecutable(options.executable, ['codex', 'codex.exe'], env);
     const version = await inspectVersion(executable, env, options.signal);
-    if (!isCompatibleProgram('codex', version)) throw new Error('codex_version_unsupported: requires 0.163.x');
+    if (!isCompatibleProgram('codex', version)) throw new Error(`codex_version_unsupported: requires ${nativeProgramPolicy('codex').compatibility}`);
     const binding = await nativeBinding('codex', executable, version, config, options.binding);
     const launch = nativeCommand(executable);
     const rpc = new NativeRpc(launch.command, [...launch.prefix, 'app-server', '--listen', 'stdio://', '-c', 'cli_auth_credentials_store="file"'], { cwd: options.configRoot, env });

@@ -6,7 +6,8 @@ import test, { type TestContext } from 'node:test';
 import { createAgentService } from '../src/index.ts';
 import type { AgentExecutor, AgentProgramManager, AgentRuntime, LoginObservation, ProgramCatalog } from '../src/contracts.ts';
 import { NativeProgramManager } from '../src/executors/program-manager.ts';
-import { isCompatibleProgram } from '../src/executors/program-policy.ts';
+import { isCompatibleProgram, nativeProgramPolicy } from '../src/executors/program-policy.ts';
+import { safeDiagnostic } from '../src/domain/agent-state.ts';
 
 function fixture(t: TestContext) {
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-preparation-test-'));
@@ -97,15 +98,24 @@ test('native discovery deduplicates real paths, rejects unsupported versions and
   const actual=fs.realpathSync(program);
   const found=await manager.discover({provider:'codex',signal});assert.equal(found.candidates.filter(item=>item.executable===actual).length,1);assert.equal(found.candidates.find(item=>item.executable===actual)?.compatible,true);
   const missing=await manager.discover({provider:'codex',executable:path.join(bin,'missing'),signal});assert.equal(missing.candidates.length,1);assert.equal(missing.candidates[0]?.compatible,false);
+  for (const [provider,version] of [['codex','0.164.0-alpha.11.1'],['dsh','0.3.0-rc.1'],['qoder','1.2.0']]) {
+    fs.writeFileSync(program,`console.log('${provider} ${version}');\n`);
+    const updated=await manager.discover({provider,executable:program,signal});
+    assert.equal(updated.candidates[0]?.compatible,true);assert.equal(updated.candidates[0]?.version,version);
+    assert.equal(updated.candidates[0]?.diagnostic,undefined);
+  }
   fs.writeFileSync(program,"console.log('codex-cli 9.9.9');\n");const unsupported=await manager.discover({provider:'codex',executable:program,signal});assert.equal(unsupported.candidates[0]?.compatible,false);
   assert.equal(isCompatibleProgram('codex','0.163.0-alpha.11.3'),true);
 });
-test('compatibility follows version families including prereleases, independently of download pins',()=>{
-  for(const [provider,versions] of Object.entries({codex:['0.163.0','0.163.12','0.163.0-alpha.11.3','0.163.2+build.9'],dsh:['0.2.0','0.2.1-rc.2','0.2.1-rc.3','0.2.99'],qoder:['1.1.75','1.1.76','1.1.99-beta.1']})){
+test('admission follows each major including minor upgrades and prereleases, independently of download pins',()=>{
+  for(const [provider,versions] of Object.entries({codex:['0.0.0','0.162.99','0.163.0','0.164.0-alpha.11.1','0.200.2+build.9'],dsh:['0.1.99','0.2.0','0.2.1-rc.3','0.3.0-beta.1','0.99.99'],qoder:['1.0.0','1.1.75','1.2.0','1.99.99-beta.1+build.9']})){
     for(const version of versions)assert.equal(isCompatibleProgram(provider,version),true,`${provider} ${version}`);
   }
-  for(const [provider,versions] of Object.entries({codex:['0.164.0','0.162.99','1.163.0'],dsh:['0.3.0','0.1.99','1.2.0'],qoder:['1.2.0','1.0.99','2.1.0']})){
-    for(const version of [...versions,'0.2','garbage','0.2.01','0.2.1-rc..3','0.2.1-01'])assert.equal(isCompatibleProgram(provider,version),false,`${provider} ${version}`);
+  for(const [provider,versions] of Object.entries({codex:['1.0.0','2.163.0'],dsh:['1.0.0','2.2.0'],qoder:['0.99.99','2.0.0']})){
+    const major=nativeProgramPolicy(provider).major;
+    for(const version of [...versions,'garbage',`${major}.2`,`${major}.2.01`,`${major}.02.1`,`${major}.2.1-rc..3`,`${major}.2.1-01`])assert.equal(isCompatibleProgram(provider,version),false,`${provider} ${version}`);
+    assert.ok(safeDiagnostic(new Error(`${provider}_version_unsupported`)).includes(nativeProgramPolicy(provider).compatibility),'safe runtime diagnostics use the current range');
+    assert.equal(isCompatibleProgram(provider,nativeProgramPolicy(provider).version),true,'pinned downloads remain admitted');
   }
 });
 test('fixed package installer uses an isolated prefix, verifies its result and reuses it',async t=>{

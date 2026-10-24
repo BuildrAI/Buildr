@@ -35,13 +35,13 @@ test('Codex native adapter preserves exact context, streams, answers and stops o
     const history = await runtime.readHistory({ contextRef: reference, cwd: workspace }); assert.ok(history.some(item => item.id === 'user-turn-0' && item.executionId === 'turn-0'));
     await assert.rejects(runtime.resumeContext({ contextRef: reference, cwd: root }), /binding_mismatch/);
     const prior={identity:runtime.bindingIdentity,data:runtime.bindingData};await runtime.close();
-    await writeFile(executable,source.replace('codex 0.163.0','codex 0.163.1'));
+    await writeFile(executable,source.replace('codex 0.163.0','codex 0.164.0-alpha.11.1'));
     runtime=await createCodexExecutor().open({...options,binding:prior});
-    assert.equal(runtime.bindingIdentity,binding);assert.equal(runtime.bindingData?.observedVersion,'0.163.1');
+    assert.equal(runtime.bindingIdentity,binding);assert.equal(runtime.bindingData?.observedVersion,'0.164.0-alpha.11.1');
     await runtime.resumeContext({contextRef:reference,cwd:workspace});
     assert.ok((await runtime.readHistory({contextRef:reference,cwd:workspace})).some(item=>item.id==='user-turn-0'));
     await runtime.close();runtime=undefined;
-    await writeFile(executable,source.replace('codex 0.163.0','codex 0.164.0'));
+    await writeFile(executable,source.replace('codex 0.163.0','codex 1.0.0'));
     await assert.rejects(createCodexExecutor().open({...options,binding:prior}),/version_unsupported/);
   } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
 });

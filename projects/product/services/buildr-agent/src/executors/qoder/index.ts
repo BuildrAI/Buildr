@@ -1,4 +1,4 @@
-import { isCompatibleProgram } from '../program-policy.ts';
+import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -35,7 +35,7 @@ class QoderRuntime implements AgentRuntime {
     await privateDirectories(options.configRoot, home, temporary, config);
     const env = isolatedEnvironment(options.environment, home, temporary, { QODER_CONFIG_DIR: config });
     const executable = await findExecutable(options.executable, ['qodercli', 'qoder', 'qodercli.exe'], env); const version = await inspectVersion(executable, env, options.signal);
-    if (!isCompatibleProgram('qoder', version)) throw new Error('qoder_version_unsupported: requires 1.1.x');
+    if (!isCompatibleProgram('qoder', version)) throw new Error(`qoder_version_unsupported: requires ${nativeProgramPolicy('qoder').compatibility}`);
     const binding = await nativeBinding('qoder', executable, version, config, options.binding);
     const rpc = new NativeRpc(process.execPath, [fileURLToPath(new URL(import.meta.url.endsWith('.ts') ? './worker.ts' : './worker.js', import.meta.url))], { cwd: options.configRoot, env });
     const runtime = new QoderRuntime(binding.identity, rpc, executable, env, options.configRoot);
