@@ -15,6 +15,6 @@ export function WorkspacePreparationNotice({workspaceId}:{workspaceId:string}) {
   if(!incoming)return null;
   return <>
     {progress?.status!=='ready'&&<Alert showIcon type={progress?.status==='failed'?'warning':'info'} message={progress?.status==='failed'?'此工作空间尚未准备完成，已有内容已保留。':'正在为此工作空间准备新版工作内容。'} action={<Button size="small" onClick={()=>setOpen(true)}>{progress?.status==='failed'?'查看并重试':'查看进度'}</Button>}/>}
-    <AddWorkspaceDialog key={workspaceId} incoming={incoming} open={open} onClose={()=>setOpen(false)} onReady={()=>{}} onOpen={()=>setOpen(false)} onProgress={setProgress}/>
+    <AddWorkspaceDialog key={workspaceId} incoming={incoming} open={open} onClose={()=>setOpen(false)} onSettled={()=>{}} onProgress={setProgress}/>
   </>;
 }

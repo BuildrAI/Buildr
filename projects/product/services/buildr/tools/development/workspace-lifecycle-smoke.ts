@@ -83,6 +83,30 @@ try {
   const prepared=await wait(chosen.id);assert.equal(prepared.status,'ready',prepared.error);secondWorkspaceId=prepared.workspaceId;
   response=await fetch(`${url}/api/v1/workspaces/preparations/${chosen.id}`);assert.equal(response.status,200);assert.equal((await response.json()).status,'ready');
   response=await fetch(`${url}/api/v1/workspaces/open`,{method:'POST',headers,body:JSON.stringify({workspaceId:prepared.workspaceId})});assert.equal(response.status,200);assert.equal((await response.json()).ready,true);
+  // A completed operation must not skip confirmation or stand in for registry membership.
+  const registered = app.listRegisteredWorkspaces();
+  response=await fetch(`${url}/api/v1/workspaces`,{method:'DELETE',headers,body:JSON.stringify({revision:registered.revision,rootPath:second})});
+  assert.equal(response.status,200);
+  const removedRegistry:any=await response.json();
+  assert.equal(removedRegistry.workspaces.some((item:any)=>item.rootPath===second),false);
+  response=await fetch(`${url}/api/v1/workspaces/choose`,{method:'POST',headers,body:'{}'});
+  assert.equal(response.status,200);
+  const selectedAgain:any=await response.json();
+  assert.equal(selectedAgain.status,'selected');
+  assert.equal(selectedAgain.id,chosen.id);
+  assert.equal(selectedAgain.workspaceId,prepared.workspaceId);
+  assert.ok(selectedAgain.revision>prepared.revision);
+  assert.equal(app.listRegisteredWorkspaces().workspaces.some((item:any)=>item.rootPath===second),false);
+  response=await fetch(`${url}/api/v1/workspaces/prepare`,{method:'POST',headers,body:JSON.stringify({id:chosen.id,revision:chosen.revision,name:'HTTP validation'})});
+  assert.equal(response.status,409);
+  response=await fetch(`${url}/api/v1/workspaces/prepare`,{method:'POST',headers,body:JSON.stringify({id:selectedAgain.id,revision:selectedAgain.revision,name:selectedAgain.name})});
+  assert.equal(response.status,200);assert.equal((await response.json()).status,'preparing');
+  response=await fetch(`${url}/api/v1/workspaces/choose`,{method:'POST',headers,body:'{}'});
+  assert.equal(response.status,200);assert.equal((await response.json()).status,'preparing');
+  const restored=await wait(selectedAgain.id);assert.equal(restored.status,'ready',restored.error);
+  assert.equal(restored.workspaceId,prepared.workspaceId);
+  assert.equal(app.listRegisteredWorkspaces().workspaces.filter((item:any)=>item.rootPath===second).length,1);
+
 } finally {await server.shutdown();}
 // A global replacement succeeds for available spaces; an unavailable stale space retries latest.
 const currentIdentity=readResourceAdoption(root)!.resourceSet;

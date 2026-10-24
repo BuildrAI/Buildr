@@ -26,7 +26,12 @@ export function createWorkspacePreparation(runtime: any) {
     if (runtime.registryRepository.isSharedRegistryScope() && ephemeralWorkspaceRootReason(root)) throw fail('workspace_registry_ephemeral_root', '请选择需要长期保留的本机目录。');
     const registered = runtime.listRegisteredWorkspaces().workspaces.find((entry: any) => entry.rootPath === root);
     const known = store.list().find(entry=>entry.rootPath===root&&entry.directoryIdentity===identity(root));
-    if (known) return known;
+    if (known) {
+      const observed = read(known.id);
+      if (observed.status === 'preparing') return observed;
+      // Completed preparation is not proof of a current registry entry.
+      return write({ ...observed, status: 'selected', error: null, details: undefined, customizations: undefined, ownerPid: undefined }, observed.revision);
+    }
     return write({ id: randomUUID(), revision: 0, rootPath: root, directoryIdentity: identity(root), name: registered?.workspace?.name || path.basename(root), workspaceId: registered?.workspace?.id || null, status: 'selected', error: null, updatedAt: '' }, null);
   }
   // Shared resources are capability inputs, not the authority for opening a Workspace.
@@ -62,14 +67,14 @@ export function createWorkspacePreparation(runtime: any) {
     if (fs.existsSync(metadata)) {
       const record = runtime.readWorkspaceRecord(root);
       if (expectedWorkspaceId && record.workspace.id !== expectedWorkspaceId) throw fail('workspace_identity_conflict', '目录中的工作空间身份已变化。');
+      runtime.canonicalWorkspaceManagementIdentity(root);
+      runtime.ensureRegisteredTarget(root);
       const selfBootstrap=runtime.readComponentsManifestForWrite(root).components.some((entry:any)=>entry.id==='buildr-self-bootstrap'&&entry.enabled!==false&&entry.state!=='uninstalled');
       if(selfBootstrap) {
         const adopted=readResourceAdoption(root);
         if(adopted?.ready) { const refresh=refreshResourceProjection(root); if(refresh.status==='failed')throw fail('workspace_resource_projection_failed',`本机技能入口尚未刷新，其他工作可继续。${refresh.message}`); return {workspaceId:record.workspace.id,name:record.workspace.name}; }
         throw fail('workspace_self_bootstrap_owned','此 Buildr 开发工作空间需要由自身维护程序更新，当前目录已保留。');
       }
-      runtime.canonicalWorkspaceManagementIdentity(root);
-      runtime.ensureRegisteredTarget(root);
       initialized = true;
     } else if (expectedWorkspaceId) throw fail('workspace_identity_conflict', '已登记工作空间的身份文件已不存在，未重新初始化。');
     if (keep.length) runtime.keepPackageCustomizations(root,keep);

@@ -190,6 +190,8 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
     setSettingsOpen(true);
   }, []);
 
+  const refreshWorkspaceRegistry = useCallback(() => setWorkspaceRegistryRevision(value => value + 1), []);
+
   const workspaceSettingsSaved = (id: string, data: WorkspaceResponse) => {
     if (id === activeWorkspaceId.current) setWorkspace(data);
     setRegistry(entries => entries.map(entry => entry.workspace?.id === id ? { ...entry, workspace: data.workspace } : entry));
@@ -330,6 +332,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
     setWorkspace,
     openWorkspaceSettings,
     workspaceRegistryRevision,
+    refreshWorkspaceRegistry,
     openAgentAction,
     breadcrumbParts,
     setBreadcrumbParts,
