@@ -8,6 +8,7 @@ import { apiError } from './responses.ts';
 import { createLocalWorkspaceRequestRouter } from './router.ts';
 
 export function createLocalWorkspaceServer(runtime: any, {
+  onReady = null,
   targetRoot = null,
   port = 0,
   instanceSecret = null,
@@ -133,6 +134,7 @@ export function createLocalWorkspaceServer(runtime: any, {
   const ready: Promise<any> = new Promise((resolve: any, reject: any) => {
     server.once('error', reject);
     server.listen(port, '127.0.0.1', () => {
+      onReady?.();
       server.removeListener('error', reject);
       const address = server.address();
       if (!address || typeof address === 'string') throw new Error('Buildr Web server did not bind a TCP address.');

@@ -30,7 +30,7 @@ test('documentation, test and independent plugin commits preserve running develo
   const f = fixture(t);
   const initial = readCurrentInstallationOrigin(f.product);
   const running = { ...initial, installationIdentity: initial.ownershipIdentity };
-  for (const name of ['README.md', `${service}/docs/start.md`, `${service}/test/example.test.ts`, `${frontend}/test/example.test.ts`, 'projects/product/services/dsh-plugin/plugin/bridge.ts']) {
+  for (const name of ['README.md', `${service}/docs/start.md`, `${service}/tools/verification/package-check/bootstrap.yml`, `${service}/test/example.test.ts`, `${frontend}/test/example.test.ts`, 'projects/product/services/dsh-plugin/plugin/bridge.ts']) {
     f.write(name, 'changed\n'); f.commit();
     const current = readCurrentInstallationOrigin(f.product);
     assert.notEqual(current.sourceCommit, initial.sourceCommit);
@@ -41,7 +41,7 @@ test('documentation, test and independent plugin commits preserve running develo
   }
 });
 
-for (const name of [`${service}/src/index.ts`, `${service}/package-lock.json`, `${frontend}/src/App.tsx`, `${frontend}/vite.config.ts`, `${frontend}/package-lock.json`, `${service}/tools/development/run-development-cli`, `${service}/tools/development/resolve-development-node`, 'projects/product/.node-version', `${service}/tools/codegen/contracts/task-dto.ts`, `${service}/resources/contracts/bootstrap.yml`, `${service}/web-dist/index.html`]) {
+for (const name of [`${service}/src/index.ts`, `${service}/package-lock.json`, `${frontend}/src/App.tsx`, `${frontend}/vite.config.ts`, `${frontend}/package-lock.json`, `${service}/tools/development/run-development-cli`, `${service}/tools/development/resolve-development-node`, 'projects/product/.node-version', `${service}/tools/codegen/contracts/task-dto.ts`, `${service}/web-dist/index.html`]) {
   test(`runtime input ${name} changes identity before a commit`, t => {
     const f = fixture(t), initial = f.identity();
     assert.match(initial!, /^sha256-[a-f0-9]{64}$/);

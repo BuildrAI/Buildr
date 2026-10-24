@@ -48,7 +48,7 @@ export function ServiceRuntimeSection({ serviceCode, serviceName }: Props) {
     {detail.loading && !service ? <p className="runtime-section-note">正在读取运行状态…</p> : null}
     <LocalRuntimeSurface services={service ? [service] : []} runs={service?.runs || []} busyIds={stopping ? [stopping] : []} startDisabled={!definition} onStart={start} onStop={run => void stop(run)} onLogs={setLogRun} onConnection={start} taskHref={id => workspaceHref(workspaceId, `/tasks/${encodeURIComponent(id)}`)} configuration={definition ? <RuntimeConfigurationSummary definition={definition} onView={() => setDefinitionOpen(true)} onConfigure={() => setDiscoveryOpen(true)} /> : null} />
     <p className="runtime-scope-note">本地运行托管进程和日志，不管理共享环境的注册、流量或消息队列。就绪不代表业务验证完成。</p>
-    <StartWorktreeModal open={startOpen} serviceCode={serviceCode} serviceName={serviceName} initialRun={initialRun} onClose={() => setStartOpen(false)} onStarted={() => detail.refresh({ silent: true })} />
+    <StartWorktreeModal open={startOpen} serviceCode={serviceCode} serviceName={serviceName} initialRun={initialRun} onClose={() => setStartOpen(false)} onStarted={async () => { await detail.refresh({ silent: true }); }} />
     <RuntimeDefinitionDrawer service={definitionOpen && service ? service : null} onClose={() => setDefinitionOpen(false)} onConfigure={() => { setDefinitionOpen(false); setDiscoveryOpen(true); }} />
     <AgentDiscoveryDrawer open={discoveryOpen} serviceCode={serviceCode} serviceName={serviceName} onClose={() => setDiscoveryOpen(false)} />
     <LocalLogsDrawer open={Boolean(logRun)} run={service?.runs.find(run => run.id === logRun?.id) || logRun} serviceName={serviceName} onClose={() => setLogRun(null)} />

@@ -4,6 +4,7 @@ import type { TextAreaRef } from 'antd/es/input/TextArea';
 import { Alert, Button, Form, Input, Modal, Select, Space, Spin, message } from 'antd';
 import { CopyOutlined, EyeOutlined, EditOutlined, SaveOutlined } from '@ant-design/icons';
 import { publicationApi, type PublicationAsset, type PublicationDetail, type PublicationDraft } from '../api/publication-api';
+import { articleEditorRemains } from '../publication-navigation';
 import { articleDraft, insertMarkdown, publicationStatus, writingMethods } from '../publication-model';
 import { copyText } from '../../../lib/copyText';
 import { ArticleAssetsPanel } from './ArticleAssetsPanel';
@@ -33,9 +34,15 @@ export function ArticleEditorPanel({ workspaceId, projectCode, publicationId, so
   exitState.current = { dirty, busy };
   const exiting = useRef(false);
   const blocker = useBlocker(({ nextLocation }) => {
-    // 预览面板在同一 pathname 上用 location state 堆叠；任何导航（含同路径后退）
-    // 都可能弹出面板，必须以 location key 区分而不是只看 pathname。
-    const blocked = !exiting.current && (exitState.current.dirty || exitState.current.busy) && nextLocation.key !== location.key;
+    // 编辑器在预览面板中，面板按属主路径在 location state 上堆叠：同路径换 key
+    // 的导航会弹出或替换整个面板，草稿随之卸载；指向同一属主的资源地址先经
+    // WorkspacePages 规范化为属主路径再替换栈，同样会落在「同路径」分支。
+    // 换到同一工作空间的另一页面时本页保留在已访问页面中、草稿不丢，不拦截；
+    // 只有进入会释放编辑现场的位置（跨工作空间、独立原型、列表/全局页）或上
+    // 述同路径面板级替换，才需要继续编辑或放弃确认。
+    const releases = nextLocation.key !== location.key
+      && (nextLocation.pathname === location.pathname || !articleEditorRemains(workspaceId, nextLocation.pathname));
+    const blocked = !exiting.current && (exitState.current.dirty || exitState.current.busy) && releases;
     savingExit.current = blocked && exitState.current.busy;
     return blocked;
   });

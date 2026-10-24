@@ -136,3 +136,15 @@ test('Update Flow HTTP 契约：Preview 实例拒绝写入口，状态仍只读�
   }
   assert.equal(calls.length, 0, 'Preview 写请求不得产生 Application 副作用');
 });
+
+test('共享位置 HTTP 仅接受资源身份并要求写保护，读取不准备资源', async () => {
+  const reads:any[]=[];const opens:any[]=[];
+  const resources:any={resourceLocation:()=>{reads.push(true);return {version:'1.0.0',resourceSet:'1.0.0-content',path:'/shared/resources/1.0.0-content',available:true,issue:null};},openResourceLocation:async(input:any)=>{opens.push(input);return {requested:true};}};
+  const http=createUpdateFlowHttpContribution({},resources);
+  const context:any={request:{method:'GET'},pathname:'/api/v1/installation/resources',authorizeWrite:()=>{throw new Error('protected');},readJsonBody:async()=>({resourceSet:'1.0.0-content'})};
+  assert.equal((await http.handleTopLevel(context))?.body.available,true);assert.equal(reads.length,1);assert.equal(opens.length,0);
+  const write={...context,request:{method:'POST'},pathname:'/api/v1/installation/resources/open'};
+  await assert.rejects(http.handleTopLevel(write),/protected/);assert.equal(opens.length,0);
+  await assert.rejects(http.handleTopLevel({...write,authorizeWrite:()=>{},readJsonBody:async()=>({path:'/etc'})}),/契约/);assert.equal(opens.length,0);
+  assert.equal((await http.handleTopLevel({...write,authorizeWrite:()=>{}}))?.body.requested,true);assert.deepEqual(opens,[{resourceSet:'1.0.0-content'}]);
+});

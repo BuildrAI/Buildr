@@ -1,24 +1,27 @@
+import { workspacePreparationApi } from '../api/workspace-preparation-api';
+import { AddWorkspaceDialog } from '../components/AddWorkspaceDialog';
+import type { WorkspacePreparation } from '../api/workspace-preparation-api';
 import { workspaceApi } from '../api/workspace-api';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Alert, Button, Empty, Space, Tag, Typography } from 'antd';
-import { SettingOutlined } from '@ant-design/icons';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Button, Space, Tag } from 'antd';
 import { useAppShell } from '../../../app/AppShellContext';
 import { confirmModal } from '../../../lib/confirm';
 import { workspaceHomePath } from '../../../lib/labels';
+import { WorkspacesCatalogView, type WorkspaceEntry } from '../components/WorkspacesCatalogView';
 
 
-type WorkspaceEntry = (Awaited<ReturnType<typeof workspaceApi.listRegistered>>['workspaces'])[number];
 type WorkspaceRegistry = Awaited<ReturnType<typeof workspaceApi.listRegistered>>;
 
 type Options = {
   stayOnCatalog: boolean;
   onOpenWorkspace: (workspaceId: string, replace: boolean) => void;
   onRecoveryPrompt: (prompt: string) => void;
+  onPreparationStart: (value:WorkspacePreparation) => void;
   workspaceRegistryRevision: number;
 };
 
-function useWorkspaceCatalog({ stayOnCatalog, onOpenWorkspace, onRecoveryPrompt, workspaceRegistryRevision }: Options) {
+function useWorkspaceCatalog({ stayOnCatalog, onOpenWorkspace, onRecoveryPrompt, onPreparationStart, workspaceRegistryRevision }: Options) {
   const [registry, setRegistry] = useState<WorkspaceRegistry | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -43,11 +46,11 @@ function useWorkspaceCatalog({ stayOnCatalog, onOpenWorkspace, onRecoveryPrompt,
       .then((next) => {
         if (!active || !mounted.current || readGeneration.current !== generation || stayOnCatalog || mutation.current) return;
         const ready = (next.workspaces || []).filter((entry) => entry.status === 'ready' && entry.workspace?.id);
-        if (ready.length === 1 && ready[0].workspace?.id) onOpenWorkspace(ready[0].workspace.id, true);
+        if (ready.length === 1 && ready[0].workspace?.id) void workspacePreparationApi.open(ready[0].workspace.id).then(result=>{if(!active)return;if('ready' in result)onOpenWorkspace(result.workspaceId,true);else onPreparationStart(result);}).catch(error=>{if(active)setFailure(error.message);});
       })
       .catch((error: Error) => { if (active && mounted.current && readGeneration.current === generation) setFailure(error.message); });
     return () => { active = false; };
-  }, [load, onOpenWorkspace, stayOnCatalog, workspaceRegistryRevision]);
+  }, [load, onOpenWorkspace, onPreparationStart, stayOnCatalog, workspaceRegistryRevision]);
 
   const remove = useCallback(async (entry: WorkspaceEntry) => {
     if (!registry || mutation.current) return;
@@ -101,15 +104,10 @@ function useWorkspaceCatalog({ stayOnCatalog, onOpenWorkspace, onRecoveryPrompt,
   return { registry, message, setMessage, adding, removing, refreshing, failure, setFailure, refresh, remove, pick };
 }
 
-function healthLabel(status: string): string {
-  if (status === 'ready') return '可用';
-  if (status === 'unavailable') return '路径不可用';
-  if (status === 'identity_conflict') return '身份冲突';
-  return '需要处理';
-}
-
 export function WorkspacesPage() {
   const confirming = useRef(false);
+  const [incoming,setIncoming]=useState<WorkspacePreparation|null>(null),[opening,setOpening]=useState<string|null>(null);
+  const [addOpen,setAddOpen]=useState(false),[preparation,setPreparation]=useState<WorkspacePreparation|null>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const stayOnCatalog = searchParams.get('catalog') === '1';
@@ -120,10 +118,12 @@ export function WorkspacesPage() {
   const onRecoveryPrompt = useCallback((prompt: string) => {
     openAgentAction('workspace-recovery', { prompt });
   }, [openAgentAction]);
-  const { registry, message, setMessage, adding, removing, refreshing, failure, setFailure, refresh, remove, pick } = useWorkspaceCatalog({
+  const onPreparationStart=useCallback((value:WorkspacePreparation)=>{setPreparation(null);setIncoming(value);setOpening(value.workspaceId);setAddOpen(true);},[]);
+  const { registry, message, setMessage, adding, removing, refreshing, failure, setFailure, refresh, remove } = useWorkspaceCatalog({
     stayOnCatalog,
     onOpenWorkspace,
     onRecoveryPrompt,
+    onPreparationStart,
     workspaceRegistryRevision,
   });
 
@@ -148,115 +148,48 @@ export function WorkspacesPage() {
     } finally { confirming.current = false; }
   };
 
-  const pickWorkspace = () => pick();
+  const pickWorkspace = () => {setOpening(null);setAddOpen(true);};
+  const openPreparedWorkspace = async (entry: WorkspaceEntry) => {
+    if (!entry.workspace?.id || opening) return;
+    setIncoming(null);setPreparation(null);setOpening(entry.workspace.id);setFailure('');
+    try { const next = await workspacePreparationApi.open(entry.workspace.id); if ('ready' in next) {onOpenWorkspace(next.workspaceId,false);setOpening(null);} else {setIncoming(next);setAddOpen(true);} }
+    catch(error) {setOpening(null);setFailure(error instanceof Error?error.message:'工作空间暂时无法打开。');}
+  };
+  useEffect(()=>{if(opening&&preparation?.status==='ready'&&preparation.workspaceId===opening){setOpening(null);setAddOpen(false);onOpenWorkspace(opening,false);}},[opening,preparation,onOpenWorkspace]);
 
-  const empty = registry !== null && registry.workspaces.length === 0;
-
-  return (
-    <>
-      <section className="resource-toolbar">
-        <div>
-          <Typography.Title level={2} style={{ margin: 0 }}>工作空间</Typography.Title>
-          <p className="page-copy">从这里建立工作范围。工作空间是你和 Agent 共同工作的顶层目录；项目表示长期工作单元，服务按需登记代码仓、应用或模块。</p>
-        </div>
-        <div className="toolbar-actions">
-          <Button id="add-workspace" type="primary" loading={adding} disabled={Boolean(removing) || refreshing} onClick={() => void pickWorkspace()}>
-            添加已有工作空间
-          </Button>
-          <Button id="create-workspace-agent" onClick={() => openAgentAction('workspace')}>
-            让 Agent 创建工作空间
-          </Button>
-        </div>
-      </section>
-      <div id="workspace-global-message" className={message ? '' : 'hidden'} role="status">
-        {message ? <Alert type="info" showIcon message={message} style={{ marginBottom: 16 }} /> : null}
-      </div>
-      {failure && <Alert id="workspace-operation-error" type="error" showIcon message={failure}
-        action={<Button size="small" loading={refreshing} disabled={adding || Boolean(removing)} onClick={() => void refresh()}>重新读取登记</Button>} />}
-      {removing && <p role="status">正在移除工作空间登记…</p>}
-      <section id="workspace-grid" className="workspace-grid" aria-label="已登记工作空间">
-        {(registry?.workspaces || []).map((entry) => {
-          const ready = entry.status === 'ready';
-          const main = (
-            <>
-              <div className="workspace-card-heading">
-                <Tag color={ready ? 'success' : 'warning'}>{healthLabel(entry.status)}</Tag>
-                <span className="workspace-health">
-                  {entry.updatedAt ? `最近登记 ${new Date(entry.updatedAt).toLocaleDateString('zh-CN')}` : '本机登记'}
-                </span>
-              </div>
-              <h2>{entry.workspace?.name || '不可用的工作空间'}</h2>
-              <p className="workspace-description">{entry.workspace?.description || entry.error?.message || '无法读取工作空间信息。'}</p>
-              <p className="mono workspace-root">{entry.rootPath}</p>
-              <span className="workspace-open-label">
-                进入工作空间
-                {' '}
-                <span aria-hidden="true">→</span>
-              </span>
-            </>
-          );
-          return (
-            <article className={`workspace-card${ready && entry.workspace?.id ? ' has-settings' : ''}`} key={entry.rootPath} data-workspace-id={entry.workspace?.id}>
-              {ready && entry.workspace?.id ? (
-                <Link className="workspace-card-main" to={workspaceHomePath(entry.workspace.id)}>
-                  {main}
-                </Link>
-              ) : (
-                <div className="workspace-card-main" aria-disabled="true">
-                  {main}
-                </div>
-              )}
-              {ready && entry.workspace?.id ? <Button
-                className="workspace-card-settings" type="text" icon={<SettingOutlined />}
-                aria-label={`设置工作空间：${entry.workspace.name}`} title="工作空间设置"
-                onClick={() => openWorkspaceSettings(entry.workspace!.id)}
-              /> : null}
-              <Button
-                className="workspace-remove"
-                size="small"
-                type="text"
-                danger
-                loading={removing === entry.rootPath}
-                disabled={adding || refreshing || Boolean(removing && removing !== entry.rootPath)}
-                onClick={() => void removeWorkspace(entry)}
-              >
-                移除
-              </Button>
-            </article>
-          );
-        })}
-      </section>
-      <section id="workspace-empty" className={`empty-state${empty ? '' : ' hidden'}`}>
-        {empty ? (
-          <Empty
-            description={(
-              <Space direction="vertical" size={8}>
-                <p className="eyebrow">工作空间 → 项目 → 服务</p>
-                <Typography.Title level={4} style={{ margin: 0 }}>先选择一个共同工作的目录</Typography.Title>
-                <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
-                  添加已有工作空间只保存本机入口：不会移动目录、修改源资产或自动扫描磁盘。进入后，Buildr 会再引导你建立项目，并按需接入服务。
-                </Typography.Paragraph>
-              </Space>
-            )}
-          >
-            <Space wrap>
-              <Button id="empty-add-workspace" type="primary" loading={adding} disabled={Boolean(removing) || refreshing} onClick={() => void pickWorkspace()}>
-                添加已有工作空间
-              </Button>
-              <Button id="empty-create-workspace" onClick={() => openAgentAction('workspace')}>
-                让 Agent 创建工作空间
-              </Button>
-              <Button
-                id="empty-later"
-                type="link"
-                onClick={() => setMessage('没有登记任何工作空间。你可以直接退出 Buildr，稍后再次打开。')}
-              >
-                稍后处理
-              </Button>
-            </Space>
-          </Empty>
-        ) : null}
-      </section>
-    </>
-  );
+  return <><AddWorkspaceDialog incoming={incoming} open={addOpen} onClose={()=>setAddOpen(false)} onReady={()=>void refresh()} onOpen={id=>onOpenWorkspace(id,false)} onProgress={setPreparation}/><WorkspacesCatalogView
+    entries={registry?.workspaces ?? null}
+    emptyEyebrow={null}
+    emptyDescription="选择本机目录，Buildr 会自动准备工作内容和智能体入口。已有文件会保留，准备完成后即可开始工作。"
+    message={message}
+    error={failure}
+    adding={adding}
+    removing={removing}
+    refreshing={refreshing}
+    onOpen={entry=>void openPreparedWorkspace(entry)}
+    onRemove={entry => void removeWorkspace(entry)}
+    renderStatus={entry=>{const status=preparation?.rootPath===entry.rootPath?preparation.status:null;const readiness=(entry as WorkspaceEntry & {readiness?:string}).readiness;return <Tag color={status==='preparing'?'processing':status==='failed'||readiness&&readiness!=='ready'?'warning':entry.status==='ready'?'success':'warning'}>{status==='preparing'?'准备中':status==='failed'?'待完成':readiness&&readiness!=='ready'?'待准备':entry.status==='ready'?'可用':'暂不可用'}</Tag>;}}
+    onSettings={openWorkspaceSettings}
+    renderExtra={entry=>preparation?.rootPath===entry.rootPath&&preparation.status!=='ready'?<Button onClick={()=>setAddOpen(true)}>{preparation.status==='preparing'?'正在准备，查看进度':'继续准备'}</Button>:null}
+    onRetry={() => void refresh()}
+    toolbar={<>
+      <Button id="add-workspace" type="primary" loading={adding} disabled={Boolean(removing) || refreshing} onClick={() => void pickWorkspace()}>
+        添加工作空间
+      </Button>
+      <Button id="create-workspace-agent" onClick={() => openAgentAction('workspace')}>
+        让 Agent 创建工作空间
+      </Button>
+    </>}
+    emptyActions={<Space wrap>
+      <Button id="empty-add-workspace" type="primary" loading={adding} disabled={Boolean(removing) || refreshing} onClick={() => void pickWorkspace()}>
+        添加工作空间
+      </Button>
+      <Button id="empty-create-workspace" onClick={() => openAgentAction('workspace')}>
+        让 Agent 创建工作空间
+      </Button>
+      <Button id="empty-later" type="link" onClick={() => setMessage('没有登记任何工作空间。你可以直接退出 Buildr，稍后再次打开。')}>
+        稍后处理
+      </Button>
+    </Space>}
+  /></>;
 }

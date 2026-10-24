@@ -3,7 +3,7 @@ import { spawnCommand } from '../../../infrastructure/process.ts';
 import { identifyCliSource } from './cli-update.ts';
 import { inspectProductUpdateAuthority } from '../infrastructure/installation-registry.ts';
 import { RELEASE_TRACKS, compareVersions, parseSemver } from './release-awareness.ts';
-import { pendingSteps, updateError, type UpdateRecord, type UpdateStore, type UpdateStage } from '../domain/update-flow-state.ts';
+import { pendingSteps, updateError, type UpdateRecord, type UpdateStore, type UpdateStage, type WorkspaceUpdate } from '../domain/update-flow-state.ts';
 import type { UpdateLauncher, LauncherResult } from './update-launcher.ts';
 
 export const WEB_UPDATE_FLOW_SCHEMA = 'buildr.web-update-flow/v2';
@@ -22,6 +22,7 @@ export function createWebUpdateFlow(dependencies: {
   store?: UpdateStore;
   launcher?: UpdateLauncher;
   devTiming?: { downloadMs?: number; installMs?: number };
+  workspaces?: { list(): WorkspaceUpdate[]; prepareResources?(): unknown; prepare(entry: WorkspaceUpdate, options?: any): Promise<unknown> };
   now?(): string;
 }) {
   const spawnProcess = dependencies.spawnProcess || spawnCommand;
@@ -35,6 +36,7 @@ export function createWebUpdateFlow(dependencies: {
   try { bootSource = identifySource(dependencies.productRoot()); } catch { /* Only the update surface is unavailable. */ }
   let job: UpdateRecord | null = null;
   let loaded = false;
+  let preparingWorkspaces = false;
   let observedLauncher: { key: string; result: LauncherResult } | null = null;
 
   function load() {
@@ -62,7 +64,7 @@ export function createWebUpdateFlow(dependencies: {
     const value = dependencies.store ? dependencies.store.read() : job;
     if (!value) return { schemaVersion: WEB_UPDATE_FLOW_SCHEMA, id: null, revision: 0, status: 'idle', stage: 'idle', track: null, version: null,
       currentVersion: bootSource?.version || null, runningVersion: bootSource?.version || null, installedVersion: null,
-      steps: pendingSteps(), launcherError: null, error: null, updatedAt: null, simulated: bootSource?.mode === 'development' };
+      workspaces: [], steps: pendingSteps(), launcherError: null, error: null, updatedAt: null, simulated: bootSource?.mode === 'development' };
     const view = structuredClone(value);
     if (view.mode === 'npm' && bootSource?.mode === 'npm' && bootSource.version === view.version && (view.ownerPid !== process.pid || view.status !== 'applying')) {
       try {
@@ -72,7 +74,10 @@ export function createWebUpdateFlow(dependencies: {
         view.launcherError = result.error || null;
         view.status = result.status === 'failed' ? 'partial' : 'completed';
         view.stage = result.status === 'failed' ? 'launcher' : 'completed';
-        view.error = null;
+        const pending = ['pending','running'].includes(view.resources || '') || (view.workspaces || []).some(entry => ['pending', 'running'].includes(entry.status));
+        const failed = view.resources === 'failed' || (view.workspaces || []).some(entry => entry.status === 'failed');
+        if (pending || failed) { view.status = view.resources === 'failed' || ['failed','partial'].includes(view.status) ? 'partial' : pending ? 'applying' : 'partial'; view.stage = 'workspaces'; }
+        view.error = value.stage === 'workspaces' && value.status === 'partial' ? value.error : null;
       } catch (error: any) {
         view.status = 'partial'; view.stage = 'verify'; view.steps.verify = 'failed';
         view.error = { code: error.code || 'update_installation_unconfirmed', message: error.message || '目标安装归属尚未核实。' };
@@ -88,7 +93,7 @@ export function createWebUpdateFlow(dependencies: {
     }
     return { schemaVersion: WEB_UPDATE_FLOW_SCHEMA, id: view.id, revision: value.revision, status: view.status, stage: view.stage, track: view.track,
       version: view.version, currentVersion: bootSource?.version || null, runningVersion: bootSource?.version || null,
-      installedVersion: view.installedVersion, steps: view.steps, launcherError: view.launcherError, error: view.error,
+      installedVersion: view.installedVersion, workspaces: view.workspaces || [], steps: view.steps, launcherError: view.launcherError, error: view.error,
       updatedAt: view.updatedAt, simulated: view.mode === 'development' };
   }
   function source() {
@@ -115,7 +120,7 @@ export function createWebUpdateFlow(dependencies: {
     if (stage === 'install' || stage === 'launcher' || stage === 'restart' || stage === 'verify') steps[stage] = 'failed';
     record({ status: job.installedVersion ? 'partial' : 'failed', stage, steps,
       ...(stage === 'launcher' ? { launcherError: { code: error.code || 'update_launcher_failed', message: error.message || '启动入口修复未完成。' } } : {}),
-      error: { code: error.code || 'update_failed', message: error.message || '更新未完成。' } });
+      error: { code: error.code || 'update_failed', message: error.message || '更新未完成。', ...(error.diagnostic?{details:String(error.diagnostic).slice(-6000)}:{}) } });
   }
   const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
   function launcherResult(result: LauncherResult) {
@@ -130,7 +135,7 @@ export function createWebUpdateFlow(dependencies: {
     }
     record({ stage: 'verify', steps: { ...job!.steps, restart: 'done', verify: 'running' } });
     // The Web owner verified the precise successor. This outgoing process still reports its boot version.
-    record({ status: job!.launcherError ? 'partial' : 'completed', stage: job!.launcherError ? 'launcher' : 'completed',
+    record({ status: job!.resources === 'pending' || job!.workspaces?.length ? 'applying' : job!.launcherError ? 'partial' : 'completed', stage: job!.resources === 'pending' || job!.workspaces?.length ? 'workspaces' : job!.launcherError ? 'launcher' : 'completed',
       steps: { ...job!.steps, verify: 'done' } });
   }
   async function install(auth: any, selectedSource: any) {
@@ -154,7 +159,7 @@ export function createWebUpdateFlow(dependencies: {
   }
   async function simulate(start: 'download' | 'install' | 'launcher' | 'restart') {
     try {
-      if (start === 'download') { await pause(timing.downloadMs); record({ status: 'ready', stage: 'ready' }); return; }
+      if (start === 'download') { await pause(timing.downloadMs); record({ status: 'ready', stage: 'ready' }); if (job!.autoApply) apply({ expectedVersion: job!.version }); return; }
       const stages = start === 'install' ? ['install', 'launcher', 'restart', 'verify'] as const : start === 'launcher' ? ['launcher', 'verify'] as const : ['restart', 'verify'] as const;
       for (const stage of stages) {
         record({ stage, steps: { ...job!.steps, [stage]: 'running' } });
@@ -181,6 +186,7 @@ export function createWebUpdateFlow(dependencies: {
     }
     record({ id: randomUUID(), productRoot: selected.productRoot, mode: selected.mode, previousVersion: selected.version,
       previousInstallationIdentity: selected.installationIdentity || null, track, version: expectedVersion,
+      autoApply: input.autoApply === true, resources: selected.mode === 'npm' && dependencies.workspaces ? 'pending' : 'skipped', workspaces: selected.mode === 'npm' ? dependencies.workspaces?.list() || [] : [],
       status: 'preparing', stage: 'download', steps: pendingSteps(), installedVersion: null, error: null, launcherError: null }, true);
     if (selected.mode === 'development') void simulate('download');
     else void (async () => {
@@ -188,6 +194,7 @@ export function createWebUpdateFlow(dependencies: {
         const result = await spawnProcess(auth!.nodeExecutable, [auth!.npmCliPath, 'cache', 'add', `${selected.package || UPDATE_PACKAGE}@${expectedVersion}`]);
         if (!result.ok) throw updateError('update_download_failed', `更新包下载失败：${result.stderr || result.error || 'unknown error'}`);
         record({ status: 'ready', stage: 'ready' });
+        if (job!.autoApply) apply({ expectedVersion: job!.version });
       } catch (error: any) { try { failure('download', error); } catch {} }
     })();
     return snapshot();
@@ -205,14 +212,51 @@ export function createWebUpdateFlow(dependencies: {
     setImmediate(() => { if (selected.mode === 'development') void simulate('install'); else void install(auth, selected); });
     return snapshot();
   }
+  async function prepareWorkspaces(onlyRoot?: string, keepCustomizations = false) {
+    if (preparingWorkspaces || !dependencies.workspaces) return;
+    load();
+    if (!job || job.mode !== 'npm' || bootSource?.mode !== 'npm' || bootSource.version !== job.version || !job.installedVersion) return;
+    preparingWorkspaces = true;
+    try {
+      launcher.inspect(job);
+      record({ status: 'applying', stage: 'workspaces', steps: { ...job.steps, install: 'done', restart: 'done', verify: 'done' }, error: null });
+      if (job.resources !== 'done') { record({resources:'running'}); await dependencies.workspaces.prepareResources?.(); record({resources:'done'}); }
+      const known = new Set((job.workspaces || []).map(entry => entry.rootPath));
+      const added = dependencies.workspaces.list().filter(entry => !known.has(entry.rootPath));
+      if (added.length) record({ workspaces: [...(job.workspaces || []), ...added] });
+      const entries = [...(job.workspaces || [])];
+      for (const entry of entries) {
+        if (['done','skipped'].includes(entry.status) || (onlyRoot && entry.rootPath !== onlyRoot)) continue;
+        const patch = (status: WorkspaceUpdate['status'], error: string | null) => record({ workspaces: job!.workspaces!.map(item => item.rootPath === entry.rootPath ? { ...item, status, error } : item) });
+        patch('running', null);
+        try { const result:any=await dependencies.workspaces.prepare(entry, keepCustomizations ? {keepCustomizations:entry.customizations || []} : {}); patch(result?.status==='removed'?'skipped':'done', null); }
+        catch (error: any) { patch('failed', error.message || '工作空间准备未完成。'); if(error.diagnostic) record({workspaces:job!.workspaces!.map(item=>item.rootPath===entry.rootPath?{...item,details:error.diagnostic}:item)}); if(error.customizations) record({workspaces:job!.workspaces!.map(item=>item.rootPath===entry.rootPath?{...item,customizations:error.customizations}:item)}); }
+      }
+      const incomplete = job!.workspaces!.some(entry => !['done','skipped'].includes(entry.status));
+      record({ status: incomplete || job!.launcherError ? 'partial' : 'completed', stage: incomplete ? 'workspaces' : job!.launcherError ? 'launcher' : 'completed' });
+    } catch (error: any) { try { record({ resources: job?.resources === 'running' ? 'failed' : job?.resources }); failure('workspaces', error); } catch {} }
+    finally { preparingWorkspaces = false; }
+  }
+  function resume() {
+    try { load(); } catch { return; }
+    if (job && job.resources !== 'failed' && job.mode === 'npm' && bootSource?.version === job.version && job.installedVersion && (['pending','running'].includes(job.resources || '') || (job.workspaces || []).some(entry => ['pending', 'running'].includes(entry.status)))) setImmediate(() => { void prepareWorkspaces(); });
+  }
   function recover(input: any = {}) {
     load();
     const observed = snapshot();
     if (!job || input.expectedJobId !== job.id || input.expectedVersion !== job.version) throw updateError('update_flow_recovery_conflict', '本次更新的任务或目标版本已变化，请重新读取。');
-    if (!['launcher', 'restart', 'install'].includes(input.action)) throw updateError('update_flow_recovery_action_invalid', '恢复环节无效。', 400);
+    if (!['launcher', 'restart', 'install', 'workspaces'].includes(input.action)) throw updateError('update_flow_recovery_action_invalid', '恢复环节无效。', 400);
     if (!['partial', 'failed'].includes(observed.status)) throw updateError('update_flow_recovery_conflict', '当前更新没有可恢复的失败环节。');
     const selected = source();
     if (selected.mode !== job.mode || selected.productRoot !== job.productRoot) throw updateError('update_flow_installation_changed', '安装范围已变化。');
+    if (input.action === 'workspaces') {
+      if (input.keepCustomizations === true && !input.rootPath) throw updateError('update_flow_recovery_action_invalid', '请明确需要保留定制的工作空间。', 400);
+      if (preparingWorkspaces || selected.version !== job.version || !job.installedVersion || !(job.resources === 'failed' || job.workspaces?.some(entry => !['done','skipped'].includes(entry.status) && (!input.rootPath || entry.rootPath === input.rootPath)))) throw updateError('update_flow_recovery_conflict', '当前没有可重试的工作空间。');
+      if (input.rootPath !== undefined && typeof input.rootPath !== 'string') throw updateError('update_flow_recovery_action_invalid', '工作空间目录无效。', 400);
+      record({ status: 'applying', stage: 'workspaces', error: null });
+      setImmediate(() => { void prepareWorkspaces(input.rootPath,input.keepCustomizations === true); });
+      return snapshot();
+    }
     const action = input.action as 'launcher' | 'restart' | 'install';
     if (action === 'install') {
       if (observed.installedVersion || job.stage !== 'install' || selected.version !== job.previousVersion || (selected.installationIdentity || null) !== job.previousInstallationIdentity) throw updateError('update_flow_recovery_conflict', '当前安装状态不允许重复安装本次版本。');
@@ -238,5 +282,5 @@ export function createWebUpdateFlow(dependencies: {
     }
     return snapshot();
   }
-  return Object.freeze({ webUpdatePrepare: prepare, webUpdateStatus: snapshot, webUpdateApply: apply, webUpdateRecover: recover });
+  return Object.freeze({ webUpdateResume: resume, webUpdatePrepare: prepare, webUpdateStatus: snapshot, webUpdateApply: apply, webUpdateRecover: recover });
 }

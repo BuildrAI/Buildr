@@ -1,7 +1,11 @@
 export type UpdateStep = 'pending' | 'running' | 'done' | 'failed' | 'skipped';
-export type UpdateStage = 'idle' | 'download' | 'ready' | 'install' | 'launcher' | 'restart' | 'verify' | 'completed';
-export type UpdateError = { code: string; message: string };
+export type UpdateStage = 'idle' | 'download' | 'ready' | 'install' | 'launcher' | 'restart' | 'verify' | 'workspaces' | 'completed';
+export type UpdateError = { code: string; message: string; details?:string };
+export type WorkspaceUpdate = { rootPath: string; workspaceId: string | null; name: string; status: UpdateStep; error: string | null; details?:string; customizations?: Array<{id:string;integrity:string}> };
 export type UpdateRecord = {
+  autoApply?: boolean;
+  resources?: UpdateStep;
+  workspaces?: WorkspaceUpdate[];
   id: string;
   revision: number;
   productRoot: string;

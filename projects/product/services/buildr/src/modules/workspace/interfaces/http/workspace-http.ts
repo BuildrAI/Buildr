@@ -33,10 +33,26 @@ export function createWorkspaceHttpContribution(application: any) {
     if (!item) throw new Error(`Workspace HTTP operation is missing: ${id}`);
     return validateWorkspaceHttp(item.successSchemaId, value, id, 'response');
   }
+  const publicPreparation = ({ directoryIdentity: _directory, ownerPid: _pid, ...value }: any) => value;
   const respond = (id: any, value: any) => ({ status: 200, body: validateResponse(id, value) });
   return Object.freeze({
     id: 'workspace-core.http',
     async handleTopLevel({ request, pathname, authorizeWrite, readJsonBody, pickWorkspaceDirectory }: any) {
+      if (request.method === 'POST' && pathname === '/api/v1/workspaces/open') {
+        authorizeWrite(); const input = validateRequest('workspace.preparation.open', await readJsonBody());
+        return respond('workspace.preparation.open',publicPreparation(application.prepareWorkspaceForOpen(input.workspaceId)));
+      }
+      if (request.method === 'POST' && pathname === '/api/v1/workspaces/choose') {
+        authorizeWrite();
+        validateRequest('workspace.preparation.choose', await readJsonBody());
+        const root = pickWorkspaceDirectory();
+        return respond('workspace.preparation.choose', root ? publicPreparation(application.selectWorkspaceDirectory(root)) : { canceled: true });
+      }
+      if (request.method === 'POST' && pathname === '/api/v1/workspaces/prepare') {
+        authorizeWrite(); return respond('workspace.preparation.start', publicPreparation(application.prepareSelectedWorkspace(validateRequest('workspace.preparation.start', await readJsonBody()))));
+      }
+      const preparation = pathname.match(/^\/api\/v1\/workspaces\/preparations\/([a-f0-9-]{36})$/);
+      if (request.method === 'GET' && preparation) { validateRequest('workspace.preparation.read',{id:preparation[1]}); return respond('workspace.preparation.read',publicPreparation(application.workspacePreparation(preparation[1]))); }
       if (request.method === 'GET' && pathname === '/api/v1/workspaces') {
         validateRequest('workspace.registry.list', {});
         return respond('workspace.registry.list', application.listRegisteredWorkspaces());

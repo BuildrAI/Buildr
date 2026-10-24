@@ -1,3 +1,4 @@
+import { createWorkspacePreparation } from './application/workspace-preparation.ts';
 export type { AssetCatalog } from './domain/asset-relationships.ts';
 import { registerAssetRelationshipsApplication } from './application/asset-relationships-application.ts';
 import { ASSET_CATALOG_HELP, assetCatalogCommand } from './interfaces/cli/asset-catalog.ts';
@@ -64,6 +65,7 @@ export const WORKSPACE_DIAGNOSTICS = 'workspace.diagnostics';
 const WORKSPACE_METHODS = Object.freeze([
   'listCatalogDirectoryCandidates', 'catalogRepositoryLocalConfig', 'listCatalogServices', 'listCatalogRepositories', 'catalogRepositoryStatus', 'normalizeCatalogRepositories', 'deleteCatalogAsset',
   'workspaceComposition', 'catalogServiceDocument', 'assetCatalog', 'assetCatalogVersion', 'migrateAssetCatalog', 'createCatalogRepository', 'createCatalogService', 'createCatalogProject', 'listProjectRegistrationCandidates', 'registerCatalogProject', 'updateProjectServices', 'updateCatalogAsset', 'repositoryPreparePrompt', 'repositoryCloneStatus', 'repositoryCloneRequest',
+  'prepareWorkspaceForOpen', 'selectWorkspaceDirectory', 'workspacePreparation', 'prepareSelectedWorkspace', 'prepareRegisteredWorkspace',
   'getWorkspace', 'listRegisteredWorkspaces', 'registerLocalWorkspace', 'removeRegisteredWorkspace',
   'resolveRegisteredWorkspace', 'workspaceMigrationPlan', 'migrateWorkspaceMetadata', 'updateWorkspaceMetadata',
   'generateWorkspaceCreatePrompt', 'inspectLocalWorkspaceCandidate', 'getWorkspaceGettingStarted',
@@ -203,6 +205,7 @@ export function createWorkspaceModule(runtime: DynamicRuntime, { readProductIden
       registerWorkspaceCommandApplication(privateComposition);
       privateComposition.ensureRegisteredTarget = (targetRoot: any) => ensureRegisteredTarget(privateComposition, targetRoot);
       registerWorkspaceOperations(privateComposition);
+      Object.assign(privateComposition, createWorkspacePreparation(privateComposition));
       registerWorkspaceSourceGit(privateComposition);
       registerProjectApplication(privateComposition);
       registerServiceApplication(privateComposition);

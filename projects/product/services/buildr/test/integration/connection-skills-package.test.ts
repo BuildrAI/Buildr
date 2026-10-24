@@ -28,23 +28,25 @@ test('正式包在独立目录消费完整接入资源、投射附件并运行�
   assert.equal(nacos.path, 'connections/nacos-connection');
   assert.equal(nacos.sourceIdentity, 'package:skills/connections/nacos-connection');
   assert.equal(fs.existsSync(path.join(workspace, 'skills/buildr/nacos-connection')), false);
-  const definitionPath = path.join(workspace, 'skills/connections/nacos-connection/assets/connection.yml');
+  // Official connection skill sources are projected from the fixed shared resource store.
+  const sourceRoot = path.join(env.BUILDR_PRODUCT_DATA_DIR, 'resources', 'skills/connections/nacos-connection');
+  const definitionPath = path.join(sourceRoot, 'assets/connection.yml');
   const definition = parseConnectionDefinition(fs.readFileSync(definitionPath, 'utf8')); assert.equal(definition.definitionId, 'nacos'); assert.equal(definition.configVersion, 2);
-  for (const relative of ['scripts/nacos-client.mjs', 'scripts/lib/context.mjs', 'references/commands-and-results.md']) assert.equal(fs.existsSync(path.join(workspace, 'skills/connections/nacos-connection', relative)), true, relative);
-  assert.equal(fs.existsSync(path.join(workspace, 'skills/buildr/connection-authoring/templates/client.mjs')), true);
-  const authoring = path.join(workspace, 'skills/buildr/connection-authoring');
+  for (const relative of ['scripts/nacos-client.mjs', 'scripts/lib/context.mjs', 'references/commands-and-results.md']) assert.equal(fs.existsSync(path.join(sourceRoot, relative)), true, relative);
+  const authoring = path.join(env.BUILDR_PRODUCT_DATA_DIR, 'resources', 'skills/buildr/connection-authoring');
+  assert.equal(fs.existsSync(path.join(authoring, 'templates/client.mjs')), true);
   assert.equal(fs.existsSync(path.join(authoring, 'templates/deployment-adapter.mjs')), false);
   const template = parseConnectionDefinition(fs.readFileSync(path.join(authoring, 'templates/connection.yml'), 'utf8'));
   assert.deepEqual(Object.keys(template.programs), ['cli']);
   assert.match(fs.readFileSync(path.join(workspace, 'AGENTS.md'), 'utf8'), /少即是多/);
   run(['skills', 'render', 'codex', '--target', workspace]);
   assert.equal(fs.readFileSync(path.join(workspace, '.agents/skills/nacos-connection/assets/connection.yml'), 'utf8'), fs.readFileSync(definitionPath, 'utf8'));
-  if (process.platform !== 'win32') assert.equal(fs.statSync(path.join(workspace, '.agents/skills/nacos-connection/scripts/nacos-client.mjs')).mode & 0o100, fs.statSync(path.join(workspace, 'skills/connections/nacos-connection/scripts/nacos-client.mjs')).mode & 0o100);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(path.join(workspace, '.agents/skills/nacos-connection/scripts/nacos-client.mjs')).mode & 0o100, fs.statSync(path.join(sourceRoot, 'scripts/nacos-client.mjs')).mode & 0o100);
   const catalog = JSON.parse(run(['connection-skill', 'definitions', 'list', '--target', workspace, '--json']));
   const current = catalog.definitions.find((entry: { definition: { definitionId: string } }) => entry.definition.definitionId === 'nacos'); assert.equal(current.available, true);
   const input = path.join(root, 'create.json'); fs.writeFileSync(input, JSON.stringify({ id: 'package-nacos', name: 'package example', binding: { skillAssetIdentity: current.skill.assetIdentity, definitionId: 'nacos', sourceIdentity: current.skill.sourceIdentity, configVersion: current.definition.configVersion }, config: { apiBaseUrl: 'https://example.invalid/nacos', consoleUrl: 'https://console.example.invalid/', production: false }, authentication: { intent: 'remove' }, expected: { teamRevision: 'absent', definitionRevision: current.revision } }), { mode: 0o600 });
   run(['connection-skill', 'create', '--target', workspace, '--file', input, '--json']);
   const help = JSON.parse(run(['connection-skill', 'help', '--connection', 'package-nacos', '--target', workspace, '--json'])); assert.equal(help.exitCode, 0); assert.match(help.stdout, /diff.*publish/s); assert.match(help.stdout, /--result-file/); assert.doesNotMatch(help.stdout, /EXAMPLE_PASSWORD/);
   // The independent program is also executable directly from the copied source with no developer imports.
-  const direct = spawnSync(process.execPath, [path.join(workspace, 'skills/connections/nacos-connection/scripts/nacos-client.mjs'), '--help'], { cwd: root, env, encoding: 'utf8', timeout: 5000 }); assert.equal(direct.status, 0, direct.stderr); assert.match(direct.stdout, /--data-id/);
+  const direct = spawnSync(process.execPath, [path.join(sourceRoot, 'scripts/nacos-client.mjs'), '--help'], { cwd: root, env, encoding: 'utf8', timeout: 5000 }); assert.equal(direct.status, 0, direct.stderr); assert.match(direct.stdout, /--data-id/);
 });

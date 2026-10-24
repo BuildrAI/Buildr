@@ -1,3 +1,4 @@
+import { resolveSharedResource } from '../../../src/infrastructure/product-resources/shared-resources.ts';
 import { stripTypeScriptTypes } from 'node:module';
 import { RUNTIME_ADAPTER_MAPPINGS, SUPPORTED_ADAPTER_IDS, resolveRuntimeSelection } from '../../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
 import { validateSkillPublication } from '../../../src/modules/agent-assets/infrastructure/runtime/skills/publication.ts';
@@ -191,7 +192,7 @@ export function createPackageStaticValidator(deps: any): any  {
       }
 
       const baselineSkillFile = path.join(sourcePathFromBuiltin(builtin), 'SKILL.md');
-      const workspaceSkillFile = path.join(workspaceSkillsRoot, workspaceSkill.path, 'SKILL.md');
+      const workspaceSkillFile = workspaceSkill.resource ? resolveSharedResource(root, `${workspaceSkill.resource}/SKILL.md`) : path.join(workspaceSkillsRoot, workspaceSkill.path, 'SKILL.md');
       if (!existsFile(baselineSkillFile)) {
         problems.push(`Package builtin Skill SKILL.md does not exist: ${builtin.path}/SKILL.md`);
         continue;

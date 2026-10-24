@@ -87,7 +87,7 @@ test('product verification exposes four gates, direct layers, and one focus entr
   const fast: any = read('test/verification/verify-buildr-product-fast');
   assert.match(fast, /run-development-node" test\/verification\/profile\.ts fast/);
   const fastIds: any = createVerificationPlan({ profiles: ['fast'] }).steps.map((step: any) => step.id);
-  assert.deepEqual(fastIds, ['typecheck', 'unit', 'component', 'contract', 'cli-architecture', 'openspec-strict']);
+  assert.deepEqual(fastIds, ['typecheck', 'unit', 'component', 'contract', 'cli-architecture', 'openspec-strict', 'test-file-ownership']);
   assert.equal(fastIds.includes('system'), false);
   for (const forbidden of ['npm pack', 'npm install', 'verification/workspace/run.ts', 'release-smoke.ts']) {
     assert.equal(fast.includes(forbidden), false, `fast verifier must exclude ${forbidden}`);

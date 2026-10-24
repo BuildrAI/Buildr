@@ -57,8 +57,8 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
   'integration-code': testing(SERVICE_OWNER, 'Development', 'Integration', 215000, 'Code browsing, editing, observation and Git operations preserve the actual checkout and mutation boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-desktop': testing(SERVICE_OWNER, 'Development', 'Integration', 45000, 'Desktop and Agent connections preserve their isolated registration, lifecycle, Git read roots and HTTP boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-knowledge': testing(SERVICE_OWNER, 'Development', 'Integration', 35000, 'Knowledge and Agent source reading preserve current content, provenance and HTTP results.', TEST_ENVIRONMENTS.repeatedCli),
-  'integration-workspace-assets': testing(SERVICE_OWNER, 'Development', 'Integration', 240000, 'Workspace assets preserve composition, registration, mutation and user content.', TEST_ENVIRONMENTS.repeatedGitCli),
-  'integration-archify': testing(SERVICE_OWNER, 'Development', 'Integration', 90000, 'Archify installation, rendering, upgrade, user content protection, removal and bounded diagnostics retain their real isolated lifecycle.', TEST_ENVIRONMENTS.repeatedCli),
+  'integration-workspace-assets': testing(SERVICE_OWNER, 'Development', 'Integration', 300000, 'Workspace assets preserve composition, registration, mutation and user content.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-archify': testing(SERVICE_OWNER, 'Development', 'Integration', 90000, 'Retired Archify preserves old installations, offline and customized workspaces, self-use rendering and bounded diagnostics.', TEST_ENVIRONMENTS.repeatedCli),
   'integration-task-records': testing(SERVICE_OWNER, 'Development', 'Integration', 125000, 'Task records, materials and workbench views preserve filesystem, Git, SQLite and HTTP behavior.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-connections': testing(SERVICE_OWNER, 'Development', 'Integration', 135000, 'Connection Skills preserve definitions, credential handling, Git workspaces, process and local protocol boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-connections-cli': testing(SERVICE_OWNER, 'Development', 'Integration', 180000, 'The connection CLI smoke preserves credential handling, isolated workspaces, real process boundaries and cleanup.', TEST_ENVIRONMENTS.repeatedGitCli),
@@ -109,6 +109,7 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
   'open-source-candidate': testing(PROJECT_OWNER, 'Delivery / Release', 'Static', 10000, 'The candidate contains the required public release materials.', TEST_ENVIRONMENTS.sourceReadOnly),
   'openspec-candidate-audit': testing(PROJECT_OWNER, 'Static Conformance', 'Static', 5000, 'Candidate OpenSpec contracts are current and internally consistent.', TEST_ENVIRONMENTS.sourceReadOnly),
   'managed-mutations': testing(SERVICE_OWNER, 'Static Conformance', 'Static', 5000, 'Production filesystem mutations remain behind declared owners.', TEST_ENVIRONMENTS.sourceReadOnly),
+  'test-file-ownership': testing(SERVICE_OWNER, 'Static Conformance', 'Static', 5000, 'Every test file has exactly one primary verification owner.', TEST_ENVIRONMENTS.sourceReadOnly),
   'capability-cli-integration': testing(SERVICE_OWNER, 'Development', 'Integration', 85000, 'Capability CLI operations integrate with package and runtime assets.', TEST_ENVIRONMENTS.repeatedCli),
   'commands-cli-integration': testing(SERVICE_OWNER, 'Development', 'Integration', 75000, 'Commands context CLI operations integrate with managed workspace assets.', TEST_ENVIRONMENTS.repeatedCli),
   'openspec-contract-fixtures': testing(PROJECT_OWNER, 'Development', 'Integration', 20000, 'OpenSpec application contracts hold across isolated fixture repositories.', TEST_ENVIRONMENTS.repeatedGitCli),
@@ -139,8 +140,8 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
 
 export const VERIFICATION_STEP_EVIDENCE: any = Object.freeze({
   'integration-archify': primaryEvidence(
-    'An Archify install, render, upgrade, removal or diagnostic command that loses user content, changes CLI behavior or leaks private inputs must fail.',
-    'real isolated Workspace and user home, component lifecycle, rendering and bounded CLI diagnostics',
+    'Archify retirement that loses installed content, re-enables disabled Skills, breaks self-use rendering or leaks diagnostic inputs must fail.',
+    'real isolated workspaces, retained legacy source migration, self-use rendering and bounded CLI diagnostics',
   ),
   'integration-candidate-release': primaryEvidence(
     'A release contract, selection, rehearsal, recovery, or Git convergence boundary that drifts from the frozen Candidate source must fail.',
@@ -597,13 +598,17 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/attached-project-services.test.ts',
     'test/integration/inline-workspace-core-rules.test.ts',
     'test/integration/non-git-workspace-continuity.test.ts',
+    'test/integration/shared-resources.test.ts',
+    'test/integration/workspace-lifecycle.test.ts',
     'test/integration/workspace-agent-assets-http-contract.test.ts',
     'test/integration/workspace-composition.test.ts',
     'test/integration/workspace-mutation-recovery.test.ts',
     'test/integration/workspace-read-reuse.test.ts',
-  // This group includes two bounded 85s CLI scenarios. Its cap must
-  // include the other files sharing two workers, not truncate a valid child.
-  ], { schedulingCostMs: 5000, timeoutMs: 300_000, args: ['--test-concurrency=2'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
+  // This group includes two bounded 85s CLI scenarios. Shared-resource preparation
+  // grew workspace fixtures; the cap must absorb the full slice on two loaded
+  // workers (observed ~330s under concurrent candidate rounds) within the
+  // candidate 360s ceiling, not truncate it.
+  ], { schedulingCostMs: 5000, timeoutMs: 360_000, args: ['--test-concurrency=2'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
   integrationSlice('integration-archify', [
     'test/integration/archify-command-cost.test.ts',
     'test/integration/archify-component.test.ts',
@@ -763,7 +768,7 @@ export const verificationSteps: any = Object.freeze([
       'integration-connections-cli': 'Connection CLI smoke',
       'integration-task-records': 'Task record and material integration slice',
       'integration-workspace-assets': 'Workspace asset integration slice',
-      'integration-archify': 'Archify component lifecycle integration slice',
+      'integration-archify': 'Archify retirement and self-use integration slice',
       'integration-knowledge': 'Knowledge and source reading integration slice',
       'integration-desktop': 'Desktop and Agent connection integration slice',
       'integration-code': 'Code and Git application integration slice',
@@ -846,6 +851,7 @@ export const verificationSteps: any = Object.freeze([
   step({ id: 'open-source-candidate', name: 'open-source candidate', executor: { type: 'node', file: 'test/verification/release/open-source-candidate.ts', consumesArtifact: true }, profiles: ['candidate'], groups: ['public', 'release'],  dependsOn: ['candidate-tarball'] }),
   step({ id: 'openspec-candidate-audit', name: 'OpenSpec contract candidate audit', executor: { type: 'node', file: 'test/verification/openspec/contract-audit.ts' }, profiles: [], groups: ['openspec'], }),
   step({ id: 'managed-mutations', name: 'managed mutations', executor: { type: 'node', file: 'test/verification/integrity/managed-mutations.ts' }, profiles: ['candidate'], groups: ['package'], }),
+  step({ id: 'test-file-ownership', name: 'test file primary ownership audit', executor: { type: 'node', file: 'test/verification/integrity/test-file-ownership.ts' }, profiles: ['fast', 'candidate'], groups: ['package'], }),
 
   step({ id: 'capability-cli-integration', name: 'capability CLI integration', executor: { type: 'node', file: 'test/capability-cli.integration.ts' }, profiles: ['candidate'],  schedulingCostMs: 25000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'commands-cli-integration', name: 'Commands context CLI integration', executor: { type: 'node', file: 'test/commands-cli.integration.ts' }, profiles: ['candidate'], groups: ['cli', 'package'],  schedulingCostMs: 12000, concurrencyClass: 'workspace-heavy' }),
@@ -999,6 +1005,7 @@ export const CANDIDATE_CI_SHARDS: any = Object.freeze([
     'contract',
     'runtime-adapter-contract',
     'managed-mutations',
+    'test-file-ownership',
     'package-static',
     'system-verification-admission',
     'integration-verification',

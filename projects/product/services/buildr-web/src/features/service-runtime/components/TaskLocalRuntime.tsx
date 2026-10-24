@@ -21,7 +21,7 @@ export function TaskLocalRuntime({ taskId }: { taskId: string }) {
   const client = useMemo(() => createServiceRuntimeClient(api, workspaceId || undefined), [workspaceId]);
   const [startOpen, setStartOpen] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
-  const [connection, setConnection] = useState<ConnectionSelection>('local');
+  const [connection, setConnection] = useState<ConnectionSelection>('auto');
   const [starting, setStarting] = useState(false);
   const [startResult, setStartResult] = useState<TaskStartResult | null>(null);
   const [error, setError] = useState('');
@@ -32,13 +32,13 @@ export function TaskLocalRuntime({ taskId }: { taskId: string }) {
   const services = runtime.data?.services || [];
   const runs = runtime.data?.runs.filter(run => run.taskId === taskId) || [];
   const connectionBlocked = connection === 'local' && !canUseLocalConnection(services, selected, true);
-  const openStart = (run?: ManagedRun) => { if (starting) { setStartOpen(true); return; } setSelected(run ? [run.serviceCode] : availableTaskServices(services).map(item => item.service.code)); setConnection(services.some(item => item.service.definition?.local.routing) ? 'auto' : run ? runConnections(run)[0]?.mode || 'local' : 'local'); setStartResult(null); setError(''); setStartOpen(true); };
+  const openStart = (run?: ManagedRun) => { if (starting) { setStartOpen(true); return; } setSelected(run ? [run.serviceCode] : availableTaskServices(services).map(item => item.service.code)); setConnection('auto'); setStartResult(null); setError(''); setStartOpen(true); };
   const start = async () => {
     const choices = taskSelections(services, selected, connection);
     if (!choices.length || connectionBlocked) return;
     setStarting(true); setError(''); setStartResult(null);
     try {
-      const result = await client.startTask(taskId, { selected: choices, ...(connection === 'auto' ? {} : { connection }), origin: 'human' });
+      const result = await client.startTask(taskId, { selected: choices, connection, origin: 'human' });
       setStartResult(result);
       await runtime.refresh({ silent: true });
       const failures = result.results.filter(item => item.error);
@@ -75,7 +75,7 @@ export function TaskLocalRuntime({ taskId }: { taskId: string }) {
         <p className="start-worktree-note"><Tag>按项返回结果</Tag>已有实例先核对连接后复用。前端失败时保留已就绪后端；等待较久时可“后台查看运行状态”并打开运行卡日志；关闭面板不会取消已发起的启动。</p>
       </div>
     </Modal>
-    <StartWorktreeModal open={Boolean(switchRun)} serviceCode={switchRun?.serviceCode || null} serviceName={selectedService?.name} initialRun={switchRun} onClose={() => setSwitchRun(null)} onStarted={() => runtime.refresh({ silent: true })} />
+    <StartWorktreeModal open={Boolean(switchRun)} serviceCode={switchRun?.serviceCode || null} serviceName={selectedService?.name} initialRun={switchRun} onClose={() => setSwitchRun(null)} onStarted={async () => { await runtime.refresh({ silent: true }); }} />
     <LocalLogsDrawer open={Boolean(logRun)} run={runs.find(run => run.id === logRun?.id) || logRun} serviceName={services.find(item => item.service.code === logRun?.serviceCode)?.service.name} onClose={() => setLogRun(null)} />
     <AgentDiscoveryDrawer open={Boolean(discovery)} serviceCode={discovery?.code || null} serviceName={discovery?.name} onClose={() => setDiscovery(null)} />
   </section>;

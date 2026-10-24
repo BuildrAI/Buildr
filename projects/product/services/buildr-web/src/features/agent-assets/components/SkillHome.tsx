@@ -1,3 +1,4 @@
+import { FileSystemActions } from '../../../components/FileSystemActions';
 import { ResourceActions } from '../../workbench/components/ResourceActions';
 import { useAppShell } from '../../../app/AppShellContext';
 import { workspaceHref } from '../../../lib/labels';
@@ -54,7 +55,7 @@ function SkillHomeContent({ skill, onAction, onRemove, children }: SkillHomeProp
       <section className="resource-section skill-primary-document" aria-label="技能正文">
         <ResourceDocumentPane file="SKILL.md" load={load} onOpen={open} />
       </section>
-      <section className="resource-section"><div className="resource-section-head"><h2>维护信息</h2><Button size="small" disabled={skill.required} onClick={() => onAction(skill.enabled ? 'disable' : 'enable', skill)}>{skill.enabled ? '停用技能' : '启用技能'}</Button></div><p className="page-copy">{skill.required ? '此技能是工作空间必需项。' : '启用情况由当前工作空间维护。'}修改内容时由智能体（Agent）核对权威源与归属。</p><code className="resource-path">{skill.sourcePath || '未登记本地源目录'}</code></section>
+      <section className="resource-section"><div className="resource-section-head"><h2>维护信息</h2><Button size="small" disabled={skill.required} onClick={() => onAction(skill.enabled ? 'disable' : 'enable', skill)}>{skill.enabled ? '停用技能' : '启用技能'}</Button></div><p className="page-copy">{skill.required ? '此技能是工作空间必需项。' : '启用情况由当前工作空间维护。'}修改内容时由智能体（Agent）核对权威源与归属。</p><code className="resource-path" style={{ display: 'block', overflowWrap: 'anywhere', marginBottom: 8 }}>{skill.sourcePath || '未登记本地源目录'}</code>{skill.sourcePath && <FileSystemActions path={skill.sourcePath} disabled={Boolean(skill.contentIssue)} onOpen={() => agentAssetsApi.openSkillSource(skill.id)} />}</section>
     </div>{children}
   </WorkspaceStage>;
 }

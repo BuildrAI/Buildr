@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -11,6 +12,7 @@ import { readCandidateCiArtifact, resolveCandidateExecutionContext, resolveCandi
 import { createCandidateCheckInputReader } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
 import { candidateProofDefinition, candidateProofDescriptors } from './candidate-repair.ts';
 import { assertFrozenCandidateCheckout, validateCandidateArtifactEvidence } from './candidate-artifact-reuse.ts';
+import { resolveExactNodeExecutable } from './required-node.ts';
 
 const productRoot = path.resolve(import.meta.dirname, '../..');
 const entry = path.join(productRoot, 'test/verification/candidate-ci.ts');
@@ -119,14 +121,54 @@ export function runLocalArtifactVerification(options: any, dependencies: any = {
   return { ...plan, artifact: artifact.identity, output, status: results.length === plan.nodes.length && results.every(result => result.status === 'passed') ? 'passed' : 'failed', results };
 }
 
+/** The declared minimum Node tuple for this local plan, or null when the
+ * selection does not run a minimum host check. */
+export function localArtifactRequiredNode(options: any, platform = process.platform): string | null {
+  const plan = createLocalArtifactPlan(platform, options);
+  if (plan.scope === 'common' || plan.nodeTuple !== 'minimum') return null;
+  return CANDIDATE_CI_HOST_NODE_TUPLES.find((tuple: any) => tuple.runner === plan.runner && tuple.expectation === 'minimum')?.requestedNode ?? null;
+}
+
+/** Minimum package checks only prove the real declared version. When the
+ * active runtime differs, re-execute this entry under an installed exact
+ * executable instead of failing on the active newer runtime. */
+export function reexecUnderRequiredNode(options: any, dependencies: any = {}): number | null {
+  if (options.json) return null;
+  const env = dependencies.env ?? process.env;
+  const requiredNode = dependencies.requiredNode !== undefined ? dependencies.requiredNode : localArtifactRequiredNode(options, dependencies.platform ?? process.platform);
+  const activeNode = dependencies.nodeVersion ?? process.versions.node;
+  if (!requiredNode || activeNode === requiredNode || env.BUILDR_ARTIFACT_NODE_REEXEC === '1') return null;
+  const resolved = dependencies.resolve !== undefined ? dependencies.resolve(requiredNode) : resolveExactNodeExecutable(requiredNode);
+  if (!resolved) return -1;
+  process.stderr.write(`Minimum Node package checks require actual Node ${requiredNode}, active ${activeNode}; re-executing under ${resolved}.\n`);
+  const child = (dependencies.spawn ?? spawnSync)(resolved, [fileURLToPath(import.meta.url), ...process.argv.slice(2)], {
+    stdio: 'inherit',
+    cwd: process.cwd(),
+    env: {
+      ...env,
+      BUILDR_NODE: resolved,
+      BUILDR_ARTIFACT_NODE_REEXEC: '1',
+      PATH: `${path.dirname(resolved)}${path.delimiter}${env.PATH ?? ''}`,
+    },
+  });
+  if (child.error) process.stderr.write(`${child.error.message ?? String(child.error)}\n`);
+  return child.status ?? 1;
+}
+
 if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {
   try {
     const options = parseArtifactArgs(process.argv.slice(2));
     if (options.help) process.stdout.write('Usage: artifact.ts --artifact-dir <original-package-directory> --output <evidence-directory> [--scope all|common|platform] [--node-tuple minimum] [--json]\n');
     else {
-      const result = runLocalArtifactVerification(options);
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      if (result.status === 'failed') process.exitCode = 1;
+      const reexec = reexecUnderRequiredNode(options);
+      if (reexec !== null) {
+        if (reexec === -1) throw new Error(`Minimum Node package checks require actual Node ${localArtifactRequiredNode(options)}, active ${process.versions.node}. No installed Node ${localArtifactRequiredNode(options)} was resolved; set BUILDR_NODE to a Node ${localArtifactRequiredNode(options)} executable or install Node ${localArtifactRequiredNode(options)} (searched BUILDR_NODE, known version managers and PATH).`);
+        process.exitCode = reexec;
+      } else {
+        const result = runLocalArtifactVerification(options);
+        process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+        if (result.status === 'failed') process.exitCode = 1;
+      }
     }
   } catch (error: any) { process.stderr.write(`${error.message}\n`); process.exitCode = 1; }
 }

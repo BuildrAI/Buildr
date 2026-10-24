@@ -4,7 +4,7 @@ Buildr 把可复用的工作方法保存在技能（Skill）中，再为不同�
 
 ## 从源文件到智能体（Agent）入口
 
-普通技能（Skill）的源位于工作空间（Workspace）的 `skills/`，由 `skills/manifest.yml` 登记。内置方法、本地方法和随组件（Component）安装的外部方法都走同一条路径；只有产品入口 `buildr` 直接来自安装包。
+工作空间（Workspace）的 `skills/manifest.yml` 统一管理技能（Skill）的采用与绑定。官方源和完整附件集中在 `~/.buildr/resources/skills/`，通过逻辑 `resource` 引用；组织自有源继续位于工作空间（Workspace）的 `skills/`。产品入口 `buildr` 同样从已采用资源读取。每个空间仍按自己的选择、绑定及组件（Component）片段生成入口，共享官方内容只随 Buildr 更新整体替换，不能作为空间定制位置。
 
 ![技能源文件如何成为可发现入口](../../archify/flows/skill-projection.html)
 
@@ -12,7 +12,7 @@ Buildr 把可复用的工作方法保存在技能（Skill）中，再为不同�
 
 生成过程保持源文件独立：`SKILL.md` 可以组合增强内容，`references/`、`scripts/`、`assets/` 等附件按原始字节和可执行状态投射。各适配器（Adapter）共享组合逻辑，只改变目标根、诊断身份和启用信息。项目（Project）的 `capabilities.yml` 保存适用性、需求和选择，不另外保存技能（Skill）副本。
 
-因此，调整工作方法应修改源目录，再通过同步生成目标入口。直接修改 `.agents/skills` 等派生目录，不能成为可持续维护的办法。完整实现见[技能投射代码地图](../../code-map/skill-projection.md)；需要逐节点查看时，可打开[投射关系图](../../archify/flows/skill-projection.html)。
+因此，调整组织自有方法应修改空间源目录，再生成目标入口；官方方法随 Buildr 更新。保留本地定制需要明确选择，内容摘要复核后归当前空间维护。添加目录和网页更新会自动执行相应准备与检查。直接修改 `.agents/skills` 等派生目录，不能成为可持续维护的办法。完整实现见[技能投射代码地图](../../code-map/skill-projection.md)；需要逐节点查看时，可打开[投射关系图](../../archify/flows/skill-projection.html)。
 
 ## 两种组合方式，解决不同问题
 
@@ -71,7 +71,7 @@ buildr doctor --agent <agent> --target <workspace> --json --detail full
 
 ## 连接用途复用同一份技能
 
-连接技能（Connection Skill）是带接入声明和必要程序的普通技能（Skill），完整源位于 `skills/connections/`，沿用已有清单、来源选择和附件投射。连接目录（Connection Catalog）从已登记源读取声明；可发现不代表当前智能体（Agent）已经加载方法，已投射也不代表专业程序可运行。
+连接技能（Connection Skill）是带接入声明和必要程序的普通技能（Skill），逻辑路径为 `skills/connections/`，官方原文来自共享资源，组织自有内容来自空间目录，沿用已有清单、来源选择和附件投射。连接目录（Connection Catalog）从已登记源读取声明；可发现不代表当前智能体（Agent）已经加载方法，已投射也不代表专业程序可运行。
 
 实例精确绑定已选来源，安装另一同系统方法不替换已有绑定。来源停用、缺失或不兼容时保留实例并报告局部问题；取消登记和卸载披露受影响实例，不自动删除配置和认证。制作自有方法使用[接入开发方法（connection-authoring）](../../../services/buildr/resources/workspace/skills/buildr/connection-authoring/SKILL.md)，不另建技能（Skill）加载系统。
 

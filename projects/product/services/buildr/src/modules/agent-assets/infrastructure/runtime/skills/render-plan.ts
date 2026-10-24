@@ -374,6 +374,7 @@ export function buildSkillRenderPlan(repoRoot: any, targetRoot: any, skills: any
         skillId: projection.skill.id,
         assetIdentity: projection.skill.assetIdentity || `product:${projection.skill.id}`,
         sourceIdentity: projection.skill.sourceIdentity || `product:${projection.skill.displaySource || projection.skill.id}`,
+        previousSourceIdentity: projection.skill.previousSourceIdentity,
         sourceWorkspaceId: projection.skill.workspaceId || options.sourceWorkspaceId || sha256Integrity(Buffer.from(path.resolve(repoRoot), 'utf8')),
         receiptEntries: receiptsByRoot.get(root),
       });

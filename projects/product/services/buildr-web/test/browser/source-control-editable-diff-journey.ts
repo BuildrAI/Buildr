@@ -76,7 +76,7 @@ export async function runSourceControlEditableDiffJourney({t, page, workspaceUrl
     await beforeSelection?.();
     await parent.locator('[data-source-worktree="' + tree.worktreeId + '"] .source-control-repository-copy').click();
     await selectSourceControlView(root(), 'changes');
-    const file = (area: string, filePath: string) => root().locator('[data-change-worktree="' + tree.worktreeId + '"] [data-change-area="' + area + '"] .task-changed-row')
+    const file = (filePath: string) => root().locator('[data-change-worktree="' + tree.worktreeId + '"] [data-change-area="working"] .task-changed-row')
       .filter({has: page.locator('.task-changed-path[data-file-path="' + filePath + '"]')});
     return {repository, tree, file};
   };
@@ -123,11 +123,11 @@ export async function runSourceControlEditableDiffJourney({t, page, workspaceUrl
       };
       page.on('request', observeEditorRead);
       await page.setViewportSize({width: 1440, height: 1000});
-      const {file, tree} = await open(branches, () => page.evaluate(() => {
+      const {file, tree, repository} = await open(branches, () => page.evaluate(() => {
         (window as Window & {__editableDiffReadProbe: {deferPolling: boolean}}).__editableDiffReadProbe.deferPolling = true;
       }));
       try {
-        await file('unstaged', files.changedPath).click(); await current().waitFor();
+        await file(files.changedPath).click(); await current().waitFor();
         await current().evaluate(async () => {await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);});
         const readsForSelection = () => editorReads.filter(url => url.searchParams.get('checkoutId') === tree.worktreeId);
         assert.equal(readsForSelection().length, 1, '首次打开只读取一次完整当前文件，挂载不立即重复读取');
@@ -177,11 +177,11 @@ export async function runSourceControlEditableDiffJourney({t, page, workspaceUrl
       assert.equal(await pane().getAttribute('data-diff-mode'), 'unified');
       const deleted = pane().locator('.cm-deletedChunk').first(); await deleted.waitFor();
       assert.equal(await deleted.getAttribute('contenteditable'), 'false', '统一对比的旧删除文本保持只读');
-      assert.match(await deleted.innerText(), /editableLine3 = 103/);
+      assert.match(await deleted.innerText(), /editableLine3 = 3;/, '统一更改差异以最近提交为旧侧基线');
       await current().press('ControlOrMeta+z'); await waitForDisk(files.absolute, files.working);
       await current().press('ControlOrMeta+Shift+z'); await waitForDisk(files.absolute, edited);
-      await file('unstaged', files.otherPath).click(); await pane().waitFor();
-      await file('unstaged', files.changedPath).click(); await pane().waitFor();
+      await file(files.otherPath).click(); await pane().waitFor();
+      await file(files.changedPath).click(); await pane().waitFor();
       await current().press('ControlOrMeta+z'); await waitForDisk(files.absolute, files.working);
       await current().press('ControlOrMeta+Shift+z'); await waitForDisk(files.absolute, edited);
 
@@ -195,7 +195,7 @@ export async function runSourceControlEditableDiffJourney({t, page, workspaceUrl
       await pane().getByRole('button', {name: '上一个差异', exact: true}).click();
       assert.equal(await position().getAttribute('data-diff-index'), '1');
       await assertLineInReader('export const editableLine3 = 303;');
-      const restored = edited.replace('editableLine3 = 303', 'editableLine3 = 103');
+      const restored = edited.replace('editableLine3 = 303', 'editableLine3 = 3');
       await restore().click(); await waitForDisk(files.absolute, restored);
       assert.equal(await position().getAttribute('data-diff-count'), '2');
       assert.match(files.read(), /editableLine25 = 225/); assert.match(files.read(), /editableLine47 = 247/);
@@ -203,15 +203,23 @@ export async function runSourceControlEditableDiffJourney({t, page, workspaceUrl
       await current().press('ControlOrMeta+Shift+z'); await waitForDisk(files.absolute, restored);
       assert.equal(files.indexContent(), files.index);
 
-      await pane().getByRole('button', {name: '下一个差异', exact: true}).click(); await restore().click();
-      await waitForDisk(files.absolute, files.index.replace('editableLine47 = 47', 'editableLine47 = 247'));
-      await pane().getByRole('button', {name: '下一个差异', exact: true}).click(); await restore().click();
-      await waitForDisk(files.absolute, files.index);
-      await file('unstaged', files.changedPath).waitFor({state: 'hidden'});
+      // Restore by the chunk the cursor actually lands on: after removing the
+      // line-3 chunk the remaining chunks are line 25 then line 47.
+      await pane().getByRole('button', {name: '下一个差异', exact: true}).click();
+      await assertLineInReader('export const editableLine25 = 225;');
+      await pane().getByRole('button', {name: '下一个差异', exact: true}).click();
+      await assertLineInReader('export const editableLine47 = 247;');
+      await restore().click();
+      await waitForDisk(files.absolute, restored.replace('editableLine47 = 247', 'editableLine47 = 47'));
+      await pane().getByRole('button', {name: '下一个差异', exact: true}).click();
+      await assertLineInReader('export const editableLine25 = 225;');
+      await restore().click();
+      await waitForDisk(files.absolute, files.base);
+      assert.equal(await file(files.changedPath).count(), 1, '恢复全部提交基线差异后索引仍不同，更改行保留在统一清单');
       assert.equal(await pane().getAttribute('data-file-id'), fileId, '恢复全部变化后仍保留当前文件和撤销入口');
       assert.equal(await position().getAttribute('data-diff-count'), '0');
-      assert.equal(await root().getByLabel('完整绝对路径', {exact: true}).innerText(), files.absolute, '清单行消失后不自动选择其他文件');
-      await current().press('ControlOrMeta+z'); await waitForDisk(files.absolute, files.index.replace('editableLine47 = 47', 'editableLine47 = 247'));
+      assert.equal(await root().getByLabel('完整绝对路径', {exact: true}).innerText(), files.absolute, '清单行保留后不自动选择其他文件');
+      await current().press('ControlOrMeta+z'); await waitForDisk(files.absolute, restored.replace('editableLine47 = 247', 'editableLine47 = 47'));
       await current().press('ControlOrMeta+z'); await waitForDisk(files.absolute, restored);
 
       await page.setViewportSize({width: 900, height: 900}); await assertNoOverflow();
@@ -225,8 +233,12 @@ export async function runSourceControlEditableDiffJourney({t, page, workspaceUrl
       await page.setViewportSize({width: 1440, height: 1000});
       await root().getByRole('button', {name: '恢复分屏', exact: true}).click();
 
-      await file('staged', files.changedPath).click(); await assertReadOnly();
-      await root().getByRole('region', {name: '差异内容', exact: true}).getByText('editableLine3 = 103', {exact: false}).waitFor();
+      // 统一更改列表不再提供显式暂存选择；显式分层读取继续由接口保持既有基线。
+      const stagedDiff = await page.request.get(api + '/code/diff?' + new URLSearchParams({repositoryId: repository.id, worktreeId: tree.worktreeId, filePath: files.changedPath, area: 'staged'}));
+      assert.equal(stagedDiff.status(), 200);
+      const stagedBody = await stagedDiff.json();
+      assert.equal(stagedBody.area, 'staged', '显式已暂存比较继续以暂存基线读取');
+      assert.match(stagedBody.patch || '', /\+export const editableLine3 = 103;/, '已暂存接口仍读取索引内容，不冒充当前文件');
       await selectSourceControlView(root(), 'history');
       const commit = root().locator('.source-control-graph > li[data-source-commit="' + files.commitHash + '"]'); await commit.waitFor();
       const toggle = commit.locator('.source-control-commit-toggle'); if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
@@ -243,7 +255,7 @@ export async function runSourceControlEditableDiffJourney({t, page, workspaceUrl
       await explorer.getByRole('button', {name: '返回源代码管理', exact: true}).click();
       await root().getByRole('button', {name: '返回差异', exact: true}).click();
       await selectSourceControlView(root(), 'changes');
-      await file('untracked', files.newPath).click(); await pane().waitFor();
+      await file(files.newPath).click(); await pane().waitFor();
       await restore().click(); await waitForDisk(files.newAbsolute, '');
       assert.equal(fs.existsSync(files.newAbsolute), true, '未跟踪全部恢复为空正文，文件对象仍存在');
       assert.equal(await position().getAttribute('data-diff-count'), '0');
@@ -256,18 +268,32 @@ export async function runSourceControlEditableDiffJourney({t, page, workspaceUrl
     });
   });
 
-  await scenario('可编辑差异：过期索引取消旧块恢复', async () => {
+  await scenario('可编辑差异：过期提交基线取消旧块恢复', async () => {
     await withFiles(async (branches: any) => {
       const files = prepareFiles(branches);
-      await page.setViewportSize({width: 1440, height: 1000}); const {file} = await open(branches);
-      await file('unstaged', files.changedPath).click(); await pane().waitFor();
+      // Defer live polling so the stale baseline cannot refresh before the click.
+      await page.addInitScript(() => {
+        const state = window as Window & {__editableDiffReadProbe?: {deferPolling: boolean}};
+        state.__editableDiffReadProbe = {deferPolling: false};
+        const schedule = window.setInterval.bind(window);
+        window.setInterval = ((callback: TimerHandler, delay?: number, ...args: unknown[]) => {
+          if (typeof callback !== 'function' || delay !== 5000) return schedule(callback, delay, ...args);
+          return schedule((...values: unknown[]) => {if (!state.__editableDiffReadProbe?.deferPolling) callback.apply(window, values);}, delay, ...args);
+        }) as typeof window.setInterval;
+      });
+      await page.setViewportSize({width: 1440, height: 1000}); const {file} = await open(branches, () => page.evaluate(() => {
+        (window as Window & {__editableDiffReadProbe: {deferPolling: boolean}}).__editableDiffReadProbe.deferPolling = true;
+      }));
+      await file(files.changedPath).click(); await pane().waitFor();
       await mode().getByText('左右对比', {exact: true}).click();
-      const newerIndex = files.index.replace('editableLine3 = 103', 'editableLine3 = 503');
-      fs.writeFileSync(files.absolute, newerIndex); files.git(['add', '--', files.changedPath]); fs.writeFileSync(files.absolute, files.working);
+      // External partial commit moves HEAD without the open file: add only the
+      // other files to the index on top of its staged entry and commit the index.
+      files.git(['reset', '-q', '--', files.changedPath]);
+      files.git(['add', '--', files.otherPath, files.newPath]);
+      files.git(['-c', 'commit.gpgSign=false', 'commit', '-qm', 'external baseline move']);
       await restore().click();
-      await page.getByText('暂存内容已变化，已更新比较；请核对后再次恢复。', {exact: true}).waitFor();
-      assert.equal(files.read(), files.working, '过期块不写入旧范围'); assert.equal(files.indexContent(), newerIndex);
-      await original().getByText('export const editableLine3 = 503;', {exact: true}).waitFor();
+      await page.getByText('最近提交或文件来源已变化，请刷新后重新核对。', {exact: true}).waitFor();
+      assert.equal(files.read(), files.working, '过期块不写入旧范围');
       await capture(page, 'source-control-editable-diff-stale-index.png');
     });
   });
@@ -276,7 +302,7 @@ export async function runSourceControlEditableDiffJourney({t, page, workspaceUrl
     await withFiles(async (branches: any) => {
       const files = prepareFiles(branches);
       await page.setViewportSize({width: 1440, height: 1000}); const {file} = await open(branches);
-      await file('unstaged', files.changedPath).click(); await pane().waitFor();
+      await file(files.changedPath).click(); await pane().waitFor();
       await mode().getByText('左右对比', {exact: true}).click();
       let release!: () => void; const held = new Promise<void>(resolve => {release = resolve;});
       const routePattern = '**/code/save-file';

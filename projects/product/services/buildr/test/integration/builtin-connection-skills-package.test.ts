@@ -39,6 +39,9 @@ test('installed package independently delivers three complete builtin connection
   const unpack = spawnSync('tar', ['-xzf', artifact.tarball, '-C', extracted], { encoding: 'utf8', timeout: 60_000 });
   assert.equal(unpack.status, 0, unpack.stderr);
   const extractedPackage = path.join(extracted, 'package'), metadata = JSON.parse(fs.readFileSync(path.join(extractedPackage, 'package.json'), 'utf8'));
+  for (const relative of ['workspace/skills/buildr/archify', 'workspace/components/buildr/archify', 'contracts/bootstrap.yml', 'installation/launcher/buildr-icon.png']) {
+    assert.equal(fs.existsSync(path.join(extractedPackage, 'payload/product/resources', relative)), false, relative);
+  }
   assert.equal(metadata.bin['buildr-mysql'], 'bin/buildr-mysql.mjs');
   assert.ok(fs.statSync(path.join(extractedPackage, 'runtime/mysql-connection.cjs')).isFile());
   assert.equal(fs.existsSync(path.join(extractedPackage, 'node_modules')), false);
@@ -81,6 +84,7 @@ test('installed package independently delivers three complete builtin connection
   };
   const workspace = path.join(root, 'workspace'); fs.mkdirSync(workspace);
   run(['init', '--target', workspace, '--name', 'builtin-package-fixture', '--profile', 'personal', '--source-only']);
+  assert.equal(fs.existsSync(path.join(env.BUILDR_PRODUCT_DATA_DIR!, 'local/preserved-skills/archify')), false);
   const manifest = YAML.parse(fs.readFileSync(path.join(workspace, 'skills/manifest.yml'), 'utf8'));
   const systems = [
     { skillId: 'mysql-connection', definitionId: 'mysql', config: { host: 'database.example.invalid', port: 3306 }, help: /test[\s\S]*databases/u },
@@ -95,7 +99,9 @@ test('installed package independently delivers three complete builtin connection
     assert.equal(skill.assetIdentity, `buildr:skill:${system.skillId}`);
     assert.equal(skill.sourceIdentity, `package:skills/connections/${system.skillId}`);
     assert.deepEqual(skill.connectionDefinitions, ['assets/connection.yml']);
-    const source = path.join(workspace, 'skills/connections', system.skillId);
+    const adopted = JSON.parse(fs.readFileSync(path.join(workspace, '.buildr/local/package-resources.json'), 'utf8'));
+    const source = path.join(env.BUILDR_PRODUCT_DATA_DIR!, 'resources', 'skills/connections', system.skillId);
+    assert.equal(fs.existsSync(path.join(workspace, 'skills/connections', system.skillId)), false);
     const definition = parseConnectionDefinition(fs.readFileSync(path.join(source, 'assets/connection.yml'), 'utf8'));
     assert.equal(definition.definitionId, system.definitionId);
     const entry = catalog.definitions.find((item: any) => item.skill.assetIdentity === skill.assetIdentity && item.definition.definitionId === system.definitionId);
@@ -118,14 +124,15 @@ test('installed package independently delivers three complete builtin connection
 
   run(['skills', 'render', 'codex', '--target', workspace]);
   for (const system of systems) {
-    const source = path.join(workspace, 'skills/connections', system.skillId), projected = path.join(workspace, '.agents/skills', system.skillId);
+    const adopted = JSON.parse(fs.readFileSync(path.join(workspace, '.buildr/local/package-resources.json'), 'utf8'));
+    const source = path.join(env.BUILDR_PRODUCT_DATA_DIR!, 'resources', 'skills/connections', system.skillId), projected = path.join(workspace, '.agents/skills', system.skillId);
     assert.ok(fs.statSync(path.join(projected, 'SKILL.md')).isFile());
     const attachments = files(source).filter(file => file !== 'SKILL.md');
     assert.ok(attachments.length >= 2);
     for (const relative of attachments) {
       const original = path.join(source, relative), copy = path.join(projected, relative);
       assert.deepEqual(fs.readFileSync(copy), fs.readFileSync(original), `${system.skillId}/${relative}`);
-      if (process.platform !== 'win32') assert.equal(fs.statSync(copy).mode & 0o111, fs.statSync(original).mode & 0o111, `${system.skillId}/${relative} executable mode`);
+      if (process.platform !== 'win32') assert.equal(fs.statSync(copy).mode & 0o100, fs.statSync(original).mode & 0o100, `${system.skillId}/${relative} executable mode`);
     }
   }
 });

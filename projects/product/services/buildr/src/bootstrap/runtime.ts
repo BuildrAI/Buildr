@@ -1,3 +1,4 @@
+import { ensurePackageResources } from '../infrastructure/product-resources/shared-resources.ts';
 import { AGENT_ASSETS_SOURCE_MODULE } from '../modules/agent-assets/source/module.ts';
 import { createConnectionSkillsModule, CONNECTION_SKILLS_APPLICATION } from '../modules/connection-skills/module.ts';
 import { SERVICE_RUNTIME_MODULE } from '../modules/service-runtime/module.ts';
@@ -99,6 +100,11 @@ export function createRuntime(): any  {
     registry.provide(DSH_PAGE_OBSERVATIONS).close();
     await Promise.all([registry.provide(DSH_DESKTOP_APPLICATION).close(), registry.provide(AGENT_OPERATIONS_APPLICATION).close()]);
   } }));
+  registry.provide(SYSTEM_INSTALLATION_WEB_BINDER).bindWorkspaceUpdates({
+    prepareResources: () => {try{return ensurePackageResources();}catch(error:any){throw Object.assign(new Error('新版工作内容尚未准备好，已安装的软件会保留。请重试。',{cause:error}),{code:'update_resources_failed',diagnostic:error.message});}},
+    list: () => registry.provide(WORKSPACE_APPLICATION).listRegisteredWorkspaces().workspaces.filter((entry: any) => entry.registryScope !== 'shared').map((entry: any) => ({ rootPath: entry.rootPath, workspaceId: entry.workspace?.id || null, name: entry.workspace?.name || entry.rootPath, status: 'pending', error: null })),
+    prepare: (entry: any,options: any) => registry.provide(WORKSPACE_APPLICATION).prepareRegisteredWorkspace(entry,options),
+  });
   registry.provide(SYSTEM_INSTALLATION_WEB_BINDER).bindWebUpdates(registry.provide(WEB_INSTANCE_LIFECYCLE));
   registry.install(createSystemDoctorModule(runtime, {
     diagnosticContributions: registry.contributions('diagnostics'),

@@ -135,7 +135,7 @@ export async function runSourceControlSourceFeedbackJourney({t,page,workspaceUrl
 
         await navigate('source-control');await currentSource(repository.id,worktree.worktreeId);
         await selectSourceControlView(scm(), 'changes');
-        await scm().locator('[data-change-worktree="'+worktree.worktreeId+'"] [data-change-area="unstaged"] .task-changed-row').filter({has:page.locator('.task-changed-path[data-file-path="'+branches.liveRefresh.path+'"]')}).click();
+        await scm().locator('[data-change-worktree="'+worktree.worktreeId+'"] [data-change-area="working"] .task-changed-row').filter({has:page.locator('.task-changed-path[data-file-path="'+branches.liveRefresh.path+'"]')}).click();
         const comparison=scm().locator('.file-diff-editor:visible');await comparison.waitFor();const comparisonId=await comparison.getAttribute('data-file-id');assert.equal(comparisonId,fileId);
         const matchesDiff=(url:URL)=>url.pathname===operation('diff')&&url.searchParams.get('repositoryId')===repository.id&&url.searchParams.get('worktreeId')===worktree.worktreeId&&url.searchParams.get('filePath')===branches.liveRefresh.path;
         const diffGate=new Promise<void>(resolve=>{releaseDiff=resolve;}),diffRequests=new Set<any>();

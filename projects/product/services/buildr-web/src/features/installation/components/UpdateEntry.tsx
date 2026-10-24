@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { App, Button, Tooltip } from 'antd';
+import { App, Button, Space, Tag, Tooltip } from 'antd';
 import { ExclamationCircleOutlined, SyncOutlined, DownloadOutlined } from '@ant-design/icons';
 import { useUpdateFlow } from '../hooks/useUpdateFlow';
 import { buildUpdateView, updateEntryVisible } from '../lib/update-view';
@@ -7,10 +7,10 @@ import { copyText } from '../../../lib/copyText';
 import { UpdateDialog } from './UpdateDialog';
 
 export type UpdateEntryHandle = { check():void };
-type Props = { enabled:boolean; openAgentAction(action?:string,context?:Record<string,unknown>):void; onCompleted?():void };
+type Props = { enabled:boolean; checkOnly?:boolean; openAgentAction(action?:string,context?:Record<string,unknown>):void; onCompleted?():void };
 const storageKey='buildr.pending-update';
 function pendingUpdate():{id:string;version:string}|null {try{const value=JSON.parse(sessionStorage.getItem(storageKey)||'null');return typeof value?.id==='string'&&typeof value?.version==='string'?value:null;}catch{return null;}}
-export const UpdateEntry=forwardRef<UpdateEntryHandle,Props>(function UpdateEntry({enabled,openAgentAction,onCompleted},ref){
+export const UpdateEntry=forwardRef<UpdateEntryHandle,Props>(function UpdateEntry({enabled,checkOnly=false,onCompleted},ref){
   const {notification,message}=App.useApp();
   const flow=useUpdateFlow({enabled,onCompleted});
   const [open,setOpen]=useState(()=>Boolean(pendingUpdate())),[busy,setBusy]=useState(false),[actionError,setActionError]=useState(''),[selectedTrack,setSelectedTrack]=useState('');
@@ -39,15 +39,15 @@ export const UpdateEntry=forwardRef<UpdateEntryHandle,Props>(function UpdateEntr
   const close=()=>{setOpen(false);if(['completed','latest'].includes(view.phase)){try{sessionStorage.removeItem(storageKey);}catch{}setShowCompleted(false);}};
   if(!enabled)return null;
   const visible=updateEntryVisible(flow.awareness,flow.job,flow.connection);
-  const active=['downloading','installing','launcher-updating','restarting','verifying'].includes(view.phase);
+  const active=['downloading','installing','launcher-updating','restarting','verifying','workspaces-updating'].includes(view.phase);
   return <>
     {visible&&<Tooltip title={view.phase.endsWith('error')?'更新有待恢复的事项':view.phase==='ready'?'更新已准备好':active?'更新正在进行':'有新版本可更新'}><Button id="update-entry" className={'shell-update-entry'+(view.phase.endsWith('error')?' has-warning':'')} aria-label="软件更新" type="text" icon={active?<SyncOutlined spin/>:view.phase.endsWith('error')?<ExclamationCircleOutlined/>:<DownloadOutlined/>} onClick={()=>{setOpen(true);setActionError('');}}/></Tooltip>}
-    <UpdateDialog open={open} view={view} busy={busy||flow.checking} actionError={actionError} disconnected={flow.connection==='timed-out'} onClose={close} onCheck={check} onTargetChange={setSelectedTrack}
-      onDownload={()=>{if(view.target)void run(()=>flow.prepare(view.target!.track,view.target!.version));}}
+    <UpdateDialog footerContent={checkOnly?<><p className="page-copy">预览实例仅检查版本，安装更新请回到日常使用的 Buildr。</p><Button onClick={close}>关闭</Button></>:undefined} allowBackground extraContent={flow.job?.workspaces?.length?<div className="buildr-update-workspaces" aria-label="工作空间更新结果"><h2>工作空间</h2>{flow.job.workspaces.map(entry=><div key={entry.rootPath} className="buildr-update-workspace"><Space wrap><strong>{entry.name}</strong><Tag color={entry.status==='done'?'success':entry.status==='failed'?'warning':'default'}>{entry.status==='done'?'可使用新版':entry.status==='failed'?'待完成':entry.status==='running'?'准备中':entry.status==='skipped'?'已移除':'等待中'}</Tag>{!checkOnly&&entry.status==='failed'&&Boolean(entry.customizations?.length)&&<Button size="small" disabled={busy||flow.job?.status==='applying'} onClick={()=>{remember();void run(()=>flow.recover('workspaces',entry.rootPath,true));}}>保留当前定制并继续</Button>}{!checkOnly&&entry.status==='failed'&&<Button size="small" disabled={busy||flow.job?.status==='applying'} onClick={()=>{remember();void run(()=>flow.recover('workspaces',entry.rootPath));}}>重试</Button>}</Space><div className="mono">{entry.rootPath}</div>{entry.error&&<p role="alert">{entry.error}</p>}{entry.status==='failed'&&entry.details&&<details><summary>查看详情</summary><pre className="workspace-preparation-details">{entry.details}</pre></details>}</div>)}</div>:undefined} open={open} view={view} busy={busy||flow.checking} actionError={actionError} disconnected={flow.connection==='timed-out'} onClose={close} onCheck={check} onTargetChange={setSelectedTrack}
+      onDownload={()=>{if(view.target)void run(async()=>{const next=await flow.prepare(view.target!.track,view.target!.version);setShowCompleted(true);try{sessionStorage.setItem(storageKey,JSON.stringify({id:next.id,version:next.version}));}catch{}});}}
       onInstall={()=>{remember();if(flow.job?.version)void run(()=>flow.apply(flow.job!.version!));}}
       onRecover={action=>{remember();void run(()=>flow.recover(action));}}
       onReconnect={()=>void flow.reconnect()}
       onCopy={command=>void (async()=>{if(await copyText(command))void message.success('命令已复制。');else void message.warning('复制失败，请选中命令手动复制。');})()}
-      onAgent={()=>{if(!view.target)return;const command=`buildr update --track ${view.target.track}`;openAgentAction('release-update',{track:view.target.track,version:view.target.version,command,prompt:`用户选择更新 Buildr 到 ${view.target.label} ${view.target.version}。先检查 buildr update check --json，确认该通道版本仍一致，再执行 ${command}。不要更换通道或降级；完成后核实实际安装、启动入口和网页运行版本。`});setOpen(false);}}/>
+      onAgent={()=>{}}/>
   </>;
 });

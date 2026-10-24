@@ -16,7 +16,7 @@ export function createUpdateFlowStore(productRoot: string, options: { dataRoot?:
     if (!fs.existsSync(file)) return null;
     try {
       const stat = fs.lstatSync(file);
-      if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 65536) throw invalid();
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4 * 1024 * 1024) throw invalid();
       const envelope = JSON.parse(fs.readFileSync(file, 'utf8'));
       const value = envelope?.record;
       if (envelope.schemaVersion !== 'buildr.web-update-record/v1' || !value || value.productRoot !== root
@@ -27,9 +27,11 @@ export function createUpdateFlowStore(productRoot: string, options: { dataRoot?:
         || !(value.installedVersion === null || parseSemver(value.installedVersion))
         || !(value.previousInstallationIdentity === null || typeof value.previousInstallationIdentity === 'string')
         || !['preparing', 'ready', 'applying', 'failed', 'partial', 'completed'].includes(value.status)
-        || !['idle', 'download', 'ready', 'install', 'launcher', 'restart', 'verify', 'completed'].includes(value.stage)
+        || !['idle', 'download', 'ready', 'install', 'launcher', 'restart', 'verify', 'workspaces', 'completed'].includes(value.stage)
         || !['install', 'launcher', 'restart', 'verify'].every(key => ['pending', 'running', 'done', 'failed', 'skipped'].includes(value.steps?.[key]))
         || ![value.error, value.launcherError].every(error => error === null || (typeof error?.code === 'string' && typeof error?.message === 'string'))
+        || (value.resources !== undefined && !['pending','running','done','failed','skipped'].includes(value.resources))
+        || (value.workspaces !== undefined && (!Array.isArray(value.workspaces) || value.workspaces.some((item: any) => typeof item.rootPath !== 'string' || !path.isAbsolute(item.rootPath) || !(item.workspaceId === null || typeof item.workspaceId === 'string') || typeof item.name !== 'string' || !['pending','running','done','failed','skipped'].includes(item.status) || !(item.error === null || typeof item.error === 'string'))))
         || typeof value.updatedAt !== 'string') throw invalid();
       return value;
     } catch { throw invalid(); }

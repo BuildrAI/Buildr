@@ -132,3 +132,14 @@ test('read errors retain HTTP status and code so unavailable sources are disting
   status = 503;
   await assert.rejects(client('/api/v1/tasks/one/file-diff'), error => error.status === 503 && error.code === 'task_file_checkout_unavailable');
 });
+
+test('安装资源位置保持本机全局路径，技能打开仍使用当前工作空间及写会话', async t => {
+  const requests=[];
+  t.mock.method(globalThis,'fetch',async(url,init)=>{requests.push({url,init});return new Response('{"requested":true}',{status:200});});
+  const client=createApiClient({getWorkspaceId:()=> 'space-a',sessionAdapter:{writeHeaders:()=>({'x-buildr-session':'token'})}});
+  await client('/api/v1/installation/resources');
+  await client('/api/v1/installation/resources/open',{method:'POST',body:'{"resourceSet":"set"}'});
+  await client('/api/v1/agent-assets/skills/demo/open',{method:'POST',body:'{}'});
+  assert.deepEqual(requests.map(r=>r.url),['/api/v1/installation/resources','/api/v1/installation/resources/open','/api/v1/workspaces/space-a/agent-assets/skills/demo/open']);
+  assert.equal(requests[1].init.headers.get('x-buildr-session'),'token');assert.equal(requests[2].init.headers.get('x-buildr-session'),'token');
+});

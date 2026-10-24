@@ -5,6 +5,6 @@ description: 使用 Archify 创建或修改架构、流程、时序、数据流�
 
 # Archify
 
-绘图前读取随附的 [Archify 上游说明](assets/archify/SKILL.md)，按其方法生成、验证并交付图示。该完整发行包位于本技能（Skill）目录下的 `assets/archify/`；上游说明中的 `bin/`、`scripts/`、`references/` 等相对路径均从该目录解析，命令也在该目录执行。图示输入和输出使用目标项目的绝对路径。
+本技能（Skill）是 Buildr 自身开发使用的工作空间资产，不随产品安装包交付。绘图前读取随附的 [Archify 上游说明](assets/archify/SKILL.md)，按其方法生成、验证并交付图示。完整发行包位于 `assets/archify/`；上游说明中的相对路径从该目录解析。图示输入和输出使用目标项目的绝对路径。
 
-上游内容由 Buildr 的 `archify` 可选组件（Component）整体管理。更新受管版本时使用 Buildr 的组件（Component）更新流程；保留项目中的图示源文件和生成结果。
+当前工作空间自行维护完整来源和上游版本；不使用已退出的内置组件（Component）安装、更新或卸载指令。更新前核对来源、许可证与真实需求，保留已有图示源文件和生成结果，不自动升级上游。

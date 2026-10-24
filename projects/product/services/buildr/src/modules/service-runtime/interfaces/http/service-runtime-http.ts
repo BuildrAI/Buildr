@@ -27,7 +27,9 @@ function assertParams(params: URLSearchParams, allowed: string[]) {
 export function parseStartRunInput(code: string, body: Record<string, unknown>): StartRunInput {
   if (typeof body.worktreeId !== 'string' || !body.worktreeId) failure('service_runtime_input_invalid', '必须选择要启动的代码目录。');
   if (body.origin !== undefined && body.origin !== 'human' && body.origin !== 'agent') failure('service_runtime_input_invalid', '启动入口无效。');
-  if (body.connection !== undefined && body.connection !== 'local' && body.connection !== 'remote') failure('service_runtime_input_invalid', '前端连接必须单选 local 或 remote。');
+  if (body.connection !== undefined && !['local', 'remote', 'auto'].includes(body.connection as string)) failure('service_runtime_input_invalid', '连接方式无效。');
+  if (body.standalone !== undefined && typeof body.standalone !== 'boolean') failure('service_runtime_input_invalid', '单服务启动标记无效。');
+  if (body.environment !== undefined && (typeof body.environment !== 'string' || !IDENTIFIER.test(body.environment))) failure('service_runtime_input_invalid', '远程环境编号无效。');
   if (body.taskId !== undefined && (typeof body.taskId !== 'string' || !IDENTIFIER.test(body.taskId))) failure('service_runtime_input_invalid', '任务编号无效。');
   if (body.expectedBackendRunId !== undefined && (typeof body.expectedBackendRunId !== 'string' || !IDENTIFIER.test(body.expectedBackendRunId))) failure('service_runtime_input_invalid', '已观察的本地后端编号无效。');
   if (body.expectedRoutingDigest !== undefined && (typeof body.expectedRoutingDigest !== 'string' || !/^sha256-[a-f0-9]{64}$/.test(body.expectedRoutingDigest))) failure('service_runtime_input_invalid', '已观察的泳道上下文摘要无效。');
@@ -55,7 +57,7 @@ export function parseStartRunInput(code: string, body: Record<string, unknown>):
   }
   return { ...body, serviceCode: code, origin: body.origin ?? 'human' } as StartRunInput;
 }
-export function createServiceRuntimeHttp(deps: { view: ServiceRuntimeView; runtime: ServiceRuntimeApplication; taskRuntime?: ServiceTaskRuntimeApplication }) {
+export function createServiceRuntimeHttp(deps: { view: ServiceRuntimeView; runtime: ServiceRuntimeApplication; taskRuntime?: ServiceTaskRuntimeApplication; sources?: { prepare(root: string, code: string, input: { worktreeId: string; targetRef: string; expectedTargetHash: string; expectedRevision: string }): unknown } }) {
   return Object.freeze({
     id: 'service-runtime.http',
     async handle({ request, suffix, searchParams, root, authorizeWrite, readBody }: any) {
@@ -72,7 +74,7 @@ export function createServiceRuntimeHttp(deps: { view: ServiceRuntimeView; runti
           const taskId = identifier(taskStart[1], '任务编号');
           const body = await readBody(new Set(['selected', 'connection', 'origin']), '启动任务本地服务');
           if (!Array.isArray(body.selected) || !body.selected.length) failure('service_runtime_input_invalid', '至少选择一个服务。');
-          if (body.connection !== undefined && body.connection !== 'local' && body.connection !== 'remote') failure('service_runtime_input_invalid', '前端连接必须单选 local 或 remote。');
+          if (body.connection !== undefined && !['local', 'remote', 'auto'].includes(body.connection)) failure('service_runtime_input_invalid', '连接方式无效。');
           if (body.origin !== undefined && body.origin !== 'human' && body.origin !== 'agent') failure('service_runtime_input_invalid', '启动入口无效。');
           const selected: TaskRunSelection[] = body.selected.map((item: unknown) => {
             if (!item || typeof item !== 'object' || Array.isArray(item)) failure('service_runtime_input_invalid', '所选服务无效。');
@@ -87,23 +89,33 @@ export function createServiceRuntimeHttp(deps: { view: ServiceRuntimeView; runti
         }
         const service = suffix.match(/^\/service-runtime\/services\/([^/]+)$/);
         if (service && request.method === 'GET') {
-          assertParams(searchParams, ['taskId']);
+          assertParams(searchParams, ['taskId', 'standalone']);
           const taskId = searchParams.has('taskId') ? identifier(searchParams.get('taskId')!, '任务编号') : undefined;
-          return { status: 200, body: await deps.view.detail(root, identifier(service[1], '服务编号'), taskId) };
+          if (searchParams.has('standalone') && searchParams.get('standalone') !== 'true') failure('service_runtime_input_invalid', '单服务读取标记无效。');
+          const standalone = searchParams.get('standalone') === 'true';
+          if (standalone && taskId) failure('service_runtime_input_invalid', '单服务读取不能同时指定任务。');
+          return { status: 200, body: await deps.view.detail(root, identifier(service[1], '服务编号'), taskId, { standalone }) };
         }
         const start = suffix.match(/^\/service-runtime\/services\/([^/]+)\/runs$/);
         if (start && request.method === 'POST') {
           assertParams(searchParams, []); authorizeWrite();
-          const body = await readBody(new Set(['worktreeId', 'origin', 'taskId', 'connection', 'expectedWorktree', 'expectedBackendRunId', 'backendTargets']), '启动本地运行');
+          const body = await readBody(new Set(['worktreeId', 'origin', 'taskId', 'connection', 'expectedWorktree', 'expectedBackendRunId', 'backendTargets', 'standalone', 'environment']), '启动本地运行');
           return { status: 200, body: await deps.runtime.startRun(root, parseStartRunInput(identifier(start[1], '服务编号'), body)) };
         }
         if (suffix === '/service-runtime/overview' && request.method === 'GET') { assertParams(searchParams, []); return { status: 200, body: await deps.view.overview(root) }; }
         const restart = suffix.match(/^\/service-runtime\/runs\/([^/]+)\/restart$/);
         if (restart && request.method === 'POST') {
           assertParams(searchParams, []); authorizeWrite();
-          const body = await readBody(new Set(['connection', 'expectedWorktree', 'expectedBackendRunId', 'backendTargets', 'expectedRoutingDigest']), '切换本地运行连接');
+          const body = await readBody(new Set(['connection', 'expectedWorktree', 'expectedBackendRunId', 'backendTargets', 'expectedRoutingDigest', 'environment']), '切换本地运行连接');
           const parsed = parseStartRunInput('', { ...body, worktreeId: 'current' });
-          return { status: 200, body: await deps.runtime.restartRun(root, identifier(restart[1], '运行编号'), { origin: 'human', connection: parsed.connection, backendTargets: parsed.backendTargets, expectedWorktree: parsed.expectedWorktree, expectedBackendRunId: parsed.expectedBackendRunId, expectedRoutingDigest: parsed.expectedRoutingDigest }) };
+          return { status: 200, body: await deps.runtime.restartRun(root, identifier(restart[1], '运行编号'), { origin: 'human', connection: parsed.connection, backendTargets: parsed.backendTargets, expectedWorktree: parsed.expectedWorktree, expectedBackendRunId: parsed.expectedBackendRunId, expectedRoutingDigest: parsed.expectedRoutingDigest, environment: parsed.environment }) };
+        }
+        const prepare = suffix.match(/^\/service-runtime\/services\/([^/]+)\/worktrees$/);
+        if (prepare && request.method === 'POST' && deps.sources) {
+          assertParams(searchParams, []); authorizeWrite();
+          const body = await readBody(new Set(['worktreeId', 'targetRef', 'expectedTargetHash', 'expectedRevision']), '准备独立工作树');
+          if (!/^checkout-[a-f0-9]{64}$/.test(body.worktreeId || '') || !/^refs\/(?:heads|remotes)\/.+/.test(body.targetRef || '') || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(body.expectedTargetHash || '') || typeof body.expectedRevision !== 'string' || !body.expectedRevision) failure('service_runtime_input_invalid', '必须选择真实工作树及已观察的分支版本。');
+          return { status: 200, body: deps.sources.prepare(root, identifier(prepare[1], '服务编号'), body) };
         }
         const stop = suffix.match(/^\/service-runtime\/runs\/([^/]+)\/stop$/);
         if (stop && request.method === 'POST') { assertParams(searchParams, []); authorizeWrite(); await readBody(new Set([]), '停止本地运行'); return { status: 200, body: await deps.runtime.stopRun(root, identifier(stop[1], '运行编号')) }; }

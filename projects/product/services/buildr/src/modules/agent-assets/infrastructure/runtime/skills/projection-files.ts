@@ -4,6 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from '../../../../../infrastructure/process.ts';
 import { getRuntimeAdapterFor } from '../adapter-contract.ts';
+import { isFinderMetadata } from '../../../../../infrastructure/filesystem/finder-metadata.ts';
 
 export const RUNTIME_SKILL_PROJECTION_SCHEMA_V1 = 'buildr.runtime-skill-projection/v1';
 export const RUNTIME_SKILL_PROJECTION_SCHEMA = 'buildr.skill-projection/v2';
@@ -99,6 +100,7 @@ function gitExecutablePaths(sourceDir: any): any  {
 function inspectSourceEntry(sourceDir: any, absolute: any, relative: any, files: any, indexedExecutable: any): any  {
   const stat = fs.lstatSync(absolute);
   if (stat.isSymbolicLink()) throw new Error(`Skill source must not contain symbolic links: ${path.join(sourceDir, relative)}`);
+  if (isFinderMetadata(path.basename(absolute), stat)) return;
   if (stat.isDirectory()) {
     for (const child of fs.readdirSync(absolute).sort()) {
       inspectSourceEntry(sourceDir, path.join(absolute, child), path.posix.join(relative, child), files, indexedExecutable);
@@ -119,7 +121,7 @@ export function enumerateSkillSourceFiles(sourceDir: any): any  {
   const rootStat = fs.lstatSync(sourceDir);
   if (rootStat.isSymbolicLink()) throw new Error(`Skill source directory must not be a symbolic link: ${sourceDir}`);
   if (!rootStat.isDirectory()) throw new Error(`Skill source directory does not exist: ${sourceDir}`);
-  const entries = fs.readdirSync(sourceDir).sort();
+  const entries = fs.readdirSync(sourceDir).sort().filter(entry => !isFinderMetadata(entry, fs.lstatSync(path.join(sourceDir, entry))));
   const unknown = entries.filter((entry: any) => !SUPPORTED_SKILL_SOURCE_ENTRY_SET.has(entry));
   if (unknown.length) throw new Error(`Skill source contains unsupported top-level entries: ${unknown.join(', ')}`);
   const indexedExecutable = gitExecutablePaths(sourceDir);
@@ -355,7 +357,7 @@ export function listSkillProjectionOwnershipReceipts({ targetRoot, runtimeRoot, 
   return entries;
 }
 
-export function observeSkillProjectionOwnershipReceipt({ targetRoot, runtimeRoot, destination, adapterId, runtimePath, runtimeSkillDir, legacyRuntimePaths = [], skillId, assetIdentity, sourceIdentity, sourceWorkspaceId, receiptEntries }: any): any {
+export function observeSkillProjectionOwnershipReceipt({ targetRoot, runtimeRoot, destination, adapterId, runtimePath, runtimeSkillDir, legacyRuntimePaths = [], skillId, assetIdentity, sourceIdentity, previousSourceIdentity, sourceWorkspaceId, receiptEntries }: any): any {
   const ownerId = skillProjectionOwnerId(adapterId, runtimeRoot);
   const canonicalFile = historicalSkillProjectionOwnershipReceiptTarget(targetRoot, destination, ownerId, runtimePath);
   assertProjectionPath(targetRoot, canonicalFile);
@@ -373,7 +375,7 @@ export function observeSkillProjectionOwnershipReceipt({ targetRoot, runtimeRoot
   }
   for (const entry of entries) {
     const receipt = entry.receipt;
-    if (receipt.schemaVersion === RUNTIME_SKILL_PROJECTION_SCHEMA && ((skillId && receipt.skillId !== skillId) || (assetIdentity && receipt.assetIdentity !== assetIdentity) || (sourceIdentity && receipt.sourceIdentity !== sourceIdentity) || (destination === 'user' && sourceWorkspaceId && receipt.sourceWorkspaceId !== sourceWorkspaceId))) {
+    if (receipt.schemaVersion === RUNTIME_SKILL_PROJECTION_SCHEMA && ((skillId && receipt.skillId !== skillId) || (assetIdentity && receipt.assetIdentity !== assetIdentity) || (sourceIdentity && receipt.sourceIdentity !== sourceIdentity && !(destination === 'workspace' && sourceWorkspaceId === receipt.sourceWorkspaceId && assetIdentity === receipt.assetIdentity && previousSourceIdentity === receipt.sourceIdentity)) || (destination === 'user' && sourceWorkspaceId && receipt.sourceWorkspaceId !== sourceWorkspaceId))) {
       throw new Error(`Skill projection ownership identity conflict; no files were changed: ${entry.file}`);
     }
     if (preferred && !skillProjectionOwnershipReceiptsEquivalent(preferred.receipt, receipt, { ignoreRuntimePath: true })) {

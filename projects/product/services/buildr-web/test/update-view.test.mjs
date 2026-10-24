@@ -31,3 +31,12 @@ test('完成后主动检查读取发布事实，模拟完成不虚构安装版�
   const simulated=view({awareness:{...awareness,mode:'development'},job:{...job,status:'completed',simulated:true,installedVersion:null,runningVersion:'0.1.0-rc.47'}});
   assert.equal(simulated.title,'模拟更新完成'); assert.equal(simulated.currentVersion,'0.1.0-rc.47'); assert.equal(simulated.installedVersion,null);
 });
+
+test('工作空间更新与局部失败独立呈现，软件为最新仍显示待恢复入口',()=>{
+  const workspaces=[{rootPath:'/space/a',workspaceId:'a',name:'a',status:'done',error:null},{rootPath:'/space/b',workspaceId:'b',name:'b',status:'failed',error:'unavailable'}];
+  const pending={...job,stage:'workspaces',workspaces,steps:{...job.steps,launcher:'done'},launcherError:null};
+  assert.equal(view({job:pending}).phase,'workspaces-error');
+  assert.equal(view({job:{...pending,status:'applying'}}).phase,'workspaces-updating');
+  const latest={...awareness,tracks:{stable:track('stable','0.1.0',false),candidate:track('candidate','0.1.0-rc.48',false)}};
+  assert.equal(updateEntryVisible(latest,pending,'connected'),true);
+});

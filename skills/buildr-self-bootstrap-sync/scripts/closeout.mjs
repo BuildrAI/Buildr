@@ -243,6 +243,10 @@ function inspectDevelopmentWebContinuity(execute, root, nodeExecutable, environm
       || instance.launcherIdentity?.channel !== 'development') {
       throw closeoutError('self-bootstrap-closeout.development-web-inspection-invalid', '健康Development Web实例缺少可证明的port、PID或Launcher identity。', { payload });
     }
+    if (!sameFilesystemPath(instance.launcherIdentity.sourceRoot, path.join(root, SERVICE_ROOT))
+      || !sameFilesystemPath(instance.launcherIdentity.developmentRuntime?.executable, nodeExecutable)) {
+      return { ...payload, status: 'different-owner', reason: 'development-source-mismatch' };
+    }
   }
   return payload;
 }
@@ -267,6 +271,9 @@ function recoverDevelopmentWebContinuity({ execute, root, nodeExecutable, succes
   const script = path.join(root, DEVELOPMENT_WEB_CONTINUITY_SCRIPT);
   const projectBridge = path.join(root, PRODUCT_ROOT, 'buildr');
   const expectedSourceRoot = path.join(root, SERVICE_ROOT);
+  const { readDevelopmentRuntimeIdentity } = createRequire(import.meta.url)(path.join(root, SERVICE_ROOT, 'src/modules/installation/infrastructure/development-runtime-inputs.ts'));
+  const runtimeIdentity = readDevelopmentRuntimeIdentity(expectedSourceRoot, root);
+  if (!runtimeIdentity) throw closeoutError('self-bootstrap-closeout.development-runtime-unavailable', '无法核验开发应用的当前运行输入。');
   const previous = continuity.instance;
   const args = [
     script,
@@ -277,6 +284,7 @@ function recoverDevelopmentWebContinuity({ execute, root, nodeExecutable, succes
     '--launcher-identity', developmentLauncherIdentityPath(launcher),
     '--expected-source-root', expectedSourceRoot,
     '--expected-head', successor,
+    '--expected-runtime-identity', runtimeIdentity,
     '--node-executable', nodeExecutable,
     '--previous-pid', String(previous.pid),
   ];
@@ -291,8 +299,6 @@ function recoverDevelopmentWebContinuity({ execute, root, nodeExecutable, succes
   requirePassed(restarted, 'self-bootstrap-closeout.development-web-restart-failed', `Development Web未能迁移到固定端口 ${DEFAULT_DEVELOPMENT_WEB_PORT}。`);
   const payload = parseJson(restarted, 'self-bootstrap-closeout.development-web-restart-invalid', 'Development Web恢复结果不是合法JSON。');
   const identity = payload?.launcherIdentity;
-  const { readDevelopmentRuntimeIdentity } = createRequire(import.meta.url)(path.join(root, SERVICE_ROOT, 'src/modules/installation/infrastructure/development-runtime-inputs.ts'));
-  const runtimeIdentity = readDevelopmentRuntimeIdentity(expectedSourceRoot, root);
   if (payload?.schemaVersion !== 'buildr.development-web-continuity/v1'
     || payload.action !== 'restart'
     || payload.status !== 'passed'
@@ -301,7 +307,6 @@ function recoverDevelopmentWebContinuity({ execute, root, nodeExecutable, succes
     || payload.instance?.port !== DEFAULT_DEVELOPMENT_WEB_PORT
     || !Number.isInteger(payload.instance?.pid)
     || payload.instance.pid <= 0
-    || payload.instance.pid === previous.pid
     || !runtimeIdentity
     || payload.instance?.productIdentity?.developmentRuntimeIdentity !== runtimeIdentity
     || identity?.channel !== 'development'
@@ -314,6 +319,87 @@ function recoverDevelopmentWebContinuity({ execute, root, nodeExecutable, succes
     });
   }
   return payload;
+}
+
+// This is a local obligation to restore a previously running app, not a delivery
+// receipt. Keep it across failed invocations until authenticated health confirms
+// that the app is available again.
+function developmentWebRecoveryFile(root) {
+  return path.join(root, '.buildr/local/self-bootstrap-development-web-recovery.json');
+}
+
+function developmentWebRecoveryDataRoot(root, environment) {
+  const { developmentWebDataRoot } = createRequire(import.meta.url)(path.join(root, DEVELOPMENT_WEB_CONTINUITY_SCRIPT));
+  return developmentWebDataRoot(environment);
+}
+
+function readDevelopmentWebRecovery(root, nodeExecutable) {
+  const file = developmentWebRecoveryFile(root);
+  let state;
+  try { state = JSON.parse(fs.readFileSync(file, 'utf8')); }
+  catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw closeoutError('self-bootstrap-closeout.development-web-recovery-invalid', '开发应用待恢复信息无法读取，已保留。', { file });
+  }
+  if (state?.schemaVersion !== 'buildr.development-web-recovery/v1'
+    || !sameFilesystemPath(state.workspaceRoot, root)
+    || !sameFilesystemPath(state.nodeExecutable, nodeExecutable)
+    || state.continuity?.status !== 'healthy-development'
+    || !Number.isInteger(state.continuity.instance?.pid) || state.continuity.instance.pid <= 0
+    || !Number.isInteger(state.continuity.instance.port) || state.continuity.instance.port <= 0 || state.continuity.instance.port > 65535
+    || state.continuity.instance.launcherIdentity?.channel !== 'development'
+    || !sameFilesystemPath(state.continuity.instance.launcherIdentity.sourceRoot, path.join(root, SERVICE_ROOT))
+    || !sameFilesystemPath(state.continuity.instance.launcherIdentity.developmentRuntime?.executable, nodeExecutable)) {
+    throw closeoutError('self-bootstrap-closeout.development-web-recovery-invalid', '开发应用待恢复信息与当前来源不匹配，已保留。', { file });
+  }
+  return state;
+}
+
+function rememberDevelopmentWebRecovery(root, nodeExecutable, continuity, environment) {
+  const file = developmentWebRecoveryFile(root);
+  const state = { schemaVersion: 'buildr.development-web-recovery/v1', workspaceRoot: root, nodeExecutable,
+    appDataRoot: developmentWebRecoveryDataRoot(root, environment), continuity };
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const temporary = `${file}.${crypto.randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, `${JSON.stringify(state)}\n`, { mode: 0o600, flag: 'wx' });
+    fs.renameSync(temporary, file);
+  } finally { fs.rmSync(temporary, { force: true }); }
+  return state;
+}
+
+function clearDevelopmentWebRecovery(root, recovery) {
+  const current = readDevelopmentWebRecovery(root, recovery.nodeExecutable);
+  if (!current || digest(current) !== digest(recovery)) throw closeoutError('self-bootstrap-closeout.development-web-recovery-changed', '开发应用待恢复信息已变化，未删除其他恢复请求。');
+  fs.unlinkSync(developmentWebRecoveryFile(root));
+}
+
+function recoveryEnvironment(state, environment) {
+  const currentRoot = developmentWebRecoveryDataRoot(state.workspaceRoot, environment);
+  if (state.appDataRoot !== currentRoot) throw closeoutError('self-bootstrap-closeout.development-web-recovery-root-mismatch', '开发应用待恢复信息属于不同的数据目录，已保留。');
+  return environment;
+}
+
+function restoreDevelopmentWebAfterFailure({ execute, root, nodeExecutable, recovery, environment, phaseResult }) {
+  recoveryEnvironment(recovery, environment);
+  const observed = inspectDevelopmentWebContinuity(execute, root, nodeExecutable, environment, phaseResult);
+  if (observed.status === 'healthy-development') {
+    const identity = observed.instance.launcherIdentity;
+    if (!sameFilesystemPath(identity.sourceRoot, path.join(root, SERVICE_ROOT))
+      || !sameFilesystemPath(identity.developmentRuntime?.executable, nodeExecutable)) {
+      throw closeoutError('self-bootstrap-closeout.development-web-recovery-owner-mismatch', '当前开发应用来源不同，未替换该实例。');
+    }
+    return { status: 'passed', disposition: 'preserved', instance: observed.instance };
+  }
+  if (observed.status === 'different-owner') throw closeoutError('self-bootstrap-closeout.development-web-recovery-owner-mismatch', '当前应用不属于开发版，未替换该实例。');
+  const status = command(execute, nodeExecutable, [path.join(root, SERVICE_ROOT, 'tools/build/launcher/manage.ts'), 'status', '--channel', 'development'], root, 'inspect-recovery-launcher', phaseResult);
+  requirePassed(status, 'self-bootstrap-closeout.development-web-recovery-launcher-unavailable', '无法读取用于恢复的开发启动器。');
+  const launcher = parseJson(status, 'self-bootstrap-closeout.development-web-recovery-launcher-invalid', '恢复启动器信息无效。');
+  const installedHead = launcher.identity?.checkout?.head;
+  if (!/^[a-f0-9]{40,64}$/.test(installedHead || '')) throw closeoutError('self-bootstrap-closeout.development-web-recovery-launcher-invalid', '恢复启动器缺少来源提交。');
+  validateDevelopmentLauncherResult(launcher, root, nodeExecutable, installedHead);
+  return recoverDevelopmentWebContinuity({ execute, root, nodeExecutable, successor: installedHead, launcher,
+    continuity: recovery.continuity, environment, phaseResult });
 }
 
 function developmentEntryFailure(evidence, code, message, details = null) {
@@ -552,6 +638,7 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
   let ownsLock = false;
   let delivered = false;
   let successor = null;
+  let developmentWebRecovery = null;
   const activationIdentity = digest({ baseRef, deliveredRef, targetBranch, remote, agent });
   const result = (status, diagnostic = null) => ({ schemaVersion: SELF_BOOTSTRAP_CLOSEOUT_RESULT_SCHEMA, status, taskId, runId: null, delivery: { observed: delivered, ref: deliveredRef, remote, targetBranch }, phases, successor, diagnostic });
   const start = (id) => { active = phase(id); phases.push(active); return active; };
@@ -570,7 +657,7 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
     const scopedPaths = zeroList(read(['diff', '--name-only', '-z', baseRef, deliveredRef, '--'], 'activation-paths'));
     const actions = classifications(scopedPaths, root);
     if (resume && !actions['sync-retained-workspace'].length) throw closeoutError('self-bootstrap-closeout.resume-input-mismatch', '本次交付范围不包含可恢复的同步动作。');
-    if (!Object.values(actions).some((paths) => paths.length)) return result('not-applicable');
+    if (!Object.values(actions).some((paths) => paths.length) && !fs.existsSync(developmentWebRecoveryFile(root))) return result('not-applicable');
     // A short-lived lock belongs to this runner; it is not delivery evidence.
     const common = read(['rev-parse', '--path-format=absolute', '--git-common-dir'], 'git-common-directory');
     const lockParent = path.join(common, 'buildr');
@@ -578,6 +665,8 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
     lock = path.join(lockParent, 'self-bootstrap-direct.lock');
     try { fs.mkdirSync(lock); ownsLock = true; fs.writeFileSync(path.join(lock, 'owner.json'), JSON.stringify({ pid: process.pid, taskId, deliveredRef })); }
     catch { throw closeoutError('self-bootstrap-closeout.activation-busy', '已有自举激活占用；保留现场并核对锁的进程，不自动夺锁。', { lock }); }
+    developmentWebRecovery = readDevelopmentWebRecovery(root, nodeExecutable);
+    if (developmentWebRecovery) recoveryEnvironment(developmentWebRecovery, environment);
     if (!resume && changedPaths(execute, root, active, 'before-activation').length) throw closeoutError('self-bootstrap-closeout.workspace-dirty', '保留工作空间有未提交内容，不能把它们混入激活。');
     const head = read(['rev-parse', 'HEAD'], 'head');
     assertHead(head);
@@ -637,13 +726,20 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
       if (after !== successor) throw closeoutError('self-bootstrap-closeout.remote-readback-mismatch', '推送后远端提交不匹配。');
       markPassed(active, beforeRemote, after);
     }
-    if (actions['install-development-buildr-web'].length) {
+    if (actions['install-development-buildr-web'].length || developmentWebRecovery) {
       start('install-buildr-web'); assertHead(successor);
       const continuity = inspectDevelopmentWebContinuity(execute, root, nodeExecutable, environment, active);
-      const installed = command(execute, nodeExecutable, [path.join(root, SERVICE_ROOT, 'tools/build/launcher/manage.ts'), 'install', '--channel', 'development'], root, 'install-development-buildr-web', active);
+      if (continuity.status === 'different-owner' && developmentWebRecovery) throw closeoutError('self-bootstrap-closeout.development-web-recovery-owner-mismatch', '待恢复的开发应用数据目录已有其他实例，未执行替换。');
+      if (continuity.status === 'healthy-development') developmentWebRecovery = rememberDevelopmentWebRecovery(root, nodeExecutable, continuity, environment);
+      const installed = command(execute, nodeExecutable, [path.join(root, SERVICE_ROOT, 'tools/build/launcher/manage.ts'), 'install', '--channel', 'development', '--no-stop-instance'], root, 'install-development-buildr-web', active);
       requirePassed(installed, 'self-bootstrap-closeout.local-app-install-failed', '开发应用更新失败。');
       const launcher = validateDevelopmentLauncherResult(parseJson(installed, 'self-bootstrap-closeout.local-app-result-invalid', '安装结果无效。'), root, nodeExecutable, successor);
-      const continuityAfter = recoverDevelopmentWebContinuity({ execute, root, nodeExecutable, successor, launcher, continuity, environment, phaseResult: active });
+      assertHead(successor);
+      const continuityAfter = recoverDevelopmentWebContinuity({ execute, root, nodeExecutable, successor, launcher, continuity: developmentWebRecovery?.continuity || continuity, environment, phaseResult: active });
+      if (developmentWebRecovery) {
+        clearDevelopmentWebRecovery(root, developmentWebRecovery);
+        developmentWebRecovery = null;
+      }
       markPassed(active, deliveredRef, successor, [{ type: 'development-web-continuity', status: continuityAfter.status }]);
     }
     start('verify-development-entry'); assertHead(successor);
@@ -658,7 +754,24 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
     return result('passed');
   } catch (error) {
     if (active) active.status = 'blocked';
-    return result('blocked', { code: error.code || 'self-bootstrap-closeout.direct-failed', message: error.message, details: error.details || null });
+    let recoveryResult = null;
+    if (developmentWebRecovery && delivered && ownsLock) {
+      try {
+        recoveryResult = restoreDevelopmentWebAfterFailure({ execute, root, nodeExecutable, recovery: developmentWebRecovery, environment, phaseResult: active });
+        try { clearDevelopmentWebRecovery(root, developmentWebRecovery); }
+        catch (cleanupError) {
+          recoveryResult = { ...recoveryResult, pending: developmentWebRecoveryFile(root),
+            cleanup: { status: 'failed', code: cleanupError.code, message: cleanupError.message } };
+        }
+      } catch (recoveryError) {
+        recoveryResult = { status: 'failed', code: recoveryError.code || 'self-bootstrap-closeout.development-web-recovery-failed', message: recoveryError.message, details: recoveryError.details || null, pending: developmentWebRecoveryFile(root) };
+      }
+      active.effects.push({ type: 'development-web-recovery', ...recoveryResult });
+    }
+    const recoveryMessage = !recoveryResult ? '' : recoveryResult.status === 'passed'
+      ? ' 开发应用已确认运行。' : ' 开发应用尚未恢复，已保留待恢复信息；重试会继续恢复。';
+    return result('blocked', { code: error.code || 'self-bootstrap-closeout.direct-failed', message: `${error.message}${recoveryMessage}`,
+      details: recoveryResult ? { ...(error.details || {}), developmentWebRecovery: recoveryResult } : error.details || null });
   } finally {
     if (ownsLock) { fs.unlinkSync(path.join(lock, 'owner.json')); fs.rmdirSync(lock); }
   }

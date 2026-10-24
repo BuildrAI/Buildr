@@ -1,6 +1,6 @@
 export const RESOURCE_WORKSPACE_ROOT = 'resources/workspace';
 export const PACKAGE_RUNTIME_TARGET = 'resources/runtime';
-export const BOOTSTRAP_CONTRACT_RESOURCE = 'resources/contracts/bootstrap.yml';
+export const BOOTSTRAP_CHECK_PATH = 'tools/verification/package-check/bootstrap.yml';
 
 export const GENERATED_USER_REGISTRY_RESOURCE_SOURCES = Object.freeze([
   `${RESOURCE_WORKSPACE_ROOT}/.buildr/workspace.yml`,

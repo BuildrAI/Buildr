@@ -50,6 +50,19 @@ export function AgentRegistryDrawer() {
     if (key !== 'codex' && key !== 'dsh') return;
     setDetails(null); setRepairing(null); setAdding(key); setFeedback(''); setWarning('');
   };
+  // rc-motion only listens for transitionend/animationend; a viewport resize or
+  // display change mid-leave fires transitioncancel instead, and the portal node
+  // then stays in the DOM at its old viewport position, widening scrollWidth.
+  // As a backstop we drop leftover overlay copies after the menu closes, but
+  // never while a reopened overlay exists (its node may reuse the same element).
+  const menuOpenChange = (visible: boolean) => {
+    if (visible) return;
+    window.setTimeout(() => {
+      const overlays = [...document.querySelectorAll<HTMLElement>('.agent-connect-menu')];
+      if (overlays.some(node => !node.classList.contains('ant-slide-up-leave') && !node.classList.contains('ant-slide-up-leave-active'))) return;
+      overlays.forEach(node => node.remove());
+    }, 350);
+  };
   const close = () => {if (!busy) {setAdding(null); setRepairing(null); setDetails(null); setOpen(false);}};
   const menu = {
     items: [{key: 'codex', label: codexConnected ? 'Codex · 已接入' : 'Codex', disabled: codexConnected}, {key: 'dsh', label: dshConnected ? 'DSH · 已接入' : 'DSH', disabled: dshConnected}],
@@ -57,7 +70,7 @@ export function AgentRegistryDrawer() {
   };
   return <DrawerShell title="智能体" width="min(640px, 100vw)" open={open} onClose={close} closeDisabled={busy} maskClosable={!busy} keyboard={!busy && !details} closeAriaLabel="关闭智能体" rootClassName="agent-registry-drawer" extra={<>
     <Tooltip title="刷新智能体状态"><Button id="refresh-agent-registry" type="text" size="small" aria-label="刷新智能体状态" loading={loading || codexDesktop.state.loading || dshDesktop.state.loading} disabled={busy} icon={<ReloadOutlined />} onClick={() => void Promise.all([refresh(), codexDesktop.refresh(), dshDesktop.refresh()])} /></Tooltip>
-    <Dropdown trigger={['hover', 'click']} disabled={busy || !registry} menu={menu}>
+    <Dropdown trigger={['hover', 'click']} disabled={busy || !registry} destroyOnHidden overlayClassName="agent-connect-menu" menu={menu} onOpenChange={menuOpenChange}>
       <Button id="add-agent-entry" type="text" size="small" icon={<PlusOutlined />} disabled={busy || !registry} aria-label="选择接入智能体">接入</Button>
     </Dropdown>
   </>}>

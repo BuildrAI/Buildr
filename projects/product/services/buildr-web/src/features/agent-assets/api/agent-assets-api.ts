@@ -19,6 +19,7 @@ export type AgentAssetsMutation = AgentAssetsMutationResponseMutationResponse;
 
 export function createAgentAssetsClient(api: ApiClient) {
   return {
+    openSkillSource: (id: string) => api(`/api/v1/agent-assets/skills/${encodeURIComponent(id)}/open`, { method: 'POST', body: '{}' }),
     skillCandidates: (signal?: AbortSignal) => api('/api/v1/agent-assets/skill-candidates', { signal }) as Promise<SkillCandidatesResponseSkillCandidatesResponse>,
     registerSkill: (input: SkillRegisterRequestSkillRegisterRequest) => api('/api/v1/agent-assets/skills', { method: 'POST', body: JSON.stringify(input) }),
     skillRemoval: (id: string, signal?: AbortSignal) => api(`/api/v1/agent-assets/skills/${encodeURIComponent(id)}/removal`, { signal }) as Promise<SkillRemovalResponseSkillRemovalResponse>,

@@ -1,0 +1,278 @@
+{
+  "version": 1,
+  "pages": [
+    {
+      "id": "workspaces",
+      "title": "工作空间列表",
+      "notes": [
+        {
+          "id": "add",
+          "title": "一个添加入口",
+          "text": "选择本机目录后，由 Buildr 自动判断新建、补齐或直接打开。用户不需要理解初始化、同步或投射。",
+          "position": "add-entry"
+        },
+        {
+          "id": "catalog",
+          "title": "同一份空间列表",
+          "text": "添加结果、版本与更新进度在列表和更新窗口中保持一致。",
+          "position": "catalog"
+        },
+        {
+          "id": "entry",
+          "title": "随时查看更新",
+          "text": "顶部更新入口显示正在进行或尚未完成的更新。收起窗口不会取消操作。",
+          "position": "update-entry"
+        }
+      ],
+      "states": [
+        {
+          "id": "empty",
+          "title": "首次使用",
+          "notes": []
+        },
+        {
+          "id": "pending",
+          "title": "有空间待完成",
+          "notes": [
+            {
+              "id": "pending",
+              "title": "软件最新版仍可补齐",
+              "text": "软件已经安装，但部分空间仍待完成，列表保留继续处理入口。",
+              "position": "catalog-banner"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "add",
+      "title": "添加工作空间",
+      "notes": [
+        {
+          "id": "add-dialog",
+          "title": "只确认目录和名称",
+          "text": "目录由本机选择器选取。演示使用三个虚拟目录，不访问或写入真实文件。名称默认来自目录，可直接修改。",
+          "position": "add-dialog"
+        }
+      ],
+      "states": [
+        {
+          "id": "confirm",
+          "title": "普通目录确认",
+          "notes": [
+            {
+              "id": "confirm",
+              "title": "确认即授权准备",
+              "text": "点击添加并打开后，自动准备目录、工作方法和智能体入口，并登记在当前 Buildr 中。",
+              "position": "add-dialog"
+            }
+          ]
+        },
+        {
+          "id": "existing",
+          "title": "已有空间",
+          "notes": [
+            {
+              "id": "existing",
+              "title": "已有内容直接接续",
+              "text": "识别已存在的空间身份，补齐当前版本需要的内容，不重新创建身份。",
+              "position": "add-dialog"
+            }
+          ]
+        },
+        {
+          "id": "registered",
+          "title": "已登记目录",
+          "notes": [
+            {
+              "id": "registered",
+              "title": "避免重复登记",
+              "text": "识别列表中的相同目录和身份，直接打开。",
+              "position": "add-dialog"
+            }
+          ]
+        },
+        {
+          "id": "preparing",
+          "title": "正在准备",
+          "notes": [
+            {
+              "id": "progress",
+              "title": "三段真实结果",
+              "text": "检查目录、准备工作内容、确认可用。允许收起；任务继续，重新打开可查看进度。",
+              "position": "add-progress"
+            }
+          ]
+        },
+        {
+          "id": "failed",
+          "title": "准备失败与重试",
+          "notes": [
+            {
+              "id": "retry",
+              "title": "保留已完成部分",
+              "text": "保留已填写名称、已建立的目录身份与已完成内容；重试只继续未完成部分。",
+              "position": "add-result"
+            }
+          ]
+        },
+        {
+          "id": "ready",
+          "title": "准备完成",
+          "notes": [
+            {
+              "id": "ready",
+              "title": "选择同一个工作目录",
+              "text": "在智能体中新开对话并选择此目录即可使用，不要求用户执行额外命令。",
+              "position": "add-result"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "update",
+      "title": "更新 Buildr",
+      "notes": [
+        {
+          "id": "scope",
+          "title": "一次确认完整更新",
+          "text": "本安装管理的全部已登记空间均在范围内，包括很久没有打开但可以访问的目录。确认前说明网页会重新连接。",
+          "position": "update-scope"
+        },
+        {
+          "id": "flow",
+          "title": "全部准备好才完成",
+          "text": "下载、安装、恢复网页和启动入口后，逐空间准备新版内容并检查。每个空间独立恢复。",
+          "position": "flow"
+        }
+      ],
+      "states": [
+        {
+          "id": "downloading",
+          "title": "下载中",
+          "notes": []
+        },
+        {
+          "id": "installing",
+          "title": "安装中",
+          "notes": []
+        },
+        {
+          "id": "restarting",
+          "title": "恢复网页",
+          "notes": []
+        },
+        {
+          "id": "spaces",
+          "title": "自动更新全部空间",
+          "notes": [
+            {
+              "id": "spaces",
+              "title": "自动逐个更新",
+              "text": "这一步由 Buildr 执行，用户无需手动打开每个空间或运行命令。",
+              "position": "workspace-results"
+            }
+          ]
+        },
+        {
+          "id": "download-error",
+          "title": "下载失败",
+          "notes": [
+            {
+              "id": "download",
+              "title": "从下载恢复",
+              "text": "重新下载保留本次目标，不创建第二次更新。",
+              "position": "update-actions"
+            }
+          ]
+        },
+        {
+          "id": "install-error",
+          "title": "安装失败",
+          "notes": [
+            {
+              "id": "install",
+              "title": "复用已下载内容",
+              "text": "重试安装不重复要求下载或切换更新版本。",
+              "position": "update-actions"
+            }
+          ]
+        },
+        {
+          "id": "reconnect-error",
+          "title": "网页恢复失败",
+          "notes": [
+            {
+              "id": "reconnect",
+              "title": "保留已安装事实",
+              "text": "新版安装已经完成；只恢复网页连接，后续再继续更新空间。",
+              "position": "update-actions"
+            }
+          ]
+        },
+        {
+          "id": "completed",
+          "title": "全部完成",
+          "notes": [
+            {
+              "id": "done",
+              "title": "实际可用的完成标准",
+              "text": "所有空间均准备完毕后显示更新完成。已有对话是否重新读取由宿主决定，需要时给一句明确提示。",
+              "position": "workspace-results"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "recovery",
+      "title": "失败后的继续处理",
+      "notes": [
+        {
+          "id": "partial",
+          "title": "部分失败保留部分成功",
+          "text": "已完成空间可以继续工作。全局重试只处理未完成空间，不重新安装软件。",
+          "position": "workspace-results"
+        },
+        {
+          "id": "actions",
+          "title": "每项独立重试",
+          "text": "可以逐个重试，也可以重试全部未完成项。演示假定权限或路径已恢复，重试会成功。",
+          "position": "update-actions"
+        }
+      ],
+      "states": [
+        {
+          "id": "conflict",
+          "title": "本地修改冲突",
+          "notes": [
+            {
+              "id": "conflict",
+              "title": "真正需要用户决定时才询问",
+              "text": "点击查看并处理，比较当前方法与新版。保留修改作为自定义方法，或明确选择新版并保留原内容。单纯重试不会覆盖修改。",
+              "position": "workspace-results"
+            }
+          ]
+        },
+        {
+          "id": "background",
+          "title": "收起后继续",
+          "notes": [
+            {
+              "id": "background",
+              "title": "在列表接续同一次更新",
+              "text": "点击顶部完成更新或列表继续处理可重新查看本次结果。原型在本页内存中保留；正式实现需要跨进程保留。",
+              "position": "catalog-banner"
+            }
+          ]
+        },
+        {
+          "id": "completed",
+          "title": "重试后全部完成",
+          "notes": []
+        }
+      ]
+    }
+  ]
+}

@@ -296,7 +296,7 @@ export async function uninstallLauncher({ platform = process.platform, channel =
 export async function main(args: any = process.argv.slice(2)): Promise<any>  {
   const action: any = args[0] || 'status';
   const value: any = (name: any, fallback: any) => { const i: any = args.indexOf(name); return i === -1 ? fallback : args[i + 1]; };
-  const options: any = { platform: value('--platform', process.platform), channel: value('--channel', 'development'), installRoot: value('--target', undefined) };
+  const options: any = { platform: value('--platform', process.platform), channel: value('--channel', 'development'), installRoot: value('--target', undefined), stopInstance: !args.includes('--no-stop-instance') };
   if (action === 'install') await prepareDevelopmentWeb();
   const result: any = action === 'install' ? await installLauncher(options) : action === 'uninstall' ? await uninstallLauncher(options) : action === 'status' ? launcherStatus(options) : (() => { throw new Error(`Unknown launcher action: ${action}`); })();
   console.log(JSON.stringify(result, null, 2));

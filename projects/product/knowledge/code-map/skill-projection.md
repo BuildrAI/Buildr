@@ -42,9 +42,11 @@ agent-assets/
 | `buildEffectiveSkillInventory`、`classifySkillCandidate` | 检查可见位置，区分可写候选、已由用户位置满足和冲突 | [inventory.ts](../../services/buildr/src/modules/agent-assets/infrastructure/runtime/skills/inventory.ts) |
 | `validateRuntimePlan`、`reconcileRuntimePlan` | 核对目标安全、当前内容与归属，发现计划冲突时保持零写入；正常时更新实际变化文件并处理已证明可清理目标 | [runtime-reconciler.ts](../../services/buildr/src/modules/agent-assets/infrastructure/runtime/runtime-reconciler.ts) |
 
+共享资源安装与完整性由 [shared-resources.ts](../../services/buildr/src/infrastructure/product-resources/shared-resources.ts) 负责；[shared-skill-source.ts](../../services/buildr/src/modules/agent-assets/infrastructure/shared-skill-source.ts) 为组件与连接读取适配明确的共享引用。普通解析不根据同名文件猜测官方归属。
+
 ## 关键调用与数据流
 
-`renderSkillsRuntime` 调用 `assembleRuntimeProjection`；后者调用 `resolveRenderSkills`，取得 `resolveSkillCapabilityGraph` 与 `resolveSkills` 的结果，再通过 `buildSkillRenderPlan` 生成目标计划。`resolveSkills` 内调用 `resolveComponentContributions`，将适用片段和依赖附到目标技能。图中的“有效技能集合”是这段解析过程的概括，不是新增持久对象。
+`renderSkillsRuntime` 调用 `assembleRuntimeProjection`；后者调用 `resolveRenderSkills`，取得 `resolveSkillCapabilityGraph` 与 `resolveSkills` 的结果，再通过 `buildSkillRenderPlan` 生成目标计划。`resolveSkills` 通过 `resolveSharedResource` 解析官方引用，其他本地来源继续从空间读取，再调用 `resolveComponentContributions`，将适用片段和依赖附到目标技能。图中的“有效技能集合”是这段解析过程的概括，不是新增持久对象。
 
 `buildSkillContent` 按源正文、片段、局部能力说明和生成标记组合 `SKILL.md`。`buildSkillRenderPlan` 同时调用文件枚举及归属记录构造，保持附属文件内容与可执行位。目标根由 `skillDestinationRoots` 给出，计划按该集合迭代生成写入与删除动作，每个根各取一份归属记录。调用方完成发现位置冲突分类后，由 `reconcileRuntimePlan` 比较并写入目标。相同内容不重复写，已有外部或被修改文件不能被默认覆盖。
 
@@ -52,7 +54,9 @@ agent-assets/
 
 | 数据或文件 | 归属及读写 |
 |---|---|
-| 工作空间 `skills/manifest.yml`、技能源目录、组件定义与片段 | 本路径只读；受管内置内容从产品源修改并通过适用同步交付 |
+| 工作空间 `skills/manifest.yml`、组织技能源目录、组件定义与片段 | 清单管理采用及选择；组织自有源留在空间，官方条目通过 `resource` 读取已采用共享资源 |
+| `~/.buildr/resources/` | 官方原文与完整附件的固定本机共享来源；校验完整暂存内容后切换，清理旧文件，失败空间恢复后按最新版重建 |
+| `.buildr/local/package-resources.json` | 本机采用身份和入口准备结果；不写个人路径到协作清单 |
 | 组合后的正文、能力局部视图和目标计划 | 内存派生对象，不建立新的工作状态数据库 |
 | Codex 工作空间 `.agents/skills/<id>/` | 可重建输出；`reconcileRuntimePlan` 更新已验证安全的文件，不回写源技能 |
 | `.buildr/agent-runtime/workspace/<adapter>/skill-projection-ownership-receipts/` | 本机投射归属记录，供比较、完整性和后续清理使用；不证明任务目标完成。每个目标根各有 `<skillId>.json`；共享目录中，其他适配器（Adapter）的回执说明既有归属，当前适配器不删除对应目录，也不据此报冲突。 |

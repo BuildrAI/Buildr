@@ -203,7 +203,7 @@ documentSections:
         title: "接入新的智能体（Agent）工具"
         summary: "收集真实发现和加载证据，实施适配并确认支持范围。"
       - location: scope
-        path: services/buildr/docs/archify-component.md
+        path: knowledge/docs/reference/archify.md
         title: "使用与维护 Archify 绘图能力"
         summary: "了解可选绘图能力的来源、使用、更新与完整升级边界。"
   - id: release-and-maintenance
@@ -2384,8 +2384,6 @@ sources:
     kind: skill
     skillId: archify
     path: SKILL.md
-    link: services/buildr/resources/workspace/skills/buildr/archify/SKILL.md
-    observedDigest: cf43da2ed26f087241edb6373a4e3c856e4f9ac8b5211b5740038e8100f22238
   - id: openspec
     title: OpenSpec 规范建设
     summary: 指导明确行为承诺、变更范围和验收要求。
@@ -3744,9 +3742,9 @@ sources:
     kind: evidence
     path: knowledge/docs/reference/agent-runtime-adapter-contribution.md
   - id: manual-archify-component-document
-    title: Archify 可选组件（Component）
+    title: Archify 自用与旧安装迁移
     kind: evidence
-    path: services/buildr/docs/archify-component.md
+    path: knowledge/docs/reference/archify.md
   - id: release-readiness-document
     title: 0.1.0 准备审查
     kind: evidence

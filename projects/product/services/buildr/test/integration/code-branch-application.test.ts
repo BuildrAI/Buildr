@@ -36,6 +36,31 @@ function fixture(t: test.TestContext, format = 'sha1') {
 }
 const code = (expected: string) => (error: unknown) => (error as { code?: string }).code === expected;
 
+test('service branch creates independent checkout and preserves dirty source, then reuses it', t => {
+  const f = fixture(t); fs.appendFileSync(path.join(f.root, '.git/info/exclude'), '\n.buildr/\n'); f.write('one.ts', 'base\n'); const hash = f.commit('base'); f.git('branch', 'feature/service');
+  f.write('one.ts', 'uncommitted\n'); f.write('untracked.ts', 'keep\n'); const before = f.snapshot();
+  const created = f.app.prepareWorktree(f.root, f.request('refs/heads/feature/service'));
+  assert.equal(created.created, true); assert.equal(created.branch, 'feature/service'); assert.equal(created.head, hash);
+  assert.notEqual(created.location, f.root); assert.equal(fs.readFileSync(path.join(created.location, 'one.ts'), 'utf8'), 'base\n');
+  assert.deepEqual(f.snapshot(), before);
+  const reused = f.app.prepareWorktree(f.root, f.request('refs/heads/feature/service'));
+  assert.equal(reused.created, false); assert.equal(reused.worktreeId, created.worktreeId); assert.deepEqual(f.snapshot(), before);
+});
+
+test('service branch preparation rejects stale ref without writing or switching source', t => {
+  const f = fixture(t); f.write('one.ts', 'base\n'); const hash = f.commit('base'); f.git('branch', 'feature/service');
+  const request = f.request('refs/heads/feature/service'); f.write('one.ts', 'next\n'); const next = f.commit('next'); f.git('update-ref', 'refs/heads/feature/service', next, hash);
+  const before = f.snapshot(); assert.throws(() => f.app.prepareWorktree(f.root, request)); assert.deepEqual(f.snapshot(), before);
+  assert.equal(f.git('worktree', 'list', '--porcelain').split('worktree ').length - 1, 1);
+});
+
+test('service remote branch uses observed local ref without fetch or modifying current branch', t => {
+  const f = fixture(t); fs.appendFileSync(path.join(f.root, '.git/info/exclude'), '\n.buildr/\n'); f.write('one.ts', 'base\n'); const hash = f.commit('base'); f.remote('origin', 'feature/new', hash);
+  const before = f.snapshot(), result = f.app.prepareWorktree(f.root, f.request('refs/remotes/origin/feature/new'));
+  assert.equal(result.branch, 'feature/new'); assert.equal(result.head, hash); assert.equal(result.created, true);
+  assert.equal(f.git('rev-parse', 'feature/new@{upstream}'), hash); assert.deepEqual(f.snapshot(), before);
+});
+
 test('system checkout filters remain a local refusal while unrelated branch changes are allowed', t => {
   const f = fixture(t); f.write('filtered.txt', 'base\n'); f.commit('base'); f.git('switch', '-c', 'converted');
   f.write('.gitattributes', 'filtered.txt filter=review\n'); f.write('filtered.txt', 'converted\n'); f.commit('converted'); f.git('switch', 'main');

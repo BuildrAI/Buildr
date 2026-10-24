@@ -23,7 +23,7 @@ export type TaskRunResult = {
 export type StartTaskRunsInput = {
   taskId: string;
   selected: TaskRunSelection[];
-  connection?: 'local' | 'remote';
+  connection?: 'local' | 'remote' | 'auto';
   origin?: 'human' | 'agent';
 };
 
@@ -71,7 +71,7 @@ export function createServiceTaskRuntimeApplication(deps: {
   async function start(root: string, input: StartTaskRunsInput) {
     if (!Array.isArray(input.selected) || input.selected.length === 0) throw new ServiceRuntimeError('service_runtime_input_invalid', '至少选择一个服务。');
     if (new Set(input.selected.map(item => item.serviceCode)).size !== input.selected.length) throw new ServiceRuntimeError('service_runtime_input_invalid', '同一服务不能重复选择。');
-    if (input.connection !== undefined && input.connection !== 'local' && input.connection !== 'remote') throw new ServiceRuntimeError('service_runtime_input_invalid', '连接选择必须为 local 或 remote。');
+    if (input.connection !== undefined && !['local', 'remote', 'auto'].includes(input.connection)) throw new ServiceRuntimeError('service_runtime_input_invalid', '连接选择必须为 local、remote 或 auto。');
     if (input.origin !== undefined && input.origin !== 'agent' && input.origin !== 'human') throw new ServiceRuntimeError('service_runtime_input_invalid', '启动入口必须为 agent 或 human。');
     // Resolve before any effect. Caller paths never become execution locations.
     const observed = await detail(root, input.taskId);
@@ -160,6 +160,7 @@ export function createServiceTaskRuntimeApplication(deps: {
             const actual = ready.connections.find(connection => connection.serviceCode === backend.serviceCode);
             if (mode === 'remote' || expected?.target === 'remote') return actual?.mode !== 'remote' || actual.url !== backend.remoteUrl;
             const target = availabilities.find(availability => availability.serviceCode === backend.serviceCode)?.target;
+            if (!target && mode === 'auto') return actual?.mode !== 'remote' || actual.url !== backend.remoteUrl;
             return !target || actual?.mode !== 'local' || actual.runId !== target.runId || actual.url !== target.url;
           });
           if (mismatched) throw new ServiceRuntimeError('service_runtime_connection_conflict', `该目录已有与 ${mismatched.serviceCode} 不同连接的运行，请明确切换连接后重试。`);

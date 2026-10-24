@@ -105,7 +105,8 @@
 
 ## Skills
 
-- Workspace 是唯一 Skill source authority：源资产位于 workspace `skills/manifest.yml` 与 `skills/<skill-id>/`。Project 只在 `capabilities.yml` 引用 workspace Skill 并声明 requirements/bindings/applicability，不作为安装或可见性边界。
+- 工作空间（Workspace）的 `skills/manifest.yml` 管理采用与绑定；组织自有技能（Skill）源位于空间 `skills/`，官方源通过清单中的 `resource` 引用共享资源集 `~/.buildr/resources/`。不要手工编辑共享官方资源或生成入口。Project 只在 `capabilities.yml` 引用 workspace Skill 并声明 requirements/bindings/applicability，不作为安装或可见性边界。
+- 定制非组件管理的共享官方技能（Skill）时，核对影响后用 `skills add <id> --source <已核实的完整共享目录> --replace --target <workspace>` 建立当前空间副本，再修改与同步。保留原资产身份、绑定及附件，来源转为本空间维护；组件成员仍由组件维护入口负责，不编辑共享库。
 - 本地作者型 Skill 可以只适用于某个 Project，但内容仍在 workspace 维护，由 Project applicability 表达业务范围；远端发布型 Skill 适合已发布或外部维护的 Skill。
 - Buildr 随包场景化流程通过 workspace Skills 承载；Rule 保留 Agent 价值观、边界和约束。
 - 本地作者型：`buildr skills add [<id>] --source <skill-dir> --target <workspace>`；移除登记用 `buildr skills remove <id> --target <workspace>`，保留本地源目录和全部文件；组件受管技能继续走组件维护入口，不能借此删除成员。旧 `--scope .` 只作 deprecated 兼容；Project scope 已不受支持。
@@ -123,6 +124,8 @@
 - 源删除、卸载和重复投射只清理仍匹配回执（Receipt）的文件；共享根中其他品牌仍有启用来源的技能（Skill）不被误删，品牌限制导致共享正文或能力绑定（Capability Binding）不同时必须报告冲突。`resolved.kind: skill-url` 仍只表示单个原始 `SKILL.md`，不得推测 URL 邻近目录。
 
 ## 安装与更新
+
+用户在网页更新时，一次确认后自动完成安装、维护已有启动器（Launcher）、网页交接、全部本来源已登记工作空间（Workspace）准备和诊断（Doctor）。页面按目录保留实际结果；失败只重试对应目录，不要求用户理解同步或投射。目录选择后可直接初始化并准备，重复添加复用身份。官方资源的完整性、采用身份与入口漂移由诊断（Doctor）核对；版本及内容身份只保存在内部元数据。更新完整替换官方共享目录并清理旧文件；失败空间恢复后按最新版重新准备，不依赖旧资源。组织自有与定制内容仍保留在工作空间。当前未增加智能体（Agent）发起更新的页面联动。以下命令行（CLI）指引保留独立入口的既有行为。
 
 用户要求安装 Buildr 时，从 npm 官方仓库查询 `@buildr-ai/buildr` 的实际标签、版本与 `engines.node`，说明正式版（GA）和候选版（RC），按用户明确选择安装；不把仍带预发布标识的 `latest` 当成正式版。验证命令入口与 Buildr Web，包内已经包含网页。按用户要求的完整上手路径安装 macOS / Windows 启动器（Launcher）时，执行 `buildr web launcher install` 并核对同一安装、Node.js 与包入口；用户只要求命令行安装时不追加图形入口，不写未知工作目录。
 

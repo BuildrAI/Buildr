@@ -91,9 +91,15 @@
 .runtime-configuration-summary { display:grid; gap:12px; min-width:0; }
 .runtime-configuration-heading,.runtime-configuration-actions,.runtime-configuration-source { display:flex; align-items:center; flex-wrap:wrap; gap:8px; min-width:0; }
 .runtime-configuration-heading { justify-content:space-between; }
+.runtime-configuration-title { display:flex; align-items:center; flex-wrap:wrap; gap:6px 12px; min-width:0; }
+.runtime-configuration-verification { display:inline-flex; align-items:center; gap:5px; color:var(--soft-muted); font-size:11px; line-height:1.6; }
+.runtime-configuration-verification .anticon { color:var(--soft-primary); }
+.runtime-configuration-source { flex-wrap:nowrap; align-items:baseline; font-size:11px; }
+.runtime-configuration-source > span { flex:none; }
+.runtime-configuration-source > code { min-width:0; overflow-wrap:anywhere; }
 .runtime-configuration-heading h3 { margin:0; color:var(--soft-ink); font-size:13px; font-weight:600; }
 .runtime-configuration-connections { display:grid; gap:8px; margin:0; }
-.runtime-configuration-connections > div { display:grid; grid-template-columns:88px minmax(0,1fr); gap:8px; align-items:baseline; }
+.runtime-configuration-connections > div { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:8px; align-items:baseline; }
 .runtime-configuration-connections dd { min-width:0; margin:0; }
 .runtime-configuration-connections code { font-size:12px; }
 .runtime-scope-note,.runtime-notes { margin:16px 0 0; color:var(--soft-muted); font-size:11.5px; line-height:1.7; }
@@ -115,6 +121,16 @@
 .runtime-start-name { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
 .runtime-start-name strong,.runtime-start-name .ant-checkbox-wrapper { font-size:14px; font-weight:600; }
 .start-worktree-main .ant-select { width:100%; }
+.runtime-source-branch-control .ant-btn { display:flex; justify-content:flex-start; width:100%; height:32px; padding:4px 11px; border:1px solid var(--soft-line); border-radius:6px; background:var(--soft-surface); color:var(--soft-ink); font-size:13px; }
+.runtime-source-branch-control .source-control-row-branch-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.runtime-source-branch-control .source-control-row-branch-measure { display:none; }
+.service-directory-name { display:flex; align-items:center; gap:7px; min-width:0; }
+.service-directory-name .resource-name { min-width:0; }
+.service-directory-name .service-frequent-button { flex:none; margin-top:0; color:var(--soft-muted); opacity:.6; }
+.service-directory-name .service-frequent-button:is(:hover,:focus-visible),.service-directory-name .service-frequent-button.is-frequent { color:var(--soft-primary); opacity:1; }
+.resource-directory-row-actions .ant-btn.service-directory-start { padding-inline:10px; color:var(--soft-primary); border-color:color-mix(in srgb,var(--soft-primary) 25%,var(--soft-line)); background:color-mix(in srgb,var(--soft-primary) 8%,var(--soft-surface)); font-weight:500; }
+.resource-directory-row-actions .ant-btn.service-directory-start:hover { color:var(--soft-primary); border-color:var(--soft-primary); background:color-mix(in srgb,var(--soft-primary) 14%,var(--soft-surface)); }
+.service-frequent-filter.is-active { color:var(--soft-primary); border-color:var(--soft-primary); background:var(--soft-primary-soft); }
 .runtime-backend-options { display:grid; gap:12px; padding:4px 0; font-size:13px; }
 .runtime-backend-options > code { overflow-wrap:anywhere; font-size:12px; color:var(--soft-primary); }
 .runtime-backend-options .ant-radio-group { display:flex; gap:12px 24px; flex-wrap:wrap; }
@@ -138,7 +154,8 @@
 .local-run-connection { display:grid; gap:3px; }
 .local-run-connection + .local-run-connection { margin-top:8px; padding-top:8px; border-top:1px dashed var(--soft-line); }
 .local-runtime-connection-item { display:inline-flex; flex-wrap:wrap; align-items:baseline; gap:6px; }
-#service-runtime-start-drawer > .ant-alert,#task-runtime-start-modal > .ant-alert { margin-top:12px; }
+#service-runtime-start-drawer { display:grid; gap:14px; }
+#task-runtime-start-modal > .ant-alert { margin-top:12px; }
 .discovery-drawer,.local-logs { display:grid; gap:14px; }
 .config-field { display:flex; min-width:0; flex-direction:column; gap:6px; }
 .config-field label { color:var(--soft-muted); font-size:12px; font-weight:600; }

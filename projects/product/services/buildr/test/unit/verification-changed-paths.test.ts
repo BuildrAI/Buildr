@@ -129,7 +129,7 @@ test('Product knowledge navigation index selects its real catalog integration an
 test('package skill projection regression selects the slice that actually executes its file', () => {
   const plan = createVerificationPlan({ paths: ['test/integration/package-generic-skills.test.ts'] });
   assert.equal(plan.status, 'ready');
-  assert.deepEqual(ids(plan), ['integration-runtime-projection']);
+  assert.deepEqual(ids(plan), ['integration-runtime-projection', 'test-file-ownership']);
 });
 
 

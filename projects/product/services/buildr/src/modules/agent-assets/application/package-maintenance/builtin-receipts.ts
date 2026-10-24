@@ -1,3 +1,5 @@
+import { isFinderMetadata } from '../../../../infrastructure/filesystem/finder-metadata.ts';
+
 export function createBuiltinReceipts(deps: any): any  {
   const { atomicWriteJson, collectFiles, crypto, ensureDirectory, existsDirectory, existsFile, fs, isPlainObject, path, toPosixRelative } = deps;
   const schemaVersion = 'buildr.builtin-receipts/v1';
@@ -15,6 +17,7 @@ export function createBuiltinReceipts(deps: any): any  {
     const inventory: any[] = [];
     for (const file of collectFiles(assetPath).sort()) {
       if (fs.lstatSync(file).isSymbolicLink()) throw new Error(`Builtin asset must not contain symlinks: ${file}`);
+      if (isFinderMetadata(path.basename(file), fs.lstatSync(file))) continue;
       const relative = toPosixRelative(assetPath, file);
       if (!relative || relative.startsWith('../') || path.isAbsolute(relative)) throw new Error(`Builtin asset path escapes its root: ${file}`);
       inventory.push({ path: relative, integrity: sha256(fs.readFileSync(file)) });

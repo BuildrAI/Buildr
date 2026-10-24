@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { App, Button } from 'antd';
+import { Button } from 'antd';
 import { codeApi, type CodeAuthorsResponse, type CodeBranchesResponse, type CodeSourceControlInput } from '../api/code-api';
-import { BranchManagementPopover } from '../components/BranchManagementPopover';
+import { SourceControlBranchControl } from '../components/SourceControlBranchControl';
 import { HistoryFilters } from '../components/HistoryFilters';
 import type { SourceControlBranchExtension } from '../components/SourceControlWorkbench';
-import { branchSwitchFailure, branchSwitchImpact, type BranchSwitchFailure, type SourceControlBranch } from '../source-control-branches';
 import { sourceControlWorktreeKey, type SourceControlRepository, type SourceControlWorktree } from '../source-control-model';
 import { formatShortDateTime } from '../../../lib/taskLabels';
 import { useSourceControlRead } from './useSourceControlRead';
@@ -16,67 +15,6 @@ import { codeRepositoryLabel } from '../code-source-labels';
 const observationNote = (data: CodeBranchesResponse | CodeAuthorsResponse | null) => data ? [data.coverage.truncated ? '读取范围达到上限，当前记录不完整。' : '', ...data.diagnostics.map(item => item.message)].filter(Boolean).join('；') : '';
 type LocationProps = { workspaceId: string; repository: SourceControlRepository; worktree: SourceControlWorktree; version: string };
 
-function BranchControl({workspaceId, repository, worktree, version, ready, inlineVisible, rowVisible, openRequest, fetchActions, onOpenPosition, onViewChanges}: LocationProps & {
-  fetchActions?: SourceControlFetchActions; ready: boolean; inlineVisible:boolean; rowVisible:boolean; openRequest:number; onOpenPosition(worktreeId: string): void; onViewChanges(): void;
-}) {
-  const {message} = App.useApp();
-  const [open, setOpen] = useState(false), [pending, setPending] = useState(false);
-  const [failure, setFailure] = useState<BranchSwitchFailure | null>(null);
-  const sourceKey = JSON.stringify([workspaceId, repository.id, worktree.worktreeId]);
-  const currentSource = useRef(sourceKey); currentSource.current = sourceKey;
-  const mounted = useRef(false), writing = useRef(false);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  useEffect(() => { setFailure(null); setOpen(false); }, [sourceKey]);
-  useEffect(() => {setOpen(false);}, [inlineVisible, rowVisible]);
-  useEffect(() => {if (openRequest && ready && rowVisible) setOpen(true);}, [openRequest]);
-  const loader = useCallback((input: CodeSourceControlInput, signal: AbortSignal) => codeApi.branches(workspaceId, input, signal), [workspaceId]);
-  const input = {repositoryId: repository.id, worktreeId: worktree.worktreeId};
-  const branches = useSourceControlRead(sourceKey, input, loader, Boolean(open && ready), version);
-  const entries = branches.data?.branches || [];
-  const fetchResult = fetchActions?.results[repository.id];
-  const fetching = Boolean(fetchActions?.pending[repository.id]);
-  const fetchedAt = fetchActions?.successfulAt[JSON.stringify([repository.id, repository.gitId])];
-  const resultMatches = fetchResult?.gitId === repository.gitId;
-  const fetchError = resultMatches && fetchResult?.status !== 'succeeded'
-    ? [fetchResult?.message, ...(fetchResult?.remotes || []).filter(remote => remote.status !== 'succeeded').map(remote => `${remote.name}：${remote.message}`)].filter(Boolean).join('；') : '';
-  useEffect(() => { if (resultMatches && fetchResult) void branches.refresh(); }, [fetchResult, resultMatches, branches.refresh]);
-  async function fetchRemote() {
-    if (!fetchActions || !ready || pending || fetching || branches.loading || !repository.gitId || !repository.checkoutId) return;
-    setFailure(null);
-    try { await fetchActions.run([repository]); }
-    catch (error) { if (mounted.current && currentSource.current === sourceKey) message.error(error instanceof Error ? error.message : '获取远程失败'); }
-  }
-  async function use(entry: SourceControlBranch, localName?: string) {
-    if (writing.current || fetching || branches.loading || !branches.data) return false;
-    const snapshot = branches.data;
-    const isCurrent = () => mounted.current && currentSource.current === sourceKey;
-    writing.current = true; setPending(true); setFailure(null);
-    let succeeded = false;
-    try {
-      const result = await codeApi.switchBranch(workspaceId, {...input, targetRef: entry.ref, expectedTargetHash: entry.hash, expectedRevision: snapshot.observedRevision, ...(localName ? {localName} : {})});
-      succeeded = true;
-      if (isCurrent()) message.success('已切换到 ' + result.branch);
-    } catch (error) {
-      if (isCurrent()) {
-        const observedFailure = branchSwitchFailure(error);
-        setFailure(observedFailure); message.error(observedFailure.message);
-      }
-    } finally {
-      writing.current = false;
-      if (isCurrent()) setPending(false);
-      // The completed write ends its wait now. Subsequent reads own independent feedback.
-      if (isCurrent() && !succeeded) void branches.refresh();
-    }
-    return succeeded;
-  }
-  return <BranchManagementPopover repository={repository} worktree={worktree} entries={entries} ready={ready && worktree.status !== 'offline'} open={open}
-    reading={branches.loading} pending={pending || fetching} failure={failure} readNote={observationNote(branches.data)}
-    fetching={fetching} fetchDisabled={!fetchActions || !ready || pending || branches.loading || !repository.gitId || !repository.checkoutId}
-    fetchedAt={fetchedAt ? formatShortDateTime(fetchedAt) : ''} fetchError={fetchError}
-    remoteError={branches.error} onFetchRemote={() => void fetchRemote()}
-    onOpenChange={setOpen} onTargetChange={() => setFailure(null)}
-    inspect={entry => branchSwitchImpact(repository, worktree, entries, entry)} onUse={use} onOpenPosition={onOpenPosition} onViewChanges={onViewChanges} />;
-}
 
 function HistoryControls({active = true, workspaceId, repository, worktree, version, branchRef, authorEmail, query, onBranchChange, onAuthorChange, onClear}: LocationProps & {
   active?: boolean; branchRef: string; authorEmail: string; query: string; onBranchChange(ref: string): void; onAuthorChange(email: string): void; onClear(): void;
@@ -117,7 +55,7 @@ export function useSourceControlBranches(workspaceId: string, fetchActions?: Sou
       return {branch: current.branchRef === 'HEAD' ? undefined : current.branchRef, authorEmail: current.authorEmail || undefined};
     },
     selection,
-    rowControl: (repository, worktree, ready, context) => <BranchControl key={JSON.stringify([workspaceId, repository.id, worktree.worktreeId])} workspaceId={workspaceId} fetchActions={fetchActions} repository={repository} worktree={worktree} version={repository.refsVersion || repository.readVersion || ''} ready={ready && !syncing(repository)} inlineVisible={context.branchVisible} rowVisible={context.rowVisible} openRequest={branchRequest.key === key(repository, worktree) ? branchRequest.serial : 0}
+    rowControl: (repository, worktree, ready, context) => <SourceControlBranchControl key={JSON.stringify([workspaceId, repository.id, worktree.worktreeId])} workspaceId={workspaceId} fetchActions={fetchActions} repository={repository} worktree={worktree} version={repository.refsVersion || repository.readVersion || ''} ready={ready && !syncing(repository)} inlineVisible={context.branchVisible} rowVisible={context.rowVisible} openRequest={branchRequest.key === key(repository, worktree) ? branchRequest.serial : 0}
       onOpenPosition={worktreeId => openPosition(repository.id, worktreeId, 'history')} onViewChanges={() => openPosition(repository.id, worktree.worktreeId, 'changes')} />,
     rowActions: fetchActions && syncActions ? (repository, worktree, ready, context) => {
       const available = ready && worktree.status !== 'offline' && Boolean(repository.gitId && repository.checkoutId);

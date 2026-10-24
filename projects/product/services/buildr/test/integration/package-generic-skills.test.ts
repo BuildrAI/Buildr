@@ -86,6 +86,20 @@ test('任务技能的自然意图描述从包同步到发现入口，升级不�
   runtime.initBuildr(['--source-only', '--target', root, '--name', 'task-discovery', '--profile', 'personal']);
   const existing = runtime.createTask(root, { taskId: 'existing-fix', title: '继续修复', intent: '保留已开始的目标', projects: [], services: [], changes: [] });
   const sources = new Map<string, string>();
+  // Older installations owned local copies. Never mutate the shared official store
+  // to simulate them: that invalidates every resource reference in this workspace.
+  const manifestFile = path.join(root, 'skills/manifest.yml');
+  const manifest = YAML.parse(fs.readFileSync(manifestFile, 'utf8'));
+  const installedSources = resolveSkills(root, null, { runtime: 'codex' });
+  for (const id of ['task-manager', 'task-triage']) {
+    const entry = manifest.skills.find((skill: any) => skill.id === id);
+    const installed = installedSources.find((skill: any) => skill.id === id);
+    const local = path.join(root, 'skills', entry.path);
+    fs.mkdirSync(path.dirname(local), { recursive: true });
+    fs.cpSync(installed.sourceDir, local, { recursive: true });
+    delete entry.resource;
+  }
+  fs.writeFileSync(manifestFile, YAML.stringify(manifest));
   const receiptFile = path.join(root, '.buildr/builtin-receipts.json');
   const receipts = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
   const digest = (value: string) => `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
@@ -110,7 +124,9 @@ test('任务技能的自然意图描述从包同步到发现入口，升级不�
     const localGuide = path.join(root, '.agents/skills/buildr/references/local-services.md');
     assert.equal(fs.readFileSync(localGuide, 'utf8'), fs.readFileSync(path.resolve(import.meta.dirname, '../../resources/runtime/skills/buildr/references/local-services.md'), 'utf8'));
     assert.match(productSkill, /\]\(references\/local-services\.md\)/);
-    for (const [id, sourceFile] of sources) {
+    const currentSources = resolveSkills(root, null, { runtime: runtimeId });
+    for (const [id] of sources) {
+      const sourceFile = currentSources.find((skill: any) => skill.id === id)!.sourceFile;
       const source = fs.readFileSync(sourceFile, 'utf8');
       const projected = fs.readFileSync(path.join(root, '.agents/skills', id, 'SKILL.md'), 'utf8');
       const frontmatter = (text: string) => YAML.parse(text.split('---')[1]);

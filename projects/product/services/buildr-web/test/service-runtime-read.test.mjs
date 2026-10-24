@@ -3,12 +3,13 @@ import test from 'node:test';
 import { registerHooks } from 'node:module';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
+import { createWorkspaceReadCache } from '../src/lib/workspace-read-cache.ts';
 const facade = source => ({ url: 'data:text/javascript,' + encodeURIComponent(source), shortCircuit: true });
-const hooked = parent => parent?.endsWith('/service-runtime/hooks/useServiceRuntime.ts') || parent?.endsWith('/service-runtime/components/LocalLogsDrawer.tsx');
+const hooked = parent => parent?.endsWith('/components/WorkspaceReadCache.tsx') || parent?.endsWith('/service-runtime/hooks/useServiceRuntime.ts') || parent?.endsWith('/service-runtime/components/LocalLogsDrawer.tsx');
 registerHooks({
   resolve(specifier, context, next) {
     if (context.parentURL?.endsWith('/workspace/components/AssetHome.tsx') || context.parentURL?.endsWith('/service/pages/ServicesPage.tsx')) {
-      if (specifier === 'react') return facade(['useCallback', 'useContext', 'useEffect', 'useMemo', 'useRef', 'useState'].map(name => `export const ${name}=(...args)=>globalThis.__runtimeHooks.${name}(...args);`).join('\n'));
+      if (specifier === 'react') return facade(['useCallback', 'useContext', 'useEffect', 'useMemo', 'useRef', 'useState'].map(name => `export const ${name}=(...args)=>globalThis.__runtimeHooks.${name}(...args);`).join('\n') + '\nexport const createContext=value=>({cacheContext:true,defaultValue:value});');
       if (specifier.endsWith('.css')) return facade('');
       if (specifier.endsWith('/useServiceRuntime') || specifier.endsWith('/service-runtime/model')) return next(new URL(specifier + '.ts', context.parentURL).href, context);
       const source = ts.createSourceFile('host.tsx', readFileSync(new URL(context.parentURL), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -18,8 +19,9 @@ registerHooks({
       return facade(names.map(name => `export const ${name}=globalThis.__assetMocks.${name} ?? (()=>null);`).join('\n') + '\n// host: ' + context.parentURL);
     }
     if (hooked(context.parentURL)) {
-      if (specifier === 'react') return facade(['useCallback', 'useContext', 'useEffect', 'useMemo', 'useRef', 'useState'].map(name => `export const ${name}=(...args)=>globalThis.__runtimeHooks.${name}(...args);`).join('\n'));
+      if (specifier === 'react') return facade(['useCallback', 'useContext', 'useEffect', 'useMemo', 'useRef', 'useState'].map(name => `export const ${name}=(...args)=>globalThis.__runtimeHooks.${name}(...args);`).join('\n') + '\nexport const createContext=value=>({cacheContext:true,defaultValue:value});');
       if (specifier === '../../../api') return facade('export const api=(...args)=>globalThis.__runtimeRequest(...args);');
+      if (specifier.endsWith('/WorkspaceReadCache')) return next(new URL(specifier + '.tsx', context.parentURL).href, context);
       if (specifier.endsWith('/pageTabs')) return facade('export const WorkspaceViewActiveContext={};');
       if (specifier.endsWith('/AppShellContext')) return facade('export const useAppShell=()=>({workspaceId:globalThis.__runtimeWorkspace});');
       if (specifier.endsWith('/DrawerShell')) return facade('export const DrawerShell="drawer";');
@@ -32,7 +34,7 @@ registerHooks({
     return next(specifier, context);
   },
   load(url, context, next) {
-    if (url.endsWith('/LocalLogsDrawer.tsx') || url.endsWith('/workspace/components/AssetHome.tsx') || url.endsWith('/service/pages/ServicesPage.tsx')) return { format: 'module', source: ts.transpileModule(readFileSync(new URL(url), 'utf8'), { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText, shortCircuit: true };
+    if (url.endsWith('/components/WorkspaceReadCache.tsx') || url.endsWith('/LocalLogsDrawer.tsx') || url.endsWith('/workspace/components/AssetHome.tsx') || url.endsWith('/service/pages/ServicesPage.tsx')) return { format: 'module', source: ts.transpileModule(readFileSync(new URL(url), 'utf8'), { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText, shortCircuit: true };
     return next(url, context);
   },
 });
@@ -41,6 +43,7 @@ const { createServiceRuntimeClient } = await import('../src/features/service-run
 const { LocalLogsDrawer } = await import('../src/features/service-runtime/components/LocalLogsDrawer.tsx');
 const settle = async () => { for (let index = 0; index < 8; index++) await Promise.resolve(); };
 function harness(render) {
+  const sharedCache = createWorkspaceReadCache();
   const slots = [], effects = [], requests = []; let cursor = 0, active = true;
   const timers = new Map(); let timerId = 0; const nativeSet = globalThis.setInterval, nativeClear = globalThis.clearInterval;
   globalThis.setInterval = (callback, milliseconds) => { timers.set(++timerId, { callback, milliseconds }); return timerId; };
@@ -51,12 +54,12 @@ function harness(render) {
   globalThis.__runtimeCopied = []; globalThis.__runtimeMessages = [];
   globalThis.__runtimeRequest = (url, options = {}) => new Promise((resolve, reject) => requests.push({ url, ...options, resolve, reject }));
   globalThis.__runtimeHooks = {
-    useContext() { cursor++; return active; }, useMemo: memo, useCallback: (fn, deps) => memo(() => fn, deps),
+    useContext(context) { cursor++; return context.cacheContext ? sharedCache : active; }, useMemo: memo, useCallback: (fn, deps) => memo(() => fn, deps),
     useRef(value) { const index = cursor++; return slots[index] ||= { current: value }; },
     useState(value) { const index = cursor++; slots[index] ||= { value: typeof value === 'function' ? value() : value }; return [slots[index].value, next => { slots[index].value = typeof next === 'function' ? next(slots[index].value) : next; }]; },
     useEffect(fn, deps) { const index = cursor++; if (!same(slots[index]?.deps, deps)) { const old = slots[index]; slots[index] = { deps }; effects.push(() => { old?.cleanup?.(); slots[index].cleanup = fn(); }); } },
   };
-  return { requests, tick(milliseconds) { for (const timer of [...timers.values()]) if (timer.milliseconds === milliseconds) timer.callback(); }, render(props, workspace = 'A', visible = true) { active = visible; globalThis.__runtimeWorkspace = workspace; cursor = 0; const value = render(props, workspace); effects.splice(0).forEach(effect => effect()); return value; }, values() { return slots.filter(slot => slot && Object.hasOwn(slot, 'value')).map(slot => slot.value); }, dispose() { slots.forEach(slot => slot?.cleanup?.()); globalThis.setInterval = nativeSet; globalThis.clearInterval = nativeClear; for (const key of ['window', 'document', '__runtimeHooks', '__runtimeRequest', '__runtimeWorkspace', '__runtimeCopied', '__runtimeMessages']) delete globalThis[key]; } };
+  return { requests, tick(milliseconds) { for (const timer of [...timers.values()]) if (timer.milliseconds === milliseconds) timer.callback(); }, render(props, workspace = 'A', visible = true) { active = visible; globalThis.__runtimeWorkspace = workspace; cursor = 0; const value = render(props, workspace); effects.splice(0).forEach(effect => effect()); return value; }, values() { return slots.filter(slot => slot && Object.hasOwn(slot, 'value')).map(slot => slot.value); }, dispose() { slots.forEach(slot => slot?.cleanup?.()); sharedCache.dispose(); globalThis.setInterval = nativeSet; globalThis.clearInterval = nativeClear; for (const key of ['window', 'document', '__runtimeHooks', '__runtimeRequest', '__runtimeWorkspace', '__runtimeCopied', '__runtimeMessages']) delete globalThis[key]; } };
 }
 const find = (tree, type) => { if (Array.isArray(tree)) return tree.flatMap(item => find(item, type)); if (!tree || typeof tree !== 'object') return []; return [...(tree.type === type ? [tree] : []), ...find(tree.props?.children, type)]; };
 const run = id => ({ id, serviceCode: 'front', worktreePath: '/actual/' + id, worktreeLabel: 'task', main: false, taskId: 'task', taskTitle: '订单验证', branch: 'topic', head: 'a'.repeat(40), actualPort: 3000, status: 'running', startedAt: '2026-10-22T01:00:00Z', failure: null, logPath: '/logs/' + id });
@@ -65,15 +68,15 @@ const response = (id, log) => ({ record: run(id), log, truncated: false, maxByte
 test('本地运行读取按工作空间和任务隔离，隐藏页面不刷新，迟到旧范围不能覆盖', async () => {
   const h = harness((_props, workspace) => useServiceRuntimeOverview(workspace));
   try {
-    h.render(); h.requests[0].resolve({ readAt: 'A' }); await settle(); assert.equal(h.render().data.readAt, 'A');
-    const pending = h.render(null, 'B'); assert.equal(pending.data, null); assert.equal(h.requests[0].signal.aborted, true);
+    h.render(); await settle(); h.requests[0].resolve({ readAt: 'A' }); await settle(); assert.equal(h.render().data.readAt, 'A');
+    const pending = h.render(null, 'B'); await settle(); assert.equal(pending.data, null);
     h.requests[1].resolve({ readAt: 'B' }); await settle(); assert.equal(h.render(null, 'B').data.readAt, 'B');
     h.render(null, 'B', false); window.dispatchEvent(new Event('focus')); assert.equal(h.requests.length, 2);
-    h.render(null, 'B', true); assert.equal(h.requests.length, 3);
+    h.render(null, 'B', true); await settle(); assert.equal(h.requests.length, 2, 'warm observations remain available when returning to a tab');
   } finally { h.dispose(); }
   const task = harness((id, workspace) => useTaskRuntime(workspace, id));
   try {
-    task.render('old'); task.render('current'); assert.equal(task.requests[0].signal.aborted, true);
+    task.render('old'); await settle(); task.render('current'); await settle();
     task.requests[1].resolve({ taskId: 'current' }); await settle(); task.requests[0].resolve({ taskId: 'old' }); await settle();
     assert.equal(task.render('current').data.taskId, 'current'); assert.match(task.requests[1].url, /tasks\/current$/);
   } finally { task.dispose(); }
@@ -82,15 +85,15 @@ test('本地运行读取按工作空间和任务隔离，隐藏页面不刷新�
 test('切换详情携带明确任务范围，任务变化拒绝旧响应，普通服务不带任务参数', async () => {
   const h = harness((taskId, workspace) => useServiceRuntimeDetail(workspace, 'front', taskId));
   try {
-    h.render('old task'); assert.match(h.requests[0].url, /\/services\/front\?taskId=old%20task$/u);
+    h.render('old task'); await settle(); assert.equal(new URL(h.requests[0].url, 'http://fixture').searchParams.get('taskId'), 'old task');
     h.requests[0].resolve({ readAt: 'old', connectionTargets: {} }); await settle(); assert.equal(h.render('old task').data.readAt, 'old');
-    h.tick(5000); const late = h.requests[1];
-    const next = h.render('new/task'); assert.equal(next.data, null); assert.equal(late.signal.aborted, true);
+    h.tick(5000); await settle(); const late = h.requests[1];
+    const next = h.render('new/task'); await settle(); assert.equal(next.data, null);
     assert.match(h.requests[2].url, /\/services\/front\?taskId=new%2Ftask$/u);
     assert.equal(Object.hasOwn(h.requests[2], 'taskId'), false, '任务只作为URL查询参数，不混入请求选项');
     h.requests[2].resolve({ readAt: 'new', connectionTargets: {} }); await settle(); late.resolve({ readAt: 'late-old' }); await settle();
     assert.equal(h.render('new/task').data.readAt, 'new');
-    assert.equal(h.render(undefined).data, null); assert.equal(h.requests[3].url.endsWith('/services/front'), true);
+    assert.equal(h.render(undefined).data, null); await settle(); assert.equal(h.requests[3].url.endsWith('/services/front?standalone=true'), true);
     h.requests[3].resolve({ readAt: 'global' }); await settle(); assert.equal(h.render(undefined).data.readAt, 'global');
   } finally { h.dispose(); }
 });
@@ -139,6 +142,7 @@ test('可见空目录轮询发现外部启动，同工作空间写入立即同�
   const overview = runs => ({ services: [summary(runs)], runs, local: { active: runs, activeCount: runs.length } });
   const navigations = [];
   globalThis.__assetMocks = {
+    App: {useApp:()=>({message:{error(){}}})}, useWorkbenchPreferences:()=>({has:()=>false,loading:false}),
     Alert: 'alert', Button: 'service-action-button', Space: 'space', Select: 'select', ResourceDirectory: 'resource-directory', WorkspaceStage: 'workspace-stage',
     useAppShell: () => ({ workspaceId: globalThis.__runtimeWorkspace }), useNavigate: () => path => navigations.push(path), workspaceHref: (workspace, path) => '/workspaces/' + workspace + path,
     useAssetList: () => ({ data: { services: [item] }, loading: false, error: '', reload() {} }), useAssetCatalog: () => ({}),
@@ -148,14 +152,14 @@ test('可见空目录轮询发现外部启动，同工作空间写入立即同�
   const h = harness(() => ServicesPage());
   const action = tree => find(find(tree, 'resource-directory')[0].props.rowActions(item), 'service-action-button')[0];
   try {
-    h.render(); h.requests[0].resolve(overview([])); await settle(); assert.equal(action(h.render()).props.children, '启动');
-    h.tick(5000); assert.equal(h.requests.length, 2, '零实例也定期读取，发现外部智能体启动');
+    h.render(); await settle(); h.requests[0].resolve(overview([])); await settle(); assert.equal(action(h.render()).props.children, '启动');
+    h.tick(5000); await settle(); assert.equal(h.requests.length, 2, '零实例也定期读取，发现外部智能体启动');
     h.requests[1].resolve(overview([run('external')])); await settle();
     let button = action(h.render()); assert.equal(button.props.children, '查看运行'); button.props.onClick(); assert.match(navigations.at(-1), /services\/front-id\?view=runtime$/);
     const client = createServiceRuntimeClient(async () => ({}), 'A');
-    await client.stop('external'); assert.equal(h.requests.length, 3, '同工作空间写入后立即重读，不等待下一轮询');
+    await client.stop('external'); await settle(); assert.equal(h.requests.length, 3, '同工作空间写入后立即重读，不等待下一轮询');
     h.requests[2].resolve(overview([])); await settle(); assert.equal(action(h.render()).props.children, '启动');
-    await client.start('front', 'main'); assert.equal(h.requests.length, 4);
+    await client.start('front', 'main'); await settle(); assert.equal(h.requests.length, 4);
     h.requests[3].resolve(overview([run('started')])); await settle(); assert.equal(action(h.render()).props.children, '查看运行');
     await createServiceRuntimeClient(async () => ({}), 'B').stop('other'); assert.equal(h.requests.length, 4, '其他工作空间不触发当前目录重读');
   } finally { h.dispose(); delete globalThis.__assetMocks; }

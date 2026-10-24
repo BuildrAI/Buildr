@@ -1,5 +1,6 @@
+import { sharedSkillSource } from '../infrastructure/shared-skill-source.ts';
 import path from 'node:path';
-import { readSkillText, readSkillTexts, skillContentError, skillSourceRoot } from '../persistence/skill-content-repository.ts';
+import { readSkillText, readSkillTexts, skillContentError } from '../persistence/skill-content-repository.ts';
 import { VERIFIED_READONLY_BATCH_SIZE } from '../../../infrastructure/filesystem/verified-readonly-file.ts';
 import { parseSkillFrontmatterNameFromContent } from '../infrastructure/runtime/skills/primitives.ts';
 import { parseSkillsManifestContent } from '../persistence/skill-manifest.ts';
@@ -13,7 +14,7 @@ export function readConnectionSkillSources(root: string) {
 
 /** Public, bounded source-file reader; no runtime projection or program execution. */
 export function readConnectionSkillFile(root: string, skillPath: string, relative: string) {
-  const directory = skillSourceRoot(root, skillPath);
+  const directory = sharedSkillSource(root, `skills/${skillPath}`);
   const file = readSkillText(directory, relative, { requireRootProof: true });
   if (relative === 'SKILL.md' && parseSkillFrontmatterNameFromContent(file.content, path.join(directory, 'SKILL.md')) !== path.posix.basename(skillPath)) throw skillContentError('技能源入口名称与登记身份不一致。');
   return { ...file, directory, absolutePath: path.join(directory, ...relative.split('/')) };
@@ -26,7 +27,7 @@ export function readConnectionSkillFiles(root: string, requests: readonly { skil
   const results: Result[] = new Array(requests.length);
   const readable: Array<{ index: number; skillPath: string; directory: string; relative: string }> = [];
   requests.forEach((request, index) => {
-    try { readable.push({ index, ...request, directory: skillSourceRoot(root, request.skillPath) }); }
+    try { readable.push({ index, ...request, directory: sharedSkillSource(root, `skills/${request.skillPath}`) }); }
     catch (cause) { results[index] = { ok: false, error: cause instanceof Error ? cause : skillContentError('技能来源不可读取。') }; }
   });
   const observed = readSkillTexts(readable);

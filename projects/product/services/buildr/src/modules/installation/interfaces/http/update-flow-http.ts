@@ -12,12 +12,20 @@ function previewRejected(previewIdentity: any) {
   throw error;
 }
 
-export function createUpdateFlowHttpContribution(application: any) {
+export function createUpdateFlowHttpContribution(application: any, resources?: ReturnType<typeof import('../../application/resource-location.ts').createResourceLocation>) {
   return Object.freeze({
     id: 'system-installation.update-flow.http',
     operations: UPDATE_FLOW_HTTP_OPERATIONS,
     schemas: UPDATE_FLOW_HTTP_SCHEMAS,
     handleTopLevel: async ({ request, pathname, searchParams, authorizeWrite, readJsonBody, previewIdentity }: any) => {
+      if (resources && request.method === 'GET' && pathname === '/api/v1/installation/resources') {
+        return { status: 200, body: validateUpdateFlowHttp(UPDATE_FLOW_HTTP_SCHEMAS.resourceLocationResponse.$id, resources.resourceLocation(), 'response', 'system-installation.resources.location') };
+      }
+      if (resources && request.method === 'POST' && pathname === '/api/v1/installation/resources/open') {
+        authorizeWrite();
+        const input = validateUpdateFlowHttp(UPDATE_FLOW_HTTP_SCHEMAS.resourceOpenRequest.$id, await readJsonBody(), 'request', 'system-installation.resources.open');
+        return { status: 200, body: await resources.openResourceLocation(input) };
+      }
       if (request.method === 'GET' && pathname === '/api/v1/update/status') {
         validateUpdateFlowHttp(UPDATE_FLOW_HTTP_SCHEMAS.statusRequest.$id, {}, 'request', 'system-installation.update-flow.status');
         return { status: 200, body: application.webUpdateStatus() };

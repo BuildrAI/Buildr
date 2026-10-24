@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { BOOTSTRAP_CONTRACT_RESOURCE, RESOURCE_WORKSPACE_ROOT } from '../product-layout.ts';
+import { BOOTSTRAP_CHECK_PATH, RESOURCE_WORKSPACE_ROOT } from '../product-layout.ts';
 import { resolveProductRoot } from '../product-resources/index.ts';
 export { acquireExclusiveFileLock, releaseExclusiveFileLock, withExclusiveFileLock } from './exclusive-file-lock.ts';
 import { parseYamlDocument, parseYamlValue, quoteYaml } from './yaml.ts';
@@ -57,7 +57,7 @@ export function registerWorkspaceInfrastructure(runtime: any): any  {
   }
 
   function bootstrapContractPath(): any  {
-    return path.join(productRoot(), BOOTSTRAP_CONTRACT_RESOURCE);
+    return path.join(productRoot(), BOOTSTRAP_CHECK_PATH);
   }
 
   function developmentWorkspaceRoot(): any  {

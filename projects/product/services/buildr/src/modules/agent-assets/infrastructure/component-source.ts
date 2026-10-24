@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { isFinderMetadata } from '../../../infrastructure/filesystem/finder-metadata.ts';
 
 export function assetIntegrity(assetPath: string): string | null {
   const stat = fs.statSync(assetPath, { throwIfNoEntry: false });
@@ -14,6 +15,7 @@ export function assetIntegrity(assetPath: string): string | null {
       for (const entry of fs.readdirSync(directory, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))) {
         const absolute = path.join(directory, entry.name);
         if (entry.isSymbolicLink()) throw new Error(`Integrity input contains a symbolic link: ${absolute}`);
+        if (isFinderMetadata(entry.name, entry)) continue;
         if (entry.isDirectory()) visit(absolute);
         else if (entry.isFile()) files.push(absolute);
       }

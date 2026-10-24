@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { reconcilePublicationAfterPreparedContext, resolveRetainedController, runReleaseOperation, waitForReleaseMainPullRequest } from '../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts';
-import { readCandidateEvidence, runHostedReleaseTransaction } from '../../../../../../skills/buildr-release/scripts/release-transaction-runner.ts';
+import { packageDownloadTimeoutMs, readCandidateEvidence, runHostedReleaseTransaction } from '../../../../../../skills/buildr-release/scripts/release-transaction-runner.ts';
 import { inspectReleaseSelection } from '../../../../../../skills/buildr-release/scripts/release-selection.ts';
 import { createReleaseArtifactFixture, preparationRecordFixture } from '../helpers/release-artifact-fixture.ts';
 import { aggregateCandidateCiEvidence, candidateCiRegistryIdentity, createCandidateCiEvidence, CANDIDATE_CI_AGGREGATE_SCHEMA } from '../verification/candidate-ci-evidence.ts';
@@ -127,6 +127,47 @@ test('Candidate artifact readback uses a bounded package download budget and rep
   assert.deepEqual(observed, [60_000, 120_000]);
 });
 
+test('Candidate artifact readback scales the package download budget with the declared artifact size', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-candidate-readback-scaled-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const read = (artifact: any) => {
+    const observed: number[] = [];
+    const execute = (_command: string, args: string[], options: any) => {
+      observed.push(options.timeout);
+      const directory = args[args.indexOf('--dir') + 1]!;
+      fs.mkdirSync(directory, { recursive: true });
+      const name = args[args.indexOf('--name') + 1]!;
+      if (name === 'candidate-aggregate') fs.writeFileSync(path.join(directory, 'candidate-ci-aggregate.json'), JSON.stringify(artifact ? { artifact } : {}));
+      return { status: 0, stdout: '' };
+    };
+    assert.throws(() => readCandidateEvidence({ candidateRunId: 42, ghCommand: 'gh', repo: root, execute,
+      dependencies: { makeTempDirectory: () => root, removeDirectory: () => {} } }));
+    return observed[1]!;
+  };
+  assert.equal(read({ size: 64 * 1024 * 1024 }), 572_000, 'a 64 MiB package needs roughly 512s at the minimum rate plus margin');
+  assert.equal(read({ size: 900 * 1024 * 1024 }), 900_000, 'huge packages are capped');
+  assert.equal(read({ size: 10 }), 120_000, 'small packages keep the floor budget');
+  assert.equal(read(null), 120_000, 'a missing size keeps the floor budget');
+  assert.equal(read({ size: 'large' }), 120_000, 'a non-integer size keeps the floor budget');
+});
+
+test('Candidate artifact readback points a failed package download at the retained destination', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-candidate-readback-hint-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const destination = path.join(root, 'retained');
+  const execute = (_command: string, args: string[], options: any) => {
+    const name = args[args.indexOf('--name') + 1]!;
+    if (name !== 'candidate-aggregate') return { status: null, stderr: '', error: new Error('ETIMEDOUT') };
+    const directory = args[args.indexOf('--dir') + 1]!;
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(path.join(directory, 'candidate-ci-aggregate.json'), '{}');
+    return { status: 0, stdout: '' };
+  };
+  assert.throws(() => readCandidateEvidence({ candidateRunId: 42, ghCommand: 'gh', repo: root, execute, artifactDestination: destination,
+    dependencies: { makeTempDirectory: () => root, removeDirectory: () => {} } }),
+    (error: any) => /ETIMEDOUT/u.test(error.message) && error.message.includes(destination) && error.message.includes('reused without downloading'));
+});
+
 test('Candidate artifact readback reuses only the complete manifest derived from the authenticated original bytes', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-candidate-local-readback-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -140,7 +181,7 @@ test('Candidate artifact readback reuses only the complete manifest derived from
     const execute = (_command: string, args: string[], options: any) => {
       const name = args[args.indexOf('--name') + 1]!, directory = args[args.indexOf('--dir') + 1]!;
       downloads.push(name);
-      assert.equal(options.timeout, name === 'candidate-package' ? 120_000 : 60_000);
+      assert.equal(options.timeout, name === 'candidate-package' ? packageDownloadTimeoutMs(selectedAggregate.artifact?.size) : 60_000);
       if (failure === name) return { status: null, error: new Error('ETIMEDOUT') };
       if (failure === 'destination-race' && name === 'candidate-package' && destination) {
         fs.mkdirSync(destination); fs.writeFileSync(path.join(destination, 'retain.txt'), 'concurrent owner');

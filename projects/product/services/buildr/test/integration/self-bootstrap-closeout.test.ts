@@ -3,10 +3,10 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { runDirectSelfBootstrapCloseout, runSelfBootstrapCloseoutCommand, SELF_BOOTSTRAP_SYNC_RESUME_SCHEMA } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs';
-import { DEFAULT_DEVELOPMENT_WEB_PORT } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs';
+import { DEFAULT_DEVELOPMENT_WEB_PORT, restartDevelopmentInstance, inspectDevelopmentInstance } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs';
 import { parseTaskCommitTrailer } from '../../src/modules/task/commits/domain/task-commit.ts';
 import { readDevelopmentRuntimeIdentity } from '../../src/modules/installation/infrastructure/development-runtime-inputs.ts';
 
@@ -31,6 +31,8 @@ function fixture(t: any): any  {
   fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'bin'), { recursive: true });
   fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'tools', 'build', 'launcher'), { recursive: true });
   fs.mkdirSync(path.join(root, 'skills', 'generated'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'skills/buildr-self-bootstrap-sync/scripts'), { recursive: true });
+  fs.copyFileSync(path.resolve(import.meta.dirname, '../../../../../../skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs'), path.join(root, 'skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs'));
   fs.mkdirSync(path.join(root, '.buildr'), { recursive: true });
   const projectBridge: any = path.join(root, 'projects', 'product', 'buildr');
   const launcher: any = path.join(root, 'projects', 'product', 'services', 'buildr', 'tools', 'development', 'run-development-cli');
@@ -101,6 +103,10 @@ function executor(root: any, options: any = {}): any  {
   let finishResumeIndex: any = 0;
   let successfulPushes: any = 0;
   let postPushReadbacks: any = 0;
+  let developmentHealthy = options.runningDevelopmentInstance === true;
+  let developmentPid = options.previousDevelopmentPid || 71173;
+  let developmentPort = 4317;
+  let restartAttempts = 0;
   return (executable: any, args: any, context: any) => {
     if (executable === 'git') {
       if (args[0] === 'add' && options.failStage) return { status: 128, stdout: '', stderr: 'simulated index.lock contention' };
@@ -178,13 +184,17 @@ function executor(root: any, options: any = {}): any  {
       }
     }
     if (executable === process.execPath && args[0] === launcherManager) {
-      if (options.failLauncherInstall) return { status: 1, stdout: '', stderr: 'launcher manager failed' };
+      if (args[1] === 'install') {
+        if (!args.includes('--no-stop-instance')) developmentHealthy = false;
+        if (options.failLauncherInstall) return { status: 1, stdout: '', stderr: 'launcher manager failed' };
+      }
       return {
         status: 0,
         stdout: JSON.stringify({
           schemaVersion: 'buildr.launcher-status/v1',
           channel: 'development',
           installed: true,
+          platform: process.platform,
           target: path.join(canonicalRoot, 'Buildr Web Dev.app'),
           identity: {
             schemaVersion: 'buildr.launcher-identity/v1',
@@ -202,7 +212,7 @@ function executor(root: any, options: any = {}): any  {
     if (executable === process.execPath && args[0] === continuityHelper) {
       if (args[1] === 'inspect') {
         if (options.failContinuityInspect) return { status: 1, stdout: '', stderr: 'continuity inspection failed' };
-        const healthy: any = options.runningDevelopmentInstance === true;
+        const healthy: any = developmentHealthy;
         return {
           status: 0,
           stdout: JSON.stringify({
@@ -211,10 +221,10 @@ function executor(root: any, options: any = {}): any  {
             status: healthy ? 'healthy-development' : (options.continuityStatus || 'not-running'),
             reason: healthy ? null : (options.continuityStatus || 'instance-record-absent'),
             instance: healthy ? {
-              url: 'http://127.0.0.1:4317',
-              port: 4317,
-              pid: options.previousDevelopmentPid || 71173,
-              launcherIdentity: { channel: 'development' },
+              url: `http://127.0.0.1:${developmentPort}`,
+              port: developmentPort,
+              pid: developmentPid,
+              launcherIdentity: { channel: 'development', sourceRoot: path.join(canonicalRoot, 'projects/product/services/buildr'), developmentRuntime: { executable: process.execPath } },
               productIdentity: null,
             } : null,
           }),
@@ -222,16 +232,21 @@ function executor(root: any, options: any = {}): any  {
         };
       }
       if (args[1] === 'restart') {
+        restartAttempts += 1;
+        developmentHealthy = false;
         if (options.occupiedDevelopmentPort) {
           return { status: 1, stdout: '', stderr: JSON.stringify({ code: 'EADDRINUSE', message: `listen EADDRINUSE: 127.0.0.1:${DEFAULT_DEVELOPMENT_WEB_PORT}` }) };
         }
-        if (options.failDevelopmentRestart) {
+        if (options.failDevelopmentRestart || restartAttempts <= (options.developmentRestartFailures || 0)) {
           return { status: 1, stdout: '', stderr: JSON.stringify({ code: 'development-web-continuity.start-timeout', details: { cleanup: { pid: 72200, status: 'requested' } } }) };
         }
         const value: any = (name: any) => args[args.indexOf(name) + 1];
         const previousPid: any = Number(value('--previous-pid'));
         const port: any = Number(value('--port'));
         const previousPort: any = Number(value('--previous-port'));
+        developmentHealthy = true;
+        developmentPid = options.restartedDevelopmentPid || previousPid + 1;
+        developmentPort = port;
         return {
           status: 0,
           stdout: JSON.stringify({
@@ -584,7 +599,7 @@ for (const [role, sourcePath] of [
     const doctorIndex = calls.findIndex((call) => call.executable === bridge && call.args[0] === 'doctor');
     assert.ok(inspectIndex >= 0 && inspectIndex < installIndex && installIndex < restartIndex && restartIndex < entryIndex && entryIndex < doctorIndex, JSON.stringify(calls));
     for (const index of [inspectIndex, installIndex, restartIndex]) assert.equal(calls[index].executable, process.execPath);
-    assert.deepEqual(calls[installIndex].args.slice(1), ['install', '--channel', 'development']);
+    assert.deepEqual(calls[installIndex].args.slice(1), ['install', '--channel', 'development', '--no-stop-instance']);
     const restart = calls[restartIndex].args;
     assert.equal(restart[restart.indexOf('--previous-pid') + 1], '71173');
     assert.equal(restart[restart.indexOf('--port') + 1], String(DEFAULT_DEVELOPMENT_WEB_PORT));
@@ -700,3 +715,190 @@ test('a restarted instance with a different runtime proof cannot pass closeout',
   assert.equal(result.diagnostic?.code, 'self-bootstrap-closeout.development-web-restart-identity-mismatch');
   assert.equal(result.phases.some((phase: any) => phase.id === 'finalize'), false);
 });
+
+function runtimeRecoveryFixture(t: any): any {
+  const f = fixture(t);
+  fs.writeFileSync(path.join(f.root, 'projects/product/services/buildr/package-lock.json'), '{}\n');
+  git(f.root, 'add', '--', 'projects/product/services/buildr/package-lock.json');
+  git(f.root, 'commit', '-m', 'runtime change');
+  git(f.root, 'push', 'origin', 'dev');
+  return { ...f, pending: path.join(f.root, '.buildr/local/self-bootstrap-development-web-recovery.json'),
+    input: { workspaceRoot: f.root, baseRef: f.baseRef, deliveredRef: git(f.root, 'rev-parse', 'HEAD'),
+      targetBranch: 'dev', remote: 'origin', agent: 'codex', nodeExecutable: process.execPath, environment: f.environment } };
+}
+
+for (const [options, code] of [
+  [{ failLauncherInstall: true }, 'self-bootstrap-closeout.local-app-install-failed'],
+  [{ observedLauncherHead: '0'.repeat(40) }, 'self-bootstrap-closeout.local-app-identity-mismatch'],
+] as const) {
+  test(`failed update preserves the running app: ${code}`, t => {
+    const f = runtimeRecoveryFixture(t), calls: string[][] = [];
+    const perform = executor(f.root, { runningDevelopmentInstance: true, ...options });
+    const result = runDirectSelfBootstrapCloseout({ ...f.input, execute: (command: string, args: string[], context: any) => {
+      calls.push(args); return perform(command, args, context);
+    } });
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.diagnostic.code, code);
+    assert.equal(result.diagnostic.details.developmentWebRecovery.disposition, 'preserved');
+    assert.equal(result.diagnostic.details.developmentWebRecovery.instance.pid, 71173);
+    assert.equal(calls.some(args => args.includes('restart')), false);
+    assert.equal(fs.existsSync(f.pending), false);
+  });
+}
+
+test('failed restart retains the recovery obligation and a fresh invocation restores an absent instance', t => {
+  const f = runtimeRecoveryFixture(t);
+  const failed = runDirectSelfBootstrapCloseout({ ...f.input, execute: executor(f.root, { runningDevelopmentInstance: true, failDevelopmentRestart: true }) });
+  assert.equal(failed.status, 'blocked');
+  assert.equal(failed.diagnostic.details.developmentWebRecovery.status, 'failed');
+  assert.equal(JSON.parse(fs.readFileSync(f.pending, 'utf8')).continuity.instance.pid, 71173);
+  const calls: string[][] = [], perform = executor(f.root);
+  const recovered = runDirectSelfBootstrapCloseout({ ...f.input, execute: (command: string, args: string[], context: any) => {
+    calls.push(args); return perform(command, args, context);
+  } });
+  assert.equal(recovered.status, 'passed', JSON.stringify(recovered));
+  const restart = calls.find(args => args[1] === 'restart')!;
+  assert.equal(restart[restart.indexOf('--previous-pid') + 1], '71173');
+  assert.equal(fs.existsSync(f.pending), false);
+  assert.equal(recovered.phases.find((p: any) => p.id === 'install-buildr-web').effects[0].status, 'passed');
+});
+
+test('a transient restart failure recovers immediately while retaining the original update failure', t => {
+  const f = runtimeRecoveryFixture(t);
+  const result = runDirectSelfBootstrapCloseout({ ...f.input, execute: executor(f.root, { runningDevelopmentInstance: true, developmentRestartFailures: 1 }) });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.development-web-restart-failed');
+  assert.equal(result.diagnostic.details.developmentWebRecovery.status, 'passed');
+  assert.equal(result.diagnostic.details.developmentWebRecovery.instance.pid, 71174);
+  assert.equal(fs.existsSync(f.pending), false);
+});
+
+test('an installation failure on retry still restores the app from the persisted obligation', t => {
+  const f = runtimeRecoveryFixture(t);
+  runDirectSelfBootstrapCloseout({ ...f.input, execute: executor(f.root, { runningDevelopmentInstance: true, failDevelopmentRestart: true }) });
+  assert.equal(fs.existsSync(f.pending), true);
+  const result = runDirectSelfBootstrapCloseout({ ...f.input, execute: executor(f.root, { failLauncherInstall: true }) });
+  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.local-app-install-failed');
+  assert.equal(result.diagnostic.details.developmentWebRecovery.status, 'passed');
+  assert.equal(fs.existsSync(f.pending), false);
+});
+
+test('an invalid recovery obligation is preserved and cannot trigger installation or restart', t => {
+  const f = runtimeRecoveryFixture(t);
+  fs.mkdirSync(path.dirname(f.pending), { recursive: true }); fs.writeFileSync(f.pending, '{broken');
+  const calls: string[][] = [], perform = executor(f.root);
+  const result = runDirectSelfBootstrapCloseout({ ...f.input, execute: (command: string, args: string[], context: any) => {
+    calls.push(args); return perform(command, args, context);
+  } });
+  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.development-web-recovery-invalid');
+  assert.equal(fs.readFileSync(f.pending, 'utf8'), '{broken');
+  assert.equal(calls.some(args => ['install', 'restart'].includes(args[1])), false);
+});
+
+test('a recovery obligation cannot switch its application data root during retry', t => {
+  const f = runtimeRecoveryFixture(t);
+  runDirectSelfBootstrapCloseout({ ...f.input, execute: executor(f.root, { runningDevelopmentInstance: true, failDevelopmentRestart: true }) });
+  const before = fs.readFileSync(f.pending, 'utf8'), calls: string[][] = [], perform = executor(f.root);
+  const result = runDirectSelfBootstrapCloseout({ ...f.input,
+    environment: { ...f.environment, BUILDR_APP_DATA_DIR: path.join(f.root, '.buildr/local/other-app') },
+    execute: (command: string, args: string[], context: any) => { calls.push(args); return perform(command, args, context); } });
+  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.development-web-recovery-root-mismatch');
+  assert.equal(fs.readFileSync(f.pending, 'utf8'), before);
+  assert.equal(calls.some(args => ['install', 'restart'].includes(args[1])), false);
+});
+
+test('changed recovery metadata is preserved without denying that the app recovered', t => {
+  const f = runtimeRecoveryFixture(t), perform = executor(f.root, { runningDevelopmentInstance: true });
+  let changed = '';
+  const result = runDirectSelfBootstrapCloseout({ ...f.input, execute: (command: string, args: string[], context: any) => {
+    const output = perform(command, args, context);
+    if (args[1] === 'restart') {
+      const pending = JSON.parse(fs.readFileSync(f.pending, 'utf8'));
+      pending.continuity.instance.pid += 100;
+      changed = JSON.stringify(pending); fs.writeFileSync(f.pending, changed);
+    }
+    return output;
+  } });
+  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.development-web-recovery-changed');
+  assert.equal(result.diagnostic.details.developmentWebRecovery.status, 'passed');
+  assert.equal(result.diagnostic.details.developmentWebRecovery.cleanup.status, 'failed');
+  assert.equal(fs.readFileSync(f.pending, 'utf8'), changed);
+});
+
+for (const failFirstStart of [false, true]) {
+  test(`real isolated development process recovers and is reused after handoff (first start fails: ${failFirstStart})`, async t => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-web-continuity-'));
+    const dataRoot = path.join(directory, 'data'), sourceRoot = path.join(directory, 'source');
+    fs.mkdirSync(dataRoot); fs.mkdirSync(sourceRoot);
+    const identity = { schemaVersion: 'buildr.launcher-identity/v1', channel: 'development', source: 'checkout',
+      sourceRoot, developmentRuntime: { executable: process.execPath }, checkout: { head: 'a'.repeat(40) } };
+    const identityFile = path.join(directory, 'identity.json'); fs.writeFileSync(identityFile, JSON.stringify(identity));
+    const configFile = path.join(directory, 'config.json'), instanceFile = path.join(dataRoot, 'instance.json');
+    const oldProof = `sha256-${'1'.repeat(64)}`, newProof = `sha256-${'2'.repeat(64)}`;
+    const configure = (proof: string) => fs.writeFileSync(configFile, JSON.stringify({ dataRoot, identity, proof }));
+    configure(oldProof);
+    const children: ReturnType<typeof spawn>[] = [];
+    const serverProgram = `
+      const fs = require('node:fs'), path = require('node:path'), http = require('node:http');
+      const config = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+      const file = path.join(config.dataRoot, 'instance.json'), secret = 'isolated-secret';
+      const server = http.createServer((request, response) => {
+        if (request.headers['x-buildr-instance'] !== secret) { response.writeHead(403).end(); return; }
+        if (request.url === '/api/v1/app/quit-instance' && request.method === 'POST') {
+          response.writeHead(202).end(); setImmediate(() => server.close(() => {
+            if (JSON.parse(fs.readFileSync(file, 'utf8')).pid === process.pid) fs.unlinkSync(file);
+          })); return;
+        }
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify({ schemaVersion: 'buildr.local-app-health/v1', status: 'ready', pid: process.pid }));
+      });
+      server.listen(0, '127.0.0.1', () => fs.writeFileSync(file, JSON.stringify({
+        url: 'http://127.0.0.1:4458', testingUrl: 'http://127.0.0.1:' + server.address().port,
+        pid: process.pid, secret, launcherIdentity: config.identity, productIdentity: { developmentRuntimeIdentity: config.proof }
+      })));
+    `;
+    const launch = () => {
+      const child = spawn(process.execPath, ['-e', serverProgram, configFile], { stdio: 'ignore' }); children.push(child); return child;
+    };
+    t.after(async () => {
+      await Promise.all(children.map(child => new Promise<void>(resolve => {
+        if (child.exitCode !== null || child.signalCode !== null) return resolve();
+        child.once('exit', () => resolve()); child.kill('SIGKILL');
+      })));
+      fs.rmSync(directory, { recursive: true, force: true });
+    });
+    const previous = launch();
+    for (let attempt = 0; !fs.existsSync(instanceFile) && attempt < 100; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(fs.existsSync(instanceFile), true);
+    // Only this isolated receipt is routed to its ephemeral HTTP listener.
+    // The everyday development port is never contacted or occupied.
+    const fetchImpl: typeof fetch = (url: any, options: any) => {
+      const state = JSON.parse(fs.readFileSync(instanceFile, 'utf8'));
+      return fetch(new URL(new URL(url).pathname, state.testingUrl), options);
+    };
+    configure(newProof);
+    let attempts = 0;
+    const input = { projectBridge: path.join(directory, 'buildr'), launcherIdentityPath: identityFile,
+      expectedSourceRoot: sourceRoot, expectedHead: identity.checkout.head, expectedRuntimeIdentity: newProof,
+      nodeExecutable: process.execPath, previousPid: previous.pid, dataRoot, fetchImpl,
+      spawnImpl: (_program: any, args: any) => {
+        assert.deepEqual(args, ['web', '--port', '4458', '--no-open']);
+        attempts++;
+        if (failFirstStart && attempts === 1) {
+          const child = spawn(process.execPath, ['-e', 'process.exit(1)'], { stdio: 'ignore' }); children.push(child); return child;
+        }
+        return launch();
+      } };
+    await assert.rejects(restartDevelopmentInstance({ ...input, previousPid: previous.pid! + 1, timeoutMs: 2000 }), (error: any) => error.code === 'development-web-continuity.owner-mismatch');
+    assert.equal(attempts, 0);
+    assert.equal((await inspectDevelopmentInstance({ dataRoot, fetchImpl })).instance?.pid, previous.pid);
+    if (failFirstStart) await assert.rejects(restartDevelopmentInstance({ ...input, timeoutMs: 300 }), (error: any) => error.code === 'development-web-continuity.start-timeout');
+    const result = await restartDevelopmentInstance({ ...input, timeoutMs: 2000 });
+    assert.equal(result.status, 'passed'); assert.notEqual(result.instance.pid, previous.pid);
+    assert.equal((await inspectDevelopmentInstance({ dataRoot, fetchImpl })).status, 'healthy-development');
+    const beforeReuse = attempts;
+    const reused = await restartDevelopmentInstance({ ...input, timeoutMs: 2000 });
+    assert.equal(reused.disposition, 'reused'); assert.equal(reused.instance.pid, result.instance.pid);
+    assert.equal(attempts, beforeReuse);
+  });
+}
