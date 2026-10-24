@@ -57,7 +57,7 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
   'integration-code': testing(SERVICE_OWNER, 'Development', 'Integration', 215000, 'Code browsing, editing, observation and Git operations preserve the actual checkout and mutation boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-desktop': testing(SERVICE_OWNER, 'Development', 'Integration', 45000, 'Desktop and Agent connections preserve their isolated registration, lifecycle, Git read roots and HTTP boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-knowledge': testing(SERVICE_OWNER, 'Development', 'Integration', 35000, 'Knowledge and Agent source reading preserve current content, provenance and HTTP results.', TEST_ENVIRONMENTS.repeatedCli),
-  'integration-workspace-assets': testing(SERVICE_OWNER, 'Development', 'Integration', 240000, 'Workspace assets preserve composition, registration, mutation and user content.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-workspace-assets': testing(SERVICE_OWNER, 'Development', 'Integration', 300000, 'Workspace assets preserve composition, registration, mutation and user content.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-archify': testing(SERVICE_OWNER, 'Development', 'Integration', 90000, 'Retired Archify preserves old installations, offline and customized workspaces, self-use rendering and bounded diagnostics.', TEST_ENVIRONMENTS.repeatedCli),
   'integration-task-records': testing(SERVICE_OWNER, 'Development', 'Integration', 125000, 'Task records, materials and workbench views preserve filesystem, Git, SQLite and HTTP behavior.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-connections': testing(SERVICE_OWNER, 'Development', 'Integration', 135000, 'Connection Skills preserve definitions, credential handling, Git workspaces, process and local protocol boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
@@ -604,9 +604,10 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/workspace-composition.test.ts',
     'test/integration/workspace-mutation-recovery.test.ts',
     'test/integration/workspace-read-reuse.test.ts',
-  // This group includes two bounded 85s CLI scenarios. Its cap must
-  // include the other files sharing two workers, not truncate a valid child.
-  ], { schedulingCostMs: 5000, timeoutMs: 300_000, args: ['--test-concurrency=2'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
+  // This group includes two bounded 85s CLI scenarios. Shared-resource preparation
+  // grew workspace fixtures; the cap must absorb the full slice on two loaded
+  // workers (observed ~330s under concurrent candidate rounds), not truncate it.
+  ], { schedulingCostMs: 5000, timeoutMs: 420_000, args: ['--test-concurrency=2'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
   integrationSlice('integration-archify', [
     'test/integration/archify-command-cost.test.ts',
     'test/integration/archify-component.test.ts',
