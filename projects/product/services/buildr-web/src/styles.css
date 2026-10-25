@@ -2000,8 +2000,18 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .pane-tab-wrap { display:flex; position:relative; flex:none; align-items:center; border-radius:10px 10px 0 0; touch-action:none; user-select:none; }
 .pane-tab-wrap .pane-tab { height:36px; padding-right:29px; }
 .pane-tab-wrap > .pane-tab-x { position:absolute; right:7px; top:10px; border:0; padding:2px; background:transparent; cursor:pointer; }
+.workspace-tabstrip .pane-tab-pin { position:absolute; top:5px; left:4px; display:inline-flex; align-items:center; justify-content:center; width:22px; height:26px; padding:0; border:0; border-radius:5px; background:transparent; color:var(--soft-muted); font-size:12px; cursor:pointer; opacity:0; }
+.workspace-tabstrip .can-pin:hover .pane-tab-pin, .workspace-tabstrip .can-pin:focus-within .pane-tab-pin, .workspace-tabstrip .is-pinned .pane-tab-pin { opacity:1; }
+.workspace-tabstrip .can-pin:hover .pane-tab-dot, .workspace-tabstrip .can-pin:focus-within .pane-tab-dot, .workspace-tabstrip .is-pinned .pane-tab-dot { visibility:hidden; }
+.workspace-tabstrip .pane-tab-pin:hover { background:#e8ecef; color:var(--soft-ink); }
+.workspace-tabstrip .is-pinned .pane-tab-pin, .pane-tab-pinned-mark { color:var(--soft-primary); }
+.workspace-tabstrip .pane-tab-pin:focus-visible { outline:2px solid var(--soft-primary); outline-offset:-2px; }
+.workspace-tabstrip .is-last-pinned:not(:last-child) { margin-right:8px; }
+.workspace-tabstrip .is-last-pinned:not(:last-child)::after { content:''; position:absolute; right:-6px; top:10px; height:16px; border-right:1px solid var(--soft-line); }
+@media (hover:none) { .workspace-tabstrip .can-pin .pane-tab-pin { opacity:1; } .workspace-tabstrip .can-pin .pane-tab-dot { visibility:hidden; } }
 .pane-tab-wrap.is-dragged { background:#e5efeb; outline:1px dashed #96b7ab; outline-offset:-2px; }
 .pane-tab-wrap.is-dragged > * { opacity:0; }
+.workspace-tabstrip .pane-tab-wrap.is-dragged .pane-tab-pin { opacity:0; }
 .pane-tab-drag-ghost { position:fixed; z-index:2000; pointer-events:none; display:flex; align-items:center; justify-content:space-between; gap:7px; padding:8px 12px; background:white; color:var(--soft-ink); border:1px solid #8eb4a5; border-radius:9px; box-shadow:0 6px 20px #203d3026; font-size:12.5px; }
 .pane-tab-drag-ghost.landing { transition:transform 140ms ease-out; }
 @container (max-width:740px) { .ws-svc-grid { grid-template-columns:minmax(0,1fr); } .ws-hero-stats { gap:22px; flex-wrap:wrap; } }

@@ -9,6 +9,7 @@ export type WorkspaceTabsState = {
   register: (tab: WorkspacePageTab) => void;
   close: (key: string) => void;
   reorder: (key: string, index: number) => void;
+  togglePin?: (key: string) => void;
   reportPaneWidth: (path: string, width: number) => void;
   ratio: number | null;
   setRatio: (ratio: number) => void;

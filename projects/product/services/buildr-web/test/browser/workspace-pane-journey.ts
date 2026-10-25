@@ -6,7 +6,7 @@ export async function runWorkspacePaneJourney({ t, page, workspaceUrl, capture }
     await page.locator('.primary-navigation-rail [data-nav="workspace"]').hover();
     await page.locator('.primary-secondary-navigation:visible .shell-navigation').getByRole('link',{name,exact:true}).click();
   };
-  await t.test('中右屏激活页签置首、稳定顺延并滚回最左，各来源独立保留', async () => {
+  await t.test('页面激活保持手动顺序并滚到可见，对象激活仍置首且来源独立', async () => {
     await page.setViewportSize({width:1440,height:900});
     await page.goto(`${workspaceUrl}/projects/demo`);
     await page.locator('#project-detail-name:visible').waitFor();
@@ -20,24 +20,35 @@ export async function runWorkspacePaneJourney({ t, page, workspaceUrl, capture }
       },{label:await strip.getAttribute('aria-label'),title});
       assert.deepEqual(await names(strip),[title,...previous.filter(item=>item!==title)]);
     };
-    for (const [title,path] of [['服务','services'],['代码库','repositories'],['技能','skills'],['文章','articles'],['项目','projects']]) {
+    for (const [title,path,tabTitle] of [['服务','services','服务目录'],['代码库','repositories','代码库目录'],['技能','skills','技能目录'],['文章','articles','文章'],['项目','projects','项目目录']]) {
       await navigateWorkspace(title);
       await page.waitForURL(`${workspaceUrl}/${path}`);
-      await page.waitForFunction(()=>document.querySelector('.workspace-tabstrip [role="tab"]')?.getAttribute('aria-selected')==='true');
+      await middle().getByRole('tab',{name:tabTitle,exact:true,selected:true}).waitFor();
     }
     await middle().evaluate((element:HTMLElement)=>{element.style.maxWidth='220px';element.scrollLeft=element.scrollWidth;});
     assert.ok(await middle().evaluate((element:HTMLElement)=>element.scrollWidth>element.clientWidth&&element.scrollLeft>0));
-    await front(middle(),'演示项目',await names(middle()));
+    const opened=await names(middle());
+    await middle().getByRole('tab',{name:'演示项目',exact:true}).click();
+    await page.waitForURL(`${workspaceUrl}/projects/demo`);
+    assert.deepEqual(await names(middle()),opened,'激活已经打开的页面不改变用户顺序');
     const demo=middle().getByRole('tab',{name:'演示项目',exact:true});
+    const moved=[...opened];
+    const demoIndex=moved.indexOf('演示项目');
+    moved.splice(demoIndex,1);moved.splice(Math.min(demoIndex+1,moved.length),0,'演示项目');
     await demo.press('Alt+ArrowRight');
-    await page.waitForFunction(()=>document.querySelector('.workspace-tabstrip .pane-tab-text')?.textContent!=='演示项目');
-    const moved=await names(middle());
+    await page.waitForFunction((expected:string[])=>JSON.stringify([...document.querySelectorAll('.workspace-tabstrip .pane-tab-text')].map(node=>node.textContent))===JSON.stringify(expected),moved);
     await demo.click();
-    await page.waitForFunction(()=>document.querySelector('.workspace-tabstrip .pane-tab-text')?.textContent==='演示项目');
-    assert.deepEqual(await names(middle()),['演示项目',...moved.filter((name:string)=>name!=='演示项目')],'点击当前活动页签也置首');
+    assert.deepEqual(await names(middle()),moved,'重复点击当前活动页面仍保留手动顺序');
     await middle().evaluate((element:HTMLElement)=>{element.scrollLeft=element.scrollWidth;});
     await demo.dispatchEvent('click');
-    assert.equal(await middle().evaluate((element:HTMLElement)=>element.scrollLeft),0,'重复激活当前页签复位滚动');
+    await page.waitForFunction(()=>{
+      const strip=document.querySelector<HTMLElement>('.workspace-tabstrip');
+      const active=strip?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+      if(!strip||!active)return false;
+      const bounds=strip.getBoundingClientRect(),tab=active.getBoundingClientRect();
+      return tab.left>=bounds.left-1&&tab.right<=bounds.right+1;
+    });
+    assert.deepEqual(await names(middle()),moved,'重复激活只让当前页签可见');
     await page.locator('[data-doc-row="readme"]:visible').click();
     await page.locator('.pane-right:visible .file-editing-pane:visible').waitFor();
     await page.locator('[data-doc-row="agents"]:visible').click();
@@ -56,7 +67,7 @@ export async function runWorkspacePaneJourney({ t, page, workspaceUrl, capture }
     await right.evaluate((element:HTMLElement)=>{element.scrollLeft=element.scrollWidth;});
     await right.getByRole('tab',{name:'AGENTS.md',exact:true}).dispatchEvent('click');
     assert.equal(await right.evaluate((element:HTMLElement)=>element.scrollLeft),0);
-    await capture(page,'active-tab-first-both-panes.png');
+    await capture(page,'stable-page-order-active-object-first.png');
     await middle().getByRole('tab',{name:'服务目录',exact:true}).click();
     await page.waitForURL(`${workspaceUrl}/services`);
     await middle().getByRole('tab',{name:'演示项目',exact:true}).click();
@@ -69,7 +80,90 @@ export async function runWorkspacePaneJourney({ t, page, workspaceUrl, capture }
       return strip?.querySelector('[role="tab"]')?.getAttribute('aria-selected')==='true'&&strip.scrollLeft===0;
     });
     await page.reload();await page.locator('#project-detail-name:visible').waitFor();
-    assert.equal((await names(middle()))[0],'演示项目','刷新后的中屏当前页签仍为首位');
+    assert.deepEqual(await names(middle()),moved,'刷新后页面顺序保持，当前项不自动置首');
+  });
+
+  await t.test('固定页面可排序、关闭重开与刷新恢复，取消固定不关闭页面', async () => {
+    await page.setViewportSize({width:1440,height:900});
+    await page.goto(`${workspaceUrl}/projects/demo`);
+    await page.locator('#project-detail-name:visible').waitFor();
+    const workspaceId=new URL(workspaceUrl).pathname.split('/').at(-1)!;
+    const keys=[`buildr.web.page-tabs.${workspaceId}`,`buildr.web.pinned-page-tabs.${workspaceId}`];
+    const saved=await page.evaluate((keys:string[])=>keys.map(key=>[key,localStorage.getItem(key)]),keys);
+    const middle=()=>page.getByRole('tablist',{name:'打开的页面',exact:true});
+    const names=()=>middle().locator('.pane-tab-text').allTextContents();
+    const tab=(title:string)=>middle().getByRole('tab',{name:title,exact:true});
+    const toggle=async(title:string,pinned:boolean,keyboard=false)=>{
+      const button=middle().getByRole('button',{name:`${pinned?'取消固定':'固定'} ${title}`,exact:true});
+      await tab(title).hover();
+      if(keyboard)await button.press('Enter');else await button.click();
+      await middle().getByRole('button',{name:`${pinned?'固定':'取消固定'} ${title}`,exact:true}).waitFor();
+    };
+    const waitForOrder=async(expected:string[])=>{
+      await page.waitForFunction((expected:string[])=>JSON.stringify([...document.querySelectorAll('.workspace-tabstrip .pane-tab-text')].map(node=>node.textContent))===JSON.stringify(expected),expected);
+    };
+    try {
+      await page.evaluate((keys:string[])=>keys.forEach(key=>localStorage.removeItem(key)),keys);
+      await page.reload();await page.locator('#project-detail-name:visible').waitFor();
+      for(const [title,path,tabTitle] of [['服务','services','服务目录'],['技能','skills','技能目录'],['项目','projects','项目目录']]){
+        await navigateWorkspace(title);await page.waitForURL(`${workspaceUrl}/${path}`);
+        await middle().getByRole('tab',{name:tabTitle,exact:true,selected:true}).waitFor();
+      }
+      await tab('演示项目').click();await page.waitForURL(`${workspaceUrl}/projects/demo`);
+      const ordinary=await names();
+      assert.deepEqual(ordinary,['演示项目','服务目录','技能目录','项目目录'],'新普通页面追加到末尾');
+      await toggle('服务目录',false);
+      assert.equal(page.url(),`${workspaceUrl}/projects/demo`,'固定另一个页面不切换当前页面');
+      await toggle('技能目录',false);
+      await waitForOrder(['服务目录','技能目录','演示项目','项目目录']);
+      assert.equal(await middle().getByRole('button',{name:'取消固定 服务目录',exact:true}).getAttribute('aria-pressed'),'true');
+
+      await tab('技能目录').press('Alt+ArrowLeft');
+      await waitForOrder(['技能目录','服务目录','演示项目','项目目录']);
+      await tab('演示项目').press('Alt+ArrowLeft');
+      assert.deepEqual(await names(),['技能目录','服务目录','演示项目','项目目录'],'普通页面不能越过固定区');
+      const skill=await tab('技能目录').boundingBox(),service=await tab('服务目录').boundingBox();
+      assert.ok(skill&&service);
+      await page.mouse.move(skill.x+skill.width/2,skill.y+skill.height/2);
+      await page.mouse.down();
+      await page.mouse.move(service.x+service.width-2,service.y+service.height/2,{steps:8});
+      await page.mouse.up();
+      await waitForOrder(['服务目录','技能目录','演示项目','项目目录']);
+      await page.locator('.pane-tab-drag-ghost').waitFor({state:'hidden'});
+
+      await middle().getByRole('button',{name:'关闭 服务目录',exact:true}).click();
+      assert.equal(await tab('服务目录').count(),0);
+      await page.reload();await page.locator('#project-detail-name:visible').waitFor();
+      assert.deepEqual(await names(),['技能目录','演示项目','项目目录'],'刷新不重新打开已关闭的固定页面');
+      await navigateWorkspace('服务');await page.waitForURL(`${workspaceUrl}/services`);
+      await waitForOrder(['服务目录','技能目录','演示项目','项目目录']);
+      assert.equal(await middle().getByRole('button',{name:'取消固定 服务目录',exact:true}).getAttribute('aria-pressed'),'true','关闭重开仍保留固定位置');
+      await tab('演示项目').click();await page.waitForURL(`${workspaceUrl}/projects/demo`);
+      assert.deepEqual(await names(),['服务目录','技能目录','演示项目','项目目录'],'日常切换不改变固定和普通区顺序');
+      await capture(page,'pinned-page-tabs-restored.png');
+
+      const reopenedContext=await page.context().browser().newContext({storageState:await page.context().storageState(),viewport:{width:1440,height:900}});
+      const reopened=await reopenedContext.newPage();
+      try {
+        await reopened.goto(`${workspaceUrl}/projects/demo`);
+        await reopened.locator('#project-detail-name:visible').waitFor();
+        assert.deepEqual(await reopened.getByRole('tablist',{name:'打开的页面',exact:true}).locator('.pane-tab-text').allTextContents(),['服务目录','技能目录','演示项目','项目目录'],'新浏览器页面从持久偏好恢复固定顺序');
+      } finally {await reopenedContext.close();}
+
+      await toggle('服务目录',true,true);
+      await waitForOrder(['技能目录','服务目录','演示项目','项目目录']);
+      assert.equal(page.url(),`${workspaceUrl}/projects/demo`,'取消固定不关闭或切换页面');
+      await tab('服务目录').click();await page.waitForURL(`${workspaceUrl}/services`);
+      await middle().getByRole('button',{name:'关闭 服务目录',exact:true}).click();
+      await navigateWorkspace('服务');await page.waitForURL(`${workspaceUrl}/services`);
+      await middle().getByRole('tab',{name:'服务目录',exact:true,selected:true}).waitFor();
+      assert.deepEqual(await names(),['技能目录','演示项目','项目目录','服务目录'],'取消固定后重开按普通页面追加');
+      assert.equal(await middle().getByRole('button',{name:'固定 服务目录',exact:true}).getAttribute('aria-pressed'),'false');
+    } finally {
+      await page.evaluate((saved:[string,string|null][])=>saved.forEach(([key,value])=>value===null?localStorage.removeItem(key):localStorage.setItem(key,value)),saved);
+      await page.goto(`${workspaceUrl}/projects/demo`);
+      await page.locator('#project-detail-name:visible').waitFor();
+    }
   });
 
   await t.test('共享中右内容区：暂看不导航，菜单恢复，局部展开保留实例和滚动', async () => {
