@@ -25,6 +25,24 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService) 
       if (request.method === 'GET') authorizeRead(); else authorizeWrite();
       query(searchParams, []);
       const service = resolve();
+      if (pathname === `${prefix}/model-accounts`) {
+        if (request.method === 'GET') return result('modelAccounts', await service.models.accounts.list());
+        if (request.method === 'POST') return result('modelAccount', await service.models.accounts.add(validate('addModelAccount', await readJsonBody())), 201);
+      }
+      if (pathname === `${prefix}/model-catalog` && request.method === 'GET') return result('modelCatalog', await service.models.catalog.list());
+      const accountRoute = pathname.slice(prefix.length).match(/^\/model-accounts\/([a-f0-9-]{36})(?:\/(check|disconnect|login-attempts)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);
+      if (accountRoute) {
+        const [, accountId, action, attemptId, cancel] = accountRoute;
+        if (request.method === 'GET' && !action) return result('modelAccount', await service.models.accounts.read(accountId));
+        if (request.method === 'GET' && action === 'login-attempts' && attemptId && !cancel) return result('modelAccount', await service.models.accounts.attempt(accountId, attemptId));
+        if (request.method !== 'POST') return null;
+        const body = validate('revision', await readJsonBody());
+        if (action === 'check') return result('modelAccount', await service.models.accounts.check(accountId, body));
+        if (action === 'disconnect') return result('modelAccount', await service.models.accounts.disconnect(accountId, body));
+        if (action === 'login-attempts' && !attemptId) return result('modelAccount', await service.models.accounts.login(accountId, body), 202);
+        if (action === 'login-attempts' && attemptId && cancel) return result('modelAccount', await service.models.accounts.cancelLogin(accountId, attemptId, body));
+        return null;
+      }
       if (pathname === `${prefix}/connections` && request.method === 'GET') return result('connections', service.connections.list());
       if (pathname === `${prefix}/pending-requests` && request.method === 'GET') return result('conversations', service.conversations.pending());
       const match = pathname.slice(prefix.length).match(/^\/connections\/([a-z][a-z0-9-]*)(?:\/(connect|check|disconnect|login-attempts|preparation-attempts)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);

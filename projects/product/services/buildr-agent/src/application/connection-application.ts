@@ -1,13 +1,14 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { AgentExecutor, AgentRuntime, ConnectionView, LoginObservation } from '../contracts.ts';
+import type { AgentExecutor, AgentRuntime, ConnectionView, LoginObservation, ModelGatewayConfiguration } from '../contracts.ts';
 import { expected, fail, nonempty, safeDiagnostic } from '../domain/agent-state.ts';
 import type { StoredConnection } from '../domain/agent-state.ts';
 import type { ConversationRepository } from '../persistence/conversation-repository.ts';
 
 export class ConnectionApplication {
   private readonly executors: Map<string, AgentExecutor>;
+  private readonly gatewayRuntimes = new Map<string, Promise<AgentRuntime>>();
   private readonly runtimes = new Map<string, Promise<AgentRuntime>>();
   private readonly loginUrls = new Map<string, { attemptId: string; url: string }>();
   private readonly loginTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -87,7 +88,8 @@ export class ConnectionApplication {
     this.save(record);
     return this.check(id);
   }
-  async runtime(id: string): Promise<AgentRuntime> {
+  async runtime(id: string, gateway?: ModelGatewayConfiguration): Promise<AgentRuntime> {
+    if (gateway) return this.gatewayRuntime(id, gateway);
     const record = this.stored(id);
     const existing = this.runtimes.get(id);
     if (existing) return existing; // Existing owned runtime remains available to stop/reply during disconnect.
@@ -120,6 +122,20 @@ export class ConnectionApplication {
     }
     return promise;
   }
+  private async gatewayRuntime(id: string, gateway: ModelGatewayConfiguration): Promise<AgentRuntime> {
+    const key = `${id}:${gateway.identity}`;
+    const existing = this.gatewayRuntimes.get(key); if (existing) return existing;
+    const record = this.stored(id);
+    if (!record.view.enabled || this.closing) fail('agent_connection_disabled', '请先准备此智能体程序。', 409);
+    const configRoot = path.join(this.options.root, 'connections', id, 'model-bindings', createHash('sha256').update(gateway.identity).digest('hex'));
+    const lifecycle = this.lifecycles.get(id);
+    const opening = new AbortController(); this.opening.set(key, opening);
+    const promise = this.executors.get(id)!.open({ connectionId: id, configRoot, executable: record.view.executable, environment: this.options.environment, signal: opening.signal, gateway, nativeAccountConfigRoot: record.view.configPath ?? path.join(this.options.root, 'connections', id) }).then(async runtime => {
+      if (this.closing || opening.signal.aborted || this.lifecycles.get(id) !== lifecycle) { await runtime.close(); fail('agent_connection_disabled', '接入已断开。', 409); }
+      return runtime;
+    }).catch(error => { if (this.gatewayRuntimes.get(key) === promise) this.gatewayRuntimes.delete(key); throw error; }).finally(() => { this.opening.delete(key); });
+    this.gatewayRuntimes.set(key, promise); return promise;
+  }
   binding(id: string): string | undefined { return this.stored(id).bindingIdentity; }
   observeModels(id: string, bindingIdentity: string, models: ConnectionView['models']): ConnectionView {
     const record = this.stored(id);
@@ -134,6 +150,7 @@ export class ConnectionApplication {
     record.view.enabled = false; record.view.status = 'disconnected'; this.save(record);
     this.lifecycles.set(id, (this.lifecycles.get(id) ?? 0) + 1);
     this.checking.delete(id); this.opening.get(id)?.abort();
+    for (const [key, opening] of this.opening) if (key.startsWith(`${id}:`)) opening.abort();
   }
 
   async check(id: string, expectedRevision?: string): Promise<ConnectionView> {
@@ -223,6 +240,9 @@ export class ConnectionApplication {
     clearTimeout(this.loginTimers.get(id)); this.loginTimers.delete(id); this.loginUrls.delete(id);
     const runtime = this.runtimes.get(id); this.runtimes.delete(id);
     if (runtime) await runtime.then(item => item.close());
+    const shared = [...this.gatewayRuntimes].filter(([key]) => key.startsWith(`${id}:`));
+    for (const [key] of shared) this.gatewayRuntimes.delete(key);
+    await Promise.allSettled(shared.map(async ([, item]) => (await item).close()));
     return this.get(id);
   }
   async close(): Promise<void> {
@@ -230,7 +250,7 @@ export class ConnectionApplication {
     for (const controller of this.opening.values()) controller.abort();
     for (const timer of this.loginTimers.values()) clearTimeout(timer);
     this.loginTimers.clear(); this.loginUrls.clear();
-    const runtimes = [...this.runtimes.values()]; this.runtimes.clear();
+    const runtimes = [...this.runtimes.values(), ...this.gatewayRuntimes.values()]; this.runtimes.clear(); this.gatewayRuntimes.clear();
     await Promise.allSettled(runtimes.map(async runtime => (await runtime).close()));
   }
   beginClosing(): void { this.closing = true; }

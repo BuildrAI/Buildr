@@ -1,7 +1,7 @@
 import { createApiClient, LocalSessionAdapter } from '../../../api';
 import type { ApiClient, ApiError, SessionAdapter } from '../../../api';
 import { parseEventFrame } from '../conversation-state';
-import type { AttachmentView, ConnectionView, ConversationEvent, ConversationSummary, ConversationView, PendingConversation, PreparationView, ProviderId, SendInput, SendPreview } from '../types';
+import type { ModelAccount, CatalogModel, AttachmentView, ConnectionView, ConversationEvent, ConversationSummary, ConversationView, PendingConversation, PreparationView, ProviderId, SendInput, SendPreview } from '../types';
 
 const appPath = '/api/v1/app/agent-service';
 const path = (workspaceId: string, conversationId?: string) => `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/agent-conversations${conversationId ? '/' + encodeURIComponent(conversationId) : ''}`;
@@ -15,6 +15,12 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     }
   };
   return {
+    modelAccounts(signal?:AbortSignal) {return request<{accounts:ModelAccount[];providers:Array<{id:string;label:string}>}>(appPath+'/model-accounts',{signal});},
+    modelCatalog(signal?:AbortSignal) {return request<{models:CatalogModel[]}>(appPath+'/model-catalog',{signal});},
+    addModelAccount(provider:string) {return request<ModelAccount>(appPath+'/model-accounts',post({provider}));},
+    modelAccountAction(account:ModelAccount,action:'check'|'disconnect'|'login-attempts') {return request<ModelAccount>(appPath+'/model-accounts/'+account.id+'/'+action,post({expectedRevision:account.revision}));},
+    modelLoginAttempt(accountId:string,attemptId:string,signal?:AbortSignal) {return request<ModelAccount>(appPath+'/model-accounts/'+accountId+'/login-attempts/'+attemptId,{signal});},
+    cancelModelLogin(account:ModelAccount) {return request<ModelAccount>(appPath+'/model-accounts/'+account.id+'/login-attempts/'+account.loginAttempt!.id+'/cancel',post({expectedRevision:account.revision}));},
     connections(signal?: AbortSignal) { return request<{connections: ConnectionView[]}>(appPath + '/connections', {signal}); },
     prepareConnection(connection: ConnectionView, options: {executable?: string; install?: boolean} = {}) { return request<PreparationView>(`${appPath}/connections/${encodeURIComponent(connection.id)}/preparation-attempts`, post({expectedRevision: connection.revision, ...options})); },
     currentPreparation(connectionId: string, signal?: AbortSignal) { return request<{attempt: PreparationView|null}>(`${appPath}/connections/${encodeURIComponent(connectionId)}/preparation-attempts`, {signal}); },

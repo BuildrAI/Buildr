@@ -1,3 +1,4 @@
+import type { ModelProvider } from './model-access/contracts.ts';
 /** Public executor protocol. Vendor credentials and opaque state never become UI state. */
 export type ProviderId = string;
 export type PermissionMode = 'default' | 'full-access';
@@ -35,7 +36,13 @@ export interface ExecutorBinding {
   executable?: string;
   configRoot?: string;
 }
+export interface ModelGatewayConfiguration {
+  identity: string; baseUrl: string; apiKey: string;
+  models: Array<AgentModel & { contextWindow?: number; maxOutputTokens?: number; vision?: boolean; tools?: boolean }>;
+}
 export interface ExecutorOpenOptions {
+  gateway?: ModelGatewayConfiguration;
+  nativeAccountConfigRoot?: string;
   connectionId: string;
   configRoot: string;
   executable?: string;
@@ -183,6 +190,7 @@ export interface ConversationEntry {
   createdAt: string;
 }
 export interface RunView {
+  modelAccountId?: string; modelAccountIdentity?: string; modelSourceLabel?: string;
   id: string;
   participantId: string;
   provider: ProviderId;
@@ -221,6 +229,7 @@ export interface ConversationView {
   nextEntryCursor?: number;
 }
 export interface SendDraft {
+  modelAccountId?: string; modelAccountIdentity?: string; modelAccountRevision?: string;
   expectedRevision: string;
   connectionId: string;
   text: string;
@@ -232,6 +241,7 @@ export interface SendDraft {
   handoffSummary?: string;
 }
 export interface SendPreview {
+  modelAccountId?: string; modelAccountIdentity?: string; modelAccountRevision?: string; modelSourceLabel?: string;
   token: string;
   conversationId: string;
   revision: string;
@@ -261,6 +271,7 @@ export interface ServiceEvent {
   payload: { conversation?: ConversationView; connection?: ConnectionView };
 }
 export interface AgentServiceOptions {
+  modelProviders?: ModelProvider[];
   dataRoot: string;
   executors?: AgentExecutor[];
   environment?: Record<string, string | undefined>;

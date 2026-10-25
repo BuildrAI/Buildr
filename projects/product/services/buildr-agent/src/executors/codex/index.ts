@@ -1,12 +1,34 @@
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
 import { join } from 'node:path';
+import { writeFile } from 'node:fs/promises';
 import type { AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorRequest, ExecutorSendInput, ExecutorTitleInput, LoginObservation, PermissionMode } from '../../contracts.ts';
 import { NativeRpc, nativePreview, nativeBinding, bounded, findExecutable, inspectVersion, isolatedEnvironment, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories, visibleText, type RpcMessage } from '../native-process.ts';
 import { modelOptions } from '../model-options.ts';
 import { generateCodexTitle } from './title.ts';
 import { codexThreadPermissions, codexTurnPermissions } from './permissions.ts';
+import { checkedGateway, consumerBinding, gatewayModel, gatewayEffort, type ExecutorGateway } from '../model-gateway.ts';
 
 const capabilities = { permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
+function codexEffort(value?: string): string | undefined {
+  if (value === 'off') return 'none';
+  return value && ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(value) ? value : undefined;
+}
+function codexGatewayCatalog(gateway: ExecutorGateway) {
+  return { models: gateway.models.map((model, priority) => ({
+    slug: model.id, display_name: model.label, description: 'Buildr model connection',
+    visibility: 'list', supported_in_api: true, priority,
+    base_instructions: 'You are a coding agent. Follow the user request and applicable project instructions. Use the supplied tools when needed.',
+    shell_type: 'shell_command', apply_patch_tool_type: model.tools === true ? 'freeform' : null,
+    supports_parallel_tool_calls: false, experimental_supported_tools: [], support_verbosity: false,
+    prefer_websockets: false, supports_reasoning_summary_parameter: false, supports_reasoning_summaries: false,
+    supports_reasoning_effort_updates: Boolean(model.reasoningEfforts?.length),
+    default_reasoning_level: codexEffort(model.defaultReasoningEffort) ?? null,
+    supported_reasoning_levels: (model.reasoningEfforts ?? []).filter(option => codexEffort(option.id)).map(option => ({ effort: codexEffort(option.id), description: option.label })),
+    input_modalities: model.vision ? ['text', 'image'] : ['text'],
+    ...(model.contextWindow ? { context_window: model.contextWindow } : {}),
+    truncation_policy: { mode: 'tokens', limit: 10000 },
+  })) };
+}
 interface ActiveTurn { contextId: string; id: string; input: ExecutorSendInput; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown'; processId?: string }>; pending: Map<string, { nativeId: string | number; method: string; params: any }>; texts: Map<string, string>; terminal?: 'completed' | 'stopped' | 'failed'; done: () => void; reject: (error: Error) => void; accepted: boolean; buffered: RpcMessage[] }
 export function createCodexExecutor(): AgentExecutor {
   return { descriptor: { id: 'codex', label: 'Codex', capabilities }, async open(options) { return await CodexRuntime.open(options); } };
@@ -21,21 +43,32 @@ class CodexRuntime implements AgentRuntime {
   private rpc: NativeRpc;
   private readonly titleDirectory: string;
   private readonly auxiliary = new Set<string>();
+  private gateway?: ExecutorGateway;
   private constructor(bindingIdentity: string, rpc: NativeRpc, titleDirectory: string) { this.bindingIdentity = bindingIdentity; this.rpc = rpc; this.titleDirectory = titleDirectory; rpc.onMessage(message => this.message(message)); }
   static async open(options: ExecutorOpenOptions): Promise<CodexRuntime> {
     options.signal?.throwIfAborted();
+    const gateway = checkedGateway(options.gateway);
     const { home, temporary } = nativeHome(options.configRoot);
     const config = join(options.configRoot, 'codex-home');
     await privateDirectories(options.configRoot, home, temporary, config);
-    const env = isolatedEnvironment(options.environment, home, temporary, { CODEX_HOME: config });
+    const env = isolatedEnvironment(options.environment, home, temporary, { CODEX_HOME: config, ...(gateway ? { BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) });
     const executable = await findExecutable(options.executable, ['codex', 'codex.exe'], env);
     const version = await inspectVersion(executable, env, options.signal);
     if (!isCompatibleProgram('codex', version)) throw new Error(`codex_version_unsupported: requires ${nativeProgramPolicy('codex').compatibility}`);
-    const binding = await nativeBinding('codex', executable, version, config, options.binding);
+    const binding = await consumerBinding('codex', executable, version, config, options);
     const launch = nativeCommand(executable);
-    const rpc = new NativeRpc(launch.command, [...launch.prefix, 'app-server', '--listen', 'stdio://', '-c', 'cli_auth_credentials_store="file"'], { cwd: options.configRoot, env });
+    const overrides: string[] = [];
+    if (gateway) {
+      const model = gatewayModel(gateway);
+      const catalog = join(config, 'buildr-model-catalog.json');
+      await writeFile(catalog, JSON.stringify(codexGatewayCatalog(gateway)), { mode: 0o600 });
+      const values = { web_search: 'disabled', model_provider: 'buildr-models', model: model.id, review_model: model.id, model_catalog_json: catalog, 'model_providers.buildr-models.name': 'Buildr', 'model_providers.buildr-models.base_url': gateway.baseUrl.replace(/\/$/, ''), 'model_providers.buildr-models.env_key': 'BUILDR_MODEL_GATEWAY_KEY', 'model_providers.buildr-models.wire_api': 'responses', 'model_providers.buildr-models.requires_openai_auth': false, 'model_providers.buildr-models.supports_websockets': false, ...(model.contextWindow ? { model_context_window: model.contextWindow } : {}) };
+      for (const [key, value] of Object.entries(values)) overrides.push('-c', `${key}=${JSON.stringify(value)}`);
+    }
+    const rpc = new NativeRpc(launch.command, [...launch.prefix, 'app-server', '--listen', 'stdio://', '-c', 'cli_auth_credentials_store="file"', ...overrides], { cwd: options.configRoot, env });
     const runtime = new CodexRuntime(binding.identity, rpc, join(temporary, 'title-requests'));
     runtime.bindingData = binding.data;
+    runtime.gateway = gateway;
     let abortedClose: Promise<void> | undefined; const abort = () => { abortedClose ??= rpc.close(); };
     options.signal?.addEventListener('abort', abort, { once: true }); if (options.signal?.aborted) abort();
     try {
@@ -54,10 +87,13 @@ class CodexRuntime implements AgentRuntime {
   }
   private context(id: string, cwd: string): ContextRef { this.contexts.set(id, cwd); return { id, data: { cwd, native: opaqueReference('codex', id, cwd, this.bindingIdentity) } }; }
   async inspectAccount() {
+    if (this.gateway) return { status: 'ready' as const, label: this.gateway.models[0].label, loginMethod: 'Buildr 模型连接' };
     const result = await this.rpc.call('account/read', { refreshToken: false });
+    if (result.requiresOpenaiAuth === false) return { status: 'ready' as const, label: 'Codex', loginMethod: '自定义模型连接' };
     return result.account ? { status: 'ready' as const, label: result.account.type === 'chatgpt' ? `ChatGPT${result.account.planType ? ' · ' + result.account.planType : ''}` : 'Codex', loginMethod: result.account.type === 'chatgpt' ? 'ChatGPT' : '原生配置' } : { status: 'not-authenticated' as const };
   }
   async models() {
+    if (this.gateway) return structuredClone(this.gateway.models);
     const result = []; let cursor: string | undefined;
     do {
       const page = await this.rpc.call('model/list', { limit: 100, ...(cursor ? { cursor } : {}) });
@@ -67,6 +103,7 @@ class CodexRuntime implements AgentRuntime {
     return result;
   }
   async beginLogin(update: (value: LoginObservation) => void): Promise<void> {
+    if (this.gateway) { update({ state: 'failed', diagnostic: 'agent_gateway_login_managed_by_model_account' }); return; }
     await this.cancelLogin();
     let done!: () => void; const ended = new Promise<void>(resolve => { done = resolve; });
     const login = { id: undefined as string | undefined, update, done }; this.login = login; update({ state: 'initializing' });
@@ -113,10 +150,16 @@ class CodexRuntime implements AgentRuntime {
   }
   async generateTitle(input: ExecutorTitleInput): Promise<string | undefined> {
     this.reference(input.contextRef, input.cwd);
+    if (this.gateway) input = { ...input, model: gatewayModel(this.gateway).id };
     return await generateCodexTitle(this.rpc, input, this.titleDirectory, this.auxiliary);
   }
   async send(input: ExecutorSendInput): Promise<void> {
     this.reference(input.contextRef, input.cwd);
+    if (this.gateway) {
+      const effort = gatewayEffort(this.gateway, input.model, input.reasoningEffort);
+      if (input.reasoningEffort && !codexEffort(effort)) throw new Error('agent_reasoning_unavailable');
+      input = { ...input, model: gatewayModel(this.gateway, input.model).id, reasoningEffort: codexEffort(effort) };
+    }
     if (this.turns.get(input.contextRef.id)?.terminal === undefined && this.turns.has(input.contextRef.id)) throw new Error('agent_native_turn_active');
     let done!: () => void; let reject!: (error: Error) => void;
     const ended = new Promise<void>((resolve, fail) => { done = resolve; reject = fail; }); ended.catch(() => {});

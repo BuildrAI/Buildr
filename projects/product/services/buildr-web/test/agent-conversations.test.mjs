@@ -263,3 +263,14 @@ test('历史图片按原对话身份携带认证头读取，认证轮换重试�
   assert.equal(calls[0].init.headers['x-buildr-session'],'old');assert.equal(calls[1].init.headers['x-buildr-session'],'new');assert.equal(calls[1].init.signal,signal);assert.equal(calls[1].init.cache,'no-store');
   assert.ok(calls.every(call=>!call.url.includes('old')&&!call.url.includes('new')));
 });
+
+test('模型套餐客户端携带观察版本且发送来源固定，不把凭据放入网址',async()=>{
+  const calls=[];const api=createAgentConversationsClient(async(url,init)=>{calls.push({url,init});return {};},session);
+  await api.modelAccounts();await api.modelCatalog();await api.addModelAccount('devin');
+  const account={id:'account-id',revision:'account-r1',loginAttempt:{id:'attempt-id'}};
+  await api.modelAccountAction(account,'login-attempts');await api.cancelModelLogin(account);
+  await api.prepare(conversation,{expectedRevision:'r1',connectionId:'dsh',modelAccountId:'account-id',modelAccountRevision:'account-r1',model:'same-name',text:'work'});
+  assert.equal(calls[0].url,'/api/v1/app/agent-service/model-accounts');assert.equal(calls[1].url,'/api/v1/app/agent-service/model-catalog');
+  assert.deepEqual(JSON.parse(calls[3].init.body),{expectedRevision:'account-r1'});assert.equal(JSON.parse(calls[5].init.body).modelAccountId,'account-id');assert.equal(JSON.parse(calls[5].init.body).connectionId,'dsh');
+  assert.ok(calls.every(call=>!call.url.includes('native-test-session')));
+});

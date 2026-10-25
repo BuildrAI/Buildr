@@ -1,3 +1,4 @@
+import {ModelAccessError} from '../model-access/contracts.ts';
 import type { ConnectionView, ContextRef, ConversationView, ExecutionRef, RunStatus } from '../contracts.ts';
 
 export class AgentServiceError extends Error {
@@ -17,9 +18,12 @@ export function expected(actual: string, supplied: unknown): void {
 }
 export function safeDiagnostic(error: unknown): string {
   // Do not expose raw vendor errors, which can contain headers, URLs or credentials.
-  if (error instanceof AgentServiceError) return error.message;
+  if (error instanceof AgentServiceError || error instanceof ModelAccessError) return error.message;
   const code = error instanceof Error ? error.message.split(':')[0] : '';
   const messages: Record<string, string> = {
+    qoder_platform_login_required: 'Qoder 程序需要先完成基础平台登录；不要求购买或选择 Qoder 模型套餐。',
+    qoder_platform_login_expired: 'Qoder 基础平台登录已过期，请在智能体程序中重新登录。所选模型套餐保持。',
+    qoder_platform_auth_unavailable: '尚未确认 Qoder 基础平台登录，请检查该程序的独立账号。',
     agent_program_missing: '未找到原生程序，请选择已安装程序的准确绝对路径。',
     codex_version_unsupported: '当前接入接受 Codex 0.x.x，包含有效预发布版本，仍需通过实际连接检查。',
     dsh_version_unsupported: '当前接入接受 DSH 0.x.x，包含有效预发布版本，仍需通过实际连接检查。',
@@ -38,6 +42,7 @@ export interface StoredConnection {
   bindingData?: Record<string, unknown>;
 }
 export interface StoredParticipant {
+  modelAccountId?: string; modelAccountIdentity?: string; modelId?: string;
   id: string;
   connectionId: string;
   provider: string;

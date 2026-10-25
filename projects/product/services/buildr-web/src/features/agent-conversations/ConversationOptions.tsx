@@ -1,3 +1,4 @@
+import {useOptionalAgentConversations} from './AgentConversationsContext';
 import { useEffect, useRef, useState } from 'react';
 import { Button, Popover, Select, Slider } from 'antd';
 import { DownOutlined, ReloadOutlined } from '@ant-design/icons';
@@ -15,12 +16,17 @@ export function ConversationOptions({connections,value,disabled,onChange}:Props)
   const [open,setOpen]=useState(false);
   const trigger=useRef<HTMLButtonElement>(null);
   const controlsRef=useRef<HTMLDivElement>(null);
-  const connection=connections.find(item=>item.id===value.connectionId);
+  const context=useOptionalAgentConversations();
+  const shared=context?.modelCatalog||[];
+  const original=connections.find(item=>item.id===value.connectionId);
+  const selectedShared=shared.find(item=>item.accountId===value.modelAccountId&&item.modelId===value.model);
+  const connection=value.modelAccountId&&original?{...original,models:selectedShared?[{...selectedShared,id:selectedShared.modelId,isDefault:true}]:[]}:original;
   const model=selectedConversationModel(connection,value.model);
+  useEffect(()=>{if(selectedShared&&value.modelAccountIdentity===selectedShared.accountIdentity&&value.modelAccountRevision!==selectedShared.accountRevision)onChange({...value,modelAccountRevision:selectedShared.accountRevision});},[selectedShared?.accountRevision,selectedShared?.accountIdentity,value.modelAccountIdentity,value.modelAccountRevision]);
   const defaultModel=selectedConversationModel(connection);
   const reasoning=conversationReasoningSelection(connection,value);
-  const modelLabel=model?.label||value.model||defaultModel?.label||'默认模型';
-  const unavailable=disabled||!connection?.models.length;
+  const modelLabel=(selectedShared?selectedShared.accountLabel+' / '+selectedShared.label:undefined)||model?.label||value.model||defaultModel?.label||'默认模型';
+  const unavailable=disabled||(!original?.models.length&&!shared.some(item=>item.available));
   useEffect(()=>{setOpen(false);},[value.connectionId,disabled]);
   useEffect(()=>{
     if(!open)return;
@@ -40,11 +46,11 @@ export function ConversationOptions({connections,value,disabled,onChange}:Props)
       <Button type="text" size="small" icon={<ReloadOutlined/>} aria-label="恢复默认推理强度" title="使用模型默认推理强度" disabled={disabled||!value.reasoningEffort} onClick={()=>onChange({...value,reasoningEffort:undefined})}/>
     </div>
     <Select className="ac-model-picker" aria-label="执行模型" title="模型" size="small" showSearch optionFilterProp="label"
-      value={value.model||''} labelRender={({label})=>value.model?label:defaultModel?.label||'默认模型'}
+      value={value.modelAccountId?'shared:'+value.modelAccountId+'::'+value.model:value.model||''} labelRender={({label})=>value.model?label:defaultModel?.label||'默认模型'}
       disabled={unavailable} popupMatchSelectWidth placement="topRight"
       classNames={{popup:{root:'ac-panel-popup ac-choice-popup'}}}
-      options={[{value:'',label:defaultModel?`默认 · ${defaultModel.label}`:'默认模型'},...(connection?.models||[]).map(item=>({value:item.id,label:item.label}))]}
-      onChange={model=>onChange({...value,model:model||undefined,reasoningEffort:undefined})}/>
+      options={[{label:'原生账号',options:[{value:'',label:'原生默认模型'},...(original?.models||[]).map(item=>({value:item.id,label:item.label}))]},...Array.from(new Set(shared.map(item=>item.accountId))).map(accountId=>({label:shared.find(item=>item.accountId===accountId)!.accountLabel,options:shared.filter(item=>item.accountId===accountId).map(item=>({value:'shared:'+accountId+'::'+item.modelId,label:item.label,disabled:!item.available}))}))]}
+      onChange={model=>{const source=shared.find(item=>'shared:'+item.accountId+'::'+item.modelId===model);onChange({...value,model:source?.modelId||model||undefined,modelAccountId:source?.accountId,modelAccountRevision:source?.accountRevision,modelAccountIdentity:source?.accountIdentity,reasoningEffort:undefined});}}/>
     <div className="ac-effort-controls">
       {reasoning.options.length>1&&reasoning.index>=0?<>
         <Slider min={0} max={reasoning.options.length-1} step={1} dots value={reasoning.index} disabled={disabled}
@@ -59,7 +65,7 @@ export function ConversationOptions({connections,value,disabled,onChange}:Props)
       value={value.connectionId||undefined} placeholder="选择智能体" disabled={disabled} popupMatchSelectWidth={false} placement="topRight"
       classNames={{popup:{root:'ac-panel-popup ac-choice-popup'}}}
       options={connections.map(item=>({value:item.id,label:providerNames[item.provider]||item.label}))}
-      onChange={connectionId=>onChange({connectionId})}/>
+      onChange={connectionId=>onChange(value.modelAccountId?{...value,connectionId,reasoningEffort:undefined}:{connectionId})}/>
     <Popover rootClassName="ac-panel-popup ac-model-popover" trigger="click" placement="topRight" open={open&&!unavailable} onOpenChange={next=>setOpen(next&&!unavailable)} content={controls}>
       <Button ref={trigger} type="text" size="small" className="ac-model-trigger" aria-label="模型与推理强度" aria-haspopup="dialog" aria-expanded={open&&!unavailable}
         title={modelLabel+(reasoning.options.length?` · ${reasoning.label}${reasoning.inherited?'（默认）':''}`:'')} disabled={unavailable}>

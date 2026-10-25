@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
@@ -8,7 +8,16 @@ import { launchDshHost, dshValue, type DshClient } from './client.ts';
 import { dshItem, dshHistoryItems, dshExecutionObservation } from './protocol.ts';
 import { modelOptions } from '../model-options.ts';
 import { applyDshPermissions, dshPermissionCatalog } from './permissions.ts';
+import { checkedGateway, consumerBinding, gatewayModel, gatewayEffort, type ExecutorGateway } from '../model-gateway.ts';
 const capabilities = { text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
+/** An additive overlay owns only the Buildr route; the native profile stays intact. */
+export async function writeGatewayPatch(directory: string, gateway: ExecutorGateway): Promise<string> {
+  checkedGateway(gateway);
+  const filename = join(directory, 'buildr-model-gateway.json');
+  const models = gateway.models.map(model => ({ id: model.id, name: model.label, ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}), ...(model.maxOutputTokens ? { maxTokens: model.maxOutputTokens } : {}), input: model.vision ? ['text', 'image'] : ['text'], reasoningEfforts: model.reasoningEfforts?.length ? Object.fromEntries(model.reasoningEfforts.map(effort => [effort.id, effort.id])) : false }));
+  await writeFile(filename, JSON.stringify([{ id: 'llm-pi-ai', name: '@deepseek-ai/dsh-llm-pi-ai', config: { providers: { 'buildr-models': { displayName: 'Buildr', api: 'openai-responses', baseURL: gateway.baseUrl.replace(/\/$/, ''), apiKeyEnv: 'BUILDR_MODEL_GATEWAY_KEY', models } } } }]), { mode: 0o600 });
+  return filename;
+}
 interface ActiveTurn { id: string; input: ExecutorSendInput; nativeTurn?: number; terminal?: 'completed' | 'stopped' | 'failed'; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown' }>; pending: Map<string, { request: ExecutorRequest; resolve?: (value: string) => void; answer?: (value: { answers: any[] }) => void; reject?: (error: Error) => void; wait?: any }>; stream?: any; pump?: Promise<void>; streamAttempt?: { id: string; turn: number; step: number; nextIndex: number; text: string }; }
 export function createDshExecutor(): AgentExecutor { return { descriptor: { id: 'dsh', label: 'DSH', capabilities }, open: options => DshRuntime.open(options) }; }
 export class DshRuntime implements AgentRuntime {
@@ -24,18 +33,22 @@ export class DshRuntime implements AgentRuntime {
   bindingData?: Record<string, unknown>;
   private host: Awaited<ReturnType<typeof launchDshHost>>;
   private client: DshClient;
+  private gateway?: ExecutorGateway;
   private constructor(bindingIdentity: string, host: Awaited<ReturnType<typeof launchDshHost>>, client: DshClient) { this.bindingIdentity = bindingIdentity; this.host = host; this.client = client; }
-  static async open(options: ExecutorOpenOptions): Promise<DshRuntime> {
+  static async open(options: ExecutorOpenOptions, ownerPatch?: string): Promise<DshRuntime> {
     options.signal?.throwIfAborted();
+    const gateway = checkedGateway(options.gateway);
     const { home, temporary } = nativeHome(options.configRoot); const config = join(options.configRoot, 'dsh-home'); const agents = join(options.configRoot, 'dsh-agents-home');
     await privateDirectories(options.configRoot, home, temporary, config, agents);
-    const env = isolatedEnvironment(options.environment, home, temporary, { DSH_HOME: config, DSH_AGENTS_HOME: agents, DSH_TOOLS_MODE: 'native' });
+    const env = isolatedEnvironment(options.environment, home, temporary, { DSH_HOME: config, DSH_AGENTS_HOME: agents, DSH_TOOLS_MODE: 'native', ...(ownerPatch ? { BUILDR_DSH_OWNER_KEY: options.environment.BUILDR_DSH_OWNER_KEY } : {}), ...(gateway ? { BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) });
     const executable = await findExecutable(options.executable, ['dsh', 'dsh.exe'], env); const version = await inspectVersion(executable, env, options.signal);
     if (!isCompatibleProgram('dsh', version)) throw new Error(`dsh_version_unsupported: requires ${nativeProgramPolicy('dsh').compatibility}`);
-    const binding = await nativeBinding('dsh', executable, version, config, options.binding);
-    const host = await launchDshHost(executable, env, options.configRoot, options.signal);
+    const binding = await consumerBinding('dsh', executable, version, config, options);
+    const patch = gateway ? await writeGatewayPatch(config, gateway) : ownerPatch;
+    const host = await launchDshHost(executable, env, options.configRoot, options.signal, patch);
     const runtime = new DshRuntime(binding.identity, host, host.client);
     runtime.bindingData = binding.data; runtime.metadata.version = version;
+    runtime.gateway = gateway;
     try {
       host.client.ctx.typert.contexts.registerClient('agent', {
         identity: (candidate: any) => candidate?.[runtime.scopeKey],
@@ -51,6 +64,10 @@ export class DshRuntime implements AgentRuntime {
       });
       const catalog = await dshPermissionCatalog(host.client.remote).catch(() => undefined);
       if (catalog?.options.some(option => option.value === 'danger-full-access')) runtime.capabilities.permissionModes.push('full-access');
+      if (gateway) {
+        const models = dshValue(await host.client.remote.session.modelCatalog());
+        if (!models.groups?.some((group: any) => group.id === 'buildr-models' && group.models?.some((model: any) => model.id === gateway.models[0].id))) throw new Error('dsh_gateway_route_unavailable');
+      }
       options.signal?.throwIfAborted();
       return runtime;
     } catch (error) { await host.close(); throw error; }
@@ -63,16 +80,19 @@ export class DshRuntime implements AgentRuntime {
   }
   private context(id: string, cwd: string): ContextRef { this.contexts.set(id, cwd); return { id, data: { cwd, native: opaqueReference('dsh', id, cwd, this.bindingIdentity) } }; }
   async inspectAccount() {
+    if (this.gateway) return { status: 'ready' as const, label: this.gateway.models[0].label, loginMethod: 'Buildr 模型连接' };
     const state = dshValue(await this.client.remote.account.getState());
     if (state.status !== 'credential-stored') return { status: state.status === 'session-expired' ? 'expired' as const : 'not-authenticated' as const };
     const profile = dshValue(await this.client.remote.account.getProfile(this.metadata));
     return profile?.status === 'ready' ? { status: 'ready' as const, label: 'DeepSeek', loginMethod: 'DeepSeek 账号' } : { status: 'failed' as const, diagnostic: 'dsh_account_profile_unavailable' };
   }
   async models() {
+    if (this.gateway) return structuredClone(this.gateway.models);
     const catalog = dshValue(await this.client.remote.session.modelCatalog());
     return (catalog.groups ?? []).flatMap((group: any) => (group.models ?? []).filter((model: any) => typeof model.id === 'string').map((model: any) => modelOptions({ id: `${group.id}::${model.id}`, label: String(model.label ?? model.name ?? model.id), ...(catalog.default?.provider === group.id && catalog.default?.model === model.id ? { isDefault: true } : {}) }, model.reasoning?.efforts?.map((effort: any) => ({ id: effort.id, label: effort.name ?? effort.id })), catalog.default?.provider === group.id && catalog.default?.model === model.id ? catalog.default.reasoningEffort ?? model.reasoning?.defaultEffort : model.reasoning?.defaultEffort)));
   }
   async beginLogin(update: (value: LoginObservation) => void): Promise<void> {
+    if (this.gateway) { update({ state: 'failed', diagnostic: 'agent_gateway_login_managed_by_model_account' }); return; }
     await this.cancelLogin(); const login = { cancelled: false, update, id: undefined as string | undefined }; this.login = login; update({ state: 'initializing' });
     try {
     let state = dshValue(await this.client.remote.account.startSignIn(this.metadata, this.client.origin, 'web'));
@@ -140,7 +160,11 @@ export class DshRuntime implements AgentRuntime {
     if (this.turns.has(input.contextRef.id) && !this.turns.get(input.contextRef.id)!.terminal) throw new Error('agent_native_turn_active');
     const previous = this.turns.get(input.contextRef.id); if (previous?.stream) { await previous.stream.dispose(); await previous.pump; }
     await applyDshPermissions(this.client.remote, input.contextRef.id, input.permissionMode, () => this.snapshot(input.contextRef.id));
-    if (input.model) {
+    if (this.gateway) {
+      const model = gatewayModel(this.gateway, input.model);
+      const effort = gatewayEffort(this.gateway, input.model, input.reasoningEffort);
+      dshValue(await this.client.remote.session.selectModel({ sessionId: input.contextRef.id, provider: 'buildr-models', model: model.id, ...(effort ? { reasoningEffort: effort } : {}) }));
+    } else if (input.model) {
       const split = input.model.indexOf('::'); if (split < 1) throw new Error('dsh_model_identity_invalid');
       dshValue(await this.client.remote.session.selectModel({ sessionId: input.contextRef.id, provider: input.model.slice(0, split), model: input.model.slice(split + 2), ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}) }));
       input.onEvent({ type: 'models', models: await this.models() });

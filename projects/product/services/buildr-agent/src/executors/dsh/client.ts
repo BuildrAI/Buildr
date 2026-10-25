@@ -3,10 +3,10 @@ import { bounded, closeOwnedProcess, nativeCommand, type NativeEnvironment } fro
 
 export interface DshClient { ctx: any; remote: any; origin: string; close(): Promise<void>; }
 /** Owns the complete native web Host; the authorization URL and cookie stay private. */
-export async function launchDshHost(executable: string, env: NativeEnvironment, cwd: string, signal?: AbortSignal): Promise<{ child: ChildProcessWithoutNullStreams; client: DshClient; close(): Promise<void> }> {
+export async function launchDshHost(executable: string, env: NativeEnvironment, cwd: string, signal?: AbortSignal, patch?: string): Promise<{ child: ChildProcessWithoutNullStreams; client: DshClient; close(): Promise<void> }> {
   signal?.throwIfAborted();
   const launch = nativeCommand(executable);
-  const child = spawn(launch.command, [...launch.prefix, 'web', '--no-open', '--port', '0'], { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+  const child = spawn(launch.command, [...launch.prefix, 'web', ...(patch ? ['--patch', patch] : []), '--no-open', '--port', '0'], { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
   let output = ''; let settled = false;
   const ready = new Promise<string>((resolve, reject) => {
     const read = (chunk: Buffer) => {

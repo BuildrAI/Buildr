@@ -129,3 +129,23 @@ test('a valid large initial snapshot drains before subsequent live events instea
   assert.match(text, /permission request after snapshot/);
   assert.equal(released, true);
 });
+
+test('model account HTTP preserves authentication, revisions, source identity and secret-free catalog', {timeout:30000}, async t=>{
+  const {base,root}=taskRecordFixture(t,'shared-model-http');
+  const service=createAgentService({dataRoot:path.join(base,'model-profile'),executors:[],modelProviders:[{id:'fixture',label:'Fixture',async open(){return {protocol:'chat-completions',async inspect(){return {status:'ready',label:'Plan owner',models:[{id:'same-name',label:'Model',images:false,tools:true}],quota:{available:false,observedAt:new Date().toISOString()}};},async beginLogin(update){update({state:'waiting-browser',url:'https://login.example.test/authorize'});},async cancelLogin(){},async infer(){return Response.json({});},async close(){}};}}],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+  const runtime=createRuntime(),contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+  const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions}),{url,sessionToken}=await server.ready;
+  t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(resolve));});
+  const endpoint=url+'/api/v1/app/agent-service/model-accounts',headers={origin:url,'x-buildr-session':sessionToken,'content-type':'application/json'};
+  assert.equal((await fetch(endpoint)).status,403);
+  let response=await fetch(endpoint,{headers});assert.equal(response.status,200);assert.equal((await response.json()).providers[0].id,'fixture');
+  response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({provider:'fixture',token:'must-not-accept-secret'})});assert.equal(response.status,400);
+  response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({provider:'fixture'})});assert.equal(response.status,201);const created=await response.json();
+  response=await fetch(endpoint+'/'+created.id+'/check',{method:'POST',headers,body:JSON.stringify({expectedRevision:'old'})});assert.equal(response.status,409);
+  response=await fetch(endpoint+'/'+created.id+'/check',{method:'POST',headers,body:JSON.stringify({expectedRevision:created.revision})});assert.equal(response.status,200);const checked=await response.json();assert.equal(checked.status,'ready');
+  response=await fetch(url+'/api/v1/app/agent-service/model-catalog',{headers});assert.equal(response.status,200);const catalog=await response.json();assert.equal(catalog.models[0].accountId,created.id);assert.equal(catalog.models[0].available,true);assert.ok(!JSON.stringify(catalog).includes('apiKey'));
+  response=await fetch(endpoint+'/'+created.id+'/login-attempts',{method:'POST',headers,body:JSON.stringify({expectedRevision:checked.revision})});assert.equal(response.status,202);let login=await response.json();
+  for(let i=0;i<20&&!login.loginAttempt?.url;i++){response=await fetch(endpoint+'/'+created.id+'/login-attempts/'+login.loginAttempt.id,{headers});login=await response.json();await new Promise(resolve=>setTimeout(resolve,2));}
+  assert.equal(login.loginAttempt.url,'https://login.example.test/authorize');
+  response=await fetch(endpoint+'/'+created.id+'/login-attempts/'+login.loginAttempt.id+'/cancel',{method:'POST',headers,body:JSON.stringify({expectedRevision:login.revision})});assert.equal(response.status,200);const cancelled=await response.json();assert.equal(cancelled.loginAttempt.state,'cancelled');
+});

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import type { AccountObservation, AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorSendInput, ExecutorTitleInput, LoginObservation, PermissionMode } from '../../contracts.ts';
 import { NativeRpc, nativeBinding, bounded, closeOwnedProcess, findExecutable, inspectVersion, isolatedEnvironment, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories } from '../native-process.ts';
+import { checkedGateway, consumerBinding, gatewayModel, gatewayEffort, type ExecutorGateway } from '../model-gateway.ts';
 const capabilities = { permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 export function createQoderExecutor(): AgentExecutor { return { descriptor: { id: 'qoder', label: 'Qoder', capabilities }, open: options => QoderRuntime.open(options) }; }
 class QoderRuntime implements AgentRuntime {
@@ -19,6 +20,7 @@ class QoderRuntime implements AgentRuntime {
   private handlers = new Map<string, ExecutorSendInput['onEvent']>();
   private observations = new Map<string, ExecutorObservation>();
   private login?: { child: ChildProcessWithoutNullStreams; cancelled: boolean; update: (value: LoginObservation) => void };
+  private gateway?: ExecutorGateway;
   private constructor(bindingIdentity: string, rpc: NativeRpc, executable: string, environment: NodeJS.ProcessEnv, configRoot: string) {
     this.bindingIdentity = bindingIdentity; this.rpc = rpc; this.executable = executable; this.environment = environment; this.configRoot = configRoot;
     rpc.onMessage(message => {
@@ -31,18 +33,31 @@ class QoderRuntime implements AgentRuntime {
   }
   static async open(options: ExecutorOpenOptions): Promise<QoderRuntime> {
     options.signal?.throwIfAborted();
-    const { home, temporary } = nativeHome(options.configRoot); const config = join(options.configRoot, 'qoder-config');
+    const gateway = checkedGateway(options.gateway);
+    const { home, temporary } = nativeHome(options.configRoot);
+    // qodercliAuth owns this one Buildr login; model leases isolate execution, not credentials.
+    const config = join(options.nativeAccountConfigRoot ?? options.configRoot, 'qoder-config');
     await privateDirectories(options.configRoot, home, temporary, config);
-    const env = isolatedEnvironment(options.environment, home, temporary, { QODER_CONFIG_DIR: config });
+    const env = isolatedEnvironment(options.environment, home, temporary, { QODER_CONFIG_DIR: config, ...(gateway ? { NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) });
     const executable = await findExecutable(options.executable, ['qodercli', 'qoder', 'qodercli.exe'], env); const version = await inspectVersion(executable, env, options.signal);
     if (!isCompatibleProgram('qoder', version)) throw new Error(`qoder_version_unsupported: requires ${nativeProgramPolicy('qoder').compatibility}`);
-    const binding = await nativeBinding('qoder', executable, version, config, options.binding);
+    const binding = await consumerBinding('qoder', executable, version, config, options);
     const rpc = new NativeRpc(process.execPath, [fileURLToPath(new URL(import.meta.url.endsWith('.ts') ? './worker.ts' : './worker.js', import.meta.url))], { cwd: options.configRoot, env });
     const runtime = new QoderRuntime(binding.identity, rpc, executable, env, options.configRoot);
     runtime.bindingData = binding.data;
+    runtime.gateway = gateway;
     let abortedClose: Promise<void> | undefined; const abort = () => { abortedClose ??= rpc.close(); };
     options.signal?.addEventListener('abort', abort, { once: true }); if (options.signal?.aborted) abort();
-    try { await rpc.call('initialize', { executable }); options.signal?.throwIfAborted(); return runtime; } catch (error) { await (abortedClose ?? rpc.close()); throw error; } finally { options.signal?.removeEventListener('abort', abort); }
+    try {
+      await rpc.call('initialize', { executable, ...(gateway ? { gateway } : {}) });
+      if (gateway) {
+        // The platform login starts Qoder itself; paid native model access is unrelated.
+        const account: AccountObservation = await rpc.call('account', { cwd: options.configRoot }, 40000);
+        if (account.status !== 'ready') throw new Error(account.status === 'expired' ? 'qoder_platform_login_expired' : account.status === 'not-authenticated' ? 'qoder_platform_login_required' : 'qoder_platform_auth_unavailable');
+      }
+      options.signal?.throwIfAborted(); return runtime;
+    } catch (error) { await (abortedClose ?? rpc.close()); throw error; }
+    finally { options.signal?.removeEventListener('abort', abort); }
   }
   private reference(context: ContextRef, cwd?: string): string {
     const saved = this.contexts.get(context.id) ?? (typeof context.data?.cwd === 'string' ? context.data.cwd : undefined);
@@ -54,7 +69,7 @@ class QoderRuntime implements AgentRuntime {
     try { return await this.rpc.call('account', { cwd: this.configRoot }, 40000); }
     catch { return { status: 'failed', diagnostic: 'qoder_account_not_observed' }; }
   }
-  async models() { return await this.rpc.call('models', { cwd: this.configRoot }, 40000); }
+  async models() { return this.gateway ? structuredClone(this.gateway.models) : await this.rpc.call('models', { cwd: this.configRoot }, 40000); }
   async generateTitle(input: ExecutorTitleInput): Promise<string | undefined> {
     this.reference(input.contextRef, input.cwd); input.signal.throwIfAborted();
     return await this.rpc.call('title', { description: input.description }, 10_000);
@@ -91,6 +106,7 @@ class QoderRuntime implements AgentRuntime {
   async readHistory({ contextRef, cwd }: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]> { this.reference(contextRef, cwd); return await this.rpc.call('history', { contextId: contextRef.id, cwd }); }
   async send(input: ExecutorSendInput): Promise<void> {
     this.reference(input.contextRef, input.cwd);
+    if (this.gateway) input = { ...input, model: gatewayModel(this.gateway, input.model).id, reasoningEffort: gatewayEffort(this.gateway, input.model, input.reasoningEffort) };
     this.handlers.set(input.contextRef.id, input.onEvent);
     try { await this.rpc.call('send', { contextId: input.contextRef.id, cwd: input.cwd, text: input.text, images: input.images, model: input.model, reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode, clientRequestId: input.clientRequestId }, 24 * 60 * 60 * 1000); }
     finally { this.handlers.delete(input.contextRef.id); }

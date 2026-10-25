@@ -1,3 +1,9 @@
+import {ModelAccessError} from './model-access/contracts.ts';
+import {createModelAccess} from './model-access/application.ts';
+import {createDevinModelProvider} from './model-access/providers/devin.ts';
+import {createCodexModelProvider} from './model-access/providers/codex.ts';
+import {createDeepSeekModelProvider} from './model-access/providers/deepseek.ts';
+import {createDeepSeekAccountOwner} from './executors/dsh/model-source-owner.ts';
 import path from 'node:path';
 import process from 'node:process';
 import { randomUUID } from 'node:crypto';
@@ -12,6 +18,7 @@ import { NativeProgramManager } from './executors/program-manager.ts';
 import { PreparationApplication } from './application/preparation-application.ts';
 
 export * from './contracts.ts';
+export * from './model-access/contracts.ts';
 export { AgentServiceError } from './domain/agent-state.ts';
 
 /** Public application service. Its host supplies authority, authentication and transport. */
@@ -22,11 +29,20 @@ export function createAgentService(options: AgentServiceOptions) {
   const events = new ConversationEvents(generation);
   const now = () => (options.now?.() ?? new Date()).toISOString();
   const connections = new ConnectionApplication({ repository, root, executors: options.executors ?? createNativeExecutors(), environment: executorEnvironment(options.environment ?? process.env), generation, now, changed: (connection: ConnectionView) => events.publish({ type: 'connection', revision: connection.revision, payload: { connection } }) });
-  const preparations = new PreparationApplication(connections, options.programManager ?? new NativeProgramManager(root, executorEnvironment(options.environment ?? process.env)), generation, now);
-  const conversations = new ConversationApplication({ repository, connections, events, root, generation, now, host: options });
+  const programManager = options.programManager ?? new NativeProgramManager(root, executorEnvironment(options.environment ?? process.env));
+  const preparations = new PreparationApplication(connections, programManager, generation, now);
+  const models = createModelAccess({root: path.join(root, 'model-access'), providers: options.modelProviders ?? [createCodexModelProvider(), createDevinModelProvider(), createDeepSeekModelProvider({ownerFactory: async input => {
+    const bound = connections.get('dsh').executable;
+    const catalog = await programManager.discover({provider:'dsh',...(bound?{executable:bound,boundExecutable:bound}:{}),signal:new AbortController().signal});
+    const candidates = catalog.candidates.filter(candidate=>candidate.compatible);
+    if(candidates.length!==1) throw new ModelAccessError('model_dsh_program_unavailable','请先在智能体程序中准备并选择准确的 DSH 程序。');
+    return createDeepSeekAccountOwner({...input,executable:candidates[0]!.executable});
+  }})], environment: executorEnvironment(options.environment ?? process.env)});
+  const conversations = new ConversationApplication({ repository, connections, modelAccess: models, events, root, generation, now, host: options });
   let closed = false;
   return {
     generation,
+    models: { accounts: models.accounts, catalog: models.catalog },
     connections: {
       list: () => ({ connections: connections.list() }),
       read: (id: string) => connections.get(id),
@@ -81,7 +97,7 @@ export function createAgentService(options: AgentServiceOptions) {
       try { await within(conversations.close(), Math.max(1, Math.floor(budget * 0.7))); }
       finally {
         // Always start actual resource release, even if a vendor's stop never responds.
-        await within(Promise.allSettled([preparations.close(), connections.close()]), Math.max(1, deadline - Date.now()));
+        await within(Promise.allSettled([preparations.close(), connections.close(), models.close()]), Math.max(1, deadline - Date.now()));
         events.close();
       }
     },

@@ -72,3 +72,7 @@
 .ac-effort-unavailable{margin:0;text-align:center;font-size:12px;color:var(--soft-muted)}
 
 @media(min-width:761px){.ac-compose-toolbar,.ac-compose-execution,.ac-execution-options{flex-wrap:nowrap}}
+
+.ac-model-account{margin-top:14px;padding:14px;border:1px solid var(--border-color,#e5e7eb);border-radius:10px}.ac-model-account>header{display:flex;align-items:center;justify-content:space-between;gap:10px}.ac-model-account>p{overflow-wrap:anywhere}
+
+.ac-model-account>header>strong{min-width:0;overflow-wrap:anywhere}.ac-model-account>header>.ant-tag{flex-shrink:0}

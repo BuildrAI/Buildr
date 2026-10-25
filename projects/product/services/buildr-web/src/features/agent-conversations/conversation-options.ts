@@ -1,6 +1,6 @@
 import type {ConnectionView, ConversationRun, SendDraft} from './types';
 
-export type ConversationChoice = Pick<SendDraft,'connectionId'|'model'|'reasoningEffort'>;
+export type ConversationChoice = Pick<SendDraft,'connectionId'|'model'|'reasoningEffort'|'modelAccountId'|'modelAccountRevision'|'modelAccountIdentity'>;
 export type PermissionMode=NonNullable<SendDraft['permissionMode']>;
 export const permissionModeLabels:Record<PermissionMode,string>={default:'默认权限','full-access':'完全访问'};
 

@@ -30,9 +30,9 @@ Buildr 宿主负责本机认证、HTTP 与事件流、已登记工作空间（Wo
 
 配置保存在本机网页运行配置（Profile）的 `dataRoot/agent-service/connections/<provider>/`；统一对话保存在同根的 `conversations.sqlite`，图片保存在 `attachments/`。这些是私有运行数据，不写入工作空间（Workspace）源资产或 Git。页面显示可用状态、非秘密账号摘要及配置路径，登录地址仅属于当前登录尝试；凭据由各家原生配置保存，不通过消息或诊断返回。断开保留账号、配置和对话，停止及退出只释放本接入拥有的执行资源，不能以“已断开”冒充执行已确认停止。
 
-DSH 在对话中选择模型会改变这套独立配置的后续默认模型；因为配置独立，不改外部桌面的默认模型。首版界面不提供任意第三方模型凭据编辑，也不建立统一模型或技能配置中心。
+DSH 在对话中选择模型会改变这套独立配置的后续默认模型；因为配置独立，不改外部桌面的默认模型。统一模型套餐组件允许在本应用配置域中明确登录 Codex、Devin 和 DeepSeek 账号，供三家原生智能体独立选择。套餐来源与原生程序准备分开，模型请求由本机认证网关转换协议，工具及权限仍由原生智能体负责。Qoder 消费外部套餐使用软件开发工具包（SDK）的逐次模型选择；其个人套餐反向模型输出尚无已接入的可靠接口。
 
-输入栏左侧呈现附件与权限，右侧依次为独立的智能体（Agent）、模型、思考档位和发送控件。切换执行方使用其默认模型并清除原模型和档位，切换模型清除原档位；选择只更新草稿，不因此开始执行。选择器保持一致行高、清晰正文色和白色背景，悬停与选中状态一致，菜单开合不改变输入栏高度；窄屏按完整控件换行，正常名称不省略。
+输入栏左侧呈现附件与权限，右侧依次为独立的智能体（Agent）、模型、思考档位和发送控件。原生模式切换执行方使用其默认模型并清除原模型和档位；统一套餐模式保留所选来源并重新校验兼容性，切换模型清除原档位；选择只更新草稿，不因此开始执行。选择器保持一致行高、清晰正文色和白色背景，悬停与选中状态一致，菜单开合不改变输入栏高度；窄屏按完整控件换行，正常名称不省略。
 
 模型目录同时保留实际默认模型、逐模型支持的思考深度（Reasoning Effort）及默认档位。输入栏仅显示该模型支持的选项；发送预览和本轮执行保留实际模型与档位，刷新后按执行记录恢复。切换模型或执行方不会沿用不兼容的旧档位。DSH 选型后重新观察原生目录并通知对话重新读取连接，避免界面仍把旧默认值当成当前事实。
 
@@ -116,3 +116,11 @@ DSH 的关联身份来自目标原生执行直接提供的 `DSH_SESSION_ID`，�
 ## 原有链路的实现来源
 
 原有链路保持独立。当前事实入口：[Codex 发现](../../../services/buildr/src/modules/agent-operations/infrastructure/codex-discovery.ts) · [DSH 发现](../../../services/buildr/src/modules/agent-operations/infrastructure/dsh-discovery.ts) · [确认、排队与生命周期](../../../services/buildr/src/modules/agent-operations/application/agent-operations-application.ts) · [DSH 生成提供者](../../../services/buildr/src/modules/agent-operations/infrastructure/dsh-desktop-provider.ts) · [桌面插件桥](../../../services/dsh-plugin/plugin/desktop-server.ts) · [关系聚合](../../../services/buildr/src/modules/native-session-links/application/native-session-links-application.ts) · [DSH 桌面导航](../../../services/buildr/src/modules/dsh-desktop/application/dsh-desktop-application.ts) · [任务页入口](../../../services/buildr-web/src/features/task/components/TaskAgentSessions.tsx)。
+
+## 统一模型套餐
+
+实现位于 `services/buildr-agent/src/model-access/`，作为私有库随主包捆绑交付；不是新增公开 npm 包。账号元数据和模型观察保存在本应用 `agent-service/model-access/`，厂商凭据由其唯一提供者管理。Codex 和 Devin 明确发起独立浏览器登录；DeepSeek 由私有 DSH 宿主账号服务持有凭据，通过固定目的地的认证桥接委托模型请求，不向网页或网关消费者导出凭据。
+
+公共模型入口由宿主的 `/api/v1/app/agent-service/model-accounts` 与 `/model-catalog` 管理，沿用本机认证与写入校验；执行方只取得绑定账号、模型、对话和执行方的本机访问凭据。三个模型协议入口只在回环地址监听，不以系统代理环境变量代替套餐连接。
+
+每轮保存 `modelAccountId` 和来源摘要。跨来源或模型的原生状态不能通用时，仍在同一可见对话中保留不同参与绑定，并交付尚未见到的可见历史。旧原生模式和已有对话保留；断开、刷新和未知执行都不自动重发。额度不可读按未知显示，不根据静态模型列表或估算用量推断剩余套餐。

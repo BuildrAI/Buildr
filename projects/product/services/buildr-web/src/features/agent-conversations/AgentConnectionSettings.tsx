@@ -1,3 +1,4 @@
+import {ModelAccountSettings} from './ModelAccountSettings';
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Button, Tag } from 'antd';
 import { LoginOutlined, ReloadOutlined, RobotOutlined } from '@ant-design/icons';
@@ -25,7 +26,9 @@ export function AgentConnectionSettings() {
     return () => {clearInterval(timer); controller.abort();};
   },[context.settings,connection?.id,attempt?.id,attempt?.state,context.api,context.updateConnection]);
   const officialUrl = attempt?.url && /^https?:\/\//i.test(attempt.url) ? attempt.url : null;
-  return <DrawerShell open={context.settings} title="智能体账号与配置" onClose={() => context.setSettings(false)} closeAriaLabel="关闭智能体账号与配置" width={620} rootClassName="agent-conversation-settings">
+  return <DrawerShell open={context.settings} title="智能体账号与配置" onClose={() => context.setSettings(false)} closeAriaLabel="关闭智能体账号与配置" width="min(620px, 100vw)" rootClassName="agent-conversation-settings">
+    <ModelAccountSettings/>
+    <h3>智能体程序与原生账号</h3>
     <p className="ac-subtle">先检查本机程序，再通过官方登录连接。每家使用独立配置，已有账号和对话会保留。</p>
     <div className="ac-provider-tabs" role="tablist" aria-label="选择智能体">{providers.map(provider => <button key={provider} type="button" role="tab" aria-selected={selected===provider} onClick={() => {setSelected(provider);setError('');}}><RobotOutlined />{providerNames[provider]}</button>)}</div>
     {error && <Alert showIcon type="warning" message={error} />}
@@ -39,6 +42,7 @@ export function AgentConnectionSettings() {
         <p className="ac-subtle">断开保留登录、配置和已有对话。关闭此面板不会取消准备；浏览器工具由智能体按技能检查和准备。</p>
         <details className="ac-account-details"><summary>接入详情</summary><dl><dt>使用程序</dt><dd><code>{connection.executable || (connection.status==='ready'?'已发现兼容程序（自动发现）':'按配置自动发现（待检查）')}</code></dd><dt>独立配置目录</dt><dd><code>{connection.configPath || '连接时建立'}</code></dd><dt>可用模型</dt><dd>{connection.models.map(model => model.label).join('、') || '账号检查后读取'}</dd></dl></details>
       </> : <><p>当前尚未读取到此接入，请重新读取配置。</p><Button type="primary" loading={busy==='refresh'} onClick={() => {setBusy('refresh');setError('');void context.refreshConnections().catch(failure=>setError(failure instanceof Error?failure.message:'读取失败。')).finally(()=>setBusy(''));}}>重新读取接入</Button></>}
+      {selected==='qoder' && <p className="ac-subtle">使用其他模型套餐时，Qoder 程序仍需要基础平台登录，不要求使用其付费模型。</p>}
       {selected==='dsh' && <p className="ac-subtle">选择 DSH 模型也会更新这套独立配置后续对话的默认模型。</p>}
     </section>
   </DrawerShell>;

@@ -1,3 +1,6 @@
+import type { AgentModelAccountModelAccount, AgentModelCatalogModelCatalog } from '../../../build/generated/agent-service-http-dto';
+export type ModelAccount = AgentModelAccountModelAccount;
+export type CatalogModel = AgentModelCatalogModelCatalog['models'][number];
 import type { AgentServiceConnectionConnection, AgentConversationConversation, AgentConversationDraftRequestDraft, AgentConversationSendPreviewPreview, AgentConversationEventEvent, AgentConversationAttachmentResultAttachmentResult } from '../../../build/generated/agent-service-http-dto';
 import type { AgentServicePreparationPreparation } from '../../../build/generated/agent-service-http-dto';
 

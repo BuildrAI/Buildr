@@ -9,10 +9,12 @@ import { query, qodercliAuth, ProcessTransport, getSessionInfo, getSessionMessag
 import { qoderHistoryItems } from './protocol.ts';
 import { qoderModel } from '../model-options.ts';
 import { resolvePermissionMode } from '../../domain/permission-mode.ts';
+import { checkedGateway, qoderGatewayPolicy, type ExecutorGateway } from '../model-gateway.ts';
 
 console.log = console.info = console.warn = console.error = console.debug = () => {};
 const send = (message: unknown) => { process.stdout.write(JSON.stringify(message) + '\n'); };
 let executable = '';
+let gateway: ExecutorGateway | undefined;
 interface LiveQuery {
   id: string; contextId: string; permissionMode: PermissionMode; q: any; child?: ChildProcessWithoutNullStreams; accepted: boolean; stopping: boolean; terminal?: 'completed' | 'stopped' | 'failed';
   tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown'; taskId?: string }>;
@@ -28,6 +30,8 @@ function options(cwd: string, state?: LiveQuery, onChild?: (child: ChildProcessW
     auth: qodercliAuth(), transport: ProcessTransport.default, pathToQoderCLIExecutable: executable, cwd, env: { ...process.env },
     settingSources: ['user', 'project', 'local'], skills: 'all', settings: { skills: { loadFromAgentsDirectory: true } }, permissionMode: state?.permissionMode === 'full-access' ? 'bypassPermissions' : 'default', allowDangerouslySkipPermissions: state?.permissionMode === 'full-access',
     stderr: () => {}, includePartialMessages: true,
+    // Apply the lease to every purpose, including title, compaction and child agents.
+    ...(gateway ? { resolveModel: () => qoderGatewayPolicy(gateway!) } : {}),
     spawnQoderCLIProcess: (input: any) => {
       const child = spawn(input.command, input.args, { cwd: input.cwd, env: input.env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
       child.stderr.on('data', () => {}); if (state) state.child = child; onChild?.(child); return child;
@@ -100,7 +104,8 @@ async function execute(params: any): Promise<void> {
     await gate;
   }
   const opts = { ...options(params.cwd, state), ...(info ? { resume: params.contextId } : { sessionId: params.contextId }), ...(params.model ? { model: params.model } : {}) };
-  if (params.reasoningEffort) Object.assign(opts, { resolveModel: (context: any) => {
+  if (gateway) Object.assign(opts, { resolveModel: () => qoderGatewayPolicy(gateway!, params.model, params.reasoningEffort) });
+  else if (params.reasoningEffort) Object.assign(opts, { resolveModel: (context: any) => {
     if (context.purpose !== 'main' && context.purpose !== 'plan') return undefined;
     const id = params.model ?? context.resolvedModel;
     const model = context.availableModels.map(qoderModel).find((candidate: any) => candidate.id === id);
@@ -159,7 +164,7 @@ async function execute(params: any): Promise<void> {
   }
 }
 async function dispatch(method: string, params: any): Promise<any> {
-  if (method === 'initialize') { executable = params.executable; return {}; }
+  if (method === 'initialize') { executable = params.executable; gateway = checkedGateway(params.gateway); return {}; }
   if (!executable) throw new Error('qoder_worker_not_initialized');
   if (method === 'account') return await accountQuery(params.cwd, 'account');
   if (method === 'models') return await accountQuery(params.cwd, 'models');

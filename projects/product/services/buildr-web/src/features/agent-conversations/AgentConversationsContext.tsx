@@ -2,13 +2,14 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { agentConversationsApi, type AgentConversationsClient } from './api/agent-conversations-api';
 import { applyConversationEvent, createdConversationVisibility, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, sameConversationSelection, type ConversationSelection } from './conversation-state';
 import { readOptionalPreference, writeOptionalPreference } from '../../lib/optional-preferences';
-import type { ConnectionView, ConversationView, PendingConversation } from './types';
+import type { CatalogModel, ConnectionView, ConversationView, PendingConversation } from './types';
 
 type Scope = {workspaceId: string; conversationId: string};
 type VisibilityOptions={preserveVisibility?:boolean};
 type ContextValue = {
   api: AgentConversationsClient; open: boolean; side: 'left' | 'right'; full: boolean; view: 'conversation' | 'history';
   scope: Scope | null; conversation: ConversationView | null; connections: ConnectionView[]; pending: PendingConversation[];
+  modelCatalog:CatalogModel[]; refreshModelCatalog():Promise<void>;
   loading: boolean; error: string; streamError: string; settings: boolean;
   setSettings(value: boolean): void; setOpen(value: boolean): void; setFull(value: boolean): void; setView(value: 'conversation' | 'history'): void; move(): void;
   openGlobal(): void; toggle(): void; openConversation(workspaceId: string, conversationId: string,options?:VisibilityOptions): Promise<void>; newConversation(options?:VisibilityOptions): void;
@@ -33,6 +34,9 @@ export function AgentConversationsProvider({children, client = agentConversation
   const [side, setSide] = useState<'left' | 'right'>(() => readOptionalPreference('buildr.agent-conversation-side') === 'left' ? 'left' : 'right');
   const [settings, setSettings] = useState(false), [scope, setScope] = useState<Scope | null>(null), [conversation, setConversation] = useState<ConversationView | null>(null);
   const [connections, setConnections] = useState<ConnectionView[]>([]), [pending, setPending] = useState<PendingConversation[]>([]), [loading, setLoading] = useState(false), [error, setError] = useState(''), [streamError, setStreamError] = useState('');
+  const [modelCatalog,setModelCatalog]=useState<CatalogModel[]>([]);
+  const refreshModelCatalog=useCallback(async()=>{const result=await client.modelCatalog();setModelCatalog(result.models);},[client]);
+  useEffect(()=>{void refreshModelCatalog().catch(()=>{});},[refreshModelCatalog,settings]);
   const scopeRef = useRef(scope);
   const conversationRef=useRef(conversation);conversationRef.current=conversation;
   const attentionSignature=useRef('');
@@ -90,7 +94,7 @@ export function AgentConversationsProvider({children, client = agentConversation
   const openGlobal = useCallback(() => { if (pending.length === 1) {void openConversation(pending[0].workspaceId, pending[0].conversationId); return;} setVisibility(true); savePanel(true,scopeRef.current); if (pending.length > 1) setView('history'); }, [pending, openConversation,setVisibility]);
   const toggle=useCallback(()=>setOpen(!open),[open,setOpen]);
   const shell=useMemo(()=>({open,full,pending,openGlobal,toggle,setSettings}),[open,full,pending,openGlobal,toggle]);
-  return <ShellContext.Provider value={shell}><Context.Provider value={{api:client, open,side,full,view,scope,conversation,connections,pending,loading,error,streamError,settings,setSettings,setOpen,setFull,setView,move:() => setSide(current => { const next = current === 'right' ? 'left' : 'right'; writeOptionalPreference('buildr.agent-conversation-side',next); return next; }),openGlobal,toggle,openConversation,newConversation,refresh,refreshConnections,refreshPending,apply,prependEntries,updateConnection,create,selectionGeneration,getSelection,isSelectionCurrent}}>{children}</Context.Provider></ShellContext.Provider>;
+  return <ShellContext.Provider value={shell}><Context.Provider value={{api:client, modelCatalog,refreshModelCatalog,open,side,full,view,scope,conversation,connections,pending,loading,error,streamError,settings,setSettings,setOpen,setFull,setView,move:() => setSide(current => { const next = current === 'right' ? 'left' : 'right'; writeOptionalPreference('buildr.agent-conversation-side',next); return next; }),openGlobal,toggle,openConversation,newConversation,refresh,refreshConnections,refreshPending,apply,prependEntries,updateConnection,create,selectionGeneration,getSelection,isSelectionCurrent}}>{children}</Context.Provider></ShellContext.Provider>;
 }
 export function useAgentConversations() { const value = useContext(Context); if (!value) throw new Error('AgentConversationsProvider 未提供。'); return value; }
 export function useOptionalAgentConversations() { return useContext(Context); }
