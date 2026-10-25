@@ -296,17 +296,18 @@ async function nestedGitIsolationScenario(section: 'full' | 'lifecycle' | 'safet
     return root;
   };
   const apiRoot = createSource('api'), workerRoot = createSource('worker');
-  let catalog = run(['assets', 'inspect']);
-  catalog = write(['assets', 'create', 'project'], { revision: catalog.revision, code: 'demo', name: 'Mixed project' });
+  const fixtureRuntime = runtimeProvide(createRuntime(), WORKSPACE_APPLICATION);
+  let catalog = fixtureRuntime.assetCatalog(workspace);
+  catalog = fixtureRuntime.createCatalogProject(workspace, { revision: catalog.revision, code: 'demo', name: 'Mixed project' });
   const projectId = catalog.projects[0].id;
-  for (const code of ['api', 'worker']) catalog = write(['assets', 'create', 'repository'], { revision: catalog.revision, code, path: `repositories/${code}`, integrationBranch: 'main' });
+  for (const code of ['api', 'worker']) catalog = fixtureRuntime.createCatalogRepository(workspace, { revision: catalog.revision, code, path: `repositories/${code}`, integrationBranch: 'main' });
   for (const repository of catalog.repositories) {
     assert.equal(repository.source.type, 'git');
     assert.equal(repository.source.git, undefined);
     assert.equal(repository.source.integrationBranch, 'main');
   }
   for (const [code, repositoryCode, modulePath] of [['api', 'api', ''], ['api-view', 'api', 'modules/shared'], ['worker', 'worker', '']]) {
-    catalog = write(['assets', 'create', 'service'], { revision: catalog.revision, projectId, service: { code, name: code, repositoryId: catalog.repositories.find((item: { code: string }) => item.code === repositoryCode).id, modulePath } });
+    catalog = fixtureRuntime.createCatalogService(workspace, { revision: catalog.revision, projectId, service: { code, name: code, repositoryId: catalog.repositories.find((item: { code: string }) => item.code === repositoryCode).id, modulePath } });
   }
   const taskId = 'nested-code', branch = `codex/${taskId}`;
   const task = run(['task', 'create', taskId, '--title', '隔离嵌套代码', '--intent', '修改两个实际 Git 来源并保留普通资料', '--project', 'demo', '--service', 'demo/api', '--service', 'demo/api-view', '--service', 'demo/worker']);

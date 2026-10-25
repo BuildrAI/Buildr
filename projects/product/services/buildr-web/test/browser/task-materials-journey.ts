@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 // All successful reads come from the production host. Fixtures are explicitly
-// created through the public CLI; no real workspace or task history is changed.
-export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot, workspaceUrl, runBuildr, runGit, capture, expectedBrowserErrors }: any) {
+// created through the application, retaining a real CLI-to-page update chain.
+export async function runTaskMaterialsJourney({ t, page, runtime, materials, workspaceRoot, workspaceUrl, runBuildr, runGit, capture, expectedBrowserErrors }: any) {
   const simple = 'materials-simple', empty = 'materials-intent-only', history = 'materials-history';
   // Diagnostic selection retains the same production host and fixture boundary.
   const focus = process.env.BUILDR_TASK_MATERIALS_FOCUS || '';
@@ -22,11 +22,11 @@ export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot,
     return file;
   };
   const cli = (args: string[]) => runBuildr([...args, '--target', workspaceRoot, '--json']);
-  const inspect = (id: string) => cli(['task', 'materials', 'inspect', id]);
+  const inspect = (id: string) => materials.inspectTaskMaterials(workspaceRoot, id);
   const local = (id: string, role: string, title: string, file: string) => ({ id, role, title, source: { kind: 'task', path: file } });
-  const write = (id: string, file: string, content: string, expected = 'absent') => cli(['task', 'materials', 'write', id, '--path', file, '--content', markdown(`${id}-${file.replaceAll('/', '-')}`, content), '--expected-document', expected]);
-  const associate = (id: string, documents: unknown[], expected = 'absent') => cli(['task', 'materials', 'record', id, '--materials', json(id, { schemaVersion: 'buildr.task-materials/v2', documents }), '--expected-current', expected]);
-  const writeBrief = (id: string, content: string) => cli(['task', 'update', id, '--brief-file', markdown(`${id}-record-brief`, content), '--expected-record', runtime.inspectTask(workspaceRoot, id).recordDigest]);
+  const write = (id: string, file: string, content: string, expected = 'absent') => materials.writeTaskMaterialDocument(workspaceRoot, id, { path: file, content, expectedDocumentDigest: expected });
+  const associate = (id: string, documents: unknown[], expected = 'absent') => materials.recordTaskMaterials(workspaceRoot, id, { documents, expectedCurrent: expected });
+  const writeBrief = (id: string, content: string) => runtime.updateTask(workspaceRoot, id, { brief: content, expectedRecordDigest: runtime.inspectTask(workspaceRoot, id).recordDigest });
   const body = () => page.locator('#task-node-content:visible');
   const open = async (id: string) => {
     await page.goto(`${workspaceUrl}/tasks/${id}`);
@@ -41,11 +41,11 @@ export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot,
     cli(['task', 'create', id, '--title', title, '--intent', id === empty ? '只有短目标，没有说明正文。' : '验证任务独立材料的真实读取。', '--project', 'demo', '--service', 'demo/api', ...(id === simple ? ['--brief-file', markdown(`${id}-initial-brief`, brief)] : []), ...(id === history ? ['--change', 'demo/browser-flow', '--change', 'demo/archived-flow'] : [])]);
   }
   const recordBefore = runtime.inspectTask(workspaceRoot, simple);
-  write(simple, 'solution.md', '# 短方案\n\n复用目录布局，按实际容器宽度排列操作。\n');
+  cli(['task', 'materials', 'write', simple, '--path', 'solution.md', '--content', markdown('cli-solution', '# 短方案\n\n复用目录布局，按实际容器宽度排列操作。\n'), '--expected-document', 'absent']);
   write(simple, 'implementation.md', '# 实施过程\n\n只修改布局并检查窄栏，不改变业务操作。\n');
   write(simple, 'delivery.md', '# 交付材料\n\n浏览器夹具中的可读交付说明，不是本框架任务的交付报告。\n');
   const references = [local('solution', 'solution', '修复方案', 'solution.md'), local('implementation', 'implementation', '实施过程', 'implementation.md'), local('delivery', 'delivery', '交付说明', 'delivery.md')];
-  associate(simple, references);
+  cli(['task', 'materials', 'record', simple, '--materials', json(simple, { schemaVersion: 'buildr.task-materials/v2', documents: references }), '--expected-current', 'absent']);
   assert.deepEqual(runtime.inspectTask(workspaceRoot, simple).record, recordBefore.record, '材料写入不得重写任务状态、时间或结果历史');
   assert.equal(runtime.inspectTask(workspaceRoot, simple).recordDigest, recordBefore.recordDigest);
   assert.deepEqual(runtime.inspectTask(workspaceRoot, simple).record.changes, []);
@@ -297,7 +297,7 @@ export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot,
   await scenario('任务说明：记录正文更新显示新版本，清空不回退历史变更说明', async () => {
     await open(simple);
     const previous = runtime.inspectTask(workspaceRoot, simple);
-    writeBrief(simple, `${brief}\n修改后的当前说明版本二。\n`);
+    cli(['task', 'update', simple, '--brief-file', markdown('cli-updated-brief', `${brief}\n修改后的当前说明版本二。\n`), '--expected-record', runtime.inspectTask(workspaceRoot, simple).recordDigest]);
     await refresh(); await body().locator('.markdown-body').filter({ hasText: '当前说明版本二' }).waitFor({ state: 'visible' });
     assert.notEqual(runtime.inspectTask(workspaceRoot, simple).recordDigest, previous.recordDigest);
     await page.reload(); await body().locator('.markdown-body').filter({ hasText: '当前说明版本二' }).waitFor({ state: 'visible' });

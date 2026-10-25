@@ -274,7 +274,7 @@ test('受限 CI 将真实 App 与适配器重型检查互斥，轻量检查仍�
   assert.equal(lightOverlap, true);
   assert.deepEqual(results.map((item: any) => [item.id, item.status]), ids.map(id => [id, 'passed']));
   assert.equal(results[0].scheduling.grant.workers, 2);
-  assert.equal(results[1].scheduling.grant.workers, 1);
+  assert.equal(results[1].scheduling.grant.workers, 2);
 });
 
 test('真实发布效果检查独占执行，结束后其他 owner 恢复并行', async () => {

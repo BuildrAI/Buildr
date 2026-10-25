@@ -80,6 +80,9 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/infrastructure/git/**",
       "src/modules/task/infrastructure/git-worktree-provider.ts",
       "test/helpers/code-git-configuration-fixture.ts",
+      "test/helpers/code-operation-seeds.ts",
+      "test/helpers/code-commit-application-fixture.ts",
+      "test/helpers/code-sync-application-fixture.ts",
       "test/fixtures/code-commit-message-large-fixture.ts"
     ],
     "inputExclusions": []

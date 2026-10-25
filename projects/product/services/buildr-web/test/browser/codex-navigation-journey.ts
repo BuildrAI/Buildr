@@ -8,7 +8,7 @@ import { runDshTaskPageJourney } from './dsh-task-page-journey.ts';
 /** Production-hosted routing; the connection fixture is explicitly isolated and never installs a plugin. */
 export async function runCodexNavigationJourney({t, page, runtime, workspaceRoot, workspaceUrl, runBuildr, capture, expectedBrowserErrors}: any) {
   const first = 'codex-navigation-first', second = 'codex-navigation-second';
-  for (const id of [first, second]) runBuildr(['task', 'create', id, '--title', `Codex 导航 ${id}`, '--intent', '验证固定入口准确到达及原任务状态保全', '--project', 'demo', '--target', workspaceRoot, '--json']);
+  for (const id of [first, second]) runtime.createTask(workspaceRoot, { taskId: id, title: `Codex 导航 ${id}`, intent: '验证固定入口准确到达及原任务状态保全', projects: ['demo'] });
   const before = runtime.inspectTask(workspaceRoot, first).recordDigest;
   const visibleTask = (id: string) => page.locator(`#task-detail-main[data-task-id="${id}"]:visible`);
   const fragment = async (target: string) => {

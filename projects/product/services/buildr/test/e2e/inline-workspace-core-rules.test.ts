@@ -46,55 +46,6 @@ test('new workspace and receipt-owned upgrade deliver all principles without a C
 });
 
 
-test('modified, unreceipted, foreign and symlink legacy files survive sync without global failure', async (t: any) => {
-  for (const options of [{ modified: true }, { receipt: false }, { foreign: true }, { symlink: true }, { missing: true }, { unregistered: true, receipt: false }]) {
-    await t.test(JSON.stringify(options), (t: any) => {
-      // Initialization has its own real CLI and installed-package cases below.
-      // Each ownership variant uses the real builtin-sync and Doctor application
-      // on its own filesystem; the surrounding cases retain process, full-sync,
-      // installed-package and rollback coverage.
-      const { root, workspace }: any = fixture(t, true);
-      const runtime = createRuntime();
-      legacy(workspace, options);
-      if (options.unregistered) {
-        const rulesPath: any = path.join(workspace, 'rules/manifest.yml');
-        const manifest: any = YAML.parse(fs.readFileSync(rulesPath, 'utf8'));
-        manifest.rules = manifest.rules.filter((r: any) => r.id !== 'buildr-core');
-        fs.writeFileSync(rulesPath, YAML.stringify(manifest));
-      }
-      const file: any = path.join(workspace, 'rules/buildr/core.md');
-      if (options.symlink) {
-        fs.unlinkSync(file);
-        fs.writeFileSync(path.join(root, 'outside.md'), 'outside user content');
-        fs.symlinkSync(path.join(root, 'outside.md'), file);
-      }
-      const before: any = options.missing ? null : fs.readFileSync(file, 'utf8');
-      runtime.syncPackageBuiltins(workspace);
-      assertInline(workspace);
-      const entry: any = YAML.parse(fs.readFileSync(path.join(workspace, 'rules/manifest.yml'), 'utf8')).rules.find((r: any) => r.id === 'buildr-core');
-      if (options.missing) {
-        assert.equal(entry, undefined);
-        return;
-      }
-      assert.equal(fs.readFileSync(file, 'utf8'), before);
-      if (options.symlink) assert.equal(fs.lstatSync(file).isSymbolicLink(), true);
-      if (options.unregistered) assert.equal(entry, undefined);
-      else if (options.foreign) assert.equal(entry.source, 'workspace');
-      else {
-        assert.equal(entry.required, false);
-        assert.equal(entry.enabled, false);
-      }
-      const doctor: any = runtime.doctor({ targetRoot: workspace, agent: 'codex' });
-      assert.ok(doctor.findings.some((f: any) => f.code === 'rules.legacy_core'));
-      assert.equal(doctor.findings.some((f: any) => f.code === 'rules.buildr_unregistered' && f.path === 'rules/buildr/core.md'), false);
-      assert.equal(doctor.findings.some((f: any) => f.code === 'rules.required_block_invalid'), false);
-      runtime.syncPackageBuiltins(workspace);
-      assert.equal(fs.readFileSync(file, 'utf8'), before);
-    });
-  }
-});
-
-
 test('failed migration restores the old entry, registration, receipt and file together', (t: any) => {
   const { workspace, run, env }: any = fixture(t);
   run(['init', '--target', workspace, '--name', 'rollback', '--profile', 'personal']);

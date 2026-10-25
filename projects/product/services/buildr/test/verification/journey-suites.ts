@@ -57,7 +57,7 @@ export const JOURNEY_SUITES: any = Object.freeze([
     id: 'e2e-workspace',
     name: 'Workspace lifecycle',
     innerConcurrency: 2,
-    schedulingCostMs: 45000,
+    schedulingCostMs: 145000,
     concurrencyClass: 'workspace-heavy',
     resources: Object.freeze(['workspace-saturating']),
     contexts: Object.freeze([
@@ -104,7 +104,7 @@ export const JOURNEY_SUITES: any = Object.freeze([
     id: 'e2e-nested-git',
     name: 'nested Git isolation lifecycle',
     innerConcurrency: 1,
-    schedulingCostMs: 45000,
+    schedulingCostMs: 121000,
     // Its public lifecycle has a bounded nested process deadline. Do not
     // compete with other CLI-heavy owners while that deadline is running.
     concurrencyClass: 'exclusive',

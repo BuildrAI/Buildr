@@ -85,3 +85,23 @@ test('Archify lifecycle stays isolated from Workspace checks with bounded concur
     assert.equal(step.reuse.git, false, `${id}: private fixture Git must not bind the shared checkout HEAD`);
   }
 });
+
+test('release and parity request two workers and honor smaller outer grants', () => {
+  for (const id of ['integration-candidate-release', 'runtime-adapter-parity']) {
+    const step = verificationSteps.find((item: any) => item.id === id);
+    assert.equal(step.resourceDemand.workers, 2, id);
+    for (const profileId of ['local', 'ci', 'ci-workspace-limited']) {
+      const profile = resolveVerificationExecutionProfile(profileId);
+      for (const workers of [1, 2]) {
+        assert.deepEqual(workerBudgetEnvironment(step, { executionProfile: profile, resourceGrant: { workers } }), { [VERIFICATION_WORKER_BUDGET_ENV]: String(workers) });
+      }
+    }
+  }
+});
+
+test('the seven reviewed long-running owners have nonzero scheduling estimates', () => {
+  for (const id of ['integration-code', 'e2e-workspace', 'e2e-workspace-assets', 'e2e-nested-git', 'e2e-browser:task', 'e2e-browser:code-explorer', 'e2e-browser:code']) {
+    const step = verificationSteps.find((item: any) => item.id === id);
+    assert.ok(Number.isFinite(step.schedulingCostMs) && step.schedulingCostMs > 0, id);
+  }
+});
