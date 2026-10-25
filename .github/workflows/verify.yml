@@ -15,7 +15,7 @@ on:
         required: false
         default: none
         type: choice
-        options: [none, core-project-task-macos, nested-git-isolation-windows, runtime-windows, failed-windows, package-consumer-windows, nested-lifecycle-windows, app-process-windows, readonly-files-windows, task-lifecycle-windows, preview-lifecycle-windows, publication-effects-windows, package-pair-publisher]
+        options: [none, development-windows, core-project-task-macos, nested-git-isolation-windows, runtime-windows, failed-windows, package-consumer-windows, nested-lifecycle-windows, app-process-windows, readonly-files-windows, task-lifecycle-windows, preview-lifecycle-windows, publication-effects-windows, package-pair-publisher]
       diagnostic_candidate_run_id:
         description: Original Candidate run whose immutable package is consumed only by an independent diagnosis
         required: false
@@ -296,6 +296,42 @@ jobs:
             ${{ runner.temp }}/development-windows-diagnostics
           if-no-files-found: warn
           overwrite: true
+
+  development-windows:
+    name: Explicit Windows source integration
+    if: github.event_name == 'workflow_dispatch' && inputs.diagnostic_scope == 'development-windows'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: projects/product/services/buildr
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SOURCE_SHA }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+          cache: npm
+          cache-dependency-path: projects/product/services/buildr/package-lock.json
+      - name: Install product dependencies
+        run: npm ci
+      - name: Run all Windows-native source checks
+        env:
+          BUILDR_TIMING_OUTPUT: ${{ runner.temp }}/windows-source-timing.json
+          BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/windows-source-diagnostics
+          BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
+        shell: bash
+        run: npm run test:related -- --check integration-windows-native
+      - name: Upload Windows source evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-source-evidence
+          path: |
+            ${{ runner.temp }}/windows-source-timing.json
+            ${{ runner.temp }}/windows-source-diagnostics
+          retention-days: 14
 
   dev-verification-gate:
     name: Development verification gate

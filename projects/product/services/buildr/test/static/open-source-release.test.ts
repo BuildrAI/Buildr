@@ -467,8 +467,18 @@ test('CI and publish workflows use the supported Node runtime', () => {
   assert.equal(verifyDocument.jobs['dev-feedback-windows']['runs-on'], 'windows-latest');
   assert.equal(verifyDocument.jobs['candidate-plan'].if, "(!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))");
   assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.purpose.options, ['candidate', 'release-rehearsal']);
-  assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.options, ['none', 'core-project-task-macos', 'nested-git-isolation-windows', 'runtime-windows', 'failed-windows', 'package-consumer-windows', 'nested-lifecycle-windows', 'app-process-windows', 'readonly-files-windows', 'task-lifecycle-windows', 'preview-lifecycle-windows', 'publication-effects-windows', 'package-pair-publisher']);
+  assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.options, ['none', 'development-windows', 'core-project-task-macos', 'nested-git-isolation-windows', 'runtime-windows', 'failed-windows', 'package-consumer-windows', 'nested-lifecycle-windows', 'app-process-windows', 'readonly-files-windows', 'task-lifecycle-windows', 'preview-lifecycle-windows', 'publication-effects-windows', 'package-pair-publisher']);
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.default, 'none');
+
+  const explicitWindows = verifyDocument.jobs['development-windows'];
+  assert.equal(explicitWindows.if, "github.event_name == 'workflow_dispatch' && inputs.diagnostic_scope == 'development-windows'");
+  assert.equal(explicitWindows['runs-on'], 'windows-latest');
+  assert.equal(explicitWindows.needs, undefined, 'explicit Windows source checks do not need a release candidate');
+  const sourceCheck = explicitWindows.steps.find((step: {run?: string}) => step.run === 'npm run test:related -- --check integration-windows-native');
+  assert.ok(sourceCheck, 'the explicit request always executes the complete Windows-native owner');
+  assert.notEqual(sourceCheck['continue-on-error'], true);
+  assert.ok(explicitWindows.steps.some((step: {if?: string; uses?: string}) => step.if === 'always()' && step.uses?.startsWith('actions/upload-artifact@')));
+
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.expected_source_tree.required, false);
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.rehearsal_identity.required, false);
   const candidateJobs: any[] = ['candidate-bootstrap', 'candidate-source', 'candidate-artifact-consumers', 'candidate-host-node'].map(id => verifyDocument.jobs[id]);
