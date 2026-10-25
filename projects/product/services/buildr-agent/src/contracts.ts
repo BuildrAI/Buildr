@@ -108,6 +108,9 @@ export interface AgentRuntime {
   capabilities: AgentCapabilities;
   inspectAccount(): Promise<AccountObservation>;
   models(): Promise<AgentModel[]>;
+  /** Private fixed-upstream model bridge; never exposed over host HTTP. */
+  requestModel?(path: string, init?: RequestInit, expectedIdentity?: string): Promise<Response>;
+  modelIdentity?(): Promise<string>;
   beginLogin(onUpdate: (observation: LoginObservation) => void): Promise<void>;
   cancelLogin(): Promise<void>;
   createContext(input: { cwd: string; permissionMode?: PermissionMode }): Promise<ContextRef>;

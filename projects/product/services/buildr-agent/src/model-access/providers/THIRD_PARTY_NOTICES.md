@@ -25,3 +25,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+`qoder-signing.ts` adapted from pi-provider-qoder (https://github.com/simonsmh/pi-provider-qoder), MIT, commit fa5067d1bf0c4accc2fc88ad672e23390a2d6f16.
+Copyright (c) pi-provider-qoder contributors. The MIT permission and warranty terms above apply to this material as well.

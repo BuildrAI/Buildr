@@ -22,6 +22,7 @@ export interface ModelQuotaObservation {
 export interface ModelProviderObservation {
   status: 'not-authenticated' | 'ready' | 'expired' | 'failed';
   label?: string;
+  identity?: string;
   models: ModelOffering[];
   quota?: ModelQuotaObservation;
   diagnostic?: string;
@@ -45,6 +46,7 @@ export interface ModelProviderRuntime {
 export interface ModelProvider {
   readonly id: string;
   readonly label: string;
+  readonly connectionId?: string;
   open(input: { accountId: string; configRoot: string; environment: Readonly<Record<string, string>> }): Promise<ModelProviderRuntime>;
 }
 export interface ModelAccountView {
@@ -52,6 +54,7 @@ export interface ModelAccountView {
   /** Local credential generation. Changes at explicit login, not token renewal. */
   identity: string;
   provider: string;
+  connectionId?: string;
   label: string;
   revision: string;
   enabled: boolean;

@@ -1,6 +1,7 @@
+import {createHash} from 'node:crypto';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
 import { join } from 'node:path';
-import { writeFile } from 'node:fs/promises';
+import { lstat, readFile, writeFile } from 'node:fs/promises';
 import type { AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorRequest, ExecutorSendInput, ExecutorTitleInput, LoginObservation, PermissionMode } from '../../contracts.ts';
 import { NativeRpc, nativePreview, nativeBinding, bounded, findExecutable, inspectVersion, isolatedEnvironment, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories, visibleText, type RpcMessage } from '../native-process.ts';
 import { modelOptions } from '../model-options.ts';
@@ -44,6 +45,7 @@ class CodexRuntime implements AgentRuntime {
   private readonly titleDirectory: string;
   private readonly auxiliary = new Set<string>();
   private gateway?: ExecutorGateway;
+  private modelConfig?: string;
   private constructor(bindingIdentity: string, rpc: NativeRpc, titleDirectory: string) { this.bindingIdentity = bindingIdentity; this.rpc = rpc; this.titleDirectory = titleDirectory; rpc.onMessage(message => this.message(message)); }
   static async open(options: ExecutorOpenOptions): Promise<CodexRuntime> {
     options.signal?.throwIfAborted();
@@ -68,7 +70,7 @@ class CodexRuntime implements AgentRuntime {
     const rpc = new NativeRpc(launch.command, [...launch.prefix, 'app-server', '--listen', 'stdio://', '-c', 'cli_auth_credentials_store="file"', ...overrides], { cwd: options.configRoot, env });
     const runtime = new CodexRuntime(binding.identity, rpc, join(temporary, 'title-requests'));
     runtime.bindingData = binding.data;
-    runtime.gateway = gateway;
+    runtime.gateway = gateway; runtime.modelConfig = config;
     let abortedClose: Promise<void> | undefined; const abort = () => { abortedClose ??= rpc.close(); };
     options.signal?.addEventListener('abort', abort, { once: true }); if (options.signal?.aborted) abort();
     try {
@@ -91,6 +93,20 @@ class CodexRuntime implements AgentRuntime {
     const result = await this.rpc.call('account/read', { refreshToken: false });
     if (result.requiresOpenaiAuth === false) return { status: 'ready' as const, label: 'Codex', loginMethod: '自定义模型连接' };
     return result.account ? { status: 'ready' as const, label: result.account.type === 'chatgpt' ? `ChatGPT${result.account.planType ? ' · ' + result.account.planType : ''}` : 'Codex', loginMethod: result.account.type === 'chatgpt' ? 'ChatGPT' : '原生配置' } : { status: 'not-authenticated' as const };
+  }
+  async modelIdentity():Promise<string> {
+    const file=join(this.modelConfig!,'auth.json'),info=await lstat(file);if(!info.isFile()||info.isSymbolicLink()||info.nlink!==1)throw new Error('codex_credential_unsafe');
+    const data=JSON.parse(await readFile(file,'utf8'));
+    const id=data.tokens?.account_id; if(typeof id!=='string'||!id)throw new Error('codex_account_identity_missing');
+    return 'codex:'+id;
+  }
+  async requestModel(path:string, init:RequestInit={},expectedIdentity?:string):Promise<Response> {
+    if(this.gateway || !['/codex/models?client_version=0.163.0','/codex/responses','/wham/usage'].includes(path))throw new Error('codex_model_target_invalid');
+    const auth=await this.rpc.call('getAuthStatus',{includeToken:true,refreshToken:true});
+    if(typeof auth.authToken!=='string')return new Response(null,{status:401});
+    const identity=await this.modelIdentity();
+    if(expectedIdentity&&createHash('sha256').update(identity).digest('hex')!==expectedIdentity)throw new Error('model_identity_conflict');
+    return fetch('https://chatgpt.com/backend-api'+path,{...init,headers:{...Object.fromEntries(new Headers(init.headers)),authorization:'Bearer '+auth.authToken,'chatgpt-account-id':identity.slice(6),originator:'codex_cli_rs','user-agent':'codex_cli_rs/0.163.0'},redirect:'error'});
   }
   async models() {
     if (this.gateway) return structuredClone(this.gateway.models);

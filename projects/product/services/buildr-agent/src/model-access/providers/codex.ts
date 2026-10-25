@@ -3,9 +3,9 @@ import type { ModelProvider, ModelProviderRuntime, ModelProviderObservation, Mod
 import { PrivateAccount, beginPkce, record, string, positive, type CredentialRecord } from './private-account.ts';
 
 const AUTH = 'https://auth.openai.com', BASE = 'https://chatgpt.com/backend-api', CLIENT = 'app_EMoamEEZ73f0CkXaXp7hrann', VERSION = '0.163.0';
-export interface CodexProviderOptions { fetch?: typeof fetch; callbackPort?: number; loginTimeoutMs?: number; }
+export interface CodexProviderOptions { owner?: {request(path:string,init?:RequestInit):Promise<Response>;inspect():Promise<import("../../contracts.ts").AccountObservation>;identity():Promise<string>}; fetch?: typeof fetch; callbackPort?: number; loginTimeoutMs?: number; }
 /** Explicit model-account login. Never reads ~/.codex or the desktop credential store. */
-export function createCodexModelProvider(options: CodexProviderOptions = {}): ModelProvider { return { id: 'codex', label: 'Codex / ChatGPT', async open(input) { return new CodexRuntime(new PrivateAccount(input.configRoot), options); } }; }
+export function createCodexModelProvider(options: CodexProviderOptions = {}): ModelProvider { return { id: options.owner?'native-codex':'codex', ...(options.owner?{connectionId:'codex'}:{}), label: 'Codex / ChatGPT', async open(input) { return new CodexRuntime(new PrivateAccount(input.configRoot), options); } }; }
 class CodexRuntime implements ModelProviderRuntime {
   readonly protocol = 'responses' as const;
   private account: PrivateAccount; private options: CodexProviderOptions; private fetch: typeof fetch;
@@ -28,6 +28,7 @@ class CodexRuntime implements ModelProviderRuntime {
     this.refreshing = work; try { return await work; } finally { if (this.refreshing === work) this.refreshing = undefined; }
   }
   private async request(path: string, init: RequestInit = {}, signal?: AbortSignal): Promise<Response> {
+    if(this.options.owner)return this.options.owner.request(path,{...init,signal:AbortSignal.any([this.lifetime.signal,signal??AbortSignal.timeout(15000)])});
     const credential = await this.credential(); if (!credential) return Response.json({ error: { code: 'model_login_required' } }, { status: 401 });
     const send = (value: CredentialRecord) => this.fetch(BASE + path, { ...init, headers: { ...this.headers(value), ...Object.fromEntries(new Headers(init.headers)) }, redirect: 'error', signal: AbortSignal.any([this.lifetime.signal, signal ?? AbortSignal.timeout(15000)]) });
     let response = await send(credential);
@@ -36,7 +37,8 @@ class CodexRuntime implements ModelProviderRuntime {
   }
   async inspect(): Promise<ModelProviderObservation> {
     try {
-      const credential = await this.credential(); if (!credential) return { status: 'not-authenticated', models: [] };
+      if(this.options.owner){const account=await this.options.owner.inspect();if(account.status!=='ready')return{status:account.status,models:[],label:account.label};}
+      else {const credential=await this.credential();if(!credential)return{status:'not-authenticated',models:[]};}
       const response = await this.request(`/codex/models?client_version=${VERSION}`);
       if (response.status === 401) { await response.body?.cancel(); return { status: 'expired', models: [], diagnostic: 'model_codex_login_expired' }; }
       if (!response.ok) { await response.body?.cancel(); throw new Error('model_codex_catalog_failed'); }
@@ -57,10 +59,11 @@ class CodexRuntime implements ModelProviderRuntime {
           if (tightest) quota = { available: true, observedAt: new Date().toISOString(), remainingPercent: tightest.remaining, ...(tightest.reset ? { resetsAt: new Date(tightest.reset * 1000).toISOString() } : {}), summary: 'ChatGPT 套餐上游报告额度' };
         } else await response.body?.cancel();
       } catch { /* Quota observation cannot invalidate an otherwise usable source. */ }
-      return { status: models.length ? 'ready' : 'failed', label: 'Codex / ChatGPT', models, quota, ...(!models.length ? { diagnostic: 'model_codex_catalog_empty' } : {}) };
+      return { status: models.length ? 'ready' : 'failed', label: 'Codex / ChatGPT', ...(this.options.owner?{identity:await this.options.owner.identity()}:{}), models, quota, ...(!models.length ? { diagnostic: 'model_codex_catalog_empty' } : {}) };
     } catch (error) { return { status: (error as Error).message === 'model_codex_login_expired' ? 'expired' : 'failed', models: [], diagnostic: (error as Error).message === 'model_codex_login_expired' ? 'model_codex_login_expired' : 'model_codex_observation_failed' }; }
   }
   async beginLogin(update: (value: LoginObservation) => void): Promise<void> {
+    if(this.options.owner)throw new Error('model_managed_account');
     await this.cancelLogin(); const active = { controller: new AbortController(), close: undefined as (() => Promise<void>) | undefined }; this.login = active; update({ state: 'initializing' });
     try {
       const previous = await this.account.read();

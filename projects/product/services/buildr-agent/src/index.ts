@@ -1,3 +1,6 @@
+import {createQoderModelProvider} from './model-access/providers/qoder.ts';
+import type {ModelProvider} from './model-access/contracts.ts';
+import {createHash} from 'node:crypto';
 import {ModelAccessError} from './model-access/contracts.ts';
 import {createModelAccess} from './model-access/application.ts';
 import {createDevinModelProvider} from './model-access/providers/devin.ts';
@@ -28,21 +31,41 @@ export function createAgentService(options: AgentServiceOptions) {
   const repository = new ConversationRepository(root);
   const events = new ConversationEvents(generation);
   const now = () => (options.now?.() ?? new Date()).toISOString();
-  const connections = new ConnectionApplication({ repository, root, executors: options.executors ?? createNativeExecutors(), environment: executorEnvironment(options.environment ?? process.env), generation, now, changed: (connection: ConnectionView) => events.publish({ type: 'connection', revision: connection.revision, payload: { connection } }) });
+  let linkedChanged: ((connection:ConnectionView)=>void)|undefined;
+  const connections = new ConnectionApplication({ repository, root, executors: options.executors ?? createNativeExecutors(), environment: executorEnvironment(options.environment ?? process.env), generation, now, changed: (connection: ConnectionView) => {events.publish({ type: 'connection', revision: connection.revision, payload: { connection } });linkedChanged?.(connection);} });
   const programManager = options.programManager ?? new NativeProgramManager(root, executorEnvironment(options.environment ?? process.env));
   const preparations = new PreparationApplication(connections, programManager, generation, now);
-  const models = createModelAccess({root: path.join(root, 'model-access'), providers: options.modelProviders ?? [createCodexModelProvider(), createDevinModelProvider(), createDeepSeekModelProvider({ownerFactory: async input => {
+  const owner=(id:string)=>({
+    async inspect(){if(!connections.get(id).enabled)return{status:'not-authenticated' as const};return(await connections.runtime(id)).inspectAccount();},
+    async identity(){const runtime=await connections.runtime(id);if(!runtime.modelIdentity)throw new Error('native_model_identity_unavailable');return runtime.modelIdentity();},
+    async request(path:string,init?:RequestInit){if(!connections.get(id).enabled)return new Response(null,{status:401});const runtime=await connections.runtime(id);if(!runtime.requestModel)throw new Error('native_model_bridge_unavailable');return runtime.requestModel(path,init,['/chat','/codex/responses','/anthropic/v1/messages'].includes(path)?models.accounts.read('native-'+id).identity:undefined);}
+  });
+  const dsh=owner('dsh');
+  const dshProvider=createDeepSeekModelProvider({ownerFactory:()=>({...dsh,beginLogin:async()=>{throw new Error('请在DSH账号中登录。');},cancelLogin:async()=>{},close:async()=>{},request:(url,init)=>dsh.request(new URL(url).pathname,init)})});
+  const nativeDsh:ModelProvider={...dshProvider,id:'native-dsh',label:'DSH / DeepSeek',connectionId:'dsh',async open(input){const runtime=await dshProvider.open(input);return{protocol:runtime.protocol,inspect:async()=>{const value=await runtime.inspect();return{...value,...(value.status==='ready'?{identity:await dsh.identity()}: {})};},beginLogin:u=>runtime.beginLogin(u),cancelLogin:()=>runtime.cancelLogin(),infer:i=>runtime.infer(i),close:()=>runtime.close()};}};
+  const linkedProviders=[createCodexModelProvider({owner:owner('codex')}),nativeDsh,createQoderModelProvider(owner('qoder'))].map(provider=>({...provider,async open(input:Parameters<ModelProvider['open']>[0]){const runtime=await provider.open(input);return{protocol:runtime.protocol,inspect:()=>runtime.inspect(),beginLogin:(u:Parameters<typeof runtime.beginLogin>[0])=>runtime.beginLogin(u),cancelLogin:()=>runtime.cancelLogin(),close:()=>runtime.close(),infer:async(i:Parameters<typeof runtime.infer>[0])=>{const identity=createHash('sha256').update(await owner(provider.connectionId!).identity()).digest('hex');if(models.accounts.read(provider.id).identity!==identity)throw new ModelAccessError('model_identity_conflict','账号身份已变化，请刷新模型。');return runtime.infer(i);}};}}));
+  const models = createModelAccess({root: path.join(root, 'model-access'), providers: options.modelProviders ?? [...linkedProviders,createCodexModelProvider(), createDevinModelProvider(), createDeepSeekModelProvider({ownerFactory: async input => {
     const bound = connections.get('dsh').executable;
     const catalog = await programManager.discover({provider:'dsh',...(bound?{executable:bound,boundExecutable:bound}:{}),signal:new AbortController().signal});
     const candidates = catalog.candidates.filter(candidate=>candidate.compatible);
     if(candidates.length!==1) throw new ModelAccessError('model_dsh_program_unavailable','请先在智能体程序中准备并选择准确的 DSH 程序。');
     return createDeepSeekAccountOwner({...input,executable:candidates[0]!.executable});
   }})], environment: executorEnvironment(options.environment ?? process.env)});
+  let discoveryVersion=0;let lastDiscovery=0;let discovery:Promise<void>|undefined;
+  const discover=async()=>{
+    if(options.modelProviders)return;
+    if(discovery)return discovery;
+    if(Date.now()-lastDiscovery<30000)return;
+    const observed=discoveryVersion;
+    discovery=(async()=>{await models.ensureLinked();for(const provider of linkedProviders)await models.accounts.check(provider.id);if(observed===discoveryVersion)lastDiscovery=Date.now();})().finally(()=>{discovery=undefined;});
+    return discovery;
+  };
+  linkedChanged=connection=>{discoveryVersion++;lastDiscovery=0;if(!connection.enabled||['not-authenticated','expired'].includes(connection.status)||connection.loginAttempt&&['initializing','waiting-browser'].includes(connection.loginAttempt.state))models.invalidate('native-'+connection.id);};
   const conversations = new ConversationApplication({ repository, connections, modelAccess: models, events, root, generation, now, host: options });
   let closed = false;
   return {
     generation,
-    models: { accounts: models.accounts, catalog: models.catalog },
+    models: { accounts: {...models.accounts,list:async()=>{await discover();return models.accounts.list();}}, catalog: {list:async()=>{await discover();return models.catalog.list();}} },
     connections: {
       list: () => ({ connections: connections.list() }),
       read: (id: string) => connections.get(id),

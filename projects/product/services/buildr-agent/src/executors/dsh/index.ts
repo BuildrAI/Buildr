@@ -1,6 +1,7 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, rm } from 'node:fs/promises';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
-import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import type { AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorRequest, ExecutorSendInput, LoginObservation, PermissionMode } from '../../contracts.ts';
 import { nativeBinding, bounded, findExecutable, inspectVersion, isolatedEnvironment, nativeHome, opaqueReference, parseReference, privateDirectories } from '../native-process.ts';
@@ -34,21 +35,24 @@ export class DshRuntime implements AgentRuntime {
   private host: Awaited<ReturnType<typeof launchDshHost>>;
   private client: DshClient;
   private gateway?: ExecutorGateway;
+  private modelBridge?: {key:string;addressFile:string};
   private constructor(bindingIdentity: string, host: Awaited<ReturnType<typeof launchDshHost>>, client: DshClient) { this.bindingIdentity = bindingIdentity; this.host = host; this.client = client; }
   static async open(options: ExecutorOpenOptions, ownerPatch?: string): Promise<DshRuntime> {
     options.signal?.throwIfAborted();
     const gateway = checkedGateway(options.gateway);
     const { home, temporary } = nativeHome(options.configRoot); const config = join(options.configRoot, 'dsh-home'); const agents = join(options.configRoot, 'dsh-agents-home');
     await privateDirectories(options.configRoot, home, temporary, config, agents);
-    const env = isolatedEnvironment(options.environment, home, temporary, { DSH_HOME: config, DSH_AGENTS_HOME: agents, DSH_TOOLS_MODE: 'native', ...(ownerPatch ? { BUILDR_DSH_OWNER_KEY: options.environment.BUILDR_DSH_OWNER_KEY } : {}), ...(gateway ? { BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) });
+    const modelBridge = !gateway&&!ownerPatch?{key:randomUUID(),addressFile:join(config,'model-bridge-'+randomUUID()+'.json')}:undefined;
+    const env = isolatedEnvironment(options.environment, home, temporary, { DSH_HOME: config, DSH_AGENTS_HOME: agents, DSH_TOOLS_MODE: 'native', ...(modelBridge?{BUILDR_DSH_OWNER_KEY:modelBridge.key}:{}), ...(ownerPatch ? { BUILDR_DSH_OWNER_KEY: options.environment.BUILDR_DSH_OWNER_KEY } : {}), ...(gateway ? { BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) });
     const executable = await findExecutable(options.executable, ['dsh', 'dsh.exe'], env); const version = await inspectVersion(executable, env, options.signal);
     if (!isCompatibleProgram('dsh', version)) throw new Error(`dsh_version_unsupported: requires ${nativeProgramPolicy('dsh').compatibility}`);
     const binding = await consumerBinding('dsh', executable, version, config, options);
-    const patch = gateway ? await writeGatewayPatch(config, gateway) : ownerPatch;
+    let patch = gateway ? await writeGatewayPatch(config, gateway) : ownerPatch;
+    if(modelBridge){patch=join(config,'buildr-native-model-owner.json');await writeFile(patch,JSON.stringify([{insert:[{id:'buildr-deepseek-model-owner',name:fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./model-source-plugin.ts':'./model-source-plugin.js',import.meta.url)),config:{addressFile:modelBridge.addressFile}}]}]),{mode:0o600});}
     const host = await launchDshHost(executable, env, options.configRoot, options.signal, patch);
     const runtime = new DshRuntime(binding.identity, host, host.client);
     runtime.bindingData = binding.data; runtime.metadata.version = version;
-    runtime.gateway = gateway;
+    runtime.gateway = gateway; runtime.modelBridge=modelBridge;
     try {
       host.client.ctx.typert.contexts.registerClient('agent', {
         identity: (candidate: any) => candidate?.[runtime.scopeKey],
@@ -85,6 +89,13 @@ export class DshRuntime implements AgentRuntime {
     if (state.status !== 'credential-stored') return { status: state.status === 'session-expired' ? 'expired' as const : 'not-authenticated' as const };
     const profile = dshValue(await this.client.remote.account.getProfile(this.metadata));
     return profile?.status === 'ready' ? { status: 'ready' as const, label: 'DeepSeek', loginMethod: 'DeepSeek 账号' } : { status: 'failed' as const, diagnostic: 'dsh_account_profile_unavailable' };
+  }
+  async modelIdentity():Promise<string> { const profile=dshValue(await this.client.remote.account.getProfile(this.metadata)); return 'dsh:'+String(profile?.value?.id??(()=>{throw new Error('dsh_account_identity_missing');})()); }
+  async requestModel(path:string,init:RequestInit={},expectedIdentity?:string):Promise<Response>{
+    if(!this.modelBridge||!['/models','/anthropic/v1/messages'].includes(path))throw new Error('dsh_model_target_invalid');
+    if(expectedIdentity&&createHash('sha256').update(await this.modelIdentity()).digest('hex')!==expectedIdentity)throw new Error('model_identity_conflict');
+    const address=JSON.parse(await readFile(this.modelBridge.addressFile,'utf8'));if(!Number.isInteger(address.port)||address.port<1||address.port>65535)throw new Error('dsh_bridge_unavailable');
+    return fetch('http://127.0.0.1:'+address.port+path,{...init,headers:{...Object.fromEntries(new Headers(init.headers)),authorization:'Bearer '+this.modelBridge.key},redirect:'error'});
   }
   async models() {
     if (this.gateway) return structuredClone(this.gateway.models);
@@ -311,5 +322,6 @@ export class DshRuntime implements AgentRuntime {
       await turn.stream?.dispose(); await turn.pump;
     }));
     await this.host.close();
+    if(this.modelBridge)await rm(this.modelBridge.addressFile,{force:true});
   }
 }

@@ -111,12 +111,26 @@ export class ModelAccessApplication {
     }
     return await runtime;
   }
-  list() { if (this.storageError) throw this.storageError; return { accounts: [...this.rows.values()].map(row => this.view(row)), providers: [...this.providers.values()].map(provider => ({ id: provider.id, label: provider.label })) }; }
+  async ensureLinked() {
+    await this.ready;
+    for (const provider of this.providers.values()) {
+      if (!provider.connectionId || this.rows.has(provider.id)) continue;
+      this.rows.set(provider.id, { id:provider.id, identity:randomUUID(), provider:provider.id, connectionId:provider.connectionId, label:provider.label, revision:randomUUID(),enabled:true,status:'not-authenticated',models:[] });
+      await this.save();
+    }
+  }
+  invalidate(id:string) {
+    const row=this.rows.get(id); if(!row)return;
+    this.operations.set(id,(this.operations.get(id)??0)+1);
+    row.status='not-authenticated';row.models=[];
+    for(const lease of [...this.leasesByIdentity.values()])if(lease.input.accountId===id)this.release(lease.view.identity);
+  }
+  list() { if (this.storageError) throw this.storageError; return { accounts: [...this.rows.values()].map(row => this.view(row)), providers: [...this.providers.values()].filter(provider=>!provider.connectionId).map(provider => ({ id: provider.id, label: provider.label })) }; }
   read(id: string) { return this.view(this.current(id)); }
   async add(input: { provider: string; label?: string }) {
     await this.ready; if (this.storageError) throw this.storageError;
     const provider = this.providers.get(input.provider);
-    if (!provider) throw new ModelAccessError('model_provider_unavailable', '此模型来源当前不可用。', 404);
+    if (!provider || provider.connectionId) throw new ModelAccessError('model_provider_unavailable', '此模型来源由已有账号自动发现。', 404);
     const row: ModelAccountView = { id: randomUUID(), identity:randomUUID(), provider: provider.id, label: input.label?.trim().slice(0, 160) || provider.label, revision: randomUUID(), enabled: true, status: 'not-authenticated', models: [] };
     this.rows.set(row.id, row); await this.save(); this.options.changed?.(this.view(row)); return this.view(row);
   }
@@ -126,6 +140,7 @@ export class ModelAccessApplication {
     try {
       const observation = await (await this.runtime(id)).inspect();
       if (this.operations.get(id) !== operation) return this.view(this.current(id));
+      if(observation.identity && row.identity!==digest(observation.identity)){row.identity=digest(observation.identity);for(const lease of [...this.leasesByIdentity.values()])if(lease.input.accountId===id)this.release(lease.view.identity);}
       row.enabled = true; row.status = observation.status; if(observation.label) row.accountLabel = observation.label; row.diagnostic = observation.diagnostic;
       if(observation.status==='ready') { row.models = structuredClone(observation.models); row.observedAt = this.now; }
       if(observation.quota) row.quota = observation.quota;
@@ -133,7 +148,7 @@ export class ModelAccessApplication {
     return await this.changed(row);
   }
   async login(id: string, input: { expectedRevision: string }) {
-    await this.ready; const row = this.current(id); conflict(row.revision, input.expectedRevision);
+    await this.ready; const row = this.current(id); if(row.connectionId)throw new ModelAccessError('model_managed_account','此账号复用原生登录，请在对应账号入口操作。'); conflict(row.revision, input.expectedRevision);
     if (row.loginAttempt && ['initializing', 'waiting-browser', 'checking'].includes(row.loginAttempt.state)) return this.view(row);
     const attemptId = randomUUID(); this.operations.set(id,(this.operations.get(id)??0)+1); row.identity=randomUUID(); row.status='not-authenticated';
     for(const lease of [...this.leasesByIdentity.values()]) if(lease.input.accountId===id) this.release(lease.view.identity);
@@ -170,7 +185,7 @@ export class ModelAccessApplication {
     const result = await this.changed(row); await this.runtimes.get(id)?.then(runtime => runtime.cancelLogin()).catch(() => {}); return result;
   }
   async disconnect(id: string, input: { expectedRevision: string }) {
-    await this.ready; const row = this.current(id); conflict(row.revision, input.expectedRevision); this.operations.set(id, (this.operations.get(id) ?? 0) + 1);
+    await this.ready; const row = this.current(id); if(row.connectionId)throw new ModelAccessError('model_managed_account','请在对应账号入口断开。'); conflict(row.revision, input.expectedRevision); this.operations.set(id, (this.operations.get(id) ?? 0) + 1);
     row.enabled = false; row.status = 'disconnected'; row.identity=randomUUID(); this.urls.delete(id);
     if (row.loginAttempt && ['initializing','waiting-browser','checking'].includes(row.loginAttempt.state)) row.loginAttempt.state = 'cancelled';
     for (const lease of [...this.leasesByIdentity.values()]) if (lease.input.accountId === id) this.release(lease.view.identity);
@@ -256,6 +271,7 @@ export class ModelAccessApplication {
 export function createModelAccess(options: ModelAccessOptions) {
   const application = new ModelAccessApplication(options);
   return {
+    ensureLinked: () => application.ensureLinked(), invalidate: (id:string) => application.invalidate(id),
     accounts: { list: () => application.list(), read: (id: string) => application.read(id), snapshot: (id:string) => application.read(id), add: (input: {provider:string;label?:string}) => application.add(input), login: (id:string,input:{expectedRevision:string}) => application.login(id,input), attempt: (id:string,attemptId:string) => application.attempt(id,attemptId), cancelLogin: (id:string,attemptId:string,input:{expectedRevision:string}) => application.cancelLogin(id,attemptId,input), check: (id:string,input:{expectedRevision?:string}={}) => application.check(id,input), disconnect: (id:string,input:{expectedRevision:string}) => application.disconnect(id,input) },
     catalog: { list: () => application.catalog() },
     leases: { create: (input:ModelLeaseInput) => application.createLease(input), release: (identity:string) => application.release(identity), updateRun:(identity:string,runId:string)=>application.updateRun(identity,runId) },

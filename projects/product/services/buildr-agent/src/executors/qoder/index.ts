@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import type { AccountObservation, AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorSendInput, ExecutorTitleInput, LoginObservation, PermissionMode } from '../../contracts.ts';
 import { NativeRpc, nativeBinding, bounded, closeOwnedProcess, findExecutable, inspectVersion, isolatedEnvironment, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories } from '../native-process.ts';
+import {readQoderIdentity,requestQoderModel} from '../../model-access/providers/qoder.ts';
 import { checkedGateway, consumerBinding, gatewayModel, gatewayEffort, type ExecutorGateway } from '../model-gateway.ts';
 const capabilities = { permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 export function createQoderExecutor(): AgentExecutor { return { descriptor: { id: 'qoder', label: 'Qoder', capabilities }, open: options => QoderRuntime.open(options) }; }
@@ -68,6 +69,11 @@ class QoderRuntime implements AgentRuntime {
   async inspectAccount(): Promise<AccountObservation> {
     try { return await this.rpc.call('account', { cwd: this.configRoot }, 40000); }
     catch { return { status: 'failed', diagnostic: 'qoder_account_not_observed' }; }
+  }
+  async modelIdentity():Promise<string> {return 'qoder:'+(await readQoderIdentity(join(this.configRoot,'qoder-config'))).userID;}
+  async requestModel(path:string,init:RequestInit={},expectedIdentity?:string):Promise<Response> {
+    if(this.gateway)throw new Error('qoder_native_account_required');
+    return requestQoderModel(join(this.configRoot,'qoder-config'),path,init,fetch,expectedIdentity);
   }
   async models() { return this.gateway ? structuredClone(this.gateway.models) : await this.rpc.call('models', { cwd: this.configRoot }, 40000); }
   async generateTitle(input: ExecutorTitleInput): Promise<string | undefined> {
