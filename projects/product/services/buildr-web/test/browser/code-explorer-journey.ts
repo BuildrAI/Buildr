@@ -249,8 +249,8 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     await folder.click();await page.locator('[data-file-path="src/file1.ts"]').waitFor();
     await folder.click();await page.locator('[data-file-path="src/file1.ts"]').waitFor({state:'hidden'});
     await folder.click();await page.locator('[data-file-path="src/file1.ts"]').waitFor();
-    await showPrimaryNavigation(page, 'code');await page.getByRole('button',{name:'展开导航',exact:true}).click();
-    await page.getByRole('button',{name:'收起导航',exact:true}).click();
+    await showPrimaryNavigation(page, 'code');await page.locator('.primary-navigation-rail button[data-nav="code"]').click();await page.locator('.primary-secondary-navigation.is-fixed:visible').waitFor();
+    await page.locator('.primary-navigation-rail button[data-nav="code"]').click();await page.locator('.primary-secondary-navigation.is-fixed').waitFor({state:'hidden'});await page.mouse.move(400,4);await page.locator('.primary-secondary-navigation.is-floating').waitFor({state:'hidden'});
     const geometry=await page.locator('.code-explorer-stage').evaluate((el:HTMLElement)=>{
       const stage=el.getBoundingClientRect(),parent=el.parentElement!.getBoundingClientRect(),tree=el.querySelector('.global-source-dock')!.getBoundingClientRect();
       const reader=el.querySelector('.code-file-stage')!.getBoundingClientRect();
@@ -263,7 +263,7 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     await page.locator('.file-editing-mode').getByText('编辑',{exact:true}).click();await read.text('# Explorer document');assert.equal(await page.locator(codeMarkdown+':visible').count(),0);
     const rawWidth=await page.locator(codeEditor+':visible').evaluate((el:HTMLElement)=>({width:el.getBoundingClientRect().width,parentWidth:el.parentElement!.clientWidth}));assert.ok(rawWidth.width>=rawWidth.parentWidth-1);
     await page.locator('.file-editing-mode').getByText('阅读',{exact:true}).click();await read.markdown('Explorer document');
-    await showPrimaryNavigation(page, 'code');await page.getByRole('button',{name:'展开导航',exact:true}).click();
+    await showPrimaryNavigation(page, 'code');await page.locator('.primary-navigation-rail button[data-nav="code"]').click();await page.locator('.primary-secondary-navigation.is-fixed:visible').waitFor();
   });
   await t.test('打开搜索结果和切换文件不重搜，主动刷新与改变范围会重搜',async()=>{
     await page.setViewportSize({width:1440,height:900});await page.goto(workspaceUrl+'/code/explorer');

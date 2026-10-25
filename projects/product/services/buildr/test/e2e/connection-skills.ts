@@ -54,6 +54,11 @@ fs.mkdirSync(screenshots, { recursive: true });
 try {
   const { url, initialWorkspaceId } = await host.ready;
   page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const returnToConnectionList = async () => {
+    // A drawer's right-edge controls can leave the pointer over the conversation rail.
+    await page!.locator('#connection-skills-search').hover();
+    await page!.locator('#agent-conversation-panel').waitFor({ state: 'hidden' });
+  };
   const browserErrors: string[] = []; let journeyScene = 'start'; page.on('pageerror', error => browserErrors.push(`${journeyScene}: ${error.stack || error.message}`));
   const legacyRequests: string[] = []; page.on('request', request => { if (/\/api\/v1\/workspaces\/[^/]+\/connections(?:\/|$)/u.test(new URL(request.url()).pathname)) legacyRequests.push(request.url()); });
   const queryRequests: { path: string; method: string; body: Record<string, unknown> | null }[] = [];
@@ -540,6 +545,7 @@ try {
   await page.locator('#connection-skill-name').fill('新增保存后关闭');
   await page.locator('#save-connection-skill-team').click();
   await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
+  await returnToConnectionList();
   await page.locator('#connection-skills-table').getByText('新增保存后关闭', { exact: true }).waitFor();
   const added = connections.list(workspaceRoot).instances.find((instance: any) => instance.name === '新增保存后关闭');
   assert.ok(added);
@@ -622,6 +628,7 @@ try {
   await page.locator('#connection-skill-test-result').filter({ hasText: '测试失败' }).waitFor();
   await page.locator('#save-connection-skill-team').click();
   await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
+  await returnToConnectionList();
   assertReads(refreshedReads, 'Updating a saved connection only replaces its row.');
   await assertRows(refreshedRowOrder, 'Editing a row keeps it in the same category position without reordering peers.');
   assert.equal(connections.get(workspaceRoot, created.id).instance.authentication.source, 'personal', 'Failed connection test does not block successful save or change personal authentication.');
@@ -651,6 +658,7 @@ try {
   assert.equal(await page.locator('#connection-skill-editor').isVisible(), true, 'Independent personal save never closes the whole editor.');
   await page.locator('#save-connection-skill-team').click();
   await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
+  await returnToConnectionList();
   assertReads(refreshedReads, 'Detail reread and subsequent saves remain local to the selected row.');
   await editOriginal();
 
@@ -672,6 +680,7 @@ try {
     await refreshRequestStarted;
     await page.locator('#save-connection-skill-team').click();
     await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
+  await returnToConnectionList();
     await page.locator('#connection-skills-table').getByText('保存响应优先', { exact: true }).waitFor();
     releaseRefresh(); await refreshRequestFinished;
     assert.equal(await page.locator('#connection-skills-table').getByText('保存响应优先', { exact: true }).count(), 1, 'An older explicit-refresh result cannot roll back a saved row.');
@@ -700,6 +709,7 @@ try {
   await page.locator('#connection-skill-personal-test-result').getByText('账号：fixture-refreshed-person', { exact: true }).waitFor();
   await page.locator('#save-connection-skill-team').click();
   await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
+  await returnToConnectionList();
   await editOriginal();
 
   const external = YAML.parse(fs.readFileSync(teamFile, 'utf8')); external.name = '另一入口修改'; fs.writeFileSync(teamFile, YAML.stringify(external));
@@ -740,6 +750,7 @@ try {
   await page.locator('#connection-skill-name').fill('独立接口与网站');
   await page.locator('#save-connection-skill-team').click();
   await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
+  await returnToConnectionList();
   let nacos = connections.list(workspaceRoot).instances.find((item: any) => item.name === '独立接口与网站');
   assert.equal(nacos.binding.configVersion, 2);
   assert.equal(nacos.config.apiBaseUrl, 'http://admin.example.invalid:8848/nacos');
@@ -751,6 +762,7 @@ try {
   await page.locator('#connection-skill-config-consoleUrl').fill('http://console.example.invalid:8080/');
   await page.locator('#save-connection-skill-team').click();
   await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
+  await returnToConnectionList();
   nacos = connections.get(workspaceRoot, nacos.id).instance;
   assert.equal(nacos.websiteUrl, 'http://console.example.invalid:8080/');
   assert.equal(await nacosRow.getByRole('link', { name: '打开网站', exact: true }).getAttribute('href'), nacos.websiteUrl, 'Saving an explicit website override immediately takes precedence.');
@@ -822,6 +834,7 @@ try {
   assert.equal(await page.locator('#connection-skill-personal-password').inputValue(), 'fixture-local-password');
   await page.locator('#save-connection-skill-team').click();
   await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
+  await returnToConnectionList();
   personalInstance = connections.get(workspaceRoot, personalInstance.id).instance;
   assert.equal(personalInstance.authentication.source, 'personal');
   assert.equal(personalInstance.authentication.personal.configured, true);
@@ -936,6 +949,7 @@ try {
   await page.unroute(managedCreateRoute);
   await page.locator('#save-connection-skill-team').click();
   await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
+  await returnToConnectionList();
   const managedUnauthenticated = connections.list(workspaceRoot).instances.find((item: any) => item.name === '外部授权配置保存后关闭');
   assert.ok(managedUnauthenticated, 'Explicit create saves the browser-authorized connection without requiring authentication.');
   assert.equal(managedUnauthenticated.authentication.personal.present, false);
@@ -974,6 +988,7 @@ try {
   await page.locator('#connection-skill-authorization-dirty').waitFor();
   await page.locator('#save-connection-skill-team').click();
   await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
+  await returnToConnectionList();
   const managedSavedRow = page.locator('#connection-skills-table').locator(`[data-row-key="${managedInstance.id}"]`);
   await managedSavedRow.getByText('授权后的非秘密草稿', { exact: true }).waitFor();
   assert.equal(connections.get(workspaceRoot, managedInstance.id).instance.name, '授权后的非秘密草稿');
@@ -993,6 +1008,7 @@ try {
   await page.unroute(managedUpdateRoute);
   await page.locator('#save-connection-skill-team').click();
   await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
+  await returnToConnectionList();
   await managedSavedRow.getByText('授权后的再次编辑', { exact: true }).waitFor();
   assert.equal(connections.get(workspaceRoot, managedInstance.id).instance.name, '授权后的再次编辑');
   assert.equal(managedAuthorizationRequests.length, 2, 'Explicit edits never restart authorization after the failed and successful authorization attempts.');

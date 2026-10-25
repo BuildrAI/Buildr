@@ -1,3 +1,5 @@
+import childProcess from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -144,4 +146,24 @@ test('untrusted whole-kernel queries deliver no batch bytes and release every de
     try { readVerifiedReadonlyBatch([f.request('left', 'a.md'), f.request('right', 'a.md')]).forEach(denied); if (fault === 'post-timeout') assert.ok(bodyReads > 0); else assert.equal(bodyReads, 0); opens.assertClosed(); }
     finally { probes.restore(); opens.restore(); reads.mock.restore(); }
   }
+});
+
+
+test('a delayed real kernel probe can still attest unchanged authorized files', { skip: process.platform !== 'darwin' }, t => {
+  const f = fixture(t); f.write('left/a.md', 'authorized');
+  const original = childProcess.execFileSync;
+  const delayedProbe = `
+    import {spawnSync} from 'node:child_process';
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,350);
+    const result=spawnSync('/usr/sbin/lsof',JSON.parse(process.argv[1]),{maxBuffer:256*1024});
+    if(result.error)throw result.error;
+    process.stdout.write(result.stdout);process.stderr.write(result.stderr);process.exitCode=result.status??1;
+  `;
+  const capture = t.mock.method(childProcess, 'execFileSync', ((file: any, args: any, options: any) => {
+    if (file !== '/usr/sbin/lsof') return original(file, args, options);
+    return original(process.execPath, ['--input-type=module', '-e', delayedProbe, JSON.stringify(args)], options);
+  }) as typeof childProcess.execFileSync);
+  syncBuiltinESMExports();
+  try { assert.equal(body(readVerifiedReadonlyBatch([f.request('left', 'a.md')])[0]!), 'authorized'); }
+  finally { capture.mock.restore(); syncBuiltinESMExports(); }
 });

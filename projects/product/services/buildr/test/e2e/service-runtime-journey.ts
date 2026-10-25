@@ -383,8 +383,17 @@ export async function runServiceRuntimeJourney({ page, runtime, workspaceRoot, w
     await logs.getByRole('button', { name: /复制匹配日志$/ }).click(); await page.getByText('日志已复制', { exact: true }).waitFor({ state: 'visible' });
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), `RuntimeFixture target ${REMOTE_URL}`); await capture(page, 'service-runtime-log-search.png');
     await page.locator('.ant-drawer-open .ant-drawer-footer').getByRole('button', { name: /关\s*闭/ }).click(); await logs.waitFor({ state: 'hidden' });
+    // Leaving the drawer near the conversation rail can open its hover preview.
+    // Move back to the service before opening a link beneath that preview.
+    await card(mainRun.id).getByText('主工作库', { exact: true }).hover();
+    await page.locator('#agent-conversation-panel').waitFor({ state: 'hidden' });
     const openLink = card(mainRun.id).getByRole('link', { name: /打开$/ }); assert.equal(await openLink.getAttribute('target'), '_blank'); assert.equal(new URL((await openLink.getAttribute('href'))!).href, new URL(mainRun.url).href);
-    const currentUrl = page.url(); const [opened] = await Promise.all([page.waitForEvent('popup'), openLink.click()]);
+    const currentUrl = page.url();
+    const [opened] = await Promise.all([page.waitForEvent('popup'), openLink.click()]).catch(async error => {
+      await capture(page, 'service-runtime-open-failed.png');
+      process.stderr.write(`[buildr-service-runtime-open] ${JSON.stringify({ href: await openLink.getAttribute('href'), pages: page.context().pages().map(item => item.url()) })}\n`);
+      throw error;
+    });
     try { await opened.waitForLoadState('domcontentloaded'); assert.equal(await opened.locator('#backend-target').innerText(), REMOTE_URL); } finally { await opened.close(); }
     assert.equal(page.url(), currentUrl, '打开服务时保留当前运行页');
     await openTask(); const empty = await taskDetail(); assert.equal(empty.runs.length, 0); assert.equal(empty.services.length, 2);

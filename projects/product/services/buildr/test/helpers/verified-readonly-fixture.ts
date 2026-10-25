@@ -26,7 +26,7 @@ export function captureProbes(t: test.TestContext, transform?: (bytes: Buffer, a
   const capture = t.mock.method(childProcess, 'execFileSync', ((file: any, args: any, options: any) => {
     const bytes = original(file, args, options);
     if (file !== '/usr/sbin/lsof') return bytes;
-    calls.push(args); assert.equal(options.timeout, 250); assert.equal(options.maxBuffer, 256 * 1024);
+    calls.push(args); assert.equal(options.timeout, 2000); assert.equal(options.maxBuffer, 256 * 1024);
     return transform ? transform(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes), args, calls.length) : bytes;
   }) as typeof childProcess.execFileSync);
   syncBuiltinESMExports();

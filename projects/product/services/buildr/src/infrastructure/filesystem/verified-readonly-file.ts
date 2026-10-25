@@ -28,7 +28,8 @@ function descriptorPaths(descriptors: number[]): Map<number, string> {
   }
   if (process.platform !== 'darwin') throw unavailable();
   // At most 32 held descriptors; bounded libproc output, without shell/PATH or DNS.
-  const bytes = execFileSync('/usr/sbin/lsof', ['-n', '-P', '-a', '-p', String(process.pid), '-d', descriptors.join(','), '-F0fn'], { timeout: 250, maxBuffer: 256 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
+  // Kernel probes can exceed 250 ms on a busy host; keep a bounded wait without treating scheduling delay as missing files.
+  const bytes = execFileSync('/usr/sbin/lsof', ['-n', '-P', '-a', '-p', String(process.pid), '-d', descriptors.join(','), '-F0fn'], { timeout: 2000, maxBuffer: 256 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
   const fields = new TextDecoder('utf-8', { fatal: true }).decode(bytes).split('\0');
   const paths = new Map<number, string>(), seen = new Set<number>(); let owner: number | null = null, descriptor: number | null = null;
   for (const raw of fields) {
