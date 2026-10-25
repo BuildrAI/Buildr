@@ -209,7 +209,7 @@ try {
   const verificationRecordHelp: any = contract.verificationRecordHelp;
   assert.match(verificationRecordHelp.stdout, /--expected-report <absent\|sha256-digest>/);
   assert.match(verificationRecordHelp.stdout, /只保存报告，不执行测试、Git、交付、Task完成或清理/);
-  const surfaceHeadings: any = {
+  const surfaceHeadings: Record<string, string> = {
     primary: 'Primary workspace commands:',
     'agent-machine': 'Agent machine commands:',
     maintenance: 'Product maintenance commands:',

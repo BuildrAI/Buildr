@@ -1,0 +1,119 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import process from 'node:process';
+import { execFileSync, spawnSync } from 'node:child_process';
+import test from 'node:test';
+
+const audit: any = path.resolve(import.meta.dirname, '../verification/openspec/spec-change-consistency.ts');
+
+function git(root: any, args: any): any  {
+  return execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+}
+
+function write(file: any, content: any): any  {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, content);
+}
+
+function fixture(t: any): any  {
+  const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-openspec-candidate-audit-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const productRoot: any = path.join(root, 'projects', 'product');
+  const spec: any = path.join(productRoot, 'openspec', 'specs', 'demo', 'spec.md');
+  write(spec, '# demo Specification\n\n## Purpose\n\nBaseline purpose.\n\n## Requirements\n\n### Requirement: Existing\nSystem MUST preserve the baseline.\n\n#### Scenario: normal\n- **WHEN** requested\n- **THEN** the behavior is provided\n');
+  git(root, ['init', '--initial-branch=dev']);
+  git(root, ['config', 'user.email', 'buildr-test@example.com']);
+  git(root, ['config', 'user.name', 'Buildr Test']);
+  git(root, ['add', '.']);
+  git(root, ['commit', '-m', 'baseline']);
+  return { root, productRoot, spec, base: git(root, ['rev-parse', 'HEAD']) };
+}
+
+function runAudit(value: any): any  {
+  return spawnSync(process.execPath, [audit], {
+    cwd: value.productRoot,
+    encoding: 'utf8',
+    env: { ...process.env, BUILDR_PROJECT_ROOT: value.productRoot, BUILDR_VERIFICATION_BASE: value.base },
+  });
+}
+
+test('候选审计拒绝没有active或archived Change delta的canonical变更', (t: any) => {
+  const value: any = fixture(t);
+  fs.appendFileSync(value.spec, '\n### Requirement: Candidate\nSystem MUST audit committed candidate changes.\n\n#### Scenario: normal\n- **WHEN** requested\n- **THEN** the behavior is provided\n');
+  git(value.root, ['add', '.']);
+  git(value.root, ['commit', '-m', 'candidate canonical drift']);
+  const result: any = runAudit(value);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /without a matching active or archived Change delta/);
+});
+
+test('候选审计允许相对基线仅维护Purpose正文', (t: any) => {
+  const value: any = fixture(t);
+  fs.writeFileSync(value.spec, fs.readFileSync(value.spec, 'utf8').replace('Baseline purpose.', 'Updated purpose.'));
+  git(value.root, ['add', '.']);
+  git(value.root, ['commit', '-m', 'maintain purpose']);
+  const result: any = runAudit(value);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /no canonical requirement changes/);
+});
+
+for (const changeState of ['archive', 'active'] as const) {
+  test(`候选审计接受无需tracked Receipt且可重放到当前canonical的${changeState} Change delta`, (t: any) => {
+    const value: any = fixture(t);
+    fs.appendFileSync(value.spec, '\n### Requirement: Candidate\nSystem MUST bind the convergence receipt.\n\n#### Scenario: normal\n- **WHEN** requested\n- **THEN** the behavior is provided\n');
+    const changeRoot: any = changeState === 'archive'
+      ? path.join(value.productRoot, 'openspec', 'changes', 'archive', '2026-07-27-candidate-change')
+      : path.join(value.productRoot, 'openspec', 'changes', 'candidate-change');
+    write(path.join(changeRoot, 'specs', 'demo', 'spec.md'), '## ADDED Requirements\n\n### Requirement: Candidate\nSystem MUST bind the convergence receipt.\n\n#### Scenario: normal\n- **WHEN** requested\n- **THEN** the behavior is provided\n');
+    git(value.root, ['add', '.']);
+    git(value.root, ['commit', '-m', 'converged candidate']);
+    const result: any = runAudit(value);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /demo associated with observed active or archived Change deltas/);
+    assert.equal(fs.existsSync(path.join(changeRoot, '.buildr', 'convergence-receipt.json')), false);
+  });
+}
+
+test('候选审计可重放先新增后移除且最终不存在的历史 capability', (t: any) => {
+  const value: any = fixture(t);
+  fs.appendFileSync(value.spec, '\n### Requirement: Candidate\nSystem MUST bind the retained canonical change.\n\n#### Scenario: normal\n- **WHEN** requested\n- **THEN** the behavior is provided\n');
+  const first: any = path.join(value.productRoot, 'openspec', 'changes', 'archive', '2026-07-27-candidate-change');
+  write(path.join(first, 'specs', 'demo', 'spec.md'), '## ADDED Requirements\n\n### Requirement: Candidate\nSystem MUST bind the retained canonical change.\n\n#### Scenario: normal\n- **WHEN** requested\n- **THEN** the behavior is provided\n');
+  write(path.join(first, 'specs', 'ephemeral', 'spec.md'), '## ADDED Requirements\n\n### Requirement: Temporary\nSystem MUST expose a temporary capability.\n\n#### Scenario: normal\n- **WHEN** requested\n- **THEN** the behavior is provided\n');
+  const second: any = path.join(value.productRoot, 'openspec', 'changes', 'archive', '2026-07-28-remove-ephemeral');
+  write(path.join(second, '.openspec.yaml'), 'schema: spec-driven\nretire_capabilities: true\n');
+  write(path.join(second, 'specs', 'ephemeral', 'spec.md'), '## REMOVED Requirements\n\n### Requirement: Temporary\n**Reason**: The temporary capability is no longer current.\n\n**Migration**: Remove it.\n\n#### Scenario: Remove temporary capability\n- **WHEN** the later Change converges\n- **THEN** the capability MUST be absent\n');
+  git(value.root, ['add', '.']);
+  git(value.root, ['commit', '-m', 'converged add then remove capability']);
+  const result: any = runAudit(value);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /demo associated with observed active or archived Change deltas/);
+});
+
+test('候选审计按 Requirement 依赖重放同日新增与后续纠偏', (t: any) => {
+  const value: any = fixture(t);
+  fs.appendFileSync(value.spec, '\n### Requirement: Candidate\nSystem MUST keep the corrected result.\n\n#### Scenario: normal\n- **WHEN** requested\n- **THEN** the behavior is provided\n');
+  const correction: any = path.join(value.productRoot, 'openspec', 'changes', 'archive', '2026-07-27-a-correction');
+  const introduction: any = path.join(value.productRoot, 'openspec', 'changes', 'archive', '2026-07-27-z-introduction');
+  write(path.join(correction, 'specs', 'demo', 'spec.md'), '## MODIFIED Requirements\n\n### Requirement: Candidate\nSystem MUST keep the corrected result.\n\n#### Scenario: normal\n- **WHEN** requested\n- **THEN** the behavior is provided\n');
+  write(path.join(introduction, 'specs', 'demo', 'spec.md'), '## ADDED Requirements\n\n### Requirement: Candidate\nSystem MUST keep the initial result.\n\n#### Scenario: normal\n- **WHEN** requested\n- **THEN** the behavior is provided\n');
+  git(value.root, ['add', '.']);
+  git(value.root, ['commit', '-m', 'converged same-day correction']);
+  const result: any = runAudit(value);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /demo associated with observed active or archived Change deltas/);
+});
+
+test('候选审计拒绝Archived Change delta与当前canonical不匹配', (t: any) => {
+  const value: any = fixture(t);
+  fs.appendFileSync(value.spec, '\n### Requirement: Candidate\nSystem MUST preserve a different result.\n\n#### Scenario: normal\n- **WHEN** requested\n- **THEN** the behavior is provided\n');
+  const archived: any = path.join(value.productRoot, 'openspec', 'changes', 'archive', '2026-07-27-candidate-change');
+  write(path.join(archived, 'specs', 'demo', 'spec.md'), '## ADDED Requirements\n\n### Requirement: Candidate\nSystem MUST bind the archived delta.\n\n#### Scenario: normal\n- **WHEN** requested\n- **THEN** the behavior is provided\n');
+  git(value.root, ['add', '.']);
+  git(value.root, ['commit', '-m', 'mismatched converged candidate']);
+  const result: any = runAudit(value);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /delta\/canonical mismatch/);
+});

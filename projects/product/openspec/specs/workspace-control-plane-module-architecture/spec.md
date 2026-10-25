@@ -7,7 +7,7 @@
 ## Requirements
 
 ### Requirement: Workspace Control Plane 必须有唯一业务 owner
-Buildr Service MUST 将 Workspace/Project/Service registry、onboarding、mutation recovery 与 declaration-intake application 编排归入 Workspace owner；Workspace owner MUST 不拥有 Agent Assets、Task、Verification 或 Public JSON Contract 的 writer。Workspace、Project 与 Service MUST保持各自独立的领域和Application边界。Workspace module MUST使用只包含已声明依赖的私有组合对象装配Repository、Application与Workspace Management Fence，并 MUST NOT 将内部能力写入进程级共享runtime或通过未声明的任意方法查找取得能力。
+Buildr Service MUST 将 Workspace/Project/Service registry、onboarding、mutation recovery 与 声明缺口发现的应用（Application）编排归入 Workspace owner；Workspace owner MUST 不拥有 Agent Assets、Task、Verification 或 Public JSON Contract 的 writer。Workspace、Project 与 Service MUST保持各自独立的领域和Application边界。Workspace module MUST使用只包含已声明依赖的私有组合对象装配Repository、Application与Workspace Management Fence，并 MUST NOT 将内部能力写入进程级共享runtime或通过未声明的任意方法查找取得能力。
 
 #### Scenario: Workspace application 组装
 - **WHEN** Buildr 启动 CLI、HTTP Host 或 Application payload

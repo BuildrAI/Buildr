@@ -10,7 +10,7 @@ function fixture(options: { backend?: boolean; failFrontend?: boolean; ambiguous
   const worktree = (code: string): ServiceWorktree => ({ id: code + '-task', path: '/task/' + code, label: '任务', main: false, branch: 'task', head: code + '-head', dirty: false, taskId: 'task', taskTitle: '测试任务' });
   const local = (code: string) => ({ command: ['node', 'server.js'], cwd: '.', profile: null, preferredPort: code === 'back' ? 8080 : 3000, portOverride: '--port', readiness: { kind: 'http' as const, path: '/' }, timeoutSeconds: 10,
     ...(code === 'front' ? { backends: [{ serviceCode: 'back', environmentVariable: 'PROXY_TARGET', remoteUrl: 'https://test.example.com' }] } : {}) });
-  const summary = (code: string): ServiceRuntimeSummary => ({ id: code, code, name: code, projects: ['project'], repositoryId: code, definition: { source: 'agent', verifiedAt: '2026-10-22', path: code + '/runtime.yml', local: local(code) }, definitionDiagnostic: null, runs: [], local: { activeCount: 0, activePorts: [] } });
+  const summary = (code: string): ServiceRuntimeSummary => ({ id: code, code, name: code, type: 'backend', projects: ['project'], repositoryId: code, definition: { source: 'agent', verifiedAt: '2026-10-22', path: code + '/runtime.yml', local: local(code) }, definitionDiagnostic: null, runs: [], local: { activeCount: 0, activePorts: [] } });
   const services = ['front', 'back'].map(summary), runs: ManagedRunRecord[] = [], calls: string[] = [];
   const worktrees = Object.fromEntries(['front', 'back'].map(code => [code, options.ambiguous && code === 'front' ? [worktree(code), { ...worktree(code), id: 'another' }] : [worktree(code), { ...worktree(code), id: code + '-other', taskId: 'other' }, { ...worktree(code), id: code + '-main', main: true, taskId: null }]]));
   const createRun = (code: string, mode?: 'local' | 'remote'): ManagedRunRecord => {
@@ -35,9 +35,9 @@ function fixture(options: { backend?: boolean; failFrontend?: boolean; ambiguous
       if (input.serviceCode === 'front' && (options.failFrontend || input.connection === 'local' && !runs.some(run => run.serviceCode === 'back' && run.taskId === 'task'))) throw Object.assign(new Error('前端启动失败或后端未就绪'), { code: 'service_runtime_backend_unavailable' });
       const run = createRun(input.serviceCode, input.connection); runs.push(run); return run;
     },
-  } as unknown as ServiceRuntimeApplication;
+  };
   const task = { taskId: 'task', title: '测试任务', scope: { projects: ['project'], services: [{ project: 'project', service: 'front' }, { project: 'project', service: 'back' }] } };
-  const app = createServiceTaskRuntimeApplication({ readTaskScope: () => task, catalog: { listServices: () => services.map(service => ({ ...service, modulePath: '' })) }, runtime,
+  const app = createServiceTaskRuntimeApplication({ readTaskScope: () => task, catalog: { listServices: () => services.map(service => ({ ...service, modulePath: '' })) }, runtime: runtime as unknown as ServiceRuntimeApplication,
     view: { overview: async () => ({ services, runs }) } as unknown as ServiceRuntimeView });
   if (options.backend) runs.push(createRun('back'));
   return { app, calls, runs, createRun, task, runtime, worktrees };

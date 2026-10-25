@@ -74,15 +74,15 @@ bindings:
 
 `task-finish/v1` 指导智能体（Agent）组合已有 Git、业务工具、任务记录和资源能力；不要求任务、候选、研发交接或旧执行运行。写入前检查对象、授权和范围，写入后回读结果，删除前检查归属与内容保全。内容检查复用仍适用的结果，不建立统一验证门禁。
 
-任务验证单独建模，是因为Project测试地图和开发完成后的Task验证报告需要稳定协作边界。`buildr.task-verification/v4`不执行测试：Skill指导Agent选择并直接调用项目工具；Project Verification Application维护`verification.yml`，Task Verification Application维护current报告。Project测试地图不进入`capabilities.yml`。
+`buildr.task-verification/v4` 保留既有应用及报告协议，默认由 `project-verification` 提供选择、实际执行和证据判断。`project-testing` 是测试代码与 `verification.yml` 内容的唯一维护者，原 Project Verification Application 继续承担安全读写，Task Verification Application 保存已有任务报告。项目测试地图不进入 `capabilities.yml`。
 
-顶层验证provider不是只有用户主动说“验证”才加载。用户直接要求测试、初始化或更新测试地图时由description发现；开发完成后，Agent独立读取Task、实际改动和`verification.yml`，选择并直接执行已有测试，再保存一份有意义的current报告。任务收尾不路由或解释Task Verification。
+用户可指定任意现有检查、类型、全量或相关范围，由 `project-verification` 根据 description 发现并执行，不要求正式任务或比较基线。开发按目标选齐相关四类检查；收尾按具体项目政策核对推送前完整证明，Buildr 产品要求四服务全量静态检查（Static Check）和单元测试（Unit Test）。有已有正式任务时按实际结果登记报告，无任务直接交付证据。
 
 `buildr.task-record/v4`是正式任务（Task）记录的薄能力，默认由 `task-manager` 提供。记录的 `brief` 保存独立 Markdown 说明，`intent` 保持一句话目标；正文写入使用已观察版本，详情与列表保持相同摘要而列表不携带正文。旧文件只通过显式产品动作导入并保留原文件，材料应用继续承载方案、实施和交付。todo可暂缺正文，只保存已接受意向，显式activate后才进入active；`open`为todo + active查询态。终态Task可登记固定本机复盘Markdown的SHA-256与`pending-decision|decided`，但复盘字段不保存正文、处置说明、action item、复盘来源或执行计划。Buildr Web只观察和有限维护已有Task，不创建或激活。
 
 Buildr不再提供统一任务环境能力。需要隔离Git位置时，Agent调用`buildr.git-worktree-provider/v1`；Project `preparation.yml`只说明真实准备入口，由Agent按需直接调用；Preview、Runtime和其他动态资源由创建它们的能力维护owner与清理。它们之间不共享Plan、Receipt、`ready`状态或总cleanup Application。
 
-`declaration-intake`不是capability provider，而是Preparation与Verification长期声明的Agent路由入口。它在注册、首次Task、入口变化或专业gap时只读发现候选和精确差异；已有授权覆盖的常规维护直接交给既有owner Skill，只有超出授权或涉及业务选择时才请用户决定；不新增统一contract、binding、store或writer。`capabilities.yml`和`commands.yml`只作为外部readiness诊断，Intake不安装或修改Skill/provider/CLI。
+不再交付独立声明接入技能（Skill）：测试建设与登记由 `project-testing` 直接维护，准备声明由 `buildr` 专业指引维护，选择执行与报告由 `project-verification` 负责。普通维护按现有授权连续完成，新增外部副作用、授权缺失或业务取舍反馈用户，不创建额外统一契约、绑定或中转状态。
 
 ### 3. Resolver 与 readiness
 

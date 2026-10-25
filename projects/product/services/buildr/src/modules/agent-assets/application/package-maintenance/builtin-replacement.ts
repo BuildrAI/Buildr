@@ -21,6 +21,7 @@ export function createBuiltinReplacement(deps: any): any  {
     restoreOutcomes,
     updateReceipt,
     targetRoot,
+    onReplaced = () => {},
   }: any): any  {
     const replacement = builtin.replaces || null;
     if (!replacement) return false;
@@ -52,6 +53,16 @@ export function createBuiltinReplacement(deps: any): any  {
     const predecessorDir = path.join(targetRoot, replacement.target);
     const predecessorSnapshot = builtinSnapshot(predecessorDir, 'skill');
     const predecessorReceipt = receiptByKey.get(builtinReceiptKey('skill', replacement.id)) || null;
+    // Shared official sources can disappear when the package resource set advances.
+    // Exact managed metadata plus its receipt proves a metadata-only replacement;
+    // any local directory still has to pass the ordinary byte-ownership check.
+    const sharedPredecessor = predecessor?.resource === `resources/workspace/${replacement.target}`
+      && predecessor?.source === 'buildr'
+      && (!predecessor.assetIdentity || predecessor.assetIdentity === `buildr:skill:${replacement.id}`)
+      && (!predecessor.sourceIdentity || predecessor.sourceIdentity === `package:${replacement.target}`)
+      && !predecessor.customizedFrom
+      && predecessorReceipt?.target === replacement.target;
+
     let status: any = null;
     let reason: any = null;
     if (!predecessor) {
@@ -75,6 +86,8 @@ export function createBuiltinReplacement(deps: any): any  {
         status = 'modified';
         reason = 'uninstalled predecessor still has live files';
       } else status = 'uninstalled';
+    } else if (!predecessorSnapshot && sharedPredecessor) {
+      status = 'installed';
     } else if (!predecessorSnapshot) {
       status = 'missing';
       reason = 'legacy predecessor source is missing';
@@ -109,15 +122,18 @@ export function createBuiltinReplacement(deps: any): any  {
     removeReceipt('skill', { id: replacement.id });
     if (status === 'uninstalled') {
       skillsManifest[predecessorRecord.index] = { ...desired, enabled: false, state: 'uninstalled', ...(predecessor.reason ? { reason: predecessor.reason } : {}) };
+      onReplaced({ predecessor, builtin });
       return true;
     }
     if (existsDirectory(predecessorDir)) {
       removeDirectory(predecessorDir);
       changed.push(replacement.target);
     }
-    if (copyDirectoryIfChanged(sourceDir, targetDir)) changed.push(builtin.target);
+    if (builtin.path) desired.resource = builtin.path;
+    else if (copyDirectoryIfChanged(sourceDir, targetDir)) changed.push(builtin.target);
     skillsManifest[predecessorRecord.index] = desired;
     updateReceipt('skill', builtin, newSnapshot);
+    onReplaced({ predecessor, builtin });
     recordRestoreOutcome('restored');
     return true;
   }

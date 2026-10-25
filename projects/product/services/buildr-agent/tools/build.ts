@@ -21,4 +21,4 @@ export function buildAgentService(serviceRoot = root): string {
   return path.join(serviceRoot, 'build');
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === import.meta.filename) buildAgentService();
+if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(import.meta.filename)) buildAgentService();

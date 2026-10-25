@@ -26,7 +26,7 @@ function fixture(t: test.TestContext, format = 'sha1') {
   gitAt(base, 'init', '--bare', '--initial-branch=main', '--object-format=' + format, remote); git('remote', 'add', 'origin', remote); git('push', '-u', 'origin', 'main');
   gitAt(base, 'clone', '--branch=main', remote, peer); gitAt(peer, 'config', 'user.name', 'Peer Fixture'); gitAt(peer, 'config', 'user.email', 'peer@example.com'); gitAt(peer, 'config', 'commit.gpgSign', 'false');
   let registered = root;
-  const app = createCodeApplication({ assetCatalog: () => ({ repositories: [{ id: 'repo', code: 'repo', name: 'Sync Fixture', source: { path: registered } }], services: [], projects: [] }), resolveSourceRoot: (_root, source) => source.path, readTaskScope: () => ({ projects: [], services: [] }), readGitWorktreeEvidence: () => null });
+  const app = createCodeApplication({ assetCatalog: () => ({ repositories: [{ id: 'repo', code: 'repo', name: 'Sync Fixture', source: { type: 'workspace', path: registered } }], services: [], projects: [] }), resolveSourceRoot: (_root, source) => source.path, readTaskScope: () => ({ projects: [], services: [] }), readGitWorktreeEvidence: () => null });
   const input = () => ({ repositoryId: 'repo', worktreeId: app.sourceControl(root).repositories[0].worktrees.find(item => item.isRegistered)!.worktreeId });
   const request = () => ({ ...input(), expectedRevision: app.syncContext(root, input()).revision });
   const peerCommit = (file = 'remote.txt', content = 'remote\n') => { write(file, content, peer); const head = commitAt(peer, 'remote change'); gitAt(peer, 'push', 'origin', 'main'); return head; };

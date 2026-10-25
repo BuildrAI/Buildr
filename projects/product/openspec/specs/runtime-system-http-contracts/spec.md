@@ -92,7 +92,7 @@ Buildr MUST 从实际 Buildr Web route inventory 与模块公开 operation catal
 - **AND** runtime router MUST 不依赖该离线检查才能启动
 
 ### Requirement: 生成 DTO 与发布形态必须保持一致
-Buildr MUST从同一Runtime/System Schema在构建前确定性生成后端与Buildr Web DTO，输出到精确ignored目录并绑定同一生成批次；并 MUST通过重复生成检查、Buildr Service typecheck/Contract/System tests、Buildr Web typecheck/正式build、隔离`web-dist`、Application Payload、npm tarball parity与Browser Smoke验证一致性。Buildr Web MUST NOT引入Ajv runtime，非Web CLI冷启动 MUST NOT依赖DTO generator。
+Buildr MUST从同一Runtime/System Schema在构建前确定性生成后端与Buildr Web DTO，输出到精确ignored目录并绑定同一生成批次；并 MUST通过重复生成检查、Buildr Service typecheck/Contract/System tests、Buildr Web typecheck/正式build、隔离`web-dist`、Application Payload、npm tarball parity与浏览器端到端检查（E2E）验证一致性。Buildr Web MUST NOT引入Ajv runtime，非Web CLI冷启动 MUST NOT依赖DTO generator。
 
 #### Scenario: Schema 与生成物发生漂移
 - **WHEN** Runtime/System Schema改变，或者两端DTO、Web dist或manifest不属于同一当前生成批次
@@ -102,7 +102,7 @@ Buildr MUST从同一Runtime/System Schema在构建前确定性生成后端与Bui
 #### Scenario: 正式发布入口验收
 - **WHEN** 当前source形成稳定Product Candidate并执行正式Candidate验证
 - **THEN** development checkout、Application Payload、npm tarball与本次隔离构建的Buildr Web MUST对相同Runtime/System HTTP contract表现一致
-- **AND** Browser Smoke MUST覆盖release-awareness、Publication与安全退出的代表性用户链路
+- **AND** 浏览器端到端检查（E2E） MUST覆盖release-awareness、Publication与安全退出的代表性用户链路
 
 ### Requirement: System Installation update operation 必须形成完整契约链路
 

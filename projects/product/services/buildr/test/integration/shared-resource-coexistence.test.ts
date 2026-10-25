@@ -77,6 +77,8 @@ function preparation(root:string,workspace:string,onRender:()=>void) {
     registryRepository:{workspaceRegistryPath:()=>path.join(root,'registry/workspaces.json'),isSharedRegistryScope:()=>false},
     listRegisteredWorkspaces:()=>({workspaces:[entry]}),resolveRegisteredWorkspace:()=>entry,
     assertWorkspaceManagementAccess:()=>({claimed:true}),
+    canonicalWorkspaceManagementIdentity:(target:string)=>{assert.equal(target,fs.realpathSync(workspace));},
+    ensureRegisteredTarget:(target:string)=>{assert.equal(target,fs.realpathSync(workspace));},
     renderRuntime:onRender,
     readWorkspaceRecord:()=>({workspace:entry.workspace}),
     readComponentsManifestForWrite:()=>({components:[{id:"buildr-self-bootstrap",enabled:true,state:"installed"}]}),
@@ -89,10 +91,12 @@ test('打开旧采用空间只刷新本机投射；自有源保留，重复打�
   let renders=0;const app=preparation(root,workspace,()=>{renders++;});
   const latest=publishPackageResources(next);
   const result=app.prepareWorkspaceForOpen('test');
+  assert.ok('ready' in result);
   assert.equal(result.ready,true);assert.equal(result.resourceRefresh?.status,'refreshed');
   assert.equal(readResourceAdoption(workspace)?.resourceSet,latest.id);
   assert.equal(fs.readFileSync(custom,'utf8'),'custom source');
-  assert.equal(app.prepareWorkspaceForOpen('test').resourceRefresh?.status,'current');
+  const again = app.prepareWorkspaceForOpen('test'); assert.ok('resourceRefresh' in again);
+  assert.equal(again.resourceRefresh?.status,'current');
   assert.equal(renders,1);
 });
 
@@ -101,11 +105,12 @@ test('投射失败仍可打开已准备工作空间，保留原采用并返回�
   let failed=true;const app=preparation(root,workspace,()=>{if(failed)throw new Error('example attachment damaged');});
   publishPackageResources(next);
   const result=app.prepareWorkspaceForOpen('test');
+  assert.ok('ready' in result);
   assert.equal(result.ready,true);assert.equal(result.resourceRefresh?.status,'failed');
   assert.equal(validateWorkspaceHttp(WORKSPACE_HTTP_SCHEMAS.preparationOpenResponse.$id,result,'workspace.preparation.open','response'),result);
   assert.match(result.resourceRefresh?.message||'',/attachment damaged/);
   assert.equal(readResourceAdoption(workspace)?.resourceSet,first.id);
-  failed=false;assert.equal(app.prepareWorkspaceForOpen('test').resourceRefresh?.status,'refreshed');
+  failed=false;const restored=app.prepareWorkspaceForOpen('test');assert.ok('resourceRefresh' in restored);assert.equal(restored.resourceRefresh?.status,'refreshed');
 });
 
 test('显式发布也拒绝较低版本和较早候选回退', t => {
@@ -123,13 +128,14 @@ test('自举工作空间重试仅刷新投射，不再被随包摘要锁死', as
   let renders=0;const app=preparation(root,workspace,()=>{renders++;});
   const latest=publishPackageResources(next);
   const result=await app.prepareRegisteredWorkspace({rootPath:fs.realpathSync(workspace),workspaceId:'test'});
+  assert.ok('workspaceId' in result);
   assert.equal(result.workspaceId,'test');assert.equal(renders,1);
   assert.equal(readResourceAdoption(workspace)?.resourceSet,latest.id);
 });
 
 test('真实隔离进程：旧安装消费后，打开工作空间刷新当前共享技能', {timeout:90000}, () => {
   const service=path.resolve(import.meta.dirname,'../..');
-  const result=spawnSync(process.execPath,[path.join(service,'tools/development/run-isolated-workspace-smoke.ts'),'--script',path.join(service,'tools/development/shared-resource-coexistence-smoke.ts')],{cwd:service,env:process.env,encoding:'utf8',timeout:85000,maxBuffer:4*1024*1024});
+  const result=spawnSync(process.execPath,[path.join(service,'tools/development/run-isolated-workspace-check.ts'),'--script',path.join(service,'tools/development/shared-resource-coexistence-check.ts')],{cwd:service,env:process.env,encoding:'utf8',timeout:85000,maxBuffer:4*1024*1024});
   assert.equal(result.status,0,result.stderr+result.stdout);
   assert.match(result.stdout,/"status":"passed"/);assert.match(result.stdout,/"cleanup":"cleaned"/);
 });

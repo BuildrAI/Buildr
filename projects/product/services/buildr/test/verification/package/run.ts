@@ -26,7 +26,7 @@ if (!selector || selector === '--help' || selector === '-h') {
   try {
     selectPackageVerifiers(selector);
     const result: any = spawnSync(process.execPath, [
-      path.join(productRoot, 'tools/development/run-isolated-workspace-smoke.ts'),
+      path.join(productRoot, 'tools/development/run-isolated-workspace-check.ts'),
       '--script', path.join(productRoot, 'bin', 'buildr.mjs'), '--', 'package', 'check',
     ], {
       cwd: productRoot,

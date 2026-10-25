@@ -83,6 +83,7 @@ export function collectVerificationSourceIdentity(productRoot: any, options: any
 
 function normalizedSteps(results: any): any  {
   return results.map((result: any) => ({
+    ...(result.id ? { id: result.id } : {}),
     name: result.name,
     status: result.status,
     exitCode: Number(result.exitCode ?? 0),
@@ -107,6 +108,7 @@ function normalizedSteps(results: any): any  {
     ...(result.processCleanup ? { processCleanup: result.processCleanup } : {}),
     ...(result.phases?.length ? { phases: result.phases } : {}),
     ...(result.testContextRuntime ? { testContextRuntime: result.testContextRuntime } : {}),
+    ...(result.preparations ? { preparations: result.preparations } : {}),
   }));
 }
 
@@ -122,6 +124,7 @@ export function createVerificationTimingSummary(options: any): any  {
       finishedAt: new Date(options.finishedAt).toISOString(),
     },
     source: options.source,
+    ...(options.coverage ? { coverage: options.coverage } : {}),
     steps,
     totalDurationMs: Number(options.finishedAt - options.startedAt),
     environment: {

@@ -1,82 +1,38 @@
 schemaVersion: buildr.project-preparation/v1
 entries:
-  - id: buildr-agent.npm-ci
-    title: 安装独立智能体服务的锁定依赖
-    scope:
-      kind: service
-      service: buildr-agent
-    cwd: services/buildr-agent
-    executable: ../buildr/tools/development/run-development-npm
-    args: [ci, --ignore-scripts]
-  - id: buildr-agent.build
-    title: 编译独立智能体服务的公开包入口
-    scope:
-      kind: service
-      service: buildr-agent
-    cwd: services/buildr-agent
-    executable: ../buildr/tools/development/run-development-npm
-    args: [run, build]
   - id: buildr.npm-ci
-    title: Install Buildr CLI dependencies
-    scope:
-      kind: service
-      service: buildr
+    title: 安装 Buildr 主体锁定依赖
+    scope: {kind: service, service: buildr}
     cwd: services/buildr
     executable: tools/development/run-development-npm
     args: [ci, --install-links]
   - id: buildr-web.npm-ci
-    title: Install Buildr Web dependencies
-    scope:
-      kind: service
-      service: buildr-web
+    title: 安装 Buildr Web 锁定依赖
+    scope: {kind: service, service: buildr-web}
     cwd: services/buildr-web
     executable: ../buildr/tools/development/run-development-npm
     args: [ci]
+  - id: buildr-agent.npm-ci
+    title: 安装 Buildr 智能体服务锁定依赖
+    scope: {kind: service, service: buildr-agent}
+    cwd: services/buildr-agent
+    executable: ../buildr/tools/development/run-development-npm
+    args: [ci, --ignore-scripts]
+  - id: dsh-plugin.npm-ci
+    title: 安装 DSH 插件源码锁定依赖
+    scope: {kind: service, service: dsh-plugin}
+    cwd: services/dsh-plugin
+    executable: ../buildr/tools/development/run-development-npm
+    args: [ci, --ignore-scripts]
+  - id: buildr-agent.build
+    title: 编译智能体服务公开包入口
+    scope: {kind: service, service: buildr-agent}
+    cwd: services/buildr-agent
+    executable: ../buildr/tools/development/run-development-npm
+    args: [run, build]
   - id: buildr.browser-chromium
-    title: 准备 Playwright 配套 Chromium（无桌面窗口）
-    scope:
-      kind: service
-      service: buildr
+    title: 准备 Playwright 配套 Chromium
+    scope: {kind: service, service: buildr}
     cwd: services/buildr
     executable: tools/development/run-development-npm
-    args: [run, test:browser:install]
-  - id: buildr.source-runtime
-    title: Prepare Buildr source runtime
-    scope:
-      kind: service
-      service: buildr
-    cwd: services/buildr
-    executable: tools/development/run-development-npm
-    args: [run, candidate:prepare, --, --profile, source-runtime]
-  - id: buildr.frontend
-    title: 准备独立前端逻辑验证
-    scope:
-      kind: service
-      service: buildr-web
-    cwd: services/buildr
-    executable: tools/development/run-development-npm
-    args: [run, candidate:prepare, --, --profile, frontend]
-  - id: buildr.browser-artifact
-    title: 准备候选产物核心浏览器验收
-    scope:
-      kind: service
-      service: buildr
-    cwd: services/buildr
-    executable: tools/development/run-development-npm
-    args: [run, candidate:prepare, --, --profile, browser-artifact]
-  - id: buildr.candidate-artifact
-    title: Prepare Buildr Candidate artifact builder
-    scope:
-      kind: service
-      service: buildr
-    cwd: services/buildr
-    executable: tools/development/run-development-npm
-    args: [run, candidate:prepare, --, --profile, artifact]
-  - id: buildr.artifact-consumer
-    title: Prepare Buildr artifact consumer
-    scope:
-      kind: service
-      service: buildr
-    cwd: services/buildr
-    executable: tools/development/run-development-npm
-    args: [run, candidate:prepare, --, --profile, consumer]
+    args: [run, browser:prepare]

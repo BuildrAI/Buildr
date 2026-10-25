@@ -1,7 +1,9 @@
 /** Exercise the actual hover/fixed navigation modes without a hidden sidebar assumption. */
 export async function showPrimaryNavigation(page: any, area: 'code' | 'workspace' | 'workbench') {
   const trigger = page.locator('.primary-navigation-rail button[data-nav="' + area + '"]');
-  if (await page.locator('.primary-secondary-navigation.is-fixed:visible').count()) await trigger.click();
+  if (await page.locator('.primary-secondary-navigation.is-fixed:visible').count()) {
+    if (await page.locator('.primary-navigation').getAttribute('data-fixed-area') !== area) await trigger.click();
+  }
   else {
     // A prior navigation can close the preview while the pointer remains on
     // its trigger. Leave first so this is a real new hover, as a user would do.

@@ -14,7 +14,7 @@ import { resolveCandidateExecutionContext } from '../verification/candidate-ci-e
 const hash = (value: unknown) => `sha256-${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
 const context = { sourceCommit: 'a'.repeat(40), sourceTree: 'b'.repeat(40), purpose: 'candidate' };
 const descriptor = { id: 'runtime-macos', kind: 'shard', runner: 'macos', requiresArtifact: true,
-  platformScope: { kind: 'platform', runners: ['macos'] }, steps: [{ id: 'release-tarball-smoke' }] };
+  platformScope: { kind: 'platform', runners: ['macos'] }, steps: [{ id: 'release-tarball-consumption' }] };
 
 test('artifact directory import reads original evidence and does not adopt aggregate claims', t => {
   const original = { schemaVersion: 'buildr.candidate-ci-evidence/v2', kind: 'shard', id: 'runtime-macos',

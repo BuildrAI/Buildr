@@ -33,7 +33,7 @@ export const releaseExecutorRecoveryPaths = new Set([
   ...['release-executor-recovery', 'package-release-operation', 'package-publication-evidence', 'plugin-hosted-release', 'release-authority-cli', 'release-convergence', 'publication-effects', 'package-artifact-observation']
     .map(name => `${buildr}test/integration-candidate-release/${name}.test.ts`),
   ...['registry', 'planner', 'candidate-ci'].map(name => `${buildr}test/verification/${name}.ts`),
-  `${buildr}test/contract/release-authority.test.ts`, `${buildr}test/contract/open-source-release.test.ts`,
+  `${buildr}test/unit/release-authority.test.ts`, `${buildr}test/static/open-source-release.test.ts`,
   `${plugin}tools/buildr-peer.ts`, `${plugin}tools/verify-buildr-plugin-pair.ts`,
   'skills/buildr-release/scripts/dsh-plugin/release-workflow.ts', 'skills/buildr-release/scripts/dsh-plugin/trusted-publish.ts',
   `${plugin}test/unit/buildr-pair.test.ts`, `${plugin}test/unit/buildr-peer.test.ts`,

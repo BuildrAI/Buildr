@@ -159,7 +159,7 @@ documentSections:
         title: "Buildr 自身如何测试"
         summary: "理解 Buildr 自测的选择、执行、隔离与候选验证范围。"
       - location: scope
-        path: services/buildr/test/browser-smoke/README.md
+        path: services/buildr/test/e2e/README.md
         title: "浏览器测试：准备与运行"
         summary: "准备测试浏览器并运行已有入口，了解缓存和隔离边界。"
       - location: scope
@@ -698,6 +698,9 @@ artifacts:
       - project-services-ui
       - asset-detail-ui
       - asset-tests
+      - asset-catalog-tests
+      - asset-registration-tests
+      - asset-repository-tests
       - scope-rules
       - project-terms
       - current-knowledge-maintenance
@@ -708,7 +711,7 @@ artifacts:
       - composition-reader
       - composition-view
       - composition-query
-    observedDigest: 3242eadf297eaf5d8bcc2145df1bfb805152566a3a74eeb229c2d7b0eca7cf95
+    observedDigest: 310c6023eb89b757815b3c0c4ee897a4f1e490d517add81298ba43a031ab77b2
     files:
       - file-project-relations-map
       - file-project-relations-article
@@ -1050,7 +1053,7 @@ artifacts:
       - task-git-method
       - task-commits-contract
       - public-json-contracts
-    observedDigest: c818f820d85299e8b8cd4d6f3c2e1d1109e981c78e2added1716e5db7d6666b0
+    observedDigest: ee3995808d3ade57f9ce839680e94ad2ca8792043d2438b303a5af4408fdcbdb
     files:
       - task-source-2026-08-30-parent-child-task-audit-b28c38
       - task-file-task-system-md-d14898
@@ -1155,7 +1158,7 @@ artifacts:
       - verification-file-9894349f
       - verification-source-a9829f3f69
       - verification-file-8c3c96dd
-    observedDigest: 21affd27b3e912c6ae6c8d7b1803a3c23930d321efbd4c7923f0816c2e270028
+    observedDigest: 7fe92c9eef48a9fe5723847b8c6202bef20380e6bbb3dc785c4ffde6923ca335
     files:
       - verification-file-263d3698
       - verification-file-9894349f
@@ -1188,7 +1191,7 @@ artifacts:
       - task-source-task-verification-application-68479e
       - task-source-task-verification-4ea021
       - task-source-task-verification-repository-470799
-    observedDigest: 5362e373dcbc874dca21794990f0f61b7e433b39af4383684b4346a66d48b181
+    observedDigest: aab84bf736d639d0c8f0323db4df100b2ea5f5e207e76909e8e199c3cb5afae6
     graphDigest: 0ac9549dcff1fe26866e1f012c908bbaa9e9040c86734d66665c217d0c166575
     files:
       - verification-file-263d3698
@@ -1234,7 +1237,7 @@ artifacts:
       - verification-source-03659a2597
       - verification-source-ab9c61c2bd
       - verification-product-map-file
-    observedDigest: 7981b849f9c081bd4fec8a6a29fd0d2a15e9433d8278c384dd36b64ad5db6659
+    observedDigest: b79ecb13e5dcecd24c462ad79c3e32fcc172518d86b584beb120c2e96d3860c8
     files:
       - verification-file-263d3698
       - verification-file-9894349f
@@ -1249,6 +1252,8 @@ artifacts:
     objects:
       - verification-product-tools
     sources:
+      - verification-test-type-config
+      - verification-plugin-test-types
       - verification-local-source
       - verification-candidate-round
       - verification-platform-boundaries
@@ -1275,7 +1280,7 @@ artifacts:
       - verification-ref-73fbe375
       - verification-installed-package
       - verification-ref-e568f1e4
-    observedDigest: 4c784fd3d8eee8ce6b7bfc60bef19d40c414d611183c18cf3b2e9871fbde51f4
+    observedDigest: fdd7f3c77912b99edbe77444c4b607d19cde89f571f260b9782d3b39543ccfc7
     files:
       - verification-file-263d3698
       - verification-file-9894349f
@@ -1290,6 +1295,8 @@ artifacts:
     objects:
       - verification-product-tools
     sources:
+      - verification-test-type-config
+      - verification-plugin-test-types
       - verification-local-source
       - verification-platform-boundaries
       - verification-local-artifact
@@ -1351,7 +1358,7 @@ artifacts:
       - verification-ref-73fbe375
     files:
       - verification-product-map-file
-    observedDigest: a1f0e8f527d3e36da2f3901f5ffb84b11beba906cac35db7b16af19ad1191195
+    observedDigest: 2b2f0075f80ed1f7cb3f04181b8f76af02297eacdb19c8c41a855817bc4ee17f
   - id: verification-context-guide
     title: Node.js 测试上下文：复用、隔离与生命周期
     kind: document
@@ -1642,7 +1649,7 @@ sources:
     title: 通用与本机平台原包检查
     kind: code
     path: services/buildr/test/verification/artifact.ts
-    summary: 显式消费同一原包，独立选择通用与本机平台检查，分别保存最低和当前 Node 的真实执行证明，不重新制包。
+    summary: 显式消费同一原包，独立选择通用检查与当前操作系统差异，分别保存最低和当前 Node 的真实执行证明，不重新制包。
   - id: verification-artifact-reuse
     title: 原包检查证明交接与复用
     kind: code
@@ -2188,7 +2195,7 @@ sources:
     kind: evidence
     path: services/buildr/resources/manifest.yml
     summary: Buildr 随包工作资产的资源登记与交付范围。
-    observedDigest: f8eb9fa95e8448907b2a1f2279104331d366cb5a82effb73a1c558c7c87042a5
+    observedDigest: 0895067a25be3976f0004855c282ea4e24cba1a4624e2129931ff10c27a0122f
   - id: skill-source-2
     title: 投射规范
     kind: spec
@@ -2397,19 +2404,19 @@ sources:
     kind: code
     path: services/buildr/test/unit/verification-changed-paths.test.ts
     summary: 以真实源码路径验证必要步骤被选中；地图模块采用稳定职责范围，新增位置解析与命令入口也纳入声明回归。
-    observedDigest: 7afa4530524d3bf97c8ce6cf254aca508e4e776df86a3c7a073aad45a85b71a4
+    observedDigest: 848587f6c321f0495fbab3408aaafaea2d4c25596161f2d24e961452f0f23d15
   - id: verification-entrypoints
     title: 产品完整入口与声明范围契约
     kind: code
-    path: services/buildr/test/contract/verification-entrypoints.test.ts
-    summary: 核对 Buildr 自身公开测试入口、集成与系统测试族的范围及真实命令，不把这些命令强加给用户项目。
-    observedDigest: 70a9b72382ceb1c21687a2c10c9e47f1666f0cad55191c18a085cb358dba597e
+    path: services/buildr/test/static/verification-entrypoints.test.ts
+    summary: 核对 Buildr 自身公开测试入口、四服务与四类检查的完整范围及真实命令，不把这些命令强加给用户项目。
+    observedDigest: 488ed1b320d92285d464ef205f7fe99f63f8ce8cce0d5f73e48be2cc9f10e5af
   - id: verification-installed-package
     title: 安装包中的地图与报告行为
     kind: code
-    path: services/buildr/test/integration/application-payload-release.test.ts
+    path: services/buildr/test/e2e/application-payload-release.test.ts
     summary: 真实构建、离线安装后验证外部服务登记、地图位置解析与报告读写，证明能力不依赖开发源码目录。
-    observedDigest: e82bd53adf982bb50a74e1c6f653cc7b3018a66b0cc7e834232128d137f7373d
+    observedDigest: e6187ac51575c58d184e6b5db23ca773fce0885578a340dcbd09408b677b9518
   - id: catalog-query
     title: 知识目录查询与版本分页
     kind: code
@@ -2600,7 +2607,32 @@ sources:
     title: 关系与分支回归依据
     kind: evidence
     path: services/buildr/test/integration/asset-relationships.test.ts
-    observedDigest: 7894f7978ea51af7c67b4695beeffb704c02adee81fef9f5fedb1d1f8dce0568
+    observedDigest: 9b6e98689fe399979484bba3ce1679731a732caf70efdea5dc0b7ff7f92c7288
+  - id: asset-catalog-tests
+    title: 目录与迁移回归依据
+    kind: evidence
+    path: services/buildr/test/integration/asset-catalog-lifecycle.test.ts
+    observedDigest: 661fc3bf63e7aabe3039ede222cd6d32dad0d863517d7f756cf01cd68910fab1
+  - id: asset-registration-tests
+    title: 真实目录登记回归依据
+    kind: evidence
+    path: services/buildr/test/integration/asset-registration.test.ts
+    observedDigest: 133dd84ae965a2ffaf65e5943816999f14903e53eb070bc50d0cb1f8eaa14813
+  - id: asset-repository-tests
+    title: 代码库与分支变更回归依据
+    kind: evidence
+    path: services/buildr/test/integration/asset-repository-mutations.test.ts
+    observedDigest: 59ddd79fc16eba26d044d519ae6259e1bb4d52031127031fc95c3f7ceed6d341
+  - id: verification-test-type-config
+    title: 主体网页与智能体测试类型配置
+    kind: code
+    path: services/buildr/tsconfig.tests.json
+    observedDigest: 36c7e8a9dc293769d98e6439fc64d871a056df6e3e0ad255e7839f685d0003e2
+  - id: verification-plugin-test-types
+    title: 插件宿主端与客户端测试类型检查
+    kind: code
+    path: services/dsh-plugin/tools/testing/check-test-types.ts
+    observedDigest: ef67612a0780cdb3423c00a9bfb6e8f516b3d9068de3255c7d5e6ef344207ecc
   - id: scope-rules
     title: 工作空间作用域规则
     kind: evidence
@@ -2793,7 +2825,7 @@ sources:
     kind: evidence
     path: knowledge/code-map/project-service-repositories.md
     summary: 这份文件保存《关系维护与代码定位的实现地图》的职责、规范和实现位置地图，与网页阅读使用同一正文。它是理解事实的成果，不替代规范或源码。
-    observedDigest: 3242eadf297eaf5d8bcc2145df1bfb805152566a3a74eeb229c2d7b0eca7cf95
+    observedDigest: 310c6023eb89b757815b3c0c4ee897a4f1e490d517add81298ba43a031ab77b2
   - id: file-project-relations-diagram
     title: 项目、服务与代码库的引用关系 · 展示文件
     kind: evidence
@@ -2811,7 +2843,7 @@ sources:
     kind: spec
     path: openspec/specs/agent-task-workflows/spec.md
     summary: 约束技能（Skill）协作、任务分流和默认隔离；工作树（Worktree）只管理位置与删除安全，相关检查与同步由适用能力负责。
-    observedDigest: 774a690ce8804a7e49bce4f2beb055302866bfa7ce21653a80bc424ccea8e353
+    observedDigest: a4115d1475efd3fc7b8d9222d5e0e5a15f061b44673d7a543efa4a29fef2dcaa
   - id: task-source-module-19a342
     title: 任务能力装配
     kind: code
@@ -3091,15 +3123,15 @@ sources:
     summary: 按真实对象与风险完成方案或结果审阅，使用当前摘要保存独立结论。
     observedDigest: 0bcdd6f7b2e982c861cc799caafd6910ad5e4a14691aa3037c455633f4bb58fb
   - id: task-source-skill-0ea6ac
-    title: 任务验证（task-verification）
+    title: 项目验证（project-verification）
     kind: code
-    path: services/buildr/resources/workspace/skills/buildr/task-verification/SKILL.md
+    path: services/buildr/resources/workspace/skills/buildr/project-verification/SKILL.md
     summary: 指导智能体（Agent）选择并执行已有检查，核对适用性后保存有意义的任务报告。
-    observedDigest: b764cd62c824170dfe58086e251de7f8cd2db4b3efca5b075b9e176f90b25b46
+    observedDigest: 5540660f66367f7bcd676c2f6fd9ff118a06d10a79da1b6732c8fa777ca4bc1f
   - id: task-source-task-record-product-test-2e0e74
     title: 任务记录产品回归
     kind: evidence
-    path: services/buildr/test/system/task-record-product.test.ts
+    path: services/buildr/test/e2e/task-record-product.test.ts
     summary: 覆盖任务动作、四态、引用、父子关系、更正与并发版本保护。
     observedDigest: 6e73aac7b62d813e338307c07bcc065c00ea0d689110c89bc8c5dc65fa04c85a
   - id: task-source-self-bootstrap-closeout-test-2c0ed6
@@ -3145,7 +3177,7 @@ sources:
     kind: evidence
     path: knowledge/code-map/task-system.md
     summary: 保存本主题当前解释或依据，网页与本地使用同一正文；不替代规范和代码。
-    observedDigest: c818f820d85299e8b8cd4d6f3c2e1d1109e981c78e2added1716e5db7d6666b0
+    observedDigest: ee3995808d3ade57f9ce839680e94ad2ca8792043d2438b303a5af4408fdcbdb
   - id: task-file-task-system-html-80857d
     title: 完整过程与角色职责 · 独立展示
     kind: evidence
@@ -3210,22 +3242,22 @@ sources:
     observedDigest: 066ef2964f3dcb6aef3fff2cac42f432c9e18258ff36b8afc8ea4a3cd7b532bc
   - id: verification-source-739faaad07
     title: 测试建设（project-testing）
-    summary: 从公共结果设计必要案例，维护测试及其选择映射；不写项目测试地图或正式报告
+    summary: 从公共结果设计必要案例，统一维护测试、选择映射与项目测试登记；不登记任务报告
     kind: code
     path: services/buildr/resources/workspace/skills/buildr/project-testing/SKILL.md
-    observedDigest: 6d5e4b0bd46c205c86376106c439c9d0cf1cac8db8c13158ee72142c6a7514d2
+    observedDigest: 2374b33982c63b47bf4c4e6561878e712f76e9c6eefc7753b95d25656e69e0d4
   - id: verification-source-18593c6ff1
-    title: 声明接入（declaration-intake）
-    summary: 对已有入口做只读发现与差异判断，区分普通维护和需要人决定的变化，交给声明维护者
+    title: 准备声明维护
+    summary: 核对真实准备入口并在现有授权内直接维护；测试及测试登记由项目测试建设负责
     kind: code
-    path: services/buildr/resources/workspace/skills/buildr/declaration-intake/SKILL.md
-    observedDigest: 3ace4c156f6284941f6e6b040c161aa92258cbe1bf5766ddd2b9d5a3d4608344
+    path: services/buildr/resources/runtime/skills/buildr/references/preparation-declarations.md
+    observedDigest: 12867af10498e5ad35eab8b6eec18864f09c0d5a71be51b99aec63389fea0567
   - id: verification-source-27da98a320
     title: 测试设计与质量指导
     summary: 指导测试质量、最低充分边界、反例、职责和稳定入口建设。
     kind: spec
     path: openspec/specs/project-testing-guidance/spec.md
-    observedDigest: 87d7e105ddf16d2c2f1c72106e48abe22cb56a0bafde3671fd44b2a1bca18d25
+    observedDigest: b42e3c8f8a2d80e3424ce02e65368333e7457ebe24a569c4877c7cd9c100f91f
   - id: verification-source-fe945192ca
     title: 项目测试地图规范
     summary: 本主题引用当前 v4 要求，解释少量稳定测试族、范围、完整入口及受控维护。
@@ -3237,7 +3269,7 @@ sources:
     summary: Buildr 产品证据分类、发现、选择、资源和质量要求
     kind: spec
     path: openspec/specs/product-verification-quality/spec.md
-    observedDigest: 68f662c5197d3caa87619d9ee8c40d0885b396f840debeb6607def484e64a700
+    observedDigest: 7ab2e6a9af5c14cd5aedf81a987c7de59846e3f2325ce5cc9a48b16d62ac7282
   - id: verification-source-6bc914610e
     title: 测试上下文公共契约
     summary: 可复用测试上下文（Test Context）的公共行为
@@ -3249,13 +3281,13 @@ sources:
     summary: 当前四个测试族（Testing Family），供智能体（Agent）发现入口
     kind: evidence
     path: verification.yml
-    observedDigest: 6c07e3b460c7067dc7622cd73f6ec40feacacf1e0c39e53c009e11f073a90798
+    observedDigest: 1bd10e97992bfd0723c2e3d922794000b900372c2cbf95e717e81667a6c4f08b
   - id: verification-source-456f6be9e6
     title: Buildr 产品准备入口
     summary: 主包、前端与私有智能体服务（Agent Service）的准备入口；先准备服务公开包再物化主包依赖，DSH 插件独立准备。
     kind: evidence
     path: preparation.yml
-    observedDigest: eb9c525b6c195760574a8b5103e880df09d80b1ef9ad1b7e5f202c45126c4f14
+    observedDigest: 4351cdfd7752d5d5f6b7e4f69e1819500fa35216c0f870084e401e9a9bf745ae
   - id: verification-source-c8ee7d9bf2
     title: 测试地图模块装配
     summary: 声明依赖、公开应用与声明能力、登记命令行（CLI）和诊断入口
@@ -3299,47 +3331,47 @@ sources:
     path: services/buildr/test/verification/test-files.ts
     observedDigest: 4afd0fb719033988e5b1cac8a49fd9c5ff6482391c45e77f88b839c3bac2a500
   - id: verification-source-4759f3fa18
-    title: 系统测试分组
-    summary: 系统测试（System）分组、实际文件和有关资源
+    title: 集成与端到端检查登记
+    summary: 集成测试（Integration Test）与端到端测试（End-to-End Test，E2E）的实际文件、唯一归属和相关资源。
     kind: code
-    path: services/buildr/test/verification/system-suites.ts
-    observedDigest: b5fb1a6cd219481e8bd5e26ea5072e068924fc66053da844b0cca4754aea63c6
+    path: services/buildr/test/verification/journey-suites.ts
+    observedDigest: 3bf9fc9259c3701029368d55048b54684f9ca362e652bd6adca399e621b0a754
   - id: verification-source-a567a4e171
     title: 改动路径与验证归属
     summary: 改动路径归属、排除项、委托与扩大范围的依据
     kind: code
     path: services/buildr/test/verification/ownership.ts
-    observedDigest: eaa44bb44871878b56dadae21c8b9b7d2658b9ab2bb296a30c0f073eaff73644
+    observedDigest: 6327e02f887f02296e265bbdedfb19b724d9c339ef55ec83630faba146ae77a3
   - id: verification-source-b5e167a6ea
     title: 产品验证步骤注册表
     summary: 稳定步骤、集成分片、通用与平台归属、主要证明责任、资源及候选分片
     kind: code
     path: services/buildr/test/verification/registry.ts
-    observedDigest: cabaca06c40afe232f5150011e7c4ebb0f62f99bac61c8c5f9f1346baad87efa
+    observedDigest: a0c1035aab5ebea408b71ee7d44b49b45d47b39b93af102fabc356c61dde2626
   - id: verification-source-4aba70c072
-    title: 验证选择与预算校验
-    summary: 校验步骤与预算，选择范围并给出原因，组合低成本前置检查
+    title: 验证选择与一致性校验
+    summary: 按四类、真实改动及显式请求选择检查，校验登记并给出覆盖依据与局部缺口。
     kind: code
     path: services/buildr/test/verification/planner.ts
-    observedDigest: d84b4bdd18f7cbcc20c3c623ec1e99960705ba917615c0382bfc27796de4903c
+    observedDigest: 88b122d11a0024397eee81dab380ff377c4eb18e8b18562f523c6ffc1b75b057
   - id: verification-source-a8e6c6c2a4
     title: 受影响检查入口
     summary: 日常受影响范围（affected）的预览或执行入口
     kind: code
-    path: services/buildr/test/verification/changed.ts
-    observedDigest: 6115cf2fcb139a4fbf7a10da6636e06639973b3f593bb5b3c40d6813739939fc
+    path: services/buildr/test/verification/cli.ts
+    observedDigest: 8edaca4b22fd50943866411358f4bd1a0d00ec380e840ce267ae0b2f6ade4f7c
   - id: verification-source-11958882cd
     title: 定向检查入口
-    summary: 显式步骤、分组及目录查看入口
+    summary: 统一入口支持显式检查、四类完整集合和执行计划查看。
     kind: code
-    path: services/buildr/test/verification/focus.ts
-    observedDigest: fe35bbc1e3649f033abac216d780e8197d223e0018875aaed9e73594e55f9506
+    path: services/buildr/test/verification/cli.ts
+    observedDigest: 8edaca4b22fd50943866411358f4bd1a0d00ec380e840ce267ae0b2f6ade4f7c
   - id: verification-source-8b321bc253
     title: 项目验证执行编排
     summary: 一次执行的准备、资源协调、调度与汇总
     kind: code
     path: services/buildr/test/verification/plan-runner.ts
-    observedDigest: 15648a05df4f93913fb0c861a4c96d2cddef4378a404d3b40340d979e7d21c37
+    observedDigest: 96909b278ba8bbbf4f136d31ec251eb9f767c51e2e9b36a73c4a8648ae3061ad
   - id: verification-source-bb279cd090
     title: 依赖与资源调度
     summary: 依赖、并发类别、具名资源和数字容量的调度
@@ -3351,7 +3383,7 @@ sources:
     summary: 将步骤和实际额度转成具体子进程调用
     kind: code
     path: services/buildr/test/verification/executor.ts
-    observedDigest: a88bff8607347ecc17b75ef8803e876fe1dcecdaa0ce17dd5e923b48282d3ad5
+    observedDigest: 6103f10b9cc68379d8970c41c61ebfa3599d20088feb1ebf7081f61cd77444cb
   - id: verification-source-bb45a79c77
     title: 并发执行资源协调
     summary: 同机多次执行间的共享资源协调
@@ -3363,7 +3395,7 @@ sources:
     summary: 选择页面检查，准备隔离 web-dist，通过隔离执行器（Runner）启动浏览器（Browser）测试
     kind: code
     path: services/buildr/test/verification/browser-selector-dispatcher.ts
-    observedDigest: 907680316c14454763c9febe174a4312e8cc03522245b6ef88de1862ef52cad1
+    observedDigest: 772a7d3629cf3ff2aa11604b213634abf53368fc8d694467631b1cb227e3cedc
   - id: verification-source-1a428d5163
     title: 验证耗时与诊断汇总
     summary: 汇总实际步骤结果、上下文（Context）、耗时与诊断文件
@@ -3381,13 +3413,13 @@ sources:
     summary: 稳定命令、生成物准备、测试及公开包导出
     kind: code
     path: services/buildr/package.json
-    observedDigest: 5338a9e12d85cc3c5f5a6afae24498e6c4fb54b2603957d63c0b5d3a40be260f
+    observedDigest: 07f4383ca7f18227d32fb1140c734957b5b97d062b49d0c90d830d5a44f6ec95
   - id: verification-source-535557f7c3
     title: 前端构建与测试命令
     summary: 前端构建及独立逻辑测试入口
     kind: code
     path: services/buildr-web/package.json
-    observedDigest: 7595f2f5d16d084b760e9208ce1d37fb0f9adf09e87dddf3cdc8053a9769c038
+    observedDigest: 53aed6ff708b699a68d4b9c20ec0e793186f2038e280e15f993c986978713e3c
   - id: verification-source-2067de1414
     title: 项目声明范围内的 npm 调用
     summary: 检查当前 Node.js 是否在项目声明版本范围内（声明版本优先），再使用相邻 npm 和相同进程环境调用真实命令。
@@ -3395,11 +3427,11 @@ sources:
     path: services/buildr/tools/development/run-development-npm.ts
     observedDigest: f781d493507f8719516625522f93aa26783bf43961c4d9ee578e6f3a914734ff
   - id: verification-source-57ca327cab
-    title: 工作空间冒烟隔离
+    title: 工作空间检查隔离
     summary: 隔离工作目录和两类应用数据目录，统一成功与失败清理
     kind: code
-    path: services/buildr/tools/development/run-isolated-workspace-smoke.ts
-    observedDigest: b765e3a78830b6e6f3c2a51ced49e7ad26e9a77122bf9b0b6f60f9d4264f51a0
+    path: services/buildr/tools/development/run-isolated-workspace-check.ts
+    observedDigest: e72c5fd325d2c5b885417b0ef05071954c7f574e541cfb615b03fb81e90c60e0
   - id: verification-source-ba6db2aa02
     title: 测试上下文公共导出
     summary: 闭合公共导出，供包入口消费
@@ -3435,7 +3467,7 @@ sources:
     summary: 每个步骤采用复用、混合或完整生命周期的理由
     kind: code
     path: services/buildr/test/context/dispositions.ts
-    observedDigest: 9c687ed81ac6f5e979bfa4c2cc485bc65ce528f6d572344cebde13a3c165fdb3
+    observedDigest: 5448b7a915903b08423909e59e53f60eee939597b009d191e1e1036e84e6485e
   - id: verification-source-9970cc9595
     title: 应用组装与案例隔离
     summary: 应用组装复用、共享端口恢复与案例工作空间（Workspace）
@@ -3477,7 +3509,7 @@ sources:
     summary: 任务、地图、当前报告与存储的协作
     kind: code
     path: services/buildr/test/integration/task-verification-report.test.ts
-    observedDigest: 12835f5bbb88a1ec2125fc29a1be19531f0b6b411ccb48eb56c65e42f0b50f48
+    observedDigest: f9c6a7c25ae8f64e2301f121bc67baac07916122e301f096a0c7f459a1c3f514
   - id: verification-source-4e2cb05a2b
     title: 持久测试进程行为检查
     summary: 持久工作进程（Worker Host）的复用、额度与失败
@@ -3489,36 +3521,36 @@ sources:
     summary: 区分意图、执行边界、选择范围和验证对象，提供真实边界与案例质量判断。
     kind: code
     path: services/buildr/resources/workspace/skills/buildr/project-testing/references/testing-model-v1.md
-    observedDigest: 9172622134dfca4fcebf17025fc8b3d009e5b6957d85c521a17e651d26eca933
+    observedDigest: 95f736c21b7b921a52882196fb1c20dd1f0122aeb944d8ec0377d2d9873e70b1
   - id: verification-source-d43baaebce
     title: 测试地图字段参考
     summary: 约束 v4 稳定测试体系、完整入口和声明维护职责。
     kind: code
-    path: services/buildr/resources/workspace/skills/buildr/task-verification/references/project-verification-v4.md
-    observedDigest: f6f685078dd875a014cc537ba66ae8e150452215a404fc5773a56978168c35de
+    path: services/buildr/resources/workspace/skills/buildr/project-testing/references/project-verification-v4.md
+    observedDigest: 184610958ab5ddee1ce855e97cefe3a676b73d79cfd1cd8efa03ec1129caf8f6
   - id: verification-source-15fb890b91
     title: 地图维护操作
     summary: 读取当前身份、形成候选、校验并按已观察版本更新。
     kind: code
-    path: services/buildr/resources/workspace/skills/buildr/task-verification/references/maintain-map.md
+    path: services/buildr/resources/workspace/skills/buildr/project-testing/references/maintain-map.md
     observedDigest: 0aefff611491ecfdd7461837ddbbb2a7a80a0fb4ced0d4f093dd118f8f8c747d
   - id: verification-source-31c0f13893
     title: 报告登记操作
     summary: 区分测试执行位置和合法写入者，以当前摘要保存可移植报告。
     kind: code
-    path: services/buildr/resources/workspace/skills/buildr/task-verification/references/record-report.md
-    observedDigest: 61d82d2740a9f60216a5919e0a42a44ea550faea1479d0d5164b938fc050692f
+    path: services/buildr/resources/workspace/skills/buildr/project-verification/references/record-report.md
+    observedDigest: 8bc6facb683b31547ec443704c096b24af4cca79319e9a2b0904b95f8dd4dd3d
   - id: verification-file-263d3698
     title: Buildr 项目与服务测试验证框架
     kind: evidence
     path: knowledge/docs/architecture/workspace-testing-and-verification-framework.md
     summary: 本主题的可独立阅读或维护成果；事实来源见关联文章和实现地图。
-    observedDigest: fb6051da600c470d8d245b897735b84c2b4cc68d3a1ed621852595f9177ea9eb
+    observedDigest: 7fe92c9eef48a9fe5723847b8c6202bef20380e6bbb3dc785c4ffde6923ca335
   - id: verification-file-9894349f
     title: Buildr 验证框架
     kind: evidence
     path: knowledge/docs/architecture/verification-framework.md
-    observedDigest: 4c784fd3d8eee8ce6b7bfc60bef19d40c414d611183c18cf3b2e9871fbde51f4
+    observedDigest: fdd7f3c77912b99edbe77444c4b607d19cde89f571f260b9782d3b39543ccfc7
   - id: verification-file-8c3c96dd
     title: Node.js 测试上下文：复用、隔离与生命周期
     kind: evidence
@@ -3530,25 +3562,25 @@ sources:
     kind: evidence
     path: knowledge/code-map/verification-framework.md
     summary: 本主题的可独立阅读或维护成果；事实来源见关联文章和实现地图。
-    observedDigest: 7981b849f9c081bd4fec8a6a29fd0d2a15e9433d8278c384dd36b64ad5db6659
+    observedDigest: fd5961de018a0696f9afa9bbc15504cc01443745ca270445d9d5fb3e193d0ffc
   - id: verification-file-bc346270
     title: Buildr 如何引导测试建设与使用
     kind: evidence
     path: knowledge/archify/flows/verification-framework.html
     summary: 使用主线与按需补建分支，以及测试建设、声明接入、任务验证三项技能的用途。
-    observedDigest: 5362e373dcbc874dca21794990f0f61b7e433b39af4383684b4346a66d48b181
+    observedDigest: aab84bf736d639d0c8f0323db4df100b2ea5f5e207e76909e8e199c3cb5afae6
   - id: verification-file-e9222fb3
     title: 测试建设与使用流程图源
     kind: evidence
     path: knowledge/archify/flows/verification-framework.json
     summary: 六个环节表达查阅、执行、结果与按需补建；三项技能卡片解释Buildr提供的方法。
-    observedDigest: 0ac9549dcff1fe26866e1f012c908bbaa9e9040c86734d66665c217d0c166575
+    observedDigest: cd378daf227bf8dd9ebbbc070688629a2f0e44da5501c091cb67fc30fb666912
   - id: verification-release-reference
     title: 发布流程参考
     summary: 说明冻结候选、同包消费、明确发布授权与公开事实回读；发布流程保持独立维护。
     kind: evidence
     path: knowledge/docs/flows/open-source-release.md
-    observedDigest: 159c0c283e5c28f2f42b67134945e5901f1b5566b1c77357b3adeaf62ce1bdb6
+    observedDigest: 528c0d8a3b28c84ea1c4dd9d68f29fcd335ac67172e3ef6764fa52e0f25fa957
   - id: verification-context-types
     title: 测试上下文公开类型
     summary: 定义上下文配置、生存范围、并发、生命周期钩子与测试回调的严格类型。
@@ -3566,13 +3598,13 @@ sources:
     summary: 说明逐项目与服务发现声明、核对维护范围及责任交接；本主题的字段解释另以 v4 要求和领域模型为依据。
     kind: spec
     path: openspec/specs/project-declaration-intake/spec.md
-    observedDigest: f6d6eb1f87a2299f0bfe565e7c0869a2a3010dae414cb0212e2d345e9526e8b9
+    observedDigest: d78e68dacfef94ddc9b13fe3e0355333ed4c3223c8829be4a7ccfa1e20cf0114
   - id: verification-product-map-file
     title: 采用实例：Buildr 产品测试工具地图
     summary: Buildr 产品自身的选择执行与上下文复用位置，不是用户项目的必需实现。
     kind: evidence
     path: knowledge/code-map/product-verification-tools.md
-    observedDigest: a1f0e8f527d3e36da2f3901f5ffb84b11beba906cac35db7b16af19ad1191195
+    observedDigest: 2b2f0075f80ed1f7cb3f04181b8f76af02297eacdb19c8c41a855817bc4ee17f
   - id: parent-input-validation
     title: 任务与完成依据输入校验
     kind: code
@@ -3638,7 +3670,7 @@ sources:
     summary: 选择当前机器的候选步骤并执行，不能产生其他平台证据。
     kind: code
     path: services/buildr/test/verification/candidate.ts
-    observedDigest: a5f284c3aaed1b1632f0f75fde7acfbf13f414270bfdba15292f3127dfa999f9
+    observedDigest: 1abc2433730545a4653ddefc40c627be0004c71fe881d01163abfde1c8e802a9
   - id: verification-ref-afecd484
     title: 跨平台候选编排入口
     summary: 按有效证明选择跨平台源码与原包缺项，组织真实宿主 Node 组合并汇总；源码全部通过后制包。
@@ -3650,13 +3682,13 @@ sources:
     kind: code
     path: services/buildr/test/verification/release/browser-candidate.ts
     summary: 校验唯一候选压缩包（Candidate Tarball）及网页载荷，隔离解包、直接托管、执行核心旅程（Browser Journey）并清理；不重新构建源码网页或替代安装后全部行为验收。
-    observedDigest: 1d011240d5b012d304346c0ffc927eadf99c29adc7115a542f9246b7ccd6d7bd
+    observedDigest: 716755edae748e6bf446bcea1dd916c250b24aee29bc89ce5e8ac638d959f2d8
   - id: verification-candidate-environment
     title: 候选环境统一准备
     kind: code
     path: services/buildr/tools/verification/candidate-environment.ts
     summary: 按档位（Profile）准备实际运行依赖；前端逻辑档位提供两服务依赖及测试输入，候选浏览器档位提供测试运行时（Runtime）和明确 Chromium，均不重新构建候选网页载荷。
-    observedDigest: add5e58c10e1c5ac7f0dca5be4bce6a5fecd8aacfde94b7ed6603ef75156eb1e
+    observedDigest: 3500415525b4253f1d6d75a9182e04589d0a5c4be21cbcb2f052ec0f44577cf2
   - id: verification-frontend-test-runner
     title: 前端完整逻辑测试驱动
     kind: code
@@ -3673,20 +3705,20 @@ sources:
     title: 任务报告公共入口检查
     summary: 用真实命令行核对报告登记、读取和内容适用性，不替项目执行测试。
     kind: code
-    path: services/buildr/test/system/task-verification-product.test.ts
+    path: services/buildr/test/e2e/task-verification-product.test.ts
     observedDigest: 094b3e06be60ea9307b9d2fd975c3cd45fbb430448f49500f56e0dfe18c948dc
   - id: verification-ref-028fd920
     title: 浏览器检查组装
     summary: 组装隔离服务、浏览器与测试现场，选择旅程并清理。
     kind: code
-    path: services/buildr/test/browser-smoke/buildr-web-browser.test.ts
-    observedDigest: 1be4dfeffd2e048759d3aa777fcdceb5d868c7799cd3cda62c295dbe6e3c8381
+    path: services/buildr/test/e2e/buildr-web-browser.test.ts
+    observedDigest: 60ea3bdf3cf35457168a8e152039f2d504ed463c1228ed274b73ed970dcd659f
   - id: verification-ref-73fbe375
     title: 工作台真实交互旅程
     summary: 核对答复冲突后的重读保存、资料阅读和偏好恢复。
     kind: code
-    path: services/buildr/test/browser-smoke/workbench-journey.ts
-    observedDigest: acf3d55f68fd4441d3eecdff1a793ad98b5dfe2827173a462ad120c95d1f4f04
+    path: services/buildr/test/e2e/workbench-journey.ts
+    observedDigest: ae3647f29bb110c595fa5d6ac096f170df1385d3c2f82550517ca45b00ff8cda
   - id: project-candidate-directory
     title: 已有项目目录观察
     kind: code

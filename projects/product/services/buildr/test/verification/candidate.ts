@@ -3,10 +3,9 @@ import fs from 'node:fs'; import os from 'node:os';
 import path from 'node:path'; import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { executePlan } from './plan-runner.ts'; import { parseVerificationSchedulingMode } from './dag-scheduler.ts';
-import { admitVerificationPlanBudget, createVerificationAdmissionPlan, createVerificationPlan } from './planner.ts';
+import { createVerificationPlan } from './planner.ts';
 import { resolveVerificationExecutionProfile } from './registry.ts';
 import { enforceOfflineVerification } from '../../src/infrastructure/network/verification-network-policy.ts'; import { assertMinimumNodeVersion } from '../../src/infrastructure/process.ts';
-import { CANDIDATE_TOTAL_BUDGET_MS, CORE_TOTAL_BUDGET_MS } from './timing/budgets.ts';
 import { collectVerificationSourceIdentity, createVerificationEvidencePaths, writeVerificationTimingEvidence } from './timing/evidence.ts';
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..'); const projectRoot: any = path.resolve(productRoot, '../..');
 const schedulingMode: any = parseVerificationSchedulingMode(process.env.BUILDR_VERIFICATION_SCHEDULING ?? 'cost'); const executionProfile: any = resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE);
@@ -14,26 +13,19 @@ function parseArgs(args: any): any  {
   const result: any = { json: false, profile: 'candidate' };
   for (let index: any = 0; index < args.length; index += 1) {
     const arg: any = args[index];
-    if (arg === '--profile') {
-      if (!['daily-full', 'core', 'candidate'].includes(args[index + 1])) throw new Error('Missing or invalid --profile value.');
-      result.profile = args[index += 1];
-    } else if (arg === '--json') result.json = true;
-    else throw new Error(`Unknown test:${result.profile} option: ${arg}`);
+    if (arg === '--json') result.json = true;
+    else if (arg === '--help') { process.stdout.write('Internal frozen Candidate verification: --json to inspect.\n'); process.exit(0); }
+    else throw new Error(`Unknown Candidate verification option: ${arg}`);
+
   }
   return result;
 }
 const request: any = parseArgs(process.argv.slice(2));
-const registryProfile: any = request.profile === 'daily-full' ? 'core' : request.profile;
-const lane: any = registryProfile === 'core'
-  ? { budgetMs: CORE_TOTAL_BUDGET_MS, kind: 'core', source: request.profile === 'daily-full' ? 'daily-full-entry' : 'core-profile', model: { verificationTarget: 'task-or-current-source', selection: 'full', evidenceSet: 'daily-full', compatibilityProfile: 'core' } }
-  : { budgetMs: CANDIDATE_TOTAL_BUDGET_MS, kind: 'candidate', source: 'candidate-profile', model: { verificationTarget: 'product-artifact-candidate', selection: 'full', evidenceSet: 'daily-full-plus-candidate-artifact', compatibilityProfile: null } };
-const plan: any = admitVerificationPlanBudget(
-  createVerificationAdmissionPlan(createVerificationPlan({ profiles: [registryProfile] })),
-  { concurrency: executionProfile.limits, declaredBudgetMs: lane.budgetMs },
-);
+const lane: any = { kind: 'candidate', source: 'candidate', model: { verificationTarget: 'product-artifact-candidate', selection: 'full' } };
+const plan: any = createVerificationPlan({ profiles: ['candidate'] });
 if (request.json) {
   const project: any = (step: any) => ({ id: step.id, name: step.name, reasons: step.reasons });
-  await new Promise((resolve: any, reject: any) => process.stdout.write(`${JSON.stringify({ schemaVersion: 'buildr.verification-full-plan/v1', status: plan.status, diagnostic: plan.diagnostic, base: null, source: lane.source, model: lane.model, paths: plan.paths, scope: plan.scope, estimate: plan.estimate, delegated: plan.delegated, admissionStepIds: plan.admissionStepIds, preflightSteps: [], steps: plan.steps.map(project) }, null, 2)}\n`, (error: any) => error ? reject(error) : resolve()));
+  await new Promise((resolve: any, reject: any) => process.stdout.write(`${JSON.stringify({ schemaVersion: 'buildr.verification-full-plan/v1', status: plan.status, diagnostic: plan.diagnostic, base: null, source: lane.source, model: lane.model, paths: plan.paths, scope: plan.scope, estimate: plan.estimate, delegated: plan.delegated, preflightSteps: [], steps: plan.steps.map(project) }, null, 2)}\n`, (error: any) => error ? reject(error) : resolve()));
   process.exit(plan.status === 'ready' ? 0 : 1);
 }
 if (plan.status === 'blocked') throw new Error(plan.diagnostic?.message ?? `${request.profile} verification plan is blocked.`);
@@ -56,7 +48,6 @@ function writeSummary(status: any): any  {
     contextLifecycle,
     startedAt: totalStartedAt,
     finishedAt: Date.now(),
-    totalBudgetMs: lane.budgetMs,
     diagnosticsDirectory: evidence.diagnosticsOutput,
     prefix: 'verify-product',
     stream: process.stdout,

@@ -1,5 +1,5 @@
 import { stripTypeScriptTypes } from 'node:module';
-import { createScanner, ScriptTarget, SyntaxKind } from 'typescript/unstable/ast';
+import { createScanner, SyntaxKind } from 'typescript/unstable/ast';
 
 type Token = { kind: SyntaxKind; text: string; value: string; start: number; end: number };
 type Owner = { name: string; start: number; end: number };
@@ -26,7 +26,7 @@ function closesStatementBlock(tokens: Token[], pairs: Map<number, number>, close
 
 /** The locked TypeScript scanner distinguishes executable calls from comments and literals. */
 function scan(source: string): { tokens: Token[]; pairs: Map<number, number> } {
-  const text = stripTypeScriptTypes(source), scanner = createScanner(ScriptTarget.Latest, true);
+  const text = stripTypeScriptTypes(source), scanner = createScanner(true);
   scanner.setText(text);
   const tokens: Token[] = [], pairs = new Map<number, number>(), delimiters: number[] = [], templates: number[] = [];
   let braces = 0;

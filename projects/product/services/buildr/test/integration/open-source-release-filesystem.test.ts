@@ -15,13 +15,13 @@ import {
   readSharedCandidatePackage,
 } from '../../../../../../skills/buildr-release/scripts/candidate-package.ts';
 import {
-  createReleaseSmokeProgressRecorder,
+  createPackageConsumptionProgressRecorder,
   preserveLauncherFailureEvidence,
   RELEASE_LAUNCHER_READINESS_TIMEOUT_MS,
-  resolveReleaseSmokeSource,
-  runReleaseSmokeCommand,
+  resolvePackageConsumptionSource,
+  runPackageConsumptionCommand,
   waitForWebReadiness,
-} from '../verification/release/release-smoke.ts';
+} from '../verification/release/package-consumption.ts';
 import { parseVerificationPhaseTimings } from '../verification/timing/phases.ts';
 import { createVerificationExecutor } from '../verification/executor.ts';
 import { createGeneratedReleaseInputs } from '../helpers/generated-release-inputs.ts';
@@ -31,7 +31,7 @@ const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url
 test('release smoke progress is durable before an unfinished operation and preserves its result', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-progress-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const progress = createReleaseSmokeProgressRecorder({ env: { BUILDR_DIAGNOSTICS_OUTPUT: root } });
+  const progress = createPackageConsumptionProgressRecorder({ env: { BUILDR_DIAGNOSTICS_OUTPUT: root } });
   const records = () => fs.readFileSync(progress.file, 'utf8').trim().split('\n').map(line => JSON.parse(line));
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
@@ -54,7 +54,7 @@ test('release smoke progress is durable before an unfinished operation and prese
 test('release smoke progress preserves the original failure and bounded child exit facts', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-progress-failure-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const progress = createReleaseSmokeProgressRecorder({ env: { BUILDR_DIAGNOSTICS_OUTPUT: root } });
+  const progress = createPackageConsumptionProgressRecorder({ env: { BUILDR_DIAGNOSTICS_OUTPUT: root } });
   const original = Object.assign(new Error('private args and secret must-not-persist'), { childExitCode: 3221225477, childSignal: 'SIGABRT', childErrorCode: 'ETIMEDOUT' });
   assert.throws(() => progress.runSync('launcher-launch-default', () => { throw original; }), error => error === original);
   const text = fs.readFileSync(progress.file, 'utf8'), records = text.trim().split('\n').map(line => JSON.parse(line));
@@ -66,10 +66,10 @@ test('release smoke progress preserves the original failure and bounded child ex
 test('release smoke command progress retains expected nonzero success and an actual failed child', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-progress-command-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const progress = createReleaseSmokeProgressRecorder({ env: { BUILDR_DIAGNOSTICS_OUTPUT: root } });
-  const output = runReleaseSmokeCommand(process.execPath, ['-e', 'process.stdout.write("unchanged output");process.exit(1)'], { expectedStatus: 1, progress, progressStage: 'update-check' });
+  const progress = createPackageConsumptionProgressRecorder({ env: { BUILDR_DIAGNOSTICS_OUTPUT: root } });
+  const output = runPackageConsumptionCommand(process.execPath, ['-e', 'process.stdout.write("unchanged output");process.exit(1)'], { expectedStatus: 1, progress, progressStage: 'update-check' });
   assert.equal(output, 'unchanged output');
-  assert.throws(() => runReleaseSmokeCommand(process.execPath, ['-e', 'process.exit(23)'], { progress, progressStage: 'launcher-install' }), (error: any) => error.childExitCode === 23 && error.childSignal === null);
+  assert.throws(() => runPackageConsumptionCommand(process.execPath, ['-e', 'process.exit(23)'], { progress, progressStage: 'launcher-install' }), (error: any) => error.childExitCode === 23 && error.childSignal === null);
   const text = fs.readFileSync(progress.file, 'utf8'), records = text.trim().split('\n').map(line => JSON.parse(line));
   assert.deepEqual(records.map(item => [item.stage, item.status, item.childExitCode]), [
     ['update-check', 'started', undefined], ['update-check', 'passed', 1], ['launcher-install', 'started', undefined], ['launcher-install', 'failed', 23],
@@ -80,10 +80,10 @@ test('release smoke command progress retains expected nonzero success and an act
 test('release smoke progress has no required file and cannot replace outcomes when diagnostics cannot be written', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-progress-unavailable-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const absent = createReleaseSmokeProgressRecorder({ env: {} });
+  const absent = createPackageConsumptionProgressRecorder({ env: {} });
   assert.equal(absent.file, null); assert.equal(absent.runSync('direct-web-start', () => 42), 42);
   const blocked = path.join(root, 'ordinary-file'); fs.writeFileSync(blocked, 'unchanged');
-  const unavailable = createReleaseSmokeProgressRecorder({ env: { BUILDR_DIAGNOSTICS_OUTPUT: blocked } });
+  const unavailable = createPackageConsumptionProgressRecorder({ env: { BUILDR_DIAGNOSTICS_OUTPUT: blocked } });
   assert.equal(await unavailable.run('direct-web-stop', async () => 'stopped'), 'stopped');
   const original = new Error('original failure');
   await assert.rejects(unavailable.run('launcher-stop-default', async () => { throw original; }), error => error === original);
@@ -93,7 +93,7 @@ test('release smoke progress has no required file and cannot replace outcomes wh
 test('release smoke progress accepts only fixed boundaries and has a bounded record count', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-progress-bounded-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const progress = createReleaseSmokeProgressRecorder({ env: { BUILDR_DIAGNOSTICS_OUTPUT: root } });
+  const progress = createPackageConsumptionProgressRecorder({ env: { BUILDR_DIAGNOSTICS_OUTPUT: root } });
   assert.equal(progress.runSync('secret arbitrary args', () => 'unchanged'), 'unchanged');
   assert.equal(fs.existsSync(progress.file), false);
   let calls = 0;
@@ -289,7 +289,7 @@ test('release artifact preparation packs once and detects mutated bytes', async 
     assert.equal(reused.status, 'passed', reused.stderr);
     assert.equal(fs.existsSync(forbiddenRepackRoot), false, 'external Candidate artifact must prevent another npm pack');
 
-    const smokeSource: any = resolveReleaseSmokeSource({ BUILDR_RELEASE_ARTIFACT_MANIFEST: artifact.manifestPath });
+    const smokeSource: any = resolvePackageConsumptionSource({ BUILDR_RELEASE_ARTIFACT_MANIFEST: artifact.manifestPath });
     assert.equal(smokeSource.kind, 'release-artifact');
     assert.equal(smokeSource.installTarget, artifact.tarball);
     assert.equal(smokeSource.expectedVersion, artifact.manifest.version);

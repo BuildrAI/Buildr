@@ -6,7 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { createVerificationResourceCoordinator } from '../verification/support/resource-coordinator.ts';
-import { executePlan, FULL_PLAN_RESOURCE_ID } from '../verification/plan-runner.ts';
+import { executePlan } from '../verification/plan-runner.ts';
 
 function fixture(context: any): any  {
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-resource-coordinator-'));
@@ -43,36 +43,25 @@ function order(value: any): any  {
 
 const coordinated: any = { browser: { id: 'browser', strategy: 'coordinated', capacity: 1, authorization: 'implicit' } };
 
-test('不同 Task 的 Full plan 共享容量且不重叠执行 DAG', async (context: any) => {
+test('independent full selections do not acquire a synthetic project-wide lock', async (context: any) => {
   const root: any = fixture(context);
-  const resources: any = {
-    [FULL_PLAN_RESOURCE_ID]: { id: FULL_PLAN_RESOURCE_ID, strategy: 'coordinated', capacity: 1, authorization: 'implicit' },
-  };
-  const plan: any = {
-    scope: { mode: 'full' }, paths: [], delegated: [],
-    steps: [{ id: 'full-step', name: 'full step', dependsOn: [], resources: [], concurrencyClass: 'default' }],
-  };
-  let active: any = 0;
-  let peak: any = 0;
-  const execute: any = (taskId: any) => executePlan(plan, {
+  const plan: any = { scope: { mode: 'full' }, paths: [], delegated: [], steps: [{ id: 'independent', name: 'independent check', dependsOn: [], resources: [], contexts: [], concurrencyClass: 'default' }] };
+  let active = 0, peak = 0;
+  const execute = (taskId: string) => executePlan(plan, {
     productRoot: root,
     concurrency: { global: 1, classes: { default: 1 }, resources: {}, innerConcurrency: {} },
-    resourceCoordinator: createVerificationResourceCoordinator({ root, resources, owner: { taskId, runId: `run-${taskId}` }, pollMs: 5 }),
+    resourceCoordinator: createVerificationResourceCoordinator({ root, resources: {}, owner: { taskId, runId: `run-${taskId}` }, pollMs: 5 }),
     executorFactory: () => async () => {
-      active += 1;
-      peak = Math.max(peak, active);
-      await new Promise((resolve: any) => setTimeout(resolve, 30));
-      active -= 1;
+      active++; peak = Math.max(peak, active);
+      await new Promise(resolve => setTimeout(resolve, 30)); active--;
       return { status: 'passed', exitCode: 0, durationMs: 30 };
     },
-    stream: { write(): any  {} },
-    errorStream: { write(): any  {} },
+    stream: { write() {} }, errorStream: { write() {} },
   });
-
-  const results: any = await Promise.all([execute('task-a'), execute('task-b')]);
-  assert.equal(peak, 1);
-  assert.ok(results.some((result: any) => result.fullPlanCoordination.waitDurationMs >= 20));
-  assert.ok(results.every((result: any) => result.fullPlanCoordination.release[0].status === 'released'));
+  const results = await Promise.all([execute('task-a'), execute('task-b')]);
+  assert.equal(peak, 2);
+  assert.ok(results.every(result => result.passed));
+  assert.deepEqual(filesNamed(root, 'claim.json'), []);
 });
 
 test('不同 verification runs 对容量一资源排队且精确释放', async (context: any) => {

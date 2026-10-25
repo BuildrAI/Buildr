@@ -13,7 +13,7 @@ import {
 } from '../../src/modules/agent-assets/infrastructure/runtime/rule-projection.ts';
 import { BUILDR_REQUIRED_BLOCK_START, GENERATED_USER_REGISTRY_RESOURCE_SOURCES, LEGACY_PACKAGE_PATHS, PACKAGE_RUNTIME_TARGET, RESOURCE_WORKSPACE_ROOT } from '../../src/infrastructure/product-layout.ts';
 import { SUPPORTED_AGENT_IDS, getRuntimeAdapter } from '../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
-import { createPackageSmokeChecks } from './package-check/smoke-checks.ts';
+import { createPackageRuntimeChecks } from './package-check/runtime-checks.ts';
 import { createPackageStaticValidator } from './package-check/static-validation.ts';
 import { PACKAGE_VERIFIER_ENV, selectPackageVerifiers } from './package-check/verification-registry.ts';
 import { validateSkillPublication } from '../../src/modules/agent-assets/infrastructure/runtime/skills/publication.ts';
@@ -95,12 +95,12 @@ export function runPackageCheck(runtime: any) {
     validateSkillPublication,
   });
   const {
-    runPackageWorkspaceSmoke,
+    runPackageWorkspaceLifecycle,
     runPackageDomainIntegration,
     runPackageRuntimeIntegration,
-    runPackageAggregateSmoke,
+    runPackageAggregateIntegration,
     validatePackageSupportTools,
-  } = createPackageSmokeChecks({
+  } = createPackageRuntimeChecks({
     renderRulesManifestYaml: runtime.renderRulesManifestYaml,
     rootRequiredBlockStatus: runtime.rootRequiredBlockStatus,
     BUILDR_REQUIRED_BLOCK_START,
@@ -143,21 +143,21 @@ export function runPackageCheck(runtime: any) {
     const context: any = { root, workspaceRoot, manifestPath, manifest, allowedVariables, files, problems, mappedEntries };
     const selector = process.env[PACKAGE_VERIFIER_ENV] || '';
     const selected = selectPackageVerifiers(selector);
-    const smokeContext: any = { ...context, parseJsonOutput };
+    const checkContext: any = { ...context, parseJsonOutput };
     const runners: any = {
       static: () => {
         validatePackageStatic(context);
-        validatePackageSupportTools(smokeContext);
+        validatePackageSupportTools(checkContext);
       },
-      workspace: () => runPackageWorkspaceSmoke(smokeContext),
-      commands: () => runPackageDomainIntegration(smokeContext, 'commands'),
-      rules: () => runPackageDomainIntegration(smokeContext, 'rules'),
-      skills: () => runPackageDomainIntegration(smokeContext, 'skills'),
-      runtime: () => runPackageRuntimeIntegration(smokeContext),
+      workspace: () => runPackageWorkspaceLifecycle(checkContext),
+      commands: () => runPackageDomainIntegration(checkContext, 'commands'),
+      rules: () => runPackageDomainIntegration(checkContext, 'rules'),
+      skills: () => runPackageDomainIntegration(checkContext, 'skills'),
+      runtime: () => runPackageRuntimeIntegration(checkContext),
     };
     if (!selector) {
       runners.static();
-      runPackageAggregateSmoke(smokeContext);
+      runPackageAggregateIntegration(checkContext);
     } else {
       for (const step of selected) runners[step.runner]();
     }

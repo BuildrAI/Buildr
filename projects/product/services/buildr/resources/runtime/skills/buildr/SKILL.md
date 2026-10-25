@@ -45,8 +45,8 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 | 启动或继续已有active Formal Task | `buildr task inspect <task-id> --json`核对目标与scope；Agent再按真实Git/文件现场选择直接工作或matching Worktree |
 | 查看 Parent/Child 关系、旧 Parent Plan 与整体完成观察 | `task parent inspect`；关系和终态由 Task Record 管理，旧 Parent Plan 只读 |
 | 按需生成或查看已结束Task的执行效率复盘 | `task-retrospective`纯Skill基于当前可见事实写本机Markdown；Task Record v4的复盘字段只登记文档摘要和人的决定状态 |
-| 设计或优化 Project / Service 测试框架、划分测试边界、编排场景，或为实现任务开发测试 | `project-testing` Skill；无 Result、Receipt 或 provider contract |
-| 探查或维护Project测试地图、开发中选择已有前后端测试，或开发完成后记录和查看Task验证报告 | `buildr.task-verification/v4` selected provider；Agent直接调用项目测试工具 |
+| 建设或维护项目测试、四类边界、稳定入口及 `verification.yml` 测试登记 | `project-testing` 技能（Skill），同时维护测试登记与稳定入口 |
+| 按任意用户请求或任务目标选择并执行检查，交付证据，或记录与查看已有任务验证报告 | `buildr.task-verification/v4` selected provider；Agent直接调用项目测试工具 |
 | 显式创建、检查或清理 Task 的 Git worktree/provider evidence | `buildr.git-worktree-provider/v1` selected provider |
 | 从 proposal、方案或直接实现开始完成开发工作 | 首次交付文件写入前使用 `task-triage` 与 `task-manager` 登记或接续任务；Agent 直接组合专业工具，不创建研发回执 |
 | 用户要求“收尾”“交付”或完成当前工作 | `task-finish` 技能依据真实现场组合 Git、系统工具和已有 Buildr 接口；有任务则登记真实结果，无任务不创建，不要求旧候选或交接链 |

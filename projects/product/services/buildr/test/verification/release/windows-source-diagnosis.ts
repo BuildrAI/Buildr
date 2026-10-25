@@ -14,8 +14,8 @@ import { projectResult } from './windows-artifact-diagnosis.ts';
 export const WINDOWS_SOURCE_DIAGNOSIS_SCHEMA = 'buildr.windows-source-diagnosis/v1';
 export const WINDOWS_SOURCE_DIAGNOSIS_SCENARIO = 'app-process-windows';
 const sourceOwners: Record<string, string> = Object.freeze({
-  'app-process-windows': 'system-app-process',
-  'readonly-files-windows': 'system-windows-platform',
+  'app-process-windows': 'e2e-app-process',
+  'readonly-files-windows': 'integration-windows-native',
 });
 const sha = /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u;
 interface GitFacts { head: string; tree: string; dirty: boolean }

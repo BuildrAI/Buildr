@@ -23,7 +23,7 @@ test('local package execution preserves local identity and continues independent
     },
   });
   assert.equal(result.status, 'failed');
-  assert.deepEqual(calls.map(args => args.at(-1)), createLocalArtifactPlan('darwin', { scope: 'platform' }).nodes.map(node => node.id));
+  assert.deepEqual(calls.map(args => args.at(-1)), createLocalArtifactPlan('darwin', { scope: 'platform' }).nodes.map((node: { id: string }) => node.id));
   assert.ok(result.results.every((node: any) => node.status === 'failed' && node.disposition === 'executed'));
 });
 

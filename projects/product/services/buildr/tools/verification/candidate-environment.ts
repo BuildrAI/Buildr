@@ -44,7 +44,7 @@ export function candidateEnvironmentPlan(profileValue: string, roots = { service
   if (profile === 'source-runtime') {
     plan.push({ id: 'buildr-web-source-runtime', executable: 'node', args: ['tools/development/prepare-development-web.ts'], cwd: roots.serviceRoot });
   }
-  if (profile === 'browser-artifact') plan.push({ id: 'browser-chromium', executable: 'npm', args: ['run', 'test:browser:install'], cwd: roots.serviceRoot });
+  if (profile === 'browser-artifact') plan.push({ id: 'browser-chromium', executable: 'npm', args: ['run', 'browser:prepare'], cwd: roots.serviceRoot });
   return plan;
 }
 

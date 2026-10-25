@@ -125,7 +125,7 @@ function label(data: any): any {
  * File completion remains visible when Node buffers a later file's individual test events.
  * Diagnostics never copy assertion values or process output; individual names can still be delayed.
  */
-export default async function* integrationProgressReporter(source: any): Promise<any> {
+export default async function* integrationProgressReporter(source: any) {
   for await (const event of source) {
     const data = event?.data;
     if (event?.type === 'test:stderr' && typeof data?.file === 'string'

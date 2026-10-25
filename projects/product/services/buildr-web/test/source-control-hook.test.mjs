@@ -28,29 +28,34 @@ function harness() {
   return {render(hook, workspaceId = 'workspace', taskId = 'task') {cursor = 0; const value = hook(workspaceId, taskId); effects.splice(0).forEach(fn => fn()); return value;}, dispose() {slots.forEach(slot => slot?.cleanup?.()); delete globalThis.__sourceControlHarness;}};
 }
 
-test('任务默认来源等完整刷新后一次提供，后续渐进刷新保留旧选择且工作空间切换不复用', async () => {
-  const lists = [], reads = [];
-  globalThis.__sourceControlApi = {
-    sourceControlInventory(workspaceId, input, signal) {const request = {...deferred(), workspaceId, input, signal}; lists.push(request); return request.promise;},
-    sourceControl(workspaceId, input, signal) {const request = {...deferred(), workspaceId, input, signal}; reads.push(request); return request.promise;},
-  };
+test('task selection consumes complete observations in both response orders and keeps later explicit scope', async t => {
+  const api = {}; globalThis.__sourceControlApi = api;
   const {useSourceControl} = await import('../src/features/code/hooks/useSourceControl.ts');
-  const view = harness();
   try {
-    view.render(useSourceControl); lists[0].resolve(inventory()); await settle();
-    assert.equal(view.render(useSourceControl).selection, undefined);
-    assert.deepEqual(view.render(useSourceControl).observation.diagnostics, [], '等待状态不能当作全局失败警告');
-    reads.find(item => item.input.repositoryId === 'other').resolve(response(repository('other'))); await settle();
-    assert.equal(view.render(useSourceControl).repositories.find(item => item.id === 'other').status, 'clean', '非任务库结果仍可渐进显示');
-    assert.equal(view.render(useSourceControl).selection, undefined, '任务来源未完成前不能消费空工作树选择');
-    reads.find(item => item.input.repositoryId === 'task-repo').resolve(response(repository('task-repo'))); await settle();
-    const ready = view.render(useSourceControl);
-    assert.deepEqual(ready.selection.worktrees, [{repositoryId:'task-repo',worktreeId:'task-repo-task'}]);
-    const refresh = ready.refresh(); lists[1].resolve(inventory()); await settle();
-    assert.equal(view.render(useSourceControl).selection, ready.selection, '后续刷新期间继续保留已确认范围');
-    reads.slice(2).forEach(request => request.resolve(response(repository(request.input.repositoryId)))); await refresh;
-    assert.equal(view.render(useSourceControl, 'different').selection, undefined, '新工作空间不能沿用旧任务来源');
-  } finally {view.dispose(); delete globalThis.__sourceControlApi;}
+    for (const order of [['other','task-repo'],['task-repo','other']]) await t.test(order.join(' then '), async () => {
+      const lists = [], reads = [];
+      Object.assign(api, {
+        sourceControlInventory(workspaceId,input,signal) {const request={...deferred(),workspaceId,input,signal};lists.push(request);return request.promise;},
+        sourceControl(workspaceId,input,signal) {const request={...deferred(),workspaceId,input,signal};reads.push(request);return request.promise;},
+      });
+      const view=harness();
+      try {
+        view.render(useSourceControl);lists[0].resolve(inventory());await settle();
+        assert.equal(view.render(useSourceControl).selection,undefined);
+        assert.deepEqual(view.render(useSourceControl).observation.diagnostics,[]);
+        reads.find(item=>item.input.repositoryId===order[0]).resolve(response(repository(order[0])));await settle();
+        assert.equal(view.render(useSourceControl).repositories.find(item=>item.id===order[0]).status,'clean');
+        assert.equal(view.render(useSourceControl).selection,undefined,'a partial response cannot consume the task entry');
+        reads.find(item=>item.input.repositoryId===order[1]).resolve(response(repository(order[1])));await settle();
+        const ready=view.render(useSourceControl);
+        assert.deepEqual(ready.selection.worktrees,[{repositoryId:'task-repo',worktreeId:'task-repo-task'}]);
+        const refresh=ready.refresh();lists[1].resolve(inventory());await settle();
+        assert.equal(view.render(useSourceControl).selection,ready.selection);
+        reads.slice(2).forEach(request=>request.resolve(response(repository(request.input.repositoryId))));await refresh;
+        assert.equal(view.render(useSourceControl,'different').selection,undefined);
+      } finally {view.dispose();}
+    });
+  } finally {delete globalThis.__sourceControlApi;}
 });
 
 test('共享静默初始观察不以spinner判断选择就绪，pending不告警且页激活仍复用observer', async () => {

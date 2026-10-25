@@ -35,7 +35,7 @@ test('dispatch readiness is collect-all, frozen and always side-effect free', ()
   assert.equal(result.frozen, true);
   assert.deepEqual(result.effects, []);
   assert.deepEqual(result.findings, []);
-  assert.deepEqual(result.deferredChecks.map((item) => item.id), ['npm-production-approval', 'hosted-oidc-exchange', 'pre-tag-remote-readback']);
+  assert.deepEqual(result.deferredChecks.map((item: { id: string }) => item.id), ['npm-production-approval', 'hosted-oidc-exchange', 'pre-tag-remote-readback']);
 });
 
 test('readiness retains independent Candidate, artifact, Task, Preparation, Node, workflow and main findings', () => {
@@ -50,7 +50,7 @@ test('readiness retains independent Candidate, artifact, Task, Preparation, Node
       taskCorrelation: { ...input().taskCorrelation, status: 'blocked', sourceTree: sha('f') },
     })),
   });
-  const codes = new Set(result.findings.map((item) => item.code));
+  const codes = new Set(result.findings.map((item: { code: string }) => item.code));
   for (const code of ['candidate-not-passed', 'candidate-source-mismatch', 'artifact-name-mismatch', 'task-correlation-not-passed', 'node-preparation-mismatch', 'workflow-authority-mismatch', 'main-tree-mismatch']) assert.equal(codes.has(code), true, code);
   assert.equal(result.status, 'blocked');
   assert.deepEqual(result.effects, []);
@@ -59,7 +59,7 @@ test('readiness retains independent Candidate, artifact, Task, Preparation, Node
 test('pre-candidate reports missing owner facts without requiring future Candidate/main facts', () => {
   const context = createReleaseContext(input({ candidate: null, artifact: null, convergence: null, taskCorrelation: null }));
   const result = evaluateReleaseReadiness({ stage: 'pre-candidate', context });
-  assert.deepEqual(result.findings.map((item) => item.code), ['taskCorrelation-missing']);
+  assert.deepEqual(result.findings.map((item: { code: string }) => item.code), ['taskCorrelation-missing']);
   assert.equal(result.frozen, false);
 });
 
@@ -87,6 +87,6 @@ test('reconciled release readiness requires matching merge-commit provenance', (
     }),
   });
   assert.equal(blocked.status, 'blocked');
-  assert.equal(blocked.findings.some((item) => item.code === 'main-reconciliation-identity-mismatch'), true);
-  assert.equal(blocked.findings.some((item) => item.code === 'main-merge-method-mismatch'), true);
+  assert.equal(blocked.findings.some((item: { code: string; }) => item.code === 'main-reconciliation-identity-mismatch'), true);
+  assert.equal(blocked.findings.some((item: { code: string; }) => item.code === 'main-merge-method-mismatch'), true);
 });

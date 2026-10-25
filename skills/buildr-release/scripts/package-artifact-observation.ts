@@ -8,7 +8,7 @@ import { sameFilesystemPath } from '../../../projects/product/services/buildr/sr
 import { parsePackageCompatibility, type CompatibilityArtifact } from './package-compatibility.ts';
 import { type PublishedPackageObservation } from './release-targets.ts';
 import { requestReleaseJson } from './release-observation.ts';
-import { readReleaseArtifact, releaseArtifactSchemaVersion, releasePackMetadataName } from './release-artifact.ts';
+import { readReleaseArtifact, releaseArtifactSchemaVersion, releasePackMetadataName, RELEASE_ARTIFACT_METADATA_MAX_BYTES } from './release-artifact.ts';
 
 export const packageNames = { buildr: '@buildr-ai/buildr', 'dsh-plugin': '@buildr-ai/buildr-dsh-plugin' } as const;
 export const packageArtifactInputSchema = 'buildr.package-artifact-input/v1';
@@ -78,7 +78,7 @@ function inspectPackageTarball(bytes: Buffer, releaseInputs = false): { metadata
     if (releaseInputs) inventory.push({ path: name.slice('package/'.length), size, mode: archiveNumber(header.subarray(100, 108)) });
     const releaseKey = releaseInputs ? ({ 'package/application-payload.json': 'payload', 'package/payload/build/generated-artifacts.json': 'generated' } as Record<string, string>)[name] : undefined;
     if (name === 'package/package.json' || releaseKey) {
-      if (body.length > 1024 * 1024) throw new Error('Package metadata is too large.');
+      if (body.length > (releaseKey ? RELEASE_ARTIFACT_METADATA_MAX_BYTES : 1024 * 1024)) throw new Error('Package metadata is too large.');
       const value = JSON.parse(body.toString('utf8'));
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Package metadata is invalid.');
       if (releaseKey) release[releaseKey] = value; else metadata = value;

@@ -158,7 +158,7 @@ test('HTTP validates closed paged queries, numeric conversion and real observed 
   const first:any=await request({});assert.equal(first.status,200);assert.equal(first.body.page.index,0);assert.equal(CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS.file.$id,first.body).valid,true);
   const next:any=await request({page:'1',expectedRevision:first.body.revision});assert.equal(next.body.page.index,1);
   const match:any=await request({line:'3',matchQuery:'http [NEEDLE]'});assert.equal(match.body.page.startLine,2);assert.equal(match.body.page.endLine,3);assert.ok(match.body.page.matchOffset>CODE_LIMITS.textBytes);
-  for(const values of [{page:'-1'},{line:'0'},{page:'1.0'},{unexpected:'field'}])await assert.rejects(request(values),(error:any)=>error.code==='code_query_invalid');
+  for(const values of ([{page:'-1'},{line:'0'},{page:'1.0'},{unexpected:'field'}] as Record<string,string>[]))await assert.rejects(request(values),(error:any)=>error.code==='code_query_invalid');
   await assert.rejects(request({page:'1'}),(error:any)=>error.code==='code_file_revision_required');
   await assert.rejects(request({page:'1',expectedRevision:'stale'}),(error:any)=>error.code==='code_file_changed');
 });

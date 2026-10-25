@@ -52,9 +52,9 @@ Application MUST按规范化closed值计算Declaration identity与每个Recipe i
 - **THEN** 旧Task Plan与Receipt MUST派生为stale/blocked
 - **AND** Agent MUST重新提交当前Recipe选择后才能恢复prepare
 
-### Requirement: Preparation缺口必须提供Declaration Intake恢复入口
+### Requirement: Preparation缺口必须提供声明核对恢复入口
 
-Declaration Intake MAY只读指出Project preparation声明缺失、失效或与真实入口不一致；它 MUST不阻塞无关开发动作，也不得把缺口写成Task Environment blocker。
+`buildr` 的准备指引 MAY只读指出Project preparation声明缺失、失效或与真实入口不一致；它 MUST不阻塞无关开发动作，也不得把缺口写成Task Environment blocker。
 
 #### Scenario: 声明缺失但当前动作不需要准备
 - **WHEN** Agent能够直接编辑、审查、验证或交付且无需该准备入口
@@ -62,8 +62,8 @@ Declaration Intake MAY只读指出Project preparation声明缺失、失效或与
 
 #### Scenario: Recipe缺失
 - **WHEN** 当前动作明确需要的Recipe不存在
-- **THEN** 只依赖该Recipe的动作 MUST停止并指向Declaration Intake
+- **THEN** 只依赖该Recipe的动作 MUST停止并指向 `buildr` 的准备指引
 
 #### Scenario: 声明缺失
 - **WHEN** Project没有`preparation.yml`且Agent无法确定必要准备入口
-- **THEN** Declaration Intake MUST报告事实缺口，不创建Environment blocker
+- **THEN** `buildr` 的准备指引 MUST报告事实缺口，不创建Environment blocker

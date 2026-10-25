@@ -79,13 +79,19 @@ test('CLI 集成验证 provider 替换、绑定与 builtin 恢复', { concurrenc
     'skills', 'add', '--source', internalVerificationSource, '--scope', '.', '--target', root,
     '--provides', 'buildr.task-verification@4',
   ]);
-  assert.equal(manifest(root).bindings.find((item: any) => item.capability === 'buildr.task-verification').provider, 'task-verification');
+  const customVerificationEntry = manifest(root).skills.find((item: any) => item.id === 'internal-verification');
+  assert.ok(customVerificationEntry, 'the custom provider must be registered before replacing the binding');
+  assert.equal(manifest(root).bindings.find((item: any) => item.capability === 'buildr.task-verification').provider, 'project-verification', 'provider install must not silently change binding');
   await run(['skills', 'bind', 'buildr.task-verification@4', '--provider', 'internal-verification', '--scope', '.', '--target', root]);
-  await run(['builtin', 'uninstall', 'task-verification', '--target', root, '--reason', 'internal replacement']);
+  const uninstallVerification: any = await run(['builtin', 'uninstall', 'project-verification', '--target', root, '--reason', 'internal replacement']);
+  assert.doesNotMatch(uninstallVerification.stdout, /Capability dependency impact（写入前）/, 'unselected verification builtin must not report a false dependency impact');
   const uninstallGit: any = await run(['builtin', 'uninstall', 'git-operations', '--target', root, '--reason', 'internal replacement']);
   assert.doesNotMatch(uninstallGit.stdout, /Capability dependency impact（写入前）/, 'unselected builtin must not report a false dependency impact');
   workspaceManifest = manifest(root);
   assert.equal(workspaceManifest.skills.find((item: any) => item.id === 'git-operations').state, 'uninstalled');
+  assert.equal(workspaceManifest.skills.find((item: any) => item.id === 'project-verification').state, 'uninstalled');
+  assert.deepEqual(workspaceManifest.skills.find((item: any) => item.id === 'internal-verification'), customVerificationEntry, 'uninstalling the builtin must preserve the complete custom provider declaration');
+  assert.equal(workspaceManifest.bindings.find((item: any) => item.capability === 'buildr.task-verification').provider, 'internal-verification', 'builtin uninstall must preserve the explicitly selected custom provider');
   const readyDoctor: any = await doctor(root);
   assert.equal(consumer(readyDoctor, '.', 'task-finish').readiness, 'ready');
   assert.equal(consumer(readyDoctor, '.', 'task-finish').dependencies.some((item: any) => item.capability === 'buildr.task-verification'), false);
@@ -96,6 +102,11 @@ test('CLI 集成验证 provider 替换、绑定与 builtin 恢复', { concurrenc
 
   await run(['builtin', 'restore', 'git-operations', '--target', root]);
   assert.equal(manifest(root).skills.find((item: any) => item.id === 'git-operations').state, 'installed');
+  await run(['builtin', 'restore', 'project-verification', '--target', root]);
+  workspaceManifest = manifest(root);
+  assert.equal(workspaceManifest.skills.find((item: any) => item.id === 'project-verification').state, 'installed');
+  assert.deepEqual(workspaceManifest.skills.find((item: any) => item.id === 'internal-verification'), customVerificationEntry, 'restoring the builtin must preserve the complete custom provider declaration');
+  assert.equal(workspaceManifest.bindings.find((item: any) => item.capability === 'buildr.task-verification').provider, 'internal-verification', 'builtin restore must preserve the explicitly selected custom provider');
 });
 
 test('CLI 集成验证独立Task Retrospective卸载不影响生命周期consumer', { concurrency: true }, async (t: any) => {

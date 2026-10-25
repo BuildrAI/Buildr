@@ -8,8 +8,8 @@ import { fileURLToPath } from 'node:url';
 test('actual capture queries Buildr metadata while later event viewing runs zero source processes', { timeout: 60_000, skip: !process.env.BUILDR_DSH_BUILDR_PEER_MANIFEST ? 'explicit prepared peer required' : false }, () => {
   const directory = path.dirname(fileURLToPath(import.meta.url));
   const buildrRoot = path.resolve(directory, '../../../buildr');
-  const runner = path.join(buildrRoot, 'tools/development/run-isolated-workspace-smoke.ts');
-  const scenario = path.join(directory, 'source-business-gateway.smoke.ts');
+  const runner = path.join(buildrRoot, 'tools/development/run-isolated-workspace-check.ts');
+  const scenario = path.join(directory, 'source-business-gateway-check.ts');
   assert.ok(fs.statSync(runner).isFile()); assert.ok(fs.statSync(scenario).isFile());
   const result = spawnSync(process.execPath, [runner, '--script', scenario, '--', '--peer-receipt', process.env.BUILDR_DSH_BUILDR_PEER_MANIFEST!], { cwd: buildrRoot, env: process.env, encoding: 'utf8', timeout: 55_000, maxBuffer: 2 * 1024 * 1024 });
   assert.equal(result.status, 0, result.stderr || result.stdout);

@@ -98,8 +98,8 @@ test('Candidate CI coverage is a closed projection of the full local Candidate',
   assert.deepEqual(distributed, local);
   const corePlans: any = CORE_MACOS_SHARDS.map((shard: any) => createCandidateCiShardPlan(shard.id, { externalArtifact: true }));
   assert.ok(corePlans.every((plan: any) => !plan.steps.some((item: any) => item.id === 'candidate-tarball')));
-  assert.ok(corePlans.every((plan: any) => !plan.steps.some((item: any) => item.id === 'release-tarball-smoke')));
-  assert.ok(createCandidateCiShardPlan('runtime-macos', { externalArtifact: true }).steps.some((item: any) => item.id === 'release-tarball-smoke'));
+  assert.ok(corePlans.every((plan: any) => !plan.steps.some((item: any) => item.id === 'release-tarball-consumption')));
+  assert.ok(createCandidateCiShardPlan('runtime-macos', { externalArtifact: true }).steps.some((item: any) => item.id === 'release-tarball-consumption'));
   assert.ok(corePlans.every((plan: any) => plan.steps.every((item: any) => !item.dependsOn.includes('candidate-tarball'))));
   const coreOwners: any = CORE_MACOS_SHARDS.flatMap((shard: any) => shard.stepIds);
   assert.deepEqual([...coreOwners].sort(), [...CORE_MACOS_STEP_IDS].sort());
@@ -130,11 +130,11 @@ test('Generic lifecycle owners retain complete source coverage on one primary pl
   assert.deepEqual(shards.map((shard: any) => ({ id: shard.id, stepIds: shard.stepIds })), [
     {
       id: 'workspace-lifecycle-macos',
-      stepIds: ['system-workspace-lifecycle', 'workspace-lifecycle'],
+      stepIds: ['e2e-workspace', 'workspace-lifecycle'],
     },
     {
       id: 'task-worktree-recovery-macos',
-      stepIds: ['system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation'],
+      stepIds: ['e2e-task', 'e2e-worktree', 'e2e-nested-git'],
     },
     { id: 'task-concurrent-macos', stepIds: ['concurrent-task-acceptance'] },
   ]);
@@ -249,7 +249,7 @@ test('Candidate aggregate preserves fresh Windows execution when its optional fu
   const workflow = { runId: '38797032896', runAttempt: '1' };
   const complete = passedEvidence(workflow);
   const shard = complete.find((item: any) => item.id === 'platform-boundaries-windows');
-  for (const id of ['system-windows-platform']) {
+  for (const id of ['integration-windows-native']) {
     const result = shard.results.find((item: any) => item.id === id);
     result.durationMs = 12_345;
     result.sourceRecord = { identity: { stepId: id, key: `sha256-${'a'.repeat(64)}` } };
@@ -261,13 +261,13 @@ test('Candidate aggregate preserves fresh Windows execution when its optional fu
   assert.equal(accepted.status, 'passed');
   assert.deepEqual(accepted.findings, []);
   assert.equal(checked, 0, 'fresh same-run results do not use the optional future reuse proof');
-  assert.equal(shard.results.find((item: any) => item.id === 'system-windows-platform').durationMs, 12_345);
+  assert.equal(shard.results.find((item: any) => item.id === 'integration-windows-native').durationMs, 12_345);
 });
 
 test('Candidate aggregate still rejects an invalid or missing record for explicitly reused results', () => {
   for (const hasRecord of [true, false]) {
     const complete = passedEvidence();
-    const result = complete.find((item: any) => item.id === 'platform-boundaries-windows').results.find((item: any) => item.id === 'system-windows-platform');
+    const result = complete.find((item: any) => item.id === 'platform-boundaries-windows').results.find((item: any) => item.id === 'integration-windows-native');
     result.disposition = 'reused';
     if (hasRecord) result.sourceRecord = { identity: { stepId: result.id, key: `sha256-${'a'.repeat(64)}` } };
     const rejected = aggregateCandidateCiEvidence(complete, candidateContext, null, { validateSourceRecord: () => !hasRecord });
@@ -318,18 +318,18 @@ test('Candidate shard evidence retains bounded failure diagnostics', () => {
   const evidence: any = createCandidateCiEvidence({
     kind: 'shard', id: 'runtime-windows', platform: 'win32', sourceCommit, sourceTree, purpose: 'candidate',
     registryIdentity: candidateCiRegistryIdentity(), artifact,
-    primaryStepIds: ['release-tarball-smoke'],
+    primaryStepIds: ['release-tarball-consumption'],
     startedAt: '2026-08-13T00:00:00.000Z', finishedAt: '2026-08-13T00:00:01.000Z', durationMs: 1000,
     status: 'failed',
     results: [{
-      id: 'release-tarball-smoke', status: 'failed', exitCode: 1, durationMs: 1000,
+      id: 'release-tarball-consumption', status: 'failed', exitCode: 1, durationMs: 1000,
       failureCode: 'process-close-timeout',
       processCleanup: { status: 'failed', ownership: 'runner-observed-lineage' },
       stdoutPath: 'C:\\runner\\release.stdout.log', stderrPath: 'C:\\runner\\release.stderr.log',
     }],
   });
   assert.deepEqual(evidence.results[0], {
-    id: 'release-tarball-smoke', status: 'failed', exitCode: 1, durationMs: 1000,
+    id: 'release-tarball-consumption', status: 'failed', exitCode: 1, durationMs: 1000,
     queueDurationMs: null, phases: [], failureCode: 'process-close-timeout',
     processCleanup: { status: 'failed', ownership: 'runner-observed-lineage' },
     diagnostics: { stdoutFile: 'release.stdout.log', stderrFile: 'release.stderr.log' },
@@ -450,12 +450,13 @@ test('Release rehearsal evidence is bound to purpose, tree and rehearsal identit
   assert.ok(aggregateCandidateCiEvidence(drifted, { purpose: 'release-rehearsal', sourceCommit, sourceTree, rehearsalIdentity }).findings.some((item: any) => item.code === 'source-tree-mismatch'));
 });
 
-test('Candidate has one independent owner for the complete frontend logic suite', () => {
+test('Candidate assigns the complete frontend logic and type checks once to their source owner', () => {
   const shard = CANDIDATE_CI_SHARDS.find((item: any) => item.id === 'frontend-logic-macos');
-  assert.deepEqual(shard.stepIds, ['frontend-logic']);
+  assert.deepEqual(shard.stepIds, ['frontend-logic', 'frontend-typecheck']);
+  assert.equal(CANDIDATE_CI_SHARDS.flatMap((item: any) => item.stepIds).filter((id: string) => id === 'frontend-logic').length, 1);
   assert.equal(shard.requiresArtifact, false);
   const plan = createCandidateCiShardPlan(shard.id);
-  assert.deepEqual(plan.steps.map((item: any) => item.id), ['frontend-logic']);
+  assert.deepEqual(plan.steps.map((item: any) => item.id), ['frontend-logic', 'frontend-typecheck']);
   const withoutFrontend = passedEvidence().filter((item: any) => item.id !== shard.id);
   assert.ok(aggregateCandidateCiEvidence(withoutFrontend, candidateContext).findings.some((item: any) => item.id === shard.id && item.code === 'evidence-missing'));
 });

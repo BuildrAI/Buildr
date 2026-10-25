@@ -72,6 +72,6 @@ test('Candidate artifact Browser explicitly prepares Chromium and source harness
     { id: 'buildr-agent-build', executable: 'node', args: ['tools/build.ts'], cwd: '/product/buildr-agent' },
     { id: 'buildr-dependencies', executable: 'npm', args: ['ci', '--install-links'], cwd: roots.serviceRoot },
     { id: 'generated-contracts-and-test-context', executable: 'npm', args: ['run', 'artifacts:prepare'], cwd: roots.serviceRoot },
-    { id: 'browser-chromium', executable: 'npm', args: ['run', 'test:browser:install'], cwd: roots.serviceRoot },
+    { id: 'browser-chromium', executable: 'npm', args: ['run', 'browser:prepare'], cwd: roots.serviceRoot },
   ]);
 });

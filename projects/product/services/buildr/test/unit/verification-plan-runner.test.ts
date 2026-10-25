@@ -1,71 +1,64 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { executePlan, prepareVerificationReuse } from '../verification/plan-runner.ts';
 
-import { executePlan, FULL_PLAN_RESOURCE_ID, FULL_PLAN_WAIT_TIMEOUT_MS } from '../verification/plan-runner.ts';
-import { verificationSteps } from '../verification/registry.ts';
+test('owned dependency preparation precedes the environment proof and leaves cached checks untouched', async () => {
+  let version = 0;
+  const prepared: string[][] = [];
+  const result = await prepareVerificationReuse({ steps: [step('cold'), step('cached')] }, async checks => {
+    prepared.push(checks.map(check => check.id)); version++;
+  }, () => ({ hits: new Map([['cached', {}]]), version }));
+  assert.equal(result.version, 1);
+  assert.deepEqual(prepared, [['cold']]);
+});
 
-function emptyPlan(mode: any): any  {
-  return { scope: { mode }, steps: [], paths: [], delegated: [] };
-}
+test('preparation changing a dependency also prepares checks whose cached proof becomes stale', async () => {
+  let version = 0;
+  const prepared: string[][] = [];
+  const result = await prepareVerificationReuse({ steps: [step('cold'), step('newly-fresh')] }, async checks => {
+    prepared.push(checks.map(check => check.id)); version++;
+  }, () => ({ hits: new Map(version === 0 ? [['newly-fresh', {}]] : []), version }));
+  assert.equal(result.version, 2);
+  assert.deepEqual(prepared, [['cold'], ['newly-fresh']]);
+});
 
-function coordinator(events: any): any  {
+const step = (id: string, dependsOn: string[] = []) => ({ id, name: id, dependsOn, contexts: [], resources: [], concurrencyClass: 'default' });
+function options(execute: (check: any) => Promise<any>) {
+  const events: string[] = [];
   return {
-    root: '/verification-coordination',
-    async acquire(resources: any, options: any): Promise<any>  {
-      events.push(['acquire', resources, options]);
-      return {
-        waitDurationMs: 17,
-        async release(): Promise<any>  {
-          events.push(['release', resources]);
-          return resources.map((resource: any) => ({ resource, slot: 0, status: 'released' }));
-        },
-      };
-    },
+    events, productRoot: process.cwd(),
+    concurrency: { global: 2, classes: { default: 2 }, resources: {}, innerConcurrency: {} },
+    resourceCoordinator: { root: '/fixture-coordination', acquire: () => assert.fail('Resource-free checks must not acquire a project-wide lease.') },
+    contextPoolFactory: () => ({ prepareAll: () => [], environment: () => ({}), cleanup: () => { events.push('cleaned'); return { status: 'cleaned', events: [] }; }, events: () => [] }),
+    executorFactory: () => execute,
+    stream: { write() {} }, errorStream: { write() {} },
   };
 }
 
-const silentExecutor: any = () => async () => ({ status: 'passed', durationMs: 0 });
-
-test('long nested and cross-domain owners retain their deadlines while avoiding competing outer owners', () => {
-  for (const id of ['system-nested-git-isolation', 'integration']) assert.equal(verificationSteps.find((step: any) => step.id === id).concurrencyClass, 'exclusive');
-  assert.equal(verificationSteps.find((step: any) => step.id === 'integration').timeoutMs, 300_000);
+for (const mode of ['affected', 'full']) test(`${mode} empty selection performs no check or synthetic lease`, async () => {
+  const input = options(async () => assert.fail('An empty selection has no executor calls.'));
+  const result = await executePlan({ scope: { mode }, steps: [], paths: [], delegated: [] }, input);
+  assert.equal(result.passed, true);
+  assert.deepEqual(result.results, []);
+  assert.deepEqual(input.events, ['cleaned']);
 });
 
-test('Full plan 持有跨 Task 共享容量直到整个 DAG 结束', async () => {
-  const events: any[] = [];
-  const output: any[] = [];
-  const plan = { ...emptyPlan('full'), steps: [{ id: 'local-check', name: 'local check', dependsOn: [], contexts: [] }] };
-  const result: any = await executePlan(plan, {
-    productRoot: process.cwd(),
-    resourceCoordinator: coordinator(events),
-    executorFactory: silentExecutor,
-    stream: { write: (value: any) => output.push(value) },
-    errorStream: { write(): any  {} },
-  });
-
-  assert.deepEqual(events, [
-    ['acquire', [FULL_PLAN_RESOURCE_ID], { signal: undefined, waitTimeoutMs: FULL_PLAN_WAIT_TIMEOUT_MS }],
-    ['release', [FULL_PLAN_RESOURCE_ID]],
-  ]);
-  assert.deepEqual(result.fullPlanCoordination, {
-    waitDurationMs: 17,
-    release: [{ resource: FULL_PLAN_RESOURCE_ID, slot: 0, status: 'released' }],
-  });
-  assert.match(output.join(''), /waiting: product-full-execution/);
-  assert.match(output.join(''), /acquired: product-full-execution wait=17ms/);
+test('full source selection executes independent checks without a project-wide lock', async () => {
+  const calls: string[] = [];
+  const input = options(async check => { calls.push(check.id); return { status: 'passed', exitCode: 0, durationMs: 0 }; });
+  const result = await executePlan({ scope: { mode: 'full' }, steps: [step('first'), step('second')], paths: [], delegated: [] }, input);
+  assert.equal(result.passed, true);
+  assert.deepEqual(calls.sort(), ['first', 'second']);
+  assert.deepEqual(input.events, ['cleaned']);
 });
 
-for (const mode of ['affected', 'full']) test(`${mode} 空计划不占用 Full 共享容量`, async () => {
-  const events: any[] = [];
-  const result: any = await executePlan(emptyPlan(mode), {
-    productRoot: process.cwd(),
-    resourceCoordinator: coordinator(events),
-    executorFactory: silentExecutor,
-    stream: { write(): any  {} },
-    errorStream: { write(): any  {} },
-  });
-
-  assert.deepEqual(events, []);
-  assert.equal(result.fullPlanCoordination, null);
+test('a failed check preserves independent results and blocks only its dependent check', async () => {
+  const calls: string[] = [];
+  const input = options(async check => { calls.push(check.id); return { status: check.id === 'failed' ? 'failed' : 'passed', exitCode: check.id === 'failed' ? 1 : 0, durationMs: 0 }; });
+  const result = await executePlan({ scope: { mode: 'full' }, steps: [step('failed'), step('independent'), step('dependent', ['failed'])], paths: [], delegated: [] }, input);
+  assert.equal(result.passed, false);
+  assert.deepEqual(calls.sort(), ['failed', 'independent']);
+  assert.equal(result.results.find((value: any) => value.id === 'dependent').status, 'blocked');
+  assert.equal(result.results.find((value: any) => value.id === 'independent').status, 'passed');
+  assert.deepEqual(input.events, ['cleaned']);
 });
-

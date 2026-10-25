@@ -14,7 +14,7 @@ export function fixture(t: test.TestContext) {
   const request = (root: string, relative: string, maxBytes = 1024) => ({ root: path.join(directory, root), relative, maxBytes });
   return { directory, write, request };
 }
-export function body(result: VerifiedReadonlyResult): string { assert.equal(result.ok, true); if (!result.ok) throw result.error; return result.bytes.toString('utf8'); }
+export function body(result: VerifiedReadonlyResult): string { if (!result.ok) throw result.error; assert.equal(result.ok, true); return result.bytes.toString('utf8'); }
 export function denied(result: VerifiedReadonlyResult): void { assert.equal(result.ok, false); if (result.ok) assert.fail('unproved body returned'); assert.equal(Reflect.get(result.error, 'code'), 'readonly_root_unconfirmed'); }
 export function captureOpens(t: test.TestContext, before?: (file: string) => void) {
   const original = fs.openSync, opened = new Map<number, string>();
@@ -27,7 +27,7 @@ export function captureProbes(t: test.TestContext, transform?: (bytes: Buffer, a
     const bytes = original(file, args, options);
     if (file !== '/usr/sbin/lsof') return bytes;
     calls.push(args); assert.equal(options.timeout, 250); assert.equal(options.maxBuffer, 256 * 1024);
-    return transform ? transform(bytes as Buffer, args, calls.length) : bytes;
+    return transform ? transform(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes), args, calls.length) : bytes;
   }) as typeof childProcess.execFileSync);
   syncBuiltinESMExports();
   return { calls, restore: () => { capture.mock.restore(); syncBuiltinESMExports(); } };

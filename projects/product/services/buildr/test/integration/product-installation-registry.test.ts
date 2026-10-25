@@ -274,7 +274,9 @@ test('registry lock times out fail-closed, releases only its exact token, and sa
     },
   });
   assert.equal(enrolled.action, 'registered');
-  assert.equal(readProductInstallationRegistry({ file }).registry.installations.length, 1);
+  const registry = readProductInstallationRegistry({ file }).registry;
+  assert.ok(registry);
+  assert.equal(registry.installations.length, 1);
   assert.equal(releaseExclusiveFileLock(staleOwner), false, 'a reclaimed stale token cannot release a later owner');
   assert.equal(fs.existsSync(lockFile), false);
 
@@ -348,7 +350,9 @@ test('two npm entries sharing one Host Node remain distinct by explicit envelope
   assert.equal(first.entry.runtime.executable, second.entry.runtime.executable);
   assert.notEqual(first.entry.entryPath, second.entry.entryPath);
   assert.notEqual(first.entry.identity, second.entry.identity);
-  assert.equal(readProductInstallationRegistry({ file }).registry.installations.length, 2);
+  const registry = readProductInstallationRegistry({ file }).registry;
+  assert.ok(registry);
+  assert.equal(registry.installations.length, 2);
   assert.equal(findRegisteredProductInstallation(first.entry.origin, {
     file,
     productRoot: firstInput.productRoot,

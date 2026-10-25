@@ -5,6 +5,7 @@ import { encodeCandidateSourceImport } from './candidate-source-reuse.ts';
 import { assertCandidateRound, passedRoundRecord, readCandidateRound } from './candidate-round.ts';
 import { verificationStepOwnership, VERIFICATION_GOVERNED_REPOSITORY_INPUTS } from './ownership.ts';
 import { matchesInput } from './planner.ts';
+import { verificationSteps } from './registry.ts';
 
 const BUILDR_PREFIX = 'projects/product/services/buildr/';
 const PRODUCT_PREFIX = 'projects/product/';
@@ -32,12 +33,14 @@ function normalizedProductPath(value: string): string | null {
 }
 
 function stepAffectedBy(step: any, changed: string[]): boolean | null {
-  let inputs: string[];
-  try { inputs = [...verificationStepOwnership(step.id.startsWith('dsh-plugin:') ? 'dsh-plugin' : step.id, step.executor).inputs]; }
+  let ownership: any;
+  try { ownership = Array.isArray(step.inputs) ? step : verificationStepOwnership(step.id, step.executor); }
   catch { return null; }
+  const inputs: string[] = ownership.inputs;
   return changed.some(value => {
     const productPath = normalizedProductPath(value);
-    return productPath !== null && inputs.some((pattern: string) => matchesInput(productPath, pattern));
+    return productPath !== null && inputs.some((pattern: string) => matchesInput(productPath, pattern))
+      && !(ownership.inputExclusions ?? []).some((pattern: string) => matchesInput(productPath, pattern));
   });
 }
 
@@ -51,7 +54,11 @@ export async function prepareLocalSourceVerification(options: {
   const pluginRequired = options.packages?.includes('dsh-plugin') ?? false;
   const log = (dependencies.readRound ?? readCandidateRound)(options.sourceFile, options.roundId);
   assertCandidateRound(log, options.roundId);
-  const required = [...(buildrRequired ? plan.steps : []), ...(pluginRequired ? [{ id: 'dsh-plugin:unit', platformScope: { kind: 'common' } }] : [])];
+  const pluginUnit = verificationSteps.find((step: any) => step.id === 'plugin-unit');
+  if (pluginRequired && !pluginUnit) throw new Error('The DSH plugin Unit check is not registered.');
+  // The release round retains its existing phase identity while consuming the
+  // single Service-owned check's actual inputs and execution declaration.
+  const required = [...(buildrRequired ? plan.steps : []), ...(pluginRequired ? [{ ...pluginUnit, id: 'dsh-plugin:unit' }] : [])];
   const head = (dependencies.sourceHead ?? sourceHead)(options.repo);
   const readChangedPaths = dependencies.changedPaths ?? changedSourcePaths;
   const changedBySource = new Map<string, string[] | null>();
@@ -80,7 +87,7 @@ export async function prepareLocalSourceVerification(options: {
       reasons: [missingStepIds.includes(step.id) ? (invalidated.includes(step.id) ? 'source-inputs-changed' : 'failed-or-not-run-in-this-round') : 'passed-in-this-round'] })) },
     ...(missingStepIds.length ? {} : { transport: encodeCandidateSourceImport(log) }),
     nextActions: missingStepIds.length ? [
-      `在 ${productRoot} 执行 tools/development/run-development-npm run test:source -- --round ${options.roundId}${options.base ? ` --base ${options.base}` : ''}${options.sourceFile ? ` --output ${options.sourceFile}` : ''}${invalidated.length ? ` --invalidate ${invalidated.join(',')}` : ''}；同轮只补失败及未执行项。插件使用同一 --round 和 --output 运行 tools/verify-source.ts${invalidated.includes('dsh-plugin:unit') ? ' --invalidate dsh-plugin:unit' : ''}。`,
+      `在 ${productRoot} 执行 tools/development/run-development-node test/verification/source.ts --round ${options.roundId}${options.base ? ` --base ${options.base}` : ''}${options.sourceFile ? ` --output ${options.sourceFile}` : ''}${invalidated.length ? ` --invalidate ${invalidated.join(',')}` : ''}；同轮只补失败及未执行项。插件使用同一 --round 和 --output 运行 tools/verify-source.ts${invalidated.includes('dsh-plugin:unit') ? ' --invalidate dsh-plugin:unit' : ''}。`,
       ...(invalidated.length ? [`源码自记录后发生变化，仅需重跑受影响步骤：${invalidated.join(', ')}。`] : []),
     ] : [] };
 }

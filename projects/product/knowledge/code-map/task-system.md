@@ -216,7 +216,7 @@
 | [任务管理（task-manager）](../../services/buildr/resources/workspace/skills/buildr/task-manager/SKILL.md) | 形成、保存及接续记录中的唯一任务说明（Task Brief），维护任务、工作摘要（Work Context）、真实答复及父任务完成依据 |
 | [工作树管理（task-worktree）](../../services/buildr/resources/workspace/skills/buildr/task-worktree/SKILL.md) | 创建、检查和安全清理明确归属的独立位置 |
 | [任务审查（task-review）](../../services/buildr/resources/workspace/skills/buildr/task-review/SKILL.md) | 按目标与风险审查方案或实现结果，保存真实结论 |
-| [任务验证（task-verification）](../../services/buildr/resources/workspace/skills/buildr/task-verification/SKILL.md) | 直接运行项目检查，区分检查通过、未覆盖与完成报告 |
+| [项目验证（project-verification）](../../services/buildr/resources/workspace/skills/buildr/project-verification/SKILL.md) | 直接运行项目检查，区分检查通过、未覆盖与完成报告 |
 | [Git 操作（git-operations）](../../services/buildr/resources/workspace/skills/buildr/git-operations/SKILL.md) | 精确执行已授权操作；明确正式任务时写入任务尾注并分别核对真实提交与任务读取 |
 | [收尾与交付（task-finish）](../../services/buildr/resources/workspace/skills/buildr/task-finish/SKILL.md) | 核验成果、完成实际交付，保存已有任务结果并处理安全善后 |
 | [当前知识维护（current-knowledge-maintenance）](../../services/buildr/resources/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md) | 维护受影响的文章、技术图（Technical Diagram）与代码地图（Code Map） |
@@ -238,7 +238,7 @@
     - [task-parent-coordination.json](../archify/flows/task-parent-coordination.json) — 父任务完成时序图源
     - [task-parent-coordination.html](../archify/flows/task-parent-coordination.html) — 核对成果、明确授权、保存完成与拒绝分支
 
-地图按职责定位文件，源码内容由当前文件提供；没有改变的实现不因改写地图重新验证。实际存储与交互的代表检查见[任务记录回归](../../services/buildr/test/system/task-record-product.test.ts)、[父任务完成输入回归](../../services/buildr-web/test/parentCoordination.test.mjs)和[工作摘要与工作台回归](../../services/buildr/test/integration/workbench-application.test.ts)。
+地图按职责定位文件，源码内容由当前文件提供；没有改变的实现不因改写地图重新验证。实际存储与交互的代表检查见[任务记录回归](../../services/buildr/test/e2e/task-record-product.test.ts)、[父任务完成输入回归](../../services/buildr-web/test/parentCoordination.test.mjs)和[工作摘要与工作台回归](../../services/buildr/test/integration/workbench-application.test.ts)。
 
 ## 任务图的来源与表达边界
 

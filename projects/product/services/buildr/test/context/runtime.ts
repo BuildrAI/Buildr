@@ -83,7 +83,7 @@ function readProjection(env: any): any  {
   }
   const contexts: any = new Map();
   for (const [key, value] of Object.entries(projection.contexts)) {
-    if (!value || typeof value.root !== 'string' || !/^sha256-[a-f0-9]{64}$/.test(value.identity ?? '')) {
+    if (!value || typeof value !== 'object' || !('root' in value) || typeof value.root !== 'string' || !('identity' in value) || typeof value.identity !== 'string' || !/^sha256-[a-f0-9]{64}$/.test(value.identity)) {
       throw contextError('test_context_projection_invalid', 'Inherited Test Context entry is incomplete.', { key });
     }
     contexts.set(key, Object.freeze({ root: path.resolve(value.root), identity: value.identity }));

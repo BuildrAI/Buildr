@@ -52,7 +52,7 @@ assert.deepEqual(RUNTIME_HOST_PROFILES.codex.publicationExtensions, [
 for (const adapterId of SUPPORTED_AGENT_IDS) {
   assert.deepEqual(RUNTIME_ADAPTERS[adapterId].traits.skills.publicationExtensions || [], [], `${adapterId} must not consume OpenAI Skill metadata`);
 }
-for (const adapter of Object.values(RUNTIME_ADAPTERS)) {
+for (const adapter of SUPPORTED_AGENT_IDS.map(id => RUNTIME_ADAPTERS[id])) {
   assert.ok(adapter.traits);
   assert.deepEqual(Object.keys(adapter.renderCapabilities), REQUIRED_RENDER_CAPABILITIES);
   const root: any = path.join(temporaryRoot, `adapter-${adapter.id}`);

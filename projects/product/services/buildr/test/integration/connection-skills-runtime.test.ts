@@ -81,7 +81,7 @@ test('查看个人秘密只接受当前观察和单个声明秘密字段，普�
   assert.throws(() => f.app.revealPersonal(f.workspace, created.id, { field: 'password', expected: { ...expected, localRevision: 'absent' } }), { code: 'connection_skill_revision_conflict' });
   const result = await http.handle({ root: f.workspace, suffix: `/connection-skills/instances/${created.id}/auth/reveal`, searchParams: new URLSearchParams(), request: { method: 'POST' }, authorizeWrite: () => { authorized++; }, readJsonBody: async () => ({ field: 'password', expected }) });
   assert.equal(authorized, 1); assert.deepEqual(result?.body, { field: 'password', value: 'personal-secret-456' });
-  assert.equal(result && 'headers' in result ? result.headers['cache-control'] : undefined, 'no-store');
+  assert.equal(result && 'headers' in result ? result.headers?.['cache-control'] : undefined, 'no-store');
   assert.equal(JSON.stringify(f.app.get(f.workspace, created.id)).includes('personal-secret-456'), false);
   assert.equal(JSON.stringify(f.app.directory(f.workspace)).includes('personal-secret-456'), false);
 });

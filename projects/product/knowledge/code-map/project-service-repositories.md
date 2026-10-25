@@ -55,7 +55,7 @@
 
 ## 修改时重点看哪里？
 
-改变引用规则先核对规范、领域校验和应用用例；修改存储兼容看数据访问；调整展示看对应前端组件。解除一方引用应保留共享身份和代码，删除登记也不等于删除源码。代表行为见[关系与分支回归](../../services/buildr/test/integration/asset-relationships.test.ts)。
+改变引用规则先核对规范、领域校验和应用用例；修改存储兼容看数据访问；调整展示看对应前端组件。解除一方引用应保留共享身份和代码，删除登记也不等于删除源码。代表行为见[关系回归](../../services/buildr/test/integration/asset-relationships.test.ts)、[目录与迁移](../../services/buildr/test/integration/asset-catalog-lifecycle.test.ts)、[实际目录登记](../../services/buildr/test/integration/asset-registration.test.ts)和[代码库与分支变更](../../services/buildr/test/integration/asset-repository-mutations.test.ts)。
 
 代码职责组织由[代码架构（code-architecture）](../../services/buildr/resources/workspace/skills/buildr/code-architecture/SKILL.md)指导，地图表达由[代码地图制作（code-map）](../../services/buildr/resources/workspace/skills/buildr/code-map/SKILL.md)负责，事实变化后的相关表达由[当前知识维护（current-knowledge-maintenance）](../../services/buildr/resources/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md)组织核对。这里说明专业方法，不声称每个历史文件都由这些方法产生。
 

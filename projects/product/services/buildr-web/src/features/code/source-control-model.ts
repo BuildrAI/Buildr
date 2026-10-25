@@ -122,3 +122,10 @@ export function sourceControlRepository(repository: CodeSourceControlRepository)
     fileCount: repository.fileCount, head: repository.head, observedRevision: repository.observedRevision,
     diagnostics: repository.diagnostics.map(item => item.message), ...(taskLocation ? { taskLocation, taskBranch: repository.branch } : {}) };
 }
+
+/** Composition retains the prior search; short Unicode input exits search. */
+export function sourceControlSearchQuery(query: string, composing: boolean): string | null {
+  if (composing) return null;
+  const value = query.trim();
+  return Array.from(value).length < 2 ? '' : value;
+}

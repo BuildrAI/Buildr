@@ -81,7 +81,7 @@ export function formatSystemFileTiming(files: any): any  {
   return `[buildr-system-file-timing] scope=transient files=${ordered.length} slowest-first=${details.join(',')}`;
 }
 
-export default async function* systemFileTimingReporter(source: any): Promise<any>  {
+export default async function* systemFileTimingReporter(source: any) {
   const files: any[] = [];
   let taskReviewDiagnostics = 0;
   const cases = new Map<string, { count: number; pending: Map<string, number[]> }>();

@@ -4,9 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { INTEGRATION_GENERAL_EXCLUDED_FILES, INTEGRATION_PRIMARY_SLICES, verificationSteps } from '../verification/registry.ts';
+import { INTEGRATION_PRIMARY_SLICES, verificationSteps } from '../verification/registry.ts';
 import { auditNodeTestFileOwnership, resolveNodeTestFiles } from '../verification/test-files.ts';
-import { auditServiceTestOwnership } from '../verification/test-inventory-ownership.ts';
+import { auditServiceTestOwnership, serviceOwnershipClaims } from '../verification/test-inventory-ownership.ts';
 
 const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -62,10 +62,15 @@ test('complete Buildr test inventory has one primary owner, including wrapped re
   for (const file of browser.executor.discoveredFiles) assert.ok(browserEntry.includes(file), `Browser wrapper must actually call ${file}`);
 });
 
-test('compatibility general covers every source Integration member and Candidate executes only the disjoint primary slices', () => {
-  const inventory = fs.readdirSync(path.join(serviceRoot, 'test/integration')).filter(file => file.endsWith('.test.ts'))
-    .map(file => `test/integration/${file}`).filter(file => !INTEGRATION_GENERAL_EXCLUDED_FILES.includes(file));
-  assert.deepEqual(auditNodeTestFileOwnership(inventory, INTEGRATION_PRIMARY_SLICES).findings, []);
+test('complete source Integration covers every member through its unique real primary owner', () => {
+  const byId = new Map<string, any>(verificationSteps.map((step: any) => [step.id, step]));
+  const allClaims = serviceOwnershipClaims(serviceRoot);
+  const artifactFiles = new Set(allClaims.filter(claim => byId.get(claim.id)?.target === 'artifact').flatMap(claim => claim.files));
+  const inventory = inventoryTests(path.join(serviceRoot, 'test/integration')).filter(file => !artifactFiles.has(file));
+  const claims = allClaims.filter(claim => byId.get(claim.id)?.target === 'source' && byId.get(claim.id)?.testing.executionBoundary === 'Integration');
+  const inIntegration = (file: string) => file.includes(`${path.sep}test${path.sep}integration${path.sep}`);
+  assert.deepEqual(auditNodeTestFileOwnership(inventory, claims.map(claim => ({ ...claim,
+    files: claim.files.filter(inIntegration), supportingFiles: claim.supportingFiles.filter(inIntegration) }))).findings, []);
   for (const slice of INTEGRATION_PRIMARY_SLICES) {
     const step = verificationSteps.find((item: any) => item.id === slice.id);
     assert.equal(step.testing.primaryEvidenceOwner, slice.id);
@@ -76,7 +81,7 @@ test('compatibility general covers every source Integration member and Candidate
 });
 
 test('native Windows selection keeps every declared platform test while its shared Worktree subset stays supporting', () => {
-  const step = verificationSteps.find((item: any) => item.id === 'system-windows-platform');
+  const step = verificationSteps.find((item: any) => item.id === 'integration-windows-native');
   const selector = step.executor.args.find((arg: string) => arg.startsWith('--test-name-pattern='));
   const pattern = new RegExp(selector.slice(selector.indexOf('=') + 1), 'u');
   for (const file of step.executor.files.filter((file: string) => !step.executor.supportingFiles.includes(file))) {
@@ -96,7 +101,7 @@ test('Web and DSH complete entries discover every service-owned test file exactl
   const uiConfig = fs.readFileSync(path.join(pluginRoot, 'test/integration/source-ui.vitest.config.ts'), 'utf8');
   const uiFiles = [...uiConfig.matchAll(/['"]([^'"\n]+\.spec\.tsx)['"]/gu)].map(match => path.join(pluginRoot, 'test/integration', match[1]!));
   const claims = [
-    ...['unit', 'integration'].map(group => ({ id: `dsh-plugin:${group}`, files: pluginSourcePhaseFiles(group, pluginRoot).map((file: string) => path.join(pluginRoot, file)) })),
+    ...['static', 'unit', 'integration', 'e2e'].map(group => ({ id: `dsh-plugin:${group}`, files: pluginSourcePhaseFiles(group, pluginRoot).map((file: string) => path.join(pluginRoot, file)) })),
     { id: 'dsh-plugin:peer-gateway', files: PLUGIN_PEER_PHASE_FILES.map((file: string) => path.join(pluginRoot, file)) },
     { id: 'dsh-plugin:source-ui', files: uiFiles },
   ];

@@ -70,7 +70,7 @@ test('任务范围在端口探测间变化时，最终启动前核对阻止创�
 
 test('可选本地后端只暴露唯一同范围就绪实例和实际避让地址，停止与不可信进程不可选', async t => {
   const f = await runtimeFixture(t, { frontendConnection: true });
-  const view = createServiceRuntimeView({ runtime: f.runtime, catalog: { listServices: () => [{ id: 'frontend', code: 'frontend', name: '前端', repositoryId: 'repo', modulePath: '', projects: [] }] } });
+  const view = createServiceRuntimeView({ runtime: f.runtime, catalog: { listServices: () => [{ id: 'frontend', code: 'frontend', name: '前端', type: 'frontend', repositoryId: 'repo', modulePath: '', projects: [] }] } });
   const missing = await view.detail(f.root, 'frontend');
   assert.equal(missing.connectionTargets['frontend-main']?.[0]?.target, null);
   assert.match(missing.connectionTargets['frontend-main']![0]!.reason!, /先启动后端/);
@@ -155,7 +155,7 @@ test('用户观察后端A后已换为B时拒绝启动与切换，原前端保持
 test('多后端声明逐组列出候选，可显式选择跨范围实例，未选择后端按规则回落', async t => {
   const f = await runtimeFixture(t);
   for (const source of ['main', 'task', 'other']) fs.mkdirSync(path.join(f.root, `backend2-${source}`), { recursive: true });
-  const worktrees = { ...f.worktrees, backend2: f.worktrees.backend!.map(worktree => ({ ...worktree, id: worktree.id.replace('backend', 'backend2'), path: path.join(f.root, worktree.id.replace('backend', 'backend2')) })) };
+  const worktrees: Record<string, import('../../src/modules/service-runtime/domain/worktrees.ts').ServiceWorktree[]> = { ...f.worktrees, backend2: f.worktrees.backend!.map(worktree => ({ ...worktree, id: worktree.id.replace('backend', 'backend2'), path: path.join(f.root, worktree.id.replace('backend', 'backend2')) })) };
   const runtime = createServiceRuntimeApplication({ resolveService: (_root, code) => ['frontend', 'backend', 'backend2'].includes(code) ? { id: code, code } : null, listWorktrees: (_root, code) => worktrees[code] ?? [] });
   t.after(async () => { for (const record of await runtime.listRuns(f.root)) if (record.status === 'starting' || record.status === 'running') await runtime.stopRun(f.root, record.id); });
   await runtime.writeDefinition(f.root, 'frontend', runtimeDefinition(f.ports.frontend, { backends: [

@@ -118,13 +118,13 @@ module.ts → private composition
 ## 维护验证
 
 ```bash
-./tools/development/run-development-npm run test:fast
-./tools/development/run-development-npm run typecheck
+./tools/development/run-development-npm run check
+./tools/development/run-development-npm run test:related -- --plan
 ./tools/development/run-development-npm run build:web
 ./tools/development/run-development-npm run pack:check
 ```
 
-架构检查另外核对模块根、单向技术层、公开入口、命令贡献、应用负载（Application Payload）和 `package/` 不再承载产品文件的约定。完整入口及证明范围以 Product `verification.yml` 为准。
+推送前 `check` 聚合四服务完整静态检查（Static Check）与单元测试（Unit Test），`test:related` 依据用户请求及实际改动选择相关四类。完整入口都支持 `--plan` 查看选择与 `--check <id>` 显式指定检查，不冒充实际测试结果。架构检查核对模块根、单向技术层、公开入口、命令贡献、应用负载（Application Payload）和 `package/` 不再承载产品文件的约定。完整入口及证明范围以 Product `verification.yml` 为准。
 
 更完整的位置、对象和调用见 [Buildr 全项目代码地图](../../../knowledge/code-map/README.md)。
 

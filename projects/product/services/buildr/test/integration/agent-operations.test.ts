@@ -439,7 +439,7 @@ test('valid Codex output survives uncertain cleanup while the same identity cann
   Object.defineProperty(client, 'alive', { get: () => !client.cleanupWarning });
   t.mock.method(client, 'start', async () => {});
   t.mock.method(protocol, 'prepareThread', async () => ({ threadId: 'temporary-one', permissions: null }));
-  t.mock.method(protocol, 'request', async method => {
+  t.mock.method(protocol, 'request', async (method: string) => {
     if (method === 'thread/unsubscribe') throw Error('release reply lost');
     if (method === 'turn/start') {
       queueMicrotask(() => {

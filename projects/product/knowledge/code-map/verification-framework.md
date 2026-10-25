@@ -8,9 +8,8 @@
 
 | 方法 | 职责与交接 |
 | --- | --- |
-| [测试建设（project-testing）](../../services/buildr/resources/workspace/skills/buildr/project-testing/SKILL.md) | 从公共结果设计必要案例，维护测试及其选择映射；不写项目测试地图或正式报告 |
-| [声明接入（declaration-intake）](../../services/buildr/resources/workspace/skills/buildr/declaration-intake/SKILL.md) | 对已有入口做只读发现与差异判断，区分普通维护和需要人决定的变化，交给声明维护者 |
-| [任务验证（task-verification）](../../services/buildr/resources/workspace/skills/buildr/task-verification/SKILL.md) | 维护稳定测试族（Testing Family），选择并直接调用工具，开发完成后核对结果并登记报告 |
+| [测试建设（project-testing）](../../services/buildr/resources/workspace/skills/buildr/project-testing/SKILL.md) | 从公共结果设计必要案例，统一维护测试、选择映射与项目测试地图；不登记正式报告 |
+| [项目验证（project-verification）](../../services/buildr/resources/workspace/skills/buildr/project-verification/SKILL.md) | 读取稳定测试登记，按请求选择并直接调用工具，交付证据，已有任务按需登记报告 |
 | [任务收尾（task-finish）](../../services/buildr/resources/workspace/skills/buildr/task-finish/SKILL.md) | 消费真实成果、验证和交付事实，完成授权内交付与善后；不把报告当成发布许可 |
 
 这些是智能体（Agent）的工作方法，表中交接不表示软件函数自动调用。用户项目（Project）及服务（Service）的真实测试代码、工具和环境留在各自代码来源；不能从 Buildr 自己的测试目录推断用户已经拥有哪些能力。测试建设（project-testing）是指导建设的技能（Skill），同名软件模块 `project-testing` 只负责地图维护。
@@ -63,9 +62,12 @@
     - [project-verification-v4.test.ts](../../services/buildr/test/unit/project-verification-v4.test.ts) — 地图结构、路径根绑定、畸形字段与安全路径边界
     - [task-verification-report.test.ts](../../services/buildr/test/unit/task-verification-report.test.ts) — 报告结构及结论约束
   - `integration/`
-    - [application-payload-release.test.ts](../../services/buildr/test/integration/application-payload-release.test.ts) — 真实离线安装后，外部服务地图位置与任务报告仍可通过公开命令使用
+    - [application-payload-source.test.ts](../../services/buildr/test/integration/application-payload-source.test.ts) — 当前源码的载荷确定性、构建和入口进程边界
+    - [application-payload-artifact.test.ts](../../services/buildr/test/integration/application-payload-artifact.test.ts) — 准确原包的文件清单与测试上下文导出协议
     - [project-verification-map.test.ts](../../services/buildr/test/integration/project-verification-map.test.ts) — 真实登记下的项目／外部服务根、局部不可用、目录越界与版本写入行为
     - [task-verification-report.test.ts](../../services/buildr/test/integration/task-verification-report.test.ts) — 任务、地图、当前报告与存储的协作
+  - `e2e/`
+    - [application-payload-release.test.ts](../../services/buildr/test/e2e/application-payload-release.test.ts) — 真实离线安装后，工作空间、项目、任务报告及网页入口的完整流程
 
 正文和图的解释修改只验证受影响成果；产品行为或测试工具改变才运行对应行为检查。通用能力边界见[主文](../docs/architecture/workspace-testing-and-verification-framework.md)。Buildr 自身的执行编排另见[采用实例的工具地图](product-verification-tools.md)，其中的 npm 命令、依赖图（DAG）与测试上下文（Test Context）不成为通用框架要求。
 
@@ -73,4 +75,4 @@
 
 [测试建设与使用图](../archify/flows/verification-framework.html)表达已有能力使用主线与按需补建分支：能力具备时选择、执行并核对结果；缺少必要测试时建设测试、核对入口和声明后继续。执行失败先判断实现或环境原因，不把所有失败当成新建测试的理由。虚线表示按需补齐覆盖，不是自动调度。
 
-图中的三项技能（Skill）分别对应前文的测试建设、声明接入和任务验证。项目（Project）与各服务（Service）拥有自己的测试、工具与环境，局部通过不能自动组合为业务通过；缺少测试、未执行、环境失配和失败须分别说明。真实输出是执行证据，正式验证报告只记录本轮结论，不重跑测试，也不等于验收或任务完成。可选测试上下文（Test Context）见[运行时说明](../docs/guides/node-test-context-runtime.md)，不作为用户项目的前置要求。
+图中的两项技能（Skill）分别负责测试建设与登记，以及选择、实际执行与证据交付。项目（Project）与各服务（Service）拥有自己的测试、工具与环境，局部通过不能自动组合为业务通过；缺少测试、未执行、环境失配和失败须分别说明。真实输出是执行证据，正式验证报告只记录本轮结论，不重跑测试，也不等于验收或任务完成。可选测试上下文（Test Context）见[运行时说明](../docs/guides/node-test-context-runtime.md)，不作为用户项目的前置要求。

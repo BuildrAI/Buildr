@@ -79,7 +79,7 @@ Buildr Web UI 重设计 MUST 仅修改 `product/buildr-web` 内的视觉、布�
 
 #### Scenario: 生产托管验收
 - **WHEN** Task 或 Candidate 宣称 UI 重设计完成
-- **THEN** 验收 MUST 在生产托管的 `web-dist` 上执行适用的 browser smoke 或 affected selector
+- **THEN** 验收 MUST 在生产托管的 `web-dist` 上执行适用的 浏览器端到端检查（E2E） 或 affected selector
 - **AND** MUST NOT 仅以 Vite HMR 预览截图或开发服务器会话作为完成证据
 
 ### Requirement: Buildr Web 必须区分待办与正式执行 Task

@@ -10,158 +10,9 @@ import { resolveRuleScope } from '../../src/modules/agent-assets/infrastructure/
 import { createRuntime } from '../helpers/runtime-harness.ts';
 import { copyPreparedProjectWorkspace, copyPreparedLegacyProjectWorkspace } from '../helpers/prepared-fixtures.ts';
 import { createWorkspaceHttpContribution } from '../../src/modules/workspace/interfaces/http/workspace-http.ts';
+import { setup, setupLegacy, ready, addRepo, waitFor, makeOriginRepository, initRepository } from '../helpers/asset-relationships.ts';
 
-function setup(t: any) {
-  const { root } = copyPreparedProjectWorkspace(t, 'asset-relationships');
-  const runtime: any = createRuntime();
-  // Async clones may still run when the test finishes; drain before the sandbox is removed.
-  t.after(async () => { if (runtime.repositoryCloneIdle) await runtime.repositoryCloneIdle(); });
-  return { root, runtime };
-}
-function setupLegacy(t: any) {
-  const { root } = copyPreparedLegacyProjectWorkspace(t, 'legacy-asset-relationships');
-  const runtime: any = createRuntime();
-  t.after(async () => { if (runtime.repositoryCloneIdle) await runtime.repositoryCloneIdle(); });
-  return { root, runtime };
-}
-function ready(runtime: any, root: string) {
-  const before = runtime.assetCatalog(root);
-  return runtime.migrateAssetCatalog(root, { revision: before.revision });
-}
-function addRepo(runtime: any, root: string, revision: string, code: string, branch: string) {
-  return runtime.createCatalogRepository(root, { revision, code, url: 'https://example.com/freshx.git', integrationBranch: branch });
-}
-async function waitFor(predicate: () => boolean, message: string, attempts = 200, intervalMs = 50) {
-  for (let index = 0; index < attempts; index += 1) {
-    if (predicate()) return;
-    await new Promise(resolve => setTimeout(resolve, intervalMs));
-  }
-  throw new Error(message);
-}
-function makeOriginRepository(t: any, name: string): string {
-  const origin = fs.mkdtempSync(path.join(os.tmpdir(), `buildr-${name}-`));
-  t.after(() => fs.rmSync(origin, { recursive: true, force: true }));
-  const run = (args: string[]) => spawnSync('git', args, { cwd: origin, encoding: 'utf8' });
-  assert.equal(run(['init', '-b', 'main']).status, 0);
-  assert.equal(run(['config', 'user.email', 'test@example.com']).status, 0);
-  assert.equal(run(['config', 'user.name', 'Test']).status, 0);
-  fs.writeFileSync(path.join(origin, 'README.md'), '# demo\n');
-  assert.equal(run(['add', 'README.md']).status, 0);
-  assert.equal(run(['commit', '-m', 'init']).status, 0);
-  return origin;
-}
-test('自然显示名在初始化和编辑间一致，空白名称在写入前拒绝', (t: any) => {
-  const runtime: any = createRuntime();
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-display-name-'));
-  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
-  const root = path.join(base, '中文 工作目录');
-  runtime.initBuildr(['--target', root, '--description', '中文资料工作空间', '--profile', 'personal', '--source-only']);
-  const initial = runtime.getWorkspace(root);
-  assert.equal(initial.workspace.name, '中文 工作目录');
-  const renamed = runtime.updateWorkspaceMetadata(root, { revision: initial.revision, name: '  研究 🌱 项目  ' });
-  assert.equal(renamed.workspace.name, '研究 🌱 项目');
-  assert.equal(renamed.workspace.id, initial.workspace.id);
-  const invalid = path.join(base, 'invalid');
-  assert.throws(() => runtime.initializeWorkspace({ targetRoot: invalid, name: '   ', description: 'Description', profile: 'personal', agent: null, sourceOnly: true }), /name must be a non-empty string/u);
-  assert.equal(fs.existsSync(invalid), false);
-  const metadata = fs.readFileSync(path.join(root, '.buildr', 'workspace.yml'), 'utf8');
-  assert.throws(() => runtime.updateWorkspaceMetadata(root, { revision: renamed.revision, name: '\n\t ' }), /name must be a non-empty string/u);
-  assert.equal(fs.readFileSync(path.join(root, '.buildr', 'workspace.yml'), 'utf8'), metadata);
-});
-test('fresh initialization creates a current empty catalog and accepts the first project through HTTP', async (t: any) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-fresh-asset-catalog-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const runtime = createRuntime();
-  runtime.initializeWorkspace({ targetRoot: root, name: 'fresh', description: 'First-use catalog fixture', profile: 'team', agent: null, sourceOnly: true });
-  for (const [file, schemaVersion, key] of [
-    ['projects/manifest.yml', 'buildr.projects/v2', 'projects'],
-    ['services/manifest.yml', 'buildr.services/v3', 'services'],
-    ['repositories/manifest.yml', 'buildr.repositories/v1', 'repositories'],
-  ]) {
-    assert.deepEqual(YAML.parse(fs.readFileSync(path.join(root, file), 'utf8')), { schemaVersion, [key]: {} });
-  }
-  const before = runtime.assetCatalog(root);
-  assert.equal(before.migrationRequired, false);
-  assert.deepEqual([before.projects, before.services, before.repositories], [[], [], []]);
-  let authorized = 0;
-  const response: any = await createWorkspaceHttpContribution(runtime).handle({
-    request: { method: 'POST' }, suffix: '/asset-catalog/projects', root,
-    authorizeWrite: () => authorized++,
-    readJsonBody: async () => ({ revision: before.revision, code: 'first', name: '首个项目' }),
-  });
-  assert.equal(response.status, 200);
-  assert.equal(authorized, 1);
-  assert.equal(response.body.migrationRequired, false);
-  assert.equal(response.body.projects[0].code, 'first');
-  assert.ok(fs.existsSync(path.join(root, 'projects/first/AGENTS.md')));
-  const files = ['.buildr/workspace.yml', 'projects/manifest.yml', 'services/manifest.yml', 'repositories/manifest.yml'];
-  const bytes = files.map(file => fs.readFileSync(path.join(root, file)));
-  runtime.initializeWorkspace({ targetRoot: root, name: 'reinitialized', description: 'Preserve registered assets', profile: 'team', agent: null, sourceOnly: true });
-  files.forEach((file, i) => assert.deepEqual(fs.readFileSync(path.join(root, file)), bytes[i]));
-  assert.equal(runtime.assetCatalog(root).revision, response.body.revision);
-});
 
-test('reinitializing a legacy layout preserves migration, service identities and physical content', (t: any) => {
-  const { root, runtime } = setupLegacy(t);
-  const source = path.join(root, 'incoming'); fs.mkdirSync(source); fs.writeFileSync(path.join(source, 'README.md'), 'legacy service bytes\n');
-  const service = runtime.createServiceAsset({ targetRoot: root, project: 'demo', service: 'api', repoRef: source, attachRef: null, name: 'Legacy', description: 'Legacy service', type: 'service', rulesSource: null, integrationBranch: null, remote: 'origin', remoteExplicit: false, json: false }).service;
-  const files = ['.buildr/workspace.yml', 'projects/manifest.yml', 'projects/demo/services/manifest.yml', 'projects/demo/services/api/README.md'];
-  const bytes = files.map(file => fs.readFileSync(path.join(root, file)));
-  const before = runtime.assetCatalog(root);
-  assert.equal(before.migrationRequired, true);
-  assert.equal(before.services[0].id, service.id);
-  runtime.initializeWorkspace({ targetRoot: root, name: 'legacy', description: 'Preserve legacy assets', profile: 'team', agent: null, sourceOnly: true });
-  assert.deepEqual(runtime.assetCatalog(root), before);
-  files.forEach((file, i) => assert.deepEqual(fs.readFileSync(path.join(root, file)), bytes[i]));
-  for (const file of ['services/manifest.yml', 'repositories/manifest.yml']) assert.equal(fs.existsSync(path.join(root, file)), false);
-  assert.throws(() => runtime.createCatalogProject(root, { revision: before.revision, code: 'blocked', name: 'Requires migration' }), (e: any) => e.code === 'asset_migration_required');
-  const after = ready(runtime, root);
-  assert.equal(after.migrationRequired, false);
-  assert.equal(after.services[0].id, service.id);
-  assert.equal(fs.readFileSync(path.join(root, 'projects/demo/services/api/README.md'), 'utf8'), 'legacy service bytes\n');
-});
-
-test('reinitializing either half of a global catalog preserves the incomplete state', (t: any) => {
-  for (const missing of ['services/manifest.yml', 'repositories/manifest.yml']) {
-    const { root, runtime } = setup(t);
-    fs.rmSync(path.join(root, missing));
-    const files = ['.buildr/workspace.yml', 'projects/manifest.yml', missing === 'services/manifest.yml' ? 'repositories/manifest.yml' : 'services/manifest.yml'];
-    const bytes = files.map(file => fs.readFileSync(path.join(root, file)));
-    assert.throws(() => runtime.assetCatalog(root), (e: any) => e.code === 'asset_registry_incomplete');
-    runtime.initializeWorkspace({ targetRoot: root, name: 'incomplete', description: 'Preserve catalog recovery boundary', profile: 'team', agent: null, sourceOnly: true });
-    assert.equal(fs.existsSync(path.join(root, missing)), false);
-    files.forEach((file, i) => assert.deepEqual(fs.readFileSync(path.join(root, file)), bytes[i]));
-    assert.throws(() => runtime.assetCatalog(root), (e: any) => e.code === 'asset_registry_incomplete');
-  }
-});
-
-test('an existing dangling catalog entry is not treated as a fresh empty layout', (t: any) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-existing-catalog-entry-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  fs.mkdirSync(path.join(root, 'services'));
-  const manifest = path.join(root, 'services/manifest.yml');
-  fs.symlinkSync('unavailable.yml', manifest);
-  const runtime = createRuntime();
-  runtime.initializeWorkspace({ targetRoot: root, name: 'existing', description: 'Preserve unknown catalog entries', profile: 'team', agent: null, sourceOnly: true });
-  assert.equal(fs.lstatSync(manifest).isSymbolicLink(), true);
-  assert.equal(fs.readlinkSync(manifest), 'unavailable.yml');
-  assert.equal(fs.existsSync(path.join(root, 'repositories/manifest.yml')), false);
-  assert.throws(() => runtime.assetCatalog(root), (e: any) => e.code === 'asset_symlink_forbidden');
-});
-
-test('global catalog read is zero-write; explicit migration is idempotent and stale mutations fail', (t: any) => {
-  const { root, runtime } = setupLegacy(t);
-  const file = path.join(root, 'projects/manifest.yml');
-  const bytes = fs.readFileSync(file);
-  const before = runtime.assetCatalog(root);
-  assert.equal(before.migrationRequired, true);
-  assert.deepEqual(fs.readFileSync(file), bytes);
-  assert.equal(fs.existsSync(path.join(root, 'services/manifest.yml')), false);
-  const after = ready(runtime, root);
-  assert.equal(after.migrationRequired, false);
-  assert.deepEqual(runtime.migrateAssetCatalog(root, { revision: after.revision }), after);
-  assert.throws(() => addRepo(runtime, root, before.revision, 'pigs', 'dev-pigs'), (e: any) => e.code === 'asset_revision_conflict');
-});
 test('distinct branches and services share repository identity without duplicate repositories', (t: any) => {
   const { root, runtime } = setup(t);
   let catalog = ready(runtime, root);
@@ -176,6 +27,7 @@ test('distinct branches and services share repository identity without duplicate
   assert.equal(fs.existsSync(path.join(root, 'repositories/freshx-pigs')), false);
   assert.equal(fs.existsSync(path.join(root, 'services/pig-business')), false);
 });
+
 test('project association is many-to-many; unlink keeps service, code and other project intact', (t: any) => {
   const { root, runtime } = setup(t);
   let c = ready(runtime, root);
@@ -192,6 +44,7 @@ test('project association is many-to-many; unlink keeps service, code and other 
   assert.deepEqual(runtime.listServices(root, 'demo').services, []);
   assert.equal(runtime.listServices(root, 'egg').services[0].id, serviceId);
 });
+
 test('nested creation validates references before writing any project or repository', (t: any) => {
   const { root, runtime } = setup(t);
   const c = ready(runtime, root);
@@ -201,6 +54,7 @@ test('nested creation validates references before writing any project or reposit
   const next = runtime.createCatalogProject(root, { revision: c.revision, code: 'good', name: 'Good', newServices: [{ code: 'api', name: 'API', repository: { code: 'api-code', url: 'https://example.com/api.git', integrationBranch: 'dev' } }] });
   assert.equal(next.projects.find((p: any) => p.code === 'good').serviceIds[0], next.services[0].id);
 });
+
 test('service creation and editing carry project affiliation, service code and repository membership', (t: any) => {
   const { root, runtime } = setup(t);
   let c = ready(runtime, root);
@@ -225,6 +79,7 @@ test('service creation and editing carry project affiliation, service code and r
   assert.equal(fs.existsSync(path.join(root, 'services/api-v3/notes.md')), true);
   assert.equal(fs.existsSync(path.join(root, 'services/api-v2')), false);
 });
+
 test('explicit service projectIds override directory inference while fixed parent projectId remains linked', (t: any) => {
   const { root, runtime } = setup(t);
   let c = ready(runtime, root);
@@ -241,6 +96,7 @@ test('explicit service projectIds override directory inference while fixed paren
   assert.ok(c.projects.find((project: any) => project.id === parent.id).serviceIds.includes(serviceId));
   assert.equal(c.projects.find((project: any) => project.code === 'demo').serviceIds.includes(serviceId), false);
 });
+
 test('nested service drafts apply projectIds in create, edit and associate transactions', (t: any) => {
   const { root, runtime } = setup(t);
   let c = ready(runtime, root);
@@ -273,6 +129,7 @@ test('nested service drafts apply projectIds in create, edit and associate trans
   assert.equal(runtime.assetCatalog(root).revision, beforeInvalid);
   assert.equal(runtime.assetCatalog(root).services.some((item: any) => item.code.startsWith('invalid-')), false);
 });
+
 test('repository create and update move services in while keeping current members', (t: any) => {
   const { root, runtime } = setup(t);
   let c = ready(runtime, root);
@@ -288,6 +145,7 @@ test('repository create and update move services in while keeping current member
   assert.equal(c.services[0].repositoryId, c.repositories[2].id);
   assert.throws(() => runtime.updateCatalogAsset(root, 'repository', c.repositories[2].id, { revision: c.revision, serviceIds: ['missing'] }), (e: any) => e.code === 'service_not_found');
 });
+
 test('project editing rewrites code, legacy refs and service membership', (t: any) => {
   const { root, runtime } = setup(t);
   let c = ready(runtime, root);
@@ -311,6 +169,7 @@ test('project editing rewrites code, legacy refs and service membership', (t: an
   assert.deepEqual(inline.legacyRefs, ['renamed/inline']);
   assert.throws(() => runtime.updateCatalogAsset(root, 'service', serviceId, { revision: c.revision, newServices: [] }), (e: any) => e.code === 'asset_field_forbidden');
 });
+
 test('project code rename updates nested repository roots and creates inline service directories under the new code', (t: any) => {
   const { root, runtime } = setup(t);
   let c = ready(runtime, root);
@@ -359,6 +218,7 @@ test('project code rename updates nested repository roots and creates inline ser
   assert.ok(updatedProject.serviceIds.includes(inline.id));
   assert.deepEqual(inline.legacyRefs, ['renamed-with-repository/inline-directory']);
 });
+
 test('project and service code renames reject occupied directories and roll back moves with manifests', (t: any) => {
   const { root, runtime } = setup(t);
   let c = ready(runtime, root);
@@ -410,6 +270,7 @@ test('project and service code renames reject occupied directories and roll back
   assert.equal(fs.existsSync(oldDocs), false);
   assert.equal(fs.readFileSync(path.join(root, 'services/asset-api-v2/notes.md'), 'utf8'), 'service docs\n');
 });
+
 test('attached project code rename keeps external source and never adopts workspace path', (t: any) => {
   const { root, runtime } = setup(t);
   const projectManifest = path.join(root, 'projects/manifest.yml'), external = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-attached-project-'));
@@ -433,6 +294,7 @@ test('attached project code rename keeps external source and never adopts worksp
   assert.equal(fs.existsSync(path.join(root, 'projects/demo')), true);
 });
 
+
 test('unsafe module and manifest symlink cannot write outside the workspace', (t: any) => {
   const { root, runtime } = setup(t);
   let c = ready(runtime, root); c = addRepo(runtime, root, c.revision, 'api', 'dev');
@@ -441,6 +303,7 @@ test('unsafe module and manifest symlink cannot write outside the workspace', (t
   fs.renameSync(file, file + '.original'); fs.symlinkSync(file + '.original', file);
   assert.throws(() => runtime.assetCatalog(root), (e: any) => e.code === 'asset_symlink_forbidden');
 });
+
 test('HTTP catalog validates request and enforces write authorization', async (t: any) => {
   const { root, runtime } = setup(t);
   const http = createWorkspaceHttpContribution(runtime);
@@ -451,30 +314,6 @@ test('HTTP catalog validates request and enforces write authorization', async (t
   await assert.rejects(http.handle({ request: { method: 'POST' }, suffix: '/asset-catalog/repositories', root, authorizeWrite: () => {}, readJsonBody: async () => ({ revision: result.body.revision, code: 'bad', unexpected: true }) }), (e: any) => e.code === 'workspace_http_request_invalid');
 });
 
-test('legacy service paths survive migration and unlink; compatibility HTTP accepts optional descriptions', async (t: any) => {
-  const { root, runtime } = setup(t);
-  let c = ready(runtime, root); c = addRepo(runtime, root, c.revision, 'api', 'dev');
-  const project = c.projects[0];
-  c = runtime.createCatalogService(root, { revision: c.revision, projectId: project.id, service: { code: 'business', name: 'Business', repositoryId: c.repositories[0].id } });
-  const http = createWorkspaceHttpContribution(runtime);
-  const response: any = await http.handle({ request: { method: 'GET' }, suffix: `/projects/${project.code}/services`, root });
-  assert.equal(response.status, 200); assert.equal(response.body.services[0].description, '');
-  c = runtime.updateProjectServices(root, project.id, { revision: c.revision, serviceIds: [] });
-  assert.equal(runtime.listServices(root, project.code).services.length, 0);
-  assert.equal(runtime.serviceDetail(root, project.code, 'business').service.id, c.services[0].id);
-});
-
-test('existing broken references do not prevent unrelated metadata editing', (t: any) => {
-  const { root, runtime } = setup(t);
-  let c = ready(runtime, root); c = addRepo(runtime, root, c.revision, 'api', 'dev');
-  const file = path.join(root, 'projects/manifest.yml');
-  fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('serviceIds: []', 'serviceIds: [aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa]'));
-  c = runtime.assetCatalog(root);
-  assert.equal(c.diagnostics[0].code, 'project_service_missing');
-  const next = runtime.updateCatalogAsset(root, 'repository', c.repositories[0].id, { revision: c.revision, name: 'Updated' });
-  assert.equal(next.repositories[0].name, 'Updated');
-  assert.deepEqual(next.projects[0].serviceIds, ['aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa']);
-});
 
 
 test('shared code repository yields one task worktree and module directories do not become Git roots', (t: any) => {
@@ -496,106 +335,6 @@ test('shared code repository yields one task worktree and module directories do 
   assert.equal(resolveRuleScope(root, 'repositories/shared/modules/pig').scopeRoot, path.join(codeRoot, 'modules/pig'));
 });
 
-test('explicit migration code mappings preserve legacy identities and physical content', (t: any) => {
-  const { root, runtime } = setupLegacy(t);
-  runtime.createProjectAsset({ targetRoot: root, project: 'other', repoRef: null, attachRef: null, name: 'Other', description: 'Other project', remote: 'origin', remoteExplicit: false, integrationBranch: null });
-  const original: Record<string, string> = {};
-  for (const project of ['demo', 'other']) {
-    const source = path.join(root, `incoming-${project}`); fs.mkdirSync(source); fs.writeFileSync(path.join(source, 'README.md'), project);
-    original[project] = runtime.createServiceAsset({ targetRoot: root, project, service: 'api', repoRef: source, attachRef: null, name: project, description: 'Legacy', type: 'service', rulesSource: null, integrationBranch: null, remote: 'origin', remoteExplicit: false, json: false }).service.id;
-  }
-  const before = runtime.assetCatalog(root);
-  assert.throws(() => runtime.migrateAssetCatalog(root, { revision: before.revision }), (e: any) => e.code === 'asset_duplicate');
-  assert.equal(fs.existsSync(path.join(root, 'services/manifest.yml')), false);
-  const after = runtime.migrateAssetCatalog(root, { revision: before.revision, codeMappings: { 'demo/api': 'demo-api', 'other/api': 'other-api' } });
-  for (const project of ['demo', 'other']) {
-    assert.equal(runtime.serviceDetail(root, project, 'api').service.id, original[project]);
-    assert.equal(fs.readFileSync(path.join(root, 'projects', project, 'services/api/README.md'), 'utf8'), project);
-  }
-  assert.equal(after.repositories.length, 2);
-  assert.equal(runtime.catalogServiceDocument(root, original.demo, 'README.md').content, 'demo');
-});
-
-test('global service documents preserve rule access and reject escaping symlinks', (t: any) => {
-  const { root, runtime } = setup(t);
-  let c = ready(runtime, root); c = addRepo(runtime, root, c.revision, 'code', 'dev');
-  c = runtime.createCatalogService(root, { revision: c.revision, service: { code: 'api', name: 'API', repositoryId: c.repositories[0].id } });
-  const document = runtime.catalogServiceDocument(root, c.services[0].id, 'AGENTS.md');
-  assert.equal(document.exists, false); assert.equal(document.content, null);
-  fs.mkdirSync(path.join(root, 'services/api'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'services/api/AGENTS.md'), '# API\n\n服务级规则占位。\n');
-  assert.match(runtime.catalogServiceDocument(root, c.services[0].id, 'AGENTS.md').content, /服务级规则占位/);
-  assert.throws(() => runtime.catalogServiceDocument(root, c.services[0].id, '../manifest.yml'), /范围内/);
-  fs.symlinkSync(path.join(root, 'projects/demo/AGENTS.md'), path.join(root, 'services/api/README.md'));
-  assert.throws(() => runtime.catalogServiceDocument(root, c.services[0].id, 'README.md'), (e: any) => e.code === 'service_document_path_forbidden');
-});
-
-test('public asset CLI reads and writes the same catalog with version protection', (t: any) => {
-  const { root, runtime } = setup(t);
-  const cli = path.resolve(import.meta.dirname, '../../bin/buildr.mjs');
-  const invoke = (...args: string[]) => spawnSync(process.execPath, [cli, 'assets', ...args, '--target', root, '--json'], { encoding: 'utf8' });
-  const observed = invoke('inspect'); assert.equal(observed.status, 0, observed.stderr);
-  const before = JSON.parse(observed.stdout);
-  const input = path.join(root, 'migration-input.json'); fs.writeFileSync(input, JSON.stringify({ revision: before.revision }));
-  const migrated = invoke('migrate', '--input', input); assert.equal(migrated.status, 0, migrated.stderr);
-  fs.writeFileSync(input, JSON.stringify({ revision: JSON.parse(migrated.stdout).revision, code: 'cli-code', url: 'https://example.com/cli.git', integrationBranch: 'dev' }));
-  const created = invoke('create', 'repository', '--input', input); assert.equal(created.status, 0, created.stderr);
-  assert.equal(runtime.assetCatalog(root).repositories[0].code, 'cli-code');
-  assert.notEqual(invoke('create', 'repository', '--input', input).status, 0);
-  const directory = path.join(root, 'projects/cli-existing'); fs.mkdirSync(directory);
-  const candidates = invoke('project-candidates'); assert.equal(candidates.status, 0, candidates.stderr);
-  const available = JSON.parse(candidates.stdout), candidate = available.candidates.find((item: any) => item.code === 'cli-existing');
-  fs.writeFileSync(input, JSON.stringify({ revision: available.revision, code: candidate.code, name: 'CLI existing', observation: candidate.observation }));
-  const registered = invoke('register', 'project', '--input', input); assert.equal(registered.status, 0, registered.stderr);
-  assert.equal(runtime.assetCatalog(root).projects.some((project: any) => project.code === candidate.code), true);
-  assert.deepEqual(fs.readdirSync(directory), []);
-});
-
-test('assets help examples execute through the public CLI and retired guide stays unavailable', async (t: any) => {
-  const { root, runtime } = setup(t);
-  let catalog = ready(runtime, root);
-  const cli = path.resolve(import.meta.dirname, '../../bin/buildr.mjs');
-  const invoke = (...args: string[]) => spawnSync(process.execPath, [cli, ...args], {
-    cwd: root, encoding: 'utf8',
-    env: { ...process.env, BUILDR_APP_DATA_DIR: path.join(root, '.isolated-app'), BUILDR_PRODUCT_DATA_DIR: path.join(root, '.isolated-product') },
-  });
-  const help = invoke('help', 'assets');
-  assert.equal(help.status, 0, help.stderr);
-  assert.equal(invoke('assets', '--help').stdout, help.stdout);
-  const examples = help.stdout.split('\n').filter(line => line.trim().startsWith('{')).map(line => JSON.parse(line));
-  assert.equal(examples.length, 3);
-  const inputFile = path.join(root, 'help-input.json');
-  const write = (args: string[], input: any) => {
-    fs.writeFileSync(inputFile, JSON.stringify(input));
-    const result = invoke('assets', ...args, '--target', root, '--input', inputFile, '--json');
-    assert.equal(result.status, 0, result.stderr || result.stdout);
-    return JSON.parse(result.stdout);
-  };
-  // The prepared workspace already owns demo; replace only the example identity.
-  catalog = write(['create', 'project'], { ...examples[0], code: 'help-project', revision: catalog.revision });
-  assert.equal(catalog.projects.find((p: any) => p.code === 'help-project').description, '项目目标');
-  catalog = addRepo(runtime, root, catalog.revision, 'help-code', 'main');
-  const repositoryId = catalog.repositories.find((r: any) => r.code === 'help-code').id;
-  catalog = write(['create', 'service'], { ...examples[1], revision: catalog.revision, service: { ...examples[1].service, repositoryId } });
-  const serviceId = catalog.services.find((service: any) => service.code === 'api').id;
-  catalog = write(['associate', 'help-project'], { ...examples[2], revision: catalog.revision, serviceIds: [serviceId] });
-  assert.deepEqual(catalog.projects.find((p: any) => p.code === 'help-project').serviceIds, [serviceId]);
-  await waitFor(() => runtime.repositoryCloneStatus(root, repositoryId).state !== 'cloning', 'repository clone must finish');
-  const cloned = runtime.repositoryCloneStatus(root, repositoryId);
-  assert.equal(cloned.state, 'failed', `unreachable git url must surface a failed clone state, got ${JSON.stringify(cloned)}`);
-  assert.equal(fs.existsSync(path.join(root, 'repositories/help-code')), false, 'failed clone must leave no directory');
-  const before = ['projects/manifest.yml', 'services/manifest.yml', 'repositories/manifest.yml'].map(file => fs.readFileSync(path.join(root, file)));
-  const directoryBefore = fs.readdirSync(root);
-  for (const args of [['bootstrap', 'guide'], ['bootstrap', 'guide', '--help'], ['help', 'bootstrap', 'guide']]) {
-    const result = invoke(...args, '--json');
-    assert.equal(result.status, 2);
-    const diagnostic = JSON.parse(result.stdout);
-    assert.match(diagnostic.error.code, /^cli\.unknown_(?:command|help_topic)$/);
-    assert.ok(!diagnostic.suggestions.some((suggestion: string) => suggestion.includes('bootstrap')));
-  }
-  assert.deepEqual(fs.readdirSync(root), directoryBefore);
-  ['projects/manifest.yml', 'services/manifest.yml', 'repositories/manifest.yml'].forEach((file, index) => assert.deepEqual(fs.readFileSync(path.join(root, file)), before[index]));
-});
 
 test('git repository registration clones asynchronously; explicit request retries after failure', async (t: any) => {
   const { root, runtime } = setup(t);
@@ -618,6 +357,7 @@ test('git repository registration clones asynchronously; explicit request retrie
   assert.equal(runtime.repositoryCloneRequest(root, 'unknown-id').status, 'unavailable');
 });
 
+
 test('partial nested catalog write rolls back all manifests and newly created roots', (t: any) => {
   const { root, runtime } = setup(t);
   const before = ready(runtime, root);
@@ -637,490 +377,4 @@ test('partial nested catalog write rolls back all manifests and newly created ro
   assert.equal(fs.existsSync(path.join(root, 'projects/rollback')), false);
   assert.equal(fs.existsSync(path.join(root, 'services/rollback-service')), false);
   assert.equal(runtime.assetCatalog(root).revision, before.revision);
-});
-
-test('independent list HTTP contracts omit full catalog and never observe Git', async (t: any) => {
-  const { root, runtime } = setup(t);
-  let c = ready(runtime, root); c = addRepo(runtime, root, c.revision, 'light', 'dev');
-  c = runtime.createCatalogService(root, { revision: c.revision, projectId: c.projects[0].id, service: { code: 'light-api', name: 'Light', repositoryId: c.repositories[0].id } });
-  const http = createWorkspaceHttpContribution(runtime);
-  const observed = runtime.observeProjectGit;
-  runtime.observeProjectGit = () => { throw new Error('list must not scan Git'); };
-  try {
-    for (const suffix of ['/services', '/repositories', '/asset-catalog']) {
-      const response: any = await http.handle({ request: { method: 'GET' }, suffix, root });
-      assert.equal(response.status, 200);
-      assert.equal(response.body.revision, c.revision);
-      if (suffix === '/services') { assert.equal(response.body.repositories, undefined); assert.equal(response.body.services[0].repository.name, 'light'); assert.equal(response.body.services[0].projects.length, 1); }
-      if (suffix === '/repositories') { assert.equal(response.body.services, undefined); assert.equal(response.body.repositories[0].serviceCount, 1); }
-    }
-  } finally { runtime.observeProjectGit = observed; }
-});
-
-test('delete service and project uses observed revision and preserves all physical content', async (t: any) => {
-  const { root, runtime } = setup(t);
-  let c = ready(runtime, root); c = addRepo(runtime, root, c.revision, 'shared-delete', 'dev');
-  c = runtime.createCatalogService(root, { revision: c.revision, projectId: c.projects[0].id, service: { code: 'delete-api', name: 'Delete', repositoryId: c.repositories[0].id } });
-  const serviceId = c.services[0].id;
-  c = runtime.createCatalogProject(root, { revision: c.revision, code: 'other-delete', name: 'Other', serviceIds: [serviceId] });
-  const stale = c.revision;
-  c = runtime.updateCatalogAsset(root, 'service', serviceId, { revision: c.revision, name: 'Changed' });
-  assert.throws(() => runtime.deleteCatalogAsset(root, 'service', serviceId, { revision: stale }), (e: any) => e.code === 'asset_revision_conflict');
-  assert.equal(runtime.assetCatalog(root).services.length, 1);
-  const directory = path.join(root, 'services/delete-api'); fs.mkdirSync(directory, { recursive: true });
-  const file = path.join(directory, 'AGENTS.md'); fs.writeFileSync(file, '# Delete\n\n人工服务规则。\n'); const bytes = fs.readFileSync(file);
-  const http = createWorkspaceHttpContribution(runtime); let authorization = 0;
-  const result: any = await http.handle({ request: { method: 'DELETE' }, suffix: `/asset-catalog/service/${serviceId}`, root, authorizeWrite: () => { authorization++; }, readJsonBody: async () => ({ revision: c.revision }) });
-  assert.equal(authorization, 1); assert.equal(result.status, 200); c = result.body;
-  assert.equal(c.services.length, 0); assert.equal(c.repositories.length, 1);
-  assert.ok(c.projects.every((p: any) => !p.serviceIds.includes(serviceId)));
-  assert.deepEqual(fs.readFileSync(file), bytes);
-  c = runtime.deleteCatalogAsset(root, 'project', 'other-delete', { revision: c.revision });
-  assert.equal(c.projects.length, 1); assert.ok(fs.existsSync(path.join(root, 'projects/other-delete/AGENTS.md')));
-  assert.equal(c.repositories.length, 1);
-});
-
-function initRepository(location: string) {
-  fs.mkdirSync(location, { recursive: true });
-  const result = spawnSync('git', ['init', '--initial-branch=dev'], { cwd: location, encoding: 'utf8' });
-  assert.equal(result.status, 0, result.stderr);
-}
-
-test('removed project can be registered through HTTP without changing its files or restoring old relationships', async (t: any) => {
-  const { root, runtime } = setup(t);
-  let catalog = ready(runtime, root);
-  catalog = addRepo(runtime, root, catalog.revision, 'registration-code', 'dev');
-  catalog = runtime.createCatalogService(root, { revision: catalog.revision, service: { code: 'registration-api', name: '保留服务', repositoryId: catalog.repositories[0].id } });
-  const serviceId = catalog.services[0].id;
-  catalog = runtime.createCatalogProject(root, { revision: catalog.revision, code: 'register-again', name: '原项目', serviceIds: [serviceId] });
-  const previous = catalog.projects.find((project: any) => project.code === 'register-again');
-  const directory = path.join(root, 'projects/register-again');
-  fs.writeFileSync(path.join(directory, 'README.md'), '保留的用户内容\n');
-  fs.rmSync(path.join(directory, 'commands.yml'));
-  const snapshot = () => fs.readdirSync(directory, { recursive: true }).map(String).sort().map(relative => {
-    const file = path.join(directory, relative);
-    return [relative, fs.statSync(file).isFile() ? fs.readFileSync(file).toString('base64') : null];
-  });
-  const files = snapshot();
-  catalog = runtime.deleteCatalogAsset(root, 'project', previous.id, { revision: catalog.revision });
-  assert.throws(() => runtime.createCatalogProject(root, { revision: catalog.revision, code: previous.code, name: '错误创建' }), (error: any) => error.code === 'asset_directory_occupied');
-  const http = createWorkspaceHttpContribution(runtime);
-  const candidates: any = await http.handle({ request: { method: 'GET' }, suffix: '/asset-catalog/project-candidates', root });
-  const selected = candidates.body.candidates.find((candidate: any) => candidate.code === previous.code);
-  assert.equal(candidates.body.revision, catalog.revision);
-  assert.deepEqual(snapshot(), files);
-  let authorized = 0;
-  const request = { revision: catalog.revision, code: previous.code, name: '重新登记', description: '新的业务说明', serviceIds: [serviceId], observation: selected.observation };
-  const registered: any = await http.handle({ request: { method: 'POST' }, suffix: '/asset-catalog/projects/register', root, authorizeWrite: () => { authorized++; }, readJsonBody: async () => request });
-  assert.equal(authorized, 1);
-  const project = registered.body.projects.find((item: any) => item.code === previous.code);
-  assert.notEqual(project.id, previous.id);
-  assert.equal(project.name, '重新登记');
-  assert.deepEqual(project.serviceIds, [serviceId]);
-  assert.deepEqual(snapshot(), files);
-  assert.equal(runtime.listProjectRegistrationCandidates(root).candidates.some((item: any) => item.code === previous.code), false);
-  assert.throws(() => runtime.registerCatalogProject(root, { ...request, revision: registered.body.revision }), (error: any) => error.code === 'project_directory_registered');
-  catalog = runtime.deleteCatalogAsset(root, 'project', project.id, { revision: registered.body.revision });
-  const withoutServices = runtime.registerCatalogProject(root, { ...request, revision: catalog.revision, serviceIds: [] });
-  assert.deepEqual(withoutServices.projects.find((item: any) => item.code === previous.code).serviceIds, []);
-  assert.deepEqual(snapshot(), files);
-});
-
-test('project registration rejects stale catalogs, replaced directories and unsafe paths without altering the catalog', (t: any) => {
-  const { root, runtime } = setup(t);
-  let catalog = ready(runtime, root);
-  const directory = path.join(root, 'projects/existing');
-  fs.mkdirSync(directory);
-  fs.writeFileSync(path.join(directory, 'keep.txt'), 'original');
-  const candidate = runtime.listProjectRegistrationCandidates(root).candidates.find((item: any) => item.code === 'existing');
-  const input = { revision: catalog.revision, code: 'existing', name: 'Existing', observation: candidate.observation };
-  catalog = runtime.updateCatalogAsset(root, 'project', catalog.projects[0].id, { revision: catalog.revision, name: 'Changed' });
-  assert.throws(() => runtime.registerCatalogProject(root, input), (error: any) => error.code === 'asset_revision_conflict');
-  assert.throws(() => runtime.registerCatalogProject(root, { ...input, revision: catalog.revision, serviceIds: ['aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa'] }), (error: any) => error.code === 'project_service_missing');
-  fs.renameSync(directory, directory + '-original'); fs.mkdirSync(directory);
-  assert.throws(() => runtime.registerCatalogProject(root, { ...input, revision: catalog.revision }), (error: any) => error.code === 'project_directory_changed');
-  fs.rmdirSync(directory);
-  assert.throws(() => runtime.registerCatalogProject(root, { ...input, revision: catalog.revision }), (error: any) => error.code === 'project_directory_changed');
-  fs.symlinkSync(directory + '-original', directory);
-  assert.equal(runtime.listProjectRegistrationCandidates(root).candidates.some((item: any) => item.code === 'existing'), false);
-  assert.throws(() => runtime.registerCatalogProject(root, { ...input, revision: catalog.revision }), (error: any) => error.code === 'asset_symlink_forbidden');
-  assert.throws(() => runtime.registerCatalogProject(root, { ...input, revision: catalog.revision, code: '../escape' }), (error: any) => error.code === 'project_directory_invalid');
-  assert.equal(runtime.assetCatalog(root).revision, catalog.revision);
-  assert.equal(fs.readFileSync(path.join(directory + '-original', 'keep.txt'), 'utf8'), 'original');
-});
-
-test('project candidates preserve independent Git sources and report incomplete sources locally', (t: any) => {
-  const { root, runtime } = setup(t);
-  const catalog = ready(runtime, root);
-  const directory = path.join(root, 'projects/git-existing');
-  initRepository(directory);
-  let result = runtime.listProjectRegistrationCandidates(root);
-  assert.equal(result.candidates.some((item: any) => item.code === 'git-existing'), false);
-  assert.match(result.diagnostics.find((item: any) => item.code === 'git-existing').message, /origin/);
-  assert.equal(spawnSync('git', ['remote', 'add', 'origin', 'https://example.com/project.git'], { cwd: directory }).status, 0);
-  result = runtime.listProjectRegistrationCandidates(root);
-  const candidate = result.candidates.find((item: any) => item.code === 'git-existing');
-  assert.deepEqual(candidate.source, { type: 'git', path: 'projects/git-existing', git: { url: 'https://example.com/project.git', remote: 'origin', integrationBranch: 'dev' } });
-  const input = { revision: catalog.revision, code: candidate.code, name: 'Existing Git project', observation: candidate.observation };
-  assert.equal(spawnSync('git', ['remote', 'set-url', 'origin', 'https://example.com/changed.git'], { cwd: directory }).status, 0);
-  assert.throws(() => runtime.registerCatalogProject(root, input), (error: any) => error.code === 'project_directory_changed');
-  const refreshed = runtime.listProjectRegistrationCandidates(root).candidates.find((item: any) => item.code === candidate.code);
-  const registered = runtime.registerCatalogProject(root, { ...input, observation: refreshed.observation });
-  assert.deepEqual(registered.projects.find((item: any) => item.code === candidate.code).source, refreshed.source);
-  assert.deepEqual(fs.readdirSync(directory), ['.git']);
-});
-
-test('project registration rechecks directory identity inside the write transaction', (t: any) => {
-  const { root, runtime } = setup(t);
-  const catalog = ready(runtime, root), directory = path.join(root, 'projects/racing');
-  fs.mkdirSync(directory);
-  const candidate = runtime.listProjectRegistrationCandidates(root).candidates.find((item: any) => item.code === 'racing');
-  const mutate = runtime.withWorkspaceMutation;
-  runtime.withWorkspaceMutation = (...args: any[]) => {
-    fs.renameSync(directory, directory + '-original'); fs.mkdirSync(directory);
-    return mutate(...args);
-  };
-  try {
-    assert.throws(() => runtime.registerCatalogProject(root, { revision: catalog.revision, code: candidate.code, name: 'Racing', observation: candidate.observation }), (error: any) => error.code === 'project_directory_changed');
-  } finally { runtime.withWorkspaceMutation = mutate; }
-  assert.equal(runtime.assetCatalog(root).revision, catalog.revision);
-  assert.ok(fs.existsSync(directory + '-original'));
-  assert.deepEqual(fs.readdirSync(directory), []);
-});
-
-test('project candidate lookup is bounded and excludes a directory already registered under another identity', (t: any) => {
-  const { root, runtime } = setup(t);
-  const catalog = ready(runtime, root), location = path.join(root, 'projects/existing-alias');
-  fs.mkdirSync(location);
-  const candidate = runtime.listProjectRegistrationCandidates(root).candidates.find((item: any) => item.code === 'existing-alias');
-  const manifestPath = path.join(root, 'projects/manifest.yml');
-  const manifest = YAML.parse(fs.readFileSync(manifestPath, 'utf8'));
-  manifest.projects[catalog.projects[0].code].source = { type: 'git', root: 'attached', path: location, git: { url: 'https://example.com/existing.git', remote: 'origin', integrationBranch: 'dev' } };
-  fs.writeFileSync(manifestPath, YAML.stringify(manifest));
-  const current = runtime.assetCatalog(root);
-  assert.equal(runtime.listProjectRegistrationCandidates(root).candidates.some((item: any) => item.code === 'existing-alias'), false);
-  assert.throws(() => runtime.registerCatalogProject(root, { revision: current.revision, code: candidate.code, name: 'Alias', observation: candidate.observation }), (error: any) => error.code === 'project_directory_registered');
-  for (let index = 0; index < 202; index++) fs.mkdirSync(path.join(root, 'projects', `candidate-${index}`));
-  const result = runtime.listProjectRegistrationCandidates(root);
-  assert.ok(result.candidates.length <= 200);
-  assert.ok(result.diagnostics.some((item: any) => item.code === 'project_candidates_limited'));
-  assert.equal(runtime.assetCatalog(root).revision, current.revision);
-});
-
-test('register actual workspace root and attached Git roots; reject child and ordinary directories', async (t: any) => {
-  const { root, runtime } = setup(t); let c = ready(runtime, root);
-  const ordinary = path.join(root, 'ordinary'); fs.mkdirSync(ordinary);
-  assert.throws(() => runtime.createCatalogRepository(root, { revision: c.revision, code: 'bad', path: 'ordinary' }), /Git/);
-  initRepository(root);
-  c = runtime.createCatalogRepository(root, { revision: c.revision, code: 'workspace-code', path: '.' });
-  assert.equal(c.repositories[0].source.path, '.'); assert.equal(c.repositories[0].source.type, 'git');
-  assert.throws(() => runtime.createCatalogRepository(root, { revision: c.revision, code: 'child', path: 'ordinary' }), (e: any) => e.code === 'repository_not_root');
-  assert.throws(() => runtime.createCatalogRepository(root, { revision: c.revision, code: 'duplicate', path: '.' }), (e: any) => e.code === 'repository_duplicate_path');
-  const attached = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-attached-git-'));
-  t.after(() => fs.rmSync(attached, { recursive: true, force: true })); initRepository(attached);
-  c = runtime.createCatalogRepository(root, { revision: c.revision, code: 'attached', path: attached });
-  assert.equal(c.repositories[1].source.root, 'attached');
-  const http = createWorkspaceHttpContribution(runtime);
-  const status: any = await http.handle({ request: { method: 'GET' }, suffix: `/repositories/${c.repositories[0].id}/status`, root });
-  assert.equal(status.status, 200); assert.equal(status.body.available, true); assert.equal(status.body.observed.currentBranch, 'dev');
-});
-
-test('repository root registration and status use filesystem identity for valid path aliases', (t: any) => {
-  const { root, runtime } = setup(t);
-  let catalog = ready(runtime, root);
-  const actual = path.join(root, 'MixedCaseRepository'), alias = path.join(root, 'mixedcaserepository');
-  initRepository(actual);
-  if (!fs.existsSync(alias)) fs.symlinkSync(actual, alias, 'junction');
-  const actualStat = fs.statSync(actual, { bigint: true }), aliasStat = fs.statSync(alias, { bigint: true });
-  assert.equal(aliasStat.dev, actualStat.dev); assert.equal(aliasStat.ino, actualStat.ino);
-  fs.mkdirSync(path.join(actual, 'ordinary-child'));
-  catalog = runtime.createCatalogRepository(root, { revision: catalog.revision, code: 'aliased-root', path: 'mixedcaserepository' });
-  const registered = catalog.repositories.find((repository: any) => repository.code === 'aliased-root');
-  assert.equal(registered.source.path, 'mixedcaserepository');
-  catalog = runtime.createCatalogService(root, { revision: catalog.revision, service: { code: 'aliased-module', name: 'Alias module', repositoryId: registered.id, modulePath: 'ordinary-child' } });
-  assert.equal(runtime.catalogRepositoryStatus(root, registered.id).available, true);
-  const revision = catalog.revision;
-  assert.throws(() => runtime.createCatalogRepository(root, { revision, code: 'aliased-child', path: 'mixedcaserepository/ordinary-child' }), (error: any) => error.code === 'repository_not_root');
-  assert.throws(() => runtime.createCatalogRepository(root, { revision, code: 'duplicate-alias', path: 'MixedCaseRepository' }), (error: any) => error.code === 'repository_duplicate_path');
-  assert.equal(runtime.assetCatalog(root).revision, revision);
-});
-
-test('normalization merges old workspace modules by real root while retaining service identities and content', (t: any) => {
-  const { root, runtime } = setupLegacy(t); initRepository(root);
-  for (const code of ['api', 'web']) {
-    const source = path.join(root, `incoming-${code}`); fs.mkdirSync(source); fs.writeFileSync(path.join(source, 'README.md'), code);
-    runtime.createServiceAsset({ targetRoot: root, project: 'demo', service: code, repoRef: source, attachRef: null, name: code, description: 'Legacy', type: 'service', rulesSource: null, integrationBranch: null, remote: 'origin', remoteExplicit: false, json: false });
-  }
-  let c = ready(runtime, root); const identities = c.services.map((s: any) => s.id);
-  assert.equal(c.repositories.length, 2);
-  c = runtime.normalizeCatalogRepositories(root, { revision: c.revision });
-  assert.equal(c.repositories.length, 1); assert.equal(c.repositories[0].source.path, '.'); assert.equal(c.repositories[0].source.type, 'git');
-  assert.deepEqual(c.services.map((s: any) => s.id), identities);
-  for (const s of c.services) { assert.equal(s.repositoryId, c.repositories[0].id); assert.equal(s.modulePath, `projects/demo/services/${s.code}`); assert.equal(runtime.catalogServiceDocument(root, s.id, 'README.md').content, s.code); }
-  assert.equal(runtime.normalizeCatalogRepositories(root, { revision: c.revision }).revision, c.revision);
-});
-
-
-test('services sharing the workspace Git root reuse its task worktree', (t: any) => {
-  const { root, runtime } = setup(t); initRepository(root);
-  let c = ready(runtime, root);
-  c = runtime.createCatalogRepository(root, { revision: c.revision, code: 'root', path: '.' });
-  c = runtime.createCatalogService(root, { revision: c.revision, projectId: c.projects[0].id, service: { code: 'root-module', name: 'Module', repositoryId: c.repositories[0].id, modulePath: 'projects/demo' } });
-  for (const args of [['config', 'user.name', 'Test'], ['config', 'user.email', 'test@example.com'], ['add', '.'], ['commit', '-m', 'root']]) assert.equal(spawnSync('git', args, { cwd: root }).status, 0);
-  const plan = runtime.planGitWorktrees({ workspaceRoot: root, taskId: 'root-modules', branch: 'codex/root-modules', includes: ['service:demo/root-module'] });
-  assert.equal(plan.repositories.length, 1);
-  assert.equal(plan.repositories[0].sourcePath, '.');
-});
-
-
-test('Doctor explicitly checks repository state once for shared services', (t: any) => {
-  const { root, runtime } = setup(t); initRepository(root);
-  let c = ready(runtime, root);
-  c = runtime.createCatalogRepository(root, { revision: c.revision, code: 'root-doctor', path: '.' });
-  for (const code of ['doctor-one', 'doctor-two']) c = runtime.createCatalogService(root, { revision: c.revision, service: { code, name: code, repositoryId: c.repositories[0].id } });
-  let checks = 0;
-  const diagnostics = createServiceDiagnostics({ path, existsFile: fs.existsSync, assetCatalog: runtime.assetCatalog,
-    catalogRepositoryStatus: (...args: any[]) => { checks++; return runtime.catalogRepositoryStatus(...args); },
-    addDoctorFinding: (result: any, _severity: string, code: string) => result.findings.push(code),
-  });
-  const result: any = { findings: [] }; diagnostics.diagnoseServices(result, root, []);
-  assert.equal(checks, 1); assert.equal(result.services.length, 2);
-  assert.ok(result.services.every((s: any) => s.exists && s.isGitRepository)); assert.deepEqual(result.findings, []);
-});
-
-test('repository branch edits work without a remote and do not change HEAD or service identity', (t: any) => {
-  const { root, runtime } = setup(t); initRepository(root);
-  let c = ready(runtime, root);
-  c = runtime.createCatalogRepository(root, { revision: c.revision, code: 'branch-edit', path: '.' });
-  const repository = c.repositories[0];
-  c = runtime.createCatalogService(root, { revision: c.revision, service: { code: 'branch-service', name: 'Branch', repositoryId: repository.id } });
-  assert.throws(() => runtime.updateCatalogAsset(root, 'repository', repository.id, { revision: c.revision, remote: 'upstream' }), (e: any) => e.code === 'repository_remote_url_required');
-  const service = c.services[0], config = fs.readFileSync(path.join(root, '.git/config')), head = fs.readFileSync(path.join(root, '.git/HEAD'));
-  c = runtime.updateCatalogAsset(root, 'repository', repository.id, { revision: c.revision, integrationBranch: 'release/next' });
-  assert.equal(c.repositories[0].source.integrationBranch, 'release/next'); assert.equal(c.repositories[0].source.git, undefined);
-  assert.equal(c.repositories[0].id, repository.id); assert.deepEqual(c.services[0], service);
-  assert.deepEqual(fs.readFileSync(path.join(root, '.git/config')), config); assert.deepEqual(fs.readFileSync(path.join(root, '.git/HEAD')), head);
-  assert.equal(runtime.catalogRepositoryStatus(root, repository.id).alignment, 'ready');
-  assert.equal(runtime.catalogRepositoryStatus(root, repository.id).observed.currentBranch, 'dev');
-  for (const integrationBranch of ['../bad', 'bad branch', '-bad', 'bad/.hidden', 'bad.lock/branch', 'bad\u0007branch']) assert.throws(() => runtime.updateCatalogAsset(root, 'repository', repository.id, { revision: c.revision, integrationBranch }), (e: any) => e.code === 'repository_branch_invalid');
-  c = runtime.updateCatalogAsset(root, 'repository', repository.id, { revision: c.revision, integrationBranch: '' });
-  assert.equal(c.repositories[0].source.integrationBranch, undefined);
-});
-
-test('repository HTTP edits store remote declaration, report pending alignment and reject stale writes', async (t: any) => {
-  const { root, runtime } = setup(t); initRepository(root);
-  assert.equal(spawnSync('git', ['remote', 'add', 'origin', 'https://example.com/actual.git'], { cwd: root }).status, 0);
-  let c = ready(runtime, root); c = runtime.createCatalogRepository(root, { revision: c.revision, code: 'remote-edit', path: '.' });
-  const repository = c.repositories[0], old = c.revision, config = fs.readFileSync(path.join(root, '.git/config'));
-  const http = createWorkspaceHttpContribution(runtime); let authorization = 0;
-  const response: any = await http.handle({ request: { method: 'PUT' }, suffix: `/asset-catalog/repository/${repository.id}`, root, authorizeWrite: () => authorization++, readJsonBody: async () => ({ revision: old, url: 'https://example.com/desired.git', remote: 'origin', integrationBranch: 'main' }) });
-  assert.equal(response.status, 200); assert.equal(authorization, 1); c = response.body;
-  assert.equal(c.repositories[0].source.git.integrationBranch, 'main');
-  const state: any = await http.handle({ request: { method: 'GET' }, suffix: `/repositories/${repository.id}/status`, root });
-  assert.equal(state.body.alignment, 'pending'); assert.equal(state.body.observed.remoteUrl, 'https://example.com/actual.git');
-  assert.match(state.body.diagnostic, /远端/); assert.deepEqual(fs.readFileSync(path.join(root, '.git/config')), config);
-  assert.throws(() => runtime.updateCatalogAsset(root, 'repository', repository.id, { revision: old, remote: 'upstream' }), (e: any) => e.code === 'asset_revision_conflict');
-  c = runtime.updateCatalogAsset(root, 'repository', repository.id, { revision: c.revision, remote: 'upstream' });
-  assert.equal(c.repositories[0].source.git.remote, 'upstream');
-  assert.equal(runtime.catalogRepositoryStatus(root, repository.id).alignment, 'pending');
-  c = runtime.updateCatalogAsset(root, 'repository', repository.id, { revision: c.revision, url: '' });
-  assert.equal(c.repositories[0].source.git, undefined); assert.equal(c.repositories[0].source.integrationBranch, 'main');
-  assert.equal(runtime.catalogRepositoryStatus(root, repository.id).alignment, 'ready');
-});
-
-test('repository location edits preserve old files, allow missing targets and reject duplicate or escaping modules', (t: any) => {
-  const { root, runtime } = setup(t); let c = ready(runtime, root);
-  const oldRoot = path.join(root, 'code-old'); initRepository(oldRoot); fs.mkdirSync(path.join(oldRoot, 'module')); fs.writeFileSync(path.join(oldRoot, 'module/keep.txt'), 'keep');
-  c = runtime.createCatalogRepository(root, { revision: c.revision, code: 'location-edit', path: 'code-old' });
-  const id = c.repositories[0].id;
-  c = runtime.createCatalogService(root, { revision: c.revision, service: { code: 'module-service', name: 'Module', repositoryId: id, modulePath: 'module' } });
-  c = runtime.updateCatalogAsset(root, 'repository', id, { revision: c.revision, path: 'code-new' });
-  assert.equal(runtime.catalogRepositoryStatus(root, id).alignment, 'pending'); assert.equal(fs.existsSync(path.join(root, 'code-new')), false);
-  assert.equal(fs.readFileSync(path.join(oldRoot, 'module/keep.txt'), 'utf8'), 'keep');
-  const newRoot = path.join(root, 'code-new'); initRepository(newRoot);
-  assert.match(runtime.catalogRepositoryStatus(root, id).diagnostic, /模块目录/);
-  fs.symlinkSync(oldRoot, path.join(newRoot, 'module'));
-  assert.throws(() => runtime.updateCatalogAsset(root, 'repository', id, { revision: c.revision, path: 'code-new' }), (e: any) => e.code === 'service_module_path_forbidden');
-  assert.throws(() => runtime.updateCatalogAsset(root, 'repository', id, { revision: c.revision, path: 'code-old/module' }), (e: any) => e.code === 'repository_not_root');
-  c = runtime.createCatalogRepository(root, { revision: c.revision, code: 'other-location', path: 'code-old' });
-  assert.throws(() => runtime.updateCatalogAsset(root, 'repository', id, { revision: c.revision, path: 'code-old' }), (e: any) => e.code === 'repository_duplicate_path');
-  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-edit-outside-')); t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
-  fs.symlinkSync(outside, path.join(root, 'outside-link'));
-  assert.throws(() => runtime.updateCatalogAsset(root, 'repository', id, { revision: c.revision, path: 'outside-link/missing' }), (e: any) => e.code === 'repository_path_invalid');
-});
-
-test('local repository integration branch is consumed by subsequent task worktree planning', (t: any) => {
-  const { root, runtime } = setup(t); initRepository(root);
-  const git = (cwd: string, ...args: string[]) => { const result = spawnSync('git', args, { cwd, encoding: 'utf8' }); assert.equal(result.status, 0, result.stderr); return result.stdout.trim(); };
-  let c = ready(runtime, root); const code = path.join(root, 'local-code'); initRepository(code);
-  git(code, 'config', 'user.name', 'Test'); git(code, 'config', 'user.email', 'test@example.com'); git(code, 'commit', '--allow-empty', '-m', 'base');
-  const start = git(code, 'rev-parse', 'HEAD'); git(code, 'branch', 'integration'); git(code, 'commit', '--allow-empty', '-m', 'later');
-  c = runtime.createCatalogRepository(root, { revision: c.revision, code: 'local-code', path: 'local-code' });
-  c = runtime.updateCatalogAsset(root, 'repository', c.repositories[0].id, { revision: c.revision, integrationBranch: 'integration' });
-  c = runtime.createCatalogService(root, { revision: c.revision, projectId: c.projects[0].id, service: { code: 'local-module', name: 'Local', repositoryId: c.repositories[0].id } });
-  fs.appendFileSync(path.join(root, '.gitignore'), '\n/local-code/\n'); git(root, 'config', 'user.name', 'Test'); git(root, 'config', 'user.email', 'test@example.com'); git(root, 'add', '.'); git(root, 'commit', '-m', 'workspace');
-  const plan = runtime.planGitWorktrees({ workspaceRoot: root, taskId: 'local-branch-edit', branch: 'codex/local-branch-edit', includes: ['service:demo/local-module'] });
-  assert.equal(plan.repositories.length, 2); assert.equal(plan.repositories[1].startPoint, 'integration'); assert.equal(git(code, 'rev-parse', plan.repositories[1].startPoint), start);
-  assert.equal(git(code, 'branch', '--show-current'), 'dev');
-});
-
-test('workspace-root integration branch is used unless the task explicitly chooses a start point', (t: any) => {
-  const { root, runtime } = setup(t); initRepository(root);
-  const git = (...args: string[]) => { const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' }); assert.equal(result.status, 0, result.stderr); return result.stdout.trim(); };
-  let c = ready(runtime, root);
-  c = runtime.createCatalogRepository(root, { revision: c.revision, code: 'root-branch', path: '.', integrationBranch: 'integration' });
-  c = runtime.createCatalogService(root, { revision: c.revision, projectId: c.projects[0].id, service: { code: 'root-branch-service', name: 'Root', repositoryId: c.repositories[0].id } });
-  git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.com'); git('add', '.'); git('commit', '-m', 'base'); git('branch', 'integration'); git('commit', '--allow-empty', '-m', 'later');
-  const input = { workspaceRoot: root, taskId: 'root-default', branch: 'codex/root-default', includes: ['service:demo/root-branch-service'] };
-  assert.equal(runtime.planGitWorktrees(input).repositories[0].startPoint, 'integration');
-  assert.equal(runtime.planGitWorktrees({ ...input, startPoint: 'HEAD' }).repositories[0].startPoint, 'HEAD');
-  assert.equal(git('branch', '--show-current'), 'dev');
-});
-
-test('local Git config reads real remotes without changing declarations or scanning status', async (t: any) => {
-  const { root, runtime } = setup(t); initRepository(root);
-  assert.equal(spawnSync('git', ['remote', 'add', 'origin', 'https://example.com/local.git'], { cwd: root }).status, 0);
-  let c = ready(runtime, root); c = runtime.createCatalogRepository(root, { revision: c.revision, code: 'local-config', path: '.', integrationBranch: 'integration' });
-  const before = fs.readFileSync(path.join(root, 'repositories/manifest.yml')), config = fs.readFileSync(path.join(root, '.git/config'));
-  const original = runtime.observeProjectGit; runtime.observeProjectGit = () => { throw new Error('local configuration must not scan status'); };
-  try {
-    const http = createWorkspaceHttpContribution(runtime);
-    const response: any = await http.handle({ request: { method: 'GET' }, suffix: `/repositories/${c.repositories[0].id}/local-config`, root });
-    assert.equal(response.status, 200); assert.equal(response.body.selectedRemote, 'origin'); assert.equal(response.body.currentBranch, 'dev');
-    assert.deepEqual(response.body.remotes, [{ name: 'origin', url: 'https://example.com/local.git' }]);
-    assert.deepEqual(fs.readFileSync(path.join(root, 'repositories/manifest.yml')), before); assert.deepEqual(fs.readFileSync(path.join(root, '.git/config')), config);
-    assert.equal(runtime.assetCatalog(root).repositories[0].source.integrationBranch, 'integration');
-  } finally { runtime.observeProjectGit = original; }
-});
-
-test('local config resolves tracked and sole remotes but does not guess ambiguous or missing declared remotes', (t: any) => {
-  const { root, runtime } = setup(t); initRepository(root);
-  const git = (...args: string[]) => assert.equal(spawnSync('git', args, { cwd: root }).status, 0);
-  let c = ready(runtime, root); c = runtime.createCatalogRepository(root, { revision: c.revision, code: 'multi-config', path: '.' });
-  const id = c.repositories[0].id;
-  git('remote', 'add', 'upstream', 'https://example.com/upstream.git');
-  assert.equal(runtime.catalogRepositoryLocalConfig(root, id).selectedRemote, 'upstream');
-  git('remote', 'add', 'mirror', 'https://example.com/mirror.git');
-  let config = runtime.catalogRepositoryLocalConfig(root, id); assert.equal(config.selectedRemote, null); assert.match(config.diagnostic, /多个远端/);
-  git('config', 'branch.dev.remote', 'mirror'); assert.equal(runtime.catalogRepositoryLocalConfig(root, id).selectedRemote, 'mirror');
-  c = runtime.updateCatalogAsset(root, 'repository', id, { revision: c.revision, url: 'https://example.com/desired.git', remote: 'absent', integrationBranch: 'main' });
-  config = runtime.catalogRepositoryLocalConfig(root, id); assert.equal(config.selectedRemote, null); assert.match(config.diagnostic, /absent/); assert.equal(config.remotes.length, 2);
-  c = runtime.updateCatalogAsset(root, 'repository', id, { revision: c.revision, path: 'missing-local' });
-  config = runtime.catalogRepositoryLocalConfig(root, id); assert.equal(config.available, false); assert.match(config.diagnostic, /不存在/);
-});
-
-test('service update creates and associates a repository atomically through the HTTP contract', async (t: any) => {
-  const { root, runtime } = setup(t); let c = ready(runtime, root);
-  c = addRepo(runtime, root, c.revision, 'old-service-code', 'dev');
-  c = runtime.createCatalogService(root, { revision: c.revision, projectId: c.projects[0].id, service: { code: 'edit-new-code', name: 'Original', repositoryId: c.repositories[0].id } });
-  const service = c.services[0], projectRefs = c.projects.map((p: any) => p.serviceIds), originalRevision = c.revision;
-  const http = createWorkspaceHttpContribution(runtime); let authorized = 0;
-  const response: any = await http.handle({ request: { method: 'PUT' }, suffix: `/asset-catalog/service/${service.id}`, root, authorizeWrite: () => authorized++, readJsonBody: async () => ({ revision: c.revision, name: 'Updated', repository: { code: 'new-inline-code', url: 'https://example.com/new-inline.git', integrationBranch: 'main' } }) });
-  c = response.body; assert.equal(response.status, 200); assert.equal(authorized, 1);
-  assert.equal(c.repositories.length, 2); assert.equal(c.services[0].id, service.id); assert.equal(c.services[0].name, 'Updated');
-  assert.equal(c.services[0].repositoryId, c.repositories.find((r: any) => r.code === 'new-inline-code').id);
-  assert.deepEqual(c.projects.map((p: any) => p.serviceIds), projectRefs);
-  assert.equal(fs.existsSync(path.join(root, 'repositories/new-inline-code')), false);
-  assert.throws(() => runtime.updateCatalogAsset(root, 'service', service.id, { revision: originalRevision, repository: { code: 'stale-inline-code', url: 'https://example.com/stale.git', integrationBranch: 'dev' } }), (e: any) => e.code === 'asset_revision_conflict');
-  assert.equal(runtime.assetCatalog(root).repositories.length, 2);
-});
-
-test('invalid or ambiguous inline repository service updates leave every manifest untouched', (t: any) => {
-  const { root, runtime } = setup(t); let c = ready(runtime, root); c = addRepo(runtime, root, c.revision, 'original-inline', 'dev');
-  c = runtime.createCatalogService(root, { revision: c.revision, service: { code: 'inline-failure', name: 'Keep', repositoryId: c.repositories[0].id } });
-  const files = ['projects/manifest.yml', 'services/manifest.yml', 'repositories/manifest.yml']; const bytes = files.map(file => fs.readFileSync(path.join(root, file)));
-  const repository = { code: 'invalid-inline', url: 'https://example.com/inline.git', integrationBranch: 'dev' };
-  assert.throws(() => runtime.updateCatalogAsset(root, 'service', c.services[0].id, { revision: c.revision, repositoryId: c.repositories[0].id, repository }), (e: any) => e.code === 'service_repository_ambiguous');
-  assert.throws(() => runtime.updateCatalogAsset(root, 'service', c.services[0].id, { revision: c.revision, repository, modulePath: '../escape' }), (e: any) => e.code === 'asset_path_invalid');
-  files.forEach((file, i) => assert.deepEqual(fs.readFileSync(path.join(root, file)), bytes[i]));
-  assert.equal(runtime.assetCatalog(root).repositories.length, 1);
-});
-
-test('service directories register existing code, remove without writes and register again', (t: any) => {
-  const { root, runtime } = setup(t); let c = ready(runtime, root);
-  c = runtime.createCatalogProject(root, { revision: c.revision, code: 'directory-project', name: '目录项目' });
-  const directoryPath = 'projects/directory-project/services/existing';
-  const directory = path.join(root, directoryPath); fs.mkdirSync(directory, { recursive: true });
-  fs.writeFileSync(path.join(directory, 'README.md'), 'original bytes\n');
-  const candidate = runtime.listCatalogDirectoryCandidates(root, 'service').candidates.find((c: any) => c.path === directoryPath);
-  assert.ok(candidate);
-  const service = { code: 'existing', name: '已有服务', directoryMode: 'existing', directoryPath, directoryObservation: candidate.observation };
-  c = runtime.createCatalogService(root, { revision: c.revision, service });
-  assert.equal(c.projects.find((p: any) => p.code === 'directory-project').serviceIds.length, 1);
-  const created = c.services.find((s: any) => s.code === 'existing');
-  assert.ok(created.repositoryId); assert.equal(fs.existsSync(path.join(directory, 'AGENTS.md')), false);
-  assert.equal(fs.existsSync(path.join(root, 'services/existing')), false);
-  assert.ok(!runtime.listCatalogDirectoryCandidates(root, 'service').candidates.some((d: any) => d.path === directoryPath));
-  c = runtime.deleteCatalogAsset(root, 'service', created.id, { revision: c.revision });
-  assert.equal(fs.readFileSync(path.join(directory, 'README.md'), 'utf8'), 'original bytes\n');
-  c = runtime.createCatalogService(root, { revision: c.revision, service });
-  assert.notEqual(c.services.find((s: any) => s.code === 'existing').id, created.id);
-  assert.equal(fs.readdirSync(directory).join(), 'README.md');
-});
-
-test('new nested services create in project and transaction failure leaves no directory', (t: any) => {
-  const { root, runtime } = setup(t); let c = ready(runtime, root);
-  c = runtime.createCatalogProject(root, { revision: c.revision, code: 'new-directory-project', name: '新项目', newServices: [{ code: 'api', name: 'API', directoryMode: 'create' }] });
-  assert.ok(fs.statSync(path.join(root, 'projects/new-directory-project/services/api')).isDirectory());
-  assert.equal(fs.existsSync(path.join(root, 'projects/new-directory-project/services/api/AGENTS.md')), false);
-  const project = c.projects.find((p: any) => p.code === 'new-directory-project');
-  assert.equal(project.serviceIds.length, 1);
-  assert.throws(() => runtime.createCatalogService(root, { revision: c.revision, service: { code: 'api', name: '重复', directoryMode: 'create', projectCode: project.code } }), /已存在|重复/);
-  const original = runtime.atomicWriteFile;
-  runtime.atomicWriteFile = (file: string, content: string) => { if (file.endsWith('services/manifest.yml')) throw new Error('injected-directory-failure'); return original(file, content); };
-  try { assert.throws(() => runtime.createCatalogService(root, { revision: c.revision, service: { code: 'rollback', name: '回滚', directoryMode: 'create', projectCode: project.code } }), /injected-directory-failure/); }
-  finally { runtime.atomicWriteFile = original; }
-  assert.equal(fs.existsSync(path.join(root, 'projects/new-directory-project/services/rollback')), false);
-  assert.equal(runtime.assetCatalog(root).revision, c.revision);
-});
-
-test('service registration rejects replaced directories and unsafe links with zero writes', (t: any) => {
-  const { root, runtime } = setup(t); let c = ready(runtime, root);
-  c = runtime.createCatalogProject(root, { revision: c.revision, code: 'observe', name: '观察' });
-  const relative = 'projects/observe/services/api', directory = path.join(root, relative); fs.mkdirSync(directory, { recursive: true });
-  const old = runtime.listCatalogDirectoryCandidates(root, 'service').candidates.find((d: any) => d.path === relative);
-  fs.renameSync(directory, directory + '-old'); fs.mkdirSync(directory);
-  assert.throws(() => runtime.createCatalogService(root, { revision: c.revision, service: { code: 'api', name: 'API', directoryMode: 'existing', directoryPath: relative, directoryObservation: old.observation } }), (e: any) => e.code === 'asset_directory_changed');
-  assert.equal(runtime.assetCatalog(root).revision, c.revision);
-  fs.symlinkSync(directory + '-old', path.join(root, 'projects/observe/services/link'));
-  assert.ok(!runtime.listCatalogDirectoryCandidates(root, 'service').candidates.some((d: any) => d.path.endsWith('/link')));
-});
-
-test('repository candidates are real roots; removal protects references and preserves Git files', (t: any) => {
-  const { root, runtime } = setup(t); let c = ready(runtime, root);
-  const directory = path.join(root, 'repositories/retained'); fs.mkdirSync(directory, { recursive: true });
-  assert.equal(spawnSync('git', ['init', '-b', 'main'], { cwd: directory }).status, 0);
-  fs.writeFileSync(path.join(directory, 'keep.txt'), 'keep');
-  const candidate = runtime.listCatalogDirectoryCandidates(root, 'repository').candidates.find((d: any) => d.path === 'repositories/retained'); assert.ok(candidate);
-  c = runtime.createCatalogRepository(root, { revision: c.revision, code: 'retained', path: candidate.path, observation: candidate.observation });
-  const repositoryId = c.repositories.find((r: any) => r.code === 'retained').id;
-  c = runtime.createCatalogService(root, { revision: c.revision, service: { code: 'ref', name: '引用服务', repositoryId } });
-  assert.throws(() => runtime.deleteCatalogAsset(root, 'repository', repositoryId, { revision: c.revision }), (e: any) => e.code === 'repository_in_use');
-  c = runtime.deleteCatalogAsset(root, 'service', c.services.find((s: any) => s.code === 'ref').id, { revision: c.revision });
-  c = runtime.deleteCatalogAsset(root, 'repository', repositoryId, { revision: c.revision });
-  assert.equal(fs.readFileSync(path.join(directory, 'keep.txt'), 'utf8'), 'keep'); assert.ok(fs.existsSync(path.join(directory, '.git')));
-  c = runtime.createCatalogRepository(root, { revision: c.revision, code: 'retained', path: candidate.path, observation: candidate.observation });
-  assert.notEqual(c.repositories.find((r: any) => r.code === 'retained').id, repositoryId);
-});
-
-test('skill register, remove and re-register preserve source bytes and reject stale observations', (t: any) => {
-  const { root, runtime } = setup(t);
-  let candidates = runtime.skillRegistrationCandidates(root);
-  runtime.registerLocalSkill(root, { revision: candidates.revision, id: 'local-example', description: '示例', content: '# 示例\n\n保留正文。' });
-  const file = path.join(root, 'skills/local-example/SKILL.md'), bytes = fs.readFileSync(file);
-  fs.mkdirSync(path.join(root, 'skills/local-example/assets')); fs.writeFileSync(path.join(root, 'skills/local-example/assets/data.txt'), 'asset');
-  const removal = runtime.skillRemoval(root, 'local-example');
-  assert.equal(removal.removable, true);
-  runtime.removeRegisteredSkill(root, 'local-example', { revision: removal.revision });
-  assert.deepEqual(fs.readFileSync(file), bytes);
-  candidates = runtime.skillRegistrationCandidates(root);
-  const candidate = candidates.candidates.find((c: any) => c.id === 'local-example'); assert.ok(candidate);
-  fs.appendFileSync(file, '\n变化');
-  assert.throws(() => runtime.registerLocalSkill(root, { revision: candidates.revision, path: candidate.path, observation: candidate.observation }), (e: any) => e.code === 'skill_directory_changed');
-  candidates = runtime.skillRegistrationCandidates(root);
-  runtime.registerLocalSkill(root, { revision: candidates.revision, ...candidates.candidates.find((c: any) => c.id === 'local-example') });
-  assert.equal(fs.readFileSync(path.join(root, 'skills/local-example/assets/data.txt'), 'utf8'), 'asset');
-  assert.throws(() => runtime.removeRegisteredSkill(root, 'local-example', { revision: candidates.revision }), (e: any) => e.code === 'skill_revision_conflict');
-  runtime.skillsRemove({ targetRoot: root, id: 'local-example' });
-  assert.ok(fs.existsSync(file));
 });

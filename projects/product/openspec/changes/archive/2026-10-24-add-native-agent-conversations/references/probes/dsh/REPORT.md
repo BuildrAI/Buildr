@@ -1,5 +1,7 @@
 > 历史讨论与实验记录：保留原结论和当时边界。实现现状以正式规范、当前架构说明及交付报告为准；一次性附件和运行资源已在本次交付清理，不作为当前运行依赖。
 
+> 公开路径脱敏：仅将本机用户目录替换为 `<user-home>`；原运行结果、时间及结论保持不变。
+
 # DSH 独立接入真实验证
 
 日期：2026-10-22（Asia/Shanghai）。范围为临时实验，不修改 Buildr 正式功能，不接管外部桌面会话。
@@ -49,11 +51,11 @@ DSH 0.2.1-rc.2 的独立 Web Host 能由 Buildr 式 Node.js 调用方通过官�
 | 取消后无迟到写入 | 通过 | 等待 32 秒后结束标记仍不存在 |
 | Host 重启恢复 | 通过 | 停止本实验 Host，再启动新端口；相同 sessionId 的 `follow/page` 返回 75 条历史 |
 | 重启后继续对话 | 通过 | 不重新读取文件，真实模型正确复述此前技能与兄弟文件标记 |
-| 真实 Buildr cwd 初始化 | 部分确认 | 零模型轮、无工作空间写入；目录返回 38 个实际工作空间技能，均来自 `/Users/chenjun/workspaces/BuildrAI/Buildr/.agents/skills` |
+| 真实 Buildr cwd 初始化 | 部分确认 | 零模型轮、无工作空间写入；目录返回 38 个实际工作空间技能，均来自 `<user-home>/workspaces/BuildrAI/Buildr/.agents/skills` |
 | 真实 Buildr 根规则注入 | 未执行模型验证 | 创建阶段历史有 0 个规则事件；DSH 在首轮前才注入。只确认真实 `AGENTS.md` 存在，不声称已验证注入 |
 | 新账号浏览器登录、注销、API 密钥配置 | 本轮未执行 | 流程支持来自官方代码/文档，不与上述实测混淆 |
 
-非临时合成场地为 `/Users/chenjun/Library/Caches/Buildr-agent-integration-wgc0iS-dsh`，由本实验创建，结束后删除。没有在实际 Buildr 或集鲜工作空间执行模型或改文件。
+非临时合成场地为 `<user-home>/Library/Caches/Buildr-agent-integration-wgc0iS-dsh`，由本实验创建，结束后删除。没有在实际 Buildr 或集鲜工作空间执行模型或改文件。
 
 ## 会话与证据
 

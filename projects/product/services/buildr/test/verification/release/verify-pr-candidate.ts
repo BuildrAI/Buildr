@@ -26,6 +26,16 @@ const digest = /^(?:sha256-)?[0-9a-f]{64}$/u;
 type Selection = { id: string; packages: string[]; versions: Record<string, string>; baseline: string; main: string; identity: string };
 type GitRead = (args: string[]) => string;
 
+// These source-only release regressions moved out of their former shared
+// directory. Retain the same artifact-input boundary using their current paths.
+const releaseSupportTests = new Set([
+  'candidate-source-binding', 'package-publication-evidence', 'package-release-operation',
+  'package-release-selection-operation', 'plugin-hosted-release', 'publication-effects',
+  'release-authority-cli', 'release-contract-cold-start', 'release-convergence',
+  'release-node-runner', 'release-operation', 'release-recovery', 'release-rehearsal',
+  'release-selection', 'release-skill-ownership', 'release-source-scope',
+].map(name => `test/integration/${name}.test.ts`));
+
 /** Publication targets cannot reduce the checks required by the complete main-to-source tree diff. */
 export function releaseCandidateRequirements({ packages, changedPaths }: { packages: string[]; changedPaths: string[] }): { buildr: boolean; plugin: boolean } {
   requireFact(packages.length > 0 && packages.every(value => ['buildr', 'dsh-plugin'].includes(value)) && new Set(packages).size === packages.length, 'Unsupported release packages.');
@@ -38,8 +48,8 @@ export function releaseCandidateRequirements({ packages, changedPaths }: { packa
       const local = value.slice('projects/product/services/buildr/'.length);
       // These tools are outside the npm runtime. Their focused regression is
       // still required, but they do not independently require a new main pack.
-      if (local.startsWith('tools/release/') && !['release-consumption.ts', 'application-payload.ts', 'application-payload-entry.ts', 'release-files.ts', 'release-artifact.ts', 'candidate-ci-contract.ts', 'release-contract.ts', 'release-notes.ts', 'release-authority.ts'].includes(path.posix.basename(local))) return false;
-      if (local.startsWith('test/integration-candidate-release/') || /^test\/unit\/(?:release[^/]*|package-compatibility)\.test\.ts$/u.test(local) || /^test\/contract\/(?:release[^/]*|open-source-release|package-compatibility)\.test\.ts$/u.test(local) || local === 'test/helpers/package-compatibility-fixtures.ts') return false;
+      if (local.startsWith('test/verification/release/') && !['release-consumption.ts', 'application-payload.ts', 'application-payload-entry.ts', 'release-files.ts', 'release-artifact.ts', 'candidate-ci-contract.ts', 'release-contract.ts', 'release-notes.ts', 'release-authority.ts'].includes(path.posix.basename(local))) return false;
+      if (releaseSupportTests.has(local) || local.startsWith('test/integration/git-convergence/') || /^test\/unit\/(?:release[^/]*|package-compatibility|package-artifact-observation)\.test\.ts$/u.test(local) || /^test\/static\/(?:release[^/]*|open-source-release|package-compatibility)\.test\.ts$/u.test(local) || local === 'test/helpers/package-compatibility-fixtures.ts') return false;
       return true;
     }
     return (value.startsWith('.github/') && value !== '.github/workflows/publish-dsh-plugin.yml') || ['projects/product/buildr', 'projects/product/.node-version', 'projects/product/preparation.yml', 'projects/product/verification.yml'].includes(value);

@@ -1,451 +1,126 @@
 schemaVersion: buildr.project-verification/v4
 testing:
-  - id: buildr-source
-    title: Buildr 发布前本机源码检查
+  - id: buildr-static
+    title: Buildr 静态检查（Static Check）
     scope:
       project: product
-      services:
-        - buildr
-        - buildr-web
-        - buildr-agent
-    purpose: 通用产品逻辑只有一套，默认选择通用检查和本机系统源码节点；另一系统只补真实系统差异，不证明最终发布包
+      services: [buildr, buildr-web, buildr-agent, dsh-plugin]
+    purpose: 检查四服务类型、源码依赖、声明、资源和交付结构，不执行业务流程。
     sourcePaths:
-      - services/buildr/src/**
-      - services/buildr/resources/**
-      - services/buildr/tools/**
-      - services/buildr-web/src/**
-      - services/buildr-web/tools/**
+      - services/buildr/**
+      - services/buildr-web/**
       - services/buildr-agent/**
+      - services/dsh-plugin/**
+      - verification.yml
+      - preparation.yml
     testRoots:
       - services/buildr/test/**
       - services/buildr-web/test/**
       - services/buildr-agent/test/**
+      - services/dsh-plugin/test/**
     full:
       kind: command
-      argv:
-        - tools/development/run-development-npm
-        - run
-        - test:source
+      argv: [tools/development/run-development-npm, run, test:static]
       cwd: services/buildr
     selection:
-      - 普通开发选择受影响源码及独立源码包检查；dev 直接推送与开发合并请求沿用原有开发反馈，准备发布时只补当前缺项
-      - 文档链接、架构及规范静态检查不作候选必跑门槛；独立检查不挂在全局前置检查后，一轮收集失败，修复后只补失败及受影响项
-      - 按实际内容、配方、依赖和原环境复用；最终包和未覆盖平台仍单独验证
-      - 传入 --json 只看计划；--force 强制重跑；--output 导出可搬运源码结果
-      - 发布准备返回的 --base 固定比较提交；同轮本机与远端共用，不追随开发分支移动
-      - --scope common 只选通用逻辑；--scope platform 只选实际系统机制，不附带另一套功能检查
-      - 严格来源文件读取的系统差异由原生平台节点验证；真实失败不得跳过或冒充另一系统已验
+      - 完整入口以实际登记和发现集合运行本类全部检查，不按旧目录名推定分类，不在地图复制成员。
+      - 所有公开入口支持 --plan 查看选择，使用 --check <id> 显式指定检查；计划和选择成功不等于实际验证通过。
+      - 任务开发按用户请求、目标、真实改动及调用边界选齐相关四类，使用 test:related 或明确指定的现有检查，不要求正式任务或比较基线。
+      - 推送前必须取得四服务全部静态检查（Static Check）与单元测试（Unit Test）的有效完整证明；不能仅用相关检查冒充全量。
+      - 仅在内容、配方、依赖、工具与必要环境仍适用时复用有效结果，保留实际来源；缺失、失败和未覆盖如实报告。
     requirements:
-      - 稳定版 Node >=24.15.0 与相邻 npm，通过项目 wrapper 执行
-      - git
-  - id: buildr-windows-boundaries
-    title: Buildr Windows 真实系统差异
+      - 稳定版 Node >=24.15.0 与相邻 npm，通过项目包装入口运行
+  - id: buildr-unit
+    title: Buildr 单元测试（Unit Test）
     scope:
       project: product
-      services:
-        - buildr
-    purpose: 验证实际命令 shim、路径别名、目录链接、硬链接锁、严格文件句柄读取、进程树清理及一个 Git 换行转换用例；只在真实 Windows
-      执行时形成 Windows 证明
-    sourcePaths:
-      - services/buildr/src/infrastructure/process.ts
-      - services/buildr/src/infrastructure/filesystem/**
-      - services/buildr/src/infrastructure/git/**
-      - services/buildr/src/modules/task/infrastructure/**
-    testRoots:
-      - services/buildr/test/platform/**
-    full:
-      kind: command
-      argv:
-        - tools/development/run-development-npm
-        - run
-        - test:focus
-        - --
-        - system-windows-platform
-      cwd: services/buildr
-    selection:
-      - 按 test/verification/platform-boundaries.ts 的实际系统依赖和输入选择，沿用统一登记及原断言
-      - 只选择 worktree-create.test.ts 中的路径别名与 CRLF 用例，不重复整套任务和工作目录检查
-      - 最终包快捷方式、安装启动及退出由 release-tarball-smoke 和宿主 Node 检查独立证明；本族不替代原包消费
-    requirements:
-      - Windows；其他系统执行仅证明当地可适用部分，命令 shim 用例跳过必须如实报告
-      - 稳定版 Node >=24.15.0 与相邻 npm
-      - git
-      - 系统 Windows PowerShell 5.1 与 .NET；缺失时严格句柄读取关闭相关结果，不退回路径猜测
-      - Windows 文件符号链接创建权限；不足时是环境缺项，不以跳过证明完整平台覆盖，可由 GitHub 补验同一节点
-  - id: buildr-macos-boundaries
-    title: Buildr macOS 真实系统差异
-    scope:
-      project: product
-      services:
-        - buildr
-    purpose: 验证目录描述符、系统文件句柄、开发壳入口和应用壳入口的真实系统机制；不重复产品逻辑或通用功能
-    sourcePaths:
-      - services/buildr/src/infrastructure/filesystem/verified-readonly-file.ts
-      - services/buildr/tools/development/**
-      - services/buildr/src/modules/installation/**
-    testRoots:
-      - services/buildr/test/platform/macos-*.test.ts
-    full:
-      kind: command
-      argv:
-        - tools/development/run-development-npm
-        - run
-        - test:focus
-        - --
-        - system-macos-platform
-      cwd: services/buildr
-    selection:
-      - 仅在真实 macOS 执行 system-macos-platform；只补此节点，不重跑通用检查
-      - 最终原包的应用启动入口由 runtime-macos 独立证明
-    requirements:
-      - macOS
-      - 稳定版 Node >=24.15.0 与相邻 npm
-      - git
-  - id: buildr-artifact
-    title: Buildr 通用原包与系统验包
-    scope:
-      project: product
-      services:
-        - buildr
-        - buildr-web
-        - buildr-agent
-    purpose: 对同一最终原包执行一次通用检查，并分别证明两个系统的原生启动及最低 Node；本入口不制包、不公开
+      services: [buildr, buildr-web, buildr-agent, dsh-plugin]
+    purpose: 验证四服务隔离条件下的内部逻辑与完整内部功能；替换外部协作者，整套保持低成本。
     sourcePaths:
       - services/buildr/**
       - services/buildr-web/**
       - services/buildr-agent/**
+      - services/dsh-plugin/**
+      - verification.yml
+      - preparation.yml
     testRoots:
-      - services/buildr/test/verification/release/**
-      - services/buildr/test/verification/host-node/**
-    full:
-      kind: agent
-      instructions:
-        - 从发布入口取已核验来源和摘要的准确原包目录，用 tools/development/run-development-node 调用
-          test/verification/artifact.ts，显式提供 --artifact-dir 和 --output
-        - --scope common 只执行通用原包检查一次；--scope platform 只执行当前系统的 runtime-macos 或
-          runtime-windows 及最低 Node，不包含另一系统或通用功能
-        - 默认 all 使用实际 Node 24.15.0，一次完成通用原包和本机系统验包；分别执行 common 与 platform
-          时也只补缺项，不另跑当前版本组合
-        - 有效结果保留原实际系统和程序；使用同一 prepare 的 --artifact-verification 导入，缺项不冒充完整通过
-    requirements:
-      - 明确冻结源码、同一原包及隔离检查目录
-      - 真实 macOS 或 Windows；另一个系统的证明不能由当前系统结果替代
-      - 系统验包使用实际 Node 24.15.0；一般开发工具仍接受稳定版 >=24.15.0，不要求恰好最低版本
-  - id: buildr-fast
-    title: Buildr 后端低成本完整回归
-    scope:
-      project: product
-      services:
-        - buildr
-    purpose: 验证类型、单元、组件、契约和低成本静态边界
-    sourcePaths:
-      - services/buildr/src/**
-      - services/buildr/resources/**
-      - services/buildr/tools/**/*.ts
-      - services/buildr/package.json
-      - services/buildr/tsconfig*.json
-    testRoots:
-      - services/buildr/test/unit/**
-      - services/buildr/test/component/**
-      - services/buildr/test/contract/**
-    full:
-      kind: command
-      argv:
-        - tools/development/run-development-npm
-        - run
-        - test:fast
-      cwd: services/buildr
-    selection:
-      - 开发中按修改区域选择相关 unit、component 或 contract 文件
-      - 开发完成后运行完整低成本回归
-    requirements:
-      - node
-      - npm
-  - id: buildr-functional
-    title: Buildr 本地集成测试
-    scope:
-      project: product
-      services:
-        - buildr
-    purpose: 验证真实 CLI、SQLite、Git、HTTP 和文件系统集成边界
-    sourcePaths:
-      - services/buildr/src/**
-      - services/buildr/resources/**
-    testRoots:
-      - services/buildr/test/integration/**
-    full:
-      kind: command
-      argv:
-        - tools/development/run-development-npm
-        - run
-        - test:integration
-      cwd: services/buildr
-    selection:
-      - 根据任务修改的应用（Application）、接口、数据和副作用选择相关集成测试文件
-    requirements:
-      - node
-      - npm
-      - git
-  - id: buildr-release-infrastructure
-    title: Buildr 发布选择与恢复完整检查
-    scope:
-      project: product
-      services:
-        - buildr
-    purpose: 验证源码选择、独立版本、逐包发布编排、真实 Git 收敛及失败恢复；隔离外部发布副作用，不证明实际公开发布
-    sourcePaths:
-      - services/buildr/test/verification/release/**
-      - services/buildr/src/modules/installation/domain/release-version.ts
-    testRoots:
-      - services/buildr/test/integration-candidate-release/**
-    full:
-      kind: command
-      argv:
-        - tools/development/run-development-npm
-        - run
-        - test:integration:candidate:release
-      cwd: services/buildr
-    selection:
-      - 六组发布基础设施检查分别承担契约、源码选择、独立包选择、副作用恢复和两组 Git 收敛；完整入口运行全部检查，候选只需一份通用源码证明
-      - 开发中的受影响选择保留低成本检查；本族通过显式发布组或完整候选（Candidate）执行，不混入日常完整核心检查
-      - 三种包选择、同版本身份漂移、联合顺序、响应未知和共享清理使用隔离 Git 仓库及外部系统替身，不派发真实发布
-      - 发布脚本位于工作空间的
-        skills/buildr-release/scripts/；同时核对这些源码及项目内检查，由现有项目测试入口统一验证，不另建执行根。
-    requirements:
-      - 项目锁定 Node 与 npm，通过项目 wrapper 执行
-      - git
-  - id: buildr-system
-    title: Buildr 系统测试
-    scope:
-      project: product
-      services:
-        - buildr
-    purpose: 验证完整公共入口、工作空间（Workspace）与任务生命周期，以及跨组件运行和恢复行为
-    sourcePaths:
-      - services/buildr/src/**
-      - services/buildr/resources/**
-    testRoots:
-      - services/buildr/test/system/**
-    full:
-      kind: command
-      argv:
-        - tools/development/run-development-npm
-        - run
-        - test:system
-      cwd: services/buildr
-    selection:
-      - 按 test/verification/system-suites.ts 的归属选择受影响系统测试，可使用 test:system --
-        --owner <suite-id>
-      - 需要完整系统回归时使用 full 入口，运行全部已登记系统测试
-    requirements:
-      - node
-      - npm
-      - git
-  - id: buildr-web-unit
-    title: Buildr Web 前端逻辑测试
-    scope:
-      project: product
-      services:
-        - buildr-web
-    purpose: 验证前端状态转换、分页导航、请求处理和输入转换等可独立判断的逻辑
-    sourcePaths:
-      - services/buildr-web/src/**
-      - services/buildr-web/package.json
-      - services/buildr-web/package-lock.json
-      - services/buildr-web/tsconfig*.json
-      - services/buildr-web/tools/run-logic-tests.mjs
-    testRoots:
-      - services/buildr-web/test/*.test.mjs
-    full:
-      kind: command
-      argv:
-        - ../buildr/tools/development/run-development-npm
-        - test
-      cwd: services/buildr-web
-    selection:
-      - 从真实测试文件选择与当前逻辑变化相关的检查，使用服务已有 Node.js 测试入口
-      - 需要完整前端逻辑回归时运行 full；类型构建和浏览器交互由 buildr-web 独立验证
-      - 自动受影响选择通过 frontend-logic 调用本族完整入口；完整主包候选（Candidate）包含该独立源码证据，日常后端 Core
-        不代表前端通过
-      - npm test 与 frontend-logic 使用同一完整测试驱动；获授工作进程预算（Worker Budget）通过 Node.js
-        前置 --test-concurrency 显式生效，独立调用默认 1
-    requirements:
-      - node
-      - npm
-  - id: buildr-web
-    title: Buildr Web 构建与浏览器交互测试
-    scope:
-      project: product
-      services:
-        - buildr
-        - buildr-web
-    purpose: 验证 TypeScript 构建、页面交互和关键任务流程
-    sourcePaths:
-      - services/buildr-web/src/**
-      - services/buildr-web/package.json
-      - services/buildr-web/package-lock.json
-      - services/buildr-web/tsconfig*.json
-      - services/buildr-web/vite.config.ts
-      - services/buildr-web/tools/**
-      - services/buildr/src/web/**
-      - services/buildr/tools/build/**
-      - services/buildr/tools/codegen/contracts/**
-      - services/buildr/tools/testing/**
-      - services/buildr/test/verification/web-dist.ts
-      - services/buildr/test/verification/browser-selector-dispatcher.ts
-    testRoots:
-      - services/buildr/test/browser-smoke/**
-      - services/buildr-web/test/browser/**
-    full:
-      kind: command
-      argv:
-        - tools/development/run-development-npm
-        - run
-        - test:browser:smoke
-      cwd: services/buildr
-    selection:
-      - 根据受影响页面选择 test:browser:changed 或对应页面入口；需要完整浏览器检查时使用 full
-      - 通过 preparation.yml 中的 buildr.browser-chromium 准备配套
-        Chromium；安装、缓存复用与显式路径说明见 services/buildr/test/browser-smoke/README.md
-      - 自动化测试采用无头模式（Headless），不依赖智能体（Agent）的临时浏览器工具
-      - 布局与共享样式变化执行 services/buildr-web 的
-        test:browser:layout；宽屏、窄屏、分屏及阅读状态由前端服务（Service）维护，生产托管与清理由 buildr
-        服务（Service）提供
-      - 前端逻辑测试由 buildr-web-unit 单独执行；浏览器检查通过不能替代逻辑测试
-      - 临时交互与视觉审查按当前绑定和现场工具执行，分别记录 source=agent 与实际覆盖；它们不替代 Playwright
-        自动化入口或其运行依赖
-      - 原型候选构建使用前端现有依赖；单独执行 node tools/build-prototype.mjs <output.html>
-        并在隔离生产托管中验证，不由完整浏览器入口自动生成或证明原型效果
-      - 完整主包候选（Candidate）由 artifact-browser-core 消费唯一压缩包内 web-dist
-        并执行核心代表旅程（Browser Journey）；该证据不代表全部选择器（Selector）通过，受影响源码验收仍按页面选择
-    requirements:
-      - node
-      - npm
-      - playwright-core（由 buildr 的锁定依赖提供）
-      - playwright-chromium（通过 buildr.browser-chromium 显式准备）；或
-        BUILDR_BROWSER_EXECUTABLE 指定的兼容浏览器，测试运行不下载
-  - id: buildr-environment-smoke
-    title: Buildr 已安装环境冒烟
-    scope:
-      project: product
-      services:
-        - buildr
-        - buildr-web
-        - buildr-agent
-    purpose: 在明确需要验证真实安装或发布环境时检查 CLI、Web 和关键入口
-    sourcePaths:
-      - services/buildr/**
-      - services/buildr-web/**
-      - services/buildr-agent/**
-    testRoots:
-      - services/buildr/test/verification/host-node/**
-      - services/buildr/test/verification/release/**
-    full:
-      kind: agent
-      instructions:
-        - 只在当前任务目标包含安装、发布或真实环境采用时执行
-        - 使用对应环境的 CLI、Browser 或 HTTP 工具检查关键入口并保存实际观察
-    requirements:
-      - explicit-target-environment
-  - id: dsh-plugin-source
-    title: DSH 插件独立源码单元检查
-    scope:
-      project: product
-      services:
-        - dsh-plugin
-    location:
-      kind: service
-      service: dsh-plugin
-    purpose: 只证明不依赖软件开发工具包（SDK）与主包对端的源码单元行为；不替代完整构建、装载及准确双包兼容
-    sourcePaths:
-      - plugin/**
-      - tools/**
-      - package.json
-    testRoots:
-      - test/unit/**
-    full:
-      kind: command
-      argv:
-        - node
-        - tools/verify-source.ts
-      cwd: .
-    selection:
-      - 发布本机预检只补此入口缺项，不先跑旧对端的完整验证
-      - 与完整候选使用同一单元配方及逐项证明；SDK 专属单元在完整入口执行
-      - --output 导出可搬运证明；源码、配方或真实环境变化使相应结果失效
-    requirements:
-      - node >=24.15.0
-      - git
-  - id: dsh-plugin
-    title: DSH 桌面插件构建与装载
-    scope:
-      project: product
-      services:
-        - dsh-plugin
-    location:
-      kind: service
-      service: dsh-plugin
-    purpose: 验证正式版和开发版完整组合的构建、逻辑、同场装载、可撤销接线、候选字节与发布恢复检查，以及 DSH 真实加载器边界
-    sourcePaths:
-      - plugin/**
-      - tools/**
-      - sdk-patches/**
-      - package.json
-    testRoots:
-      - test/unit/**
-      - test/integration/**
-    full:
-      kind: command
-      argv:
-        - node
-        - tools/verify-all.ts
-      cwd: .
-    selection:
-      - 开发中按改动选择对应单元、进程或装载测试；完成时运行完整入口
-      - 完整入口构建可安装组合并验证物理文件、自足引用及内层真实入口；组合生命周期测试覆盖停用恢复与配置保全；厂商发行应用的原生装卸仅在对应实现或兼容边界变化时验收
-      - 增强源码完整入口必须显式提供 --source-sdk 或 BUILDR_DSH_SOURCE_SDK_ROOT，指向经
-        prepare-source-sdk 重建并核对基线、补丁清单、生成声明与产物摘要的独占软件开发工具包（SDK）；普通未补丁 rc.2 或旧
-        rc.1 不代表新接口支持，不自动修改共享检出或真实配置档（Profile）
-      - 完整入口还须显式提供 --buildr-peer 原字节清单、--buildr-peer-manifest 就绪对端清单，或对应
-        BUILDR_DSH_BUILDR_PEER_INPUT／BUILDR_DSH_BUILDR_PEER_MANIFEST
-        文件引用；原始和就绪输入互斥，不能默认消费相邻开发源码
-      - 仅插件（Plugin）发布核对准确公开主包，联合候选（Candidate）消费准确主包候选；两个包版本相同不证明能力或字节相同
-      - 独立发布工作流（Workflow）由仓库级选择映射指向本族；完整入口包含候选搬运与可信发布恢复的隔离检查，真实 npm
-        信任和公开发布仍需另外授权及验收
-      - 新托管准备使用 prepare-release-sdk.ts，固定真实上游提交及补丁后的冻结依赖；必须显式提供对应 Node 和 pnpm
-        入口，不复用本机认证配置
-      - 只在安装、加载、宿主兼容或卸载恢复发生变化时执行对应桌面操作；有效功能证明不重复，未改变的安装卸载与跨重启交互不作每轮发布要求
-      - 自动受影响选择通过 dsh-plugin 调用完整入口并准备固定 SDK 与 pnpm@11.7.0；本族不进入独立 Buildr
-        主包候选（Candidate）集合
-    requirements:
-      - node >=24.15.0
-      - pnpm
-      - 与明确 Node 配套的 npm 入口，或 --npm 指定的固定
-        npm；对端在独占临时前缀（Prefix）按原字节安装，使用空认证配置（Configuration）且禁用安装脚本
-      - 经过完整性（Integrity）核验的准确公开主包或联合候选（Candidate）及其文件清单；基础公开入口、可选能力缺失和实际调用失败分别验证，不复用本机默认安装或认证
-      - 已核验的来源增强软件开发工具包（SDK）、持久源码补丁清单及完整 SHA256；构建依赖通过冻结锁文件与 --ignore-scripts
-        预先准备，准备器直接调用构建工具，不执行安装脚本或启用运行时（Runtime）
-  - id: buildr-agent
-    title: Buildr 智能体服务独立构建与执行检查
-    scope:
-      project: product
-      services:
-        - buildr-agent
-    purpose: 验证私有存储、会话和执行者契约、原生协议替身及独立公开包边界；不代表真实账号或模型验收
-    sourcePaths:
-      - services/buildr-agent/**
-    testRoots:
+      - services/buildr/test/**
+      - services/buildr-web/test/**
       - services/buildr-agent/test/**
+      - services/dsh-plugin/test/**
     full:
       kind: command
-      argv:
-        - ../buildr/tools/development/run-development-npm
-        - run
-        - verify
-      cwd: services/buildr-agent
+      argv: [tools/development/run-development-npm, test]
+      cwd: services/buildr
     selection:
-      - 独立入口先编译公开包再运行全部服务测试；主包受影响选择中的 agent-service 使用同一入口
-      - 真实厂家登录和模型执行单独验收，不由协议替身或静态构建证明
+      - 完整入口以实际登记和发现集合运行本类全部检查，不按旧目录名推定分类，不在地图复制成员。
+      - 所有公开入口支持 --plan 查看选择，使用 --check <id> 显式指定检查；计划和选择成功不等于实际验证通过。
+      - 任务开发按用户请求、目标、真实改动及调用边界选齐相关四类，使用 test:related 或明确指定的现有检查，不要求正式任务或比较基线。
+      - 推送前必须取得四服务全部静态检查（Static Check）与单元测试（Unit Test）的有效完整证明；不能仅用相关检查冒充全量。
+      - 仅在内容、配方、依赖、工具与必要环境仍适用时复用有效结果，保留实际来源；缺失、失败和未覆盖如实报告。
     requirements:
-      - 稳定版 Node >=24.15.0 与相邻 npm，通过项目 wrapper 执行
-      - 按 buildr-agent.npm-ci 准备锁定依赖，禁用厂家安装脚本
+      - 稳定版 Node >=24.15.0 与相邻 npm，通过项目包装入口运行
+  - id: buildr-integration
+    title: Buildr 集成测试（Integration Test）
+    scope:
+      project: product
+      services: [buildr, buildr-web, buildr-agent, dsh-plugin]
+    purpose: 验证真实数据库、HTTP、文件系统、Git、消息和子进程等技术边界；按真实平台和依赖执行。
+    sourcePaths:
+      - services/buildr/**
+      - services/buildr-web/**
+      - services/buildr-agent/**
+      - services/dsh-plugin/**
+      - verification.yml
+      - preparation.yml
+    testRoots:
+      - services/buildr/test/**
+      - services/buildr-web/test/**
+      - services/buildr-agent/test/**
+      - services/dsh-plugin/test/**
+    full:
+      kind: command
+      argv: [tools/development/run-development-npm, run, test:integration]
+      cwd: services/buildr
+    selection:
+      - 完整入口以实际登记和发现集合运行本类全部检查，不按旧目录名推定分类，不在地图复制成员。
+      - 所有公开入口支持 --plan 查看选择，使用 --check <id> 显式指定检查；计划和选择成功不等于实际验证通过。
+      - 任务开发按用户请求、目标、真实改动及调用边界选齐相关四类，使用 test:related 或明确指定的现有检查，不要求正式任务或比较基线。
+      - 发布或明确要求时按所需范围执行；任务已涉及的必要真实边界在开发完成前验证，不因发布阶段命名而推迟。
+      - 仅在内容、配方、依赖、工具与必要环境仍适用时复用有效结果，保留实际来源；缺失、失败和未覆盖如实报告。
+    requirements:
+      - 稳定版 Node >=24.15.0 与相邻 npm，通过项目包装入口运行
+      - 对应检查声明的真实平台与独立环境；浏览器、软件开发工具包（SDK）及准确原包按需准备
+      - 不自动借用真实账号、调用付费模型或派发公开发布，超出现有授权时反馈用户决定
+  - id: buildr-e2e
+    title: Buildr 端到端测试（End-to-End Test，E2E）
+    scope:
+      project: product
+      services: [buildr, buildr-web, buildr-agent, dsh-plugin]
+    purpose: 从命令行或浏览器实际入口完成应用流程，核对最终结果，明确替换的外部系统。
+    sourcePaths:
+      - services/buildr/**
+      - services/buildr-web/**
+      - services/buildr-agent/**
+      - services/dsh-plugin/**
+      - verification.yml
+      - preparation.yml
+    testRoots:
+      - services/buildr/test/**
+      - services/buildr-web/test/**
+      - services/buildr-agent/test/**
+      - services/dsh-plugin/test/**
+    full:
+      kind: command
+      argv: [tools/development/run-development-npm, run, test:e2e]
+      cwd: services/buildr
+    selection:
+      - 完整入口以实际登记和发现集合运行本类全部检查，不按旧目录名推定分类，不在地图复制成员。
+      - 所有公开入口支持 --plan 查看选择，使用 --check <id> 显式指定检查；计划和选择成功不等于实际验证通过。
+      - 任务开发按用户请求、目标、真实改动及调用边界选齐相关四类，使用 test:related 或明确指定的现有检查，不要求正式任务或比较基线。
+      - 发布或明确要求时按所需范围执行；任务已涉及的必要真实边界在开发完成前验证，不因发布阶段命名而推迟。
+      - 仅在内容、配方、依赖、工具与必要环境仍适用时复用有效结果，保留实际来源；缺失、失败和未覆盖如实报告。
+    requirements:
+      - 稳定版 Node >=24.15.0 与相邻 npm，通过项目包装入口运行
+      - 对应检查声明的真实平台与独立环境；浏览器、软件开发工具包（SDK）及准确原包按需准备
+      - 不自动借用真实账号、调用付费模型或派发公开发布，超出现有授权时反馈用户决定

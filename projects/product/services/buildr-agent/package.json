@@ -23,9 +23,9 @@
   "scripts": {
     "build": "node tools/build.ts",
     "typecheck": "tsc --project tsconfig.json --noEmit",
-    "test": "node tools/verify.ts",
-    "test:boundary": "node --test test/engineering-boundaries.test.ts",
-    "verify": "node tools/verify.ts"
+    "test": "node ../buildr/test/verification/cli.ts unit --check agent-unit",
+    "test:static": "node ../buildr/test/verification/cli.ts static --check agent-source-boundaries --check agent-typecheck",
+    "test:integration": "node ../buildr/test/verification/cli.ts integration --check agent-integration"
   },
   "dependencies": {
     "@deepseek-ai/cordis": "4.0.5",

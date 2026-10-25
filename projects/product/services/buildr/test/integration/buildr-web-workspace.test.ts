@@ -198,7 +198,7 @@ test('任务详情复用系统副屏与抽屉，独立专业事实按工作节�
   assert.doesNotMatch(node, /查看验证结果|查看确认内容|查看完整结果|task-material-row/);
   assert.match(reader, /ParentCoordinationPanel/);
   assert.match(reader, /RetrospectiveDocumentCard/);
-  // 审查/验证阅读视图只读，不在其中内联启动专业流程（与 browser-smoke 渲染契约一致）。
+  // 审查/验证阅读视图只读，不在其中内联启动专业流程（与 browser-e2e 渲染契约一致）。
   assert.doesNotMatch(reader, /交给智能体审查|交给智能体验证|onAgent\(/);
   assert.match(evidence, /taskProfessionalApi\.reviews/);
   assert.match(evidence, /taskProfessionalApi\.verification/);
@@ -249,7 +249,7 @@ test('证据视图只读展示审查与验证结果，专业流程不在阅读�
   assert.match(source, /验证结果/);
   assert.match(source, /applicability/);
   assert.match(evidenceHook, /taskProfessionalApi\.verification\(taskId, \{ signal \}\)/);
-  // 阅读视图只读；启动专业流程的智能体动作不在证据阅读视图内联触发（与 browser-smoke 渲染契约一致）。
+  // 阅读视图只读；启动专业流程的智能体动作不在证据阅读视图内联触发（与 browser-e2e 渲染契约一致）。
   assert.doesNotMatch(source, /交给智能体审查|交给智能体验证|onAgent\(/);
   assert.doesNotMatch(actions, /taskProfessionalApi\.(?:reviewPrompt|verificationPrompt)\(/);
   assert.match(actions, /读取并遵循 task-verification Skill/);

@@ -198,7 +198,7 @@ test('explicit targets override cwd while subdirectories and filesystem aliases 
   fs.mkdirSync(nested, { recursive: true });
   const alias = path.join(f.root, 'workspace-alias');
   fs.symlinkSync(target.root, alias, process.platform === 'win32' ? 'junction' : 'dir');
-  for (const cwd of [nested, alias]) assert.equal(inspect(f, undefined, cwd).workspaceRoot, target.root);
+  for (const cwd of [nested, alias]) { const plan = inspect(f, undefined, cwd); assert.equal(plan.kind, 'forward'); assert.ok('workspaceRoot' in plan); assert.equal(plan.workspaceRoot, target.root); }
   const args = ['future-command', '--target', '../development-workspace', '中文 空格', '--unknown=value'];
   const plan = inspect(f, args, released.root);
   assert.equal(plan.kind, 'forward');
@@ -258,13 +258,13 @@ test('subsequent calls use a moved source after its existing launcher registrati
   const target = workspace(f.root, 'workspace');
   manage(f, target, 'development');
   const dev = development(f);
-  assert.equal(inspect(f, undefined, target.root).args?.[0], dev.entry);
+  { const plan = inspect(f, undefined, target.root); assert.ok('args' in plan); assert.equal(plan.args[0], dev.entry); }
   const moved = path.join(f.root, 'moved-source');
   fs.renameSync(dev.sourceGitRoot, moved);
   const sourceRoot = path.join(moved, 'projects', 'product', 'services', 'buildr');
   const identity = JSON.parse(fs.readFileSync(dev.launcherFile, 'utf8'));
   writeJson(dev.launcherFile, { ...identity, sourceRoot });
-  assert.equal(inspect(f, undefined, target.root).args?.[0], path.join(sourceRoot, 'bin', 'buildr.mjs'));
+  { const plan = inspect(f, undefined, target.root); assert.ok('args' in plan); assert.equal(plan.args[0], path.join(sourceRoot, 'bin', 'buildr.mjs')); }
 });
 
 test('init routes only an already established target root and does not inherit a parent for new workspaces', (t) => {
@@ -410,7 +410,8 @@ test('forwarded environment uses the selected development identity and retains p
     BUILDR_APP_DATA_DIR: f.dataRoots.released, BUILDR_PRODUCT_DATA_DIR: path.join(f.root, 'isolated-product-data'),
     ROUTING_USER_VALUE: '保留 用户值',
   };
-  const env = inspect(f, undefined, target.root, incoming).env!;
+  const plan = inspect(f, undefined, target.root, incoming); assert.ok('env' in plan);
+  const env = plan.env!;
   for (const key of [
     'BUILDR_NPM_ENTRY_PATH', 'BUILDR_APPLICATION_PAYLOAD_ROOT', 'BUILDR_INSTALLATION_IDENTITY',
     'BUILDR_SOURCE_ROOT', 'BUILDR_DEVELOPMENT_ENTRY', 'BUILDR_HOST_RUNTIME_ROLE', 'BUILDR_CURRENT_PRODUCT_ROOT',

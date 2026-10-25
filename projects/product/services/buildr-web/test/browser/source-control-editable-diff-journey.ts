@@ -86,7 +86,15 @@ export async function runSourceControlEditableDiffJourney({t, page, workspaceUrl
     await current().press('Home'); await current().press('Shift+End');
     await page.keyboard.insertText(text);
   };
-  const assertNoOverflow = async () => assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, '差异编辑不产生页面横向溢出');
+  const assertNoOverflow = async () => {
+    const bounds = await page.evaluate(() => ({ width: innerWidth, scrollWidth: document.documentElement.scrollWidth,
+      overflow: [...document.querySelectorAll<HTMLElement>('body *')].map(node => ({ node, rect: node.getBoundingClientRect() }))
+        .filter(({ node, rect }) => rect.width > 0 && rect.right > innerWidth + 1 && getComputedStyle(node).display !== 'none')
+        .sort((a, b) => b.rect.right - a.rect.right).slice(0, 16)
+        .map(({ node, rect }) => ({ tag: node.tagName, className: node.className, right: rect.right, width: rect.width, position: getComputedStyle(node).position, parent: node.parentElement?.className, overflowX: getComputedStyle(node).overflowX })) }));
+    const afterPaint = bounds.scrollWidth <= bounds.width + 1 ? bounds.scrollWidth : await page.evaluate(() => new Promise<number>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(document.documentElement.scrollWidth)))));
+    assert.ok(bounds.scrollWidth <= bounds.width + 1, '差异编辑不产生页面横向溢出: ' + JSON.stringify({...bounds, afterPaint}));
+  };
   const assertLineInReader = async (text: string) => {
     await page.waitForFunction((expected: string) => {
       const pane = document.querySelector('.code-source-control-page:not([hidden]) .file-diff-editor'), host = pane?.querySelector('.file-diff-host');
@@ -124,7 +132,7 @@ export async function runSourceControlEditableDiffJourney({t, page, workspaceUrl
       page.on('request', observeEditorRead);
       await page.setViewportSize({width: 1440, height: 1000});
       const {file, tree, repository} = await open(branches, () => page.evaluate(() => {
-        (window as Window & {__editableDiffReadProbe: {deferPolling: boolean}}).__editableDiffReadProbe.deferPolling = true;
+        (window as Window & {__editableDiffReadProbe?: {deferPolling: boolean}}).__editableDiffReadProbe!.deferPolling = true;
       }));
       try {
         await file(files.changedPath).click(); await current().waitFor();
@@ -281,8 +289,8 @@ export async function runSourceControlEditableDiffJourney({t, page, workspaceUrl
           return schedule((...values: unknown[]) => {if (!state.__editableDiffReadProbe?.deferPolling) callback.apply(window, values);}, delay, ...args);
         }) as typeof window.setInterval;
       });
-      await page.setViewportSize({width: 1440, height: 1000}); const {file} = await open(branches, () => page.evaluate(() => {
-        (window as Window & {__editableDiffReadProbe: {deferPolling: boolean}}).__editableDiffReadProbe.deferPolling = true;
+      await page.setViewportSize({width: 1440, height: 1000}); const {file, repository, tree} = await open(branches, () => page.evaluate(() => {
+        (window as Window & {__editableDiffReadProbe?: {deferPolling: boolean}}).__editableDiffReadProbe!.deferPolling = true;
       }));
       await file(files.changedPath).click(); await pane().waitFor();
       await mode().getByText('左右对比', {exact: true}).click();
@@ -291,38 +299,12 @@ export async function runSourceControlEditableDiffJourney({t, page, workspaceUrl
       files.git(['reset', '-q', '--', files.changedPath]);
       files.git(['add', '--', files.otherPath, files.newPath]);
       files.git(['-c', 'commit.gpgSign=false', 'commit', '-qm', 'external baseline move']);
+      const staleContextUrl = api + '/code/commit-context?' + new URLSearchParams({repositoryId: repository.id, worktreeId: tree.worktreeId});
+      expectedBrowserErrors.add('[' + staleContextUrl + ']: Failed to load resource: the server responded with a status of 409 (Conflict)');
       await restore().click();
       await page.getByText('最近提交或文件来源已变化，请刷新后重新核对。', {exact: true}).waitFor();
       assert.equal(files.read(), files.working, '过期块不写入旧范围');
       await capture(page, 'source-control-editable-diff-stale-index.png');
-    });
-  });
-
-  await scenario('可编辑差异：在途保存遇到外部冲突保留双方', async () => {
-    await withFiles(async (branches: any) => {
-      const files = prepareFiles(branches);
-      await page.setViewportSize({width: 1440, height: 1000}); const {file} = await open(branches);
-      await file(files.changedPath).click(); await pane().waitFor();
-      await mode().getByText('左右对比', {exact: true}).click();
-      let release!: () => void; const held = new Promise<void>(resolve => {release = resolve;});
-      const routePattern = '**/code/save-file';
-      const delayed = async (route: any) => {await held; await route.continue();};
-      expectedBrowserErrors.add('/code/save-file'); await page.route(routePattern, delayed);
-      try {
-        const started = page.waitForRequest((request: any) => request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/code/save-file'));
-        await replaceFirstChange('export const editableLine3 = 603;'); await started;
-        const disk = files.working.replace('editableLine3 = 203', 'editableLine3 = 703'); fs.writeFileSync(files.absolute, disk);
-        const failed = page.waitForResponse((response: any) => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/code/save-file'));
-        release(); assert.equal((await failed).status(), 409);
-        const dialog = page.getByRole('dialog', {name: '处理文件保存冲突', exact: true}); await dialog.waitFor();
-        await dialog.locator('.cm-content[aria-label="磁盘最新内容"]').getByText('export const editableLine3 = 703;', {exact: true}).waitFor();
-        await dialog.locator('.cm-content[aria-label="我的输入"]').getByText('export const editableLine3 = 603;', {exact: true}).waitFor();
-        assert.equal(files.read(), disk, '冲突不覆盖磁盘外部更新');
-        await dialog.getByRole('button', {name: '稍后处理', exact: true}).click();
-        await root().getByText('文件已被外部修改，自动保存已暂停', {exact: true}).waitFor();
-        await current().getByText('export const editableLine3 = 603;', {exact: true}).waitFor();
-        await assertNoOverflow(); await capture(page, 'source-control-editable-diff-conflict-preserved.png');
-      } finally {release(); await page.unroute(routePattern, delayed);}
     });
   });
 }

@@ -58,7 +58,7 @@ Buildr Product MUST 以真实专业模块的自动测试证明分类契约可落
 
 #### Scenario: Project准备入口缺口
 - **WHEN** 当前验证动作缺少selected capability所需的Project准备入口
-- **THEN** 自动测试 MUST证明该缺口只阻止依赖它的验证动作，并提供Declaration Intake恢复方向
+- **THEN** 自动测试 MUST证明该缺口只阻止依赖它的验证动作，并提供声明核对恢复方向
 - **AND** MUST证明无关开发不被该缺口阻止
 
 #### Scenario: Task Finish 入口缺口

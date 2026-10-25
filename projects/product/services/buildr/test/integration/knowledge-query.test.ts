@@ -795,7 +795,7 @@ test("生产 HTTP 宿主允许知识地址刷新，隔离图示不放宽页面�
     resolveRegisteredWorkspace: workspace.resolveRegisteredWorkspace,
   });
   const { url, initialWorkspaceId: id, sessionToken } = await instance.ready;
-  t.after(() => new Promise<void>((resolve) => instance.server.close(resolve)));
+  t.after(() => new Promise<void>((resolve) => instance.server.close(() => resolve())));
   for (const page of ["project/demo", "service/api"]) {
     const response = await fetch(`${url}/workspaces/${id}/knowledge/${page}`);
     assert.equal(response.status, 200);

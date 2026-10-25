@@ -8,7 +8,7 @@ import { verificationSteps } from '../verification/registry.ts';
 import { createVerificationSourceInputReader } from '../verification/verification-source-inputs.ts';
 import { createVerificationReuseIdentity, type VerificationReuseSnapshot } from '../verification/verification-reuse.ts';
 
-const windows = verificationSteps.find((step: any) => step.id === 'system-windows-platform');
+const windows = verificationSteps.find((step: any) => step.id === 'integration-windows-native');
 
 test('native Windows proof shares complete backend inputs across working and immutable Git sources without unrelated assets', t => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-windows-inputs-'));
@@ -20,9 +20,9 @@ test('native Windows proof shares complete backend inputs across working and imm
     [prefix + 'src/platform.ts', 'export const platform = 1;'],
     [prefix + 'resources/runtime.yml', 'runtime: original'],
     [prefix + 'tools/development/prepare.ts', 'export const prepare = 1;'],
-    [prefix + 'test/platform/windows-boundaries.test.ts', "import '../../src/platform.ts'; import './actual-dependency.ts';"],
-    [prefix + 'test/platform/actual-dependency.ts', 'export const dependency = 1;'],
-    [prefix + 'test/system/worktree-create.test.ts', "import '../../src/platform.ts';"],
+    [prefix + 'test/integration/windows-boundaries.test.ts', "import '../../src/platform.ts'; import './actual-dependency.ts';"],
+    [prefix + 'test/integration/actual-dependency.ts', 'export const dependency = 1;'],
+    [prefix + 'test/e2e/worktree-create.test.ts', "import '../../src/platform.ts';"],
     ['projects/product/.node-version', '24.15.0'],
     ['projects/product/buildr', '#!/bin/sh\n'],
     ['projects/product/preparation.yml', 'schemaVersion: fixture'],
@@ -73,7 +73,7 @@ test('native Windows proof shares complete backend inputs across working and imm
     prefix + 'resources/runtime.yml', prefix + 'tools/development/prepare.ts',
     'projects/product/.node-version', 'projects/product/buildr',
     'projects/product/preparation.yml',
-    prefix + 'test/platform/actual-dependency.ts',
+    prefix + 'test/integration/actual-dependency.ts',
   ]) {
     const before = observe();
     write(file, files.get(file)! + '\n// relevant change'); source = commit();
@@ -86,7 +86,7 @@ test('native Windows proof shares complete backend inputs across working and imm
       }
     }
   }
-  write(prefix + 'test/platform/windows-boundaries.test.ts', files.get(prefix + 'test/platform/windows-boundaries.test.ts')!
+  write(prefix + 'test/integration/windows-boundaries.test.ts', files.get(prefix + 'test/integration/windows-boundaries.test.ts')!
     + "\nimport '../../../../../../tools/native-platform.ts';");
   source = commit();
   const external = observe(true);

@@ -692,19 +692,6 @@ Buildr MUST 允许用户从当前 Workspace 选择 canonical Project、可选 Se
 - **THEN** API MUST 按受控类型返回文件，并以下载方式提供非图片附件
 - **AND** HTML、脚本及其他可执行内容 MUST NOT 以内联文档执行
 
-### Requirement: 首次开始工作必须触发scope内Declaration Intake
-Buildr Web生成Start Work Agent prompt时 MUST要求Agent在任务分流前只读检查所选Project及可选Service的Preparation与Verification声明。Prompt生成 MUST不读取代码树来生成声明候选，也 MUST不写Project文件。
-
-#### Scenario: Project-only开始工作
-- **WHEN** 用户选择Project但不选择Service
-- **THEN** prompt MUST触发Project-only Declaration Intake
-- **AND** MUST明确Service不是必需范围
-
-#### Scenario: Service-scoped开始工作
-- **WHEN** 用户选择一个Service开始工作
-- **THEN** prompt MUST触发Project与该Service的Declaration Intake
-- **AND** MUST不检查或安装未选择Service
-
 ### Requirement: 当前本机浏览器产品必须采用 Buildr Web 分层术语
 当前用户能力 MUST 命名为 Buildr Web（本机 Web 界面）；`buildr-web` Service MUST 命名为 Buildr Web Frontend Service；`buildr` Service 中负责 loopback HTTP、session、安全与 Application 调用的部分 MUST 命名为 Buildr Web Runtime；平台图形入口 MUST 命名为 Buildr Web Launcher。Buildr Desktop MUST 保留给未来真正的桌面应用，当前产品、帮助、页面与 Launcher MUST NOT 使用该名称。
 
@@ -1284,7 +1271,7 @@ Review Agent action MUST只在前端形成携带Task ID、review type与必要Ta
 - **AND** 后端 MUST不存在Task Review prompt route或DTO
 
 ### Requirement: Buildr Web Task Verification Agent action不得依赖后端prompt
-Buildr Web MUST在前端形成携带Task ID的最小指令，要求Agent读取Task Verification Skill与真实现场。前端 MUST不调用、声明或依赖Verification prompt API；后端不存在该route。
+Buildr Web MUST在前端形成携带Task ID的最小指令，要求Agent读取项目验证技能（project-verification）与真实现场。前端 MUST不调用、声明或依赖Verification prompt API；后端不存在该route。
 
 #### Scenario: 用户交给Agent验证
 - **WHEN** 用户在证据页发起Task Verification Agent action
@@ -1666,3 +1653,16 @@ Buildr Web MUST 在任务详情的说明节点，通过任务记录应用读取 
 - **WHEN** 在预览实例中请求移除仅存在于共享 Profile 登记列表的 Workspace
 - **THEN** Application MUST 返回明确诊断说明该条目属于共享登记列表
 - **AND** 共享登记文件 MUST 保持不变
+
+### Requirement: 首次开始工作必须触发scope内声明核对
+Buildr Web生成Start Work Agent prompt时 MUST要求Agent在任务分流前通过 `buildr` 准备指引与 `project-testing` 只读检查所选Project及可选Service的Preparation与Verification声明。Prompt生成 MUST不读取代码树来生成声明候选，也 MUST不写Project文件。
+
+#### Scenario: Project-only开始工作
+- **WHEN** 用户选择Project但不选择Service
+- **THEN** prompt MUST触发Project-only 声明核对
+- **AND** MUST明确Service不是必需范围
+
+#### Scenario: Service-scoped开始工作
+- **WHEN** 用户选择一个Service开始工作
+- **THEN** prompt MUST触发Project与该Service的声明核对
+- **AND** MUST不检查或安装未选择Service

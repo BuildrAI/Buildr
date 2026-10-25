@@ -12,7 +12,7 @@ import { parseCompatibilityArtifact, parseLegacyPairEvidence, sameArtifactIdenti
 import { pairExecutionDiagnostic, type PairExecutionDiagnostic } from '../../../../../skills/buildr-release/scripts/package-pair-diagnostics.ts';
 
 const service = path.resolve(import.meta.dirname, '..');
-const runner = path.resolve(service, '../buildr/tools/development/run-isolated-workspace-smoke.ts');
+const runner = path.resolve(service, '../buildr/tools/development/run-isolated-workspace-check.ts');
 const thisFile = fileURLToPath(import.meta.url);
 type ArtifactInput = { artifact: CompatibilityArtifact; tarball: string };
 export const identity = (a: CompatibilityArtifact): ArtifactIdentity => ({ packageName: a.packageName, version: a.version, integrity: a.integrity, artifactSha256: a.artifactSha256 });

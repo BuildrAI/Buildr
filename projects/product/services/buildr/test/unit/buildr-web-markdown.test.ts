@@ -112,7 +112,7 @@ test.before(() => {
 });
 
 test.after(() => {
-  if (originalDocument === undefined) delete globalThis.document;
+  if (originalDocument === undefined) Reflect.deleteProperty(globalThis, 'document');
   else globalThis.document = originalDocument;
 });
 
@@ -293,9 +293,9 @@ test('原生嵌套目录保持父子关系、可点击路径与安全转义', as
   const top = root.childNodes[0];
   assert.equal(top.tagName, 'UL');
   const directory = top.childNodes[0];
-  const children = directory.childNodes.find(n => n.tagName === 'UL');
+  const children = directory.childNodes.find((n: { tagName: string; }) => n.tagName === 'UL');
   assert.equal(children.childNodes.length, 2);
-  const nested = children.childNodes[0].childNodes.find(n => n.tagName === 'UL');
+  const nested = children.childNodes[0].childNodes.find((n: { tagName: string; }) => n.tagName === 'UL');
   assert.equal(nested.querySelector('a').getAttribute('href'), '../../src/domain/model.ts');
   assert.equal(children.childNodes[1].querySelector('a').textContent, 'app.ts');
   assert.equal(root.childNodes[1].textContent, '结束');
@@ -328,7 +328,7 @@ test('代码正文保留空行和缩进，Mermaid明确源码回退，表格独�
 test('标题章节标识与常见GitHub片段一致，重名章节不覆盖', async () => {
   const { renderMarkdown } = await loadRenderer();
   const root = renderMarkdown('## 开始使用（Getting Started）\n## 开始使用（Getting Started）\n## `buildr update`');
-  assert.deepEqual(root.querySelectorAll('h2').map(item => item.getAttribute('id')), ['开始使用getting-started', '开始使用getting-started-1', 'buildr-update']);
+  assert.deepEqual(root.querySelectorAll('h2').map((item: { getAttribute(name: string): string | null }) => item.getAttribute('id')), ['开始使用getting-started', '开始使用getting-started-1', 'buildr-update']);
 });
 
 test('相对链接保留原始安全引用，分块标题计数不依赖共享可变状态', async () => {

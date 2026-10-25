@@ -33,7 +33,7 @@ function fixture(t: test.TestContext) {
   const externalTemp = path.join(root, 'retained-temp');
   fs.mkdirSync(externalTemp);
   fs.writeFileSync(path.join(externalTemp, 'keep'), 'retained temporary data');
-  const env = { ...process.env, BUILDR_APP_DATA_DIR: appData, BUILDR_PRODUCT_DATA_DIR: productData, TMPDIR: externalTemp, TMP: externalTemp, TEMP: externalTemp };
+  const env: NodeJS.ProcessEnv = { ...process.env, BUILDR_APP_DATA_DIR: appData, BUILDR_PRODUCT_DATA_DIR: productData, TMPDIR: externalTemp, TMP: externalTemp, TEMP: externalTemp };
   env.NODE_TEST_CONTEXT = undefined;
   return { root, appData, productData, externalTemp, env };
 }

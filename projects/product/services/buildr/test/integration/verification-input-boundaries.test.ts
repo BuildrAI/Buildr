@@ -9,7 +9,7 @@ import { scopedVerificationInputs } from '../verification/verification-inputs.ts
 import { candidateCheckInputIdentity } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
 import { discoveredVerificationFiles, executableModuleInputs, verificationModuleSlice } from '../verification/verification-input-discovery.ts';
 import { createVerificationSourceInputReader } from '../verification/verification-source-inputs.ts';
-import { INTEGRATION_GENERAL_EXCLUDED_FILES, verificationSteps } from '../verification/registry.ts';
+import { verificationSteps } from '../verification/registry.ts';
 
 test('working-tree and immutable Git readers give the same inputs across scopes and preserve modes and links', t => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-input-reader-'));
@@ -207,8 +207,8 @@ test('reviewed source checks keep results for a notes-only repair while binding 
   });
   const original = observe(), notes = observe('CHANGELOG.md');
   const ids = ['integration-knowledge', 'integration-workspace-assets', 'integration-archify',
-    'integration-declarations', 'integration-openspec', 'system-public-json-contracts',
-    'system-openspec-contract-audit', 'concurrent-task-acceptance', 'npm-launcher-candidate', 'capability-cli-integration',
+    'integration-declarations', 'integration-openspec', 'integration-public-json',
+    'integration-openspec-audit', 'concurrent-task-acceptance', 'npm-launcher-candidate', 'capability-cli-integration',
     'commands-cli-integration', 'remote-skill-timeout'];
   const actualInputs = ['projects/product/services/buildr/package-lock.json', 'projects/product/services/buildr/src/bootstrap/cli/main.ts',
     'projects/product/services/buildr/resources/workspace/AGENTS.md'];
@@ -229,15 +229,15 @@ test('local and Git proofs isolate selected system contents while binding discov
   const prefix = 'projects/product/services/buildr/';
   const files = new Map<string, string>([
     ['package.json', '{}'], ['src/product.ts', 'export const value=1'],
-    ['test/verification/system.ts', 'export {}'],
-    ['test/system/selected.test.ts', "await import(new URL('../verification/selected.ts', import.meta.url).href)"],
+    ['test/verification/journeys.ts', 'export {}'],
+    ['test/e2e/selected.test.ts', "await import(new URL('../verification/selected.ts', import.meta.url).href)"],
     ['test/verification/selected.ts', 'export const value=1'],
-    ['test/system/other.test.ts', '// unrelated'],
+    ['test/e2e/other.test.ts', '// unrelated'],
     ['test/verification/verification-reuse.ts', '// result adoption only'],
     ['test/verification/verification-inputs.ts', '// input validation only'],
     ['test/verification/verification-input-discovery.ts', '// input discovery only'],
   ]);
-  const step = { id: 'system-selected', executor: { type: 'node', file: 'test/verification/system.ts', discoveredFiles: ['test/system/selected.test.ts'] } };
+  const step = { id: 'journey-selected', executor: { type: 'node', file: 'test/verification/journeys.ts', discoveredFiles: ['test/e2e/selected.test.ts'] } };
   const observe = () => {
     const inventory = [...files].map(([file, value]) => ({ path: prefix + file, mode: '100644', kind: 'blob', object: value }));
     for (const [file, value] of files) {
@@ -248,16 +248,16 @@ test('local and Git proofs isolate selected system contents while binding discov
     return { local: JSON.stringify([local.content, local.recipe]), git, fallback: local.fallback };
   };
   const original = observe(); assert.equal(original.fallback, false);
-  files.set('test/system/other.test.ts', '// repaired unrelated assertion');
+  files.set('test/e2e/other.test.ts', '// repaired unrelated assertion');
   assert.deepEqual(observe(), original, 'the other owner content must not invalidate this proof');
   files.set('test/verification/verification-reuse.ts', '// repaired result adoption only');
   assert.deepEqual(observe(), original, 'adoption code does not execute this check');
-  files.set('test/system/selected.test.ts', files.get('test/system/selected.test.ts') + '\nconst fixture = "await import(process.env.FIXTURE_MODULE)";');
+  files.set('test/e2e/selected.test.ts', files.get('test/e2e/selected.test.ts') + '\nconst fixture = "await import(process.env.FIXTURE_MODULE)";');
   const generated = observe(); assert.equal(generated.fallback, false);
-  files.set('test/system/other.test.ts', '// unrelated change after generated source');
+  files.set('test/e2e/other.test.ts', '// unrelated change after generated source');
   assert.deepEqual(observe(), generated, 'generated source cannot become a runtime dependency');
-  files.set('test/system/selected.test.ts', "await import(new URL('../verification/selected.ts', import.meta.url).href)");
-  for (const file of ['test/system/selected.test.ts', 'test/verification/selected.ts', 'src/product.ts']) {
+  files.set('test/e2e/selected.test.ts', "await import(new URL('../verification/selected.ts', import.meta.url).href)");
+  for (const file of ['test/e2e/selected.test.ts', 'test/verification/selected.ts', 'src/product.ts']) {
     const before = files.get(file)!; files.set(file, before + '\n// changed');
     const changed = observe(); assert.notEqual(changed.local, original.local, file); assert.notEqual(changed.git, original.git, file);
     files.set(file, before);
@@ -268,33 +268,32 @@ test('local and Git proofs isolate selected system contents while binding discov
     assert.equal(changed.local, original.local, file); assert.equal(changed.git, original.git, file);
     files.delete(file);
   }
-  files.set('test/system/new.test.ts', '// new member');
+  files.set('test/e2e/new.test.ts', '// new member');
   assert.notEqual(observe().local, original.local); assert.notEqual(observe().git, original.git);
-  files.delete('test/system/new.test.ts'); files.delete('test/system/other.test.ts');
+  files.delete('test/e2e/new.test.ts'); files.delete('test/e2e/other.test.ts');
   assert.notEqual(observe().local, original.local); assert.notEqual(observe().git, original.git);
-  files.set('test/system/other.test.ts', '// repaired unrelated assertion');
-  files.set('test/system/selected.test.ts', 'await import(process.env.UNKNOWN_MODULE)');
+  files.set('test/e2e/other.test.ts', '// repaired unrelated assertion');
+  files.set('test/e2e/selected.test.ts', 'await import(process.env.UNKNOWN_MODULE)');
   const opaque = observe(); assert.equal(opaque.fallback, true);
-  files.set('test/system/other.test.ts', '// unknown dependency changed');
+  files.set('test/e2e/other.test.ts', '// unknown dependency changed');
   assert.notEqual(observe().local, opaque.local); assert.notEqual(observe().git, opaque.git);
 });
 
-test('compatibility general input discovery follows all source members and retains imported artifact-only inputs', t => {
+test('explicit test files ignore unexecuted members and retain actually imported support inputs', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-general-input-boundaries-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const prefix = 'projects/product/services/buildr/';
   fs.mkdirSync(path.join(root, prefix), { recursive: true });
-  const delegated = 'test/integration/application-payload-release.test.ts';
+  const delegated = 'test/integration/application-payload-artifact.test.ts';
   const addedDelegated = 'test/integration/npm-launcher.test.ts';
   const general = 'test/integration/general.test.ts';
   const files = new Map<string, string>([
     ['package.json', '{}'], ['src/product.ts', 'export const value=1'],
-    ['test/verification/integration.ts', 'export {}'],
     [general, 'export const assertion=1'], [delegated, 'export const delegated=1'],
     ['test/integration/nested/ignored.test.ts', '// not a top-level member'],
     ['test/integration/ignored.test.mjs', '// not selected by the actual *.test.ts runner'],
   ]);
-  const step = { ...verificationSteps.find((item: any) => item.id === 'integration'), executor: { type: 'node', file: 'test/verification/integration.ts', args: ['--suite', 'general'], excludedFiles: [...INTEGRATION_GENERAL_EXCLUDED_FILES] } };
+  const step = { ...verificationSteps.find((item: any) => item.id === 'integration'), executor: { type: 'node-test', files: [general] } };
   const observe = () => {
     const inventory = [...files].map(([file, value]) => ({ path: prefix + file, mode: '100644', kind: 'blob', object: value }));
     const inputs = scopedVerificationInputs(inventory.map(entry => [entry.path, entry.object]), root, path.join(root, prefix), step, {
@@ -303,7 +302,7 @@ test('compatibility general input discovery follows all source members and retai
     const immutable = candidateCheckInputIdentity(root, 'a'.repeat(40), step, { inventory: () => inventory, blob: (_commit, file) => files.get(file.slice(prefix.length))! });
     return { local: JSON.stringify([inputs.content, inputs.recipe]), immutable, fallback: inputs.fallback };
   };
-  assert.deepEqual(discoveredVerificationFiles(step, [...files.keys()]), { selected: [general], inventory: [general] });
+  assert.deepEqual(discoveredVerificationFiles(step, [...files.keys()]), { selected: [], inventory: [] });
   const original = observe();
   assert.equal(original.fallback, false);
   for (const file of [delegated, 'test/integration/nested/ignored.test.ts', 'test/integration/ignored.test.mjs']) {
@@ -315,13 +314,12 @@ test('compatibility general input discovery follows all source members and retai
   files.delete(delegated);
   assert.deepEqual(observe(), original, 'a removed delegated member is checked by its own owner');
   files.set('test/integration/new-general.test.ts', '// new general assertion');
-  assert.notEqual(observe().local, original.local);
-  assert.notEqual(observe().immutable, original.immutable);
+  assert.deepEqual(observe(), original, 'an unselected file does not silently expand an explicit recipe');
   files.delete('test/integration/new-general.test.ts');
   files.set(general, 'export const assertion=2');
   assert.notEqual(observe().local, original.local);
   assert.notEqual(observe().immutable, original.immutable);
-  files.set(general, "import './application-payload-release.test.ts';");
+  files.set(general, "import './application-payload-artifact.test.ts';");
   files.set(delegated, 'export const delegated=1');
   const imported = observe();
   assert.equal(imported.fallback, false);

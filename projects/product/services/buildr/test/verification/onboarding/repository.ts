@@ -24,9 +24,10 @@ function run(command: any, args: any, options: any = {}): any  {
     encoding: 'utf8',
     stdio: options.capture ? ['ignore', 'pipe', 'pipe'] : 'inherit',
     timeout: options.timeout ?? 120000,
+    maxBuffer: options.maxBuffer ?? 1024 * 1024,
   });
   if (result.status !== 0) {
-    throw new Error(`${command} ${args.join(' ')} failed (${result.status ?? 'no status'}):\n${result.stderr || result.stdout || result.error?.message || 'unknown error'}`);
+    throw new Error(`${command} ${args.join(' ')} failed (${result.status ?? 'no status'}):\n${result.error?.message || result.stderr || result.stdout || 'unknown error'}`);
   }
   return result.stdout || '';
 }
@@ -69,7 +70,7 @@ try {
   const sourceCommit: any = run('git', ['rev-parse', 'HEAD'], { cwd: workspaceRoot, capture: true }).trim();
   run('git', ['clone', '--shared', '--no-checkout', '-q', workspaceRoot, checkout], { cwd: tempRoot });
   run('git', ['checkout', '--detach', '-q', sourceCommit], { cwd: checkout });
-  const sourceDelta: any = run('git', ['diff', '--binary', 'HEAD'], { cwd: workspaceRoot, capture: true });
+  const sourceDelta: any = run('git', ['diff', '--binary', 'HEAD'], { cwd: workspaceRoot, capture: true, maxBuffer: 32 * 1024 * 1024 });
   if (sourceDelta) {
     const applied: any = spawnSync('git', ['apply', '--whitespace=nowarn', '-'], { cwd: checkout, input: sourceDelta, encoding: 'utf8' });
     if (applied.status !== 0) throw new Error(`failed to apply source delta: ${applied.stderr || applied.stdout || applied.error?.message || 'unknown error'}`);
@@ -108,7 +109,9 @@ try {
   const copiedAgent = path.join(copiedProduct, 'services/buildr-agent');
   run(developmentNode, [npmCliForNode(developmentNode), 'ci', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: copiedAgent, env });
   run(developmentNode, [path.join(copiedAgent, 'tools/build.ts')], { cwd: copiedAgent, env });
-  run(developmentNode, [npmCliForNode(developmentNode), 'ci', '--omit=dev', '--install-links', '--no-audit', '--no-fund'], { cwd: copiedService, env });
+  run(developmentNode, [npmCliForNode(developmentNode), 'ci', '--install-links', '--no-audit', '--no-fund'], { cwd: copiedService, env });
+  const copiedWeb = path.join(copiedProduct, 'services/buildr-web');
+  run(developmentNode, [npmCliForNode(developmentNode), 'ci', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: copiedWeb, env });
   const developmentIdentity: any = JSON.parse(runDevelopment([], {
     env: { ...env, BUILDR_INTERNAL_DEVELOPMENT_CLI_IDENTITY_JSON: '1' },
     capture: true,
@@ -132,7 +135,8 @@ try {
     run('git', ['push', '-q'], { cwd: checkout });
   }
   const runtime: any = JSON.parse(runDevelopment(['runtime', 'list', '--json'], { env, capture: true }));
-  assert(runtime.supportedAgents.includes('codex'));
+  assert(runtime.supportedAgents.includes('agents-standard'));
+  assert.equal(runtime.runtimeMappings.codex, 'agents-standard', 'Codex keeps its supported standard adapter mapping');
   const launcher: any = JSON.parse(run(developmentNode, [fs.realpathSync(path.join(copiedService, 'tools', 'build', 'launcher', 'manage.ts')), 'install', '--channel', 'development', '--target', launcherRoot], { cwd: checkout, env, capture: true }));
   assert.equal(launcher.installed, true);
   assert.equal(launcher.identity.channel, 'development');

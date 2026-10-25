@@ -16,7 +16,7 @@ export async function runWorkspacePaneJourney({ t, page, workspaceUrl, capture }
       await strip.getByRole('tab',{name:title,exact:true}).click();
       await page.waitForFunction(({label,title}:any) => {
         const strip=[...document.querySelectorAll<HTMLElement>('[role="tablist"]')].find(node=>node.getAttribute('aria-label')===label&&node.getClientRects().length);
-        return strip?.querySelector('.pane-tab-text')?.textContent===title&&strip.scrollLeft===0;
+        return Boolean(strip&&strip.querySelector('.pane-tab-text')?.textContent===title&&strip.scrollLeft===0);
       },{label:await strip.getAttribute('aria-label'),title});
       assert.deepEqual(await names(strip),[title,...previous.filter(item=>item!==title)]);
     };

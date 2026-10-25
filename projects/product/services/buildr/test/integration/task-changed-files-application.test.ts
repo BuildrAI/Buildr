@@ -133,10 +133,13 @@ test('工作区改动按状态、统计与预览返回，契约闭合且零写�
   assert.equal(result.repositories[0].fileCount, result.files.length);
   assert.equal(result.commits.length, 1);
   const key = `${encodeURIComponent(result.commits[0].repositoryId)}:${result.commits[0].hash}`;
-  assert.ok(result.commitFiles[key]?.length >= 1);
-  const committed = result.commitFiles[key].find(item => item.path === 'src/a.ts');
+  const commitFiles = result.commitFiles[key];
+  assert.ok(commitFiles && commitFiles.length >= 1);
+  const committed = commitFiles.find(item => item.path === 'src/a.ts');
   assert.ok(committed); assert.equal(committed.status, 'added'); assert.ok(committed.preview?.includes('+export const a = 1;'));
-  assert.equal(result.repositoryMeta[result.repositories[0].id].branch, 'main');
+  const meta = result.repositoryMeta[result.repositories[0].id];
+  assert.ok(meta);
+  assert.equal(meta.branch, 'main');
   assert.deepEqual(snapshot(f.root), before); assert.deepEqual(result.effects, []);
   const validator = (value: unknown) => TASK_HTTP_VALIDATORS.validate(TASK_HTTP_SCHEMAS.changedFilesResponse.$id, value).valid;
   assert.equal(validator(result), true);
@@ -405,6 +408,7 @@ test('组合任务展开直接子任务提交文件及固定差异，不混入�
   const repositoryId = result.repositories[0].id;
   assert.equal(result.repositories[0].fileCount, 0);
   const childFiles = result.commitFiles[`${encodeURIComponent(repositoryId)}:${child}`];
+  assert.ok(childFiles);
   assert.equal(childFiles[0].path, 'shared.ts'); assert.match(childFiles[0].preview || '', /\+child delivered/);
   const full = application.inspectTaskFileDiff(f.root, 'task-one', repositoryId, 'shared.ts', child);
   assert.match(full.files[0].preview || '', /-original\n\+child delivered/);
@@ -465,6 +469,7 @@ test('组合子任务的合并提交文件与固定差异都比较第一父提�
   assert.equal(result.status, 'complete');
   const entry = result.commits.find(item => item.hash === merge); assert.equal(entry?.taskId, 'child-one');
   const files = result.commitFiles[`${encodeURIComponent(entry!.repositoryId)}:${merge}`];
+  assert.ok(files);
   assert.deepEqual(files.map(file => [file.path, file.status]), [['child.txt', 'added']]);
   const full = application.inspectTaskFileDiff(f.root, 'task-one', entry!.repositoryId, 'child.txt', merge);
   assert.equal(full.status, 'complete'); assert.match(full.files[0].preview || '', /\+child merge delivered/);

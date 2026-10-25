@@ -76,7 +76,7 @@ function ordinaryNodes(count: number): EventNode[] {
 function trajectoryFixture(nodes: TrajectorySnapshot['eventNodes']) {
  const cells = deriveTrajectoryLayout({ nodes, partial: null, runningCalls: [], eventLocations: new Map() }, key => key).flatMap(turn => turn.groups.flatMap(group => group.cells));
  const recordContexts = cells.flatMap(cell => { const record = trajectoryRecordContext(SID, cell); return record === undefined ? [] : [record]; });
- const snapshot: TrajectorySnapshot = { eventNodes: nodes, eventLocations: new Map(), requests: [], callSchemas: new Map(), partial: null, runningCalls: [], recordContexts };
+ const snapshot: TrajectorySnapshot & { recordContexts: NonNullable<TrajectorySnapshot['recordContexts']> } = { eventNodes: nodes, eventLocations: new Map(), requests: [], callSchemas: new Map(), partial: null, runningCalls: [], recordContexts };
  return { snapshot, cells };
 }
 function readySource(input: SourceRecordRequest, body = 'Recorded method body'): SourceRecordResult {
@@ -89,7 +89,7 @@ async function createScene(nodes: TrajectorySnapshot['eventNodes'], query: (inpu
  const fixture = trajectoryFixture(nodes), trajectoryStore = createSnapshotStore(fixture.snapshot);
  const conversationStore = createSnapshotStore<ConversationSnapshot>({ ...EMPTY_CONVERSATION_SNAPSHOT, activeTargets: new Set(['trajectory']) });
  const conversation = new UiConversation(ctx, runtime.sessions);
- const binding: ConversationBinding = { snapshot: conversationStore, openTurn: createSnapshotStore<number | undefined>(undefined), activate: () => {}, target: target => target === 'trajectory' ? trajectoryStore : createSnapshotStore(undefined) };
+ const binding: ConversationBinding = { snapshot: conversationStore, openTurn: createSnapshotStore<number | undefined>(undefined), activate: () => {}, target: ((target: string) => target === 'trajectory' ? trajectoryStore : createSnapshotStore(undefined)) as ConversationBinding['target'] };
  vi.spyOn(conversation, 'binding').mockReturnValue(binding);
  await runtime.declare({ 'conversation.view': { kind: 'list', scope: 'session' }, 'sidebar.footer.action': { kind: 'list', scope: 'root' }, 'shell.overlay': { kind: 'list', scope: 'root' } } as never);
  ctx.provide('connection', { api: { settings: {} }, isLoopback: false } as never);
@@ -102,7 +102,7 @@ async function createScene(nodes: TrajectorySnapshot['eventNodes'], query: (inpu
  ctx.provide('layout', { panelInfo: runtime.panelInfo } as never);
  await runtime.mount(trajectoryPlugin); const buildr = await runtime.mount(buildrPlugin);
  if (qualification === undefined) await waitFor(() => expect(runtime.slots.entries('conversation.view').some(entry => entry.options.id === 'buildr')).toBe(true));
- const owner = { inspectCall: undefined, viewRequest: undefined, openView: () => {}, completeViewRequest: () => {} };
+ const owner = { inspectCall: undefined, viewRequest: null, openView: () => {}, completeViewRequest: () => {} };
  const original = runtime.renderSlot('conversation.view', owner, { session: reference, only });
  return { runtime, reference, buildr, owner, original, requests, trajectoryStore, ...fixture };
 }
@@ -124,7 +124,7 @@ it('original source cells and the Buildr tab use recorded marks immediately, wit
  original.update(owner, { session: reference, only: 'buildr' }); await waitFor(() => expect(original.container.querySelectorAll('[data-buildr-record-selector]').length).toBe(1));
  expect(requests).toEqual([]); expect(original.container.querySelector('[data-content-view]')).toBeNull(); expect(original.view.queryByRole('region', { name: zh.sourceDetails })).toBeNull();
  await clickRecord(original.container, snapshot.recordContexts[0]!.recordId); await waitFor(() => expect(original.view.getByText('Captured body')).toBeTruthy());
- expect(requests.length).toBe(1); expect(requests[0]!.record.eventSources).toBeUndefined(); expect(original.container.querySelector('[data-content-view="observed"]')).toBeTruthy(); expect(original.view.queryByRole('button', { name: zh.sourceCurrent })).toBeNull();
+ expect(requests.length).toBe(1); expect(Reflect.get(requests[0]!.record, 'eventSources')).toBeUndefined(); expect(original.container.querySelector('[data-content-view="observed"]')).toBeTruthy(); expect(original.view.queryByRole('button', { name: zh.sourceCurrent })).toBeNull();
  original.update(owner, { session: reference, only: 'trajectory' }); fireEvent.click(original.container.querySelector('tr[data-record-index="' + cells[0]!.index + '"]')!);
  await waitFor(() => expect(original.view.getByText('Captured body')).toBeTruthy()); expect(requests.length).toBe(1);
  await act(() => buildr.dispose()); expect(runtime.slots.entries('conversation.view').some(entry => entry.options.id === 'trajectory')).toBe(true);
@@ -285,9 +285,9 @@ it('recorded Markdown preview and raw text share the exact fragment without anot
  await waitFor(() => expect(scene.original.view.getByRole('heading', { name: 'Saved heading' })).toBeTruthy());
  expect(scene.original.view.getByText(zh.sourceCapturedPartial)).toBeTruthy();
  expect(scene.original.container.querySelector('[data-content-view]')?.getAttribute('data-content-format')).toBe('markdown');
- fireEvent.click(scene.original.view.getByRole('button', { name: zh.sourceRaw, exact: true }));
+ fireEvent.click(scene.original.view.getByRole('button', { name: zh.sourceRaw }));
  expect(scene.original.container.querySelector('[data-content-view] pre')?.textContent).toBe(body);
- fireEvent.click(scene.original.view.getByRole('button', { name: zh.sourcePreview, exact: true }));
+ fireEvent.click(scene.original.view.getByRole('button', { name: zh.sourcePreview }));
  expect(scene.original.view.getByRole('heading', { name: 'Saved heading' })).toBeTruthy(); expect(scene.requests.length).toBe(1);
 });
 
@@ -299,7 +299,7 @@ it('a Markdown renderer fault preserves the list, recorded source and raw-conten
   await clickRecord(scene.original.container, scene.snapshot.recordContexts[0]!.recordId);
   await waitFor(() => expect(scene.original.view.getByText(zh.sourceMarkdownFailed)).toBeTruthy());
   expect(scene.original.container.querySelector('[data-buildr-record-count]')?.getAttribute('data-buildr-record-count')).toBe('1');
-  fireEvent.click(scene.original.view.getByRole('button', { name: zh.sourceRaw, exact: true }));
+  fireEvent.click(scene.original.view.getByRole('button', { name: zh.sourceRaw }));
   expect(scene.original.container.querySelector('[data-content-view] pre')?.textContent).toBe('# Exact original body'); expect(scene.requests.length).toBe(1);
  } finally { markdownFailure.enabled = false; error.mockRestore(); }
 });

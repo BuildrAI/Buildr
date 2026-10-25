@@ -12,7 +12,7 @@ function normalizedScope(project: any, services: any = []): any  {
 export function declarationIntakeNextAction({ trigger, project, services = [] }: any): any  {
   if (typeof trigger !== 'string' || !trigger.trim()) throw new Error('Declaration Intake trigger is required.');
   const scope = normalizedScope(project, services);
-  return `运行 declaration-intake Skill（trigger: ${trigger.trim()}；scope: ${scope.selectors.join('、')}），只读检查 preparation.yml 与 verification.yml，展示候选或差异并分类routine-maintenance或user-decision-required；routine维护交给声明owner，改变长期适用性时请求用户确认。`;
+  return `核对项目声明（trigger: ${trigger.trim()}；scope: ${scope.selectors.join('、')}）：测试及 verification.yml 直接由 project-testing 建设与维护；preparation.yml 按 buildr 的准备声明指引核对真实入口。已有授权内普通维护直接完成，授权缺失或业务取舍反馈用户决定；只读发现不自动写声明。`;
 }
 
 const DECISION_FIELDS = Object.freeze([
@@ -40,5 +40,6 @@ export function declarationIntakeGapNextAction({ kind, project, services = [], s
   const scope = normalizedScope(project, services);
   const gapScopes = [...new Set(scopes.map((item: any) => String(item).trim()).filter(Boolean))].sort();
   const details = gapScopes.length ? `；gap: ${gapScopes.join('、')}` : '';
-  return `${declarationIntakeNextAction({ trigger: `${kind}-gap`, project: scope.project, services: scope.services })}${details}`;
+  const owner = kind === 'verification' ? 'project-testing：直接维护测试及 verification.yml，project-verification 选择并实际执行检查' : kind === 'preparation' ? 'buildr：按准备声明指引核对真实入口并维护 preparation.yml' : 'project-testing 维护测试登记，buildr 维护准备声明';
+  return `项目声明缺口（scope: ${scope.selectors.join('、')}；trigger: ${kind}-gap）：${owner}；已有授权内普通维护直接完成，授权缺失或业务取舍反馈用户决定，只读发现不自动写声明${details}。`;
 }

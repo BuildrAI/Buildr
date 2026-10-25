@@ -117,7 +117,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const matrices = materializeCandidateRepair(plan, path.join(output, 'reused-evidence'), {
       runId: process.env.GITHUB_RUN_ID, runAttempt: process.env.GITHUB_RUN_ATTEMPT, job: process.env.GITHUB_JOB });
     if (process.env.GITHUB_OUTPUT) {
-      for (const [key, include] of Object.entries(matrices)) fs.appendFileSync(process.env.GITHUB_OUTPUT, key + '=' + JSON.stringify({ include }) + '\n' + key + '_required=' + (include.length > 0) + '\n');
+      for (const [key, include] of Object.entries(matrices)) fs.appendFileSync(process.env.GITHUB_OUTPUT, key + '=' + JSON.stringify({ include }) + '\n' + key + '_required=' + (Array.isArray(include) && include.length > 0) + '\n');
     }
     process.stdout.write(JSON.stringify({ sourceBinding: plan.sourceBinding, matrices, checks: plan.checks.map((check: any) => ({ id: check.id,
       steps: check.steps.map(({ proof, ...step }: any) => step) })) }, null, 2) + '\n');

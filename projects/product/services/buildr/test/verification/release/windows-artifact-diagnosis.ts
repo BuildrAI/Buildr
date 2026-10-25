@@ -13,14 +13,14 @@ import { resolveVerificationExecutionProfile } from '../registry.ts';
 import { CANDIDATE_TARBALL_ENV, CANDIDATE_PACK_METADATA_ENV, CANDIDATE_RELEASE_MANIFEST_ENV } from '../../../../../../../skills/buildr-release/scripts/candidate-package.ts';
 
 export const WINDOWS_ARTIFACT_DIAGNOSIS_SCHEMA = 'buildr.windows-artifact-diagnosis/v1';
-export const WINDOWS_ARTIFACT_DIAGNOSIS_STEPS = Object.freeze(['system-app-process', 'runtime-adapter-parity', 'release-tarball-smoke']);
+export const WINDOWS_ARTIFACT_DIAGNOSIS_STEPS = Object.freeze(['e2e-app-process', 'runtime-adapter-parity', 'release-tarball-consumption']);
 export const WINDOWS_DIAGNOSIS_SCENARIOS = Object.freeze({
   'runtime-windows': { shard: 'runtime-windows', artifactConsumer: true, stepIds: WINDOWS_ARTIFACT_DIAGNOSIS_STEPS },
-  'package-consumer-windows': { shard: 'runtime-windows', artifactConsumer: true, stepIds: ['release-tarball-smoke'] },
-  'worktree-windows': { shard: 'task-worktree-recovery-macos', artifactConsumer: false, stepIds: ['system-worktree-lifecycle', 'system-nested-git-isolation'] },
-  'nested-lifecycle-windows': { shard: 'task-worktree-recovery-macos', artifactConsumer: false, stepIds: ['system-nested-git-isolation'] },
-  'task-lifecycle-windows': { shard: 'task-worktree-recovery-macos', artifactConsumer: false, stepIds: ['system-task-lifecycle'] },
-  'preview-lifecycle-windows': { shard: 'runtime-source-macos', artifactConsumer: false, stepIds: ['system-app-process'] },
+  'package-consumer-windows': { shard: 'runtime-windows', artifactConsumer: true, stepIds: ['release-tarball-consumption'] },
+  'worktree-windows': { shard: 'task-worktree-recovery-macos', artifactConsumer: false, stepIds: ['e2e-worktree', 'e2e-nested-git'] },
+  'nested-lifecycle-windows': { shard: 'task-worktree-recovery-macos', artifactConsumer: false, stepIds: ['e2e-nested-git'] },
+  'task-lifecycle-windows': { shard: 'task-worktree-recovery-macos', artifactConsumer: false, stepIds: ['e2e-task'] },
+  'preview-lifecycle-windows': { shard: 'runtime-source-macos', artifactConsumer: false, stepIds: ['e2e-app-process'] },
   'publication-effects-windows': { shard: 'release-infrastructure-macos', artifactConsumer: false, stepIds: ['integration-candidate-release-effects'] },
   'release-contract-windows': { shard: 'release-infrastructure-macos', artifactConsumer: false, stepIds: ['integration-candidate-release', 'integration-candidate-release-selection', 'integration-candidate-package-selection'] },
   'git-convergence-windows': { shard: 'release-infrastructure-macos', artifactConsumer: false, stepIds: ['integration-candidate-git-convergence', 'integration-candidate-git-selection'] },
@@ -56,8 +56,8 @@ export function validateWindowsArtifactDiagnosis(env: NodeJS.ProcessEnv, run: an
 }
 
 export function createWindowsArtifactDiagnosisPlan(scenario = 'runtime-windows'): any {
-  const definition = Object.hasOwn(WINDOWS_DIAGNOSIS_SCENARIOS, scenario) && WINDOWS_DIAGNOSIS_SCENARIOS[scenario as keyof typeof WINDOWS_DIAGNOSIS_SCENARIOS];
-  if (!definition) fail('diagnosis-unknown-scenario');
+  const definition = Object.hasOwn(WINDOWS_DIAGNOSIS_SCENARIOS, scenario) ? WINDOWS_DIAGNOSIS_SCENARIOS[scenario as keyof typeof WINDOWS_DIAGNOSIS_SCENARIOS] : undefined;
+  if (!definition) return fail('diagnosis-unknown-scenario');
   // Explicit diagnostics can run a generic owner on Windows without adding it
   // to every Candidate. Keep the registered executor, limits and resources.
   const original = createVerificationPlan({ stepIds: [...definition.stepIds] });
@@ -128,7 +128,7 @@ export async function runWindowsArtifactDiagnosis(options: DiagnosisOptions = {}
     if (plan.artifactConsumer) Object.assign(executionEnv, { [CANDIDATE_TARBALL_ENV]: artifact.tarball, [CANDIDATE_PACK_METADATA_ENV]: artifact.metadataPath, [CANDIDATE_RELEASE_MANIFEST_ENV]: artifact.manifestPath });
     enforceOfflineVerification(executionEnv);
     const record = (result: any) => { if (!selected.has(result.id)) return; results.set(result.id, projectResult(result));
-      if (result.id === 'release-tarball-smoke' && !['blocked', 'skipped'].includes(result.status)) summary.artifactConsumed = true; };
+      if (result.id === 'release-tarball-consumption' && !['blocked', 'skipped'].includes(result.status)) summary.artifactConsumed = true; };
     const execution = await (dependencies.execute ?? executePlan)(plan, {
       productRoot, projectRoot: path.resolve(productRoot, '../..'), artifactDirectory: path.resolve(env.DIAGNOSTIC_ARTIFACT_DIR!),
       diagnosticsDirectory: path.join(output, 'diagnostics'), env: executionEnv, executionProfile: profile, concurrency: profile.limits, reuse: false,

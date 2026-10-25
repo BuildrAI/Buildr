@@ -29,7 +29,7 @@ function client(t: test.TestContext, f: ReturnType<typeof codexFixture>, directo
     catch (error) { process.send({ event: 'result', error: { code: error.code, message: error.message } }); }
   `;
   const child = spawn(process.execPath, ['--input-type=module', '--eval', source], { stdio: ['ignore', 'pipe', 'pipe', 'ipc'], env: process.env });
-  let stderr = ''; child.stderr.on('data', chunk => { stderr += chunk; });
+  assert.ok(child.stderr); let stderr = ''; child.stderr.on('data', chunk => { stderr += chunk; });
   const seen = new Map<string, any>(), waiting = new Map<string, (value: any) => void>();
   child.on('message', (value: any) => { seen.set(value.event, value); waiting.get(value.event)?.(value); waiting.delete(value.event); });
   const event = (name: string) => seen.has(name) ? Promise.resolve(seen.get(name)) : new Promise<any>((resolve, reject) => {

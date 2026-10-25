@@ -13,7 +13,7 @@ const checkoutCli: any = path.join(productRoot, 'bin', 'buildr.mjs');
 // Use the common smoke owner for both registered and direct invocations.
 if (!process.env.BUILDR_SMOKE_ROOT) {
   const child = spawnCommandSync(process.execPath, [
-    path.join(productRoot, 'tools/development/run-isolated-workspace-smoke.ts'),
+    path.join(productRoot, 'tools/development/run-isolated-workspace-check.ts'),
     '--script', fileURLToPath(import.meta.url),
   ], { cwd: productRoot, stdio: 'inherit' });
   if (child.error) throw child.error;

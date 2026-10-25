@@ -33,7 +33,7 @@ test('record stores one meaningful completion report and inspect derives content
 
 test('packaged report input example records through the real application without response-only fields', (t: any) => {
   const { root, runtime } = fixture(t);
-  const guide = fs.readFileSync(path.resolve(import.meta.dirname, '../../resources/workspace/skills/buildr/task-verification/references/record-report.md'), 'utf8');
+  const guide = fs.readFileSync(path.resolve(import.meta.dirname, '../../resources/workspace/skills/buildr/project-verification/references/record-report.md'), 'utf8');
   const example = guide.match(/```json\n([\s\S]*?)\n```/u);
   assert.ok(example, 'The report guide must provide a copyable JSON request');
   const input = JSON.parse(example[1]);

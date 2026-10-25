@@ -14,8 +14,8 @@ test('重复生成测试库时，正在读取的模块不会消失或被无谓�
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-test-context-readable-'));
   const output = path.join(root, 'library');
   const first = buildTestContext(output);
-  const files = first.files.map((file) => path.join(output, file.path));
-  const before = files.map((file) => fs.statSync(file).mtimeMs);
+  const files = first.files.map((file: { path: string; }) => path.join(output, file.path));
+  const before = files.map((file: fs.PathLike) => fs.statSync(file).mtimeMs);
   const reader = new Worker(`
     const { parentPort, workerData } = require('node:worker_threads');
     const fs = require('node:fs');
@@ -40,7 +40,7 @@ test('重复生成测试库时，正在读取的模块不会消失或被无谓�
   const [observed] = await completion;
   assert.ok(observed.samples > 0);
   assert.deepEqual(observed.errors, []);
-  assert.deepEqual(files.map((file) => fs.statSync(file).mtimeMs), before);
+  assert.deepEqual(files.map((file: fs.PathLike) => fs.statSync(file).mtimeMs), before);
 });
 
 test('Candidate输入从空暂存生成闭合且可重复的artifact set', async (t) => {
@@ -61,6 +61,7 @@ test('Candidate输入从空暂存生成闭合且可重复的artifact set', async
   const expectedDtoFiles = [
     'agent-assets-http-dto.ts',
     'agent-operations-http-dto.ts',
+    'agent-service-http-dto.ts',
     'code-generation-http-dto.ts',
     'code-http-dto.ts',
     'codex-desktop-http-dto.ts',

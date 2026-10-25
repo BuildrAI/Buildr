@@ -69,7 +69,7 @@ Buildr MUST 将根 `CHANGELOG.md` 中与目标 package version 精确匹配的�
 - **AND** GitHub Release MUST NOT 标记为 prerelease
 
 ### Requirement: Release workflow 必须只发布 npm package
-Buildr release workflow MUST 只将唯一 `@buildr-ai/buildr` tarball 发布到 npm Registry。Workflow MUST 从显式 dispatch 的 version/tag、source commit、candidate identities、dist-tag 与 release notes 解析唯一 release contract，消费候选阶段唯一一次 application payload build 和 `npm pack`的结果，正式发布不得构建，并让 smoke、protected release transaction 与 Registry integrity readback 消费同一 tarball bytes。GitHub Release MAY 承载 tag notes metadata，但 MUST NOT 上传 npm tarball、Launcher、SEA、PKG/MSI、platform manifest 或 checksums。
+Buildr release workflow MUST 只将唯一 `@buildr-ai/buildr` tarball 发布到 npm Registry。Workflow MUST 从显式 dispatch 的 version/tag、source commit、candidate identities、dist-tag 与 release notes 解析唯一 release contract，消费候选阶段唯一一次 application payload build 和 `npm pack`的结果，正式发布不得构建，并让 端到端检查（E2E）、protected release transaction 与 Registry integrity readback 消费同一 tarball bytes。GitHub Release MAY 承载 tag notes metadata，但 MUST NOT 上传 npm tarball、Launcher、SEA、PKG/MSI、platform manifest 或 checksums。
 
 #### Scenario: 可逆验证先于 npm publish
 - **WHEN** dispatch workflow 准备正式发布
@@ -78,7 +78,7 @@ Buildr release workflow MUST 只将唯一 `@buildr-ai/buildr` tarball 发布到 
 
 #### Scenario: 发布并回读同一 tarball
 - **WHEN** protected release transaction 获得授权
-- **THEN** workflow MUST 先完成 current authority probe、最终 pre-tag 校验和匹配 tag ensure，再发布已冻结 tarball并从官方 Registry读取精确 version/integrity后重新安装 smoke
+- **THEN** workflow MUST 先完成 current authority probe、最终 pre-tag 校验和匹配 tag ensure，再发布已冻结 tarball并从官方 Registry读取精确 version/integrity后重新安装 端到端检查（E2E）
 - **AND** MUST NOT重新 pack、切换本地 publish或把 Actions artifact作为公共下载地址
 
 ### Requirement: 正式 Buildr bytes 必须只由 npm Registry 承载
@@ -184,7 +184,7 @@ Buildr Release MUST在matching release Worktree中使用冻结source的锁文件
 - **THEN** Release MUST只阻塞依赖该准备的readiness，不改变Task、Candidate、Git或Publication事实
 
 ### Requirement: Candidate 与 Release 子进程必须共同冻结 exact Node executable 和 PATH
-Buildr MUST由一个共享 execution environment helper同时绑定权威 Node executable、对应 bin 的 PATH 首项、npm shim与可审计 Node identity。本地 Candidate、hosted Host Node tuple、release prepare、tarball/Registry smoke、macOS LaunchServices Launcher后代进程和hosted publication helper MUST复用该 contract；任何 consumer MUST NOT只冻结父进程 executable而让子进程从会话 PATH 解析其他 Node。Host Node tuple的权威版本 MUST来自该tuple实际启动verifier的Node，开发、验证与发布入口 MUST接受满足 Product 最低版本要求的稳定 Node，MUST NOT因实际版本不等于基准或主版本更高而拒绝；同一次执行内的真实 Node identity继续严格一致。
+Buildr MUST由一个共享 execution environment helper同时绑定权威 Node executable、对应 bin 的 PATH 首项、npm shim与可审计 Node identity。本地 Candidate、hosted Host Node tuple、release prepare、tarball/Registry 原包端到端检查（E2E）、macOS LaunchServices Launcher后代进程和hosted publication helper MUST复用该 contract；任何 consumer MUST NOT只冻结父进程 executable而让子进程从会话 PATH 解析其他 Node。Host Node tuple的权威版本 MUST来自该tuple实际启动verifier的Node，开发、验证与发布入口 MUST接受满足 Product 最低版本要求的稳定 Node，MUST NOT因实际版本不等于基准或主版本更高而拒绝；同一次执行内的真实 Node identity继续严格一致。
 
 #### Scenario: inherited PATH 含另一个 Node
 - **WHEN** 权威 executable 与 inherited PATH 中首先可见的 Node 版本或路径不同
@@ -199,16 +199,16 @@ Buildr MUST由一个共享 execution environment helper同时绑定权威 Node e
 
 #### Scenario: Launcher readiness 失败
 - **WHEN** macOS LaunchServices后代没有在专用readiness budget内证明匹配health与Node identity
-- **THEN** smoke MUST在清理前保留脱敏instance、launcher log、process observation、elapsed/budget和exact Node audit
+- **THEN** 端到端检查（E2E） MUST在清理前保留脱敏instance、launcher log、process observation、elapsed/budget和exact Node audit
 - **AND** diagnostic evidence MUST位于既有Candidate diagnostics owner，不得写入旁路store或泄漏instance secret
 
 #### Scenario: Node 或 PATH 漂移
 - **WHEN** executable 不是绝对可执行文件、version不满足当前声明、PATH head不匹配或子进程 identity不同
-- **THEN** smoke/publish helper MUST在安装、tag或npm publish前 fail closed
+- **THEN** 端到端检查（E2E）/publish helper MUST在安装、tag或npm publish前 fail closed
 - **AND** MUST不依赖硬编码历史复盘中的 Node 版本恢复
 
 ### Requirement: Release transaction evidence 必须提供正式关联与可验证 readback
-Buildr MUST以closed release transaction context/evidence schema关联source release Task、显式support Tasks、Candidate source SHA/workflow/run、publish workflow/run、main/dev收敛提交、tag、npm version/dist-tag、GitHub Release与Registry smoke。发布事务 MUST不读取、复制或依赖Task复盘文档、决定状态或来源关系。
+Buildr MUST以closed release transaction context/evidence schema关联source release Task、显式support Tasks、Candidate source SHA/workflow/run、publish workflow/run、main/dev收敛提交、tag、npm version/dist-tag、GitHub Release与Registry 原包端到端检查（E2E）。发布事务 MUST不读取、复制或依赖Task复盘文档、决定状态或来源关系。
 
 #### Scenario: dispatch 正式 release transaction
 - **WHEN** 维护者明确授权publication且runner准备dispatch唯一protected workflow
@@ -247,7 +247,7 @@ Buildr MUST在完整Product Candidate前，对current `release-<version>` frozen
 - **AND** MUST对新final source重新运行完整Candidate，MUST NOT把main反向merge进已验证release或复用旧tarball
 
 #### Scenario: 发布成功后dev已经前进
-- **WHEN** tag、npm、dist-tag、GitHub Release和Registry smoke已成立，且`dev`包含release冻结后交付的新内容
+- **WHEN** tag、npm、dist-tag、GitHub Release和Registry 原包端到端检查（E2E）已成立，且`dev`包含release冻结后交付的新内容
 - **THEN** reconciliation MUST核验Publication context、current frozen selection、published main commit/tree有效且current main包含该发布提交；正式release ref存在时必须匹配，缺失时必须证明官方远端Tag匹配published main且冻结源码位于该提交历史中
 - **AND** MUST证明selection baseline与每个ordered `sourceDevCommit`均由current `dev`包含，同时保留`dev`当前HEAD与后续内容
 - **AND** MUST NOT要求main成为dev祖先、比较dev与release tree相等或产生任何Git写入effect
@@ -283,7 +283,7 @@ Buildr正式publication MUST只由`.github/workflows/publish.yml`的唯一protec
 - **AND** MUST NOT重建context、重新pack、dispatch第二workflow或回退本机凭证
 
 ### Requirement: 发布失败必须保留不可逆事实与attempt恢复路径
-Protected transaction MUST为current GitHub run/attempt保存逐步evidence，并 MUST从正式Git/npm/GitHub readback记录已经成立的tag、npm version/integrity、dist-tag、GitHub Release与Registry smoke事实。失败Result MUST区分同attempt恢复、明确新attempt恢复和必须新version/人工处理，不得撤销或伪装已成立事实。
+Protected transaction MUST为current GitHub run/attempt保存逐步evidence，并 MUST从正式Git/npm/GitHub readback记录已经成立的tag、npm version/integrity、dist-tag、GitHub Release与Registry 原包端到端检查（E2E）事实。失败Result MUST区分同attempt恢复、明确新attempt恢复和必须新version/人工处理，不得撤销或伪装已成立事实。
 
 #### Scenario: Tag创建后npm失败
 - **WHEN** immutable tag已指向冻结source但npm publish或OIDC exchange失败
@@ -291,7 +291,7 @@ Protected transaction MUST为current GitHub run/attempt保存逐步evidence，�
 - **AND** 恢复 MUST继续消费同一context与tarball并明确是否需要新attempt，MUST NOT删除、移动tag或改用本机token publish
 
 #### Scenario: npm成功后公开readback失败
-- **WHEN** Registry已存在同version且integrity匹配冻结tarball，但dist-tag、GitHub Release或Registry smoke尚未完成
+- **WHEN** Registry已存在同version且integrity匹配冻结tarball，但dist-tag、GitHub Release或Registry 原包端到端检查（E2E）尚未完成
 - **THEN** rerun MUST复用已发布npm事实并只补齐未成立步骤
 - **AND** MUST NOT再次publish、重新pack、unpublish或覆盖相同version
 

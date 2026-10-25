@@ -24,7 +24,7 @@ test('program preparation is authenticated, schema checked and independently obs
   contributions.push(createAgentServiceHttpContribution(() => service));
   const server = createLocalWorkspaceServer(runtime, {targetRoot:root,httpContributions:contributions});
   const {url,sessionToken}=await server.ready;
-  t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(resolve));});
+  t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(() => resolve()));});
   const endpoint=`${url}/api/v1/app/agent-service/connections/codex/preparation-attempts`;
   const headers={origin:url,'x-buildr-session':sessionToken,'content-type':'application/json'};
   let response=await fetch(endpoint);assert.equal(response.status,403);
@@ -54,7 +54,7 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   const server = createLocalWorkspaceServer(runtime, { targetRoot: root, httpContributions: contributions });
   const { url, initialWorkspaceId, sessionToken } = await server.ready;
   workspaceId = initialWorkspaceId;
-  t.after(async () => { await service.close(); server.server.closeAllConnections(); await new Promise<void>(resolve => server.server.close(resolve)); });
+  t.after(async () => { await service.close(); server.server.closeAllConnections(); await new Promise<void>(resolve => server.server.close(() => resolve())); });
   const app = `${url}/api/v1/app/agent-service`;
   const conversations = `${url}/api/v1/workspaces/${workspaceId}/agent-conversations`;
   const headers = { origin: url, 'x-buildr-session': sessionToken, 'content-type': 'application/json' };
@@ -135,7 +135,7 @@ test('model account HTTP preserves authentication, revisions, source identity an
   const service=createAgentService({dataRoot:path.join(base,'model-profile'),executors:[],modelProviders:[{id:'fixture',label:'Fixture',async open(){return {protocol:'chat-completions',async inspect(){return {status:'ready',label:'Plan owner',models:[{id:'same-name',label:'Model',images:false,tools:true}],quota:{available:false,observedAt:new Date().toISOString()}};},async beginLogin(update){update({state:'waiting-browser',url:'https://login.example.test/authorize'});},async cancelLogin(){},async infer(){return Response.json({});},async close(){}};}}],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
   const runtime=createRuntime(),contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
   const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions}),{url,sessionToken}=await server.ready;
-  t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(resolve));});
+  t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(() => resolve()));});
   const endpoint=url+'/api/v1/app/agent-service/model-accounts',headers={origin:url,'x-buildr-session':sessionToken,'content-type':'application/json'};
   assert.equal((await fetch(endpoint)).status,403);
   let response=await fetch(endpoint,{headers});assert.equal(response.status,200);assert.equal((await response.json()).providers[0].id,'fixture');
@@ -155,7 +155,7 @@ test('model preferences enforce authentication, revision and context limits', {t
  const service=createAgentService({dataRoot:path.join(base,'agent-profile'),executors:[],modelProviders:[{id:'fixture',label:'Fixture',async open(){return{protocol:'chat-completions',inspect:async()=>({status:'ready',models:[{id:'model',label:'Model',images:false,tools:true,contextWindow:258000}],quota:{available:true,observedAt:'2026-10-25T00:00:00Z',windows:[{id:'weekly',label:'每周窗口',remainingPercent:93}]}}),beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>assert.fail('metadata must not infer'),close:async()=>{}};}}],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
  const runtime=createRuntime(),contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
  const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions});const {url,sessionToken}=await server.ready;
- t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(resolve));});
+ t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(() => resolve()));});
  const added=await service.models.accounts.add({provider:'fixture'}),checked=await service.models.accounts.check(added.id);
  const endpoint=`${url}/api/v1/app/agent-service/model-accounts/${added.id}/preferences`,headers={origin:url,'x-buildr-session':sessionToken,'content-type':'application/json'};
  assert.equal((await fetch(endpoint,{method:'POST',body:'{}'})).status,403);

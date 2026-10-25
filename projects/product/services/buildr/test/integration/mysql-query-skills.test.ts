@@ -86,7 +86,7 @@ test('new MySQL preferences use independent SQLite identity, survive reopening a
   assert.deepEqual(f.application.queryPreferences(f.root, another.id, another.revision), otherEmpty);
   assert.deepEqual(fs.readFileSync(path.join(f.root, created.sourcePath)), before);
   assert.equal(f.connections.get(f.root, created.id).instance.revision, created.revision);
-  f.store.runWorkspaceTransaction(f.root, context => {
+  f.store.runWorkspaceTransaction(f.root, (context: object) => {
     const database = transactionDatabase(context);
     assert.equal(database.prepare('SELECT count(*) AS n FROM mysql_skill_query_preferences').get()!.n, 1);
   });
@@ -100,7 +100,7 @@ test('schema36 preferences and ordinary reads stay read-only until the first exp
   database.close(); const before = fs.readFileSync(file);
   const preference = f.application.queryPreferences(f.root, created.id, created.revision);
   assert.deepEqual(preference.enabledDatabases, []); assert.equal(preference.currentDatabase, null);
-  f.store.runWorkspaceSqliteRead(f.root, context => {
+  f.store.runWorkspaceSqliteRead(f.root, (context: object) => {
     const db = transactionDatabase(context);
     assert.equal(db.prepare('SELECT max(version) AS version FROM schema_migrations').get()!.version, 36);
     assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE name='mysql_skill_query_preferences'").get(), undefined);
@@ -108,7 +108,7 @@ test('schema36 preferences and ordinary reads stay read-only until the first exp
   assert.deepEqual(fs.readFileSync(file), before, 'new and existing reads preserve canonical SQLite bytes');
   const saved = f.application.saveQueryPreferences(f.root, created.id, { connectionRevision: created.revision, expectedRevision: preference.revision, enabledDatabases: ['orders'], currentDatabase: 'orders' });
   assert.deepEqual(saved.enabledDatabases, ['orders']);
-  f.store.runWorkspaceSqliteRead(f.root, context => assert.equal(transactionDatabase(context).prepare('SELECT max(version) AS version FROM schema_migrations').get()!.version, 38));
+  f.store.runWorkspaceSqliteRead(f.root, (context: object) => assert.equal(transactionDatabase(context).prepare('SELECT max(version) AS version FROM schema_migrations').get()!.version, 38));
 });
 test('a replacement source masquerading as MySQL cannot route another declared program into the builtin query capability', async t => {
   const f = fixture(t), created = f.create(), definitionFile = path.join(f.skill, 'assets/connection.yml'), definition = YAML.parse(fs.readFileSync(definitionFile, 'utf8'));
@@ -135,7 +135,7 @@ test('independent query HTTP and CLI share the same selected revision and local 
   await assert.rejects(request('POST', 'query', '', { connectionRevision: created.revision, sql: 'SELECT 1', password: 'never-accepted' }), { code: 'connection_input_invalid' });
   assert.equal(writes, 1);
   const output = await cli.run(null, { argv: ['node', 'buildr', 'mysql-query', 'query', '--connection', created.id, '--expected-revision', created.revision, '--target', f.root, '--sql', 'SELECT 1', '--json'] });
-  assert.equal(output.operation, 'query'); assert.deepEqual((output as { rows: unknown[] }).rows, [[1]]);
+  assert.equal(output.operation, 'query'); assert.partialDeepStrictEqual(output, { rows: [[1]] });
   await assert.rejects(cli.run(null, { argv: ['node', 'buildr', 'mysql-query', 'databases', '--connection', created.id] }), { code: 'connection_skill_revision_required' });
 });
 test('installed MySQL connection program is offline for help/version, rejects query and only exposes bounded connection facts', async () => {

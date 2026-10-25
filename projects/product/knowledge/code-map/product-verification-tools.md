@@ -6,9 +6,12 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
 
 ## 产品测试工具：发现、选择、执行
 
-这些文件服务 Buildr 产品自己的工程验证。`changed.ts` 收集差异后调用规划器（Planner），组合前置检查并将执行交给 `executePlan()`；后者通过依赖调度和执行器（Executor）调用真实工具。依赖方向是项目工具消费测试及公共技术能力，不是通用项目地图模块反向执行这些脚本。
+这些文件服务 Buildr 产品自己的工程验证。公开入口承接具体检查、类型、全量或相关请求，登记与实际发现决定检查集合；规划器（Planner）与 `executePlan()` 通过原有依赖调度和执行器（Executor）调用真实工具。依赖方向是项目工具消费测试及公共技术能力，不是通用项目地图模块反向执行这些脚本。
 
 - **`services/buildr/test/verification/`** — 产品自己的测试编排
+  - [cli.ts](../../services/buildr/test/verification/cli.ts) — 六个公开入口的请求解析、选择预览、登记核对与实际执行；不要求正式任务或比较基线
+  - [journey-suites.ts](../../services/buildr/test/verification/journey-suites.ts) — 已有真实集成和完整流程的分组与资源归属
+  - [journeys.ts](../../services/buildr/test/verification/journeys.ts) — 核对实际测试归属，按登记集合调用集成测试（Integration Test）与端到端测试（End-to-End Test，E2E）
   - [source.ts](../../services/buildr/test/verification/source.ts) — 本机源码入口，分别选择通用检查与当前系统的原生源码检查；按本轮普通结果保留成功，只准备和执行失败及未执行项，不生产或消费最终原包
   - [artifact.ts](../../services/buildr/test/verification/artifact.ts) — 本机原包入口，显式读取同一原包目录；通用原包与本机平台分别选择，按依赖档位排序并在准备后重新判断有效结果；不回退制包
   - [candidate-artifact-reuse.ts](../../services/buildr/test/verification/candidate-artifact-reuse.ts) — 原包证明的有界交接、原字节及真实平台核验、暂留本机缺项及原始来源保留；同原包成功子项不按配方或依赖摘要失效
@@ -19,18 +22,15 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
   - [local-source-verification.ts](../../services/buildr/test/verification/local-source-verification.ts) — 发布派发前读取同轮主包及插件普通日志，失败或未执行项只返回补齐动作
   - [candidate-source-reuse.ts](../../services/buildr/test/verification/candidate-source-reuse.ts) — 有界受控交接、源码分片（Shard）覆盖计算；轮次及真实平台由普通结果入口核对
   - [test-files.ts](../../services/buildr/test/verification/test-files.ts) — 解析安全路径、展开文件匹配并去重，空集合失败
-  - [system-suites.ts](../../services/buildr/test/verification/system-suites.ts) — 系统测试（System）分组、实际文件和有关资源
   - [ownership.ts](../../services/buildr/test/verification/ownership.ts) — 改动路径归属、排除项、委托与扩大范围的依据
   - [registry.ts](../../services/buildr/test/verification/registry.ts) — 稳定步骤、职责分片、通用／平台归属、主要证明责任、真实工作进程额度及候选分片；平台归属与运行场所分别声明
   - [platform-boundaries.ts](../../services/buildr/test/verification/platform-boundaries.ts) — macOS 与 Windows 原生命令、路径／锁、文件描述符／进程及原包启动器的具体机制与最小断言；不以系统名称复制通用功能
-  - [planner.ts](../../services/buildr/test/verification/planner.ts) — 校验步骤与预算，选择范围并给出原因，组合低成本前置检查
-  - [changed.ts](../../services/buildr/test/verification/changed.ts) — 日常受影响范围（affected）的预览或执行入口
-  - [focus.ts](../../services/buildr/test/verification/focus.ts) — 显式步骤、分组及目录查看入口
+  - [planner.ts](../../services/buildr/test/verification/planner.ts) — 校验步骤与预算，依据实际请求、类型与相关输入选择范围并给出原因，不把静态或单元组设为其他独立检查的全局前置
   - [plan-runner.ts](../../services/buildr/test/verification/plan-runner.ts) — 一次执行的准备、资源协调、调度与汇总
   - [dag-scheduler.ts](../../services/buildr/test/verification/dag-scheduler.ts) — 依赖、并发类别、具名资源和数字容量的调度
   - [executor.ts](../../services/buildr/test/verification/executor.ts) — 将步骤和实际额度转成具体子进程调用
   - [resource-coordinator.ts](../../services/buildr/test/verification/resource-coordinator.ts) — 同机多次执行间的共享资源协调
-  - [candidate.ts](../../services/buildr/test/verification/candidate.ts) — 本机日常完整或候选（Candidate）集合入口；只执行当前机器上的注册步骤
+  - [candidate.ts](../../services/buildr/test/verification/candidate.ts) — 内部发布候选（Candidate）集合入口，只执行当前机器适用的登记步骤；不作为日常并列类型入口
   - [candidate-ci.ts](../../services/buildr/test/verification/candidate-ci.ts) — 按有效证明选择跨平台源码／原包缺项，执行宿主 Node.js（Host Node）组合并汇总；全部必需源码通过后才进入产包
   - [candidate-ci-evidence.ts](../../services/buildr/test/verification/candidate-ci-evidence.ts) — 检查证据齐全性以及源码、登记、作业和唯一压缩包身份
   - [candidate-repair.ts](../../services/buildr/test/verification/candidate-repair.ts) — 同轮原包补验保留成功、只补失败及缺项；核对原字节、真实平台和最低宿主，保留原始来源
@@ -56,7 +56,7 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
   - [release-rehearsal.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/release-rehearsal.ts) — 显式演练使用 v2 准备文件持久保存请求意图；旧 v1 或无持久位置仅回读恢复，终态仍需检查完整性
 - **`services/buildr/tools/development/`** — 真实开发环境边界
   - [run-development-npm.ts](../../services/buildr/tools/development/run-development-npm.ts) — 检查当前 Node.js 在项目声明范围内并调用相邻 npm；无扩展名的同名入口负责在声明范围内选择 Node.js（声明版本优先）
-  - [run-isolated-workspace-smoke.ts](../../services/buildr/tools/development/run-isolated-workspace-smoke.ts) — 隔离工作目录和两类应用数据目录，统一成功与失败清理
+  - [run-isolated-workspace-check.ts](../../services/buildr/tools/development/run-isolated-workspace-check.ts) — 隔离工作目录和两类应用数据目录，统一成功与失败清理
 - **`services/buildr/tools/verification/`** — 候选环境准备
   - [candidate-preparation-reuse.ts](../../services/buildr/tools/verification/candidate-preparation-reuse.ts) — 本机准备按输入及完整输出内容核验可重建回执（Receipt），输出缺失或变化只重做相关操作；持续集成（CI）默认保留干净安装
   - [candidate-environment.ts](../../services/buildr/tools/verification/candidate-environment.ts) — 唯一准备入口即时保存准备状态，按档位（Profile）安装实际运行依赖；`frontend` 提供前端测试输入，`browser-artifact` 提供测试运行时（Runtime）和明确 Chromium，均不替代候选网页载荷
@@ -80,7 +80,7 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
 
 ## 前端与产品行为：从要证明的结果定位测试
 
-前端逻辑测试由 `services/buildr-web/package.json` 的 `test` 执行，`frontend-logic` 在前端受影响路径和完整候选（Candidate）中调用它。源码浏览器（Browser）旅程由后端 `test:browser:smoke` 或 `test:browser:changed` 执行；完整候选（Candidate）另由 `artifact-browser-core` 消费唯一压缩包内的网页载荷执行核心旅程，不证明全部页面。后端 `test:daily-full` 继续只声明日常后端范围。`dsh-plugin` 在插件受影响路径调用独立完整验证，不进入主包候选集合。各入口的工作目录与覆盖边界见[产品测试架构](../docs/architecture/verification-framework.md#当前入口)。
+四服务完整单元测试（Unit Test）由 `services/buildr` 的 `npm test` 聚合；`npm run check` 覆盖推送前全部静态检查（Static Check）与单元测试（Unit Test）。另外提供 `test:static`、`test:integration`、`test:e2e` 和 `test:related`，所有入口均可通过 `--plan` 查看集合、`--check <id>` 显式指定检查。相关选择不要求正式任务或先有比较基线；已知具体检查可直接指定，选择完整性仍由智能体（Agent）对照目标判断。原包消费与准确双包验证保留其实际环境要求，不构成第五类。各入口范围见[产品测试架构](../docs/architecture/verification-framework.md#公开入口)。
 
 - **`services/buildr-web/test/`** — 前端逻辑的独立测试集合
   - [parentCoordination.test.mjs](../../services/buildr-web/test/parentCoordination.test.mjs) — 父任务确认的默认拒绝、子任务处置和版本保留，不启动网页
@@ -89,16 +89,29 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
 - **`services/buildr/test/`** — 产品技术边界及真实旅程
   - `unit/`
     - [verification-changed-paths.test.ts](../../services/buildr/test/unit/verification-changed-paths.test.ts) — 受影响路径必须选中必要步骤，选择成功与实际测试通过分别核对
-  - `contract/`
-    - [verification-entrypoints.test.ts](../../services/buildr/test/contract/verification-entrypoints.test.ts) — 测试族（Testing Family）的完整入口与声明范围对应，包括集成、系统和前端的独立入口
+  - `static/`
+    - [verification-entrypoints.test.ts](../../services/buildr/test/static/verification-entrypoints.test.ts) — 测试族（Testing Family）的完整入口与声明范围对应，包括四服务及四类检查的完整范围
   - `integration/`
     - [project-verification-map.test.ts](../../services/buildr/test/integration/project-verification-map.test.ts) — 多服务位置解析、局部不可用诊断、版本冲突与安全保存，不执行用户声明的测试
-    - [application-payload-release.test.ts](../../services/buildr/test/integration/application-payload-release.test.ts) — 载荷构造夹具及真实原包的离线安装、宿主运行和按需网页边界；部分夹具不消费最终原包
+    - [application-payload-source.test.ts](../../services/buildr/test/integration/application-payload-source.test.ts) — 源码构建、载荷确定性及受控进程边界，进入源码完整集成检查
+    - [application-payload-artifact.test.ts](../../services/buildr/test/integration/application-payload-artifact.test.ts) — 准确原包的文件与公共测试导出协议，消费候选包
     - [node-test-context-host.test.ts](../../services/buildr/test/integration/node-test-context-host.test.ts) — 持久工作进程（Worker Host）的上下文复用、额度与失败处理
-  - `system/`
-    - [task-verification-product.test.ts](../../services/buildr/test/system/task-verification-product.test.ts) — 真实命令行（CLI）报告登记与读取，以及被拒绝写入的错误投射
-  - `browser-smoke/`
-    - [buildr-web-browser.test.ts](../../services/buildr/test/browser-smoke/buildr-web-browser.test.ts) — 隔离服务、浏览器（Browser）和测试现场的组装、选择与清理
-    - [workbench-journey.ts](../../services/buildr/test/browser-smoke/workbench-journey.ts) — 实际页面回应、并发冲突后的重读保存、偏好恢复与资料阅读旅程
+  - `e2e/`
+    - [application-payload-release.test.ts](../../services/buildr/test/e2e/application-payload-release.test.ts) — 准确原包安装、登记和实际用户命令及网页流程
+    - [task-verification-product.test.ts](../../services/buildr/test/e2e/task-verification-product.test.ts) — 真实命令行（CLI）报告登记与读取，以及被拒绝写入的错误投射
+    - [buildr-web-browser.test.ts](../../services/buildr/test/e2e/buildr-web-browser.test.ts) — 隔离服务、浏览器（Browser）和测试现场的组装、选择与清理
+    - [workbench-journey.ts](../../services/buildr/test/e2e/workbench-journey.ts) — 实际页面回应、并发冲突后的重读保存、偏好恢复与资料阅读旅程
 
 跨平台编排由仓库根 `.github/workflows/verify.yml` 消费 `candidate-ci.ts` 和 `registry.ts` 的检查归属与宿主组合。通用源码与原包检查本机执行一次，平台源码与平台原包分别由本机系统和 GitHub 另一系统提供真实证明；最低 Node 要求仍按实际执行满足。历史分片名称中的 `macos` 不再代表通用检查只能在 macOS 执行，实际归属以 `platformScope` 为准。汇总由 `candidate-ci-evidence.ts` 核验原包、源码、环境与原始来源；同轮普通本机日志可用于接续已有成功，不能代替另一平台或尚未执行的原包检查。`main` 候选仍执行来源校验，不支持来源不能因跳过取得成功。
+
+## 测试源码检查与按边界执行
+
+- [tsconfig.tests.json](../../services/buildr/tsconfig.tests.json) 与 [run-types.ts](../../services/buildr/tools/testing/run-types.ts) 检查主体、网页及智能体的 TypeScript 测试和辅助脚本；生产源码继续使用各服务自己的编译配置。
+- [check-test-types.ts](../../services/dsh-plugin/tools/testing/check-test-types.ts) 使用准确的软件开发工具包（SDK）与真实生成协议，按入口隔离插件宿主端和客户端类型；不以空类型替代依赖。
+- 资产目录的真实事务按初始化、关系、登记及代码库变更拆分，保留全部案例并可受控并行。公共命令行完整流程由 `e2e-workspace-assets` 执行；安装后连接与核心规则升级由 `application-payload-release` 消费同一冻结原包，避免重复制包。
+
+## 低成本内部规则与页面流程
+
+- [source-control-selection.ts](../../services/buildr-web/src/features/code/source-control-selection.ts) 承担任务入口、显式用户选择与已观察来源的优先级判断，由页面工作台调用并由无服务器单元测试直接验证。
+- [source-control-row-density.ts](../../services/buildr-web/src/features/code/components/source-control-row-density.ts) 只计算测量值对应的逐级展示；行组件继续拥有 DOM 测量与真实交互，计算边界由单元测试覆盖。
+- 文件浏览与源代码管理分别由 `e2e-browser:code-explorer`、`e2e-browser:code` 选择。源码浏览器检查共享不可变构建，各自创建临时现场，独立资源限制允许最多两个检查并行；真实 Git 与 HTTP 矩阵仍由现有集成入口执行。

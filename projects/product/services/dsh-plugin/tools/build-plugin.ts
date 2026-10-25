@@ -47,7 +47,7 @@ const option = (name: string): string | undefined => {
   return args[index + 1];
 };
 for (let index = 0; index < args.length; index++) {
-  if (args[index] === '--dev') continue;
+  if (args[index] === '--dev' || args[index] === '--typecheck-only') continue;
   if (!['--source-sdk', '--output'].includes(args[index])) throw new Error(`Unknown build argument ${args[index]}; use --source-sdk <prepared SDK>`);
   index++;
 }
@@ -63,7 +63,7 @@ const { build } = req('esbuild') as typeof Esbuild;
 const { transform } = req('lightningcss') as CssCompiler;
 const { WorkspaceTypertGenerator } = await tsImport(pathToFileURL(join(sdk, 'packages/typert/generator/src/index.ts')).href, import.meta.url) as TypertCompiler;
 const { PLATFORM_MODULES } = await tsImport(pathToFileURL(join(sdk, 'packages/client/web/src/platform.ts')).href, import.meta.url) as { PLATFORM_MODULES: string[] };
-const out = newBuildOutput(root, option('--output') ?? VARIANT.out);
+const out = args.includes('--typecheck-only') ? '' : newBuildOutput(root, option('--output') ?? VARIANT.out);
 const stage = await mkdtemp(join(ownedBuildRoot(root), 'dsh-plugin-compile-'));
 const pkg = join(stage, 'packages/plugin');
 const source = join(root, 'plugin');
@@ -153,6 +153,11 @@ for (const [name, contents] of Object.entries({ 'typert.host.js': artifact.js, '
   'typert.remote-client.js': artifact.remote.js, 'typert.remote-client.d.ts': artifact.remote.dts })) await writeFile(join(pkg, 'lib', name), contents);
 await writeFile(join(pkg, 'tsconfig.client.json'), JSON.stringify({ compilerOptions: options, files: ['src/client.tsx', 'src/css-modules.d.ts'] }));
 compile(join(pkg, 'tsconfig.client.json'));
+if (args.includes('--typecheck-only')) {
+  await (await import('node:fs/promises')).rm(stage, { recursive: true, force: true });
+  console.log(JSON.stringify({ status: 'passed', check: 'plugin-typecheck', scopes: ['host', 'client'], sdk, packageBuilt: false, desktopValidated: false }));
+  process.exit(0);
+}
 // A profile-installed bundle resolves only from the profile, while the DSH built-ins live inside the app
 // archive. Bundle the verified protocol from the pinned SDK source so the host half keeps only
 // resolvable runtime imports; the protocol module is stateless (well-known symbols, no registry).

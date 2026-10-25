@@ -43,7 +43,7 @@ function armGate(){gate.armed=true;gate.started=false;gate.released=false;}
 
 const userNodes:TrajectorySnapshot['eventNodes']=Array.from({length:80},(_,index)=>({kind:'user',seq:index===0?1:index+3,time:1000+index*400,content:[{type:'text',text:index===0?'Original preserved user input':'Loaded window record '+(index+1)}],source:null}));
 const first=userNodes[0];if(first===undefined)throw Error('Fixture must have a durable user record');
-const methodNodes:TrajectorySnapshot['eventNodes']=Array.from({length:24},(_,index)=>({kind:'tool-result',seq:86+index,time:35000+index*400,callId:'fixture-method-'+index,call:{name:'skill',argsRaw:JSON.stringify({name:'method-sample-'+(index+1)})},callTime:34900+index*400,content:[{type:'text',text:'Controlled Buildr method result'}],isError:false,subCalls:[]}));
+const methodNodes:Array<TrajectorySnapshot['eventNodes'][number]>=Array.from({length:24},(_,index)=>({kind:'tool-result',seq:86+index,time:35000+index*400,callId:'fixture-method-'+index,call:{name:'skill',argsRaw:JSON.stringify({name:'method-sample-'+(index+1)})},callTime:34900+index*400,content:[{type:'text',text:'Controlled Buildr method result'}],isError:false,subCalls:[]}));
 // Replace one spare sample so the loaded-window/virtualization size stays unchanged.
 // This is a controlled failed Buildr capability, with no user document in its output.
 methodNodes[23]={kind:'tool-result',seq:109,time:44200,callId:'fixture-failed-capability-call',call:{name:'bash',argsRaw:JSON.stringify({command:'buildr task inspect fixture-failed-task --json'})},callTime:44100,content:[{type:'text',text:'Controlled Buildr capability failure; no user document.'}],isError:true,subCalls:[]};
@@ -79,7 +79,7 @@ const records=cells.flatMap(cell=>{const record=trajectoryRecordContext(SID,cell
 const snapshot:TrajectorySnapshot={eventNodes:capturedNodes,eventLocations:new Map(),requests:[],callSchemas:new Map([['fixture-read-call',{name:'read_file',description:'Read-only external fixture operation',parameters:{type:'object',properties:{path:{type:'string'}},required:['path']}}]]),partial:null,runningCalls:[],recordContexts:records};
 const trajectory=Store.createSnapshotStore(snapshot);
 const conversation=Store.createSnapshotStore<ConversationSnapshot>({...EMPTY_CONVERSATION_SNAPSHOT,activeTargets:new Set(['trajectory'])});
-const binding:ConversationBinding={snapshot:conversation,openTurn:Store.createSnapshotStore<number|undefined>(undefined),activate:()=>{},target:key=>key==='trajectory'?trajectory:Store.createSnapshotStore(undefined)};
+const binding:ConversationBinding={snapshot:conversation,openTurn:Store.createSnapshotStore<number|undefined>(undefined),activate:()=>{},target:((key:string)=>key==='trajectory'?trajectory:Store.createSnapshotStore(undefined)) as ConversationBinding['target']};
 class FixtureConversation extends UiConversation {override binding():ConversationBinding{return binding;}}
 async function sourceRecord(input:SourceRecordRequest){
  requests.push(input);if(gate.armed){gate.armed=false;gate.started=true;await new Promise<void>(resolve=>{releaseGate=()=>{gate.released=true;resolve();};});}
@@ -92,7 +92,7 @@ async function sourceRecord(input:SourceRecordRequest){
  })}))}};
  return {ok:true as const,value};
 }
-type FrameProps=ComposedProps<'root',never,'conversation.view'|'sidebar.footer.action'|'shell.overlay',undefined,{reference:SessionReference;unload():Promise<void>}>;
+type FrameProps=ComposedProps<'root',never,'conversation.view',undefined,{reference:SessionReference;unload():Promise<void>}>;
 function Frame(props:FrameProps){
  const [view,setView]=useState('trajectory');
  const toolbar=useRef<HTMLElement>(null),[toolbarHeight,setToolbarHeight]=useState(84);
@@ -100,7 +100,7 @@ function Frame(props:FrameProps){
  // The host gives the whole conversation viewport, including its overlaid composer. The
  // production view, not this fixture, must reserve those 170 px and bound its own scroll panes.
  const bodyStyle={position:'fixed',top:toolbarHeight,left:0,right:0,bottom:0,height:'auto',overflow:'hidden','--dsh-conversation-viewport-height':`calc(100dvh - ${toolbarHeight}px)`,'--dsh-composer-height':'170px'} as React.CSSProperties;
- return <><header ref={toolbar} className="fixture-toolbar"><strong>Buildr 候选验证夹具（非当前桌面）</strong><button onClick={()=>setView('trajectory')}>原轨迹入口</button><button onClick={()=>setView('buildr')}>Buildr 来源入口</button><button onClick={()=>setView('buildr-dev')}>Buildr 开发入口</button><button onClick={()=>setView('withdrawn')}>撤回来源消费者</button><button onClick={()=>void props.unload()}>卸载 Buildr 贡献</button></header><main className="fixture-body" style={bodyStyle}><props.SessionProvider session={props.reference}>{props.renderSlot('conversation.view',{inspectCall:undefined,viewRequest:undefined,openView:()=>setView('trajectory'),completeViewRequest:()=>{}},{only:view})}</props.SessionProvider></main><footer data-fixture-composer="" aria-label="模拟宿主输入区" style={{position:'fixed',left:0,right:0,bottom:0,height:170,boxSizing:'border-box',padding:16,borderTop:'1px solid var(--dsw-alias-border-l2)',background:'var(--dsw-alias-bg-layer-1)',zIndex:20}}>受控宿主底部输入区（170px）</footer></>;
+ return <><header ref={toolbar} className="fixture-toolbar"><strong>Buildr 候选验证夹具（非当前桌面）</strong><button onClick={()=>setView('trajectory')}>原轨迹入口</button><button onClick={()=>setView('buildr')}>Buildr 来源入口</button><button onClick={()=>setView('buildr-dev')}>Buildr 开发入口</button><button onClick={()=>setView('withdrawn')}>撤回来源消费者</button><button onClick={()=>void props.unload()}>卸载 Buildr 贡献</button></header><main className="fixture-body" style={bodyStyle}><props.SessionProvider session={props.reference}>{props.renderSlot('conversation.view',{inspectCall:undefined,viewRequest:null,openView:()=>setView('trajectory'),completeViewRequest:()=>{}},{only:view})}</props.SessionProvider></main><footer data-fixture-composer="" aria-label="模拟宿主输入区" style={{position:'fixed',left:0,right:0,bottom:0,height:170,boxSizing:'border-box',padding:16,borderTop:'1px solid var(--dsw-alias-border-l2)',background:'var(--dsw-alias-bg-layer-1)',zIndex:20}}>受控宿主底部输入区（170px）</footer></>;
 }
 interface ClientPlugin {inject:string[];apply(ctx:Cordis.Context):void|Promise<void>}
 function isClientPlugin(value:unknown):value is ClientPlugin{return typeof value==='object'&&value!==null&&'apply'in value&&typeof value.apply==='function'&&'inject'in value&&Array.isArray(value.inject)&&value.inject.every(key=>typeof key==='string');}
@@ -110,7 +110,7 @@ async function boot(){
  const seed={'react':React,'react/jsx-runtime':ReactJSX,'react-dom':ReactDOM,'react-dom/client':ReactDOMClient,'@deepseek-ai/cordis':Cordis,'@deepseek-ai/dsh-client-store':Store,'@deepseek-ai/dsh-client-ui-slots':Slots,'@deepseek-ai/dsh-client-ui-primitives':Primitives,'@deepseek-ai/dsh-client-ui-dockkit':Dockkit};
  const modules=new ClientModuleSystem({manifest:{rev:'offline-candidate',modules:[],plugins:[]},staticModules:seed,registrationTarget:target,bootstrapModule:{id:'@deepseek-ai/dsh-client-modules',exports:Modules},loadBundle:async url=>{throw Error('Unexpected external bundle load: '+url);}});
  for(const code of [releaseCode,devCode]){const script=document.createElement('script');script.textContent=code;document.head.append(script);}
- const release=await modules.import(releasedId,'',{}),dev=await modules.import(devId,'',{});if(!isClientPlugin(release)||!isClientPlugin(dev))throw Error('Actual bundle did not export a Client plugin');
+ const release=await modules.import(releasedId),dev=await modules.import(devId);if(!isClientPlugin(release)||!isClientPlugin(dev))throw Error('Actual bundle did not export a Client plugin');
  const ctx=new Cordis.Context();await ctx.plugin(rendererPlugin).await();
  const stabilize=async(fn:()=>void|Promise<void>)=>{await fn();};const sessions=new TestSessions(stabilize,ctx),workspaces=new TestWorkspaces(stabilize);
  ctx.provide('sessions',sessions);ctx.provide('workspaces',workspaces);class ControlledRemote extends TestRemote{override async $mount(){return async()=>{};}}new ControlledRemote(ctx,{buildr:{activation:async()=>({ok:true,value:{active:true,packageName:releasedId}}),sourceRecord,open:async()=>({ok:true,value:{ready:false,code:'fixture-only',message:''}})},'buildr-dev':{activation:async()=>({ok:true,value:{active:true,packageName:devId}}),sourceRecord,open:async()=>({ok:true,value:{ready:false,code:'fixture-only',message:''}})}});

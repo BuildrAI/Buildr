@@ -20,6 +20,7 @@ const allowedProjectRootEntries: any = new Set([
   'CLAUDE.md',
   'README.md',
   'buildr',
+  'assets',
   'capabilities.yml',
   'commands.yml',
   'docs',

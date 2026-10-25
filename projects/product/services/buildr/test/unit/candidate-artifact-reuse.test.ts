@@ -15,10 +15,10 @@ const context = { sourceCommit: 'a'.repeat(40), sourceTree: 'b'.repeat(40), purp
 const artifact = { sourceCommit: context.sourceCommit, filename: 'buildr.tgz', size: 12, sha256: 'c'.repeat(64),
   integrity: 'sha512-ZmFrZQ==', applicationPayloadDigest: `sha256-${'d'.repeat(64)}` };
 const descriptor = { id: 'runtime-macos', kind: 'shard', runner: 'macos', requiresArtifact: true,
-  platformScope: { kind: 'platform', runners: ['macos'] }, steps: [{ id: 'release-tarball-smoke' }] };
-const inputs = { 'release-tarball-smoke': hash('inputs') };
+  platformScope: { kind: 'platform', runners: ['macos'] }, steps: [{ id: 'release-tarball-consumption' }] };
+const inputs = { 'release-tarball-consumption': hash('inputs') };
 function evidence(target: any = descriptor, platform = 'darwin', nodeVersion = '24.21.0'): any {
-  const checkInputs = Object.fromEntries(target.steps.map((step: any) => [step.id, inputs['release-tarball-smoke']]));
+  const checkInputs = Object.fromEntries(target.steps.map((step: any) => [step.id, inputs['release-tarball-consumption']]));
   const environment = { schemaVersion: 'buildr.candidate-execution-environment/v1', platform, arch: platform === 'darwin' ? 'arm64' : 'x64',
     preparation: target.preparation ?? (target.kind === 'host-node' ? target.id === 'host-minimum-macos' ? 'publisher' : 'host' : 'base'),
     nodeVersion, nodeExecutable: '/actual/node', npmVersion: '11.19.0', dependencyIdentity: hash('actual-installed-bytes'), dependencyInputsIdentity: hash('locked-dependencies-and-recipe'),
@@ -62,7 +62,7 @@ test('same-package results retain success independently of assertion and depende
   wrongDependencyInputs.executionEnvironment.identity = hash(wrongBody);
   assert.equal(validateCandidateArtifactEvidence(wrongDependencyInputs, descriptor, context, inputs, artifact,
     { dependencyInputsIdentity: original.executionEnvironment.dependencyInputsIdentity }), true);
-  const adopted = reusedCandidateArtifactResult(original, 'release-tarball-smoke');
+  const adopted = reusedCandidateArtifactResult(original, 'release-tarball-consumption');
   assert.equal(adopted.reusedFrom.kind, 'local'); assert.equal(adopted.reusedFrom.workflow, null);
   assert.equal(adopted.durationMs, 0); assert.equal(adopted.reusedFrom.durationMs, 100);
   assert.deepEqual(adopted.artifactRecord, original);
@@ -83,12 +83,12 @@ test('Host Node reuse requires the exact minimum on each actual system', () => {
 });
 
 test('failed local groups retain successful children across assertion and dependency edits', () => {
-  const group = { ...descriptor, steps: [{ id: 'contract' }, { id: 'payload' }, { id: 'parity' }] };
+  const group = { ...descriptor, steps: [{ id: 'source-contracts' }, { id: 'payload' }, { id: 'parity' }] };
   const original = evidence(group);
   original.status = 'failed'; original.results[2].status = 'failed'; original.results[2].exitCode = 1;
   const currentInputs = { ...original.checkInputs, parity: hash('corrected parity assertion') };
   const expectedEnvironment = { executionEnvironment: { ...original.executionEnvironment, inputsIdentity: hash(currentInputs) } };
-  assert.deepEqual(reusableCandidateArtifactStepIds(original, group, context, currentInputs, artifact, expectedEnvironment), ['contract', 'payload']);
+  assert.deepEqual(reusableCandidateArtifactStepIds(original, group, context, currentInputs, artifact, expectedEnvironment), ['source-contracts', 'payload']);
   assert.equal(validateCandidateArtifactEvidence(original, group, context, original.checkInputs, artifact), false,
     'successful children never make the failed group complete');
   const adopted = reusedCandidateArtifactResult(original, 'payload');
@@ -96,7 +96,7 @@ test('failed local groups retain successful children across assertion and depend
   assert.equal(adopted.reusedFrom.durationMs, 100);
   assert.equal(adopted.artifactRecord.results[2].status, 'failed');
   const changedInputs = { ...currentInputs, payload: hash('changed payload assertion') };
-  assert.deepEqual(reusableCandidateArtifactStepIds(original, group, context, changedInputs, artifact, expectedEnvironment), ['contract', 'payload']);
+  assert.deepEqual(reusableCandidateArtifactStepIds(original, group, context, changedInputs, artifact, expectedEnvironment), ['source-contracts', 'payload']);
   for (const change of [
     (item: any) => { item.cleanupClean = false; },
     (item: any) => { item.workflow = { runId: '52', runAttempt: '1' }; },
@@ -107,5 +107,5 @@ test('failed local groups retain successful children across assertion and depend
     assert.deepEqual(reusableCandidateArtifactStepIds(changed, group, context, currentInputs, artifact, expectedEnvironment), []);
   }
   const changedEnvironment = { ...original.executionEnvironment, dependencyIdentity: hash('new actual controller') };
-  assert.deepEqual(reusableCandidateArtifactStepIds(original, group, context, currentInputs, artifact, { executionEnvironment: changedEnvironment }), ['contract', 'payload']);
+  assert.deepEqual(reusableCandidateArtifactStepIds(original, group, context, currentInputs, artifact, { executionEnvironment: changedEnvironment }), ['source-contracts', 'payload']);
 });

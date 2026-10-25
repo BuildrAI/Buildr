@@ -27,7 +27,7 @@ function fixture(t: { after(action: () => void): void }) {
 
 test('unchanged current bytes reuse parsing without sharing mutable records', t => {
   const f = fixture(t), first = f.repository.readWorkspacePersistence(f.root);
-  first.metadata.workspace.name = 'Changed by caller';
+  assert.ok(Reflect.set(first.metadata.workspace, 'name', 'Changed by caller'));
   first.metadata.document.name = 'Changed document';
   first.skills.skills[0].enabled = false;
   const next = f.repository.readWorkspacePersistence(f.root);

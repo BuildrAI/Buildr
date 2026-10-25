@@ -1,112 +1,28 @@
-# Project Testing Model v1
+# 四类测试定义
 
-本 reference 帮助不同技术栈使用同一组测试判断。Project 的真实代码、测试框架和团队约定始终优先。
+项目（Project）的真实代码、工具和约定是执行依据。只定义以下四类，不增加意图、成本、平台或阶段等第二套分类维度。
 
-## 测试边界与编排问题
-
-| 类别 | 取值 | 判断问题 |
-| --- | --- | --- |
-| 主要意图 | Development、Acceptance、Static Conformance、Delivery / Release | 为什么需要这份证据？ |
-| 执行边界 | Static、Unit、Component、Integration、System | 启动了哪些真实边界？ |
-| 成本约束 | Quick 或不受 Quick 预算约束 | 是否适合高频反馈？ |
-| 选择范围 | focus、affected、full | 本次选择多少证据？ |
-| 验证目标 | 开发目标、Candidate、Release artifact | 针对哪个冻结程度和交付物运行？ |
-
-主要意图和执行边界属于测试分类；后三项属于一次编排决策，不要求固化成每个测试的单一场景标签。例如真实 CLI + Git 的完整 Workspace 生命周期可以是 `Development + System`，本次在冻结 Candidate 上按 affected 或 full 范围运行，并不自动成为 Acceptance。
-
-## 执行边界
-
-| 边界 | 定义 |
+| 类型 | 定义 |
 | --- | --- |
-| Static | 只检查源码、schema、manifest、文档或制品结构，不启动被测系统 |
-| Unit | 同进程验证一个逻辑单元，协作者被替换，不经过真实进程、网络、数据库或 Workspace 生命周期 |
-| Component | 验证一个 Service 的有界组装或轻量上下文，外部系统使用替身、内存实现或受控轻环境 |
-| Integration | 穿过真实技术边界，例如子进程 CLI、Git、数据库、HTTP、消息、真实文件系统或容器 |
-| System | 从完整交付物或公共入口验证跨组件、跨 Service 或完整生命周期 |
+| 静态检查（Static Check） | 不执行业务流程，检查类型、源码依赖、声明、资源及交付结构。读取检查输入或调用编译工具不使其成为集成测试。 |
+| 单元测试（Unit Test） | 在隔离条件下验证局部逻辑或完整内部功能，外部协作者被替换；不验证真实网络、数据库、Git、文件存储协议或外部程序，整套易准备、低成本。 |
+| 集成测试（Integration Test） | 验证实际代码与真实技术设施或协议的配合，如数据库、文件系统、HTTP、Git、消息或子进程；只启动本次边界需要的环境。 |
+| 端到端测试（End-to-End Test，E2E） | 从实际用户入口出发，运行完整应用链路并核对最终结果；入口可以是命令行或浏览器，明确仍被替换的外部系统。 |
 
-边界按实际启动内容判断，不按目录和框架名字判断。启动 Spring context 的测试在外部系统被替换且范围有界时可以是 Component；连接真实数据库或远端协议时是 Integration。
+单元测试（Unit Test）不限定一个类或函数；使用内存仓储替身验证创建、重复拒绝及错误处理可以覆盖完整内部功能。实际执行 SQL 的内存数据库仍穿过数据库边界，属于集成测试（Integration Test）。测试运行器创建工作进程、读取测试源码及依赖，不等于被测业务的真实外部协作。
 
-## 主要意图
+真实 HTTP 并不自动等于端到端测试（End-to-End Test，E2E）：测试内部组装服务器、注入受控依赖并核对协议错误是集成测试（Integration Test）；实际启动应用并从公开入口完成使用流程才属于后者。浏览器中把后端全部替换的检查不能证明真实前后端完整链路。
 
-- Development：为研发实现提供正确性和回归证据，可以覆盖 Unit 到技术性 System。
-- Acceptance：从提案、需求或设计验收标准派生，证明业务目标；执行上通常是 Component、Integration 或 System。
-- Static Conformance：证明契约、结构、类型、规范或文档一致性，通常使用 Static。
-- Delivery / Release：证明 package、安装、部署、升级、发布或发布后状态；执行上可以是 Integration 或 System。
+检查类型按实际证明内容判断，不按目录、框架或注解名称判断；操作系统差异属于运行条件，准确交付物属于被测对象，不增加分类或并列公开执行体系。
 
-Browser / Playwright 只是执行手段。技术 smoke 属于 Development / System；只有 requirement-derived case 才属于 Acceptance。
+## 执行规则
 
-## 测试质量闭环
+- 开发时依据用户目标、实际修改及公共调用面选齐相关四类检查；自动路径选择只是线索，不能遗漏真实依赖、安装后入口或跨服务行为。
+- 用户可以指定具体检查、某类、全量或相关范围；已知对象直接执行，不要求正式任务、比较基线或先选固定场景。相关选择需要比较时使用明确来源；缺少基线时先从请求与实际文件定位，不能以缺少 Git 基线阻断所有验证。
+- Buildr 产品推送前执行四服务全部静态检查（Static Check）和单元测试（Unit Test）；整组实际成本需要观察与优化，不设统一三十秒门槛，不因成本高静默跳过成员。
+- 发布或用户明确要求时运行对应集成测试（Integration Test）与端到端测试（End-to-End Test，E2E）；任务已涉及的必要真实边界在开发完成前验证，不因被称为发布检查而推迟。
+- 已有结果仅在内容、配方、真实依赖、工具和必要环境仍适用时复用，保留实际来源；失败、未执行、无效证据与新增内容补验。缺口如实报告，不能以部分通过冒充全量。
 
-执行边界只回答“从哪里证明”，不能替代测试内容设计。每项关键事实使用以下最小链路：
+## 最低充分证明
 
-```text
-待证明事实
-→ 公共可观察结果
-→ 最小关键案例
-→ 最低充分执行边界
-→ 能区分正确与错误实现的断言
-→ 反例证据或明确 gap
-```
-
-断言、反例和状态隔离按 [技能正文](../SKILL.md#3-为任务设计和开发测试) 的质量要求执行；下面只补充分层与编排判断。
-
-## 编排
-
-| 问题 | 边界 |
-| --- | --- |
-| Quick | 只组合完整低成本 Static、Unit、Component 和少量轻 Integration；它是成本约束 |
-| affected | 根据变更路径、owner 和风险选择所有直接相关证据，包括必要的重型测试 |
-| full | 选择 Project 登记的完整回归证据；选择机制自身变化或明确全量要求时使用 |
-| Candidate | 表示冻结候选目标；可以承载 affected 或 full，不决定范围 |
-| Release | 表示真实发布物节点；组合 package、安装、部署、发布与发布后 smoke |
-
-`System` 不等于 Acceptance；验收必须来自需求或设计中的业务标准。`focus` 只用于失败诊断和定向选择，不声明交付完整性。Project 可以提供 `test:candidate` 这类组合入口，但入口名称不得被提升为所有 Candidate 都必须 full 的通用规则。
-
-## Project / Service owner
-
-- Service owner：事实可由一个 Service 的代码、公开技术契约或独立交付物判定。
-- Project owner：事实跨 Service、属于 Project 治理资产、用户旅程或组合 Candidate / Release。
-- 文件放在 Project 根不改变 Service 事实的 owner；测试实现位置也不应代替部署和交付边界判断。
-- 辅助覆盖可以重叠；主门禁按 `primaryEvidenceOwner` 去重。
-
-最小审查卡：
-
-```text
-step
-→ ownerScope
-→ primaryIntent
-→ executionBoundary
-→ environment/effects
-→ targetDuration
-→ discovery/proves/evidence/usableFor
-→ primaryEvidenceOwner
-→ observableOutcome/cases
-→ assertions/counterEvidence
-→ isolation/idempotency/cleanup
-```
-
-编排再从这些事实决定：哪些低成本步骤进入 Quick、changed inputs 选择哪些 affected owner、哪些步骤构成 full，以及本次验证目标是什么。
-
-`mixed` 只作为“该入口仍需拆分”的审查信号，不是正式测试类型。
-
-## 技术栈映射示例
-
-| 边界 | Node.js 示例 | Java / Spring 示例 |
-| --- | --- | --- |
-| Static | type/lint、schema、manifest、OpenSpec、package structure | compiler、Checkstyle、ArchUnit、OpenAPI/schema |
-| Unit | `node:test` / Vitest / Jest 验证纯函数或类 | JUnit 验证纯 Java 类，协作者 mock/fake |
-| Component | 同进程组装一个模块、handler 或轻量 service context | Spring slice 或有界 ApplicationContext，外部系统替换 |
-| Integration | child CLI、Git、真实 FS、DB/HTTP/container | Testcontainers、真实 DB、HTTP、消息或跨模块协议 |
-| System | 打包 CLI、完整 Workspace、Browser 技术旅程 | 完整应用/服务组合、公共入口、端到端技术生命周期 |
-
-这些是映射示例，不是 Buildr 要求用户安装的框架。引入新技术栈时仍先读取该项目已有工具，再按真实执行边界映射。
-
-## 代表性判断示例
-
-### Bug 修复
-
-金额计算的舍入错误可以在同进程证明时，使用 Unit 覆盖正常金额、触发旧错误的边界金额和非法输入契约。主要断言是公开计算结果；回归证据应表明旧舍入逻辑下边界案例失败，而不是只报告当前 suite 通过。
-
-### 有状态行为
-
-重复提交必须幂等且写入真实数据库协议时，使用 Integration 验证首次提交、重复提交和失败恢复。测试隔离自己的数据，断言公开结果与最终记录数，并证明重复运行和失败后清理符合项目约定；不要 mock 幂等判断后只验证数据库方法被调用。
+先明确公共结果与必要案例，保留实际被测逻辑，再选择最低充分边界及能区分正确与错误的断言。单元测试（Unit Test）集合的低成本是设计要求，不能用无限并发掩盖资源消耗；慢检查先确认范围与效率，不仅因慢改类。纯结构检查与真实功能证据分别报告，未执行、环境不可用、缺少测试及实际失败分别说明。

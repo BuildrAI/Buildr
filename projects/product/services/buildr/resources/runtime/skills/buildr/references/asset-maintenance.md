@@ -12,7 +12,7 @@
 - 创建或修复项目（Project）和服务（Service）必须来自用户目标、已有源资产或具体诊断。先用 `buildr assets inspect` 核对当前清单，通过 `buildr help assets` 读取合法输入，再使用 `assets create project`、`assets register project` 与明确的服务（Service）关联。独立项目（Project）资产仓的兼容创建入口仍为 `buildr project create --repo`，具体参数以帮助为准；集成分支（Integration Branch）是稳定目标，不是当前检出分支。
 - `currentBranch`、HEAD、dirty、upstream、ahead/behind 和实际 remote URL 由 doctor/app 实时观察，不写入 Domain；分支偏移可能是合法任务状态，任何 checkout、stash、merge 或 remote 修改前都核对任务、clean 状态、ownership 和授权，不盲目纠正。
 - `projects/manifest.yml` v1 只兼容读取；使用 canonical `buildr sync <agent>` 迁移，不手工编造 UUID 或由页面静默迁移。`buildr web` 可查看 Project/Git 状态并受控修改 `name`、`description`；项目登记及关联可通过全局资产界面维护；Git 克隆仍由智能体根据明确来源执行。
-- Project可以按需维护可选`verification.yml`，只接受closed`buildr.project-verification/v4`测试地图，声明少量稳定测试体系的Project/Service scope、purpose、sourcePaths、testRoots、完整入口、选择指导与环境要求；不复制具体测试清单、Task计划或运行结果。Agent直接调用项目工具执行测试，开发完成后只通过Task Verification Application保存有意义报告。Project也可按需维护可选`preparation.yml`，声明Project-wide或Service-scoped真实准备入口；Agent只在当前动作需要时读取并直接调用，不保存Task Plan或执行状态。初始化、刷新、Project/Service注册、首次Task或专业gap先路由`declaration-intake`做只读发现；已确认入口的普通维护按 `routine-maintenance` 交给声明所有者；新增范围、能力、外部效果或长期边界变化按 `user-decision-required` 取得用户决定。
+- 项目（Project）可按需维护 `verification.yml`，测试建设与登记直接由 `project-testing` 负责；选择、实际执行及报告交给 `project-verification`，不设独立声明接入技能（Skill）。`preparation.yml` 只声明当前项目或服务的真实准备入口，按[准备声明维护](preparation-declarations.md)核对与维护。初始化、项目或服务登记、只读读取和诊断均不自动写入声明；只有已获授权的实际维护才更新长期事实。
 
 ## 遗留 Practices
 

@@ -1,0 +1,68 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import process from 'node:process';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+import { createRuntime, runtimeProvide } from '../../src/bootstrap/runtime.ts';
+import { PROJECT_APPLICATION, SERVICE_APPLICATION, WORKSPACE_APPLICATION } from '../../src/modules/workspace/module.ts';
+import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
+
+const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const buildrEntry: any = path.join(serviceRoot, 'bin/buildr.mjs');
+const smokeRoot: any = process.env.BUILDR_SMOKE_ROOT;
+const workspaceRoot: any = process.env.BUILDR_SMOKE_WORKSPACE_ROOT;
+
+assert.ok(smokeRoot, 'BUILDR_SMOKE_ROOT is required. Use run-isolated-workspace-check.ts.');
+assert.ok(workspaceRoot, 'BUILDR_SMOKE_WORKSPACE_ROOT is required. Use run-isolated-workspace-check.ts.');
+assert.equal(process.env.BUILDR_APP_DATA_DIR, path.join(smokeRoot, 'app-data'));
+assert.equal(process.env.BUILDR_PRODUCT_DATA_DIR, path.join(smokeRoot, 'product-data'));
+
+function runBuildr(args: any): any  {
+  const result: any = spawnSync(process.execPath, [buildrEntry, ...args], {
+    cwd: serviceRoot,
+    encoding: 'utf8',
+    env: process.env,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  return result;
+}
+
+runBuildr(['init', '--target', workspaceRoot, '--name', 'smoke', '--description', 'Isolated Buildr Workspace check.', '--profile', 'team']);
+const catalog = JSON.parse(runBuildr(['assets', 'inspect', '--target', workspaceRoot, '--json']).stdout);
+assert.equal(catalog.migrationRequired, false);
+const input = path.join(smokeRoot, 'project-input.json');
+fs.writeFileSync(input, JSON.stringify({ revision: catalog.revision, code: 'smoke', name: 'Smoke', description: 'Workspace check project.', newServices: [{ code: 'app', name: 'Smoke App', description: 'Workspace check service.', type: 'application', directoryMode: 'create' }] }));
+runBuildr(['assets', 'create', 'project', '--target', workspaceRoot, '--input', input, '--json']);
+
+const runtime: any = createRuntime();
+const workspace: any = runtimeProvide(runtime, WORKSPACE_APPLICATION);
+const project: any = runtimeProvide(runtime, PROJECT_APPLICATION);
+const service: any = runtimeProvide(runtime, SERVICE_APPLICATION);
+const instance: any = createLocalWorkspaceServer(runtime, {
+  targetRoot: workspaceRoot,
+  ensureRegisteredTarget: workspace.ensureRegisteredTarget,
+  resolveRegisteredWorkspace: workspace.resolveRegisteredWorkspace,
+});
+try {
+  const { url, initialWorkspaceId }: any = await instance.ready;
+  const response: any = await fetch(`${url}/api/v1/workspaces`);
+  assert.equal(response.status, 200);
+  const registry: any = await response.json();
+  assert.equal(registry.workspaces.length, 1);
+  assert.equal(registry.workspaces[0].workspace.id, initialWorkspaceId);
+  assert.equal(registry.workspaces[0].rootPath, workspaceRoot);
+  const projects = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/projects`);
+  assert.equal(projects.status, 200);
+  assert.equal((await projects.json()).projects[0].code, 'smoke');
+  assert.equal(project.listProjects(workspaceRoot).projects[0].code, 'smoke');
+  assert.equal(service.listServices(workspaceRoot, 'smoke').services[0].code, 'app');
+  process.stdout.write(`${JSON.stringify({
+    schemaVersion: 'buildr.workspace-smoke-scenario/v1',
+    status: 'passed',
+    workspaceId: initialWorkspaceId,
+  })}\n`);
+} finally {
+  await new Promise((resolve: any, reject: any) => instance.server.close((error: any) => error ? reject(error) : resolve()));
+}

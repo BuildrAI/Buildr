@@ -447,13 +447,13 @@ test('shared background requests coalesce in flight and reuse observations; expl
   await read('repo-1'); assert.equal(scans,4,'unrelated repository keeps its observation');
   await read(); assert.equal(scans,5);
   f.catalog.repositories[0].name = 'Renamed';
-  const renamed = await read(); assert.equal(scans,6); assert.equal(renamed!.body.repositories[0].name,'Renamed');
+  const renamed = await read(); assert.equal(scans,6); assert.ok(renamed && renamed.body && typeof renamed.body === 'object' && 'repositories' in renamed.body && Array.isArray(renamed.body.repositories)); assert.partialDeepStrictEqual(renamed.body.repositories[0], {name:'Renamed'});
   const replaced = f.locations[0] + '-retired';
   fs.renameSync(f.locations[0],replaced); fs.cpSync(replaced,f.locations[0],{recursive:true});
   await read(); assert.equal(scans,7,'directory identity replacement invalidates before notification delivery');
   const before = await f.quiet((await f.observations.watch(f.root)).cursor);
   f.write(0,'external shared change\n'); await f.nextInvalidation(before.cursor);
-  const changed = await read(); assert.equal(scans,8); assert.equal(changed!.body.repositories[0].fileCount,1);
+  const changed = await read(); assert.equal(scans,8); assert.ok(changed && changed.body && typeof changed.body === 'object' && 'repositories' in changed.body && Array.isArray(changed.body.repositories)); assert.partialDeepStrictEqual(changed.body.repositories[0], {fileCount:1});
 });
 
 test('shared reads fence changes during execution, isolate scopes, expire and cancel on owner shutdown', async () => {

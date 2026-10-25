@@ -6,7 +6,7 @@ import integrationProgressReporter, { archifyScenarioTimings, archifyWrapperTimi
 test('Integration failure and completed file diagnostics arrive before the remaining event stream ends', async () => {
   const file = '/workspace/test/integration/http.test.ts';
   let exhausted = false;
-  async function* events(): Promise<any> {
+  async function* events() {
     yield { type: 'test:complete', data: { file, name: 'HTTP read boundary', details: {
       duration_ms: 10.6, passed: false,
       error: { code: 'ERR_TEST_FAILURE', failureType: 'testCodeFailure', cause: { code: 'ERR_ASSERTION' } },
@@ -16,10 +16,13 @@ test('Integration failure and completed file diagnostics arrive before the remai
   }
   const reporter = integrationProgressReporter(events());
   const failed = await reporter.next();
+  assert.equal(failed.done, false);
   assert.match(failed.value, /"name":"HTTP read boundary","status":"failed","durationMs":11/);
+  assert.equal(failed.done, false);
   assert.match(failed.value, /"causeCode":"ERR_ASSERTION"/);
   assert.equal(exhausted, false);
   const completed = await reporter.next();
+  assert.equal(completed.done, false);
   assert.match(completed.value, /"file":"http.test.ts","name":"http.test.ts".*"status":"failed","durationMs":20/);
   assert.equal(exhausted, false);
   assert.equal((await reporter.next()).done, true);
@@ -27,7 +30,7 @@ test('Integration failure and completed file diagnostics arrive before the remai
 
 test('Integration progress keeps only test identity and safe error metadata', async () => {
   const file = '/private/workspace/test/integration/http.test.ts';
-  async function* events(): Promise<any> {
+  async function* events() {
     yield { type: 'test:stderr', data: { file, name: 'HTTP', message: 'secret-process-output' } };
     yield { type: 'test:complete', data: { file, name: 'successful test', details: { duration_ms: 1, passed: true } } };
     yield { type: 'test:complete', data: { file, name: 'HTTP\nread', details: {
@@ -48,7 +51,7 @@ test('Integration progress keeps only test identity and safe error metadata', as
 });
 
 test('Archify timeout diagnostics retain the last fixed scenario phase without copying child output', async () => {
-  async function* events(): Promise<any> {
+  async function* events() {
     yield { type: 'test:complete', data: {
       file: '/workspace/test/integration/archify-component.test.ts', name: 'Archify lifecycle', details: {
         duration_ms: 175_000, passed: false, error: {
@@ -77,7 +80,7 @@ test('Archify timeout diagnostics retain the last fixed scenario phase without c
 });
 
 test('Scenario-looking child output stays private while timeout codes remain observable for other files', async () => {
-  async function* events(): Promise<any> {
+  async function* events() {
     for (const [file, code] of [['other.test.ts', 'ERR_ASSERTION'], ['archify-component.test.ts', 'EPERM']]) {
       yield { type: 'test:complete', data: { file, name: 'read boundary', details: {
         duration_ms: 1, passed: false, error: { code: 'ERR_TEST_FAILURE', cause: {
@@ -101,7 +104,7 @@ test('Archify elapsed and command durations survive the real event shapes as clo
   const message = records.map(record => `[archify-scenario-timing] ${JSON.stringify(record)}`).join('\n');
   const expected = records.map(({ path: _path, stdout: _stdout, ...record }: any) => record);
   assert.deepEqual(archifyScenarioTimings(message), expected);
-  async function* events(): Promise<any> {
+  async function* events() {
     yield { type: 'test:stderr', data: { file: '/private/archify-component.test.ts', message } };
     yield { type: 'test:complete', data: { file: '/private/archify-component.test.ts', name: 'Archify lifecycle', details: {
       passed: false, duration_ms: 175_000, error: { code: 'ERR_TEST_FAILURE', cause: {
@@ -130,7 +133,7 @@ test('Archify timing rejects invalid numbers, roles and phase shapes without adm
   const message = ['[archify-scenario-timing] malformed-secret-output',
     ...invalid.map(record => `[archify-scenario-timing] ${JSON.stringify(record)}`)].join('\n');
   assert.deepEqual(archifyScenarioTimings(message), []);
-  async function* events(): Promise<any> {
+  async function* events() {
     yield { type: 'test:stderr', data: { file: 'archify-component.test.ts', message } };
     yield { type: 'test:stderr', data: { file: 'other.test.ts', message: `[archify-scenario-timing] ${JSON.stringify(valid)}` } };
   }
@@ -147,7 +150,7 @@ test('Archify diagnostics distinguish scenario elapsed time from the actual oute
     + `[archify-wrapper-timing] ${JSON.stringify({ ...wrapper, stderr: 'secret-output' })}`;
   assert.deepEqual(archifyScenarioTimings(message), [phase]);
   assert.deepEqual(archifyWrapperTimings(message), [wrapper]);
-  async function* events(): Promise<any> {
+  async function* events() {
     yield { type: 'test:stderr', data: { file: '/private/archify-component.test.ts', message } };
   }
   let output = '';
@@ -181,7 +184,7 @@ test('failure diagnostics distinguish a real assertion from nested subprocess ti
   current.message = 'ETIMEDOUT secret-too-deep';
   const errors = [cycle, { code: 'ERR_TEST_FAILURE', cause: { code: 'ERR_ASSERTION', message: 'spawnSync /private/secret-node ETIMEDOUT' } },
     { code: 'ERR_TEST_FAILURE', failureType: 'testTimeoutFailure' }, deep, { code: 'ERR_TEST_FAILURE', cause: { code: 'ERR_ASSERTION', message: 'secret-oversized-' + 'x'.repeat(70_000) } }];
-  async function* events(): Promise<any> {
+  async function* events() {
     for (const error of errors) yield { type: 'test:complete', data: { file: '/private/secret-root/fixture.test.ts', name: 'fixed case', details: { duration_ms: 1, passed: false, error } } };
   }
   let output = '';

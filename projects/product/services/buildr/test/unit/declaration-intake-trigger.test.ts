@@ -3,13 +3,13 @@ import test from 'node:test';
 
 import { classifyDeclarationMaintenance, declarationIntakeGapNextAction, declarationIntakeNextAction } from '../../src/infrastructure/contracts/declaration-intake.ts';
 
-test('Declaration Intake trigger稳定表达Project-only与多Service只读边界', () => {
+test('声明指引直接分配建设与准备职责并保持项目范围', () => {
   const projectOnly: any = declarationIntakeNextAction({ trigger: 'first-task-scope', project: 'demo' });
   assert.match(projectOnly, /scope: project:demo/);
   assert.doesNotMatch(projectOnly, /service:demo/);
-  assert.match(projectOnly, /只读检查 preparation\.yml 与 verification\.yml/);
-  assert.match(projectOnly, /routine-maintenance或user-decision-required/);
-  assert.match(projectOnly, /改变长期适用性时请求用户确认/);
+  assert.match(projectOnly, /verification\.yml 直接由 project-testing/);
+  assert.match(projectOnly, /已有授权内普通维护直接完成/);
+  assert.match(projectOnly, /授权缺失或业务取舍反馈用户决定/);
 
   const services: any = declarationIntakeNextAction({ trigger: 'service-registered', project: 'demo', services: ['web', 'api', 'web'] });
   assert.match(services, /project:demo、service:demo\/api、service:demo\/web/);

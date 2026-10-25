@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import test from 'node:test';
+import YAML from 'yaml';
+import { taskVerificationRecoveryAction } from '../../src/modules/task/interfaces/cli/task-verification.ts';
+
+const root = path.resolve(import.meta.dirname, '../..');
+const read = (relative: string) => fs.readFileSync(path.join(root, relative), 'utf8');
+
+test('Task Verification CLI provenance diagnostic points at the retained Product bridge', () => {
+  const action = taskVerificationRecoveryAction('record', '/workspace-without-product-bridge', { code: 'workspace_store_writer_provenance_forbidden', message: 'forbidden', structuredStoreBusiness: true });
+  assert.match(action, /installed或retained Buildr/u);
+  assert.match(action, /不要绕过provenance或重新运行已经完成的测试/u);
+});
+
+test('packaged manifest selects v4 and template is a testing map', () => {
+  const manifest = YAML.parse(read('resources/manifest.yml'));
+  assert.equal(manifest.capabilityContracts.find((item: any) => item.id === 'buildr.task-verification').version, 4);
+  assert.equal(manifest.initialSkillBindings.find((item: any) => item.capability === 'buildr.task-verification').version, 4);
+  const provider = manifest.builtins.skills.find((item: any) => item.id === 'project-verification');
+  assert.deepEqual(provider.provides, [{ capability: 'buildr.task-verification', version: 4 }]);
+  const template = YAML.parse(read('resources/workspace/skills/buildr/project-testing/templates/project-verification.yml'));
+  assert.equal(template.schemaVersion, 'buildr.project-verification/v4');
+  assert.deepEqual(Object.keys(template).sort(), ['schemaVersion', 'testing']);
+});

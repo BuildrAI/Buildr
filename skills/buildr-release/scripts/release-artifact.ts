@@ -16,6 +16,7 @@ const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url
 export const releaseArtifactSchemaVersion: any = 'buildr.release-artifact/v1';
 export const releaseArtifactManifestName: any = 'release-artifact.json';
 export const releasePackMetadataName: any = 'npm-pack.json';
+export const RELEASE_ARTIFACT_METADATA_MAX_BYTES = 32 * 1024 * 1024;
 export const npmInstallationOriginSchemaVersion: any = 'buildr.installation-origin/v2';
 
 function parsePackResult(stdout: any): any  {
@@ -280,7 +281,7 @@ export function createReleaseArtifact(payloadRoot: any, destination: any, option
     const result: any = spawnCommandSync(npmExecutable, ['pack', '--ignore-scripts', '--pack-destination', destination, '--json'], {
       cwd: stagingRoot,
       encoding: 'utf8',
-      maxBuffer: 32 * 1024 * 1024,
+      maxBuffer: RELEASE_ARTIFACT_METADATA_MAX_BYTES,
       env: {
         ...process.env,
         npm_config_cache: path.join(stagingBase, 'npm-cache'),
@@ -317,7 +318,9 @@ export function createReleaseArtifact(payloadRoot: any, destination: any, option
       inventory: normalizedInventory(metadata.files),
     };
     const manifestPath: any = path.join(destination, releaseArtifactManifestName);
-    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+    const manifestText = `${JSON.stringify(manifest, null, 2)}\n`;
+    if (Buffer.byteLength(manifestText) > RELEASE_ARTIFACT_METADATA_MAX_BYTES) throw new Error('Release artifact manifest exceeds the supported metadata limit.');
+    fs.writeFileSync(manifestPath, manifestText, 'utf8');
     return { manifest, manifestPath, packMetadataPath, tarball };
   } finally {
     fs.rmSync(stagingBase, { recursive: true, force: true });

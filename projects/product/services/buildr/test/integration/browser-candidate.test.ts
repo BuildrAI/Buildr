@@ -5,10 +5,31 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import test from 'node:test';
 import { candidateBrowserWebRoot, runCandidateBrowser, resolveCandidateBrowserSource } from '../verification/release/browser-candidate.ts';
+import { executeVerificationCommand } from '../verification/support/process-executor.ts';
 
 const sourceCommit = 'a'.repeat(40);
 const candidate = { tarball: '/frozen/buildr.tgz', manifest: { sourceCommit, sha256: 'b'.repeat(64), applicationPayloadDigest: `sha256-${'c'.repeat(64)}` } };
 const payload = (root: string) => ({ root, layout: 'installed', manifest: { sourceCommit, applicationPayloadDigest: candidate.manifest.applicationPayloadDigest } });
+
+test('Candidate Browser consumes a complete real inventory above the diagnostic log limit', async () => {
+  let bytes = 0;
+  await runCandidateBrowser({ candidate, sourceCommit, verifyPayload: (root: string) => payload(root),
+    async execute(step: any, options: any) {
+      if(step.name !== 'archive-inventory')return {status:'passed',exitCode:0,stdout:'',stderr:''};
+      const result = await executeVerificationCommand({...step, command:{...step.command,argv:[process.execPath,'-e',"process.stdout.write(Array.from({length:6000},(_,i)=>'package/'+i+'/'+'x'.repeat(60)).join('\\n')+'\\n')"]}},options);
+      bytes = Buffer.byteLength(result.stdout);assert.equal(result.stdoutTruncated,false);return result;
+    },
+  });
+  assert.ok(bytes>256*1024,'real package inventory must not be replaced by a truncated diagnostic log');
+});
+
+test('Candidate Browser rejects incomplete inventory before extracting any package', async () => {
+  const calls: string[]=[];
+  await assert.rejects(runCandidateBrowser({candidate,sourceCommit,verifyPayload:()=>assert.fail('incomplete inventory cannot be verified'),
+    execute:async(step:any)=>{calls.push(step.name);return{status:'passed',exitCode:0,stdout:'package/a\n',stderr:'',stdoutTruncated:true};},
+  }),/bounded complete-output limit/);
+  assert.deepEqual(calls,['archive-inventory']);
+});
 
 test('the Browser entry binds the preserved product source while still verifying its repaired checkout', t => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-source-'));
@@ -58,7 +79,7 @@ test('Candidate Browser hosts only the unpacked artifact Web tree and cleans it 
   assert.deepEqual(invocations[0].argv, ['tar', '-tzf', candidate.tarball]);
   assert.deepEqual(invocations[1].argv, ['tar', '-xzf', candidate.tarball, '-C', temporaryRoot]);
   assert.deepEqual(invocations[2].argv.slice(-2), ['--', 'core']);
-  assert.match(invocations[2].argv[1], /run-isolated-workspace-smoke\.ts$/u);
+  assert.match(invocations[2].argv[1], /run-isolated-workspace-check\.ts$/u);
   assert.equal(invocations[2].options.env.BUILDR_BROWSER_WEB_DIST_ROOT, path.join(temporaryRoot, 'package/payload/product/web-dist'));
   assert.equal(fs.existsSync(temporaryRoot), false);
 });

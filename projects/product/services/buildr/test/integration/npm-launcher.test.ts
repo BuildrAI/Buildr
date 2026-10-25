@@ -490,7 +490,7 @@ test('released npm Launcher falls back once from an occupied preferred port whil
     installationIdentity: installed.binding.installationOwnershipIdentity,
   };
   const runtime: any = createRuntime();
-  registerWebInstanceLifecycle(runtime, { readProductIdentity: () => productIdentity, assertNpmLauncherBinding: assertCurrentNpmLauncherBinding, createLocalWorkspaceServer, ensureRegisteredTarget });
+  registerWebInstanceLifecycle(runtime, { readProductIdentity: () => productIdentity, assertNpmLauncherBinding: assertCurrentNpmLauncherBinding, createLocalWorkspaceServer, ensureRegisteredTarget: root => ensureRegisteredTarget(runtime, root) });
   const warnings: any[] = [];
   const originalWarn: any = console.warn;
   console.warn = (message: any) => warnings.push(String(message));
@@ -501,7 +501,7 @@ test('released npm Launcher falls back once from an occupied preferred port whil
   const actualPort: any = Number(new URL(started.url).port);
   assert.notEqual(actualPort, preferred);
   assert.match(warnings.join('\n'), new RegExp(`首选端口 ${preferred} 已被占用`));
-  const receipt: any = JSON.parse(fs.readFileSync(path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json'), 'utf8'));
+  const receipt: any = JSON.parse(fs.readFileSync(path.join(process.env.BUILDR_APP_DATA_DIR!, 'instance.json'), 'utf8'));
   assert.equal(receipt.url, started.url);
   assert.equal(receipt.launcherIdentity.bindingIdentity, installed.binding.bindingIdentity);
   const closed: any = new Promise((resolve: any) => started.server.once('close', resolve));
@@ -511,7 +511,7 @@ test('released npm Launcher falls back once from an occupied preferred port whil
   });
   assert.equal(stopped.status, 202);
   await closed;
-  assert.equal(fs.existsSync(path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json')), false);
+  assert.equal(fs.existsSync(path.join(process.env.BUILDR_APP_DATA_DIR!, 'instance.json')), false);
 
   await assert.rejects(
     () => runtime.startBuildrWeb(['--no-open', '--port', String(preferred)]),
@@ -524,7 +524,7 @@ test('concurrent npm Launchers retry ownership after an old CLI releases its sta
   const installed: any = installNpmLauncher({ registration: value.registration, platform: 'darwin', target: path.join(value.root, 'Applications', 'Buildr Web.app'), port: 0 });
   const productIdentity = productIdentityFor(installed.binding);
   const runtime: any = createRuntime();
-  registerWebInstanceLifecycle(runtime, { readProductIdentity: () => productIdentity, assertNpmLauncherBinding: assertCurrentNpmLauncherBinding, createLocalWorkspaceServer, ensureRegisteredTarget });
+  registerWebInstanceLifecycle(runtime, { readProductIdentity: () => productIdentity, assertNpmLauncherBinding: assertCurrentNpmLauncherBinding, createLocalWorkspaceServer, ensureRegisteredTarget: root => ensureRegisteredTarget(runtime, root) });
   const originalWait = process.env.BUILDR_LAUNCHER_HANDOFF_WAIT_MS;
   process.env.BUILDR_LAUNCHER_HANDOFF_WAIT_MS = '500';
   onFixtureCleanup(t, () => {
@@ -543,7 +543,7 @@ test('concurrent npm Launchers retry ownership after an old CLI releases its sta
   assert.equal(results.filter(result => !result.reused).length, 1);
   assert.equal(results.filter(result => result.reused).length, 1);
   assert.equal(results[0].url, results[1].url);
-  const receipt = JSON.parse(fs.readFileSync(path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json'), 'utf8'));
+  const receipt = JSON.parse(fs.readFileSync(path.join(process.env.BUILDR_APP_DATA_DIR!, 'instance.json'), 'utf8'));
   assert.equal(receipt.launcherIdentity.bindingIdentity, installed.binding.bindingIdentity);
   assert.equal(cli.server.listening, false);
 });
@@ -553,7 +553,7 @@ test('npm Launcher takes over CLI ownership, serializes concurrent opens, reuses
   const target: any = path.join(value.root, 'Applications', 'Buildr Web.app');
   const installed: any = installNpmLauncher({ registration: value.registration, platform: 'darwin', target, port: 0 });
   const entry: any = value.registration.entry.entryPath;
-  const receiptFile: any = path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json');
+  const receiptFile: any = path.join(process.env.BUILDR_APP_DATA_DIR!, 'instance.json');
   const children: any = new Set();
   const launch: any = (args: any) => {
     const child: any = spawnInstalledWeb(entry, args);
@@ -756,13 +756,13 @@ test('npm Launcher preserves foreign ownership and a non-stopping handoff receip
   const productIdentity: any = productIdentityFor(installed.binding);
   const foreignIdentity: any = { ...productIdentity, installationIdentity: `sha256-${'f'.repeat(64)}` };
   const foreignRuntime: any = createRuntime();
-  registerWebInstanceLifecycle(foreignRuntime, { readProductIdentity: () => foreignIdentity, assertNpmLauncherBinding: assertCurrentNpmLauncherBinding, createLocalWorkspaceServer, ensureRegisteredTarget });
+  registerWebInstanceLifecycle(foreignRuntime, { readProductIdentity: () => foreignIdentity, assertNpmLauncherBinding: assertCurrentNpmLauncherBinding, createLocalWorkspaceServer, ensureRegisteredTarget: root => ensureRegisteredTarget(foreignRuntime, root) });
   const foreign: any = await foreignRuntime.startBuildrWeb(['--no-open', '--port', '0']);
   onFixtureCleanup(t, async () => { if (foreign.server.listening) await new Promise<void>(resolve => foreign.server.close(() => resolve())); });
-  const receiptFile: any = path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json');
+  const receiptFile: any = path.join(process.env.BUILDR_APP_DATA_DIR!, 'instance.json');
   const foreignReceipt: any = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
   const currentRuntime: any = createRuntime();
-  registerWebInstanceLifecycle(currentRuntime, { readProductIdentity: () => productIdentity, assertNpmLauncherBinding: assertCurrentNpmLauncherBinding, createLocalWorkspaceServer, ensureRegisteredTarget });
+  registerWebInstanceLifecycle(currentRuntime, { readProductIdentity: () => productIdentity, assertNpmLauncherBinding: assertCurrentNpmLauncherBinding, createLocalWorkspaceServer, ensureRegisteredTarget: root => ensureRegisteredTarget(currentRuntime, root) });
   await assert.rejects(
     () => currentRuntime.startBuildrWeb(['--no-open', '--launcher-binding', installed.bindingPath]),
     (error: any) => error.code === 'launcher_handoff_cli_ownership_conflict',
@@ -805,7 +805,7 @@ test('npm Launcher preserves foreign ownership and a non-stopping handoff receip
 test('non-Windows foreground Web clears its receipt on SIGHUP', async (t: any) => {
   if (process.platform === 'win32') return;
   const value: any = await fixture({ runnable: true });
-  const receiptFile: any = path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json');
+  const receiptFile: any = path.join(process.env.BUILDR_APP_DATA_DIR!, 'instance.json');
   const child: any = spawnInstalledWeb(value.registration.entry.entryPath, ['--no-open', '--port', '0']);
   onFixtureCleanup(t, () => stopFixtureChild(child));
   await waitFor(() => fs.existsSync(receiptFile) ? JSON.parse(fs.readFileSync(receiptFile, 'utf8')).pid === child.pid : false, { message: 'SIGHUP test receipt' });

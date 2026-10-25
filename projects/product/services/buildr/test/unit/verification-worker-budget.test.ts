@@ -55,16 +55,19 @@ test('Context-aware node runner摘要进入稳定timing evidence', () => {
 });
 
 
-test('complete low-cost suites execute through the granted node-test boundary instead of unbounded npm children', () => {
-  for (const [id, local, limited] of [['unit', 4, 3], ['component', 1, 1], ['contract', 2, 2]] as const) {
+test('complete service suites receive and honor the granted worker count', () => {
+  for (const [id, selector, local, limited] of [['unit', 'test/unit/*.test.ts', 4, 3], ['source-contracts', 'test/static/*.test.ts', 2, 2]] as const) {
     const step = verificationSteps.find((item: any) => item.id === id);
-    assert.equal(step.executor.type, 'node-test');
-    assert.deepEqual(step.executor.files, [`test/${id}/*.test.ts`]);
+    assert.equal(step.executor.type, 'command');
+    assert.equal(step.executor.file, process.execPath);
+    assert.ok(step.executor.args.includes('tools/testing/run-service-tests.ts'));
+    assert.ok(step.executor.args.includes(selector));
     assert.equal(step.resourceDemand.workers, local);
-    assert.deepEqual(nodeTestConcurrencyArguments(step, { resourceGrant: { workers: local } }), [`--test-concurrency=${local}`]);
-    assert.deepEqual(nodeTestConcurrencyArguments(step, resolveVerificationExecutionProfile('ci-workspace-limited')), [`--test-concurrency=${limited}`]);
-    assert.deepEqual(nodeTestConcurrencyArguments(step, { resourceGrant: { workers: 1 } }), ['--test-concurrency=1']);
-    assert.ok(step.executor.args.includes('./test/register-development-entry.ts'));
+    for (const [context, workers] of [[{ resourceGrant: { workers: local } }, local], [resolveVerificationExecutionProfile('ci-workspace-limited'), limited], [{ resourceGrant: { workers: 1 } }, 1]] as const) {
+      const environment = workerBudgetEnvironment(step, context);
+      assert.deepEqual(environment, { [VERIFICATION_WORKER_BUDGET_ENV]: String(workers) });
+      assert.equal(resolveVerificationWorkerBudget({ env: environment, fallback: 1, maximum: 1000, label: id }), workers);
+    }
   }
 });
 

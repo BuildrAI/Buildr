@@ -36,10 +36,12 @@ export function verificationFailureFacts({ stdout = '', stderr = '', failureCode
 }
 
 function diagnosticBaseName(step: any): any  {
-  return String(step.diagnosticId ?? step.name ?? 'verification-step')
+  const value = String(step.diagnosticId ?? step.name ?? 'verification-step');
+  const readable = value
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'verification-step';
+  return readable.length <= 140 ? readable : `${readable.slice(0, 120)}-${crypto.createHash('sha256').update(value).digest('hex').slice(0, 16)}`;
 }
 
 export function writeVerificationDiagnostics(step: any, stdout: any, stderr: any): any  {

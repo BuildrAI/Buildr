@@ -191,7 +191,7 @@ export async function runCodexNavigationJourney({t, page, runtime, workspaceRoot
     const scopedPattern = '**/api/v1/workspaces/*/agent-sessions**';
     let release!: () => void, secondRemoved = false, oldSettled = false;
     const held = new Promise<void>(resolve => {release = resolve;});
-    const relations = (taskId: string) => taskId === second && secondRemoved ? [] : [{provider: 'codex', id: 'relation-' + taskId, workspaceId, taskId, connectionId: 'fixture', nativeSessionId: nativeIds[taskId], revision: taskId + '-v1', createdAt: new Date().toISOString(), sessionUrl: 'codex://threads/' + nativeIds[taskId], taskUrl: new URL(workspaceUrl).pathname + '/codex#/tasks/' + taskId}];
+    const relations = (taskId: string) => (taskId !== first && taskId !== second) || taskId === second && secondRemoved ? [] : [{provider: 'codex', id: 'relation-' + taskId, workspaceId, taskId, connectionId: 'fixture', nativeSessionId: nativeIds[taskId], revision: taskId + '-v1', createdAt: new Date().toISOString(), sessionUrl: 'codex://threads/' + nativeIds[taskId], taskUrl: new URL(workspaceUrl).pathname + '/codex#/tasks/' + taskId}];
     const oldFailureUrl = new URL(workspaceUrl).origin + '/api/v1/workspaces/' + workspaceId + '/agent-sessions/unlink';
     expectedBrowserErrors.add(oldFailureUrl);
     const scopedHandler = async (route: any) => {

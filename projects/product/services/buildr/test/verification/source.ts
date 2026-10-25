@@ -10,7 +10,7 @@ import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesyst
 import { assertMinimumNodeVersion } from '../../src/infrastructure/process.ts';
 import { enforceOfflineVerification } from '../../src/infrastructure/network/verification-network-policy.ts';
 import { prepareCandidateEnvironment } from '../../tools/verification/candidate-environment.ts';
-import { createVerificationAdmissionPlan, createVerificationPlan } from './planner.ts';
+import { createVerificationPlan } from './planner.ts';
 import { CANDIDATE_CI_SHARDS, VERIFICATION_PLATFORMS, verificationSteps, resolveVerificationExecutionProfile } from './registry.ts';
 import { collectVerificationSourceIdentity, createVerificationEvidencePaths, writeVerificationTimingEvidence } from './timing/evidence.ts';
 import { inspectVerificationReusePlan } from './verification-reuse.ts';
@@ -69,7 +69,7 @@ export function parseSourceArgs(args: string[]): { help: boolean; json: boolean;
       const ids = value.split(',').map(id => id.trim()).filter(Boolean);
       if (!ids.length || ids.some(id => !/^[a-z0-9][a-z0-9:-]*$/u.test(id))) throw new Error('--invalidate requires comma-separated step ids');
       result.invalidate = ids;
-    } else throw new Error(`Unknown test:source option: ${arg}`);
+    } else throw new Error(`Unknown release source-verification option: ${arg}`);
   }
   if (result.help && args.length !== 1) throw new Error('--help cannot be combined with other arguments');
   return result;
@@ -108,7 +108,7 @@ export function createSourceVerificationPlan(platform: string = process.platform
     && (step.platformScope.kind === 'common' ? scope !== 'platform'
       : scope !== 'common' && step.platformScope.runners.includes(runner))).map((step: any) => step.id) : [];
   const selected = createVerificationPlan({ stepIds });
-  const composed = stepIds.length > 0 && scope !== 'platform' ? createVerificationAdmissionPlan(selected, verificationSteps.filter((step: any) => step.profiles.includes('candidate'))) : selected;
+  const composed = selected;
   const source = sourceOnlyVerificationSteps(composed.steps);
   const ids = new Set(source.steps.map(step => step.id));
   return {
@@ -118,7 +118,6 @@ export function createSourceVerificationPlan(platform: string = process.platform
     status: supported ? composed.status : 'blocked',
     diagnostic: supported ? composed.diagnostic : { code: 'source-runner-not-declared', message: `No Candidate source checks are declared for ${runner}.` },
     stepIds: stepIds.filter(id => ids.has(id)),
-    admissionStepIds: (composed.admissionStepIds ?? []).filter((id: string) => ids.has(id)),
     excludedStepIds: source.excludedStepIds,
     steps: source.steps,
   };
@@ -168,7 +167,7 @@ export function prepareSourceVerificationEnvironment(plan: any, options: any, de
 }
 
 function usage(): void {
-  process.stdout.write('Usage: npm run test:source -- [--scope all|common|platform] [--base <ref>] [--json] [--force] [--round <round-id>] [--output <round-log.json>] [--invalidate <step-id,...>]\n');
+  process.stdout.write('Internal release source verification: node test/verification/source.ts [--scope all|common|platform] [--base <ref>] [--json] [--force] [--round <round-id>] [--output <round-log.json>] [--invalidate <step-id,...>]\n');
 }
 
 if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {

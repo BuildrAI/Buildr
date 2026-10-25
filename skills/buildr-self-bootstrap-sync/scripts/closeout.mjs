@@ -630,6 +630,11 @@ function option(args, name) {
   return value;
 }
 
+/**
+ * @param {{workspaceRoot: string, taskId?: string|null, baseRef: string, deliveredRef: string,
+ * targetBranch: string, remote: string, agent: string, nodeExecutable: string,
+ * resumeSync?: string|null, execute?: typeof defaultExecute, environment?: NodeJS.ProcessEnv}} options
+ */
 export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, baseRef, deliveredRef, targetBranch, remote, agent, nodeExecutable, resumeSync = null, execute = defaultExecute, environment = process.env }) {
   const root = fs.realpathSync(path.resolve(workspaceRoot));
   const phases = [];
@@ -640,6 +645,7 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
   let successor = null;
   let developmentWebRecovery = null;
   const activationIdentity = digest({ baseRef, deliveredRef, targetBranch, remote, agent });
+  /** @param {string} status @param {{code: string, message: string, details: object|null}|null} diagnostic */
   const result = (status, diagnostic = null) => ({ schemaVersion: SELF_BOOTSTRAP_CLOSEOUT_RESULT_SCHEMA, status, taskId, runId: null, delivery: { observed: delivered, ref: deliveredRef, remote, targetBranch }, phases, successor, diagnostic });
   const start = (id) => { active = phase(id); phases.push(active); return active; };
   const read = (args, id) => gitText(execute, root, args, id, active, 'self-bootstrap-closeout.git-observation-failed');

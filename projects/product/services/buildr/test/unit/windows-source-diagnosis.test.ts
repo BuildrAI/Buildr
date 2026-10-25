@@ -10,7 +10,7 @@ const env = { DIAGNOSTIC_SCENARIO: WINDOWS_SOURCE_DIAGNOSIS_SCENARIO, DIAGNOSTIC
 const facts = { head: source, tree, dirty: false };
 const packageKeys = ['BUILDR_CANDIDATE_TARBALL', 'BUILDR_CANDIDATE_PACK_METADATA', 'BUILDR_CANDIDATE_RELEASE_MANIFEST',
   'BUILDR_RELEASE_ARTIFACT_MANIFEST', 'BUILDR_RELEASE_PACKAGE_SPEC'];
-const result = () => ({ id: 'system-app-process', status: 'passed', exitCode: 0, childOutcome: 'passed', childExitCode: 0,
+const result = () => ({ id: 'e2e-app-process', status: 'passed', exitCode: 0, childOutcome: 'passed', childExitCode: 0,
   childSignal: null, durationMs: 12_345, processCleanup: { status: 'clean' } });
 
 test('source diagnosis accepts only full exact clean source identities and its closed scenario', () => {
@@ -33,8 +33,8 @@ test('source diagnosis keeps the one registered owner recipe and its original bu
   const plan = createWindowsSourceDiagnosisPlan(WINDOWS_SOURCE_DIAGNOSIS_SCENARIO);
   const original = createCandidateCiShardPlan('runtime-source-macos', { externalArtifact: false });
   assert.equal(plan.status, 'ready');
-  assert.deepEqual(plan.primaryStepIds, ['system-app-process']);
-  const registered = original.steps.filter((step: any) => step.id === 'system-app-process');
+  assert.deepEqual(plan.primaryStepIds, ['e2e-app-process']);
+  const registered = original.steps.filter((step: any) => step.id === 'e2e-app-process');
   assert.deepEqual(plan.steps, registered.map((step: any) => ({ ...step, executor: { ...step.executor,
     args: step.executor.args.map((arg: string) => arg === '--test-reporter=dot' ? '--test-reporter=tap' : arg),
   } })));
@@ -49,17 +49,17 @@ test('Windows file diagnosis selects only its native source owner and cannot cou
   const nativeEnv = { ...env, DIAGNOSTIC_SCENARIO: 'readonly-files-windows' };
   assert.doesNotThrow(() => validateWindowsSourceDiagnosis(nativeEnv, facts));
   const plan = createWindowsSourceDiagnosisPlan(nativeEnv.DIAGNOSTIC_SCENARIO);
-  assert.deepEqual(plan.primaryStepIds, ['system-windows-platform']);
-  assert.deepEqual(plan.steps.map((step: any) => step.id), ['system-windows-platform']);
+  assert.deepEqual(plan.primaryStepIds, ['integration-windows-native']);
+  assert.deepEqual(plan.steps.map((step: any) => step.id), ['integration-windows-native']);
   assert.ok(plan.steps[0].executor.args.includes('--test-reporter=tap'));
-  assert.ok(createVerificationPlan({ stepIds: ['system-windows-platform'] }).steps
-    .find((step: any) => step.id === 'system-windows-platform').executor.args.includes('--test-reporter=dot'));
+  assert.ok(createVerificationPlan({ stepIds: ['integration-windows-native'] }).steps
+    .find((step: any) => step.id === 'integration-windows-native').executor.args.includes('--test-reporter=dot'));
   assert.ok(plan.steps.every((step: any) => !step.executor.consumesArtifact && step.executor.type !== 'candidate-artifact'));
   const summary = await runWindowsSourceDiagnosis({ env: nativeEnv }, {
     platform: 'win32', readGitFacts: () => facts, writeSummary: () => {},
     execute: async (_plan, options) => {
       assert.equal(options.reuse, false);
-      const completed = { ...result(), id: 'system-windows-platform' };
+      const completed = { ...result(), id: 'integration-windows-native' };
       options.onComplete(completed);
       return { passed: true, results: [completed] };
     },
@@ -76,7 +76,7 @@ test('fresh source diagnosis masks every inherited package input and retains act
     platform: 'win32', readGitFacts: () => { sourceReads++; return facts; },
     writeSummary: (_directory, value) => saved.push(structuredClone(value)),
     execute: async (plan, options) => {
-      assert.deepEqual(plan.steps.map((step: any) => step.id), ['system-app-process']);
+      assert.deepEqual(plan.steps.map((step: any) => step.id), ['e2e-app-process']);
       assert.equal(options.reuse, false); assert.equal(options.executionProfile.id, 'ci-workspace-limited');
       assert.equal(options.concurrency, options.executionProfile.limits); assert.equal(Object.hasOwn(options, 'artifactDirectory'), false);
       for (const key of packageKeys) {

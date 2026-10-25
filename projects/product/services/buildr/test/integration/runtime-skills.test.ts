@@ -155,8 +155,8 @@ test('runtime ownership receipt stale 诊断列出具体文件差异', (t: any) 
 
 test('render 参数解析拒绝未知和缺失参数', (t: any) => {
   t.mock.method(console, 'error', () => {});
-  assert.deepEqual(parseRenderClaudeCodeArgs(['--scope', '.', '--target', 'tmp']), { scope: '.', target: 'tmp' });
-  assert.deepEqual(parseInstallClaudeCodeBuildrSkillArgs(['--target', 'tmp']), { target: 'tmp' });
+  assert.deepEqual(parseRenderClaudeCodeArgs(['--scope', '.', '--target', 'tmp'], 'buildr render'), { scope: '.', target: 'tmp' });
+  assert.deepEqual(parseInstallClaudeCodeBuildrSkillArgs(['--target', 'tmp'], 'buildr install'), { target: 'tmp' });
   assert.throws(() => parseRenderClaudeCodeArgs(['--scope', '.'], 'buildr render'), /Missing required arguments/);
   assert.throws(() => parseRenderClaudeCodeArgs(['--scope', '.', '--target', 'tmp', '--extra'], 'buildr render'), /Unknown argument/);
 });
@@ -391,7 +391,7 @@ test('完整 Skill 投射拒绝 source symlink 与已修改受管资源', (t: an
 });
 
 test('adapter 明确声明 user/workspace destination 与 partial inventory evidence', () => {
-  for (const adapter of Object.values(RUNTIME_ADAPTERS)) {
+  for (const adapter of Object.keys(RUNTIME_ADAPTERS).map(id => RUNTIME_ADAPTERS[id])) {
     const destinations: any = adapter.traits.skills.destinations;
     assert.equal(destinations.workspace.supported, true);
     assert.equal(destinations.user.supported, true);

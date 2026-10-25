@@ -108,7 +108,7 @@ test('project source rebind and replacement of the source directory reject an ol
 
 test('the explicit selected worktree remains independent from the registered main directory', t => {
   const f = fixture(t), checkout = path.join(f.temporary, 'candidate'); f.git('worktree', 'add', '--detach', checkout, 'HEAD');
-  const selector: EditorFileSelector = { ...f.code(), checkoutId: gitCheckoutReadId(checkout) };
+  const selector: EditorFileSelector = { ...f.code() as Extract<EditorFileSelector, { kind: 'code' }>, checkoutId: gitCheckoutReadId(checkout) };
   const main = f.app.editorFile(f.root, f.code()), candidate = f.app.editorFile(f.root, selector);
   assert.notEqual(main.fileId, candidate.fileId); assert.equal(candidate.rootPath, fs.realpathSync(checkout));
   f.app.saveFile(f.root, f.input(selector, 'candidate only\n'));
@@ -224,8 +224,8 @@ test('HTTP validates both selectors, applies session authorization before parsin
   const request = { request: { method: 'POST' }, suffix: '/code/save-file', searchParams: new URLSearchParams(), root: f.root, readJsonBody: async (maxBytes?: number) => { parsed = true; limit = maxBytes; return f.input(f.project(), 'saved\n'); } };
   await assert.rejects(http.handle(request), errorCode('file_write_unauthorized')); assert.equal(parsed, false);
   await assert.rejects(http.handle({ ...request, authorizeWrite: () => { throw Object.assign(new Error('unauthorized'), { code: 'session_test' }); } }), errorCode('session_test')); assert.equal(parsed, false);
-  const saved = await http.handle({ ...request, authorizeWrite: () => {} }); assert.equal(saved?.body.content, 'saved\n'); assert.equal(limit, EDITABLE_FILE_JSON_BYTES);
-  for (const values of [{ kind: 'code', repositoryId: 'repo', filePath: 'README.md' }, { kind: 'project', projectCode: 'product', repositoryId: 'repo', filePath: 'README.md' }]) await assert.rejects(http.handle({ request: { method: 'GET' }, suffix: '/code/editor-file', searchParams: new URLSearchParams(values), root: f.root }), errorCode('file_query_invalid'));
+  const saved = await http.handle({ ...request, authorizeWrite: () => {} }); assert.partialDeepStrictEqual(saved, { body: { content: 'saved\n' } }); assert.equal(limit, EDITABLE_FILE_JSON_BYTES);
+  for (const values of ([{ kind: 'code', repositoryId: 'repo', filePath: 'README.md' }, { kind: 'project', projectCode: 'product', repositoryId: 'repo', filePath: 'README.md' }] as Record<string, string>[])) await assert.rejects(http.handle({ request: { method: 'GET' }, suffix: '/code/editor-file', searchParams: new URLSearchParams(values), root: f.root }), errorCode('file_query_invalid'));
 });
 
 test('real HTTP reads through the bounded worker, saves escaped large UTF-8, reports conflicts and preserves project images', { timeout: 30_000 }, async t => {

@@ -69,7 +69,7 @@ export async function buildComposition(args: string[]): Promise<{ output: string
     delete original.scripts; delete original.devDependencies; delete original.dependencies;
     original.peerDependencies = normalizeDshHostPeers({ ...original.peerDependencies, '@deepseek-ai/cordis': '4.0.4' });
     await writeFile(path.join(output, directory, 'package.json'), JSON.stringify(original, null, 2) + '\n');
-    await cp(path.join(sdk, 'LICENSE'), path.join(output, directory, 'LICENSE'));
+    await cp(path.join(sdk!, 'LICENSE'), path.join(output, directory, 'LICENSE'));
   }
   await copyClient(trajectorySource, trajectoryDirectory);
   const clients: Array<{ entryId: string; name: string; directory: string }> = [];
