@@ -156,8 +156,8 @@ jobs:
           base="${{ github.event.pull_request.base.sha || github.event.before }}"
           if [[ -z "$base" || "$base" =~ ^0+$ ]]; then base="$(git rev-parse HEAD^)"; fi
           echo "sha=$base" >> "$GITHUB_OUTPUT"
-      - name: Install product dependencies
-        run: npm ci
+      - name: Prepare product source dependencies
+        run: node tools/verification/candidate-environment.ts prepare --profile base
       - name: Plan affected service dependencies
         id: services
         shell: bash
@@ -273,9 +273,9 @@ jobs:
         run: |
           node --input-type=module -e 'import fs from "node:fs"; import {collectChangedProductPaths} from "./test/verification/changed-paths.ts"; import {createDevelopmentPlatformPlan} from "./test/verification/planner.ts"; const changed=collectChangedProductPaths({productRoot:process.cwd(),projectRoot:"../..",base:process.argv[1]}); fs.writeFileSync(process.argv[2],JSON.stringify(createDevelopmentPlatformPlan({runner:"windows",paths:changed.paths})));' "${{ steps.base.outputs.sha }}" "${RUNNER_TEMP}/development-windows-plan.json"
           node -e 'const fs = require("node:fs"); const plan = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); fs.appendFileSync(process.env.GITHUB_OUTPUT, "selected=" + (plan.steps.length > 0) + "\n");' "${RUNNER_TEMP}/development-windows-plan.json"
-      - name: Install product dependencies
+      - name: Prepare product source dependencies
         if: steps.windows-plan.outputs.selected == 'true'
-        run: npm ci
+        run: node tools/verification/candidate-environment.ts prepare --profile base
       - name: Verify Windows platform-sensitive product scope
         continue-on-error: true
         if: steps.windows-plan.outputs.selected == 'true'
@@ -314,8 +314,8 @@ jobs:
           node-version: '24.x'
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
-      - name: Install product dependencies
-        run: npm ci
+      - name: Prepare product source dependencies
+        run: node tools/verification/candidate-environment.ts prepare --profile base
       - name: Run all Windows-native source checks
         env:
           BUILDR_TIMING_OUTPUT: ${{ runner.temp }}/windows-source-timing.json

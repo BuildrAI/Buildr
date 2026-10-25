@@ -474,6 +474,12 @@ test('CI and publish workflows use the supported Node runtime', () => {
   assert.equal(explicitWindows.if, "github.event_name == 'workflow_dispatch' && inputs.diagnostic_scope == 'development-windows'");
   assert.equal(explicitWindows['runs-on'], 'windows-latest');
   assert.equal(explicitWindows.needs, undefined, 'explicit Windows source checks do not need a release candidate');
+  for (const id of ['dev-feedback-macos', 'dev-feedback-windows', 'development-windows']) {
+    const job = verifyDocument.jobs[id];
+    const preparation = job.steps.findIndex((step: {run?: string}) => step.run === 'node tools/verification/candidate-environment.ts prepare --profile base');
+    assert.ok(preparation >= 0, id + ' prepares the private agent before the product postinstall');
+    assert.equal(job.steps.some((step: {name?: string; run?: string}) => step.name === 'Install product dependencies' && step.run === 'npm ci'), false);
+  }
   const sourceCheck = explicitWindows.steps.find((step: {run?: string}) => step.run === 'npm run test:related -- --check integration-windows-native');
   assert.ok(sourceCheck, 'the explicit request always executes the complete Windows-native owner');
   assert.notEqual(sourceCheck['continue-on-error'], true);
