@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { createRuntime } from './runtime-harness.ts';
+import { ensurePackageResources } from '../../src/infrastructure/product-resources/shared-resources.ts';
 import { useLegacyAssetCatalog } from './legacy-asset-catalog.ts';
 import { repositoryClonesIdle } from '../../src/modules/workspace/infrastructure/repository-clone-supervisor.ts';
 
@@ -11,6 +12,8 @@ import {
 } from '../context/profiles.ts';
 
 function acquire(t: any, key: any, name: any): any  {
+  // Inherited workspace bytes do not initialize this worker's isolated product store.
+  if (key === WORKSPACE_FOUNDATION_CONTEXT_KEY || key === PROJECT_FOUNDATION_CONTEXT_KEY) ensurePackageResources();
   const lease: any = defaultTestContextPool().acquire(key, { name });
   // Registered in order: in-flight repository clones settle before the sandbox is removed.
   t.after(async () => { await repositoryClonesIdle(); });

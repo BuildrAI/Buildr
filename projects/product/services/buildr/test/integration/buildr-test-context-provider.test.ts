@@ -140,3 +140,35 @@ test('Prepared Git repositories expose independent remotes and working clones', 
     pool.cleanup();
   }
 });
+
+
+test('inherited Project fixtures prepare shared resources in the consuming worker', () => {
+  const provider = createProjectFoundationContextProvider();
+  const pool = createTestContextPool({ providers: [provider], env: {} });
+  try {
+    const prepared = pool.prepare(provider.key);
+    const helper = new URL('../helpers/prepared-fixtures.ts', import.meta.url).href;
+    const runtime = new URL('../helpers/runtime-harness.ts', import.meta.url).href;
+    const program = `
+      import fs from 'node:fs';
+      import path from 'node:path';
+      import assert from 'node:assert/strict';
+      import {copyPreparedProjectWorkspace} from ${JSON.stringify(helper)};
+      import {createRuntime} from ${JSON.stringify(runtime)};
+      const descriptor=path.join(process.env.BUILDR_PRODUCT_DATA_DIR,'resources/resource-set.json');
+      assert.equal(fs.existsSync(descriptor),false,'worker begins without coordinator resources');
+      const cleanup=[];
+      try {
+        const fixture=copyPreparedProjectWorkspace({after(callback){cleanup.push(callback);}},'inherited-resource-consumer');
+        assert.equal(fixture.context.root,${JSON.stringify(prepared.contextRoot)},'reuse the inherited seed rather than initialize a new workspace');
+        const candidates=createRuntime().skillRegistrationCandidates(fixture.root);
+        assert.equal(typeof candidates.revision,'string');
+        assert.equal(fs.existsSync(descriptor),true,'the consumer owns its required shared resources');
+      } finally {for(const callback of cleanup)await callback();}
+    `;
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', program], {
+      cwd: process.cwd(), env: { ...process.env, ...pool.environment() }, encoding: 'utf8', timeout: 30_000,
+    });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+  } finally { pool.cleanup(); }
+});
