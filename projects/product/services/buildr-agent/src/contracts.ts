@@ -97,6 +97,7 @@ export interface ExecutorSendInput {
   images: ExecutorImage[];
   model?: string;
   reasoningEffort?: string;
+  serviceTier?: string;
   permissionMode?: PermissionMode;
   clientRequestId: string;
   onEvent(event: ExecutorEvent): void;
@@ -203,6 +204,7 @@ export interface RunView {
   tools: ExecutorObservation['tools'];
   model?: string;
   reasoningEffort?: string;
+  serviceTier?: string;
   permissionMode?: PermissionMode;
   diagnostic?: string;
   startedAt: string;
@@ -238,6 +240,7 @@ export interface SendDraft {
   text: string;
   model?: string;
   reasoningEffort?: string;
+  serviceTier?: string;
   permissionMode?: PermissionMode;
   attachmentIds?: string[];
   /** Explicit user-authored replacement for the selected history range. */
@@ -251,6 +254,7 @@ export interface SendPreview {
   connectionId: string;
   model?: string;
   reasoningEffort?: string;
+  serviceTier?: string;
   permissionMode: PermissionMode;
   participantId?: string;
   cwd: string;

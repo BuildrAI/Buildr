@@ -15,7 +15,7 @@ test('linked sources are discovered once without adding accounts, native login, 
  const service=createAgentService({dataRoot:root,executors,resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
  try{
   for(const id of ['codex','dsh','qoder'])await service.connections.connect(id,{expectedRevision:'unconfigured'});
-  const catalog=await service.models.catalog.list();assert.equal(catalog.models.length,3);assert.ok(catalog.models.every(m=>m.available));
+  const catalog=await service.models.catalog.list();assert.equal(catalog.models.length,3);assert.ok(catalog.models.every(m=>m.enabled===false&&!m.available));
   const first=(await service.models.accounts.list()).accounts;assert.deepEqual(first.map(a=>a.connectionId),['codex','dsh','qoder']);assert.equal(requests,4);
   await service.models.catalog.list();assert.equal(requests,4);
   const qoder=service.connections.read('qoder');await service.connections.disconnect('qoder',{expectedRevision:qoder.revision});
@@ -28,6 +28,7 @@ test('native identity changes and disconnect invalidate scoped leases while old 
  const provider={id:'native-codex',label:'Codex',connectionId:'codex',async open(){return{protocol:'chat-completions' as const,inspect:async()=>({status:'ready' as const,identity,models:[offering]}),beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>Response.json({}),close:async()=>{}};}};
  const app=createModelAccess({root,providers:[provider]});try{
   await app.ensureLinked();await app.ensureLinked();assert.equal(app.accounts.list().accounts.length,1);await assert.rejects(app.accounts.add({provider:provider.id}));await app.accounts.check(provider.id);await assert.rejects(app.accounts.login(provider.id,{expectedRevision:app.accounts.read(provider.id).revision}),/原生登录/);
+  await app.accounts.preferences(provider.id,{expectedRevision:app.accounts.read(provider.id).revision,models:[{id:'model',enabled:true}]});
   const lease=await app.leases.create({accountId:provider.id,agentId:'dsh',conversationId:'a',runId:'a',modelId:'model'});identity='b';await app.accounts.check(provider.id);
   assert.equal((await fetch(lease.baseUrl+'/models',{headers:{authorization:'Bearer '+lease.apiKey}})).status,401);
   const next=await app.leases.create({accountId:provider.id,agentId:'dsh',conversationId:'a',runId:'b',modelId:'model'});app.invalidate(provider.id);assert.equal((await fetch(next.baseUrl+'/models',{headers:{authorization:'Bearer '+next.apiKey}})).status,401);

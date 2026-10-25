@@ -20,9 +20,9 @@ test('private metadata survives restart; stale account writes and unbound models
   const source=provider(async()=>{called++;return chat({content:'ok'});});
   let access=createModelAccess({root,providers:[source]});
   try {
-    const added=await access.accounts.add({provider:'fixture'});const ready=await access.accounts.check(added.id,{expectedRevision:added.revision});
+    const added=await access.accounts.add({provider:'fixture'});const ready=await checkEnabled(access,added.id,{expectedRevision:added.revision});
     assert.equal(ready.status,'ready');assert.equal(ready.quota?.available,false);assert.equal(access.catalog.list().models[0].accountId,added.id);
-    await assert.rejects(access.accounts.check(added.id,{expectedRevision:added.revision}),/已变化/);
+    await assert.rejects(checkEnabled(access,added.id,{expectedRevision:added.revision}),/已变化/);
     const input={accountId:ready.id,modelId:model.id,agentId:'codex',conversationId:'conversation-a',runId:'run-a'};
     const lease=await access.leases.create(input),same=await access.leases.create({...input,runId:'run-b'});assert.equal(lease.identity,same.identity);assert.equal(lease.apiKey,same.apiKey);
     const headers={'Authorization':'Bearer '+lease.apiKey,'Content-Type':'application/json'};
@@ -52,7 +52,7 @@ test('Responses tool output returns to the exact source call; signed reasoning i
   const source=provider(async input=>{inputs.push(input);return chat({content:'before',reasoning_content:'private reasoning',reasoning_signature:'signed-by-source',tool_calls:[{id:'call-source',type:'function',function:{name:'read_file',arguments:'{"path":"a.txt"}'}}]});});
   const access=createModelAccess({root,providers:[source]});
   try {
-    const added=await access.accounts.add({provider:'fixture'}),ready=await access.accounts.check(added.id);const lease=await access.leases.create({accountId:ready.id,modelId:model.id,agentId:'codex',conversationId:'a',runId:'1'});
+    const added=await access.accounts.add({provider:'fixture'}),ready=await checkEnabled(access,added.id);const lease=await access.leases.create({accountId:ready.id,modelId:model.id,agentId:'codex',conversationId:'a',runId:'1'});
     const request=async(body:ProtocolJson,key=lease.apiKey)=>await fetch(lease.baseUrl+'/responses',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:JSON.stringify({model:lease.model,...body})});
     const response=await (await request({input:'read'})).json();const reasoning=response.output.find((item:ProtocolJson)=>item.type==='reasoning');assert.ok(reasoning.encrypted_content.startsWith('buildr-v1.'));assert.ok(!reasoning.encrypted_content.includes('private reasoning'));
     const tool=response.output.find((item:ProtocolJson)=>item.type==='function_call');assert.equal(tool.call_id,'call-source');
@@ -90,14 +90,14 @@ test('disconnect aborts only its owned inference and revokes its local credentia
   const root=await mkdtemp(join(tmpdir(),'buildr-model-cancel-'));let aborted=false;
   const source=provider(async input=>new Response(new ReadableStream({start(controller){controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"started"}}]}\n\n'));input.signal.addEventListener('abort',()=>{aborted=true;controller.close();},{once:true});}}),{headers:{'Content-Type':'text/event-stream'}}));
   const access=createModelAccess({root,providers:[source]});
-  try {const added=await access.accounts.add({provider:'fixture'}),ready=await access.accounts.check(added.id),lease=await access.leases.create({accountId:ready.id,modelId:model.id,agentId:'qoder',conversationId:'a',runId:'1'});const response=await fetch(lease.baseUrl+'/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+lease.apiKey,'Content-Type':'application/json'},body:JSON.stringify({model:lease.model,messages:[],stream:true})});const reader=response.body!.getReader();await reader.read();await access.accounts.disconnect(ready.id,{expectedRevision:ready.revision});assert.equal(aborted,true);await reader.cancel().catch(()=>{});assert.equal((await fetch(lease.baseUrl+'/models',{headers:{Authorization:'Bearer '+lease.apiKey}})).status,401);} finally {await access.close();await rm(root,{recursive:true,force:true});}
+  try {const added=await access.accounts.add({provider:'fixture'}),ready=await checkEnabled(access,added.id),lease=await access.leases.create({accountId:ready.id,modelId:model.id,agentId:'qoder',conversationId:'a',runId:'1'});const response=await fetch(lease.baseUrl+'/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+lease.apiKey,'Content-Type':'application/json'},body:JSON.stringify({model:lease.model,messages:[],stream:true})});const reader=response.body!.getReader();await reader.read();await access.accounts.disconnect(ready.id,{expectedRevision:ready.revision});assert.equal(aborted,true);await reader.cancel().catch(()=>{});assert.equal((await fetch(lease.baseUrl+'/models',{headers:{Authorization:'Bearer '+lease.apiKey}})).status,401);} finally {await access.close();await rm(root,{recursive:true,force:true});}
 });
 
 test('new login rotates credential generation and rejects the previous source binding',async()=>{
   const root=await mkdtemp(join(tmpdir(),'buildr-model-generation-'));const access=createModelAccess({root,providers:[provider(async()=>chat({content:'ok'}))]});
-  try {const row=await access.accounts.add({provider:'fixture'}),ready=await access.accounts.check(row.id);const input={accountId:row.id,modelId:model.id,agentId:'codex',conversationId:'a',runId:'1',expectedIdentity:ready.identity};const lease=await access.leases.create(input);
+  try {const row=await access.accounts.add({provider:'fixture'}),ready=await checkEnabled(access,row.id);const input={accountId:row.id,modelId:model.id,agentId:'codex',conversationId:'a',runId:'1',expectedIdentity:ready.identity};const lease=await access.leases.create(input);
     const login=await access.accounts.login(row.id,{expectedRevision:ready.revision});assert.notEqual(login.identity,ready.identity);
-    await access.accounts.check(row.id);
+    await checkEnabled(access,row.id);
     await assert.rejects(access.leases.create(input),/来源已变化/);
     assert.equal((await fetch(lease.baseUrl+'/models',{headers:{Authorization:'Bearer '+lease.apiKey}})).status,401);
     const fresh=await access.leases.create({...input,expectedIdentity:login.identity});assert.notEqual(fresh.identity,lease.identity);
@@ -106,7 +106,7 @@ test('new login rotates credential generation and rejects the previous source bi
 
 test('disconnect and reconnect create a new access generation without accepting cached credentials',async()=>{
   const root=await mkdtemp(join(tmpdir(),'buildr-model-reconnect-'));const access=createModelAccess({root,providers:[provider(async()=>chat({content:'ok'}))]});
-  try{const added=await access.accounts.add({provider:'fixture'}),ready=await access.accounts.check(added.id);const input={accountId:added.id,modelId:model.id,agentId:'dsh',conversationId:'a',runId:'1'};const old=await access.leases.create({...input,expectedIdentity:ready.identity});const disconnected=await access.accounts.disconnect(added.id,{expectedRevision:ready.revision});assert.notEqual(disconnected.identity,ready.identity);const restored=await access.accounts.check(added.id,{expectedRevision:disconnected.revision});assert.equal(restored.status,'ready');const fresh=await access.leases.create({...input,expectedIdentity:restored.identity});assert.notEqual(fresh.identity,old.identity);assert.notEqual(fresh.apiKey,old.apiKey);await assert.rejects(access.leases.create({...input,expectedIdentity:ready.identity}),/来源已变化/);assert.equal((await fetch(old.baseUrl+'/models',{headers:{Authorization:'Bearer '+old.apiKey}})).status,401);}finally{await access.close();await rm(root,{recursive:true,force:true});}
+  try{const added=await access.accounts.add({provider:'fixture'}),ready=await checkEnabled(access,added.id);const input={accountId:added.id,modelId:model.id,agentId:'dsh',conversationId:'a',runId:'1'};const old=await access.leases.create({...input,expectedIdentity:ready.identity});const disconnected=await access.accounts.disconnect(added.id,{expectedRevision:ready.revision});assert.notEqual(disconnected.identity,ready.identity);const restored=await checkEnabled(access,added.id,{expectedRevision:disconnected.revision});assert.equal(restored.status,'ready');const fresh=await access.leases.create({...input,expectedIdentity:restored.identity});assert.notEqual(fresh.identity,old.identity);assert.notEqual(fresh.apiKey,old.apiKey);await assert.rejects(access.leases.create({...input,expectedIdentity:ready.identity}),/来源已变化/);assert.equal((await fetch(old.baseUrl+'/models',{headers:{Authorization:'Bearer '+old.apiKey}})).status,401);}finally{await access.close();await rm(root,{recursive:true,force:true});}
 });
 
 test('Messages cross-protocol stream closes each content block before opening the next',async()=>{
@@ -153,3 +153,5 @@ test('login remains checking until model discovery completes and cancelled disco
     } finally {release();await access.close();await rm(root,{recursive:true,force:true});}
   }
 });
+
+async function checkEnabled(application:any,id:string,input:any={}){const row=await application.accounts.check(id,input);const disabled=row.models.filter((model:any)=>model.enabled===false);return disabled.length?await application.accounts.preferences(id,{expectedRevision:row.revision,models:disabled.map((model:any)=>({id:model.id,enabled:true}))}):row;}

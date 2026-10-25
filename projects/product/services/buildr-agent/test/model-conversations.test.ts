@@ -18,7 +18,7 @@ test('a prepared executor without its own model login uses the selected account,
   try{
     const native=await service.connections.connect('local',{expectedRevision:'unconfigured'});assert.equal(native.status,'not-authenticated');
     const first=await service.models.accounts.add({provider:'fixture'}),second=await service.models.accounts.add({provider:'fixture'});
-    await service.models.accounts.check(first.id);await service.models.accounts.check(second.id);
+    for(const account of [first,second]){const checked=await service.models.accounts.check(account.id);await service.models.accounts.preferences(account.id,{expectedRevision:checked.revision,models:checked.models.map(model=>({id:model.id,enabled:true}))});}
     const conversation=await service.conversations.create('workspace',{});
     for(const account of [first,second,first]){
       const view=service.conversations.read('workspace',conversation.id);
@@ -33,5 +33,14 @@ test('a prepared executor without its own model login uses the selected account,
     const final=service.conversations.read('workspace',conversation.id);assert.equal(final.participants.length,2);assert.equal(final.run?.modelAccountId,first.id);assert.equal(contexts.size,2);
     assert.equal(opens.filter(input=>input.gateway).length,2);assert.ok(opens.filter(input=>input.gateway).every(input=>input.configRoot.includes('model-bindings')));
     assert.equal(JSON.stringify(final).includes('apiKey'),false);
+    const account=service.models.accounts.read(first.id);
+    const adjusted=await service.models.accounts.preferences(first.id,{expectedRevision:account.revision,models:[{id:'same-model',contextWindow:128000}]});
+    const current=service.conversations.read('workspace',conversation.id),next={expectedRevision:current.revision,connectionId:'local',modelAccountId:first.id,model:'same-model',text:'use adjusted context'};
+    const preview=service.conversations.prepareSend('workspace',current.id,next);assert.equal(preview.participantId,undefined);
+    service.conversations.send('workspace',current.id,{...next,previewToken:preview.token,clientRequestId:randomUUID()});
+    for(let i=0;i<200&&service.conversations.read('workspace',current.id).run?.status!=='completed';i++)await new Promise(resolve=>setTimeout(resolve,5));
+    assert.equal(service.conversations.read('workspace',current.id).run?.status,'completed');assert.equal(contexts.size,3);assert.equal(opens.filter(input=>input.gateway).at(-1)!.gateway!.models[0].contextWindow,128000);
+    await service.models.accounts.preferences(first.id,{expectedRevision:adjusted.revision,models:[{id:'same-model',enabled:false}]});
+    assert.throws(()=>service.conversations.prepareSend('workspace',current.id,{...next,expectedRevision:service.conversations.read('workspace',current.id).revision}),/已停用/);
   }finally{await service.close();rmSync(root,{recursive:true,force:true});}
 });

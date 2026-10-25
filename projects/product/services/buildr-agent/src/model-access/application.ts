@@ -5,19 +5,22 @@ import { join } from 'node:path';
 import { once } from 'node:events';
 import { lstatSync, readFileSync } from 'node:fs';
 import { ModelAccessError, type CatalogModel, type ModelAccessOptions, type ModelAccountView, type ModelGatewayLease, type ModelLeaseInput, type ModelProtocol, type ModelProviderRuntime, type ProtocolJson } from './contracts.ts';
+import { effectiveModel, selectedOffering, modelConfiguration } from './model-preferences.ts';
+import type {ModelPreference,ModelPreferenceUpdate} from './contracts.ts';
 import { translateRequest, translateResponse, type OpaqueReasoning } from './protocols.ts';
 
 const object = (value: unknown): ProtocolJson => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as ProtocolJson : {};
 const safeId = (value: string) => /^[a-zA-Z0-9_-]{1,100}$/.test(value);
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 function conflict(actual: string, expected: string | undefined) { if (expected !== undefined && expected !== actual) throw new ModelAccessError('model_revision_conflict', '模型账号已变化，请刷新后重试。'); }
-interface Stored { version: 1; accounts: ModelAccountView[] }
+interface Stored { version: 1; accounts: ModelAccountView[]; preferences?:Record<string,Record<string,ModelPreference>> }
 interface LeaseRecord { view: ModelGatewayLease; input: ModelLeaseInput; tokenHash: string; requests: Set<AbortController> }
 
 /** Owns metadata and local routes. Upstream credentials stay inside provider runtimes. */
 export class ModelAccessApplication {
   private readonly providers: Map<string, ModelAccessOptions['providers'][number]>;
   private readonly rows = new Map<string, ModelAccountView>();
+  private readonly preferences = new Map<string,Record<string,ModelPreference>>();
   private readonly runtimes = new Map<string, Promise<ModelProviderRuntime>>();
   private readonly urls = new Map<string, { attemptId: string; url: string }>();
   private readonly leasesByToken = new Map<string, LeaseRecord>();
@@ -58,7 +61,10 @@ export class ModelAccessApplication {
         if(!view.identity) view.identity = digest('legacy-account:'+view.id);
         if(view.loginAttempt) delete view.loginAttempt.url;
         if (view.loginAttempt && ['initializing', 'waiting-browser', 'checking'].includes(view.loginAttempt.state)) view.loginAttempt = { ...view.loginAttempt, state: 'expired', diagnostic: '服务已重启，请重新登录。' };
-        this.rows.set(view.id, view);
+        const prefs=object(object(stored.preferences)[view.id]) as Record<string,ModelPreference>;
+        for(const model of view.models)if(!Object.hasOwn(prefs,model.id))Object.defineProperty(prefs,model.id,{value:{enabled:model.kind!=='combination'&&!/^fusion(?:-|$)/i.test(model.id)},enumerable:true,writable:true,configurable:true});
+        for(const value of Object.values(prefs))if(!value||typeof value.enabled!=='boolean'||value.contextWindow!==undefined&&(!Number.isSafeInteger(value.contextWindow)||value.contextWindow<1||value.contextWindow>10000000))throw new Error('invalid-preference');
+        this.preferences.set(view.id,prefs);this.rows.set(view.id, view);
       }
     } catch (error) { if (object(error).code !== 'ENOENT') throw new ModelAccessError('model_storage_unavailable', '模型账号存储不可读取，原数据已保留。'); }
   }
@@ -70,7 +76,7 @@ export class ModelAccessApplication {
   }
   private async save() {
     if (this.storageError) throw this.storageError;
-    const body: Stored = { version: 1, accounts: [...this.rows.values()].map(row => { const copy = structuredClone(row); if (copy.loginAttempt) delete copy.loginAttempt.url; return copy; }) };
+    const body: Stored = { version: 1, preferences:structuredClone(Object.fromEntries(this.preferences)), accounts: [...this.rows.values()].map(row => { const copy = structuredClone(row); if (copy.loginAttempt) delete copy.loginAttempt.url; return copy; }) };
     const work = this.writeChain.then(async () => {
       await this.privateRoot();
       const lock = join(this.options.root, 'accounts.lock');
@@ -95,6 +101,7 @@ export class ModelAccessApplication {
   }
   private view(row: ModelAccountView): ModelAccountView {
     const result = structuredClone(row), url = this.urls.get(row.id);
+    result.models=result.models.map(model=>effectiveModel(model,this.preferences.get(row.id)?.[model.id]));
     if (result.loginAttempt && url?.attemptId === result.loginAttempt.id) result.loginAttempt.url = url.url;
     return result;
   }
@@ -142,8 +149,12 @@ export class ModelAccessApplication {
       if (this.operations.get(id) !== operation) return this.view(this.current(id));
       if(observation.identity && row.identity!==digest(observation.identity)){row.identity=digest(observation.identity);for(const lease of [...this.leasesByIdentity.values()])if(lease.input.accountId===id)this.release(lease.view.identity);}
       row.enabled = true; row.status = observation.status; if(observation.label) row.accountLabel = observation.label; row.diagnostic = observation.diagnostic;
-      if(observation.status==='ready') { row.models = structuredClone(observation.models); row.observedAt = this.now; }
-      if(observation.quota) row.quota = observation.quota;
+      if(observation.status==='ready') {
+        const prefs=this.preferences.get(id)??{};
+        for(const model of observation.models)if(!Object.hasOwn(prefs,model.id))Object.defineProperty(prefs,model.id,{value:{enabled:false},enumerable:true,writable:true,configurable:true});
+        this.preferences.set(id,prefs);row.models = structuredClone(observation.models); row.observedAt = this.now;
+      }
+      if(observation.quota)row.quota=!observation.quota.available&&row.quota?.available?{...row.quota,stale:true,diagnostic:'本次额度读取未完成，以下保留上次观察。'}:observation.quota;
     } catch { if (this.operations.get(id) !== operation) return this.view(this.current(id)); row.status = 'failed'; row.diagnostic = '模型账号检查未完成，已保留上次目录。'; }
     return await this.changed(row);
   }
@@ -185,16 +196,36 @@ export class ModelAccessApplication {
     const result = await this.changed(row); await this.runtimes.get(id)?.then(runtime => runtime.cancelLogin()).catch(() => {}); return result;
   }
   async disconnect(id: string, input: { expectedRevision: string }) {
-    await this.ready; const row = this.current(id); if(row.connectionId)throw new ModelAccessError('model_managed_account','请在对应账号入口断开。'); conflict(row.revision, input.expectedRevision); this.operations.set(id, (this.operations.get(id) ?? 0) + 1);
+    await this.ready; const row = this.current(id); conflict(row.revision, input.expectedRevision); this.operations.set(id, (this.operations.get(id) ?? 0) + 1);
     row.enabled = false; row.status = 'disconnected'; row.identity=randomUUID(); this.urls.delete(id);
     if (row.loginAttempt && ['initializing','waiting-browser','checking'].includes(row.loginAttempt.state)) row.loginAttempt.state = 'cancelled';
     for (const lease of [...this.leasesByIdentity.values()]) if (lease.input.accountId === id) this.release(lease.view.identity);
     const pending = this.runtimes.get(id); this.runtimes.delete(id); await pending?.then(runtime => runtime.close()).catch(() => {}); return await this.changed(row);
   }
+  async updatePreferences(id:string,input:ModelPreferenceUpdate) {
+    await this.ready;const row=this.current(id);conflict(row.revision,input.expectedRevision);
+    if(!Array.isArray(input.models)||!input.models.length||input.models.length>2000)throw new ModelAccessError('model_preferences_invalid','请选择需要修改的模型。',400);
+    const next=structuredClone(this.preferences.get(id)??{}),seen=new Set<string>();
+    for(const update of input.models){
+      const model=row.models.find(model=>model.id===update.id);
+      if(!model||seen.has(update.id))throw new ModelAccessError('model_unavailable','模型目录已变化，请刷新后重试。',409);
+      seen.add(update.id);const preference=next[model.id]??{enabled:false};
+      if(update.enabled!==undefined){if(typeof update.enabled!=='boolean')throw new ModelAccessError('model_preferences_invalid','模型开关无效。',400);preference.enabled=update.enabled;}
+      if(update.contextWindow!==undefined){
+        const value=update.contextWindow,limit=model.reportedContextWindow??model.contextWindow;
+        if(value===null)delete preference.contextWindow;
+        else {if(!Number.isSafeInteger(value)||value<1||value>10000000||limit!==undefined&&value>limit)throw new ModelAccessError('model_context_invalid','上下文必须为正整数，且不能超过平台报告上限。',400);preference.contextWindow=value;}
+      }
+      Object.defineProperty(next,model.id,{value:preference,enumerable:true,writable:true,configurable:true});
+    }
+    const previous=this.preferences.get(id),revision=row.revision;this.preferences.set(id,next);
+    const saving=this.changed(row),writtenRevision=row.revision;
+    try{return await saving;}catch(error){if(row.revision===writtenRevision&&this.preferences.get(id)===next){if(previous)this.preferences.set(id,previous);else this.preferences.delete(id);row.revision=revision;}throw error;}
+  }
   catalog() {
     if (this.storageError) throw this.storageError;
     const models: CatalogModel[] = [];
-    for (const row of this.rows.values()) for (const model of row.models) models.push({ ...structuredClone(model), id: `${row.id}::${model.id}`, accountId: row.id, accountIdentity:row.identity, provider: row.provider, accountLabel: row.accountLabel || row.label, modelId: model.id, accountRevision: row.revision, available: row.enabled && row.status === 'ready', observedAt: row.observedAt });
+    for (const stored of this.rows.values()) { const row=this.view(stored); for (const model of row.models) models.push({ ...structuredClone(model), id: `${row.id}::${model.id}`, accountId: row.id, accountIdentity:row.identity, provider: row.provider, accountLabel: row.accountLabel || row.label, modelId: model.id, accountRevision: row.revision, available: row.enabled && row.status === 'ready' && model.enabled!==false, observedAt: row.observedAt }); }
     return { models };
   }
   private async encryptionKey() {
@@ -221,9 +252,11 @@ export class ModelAccessApplication {
     await this.ready; const account = this.current(input.accountId); conflict(account.revision,input.expectedRevision);
     if(input.expectedIdentity!==undefined&&input.expectedIdentity!==account.identity) throw new ModelAccessError('model_account_identity_changed','套餐登录来源已变化，请建立新的执行上下文。');
     if (!account.enabled || account.status !== 'ready') throw new ModelAccessError('model_account_unavailable', '所选模型套餐当前不可用。');
-    const offering = account.models.find(model => model.id === input.modelId); if (!offering) throw new ModelAccessError('model_unavailable', '所选模型不在账号当前目录中。');
+    const model = this.view(account).models.find(model => model.id === input.modelId);
+    if(model?.enabled===false)throw new ModelAccessError('model_disabled','所选模型已停用，请重新选择。');
+    const offering=model?selectedOffering(model,input.serviceTier):undefined; if (!offering) throw new ModelAccessError('model_unavailable', '所选模型不在账号当前目录中。');
     if (!input.agentId || !input.conversationId || !input.runId) throw new ModelAccessError('model_binding_invalid','模型绑定缺少准确执行身份。',400);
-    const identity = digest(JSON.stringify([account.id,account.identity,input.modelId,input.conversationId,input.agentId]));
+    const identity = digest(JSON.stringify([account.id,account.identity,input.modelId,input.conversationId,input.agentId,modelConfiguration(offering,input.serviceTier)]));
     const existing = this.leasesByIdentity.get(identity); if (existing) { existing.input.runId = input.runId; return structuredClone(existing.view); }
     const baseUrl = await this.start(), token = randomBytes(32).toString('base64url'); await this.encryptionKey();
     const view: ModelGatewayLease = { identity, baseUrl: baseUrl + '/v1', apiKey: token, model: `buildr-${identity.slice(0,32)}`, offering: structuredClone(offering), accountId: account.id, accountLabel: account.accountLabel || account.label, provider: account.provider };
@@ -252,6 +285,7 @@ export class ModelAccessApplication {
       const runtime = await this.runtime(account.id), opaque = this.opaque(await this.encryptionKey(),lease.view.identity);
       const binding={...lease.input};
       const translated = translateRequest(body,protocol,runtime.protocol,opaque); translated.model = binding.modelId;
+      delete translated.service_tier;if(binding.serviceTier)translated.service_tier=binding.serviceTier;
       const upstream = await runtime.infer({body:translated,modelId:binding.modelId,signal:controller.signal,context:{accountId:account.id,agentId:binding.agentId,conversationId:binding.conversationId,runId:binding.runId,requestId:randomUUID()}});
       if (!upstream.ok) { await upstream.body?.cancel(); throw new ModelAccessError('model_upstream_failed','所选套餐的模型请求失败，请检查账号与额度。',upstream.status); }
       const response = await translateResponse(upstream,runtime.protocol,protocol,{model:lease.view.model,stream:body.stream===true,request:body,opaque,signal:controller.signal});
@@ -272,7 +306,7 @@ export function createModelAccess(options: ModelAccessOptions) {
   const application = new ModelAccessApplication(options);
   return {
     ensureLinked: () => application.ensureLinked(), invalidate: (id:string) => application.invalidate(id),
-    accounts: { list: () => application.list(), read: (id: string) => application.read(id), snapshot: (id:string) => application.read(id), add: (input: {provider:string;label?:string}) => application.add(input), login: (id:string,input:{expectedRevision:string}) => application.login(id,input), attempt: (id:string,attemptId:string) => application.attempt(id,attemptId), cancelLogin: (id:string,attemptId:string,input:{expectedRevision:string}) => application.cancelLogin(id,attemptId,input), check: (id:string,input:{expectedRevision?:string}={}) => application.check(id,input), disconnect: (id:string,input:{expectedRevision:string}) => application.disconnect(id,input) },
+    accounts: { list: () => application.list(), read: (id: string) => application.read(id), snapshot: (id:string) => application.read(id), preferences:(id:string,input:ModelPreferenceUpdate)=>application.updatePreferences(id,input), add: (input: {provider:string;label?:string}) => application.add(input), login: (id:string,input:{expectedRevision:string}) => application.login(id,input), attempt: (id:string,attemptId:string) => application.attempt(id,attemptId), cancelLogin: (id:string,attemptId:string,input:{expectedRevision:string}) => application.cancelLogin(id,attemptId,input), check: (id:string,input:{expectedRevision?:string}={}) => application.check(id,input), disconnect: (id:string,input:{expectedRevision:string}) => application.disconnect(id,input) },
     catalog: { list: () => application.catalog() },
     leases: { create: (input:ModelLeaseInput) => application.createLease(input), release: (identity:string) => application.release(identity), updateRun:(identity:string,runId:string)=>application.updateRun(identity,runId) },
     close: () => application.close(),

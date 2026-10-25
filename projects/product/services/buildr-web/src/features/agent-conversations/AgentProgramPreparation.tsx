@@ -4,7 +4,7 @@ import { useAgentConversations } from './AgentConversationsContext';
 import type { ConnectionView, PreparationView } from './types';
 
 const active = (attempt?: PreparationView) => Boolean(attempt && ['discovering','installing','connecting','waiting-login'].includes(attempt.state));
-export function AgentProgramPreparation({connection,onPending}:{connection:ConnectionView;onPending:(id:string,pending:boolean)=>void}) {
+export function AgentProgramPreparation({connection,onPending,autoStart=false}:{connection:ConnectionView;onPending:(id:string,pending:boolean)=>void;autoStart?:boolean}) {
   const context = useAgentConversations();
   const [attempt,setAttempt] = useState<PreparationView>();
   const [path,setPath] = useState(''), [busy,setBusy] = useState(false), [error,setError] = useState('');
@@ -40,6 +40,8 @@ export function AgentProgramPreparation({connection,onPending}:{connection:Conne
     }catch(failure){if(mounted.current&&epoch.current===requestEpoch)setError(failure instanceof Error?failure.message:'准备未完成。');}
     finally{if(mounted.current)setBusy(false);}
   };
+  const autoStarted=useRef(false);
+  useEffect(()=>{if(autoStart&&!autoStarted.current){autoStarted.current=true;void prepare();}},[autoStart]);
   const cancel=async()=>{
     if(!attempt||busy)return;++epoch.current;setBusy(true);setError('');
     try{const value=await context.api.cancelPreparation(connection.id,attempt.id);if(mounted.current)accept(value);}

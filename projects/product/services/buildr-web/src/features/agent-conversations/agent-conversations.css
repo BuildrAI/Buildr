@@ -76,3 +76,5 @@
 .ac-model-account{margin-top:14px;padding:14px;border:1px solid var(--border-color,#e5e7eb);border-radius:10px}.ac-model-account>header{display:flex;align-items:center;justify-content:space-between;gap:10px}.ac-model-account>p{overflow-wrap:anywhere}
 
 .ac-model-account>header>strong{min-width:0;overflow-wrap:anywhere}.ac-model-account>header>.ant-tag{flex-shrink:0}
+
+.ac-tier-control{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:11px;color:var(--soft-muted)}.ac-tier-control .ant-select{flex:1}.model-account-settings .ant-drawer-body{padding:24px}.model-account-settings .ant-alert{font-size:12px}@media(max-width:760px){.model-account-settings .ant-drawer-body{padding:16px}}

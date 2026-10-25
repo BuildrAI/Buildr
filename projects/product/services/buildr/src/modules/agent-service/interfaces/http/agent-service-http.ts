@@ -30,12 +30,13 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService) 
         if (request.method === 'POST') return result('modelAccount', await service.models.accounts.add(validate('addModelAccount', await readJsonBody())), 201);
       }
       if (pathname === `${prefix}/model-catalog` && request.method === 'GET') return result('modelCatalog', await service.models.catalog.list());
-      const accountRoute = pathname.slice(prefix.length).match(/^\/model-accounts\/([a-f0-9-]{36})(?:\/(check|disconnect|login-attempts)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);
+      const accountRoute = pathname.slice(prefix.length).match(/^\/model-accounts\/([a-zA-Z0-9_-]{1,100})(?:\/(check|disconnect|login-attempts|preferences)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);
       if (accountRoute) {
         const [, accountId, action, attemptId, cancel] = accountRoute;
         if (request.method === 'GET' && !action) return result('modelAccount', await service.models.accounts.read(accountId));
         if (request.method === 'GET' && action === 'login-attempts' && attemptId && !cancel) return result('modelAccount', await service.models.accounts.attempt(accountId, attemptId));
         if (request.method !== 'POST') return null;
+        if(action==='preferences'&&!attemptId&&!cancel)return result('modelAccount',await service.models.accounts.preferences(accountId,validate('modelPreferences',await readJsonBody())));
         const body = validate('revision', await readJsonBody());
         if (action === 'check') return result('modelAccount', await service.models.accounts.check(accountId, body));
         if (action === 'disconnect') return result('modelAccount', await service.models.accounts.disconnect(accountId, body));

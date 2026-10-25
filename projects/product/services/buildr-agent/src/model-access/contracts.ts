@@ -11,13 +11,26 @@ export interface ModelOffering {
   tools: boolean;
   reasoningEfforts?: Array<{ id: string; label: string }>;
   defaultReasoningEffort?: string;
+  kind?: 'model' | 'combination';
+  family?: string;
+  enabled?: boolean;
+  reportedContextWindow?: number;
+  contextWindowOverride?: number;
+  defaultServiceTier?: string;
+  serviceTiers?: Array<{id:string;label:string;contextWindow?:number;reasoningEfforts?:Array<{id:string;label:string}>;defaultReasoningEffort?:string}>;
 }
+export interface ModelPreference { enabled:boolean;contextWindow?:number; }
+export interface ModelPreferenceUpdate { expectedRevision:string;models:Array<{id:string;enabled?:boolean;contextWindow?:number|null}>; }
 export interface ModelQuotaObservation {
   observedAt: string;
   available: boolean;
   summary?: string;
   remainingPercent?: number;
   resetsAt?: string;
+  planLabel?: string;
+  stale?:boolean;
+  diagnostic?:string;
+  windows?: Array<{id:string;label:string;remainingPercent:number;resetsAt?:string;limitWindowSeconds?:number}>;
 }
 export interface ModelProviderObservation {
   status: 'not-authenticated' | 'ready' | 'expired' | 'failed';
@@ -84,6 +97,7 @@ export interface ModelLeaseInput {
   agentId: string;
   expectedRevision?: string;
   expectedIdentity?: string;
+  serviceTier?: string;
 }
 export interface ModelGatewayLease {
   identity: string;

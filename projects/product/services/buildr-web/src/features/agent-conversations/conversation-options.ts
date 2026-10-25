@@ -1,6 +1,6 @@
 import type {ConnectionView, ConversationRun, SendDraft} from './types';
 
-export type ConversationChoice = Pick<SendDraft,'connectionId'|'model'|'reasoningEffort'|'modelAccountId'|'modelAccountRevision'|'modelAccountIdentity'>;
+export type ConversationChoice = Pick<SendDraft,'connectionId'|'model'|'reasoningEffort'|'serviceTier'|'modelAccountId'|'modelAccountRevision'|'modelAccountIdentity'>;
 export type PermissionMode=NonNullable<SendDraft['permissionMode']>;
 export const permissionModeLabels:Record<PermissionMode,string>={default:'默认权限','full-access':'完全访问'};
 
@@ -31,7 +31,7 @@ export function selectedConversationModel(connection:Pick<ConnectionView,'models
 
 export function conversationReasoningOptions(connection:ConnectionView|undefined,modelId?:string) {
   const model=selectedConversationModel(connection,modelId);
-  return model?.reasoningEfforts||[];
+  return sortReasoningEfforts(model?.reasoningEfforts||[]);
 }
 
 export function conversationReasoningSelection(connection:ConnectionView|undefined,choice:ConversationChoice) {
@@ -39,10 +39,21 @@ export function conversationReasoningSelection(connection:ConnectionView|undefin
   const options=conversationReasoningOptions(connection,choice.model);
   const id=choice.reasoningEffort ?? model?.defaultReasoningEffort;
   const index=options.findIndex(option=>option.id===id);
-  return {options,index,inherited:choice.reasoningEffort===undefined,label:index>=0?reasoningEffortLabel(options[index]!):choice.reasoningEffort||'默认'};
+  const ranks=options.map(option=>reasoningEffortRank(option.id));
+  const ordered=options.length>1&&ranks.every(rank=>rank!==undefined)&&new Set(ranks).size===ranks.length;
+  return {options,index,ordered,inherited:choice.reasoningEffort===undefined,label:index>=0?reasoningEffortLabel(options[index]!):choice.reasoningEffort||'默认'};
 }
 
 export function reasoningEffortLabel(effort:{id:string;label:string}) {
-  const labels:Record<string,string>={minimal:'最小',low:'低',medium:'中',high:'高',xhigh:'极高',max:'最高',ultra:'极致',none:'无',off:'关闭',auto:'自动'};
+  const labels:Record<string,string>={minimal:'最小',low:'低',medium:'中',high:'高',xhigh:'极高',max:'最高',ultra:'极致',none:'无',off:'关闭',disabled:'关闭',auto:'自动',adaptive:'自适应'};
   return labels[effort.id]||effort.label;
+}
+
+/** Rank only explicit depth values. Auto/adaptive/unknown choices are not depth steps. */
+export function reasoningEffortRank(id:string):number|undefined {
+  const ranks:Record<string,number>={off:0,none:0,disabled:0,minimal:1,low:2,medium:3,high:4,xhigh:5,max:6,ultra:7};
+  return ranks[id.toLowerCase()];
+}
+export function sortReasoningEfforts<T extends {id:string}>(options:readonly T[]):T[]{
+  return options.map((value,index)=>({value,index,rank:reasoningEffortRank(value.id)})).sort((a,b)=>(a.rank??Infinity)-(b.rank??Infinity)||a.index-b.index).map(item=>item.value);
 }

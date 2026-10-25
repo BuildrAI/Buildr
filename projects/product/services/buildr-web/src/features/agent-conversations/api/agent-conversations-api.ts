@@ -18,6 +18,7 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     modelAccounts(signal?:AbortSignal) {return request<{accounts:ModelAccount[];providers:Array<{id:string;label:string}>}>(appPath+'/model-accounts',{signal});},
     modelCatalog(signal?:AbortSignal) {return request<{models:CatalogModel[]}>(appPath+'/model-catalog',{signal});},
     addModelAccount(provider:string) {return request<ModelAccount>(appPath+'/model-accounts',post({provider}));},
+    modelPreferences(account:ModelAccount,models:Array<{id:string;enabled?:boolean;contextWindow?:number|null}>) {return request<ModelAccount>(appPath+'/model-accounts/'+account.id+'/preferences',post({expectedRevision:account.revision,models}));},
     modelAccountAction(account:ModelAccount,action:'check'|'disconnect'|'login-attempts') {return request<ModelAccount>(appPath+'/model-accounts/'+account.id+'/'+action,post({expectedRevision:account.revision}));},
     modelLoginAttempt(accountId:string,attemptId:string,signal?:AbortSignal) {return request<ModelAccount>(appPath+'/model-accounts/'+accountId+'/login-attempts/'+attemptId,{signal});},
     cancelModelLogin(account:ModelAccount) {return request<ModelAccount>(appPath+'/model-accounts/'+account.id+'/login-attempts/'+account.loginAttempt!.id+'/cancel',post({expectedRevision:account.revision}));},

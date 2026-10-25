@@ -20,3 +20,20 @@ test('换模型、无强度与缺失默认信息时不虚构可用档位',()=>{
  const unknown=conversationReasoningSelection({models:[{...connection.models[0],isDefault:false}]},{connectionId:'qoder'});assert.deepEqual(unknown.options,[]);assert.equal(unknown.label,'默认');
  const noDefault=conversationReasoningSelection({models:[{...connection.models[0],defaultReasoningEffort:undefined}]},{connectionId:'qoder'});assert.equal(noDefault.index,-1);assert.equal(noDefault.label,'默认');
 });
+
+test('乱序档位按低到高展示，默认值和显式选择始终按标识匹配',()=>{
+ const efforts=[{id:'high',label:'High'},{id:'medium',label:'Medium'},{id:'none',label:'None'},{id:'max',label:'Max'},{id:'low',label:'Low'}];
+ const source={models:[{id:'ordered',label:'Ordered',isDefault:true,defaultReasoningEffort:'high',reasoningEfforts:efforts}]};
+ const result=conversationReasoningSelection(source,{connectionId:'codex'});
+ assert.deepEqual(result.options.map(item=>item.id),['none','low','medium','high','max']);
+ assert.equal(result.index,3);assert.equal(result.label,'高');assert.equal(result.ordered,true);
+ const selected=conversationReasoningSelection(source,{connectionId:'codex',reasoningEffort:'low'});
+ assert.equal(selected.index,1);assert.equal(selected.label,'低');
+ assert.deepEqual(efforts.map(item=>item.id),['high','medium','none','max','low']);
+});
+test('自动、未知或同义档位不强制放入有序滑杆，单档位保持原能力',()=>{
+ for(const ids of [['high','auto','low'],['high','future-mode','low'],['none','off','high'],['medium']]){
+  const result=conversationReasoningSelection({models:[{id:'m',isDefault:true,defaultReasoningEffort:ids[0],reasoningEfforts:ids.map(id=>({id,label:id}))}]},{connectionId:'qoder'});
+  assert.equal(result.ordered,false);assert.equal(result.options[result.index].id,ids[0]);
+ }
+});

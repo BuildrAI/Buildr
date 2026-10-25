@@ -42,7 +42,7 @@ export interface StoredConnection {
   bindingData?: Record<string, unknown>;
 }
 export interface StoredParticipant {
-  modelAccountId?: string; modelAccountIdentity?: string; modelId?: string;
+  modelAccountId?: string; modelAccountIdentity?: string; modelId?: string; serviceTier?:string;modelConfiguration?:string;
   id: string;
   connectionId: string;
   provider: string;

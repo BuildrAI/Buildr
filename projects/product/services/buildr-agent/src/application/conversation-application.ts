@@ -1,3 +1,5 @@
+import {selectedOffering,modelConfiguration} from '../model-access/model-preferences.ts';
+import type {ModelOffering} from '../model-access/contracts.ts';
 import type { ModelAccess } from '../model-access/application.ts';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
@@ -50,7 +52,7 @@ export class ConversationApplication {
     if (!participant.modelAccountId) return this.options.connections.runtime(participant.connectionId).then(runtime => ({runtime, model: record.view.run?.model ?? ''}));
     const found = this.sourceRuntimes.get(participant.id); if (found) return found;
     const access = this.options.modelAccess; if (!access) fail('agent_model_source_unavailable', '模型套餐组件不可用。', 409);
-    const work = access.leases.create({ accountId: participant.modelAccountId, expectedIdentity: participant.modelAccountIdentity, modelId: participant.modelId!, conversationId: record.view.id, agentId: participant.connectionId, runId: record.view.run?.id ?? 'observe' }).then(async lease => ({ runtime: await this.options.connections.runtime(participant.connectionId, { identity: lease.identity, baseUrl: lease.baseUrl, apiKey: lease.apiKey, models: [{id: lease.model, label: lease.offering.label, isDefault: true, reasoningEfforts: lease.offering.reasoningEfforts, defaultReasoningEffort: lease.offering.defaultReasoningEffort, contextWindow: lease.offering.contextWindow, maxOutputTokens: lease.offering.maxOutputTokens, vision: lease.offering.images, tools: lease.offering.tools}] }), model: lease.model })).catch(error => { this.sourceRuntimes.delete(participant.id); throw error; });
+    const work = access.leases.create({ accountId: participant.modelAccountId, expectedIdentity: participant.modelAccountIdentity, modelId: participant.modelId!,serviceTier:participant.serviceTier, conversationId: record.view.id, agentId: participant.connectionId, runId: record.view.run?.id ?? 'observe' }).then(async lease => ({ runtime: await this.options.connections.runtime(participant.connectionId, { identity: lease.identity, baseUrl: lease.baseUrl, apiKey: lease.apiKey, models: [{id: lease.model, label: lease.offering.label, isDefault: true, reasoningEfforts: lease.offering.reasoningEfforts, defaultReasoningEffort: lease.offering.defaultReasoningEffort, contextWindow: lease.offering.contextWindow, maxOutputTokens: lease.offering.maxOutputTokens, vision: lease.offering.images, tools: lease.offering.tools}] }), model: lease.model })).catch(error => { this.sourceRuntimes.delete(participant.id); throw error; });
     this.sourceConnections.set(participant.id, participant.connectionId); this.sourceRuntimes.set(participant.id, work); return work;
   }
   private load(workspaceId: string, id: string): StoredConversation {
@@ -128,9 +130,9 @@ export class ConversationApplication {
     if (!input.text.trim() && !input.attachmentIds?.length) fail('agent_input_empty', '请填写内容或添加图片。');
     if (input.attachmentIds && (!Array.isArray(input.attachmentIds) || input.attachmentIds.length > 4 || input.attachmentIds.some(id => typeof id !== 'string'))) fail('agent_attachments_invalid', '每次最多添加4张图片。');
     if (input.handoffSummary !== undefined && (typeof input.handoffSummary !== 'string' || !input.handoffSummary.trim() || Buffer.byteLength(input.handoffSummary) > MAX_TEXT_BYTES)) fail('agent_handoff_invalid', '请明确填写精简接续说明。');
-    return { expectedRevision: nonempty(input.expectedRevision, '对话版本'), connectionId: nonempty(input.connectionId, '接入身份'), text: input.text, modelAccountId: input.modelAccountId === undefined ? undefined : nonempty(input.modelAccountId, '套餐账号'), modelAccountRevision: input.modelAccountRevision, modelAccountIdentity: input.modelAccountIdentity, permissionMode: resolvePermissionMode(input.permissionMode), model: input.model === undefined ? undefined : nonempty(input.model, '模型', 256), reasoningEffort: input.reasoningEffort === undefined ? undefined : nonempty(input.reasoningEffort, '思考深度', 80), attachmentIds: input.attachmentIds ?? [], handoffSummary: input.handoffSummary };
+    return { expectedRevision: nonempty(input.expectedRevision, '对话版本'), connectionId: nonempty(input.connectionId, '接入身份'), text: input.text, modelAccountId: input.modelAccountId === undefined ? undefined : nonempty(input.modelAccountId, '套餐账号'), modelAccountRevision: input.modelAccountRevision, modelAccountIdentity: input.modelAccountIdentity, permissionMode: resolvePermissionMode(input.permissionMode), model: input.model === undefined ? undefined : nonempty(input.model, '模型', 256), serviceTier:input.serviceTier===undefined?undefined:nonempty(input.serviceTier,'服务档位',256),reasoningEffort: input.reasoningEffort === undefined ? undefined : nonempty(input.reasoningEffort, '思考深度', 80), attachmentIds: input.attachmentIds ?? [], handoffSummary: input.handoffSummary };
   }
-  private prepare(record: StoredConversation, raw: SendDraft): { preview: SendPreview; text: string; images: ExecutorImage[]; draft: SendDraft } {
+  private prepare(record: StoredConversation, raw: SendDraft): { preview: SendPreview; text: string; images: ExecutorImage[]; draft: SendDraft;configuration?:string } {
     const input = this.draft(raw); expected(record.view.revision, input.expectedRevision); this.assertIdle(record);
     const connection = this.options.connections.get(input.connectionId);
     if (!connection.enabled || (!input.modelAccountId && connection.status !== 'ready')) fail('agent_account_unavailable', '请先准备智能体程序，并连接所选模型账号。', 409);
@@ -141,13 +143,18 @@ export class ConversationApplication {
     if (source && input.modelAccountIdentity && source.identity !== input.modelAccountIdentity) fail('agent_model_source_changed', '套餐登录来源已变化，请重新选择套餐模型。', 409);
     if (source && input.modelAccountRevision && source.revision !== input.modelAccountRevision) fail('agent_model_source_changed', '套餐目录已变化，请重新检查发送。', 409);
     const availableModels = source?.models ?? connection.models;
-    const selectedModel = input.model ? availableModels.find(model => model.id === input.model) : source ? source.models[0] : connection.models.find(model => model.isDefault);
+    const selectedModel = input.model ? availableModels.find(model => model.id === input.model) : source ? source.models.find(model=>model.enabled!==false) : connection.models.find(model => model.isDefault);
     if (input.model && !selectedModel) fail('agent_model_unavailable', '该模型不在当前接入的可用目录中。', 409);
     input.model = selectedModel?.id ?? input.model;
-    input.reasoningEffort ??= selectedModel?.defaultReasoningEffort;
-    if (input.reasoningEffort && !selectedModel?.reasoningEfforts?.some(effort => effort.id === input.reasoningEffort)) fail('agent_reasoning_unavailable', '该思考深度不在所选模型的可用目录中。', 409);
+    if(source&&selectedModel&&'enabled' in selectedModel&&selectedModel.enabled===false)fail('agent_model_disabled','所选模型已停用，请重新选择。',409);
+    const boundModel=source&&selectedModel?selectedOffering(selectedModel as ModelOffering,input.serviceTier):selectedModel;
+    if(input.serviceTier&&!source)fail('agent_model_tier_unavailable','原生默认模型不支持此共享服务档位。',409);
+    input.serviceTier=source?(boundModel as ModelOffering|undefined)?.defaultServiceTier:undefined;
+    const configuration=source&&selectedModel?modelConfiguration(selectedModel as ModelOffering,input.serviceTier):undefined;
+    input.reasoningEffort ??= boundModel?.defaultReasoningEffort;
+    if (input.reasoningEffort && !boundModel?.reasoningEfforts?.some(effort => effort.id === input.reasoningEffort)) fail('agent_reasoning_unavailable', '该思考深度不在所选模型的可用目录中。', 409);
     if (!connection.capabilities.text) fail('agent_capability_unavailable', '此接入尚不支持文本输入。', 409);
-    const participant = record.participants.find(value => value.connectionId === input.connectionId && value.modelAccountId === input.modelAccountId && (!input.modelAccountId || value.modelId === input.model && value.modelAccountIdentity === source?.identity));
+    const participant = record.participants.find(value => value.connectionId === input.connectionId && value.modelAccountId === input.modelAccountId && (!input.modelAccountId || value.modelId === input.model && value.modelAccountIdentity === source?.identity && value.modelConfiguration===configuration));
     const through = record.view.entries.at(-1)?.sequence ?? 0;
     const changes = record.view.entries.filter(entry => entry.sequence > (participant?.deliveredThrough ?? 0) && entry.status !== 'failed');
     const switching = record.participants.length > 0 && record.view.run?.participantId !== participant?.id;
@@ -160,7 +167,7 @@ export class ConversationApplication {
     const imageBytes = ids.reduce((total, id) => total + record.attachments[id]!.size, 0);
     const fits = inputBytes <= maxInputBytes && images.length <= 4 && imageBytes <= 32 * 1024 * 1024 && ids.every(id => record.attachments[id]!.size <= (connection.capabilities.maxImageBytes ?? MAX_IMAGE_BYTES)) && (!images.length || (connection.capabilities.images && (!source || Boolean(selectedModel && 'images' in selectedModel && selectedModel.images))));
     const token = createHmac('sha256', this.previewSecret).update(JSON.stringify({ id: record.view.id, input, sourceRevision: source?.revision, through, text, ids })).digest('hex');
-    return { preview: { token, conversationId: record.view.id, revision: record.view.revision, connectionId: input.connectionId, modelAccountId: input.modelAccountId, modelAccountIdentity: source?.identity, modelAccountRevision: source?.revision, modelSourceLabel: source?.accountLabel ?? source?.label, model: input.model, reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode!, participantId: participant?.id, cwd: record.view.cwd, taskId: record.view.taskId, text: input.text, history, sourceThrough: through, inputBytes, maxInputBytes, fits, switching, diagnostic: fits ? undefined : images.length && !connection.capabilities.images ? '此执行方未验收图片输入，请继续原执行方或明确提供文字接续说明。' : '接续内容超过已验收容量，请继续原执行方或明确提供精简接续说明。' }, text, images, draft: input };
+    return { preview: { token, conversationId: record.view.id, revision: record.view.revision, connectionId: input.connectionId, modelAccountId: input.modelAccountId, modelAccountIdentity: source?.identity, modelAccountRevision: source?.revision, modelSourceLabel: source?.accountLabel ?? source?.label, model: input.model, serviceTier:input.serviceTier,reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode!, participantId: participant?.id, cwd: record.view.cwd, taskId: record.view.taskId, text: input.text, history, sourceThrough: through, inputBytes, maxInputBytes, fits, switching, diagnostic: fits ? undefined : images.length && !connection.capabilities.images ? '此执行方未验收图片输入，请继续原执行方或明确提供文字接续说明。' : '接续内容超过已验收容量，请继续原执行方或明确提供精简接续说明。' }, text, images, draft: input,configuration };
   }
   prepareSend(workspaceId: string, id: string, input: SendDraft): SendPreview { return this.prepare(this.load(workspaceId, id), input).preview; }
 
@@ -179,13 +186,13 @@ export class ConversationApplication {
     const a = Buffer.from(prepared.preview.token); const b = Buffer.from(String(raw.previewToken));
     if (a.length !== b.length || !timingSafeEqual(a, b)) fail('agent_preview_stale', '发送预览已变化，请重新核对后发送。', 409);
     if (!prepared.preview.fits) fail('agent_handoff_capacity', prepared.preview.diagnostic!, 413);
-    let participant = record.participants.find(value => value.connectionId === prepared.draft.connectionId && value.modelAccountId === prepared.draft.modelAccountId && (!prepared.draft.modelAccountId || value.modelId === prepared.draft.model && value.modelAccountIdentity === this.options.modelAccess?.accounts.snapshot(prepared.draft.modelAccountId).identity));
+    let participant = record.participants.find(value=>value.id===prepared.preview.participantId);
     const connection = this.options.connections.get(prepared.draft.connectionId);
     if (!participant) {
-      participant = { id: randomUUID(), connectionId: connection.id, provider: connection.provider, label: connection.label, modelAccountId: prepared.draft.modelAccountId, modelAccountIdentity: prepared.draft.modelAccountId ? this.options.modelAccess?.accounts.snapshot(prepared.draft.modelAccountId).identity : undefined, modelId: prepared.draft.model, bindingIdentity: prepared.draft.modelAccountId ? '' : this.options.connections.binding(connection.id) ?? '', deliveredThrough: 0 };
+      participant = { id: randomUUID(), connectionId: connection.id, provider: connection.provider, label: connection.label, modelAccountId: prepared.draft.modelAccountId, modelAccountIdentity: prepared.draft.modelAccountId ? this.options.modelAccess?.accounts.snapshot(prepared.draft.modelAccountId).identity : undefined, modelId: prepared.draft.model,serviceTier:prepared.draft.serviceTier,modelConfiguration:prepared.configuration, bindingIdentity: prepared.draft.modelAccountId ? '' : this.options.connections.binding(connection.id) ?? '', deliveredThrough: 0 };
       record.participants.push(participant);
     }
-    const run: RunView = { id: randomUUID(), participantId: participant.id, provider: participant.provider, generation: this.options.generation, status: 'starting', accepted: false, tools: [], modelAccountId: prepared.draft.modelAccountId, modelAccountIdentity: prepared.preview.modelAccountIdentity, modelSourceLabel: prepared.preview.modelSourceLabel, model: prepared.draft.model, reasoningEffort: prepared.draft.reasoningEffort, permissionMode: prepared.draft.permissionMode, startedAt: this.options.now(), updatedAt: this.options.now() };
+    const run: RunView = { id: randomUUID(), participantId: participant.id, provider: participant.provider, generation: this.options.generation, status: 'starting', accepted: false, tools: [], modelAccountId: prepared.draft.modelAccountId, modelAccountIdentity: prepared.preview.modelAccountIdentity, modelSourceLabel: prepared.preview.modelSourceLabel, model: prepared.draft.model, serviceTier:prepared.draft.serviceTier,reasoningEffort: prepared.draft.reasoningEffort, permissionMode: prepared.draft.permissionMode, startedAt: this.options.now(), updatedAt: this.options.now() };
     const append = (entry: Omit<ConversationEntry, 'sequence' | 'createdAt'>) => { record.view.entries.push({ ...entry, sequence: (record.view.entries.at(-1)?.sequence ?? 0) + 1, createdAt: this.options.now() }); };
     if (prepared.preview.switching) append({ id: randomUUID(), kind: 'handoff', role: 'system', text: `由 ${connection.label} 接续本对话`, participantId: participant.id, provider: participant.provider });
     if (prepared.draft.handoffSummary !== undefined) append({ id: randomUUID(), kind: 'notice', role: 'user', text: `用户确认的精简接续说明：\n${prepared.draft.handoffSummary}`, participantId: participant.id });
@@ -298,7 +305,7 @@ export class ConversationApplication {
       if (record.view.taskId) await this.options.host.assertTask(workspaceId, record.view.taskId);
       if (!fs.statSync(record.view.cwd, { throwIfNoEntry: false })?.isDirectory()) fail('agent_cwd_missing', '对话保存的工作目录已不可用。', 409);
       const startingParticipant = record.participants.find(value => value.id === record!.view.run!.participantId)!;
-      if (startingParticipant.modelAccountId) await this.options.modelAccess!.leases.create({accountId:startingParticipant.modelAccountId, expectedIdentity:startingParticipant.modelAccountIdentity, modelId:startingParticipant.modelId!,conversationId:record.view.id,agentId:startingParticipant.connectionId,runId});
+      if (startingParticipant.modelAccountId) await this.options.modelAccess!.leases.create({accountId:startingParticipant.modelAccountId, expectedIdentity:startingParticipant.modelAccountIdentity, modelId:startingParticipant.modelId!,serviceTier:startingParticipant.serviceTier,conversationId:record.view.id,agentId:startingParticipant.connectionId,runId});
       const selectedRuntime = await this.sourceRuntime(record, startingParticipant);
       const runtime = selectedRuntime.runtime;
       record = this.currentRun(workspaceId, id, runId); if (!record) return;

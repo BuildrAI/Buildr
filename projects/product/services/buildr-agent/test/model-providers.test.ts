@@ -57,7 +57,7 @@ test('Devin login uses real PKCE callback; dynamic catalog and observed quota ne
   const { runtime, root } = await devinFixture(t, () => { throw new Error('must not infer'); });
   const view = await runtime.inspect(); assert.equal(view.status, 'ready'); assert.equal(view.models.length, 1);
   assert.deepEqual(view.models[0]?.reasoningEfforts?.map(value => value.id), ['low', 'high']); assert.equal(view.models[0]?.defaultReasoningEffort, 'high');
-  assert.equal(view.quota?.remainingPercent, 60); assert.equal(view.quota?.resetsAt, '2027-01-15T08:00:00.000Z'); assert.ok(!JSON.stringify(view).includes('private-test-token'));
+  assert.deepEqual(view.quota?.windows?.map(window=>window.remainingPercent),[80,60]);assert.equal(view.quota?.planLabel,'Pro');assert.equal(view.quota?.remainingPercent, 60); assert.equal(view.quota?.resetsAt, '2027-01-15T08:00:00.000Z'); assert.ok(!JSON.stringify(view).includes('private-test-token'));
   if (process.platform !== 'win32') assert.equal((await stat(join(root, 'model-credential.json'))).mode & 0o777, 0o600);
 });
 

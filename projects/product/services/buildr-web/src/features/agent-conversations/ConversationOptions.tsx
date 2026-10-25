@@ -2,30 +2,35 @@ import {useOptionalAgentConversations} from './AgentConversationsContext';
 import { useEffect, useRef, useState } from 'react';
 import { Button, Popover, Select, Slider } from 'antd';
 import { DownOutlined, ReloadOutlined } from '@ant-design/icons';
-import { providerNames, type ConnectionView } from './types';
+import { providerNames, type ConnectionView, type CatalogModel } from './types';
 import {conversationReasoningSelection,reasoningEffortLabel,selectedConversationModel,type ConversationChoice} from './conversation-options';
 
 type Props = {
   connections:ConnectionView[];
+  modelCatalog?:CatalogModel[];
   value:ConversationChoice;
   disabled:boolean;
   onChange(value:ConversationChoice):void;
 };
 
-export function ConversationOptions({connections,value,disabled,onChange}:Props) {
+export function ConversationOptions({connections,modelCatalog,value,disabled,onChange}:Props) {
   const [open,setOpen]=useState(false);
   const trigger=useRef<HTMLButtonElement>(null);
   const controlsRef=useRef<HTMLDivElement>(null);
   const context=useOptionalAgentConversations();
-  const shared=context?.modelCatalog||[];
+  const shared=modelCatalog??context?.modelCatalog??[];
   const original=connections.find(item=>item.id===value.connectionId);
   const selectedShared=shared.find(item=>item.accountId===value.modelAccountId&&item.modelId===value.model);
-  const connection=value.modelAccountId&&original?{...original,models:selectedShared?[{...selectedShared,id:selectedShared.modelId,isDefault:true}]:[]}:original;
+  const tier=selectedShared?.serviceTiers?.find(tier=>tier.id===(value.serviceTier??selectedShared.defaultServiceTier));
+  const effectiveShared=selectedShared?{...selectedShared,reasoningEfforts:tier?.reasoningEfforts??selectedShared.reasoningEfforts,defaultReasoningEffort:tier?.defaultReasoningEffort??selectedShared.defaultReasoningEffort}:undefined;
+  const candidates=shared.filter(item=>item.enabled!==false||item.accountId===value.modelAccountId&&item.modelId===value.model);
+  const nativeFallback=!shared.some(item=>item.accountId==='native-'+original?.id);
+  const connection=value.modelAccountId&&original?{...original,models:effectiveShared?[{...effectiveShared,id:effectiveShared.modelId,isDefault:true}]:[]}:original;
   const model=selectedConversationModel(connection,value.model);
   useEffect(()=>{if(selectedShared&&value.modelAccountIdentity===selectedShared.accountIdentity&&value.modelAccountRevision!==selectedShared.accountRevision)onChange({...value,modelAccountRevision:selectedShared.accountRevision});},[selectedShared?.accountRevision,selectedShared?.accountIdentity,value.modelAccountIdentity,value.modelAccountRevision]);
   const defaultModel=selectedConversationModel(connection);
   const reasoning=conversationReasoningSelection(connection,value);
-  const modelLabel=(selectedShared?selectedShared.accountLabel+' / '+selectedShared.label:undefined)||model?.label||value.model||defaultModel?.label||'默认模型';
+  const modelLabel=(selectedShared?selectedShared.accountLabel+' / '+selectedShared.label+(selectedShared.enabled===false?'（已停用）':''):undefined)||model?.label||value.model||defaultModel?.label||'默认模型';
   const unavailable=disabled||(!original?.models.length&&!shared.some(item=>item.available));
   useEffect(()=>{setOpen(false);},[value.connectionId,disabled]);
   useEffect(()=>{
@@ -49,11 +54,12 @@ export function ConversationOptions({connections,value,disabled,onChange}:Props)
       value={value.modelAccountId?'shared:'+value.modelAccountId+'::'+value.model:value.model||''} labelRender={({label})=>value.model?label:defaultModel?.label||'默认模型'}
       disabled={unavailable} popupMatchSelectWidth placement="topRight"
       classNames={{popup:{root:'ac-panel-popup ac-choice-popup'}}}
-      options={[{label:'原生账号',options:[{value:'',label:'原生默认模型'},...(original?.models||[]).map(item=>({value:item.id,label:item.label}))]},...Array.from(new Set(shared.map(item=>item.accountId))).map(accountId=>({label:shared.find(item=>item.accountId===accountId)!.accountLabel,options:shared.filter(item=>item.accountId===accountId).map(item=>({value:'shared:'+accountId+'::'+item.modelId,label:item.label,disabled:!item.available}))}))]}
-      onChange={model=>{const source=shared.find(item=>'shared:'+item.accountId+'::'+item.modelId===model);onChange({...value,model:source?.modelId||model||undefined,modelAccountId:source?.accountId,modelAccountRevision:source?.accountRevision,modelAccountIdentity:source?.accountIdentity,reasoningEffort:undefined});}}/>
+      options={[...(original?.models.length&&nativeFallback?[{label:'原生账号',options:[{value:'',label:'原生默认模型'},...(original?.models||[]).map(item=>({value:item.id,label:item.label}))]}]:[]),...Array.from(new Set(candidates.map(item=>item.accountId))).map(accountId=>({label:shared.find(item=>item.accountId===accountId)!.accountLabel,options:candidates.filter(item=>item.accountId===accountId).map(item=>({value:'shared:'+accountId+'::'+item.modelId,label:item.label,disabled:!item.available}))}))]}
+      onChange={model=>{const source=shared.find(item=>'shared:'+item.accountId+'::'+item.modelId===model);onChange({...value,model:source?.modelId||model||undefined,modelAccountId:source?.accountId,modelAccountRevision:source?.accountRevision,modelAccountIdentity:source?.accountIdentity,serviceTier:source?.defaultServiceTier,reasoningEffort:undefined});}}/>
+    {selectedShared?.serviceTiers?.length&&<label className="ac-tier-control"><span>服务档位</span><Select aria-label="服务档位" size="small" value={value.serviceTier??selectedShared.defaultServiceTier} options={selectedShared.serviceTiers.map(tier=>({value:tier.id,label:tier.label}))} onChange={serviceTier=>onChange({...value,serviceTier,reasoningEffort:undefined})}/></label>}
     <div className="ac-effort-controls">
-      {reasoning.options.length>1&&reasoning.index>=0?<>
-        <Slider min={0} max={reasoning.options.length-1} step={1} dots value={reasoning.index} disabled={disabled}
+      {reasoning.ordered&&reasoning.index>=0?<>
+        <Slider min={0} max={reasoning.options.length-1} step={1} dots marks={Object.fromEntries(reasoning.options.map((option,index)=>[index,reasoningEffortLabel(option)]))} value={reasoning.index} disabled={disabled}
           ariaLabelForHandle="思考深度" ariaValueTextFormatterForHandle={index=>reasoningEffortLabel(reasoning.options[index]!)}
           tooltip={{formatter:index=>index===undefined?'':reasoningEffortLabel(reasoning.options[index]!)}}
           onChange={selectEffort}/>
