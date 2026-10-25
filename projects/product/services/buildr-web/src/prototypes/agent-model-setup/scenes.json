@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "pages": [
+    {
+      "id": "agents",
+      "title": "智能体 · 程序接入",
+      "notes": [
+        {
+          "id": "independent",
+          "title": "程序就绪不等于账号已登录",
+          "text": "这里只管理本机程序；在模型页登录并启用模型。对话切换智能体时，优先使用其可用官方模型，也可手动选择其他来源。",
+          "position": "execution-setup"
+        }
+      ],
+      "states": [
+        {
+          "id": "other-source",
+          "title": "Codex 未登录自家账号，使用 Devin",
+          "notes": []
+        },
+        {
+          "id": "no-models",
+          "title": "程序已准备，但无可用模型",
+          "notes": []
+        }
+      ]
+    },
+    {
+      "id": "quota",
+      "title": "模型 · 登录与额度",
+      "notes": [
+        {
+          "id": "accounts",
+          "title": "账号独立于执行程序",
+          "text": "账号来源负责登录、额度与模型。登录一次后可供多个已准备的执行智能体选择，断开账号不卸载程序。",
+          "position": "quota-card"
+        },
+        {
+          "id": "refresh",
+          "title": "逐个更新，不等待最慢来源",
+          "text": "刷新全部时各账号独立显示进度和更新时间；先完成的账号先更新，其他操作仍可使用。这是原型模拟，正式优化将避免重复拉取全来源。",
+          "position": "quota-card"
+        }
+      ],
+      "states": [
+        {
+          "id": "expired",
+          "title": "账号过期与重新登录",
+          "notes": []
+        },
+        {
+          "id": "dsh",
+          "title": "模型账号尚未登录",
+          "notes": []
+        }
+      ]
+    },
+    {
+      "id": "models",
+      "title": "模型 · 上下文窗口与启停",
+      "notes": [
+        {
+          "id": "context",
+          "title": "上下文窗口以 K 设置",
+          "text": "1 K = 1000 个词元，显示截去后三位，不四舍五入。离开输入框保存，留空或点击恢复使用平台默认；不增加平台实际容量。这里仅修改示例数据。",
+          "position": "model-context"
+        },
+        {
+          "id": "models",
+          "title": "启用决定可选模型",
+          "text": "只有已启用且可用的模型出现在对话选择器中。停用模型不改变已有任务。",
+          "position": "model-visibility"
+        }
+      ],
+      "states": [
+        {
+          "id": "all-disabled",
+          "title": "模型全部停用",
+          "notes": []
+        }
+      ]
+    },
+    {
+      "id": "conversation",
+      "title": "对话 · 独立选择与滑动强度",
+      "notes": [
+        {
+          "id": "selection",
+          "title": "加号、智能体、权限依次排列",
+          "text": "智能体显示同款前置图标；模型独立选择，支持的强度使用滑杆并从低到高排列，刻度留足下边距。",
+          "position": "conversation-picker"
+        }
+      ],
+      "states": [
+        {
+          "id": "qoder",
+          "title": "自动档位保留语义",
+          "notes": []
+        }
+      ]
+    }
+  ]
+}

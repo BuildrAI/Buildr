@@ -49,7 +49,7 @@ export function AgentProgramPreparation({connection,onPending,autoStart=false}:{
     finally{if(mounted.current)setBusy(false);}
   };
   return <div className="ac-program-preparation" data-testid="agent-program-preparation">
-    <div className="ac-prepare-steps" aria-label="接入准备流程"><span>检查程序</span><span>准备连接</span><span>官方登录</span><span>验证可用</span></div>
+    <div className="ac-prepare-steps" aria-label="接入准备流程"><span>检查程序</span><span>准备连接</span><span>程序就绪</span></div>
     {error&&<Alert type="warning" showIcon message={error}/>}
     {attempt&&<div className="ac-preparation-status" role="status" data-state={attempt.state}>{pending&&<Spin size="small"/>}<span>{attempt.message}</span></div>}
     {catalog&&catalog.candidates.length>0&&<div className="ac-program-choices"><label htmlFor={`agent-program-selection-${connection.id}`}>程序来源</label><Select id={`agent-program-selection-${connection.id}`} aria-label="选择接入程序" value={path||undefined} placeholder={connection.executable||'选择发现的兼容程序'} disabled={pending||busy||Boolean(connection.executable)} onChange={setPath} options={catalog.candidates.map(item=>({value:item.executable,label:`${item.label}${item.version?' · '+item.version:''}${item.compatible?'':'（不可用）'}`,disabled:!item.compatible}))}/>{catalog.candidates.map(item=><div className="ac-program-detail" key={item.executable}><strong>{item.label}{item.version?' · '+item.version:''}</strong><code>{item.executable}</code>{item.diagnostic&&<p>{item.diagnostic}</p>}</div>)}</div>}

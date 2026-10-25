@@ -4,7 +4,7 @@ export function effectiveModel(model:ModelOffering,preference:ModelPreference|un
   const reported=model.reportedContextWindow??model.contextWindow;
   const requested=preference?.contextWindow;
   return {...model,enabled:preference?.enabled??false,reportedContextWindow:reported,
-    contextWindowOverride:requested,contextWindow:requested===undefined?model.contextWindow:Math.min(requested,model.contextWindow??requested)};
+    contextWindowOverride:requested,contextWindow:requested===undefined?model.contextWindow:Math.min(requested,reported??requested)};
 }
 export function selectedOffering(model:ModelOffering,tierId?:string):ModelOffering {
   const id=tierId??model.defaultServiceTier;

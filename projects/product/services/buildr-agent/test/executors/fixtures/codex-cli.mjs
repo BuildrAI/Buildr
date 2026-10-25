@@ -46,6 +46,7 @@ return;
 if(!m.method&&m.id?.startsWith('request-')){if(m.result.answers.color.answers[0]!=='蓝')throw Error('wrong answer');
 const item={id:'command-'+active.id,type:'commandExecution',command:'synthetic command',processId:'native-process-'+active.id};
 active.items.push(item);
+event('thread/tokenUsage/updated',{threadId:active.threadId,tokenUsage:{total:{totalTokens:99999},last:{totalTokens:12000},modelContextWindow:500000}});
 event('item/started',{threadId:active.threadId,turnId:active.id,item});
 return;
 }

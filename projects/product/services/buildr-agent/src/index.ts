@@ -57,7 +57,7 @@ export function createAgentService(options: AgentServiceOptions) {
     if(discovery)return discovery;
     if(Date.now()-lastDiscovery<30000)return;
     const observed=discoveryVersion;
-    discovery=(async()=>{await models.ensureLinked();for(const provider of linkedProviders){const account=models.accounts.read(provider.id);if(account.enabled)await models.accounts.check(provider.id);}for(const account of models.accounts.list().accounts){if(!account.connectionId&&account.enabled&&['ready','failed'].includes(account.status)&&!account.loginAttempt?.state?.match(/^(initializing|waiting-browser|checking)$/))await models.accounts.check(account.id);}if(observed===discoveryVersion)lastDiscovery=Date.now();})().finally(()=>{discovery=undefined;});
+    discovery=(async()=>{await models.ensureLinked();await Promise.allSettled(models.accounts.list().accounts.filter(account=>account.enabled&&(account.connectionId||['ready','failed'].includes(account.status))&&!account.loginAttempt?.state?.match(/^(initializing|waiting-browser|checking)$/)).map(account=>models.accounts.check(account.id)));if(observed===discoveryVersion)lastDiscovery=Date.now();})().finally(()=>{discovery=undefined;});
     return discovery;
   };
   linkedChanged=connection=>{discoveryVersion++;lastDiscovery=0;if(!connection.enabled||['not-authenticated','expired'].includes(connection.status)||connection.loginAttempt&&['initializing','waiting-browser'].includes(connection.loginAttempt.state))models.invalidate('native-'+connection.id);};
@@ -65,7 +65,7 @@ export function createAgentService(options: AgentServiceOptions) {
   let closed = false;
   return {
     generation,
-    models: { accounts: {...models.accounts,list:async()=>{await discover();return models.accounts.list();}}, catalog: {list:async()=>{await discover();return models.catalog.list();}} },
+    models: { accounts: {...models.accounts,list:async(input:{refresh?:boolean}={})=>{if(input.refresh===false)void discover().catch(()=>{});else await discover();return models.accounts.list();}}, catalog: {list:async(input:{refresh?:boolean}={})=>{if(input.refresh===false)void discover().catch(()=>{});else await discover();return models.catalog.list();}} },
     connections: {
       list: () => ({ connections: connections.list() }),
       read: (id: string) => connections.get(id),

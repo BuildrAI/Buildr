@@ -96,14 +96,10 @@ export class PreparationApplication {
   private async finishConnection(id: string, attempt: Attempt, executable?: string): Promise<void> {
     attempt.controller.signal.throwIfAborted();
     expected(this.connections.get(id).revision, attempt.input.expectedRevision);
-    this.update(attempt, 'connecting', '正在连接独立配置并检查账号与模型。');
-    const connection = await this.connections.connect(id, { expectedRevision: attempt.input.expectedRevision, executable });
+    this.update(attempt, 'connecting', '正在核验程序与独立配置。');
+    const connection = await this.connections.connect(id, { expectedRevision: attempt.input.expectedRevision, executable, programOnly:true });
     attempt.controller.signal.throwIfAborted();
-    if (connection.status === 'ready' && connection.models.length) this.update(attempt, 'ready', '账号与可用模型已验证，可以开始对话。');
-    else if (['not-authenticated', 'expired'].includes(connection.status)) {
-      attempt.loginId = this.connections.beginLogin(id, connection.revision).loginAttempt?.id;
-      this.update(attempt, 'waiting-login', '程序已就绪，请完成官方登录；登录后自动验证账号与模型。');
-    } else this.update(attempt, 'failed', connection.diagnostic ?? '接入尚未通过检查，请核对程序及账号。');
+    this.update(attempt, 'ready', '程序已就绪。账号登录与模型检查在“模型”中管理。');
   }
   beginClosing(): void { this.closing = true; for (const attempt of this.attempts.values()) attempt.controller.abort(); }
   async close(): Promise<void> { this.beginClosing(); await Promise.allSettled([...this.attempts.values()].map(attempt => attempt.work)); }

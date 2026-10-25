@@ -80,6 +80,7 @@ export interface ExecutorObservation {
   diagnostic?: string;
 }
 export type ExecutorEvent =
+  | { type: 'context-usage'; usedTokens:number; windowTokens?:number }
   | { type: 'models'; models: AgentModel[] }
   | { type: 'title'; title: string }
   | { type: 'accepted'; executionRef: ExecutionRef; inputItemId?: string }
@@ -194,6 +195,7 @@ export interface ConversationEntry {
   createdAt: string;
 }
 export interface RunView {
+  contextUsage?: {usedTokens:number;windowTokens?:number};
   modelAccountId?: string; modelAccountIdentity?: string; modelSourceLabel?: string;
   id: string;
   participantId: string;

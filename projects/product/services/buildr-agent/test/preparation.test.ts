@@ -12,13 +12,13 @@ import { safeDiagnostic } from '../src/domain/agent-state.ts';
 function fixture(t: TestContext) {
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-preparation-test-'));
   const executable=path.join(root,'codex.js');fs.writeFileSync(executable,'');
-  let authenticated=false,opens=0,installs=0,cancelled=0;
+  let authenticated=false,opens=0,installs=0,cancelled=0,accountChecks=0,modelChecks=0;
   let loginUpdate:((value:LoginObservation)=>void)|undefined;
   let models=[{id:'actual-model',label:'Actual model'}];
   const capabilities={text:true,images:false,approval:true,questions:true,stop:true,resume:true,maxInputBytes:65536};
   const executor:AgentExecutor={descriptor:{id:'codex',label:'Codex',capabilities},async open(options){opens++;return {
     bindingIdentity:options.executable??'existing-binding',capabilities,
-    inspectAccount:async()=>({status:authenticated?'ready':'not-authenticated'}),models:async()=>models,
+    inspectAccount:async()=>{accountChecks++;return {status:authenticated?'ready':'not-authenticated'};},models:async()=>{modelChecks++;return models;},
     beginLogin:async(update)=>{loginUpdate=update;update({state:'waiting-browser',url:'https://auth.openai.com/test?secret=never-persist'});},
     cancelLogin:async()=>{cancelled++;loginUpdate?.({state:'cancelled'});},close:async()=>{},
   } as AgentRuntime;}};
@@ -28,7 +28,7 @@ function fixture(t: TestContext) {
   const candidate=(program=executable)=>({executable:program,source:'path' as const,label:'Existing CLI',version:'0.163.0',compatible:true});
   const begin=(input:{executable?:string;install?:boolean}={})=>service.connections.prepare('codex',{expectedRevision:service.connections.read('codex').revision,...input});
   t.after(async()=>{await service.close();fs.rmSync(root,{recursive:true,force:true});});
-  return {root,executable,service,catalog,manager,candidate,begin,get opens(){return opens;},get installs(){return installs;},get cancelled(){return cancelled;},authenticate(){authenticated=true;loginUpdate?.({state:'completed'});},setAuthenticated(){authenticated=true;},noModels(){models=[];}};
+  return {root,executable,service,catalog,manager,candidate,begin,get accountChecks(){return accountChecks;},get modelChecks(){return modelChecks;},get opens(){return opens;},get installs(){return installs;},get cancelled(){return cancelled;},authenticate(){authenticated=true;loginUpdate?.({state:'completed'});},setAuthenticated(){authenticated=true;},noModels(){models=[];}};
 }
 async function settled(service:ReturnType<typeof createAgentService>,id:string,state:string){
   for(let i=0;i<500;i++){const view=service.connections.preparation('codex',id);if(view.state===state)return view;await new Promise(resolve=>setTimeout(resolve,5));}
@@ -40,15 +40,15 @@ test('missing programs guide installation without enabling or creating credentia
   assert.equal(view.connection.enabled,false);assert.equal(f.opens,0);assert.equal(f.installs,0);
   assert.equal(fs.existsSync(path.join(f.root,'profile/agent-service/connections')),false);
 });
-test('multiple sources require selection, then independent login and actual models determine readiness',async t=>{
+test('program preparation completes without initiating account login',async t=>{
   const f=fixture(t),second=path.join(f.root,'other.js');fs.writeFileSync(second,'');
   f.catalog.candidates=[f.candidate(),f.candidate(second)];
   const first=f.begin();await settled(f.service,first.id,'selection-required');assert.equal(f.opens,0);
   f.manager.discover=async input=>({...f.catalog,candidates:[f.candidate(input.executable)]});
-  const attempt=f.begin({executable:second});const waiting=await settled(f.service,attempt.id,'waiting-login');
-  assert.equal(waiting.connection.status,'not-authenticated');assert.equal(f.opens,1);
-  assert.match(waiting.connection.loginAttempt?.url??'',/^https:\/\/auth\.openai\.com\//);
-  f.authenticate();const ready=await settled(f.service,attempt.id,'ready');assert.equal(ready.connection.models[0]?.id,'actual-model');
+  const attempt=f.begin({executable:second});const waiting=await settled(f.service,attempt.id,'ready');
+  assert.equal(waiting.connection.status,'not-authenticated');assert.equal(f.opens,1);assert.equal(f.accountChecks,0);assert.equal(f.modelChecks,0);
+  assert.equal(waiting.connection.loginAttempt,undefined);
+  f.setAuthenticated();const ready=await f.service.connections.check('codex',waiting.connection.revision);assert.equal(ready.models[0]?.id,'actual-model');
   assert.equal(fs.readFileSync(path.join(f.root,'profile/agent-service/conversations.sqlite')).includes(Buffer.from('never-persist')),false);
   assert.throws(()=>f.begin({executable:f.executable}),{code:'agent_configuration_bound'});
 });
@@ -71,12 +71,12 @@ test('failed installation can retry, successful preparation is reverified and re
   f.manager.install=async()=>{if(failed)throw new Error('secret=https://registry.example/token');f.catalog.candidates=[f.candidate()];return f.executable;};
   let attempt=f.begin({install:true});let view=await settled(f.service,attempt.id,'failed');assert.doesNotMatch(view.message,/secret|token|registry\.example/);
   failed=false;attempt=f.begin({install:true});const duplicate=f.begin({install:true});assert.equal(duplicate.id,attempt.id);
-  view=await settled(f.service,attempt.id,'waiting-login');assert.equal(f.opens,1);assert.equal(view.connection.executable,f.executable);
-  await f.service.connections.cancelPreparation('codex',attempt.id);assert.equal(f.cancelled,1);assert.ok(fs.existsSync(f.executable));
+  view=await settled(f.service,attempt.id,'ready');assert.equal(f.opens,1);assert.equal(view.connection.executable,f.executable);
+  await f.service.connections.cancelPreparation('codex',attempt.id);assert.equal(f.cancelled,0);assert.ok(fs.existsSync(f.executable));
 });
-test('empty model catalog cannot be advertised as ready or trigger a login loop',async t=>{
+test('program readiness is independent from an empty model catalog',async t=>{
   const f=fixture(t);f.setAuthenticated();f.noModels();f.catalog.candidates=[f.candidate()];
-  const attempt=f.begin();const view=await settled(f.service,attempt.id,'failed');assert.equal(view.connection.status,'failed');assert.match(view.message,/模型/);assert.equal(view.connection.loginAttempt,undefined);
+  const attempt=f.begin();const view=await settled(f.service,attempt.id,'ready');assert.equal(view.connection.loginAttempt,undefined);const checked=await f.service.connections.check('codex',view.connection.revision);assert.equal(checked.status,'failed');assert.match(checked.diagnostic??'',/模型/);
 });
 test('restarting preparation preserves the exact established program and an invalid explicit path never installs a fallback',async t=>{
   const f=fixture(t);f.setAuthenticated();f.catalog.candidates=[f.candidate()];

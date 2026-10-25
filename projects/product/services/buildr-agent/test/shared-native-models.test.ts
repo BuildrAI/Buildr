@@ -56,3 +56,8 @@ test('a pending catalog cannot restore a source after its native login was inval
  const app=createModelAccess({root,providers:[{id:'native-qoder',connectionId:'qoder',label:'Qoder',async open(){return{protocol:'chat-completions',async inspect(){started();await gate;return{status:'ready',identity:'old',models:[offering]};},beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>Response.json({}),close:async()=>{}};}}]});
  try{await app.ensureLinked();const checking=app.accounts.check('native-qoder');await observing;app.invalidate('native-qoder');release();await checking;assert.equal(app.accounts.read('native-qoder').status,'not-authenticated');assert.equal(app.catalog.list().models.length,0);}finally{await app.close();await rm(root,{recursive:true,force:true});}
 });
+
+test('Qoder discovers supported context windows separately from the default',async()=>{
+ const runtime=await createQoderModelProvider({inspect:async()=>({status:'ready'}),identity:async()=>'user',request:async()=>Response.json({chat:[{key:'model',enable:true,max_input_tokens:180000,context_config:{small:{token_count:200000,is_default:true},medium:{token_count:400000},large:{token_count:1000000}}}]})}).open({accountId:'native-qoder',configRoot:'unused',environment:{}});
+ const observation=await runtime.inspect();assert.equal(observation.models[0].contextWindow,200000);assert.equal(observation.models[0].reportedContextWindow,1000000);await runtime.close();
+});

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {conversationReasoningSelection} from '../src/features/agent-conversations/conversation-options.ts';
+import {conversationReasoningSelection,officialConversationChoice} from '../src/features/agent-conversations/conversation-options.ts';
 const connection={models:[
   {id:'first',label:'First',isDefault:true,defaultReasoningEffort:'high',reasoningEfforts:[{id:'low',label:'Low'},{id:'high',label:'High'}]},
   {id:'second',label:'Second',defaultReasoningEffort:'medium',reasoningEfforts:[{id:'medium',label:'Medium'}]},
@@ -36,4 +36,12 @@ test('自动、未知或同义档位不强制放入有序滑杆，单档位保�
   const result=conversationReasoningSelection({models:[{id:'m',isDefault:true,defaultReasoningEffort:ids[0],reasoningEfforts:ids.map(id=>({id,label:id}))}]},{connectionId:'qoder'});
   assert.equal(result.ordered,false);assert.equal(result.options[result.index].id,ids[0]);
  }
+});
+
+test('切换智能体优先采用官方来源，不自动消费其他套餐',()=>{
+ const own={accountId:'native-codex',modelId:'m',available:true,enabled:true,accountIdentity:'own',accountRevision:'r'};
+ const other={...own,accountId:'devin',accountIdentity:'other'};
+ assert.equal(officialConversationChoice({id:'codex',models:[]},[other,own]).modelAccountId,'native-codex');
+ assert.deepEqual(officialConversationChoice({id:'codex',models:[]},[other]),{connectionId:'codex'});
+ assert.deepEqual(officialConversationChoice({id:'codex',models:[]},[{...own,enabled:false},other]),{connectionId:'codex'});
 });

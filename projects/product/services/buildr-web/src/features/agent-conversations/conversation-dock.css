@@ -27,3 +27,9 @@
   .ac-panel .ac-boundary-toggle{left:auto;right:0}
   .ac-panel[data-dock] .ac-thread-header{padding-left:9px;padding-right:40px}
 }
+
+.ac-collapsed-rail{box-sizing:border-box;width:53px;padding:6px 5px 10px;background:#fff}.ac-conversation-icon.ant-btn{width:40px;height:40px;border-radius:8px;font-size:22px}.ac-conversation-icon.ant-btn.is-active{color:var(--soft-primary);background:#edf4f0}.ac-panel[data-dock] .ac-thread-header{padding-right:9px}@media(min-width:761px){.ac-panel.is-peeking{right:53px}.ac-panel.is-peeking[data-dock=left]{left:53px;right:auto}}
+
+.ac-conversation-icon.ant-btn.is-active:hover{color:var(--soft-muted);background:transparent}
+
+.ac-conversation-icon.ant-btn{border:0!important;box-shadow:none!important}.ac-conversation-icon .anticon,.ac-conversation-icon svg{color:inherit}.ac-conversation-icon:not(:focus-visible){outline:none!important}.ac-conversation-icon.ant-btn:not(.is-active):hover{color:var(--soft-primary)!important;background:#edf4f0!important}

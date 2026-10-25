@@ -854,3 +854,16 @@ test('legacy runs and accepted request digests without a mode stay default-compa
     const preview = f.service.conversations.prepareSend('workspace-one', chat.id, { expectedRevision: done.revision, connectionId: 'local', text: 'new input' }); assert.equal(preview.permissionMode, 'default');
   } finally { await f.close(); }
 });
+
+test('context usage stores the latest executor observation and ignores invalid counts', async () => {
+  const native=fake('local',{hold:true});const f=fixture([native.executor]);
+  try {
+    await connected(f.service,'local');const created=await f.service.conversations.create('workspace-one',{});
+    await send(f.service,created.id,'local','usage observation');
+    await waitUntil(()=>native.sends.length,value=>value===1);
+    native.sends[0]!.onEvent({type:'context-usage',usedTokens:12000,windowTokens:500000});
+    assert.deepEqual(f.service.conversations.read('workspace-one',created.id).run?.contextUsage,{usedTokens:12000,windowTokens:500000});
+    native.sends[0]!.onEvent({type:'context-usage',usedTokens:-1});
+    assert.equal(f.service.conversations.read('workspace-one',created.id).run?.contextUsage?.usedTokens,12000);
+  } finally {await f.close();}
+});

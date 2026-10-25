@@ -4,6 +4,10 @@ import type { ThemeConfig } from 'antd';
 export const softProductTheme: ThemeConfig = {
   token: {
     colorPrimary: '#397d74',
+    colorPrimaryBg: '#edf5f1',
+    colorPrimaryBgHover: '#e4efea',
+    controlOutline: 'rgba(57, 125, 116, 0.12)',
+    controlOutlineWidth: 1,
     colorInfo: '#5b8fa8',
     colorSuccess: '#5a9a78',
     colorWarning: '#c4a35a',
@@ -30,6 +34,12 @@ export const softProductTheme: ThemeConfig = {
       headerBg: '#ffffff',
       bodyBg: '#f7f8f9',
       triggerBg: '#397d74',
+    },
+    Select: {
+      optionSelectedBg: '#edf5f1',
+      optionSelectedColor: '#306b62',
+      optionActiveBg: '#f4f6f7',
+      optionSelectedFontWeight: 500,
     },
     Menu: {
       itemBorderRadius: 8,

@@ -73,7 +73,7 @@ export class ConnectionApplication {
     return this.save(record);
   }
 
-  async connect(id: string, input: { expectedRevision: string; executable?: string }): Promise<ConnectionView> {
+  async connect(id: string, input: { expectedRevision: string; executable?: string; programOnly?: boolean }): Promise<ConnectionView> {
     if (this.closing) fail('agent_service_closing', '智能体服务正在退出。', 503);
     const record = this.stored(id); expected(record.view.revision, input.expectedRevision);
     if (input.executable !== undefined) {
@@ -84,8 +84,10 @@ export class ConnectionApplication {
       if (record.view.executable && record.view.executable !== executable) fail('agent_configuration_bound', '已有接入不能静默改绑程序，请保留原配置并核对版本。', 409);
       record.view.executable = executable;
     }
-    record.view.enabled = true; record.view.status = 'connecting'; delete record.view.diagnostic;
+    const previousStatus=record.view.status;
+    record.view.enabled = true; record.view.status = input.programOnly?(['disconnected','connecting'].includes(previousStatus)?'not-authenticated':previousStatus):'connecting'; delete record.view.diagnostic;
     this.save(record);
+    if(input.programOnly){await this.runtime(id);return this.get(id);}
     return this.check(id);
   }
   async runtime(id: string, gateway?: ModelGatewayConfiguration): Promise<AgentRuntime> {

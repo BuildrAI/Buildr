@@ -210,6 +210,7 @@ class CodexRuntime implements AgentRuntime {
   }
   private turnMessage(turn: ActiveTurn, message: RpcMessage): void {
     const p = message.params ?? {}; const emit = turn.input.onEvent;
+    if(message.method==='thread/tokenUsage/updated'){const usage=p.tokenUsage;const used=usage?.last?.totalTokens;const window=usage?.modelContextWindow;if(Number.isSafeInteger(used)&&used>=0)emit({type:'context-usage',usedTokens:used,...(Number.isSafeInteger(window)&&window>0?{windowTokens:window}:{})});return;}
     if (message.method === 'thread/name/updated') { if (typeof p.threadName === 'string') emit({ type: 'title', title: p.threadName }); return; }
     if (p.turnId && p.turnId !== turn.id || p.turn?.id && p.turn.id !== turn.id) return;
     if (message.id !== undefined && message.method) {

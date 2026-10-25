@@ -31,8 +31,10 @@ class DeepSeekRuntime implements ModelProviderRuntime {
         const row = record(value), id = string(row.id); if (!id || row.enabled === false || row.disabled === true) return [];
         const capabilities = record(row.api_capabilities);
         if (capabilities.anthropic_messages === undefined) return [];
-        const efforts = (Array.isArray(row.reasoning_efforts) ? row.reasoning_efforts : []).flatMap(value => { const effort = string(value); return effort ? [{ id: effort, label: effort }] : []; });
-        return [{ id, label: string(row.name) ?? string(row.display_name) ?? id, images: Array.isArray(row.input_modalities) && row.input_modalities.includes('image'), tools: true, ...(positive(row.context_window) ? { contextWindow: positive(row.context_window) } : {}), ...(positive(row.max_output_tokens) ? { maxOutputTokens: positive(row.max_output_tokens) } : {}), ...(efforts.length ? { reasoningEfforts: efforts } : {}) }];
+        const effortConfig = record(row.effort);
+        const levels = Array.isArray(effortConfig.supported_levels) ? effortConfig.supported_levels : row.reasoning_efforts;
+        const efforts = (Array.isArray(levels) ? levels : []).flatMap(value => { const effort = string(value); return effort ? [{ id: effort, label: effort }] : []; });
+        return [{ id, label: string(row.name) ?? string(row.display_name) ?? id, images: Array.isArray(row.input_modalities) && row.input_modalities.includes('image'), tools: true, ...(positive(row.context_window) ? { contextWindow: positive(row.context_window) } : {}), ...(positive(row.max_output_tokens) ? { maxOutputTokens: positive(row.max_output_tokens) } : {}), ...(efforts.length ? { reasoningEfforts: efforts, ...(efforts.some(effort=>effort.id===effortConfig.default_level)?{defaultReasoningEffort:string(effortConfig.default_level)}:{}) } : {}) }];
       });
       this.catalog = new Map(models.map(model => [model.id, model]));
       return { status: models.length ? 'ready' : 'failed', label: account.label ?? 'DeepSeek', models, quota: { available: false, observedAt: new Date().toISOString(), summary: 'DeepSeek 账号未返回可读取套餐额度' }, ...(!models.length ? { diagnostic: 'model_deepseek_catalog_empty' } : {}) };

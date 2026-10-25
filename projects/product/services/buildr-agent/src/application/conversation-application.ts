@@ -234,6 +234,7 @@ export class ConversationApplication {
     const record = this.currentRun(workspaceId, id, runId); if (!record) return;
     const run = record.view.run!; const participant = record.participants.find(value => value.id === run.participantId)!;
     const attempt = record.attempts.find(value => value.runId === runId)!;
+    if(event.type==='context-usage'){if(Number.isSafeInteger(event.usedTokens)&&event.usedTokens>=0){run.contextUsage={usedTokens:event.usedTokens,...(Number.isSafeInteger(event.windowTokens)&&event.windowTokens!>0?{windowTokens:event.windowTokens}:{})};run.updatedAt=this.options.now();this.save(record);}return;}
     if (event.type === 'models') {
       const connection = this.options.connections.observeModels(participant.connectionId, participant.bindingIdentity, event.models);
       this.options.events.publish({ type: 'connection', workspaceId, conversationId: id, revision: connection.revision, payload: { connection } }); return;

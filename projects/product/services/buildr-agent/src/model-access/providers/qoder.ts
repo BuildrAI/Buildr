@@ -47,7 +47,8 @@ export function createQoderModelProvider(owner:QoderModelOwner):ModelProvider {
         for(const value of data.chat){const config=record(value),id=string(config.key);if(!id||config.enable===false)continue;
           const thinking=record(config.thinking_config),enabled=record(thinking.enabled),efforts=Object.keys(record(enabled.efforts));
           const contexts=Object.values(record(config.context_config)).map(record);const windows=contexts.flatMap(v=>positive(v.token_count)??[]);const contextWindow=positive(contexts.find(v=>v.is_default===true)?.token_count)??positive(config.max_input_tokens)??(windows.length?Math.min(...windows):undefined);
-          const offering:ModelOffering={id,label:string(config.display_name)??id,tools:true,images:config.is_vl===true,...(contextWindow?{contextWindow}:{}),...(efforts.length?{reasoningEfforts:efforts.map(id=>({id,label:id})),defaultReasoningEffort:efforts.find(id=>record(record(enabled.efforts)[id]).is_default===true)}:{})};
+          const reportedContextWindow=windows.length?Math.max(...windows):positive(config.max_input_tokens);
+          const offering:ModelOffering={id,...(reportedContextWindow?{reportedContextWindow}:{}),label:string(config.display_name)??id,tools:true,images:config.is_vl===true,...(contextWindow?{contextWindow}:{}),...(efforts.length?{reasoningEfforts:efforts.map(id=>({id,label:id})),defaultReasoningEffort:efforts.find(id=>record(record(enabled.efforts)[id]).is_default===true)}:{})};
           models.set(id,{offering,config});}
         return{status:models.size?'ready':'failed',label:account.label??'Qoder',identity:await owner.identity(),models:[...models.values()].map(v=>v.offering),quota:{available:false,observedAt:new Date().toISOString()}};
       },

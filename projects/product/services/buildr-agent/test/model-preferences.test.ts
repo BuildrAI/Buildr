@@ -1,3 +1,4 @@
+import {effectiveModel} from '../src/model-access/model-preferences.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm,writeFile} from 'node:fs/promises';import {join} from 'node:path';import {tmpdir} from 'node:os';
@@ -55,4 +56,11 @@ test('failed quota observations retain the timestamp and windows of the last suc
  const root=await mkdtemp(join(tmpdir(),'buildr-quota-stale-'));let available=true;
  const source=provider(()=>[basic]),original=source.open;source.open=async input=>({...await original(input),inspect:async()=>({status:'ready',models:[basic],quota:{available,observedAt:available?'2026-10-25T00:00:00Z':'2026-10-25T01:00:00Z',...(available?{windows:[{id:'weekly',label:'Week',remainingPercent:93}]}:{})}})});
  const app=createModelAccess({root,providers:[source]});try{const account=await app.accounts.add({provider:'fixture'});await app.accounts.check(account.id);available=false;const view=await app.accounts.check(account.id);assert.equal(view.status,'ready');assert.equal(view.quota?.stale,true);assert.equal(view.quota?.observedAt,'2026-10-25T00:00:00Z');assert.equal(view.quota?.windows?.[0].remainingPercent,93);}finally{await app.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('a configured default window is separate from the supported maximum',()=>{
+ const model={...basic,contextWindow:200000,reportedContextWindow:1000000};
+ assert.equal(effectiveModel(model,undefined).contextWindow,200000);
+ assert.equal(effectiveModel(model,{enabled:true,contextWindow:512000}).contextWindow,512000);
+ assert.equal(effectiveModel(model,{enabled:true,contextWindow:2000000}).contextWindow,1000000);
 });

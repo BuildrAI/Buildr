@@ -127,14 +127,14 @@ test('Codex explicit login, dynamic catalog and Responses negotiation work witho
   const mock: typeof fetch = async (url, init = {}) => {
     const target = String(url);
     if (target.endsWith('/oauth/token')) { const params = new URLSearchParams(String(init.body)); assert.equal(params.get('code'), 'test-authorization-code'); assert.equal(createHash('sha256').update(params.get('code_verifier')!).digest('base64url').length, 43); return Response.json({ access_token: 'private-codex-token', refresh_token: 'private-refresh', id_token: `header.${claims}.signature`, expires_in: 3600 }); }
-    if (target.includes('/codex/models')) return Response.json({ models: [{ slug: 'gpt-test', display_name: 'GPT Test', context_window: 100000, input_modalities: ['text', 'image'], supported_reasoning_levels: [{ effort: 'high', description: 'High' }] }] });
+    if (target.includes('/codex/models')) return Response.json({ models: [{ slug: 'gpt-test', display_name: 'GPT Test', context_window: 100000, max_context_window:1000000, input_modalities: ['text', 'image'], supported_reasoning_levels: [{ effort: 'high', description: 'High' }] }] });
     if (target.endsWith('/wham/usage')) return Response.json({ rate_limit: { primary_window: { used_percent: 25 } } });
     if (target.endsWith('/codex/responses')) { assert.equal(new Headers(init.headers).get('chatgpt-account-id'), 'upstream-account'); requests.push(JSON.parse(String(init.body))); return new Response('event: response.completed\ndata: {"type":"response.completed","response":{"id":"resp","status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}]}}\n\n', { headers: { 'content-type': 'text/event-stream' } }); }
     throw new Error('unexpected_test_network');
   };
   const runtime = await createCodexModelProvider({ fetch: mock, callbackPort: 0 }).open({ accountId: 'account', configRoot: root, environment: {} });
   t.after(async () => { await runtime.close(); await rm(root, { recursive: true, force: true }); });
-  await login(runtime, 'codex'); const view = await runtime.inspect(); assert.equal(view.quota?.remainingPercent, 75); assert.equal(view.models[0]?.maxOutputTokens, undefined);
+  await login(runtime, 'codex'); const view = await runtime.inspect(); assert.equal(view.quota?.remainingPercent, 75);assert.equal(view.models[0]?.contextWindow,100000);assert.equal(view.models[0]?.reportedContextWindow,1000000); assert.equal(view.models[0]?.maxOutputTokens, undefined);
   const translated = translateRequest({ system: 'system', messages: [{ role: 'user', content: 'hello' }], max_tokens: 4096, tools: [{ name: 'read_file', input_schema: { type: 'object' } }], tool_choice: { type: 'auto' } }, 'anthropic-messages', 'responses', opaque);
   const result = await (await runtime.infer(input(translated, 'gpt-test'))).json();
   assert.equal(result.status, 'completed'); assert.equal(requests[0]!.instructions, 'system'); assert.equal(requests[0]!.max_output_tokens, undefined); assert.equal(requests[0]!.store, false); assert.equal(requests[0]!.stream, true);
@@ -172,10 +172,10 @@ test('DeepSeek source delegates native login and raw inference to its sole owner
   const runtime = await createDeepSeekModelProvider({ ownerFactory: () => ({
     async inspect() { return { status: logged ? 'ready' : 'not-authenticated', label: 'DeepSeek account' }; },
     async beginLogin(update) { update({ state: 'waiting-browser', url: 'https://accounts.deepseek.com/login' }); logged = true; update({ state: 'completed' }); }, async cancelLogin() {},
-    async request(url, init = {}) { requests.push({ url, init }); return url.endsWith('/models') ? Response.json({ data: [{ id: 'deepseek-test', name: 'DeepSeek test', api_capabilities: { anthropic_messages: {} }, context_window: 100000, max_output_tokens: 5000, input_modalities: ['text', 'image'] }] }) : Response.json({ type: 'message', content: [{ type: 'text', text: 'ok' }] }); }, async close() { closed = true; },
+    async request(url, init = {}) { requests.push({ url, init }); return url.endsWith('/models') ? Response.json({ data: [{ id: 'deepseek-test', name: 'DeepSeek test', effort: {supported_levels:['low','high','max'],default_level:'high'}, api_capabilities: { anthropic_messages: {} }, context_window: 100000, max_output_tokens: 5000, input_modalities: ['text', 'image'] }] }) : Response.json({ type: 'message', content: [{ type: 'text', text: 'ok' }] }); }, async close() { closed = true; },
   }) }).open({ accountId: 'account', configRoot: '/unused-private-test-profile', environment: {} });
   const events: LoginObservation[] = []; await runtime.beginLogin(value => events.push(value)); assert.equal(events.at(-1)?.state, 'completed');
-  const view = await runtime.inspect(); assert.equal(view.quota?.available, false); assert.equal(view.models[0]?.images, true);
+  const view = await runtime.inspect(); assert.equal(view.quota?.available, false); assert.equal(view.models[0]?.images, true); assert.deepEqual(view.models[0]?.reasoningEfforts?.map(effort=>effort.id),['low','high','max']); assert.equal(view.models[0]?.defaultReasoningEffort,'high');
   const body = { messages: [{ role: 'user', content: 'test' }], max_tokens: 100 }; await runtime.infer(input(body, 'deepseek-test'));
   assert.equal(requests.at(-1)?.url, 'https://api.deepseek.com/anthropic/v1/messages'); assert.deepEqual(JSON.parse(String(requests.at(-1)?.init.body)), { ...body, model: 'deepseek-test' });
   assert.equal(new Headers(requests.at(-1)?.init.headers).has('x-dsh-auth-token'), false); await runtime.close(); assert.equal(closed, true);

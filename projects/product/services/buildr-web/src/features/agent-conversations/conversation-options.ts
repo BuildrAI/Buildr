@@ -1,4 +1,4 @@
-import type {ConnectionView, ConversationRun, SendDraft} from './types';
+import type {ConnectionView, ConversationRun, SendDraft, CatalogModel} from './types';
 
 export type ConversationChoice = Pick<SendDraft,'connectionId'|'model'|'reasoningEffort'|'serviceTier'|'modelAccountId'|'modelAccountRevision'|'modelAccountIdentity'>;
 export type PermissionMode=NonNullable<SendDraft['permissionMode']>;
@@ -56,4 +56,17 @@ export function reasoningEffortRank(id:string):number|undefined {
 }
 export function sortReasoningEfforts<T extends {id:string}>(options:readonly T[]):T[]{
   return options.map((value,index)=>({value,index,rank:reasoningEffortRank(value.id)})).sort((a,b)=>(a.rank??Infinity)-(b.rank??Infinity)||a.index-b.index).map(item=>item.value);
+}
+
+export function modelSourceName(provider:string):string {
+  const id=provider.replace(/^native-/, '');
+  return ({codex:'Codex',dsh:'DSH',deepseek:'DeepSeek',qoder:'Qoder',devin:'Devin'} as Record<string,string>)[id]??provider;
+}
+
+/** Never select a different subscription without an explicit user choice. */
+export function officialConversationChoice(connection:ConnectionView|undefined,catalog:CatalogModel[]):ConversationChoice {
+ const connectionId=connection?.id??'';
+ const own=catalog.filter(item=>item.accountId==='native-'+connectionId&&item.available&&item.enabled!==false);
+ const source=own.find(item=>item.modelId===connection?.models.find(model=>model.isDefault)?.id)??own[0];
+ return source?{connectionId,model:source.modelId,modelAccountId:source.accountId,modelAccountRevision:source.accountRevision,modelAccountIdentity:source.accountIdentity,serviceTier:source.defaultServiceTier}:{connectionId};
 }
