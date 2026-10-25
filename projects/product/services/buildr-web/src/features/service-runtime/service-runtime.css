@@ -130,7 +130,7 @@
 .service-directory-name .service-frequent-button:is(:hover,:focus-visible),.service-directory-name .service-frequent-button.is-frequent { color:var(--soft-primary); opacity:1; }
 .resource-directory-row-actions .ant-btn.service-directory-start { padding-inline:10px; color:var(--soft-primary); border-color:color-mix(in srgb,var(--soft-primary) 25%,var(--soft-line)); background:color-mix(in srgb,var(--soft-primary) 8%,var(--soft-surface)); font-weight:500; }
 .resource-directory-row-actions .ant-btn.service-directory-start:hover { color:var(--soft-primary); border-color:var(--soft-primary); background:color-mix(in srgb,var(--soft-primary) 14%,var(--soft-surface)); }
-.service-frequent-filter.is-active { color:var(--soft-primary); border-color:var(--soft-primary); background:var(--soft-primary-soft); }
+.ant-btn.service-directory-filter.is-active { color:var(--soft-primary); border-color:var(--soft-primary); background:color-mix(in srgb,var(--soft-primary) 8%,var(--soft-surface)); }
 .runtime-backend-options { display:grid; gap:12px; padding:4px 0; font-size:13px; }
 .runtime-backend-options > code { overflow-wrap:anywhere; font-size:12px; color:var(--soft-primary); }
 .runtime-backend-options .ant-radio-group { display:flex; gap:12px 24px; flex-wrap:wrap; }
