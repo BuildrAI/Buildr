@@ -166,6 +166,63 @@ test('Codex explicit login, dynamic catalog and Responses negotiation work witho
   assert.ok(!JSON.stringify(view).includes('private-codex-token'));
 });
 
+test('native Codex headerless Responses streams complete a Chat tool loop through the real translators', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-codex-owner-stream-')), requests: Record<string, unknown>[] = [];
+  const runtime = await createCodexModelProvider({ owner: {
+    async inspect() { return { status: 'ready' }; }, async identity() { return 'native-codex-fixture'; },
+    async request(path, init = {}) {
+      if (path.startsWith('/codex/models')) return Response.json({ models: [{ slug: 'gpt-test' }] });
+      if (path === '/wham/usage') return Response.json({});
+      assert.equal(path, '/codex/responses'); const body = JSON.parse(String(init.body)); requests.push(body); assert.equal(body.stream, true);
+      const call = { id: 'fc-read', type: 'function_call', call_id: 'call-read', name: 'read_file', arguments: '{"path":"a.ts"}' };
+      const output = requests.length === 1 ? [call] : [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'file checked' }] }];
+      const events = requests.length === 1 ? [{ type: 'response.output_item.added', output_index: 0, item: { ...call, arguments: '' } }, { type: 'response.function_call_arguments.delta', item_id: call.id, output_index: 0, delta: call.arguments }] : [{ type: 'response.output_text.delta', output_index: 0, delta: 'file checked' }];
+      const bytes = new TextEncoder().encode([...events, { type: 'response.completed', response: { id: 'response-' + requests.length, status: 'completed', output } }].map(event => 'data: ' + JSON.stringify(event) + '\n\n').join(''));
+      const response = new Response(new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(bytes.slice(0, 19)); controller.enqueue(bytes.slice(19)); controller.close(); } }));
+      assert.equal(response.headers.get('content-type'), null, 'the owner fixture must reproduce a missing header, not string Response text/plain');
+      return response;
+    },
+  } }).open({ accountId: 'account', configRoot: root, environment: {} });
+  t.after(async () => { await runtime.close(); await rm(root, { recursive: true, force: true }); });
+  const request = { model: 'consumer-route', stream: true, messages: [{ role: 'user', content: 'inspect file' }], tools: [{ type: 'function', function: { name: 'read_file', parameters: { type: 'object' } } }] };
+  const consume = async (body: Record<string, unknown>, stream = false) => {
+    const response = await runtime.infer(input(translateRequest(body, 'chat-completions', 'responses', opaque), 'gpt-test'));
+    return translateResponse(response, 'responses', 'chat-completions', { model: 'consumer-route', stream, request: body, opaque, signal: new AbortController().signal });
+  };
+  const first = await (await consume(request)).json(), message = first.choices[0].message;
+  assert.deepEqual(message.tool_calls, [{ id: 'call-read', type: 'function', function: { name: 'read_file', arguments: '{"path":"a.ts"}' } }]);
+  assert.equal(first.choices[0].finish_reason, 'tool_calls');
+  const final = await (await consume({ ...request, messages: [...request.messages, message, { role: 'tool', tool_call_id: 'call-read', content: 'actual fixture file result' }] }, true)).text();
+  const events = final.split('\n\n').filter(frame => frame.startsWith('data: {')).map(frame => JSON.parse(frame.slice(6)));
+  assert.equal(events.map(event => event.choices[0].delta.content ?? '').join(''), 'file checked');
+  assert.equal(events.at(-1).choices[0].finish_reason, 'stop'); assert.match(final, /\[DONE\]/);
+  assert.ok((requests[1].input as Record<string, unknown>[]).some(item => item.type === 'function_call_output' && item.call_id === 'call-read' && item.output === 'actual fixture file result'));
+  assert.equal(requests.length, 2);
+});
+
+test('native Codex stream header normalization preserves bytes, declared headers, cancellation and HTTP failures', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-codex-owner-stream-boundaries-'));
+  const bytes = new TextEncoder().encode('event: response.completed\r\ndata: {"type":"response.completed","response":{"status":"completed","output":[]}}\r\n\r\n');
+  let mode: 'headerless' | 'declared' | 'cancel' | 'error' = 'headerless', cancelled = false, failedBodyCancelled = false;
+  const runtime = await createCodexModelProvider({ owner: {
+    async inspect() { return { status: 'ready' }; }, async identity() { return 'native-codex-fixture'; },
+    async request(path) {
+      if (path.startsWith('/codex/models')) return Response.json({ models: [{ slug: 'gpt-test' }] });
+      if (path === '/wham/usage') return Response.json({});
+      assert.equal(path, '/codex/responses');
+      if (mode === 'error') return new Response(new ReadableStream({ cancel() { failedBodyCancelled = true; } }), { status: 429 });
+      return new Response(new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(bytes); if (mode !== 'cancel') controller.close(); }, cancel() { cancelled = true; } }), { headers: { 'x-owner-header': 'preserved', ...(mode === 'declared' ? { 'content-type': 'text/event-stream; charset=utf-8' } : {}) } });
+    },
+  } }).open({ accountId: 'account', configRoot: root, environment: {} });
+  t.after(async () => { await runtime.close(); await rm(root, { recursive: true, force: true }); });
+  const infer = () => runtime.infer(input({ input: 'test', stream: true }, 'gpt-test'));
+  const normalized = await infer(); assert.equal(normalized.headers.get('content-type'), 'text/event-stream'); assert.equal(normalized.headers.get('x-owner-header'), 'preserved');
+  assert.deepEqual(new Uint8Array(await normalized.arrayBuffer()), bytes);
+  mode = 'declared'; const declared = await infer(); assert.equal(declared.headers.get('content-type'), 'text/event-stream; charset=utf-8'); assert.deepEqual(new Uint8Array(await declared.arrayBuffer()), bytes);
+  mode = 'cancel'; const ongoing = await infer(), reader = ongoing.body!.getReader(); await reader.read(); await reader.cancel(); assert.equal(cancelled, true);
+  mode = 'error'; const failure = await infer(); assert.equal(failure.status, 429); assert.match(failure.headers.get('content-type')!, /application\/json/); assert.deepEqual(await failure.json(), { error: { code: 'model_codex_upstream_failed' } }); assert.equal(failedBodyCancelled, true);
+});
+
 test('Codex Responses consumer completes a two-turn Devin tool loop through the real protocol translators', { timeout: 10000 }, async t => {
   const captured: Buffer[] = [];
   const { runtime } = await devinFixture(t, init => {
