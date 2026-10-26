@@ -1112,6 +1112,12 @@ jobs:
           : > "${RUNNER_TEMP}/buildr-cli-dependencies/global.npmrc"
           env -i PATH="${PATH}" NPM_CONFIG_USERCONFIG="${RUNNER_TEMP}/buildr-cli-dependencies/user.npmrc" NPM_CONFIG_GLOBALCONFIG="${RUNNER_TEMP}/buildr-cli-dependencies/global.npmrc" \
             node "${RUNNER_TEMP}/plugin-tooling/node_modules/npm/bin/npm-cli.js" ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/ --cache "${RUNNER_TEMP}/buildr-cli-dependencies/npm-cache"
+      - name: Prepare the private Agent package
+        if: ${{ !inputs.repair_candidate_run_id || needs.candidate-plan.outputs.buildr != 'true' }}
+        working-directory: projects/product/services/buildr-agent
+        run: |
+          node "${RUNNER_TEMP}/plugin-tooling/node_modules/npm/bin/npm-cli.js" ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/ --cache "${RUNNER_TEMP}/buildr-cli-dependencies/npm-cache"
+          node tools/build.ts
       - name: Prepare shared release-tool generated test inputs
         if: ${{ !inputs.repair_candidate_run_id || needs.candidate-plan.outputs.buildr != 'true' }}
         working-directory: projects/product/services/buildr

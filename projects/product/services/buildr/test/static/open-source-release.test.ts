@@ -452,7 +452,7 @@ test('protected publication resolves the Workspace repository root', () => {
   assert.equal(fs.statSync(path.join(releasePublicationRepositoryRoot, '.github', 'workflows', 'publish.yml')).isFile(), true);
 });
 
-test('CI and publish workflows use the supported Node runtime', () => {
+test('CI and publish workflows use the supported Node runtime', async () => {
   const verifyWorkflow: any = fs.readFileSync(path.join(workspaceRoot, '.github/workflows/verify.yml'), 'utf8');
   const publishWorkflow: any = fs.readFileSync(path.join(workspaceRoot, '.github/workflows/publish.yml'), 'utf8');
   const verifyDocument: any = YAML.parseDocument(verifyWorkflow, { uniqueKeys: true }).toJS();
@@ -492,6 +492,21 @@ test('CI and publish workflows use the supported Node runtime', () => {
     assert.equal(job.steps.filter((step: any) => /candidate-environment\.ts prepare --profile/u.test(step.run || '')).length, 1);
     assert.equal(job.steps.some((step: any) => step.run === 'npm ci' || /artifacts:prepare|prepare-development-web\.ts/u.test(step.run || '')), false);
   }
+  // Every environment profile builds the private Agent package before the
+  // enclosing install: artifact-consuming shards still run source tools that
+  // import node_modules/@buildr-ai/buildr-agent/build/index.js.
+  const { candidateEnvironmentPlan } = await import('../../tools/verification/candidate-environment.ts');
+  for (const profile of ['base', 'artifact', 'frontend', 'browser-artifact', 'source-runtime', 'consumer', 'host', 'publisher']) {
+    const ids = candidateEnvironmentPlan(profile).map((step: {id: string}) => step.id);
+    const dependencies = ids.indexOf('buildr-dependencies');
+    assert.ok(ids.indexOf('buildr-agent-dependencies') >= 0 && ids.indexOf('buildr-agent-build') >= 0, profile + ' prepares the private agent');
+    assert.ok(ids.indexOf('buildr-agent-build') < dependencies, profile + ' builds the agent before the product install');
+  }
+  const pluginSourceCandidate: any = verifyDocument.jobs['plugin-source-candidate'];
+  const pluginSteps: any[] = pluginSourceCandidate.steps;
+  const agentPreparation = pluginSteps.findIndex((step: any) => step.name === 'Prepare the private Agent package');
+  const generatedInputs = pluginSteps.findIndex((step: any) => step.name === 'Prepare shared release-tool generated test inputs');
+  assert.ok(agentPreparation >= 0 && generatedInputs > agentPreparation, 'the plugin candidate builds the private agent before artifacts:prepare');
   assert.equal(verifyDocument.jobs['candidate-gate'].if, "always() && (!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main'))");
   const diagnosis = verifyDocument.jobs['diagnostic-core-project-task-macos'];
   assert.equal(diagnosis.if, "github.event_name == 'workflow_dispatch' && inputs.diagnostic_scope == 'core-project-task-macos'");
