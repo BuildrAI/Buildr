@@ -121,7 +121,7 @@ test('已派发写入在请求方取消后继续完成，结果不再交付', as
     assert.equal(metrics.calls, 1, '取消只影响结果交付，Worker 中的 Git 写入仍完成');
     assert.equal((metrics as any).terminated ?? 0, 0, '写入完成不得回收 Worker');
     const next = await executor.run('code-sync', input({}));
-    assert.equal(next.operation, 'code-sync');
+    assert.deepEqual(next, { operation: 'code-sync' });
   } finally { await executor.close(); }
 });
 
@@ -131,7 +131,7 @@ test('Worker failure 只结算当前写入并恢复容量', async () => {
   try {
     await assert.rejects(executor.run('code-fetch', input({})), (error: any) => error.code === 'worker_crashed');
     const recovered = await executor.run('code-sync', input({}));
-    assert.equal(recovered.operation, 'code-sync');
+    assert.deepEqual(recovered, { operation: 'code-sync' });
     assert.equal(metrics.calls, 2);
   } finally { await executor.close(); }
 });
@@ -146,7 +146,7 @@ test('写操作白名单拒绝读取与其他字段', async () => {
     assert.throws(() => executor.run('code-sync', { ...input({}), taskId: 'task-a' }), (error: any) => error.code === 'local_app_write_field_forbidden');
     assert.throws(() => executor.run('service-runtime-prepare', input({})), (error: any) => error.code === 'local_app_write_input_invalid');
     const prepared = await executor.run('service-runtime-prepare', { targetRoot: '/tmp/buildr-write-executor', serviceCode: 'demo', input: JSON.stringify({ worktreeId: 'x' }) });
-    assert.equal(prepared.operation, 'service-runtime-prepare');
+    assert.deepEqual(prepared, { operation: 'service-runtime-prepare' });
     assert.equal(metrics.messages.at(-1).serviceCode, 'demo');
   } finally { await executor.close(); }
 });
@@ -179,7 +179,7 @@ test('Worker 退出时按登记表回收其持有的 Git 锁', async () => {
     assert.equal(fs.existsSync(lockFile), false, 'worker 退出必须回收其登记的锁');
     assert.equal(registries.length, 2, '退出后必须补充新 worker');
     const recovered = await executor.run('code-fetch', input({}));
-    assert.equal(recovered.operation, 'code-fetch');
+    assert.deepEqual(recovered, { operation: 'code-fetch' });
   } finally { await executor.close(); fs.rmSync(common, { recursive: true, force: true }); }
 });
 
@@ -291,7 +291,7 @@ const fs = require('node:fs'); fs.writeFileSync(process.env.MARKER, String(proce
     if (closing) await closing;
     await until(() => !fs.existsSync(lockFile), 'Lock must be reclaimed after Git closes');
     assert.throws(() => process.kill(pid, 0), 'Child must have exited before lock reclamation');
-    if (queued) assert.equal((await queued).ok, true, 'Replacement Worker receives the supervised Git result');
+    if (queued) assert.deepEqual(await queued, { ok: true, timedOut: false, stdout: '', stderr: '', code: 0 }, 'Replacement Worker receives the supervised Git result');
     const release = acquireCodeGitOperation({ location: root } as any); release();
   } finally {
     fs.writeFileSync(finish, 'finish');
