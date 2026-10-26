@@ -32,6 +32,15 @@ DSH_BUILD_NODE=<explicit-compatible-node>
 
 输出 JSON 的 `sdk` 是该次唯一目录。只有全部准备成功、就绪回执（Receipt）通过重新核验后，才能作为明确构建输入；失败输出保留诊断而不产生可用回执。准备与验证均不启动应用或替代服务器。
 
+准备默认复用既有产物：`build/dsh-source-sdk-*/sdk` 的回执在来源提交、补丁摘要、清单摘要与全部文件摘要都一致，且来源检出与依赖仍存在时，输出 `status: reused` 并指向该目录；不满足任一项才新建。需要强制新建时追加 `--fresh`，发布 SDK 的构建固定使用它。
+
+```sh
+"${DSH_BUILD_NODE:?}" tools/sdk-build.ts status
+"${DSH_BUILD_NODE:?}" tools/sdk-build.ts clean [--keep <n>] [--execute]
+```
+
+`status` 列出 `build/` 直属 `dsh-*` 产物的类别、大小、时间、来源身份与保留判定；`clean` 默认只预览，`--execute` 才按类别保留最新 `--keep` 份并删除其余，`--keep 0` 清空全部自有产物。它只处理自有目录，符号链接与未知名称不在删除范围。删除发布 SDK 的来源目录会使依赖它的类型 SDK 失去复用条件，复用判定会自行跳过。
+
 ```sh
 "${DSH_BUILD_NODE:?}" tools/build-plugin.ts --source-sdk <prepared-v2-sdk> --output <owned-candidate-root>
 "${DSH_BUILD_NODE:?}" tools/build-plugin.ts --dev --source-sdk <prepared-v2-sdk> --output <owned-dev-candidate-root>

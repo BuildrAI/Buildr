@@ -1,7 +1,7 @@
 /** Rebuild an explicitly selected source-patched DSH SDK in an owned, unique build directory. */
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DSH_SDK_BASELINES, DSH_SDK_COMMIT_MARKER, type DshSdkBaseline } from './sdk-baselines.ts';
@@ -696,10 +696,52 @@ export async function prepareSourceSdk(sourceRoot: string, manifestFile: string,
   return { sdk, receipt };
 }
 
+/** Reuse the newest prepared SDK only when every identity fact still matches this manifest. */
+export function findReusableSourceSdk(manifestFile: string, serviceRoot = SERVICE_ROOT): string | undefined {
+  const build = ownedBuildRoot(serviceRoot);
+  const manifest = readManifest(manifestFile);
+  const manifestSha256 = fileHash(manifestFile);
+  const candidates = readdirSync(build, { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && entry.name.startsWith('dsh-source-sdk-'))
+    .map(entry => join(build, entry.name, 'sdk'))
+    .filter(sdk => existsSync(join(sdk, SOURCE_SDK_RECEIPT)))
+    .sort((left, right) => statSync(right).mtimeMs - statSync(left).mtimeMs);
+  for (const sdk of candidates) {
+    try {
+      const receipt = JSON.parse(readFileSync(join(sdk, SOURCE_SDK_RECEIPT), 'utf8')) as SourceSdkReceipt;
+      if (JSON.stringify(receipt.baseline) !== JSON.stringify(manifest.upstream)) continue;
+      if (receipt.patchSha256 !== manifest.patch.sha256 || receipt.sourceManifest.sha256 !== manifestSha256) continue;
+      if (!existsSync(receipt.sourceCheckout) || !existsSync(join(sdk, 'node_modules'))) continue;
+      verifyPreparedSourceReceipt(realpathSync(sdk), receipt, serviceRoot);
+      return realpathSync(sdk);
+    } catch {
+      // A stale or unreadable candidate never blocks a fresh preparation.
+    }
+  }
+  return undefined;
+}
+
 if (import.meta.main) {
   const args = process.argv.slice(2);
-  const option = (name: string): string => { const index = args.indexOf(name), value = args[index + 1]; if (index < 0 || !value || value.startsWith('--')) fail(`required option ${name}`); return value; };
-  for (let index = 0; index < args.length; index += 2) { const name = args[index]; if (name === undefined || !['--source', '--manifest', '--node'].includes(name)) fail(`unknown option ${name}`); }
-  const result = await prepareSourceSdk(option('--source'), option('--manifest'), option('--node'));
-  console.log(JSON.stringify({ status: 'prepared', sdk: result.sdk, baseline: result.receipt.baseline, patchSha256: result.receipt.patchSha256, contracts: result.receipt.contracts, runtimeActivated: false, desktopValidated: false }));
+  const values = new Map<string, string>();
+  let fresh = false;
+  for (let index = 0; index < args.length; index++) {
+    const name = args[index];
+    if (name === '--fresh') { fresh = true; continue; }
+    if (!['--source', '--manifest', '--node'].includes(name)) fail(`unknown option ${name}`);
+    const value = args[index + 1];
+    if (!value || value.startsWith('--') || values.has(name)) fail(`required option ${name}`);
+    values.set(name, value);
+    index++;
+  }
+  const required = (name: string): string => values.get(name) ?? fail(`required option ${name}`);
+  const source = required('--source'), manifestFile = required('--manifest'), node = required('--node');
+  const reusable = fresh ? undefined : findReusableSourceSdk(manifestFile);
+  if (reusable !== undefined) {
+    const receipt = JSON.parse(readFileSync(join(reusable, SOURCE_SDK_RECEIPT), 'utf8')) as SourceSdkReceipt;
+    console.log(JSON.stringify({ status: 'reused', sdk: reusable, baseline: receipt.baseline, patchSha256: receipt.patchSha256, contracts: receipt.contracts, runtimeActivated: false, desktopValidated: false }));
+  } else {
+    const result = await prepareSourceSdk(source, manifestFile, node);
+    console.log(JSON.stringify({ status: 'prepared', sdk: result.sdk, baseline: result.receipt.baseline, patchSha256: result.receipt.patchSha256, contracts: result.receipt.contracts, runtimeActivated: false, desktopValidated: false }));
+  }
 }
