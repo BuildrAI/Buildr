@@ -78,11 +78,28 @@ class DevinRuntime implements ModelProviderRuntime {
     const deltas = readDeltas(response, signal, credential.accessToken, stage), state = new Completion(input.modelId);
     if (input.body.stream !== true) { for await (const delta of deltas) state.accept(delta); return Response.json(state.result()); }
     const encoder = new TextEncoder();
+    // Keep an immediate upstream refusal as an HTTP error. Opening SSE first
+    // makes native consumers mistake a permanent denial for a broken stream.
+    let initial: ProtocolJson[] = [], ended = false;
+    try {
+      while (!initial.length) {
+        const next = await deltas.next();
+        if (next.done) { ended = true; break; }
+        initial = state.accept(next.value);
+      }
+    } catch (error) {
+      controller.abort(); await deltas.return(undefined);
+      // These refusals describe this request, not an expired login or a transient
+      // connection. Codex retries even HTTP 403; a bad request must remain final.
+      if (error instanceof ModelAccessError && error.status === 403 && /MCP configuration issue|blocked by (?:our |the )?content policy/i.test(error.message)) throw new ModelAccessError('model_devin_request_rejected', error.message, 400);
+      throw error;
+    }
     async function* chunks(): AsyncGenerator<Uint8Array> {
       try {
-        for await (const delta of deltas) for (const value of state.accept(delta)) yield encoder.encode(`data: ${JSON.stringify(value)}\n\n`);
+        for (const value of initial) yield encoder.encode(`data: ${JSON.stringify(value)}\n\n`);
+        if (!ended) for await (const delta of deltas) for (const value of state.accept(delta)) yield encoder.encode(`data: ${JSON.stringify(value)}\n\n`);
         yield encoder.encode(`data: ${JSON.stringify(state.finished())}\n\ndata: [DONE]\n\n`);
-      } finally { controller.abort(); }
+      } finally { controller.abort(); await deltas.return(undefined); }
     }
     const iterator = chunks();
     return new Response(new ReadableStream<Uint8Array>({ async pull(stream) { try { const next = await iterator.next(); if (next.done) stream.close(); else stream.enqueue(next.value); } catch (error) { stream.error(error); } }, async cancel() { controller.abort(); await iterator.return(undefined); } }), { headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-store' } });

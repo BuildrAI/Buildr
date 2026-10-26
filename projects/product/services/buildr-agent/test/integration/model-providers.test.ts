@@ -98,6 +98,17 @@ test('Devin streaming converts cumulative tool parameters to deltas and fails tr
   mode = 'error'; await assert.rejects(() => runtime.infer(input({ ...body, stream: false })).then(response => response.json()), error => (error as {code?:string}).code === 'model_devin_stream_failed' && /resource_exhausted: quota/.test((error as Error).message));
 });
 
+test('Devin rejects before opening a response stream when only metadata precedes a permanent denial', {timeout:10000},async t=>{
+  let message='Unable to process request due to an MCP configuration issue.';
+  const {runtime}=await devinFixture(t,()=>new Response(new Uint8Array(responseFrames([Buffer.alloc(0)],JSON.stringify({error:{code:'permission_denied',message}})))));
+  const infer=()=>runtime.infer(input({messages:[{role:'user',content:'inspect'}],stream:true}));
+  await assert.rejects(infer,error=>(error as {status?:number}).status===400&&/permission_denied.*MCP configuration/.test((error as Error).message));
+  message='Your request was blocked by our content policy.';
+  await assert.rejects(infer,{status:400,code:'model_devin_request_rejected'});
+  message='This account is not allowed to use the model.';
+  await assert.rejects(infer,{status:403,code:'model_devin_stream_failed'});
+});
+
 test('Devin tool continuation failure keeps partial output, upstream code and stage across Responses streaming', { timeout: 10000 }, async t => {
   let calls = 0;
   const { runtime } = await devinFixture(t, () => {
