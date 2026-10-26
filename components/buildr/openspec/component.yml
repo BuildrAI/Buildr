@@ -7,7 +7,6 @@ upstream:
   name: "@fission-ai/openspec"
   version: "1.13.0"
 members:
-  rules: []
   skills: ["skills/openspec/openspec-explore","skills/openspec/openspec-propose","skills/openspec/openspec-update-change","skills/openspec/openspec-apply-change","skills/openspec/openspec-sync-specs","skills/openspec/openspec-archive-change","skills/buildr/openspec-contract-guard"]
   commandCollections: ["commands/buildr/openspec/manifest.yml"]
   skillContributions: ["components/buildr/openspec/contributions/openspec-explore-terminology.md","components/buildr/openspec/contributions/openspec-propose-sidebar.md","components/buildr/openspec/contributions/openspec-update-sidebar.md","components/buildr/openspec/contributions/openspec-apply-sidebar.md","components/buildr/openspec/contributions/openspec-sync-converge.md","components/buildr/openspec/contributions/openspec-archive-converge.md"]
