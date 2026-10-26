@@ -16,6 +16,7 @@ import { OPENSPEC_QUERY, createOpenSpecModule } from '../../src/modules/openspec
 import { CHANGE_APPLICATION } from '../../src/modules/task/change/module.ts';
 import { AGENT_SERVICE_APPLICATION } from '../../src/modules/agent-service/module.ts';
 import { CODE_APPLICATION, CODE_GENERATION_APPLICATION, CODE_SOURCE_CONTROL_OBSERVATIONS } from '../../src/modules/code/module.ts';
+import { SERVICE_RUNTIME_SOURCES } from '../../src/modules/service-runtime/module.ts';
 
 test('OpenSpec 独占通用内容查询，任务能力只提供关联组合', () => {
   const runtime = createProductRuntime();
@@ -273,7 +274,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   }, {
     id: 'service-runtime',
     requires: [WORKSPACE_APPLICATION, CODE_APPLICATION, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER],
-    provides: ['service-runtime.application', 'service-runtime.view', 'service-runtime.task-application'],
+    provides: ['service-runtime.application', 'service-runtime.view', 'service-runtime.task-application', SERVICE_RUNTIME_SOURCES],
     contributions: { cli: ['service-runtime'], http: ['service-runtime.http'], diagnostics: [] },
     lifecycle: 'none',
   }, {

@@ -10,7 +10,7 @@ import { CODE_APPLICATION } from '../../src/modules/code/module.ts';
 import { TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER } from '../../src/modules/task/module.ts';
 import { registerGitWorktreeProvider } from '../../src/modules/task/infrastructure/git-worktree-provider.ts';
 import { WORKSPACE_APPLICATION } from '../../src/modules/workspace/module.ts';
-import { SERVICE_RUNTIME_APPLICATION, SERVICE_RUNTIME_MODULE, SERVICE_RUNTIME_VIEW, SERVICE_TASK_RUNTIME_APPLICATION } from '../../src/modules/service-runtime/module.ts';
+import { SERVICE_RUNTIME_APPLICATION, SERVICE_RUNTIME_MODULE, SERVICE_RUNTIME_SOURCES, SERVICE_RUNTIME_VIEW, SERVICE_TASK_RUNTIME_APPLICATION } from '../../src/modules/service-runtime/module.ts';
 import { createServiceRuntimeCliContributions } from '../../src/modules/service-runtime/interfaces/cli/service-runtime-cli.ts';
 import { createServiceRuntimeView } from '../../src/modules/service-runtime/application/service-runtime-view.ts';
 import { processAlive } from '../../src/modules/service-runtime/infrastructure/managed-process.ts';
@@ -40,7 +40,7 @@ test('模块从真实代码库解析服务目录与分支，不依赖部署连�
   const runtime = module.provides[SERVICE_RUNTIME_APPLICATION];
   const view = module.provides[SERVICE_RUNTIME_VIEW];
   t.after(async () => { for (const record of await runtime.listRuns(root)) if (record.status === 'starting' || record.status === 'running') await runtime.stopRun(root, record.id); fs.rmSync(base, { recursive: true, force: true }); });
-  assert.deepEqual(Object.keys(module.provides).sort(), [SERVICE_RUNTIME_APPLICATION, SERVICE_RUNTIME_VIEW, SERVICE_TASK_RUNTIME_APPLICATION].sort());
+  assert.deepEqual(Object.keys(module.provides).sort(), [SERVICE_RUNTIME_APPLICATION, SERVICE_RUNTIME_VIEW, SERVICE_RUNTIME_SOURCES, SERVICE_TASK_RUNTIME_APPLICATION].sort());
   assert.equal('service-runtime.deployment' in module.provides, false);
   assert.equal(SERVICE_RUNTIME_MODULE.requires.includes('connection-skills.application'), false);
   await runtime.writeDefinition(root, 'backend', runtimeDefinition(await freeRuntimePort()));

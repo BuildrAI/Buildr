@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { resolveSourceRoot } from './workspace-source-filesystem.ts';
@@ -8,10 +7,12 @@ export type RepositoryCloneState = 'cloning' | 'failed';
 export type RepositoryCloneStatus = { state: RepositoryCloneState | null; diagnostic: string | null; startedAt: string | null };
 export type RepositoryCloneRequest = { status: 'started' | 'already-running' | 'ready' | 'unavailable'; diagnostic: string | null };
 
-type Entry = { state: 'cloning' | 'failed'; diagnostic: string | null; startedAt: string };
+type Entry = { state: 'cloning' | 'failed'; diagnostic: string | null; startedAt: string; child?: { kill(signal?: NodeJS.Signals): boolean } };
+
+const CLONE_TIMEOUT_MS = 10 * 60 * 1000;
 
 function cloneEnvironment(inherited: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  const environment = Object.fromEntries(Object.entries(inherited).filter(([name]) => !name.toUpperCase().startsWith('GIT_')).map(([name, value]) => [name.toUpperCase().startsWith('GIT_') ? name.toUpperCase() : name, value]));
+  const environment = Object.fromEntries(Object.entries(inherited).filter(([name]) => !name.toUpperCase().startsWith('GIT_')));
   return { ...environment, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: '0' };
 }
 
@@ -56,9 +57,10 @@ export function createRepositoryCloneSupervisor() {
     const current = states.get(repository.id);
     if (current?.state === 'cloning') return { status: 'already-running', diagnostic: null };
     fs.mkdirSync(path.dirname(location), { recursive: true });
-    // Stage outside the workspace: an in-flight clone must never be picked up by
-    // concurrent git add or presented as an existing directory.
-    const staging = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-clone-'));
+    // Stage beside the target so publication stays on one filesystem: an in-flight
+    // clone must never be picked up by concurrent git add or presented as an
+    // existing directory, and a cross-volume staging would force a full copy.
+    const staging = fs.mkdtempSync(path.join(path.dirname(location), '.buildr-clone-'));
     const args = ['clone'];
     const branch = repository.source.git.integrationBranch || null;
     if (branch) args.push('--branch', branch, '--single-branch');
@@ -66,16 +68,20 @@ export function createRepositoryCloneSupervisor() {
     const stderrChunks: Buffer[] = [];
     const child = spawn('git', args, { env: cloneEnvironment(), stdio: ['ignore', 'ignore', 'pipe'] });
     child.stderr.on('data', chunk => { stderrChunks.push(Buffer.from(chunk)); });
-    states.set(repository.id, { state: 'cloning', diagnostic: null, startedAt: new Date().toISOString() });
+    const timeout = setTimeout(() => child.kill('SIGTERM'), CLONE_TIMEOUT_MS);
+    timeout.unref();
+    states.set(repository.id, { state: 'cloning', diagnostic: null, startedAt: new Date().toISOString(), child });
+    const settle = () => { clearTimeout(timeout); };
     const finish = (diagnostic: string | null) => {
       if (diagnostic !== null) states.set(repository.id, { state: 'failed', diagnostic, startedAt: states.get(repository.id)?.startedAt || new Date().toISOString() });
       else states.delete(repository.id);
     };
-    child.on('error', error => { try { fs.rmSync(staging, { recursive: true, force: true }); } catch { /* ignore */ } finish(error.message); });
+    child.on('error', error => { settle(); try { fs.rmSync(staging, { recursive: true, force: true }); } catch { /* ignore */ } finish(error.message); });
     child.on('close', code => {
+      settle();
       if (code !== 0) {
         try { fs.rmSync(staging, { recursive: true, force: true }); } catch { /* ignore */ }
-        finish(tailLines(Buffer.concat(stderrChunks).toString('utf8')) || `git clone 退出码 ${code}`);
+        finish(tailLines(Buffer.concat(stderrChunks).toString('utf8')) || (code === null ? '克隆已中止。' : `git clone 退出码 ${code}`));
         return;
       }
       try {
@@ -109,6 +115,7 @@ export function createRepositoryCloneSupervisor() {
   }
 
   function close() {
+    for (const entry of states.values()) { try { entry.child?.kill('SIGTERM'); } catch { /* Already exited. */ } }
     states.clear();
   }
 

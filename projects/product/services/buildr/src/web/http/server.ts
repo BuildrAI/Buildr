@@ -4,6 +4,7 @@ import process from 'node:process';
 
 import { spawnBuildrWebRestartSuccessor } from '../application/restart-web-handoff.ts';
 import { createBoundedBuildrWebReadExecutor } from './read-executor.ts';
+import { createBoundedBuildrWebWriteExecutor } from './write-executor.ts';
 import { apiError } from './responses.ts';
 import { createLocalWorkspaceRequestRouter } from './router.ts';
 
@@ -20,6 +21,7 @@ export function createLocalWorkspaceServer(runtime: any, {
   beforeShutdown = null,
   spawnSuccessor = null,
   readExecutor = null,
+  writeExecutor = null,
   httpContributions = runtime.__bootstrapContributions?.('http') || [],
   ensureRegisteredTarget = runtime.ensureRegisteredTarget,
   resolveRegisteredWorkspace = runtime.resolveRegisteredWorkspace,
@@ -38,6 +40,8 @@ export function createLocalWorkspaceServer(runtime: any, {
   const launchSuccessor = typeof spawnSuccessor === 'function' ? spawnSuccessor : spawnBuildrWebRestartSuccessor;
   const ownsReadExecutor = !readExecutor;
   const taskReadExecutor = readExecutor || createBoundedBuildrWebReadExecutor({ warm: 1 });
+  const ownsWriteExecutor = !writeExecutor;
+  const taskWriteExecutor = writeExecutor || createBoundedBuildrWebWriteExecutor();
   const sessionToken = crypto.randomBytes(32).toString('hex');
   const healthSecret = instanceSecret || crypto.randomBytes(32).toString('hex');
   let origin: any = null;
@@ -81,6 +85,12 @@ export function createLocalWorkspaceServer(runtime: any, {
     });
   }
 
+  // Dispatched writes run to completion in the Worker; a client disconnect must
+  // not interrupt a Git mutation, so no request abort is attached here.
+  function submitTaskWrite(operation: any, root: any, input: any = {}) {
+    return taskWriteExecutor.run(operation, { targetRoot: root, ...input });
+  }
+
   const server = http.createServer((request: any, response: any) => {
     Promise.resolve().then(() => routeRequest(request, response)).catch((error: any) => apiError(response, error));
   });
@@ -122,12 +132,14 @@ export function createLocalWorkspaceServer(runtime: any, {
       });
     },
     submitTaskRead,
+    submitTaskWrite,
     staticRoot,
   });
   let hostWasListening = false;
   server.once('listening', () => { hostWasListening = true; });
   server.once('close', () => {
     if (ownsReadExecutor) void taskReadExecutor.close();
+    if (ownsWriteExecutor) void taskWriteExecutor.close();
     if (hostWasListening) void closeResources().catch(error => console.error('Buildr Web resource shutdown failed:', error));
   });
 

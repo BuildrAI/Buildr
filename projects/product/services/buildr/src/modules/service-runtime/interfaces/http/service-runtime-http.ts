@@ -60,7 +60,7 @@ export function parseStartRunInput(code: string, body: Record<string, unknown>):
 export function createServiceRuntimeHttp(deps: { view: ServiceRuntimeView; runtime: ServiceRuntimeApplication; taskRuntime?: ServiceTaskRuntimeApplication; sources?: { prepare(root: string, code: string, input: { worktreeId: string; targetRef: string; expectedTargetHash: string; expectedRevision: string }): unknown } }) {
   return Object.freeze({
     id: 'service-runtime.http',
-    async handle({ request, suffix, searchParams, root, authorizeWrite, readBody }: any) {
+    async handle({ request, suffix, searchParams, root, authorizeWrite, readBody, submitTaskWrite }: any) {
       if (!suffix.startsWith('/service-runtime')) return null;
       try {
         const task = suffix.match(/^\/service-runtime\/tasks\/([^/]+)$/);
@@ -115,7 +115,9 @@ export function createServiceRuntimeHttp(deps: { view: ServiceRuntimeView; runti
           assertParams(searchParams, []); authorizeWrite();
           const body = await readBody(new Set(['worktreeId', 'targetRef', 'expectedTargetHash', 'expectedRevision']), '准备独立工作树');
           if (!/^checkout-[a-f0-9]{64}$/.test(body.worktreeId || '') || !/^refs\/(?:heads|remotes)\/.+/.test(body.targetRef || '') || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(body.expectedTargetHash || '') || typeof body.expectedRevision !== 'string' || !body.expectedRevision) failure('service_runtime_input_invalid', '必须选择真实工作树及已观察的分支版本。');
-          return { status: 200, body: deps.sources.prepare(root, identifier(prepare[1], '服务编号'), body) };
+          const serviceCode = identifier(prepare[1], '服务编号');
+          const prepared = submitTaskWrite ? await submitTaskWrite('service-runtime-prepare', { serviceCode, input: JSON.stringify(body) }) : deps.sources.prepare(root, serviceCode, body);
+          return { status: 200, body: prepared };
         }
         const stop = suffix.match(/^\/service-runtime\/runs\/([^/]+)\/stop$/);
         if (stop && request.method === 'POST') { assertParams(searchParams, []); authorizeWrite(); await readBody(new Set([]), '停止本地运行'); return { status: 200, body: await deps.runtime.stopRun(root, identifier(stop[1], '运行编号')) }; }
@@ -130,6 +132,9 @@ export function createServiceRuntimeHttp(deps: { view: ServiceRuntimeView; runti
       } catch (cause) {
         if (cause instanceof ServiceRuntimeError) failure(cause.code, cause.message, STATUS_BY_CODE[cause.code] ?? 409);
         if (cause instanceof RuntimeDefinitionError) failure(cause.code, cause.message, 400);
+        // Write Worker transports failures as plain errors carrying code/status/details.
+        const carried = cause as { code?: string; status?: number; message?: string } | null;
+        if (carried && typeof carried.code === 'string' && typeof carried.message === 'string') failure(carried.code, carried.message, typeof carried.status === 'number' ? carried.status : 409);
         throw cause;
       }
     },

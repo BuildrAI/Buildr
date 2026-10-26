@@ -16,6 +16,7 @@ export const SERVICE_RUNTIME_MODULE_ID = 'service-runtime';
 export const SERVICE_RUNTIME_APPLICATION = 'service-runtime.application';
 export const SERVICE_TASK_RUNTIME_APPLICATION = 'service-runtime.task-application';
 export const SERVICE_RUNTIME_VIEW = 'service-runtime.view';
+export const SERVICE_RUNTIME_SOURCES = 'service-runtime.sources';
 
 export const SERVICE_RUNTIME_MODULE = Object.freeze({
     id: SERVICE_RUNTIME_MODULE_ID,
@@ -115,6 +116,7 @@ export const SERVICE_RUNTIME_MODULE = Object.freeze({
           [SERVICE_RUNTIME_APPLICATION]: runtime,
           [SERVICE_RUNTIME_VIEW]: view,
           [SERVICE_TASK_RUNTIME_APPLICATION]: taskRuntime,
+          [SERVICE_RUNTIME_SOURCES]: sources,
         },
         contributions: {
           http: [createServiceRuntimeHttp({ view, runtime, taskRuntime, sources })],
