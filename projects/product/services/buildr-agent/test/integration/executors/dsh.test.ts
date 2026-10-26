@@ -14,6 +14,32 @@ class Stream {
   async dispose() { this.closed = true; this.waiting?.({ done: true, value: undefined }); this.waiting = undefined; }
 }
 async function eventually(condition: () => unknown) { const deadline = Date.now() + 1000; while (!condition()) { if (Date.now() > deadline) throw new Error('condition timeout'); await new Promise(resolve => setTimeout(resolve, 5)); } }
+test('DSH retains the model failure after successful tools without losing prior output', async () => {
+  const streams: Stream[]=[]; const events:any[]=[]; const cwd='/synthetic/workspace'; const ok=(value:any)=>({ok:true,value});
+  const publish=(event:any)=>{event.seq=events.length+1;events.push(event);for(const stream of streams)stream.push({type:'event',event});};
+  const remote={
+    permissionPresets:{catalog:async()=>ok({defaultPreset:'workspace-write',options:[{value:'workspace-write'}]})},
+    commands:{list:async()=>ok([{name:'permission',definitionId:'@deepseek-ai/dsh-permission-presets'}]),execute:async()=>ok({result:{kind:'success'}})},
+    session:{create:async()=>ok({sessionId:'failure-session'}),follow:()=>{const stream=new Stream();streams.push(stream);stream.push({type:'snapshot',header:{id:'failure-session',cwd},cursor:0,records:[],projections:{values:{permissions:{currentValue:'workspace-write'}}}});return stream;},
+      prompt:async(input:any)=>{queueMicrotask(()=>{
+        publish({type:'turn/start',data:{turn:1}});publish({type:'user/message',data:{id:'user',content:input.content,source:{rpcId:input.requestId}}});
+        publish({type:'assistant/message',data:{turn:1,step:1,message:{content:[{type:'text',text:'先检查现场。'}]}}});
+        publish({type:'tool/call',data:{turn:1,callId:'read-call',name:'read',arguments:'{}'}});
+        publish({type:'tool/result',data:{turn:1,message:{toolCallId:'read-call',content:[{type:'text',text:'file result'}]}}});
+        publish({type:'turn/end',data:{turn:1,reason:{kind:'error',error:{message:'model_devin_stream_failed: Devin · 工具结果接续 / 响应流：permission_denied: MCP configuration issue. Authorization: Bearer native-secret'}}}});
+      });return ok({accepted:true});}},
+  };
+  const runtime=Reflect.construct(DshRuntime,['binding-fixture',{close:async()=>{for(const s of streams)await s.dispose();}},{remote,close:async()=>{},ctx:{}}]) as AgentRuntime;
+  try {
+    const contextRef=await runtime.createContext({cwd}), visible:ExecutorEvent[]=[];
+    await runtime.send({contextRef,cwd,text:'inspect',images:[],clientRequestId:'failed-request',onEvent:event=>visible.push(event)});
+    const completed=visible.find(event=>event.type==='completed');assert.equal(completed?.type,'completed');assert.equal(completed.status,'failed');
+    assert.match(completed.diagnostic!,/工具调用后.*permission_denied.*MCP configuration issue/);assert.ok(!completed.diagnostic!.includes('native-secret'));
+    const accepted=visible.find(event=>event.type==='accepted');assert.equal(accepted?.type,'accepted');
+    const observed=await runtime.observe({contextRef,executionRef:accepted.executionRef});assert.equal(observed.diagnostic,completed.diagnostic);assert.equal(observed.tools[0].status,'completed');
+    assert.ok(visible.some(event=>event.type==='item'&&event.item.text==='先检查现场。'));
+  }finally{await runtime.close();}
+});
 test('DSH stream shows accumulated text, answers the native question and observes cancellation', async () => {
   const root=await mkdtemp(join(tmpdir(),'buildr-dsh-image-'));const imagePath=join(root,'image.png');const imageBytes=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII=','base64');await writeFile(imagePath,imageBytes);
   let runtime: AgentRuntime; let nativeAnswer: any;

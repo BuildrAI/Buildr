@@ -9,6 +9,26 @@ import type { ExecutorEvent, AgentRuntime, ContextRef, ExecutionRef } from '../.
 
 const source = readFileSync(new URL('./fixtures/codex-cli.mjs', import.meta.url), 'utf8');
 async function eventually(condition: () => unknown, timeout = 1000) { const until = Date.now() + timeout; while (!condition()) { if (Date.now() > until) throw new Error('condition timeout'); await new Promise(resolve => setTimeout(resolve, 5)); } }
+test('Codex retains a safe native failure after tools in completion and observation', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-codex-error-')); let runtime: AgentRuntime | undefined;
+  try {
+    const executable = join(root,'codex.mjs');
+    const original = "event('item/started',{threadId:active.threadId,turnId:active.id,item});";
+    assert.ok(source.includes(original));
+    await writeFile(executable,source.replace(original,original+"item.status='completed';event('item/completed',{threadId:active.threadId,turnId:active.id,item});active.status='failed';active.error={message:'Devin · 工具结果接续 / 响应流：permission_denied: MCP configuration issue. Authorization: Bearer native-secret'};save();event('turn/completed',{threadId:active.threadId,turn:active});"));
+    runtime = await createCodexExecutor().open({connectionId:'codex',configRoot:root,executable,environment:{PATH:process.env.PATH??''}});
+    const contextRef = await runtime.createContext({cwd:root}), events: ExecutorEvent[]=[];
+    const sending=runtime.send({contextRef,cwd:root,text:'inspect',images:[],clientRequestId:'error-turn',onEvent:event=>events.push(event)});
+    await eventually(()=>events.some(event=>event.type==='request'));
+    const accepted=events.find(event=>event.type==='accepted'), request=events.find(event=>event.type==='request');
+    assert.equal(accepted?.type,'accepted');assert.equal(request?.type,'request');
+    await runtime.reply({contextRef,executionRef:accepted.executionRef,requestId:request.request.id,answer:{color:'蓝'}});await sending;
+    const completed=events.find(event=>event.type==='completed');assert.equal(completed?.type,'completed');assert.equal(completed.status,'failed');
+    assert.match(completed.diagnostic!,/工具调用后.*permission_denied.*MCP configuration issue/);assert.ok(!completed.diagnostic!.includes('native-secret'));
+    assert.equal((await runtime.observe({contextRef,executionRef:accepted.executionRef})).diagnostic,completed.diagnostic);
+    assert.ok(events.some(event=>event.type==='item'&&event.item.text==='你好'));
+  } finally {await runtime?.close();await rm(root,{recursive:true,force:true});}
+});
 test('Codex native adapter preserves exact context, streams, answers and stops only its native terminal', async () => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-executor-codex-')); const workspace = join(root, 'workspace'); await mkdir(workspace);
   const executable = join(root, 'codex.mjs'); await writeFile(executable, source); const configRoot = join(root, 'connection');

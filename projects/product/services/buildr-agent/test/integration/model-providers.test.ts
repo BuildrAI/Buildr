@@ -95,7 +95,27 @@ test('Devin streaming converts cumulative tool parameters to deltas and fails tr
   const signatures = events.flatMap(event => event.choices[0].delta.reasoning_signature ?? []); assert.deepEqual(signatures, [Buffer.from([0, 255, 128, 1]).toString('base64')]);
   assert.ok(events.findIndex(event => event.choices[0].delta.reasoning_signature) < events.findIndex(event => event.choices[0].delta.tool_calls));
   mode = 'truncated'; await assert.rejects(() => runtime.infer(input({ ...body, stream: false })).then(response => response.json()), /stream_truncated/);
-  mode = 'error'; await assert.rejects(() => runtime.infer(input({ ...body, stream: false })).then(response => response.json()), /stream_failed/);
+  mode = 'error'; await assert.rejects(() => runtime.infer(input({ ...body, stream: false })).then(response => response.json()), error => (error as {code?:string}).code === 'model_devin_stream_failed' && /resource_exhausted: quota/.test((error as Error).message));
+});
+
+test('Devin tool continuation failure keeps partial output, upstream code and stage across Responses streaming', { timeout: 10000 }, async t => {
+  let calls = 0;
+  const { runtime } = await devinFixture(t, () => {
+    calls++;
+    return new Response(new Uint8Array(calls === 1 ? responseFrames([
+      bytesField(6, Buffer.concat([stringField(1, 'read-call'), stringField(2, 'read_file'), stringField(3, '{}')])), intField(5, 10),
+    ]) : responseFrames([stringField(3, 'partial answer')], JSON.stringify({error:{code:'permission_denied',message:'Unable to process request due to an MCP configuration issue. private-test-token Authorization: Bearer secret-value'}}))));
+  });
+  const request = {model:'consumer-route',input:[{role:'user',content:'inspect'}],tools:[{type:'function',name:'read_file',parameters:{type:'object'}}]};
+  const first = await runtime.infer(input(translateRequest(request,'responses','chat-completions',opaque)));
+  const result = await (await translateResponse(first,'chat-completions','responses',{model:'consumer-route',stream:false,request,opaque,signal:new AbortController().signal})).json();
+  const next = {...request,stream:true,input:[...request.input,...result.output,{type:'function_call_output',call_id:'read-call',output:'file result'}]};
+  const response = await runtime.infer(input(translateRequest(next,'responses','chat-completions',opaque)));
+  const stream = await (await translateResponse(response,'chat-completions','responses',{model:'consumer-route',stream:true,request:next,opaque,signal:new AbortController().signal})).text();
+  assert.match(stream,/partial answer/); assert.match(stream,/response.failed/); assert.match(stream,/model_devin_stream_failed/);
+  assert.match(stream,/permission_denied/); assert.match(stream,/MCP configuration issue/); assert.match(stream,/工具结果接续/);
+  assert.ok(!stream.includes('response.completed')); assert.ok(!stream.includes('private-test-token')); assert.ok(!stream.includes('secret-value'));
+  assert.equal(calls,2,'failure must not replay the tool continuation');
 });
 
 test('Devin caller cancellation aborts the real fetch signal and prevents completed output', { timeout: 10000 }, async t => {

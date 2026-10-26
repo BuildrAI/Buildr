@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import { errorDiagnostic } from '../../domain/error-diagnostic.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
 import { join } from 'node:path';
 import { lstat, readFile, writeFile } from 'node:fs/promises';
@@ -30,7 +31,7 @@ function codexGatewayCatalog(gateway: ExecutorGateway) {
     truncation_policy: { mode: 'tokens', limit: 10000 },
   })) };
 }
-interface ActiveTurn { contextId: string; id: string; input: ExecutorSendInput; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown'; processId?: string }>; pending: Map<string, { nativeId: string | number; method: string; params: any }>; texts: Map<string, string>; terminal?: 'completed' | 'stopped' | 'failed'; done: () => void; reject: (error: Error) => void; accepted: boolean; buffered: RpcMessage[] }
+interface ActiveTurn { contextId: string; id: string; input: ExecutorSendInput; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown'; processId?: string }>; pending: Map<string, { nativeId: string | number; method: string; params: any }>; texts: Map<string, string>; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; done: () => void; reject: (error: Error) => void; accepted: boolean; buffered: RpcMessage[] }
 export function createCodexExecutor(): AgentExecutor {
   return { descriptor: { id: 'codex', label: 'Codex', capabilities }, async open(options) { return await CodexRuntime.open(options); } };
 }
@@ -213,6 +214,7 @@ class CodexRuntime implements AgentRuntime {
     if(message.method==='thread/tokenUsage/updated'){const usage=p.tokenUsage;const used=usage?.last?.totalTokens;const window=usage?.modelContextWindow;if(Number.isSafeInteger(used)&&used>=0)emit({type:'context-usage',usedTokens:used,...(Number.isSafeInteger(window)&&window>0?{windowTokens:window}:{})});return;}
     if (message.method === 'thread/name/updated') { if (typeof p.threadName === 'string') emit({ type: 'title', title: p.threadName }); return; }
     if (p.turnId && p.turnId !== turn.id || p.turn?.id && p.turn.id !== turn.id) return;
+    if (message.method === 'error' && !p.willRetry) turn.diagnostic = errorDiagnostic(p.error?.message, this.gateway ? [this.gateway.apiKey] : []);
     if (message.id !== undefined && message.method) {
       const request = codexRequest(String(message.id), message.method, p);
       if (!request) { this.rpc.write({ id: message.id, error: { code: -32601, message: 'Unsupported Buildr request' } }); return; }
@@ -231,13 +233,17 @@ class CodexRuntime implements AgentRuntime {
     }
     if (message.method === 'turn/completed') {
       turn.terminal = p.turn?.status === 'completed' ? 'completed' : p.turn?.status === 'interrupted' ? 'stopped' : 'failed';
+      if (turn.terminal === 'failed') {
+        const message = errorDiagnostic(p.turn?.error?.message, this.gateway ? [this.gateway.apiKey] : []) ?? turn.diagnostic;
+        turn.diagnostic = message ? `Codex · ${turn.tools.size ? '工具调用后' : '本轮执行'}：${message}` : 'codex_turn_failed';
+      } else turn.diagnostic = undefined;
       for (const request of turn.pending.keys()) emit({ type: 'request-resolved', requestId: request }); turn.pending.clear();
-      emit({ type: 'completed', status: turn.terminal, ...(turn.terminal === 'failed' ? { diagnostic: 'codex_turn_failed' } : {}) }); turn.done();
+      emit({ type: 'completed', status: turn.terminal, ...(turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) }); turn.done();
     }
   }
   private activeObservation(turn: ActiveTurn): ExecutorObservation {
     const tools = [...turn.tools.values()].map(({ processId, ...tool }) => ({ ...tool, canStop: Boolean(processId) && tool.status === 'running' }));
-    return { status: turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : turn.terminal === 'stopped' ? 'stopped' : 'idle' : turn.pending.size ? 'waiting' : 'running', executionRef: { id: turn.id }, tools };
+    return { status: turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : turn.terminal === 'stopped' ? 'stopped' : 'idle' : turn.pending.size ? 'waiting' : 'running', executionRef: { id: turn.id }, tools, ...(turn.terminal === 'failed' && turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
   }
   async observe({ contextRef, executionRef }: { contextRef: ContextRef; executionRef?: ExecutionRef }): Promise<ExecutorObservation> {
     this.reference(contextRef);

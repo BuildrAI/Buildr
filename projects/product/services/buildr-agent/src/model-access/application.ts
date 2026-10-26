@@ -8,6 +8,7 @@ import { ModelAccessError, type CatalogModel, type ModelAccessOptions, type Mode
 import { effectiveModel, selectedOffering, modelConfiguration } from './model-preferences.ts';
 import type {ModelPreference,ModelPreferenceUpdate} from './contracts.ts';
 import { translateRequest, translateResponse, type OpaqueReasoning } from './protocols.ts';
+import { modelFailure, upstreamFailure } from './errors.ts';
 
 const object = (value: unknown): ProtocolJson => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as ProtocolJson : {};
 const safeId = (value: string) => /^[a-zA-Z0-9_-]{1,100}$/.test(value);
@@ -317,7 +318,14 @@ export class ModelAccessApplication {
       const translated = translateRequest(body,protocol,runtime.protocol,opaque); translated.model = binding.modelId;
       delete translated.service_tier;if(binding.serviceTier)translated.service_tier=binding.serviceTier;
       const upstream = await runtime.infer({body:translated,modelId:binding.modelId,signal:controller.signal,context:{accountId:account.id,agentId:binding.agentId,conversationId:binding.conversationId,runId:binding.runId,requestId:randomUUID()}});
-      if (!upstream.ok) { await upstream.body?.cancel(); throw new ModelAccessError('model_upstream_failed','所选套餐的模型请求失败，请检查账号与额度。',upstream.status); }
+      if (!upstream.ok) {
+        // Read only a bounded JSON error, never expose an arbitrary upstream body.
+        let size = 0, body = ''; const reader = upstream.body?.getReader(), decoder = new TextDecoder();
+        try { if (reader) for (;;) { const part = await reader.read(); if (part.done) { body += decoder.decode(); break; } size += part.value.length; if (size > 8192) break; body += decoder.decode(part.value, {stream:true}); } }
+        finally { await reader?.cancel().catch(()=>{}); reader?.releaseLock(); }
+        let detail: unknown; try { if (size <= 8192) detail = object(JSON.parse(body)).error; } catch { /* Non-JSON error bodies stay private. */ }
+        throw upstreamFailure(detail, upstream.status);
+      }
       const response = await translateResponse(upstream,runtime.protocol,protocol,{model:lease.view.model,stream:body.stream===true,request:body,opaque,signal:controller.signal});
       if (!response.body) throw new ModelAccessError('model_response_empty','模型服务返回空响应。',502);
       res.writeHead(response.status,{'Content-Type':response.headers.get('content-type') || 'application/json','Cache-Control':'no-store'});
@@ -325,7 +333,7 @@ export class ModelAccessApplication {
       try { while (!controller.signal.aborted) { const chunk = await reader.read(); if (chunk.done) break; if (!res.write(chunk.value)) await once(res,'drain',{signal:controller.signal}); } if (!controller.signal.aborted) res.end(); }
       finally { if (controller.signal.aborted) await reader.cancel().catch(()=>{}); reader.releaseLock(); }
     } catch (error) {
-      if (!res.headersSent && !res.destroyed) { const known = error instanceof ModelAccessError; this.json(res,known ? error.status : 502,{error:{code:known ? error.code : 'model_gateway_failed',message:known ? error.message : '模型请求未完成，请检查本次执行。'}}); }
+      if (!res.headersSent && !res.destroyed) { this.json(res,error instanceof ModelAccessError ? error.status : 502,{error:modelFailure(error)}); }
       else if (!res.destroyed) res.destroy();
     } finally { lease?.requests.delete(controller); }
   }

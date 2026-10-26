@@ -15,6 +15,19 @@ function provider(infer:(input:ProviderInferenceInput)=>Promise<Response>,protoc
 const chat=(message:ProtocolJson)=>Response.json({choices:[{message,finish_reason:message.tool_calls?'tool_calls':'stop'}],usage:{prompt_tokens:12,completion_tokens:4}});
 function frames(values:unknown[]){return new Response(values.map(value=>'data: '+JSON.stringify(value)+'\n\n').join('')+'data: [DONE]\n\n',{headers:{'Content-Type':'text/event-stream'}});}
 
+test('gateway preserves a bounded HTTP failure before streaming without exposing credentials or HTML',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-model-error-'));let mode='json';
+  const access=createModelAccess({root,providers:[provider(async()=>mode==='json'?Response.json({error:{code:'model_devin_quota_or_rate_limit',message:'Devin · 请求响应：HTTP 429 Authorization: Bearer private-token'}},{status:429}):new Response('<html>private upstream body</html>',{status:503}))]});
+  try{
+    const added=await access.accounts.add({provider:'fixture'}),ready=await checkEnabled(access,added.id);
+    const lease=await access.leases.create({accountId:ready.id,modelId:model.id,agentId:'codex',conversationId:'one',runId:'one'});
+    const request=()=>fetch(lease.baseUrl+'/responses',{method:'POST',headers:{Authorization:'Bearer '+lease.apiKey,'Content-Type':'application/json'},body:JSON.stringify({model:lease.model,input:'test',stream:true})});
+    const response=await request();assert.equal(response.status,429);const result=await response.json();
+    assert.equal(result.error.code,'model_devin_quota_or_rate_limit');assert.match(result.error.message,/请求响应.*429/);assert.ok(!JSON.stringify(result).includes('private-token'));
+    mode='html';const other=await request();assert.equal(other.status,503);assert.ok(!(await other.text()).includes('private upstream body'));
+  }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});
+
 test('private metadata survives restart; stale account writes and unbound models are rejected',async()=>{
   const root=await mkdtemp(join(tmpdir(),'buildr-model-access-'));let called=0;
   const source=provider(async()=>{called++;return chat({content:'ok'});});
