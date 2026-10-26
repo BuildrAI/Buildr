@@ -27,10 +27,16 @@ test('普通发布测试无GUI副作用，真实平台Launcher仅由显式入口
   assert.doesNotMatch(registry, /--platform-launcher/u);
 });
 
-test('Development Launcher固定端口不改变Task Preview的随机端口与无浏览器子进程边界', () => {
+test('Development Launcher固定端口不改变Task Preview的端口记忆与无浏览器子进程边界', () => {
   const previewManager: any = read('src/web/application/preview-lifecycle.ts');
   assert.match(previewManager, /optionValue\(args, '--port', '0'\)/u);
-  assert.match(previewManager, /'web', '--target', targetRoot, '--port', String\(port\), '--no-open'/u);
+  assert.match(previewManager, /'web', '--target', targetRoot, '--port', String\(desiredPort\), '--no-open'/u);
+  // 端口记忆只在未显式指定 --port 时生效，且必须通过空闲探测再回退随机。
+  assert.match(previewManager, /!explicitPort && port === 0/u);
+  assert.match(previewManager, /desiredPort = await probeLoopbackPort\(remembered\) \? remembered : 0/u);
+  // 登记播种与端口记忆只写预览实例自身数据目录。
+  assert.match(previewManager, /seedPreviewWorkspaces\(root, workspaceRoots\)/u);
+  assert.match(previewManager, /writePreferredPort\(instance, startedPort, dataRoot\)/u);
 });
 
 test('npm Launcher candidate is registered without a platform distribution dependency', () => {
