@@ -1,7 +1,7 @@
 # managed-components Specification
 
 ## Purpose
-定义 Buildr 在 workspace 范围内以 Component 统一管理 Rules、Skills、Command collections 及其自然语言贡献的当前契约，覆盖来源登记、完整性与所有权校验、事务化生命周期、runtime 投射边界，以及随包 OpenSpec Component 的交付方式。
+定义 Buildr 在 workspace 范围内以 Component 统一管理 Skills、Command collections、Skill Contributions 及其自然语言贡献的当前契约，覆盖来源登记、完整性与所有权校验、事务化生命周期、runtime 投射边界，以及随包 OpenSpec Component 的交付方式。
 ## Requirements
 
 ### Requirement: Workspace 管理 Component 源资产

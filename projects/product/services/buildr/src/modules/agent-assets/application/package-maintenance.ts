@@ -9,7 +9,7 @@ import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/con
 import { createPackageOutput } from './package-maintenance/output.ts';
 import { createBuiltinReceipts } from './package-maintenance/builtin-receipts.ts';
 import { createBuiltinReplacement } from './package-maintenance/builtin-replacement.ts';
-import { retireLegacyCoreRule, retireOrphanedBuiltinSkills } from './package-maintenance/builtin-retirement.ts';
+import { retireOrphanedBuiltinSkills } from './package-maintenance/builtin-retirement.ts';
 import { createPackageSyncPlan } from './package-maintenance/sync-plan.ts';
 import { createBuiltinLifecycle } from './package-maintenance/builtin-lifecycle.ts';
 import { createCapabilityRetirement } from './package-maintenance/capability-retirement.ts';
@@ -27,7 +27,6 @@ export interface PackageMaintenanceDependencies {
   readPackageManifest: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['readPackageManifest'];
   parseManifestFileEntry: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['parseManifestFileEntry'];
   collectFiles: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['collectFiles'];
-  builtinRuleEntry: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['builtinRuleEntry'];
   builtinSkillEntry: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['builtinSkillEntry'];
   builtinCommandEntry: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['builtinCommandEntry'];
   sourcePathFromBuiltin: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['sourcePathFromBuiltin'];
@@ -37,8 +36,6 @@ export interface PackageMaintenanceDependencies {
   packageRegistryMutationPaths: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['packageRegistryMutationPaths'];
   assertSafeSyncMutationPaths: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['assertSafeSyncMutationPaths'];
   convergeRegistryManifests: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['convergeRegistryManifests'];
-  readRulesManifestForWrite: ReturnType<typeof import('./rules.ts').registerDomainsRules>['readRulesManifestForWrite'];
-  writeRulesManifest: ReturnType<typeof import('./rules.ts').registerDomainsRules>['writeRulesManifest'];
   readSkillsManifestForWrite: ReturnType<typeof import('./skills.ts').registerDomainsSkills>['readSkillsManifestForWrite'];
   writeSkillsManifest: ReturnType<typeof import('./skills.ts').registerDomainsSkills>['writeSkillsManifest'];
   manifestDocumentFor: ReturnType<typeof import('./skills.ts').registerDomainsSkills>['manifestDocumentFor'];
@@ -74,7 +71,6 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
     readPackageManifest,
     parseManifestFileEntry,
     collectFiles,
-    builtinRuleEntry,
     builtinSkillEntry,
     builtinCommandEntry,
     sourcePathFromBuiltin,
@@ -84,8 +80,6 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
     packageRegistryMutationPaths,
     assertSafeSyncMutationPaths,
     convergeRegistryManifests,
-    readRulesManifestForWrite,
-    writeRulesManifest,
     readSkillsManifestForWrite,
     writeSkillsManifest,
     manifestDocumentFor,
@@ -162,60 +156,6 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
       }
     }
 
-    const rulesManifest = readRulesManifestForWrite(targetRoot);
-    retireLegacyCoreRule({ targetRoot, rulesManifest, receiptByKey, builtinSnapshot, removeReceipt, changed, findings, checkOnly });
-    const rulesById: any = new Map(rulesManifest.rules.map((rule: any, index: any) => [rule.id, { rule, index }]));
-    for (const builtin of manifest.builtins.rules) {
-      if (builtin.component) {
-        findings.push({ type: 'rule', id: builtin.id, required: builtin.required === true, status: componentStatusById.get(builtin.component) || 'missing', path: builtin.target, component: builtin.component, lifecycle: `buildr component check ${builtin.component} --target ${targetRoot} --json` });
-        continue;
-      }
-      const sourceFile = sourcePathFromBuiltin(builtin);
-      const targetFile = targetPathFromBuiltin(targetRoot, builtin);
-      const existing = rulesById.get(builtin.id)?.rule || null;
-      const isRestore = restoreId === builtin.id;
-      const isNew = !existing;
-      const isUninstalled = existing?.state === 'uninstalled' || existing?.enabled === false;
-      const desired = builtinRuleEntry(builtin);
-      const newSnapshot = builtinSnapshot(sourceFile, 'rule');
-      const liveSnapshot = builtinSnapshot(targetFile, 'rule');
-      const state = resolveBuiltinState({ type: 'rule', builtin, liveSnapshot, newSnapshot, oldReceipt: receiptByKey.get(builtinReceiptKey('rule', builtin.id)), isRestore, required: builtin.required === true });
-      const status = isUninstalled && !isRestore ? 'uninstalled' : state.status;
-      findings.push({ type: 'rule', id: builtin.id, required: builtin.required === true, status, path: builtin.target, ...(liveSnapshot ? { liveIntegrity: liveSnapshot.integrity } : {}), converge: state.converge === true || (isNew && !liveSnapshot) });
-
-      if (checkOnly) {
-        if (isRestore) restoreOutcomes.push({ id: builtin.id, type: 'rule', status: 'ready', replacementFrom: null, path: builtin.target, reason: null });
-        continue;
-      }
-      if (isUninstalled && !isRestore && !builtin.required) {
-        removeReceipt('rule', builtin);
-        continue;
-      }
-      if (!builtin.required && !isNew && !isRestore && status === 'modified') {
-        const updated: any = { ...existing, state: 'modified' };
-        rulesManifest.rules[rulesById.get(builtin.id).index] = updated;
-        continue;
-      }
-      if (!builtin.required && !isNew && !isRestore && status === 'missing') {
-        const updated: any = { ...existing, state: 'missing' };
-        rulesManifest.rules[rulesById.get(builtin.id).index] = updated;
-        continue;
-      }
-      if (builtin.required || isNew || isRestore || state.converge || state.adopt) {
-        if (copyFileIfChanged(sourceFile, targetFile)) changed.push(builtin.target);
-        if (rulesById.has(builtin.id)) {
-          rulesManifest.rules[rulesById.get(builtin.id).index] = desired;
-        } else {
-          rulesManifest.rules.push(desired);
-        }
-        updateReceipt('rule', builtin, newSnapshot);
-        if (isRestore) restoreOutcomes.push({ id: builtin.id, type: 'rule', status: 'restored', replacementFrom: null, path: builtin.target, reason: null });
-      }
-    }
-    if (!checkOnly) {
-      const rulesPath = writeRulesManifest(targetRoot, rulesManifest);
-      changed.push(toPosixRelative(targetRoot, rulesPath));
-    }
     const skillsManifest = readSkillsManifestForWrite(targetRoot);
     const skillsDocument = manifestDocumentFor(skillsManifest);
     retireOrphanedBuiltinSkills({ manifest, receipts, receiptByKey, skillsManifest, targetRoot, builtinReceiptKey, builtinSnapshot, existsDirectory, path, removeDirectory: removePath, removeReceipt, changed, findings, checkOnly });
@@ -431,7 +371,6 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
     readBuiltinReceipts,
     readCommandsManifestForWrite,
     readPackageManifest,
-    readRulesManifestForWrite,
     readSkillsManifestForWrite,
     SUPPORTED_AGENT_IDS,
     syncPackageBuiltins,
@@ -439,7 +378,6 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
     withWorkspaceMutation,
     writeBuiltinReceipts,
     writeCommandsManifest,
-    writeRulesManifest,
     writeSkillsManifest,
   });
 

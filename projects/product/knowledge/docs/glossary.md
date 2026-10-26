@@ -48,6 +48,7 @@
 
 - 定义：表达价值观、权威与授权边界、约束和结果不变量的长期要求。
 - 适用范围：组织、项目（Project）及服务（Service）的适用规则（Rule）与受管核心规则（Rule）。
+- 承载方式：规则正文位于对应作用域的 `AGENTS.md`，按组织根、项目到服务逐层读取；不再有独立的规则清单登记。
 - 避免混用：不承载命令序列、专业流程或当前任务（Task）状态；这些由方法与应用（Application）负责。
 - 来源：[核心规则](../../services/buildr/resources/workspace/AGENTS.md)。
 
@@ -74,7 +75,7 @@
 
 ## 组件（Component）
 
-- 定义：把相关规则（Rule）、技能（Skill）、命令集合及内容增强作为一组安装和维护的资产包。
+- 定义：把相关技能（Skill）、命令集合及内容增强作为一组安装和维护的资产包。
 - 适用范围：OpenSpec、Archify 等受管集成及其成员。
 - 避免混用：不是前端组件（UI Component）或组件测试（Component Test）；成员维护边界由组件（Component）声明确定。
 - 来源：[组件规范](../../openspec/specs/managed-components/spec.md)。
@@ -96,7 +97,7 @@
 ## 运行时投射（Runtime Projection）
 
 - 定义：依据当前源资产和适用配置，为目标智能体（Agent）生成可发现入口。
-- 适用范围：技能（Skill）正文、附件、规则（Rule）入口及其本机所有权记录。
+- 适用范围：技能（Skill）正文、附件、规则（Rule）入口（`AGENTS.md`）及其本机所有权记录。
 - 避免混用：生成成功不证明宿主已加载、当前会话已采用或工作已经完成。
 - 来源：[技能体系](architecture/buildr-skill-system.md)。
 

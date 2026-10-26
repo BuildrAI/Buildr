@@ -196,7 +196,6 @@ initialSkillBindings:
     version: 4
     provider: current-knowledge-maintenance
 builtins:
-  rules: []
   skills:
     - id: mysql-connection
       path: resources/workspace/skills/connections/mysql-connection
@@ -461,7 +460,6 @@ workspaceDirectories:
   - commands
   - components
   - projects
-  - rules
   - skills
 
 workspaceFiles:

@@ -213,3 +213,17 @@ test('Component dependency contribution 与 fragment 同生命周期合并且 re
   assert.equal(consumer.skillContributions, undefined);
   assert.equal(consumer.capabilityBindings.readiness, 'degraded');
 });
+
+test('Component members.rules 空数组成员兼容，非空成员明确退役且不写 Rule manifest', (t: any) => {
+  const root: any = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  writeManifest(root);
+  writeDependencyComponent(root);
+  const definitionPath: any = path.join(root, 'components', 'workspace', 'dependency-fixture', 'component.yml');
+  const definition: any = YAML.parse(fs.readFileSync(definitionPath, 'utf8'));
+  assert.doesNotThrow(() => resolveRenderSkills(root, '.', SUPPORTED_AGENT_IDS[0]));
+  definition.members.rules = ['rules/legacy.md'];
+  fs.writeFileSync(definitionPath, YAML.stringify(definition, { lineWidth: 0 }));
+  assert.throws(() => resolveRenderSkills(root, '.', SUPPORTED_AGENT_IDS[0]), /members\.rules is retired/u);
+  assert.equal(fs.existsSync(path.join(root, 'rules', 'manifest.yml')), false);
+});

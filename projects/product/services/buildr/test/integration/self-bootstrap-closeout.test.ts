@@ -530,7 +530,7 @@ test('taskless recovery binds the delivery inputs and ignores optional Task anno
   assert.equal(parseTaskCommitTrailer(git(current.root, 'show', '-s', '--format=%B', successor)).taskId, null);
 });
 
-for (const changedPath of ['AGENTS.md', 'projects/product/AGENTS.md', 'rules/manifest.yml', 'components/workspace/buildr-self-bootstrap/contributions/task-finish.md']) {
+for (const changedPath of ['AGENTS.md', 'projects/product/AGENTS.md', 'components/workspace/buildr-self-bootstrap/contributions/task-finish.md']) {
   test(`taskless ${changedPath} changes trigger projection`, (t: any) => {
     const current: any = fixture(t);
     const file = path.join(current.root, changedPath);

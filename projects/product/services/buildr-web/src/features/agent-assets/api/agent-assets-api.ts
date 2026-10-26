@@ -7,8 +7,6 @@ import type {
   SkillDetailResponseSkillDetailResponse,
   SkillFileResponseSkillFileResponse,
   AgentAssetsMutationResponseMutationResponse,
-  AgentAssetsRulesAddRequestRulesAddRequest,
-  AgentAssetsRulesRemoveRequestRulesRemoveRequest,
 } from '../../../../build/generated/agent-assets-http-dto';
 
 export type AgentAssetsInventory = AgentAssetsInventoryResponseInventoryResponse;
@@ -35,12 +33,6 @@ export function createAgentAssetsClient(api: ApiClient) {
     },
     inventory(options: Pick<RequestInit, 'signal'> = {}): Promise<AgentAssetsInventory> {
       return api('/api/v1/agent-assets', options) as Promise<AgentAssetsInventory>;
-    },
-    addRule(input: AgentAssetsRulesAddRequestRulesAddRequest): Promise<AgentAssetsMutation> {
-      return api('/api/v1/agent-assets/rules', { method: 'POST', body: JSON.stringify(input) }) as Promise<AgentAssetsMutation>;
-    },
-    removeRule(input: AgentAssetsRulesRemoveRequestRulesRemoveRequest): Promise<AgentAssetsMutation> {
-      return api(`/api/v1/agent-assets/rules/${encodeURIComponent(input.id)}`, { method: 'DELETE', body: JSON.stringify(input) }) as Promise<AgentAssetsMutation>;
     },
   };
 }

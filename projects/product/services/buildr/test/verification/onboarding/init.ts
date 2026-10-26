@@ -110,14 +110,12 @@ try {
   assert.equal(fs.existsSync(path.join(sourceOnly, 'projects', 'manifest.yml')), true);
   const workspace: any = YAML.parse(fs.readFileSync(path.join(sourceOnly, '.buildr', 'workspace.yml'), 'utf8'));
   const projects: any = YAML.parse(fs.readFileSync(path.join(sourceOnly, 'projects', 'manifest.yml'), 'utf8'));
-  const rules: any = YAML.parse(fs.readFileSync(path.join(sourceOnly, 'rules', 'manifest.yml'), 'utf8'));
   const skills: any = YAML.parse(fs.readFileSync(path.join(sourceOnly, 'skills', 'manifest.yml'), 'utf8'));
   const commands: any = YAML.parse(fs.readFileSync(path.join(sourceOnly, 'commands', 'manifest.yml'), 'utf8'));
   const components: any = YAML.parse(fs.readFileSync(path.join(sourceOnly, 'components', 'manifest.yml'), 'utf8'));
   assert.match(workspace.id, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu);
   assert.deepEqual(projects, { schemaVersion: 'buildr.projects/v2', projects: {} });
-  assert.equal(rules.rules.some((item: any) => item.id === 'buildr-core'), false);
-  assert.equal(fs.existsSync(path.join(sourceOnly, 'rules/buildr/core.md')), false);
+  assert.equal(fs.existsSync(path.join(sourceOnly, 'rules')), false, 'init must not create the retired rules directory');
   assert.match(fs.readFileSync(path.join(sourceOnly, 'AGENTS.md'), 'utf8'), /以可信完成目标的效率衡量性能/);
   assert.equal(skills.workspaceId, workspace.id);
   assert.equal(skills.skills.some((item: any) => item.id === 'task-triage' && item.state === 'installed'), true);

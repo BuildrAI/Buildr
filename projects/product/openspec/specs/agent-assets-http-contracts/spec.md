@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Rules、Skills、Commands、Components、Builtin 与 runtime projection 管理 HTTP 契约及其 typed Client 边界。
+Skills、Commands、Components、Builtin 与 runtime projection 管理 HTTP 契约及其 typed Client 边界。
 
 ## Requirements
 

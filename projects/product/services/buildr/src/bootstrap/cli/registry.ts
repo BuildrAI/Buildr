@@ -29,8 +29,6 @@ const AGENT_ASSETS_SOURCE_COMMANDS: any = new Set([
   'component check',
   'component install',
   'component uninstall',
-  'rules add',
-  'rules remove',
   'builtin list',
   'builtin uninstall',
   'builtin restore',

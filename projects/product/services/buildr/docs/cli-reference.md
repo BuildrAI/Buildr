@@ -170,13 +170,13 @@ buildr help assets
 | `buildr task work-context inspect\|record\|respond <task-id>` | 独立工作摘要与显式待处理事项。`record` 使用 `--expected-current <absent\|digest>`、`--progress`、`--next-step`；可明确登记或清除事项。`respond` 以当前版本、事项身份和真实用户意见保存答复，不改变任务状态或完成结果。 |
 | `buildr task parent inspect` | 只读查看整体目标、真实子任务及结果、完成观察身份和历史父计划。旧 record、reconcile、bind-child、refresh-planning、reconcile-child-delivery、accept 写入口已退役。父任务通过已有 task complete 提交当前版本、验收和明确用户授权。 |
 | `buildr task verification inspect\|record <task-id>` | 读取或整值保存Workspace SQLite中的current任务验证报告。`record --report <json-file>`接收Agent在开发完成后形成的实际检查、选择范围、目标、结果、未覆盖项和结论；`inspect`可带当前内容identity判断报告是否仍适用。命令不生成计划、不执行测试、不绑定Candidate。 |
-| `buildr rules add/remove` | 维护 root Rules manifest 和文件生命周期。 |
+| `buildr rules render` | 按 `AGENTS.md` 的 scope 祖先链与子树投射规则内容；`rules add/remove` 与 `rules/manifest.yml` 已退役，既有文件保留为兼容内容。 |
 | `buildr skills add/remove` | 只维护 workspace `skills/` 中的 Skill source；旧 `--scope .` 仅兼容并警告，Project scope 被拒绝。 |
 | `buildr skills bind/unbind` | 维护 workspace 默认 binding，或在 `projects/<project>/capabilities.yml` 维护 Project context binding。 |
 | `buildr skills render [<agent>] [--adapter <adapter-id>] --destination workspace\|user` | 从 `--target <workspace>` 读取源资产，投射到工作空间（Workspace）或个人用户层；默认 workspace，不按品牌登记限制通用技能（Skill）。 |
 | `buildr commands add/remove` | 维护 workspace Command catalog definitions；最后一个 definition 仍被 requirement 引用时零写入。 |
 | `buildr commands check [--project <project> ...]` | 按显式 Project task context 合并 requirements 并观察本机环境；无 Project 时只检查 workspace defaults。 |
-| `buildr component list/check/install/uninstall` | 管理 workspace 级 Rules、Skills、Command collections 与声明式 Skill Contribution。 |
+| `buildr component list/check/install/uninstall` | 管理 workspace 级 Skills、Command collections 与声明式 Skill Contribution。 |
 | `buildr builtin list/uninstall/restore` | 查看或维护 Buildr 内置能力；required 能力不能卸载。`restore` 表示明确放弃该 Builtin 的本地修改；replacement 只接管可证明为 Buildr-managed 的 predecessor，恢复 source 后再运行 `sync <agent>` 收敛 runtime。 |
 | `buildr update [check]` | 按安装回执（Installation Receipt）检查或更新当前 npm 安装或开发检出（Development Checkout）；不负责工作空间（Workspace）同步。 |
 

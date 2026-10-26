@@ -22,7 +22,6 @@ export interface ComponentsDependencies {
   isPlainObject: ReturnType<typeof import('./commands.ts').registerDomainsCommands>['isPlainObject'];
   readPackageManifest: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['readPackageManifest'];
   collectFiles: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['collectFiles'];
-  builtinRuleEntry: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['builtinRuleEntry'];
   builtinSkillEntry: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['builtinSkillEntry'];
   sourcePathFromBuiltin: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['sourcePathFromBuiltin'];
   missingAncestorForMutation: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['missingAncestorForMutation'];
@@ -30,9 +29,6 @@ export interface ComponentsDependencies {
   assertSafeSyncMutationPaths: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['assertSafeSyncMutationPaths'];
   isValidAssetId: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['isValidAssetId'];
   listManagedDirectories: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['listManagedDirectories'];
-  rulesManifestPath: ReturnType<typeof import('./rules.ts').registerDomainsRules>['rulesManifestPath'];
-  readRulesManifestForWrite: ReturnType<typeof import('./rules.ts').registerDomainsRules>['readRulesManifestForWrite'];
-  writeRulesManifest: ReturnType<typeof import('./rules.ts').registerDomainsRules>['writeRulesManifest'];
   assertAgentId: ReturnType<typeof import('./runtime.ts').registerDomainsRuntime>['assertAgentId'];
   normalizeRelativePathForBuildr: ReturnType<typeof import('./skills.ts').registerDomainsSkills>['normalizeRelativePathForBuildr'];
   skillsManifestPath: ReturnType<typeof import('./skills.ts').registerDomainsSkills>['skillsManifestPath'];
@@ -62,7 +58,6 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
     isPlainObject,
     readPackageManifest,
     collectFiles,
-    builtinRuleEntry,
     builtinSkillEntry,
     sourcePathFromBuiltin,
     missingAncestorForMutation,
@@ -70,9 +65,6 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
     assertSafeSyncMutationPaths,
     isValidAssetId,
     listManagedDirectories,
-    rulesManifestPath,
-    readRulesManifestForWrite,
-    writeRulesManifest,
     assertAgentId,
     normalizeRelativePathForBuildr,
     skillsManifestPath,
@@ -172,7 +164,6 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
   }
 
   function componentMemberKind(definition: any, member: any): any  {
-    if (definition.members.rules.includes(member)) return 'rule';
     if (definition.members.skills.includes(member)) return 'skill';
     if (definition.members.commandCollections.includes(member)) return 'commandCollection';
     if (definition.members.skillContributions.includes(member)) return 'skillContribution';
@@ -181,7 +172,6 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
 
   function componentBuiltinForMember(manifest: any, definition: any, member: any): any  {
     const kind = componentMemberKind(definition, member);
-    if (kind === 'rule') return { kind, builtin: manifest.builtins.rules.find((item: any) => item.target === member) || null };
     if (kind === 'skill') return { kind, builtin: manifest.builtins.skills.find((item: any) => item.target === member) || null };
     return { kind, builtin: null };
   }
@@ -199,7 +189,7 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
       if (!actual) errors.push(`Package Component member source is missing: ${member}.`);
       else if (actual !== integrity.get(member)) errors.push(`Package Component member integrity differs: ${member}.`);
       const { kind, builtin } = componentBuiltinForMember(manifest, record.definition, member);
-      if ((kind === 'rule' || kind === 'skill') && (!builtin || builtin.component !== record.entry.id)) {
+      if (kind === 'skill' && (!builtin || builtin.component !== record.entry.id)) {
         errors.push(`Package Component ${kind} member must have a matching builtin descriptor with component: ${record.entry.id}: ${member}.`);
       }
     }
@@ -269,12 +259,6 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
       if (entry && (entry.enabled === false || ['modified', 'missing', 'uninstalled'].includes(entry.state))) return `${kind}:${builtin.id} is ${entry.state || 'uninstalled'}`;
       if (entry && !knownOldFork && !assetIntegrity(memberSource(targetRoot, member))) return `${kind}:${builtin.id} is missing`;
     }
-    if (kind === 'rule' && builtin) {
-      const entry = readRulesManifestForWrite(targetRoot).rules.find((item: any) => item.id === builtin.id);
-      if (entry && (entry.source !== 'buildr' || entry.path !== member)) return `${kind}:${builtin.id} has a conflicting source or path`;
-      if (entry && (entry.enabled === false || ['modified', 'missing', 'uninstalled'].includes(entry.state))) return `${kind}:${builtin.id} is ${entry.state || 'uninstalled'}`;
-      if (entry && !assetIntegrity(memberSource(targetRoot, member))) return `${kind}:${builtin.id} is missing`;
-    }
     return null;
   }
 
@@ -284,9 +268,6 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
     if (kind === 'skill') {
       const expectedSource = member.startsWith('skills/openspec/') ? 'openspec' : 'buildr';
       return readSkillsManifestForWrite(targetRoot).some((entry: any) => entry.id === builtin.id && entry.source === expectedSource && entry.path === member.replace(/^skills\//, ''));
-    }
-    if (kind === 'rule') {
-      return readRulesManifestForWrite(targetRoot).rules.some((entry: any) => entry.id === builtin.id && entry.source === 'buildr' && entry.path === member);
     }
     return false;
   }
@@ -382,14 +363,10 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
     }
   }
 
-  function removeComponentMember(targetRoot: any, packageManifest: any, definition: any, member: any, rulesManifest: any, skillsManifest: any, changed: any): any  {
+  function removeComponentMember(targetRoot: any, packageManifest: any, definition: any, member: any, skillsManifest: any, changed: any): any  {
     const { kind, builtin } = componentBuiltinForMember(packageManifest, definition, member);
     const target = path.join(targetRoot, member);
-    if (kind === 'rule') {
-      const pathKey = builtin?.target || member;
-      rulesManifest.rules = rulesManifest.rules.filter((entry: any) => entry.path !== pathKey && (!builtin || entry.id !== builtin.id));
-      if (existsFile(target)) fs.rmSync(target, { force: true });
-    } else if (kind === 'skill') {
+    if (kind === 'skill') {
       const skillPath = member.replace(/^skills\//, '');
       skillsManifest.splice(0, skillsManifest.length, ...skillsManifest.filter((entry: any) => entry.path !== skillPath && (!builtin || entry.id !== builtin.id)));
       if (existsDirectory(target)) fs.rmSync(target, { recursive: true, force: true });
@@ -409,18 +386,11 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
     changed.push(member);
   }
 
-  function installComponentMember(targetRoot: any, packageManifest: any, definition: any, member: any, rulesManifest: any, skillsManifest: any, changed: any): any  {
+  function installComponentMember(targetRoot: any, packageManifest: any, definition: any, member: any, skillsManifest: any, changed: any): any  {
     const { kind, builtin } = componentBuiltinForMember(packageManifest, definition, member);
     const source = packageComponentSourcePath(member);
     const target = path.join(targetRoot, member);
-    if (kind === 'rule') {
-      ensureDirectory(path.dirname(target));
-      fs.copyFileSync(source, target);
-      const desired = builtinRuleEntry(builtin);
-      const index = rulesManifest.rules.findIndex((entry: any) => entry.id === desired.id);
-      if (index === -1) rulesManifest.rules.push(desired);
-      else rulesManifest.rules[index] = desired;
-    } else if (kind === 'skill') {
+    if (kind === 'skill') {
       if (existsDirectory(target)) fs.rmSync(target, { recursive: true, force: true });
       // The component owns its logical member; official bytes live in the shared set.
       const index = skillsManifest.findIndex((entry: any) => entry.id === builtin.id);
@@ -442,7 +412,6 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
     const definitionTarget = path.join(targetRoot, componentPath, 'component.yml');
     const affected: any[] = [
       ...new Set([...plan.oldMembers, ...plan.nextMembers].map((member: any) => path.join(targetRoot, member))),
-      rulesManifestPath(targetRoot),
       skillsManifestPath(targetRoot),
       componentRegistryPath(targetRoot),
       definitionTarget,
@@ -462,13 +431,11 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
     const affected = componentReconcileAffectedPaths(targetRoot, record, plan);
     return withWorkspaceMutation(targetRoot, `component.reconcile:${record.entry.id}`, affected, () => {
       const changed: any[] = [];
-      const rulesManifest = readRulesManifestForWrite(targetRoot);
       const skillsManifest = readSkillsManifestForWrite(targetRoot);
       for (const member of plan.oldMembers) {
-        if (!plan.nextMembers.has(member) && !plan.restoring) removeComponentMember(targetRoot, packageManifest, plan.oldDefinition, member, rulesManifest, skillsManifest, changed);
+        if (!plan.nextMembers.has(member) && !plan.restoring) removeComponentMember(targetRoot, packageManifest, plan.oldDefinition, member, skillsManifest, changed);
       }
-      for (const member of plan.nextMembers) installComponentMember(targetRoot, packageManifest, record.definition, member, rulesManifest, skillsManifest, changed);
-      if (record.definition.members.rules.length || plan.oldDefinition?.members.rules.length) changed.push(toPosixRelative(targetRoot, writeRulesManifest(targetRoot, rulesManifest)));
+      for (const member of plan.nextMembers) installComponentMember(targetRoot, packageManifest, record.definition, member, skillsManifest, changed);
       if (record.definition.members.skills.length || plan.oldDefinition?.members.skills.length) changed.push(toPosixRelative(targetRoot, writeSkillsManifest(targetRoot, skillsManifest)));
       const nextEntry: any = { id: record.entry.id, source: 'buildr', path: componentPath, enabled: true, required: record.entry.required === true, state: 'installed' };
       const registry = readComponentsManifestForWrite(targetRoot);
@@ -849,16 +816,13 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
     const packageManifest = readPackageManifest();
     const affected: any[] = [
       ...componentMemberPaths(definition).map((member: any) => path.join(targetRoot, member)),
-      rulesManifestPath(targetRoot),
       skillsManifestPath(targetRoot),
       componentRegistryPath(targetRoot),
     ];
     const { changed } = withWorkspaceMutation(targetRoot, `component.uninstall:${id}`, affected, () => {
       const changed: any[] = [];
-      const rulesManifest = readRulesManifestForWrite(targetRoot);
       const skillsManifest = readSkillsManifestForWrite(targetRoot);
-      for (const member of componentMemberPaths(definition)) removeComponentMember(targetRoot, packageManifest, definition, member, rulesManifest, skillsManifest, changed);
-      if (definition.members.rules.length) changed.push(toPosixRelative(targetRoot, writeRulesManifest(targetRoot, rulesManifest)));
+      for (const member of componentMemberPaths(definition)) removeComponentMember(targetRoot, packageManifest, definition, member, skillsManifest, changed);
       if (definition.members.skills.length) changed.push(toPosixRelative(targetRoot, writeSkillsManifest(targetRoot, skillsManifest)));
       registry.components[index] = { ...entry, enabled: false, state: 'uninstalled' };
       if (reason) registry.components[index].reason = reason;

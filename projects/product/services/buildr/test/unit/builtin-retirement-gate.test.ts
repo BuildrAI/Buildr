@@ -13,14 +13,12 @@ function validator({ builtins, workspaceSkills }: any) {
     normalizeRelativePathForBuildr: (value: any) => value,
     existsFile: (file: string) => fs.existsSync(file) && fs.statSync(file).isFile(),
     existsDirectory: (dir: string) => fs.existsSync(dir) && fs.statSync(dir).isDirectory(),
-    readPackageManifest: () => ({ builtins: { skills: builtins, rules: [], commands: [] }, skillSources: [], capabilityContracts: [], initialSkillBindings: [] }),
+    readPackageManifest: () => ({ builtins: { skills: builtins, commands: [] }, skillSources: [], capabilityContracts: [], initialSkillBindings: [] }),
     readSkillManifest: () => workspaceSkills,
     builtinSkillEntry: (builtin: any) => builtin,
-    builtinRuleEntry: (rule: any) => rule,
     sourcePathFromBuiltin: (builtin: any) => builtin.path,
     parseSkillSourceRef: () => ({ type: 'workspace', id: 'stub' }),
     toPosixRelative: (_root: string, file: string) => file,
-    parseRulesManifestYaml: () => ({ rules: [] }),
     parseCommandsManifestYaml: () => ({ commands: [] }),
   });
 }

@@ -46,13 +46,15 @@ function parseComponentContributions(definitionPath: any): any  {
   }
   definition.members ||= {};
   definition.contributions ||= {};
+  if (Array.isArray(definition.members.rules) && definition.members.rules.length === 0) delete definition.members.rules;
   for (const key of Object.keys(definition.members)) {
-    if (!['rules', 'skills', 'commandCollections', 'skillContributions'].includes(key)) throw new Error(`Component member type is not supported and cannot extend runtime adapters: ${key}`);
+    if (key === 'rules') throw new Error('Component members.rules is retired; move rule content to AGENTS.md and remove the member.');
+    if (!['skills', 'commandCollections', 'skillContributions'].includes(key)) throw new Error(`Component member type is not supported and cannot extend runtime adapters: ${key}`);
   }
   for (const key of Object.keys(definition.contributions)) {
     if (!['skillFragments', 'skillDependencies'].includes(key)) throw new Error(`Component contribution type is not supported and cannot extend runtime adapters: ${key}`);
   }
-  for (const key of ['rules', 'skills', 'commandCollections', 'skillContributions']) {
+  for (const key of ['skills', 'commandCollections', 'skillContributions']) {
     definition.members[key] ||= [];
     if (!Array.isArray(definition.members[key]) || !definition.members[key].every((item: any) => typeof item === 'string')) throw new Error(`Component members.${key} must be an array of strings.`);
   }

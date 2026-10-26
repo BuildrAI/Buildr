@@ -92,7 +92,7 @@
     - **`specs/task-verification/`** — 真实验证报告
       - [spec.md](../../openspec/specs/task-verification/spec.md) — 检查、未覆盖项、内容身份及合法写入
   - **`services/buildr/src/modules/agent-assets/`** — 工作方法治理与运行时投射
-    - [module.ts](../../services/buildr/src/modules/agent-assets/module.ts) — 组装规则（Rule）、技能（Skill）、能力绑定和运行时投射职责
+    - [module.ts](../../services/buildr/src/modules/agent-assets/module.ts) — 组装技能（Skill）、命令、组件、能力绑定和运行时投射职责，并保留规则（Rule）存量兼容诊断
   - **`services/buildr/src/modules/workspace/`** — 用户的工作空间（Workspace）管理
     - [application/workspace-query-application.ts](../../services/buildr/src/modules/workspace/application/workspace-query-application.ts) — 读取同一空间身份、项目、服务及登记事实
   - **`services/buildr/src/modules/task/`** — 后端任务事实与具体操作

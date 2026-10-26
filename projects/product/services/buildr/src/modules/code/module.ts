@@ -9,7 +9,7 @@ import { AGENT_ASSETS_SOURCE_READ } from '../agent-assets/module.ts';
 import { createCodeCommitMessageApplication, type CodeCommitMessageDependencies } from './application/code-commit-message-application.ts';
 import { createCodeGenerationHttpContribution } from './interfaces/http/code-generation-http.ts';
 import { readCodeCommitGuidance } from './infrastructure/code-commit-guidance.ts';
-import { createCodeCommitMaterialReader, type CodeCommitMaterialReaderDependencies } from './infrastructure/code-commit-material.ts';
+import { createCodeCommitMaterialReader } from './infrastructure/code-commit-material.ts';
 import { SourceControlObservations } from './application/source-control-observations.ts';
 export { reclaimCodeGitOperationFile } from './infrastructure/code-git-operation-lock.ts';
 export const CODE_APPLICATION='code.application';
@@ -28,8 +28,7 @@ export const CODE_MODULE=Object.freeze({id:'code',requires:Object.freeze([WORKSP
   const observations=new SourceControlObservations();
   const models=requires[AGENT_SERVICE_APPLICATION] as {generate:GenerateModel};
   const runs=new CodeGeneration(input=>models.generate(input));
-  const assets=requires[AGENT_ASSETS_SOURCE_READ] as Pick<CodeCommitMaterialReaderDependencies,'readRules'>;
-  const commitMaterial=createCodeCommitMaterialReader({readRules:root=>assets.readRules(root)});
+  const commitMaterial=createCodeCommitMaterialReader();
   const generation=createCodeCommitMessageApplication({commitSnapshot:application.commitSnapshot,commitGuidance:(root,snapshot)=>readCodeCommitGuidance(root,snapshot,{...dependencies,taskContext:(root,id)=>{const record=readTask(root,id).record;return {taskId:record.taskId,title:record.title,intent:record.intent,scope:record.scope};}}),commitMaterial,startGeneration:input=>runs.start(input)});
   return Object.freeze({provides:{[CODE_APPLICATION]:application,[CODE_GENERATION_APPLICATION]:{...generation,close:()=>runs.close()},[CODE_SOURCE_CONTROL_OBSERVATIONS]:observations},contributions:{http:[createCodeHttpContribution(application,observations),createCodeGenerationHttpContribution(generation,runs)],cli:createCodeCliContributions(application)},lifecycle:{start(){},stop(){runs.close();observations.close();}}});
 }});

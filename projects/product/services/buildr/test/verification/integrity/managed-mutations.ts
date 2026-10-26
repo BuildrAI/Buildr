@@ -58,7 +58,6 @@ const allowed: any = new Map([
   ])],
   ['src/modules/project-testing/application/verification-application.ts', new Set(['withRetainedControllerPlanArgs'])],
   ['src/bootstrap/cli/task-finish-bootstrap.ts', new Set(['atomicWriteFile'])],
-  ['src/modules/agent-assets/application/rules.ts', new Set(['rulesRemoveUnsafe'])],
   ['src/modules/agent-assets/application/skills.ts', new Set(['copySupportedSkillSource', 'skillsRemoveUnsafe'])],
   ['src/modules/agent-assets/application/components.ts', new Set(['removeComponentMember', 'installComponentMember'])],
   ['src/modules/workspace/application/registry-maintenance.ts', new Set(['convergeServiceManifest', 'convergeRegistryManifests'])],

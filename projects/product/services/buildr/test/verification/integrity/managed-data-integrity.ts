@@ -111,9 +111,10 @@ try {
 
   const ruleFile: any = path.join(workspace, 'rules', 'fixture.md');
   fs.writeFileSync(ruleFile, '# Fixture\n');
-  run(['rules', 'add', 'fixture', '--description', 'fixture rule', '--target', workspace]);
-  run(['rules', 'remove', 'fixture', '--target', workspace]);
-  if (fs.existsSync(ruleFile)) throw new Error('Normal Rule member deletion was blocked.');
+  run(['rules', 'add', 'fixture', '--description', 'fixture rule', '--target', workspace], { expectFailure: true });
+  run(['rules', 'remove', 'fixture', '--target', workspace], { expectFailure: true });
+  if (!fs.existsSync(ruleFile)) throw new Error('Retired rules command removed the legacy file.');
+  if (fs.existsSync(path.join(workspace, 'rules', 'manifest.yml'))) throw new Error('Retired rules command wrote a manifest.');
 
   const escapedDescription: any = 'line one\nline "two"';
   run(['commands', 'add', 'fixture-tool', '--purpose', 'fixture', '--description', escapedDescription, '--install-hint', 'https://example.com/tool', '--target', workspace]);

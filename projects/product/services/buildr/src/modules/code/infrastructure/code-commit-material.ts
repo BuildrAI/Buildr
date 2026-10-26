@@ -16,9 +16,6 @@ export type CodeCommitMaterialCoverage = {
   includedRuleSources: number; omittedRuleSources: number; rulesPartial: boolean; evidencePartial: boolean;
 };
 export type CodeCommitMaterial = { text: string; revision: string; coverage: CodeCommitMaterialCoverage };
-export type CodeCommitMaterialReaderDependencies = {
-  readRules(root: string): Array<{ id?: string; path?: string; description?: string; enabled?: boolean; required?: boolean; state?: string }>;
-};
 type RuleExcerpt = { source: string; scope: string; text: string; partial: boolean };
 type Evidence = { path: string; format: 'diff' | 'new-content'; text: string; partial: boolean };
 export type CodeCommitMaterialObservations = { rules: RuleExcerpt[]; ruleSources: number; ruleFacts: unknown[]; rulesPartial?: boolean; evidence: Evidence[] };
@@ -199,7 +196,7 @@ function readPatch(snapshot: CodeCommitSnapshot, file: CodeCommitSnapshotFile, f
   });
 }
 
-export function createCodeCommitMaterialReader(dependencies: CodeCommitMaterialReaderDependencies) {
+export function createCodeCommitMaterialReader() {
   return async (snapshot: CodeCommitSnapshot, guidance: CodeCommitGuidance, maxBytes: number): Promise<CodeCommitMaterial> => {
     const rules: RuleExcerpt[] = [], ruleFacts: unknown[] = [], sources = new Map<string, { root: string; relative: string; scope: string; label: string }>();
     const label = (file: string, scope: CodeCommitGuidance['scopes'][number], index: number) => insideFilesystemPath(snapshot.source.location, file) ? path.relative(snapshot.source.location, file).split(path.sep).join('/') : `[external ${scope.kind} ${index + 1}]/${path.relative(scope.path, file).split(path.sep).join('/')}`;
@@ -207,16 +204,6 @@ export function createCodeCommitMaterialReader(dependencies: CodeCommitMaterialR
       const override = path.join(scope.path, 'AGENTS.override.md'), normal = path.join(scope.path, 'AGENTS.md');
       const agents = guidance.ruleEntrypoints.includes(override) ? override : guidance.ruleEntrypoints.includes(normal) ? normal : null;
       if (agents) sources.set(agents, { root: scope.path, relative: path.basename(agents), scope: scope.kind, label: label(agents, scope, scopeIndex) });
-      if (!guidance.ruleEntrypoints.includes(path.join(scope.path, 'rules/manifest.yml'))) continue;
-      try {
-        const selected = dependencies.readRules(scope.path).filter(rule => rule.enabled !== false && !['uninstalled', 'missing'].includes(rule.state || '') && (rule.required === true || relevant.test((rule.description || '') + ' ' + (rule.id || ''))));
-        ruleFacts.push({ manifest: scope.path, selected });
-        for (const rule of selected) {
-          if (typeof rule.path !== 'string' || !rule.path.startsWith('rules/') || rule.path.includes('\\') || rule.path.split('/').some(part => !part || part === '.' || part === '..') || path.isAbsolute(rule.path)) { ruleFacts.push({ invalidRulePath: rule.id }); continue; }
-          const file = path.join(scope.path, rule.path); if (!insideFilesystemPath(scope.path, file)) continue;
-          sources.set(file, { root: scope.path, relative: rule.path, scope: scope.kind, label: label(file, scope, scopeIndex) });
-        }
-      } catch { ruleFacts.push({ manifest: scope.path, unavailable: true }); }
     }
     let consumed = 0, readFiles = 0;
     for (const [file, source] of sources) {

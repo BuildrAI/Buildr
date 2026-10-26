@@ -19,7 +19,7 @@ export function retirePackagedArchify({ targetRoot, checkOnly, readSkills, write
     const definition = path.join(targetRoot, component.path, 'component.yml');
     if (fs.existsSync(definition)) {
       const declared = readDefinition(definition, 'archify');
-      if (declared.source !== 'buildr' || declared.members.rules.length || declared.members.commandCollections.length || declared.members.skillContributions.length || declared.members.skills.length !== 1 || declared.members.skills[0] !== localPath) throw new Error('旧 Archify 组件含有不同归属或额外成员，已保留现场。');
+      if (declared.source !== 'buildr' || (declared.members.rules?.length ?? 0) || declared.members.commandCollections.length || declared.members.skillContributions.length || declared.members.skills.length !== 1 || declared.members.skills[0] !== localPath) throw new Error('旧 Archify 组件含有不同归属或额外成员，已保留现场。');
     }
   }
   // A locally maintained source always wins. Never replace user bytes with a snapshot.

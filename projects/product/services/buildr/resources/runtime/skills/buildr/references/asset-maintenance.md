@@ -5,7 +5,7 @@
 - Workspace 是 Buildr 组织（Organization/Root）源资产根；`--target` 始终指向 Buildr workspace root，不指向 Service 代码仓。
 - 工作空间（Workspace）必须完成 `buildr init`；身份已知时运行 `buildr init --agent <agent> --target <dir> --name <name> --profile <personal|team|company>` 一次完成源资产、运行时（Runtime）文件和最终诊断（Doctor）。身份未知可省略 `--agent`，保留唯一既有受管方式，无既有方式时默认 `agents-standard`；多个不等价方式要求明确选择。仅源资产使用 `init --source-only`，不能与 `--agent` 或 `--adapter` 混用，执行失败也不退回纯源流程。完整初始化的最终诊断（Doctor）通过后继续首次使用交接，而不是默认让用户执行 `project create`：用普通语言说明工作空间（Workspace）承载共同事实，项目（Project）承载业务目标，服务（Service）承担实现职责，代码库实例（Repository Instance）定位实际代码；多个服务可共用一份代码。没有 Project 时询问要管理的业务、产品、系统、长期工作或已有 repo；唯一 Project 没有 Service 时说明 Service 只在代码仓、应用、模块或可执行资产存在时需要，并询问接入还是直接开始；唯一范围时直接邀请第一项工作目标；多个候选时只问消除范围歧义的最少问题。不要创建 `WELCOME.md`、持久 checklist 或固定教学 Rule。用户已经给出明确目标时连续推进，不为展示教学中断工作。
 - 普通初始化在源资产准备完成后，默认登记到当前产品对应的本机 Buildr Web，再执行运行时（Runtime）准备；已有登记直接复用，不启动网页或转移另一渠道的归属。`init --source-only` 不登记本机列表或建立网页管理归属。登记失败保留源资产，按具体原因修复后重试原初始化；后续运行时（Runtime）失败保留已成立登记，使用输出的 `sync` 指引接续，不要求重复初始化或手动添加。用户需要网页配置时，打开已登记的工作空间（Workspace），先选择工作空间（Workspace），再在“项目”“服务”“代码库”页面维护相应范围；用户只在智能体（Agent）工具中工作时无需打开网页。
-- 根 `AGENTS.md` 是规则入口，其受管区块（Managed Block）内联核心规则；专业规则通过 `rules/manifest.yml` 按需发现，`projects/manifest.yml` 是项目清单（Project Registry）。
+- 根 `AGENTS.md` 是规则入口，其受管区块（Managed Block）内联核心规则；专业规则通过组织根、项目或服务的 `AGENTS.md` 按作用域发现，`projects/manifest.yml` 是项目清单（Project Registry）。
 
 ## Project
 
@@ -17,7 +17,7 @@
 ## 遗留 Practices
 
 - Practices 不再是独立 Buildr 资产类型；已有 workspace 或 Project `practices/` 是用户保留数据，不得自动读取、迁移、覆盖或删除，也不得因其存在阻塞正常命令。
-- 用户决定整理时，先人工审阅内容语义：约束和值守边界迁移为 Rule，可复用专业动作和操作流程迁移为 Skill，产品事实、需求和变更迁移为 OpenSpec，其他说明保留为普通 docs。
+- 用户决定整理时，先人工审阅内容语义：约束和值守边界迁移到对应作用域的 `AGENTS.md`，可复用专业动作和操作流程迁移为 Skill，产品事实、需求和变更迁移为 OpenSpec，其他说明保留为普通 docs。
 - 不根据文件名或正文猜测迁移类别；用户确认内容已经妥善归类且目录为空后，才由用户自行决定是否删除遗留目录。
 
 ## 服务与代码库
@@ -75,24 +75,23 @@
 - Component 是 workspace 级统一生命周期单元；当前不支持 Project/Service Component。registry 为 `components/manifest.yml`，成员由 installed `component.yml` 唯一声明。
 - Component 必须自证 definition、全部成员 integrity、唯一 ownership 和 Skill Contribution 完整性；不能注册或注入 runtime adapter、runtime hook、可执行 member 或 registry patch。验证通过的 Contribution 只作为通用 runtime source input。
 - Sidebar 是对外部能力的独立、可卸载增强；Skill Contribution 是其 runtime 组合机制。外部 Skill 源必须保持上游正文，Buildr 增强只进入 Agent runtime 派生版本，不在 `skills/buildr/` 维护外部 fork。
-- 用户明确说“作为 Component”时，即使只有一个成员也走 Component；用户明确要单项 Rule、Skill 或 Command 时走单项入口。
+- 用户明确说“作为 Component”时，即使只有一个成员也走 Component；用户明确要单项 Skill 或 Command 时走单项入口。
 - 用户只说“安装 X”时，先读取权威来源并识别会安装的资源；跨资产类型或需要统一版本、更新、卸载时创建或选择 Component，组成不明时继续调查，不让 CLI 猜测。
 - 安装前用 `buildr component list/check --target <dir> --json` 核对来源、版本、成员和 integrity；执行 `buildr component install <id> --agent <agent> --target <dir>`。
 - 用户只说“卸载 X”时，先查询 registry、ownership 和 `component check`。若 X 是 Component 或其成员，不得调用单项删除命令。
-- 卸载前展示 Component id、source、version、workspace scope、将删除的 Rules、Skills、Command collections 和当前 Agent runtime 投射，并说明不会删除本机外部 CLI 或任何 Project 内容；取得用户针对该完整范围的明确确认。已有确认覆盖完全相同范围时直接继续。
+- 卸载前展示 Component id、source、version、workspace scope、将删除的 Skills、Command collections 和当前 Agent runtime 投射，并说明不会删除本机外部 CLI 或任何 Project 内容；取得用户针对该完整范围的明确确认。已有确认覆盖完全相同范围时直接继续。
 - 只有完整范围已获用户明确确认才运行 `buildr component uninstall <id> --agent <agent> --target <dir> [--reason <text>]`；拒绝、未确认或范围变化时不得写入。
 - install/uninstall 必须完成指定 Agent runtime reconcile 和最终 doctor；仍有 error 时不得报告完成。
 
 ## Rules
 
-- Rules 源资产是当前 scope 的 `AGENTS.md`、`rules/manifest.yml` 和 `rules/`。
+- Rules 源资产是当前 scope 的 `AGENTS.md`，按组织根、项目、服务逐层发现和读取；不再有 `rules/manifest.yml`、规则登记命令或组件 `members.rules` 成员类型。
 - Rules 控制 Agent 的价值观、边界和约束；Skills 封装可复用的专业动作和操作流程。
-- Rule 和 Skill 不以“是否必须加载”作为本质区分；Rule description 是 Agent 判断规则语义相关性的索引，不是路径或角色路由表。
+- Rule 和 Skill 不以“是否必须加载”作为本质区分；Rule 描述是 Agent 判断规则语义相关性的索引，不是路径或角色路由表。
 - Agent runtime adapter 按“scope 祖先链 + scope 子树”发现和投射 `AGENTS.md`，不替 Agent 判断 optional Rule 与任务的语义相关性，也不使用预设 role/path 路由。
-- 按根 `AGENTS.md` 的启用、安装与语义相关性规则读取 Rules；Rule 与 Skill 不以是否必须加载作为职责区分。
-- root/Organization 规则新增：先创建并编辑 `rules/<rule-id>.md`，再运行 `buildr rules add <rule-id> --target <dir> --description <text>`；未传 `--path` 时默认注册 `rules/<rule-id>.md`。
-- root/Organization 规则删除：运行 `buildr rules remove <rule-id> --target <dir>`，同时删除 manifest entry 和规则文件；如只取消注册并保留文件，使用 `--keep-file`。
-- Project/Service 规则分别通过对应目录的 `AGENTS.md` 维护，不使用 Project 或 Service 级 `rules/manifest.yml`。
+- 新增或修改规则直接编辑对应 scope 的 `AGENTS.md`；受管区块（Managed Block）内的核心规则由 Buildr 维护，不得手工改写。
+- root/Organization、Project 与 Service 规则都通过各自目录的 `AGENTS.md` 维护；更具体作用域的规则补充而不削弱上层。
+- 既有 `rules/manifest.yml` 与 `rules/*.md` 只保留为兼容文件，不再被登记、加载或删除；doctor 会提示迁移到 `AGENTS.md`，不阻断其他工作。
 - 需要投射到智能体运行时（Agent Runtime）时，运行 `buildr rules render <agent> --scope <workspace-relative-path> --target <dir>`；身份未知可省略。标准适配器（Adapter）原生使用 `AGENTS.md`，Claude Code 使用逐源桥接，Cursor/Qoder/TRAE 使用作用域内厂商规则（Rule），TRAE Work/WorkBuddy 使用根引用桥接。本机查询与诊断见[运行时维护](runtime.md)；具体路径、刷新前置条件和兼容依据见[在线适配参考](https://github.com/BuildrAI/Buildr/blob/main/projects/product/services/buildr/docs/agent-runtime-adapters.md)。文件准备不证明当前会话加载，不维护品牌通过等级或历史冒烟状态。
 ## Commands
 
@@ -108,7 +107,7 @@
 - 工作空间（Workspace）的 `skills/manifest.yml` 管理采用与绑定；组织自有技能（Skill）源位于空间 `skills/`，官方源通过清单中的 `resource` 引用共享资源集 `~/.buildr/resources/`。不要手工编辑共享官方资源或生成入口。Project 只在 `capabilities.yml` 引用 workspace Skill 并声明 requirements/bindings/applicability，不作为安装或可见性边界。
 - 定制非组件管理的共享官方技能（Skill）时，核对影响后用 `skills add <id> --source <已核实的完整共享目录> --replace --target <workspace>` 建立当前空间副本，再修改与同步。保留原资产身份、绑定及附件，来源转为本空间维护；组件成员仍由组件维护入口负责，不编辑共享库。
 - 本地作者型 Skill 可以只适用于某个 Project，但内容仍在 workspace 维护，由 Project applicability 表达业务范围；远端发布型 Skill 适合已发布或外部维护的 Skill。
-- Buildr 随包场景化流程通过 workspace Skills 承载；Rule 保留 Agent 价值观、边界和约束。
+- Buildr 随包场景化流程通过 workspace Skills 承载；Agent 价值观、边界和约束由 `AGENTS.md` 承载。
 - 本地作者型：`buildr skills add [<id>] --source <skill-dir> --target <workspace>`；移除登记用 `buildr skills remove <id> --target <workspace>`，保留本地源目录和全部文件；组件受管技能继续走组件维护入口，不能借此删除成员。旧 `--scope .` 只作 deprecated 兼容；Project scope 已不受支持。
 - 本地作者型和 package Skill 的完整源目录可包含 `SKILL.md` 以及 `agents/`、`assets/`、`examples/`、`references/`、`scripts/`、`templates/`；render 保留随附文件的原始字节与 owner executable 状态，只有 `SKILL.md` 会注入 managed marker、contributions、capability bindings 和 adapter context。
 - 通用技能（Skill）省略 `runtimes`，不展开有限品牌列表；用户明确范围按真实 `runtimeId` 判断，未知身份不获得品牌专属许可。维护时仅把可识别的历史产品完整七品牌列表升级为通用，保留用户缩小的列表、绑定与卸载状态。

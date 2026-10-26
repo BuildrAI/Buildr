@@ -45,7 +45,7 @@
 
 ## 工作资产与项目声明怎样使用
 
-规则（Rule）保存约束，技能（Skill）保存方法，组件（Component）把相关资产作为一组安装和维护，命令定义（Command Definition）描述外部工具的识别与诊断。各自清单指向原文，登记本身不复制正文，也不会安装外部工具或保存它的凭证。
+规则（Rule）保存约束，技能（Skill）保存方法，组件（Component）把相关资产作为一组安装和维护，命令定义（Command Definition）描述外部工具的识别与诊断。规则正文位于组织根、项目（Project）或服务（Service）的 `AGENTS.md`，按作用域逐层读取；技能与命令各自清单指向原文，登记本身不复制正文，也不会安装外部工具或保存它的凭证。
 
 普通技能（Skill）在工作空间（Workspace）的 `skills/` 维护，`assetIdentity` 与 `sourceIdentity` 分别表示资产与来源。项目（Project）只声明需要什么和选择谁，不另存源副本。组合与投射细节见[技能体系](buildr-skill-system.md)。
 

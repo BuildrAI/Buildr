@@ -52,11 +52,11 @@ export function createWorkspacePreparation(runtime: any) {
   }
   async function prepareRoot(root: string, expectedWorkspaceId: string | null, name: string, keep: Array<{id:string;integrity:string}> = [], reuseReady = false) {
     if (fs.realpathSync(root) !== root) throw fail('workspace_directory_changed', '工作目录路径已变化，请重新选择。');
-    for (const relative of ['.buildr', '.buildr/local', 'skills', 'rules', 'components', 'commands', 'projects']) {
+    for (const relative of ['.buildr', '.buildr/local', 'skills', 'components', 'commands', 'projects']) {
       const stat = fs.lstatSync(path.join(root, relative), { throwIfNoEntry: false });
       if (stat && (!stat.isDirectory() || stat.isSymbolicLink())) throw fail('workspace_directory_invalid', `目录 ${relative} 无法安全使用，已有内容已保留。`);
     }
-    for (const relative of ['AGENTS.md','.buildr/workspace.yml','skills/manifest.yml','rules/manifest.yml','components/manifest.yml','commands/manifest.yml']) { const stat=fs.lstatSync(path.join(root,relative),{throwIfNoEntry:false}); if(stat&&(!stat.isFile()||stat.isSymbolicLink()))throw fail('workspace_directory_invalid',`文件 ${relative} 无法安全使用，已有内容已保留。`); }
+    for (const relative of ['AGENTS.md','.buildr/workspace.yml','skills/manifest.yml','components/manifest.yml','commands/manifest.yml']) { const stat=fs.lstatSync(path.join(root,relative),{throwIfNoEntry:false}); if(stat&&(!stat.isFile()||stat.isSymbolicLink()))throw fail('workspace_directory_invalid',`文件 ${relative} 无法安全使用，已有内容已保留。`); }
     const lock=store.acquire(root);
     try { return await prepareRootUnlocked(root, expectedWorkspaceId, name, keep, reuseReady); }
     finally { store.release(lock); }

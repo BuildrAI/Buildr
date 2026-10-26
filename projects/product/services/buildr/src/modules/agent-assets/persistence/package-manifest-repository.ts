@@ -23,7 +23,7 @@ export function createPackageManifestRepository(deps: { resourcesRoot(): string;
       forbiddenPatterns: [],
       ...parsed,
       builtins: {
-        rules: parsed.builtins?.rules || [],
+        rules: parsed.builtins?.rules,
         skills: parsed.builtins?.skills || [],
         commands: parsed.builtins?.commands || [],
       },

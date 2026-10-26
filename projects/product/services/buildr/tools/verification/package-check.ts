@@ -33,10 +33,8 @@ export function runPackageCheck(runtime: any) {
   const parseManifestFileEntry = (...args: any[]) => runtime.parseManifestFileEntry(...args);
   const collectFiles = (...args: any[]) => runtime.collectFiles(...args);
   const validateBootstrapContract = (...args: any[]) => runtime.validateBootstrapContract(...args);
-  const builtinRuleEntry = (...args: any[]) => runtime.builtinRuleEntry(...args);
   const builtinSkillEntry = (...args: any[]) => runtime.builtinSkillEntry(...args);
   const sourcePathFromBuiltin = (...args: any[]) => runtime.sourcePathFromBuiltin(...args);
-  const parseRulesManifestYaml = (...args: any[]) => runtime.parseRulesManifestYaml(...args);
   const readSkillManifest = (...args: any[]) => runtime.readSkillManifest(...args);
   const validateSkillManifestEntries = (...args: any[]) => runtime.validateSkillManifestEntries(...args);
   const isManifestSourceLabel = (...args: any[]) => runtime.isManifestSourceLabel(...args);
@@ -65,7 +63,7 @@ export function runPackageCheck(runtime: any) {
     PACKAGE_RUNTIME_TARGET,
     RESOURCE_WORKSPACE_ROOT,
     SUPPORTED_AGENT_IDS,
-    collectFiles, builtinRuleEntry, builtinSkillEntry,
+    collectFiles, builtinSkillEntry,
     componentMemberPaths,
     existsDirectory,
     existsFile,
@@ -80,7 +78,6 @@ export function runPackageCheck(runtime: any) {
     parseProjectCommandsYaml,
     parseManifestFileEntry,
     parseProjectsYaml,
-    parseRulesManifestYaml,
     parseSkillFrontmatter,
     parseSkillSourceRef,
     path,
@@ -101,7 +98,6 @@ export function runPackageCheck(runtime: any) {
     runPackageAggregateIntegration,
     validatePackageSupportTools,
   } = createPackageRuntimeChecks({
-    renderRulesManifestYaml: runtime.renderRulesManifestYaml,
     rootRequiredBlockStatus: runtime.rootRequiredBlockStatus,
     BUILDR_REQUIRED_BLOCK_START,
     buildRuleDiscoveryPlan,
@@ -119,7 +115,6 @@ export function runPackageCheck(runtime: any) {
     parseProjectCommandsYaml,
     parseManifestFileEntry,
     parseProjectsYaml,
-    parseRulesManifestYaml,
     path,
     currentProductInvocation: runtime.currentProductInvocation, productInvocationArgs: runtime.productInvocationArgs,
     readSkillManifest,

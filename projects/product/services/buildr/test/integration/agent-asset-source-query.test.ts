@@ -17,7 +17,7 @@ function fixture(t: { after(fn: () => void): void }) {
  fs.mkdirSync(path.join(root, '.buildr'), { recursive: true }); fs.writeFileSync(path.join(root, '.buildr/workspace.yml'), 'workspace: fixture\n');
  const skills = [{ id: 'review', path: 'buildr/review', assetIdentity: 'buildr:skill:review', sourceIdentity: 'package:skills/buildr/review', source: 'buildr', enabled: true }];
  let materialReads = 0;
- const query = createSourceQuery({ assets: { readSkills: () => skills, readRules: () => [{ id: 'team', path: 'rules/team.md', source: 'workspace' }], readContracts: () => [], requiredBlock: () => required }, workspace: { resolveSourceWorkspaceRoot: () => root, getWorkspace: () => ({ workspace: { id: uuid }, rootPath: root }), readProjectRegistryRecord: () => ({ projects: {} }) }, task: { readTaskBrief: () => { materialReads++; assert.fail('source observations must not read user briefs'); } }, materials: { inspectTaskMaterial: () => { materialReads++; assert.fail('source observations must not read user materials'); } } });
+ const query = createSourceQuery({ assets: { readSkills: () => skills, readContracts: () => [], requiredBlock: () => required }, workspace: { resolveSourceWorkspaceRoot: () => root, getWorkspace: () => ({ workspace: { id: uuid }, rootPath: root }), readProjectRegistryRecord: () => ({ projects: {} }) }, task: { readTaskBrief: () => { materialReads++; assert.fail('source observations must not read user briefs'); } }, materials: { inspectTaskMaterial: () => { materialReads++; assert.fail('source observations must not read user materials'); } } });
  const write = (relative: string, content: string) => { const p = path.join(root, relative); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, content); };
  const inspect = (observations: unknown[], options = {}) => query.inspect(root, { schemaVersion: SOURCE_OBSERVATIONS_SCHEMA, observations }, options);
  return { root, write, inspect, skills, query, materialReads: () => materialReads };
@@ -61,9 +61,9 @@ test('exact projection receipt plus scope and observed full digest identifies sk
  f.write('.agents/skills/review/SKILL.md', 'tampered'); assert.equal(f.inspect([{ id: 'bad', ...base }]).items[0].status, 'conflict');
 });
 test('secret, path escape and symbolic link fail locally without exposing content', t => {
- const f = fixture(t); f.write('.env', 'SECRET=private'); f.write('rules/team.md', 'workspace rule'); fs.symlinkSync(path.join(f.root, 'rules/team.md'), path.join(f.root, 'link.md'));
- const r = f.inspect([{ id: 'secret', type: 'file', locator: { path: '.env' } }, { id: 'escape', type: 'file', locator: { path: '../outside' } }, { id: 'link', type: 'file', locator: { path: 'link.md' } }, { id: 'valid', type: 'file', locator: { path: 'rules/team.md' } }]);
- assert.deepEqual(r.items.map(i => i.status), ['error', 'error', 'error', 'detected']); assert.ok(!JSON.stringify(r).includes('SECRET')); assert.equal(r.items[3].objects[0].providedBy, 'workspace');
+ const f = fixture(t); f.write('.env', 'SECRET=private'); f.write('AGENTS.md', required); fs.symlinkSync(path.join(f.root, 'AGENTS.md'), path.join(f.root, 'link.md'));
+ const r = f.inspect([{ id: 'secret', type: 'file', locator: { path: '.env' } }, { id: 'escape', type: 'file', locator: { path: '../outside' } }, { id: 'link', type: 'file', locator: { path: 'link.md' } }, { id: 'valid', type: 'file', locator: { path: 'AGENTS.md' } }]);
+ assert.deepEqual(r.items.map(i => i.status), ['error', 'error', 'error', 'detected']); assert.ok(!JSON.stringify(r).includes('SECRET')); assert.equal(r.items[3].objects[0].providedBy, 'buildr');
 });
 test('malformed observations, observation conflict, bounds and cancellation remain local', t => {
  const f = fixture(t); f.write('AGENTS.md', required);

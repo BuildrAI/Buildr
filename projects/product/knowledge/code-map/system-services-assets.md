@@ -15,7 +15,7 @@
 | 服务本地运行 | [service-runtime/module.ts](../../services/buildr/src/modules/service-runtime/module.ts) | 服务级运行定义、按实际检出目录的受管实例、任务范围单项与组合启动、真实连接目标和日志；各入口共享当前事实，QA 部署入口暂停，见[本地运行分层](technical-layers.md#服务本地运行) |
 | 任务关联变更 | [task/change/module.ts](../../services/buildr/src/modules/task/change/module.ts) | 核对任务关联与受信任副本，委托 OpenSpec 读取，不拥有规范正文 |
 | OpenSpec | [openspec/module.ts](../../services/buildr/src/modules/openspec/module.ts) | 变更读取、冲突检查、上游归档接入与恢复；见[接入边界](technical-layers.md#openspec-接入与恢复) |
-| 工作资产（Work Asset） | [agent-assets/module.ts](../../services/buildr/src/modules/agent-assets/module.ts) | 规则（Rule）、技能（Skill）、命令（Command）、组件（Component）、能力选择与投射；见[投射地图](skill-projection.md) |
+| 工作资产（Work Asset） | [agent-assets/module.ts](../../services/buildr/src/modules/agent-assets/module.ts) | 技能（Skill）、命令（Command）、组件（Component）、能力选择与投射；规则（Rule）经 `AGENTS.md` 层级维护，本模块只保留存量登记与文件的兼容诊断；见[投射地图](skill-projection.md) |
 | 用户项目测试声明 | [project-testing/module.ts](../../services/buildr/src/modules/project-testing/module.ts) | 维护 `verification.yml`，不执行用户测试；见[验证地图](verification-framework.md) |
 | 安装、更新与版本提示 | [installation/module.ts](../../services/buildr/src/modules/installation/module.ts) | 安装身份、npm 启动器（Launcher）、版本查询与更新 |
 | 工作区产物（Artifact）登记与处置 | [artifact-lifecycle/module.ts](../../services/buildr/src/modules/artifact-lifecycle/module.ts) | `.buildr/local/artifacts/` 文件式产物清单、scratch 根发现、即时处置状态与逐项核验清扫；`artifact` 命令族属 agent-machine 表面，登记为描述性可选动作 |

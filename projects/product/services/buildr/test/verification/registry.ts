@@ -120,7 +120,7 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
   'package-static': testing(SERVICE_OWNER, 'Delivery / Release', 'Static', 'The Buildr package structure is valid.', TEST_ENVIRONMENTS.sourceReadOnly),
   'package-workspace': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 'Packaged Workspace assets install and check correctly.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'package-commands': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 'Packaged Commands assets integrate correctly.', TEST_ENVIRONMENTS.repeatedFilesystem),
-  'package-rules': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 'Packaged Rules assets integrate correctly.', TEST_ENVIRONMENTS.repeatedFilesystem),
+  'package-rules': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 'Retired Rules registration stays retired while legacy files and guidance remain non-blocking.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'package-skills': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 'Packaged Skills assets integrate correctly.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'package-runtime': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 'Packaged runtime assets integrate correctly.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'runtime-adapter-parity': testing(SERVICE_OWNER, 'Development', 'E2E', 'All supported runtime implementation families remain behaviorally aligned.', TEST_ENVIRONMENTS.workspaceLifecycle),

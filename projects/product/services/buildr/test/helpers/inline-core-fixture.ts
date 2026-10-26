@@ -27,12 +27,13 @@ function fixture(t: any, prepared = false): any  {
   const workspace: any = prepared ? copyPreparedWorkspace(t, 'legacy-core-preservation').root : path.join(root, 'workspace');
   if (!prepared) fs.mkdirSync(workspace);
   const env: any = { ...process.env, BUILDR_APP_DATA_DIR: path.join(root, 'app-data'), BUILDR_PRODUCT_DATA_DIR: path.join(root, 'product-data') };
+  const runRaw: any = (args: any, cli: any = path.join(service, 'bin/buildr.mjs')) => spawnSync(process.execPath, [cli, ...args], { cwd: service, env, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, timeout: 60000 });
   const run: any = (args: any, cli: any = path.join(service, 'bin/buildr.mjs')) => {
-    const result: any = spawnSync(process.execPath, [cli, ...args], { cwd: service, env, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, timeout: 60000 });
+    const result: any = runRaw(args, cli);
     assert.equal(result.status, 0, `${args.join(' ')}\n${result.stdout}\n${result.stderr}`);
     return result.stdout;
   };
-  return { root, workspace, run, env };
+  return { root, workspace, run, runFail: runRaw, env };
 }
 
 function assertInline(workspace: any): any  {
@@ -42,23 +43,16 @@ function assertInline(workspace: any): any  {
   return actual;
 }
 
-function legacy(workspace: any, { receipt = true, modified = false, foreign = false, missing = false }: any = {}): any  {
+function legacy(workspace: any, { modified = false, invalid = false, missing = false }: any = {}): any  {
   const target: any = 'rules/buildr/core.md';
   const old: any = '# Legacy official core\n';
   const rulesPath: any = path.join(workspace, 'rules/manifest.yml');
-  const manifest: any = YAML.parse(fs.readFileSync(rulesPath, 'utf8'));
-  manifest.rules.push({ id: 'buildr-core', source: foreign ? 'workspace' : 'buildr', path: target, description: 'legacy required core', enabled: true, required: true, state: 'installed' });
-  fs.writeFileSync(rulesPath, YAML.stringify(manifest));
+  fs.mkdirSync(path.dirname(rulesPath), { recursive: true });
+  fs.writeFileSync(rulesPath, invalid
+    ? 'rules: [\n'
+    : YAML.stringify({ schemaVersion: 'buildr.rules/v1', rules: [{ id: 'buildr-core', source: 'buildr', path: target, description: 'legacy required core', enabled: true, required: true, state: 'installed' }] }));
   fs.mkdirSync(path.join(workspace, 'rules/buildr'), { recursive: true });
   if (!missing) fs.writeFileSync(path.join(workspace, target), modified ? old + 'user changes\n' : old);
-  if (receipt) {
-    const file: any = path.join(workspace, '.buildr/builtin-receipts.json');
-    const receipts: any = JSON.parse(fs.readFileSync(file, 'utf8'));
-    const files: any[] = [{ path: 'core.md', integrity: hash(old) }];
-    receipts.builtins.push({ type: 'rule', id: 'buildr-core', target, files, integrity: hash(JSON.stringify(files)) });
-    fs.writeFileSync(file, JSON.stringify(receipts));
-  }
-  fs.writeFileSync(path.join(workspace, 'AGENTS.md'), 'USER PREFIX\n<!-- buildr:required begin -->\n请读取 rules/buildr/core.md\n<!-- buildr:required end -->\nUSER SUFFIX');
 }
 
 export { service, source, block, principles, hash, fixture, assertInline, legacy };

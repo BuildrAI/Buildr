@@ -31,8 +31,7 @@ function snapshot(directory: string): Record<string, string> {
  }
  walk(directory); return result;
 }
-write('rules/src/policy.md', 'Registered workspace policy');
-write('rules/manifest.yml', 'schemaVersion: buildr.rules/v1\nrules:\n  - id: race-policy\n    source: workspace\n    path: rules/src/policy.md\n    description: isolated registered policy\n');
+write('rules/src/policy.md', 'Legacy workspace policy');
 const materials = createTaskMaterialsApplication({ taskQuery: { assertCanonicalTaskWorkspace: () => root, readTask: () => ({ record: { changes: [] } }) }, projectQuery: { projectDetail: () => { throw Error('not a project body'); }, resolveSourceRoot: () => { throw Error('not a project root'); } }, worktreeQuery: { inspectGitWorktrees: () => { throw Error('not a worktree'); } } });
 const runtime = createRuntime();
 const query = createSourceQuery({ assets: runtimeProvide(runtime, AGENT_ASSETS_SOURCE_READ), workspace: runtimeProvide(runtime, WORKSPACE_QUERY), task: runtimeProvide(runtime, TASK_BRIEF_QUERY), materials });
@@ -110,7 +109,7 @@ if (process.argv.includes('--root-only')) {
  process.exit(0);
 }
 
-race('rules/src', 'policy.md', { id: 'rule-parent-swap', type: 'file', locator: { path: 'rules/src/policy.md' } });
+race('rules/src', 'policy.md', { id: 'rule-file-parent-swap', type: 'file', locator: { path: 'rules/src/policy.md' } });
 write('.buildr/local/task-materials/task/docs/policy.md', 'Selected task material');
 write('.buildr/local/task-materials/task/materials.json', JSON.stringify({ schemaVersion: 'buildr.task-materials/v2', documents: [{ id: 'policy', role: 'solution', title: 'Policy', source: { kind: 'task', path: 'docs/policy.md' } }] }));
 // User task materials are deliberately outside source observations, so no leaf-read race is reachable.
@@ -143,4 +142,4 @@ assert.equal(excluded.items[1].status, 'detected'); assert.deepEqual(excluded.ef
 assert.ok(!JSON.stringify(excluded).includes('Selected task material'));
 assert.deepEqual(snapshot(root), sourcesBefore, 'excluded source observation writes no workspace content');
 assert.deepEqual({ app: snapshot(process.env.BUILDR_APP_DATA_DIR!), product: snapshot(process.env.BUILDR_PRODUCT_DATA_DIR!) }, profiles);
-console.log(JSON.stringify({ schemaVersion: 'buildr.source-readonly-race-smoke/v1', status: 'passed', cases: ['registered-rule-parent-replace', 'task-material-excluded-without-body-read'], foreignBodyReads: 0, taskMaterialOpens: 0, taskMaterialBodyReads: 0, otherCoreDetected: true, sourcesUnchanged: true, profilesUnchanged: true, effects: [] }));
+console.log(JSON.stringify({ schemaVersion: 'buildr.source-readonly-race-smoke/v1', status: 'passed', cases: ['rule-file-parent-replace', 'task-material-excluded-without-body-read'], foreignBodyReads: 0, taskMaterialOpens: 0, taskMaterialBodyReads: 0, otherCoreDetected: true, sourcesUnchanged: true, profilesUnchanged: true, effects: [] }));
