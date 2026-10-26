@@ -5,8 +5,8 @@ import { registerHooks } from 'node:module';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createApiClient } from '../src/api/client.ts';
-import { appendDraftAttachment, canGenerateConversationTitle, canStopConversationTool, createdConversationVisibility, executionLocked, shouldSendOnKey, draftKey, readDraft, removeSubmittedAttachments, transferDraftText, writeDraft, applyConversationEvent, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, parseEventFrame, sameConversationSelection, latestConversationParticipant } from '../src/features/agent-conversations/conversation-state.ts';
-import {conversationPermissionKey,conversationPermissionStorageKey,conversationReasoningOptions,readConversationPermission,reasoningEffortLabel,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,writeConversationPermission} from '../src/features/agent-conversations/conversation-options.ts';
+import { appendDraftAttachment, canGenerateConversationTitle, canStopConversationTool, createdConversationVisibility, executionLocked, participantAgentIds, shouldSendOnKey, draftKey, readDraft, removeSubmittedAttachments, transferDraftText, writeDraft, applyConversationEvent, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, parseEventFrame, sameConversationSelection, latestConversationParticipant } from '../src/features/agent-conversations/conversation-state.ts';
+import {conversationPermissionKey,conversationPermissionStorageKey,conversationReasoningOptions,conversationRunIdentity,readConversationPermission,reasoningEffortLabel,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,writeConversationPermission} from '../src/features/agent-conversations/conversation-options.ts';
 registerHooks({resolve(specifier,context,next){
   if(specifier==='../../../api'&&context.parentURL?.endsWith('/agent-conversations-api.ts'))return next(new URL('../src/api/index.ts',import.meta.url).href,context);
   try{return next(specifier,context);}catch(cause){if(!specifier.startsWith('.')||!context.parentURL?.includes('/src/'))throw cause;for(const suffix of ['.ts','/index.ts']){const url=new URL(specifier+suffix,context.parentURL);if(existsSync(fileURLToPath(url)))return next(url.href,context);}throw cause;}
@@ -51,6 +51,21 @@ test('服务端事件流携带header游标，正确解析跨块中文/CRLF，不
   await assert.rejects(api.subscribe(conversation.workspaceId,conversation.id,new AbortController().signal,event=>events.push(event),18),/连接已中断/);
   assert.deepEqual(events,[event]);assert.equal(request.init.headers['last-event-id'],'18');assert.equal(request.init.headers['x-buildr-session'],'native-test-session');assert.ok(!request.url.includes('native-test-session'));assert.ok(!request.url.includes('?'));
   assert.equal(parseEventFrame('data: first\ndata: second').data,'first\nsecond');
+});
+
+test('参与过此对话按智能体去重，同一执行者的多个参与者只展示一次',()=>{
+  assert.deepEqual(participantAgentIds([{id:'p1',provider:'codex'},{id:'p2',provider:'dsh'},{id:'p3',provider:'dsh'}]),['codex','dsh']);
+  assert.deepEqual(participantAgentIds([]),[]);
+});
+
+test('执行状态行只表达智能体与模型，不把模型来源账号标签当作状态',()=>{
+  const catalog=[{accountId:'account-devin',accountIdentity:'identity-devin',modelId:'grok-4.7',accountLabel:'someone@example.com · Pro',accountRevision:'account-r1',provider:'devin',label:'Grok 4.7',available:true,enabled:true}];
+  const shared={...conversation.run,provider:'dsh',modelAccountId:'account-devin',modelAccountIdentity:'identity-devin',model:'grok-4.7',modelSourceLabel:'someone@example.com · Pro'};
+  assert.equal(conversationRunIdentity(shared,undefined,catalog),'DSH · Devin / Grok 4.7');
+  assert.ok(!conversationRunIdentity(shared,undefined,catalog).includes('@'));
+  const native={id:'codex',provider:'codex',models:[{id:'gpt-5-codex',label:'GPT-5 Codex'}]};
+  assert.equal(conversationRunIdentity({...conversation.run,provider:'codex',model:'gpt-5-codex'},native,[]),'Codex · GPT-5 Codex');
+  assert.equal(conversationRunIdentity({...conversation.run,provider:'codex',model:'custom-model'},undefined,[]),'Codex · custom-model');
 });
 
 test('输入法组合和Shift+Enter不发送，执行与未知状态保留新内容为草稿',()=>{

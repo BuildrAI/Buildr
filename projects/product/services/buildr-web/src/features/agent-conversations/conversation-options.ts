@@ -64,6 +64,13 @@ export function modelSourceName(provider:string):string {
   return ({codex:'Codex',dsh:'DSH',deepseek:'DeepSeek',qoder:'Qoder',devin:'Devin'} as Record<string,string>)[id]??provider;
 }
 
+/** 状态行表达执行身份（智能体与模型）；来源账号只保留在模型设置和发送预览。 */
+export function conversationRunIdentity(run:ConversationRun,connection:ConnectionView|undefined,catalog:CatalogModel[]):string {
+  const shared=catalog.find(model=>model.accountId===run.modelAccountId&&model.modelId===run.model);
+  const model=shared?modelSourceName(shared.provider)+' / '+shared.label:selectedConversationModel(connection,run.model)?.label||run.model;
+  return [modelSourceName(run.provider),model].filter(Boolean).join(' · ');
+}
+
 /** Never select a different subscription without an explicit user choice. */
 export function officialConversationChoice(connection:ConnectionView|undefined,catalog:CatalogModel[]):ConversationChoice {
  const connectionId=connection?.id??'';

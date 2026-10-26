@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Alert, Button, Dropdown, Empty, Input, Modal, Popover, Select, Spin, Tag } from 'antd';
-import { ArrowUpOutlined, CommentOutlined, CopyOutlined, EllipsisOutlined, FolderOpenOutlined, MenuOutlined, PlusOutlined, SafetyCertificateOutlined, StopOutlined } from '@ant-design/icons';
+import { ArrowUpOutlined, CommentOutlined, CopyOutlined, EllipsisOutlined, FolderOpenOutlined, MenuOutlined, PlusOutlined, SafetyCertificateOutlined, StopOutlined, VerticalAlignTopOutlined } from '@ant-design/icons';
 import { MarkdownHost } from '../../components/MarkdownHost';
 import type { ApiError } from '../../api';
 import { copyText } from '../../lib/copyText';
@@ -13,8 +13,8 @@ import { ConversationDock } from './ConversationDock';
 import { ConversationMessageImages } from './ConversationMessageImages';
 import { ConversationImageInput, type DraftImage } from './ConversationImageInput';
 import { imageSelectionError, conversationImageTypes } from './conversation-images';
-import {officialConversationChoice,conversationPermissionKey,conversationPermissionStorageKey,permissionModeLabels,readConversationPermission,reasoningEffortLabel,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,writeConversationPermission,type ConversationChoice,type PermissionMode} from './conversation-options';
-import { appendDraftAttachment, canGenerateConversationTitle, canStopConversationTool, executionLocked, groupConversationStream, removeSubmittedAttachments, shouldSendOnKey, latestConversationParticipant, processBlockKey, type ConversationSelection } from './conversation-state';
+import {officialConversationChoice,conversationPermissionKey,conversationPermissionStorageKey,conversationRunIdentity,permissionModeLabels,readConversationPermission,reasoningEffortLabel,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,writeConversationPermission,type ConversationChoice,type PermissionMode} from './conversation-options';
+import { appendDraftAttachment, canGenerateConversationTitle, canStopConversationTool, executionLocked, groupConversationStream, participantAgentIds, removeSubmittedAttachments, shouldSendOnKey, latestConversationParticipant, processBlockKey, type ConversationSelection } from './conversation-state';
 import { conversationActionKey, createConversationActions } from './conversation-actions';
 import { useConversationDraft } from './useConversationDraft';
 import { providerNames, type ConversationEntry, type ConversationView, type SendDraft, type SendPreview } from './types';
@@ -70,6 +70,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
   const [prepared,setPrepared]=useState<Prepared|null>(null),[summary,setSummary]=useState(''),[previewOpen,setPreviewOpen]=useState(false),[rename,setRename]=useState(false),[title,setTitle]=useState('');
   const [moreOpen,setMoreOpen]=useState(false),[locationOpen,setLocationOpen]=useState(false);
   const [expandedToolGroups,setExpandedToolGroups]=useState<Record<string,boolean>>({});
+  const [loadingEarlier,setLoadingEarlier]=useState(false);
   const stream=useRef<HTMLDivElement>(null),readPosition=useRef(0),bottom=useRef(true),fileInput=useRef<HTMLInputElement>(null),composing=useRef(false);
   const selectedSourceModel=context.modelCatalog.find(model=>model.accountId===choice.modelAccountId&&model.modelId===choice.model);
   const activeSend=useRef<SendOperation|null>(null),locked=executionLocked(chat?.run),canSend=!context.loading&&(!context.scope||Boolean(chat))&&!locked&&!sending&&!uploading&&(choice.modelAccountId?connection?.enabled&&selectedSourceModel?.available:connection?.status==='ready')&&permissionAvailable&&(!images.length||connection?.capabilities.images);
@@ -169,6 +170,18 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
     catch(failure){if(context.isSelectionCurrent(selection)){setFeedback('');fail(failure);}}
     finally{actions.finish(key);}
   };
+  const loadEarlier=async()=>{
+    if(!chat||loadingEarlier)return;
+    const cursor=chat.nextEntryCursor;if(cursor===undefined)return;
+    setLoadingEarlier(true);
+    try{context.prependEntries(await context.api.entries(chat.workspaceId,chat.id,cursor));}
+    catch(failure){fail(failure);}
+    finally{setLoadingEarlier(false);}
+  };
+  const run=chat?.run;
+  const runConnection=context.connections.find(item=>item.id===chat?.participants.find(participant=>participant.id===run?.participantId)?.connectionId);
+  const runIdentity=run?conversationRunIdentity(run,runConnection,context.modelCatalog):'';
+  const participantNames=participantAgentIds(chat?.participants||[]).map(provider=>providerNames[provider]||provider);
   const workspace=workspaces.find(item=>item.id===chat?.workspaceId);
   const preparedShared=context.modelCatalog.find(model=>model.accountId===prepared?.preview.modelAccountId&&model.modelId===prepared?.preview.model);
   const preparedModel=preparedShared??selectedConversationModel(connection,prepared?.preview.model);
@@ -211,10 +224,10 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
           }}}><Button type="text" icon={<EllipsisOutlined/>} aria-label="更多对话操作" title="更多"/></Dropdown>
         </div>
       </header>
-      {chat?.participants.length?<div className="ac-participants">参与过此对话 {chat.participants.map(item=><span key={item.id}>{providerNames[item.provider]||item.provider}</span>)}</div>:null}
+      {participantNames.length?<div className="ac-participants">参与过此对话 {participantNames.map(name=><span key={name}>{name}</span>)}</div>:null}
       <div className="ac-stream" ref={stream} onScroll={()=>{if(stream.current?.getClientRects().length){readPosition.current=stream.current.scrollTop;bottom.current=stream.current.scrollHeight-stream.current.scrollTop-stream.current.clientHeight<80;}}}>
         {context.loading?<Spin/>:context.error?<Alert type="error" showIcon message={context.error} action={<Button onClick={()=>void context.refresh().catch(fail)}>重新读取</Button>}/>:!chat?.entries.length?<div className="ac-welcome"><CommentOutlined/><h1>{chat?.taskId||boundTaskId?'从这项任务继续':'今天想做什么？'}</h1><p>了解一个问题，或者交办一件事。</p>{!chat&&settings}</div>:<div className="ac-message-list">
-          {chat.nextEntryCursor!==undefined&&<Button size="small" onClick={()=>{void context.api.entries(chat.workspaceId,chat.id,chat.nextEntryCursor!).then(result=>{context.prependEntries(result);}).catch(fail);}}>加载更早记录</Button>}
+          {chat.nextEntryCursor!==undefined&&<div className="ac-load-earlier"><Button size="small" type="text" icon={<VerticalAlignTopOutlined/>} loading={loadingEarlier} onClick={()=>void loadEarlier()}>加载更早的记录</Button></div>}
           {transcript.map((item,index)=>{
             if(item.type==='process-block'){
               const key=processBlockKey(item.entries),next=transcript[index+1];
@@ -234,7 +247,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
             </section>:renderEntry(entry);
           })}
         </div>}
-        {chat?.run&&<div className="ac-run-status" role="status" data-run-status={chat.run.status}>{statusLabels[chat.run.status]}{chat.run.modelSourceLabel&&` · ${chat.run.modelSourceLabel}`} · {permissionModeLabels[chat.run.permissionMode||'default']}{chat.run.diagnostic&&<p>{chat.run.diagnostic}</p>}</div>}
+        {run&&<div className="ac-run-status" role="status" data-run-status={run.status}>{statusLabels[run.status]}{runIdentity&&` · ${runIdentity}`} · {permissionModeLabels[run.permissionMode||'default']}{run.diagnostic&&<p>{run.diagnostic}</p>}</div>}
         {context.streamError&&<Alert type="warning" showIcon message="对话连接已中断" description={context.streamError} action={<Button loading={observing} onClick={()=>void observe()}>重新连接并核对</Button>}/>}
         {chat?.run?.status==='unknown'&&<Alert type="warning" showIcon message="执行状态待确认" description="核对原执行后再发送；重新连接不会重发原指令。" action={<Button loading={observing} onClick={()=>void observe()}>核对执行状态</Button>}/>}
         {chat?.run?.status==='tools-active'&&<Alert type="warning" showIcon message="模型已中断，仍有命令运行" description={<div>{chat.run.tools.filter(tool=>tool.status!=='completed').map(tool=><p key={tool.id}>{tool.label}{canStopConversationTool(tool)?<Button size="small" loading={stopping} onClick={()=>void stop(tool.id)}>停止此命令</Button>:<small> · 不支持单独停止</small>}</p>)}<Button type="link" size="small" loading={observing} onClick={()=>void observe()}>核对执行状态</Button></div>} action={<Button loading={stopping} onClick={()=>void stop()}>停止剩余执行</Button>}/>}

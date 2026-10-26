@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { agentConversationsApi, type AgentConversationsClient } from './api/agent-conversations-api';
 import { applyConversationEvent, createdConversationVisibility, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, sameConversationSelection, type ConversationSelection } from './conversation-state';
 import { readOptionalPreference, writeOptionalPreference } from '../../lib/optional-preferences';
-import type { CatalogModel, ConnectionView, ConversationView, PendingConversation } from './types';
+import type { CatalogModel, ConnectionView, ConversationEvent, ConversationView, PendingConversation } from './types';
 
 type Scope = {workspaceId: string; conversationId: string};
 export type DraftScope = {workspaceId: string; taskId?: string};
@@ -63,7 +63,8 @@ export function AgentConversationsProvider({children, client = agentConversation
   useEffect(() => {
     if (!scope || !conversation) return;
     const controller = new AbortController(); let generation: string | undefined;
-    void client.subscribe(scope.workspaceId, scope.conversationId, controller.signal, event => {
+    let retryTimer: ReturnType<typeof setTimeout> | undefined, retried = false;
+    const handle = (event: ConversationEvent) => {
       if (controller.signal.aborted) return;
       const expectedGeneration = generation;
       const previousCursor = eventCursor.current;
@@ -73,10 +74,25 @@ export function AgentConversationsProvider({children, client = agentConversation
       setConversation(current => applyConversationEvent(current, event, scope, expectedGeneration, previousCursor));
       if (!expectedGeneration || event.type === 'snapshot' || event.generation === expectedGeneration) eventCursor.current = event.cursor;
       setStreamError('');
+      // Only live changes prove the subscription healthy; a lone snapshot on a
+      // connection that closes again must not loop the silent retry.
+      if (event.type !== 'snapshot') retried = false;
       const snapshot=event.payload.conversation;
       if(snapshot){const signature=[snapshot.workspaceId,snapshot.id,snapshot.run?.status||'',...snapshot.requests.map(request=>request.id)].join(':');if(signature!==attentionSignature.current){attentionSignature.current=signature;void refreshPending().catch(()=>{});}}
-    }, eventCursor.current).catch(failure => { if (!controller.signal.aborted) setStreamError(failure instanceof Error ? failure.message : '对话连接已中断；请重新核对执行状态。'); });
-    return () => controller.abort();
+    };
+    // The next subscription starts from a current snapshot, so the first drop
+    // recovers silently; only a second consecutive drop needs the user.
+    const connect = async (): Promise<void> => {
+      generation = undefined;
+      try { await client.subscribe(scope.workspaceId, scope.conversationId, controller.signal, handle, eventCursor.current); }
+      catch (failure) {
+        if (controller.signal.aborted) return;
+        if (!retried) { retried = true; retryTimer = setTimeout(() => { void connect(); }, 1_500); return; }
+        setStreamError(failure instanceof Error ? failure.message : '对话连接已中断；请重新核对执行状态。');
+      }
+    };
+    void connect();
+    return () => { controller.abort(); if (retryTimer) clearTimeout(retryTimer); };
     // Snapshot updates must not recreate the subscriber or lose its cursor.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client, scope?.workspaceId, scope?.conversationId, Boolean(conversation), observation, refreshPending, refreshConnections]);

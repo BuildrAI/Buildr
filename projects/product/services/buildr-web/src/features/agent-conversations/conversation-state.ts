@@ -94,6 +94,10 @@ export function sameConversationSelection(current:ConversationSelection,observed
 export function latestConversationParticipant(conversation:ConversationView|null) {
   return conversation?.participants.find(participant=>participant.id===conversation.run?.participantId)??conversation?.participants.at(-1);
 }
+/** The same agent may hold several participants (sources or models); the summary names it once. */
+export function participantAgentIds(participants:ConversationView['participants']):string[] {
+  return [...new Set(participants.map(participant=>participant.provider))];
+}
 
 // The visible stream interleaves conversation entries with per-run process blocks.
 export type ConversationStreamItem = {type:'entry';entry:ConversationEntry}|{type:'process-block';entries:ConversationEntry[];active:boolean;finishedAt?:string};
