@@ -1,3 +1,4 @@
+import { CodeGeneration } from '../../src/modules/code/application/code-generation.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -19,7 +20,7 @@ test('generation HTTP accepts the exact worktree identity from real code observa
   const location = { repositoryId: 'registered-repo', worktreeId: tree.worktreeId };
   const context = code.commitContext(root, location);
   let invoked = 0;
-  const generation = createCodeCommitMessageApplication({ commitSnapshot: code.commitSnapshot, commitGuidance: () => ({ scopes: [{ kind: 'repository', path: fs.realpathSync(root) }], ruleEntrypoints: [], readableRoots: [fs.realpathSync(root)], task: null, revision: 'entries-1' }), commitMaterial: createCodeCommitMaterialReader({readRules: () => []}), startGeneration: input => { invoked++; assert.equal(input.cwd, fs.realpathSync(root)); assert.equal(input.environment, undefined); assert.match(input.prompt, /new content/); return { id: 'run-1', agentId: 'agent-1', registrationRevision: 'v1', executionConfig: null, status: 'queued', output: null, error: null }; } });
-  const response = await createCodeGenerationHttpContribution(generation).handle({ request: { method: 'POST' }, suffix: '/code/commit-message', root, searchParams: new URLSearchParams(), authorizeWrite: () => {}, readJsonBody: async () => ({ ...location, expectedRevision: context.revision }) });
+  const generation = createCodeCommitMessageApplication({ commitSnapshot: code.commitSnapshot, commitGuidance: () => ({ scopes: [{ kind: 'repository', path: fs.realpathSync(root) }], ruleEntrypoints: [], readableRoots: [fs.realpathSync(root)], task: null, revision: 'entries-1' }), commitMaterial: createCodeCommitMaterialReader({readRules: () => []}), startGeneration: input => { invoked++; assert.equal(input.root, root); assert.match(input.prompt, /new content/); return {id:'run-1',modelAccountId:'account',modelId:'model',label:'Model',accountRevision:'v1',status:'running',output:null,error:null}; } });
+  const response = await createCodeGenerationHttpContribution(generation,new CodeGeneration(async()=>{throw Error('unused');})).handle({ request: { method: 'POST' }, suffix: '/code/commit-message', root, searchParams: new URLSearchParams(), authorizeWrite: () => {}, readJsonBody: async () => ({ ...location, expectedRevision: context.revision,modelAccountId:'account',modelId:'model',accountIdentity:'identity',accountRevision:'v1',label:'Model' }) });
   assert.equal(response?.status, 202); assert.equal(invoked, 1);
 });

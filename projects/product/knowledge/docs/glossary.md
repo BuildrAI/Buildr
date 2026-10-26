@@ -131,9 +131,9 @@
 ## 智能体会话（Agent Session）
 
 - 定义：带身份与上下文的智能体（Agent）工作单元，可以持续保存或临时使用；界面简称“会话”。
-- 适用范围：各家原生上下文、外部会话关联与智能体（Agent）临时生成。
+- 适用范围：各家原生上下文与内部对话的参与者恢复。
 - 避免混用：Buildr 统一对话可以有多个参与者和原生会话；会话不是执行进程或本机 HTTP 请求会话。Codex `thread`、DSH 原生会话及 Qoder 原生会话保持各自身份和生命周期。
-- 来源：[智能体接入](architecture/agent-integration.md)、[Codex 协作规范](../../openspec/specs/codex-desktop-collaboration/spec.md)与[智能体操作规范](../../openspec/specs/agent-operations/spec.md)。
+- 来源：[智能体接入](architecture/agent-integration.md)、[内部对话规范](../../openspec/specs/agent-conversations/spec.md)。
 
 ## 统一对话（Conversation）
 

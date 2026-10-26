@@ -26,7 +26,7 @@
 
 输入栏的[ConversationOptions.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationOptions.tsx)提供独立的智能体（Agent）与模型选择器，并按实际模型能力呈现思考档位；切换执行方后恢复其默认模型并清除不兼容档位，只更新未发送选择，不创建参与者或执行。权限选择与附件位于左侧，保留独立的模式范围。
 
-原有[外部会话关系聚合](../../services/buildr/src/modules/native-session-links/module.ts)、[Codex 桌面关联](../../services/buildr/src/modules/codex-desktop/module.ts)和[DSH 桌面导航](../../services/buildr/src/modules/dsh-desktop/module.ts)继续维护外部聊天的多对多任务关系，不迁入新私有库。工作摘要（Work Context）中的答复仍不是自动启动内部对话或执行的触发器（Trigger）。
+外部桌面会话（Session）关系已退役；内部对话保留可选任务（Task）引用，任务状态与成果继续由任务应用及实际系统维护。
 
 ## 任务说明与过程材料怎样落到实现？
 

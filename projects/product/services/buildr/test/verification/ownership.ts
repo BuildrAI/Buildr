@@ -76,6 +76,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration-code": {
     "inputs": [
+      "src/modules/installation/infrastructure/retire-legacy-agent-data.ts",
       "src/modules/code/**",
       "src/infrastructure/git/**",
       "src/modules/task/infrastructure/git-worktree-provider.ts",
@@ -84,17 +85,6 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/helpers/code-commit-application-fixture.ts",
       "test/helpers/code-sync-application-fixture.ts",
       "test/fixtures/code-commit-message-large-fixture.ts"
-    ],
-    "inputExclusions": []
-  },
-  "integration-desktop": {
-    "inputs": [
-      "src/modules/native-session-links/**",
-      "src/modules/codex-desktop/**",
-      "src/modules/dsh-desktop/**",
-      "src/modules/agent-operations/**",
-      "test/helpers/codex-desktop-fixture.ts",
-      "test/fixtures/agent-codex-app-server.ts"
     ],
     "inputExclusions": []
   },

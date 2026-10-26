@@ -15,7 +15,6 @@ import { TaskOverview } from '../components/TaskOverview';
 import { TaskChecklist } from '../components/TaskChecklist';
 import { TaskSummary } from '../components/TaskSummary';
 import { TaskConversationEntry } from '../../agent-conversations/TaskConversationEntry';
-import { TaskAgentSessions } from '../components/TaskAgentSessions';
 import { TaskHeaderMetadata } from '../components/TaskHeaderMetadata';
 import { useTaskVisit } from '../hooks/useTaskVisit';
 import { useWorkbenchPreferences } from '../../workbench/hooks/useWorkbenchPreferences';
@@ -172,7 +171,6 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
     {data.referenceDiagnostics.length > 0 && <Alert id="task-reference-diagnostics" type="warning" message={`部分引用不可用：${data.referenceDiagnostics.map(item => item.message).join('；')}`} />}
     <TaskSummary context={workContext.data} error={workContext.error} terminal={terminal} onRespond={() => editor.open('respond')} />
     {workspaceId && <TaskConversationEntry key={`internal:${workspaceId}:${taskId}`} workspaceId={workspaceId} taskId={taskId} cwd={workspace?.rootPath} />}
-    {workspaceId && <TaskAgentSessions key={`${workspaceId}:${taskId}`} workspaceId={workspaceId} taskId={taskId} />}
     {record.isParent ? <CompositeTaskContent key={taskId} choices={reading.choices} choose={reading.choose} changed={changedFiles} onOpenFile={(file,repository,commit)=>openCode({gitRepositoryId:repository.id,path:file.path,commitHash:commit?.commit.hash})} deliveryFiles={hasDeliveryFiles(artifacts.changes) ? <TaskDeliveryFiles changes={artifacts.changes} loading={artifacts.changesLoading} onRead={reading.openExtra} /> : undefined} task={data} coordination={evidence.coordinationData} loading={evidence.coordinationLoading} changes={artifacts.changes} documents={documents} materials={artifacts.materials} renderContent={readContent} refresh={async () => { await refresh(); }} onEnd={() => setEndOpen(true)} href={href} /> : <>
     <TaskWorkPath actions={checklistTrigger} record={record} context={workContext.data?.context} selected={selected === 'changes' || selected === 'local-runtime' ? null : selected} onSelect={selectNode} contentTabs={[{ key: 'changes', label: <span data-prototype-position="changes-entry" title={changedCount.error || (countResult?.status === 'partial' ? '数量为已读范围，详情见改动与提交。' : undefined)}>改动与提交{changedFileCount !== null && changedFileCount > 0 && <span className="task-badge">{changedFileCount}</span>}</span>, selected: selected === 'changes', onSelect: () => selectNode('changes') }, { key: 'local-runtime', label: '本地验证', selected: selected === 'local-runtime', onSelect: () => selectNode('local-runtime') }]} />
     <div className={`task-detail-layout${checklist.open && checklist.pinned ? ' checklist-pinned' : ''}${checklistResizing ? ' checklist-resizing' : ''}`}>

@@ -29,7 +29,6 @@ import { runLayoutJourney } from '../../../buildr-web/test/browser/layout-journe
 import { runTaskCommitsJourney } from '../../../buildr-web/test/browser/task-commits-journey.ts';
 import { runTaskMaterialsJourney } from '../../../buildr-web/test/browser/task-materials-journey.ts';
 import { runCompositeTaskChildrenJourney } from '../../../buildr-web/test/browser/composite-task-children-journey.ts';
-import { runCodexNavigationJourney } from '../../../buildr-web/test/browser/codex-navigation-journey.ts';
 import { runWorkbenchJourney } from './workbench-journey.ts';
 import { runPublicationJourney, publicationTestPng } from './publication-journey.ts';
 import { useLegacyAssetCatalog } from '../helpers/legacy-asset-catalog.ts';
@@ -2525,7 +2524,6 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
 
   if (selected('task')) await runTaskListJourney({antdSelectDisplay, antdSelectOptionTexts, applyTaskFilters, assert, browserErrors, capture, closeTaskReading, confirmAntModal, crypto, expectedBrowserErrors, fs, openAntdSelect, openTaskActionModal, openTaskFilterPanel, openTaskSearch, otherWorkspaceId, page, path, prepareEvidenceFixture, process, recordVerificationResultFromEvidence, runBuildr, runtime, selectAntdOption, selected, showPrimaryNavigation, t: taskFocusedT(t), taskFocusedT, url, workspaceRoot, workspaceUrl, writeChange});
   if (selected('task')) await runTaskCommitsJourney({ t: taskFocusedT(t), page, runtime, workspaceRoot, workspaceUrl, expectedBrowserErrors, capture });
-  if (selected('task')) await runCodexNavigationJourney({ t: taskFocusedT(t), page, runtime, workspaceRoot, workspaceUrl, runBuildr, capture, expectedBrowserErrors });
 
   if (selected('task-materials')) await runTaskMaterialsJourney({ t, page, runtime, materials: runtimeProvide(webRuntime, TASK_MATERIALS_APPLICATION), workspaceRoot, workspaceUrl, runBuildr, runGit, capture, expectedBrowserErrors });
 

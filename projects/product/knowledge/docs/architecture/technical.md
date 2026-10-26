@@ -26,9 +26,9 @@
 
 内部对话由 `buildr-agent` 的公开应用服务（Application Service）维护，Buildr 的 `agent-service` 模块只装配工作空间（Workspace）、任务（Task）权威和 HTTP/事件流。账号、对话和原生上下文绑定保存在本机运行配置（Profile）的私有交互库，原生凭据留各家独立配置；任务状态和文件成果不转移到此库。Codex 应用服务（App Server）、DSH 完整本机网页宿主（Web Host）、Qoder 软件开发工具包（SDK）与命令行（CLI）各自执行和恢复。同一对话保存统一可见历史，各参与者分别恢复自己的原生上下文；未知执行不自动重发。前端全局对话功能可停靠右侧或一级导航最左侧，原有中右工作屏继续独立展开与折叠。职责和恢复边界见[智能体接入](agent-integration.md)。
 
-原有智能体（Agent）一次生成由 `agent-operations` 统一管理登记、默认与单次选择、运行（Run）、取消和结果。Codex 使用 Buildr 按需启动、复用和回收的专用应用服务（App Server）；DSH 连接已运行桌面的 Buildr 插件，调用同一宿主（Host）的当前模型服务，每次读取当前默认配置并记录实际采用值，不启动独立 DSH 生成进程。两者按登记身份串行排队；DSH 空闲回收、取消与退出只释放本次请求和连接。提交说明由 `code` 准备有界材料并校验来源及结果，提交、推送继续直接调用 Git。
+提交说明由 `code` 准备有界材料和生成请求，调用 `buildr-agent` 的统一模型（Model）能力。账号与模型来源显式固定，不提供工具、不创建持久对话；业务和界面分别校验来源及草稿版本，提交与推送继续直接调用 Git。
 
-原生会话（Session）关联由 `native-session-links` 聚合 Codex 与 DSH 的多对多关系；`codex-desktop` 保留原有文件和深层链接（Deep Link），`dsh-desktop` 核验桌面范围并确认准确导航。外部原生程序继续保存这些桌面会话（Session）的对话与持续执行；内部对话另由新服务（Service）维护，一次生成不继承已有聊天的内容、工具或记忆。三条并列链路见[智能体（Agent）接入架构](agent-integration.md)。
+外部桌面会话（Session）关联和旧生成后台已退役。内部对话继续可选关联任务（Task），不成为任务状态或成果权威；详见[智能体（Agent）接入架构](agent-integration.md)。
 
 外部系统接入由 `connection-skills` 管理准确绑定的实例、团队配置与本机个人认证，页面与命令使用同一应用。专业技能（Skill）维护各系统的对象定位、操作与结果判断；MySQL 查询由独立模块承接。通用执行负责交接当前实例和私有认证，专业程序负责真实系统的授权及校验。对象分工与核心边界集中在[外部系统连接](external-connections.md)，实现位置见[连接代码地图](../../code-map/technical-layers.md#外部系统接入)。
 

@@ -14,11 +14,7 @@ import { createRuntime, runtimeContributions, runtimeModuleSnapshot, runtimeProv
 import { createRuntime as createProductRuntime } from '../../src/bootstrap/runtime.ts';
 import { OPENSPEC_QUERY, createOpenSpecModule } from '../../src/modules/openspec/module.ts';
 import { CHANGE_APPLICATION } from '../../src/modules/task/change/module.ts';
-import { AGENT_OPERATIONS_APPLICATION } from '../../src/modules/agent-operations/module.ts';
 import { AGENT_SERVICE_APPLICATION } from '../../src/modules/agent-service/module.ts';
-import { CODEX_DESKTOP_APPLICATION } from '../../src/modules/codex-desktop/module.ts';
-import { NATIVE_SESSION_LINKS_APPLICATION } from '../../src/modules/native-session-links/module.ts';
-import { DSH_DESKTOP_APPLICATION, DSH_PAGE_OBSERVATIONS } from '../../src/modules/dsh-desktop/module.ts';
 import { CODE_APPLICATION, CODE_GENERATION_APPLICATION, CODE_SOURCE_CONTROL_OBSERVATIONS } from '../../src/modules/code/module.ts';
 
 test('OpenSpec 独占通用内容查询，任务能力只提供关联组合', () => {
@@ -257,38 +253,14 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     contributions: { cli: [], http: ['change.http'], diagnostics: [] },
     lifecycle: 'none',
   }, {
-    id: 'agent-operations',
-    requires: [],
-    provides: [AGENT_OPERATIONS_APPLICATION],
-    contributions: { cli: ['agent', 'agent list', 'agent register', 'agent select'], http: ['agent-operations.http'], diagnostics: [] },
-    lifecycle: 'none',
-  }, {
     id: 'agent-service',
     requires: [WORKSPACE_APPLICATION, TASK_QUERY_APPLICATION],
     provides: [AGENT_SERVICE_APPLICATION],
     contributions: { cli: [], http: ['agent-service.http'], diagnostics: [] },
     lifecycle: 'managed',
   }, {
-    id: 'native-session-links',
-    requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, TASK_QUERY_APPLICATION],
-    provides: [NATIVE_SESSION_LINKS_APPLICATION],
-    contributions: { cli: ['dsh', 'dsh link', 'dsh sessions', 'dsh open-task'], http: ['native-session-links.http'], diagnostics: [] },
-    lifecycle: 'none',
-  }, {
-    id: 'codex-desktop',
-    requires: [AGENT_OPERATIONS_APPLICATION, WORKSPACE_APPLICATION, WORKSPACE_QUERY, TASK_QUERY_APPLICATION, NATIVE_SESSION_LINKS_APPLICATION],
-    provides: [CODEX_DESKTOP_APPLICATION],
-    contributions: { cli: ['codex connections', 'codex link', 'codex sessions', 'codex'], http: ['codex-desktop.http'], diagnostics: [] },
-    lifecycle: 'none',
-  }, {
-    id: 'dsh-desktop',
-    requires: [AGENT_OPERATIONS_APPLICATION],
-    provides: [DSH_DESKTOP_APPLICATION, DSH_PAGE_OBSERVATIONS],
-    contributions: { cli: [], http: ['dsh-desktop.http'], diagnostics: [] },
-    lifecycle: 'managed',
-  }, {
     id: 'code',
-    requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER, AGENT_OPERATIONS_APPLICATION, AGENT_ASSETS_SOURCE_READ],
+    requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER, AGENT_SERVICE_APPLICATION, AGENT_ASSETS_SOURCE_READ],
     provides: [CODE_APPLICATION, CODE_GENERATION_APPLICATION, CODE_SOURCE_CONTROL_OBSERVATIONS],
     contributions: {cli:['code repositories','code directory','code file','code search','code source-control','code source-control-inventory','code discard-context','code commit-context','code sync-context','code branches','code authors','code history','code commit','code diff','code source-file'],http:['code.files.http', 'code.generation.http'],diagnostics:[]},
     lifecycle: 'managed',
@@ -400,9 +372,6 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'task commits', 'task changed-files',
     'task materials inspect', 'task materials record', 'task materials write', 'task brief migrate',
     'agent-assets source inspect',
-    'agent', 'agent list', 'agent register', 'agent select',
-    'dsh', 'dsh link', 'dsh sessions', 'dsh open-task',
-    'codex connections', 'codex link', 'codex sessions', 'codex',
     'code repositories', 'code directory', 'code file', 'code search', 'code source-control','code source-control-inventory', 'code discard-context', 'code commit-context', 'code sync-context', 'code branches', 'code authors', 'code history', 'code commit', 'code diff', 'code source-file',
     'connection-skill', 'service-runtime', 'mysql-query',
     'project verification inspect', 'project verification validate', 'project verification update',
@@ -416,7 +385,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'doctor',
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item: any) => item.id), [
-    'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'task-work-context.http', 'task.http', 'workbench.http', 'task.commits.http', 'task.changed-files.http', 'task.materials.http', 'publication.http', 'change.http', 'agent-operations.http', 'agent-service.http', 'native-session-links.http', 'codex-desktop.http', 'dsh-desktop.http', 'code.files.http', 'code.generation.http',
+    'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'task-work-context.http', 'task.http', 'workbench.http', 'task.commits.http', 'task.changed-files.http', 'task.materials.http', 'publication.http', 'change.http', 'agent-service.http', 'code.files.http', 'code.generation.http',
     'connection-skills.http', 'service-runtime.http', 'mysql-query.http',
     'task-review.http', 'task-verification.http',
     'task-parent-coordination.http', 'system-installation.release-awareness.http',
@@ -448,8 +417,6 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   const agentRuntime: any = runtimeProvide(runtime, AGENT_ASSETS_RUNTIME);
   assert.equal(typeof agentRuntime.getRuntimeAdapter, 'function');
   assert.equal(typeof agentRuntime.assembleRuntimeProjection, 'function');
-  const agentOperations = runtimeProvide(runtime, AGENT_OPERATIONS_APPLICATION);
-  for (const name of ['listRegistry', 'registerCodex', 'selectAgent', 'startGeneration', 'getRun', 'cancelRun', 'close']) assert.equal(typeof agentOperations[name], 'function', name);
   assert.equal(agentAssets.startGeneration, undefined);
   assert.equal(typeof runtimeProvide(runtime, CODE_GENERATION_APPLICATION).generateCommitMessage, 'function');
   const taskQuery: any = runtimeProvide(runtime, TASK_QUERY_APPLICATION);

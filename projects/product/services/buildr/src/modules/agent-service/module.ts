@@ -26,7 +26,7 @@ export function createAgentServiceModule(options: { readProductIdentity(): unkno
         return service;
       };
       const close = async () => { await service?.close(); };
-      return { provides: { [AGENT_SERVICE_APPLICATION]: { close } }, contributions: { http: [createAgentServiceHttpContribution(resolve)] }, lifecycle: { start: async () => {}, stop: close } };
+      return { provides: { [AGENT_SERVICE_APPLICATION]: { close, generate: (input: Parameters<AgentService['models']['generate']>[0]) => resolve().models.generate(input) } }, contributions: { http: [createAgentServiceHttpContribution(resolve)] }, lifecycle: { start: async () => {}, stop: close } };
     },
   };
 }

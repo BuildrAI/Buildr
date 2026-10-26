@@ -7,7 +7,7 @@ import { createGeneratedReleaseInputs } from '../helpers/generated-release-input
 import { createGeneratedArtifactManifest } from '../../tools/build/generated-artifacts.ts';
 import { buildApplicationPayload } from '../../../../../../skills/buildr-release/scripts/application-payload.ts';
 
-test('Buildr payload includes the desktop bridge while excluding the retired DSH runtime and independent plugin', async t => {
+test('Buildr payload excludes the retired desktop bridge and keeps the independent plugin outside the main package', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-without-dsh-plugin-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const generated = createGeneratedReleaseInputs(path.join(root, 'generated'));
@@ -22,7 +22,7 @@ test('Buildr payload includes the desktop bridge while excluding the retired DSH
   assert.equal(result.manifest.files.some((file: { path: string }) => file.path === 'resources/runtime/dsh-agent.mts' || file.path.startsWith('resources/product/resources/runtime/dsh/')), false);
   assert.equal(fs.existsSync(path.join(result.root, 'resources/runtime/dsh-agent.mts')), false);
   const runtime = fs.readFileSync(path.join(result.root, 'runtime/buildr.cjs'), 'utf8');
-  assert.ok(runtime.includes('buildr.dsh-desktop-bridge/v1'), 'The actual payload retains the existing desktop transport.');
+  assert.equal(runtime.includes('buildr.dsh-desktop-bridge/v1'), false, 'Retired desktop transport is not bundled.');
   for (const retired of ['DshAcpServer', 'dshRuntimeInvocation', 'BUILDR_DSH_INSTALL_ANCHOR', 'runtime/dsh-agent.mts']) assert.equal(runtime.includes(retired), false, retired);
   await assert.rejects(buildApplicationPayload(path.join(root, 'rejected'), 'b'.repeat(40), {
     generatedArtifactManifest: manifest, webDistRoot: generated.webDistRoot, dshPluginRoot: root,

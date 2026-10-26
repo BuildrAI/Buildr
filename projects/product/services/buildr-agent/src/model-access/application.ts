@@ -262,6 +262,36 @@ export class ModelAccessApplication {
     const view: ModelGatewayLease = { identity, baseUrl: baseUrl + '/v1', apiKey: token, model: `buildr-${identity.slice(0,32)}`, offering: structuredClone(offering), accountId: account.id, accountLabel: account.accountLabel || account.label, provider: account.provider };
     const lease: LeaseRecord = { view, input: { ...input }, tokenHash: digest(token), requests: new Set() }; this.leasesByToken.set(lease.tokenHash,lease); this.leasesByIdentity.set(identity,lease); return structuredClone(view);
   }
+  async generate(input: ModelLeaseInput & { prompt: string; signal: AbortSignal }): Promise<string> {
+    input.signal.throwIfAborted();
+    const lease = await this.createLease(input);
+    try {
+      input.signal.throwIfAborted();
+      const efforts = lease.offering.reasoningEfforts;
+      const ranks: Record<string, number> = {off:0,none:0,disabled:0,minimal:1,low:2,medium:3,high:4,xhigh:5,max:6,ultra:7};
+      const effort = efforts?.length && efforts.every(value => ranks[value.id] !== undefined)
+        ? [...efforts].sort((a,b) => ranks[a.id]! - ranks[b.id]!)[0]?.id : undefined;
+      const response = await fetch(lease.baseUrl + '/chat/completions', {
+        method: 'POST', signal: input.signal,
+        headers: {'Content-Type':'application/json',Authorization:'Bearer ' + lease.apiKey},
+        body: JSON.stringify({model:lease.model,stream:false,messages:[{role:'user',content:input.prompt}],tools:[],
+          max_tokens: Math.min(4096, lease.offering.maxOutputTokens ?? 4096), ...(effort ? {reasoning_effort:effort} : {})}),
+      });
+      if (!response.ok) { await response.body?.cancel(); throw new ModelAccessError('model_generation_failed','模型生成未完成，请检查账号与额度。',502); }
+      if (!response.body) throw new ModelAccessError('model_response_empty','模型返回空响应。',502);
+      const reader=response.body.getReader(); const chunks: Uint8Array[]=[]; let size=0;
+      try { while(true){ input.signal.throwIfAborted(); const part=await reader.read(); if(part.done)break;size+=part.value.length;
+        if(size>2*1024*1024)throw new ModelAccessError('model_response_too_large','模型结果超过本次限制。',502); chunks.push(part.value); }
+      } finally { await reader.cancel().catch(()=>{}); reader.releaseLock(); }
+      input.signal.throwIfAborted();
+      const result = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      const message = result?.choices?.[0]?.message;
+      if (result?.choices?.length !== 1 || message?.tool_calls?.length || message?.function_call || result.choices[0].finish_reason === 'length' || typeof message?.content !== 'string' || !message.content.trim()) {
+        throw new ModelAccessError('model_generation_output_invalid','模型未返回完整的纯文本结果。',502);
+      }
+      return message.content;
+    } finally { this.release(lease.identity); }
+  }
   release(identity: string) { const lease = this.leasesByIdentity.get(identity); if (!lease) return; this.leasesByIdentity.delete(identity); this.leasesByToken.delete(lease.tokenHash); for (const request of lease.requests) request.abort(); }
   updateRun(identity:string,runId:string) { const lease=this.leasesByIdentity.get(identity); if(!lease||!runId) throw new ModelAccessError('model_binding_missing','本次模型绑定已失效。'); lease.input.runId=runId; }
   private async body(req: IncomingMessage): Promise<ProtocolJson> { const chunks: Buffer[] = []; let size = 0; for await (const chunk of req) { const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); size += value.length; if (size > 64 * 1024 * 1024) throw new ModelAccessError('model_request_too_large','模型输入超过本机限制。',413); chunks.push(value); } try { const value: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8')); if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('object'); return value as ProtocolJson; } catch { throw new ModelAccessError('model_request_invalid','模型请求不是有效 JSON 对象。',400); } }
@@ -308,6 +338,7 @@ export function createModelAccess(options: ModelAccessOptions) {
     ensureLinked: () => application.ensureLinked(), invalidate: (id:string) => application.invalidate(id),
     accounts: { list: () => application.list(), read: (id: string) => application.read(id), snapshot: (id:string) => application.read(id), preferences:(id:string,input:ModelPreferenceUpdate)=>application.updatePreferences(id,input), add: (input: {provider:string;label?:string}) => application.add(input), login: (id:string,input:{expectedRevision:string}) => application.login(id,input), attempt: (id:string,attemptId:string) => application.attempt(id,attemptId), cancelLogin: (id:string,attemptId:string,input:{expectedRevision:string}) => application.cancelLogin(id,attemptId,input), check: (id:string,input:{expectedRevision?:string}={}) => application.check(id,input), disconnect: (id:string,input:{expectedRevision:string}) => application.disconnect(id,input) },
     catalog: { list: () => application.catalog() },
+    generate: (input: ModelLeaseInput & {prompt:string;signal:AbortSignal}) => application.generate(input),
     leases: { create: (input:ModelLeaseInput) => application.createLease(input), release: (identity:string) => application.release(identity), updateRun:(identity:string,runId:string)=>application.updateRun(identity,runId) },
     close: () => application.close(),
   };

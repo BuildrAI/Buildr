@@ -38,7 +38,7 @@
 
 ## 内部对话与原生执行
 
-[智能体接入架构](../docs/architecture/agent-integration.md)解释用户可见行为；这里定位新内部对话的实际边界。它与既有 `agent-operations` 的一次生成、`native-session-links` 的外部关联并列，不扩展或迁移旧数据。
+[智能体接入架构](../docs/architecture/agent-integration.md)解释用户可见行为；这里定位新内部对话的实际边界。单次生成也复用同一模型（Model）能力；旧生成后台和外部桌面关联已退役。
 
 - **宿主（Host）适配**：[agent-service/module.ts](../../services/buildr/src/modules/agent-service/module.ts) 按公开包名装配 `createAgentService`，提供已登记工作空间（Workspace）解析和任务（Task）存在检查；[HTTP 入口](../../services/buildr/src/modules/agent-service/interfaces/http/agent-service-http.ts)接入本机认证和独立控制请求，不维护对话副本。
 - **独立服务（Service）**：[公开入口](../../services/buildr-agent/src/index.ts)创建账号应用、对话应用、事件与私有库；[contracts.ts](../../services/buildr-agent/src/contracts.ts)只公开宿主依赖、视图及执行器（Executor）协议，主包不导入私有源码。

@@ -18,7 +18,7 @@
 | --- | --- |
 | 怎样接续工作、判断成果并保留方法？ | [从讨论到交付](architecture/task-system.md) · [技能（Skill）体系](architecture/buildr-skill-system.md) · [知识维护](architecture/knowledge-maintenance.md) |
 | 怎样管理外部系统账号并执行专业操作？ | [外部系统连接](architecture/external-connections.md) |
-| Buildr 怎样接入 Codex、DSH、Qoder，并保留外部会话关联和一次生成？ | [接入方式与职责](architecture/agent-integration.md) · [提交说明怎样生成](architecture/agent-integration-generation.md) |
+| Buildr 怎样接入 Codex、DSH、Qoder，并复用统一模型生成提交说明？ | [接入方式与职责](architecture/agent-integration.md) · [提交说明怎样生成](architecture/agent-integration-generation.md) |
 | 系统怎样组成，代码和数据由谁维护？ | [技术架构](architecture/technical.md) · [代码地图（Code Map）](../code-map/README.md) · [数据设计](architecture/buildr-data-design.md) · [数据库表](architecture/buildr-database-tables.md) |
 | 怎样准备开发并验证实际改动？ | [产品开发入口](../../README.md) · [贡献指南](../../../../CONTRIBUTING.md) · [项目测试与验证](architecture/workspace-testing-and-verification-framework.md) · [产品验证框架](architecture/verification-framework.md) |
 | 怎样查命令、数据格式与扩展约定？ | [命令参考](../../services/buildr/docs/cli-reference.md) · [公开数据格式](reference/json-contracts.md) · [工具适配开发](reference/agent-runtime-adapter-contribution.md) · [能力契约（Capability Contract）](../../services/buildr/docs/skill-capability-contracts.md) |

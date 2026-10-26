@@ -60,7 +60,6 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
   unit: testing(SERVICE_OWNER, 'Development', 'Unit', 'Pure Buildr logic behaves correctly with collaborators replaced.', TEST_ENVIRONMENTS.pure),
   integration: testing(SERVICE_OWNER, 'Development', 'Integration', 'Generated inputs and verification tools preserve their process, build and compatibility boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-code': testing(SERVICE_OWNER, 'Development', 'Integration', 'Code browsing, editing, observation and Git operations preserve the actual checkout and mutation boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
-  'integration-desktop': testing(SERVICE_OWNER, 'Development', 'Integration', 'Desktop and Agent connections preserve their isolated registration, lifecycle, Git read roots and HTTP boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-knowledge': testing(SERVICE_OWNER, 'Development', 'Integration', 'Knowledge and Agent source reading preserve current content, provenance and HTTP results.', TEST_ENVIRONMENTS.repeatedCli),
   'integration-workspace-assets': testing(SERVICE_OWNER, 'Development', 'Integration', 'Workspace assets preserve composition, registration, mutation and user content.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-archify': testing(SERVICE_OWNER, 'Development', 'Integration', 'Retired Archify preserves old installations, offline and customized workspaces, self-use rendering and bounded diagnostics.', TEST_ENVIRONMENTS.repeatedCli),
@@ -263,10 +262,6 @@ export const VERIFICATION_STEP_EVIDENCE: any = Object.freeze({
     'A Code or Git application that mutates the wrong checkout, loses mutation isolation, or crosses its declared read roots must fail.',
     'real checkout filesystem, Git read/write roots and repeated CLI boundaries',
   ),
-  'integration-desktop': primaryEvidence(
-    'A Desktop or Agent connection that leaks registration state, crosses lifecycle ownership, or corrupts Git read roots must fail.',
-    'real isolated registration, connection lifecycle, Git read roots and HTTP boundaries',
-  ),
   'integration-knowledge': primaryEvidence(
     'A Knowledge or Agent source read that returns stale content, loses provenance, or misprojects HTTP results must fail.',
     'real content sources, provenance records and HTTP read boundaries',
@@ -327,7 +322,7 @@ export const VERIFICATION_STEP_EVIDENCE: any = Object.freeze({
 
 const BACKEND_REUSE_CHECKS = new Set(['managed-mutations', 'cli-compatibility']);
 // These bounded fixture suites read runtime/source assets, not this Product's governance records.
-const RUNTIME_REUSE_CHECKS = new Set(['integration-runtime', 'integration-code', 'integration-desktop', 'integration-task-records', 'integration-connections', 'integration-connections-cli', 'integration-runtime-projection', 'integration-data-store', 'integration-task-read-models', 'integration-task-coordination',
+const RUNTIME_REUSE_CHECKS = new Set(['integration-runtime', 'integration-code', 'integration-task-records', 'integration-connections', 'integration-connections-cli', 'integration-runtime-projection', 'integration-data-store', 'integration-task-read-models', 'integration-task-coordination',
   'integration-web-http', 'e2e-task', 'e2e-worktree', 'e2e-nested-git',
   'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection',
   'e2e-runtime-recovery', 'e2e-app-process', 'e2e-workspace']);
@@ -466,7 +461,7 @@ export const VERIFICATION_RESOURCE_CONTRACTS: any = Object.freeze({
 export const VERIFICATION_EXECUTION_PROFILES: any = Object.freeze({
   local: concurrency(4, 3, 2, { integration: 4, 'integration-candidate-release': 2, 'runtime-adapter-parity': 2, ...Object.fromEntries(JOURNEY_SUITES.map((suite: any) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }, { workers: 8, processes: 8, git: 3, workspaceIo: 3 }),
   ci: concurrency(4, 3, 2, { integration: 4, 'integration-candidate-release': 2, 'runtime-adapter-parity': 2, ...Object.fromEntries(JOURNEY_SUITES.map((suite: any) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }, { workers: 8, processes: 8, git: 3, workspaceIo: 3 }),
-  'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, unit: 3, 'source-contracts': 2, 'integration-runtime': 2, 'integration-code': 2, 'integration-desktop': 2, 'integration-knowledge': 1, 'integration-workspace-assets': 2, 'integration-archify': 1, 'integration-task-records': 2, 'integration-connections': 2, 'integration-runtime-projection': 1,  ...Object.fromEntries(JOURNEY_SUITES.map((suite: any) => [suite.id, Math.min(suite.innerConcurrency, 2)])), 'integration-candidate-release': 2, 'runtime-adapter-parity': 2, 'integration-candidate-release-selection': 1, 'integration-candidate-package-selection': 1, 'integration-candidate-release-effects': 1, 'integration-candidate-git-convergence': 2, 'integration-candidate-git-selection': 2, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2 }, { workers: 3, processes: 3, git: 2, workspaceIo: 2 }),
+  'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, unit: 3, 'source-contracts': 2, 'integration-runtime': 2, 'integration-code': 2, 'integration-knowledge': 1, 'integration-workspace-assets': 2, 'integration-archify': 1, 'integration-task-records': 2, 'integration-connections': 2, 'integration-runtime-projection': 1,  ...Object.fromEntries(JOURNEY_SUITES.map((suite: any) => [suite.id, Math.min(suite.innerConcurrency, 2)])), 'integration-candidate-release': 2, 'runtime-adapter-parity': 2, 'integration-candidate-release-selection': 1, 'integration-candidate-package-selection': 1, 'integration-candidate-release-effects': 1, 'integration-candidate-git-convergence': 2, 'integration-candidate-git-selection': 2, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2 }, { workers: 3, processes: 3, git: 2, workspaceIo: 2 }),
 });
 
 export const VERIFICATION_CONCURRENCY: any = VERIFICATION_EXECUTION_PROFILES.local;
@@ -531,6 +526,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/windows-artifact-diagnosis.test.ts',
   ], { schedulingCostMs: 5000, timeoutMs: 300_000, concurrencyClass: 'exclusive', args: ['--test-concurrency=4'] }),
   integrationSlice('integration-code', [
+    'test/integration/retire-legacy-agent-data.test.ts',
     'test/integration/code-branch-application.test.ts',
     'test/integration/code-fixture-isolation.test.ts',
     'test/integration/code-commit-application.test.ts',
@@ -554,20 +550,6 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/source-control-observation-http.test.ts',
     'test/integration/source-control-observations.test.ts',
   ], { schedulingCostMs: 179000, timeoutMs: 300_000, args: ['--test-concurrency=3'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
-  integrationSlice('integration-desktop', [
-    'test/integration/agent-codex-discovery.test.ts',
-    'test/integration/agent-codex-remove.test.ts',
-    'test/integration/agent-operations.test.ts',
-    'test/integration/codex-desktop-application.test.ts',
-    'test/integration/codex-desktop-concurrency.test.ts',
-    'test/integration/codex-desktop-disconnect.test.ts',
-    'test/integration/codex-desktop-module-http.test.ts',
-    'test/integration/codex-desktop-plugin.test.ts',
-    'test/integration/codex-desktop-recovery.test.ts',
-    'test/integration/dsh-desktop-backend.test.ts',
-    'test/integration/dsh-page-observations.test.ts',
-    'test/integration/native-session-links.test.ts',
-  ], { schedulingCostMs: 5000, args: ['--test-concurrency=3'] }),
   integrationSlice('integration-knowledge', [
     'test/integration/agent-asset-source-query.test.ts',
     'test/integration/current-knowledge-capability-graph.test.ts',
@@ -757,7 +739,6 @@ const builtInVerificationSteps: any = Object.freeze([
       'integration-workspace-assets': 'Workspace asset integration slice',
       'integration-archify': 'Archify retirement and self-use integration slice',
       'integration-knowledge': 'Knowledge and source reading integration slice',
-      'integration-desktop': 'Desktop and Agent connection integration slice',
       'integration-code': 'Code and Git application integration slice',
       'integration': 'Build and verification tool boundaries',
       'integration-declarations': 'Project declaration integration slice',
@@ -961,7 +942,6 @@ export const CORE_MACOS_STEP_IDS: any = Object.freeze([
   'e2e-workspace-assets',
   'integration-archify',
   'integration-task-records',
-  'integration-desktop',
   'integration-connections',
   'integration-connections-cli',
   'integration-runtime-projection',
@@ -1022,7 +1002,6 @@ export const CORE_MACOS_SHARDS: any = Object.freeze([
   ], { preparation: 'source-runtime' }),
   candidateShard('core-runtime-source-macos', 'macos', 'verification', [
     'integration-runtime',
-    'integration-desktop',
     'integration-connections',
     'integration-connections-cli',
     'integration-runtime-projection',

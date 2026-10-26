@@ -60,14 +60,10 @@ test('Candidate输入从空暂存生成闭合且可重复的artifact set', async
   });
   const expectedDtoFiles = [
     'agent-assets-http-dto.ts',
-    'agent-operations-http-dto.ts',
     'agent-service-http-dto.ts',
     'code-generation-http-dto.ts',
     'code-http-dto.ts',
-    'codex-desktop-http-dto.ts',
-    'dsh-desktop-http-dto.ts',
     'knowledge-http-dto.ts',
-    'native-session-links-http-dto.ts',
     'runtime-system-http-dto.ts',
     'task-dto.ts',
     'task-professional-http-dto.ts',

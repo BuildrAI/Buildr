@@ -6,14 +6,6 @@ import { selectSourceControlView } from './source-control-view-controls.ts';
 export async function runSourceControlActionsJourney({t, page, workspaceUrl, capture, fixture, expectedBrowserErrors, scenario = (name: string, action: () => Promise<void>) => t.test(name, action)}: any) {
   const root = () => page.locator('.code-source-control-page:visible');
   const api = workspaceUrl.replace('/workspaces/', '/api/v1/workspaces/');
-  const details = () => page.getByRole('dialog', {name: 'Codex 接入详情', exact: true});
-  const openDetails = async (drawer: any) => {
-    await drawer.getByRole('button', {name: 'Codex 详情', exact: true}).click();
-    await details().waitFor({state: 'visible'});
-    await details().getByRole('button', {name: /配置与运行信息$/u}).click();
-    await details().getByText('最近读取的生成配置', {exact: true}).waitFor({state: 'visible'});
-    return details();
-  };
   const assertCommitSplit = async (panel: any) => {
     const layout = await panel.locator('.source-control-commit-split').evaluate((element: HTMLElement) => {
       const main = element.querySelector<HTMLElement>('#commit-changes')!, menu = element.querySelector<HTMLElement>('#commit-action-menu')!;
@@ -54,15 +46,14 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
   };
   const model = async (available: boolean) => {
     let counter = 0; const cancelled = new Set<string>(), starts: unknown[] = [];
-    const executionConfig = {model: 'browser-confirmed-model', modelProvider: 'browser-confirmed-provider', reasoningEffort: 'high'};
-    const agent = {id: 'browser-codex', kind: 'codex', label: 'Codex', capabilities: ['structured-generation'], availability: 'available', runtimeStatus: 'running', safeReason: null, lastExecutionConfig: null as typeof executionConfig | null};
-    const run = (id: string, status: string) => ({id, agentId: agent.id, registrationRevision: 'browser-registry', status, output: status === 'succeeded' ? {commitMessage: 'feat: 浏览器生成提交说明\n\n验证生成结果可继续编辑。'} : null, error: null, executionConfig: status === 'succeeded' ? executionConfig : null});
+    const selected={id:'account::model',modelId:'model',accountId:'account',accountIdentity:'identity',accountRevision:'v1',accountLabel:'Fixture',provider:'fixture',label:'Browser Model',images:false,tools:false,available:true,enabled:true};
+    const run=(id:string,status:string)=>({id,modelAccountId:'account',modelId:'model',accountRevision:'v1',label:'Fixture / Browser Model',status,output:status==='succeeded'?{commitMessage:'feat: 浏览器生成提交说明\n\n验证生成结果可继续编辑。'}:null,error:null});
     const add = async (pattern: string, handler: (route: any) => Promise<void>) => {await page.route(pattern, handler);};
-    await add('**/api/v1/app/agents', async route => route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify({revision: 'browser-registry', defaultAgentId: available ? agent.id : null, agents: available ? [agent] : []})}));
+    await add('**/api/v1/app/agent-service/model-catalog',async route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({models:available?[selected]:[]})}));
     await add('**/code/commit-message', async route => {starts.push(route.request().postDataJSON()); await route.fulfill({status: 202, contentType: 'application/json', body: JSON.stringify(run('browser-run-' + ++counter, 'running'))});});
-    await add('**/api/v1/app/agents/runs?*', async route => {const id = new URL(route.request().url()).searchParams.get('runId')!, status = cancelled.has(id) ? 'cancelled' : 'succeeded'; if (status === 'succeeded') agent.lastExecutionConfig = {...executionConfig}; await route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(run(id, status))});});
-    await add('**/api/v1/app/agents/cancel', async route => {const id = route.request().postDataJSON().runId; cancelled.add(id); await route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(run(id, 'cancelled'))});});
-    return {starts, cancelled, setLastExecutionConfig: (config: typeof executionConfig) => {agent.lastExecutionConfig = config;}, dispose: () => page.unrouteAll({behavior:'wait'})};
+    await add('**/code/commit-message-runs?*', async route => {const id = new URL(route.request().url()).searchParams.get('runId')!, status = cancelled.has(id) ? 'cancelled' : 'succeeded'; await route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(run(id, status))});});
+    await add('**/code/commit-message-cancel', async route => {const id = route.request().postDataJSON().runId; cancelled.add(id); await route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(run(id, 'cancelled'))});});
+    return {starts, cancelled, dispose: () => page.unrouteAll({behavior:'wait'})};
   };
 
   await scenario('统一生成控件刷新与取消保留说明，生成后手改并提交只改变原工作树', async () => {
@@ -71,17 +62,12 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
       const protocol = await model(true);
       try {
         await page.setViewportSize({width: 1440, height: 900}); const {tree} = await open(branches);
-        await page.locator('#global-agents-entry').getByText('Codex', {exact: true}).waitFor();
-        await page.getByRole('button', {name: '智能体', exact: true}).click();
-        const drawer = page.locator('.agent-registry-drawer:visible');
-        assert.equal(await drawer.getByRole('button', {name: '设为默认智能体 Codex', exact: true}).getAttribute('aria-pressed'), 'true');
-        const detail = await openDetails(drawer);
-        await detail.getByText(/独立服务按需启动，空闲 1 小时后释放/u).waitFor({state: 'visible'});
-        await detail.getByText(/一次性生成不积累对话历史。/u).waitFor({state: 'visible'});
-        await capture(page, 'source-control-global-agent-registry.png');
-        await drawer.getByRole('button', {name: '关闭智能体', exact: true}).click();
+        assert.equal(await page.locator('#global-agents-entry').count(),0);
         const panel = root().locator('.source-control-commit-panel'), input = panel.getByRole('textbox', {name: '提交说明内容', exact: true});
-        assert.equal((await panel.innerText()).includes('Codex'), false, '功能区不常驻执行者名称');
+        await panel.locator('#generate-commit-message-model-menu').click();
+        await capture(page,'source-control-model-choice.png');
+        await page.getByRole('menuitem',{name:'Fixture / Browser Model',exact:true}).click();
+        await page.getByRole('menu').filter({has:page.getByRole('menuitem',{name:'配置模型',exact:true})}).waitFor({state:'hidden'});
         const height = await panel.evaluate((element: HTMLElement) => element.getBoundingClientRect().height); assert.ok(height >= 65 && height <= 120, '默认说明区保持紧凑：' + height);
         await assertCommitSplitAtWidths(panel);
         assert.equal(await panel.locator('#commit-changes').isDisabled(), true, '说明为空时主按钮禁用');
@@ -106,6 +92,7 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
         await page.waitForFunction(() => (document.querySelector('#commit-message-text')?.getBoundingClientRect().height || 0) >= 120);
         await assertCommitSplitAtWidths(panel);
         assert.equal((protocol.starts[0] as {worktreeId: string}).worktreeId, tree.worktreeId);
+        await capture(page,'source-control-model-generated.png');
         await input.fill(['feat: 说明阅读高度', '', ...Array.from({length: 16}, (_, index) => '说明第 ' + (index + 1) + ' 行')].join('\n'));
         await page.waitForFunction(() => {const input = document.querySelector<HTMLTextAreaElement>('#commit-message-text'); return input && input.getBoundingClientRect().height >= 120 && input.getBoundingClientRect().height <= 252 && input.scrollHeight > input.clientHeight && getComputedStyle(input).overflowY === 'auto';});
         await input.fill('feat: 用户修改生成说明后提交');

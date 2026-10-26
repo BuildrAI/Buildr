@@ -37,7 +37,6 @@ const entries: any[] = [
   ]),
   ...disposition('full-lifecycle', 'isolated-boundary-owned-by-test', 'The owner intentionally creates isolated filesystem, Git, SQLite, network, or process state as its primary boundary.', [
     'integration',
-    'integration-desktop',
     'integration-knowledge',
     'integration-connections',
     'integration-connections-cli',

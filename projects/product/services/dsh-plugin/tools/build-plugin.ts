@@ -72,14 +72,7 @@ await symlink(join(sdk, 'node_modules'), join(stage, 'node_modules'), 'dir');
 await cp(source, pkg, { recursive: true });
 // The main package owns the sole wire source. Materialize only a build projection so published
 // extensions remain self-contained and never import a sibling service or another npm package.
-const desktopContract = 'src/modules/agent-operations/contracts/dsh-desktop-bridge.ts';
-await cp(join(root, '..', 'buildr', desktopContract), join(pkg, 'desktop-contract.ts'));
-for (const file of ['desktop-server.ts', 'desktop-navigation.ts', 'src/index.ts', 'src/desktop-client.ts', 'src/types.ts']) {
-  const filename = join(pkg, file), prefix = file.startsWith('src/') ? '../' : './';
-  await writeFile(filename, (await readFile(filename, 'utf8')).replaceAll(
-    file.startsWith('src/') ? '../../../buildr/' + desktopContract : '../../buildr/' + desktopContract,
-    prefix + 'desktop-contract.ts'));
-}
+
 // Cordis and the Remote generator both require the service key to be a literal, so the development
 // variant takes its own key here rather than at runtime. This is the whole difference between the
 // two packages' Host halves: diagnostics retain separate namespaces. Cooperative business ownership

@@ -65,7 +65,7 @@ export function createAgentService(options: AgentServiceOptions) {
   let closed = false;
   return {
     generation,
-    models: { accounts: {...models.accounts,list:async(input:{refresh?:boolean}={})=>{if(input.refresh===false)void discover().catch(()=>{});else await discover();return models.accounts.list();}}, catalog: {list:async(input:{refresh?:boolean}={})=>{if(input.refresh===false)void discover().catch(()=>{});else await discover();return models.catalog.list();}} },
+    models: { generate: models.generate, accounts: {...models.accounts,list:async(input:{refresh?:boolean}={})=>{if(input.refresh===false)void discover().catch(()=>{});else await discover();return models.accounts.list();}}, catalog: {list:async(input:{refresh?:boolean}={})=>{if(input.refresh===false)void discover().catch(()=>{});else await discover();return models.catalog.list();}} },
     connections: {
       list: () => ({ connections: connections.list() }),
       read: (id: string) => connections.get(id),

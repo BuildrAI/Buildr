@@ -150,3 +150,30 @@ test('login remains checking until model discovery completes and cancelled disco
 });
 
 async function checkEnabled(application:any,id:string,input:any={}){const row=await application.accounts.check(id,input);const disabled=row.models.filter((model:any)=>model.enabled===false);return disabled.length?await application.accounts.preferences(id,{expectedRevision:row.revision,models:disabled.map((model:any)=>({id:model.id,enabled:true}))}):row;}
+
+test('single generation uses the selected account without tools or persistent conversation and rejects stale identity',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-model-generate-'));const inputs:ProviderInferenceInput[]=[];
+ const access=createModelAccess({root,providers:[provider(async input=>{inputs.push(input);return chat({content:'{"commitMessage":"ok"}'});})]});
+ try{
+  const added=await access.accounts.add({provider:'fixture'}),ready=await checkEnabled(access,added.id);
+  const input={accountId:ready.id,modelId:model.id,expectedIdentity:ready.identity,expectedRevision:ready.revision,agentId:'commit-message',conversationId:'temporary-1',runId:'run-1',prompt:'only supplied material',signal:new AbortController().signal};
+  assert.equal(await access.generate(input),'{"commitMessage":"ok"}');
+  assert.deepEqual(inputs[0].body.tools,[]);assert.deepEqual(inputs[0].body.messages,[{role:'user',content:'only supplied material'}]);assert.equal(inputs[0].modelId,model.id);
+  await assert.rejects(access.generate({...input,expectedIdentity:'other'}),/来源已变化/);assert.equal(inputs.length,1);
+  await access.generate({...input,conversationId:'temporary-2',runId:'run-2'});assert.equal(inputs[1].context.conversationId,'temporary-2');
+ }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('single generation rejects unsolicited tool calls and abort propagates to only that request',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-model-generate-cancel-'));let started!:()=>void;const start=new Promise<void>(resolve=>{started=resolve;});let signal:AbortSignal|undefined;
+ let mode='tool';const access=createModelAccess({root,providers:[provider(async input=>{
+  if(mode==='tool')return chat({tool_calls:[{id:'x',type:'function',function:{name:'write_file',arguments:'{}'}}]});
+  signal=input.signal;started();return new Promise<Response>((_,reject)=>input.signal.addEventListener('abort',()=>reject(Error('cancelled')),{once:true}));
+ })]});
+ try{
+  const added=await access.accounts.add({provider:'fixture'}),ready=await checkEnabled(access,added.id);
+  const controller=new AbortController(),input={accountId:ready.id,modelId:model.id,expectedIdentity:ready.identity,expectedRevision:ready.revision,agentId:'commit-message',conversationId:'one',runId:'one',prompt:'given',signal:controller.signal};
+  await assert.rejects(access.generate(input),/纯文本/);mode='wait';const pending=access.generate({...input,conversationId:'two'});await start;controller.abort();await assert.rejects(pending);
+  for(let i=0;i<20&&!signal?.aborted;i++)await new Promise(resolve=>setTimeout(resolve,5));assert.equal(signal?.aborted,true);
+ }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});

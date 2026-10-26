@@ -8,7 +8,8 @@ import { createCodeApplication } from '../../src/modules/code/application/code-a
 import { createCodeCommitMessageApplication } from '../../src/modules/code/application/code-commit-message-application.ts';
 import { readCodeCommitGuidance, type CodeCommitGuidanceDependencies } from '../../src/modules/code/infrastructure/code-commit-guidance.ts';
 import { createCodeCommitMaterialReader, type CodeCommitMaterialReaderDependencies } from '../../src/modules/code/infrastructure/code-commit-material.ts';
-import type { AgentGenerationInput } from '../../src/modules/agent-operations/module.ts';
+import type { GenerationInput } from '../../src/modules/code/application/code-generation.ts';
+const selection={modelAccountId:'account',modelId:'model',accountIdentity:'identity',accountRevision:'v1',label:'Model'};
 
 function fixture(t: test.TestContext) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-commit-guidance-')), repository = path.join(root, 'repository');
@@ -31,9 +32,9 @@ function fixture(t: test.TestContext) {
   const selectedRules = new Map<string, ReturnType<CodeCommitMaterialReaderDependencies['readRules']>>();
   const commitMaterial = createCodeCommitMaterialReader({ readRules: target => selectedRules.get(target) || [] });
   const generation = (directory = repository) => {
-    let captured: AgentGenerationInput | undefined;
-    const application = createCodeCommitMessageApplication({ commitSnapshot: app.commitSnapshot, commitGuidance: (workspace, snapshot) => readCodeCommitGuidance(workspace, snapshot, dependencies), commitMaterial, startGeneration: input => { captured = input; return { id: 'run', agentId: 'codex', registrationRevision: 'v1', status: 'queued', output: null, error: null, executionConfig: null }; } });
-    return { application, input: () => ({ ...location(directory), expectedRevision: app.commitContext(root, location(directory)).revision }), captured: () => captured! };
+    let captured: GenerationInput | undefined;
+    const application = createCodeCommitMessageApplication({ commitSnapshot: app.commitSnapshot, commitGuidance: (workspace, snapshot) => readCodeCommitGuidance(workspace, snapshot, dependencies), commitMaterial, startGeneration: input => { captured = input; return { id:'run',modelAccountId:'account',modelId:'model',label:'Model',accountRevision:'v1',status:'running', output: null, error: null }; } });
+    return { application, input: () => ({ ...location(directory), ...selection, expectedRevision: app.commitContext(root, location(directory)).revision }), captured: () => captured! };
   };
   return { root, repository, git, write, catalog, tasks, evidence, dependencies, app, location, commit, associate, generation, selectedRules, commitMaterial };
 }
@@ -44,7 +45,7 @@ test('mixed text, binary and type changes supply bounded real evidence without g
   const before = f.git(f.repository, 'status', '--porcelain'), g = f.generation(); await g.application.generateCommitMessage(f.root, g.input());
   assert.match(g.captured().prompt, /NEW-TEXT-SENTINEL|CURRENT-TEXT-SENTINEL/); assert.match(g.captured().prompt, /modified.bin/); assert.doesNotMatch(g.captured().prompt, /GIT binary patch/);
   assert.match(g.captured().prompt, /all-final-uncommitted-changes/); assert.ok(Buffer.byteLength(g.captured().prompt) < 16 * 1024);
-  assert.equal(g.captured().environment, undefined); assert.match(g.captured().prompt, /after/);
+  assert.equal('environment' in g.captured(), false); assert.match(g.captured().prompt, /after/);
   await g.captured().validateResult!({ commitMessage: 'Update resources and current text' });
   assert.equal(f.git(f.repository, 'rev-list', '--count', 'HEAD'), '1'); assert.equal(f.git(f.repository, 'status', '--porcelain'), before);
 });
@@ -69,9 +70,9 @@ test('a complete source with a diff exceeding 8 MiB still starts generation with
 
 test('existing 16 MiB and 1000-path source observation bounds remain explicit before agent start', async t => {
   const f = fixture(t); f.write('large.bin', Buffer.alloc(17 * 1024 * 1024));
-  const g = f.generation(); await assert.rejects(g.application.generateCommitMessage(f.root, { ...f.location(), expectedRevision: 'unused' }), { code: 'code_commit_observation_incomplete' }); assert.equal(g.captured(), undefined);
+  const g = f.generation(); await assert.rejects(g.application.generateCommitMessage(f.root, { ...f.location(), ...selection, expectedRevision: 'unused' }), { code: 'code_commit_observation_incomplete' }); assert.equal(g.captured(), undefined);
   fs.unlinkSync(path.join(f.repository, 'large.bin')); for (let index = 0; index < 1001; index++) f.write('file-' + index, 'x');
-  await assert.rejects(g.application.generateCommitMessage(f.root, { ...f.location(), expectedRevision: 'unused' }), { code: 'code_commit_observation_incomplete' }); assert.equal(g.captured(), undefined);
+  await assert.rejects(g.application.generateCommitMessage(f.root, { ...f.location(), ...selection, expectedRevision: 'unused' }), { code: 'code_commit_observation_incomplete' }); assert.equal(g.captured(), undefined);
 });
 
 test('entry discovery uses selected checkout and explicit task scopes with exact external rule roots', async t => {
@@ -100,7 +101,7 @@ test('oversized or unselected rules remain explicit partial material without blo
   const f = fixture(t); f.write('code.txt', 'before\n'); f.commit(); f.write('code.txt', 'after\n'); f.write('AGENTS.md', 'RULE-BODY-SENTINEL'.repeat(40_000), f.root); f.write('rules/manifest.yml', 'AGENT-DECIDES-MANIFEST-CONTENT', f.root); f.write('rules/optional.md', 'OPTIONAL-RULE-SENTINEL', f.root);
   const g = f.generation(); await g.application.generateCommitMessage(f.root, g.input());
   assert.ok(Buffer.byteLength(g.captured().prompt) < 16 * 1024); assert.doesNotMatch(g.captured().prompt, /RULE-BODY-SENTINEL|AGENT-DECIDES-MANIFEST-CONTENT|OPTIONAL-RULE-SENTINEL/);
-  assert.equal(g.captured().environment, undefined); assert.match(g.captured().prompt, /"rulesPartial":true/);
+  assert.equal('environment' in g.captured(), false); assert.match(g.captured().prompt, /"rulesPartial":true/);
 });
 
 test('independent rule entry changes invalidate results while unrelated workspace files do not', async t => {

@@ -1,7 +1,7 @@
 /** The native editor remains the only writer; this adapter addresses our one declared field. */
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { desktopFault } from './desktop-navigation.ts';
+import { desktopFault } from './plugin-error.ts';
 import type { MaintainerBinding, BindingMaintenanceView, BindingMaintenanceUpdate } from './src/types.ts';
 
 type Entry = { options: { id: string; name: string; config?: unknown } };
