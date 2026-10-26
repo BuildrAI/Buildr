@@ -66,11 +66,22 @@ export function recordCandidateStepTimings(buildrServiceRoot: string, aggregate:
     const runner = check?.runner?.os ?? check?.workflow?.runner?.os ?? shardRunner;
     const results = Array.isArray(check?.results) ? check.results : [];
     for (const result of results) {
+      if (result?.status !== 'passed') continue;
       const duration = Number.isSafeInteger(result?.durationMs) && result.durationMs > 0
         ? result.durationMs
         : result?.reusedFrom?.durationMs;
       const resultRunner = result?.reusedFrom?.origin?.runner?.os ?? runner;
       push(result?.id, duration, resultRunner);
+      // A single volatile phase (a fresh package install racing shared CI
+      // networking) can blow a step whose own total stays well under the
+      // threshold; record phases under a compound key so the lint below can
+      // warn on phase dominance before it fails remotely.
+      const phases = result?.disposition === 'reused' ? result?.originPhases ?? [] : result?.phases ?? [];
+      for (const phase of phases) {
+        if (typeof phase?.id === 'string' && Number.isSafeInteger(phase?.durationMs) && phase.durationMs > 0) {
+          push(`${result?.id}::${phase.id}`, phase.durationMs, resultRunner);
+        }
+      }
     }
   }
   if (recorded > 0) writeStepTimings(buildrServiceRoot, store);
@@ -94,11 +105,15 @@ export function lintCandidateStepTimeouts(buildrServiceRoot: string, steps: any[
   for (const step of steps) {
     const timeoutMs = step?.timeoutMs;
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) continue;
-    const observations = store[step.id];
-    if (!observations) continue;
-    for (const [runner, entries] of Object.entries(observations)) {
-      const maxObserved = Math.max(...(entries as StepTimingObservation[]).map(item => item.durationMs));
-      if (maxObserved > timeoutMs * threshold) warnings.push({ stepId: step.id, runner, timeoutMs, maxObservedMs: maxObserved, ratio: Math.round((maxObserved / timeoutMs) * 100) / 100 });
+    for (const [stepId, thresholdRatio] of [[step.id, threshold], [`${step.id}::package-installation`, 0.5]] as const) {
+      const observations = store[stepId];
+      if (!observations) continue;
+      for (const [runner, entries] of Object.entries(observations)) {
+        const maxObserved = Math.max(...(entries as StepTimingObservation[]).map(item => item.durationMs));
+        // Fresh package installs swing hardest across shared CI runners; a
+        // phase already half the step budget leaves no room for that swing.
+        if (maxObserved > timeoutMs * thresholdRatio) warnings.push({ stepId, runner, timeoutMs, maxObservedMs: maxObserved, ratio: Math.round((maxObserved / timeoutMs) * 100) / 100 });
+      }
     }
   }
   return warnings;

@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import {
   classifyCandidateFailure,
@@ -148,6 +151,31 @@ test('structured preparation failure must be complete, matching and specifically
   assert.equal(classifyCandidateStructuredFailures([prep], expected), 'transient');
   assert.equal(classifyCandidateStructuredFailures([{ ...prep, operations: [{ status: 'running' }] }], expected), 'diagnosis-required');
   assert.equal(classifyCandidateStructuredFailures([{ ...prep, operations: [{ status: 'failed', failureClass: 'timeout', errorCode: 'ETIMEDOUT' }] }], expected), 'diagnosis-required');
+});
+
+test('a capability timeout that previously passed on the same runner earns one rerun', () => {
+  const serviceRoot: any = fs.mkdtempSync(path.join(os.tmpdir(), 'candidate-retry-timings-'));
+  try {
+    const store: any = { schemaVersion: 'buildr.candidate-step-timings/v1', steps: {
+      'release-tarball-consumption': { windows: [{ runner: 'windows', durationMs: 180_000, runId: 1, observedAt: '2026-01-01T00:00:00Z' }] },
+    } };
+    fs.mkdirSync(path.join(serviceRoot, 'build', 'verification'), { recursive: true });
+    fs.writeFileSync(path.join(serviceRoot, 'build', 'verification', 'candidate-step-timings.json'), JSON.stringify(store));
+    const timedOut: any = { id: 'release-tarball-consumption', status: 'failed', processCleanup: { status: 'clean' }, failureCode: 'capability-timeout', failureFacts: [] };
+    const windowsEvidence: any = [{ schemaVersion: CANDIDATE_CI_EVIDENCE_SCHEMA, id: failedId, status: 'failed',
+      workflow: { runId, runAttempt: 1 }, sourceCommit, runner: { os: 'windows' }, results: [timedOut] }];
+    const withTimings: any = { ...expected, buildrServiceRoot: serviceRoot };
+    assert.equal(classifyCandidateStructuredFailures(windowsEvidence, withTimings), 'transient');
+    // A timeout on a step never observed to pass on that runner still needs diagnosis.
+    const macosEvidence: any = windowsEvidence.map((item: any) => ({ ...item, runner: { os: 'macos' } }));
+    assert.equal(classifyCandidateStructuredFailures(macosEvidence, withTimings), 'diagnosis-required');
+    assert.equal(classifyCandidateStructuredFailures(windowsEvidence, expected), 'diagnosis-required');
+    // A timeout mixed with an unrelated fact is never rerun automatically.
+    const mixed: any = windowsEvidence.map((item: any) => ({ ...item, results: [timedOut, { ...timedOut, id: 'other-check', failureCode: null, failureFacts: [{ kind: 'execution', code: 'E2BIG' }] }] }));
+    assert.equal(classifyCandidateStructuredFailures(mixed, withTimings), 'deterministic');
+  } finally {
+    fs.rmSync(serviceRoot, { recursive: true, force: true });
+  }
 });
 
 test('structured retry facts take precedence over unrelated transient log text', () => {

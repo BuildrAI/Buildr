@@ -1075,7 +1075,7 @@ const declaredCandidateShards: any = [
   ]),
   candidateShard('artifact-macos', 'macos', 'artifact', [
     'candidate-tarball',
-  ], { producesArtifact: true }),
+  ], { producesArtifact: true, preparation: 'artifact' }),
   ...CORE_MACOS_SHARDS,
   candidateShard('release-infrastructure-macos', 'macos', 'verification', ['integration-candidate-release', 'integration-candidate-release-selection', 'integration-candidate-package-selection', 'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection'], { preparation: 'source-runtime' }),
   candidateShard('platform-boundaries-macos', 'macos', 'verification', ['integration-macos-native']),

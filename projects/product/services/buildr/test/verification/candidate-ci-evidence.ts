@@ -52,7 +52,7 @@ const normalizeExecutor: any = (executor: any) => {
   return normalized;
 };
 
-function registryProjection(): any  {
+export function candidateCiRegistryProjection(): any  {
   return {
     consumption: releaseConsumptionIdentity(),
     sourceReuse: CANDIDATE_SOURCE_REUSE_POLICY,
@@ -77,7 +77,7 @@ export function candidateCiRegistryIdentity(): any  {
   if (!validation.ok) throw new Error(`Invalid Candidate CI coverage: ${validation.findings.map((item: any) => `${item.step}:${item.code}`).join(', ')}`);
   const evidenceIds = new Set([...CANDIDATE_CI_SHARDS, ...CANDIDATE_CI_HOST_NODE_TUPLES].map(item => item.id));
   for (const check of RELEASE_CHECKS) if ('evidence' in check && check.evidence.some(id => !evidenceIds.has(id))) throw new Error(`Release check ${check.id} is not covered by Candidate.`);
-  return sha256(registryProjection());
+  return sha256(candidateCiRegistryProjection());
 }
 
 export function resolveCandidateSourceCommit(productRoot: any, expected: any = null): any  {

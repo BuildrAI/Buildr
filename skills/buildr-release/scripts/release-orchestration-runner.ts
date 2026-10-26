@@ -1115,7 +1115,8 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       if (previousRetry?.runId === state.candidate.runId && Number(candidate.run_attempt) <= previousRetry.previousAttempt) {
         return answer('candidate-retry-unconfirmed', ['回读同一候选运行的新attempt；不重复发送失败作业恢复请求。'], { run: candidate });
       }
-      const retried = retryCandidateFailedShards({ runId: state.candidate.runId, sourceCommit, repo, ghCommand: options.ghCommand }, { execute,
+      const retried = retryCandidateFailedShards({ runId: state.candidate.runId, sourceCommit, repo, ghCommand: options.ghCommand,
+        buildrServiceRoot: path.join(workspace, 'projects/product/services/buildr') }, { execute,
         onRetryIntent: (intent: any) => { state.candidate.retry = intent; save(); },
       });
       currentEffects.push(...retried.effects);
@@ -1143,6 +1144,16 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       const evidenceDirectory = handoff.evidenceDirectory;
       const localArtifact = { ...handoff, artifactDirectory: candidateEvidence.artifactDirectory ?? artifactDestination,
         missingEvidenceIds: aggregate.deferredIds, artifact: candidateEvidence.manifest };
+      // The exact bytes were already verified against the aggregate; fetch them
+      // to the declared destination so the handoff never needs a manual step.
+      const destination = localArtifact.artifactDirectory;
+      const manifestFile = path.join(destination, 'release-artifact.json');
+      if (fs.lstatSync(manifestFile, { throwIfNoEntry: false })?.isFile() !== true) {
+        const downloaded = execute(handoff.download.command, handoff.download.args, { cwd: repo, encoding: 'utf8', timeout: 300_000 });
+        const fetched = downloaded.status === 0 && !downloaded.error && fs.lstatSync(manifestFile, { throwIfNoEntry: false })?.isFile() === true;
+        currentEffects.push({ type: 'candidate-artifact-download', directory: destination, state: fetched ? 'fetched' : 'failed' });
+        if (!fetched) localArtifact.downloadDiagnostic = String(downloaded.stderr || downloaded.stdout || downloaded.error?.message || 'download failed').slice(0, 2048);
+      } else currentEffects.push({ type: 'candidate-artifact-download', directory: destination, state: 'reused' });
       state.candidate.awaitingLocalArtifact = localArtifact; save();
       return answer('local-artifact-verification-required', [
         `在冻结源码的 buildr 服务使用 test/verification/artifact.ts：--artifact-dir ${localArtifact.artifactDirectory} --output ${evidenceDirectory}；通用原包与平台启动器只跑一次，最低24.15.0及实际稳定24.x分别补安装运行兼容。`,
