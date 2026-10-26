@@ -900,6 +900,7 @@ const serviceSteps = serviceSets.flatMap(([service, checks]) => checks.map((chec
     isolationMode: footprints.length ? 'sandbox' : 'none', resetStrategy: footprints.length ? 'recreate' : 'none',
     parallelSafety: 'worker-safe', concurrencyClass: 'cpu-heavy', resourceDemand: inherited?.resourceDemand ?? { workers: 1, processes: 1 },
     id: check.id, name: check.name, service, serviceRoot: root, serviceOwned: true, testFiles: check.testFiles ?? [], target: 'source',
+    ...(check.selection ? { selection: check.selection } : {}),
     inputs: [...new Set([...(inherited?.inputs ?? []), ...(check.sourcePaths ?? ['src/**']).map(input), ...(check.testFiles ?? []).map(input), input('tools/testing/verification-checks.ts')])],
     inputExclusions: [...new Set([...(inherited?.inputExclusions ?? []), ...(check.inputExclusions ?? []).map(input)])],
     executor: { type: 'command', ...command(check.command), discoveredFiles: (check.testFiles ?? []).map((file: string) => path.relative(path.join(servicesRoot, 'buildr'), path.join(root, file)).replaceAll('\\', '/')) },

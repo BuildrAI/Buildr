@@ -27,14 +27,16 @@ export const serviceVerificationChecks = [
     sourcePaths: ['.github/workflows/publish-dsh-plugin.yml', 'plugin/**', 'tools/**', 'sdk-patches/**', 'package.json'],
     command: { file: process.execPath, args: [path.join(root, 'tools/build-plugin.ts'), '--typecheck-only'], cwd: '.' },
     requiredEnvironment: ['BUILDR_DSH_SOURCE_SDK_ROOT'],
-    requirements: ['Explicit integrity-verified source SDK; no SDK download, package bundle or desktop activation.'],
+    selection: 'explicit-only',
+    requirements: ['Explicit integrity-verified source SDK; no SDK download, package bundle or desktop activation.', 'Release and candidate verification runs this against the prepared SDK; ordinary source checks omit it because an unprepared machine cannot prove it.'],
   },
   {
     id: 'plugin-test-typecheck', type: 'Static', name: 'DSH TypeScript tests and helpers against the exact SDK',
     sourcePaths: ['test/**', 'plugin/**', 'tools/**', 'sdk-patches/**', 'package.json'],
     command: { file: process.execPath, args: [path.join(root, 'tools/testing/check-test-types.ts')], cwd: '.' },
     requiredEnvironment: ['BUILDR_DSH_SOURCE_SDK_ROOT', 'BUILDR_DSH_SOURCE_UI_CONSUMER_ROOT'],
-    requirements: ['Strict typing per entry preserves distinct Host and Client SDK declarations; uses existing generated protocol declarations.'],
+    selection: 'explicit-only',
+    requirements: ['Strict typing per entry preserves distinct Host and Client SDK declarations; uses existing generated protocol declarations.', 'Release and candidate verification runs this against the prepared SDK and generated Client consumer.'],
   },
   {
     id: 'plugin-integration', type: 'Integration', name: 'DSH real files, Git, child processes and local transport',

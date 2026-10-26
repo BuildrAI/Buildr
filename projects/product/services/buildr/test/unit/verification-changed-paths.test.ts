@@ -113,10 +113,13 @@ test('frontend and plugin paths select their real Service test entrypoints', () 
     assert.equal(plan.status, 'ready');
     assert.equal(plan.scope.mode, 'affected');
     assert.deepEqual(plan.unmapped, []);
-    for (const id of ['plugin-unit', 'plugin-typecheck', 'plugin-integration', 'plugin-sdk-integration', 'plugin-native-e2e']) assert.ok(ids(plan).includes(id), `${source}: ${id}`);
+    for (const id of ['plugin-unit', 'plugin-integration', 'plugin-sdk-integration', 'plugin-native-e2e']) assert.ok(ids(plan).includes(id), `${source}: ${id}`);
+    for (const id of ['plugin-typecheck', 'plugin-test-typecheck']) assert.equal(ids(plan).includes(id), false, `${source}: ${id} is release-gated and needs an explicitly prepared SDK`);
     for (const step of plan.steps.filter((item: any) => item.service === 'dsh-plugin')) assert.equal(step.executor.type, 'command');
     assert.equal(ids(plan).includes('dsh-plugin'), false, 'retired whole-plugin wrapper cannot duplicate individual owners');
   }
+  const explicit = createVerificationPlan({ stepIds: ['plugin-typecheck', 'plugin-test-typecheck'] });
+  for (const id of ['plugin-typecheck', 'plugin-test-typecheck']) assert.ok(ids(explicit).includes(id), `explicit selection keeps ${id} available for the release owner`);
   const candidate = createVerificationPlan({ profiles: ['candidate'] });
   assert.ok(ids(candidate).includes('frontend-logic'));
   assert.equal(ids(candidate).includes('dsh-plugin'), false, '独立插件不属于 Buildr 主包候选');
