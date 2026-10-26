@@ -10,13 +10,27 @@ import { launchDshHost, dshValue, type DshClient } from './client.ts';
 import { dshItem, dshHistoryItems, dshExecutionObservation } from './protocol.ts';
 import { modelOptions } from '../model-options.ts';
 import { applyDshPermissions, dshPermissionCatalog } from './permissions.ts';
+import { AgentServiceError } from '../../domain/agent-state.ts';
 import { checkedGateway, consumerBinding, gatewayModel, gatewayEffort, type ExecutorGateway } from '../model-gateway.ts';
 const capabilities = { text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
+// @deepseek-ai/dsh-llm-pi-ai Config.reasoningEfforts uses these THINKING_LEVELS keys (0.2.1-rc.3).
+const dshReasoningEfforts = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+export function dshGatewayModels(gateway: ExecutorGateway) {
+  return gateway.models.map(model => {
+    const efforts = model.reasoningEfforts?.filter(effort => dshReasoningEfforts.has(effort.id));
+    return { id: model.id, name: model.label, ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}), ...(model.maxOutputTokens ? { maxTokens: model.maxOutputTokens } : {}), input: model.vision ? ['text', 'image'] : ['text'], reasoningEfforts: efforts?.length ? Object.fromEntries(efforts.map(effort => [effort.id, effort.id])) : false };
+  });
+}
+export function dshGatewayEffort(gateway: ExecutorGateway, modelId?: string, effort?: string): string | undefined {
+  const selected = gatewayEffort(gateway, modelId, effort), offered = gatewayModel(gateway, modelId).reasoningEfforts;
+  if (selected && !dshReasoningEfforts.has(selected) || !selected && offered?.length && !offered.some(option => dshReasoningEfforts.has(option.id))) throw new AgentServiceError('agent_reasoning_unavailable', 'DSH 暂不支持所选推理强度，请选择其他已支持档位。');
+  return selected;
+}
 /** An additive overlay owns only the Buildr route; the native profile stays intact. */
 export async function writeGatewayPatch(directory: string, gateway: ExecutorGateway): Promise<string> {
   checkedGateway(gateway);
   const filename = join(directory, 'buildr-model-gateway.json');
-  const models = gateway.models.map(model => ({ id: model.id, name: model.label, ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}), ...(model.maxOutputTokens ? { maxTokens: model.maxOutputTokens } : {}), input: model.vision ? ['text', 'image'] : ['text'], reasoningEfforts: model.reasoningEfforts?.length ? Object.fromEntries(model.reasoningEfforts.map(effort => [effort.id, effort.id])) : false }));
+  const models = dshGatewayModels(gateway);
   await writeFile(filename, JSON.stringify([{ id: 'llm-pi-ai', name: '@deepseek-ai/dsh-llm-pi-ai', config: { providers: { 'buildr-models': { displayName: 'Buildr', api: 'openai-responses', baseURL: gateway.baseUrl.replace(/\/$/, ''), apiKeyEnv: 'BUILDR_MODEL_GATEWAY_KEY', models } } } }]), { mode: 0o600 });
   return filename;
 }
@@ -174,7 +188,7 @@ export class DshRuntime implements AgentRuntime {
     await applyDshPermissions(this.client.remote, input.contextRef.id, input.permissionMode, () => this.snapshot(input.contextRef.id));
     if (this.gateway) {
       const model = gatewayModel(this.gateway, input.model);
-      const effort = gatewayEffort(this.gateway, input.model, input.reasoningEffort);
+      const effort = dshGatewayEffort(this.gateway, input.model, input.reasoningEffort);
       dshValue(await this.client.remote.session.selectModel({ sessionId: input.contextRef.id, provider: 'buildr-models', model: model.id, ...(effort ? { reasoningEffort: effort } : {}) }));
     } else if (input.model) {
       const split = input.model.indexOf('::'); if (split < 1) throw new Error('dsh_model_identity_invalid');

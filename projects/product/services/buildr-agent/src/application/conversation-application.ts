@@ -340,8 +340,8 @@ export class ConversationApplication {
     } catch (error) {
       const record = this.currentRun(workspaceId, id, runId); if (!record) return;
       const run = record.view.run!;
-      const permissionRejectedBeforeInput = !run.accepted && error instanceof AgentServiceError && ['agent_permission_invalid', 'agent_permission_unavailable', 'agent_permission_unverified'].includes(error.code);
-      const possiblyDelivered = dispatched && !permissionRejectedBeforeInput;
+      const rejectedBeforeInput = !run.accepted && error instanceof AgentServiceError && ['agent_permission_invalid', 'agent_permission_unavailable', 'agent_permission_unverified', 'agent_reasoning_unavailable'].includes(error.code);
+      const possiblyDelivered = dispatched && !rejectedBeforeInput;
       if (!['stopped', 'completed'].includes(run.status)) run.status = possiblyDelivered ? 'unknown' : 'failed';
       run.diagnostic = safeDiagnostic(error); run.updatedAt = this.options.now();
       const attempt = record.attempts.find(value => value.runId === runId);

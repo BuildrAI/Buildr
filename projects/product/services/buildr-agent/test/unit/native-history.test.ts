@@ -1,7 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { dshHistoryItems } from '../../src/executors/dsh/protocol.ts';
-import { qoderHistoryItems } from '../../src/executors/qoder/protocol.ts';
+import { qoderHistoryItems, qoderResultOutcome } from '../../src/executors/qoder/protocol.ts';
+
+test('Qoder result failures retain explicit errors with credentials and URLs redacted',()=>{
+  const outcome=qoderResultOutcome({type:'result',subtype:'error_during_execution',is_error:true,errors:['invalid_argument: request rejected https://qoder.invalid/?token=private-url api_key="private-key" Bearer vendor-secret raw-gateway-key','The selected provider rejected the request.']},false,['raw-gateway-key']);
+  assert.equal(outcome.status,'failed');assert.match(outcome.diagnostic!,/invalid_argument: request rejected/);assert.match(outcome.diagnostic!,/selected provider rejected/);
+  for(const secret of ['qoder.invalid','private-url','private-key','vendor-secret','raw-gateway-key'])assert.ok(!outcome.diagnostic!.includes(secret),secret);
+});
+
+test('Qoder result diagnostics keep the fallback and never turn success or stop into failure',()=>{
+  const failed={type:'result',subtype:'error_during_execution',is_error:true};
+  for(const errors of [undefined,[],['',' '],[{message:'not an explicit string'}]])assert.deepEqual(qoderResultOutcome({...failed,errors}),{status:'failed',diagnostic:'qoder_turn_failed'});
+  const errors=['unused failure text'];
+  assert.deepEqual(qoderResultOutcome({type:'result',subtype:'success',is_error:false,errors}),{status:'completed'});
+  assert.deepEqual(qoderResultOutcome({...failed,errors},true),{status:'stopped'});
+  for(const terminal_reason of ['aborted','aborted_tools'])assert.deepEqual(qoderResultOutcome({...failed,errors,terminal_reason}),{status:'stopped'});
+});
 
 test('DSH flat user event maps request identity to all corresponding turn items', () => {
   const items = dshHistoryItems([

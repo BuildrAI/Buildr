@@ -862,6 +862,50 @@ test('a native permission readback failure before prompt is a failed delivery, n
   } finally { await f.close(); }
 });
 
+test('a typed reasoning rejection before acceptance fails delivery and allows choosing a supported level', async () => {
+  const { AgentServiceError } = await import('../../src/index.ts'); const native = fake(); const open = native.executor.open;
+  native.executor.open = async input => {
+    const runtime = await open(input);
+    return { ...runtime, async models() { return [{ id: 'test-model', label: 'Model', reasoningEfforts: [{ id: 'high', label: 'High' }, { id: 'ultra', label: 'Ultra' }] }]; }, async send(input) {
+      if (input.reasoningEffort === 'ultra') throw new AgentServiceError('agent_reasoning_unavailable', 'This level cannot be delivered to the native prompt.');
+      return runtime.send(input);
+    } };
+  };
+  const f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {});
+    const submit = (reasoningEffort: string) => {
+      const view = f.service.conversations.read('workspace-one', chat.id), draft = { expectedRevision: view.revision, connectionId: 'local', model: 'test-model', text: 'read with the selected level', reasoningEffort };
+      const preview = f.service.conversations.prepareSend('workspace-one', chat.id, draft);
+      return f.service.conversations.send('workspace-one', chat.id, { ...draft, previewToken: preview.token, clientRequestId: randomUUID() });
+    };
+    submit('ultra');
+    const rejected = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), value => value.run?.status === 'failed' || value.run?.status === 'unknown');
+    assert.equal(rejected.run!.status, 'failed'); assert.equal(rejected.run!.accepted, false); assert.equal(rejected.entries[0]!.status, 'failed'); assert.equal(native.sends.length, 0);
+    submit('high');
+    const completed = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), value => value.run?.status === 'completed');
+    assert.equal(completed.run!.accepted, true); assert.equal(completed.run!.reasoningEffort, 'high'); assert.equal(native.sends.length, 1); assert.equal(native.sends[0]!.reasoningEffort, 'high');
+  } finally { await f.close(); }
+});
+
+test('accepted or untyped reasoning errors remain ambiguous and cannot authorize a retry', async t => {
+  const { AgentServiceError } = await import('../../src/index.ts');
+  for (const accepted of [false, true]) await t.test(accepted ? 'accepted typed error' : 'unaccepted untyped error', async () => {
+    const native = fake(); const open = native.executor.open;
+    native.executor.open = async input => ({ ...await open(input), async send(input) {
+      if (accepted) input.onEvent({ type: 'accepted', executionRef: { id: 'accepted-before-error' } });
+      throw accepted ? new AgentServiceError('agent_reasoning_unavailable', 'The accepted turn later failed.') : new Error('agent_reasoning_unavailable');
+    } });
+    const f = fixture([native.executor]);
+    try {
+      await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {}); send(f.service, chat.id, 'local', 'possibly delivered input');
+      const unknown = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), value => value.run?.status === 'unknown');
+      assert.equal(unknown.run!.accepted, accepted); assert.equal(unknown.entries[0]!.status, accepted ? 'accepted' : 'unknown');
+      assert.throws(() => send(f.service, chat.id, 'local', 'do not resend uncertain input'), { code: 'agent_conversation_busy' });
+    } finally { await f.close(); }
+  });
+});
+
 test('unsupported or rejected individual tool stop preserves the whole-run state and trusted tool observations', async t => {
   for (const support of [undefined, false, true]) await t.test(String(support), async () => {
     const native = fake('local', { toolSurvives: true }); const open = native.executor.open; let stopCalls = 0;

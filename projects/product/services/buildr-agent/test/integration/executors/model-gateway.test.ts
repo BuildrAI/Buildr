@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { checkedGateway, consumerBinding, gatewayModel, qoderGatewayPolicy, type ExecutorGateway } from '../../../src/executors/model-gateway.ts';
+import { checkedGateway, consumerBinding, gatewayModel, qoderGatewayPolicy, qoderGatewaySettings, type ExecutorGateway } from '../../../src/executors/model-gateway.ts';
 import { writeGatewayPatch, DshRuntime } from '../../../src/executors/dsh/index.ts';
 import { createCodexExecutor } from '../../../src/executors/codex/index.ts';
 import { createQoderExecutor } from '../../../src/executors/qoder/index.ts';
@@ -56,23 +56,39 @@ test('Codex gateway consumes a private catalog and can run without an OpenAI acc
     assert.equal(catalog.models[0].context_window, 200000);
   } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
 });
-test('Qoder SDK injects the same gateway model into main, title, compression and subagent requests', { timeout: 15000 }, async () => {
+test('Qoder SDK uses the query-local direct provider for every model purpose without changing native account settings', { timeout: 15000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-gateway-')); let runtime: Awaited<ReturnType<ReturnType<typeof createQoderExecutor>['open']>> | undefined;
   try {
+    const purposes = ['main', 'plan', 'task', 'compact', 'title', 'suggestion', 'generate', 'hook_prompt', 'subagent', 'web_fetch', 'image_gen', 'compression', 'utility'];
     const executable = join(root, 'qoder.mjs');
     const source = (await readFile(new URL('./fixtures/qoder-cli.mjs', import.meta.url), 'utf8'))
-      .replace("import{createInterface}", "import fs from'node:fs';import path from'node:path';const policies=[];import{createInterface}")
-      .replace("if(m.type==='user'){input=m;", "if(m.type==='control_response'&&m.response.request_id.startsWith('policy-')){policies.push(m.response.response);fs.writeFileSync(path.join(process.env.QODER_CONFIG_DIR,'policies.json'),JSON.stringify(policies));if(policies.length===5)emit({type:'result',subtype:'success',is_error:false,terminal_reason:'completed',session_id:sid,uuid:'end',num_turns:1,usage:{},modelUsage:{},permission_denials:[],result:'ok'});return;}if(m.type==='user'){sid=m.session_id;for(const purpose of ['main','plan','title','compression','subagent'])emit({type:'control_request',request_id:'policy-'+purpose,request:{type:'get_model_policy',purpose,sessionId:sid,turnIndex:0,resolvedModel:'fixture-model',models:[]}});return;input=m;");
+      .replace("import{createInterface}", "import fs from'node:fs';import path from'node:path';const policies=[];const si=process.argv.indexOf('--settings');const settings=si<0?{}:JSON.parse(process.argv[si+1]);const models=Object.entries(settings.providers??{}).flatMap(([providerId,provider])=>provider.models.map(model=>({value:providerId+'/'+model.model,displayName:model.displayName})));import{createInterface}")
+      .replaceAll("models:[{value:'fixture-model',displayName:'Fixture model'}]", 'models')
+      .replace("if(t==='initialize'){", "if(t==='initialize'){fs.writeFileSync(path.join(process.env.QODER_CONFIG_DIR,'launch.json'),JSON.stringify({args:process.argv,settings,key:process.env.BUILDR_MODEL_GATEWAY_KEY,optIn:process.env.QODER_SDK_CUSTOM_BASE_URL_BYOK,configDir:process.env.QODER_CONFIG_DIR}));")
+      .replace("if(m.type==='user'){input=m;", `if(m.type==='control_response'&&m.response.request_id.startsWith('policy-')){policies.push(m.response.response);fs.writeFileSync(path.join(process.env.QODER_CONFIG_DIR,'policies.json'),JSON.stringify(policies));if(policies.length===${purposes.length})emit({type:'result',subtype:'success',is_error:false,terminal_reason:'completed',session_id:sid,uuid:'end',num_turns:1,usage:{},modelUsage:{},permission_denials:[],result:'ok'});return;}if(m.type==='user'){sid=m.session_id;for(const purpose of ${JSON.stringify(purposes)})emit({type:'control_request',request_id:'policy-'+purpose,request:{type:'get_model_policy',purpose,sessionId:sid,turnIndex:0,resolvedModel:'fixture-model',models}});return;input=m;`);
     await writeFile(executable, source);
+    const ownerConfig = join(root, 'native-account/qoder-config'), ownerSettings = join(ownerConfig, 'settings.json');
+    await mkdir(ownerConfig, { recursive: true }); await writeFile(ownerSettings, 'native-owner-settings\n');
     runtime = await createQoderExecutor().open({ connectionId: 'qoder', configRoot: root, nativeAccountConfigRoot: join(root, 'native-account'), executable, environment: { PATH: process.env.PATH ?? '' }, gateway: lease });
     const contextRef = await runtime.createContext({ cwd: root });
+    await assert.rejects(runtime.send({ contextRef, cwd: root, text: 'must not reach the CLI', images: [], model: lease.models[0].id, reasoningEffort: 'ultra', clientRequestId: '13d3bbaf-94b6-4712-8641-856eb0e3cf94', onEvent() { assert.fail('unsupported effort emitted an execution event'); } }), (error: any) => error.code === 'agent_reasoning_unavailable');
+    await assert.rejects(readFile(join(ownerConfig, 'policies.json')), { code: 'ENOENT' });
     await runtime.send({ contextRef, cwd: root, text: 'local protocol test', images: [], model: lease.models[0].id, reasoningEffort: 'high', clientRequestId: 'd147cb04-e958-48e4-98c3-010f0727ece5', onEvent() {} });
-    const policies = JSON.parse(await readFile(join(root, 'native-account/qoder-config/policies.json'), 'utf8'));
-    assert.equal(policies.length, 5);
+    const launch = JSON.parse(await readFile(join(ownerConfig, 'launch.json'), 'utf8'));
+    assert.equal(launch.optIn, '1'); assert.equal(launch.key, lease.apiKey);
+    assert.equal(launch.configDir, ownerConfig);
+    assert.deepEqual(launch.settings.providers, qoderGatewaySettings(lease).providers);
+    assert.equal(launch.settings.skills.loadFromAgentsDirectory, true);
+    assert.equal(launch.args[launch.args.indexOf('--setting-sources') + 1], 'user,project,local');
+    assert.equal(launch.args[launch.args.indexOf('--model') + 1], qoderGatewayPolicy(lease).model);
+    assert.ok(!launch.args.join(' ').includes(lease.apiKey));
+    assert.equal(await readFile(ownerSettings, 'utf8'), 'native-owner-settings\n');
+    await assert.rejects(readFile(join(root, 'qoder-config/settings.json')), { code: 'ENOENT' });
+    const policies = JSON.parse(await readFile(join(ownerConfig, 'policies.json'), 'utf8'));
+    assert.equal(policies.length, purposes.length);
     for (const policy of policies) {
-      assert.equal(policy.model, lease.models[0].id);
-      assert.equal(policy.custom_model.api_key, lease.apiKey);
-      assert.equal(policy.custom_model.url, lease.baseUrl);
+      assert.equal(policy.model, qoderGatewayPolicy(lease).model);
+      assert.equal(policy.custom_model, undefined);
       assert.equal(policy.parameters.reasoningEffort, 'high');
     }
   } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
@@ -85,4 +101,23 @@ test('Qoder reports its required platform login without demanding native paid mo
     await writeFile(executable, source);
     await assert.rejects(createQoderExecutor().open({ connectionId: 'qoder', configRoot: root, executable, environment: { PATH: process.env.PATH ?? '' }, gateway: lease }), /qoder_platform_login_required/);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+test('Qoder rejects an unregistered gateway model instead of using the native default', { timeout: 15000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-gateway-unavailable-')); let runtime: Awaited<ReturnType<ReturnType<typeof createQoderExecutor>['open']>> | undefined;
+  try {
+    const executable = join(root, 'qoder.mjs');
+    const source = (await readFile(new URL('./fixtures/qoder-cli.mjs', import.meta.url), 'utf8'))
+      .replace("import{createInterface}", "import fs from'node:fs';import path from'node:path';import{createInterface}")
+      .replace("if(m.type==='user'){input=m;", "if(m.type==='control_response'&&m.response.request_id==='missing-gateway-model'){fs.writeFileSync(path.join(process.env.QODER_CONFIG_DIR,'policy-error.json'),JSON.stringify(m.response));emit({type:'result',subtype:'error_during_execution',is_error:true,errors:[m.response.error],terminal_reason:'completed',session_id:sid,uuid:'end',num_turns:1,usage:{},modelUsage:{},permission_denials:[],result:''});return;}if(m.type==='user'){sid=m.session_id;emit({type:'control_request',request_id:'missing-gateway-model',request:{type:'get_model_policy',purpose:'main',sessionId:sid,turnIndex:0,resolvedModel:'fixture-model',models:[{value:'fixture-model'}]}});return;input=m;");
+    await writeFile(executable, source);
+    runtime = await createQoderExecutor().open({ connectionId: 'qoder', configRoot: root, executable, environment: { PATH: process.env.PATH ?? '' }, gateway: lease });
+    const contextRef = await runtime.createContext({ cwd: root }), events: any[] = [];
+    await runtime.send({ contextRef, cwd: root, text: 'must not fall back', images: [], model: lease.models[0].id, reasoningEffort: 'high', clientRequestId: '07cda175-c9e1-49b1-afdc-3e0ea36e2a51', onEvent(event) { events.push(event); } });
+    const response = JSON.parse(await readFile(join(root, 'qoder-config/policy-error.json'), 'utf8'));
+    assert.equal(response.subtype, 'error');
+    assert.equal(response.error, 'qoder_gateway_model_unavailable');
+    assert.equal(response.response, undefined);
+    assert.equal(events.find(event => event.type === 'completed')?.status, 'failed');
+    assert.match(events.find(event => event.type === 'completed')?.diagnostic, /qoder_gateway_model_unavailable/);
+  } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
 });

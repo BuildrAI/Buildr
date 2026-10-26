@@ -10,6 +10,17 @@ const signal=()=>AbortSignal.timeout(3000);
 
 function sse(frames:unknown[],done=true){return new Response(frames.map(frame=>'data: '+(typeof frame==='string'?frame:JSON.stringify(frame))+'\n\n').join('')+(done?'data: [DONE]\n\n':''));}
 
+test('Qoder loads its catalog on first inference without changing the native account',async()=>{
+ const paths:string[]=[],account={status:'ready' as const,label:'Qoder account'},original=structuredClone(account);
+ const runtime=await createQoderModelProvider({inspect:async()=>account,identity:async()=>'user',async request(path){paths.push(path);if(path==='/models')return Response.json({chat:[{key:'model',display_name:'Model',enable:true}]});assert.equal(path,'/chat');return sse([{statusCodeValue:200,body:JSON.stringify({choices:[{delta:{content:'catalog ready'},finish_reason:'stop'}]})}]);}}).open({accountId:'native-qoder',configRoot:'unused',environment:{}});
+ const input={modelId:'model',signal:signal(),context:{accountId:'q',agentId:'dsh',conversationId:'c',runId:'r',requestId:'i'},body:{stream:false,messages:[{role:'user',content:'hello'}]}};
+ try{
+  const {infer}=runtime,first=await infer(input);assert.equal(first.status,200);assert.equal((await first.json()).choices[0].message.content,'catalog ready');assert.deepEqual(paths,['/models','/chat']);
+  await(await infer(input)).json();assert.deepEqual(paths,['/models','/chat','/chat']);
+  const missing=await infer({...input,modelId:'missing'});assert.equal(missing.status,404);assert.equal((await missing.json()).error.code,'model_not_available');assert.equal(paths.filter(path=>path==='/chat').length,2);assert.deepEqual(account,original);
+ }finally{await runtime.close();}
+});
+
 test('Qoder preserves native tool fragments and tool results instead of parsing prompt-generated JSON',async()=>{
  const inputs:any[]=[];const runtime=await createQoderModelProvider({inspect:async()=>({status:'ready'}),identity:async()=>'user',async request(path,init){if(path==='/models')return Response.json({chat:[{key:'model',display_name:'Model',enable:true}]});inputs.push(JSON.parse(String(init?.body)));return sse([{statusCodeValue:200,body:JSON.stringify({id:'r',choices:[{delta:{tool_calls:[{index:0,id:'t',function:{name:'read',arguments:'{"p":'}}]},finish_reason:null}]})},{statusCodeValue:200,body:JSON.stringify({id:'r',choices:[{delta:{tool_calls:[{index:0,function:{arguments:'"a"}'}}]},finish_reason:'tool_calls'}]})}]);}}).open({accountId:'native-qoder',configRoot:'unused',environment:{}});
  await runtime.inspect();const input={modelId:'model',signal:signal(),context:{accountId:'q',agentId:'codex',conversationId:'c',runId:'r',requestId:'i'},body:{stream:false,messages:[{role:'developer',content:'instructions'},{role:'user',content:'read'}],tools:[{type:'function',function:{name:'read',parameters:{type:'object'}}}]}};

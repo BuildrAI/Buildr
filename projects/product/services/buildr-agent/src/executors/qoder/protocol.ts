@@ -1,5 +1,15 @@
 import type { ExecutorItem } from '../../contracts.ts';
+import { errorDiagnostic } from '../../domain/error-diagnostic.ts';
 import { visibleText, nativePreview } from '../native-process.ts';
+
+export function qoderResultOutcome(message:any,stopping=false,secrets:readonly string[]=[]):{status:'completed'|'stopped'|'failed';diagnostic?:string} {
+  const status=stopping||message.terminal_reason==='aborted_tools'||message.terminal_reason==='aborted'?'stopped':message.subtype==='success'&&!message.is_error?'completed':'failed';
+  if(status!=='failed')return{status};
+  const errors=Array.isArray(message.errors)?message.errors.filter((value:unknown)=>typeof value==='string'&&value.trim()).slice(0,3).join('\n'):undefined;
+  const reason=errorDiagnostic(errors,secrets);
+  return {status,diagnostic:reason?`Qoder · 本轮执行：${reason}`:'qoder_turn_failed'};
+}
+
 /** Fold repeated native assistant snapshots by their stable message identity. */
 export function qoderHistoryItems(messages: any[], contextId: string): ExecutorItem[] {
   const items: ExecutorItem[] = []; let executionId: string | undefined;

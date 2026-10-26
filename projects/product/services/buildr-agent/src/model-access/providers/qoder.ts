@@ -1,7 +1,7 @@
 import { createDecipheriv, createHash, randomUUID } from 'node:crypto';
 import { readFile, lstat } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { ModelProvider, ModelOffering, ProtocolJson } from '../contracts.ts';
+import type { ModelProvider, ModelOffering, ModelProviderObservation, ProtocolJson } from '../contracts.ts';
 import type { AccountObservation } from '../../contracts.ts';
 import { record, string, positive } from './private-account.ts';
 import { buildAuthHeaders, qoderEncodeBody } from './qoder-signing.ts';
@@ -37,8 +37,7 @@ export interface QoderModelOwner {
 export function createQoderModelProvider(owner:QoderModelOwner):ModelProvider {
   return {id:'native-qoder',label:'Qoder',connectionId:'qoder',async open(){
     const models=new Map<string,{offering:ModelOffering;config:ProtocolJson}>();
-    return {protocol:'chat-completions',
-      async inspect(){
+    const inspect=async():Promise<ModelProviderObservation>=>{
         const account=await owner.inspect(); if(account.status!=='ready')return{status:account.status,models:[],label:account.label};
         const response=await owner.request('/models',{signal:AbortSignal.timeout(15000)});
         if(response.status===401){await response.body?.cancel();return{status:'expired',models:[]};}
@@ -51,10 +50,12 @@ export function createQoderModelProvider(owner:QoderModelOwner):ModelProvider {
           const offering:ModelOffering={id,...(reportedContextWindow?{reportedContextWindow}:{}),label:string(config.display_name)??id,tools:true,images:config.is_vl===true,...(contextWindow?{contextWindow}:{}),...(efforts.length?{reasoningEfforts:efforts.map(id=>({id,label:id})),defaultReasoningEffort:efforts.find(id=>record(record(enabled.efforts)[id]).is_default===true)}:{})};
           models.set(id,{offering,config});}
         return{status:models.size?'ready':'failed',label:account.label??'Qoder',identity:await owner.identity(),models:[...models.values()].map(v=>v.offering),quota:{available:false,observedAt:new Date().toISOString()}};
-      },
+    };
+    return {protocol:'chat-completions',inspect,
       async beginLogin(){throw new Error('请在Qoder账号中登录。');},async cancelLogin(){},async close(){},
       async infer(input){
         if((await owner.inspect()).status!=='ready')return Response.json({error:{code:'qoder_login_required'}},{status:401});
+        if(!models.has(input.modelId))await inspect();
         const selected=models.get(input.modelId);if(!selected)return Response.json({error:{code:'model_not_available'}},{status:404});
         const source=input.body, messages=Array.isArray(source.messages)?source.messages.map(value=>{
           const item=record(value);
