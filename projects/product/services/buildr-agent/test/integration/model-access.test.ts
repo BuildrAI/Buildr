@@ -89,6 +89,33 @@ test('cross-protocol streams preserve content order and never complete a truncat
   const truncated=await translateResponse(frames([{choices:[{delta:{content:'partial'}}]}]),'chat-completions','responses',{model:'route',stream:true,request:{},opaque:noOpaque,signal:new AbortController().signal});const text=await truncated.text();assert.ok(text.includes('response.failed'));assert.ok(!text.includes('response.completed'));
 });
 
+test('streamed parallel tools and a delayed reasoning signature replay as the same signed assistant turn',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-model-signed-turn-'));const inputs:ProviderInferenceInput[]=[];
+  const source=provider(async input=>{
+    inputs.push(input);
+    if(inputs.length>1)return chat({content:'checked'});
+    return frames([
+      {choices:[{delta:{reasoning_content:'private thought'}}]},
+      {choices:[{delta:{content:'reading files'}}]},
+      {choices:[{delta:{tool_calls:[{index:0,id:'read-a',function:{name:'read',arguments:'{"path":"a"}'}},{index:1,id:'read-b',function:{name:'read',arguments:'{"path":"b"}'}}]}}]},
+      {choices:[{delta:{reasoning_signature:'signed-turn'},finish_reason:'tool_calls'}]},
+    ]);
+  });
+  const access=createModelAccess({root,providers:[source]});
+  try{
+    const added=await access.accounts.add({provider:'fixture'}),ready=await checkEnabled(access,added.id),lease=await access.leases.create({accountId:ready.id,modelId:model.id,agentId:'dsh',conversationId:'signed',runId:'1'});
+    const request=async(body:ProtocolJson)=>fetch(lease.baseUrl+'/responses',{method:'POST',headers:{Authorization:'Bearer '+lease.apiKey,'Content-Type':'application/json'},body:JSON.stringify({model:lease.model,...body})});
+    const response=await request({input:'inspect',stream:true});const events=(await response.text()).split('\n').filter(line=>line.startsWith('data: ')).map(line=>JSON.parse(line.slice(6)));
+    const output=events.find(event=>event.type==='response.completed').response.output as ProtocolJson[];
+    const replay=await request({input:[{role:'user',content:'inspect'},...output,...['read-a','read-b'].map(call_id=>({type:'function_call_output',call_id,output:'value '+call_id}))]});
+    assert.equal(replay.status,200);await replay.arrayBuffer();
+    const messages=inputs[1].body.messages as ProtocolJson[];
+    assert.deepEqual(messages.map(message=>message.role),['user','assistant','tool','tool']);
+    assert.deepEqual(messages[1],{role:'assistant',content:'reading files',tool_calls:['a','b'].map(path=>({id:'read-'+path,type:'function',function:{name:'read',arguments:JSON.stringify({path})}})),reasoning_content:'private thought',reasoning_signature:'signed-turn'});
+    assert.deepEqual(messages.slice(2).map(message=>[message.tool_call_id,message.content]),[['read-a','value read-a'],['read-b','value read-b']]);
+  }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});
+
 test('corrupt model metadata does not prevent construction or overwrite retained facts',async()=>{
   const root=await mkdtemp(join(tmpdir(),'buildr-model-corrupt-'));await writeFile(join(root,'accounts.json'),'not json');const access=createModelAccess({root,providers:[]});
   try {assert.throws(()=>access.accounts.list(),/不可读取/);assert.equal(await readFile(join(root,'accounts.json'),'utf8'),'not json');} finally {await access.close();await rm(root,{recursive:true,force:true});}

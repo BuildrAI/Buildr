@@ -14,3 +14,24 @@ test('Messages preserves system authority, tool identity and images when convert
   const converted=translateRequest({model:'m',system:[{type:'text',text:'system rule'}],messages:[{role:'user',content:[{type:'text',text:'look'},{type:'image',source:{type:'base64',media_type:'image/png',data:'abc'}}]},{role:'assistant',content:[{type:'tool_use',id:'t1',name:'read',input:{path:'a'}}]},{role:'user',content:[{type:'tool_result',tool_use_id:'t1',content:'value'}]}],tools:[{name:'read',input_schema:{type:'object'}}],max_tokens:42},'anthropic-messages','responses',noOpaque);
   const input=converted.input as ProtocolJson[];assert.equal(input[0].role,'system');assert.equal(input[2].call_id,'t1');assert.equal(input[3].call_id,'t1');assert.equal(converted.max_output_tokens,42);assert.equal((input[1].content as ProtocolJson[])[1].image_url,'data:image/png;base64,abc');
 });
+
+test('Responses keeps one assistant tool turn together, including separately replayed reasoning and signature',()=>{
+  const thought=(thinking:string,signature?:string)=>({type:'reasoning',encrypted_content:noOpaque.encode({type:'thinking',thinking,...(signature?{signature}:{})})});
+  const text=(role:string,value:string)=>({type:'message',role,content:[{type:role==='assistant'?'output_text':'input_text',text:value}]});
+  const call=(call_id:string)=>({type:'function_call',call_id,name:'read',arguments:JSON.stringify({path:call_id})});
+  const result=(call_id:string)=>({type:'function_call_output',call_id,output:'result '+call_id});
+  const converted=translateRequest({input:[
+    text('user','inspect'),text('assistant','reading'),call('a'),call('b'),thought('first thought'),thought('','first-signature'),result('a'),result('b'),
+    thought('second thought','second-signature'),text('assistant','checking'),call('c'),result('c'),text('user','continue'),text('assistant','done'),
+  ]},'responses','chat-completions',noOpaque);
+  const messages=converted.messages as ProtocolJson[];
+  assert.deepEqual(messages.map(message=>message.role),['user','assistant','tool','tool','assistant','tool','user','assistant']);
+  assert.deepEqual(messages[1],{role:'assistant',content:'reading',tool_calls:['a','b'].map(id=>({id,type:'function',function:{name:'read',arguments:JSON.stringify({path:id})}})),reasoning_content:'first thought',reasoning_signature:'first-signature'});
+  assert.equal(messages[4].reasoning_content,'second thought');assert.equal(messages[4].reasoning_signature,'second-signature');
+  assert.deepEqual(messages.filter(message=>message.role==='tool').map(message=>[message.tool_call_id,message.content]),[['a','result a'],['b','result b'],['c','result c']]);
+});
+
+test('Chat conversion rejects multiple independent reasoning signatures instead of dropping or joining them',()=>{
+  const input=['first','second'].map(signature=>({type:'reasoning',encrypted_content:noOpaque.encode({type:'thinking',thinking:signature,signature})}));
+  assert.throws(()=>translateRequest({input},'responses','chat-completions',noOpaque),{code:'model_reasoning_unsupported'});
+});

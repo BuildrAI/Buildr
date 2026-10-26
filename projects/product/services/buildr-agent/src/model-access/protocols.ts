@@ -60,7 +60,14 @@ function parseContent(content: unknown, protocol: ModelProtocol): Part[] {
 }
 function parseRequest(body: ProtocolJson, protocol: ModelProtocol, opaque: OpaqueReasoning): Parsed {
   const messages: Message[] = [], tools: ProtocolJson[] = [], customTools = new Set<string>();
-  const add = (role: string, parts: Part[]) => { if (parts.length) messages.push({ role, parts }); };
+  const add = (role: string, parts: Part[]) => {
+    if (!parts.length) return;
+    const previous = messages.at(-1);
+    // Responses represents one assistant turn as separate text, call and reasoning items.
+    // Keep them together until a user input or tool result starts the next turn.
+    if (protocol === 'responses' && role === 'assistant' && previous?.role === 'assistant') previous.parts.push(...parts);
+    else messages.push({ role, parts });
+  };
   if (protocol === 'responses') {
     if (typeof body.instructions === 'string') add('system', [{ type: 'text', text: body.instructions }]);
     if (typeof body.input === 'string') add('user', [{ type: 'text', text: body.input }]);
@@ -138,7 +145,11 @@ function serializeRequest(parsed: Parsed, protocol: ModelProtocol, opaque: Opaqu
         if (p.type === 'image') content.push({ type: 'image_url', image_url: { url: p.url } });
         if (p.type === 'tool') calls.push({ id: p.id, type: 'function', function: { name: p.name, arguments: p.arguments } });
         if (p.type === 'result') result.push({ role: 'tool', tool_call_id: p.id, content: resultContent(p.content,protocol) });
-        if (p.type === 'reasoning') reasoning = { reasoning_content: p.value.thinking ?? p.value.text ?? '', ...(p.value.signature ? { reasoning_signature: p.value.signature } : {}) };
+        if (p.type === 'reasoning') {
+          if (p.value.signature && reasoning.reasoning_signature) throw new ModelAccessError('model_reasoning_unsupported', '所选协议无法在同一条助手消息中保留多个独立推理签名。', 400);
+          reasoning.reasoning_content = string(reasoning.reasoning_content) + string(p.value.thinking ?? p.value.text);
+          if (p.value.signature) reasoning.reasoning_signature = p.value.signature;
+        }
       }
       if (content.length || calls.length || Object.keys(reasoning).length) result.unshift({ role: message.role, content: content.length === 1 && content[0].type === 'text' ? content[0].text : content.length ? content : null, ...(calls.length ? { tool_calls: calls } : {}), ...reasoning });
       return result;
