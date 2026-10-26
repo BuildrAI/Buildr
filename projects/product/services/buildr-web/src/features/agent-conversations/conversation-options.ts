@@ -4,11 +4,12 @@ export type ConversationChoice = Pick<SendDraft,'connectionId'|'model'|'reasonin
 export type PermissionMode=NonNullable<SendDraft['permissionMode']>;
 export const permissionModeLabels:Record<PermissionMode,string>={default:'默认权限','full-access':'完全访问'};
 
-export function conversationPermissionKey(scope:{workspaceId:string;conversationId:string}|null,generation:number):string {
-  return scope?JSON.stringify([scope.workspaceId,scope.conversationId]):`new:${generation}`;
+export function conversationPermissionKey(scope:{workspaceId:string;conversationId:string}|null,draftWorkspaceId:string):string {
+  return scope?JSON.stringify([scope.workspaceId,scope.conversationId]):`new:${draftWorkspaceId||'unselected'}`;
 }
-export function conversationPermissionStorageKey(profile:string,scope:{workspaceId:string;conversationId:string}|null):string|null {
-  return scope?`buildr.agent-conversation.permission:${encodeURIComponent(profile)}:${encodeURIComponent(scope.workspaceId)}:${encodeURIComponent(scope.conversationId)}`:null;
+export function conversationPermissionStorageKey(profile:string,scope:{workspaceId:string;conversationId:string}|null,draftWorkspaceId?:string):string|null {
+  if(scope)return `buildr.agent-conversation.permission:${encodeURIComponent(profile)}:${encodeURIComponent(scope.workspaceId)}:${encodeURIComponent(scope.conversationId)}`;
+  return draftWorkspaceId?`buildr.agent-conversation.permission:${encodeURIComponent(profile)}:${encodeURIComponent(draftWorkspaceId)}:new`:null;
 }
 export function readConversationPermission(key:string|null,storage:Pick<Storage,'getItem'>):PermissionMode|undefined {
   if(!key)return;

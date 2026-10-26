@@ -20,7 +20,7 @@
 
 ## 内部对话怎样关联任务？
 
-任务页[TaskConversationEntry.tsx](../../services/buildr-web/src/features/agent-conversations/TaskConversationEntry.tsx)使用工作空间（Workspace）、任务（Task）和明确起始目录创建内部对话；没有对话时直接创建，一段时直接打开，多段时选择。任务只保存自身事实，对话及可见历史由独立 `buildr-agent` 服务（Service）保存；任务关联不是外部桌面会话（Session）的导航关系，也不会自动改变任务状态。
+任务页[TaskConversationEntry.tsx](../../services/buildr-web/src/features/agent-conversations/TaskConversationEntry.tsx)是此任务对话的唯一入口：没有对话时进入绑定此任务的新对话草稿（发送才创建会话），一段时直接打开，多段时选择。新对话按工作空间（Workspace）共享一份未发送草稿（文本、模型/权限、附件）；任务绑定是这份草稿的一个字段，跟随草稿跨入口共享，空草稿不留绑定，可在输入区下方显式移除，发送时才写入真实会话。任务只保存自身事实，对话及可见历史由独立 `buildr-agent` 服务（Service）保存；任务关联不是外部桌面会话（Session）的导航关系，也不会自动改变任务状态。
 
 [宿主装配](../../services/buildr/src/modules/agent-service/module.ts)用任务查询能力核对身份，[对话应用](../../services/buildr-agent/src/application/conversation-application.ts)在创建时保存 `workspaceId`、`taskId` 与真实 `cwd`。它不把任务全文或当前页面静默复制成模型输入；执行者仍须重读任务和实际成果。全局对话可以不关联任务，统一历史也不按 Codex、DSH、Qoder 分组。换执行方先分别恢复原生上下文，再交付未见可见记录，未知运行不重发；见[智能体接入](../docs/architecture/agent-integration.md)。
 

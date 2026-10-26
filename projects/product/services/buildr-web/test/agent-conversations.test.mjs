@@ -61,8 +61,24 @@ test('输入法组合和Shift+Enter不发送，执行与未知状态保留新内
 
 test('草稿按配置域/工作空间/对话隔离，存储拒绝不会假称保存或自动发送',()=>{
   const rows=new Map(),storage={getItem:key=>rows.get(key)||null,setItem:(key,value)=>rows.set(key,value),removeItem:key=>rows.delete(key)};
-  const first=draftKey('dev','ws','first'),second=draftKey('dev','ws','second');assert.equal(writeDraft(first,'unsent',storage),true);assert.deepEqual(readDraft(first,storage),{text:'unsent',available:true});assert.equal(readDraft(second,storage).text,'');assert.notEqual(first,draftKey('released','ws','first'));
-  assert.equal(writeDraft(first,'same input',{setItem(){throw Error('denied');}}),false);assert.deepEqual(readDraft(first,{getItem(){throw Error('denied');}}),{text:'',available:false});assert.equal(writeDraft(first,'',storage),true);assert.equal(readDraft(first,storage).text,'');
+  const first=draftKey('dev','ws','first'),second=draftKey('dev','ws','second');assert.equal(writeDraft(first,'unsent',storage),true);assert.deepEqual(readDraft(first,storage),{text:'unsent',taskId:undefined,available:true});assert.equal(readDraft(second,storage).text,'');assert.notEqual(first,draftKey('released','ws','first'));
+  assert.equal(writeDraft(first,'same input',{setItem(){throw Error('denied');}}),false);assert.deepEqual(readDraft(first,{getItem(){throw Error('denied');}}),{text:'',taskId:undefined,available:false});assert.equal(writeDraft(first,'',storage),true);assert.equal(readDraft(first,storage).text,'');
+});
+
+test('草稿任务绑定跟随工作空间草稿记录，纯文本旧草稿不破坏兼容，清空文本不留绑定',()=>{
+  const rows=new Map(),storage={getItem:key=>rows.get(key)||null,setItem:(key,value)=>rows.set(key,value),removeItem:key=>rows.delete(key)};
+  const key=draftKey('dev','ws-a','new');
+  assert.equal(writeDraft(key,'从任务进入的草稿',storage,'task-one'),true);
+  assert.deepEqual(readDraft(key,storage),{text:'从任务进入的草稿',taskId:'task-one',available:true},'有绑定随文本一同持久化');
+  assert.equal(writeDraft(key,'改写的草稿',storage),true);
+  assert.deepEqual(readDraft(key,storage),{text:'改写的草稿',taskId:undefined,available:true},'解除绑定后只保留文本');
+  assert.equal(writeDraft(key,'',storage,'task-one'),true);
+  assert.deepEqual(readDraft(key,storage),{text:'',taskId:undefined,available:true},'空草稿不留绑定痕迹');
+  const transferred=transferDraftText(key,draftKey('dev','ws-a','created'),k=>readDraft(k,storage),(k,text,taskId)=>writeDraft(k,text,storage,taskId));
+  assert.equal(transferred.taskId,undefined);
+  assert.equal(writeDraft(key,'绑定草稿',storage,'task-two'),true);
+  const moved=transferDraftText(key,draftKey('dev','ws-a','created'),k=>readDraft(k,storage),(k,text,taskId)=>writeDraft(k,text,storage,taskId));
+  assert.deepEqual(moved,{text:'绑定草稿',taskId:'task-two',available:true},'真实会话建立后草稿连同绑定一起迁移');
 });
 
 test('迟到、重复及其他对话事件不能覆盖当前对话，重启快照可恢复新代次',()=>{
@@ -206,9 +222,10 @@ test('切离再返回后的旧发送回执仅移除已提交图片，后来新�
   assert.deepEqual(removeSubmittedAttachments(latest,[]),latest);
 });
 
-test('权限模式按准确对话和新草稿代次隔离，旧记录及新对话默认受原生默认权限约束',()=>{
-  const first=conversationPermissionKey(null,1),next=conversationPermissionKey(null,2);assert.notEqual(first,next);
-  assert.notEqual(conversationPermissionKey({workspaceId:'a',conversationId:'same'},1),conversationPermissionKey({workspaceId:'b',conversationId:'same'},1));
+test('权限模式按准确对话隔离，新草稿权限按工作空间共享，旧记录及新对话默认受原生默认权限约束',()=>{
+  const first=conversationPermissionKey(null,'ws-a'),next=conversationPermissionKey(null,'ws-b');assert.notEqual(first,next);
+  assert.equal(conversationPermissionKey(null,'ws-a'),conversationPermissionKey(null,'ws-a'),'同一工作空间的新对话共享一份权限选择');
+  assert.notEqual(conversationPermissionKey({workspaceId:'a',conversationId:'same'},'x'),conversationPermissionKey({workspaceId:'b',conversationId:'same'},'x'));
   assert.equal(selectedConversationPermission(undefined,undefined),'default');
   assert.equal(selectedConversationPermission(undefined,conversation.run),'default');
   assert.equal(selectedConversationPermission(undefined,{...conversation.run,permissionMode:'full-access'}),'full-access');

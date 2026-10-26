@@ -47,17 +47,21 @@ export function prependConversationEntries(current: ConversationView,page: Conve
 export function draftKey(profile: string, workspaceId: string | null, conversationId: string | null): string {
   return `buildr.agent-conversation.draft:${encodeURIComponent(profile)}:${encodeURIComponent(workspaceId || 'unselected')}:${encodeURIComponent(conversationId || 'new')}`;
 }
-export function readDraft(key: string, storage: Pick<Storage, 'getItem'>): {text: string; available: boolean} {
-  try { return { text: storage.getItem(key) || '', available: true }; } catch { return { text: '', available: false }; }
+export function readDraft(key: string, storage: Pick<Storage, 'getItem'>): {text: string; taskId?: string; available: boolean} {
+  try {
+    const saved=storage.getItem(key)||'';
+    if(saved.startsWith('{')){const parsed=JSON.parse(saved);return {text:typeof parsed.text==='string'?parsed.text:'',taskId:typeof parsed.taskId==='string'&&parsed.taskId?parsed.taskId:undefined,available:true};}
+    return { text: saved, taskId: undefined, available: true };
+  } catch { return { text: '', taskId: undefined, available: false }; }
 }
-export function writeDraft(key: string, text: string, storage: Pick<Storage, 'setItem' | 'removeItem'>): boolean {
-  try { if (text) storage.setItem(key, text); else storage.removeItem(key); return true; } catch { return false; }
+export function writeDraft(key: string, text: string, storage: Pick<Storage, 'setItem' | 'removeItem'>, taskId?: string): boolean {
+  try { if (text) storage.setItem(key, taskId ? JSON.stringify({ text, taskId }) : text); else storage.removeItem(key); return true; } catch { return false; }
 }
-export function transferDraftText(source:string,target:string,read:(key:string)=>{text:string},save:(key:string,text:string)=>boolean):{text:string;available:boolean} {
-  const {text}=read(source);
-  const available=save(target,text);
+export function transferDraftText(source:string,target:string,read:(key:string)=>{text:string;taskId?:string},save:(key:string,text:string,taskId?:string)=>boolean):{text:string;taskId?:string;available:boolean} {
+  const {text,taskId}=read(source);
+  const available=save(target,text,taskId);
   if(source!==target)save(source,'');
-  return {text,available};
+  return {text,taskId,available};
 }
 export function appendDraftAttachment<T extends{id:string}>(current:T[],accepted:T):T[] {
   return current.some(item=>item.id===accepted.id)?current:[...current,accepted];
