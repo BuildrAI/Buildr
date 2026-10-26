@@ -288,7 +288,7 @@ export class ConversationApplication {
     const run = record.view.run; if (!run) return;
     run.tools = observation.tools;
     if (observation.diagnostic) run.diagnostic = observation.diagnostic;
-    if (observation.tools.some(tool => tool.status === 'running') || observation.status === 'tools-active') run.status = 'tools-active';
+    if (observation.status === 'tools-active' || observation.tools.some(tool => tool.status === 'running') && !['running', 'waiting'].includes(observation.status)) run.status = 'tools-active';
     else if (observation.status === 'unknown' || observation.tools.some(tool => tool.status === 'unknown')) run.status = 'unknown';
     else if (observation.status === 'stopped') { run.status = 'stopped'; record.view.requests = []; record.requests = {}; }
     else if (observation.status === 'idle') {

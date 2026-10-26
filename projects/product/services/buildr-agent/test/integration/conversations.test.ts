@@ -287,6 +287,25 @@ test('a stop received before the vendor acceptance identity stops the eventual e
   } finally { accept(); await f.close(); }
 });
 
+test('normal running tools do not imply an interrupted model or override a pending approval', async () => {
+  const native=fake('local',{hold:true}),f=fixture([native.executor]);
+  try{
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','run command');
+    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.accepted===true);
+    const input=native.sends[0]!,context=native.contexts.get(input.contextRef.id)!;
+    context.observation={...context.observation,status:'running',tools:[{id:'command',label:'command',status:'running'}]};
+    input.onEvent({type:'observation',observation:context.observation});
+    assert.equal(f.service.conversations.read('workspace-one',chat.id).run?.status,'running');
+    assert.equal((await f.service.conversations.observe('workspace-one',chat.id)).run?.status,'running');
+    input.onEvent({type:'request',request:{id:'permission',kind:'approval',title:'Continue?'}});
+    context.observation={...context.observation,status:'waiting'};
+    input.onEvent({type:'observation',observation:context.observation});
+    const waiting=f.service.conversations.read('workspace-one',chat.id);assert.equal(waiting.run?.status,'waiting-approval');assert.equal(waiting.requests.length,1);
+    await f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:waiting.revision,runId:waiting.run!.id,participantId:waiting.run!.participantId,generation:waiting.run!.generation});
+  }finally{await f.close();}
+});
+
 test('model completion does not count as stopped while the exact tool remains active', async () => {
   const native = fake('local', { toolSurvives: true }); const f = fixture([native.executor]);
   try {
