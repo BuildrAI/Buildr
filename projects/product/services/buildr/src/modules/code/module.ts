@@ -33,3 +33,5 @@ export const CODE_MODULE=Object.freeze({id:'code',requires:Object.freeze([WORKSP
   const generation=createCodeCommitMessageApplication({commitSnapshot:application.commitSnapshot,commitGuidance:(root,snapshot)=>readCodeCommitGuidance(root,snapshot,{...dependencies,taskContext:(root,id)=>{const record=readTask(root,id).record;return {taskId:record.taskId,title:record.title,intent:record.intent,scope:record.scope};}}),commitMaterial,startGeneration:input=>runs.start(input)});
   return Object.freeze({provides:{[CODE_APPLICATION]:application,[CODE_GENERATION_APPLICATION]:{...generation,close:()=>runs.close()},[CODE_SOURCE_CONTROL_OBSERVATIONS]:observations},contributions:{http:[createCodeHttpContribution(application,observations),createCodeGenerationHttpContribution(generation,runs)],cli:createCodeCliContributions(application)},lifecycle:{start(){},stop(){runs.close();observations.close();}}});
 }});
+
+export { runCodeGitMutation } from './infrastructure/code-git-mutation-runner.ts';

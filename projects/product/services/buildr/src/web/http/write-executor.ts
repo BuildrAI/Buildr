@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { resolveProductResource } from '../../infrastructure/product-resources/index.ts';
-import { reclaimCodeGitOperationFile } from '../../modules/code/module.ts';
+import { reclaimCodeGitOperationFile, runCodeGitMutation } from '../../modules/code/module.ts';
 
 const OPERATIONS = new Set(['code-discard-changes', 'code-branch-switch', 'code-commit-changes', 'code-push', 'code-sync', 'code-fetch', 'service-runtime-prepare']);
 const DEFAULT_WORKER_COUNT = 2;
@@ -45,7 +45,7 @@ function validateRequest(operation: any, input: any) {
 }
 
 function defaultWorkerFactory(registry: string) {
-  return new Worker(WORKER_PATH, { env: { ...process.env, BUILDR_GIT_OPERATION_LOG: registry } });
+  return new Worker(WORKER_PATH, { env: { ...process.env, BUILDR_GIT_OPERATION_LOG: registry }, workerData: { buildrGitMutationBroker: true } });
 }
 
 /** Lock events noted by one write Worker, in order. */
@@ -59,18 +59,8 @@ function readRegistry(registry: string): Array<{ event: string; lockFile: string
         if (typeof event?.lockFile === 'string' && event.lockFile) events.push({ event: event.event, lockFile: event.lockFile, token: typeof event.token === 'string' ? event.token : '' });
       } catch { /* A torn final line still leaves earlier events valid. */ }
     }
-  } catch { /* A missing registry means the dead Worker never reached locking. */ }
+  } catch { /* Missing evidence cannot authorize reclaiming a lock. */ }
   return events;
-}
-
-/** Tokens currently held inside one Worker: acquires without a later release. */
-function openRegistryTokens(events: Array<{ event: string; lockFile: string; token: string }>): Set<string> {
-  const open = new Map<string, string>();
-  for (const event of events) {
-    if (event.event === 'release') open.delete(event.lockFile);
-    else if (event.event === 'acquire') open.set(event.lockFile, event.token);
-  }
-  return new Set(open.values());
 }
 
 /** Bounded executor for blocking Git writes. Writes already dispatched to the
@@ -85,6 +75,7 @@ export function createBoundedBuildrWebWriteExecutor({ workerCount = DEFAULT_WORK
   const queue: any[] = [];
   let sequence = 0;
   let closed = false;
+  let closePromise: Promise<void> | undefined;
 
   function settle(item: any, error: any, value: any = undefined) {
     if (item.settled) return;
@@ -98,25 +89,47 @@ export function createBoundedBuildrWebWriteExecutor({ workerCount = DEFAULT_WORK
     while (queue.length) settle(queue.shift(), error);
   }
 
-  /** Reclaim every lock a dead Worker registered but never released. Records
-   * belonging to another worker's open acquire or to the host thread are
-   * filtered inside reclaimCodeGitOperationFile and stay untouched. */
+  /** Preregistered tokens cover publication even if the acquire note is missing. */
   function reclaimWorkerLocks(state: any) {
     const registry = state.registry;
     if (!registry) return;
     state.registry = null;
-    const events = readRegistry(registry);
-    try { fs.rmSync(registry, { force: true }); } catch { /* Registry removal only clears bookkeeping. */ }
-    const liveTokens = new Set<string>();
-    for (const other of workers) {
-      if (other === state || other.failed || !other.worker || !other.registry) continue;
-      for (const token of openRegistryTokens(readRegistry(other.registry))) liveTokens.add(token);
+    const open = new Map<string, string>();
+    for (const event of readRegistry(registry)) {
+      if (!/^[a-f0-9]{32}$/.test(event.token)) continue;
+      if (event.event === 'release') {
+        if (open.get(event.lockFile) === event.token) open.delete(event.lockFile);
+      } else if (event.event === 'intent' || event.event === 'acquire') open.set(event.lockFile, event.token);
     }
-    const candidates = new Set<string>();
-    for (const event of events) candidates.add(event.lockFile);
-    for (const lockFile of candidates) {
-      try { reclaimCodeGitOperationFile(lockFile, liveTokens); } catch { /* Reclamation must never break the executor. */ }
+    try { fs.rmSync(registry, { force: true }); } catch { /* Bookkeeping only. */ }
+    for (const [lockFile, token] of open) {
+      try { reclaimCodeGitOperationFile(lockFile, token); } catch { /* Never infer a different owner. */ }
     }
+  }
+
+  function recover(state: any, worker: any, code: any): Promise<void> {
+    if (state.worker !== worker) return state.recovery ?? Promise.resolve();
+    state.worker = null;
+    state.failed = true;
+    const item = state.item;
+    state.item = null;
+    if (item) {
+      item.workerState = null;
+      settle(item, writeExecutorError('local_app_write_worker_failed', `Buildr Web write Worker exited unexpectedly (${code}); the dispatched write outcome is unknown.`, 500));
+    }
+    state.recovery = (async () => {
+      // Parent-owned process promises settle only after their streams close.
+      await Promise.allSettled([...state.mutations]);
+      reclaimWorkerLocks(state);
+      if (closed) return;
+      try { spawn(state); pump(); }
+      catch (error: any) {
+        state.worker = null;
+        state.failed = false;
+        rejectQueued(writeExecutorError('local_app_write_executor_unavailable', `Buildr Web write executor 无法补充 Worker：${error.message}`, 503));
+      }
+    })();
+    return state.recovery;
   }
 
   function spawn(state: any) {
@@ -125,8 +138,22 @@ export function createBoundedBuildrWebWriteExecutor({ workerCount = DEFAULT_WORK
     state.worker = worker;
     state.item = null;
     state.failed = false;
+    state.mutations = new Set<Promise<unknown>>();
     worker.on('message', (message: any) => {
       if (state.worker !== worker) return;
+      if (message?.type === 'git-mutation') {
+        if (!state.item || state.failed || !Number.isInteger(message.requestId) ||
+          typeof message.location !== 'string' || !path.isAbsolute(message.location) ||
+          !Array.isArray(message.args) || !message.args.every((arg: unknown) => typeof arg === 'string')) return;
+        const mutation = runCodeGitMutation({ location: message.location } as any, message.args, message.options);
+        state.mutations.add(mutation);
+        void mutation.then(result => {
+          if (state.worker === worker && !state.failed) {
+            try { worker.postMessage({ type: 'git-mutation-result', requestId: message.requestId, result }); } catch { /* Exit recovery still waits for close. */ }
+          }
+        }).finally(() => state.mutations.delete(mutation));
+        return;
+      }
       const item = state.item;
       if (!item || message?.id !== item.id) return;
       state.item = null;
@@ -139,33 +166,12 @@ export function createBoundedBuildrWebWriteExecutor({ workerCount = DEFAULT_WORK
       if (state.worker !== worker) return;
       state.failed = true;
       const item = state.item;
-      state.item = null;
       if (item) {
         item.workerState = null;
         settle(item, workerError({ code: error.code, message: error.message }, 'local_app_write_worker_failed'));
       }
     });
-    worker.on('exit', (code: any) => {
-      if (state.worker !== worker) return;
-      const item = state.item;
-      state.worker = null;
-      state.item = null;
-      // A crashed Worker can leave a Git operation record behind; pid liveness
-      // cannot see the death because the Worker shares this process's pid.
-      reclaimWorkerLocks(state);
-      if (item) {
-        item.workerState = null;
-        settle(item, writeExecutorError('local_app_write_worker_failed', `Buildr Web write Worker exited unexpectedly (${code}); the dispatched write outcome is unknown.`, 500));
-      }
-      if (closed) return;
-      try {
-        spawn(state);
-        pump();
-      } catch (error: any) {
-        state.worker = null;
-        rejectQueued(writeExecutorError('local_app_write_executor_unavailable', `Buildr Web write executor 无法补充 Worker：${error.message}`, 503));
-      }
-    });
+    worker.on('exit', (code: any) => { void recover(state, worker, code); });
   }
 
   function pump() {
@@ -213,7 +219,7 @@ export function createBoundedBuildrWebWriteExecutor({ workerCount = DEFAULT_WORK
     validateRequest(operation, input);
     if (closed) return Promise.reject(writeExecutorError('local_app_write_executor_closed', 'Buildr Web write executor 已关闭。', 503));
     if (input.signal?.aborted) return Promise.reject(writeExecutorError('local_app_write_cancelled', 'Buildr Web write request 已取消。', 499));
-    if (queue.length >= queueLimit && workers.every((state: any) => state.item)) {
+    if (queue.length >= queueLimit && workers.every((state: any) => state.item || state.failed)) {
       return Promise.reject(writeExecutorError('local_app_write_queue_full', 'Buildr Web write executor 当前已达到并发与队列上限。', 503, { workerCount, queueLimit }));
     }
     return new Promise((resolve: any, reject: any) => {
@@ -255,20 +261,21 @@ export function createBoundedBuildrWebWriteExecutor({ workerCount = DEFAULT_WORK
     });
   }
 
-  async function close() {
-    if (closed) return;
+  function close(): Promise<void> {
+    if (closePromise) return closePromise;
     closed = true;
     rejectQueued(writeExecutorError('local_app_write_executor_closed', 'Buildr Web write executor 已关闭。', 503));
-    const terminations: any[] = [];
-    for (const state of workers) {
-      if (state.item) {
-        state.item.workerState = null;
-        settle(state.item, writeExecutorError('local_app_write_executor_closed', 'Buildr Web write executor 已关闭；已派发写入的结果未知。', 503));
-      }
-      state.item = null;
-      if (state.worker) terminations.push(Promise.resolve(state.worker.terminate()).catch(() => {}));
-    }
-    await Promise.all(terminations);
+    closePromise = (async () => {
+      await Promise.all(workers.map(async state => {
+        const worker = state.worker;
+        if (state.item) settle(state.item, writeExecutorError('local_app_write_executor_closed', 'Buildr Web write executor 已关闭；已派发写入的结果未知。', 503));
+        if (worker) {
+          await Promise.resolve(worker.terminate());
+          await recover(state, worker, 'closed');
+        } else await state.recovery;
+      }));
+    })();
+    return closePromise;
   }
 
   function stats() {

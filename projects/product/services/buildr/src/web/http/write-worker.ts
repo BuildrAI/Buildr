@@ -7,6 +7,7 @@ let applications: Promise<typeof import('./write-worker-applications.ts')> | und
 if (!parentPort) throw new Error('Buildr Web write Worker requires a parent port.');
 const workerPort = parentPort;
 workerPort.on('message', async (message: any) => {
+  if (message?.type === 'git-mutation-result') return;
   try {
     applications ||= import('./write-worker-applications.ts');
     const value = await (await applications).runApplicationWrite(message);

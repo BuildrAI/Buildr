@@ -67,6 +67,7 @@ export function createLocalWorkspaceServer(runtime: any, {
         cleanupError = error;
       }
       await new Promise<void>(resolve => server.close(() => resolve()));
+      if (ownsWriteExecutor) await taskWriteExecutor.close();
       await onShutdown?.(cleanupError);
       if (cleanupError) throw cleanupError;
     })();
