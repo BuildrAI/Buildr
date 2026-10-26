@@ -17,6 +17,24 @@ test('Qoder preserves native tool fragments and tool results instead of parsing 
  await runtime.infer({...input,body:{...input.body,messages:[...input.body.messages,result.choices[0].message,{role:'tool',content:'actual result',tool_call_id:'t'}]}});assert.equal(inputs[1].messages.at(-1).content,'actual result');await runtime.close();
 });
 
+test('Qoder normalizes null assistant tool-call content without changing history or caller input',async()=>{
+ const inputs:any[]=[];const runtime=await createQoderModelProvider({inspect:async()=>({status:'ready'}),identity:async()=>'user',async request(path,init){if(path==='/models')return Response.json({chat:[{key:'model',display_name:'Model',enable:true}]});inputs.push(JSON.parse(String(init?.body)));return sse([{statusCodeValue:200,body:JSON.stringify({choices:[{delta:{content:'checked'},finish_reason:'stop'}]})}]);}}).open({accountId:'native-qoder',configRoot:'unused',environment:{}});
+ const messages:any[]=[
+  {role:'system',content:'Keep the supplied permissions.'},
+  {role:'user',content:'Read the file.'},
+  {role:'assistant',content:null,reasoning_content:'existing thought',reasoning_signature:'existing signature',tool_calls:[{id:'call-read',type:'function',function:{name:'exec_command',arguments:'{"cmd":"cat probe.txt"}'}}]},
+  {role:'tool',tool_call_id:'call-read',content:'actual file result'},
+  {role:'assistant',content:'Keep this text.',tool_calls:[{id:'call-check',type:'function',function:{name:'exec_command',arguments:'{"cmd":"pwd"}'}}]},
+  {role:'tool',tool_call_id:'call-check',content:'actual directory'},
+  {role:'assistant',content:null},
+ ];
+ const original=structuredClone(messages),expected=structuredClone(messages);expected[2].content='';
+ try{
+  await runtime.inspect();await runtime.infer({modelId:'model',signal:signal(),context:{accountId:'q',agentId:'codex',conversationId:'c',runId:'r',requestId:'i'},body:{stream:false,messages}});
+  assert.deepEqual(inputs[0].messages,expected);assert.deepEqual(messages,original);
+ }finally{await runtime.close();}
+});
+
 test('Qoder terminal truncation and upstream envelope errors cannot become completed responses',async()=>{
  for(const response of [sse([{body:JSON.stringify({choices:[{delta:{content:'partial'}}]})}],false),sse([{statusCodeValue:500,body:'error'}])])await assert.rejects(new Response(unwrapQoderStream(response,signal())).text(),/failed/);
  const controller=new AbortController();controller.abort();await assert.rejects(new Response(unwrapQoderStream(sse([]),controller.signal)).text(),/cancelled/);

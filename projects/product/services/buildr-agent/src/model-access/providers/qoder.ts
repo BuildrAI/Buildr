@@ -56,7 +56,12 @@ export function createQoderModelProvider(owner:QoderModelOwner):ModelProvider {
       async infer(input){
         if((await owner.inspect()).status!=='ready')return Response.json({error:{code:'qoder_login_required'}},{status:401});
         const selected=models.get(input.modelId);if(!selected)return Response.json({error:{code:'model_not_available'}},{status:404});
-        const source=input.body, messages=Array.isArray(source.messages)?source.messages.map(value=>{const item=record(value);return item.role==='developer'?{...item,role:'system'}:item;}):[];
+        const source=input.body, messages=Array.isArray(source.messages)?source.messages.map(value=>{
+          const item=record(value);
+          // Qoder drops a null-content assistant, leaving its tool results unpaired.
+          if(item.role==='assistant'&&item.content===null&&Array.isArray(item.tool_calls)&&item.tool_calls.length)return{...item,content:''};
+          return item.role==='developer'?{...item,role:'system'}:item;
+        }):[];
         const last=[...messages].reverse().map(record).find(m=>m.role==='user');const lastText=typeof last?.content==='string'?last.content:'';
         const effort=string(source.reasoning_effort);const parameters:ProtocolJson={...(positive(source.max_tokens)?{max_tokens:positive(source.max_tokens)}:{}),...(effort?{enable_thinking:effort!=='none',reasoning_effort:effort}:{})};
         const id=randomUUID();const body={request_id:input.context.requestId,request_set_id:id,chat_record_id:id,session_id:input.context.conversationId,stream:true,chat_task:'FREE_INPUT',is_reply:true,is_retry:false,source:1,version:'3',session_type:'qodercli',agent_id:'agent_common',task_id:'common',code_language:'',chat_prompt:'',image_urls:null,aliyun_user_type:'',system:'',messages,tools:source.tools??[],parameters,chat_context:{chatPrompt:'',imageUrls:null,extra:{context:[],modelConfig:{key:input.modelId,is_reasoning:selected.config.is_reasoning},originalContent:lastText},features:[],text:lastText},model_config:selected.config,business:{product:'cli',version:'1.0.0',type:'agent',stage:'start',id:input.context.runId,name:lastText.slice(0,30),begin_at:Date.now()}};
