@@ -78,7 +78,7 @@ export type PreviewRuntime = {
 type PreviewStartOptions = { cliPath?: string; dataRoot?: string; startupTimeoutMs?: number };
 type PreviewStopOptions = { dataRoot?: string; caller?: PreviewCaller | null; retainOwner?: boolean };
 type PreviewStartup = { spawnError: Error | null; processError: Error | null; phase: string; elapsedMs: number };
-type PreviewResult = { schemaVersion: typeof PREVIEW_SCHEMA; status: 'started' | 'reused'; owner: PreviewOwner; url: string; pid: number };
+type PreviewResult = { schemaVersion: typeof PREVIEW_SCHEMA; status: 'started' | 'reused'; owner: PreviewOwner; url: string; pid: number; portNote?: string | null };
 type PreviewListItem = { instance: string; owner: PreviewOwner; url: string | null; pid: number | null; status: 'healthy' | 'stale' | 'stopped' };
 
 const healthyInstance: (instance: PreviewInstance | null) => Promise<PreviewInstance | null> = healthyBuildrWebInstance;
@@ -406,12 +406,71 @@ function prepareTaskPreviewStore(taskWorktree: TaskPreviewWorktree): PreviewOwne
   }
 }
 
+function optionValues(args: string[], name: string): string[] {
+  const values: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] !== name) continue;
+    const value = args[index + 1];
+    if (!value || value.startsWith('--')) throw new Error(`Missing value for ${name}`);
+    values.push(value); index += 1;
+  }
+  return values;
+}
+
+function preferredPortPath(name: string, dataRoot?: string): string {
+  return path.join(previewDataRoot(name, dataRoot), 'preferred-port.json');
+}
+
+function readPreferredPort(name: string, dataRoot?: string): number | null {
+  const item = record(readJson(preferredPortPath(name, dataRoot)));
+  const port = item?.port;
+  return Number.isInteger(port) && (port as number) > 0 && (port as number) <= 65535 ? port as number : null;
+}
+
+function writePreferredPort(name: string, port: number, dataRoot?: string): void {
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) return;
+  fs.mkdirSync(previewDataRoot(name, dataRoot), { recursive: true });
+  const file = preferredPortPath(name, dataRoot);
+  fs.writeFileSync(file, `${JSON.stringify({ schemaVersion: 'buildr.local-app-preview/v1', port })}\n`, { mode: 0o600 });
+}
+
+// A preview that restarted should keep its loopback URL for the next run;
+// probe before binding so an occupied remembered port falls back to a fresh one.
+function probeLoopbackPort(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const probe = http.createServer();
+    probe.once('error', () => resolve(false));
+    probe.listen(port, '127.0.0.1', () => { probe.close(() => resolve(true)); });
+  });
+}
+
+// Preview instances register the service-target worktree themselves; extra
+// --workspace roots let the same instance open other workspaces for acceptance.
+// Realpath each root so the entry matches what the app resolves when opening.
+function seedPreviewWorkspaces(dataRoot: string, roots: string[]): void {
+  const file = path.join(path.resolve(dataRoot), 'workspace-registry.json');
+  const exists = fs.statSync(file, { throwIfNoEntry: false })?.isFile();
+  const current = record(readJson(file));
+  if ((exists && !current) || (current && !Array.isArray(current.roots))) {
+    throw codedError(`预览实例 ${path.basename(dataRoot)} 的 Workspace 登记文件已损坏：${file}。`, 'preview_registry_invalid', { file });
+  }
+  const merged = [...new Set([...((current?.roots as string[]) ?? []), ...roots])];
+  const registry = { schemaVersion: 'buildr.local-workspace-registry/v1', lastOpenedRoot: null, ...(current ?? {}), roots: merged };
+  fs.writeFileSync(file, `${JSON.stringify(registry)}\n`, { mode: 0o600 });
+}
+
 export async function startPreview(runtime: PreviewRuntime, name: string, args: string[], options: PreviewStartOptions = {}): Promise<PreviewResult> {
   const cliPath = options.cliPath || process.argv[1];
   const dataRoot = options.dataRoot || buildrWebDataRoot();
   const startupTimeoutMs = options.startupTimeoutMs ?? 10_000;
   const instance = assertPreviewName(name);
-  runtime.assertNoUnknownOptions(args, new Set(['--target', '--task', '--port', '--no-open', '--json']), new Set(['--no-open', '--json']));
+  runtime.assertNoUnknownOptions(args, new Set(['--target', '--task', '--port', '--workspace', '--no-open', '--json']), new Set(['--no-open', '--json']));
+  const workspaceRoots = optionValues(args, '--workspace').map((value) => {
+    const root = path.resolve(value);
+    const stat = fs.statSync(root, { throwIfNoEntry: false });
+    if (!stat?.isDirectory()) throw codedError(`--workspace 目录不存在或不是目录：${root}。`, 'preview_workspace_invalid', { root });
+    return fs.realpathSync(root);
+  });
   const requestedRoot = path.resolve(runtime.optionValue(args, '--target', process.cwd()) || process.cwd());
   const taskId = runtime.optionValue(args, '--task', null);
   let targetRoot = requestedRoot;
@@ -436,6 +495,19 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
   const rawPort = runtime.optionValue(args, '--port', '0') || '0';
   const port = Number(rawPort);
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`Invalid app port: ${rawPort}`);
+  // Remember the last port so restarts keep the same loopback URL; an
+  // occupied remembered port falls back to a fresh assignment rather than
+  // failing the whole preview start.
+  const explicitPort = args.includes('--port');
+  let desiredPort = port;
+  let portNote: string | null = null;
+  if (!explicitPort && port === 0) {
+    const remembered = readPreferredPort(instance, dataRoot);
+    if (remembered !== null) {
+      desiredPort = await probeLoopbackPort(remembered) ? remembered : 0;
+      portNote = desiredPort === remembered ? `复用上次端口 ${remembered}。` : `上次端口 ${remembered} 被占用，改用随机端口。`;
+    }
+  }
   const owner = previewOwnerForWorktree(instance, targetRoot, appInvocation.sourceRoot, taskWorktree);
   const existingOwner = readPreviewOwner(instance, dataRoot);
   const existingInstance = readPreviewInstance(instance, dataRoot);
@@ -458,7 +530,7 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
   const logDescriptor = fs.openSync(logFile, 'a');
   let child: ChildProcess;
   try {
-    child = spawn(appInvocation.command, [...appInvocation.argsPrefix, 'web', '--target', targetRoot, '--port', String(port), '--no-open'], {
+    child = spawn(appInvocation.command, [...appInvocation.argsPrefix, 'web', '--target', targetRoot, '--port', String(desiredPort), '--no-open'], {
       cwd: targetRoot,
       detached: true,
       stdio: ['ignore', logDescriptor, logDescriptor],
@@ -491,9 +563,12 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
     const code = !['terminated', 'already-exited'].includes(cleanup) ? 'preview_start_cleanup_failed' : failed ? 'preview_start_failed' : 'preview_start_timeout';
     throw codedError(message, code, { instance, pid: child.pid ?? null, phase: startup.phase, elapsedMs: startup.elapsedMs, exitCode: child.exitCode, signal: child.signalCode, cleanup, logFile, diagnostic });
   }
+  if (workspaceRoots.length) seedPreviewWorkspaces(root, workspaceRoots);
+  const startedPort = Number(new URL(started.url).port);
+  if (Number.isInteger(startedPort) && startedPort > 0) writePreferredPort(instance, startedPort, dataRoot);
   const managedOwner: PreviewOwner = { ...owner, managedProcess: { pid: started.pid, url: started.url, state: 'healthy' } };
   writeOwner(runtime, managedOwner, dataRoot);
-  const result: PreviewResult = { schemaVersion: PREVIEW_SCHEMA, status: 'started', owner: managedOwner, url: started.url, pid: started.pid };
+  const result: PreviewResult = { schemaVersion: PREVIEW_SCHEMA, status: 'started', owner: managedOwner, url: started.url, pid: started.pid, portNote };
   if (!args.includes('--no-open')) openBrowser(started.url);
   return result;
 }
