@@ -140,8 +140,13 @@ export function createWorkspacePreparation(runtime: any) {
         // only a full preparation converges it, so opening falls through there.
       }
     } catch { /* Explicit opening can recover local, rebuildable preparation state. */ }
-    const selected = select(resolved.rootPath);
-    const launched = selected.status === 'preparing' ? selected : start({id:selected.id,revision:selected.revision,name:selected.name});
+    // A persisted failure must be reported, not silently retried: unattended
+    // callers (registry refresh, page auto-open) would otherwise loop forever.
+    // select() resets a known record to 'selected', so check the store first.
+    const root = fs.realpathSync(resolved.rootPath);
+    const prior = store.list().find((entry: WorkspacePreparation) => entry.rootPath === root && entry.directoryIdentity === identity(root));
+    const launched = prior?.status === 'failed' ? read(prior.id)
+      : (() => { const selected = select(root); return selected.status === 'preparing' ? selected : start({id:selected.id,revision:selected.revision,name:selected.name}); })();
     const { ownerPid, directoryIdentity, ...preparation } = launched;
     return preparation;
   }

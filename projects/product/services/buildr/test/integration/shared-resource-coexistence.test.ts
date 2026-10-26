@@ -121,6 +121,30 @@ test('投射失败时打开自动转入完整准备收敛，保留原采用', as
   assert.fail('full preparation did not settle');
 });
 
+test('上次准备失败的打开如实返回失败，不静默重新开始', async t => {
+  const {root,workspace}=fixture(t);
+  const app=preparation(root,workspace,()=>{});
+  const first=app.prepareWorkspaceForOpen('test');
+  assert.ok(!('ready' in first));assert.equal(first.status,'preparing');
+  const deadline=Date.now()+120_000;
+  let failed:any=null;
+  while(Date.now()<deadline){
+    const value=app.workspacePreparation(first.id);
+    if(value.status!=='preparing'){failed=value;break;}
+    await new Promise(resolve=>setTimeout(resolve,100));
+  }
+  assert.ok(failed,'first preparation did not settle');
+  assert.equal(failed.status,'failed');
+  // Unattended opens (auto-open, registry refresh) must surface the failure
+  // instead of starting another attempt; retry stays with explicit /prepare.
+  const again=app.prepareWorkspaceForOpen('test');
+  assert.ok(!('ready' in again));
+  assert.equal(again.status,'failed');
+  assert.equal(again.id,failed.id);
+  assert.equal(again.revision,failed.revision);
+  assert.match(String(again.error),/自身维护程序/);
+});
+
 test('收敛降级：失效共享来源引用视为缺失，不阻塞整次同步', async t => {
   const {root}=fixture(t);
   t.mock.method(console,'log',()=>{});
