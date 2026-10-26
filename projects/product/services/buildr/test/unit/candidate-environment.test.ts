@@ -7,7 +7,11 @@ const roots = { serviceRoot: '/product/buildr', webRoot: '/product/buildr-web' }
 
 test('Candidate environment profiles are closed and select the minimum preparation recipe', () => {
   assert.deepEqual(CANDIDATE_ENVIRONMENT_PROFILES, ['base', 'artifact', 'frontend', 'browser-artifact', 'source-runtime', 'consumer', 'host', 'publisher']);
-  assert.deepEqual(candidateEnvironmentPlan('host', roots).map((item) => item.id), ['buildr-dependencies']);
+  assert.deepEqual(candidateEnvironmentPlan('host', roots).map((item) => item.id), [
+    'buildr-agent-dependencies',
+    'buildr-agent-build',
+    'buildr-dependencies',
+  ]);
   assert.deepEqual(candidateEnvironmentPlan('base', roots).map((item) => item.id), [
     'buildr-agent-dependencies',
     'buildr-agent-build',
@@ -45,15 +49,17 @@ test('source-runtime uses locked installs and the single development web prepara
 
 
 test('artifact consumers install only locked production dependencies and never generate source', () => {
+  // Artifact consumers still execute source verification tools that import the
+  // private Agent build, so they compile it before the production install.
   for (const profile of ['consumer', 'host']) {
     const plan = candidateEnvironmentPlan(profile, roots);
-    assert.equal(plan.length, 1);
-    assert.deepEqual(plan[0].args, ['ci', '--omit=dev', '--ignore-scripts', '--install-links']);
+    assert.equal(plan.length, 3);
+    assert.deepEqual(plan[2].args, ['ci', '--omit=dev', '--ignore-scripts', '--install-links']);
   }
   const publisher = candidateEnvironmentPlan('publisher', roots);
-  assert.deepEqual(publisher[0].args, ['ci', '--omit=dev', '--ignore-scripts', '--install-links']);
-  assert.ok(publisher[1].args.includes('npm@11.5.1'));
-  assert.ok(!publisher[1].args.includes('--global'));
+  assert.deepEqual(publisher[2].args, ['ci', '--omit=dev', '--ignore-scripts', '--install-links']);
+  assert.ok(publisher[3].args.includes('npm@11.5.1'));
+  assert.ok(!publisher[3].args.includes('--global'));
 });
 
 test('frontend source shard installs its own locked toolchain and generated inputs without building Web', () => {
