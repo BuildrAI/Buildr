@@ -7,6 +7,7 @@ import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 
 import { createBoundedBuildrWebWriteExecutor } from '../../src/web/http/write-executor.ts';
+import os from 'node:os';
 import { copyPreparedWorkspace } from '../helpers/prepared-fixtures.ts';
 import { createRuntime } from '../helpers/runtime-harness.ts';
 import { runtimeProvide } from '../../src/bootstrap/runtime.ts';
@@ -63,9 +64,47 @@ test('写执行器串行派发且不重复，排队请求才可取消', async ()
     await assert.rejects(executor.run('code-push', input({})), (error: any) => error.code === 'local_app_write_queue_full');
     const results = await Promise.all([first, second]);
     assert.deepEqual(results.map((item: any) => item.operation), ['code-sync', 'code-fetch']);
-    assert.equal(metrics.maxActive, 1, '写操作必须逐一进入同一个 Worker');
+    assert.equal(metrics.maxActive, 1, '单 Worker 时写操作逐一执行');
     assert.equal(metrics.calls, 2);
   } finally { await executor.close(); }
+});
+
+test('多 Worker 并行派发独立写入，同一仓库互斥由文件锁保证', async () => {
+  const metrics: any = { calls: 0, active: 0, maxActive: 0, started: [] };
+  const executor = createBoundedBuildrWebWriteExecutor({ workerCount: 2, queueLimit: 4, workerFactory: fakeWorkerFactory({ delayMs: 40, metrics }) });
+  try {
+    const results = await Promise.all([
+      executor.run('code-sync', input({ repositoryId: 'repo-a' })),
+      executor.run('code-sync', input({ repositoryId: 'repo-b' })),
+      executor.run('code-sync', input({ repositoryId: 'repo-c' })),
+    ]);
+    assert.equal(results.length, 3);
+    assert.ok(metrics.maxActive >= 2, '独立仓库必须并行执行');
+  } finally { await executor.close(); }
+});
+
+test('Worker 崩溃遗留的锁按登记回收，存活持有者不受影响', async t => {
+  const { reclaimCodeGitOperationFile } = await import('../../src/modules/code/infrastructure/code-git-operation-lock.ts');
+  const common = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-lock-common-'));
+  const lockFile = path.join(common, 'buildr-operation.lock');
+  const record = (token: string) => ({ schemaVersion: 'buildr.exclusive-file-lock/v1', pid: process.pid, token, createdAt: new Date().toISOString(), target: common });
+  try {
+    // 本进程记录、token 未被任何存活持有者登记：回收
+    fs.writeFileSync(lockFile, JSON.stringify(record('ab'.repeat(16))) + '\n');
+    reclaimCodeGitOperationFile(lockFile, new Set());
+    assert.equal(fs.existsSync(lockFile), false, '崩溃 worker 的锁必须被回收');
+    // token 仍被其他存活 worker 持有：保留
+    const aliveToken = 'cd'.repeat(16);
+    fs.writeFileSync(lockFile, JSON.stringify(record(aliveToken)) + '\n');
+    reclaimCodeGitOperationFile(lockFile, new Set([aliveToken]));
+    assert.equal(fs.existsSync(lockFile), true, '存活 worker 的锁不得回收');
+    // 其他进程的锁：保留
+    fs.rmSync(lockFile, { force: true });
+    fs.writeFileSync(lockFile, JSON.stringify({ ...record('ef'.repeat(16)), pid: process.ppid }) + '\n');
+    reclaimCodeGitOperationFile(lockFile, new Set());
+    assert.equal(fs.existsSync(lockFile), true, '其他进程的锁不得回收');
+    fs.rmSync(lockFile, { force: true });
+  } finally { fs.rmSync(common, { recursive: true, force: true }); }
 });
 
 test('已派发写入在请求方取消后继续完成，结果不再交付', async () => {
@@ -108,6 +147,38 @@ test('写操作白名单拒绝读取与其他字段', async () => {
     assert.equal(prepared.operation, 'service-runtime-prepare');
     assert.equal(metrics.messages.at(-1).serviceCode, 'demo');
   } finally { await executor.close(); }
+});
+
+test('Worker 退出时按登记表回收其持有的 Git 锁', async () => {
+  const common = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-lock-common-'));
+  const lockFile = path.join(common, 'buildr-operation.lock');
+  const token = 'ab'.repeat(16);
+  const metrics: any = { calls: 0, active: 0, maxActive: 0, started: [] };
+  const registries: string[] = [];
+  let firstWorker: any = null;
+  const executor = createBoundedBuildrWebWriteExecutor({
+    workerCount: 1,
+    workerFactory: (registry: string) => {
+      registries.push(registry);
+      const worker = fakeWorkerFactory({ delayMs: 5, metrics })();
+      if (!firstWorker) firstWorker = worker;
+      return worker;
+    },
+  });
+  try {
+    await executor.run('code-sync', input({}));
+    assert.equal(registries.length, 1, 'worker 必须获得唯一登记表');
+    // 模拟 worker 持锁中崩溃：登记为 acquire 未 release，锁记录归属本进程 pid
+    fs.appendFileSync(registries[0], JSON.stringify({ event: 'acquire', lockFile, token }) + '\n');
+    fs.writeFileSync(lockFile, JSON.stringify({ schemaVersion: 'buildr.exclusive-file-lock/v1', pid: process.pid, token, createdAt: new Date().toISOString(), target: common }) + '\n');
+    firstWorker.emit('error', new Error('worker crashed'));
+    firstWorker.emit('exit', 1);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(fs.existsSync(lockFile), false, 'worker 退出必须回收其登记的锁');
+    assert.equal(registries.length, 2, '退出后必须补充新 worker');
+    const recovered = await executor.run('code-fetch', input({}));
+    assert.equal(recovered.operation, 'code-fetch');
+  } finally { await executor.close(); fs.rmSync(common, { recursive: true, force: true }); }
 });
 
 test('HTTP 写端点进入有界写执行器', async t => {

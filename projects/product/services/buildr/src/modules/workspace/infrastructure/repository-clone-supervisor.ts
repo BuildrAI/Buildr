@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { resolveSourceRoot } from './workspace-source-filesystem.ts';
@@ -57,10 +58,10 @@ export function createRepositoryCloneSupervisor() {
     const current = states.get(repository.id);
     if (current?.state === 'cloning') return { status: 'already-running', diagnostic: null };
     fs.mkdirSync(path.dirname(location), { recursive: true });
-    // Stage beside the target so publication stays on one filesystem: an in-flight
-    // clone must never be picked up by concurrent git add or presented as an
-    // existing directory, and a cross-volume staging would force a full copy.
-    const staging = fs.mkdtempSync(path.join(path.dirname(location), '.buildr-clone-'));
+    // Stage outside the repository: an in-flight clone must never appear in the
+    // parent's untracked list, break git add, or look like an existing
+    // directory. Publication copies on a cross-volume filesystem.
+    const staging = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-clone-'));
     const args = ['clone'];
     const branch = repository.source.git.integrationBranch || null;
     if (branch) args.push('--branch', branch, '--single-branch');

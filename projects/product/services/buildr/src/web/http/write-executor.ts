@@ -1,10 +1,14 @@
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { resolveProductResource } from '../../infrastructure/product-resources/index.ts';
+import { reclaimCodeGitOperationFile } from '../../modules/code/module.ts';
 
 const OPERATIONS = new Set(['code-discard-changes', 'code-branch-switch', 'code-commit-changes', 'code-push', 'code-sync', 'code-fetch', 'service-runtime-prepare']);
-const DEFAULT_WORKER_COUNT = 1;
-const DEFAULT_QUEUE_LIMIT = 16;
+const DEFAULT_WORKER_COUNT = 2;
+const DEFAULT_QUEUE_LIMIT = 64;
 const WORKER_PATH = resolveProductResource('runtime/write-worker.cjs', {
   developmentFallback: 'src/web/http/write-worker.ts',
 });
@@ -40,8 +44,33 @@ function validateRequest(operation: any, input: any) {
   }
 }
 
-function defaultWorkerFactory() {
-  return new Worker(WORKER_PATH);
+function defaultWorkerFactory(registry: string) {
+  return new Worker(WORKER_PATH, { env: { ...process.env, BUILDR_GIT_OPERATION_LOG: registry } });
+}
+
+/** Lock events noted by one write Worker, in order. */
+function readRegistry(registry: string): Array<{ event: string; lockFile: string; token: string }> {
+  const events: Array<{ event: string; lockFile: string; token: string }> = [];
+  try {
+    for (const line of fs.readFileSync(registry, 'utf8').split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const event = JSON.parse(line);
+        if (typeof event?.lockFile === 'string' && event.lockFile) events.push({ event: event.event, lockFile: event.lockFile, token: typeof event.token === 'string' ? event.token : '' });
+      } catch { /* A torn final line still leaves earlier events valid. */ }
+    }
+  } catch { /* A missing registry means the dead Worker never reached locking. */ }
+  return events;
+}
+
+/** Tokens currently held inside one Worker: acquires without a later release. */
+function openRegistryTokens(events: Array<{ event: string; lockFile: string; token: string }>): Set<string> {
+  const open = new Map<string, string>();
+  for (const event of events) {
+    if (event.event === 'release') open.delete(event.lockFile);
+    else if (event.event === 'acquire') open.set(event.lockFile, event.token);
+  }
+  return new Set(open.values());
 }
 
 /** Bounded executor for blocking Git writes. Writes already dispatched to the
@@ -69,8 +98,30 @@ export function createBoundedBuildrWebWriteExecutor({ workerCount = DEFAULT_WORK
     while (queue.length) settle(queue.shift(), error);
   }
 
+  /** Reclaim every lock a dead Worker registered but never released. Records
+   * belonging to another worker's open acquire or to the host thread are
+   * filtered inside reclaimCodeGitOperationFile and stay untouched. */
+  function reclaimWorkerLocks(state: any) {
+    const registry = state.registry;
+    if (!registry) return;
+    state.registry = null;
+    const events = readRegistry(registry);
+    try { fs.rmSync(registry, { force: true }); } catch { /* Registry removal only clears bookkeeping. */ }
+    const liveTokens = new Set<string>();
+    for (const other of workers) {
+      if (other === state || other.failed || !other.worker || !other.registry) continue;
+      for (const token of openRegistryTokens(readRegistry(other.registry))) liveTokens.add(token);
+    }
+    const candidates = new Set<string>();
+    for (const event of events) candidates.add(event.lockFile);
+    for (const lockFile of candidates) {
+      try { reclaimCodeGitOperationFile(lockFile, liveTokens); } catch { /* Reclamation must never break the executor. */ }
+    }
+  }
+
   function spawn(state: any) {
-    const worker = workerFactory();
+    state.registry = path.join(os.tmpdir(), `buildr-write-locks-${process.pid}-${state.id}-${crypto.randomBytes(6).toString('hex')}.jsonl`);
+    const worker = workerFactory(state.registry);
     state.worker = worker;
     state.item = null;
     state.failed = false;
@@ -99,6 +150,9 @@ export function createBoundedBuildrWebWriteExecutor({ workerCount = DEFAULT_WORK
       const item = state.item;
       state.worker = null;
       state.item = null;
+      // A crashed Worker can leave a Git operation record behind; pid liveness
+      // cannot see the death because the Worker shares this process's pid.
+      reclaimWorkerLocks(state);
       if (item) {
         item.workerState = null;
         settle(item, writeExecutorError('local_app_write_worker_failed', `Buildr Web write Worker exited unexpectedly (${code}); the dispatched write outcome is unknown.`, 500));

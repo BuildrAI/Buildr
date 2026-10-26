@@ -11,6 +11,7 @@ import { createCodeGenerationHttpContribution } from './interfaces/http/code-gen
 import { readCodeCommitGuidance } from './infrastructure/code-commit-guidance.ts';
 import { createCodeCommitMaterialReader, type CodeCommitMaterialReaderDependencies } from './infrastructure/code-commit-material.ts';
 import { SourceControlObservations } from './application/source-control-observations.ts';
+export { reclaimCodeGitOperationFile } from './infrastructure/code-git-operation-lock.ts';
 export const CODE_APPLICATION='code.application';
 export const CODE_GENERATION_APPLICATION='code.generation.application';
 export const CODE_SOURCE_CONTROL_OBSERVATIONS='code.source-control-observations';

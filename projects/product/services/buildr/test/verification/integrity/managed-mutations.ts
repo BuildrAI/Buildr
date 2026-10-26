@@ -91,6 +91,12 @@ const allowed: any = new Map([
   // discardChanges follows the same owned index-lock, temporary index and rename protocol as commitChanges.
   ['src/modules/code/application/code-discard-application.ts', new Set(['discardChanges'])],
   ['src/modules/code/infrastructure/code-fetch-refs.ts', new Set(['fetchCodeRemoteRefs'])],
+  // registryNote appends only to the write Worker's own registry file so a
+  // crashed Worker's Git operation records can be reclaimed by the executor.
+  ['src/modules/code/infrastructure/code-git-operation-lock.ts', new Set(['registryNote'])],
+  // reclaimWorkerLocks removes the dead Worker's own registry after reading it;
+  // lock file removal itself goes through releaseExclusiveFileLock.
+  ['src/web/http/write-executor.ts', new Set(['reclaimWorkerLocks'])],
   ['src/modules/code/infrastructure/editable-file.ts', new Set(['replaceEditableFile'])],
   // Removes only its own mkdtemp directory after matching its device and inode.
   ['src/modules/connection-skills/application/connection-skills-application.ts', new Set(['authorize'])],
