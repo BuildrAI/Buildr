@@ -28,7 +28,10 @@ export function candidateEnvironmentPlan(profileValue: string, roots = { service
   const profile = assertProfile(profileValue);
   const consumesArtifact = profile === 'host' || profile === 'consumer' || profile === 'publisher';
   const agentRoot = path.resolve(roots.serviceRoot, '../buildr-agent');
-  const plan: Array<{ id: string; executable: 'npm' | 'node'; args: string[]; cwd: string }> = consumesArtifact ? [] : [
+  // Every profile compiles the private Agent package before the enclosing
+  // dependencies install: consumer shards still execute source verification
+  // tools that import node_modules/@buildr-ai/buildr-agent/build/index.js.
+  const plan: Array<{ id: string; executable: 'npm' | 'node'; args: string[]; cwd: string }> = [
     { id: 'buildr-agent-dependencies', executable: 'npm', args: ['ci', '--ignore-scripts'], cwd: agentRoot },
     { id: 'buildr-agent-build', executable: 'node', args: ['tools/build.ts'], cwd: agentRoot },
   ];
