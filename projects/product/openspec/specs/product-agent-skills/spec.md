@@ -87,7 +87,7 @@ Buildr MUST 支持面向支持 runtime 的产品内置 Agent Skills，将其作�
 - **AND** Buildr MUST report any required consumers that become blocked without silently restoring the builtin
 
 ### Requirement: Rule 与 Skill 语义边界
-Buildr Skill MUST 按 asset semantics 定义 Rules 与 Skills，而不是按它们是否总会被加载定义，并且 MUST 说明 Rule manifest state 如何控制 Agent consumption。
+Buildr Skill MUST 按 asset semantics 定义 Rules 与 Skills，而不是按它们是否总会被加载定义，并且 MUST 说明规则由 `AGENTS.md` 层级承载、不再存在 Rule manifest state。
 
 #### Scenario: 解释 Rule 与 Skill
 - **WHEN** 用户询问 Rules 与 Skills 的区别
@@ -97,30 +97,31 @@ Buildr Skill MUST 按 asset semantics 定义 Rules 与 Skills，而不是按它�
 
 #### Scenario: Agent 判断相关 Rules
 - **WHEN** Agent works on a task that may touch user-managed Rules
-- **THEN** Buildr Skill MUST require Agent to use Rule descriptions, user goals, files being changed, code semantics, and workspace context to judge relevant Rules
+- **THEN** Buildr Skill MUST require Agent to read applicable `AGENTS.md` from the organization root through the current target path
+- **AND** Buildr Skill MUST require Agent to use user goals, files being changed, code semantics, and workspace context to decide whether a deeper scope `AGENTS.md` is relevant
 - **AND** Buildr Skill MUST NOT require users to preconfigure roles, paths, service names, or other routing tables for Rules relevance
 
 #### Scenario: 解释 Rule manifest 状态
-- **WHEN** 用户或 Agent 询问 enabled、required or state 如何影响 Rule 加载
-- **THEN** Buildr Skill MUST explain that enabled、required and installed Rules are always read
-- **AND** Buildr Skill MUST explain that enabled、non-required and installed Rules are semantically evaluated from description and read when relevant
-- **AND** Buildr Skill MUST explain that disabled or uninstalled Rules do not participate in the current task
+- **WHEN** 用户或 Agent 询问规则何时加载
+- **THEN** Buildr Skill MUST explain that Agent reads every applicable `AGENTS.md` on the ancestor chain before acting
+- **AND** Buildr Skill MUST explain that broader scope is applied before more specific scope and unrelated sibling directories are not read
+- **AND** Buildr Skill MUST explain that `rules/manifest.yml`、enabled、required、state 和 description 索引已退役并不得参与当前任务
 - **AND** Buildr Skill MUST distinguish runtime source discovery from Agent semantic relevance judgment
 
 #### Scenario: Git 提交规则与技能边界
 - **WHEN** Buildr Skill explains where Git commit guidance belongs
 - **THEN** reusable Conventional Commits format、type selection and message generation procedure MUST belong to the Git operations Skill
 - **AND** Buildr default commit language MUST belong to required Core so it remains independent of the Git operations Skill lifecycle
-- **AND** more specific Project、Service or repository rules MUST be allowed to override the Core language default
+- **AND** more specific Project、Service or repository `AGENTS.md` rules MUST be allowed to override the Core language default
 
 ### Requirement: Buildr 技能引导工具型资产维护
-Buildr 内置技能 MUST 引导 Agent 使用 Buildr 源资产维护规则、技能和命令行工具清单，并区分源资产维护与运行环境投射。
+Buildr 内置技能 MUST 引导 Agent 使用 Buildr 源资产维护 `AGENTS.md` 规则、技能和命令行工具清单，并区分源资产维护与运行环境投射。
 
 #### Scenario: 维护规则
-- **WHEN** 用户要求新增、修改或删除需要沉淀或复用的 root/Organization 规则
-- **THEN** Buildr 技能 MUST 引导 Agent 使用 `rules add/remove` 维护 `rules/manifest.yml`
-- **AND** Buildr 技能 MUST 引导 Agent 直接编辑 `AGENTS.md` 或 `rules/` 中的 Markdown 正文来维护规则内容
-- **AND** Buildr 技能 MUST 说明 Rule description 是 Agent 判断规则语义相关性的索引，而不是人维护的路径或角色路由表
+- **WHEN** 用户要求新增、修改或删除需要沉淀或复用的组织根、项目或服务规则
+- **THEN** Buildr 技能 MUST 引导 Agent 直接维护对应作用域目录的 `AGENTS.md` 正文
+- **AND** Buildr 技能 MUST 保留 Buildr 受管区块所有权和用户正文
+- **AND** Buildr 技能 MUST NOT 引导 Agent 使用 `rules add/remove` 或维护 `rules/manifest.yml`
 - **AND** Buildr 技能 MUST 引导 Agent 在需要时运行 doctor、runtime check 或 rules render
 
 #### Scenario: 维护技能

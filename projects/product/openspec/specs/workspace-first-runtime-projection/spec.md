@@ -77,7 +77,8 @@ Buildr MUST 将支持的 Agent runtime 视为从 Buildr 源资产、canonical sc
 
 #### Scenario: Runtime 准备顺序
 - **WHEN** Buildr 渲染 Agent runtime
-- **THEN** Buildr MUST 按 `rules/manifest.yml` 暴露和检查 enabled rules
+- **THEN** Buildr MUST 通过 `AGENTS.md` discovery plan 暴露和检查适用规则
+- **AND** Buildr MUST NOT 读取 `rules/manifest.yml` 或其他 Rule manifest 来决定 runtime 规则
 - **AND** Buildr MUST 按 workspace `skills/manifest.yml` 投射 enabled skills
 - **AND** Buildr 内置项 MUST 在 manifest 中排在用户项之前
 - **AND** rule discovery plan MUST order ancestor sources before descendant sources
@@ -86,10 +87,11 @@ Buildr MUST 将支持的 Agent runtime 视为从 Buildr 源资产、canonical sc
 
 #### Scenario: Rules 语义索引读取
 - **WHEN** Agent 进入 Buildr workspace scope
-- **THEN** Agent MUST 先读取 适用的 `AGENTS.md`，其根受管区块包含核心规则
-- **AND** Agent MUST 再读取 `rules/manifest.yml`
-- **AND** Agent MUST 根据用户目标、修改范围、代码语义、workspace context 和 Rule `description` 判断 enabled user Rules 是否与当前任务相关
-- **AND** Agent MUST NOT require `rules/manifest.yml` to contain structured role, path, service, or directory routing tables
+- **THEN** Agent MUST 先读取适用的 `AGENTS.md`，其根受管区块包含核心规则
+- **AND** Agent MUST 按由宽到窄的顺序读取从组织根到当前目标路径之间所有存在的 `AGENTS.md`
+- **AND** Agent MUST 根据用户目标、修改范围、代码语义和 workspace context 判断是否读取相关子目录的 `AGENTS.md`
+- **AND** Agent MUST NOT 读取不相关兄弟目录的规则
+- **AND** Agent MUST NOT require `rules/manifest.yml` 或结构化 role、path、service、directory routing tables
 
 #### Scenario: Rule 和 Skill 加载语义
 - **WHEN** Buildr exposes Rules and Skills to an Agent runtime
@@ -98,11 +100,10 @@ Buildr MUST 将支持的 Agent runtime 视为从 Buildr 源资产、canonical sc
 - **AND** Buildr MUST treat Skills as reusable professional actions and procedures
 
 #### Scenario: Rule manifest 状态消费
-- **WHEN** Agent consumes a valid `rules/manifest.yml`
-- **THEN** Agent MUST read every enabled、required and installed Rule before performing workspace work
-- **AND** Agent MUST inspect the description of every enabled、non-required and installed Rule
-- **AND** Agent MUST read an optional Rule body before acting when user goals、changed files、code semantics or workspace context make that Rule relevant
-- **AND** Agent MUST NOT use disabled or uninstalled Rules for the current task
+- **WHEN** Agent 在 Buildr workspace 中执行工作
+- **THEN** Agent MUST 在执行前读取当前目标路径适用的全部 `AGENTS.md`
+- **AND** Agent MUST 在修改目录或文件时读取该路径新增的更深层 `AGENTS.md`
+- **AND** 已退役 `rules/manifest.yml` 中的 entry MUST NOT 参与当前任务
 - **AND** adapter discovery MUST NOT decide semantic Rule relevance on behalf of the Agent
 
 #### Scenario: 根 sync 递归投射

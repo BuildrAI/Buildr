@@ -48,7 +48,7 @@ Buildr MUST 通过 Commands Domain writer 为默认 Workspace 生成命令行工
 - **AND** Buildr MUST 校验默认命令行工具 manifest 不包含私有路径、私有组织名或个人机器状态
 
 ### Requirement: package check 覆盖 manifest-backed 资产维护命令
-Buildr package check MUST 验证 manifest-backed 资产维护命令不会破坏默认 workspace baseline、manifest 标准格式或 runtime 投射边界。
+Buildr package check MUST 验证 manifest-backed 资产维护命令不会破坏默认 workspace baseline、manifest 标准格式或 runtime 投射边界，并 MUST 验证已退役 Rule 命令不写文件。
 
 #### Scenario: 验证命令行工具 add/remove
 - **WHEN** Agent 执行 `buildr package check`
@@ -65,23 +65,18 @@ Buildr package check MUST 验证 manifest-backed 资产维护命令不会破坏�
 
 #### Scenario: 验证 Rules add/remove
 - **WHEN** Agent 执行 `buildr package check`
-- **THEN** Buildr MUST 验证 `rules add/remove` 可以在已初始化临时 workspace 中维护 root `rules/manifest.yml`
-- **AND** Buildr MUST 验证 `rules add` 要求非空 description
-- **AND** Buildr MUST 验证 `rules add` 未传 `--path` 时默认注册 `rules/<id>.md`
-- **AND** Buildr MUST 验证 `rules add` 只能注册已存在的 root Rule 文件
-- **AND** Buildr MUST 验证 `rules remove` 默认删除 Rule 源文件和 manifest entry
-- **AND** Buildr MUST 验证 `rules remove --keep-file` 保留 Rule 源文件、只移除 manifest entry，并可由 doctor 报告为未登记文件
-- **AND** Buildr MUST 验证 `rules add/remove` 不会自动写入 Agent runtime
-- **AND** Buildr MUST 验证 required Buildr Rule 不能通过 `rules remove` 删除
+- **THEN** Buildr MUST 验证 `rules add` 与 `rules remove` 返回非零状态和退役迁移指引
+- **AND** Buildr MUST 验证这两个命令不会创建或修改 `rules/manifest.yml`、`rules/*.md` 或 Agent runtime
+- **AND** Buildr MUST 验证 `rules render` 仍可用于 `AGENTS.md` 入口投射
 
 ### Requirement: 产品 MVP 验证覆盖 manifest-backed 资产维护
-Buildr 产品 MVP 验证 MUST 覆盖命令行工具、Rules 和 Skills 源资产维护命令的主要用户路径。
+Buildr 产品 MVP 验证 MUST 覆盖命令行工具与 Skills 源资产维护命令的主要用户路径，以及 Rule 命令退役路径。
 
 #### Scenario: MVP 验证新增源资产
 - **WHEN** Agent 运行产品 MVP 验证脚本
 - **THEN** 验证脚本 MUST 覆盖 `commands add/remove`
-- **AND** 验证脚本 MUST 覆盖 `rules add/remove`
 - **AND** 验证脚本 MUST 覆盖 `skills add/remove`
+- **AND** 验证脚本 MUST 覆盖 `rules add/remove` 返回退役诊断且不写文件
 - **AND** 验证脚本 MUST 覆盖 add/remove 后通过 check、doctor 或 render/check 继续确认状态的路径
 
 #### Scenario: MVP 验证边界
@@ -93,7 +88,8 @@ Buildr 产品 MVP 验证 MUST 覆盖命令行工具、Rules 和 Skills 源资产
 #### Scenario: 临时 workspace 端到端验收
 - **WHEN** Agent 运行产品 MVP 验证脚本
 - **THEN** 验证脚本 MUST 从空临时目录初始化真实 Buildr workspace
-- **AND** 验证脚本 MUST 按 Workspace、Project、Service、Rules、Commands、Skills、Runtime 七类资产覆盖主要 Agent 操作路径
+- **AND** 验证脚本 MUST 确认初始化结果不包含 `rules/` 目录或 `rules/manifest.yml`
+- **AND** 验证脚本 MUST 按 Workspace、Project、Service、Commands、Skills、Runtime 六类资产覆盖主要 Agent 操作路径
 - **AND** 验证脚本 MUST 在每类资产关键状态变更后使用 `doctor --json` 或对应专项检查确认状态
 
 ### Requirement: 产品级总验证入口
@@ -112,12 +108,12 @@ Buildr MUST 提供一个产品级总验证入口，用于统一执行产品包�
 - **AND** 规则 MAY 保留底层分解命令，便于 Agent 定位失败阶段
 
 ### Requirement: package manifest 声明内置能力
-Buildr package manifest MUST 声明可同步到用户 workspace 的产品内置 Rules、Skills、Commands 和 Skill capability contracts，并提供旧 workspace 安全采用所需的官方完整性证据。Capability retirement entry MAY declare `legacyIntegrities`，用于登记已由产品发布过的历史 contract bytes；该白名单 MUST 只接受显式、可审计的 SHA-256 值。
+Buildr package manifest MUST 声明可同步到用户 workspace 的产品内置 Skills、Commands 和 Skill capability contracts，并提供旧 workspace 安全采用所需的官方完整性证据。Capability retirement entry MAY declare `legacyIntegrities`，用于登记已由产品发布过的历史 contract bytes；该白名单 MUST 只接受显式、可审计的 SHA-256 值。
 
 #### Scenario: 声明内置 Rules
-- **WHEN** Buildr package 包含产品内置 Rules
-- **THEN** `package/manifest.yml` MUST 声明每个内置 Rule 的 id、源路径、目标路径、description 和 required 状态
-- **AND** version 或 hash 元数据 MAY 声明，但不是必填
+- **WHEN** Buildr package manifest 包含 `builtins.rules` 或尝试发布 `rules/buildr/` 内置 Rule 资产
+- **THEN** `buildr package check` MUST 失败并指出 Rule 内置能力已退役
+- **AND** Buildr MUST NOT 安装、同步或登记任何内置 Rule
 
 #### Scenario: 声明内置 Skills
 - **WHEN** Buildr package 包含产品内置 Skills
@@ -172,41 +168,43 @@ Buildr package manifest MUST 声明可同步到用户 workspace 的产品内置 
 - **AND** MUST 在 source mutation、retirement deletion 和 runtime projection 前停止
 
 #### Scenario: Rules 和 Skills manifest-first
-- **WHEN** Buildr package 发布内置 Rules 或 Skills
-- **THEN** sync MUST 将它们登记到 `rules/manifest.yml` 或 `skills/manifest.yml`
-- **AND** Buildr MUST NOT 依赖扫描裸文件决定规则、技能或 capability bindings 是否生效
+- **WHEN** Buildr package 发布内置 Skills
+- **THEN** sync MUST 将它们登记到 `skills/manifest.yml`
+- **AND** Buildr MUST NOT 创建 `rules/manifest.yml` 或登记内置 Rules
+- **AND** Buildr MUST NOT 依赖扫描裸文件决定技能或 capability bindings 是否生效
 
 #### Scenario: Rule manifest metadata
-- **WHEN** Buildr 创建、安装或更新 Rule manifest entry
-- **THEN** entry MUST 声明 `id`、`source`、`path`、`description`、`enabled` 和 `required`
-- **AND** `description` MUST 描述适用场景和用途，供 Agent 判断何时读取该规则
-- **AND** `description` MUST NOT 用来承载规则正文
+- **WHEN** Buildr 创建、安装或更新 Rule 资产
+- **THEN** Buildr MUST NOT 写入或要求 `rules/manifest.yml` entry metadata
+- **AND** 已退役 Rule manifest 中的 `id`、`source`、`path`、`description`、`enabled` 和 `required` MUST NOT 参与当前 Rule 消费
+- **AND** 需要长期生效的规则正文 MUST 由对应 `AGENTS.md` 承载
 
 #### Scenario: package baseline 排除未声明内置能力
 - **WHEN** Buildr 打包或校验产品资产
 - **THEN** builtin package 源目录下的文件 MUST 只有在 package manifest 声明或被 package include 边界覆盖时才能进入发布包
 
 ### Requirement: 场景化内置流程以 Skills 发布
-Buildr package assets MUST 将由任务意图触发的场景化流程指引发布为内置 Skills，而不是 optional 内置 Rules。
+Buildr package assets MUST 将由任务意图触发的场景化流程指引发布为内置 Skills，不得发布任何内置 Rules。
 
 #### Scenario: package 声明场景化流程指引
 - **WHEN** Buildr package 包含需要按任务意图、工作流阶段、风险条件或命令流程判断是否适用的指引
 - **THEN** `package/manifest.yml` MUST 将该指引声明为内置 Skill
 - **AND** 对应默认 workspace baseline MUST 在 `skills/manifest.yml` 中登记该 Skill
-- **AND** Buildr MUST NOT 将该指引发布为 optional 内置 Rule
+- **AND** Buildr MUST NOT 将该指引发布为内置 Rule
 
 #### Scenario: package 声明 invariant 指引
 - **WHEN** Buildr package 包含定义 workspace 模型、源资产边界、必读入口或常驻 invariant 的指引
-- **THEN** `package/manifest.yml` MAY 将该指引声明为内置 Rule
-- **AND** required 内置 Rules MUST 只包含 Agent 无论任务意图如何都必须读取的指引
+- **THEN** 该指引 MUST 位于根 `AGENTS.md` 受管区块
+- **AND** Buildr MUST NOT 将其发布为独立内置 Rule 文件
 
 ### Requirement: 默认 baseline 排除场景化 Rules
-Buildr package baseline MUST 不在默认 `rules/buildr/` 资产中发布场景化内置流程指引。
+Buildr package baseline MUST 不发布任何内置 Rules 资产，也不得把任务分流、OpenSpec 工作流、worktree 工作流或 Git 操作流程作为内置 Rules 发布。
 
 #### Scenario: package check 校验 baseline Rules
 - **WHEN** Agent 运行 `buildr package check`
-- **THEN** 如果默认 package baseline 将任务分流、OpenSpec 工作流、worktree 工作流或 Git 操作流程发布为 optional 内置 Rules，Buildr MUST 校验失败
-- **AND** 当 Buildr 仍随包提供这些流程指引时，Buildr MUST 校验等价指引可通过内置 Skills 获得
+- **THEN** 如果 package manifest 声明 `builtins.rules` 或默认 package baseline 包含 `rules/buildr/*.md`，Buildr MUST 校验失败
+- **AND** invariant 指引 MUST 由根 `AGENTS.md` 提供
+- **AND** 任务触发型指引 MUST 可通过内置 Skills 获得
 
 ### Requirement: 产品验证覆盖递归 AGENTS runtime 投射
 Buildr package check 和 product MVP verification MUST 覆盖 recursive `AGENTS.md` discovery、canonical scope resolution、adapter projection、safe reconciliation boundaries 及 user-visible task workflow status contracts。
@@ -257,13 +255,13 @@ Buildr package check 和 product MVP verification MUST 覆盖 recursive `AGENTS.
 - **AND** rendered adapters MUST report their target pattern
 
 ### Requirement: Required Core 暴露 Rule 消费协议
-Buildr package assets MUST 将 Rule manifest consumption protocol 与通用 Rule/Skill 权威边界保留在 根 `AGENTS.md` 受管区块中（原核心规则，下文沿用 Core 名称），同时 MUST 将 task-triggered professional procedures 和专业状态事实保留在对应 Skills、capability bindings、Applications 或 Project declarations 中。
+Buildr package assets MUST 将基于 `AGENTS.md` 层级的规则消费协议与通用 Rule/Skill 权威边界保留在根 `AGENTS.md` 受管区块中（原核心规则，下文沿用 Core 名称），同时 MUST 将 task-triggered professional procedures 和专业状态事实保留在对应 Skills、capability bindings、Applications 或 Project declarations 中。
 
 #### Scenario: Package Core 声明 Rule 状态语义
 - **WHEN** Buildr packages or validates 根 `AGENTS.md` 受管区块
-- **THEN** required Core MUST state that enabled、required and installed Rules are always read
-- **AND** required Core MUST state that enabled optional installed Rules are selected semantically from description and task context
-- **AND** required Core MUST state that disabled or uninstalled Rules do not participate in the task
+- **THEN** required Core MUST state that Agent reads all applicable `AGENTS.md` from the organization root to the current target path
+- **AND** required Core MUST state that broader scope is applied before more specific scope and unrelated sibling directories are not read
+- **AND** required Core MUST NOT require or describe `rules/manifest.yml`、enabled、required、state 或 description 索引
 
 #### Scenario: Package Core 限定 scope Rules 内容
 - **WHEN** required Core 说明 root、Project 或 Service `AGENTS.md` 可以增加的 scope-specific 内容
@@ -339,11 +337,16 @@ Buildr package manifest MUST 显式声明随包 workspace Components，并将 Co
 - **AND** Component 定义源 MUST 位于 `package/targets/workspace/components/<source>/<id>/component.yml`
 
 #### Scenario: Component 定义引用不同来源成员
-- **WHEN** 随包 Component 声明外部 Skills、Buildr-owned Rules/Skills、Command collections 或 Skill Contributions
+- **WHEN** 随包 Component 声明外部 Skills、Buildr-owned Skills、Command collections 或 Skill Contributions
 - **THEN** 每个 Buildr-owned member 源和目标路径 MUST 位于允许的 workspace target 边界
 - **AND** 每个外部 Skill MUST 声明可验证的 source、resolved source、version 和 integrity
 - **AND** Component 定义 MUST 声明全部物化成员 integrity
 - **AND** 同一个随包成员 MUST NOT 被多个 Component 声明生命周期所有权
+
+#### Scenario: Component 非空 members.rules 退役
+- **WHEN** 随包 Component 定义声明非空 `members.rules`
+- **THEN** `buildr package check` MUST 失败并给出迁移到 `AGENTS.md` 的指引
+- **AND** 空 `members.rules` MAY 被容忍且 MUST NOT 物化为成员或写入 Rule manifest
 
 #### Scenario: Package check 校验 Component
 - **WHEN** Agent 运行 `buildr package check`
@@ -358,7 +361,7 @@ Buildr package manifest MUST 显式声明随包 workspace Components，并将 Co
 - **AND** Buildr MUST 校验 sidebar 对该上游版本兼容
 
 #### Scenario: Component 不重复进入 baseline 映射
-- **WHEN** package manifest 已通过 Component 声明某个 Rule、Skill 或 Command collection
+- **WHEN** package manifest 已通过 Component 声明某个 Skill 或 Command collection
 - **THEN** Buildr MUST NOT 再依赖重复的 workspace baseline 文件清单决定该成员的安装状态
 - **AND** init/update MUST 通过 Component 生命周期物化该成员
 
@@ -1046,7 +1049,8 @@ Buildr MUST 从 `resources/manifest.yml` 的产品声明和内容映射生成默
 
 #### Scenario: 渲染 root baseline
 - **WHEN** Agent 执行 `buildr init --target <dir> --name <name>`
-- **THEN** Buildr MUST 使用 resources manifest 的 Workspace mappings 生成 Rule、Skill、Command、Component、AGENTS 与 Git 模板等内容资产
+- **THEN** Buildr MUST 使用 resources manifest 的 Workspace mappings 生成 Skill、Command、Component、AGENTS 与 Git 模板等内容资产
+- **AND** Buildr MUST NOT 生成 `rules/` 目录或 `rules/manifest.yml`
 - **AND** Buildr MUST 通过 canonical writer 生成全部持久化配置
 - **AND** Buildr MUST NOT 读取旧 package Workspace target
 
@@ -1084,7 +1088,7 @@ Buildr MUST 只在随包工作空间 `AGENTS.md` 受管区块维护核心规则�
 #### Scenario: 发布与诊断消费同一规则源
 - **WHEN** 初始化、同步、更新或诊断工作空间
 - **THEN** 系统 MUST 使用同一随包区块生成或比较完整正文，而非仅检查旧文件引用
-- **AND** 发布物 MUST NOT 包含独立 `rules/buildr/core.md` 或其专属内置登记
+- **AND** 发布物 MUST NOT 包含独立 `rules/buildr/core.md`、其他 `rules/buildr/` 内置 Rule 资产或 `builtins.rules` 声明
 
 #### Scenario: 工作空间承载普通业务软件
 - **WHEN** 智能体帮助开发未引入智能体交付产品结果的软件
@@ -1169,8 +1173,9 @@ Buildr自举Workspace的`buildr-self-bootstrap` Component MUST通过单一专属
 - **AND** 其他基线、目标或未授权后继MUST保留并拒绝认领
 
 #### Scenario: 规则与组件变化需要投射
-- **WHEN** 已交付变化涉及根或项目/服务AGENTS.md、rules、skills、components或commands
+- **WHEN** 已交付变化涉及根或项目/服务 `AGENTS.md`、skills、components 或 commands
 - **THEN** runner MUST执行适用sync并验证开发入口与最终Doctor
+- **AND** 已退役 `rules/` 资产 MUST NOT 被当作当前同步源资产
 
 ### Requirement: Buildr package 必须发布用户体验设计法则内置技能
 Buildr package manifest MUST 将 `ux-design-laws` 声明为无 capability contract 的可选内置 Skill，使用 `resources/workspace/skills/buildr/ux-design-laws` 作为完整源目录、`skills/buildr/ux-design-laws` 作为 Workspace target，并投射到全部受支持的 Agent runtime。
@@ -1217,15 +1222,15 @@ Buildr MUST 将 package 静态内容校验、软件包工作空间端到端检�
 
 #### Scenario: package 静态校验独立执行
 - **WHEN** Candidate 或 affected 验证执行 package static verifier
-- **THEN** verifier MUST 校验 manifest、inventory、随包 baseline、Skill/Rule/Component 内容契约和必要支持工具
+- **THEN** verifier MUST 校验 manifest、inventory、随包 baseline、Skill/Component 内容契约和必要支持工具
 - **AND** verifier MUST NOT 创建临时用户 workspace 或执行领域 CLI 生命周期
 
 #### Scenario: 软件包工作空间端到端检查（E2E） 独立执行
 - **WHEN** Candidate 或维护者执行 软件包工作空间端到端检查（E2E）
 - **THEN** verifier MUST 验证 init 生成的随包 baseline、现有 `AGENTS.md` 兼容和最终 doctor 收敛
-- **AND** verifier MUST NOT 重复 Commands、Rules、Skills 或全部 runtime adapter 的细粒度 CRUD 与投射矩阵
+- **AND** verifier MUST NOT 重复 Commands、Skills 或全部 runtime adapter 的细粒度 CRUD 与投射矩阵
 
 #### Scenario: 领域 integration 独立执行
-- **WHEN** package 验证需要覆盖 Commands、Rules、Skills 或 runtime 的行为契约
+- **WHEN** package 验证需要覆盖 Commands、Skills 或 runtime 的行为契约
 - **THEN** 对应断言 MUST 由稳定的 focused verifier identity 持有
 - **AND** package check MAY 聚合该 verifier，但 软件包工作空间端到端检查（E2E） MUST NOT 复制其完整场景
