@@ -150,6 +150,23 @@ test('model account HTTP preserves authentication, revisions, source identity an
   response=await fetch(endpoint+'/'+created.id+'/login-attempts/'+login.loginAttempt.id+'/cancel',{method:'POST',headers,body:JSON.stringify({expectedRevision:login.revision})});assert.equal(response.status,200);const cancelled=await response.json();assert.equal(cancelled.loginAttempt.state,'cancelled');
 });
 
+test('model selection HTTP waits for refreshed account revisions while other reads remain available', {timeout:30000},async t=>{
+  const {base,root}=taskRecordFixture(t,'model-catalog-current-http');
+  const service=createAgentService({dataRoot:path.join(base,'profile'),executors:[],modelProviders:[{id:'fixture',label:'Fixture',async open(){return{protocol:'chat-completions',async inspect(){return{status:'ready',models:[{id:'model',label:'Model',images:false,tools:true}]};},async beginLogin(){},async cancelLogin(){},async infer(){return assert.fail('catalog must not infer');},async close(){}};}}],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+  const added=await service.models.accounts.add({provider:'fixture'});await service.models.accounts.check(added.id);
+  const list=service.models.catalog.list,cached=await list(),updated=await service.models.accounts.check(added.id);
+  let release!:()=>void,started!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;}),reading=new Promise<void>(resolve=>{started=resolve;});
+  // The discovery boundary offers a quick cached read or its current refresh.
+  service.models.catalog.list=async(input={})=>{started();if(input.refresh===false)return cached;await gate;return list();};
+  const runtime=createRuntime(),contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+  const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions}),{url,sessionToken}=await server.ready,headers={'x-buildr-session':sessionToken};
+  t.after(async()=>{release();await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(()=>resolve()));});
+  const pending=fetch(url+'/api/v1/app/agent-service/model-catalog',{headers});await reading;
+  assert.equal((await fetch(url+'/api/v1/app/agent-service/connections',{headers})).status,200);
+  release();const response=await pending;assert.equal(response.status,200);
+  assert.equal((await response.json()).models[0].accountRevision,updated.revision);
+});
+
 test('model preferences enforce authentication, revision and context limits', {timeout:30000},async t=>{
  const {base,root}=taskRecordFixture(t,'model-preferences-http');
  const service=createAgentService({dataRoot:path.join(base,'agent-profile'),executors:[],modelProviders:[{id:'fixture',label:'Fixture',async open(){return{protocol:'chat-completions',inspect:async()=>({status:'ready',models:[{id:'model',label:'Model',images:false,tools:true,contextWindow:258000}],quota:{available:true,observedAt:'2026-10-25T00:00:00Z',windows:[{id:'weekly',label:'每周窗口',remainingPercent:93}]}}),beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>assert.fail('metadata must not infer'),close:async()=>{}};}}],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
