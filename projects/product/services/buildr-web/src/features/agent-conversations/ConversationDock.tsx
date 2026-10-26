@@ -61,7 +61,7 @@ export function ConversationDock({panel, portalTarget}: Props) {
   </aside>;
   const content = cloneElement(panel, {
     hidden:!context.open&&!peek.open,
-    ref:pane, style: {...panel.props.style, width: context.full ? 'calc(100% - 53px)' : width},
+    ref:pane, style: {...panel.props.style, width: context.full ? 'calc(100% - 52px)' : width},
     className:(panel.props.className||'')+(!context.open?' is-peeking':''),
     onPointerEnter:event=>peek.enter('pane',event.pointerType), onPointerLeave:event=>peek.exit('pane',event.pointerType),
   }, <>{panel.props.children}</>);
