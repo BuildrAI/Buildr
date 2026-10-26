@@ -249,6 +249,9 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
       if (bindings.length) skillsDocument.bindings = bindings;
     }
     for (const builtin of manifest.builtins.skills) {
+      // Retired builtins are migration declarations only; orphaned entries are
+      // converged by retireOrphanedBuiltinSkills using their ownership receipts.
+      if (builtin.retired === true) continue;
       if (builtin.component) {
         findings.push({ type: 'skill', id: builtin.id, required: builtin.required === true, status: componentStatusById.get(builtin.component) || 'missing', path: builtin.target, component: builtin.component, lifecycle: `buildr component check ${builtin.component} --target ${targetRoot} --json` });
         continue;
@@ -263,7 +266,14 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
       const predecessor = builtin.replaces ? skillsById.get(builtin.replaces.id)?.skill : null;
       const desired = builtinSkillEntry(builtin, existing || predecessor);
       const newSnapshot = builtinSnapshot(sourceDir, 'skill');
-      const liveSnapshot = builtinSnapshot(existing?.resource ? path.dirname(resolveSharedResource(targetRoot, `${existing.resource}/SKILL.md`)) : targetDir, 'skill');
+      // A stale manifest may still reference a shared source that no longer exists;
+      // treat it as missing local content instead of failing the whole convergence.
+      let liveSkillPath = targetDir;
+      if (existing?.resource) {
+        try { liveSkillPath = path.dirname(resolveSharedResource(targetRoot, `${existing.resource}/SKILL.md`)); }
+        catch { liveSkillPath = targetDir; }
+      }
+      const liveSnapshot = builtinSnapshot(liveSkillPath, 'skill');
       if (handleSkillReplacement({ builtin, changed, checkOnly, desired, existing, findings, isRestore, liveSnapshot, newSnapshot, receiptByKey, removeDirectory: (directory: any) => fs.rmSync(directory, { recursive: true, force: true }), removeReceipt, restoreOutcomes, skillsById, skillsManifest, sourceDir, targetDir, updateReceipt, targetRoot,
         onReplaced: ({ predecessor: previous, builtin: replacement }: any) => {
           // Only migrate a binding that still selects the recognized official

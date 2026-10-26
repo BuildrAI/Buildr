@@ -1,26 +1,26 @@
 schemaVersion: buildr.knowledge-impact/v1
-task: workspace-artifact-lifecycle
+task: converge-resources-on-open
 operation: assess
 impacts:
   - type: reference
-    target: knowledge/code-map
-    reason: 新增 artifact-lifecycle 模块需在代码地图登记其职责（产物登记、发现、处置清扫）与目录位置；CLI 命令族需补入命令入口说明。
+    target: knowledge/code-map/skill-projection.md
+    reason: 共享技能资源退役新增封存回落与打开时自动收敛语义，代码地图中 resolveSharedResource 与恢复叙述已按两段式退役更新。
     status: applied
     sourceIdentities:
-      - services/buildr/src/modules/artifact-lifecycle/
-      - services/buildr/src/bootstrap/cli/registry.ts
-      - openspec/changes/workspace-artifact-lifecycle/specs/workspace-artifact-lifecycle/spec.md
+      - services/buildr/src/infrastructure/product-resources/preserved-skills.ts
+      - services/buildr/src/infrastructure/product-resources/shared-resources.ts
+      - services/buildr/src/modules/workspace/application/workspace-preparation.ts
+      - openspec/changes/converge-resources-on-open/specs/shared-package-resources/spec.md
   - type: reference
     target: knowledge/docs/overview.md
-    reason: 产品能力边界说明不涉及单命令细节；产物清单属工作资产治理延伸，概览如已有工作资产章节可在实现完成后评估是否需一句话补充。
+    reason: 行为变化属于本机资源收敛与准备细节，概览的产品能力边界说明不涉及，不需新增叙述。
     status: aligned
     sourceIdentities:
-      - openspec/specs/agent-first-product-positioning/spec.md
-      - openspec/changes/workspace-artifact-lifecycle/proposal.md
+      - openspec/changes/converge-resources-on-open/proposal.md
   - type: reference
     target: knowledge/archify
-    reason: 产物处置流程（登记→分类→计划→执行）如已有收尾或资源流图可补充一条处置路径；无匹配图则不新建。
+    reason: 流程图为静态数据流视图，未覆盖退役封存时序；本次不新增图。
     status: not-applicable
     sourceIdentities:
-      - openspec/changes/workspace-artifact-lifecycle/design.md
+      - openspec/changes/converge-resources-on-open/design.md
 unresolvedItems: []

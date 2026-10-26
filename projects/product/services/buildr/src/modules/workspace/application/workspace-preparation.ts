@@ -133,10 +133,17 @@ export function createWorkspacePreparation(runtime: any) {
     runtime.assertWorkspaceManagementAccess(resolved.rootPath);
     try {
       const adopted = readResourceAdoption(resolved.rootPath);
-      if (adopted?.ready) return {ready:true, workspaceId:id, resourceRefresh:refreshResourceProjection(resolved.rootPath)};
+      if (adopted?.ready) {
+        const refresh = refreshResourceProjection(resolved.rootPath);
+        if (refresh.status !== 'failed') return {ready:true, workspaceId:id, resourceRefresh:refresh};
+        // A stale manifest can reference shared sources that no longer exist;
+        // only a full preparation converges it, so opening falls through there.
+      }
     } catch { /* Explicit opening can recover local, rebuildable preparation state. */ }
     const selected = select(resolved.rootPath);
-    return selected.status === 'preparing' ? selected : start({id:selected.id,revision:selected.revision,name:selected.name});
+    const launched = selected.status === 'preparing' ? selected : start({id:selected.id,revision:selected.revision,name:selected.name});
+    const { ownerPid, directoryIdentity, ...preparation } = launched;
+    return preparation;
   }
   return { prepareWorkspaceForOpen, selectWorkspaceDirectory: select, workspacePreparation: read, prepareSelectedWorkspace: start,
     prepareRegisteredWorkspace: async (entry: {rootPath: string; workspaceId: string | null}, options: {keepCustomizations?:Array<{id:string;integrity:string}>} = {}) => {

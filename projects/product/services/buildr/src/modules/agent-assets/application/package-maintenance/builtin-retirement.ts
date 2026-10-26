@@ -64,7 +64,7 @@ export function retireOrphanedBuiltinSkills({
   findings,
   checkOnly,
 }: any): any  {
-  const currentIds: any = new Set(manifest.builtins.skills.flatMap((item: any) => [item.id, item.replaces?.id].filter(Boolean)));
+  const currentIds: any = new Set(manifest.builtins.skills.filter((item: any) => item.retired !== true).flatMap((item: any) => [item.id, item.replaces?.id].filter(Boolean)));
   const orphanReceipts = receipts.builtins.filter((item: any) => item.type === 'skill' && !currentIds.has(item.id));
 
   for (const receipt of orphanReceipts) {

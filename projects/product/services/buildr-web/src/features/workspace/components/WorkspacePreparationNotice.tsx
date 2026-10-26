@@ -8,7 +8,9 @@ export function WorkspacePreparationNotice({workspaceId}:{workspaceId:string}) {
   const [incoming,setIncoming]=useState<WorkspacePreparation|null>(null),[progress,setProgress]=useState<WorkspacePreparation|null>(null),[open,setOpen]=useState(false),[error,setError]=useState(''),[retry,setRetry]=useState(0);
   useEffect(()=>{
     let active=true;setIncoming(null);setProgress(null);setOpen(false);setError('');
-    void workspacePreparationApi.open(workspaceId).then(value=>{if(!active)return;if('ready' in value){if(value.resourceRefresh?.status==='failed')setError(`本机技能入口尚未刷新，其他工作可继续。${value.resourceRefresh.message||''}`);}else{setIncoming(value);setProgress(value);}}).catch(reason=>{if(active)setError(reason instanceof Error?reason.message:'工作空间准备暂时无法接续。');});
+    // A failed resource refresh no longer surfaces here: opening falls through
+    // to full preparation, which converges stale shared-resource references.
+    void workspacePreparationApi.open(workspaceId).then(value=>{if(!active)return;if('ready' in value)return;setIncoming(value);setProgress(value);}).catch(reason=>{if(active)setError(reason instanceof Error?reason.message:'工作空间准备暂时无法接续。');});
     return()=>{active=false;};
   },[workspaceId,retry]);
   if(error)return <Alert showIcon type="warning" message={error} action={<Button size="small" onClick={()=>setRetry(value=>value+1)}>重试准备</Button>}/>;

@@ -44,6 +44,8 @@ agent-assets/
 
 共享资源安装与完整性由 [shared-resources.ts](../../services/buildr/src/infrastructure/product-resources/shared-resources.ts) 负责；[shared-skill-source.ts](../../services/buildr/src/modules/agent-assets/infrastructure/shared-skill-source.ts) 为组件与连接读取适配明确的共享引用。普通解析不根据同名文件猜测官方归属。
 
+包资源清单中 `replaces`（改名接替）与 `retired`（显式退役）声明构成共享技能资源的两段式退役：声明的来源先随 `publishPackageResources` 封存到 `~/.buildr/local/preserved-skills/<id>/`（由 [preserved-skills.ts](../../services/buildr/src/infrastructure/product-resources/preserved-skills.ts) 完成，`preserved-archify.ts` 为其薄兼容封装），随后共享集才被替换。`resolveSharedResource` 对登记过的退役来源回落到封存副本，所以清单仍引用旧来源的工作空间先解析到封存内容，再由后续同步收敛登记；未登记的旧引用仍按未声明拒绝。`syncPackageBuiltins` 对 `existing.resource` 的解析失败按无本地快照处理，把陈旧引用降级为缺失状态而不是中断整次收敛；`prepareWorkspaceForOpen` 在本机投射刷新失败时自动转入 `select → start` 完整准备来完成这种收敛，打开响应不再向界面单独报告可重试的刷新失败。
+
 ## 关键调用与数据流
 
 `renderSkillsRuntime` 调用 `assembleRuntimeProjection`；后者调用 `resolveRenderSkills`，取得 `resolveSkillCapabilityGraph` 与 `resolveSkills` 的结果，再通过 `buildSkillRenderPlan` 生成目标计划。`resolveSkills` 通过 `resolveSharedResource` 解析官方引用，其他本地来源继续从空间读取，再调用 `resolveComponentContributions`，将适用片段和依赖附到目标技能。图中的“有效技能集合”是这段解析过程的概括，不是新增持久对象。

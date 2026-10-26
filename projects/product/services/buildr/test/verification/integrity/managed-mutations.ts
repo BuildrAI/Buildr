@@ -70,6 +70,8 @@ const allowed: any = new Map([
   ['src/infrastructure/product-resources/shared-resources.ts', new Set(['ensurePackageResources', 'publishPackageResources', 'adoptPackageResources', 'prepareWorkspaceResourceAdoption'])],
   // Preserved Archify installs are relocated into Buildr-owned data before the shared set replaces them.
   ['src/infrastructure/product-resources/preserved-archify.ts', new Set(['preserveArchifyBeforeReplacement'])],
+  // Retired shared skill sources are sealed under local/preserved-skills/ through the same staging protocol before the shared set replaces them.
+  ['src/infrastructure/product-resources/preserved-skills.ts', new Set(['preserveSkillSourceBeforeReplacement'])],
   ['src/modules/agent-assets/application/package-maintenance/archify-retirement.ts', new Set(['retirePackagedArchify'])],
   ['tools/verification/package-check/runtime-checks.ts', new Set([
     'verifyRecursiveRules', 'verifyWorkspaceAssetLifecycle', 'verifyInitializedWorkspace',
