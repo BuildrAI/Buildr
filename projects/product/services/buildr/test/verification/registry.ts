@@ -562,6 +562,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/asset-catalog-version.test.ts',
     'test/integration/asset-catalog-lifecycle.test.ts',
     'test/integration/asset-relationships.test.ts',
+    'test/integration/repository-clone-supervisor.test.ts',
     'test/integration/asset-registration.test.ts',
     'test/integration/asset-repository-mutations.test.ts',
     'test/integration/attached-project-services.test.ts',

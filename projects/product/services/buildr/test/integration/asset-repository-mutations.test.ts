@@ -138,7 +138,9 @@ test('local config resolves tracked and sole remotes but does not guess ambiguou
   c = runtime.updateCatalogAsset(root, 'repository', id, { revision: c.revision, url: 'https://example.com/desired.git', remote: 'absent', integrationBranch: 'main' });
   config = runtime.catalogRepositoryLocalConfig(root, id); assert.equal(config.selectedRemote, null); assert.match(config.diagnostic, /absent/); assert.equal(config.remotes.length, 2);
   c = runtime.updateCatalogAsset(root, 'repository', id, { revision: c.revision, path: 'missing-local' });
-  config = runtime.catalogRepositoryLocalConfig(root, id); assert.equal(config.available, false); assert.match(config.diagnostic, /不存在/);
+  config = runtime.catalogRepositoryLocalConfig(root, id); assert.equal(config.available, false);
+  assert.ok(['cloning', 'failed'].includes(runtime.repositoryCloneStatus(root, id).state));
+  assert.ok(config.diagnostic, 'preparation reports its running or failed clone instead of reading a partial Git directory');
 });
 
 
@@ -153,7 +155,8 @@ test('service update creates and associates a repository atomically through the 
   assert.equal(c.repositories.length, 2); assert.equal(c.services[0].id, service.id); assert.equal(c.services[0].name, 'Updated');
   assert.equal(c.services[0].repositoryId, c.repositories.find((r: any) => r.code === 'new-inline-code').id);
   assert.deepEqual(c.projects.map((p: any) => p.serviceIds), projectRefs);
-  assert.equal(fs.existsSync(path.join(root, 'repositories/new-inline-code')), false);
+  const inlineRepository = c.repositories.find((r: any) => r.code === 'new-inline-code');
+  assert.ok(['cloning', 'failed'].includes(runtime.repositoryCloneStatus(root, inlineRepository.id).state));
   assert.throws(() => runtime.updateCatalogAsset(root, 'service', service.id, { revision: originalRevision, repository: { code: 'stale-inline-code', url: 'https://example.com/stale.git', integrationBranch: 'dev' } }), (e: any) => e.code === 'asset_revision_conflict');
   assert.equal(runtime.assetCatalog(root).repositories.length, 2);
 });

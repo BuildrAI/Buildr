@@ -24,7 +24,10 @@ test('distinct branches and services share repository identity without duplicate
   assert.equal(catalog.services.length, 2);
   assert.equal(new Set(catalog.services.map((s: any) => s.repositoryId)).size, 1);
   assert.equal(catalog.repositories[0].available, false);
-  assert.equal(fs.existsSync(path.join(root, 'repositories/freshx-pigs')), false);
+  assert.ok(['cloning', 'failed'].includes(runtime.repositoryCloneStatus(root, repositoryId).state));
+  const status = runtime.catalogRepositoryStatus(root, repositoryId);
+  assert.equal(status.available, false);
+  assert.ok(status.observed && typeof status.observed === 'object', 'pending status preserves the HTTP object contract');
   assert.equal(fs.existsSync(path.join(root, 'services/pig-business')), false);
 });
 
@@ -342,7 +345,7 @@ test('git repository registration clones asynchronously; explicit request retrie
   const origin = makeOriginRepository(t, 'clone-origin');
   catalog = runtime.createCatalogRepository(root, { revision: catalog.revision, code: 'cloned-code', url: `file://${origin}`, integrationBranch: 'main' });
   const repositoryId = catalog.repositories.find((r: any) => r.code === 'cloned-code').id;
-  await waitFor(() => fs.existsSync(path.join(root, 'repositories/cloned-code/.git')), 'registration clone must materialize the repository');
+  await waitFor(() => runtime.repositoryCloneStatus(root, repositoryId).state === null, 'registration clone must complete before becoming ready');
   assert.equal(fs.readFileSync(path.join(root, 'repositories/cloned-code/README.md'), 'utf8'), '# demo\n');
   assert.equal(runtime.repositoryCloneStatus(root, repositoryId).state, null, 'successful clone clears transient state');
   assert.equal(runtime.repositoryCloneRequest(root, repositoryId).status, 'ready', 'cloning an existing directory is a no-op');

@@ -2422,7 +2422,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     assert.equal(saved.services.find((s: any) => s.id === service.id).repositoryId, repository.id);
     assert.equal(saved.services.find((s: any) => s.id === service.id).name, '保留服务名称草稿');
     assert.equal(repository.source.path, 'repositories/inline-picker-code');
-    assert.equal(fs.existsSync(path.join(workspaceRoot, 'repositories/inline-picker-code')), false);
+    assert.ok(['cloning', 'failed'].includes(runtime.repositoryCloneStatus(workspaceRoot, repository.id).state), 'registration does not imply clone completion');
   });
 
   if (selected('service')) await t.test('新增代码库从地址自动填入编码目录并分别保护手动值', async () => {

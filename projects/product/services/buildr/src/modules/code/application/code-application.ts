@@ -39,6 +39,10 @@ export type CodeDependencies = {
   repositoryCloneRequest?(root:string,repositoryId:string):{status:'started'|'already-running'|'ready'|'unavailable';diagnostic:string|null};
 };
 export function createCodeApplication(dependencies:CodeDependencies) {
+  function assertRepositoryPrepared(root: string, repositoryId: string) {
+    const clone = dependencies.repositoryCloneStatus?.(root, repositoryId);
+    if (clone?.state) throw codeFailure('code_repository_unavailable', clone.diagnostic || '代码库正在克隆，尚未准备完成。', 409);
+  }
   // Scope observations belong to one read, never to the lifetime of this application.
   const repositoryRegistrations = new WeakMap<object, () => Repository>();
   const repositoryCommonDirectories = new WeakMap<object, string>();
@@ -58,6 +62,7 @@ export function createCodeApplication(dependencies:CodeDependencies) {
       try {
         location=dependencies.resolveSourceRoot(root,repo.source);
         if(readIdentity){
+          assertRepositoryPrepared(root, repo.id);
           if(!fs.statSync(location).isDirectory())throw codeFailure('code_repository_unavailable',repo.name+' 的登记目录不是有效目录。',404);
           const gitRepository=gitReader.repository(location);gitId=gitRepository.id;location=gitRepository.root;commonDirectory=gitRepository.commonDir;available=true;
         }
@@ -105,6 +110,7 @@ export function createCodeApplication(dependencies:CodeDependencies) {
   function source(root:string,input:CodeInput,registeredRead=false):CodeSource {
     const catalog=dependencies.assetCatalog(root),repo=catalog.repositories.find(r=>r.id===input.repositoryId);
     if(!repo)throw codeFailure('code_repository_not_registered','代码库不在当前工作空间的登记范围内。',404);
+    assertRepositoryPrepared(root, repo.id);
     let location=dependencies.resolveSourceRoot(root,repo.source),kind:CodeSource['kind']='default';
     let sourceTaskId=input.taskId||null,checkoutId:string|null=null,worktreeGroupId:string|null=null;
     try { location=fs.realpathSync(location); } catch { throw codeFailure('code_repository_unavailable','代码库本机目录当前不可读取。',404); }
@@ -180,6 +186,7 @@ export function createCodeApplication(dependencies:CodeDependencies) {
       verify(current: CodeSource) {
         const repository = registration?registration():dependencies.assetCatalog(root).repositories.find(item => item.id === repositoryId);
         if (!repository) throw codeFailure('code_repository_not_registered', '代码库不在当前工作空间的登记范围内。', 404);
+        assertRepositoryPrepared(root, repository.id);
         let location = dependencies.resolveSourceRoot(root, repository.source);
         try { location = fs.realpathSync(location); } catch { throw codeFailure('code_repository_unavailable', '代码库本机目录当前不可读取。', 404); }
         if(registration&&sameFilesystemPath(location,registered.location)){
@@ -200,6 +207,7 @@ export function createCodeApplication(dependencies:CodeDependencies) {
     if (location.taskId || location.commitHash || location.checkoutId !== undefined) return undefined;
     const repository = dependencies.assetCatalog(root).repositories.find(item => item.id === input.repositoryId);
     if (!repository) throw codeFailure('code_repository_not_registered', '代码库不在当前工作空间的登记范围内。', 404);
+    assertRepositoryPrepared(root, repository.id);
     let registeredLocation: string;
     try { registeredLocation = fs.realpathSync(dependencies.resolveSourceRoot(root, repository.source)); }
     catch { throw codeFailure('code_repository_unavailable', '代码库本机目录当前不可读取。', 404); }
@@ -218,6 +226,7 @@ export function createCodeApplication(dependencies:CodeDependencies) {
       if(!input.repositoryId||!input.worktreeId||!/^checkout-[a-f0-9]{64}$/.test(input.worktreeId||'')||input.taskId||input.commitHash||input.checkoutId!==undefined)return undefined;
       const repository=dependencies.assetCatalog(root).repositories.find(item=>item.id===input.repositoryId);
       if(!repository)throw codeFailure('code_repository_not_registered','代码库不在当前工作空间的登记范围内。',404);
+      assertRepositoryPrepared(root, repository.id);
       let location:string;
       try{location=fs.realpathSync(dependencies.resolveSourceRoot(root,repository.source));}catch{throw codeFailure('code_repository_unavailable','代码库本机目录当前不可读取。',404);}
       const registered=createGitCommitReader().repository(location);
@@ -228,6 +237,7 @@ export function createCodeApplication(dependencies:CodeDependencies) {
     ...createCodeFetchApplication({registeredLocation:(root,repositoryId)=>{
       const repository=dependencies.assetCatalog(root).repositories.find(item=>item.id===repositoryId);
       if(!repository)throw codeFailure('code_repository_not_registered','代码库不在当前工作空间的登记范围内。',404);
+      assertRepositoryPrepared(root, repository.id);
       return createGitCommitReader().repository(dependencies.resolveSourceRoot(root,repository.source)).root;
     }}),
     ...createCodeCommitApplication({ source: (root, input) => source(root, input as CodeInput), prepareCommitSync: syncApplication.prepareCommitSync }),
