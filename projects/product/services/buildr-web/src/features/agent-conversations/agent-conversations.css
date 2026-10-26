@@ -6,6 +6,62 @@
 .ac-participants{display:flex;align-items:center;flex-wrap:wrap;gap:9px;flex:none;min-height:34px;padding:8px 20px;border-bottom:1px solid #eef2f0;font-size:10px;color:#8d9d94}.ac-participants>span{padding:1px 5px;border:1px solid #e4ece7;border-radius:4px;color:#748b7c}
 .ac-stream{flex:1;min-height:0;overflow:auto;scrollbar-width:thin;overscroll-behavior:contain}.ac-stream>.ant-spin{display:block;margin:35px auto}.ac-stream>.ant-alert{margin:16px}.ac-message-list{max-width:780px;margin:auto;padding:26px 24px 12px}.ac-message{margin-bottom:26px;font-size:13px;line-height:1.85;overflow-wrap:anywhere}.ac-message>p{white-space:pre-wrap;margin:0}.ac-message.is-user{margin-left:auto;max-width:88%;width:fit-content;background:#eff5f2;border-radius:12px 12px 4px 12px;padding:11px 15px;color:#3b5147}.ac-message-identity{display:block;color:#6b8776;font-weight:600;font-size:11px;margin-bottom:9px}.ac-message .markdown-body{font-size:13px;line-height:1.85}.ac-message .markdown-body pre{max-width:100%;overflow:auto;font-size:11px}.ac-message>.ant-btn{color:#97aaa0;font-size:10px}.ac-message.is-system{font-size:11px;color:#7e8c84}
 .ac-tool{font-size:11px;color:#819487;margin:10px 0 22px}.ac-tool summary{cursor:pointer;overflow-wrap:anywhere}.ac-tool pre{font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere;padding:9px;background:#f7f9f8;border-radius:6px}.ac-handoff{font-size:11px;color:#85968b;margin:15px 0 24px}.ac-handoff summary{cursor:pointer}.ac-handoff p{white-space:pre-wrap;line-height:1.8}
+/* One assistant reply owns its execution disclosure and visible conclusion. */
+.ac-assistant-reply{min-width:0;margin:0 0 24px;padding-bottom:16px;border-bottom:1px solid #e7ede9}
+.ac-assistant-reply>.ac-message-identity{margin:0 0 3px}
+.ac-assistant-reply>.ac-process{margin:0 0 6px}
+.ac-assistant-reply>.ac-process:last-child{margin-bottom:0}
+.ac-assistant-reply>.ac-message{margin:0}
+.ac-assistant-reply .markdown-body>:first-child{margin-top:0}
+.ac-assistant-reply .markdown-body>:last-child{margin-bottom:0}
+.ac-assistant-reply>.ac-message>.ant-btn{margin-top:4px}
+/* Results remain visible; execution stays independently collapsible. */
+.ac-process{--ac-process-accent:var(--soft-primary,#397d74);margin:0 0 18px;padding:0;border:0;border-radius:0;background:transparent;min-width:0;color:#747d77;font-size:12px}
+.ac-process>summary{display:flex;align-items:center;gap:8px;min-height:30px;padding:4px 3px;margin-inline:-3px;border-radius:4px;list-style:none;cursor:pointer;color:inherit;font:inherit;white-space:nowrap;line-height:22px}
+.ac-process>summary::-webkit-details-marker,.ac-step>summary::-webkit-details-marker{display:none}
+.ac-process>summary::marker,.ac-step>summary::marker{content:''}
+.ac-process>summary:hover,.ac-step>summary:hover{background:#f5f7f5}
+.ac-process>summary:focus-visible,.ac-step>summary:focus-visible,.ac-tool-file-link:focus-visible{outline:1px solid #899e90;outline-offset:2px}
+.ac-process-title{flex:none;font-weight:400}
+.ac-process-meta{flex:none;color:#8a928d;font-size:11px;font-variant-numeric:tabular-nums}
+.ac-process-meta::before{content:'·';padding-right:8px;color:#b5bcb7}
+.ac-process-chevron,.ac-step-chevron{flex:none;color:#939e96;font-size:9px;transition:transform .15s ease}
+.ac-process[open]>summary>.ac-process-chevron,.ac-step[open]>summary>.ac-step-chevron{transform:rotate(90deg)}
+.ac-process-current{min-width:0;overflow:hidden;text-overflow:ellipsis;color:#818c84;font-size:11px}
+.ac-process-failures{display:inline-flex;align-items:center;gap:4px;flex:none;color:#a2742e;font-size:11px}
+.ac-process.is-running>summary>.ac-process-title{color:var(--ac-process-accent)}
+.ac-process-running-dot{flex:none;width:5px;height:5px;border-radius:50%;background:var(--ac-process-accent);color:var(--ac-process-accent);animation:ac-process-pulse 1.8s ease-out infinite}
+@keyframes ac-process-pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,currentColor 18%,transparent)}65%{box-shadow:0 0 0 4px transparent}}
+.ac-process-timeline{margin:5px 0 0 5px;padding:0 0 2px 16px;border-left:1px solid #e7ece8}
+.ac-process-narration{margin:9px 0 12px}
+.ac-process-narration .markdown-body{color:#505d54;font-size:12px;line-height:1.85;overflow-wrap:anywhere}
+.ac-process-narration .markdown-body>:first-child{margin-top:0}
+.ac-process-narration .markdown-body>:last-child{margin-bottom:0}
+.ac-process-narration .markdown-body pre{font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere}
+.ac-step{position:relative;margin:2px 0;padding:0;border:0;border-radius:0;background:transparent;min-width:0}
+.ac-step>summary{display:flex;align-items:center;gap:8px;min-height:28px;padding:4px 5px 4px 0;border-radius:4px;list-style:none;cursor:pointer;color:#727c75;font-size:11.5px;font-weight:400;white-space:nowrap;line-height:20px}
+.ac-step-node{display:inline-flex;align-items:center;justify-content:center;flex:none;width:15px;height:20px;color:#919c93;font-size:12px}
+.ac-command-symbol{font:600 15px/20px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:-2px;padding-right:2px}
+.ac-step-action{flex:none;color:#6f7c72}
+.ac-step-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;color:#879087}
+.ac-step-label.is-command{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px}
+.ac-step-chevron{margin-left:auto;font-size:8px}
+.ac-step-status{display:inline-flex;align-items:center;gap:4px;flex:none;font-size:10px}
+.ac-step.is-running>summary>.ac-step-status{color:var(--ac-process-accent)}
+.ac-step.is-failed>summary>.ac-step-status,.ac-step.is-failed>summary>.ac-step-node{color:#a2742e}
+.ac-step.is-failed>summary{background:#fcf8ef}
+.ac-step[open]>summary>.ac-step-action{color:#404f44}
+.ac-tool-file-link{display:inline-block;max-width:100%;padding:0 4px;border:0;border-radius:3px;background:#f0f4f1;color:#53765f;font:inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;cursor:pointer;text-align:left}
+.ac-tool-file-link:hover{background:#e7eee9;text-decoration:underline;text-underline-offset:3px}
+.ac-tool-detail{margin:4px 0 12px 23px;padding:10px 12px;border-radius:6px;background:#f5f7f5;color:#657168;font-size:11px}
+.ac-tool-detail-label{color:#929b94;font-size:10px;margin:0 0 5px}
+.ac-tool-detail pre{max-height:320px;overflow:auto;margin:0 0 12px;padding:0;border:0;background:transparent;color:#455249;font:11px/1.75 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;tab-size:2}
+.ac-tool-detail pre:last-child{margin-bottom:0}
+.ac-tool-detail .ac-tool-command{color:#344b3b}
+.ac-tool-files{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 10px}
+.ac-tool-files>span{font-size:10px;color:#929b94}
+.ac-message .markdown-body{color:var(--soft-ink,#252a31)}
+@media(prefers-reduced-motion:reduce){.ac-process-running-dot{animation:none}.ac-process-chevron,.ac-step-chevron{transition:none}}
 .ac-run-status{font-size:11px;color:#84998b;padding:8px 24px}.ac-run-status p{white-space:pre-wrap;margin:7px 0}.ac-run-status[data-run-status=unknown],.ac-run-status[data-run-status=tools-active]{color:#a28a5b}
 .ac-welcome{min-height:100%;display:flex;flex-direction:column;justify-content:center;max-width:620px;padding:32px 27px;margin:auto;box-sizing:border-box}.ac-welcome>.anticon{align-self:flex-start;font-size:25px;padding:10px;border:1px solid #dce9e1;border-radius:12px;color:#5c947a;margin-bottom:20px}.ac-welcome h1{font-size:24px;font-weight:550;margin:0 0 12px}.ac-welcome>p{color:#93a096;font-size:12px}.ac-welcome .ac-location-settings{margin-top:16px;width:100%}
 .ac-compose-wrap{padding:9px 18px 14px;width:100%;max-width:800px;box-sizing:border-box;margin:auto;flex:none}.ac-compose-wrap>.ant-alert{margin-bottom:10px;font-size:11px}.ac-compose-wrap>.ant-alert .ant-alert-message{font-size:12px}.ac-compose-wrap>small{display:block;font-size:11px;color:#7b9585;margin-bottom:6px}.ac-composer{border:1px solid #dce6e0;border-radius:13px;padding:10px 11px 8px;background:#fff}.ac-composer:focus-within{border-color:#9bbbad;box-shadow:0 0 0 2px #769c880a}.ac-composer textarea.ant-input{border:0;box-shadow:none!important;background:transparent;font-size:13px;line-height:1.8;padding:3px var(--ac-compose-inset,3px);resize:none}.ac-composer textarea::placeholder{color:#a1ada6}

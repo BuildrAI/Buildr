@@ -122,7 +122,7 @@ async function execute(params: any): Promise<void> {
         if (text) emit(state, { type: 'item', item: { id, kind: 'message', role: 'assistant', text, executionId: state.id, status: 'completed' } });
         for (const part of message.message?.content ?? []) if (part.type === 'tool_use') {
           state.tools.set(part.id, { id: part.id, label: String(part.name ?? '工具'), status: 'running' });
-          emit(state, { type: 'item', item: { id: part.id, kind: 'tool', role: 'system', text: String(part.name ?? '工具') + '\n' + nativePreview(JSON.stringify(part.input ?? {})), executionId: state.id, status: 'running' } });
+          emit(state, { type: 'item', item: { id: part.id, kind: 'tool', role: 'system', name: typeof part.name === 'string' && part.name ? part.name : undefined, input: nativePreview(JSON.stringify(part.input ?? {})), text: String(part.name ?? '工具') + '\n' + nativePreview(JSON.stringify(part.input ?? {})), executionId: state.id, status: 'running' } });
         }
       }
       if (message.type === 'stream_event') {

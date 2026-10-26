@@ -9,7 +9,7 @@ import { createAgentService } from '../../src/index.ts';
 import type { AgentExecutor, AgentRuntime, ContextRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorSendInput, LoginObservation } from '../../src/contracts.ts';
 
 type Context = { items: ExecutorItem[]; observation: ExecutorObservation; unblock?: () => void };
-function fake(id = 'local', options: { hold?: boolean; unknown?: boolean; images?: boolean; request?: boolean; coldUnknown?: boolean; beforeAccepted?: Promise<void>; replyAfterTerminal?: boolean; toolSurvives?: boolean } = {}) {
+function fake(id = 'local', options: { hold?: boolean; unknown?: boolean; images?: boolean; request?: boolean; coldUnknown?: boolean; beforeAccepted?: Promise<void>; replyAfterTerminal?: boolean; toolSurvives?: boolean; toolInput?: boolean } = {}) {
   const contexts = new Map<string, Context>(); const sends: ExecutorSendInput[] = []; const opens: ExecutorOpenOptions[] = [];
   let loginUpdate: ((value: LoginObservation) => void) | undefined;
   const capabilities = { text: true, images: Boolean(options.images), approval: true, questions: true, stop: true, resume: true, maxInputBytes: 128 * 1024 };
@@ -38,6 +38,12 @@ function fake(id = 'local', options: { hold?: boolean; unknown?: boolean; images
         if (options.request) input.onEvent({ type: 'request', request: { id: 'permit-one', kind: 'approval', title: 'Write a file?', options: [{ id: 'allow-once', label: 'Allow once' }, { id: 'deny', label: 'Deny' }] } });
         if (options.hold || options.request) await new Promise<void>(resolve => { context.unblock = resolve; });
         if (context.observation.status === 'stopped') { input.onEvent({ type: 'completed', status: 'stopped' }); return; }
+        if (options.toolInput) {
+          const invocation:ExecutorItem={id:`tool-${sends.length}`,kind:'tool',role:'system',name:'read',input:'{"file_path":"src/example.ts"}',text:'read\n{"file_path":"src/example.ts"}',executionId:executionRef.id,status:'running'};
+          input.onEvent({type:'item',item:invocation});
+          const result:ExecutorItem={id:invocation.id,kind:'tool',role:'system',text:'file content',executionId:executionRef.id,status:'completed'};
+          context.items.push(result);input.onEvent({type:'item',item:result});
+        }
         const item: ExecutorItem = { id: `answer-${sends.length}`, kind: 'message', role: 'assistant', text: `answer from ${id}`, executionId: executionRef.id, status: 'completed' };
         context.items.push(item); input.onEvent({ type: 'item', item });
         context.observation = options.toolSurvives ? { status: 'tools-active', executionRef, tools: [{ id: 'own-tool', label: 'owned command', status: 'running', canStop: true }] } : { status: 'idle', executionRef, tools: [] };
@@ -866,4 +872,17 @@ test('context usage stores the latest executor observation and ignores invalid c
     native.sends[0]!.onEvent({type:'context-usage',usedTokens:-1});
     assert.equal(f.service.conversations.read('workspace-one',created.id).run?.contextUsage?.usedTokens,12000);
   } finally {await f.close();}
+});
+
+test('tool result updates preserve original invocation input and name across history reconciliation', async () => {
+  const native=fake('local',{toolInput:true}),f=fixture([native.executor]);
+  try {
+    await connected(f.service,'local');const created=await f.service.conversations.create('workspace-one',{});
+    send(f.service,created.id,'local','read file');
+    await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),view=>view.run?.status==='completed');
+    const view=await f.service.conversations.observe('workspace-one',created.id);
+    const tool=view.entries.find(entry=>entry.kind==='tool');
+    assert.equal(tool?.name,'read');assert.equal(tool?.input,'{"file_path":"src/example.ts"}');assert.equal(tool?.text,'file content');
+    assert.equal(view.entries.filter(entry=>entry.kind==='tool').length,1);
+  } finally { await f.close(); }
 });

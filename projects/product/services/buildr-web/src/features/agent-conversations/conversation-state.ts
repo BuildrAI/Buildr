@@ -1,4 +1,4 @@
-import type { ConversationView, ConversationEvent, ConversationRun } from './types';
+import type { ConversationView, ConversationEntry, ConversationEvent, ConversationRun } from './types';
 
 export function executionLocked(run?: ConversationRun): boolean {
   return Boolean(run && ['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'tools-active', 'unknown'].includes(run.status));
@@ -89,4 +89,57 @@ export function sameConversationSelection(current:ConversationSelection,observed
 
 export function latestConversationParticipant(conversation:ConversationView|null) {
   return conversation?.participants.find(participant=>participant.id===conversation.run?.participantId)??conversation?.participants.at(-1);
+}
+
+// The visible stream interleaves conversation entries with per-run process blocks.
+export type ConversationStreamItem = {type:'entry';entry:ConversationEntry}|{type:'process-block';entries:ConversationEntry[];active:boolean;finishedAt?:string};
+/** Legacy records have no message phase: the last assistant message of a settled
+ * run is its visible reply, regardless of length. Never promote live narration. */
+export function groupConversationStream(entries:readonly ConversationEntry[],currentRun?:ConversationRun):ConversationStreamItem[] {
+  const items:ConversationStreamItem[]=[];
+  const isProcess=(entry:ConversationEntry)=>entry.kind==='tool'||entry.kind==='message'&&entry.role==='assistant';
+  for(let index=0;index<entries.length;){
+    const first=entries[index];
+    if(!isProcess(first)){items.push({type:'entry',entry:first});index++;continue;}
+    const run:ConversationEntry[]=[];
+    while(index<entries.length&&isProcess(entries[index])&&entries[index].runId===first.runId)run.push(entries[index++]);
+    const active=Boolean(currentRun&&currentRun.id===first.runId&&executionLocked(currentRun));
+    const result=active?undefined:[...run].reverse().find(entry=>entry.kind==='message'&&entry.role==='assistant');
+    const process=result?run.filter(entry=>entry!==result):run;
+    if(process.length)items.push({type:'process-block',entries:process,active,finishedAt:result?.createdAt});
+    if(result)items.push({type:'entry',entry:result});
+  }
+  return items;
+}
+export function toolEntryHeadline(entry:ConversationEntry):string {
+  return entry.text.split('\n',1)[0].trim();
+}
+const TOOL_NAME_LABELS:Record<string,string>={command:'已运行',commandExecution:'已运行','file-change':'已修改','mcp-tool':'已调用',bash:'已运行',read:'已读取',write:'已写入',edit:'已编辑',glob:'已查找',grep:'已搜索',web_fetch:'已获取',web_fetch_url:'已获取',web_search:'已搜索',ls:'已列出'};
+/** Stable tool names map to semantic action labels; names the dictionary misses show as-is. */
+export function toolStepLabel(entry:ConversationEntry):string {
+  const name=entry.name?.trim();
+  const headline=toolEntryHeadline(entry);
+  if(!name)return headline;
+  // File changes list affected paths below the generic first line.
+  if(name==='file-change'){const paths=entry.text.split('\n').slice(1).map(line=>line.trim()).filter(Boolean);return `已修改 ${paths.length} 个文件${paths.length?'：'+paths[0]+(paths.length>1?' 等':''):''}`;}
+  // Some executors keep the raw name as the text first line; prefer its argument line.
+  const detail=headline===name?(entry.text.split('\n',2)[1]??'').trim():headline;
+  const verb=TOOL_NAME_LABELS[name]??TOOL_NAME_LABELS[name.toLowerCase()];
+  if(verb)return `${verb} ${detail}`.trim();
+  return `已调用 ${name}${detail?' · '+detail:''}`;
+}
+export function processBlockSummary(entries:readonly ConversationEntry[]):{running:number;failed:number;latest:ConversationEntry;focus:ConversationEntry;startedAt:string;finishedAt:string} {
+  let running=0,failed=0;
+  let lastFailed:ConversationEntry|null=null;
+  for(const entry of entries){
+    if(entry.status==='running')running++;
+    else if(entry.status==='failed'){failed++;lastFailed=entry;}
+  }
+  const latest=entries[entries.length-1];
+  // Running blocks show the freshest step; settled blocks surface a failure over the tail.
+  return {running,failed,latest,focus:running>0||!lastFailed?latest:lastFailed,startedAt:entries[0].createdAt,finishedAt:latest.createdAt};
+}
+// Keep expansion stable as more steps arrive in the same process.
+export function processBlockKey(entries:readonly ConversationEntry[]):string {
+  return 'process-block:'+entries[0].id;
 }

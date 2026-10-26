@@ -29,6 +29,7 @@ test('Codex native adapter preserves exact context, streams, answers and stops o
     await runtime.stop({ contextRef: reference, executionRef }); await sending;
     await eventually(() => events.some(event => event.type === 'item' && event.item.kind === 'tool' && event.item.status === 'completed'));
     assert.equal((await runtime.observe({ contextRef: reference, executionRef })).status, 'stopped');
+    assert.ok(events.some(event => event.type === 'item' && event.item.name === 'command' && event.item.input === 'synthetic command'));
     assert.deepEqual(events.find(event=>event.type==='context-usage'),{type:'context-usage',usedTokens:12000,windowTokens:500000});
     const nativeState = JSON.parse(await readFile(join(configRoot, 'codex-home/state.json'), 'utf8')); assert.equal(nativeState[reference.id].turns[0].items[0].content[1].type, 'localImage');
     const binding = runtime.bindingIdentity; await runtime.close(); runtime = await createCodexExecutor().open(options); assert.equal(runtime.bindingIdentity, binding);

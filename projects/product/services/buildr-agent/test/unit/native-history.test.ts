@@ -14,6 +14,7 @@ test('DSH flat user event maps request identity to all corresponding turn items'
   ]);
   assert.equal(items.length, 3); assert.equal(items[0].id, 'u-native'); assert.equal(items[0].executionId, 'client-exact');
   assert.equal(items[1].id, 'assistant:7:1'); assert.equal(items[1].executionId, 'client-exact'); assert.equal(items[2].status, 'completed');
+  assert.equal(items[2].name, 'read'); assert.equal(items[2].input, '{}');
   assert.ok(!JSON.stringify(items).includes('hidden'));
 });
 test('Qoder durable snapshots collapse by native message ID, preserving exact user UUIDs', () => {
@@ -27,6 +28,7 @@ test('Qoder durable snapshots collapse by native message ID, preserving exact us
   const items = qoderHistoryItems(messages, 'session-a');
   assert.equal(items.length, 4); assert.equal(items[1].id, 'message:message-a'); assert.equal(items[1].text, '正在完成');
   assert.equal(items[1].executionId, 'request-1'); assert.equal(items[2].status, 'completed');
+  assert.equal(items[2].name, 'Read'); assert.equal(items[2].input, JSON.stringify({path:'/file'}));
   assert.equal(items[3].id, 'request-2'); assert.equal(items[3].executionId, 'request-2');
   assert.throws(() => qoderHistoryItems(messages, 'different-session'), /identity_mismatch/);
 });

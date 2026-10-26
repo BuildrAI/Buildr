@@ -310,9 +310,9 @@ function codexItem(item: any, executionId: string, status: string): ExecutorItem
   const final = status === 'completed' ? 'completed' as const : status === 'failed' ? 'failed' as const : 'running' as const;
   if (item.type === 'agentMessage') return [{ id: item.id, kind: 'message', role: 'assistant', text: String(item.text ?? ''), executionId, status: final }];
   if (item.type === 'userMessage') return [{ id: item.id, kind: 'message', role: 'user', text: visibleText(item.content), executionId, status: 'completed' }];
-  if (item.type === 'commandExecution') return [{ id: item.id, kind: 'tool', role: 'system', text: String(item.command ?? '命令') + (item.aggregatedOutput ? '\n' + nativePreview(String(item.aggregatedOutput)) : ''), executionId, status: final }];
-  if (item.type === 'fileChange') return [{ id: item.id, kind: 'tool', role: 'system', text: '修改文件\n' + (item.changes ?? []).map((change: any) => String(change.path ?? '')).join('\n'), executionId, status: final }];
-  if (item.type === 'mcpToolCall') return [{ id: item.id, kind: 'tool', role: 'system', text: String(item.tool ?? '工具'), executionId, status: final }];
+  if (item.type === 'commandExecution') return [{ id: item.id, kind: 'tool', role: 'system', name: 'command', input: String(item.command ?? ''), text: String(item.command ?? '命令') + (item.aggregatedOutput ? '\n' + nativePreview(String(item.aggregatedOutput)) : ''), executionId, status: final }];
+  if (item.type === 'fileChange') return [{ id: item.id, kind: 'tool', role: 'system', name: 'file-change', text: '修改文件\n' + (item.changes ?? []).map((change: any) => String(change.path ?? '')).join('\n'), executionId, status: final }];
+  if (item.type === 'mcpToolCall') return [{ id: item.id, kind: 'tool', role: 'system', name: 'mcp-tool', input: item.arguments === undefined ? undefined : nativePreview(JSON.stringify(item.arguments)), text: String(item.tool ?? '工具'), executionId, status: final }];
   return [];
 }
 function codexRequest(id: string, method: string, params: any): ExecutorRequest | undefined {

@@ -61,6 +61,10 @@ export interface ExecutorItem {
   kind: 'message' | 'tool' | 'notice';
   role: 'user' | 'assistant' | 'system';
   text: string;
+  /** Stable tool-step name when the source provides one (e.g. command, file-change, read). */
+  name?: string;
+  /** Original tool invocation input; retained when a later result replaces text. */
+  input?: string;
   executionId?: string;
   status?: 'running' | 'completed' | 'failed';
 }
@@ -187,6 +191,10 @@ export interface ConversationEntry {
   kind: 'message' | 'tool' | 'notice' | 'handoff';
   role: 'user' | 'assistant' | 'system';
   text: string;
+  /** Stable tool-step name when the source provided one. */
+  name?: string;
+  /** Original tool invocation input; retained when a later result replaces text. */
+  input?: string;
   participantId?: string;
   provider?: ProviderId;
   runId?: string;

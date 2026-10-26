@@ -222,10 +222,12 @@ export class ConversationApplication {
     if (entry) {
       record.sources[source] = entry.id;
       if (entry.role === 'user') return false;
-      if (entry.text === item.text && entry.status === item.status) return false;
-      entry.text = item.text; entry.status = item.status; return true;
+      const nameChanged = item.name !== undefined && entry.name !== item.name;
+      const inputChanged = item.input !== undefined && entry.input !== item.input;
+      if (entry.text === item.text && entry.status === item.status && !nameChanged && !inputChanged) return false;
+      entry.text = item.text; entry.status = item.status; if (nameChanged) entry.name = item.name; if (inputChanged) entry.input = item.input; return true;
     }
-    entry = { id: randomUUID(), sequence: (record.view.entries.at(-1)?.sequence ?? 0) + 1, createdAt: this.options.now(), kind: item.kind, role: item.role, text: item.text, participantId: participant.id, provider: participant.provider, runId, status: item.status };
+    entry = { id: randomUUID(), sequence: (record.view.entries.at(-1)?.sequence ?? 0) + 1, createdAt: this.options.now(), kind: item.kind, role: item.role, text: item.text, name: item.name, input: item.input, participantId: participant.id, provider: participant.provider, runId, status: item.status };
     record.view.entries.push(entry); record.sources[source] = entry.id;
     participant.deliveredThrough = Math.max(participant.deliveredThrough, entry.sequence);
     return true;
