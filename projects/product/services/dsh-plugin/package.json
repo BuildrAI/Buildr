@@ -9,33 +9,48 @@
         "packageName": "@buildr-ai/buildr",
         "feature": "entry",
         "required": true,
-        "versions": { "minInclusive": "0.1.0-rc.38", "maxExclusive": "0.2.0-0", "includePrerelease": true },
-        "contracts": ["buildr.installation-status/v1", "buildr.web-protocol/v1"]
+        "versions": {
+          "minInclusive": "0.1.0-rc.38",
+          "maxExclusive": "0.2.0-0",
+          "includePrerelease": true
+        },
+        "contracts": [
+          "buildr.installation-status/v1",
+          "buildr.web-protocol/v1"
+        ]
       },
       {
         "packageName": "@buildr-ai/buildr",
         "feature": "sourceCapture",
         "required": false,
-        "versions": { "minInclusive": "0.1.0-rc.38", "maxExclusive": "0.2.0-0", "includePrerelease": true },
-        "contracts": ["buildr.agent-asset-source-observations/v1", "buildr.agent-asset-source-result/v1"]
+        "versions": {
+          "minInclusive": "0.1.0-rc.38",
+          "maxExclusive": "0.2.0-0",
+          "includePrerelease": true
+        },
+        "contracts": [
+          "buildr.agent-asset-source-observations/v1",
+          "buildr.agent-asset-source-result/v1"
+        ]
       }
     ]
   },
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24.15.0" },
+  "engines": {
+    "node": ">=24.15.0"
+  },
   "scripts": {
     "build": "node tools/build-package.ts",
     "build:dev": "node tools/build-package.ts --dev",
-    "verify": "node tools/verify-package.ts",
-    "verify:dev": "node tools/verify-package.ts --dev",
     "sdk:prepare": "node tools/prepare-source-sdk.ts",
     "composition:dev": "node tools/build-development-composition.ts",
     "preset:adapter": "node tools/build-preset-adapter.ts",
     "release:status": "node ../../../../skills/buildr-release/scripts/dsh-plugin/release.ts status",
     "release:prepare": "node ../../../../skills/buildr-release/scripts/dsh-plugin/release.ts prepare",
-    "test": "node --test --test-concurrency=2 test/unit/*.test.ts test/integration/*.test.ts",
-    "test:source": "node tools/verify-source.ts",
-    "test:full": "node tools/verify-all.ts"
+    "test": "node ../buildr/test/verification/cli.ts unit --check plugin-unit",
+    "typecheck": "node tools/build-plugin.ts --typecheck-only",
+    "test:static": "node ../buildr/test/verification/cli.ts static --check plugin-source-structure --check plugin-typecheck --check plugin-test-typecheck",
+    "test:integration": "node ../buildr/test/verification/cli.ts integration --check plugin-integration --check plugin-sdk-integration --check plugin-peer-integration --check plugin-ui-integration --check plugin-package-integration"
   }
 }

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { isDeepStrictEqual } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { spawnCommandSync } from '../../src/infrastructure/process.ts';
 import { readReleaseArtifact, releaseArtifactManifestName, releasePackMetadataName } from '../../../../../../skills/buildr-release/scripts/release-artifact.ts';
 import { releaseConsumptionIdentity, RELEASE_CHECKS, validateReleaseCheckDefinitions } from './release/release-consumption.ts';
@@ -27,6 +28,30 @@ export { CANDIDATE_CI_AGGREGATE_SCHEMA, CANDIDATE_CI_CHECKPOINT_SCHEMA, CANDIDAT
 const sha256: any = (value: any) => `sha256-${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
 const platformRunner: any = (platform: any = process.platform) => platform === 'darwin' ? 'macos' : platform === 'win32' ? 'windows' : platform;
 
+const repositoryRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../..');
+// Command executors capture the running Node executable at registry import;
+// the projection must compare against that same captured value.
+const nodeExecutableAtLoad: any = process.execPath;
+const stablePath: any = (value: any) => {
+  if (typeof value !== 'string') return value;
+  if (value === nodeExecutableAtLoad) return 'node';
+  if (path.isAbsolute(value) && !path.relative(repositoryRoot, value).startsWith('..')) return path.relative(repositoryRoot, value).split(path.sep).join('/');
+  return value;
+};
+// The registry digest compares code-selected execution recipes, never host
+// layout: absolutize executables, working directories and path arguments before
+// hashing so the same source proves identical on every runner and checkout.
+const normalizeExecutor: any = (executor: any) => {
+  if (!executor || typeof executor !== 'object') return executor;
+  const normalized: any = { ...executor };
+  for (const [key, value] of Object.entries(normalized)) {
+    normalized[key] = typeof value === 'string' ? stablePath(value)
+      : Array.isArray(value) ? value.map(stablePath)
+      : value;
+  }
+  return normalized;
+};
+
 function registryProjection(): any  {
   return {
     consumption: releaseConsumptionIdentity(),
@@ -38,7 +63,7 @@ function registryProjection(): any  {
       id: item.id,
       dependsOn: item.dependsOn,
       consumesArtifact: item.executor.consumesArtifact === true,
-      executor: item.executor,
+      executor: normalizeExecutor(item.executor),
       platformEvidence: item.platformEvidence ?? null,
       timeoutMs: item.timeoutMs,
       resources: item.resources,

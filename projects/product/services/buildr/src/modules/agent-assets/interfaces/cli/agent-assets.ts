@@ -410,7 +410,7 @@ export function createAgentAssetsCliContributions(): any  {
     route({
       key: 'sync',
       summary: '同步 Buildr 产品能力，安装产品入口 Buildr Skill，并准备当前 Agent 的 workspace 入口 runtime。不是 Project scope 同步工具。',
-      usage: 'Usage: buildr sync [<agent>] --target <dir> [--scope <scope>]',
+      usage: 'Usage: buildr sync [<agent>] --target <dir> [--scope <scope>] [--publish-resources]',
       match: ({ domain }: any) => domain === 'sync',
       run: (runtime: any, context: any) => {
         // 与 parseRuntimeCommandArgs 同一规则：省略运行时身份时，紧随其后的选项不得被当成身份吞掉。

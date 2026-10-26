@@ -237,7 +237,7 @@ suiteTest('manifest-registry', '未提供 description 时 init 写入 TODO，doc
   assert.ok(report.findings.some((finding: any) => finding.code === 'workspace.description_todo'));
 });
 
-suiteTest('manifest-registry', 'Workspace 应用层只修改白名单字段并防止 revision 覆盖', (t: any) => {
+suiteTest('manifest-registry-integration', 'Workspace 应用层只修改白名单字段并防止 revision 覆盖', (t: any) => {
   const root: any = initWorkspace(t);
   const runtime: any = createRuntime();
   const before: any = runtime.getWorkspace(root);
@@ -249,7 +249,7 @@ suiteTest('manifest-registry', 'Workspace 应用层只修改白名单字段并�
   assert.equal(runtime.getWorkspace(root).workspace.name, 'Renamed');
 });
 
-suiteTest('manifest-registry', 'Getting Started projection 汇总 Workspace 范围，开始工作 prompt 再选择任务范围', (t: any) => {
+suiteTest('manifest-registry-integration', 'Getting Started projection 汇总 Workspace 范围，开始工作 prompt 再选择任务范围', (t: any) => {
   const root: any = initWorkspace(t);
   const runtime: any = createRuntime();
   let projection: any = runtime.getWorkspaceGettingStarted(root);
@@ -272,14 +272,16 @@ suiteTest('manifest-registry', 'Getting Started projection 汇总 Workspace 范�
   assert.match(prompt.prompt, /trigger: first-task-scope/);
   assert.match(prompt.prompt, /scope: project:demo/);
   assert.doesNotMatch(prompt.prompt, /service:demo\//);
-  assert.match(prompt.prompt, /routine-maintenance或user-decision-required/);
-  assert.match(prompt.prompt, /改变长期适用性时请求用户确认/);
+  assert.match(prompt.prompt, /project-testing/);
+  assert.match(prompt.prompt, /verification\.yml/);
+  assert.match(prompt.prompt, /preparation\.yml/);
+  assert.doesNotMatch(prompt.prompt, /declaration-intake|routine-maintenance|user-decision-required/);
   assert.equal(prompt.copiedMeansStarted, false);
   assert.throws(() => runtime.generateStartWorkPrompt(root, { projectCode: 'missing', goal: '不应回退' }), (error: any) => error.code === 'project_not_found');
   assert.throws(() => runtime.generateStartWorkPrompt(root, { projectCode: 'demo', goal: 'x', rootPath: root }), (error: any) => error.code === 'workspace_start_work_field_forbidden');
 });
 
-suiteTest('manifest-registry', '目录选择候选以结构化结果恢复，不在失败时写入 Registry', (t: any) => {
+suiteTest('manifest-registry-integration', '目录选择候选以结构化结果恢复，不在失败时写入 Registry', (t: any) => {
   const appData: any = isolateBuildrWebData(t, path.join(temporaryRoot(t), 'picker-app-data'));
   const runtime: any = createRuntime();
   const candidate: any = path.join(temporaryRoot(t), 'not-initialized'); fs.mkdirSync(candidate);
@@ -289,7 +291,7 @@ suiteTest('manifest-registry', '目录选择候选以结构化结果恢复，不
   assert.deepEqual(runtime.listRegisteredWorkspaces().workspaces, []);
 });
 
-suiteTest('manifest-registry', '本机 Workspace 登记只保存 root，并支持幂等登记、切换、移除和 revision CAS', (t: any) => {
+suiteTest('manifest-registry-integration', '本机 Workspace 登记只保存 root，并支持幂等登记、切换、移除和 revision CAS', (t: any) => {
   const appData: any = isolateBuildrWebData(t, path.join(temporaryRoot(t), 'app-data'));
   const first: any = initWorkspace(t, { name: 'First', freshIdentity: true });
   const second: any = initWorkspace(t, { name: 'Second', freshIdentity: true });
@@ -321,7 +323,7 @@ suiteTest('manifest-registry', '本机 Workspace 登记只保存 root，并支�
   assert.ok(fs.existsSync(second), '移除登记不得删除 Workspace');
 });
 
-suiteTest('manifest-registry', '本机 Workspace 登记隔离不可用 root 并阻止重复 identity', (t: any) => {
+suiteTest('manifest-registry-integration', '本机 Workspace 登记隔离不可用 root 并阻止重复 identity', (t: any) => {
   const appData: any = isolateBuildrWebData(t, path.join(temporaryRoot(t), 'app-data-conflict'));
   const first: any = initWorkspace(t, { name: 'Original', freshIdentity: true });
   const duplicate: any = path.join(temporaryRoot(t), 'duplicate');
@@ -338,7 +340,7 @@ suiteTest('manifest-registry', '本机 Workspace 登记隔离不可用 root 并�
   assert.equal(registry.workspaces[0].status, 'unavailable');
 });
 
-suiteTest('manifest-registry', 'legacy migration 复用 Skills UUID，失败时回滚，identity 冲突零写入', (t: any) => {
+suiteTest('manifest-registry-integration', 'legacy migration 复用 Skills UUID，失败时回滚，identity 冲突零写入', (t: any) => {
   const runtime: any = createRuntime();
   const workspaceId: any = crypto.randomUUID();
   const root: any = path.join(temporaryRoot(t), 'legacy');

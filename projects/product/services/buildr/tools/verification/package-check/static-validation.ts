@@ -21,9 +21,9 @@ export function validateTaskVerificationSkillCommands(content: string): string[]
   for (const action of ['inspect', 'record']) {
     const command = new RegExp(`(?:\\bbuildr|<selected-writer-buildr>)\\s+task\\s+verification\\s+${action}\\b[^\\n]*`, 'g');
     const matches = [...content.matchAll(command)];
-    if (!matches.length) problems.push(`task-verification Skill must document task verification ${action}.`);
+    if (!matches.length) problems.push(`project-verification Skill must document task verification ${action}.`);
     if (action === 'record' && !matches.some(([line]) => /--expected-report\b/u.test(line))) {
-      problems.push('task-verification Skill must document --expected-report on task verification record.');
+      problems.push('project-verification Skill must document --expected-report on task verification record.');
     }
   }
   return problems;
@@ -964,7 +964,8 @@ export function createPackageStaticValidator(deps: any): any  {
       const skillEntry = fs.readFileSync(skillFile, 'utf8');
       const references: Record<string, string[]> = {
         'task-triage': ['references/structured-handoff.md'],
-        'task-verification': ['references/maintain-map.md', 'references/record-report.md'],
+        'project-testing': ['references/maintain-map.md', 'references/project-verification-v4.md'],
+        'project-verification': ['references/record-report.md'],
         'capability-adaptation': ['references/adaptation-lifecycle.md'],
       };
       const skillParts = [skillEntry];
@@ -1011,10 +1012,10 @@ export function createPackageStaticValidator(deps: any): any  {
           problems.push('project-testing must not provide or require a capability contract.');
         }
       }
-      if (skill.id === 'task-verification') {
+      if (skill.id === 'project-verification') {
         problems.push(...validateTaskVerificationSkillCommands(skillContent));
         if (!skill.provides?.some((entry: any) => entry.capability === 'buildr.task-verification' && entry.version === 4)) {
-          problems.push('task-verification must provide buildr.task-verification/v4.');
+          problems.push('project-verification must provide buildr.task-verification/v4.');
         }
       }
       if (skill.id === 'git-operations') {
@@ -1050,8 +1051,8 @@ export function createPackageStaticValidator(deps: any): any  {
     if (!manifest.builtins.skills.some((skill: any) => skill.id === 'task-finish' && skill.required === false)) {
       problems.push('builtins.skills must declare optional task-finish.');
     }
-    if (!manifest.builtins.skills.some((skill: any) => skill.id === 'task-verification' && skill.required === false)) {
-      problems.push('builtins.skills must declare optional task-verification.');
+    if (!manifest.builtins.skills.some((skill: any) => skill.id === 'project-verification' && skill.required === false)) {
+      problems.push('builtins.skills must declare optional project-verification.');
     }
     if (manifest.builtins.skills.some((skill: any) => skill.id.includes('openspec-store'))) {
       problems.push('OpenSpec Stores are beta and must not be registered as a Buildr builtin Skill.');
@@ -1103,9 +1104,9 @@ export function createPackageStaticValidator(deps: any): any  {
         if (!taskFinish || taskFinish.source !== 'buildr' || taskFinish.state !== 'installed' || taskFinish.enabled !== true) {
           problems.push('Workspace skills baseline must declare enabled installed Buildr task-finish.');
         }
-        const taskVerification = baselineSkills.find((entry: any) => entry.id === 'task-verification');
-        if (!taskVerification || taskVerification.source !== 'buildr' || taskVerification.state !== 'installed' || taskVerification.enabled !== true) {
-          problems.push('Workspace skills baseline must declare enabled installed Buildr task-verification.');
+        const projectVerification = baselineSkills.find((entry: any) => entry.id === 'project-verification');
+        if (!projectVerification || projectVerification.source !== 'buildr' || projectVerification.state !== 'installed' || projectVerification.enabled !== true) {
+          problems.push('Workspace skills baseline must declare enabled installed Buildr project-verification.');
         }
         const taskManager = baselineSkills.find((entry: any) => entry.id === 'task-manager');
         if (!taskManager || taskManager.source !== 'buildr' || taskManager.state !== 'installed' || taskManager.enabled !== true || !(taskManager.provides || []).some((item: any) => item.capability === 'buildr.task-record' && item.version === 4)) {

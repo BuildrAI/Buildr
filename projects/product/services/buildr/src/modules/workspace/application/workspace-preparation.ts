@@ -1,4 +1,4 @@
-import { describePackageResources, readResourceAdoption, inspectSharedResources } from '../../../infrastructure/product-resources/shared-resources.ts';
+import { readSharedResourceSet, readResourceAdoption, adoptPackageResources } from '../../../infrastructure/product-resources/shared-resources.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -26,10 +26,31 @@ export function createWorkspacePreparation(runtime: any) {
     if (runtime.registryRepository.isSharedRegistryScope() && ephemeralWorkspaceRootReason(root)) throw fail('workspace_registry_ephemeral_root', '请选择需要长期保留的本机目录。');
     const registered = runtime.listRegisteredWorkspaces().workspaces.find((entry: any) => entry.rootPath === root);
     const known = store.list().find(entry=>entry.rootPath===root&&entry.directoryIdentity===identity(root));
-    if (known) return known;
+    if (known) {
+      const observed = read(known.id);
+      if (observed.status === 'preparing') return observed;
+      // Completed preparation is not proof of a current registry entry.
+      return write({ ...observed, status: 'selected', error: null, details: undefined, customizations: undefined, ownerPid: undefined }, observed.revision);
+    }
     return write({ id: randomUUID(), revision: 0, rootPath: root, directoryIdentity: identity(root), name: registered?.workspace?.name || path.basename(root), workspaceId: registered?.workspace?.id || null, status: 'selected', error: null, updatedAt: '' }, null);
   }
-  async function prepareRoot(root: string, expectedWorkspaceId: string | null, name: string, keep: Array<{id:string;integrity:string}> = []) {
+  // Shared resources are capability inputs, not the authority for opening a Workspace.
+  // Refresh only generated local entries; source updates remain with their existing owner.
+  function refreshResourceProjection(root: string) {
+    try {
+      const resources = readSharedResourceSet();
+      const adopted = readResourceAdoption(root);
+      if (adopted?.resourceSet === resources.id && adopted.ready) return { status: 'current' };
+      for (const adapter of detectManagedRuntimeAdapters(root)) {
+        runtime.renderRuntime(null, ['--adapter', adapter, '--target', root, '--product-skill'], { productSkill: true });
+      }
+      adoptPackageResources(root, true, resources.id);
+      return { status: 'refreshed' };
+    } catch (error: any) {
+      return { status: 'failed', message: error.message };
+    }
+  }
+  async function prepareRoot(root: string, expectedWorkspaceId: string | null, name: string, keep: Array<{id:string;integrity:string}> = [], reuseReady = false) {
     if (fs.realpathSync(root) !== root) throw fail('workspace_directory_changed', '工作目录路径已变化，请重新选择。');
     for (const relative of ['.buildr', '.buildr/local', 'skills', 'rules', 'components', 'commands', 'projects']) {
       const stat = fs.lstatSync(path.join(root, relative), { throwIfNoEntry: false });
@@ -37,23 +58,35 @@ export function createWorkspacePreparation(runtime: any) {
     }
     for (const relative of ['AGENTS.md','.buildr/workspace.yml','skills/manifest.yml','rules/manifest.yml','components/manifest.yml','commands/manifest.yml']) { const stat=fs.lstatSync(path.join(root,relative),{throwIfNoEntry:false}); if(stat&&(!stat.isFile()||stat.isSymbolicLink()))throw fail('workspace_directory_invalid',`文件 ${relative} 无法安全使用，已有内容已保留。`); }
     const lock=store.acquire(root);
-    try { return await prepareRootUnlocked(root, expectedWorkspaceId, name, keep); }
+    try { return await prepareRootUnlocked(root, expectedWorkspaceId, name, keep, reuseReady); }
     finally { store.release(lock); }
   }
-  async function prepareRootUnlocked(root: string, expectedWorkspaceId: string | null, name: string, keep: Array<{id:string;integrity:string}> = []) {
+  async function prepareRootUnlocked(root: string, expectedWorkspaceId: string | null, name: string, keep: Array<{id:string;integrity:string}> = [], reuseReady = false) {
     const metadata = path.join(root, '.buildr/workspace.yml');
     let initialized = false;
     if (fs.existsSync(metadata)) {
       const record = runtime.readWorkspaceRecord(root);
       if (expectedWorkspaceId && record.workspace.id !== expectedWorkspaceId) throw fail('workspace_identity_conflict', '目录中的工作空间身份已变化。');
+      runtime.canonicalWorkspaceManagementIdentity(root);
+      runtime.ensureRegisteredTarget(root);
       const selfBootstrap=runtime.readComponentsManifestForWrite(root).components.some((entry:any)=>entry.id==='buildr-self-bootstrap'&&entry.enabled!==false&&entry.state!=='uninstalled');
       if(selfBootstrap) {
         const adopted=readResourceAdoption(root);
-        if(adopted?.ready&&adopted.resourceSet===describePackageResources().id) {inspectSharedResources(adopted.resourceSet);return {workspaceId:record.workspace.id,name:record.workspace.name};}
+        if(adopted?.ready) { const refresh=refreshResourceProjection(root); if(refresh.status==='failed')throw fail('workspace_resource_projection_failed',`本机技能入口尚未刷新，其他工作可继续。${refresh.message}`); return {workspaceId:record.workspace.id,name:record.workspace.name}; }
         throw fail('workspace_self_bootstrap_owned','此 Buildr 开发工作空间需要由自身维护程序更新，当前目录已保留。');
       }
-      runtime.canonicalWorkspaceManagementIdentity(root);
-      runtime.ensureRegisteredTarget(root);
+      // Re-adding a ready directory is registration, not an explicit full update.
+      // Keep the existing recovery path if current assets need repair or adoption.
+      const adopted = readResourceAdoption(root);
+      if (reuseReady && !keep.length && adopted?.ready && adopted.resourceSet === readSharedResourceSet().id) {
+        const findings = runtime.syncPackageBuiltins(root, { checkOnly: true }).findings;
+        const needsRecovery = findings.some((item: any) => item.converge || ['modified', 'missing', 'blocked', 'invalid'].includes(item.status))
+          || runtime.packageComponentsStatus(root).components.some((item: any) => ['modified', 'missing', 'blocked', 'invalid'].includes(item.status));
+        if (!needsRecovery) {
+          const registered = runtime.listRegisteredWorkspaces().workspaces.some((entry: any) => entry.rootPath === root && entry.workspace?.id === record.workspace.id && entry.registryScope !== 'shared');
+          return { workspaceId: record.workspace.id, name: record.workspace.name, ...(registered ? {} : { status: 'removed' }) };
+        }
+      }
       initialized = true;
     } else if (expectedWorkspaceId) throw fail('workspace_identity_conflict', '已登记工作空间的身份文件已不存在，未重新初始化。');
     if (keep.length) runtime.keepPackageCustomizations(root,keep);
@@ -87,7 +120,7 @@ export function createWorkspacePreparation(runtime: any) {
     const value = write({ ...before, name: input.name.trim(), ownerPid: process.pid, status: 'preparing', error: null }, before.revision);
     running.add(value.id);
     setImmediate(() => { void (async () => {
-      try { const result = await prepareRoot(value.rootPath, value.workspaceId, value.name, input.keepCustomizations === true ? value.customizations || [] : []); if(result.status==='removed')throw fail('workspace_unregistered','此目录已从列表移除，已准备的内容会保留。'); write({ ...value, ...result, status: 'ready' }, value.revision); }
+      try { const result = await prepareRoot(value.rootPath, value.workspaceId, value.name, input.keepCustomizations === true ? value.customizations || [] : [], true); if(result.status==='removed')throw fail('workspace_unregistered','此目录已从列表移除，已准备的内容会保留。'); write({ ...value, ...result, status: 'ready' }, value.revision); }
       catch (error: any) { try { write({ ...value, status: 'failed', error: error.message, details: error.diagnostic || '', customizations: error.customizations || [] }, value.revision); } catch {} }
       finally { running.delete(value.id); }
     })(); });
@@ -100,7 +133,7 @@ export function createWorkspacePreparation(runtime: any) {
     runtime.assertWorkspaceManagementAccess(resolved.rootPath);
     try {
       const adopted = readResourceAdoption(resolved.rootPath);
-      if (adopted?.ready && adopted.resourceSet === describePackageResources().id) { inspectSharedResources(adopted.resourceSet); return {ready:true, workspaceId:id}; }
+      if (adopted?.ready) return {ready:true, workspaceId:id, resourceRefresh:refreshResourceProjection(resolved.rootPath)};
     } catch { /* Explicit opening can recover local, rebuildable preparation state. */ }
     const selected = select(resolved.rootPath);
     return selected.status === 'preparing' ? selected : start({id:selected.id,revision:selected.revision,name:selected.name});

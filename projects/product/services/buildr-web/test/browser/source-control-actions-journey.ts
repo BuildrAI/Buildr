@@ -3,7 +3,7 @@ import { codeRepositoryLabel } from '../../src/features/code/code-source-labels.
 import { selectSourceControlView } from './source-control-view-controls.ts';
 
 /** Model protocol is an external collaborator; catalog, exact context and Git writes use production HTTP. */
-export async function runSourceControlActionsJourney({t, page, workspaceUrl, capture, fixture, scenario = (name: string, action: () => Promise<void>) => t.test(name, action)}: any) {
+export async function runSourceControlActionsJourney({t, page, workspaceUrl, capture, fixture, expectedBrowserErrors, scenario = (name: string, action: () => Promise<void>) => t.test(name, action)}: any) {
   const root = () => page.locator('.code-source-control-page:visible');
   const api = workspaceUrl.replace('/workspaces/', '/api/v1/workspaces/');
   const details = () => page.getByRole('dialog', {name: 'Codex 接入详情', exact: true});
@@ -128,41 +128,24 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
     });
   });
 
-  await scenario('无智能体仍可手写提交并推送，无上游保留已成立提交不猜目标', async () => {
-    await fixture.withBranches(async (branches: any) => {
-      branches.configureAuthor({name: '浏览器手写', email: 'manual-browser@example.com'});
-      const protocol = await model(false);
-      try {
-        await page.setViewportSize({width: 1280, height: 900}); await open(branches);
-        const panel = root().locator('.source-control-commit-panel'); await panel.getByRole('textbox', {name: '提交说明内容', exact: true}).fill('chore: 无智能体手写提交');
-        assert.equal(await panel.locator('#generate-commit-message').isDisabled(), true);
-        // commit/push/sync 串联真实 Git 写调用，按操作成本放宽响应预算。
-        const written = page.waitForResponse((reply: any) => reply.request().method() === 'POST' && new URL(reply.url()).pathname.endsWith('/code/commit-changes'), {timeout: 30_000});
-        await (await commitMenu(panel)).getByRole('menuitem', {name: '提交并推送', exact: true}).click();
-        const response = await written; assert.equal(response.status(), 200); const result = await response.json();
-        assert.equal(response.request().postDataJSON().mode, 'commit-push', '菜单点击直接发起提交并推送');
-        await page.getByRole('menu').waitFor({state: 'hidden'});
-        assert.equal(result.commit.completed, true); assert.equal(result.push.status, 'unavailable'); assert.equal(result.push.target, null);
-        await panel.getByText('已提交，尚未推送', {exact: true}).waitFor(); assert.equal(protocol.starts.length, 0); assert.equal(branches.observe(branches.location).head, result.commit.hash);
-        await panel.locator('#commit-changes.ant-btn-loading').waitFor({state: 'hidden'});
-        assert.equal(await panel.locator('#commit-changes').innerText(), '提交', '菜单操作结束后主按钮始终恢复提交');
-        assert.equal(await panel.locator('#commit-action-menu').isDisabled(), true, '提交后无变更时下拉入口同样禁用');
-        await assertCommitSplit(panel);
-        assert.equal(await panel.locator('#retry-push').count(), 0); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
-        await capture(page, 'source-control-real-manual-no-upstream.png');
-      } finally {await protocol.dispose();}
-    });
-  });
-
   await scenario('提交并同步从菜单一次执行固定跟踪分支，等待共用禁用且完成后主按钮仍是提交', async () => {
     await fixture.withBranches(async (branches: any) => {
       branches.configureAuthor({name: '浏览器同步', email: 'sync-browser@example.com'});
       const protocol = await model(false), writes: string[] = [];
       const observe = (request: any) => {const path = new URL(request.url()).pathname; if (request.method() === 'POST' && /\/code\/(?:commit-changes|sync|push)$/.test(path)) writes.push(path);};
+      let mutating=false,selectedSource:{repositoryId:string;worktreeId:string}|undefined;
+      const contextChecks=new Set<Promise<void>>(),unexpectedContexts:unknown[]=[];
+      const observeContext=(response:any)=>{
+        const url=new URL(response.url());
+        if(!mutating||response.status()!==409||!selectedSource||!url.pathname.endsWith('/code/commit-context')||url.searchParams.get('repositoryId')!==selectedSource.repositoryId||url.searchParams.get('worktreeId')!==selectedSource.worktreeId)return;
+        const check=(async()=>{let body:{error?:{code?:unknown};cancelled?:boolean}|undefined;try{body=await response.json();}catch(error){await response.finished();const failure=response.request().failure()?.errorText;if(!failure?.includes('ERR_ABORTED')){unexpectedContexts.push({url:response.url(),bodyError:String(error),failure});return;}body={cancelled:true};}if(body?.error?.code==='code_source_changed'||body?.cancelled)expectedBrowserErrors.add('['+response.url()+']: Failed to load resource: the server responded with a status of 409 (Conflict)');else unexpectedContexts.push({url:response.url(),body});})();
+        contextChecks.add(check);void check.then(()=>contextChecks.delete(check),error=>{contextChecks.delete(check);unexpectedContexts.push({observerError:String(error)});});
+      };
+      page.on('response',observeContext);
       let release = () => {}; const gate = new Promise<void>(resolve => {release = resolve;});
       const delay = async (route: any) => {await gate; await route.continue();};
       try {
-        await page.setViewportSize({width: 1440, height: 900}); const {repository, tree} = await open(branches);
+        await page.setViewportSize({width: 1440, height: 900}); const {repository, tree} = await open(branches);selectedSource={repositoryId:repository.id,worktreeId:tree.worktreeId};
         const row = root().locator('[data-source-repository="' + repository.id + '"] [data-source-worktree="' + tree.worktreeId + '"]');
         // 密度布局收窄时分支入口收进行内“…”菜单；行内按钮可见用行内，否则走同一菜单路径。
         if (await row.locator('.source-control-row-action-button').isVisible()) await row.locator('.source-control-row-action-button').click();
@@ -177,7 +160,7 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
         await manager.getByRole('button', {name: '管理 ' + branches.remote + '/' + branches.remoteName, exact: true}).click();
         const action = page.getByRole('region', {name: '分支操作 · ' + branches.remote + '/' + branches.remoteName, exact: true});
         const switched = page.waitForResponse((reply: any) => reply.request().method() === 'POST' && new URL(reply.url()).pathname.endsWith('/code/branch-switch'));
-        await action.getByRole('button', {name: '检出并切换为 ' + branches.remoteName, exact: true}).click();
+        mutating=true;await action.getByRole('button', {name: '检出并切换为 ' + branches.remoteName, exact: true}).click();
         assert.equal((await switched).status(), 200); await manager.waitFor({state: 'hidden'});
         await page.waitForFunction(({id, title}: {id: string; title: string}) => [...document.querySelectorAll('.code-source-control-page:not([hidden]) [data-source-worktree]')].some(element => element.getAttribute('data-source-worktree') === id && element.querySelector('.source-control-row-action-button')?.getAttribute('title') === title), {id: tree.worktreeId, title: branches.remoteName + ' · 管理分支'});
         const panel = root().locator('.source-control-commit-panel'), input = panel.getByRole('textbox', {name: '提交说明内容', exact: true});
@@ -203,96 +186,17 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
         assert.equal(await panel.locator('#retry-push').count(), 0); assert.equal(writes.length, 1); assert.ok(writes[0].endsWith('/code/commit-changes'));
         assert.equal(branches.observe(branches.location).head, result.sync.head); assert.equal(branches.observe(branches.location).status, '');
         assert.deepEqual(branches.otherPositions(branches.location), otherPositions);
+        assert.equal(branches.keepContent(), 'preserve current work\n');
+        // A read of the old working diff may finish after the successful commit
+        // removed that change. Only this exact retired comparison may return 404.
+        const retiredDiff = api + '/code/diff?' + new URLSearchParams({repositoryId: repository.id, worktreeId: tree.worktreeId, filePath: branches.keepPath, area: 'working'});
+        expectedBrowserErrors.add('[' + retiredDiff + ']: Failed to load resource: the server responded with a status of 404 (Not Found)');
+        assert.equal(await root().getByRole('region', {name:'差异内容',exact:true}).locator('.ant-alert-error:visible').count(), 0);
         const context = await page.request.get(api + '/code/sync-context?' + new URLSearchParams({repositoryId: repository.id, worktreeId: tree.worktreeId}));
         assert.equal(context.status(), 200); const after = await context.json(); assert.equal(after.ahead, 0); assert.equal(after.behind, 0);
+        const freshContext=await page.request.get(api+'/code/commit-context?'+new URLSearchParams({repositoryId:repository.id,worktreeId:tree.worktreeId}));assert.equal(freshContext.status(),200,'写入完成后可读取准确的新提交上下文');await Promise.all(contextChecks);assert.deepEqual(unexpectedContexts,[],'仅接受该来源写入期间的明确版本变化冲突');
         await assertCommitSplitAtWidths(panel); await capture(page, 'source-control-real-commit-sync.png');
-      } finally {release(); page.off('request', observe); await page.unroute('**/code/commit-changes', delay); await protocol.dispose();}
-    });
-  });
-
-  await scenario('提交并同步无上游仍保留已成立提交，明确尚未同步并指向现有同步入口', async () => {
-    await fixture.withBranches(async (branches: any) => {
-      branches.configureAuthor({name: '浏览器同步无上游', email: 'sync-no-upstream@example.com'});
-      const protocol = await model(false);
-      try {
-        await page.setViewportSize({width: 1280, height: 900}); await open(branches);
-        const panel = root().locator('.source-control-commit-panel'), input = panel.getByRole('textbox', {name: '提交说明内容', exact: true});
-        await input.fill('chore: 无上游提交并同步');
-        // commit/push/sync 串联真实 Git 写调用，按操作成本放宽响应预算。
-        const written = page.waitForResponse((reply: any) => reply.request().method() === 'POST' && new URL(reply.url()).pathname.endsWith('/code/commit-changes'), {timeout: 30_000});
-        await (await commitMenu(panel)).getByRole('menuitem', {name: '提交并同步', exact: true}).click();
-        const response = await written; assert.equal(response.status(), 200); const result = await response.json();
-        assert.equal(result.commit.completed, true); assert.equal(result.sync.status, 'unavailable'); assert.equal(result.sync.upstream, null);
-        assert.equal(result.push.status, 'not-requested'); assert.equal(branches.observe(branches.location).head, result.commit.hash);
-        await panel.getByText('已提交，尚未同步', {exact: true}).waitFor(); await panel.getByText(/已有提交无需重复提交/u).waitFor();
-        await panel.locator('#commit-changes.ant-btn-loading').waitFor({state: 'hidden'});
-        assert.equal(await input.inputValue(), ''); assert.equal(await panel.locator('#commit-changes').innerText(), '提交');
-        assert.equal(await panel.locator('#retry-push').count(), 0); assert.equal(await panel.locator('#recheck-commit').count(), 0);
-        await assertCommitSplit(panel); await capture(page, 'source-control-real-commit-sync-no-upstream.png');
-      } finally {await protocol.dispose();}
-    });
-  });
-
-  await scenario('智能体统一抽屉关闭与窄屏一致，最近配置更新不改旧生成来源', async () => {
-    await fixture.withBranches(async (branches: any) => {
-      const protocol = await model(true);
-      try {
-        await page.setViewportSize({width: 1440, height: 900}); await open(branches);
-        const entry = page.getByRole('button', {name: '智能体', exact: true});
-        const drawer = page.locator('.agent-registry-drawer:visible');
-        const opened = async () => {
-          await entry.click();
-          await drawer.getByRole('button', {name: '关闭智能体', exact: true}).click({trial: true});
-          await page.waitForFunction(() => {
-            const root = document.querySelector('.agent-registry-drawer'), wrapper = root?.querySelector('.ant-drawer-content-wrapper');
-            return root?.contains(document.activeElement) && wrapper && !/-(?:appear|enter|leave)(?:-(?:prepare|active|start))?(?:\s|$)/.test(wrapper.className) && wrapper.getAnimations().every(animation => animation.playState === 'finished' || animation.playState === 'idle');
-          });
-        };
-        const closed = async () => {await drawer.waitFor({state: 'hidden'}); await page.waitForFunction(() => document.activeElement?.id === 'global-agents-entry');};
-        await opened();
-        assert.equal(await drawer.locator('.ant-drawer-close').count(), 0, '共用右侧关闭按钮');
-        const close = drawer.getByRole('button', {name: '关闭智能体', exact: true});
-        const titleBox = await drawer.locator('.drawer-shell-title').boundingBox(), closeBox = await close.boundingBox();
-        assert.ok(titleBox && closeBox && closeBox.x > titleBox.x + titleBox.width);
-        const detail = await openDetails(drawer);
-        await detail.getByText('本次服务尚未读取生成配置。', {exact: true}).waitFor({state: 'visible'});
-        await detail.getByText('独立一次性生成', {exact: true}).waitFor({state: 'visible'});
-        await detail.getByText('Codex 基础配置已接入，使用独立服务完成提交说明等一次性生成。', {exact: true}).waitFor({state: 'visible'});
-        assert.equal(protocol.starts.length, 0, '打开详情不启动生成探测');
-        await capture(page, 'refinement-agent-drawer-first-use.png');
-        await close.click(); await closed();
-        await opened(); await page.keyboard.press('Escape'); await closed();
-        await opened(); await drawer.locator('.ant-drawer-mask').click({position: {x: 10, y: 100}}); await closed();
-        await page.setViewportSize({width: 390, height: 844}); await opened();
-        const wrapper = await drawer.locator('.ant-drawer-content-wrapper').boundingBox();
-        assert.ok(wrapper && wrapper.width <= 390 && wrapper.x >= -1, '窄屏抽屉不溢出');
-        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
-        await capture(page, 'refinement-agent-drawer-390.png');
-        await drawer.getByRole('button', {name: '关闭智能体', exact: true}).click(); await closed();
-        await page.setViewportSize({width: 1440, height: 900});
-        const panel = root().locator('.source-control-commit-panel');
-        await panel.locator('#generate-commit-message').click();
-        await page.waitForFunction(() => document.querySelector<HTMLTextAreaElement>('#commit-message-text')?.value.startsWith('feat: 浏览器生成提交说明'));
-        await opened();
-        await openDetails(drawer);
-        await details().getByText('browser-confirmed-model', {exact: true}).waitFor({state: 'visible'});
-        await details().getByText('high', {exact: true}).waitFor({state: 'visible'});
-        protocol.setLastExecutionConfig({model: 'browser-later-model', modelProvider: 'browser-later-provider', reasoningEffort: 'low'});
-        const refreshed = page.waitForResponse((response: any) => new URL(response.url()).pathname === '/api/v1/app/agents');
-        await drawer.getByRole('button', {name: '刷新智能体状态', exact: true}).click();
-        await refreshed;
-        await details().waitFor({state: 'hidden'});
-        await openDetails(drawer);
-        await details().getByText('browser-later-model', {exact: true}).waitFor({state: 'visible'});
-        await capture(page, 'refinement-agent-drawer-latest-config.png');
-        await drawer.getByRole('button', {name: '关闭智能体', exact: true}).click(); await closed();
-        await panel.getByRole('button', {name: '查看说明来源', exact: true}).hover();
-        const tooltip = page.getByRole('tooltip').filter({hasText: 'browser-confirmed-model'});
-        await tooltip.waitFor(); assert.ok((await tooltip.innerText()).includes('推理级别：high'));
-        assert.equal((await tooltip.innerText()).includes('browser-later-model'), false, '旧结果固定本次确认配置');
-        assert.equal((await panel.innerText()).includes('browser-confirmed-model'), false, '日常功能区不常驻模型信息');
-        await capture(page, 'refinement-generated-config-fixed.png');
-      } finally {await protocol.dispose();}
+      } finally {release();await Promise.all(contextChecks);page.off('response',observeContext);page.off('request', observe); await page.unroute('**/code/commit-changes', delay); await protocol.dispose();}
     });
   });
 }

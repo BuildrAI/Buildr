@@ -151,8 +151,8 @@ if (enabled) {
       let failed = false;
       try {
         const result = Reflect.apply(original, this, call);
-        status = api === 'spawnSync' ? result.status : 0;
-        failed = api === 'spawnSync' && Boolean(result.error);
+        status = api === 'spawnSync' && result && typeof result === 'object' && 'status' in result ? result.status as number | null : 0;
+        failed = api === 'spawnSync' && Boolean(result && typeof result === 'object' && 'error' in result && result.error);
         return result;
       }
       catch (error: any) { failed = true; status = Number.isInteger(error?.status) ? error.status : null; throw error; }

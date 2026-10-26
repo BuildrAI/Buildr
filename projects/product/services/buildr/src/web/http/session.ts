@@ -1,5 +1,16 @@
 export const MAX_JSON_BODY_BYTES = 32 * 1024;
 
+export function assertReadRequest(request: any, origin: string, sessionToken: string) {
+  if (request.headers['x-buildr-session'] !== sessionToken) {
+    const error: Error & Record<string, any> = new Error('Buildr Web session 已失效，请刷新页面。');
+    error.code = 'session_forbidden'; error.status = 403; throw error;
+  }
+  if ((request.headers.origin && request.headers.origin !== origin) || request.headers['sec-fetch-site'] === 'cross-site') {
+    const error: Error & Record<string, any> = new Error('私有交互只允许当前 Buildr Web 读取。');
+    error.code = 'origin_forbidden'; error.status = 403; throw error;
+  }
+}
+
 export function assertRequestHost(request: any, origin: string) {
   const trustedOrigin = new URL(origin);
   const host = request.headers.host;
@@ -49,7 +60,7 @@ export function readJsonBody(request: any, maxBytes = MAX_JSON_BODY_BYTES) {
   });
 }
 
-export function assertWriteRequest(request: any, origin: any, sessionToken: any) {
+export function assertMutationRequest(request: any, origin: any, sessionToken: any) {
   if (request.headers.origin !== origin) {
     const error: Error & Record<string, any> = new Error('写请求必须来自当前 Buildr Web。');
     error.code = 'origin_forbidden';
@@ -62,12 +73,28 @@ export function assertWriteRequest(request: any, origin: any, sessionToken: any)
     error.status = 403;
     throw error;
   }
+}
+
+export function assertWriteRequest(request: any, origin: any, sessionToken: any) {
+  assertMutationRequest(request, origin, sessionToken);
   if (!String(request.headers['content-type'] || '').toLowerCase().startsWith('application/json')) {
     const error: Error & Record<string, any> = new Error('Buildr Web 请求 content type 必须是 application/json。');
     error.code = 'content_type_unsupported';
     error.status = 415;
     throw error;
   }
+}
+
+export function readBinaryBody(request: any, maxBytes: number): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []; let length = 0; let overflow = false;
+    request.on('data', (chunk: Buffer) => { length += chunk.length; if (length > maxBytes) overflow = true; else chunks.push(chunk); });
+    request.on('end', () => {
+      if (overflow) { const error: Error & { code?: string; status?: number } = new Error('图片超过允许大小。'); error.code = 'request_body_too_large'; error.status = 413; reject(error); }
+      else resolve(Buffer.concat(chunks));
+    });
+    request.on('error', reject);
+  });
 }
 
 export async function readAllowedJsonBody(request: any, allowed: any, label: any, maxBytes = MAX_JSON_BODY_BYTES) {

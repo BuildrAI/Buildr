@@ -7,6 +7,7 @@ export type WorkspacePageTab = {
   title: string;
   path: string;
   search?: string;
+  pinned?: boolean;
 };
 
 type PreviewBase = { id: string; path: string; title: string };
@@ -74,6 +75,7 @@ export function previewOwnerSearch(workspaceId: string, item: ResourcePreview, s
 }
 
 export const tabsStorageKey = (id: string) => `buildr.web.page-tabs.${id}`;
+export const pinnedTabsStorageKey = (id: string) => `buildr.web.pinned-page-tabs.${id}`;
 export const ratioStorageKey = (id: string) => `buildr.web.pane-ratio.${id}`;
 
 /** Only workspace-owned, supported page routes may be restored from untrusted storage. */
@@ -187,9 +189,46 @@ export function moveTab<T extends { key: string }>(
   return next;
 }
 
-/** Page tabs from all three entries share one strip; code files remain tabs inside the code page. */
+/** Fixed preferences include closed pages; only open members appear in the strip. */
+export function orderPageTabs(tabs: WorkspacePageTab[], pinnedTabs: WorkspacePageTab[]): WorkspacePageTab[] {
+  const ranks = new Map(pinnedTabs.map((tab, index) => [tab.key, index]));
+  const pinned = tabs.filter(tab => ranks.has(tab.key)).sort((a, b) => ranks.get(a.key)! - ranks.get(b.key)!);
+  const ordinary = tabs.filter(tab => !ranks.has(tab.key));
+  const ordered = [...pinned, ...ordinary].map(tab => {
+    const fixed = ranks.has(tab.key);
+    return Boolean(tab.pinned) === fixed ? tab : { ...tab, pinned: fixed };
+  });
+  return ordered.every((tab, index) => tab === tabs[index]) ? tabs : ordered;
+}
+
+export function togglePageTabPin(tabs: WorkspacePageTab[], pinnedTabs: WorkspacePageTab[], key: string) {
+  const target = tabs.find(tab => tab.key === key);
+  if (!target) return { tabs, pinnedTabs };
+  const unpin = pinnedTabs.some(tab => tab.key === key);
+  const nextPins = unpin ? pinnedTabs.filter(tab => tab.key !== key) : [...pinnedTabs, target];
+  // On unpin, put the page first among ordinary pages without changing the active route.
+  const nextTabs = unpin ? [target, ...tabs.filter(tab => tab.key !== key)] : tabs;
+  return { tabs: orderPageTabs(nextTabs, nextPins), pinnedTabs: nextPins };
+}
+
+/** Reordering visible pins replaces only their slots; a closed pin keeps its saved position. */
+export function reorderPinnedTabs(pinnedTabs: WorkspacePageTab[], tabs: WorkspacePageTab[]): WorkspacePageTab[] {
+  const pinnedKeys = new Set(pinnedTabs.map(tab => tab.key));
+  const openPins = tabs.filter(tab => pinnedKeys.has(tab.key));
+  const openKeys = new Set(openPins.map(tab => tab.key));
+  let index = 0;
+  return pinnedTabs.map(tab => openKeys.has(tab.key) ? openPins[index++] : tab);
+}
+
+/** Page tabs share one strip, with independent fixed/ordinary reorder boundaries. */
 export function reorderPageTabs(tabs: WorkspacePageTab[], key: string, index: number): WorkspacePageTab[] {
-  return moveTab(tabs, key, index);
+  const old = tabs.findIndex(tab => tab.key === key);
+  if (old < 0 || !Number.isFinite(index)) return tabs;
+  const count = tabs.filter(tab => tab.pinned).length;
+  const min = tabs[old].pinned ? 0 : count;
+  const max = tabs[old].pinned ? count - 1 : tabs.length - 1;
+  const destination = Math.max(min, Math.min(max, Math.trunc(index)));
+  return old === destination ? tabs : moveTab(tabs, key, destination);
 }
 
 export function readRatio(raw: string | null): number | null {

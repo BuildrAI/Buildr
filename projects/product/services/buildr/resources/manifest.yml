@@ -121,7 +121,7 @@ capabilityContracts:
         description: 对正式 Task 的计划或完成候选执行语义审查并维护两个可选 current Result。
   - id: buildr.task-verification
     version: 4
-    description: 维护 Project 测试地图，并保存开发完成后的 Task 验证报告。
+    description: 依据项目测试登记选择并执行检查，保存已有正式任务的验证报告；测试登记由 project-testing 维护。
     path: resources/workspace/skills/contracts/buildr/task-verification/v4.md
     target: skills/contracts/buildr/task-verification/v4.md
     replaces:
@@ -185,7 +185,7 @@ initialSkillBindings:
     provider: task-review
   - capability: buildr.task-verification
     version: 4
-    provider: task-verification
+    provider: project-verification
   - capability: buildr.task-finish
     version: 1
     provider: task-finish
@@ -245,11 +245,6 @@ builtins:
         - capability: buildr.git-worktree-provider
           version: 1
           mode: optional
-    - id: declaration-intake
-      path: resources/workspace/skills/buildr/declaration-intake
-      target: skills/buildr/declaration-intake
-      description: 初始化、维护准备与验证声明，或项目注册、构建和测试入口变化产生声明缺口时使用；先核对差异，再交给对应维护者。
-      required: false
     - id: code-map
       path: resources/workspace/skills/buildr/code-map
       target: skills/buildr/code-map
@@ -268,7 +263,7 @@ builtins:
     - id: project-testing
       path: resources/workspace/skills/buildr/project-testing
       target: skills/buildr/project-testing
-      description: 设计或调整测试体系、为实现开发必要测试时使用；已有检查的选择和报告交给 task-verification。
+      description: 设计或调整项目测试、为实现开发必要测试、维护测试登记与稳定入口时使用；选择、执行与报告交给 project-verification。
       required: false
     - id: task-manager
       path: resources/workspace/skills/buildr/task-manager
@@ -332,14 +327,18 @@ builtins:
       legacyIntegrities:
         - sha256-23e68c3174887ebbf6990526f93e7f1c047199e1bef1f2e8e293b0cba2a3cfad
         - sha256-7c792606db5d07e9364feb4be20755e184fb83291e4ae83a9cbb4884cf731b6d
-    - id: task-verification
-      path: resources/workspace/skills/buildr/task-verification
-      target: skills/buildr/task-verification
-      description: 选择项目已有检查、维护测试地图，或记录和查看任务验证报告时使用；测试由智能体直接调用项目工具。
+    - id: project-verification
+      path: resources/workspace/skills/buildr/project-verification
+      target: skills/buildr/project-verification
+      description: 按用户请求或任务目标选择并实际执行项目检查，交付验证证据，记录或查看已有任务验证报告时使用；测试建设与登记由 project-testing 维护。
       required: false
       provides:
         - capability: buildr.task-verification
           version: 4
+      replaces:
+        id: task-verification
+        target: skills/buildr/task-verification
+        runtimePath: task-verification
     - id: agent-first-design
       path: resources/workspace/skills/buildr/agent-first-design
       target: skills/buildr/agent-first-design
@@ -478,7 +477,6 @@ workspaceFiles:
   - resources/workspace/skills/contracts/buildr/terminology-governance/v1.md => skills/contracts/buildr/terminology-governance/v1.md copy
   - resources/workspace/skills/buildr/task-triage/SKILL.md => skills/buildr/task-triage/SKILL.md copy
   - resources/workspace/skills/buildr/task-triage/references/structured-handoff.md => skills/buildr/task-triage/references/structured-handoff.md copy
-  - resources/workspace/skills/buildr/declaration-intake/SKILL.md => skills/buildr/declaration-intake/SKILL.md copy
   - resources/workspace/skills/buildr/code-map/references/knowledge-index.md => skills/buildr/code-map/references/knowledge-index.md copy
   - resources/workspace/skills/buildr/code-map/SKILL.md => skills/buildr/code-map/SKILL.md copy
   - resources/workspace/skills/buildr/code-architecture/SKILL.md => skills/buildr/code-architecture/SKILL.md copy
@@ -510,12 +508,12 @@ workspaceFiles:
   - resources/workspace/skills/buildr/task-retrospective/SKILL.md => skills/buildr/task-retrospective/SKILL.md copy
   - resources/workspace/skills/buildr/task-retrospective/agents/openai.yaml => skills/buildr/task-retrospective/agents/openai.yaml copy
   - resources/workspace/skills/buildr/task-worktree/SKILL.md => skills/buildr/task-worktree/SKILL.md copy
-  - resources/workspace/skills/buildr/task-verification/SKILL.md => skills/buildr/task-verification/SKILL.md copy
-  - resources/workspace/skills/buildr/task-verification/references/frontend-verification.md => skills/buildr/task-verification/references/frontend-verification.md copy
-  - resources/workspace/skills/buildr/task-verification/references/record-report.md => skills/buildr/task-verification/references/record-report.md copy
-  - resources/workspace/skills/buildr/task-verification/references/maintain-map.md => skills/buildr/task-verification/references/maintain-map.md copy
-  - resources/workspace/skills/buildr/task-verification/references/project-verification-v4.md => skills/buildr/task-verification/references/project-verification-v4.md copy
-  - resources/workspace/skills/buildr/task-verification/templates/project-verification.yml => skills/buildr/task-verification/templates/project-verification.yml copy
+  - resources/workspace/skills/buildr/project-verification/SKILL.md => skills/buildr/project-verification/SKILL.md copy
+  - resources/workspace/skills/buildr/project-verification/references/frontend-verification.md => skills/buildr/project-verification/references/frontend-verification.md copy
+  - resources/workspace/skills/buildr/project-verification/references/record-report.md => skills/buildr/project-verification/references/record-report.md copy
+  - resources/workspace/skills/buildr/project-testing/references/maintain-map.md => skills/buildr/project-testing/references/maintain-map.md copy
+  - resources/workspace/skills/buildr/project-testing/references/project-verification-v4.md => skills/buildr/project-testing/references/project-verification-v4.md copy
+  - resources/workspace/skills/buildr/project-testing/templates/project-verification.yml => skills/buildr/project-testing/templates/project-verification.yml copy
   - resources/workspace/skills/buildr/agent-first-design/SKILL.md => skills/buildr/agent-first-design/SKILL.md copy
   - resources/workspace/skills/buildr/task-finish/SKILL.md => skills/buildr/task-finish/SKILL.md copy
   - resources/workspace/skills/buildr/terminology-governance/SKILL.md => skills/buildr/terminology-governance/SKILL.md copy

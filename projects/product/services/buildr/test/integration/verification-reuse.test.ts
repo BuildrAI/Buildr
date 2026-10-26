@@ -69,7 +69,7 @@ test('candidate round runs all groups initially and retries only failures after 
   const original = JSON.parse(JSON.stringify(first.sourceBundle.records.find((record: any) => record.identity.stepId === 'success')));
   fs.writeFileSync(path.join(root, 'source.ts'), 'changed source, assertions and dependencies\n');
   fail = false; calls.length = 0;
-  const second = await executePlan({ ...plan, steps: plan.steps.map(step => ({ ...step, executor: { type: 'changed-recipe' } })) }, { ...options, env: { NODE_OPTIONS: 'changed-environment' } });
+  const second = await executePlan({ ...plan, steps: plan.steps.map((step: { id: string; dependsOn: string[]; contexts: string[]; platformScope: { kind: string } }) => ({ ...step, executor: { type: 'changed-recipe' } })) }, { ...options, env: { NODE_OPTIONS: 'changed-environment' } });
   assert.equal(second.passed, true); assert.deepEqual(calls, ['failure']);
   assert.deepEqual(second.sourceBundle.records.find((record: any) => record.identity.stepId === 'success'), original);
   calls.length = 0;

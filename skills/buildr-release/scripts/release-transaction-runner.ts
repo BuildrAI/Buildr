@@ -19,7 +19,7 @@ import {
   sha256,
 } from './release-authority.ts';
 import { assertReleaseConsumptionCoverage } from '../../../projects/product/services/buildr/test/verification/release/release-consumption.ts';
-import { readReleaseArtifact } from './release-artifact.ts';
+import { readReleaseArtifact, RELEASE_ARTIFACT_METADATA_MAX_BYTES } from './release-artifact.ts';
 import { createReleaseContext, evaluateReleaseReadiness, releaseContextIdentity, validateReleaseContext } from './release-readiness.ts';
 import { inspectReleaseSelection } from './release-selection.ts';
 import { createReleaseTaskEvidenceCorrelationFromRuntime, releaseTaskAssociationProjection, readCompletedReleasePreparation } from './release-task-evidence-correlation.ts';
@@ -179,7 +179,10 @@ export function readCandidateEvidence({ candidateRunId, ghCommand, repo, execute
     if (retained) {
       const manifestPath = path.join(directory!, 'release-artifact.json');
       const manifestStat = fs.lstatSync(manifestPath, { throwIfNoEntry: false });
-      if (!retained.isDirectory() || !manifestStat?.isFile() || manifestStat.size > 1024 * 1024) throw new Error('Local Candidate destination contains different or unconfirmed bytes.');
+      if (!retained.isDirectory() || !manifestStat?.isFile()) throw new Error('Local Candidate destination contains different or unconfirmed bytes.');
+      if (manifestStat.size > RELEASE_ARTIFACT_METADATA_MAX_BYTES) throw Object.assign(new Error('Local Candidate manifest exceeds the supported read limit.'), {
+        code: 'candidate-manifest-too-large', actualBytes: manifestStat.size, maximumBytes: RELEASE_ARTIFACT_METADATA_MAX_BYTES,
+      });
       const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
       const tarballStat = typeof manifest?.filename === 'string' && path.basename(manifest.filename) === manifest.filename
         ? fs.lstatSync(path.join(directory!, manifest.filename), { throwIfNoEntry: false }) : null;

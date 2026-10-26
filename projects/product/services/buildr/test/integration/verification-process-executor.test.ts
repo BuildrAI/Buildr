@@ -9,6 +9,27 @@ import { pathToFileURL } from 'node:url';
 import { executeVerificationCommand } from '../verification/support/process-executor.ts';
 import { spawnSupervised, parseSuccessfulJson } from '../helpers/child-process-supervisor.ts';
 import { stopOwnedChildProcess } from '../verification/support/owned-process.ts';
+import { createVerificationExecutor } from '../verification/executor.ts';
+
+test('unexpected preparation failure leaves its dependent command unexecuted', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-preparation-error-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const diagnostics = path.join(root, 'not-a-directory');
+  const marker = path.join(root, 'must-not-execute');
+  fs.writeFileSync(diagnostics, 'occupied by a file');
+  const execute = createVerificationExecutor({ productRoot: root, projectRoot: root, minimumNodeVersion: null,
+    diagnosticsDirectory: diagnostics, env: { NODE_TEST_CONTEXT: undefined } });
+  const result = await execute({ id: 'dependent', name: 'Dependent command',
+    preparations: [{ file: process.execPath, args: ['-e', 'process.exit(0)'], cwd: root }],
+    executor: { type: 'command', file: process.execPath,
+      args: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'executed')`], cwd: root } });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.durationMs, 0);
+  assert.equal(fs.existsSync(marker), false);
+  assert.equal(result.preparations[0].status, 'failed');
+  assert.ok(result.preparations[0].errorCode);
+  assert.match(result.reason, /Required preparation prepare-1 failed/);
+});
 
 test('supervised output stays bounded while receiving data and preserves the head and failure tail', async () => {
   let largestObserved = 0;

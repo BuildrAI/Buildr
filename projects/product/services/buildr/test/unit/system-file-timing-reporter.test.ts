@@ -10,9 +10,9 @@ async function collect(reporter: any): Promise<any>  {
 }
 
 test('System file timing 按 worker duration 输出紧凑 transient diagnostics', async () => {
-  const fileA: any = '/workspace/test/system/a.test.mjs';
-  const fileB: any = '/workspace/test/system/b.test.mjs';
-  async function* events(): Promise<any>  {
+  const fileA: any = '/workspace/test/e2e/a.test.mjs';
+  const fileB: any = '/workspace/test/e2e/b.test.mjs';
+  async function* events() {
     yield { type: 'test:complete', data: { name: '普通用例', file: fileA, details: { duration_ms: 9, passed: true } } };
     yield { type: 'test:complete', data: { name: fileA, file: fileA, details: { duration_ms: 1200.4, passed: true } } };
     yield { type: 'test:complete', data: { name: fileB, file: fileB, details: { duration_ms: 2400.6, passed: false } } };
@@ -31,7 +31,7 @@ test('System file timing 相同耗时按文件名稳定排序', () => {
 
 test('System reporter转发黄金journey分段计时并忽略其他测试输出', async () => {
   const timing: any = '[buildr-golden-journey-timing] {"schemaVersion":"buildr.golden-journey-timing/v1"}\n';
-  async function* events(): Promise<any>  {
+  async function* events() {
     yield { type: 'test:stderr', data: { message: 'ordinary diagnostic\n' } };
     yield { type: 'test:stderr', data: { message: timing } };
   }
@@ -131,7 +131,7 @@ test('System reporter bounds the number of projected task review diagnostics', a
 });
 
 test('System case progress uses per-file ordinals and never copies names or absolute paths', async () => {
-  const first = { file: '/private/workspace/test/system/first.test.ts', name: 'private-title', line: 10, column: 1, nesting: 0 };
+  const first = { file: '/private/workspace/test/e2e/first.test.ts', name: 'private-title', line: 10, column: 1, nesting: 0 };
   const second = { ...first, line: 20, name: '/private/title-path' };
   const other = { file: 'D:\\private\\workspace\\test\\system\\other.test.ts', name: 'private-other-title', line: 30, column: 1, nesting: 0, testId: 8 };
   async function* events() {
@@ -153,7 +153,7 @@ test('System case progress uses per-file ordinals and never copies names or abso
 });
 
 test('System progress ignores root, file containers, suites and unmatched completion events', async () => {
-  const file = '/private/workspace/test/system/only.test.ts';
+  const file = '/private/workspace/test/e2e/only.test.ts';
   const actual = { file, name: 'private-case', line: 15, column: 1, nesting: 0, testId: 7 };
   async function* events() {
     const ignored = [{ name: 'root' }, { file, name: file, line: 1, column: 1 },

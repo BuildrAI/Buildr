@@ -82,6 +82,8 @@ Buildr-Task: 2026-09-27-task-git-commits
 
 ## 5. Push 必须检查完整 range
 
+上游智能体（Agent）同时负责按具体项目政策核对推送前检查，并由 `project-verification` 交付真实证据；本提供者（Provider）继续只核对授权、Git 对象、完整范围和副作用，不另设测试计划、不选择检查或重复运行验证。缺少检查声明时交回对应维护者，不猜测所有项目都采用同一政策。
+
 push 前重新观察实际 remote、source ref、destination ref 和 destination identity，并计算本次会新增到 destination 的完整 commit range，而不是只检查 tip commit。
 
 逐个确认 range 中的 commit 都在 consumer 授权 scope。range 含 scope 外 unpublished commit、远端/ref 无法可靠观察、destination 漂移或目标不匹配时，在 remote 零写入状态返回 `blocked`。不得自动扩大授权、改推其他 ref、创建远端任务分支、rebase、merge 或 force push。

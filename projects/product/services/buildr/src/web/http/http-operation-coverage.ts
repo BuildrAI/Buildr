@@ -1,4 +1,4 @@
-const ALLOWED = new Set(['migrated-json', 'migrated-binary', 'deferred', 'not-applicable']);
+const ALLOWED = new Set(['migrated-json', 'migrated-binary', 'migrated-stream', 'deferred', 'not-applicable']);
 
 export const NON_HTTP_SYSTEM_DISPOSITIONS = Object.freeze([
   Object.freeze({ id: 'system-doctor.cli', owner: 'system-doctor', disposition: 'not-applicable', reason: 'Doctor is a read-only CLI/Application diagnostic capability, not a Buildr Web HTTP route.' }),
@@ -16,7 +16,7 @@ export const DEFERRED_HTTP_OPERATIONS = Object.freeze([
 export function ownedHttpOperations(owner: any, operations: any) {
   return operations.map((operation: any) => Object.freeze({
     owner,
-    disposition: operation.responseKind === 'binary' ? 'migrated-binary' : 'migrated-json',
+    disposition: operation.responseKind === 'binary' ? 'migrated-binary' : operation.responseKind === 'stream' ? 'migrated-stream' : 'migrated-json',
     responseKind: operation.responseKind || 'json',
     ...operation,
   }));
@@ -31,6 +31,7 @@ export function inspectHttpOperationCoverage(operationGroups: any, dispositions:
     if (!entry.id || !entry.owner || !ALLOWED.has(entry.disposition)) invalid.push(entry.id || '<missing>');
     if (['deferred', 'not-applicable'].includes(entry.disposition) && !entry.reason) invalid.push(entry.id);
     if (entry.disposition === 'migrated-json' && (!entry.requestSchemaId || !entry.successSchemaId || !entry.errorSchemaId)) invalid.push(entry.id);
+    if (entry.disposition === 'migrated-stream' && (entry.responseKind !== 'stream' || !entry.requestSchemaId || !entry.successSchemaId || !entry.errorSchemaId)) invalid.push(entry.id);
     if (entry.disposition === 'migrated-binary' && (!entry.requestSchemaId || entry.successSchemaId !== null || !entry.errorSchemaId)) invalid.push(entry.id);
   }
   const duplicates = [...counts].filter(([, count]: any) => count !== 1).map(([id]: any) => id).sort();

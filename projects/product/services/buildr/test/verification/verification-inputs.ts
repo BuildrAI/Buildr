@@ -36,7 +36,7 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
   };
   // These fixture/source checks were reviewed for real checkout readers. Their
   // inputs are executable/shipped assets, not this Product's planning material.
-  const independent = step.reuse?.releaseNotes === false || ['system-verification-admission', 'runtime-adapter-contract', 'integration-candidate-release-selection', 'integration-release', 'integration-self-bootstrap'].includes(step.id);
+  const independent = step.reuse?.releaseNotes === false || ['integration-changed-paths', 'runtime-adapter-contract', 'integration-candidate-release-selection', 'integration-release', 'integration-self-bootstrap'].includes(step.id);
   const material = (file: string) => /^projects\/product\/(?:knowledge|openspec|docs|tasks)\//u.test(file);
   const content = entries.filter(([file]) => !recipeFile(file!) && !(narrow && independent && material(file!)));
   // Result validation does not execute the assertions. Its consumers still bind
@@ -99,7 +99,7 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
     const executable = options.proof ? executableModuleInputs(text, !options.legacyDeclarations) : null;
     // Child scripts are often passed to spawn via a repository-relative literal,
     // rather than imported into the current test process.
-    const catalog = /\/test\/(?:verification|context)\/(?:registry|ownership|system-suites|profiles|dispositions)\.ts$/u.test(file);
+    const catalog = /\/test\/(?:verification|context)\/(?:registry|ownership|journey-suites|profiles|dispositions)\.ts$/u.test(file);
     const children = executable?.children ?? [...text.matchAll(/['"]((?:test|tools)\/[^'"\n]+\.[cm]?[jt]sx?)['"]/gu)].map(match => match[1]!);
     for (const target of catalog ? [] : children) {
       const child = prefix + target;

@@ -17,7 +17,7 @@ import { AGENT_OPERATIONS_APPLICATION, type AgentOperationsApplication } from '.
 
 test('Codex desktop production module composes registered Workspace/Task identities and HTTP relations', async t => {
   if (!process.env.BUILDR_SMOKE_ROOT) {
-    const output = execFileSync(process.execPath, [path.resolve(import.meta.dirname, '../../tools/development/run-isolated-workspace-smoke.ts'), '--script', import.meta.filename], { encoding: 'utf8', timeout: 60_000 });
+    const output = execFileSync(process.execPath, [path.resolve(import.meta.dirname, '../../tools/development/run-isolated-workspace-check.ts'), '--script', import.meta.filename], { encoding: 'utf8', timeout: 60_000 });
     assert.match(output, /"status":"passed"/); assert.match(output, /"cleanup":"cleaned"/); return;
   }
   const base = process.env.BUILDR_SMOKE_ROOT!, root = process.env.BUILDR_SMOKE_WORKSPACE_ROOT!;

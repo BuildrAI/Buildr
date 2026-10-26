@@ -99,7 +99,7 @@ test('real local HTTP authenticates acknowledgements and shutdown releases activ
   if (!process.env.BUILDR_SMOKE_ROOT) {
     // Run just this previously skipped case in the isolated child; the other
     // in-process cases keep their single execution in the parent test runner.
-    const output = execFileSync(process.execPath, [path.resolve(import.meta.dirname, '../../tools/development/run-isolated-workspace-smoke.ts'), '--script', import.meta.filename, '--', '--isolated-http'], { encoding: 'utf8', timeout: 20_000 });
+    const output = execFileSync(process.execPath, [path.resolve(import.meta.dirname, '../../tools/development/run-isolated-workspace-check.ts'), '--script', import.meta.filename, '--', '--isolated-http'], { encoding: 'utf8', timeout: 20_000 });
     assert.match(output, /"status":"passed"/); assert.match(output, /"cleanup":"cleaned"/); return;
   }
   let url: string | null = null;

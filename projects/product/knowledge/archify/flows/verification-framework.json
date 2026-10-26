@@ -7,7 +7,8 @@
     "quality_profile": "showcase",
     "legend": {
       "mode": "hidden"
-    }
+    },
+    "output": "projects/product/knowledge/archify/flows/verification-framework.html"
   },
   "lanes": [
     {
@@ -54,7 +55,7 @@
       "col": 2,
       "type": "backend",
       "label": "选择并执行测试",
-      "sublabel": "项目与服务的工具与环境",
+      "sublabel": "project-verification · 实际执行",
       "width": 204,
       "height": 68,
       "yOffset": 44
@@ -87,7 +88,7 @@
       "col": 2,
       "type": "backend",
       "label": "核对并更新测试声明",
-      "sublabel": "入口、范围、位置与选择方式",
+      "sublabel": "project-testing · 唯一登记维护",
       "width": 204,
       "height": 68,
       "yOffset": 44
@@ -108,7 +109,6 @@
       "to": "run",
       "label": "能力已具备",
       "role": "main",
-      "fromSide": "right",
       "toSide": "left"
     },
     {
@@ -155,26 +155,18 @@
   "cards": [
     {
       "dot": "cyan",
-      "title": "project-testing · 建设测试",
+      "title": "project-testing · 建设与登记",
       "items": [
-        "指导智能体（Agent）设计和完善测试用例、隔离与执行入口。",
-        "各服务按目标采用合适的测试能力。"
-      ]
-    },
-    {
-      "dot": "amber",
-      "title": "declaration-intake · 核对声明变化",
-      "items": [
-        "核对新增或变化的入口及声明缺口，不直接写地图。",
-        "交给 task-verification 更新 verification.yml。"
+        "维护必要案例、隔离、执行入口和选择映射。",
+        "唯一维护 verification.yml，不经声明中转。"
       ]
     },
     {
       "dot": "emerald",
-      "title": "task-verification · 使用与维护",
+      "title": "project-verification · 选择与执行",
       "items": [
-        "指导查阅与维护测试地图，选择检查并直接调用项目工具。",
-        "核对结果与缺口，按需通过 Buildr 保存正式报告。"
+        "按用户请求或目标选齐相关四类并实际执行。",
+        "交付真实证据与缺口，已有任务按需保存报告。"
       ]
     }
   ]

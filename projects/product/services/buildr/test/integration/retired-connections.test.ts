@@ -73,7 +73,7 @@ test('unknown credential owner and foreign manifest are diagnosed without deleti
 });
 
 test('retired command reports replacement help and old HTTP operations return 410 without resolving a workspace or executing contributions', async t => {
-  let output = ''; t.mock.method(console, 'log', value => { output = String(value); });
+  let output = ''; t.mock.method(console, 'log', (value: unknown) => { output = String(value); });
   assert.equal(printCliError(['connection', 'mysql', 'query', '--json'], { candidates: [] }), 2);
   const error = JSON.parse(output); assert.equal(error.error.code, 'cli.connection_retired'); assert.ok(error.suggestions.includes('connection-skill --help'));
   let resolved = 0, handled = 0, body = '', status = 0;

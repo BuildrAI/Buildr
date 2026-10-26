@@ -80,19 +80,21 @@ test('documentation quality ignores trailing whitespace', () => {
   }
 });
 
-test('focus verification lists selectors and rejects unknown values before execution', () => {
-  const runner: any = path.join(productRoot, 'test', 'verification', 'focus.ts');
-  const help: any = spawnSync(process.execPath, [runner, '--help'], { cwd: productRoot, encoding: 'utf8' });
+test('public verification lists concrete checks and rejects invalid options before execution', () => {
+  const runner = path.join(productRoot, 'test/verification/cli.ts');
+  const help = spawnSync(process.execPath, [runner, 'related', '--help'], { cwd: productRoot, encoding: 'utf8' });
   assert.equal(help.status, 0, help.stderr);
-  assert.match(help.stdout, /step-id\|group/);
-  const listed: any = spawnSync(process.execPath, [runner, '--list'], { cwd: productRoot, encoding: 'utf8' });
+  assert.match(help.stdout, /--check <id>/);
+  const listed = spawnSync(process.execPath, [runner, 'related', '--list'], { cwd: productRoot, encoding: 'utf8' });
   assert.equal(listed.status, 0, listed.stderr);
-  assert.match(listed.stdout, /group:package/);
-  assert.match(listed.stdout, /workspace-lifecycle/);
-  const unknown: any = spawnSync(process.execPath, [runner, 'unknown'], { cwd: productRoot, encoding: 'utf8' });
+  const catalogue = JSON.parse(listed.stdout);
+  assert.ok(catalogue.some((check: any) => check.id === 'workspace-lifecycle'));
+  assert.ok(catalogue.every((check: any) => ['Static', 'Unit', 'Integration', 'E2E'].includes(check.type)));
+  assert.equal(new Set(catalogue.map((check: any) => check.id)).size, catalogue.length);
+  const unknown = spawnSync(process.execPath, [runner, 'related', '--unknown'], { cwd: productRoot, encoding: 'utf8' });
   assert.equal(unknown.status, 2);
-  assert.match(unknown.stderr, /Unknown verification step/);
-  assert.doesNotMatch(`${unknown.stdout}${unknown.stderr}`, /\[focus\]/);
+  assert.match(unknown.stderr, /Unknown verification option/);
+  assert.doesNotMatch(`${unknown.stdout}${unknown.stderr}`, /Verification (?:passed|not-passed|incomplete)/);
 });
 
 test('candidate rejects invalid scheduling and execution profiles before verification', () => {
@@ -119,64 +121,58 @@ test('candidate full plan only uses Candidate profile and rejects changed-path o
   const payload: any = JSON.parse(planned.stdout);
   assert.equal(payload.schemaVersion, 'buildr.verification-full-plan/v1');
   assert.equal(payload.base, null);
-  assert.equal(payload.source, 'candidate-profile');
+  assert.equal(payload.source, 'candidate');
   assert.deepEqual(payload.paths, []);
   assert.deepEqual(payload.preflightSteps, []);
-  assert.deepEqual(payload.admissionStepIds, []);
+  assert.equal('admissionStepIds' in payload, false);
   assert.equal(new Set(payload.steps.map((step: any) => step.id)).size, payload.steps.length);
   assert.equal(payload.steps.some((step: any) => step.id === 'repository-onboarding'), false);
   for (const id of [
-    'system-verification-admission', 'system-verification-contracts', 'system-public-json-contracts', 'system-openspec-contract-audit',
-    'system-workspace-lifecycle', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-runtime-recovery',
-    'system-buildr-web-http', 'system-app-process',
+    'integration-changed-paths', 'integration-verification-runtime', 'integration-public-json', 'integration-openspec-audit',
+    'e2e-workspace', 'e2e-task', 'e2e-worktree', 'e2e-runtime-recovery',
+    'integration-web-http', 'e2e-app-process',
   ]) {
     assert.equal(payload.steps.filter((step: any) => step.id === id).length, 1);
   }
   assert.equal(payload.steps.some((step: any) => step.id === 'system'), false);
   const changed: any = spawnSync(process.execPath, [runner, '--base', 'HEAD^', '--json'], { cwd: productRoot, encoding: 'utf8', env: environment });
   assert.equal(changed.status, 1);
-  assert.match(changed.stderr, /Unknown test:candidate option: --base/);
+  assert.match(changed.stderr, /Unknown Candidate verification option: --base/);
   const unknown: any = spawnSync(process.execPath, [runner, '--unknown'], { cwd: productRoot, encoding: 'utf8', env: environment });
   assert.equal(unknown.status, 1);
-  assert.match(unknown.stderr, /Unknown test:candidate option/);
+  assert.match(unknown.stderr, /Unknown Candidate verification option/);
   assert.doesNotMatch(`${unknown.stdout}${unknown.stderr}`, /\[verify-product\]/);
 });
 
-test('core full plan uses the daily core profile without Candidate-only owners', () => {
-  const runner: any = path.join(productRoot, 'test', 'verification', 'candidate.ts');
-  const planned: any = spawnSync(process.execPath, [runner, '--profile', 'core', '--json'], { cwd: productRoot, encoding: 'utf8', maxBuffer: 1024 * 1024, env: defaultPlanningEnvironment() });
-  assert.equal(planned.status, 0, planned.stderr);
-  const payload: any = JSON.parse(planned.stdout);
-  assert.equal(payload.schemaVersion, 'buildr.verification-full-plan/v1');
-  assert.equal(payload.source, 'core-profile');
-  assert.equal(payload.scope.mode, 'full');
-  assert.equal(payload.estimate.declaredBudgetMs, 1_250_000);
-  assert.equal(payload.estimate.feasible, true);
-  for (const id of ['candidate-tarball', 'application-payload-release', 'npm-launcher-candidate', 'package-static', 'cli-package-parity', 'system-fresh-build', 'init-onboarding', 'release-tarball-smoke']) {
-    assert.equal(payload.steps.some((step: any) => step.id === id), false, id);
-  }
+test('push check includes the full Static and Unit set and exposes exact package exclusions', () => {
+  const runner = path.join(productRoot, 'test/verification/cli.ts');
+  const planned = spawnSync(process.execPath, [runner, 'check', '--json'], { cwd: productRoot, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, env: defaultPlanningEnvironment() });
+  const payload = JSON.parse(planned.stdout);
+  assert.equal(planned.status, payload.status === 'ready' ? 0 : 1, planned.stderr);
+  assert.equal(payload.mode, 'check');
+  assert.equal(payload.selection, 'full');
+  assert.ok(payload.steps.some((step: any) => step.testing.executionBoundary === 'Unit'));
+  assert.ok(payload.steps.some((step: any) => step.testing.executionBoundary === 'Static'));
+  assert.ok(payload.steps.every((step: any) => ['Static', 'Unit'].includes(step.testing.executionBoundary)));
+  assert.equal('admissionStepIds' in payload, false);
+  assert.ok(payload.steps.every((step: any) => !('admission' in step) && !('targetDurationMs' in step.testing)));
+  assert.ok(payload.targetExclusions.every((step: any) => step.target === 'artifact' && step.reason));
 });
 
-test('daily-full public entry and core compatibility select one registry evidence set', () => {
-  const runner: any = path.join(productRoot, 'test', 'verification', 'candidate.ts');
-  const environment: any = defaultPlanningEnvironment();
-  const daily: any = spawnSync(process.execPath, [runner, '--profile', 'daily-full', '--json'], { cwd: productRoot, encoding: 'utf8', maxBuffer: 1024 * 1024, env: environment });
-  const compatibility: any = spawnSync(process.execPath, [runner, '--profile', 'core', '--json'], { cwd: productRoot, encoding: 'utf8', maxBuffer: 1024 * 1024, env: environment });
-  assert.equal(daily.status, 0, daily.stderr);
-  assert.equal(compatibility.status, 0, compatibility.stderr);
-  const dailyPlan: any = JSON.parse(daily.stdout);
-  const compatibilityPlan: any = JSON.parse(compatibility.stdout);
-  assert.equal(dailyPlan.source, 'daily-full-entry');
-  assert.deepEqual(dailyPlan.model, {
-    verificationTarget: 'task-or-current-source',
-    selection: 'full',
-    evidenceSet: 'daily-full',
-    compatibilityProfile: 'core',
-  });
-  assert.equal(compatibilityPlan.source, 'core-profile');
-  assert.deepEqual(compatibilityPlan.model, dailyPlan.model);
-  assert.deepEqual(dailyPlan.steps, compatibilityPlan.steps);
-  assert.deepEqual(dailyPlan.estimate, compatibilityPlan.estimate);
+test('push check cannot be narrowed by an explicit check and Candidate rejects retired profiles', () => {
+  const runner = path.join(productRoot, 'test/verification/cli.ts');
+  const environment = defaultPlanningEnvironment();
+  const invoke = (...args: string[]) => spawnSync(process.execPath, [runner, ...args, '--json'], { cwd: productRoot, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, env: environment });
+  const full = invoke('check'), explicit = invoke('check', '--check', 'unit');
+  const fullPlan = JSON.parse(full.stdout), explicitPlan = JSON.parse(explicit.stdout);
+  assert.equal(full.status, fullPlan.status === 'ready' ? 0 : 1, full.stderr);
+  assert.equal(explicit.status, explicitPlan.status === 'ready' ? 0 : 1, explicit.stderr);
+  assert.deepEqual(explicitPlan.steps.map((step: any) => step.id), fullPlan.steps.map((step: any) => step.id));
+  assert.equal('declaredBudgetMs' in (fullPlan.estimate ?? {}), false);
+  assert.equal('feasible' in (fullPlan.estimate ?? {}), false);
+  const retired = spawnSync(process.execPath, [path.join(productRoot, 'test/verification/candidate.ts'), '--profile', 'core', '--json'], { cwd: productRoot, encoding: 'utf8', env: environment });
+  assert.equal(retired.status, 1);
+  assert.match(retired.stderr, /Unknown Candidate verification option: --profile/);
 });
 
 test('OpenSpec fixture runner lists disjoint suites and rejects unknown suites', () => {
@@ -201,48 +197,29 @@ test('package verifier CLI exposes stable selectors and rejects unknown selector
   assert.match(unknown.stderr, /Unknown package verifier/);
 });
 
-test('changed verification exposes plan/json and rejects unknown options before execution', () => {
-  const runner: any = path.join(productRoot, 'test', 'verification', 'changed.ts');
-  const environment: any = defaultPlanningEnvironment();
-  const json: any = spawnSync(process.execPath, [runner, '--json', 'knowledge/docs/overview.md'], { cwd: productRoot, encoding: 'utf8', env: environment });
-  assert.equal(json.status, 0, json.stderr);
-  const payload: any = JSON.parse(json.stdout);
-  assert.equal(payload.schemaVersion, 'buildr.verification-plan/v1');
-  assert.equal(payload.status, 'ready');
-  assert.deepEqual(payload.paths, ['knowledge/docs/overview.md']);
-  assert.equal(payload.scope.mode, 'affected');
-  assert.deepEqual(payload.scope.reasons.map((reason: any) => reason.code), ['affected-owner']);
-  assert.deepEqual(payload.unmapped, []);
-  assert.deepEqual(payload.admissionStepIds, []);
+test('related verification supports explicit selection, pins a base and retains independent checks beside a gap', () => {
+  const runner = path.join(productRoot, 'test/verification/cli.ts');
+  const invoke = (...args: string[]) => spawnSync(process.execPath, [runner, 'related', ...args, '--json'], { cwd: productRoot, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, env: defaultPlanningEnvironment() });
+  const explicit = invoke('--check', 'docs-quality');
+  assert.equal(explicit.status, 0, explicit.stderr);
+  const payload = JSON.parse(explicit.stdout);
+  assert.equal(payload.selection, 'explicit');
+  assert.equal(payload.base, null);
   assert.deepEqual(payload.steps.map((step: any) => step.id), ['docs-quality']);
-  assert.ok(payload.steps.every((step: any) => step.dependsOn.length === 0));
-  assert.deepEqual(payload.selectionAudit.directMappings, [{
-    code: 'affected-owner', path: 'knowledge/docs/overview.md', owners: ['docs-quality'],
-  }]);
-  assert.equal(payload.selectionAudit.stepSelections.find((step: any) => step.stepId === 'docs-quality').selectionKinds.includes('direct-owner'), true);
-
-  const full: any = spawnSync(process.execPath, [runner, '--json', 'test/verification/ownership.ts'], { cwd: productRoot, encoding: 'utf8', maxBuffer: 1024 * 1024, env: environment });
-  assert.equal(full.status, 0, full.stderr);
-  const fullPayload: any = JSON.parse(full.stdout);
-  assert.equal(fullPayload.scope.mode, 'full');
-  assert.equal(fullPayload.scope.reasons[0].code, 'ownership-authority-change');
-  assert.equal(fullPayload.scope.reasons[0].pattern, 'test/verification/ownership.ts');
-  assert.match(fullPayload.scope.reasons[0].explanation, /ownership/u);
-  assert.ok(fullPayload.selectionAudit.stepSelections.every((step: any) => step.selectionKinds.includes('full-scope') || step.selectionKinds.includes('profile')));
-
-  const fallback: any = spawnSync(process.execPath, [runner, '--json', 'new-area/contract.bin'], { cwd: productRoot, encoding: 'utf8', env: environment });
-  assert.equal(fallback.status, 1, fallback.stderr);
-  const fallbackPayload: any = JSON.parse(fallback.stdout);
-  assert.equal(fallbackPayload.status, 'blocked');
-  assert.equal(fallbackPayload.scope.mode, 'blocked');
-  assert.equal(fallbackPayload.diagnostic.code, 'verification-owner-gap');
-  assert.deepEqual(fallbackPayload.diagnostic.unmapped, ['new-area/contract.bin']);
-  assert.deepEqual(fallbackPayload.unmapped, ['new-area/contract.bin']);
-  assert.deepEqual(fallbackPayload.admissionStepIds, []);
-  assert.deepEqual(fallbackPayload.steps, []);
-  assert.doesNotMatch(fallback.stdout, /\[verify-changed\]/);
-  const unknown: any = spawnSync(process.execPath, [runner, '--unknown'], { cwd: productRoot, encoding: 'utf8', env: environment });
-  assert.equal(unknown.status, 2);
-  assert.match(unknown.stderr, /Unknown test:changed option/);
-  assert.doesNotMatch(unknown.stderr, /\[verify\]/);
+  assert.equal('admissionStepIds' in payload, false);
+  const comparison = invoke('--base', 'HEAD');
+  const compared = JSON.parse(comparison.stdout);
+  assert.equal(comparison.status, compared.status === 'ready' ? 0 : 1, comparison.stderr);
+  assert.equal(compared.reference, 'HEAD');
+  assert.match(compared.base, /^[a-f0-9]{40}$/);
+  assert.ok(Array.isArray(compared.paths));
+  const gap = invoke('--check', 'unknown-check', '--check', 'docs-quality');
+  assert.equal(gap.status, 1, gap.stderr);
+  const incomplete = JSON.parse(gap.stdout);
+  assert.equal(incomplete.status, 'incomplete');
+  assert.ok(incomplete.gaps.some((item: any) => item.code === 'unknown-check'));
+  assert.deepEqual(incomplete.steps.map((step: any) => step.id), ['docs-quality']);
+  const missingBase = invoke();
+  assert.equal(missingBase.status, 2);
+  assert.match(missingBase.stderr, /requires --base/);
 });

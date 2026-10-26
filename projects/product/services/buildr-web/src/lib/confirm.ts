@@ -1,7 +1,7 @@
 import { Modal } from 'antd';
 import type { ModalFuncProps } from 'antd';
 
-type ConfirmOptions = Pick<ModalFuncProps, 'title' | 'content' | 'okText' | 'cancelText' | 'okButtonProps' | 'centered'>;
+type ConfirmOptions = Pick<ModalFuncProps, 'title' | 'content' | 'okText' | 'cancelText' | 'okButtonProps' | 'centered' | 'icon' | 'className' | 'width'>;
 
 type ModalApi = {
   confirm: (config: ModalFuncProps) => { destroy: () => void; update: (config: ModalFuncProps) => void };
@@ -31,6 +31,9 @@ export function confirmModal(options: ConfirmOptions): Promise<boolean> {
       cancelText: options.cancelText ?? '取消',
       okButtonProps: options.okButtonProps,
       ...(options.centered !== undefined ? { centered: options.centered } : {}),
+      ...(options.icon !== undefined ? { icon: options.icon } : {}),
+      ...(options.className !== undefined ? { className: options.className } : {}),
+      ...(options.width !== undefined ? { width: options.width } : {}),
       onOk: () => { finish(true); },
       onCancel: () => { finish(false); },
       afterClose: () => { finish(false); },

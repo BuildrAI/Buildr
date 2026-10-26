@@ -545,29 +545,6 @@ Buildr product verification MUST覆盖仍存在的capability provider默认解�
 - **WHEN** required dependency blocked或成环
 - **THEN** readiness MUST只传播到受影响consumer并返回稳定根因
 
-### Requirement: package 验证必须按资产与行为边界拆分
-Buildr MUST 将 package 静态内容校验、package workspace smoke 和领域 integration 实现为可独立执行的 verifier，并 MUST 让 `buildr package check` 聚合这些 verifier 的结果而不改变公开成功或失败语义。
-
-#### Scenario: 维护者运行 package check
-- **WHEN** 维护者运行 `buildr package check`
-- **THEN** 命令 MUST 执行全部已登记 package verifier
-- **AND** 任一 verifier 失败 MUST 使聚合命令返回非零状态并标识失败边界
-
-#### Scenario: package 静态校验独立执行
-- **WHEN** Candidate 或 affected 验证执行 package static verifier
-- **THEN** verifier MUST 校验 manifest、inventory、随包 baseline、Skill/Rule/Component 内容契约和必要支持工具
-- **AND** verifier MUST NOT 创建临时用户 workspace 或执行领域 CLI 生命周期
-
-#### Scenario: package workspace smoke 独立执行
-- **WHEN** Candidate 或维护者执行 package workspace smoke
-- **THEN** verifier MUST 验证 init 生成的随包 baseline、现有 `AGENTS.md` 兼容和最终 doctor 收敛
-- **AND** verifier MUST NOT 重复 Commands、Rules、Skills 或全部 runtime adapter 的细粒度 CRUD 与投射矩阵
-
-#### Scenario: 领域 integration 独立执行
-- **WHEN** package 验证需要覆盖 Commands、Rules、Skills 或 runtime 的行为契约
-- **THEN** 对应断言 MUST 由稳定的 focused verifier identity 持有
-- **AND** package check MAY 聚合该 verifier，但 package workspace smoke MUST NOT 复制其完整场景
-
 ### Requirement: Package baseline 只交付 workspace Skill authority
 Buildr package MUST 只向 workspace baseline 交付受管 Skill manifest、contracts、sources 和 Components，并 MUST NOT 在默认 Project template 中交付 Skill source assets。
 
@@ -615,15 +592,15 @@ Buildr package MUST 为新 Project 交付空的 Command requirements baseline，
 - **AND** sync 或 migration MUST 能安全补齐空 baseline
 
 ### Requirement: 随包任务验证能力保持完整可组合
-Buildr package MUST原子交付`buildr.task-verification/v4` contract、默认`task-verification` provider、Project `buildr.project-verification/v4` reference/template、Workspace binding、Project map CLI/Application、Task report inspect/record CLI/Application与全部supported runtime投射输入。Package authoring surface MUST不包含旧v2/v3 reference/template、Request/Plan/provider、Execution Record、Candidate或Task Finish verification authority。
+Buildr package MUST原子交付`buildr.task-verification/v4` contract、默认`project-verification` provider、由 project-testing 维护的 Project `buildr.project-verification/v4` reference/template、Workspace binding、Project map CLI/Application、Task report inspect/record CLI/Application与全部supported runtime投射输入。Package authoring surface MUST不包含旧v2/v3 reference/template、Request/Plan/provider、Execution Record、Candidate或Task Finish verification authority。
 
 #### Scenario: Package 声明 task-verification provider
 - **WHEN** package static validation读取随包能力声明
-- **THEN** Workspace Skills manifest MUST声明installed、enabled的`task-verification` provider、`buildr.task-verification/v4` contract与binding
+- **THEN** Workspace Skills manifest MUST声明installed、enabled的`project-verification` provider、`buildr.task-verification/v4` contract与binding
 - **AND** package include mapping MUST只投射v4测试地图reference/template和当前Skill资料
 
 #### Scenario: Package 交付测试声明资料
-- **WHEN** package static validation检查`task-verification`完整目录
+- **WHEN** package static validation检查`project-verification`完整目录
 - **THEN** provider MUST包含v4 schema reference和最小初始化模板
 - **AND** 资料 MUST描述testing family scope、源码/测试根、完整入口、selection与requirements，不得索引每个测试文件
 
@@ -634,7 +611,7 @@ Buildr package MUST原子交付`buildr.task-verification/v4` contract、默认`t
 
 #### Scenario: Runtime 可发现验证入口
 - **WHEN** 临时Workspace为任一supported runtime完成sync或render
-- **THEN** runtime inventory MUST包含可发现的v4 `task-verification` Skill
+- **THEN** runtime inventory MUST包含可发现的v4 `project-verification` Skill
 - **AND** description MUST覆盖测试地图、Agent直接执行与开发完成报告意图
 
 #### Scenario: Provider contract 组合验证
@@ -872,7 +849,7 @@ Buildr package 与 active product source MUST 删除 `task-asset-review` provide
 - **AND** `.gitignore` MAY继续保留旧目录排除规则
 
 ### Requirement: self-bootstrap 候选验收必须证明 canonical store 未受污染
-Buildr package/runtime verification MUST 覆盖 self-bootstrap candidate 对 canonical Structured Store 的 provenance rejection、独立 validation store migration、CLI/HTTP/internal driver writer routing 与候选 Buildr Web smoke。验证 MUST 证明拒绝路径零 mutation，并明确区分 candidate validation evidence 与 retained runtime activation evidence。
+Buildr package/runtime verification MUST 覆盖 self-bootstrap candidate 对 canonical Structured Store 的 provenance rejection、独立 validation store migration、CLI/HTTP/internal driver writer routing 与候选 Buildr Web 端到端检查（E2E）。验证 MUST 证明拒绝路径零 mutation，并明确区分 candidate validation evidence 与 retained runtime activation evidence。
 
 #### Scenario: package fixture 运行 candidate migration
 - **WHEN** verifier 用 task worktree candidate runtime 分别指向 canonical Workspace 与 receipt-bound Task Validation Workspace
@@ -1229,3 +1206,26 @@ Buildr 开发版来源内容证明与自举重启选择 MUST 使用安装身份�
 #### Scenario: 旧实例迁移
 - **WHEN** 旧实例缺少新的运行内容证明
 - **THEN** 系统 MUST 保留严格旧来源校验，不从当前文件追认旧启动内容；首次运行更新正常重启后 MUST 记录新证明
+
+### Requirement: 软件包检查必须按四类及实际行为边界拆分
+Buildr MUST 将 package 静态内容校验、软件包工作空间端到端检查（E2E） 和领域 integration 实现为可独立执行的 verifier，并 MUST 让 `buildr package check` 聚合这些 verifier 的结果而不改变公开成功或失败语义。
+
+#### Scenario: 维护者运行 package check
+- **WHEN** 维护者运行 `buildr package check`
+- **THEN** 命令 MUST 执行全部已登记 package verifier
+- **AND** 任一 verifier 失败 MUST 使聚合命令返回非零状态并标识失败边界
+
+#### Scenario: package 静态校验独立执行
+- **WHEN** Candidate 或 affected 验证执行 package static verifier
+- **THEN** verifier MUST 校验 manifest、inventory、随包 baseline、Skill/Rule/Component 内容契约和必要支持工具
+- **AND** verifier MUST NOT 创建临时用户 workspace 或执行领域 CLI 生命周期
+
+#### Scenario: 软件包工作空间端到端检查（E2E） 独立执行
+- **WHEN** Candidate 或维护者执行 软件包工作空间端到端检查（E2E）
+- **THEN** verifier MUST 验证 init 生成的随包 baseline、现有 `AGENTS.md` 兼容和最终 doctor 收敛
+- **AND** verifier MUST NOT 重复 Commands、Rules、Skills 或全部 runtime adapter 的细粒度 CRUD 与投射矩阵
+
+#### Scenario: 领域 integration 独立执行
+- **WHEN** package 验证需要覆盖 Commands、Rules、Skills 或 runtime 的行为契约
+- **THEN** 对应断言 MUST 由稳定的 focused verifier identity 持有
+- **AND** package check MAY 聚合该 verifier，但 软件包工作空间端到端检查（E2E） MUST NOT 复制其完整场景

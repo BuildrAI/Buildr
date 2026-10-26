@@ -1,4 +1,6 @@
 export const productLayerOf = (relative: string): string => {
+  // This shared value algorithm has no environment or infrastructure access.
+  if (relative === 'infrastructure/semantic-version.ts') return 'domain';
   if (relative === 'infrastructure/contracts/public-json.ts') return 'infrastructure';
   const parts: any = relative.split('/');
   if (parts[0] === 'infrastructure') return 'infrastructure';
@@ -25,6 +27,8 @@ const allowedTargets: any = {
   module: new Set(['interfaces', 'application', 'domain', 'infrastructure']),
 };
 const allowedCrossModulePorts: any = new Set([
+  'modules/agent-service/module.ts -> modules/workspace/module.ts',
+  'modules/agent-service/module.ts -> modules/task/module.ts',
   'modules/artifact-lifecycle/module.ts -> modules/task/module.ts',
   'modules/artifact-lifecycle/module.ts -> modules/workspace/module.ts',
   'modules/agent-assets/source/module.ts -> modules/agent-assets/module.ts',

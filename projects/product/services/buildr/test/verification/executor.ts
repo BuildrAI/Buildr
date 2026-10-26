@@ -25,7 +25,7 @@ function innerConcurrencyBudget(step: any, executionContext: any = {}): any  {
 }
 
 export function workerBudgetEnvironment(step: any, executionContext: any): any  {
-  if (step.executor?.type !== 'node') return {};
+  if (!['node', 'command'].includes(step.executor?.type)) return {};
   const budget: any = innerConcurrencyBudget(step, executionContext);
   if (budget == null) return {};
   return { BUILDR_VERIFICATION_WORKER_BUDGET: String(budget) };
@@ -82,6 +82,39 @@ export function createVerificationExecutor(options: any): any  {
   delete baseEnv.BUILDR_CANDIDATE_PREPARATION_ID;
   const sharedCandidate: any = readSharedCandidatePackage(baseEnv);
   const artifacts: any = sharedCandidate ? { candidate: sharedCandidate } : {};
+  const preparations: Map<string, Promise<any>> = options.preparations ?? new Map();
+  const browserWebDist = path.join(options.diagnosticsDirectory ?? artifactDirectoryForBrowser(), 'browser-web-dist');
+  function artifactDirectoryForBrowser() { return path.join(options.artifactDirectory ?? path.join(productRoot, 'build/verification'), 'prepared'); }
+  const prepareOnce = (definition: any): Promise<any> => {
+    const command = definition.file === process.execPath || definition.file === 'node' ? exactNode.nodeExecutable : definition.file;
+    const args = definition.args ?? [], cwd = definition.cwd ?? productRoot;
+    const key = JSON.stringify([command, args, cwd]);
+    if (!preparations.has(key)) {
+      const id = `prepare-${preparations.size + 1}`;
+      preparations.set(key, (async () => {
+        options.stream?.write(`[verify] ${id}: ${command} ${args.join(' ')} (cwd=${cwd})\n`);
+        const startedAt = Date.now();
+        let state: ReturnType<typeof createIsolatedWorkspaceState> | null = null;
+        let result: any;
+        try {
+          state = createIsolatedWorkspaceState({ env: baseEnv });
+          result = await runVerificationStep({ id, diagnosticId: id, name: args.join(' '), command, args, cwd, env: state.env, timeoutMs: 300_000, diagnosticsDirectory: options.diagnosticsDirectory }, { signal: options.signal });
+        } catch (error: any) {
+          result = { status: 'failed', exitCode: 1, durationMs: Date.now() - startedAt, stdout: '', stderr: error.message,
+            errorCode: error.code ?? 'preparation-error' };
+        } finally {
+          try { state?.cleanup(); }
+          catch (error: any) { result = { ...result, status: 'failed', exitCode: 1, durationMs: Date.now() - startedAt,
+            stderr: `${result?.stderr ?? ''}\nPreparation cleanup failed: ${error.message}`, errorCode: 'preparation-cleanup-failed' }; }
+        }
+        if (result.stdout) options.stream?.write(result.stdout);
+        if (result.stderr) options.errorStream?.write(result.stderr);
+        options.stream?.write(`[verify] ${id}: ${result.status} (${result.durationMs} ms)\n`);
+        return { ...result, id, command, args, cwd };
+      })());
+    }
+    return preparations.get(key)!;
+  };
   const nodeTestFile: any = (file: any) => {
     const relative: any = path.relative(productRoot, file).split(path.sep).join('/');
     return relative.startsWith('.') ? relative : `./${relative}`;
@@ -89,6 +122,10 @@ export function createVerificationExecutor(options: any): any  {
 
   const commandFor: any = (step: any, executionContext: any) => {
     const executor: any = step.executor;
+    if (executor.type === 'command') {
+      const executable = executor.file === process.execPath || executor.file === 'node' ? exactNode.nodeExecutable : executor.file;
+      return { command: executable, args: executor.args ?? [], cwd: executor.cwd ?? productRoot, shell: false };
+    }
     if (executor.type === 'node') return { command: exactNode.nodeExecutable, args: [path.join(productRoot, executor.file), ...(executor.args ?? [])] };
     if (executor.type === 'node-test') {
       const files: any = resolveNodeTestFiles(productRoot, executor.files, `verification step ${step.id}`);
@@ -128,7 +165,14 @@ export function createVerificationExecutor(options: any): any  {
     throw new Error(`Executor ${executor.type} does not resolve to a command`);
   };
 
-  return async function executeVerificationStep(step: any, executionContext: any = {}): Promise<any>  {
+  const requiredPreparationsFor = (step: any) => [
+    ...(step.preparations ?? []),
+    ...(step.browserSelector ? [
+      { file: process.execPath, args: [path.join(productRoot, 'tools/development/run-development-npm.ts'), '--prefix', productRoot, 'run', 'artifacts:prepare'], cwd: productRoot },
+      { file: process.execPath, args: [path.join(productRoot, 'test/verification/web-dist.ts'), '--output', browserWebDist], cwd: productRoot },
+    ] : []),
+  ];
+  const executeVerificationStep: any = async (step: any, executionContext: any = {}): Promise<any> => {
     if (step.executor.type === 'candidate-artifact') {
       const startedAt: any = Date.now();
       let error: any = null;
@@ -154,6 +198,16 @@ export function createVerificationExecutor(options: any): any  {
         ...diagnostics,
       };
     }
+    const preparationResults: any[] = [];
+    const requiredPreparations = requiredPreparationsFor(step);
+    for (const preparation of requiredPreparations) {
+      const result = await prepareOnce(preparation);
+      preparationResults.push({ id: result.id, status: result.status, durationMs: result.durationMs, command: result.command, args: result.args, cwd: result.cwd,
+        ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+        ...(result.stderrPath ? { stderrPath: result.stderrPath } : {}),
+        ...(result.status !== 'passed' ? { error: result.stderr || 'Preparation did not complete successfully.' } : {}) });
+      if (result.status !== 'passed') return { status: 'blocked', exitCode: 1, durationMs: 0, stdout: '', stderr: '', reason: `Required preparation ${result.id} failed: ${result.stderr || result.status}`, preparations: preparationResults };
+    }
     const resolved: any = commandFor(step, executionContext);
     const artifactEnv: any = step.executor.consumesArtifact && artifacts.candidate ? {
       [CANDIDATE_TARBALL_ENV]: artifacts.candidate.tarball,
@@ -161,7 +215,7 @@ export function createVerificationExecutor(options: any): any  {
       [CANDIDATE_RELEASE_MANIFEST_ENV]: artifacts.candidate.manifestPath,
     } : {};
     const state = createIsolatedWorkspaceState({
-      env: { ...baseEnv, ...executionContext.resourceEnvironment, ...artifactEnv, ...workerBudgetEnvironment(step, executionContext) },
+      env: { ...baseEnv, ...executionContext.resourceEnvironment, ...artifactEnv, ...workerBudgetEnvironment(step, executionContext), ...(step.browserSelector ? { BUILDR_BROWSER_WEB_DIST_ROOT: browserWebDist } : {}) },
     });
     let result: any;
     try {
@@ -179,6 +233,10 @@ export function createVerificationExecutor(options: any): any  {
       state.cleanup();
     }
     const testContextRuntime: any = step.executor.type === 'node-context-test' ? parseNodeTestContextSummary(result.stdout) : null;
-    return testContextRuntime ? { ...result, testContextRuntime } : result;
+    return { ...result, ...(testContextRuntime ? { testContextRuntime } : {}), ...(preparationResults.length ? { preparations: preparationResults } : {}) };
   };
+  executeVerificationStep.prepareSteps = async (steps: any[]) => {
+    for (const step of steps) for (const preparation of requiredPreparationsFor(step)) await prepareOnce(preparation);
+  };
+  return executeVerificationStep;
 }

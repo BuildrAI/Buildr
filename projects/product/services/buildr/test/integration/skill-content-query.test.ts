@@ -42,6 +42,7 @@ test('技能读取覆盖真实目录、类型化 HTTP 结果与零写入', async
     const result = await http.handle({ request: { method: 'GET' }, root, suffix, searchParams: new URLSearchParams('file=references%2Fguide.md') });
     assert.equal(result.status, 200);
     const op = AGENT_ASSETS_HTTP_OPERATIONS.find((item: any) => item.id === operation);
+    assert.ok(op);
     assert.equal(AGENT_ASSETS_HTTP_VALIDATORS.validate(op.successSchemaId, result.body).valid, true);
     assert.equal(AGENT_ASSETS_HTTP_VALIDATORS.validate(op.errorSchemaId, { error: { code: 'skill_content_unavailable', message: '无法读取' } }).valid, true);
     assert.equal(AGENT_ASSETS_HTTP_VALIDATORS.validate(op.requestSchemaId, { unknown: true }).valid, false);

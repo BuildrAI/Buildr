@@ -21,7 +21,7 @@ test('converge archives a brand-new capability whose canonical spec directory do
 });
 test('incomplete checklist prevents upstream archive',t=>{
  const f=fixture(t);f.write(path.join(f.changeRoot,'tasks.md'),'- [ ] implement\n');
- const before=fs.readFileSync(f.target,'utf8');const r=f.run();assert.equal(r.code,'change-checklist-incomplete');assert.equal(fs.readFileSync(f.target,'utf8'),before);
+ const before=fs.readFileSync(f.target,'utf8');const r=f.run();assert.partialDeepStrictEqual(r,{code:'change-checklist-incomplete'});assert.equal(fs.readFileSync(f.target,'utf8'),before);
 });
 test('conflict blocks only the current mutation',t=>{
  const f=fixture(t);let called=false;const r=runOpenSpecConvergence({...f.input,activeConflicts:[{code:'active-change-conflict'}],archive:()=>{called=true;return {status:'passed'};}});
@@ -34,7 +34,7 @@ test('upstream failure preserves recovery record and permits retry',t=>{
 });
 test('archive completed but receipt removal failed does not replay spec mutation',t=>{
  const f=fixture(t);const r=runOpenSpecConvergence({...f.input,releaseReceipt:()=>{throw new Error('fixture');}});
- assert.equal(r.code,'convergence-receipt-release-failed');const archived=f.input.resolveArchivedChangeRoot();
+ assert.partialDeepStrictEqual(r,{code:'convergence-receipt-release-failed'});const archived=f.input.resolveArchivedChangeRoot();
  const next=runOpenSpecConvergence({...f.input,context:{...f.context,changeRoot:archived,archived:true},archive:()=>{throw new Error('must not run');}});
  assert.equal(next.status,'passed');assert.ok(!fs.existsSync(convergenceReceiptPath(archived)));
 });

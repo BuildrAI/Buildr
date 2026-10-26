@@ -15,7 +15,8 @@ test('one exact batch supplies authority; client metadata, neighbors and current
  const addresses: unknown[] = [];
  const deps = { readEvents: async (address: unknown, signal: AbortSignal) => { addresses.push(address); assert.equal(signal.aborted, false); return { ...reply(), before: [{ content: 'PRIVATE NEIGHBOR' }] }; },
   querySources: () => assert.fail('No current source query'), readFile: () => assert.fail('No current file'), runInput: () => assert.fail('No source process') };
- const value = ready(await sourceRecord({ ...request, record: { ...request.record, eventSources: [{ seq: 2, sources: { ...sources, content: 'PRIVATE CLIENT BODY' } }] } }, deps));
+ const untrustedRequest = { ...request, record: { ...request.record, eventSources: [{ seq: 2, sources: { ...sources, content: 'PRIVATE CLIENT BODY' } }] } };
+ const value = ready(await sourceRecord(untrustedRequest, deps));
  assert.deepEqual(addresses, [{ sessionId: 's', seqs: [2] }]); assert.equal(value.result.items[0]?.objects[0]?.observed.content, 'Method'); assert.equal(value.marker?.basis, 'recorded-source'); assert.equal(JSON.stringify(value).includes('PRIVATE'), false);
 });
 test('marker mode agrees with content provenance and remains body-free', async () => {

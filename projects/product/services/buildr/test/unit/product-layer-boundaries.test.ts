@@ -54,3 +54,13 @@ test('统一智能体操作按独立模块分层，只登记代码场景的真�
   assert.equal(isAllowedProductLayerImport(root + 'domain/agent-operations.ts', root + 'infrastructure/codex-app-server.ts'), false);
   assert.equal(isAllowedProductLayerImport(root + 'infrastructure/codex-app-server.ts', 'modules/code/module.ts'), false);
 });
+
+
+test('Agent host assembly binds public ports and the shared SemVer value helper stays pure', () => {
+  assert.equal(isAllowedProductLayerImport('modules/agent-service/module.ts', 'modules/workspace/module.ts'), true);
+  assert.equal(isAllowedProductLayerImport('modules/agent-service/module.ts', 'modules/task/module.ts'), true);
+  assert.equal(isAllowedProductLayerImport('modules/agent-service/application/value.ts', 'modules/task/interfaces/http/task-http.ts'), false);
+  assert.equal(productLayerOf('infrastructure/semantic-version.ts'), 'domain');
+  assert.equal(isAllowedProductLayerImport('modules/installation/domain/release-version.ts', 'infrastructure/semantic-version.ts'), true);
+  assert.equal(isAllowedProductLayerImport('modules/installation/domain/release-version.ts', 'infrastructure/filesystem/index.ts'), false);
+});

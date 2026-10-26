@@ -42,9 +42,9 @@ export type ReleaseEffectCheckId = Extract<typeof RELEASE_CHECKS[number], { phas
 
 export const RELEASE_CONSUMER_COMMANDS = Object.freeze({
   'browser-core': { file: 'test/verification/release/browser-candidate.ts', args: ['--selector', 'core'], preparation: 'browser-artifact' },
-  platform: { file: 'test/verification/release/release-smoke.ts', args: ['--platform-launcher'], preparation: 'consumer' },
+  platform: { file: 'test/verification/release/package-consumption.ts', args: ['--platform-launcher'], preparation: 'consumer' },
   host: { file: 'test/verification/host-node.ts', args: [], preparation: 'host' },
-  registry: { file: 'test/verification/release/release-smoke.ts', args: [], preparation: 'consumer' },
+  registry: { file: 'test/verification/release/package-consumption.ts', args: [], preparation: 'consumer' },
 });
 
 const consumptionIdentity = (checks: readonly any[]) => `sha256-${crypto.createHash('sha256').update(JSON.stringify({ checks, commands: RELEASE_CONSUMER_COMMANDS, publisherNpm: PUBLISH_NPM_VERSION })).digest('hex')}`;

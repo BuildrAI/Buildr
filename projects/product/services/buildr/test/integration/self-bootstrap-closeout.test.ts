@@ -300,7 +300,7 @@ function syncResumeFixture(t: any): any {
     'skills/buildr/generated/SKILL.md': '已同步的源文件\n',
   };
   const failed: any = runDirectSelfBootstrapCloseout({ ...current.input, execute: executor(current.root, { failStage: true, syncFiles }) });
-  assert.equal(failed.diagnostic.code, 'self-bootstrap-closeout.stage-failed');
+  assert.partialDeepStrictEqual(failed.diagnostic, { code: 'self-bootstrap-closeout.stage-failed' });
   assert.equal(failed.phases.find((stage: any) => stage.id === 'sync').status, 'passed');
   const request = {
     schemaVersion: SELF_BOOTSTRAP_SYNC_RESUME_SCHEMA,
@@ -617,7 +617,7 @@ test('taskless activation rejects a delivery absent from the remote', (t: any) =
   const result: any = runDirectSelfBootstrapCloseout({ workspaceRoot: current.root, baseRef: current.baseRef,
     deliveredRef: head, targetBranch: 'dev', remote: 'origin', agent: 'codex',
     nodeExecutable: process.execPath, environment: current.environment, execute: executor(current.root) });
-  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.delivery-unconfirmed');
+  assert.partialDeepStrictEqual(result.diagnostic, { code: 'self-bootstrap-closeout.delivery-unconfirmed' });
   assert.equal(result.delivery.observed, false);
   assert.equal(git(current.root, 'rev-parse', 'HEAD'), head);
   assert.equal(result.phases.some((stage: any) => ['sync', 'commit', 'push'].includes(stage.id)), false);
@@ -650,7 +650,7 @@ test('直接激活拒绝把带相同标记的合并提交当作自己的待推�
   const before: any = git(current.root, 'rev-parse', 'HEAD');
   const result: any = runDirectSelfBootstrapCloseout({ ...current.input, execute: executor(current.root, current.options) });
   assert.equal(result.status, 'blocked');
-  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.remote-drift');
+  assert.partialDeepStrictEqual(result.diagnostic, { code: 'self-bootstrap-closeout.remote-drift' });
   assert.equal(git(current.root, 'rev-parse', 'HEAD'), before);
   assert.equal(git(current.root, 'ls-remote', 'origin', 'refs/heads/dev').split(/\s+/)[0], current.input.deliveredRef);
 });
@@ -686,7 +686,7 @@ for (const relative of ['projects/product/services/buildr-web/test/runtime.test.
     assert.equal(calls.some(args => args.includes('restart') || args.includes('--channel')), false);
   });
 }
-for (const relative of ['projects/product/services/buildr/package-lock.json', 'projects/product/services/buildr-web/vite.config.ts', 'projects/product/services/buildr-web/tsconfig.app.json', 'projects/product/services/buildr/tools/development/prepare-development-web.ts']) {
+for (const relative of ['projects/product/services/buildr-agent/src/index.ts', 'projects/product/services/buildr-agent/package-lock.json', 'projects/product/services/buildr/package-lock.json', 'projects/product/services/buildr-web/vite.config.ts', 'projects/product/services/buildr-web/tsconfig.app.json', 'projects/product/services/buildr/tools/development/prepare-development-web.ts']) {
   test(`shared runtime policy restarts for ${relative}`, t => {
     const f = fixture(t), file = path.join(f.root, relative);
     fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, 'runtime input changed\n');
@@ -738,9 +738,9 @@ for (const [options, code] of [
       calls.push(args); return perform(command, args, context);
     } });
     assert.equal(result.status, 'blocked');
-    assert.equal(result.diagnostic.code, code);
-    assert.equal(result.diagnostic.details.developmentWebRecovery.disposition, 'preserved');
-    assert.equal(result.diagnostic.details.developmentWebRecovery.instance.pid, 71173);
+    assert.partialDeepStrictEqual(result.diagnostic, { code: code });
+    assert.partialDeepStrictEqual(result.diagnostic, { details: { developmentWebRecovery: { disposition: 'preserved' } } });
+    assert.partialDeepStrictEqual(result.diagnostic, { details: { developmentWebRecovery: { instance: { pid: 71173 } } } });
     assert.equal(calls.some(args => args.includes('restart')), false);
     assert.equal(fs.existsSync(f.pending), false);
   });
@@ -750,7 +750,7 @@ test('failed restart retains the recovery obligation and a fresh invocation rest
   const f = runtimeRecoveryFixture(t);
   const failed = runDirectSelfBootstrapCloseout({ ...f.input, execute: executor(f.root, { runningDevelopmentInstance: true, failDevelopmentRestart: true }) });
   assert.equal(failed.status, 'blocked');
-  assert.equal(failed.diagnostic.details.developmentWebRecovery.status, 'failed');
+  assert.partialDeepStrictEqual(failed.diagnostic, { details: { developmentWebRecovery: { status: 'failed' } } });
   assert.equal(JSON.parse(fs.readFileSync(f.pending, 'utf8')).continuity.instance.pid, 71173);
   const calls: string[][] = [], perform = executor(f.root);
   const recovered = runDirectSelfBootstrapCloseout({ ...f.input, execute: (command: string, args: string[], context: any) => {
@@ -767,9 +767,9 @@ test('a transient restart failure recovers immediately while retaining the origi
   const f = runtimeRecoveryFixture(t);
   const result = runDirectSelfBootstrapCloseout({ ...f.input, execute: executor(f.root, { runningDevelopmentInstance: true, developmentRestartFailures: 1 }) });
   assert.equal(result.status, 'blocked');
-  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.development-web-restart-failed');
-  assert.equal(result.diagnostic.details.developmentWebRecovery.status, 'passed');
-  assert.equal(result.diagnostic.details.developmentWebRecovery.instance.pid, 71174);
+  assert.partialDeepStrictEqual(result.diagnostic, { code: 'self-bootstrap-closeout.development-web-restart-failed' });
+  assert.partialDeepStrictEqual(result.diagnostic, { details: { developmentWebRecovery: { status: 'passed' } } });
+  assert.partialDeepStrictEqual(result.diagnostic, { details: { developmentWebRecovery: { instance: { pid: 71174 } } } });
   assert.equal(fs.existsSync(f.pending), false);
 });
 
@@ -778,8 +778,8 @@ test('an installation failure on retry still restores the app from the persisted
   runDirectSelfBootstrapCloseout({ ...f.input, execute: executor(f.root, { runningDevelopmentInstance: true, failDevelopmentRestart: true }) });
   assert.equal(fs.existsSync(f.pending), true);
   const result = runDirectSelfBootstrapCloseout({ ...f.input, execute: executor(f.root, { failLauncherInstall: true }) });
-  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.local-app-install-failed');
-  assert.equal(result.diagnostic.details.developmentWebRecovery.status, 'passed');
+  assert.partialDeepStrictEqual(result.diagnostic, { code: 'self-bootstrap-closeout.local-app-install-failed' });
+  assert.partialDeepStrictEqual(result.diagnostic, { details: { developmentWebRecovery: { status: 'passed' } } });
   assert.equal(fs.existsSync(f.pending), false);
 });
 
@@ -790,7 +790,7 @@ test('an invalid recovery obligation is preserved and cannot trigger installatio
   const result = runDirectSelfBootstrapCloseout({ ...f.input, execute: (command: string, args: string[], context: any) => {
     calls.push(args); return perform(command, args, context);
   } });
-  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.development-web-recovery-invalid');
+  assert.partialDeepStrictEqual(result.diagnostic, { code: 'self-bootstrap-closeout.development-web-recovery-invalid' });
   assert.equal(fs.readFileSync(f.pending, 'utf8'), '{broken');
   assert.equal(calls.some(args => ['install', 'restart'].includes(args[1])), false);
 });
@@ -802,7 +802,7 @@ test('a recovery obligation cannot switch its application data root during retry
   const result = runDirectSelfBootstrapCloseout({ ...f.input,
     environment: { ...f.environment, BUILDR_APP_DATA_DIR: path.join(f.root, '.buildr/local/other-app') },
     execute: (command: string, args: string[], context: any) => { calls.push(args); return perform(command, args, context); } });
-  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.development-web-recovery-root-mismatch');
+  assert.partialDeepStrictEqual(result.diagnostic, { code: 'self-bootstrap-closeout.development-web-recovery-root-mismatch' });
   assert.equal(fs.readFileSync(f.pending, 'utf8'), before);
   assert.equal(calls.some(args => ['install', 'restart'].includes(args[1])), false);
 });
@@ -819,9 +819,9 @@ test('changed recovery metadata is preserved without denying that the app recove
     }
     return output;
   } });
-  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.development-web-recovery-changed');
-  assert.equal(result.diagnostic.details.developmentWebRecovery.status, 'passed');
-  assert.equal(result.diagnostic.details.developmentWebRecovery.cleanup.status, 'failed');
+  assert.partialDeepStrictEqual(result.diagnostic, { code: 'self-bootstrap-closeout.development-web-recovery-changed' });
+  assert.partialDeepStrictEqual(result.diagnostic, { details: { developmentWebRecovery: { status: 'passed' } } });
+  assert.partialDeepStrictEqual(result.diagnostic, { details: { developmentWebRecovery: { cleanup: { status: 'failed' } } } });
   assert.equal(fs.readFileSync(f.pending, 'utf8'), changed);
 });
 
@@ -868,6 +868,7 @@ for (const failFirstStart of [false, true]) {
       fs.rmSync(directory, { recursive: true, force: true });
     });
     const previous = launch();
+    assert.ok(previous.pid);
     for (let attempt = 0; !fs.existsSync(instanceFile) && attempt < 100; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
     assert.equal(fs.existsSync(instanceFile), true);
     // Only this isolated receipt is routed to its ephemeral HTTP listener.
@@ -894,11 +895,22 @@ for (const failFirstStart of [false, true]) {
     assert.equal((await inspectDevelopmentInstance({ dataRoot, fetchImpl })).instance?.pid, previous.pid);
     if (failFirstStart) await assert.rejects(restartDevelopmentInstance({ ...input, timeoutMs: 300 }), (error: any) => error.code === 'development-web-continuity.start-timeout');
     const result = await restartDevelopmentInstance({ ...input, timeoutMs: 2000 });
-    assert.equal(result.status, 'passed'); assert.notEqual(result.instance.pid, previous.pid);
+    assert.equal(result.status, 'passed'); assert.ok(result.instance); assert.notEqual(result.instance.pid, previous.pid);
     assert.equal((await inspectDevelopmentInstance({ dataRoot, fetchImpl })).status, 'healthy-development');
     const beforeReuse = attempts;
     const reused = await restartDevelopmentInstance({ ...input, timeoutMs: 2000 });
-    assert.equal(reused.disposition, 'reused'); assert.equal(reused.instance.pid, result.instance.pid);
+    assert.equal(reused.disposition, 'reused'); assert.ok(reused.instance); assert.equal(reused.instance.pid, result.instance.pid);
     assert.equal(attempts, beforeReuse);
   });
 }
+
+test('自举技能源变更必须同步组件完整性声明', async () => {
+  const { assetIntegrity } = await import('../../src/modules/agent-assets/infrastructure/component-source.ts');
+  const { default: YAML } = await import('yaml');
+  const workspaceRoot = path.resolve(import.meta.dirname, '../../../../../..');
+  const definition = YAML.parse(fs.readFileSync(path.join(workspaceRoot, 'components/workspace/buildr-self-bootstrap/component.yml'), 'utf8'));
+  const expected = new Map(definition.integrity.map((item: string) => { const split=item.lastIndexOf('=');return [item.slice(0,split),item.slice(split+1)]; }));
+  for (const member of Object.values(definition.members).flat() as string[]) {
+    assert.equal(assetIntegrity(path.join(workspaceRoot,member)),expected.get(member),`组件成员摘要未跟随源文件更新：${member}`);
+  }
+});

@@ -15,6 +15,7 @@ export type AppShellContextValue = {
   setWorkspace: (data: { workspace: { name: string }; rootPath: string }) => void;
   openWorkspaceSettings: (workspaceId: string) => void;
   workspaceRegistryRevision: number;
+  refreshWorkspaceRegistry: () => void;
   openAgentAction: (action?: string, context?: AgentActionContext) => void;
   breadcrumbParts: string[];
   setBreadcrumbParts: (parts: string[]) => void;

@@ -6,7 +6,7 @@ import {
   isVersionOnlyPackageMetadataChange,
 } from '../verification/changed-paths.ts';
 import { createVerificationPlan } from '../verification/planner.ts';
-import { INTEGRATION_PRIMARY_SLICES } from '../verification/registry.ts';
+import { INTEGRATION_PRIMARY_SLICES, verificationSteps } from '../verification/registry.ts';
 import { verificationStepOwnership } from '../verification/ownership.ts';
 
 const ids: any = (plan: any) => plan.steps.map((step: any) => step.id);
@@ -92,7 +92,7 @@ test('verification presentation metadata stays affected while invocation and env
   const base: any = `schemaVersion: buildr.project-verification/v3\nresources:\n  - id: browser\n    title: Old\n    strategy: coordinated\n    capacity: 1\n    authorization: implicit\ncapabilities:\n  - id: product.delivery\n    title: Old\n    scope: { project: product, services: [] }\n    proves: [old]\n    evidence: [unit]\n    usableFor: [task-delivery]\n    discovery: { sources: ['**'] }\n    invocation:\n      affected: { kind: command, argv: [npm, test], cwd: . }\n      full: { kind: command, argv: [npm, test], cwd: . }\n    environment: { requires: [] }\n    effects: { writes: [], externalSystems: [], authorization: implicit }\n    resourceClaims: []\n`;
   const presentation: any = base.replaceAll('Old', 'New').replace('proves: [old]', 'proves: [new]');
   assert.equal(isVerificationDeclarationMetadataOnlyChange(base, presentation), true);
-  assert.equal(isVerificationDeclarationMetadataOnlyChange(base, base.replace('argv: [npm, test]', 'argv: [npm, run, test:changed]')), false);
+  assert.equal(isVerificationDeclarationMetadataOnlyChange(base, base.replace('argv: [npm, test]', 'argv: [npm, run, test:e2e]')), false);
   assert.equal(isVerificationDeclarationMetadataOnlyChange(base, `${base}    environment:\n      requires: [node]\n`), false);
 });
 
@@ -101,7 +101,11 @@ test('frontend and plugin paths select their real Service test entrypoints', () 
     const plan = createVerificationPlan({ paths: [source] });
     assert.equal(plan.status, 'ready');
     const frontend = plan.steps.find((step: any) => step.id === 'frontend-logic');
-    assert.deepEqual(frontend.executor, { type: 'node', file: '../buildr-web/tools/run-logic-tests.mjs' });
+    assert.equal(frontend.service, 'buildr-web');
+    assert.equal(frontend.executor.type, 'command');
+    assert.equal(frontend.executor.file, process.execPath);
+    assert.ok(frontend.executor.args[0].endsWith('/buildr-web/tools/run-logic-tests.mjs'));
+    assert.ok(frontend.testFiles.includes('test/*.test.mjs'));
     assert.equal(ids(plan).includes('service-branch-contract'), false);
   }
   for (const source of ['services/dsh-plugin/plugin/client.ts', 'services/dsh-plugin/tools/verify-all.ts', '.github/workflows/publish-dsh-plugin.yml']) {
@@ -109,8 +113,9 @@ test('frontend and plugin paths select their real Service test entrypoints', () 
     assert.equal(plan.status, 'ready');
     assert.equal(plan.scope.mode, 'affected');
     assert.deepEqual(plan.unmapped, []);
-    assert.deepEqual(ids(plan), ['dsh-plugin']);
-    assert.equal(plan.steps[0].executor.file, '../dsh-plugin/tools/verify-all.ts');
+    for (const id of ['plugin-unit', 'plugin-typecheck', 'plugin-integration', 'plugin-sdk-integration', 'plugin-native-e2e']) assert.ok(ids(plan).includes(id), `${source}: ${id}`);
+    for (const step of plan.steps.filter((item: any) => item.service === 'dsh-plugin')) assert.equal(step.executor.type, 'command');
+    assert.equal(ids(plan).includes('dsh-plugin'), false, 'retired whole-plugin wrapper cannot duplicate individual owners');
   }
   const candidate = createVerificationPlan({ profiles: ['candidate'] });
   assert.ok(ids(candidate).includes('frontend-logic'));
@@ -121,7 +126,7 @@ test('Product knowledge navigation index selects its real catalog integration an
   const plan = createVerificationPlan({ paths: ['knowledge/index.yml'] });
   assert.equal(plan.status, 'ready');
   assert.equal(plan.scope.mode, 'affected');
-  assert.deepEqual(ids(plan), ['integration-knowledge', 'contract']);
+  assert.deepEqual(ids(plan), ['integration-knowledge', 'source-contracts']);
   assert.deepEqual(plan.steps.find((step: any) => step.id === 'integration-knowledge').executor.files, INTEGRATION_PRIMARY_SLICES.find((slice: any) => slice.id === 'integration-knowledge').files);
   assert.deepEqual(plan.unmapped, []);
 });
@@ -129,7 +134,7 @@ test('Product knowledge navigation index selects its real catalog integration an
 test('package skill projection regression selects the slice that actually executes its file', () => {
   const plan = createVerificationPlan({ paths: ['test/integration/package-generic-skills.test.ts'] });
   assert.equal(plan.status, 'ready');
-  assert.deepEqual(ids(plan), ['integration-runtime-projection', 'test-file-ownership']);
+  assert.deepEqual(ids(plan), ['integration-runtime-projection', 'test-file-ownership', 'test-syntax', 'test-typecheck']);
 });
 
 
@@ -152,7 +157,7 @@ test('independent package release helpers select pure feedback and the real life
     }
     for (const owner of ['integration-candidate-release', 'integration-candidate-release-selection', 'integration-candidate-package-selection', 'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection']) {
       assert.ok(verificationStepOwnership(owner).inputs.includes(source), `${source} must belong to ${owner}`);
-      assert.equal(selected.includes(owner), false, 'daily feedback keeps publication lifecycle checks in their explicit release scope');
+      assert.equal(selected.includes(owner), true, 'task-related selection must retain affected release lifecycle boundaries');
       assert.ok(ids(createVerificationPlan({ paths: [source], groups: ['release'] })).includes(owner));
     }
     assert.equal(selected.includes('dsh-plugin'), false, 'main helper checks do not claim independent plugin loader evidence');
@@ -170,4 +175,22 @@ test('each Integration test change selects only its stable primary slice and no 
       assert.equal(plan.steps.some((item: any) => item.executor.file === 'test/verification/integration.ts'), false, file);
     }
   }
+});
+
+
+test('installed-package user workflows have an artifact E2E owner and never enter source Integration', () => {
+  const owner = verificationSteps.find((step: { id: string }) => step.id === 'application-payload-release');
+  assert.equal(owner.testing.executionBoundary, 'E2E');
+  assert.equal(owner.target, 'artifact');
+  for (const file of ['test/e2e/builtin-connection-skills-package.test.ts', 'test/e2e/inline-core-package.test.ts']) {
+    assert.ok(owner.executor.files.includes(file));
+    assert.equal(INTEGRATION_PRIMARY_SLICES.some((slice: { files: string[] }) => slice.files.includes(file)), false);
+  }
+});
+
+test('workspace public lifecycle requests select their E2E owner without the old asset Integration group', () => {
+  const plan = createVerificationPlan({ paths: ['test/e2e/workspace-lifecycle.test.ts'] });
+  assert.equal(plan.status, 'ready');
+  assert.ok(ids(plan).includes('e2e-workspace-assets'));
+  assert.equal(ids(plan).includes('integration-workspace-assets'), false);
 });

@@ -95,9 +95,9 @@
 - 特征（Trait）组合通过校验，五项能力分别有可复核依据。
 - 按真实差异验证：标准复用覆盖选择、真实身份与证据边界，专用实现另覆盖格式、作用域顺序、兄弟隔离、目录与清理；不为每个标准品牌复制同一文件投射测试，也不为已删除的安装/版本探测保留机制。
 - 通用技能（Skill）不列品牌白名单，明确限制按真实 `runtimeId` 生效；共享根中的有效他方文件不被删除，内容或能力绑定（Capability Binding）不一致时不能后写覆盖。迁移测试覆盖等价、漂移、未知额外文件、多份回执（Receipt）不一致和失败回滚；预检失败整组零写入。
-- 描述符（Descriptor）只保存官方资料、随包资料、明确发现源码或可重复本机观察，不维护 `documented/verified` 等等级，也不保存品牌历史冒烟状态。
+- 描述符（Descriptor）只保存官方资料、随包资料、明确发现源码或可重复本机观察，不维护 `documented/verified` 等等级，也不以品牌历史验证状态代替当前事实。
 - `runtime list`、诊断输出、Buildr 技能（Skill）和产品文档一致，相关正式规范与适用验证满足当次范围。
 
-Buildr 当前不提供统一的真实会话标记冒烟（Marker Smoke）或 `SMOKE_PROMPT.md` 生成流程。专项验证只证明实际执行的入口、版本和行为，不升级成“该品牌在所有当前会话均已加载”的承诺。
+专项验证只证明实际执行的入口、版本和行为，不升级成“该品牌在所有当前会话均已加载”的承诺。
 
 依据：[运行时投射规范](../../../openspec/specs/workspace-first-runtime-projection/spec.md)、[适配约定实现](../../../services/buildr/src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts)及[当前适配说明](../../../services/buildr/docs/agent-runtime-adapters.md)。

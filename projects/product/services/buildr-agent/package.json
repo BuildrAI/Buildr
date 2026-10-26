@@ -1,0 +1,55 @@
+{
+  "name": "@buildr-ai/buildr-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Buildr conversations and native Agent execution service.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./build/index.d.ts",
+      "import": "./build/index.js",
+      "default": "./build/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "build/",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=24.15.0"
+  },
+  "scripts": {
+    "build": "node tools/build.ts",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "test": "node ../buildr/test/verification/cli.ts unit --check agent-unit",
+    "test:static": "node ../buildr/test/verification/cli.ts static --check agent-source-boundaries --check agent-typecheck",
+    "test:integration": "node ../buildr/test/verification/cli.ts integration --check agent-integration"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/dsh-api-account-controller": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-api-gateway": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-api-session-controller": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-api-settings-controller": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-api-workspace-controller": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-connection": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-commands": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-permission-presets": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-typert-registry": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-user-approval": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-user-questions": "0.2.1-rc.2",
+    "@qoder-ai/qoder-agent-sdk": "1.0.55",
+    "ws": "8.22.0"
+  },
+  "overrides": {
+    "zod@4.4.3": "4.6.7",
+    "undici@8.11.2": "8.12.2"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "@types/ws": "8.18.1",
+    "typescript": "7.0.2"
+  }
+}

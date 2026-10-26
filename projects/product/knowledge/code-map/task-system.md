@@ -18,6 +18,16 @@
 | 数据访问与技术支撑 | 本机 SQLite 保存任务及各专业事实，事务内比较各自摘要；过程材料清单不改任务记录（Task Record）、数据库或历史；显式旧说明导入单独写入记录并释放旧关联，受控更新在逐任务文件锁内重读比较并原子发布。工作树（Worktree）与预览（Preview）分别核验资源，Git 和文件继续持有实际成果。 |
 | 前端协作 | 工作台（Workbench）汇集明确关注事项；任务详情呈现目标、进展和成果；表单保留真实用户输入，冲突后重读；方案材料与代码按需并排查看。 |
 
+## 内部对话怎样关联任务？
+
+任务页[TaskConversationEntry.tsx](../../services/buildr-web/src/features/agent-conversations/TaskConversationEntry.tsx)使用工作空间（Workspace）、任务（Task）和明确起始目录创建内部对话；没有对话时直接创建，一段时直接打开，多段时选择。任务只保存自身事实，对话及可见历史由独立 `buildr-agent` 服务（Service）保存；任务关联不是外部桌面会话（Session）的导航关系，也不会自动改变任务状态。
+
+[宿主装配](../../services/buildr/src/modules/agent-service/module.ts)用任务查询能力核对身份，[对话应用](../../services/buildr-agent/src/application/conversation-application.ts)在创建时保存 `workspaceId`、`taskId` 与真实 `cwd`。它不把任务全文或当前页面静默复制成模型输入；执行者仍须重读任务和实际成果。全局对话可以不关联任务，统一历史也不按 Codex、DSH、Qoder 分组。换执行方先分别恢复原生上下文，再交付未见可见记录，未知运行不重发；见[智能体接入](../docs/architecture/agent-integration.md)。
+
+输入栏的[ConversationOptions.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationOptions.tsx)提供独立的智能体（Agent）与模型选择器，并按实际模型能力呈现思考档位；切换执行方后恢复其默认模型并清除不兼容档位，只更新未发送选择，不创建参与者或执行。权限选择与附件位于左侧，保留独立的模式范围。
+
+原有[外部会话关系聚合](../../services/buildr/src/modules/native-session-links/module.ts)、[Codex 桌面关联](../../services/buildr/src/modules/codex-desktop/module.ts)和[DSH 桌面导航](../../services/buildr/src/modules/dsh-desktop/module.ts)继续维护外部聊天的多对多任务关系，不迁入新私有库。工作摘要（Work Context）中的答复仍不是自动启动内部对话或执行的触发器（Trigger）。
+
 ## 任务说明与过程材料怎样落到实现？
 
 任务说明（Task Brief）由任务记录（Task Record）的 `brief` 保存，与一句话目标 `intent` 区分。[任务领域](../../services/buildr/src/modules/task/domain/task.ts)定义 v4 正文及内容摘要；[输入校验](../../services/buildr/src/modules/task/application/task-validation.ts)保留原始 Markdown、将空值归为空并限制 UTF-8 体积。[命令应用](../../services/buildr/src/modules/task/application/task-command-application.ts)按已观察记录版本写入，正文变化进入终态更正历史及父任务验收观察。[查询应用](../../services/buildr/src/modules/task/application/task-query-application.ts)与[记录仓库](../../services/buildr/src/modules/task/persistence/task-repository.ts)让详情返回正文、列表只读摘要字段，两者使用一致的记录身份。工作台通过摘要读取 `inspectTaskSummaryView` 装配单任务和列表，工作摘要（Work Context）仅核对任务存在，不隐性读取说明正文。说明随主工作空间数据库保存，不随代码分支切换。
@@ -206,7 +216,7 @@
 | [任务管理（task-manager）](../../services/buildr/resources/workspace/skills/buildr/task-manager/SKILL.md) | 形成、保存及接续记录中的唯一任务说明（Task Brief），维护任务、工作摘要（Work Context）、真实答复及父任务完成依据 |
 | [工作树管理（task-worktree）](../../services/buildr/resources/workspace/skills/buildr/task-worktree/SKILL.md) | 创建、检查和安全清理明确归属的独立位置 |
 | [任务审查（task-review）](../../services/buildr/resources/workspace/skills/buildr/task-review/SKILL.md) | 按目标与风险审查方案或实现结果，保存真实结论 |
-| [任务验证（task-verification）](../../services/buildr/resources/workspace/skills/buildr/task-verification/SKILL.md) | 直接运行项目检查，区分检查通过、未覆盖与完成报告 |
+| [项目验证（project-verification）](../../services/buildr/resources/workspace/skills/buildr/project-verification/SKILL.md) | 直接运行项目检查，区分检查通过、未覆盖与完成报告 |
 | [Git 操作（git-operations）](../../services/buildr/resources/workspace/skills/buildr/git-operations/SKILL.md) | 精确执行已授权操作；明确正式任务时写入任务尾注并分别核对真实提交与任务读取 |
 | [收尾与交付（task-finish）](../../services/buildr/resources/workspace/skills/buildr/task-finish/SKILL.md) | 核验成果、完成实际交付，保存已有任务结果并处理安全善后 |
 | [当前知识维护（current-knowledge-maintenance）](../../services/buildr/resources/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md) | 维护受影响的文章、技术图（Technical Diagram）与代码地图（Code Map） |
@@ -228,7 +238,7 @@
     - [task-parent-coordination.json](../archify/flows/task-parent-coordination.json) — 父任务完成时序图源
     - [task-parent-coordination.html](../archify/flows/task-parent-coordination.html) — 核对成果、明确授权、保存完成与拒绝分支
 
-地图按职责定位文件，源码内容由当前文件提供；没有改变的实现不因改写地图重新验证。实际存储与交互的代表检查见[任务记录回归](../../services/buildr/test/system/task-record-product.test.ts)、[父任务完成输入回归](../../services/buildr-web/test/parentCoordination.test.mjs)和[工作摘要与工作台回归](../../services/buildr/test/integration/workbench-application.test.ts)。
+地图按职责定位文件，源码内容由当前文件提供；没有改变的实现不因改写地图重新验证。实际存储与交互的代表检查见[任务记录回归](../../services/buildr/test/e2e/task-record-product.test.ts)、[父任务完成输入回归](../../services/buildr-web/test/parentCoordination.test.mjs)和[工作摘要与工作台回归](../../services/buildr/test/integration/workbench-application.test.ts)。
 
 ## 任务图的来源与表达边界
 

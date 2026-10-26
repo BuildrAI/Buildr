@@ -45,7 +45,7 @@ if (process.argv.includes('--archify-cost-scenario')) {
   test('Opted-in readonly CLI writes only closed costs; inherited helper arguments produce no record', { timeout: 40_000 }, () => {
     const output = fs.mkdtempSync(path.join(os.tmpdir(), `${secret}-`));
     try {
-      const result = spawnSync(process.execPath, [path.join(serviceRoot, 'tools/development/run-isolated-workspace-smoke.ts'),
+      const result = spawnSync(process.execPath, [path.join(serviceRoot, 'tools/development/run-isolated-workspace-check.ts'),
         '--script', file, '--', '--archify-cost-scenario'], {
         cwd: serviceRoot, encoding: 'utf8', timeout: 35_000,
         env: { ...process.env, BUILDR_ARCHIFY_COST_DIAGNOSTICS: '0', BUILDR_DIAGNOSTICS_OUTPUT: output },

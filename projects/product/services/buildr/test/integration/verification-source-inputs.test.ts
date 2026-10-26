@@ -11,7 +11,7 @@ import { verificationSteps } from '../verification/registry.ts';
 import { createVerificationSourceInputReader } from '../verification/verification-source-inputs.ts';
 import { createVerificationReuseIdentity } from '../verification/verification-reuse.ts';
 
-test('typecheck reuse binds compiler configs, types, executor, locks and the actual Node, npm and dependencies', t => {
+test('typecheck proof binds compilation inputs and tools while execution also binds its transport', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-typecheck-inputs-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const prefix = 'projects/product/services/buildr/', productRoot = path.join(root, prefix);
@@ -23,6 +23,7 @@ test('typecheck reuse binds compiler configs, types, executor, locks and the act
     [prefix + 'tsconfig.test.json', '{"extends":"./tsconfig.json"}'],
     [prefix + 'src/contract.d.ts', 'export interface Contract { value: string }'],
     [prefix + 'tools/codegen/contracts/task-dto.ts', 'export {};'],
+    [prefix + 'tools/testing/run-types.ts', 'export {};'],
     [prefix + 'test/verification/executor.ts', 'export {};'],
   ]);
   const sha = (value: unknown) => `sha256-${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}` as const;
@@ -38,11 +39,17 @@ test('typecheck reuse binds compiler configs, types, executor, locks and the act
   const original = createVerificationReuseIdentity(selected, snapshot);
   assert.ok(original);
   const inputBefore = observe().inputs(selected, true);
+  const executionBefore = observe().inputs(selected, false);
   for (const file of files.keys()) {
     const before = files.get(file)!; files.set(file, before + '\n// changed real input');
     const reader = observe();
-    assert.notDeepEqual(reader.inputs(selected, true), inputBefore, file);
-    assert.notEqual(createVerificationReuseIdentity(selected, { ...snapshot, contentIdentities: reader.contentIdentities })?.key, original.key, file);
+    assert.notDeepEqual(reader.inputs(selected, false), executionBefore, file);
+    if (file === prefix + 'test/verification/executor.ts') {
+      assert.deepEqual(reader.inputs(selected, true), inputBefore, 'transport repairs do not erase an earlier clean compilation proof');
+    } else {
+      assert.notDeepEqual(reader.inputs(selected, true), inputBefore, file);
+      assert.notEqual(createVerificationReuseIdentity(selected, { ...snapshot, contentIdentities: reader.contentIdentities })?.key, original.key, file);
+    }
     files.set(file, before);
   }
   for (const name of ['backend-dependencies', 'web-dependencies', 'npm']) {

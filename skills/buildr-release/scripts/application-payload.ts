@@ -123,7 +123,9 @@ function runtimePackageMetadata(metadata: any): any  {
     publishConfig: metadata.publishConfig,
     type: metadata.type,
     engines: metadata.engines,
-    dependencies: Object.fromEntries(Object.entries(metadata.dependencies || {}).sort(([left]: any, [right]: any) => left.localeCompare(right))),
+    dependencies: Object.fromEntries(Object.entries(metadata.dependencies || {}).map(([name, version]) => [name,
+      name === '@buildr-ai/buildr-agent' ? JSON.parse(fs.readFileSync(path.join(serviceRoot, 'node_modules', name, 'package.json'), 'utf8')).version : version,
+    ]).sort(([left]: any, [right]: any) => left.localeCompare(right))),
   };
 }
 
@@ -149,6 +151,9 @@ async function buildApplicationPayload(output: any, sourceCommit: any, options: 
     throw new Error('application payload does not bundle the independently released DSH plugin');
   }
   const { buildSync, formatMessagesSync }: any = createRequire(path.join(serviceRoot, 'package.json'))('esbuild');
+  const { copyAgentRuntimePackage } = await import('../../../projects/product/services/buildr/tools/build/agent-package.ts');
+  const { prepareDevelopmentAgent } = await import('../../../projects/product/services/buildr/tools/development/prepare-development-agent.ts');
+  prepareDevelopmentAgent({ build: false });
   const destination: any = assertDestination(output);
   if (fs.existsSync(destination)) throw new Error(`application payload output already exists: ${destination}`);
   fs.mkdirSync(path.join(destination, 'runtime'), { recursive: true });
@@ -169,7 +174,7 @@ async function buildApplicationPayload(output: any, sourceCommit: any, options: 
       platform: 'node',
       format: 'cjs',
       target: 'node24',
-      external: ['node:*'],
+      external: ['node:*', '@buildr-ai/buildr-agent'],
       legalComments: 'none',
       sourcemap: false,
       metafile: true,
@@ -202,6 +207,7 @@ async function buildApplicationPayload(output: any, sourceCommit: any, options: 
     }
 
     const resourceRoot: any = path.join(destination, 'resources');
+    copyAgentRuntimePackage(serviceRoot, destination);
     for (const [source, target, options] of RESOURCE_SOURCES) copyTree(path.join(serviceRoot, source), path.join(resourceRoot, target), options);
     copyTree(webDistRoot, path.join(resourceRoot, 'product/web-dist'));
     fs.mkdirSync(path.join(resourceRoot, 'build'), { recursive: true });

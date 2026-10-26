@@ -153,3 +153,13 @@ test('共享资源准备失败可重试，失败不会被待处理空间掩盖�
   f.setVersion('1.1.0');const next=f.create();next.webUpdateResume();await tick();await tick();const failed=next.webUpdateStatus();assert.equal(failed.status,'partial');assert.equal(attempts,0);
   damaged=false;next.webUpdateRecover({expectedJobId:failed.id,expectedVersion:failed.version,action:'workspaces'});await tick();await tick();assert.equal(next.webUpdateStatus().status,'completed');assert.equal(attempts,1);assert.equal(f.calls.npm.length,2);
 });
+
+test('共享发布跨重启保留准备时身份，不重新观察后覆盖另一来源', async t => {
+  let observation='observed-before-install';const received:unknown[]=[];
+  const f=fixture(t,{workspaces:{list:()=>[],observeResources:()=>observation,prepareResources:(expected:unknown)=>{received.push(expected);if(expected!==observation)throw new Error('shared resource changed');},prepare:async()=>{}}});
+  f.fixLauncher();const outgoing=f.create();outgoing.webUpdatePrepare({track:'stable',expectedVersion:'1.1.0',autoApply:true});await tick();await tick();
+  assert.equal(f.store.read()?.resourceSetBefore,'observed-before-install');
+  observation='another-publisher';f.setVersion('1.1.0');const next=f.create();next.webUpdateResume();await tick();await tick();
+  assert.deepEqual(received,['observed-before-install']);assert.equal(next.webUpdateStatus().status,'partial');
+  assert.equal(f.calls.npm.length,2,'资源冲突不撤销安装或重复安装');
+});

@@ -18,7 +18,7 @@ function deadline<T>(promise: Promise<T>): Promise<T> {
 
 test('real HTTP watch bypasses read Workers, removes an aborted wait and shutdown finishes outstanding requests', async t => {
   if (!process.env.BUILDR_SMOKE_ROOT) {
-    const output = execFileSync(process.execPath, [path.resolve(import.meta.dirname, '../../tools/development/run-isolated-workspace-smoke.ts'), '--script', import.meta.filename], { encoding: 'utf8', timeout: 20_000 });
+    const output = execFileSync(process.execPath, [path.resolve(import.meta.dirname, '../../tools/development/run-isolated-workspace-check.ts'), '--script', import.meta.filename], { encoding: 'utf8', timeout: 20_000 });
     assert.match(output, /"status":"passed"/); assert.match(output, /"cleanup":"cleaned"/); return;
   }
   const observations = new SourceControlObservations(), workspaceId = randomUUID(), root = process.env.BUILDR_SMOKE_WORKSPACE_ROOT!;
@@ -56,7 +56,7 @@ test('real HTTP watch bypasses read Workers, removes an aborted wait and shutdow
 
 test('one HTTP client disconnect cannot cancel the shared Git read awaited by another tab', async t => {
   if (!process.env.BUILDR_SMOKE_ROOT) {
-    const output = execFileSync(process.execPath,[path.resolve(import.meta.dirname,'../../tools/development/run-isolated-workspace-smoke.ts'),'--script',import.meta.filename],{encoding:'utf8',timeout:30_000});
+    const output = execFileSync(process.execPath,[path.resolve(import.meta.dirname,'../../tools/development/run-isolated-workspace-check.ts'),'--script',import.meta.filename],{encoding:'utf8',timeout:30_000});
     assert.match(output,/"status":"passed"/); assert.match(output,/"cleanup":"cleaned"/); return;
   }
   const fs = await import('node:fs');
@@ -78,7 +78,7 @@ test('one HTTP client disconnect cannot cancel the shared Git read awaited by an
 
 test('connection directory HTTP shares proof across disconnects and shutdown cancels the owned read', async t => {
   if (!process.env.BUILDR_SMOKE_ROOT) {
-    const output = execFileSync(process.execPath, [path.resolve(import.meta.dirname, '../../tools/development/run-isolated-workspace-smoke.ts'), '--script', import.meta.filename], { encoding: 'utf8', timeout: 30_000 });
+    const output = execFileSync(process.execPath, [path.resolve(import.meta.dirname, '../../tools/development/run-isolated-workspace-check.ts'), '--script', import.meta.filename], { encoding: 'utf8', timeout: 30_000 });
     assert.match(output, /"status":"passed"/); assert.match(output, /"cleanup":"cleaned"/); return;
   }
   const fs = await import('node:fs');

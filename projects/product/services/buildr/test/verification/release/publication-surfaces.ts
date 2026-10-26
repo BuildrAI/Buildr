@@ -4,9 +4,9 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { launchTestBrowser } from '../../browser-smoke/browser-launch.ts';
-import { publicationTestPng } from '../../browser-smoke/publication-journey.ts';
-import { waitForWebReadiness } from './release-smoke.ts';
+import { launchTestBrowser } from '../../e2e/browser-launch.ts';
+import { publicationTestPng } from '../../e2e/publication-journey.ts';
+import { waitForWebReadiness } from './package-consumption.ts';
 import { stopOwnedChildProcess } from '../support/owned-process.ts';
 import { buildGeneratedArtifactSet } from '../../../tools/build/artifact-set.ts';
 import { buildApplicationPayload } from '../../../../../../../skills/buildr-release/scripts/application-payload.ts';
@@ -15,7 +15,7 @@ import { createReleaseArtifact } from '../../../../../../../skills/buildr-releas
 // A focused installed-package check, not a full release certification. The
 // isolated workspace runner owns generated packages, installation and user state.
 const root = process.env.BUILDR_SMOKE_ROOT;
-assert.ok(root, 'Use run-isolated-workspace-smoke.ts to isolate user state.');
+assert.ok(root, 'Use run-isolated-workspace-check.ts to isolate user state.');
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const prefix = path.join(root, 'installation');

@@ -1,3 +1,4 @@
+import { parseSemver, compareVersions } from '../semantic-version.ts';
 import { withExclusiveFileLock } from '../filesystem/exclusive-file-lock.ts';
 import { isFinderMetadata } from '../filesystem/finder-metadata.ts';
 import { LEGACY_ARCHIFY_SOURCE, preserveArchifyBeforeReplacement, preservedArchifyRoot } from './preserved-archify.ts';
@@ -93,15 +94,60 @@ export function readSharedResourceSet(): ResourceSet {
 export function inspectSharedResources(expectedId?: string): ResourceSet {
   return inspectResourceDirectory(sharedResourcesRoot(), expectedId);
 }
-/** Publish a complete directory; interrupted replacements are recovered under one stable lock. */
+/** Consume the current shared set. Ordinary preparation never replaces another publisher's content. */
 export function ensurePackageResources(product = resolveProductRoot()): ResourceSet {
+  try { return readSharedResourceSet(); }
+  catch (error: any) {
+    if (error.code !== 'ENOENT' || fs.existsSync(sharedResourcesRoot())) throw error;
+    const target = sharedResourcesRoot(), parent = path.dirname(target), previous = path.join(parent, '.resources-previous');
+    if (fs.existsSync(previous)) {
+      return withExclusiveFileLock(path.join(parent, '.resources.lock'), target, () => {
+        assertPlainPath(previous); assertPlainPath(target);
+        if (!fs.existsSync(target) && fs.existsSync(previous)) fs.renameSync(previous, target);
+        return readDescriptor(target);
+      });
+    }
+    try { return publishPackageResources(product, { expectedId: null }); }
+    catch (publicationError: any) {
+      if (['shared_resources_changed','shared_resources_downgrade'].includes(publicationError.code)) return readSharedResourceSet();
+      throw publicationError;
+    }
+  }
+}
+/** Observation used by explicit update jobs across process restart. */
+export function observeSharedResourcePublication(): string | null {
+  const target = sharedResourcesRoot();
+  try { return readDescriptor(target).id; }
+  catch (error: any) {
+    if (error.code === 'ENOENT' && !fs.existsSync(target)) {
+      const previous = path.join(path.dirname(target), '.resources-previous');
+      return fs.existsSync(previous) ? readDescriptor(previous).id : null;
+    }
+    // Explicit preparation may migrate an old directory layout or repair metadata.
+    // Observe its actual metadata so another publisher cannot silently supersede it.
+    if (fs.existsSync(target)) {
+      const descriptor = path.join(target, 'resource-set.json'); assertPlainPath(descriptor);
+      return `unprepared-${digest(fs.existsSync(descriptor) ? fs.readFileSync(descriptor) : JSON.stringify(fs.readdirSync(target).sort()))}`;
+    }
+    throw error;
+  }
+}
+/** Explicit update only: publish a complete directory against an observed shared identity. */
+export function publishPackageResources(product = resolveProductRoot(), options: { expectedId?: string | null } = {}): ResourceSet {
   const desired = describePackageResources(product), target = sharedResourcesRoot();
+  const expectedId = options.expectedId === undefined ? observeSharedResourcePublication() : options.expectedId;
   const parent = path.dirname(target), stage = path.join(parent, '.resources-next'), previous = path.join(parent, '.resources-previous');
   for (const file of [target, stage, previous]) assertPlainPath(file);
   fs.mkdirSync(parent, { recursive: true });
   return withExclusiveFileLock(path.join(parent, '.resources.lock'), target, () => {
     // A crash between the two renames must not strand the stable public path.
     if (!fs.existsSync(target) && fs.existsSync(previous)) fs.renameSync(previous, target);
+    const currentId = observeSharedResourcePublication();
+    if (currentId && !currentId.startsWith('unprepared-')) {
+      const current = readDescriptor(target);
+      if (parseSemver(current.version) && parseSemver(desired.version) && compareVersions(desired.version,current.version)<0) throw Object.assign(new Error('当前共享资源版本更高，已保留现有内容；请升级程序后再准备。'), {code:'shared_resources_downgrade'});
+    }
+    if (currentId !== expectedId && currentId !== desired.id) throw Object.assign(new Error('共享资源在更新期间已变化，请重新核对后重试。'), { code: 'shared_resources_changed' });
     if (!desired.files.some(file => file.source.startsWith(LEGACY_ARCHIFY_SOURCE))) {
       let old: ResourceSet | null = null;
       try { old = readDescriptor(target); }
@@ -155,8 +201,10 @@ export function readResourceAdoption(root: string): { resourceSet: string; ready
   if (value.schemaVersion !== 'buildr.resource-adoption/v1' || typeof value.resourceSet !== 'string' || !/^[0-9A-Za-z.+-]+-[a-f0-9]{64}$/.test(value.resourceSet) || typeof value.ready !== 'boolean') throw new Error('Invalid workspace resource adoption.');
   return { resourceSet: value.resourceSet, ready: value.ready && value.layout === 'fixed' };
 }
-export function adoptPackageResources(root: string, ready = false) {
-  const resources = ensurePackageResources(); const file = adoptionPath(root); assertPlainPath(file);
+export function adoptPackageResources(root: string, ready = false, expectedId?: string) {
+  const resources = ensurePackageResources();
+  if (expectedId && resources.id !== expectedId) throw Object.assign(new Error('共享资源在入口生成期间已变化，请重试。'), { code: 'shared_resources_changed' });
+  const file = adoptionPath(root); assertPlainPath(file);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const temporary = `${file}.${crypto.randomUUID()}.tmp`;
   try { fs.writeFileSync(temporary, `${JSON.stringify({ schemaVersion: 'buildr.resource-adoption/v1', resourceSet: resources.id, ready, layout: 'fixed' })}\n`, { flag: 'wx' }); fs.renameSync(temporary, file); }
@@ -176,12 +224,12 @@ export function resolveSharedResource(root: string, source: string): string {
   }
   const adoption = readResourceAdoption(root);
   if (!adoption) throw new Error('工作空间资源尚未准备，请在 Buildr 中重试。');
-  if (descriptor.id !== adoption.resourceSet) throw new Error('共享资源已更新，此工作空间需要按最新版重新准备。');
   const entry = descriptor.files.find(item => item.source === source.replace(/^resources\//, ''));
   if (!entry) throw new Error(`Shared resource is not declared: ${source}`);
   relativeFile(entry.path);
   const file = path.join(base, entry.path); assertPlainPath(file);
-  if (digest(fs.readFileSync(file)) !== entry.sha256) throw new Error(`Shared resource damaged: ${source}`);
+  const stat = fs.lstatSync(file);
+  if (!stat.isFile() || digest(fs.readFileSync(file)) !== entry.sha256 || (process.platform !== 'win32' && (stat.mode & 0o111) !== (entry.mode & 0o111))) throw new Error(`Shared resource damaged: ${source}`);
   return file;
 }
 export function readPreservedArchify(): { root: string; sourceRoot: string; set: ResourceSet } {
@@ -192,16 +240,13 @@ export function readPreservedArchify(): { root: string; sourceRoot: string; set:
 }
 /** Local references are rebuilt on another machine or after interrupted preparation. */
 export function prepareWorkspaceResourceAdoption(root: string) {
-  ensurePackageResources();
+  const resources = ensurePackageResources();
   let adopted: ReturnType<typeof readResourceAdoption> = null;
   try { adopted = readResourceAdoption(root); }
   catch {
     const file = adoptionPath(root); assertPlainPath(file);
     if (fs.existsSync(file)) fs.renameSync(file, `${file}.damaged-${crypto.randomUUID()}`);
   }
-  if (adopted) {
-    try { inspectSharedResources(adopted.resourceSet); return; }
-    catch { /* An unavailable old set can be replaced by the current official source. */ }
-  }
-  adoptPackageResources(root);
+  if (adopted?.resourceSet === resources.id) return;
+  adoptPackageResources(root, false, resources.id);
 }

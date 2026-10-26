@@ -180,7 +180,7 @@ test('主工作库普通启动不进入任务泳道，并清空父进程遗留�
     for (const run of [mainBackend, caller]) {
       assert.equal(run.main, true); assert.equal(run.taskId, null); assert.equal(run.routing, undefined);
       assert.equal((await (await fetch(run.url)).json()).routingFile, null);
-      assert.deepEqual(run.connections.map(value => [value.kind, value.mode, value.runId, value.context]), [['service-discovery', 'remote', null, 'qa']]);
+      assert.deepEqual(run.connections.map(value => [value.kind, value.mode, value.runId, value.kind === 'service-discovery' ? value.context : null]), [['service-discovery', 'remote', null, 'qa']]);
     }
     assert.deepEqual(fs.readdirSync(path.dirname(taskBackend.routing!.contextPath)), [`${taskBackend.id}.json`]);
     const availability = f.runtime.connectionTarget(f.root, 'a', f.source('a', 'main'))![0]!;

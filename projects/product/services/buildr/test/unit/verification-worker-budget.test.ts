@@ -55,16 +55,19 @@ test('Context-aware node runner摘要进入稳定timing evidence', () => {
 });
 
 
-test('complete low-cost suites execute through the granted node-test boundary instead of unbounded npm children', () => {
-  for (const [id, local, limited] of [['unit', 4, 3], ['component', 1, 1], ['contract', 2, 2]] as const) {
+test('complete service suites receive and honor the granted worker count', () => {
+  for (const [id, selector, local, limited] of [['unit', 'test/unit/*.test.ts', 4, 3], ['source-contracts', 'test/static/*.test.ts', 2, 2]] as const) {
     const step = verificationSteps.find((item: any) => item.id === id);
-    assert.equal(step.executor.type, 'node-test');
-    assert.deepEqual(step.executor.files, [`test/${id}/*.test.ts`]);
+    assert.equal(step.executor.type, 'command');
+    assert.equal(step.executor.file, process.execPath);
+    assert.ok(step.executor.args.includes('tools/testing/run-service-tests.ts'));
+    assert.ok(step.executor.args.includes(selector));
     assert.equal(step.resourceDemand.workers, local);
-    assert.deepEqual(nodeTestConcurrencyArguments(step, { resourceGrant: { workers: local } }), [`--test-concurrency=${local}`]);
-    assert.deepEqual(nodeTestConcurrencyArguments(step, resolveVerificationExecutionProfile('ci-workspace-limited')), [`--test-concurrency=${limited}`]);
-    assert.deepEqual(nodeTestConcurrencyArguments(step, { resourceGrant: { workers: 1 } }), ['--test-concurrency=1']);
-    assert.ok(step.executor.args.includes('./test/register-development-entry.ts'));
+    for (const [context, workers] of [[{ resourceGrant: { workers: local } }, local], [resolveVerificationExecutionProfile('ci-workspace-limited'), limited], [{ resourceGrant: { workers: 1 } }, 1]] as const) {
+      const environment = workerBudgetEnvironment(step, context);
+      assert.deepEqual(environment, { [VERIFICATION_WORKER_BUDGET_ENV]: String(workers) });
+      assert.equal(resolveVerificationWorkerBudget({ env: environment, fallback: 1, maximum: 1000, label: id }), workers);
+    }
   }
 });
 
@@ -80,5 +83,25 @@ test('Archify lifecycle stays isolated from Workspace checks with bounded concur
     const step = verificationSteps.find((item: any) => item.id === id);
     assert.ok(step.reuse.tools.includes('git'), `${id}: real fixture Git requires the observed Git executable version`);
     assert.equal(step.reuse.git, false, `${id}: private fixture Git must not bind the shared checkout HEAD`);
+  }
+});
+
+test('release and parity request two workers and honor smaller outer grants', () => {
+  for (const id of ['integration-candidate-release', 'runtime-adapter-parity']) {
+    const step = verificationSteps.find((item: any) => item.id === id);
+    assert.equal(step.resourceDemand.workers, 2, id);
+    for (const profileId of ['local', 'ci', 'ci-workspace-limited']) {
+      const profile = resolveVerificationExecutionProfile(profileId);
+      for (const workers of [1, 2]) {
+        assert.deepEqual(workerBudgetEnvironment(step, { executionProfile: profile, resourceGrant: { workers } }), { [VERIFICATION_WORKER_BUDGET_ENV]: String(workers) });
+      }
+    }
+  }
+});
+
+test('the seven reviewed long-running owners have nonzero scheduling estimates', () => {
+  for (const id of ['integration-code', 'e2e-workspace', 'e2e-workspace-assets', 'e2e-nested-git', 'e2e-browser:task', 'e2e-browser:code-explorer', 'e2e-browser:code']) {
+    const step = verificationSteps.find((item: any) => item.id === id);
+    assert.ok(Number.isFinite(step.schedulingCostMs) && step.schedulingCostMs > 0, id);
   }
 });

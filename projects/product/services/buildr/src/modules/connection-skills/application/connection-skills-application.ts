@@ -449,7 +449,7 @@ export class ConnectionSkillsApplication {
     revalidate();
     return runProgram(program, options.args, { context, input: options.input, timeoutMs: options.timeoutMs, secrets: Object.values(selections).flatMap(item => item.entry.definition.authentication.fields.filter(field => field.type === 'secret').map(field => item.context.authentication.values[field.key]).filter((value): value is string => typeof value === 'string')), revalidate });
   }
-  async hook(root: string, raw: unknown, kind: 'test' | 'discover') {
+  async hook(root: string, raw: unknown, kind: 'test' | 'discover'): Promise<Record<string, unknown> & { status: string; checks: unknown[]; observedAt: string; diagnostics: unknown[]; limitations: unknown[]; authenticationSource: string }> {
     const scope = this.resolveScope(root), input = object(raw), expected = object(input.expected) as Expected, binding = object(input.binding) as unknown as ConnectionBinding;
     requireDefinitionObservation(expected);
     const entry = this.entry(scope, binding, expected.definitionRevision);

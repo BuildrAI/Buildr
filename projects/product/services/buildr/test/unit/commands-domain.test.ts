@@ -48,8 +48,10 @@ test('Commands manifest validator 直接覆盖 schema、重复 id 和 executable
 test('Commands version parser 和 constraint comparator 处理边界', () => {
   assert.deepEqual(versions.parseVersion('tool version 2.3.4'), [2, 3, 4]);
   assert.deepEqual(versions.parseVersionConstraint('>=2.1.0'), { operator: '>=', version: [2, 1, 0], rawVersion: '2.1.0' });
-  assert.equal(versions.versionSatisfies([2, 3, 4], versions.parseVersionConstraint('>=2.1.0')), true);
-  assert.equal(versions.versionSatisfies([1, 9, 9], versions.parseVersionConstraint('>=2.1.0')), false);
+  const constraint = versions.parseVersionConstraint('>=2.1.0');
+  assert.ok(constraint);
+  assert.equal(versions.versionSatisfies([2, 3, 4], constraint), true);
+  assert.equal(versions.versionSatisfies([1, 9, 9], constraint), false);
   assert.equal(versions.parseVersionConstraint('not-a-version'), null);
 });
 

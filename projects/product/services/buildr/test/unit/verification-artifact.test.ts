@@ -4,15 +4,15 @@ import { createLocalArtifactPlan, parseArtifactArgs, runLocalArtifactVerificatio
 import { candidateEnvironmentPlan } from '../../tools/verification/candidate-environment.ts';
 
 test('package selection keeps common checks once and native package checks separate on either machine', () => {
-  const ids = (platform: string, scope: string) => createLocalArtifactPlan(platform, { scope }).nodes.map((node: any) => node.id);
+  const ids = (platform: NodeJS.Platform, scope: string) => createLocalArtifactPlan(platform, { scope }).nodes.map((node: any) => node.id);
   assert.deepEqual(ids('darwin', 'common'), ids('win32', 'common'));
   assert.deepEqual(ids('darwin', 'platform'), ['runtime-macos', 'host-minimum-macos']);
   assert.deepEqual(ids('win32', 'platform'), ['runtime-windows', 'host-minimum-windows']);
-  for (const platform of ['darwin', 'win32']) {
+  for (const platform of ['darwin', 'win32'] as const) {
     const plan = createLocalArtifactPlan(platform);
     assert.ok(plan.nodes.every((node: any) => !node.stepIds.includes('candidate-tarball')));
     assert.ok(plan.nodes.some((node: any) => node.stepIds.includes('artifact-browser-core')));
-    assert.ok(plan.nodes.some((node: any) => node.stepIds.includes('release-tarball-smoke')));
+    assert.ok(plan.nodes.some((node: any) => node.stepIds.includes('release-tarball-consumption')));
     assert.equal(new Set(plan.nodes.map((node: any) => node.id)).size, plan.nodes.length);
     const modes = plan.nodes.map((node: any) => candidateEnvironmentPlan(node.preparation)
       .find(operation => operation.id === 'buildr-dependencies')!.args.includes('--omit=dev') ? 'production' : 'development');

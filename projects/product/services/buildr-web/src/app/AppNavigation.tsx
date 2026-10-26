@@ -12,12 +12,13 @@ import { useSourceControlSummary } from '../features/code/hooks/useSourceControl
  * 工作台按关注与接续组织；长期内容入口位于工作空间。
  * 不在导航内展开项目树或所属服务；对象由页面级页签与领域全景承载。
  */
-export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
+export function AppNavigation({ onNavigate, area }: { onNavigate?: () => void; area?: 'workbench' | 'workspace' | 'code' }) {
   const { workspaceId, workspaceMenuTarget, requestWorkspacePage } = useAppShell();
   const { preferences } = useWorkbenchPreferences(workspaceId);
   const code = useSourceControlSummary(workspaceId);
   const location = useLocation();
-  const state = navigationState(location.pathname, location.search, workspaceId);
+  const observed = navigationState(location.pathname, location.search, workspaceId);
+  const state = { ...observed, area: area ?? observed.area };
   const href = (path: string) => workspaceHref(workspaceId, path);
 
   const icons: Record<string, ReactNode> = {
@@ -47,7 +48,7 @@ export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
           <div className="workbench-followed-navigation">
             <p className="shell-nav-caption">我关注的项目</p>
             {(preferences?.items || []).filter(entry => entry.kind === 'followed-project').map(entry => (
-              <NavLink key={entry.key} className="shell-nav-item" to={href('/projects/' + encodeURIComponent(entry.key))}>
+              <NavLink key={entry.key} className="shell-nav-item" to={href('/projects/' + encodeURIComponent(entry.key))} onClick={onNavigate}>
                 <span className="workbench-project-dot" /><span>{entry.label}</span><RightOutlined />
               </NavLink>
             ))}

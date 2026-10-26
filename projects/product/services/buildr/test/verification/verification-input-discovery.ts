@@ -6,22 +6,11 @@ const syntaxCache = new Map<string, any>();
 // Shared by working-tree and immutable Git input readers. This only resolves
 // known execution semantics; unknown dynamic readers retain their fallback.
 export function discoveredVerificationFiles(step: any, files: string[]): { selected: string[]; inventory: string[] } {
-  const family = step.executor?.file === 'test/verification/system.ts' ? 'test/system/'
-    : step.executor?.file === 'test/verification/integration.ts' ? 'test/integration/' : null;
-  if (!family) return { selected: [], inventory: [] };
-  const integration = family === 'test/integration/';
-  const inventory = files.filter(file => file.startsWith(family) && (integration
-    ? !file.slice(family.length).includes('/') && file.endsWith('.test.ts')
-    : /\.test\.[cm]?[jt]sx?$/u.test(file))).sort();
-  // The general runner reads only top-level *.test.ts files and excludes the
-  // exact delegated members declared beside it. Their content and existence
-  // belong to those owners; a real import can still add them as dependencies.
-  const discovered = integration
-    ? inventory.filter(file => !(step.executor.excludedFiles ?? []).includes(file))
-    : inventory;
-  // The executor's declaration is derived from the same suite registry used by
-  // the runner, not from changed-path ownership. Unknown callers bind all files.
-  return { selected: step.executor.discoveredFiles ?? discovered, inventory: discovered };
+  if (step.executor?.file !== 'test/verification/journeys.ts') return { selected: [], inventory: [] };
+  const inventory = files.filter(file => /^test\/(?:integration|e2e)\/.*\.test\.[cm]?[jt]sx?$/u.test(file)).sort();
+  // The declared members come from the same Journey registry as execution.
+  // Inventory changes stay visible, without importing unrelated assertions.
+  return { selected: step.executor.discoveredFiles ?? inventory, inventory };
 }
 
 export function verificationEntryFiles(executor: any): string[] {

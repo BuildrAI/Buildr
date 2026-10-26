@@ -19,7 +19,7 @@ async function fixture(t: test.TestContext) {
     { id: code + '-main', path: path.join(root, 'main', code), label: '主工作库', main: true, taskId: null, taskTitle: null, branch: 'qa', head: 'main-head', dirty: false },
   ];
   for (const code of codes) for (const w of worktrees(code)) fs.mkdirSync(w.path, { recursive: true });
-  const catalog = { listServices: () => codes.map(code => ({ id: code, code, name: code, repositoryId: code, modulePath: '', projects: ['p'] })) };
+  const catalog = { listServices: () => codes.map(code => ({ id: code, code, name: code, type: 'backend', repositoryId: code, modulePath: '', projects: ['p'] })) };
   const runtime = createServiceRuntimeApplication({ resolveService: (_root, code) => codes.includes(code) ? { id: code, code } : null, listWorktrees: (_root, code) => worktrees(code) });
   const view = createServiceRuntimeView({ catalog, runtime });
   const taskRuntime = createServiceTaskRuntimeApplication({ readTaskScope: () => ({ taskId: 'task', title: '本地验证', scope: { projects: ['p'], services: [] } }), runtime, view, catalog });

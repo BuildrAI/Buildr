@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { tabForPath, defaultTabForArea, defaultTabForPath, parseTabs, paneDimensions, readRatio, moveTab, reorderPageTabs, ratioStorageKey, resourcePreview, previewOwnerPath, previewOwnerSearch, workspacePageLayout } from '../src/app/workspace-pages.ts';
+import { tabForPath, defaultTabForArea, defaultTabForPath, parseTabs, paneDimensions, readRatio, moveTab, orderPageTabs, togglePageTabPin, reorderPageTabs, reorderPinnedTabs, pinnedTabsStorageKey, ratioStorageKey, resourcePreview, previewOwnerPath, previewOwnerSearch, workspacePageLayout } from '../src/app/workspace-pages.ts';
 
 test('连接查询、代码工具和工作台概览铺满功能面板，文档与跨工作空间路径保持阅读宽度', () => {
  for (const path of ['/connection-skills', '/connections', '/code/explorer', '/code/source-control', '/overview']) assert.equal(workspacePageLayout('w', '/workspaces/w' + path), 'functional');
@@ -114,6 +114,53 @@ test('页面、目录和代码页签使用同一可见重排索引，代码文�
  assert.deepEqual(reorderPageTabs(tabs,'dir:code:explorer',0).map(tab=>tab.key),['dir:code:explorer','dir:projects','a','dir:services','b']);
  assert.deepEqual(reorderPageTabs(tabs,'b',0).map(tab=>tab.key),['b','dir:projects','a','dir:code:explorer','dir:services']);
  assert.deepEqual(tabs.map(tab=>tab.key),['dir:projects','a','dir:code:explorer','dir:services','b']);
+});
+
+test('固定偏好独立于打开列表，按偏好顺序前置且不信任打开记录中的固定标记', () => {
+ const pages=['projects/demo','services','skills','repositories'].map(path=>tabForPath('w',`/workspaces/w/${path}`));
+ const [project,services,skills,repositories]=pages;
+ const pins=[skills,repositories,services];
+ const open=[project,services,skills];
+ const ordered=orderPageTabs(open,pins);
+ assert.deepEqual(ordered.map(tab=>[tab.key,Boolean(tab.pinned)]),[[skills.key,true],[services.key,true],[project.key,false]]);
+ assert.deepEqual(open,pages.slice(0,3),'派生固定区不改写原打开列表');
+ assert.deepEqual(pins,[skills,repositories,services],'已关闭项仍保留在独立偏好中');
+ assert.deepEqual(parseTabs('w',JSON.stringify([{...project,pinned:true}]))[0],project,'旧打开列表不能自行取得固定身份');
+ const restoredPins=parseTabs('w',JSON.stringify([...pins,{path:'/workspaces/other/services'},{path:'/workspaces/w/tasks/task-id'},skills]));
+ assert.deepEqual(restoredPins,pins,'固定偏好复用工作空间路由校验并去重');
+ assert.notEqual(pinnedTabsStorageKey('w'),pinnedTabsStorageKey('other'));
+});
+
+test('固定追加到固定区末尾，取消移到普通区首位且不关闭', () => {
+ const [project,services,skills]=['projects/demo','services','skills'].map(path=>tabForPath('w',`/workspaces/w/${path}`));
+ const open=[project,services,skills];
+ const first=togglePageTabPin(open,[],services.key);
+ assert.deepEqual(first.pinnedTabs.map(tab=>tab.key),[services.key]);
+ assert.deepEqual(first.tabs.map(tab=>tab.key),[services.key,project.key,skills.key]);
+ const second=togglePageTabPin(first.tabs,first.pinnedTabs,skills.key);
+ assert.deepEqual(second.pinnedTabs.map(tab=>tab.key),[services.key,skills.key]);
+ assert.deepEqual(second.tabs.map(tab=>tab.key),[services.key,skills.key,project.key]);
+ const unpinned=togglePageTabPin(second.tabs,second.pinnedTabs,services.key);
+ assert.deepEqual(unpinned.pinnedTabs.map(tab=>tab.key),[skills.key]);
+ assert.deepEqual(unpinned.tabs.map(tab=>[tab.key,Boolean(tab.pinned)]),[[skills.key,true],[services.key,false],[project.key,false]]);
+ assert.deepEqual(togglePageTabPin(unpinned.tabs,unpinned.pinnedTabs,'missing'),unpinned,'未知页签不更改偏好或打开列表');
+});
+
+test('排序不能跨固定边界，已关闭固定项保留槽位并在重开时恢复', () => {
+ const [a,b,c,ordinary,another]=['services','skills','repositories','projects/demo','projects'].map(path=>tabForPath('w',`/workspaces/w/${path}`));
+ const pins=[a,b,c];
+ const open=orderPageTabs([a,c,ordinary,another],pins);
+ assert.deepEqual(reorderPageTabs(open,ordinary.key,0),open,'普通区首项不能移入固定区');
+ assert.deepEqual(reorderPageTabs(open,a.key,99).map(tab=>tab.key),[c.key,a.key,ordinary.key,another.key],'固定项不能移入普通区');
+ const moved=reorderPageTabs(open,c.key,0);
+ const saved=reorderPinnedTabs(pins,moved);
+ assert.deepEqual(saved.map(tab=>tab.key),[c.key,b.key,a.key],'已关闭固定项保持原槽位');
+ const reopened=orderPageTabs([...moved,b],parseTabs('w',JSON.stringify(saved)));
+ assert.deepEqual(reopened.map(tab=>tab.key),[c.key,b.key,a.key,ordinary.key,another.key]);
+ assert.equal(reopened.find(tab=>tab.key===b.key).pinned,true);
+ const cancelled=togglePageTabPin(moved,saved,c.key);
+ assert.deepEqual(cancelled.pinnedTabs.map(tab=>tab.key),[b.key,a.key],'取消一个打开固定项不清除已关闭项');
+ assert.deepEqual(cancelled.tabs.map(tab=>tab.key),[a.key,c.key,ordinary.key,another.key]);
 });
 
 test('项目详情与知识共享一个项目标签，恢复旧标签去重且保留检索上下文',()=>{

@@ -1,6 +1,6 @@
 /** Browser layout regression only: actual final compiled Client plugin and real SDK assembly. */
 import path from 'node:path';import fs from 'node:fs/promises';import {createRequire} from 'node:module';import {pathToFileURL} from 'node:url';import assert from 'node:assert/strict';
-const root=path.resolve(import.meta.dirname,'../..'),out=path.join(root,'build/source-ui-browser'),require=createRequire(path.join(root,'../buildr/package.json')),{chromium}=require('playwright-core');
+const root=path.resolve(import.meta.dirname,'../..'),out=path.join(root,'build/source-ui-browser'),require=createRequire(path.join(root,'../buildr/package.json')),{chromium}=(require('playwright-core') as typeof import('../../../buildr/node_modules/playwright-core/index.d.ts'));
 const binary=process.env.BUILDR_DSH_SOURCE_UI_CHROMIUM;
 if(binary===undefined||!path.isAbsolute(binary))throw Error('BUILDR_DSH_SOURCE_UI_CHROMIUM must name an already prepared absolute Chromium executable.');
 await fs.access(binary,fs.constants.X_OK);

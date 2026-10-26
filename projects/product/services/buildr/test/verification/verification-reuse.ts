@@ -135,7 +135,7 @@ export function createVerificationReuseIdentity(step: VerificationReuseStep, sna
   if (!contentIdentity) return null;
   const declared = verificationSteps.find((item: VerificationReuseStep) => item.id === step.id);
   const execution = verificationStepExecutionInputs(step);
-  const recipeIdentity = digest({ version: proof ? 2 : 1, id: step.id, executor: step.executor, dependsOn: declared?.dependsOn ?? step.dependsOn ?? [], contexts: step.contexts ?? [], timeoutMs: step.timeoutMs ?? null, reuse: step.reuse,
+  const recipeIdentity = digest({ version: proof ? 2 : 1, id: step.id, executor: step.executor, dependsOn: declared?.dependsOn ?? step.dependsOn ?? [], contexts: step.contexts ?? [], timeoutMs: step.timeoutMs ?? null, reuse: step.reuse, preparations: step.preparations ?? [], type: step.testing?.executionBoundary, target: step.target,
     ...(execution ? { execution } : {}),
     ...(inputs ? { source: inputs.recipeIdentity, fallback: inputs.fallback, resources: step.resources, resourceDemand: step.resourceDemand, concurrencyClass: step.concurrencyClass } : {}) });
   const { platform, arch, nodeVersion, tools, variablesIdentity } = snapshot.environment;
@@ -425,11 +425,11 @@ export function inspectVerificationReusePlan(plan: any, options: VerificationReu
     }
     const observed = prior?.environment?.platform === snapshot.environment.platform && prior?.environment?.arch === snapshot.environment.arch
       && Number.isFinite(prior?.result?.durationMs) && prior.result.durationMs >= 0 ? prior.result.durationMs : null;
-    const estimate = Math.max(0, Number(observed ?? step.testing?.targetDurationMs ?? step.schedulingCostMs ?? 0));
+    const estimate = Math.max(0, Number(observed ?? step.schedulingCostMs ?? 0));
     const durationMs = record ? 0 : Number.isFinite(estimate) ? estimate : 0;
     workMs += durationMs; reusedOriginalMs += record?.result.durationMs ?? 0;
     return { id: step.id, disposition: record ? 'reuse' : 'execute', reasons, estimatedDurationMs: durationMs,
-      estimateSource: observed === null ? 'declared-target' : 'prior-execution',
+      estimateSource: observed === null ? 'scheduling-estimate' : 'prior-execution',
       inputScope: (snapshot.proofInputs?.[step.id] ?? snapshot.stepInputs?.[step.id])?.fallback ? 'conservative-fallback' : step.reuse ? step.reuse.scope : 'fresh',
       ...(!identity && step.reuse ? { unavailableTools: requiredToolKeys(step).filter(key => !snapshot.environment.tools[key] || snapshot.environment.tools[key] === 'unavailable') } : {}),
       ...((snapshot.proofInputs?.[step.id] ?? snapshot.stepInputs?.[step.id])?.unresolved?.length ? { unresolvedInputs: (snapshot.proofInputs?.[step.id] ?? snapshot.stepInputs![step.id])!.unresolved } : {}),
@@ -437,9 +437,9 @@ export function inspectVerificationReusePlan(plan: any, options: VerificationReu
   });
   const durations = new Map(steps.map((step: any) => [step.id, step.estimatedDurationMs]));
   const limits = resolveVerificationExecutionProfile((options.env ?? process.env).BUILDR_VERIFICATION_PROFILE, options.env ?? process.env).limits;
-  const estimate = estimateVerificationPlan({ ...plan, steps: plan.steps.map((step: any) => ({ ...step, budgetMs: durations.get(step.id) })) }, { concurrency: limits });
+  const estimate = estimateVerificationPlan({ ...plan, steps: plan.steps.map((step: any) => ({ ...step, estimatedDurationMs: durations.get(step.id) })) }, { concurrency: limits });
   return { schemaVersion: 'buildr.verification-reuse-plan/v1', steps,
-    estimate: { source: 'prior-runs-and-declared-targets', remainingWorkMs: workMs, dependencyCriticalPathMs: estimate.dependencyCriticalPath.durationMs,
+    estimate: { source: 'prior-runs-and-scheduling-estimates', remainingWorkMs: workMs, dependencyCriticalPathMs: estimate.dependencyCriticalPath.durationMs,
       resourceLowerBoundMs: estimate.minimumFeasibleDurationMs, limitingConstraints: estimate.limitingConstraints,
       reusedOriginalMs, executedCount: steps.filter((step: any) => step.disposition === 'execute').length,
       reusedCount: steps.filter((step: any) => step.disposition === 'reuse').length, excludes: ['platform-queue', 'environment-preparation'] } };

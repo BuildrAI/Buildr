@@ -1,6 +1,6 @@
+import { sourceControlRowDensity, type SourceRowLayout as Layout } from './source-control-row-density';
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
-type Layout = 'full' | 'branch-clipped' | 'name-status' | 'name';
 type Props = {
   className: string;
   worktreeId?: string;
@@ -40,12 +40,8 @@ export function SourceControlSourceRow({className, worktreeId, active, measureKe
       const fixed = outerWidth(leading) + outerWidth(menu) + gap * (1 + Number(Boolean(menu)) + Number(shortcutWidth > 0));
       const nameWidth = name?.getBoundingClientRect().width || 0;
       const copyGap = parseFloat(getComputedStyle(element.querySelector('.source-control-row-copy')!).columnGap) || 0;
-      const remaining = Math.floor(width - fixed - nameWidth - shortcutWidth - (naturalBranchWidth ? copyGap : 0));
-      const branchVisible = naturalBranchWidth > 0 && remaining >= Math.min(naturalBranchWidth, 48);
-      const next:Layout = branchVisible ? remaining >= naturalBranchWidth ? 'full' : 'branch-clipped'
-        : Math.ceil(fixed + nameWidth + shortcutWidth) <= width ? naturalBranchWidth ? 'name-status' : 'full' : 'name';
-      const allocated = branchVisible ? Math.min(naturalBranchWidth, remaining) : 24;
-      setDensity(previous => previous.layout === next && previous.branchWidth === allocated ? previous : {layout:next, branchWidth:allocated});
+      const next = sourceControlRowDensity({width, fixed, nameWidth, shortcutWidth, naturalBranchWidth, copyGap});
+      setDensity(previous => previous.layout === next.layout && previous.branchWidth === next.branchWidth ? previous : next);
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(measure); };
     const observer = new ResizeObserver(schedule); observer.observe(element);

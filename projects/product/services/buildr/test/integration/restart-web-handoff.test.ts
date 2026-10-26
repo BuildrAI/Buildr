@@ -1,3 +1,4 @@
+import { createServer } from 'node:http';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -52,10 +53,7 @@ function restartLifecycleFixture(t: any) {
     assertNpmUpdateHandoffTarget() { calls.npmOwnership += 1; },
     ensureRegisteredTarget: () => null,
     createLocalWorkspaceServer(_runtime: any, options: any) {
-      const httpServer = {
-        once() {},
-        close(callback?: () => void) { callback?.(); },
-      };
+      const httpServer = createServer();
       const ready = Promise.resolve({
         server: httpServer,
         url: `http://127.0.0.1:${options.port || 4400}`,

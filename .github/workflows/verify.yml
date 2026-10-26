@@ -15,7 +15,7 @@ on:
         required: false
         default: none
         type: choice
-        options: [none, core-project-task-macos, nested-git-isolation-windows, runtime-windows, failed-windows, package-consumer-windows, nested-lifecycle-windows, app-process-windows, readonly-files-windows, task-lifecycle-windows, preview-lifecycle-windows, publication-effects-windows, package-pair-publisher]
+        options: [none, development-windows, core-project-task-macos, nested-git-isolation-windows, runtime-windows, failed-windows, package-consumer-windows, nested-lifecycle-windows, app-process-windows, readonly-files-windows, task-lifecycle-windows, preview-lifecycle-windows, publication-effects-windows, package-pair-publisher]
       diagnostic_candidate_run_id:
         description: Original Candidate run whose immutable package is consumed only by an independent diagnosis
         required: false
@@ -130,10 +130,11 @@ env:
 
 jobs:
   dev-feedback-macos:
-    name: Development feedback (macOS affected and Browser)
+    name: Development feedback (macOS source checks)
+    outputs:
+      verification_base: ${{ steps.base.outputs.sha }}
     if: (github.event_name == 'pull_request' && github.base_ref == 'dev') || (github.event_name == 'push' && github.ref == 'refs/heads/dev')
     runs-on: macos-latest
-    timeout-minutes: 30
     defaults:
       run:
         working-directory: projects/product/services/buildr
@@ -155,28 +156,20 @@ jobs:
           base="${{ github.event.pull_request.base.sha || github.event.before }}"
           if [[ -z "$base" || "$base" =~ ^0+$ ]]; then base="$(git rev-parse HEAD^)"; fi
           echo "sha=$base" >> "$GITHUB_OUTPUT"
-      - name: Plan affected Browser evidence
-        id: browser
-        env:
-          BUILDR_VERIFICATION_BASE: ${{ steps.base.outputs.sha }}
-        shell: bash
-        run: |
-          node test/verification/browser-selector-dispatcher.ts --output "${RUNNER_TEMP}/development-browser-plan.json"
-          node -e 'const fs = require("node:fs"); const plan = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); fs.appendFileSync(process.env.GITHUB_OUTPUT, "selected=" + (plan.status === "selected") + "\n");' "${RUNNER_TEMP}/development-browser-plan.json"
-      - name: Install product dependencies
-        run: npm ci
+      - name: Prepare product source dependencies
+        run: node tools/verification/candidate-environment.ts prepare --profile base
       - name: Plan affected service dependencies
         id: services
         shell: bash
         run: |
-          node test/verification/changed.ts --json --base "${{ steps.base.outputs.sha }}" > "${RUNNER_TEMP}/development-service-plan.json"
-          node -e 'const fs = require("node:fs"); const plan = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); const selected = new Set(plan.steps.map(step => step.id)); fs.appendFileSync(process.env.GITHUB_OUTPUT, "frontend=" + selected.has("frontend-logic") + "\n" + "dsh=" + selected.has("dsh-plugin") + "\n");' "${RUNNER_TEMP}/development-service-plan.json"
+          node test/verification/cli.ts related --json --base "${{ steps.base.outputs.sha }}" > "${RUNNER_TEMP}/development-service-plan.json" || test "$?" -eq 1
+          node -e 'const fs = require("node:fs"); const plan = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); const selected = new Set(plan.steps.map(step => step.id)); fs.appendFileSync(process.env.GITHUB_OUTPUT, "frontend=" + selected.has("frontend-logic") + "\n" + "dsh=" + [...selected].some(id => id.startsWith("plugin-")) + "\n" + "browser=" + [...selected].some(id => id.startsWith("e2e-browser:")) + "\n");' "${RUNNER_TEMP}/development-service-plan.json"
       - name: Install Buildr Web dependencies
-        if: steps.browser.outputs.selected == 'true' || steps.services.outputs.frontend == 'true'
+        continue-on-error: true
         working-directory: projects/product/services/buildr-web
         run: npm ci
       - name: Install pinned DSH package manager
-        if: steps.services.outputs.dsh == 'true'
+        continue-on-error: true
         shell: bash
         run: |
           mkdir -p "${RUNNER_TEMP}/dsh-tooling"
@@ -186,7 +179,7 @@ jobs:
           env -i PATH="${PATH}" NPM_CONFIG_USERCONFIG="${RUNNER_TEMP}/dsh-tooling/user.npmrc" NPM_CONFIG_GLOBALCONFIG="${RUNNER_TEMP}/dsh-tooling/global.npmrc" \
             npm install --prefix "${RUNNER_TEMP}/dsh-tooling" --ignore-scripts --no-save --no-package-lock --no-audit --no-fund --registry=https://registry.npmjs.org/ pnpm@11.7.0
       - name: Prepare pinned DSH SDK
-        if: steps.services.outputs.dsh == 'true'
+        continue-on-error: true
         working-directory: projects/product/services/dsh-plugin
         shell: bash
         run: |
@@ -194,34 +187,55 @@ jobs:
           node --input-type=module -e 'import fs from "node:fs"; import path from "node:path"; const result = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (result.schemaVersion !== "buildr.dsh-release-sdk/v1" || result.status !== "prepared" || typeof result.sdk !== "string" || !path.isAbsolute(result.sdk) || /[\u0000-\u001f\u007f]/.test(result.sdk)) throw new Error("SDK output missing"); fs.appendFileSync(process.env.GITHUB_ENV, `BUILDR_DSH_SOURCE_SDK_ROOT=${result.sdk}\n`);' "${RUNNER_TEMP}/development-dsh-sdk.json"
       - name: Observe the exact published Buildr peer for affected plugin checks
         if: steps.services.outputs.dsh == 'true'
+        continue-on-error: true
         shell: bash
         run: |
-          node ../../../../skills/buildr-release/scripts/package-artifact-observation.ts --package buildr --discover current --tarball "${RUNNER_TEMP}/development-buildr-peer.tgz" --output "${RUNNER_TEMP}/development-buildr-peer.json"
+          node --input-type=module - <<'JS'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          import { observePublishedPackageArtifact, packageArtifactInputSchema } from '../../../../skills/buildr-release/scripts/package-artifact-observation.ts';
+          const { observation, bytes } = await observePublishedPackageArtifact('buildr', { distTag: 'next' });
+          if (observation.status !== 'present' || !bytes) throw new Error(JSON.stringify(observation));
+          const tarball = path.join(process.env.RUNNER_TEMP, 'development-buildr-peer.tgz');
+          fs.writeFileSync(tarball, bytes);
+          fs.writeFileSync(path.join(process.env.RUNNER_TEMP, 'development-buildr-peer.json'), JSON.stringify({ schemaVersion: packageArtifactInputSchema, artifact: observation.artifact, tarball }));
+          JS
           node --input-type=module -e 'import fs from "node:fs"; fs.appendFileSync(process.env.GITHUB_ENV, `BUILDR_DSH_BUILDR_PEER_INPUT=${process.argv[1]}\n`);' "${RUNNER_TEMP}/development-buildr-peer.json"
-      - name: Verify changed product scope
+      - name: Prepare related plugin integration inputs
+        if: steps.services.outputs.dsh == 'true'
+        continue-on-error: true
+        working-directory: projects/product/services/dsh-plugin
+        shell: bash
+        run: |
+          node tools/prepare-check-environment.ts --source-sdk "${BUILDR_DSH_SOURCE_SDK_ROOT}" --buildr-peer "${BUILDR_DSH_BUILDR_PEER_INPUT}" --output "${RUNNER_TEMP}/plugin-check-environment.json"
+          node --input-type=module -e 'import fs from "node:fs"; const receipt=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); for(const [key,value] of Object.entries(receipt.env)){if(typeof value!=="string" || /[\r\n]/u.test(value))throw Error("Invalid prepared environment"); fs.appendFileSync(process.env.GITHUB_ENV,`${key}=${value}\n`);}' "${RUNNER_TEMP}/plugin-check-environment.json"
+      - name: Verify all source static and unit checks
+        continue-on-error: true
+        env:
+          BUILDR_TIMING_OUTPUT: ${{ runner.temp }}/pre-push-check-timing.json
+          BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/pre-push-check-diagnostics
+          BUILDR_VERIFICATION_PROFILE: ci
+        run: npm run check -- --base "${{ steps.base.outputs.sha }}"
+      - name: Prepare related browser dependency
+        if: steps.services.outputs.browser == 'true'
+        run: node node_modules/playwright-core/cli.js install chromium --only-shell
+      - name: Verify all task-related check types
+        continue-on-error: true
         env:
           BUILDR_TIMING_OUTPUT: ${{ runner.temp }}/development-feedback-timing.json
           BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/development-feedback-diagnostics
           BUILDR_VERIFICATION_PROFILE: ci
         shell: bash
-        run: npm run test:changed -- --base "${{ steps.base.outputs.sha }}"
-      - name: Prepare affected Browser environment
-        if: steps.browser.outputs.selected == 'true'
-        run: npm run test:browser:install
-      - name: Verify affected Browser evidence
-        if: steps.browser.outputs.selected == 'true'
-        env:
-          BUILDR_VERIFICATION_BASE: ${{ steps.base.outputs.sha }}
-          BUILDR_BROWSER_PLAN_OUTPUT: ${{ runner.temp }}/development-browser-plan.json
-        run: npm run test:browser:changed
+        run: npm run test:related -- --base "${{ steps.base.outputs.sha }}"
       - name: Upload macOS development evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: development-feedback-macos
           path: |
-            ${{ runner.temp }}/development-browser-plan.json
             ${{ runner.temp }}/development-service-plan.json
+            ${{ runner.temp }}/pre-push-check-timing.json
+            ${{ runner.temp }}/pre-push-check-diagnostics
             ${{ runner.temp }}/development-feedback-timing.json
             ${{ runner.temp }}/development-feedback-diagnostics
           if-no-files-found: warn
@@ -257,19 +271,20 @@ jobs:
         id: windows-plan
         shell: bash
         run: |
-          node test/verification/changed.ts --json --development-runner windows --base "${{ steps.base.outputs.sha }}" > "${RUNNER_TEMP}/development-windows-plan.json"
+          node --input-type=module -e 'import fs from "node:fs"; import {collectChangedProductPaths} from "./test/verification/changed-paths.ts"; import {createDevelopmentPlatformPlan} from "./test/verification/planner.ts"; const changed=collectChangedProductPaths({productRoot:process.cwd(),projectRoot:"../..",base:process.argv[1]}); fs.writeFileSync(process.argv[2],JSON.stringify(createDevelopmentPlatformPlan({runner:"windows",paths:changed.paths})));' "${{ steps.base.outputs.sha }}" "${RUNNER_TEMP}/development-windows-plan.json"
           node -e 'const fs = require("node:fs"); const plan = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); fs.appendFileSync(process.env.GITHUB_OUTPUT, "selected=" + (plan.steps.length > 0) + "\n");' "${RUNNER_TEMP}/development-windows-plan.json"
-      - name: Install product dependencies
+      - name: Prepare product source dependencies
         if: steps.windows-plan.outputs.selected == 'true'
-        run: npm ci
+        run: node tools/verification/candidate-environment.ts prepare --profile base
       - name: Verify Windows platform-sensitive product scope
+        continue-on-error: true
         if: steps.windows-plan.outputs.selected == 'true'
         env:
           BUILDR_TIMING_OUTPUT: ${{ runner.temp }}/development-windows-timing.json
           BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/development-windows-diagnostics
           BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
         shell: bash
-        run: npm run test:changed -- --development-runner windows --base "${{ steps.base.outputs.sha }}"
+        run: npm run test:related -- --check integration-windows-native
       - name: Upload Windows development evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -281,6 +296,80 @@ jobs:
             ${{ runner.temp }}/development-windows-diagnostics
           if-no-files-found: warn
           overwrite: true
+
+  development-windows:
+    name: Explicit Windows source integration
+    if: github.event_name == 'workflow_dispatch' && inputs.diagnostic_scope == 'development-windows'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: projects/product/services/buildr
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SOURCE_SHA }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+          cache: npm
+          cache-dependency-path: projects/product/services/buildr/package-lock.json
+      - name: Prepare product source dependencies
+        run: node tools/verification/candidate-environment.ts prepare --profile base
+      - name: Run all Windows-native source checks
+        env:
+          BUILDR_TIMING_OUTPUT: ${{ runner.temp }}/windows-source-timing.json
+          BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/windows-source-diagnostics
+          BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
+        shell: bash
+        run: npm run test:related -- --check integration-windows-native
+      - name: Upload Windows source evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-source-evidence
+          path: |
+            ${{ runner.temp }}/windows-source-timing.json
+            ${{ runner.temp }}/windows-source-diagnostics
+          retention-days: 14
+
+  dev-verification-gate:
+    name: Development verification gate
+    needs: [dev-feedback-macos, dev-feedback-windows]
+    if: always() && ((github.event_name == 'pull_request' && github.base_ref == 'dev') || (github.event_name == 'push' && github.ref == 'refs/heads/dev'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SOURCE_SHA }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+      - name: Download original development evidence
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          pattern: development-feedback-*
+          path: ${{ runner.temp }}/development-evidence
+          merge-multiple: true
+      - name: Require complete source coverage across the actual platforms
+        env:
+          BUILDR_DEV_MACOS_RESULT: ${{ needs.dev-feedback-macos.result }}
+          BUILDR_DEV_WINDOWS_RESULT: ${{ needs.dev-feedback-windows.result }}
+        run: >-
+          node projects/product/services/buildr/test/verification/development-aggregate.ts
+          --source "${{ env.CANDIDATE_SOURCE_SHA }}"
+          --base "${{ needs.dev-feedback-macos.outputs.verification_base }}"
+          --evidence-dir "${{ runner.temp }}/development-evidence"
+          --output "${{ runner.temp }}/development-aggregate.json"
+      - name: Preserve the combined conclusion and original evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: development-verification-aggregate
+          path: ${{ runner.temp }}/development-aggregate.json
+          if-no-files-found: warn
 
   candidate-plan:
     name: Candidate plan
@@ -487,8 +576,8 @@ jobs:
           const startedAt = new Date().toISOString();
           const started = performance.now();
           const result = spawnSync(process.execPath, [
-            'tools/development/run-isolated-workspace-smoke.ts',
-            '--script', 'test/integration/non-git-workspace-continuity.test.ts',
+            'tools/development/run-isolated-workspace-check.ts',
+            '--script', 'test/e2e/non-git-workspace-continuity.test.ts',
             '--', '--nested-git-isolation-scenario',
           ], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024, env: process.env });
           const durationMs = Math.round(performance.now() - started);
@@ -1023,6 +1112,12 @@ jobs:
           : > "${RUNNER_TEMP}/buildr-cli-dependencies/global.npmrc"
           env -i PATH="${PATH}" NPM_CONFIG_USERCONFIG="${RUNNER_TEMP}/buildr-cli-dependencies/user.npmrc" NPM_CONFIG_GLOBALCONFIG="${RUNNER_TEMP}/buildr-cli-dependencies/global.npmrc" \
             node "${RUNNER_TEMP}/plugin-tooling/node_modules/npm/bin/npm-cli.js" ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/ --cache "${RUNNER_TEMP}/buildr-cli-dependencies/npm-cache"
+      - name: Prepare the private Agent package
+        if: ${{ !inputs.repair_candidate_run_id || needs.candidate-plan.outputs.buildr != 'true' }}
+        working-directory: projects/product/services/buildr-agent
+        run: |
+          node "${RUNNER_TEMP}/plugin-tooling/node_modules/npm/bin/npm-cli.js" ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/ --cache "${RUNNER_TEMP}/buildr-cli-dependencies/npm-cache"
+          node tools/build.ts
       - name: Prepare shared release-tool generated test inputs
         if: ${{ !inputs.repair_candidate_run_id || needs.candidate-plan.outputs.buildr != 'true' }}
         working-directory: projects/product/services/buildr
@@ -1031,8 +1126,8 @@ jobs:
         if: needs.candidate-plan.outputs.buildr != 'true'
         working-directory: projects/product/services/buildr
         run: |
-          node "${RUNNER_TEMP}/plugin-tooling/node_modules/npm/bin/npm-cli.js" run test:integration:candidate:release
-          node test/verification/run-node-tests.ts 'test/unit/release-*.test.ts' 'test/unit/package-compatibility.test.ts' 'test/contract/release-*.test.ts' 'test/contract/open-source-release.test.ts' 'test/contract/package-compatibility.test.ts'
+          node "${RUNNER_TEMP}/plugin-tooling/node_modules/npm/bin/npm-cli.js" run test:integration -- --check integration-candidate-release --check integration-candidate-release-selection --check integration-candidate-package-selection --check integration-candidate-release-effects --check integration-candidate-git-convergence --check integration-candidate-git-selection
+          node test/verification/run-node-tests.ts 'test/unit/release-*.test.ts' 'test/unit/package-compatibility.test.ts' 'test/static/release-*.test.ts' 'test/static/open-source-release.test.ts' 'test/static/package-compatibility.test.ts'
       - name: Restore pinned SDK dependency downloads
         if: ${{ !inputs.repair_candidate_run_id }}
         id: sdk-downloads

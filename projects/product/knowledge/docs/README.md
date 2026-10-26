@@ -18,7 +18,7 @@
 | --- | --- |
 | 怎样接续工作、判断成果并保留方法？ | [从讨论到交付](architecture/task-system.md) · [技能（Skill）体系](architecture/buildr-skill-system.md) · [知识维护](architecture/knowledge-maintenance.md) |
 | 怎样管理外部系统账号并执行专业操作？ | [外部系统连接](architecture/external-connections.md) |
-| Buildr 怎样接入、关联与调用 Codex、DSH？ | [接入方式与职责](architecture/agent-integration.md) · [提交说明怎样生成](architecture/agent-integration-generation.md) |
+| Buildr 怎样接入 Codex、DSH、Qoder，并保留外部会话关联和一次生成？ | [接入方式与职责](architecture/agent-integration.md) · [提交说明怎样生成](architecture/agent-integration-generation.md) |
 | 系统怎样组成，代码和数据由谁维护？ | [技术架构](architecture/technical.md) · [代码地图（Code Map）](../code-map/README.md) · [数据设计](architecture/buildr-data-design.md) · [数据库表](architecture/buildr-database-tables.md) |
 | 怎样准备开发并验证实际改动？ | [产品开发入口](../../README.md) · [贡献指南](../../../../CONTRIBUTING.md) · [项目测试与验证](architecture/workspace-testing-and-verification-framework.md) · [产品验证框架](architecture/verification-framework.md) |
 | 怎样查命令、数据格式与扩展约定？ | [命令参考](../../services/buildr/docs/cli-reference.md) · [公开数据格式](reference/json-contracts.md) · [工具适配开发](reference/agent-runtime-adapter-contribution.md) · [能力契约（Capability Contract）](../../services/buildr/docs/skill-capability-contracts.md) |
@@ -40,7 +40,7 @@ Buildr 提供两个相互连接的阅读入口，重合的正文只维护一份�
 
 ## 开发参考
 
-开发从[产品开发入口](../../README.md)开始。准备与检查以产品目录的 [`preparation.yml`](../../preparation.yml)、[`verification.yml`](../../verification.yml)为准；具体运行和构建命令查所属服务（Service）的入口：[Buildr 主包](../../services/buildr/package.json)、[Buildr Web 前端](../../services/buildr-web/package.json)或 [DSH 桌面插件](../../services/dsh-plugin/package.json)。DSH 插件独立构建和发布；避免在多篇说明中抄写命令。
+开发从[产品开发入口](../../README.md)开始。准备与检查以产品目录的 [`preparation.yml`](../../preparation.yml)、[`verification.yml`](../../verification.yml)为准；具体运行和构建命令查所属服务（Service）的入口：[Buildr 主包](../../services/buildr/package.json)、[Buildr Web 前端](../../services/buildr-web/package.json)、[Buildr 智能体服务（Agent Service）](../../services/buildr-agent/package.json)或 [DSH 桌面插件](../../services/dsh-plugin/package.json)。智能体服务（Agent Service）作为私有库随主包统一发行，源码准备顺序见[构建地图](../code-map/system-services-assets.md#构建与消费)；DSH 插件独立构建和发布。避免在多篇说明中抄写命令。
 
 专项问题按需查阅：[智能体（Agent）工具支持](../../services/buildr/docs/agent-runtime-adapters.md)、[命令架构](../../services/buildr/docs/cli-architecture.md)、[Archify 自用与旧安装迁移](reference/archify.md)、[OpenSpec 协作](architecture/task-system.md#openspec-变更怎样推进)。
 

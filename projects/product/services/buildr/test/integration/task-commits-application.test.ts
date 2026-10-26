@@ -202,7 +202,7 @@ test('候选历史、结果、输出和总时间上限显式为部分结果', t 
   const f = fixture(t); commit(f.root, `huge\n\n${'x'.repeat(32000)}\n\nBuildr-Task: task-one`);
   const recent = commit(f.root, 'recent\n\nBuildr-Task: task-one');
   for (let index = 0; index < 3; index += 1) commit(f.root, `unrelated ${index}`);
-  const inspect = (limits: Partial<typeof TASK_COMMIT_LIMITS>) => createTaskCommitsApplication(f.dependencies, { ...TASK_COMMIT_LIMITS, ...limits }).inspectTaskCommits(f.root, 'task-one');
+  const inspect = (limits: Partial<{ [K in keyof typeof TASK_COMMIT_LIMITS]: number }>) => createTaskCommitsApplication(f.dependencies, { ...TASK_COMMIT_LIMITS, ...limits }).inspectTaskCommits(f.root, 'task-one');
   const history = inspect({ historyLimitPerRepository: 1 });
   assert.equal(history.status, 'partial'); assert.equal(history.coverage.truncated, true); assert.deepEqual(history.commits.map(item => item.hash), [recent]);
   assert.ok(history.diagnostics.some(item => item.code === 'task_commits_history_truncated'));

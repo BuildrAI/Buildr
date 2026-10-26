@@ -10,6 +10,7 @@ import { verifyBuildrPluginPair } from './verify-buildr-plugin-pair.ts';
 import { captureVerificationSource, gitTreeSourceIdentity } from './verification-source.ts';
 import { createReleaseCandidate, readReleaseCandidate, sourceSdkIdentityFromFiles, SOURCE_SDK_MANIFEST, type SourceSdkIdentity } from '../../../../../skills/buildr-release/scripts/dsh-plugin/release-candidate.ts';
 import { resolveVerificationWorkerBudget } from '../../buildr/test/verification/worker-budget.ts';
+import { preparePluginCheckEnvironment } from './check-environment.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export function parseVerificationInputs(args: string[], env: NodeJS.ProcessEnv = process.env): {sourceSdk:string;peerInput?:string;peerManifest?:string;output?:string;npmCli?:string;candidateOutput?:string} {
@@ -29,14 +30,12 @@ export const archiveTreeIdentity = (bytes: Buffer) => hash(Buffer.from(JSON.stri
 // freshly until their actual installed dependencies and built inputs are bound.
 export const PLUGIN_SOURCE_PHASE_IDS = ['dsh-plugin:unit'] as const;
 export const PLUGIN_PEER_PHASE_FILES = ['test/integration/source-business-gateway.test.ts'] as const;
-const freshSdkFiles = ['test/unit/sdk-source.test.ts'];
-export function pluginSourcePhaseFiles(group: 'unit' | 'integration', pluginRoot = root): string[] {
+export function pluginSourcePhaseFiles(group: 'unit' | 'static' | 'integration' | 'e2e', pluginRoot = root): string[] {
   const files = readdirSync(join(pluginRoot, 'test', group)).filter(name => name.endsWith('.test.ts')).sort()
     .map(name => `test/${group}/${name}`).filter(file => !(PLUGIN_PEER_PHASE_FILES as readonly string[]).includes(file));
-  return group === 'unit' ? files.filter(file => !freshSdkFiles.includes(file))
-    : [...files, ...freshSdkFiles.filter(file => existsSync(join(pluginRoot, file)))];
+  return files;
 }
-export function pluginSourcePhaseStep(group: 'unit' | 'integration', files: string[], env: NodeJS.ProcessEnv = process.env) {
+export function pluginSourcePhaseStep(group: 'unit' | 'static' | 'integration' | 'e2e', files: string[], env: NodeJS.ProcessEnv = process.env) {
   const workers = resolveVerificationWorkerBudget({ env, fallback: 2, maximum: files.length, label: `Plugin ${group} tests` });
   return { id: `dsh-plugin:${group}`, executor: { type: 'node-test', files: [...files].sort(), args: [`--test-concurrency=${workers}`] },
     resourceDemand: { workers, processes: workers },
@@ -58,7 +57,7 @@ export async function collectPluginSourceVerificationBundle(options: { env?: Nod
   return { ...log, records: log.records.filter((record: any) => PLUGIN_SOURCE_PHASE_IDS.includes(record.identity.stepId) && record.result.status === 'passed') };
 }
 
-export async function verifyPluginSourcePhase(group: 'unit' | 'integration', options: { pluginRoot?: string; env?: NodeJS.ProcessEnv; diagnosticsDirectory?: string; round?: any } = {}) {
+export async function verifyPluginSourcePhase(group: 'unit' | 'static' | 'integration' | 'e2e', options: { pluginRoot?: string; env?: NodeJS.ProcessEnv; diagnosticsDirectory?: string; round?: any } = {}) {
   const pluginRoot = options.pluginRoot ?? root, productRoot = resolve(pluginRoot, '../buildr');
   const environment = options.env ?? process.env;
   const { candidateSourceImportFromEnvironment } = await import(new URL('../../buildr/test/verification/candidate-source-reuse.ts', import.meta.url).href);
@@ -92,24 +91,14 @@ export function writeVerifiedPluginCandidate(input: { output: string; tarball: s
   return candidate;
 }
 export async function verifyAll(args = process.argv.slice(2)) {
-const request = parseVerificationInputs(args), sdk = request.sourceSdk, sdkReceipt = validatePreparedSourceSdk(sdk, root);
+const request = parseVerificationInputs(args);
 const verificationSource = captureVerificationSource(root);
-const bundles = mkdtempSync(join(ownedBuildRoot(root), 'dsh-plugin-full-'));
-const peer = request.peerInput ? prepareBuildrPeer({ artifactManifest: request.peerInput, npmCli: request.npmCli, ownedRoot: bundles }) : readPreparedBuildrPeer(request.peerManifest!);
-const raw = request.peerInput ?? join(bundles, 'peer-input.json');
-if (!request.peerInput) writeFileSync(raw, JSON.stringify({ schemaVersion: 'buildr.package-artifact-input/v1', artifact: peer.artifact, tarball: join(peer.root, 'artifact.tgz') }));
-const environment = { ...process.env, BUILDR_DSH_SDK_ROOT: sdk, BUILDR_DSH_SOURCE_SDK_ROOT: sdk, BUILDR_DSH_BUNDLE_ROOT: bundles,
-  BUILDR_DSH_SOURCE_UI_SDK_ROOT: sdk, BUILDR_DSH_SOURCE_UI_CONSUMER_ROOT: join(bundles, 'dsh-plugin'), BUILDR_DSH_BUILDR_PEER_MANIFEST: peer.manifestPath,
-  BUILDR_DSH_COMPOSITION_ROOT: join(bundles, 'composition'), BUILDR_DSH_COMPOSITION_DEV_ROOT: join(bundles, 'composition-dev') };
+const { sdk, sdkReceipt, bundles, peer, raw, environment } = preparePluginCheckEnvironment(root, request);
 const run = (script: string, ...parameters: string[]): void => {
   execFileSync(process.execPath, [join(root, script), ...parameters], { cwd: root, stdio: 'inherit', env: environment, shell: false });
 };
-run('tools/build-plugin.ts', '--source-sdk', sdk, '--output', join(bundles, 'dsh-plugin'));
-run('tools/build-plugin.ts', '--dev', '--source-sdk', sdk, '--output', join(bundles, 'dsh-plugin-dev'));
-run('tools/build-composition.ts', '--source-sdk', sdk, '--entry', join(bundles, 'dsh-plugin'), '--output', join(bundles, 'composition'));
-run('tools/build-composition.ts', '--source-sdk', sdk, '--entry', join(bundles, 'dsh-plugin-dev'), '--output', join(bundles, 'composition-dev'));
 const sourcePhases: any[] = [];
-for (const group of ['unit', 'integration'] as const) {
+for (const group of ['static', 'unit', 'integration', 'e2e'] as const) {
   const { phase } = await verifyPluginSourcePhase(group, { env: environment, diagnosticsDirectory: bundles });
   sourcePhases.push(phase);
 }

@@ -197,7 +197,7 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
     let fullGate: Promise<void> | null = null, fullRelease: (() => void) | null = null, fullRequested: (() => void) | null = null;
     const hash = 'a'.repeat(40), otherHash = 'b'.repeat(40);
     const message = '修正布局\n\n保留完整说明并允许选择复制。\n\nBuildr-Task: browser-task';
-    const file = (text: string) => ({ repositoryId: 'repo', path: 'layout.tsx', previousPath: null, kind: 'tracked', status: 'modified', additions: 1, deletions: 1, preview: `diff --git a/layout.tsx b/layout.tsx\nindex abc..def\n--- a/layout.tsx\n+++ b/layout.tsx\n@@ -1,72 +1,72 @@\n-old\n-second-old\n+${text}\n+extra-new\n${Array.from({ length: 70 }, (_, index) => ` context-${index}`).join('\n')}`, previewTruncated: false });
+    const file = (text: string) => ({ repositoryId: 'repo', path: 'layout.tsx', previousPath: null as string | null, kind: 'tracked', status: 'modified', additions: 1, deletions: 1, preview: `diff --git a/layout.tsx b/layout.tsx\nindex abc..def\n--- a/layout.tsx\n+++ b/layout.tsx\n@@ -1,72 +1,72 @@\n-old\n-second-old\n+${text}\n+extra-new\n${Array.from({ length: 70 }, (_, index) => ` context-${index}`).join('\n')}`, previewTruncated: false });
     const commit = (value: string, subject: string) => ({ repositoryId: 'repo', hash: value, shortHash: value.slice(0, 12), subject, message, authorName: '布局验证', authorEmail: 'layout@example.com', authoredAt: '2026-10-01T00:00:00Z', committedAt: '2026-10-01T00:00:00Z' });
     const countPattern = `**/tasks/${taskId}/changed-file-count`;
     let fullLists = 0;
@@ -237,9 +237,9 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
     };
     const singleLineNumbers = async () => {
       const gutters = await page.locator('.task-diff-text').evaluate((root: HTMLElement) => [...root.querySelectorAll('.task-diff-line')].map(row => ({ kind: row.className, values: [...row.querySelectorAll('.task-diff-gutter')].map(node => node.textContent) })));
-      assert.ok(gutters.every(row => row.values.length === 1), 'unified rows have one line-number column');
-      assert.equal(gutters.find(row => row.kind.includes('line-del')).values[0], '142');
-      assert.equal(gutters.find(row => row.kind.includes('line-add')).values[0], '142');
+      assert.ok(gutters.every((row: { values: unknown[] }) => row.values.length === 1), 'unified rows have one line-number column');
+      assert.equal(gutters.find((row: { kind: string }) => row.kind.includes('line-del')).values[0], '142');
+      assert.equal(gutters.find((row: { kind: string }) => row.kind.includes('line-add')).values[0], '142');
     };
     try {
       await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -270,13 +270,13 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
 
         }
         if (width === 1920) {
-          const boundaries = await page.locator('.split-divider:has(.split-divider-header-marker):visible').evaluateAll(dividers => dividers.map(divider => {
+          const boundaries = await page.locator('.split-divider:has(.split-divider-header-marker):visible').evaluateAll((dividers: Element[]) => dividers.map(divider => {
             const line = getComputedStyle(divider, '::before');
             const bodyX = divider.getBoundingClientRect().left + parseFloat(line.left) + parseFloat(line.width) / 2;
             const marker = divider.querySelector('.split-divider-header-marker')!.getBoundingClientRect();
             return Math.abs(marker.left + marker.width / 2 - bodyX);
           }));
-          assert.ok(boundaries.length >= 2 && boundaries.every(distance => distance < 1), '顶部短线与菜单、内容分屏的下方线严格对齐');
+          assert.ok(boundaries.length >= 1 && boundaries.every((distance: number) => distance < 1), '固定图标导航不产生分隔条，内容分屏顶部短线与下方线严格对齐');
           await page.getByRole('button', { name: '收起页面', exact: true }).click();
           const modes = detail.locator('.task-diff-mode');
           await modes.getByText('上下对比', { exact: true }).click();
@@ -369,7 +369,12 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
       // after that positioning, so this case measures same-file refresh alone.
       await page.waitForFunction(() => document.querySelector('.task-diff-reader')?.getAttribute('aria-busy') === 'false');
       await firstChangeVisible();
-      await detail.locator('.task-diff-body').evaluate((node: HTMLElement) => { node.scrollTop = 600; });
+      await detail.locator('.task-diff-body').evaluate(async (node: HTMLElement) => {
+        // Initial diff positioning runs on the next animation frame. Measure a
+        // manual reading position only after that frame has actually painted.
+        await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));
+        node.scrollTop = 600;
+      });
       const arrived = new Promise<void>(resolve => { requested = resolve; });
       gate = new Promise<void>(resolve => { release = resolve; });
       await detail.locator('#task-detail-refresh').click();
@@ -419,7 +424,7 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
       await page.waitForFunction(() => document.querySelector('.task-diff-body')?.scrollTop === 0);
       assert.equal(await detail.locator('.line-add, .line-del').count(), 0, 'unchanged rename starts at the text beginning');
 
-    } finally { release?.(); fullRelease?.(); await page.unroute(pattern); await page.unroute(fullPattern); await page.unroute(countPattern); }
+    } finally { (release as (() => void) | null)?.(); (fullRelease as (() => void) | null)?.(); await page.unroute(pattern); await page.unroute(fullPattern); await page.unroute(countPattern); }
   });
 
   await t.test('任务说明：慢读取、快速切换、返回复用与主动刷新', async () => {
@@ -574,7 +579,7 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
       // completion boundary; background code observation remains connected.
     } finally {
       await page.goto('about:blank');
-      release?.(); releaseList?.(); page.off('request', scans);
+      (release as (() => void) | null)?.(); (releaseList as (() => void) | null)?.(); page.off('request', scans);
       await page.unroute(listPattern); await page.unroute(otherPattern); await page.unroute(detailPattern); await page.unroute(changePattern); await page.unroute(contextPattern); await page.unroute(changedPattern); await page.unroute(firstCountPattern); await page.unroute(materialsPattern); await page.unroute(sessionsPattern); await page.unroute(contextsPattern);
     }
   });

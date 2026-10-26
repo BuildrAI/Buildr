@@ -8,9 +8,6 @@ import { coordinatedResourcesFromLimits, createVerificationResourceCoordinator, 
 import { VERIFICATION_CONCURRENCY } from './registry.ts';
 import { createVerificationPlanReuse, reusedVerificationResult } from './verification-reuse.ts';
 
-export const FULL_PLAN_RESOURCE_ID: any = 'product-full-execution';
-export const FULL_PLAN_WAIT_TIMEOUT_MS: any = 30 * 60_000;
-
 export function printPlan(plan: any, stream: any = process.stdout): any  {
   stream.write(`Verification plan: status=${plan.status ?? 'ready'} ${plan.steps.length} step(s)\n`);
   if (plan.paths.length > 0) {
@@ -19,13 +16,27 @@ export function printPlan(plan: any, stream: any = process.stdout): any  {
   }
   for (const item of plan.delegated ?? []) stream.write(`Delegated: ${item.path} -> ${item.owners.join(', ')}\n`);
   if (plan.estimate) {
-    stream.write(`Estimate: work=${plan.estimate.totalTargetDurationMs}ms minimum=${plan.estimate.minimumFeasibleDurationMs}ms budget=${plan.estimate.declaredBudgetMs ?? 'none'} feasible=${plan.estimate.feasible ?? 'not-declared'}\n`);
+    stream.write(`Estimate: work=${plan.estimate.totalEstimatedDurationMs}ms minimum=${plan.estimate.minimumFeasibleDurationMs}ms\n`);
   }
   if (plan.diagnostic) stream.write(`Blocked: ${plan.diagnostic.code} — ${plan.diagnostic.message}\n`);
   for (const step of plan.steps) {
     stream.write(`\n${step.id} — ${step.name}\n`);
     for (const reason of step.reasons) stream.write(`  selected: ${reason}\n`);
     if (step.dependsOn.length > 0) stream.write(`  depends: ${step.dependsOn.join(', ')}\n`);
+  }
+}
+
+/** Dependencies produced by owned preparation belong to the execution environment.
+ * Freeze their proof after preparation, including checks made fresh by that change. */
+export async function prepareVerificationReuse(plan: any, prepare: (steps: any[]) => Promise<void>, observe: () => any) {
+  let reuse = observe();
+  const prepared = new Set<string>();
+  for (;;) {
+    const pending = plan.steps.filter((step: any) => !prepared.has(step.id) && !reuse?.hits.has(step.id));
+    if (!pending.length) return reuse;
+    await prepare(pending);
+    for (const step of pending) prepared.add(step.id);
+    reuse = observe();
   }
 }
 
@@ -38,7 +49,10 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   let completed: any = 0;
   const heartbeatIntervalMs: any = Number.isFinite(options.heartbeatIntervalMs) && options.heartbeatIntervalMs > 0 ? options.heartbeatIntervalMs : 15_000;
   const concurrency: any = options.concurrency ?? VERIFICATION_CONCURRENCY;
-  const reuse = createCandidateRoundExecution(plan, options) ?? createVerificationPlanReuse(plan, options);
+  const preparations = new Map<string, Promise<any>>();
+  const observeReuse = () => createCandidateRoundExecution(plan, options) ?? createVerificationPlanReuse(plan, options);
+  const preflight = options.executorFactory ? null : createVerificationExecutor({ ...options, diagnosticsDirectory, artifactDirectory, preparations });
+  const reuse = preflight ? await prepareVerificationReuse(plan, preflight.prepareSteps, observeReuse) : observeReuse();
   if (reuse?.explanation) {
     const estimate = reuse.explanation.estimate;
     options.stream?.write(`[${prefix}] plan: execute=${estimate.executedCount} reuse=${estimate.reusedCount} remaining-work=${estimate.remainingWorkMs}ms dependency-path=${estimate.dependencyCriticalPathMs}ms (history/declared targets; queue/preparation excluded)\n`);
@@ -46,38 +60,12 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   }
   const resourceCoordinator: any = options.resourceCoordinator ?? createVerificationResourceCoordinator({
     root: resolveVerificationCoordinationRoot(options.productRoot, options.env),
-    resources: {
-      ...coordinatedResourcesFromLimits(concurrency),
-      [FULL_PLAN_RESOURCE_ID]: {
-        id: FULL_PLAN_RESOURCE_ID,
-        strategy: 'coordinated',
-        capacity: 1,
-        authorization: 'implicit',
-      },
-    },
+    resources: coordinatedResourcesFromLimits(concurrency),
     owner: {
       taskId: options.taskId ?? process.env.BUILDR_TASK_ID ?? 'workspace-verification',
       runId: options.runId ?? `verification-${process.pid}-${Date.now()}`,
     },
   });
-  let fullPlanLease: any = null;
-  if (plan.scope?.mode === 'full' && plan.steps.some((step: any) => !reuse?.hits.has(step.id))) {
-    const waitStartedAt: any = Date.now();
-    options.stream?.write(`[${prefix}] waiting: ${FULL_PLAN_RESOURCE_ID} shared capacity\n`);
-    const waitHeartbeat: any = setInterval(() => {
-      options.stream?.write(`[${prefix}] waiting: ${FULL_PLAN_RESOURCE_ID} elapsed=${Date.now() - waitStartedAt}ms\n`);
-    }, 15_000);
-    waitHeartbeat.unref?.();
-    try {
-      fullPlanLease = await resourceCoordinator.acquire([FULL_PLAN_RESOURCE_ID], {
-        signal: options.signal,
-        waitTimeoutMs: FULL_PLAN_WAIT_TIMEOUT_MS,
-      });
-    } finally {
-      clearInterval(waitHeartbeat);
-    }
-    options.stream?.write(`[${prefix}] acquired: ${FULL_PLAN_RESOURCE_ID} wait=${fullPlanLease.waitDurationMs}ms\n`);
-  }
   // Provider implementations may load the full Product runtime. Keep them out of
   // the clean-checkout Candidate aggregate import graph until execution starts.
   const { TEST_CONTEXT_PROVIDERS }: any = await import('../context/registry.ts');
@@ -86,13 +74,11 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
     env: { ...process.env, ...(options.env ?? {}) },
   });
   const contextKeys: any[] = [...new Set(plan.steps.filter((step: any) => !reuse?.hits.has(step.id)).flatMap((step: any) => step.contexts ?? []))];
-  let preparedContexts: any;
-  try {
-    preparedContexts = contextPool.prepareAll(contextKeys);
-  } catch (error: any) {
-    contextPool.cleanup();
-    if (fullPlanLease) await fullPlanLease.release();
-    throw error;
+  const preparedContexts: any[] = [];
+  const contextFailures = new Map<string, string>();
+  for (const key of contextKeys) {
+    try { preparedContexts.push(...contextPool.prepareAll([key])); }
+    catch (error: any) { contextFailures.set(key, error.message); options.errorStream?.write(`[${prefix}] context unavailable: ${key}: ${error.message}\n`); }
   }
   for (const context of preparedContexts) {
     options.stream?.write(`[${prefix}] context: ${context.provider.key} status=${context.owned ? 'prepared' : 'reused'} prepare=${context.prepareDurationMs}ms identity=${context.marker.identity}\n`);
@@ -100,6 +86,7 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   const executorFactory: any = options.executorFactory ?? createVerificationExecutor;
   const executeFresh: any = executorFactory({
     ...options,
+    preparations,
     env: { ...(options.env ?? process.env), ...contextPool.environment() },
     diagnosticsDirectory,
     artifactDirectory,
@@ -110,6 +97,8 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
     },
   });
   const execute: any = (step: any, executionContext: any) => {
+    const failedContext = (step.contexts ?? []).find((key: string) => contextFailures.has(key));
+    if (failedContext) return Promise.resolve({ status: 'blocked', exitCode: 1, durationMs: 0, stdout: '', stderr: '', reason: `Required context ${failedContext} is unavailable: ${contextFailures.get(failedContext)}` });
     const record = reuse?.hits.get(step.id);
     return record ? reusedVerificationResult(record) : reuse ? reuse.executeFiles(step, executeFresh, executionContext) : executeFresh(step, executionContext);
   };
@@ -120,7 +109,6 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   }, heartbeatIntervalMs);
   heartbeat.unref?.();
   let results: any;
-  let fullPlanRelease: any[] = [];
   let contextCleanup: any = null;
   try {
     const executionPlan = { ...plan, steps: plan.steps.map((step: any) => reuse?.hits.has(step.id)
@@ -163,12 +151,8 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
       // successful cleanup and ownership facts from their original run.
       reuse?.invalidate();
       throw error;
-    } finally {
-      if (fullPlanLease) fullPlanRelease = await fullPlanLease.release();
     }
   }
-  const releaseFailed: any = fullPlanRelease.some((item: any) => item.status !== 'released');
-  if (releaseFailed) { reuse?.invalidate(); throw new Error(`Failed to release ${FULL_PLAN_RESOURCE_ID} shared capacity`); }
   // An interrupted child may have left a process touching shared inputs. Keep
   // completed checks only after both child ownership and pool cleanup are known.
   const interruptionClean = !options.signal?.aborted || results.every((result: any) =>
@@ -183,7 +167,6 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
     cleanupClean,
     ...(reuse?.explanation ? { reusePlan: reuse.explanation } : {}),
     coordinationRoot: resourceCoordinator.root,
-    fullPlanCoordination: fullPlanLease ? { waitDurationMs: fullPlanLease.waitDurationMs, release: fullPlanRelease } : null,
     contextLifecycle: { contexts: preparedContexts.map((context: any) => ({ provider: context.provider.key, identity: context.marker.identity, owned: context.owned, prepareDurationMs: context.prepareDurationMs })), events: contextCleanup?.events ?? contextPool.events() },
     passed: !options.signal?.aborted && results.every((result: any) => result.status === 'passed'),
   };

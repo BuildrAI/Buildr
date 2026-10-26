@@ -124,6 +124,14 @@ async function waitForRestart({ dataRoot, expected, fetchImpl, timeoutMs, wait, 
   throw error;
 }
 
+/**
+ * @param {{projectBridge: string, launcherIdentityPath: string, expectedSourceRoot: string,
+ * expectedHead: string, expectedRuntimeIdentity: string, nodeExecutable: string, previousPid: number,
+ * port?: number, previousPort?: number, dataRoot?: string, environment?: NodeJS.ProcessEnv,
+ * timeoutMs?: number, fetchImpl?: typeof fetch,
+ * spawnImpl?: (command: string, args: string[], options: import('node:child_process').SpawnOptions) => import('node:child_process').ChildProcess,
+ * killProcess?: typeof process.kill, wait?: (duration: number) => Promise<unknown>}} options
+ */
 export async function restartDevelopmentInstance({
   projectBridge,
   port = DEFAULT_DEVELOPMENT_WEB_PORT,
@@ -141,7 +149,7 @@ export async function restartDevelopmentInstance({
   spawnImpl = spawn,
   killProcess = process.kill.bind(process),
   wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration)),
-} = {}) {
+}) {
   const identity = readJson(launcherIdentityPath);
   const expected = { sourceRoot: expectedSourceRoot, head: expectedHead, nodeExecutable, port, runtimeIdentity: expectedRuntimeIdentity };
   assertRestartIdentity(identity, expected);

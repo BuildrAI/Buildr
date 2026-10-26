@@ -8,7 +8,7 @@ import { runDshTaskPageJourney } from './dsh-task-page-journey.ts';
 /** Production-hosted routing; the connection fixture is explicitly isolated and never installs a plugin. */
 export async function runCodexNavigationJourney({t, page, runtime, workspaceRoot, workspaceUrl, runBuildr, capture, expectedBrowserErrors}: any) {
   const first = 'codex-navigation-first', second = 'codex-navigation-second';
-  for (const id of [first, second]) runBuildr(['task', 'create', id, '--title', `Codex 导航 ${id}`, '--intent', '验证固定入口准确到达及原任务状态保全', '--project', 'demo', '--target', workspaceRoot, '--json']);
+  for (const id of [first, second]) runtime.createTask(workspaceRoot, { taskId: id, title: `Codex 导航 ${id}`, intent: '验证固定入口准确到达及原任务状态保全', projects: ['demo'] });
   const before = runtime.inspectTask(workspaceRoot, first).recordDigest;
   const visibleTask = (id: string) => page.locator(`#task-detail-main[data-task-id="${id}"]:visible`);
   const fragment = async (target: string) => {
@@ -53,7 +53,10 @@ export async function runCodexNavigationJourney({t, page, runtime, workspaceRoot
     const input = page.locator('#article-edit-content');
     await input.waitFor({state: 'visible'}); await input.fill('# 尚未保存的 Codex 编辑\n');
     await fragment(`/tasks/${first}`);
-    await visibleTask(first).waitFor({state: 'visible'});
+    await visibleTask(first).waitFor({state: 'visible'}).catch(async(error:unknown)=>{
+      const scene=await page.evaluate(()=>({url:location.href,title:document.title,dialogs:[...document.querySelectorAll<HTMLElement>('.ant-modal')].filter(node=>node.getClientRects().length&&getComputedStyle(node).visibility!=='hidden').map(node=>({text:node.innerText,rect:node.getBoundingClientRect().toJSON()})),editor:[...document.querySelectorAll<HTMLTextAreaElement>('#article-edit-content')].map(node=>({value:node.value,rect:node.getBoundingClientRect().toJSON(),hidden:Boolean(node.closest('[hidden]'))})),tasks:[...document.querySelectorAll<HTMLElement>('#task-detail-main')].map(node=>({taskId:node.dataset.taskId,rect:node.getBoundingClientRect().toJSON(),hidden:Boolean(node.closest('[hidden]'))})),body:document.body.innerText.slice(-4500)}));
+      process.stderr.write('[codex-draft-fragment-failure] '+JSON.stringify(scene)+'\n');await capture(page,'codex-draft-fragment-failure.png');throw error;
+    });
     assert.equal(await input.inputValue(), '# 尚未保存的 Codex 编辑\n', '同一工作空间切换沿用既有编辑器，不要求丢弃草稿');
     assert.equal(await page.getByRole('dialog', {name: '放弃尚未保存的修改？', exact: true}).count(), 0);
     const retainedUrl = page.url();
@@ -188,7 +191,7 @@ export async function runCodexNavigationJourney({t, page, runtime, workspaceRoot
     const scopedPattern = '**/api/v1/workspaces/*/agent-sessions**';
     let release!: () => void, secondRemoved = false, oldSettled = false;
     const held = new Promise<void>(resolve => {release = resolve;});
-    const relations = (taskId: string) => taskId === second && secondRemoved ? [] : [{provider: 'codex', id: 'relation-' + taskId, workspaceId, taskId, connectionId: 'fixture', nativeSessionId: nativeIds[taskId], revision: taskId + '-v1', createdAt: new Date().toISOString(), sessionUrl: 'codex://threads/' + nativeIds[taskId], taskUrl: new URL(workspaceUrl).pathname + '/codex#/tasks/' + taskId}];
+    const relations = (taskId: string) => (taskId !== first && taskId !== second) || taskId === second && secondRemoved ? [] : [{provider: 'codex', id: 'relation-' + taskId, workspaceId, taskId, connectionId: 'fixture', nativeSessionId: nativeIds[taskId], revision: taskId + '-v1', createdAt: new Date().toISOString(), sessionUrl: 'codex://threads/' + nativeIds[taskId], taskUrl: new URL(workspaceUrl).pathname + '/codex#/tasks/' + taskId}];
     const oldFailureUrl = new URL(workspaceUrl).origin + '/api/v1/workspaces/' + workspaceId + '/agent-sessions/unlink';
     expectedBrowserErrors.add(oldFailureUrl);
     const scopedHandler = async (route: any) => {

@@ -21,7 +21,7 @@ function fixture(options: { failStatement?: string; initiallyActive?: boolean } 
     close() { closed = true; },
   } as unknown as DatabaseSync;
   const runtime = {
-    assertCanonicalStructuredWorkspace: (root) => root,
+    assertCanonicalStructuredWorkspace: (root: string) => root,
     openWorkspaceStructuredStore: () => ({ present: true, database }),
   };
   const manager = createTransactionManager(runtime);

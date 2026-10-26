@@ -2,10 +2,10 @@
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { auditServiceTestOwnership } from '../test-inventory-ownership.ts';
+import { auditProjectTestOwnership } from '../test-inventory-ownership.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
-const findings: any[] = auditServiceTestOwnership(productRoot).findings;
+const findings: any[] = auditProjectTestOwnership(productRoot).findings;
 
 if (findings.length) {
   console.error('Test file ownership verification failed:');

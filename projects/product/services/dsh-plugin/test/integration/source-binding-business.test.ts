@@ -8,8 +8,8 @@ import { fileURLToPath } from 'node:url';
 test('explicit development source binding uses an owned command fixture without changing open under isolation', { timeout: 50_000 }, () => {
   const directory = path.dirname(fileURLToPath(import.meta.url));
   const serviceRoot = path.resolve(directory, '../../../buildr');
-  const runner = path.join(serviceRoot, 'tools/development/run-isolated-workspace-smoke.ts');
-  const scenario = path.join(directory, 'source-binding-business.smoke.ts');
+  const runner = path.join(serviceRoot, 'tools/development/run-isolated-workspace-check.ts');
+  const scenario = path.join(directory, 'source-binding-business-check.ts');
   assert.ok(fs.statSync(runner).isFile()); assert.ok(fs.statSync(scenario).isFile());
   const child = spawnSync(process.execPath, [runner, '--script', scenario], { cwd: serviceRoot, env: process.env, encoding: 'utf8', timeout: 45_000, maxBuffer: 2 * 1024 * 1024 });
   assert.equal(child.status, 0, child.stderr || child.stdout);

@@ -23,7 +23,7 @@ test('Host navigation selects exactly one Client and only accepts observed targe
   await assert.rejects(host.navigate('openSession', { sessionId: 'new', clientId: 'first' }, new AbortController().signal),
     (error: any) => error.code === 'agent_dsh_window_ambiguous');
   assert.equal(activations, 1, 'an explicit Client cannot map the native primary window when several Clients exist');
-  lifetime.abort(); host.dispose(); await secondWait; await first.return(); await second.return();
+  lifetime.abort(); host.dispose(); await secondWait; await first.return(undefined); await second.return(undefined);
 });
 test('Host rejects guessed acknowledgement, bounds timeout and retires disconnected Client leases', async () => {
   const host = new DesktopNavigation(20, async () => {}), lifetime = new AbortController();
@@ -51,7 +51,7 @@ test('Host raises the already selected desktop before dispatch, then still requi
   release(); const command = (await next).value!;
   host.acknowledge({ clientId: 'window', commandId: command.commandId, sessionId: 'wanted', ok: true });
   assert.deepEqual(await pending, { clientId: 'window', sessionId: 'wanted', opened: true });
-  lifetime.abort(); await stream.return(); host.dispose();
+  lifetime.abort(); await stream.return(undefined); host.dispose();
 });
 test('Host activation failure cannot dispatch or claim successful navigation', async () => {
   for (const missing of [false, true]) {
@@ -62,7 +62,7 @@ test('Host activation failure cannot dispatch or claim successful navigation', a
       assert.equal(error.message.includes('private-native-output'), false);
       return error.code === (missing ? 'agent_dsh_window_activation_unavailable' : 'agent_dsh_window_activation_failed');
     });
-    lifetime.abort(); assert.equal((await next).done, true); await stream.return(); host.dispose();
+    lifetime.abort(); assert.equal((await next).done, true); await stream.return(undefined); host.dispose();
   }
 });
 test('Host cancellation, timeout, disposal and Client retirement prevent late activation delivery', async () => {
@@ -82,7 +82,7 @@ test('Host cancellation, timeout, disposal and Client retirement prevent late ac
     await rejected; assert.equal(activationSignal.aborted, true);
     release(); await Promise.resolve(); await Promise.resolve();
     lifetime.abort(); assert.equal((await next).done, true, 'late native completion must not enqueue a command');
-    await stream.return(); host.dispose();
+    await stream.return(undefined); host.dispose();
   }
 });
 test('Host refuses a newly ambiguous primary window while activation is pending', async () => {
@@ -94,7 +94,7 @@ test('Host refuses a newly ambiguous primary window while activation is pending'
   const second = host.watch({ clientId: 'second', sessionId: 'other', desktop: true }, lifetime.signal), secondNext = second.next();
   release(); await rejected;
   lifetime.abort(); assert.equal((await next).done, true); assert.equal((await secondNext).done, true);
-  await first.return(); await second.return(); host.dispose();
+  await first.return(undefined); await second.return(undefined); host.dispose();
 });
 test('task URL admission binds exact channel origin and rejects arbitrary destinations', () => {
   const origin = 'http://127.0.0.1:49100', good = origin + '/workspaces/work/tasks/task';
@@ -189,7 +189,7 @@ test('native composer focus restores the exact chat from guest browser without r
 test('foreground timeout, changed chat and disposal cannot confirm an invisible or wrong target', async () => {
   const command = { commandId: 'focus', method: 'openSession' as const, sessionId: 'wanted' };
   for (const state of [[false, true], [true, false]] as const) {
-    const f = clientFixture(); f.setForeground(...state);
+    const f = clientFixture(); f.setForeground(state[0], state[1]);
     assert.equal((await f.navigation.execute(command)).ok, false);
     assert.equal(f.listenerCount(), 0); f.navigation.dispose();
   }

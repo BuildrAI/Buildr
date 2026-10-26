@@ -101,6 +101,10 @@ npm 更新后的网页交接由新版独立进程执行，复用认证退出、�
 
 结果中的 `webUpdate.status` 分别用 `not-running`、`current`、`restarted`、`failed` 表达未运行、已是当前版、已切换和切换失败；失败带具体原因。只有核对新版服务健康身份后才报告 `restarted`，不据此宣称浏览器已加载的前端代码也已刷新。包更新成功时，网页切换失败不会抹去顶层 `status: updated` 的安装事实。
 
+开发环境、开发版与发布版共用一套 `~/.buildr/resources/`。普通 `sync` 消费当前共享技能与附件，不因调用程序的随包内容不同而替换共享集。软件更新负责显式发布完整资源；Buildr 自举激活由唯一执行器使用 `sync <agent> --publish-resources`，先核对并发布本次交付来源，再同步工作空间。该选项不是普通用户同步的默认步骤；候选工作树禁止借此发布真实用户资源。较低版本不能回退覆盖当前集，同版本不同内容只在显式发布时选择来源。
+
+共享集变化会刷新可重建的本机入口，保留工作空间自有技能、规则和定制源。局部附件缺失或损坏会报告具体资源，已准备工作空间仍可打开；查看共享位置显示实际共享集，而非假定它必须等于当前安装包。未升级的旧程序仍可能执行旧覆盖逻辑；共存程序需要一起升级，单边升级不能约束旧二进制。
+
 用户要求“更新工作空间”或“同步工作空间”时，智能体（Agent）先判断根目录是否由 Git 管理：受 Git 管理时，按 `buildr.git-operations/v1` 能力绑定（Capability Binding）选择提供者（Provider），明确目标目录、上游和更新动作，成功后执行 `buildr sync <agent> --target <workspace>`；不受 Git 管理时直接同步。所需提供者（Provider）不可用，或遇到本地改动、分叉、冲突等需要决定的情况时，停止相关更新与同步并保留现场，不自动执行 `stash`、`reset`、`rebase`、`merge` 或覆盖文件。Git 更新成功后不重复询问同步。
 
 `buildr sync` 同步当前本地工作空间（Workspace）的产品源能力，安装产品入口技能（Skill），投射当前智能体运行时（Agent Runtime）并执行最终诊断（Doctor）；它不隐式更新 Git 或 Buildr 产品安装。
@@ -210,7 +214,7 @@ Project registry 使用 `buildr.projects/v2`：每个 Project 保存 UUID `id`�
 
 Project根可选`preparation.yml`，长期说明Project-wide或Service-scoped真实准备入口。Agent只在当前动作需要时，从matching Project或Service根直接调用对应wrapper；没有额外准备的Project无需声明空步骤。Buildr不生成Task Plan、不保存选择和执行结果，也不把局部准备失败扩大为统一工作许可。
 
-旧 `project create`、`service create` 的后续提示和相关 Buildr Web 交接会指向 `declaration-intake`；准备入口缺口与验证（Verification）覆盖缺口也使用该入口。它只读检查 `preparation.yml` 与 `verification.yml` 的候选或差异，登记事务及读取动作不写声明。已确认入口在既有授权内的普通维护交给声明所有者；新增范围、能力、外部效果或长期边界变化才请求相应决定。`task-verification` 继续负责测试地图维护。
+项目与服务登记后如存在声明差异，直接按职责处理：`project-testing` 负责测试及 `verification.yml`，`buildr` 准备指引负责 `preparation.yml`，`project-verification` 负责选择、实际执行与证据。登记事务与只读读取不自动写入声明；已有授权内的普通维护直接完成，只有授权缺失、外部效果或业务取舍反馈用户决定，不另设声明接入技能。
 
 Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git common-dir的`buildr/task-worktrees/<task-id>.json`。它只包含repository selector、source/checkout、branch/start point、HEAD、clean、registration、remote和Git effects。成果交付后，Agent把已核对的逐仓source与delivered完整提交直接交给provider；provider复核source版本、dirty、registration和retained ref后才删除。provider不删除远端分支，也不执行交付或验证判断。
 
@@ -317,9 +321,9 @@ Buildr 不 render 或安装 Commands，不保存 binary、token、cookie、登�
 
 `projects/<project>/verification.yml` 只接受closed `buildr.project-verification/v4`测试地图。每项testing family声明稳定id、Project/Service scope、purpose、sourcePaths、testRoots、完整command或Agent入口、选择指导与requirements，不列举具体测试文件，也不保存一次性计划或运行结果。
 
-Task Verification Skill指导Agent在开发中直接调用Maven、npm、Playwright、Browser、HTTP或Project自有runner；开发完成后扩大到任务相关功能测试和受影响Service完整低成本回归，并将有意义报告通过Application保存。测试失败先修复或如实报告，不生成统一流程状态。
+`project-verification` 根据用户目标、实际改动和公共调用面选齐相关静态检查（Static Check）、单元测试（Unit Test）、集成测试（Integration Test）与端到端测试（End-to-End Test，E2E），直接调用项目实际工具并交付证据。用户可指定具体检查、某类全量或相关范围，不要求正式任务或比较基线。Buildr 产品推送前执行四服务全部静态检查（Static Check）与单元测试（Unit Test）；其他项目遵循其明确政策。测试失败先修复或如实报告；已有且仍为 `active` 的任务可通过应用（Application）保存实际报告。
 
-没有声明或没有适用能力时，doctor 不产生 finding，Task Verification 在具体 Result 中报告 coverage gap，不自动开发测试。文件存在时 doctor 只做 closed schema、路径、scope 与资源引用校验，不运行命令或探测测试环境。用户通过 Agent 说“初始化测试声明”或“更新测试声明”时，Agent 只从真实 build scripts、CI、文档和已有测试发现候选，并由用户确认 Project policy。
+没有声明或没有适用能力时，doctor 不产生 finding，`project-verification` 在实际结果中报告覆盖缺口。文件存在时 doctor 只做 closed schema、路径、scope 与资源引用校验，不运行命令或探测测试环境。`project-testing` 从真实构建脚本、持续集成（CI）、文档和已有测试维护测试登记；已授权的事实维护直接完成，业务取舍、授权缺失或范围扩大才反馈用户决定。
 
 current Task报告使用`buildr.task-verification-report/v1`，绑定Task scope、Agent提交的实际内容版本和current Project测试地图identity，保存实际checks、选择范围、targets、结果、gaps与结论。Task Verification Application只提供`record|inspect`并整体替换current报告；`inspect`按调用方内容identity与current测试地图派生`current|stale|unknown`。它不创建Execution Record，不保存stdout/stderr或临时路径，也不决定Task完成或交付。
 

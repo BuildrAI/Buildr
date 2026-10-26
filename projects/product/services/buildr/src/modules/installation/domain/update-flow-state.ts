@@ -5,6 +5,7 @@ export type WorkspaceUpdate = { rootPath: string; workspaceId: string | null; na
 export type UpdateRecord = {
   autoApply?: boolean;
   resources?: UpdateStep;
+  resourceSetBefore?: string | null;
   workspaces?: WorkspaceUpdate[];
   id: string;
   revision: number;

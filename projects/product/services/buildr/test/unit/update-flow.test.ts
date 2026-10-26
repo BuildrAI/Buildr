@@ -10,7 +10,7 @@ function source(mode: any = 'npm', version: any = '1.0.0'): any  {
   };
 }
 
-const AUTHORITY = { nodeExecutable: '/node', npmCliPath: '/npm-cli.js', prefix: '/prefix' };
+const AUTHORITY = { type: 'npm-prefix', identity: 'fixture-authority', nodeExecutable: '/node', npmCliPath: '/npm-cli.js', prefix: '/prefix' };
 
 function awareness(version: any = '1.1.0'): any  {
   const track = (name: any) => ({ track: name, tag: name === 'stable' ? 'latest' : 'next', label: name, version, observedVersion: version, status: 'update-available', available: true, installable: true });
@@ -30,7 +30,7 @@ function fixture(options: any = {}): any  {
   const flow = createWebUpdateFlow({
     productRoot: () => '/fixture/product',
     identifySource: () => options.source || source(),
-    inspectAuthority: () => options.authorityResult || { status: 'ready', authority: AUTHORITY },
+    inspectAuthority: () => options.authorityResult || { status: 'ready', authority: AUTHORITY, reason: null },
     releaseAwareness: () => options.awareness || awareness(),
     handoffUpdatedBuildrWeb: async (input: any) => { handoffs.push(input); return options.handoff || { status: 'restarted', version: '1.1.0' }; },
     spawnProcess: async (executable: any, args: any) => {
@@ -141,6 +141,7 @@ test('update-flow：下载失败转为 failed，可重新准备', async () => {
   await Promise.resolve(); await Promise.resolve(); await new Promise((resolve) => setImmediate(resolve));
   const failed = flow.webUpdateStatus();
   assert.equal(failed.status, 'failed');
+  assert.ok(failed.error);
   assert.equal(failed.error.code, 'update_download_failed');
   assert.match(failed.error.message, /network reset/);
 
@@ -164,7 +165,7 @@ test('update-flow：apply 校验钉住版本，安装失败与交接失败转为
   const staged = createWebUpdateFlow({
     productRoot: () => '/fixture/product',
     identifySource: () => source(),
-    inspectAuthority: () => ({ status: 'ready', authority: AUTHORITY }),
+    inspectAuthority: () => ({ status: 'ready', authority: AUTHORITY, reason: null }),
     releaseAwareness: () => awareness(),
     handoffUpdatedBuildrWeb: async () => ({ status: 'restarted', version: '1.1.0' }),
     spawnProcess: async () => { calls += 1; return calls === 1 ? { ok: true, status: 0 } : { ok: false, status: 1, stderr: 'EACCES' }; },
@@ -175,12 +176,13 @@ test('update-flow：apply 校验钉住版本，安装失败与交接失败转为
   await new Promise((resolve) => setImmediate(resolve));
   const failed = staged.webUpdateStatus();
   assert.equal(failed.status, 'failed');
+  assert.ok(failed.error);
   assert.equal(failed.error.code, 'update_install_failed');
 
   const handoffFailed = createWebUpdateFlow({
     productRoot: () => '/fixture/product',
     identifySource: () => source(),
-    inspectAuthority: () => ({ status: 'ready', authority: AUTHORITY }),
+    inspectAuthority: () => ({ status: 'ready', authority: AUTHORITY, reason: null }),
     releaseAwareness: () => awareness(),
     handoffUpdatedBuildrWeb: async () => ({ status: 'failed', code: 'web_update_no_healthy_instance', message: '新实例未就绪' }),
     spawnProcess: async () => ({ ok: true, status: 0 }),
@@ -192,6 +194,7 @@ test('update-flow：apply 校验钉住版本，安装失败与交接失败转为
   const handoff = handoffFailed.webUpdateStatus();
   assert.equal(handoff.status, 'partial');
   assert.equal(handoff.installedVersion, '1.1.0');
+  assert.ok(handoff.error);
   assert.equal(handoff.error.code, 'web_update_no_healthy_instance');
 });
 

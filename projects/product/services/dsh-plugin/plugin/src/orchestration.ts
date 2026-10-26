@@ -1,6 +1,7 @@
 /** Session-safe orchestration over the public right-sidebar navigation face. */
 import type { Context } from '@deepseek-ai/cordis';
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client';
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-browser/client';
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client';
 import type { OpenResult } from './types.ts';
 

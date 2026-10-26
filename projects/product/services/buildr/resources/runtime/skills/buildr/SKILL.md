@@ -20,7 +20,8 @@ Agent 是 Buildr 功能的默认操作入口。在用户目标和已有授权内
 | 当前目标 | 读取与动作 |
 |---|---|
 | 安装、检查或更新 Buildr | [安装与更新](references/asset-maintenance.md#安装与更新)；不猜目标工作空间（Workspace） |
-| 将本机 Codex 或 DSH 接入 Buildr，或查看当前接入与默认选择 | [本机智能体接入](references/agent-operations.md)；登记真实可调用入口，不让用户填写安装路径 |
+| 在 Buildr 内使用 Codex、DSH、Qoder 对话，或配置内部对话账号 | [内部对话接入](references/agent-operations.md#内部对话与持续执行)；使用全局“对话”的独立账号与配置，先核对当前状态和真实程序，不复制桌面凭据 |
+| 将本机 Codex 或 DSH 用于原有的一次生成或外部会话关联，查看对应接入与默认选择 | [原有本机智能体接入](references/agent-operations.md#原有的一次生成与外部会话关联)；登记真实可调用入口，不让用户填写安装路径；不作为内部对话配置入口 |
 | 初始化工作空间（Workspace） | `buildr init --agent <agent> --target <dir> --name <name> --profile <personal\|team\|company>`；普通初始化默认登记到当前产品的本机 Buildr Web，随后完整准备标准或唯一既有方式并使用内置最终 Doctor；身份未知可省略 `--agent`。仅源资产使用 `init --source-only`，该模式不登记本机列表。登记不等于网页已打开；首次使用交接见 [资产维护](references/asset-maintenance.md#workspace--organization-root) |
 | 更新或同步工作空间（Workspace），或处理检出内容变化 | [工作空间更新与检出变化](references/asset-maintenance.md#工作空间更新与检出变化) |
 | 项目（Project）、服务（Service）、代码库实例（Repository Instance）、规则（Rule）、技能（Skill）、命令（Command）、组件（Component）或内置能力（Builtin）维护 | 按对象读取 [资产维护](references/asset-maintenance.md) 中对应小节；涉及组件（Component）成员时先核对整体所有权 |
@@ -44,8 +45,8 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 | 启动或继续已有active Formal Task | `buildr task inspect <task-id> --json`核对目标与scope；Agent再按真实Git/文件现场选择直接工作或matching Worktree |
 | 查看 Parent/Child 关系、旧 Parent Plan 与整体完成观察 | `task parent inspect`；关系和终态由 Task Record 管理，旧 Parent Plan 只读 |
 | 按需生成或查看已结束Task的执行效率复盘 | `task-retrospective`纯Skill基于当前可见事实写本机Markdown；Task Record v4的复盘字段只登记文档摘要和人的决定状态 |
-| 设计或优化 Project / Service 测试框架、划分测试边界、编排场景，或为实现任务开发测试 | `project-testing` Skill；无 Result、Receipt 或 provider contract |
-| 探查或维护Project测试地图、开发中选择已有前后端测试，或开发完成后记录和查看Task验证报告 | `buildr.task-verification/v4` selected provider；Agent直接调用项目测试工具 |
+| 建设或维护项目测试、四类边界、稳定入口及 `verification.yml` 测试登记 | `project-testing` 技能（Skill），同时维护测试登记与稳定入口 |
+| 按任意用户请求或任务目标选择并执行检查，交付证据，或记录与查看已有任务验证报告 | `buildr.task-verification/v4` selected provider；Agent直接调用项目测试工具 |
 | 显式创建、检查或清理 Task 的 Git worktree/provider evidence | `buildr.git-worktree-provider/v1` selected provider |
 | 从 proposal、方案或直接实现开始完成开发工作 | 首次交付文件写入前使用 `task-triage` 与 `task-manager` 登记或接续任务；Agent 直接组合专业工具，不创建研发回执 |
 | 用户要求“收尾”“交付”或完成当前工作 | `task-finish` 技能依据真实现场组合 Git、系统工具和已有 Buildr 接口；有任务则登记真实结果，无任务不创建，不要求旧候选或交接链 |

@@ -67,7 +67,7 @@ test('Ajv request validation rejects retired and unknown fields without mutating
 test('非法 DTO 在调用 Task Record Application writer 前被拒绝', async () => {
   let calls: any = 0;
   await assert.rejects(
-    handleTaskHttpRequest({
+    Reflect.apply(handleTaskHttpRequest, undefined, [{
       request: { method: 'PATCH' },
       suffix: '/tasks/contract-task',
       searchParams: new URLSearchParams(),
@@ -75,7 +75,7 @@ test('非法 DTO 在调用 Task Record Application writer 前被拒绝', async (
       runtime: { updateTask(): any  { calls += 1; } },
       authorizeWrite(): any  {},
       readBody: async () => ({ expectedRecordDigest: 'sha256-record', title: 42 }),
-    }),
+    }]),
     (error: any) => error.code === 'task_record_field_invalid',
   );
   assert.equal(calls, 0);

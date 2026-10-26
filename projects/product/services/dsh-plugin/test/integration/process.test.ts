@@ -38,7 +38,7 @@ async function fixture(t: any) {
   return { root, home, binding, roots, status };
 }
 
-const withHome = (home: string, extra: NodeJS.ProcessEnv = {}) => ({ ...process.env, HOME: home, ...extra });
+const withHome = (home: string, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => ({ ...process.env, HOME: home, ...extra });
 
 test('DSH executes the registered CLI with exact arguments and does not inherit another Buildr channel', async t => {
   const { binding } = await fixture(t);
@@ -86,7 +86,7 @@ test('DSH detects CLI drift before execution and sanitizes subprocess parse fail
   const cliSha256 = await fileDigest(binding.cliEntry);
   await fs.appendFile(binding.cliEntry, '\nconsole.log("secret-test-marker");\n');
   await assert.rejects(queryInstallation({ ...binding, cliSha256 }, new AbortController().signal), { code: 'installation-drift' });
-  await assert.rejects(queryInstallation(binding, new AbortController().signal), error => error.code === 'query-failed' && !error.message.includes('secret-test-marker'));
+  await assert.rejects(queryInstallation(binding, new AbortController().signal), error => error instanceof Error && 'code' in error && error.code === 'query-failed' && !error.message.includes('secret-test-marker'));
 });
 
 test('DSH development wrapper receives explicit Node without mutating parent environment', () => {

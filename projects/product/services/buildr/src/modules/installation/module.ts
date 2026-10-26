@@ -65,7 +65,7 @@ export function createSystemInstallationModule(runtime: any) {
       } }));
       Object.assign(composition, createWebUpdateFlow({
         productRoot: runtime.productRoot,
-        workspaces: { list: () => workspaceUpdates?.list() || [], prepareResources: () => workspaceUpdates.prepareResources(), prepare: (entry,options) => workspaceUpdates.prepare(entry,options) },
+        workspaces: { list: () => workspaceUpdates?.list() || [], observeResources: () => workspaceUpdates.observeResources?.() ?? null, prepareResources: expectedId => workspaceUpdates.prepareResources(expectedId), prepare: (entry,options) => workspaceUpdates.prepare(entry,options) },
         store: createUpdateFlowStore(runtime.productRoot()),
         launcher: createUpdateLauncher(),
         releaseAwareness: (options: any) => composition.releaseAwareness(options),

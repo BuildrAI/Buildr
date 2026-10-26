@@ -83,7 +83,7 @@ buildr service-runtime restart --run <caller-run-id> --backend-target <service-c
 
 启动命令等待就绪或失败后返回；进程独立运行，命令退出不等于服务停止。核对返回的运行编号、启动时代码快照、实际端口、地址和连接目标。首选端口被占用时使用实际返回端口，不沿用默认值。连接快照表示启动目标，进程就绪表示启动检查通过，两者均不证明业务请求已联通。
 
-使用实例真实地址在新的浏览器页签（Tab）打开，或用接口工具执行本次授权场景；按 `task-verification` 保存实际结果。分别说明“服务已就绪”“业务验证已执行及结果”和“未覆盖项”，不把模拟、日志匹配或首页能打开当作完整业务验证。
+使用实例真实地址在新的浏览器页签（Tab）打开，或用接口工具执行本次授权场景；按 `project-verification` 保存实际结果。分别说明“服务已就绪”“业务验证已执行及结果”和“未覆盖项”，不把模拟、日志匹配或首页能打开当作完整业务验证。
 
 ```text
 buildr service-runtime log --run <run-id> --max-bytes 65536 --target <workspace> --json

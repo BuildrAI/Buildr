@@ -45,7 +45,7 @@ buildr worktree create <task-id> --target <canonical-workspace> --branch <existi
 
 创建前完整预检全部repository，部分创建失败保留完整成员与已完成效果，再次调用补齐未完成部分。预检发现已登记来源缺少真实代码时，只报告该代码库缺口并提醒用户是否按声明来源准备，不阻断其他健康来源的隔离。清理前Agent先核验完整交付，再成对提供全部受管repository的source与delivered完整提交；provider复核source版本、dirty、registration和delivered提交仍由非任务retained ref持有。
 
-本Skill不判断 Task 是否 ready、完成或业务成果是否等价，不准备 Runtime、CLI、依赖或 projection，不记录 Agent session，不管理Preview、容器或其他资源。验证交给`task-verification`，已选定Git Operation的写入安全交给`git-operations`，其他资源交给各自owner。
+本Skill不判断 Task 是否 ready、完成或业务成果是否等价，不准备 Runtime、CLI、依赖或 projection，不记录 Agent session，不管理Preview、容器或其他资源。验证交给`project-verification`，已选定Git Operation的写入安全交给`git-operations`，其他资源交给各自owner。
 
 ## 缺少历史登记时接续
 

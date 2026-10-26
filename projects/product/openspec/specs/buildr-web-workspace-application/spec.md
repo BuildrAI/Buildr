@@ -442,7 +442,7 @@ Buildr 本机应用 MUST 使用紧凑的工作控制台信息层级：中文为�
 
 #### Scenario: 反映真实导航层级
 - **WHEN** 用户在工作空间内浏览目录或详情
-- **THEN** 应用 shell MUST 在顶栏显示可理解的工作空间名称与当前区域导航高亮，并在左侧标记对应资源
+- **THEN** 应用壳（App Shell）MUST 在顶栏显示可理解的工作空间名称，在一级图标列联动当前悬停或固定展开的导航组，并在其二级导航中标记对应资源
 - **AND** 工作空间切换器 MUST 展示当前名称，并提供返回工作空间目录的明确入口
 
 ### Requirement: 工作空间目录与资源视图必须在窄屏保持可用
@@ -493,7 +493,7 @@ Buildr 本机应用 MUST 将 Project 与 Service 的详情呈现保持为只读�
 
 #### Scenario: 侧边栏指示当前资源
 - **WHEN** 用户打开项目、服务目录或其详情/编辑页
-- **THEN** 相应顶部区域与左侧对象 MUST 显示明显的当前状态
+- **THEN** 二级导航中的资源项 MUST 显示明显的当前状态，一级区域图标 MUST 仅联动当前悬停或固定导航组，不随浏览路由改变
 - **AND** 其他导航项的样式 MUST NOT 取代当前资源项的高亮
 
 #### Scenario: 编辑抽屉保存与关闭
@@ -558,7 +558,7 @@ Buildr MUST 让 Workspace 内页面和 API 使用已登记 `workspaceId` 作为�
 - **AND** MUST NOT 回退到当前目录或其他 Workspace
 
 ### Requirement: 全局应用必须提供 Workspace 级应用外壳与路由
-Buildr MUST 提供解释 Workspace 心智的全局 Workspace 页面，并 MUST 在选定 Workspace 下提供任务列表、设置、Project、Service 和 Change 等既有稳定路由；应用外壳 MUST 将工作台和工作空间作为顶栏核心路径，并将资源入口放入对应区域的左侧导航，设置入口归属顶部工作空间选择菜单，进入 Workspace 后 MUST 直接打开工作概览，且 MUST NOT 再提供独立的 Workspace 开始/详情页作为默认落地页。
+Buildr MUST 提供解释 Workspace 心智的全局 Workspace 页面，并 MUST 在选定 Workspace 下提供任务列表、设置、Project、Service 和 Change 等既有稳定路由；应用外壳 MUST 将工作台、工作空间和代码作为原工作区左侧竖向一级图标入口，并将资源入口放入对应区域可悬停查看或固定展开的二级导航，设置入口归属顶部工作空间选择菜单，进入 Workspace 后 MUST 直接打开工作概览，且 MUST NOT 再提供独立的 Workspace 开始/详情页作为默认落地页。
 
 #### Scenario: 打开全局首页
 - **WHEN** 用户打开根路由
@@ -574,7 +574,7 @@ Buildr MUST 提供解释 Workspace 心智的全局 Workspace 页面，并 MUST �
 
 #### Scenario: 展示核心导航层级
 - **WHEN** 用户在选定 Workspace 中浏览
-- **THEN** App Shell MUST 在顶栏依次展示“工作台”“工作空间”，概览和任务位于工作台导航，项目、服务、代码库、技能和文章位于工作空间导航；设置 MUST 位于顶部工作空间选择菜单及工作空间卡片
+- **THEN** 应用壳（App Shell）MUST 在原工作区左侧一级图标列依次展示“工作台”“工作空间”“代码”，概览和任务位于工作台二级导航，项目、服务、代码库、技能和文章位于工作空间二级导航，代码保持其原有二级入口；设置 MUST 位于顶部工作空间选择菜单及工作空间卡片
 - **AND** MUST NOT 将“开始”作为常驻主导航项
 - **AND** 用户 MUST 能通过品牌标识或工作空间切换到达当前 Workspace 的工作概览
 - **AND** `/workspaces/:workspaceId/` MUST 到达工作概览，`/workspaces/:workspaceId/overview` MUST 展示工作概览
@@ -595,6 +595,11 @@ Buildr MUST 提供解释 Workspace 心智的全局 Workspace 页面，并 MUST �
 - **WHEN** 全局实例启动且最近使用的 Workspace 仍可用
 - **THEN** Buildr MUST 允许启动入口直接打开该 Workspace 的任务列表
 - **AND** 最近使用状态 MUST NOT 写入 Workspace 源资产
+
+#### Scenario: 切换工作空间不改变已有对话归属
+- **WHEN** 用户保留内部对话并切换浏览另一个工作空间（Workspace）
+- **THEN** 工作页面 MUST 使用新选择的工作空间（Workspace）身份，已有对话 MUST 保留自己的工作空间（Workspace）与起始目录（CWD）
+- **AND** 全局对话入口 MUST 保持可达，MUST NOT 将页面切换自动变成执行指令或修改任一工作空间（Workspace）源资产
 
 ### Requirement: 全局 Workspace 登记必须使用最小本机安全边界
 Buildr MUST 将任意目录选择限制在显式登记用例中，并 MUST 保护登记文件和 Workspace 源资产不被普通 Web 请求越权访问。
@@ -686,19 +691,6 @@ Buildr MUST 允许用户从当前 Workspace 选择 canonical Project、可选 Se
 - **WHEN** 有效文章引用 `assets/` 下允许类型的普通附件
 - **THEN** API MUST 按受控类型返回文件，并以下载方式提供非图片附件
 - **AND** HTML、脚本及其他可执行内容 MUST NOT 以内联文档执行
-
-### Requirement: 首次开始工作必须触发scope内Declaration Intake
-Buildr Web生成Start Work Agent prompt时 MUST要求Agent在任务分流前只读检查所选Project及可选Service的Preparation与Verification声明。Prompt生成 MUST不读取代码树来生成声明候选，也 MUST不写Project文件。
-
-#### Scenario: Project-only开始工作
-- **WHEN** 用户选择Project但不选择Service
-- **THEN** prompt MUST触发Project-only Declaration Intake
-- **AND** MUST明确Service不是必需范围
-
-#### Scenario: Service-scoped开始工作
-- **WHEN** 用户选择一个Service开始工作
-- **THEN** prompt MUST触发Project与该Service的Declaration Intake
-- **AND** MUST不检查或安装未选择Service
 
 ### Requirement: 当前本机浏览器产品必须采用 Buildr Web 分层术语
 当前用户能力 MUST 命名为 Buildr Web（本机 Web 界面）；`buildr-web` Service MUST 命名为 Buildr Web Frontend Service；`buildr` Service 中负责 loopback HTTP、session、安全与 Application 调用的部分 MUST 命名为 Buildr Web Runtime；平台图形入口 MUST 命名为 Buildr Web Launcher。Buildr Desktop MUST 保留给未来真正的桌面应用，当前产品、帮助、页面与 Launcher MUST NOT 使用该名称。
@@ -1279,7 +1271,7 @@ Review Agent action MUST只在前端形成携带Task ID、review type与必要Ta
 - **AND** 后端 MUST不存在Task Review prompt route或DTO
 
 ### Requirement: Buildr Web Task Verification Agent action不得依赖后端prompt
-Buildr Web MUST在前端形成携带Task ID的最小指令，要求Agent读取Task Verification Skill与真实现场。前端 MUST不调用、声明或依赖Verification prompt API；后端不存在该route。
+Buildr Web MUST在前端形成携带Task ID的最小指令，要求Agent读取项目验证技能（project-verification）与真实现场。前端 MUST不调用、声明或依赖Verification prompt API；后端不存在该route。
 
 #### Scenario: 用户交给Agent验证
 - **WHEN** 用户在证据页发起Task Verification Agent action
@@ -1661,3 +1653,16 @@ Buildr Web MUST 在任务详情的说明节点，通过任务记录应用读取 
 - **WHEN** 在预览实例中请求移除仅存在于共享 Profile 登记列表的 Workspace
 - **THEN** Application MUST 返回明确诊断说明该条目属于共享登记列表
 - **AND** 共享登记文件 MUST 保持不变
+
+### Requirement: 首次开始工作必须触发scope内声明核对
+Buildr Web生成Start Work Agent prompt时 MUST要求Agent在任务分流前通过 `buildr` 准备指引与 `project-testing` 只读检查所选Project及可选Service的Preparation与Verification声明。Prompt生成 MUST不读取代码树来生成声明候选，也 MUST不写Project文件。
+
+#### Scenario: Project-only开始工作
+- **WHEN** 用户选择Project但不选择Service
+- **THEN** prompt MUST触发Project-only 声明核对
+- **AND** MUST明确Service不是必需范围
+
+#### Scenario: Service-scoped开始工作
+- **WHEN** 用户选择一个Service开始工作
+- **THEN** prompt MUST触发Project与该Service的声明核对
+- **AND** MUST不检查或安装未选择Service

@@ -9,10 +9,51 @@ import { getRuntimeAdapter, RUNTIME_ADAPTERS, runtimeAdapterImplementationMatrix
 import { parseSkillsManifest } from '../../../src/modules/agent-assets/persistence/skill-manifest.ts';
 import { skillProjectionOwnershipReceiptTarget } from '../../../src/modules/agent-assets/infrastructure/runtime/skills/projection-files.ts';
 import { digestRuntime, mapLimit, RuntimeVerificationHarness } from './fixture.ts';
+import { sharedResourcesRoot } from '../../../src/infrastructure/product-resources/shared-resources.ts';
 import { resolveVerificationWorkerBudget } from '../worker-budget.ts';
 
-const harness: any = new RuntimeVerificationHarness();
-const MAX_PARALLEL_WORKSPACES: any = 3;
+// Parallel workspaces share immutable seed bytes, never mutable application state.
+export class ParityVerificationHarness extends RuntimeVerificationHarness {
+  readonly workspaceEnvironments = new Map<string, NodeJS.ProcessEnv>();
+  activeCommands = 0;
+  peakCommands = 0;
+
+  cloneWorkspace(seed: string, prefix: string): string {
+    const workspace = super.cloneWorkspace(seed, prefix);
+    const root = path.dirname(workspace);
+    const productData = path.join(root, 'product-data');
+    fs.mkdirSync(path.join(root, 'tmp'), { recursive: true });
+    fs.mkdirSync(productData, { recursive: true });
+    fs.cpSync(sharedResourcesRoot(), path.join(productData, 'resources'), { recursive: true });
+    this.workspaceEnvironments.set(path.resolve(workspace), {
+      BUILDR_APP_DATA_DIR: path.join(root, 'app-data'),
+      BUILDR_PRODUCT_DATA_DIR: productData,
+      BUILDR_TEST_LOCAL_STATE_ROOT: root,
+      TMPDIR: path.join(root, 'tmp'), TMP: path.join(root, 'tmp'), TEMP: path.join(root, 'tmp'),
+    });
+    return workspace;
+  }
+
+  private commandOptions(args: string[], options: any): any {
+    const targetIndex = args.indexOf('--target');
+    const environment = targetIndex >= 0 ? this.workspaceEnvironments.get(path.resolve(args[targetIndex + 1])) : undefined;
+    return { ...options, env: { ...options.env, ...environment } };
+  }
+
+  run(args: string[], options: any = {}): any {
+    return super.run(args, this.commandOptions(args, options));
+  }
+
+  async runAsync(args: string[], options: any = {}): Promise<any> {
+    this.activeCommands++;
+    this.peakCommands = Math.max(this.peakCommands, this.activeCommands);
+    try { return await super.runAsync(args, this.commandOptions(args, options)); }
+    finally { this.activeCommands--; }
+  }
+}
+
+const harness = new ParityVerificationHarness();
+const MAX_PARALLEL_WORKSPACES = 2;
 
 export function mapParityWorkspaces(items: any[], worker: (item: any, index: number) => any, env: NodeJS.ProcessEnv = process.env): Promise<any> {
   const workers = resolveVerificationWorkerBudget({ env, fallback: MAX_PARALLEL_WORKSPACES, maximum: MAX_PARALLEL_WORKSPACES, label: 'runtime adapter parity' });
@@ -305,6 +346,7 @@ try {
   console.log(`runtime adapter parity implementation families: ${implementationMatrix.representatives.map((entry: any) => `${entry.family}=${entry.adapterId}`).join(', ')}`);
   console.log(`runtime adapter parity supported adapters: ${supportedAdapters.join(', ')}`);
   console.log(`runtime adapter parity command timings: ${harness.timingSummary()}`);
+  console.log(`runtime adapter parity isolation: workspaces=${harness.workspaceEnvironments.size} peakCommands=${harness.peakCommands}`);
   console.log('runtime adapter parity verification passed');
 } finally {
   harness.cleanup();

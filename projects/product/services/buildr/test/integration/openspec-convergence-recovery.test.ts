@@ -16,7 +16,7 @@ test('concurrent edit after interruption is retained',t=>{
 });
 test('changed delta after interruption cannot reuse old authorization',t=>{
  const f=fixture(t);f.input.writeReceipt(convergenceReceiptPath(f.changeRoot),f.receipt());
- const r=runOpenSpecConvergence({...f.input,context:{...f.context,delta:{...f.context.delta,hash:'changed'}}});assert.equal(r.code,'recovery-input-changed');
+ const r=runOpenSpecConvergence({...f.input,context:{...f.context,delta:{...f.context.delta,hash:'changed'}}});assert.partialDeepStrictEqual(r,{code:'recovery-input-changed'});
 });
 test('legacy recovery files are preserved and diagnosed',t=>{
  const f=fixture(t);const file=`${f.changeRoot}/.buildr/deterministic-convergence.json`;f.write(file,'{"legacy":true}');

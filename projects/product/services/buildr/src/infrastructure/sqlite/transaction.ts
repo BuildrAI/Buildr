@@ -92,9 +92,9 @@ export function createTransactionManager(runtime: TransactionRuntime): Transacti
   });
 }
 
-export function registerSqliteTransaction(runtime: TransactionRuntime & Record<string, unknown>): typeof runtime {
+export function registerSqliteTransaction<T extends TransactionRuntime & Record<string, unknown>>(runtime: T) {
   const transactionManager = createTransactionManager(runtime);
-  Object.assign(runtime, {
+  return Object.assign(runtime, {
     transactionManager,
     runWorkspaceTransaction: transactionManager.run.bind(transactionManager),
     runWorkspaceSqliteRead: <T>(targetRoot: string, action: (context: SqliteReadContext) => T) => runSqliteRead(runtime, targetRoot, action),

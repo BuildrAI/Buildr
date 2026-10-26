@@ -53,7 +53,7 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 
 `buildr.task-verification-operation-result/v1`统一覆盖current报告的`inspect|record`。成功时返回`operation`、`status`、`taskId`、`slot`、`effects`与`nextActions`；`slot`包含path、present、完整current报告、响应级digest和派生applicability。没有报告时返回空slot；调用方内容identity或Project测试地图变化时派生`stale`。业务拒绝返回同一envelope、`status: blocked`、稳定diagnostic和非零退出，且不得覆盖旧slot。
 
-当保存Result含Project或Service coverage gap时，`nextActions`按Project返回只读`declaration-intake`提示；它不改变Result schema、gap事实或writer authority，也不在inspect/record中写`verification.yml`。
+当保存Result含Project或Service coverage gap时，`nextActions`按Project返回 `project-testing` 的测试登记维护提示；它不改变Result schema、gap事实或writer authority，也不在inspect/record中写`verification.yml`。
 
 `buildr.task-record-result/v5`覆盖六个Task Record动作，返回closed v3 `record`、`recordDigest`、Parent/Child `taskRelations`与`retrospectiveDocument`路径/登记摘要。Task不再返回复盘来源/后续关系。
 

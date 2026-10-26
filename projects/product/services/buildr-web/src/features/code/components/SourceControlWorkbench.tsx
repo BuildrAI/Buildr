@@ -1,3 +1,4 @@
+import { resolveTaskSourceSelection, resolveSharedSourceSelection } from '../source-control-selection';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Alert, Button, Empty, Input, Segmented, Spin, Tooltip } from 'antd';
 import { ArrowRightOutlined, DownOutlined, InfoCircleOutlined, ProjectOutlined, ReloadOutlined, RightOutlined, SearchOutlined } from '@ant-design/icons';
@@ -17,7 +18,7 @@ import { CodeLocationDetails, CodeLocationSummary } from './CodeLocationSummary'
 import { SourceControlRepositoryTree, SourceControlChanges, layerFile, worktreeLabel, type SourceControlRowContext } from './SourceControlRepositories';
 import { formatShortDateTime } from '../../../lib/taskLabels';
 import { useSourceControlRead } from '../hooks/useSourceControlRead';
-import { sourceControlWorkingChanges, sourceControlAbsolutePath, sourceControlDefaultSource, sourceControlChange, sourceControlCommit, sourceControlFileKey as fileIdentity, sourceControlWorktreeKey, type SourceControlChange, type SourceControlCommit, type SourceControlFileTarget, type SourceControlWorktree, type SourceControlObservation, type SourceControlReader, type SourceControlRepository, type SourceControlScene, type SourceControlScopeSelection } from '../source-control-model';
+import { sourceControlSearchQuery, sourceControlWorkingChanges, sourceControlAbsolutePath, sourceControlDefaultSource, sourceControlChange, sourceControlCommit, sourceControlFileKey as fileIdentity, sourceControlWorktreeKey, type SourceControlChange, type SourceControlCommit, type SourceControlFileTarget, type SourceControlWorktree, type SourceControlObservation, type SourceControlReader, type SourceControlRepository, type SourceControlScene, type SourceControlScopeSelection } from '../source-control-model';
 import type { CodeSourceControlInput } from '../api/code-api';
 import { codeRepositoryCode, codeRepositoryLabel } from '../code-source-labels';
 import type { CodeSourceTarget } from '../code-source-selection';
@@ -144,9 +145,9 @@ export function SourceControlWorkbench({ active = true, repositories, defaultRep
   const setFileKey = history ? setHistoryFileKey : setChangeFileKey;
   useEffect(() => { if (!selectedWorktreeKey && selectedIdentity && !scopeSelection) setSelectedWorktreeKey(selectedIdentity); }, [selectedWorktreeKey, selectedIdentity, scopeSelection]);
   useEffect(() => {
-    if (composing) return;
-    const normalized = query.trim();
-    if (Array.from(normalized).length < 2) { setSearchQuery(''); return; }
+    const normalized = sourceControlSearchQuery(query, composing);
+    if (normalized === null) return;
+    if (!normalized) { setSearchQuery(''); return; }
     const timer = setTimeout(() => setSearchQuery(normalized), 250);
     return () => clearTimeout(timer);
   }, [query, composing]);
@@ -156,38 +157,33 @@ export function SourceControlWorkbench({ active = true, repositories, defaultRep
     previousScene.current = scene;
   }, [scene]);
   useEffect(() => {
-    if (!active || !scopeSelection || !observation.readAt || appliedSelection.current === scopeSelection.key) return;
-    if (entryBaseline.current.key === scopeSelection.key && entryBaseline.current.sourceKey !== (currentSourceSelection?.key || '')) {
+    const decision = resolveTaskSourceSelection({active, observed: Boolean(observation.readAt), scope: scopeSelection,
+      appliedKey: appliedSelection.current, baseline: entryBaseline.current, currentSourceKey: currentSourceSelection?.key || '',
+      taskId: task?.id, saved: task ? taskSelections.current.get(task.id) : undefined,
+      availableSourceKeys: sources.map(({repository, worktree}) => sourceControlWorktreeKey(repository.id, worktree.worktreeId))});
+    if (decision.kind === 'wait' || !scopeSelection) return;
+    if (decision.kind === 'superseded') {
       appliedSelection.current = scopeSelection.key; currentEntry.current = scopeSelection.key; setSelectionEpoch(scopeSelection.key); return;
     }
     appliedCurrentSource.current = currentSourceSelection?.key || '';
-    currentEntry.current = scopeSelection.key;
-    appliedSelection.current = scopeSelection.key;
-    const saved = task ? taskSelections.current.get(task.id) : undefined;
-    const validKeys = scopeSelection.worktrees.map(item => sourceControlWorktreeKey(item.repositoryId, item.worktreeId));
-    const savedValid = saved && validKeys.includes(saved.selectedWorktreeKey) && sources.some(({repository, worktree}) => sourceControlWorktreeKey(repository.id, worktree.worktreeId) === saved.selectedWorktreeKey);
-    const first = scopeSelection.worktrees[0];
-    setSelectedWorktreeKey(savedValid ? saved.selectedWorktreeKey : first ? sourceControlWorktreeKey(first.repositoryId, first.worktreeId) : 'missing-task:' + (task?.id || scopeSelection.key));
-    setChangeFileKey(savedValid ? saved.changeFileKey : ''); setHistoryFileKey(savedValid ? saved.historyFileKey : '');
-    setCommitHash(savedValid ? saved.commitHash : ''); setCommitSummary(savedValid ? saved.commitSummary : undefined); setCommitBaseHash(savedValid ? saved.commitBaseHash : null); setHistoryReaderMode(savedValid ? saved.historyReaderMode : 'detail');
+    currentEntry.current = scopeSelection.key; appliedSelection.current = scopeSelection.key;
+    const saved = decision.saved;
+    setSelectedWorktreeKey(decision.key);
+    setChangeFileKey(saved ? saved.changeFileKey : ''); setHistoryFileKey(saved ? saved.historyFileKey : '');
+    setCommitHash(saved ? saved.commitHash : ''); setCommitSummary(saved ? saved.commitSummary : undefined); setCommitBaseHash(saved ? saved.commitBaseHash : null); setHistoryReaderMode(saved ? saved.historyReaderMode : 'detail');
     setQuery(''); setSearchQuery('');
-    setReturnScene(savedValid ? saved.returnScene : 'changes');
-    if (scene !== 'task') onScene(savedValid ? saved.scene : 'changes');
+    setReturnScene(saved ? saved.returnScene : 'changes');
+    if (scene !== 'task') onScene(saved ? saved.scene : 'changes');
     setSelectionEpoch(scopeSelection.key);
-    const currentTarget = savedValid ? scopeSelection.worktrees.find(item => sourceControlWorktreeKey(item.repositoryId, item.worktreeId) === saved.selectedWorktreeKey) : first;
-    if (currentTarget) onCurrentSourceSelect?.({repositoryId:currentTarget.repositoryId, checkoutId:currentTarget.worktreeId});
+    if (decision.target) onCurrentSourceSelect?.(decision.target);
   }, [active, scopeSelection, observation.readAt, repositories, task, onScene, scene, currentSourceSelection]);
   useEffect(() => {
-    if (!active || !observation.readAt) return;
-    const entry = scopeSelection?.key || '';
-    if (entry && entry !== currentEntry.current) { currentEntry.current = entry; appliedCurrentSource.current = currentSourceSelection?.key || ''; return; }
-    currentEntry.current = entry;
-    const selection = currentSourceSelection;
-    if (!selection || appliedCurrentSource.current === selection.key || scopeSelection && selectionEpoch !== scopeSelection.key) return;
-    appliedCurrentSource.current = selection.key;
-    const existing = selection.targets.find(target => sourceControlWorktreeKey(target.repositoryId, target.checkoutId) === selectedIdentity);
-    const target = selection.preferredTarget || existing || selection.targets[0];
-    if (target) switchSource(sourceControlWorktreeKey(target.repositoryId, target.checkoutId));
+    const decision = resolveSharedSourceSelection({active, observed: Boolean(observation.readAt), scopeKey: scopeSelection?.key || '',
+      currentEntry: currentEntry.current, selectionEpoch, appliedKey: appliedCurrentSource.current,
+      selection: currentSourceSelection, selectedIdentity});
+    if (!decision) return;
+    currentEntry.current = decision.entryKey; appliedCurrentSource.current = decision.appliedKey;
+    if ('nextKey' in decision && decision.nextKey) switchSource(decision.nextKey);
   }, [active, currentSourceSelection, scopeSelection?.key, selectionEpoch, observation.readAt]);
   useEffect(() => {
     if (task && scopeSelection && selectionEpoch === scopeSelection.key) taskSelections.current.set(task.id, {selectedWorktreeKey: selectedIdentity, changeFileKey, historyFileKey, commitHash, commitSummary, commitBaseHash, historyReaderMode, scene, returnScene});

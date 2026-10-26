@@ -184,20 +184,20 @@ skills:
     description: 准备、检查、发布或恢复 Buildr 版本时使用；核对明确发布内容、完整候选与唯一产物，执行受保护发布并分别报告发布、登记、清理和自举结果。
     assetIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:skill:buildr-release
     sourceIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:buildr-release
-  - id: task-verification
-    assetIdentity: buildr:skill:task-verification
-    sourceIdentity: package:skills/buildr/task-verification
+  - id: project-verification
+    assetIdentity: buildr:skill:project-verification
+    sourceIdentity: package:skills/buildr/project-verification
     source: buildr
-    path: buildr/task-verification
-    description: 选择项目已有检查、维护测试地图，或记录和查看任务验证报告时使用；测试由智能体直接调用项目工具。
+    path: buildr/project-verification
+    description: 按用户请求或任务目标选择并实际执行项目检查，交付验证证据，记录或查看已有任务验证报告时使用；测试建设与登记由 project-testing 维护。
     enabled: true
     required: false
     state: installed
-    runtimePath: task-verification
+    runtimePath: project-verification
     provides:
       - capability: buildr.task-verification
         version: 4
-    resource: resources/workspace/skills/buildr/task-verification
+    resource: resources/workspace/skills/buildr/project-verification
   - id: terminology-governance
     assetIdentity: buildr:skill:terminology-governance
     sourceIdentity: package:skills/buildr/terminology-governance
@@ -263,7 +263,7 @@ skills:
     sourceIdentity: package:skills/buildr/project-testing
     source: buildr
     path: buildr/project-testing
-    description: 设计或调整测试体系、为实现开发必要测试时使用；已有检查的选择和报告交给 task-verification。
+    description: 设计或调整项目测试、为实现开发必要测试、维护测试登记与稳定入口时使用；选择、执行与报告交给 project-verification。
     enabled: true
     required: false
     state: installed
@@ -279,17 +279,6 @@ skills:
     description: 在 Buildr 自身开发或验收中，需要启动服务验证时使用；运行对应工作树的 Buildr Web，修改后重新构建并重启预览。仅服务 Buildr 自举工作空间，不作为用户 workspace 的默认能力。
     assetIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:skill:buildr-dev-preview
     sourceIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:buildr-dev-preview
-  - id: declaration-intake
-    assetIdentity: buildr:skill:declaration-intake
-    sourceIdentity: package:skills/buildr/declaration-intake
-    source: buildr
-    path: buildr/declaration-intake
-    description: 初始化、维护准备与验证声明，或项目注册、构建和测试入口变化产生声明缺口时使用；先核对差异，再交给对应维护者。
-    enabled: true
-    required: false
-    state: installed
-    runtimePath: declaration-intake
-    resource: resources/workspace/skills/buildr/declaration-intake
   - id: ui-prototype
     assetIdentity: buildr:skill:ui-prototype
     sourceIdentity: package:skills/buildr/ui-prototype
@@ -477,7 +466,7 @@ contracts:
   - id: buildr.task-verification
     version: 4
     path: contracts/buildr/task-verification/v4.md
-    description: 维护 Project 测试地图，并保存开发完成后的 Task 验证报告。
+    description: 依据项目测试登记选择并执行检查，保存已有正式任务的验证报告；测试登记由 project-testing 维护。
     resource: resources/workspace/skills/contracts/buildr/task-verification/v4.md
   - id: buildr.task-review
     version: 2
@@ -514,7 +503,7 @@ bindings:
     provider: git-operations
   - capability: buildr.task-verification
     version: 4
-    provider: task-verification
+    provider: project-verification
   - capability: buildr.task-review
     version: 2
     provider: task-review

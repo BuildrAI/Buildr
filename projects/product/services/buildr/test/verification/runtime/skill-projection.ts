@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { getRuntimeAdapter, runtimeAdapterImplementationMatrix } from '../../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
 import { parseSkillsManifest } from '../../../src/modules/agent-assets/persistence/skill-manifest.ts';
+import { resolveSharedResource } from '../../../src/infrastructure/product-resources/shared-resources.ts';
 import {
   enumerateSkillSourceFiles,
   parseSkillProjectionReceipt,
@@ -16,6 +17,11 @@ import { mapLimit, RuntimeVerificationHarness } from './fixture.ts';
 
 const PACKAGE_SKILLS_ROOT: any = 'resources/workspace/skills';
 const harness: any = new RuntimeVerificationHarness();
+
+function skillSourceDirectory(workspace: string, skill: any): string | null {
+  if (typeof skill.resource === 'string') return path.dirname(resolveSharedResource(workspace, `${skill.resource}/SKILL.md`));
+  return typeof skill.path === 'string' ? path.join(workspace, 'skills', ...skill.path.split('/')) : null;
+}
 
 function sourceInventory(sourceRoot: any): any  {
   return enumerateSkillSourceFiles(sourceRoot).map((file: any) => ({
@@ -45,7 +51,8 @@ function selectSkills(skills: any): any  {
 
 function assertSkillProjection(workspace: any, adapterId: any, skill: any): any  {
   const adapter: any = getRuntimeAdapter(adapterId);
-  const sourceRoot: any = path.join(workspace, 'skills', ...skill.path.split('/'));
+  const sourceRoot: any = skillSourceDirectory(workspace, skill);
+  assert.ok(sourceRoot, `${skill.id} must have a resolvable source`);
   const runtimePath: any = skill.runtimePath || skill.id;
   const targetRoot: any = path.join(workspace, adapter.traits.skills.root, 'skills', ...runtimePath.split('/'));
   assert.ok(fs.existsSync(path.join(targetRoot, 'SKILL.md')), `${adapterId} must project ${skill.id}`);
@@ -67,7 +74,8 @@ function assertSkillProjection(workspace: any, adapterId: any, skill: any): any 
 try {
   const seed: any = harness.initializeSeed('runtime-skill-projection', 'buildr-runtime-skill-projection-seed-');
   const skills: any = parseSkillsManifest(path.join(seed, 'skills', 'manifest.yml'))
-    .filter((skill: any) => skill.enabled !== false && skill.state !== 'uninstalled' && typeof skill.path === 'string' && fs.existsSync(path.join(seed, 'skills', skill.path)));
+    .filter((skill: any) => skill.enabled !== false && skill.state !== 'uninstalled')
+    .filter((skill: any) => { const source = skillSourceDirectory(seed, skill); return source !== null && fs.existsSync(source); });
   const selectedSkills: any = selectSkills(skills);
   assert.ok(selectedSkills.length > 0, 'runtime Skill projection must select at least one packaged Skill');
 

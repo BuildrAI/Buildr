@@ -237,7 +237,7 @@ Buildr MUST 提供与当前仓库结构一致的开发 checkout 安装路径，�
 - **AND** 最终 doctor MUST 不包含需要立即处理的 error
 
 #### Scenario: 两种安装模式回归验证
-- **WHEN** 产品完整验证运行 onboarding smoke tests
+- **WHEN** 产品完整验证运行 接入端到端测试（E2E）
 - **THEN** verifier MUST 分别覆盖不包含 `node_modules` 和 Agent runtime 产物的临时开发 checkout，以及从 npm package 安装的临时 prefix
 - **AND** 两种模式 MUST 都能从公开安装入口运行 `buildr runtime list --json` 并仅用 `buildr init --agent <agent>` 完成 workspace/runtime onboarding
 - **AND** verifier MUST 独立读取 doctor JSON 证明最终状态可用
@@ -274,7 +274,7 @@ Buildr MUST 维护一份可由人和 Agent 从根 README 发现的已接入 Agen
 - **THEN** 文档 MUST 对每个 supported adapter 说明 adapter id、适用 surface、Rules 入口与生成 target、Skills root、activation/reload、checker、前置条件和已知限制
 - **AND** 文档 MUST 区分官方文档、本机观察、安装包源码和推断等兼容证据来源
 - **AND** 文档 MUST 说明自动 contract/parity 只能证明 Buildr 的投射与维护边界，不能证明目标 Agent 已在当前 workspace、版本或会话加载文件
-- **AND** 文档 MUST NOT 维护 `documented`/`verified`、`pending`/`passed` 或品牌历史 marker smoke 快照
+- **AND** 文档 MUST NOT 维护 `documented`/`verified`、`pending`/`passed` 或品牌历史 marker 固定文本快照
 
 #### Scenario: Agent 按文档接入当前 runtime
 - **WHEN** Agent 从权威文档识别到自身 runtime 已受支持

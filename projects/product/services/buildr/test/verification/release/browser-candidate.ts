@@ -35,7 +35,7 @@ export async function runCandidateBrowser({
   const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-candidate-browser-'));
   const phases = createVerificationPhaseRecorder('candidate-browser-core');
   const run = async (id: string, argv: string[], cwd: string, timeoutMs: number, extraEnv: any = {}) => {
-    const result = await execute({ name: id, command: { argv, cwd, timeoutMs } }, { cwd, env: { ...env, ...extraEnv } });
+    const result = await execute({ name: id, command: { argv, cwd, timeoutMs, ...(id === 'archive-inventory' ? { maxOutputBytes: 32 * 1024 * 1024 } : {}) } }, { cwd, env: { ...env, ...extraEnv } });
     if (result.stdout && id !== 'archive-inventory') process.stdout.write(result.stdout);
     if (result.stderr) process.stderr.write(result.stderr);
     if (result.status !== 'passed') throw new Error(`Candidate Browser ${id} failed: ${result.failureCode || result.exitCode}`);
@@ -44,6 +44,7 @@ export async function runCandidateBrowser({
   try {
     await phases.run('artifact-unpack', async () => {
       const inventory = await run('archive-inventory', ['tar', '-tzf', candidate.tarball], temporaryRoot, 30_000);
+      if (inventory.stdoutTruncated) throw new Error('Candidate Browser archive inventory exceeded its bounded complete-output limit.');
       const paths = String(inventory.stdout).split(/\r?\n/u).filter(Boolean);
       if (paths.length === 0 || paths.some(entry => !entry.startsWith('package/') || path.posix.normalize(entry).replace(/\/$/u, '') !== entry.replace(/\/$/u, '') || entry.includes('\\'))) {
         throw new Error('Candidate Browser archive contains an invalid package path.');
@@ -55,8 +56,8 @@ export async function runCandidateBrowser({
     const plan = { schemaVersion: 'buildr.browser-selector-plan/v1', status: 'selected', mode: 'candidate-artifact', selectors: [...CANDIDATE_BROWSER_SELECTORS], paths: [] };
     process.stdout.write(`${JSON.stringify({ scope: 'candidate-browser', sourceCommit, artifact: candidate.manifest.sha256, applicationPayloadDigest: candidate.manifest.applicationPayloadDigest, selectors: plan.selectors })}\n`);
     await phases.run('browser:core', () => run('browser:core', [process.execPath,
-      path.join(serviceRoot, 'tools/development/run-isolated-workspace-smoke.ts'), '--script',
-      path.join(serviceRoot, 'test/browser-smoke/buildr-web-browser.test.ts'), '--', 'core'], serviceRoot, 300_000, { BUILDR_BROWSER_WEB_DIST_ROOT: webDistRoot, BUILDR_BROWSER_SELECTOR_PLAN_JSON: JSON.stringify(plan) }));
+      path.join(serviceRoot, 'tools/development/run-isolated-workspace-check.ts'), '--script',
+      path.join(serviceRoot, 'test/e2e/buildr-web-browser.test.ts'), '--', 'core'], serviceRoot, 300_000, { BUILDR_BROWSER_WEB_DIST_ROOT: webDistRoot, BUILDR_BROWSER_SELECTOR_PLAN_JSON: JSON.stringify(plan) }));
     return { status: 'passed', selectors: [...CANDIDATE_BROWSER_SELECTORS], sourceCommit, artifact: candidate.manifest.sha256, webDistRoot };
   } finally {
     await phases.run('artifact-cleanup', async () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));

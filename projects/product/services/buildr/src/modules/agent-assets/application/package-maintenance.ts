@@ -264,7 +264,19 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
       const desired = builtinSkillEntry(builtin, existing || predecessor);
       const newSnapshot = builtinSnapshot(sourceDir, 'skill');
       const liveSnapshot = builtinSnapshot(existing?.resource ? path.dirname(resolveSharedResource(targetRoot, `${existing.resource}/SKILL.md`)) : targetDir, 'skill');
-      if (handleSkillReplacement({ builtin, changed, checkOnly, desired, existing, findings, isRestore, liveSnapshot, newSnapshot, receiptByKey, removeDirectory: (directory: any) => fs.rmSync(directory, { recursive: true, force: true }), removeReceipt, restoreOutcomes, skillsById, skillsManifest, sourceDir, targetDir, updateReceipt, targetRoot })) continue;
+      if (handleSkillReplacement({ builtin, changed, checkOnly, desired, existing, findings, isRestore, liveSnapshot, newSnapshot, receiptByKey, removeDirectory: (directory: any) => fs.rmSync(directory, { recursive: true, force: true }), removeReceipt, restoreOutcomes, skillsById, skillsManifest, sourceDir, targetDir, updateReceipt, targetRoot,
+        onReplaced: ({ predecessor: previous, builtin: replacement }: any) => {
+          // Only migrate a binding that still selects the recognized official
+          // predecessor for an unchanged capability/version and default provider.
+          for (const binding of bindings) {
+            if (binding.provider !== previous.id) continue;
+            const sameCapability = (item: any) => item.capability === binding.capability && item.version === binding.version;
+            if (!(previous.provides ?? []).some(sameCapability) || !(replacement.provides ?? []).some(sameCapability)) continue;
+            if (!(manifest.initialSkillBindings ?? []).some((item: any) => sameCapability(item) && item.provider === replacement.id)) continue;
+            binding.provider = replacement.id;
+          }
+        },
+      })) continue;
       const state = resolveBuiltinState({ type: 'skill', builtin, liveSnapshot, newSnapshot, oldReceipt: receiptByKey.get(builtinReceiptKey('skill', builtin.id)), isRestore, required: builtin.required === true });
       const status = isUninstalled && !isRestore ? 'uninstalled' : state.status;
       findings.push({ type: 'skill', id: builtin.id, required: builtin.required === true, status, path: builtin.target, ...(liveSnapshot ? { liveIntegrity: liveSnapshot.integrity } : {}), converge: state.converge === true || (isNew && !liveSnapshot) });

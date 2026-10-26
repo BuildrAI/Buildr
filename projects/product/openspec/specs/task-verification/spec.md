@@ -23,31 +23,6 @@ Buildr MUST为每个正式Task维护至多一份current `buildr.task-verificatio
 - **THEN** Agent MUST NOT写Task Verification Report
 - **AND** Application MUST不提供逐次run、attempt或history记录入口
 
-### Requirement: 任务验证报告必须有意义且保持closed
-报告MUST至少包含一个实际check或gap。每个check MUST说明Project、可选Service、testing family、`focus|task-related|full`选择范围、实际targets、source、`passed|failed`结果、摘要和可选耗时；每个gap MUST说明未覆盖scope/testing及原因。Application MUST为每个check派生`declared|map-unavailable`地图状态，caller MUST NOT自行声明该状态。
-
-`passed` MUST至少包含一个实际check且所有check均为passed；`not-passed` MUST至少包含一个failed check；`incomplete` MUST不包含failed check且至少包含一个gap。gap MAY与passed共存，但不能单独证明passed。
-
-#### Scenario: 只有测试通过一句话
-- **WHEN** caller提交没有checks和gaps的报告，或提交未知字段、绝对路径、非法outcome或矛盾passed结论
-- **THEN** Application MUST拒绝整个报告
-- **AND** 原current报告MUST保持不变
-
-#### Scenario: 环境冒烟不适用
-- **WHEN** Agent完成任务相关测试，但当前尚未进入测试环境
-- **THEN** 报告MUST允许以gap记录environment-smoke未执行及原因
-- **AND** Application MUST NOT自动把gap解释为Task blocked、风险接受或完成授权
-
-#### Scenario: 只有gap却声明passed
-- **WHEN** caller没有提交实际check，只提交gap并声明passed
-- **THEN** Application MUST拒绝整个报告
-- **AND** 原current报告MUST保持不变
-
-#### Scenario: 结论与实际检查不一致
-- **WHEN** caller声明not-passed但没有failed check，或声明incomplete却存在failed check或没有gap
-- **THEN** Application MUST拒绝整个报告
-- **AND** MUST不替caller猜测另一种结论
-
 ### Requirement: Application必须把实际检查绑定到Task范围与Project测试地图
 Application MUST使用current Task scope和本次观察到的Project测试地图校验每个check，而不是信任caller重复声明关系。check Project MUST属于Task有效Project范围；可选Service MUST属于Task允许的Service范围；测试地图可用时，testing family MUST存在且其Project/Service scope MUST覆盖该check。任一可用地图绑定错误MUST拒绝整份报告。
 
@@ -114,7 +89,7 @@ Task Verification Application MUST只维护Project测试地图绑定、正式报
 
 #### Scenario: Agent开始任务验证
 - **WHEN** 用户从Buildr Web或对话要求验证正式Task
-- **THEN** Agent MUST读取Task Verification Skill、当前Task、真实改动和测试地图
+- **THEN** Agent MUST读取项目验证技能（project-verification）、当前Task、真实改动和测试地图
 - **AND** Application MUST不参与审阅范围选择或prompt生成
 
 ### Requirement: Task Verification current 必须使用调用方摘要原子替换
@@ -165,3 +140,28 @@ Task Verification Report 写入 MUST 要求 Task 当前为 `active`；`completed
 - **WHEN** Task 仍为 `active` 且实现阶段相关检查已按适用性完成
 - **THEN** Agent MUST 在实现完成阶段登记正式报告
 - **AND** 后续收尾或完成动作不因缺失报告而重复创建检查事实，也不得把报告补救到已完成任务
+
+### Requirement: 任务验证报告必须记录实际检查和未覆盖项并保持闭合
+报告MUST至少包含一个实际check或gap。每个check MUST说明Project、可选Service、testing family、`focus|task-related|full`选择范围、实际targets、source、`passed|failed`结果、摘要和可选耗时；每个gap MUST说明未覆盖scope/testing及原因。Application MUST为每个check派生`declared|map-unavailable`地图状态，caller MUST NOT自行声明该状态。
+
+`passed` MUST至少包含一个实际check且所有check均为passed；`not-passed` MUST至少包含一个failed check；`incomplete` MUST不包含failed check且至少包含一个gap。gap MAY与passed共存，但不能单独证明passed。
+
+#### Scenario: 只有测试通过一句话
+- **WHEN** caller提交没有checks和gaps的报告，或提交未知字段、绝对路径、非法outcome或矛盾passed结论
+- **THEN** Application MUST拒绝整个报告
+- **AND** 原current报告MUST保持不变
+
+#### Scenario: 所需环境检查未执行
+- **WHEN** Agent完成任务相关测试，但当前尚未进入测试环境
+- **THEN** 报告MUST允许以gap记录所需环境检查未执行及原因
+- **AND** Application MUST NOT自动把gap解释为Task blocked、风险接受或完成授权
+
+#### Scenario: 只有gap却声明passed
+- **WHEN** caller没有提交实际check，只提交gap并声明passed
+- **THEN** Application MUST拒绝整个报告
+- **AND** 原current报告MUST保持不变
+
+#### Scenario: 结论与实际检查不一致
+- **WHEN** caller声明not-passed但没有failed check，或声明incomplete却存在failed check或没有gap
+- **THEN** Application MUST拒绝整个报告
+- **AND** MUST不替caller猜测另一种结论

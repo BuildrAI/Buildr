@@ -10,6 +10,9 @@ import { fileURLToPath } from 'node:url';
 export const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
 export class RuntimeVerificationHarness {
+  readonly buildr: string;
+  readonly commandTimings: Map<string, {count: number; durationMs: number}>;
+  readonly temporaryRoots: Set<string>;
   constructor(options: any = {}) {
     this.buildr = options.buildr ?? path.join(productRoot, 'bin', 'buildr.mjs');
     this.commandTimings = new Map();

@@ -41,24 +41,23 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/verification/source.ts",
       "test/verification/local-source-verification.ts",
       "test/verification/planner.ts",
+      "test/verification/cli.ts",
       "test/verification/test-files.ts",
       "test/verification/run-node-tests.ts",
       "test/verification/resource-coordinator.ts",
       "test/verification/registry.ts",
       "test/verification/browser-selector-dispatcher.ts",
+      "test/verification/browser-selector-catalog.ts",
       "test/verification/unit-coverage.ts"
-    ],
-    "inputExclusions": []
-  },
-  "component": {
-    "inputs": [
-      "test/component/**",
-      "src/modules/workspace/application/service-application.ts"
     ],
     "inputExclusions": []
   },
   "integration": {
     "inputs": [
+      "services/buildr-agent/**",
+      "test/integration/agent-service-delivery.test.ts",
+      "test/integration/agent-service-http.test.ts",
+      "src/modules/agent-service/**",
       "tools/build/**",
       "tools/codegen/**",
       "tools/testing/**",
@@ -67,7 +66,6 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "tools/verification/candidate-preparation-reuse.ts",
       "src/bootstrap/cli/identity.ts",
       "src/infrastructure/process.ts",
-      "test/verification/integration.ts",
       "test/verification/worker-budget.ts",
       "test/verification/support/**",
       "test/verification/verification-reuse.ts",
@@ -82,6 +80,9 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/infrastructure/git/**",
       "src/modules/task/infrastructure/git-worktree-provider.ts",
       "test/helpers/code-git-configuration-fixture.ts",
+      "test/helpers/code-operation-seeds.ts",
+      "test/helpers/code-commit-application-fixture.ts",
+      "test/helpers/code-sync-application-fixture.ts",
       "test/fixtures/code-commit-message-large-fixture.ts"
     ],
     "inputExclusions": []
@@ -109,6 +110,10 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     ],
     "inputExclusions": []
   },
+  "e2e-workspace-assets": {
+    "inputs": ["src/modules/workspace/**", "src/modules/agent-assets/**", "src/infrastructure/filesystem/**", "src/infrastructure/product-resources/**", "resources/workspace/**", "tools/development/workspace-continuity-check.ts", "tools/development/run-isolated-workspace-check.ts", "test/helpers/asset-relationships.ts", "test/helpers/inline-core-fixture.ts"],
+    "inputExclusions": []
+  },
   "integration-workspace-assets": {
     "inputs": [
       "src/modules/workspace/**",
@@ -117,11 +122,13 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/infrastructure/filesystem/workspace-mutation.ts",
       "src/infrastructure/filesystem/workspace-path.ts",
       "src/infrastructure/product-resources/**",
+      "src/infrastructure/semantic-version.ts",
+      "tools/development/shared-resource-coexistence-check.ts",
       "src/modules/agent-assets/infrastructure/shared-skill-source.ts",
       "resources/workspace/AGENTS.md",
       "resources/workspace/components/**",
       "resources/workspace/skills/buildr/task-triage/**",
-      "test/helpers/legacy-asset-catalog.ts"
+      "test/helpers/legacy-asset-catalog.ts", "test/helpers/asset-relationships.ts", "test/helpers/inline-core-fixture.ts"
     ],
     "inputExclusions": []
   },
@@ -136,7 +143,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/modules/agent-assets/application/components.ts",
       "skills/buildr/archify/**",
       "test/helpers/archify-command-cost.ts",
-      "tools/development/run-isolated-workspace-smoke.ts"
+      "tools/development/run-isolated-workspace-check.ts"
     ],
     "inputExclusions": []
   },
@@ -163,8 +170,8 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "bin/buildr-mysql.mjs",
       "resources/workspace/skills/connections/**",
       "resources/workspace/skills/buildr/connection-authoring/**",
-      "test/fixtures/connection-skills-cli-smoke.ts",
-      "test/fixtures/connection-authoring-cli-smoke.ts",
+      "test/fixtures/connection-skills-cli-check.ts",
+      "test/fixtures/connection-authoring-cli-check.ts",
       "test/fixtures/connection-authoring-example/**"
     ],
     "inputExclusions": []
@@ -173,10 +180,10 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     "inputs": [
       "src/modules/connection-skills/**",
       "resources/workspace/skills/connections/**",
-      "test/fixtures/connection-skills-cli-smoke.ts",
+      "test/fixtures/connection-skills-cli-check.ts",
       "test/helpers/child-process-supervisor.ts",
       "test/verification/support/verification-deadline.ts",
-      "tools/development/run-isolated-workspace-smoke.ts",
+      "tools/development/run-isolated-workspace-check.ts",
       "tools/development/isolated-workspace-state.ts"
     ],
     "inputExclusions": []
@@ -258,15 +265,12 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/verification/support/resource-coordinator.ts",
       "src/modules/project-testing/application/verification-application.ts",
       "test/verification/audit.ts",
-      "test/verification/changed.ts",
       "test/verification/changed-paths.ts",
       "test/verification/dag-scheduler.ts",
       "test/verification/executor.ts",
-      "test/verification/focus.ts",
-      "test/verification/integration.ts",
       "test/verification/plan-runner.ts",
       "test/verification/planner.ts",
-      "test/verification/profile.ts",
+      "test/verification/cli.ts",
       "test/verification/resource-coordinator.ts",
       "test/verification/run-node-tests.ts",
       "test/verification/test-files.ts",
@@ -337,7 +341,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/modules/task/application/task-review-application.ts",
       "src/modules/task/persistence/task-review-repository.ts",
       "test/integration/task-review-repository.test.ts",
-      "test/system/task-record-product.test.ts"
+      "test/e2e/task-record-product.test.ts"
     ],
     "inputExclusions": []
   },
@@ -352,10 +356,10 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     ],
     "inputExclusions": []
   },
-  "contract": {
+  "source-contracts": {
     "inputs": [
       "knowledge/index.yml",
-      "test/contract/**",
+      "test/static/**",
       "test/helpers/clean-product-source.ts",
       "test/helpers/legacy-asset-catalog.ts",
       "test/verification/http-contract-fresh-build-inventory.ts",
@@ -385,24 +389,19 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "skills/buildr-release/scripts/release-contract.ts",
       "skills/buildr-release/scripts/trusted-publish.ts",
       "src/modules/installation/domain/release-version.ts",
+      "src/infrastructure/semantic-version.ts",
       "src/modules/agent-assets/infrastructure/runtime/render-claude-code.ts",
       "test/verification/candidate.ts",
       "test/verification/candidate-ci.ts",
       "test/verification/candidate-ci-evidence.ts",
-      "test/verification/changed.ts",
-      "test/verification/focus.ts",
       "test/verification/executor.ts",
       "test/verification/package/run.ts",
       "test/verification/plan-runner.ts",
       "test/verification/planner.ts",
-      "test/verification/profile.ts",
+      "test/verification/cli.ts",
       "test/verification/registry.ts",
       "test/verification/release/**",
       "test/verification/workspace/suites.ts",
-      "test/verification/verify-buildr-product",
-      "test/verification/verify-buildr-product-daily-full",
-      "test/verification/verify-buildr-product-core",
-      "test/verification/verify-buildr-product-fast",
       "test/verification/verify-buildr-product-ci",
       "tools/development/resolve-development-node",
       "tools/development/run-development-node",
@@ -422,32 +421,29 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     "preflightInputs": [
     ]
   },
-  "system-verification-admission": {
+  "integration-changed-paths": {
     "inputs": [
-      "test/system/verification-changed-paths.test.ts",
+      "test/integration/verification-changed-paths.test.ts",
       "test/verification/candidate.ts",
-      "test/verification/verify-buildr-product-daily-full",
-      "test/verification/verify-buildr-product-core",
       "test/verification/dag-scheduler.ts",
       "test/verification/plan-runner.ts",
       "test/verification/planner.ts",
-      "test/verification/product-provider-entry.ts",
+      "test/verification/cli.ts",
       "test/verification/registry.ts",
       "src/modules/project-testing/application/**",
-      "test/verification/system-suites.ts",
-      "test/verification/system.ts",
+      "test/verification/journey-suites.ts",
+      "test/verification/journeys.ts",
       "test/helpers/task-lifecycle-system-context.ts",
       "test/verification/system-file-timing-reporter.ts",
       "test/verification/ownership.ts"
     ],
     "inputExclusions": []
   },
-  "system-verification-contracts": {
+  "integration-verification-runtime": {
     "inputs": [
-      "test/system/verification-resource-coordination.test.ts",
-      "test/system/verification-timing.test.ts",
-      "test/system/workspace-verification.test.ts",
-      "test/verification/focus.ts",
+      "test/integration/verification-resource-coordination.test.ts",
+      "test/integration/verification-timing.test.ts",
+      "test/integration/workspace-verification.test.ts",
       "test/verification/executor.ts",
       "test/verification/plan-runner.ts",
       "test/verification/resource-coordinator.ts",
@@ -460,58 +456,58 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/verification/support/verification-deadline.ts",
       "test/verification/support/resource-coordinator.ts",
       "src/modules/project-testing/application/verification-application.ts",
-      "test/verification/system-suites.ts",
-      "test/verification/system.ts",
+      "test/verification/journey-suites.ts",
+      "test/verification/journeys.ts",
       "test/helpers/task-lifecycle-system-context.ts",
       "test/verification/system-file-timing-reporter.ts"
     ],
     "inputExclusions": []
   },
-  "system-public-json-contracts": {
+  "integration-public-json": {
     "inputs": [
-      "test/system/public-json-contracts.test.ts",
+      "test/integration/public-json-contracts.test.ts",
       "src/infrastructure/contracts/public-json.ts",
       "src/bootstrap/cli/**",
       "src/modules/task/interfaces/cli/**",
-      "test/verification/system-suites.ts",
-      "test/verification/system.ts",
+      "test/verification/journey-suites.ts",
+      "test/verification/journeys.ts",
       "test/helpers/task-lifecycle-system-context.ts",
       "test/verification/system-file-timing-reporter.ts"
     ],
     "inputExclusions": []
   },
-  "system-openspec-contract-audit": {
+  "integration-openspec-audit": {
     "inputs": [
-      "test/system/openspec-contract-audit.test.ts",
+      "test/integration/openspec-contract-audit.test.ts",
       "src/modules/openspec/**",
-      "test/verification/system-suites.ts",
-      "test/verification/system.ts",
+      "test/verification/journey-suites.ts",
+      "test/verification/journeys.ts",
       "test/helpers/task-lifecycle-system-context.ts",
       "test/verification/system-file-timing-reporter.ts"
     ],
     "inputExclusions": []
   },
-  "system-workspace-lifecycle": {
+  "e2e-workspace": {
     "inputs": [
-      "test/system/package-capability-retirement.test.ts",
+      "test/e2e/package-capability-retirement.test.ts",
       "test/fixtures/legacy-task-record-contract-v3.md",
-      "test/system/project-product.test.ts",
-      "test/system/service-product.test.ts",
-      "test/system/workspace-manifest-registry.test.ts",
+      "test/e2e/project-product.test.ts",
+      "test/e2e/service-product.test.ts",
+      "test/e2e/workspace-manifest-registry.test.ts",
       "src/modules/workspace/**",
       "src/infrastructure/platform.ts",
       "src/infrastructure/product-layout.ts",
       "test/helpers/prepared-fixtures.ts",
       "test/helpers/legacy-asset-catalog.ts",
       "test/helpers/workspace-product-suite.ts",
-      "test/verification/system-suites.ts",
-      "test/verification/system.ts",
+      "test/verification/journey-suites.ts",
+      "test/verification/journeys.ts",
       "test/helpers/task-lifecycle-system-context.ts",
       "test/verification/system-file-timing-reporter.ts"
     ],
     "inputExclusions": []
   },
-  "system-task-lifecycle": {
+  "e2e-task": {
     "inputs": [
       "test/helpers/legacy-asset-catalog.ts",
       "src/modules/task/persistence/task-repository.ts",
@@ -519,12 +515,12 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/modules/task/persistence/task-service-repository.ts",
       "src/modules/task/persistence/task-change-repository.ts",
       "test/system/task-record-change-resolver.test.ts",
-      "test/system/task-record-buildr-web.test.ts",
-      "test/system/task-commits.test.ts",
+      "test/e2e/task-record-buildr-web.test.ts",
+      "test/e2e/task-commits.test.ts",
       "src/modules/task/commits/**",
-      "test/system/task-record-product.test.ts",
-      "test/system/task-review-product.test.ts",
-      "test/system/task-verification-product.test.ts",
+      "test/e2e/task-record-product.test.ts",
+      "test/e2e/task-review-product.test.ts",
+      "test/e2e/task-verification-product.test.ts",
       "test/system/product-verification-provider-cli.test.ts",
       "src/bootstrap/**",
       "src/modules/task/change/**",
@@ -550,48 +546,48 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/modules/task/interfaces/cli/task-verification.ts",
       "src/modules/task/interfaces/cli/parent-coordination.ts",
       "src/modules/task/interfaces/http/**",
-      "test/verification/system-suites.ts",
-      "test/verification/system.ts",
+      "test/verification/journey-suites.ts",
+      "test/verification/journeys.ts",
       "test/helpers/task-lifecycle-system-context.ts",
       "test/verification/system-file-timing-reporter.ts"
     ],
     "inputExclusions": []
   },
-  "system-worktree-lifecycle": {
+  "e2e-worktree": {
     "inputs": [
-      "test/system/worktree-create.test.ts",
+      "test/e2e/worktree-create.test.ts",
       "src/modules/task/infrastructure/**",
       "src/infrastructure/git/**",
       "test/helpers/workspace-product-suite.ts",
       "test/helpers/clean-product-source.ts",
-      "test/verification/system-suites.ts",
-      "test/verification/system.ts",
+      "test/verification/journey-suites.ts",
+      "test/verification/journeys.ts",
       "test/helpers/task-lifecycle-system-context.ts",
       "test/verification/system-file-timing-reporter.ts"
     ],
     "inputExclusions": []
   },
-  "system-nested-git-isolation": {
+  "e2e-nested-git": {
     "inputs": [
-      "test/system/worktree-nested-git-isolation.test.ts",
-      "test/integration/non-git-workspace-continuity.test.ts",
-      "tools/development/run-isolated-workspace-smoke.ts",
+      "test/e2e/worktree-nested-git-isolation.test.ts",
+      "test/e2e/non-git-workspace-continuity.test.ts",
+      "tools/development/run-isolated-workspace-check.ts",
       "src/modules/task/infrastructure/**",
       "src/infrastructure/git/**",
       "test/helpers/workspace-product-suite.ts",
-      "test/verification/system-suites.ts",
-      "test/verification/system.ts",
+      "test/verification/journey-suites.ts",
+      "test/verification/journeys.ts",
       "test/helpers/task-lifecycle-system-context.ts",
       "test/verification/system-file-timing-reporter.ts"
     ],
     "inputExclusions": []
   },
-  "system-runtime-recovery": {
+  "e2e-runtime-recovery": {
     "inputs": [
-      "test/system/cli-update.test.ts",
-      "test/system/runtime-target-authority.test.ts",
-      "test/system/web-update-flow.test.ts",
-      "test/system/workspace-runtime-recovery.test.ts",
+      "test/e2e/cli-update.test.ts",
+      "test/e2e/runtime-target-authority.test.ts",
+      "test/e2e/web-update-flow.test.ts",
+      "test/e2e/workspace-runtime-recovery.test.ts",
       "src/modules/installation/application/cli-update.ts",
       "src/modules/installation/application/release-awareness.ts",
       "src/modules/installation/application/update-flow.ts",
@@ -602,18 +598,18 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/infrastructure/filesystem/**",
       "src/infrastructure/network/**",
       "src/modules/agent-assets/infrastructure/runtime/**",
-      "test/verification/system-suites.ts",
-      "test/verification/system.ts",
+      "test/verification/journey-suites.ts",
+      "test/verification/journeys.ts",
       "test/helpers/task-lifecycle-system-context.ts",
       "test/verification/system-file-timing-reporter.ts"
     ],
     "inputExclusions": []
   },
-  "system-buildr-web-http": {
+  "integration-web-http": {
     "inputs": [
-      "test/system/buildr-web-http.test.ts",
-      "test/system/task-professional-http-contract.test.ts",
-      "test/system/workspace-buildr-web-http.test.ts",
+      "test/integration/buildr-web-http.test.ts",
+      "test/integration/task-professional-http-contract.test.ts",
+      "test/integration/workspace-buildr-web-http.test.ts",
       "src/bootstrap/**",
       "src/modules/workspace/module.ts",
       "src/modules/workspace/interfaces/http/**",
@@ -625,38 +621,38 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/infrastructure/sqlite/**",
       "services/buildr-web/src/api/**",
       "test/helpers/workspace-product-suite.ts",
-      "test/verification/system-suites.ts",
-      "test/verification/system.ts",
+      "test/verification/journey-suites.ts",
+      "test/verification/journeys.ts",
       "test/helpers/task-lifecycle-system-context.ts",
       "test/verification/system-file-timing-reporter.ts"
     ],
     "inputExclusions": []
   },
-  "system-app-process": {
+  "e2e-app-process": {
     "inputs": [
       "src/modules/installation/infrastructure/development-runtime-inputs.ts",
       "src/modules/installation/infrastructure/current-product-identity.ts",
       "src/modules/installation/infrastructure/installation-origin.ts",
-      "test/system/development-workspace-smoke-isolation.test.ts",
-      "test/system/buildr-web-channel-isolation.test.ts",
-      "test/system/buildr-web-launcher.test.ts",
-      "test/system/workspace-app-process.test.ts",
+      "test/integration/development-workspace-check-isolation.test.ts",
+      "test/e2e/buildr-web-channel-isolation.test.ts",
+      "test/e2e/buildr-web-launcher.test.ts",
+      "test/e2e/workspace-app-process.test.ts",
       "src/web/**",
       "src/infrastructure/process.ts",
       "tools/build/launcher/**",
-      "tools/development/run-isolated-workspace-smoke.ts",
-      "tools/development/workspace-smoke.ts",
-      "test/fixtures/failing-workspace-smoke.ts",
+      "tools/development/run-isolated-workspace-check.ts",
+      "tools/development/workspace-lifecycle-check.ts",
+      "test/fixtures/failing-workspace-check.ts",
       "test/helpers/workspace-product-suite.ts",
-      "test/verification/system-suites.ts",
-      "test/verification/system.ts",
+      "test/verification/journey-suites.ts",
+      "test/verification/journeys.ts",
       "test/helpers/task-lifecycle-system-context.ts",
       "test/verification/system-file-timing-reporter.ts"
     ],
     "inputExclusions": []
   },
-  "system-macos-platform": { "inputs": MACOS_SOURCE_BOUNDARY_INPUTS, "inputExclusions": [] },
-  "system-windows-platform": { "inputs": WINDOWS_SOURCE_BOUNDARY_INPUTS, "inputExclusions": [] },
+  "integration-macos-native": { "inputs": MACOS_SOURCE_BOUNDARY_INPUTS, "inputExclusions": [] },
+  "integration-windows-native": { "inputs": WINDOWS_SOURCE_BOUNDARY_INPUTS, "inputExclusions": [] },
   "cli-architecture": {
     "inputs": [
       "bin/**",
@@ -704,7 +700,6 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "skills/buildr-release/scripts/release-package-evidence.ts",
       "skills/buildr-release/scripts/plugin-hosted-release.ts",
       "skills/buildr-release/scripts/package-release-operation.ts",
-      "test/integration-candidate-release/**",
       "skills/buildr-release/scripts/release-git-convergence.ts",
       "skills/buildr-release/scripts/release-authority.ts",
       "skills/buildr-release/scripts/release-contract.ts",
@@ -729,7 +724,6 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "skills/buildr-release/scripts/release-package-evidence.ts",
       "skills/buildr-release/scripts/plugin-hosted-release.ts",
       "skills/buildr-release/scripts/package-release-operation.ts",
-      "test/integration-candidate-release/**",
       "skills/buildr-release/scripts/release-git-convergence.ts",
       "skills/buildr-release/scripts/release-authority.ts",
       "skills/buildr-release/scripts/release-contract.ts",
@@ -754,7 +748,6 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "skills/buildr-release/scripts/release-package-evidence.ts",
       "skills/buildr-release/scripts/plugin-hosted-release.ts",
       "skills/buildr-release/scripts/package-release-operation.ts",
-      "test/integration-candidate-release/**",
       "skills/buildr-release/scripts/release-git-convergence.ts",
       "skills/buildr-release/scripts/release-authority.ts",
       "skills/buildr-release/scripts/release-contract.ts",
@@ -779,7 +772,6 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "skills/buildr-release/scripts/release-package-evidence.ts",
       "skills/buildr-release/scripts/plugin-hosted-release.ts",
       "skills/buildr-release/scripts/package-release-operation.ts",
-      "test/integration-candidate-release/**",
       "skills/buildr-release/scripts/release-git-convergence.ts",
       "skills/buildr-release/scripts/release-authority.ts",
       "skills/buildr-release/scripts/release-contract.ts",
@@ -804,7 +796,6 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "skills/buildr-release/scripts/release-package-evidence.ts",
       "skills/buildr-release/scripts/plugin-hosted-release.ts",
       "skills/buildr-release/scripts/package-release-operation.ts",
-      "test/integration-candidate-release/**",
       "skills/buildr-release/scripts/release-git-convergence.ts",
       "skills/buildr-release/scripts/release-authority.ts",
       "skills/buildr-release/scripts/release-contract.ts",
@@ -829,7 +820,6 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "skills/buildr-release/scripts/release-package-evidence.ts",
       "skills/buildr-release/scripts/plugin-hosted-release.ts",
       "skills/buildr-release/scripts/package-release-operation.ts",
-      "test/integration-candidate-release/**",
       "skills/buildr-release/scripts/release-git-convergence.ts",
       "skills/buildr-release/scripts/release-authority.ts",
       "skills/buildr-release/scripts/release-contract.ts",
@@ -900,6 +890,44 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "tools/build/launcher/**"
     ]
   },
+  "integration-application-payload-source": {
+    "inputs": [
+      "skills/buildr-release/scripts/application-payload.ts",
+      "skills/buildr-release/scripts/application-payload-entry.ts",
+      "skills/buildr-release/scripts/release-artifact.ts",
+      "src/**",
+      "resources/**",
+      "package/**",
+      "test/integration/application-payload-source.test.ts",
+      "test/helpers/generated-release-inputs.ts",
+      "test/helpers/application-payload-release.ts",
+      "skills/buildr-release/scripts/candidate-package.ts",
+      "test/verification/executor.ts",
+      ".github/workflows/publish.yml"
+    ],
+    "inputExclusions": [
+      "tools/build/launcher/**"
+    ]
+  },
+  "application-payload-artifact": {
+    "inputs": [
+      "skills/buildr-release/scripts/application-payload.ts",
+      "skills/buildr-release/scripts/application-payload-entry.ts",
+      "skills/buildr-release/scripts/release-artifact.ts",
+      "src/**",
+      "resources/**",
+      "package/**",
+      "test/integration/application-payload-artifact.test.ts",
+      "test/helpers/application-payload-release.ts",
+      "test/fixtures/test-context-consumer/**",
+      "skills/buildr-release/scripts/candidate-package.ts",
+      "test/verification/executor.ts",
+      ".github/workflows/publish.yml"
+    ],
+    "inputExclusions": [
+      "tools/build/launcher/**"
+    ]
+  },
   "application-payload-release": {
     "inputs": [
       "skills/buildr-release/scripts/application-payload.ts",
@@ -908,8 +936,9 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/**",
       "resources/**",
       "package/**",
-      "test/integration/application-payload-release.test.ts",
+      "test/e2e/application-payload-release.test.ts",
       "test/helpers/legacy-asset-catalog.ts",
+      "test/helpers/application-payload-release.ts",
       "skills/buildr-release/scripts/candidate-package.ts",
       "test/verification/executor.ts",
       ".github/workflows/publish.yml"
@@ -927,12 +956,12 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "skills/buildr-release/scripts/application-payload.ts",
       "skills/buildr-release/scripts/application-payload-entry.ts",
       "test/integration/npm-launcher.test.ts",
-      "test/verification/release/release-smoke.ts",
+      "test/verification/release/package-consumption.ts",
       ".github/workflows/publish.yml"
     ],
     "inputExclusions": []
   },
-  "host-node-cli-smoke": {
+  "host-node-cli-consumption": {
     "inputs": [
       "buildr",
       "bin/buildr.mjs",
@@ -967,10 +996,10 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     ],
     "inputExclusions": []
   },
-  "openspec-candidate-audit": {
+  "spec-change-consistency": {
     "inputs": [
       "openspec/**",
-      "test/verification/openspec/contract-audit.ts"
+      "test/verification/openspec/spec-change-consistency.ts"
     ],
     "inputExclusions": []
   },
@@ -984,9 +1013,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "package.json",
       "test/**"
     ],
-    // Platform boundary suites stay delegated to their native runner owners;
-    // the candidate executors still claim them for the ownership audit.
-    "inputExclusions": ["test/platform/**"]
+    "inputExclusions": []
   },
   "managed-mutations": {
     "inputs": [
@@ -1120,7 +1147,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   "package-runtime": {
     "inputs": [
       "src/modules/workspace/**",
-      "tools/verification/package-check/smoke-checks.ts",
+      "tools/verification/package-check/runtime-checks.ts",
       "resources/runtime/**",
       "resources/workspace/rules/**",
       "src/modules/agent-assets/infrastructure/runtime/**",
@@ -1249,10 +1276,6 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     "inputs": ["services/buildr-web/**"],
     "inputExclusions": []
   },
-  "dsh-plugin": {
-    "inputs": ["services/dsh-plugin/**", ".github/workflows/publish-dsh-plugin.yml"],
-    "inputExclusions": []
-  },
   "service-branch-contract": {
     "inputs": [
       "src/modules/workspace/**",
@@ -1275,7 +1298,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     ],
     "inputExclusions": []
   },
-  "release-tarball-smoke": {
+  "release-tarball-consumption": {
     "inputs": [
       "buildr",
       "bin/buildr.mjs",
@@ -1354,8 +1377,6 @@ export const VERIFICATION_FULL_SCOPE_AUTHORITIES: any = Object.freeze([
     'tools/codegen/contracts/**', 'tools/testing/test-context-build.ts', 'test/context/**',
   ].map((pattern: any) => fullScopeAuthority(pattern, 'execution-foundation-change', 'Shared TypeScript or Test Context execution foundation changed.')),
   ...[
-    'test/verification/verify-buildr-product', 'test/verification/verify-buildr-product-daily-full',
-    'test/verification/verify-buildr-product-core', 'test/verification/verify-buildr-product-fast',
     'test/verification/verify-buildr-product-ci', 'test/verification/candidate.ts',
     'test/verification/candidate-ci.ts', 'test/verification/candidate-ci-evidence.ts',
     'test/verification/candidate-repair.ts', 'test/verification/candidate-repair-cli.ts',
@@ -1364,12 +1385,13 @@ export const VERIFICATION_FULL_SCOPE_AUTHORITIES: any = Object.freeze([
     'test/verification/verification-input-discovery.ts', 'test/verification/platform-boundaries.ts',
     'test/verification/source.ts', 'test/verification/local-source-verification.ts',
     'test/verification/dag-scheduler.ts', 'test/verification/executor.ts',
-    'test/verification/plan-runner.ts', 'test/verification/profile.ts',
+    'test/verification/cli.ts', 'test/verification/development-aggregate.ts',
+    'test/verification/plan-runner.ts',
     'test/verification/registry.ts', 'test/verification/resource-coordinator.ts',
     'test/verification/timing/parallel-runner.ts',
   ].map((pattern: any) => fullScopeAuthority(pattern, 'execution-graph-change', 'Verification execution graph, profile, scheduler, executor, or resource semantics changed.')),
   ...[
-    'test/verification/changed.ts', 'test/verification/changed-paths.ts', 'test/verification/planner.ts',
+    'test/verification/changed-paths.ts', 'test/verification/planner.ts',
   ].map((pattern: any) => fullScopeAuthority(pattern, 'selection-authority-change', 'Affected and full selection authority changed.')),
   fullScopeAuthority('test/verification/ownership.ts', 'ownership-authority-change', 'Changed path ownership and full-scope authority changed.'),
   ...[
@@ -1381,12 +1403,13 @@ export const VERIFICATION_FULL_SCOPE_AUTHORITIES: any = Object.freeze([
 export const VERIFICATION_FULL_SCOPE_INPUTS: any = Object.freeze(VERIFICATION_FULL_SCOPE_AUTHORITIES.map((item: any) => item.pattern));
 
 export const VERIFICATION_DELEGATED_INPUTS: any = Object.freeze([
-  { owner: "product.windows-platform", inputs: ["test/platform/**"] },
+  { owner: "product.native-boundaries", inputs: ["test/integration/*-boundaries.test.ts"] },
   {
-    "owner": "product.browser-smoke",
+    "owner": "product.browser-e2e",
     "inputs": [
-      "test/browser-smoke/**",
+      "test/e2e/**",
       "test/verification/browser-selector-dispatcher.ts",
+      "test/verification/browser-selector-catalog.ts",
       "test/verification/web-dist.ts"
     ]
   }
@@ -1412,14 +1435,24 @@ export function verificationStepOwnership(id: any, executor: any = null): any  {
   if (!value) throw new Error(`Missing verification ownership declaration: ${id}`);
   // The executing file selectors are also changed-path inputs; do not maintain
   // a second hand-copied membership list beside the primary suite registry.
-  const members: string[] = executor?.files ?? executor?.discoveredFiles ?? [];
+  const members: string[] = executor?.files ?? executor?.discoveredFiles
+    ?? (executor?.file === 'test/verification/run-node-tests.ts' ? executor.args : []) ?? [];
   return members.length === 0 ? value : Object.freeze({ ...value, inputs: Object.freeze([...new Set([...value.inputs, ...members])]) });
 }
 
-export function validateVerificationStepOwnership(stepIds: any): any  {
-  const expected: any = new Set(stepIds);
+export function validateVerificationStepOwnership(steps: any): any {
+  const entries = steps.map((step: any) => typeof step === 'string' ? { id: step } : step);
+  const expected = new Set(entries.map((step: any) => step.id));
   const findings: any[] = [];
-  for (const id of expected) if (!VERIFICATION_STEP_OWNERSHIP[id]) findings.push({ step: id, code: 'missing_step_ownership' });
+  for (const step of entries) {
+    // A Service definition is the sole owner of its test membership and inputs.
+    // Cross-service recipes retain the explicit project ownership declarations.
+    const serviceDeclared = step.serviceOwned === true && typeof step.serviceRoot === 'string'
+      && Array.isArray(step.inputs) && step.inputs.length > 0;
+    const browserDeclared = typeof step.browserSelector === 'string' && step.executor?.file === 'test/verification/browser-selector-dispatcher.ts'
+      && Array.isArray(step.inputs) && step.inputs.length > 0;
+    if (!VERIFICATION_STEP_OWNERSHIP[step.id] && !serviceDeclared && !browserDeclared) findings.push({ step: step.id, code: 'missing_step_ownership' });
+  }
   for (const id of Object.keys(VERIFICATION_STEP_OWNERSHIP)) if (!expected.has(id)) findings.push({ step: id, code: 'unknown_step_ownership' });
   return Object.freeze({ ok: findings.length === 0, findings: Object.freeze(findings) });
 }

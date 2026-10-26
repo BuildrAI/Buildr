@@ -67,14 +67,14 @@ const allowed: any = new Map([
   ['src/modules/agent-assets/application/package-maintenance/output.ts', new Set(['buildPackageOutput', 'packageBuild'])],
   // The shared resource set publishes atomically through staging/previous directories it exclusively owns,
   // and workspace adoption writes only its own .buildr/local record.
-  ['src/infrastructure/product-resources/shared-resources.ts', new Set(['ensurePackageResources', 'adoptPackageResources', 'prepareWorkspaceResourceAdoption'])],
+  ['src/infrastructure/product-resources/shared-resources.ts', new Set(['ensurePackageResources', 'publishPackageResources', 'adoptPackageResources', 'prepareWorkspaceResourceAdoption'])],
   // Preserved Archify installs are relocated into Buildr-owned data before the shared set replaces them.
   ['src/infrastructure/product-resources/preserved-archify.ts', new Set(['preserveArchifyBeforeReplacement'])],
   ['src/modules/agent-assets/application/package-maintenance/archify-retirement.ts', new Set(['retirePackagedArchify'])],
-  ['tools/verification/package-check/smoke-checks.ts', new Set([
+  ['tools/verification/package-check/runtime-checks.ts', new Set([
     'verifyRecursiveRules', 'verifyWorkspaceAssetLifecycle', 'verifyInitializedWorkspace',
-    'verifyExistingAgentsCompatibility', 'runPackageWorkspaceSmoke', 'runPackageDomainIntegration',
-    'runPackageAggregateSmoke',
+    'verifyExistingAgentsCompatibility', 'runPackageWorkspaceLifecycle', 'runPackageDomainIntegration',
+    'runPackageAggregateIntegration',
   ])],
   // ensure owns isolated clone staging, failure cleanup, and guarded publication to the repository source root.
   ['src/modules/workspace/infrastructure/repository-clone-supervisor.ts', new Set(['ensure'])],

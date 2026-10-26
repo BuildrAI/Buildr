@@ -29,10 +29,10 @@ test('Candidate preparation accepts the minimum, audits the active Node and reje
   });
   const result = prepare('base');
   assert.equal(result.node.version, process.versions.node);
-  assert.equal(result.operations.length, 2);
+  assert.equal(result.operations.length, 4);
   fs.writeFileSync(versionFile, '999.0.0\n');
   assert.throws(() => prepare('base'), /does not meet required minimum 999\.0\.0/);
-  assert.equal(calls, 2);
+  assert.equal(calls, 4);
   assert.doesNotThrow(() => prepare('host'), 'the explicit Host Node matrix bypass remains independent of the development floor');
 });
 
@@ -137,7 +137,7 @@ test('Candidate preparation saves running stages, complete prior operations and 
     env: { ...process.env, GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '1', CANDIDATE_SOURCE_SHA: 'a'.repeat(40), BUILDR_CANDIDATE_PREPARATION_ID: 'fixture-shard' }, stream: { write: () => true },
     execute: (() => {
       snapshots.push(JSON.parse(fs.readFileSync(output, 'utf8')));
-      return fail && snapshots.length === 2 ? { status: null, signal: 'SIGTERM', error: Object.assign(new Error('private URL with secret'), { code: 'ETIMEDOUT' }) } : { status: 0 };
+      return fail && snapshots.length === 4 ? { status: null, signal: 'SIGTERM', error: Object.assign(new Error('private URL with secret'), { code: 'ETIMEDOUT' }) } : { status: 0 };
     }) as any,
   });
   assert.throws(() => run(true), /preparation failed at generated-contracts/);
@@ -148,15 +148,15 @@ test('Candidate preparation saves running stages, complete prior operations and 
   assert.equal(failure.status, 'failed');
   assert.equal(failure.checks, 'not-started');
   assert.equal(failure.id, 'fixture-shard');
-  assert.deepEqual(failure.operations.map((item: any) => item.status), ['passed', 'failed']);
-  assert.equal(failure.operations[1].exitCode, null);
-  assert.equal(failure.operations[1].errorCode, 'ETIMEDOUT');
-  assert.equal(failure.operations[1].failureClass, 'timeout');
+  assert.deepEqual(failure.operations.map((item: any) => item.status), ['passed', 'passed', 'passed', 'failed']);
+  assert.equal(failure.operations[3].exitCode, null);
+  assert.equal(failure.operations[3].errorCode, 'ETIMEDOUT');
+  assert.equal(failure.operations[3].failureClass, 'timeout');
   assert.equal(JSON.stringify(failure).includes('private URL'), false);
   snapshots.length = 0;
   const success = run(false);
   assert.equal(success.status, 'passed');
-  assert.deepEqual(JSON.parse(fs.readFileSync(output, 'utf8')).operations.map((item: any) => item.status), ['passed', 'passed']);
+  assert.deepEqual(JSON.parse(fs.readFileSync(output, 'utf8')).operations.map((item: any) => item.status), ['passed', 'passed', 'passed', 'passed']);
   fs.writeFileSync(path.join(root, '.node-version'), '999.0.0\n');
   assert.throws(() => run(false), /does not meet required minimum/);
   const setup = JSON.parse(fs.readFileSync(output, 'utf8'));
@@ -179,17 +179,17 @@ test('local preparation reports actual executed and reused operations and repair
     },
     execute: ((_command: string, args: string[]) => {
       calls++;
-      const id = args[0] === 'ci' ? 'buildr-dependencies' : 'generated-contracts-and-test-context';
+      const id = args[0] === 'ci' ? args.includes('--ignore-scripts') ? 'buildr-agent-dependencies' : 'buildr-dependencies' : args[0] === 'tools/build.ts' ? 'buildr-agent-build' : 'generated-contracts-and-test-context';
       outputs.set(id, `sha256-output-${id}`);
       return { status: 0 };
     }) as any,
   });
-  assert.deepEqual(run().operations.map((operation: any) => operation.disposition), ['executed', 'executed']);
-  assert.deepEqual(run().operations.map((operation: any) => operation.disposition), ['reused', 'reused']);
-  assert.equal(calls, 2);
+  assert.deepEqual(run().operations.map((operation: any) => operation.disposition), ['executed', 'executed', 'executed', 'executed']);
+  assert.deepEqual(run().operations.map((operation: any) => operation.disposition), ['reused', 'reused', 'reused', 'reused']);
+  assert.equal(calls, 4);
   outputs.set('generated-contracts-and-test-context', 'sha256-output-drift');
-  assert.deepEqual(run().operations.map((operation: any) => operation.disposition), ['reused', 'executed']);
-  assert.equal(calls, 3);
+  assert.deepEqual(run().operations.map((operation: any) => operation.disposition), ['reused', 'reused', 'reused', 'executed']);
+  assert.equal(calls, 5);
 });
 
 test('preparation subprocesses do not inherit the parent timing output or operation identity', t => {

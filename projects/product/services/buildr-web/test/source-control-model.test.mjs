@@ -1,3 +1,4 @@
+import {sourceControlSearchQuery} from '../src/features/code/source-control-model.ts';
 import { sourceControlWorkingChanges } from '../src/features/code/source-control-model.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -94,4 +95,10 @@ test('统一更改按工作树与路径去重，保留重命名和冲突，暂�
   assert.equal(sourceControlFileKey(files[0]),sourceControlFileKey(sourceControlWorkingChanges([{...file,area:'unstaged',status:'modified'}])[0]));
   assert.notEqual(sourceControlFileKey(files[0]),sourceControlFileKey(files[1]));
   assert.equal(sourceControlWorkingChanges([file,{...file,area:'unstaged',status:'conflicted'}])[0].status,'conflicted');
+});
+
+test('history search counts Unicode characters, trims input and retains the old query during composition',()=>{
+  for(const input of ['', ' ', 'a', '\u4e2d', '\ud83d\ude80'])assert.equal(sourceControlSearchQuery(input,false),'');
+  for(const input of ['ab', '\u4e2d\u6587', '\ud83d\ude80x'])assert.equal(sourceControlSearchQuery(' '+input+' ',false),input);
+  assert.equal(sourceControlSearchQuery('new query',true),null);
 });

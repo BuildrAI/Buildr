@@ -1,11 +1,11 @@
 import { AssetDeleteDialog } from '../../workspace/components/AssetDeleteDialog';
 import { useAssetList } from '../../workspace/components/useAssetList';
-import { Alert, App, Select, Space, Tag, Tooltip } from 'antd';
+import { Alert, App, Select, Tag, Tooltip } from 'antd';
 import { ResourceDirectory } from '../../../components/ResourceDirectory';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from 'antd';
-import { PlayCircleOutlined, SettingOutlined, StarFilled, StarOutlined, UnorderedListOutlined } from '@ant-design/icons';
+import { CheckOutlined, PlayCircleOutlined, SettingOutlined, StarFilled, StarOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { useAppShell } from '../../../app/AppShellContext';
 import { useWorkspacePageTabs } from '../../../app/pageTabs';
 import { WorkspaceStage } from '../../../components/WorkspaceStage';
@@ -31,7 +31,7 @@ export function ServicesPage() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [starting, setStarting] = useState<{ code: string; name: string } | null>(null);
   const [discovering, setDiscovering] = useState<{ code: string; name: string } | null>(null);
-  const [statusFilter, setStatusFilter] = useState<'all' | 'running'>('all');
+  const [onlyRunning, setOnlyRunning] = useState(false);
   const [projectFilter, setProjectFilter] = useState<string[]>([]);
   const [onlyFrequent, setOnlyFrequent] = useState(false), [savingFrequent, setSavingFrequent] = useState(''), [preparing, setPreparing] = useState('');
   const catalog = useAssetCatalog(Boolean(editing || creating)), data = catalog.data, list = listing.data;
@@ -61,7 +61,7 @@ export function ServicesPage() {
     finally { if (sequence === startSequence.current) setPreparing(''); }
   };
   const services = (list?.services || []).filter(service =>
-    (statusFilter === 'all' || activeRuns(runtimeByCode.get(service.code)).length > 0)
+    (!onlyRunning || activeRuns(runtimeByCode.get(service.code)).length > 0)
     && (!onlyFrequent || frequent(service.id))
     && (!selectedProjects.size || service.projects.some(project => selectedProjects.has(project.id))))
     .sort((a, b) => Number(frequent(b.id)) - Number(frequent(a.id)));
@@ -72,11 +72,11 @@ export function ServicesPage() {
       nameContent={s => <div className="service-directory-name"><Tooltip title={frequent(s.id) ? '取消常用' : '设为常用，优先展示'}><Button className={'service-frequent-button' + (frequent(s.id) ? ' is-frequent' : '')} type="text" size="small" disabled={preferences.loading} loading={savingFrequent === s.id} icon={frequent(s.id) ? <StarFilled /> : <StarOutlined />} aria-label={`${frequent(s.id) ? '取消常用' : '设为常用'}：${s.name}`} aria-pressed={frequent(s.id)} onClick={() => void toggleFrequent(s)} /></Tooltip><div className="resource-name"><Link to={href(s.id)}>{s.name}</Link><span>{s.description || '尚未填写说明'}</span></div></div>}
       rowAttributes={s => ({ 'data-service-code': s.code } as React.HTMLAttributes<HTMLTableRowElement>)}
       tableId="service-table-wrap" bodyId="service-table-body" searchId="services-search"
-      total={list?.services.length} filtered={onlyFrequent || statusFilter === 'running' || projectFilter.length > 0} onClearFilters={() => { setOnlyFrequent(false); setStatusFilter('all'); setProjectFilter([]); }}
+      total={list?.services.length} filtered={onlyFrequent || onlyRunning || projectFilter.length > 0} onClearFilters={() => { setOnlyFrequent(false); setOnlyRunning(false); setProjectFilter([]); }}
       filters={<>
         <Select id="service-project-filter" aria-label="所属项目筛选" mode="multiple" allowClear showSearch maxTagCount={1} placeholder="所属项目" value={projectFilter} options={projectOptions} onChange={setProjectFilter} filterOption={(input, option) => String(option?.label ?? '').toLocaleLowerCase().includes(input.trim().toLocaleLowerCase())} />
-        <Select id="service-runtime-filter" aria-label="运行状态筛选" value={statusFilter} options={[{ label: '全部服务', value: 'all' }, { label: '只看运行中', value: 'running' }]} onChange={value => setStatusFilter(value as 'all' | 'running')} />
-        <Button id="service-frequent-filter" icon={onlyFrequent ? <StarFilled /> : <StarOutlined />} className={onlyFrequent ? 'service-frequent-filter is-active' : 'service-frequent-filter'} aria-pressed={onlyFrequent} onClick={() => setOnlyFrequent(value => !value)}>只看常用</Button>
+        <Button id="service-frequent-filter" icon={onlyFrequent ? <CheckOutlined /> : <StarOutlined />} className={onlyFrequent ? 'service-directory-filter is-active' : 'service-directory-filter'} aria-pressed={onlyFrequent} onClick={() => setOnlyFrequent(value => !value)}>只看常用</Button>
+        <Button id="service-runtime-filter" icon={onlyRunning ? <CheckOutlined /> : <PlayCircleOutlined />} className={onlyRunning ? 'service-directory-filter is-active' : 'service-directory-filter'} aria-pressed={onlyRunning} onClick={() => setOnlyRunning(value => !value)}>只看运行中</Button>
       </>}
       columns={[
         { title: '类型', width: 80, render: (_, s) => serviceTypeTagLabel(s.type) ? <Tag>{serviceTypeTagLabel(s.type)}</Tag> : null },
@@ -91,10 +91,10 @@ export function ServicesPage() {
           },
         },
       ]}
-      actionWidth={196}
+      actionWidth={224}
       rowActions={s => {
         const summary = runtimeByCode.get(s.code);
-        return <Space size={4} wrap>
+        return <>
           {activeRuns(summary).length
             ? <Button type="text" icon={<UnorderedListOutlined />} onClick={() => navigate(href(s.id) + '?view=runtime')}>查看运行</Button>
             : summary?.definition
@@ -102,7 +102,7 @@ export function ServicesPage() {
             : <Button type="text" icon={<SettingOutlined />} disabled={list?.migrationRequired} onClick={() => setDiscovering({ code: s.code, name: s.name })}>运行配置</Button>}
           <Button type="text" disabled={list?.migrationRequired} onClick={() => setEditing(s.id)}>编辑</Button>
           <Button type="text" disabled={list?.migrationRequired} onClick={() => setDeleting(s.id)}>移除</Button>
-        </Space>;
+        </>;
       }}
       notice={<>{list?.migrationRequired && <Alert type="info" message="旧服务登记需要迁移" action={<Button onClick={async () => { try { await assetCatalogApi.migrate(list.revision); setActionError(''); } catch (err) { setActionError((err as Error).message); } }}>迁移登记</Button>} />}
         {runtime.error ? <Alert type="warning" showIcon message="本地运行状态暂时不可用" description={runtime.error} action={<Button size="small" onClick={() => void runtime.refresh()}>重试</Button>} /> : null}</>}

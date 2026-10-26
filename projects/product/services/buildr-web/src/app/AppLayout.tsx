@@ -1,5 +1,11 @@
 import { InstallationInfoDialog } from '../features/installation/components/InstallationInfoDialog';
 import { WorkspacePreparationNotice } from '../features/workspace/components/WorkspacePreparationNotice';
+import { AgentConversationsProvider, useAgentConversationShell } from '../features/agent-conversations/AgentConversationsContext';
+import { ConversationPanel } from '../features/agent-conversations/ConversationPanel';
+import { ConversationAttention } from '../features/agent-conversations/ConversationAttention';
+import { AgentConnectionSettings } from '../features/agent-conversations/AgentConnectionSettings';
+import { AppPrimaryNavigation } from './AppPrimaryNavigation';
+import { CommentOutlined } from '@ant-design/icons';
 import { AgentRuntimeProvider, useAgentRuntime } from './AgentRuntimeContext';
 import { AgentRegistryDrawer } from '../features/agents/components/AgentRegistryDrawer';
 import { agentStatusLabel } from '../features/agents/agent-model';
@@ -67,12 +73,14 @@ function productTitle(webProfile: WebProfile | null): string {
 }
 
 export function AppLayout(props: { renderResource: (item: ResourcePreview) => ReactNode }) {
-  return <AgentRuntimeProvider><AppLayoutView {...props} /></AgentRuntimeProvider>;
+  return <AgentRuntimeProvider><AgentConversationsProvider><AppLayoutView {...props} /></AgentConversationsProvider></AgentRuntimeProvider>;
 }
 
 function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePreview) => ReactNode }) {
   useFileEditingDraftProtection();
   const agents = useAgentRuntime();
+  const conversations = useAgentConversationShell();
+  const [conversationMount, setConversationMount] = useState<HTMLDivElement | null>(null);
   const defaultAgent = agents.registry?.agents.find(agent => agent.id === agents.registry?.defaultAgentId);
   const params = useParams();
   const navigate = useNavigate();
@@ -88,6 +96,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
     const saved = Number(readOptionalPreference('buildr.sidebar-width'));
     return Number.isFinite(saved) && saved >= 150 && saved <= 256 ? saved : 256;
   });
+  const resizeSidebar = (width: number) => { setSidebarWidth(width); writeOptionalPreference('buildr.sidebar-width', String(Math.round(width))); };
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [pageNavigationRequest, setPageNavigationRequest] = useState<WorkspacePageNavigationRequest>();
   const requestWorkspacePage = useCallback((destination: string) => setPageNavigationRequest(previous => ({ sequence: (previous?.sequence || 0) + 1, destination })), []);
@@ -180,6 +189,8 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
     setSettingsWorkspaceId(id);
     setSettingsOpen(true);
   }, []);
+
+  const refreshWorkspaceRegistry = useCallback(() => setWorkspaceRegistryRevision(value => value + 1), []);
 
   const workspaceSettingsSaved = (id: string, data: WorkspaceResponse) => {
     if (id === activeWorkspaceId.current) setWorkspace(data);
@@ -321,6 +332,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
     setWorkspace,
     openWorkspaceSettings,
     workspaceRegistryRevision,
+    refreshWorkspaceRegistry,
     openAgentAction,
     breadcrumbParts,
     setBreadcrumbParts,
@@ -398,9 +410,10 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
       <WorkspaceSourceControlProvider workspaceId={workspaceId}>
       <WorkspaceReadCacheProvider key={workspaceId || 'global'}>
       <WorkbenchPreferencesProvider key={workspaceId || "global"} workspaceId={workspaceId}>
-      <div className={"app-shell area-" + area}>
-        <AppShellHeader isGlobal={isGlobal} brandHref={isGlobal ? '/' : workspaceHref('/overview')} development={webProfile === 'development'} workspaceName={isGlobal ? '全部工作空间' : (workspace?.name || '正在读取…')} workspaceMenuItems={workspaceMenuItems} area={area} workbenchHref={workspaceHref('/overview')} codeHref={codeEntryPath} workspaceDestination={{to:workspaceDestination.current.path,state:workspaceDestination.current.state}} actions={<>
+      <div className={"app-shell has-primary-navigation area-" + area + (conversations.open && conversations.full ? " has-full-conversation" : "")}>
+        <AppShellHeader primaryNavigation="rail" isGlobal={isGlobal} brandHref={isGlobal ? '/' : workspaceHref('/overview')} development={webProfile === 'development'} workspaceName={isGlobal ? '全部工作空间' : (workspace?.name || '正在读取…')} workspaceMenuItems={workspaceMenuItems} area={area} workbenchHref={workspaceHref('/overview')} codeHref={codeEntryPath} workspaceDestination={{to:workspaceDestination.current.path,state:workspaceDestination.current.state}} actions={<>
             {!isGlobal ? <WorkbenchSearch key={workspaceId} /> : null}
+            <div className="global-conversations-control"><Button id="global-conversations-entry" type="text" className={conversations.open?'is-active':''} icon={<CommentOutlined />} aria-pressed={conversations.open} aria-controls="agent-conversation-panel" title={conversations.open?'收起对话':'打开对话'} aria-label={conversations.open ? "收起全局对话" : "打开全局对话"} onClick={conversations.toggle}>对话</Button><ConversationAttention/></div>
             {!isGlobal ? <Button className="shell-menu-toggle" aria-label="打开导航菜单" icon={<MenuOutlined />} onClick={() => setNavigationOpen(true)} /> : null}
             <Tooltip title={defaultAgent ? defaultAgent.label + ' · ' + agentStatusLabel(defaultAgent) : agents.error || '查看或接入智能体'}><Button id="global-agents-entry" className={'shell-agent-entry'+(defaultAgent?.availability === 'available' ? ' is-connected' : ' is-offline')} aria-label="智能体" type="text" icon={<RobotOutlined />} onClick={() => agents.setOpen(true)}><span className="global-agent-label">{defaultAgent?.label || '智能体'}</span></Button></Tooltip>
             <InstallationInfoDialog open={installationInfoOpen} onClose={() => setInstallationInfoOpen(false)} />
@@ -426,7 +439,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
               title={preview?.worktree || undefined}
             />
             {!isGlobal ? (
-              <Tooltip title={area === 'workbench' ? '提出新目标' : '交给 Agent'}>
+              <Tooltip styles={{ root: { pointerEvents: 'none' } }} title={area === 'workbench' ? '提出新目标' : '交给 Agent'}>
               <Button
                 id="open-agent-action"
                 aria-label={area === 'workbench' ? '提出新目标' : '交给 Agent'}
@@ -444,7 +457,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
           action={<Button size="small" loading={quitting} onClick={() => void quit(false)}>重试退出</Button>} />}
         {restartError && <Alert id="restart-buildr-error" type="error" showIcon message="Buildr Web 尚未重启" description={restartError}
           action={<Button size="small" onClick={() => { setRestartError(''); void restart(); }}>重试重启</Button>} />}
-        <AppShellFrame isGlobal={isGlobal} compactNavigation={compactNavigation} sidebarCollapsed={sidebarCollapsed} sidebarWidth={sidebarWidth} onSidebarResize={width => { setSidebarWidth(width); writeOptionalPreference('buildr.sidebar-width', String(Math.round(width))); }} onToggleSidebar={() => { setSidebarCollapsed(value => !value); writeOptionalPreference('buildr.sidebar-collapsed', String(!sidebarCollapsed)); }} navigation={<AppNavigation key={workspaceId} />}>{/* Business content stays in the live adapter. */}<>{workspaceId ? <WorkspaceFileEditingProvider key={workspaceId} workspaceId={workspaceId}><ArticleEditorProvider workspaceId={workspaceId}><WorkspacePages workspaceId={workspaceId} renderResource={renderResource} navigationRequest={pageNavigationRequest} /></ArticleEditorProvider></WorkspaceFileEditingProvider> : <Outlet />}</></AppShellFrame>
+        <AppShellFrame isGlobal={isGlobal} compactNavigation={compactNavigation} sidebarCollapsed={sidebarCollapsed} sidebarWidth={sidebarWidth} onSidebarResize={resizeSidebar} onToggleSidebar={() => { setSidebarCollapsed(value => !value); writeOptionalPreference('buildr.sidebar-collapsed', String(!sidebarCollapsed)); }} navigation={<AppNavigation key={workspaceId} />} navigationRail={workspaceId ? <AppPrimaryNavigation sidebarWidth={sidebarWidth} onSidebarResize={resizeSidebar} workspaceId={workspaceId} area={area} /> : undefined} afterContent={<div className="ac-panel-mount" ref={setConversationMount} style={{display: 'contents'}} /> }>{/* Business content stays in the live adapter. */}<>{workspaceId ? <WorkspaceFileEditingProvider key={workspaceId} workspaceId={workspaceId}><ArticleEditorProvider workspaceId={workspaceId}><WorkspacePages workspaceId={workspaceId} renderResource={renderResource} navigationRequest={pageNavigationRequest} /></ArticleEditorProvider></WorkspaceFileEditingProvider> : <Outlet />}</></AppShellFrame>
       </div>
 
       {!isGlobal ? <Drawer title="导航" placement="left" width={280} open={navigationOpen}
@@ -479,9 +492,11 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
         </div>
       </DrawerShell>
       <AgentRegistryDrawer />
+      <AgentConnectionSettings />
       <WorkspaceSettingsDrawer open={settingsOpen} workspaceId={settingsWorkspaceId}
         onClose={() => setSettingsOpen(false)} onSaved={workspaceSettingsSaved} />
     </WorkbenchPreferencesProvider>
+    <ConversationPanel portalTarget={conversationMount} defaultWorkspaceId={workspaceId} workspaces={registry.flatMap(entry => entry.workspace ? [{id:entry.workspace.id,name:entry.workspace.name,rootPath:entry.rootPath}] : [])} />
     </WorkspaceReadCacheProvider>
     </WorkspaceSourceControlProvider>
     </AppShellContext.Provider>

@@ -81,6 +81,7 @@ function Preview() {
   const shell: AppShellContextValue = {
     workspaceId: 'prototype', workspace: { name: 'Buildr', rootPath: '/模拟工作空间/Buildr' },
     navigationRevision: 0, refreshNavigation: info, setWorkspace: info, openWorkspaceSettings: info,
+    refreshWorkspaceRegistry: () => {},
     workspaceRegistryRevision: 0, openAgentAction: info, breadcrumbParts: [], setBreadcrumbParts: () => {},
     taskListResetToken: 0, resetTaskList: info, workspaceMenuTarget: () => ({ to: '/workspace' }), forgetWorkspacePage: () => {},
   };

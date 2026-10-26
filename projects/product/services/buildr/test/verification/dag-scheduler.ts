@@ -69,13 +69,13 @@ export async function runVerificationDag(plan: any, options: any = {}): Promise<
   const limits: any = normalizedLimits(options.concurrency, plan);
   if (!Number.isInteger(limits.global) || limits.global < 1) throw new Error('Invalid global concurrency limit');
   for (const [name, value] of Object.entries(limits.classes ?? {})) {
-    if (!Number.isInteger(value) || value < 1) throw new Error(`Invalid concurrency limit for ${name}`);
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) throw new Error(`Invalid concurrency limit for ${name}`);
   }
   for (const [name, value] of Object.entries(limits.resources ?? {})) {
-    if (!Number.isInteger(value) || value < 1) throw new Error(`Invalid concurrency limit for resource ${name}`);
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) throw new Error(`Invalid concurrency limit for resource ${name}`);
   }
   for (const [name, value] of Object.entries(limits.capacities ?? {})) {
-    if (!Number.isInteger(value) || value < 1) throw new Error(`Invalid resource capacity for ${name}`);
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) throw new Error(`Invalid resource capacity for ${name}`);
   }
   const schedulingMode: any = parseVerificationSchedulingMode(options.schedulingMode);
   const planIndex: any = new Map(plan.steps.map((step: any, index: any) => [step.id, index]));
@@ -89,8 +89,8 @@ export async function runVerificationDag(plan: any, options: any = {}): Promise<
   const demandByStep: any = new Map(plan.steps.map((step: any) => [step.id, stepDemand(step, options.executionProfile)]));
   for (const step of plan.steps) for (const [dimension, value] of Object.entries(demandByStep.get(step.id))) {
     const capacity: any = limits.capacities?.[dimension];
-    if (!Number.isInteger(value) || value < 1) throw new Error(`Invalid ${dimension} resource demand for ${step.id}`);
-    if (!Number.isInteger(capacity) || capacity < value) throw new Error(`Unsatisfied ${dimension} resource demand for ${step.id}: demand=${value} capacity=${capacity ?? 'missing'}`);
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) throw new Error(`Invalid ${dimension} resource demand for ${step.id}`);
+    if (!Number.isInteger(capacity) || capacity < (value as number)) throw new Error(`Unsatisfied ${dimension} resource demand for ${step.id}: demand=${value} capacity=${capacity ?? 'missing'}`);
   }
 
   const capacityAvailable: any = (step: any) => {
@@ -152,7 +152,7 @@ export async function runVerificationDag(plan: any, options: any = {}): Promise<
       active.delete(step.id);
       activeByClass.set(concurrencyClass, activeByClass.get(concurrencyClass) - 1);
       for (const resource of step.resources ?? []) activeByResource.set(resource, activeByResource.get(resource) - 1);
-      for (const [dimension, demand] of Object.entries(resourceGrant)) activeDemand.set(dimension, activeDemand.get(dimension) - demand);
+      for (const [dimension, demand] of Object.entries(resourceGrant)) activeDemand.set(dimension, activeDemand.get(dimension) - (demand as number));
       results.set(step.id, scheduledResult);
       options.onComplete?.(scheduledResult, step);
       return scheduledResult;

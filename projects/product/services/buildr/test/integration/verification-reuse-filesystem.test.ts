@@ -20,7 +20,7 @@ function fixture(t: test.TestContext) {
   const runGit = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
   runGit('init', '--initial-branch=main'); runGit('add', '.');
   runGit('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', '-c', 'commit.gpgSign=false', 'commit', '-m', 'source');
-  const env = { ...process.env, BUILDR_VERIFICATION_REUSE_DIR: path.join(root, '.cache') };
+  const env: NodeJS.ProcessEnv = { ...process.env, BUILDR_VERIFICATION_REUSE_DIR: path.join(root, '.cache') };
   // Cache storage is owned runtime state, outside the observed source inventory.
   fs.writeFileSync(path.join(root, '.git/info/exclude'), '.cache/\n');
   const step = { id: 'source-fixture', executor: { type: 'node', file: 'check.ts' }, reuse: { scope: 'backend' as const } };
@@ -106,14 +106,14 @@ test('reviewed runtime proof partitions unrelated tests while binding its real t
 
 test('runtime discovery binds added, changed and deleted assertions to local reuse', t => {
   const f = fixture(t);
-  for (const family of ['integration', 'system']) {
-    const runner = path.join(f.productRoot, `test/verification/${family}.ts`);
+  for (const family of ['integration', 'e2e']) {
+    const runner = path.join(f.productRoot, 'test/verification/journeys.ts');
     const selected = path.join(f.productRoot, `test/${family}/selected.test.ts`);
     fs.mkdirSync(path.dirname(runner), { recursive: true });
     fs.mkdirSync(path.dirname(selected), { recursive: true });
     fs.writeFileSync(runner, "import fs from 'node:fs'; fs.readdirSync('test');\n");
     fs.writeFileSync(selected, '// original assertion\n');
-    const step = { ...f.step, executor: { type: 'node', file: `test/verification/${family}.ts` }, reuse: { scope: 'runtime' as const, inputMode: 'runtime-check' as const } };
+    const step = { ...f.step, executor: { type: 'node', file: 'test/verification/journeys.ts' }, reuse: { scope: 'runtime' as const, inputMode: 'runtime-check' as const } };
     const key = () => createVerificationReuseIdentity(step, collectVerificationReuseSnapshot({ ...f.options, steps: [step] }))!.key;
     const original = key();
     fs.writeFileSync(selected, '// changed assertion\n'); assert.notEqual(key(), original);
@@ -236,10 +236,10 @@ test('a pre-partition scoped proof survives an unrelated map edit without rewrit
 });
 
 test('reuse planning is read-only, explains input and recipe misses and removes reused work from its estimate', t => {
-  const f = fixture(t), step = { ...f.step, testing: { targetDurationMs: 1200 }, dependsOn: [] };
+  const f = fixture(t), step = { ...f.step, schedulingCostMs: 1200, dependsOn: [] };
   const plan = { steps: [step] };
   const missing = inspectVerificationReusePlan(plan, f.options);
-  assert.equal(fs.existsSync(f.options.env.BUILDR_VERIFICATION_REUSE_DIR), false);
+  assert.equal(fs.existsSync(f.options.env.BUILDR_VERIFICATION_REUSE_DIR!), false);
   assert.deepEqual(missing.steps[0].reasons, ['no-matching-result']);
   assert.equal(missing.estimate.remainingWorkMs, 1200);
   const snapshot = f.observe(), store = createVerificationReuseStore({ ...f.options, snapshot });
@@ -459,7 +459,7 @@ test('executePlan automatically skips a second executor call and forced failure 
   const first = await executePlan(plan, options);
   assert.equal(first.passed, true); assert.equal(first.sourceBundle.records.length, 1);
   const next = await executePlan(plan, options);
-  assert.equal(grants, 2, 'a fully reused plan acquires neither the full-plan lease nor per-check resources');
+  assert.equal(grants, 1, 'the first check alone acquires its resource; the reused plan acquires none');
   assert.equal(calls, 1); assert.equal(next.results[0].disposition, 'reused'); assert.equal(next.results[0].durationMs, 0);
   fail = true;
   const forced = await executePlan(plan, { ...options, reuse: { force: true } });
@@ -475,7 +475,7 @@ test('executePlan automatically skips a second executor call and forced failure 
   fs.writeFileSync(badFile, "import test from 'node:test'; import assert from 'node:assert/strict'; test('affected failure',()=>assert.fail('fixture'));");
   const files = { ...f.step, id: 'file-fixture', platformScope: { kind: 'common' }, dependsOn: [], contexts: [], executor: { type: 'node-test', files: ['test/unit/*.test.mjs'] } };
   const filePlan = { status: 'ready', paths: [], steps: [files] };
-  const childEnv = { ...f.options.env }; childEnv.NODE_TEST_CONTEXT = undefined;
+  const childEnv: NodeJS.ProcessEnv = { ...f.options.env }; childEnv.NODE_TEST_CONTEXT = undefined;
   const fileOptions = { ...f.options, env: childEnv, runId: 'file-fixture', concurrency: 1 };
   const failedFiles = await executePlan(filePlan, fileOptions);
   assert.equal(failedFiles.passed, false);
@@ -505,13 +505,13 @@ test('executePlan automatically skips a second executor call and forced failure 
   assert.equal(metadata.sourceBundle.records.length, 0, 'incomplete diagnostics cannot manufacture reusable file coverage');
 });
 
-for (const failure of ['context-cleanup', 'full-plan-release']) test(`executePlan ${failure} failure preserves prior reused success for the next run`, async t => {
+for (const failure of ['context-cleanup', 'resource-cleanup']) test(`executePlan ${failure} failure preserves prior reused success for the next run`, async t => {
   const f = fixture(t), oldStep = { ...f.step, dependsOn: [], contexts: [] };
-  const newStep = { ...oldStep, id: 'new-source-fixture' };
+  const newStep = { ...oldStep, id: 'new-source-fixture', ...(failure === 'resource-cleanup' ? { resourceClaims: ['owned-test-resource'] } : {}) };
   let calls = 0, releases = 0;
   const options = { ...f.options, runId: 'cleanup-fixture', concurrency: 1,
     resourceCoordinator: { root: path.join(f.root, 'resources'), async acquire() {
-      return { waitDurationMs: 0, async release() { releases++; return []; } };
+      return { waitDurationMs: 0, claims: [], async release() { releases++; return []; } };
     } },
     executorFactory: () => async () => { calls++; return { ...passed }; },
   };
@@ -524,10 +524,16 @@ for (const failure of ['context-cleanup', 'full-plan-release']) test(`executePla
       prepareAll: () => [], environment: () => ({}), events: () => [],
       cleanup() { throw new Error('injected current context cleanup failure'); },
     }) } : { resourceCoordinator: { ...options.resourceCoordinator, async acquire() {
-      return { waitDurationMs: 0, async release() { releases++; return [{ status: 'failed' }]; } };
+      return { waitDurationMs: 0, claims: [], async release() { releases++; return [{ status: 'failed' }]; } };
     } } }),
   };
-  await assert.rejects(executePlan(plan, failing), failure === 'context-cleanup' ? /injected current context cleanup failure/u : /Failed to release/u);
+  if (failure === 'context-cleanup') await assert.rejects(executePlan(plan, failing), /injected current context cleanup failure/u);
+  else {
+    const failed = await executePlan(plan, failing);
+    assert.equal(failed.passed, false);
+    assert.equal(failed.results.find((result: any) => result.id === newStep.id).status, 'failed');
+    assert.match(failed.results.find((result: any) => result.id === newStep.id).stderr, /resource cleanup/);
+  }
   assert.equal(completed.find(result => result.id === oldStep.id).status, 'passed');
   assert.equal(completed.find(result => result.id === oldStep.id).disposition, 'reused');
   assert.deepEqual(createVerificationReuseStore({ ...f.options, snapshot: f.observe() }).lookup(oldStep), original);
@@ -536,7 +542,7 @@ for (const failure of ['context-cleanup', 'full-plan-release']) test(`executePla
   assert.equal(resumed.passed, true);
   assert.equal(resumed.results.find((result: any) => result.id === oldStep.id).disposition, 'reused');
   assert.equal(calls, 3, 'the original check executes once; only the failed run\'s new check repeats');
-  assert.equal(releases, 2);
+  assert.equal(releases, failure === 'context-cleanup' ? 0 : 2);
 });
 
 test('custom inner worker grants execute without reusing or exporting a registered-profile proof', async t => {

@@ -47,15 +47,15 @@ test('external pull requests cannot import passing claims to skip source executi
 
 test('closed source shard coverage can be reused while missing, failed and other-platform results remain selected', () => {
   const shards = [
-    { id: 'mac', runner: 'macos', stepIds: ['unit', 'contract'] },
+    { id: 'mac', runner: 'macos', stepIds: ['unit', 'source-contracts'] },
     { id: 'windows', runner: 'windows', stepIds: ['system'] },
     { id: 'artifact', runner: 'macos', stepIds: ['unit'], requiresArtifact: true },
   ];
   const validate = (r: any, _step: string, runner: string) => r.result.status === 'passed' && r.environment.runner === runner;
-  const partial = planCandidateSourceReuse(shards, bundle([record('unit'), record('contract', 'macos', false), record('system')]), validate);
+  const partial = planCandidateSourceReuse(shards, bundle([record('unit'), record('source-contracts', 'macos', false), record('system')]), validate);
   assert.deepEqual(partial.sourceShards.map(s => s.id), ['mac', 'windows']);
   assert.deepEqual(partial.reusedStepIds, ['unit']);
-  const complete = planCandidateSourceReuse(shards, bundle([record('unit'), record('contract')]), validate);
+  const complete = planCandidateSourceReuse(shards, bundle([record('unit'), record('source-contracts')]), validate);
   assert.deepEqual(complete.sourceShards.map(s => s.id), ['windows']);
   assert.deepEqual(complete.reusedShards.map(s => s.shard.id), ['mac']);
   assert.equal(complete.reusedShards[0].records.length, 2);

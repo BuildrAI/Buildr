@@ -1,0 +1,12 @@
+import type {ReactNode} from 'react';
+import {Button,Space,Tag,Tabs} from 'antd';
+import {RobotOutlined,DownOutlined} from '@ant-design/icons';
+import {AccountModelManager} from './AccountModelManager';
+import './agent-model-setup.css';
+export interface SetupExecutor {id:string;label:string;prepared:boolean;version?:string;checking?:boolean;}
+type ManagerProps=Parameters<typeof AccountModelManager>[0];
+type Props=ManagerProps&{executors:SetupExecutor[];mode:'agents'|'accounts';onMode(mode:'agents'|'accounts'):void;onPrepareExecutor(id:string):void;expandedExecutor?:string|null;onToggleExecutor?(id:string):void;renderExecutor?(id:string):ReactNode;};
+/** Programs are configured separately from model accounts. */
+export function AgentModelSetup({executors,mode,onMode,onPrepareExecutor,expandedExecutor,renderExecutor,onToggleExecutor,...manager}:Props){
+ return <section className="ams-setup"><Tabs activeKey={mode} onChange={value=>onMode(value as Props['mode'])} items={[{key:'agents',label:'智能体'},{key:'accounts',label:'模型'}]}/>{mode==='accounts'?<div className="ams-accounts"><AccountModelManager {...manager}/></div>:<div className="ams-executors" data-prototype-position="execution-setup"><p className="ams-intro">接入本机智能体。账号登录和模型管理请前往“模型”。</p>{executors.map(executor=><article className="ams-executor" key={executor.id}><header role="button" tabIndex={0} aria-expanded={expandedExecutor===executor.id} onClick={()=>onToggleExecutor?.(executor.id)} onKeyDown={event=>{if(event.target===event.currentTarget&&(event.key==='Enter'||event.key===' ')){event.preventDefault();onToggleExecutor?.(executor.id);}}}><Space><span className="ams-executor-icon"><RobotOutlined/></span><div><h3>{executor.label}</h3><small>{executor.prepared?(executor.version?'程序版本 '+executor.version:'已检测到兼容程序'):'未准备本机程序'}</small></div></Space><div className="ams-executor-actions"><Tag color={executor.prepared?'success':'default'}>{executor.checking?'检查中':executor.prepared?'已就绪':'尚未准备'}</Tag><Button loading={executor.checking} type={executor.prepared?'default':'primary'} onClick={event=>{event.stopPropagation();onPrepareExecutor(executor.id);}}>{executor.prepared?'检查程序':'接入'}</Button>{renderExecutor&&<DownOutlined aria-hidden="true" className={expandedExecutor===executor.id?'ams-chevron is-open':'ams-chevron'}/>}</div></header>{expandedExecutor===executor.id&&<div className="ams-program-details">{renderExecutor?.(executor.id)}</div>}</article>)}<p className="ams-help">对话中优先使用该智能体已配置的官方模型，也可以选择其他来源的模型。</p></div>}</section>;
+}

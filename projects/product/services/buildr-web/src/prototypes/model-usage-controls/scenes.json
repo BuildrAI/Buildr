@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "pages": [
+    {
+      "id": "quota",
+      "title": "账号与模型 · 账号与额度",
+      "notes": [
+        {
+          "id": "sources",
+          "title": "登录与额度在同一处",
+          "text": "左侧选择账号来源。已登录直接显示套餐额度，未登录或过期时在同一张卡片中登录；登录完成后自动替换为额度和模型入口，不需要跳转页面。所有操作使用示例数据。",
+          "position": "quota-card"
+        },
+        {
+          "id": "quota",
+          "title": "按计费窗口展示额度",
+          "text": "每日和每周额度分开显示剩余比例及重置时间，不混成一个进度条。额度属于账号，不能重复当成每个模型的可用额度。",
+          "position": "quota-card"
+        },
+        {
+          "id": "more",
+          "title": "低频操作收到更多菜单",
+          "text": "重新登录、断开账号以及本机程序检查收在账号卡片右上角。断开后同一张卡片恢复登录入口，已有登录资料、模型启用偏好和历史对话保留。",
+          "position": "quota-card"
+        }
+      ],
+      "states": [
+        {
+          "id": "devin",
+          "title": "Devin · 日 / 周额度",
+          "notes": []
+        },
+        {
+          "id": "qoder",
+          "title": "Qoder · 额度不可读",
+          "notes": [
+            {
+              "id": "unknown",
+              "title": "未知额度不等于没有额度",
+              "text": "平台未提供额度信息时明确说明，不填 0，不编造额度，不阻止正常使用。",
+              "position": "quota-card"
+            }
+          ]
+        },
+        {
+          "id": "dsh",
+          "title": "DSH · 尚未登录",
+          "notes": []
+        },
+        {
+          "id": "expired",
+          "title": "Devin · 登录过期",
+          "notes": []
+        },
+        {
+          "id": "missing",
+          "title": "DSH · 程序未准备",
+          "notes": []
+        }
+      ]
+    },
+    {
+      "id": "models",
+      "title": "账号与模型 · 启用管理",
+      "notes": [
+        {
+          "id": "models",
+          "title": "按基础模型管理",
+          "text": "同一模型的思考档位归入一行，不再把每个变体算成一个模型。搜索、系列及启用状态可组合筛选；批量开关作用于全部筛选结果，含其他页。开关只修改原型内存数据。",
+          "position": "model-visibility"
+        },
+        {
+          "id": "fusion",
+          "title": "组合模式单独收起",
+          "text": "多个模型协作的组合预设不计入基础模型数量，默认停用。只采用平台实际返回的组合，不能自行做模型、思考强度与速度的笛卡尔积。",
+          "position": "combination-modes"
+        },
+        {
+          "id": "context",
+          "title": "设置上下文数字",
+          "text": "输入本地使用的上下文数量，离开输入框即保存；不能超过平台报告上限，可用旁边按钮恢复默认。调整后用于新的执行上下文，不改变平台实际容量。这里仅修改示例数据。",
+          "position": "model-context"
+        }
+      ],
+      "states": [
+        {
+          "id": "all-disabled",
+          "title": "全部停用",
+          "notes": []
+        },
+        {
+          "id": "codex",
+          "title": "Codex · 模型列表",
+          "notes": []
+        },
+        {
+          "id": "empty",
+          "title": "尚无模型",
+          "notes": []
+        }
+      ]
+    },
+    {
+      "id": "conversation",
+      "title": "对话 · 模型与思考深度",
+      "notes": [
+        {
+          "id": "picker",
+          "title": "智能体与模型来源独立选择",
+          "text": "复用现有对话模型组件。账号管理只决定哪些模型出现在候选列表；不同智能体可选择同一个已启用模型。停用当前所选模型时保留原选择并提示重新选择，不静默换模型。",
+          "position": "conversation-picker"
+        },
+        {
+          "id": "depth",
+          "title": "深度从左到右由低到高",
+          "text": "已知思考档位按无、最小、低、中、高、极高、最高、极致排列，并保留平台支持的实际子集。默认档位根据标识匹配，排序不会改变默认值。自动、自适应等不强行排入滑杆。",
+          "position": "conversation-picker"
+        }
+      ],
+      "states": [
+        {
+          "id": "qoder",
+          "title": "自动模式 · 使用按钮",
+          "notes": []
+        },
+        {
+          "id": "fixed",
+          "title": "固定档位 · 无滑杆",
+          "notes": []
+        },
+        {
+          "id": "disabled",
+          "title": "当前模型已停用",
+          "notes": []
+        }
+      ]
+    }
+  ]
+}

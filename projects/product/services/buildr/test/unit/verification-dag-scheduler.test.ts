@@ -192,7 +192,7 @@ test('scheduler在启动step前拒绝超过profile容量的需求', async () => 
 });
 
 test('受限 CI 的真实集成与系统检查不会叠加超过三个工作额度', async () => {
-  const ids: any = ['system-public-json-contracts', 'system-verification-contracts', 'integration'];
+  const ids: any = ['integration-public-json', 'integration-verification-runtime', 'integration'];
   const steps: any = ids.map((id: any) => verificationSteps.find((item: any) => item.id === id));
   const executionProfile: any = resolveVerificationExecutionProfile('ci-workspace-limited');
   const active: any = new Set();
@@ -238,11 +238,11 @@ test('受限 CI 可完整调度全部登记检查并保留完整工作额度', a
   assert.equal(results.length, verificationSteps.length);
   assert.ok(results.every((item: any) => item.status === 'passed'));
   assert.equal(results.find((item: any) => item.id === 'integration-runtime').scheduling.grant.workers, 2);
-  for (const [id, workers] of [['unit', 3], ['component', 1], ['contract', 2]]) assert.equal(results.find((item: any) => item.id === id).scheduling.grant.workers, workers);
+  for (const [id, workers] of [['unit', 3], ['source-contracts', 2]]) assert.equal(results.find((item: any) => item.id === id).scheduling.grant.workers, workers);
 });
 
 test('受限 CI 将真实 App 与适配器重型检查互斥，轻量检查仍可并行', async () => {
-  const ids = ['system-app-process', 'runtime-adapter-parity', 'docs-quality'];
+  const ids = ['e2e-app-process', 'runtime-adapter-parity', 'docs-quality'];
   const steps = ids.map(id => verificationSteps.find((item: any) => item.id === id));
   const executionProfile = resolveVerificationExecutionProfile('ci-workspace-limited');
   const active = new Set<string>(), started: string[] = [];
@@ -274,7 +274,7 @@ test('受限 CI 将真实 App 与适配器重型检查互斥，轻量检查仍�
   assert.equal(lightOverlap, true);
   assert.deepEqual(results.map((item: any) => [item.id, item.status]), ids.map(id => [id, 'passed']));
   assert.equal(results[0].scheduling.grant.workers, 2);
-  assert.equal(results[1].scheduling.grant.workers, 1);
+  assert.equal(results[1].scheduling.grant.workers, 2);
 });
 
 test('真实发布效果检查独占执行，结束后其他 owner 恢复并行', async () => {

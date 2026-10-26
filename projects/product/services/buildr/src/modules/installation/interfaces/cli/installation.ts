@@ -86,7 +86,7 @@ export function createInstallationCliContributions(application: any = null) {
       match: ({ domain }: any) => domain === 'update',
       run: (runtime: any, context: any) => runUpdate(application || runtime, 'update', context.argv.slice(3)),
     },
-  ].map(Object.freeze));
+  ].map(route => Object.freeze(route)));
 }
 
 function printPlan(plan: any, label: any) {

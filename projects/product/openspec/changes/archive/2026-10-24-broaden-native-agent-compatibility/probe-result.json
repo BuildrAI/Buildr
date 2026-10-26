@@ -1,0 +1,23 @@
+{
+  "status": "passed",
+  "version": "0.164.0-alpha.11.1",
+  "candidates": [
+    {
+      "source": "path",
+      "version": "0.164.0-alpha.11.1",
+      "compatible": true,
+      "label": "本机命令行"
+    },
+    {
+      "source": "application",
+      "version": "0.164.0-alpha.11.1",
+      "compatible": true,
+      "label": "ChatGPT 内的 Codex（已检查签名）"
+    }
+  ],
+  "account": "not-authenticated",
+  "isolatedConfiguration": true,
+  "restart": true,
+  "automaticLogin": false,
+  "modelRequests": 0
+}

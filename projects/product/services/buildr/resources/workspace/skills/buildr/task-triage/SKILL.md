@@ -42,7 +42,7 @@ authority 冲突、授权不明、实际 Git 操作所需的 repository set 不�
 
 工程细节默认不进入 OpenSpec；但默认值、存储或内部机制一旦改变外部行为、数据含义、兼容性、安全边界或业务承诺，仍走 `change-flow`。不得用 `spec-maintenance` 绕过新需求评审，也不得用 `code-only` 掩盖规范缺失或事实不明。
 
-若任务改变依赖、构建或测试入口，先把已确认Task scope与变更事实交给`declaration-intake`做只读差异检查；长期`preparation.yml`/`verification.yml`写入按`declaration-intake`的`routine-maintenance|user-decision-required`分类，由对应owner完成；只有后者需要新的用户决定。Triage不直接维护声明。
+若任务改变依赖、构建或测试入口，直接核对当前项目与服务的真实入口差异：测试与 `verification.yml` 由 `project-testing` 一并维护，准备声明由 `buildr` 的准备声明指引维护。已有授权内的普通维护连续完成，只有业务取舍、范围扩大或外部副作用超出现有授权时请求用户决定；不另设声明接入中转。
 
 开发开始时判断预计知识影响，最终新增、修改或删除后复核。已有知识成果受影响时，主动说明受影响成果与建议校准范围；知识维护尚未授权时等待该组授权，已有授权不重复询问。在当前授权内采用 `current-knowledge-maintenance` 维护相关图示、地图、术语和解释；按需调用专业制作方法。普通开发没有规范变化不因此建立 OpenSpec 变更，无影响内容保留，范围外缺口单独提出建议。
 
@@ -111,9 +111,9 @@ authority 冲突、授权不明、实际 Git 操作所需的 repository set 不�
 
 仅当用户目标确实要求更新代码时，才读取 optional `buildr.git-operations/v1` 的绑定（Binding）、契约（Contract）和已选提供者（Provider），明确仓库、引用、动作与授权后执行；失败不撤销已成立的登记。后续文件修改遵循上方隔离策略，工作空间同步遵循产品入口边界，不将这些条件反向加到任务登记上。
 
-选择 `change-flow` 时，先确保正式 Task Record，再完成执行位置判断并使用适用的 `openspec-*` Skill。首次采用、状态实质变化、暂停、完成或用户询问时，从 CLI 刷新并报告 change id、resolved path、action、status、progress 和 next action/blocker；未创建时只写 `planned`，不猜测路径或进度。Buildr 自有 artifacts 和用户说明正文使用中文；命令、路径、标识符、协议字段与 OpenSpec 格式关键字可保留英文。方案审查、实现审查与验证按上述目标、真实方案和风险分别判断（见 `task-review` 与 `task-verification`），不继承此路径选择。
+选择 `change-flow` 时，先确保正式 Task Record，再完成执行位置判断并使用适用的 `openspec-*` Skill。首次采用、状态实质变化、暂停、完成或用户询问时，从 CLI 刷新并报告 change id、resolved path、action、status、progress 和 next action/blocker；未创建时只写 `planned`，不猜测路径或进度。Buildr 自有 artifacts 和用户说明正文使用中文；命令、路径、标识符、协议字段与 OpenSpec 格式关键字可保留英文。方案审查、实现审查与验证按上述目标、真实方案和风险分别判断（见 `task-review` 与 `project-verification`），不继承此路径选择。
 
-实现型任务按共享实现区域、验证入口或失败影响面分组。工作位置沿用已核对的默认隔离结果，实际Git与owned scope变化时重新判断。Agent直接依据目标、OpenSpec、Git、代码、文件和专业结果推进，不创建研发聚合事实或planning snapshot。需要设计测试框架、划分测试边界、编排场景或为实现开发测试时使用`project-testing`。开发中的测试由Agent直接调用项目工具；开发完成后独立使用selected `buildr.task-verification/v4` provider，只保存有意义的Task验证报告。triage不把验证报告变成Task完成门禁。
+实现型任务按共享实现区域、验证入口或失败影响面分组。工作位置沿用已核对的默认隔离结果，实际Git与owned scope变化时重新判断。Agent直接依据目标、OpenSpec、Git、代码、文件和专业结果推进，不创建研发聚合事实或planning snapshot。需要设计测试框架、划分测试边界、编排场景或为实现开发测试时使用`project-testing`。开发中由 `project-verification` 依据用户请求、目标与实际调用面选齐相关四类检查并直接执行；不要求用户先提供比较基线或创建测试计划。推送前按具体项目政策核对完整检查，Buildr 产品使用四服务全部静态检查（Static Check）与单元测试（Unit Test）。开发完成后通过 selected `buildr.task-verification/v4` provider 保存已有正式任务的真实报告；独立检查无任务时直接交付证据。triage不把验证报告变成Task完成门禁。
 
 ## 输出
 

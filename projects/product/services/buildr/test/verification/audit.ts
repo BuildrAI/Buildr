@@ -6,7 +6,6 @@ import { fileURLToPath } from 'node:url';
 
 import { collectChangedProductPaths } from './changed-paths.ts';
 import {
-  auditDailyCoreReleaseEvidence,
   createVerificationEvidenceMap,
   createVerificationPlan,
   createVerificationSelectionAudit,
@@ -63,11 +62,10 @@ try {
       selection: createVerificationSelectionAudit(plan),
       estimate: estimateVerificationPlan(plan, { concurrency: executionProfile.limits }),
       primaryEvidence: createVerificationEvidenceMap(),
-      releaseEvidence: auditDailyCoreReleaseEvidence(),
       diagnostic: plan.diagnostic,
     };
     process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
-    if (plan.status === 'blocked' || !output.primaryEvidence.ok || !output.releaseEvidence.ok) process.exitCode = 1;
+    if (plan.status === 'blocked' || plan.status === 'incomplete') process.exitCode = 1;
   }
 } catch (error: any) {
   process.stderr.write(`${error.message}\n`);

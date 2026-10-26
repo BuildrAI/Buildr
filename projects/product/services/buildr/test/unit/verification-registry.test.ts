@@ -6,7 +6,7 @@ import { verificationSteps } from '../verification/registry.ts';
 
 const unit: any = verificationSteps.find((step: any) => step.id === 'unit');
 
-function registryStep(testing: any, profiles: any = ['fast'], overrides: any = {}): any  {
+function registryStep(testing: any, profiles: any = [], overrides: any = {}): any  {
   return [{
     ...unit,
     id: 'sample',
@@ -29,49 +29,29 @@ test('registry 拒绝缺失环境足迹或重置负担的 step', () => {
   assert.deepEqual(findingCodes(registryStep(incomplete)).sort(), ['invalid_reset_burden', 'missing_testing_environment']);
 });
 
-test('Component 不得穿过真实 filesystem 或承担 cleanup', () => {
-  const testing: any = {
-    ...unit.testing,
-    executionBoundary: 'Component',
-    environment: { footprints: ['filesystem'], isolation: 'unique-temporary-root' },
-    resetBurden: 'single-cleanup',
-  };
-  assert.ok(findingCodes(registryStep(testing)).includes('component_environment_boundary'));
-});
-
-test('Quick 拒绝重复重置并只允许无重置的隔离 Integration 例外', () => {
-  const integration: any = {
-    ...unit.testing,
-    executionBoundary: 'Integration',
-    environment: { footprints: ['filesystem'], isolation: 'unique-temporary-root' },
-    resetBurden: 'repeated-cleanup',
-  };
-  const rejected: any = findingCodes(registryStep(integration));
-  assert.ok(rejected.includes('quick_reset_burden'));
-  assert.ok(rejected.includes('quick_integration_not_isolated'));
-
-  const admitted: any = {
-    ...integration,
-    environment: { footprints: ['cli'], isolation: 'read-only' },
-    resetBurden: 'none',
-  };
-  assert.deepEqual(validateVerificationRegistry(registryStep(admitted)), { ok: true, findings: [] });
-});
-
-test('Quick Integration 拒绝 Git、network、Workspace lifecycle 或共享环境', () => {
-  for (const footprint of ['git', 'network', 'workspace-lifecycle']) {
-    const testing: any = {
-      ...unit.testing,
-      executionBoundary: 'Integration',
-      environment: { footprints: [footprint], isolation: 'unique-temporary-root' },
-      resetBurden: 'none',
-    };
-    assert.ok(findingCodes(registryStep(testing)).includes('quick_integration_not_isolated'), footprint);
+test('Unit rejects real external boundaries and cleanup obligations', () => {
+  for (const footprint of ['filesystem', 'cli', 'git', 'network', 'workspace-lifecycle']) {
+    const testing = { ...unit.testing, environment: { footprints: [footprint], isolation: 'unique-temporary-root' }, resetBurden: 'single-cleanup' };
+    assert.ok(findingCodes(registryStep(testing)).includes('unit_external_boundary'), footprint);
   }
+  assert.ok(findingCodes(registryStep({ ...unit.testing, resetBurden: 'single-cleanup' })).includes('unit_external_boundary'));
+  assert.deepEqual(findingCodes(registryStep(unit.testing)), []);
+});
+
+test('Integration admits isolated real boundaries without a duration admission gate', () => {
+  const testing = { ...unit.testing, executionBoundary: 'Integration', environment: { footprints: ['filesystem', 'git'], isolation: 'unique-temporary-root' }, resetBurden: 'repeated-cleanup' };
+  assert.deepEqual(validateVerificationRegistry(registryStep(testing)), { ok: true, findings: [] });
+});
+
+test('registry accepts the four test classes and rejects an unrecognized class', () => {
+  for (const executionBoundary of ['Static', 'Unit', 'Integration', 'E2E']) {
+    assert.deepEqual(findingCodes(registryStep({ ...unit.testing, executionBoundary })), []);
+  }
+  assert.ok(findingCodes(registryStep({ ...unit.testing, executionBoundary: 'Unknown' })).includes('invalid_testing_boundary'));
 });
 
 test('registry在执行前闭合验证Context、隔离/reset、并行安全和数值需求', () => {
-  const invalid: any = registryStep(unit.testing, ['fast'], {
+  const invalid: any = registryStep(unit.testing, [], {
     contexts: ['missing/v1'],
     isolationMode: 'shared-mutable',
     resetStrategy: 'magic',

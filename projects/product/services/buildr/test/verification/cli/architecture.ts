@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { sourceModuleReferences, hasWideTaskRecordAccess } from './source-imports.ts';
 import { isAllowedProductLayerImport } from './product-layer-boundaries.ts';
 
 import fs from 'node:fs';
@@ -117,7 +118,7 @@ for (const relative of requiredRuntime) {
   if (!fs.existsSync(path.join(sourceRoot, relative))) problems.push(`missing Product runtime module: src/${relative}`);
 }
 
-const packageSmoke: any = path.join(productRoot, 'tools/verification/package-check/smoke-checks.ts');
+const packageSmoke: any = path.join(productRoot, 'tools/verification/package-check/runtime-checks.ts');
 if (fs.existsSync(packageSmoke) && /runPackageSmokeChecks/.test(fs.readFileSync(packageSmoke, 'utf8'))) {
   problems.push('package verification must not restore the shared runPackageSmokeChecks monolith');
 }
@@ -139,8 +140,8 @@ for (const file of sourceFiles) {
   }
   if (/from\s+['"][^'"]*(?:test\/|tools\/|scripts\/)/.test(content)) problems.push(`Product runtime imports checkout-only code: src/${relative}`);
   const edges: any[] = [];
-  for (const match of content.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
-    const specifier: any = match[1];
+  for (const reference of sourceModuleReferences(content)) {
+    const specifier = reference.specifier;
     if (!specifier.startsWith('.')) continue;
     const requestedTarget: any = path.resolve(path.dirname(file), specifier);
     const typescriptSourceTarget: any = file.endsWith('.ts') && requestedTarget.endsWith('.js')
@@ -150,7 +151,7 @@ for (const file of sourceFiles) {
     if (!fs.existsSync(target)) problems.push(`src/${relative} imports missing module ${specifier}`);
     if (!target.startsWith(sourceRoot + path.sep)) continue;
     const targetRelative: any = path.relative(sourceRoot, target).split(path.sep).join('/');
-    edges.push(targetRelative);
+    if (reference.runtime) edges.push(targetRelative);
     if (!isAllowedProductLayerImport(relative, targetRelative)) {
       problems.push(`reverse Product layer import: src/${relative} -> src/${targetRelative}`);
     }
@@ -198,21 +199,10 @@ for (const suite of ['workspace-lifecycle', 'ownership-recovery', 'runtime-recon
     problems.push(`verification registry is missing Workspace E2E suite: ${suite}`);
   }
 }
-const candidateSource: any = fs.readFileSync(path.join(productRoot, 'test', 'verification', 'candidate.ts'), 'utf8');
-if (
-  !candidateSource.includes("profile: 'candidate'")
-  || !candidateSource.includes("request.profile === 'daily-full' ? 'core' : request.profile")
-  || !candidateSource.includes('profiles: [registryProfile]')
-) {
-  problems.push('candidate verifier must default to the complete candidate profile while allowing daily-full and the core compatibility lane');
+for (const module of ['registry.ts', 'planner.ts', 'dag-scheduler.ts', 'executor.ts', 'plan-runner.ts', 'cli.ts']) {
+  if (!fs.existsSync(path.join(productRoot, 'test', 'verification', module))) problems.push(`missing verification module: ${module}`);
 }
-if (/\b(?:nodeStep|commandStep|runBatch|workspaceSuiteSteps|candidateStepBudget)\b/.test(candidateSource)) {
-  problems.push('candidate verifier must not inline step commands, batches, suites, or budgets');
-}
-for (const module of ['registry.ts', 'planner.ts', 'dag-scheduler.ts', 'executor.ts', 'plan-runner.ts', 'changed.ts', 'focus.ts']) {
-  if (!fs.existsSync(path.join(productRoot, 'test', 'verification', module))) problems.push(`missing verification planning module: ${module}`);
-}
-for (const required of ['candidate-tarball', 'workspace-lifecycle', 'package-static', 'runtime-adapter-parity', 'release-tarball-smoke']) {
+for (const required of ['candidate-tarball', 'workspace-lifecycle', 'package-static', 'runtime-adapter-parity', 'release-tarball-consumption']) {
   if (!verificationSteps.some((step: any) => step.id === required && step.profiles.includes('candidate'))) problems.push(`candidate profile is missing required gate: ${required}`);
 }
 if (verificationSteps.filter((step: any) => step.executor.type === 'candidate-artifact').length !== 1) problems.push('verification registry must declare exactly one candidate artifact');
@@ -226,9 +216,9 @@ if (!candidatePackageSource.includes('buildApplicationPayload(') || !candidatePa
 if (/npm(?:Executable)?[^\n]*\[\s*['"]pack['"][^\n]*productRoot/u.test(candidatePackageSource)) {
   problems.push('formal candidate must not npm pack the development product root');
 }
-if (packageJson.scripts?.['test:focus'] !== 'node --import ./test/register-development-entry.ts test/verification/focus.ts') problems.push('package.json must expose the unified focus selector');
-if (packageJson.scripts?.['test:release'] !== 'node --import ./test/register-development-entry.ts test/verification/release/release-smoke.ts') problems.push('package.json must retain the cross-platform release smoke entry');
-if (packageJson.scripts?.['test:launcher-platform'] !== 'node --import ./test/register-development-entry.ts test/verification/release/release-smoke.ts --platform-launcher') problems.push('package.json must expose the explicit platform Launcher integration entry');
+for (const entry of ['test', 'check', 'test:static', 'test:integration', 'test:e2e', 'test:related']) {
+  if (!packageJson.scripts?.[entry]) problems.push(`missing project verification command: ${entry}`);
+}
 if (!fs.existsSync(path.join(productRoot, 'test', 'verification', 'release', 'platform-launcher-invocation.ts'))) problems.push('platform Launcher integration module is missing');
 const expectedPackageExports: any = {
   './test-context': {
@@ -388,11 +378,10 @@ const legacyTaskRecordConsumers: any = new Set([
   'web/http/server.ts',
   'web/application/preview-lifecycle.ts',
 ]);
-const legacyTaskRecordMethod: any = /\.(?:assertCanonicalTaskWorkspace|taskDirectory|ensureTaskDirectory|readTask|prepareTask|queryTaskViews|readTaskView|createTaskPersistence|mutateTaskPersistence|writeTaskPersistence|queryTasks|inspectTask|inspectTaskView|createTask|updateTask|activateTask|completeTask|abandonTask)\(/;
 for (const file of sourceFiles) {
   const relative: any = path.relative(sourceRoot, file).split(path.sep).join('/');
   if (relative.startsWith('modules/task/') || relative.startsWith('bootstrap/')) continue;
-  if (legacyTaskRecordMethod.test(fs.readFileSync(file, 'utf8')) && !legacyTaskRecordConsumers.has(relative)) {
+  if (hasWideTaskRecordAccess(fs.readFileSync(file, 'utf8')) && !legacyTaskRecordConsumers.has(relative)) {
     problems.push(`new wide Runtime Task Record consumer outside the explicit runtime-port baseline: src/${relative}`);
   }
 }

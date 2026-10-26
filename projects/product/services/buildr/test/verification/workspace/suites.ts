@@ -11,7 +11,7 @@ export const workspaceSuites: any = Object.freeze(verificationSteps
     id: step.executor.selector,
     name: step.name,
     file: path.join(directory, `${step.executor.selector}.ts`),
-    budgetMs: step.budgetMs,
+    timeoutMs: step.timeoutMs,
   })));
 
 export function selectWorkspaceSuites(selectors: any = []): any  {
@@ -37,6 +37,6 @@ export function workspaceSuiteSteps(options: any = {}): any  {
     args: [suite.file],
     cwd: productRoot,
     env,
-    budgetMs: suite.budgetMs,
+    timeoutMs: suite.timeoutMs,
   }));
 }

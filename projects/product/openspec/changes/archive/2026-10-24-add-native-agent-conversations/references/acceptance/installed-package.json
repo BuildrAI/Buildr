@@ -1,0 +1,19 @@
+{
+  "passed": true,
+  "version": "0.1.0-rc.49",
+  "commands": [
+    "npm-install-with-postinstall",
+    "version",
+    "init"
+  ],
+  "providers": [
+    "Codex",
+    "DSH",
+    "Qoder"
+  ],
+  "independentBlankProfile": true,
+  "realProductionFrontend": true,
+  "installedRuntime": true,
+  "postinstallEnabled": true,
+  "userReconnectReserved": true
+}

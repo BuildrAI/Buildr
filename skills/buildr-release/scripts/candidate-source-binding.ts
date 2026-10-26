@@ -155,6 +155,7 @@ function legacyCandidateCheckInputIdentity(repo: string, commit: string, step: a
     const selectors = [...(step.executor?.files ?? []), ...(step.executor?.args ?? []).filter((argument: string) => argument.startsWith('test/'))];
     if (selectors.some((pattern: string) => path.matchesGlob(relative, pattern))) add(entry.path);
   }
+  // Historical v2 descriptors retain their original runner identities; no runner is executed here.
   const family = step.executor?.file === 'test/verification/system.ts' ? 'test/system/'
     : step.executor?.file === 'test/verification/integration.ts' ? 'test/integration/' : null;
   const inventory = family ? entries.filter(entry => entry.path.startsWith(prefix + family) && /\.test\.[cm]?[jt]sx?$/u.test(entry.path)).map(entry => entry.path.slice(prefix.length)).sort() : [];

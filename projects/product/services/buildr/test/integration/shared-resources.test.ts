@@ -8,7 +8,7 @@ import { enumerateSkillSourceFiles } from '../../src/modules/agent-assets/infras
 import { assetIntegrity } from '../../src/modules/agent-assets/infrastructure/component-source.ts';
 import { createBuiltinReceipts } from '../../src/modules/agent-assets/application/package-maintenance/builtin-receipts.ts';
 import { collectFiles } from '../../src/infrastructure/filesystem/tree-files.ts';
-import { describePackageResources, ensurePackageResources, inspectSharedResources, sharedResourcesRoot } from '../../src/infrastructure/product-resources/shared-resources.ts';
+import { describePackageResources, publishPackageResources as ensurePackageResources, inspectSharedResources, sharedResourcesRoot } from '../../src/infrastructure/product-resources/shared-resources.ts';
 
 test('技能目录内Finder文件既不是定制修改也不是入口附件，真实附件修改仍被发现', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-skill-finder-'));

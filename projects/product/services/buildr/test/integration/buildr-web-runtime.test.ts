@@ -127,7 +127,7 @@ test('正式Web与Task Preview生命周期均不创建后台maintenance schedule
     readProductIdentity: readCurrentProductIdentity,
     assertNpmLauncherBinding: assertCurrentNpmLauncherBinding,
     createLocalWorkspaceServer,
-    ensureRegisteredTarget,
+    ensureRegisteredTarget: root => ensureRegisteredTarget(formalRuntime, root),
   });
   const formal: any = await formalRuntime.startBuildrWeb(['--port', '0', '--no-open']);
   await new Promise((resolve: any) => formal.server.close(resolve));
@@ -142,7 +142,7 @@ test('正式Web与Task Preview生命周期均不创建后台maintenance schedule
     readProductIdentity: readCurrentProductIdentity,
     assertNpmLauncherBinding: assertCurrentNpmLauncherBinding,
     createLocalWorkspaceServer,
-    ensureRegisteredTarget,
+    ensureRegisteredTarget: root => ensureRegisteredTarget(previewRuntime, root),
   });
   const preview: any = await previewRuntime.startBuildrWeb(['--port', '0', '--no-open']);
   await new Promise((resolve: any) => preview.server.close(resolve));
@@ -171,7 +171,7 @@ test('development start reuses the current source and preserves a healthy instan
   registerWebInstanceLifecycle(runtime, {
     readProductIdentity: () => expected,
     assertNpmLauncherBinding: assertCurrentNpmLauncherBinding,
-    createLocalWorkspaceServer, ensureRegisteredTarget,
+    createLocalWorkspaceServer, ensureRegisteredTarget: root => ensureRegisteredTarget(runtime, root),
   });
   const first = await runtime.startBuildrWeb(['--port', '0', '--no-open']);
   server = first.server;
@@ -225,7 +225,7 @@ test('development start with explicit replace flag gracefully restarts a mismatc
   registerWebInstanceLifecycle(runtime, {
     readProductIdentity: () => expected,
     assertNpmLauncherBinding: assertCurrentNpmLauncherBinding,
-    createLocalWorkspaceServer, ensureRegisteredTarget,
+    createLocalWorkspaceServer, ensureRegisteredTarget: root => ensureRegisteredTarget(runtime, root),
   });
   const first = await runtime.startBuildrWeb(['--port', '0', '--no-open']);
   server = first.server;
@@ -265,7 +265,7 @@ test('--replace-mismatched-development refuses non-development profiles and conf
   registerWebInstanceLifecycle(runtime, {
     readProductIdentity: () => ({ ...currentProduct, channel: 'npm', runtime: { role: 'host' } }),
     assertNpmLauncherBinding: assertCurrentNpmLauncherBinding,
-    createLocalWorkspaceServer, ensureRegisteredTarget,
+    createLocalWorkspaceServer, ensureRegisteredTarget: root => ensureRegisteredTarget(runtime, root),
   });
   await assert.rejects(runtime.startBuildrWeb(['--port', '0', '--no-open', '--replace-mismatched-development']),
     /只适用于 development/);

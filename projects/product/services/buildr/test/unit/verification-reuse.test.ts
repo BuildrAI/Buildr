@@ -139,14 +139,14 @@ test('source package selectors and isolated launcher checks are reusable while f
 test('only reviewed fixture runtime checks exclude Product governance material while governance owners retain it', () => {
   const ids = ['integration-runtime', 'integration-code', 'integration-desktop', 'integration-task-records', 'integration-connections', 'integration-connections-cli',
     'integration-runtime-projection', 'integration-data-store', 'integration-task-read-models', 'integration-task-coordination',
-    'system-buildr-web-http', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation',
+    'integration-web-http', 'e2e-task', 'e2e-worktree', 'e2e-nested-git',
     'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection',
-    'system-runtime-recovery', 'system-app-process', 'system-workspace-lifecycle'];
+    'e2e-runtime-recovery', 'e2e-app-process', 'e2e-workspace'];
   assert.deepEqual(verificationSteps.filter((item: VerificationReuseStep) => item.reuse && item.reuse.scope === 'runtime').map((item: VerificationReuseStep) => item.id).sort(), ids.sort());
-  for (const id of ['docs-quality', 'openspec-strict', 'openspec-candidate-audit', 'contract', 'integration-verification']) {
+  for (const id of ['docs-quality', 'openspec-strict', 'spec-change-consistency', 'source-contracts', 'integration-verification']) {
     assert.equal(verificationSteps.find((item: VerificationReuseStep) => item.id === id).reuse.scope, 'repository', id);
   }
-  assert.equal(verificationSteps.find((item: VerificationReuseStep) => item.id === 'openspec-candidate-audit').reuse.git, 'comparison');
+  assert.equal(verificationSteps.find((item: VerificationReuseStep) => item.id === 'spec-change-consistency').reuse.git, 'comparison');
   const runtime = verificationSteps.find((item: VerificationReuseStep) => item.id === 'integration-runtime');
   const complete = { ...snapshot, stepInputs: { [runtime.id]: { contentIdentity: sha, recipeIdentity: sha, fallback: false, unavailable: false } },
     environment: { ...snapshot.environment, tools: { ...snapshot.environment.tools, 'web-dependencies': sha, git: '2.50.1' } } };
@@ -180,6 +180,6 @@ test('declared semantic inputs distinguish subsets and bases without changing un
 
 test('only the observed semantic input consumers declare selectors; artifact browser checks remain non-reusable', () => {
   const inputs = Object.fromEntries(verificationSteps.flatMap((item: VerificationReuseStep) => item.reuse && item.reuse.inputs ? [[item.id, item.reuse.inputs]] : []));
-  assert.deepEqual(inputs, { 'openspec-candidate-audit': ['BUILDR_VERIFICATION_BASE'], 'runtime-skill-projection': ['BUILDR_CHANGED_PATHS_JSON'], 'docs-quality': ['BUILDR_CHANGED_PATHS_JSON'] });
+  assert.deepEqual(inputs, { 'spec-change-consistency': ['BUILDR_VERIFICATION_BASE'], 'runtime-skill-projection': ['BUILDR_CHANGED_PATHS_JSON'], 'docs-quality': ['BUILDR_CHANGED_PATHS_JSON'] });
   assert.equal(verificationSteps.find((item: VerificationReuseStep) => item.id === 'artifact-browser-core').reuse, false);
 });

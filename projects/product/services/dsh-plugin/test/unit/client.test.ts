@@ -20,7 +20,7 @@ function harness({ desktop = true, ready = async (): Promise<OpenResult> => ({ r
   const sidebar: Sidebar = {
     mounted: { getSnapshot: () => session, subscribe: fn => { listeners.add(fn); return () => { listeners.delete(fn); }; } },
     openTabs: { getSnapshot: () => inventory, subscribe: () => () => {} }, active: () => active,
-    openTab: (kind, options) => { calls.push(['open', session, kind, options]); active = { id: `t${calls.length}`, kind } as Tab; inventory = [...inventory, { sessionId: session!, tabId: active.id, kind, contentId: 'fixture' }]; expanded = true; },
+    openTab: (kind, options) => { calls.push(['open', session, kind, options]); active = { id: `t${calls.length}` as Tab['id'], kind, contentId: 'fixture', title: 'fixture' } as Tab; inventory = [...inventory, { sessionId: session!, tabId: active.id, kind, contentId: 'fixture' }]; expanded = true; },
     focus: id => { calls.push(['focus', id]); }, isExpanded: () => expanded,
     toggleExpanded: () => { calls.push(['show']); expanded = !expanded; },
   };

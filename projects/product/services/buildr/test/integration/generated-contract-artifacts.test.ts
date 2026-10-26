@@ -43,6 +43,7 @@ test('全部HTTP DTO从空显式目标生成两端闭合输出', async (t) => {
   const expectedFiles = [
     'agent-assets-http-dto.ts',
     'agent-operations-http-dto.ts',
+    'agent-service-http-dto.ts',
     'code-generation-http-dto.ts',
     'code-http-dto.ts',
     'codex-desktop-http-dto.ts',

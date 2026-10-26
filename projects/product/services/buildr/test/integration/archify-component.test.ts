@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import YAML from 'yaml';
-import { ensurePackageResources, sharedResourcesRoot, readPreservedArchify } from '../../src/infrastructure/product-resources/shared-resources.ts';
+import { publishPackageResources as ensurePackageResources, sharedResourcesRoot, readPreservedArchify } from '../../src/infrastructure/product-resources/shared-resources.ts';
 import { preservedArchifyRoot } from '../../src/infrastructure/product-resources/preserved-archify.ts';
 import { assetIntegrity } from '../../src/modules/agent-assets/infrastructure/component-source.ts';
 import { assembleRuntimeProjection } from '../../src/modules/agent-assets/infrastructure/runtime/projection.ts';
@@ -87,7 +87,7 @@ async function scenario() {
 }
 if (process.argv.includes('--archify-retirement-scenario')) await scenario();
 else test('Archify退出随包后保留旧安装、离线空间和定制，自用绘图仍正常', { timeout: 180_000 }, () => {
-  const result = spawnSync(process.execPath, [path.join(service, 'tools/development/run-isolated-workspace-smoke.ts'), '--script', fileURLToPath(import.meta.url), '--', '--archify-retirement-scenario'], { cwd: service, env: { ...process.env, BUILDR_DEBUG_STACK: '1' }, encoding: 'utf8', timeout: 175_000, maxBuffer: 4 * 1024 * 1024 });
+  const result = spawnSync(process.execPath, [path.join(service, 'tools/development/run-isolated-workspace-check.ts'), '--script', fileURLToPath(import.meta.url), '--', '--archify-retirement-scenario'], { cwd: service, env: { ...process.env, BUILDR_DEBUG_STACK: '1' }, encoding: 'utf8', timeout: 175_000, maxBuffer: 4 * 1024 * 1024 });
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /"status":"passed"/); assert.match(result.stdout, /"cleanup":"cleaned"/);
 });

@@ -2,6 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client';
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client';
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-browser/client';
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client';
 import type {} from '@deepseek-ai/dsh-api-session-controller/client';
 import type { SessionId } from '@deepseek-ai/dsh-session/types';

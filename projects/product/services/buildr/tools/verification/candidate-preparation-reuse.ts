@@ -51,9 +51,12 @@ export function preparationContentDigest(paths: string[], { source = false, opti
 function preparationInputScope(id: string, roots: any): { required: string[]; optional: string[]; dependencies: string[] } | null {
   const backend = (file: string) => path.join(roots.serviceRoot, file);
   const web = (file: string) => path.join(roots.webRoot, file);
+  const agent = (file: string) => path.resolve(roots.serviceRoot, '../buildr-agent', file);
+  if (id === 'buildr-agent-dependencies') return { required: ['package.json', 'package-lock.json'].map(agent), optional: [], dependencies: [] };
+  if (id === 'buildr-agent-build') return { required: ['src', 'tools/build.ts', 'tsconfig.json', 'package.json', 'package-lock.json'].map(agent), optional: [], dependencies: ['buildr-agent-dependencies'] };
   if (id === 'buildr-dependencies' || id === 'buildr-web-dependencies') {
     const file = id === 'buildr-dependencies' ? backend : web;
-    return { required: ['package.json', 'package-lock.json'].map(file), optional: [file('.npmrc')], dependencies: [] };
+    return { required: ['package.json', 'package-lock.json'].map(file), optional: [file('.npmrc'), ...(id === 'buildr-dependencies' ? ['package.json', 'build'].map(agent) : [])], dependencies: id === 'buildr-dependencies' ? ['buildr-agent-build'] : [] };
   }
   if (id === 'generated-contracts-and-test-context') return {
     required: ['src', 'tools/codegen', 'tools/testing', 'tools/build/generated-artifacts.ts', 'package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.test-context.json'].map(backend),
@@ -100,8 +103,9 @@ export function createCandidatePreparationReuse(roots: any, node: any, options: 
       return digest({ recipe: item, node, npmIdentity, scope: { required: scope.required, optional: scope.optional }, required, optional,
         dependencyOutputs: scope.dependencies.map(id => [id, dependencyOutputs.get(id) ?? null]) });
     }
-    if (item.id === 'buildr-dependencies' || item.id === 'buildr-web-dependencies') {
-      const root = item.id === 'buildr-dependencies' ? roots.serviceRoot : roots.webRoot;
+    if (item.id === 'buildr-agent-build') return contentDigest([path.resolve(roots.serviceRoot, '../buildr-agent/build')]);
+    if (item.id === 'buildr-dependencies' || item.id === 'buildr-web-dependencies' || item.id === 'buildr-agent-dependencies') {
+      const root = item.id === 'buildr-dependencies' ? roots.serviceRoot : item.id === 'buildr-web-dependencies' ? roots.webRoot : path.resolve(roots.serviceRoot, '../buildr-agent');
       if (!exists(path.join(root, 'node_modules/.package-lock.json'))) return null;
       return contentDigest([path.join(root, 'node_modules')], { webDependencyCache: item.id === 'buildr-web-dependencies' });
     }
