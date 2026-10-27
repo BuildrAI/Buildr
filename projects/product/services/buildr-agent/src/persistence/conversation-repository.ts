@@ -25,8 +25,12 @@ export class ConversationRepository {
       }
       const db = new DatabaseSync(this.filename, { readOnly: !write });
       try {
+        db.exec('PRAGMA busy_timeout=2000');
         const row = db.prepare('PRAGMA user_version').get() as { user_version: number };
         if (row.user_version > SCHEMA_VERSION) fail('agent_storage_newer', '此交互库来自较新版本，请使用匹配的 Buildr。', 409);
+        // Native tools may read/backup this same private database while events persist.
+        // Readers must not turn a completed native operation into a failed observation.
+        if (write && (db.prepare('PRAGMA journal_mode').get() as {journal_mode:string}).journal_mode !== 'wal') db.exec('PRAGMA journal_mode=WAL');
         if (row.user_version === 0) {
           if (!write) { db.close(); return undefined; }
           db.exec(`BEGIN IMMEDIATE;

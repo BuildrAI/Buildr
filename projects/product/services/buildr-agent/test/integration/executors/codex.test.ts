@@ -98,3 +98,45 @@ test('closed Codex transport restores the exact interrupted execution from nativ
 
   } finally {await runtime?.close();await rm(root,{recursive:true,force:true});}
 });
+
+
+test('a local event consumer failure preserves native work and later terminal observation',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-codex-consumer-'));let runtime:AgentRuntime|undefined;
+  try{
+    const executable=join(root,'codex.mjs');await writeFile(executable,source);
+    runtime=await createCodexExecutor().open({connectionId:'codex',configRoot:root,executable,environment:{PATH:process.env.PATH??''}});
+    const contextRef=await runtime.createContext({cwd:root}),events:ExecutorEvent[]=[];let failed=false;
+    const sending=runtime.send({contextRef,cwd:root,text:'work once',images:[],clientRequestId:'local-consumer-failure',onEvent:event=>{
+      if(!failed&&event.type==='item'&&event.item.role==='assistant'){failed=true;throw Error('private local write error');}
+      events.push(event);
+    }});
+    await assert.rejects(sending,/codex_event_observation_lost/);assert.equal(runtime.closed,false);
+    await eventually(()=>events.some(event=>event.type==='request'));
+    const accepted=events.find(event=>event.type==='accepted'),request=events.find(event=>event.type==='request');assert.equal(accepted?.type,'accepted');assert.equal(request?.type,'request');
+    await runtime.reply({contextRef,executionRef:accepted.executionRef,requestId:request.request.id,answer:{color:'蓝'}});
+    await eventually(()=>events.some(event=>event.type==='item'&&event.item.kind==='tool'));
+    await runtime.stop({contextRef,executionRef:accepted.executionRef});
+    assert.equal(runtime.closed,false);
+    assert.ok(events.some(event=>event.type==='observation'&&event.observation.status==='tools-active'));
+    assert.equal((await runtime.observe({contextRef,executionRef:accepted.executionRef})).status,'stopped');
+  }finally{await runtime?.close();await rm(root,{recursive:true,force:true});}
+});
+
+
+test('a terminal projection error cannot strand the native send promise',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-codex-terminal-projection-'));let runtime:AgentRuntime|undefined;
+  try{
+    const executable=join(root,'codex.mjs');await writeFile(executable,source);
+    runtime=await createCodexExecutor().open({connectionId:'codex',configRoot:root,executable,environment:{PATH:process.env.PATH??''}});
+    const contextRef=await runtime.createContext({cwd:root}),events:ExecutorEvent[]=[];
+    const sending=runtime.send({contextRef,cwd:root,text:'finish once',images:[],clientRequestId:'terminal-consumer-failure',onEvent:event=>{
+      events.push(event);if(event.type==='completed')throw Error('local terminal projection failed');
+    }});
+    await eventually(()=>events.some(event=>event.type==='request'));
+    const accepted=events.find(event=>event.type==='accepted');assert.equal(accepted?.type,'accepted');
+    await runtime.stop({contextRef,executionRef:accepted.executionRef});
+    let timer:ReturnType<typeof setTimeout>|undefined;
+    try{await Promise.race([sending,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('send remained pending')),1000);})]);}finally{clearTimeout(timer);}
+    assert.equal(runtime.closed,false);assert.equal((await runtime.observe({contextRef,executionRef:accepted.executionRef})).status,'stopped');
+  }finally{await runtime?.close();await rm(root,{recursive:true,force:true});}
+});

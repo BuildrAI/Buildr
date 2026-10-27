@@ -428,7 +428,7 @@ export class ConversationApplication {
       const possiblyDelivered = dispatched && !rejectedBeforeInput;
       if (!['stopped', 'completed'].includes(run.status)) run.status = possiblyDelivered ? 'unknown' : 'failed';
       run.diagnostic = safeDiagnostic(error); run.updatedAt = this.options.now();
-      const transportLost = error instanceof Error && error.message === 'codex_execution_observation_lost';
+      const transportLost = error instanceof Error && ['codex_execution_observation_lost', 'codex_event_observation_lost'].includes(error.message);
       if (!this.closing && !userStopping && transportLost && run.accepted && run.status === 'unknown' && !record.interruption?.cancelled) {
         record.interruption = { runId, reason: 'transport', awaitingUser: record.view.requests.length > 0, attempted: record.attempts.some(attempt => attempt.runId === runId && attempt.clientRequestId.startsWith('host-recovery:')) };
         run.interrupted = true;
@@ -565,7 +565,7 @@ export class ConversationApplication {
       if(run.generation!==this.options.generation||run.status!=='stopped'||run.tools.some(tool=>['running','unknown'].includes(tool.status))){unavailable('执行未完成：尚不能确认原执行和工具均已停止，已保留记录，避免重复操作。');return;}
       const participant=record.participants.find(value=>value.id===run!.participantId);
       if(!participant?.contextRef)throw new Error('agent_context_binding_mismatch');
-      const text='系统自动恢复：上次执行因 Buildr '+(marker.reason==='transport'?'原生连接断开':'服务重启')+'而中断，现已确认原执行停止。请先核对本地对话、当前工作成果与工具结果，继续完成用户尚未完成的目标。不要重新执行全部历史命令；不确定已生效的操作先核对，不扩大原有授权。若无法继续，请明确说明原因。';
+      const text='系统自动恢复：上次执行因 Buildr '+(marker.reason==='transport'?'执行观察中断':'服务重启')+'而中断，现已确认原执行停止。请先核对本地对话、当前工作成果与工具结果，继续完成用户尚未完成的目标。不要重新执行全部历史命令；不确定已生效的操作先核对，不扩大原有授权。若无法继续，请明确说明原因。';
       const draft:SendDraft={expectedRevision:record.view.revision,connectionId:participant.connectionId,modelAccountId:participant.modelAccountId,modelAccountIdentity:participant.modelAccountIdentity,model:run.model,serviceTier:run.serviceTier,reasoningEffort:run.reasoningEffort,permissionMode:run.permissionMode,text,skipHandoffSummary:true};
       this.prepare(record,draft);
       record.interruption.attempted=true;this.save(record);

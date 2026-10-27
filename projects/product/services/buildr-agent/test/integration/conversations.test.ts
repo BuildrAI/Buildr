@@ -1182,7 +1182,7 @@ test('live transport loss reopens the same binding and continues once without a 
     assert.equal(native.opens.length,2);
     assert.equal(native.opens[0]!.configRoot,native.opens[1]!.configRoot);
     assert.equal(native.sends[0]!.contextRef.id,native.sends[1]!.contextRef.id);
-    assert.match(native.sends[1]!.text,/系统自动恢复.*原生连接断开/);
+    assert.match(native.sends[1]!.text,/系统自动恢复.*执行观察中断/);
     assert.equal(done.entries.filter(e=>e.role==='user').length,1);
   } finally { await f.close(); }
 });
@@ -1285,4 +1285,19 @@ test('a later exact stopped observation releases uncertain recovery once',async(
     await Promise.all([f.service.conversations.observe('workspace-one',chat.id),f.service.conversations.observe('workspace-one',chat.id)]);
     await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');assert.equal(native.sends.length,2);
   }finally{await f.close();}
+});
+
+
+test('a pinned database reader cannot block conversation event persistence',async()=>{
+  const native=fake('local'),f=fixture([native.executor]);let reader:DatabaseSync|undefined;
+  try{
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    reader=new DatabaseSync(path.join(f.options.dataRoot,'agent-service/conversations.sqlite'),{readOnly:true});
+    reader.exec('BEGIN');reader.prepare('SELECT body FROM conversations WHERE id=?').get(chat.id);
+    const updated=f.service.conversations.update('workspace-one',chat.id,{expectedRevision:chat.revision,title:'updated while native tool reads'});
+    assert.equal(updated.title,'updated while native tool reads');
+    const old=JSON.parse((reader.prepare('SELECT body FROM conversations WHERE id=?').get(chat.id) as {body:string}).body);
+    assert.equal(old.view.title,'新对话');reader.exec('ROLLBACK');reader.close();reader=undefined;
+    assert.equal(f.service.conversations.read('workspace-one',chat.id).title,updated.title);
+  }finally{reader?.close();await f.close();}
 });

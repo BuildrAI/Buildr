@@ -29,6 +29,7 @@ export function safeDiagnostic(error: unknown): string {
     dsh_version_unsupported: '当前接入接受 DSH 0.x.x，包含有效预发布版本，仍需通过实际连接检查。',
     qoder_version_unsupported: '当前接入接受 Qoder CLI 1.x.x，包含有效预发布版本，仍需通过内置 SDK 的实际连接检查。',
     agent_context_binding_mismatch: '原生上下文与当前目录或配置身份不匹配，原记录已保留。',
+    codex_event_observation_lost: '本机执行记录暂时未能更新，正在核对原执行；不会重发原指令。',
     codex_execution_observation_lost: 'Codex 执行连接已中断，正在核对原执行；不会重发原指令。',
     agent_native_process_closed: '原生执行连接已关闭，请核对原执行；不会重发原指令。',
     agent_native_timeout: '原生程序响应超时，请重新观察；不会自动重发工作指令。',

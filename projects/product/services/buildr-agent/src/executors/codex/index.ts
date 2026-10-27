@@ -199,6 +199,10 @@ class CodexRuntime implements AgentRuntime {
     } catch (error) { if (!turn.accepted) { this.turns.delete(turn.contextId); } throw error; }
   }
   private message(message: RpcMessage): void {
+    if (message.method === 'buildr/eventConsumerFailed') {
+      for (const turn of this.turns.values()) if (!turn.terminal && (!message.params?.threadId || turn.contextId === message.params.threadId)) turn.reject(new Error('codex_event_observation_lost'));
+      return;
+    }
     if (message.method === 'buildr/transportClosed') { for (const turn of this.turns.values()) if (!turn.terminal) turn.reject(new Error('codex_execution_observation_lost')); return; }
     if (message.method === 'account/login/completed') {
       const login = this.login;
@@ -243,8 +247,12 @@ class CodexRuntime implements AgentRuntime {
         const message = errorDiagnostic(p.turn?.error?.message, this.gateway ? [this.gateway.apiKey] : []) ?? turn.diagnostic;
         turn.diagnostic = message ? `Codex · ${turn.tools.size ? '工具调用后' : '本轮执行'}：${message}` : 'codex_turn_failed';
       } else turn.diagnostic = undefined;
-      for (const request of turn.pending.keys()) emit({ type: 'request-resolved', requestId: request }); turn.pending.clear();
-      emit({ type: 'completed', status: turn.terminal, ...(turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) }); turn.done();
+      try {
+        for (const request of turn.pending.keys()) emit({ type: 'request-resolved', requestId: request }); turn.pending.clear();
+        emit({ type: 'completed', status: turn.terminal, ...(turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) });
+        // Recovered observers can outlive send's rejected wait.
+        emit({ type: 'observation', observation: this.activeObservation(turn) });
+      } finally { turn.done(); } // A local terminal projection failure cannot strand send.
     }
   }
   private activeObservation(turn: ActiveTurn): ExecutorObservation {
