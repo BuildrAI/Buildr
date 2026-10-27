@@ -452,6 +452,8 @@ test('Launcher refuses foreign targets and Windows shortcut binds exact Host Nod
   const runnerScript: any = fs.readFileSync(runnerPath, 'utf8');
   assert.match(runnerScript, /web --launcher-binding "%BINDING%"/);
   assert.match(runnerScript, /set "BINDING=/);
+  // for 子命令经 cmd /c 执行：最外层必须再包一层引号，否则 cmd /c 剥掉首尾引号会破坏命令行。
+  assert.match(runnerScript, /in \('""%NODE%"/, 'for-command must wrap an extra outer quote pair for cmd /c');
   // cmd.exe 批处理必须按 CRLF 写盘；LF 行尾在多行 if/for 块上会静默误解析。
   assert.ok(runnerScript.includes('\r\n') && !/(?<!\r)\n/u.test(runnerScript), 'Windows runner must be written with CRLF line endings');
   const hostBytes: any = fs.readFileSync(hostPath);
