@@ -314,6 +314,25 @@ export async function runAgentConversationsJourney({t,page,workspaceUrl,capture:
       for(const request of [preparedInputs.at(-1),sentInputs.at(-1)])assert.deepEqual([request.modelAccountId,request.modelAccountIdentity,request.modelAccountRevision,request.model,request.serviceTier,request.reasoningEffort,request.connectionId],['fixture-account','source-one','account-r1','shared-model','fast','high','dsh'],'预览及发送绑定同一准确来源、已观察版本、档位与强度');
       await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();await page.reload();await panel().locator('[data-run-status="stopped"]').waitFor();const sharedRunStatus=await panel().locator('.ac-run-status').innerText();assert.match(sharedRunStatus,/^已确认停止 · DSH · fixture \/ 共享模型 · /,'状态行使用共享模型的来源与模型名称');assert.ok(!sharedRunStatus.includes('套餐验证'),'状态行不显示来源账号观察标签');await assertModelSummary('fixture / 共享模型','高');await openModelSettings();assert.equal(await modelSettings().getByRole('slider',{name:'思考深度',exact:true}).getAttribute('aria-valuetext'),'高');await closeModelSettings();assert.equal(sends,sendsBefore+1,'刷新恢复配置不自动执行');
     });
+    await step('Devin按当前执行方置灰，旧选择保留草稿且不能发送，显式改选可恢复',async()=>{
+      const previousModels=sharedModels,previousConversation=structuredClone(conversation),previousDraft=await input().inputValue(),sendsBefore=sends,preparesBefore=prepares;
+      const devin={id:'devin-offering',modelId:'swe-2',label:'SWE-2',accountId:'devin-fixture',accountIdentity:'devin-identity',accountRevision:'devin-r1',accountLabel:'已登录账号',provider:'devin',available:true,enabled:true,images:true,tools:true,contextWindow:128000};
+      sharedModels=[...previousModels,devin];await input().fill('兼容选择草稿');await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+      try{
+        for(const label of ['Codex','Qoder','DSH']){
+          await chooseAgent(label);await openModelSettings();const combo=modelSettings().getByRole('combobox',{name:'执行模型',exact:true});await combo.focus();await combo.press('ArrowDown');const dropdown=page.locator('.ac-model-list-popup:visible'),option=dropdown.locator('.ant-select-item-option').filter({hasText:'SWE-2'});
+          await option.waitFor();const blocked=(await option.getAttribute('class'))!.includes('ant-select-item-option-disabled');assert.equal(blocked,label!=='DSH');
+          if(label!=='DSH'){await dropdown.getByText('暂不兼容 '+label,{exact:true}).waitFor();assert.match(await option.getAttribute('title')||'',/DSH/);await option.click({force:true});assert.equal(await input().inputValue(),'兼容选择草稿');}
+          else await option.click();
+          await modelTrigger().click();await modelSettings().waitFor({state:'hidden'});
+        }
+        assert.equal(sends,sendsBefore);assert.equal(prepares,preparesBefore);
+        update({run:run('completed','codex',{modelAccountId:devin.accountId,modelAccountIdentity:devin.accountIdentity,modelAccountRevision:devin.accountRevision,model:devin.modelId}),participants:[{id:'participant-codex',connectionId:'codex',provider:'codex'}]});
+        await page.reload();await input().waitFor();await panel().getByText('Devin 当前暂不兼容 Codex，请切换到 DSH 或选择其他模型来源。',{exact:true}).waitFor();assert.equal(await input().inputValue(),'兼容选择草稿');assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isDisabled(),true);
+        await input().press('Enter');assert.equal(sends,sendsBefore);assert.equal(prepares,preparesBefore);await assertModelSummary('Devin / SWE-2');await openModelSettings();const combo=modelSettings().getByRole('combobox',{name:'执行模型',exact:true});await combo.focus();await combo.press('ArrowDown');await page.locator('.ac-model-list-popup:visible').getByText('暂不兼容 Codex',{exact:true}).waitFor();await capture(page,'agent-model-compatibility-codex.png');await modelTrigger().click();await modelSettings().waitFor({state:'hidden'});
+        await chooseModel('共享模型');await closeModelSettings();assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isDisabled(),false);assert.equal(await input().inputValue(),'兼容选择草稿');assert.equal(sends,sendsBefore);assert.equal(prepares,preparesBefore);
+      }finally{sharedModels=previousModels;update(previousConversation);await page.reload();await input().waitFor();await input().fill(previousDraft);}
+    });
     await step('事件流中断先静默重连，不立刻打断执行状态；连续中断才提示核对',async()=>{
       const streamsBefore=eventStreams;dropEventStreams=1;await page.reload();await panel().locator('[data-run-status="stopped"]').waitFor();await page.waitForTimeout(1000);
       assert.equal(await panel().getByText('对话连接已中断',{exact:true}).count(),0,'首次断线不立刻显示执行告警');

@@ -64,6 +64,11 @@ export function modelSourceName(provider:string):string {
   return ({codex:'Codex',dsh:'DSH',deepseek:'DeepSeek',qoder:'Qoder',devin:'Devin'} as Record<string,string>)[id]??provider;
 }
 
+/** Current conversation UI limitation; source account availability remains independent. */
+export function conversationModelCompatibility(connection:Pick<ConnectionView,'provider'>|undefined,model:Pick<CatalogModel,'provider'>|undefined):string|undefined {
+  if(model?.provider==='devin'&&connection&&connection.provider!=='dsh')return `Devin 当前暂不兼容 ${modelSourceName(connection.provider)}，请切换到 DSH 或选择其他模型来源。`;
+}
+
 /** 状态行表达执行身份（智能体与模型）；来源账号只保留在模型设置和发送预览。 */
 export function conversationRunIdentity(run:ConversationRun,connection:ConnectionView|undefined,catalog:CatalogModel[]):string {
   const shared=catalog.find(model=>model.accountId===run.modelAccountId&&model.modelId===run.model);

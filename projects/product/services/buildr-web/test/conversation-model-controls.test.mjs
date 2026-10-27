@@ -1,11 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {conversationReasoningSelection,officialConversationChoice} from '../src/features/agent-conversations/conversation-options.ts';
+import {conversationModelCompatibility,conversationReasoningSelection,officialConversationChoice} from '../src/features/agent-conversations/conversation-options.ts';
 const connection={models:[
   {id:'first',label:'First',isDefault:true,defaultReasoningEffort:'high',reasoningEfforts:[{id:'low',label:'Low'},{id:'high',label:'High'}]},
   {id:'second',label:'Second',defaultReasoningEffort:'medium',reasoningEfforts:[{id:'medium',label:'Medium'}]},
   {id:'plain',label:'Plain'}
 ]};
+test('Devin兼容限制按执行方和来源判断，不改变账号或选择',()=>{
+ const source={provider:'devin',accountId:'renamed-account',modelId:'any-model',available:true,enabled:true};
+ const original=structuredClone(source);
+ for(const provider of ['codex','qoder'])assert.ok(conversationModelCompatibility({id:'custom-'+provider,provider},source)?.includes(provider==='codex'?'Codex':'Qoder'));
+ assert.equal(conversationModelCompatibility({provider:'dsh'},source),undefined);
+ assert.equal(conversationModelCompatibility(undefined,source),undefined);
+ assert.equal(conversationModelCompatibility({provider:'codex'},undefined),undefined);
+ assert.deepEqual(source,original);
+});
+test('六种已测交叉来源保持可选，不以来源显示名猜测Devin',()=>{
+ for(const [provider,source] of [['codex','native-qoder'],['codex','native-dsh'],['qoder','native-codex'],['qoder','native-dsh'],['dsh','native-codex'],['dsh','native-qoder']])assert.equal(conversationModelCompatibility({provider},{provider:source,label:'Devin'}),undefined);
+});
 test('紧凑控件仅使用模型原生档位，区分默认继承和显式覆盖',()=>{
  const inherited=conversationReasoningSelection(connection,{connectionId:'qoder'});
  assert.deepEqual(inherited.options.map(option=>option.id),['low','high']);assert.equal(inherited.index,1);assert.equal(inherited.label,'高');assert.equal(inherited.inherited,true);
