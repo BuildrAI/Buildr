@@ -16,8 +16,8 @@ export function ImageThumbnail({ image, disabled = false, onRemove }: { image: P
     return () => { reader.onload = null; reader.abort(); };
   }, [image.file]);
   return <div className="ac-image-thumbnail" title={image.name}>
-    {url ? <Image src={url} alt={image.name} width={72} height={72} preview={{ mask: '预览' }} /> : <FileImageOutlined />}
-    {onRemove && <Button type="text" size="small" icon={<CloseOutlined />} aria-label={'移除图片 ' + image.name} disabled={disabled} onClick={onRemove} />}
+    {url ? <Image src={url} alt={image.name} width={72} height={72} preview={{ mask: <></> }} /> : <FileImageOutlined />}
+    {onRemove && <Button type="text" size="small" className="ac-image-remove" icon={<CloseOutlined />} aria-label={'移除图片 ' + image.name} disabled={disabled} onClick={onRemove} />}
   </div>;
 }
 

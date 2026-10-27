@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {conversationModelCompatibility,conversationReasoningSelection,officialConversationChoice} from '../src/features/agent-conversations/conversation-options.ts';
+import {conversationModelCompatibility,conversationReasoningSelection,nextServiceTier,officialConversationChoice} from '../src/features/agent-conversations/conversation-options.ts';
 const connection={models:[
   {id:'first',label:'First',isDefault:true,defaultReasoningEffort:'high',reasoningEfforts:[{id:'low',label:'Low'},{id:'high',label:'High'}]},
   {id:'second',label:'Second',defaultReasoningEffort:'medium',reasoningEfforts:[{id:'medium',label:'Medium'}]},
@@ -60,6 +60,15 @@ test('自动、未知或同义档位不强制放入有序滑杆，单档位保�
  }
 });
 
+test('闪电只在模型实际提供的档位间循环，不编造缺失档位',()=>{
+ const tiers=[{id:'standard:200'},{id:'fast:128'},{id:'lightning:200'}];
+ assert.equal(nextServiceTier(tiers,undefined,'standard:200'),'fast:128');
+ assert.equal(nextServiceTier(tiers,'fast:128','standard:200'),'lightning:200');
+ assert.equal(nextServiceTier(tiers,'lightning:200','standard:200'),'standard:200');
+ assert.equal(nextServiceTier(tiers,'missing','standard:200'),'standard:200');
+ assert.equal(nextServiceTier(undefined,'fast','standard'),'fast');
+ assert.equal(nextServiceTier([{id:'only'}],undefined,'only'),'only');
+});
 test('切换智能体优先采用官方来源，不自动消费其他套餐',()=>{
  const own={accountId:'native-codex',modelId:'m',available:true,enabled:true,accountIdentity:'own',accountRevision:'r'};
  const other={...own,accountId:'devin',accountIdentity:'other'};

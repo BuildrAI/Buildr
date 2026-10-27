@@ -1,9 +1,9 @@
 import {useOptionalAgentConversations} from './AgentConversationsContext';
 import { useEffect, useRef, useState } from 'react';
-import { Button, Dropdown, Popover, Select, Slider, Progress } from 'antd';
-import { CheckOutlined, DownOutlined, ThunderboltOutlined, RobotOutlined } from '@ant-design/icons';
+import { Button, Popover, Select, Slider, Progress } from 'antd';
+import { CheckOutlined, DownOutlined, ThunderboltFilled, RobotOutlined } from '@ant-design/icons';
 import { providerNames, type ConnectionView, type CatalogModel } from './types';
-import {conversationModelCompatibility,officialConversationChoice,modelSourceName,conversationReasoningSelection,reasoningEffortLabel,selectedConversationModel,type ConversationChoice,type PermissionMode} from './conversation-options';
+import {conversationModelCompatibility,officialConversationChoice,modelSourceName,nextServiceTier,conversationReasoningSelection,reasoningEffortLabel,selectedConversationModel,type ConversationChoice,type PermissionMode} from './conversation-options';
 
 type Props = {
   connections:ConnectionView[];
@@ -28,6 +28,7 @@ export function ConversationOptions({connections,modelCatalog,value,disabled,onC
   const currentRun=context?.conversation?.run;
   const usage=currentRun?.model===nativeModelId&&currentRun?.modelAccountId===value.modelAccountId&&currentRun?.provider===original?.provider?currentRun?.contextUsage:undefined;
   const tier=selectedShared?.serviceTiers?.find(tier=>tier.id===(value.serviceTier??selectedShared.defaultServiceTier));
+  const accelerated=!!(selectedShared?.serviceTiers&&selectedShared.serviceTiers.length>1&&tier&&tier.id!==selectedShared.defaultServiceTier);
   const effectiveShared=selectedShared?{...selectedShared,reasoningEfforts:tier?.reasoningEfforts??selectedShared.reasoningEfforts,defaultReasoningEffort:tier?.defaultReasoningEffort??selectedShared.defaultReasoningEffort}:undefined;
   const configuredWindow=selectedShared?.contextWindowOverride===undefined?(tier?.contextWindow??selectedShared?.contextWindow):Math.min(selectedShared.contextWindowOverride,tier?.contextWindow??selectedShared.reportedContextWindow??selectedShared.contextWindowOverride);
   const effectiveWindow=usage?.windowTokens??configuredWindow;
@@ -61,7 +62,7 @@ export function ConversationOptions({connections,modelCatalog,value,disabled,onC
   const controls=<div ref={controlsRef} className="ac-model-controls" role="dialog" aria-label="模型与推理强度设置" onKeyDown={event=>{
     if(event.key==='Escape'){event.stopPropagation();setOpen(false);trigger.current?.focus();}
   }}>
-    <div className="ac-model-top-row">{selectedShared?.serviceTiers && selectedShared.serviceTiers.length>1&&<Dropdown trigger={['click']} menu={{selectable:true,selectedKeys:[value.serviceTier??selectedShared.defaultServiceTier??''],items:selectedShared.serviceTiers.map(item=>({key:item.id,label:item.label})),onClick:({key})=>onChange({...value,serviceTier:key,reasoningEffort:undefined})}}><Button type="text" size="small" className={'ac-tier-lightning'+(tier&&tier.id!==selectedShared.defaultServiceTier?' is-active':'')} aria-label="服务档位" title={tier?.label}><ThunderboltOutlined/></Button></Dropdown>}{(!selectedShared?.serviceTiers||selectedShared.serviceTiers.length<2)&&<Button type="text" size="small" className="ac-tier-lightning" disabled aria-label="服务档位不可切换" title="该模型未提供可切换的快速档位"><ThunderboltOutlined/></Button>}<Select className="ac-model-picker" aria-label="执行模型" title="模型" variant="borderless" size="small" showSearch optionFilterProp="label"
+    <div className="ac-model-top-row">{selectedShared?.serviceTiers && selectedShared.serviceTiers.length>1?<Button type="text" size="small" className={'ac-tier-lightning'+(accelerated?' is-active':'')} aria-label="切换服务档位" aria-pressed={accelerated} title={tier?.label||'切换服务档位'} onClick={()=>onChange({...value,serviceTier:nextServiceTier(selectedShared.serviceTiers,value.serviceTier,selectedShared.defaultServiceTier),reasoningEffort:undefined})}><ThunderboltFilled/></Button>:<Button type="text" size="small" className="ac-tier-lightning" disabled aria-label="服务档位不可切换" title="该模型未提供可切换的快速档位"><ThunderboltFilled/></Button>}<Select className="ac-model-picker" aria-label="执行模型" title="模型" variant="borderless" size="small" showSearch optionFilterProp="label"
       value={value.modelAccountId?'shared:'+value.modelAccountId+'::'+value.model:value.model||''} labelRender={({label})=>value.model?label:defaultModel?.label||'默认模型'}
       disabled={unavailable} popupMatchSelectWidth placement="topRight" virtual={false} listHeight={248}
       popupRender={menu=><div ref={modelPopup}><nav className="ac-model-source-nav" aria-label="模型来源快速定位">{groups.map(group=><Button key={group.id} size="small" type="text" onMouseDown={event=>{event.preventDefault();event.stopPropagation();}} onClick={event=>{event.stopPropagation();jumpToGroup(group.id);}}>{group.label}</Button>)}</nav>{menu}</div>}
@@ -78,7 +79,7 @@ export function ConversationOptions({connections,modelCatalog,value,disabled,onC
     <Popover rootClassName="ac-panel-popup ac-model-popover" trigger="click" placement="topRight" open={open&&!unavailable} onOpenChange={next=>setOpen(next&&!unavailable)} content={controls}>
       <Button ref={trigger} type="text" size="small" className="ac-model-trigger" aria-label="模型与推理强度" aria-haspopup="dialog" aria-expanded={open&&!unavailable}
         title={modelLabel+(reasoning.options.length?` · ${reasoning.label}${reasoning.inherited?'（默认）':''}`:'')} disabled={unavailable}>
-        <span className="ac-model-label">{modelLabel}</span>{reasoning.options.length>0&&<span className="ac-model-effort">{reasoning.label}</span>}<DownOutlined/>
+        {accelerated&&<ThunderboltFilled className="ac-tier-mark" aria-hidden="true"/>}<span className="ac-model-label">{modelLabel}</span>{reasoning.options.length>0&&<span className="ac-model-effort">{reasoning.label}</span>}<DownOutlined/>
       </Button>
     </Popover>
   </div>;

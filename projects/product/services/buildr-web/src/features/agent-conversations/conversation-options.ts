@@ -78,6 +78,14 @@ export function conversationRunIdentity(run:ConversationRun,connection:Connectio
   return [modelSourceName(run.provider),model].filter(Boolean).join(' · ');
 }
 
+/** Cycle only among tiers the selected model actually offers. */
+export function nextServiceTier(tiers:ReadonlyArray<{id:string}>|undefined,current:string|undefined,fallback:string|undefined):string|undefined {
+  if(!tiers?.length)return current;
+  const selected=current??fallback??tiers[0]!.id;
+  const index=tiers.findIndex(tier=>tier.id===selected);
+  return tiers[(index+1+tiers.length)%tiers.length]!.id;
+}
+
 /** Never select a different subscription without an explicit user choice. */
 export function officialConversationChoice(connection:ConnectionView|undefined,catalog:CatalogModel[]):ConversationChoice {
  const connectionId=connection?.id??'';
