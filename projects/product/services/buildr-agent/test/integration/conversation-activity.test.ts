@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { ConversationRepository } from '../../src/persistence/conversation-repository.ts';
 import type { StoredConversation } from '../../src/domain/agent-state.ts';
 
-function fixture(t:Parameters<Parameters<typeof test>[1]>[0]) {
+function fixture(t:TestContext) {
   const directory=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-activity-'));
   t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
   return new ConversationRepository(directory);
@@ -19,7 +19,7 @@ function save(repo:ConversationRepository,r:StoredConversation,change:(r:StoredC
   const prior=r.view.revision;change(r);r.view.revision+='x';r.view.updatedAt=new Date(Date.parse(r.view.updatedAt)+1000).toISOString();repo.saveConversation(r,prior);
 }
 function message(r:StoredConversation,id:string,text:string,kind:'message'|'notice'='message',role:'user'|'assistant'|'system'='user') {
-  r.view.entries.push({id,text,kind,role,createdAt:r.view.updatedAt});
+  r.view.entries.push({id,sequence:r.view.entries.length+1,text,kind,role,createdAt:r.view.updatedAt});
 }
 test('reads never create storage; new messages and streaming advance activity, metadata and tool notices do not',t=>{
   const repo=fixture(t);assert.equal(repo.querySummaries(['w1'],{limit:10}).total,0);assert.equal(fs.existsSync(repo.filename),false);

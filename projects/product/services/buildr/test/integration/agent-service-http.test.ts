@@ -52,7 +52,7 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   let workspaceId: string;
   const service = createAgentService({ dataRoot: path.join(base, 'agent-profile'), executors: [], resolveWorkspace: id => { assert.equal(id, workspaceId); return { rootPath: root }; }, assertTask: () => {} });
   const contributions = runtimeContributions(runtime, 'http').filter((item: { id: string }) => item.id !== 'agent-service.http');
-  contributions.push(createAgentServiceHttpContribution(() => service,()=>[workspaceId]));
+  contributions.push(createAgentServiceHttpContribution(() => service,{registeredWorkspaceIds:()=>[workspaceId]}));
   const server = createLocalWorkspaceServer(runtime, { targetRoot: root, httpContributions: contributions });
   const { url, initialWorkspaceId, sessionToken } = await server.ready;
   workspaceId = initialWorkspaceId;

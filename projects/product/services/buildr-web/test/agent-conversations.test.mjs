@@ -341,6 +341,8 @@ test('default workspace directory is read from the host without creating a conve
  assert.equal(calls.length,1);
  assert.equal(calls[0].url,'/api/v1/app/agent-service/default-workspace');
  assert.equal(calls[0].options.method,undefined);
+});
+
 test('活动主状态只显示一个静态结果，完成未查看仍属于活动',async()=>{
   const {activityState,isActiveConversation}=await import('../src/features/agent-conversations/conversation-activity.ts');
   const row={...conversation,activity:{version:3,seenThrough:1,active:true,updatedAt:'2026-10-27'}};
