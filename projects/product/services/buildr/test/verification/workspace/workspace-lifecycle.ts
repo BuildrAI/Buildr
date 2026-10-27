@@ -32,7 +32,6 @@ try {
   const rule: any = path.join(fixture.workspace, 'rules', 'review-policy.md');
   fs.mkdirSync(path.dirname(rule), { recursive: true });
   fs.writeFileSync(rule, '# Review Policy\n\nReview representative changes before delivery.\n');
-  runBuildr(['rules', 'add', 'review-policy', '--description', 'Review representative changes', '--target', fixture.workspace]);
   runBuildr(['commands', 'add', 'node-runtime', '--purpose', 'Execute JavaScript verification', '--executable', 'node', '--target', fixture.workspace]);
   runBuildr(['skills', 'add', '--source', skillSource, '--scope', '.', '--target', fixture.workspace]);
   runBuildr(['sync', 'codex', '--scope', '.', '--target', fixture.workspace]);
@@ -40,7 +39,7 @@ try {
   assert.equal(fs.existsSync(path.join(fixture.workspace, 'projects', 'demo', 'services', 'api', '.git')), true);
   assert.equal(fs.existsSync(path.join(fixture.workspace, '.agents', 'skills', 'review-skill', 'SKILL.md')), true);
   assert.match(fs.readFileSync(path.join(fixture.workspace, 'commands', 'manifest.yml'), 'utf8'), /node-runtime/);
-  assert.match(fs.readFileSync(path.join(fixture.workspace, 'rules', 'manifest.yml'), 'utf8'), /review-policy/);
+  assert.equal(fs.existsSync(path.join(fixture.workspace, 'rules', 'manifest.yml')), false);
 
   const doctor: any = parseJson(runBuildr(['doctor', '--agent', 'codex', '--target', fixture.workspace, '--json', '--detail', 'full']), 'workspace lifecycle doctor');
   assertHealthyDoctor(doctor, 'codex');
