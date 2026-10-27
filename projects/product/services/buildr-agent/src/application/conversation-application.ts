@@ -91,7 +91,7 @@ export class ConversationApplication {
     view.titleState??={status:'unknown'};
     view.participants = record.participants.map(participant => ({
       id: participant.id, provider: participant.provider, connectionId: participant.connectionId,
-      label: participant.label, deliveredThrough: participant.deliveredThrough, contextId: participant.contextRef?.id ?? '',
+      label: participant.label, model: participant.modelId, modelAccountId:participant.modelAccountId, deliveredThrough: participant.deliveredThrough, contextId: participant.contextRef?.id ?? '',
     }));
     const entries = view.entries.filter(entry => before === undefined || entry.sequence < before);
     const countBounded = entries.slice(-bounded(limit, PAGE_SIZE, 200));

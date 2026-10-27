@@ -1,3 +1,4 @@
+import { conversationModelLabel } from './conversation-model-label';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Empty, Input, Select, Spin } from 'antd';
 import { ArrowLeftOutlined, PlusOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons';
@@ -38,15 +39,15 @@ export function ConversationHistory({workspaces,defaultWorkspaceId}:{workspaces:
   }catch(failure){if(generation.current===current){firstPage.current='';setReload(value=>value+1);setError(failure instanceof Error?failure.message:'列表顺序已变化，重新读取中。');}}finally{if(generation.current===current){reading.current=false;setBusy(false);}}};
   const renderRow=(row:ConversationSummary)=><button key={row.workspaceId+':'+row.id} data-conversation-id={row.id} className={context.scope?.workspaceId===row.workspaceId&&context.scope.conversationId===row.id?'is-selected':''} onClick={()=>void context.openConversation(row.workspaceId,row.id,{preserveVisibility:true})}>
     <span className="ac-history-row-title"><strong title={row.title}>{row.title}</strong><ConversationActivityStatus state={activityState(row)}/></span>
-    <small><span className="ac-history-id" title={row.id}>ID {row.id}</span><span className="ac-history-meta">{conversationMetadata(row,workspaces.find(item=>item.id===row.workspaceId)?.name??row.workspaceId)}</span></small>
+    <small><span className="ac-history-id" title={row.id}>ID {row.id}</span><span className="ac-history-meta">{conversationMetadata(row,workspaces.find(item=>item.id===row.workspaceId)?.name??row.workspaceId,row.run?.model?conversationModelLabel(row.run.model,context.connections,context.modelCatalog,{modelAccountId:row.run.modelAccountId}):undefined)}</span></small>
   </button>;
   const active=rows.filter(isActiveConversation),recent=rows.filter(row=>!isActiveConversation(row));
   return <section className="ac-history" aria-label="对话列表">
     <header className="ac-thread-header"><Button type="text" icon={<ArrowLeftOutlined/>} aria-label="返回当前对话" onClick={()=>context.setView('conversation')}/><strong>对话列表</strong><Button type="text" icon={<PlusOutlined/>} aria-label="新建对话" onClick={()=>context.newConversation({preserveVisibility:true})}/></header>
     <div className="ac-history-body">
       <div className="ac-history-toolbar"><Input allowClear prefix={<SearchOutlined/>} aria-label="搜索对话" placeholder="搜索对话" value={query} onChange={event=>setQuery(event.target.value)}/><Select aria-label="对话列表工作空间" value={workspaceId} options={[{value:'',label:'全部工作空间'},...workspaces.map(item=>({value:item.id,label:item.name}))]} onChange={value=>{setWorkspaceId(value);setStats(undefined);setFilter(null);}}/></div>
-      <ConversationExecutionStats status={error?'error':stats?'ready':'unknown'} stats={stats} filter={filter} onFilter={setFilter}/>
-      {filter&&<div className="ac-execution-filter"><span>执行中 · {filter.value}</span><Button type="link" size="small" onClick={()=>setFilter(null)}>清除筛选</Button></div>}
+      <ConversationExecutionStats modelLabel={id=>conversationModelLabel(id,context.connections,context.modelCatalog)} status={error?'error':stats?'ready':'unknown'} stats={stats} filter={filter} onFilter={setFilter}/>
+      {filter&&<div className="ac-execution-filter"><span>执行中 · {filter.kind==='model'?conversationModelLabel(filter.value,context.connections,context.modelCatalog):filter.value}</span><Button type="link" size="small" onClick={()=>setFilter(null)}>清除筛选</Button></div>}
       {error&&<Alert type="warning" showIcon message={error} action={<Button size="small" onClick={()=>{firstPage.current='';setReload(value=>value+1);}}>重试</Button>}/>}
       {active.length>0&&<section className="ac-history-group" aria-label="活动中的对话"><h3>活动中的对话 <small>{active.length}{cursor?' +':''}</small></h3><div className="ac-history-list">{active.map(renderRow)}</div></section>}
       <section className="ac-history-group" aria-label="其他对话"><h3>{hidden?'已隐藏的对话':'其他对话'}<Button type="text" size="small" onClick={()=>setHidden(value=>!value)}>{hidden?'返回最近':'查看隐藏'}</Button></h3><div className="ac-history-list">{recent.map(renderRow)}</div></section>

@@ -104,6 +104,18 @@ export function participantAgentIds(participants:ConversationView['participants'
   return [...new Set(participants.map(participant=>participant.provider))];
 }
 
+/** Actual participant bindings only; a draft or another participant's current model is not evidence. */
+export function participantExecutionPairs(conversation:ConversationView|null):Array<{key:string;provider:string;model?:string;connectionId?:string;modelAccountId?:string}> {
+  const pairs=new Map<string,{key:string;provider:string;model?:string;connectionId?:string;modelAccountId?:string}>();
+  for(const participant of conversation?.participants??[]){
+    const current=conversation?.run?.participantId===participant.id?conversation.run:undefined;
+    const model=participant.model||current?.model;
+    const key=JSON.stringify([participant.provider,model??null]);
+    if(!pairs.has(key))pairs.set(key,{key,provider:participant.provider,model,connectionId:participant.connectionId,modelAccountId:participant.modelAccountId??current?.modelAccountId});
+  }
+  return [...pairs.values()];
+}
+
 // The visible stream interleaves conversation entries with per-run process blocks.
 export type ConversationStreamItem = {type:'entry';entry:ConversationEntry}|{type:'process-block';entries:ConversationEntry[];active:boolean;finishedAt?:string};
 /** Legacy records have no message phase: the last assistant message of a settled

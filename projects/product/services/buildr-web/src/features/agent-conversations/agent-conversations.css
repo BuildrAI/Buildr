@@ -168,3 +168,4 @@
 .app-shell.has-primary-navigation .app-frame{flex:1;min-height:0;height:auto;overflow:hidden}
 .app-shell.has-primary-navigation .app-frame>#app-view{min-height:0;overflow:auto}
 .ac-panel .ac-stream{flex:1 1 0;min-height:0}
+.ac-participants>span{max-width:100%;overflow-wrap:anywhere;white-space:normal}

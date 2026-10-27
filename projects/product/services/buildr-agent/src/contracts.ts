@@ -187,7 +187,7 @@ export interface PreparationView {
 }
 export interface PreparationInput { expectedRevision: string; executable?: string; install?: boolean }
 export type RunStatus = 'starting' | 'running' | 'waiting-approval' | 'waiting-question' | 'stopping' | 'stopped' | 'tools-active' | 'unknown' | 'completed' | 'failed';
-export interface ParticipantView { id: string; provider: ProviderId; connectionId: string; label: string; deliveredThrough: number; contextId: string }
+export interface ParticipantView { modelAccountId?: string; model?: string; id: string; provider: ProviderId; connectionId: string; label: string; deliveredThrough: number; contextId: string }
 export interface ConversationEntry {
   id: string;
   sequence: number;

@@ -57,8 +57,11 @@
 .ac-activity-menu>header,.ac-activity-menu>.ac-execution-stats,.ac-activity-menu>.ac-execution-filter{flex:none}
 .ac-activity-menu .ac-activity-items{min-height:0;flex:1;overflow:auto}
 .ac-execution-stats.is-compact{padding:9px 11px;margin:10px 0 7px}
-.ac-execution-stats.is-compact .ac-stats-groups{max-height:118px;overflow:auto;gap:9px;margin-top:8px}
+.ac-execution-stats.is-compact .ac-stats-groups{overflow:visible;align-content:start;grid-auto-rows:max-content;gap:9px;margin-top:8px}
 .ac-execution-stats.is-compact .ac-stats-group+.ac-stats-group{padding-top:7px}
 .ac-history-toolbar{flex-wrap:wrap}
 .ac-history-toolbar>.ant-input-affix-wrapper{flex:1 1 160px;min-width:0}
 .ac-history-toolbar>.ant-select{flex:1 1 140px;min-width:0}
+
+.ac-execution-stats.is-compact .ac-stats-group>div{overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:0 2px 4px 0}
+.ac-stats-group button{max-width:100%;flex-shrink:0}.ac-stats-group button span{min-width:0;overflow-wrap:anywhere;text-align:left}.ac-stats-group button b{flex:none}
