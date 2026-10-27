@@ -47,9 +47,11 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
   const model = async (available: boolean) => {
     let counter = 0; const cancelled = new Set<string>(), starts: unknown[] = [];
     const selected={id:'account::model',modelId:'model',accountId:'account',accountIdentity:'identity',accountRevision:'v1',accountLabel:'Fixture',provider:'fixture',label:'Browser Model',images:false,tools:false,available:true,enabled:true};
+    const disabled={...selected,modelId:'disabled-model',label:'Disabled Model',enabled:false};
+    const offline={...selected,modelId:'offline-model',label:'Offline Model',available:false};
     const run=(id:string,status:string)=>({id,modelAccountId:'account',modelId:'model',accountRevision:'v1',label:'Fixture / Browser Model',status,output:status==='succeeded'?{commitMessage:'feat: 浏览器生成提交说明\n\n验证生成结果可继续编辑。'}:null,error:null});
     const add = async (pattern: string, handler: (route: any) => Promise<void>) => {await page.route(pattern, handler);};
-    await add('**/api/v1/app/agent-service/model-catalog',async route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({models:available?[selected]:[]})}));
+    await add('**/api/v1/app/agent-service/model-catalog',async route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({models:available?[selected,disabled,offline]:[]})}));
     await add('**/code/commit-message', async route => {starts.push(route.request().postDataJSON()); await route.fulfill({status: 202, contentType: 'application/json', body: JSON.stringify(run('browser-run-' + ++counter, 'running'))});});
     await add('**/code/commit-message-runs?*', async route => {const id = new URL(route.request().url()).searchParams.get('runId')!, status = cancelled.has(id) ? 'cancelled' : 'succeeded'; await route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(run(id, status))});});
     await add('**/code/commit-message-cancel', async route => {const id = route.request().postDataJSON().runId; cancelled.add(id); await route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(run(id, 'cancelled'))});});
@@ -66,8 +68,15 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
         const panel = root().locator('.source-control-commit-panel'), input = panel.getByRole('textbox', {name: '提交说明内容', exact: true});
         await panel.locator('#generate-commit-message-model-menu').click();
         await capture(page,'source-control-model-choice.png');
-        await page.getByRole('menuitem',{name:'Fixture / Browser Model',exact:true}).click();
+        const modelMenu=page.getByRole('menu');
+        assert.equal(await modelMenu.getByRole('menuitem',{name:'Fixture / Disabled Model',exact:true}).count(),0,'未启用模型不出现在执行模型菜单');
+        assert.equal(await modelMenu.getByRole('menuitem',{name:'Fixture / Offline Model',exact:true}).isDisabled(),true,'已启用但来源不可用的模型保留且禁选');
+        await modelMenu.getByRole('menuitem',{name:'Fixture / Browser Model',exact:true}).click();
         await page.getByRole('menu').filter({has:page.getByRole('menuitem',{name:'配置模型',exact:true})}).waitFor({state:'hidden'});
+        await page.reload(); await open(branches);
+        const restoredPanel = root().locator('.source-control-commit-panel');
+        await page.waitForFunction(() => document.querySelector('#generate-commit-message')?.getAttribute('aria-label') === '生成提交说明 · Fixture / Browser Model');
+        assert.equal(await restoredPanel.locator('#generate-commit-message').getAttribute('aria-label'),'生成提交说明 · Fixture / Browser Model','刷新后仍记住执行模型');
         const height = await panel.evaluate((element: HTMLElement) => element.getBoundingClientRect().height); assert.ok(height >= 65 && height <= 120, '默认说明区保持紧凑：' + height);
         await assertCommitSplitAtWidths(panel);
         assert.equal(await panel.locator('#commit-changes').isDisabled(), true, '说明为空时主按钮禁用');

@@ -20,13 +20,13 @@ test('来源键同时区分工作空间、代码库、工作树与分支，结�
   assert.equal(commitMessageOutput({commitMessage: 'subject\n\nbody'}), 'subject\n\nbody');
 });
 
-test('来源切换保留独立草稿，迟到生成只写原来源并固定执行者，模型选择保留', async () => {
+test('来源切换保留独立草稿，迟到生成只写原来源并固定执行者', async () => {
   const start = deferred(), calls = [], actions = create(client({generate: (...args) => {calls.push(args); return start.promise;}}));
   await Promise.all([actions.observe(source), actions.observe(other)]);
-  actions.setText(source, 'original'); actions.setText(other, 'other draft'); actions.setOverride(source, selection.id);
+  actions.setText(source, 'original'); actions.setText(other, 'other draft');
   const pending = actions.generate(source, selection);
-  assert.equal(actions.state(source).overrideId, selection.id); assert.equal(actions.state(source).generation.modelKey, selection.id);
-  actions.setOverride(other, 'other-agent'); start.resolve(run()); await pending;
+  assert.equal(actions.state(source).generation.modelKey, selection.id);
+  start.resolve(run()); await pending;
   assert.equal(actions.state(source).text, 'generated'); assert.equal(actions.state(source).generatedBy.modelKey, selection.id);
   assert.equal(actions.state(other).text, 'other draft'); assert.equal(calls[0][2], selection);
 });

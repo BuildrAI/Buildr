@@ -5,7 +5,6 @@ export type Generation = { token: number; modelKey: string; label: string; runId
 export type SourceControlActionState = {
   text: string;
   textVersion: number;
-  overrideId: string | null;
   context: CommitContext | null;
   contextLoading: boolean;
   contextError: string;
@@ -22,7 +21,7 @@ export type SourceControlActionState = {
 type Ticket = {token: number; cancelled: boolean; runId: string | null; textVersion: number; label: string; modelKey: string; revision: string};
 export const actionSourceKey = (source: CodeActionSource) => JSON.stringify([source.workspaceId, source.repositoryId, source.worktreeId, source.branch]);
 export function emptyActionState(): SourceControlActionState {
-  return {text: '', textVersion: 0, overrideId: null, context: null, contextLoading: false, contextError: '', generation: null, generatedBy: null, generationError: '', generationWarning: '', stale: false, gitPending: null, gitResult: null, gitError: '', unknownCommit: false};
+  return {text: '', textVersion: 0, context: null, contextLoading: false, contextError: '', generation: null, generatedBy: null, generationError: '', generationWarning: '', stale: false, gitPending: null, gitResult: null, gitError: '', unknownCommit: false};
 }
 export function commitMessageOutput(value: unknown): string | null {
   if (typeof value !== 'object' || value === null || !('commitMessage' in value) || typeof value.commitMessage !== 'string' || !value.commitMessage.trim()) return null;
@@ -69,7 +68,6 @@ export class SourceControlActions {
   }
   private update(source: CodeActionSource, patch: Partial<SourceControlActionState>) { this.records.set(actionSourceKey(source), {...this.state(source), ...patch}); if (!this.disposed) for (const listener of this.listeners) listener(); }
   setText(source: CodeActionSource, text: string) { const current = this.state(source); this.update(source, {text, textVersion: current.textVersion + 1}); }
-  setOverride(source: CodeActionSource, overrideId: string | null) { this.update(source, {overrideId}); }
   async observe(source: CodeActionSource): Promise<void> {
     const key = actionSourceKey(source), serial = ++this.serial, controller = new AbortController();
     this.reads.get(key)?.controller.abort(); this.reads.set(key, {serial, controller}); this.update(source, {contextLoading: true});
