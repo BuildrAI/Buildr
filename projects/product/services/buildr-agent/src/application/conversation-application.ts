@@ -10,7 +10,7 @@ import type { StoredConversation, StoredParticipant } from '../domain/agent-stat
 import type { ConversationRepository } from '../persistence/conversation-repository.ts';
 import type { ConnectionApplication } from './connection-application.ts';
 import type { ConversationEvents } from './conversation-events.ts';
-import {HANDOFF_PROMPT,HANDOFF_SUMMARY_PROMPT,handoffEntries,organizeHandoff,displayRounds,receivingBudget} from '../domain/handoff-material.ts';
+import {HANDOFF_PROMPT,HANDOFF_SUMMARY_PROMPT,handoffEntries,organizeHandoff,displayRounds,receivingBudget,formatHandoffRounds} from '../domain/handoff-material.ts';
 import {handoffSources} from './handoff-sources.ts';
 import { resolvePermissionMode } from '../domain/permission-mode.ts';
 
@@ -181,7 +181,7 @@ export class ConversationApplication {
     const images = ids.map(id => this.attachment(record, id));
     const context=JSON.stringify({conversationId:record.view.id,workspaceId:record.view.workspaceId,cwd:record.view.cwd,taskId:record.view.taskId,sourceThrough:through,permissionMode:input.permissionMode,executionState:record.view.run?.status??'idle',sourceIndex:sources?.index,imageInputIds:ids,currentImageIds:currentImages,currentImages:images.filter(image=>currentImages.includes(image.id)),historicalImages:historicalImages.slice(-4),historicalImageCount:historicalImages.length,historicalImageNotice:historicalImages.length?'历史图片的全部准确引用见本地索引；此处只列最近四张。没有作为图像输入发送的部分须按需读取，不能假装已看到。':undefined});
     const suffix=`\n\n本次用户要求：\n${input.text}${input.handoffSummary?'\n用户补充的交接说明（不替代本地历史）：\n'+input.handoffSummary:''}`;
-    const fullText=changes.length||switching?`${HANDOFF_PROMPT}\n工作位置与来源：${context}\n按轮次组织的本地记录：\n${JSON.stringify(rounds)}${suffix}`:input.text;
+    const fullText=changes.length||switching?`${HANDOFF_PROMPT}\n工作位置与来源：${context}\n按轮次组织的本地记录：\n${formatHandoffRounds(rounds)}${suffix}`:input.text;
     const needsCompression=Buffer.byteLength(fullText)>maxInputBytes;
     const text=needsCompression&&sources?`${HANDOFF_PROMPT}\n工作位置与来源：${context}\n完整历史共有 ${rounds.length} 轮，记录 #${changes[0]?.sequence??0}–#${through}，超过内联容量。请先读取本地索引 ${sources.index}，按各轮路径读取用户要求、授权纠正、失败未知、成果和待办。正文没有省略来源，具体内容需按引用读取。${suffix}`:fullText;
     const previous=record.participants.find(p=>p.id===record.view.run?.participantId);
@@ -661,10 +661,12 @@ export class ConversationApplication {
   async close(): Promise<void> {
     this.closing = true;
     for (const controller of this.titleWork.values()) controller.abort();
+    const interrupted=this.options.repository.listPending(true).map(record=>({workspaceId:record.view.workspaceId,id:record.view.id,runId:record.view.run?.id}));
     for (const record of this.options.repository.listPending(true)) {
       if (record.view.run) { record.view.run.status = 'unknown'; record.view.run.diagnostic = '宿主正在退出，原生执行尚待确认。'; this.save(record); }
     }
     const ids = new Set(this.options.repository.listPending(true).map(record => record.participants.find(value => value.id === record.view.run?.participantId)?.connectionId).filter((id): id is string => Boolean(id)));
     await Promise.allSettled([...ids].map(id => this.closeConnection(id)));
+    for(const item of interrupted){const record=this.load(item.workspaceId,item.id);if(record.view.run?.id===item.runId&&record.view.run&&['stopped','unknown','tools-active','stopping'].includes(record.view.run.status)){record.view.run.diagnostic=record.view.run.status==='stopped'?'宿主退出导致执行停止；这不是用户主动停止。':'宿主退出后原执行仍待核对，不能重复发送。';this.save(record);}}
   }
 }

@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {organizeHandoff,handoffEntries,receivingBudget} from '../../src/domain/handoff-material.ts';
+import {organizeHandoff,handoffEntries,receivingBudget,formatHandoffRounds,displayRounds} from '../../src/domain/handoff-material.ts';
 import type {ConversationEntry} from '../../src/contracts.ts';
 const entry=(sequence:number,fields:Partial<ConversationEntry>):ConversationEntry=>({id:String(sequence),sequence,kind:'message',role:'user',text:'request',createdAt:'2026-10-27T00:00:00Z',runId:'one',...fields});
 test('round identity preserves in-run answers, failed tools and explicit artifacts without copying scripts or read bodies',()=>{
@@ -15,4 +15,11 @@ test('interruption after assistant commentary does not invent a final reply or a
 });
 test('receiving budget respects independent adapter and conservative context bounds',()=>{
  assert.equal(receivingBudget(96000),96000);assert.equal(receivingBudget(96000,32000,4096),23808);assert.equal(receivingBudget(8000,32000,4096),8000);assert.equal(receivingBudget(96000,4096),2048);
+});
+
+test('successful repeated operations collapse while failures, unknowns, decisions and source counts remain',()=>{
+ const records=[entry(1,{text:'不要改配置'}),...Array.from({length:100},(_,i)=>entry(i+2,{kind:'tool',role:'system',name:'read',input:JSON.stringify({path:'a.ts'}),text:'file body must not travel',status:'completed'})),entry(102,{kind:'tool',role:'system',name:'bash',text:'quota failed',status:'failed'}),entry(103,{kind:'tool',role:'system',name:'edit',text:'delivery unclear'}),entry(104,{role:'assistant',text:'需要核对，不可重试。',status:'completed'})];
+ const rounds=organizeHandoff(records);assert.equal(rounds[0].executionCount,102);assert.equal(rounds[0].execution.length,3);assert.equal(displayRounds(rounds)[0].executionCount,102);
+ const text=formatHandoffRounds(rounds);assert.match(text,/100 次执行结束/);assert.match(text,/quota failed/);assert.match(text,/结果未确认/);assert.match(text,/不要改配置/);assert.match(text,/#102/);assert.ok(!text.includes('file body must not travel'));assert.ok(!text.includes('"action"'));
+ assert.ok(Buffer.byteLength(text)<Buffer.byteLength(JSON.stringify(records.map(e=>({action:e.name,result:'执行结束，具体结果见来源',location:'a.ts'}))))/3);
 });

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {groupConversationStream,processBlockKey} from '../src/features/agent-conversations/conversation-state.ts';
+import {groupConversationStream,processBlockKey,carryExpandedProcessBlocks} from '../src/features/agent-conversations/conversation-state.ts';
 import {processTool,conversationFileTarget} from '../src/features/agent-conversations/conversation-process.ts';
 const message=(id,text,runId='r1',role='assistant')=>({id,sequence:0,kind:'message',role,text,runId,createdAt:'2026-10-26T00:00:00Z'});
 const tool=(id,options={})=>({...message(id,'output'),kind:'tool',role:'system',status:'completed',...options});
@@ -77,4 +77,10 @@ test('JSON输出不能冒充原始文件输入，依赖执行器展开的路径�
   const catalog={worktrees:[member('root','/repo')]};
   assert.equal(conversationFileTarget('/repo','symlink/../other.ts',catalog),null);
   assert.equal(conversationFileTarget('/repo','~/other.ts',catalog),null);
+});
+
+test('prepending earlier steps preserves expansion of the overlapping process',()=>{
+ const current=[{...tool('current'),sequence:10},{...message('answer','完成'),sequence:11}];
+ const added=[{...message('question','开始','r1','user'),sequence:1},{...tool('earlier'),sequence:2}];
+ const key=processBlockKey([current[0]]),next=carryExpandedProcessBlocks(current,added,{[key]:true});assert.equal(next[processBlockKey([added[1],current[0]])],true);assert.deepEqual(carryExpandedProcessBlocks(current,added,{}),{});
 });

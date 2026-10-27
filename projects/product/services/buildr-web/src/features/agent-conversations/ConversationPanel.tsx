@@ -1,10 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Alert, Button, Dropdown, Input, Modal, Popover, Select, Spin, Tag } from 'antd';
+import { Alert, App, Button, Dropdown, Input, Modal, Popover, Select, Spin, Tag } from 'antd';
 import { ArrowUpOutlined, CommentOutlined, CopyOutlined, EllipsisOutlined, FolderOpenOutlined, MenuOutlined, PlusOutlined, SafetyCertificateOutlined, StopOutlined, VerticalAlignTopOutlined } from '@ant-design/icons';
 import { MarkdownHost } from '../../components/MarkdownHost';
 import type { ApiError } from '../../api';
 import { copyText } from '../../lib/copyText';
 import { useAgentConversations } from './AgentConversationsContext';
+import {useEarlierConversationEntries} from './useEarlierConversationEntries';
+import {carryExpandedProcessBlocks} from './conversation-state';
 import { ConversationHistory, type ConversationWorkspace } from './ConversationHistory';
 import { ConversationAttention } from './ConversationAttention';
 import { ConversationRequest } from './ConversationRequest';
@@ -31,6 +33,7 @@ type SendOperation={selection:ConversationSelection};
 type Props={workspaces:ConversationWorkspace[];defaultWorkspaceId:string|null;portalTarget?:HTMLElement|null};
 export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:Props){
   const context=useAgentConversations(),chat=context.conversation;
+  const {message}=App.useApp();
   const navigate=useNavigate(),location=useLocation();
   const [newWorkspaceId,setNewWorkspaceId]=useState(defaultWorkspaceId||'');
   const draftWorkspaceId=context.draftScope?.workspaceId||newWorkspaceId;
@@ -74,7 +77,6 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
   const viewedHandoff=selectedHandoff?(chat?.entries.find(entry=>entry.id===selectedHandoff.id)??selectedHandoff):null;
   const [moreOpen,setMoreOpen]=useState(false),[locationOpen,setLocationOpen]=useState(false);
   const [expandedToolGroups,setExpandedToolGroups]=useState<Record<string,boolean>>({});
-  const [loadingEarlier,setLoadingEarlier]=useState(false);
   const stream=useRef<HTMLDivElement>(null),readPosition=useRef(0),bottom=useRef(true),fileInput=useRef<HTMLInputElement>(null),composing=useRef(false);
   const selectedSourceModel=context.modelCatalog.find(model=>model.accountId===choice.modelAccountId&&model.modelId===choice.model);
   const effectiveModel=choice.model??selectedConversationModel(connection,undefined)?.id;
@@ -179,14 +181,11 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
     catch(failure){if(context.isSelectionCurrent(selection)){setFeedback('');fail(failure);}}
     finally{actions.finish(key);}
   };
-  const loadEarlier=async()=>{
-    if(!chat||loadingEarlier)return;
-    const cursor=chat.nextEntryCursor;if(cursor===undefined)return;
-    setLoadingEarlier(true);
-    try{context.prependEntries(await context.api.entries(chat.workspaceId,chat.id,cursor));}
-    catch(failure){fail(failure);}
-    finally{setLoadingEarlier(false);}
-  };
+  const earlier=useEarlierConversationEntries({conversation:chat,selectionKey:`${context.selectionGeneration}:${chat?.workspaceId}:${chat?.id}`,stream,bottom,position:readPosition,
+    loadPage:(value,cursor)=>context.api.entries(value.workspaceId,value.id,cursor),
+    prepend:page=>{if(chat)setExpandedToolGroups(previous=>carryExpandedProcessBlocks(chat.entries,page.entries,previous,chat.run));context.prependEntries(page);},
+    onError:fail,onLoaded:text=>{void message.info({content:text,duration:2});},
+  });
   const run=chat?.run;
   const runConnection=context.connections.find(item=>item.id===chat?.participants.find(participant=>participant.id===run?.participantId)?.connectionId);
   const runIdentity=run?conversationRunIdentity(run,runConnection,context.modelCatalog):'';
@@ -208,7 +207,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
         <Popover rootClassName="ac-panel-popup" title="工作空间" trigger="click" open={locationOpen} onOpenChange={setLocationOpen} content={settings}>
           <button type="button" className="ac-thread-title" aria-label="对话信息" title={chat?.title||'新对话'}>{chat?.title||'新对话'}</button>
         </Popover>
-        {chat&&<div className="ac-thread-identity"><span title={chat.id}>ID {chat.id}</span><Button type="text" size="small" icon={<CopyOutlined/>} aria-label="复制对话 ID" title="复制对话 ID" onClick={()=>void copyText(chat.id).then(ok=>setFeedback(ok?'对话 ID 已复制。':'复制失败，请手动选择对话 ID。'))}/></div>}
+        {chat&&<div className="ac-thread-identity"><Button type="text" size="small" icon={<CopyOutlined/>} aria-label="复制对话 ID" title="复制对话 ID" onClick={()=>void copyText(chat.id).then(ok=>{if(ok)void message.success({content:'已复制',duration:1.6});else void message.error({content:'复制失败，请手动选择对话 ID。',duration:2});})}/><span title={chat.id}>ID {chat.id}</span></div>}
         </div>
         <div className="ac-thread-actions">
           <Button type="text" icon={<PlusOutlined/>} aria-label="新建对话" title="新建对话" onClick={()=>context.newConversation({preserveVisibility:true})}/>
@@ -233,9 +232,9 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
         </div>
       </header>
       {participantNames.length?<div className="ac-participants">参与过此对话 {participantNames.map(name=><span key={name}>{name}</span>)}</div>:null}
-      <div className="ac-stream" ref={stream} onScroll={()=>{if(stream.current?.getClientRects().length){readPosition.current=stream.current.scrollTop;bottom.current=stream.current.scrollHeight-stream.current.scrollTop-stream.current.clientHeight<80;}}}>
+      <div className="ac-stream" ref={stream} onScroll={earlier.onScroll} onWheel={earlier.onWheel} onTouchStart={earlier.onTouchStart} onTouchMove={earlier.onTouchMove} onTouchEnd={earlier.onTouchEnd} onTouchCancel={earlier.onTouchCancel}>
         {context.loading?<Spin/>:context.error?<Alert type="error" showIcon message={context.error} action={<Button onClick={()=>void context.refresh().catch(fail)}>重新读取</Button>}/>:!chat?.entries.length?<div className="ac-welcome"><CommentOutlined/><h1>{chat?.taskId||boundTaskId?'从这项任务继续':'今天想做什么？'}</h1><p>了解一个问题，或者交办一件事。</p>{!chat&&settings}</div>:<div className="ac-message-list">
-          {chat.nextEntryCursor!==undefined&&<div className="ac-load-earlier"><Button size="small" type="text" icon={<VerticalAlignTopOutlined/>} loading={loadingEarlier} onClick={()=>void loadEarlier()}>加载更早的记录</Button></div>}
+          {earlier.pull>0&&<div className="ac-pull-history" role="status">{earlier.pull>=60?'松开加载更早记录':'下拉加载更早记录'}</div>}{chat.nextEntryCursor!==undefined&&<div className="ac-load-earlier"><Button size="small" type="text" aria-label="加载更早的记录" icon={<VerticalAlignTopOutlined aria-hidden/>} loading={earlier.loading} onClick={()=>void earlier.load()}>加载更早的记录</Button></div>}
           {transcript.map((item,index)=>{
             if(item.type==='process-block'){
               const key=processBlockKey(item.entries),next=transcript[index+1];
@@ -255,13 +254,12 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
             </section>:renderEntry(entry);
           })}
         </div>}
-        {run&&<div className="ac-run-status" role="status" data-run-status={run.status}>{statusLabels[run.status]}{runIdentity&&` · ${runIdentity}`} · {permissionModeLabels[run.permissionMode||'default']}{run.diagnostic&&<p>{run.diagnostic}</p>}</div>}
         {context.streamError&&<Alert type="warning" showIcon message="对话连接已中断" description={context.streamError} action={<Button loading={observing} onClick={()=>void observe()}>重新连接并核对</Button>}/>}
         {chat?.run?.status==='unknown'&&<Alert type="warning" showIcon message="执行状态待确认" description="核对原执行后再发送；重新连接不会重发原指令。" action={<Button loading={observing} onClick={()=>void observe()}>核对执行状态</Button>}/>}
         {chat?.run?.status==='tools-active'&&<Alert type="warning" showIcon message="模型已中断，仍有命令运行" description={<div>{chat.run.tools.filter(tool=>tool.status!=='completed').map(tool=><p key={tool.id}>{tool.label}{canStopConversationTool(tool)?<Button size="small" loading={stopping} onClick={()=>void stop(tool.id)}>停止此命令</Button>:<small> · 不支持单独停止</small>}</p>)}<Button type="link" size="small" loading={observing} onClick={()=>void observe()}>核对执行状态</Button></div>} action={<Button loading={stopping} onClick={()=>void stop()}>停止剩余执行</Button>}/>}
         {chat?.requests.map(request=><ConversationRequest key={request.id} request={request} provider={chat.run?.provider||chat.participants.find(item=>item.id===request.participantId)?.provider||'codex'} busy={actions.has(actionKey(chat,'reply',request.id))} onReply={answer=>void reply(request.id,answer)}/>)}
       </div>
-      <div className="ac-compose-wrap">{modelCompatibility&&<Alert type="warning" showIcon message={modelCompatibility}/>} {choice.modelAccountId&&!selectedSourceModel?.available&&<Alert type="warning" showIcon message="所选模型已停用或来源不可用，请重新选择。"/>}{error&&<Alert type="warning" showIcon message={error} closable onClose={()=>setError('')}/>} {feedback&&<small role="status">{feedback}</small>}{!draft.available&&<Alert type="warning" message="浏览器存储不可用，刷新后无法恢复未发送草稿。"/>}
+      <div className="ac-compose-wrap">{(context.reconnecting||context.recovering)&&<small className="ac-recovery-status" role="status">{context.recovering?'正在自动核对原执行状态…':'连接中断，正在自动重连…'}</small>}{run&&<div className="ac-run-status" role="status" data-run-status={run.status}>{statusLabels[run.status]}{runIdentity&&` · ${runIdentity}`} · {permissionModeLabels[run.permissionMode||'default']}{run.diagnostic&&<p>{run.diagnostic}</p>}</div>}{modelCompatibility&&<Alert type="warning" showIcon message={modelCompatibility}/>} {choice.modelAccountId&&!selectedSourceModel?.available&&<Alert type="warning" showIcon message="所选模型已停用或来源不可用，请重新选择。"/>}{error&&<Alert type="warning" showIcon message={error} closable onClose={()=>setError('')}/>} {feedback&&<small role="status">{feedback}</small>}{!draft.available&&<Alert type="warning" message="浏览器存储不可用，刷新后无法恢复未发送草稿。"/>}
         {!connection?.enabled&&<div className="ac-connect-notice"><span>{connection?`${providerNames[connection.provider]} 尚未就绪`:'请先接入智能体'}</span><Button type="link" size="small" onClick={()=>context.setSettings(true)}>智能体与模型</Button></div>}
         {chat?.run&&(lastParticipant?.connectionId!==choice.connectionId||chat.run.model!==effectiveModel||chat.run.modelAccountId!==choice.modelAccountId)?<div className="ac-transfer-notice"><span>{lastParticipant?.connectionId!==choice.connectionId?`接下来由 ${connection?providerNames[connection.provider]||connection.label:''}${chat.run.model!==effectiveModel||chat.run.modelAccountId!==choice.modelAccountId?' · '+(effectiveModelLabel):''} 继续处理`:`接下来使用 ${effectiveModelLabel} 继续处理`}</span><Button type="link" size="small" disabled={!canSend} loading={sending} onClick={()=>void prepare(true)}>交接内容</Button></div>:null}
         {preparing&&<div className="ac-notice" role="status">正在准备交接资料… <Button type="link" size="small" title="跳过模型精简，使用本地记录与按需读取" onClick={()=>{activeSend.current=null;setSending(false);setPreparing(false);void prepare(false,true);}}>直接交接</Button><Button type="text" size="small" onClick={()=>{activeSend.current=null;setSending(false);setPreparing(false);}}>取消发送</Button></div>}

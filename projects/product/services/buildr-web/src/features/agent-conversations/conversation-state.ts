@@ -151,3 +151,12 @@ export function processBlockSummary(entries:readonly ConversationEntry[]):{runni
 export function processBlockKey(entries:readonly ConversationEntry[]):string {
   return 'process-block:'+entries[0].id;
 }
+
+/** Prepending steps can change a block's first entry; keep expanded overlapping blocks open. */
+export function carryExpandedProcessBlocks(current:readonly ConversationEntry[],added:readonly ConversationEntry[],expanded:Record<string,boolean>,run?:ConversationRun):Record<string,boolean>{
+ const openIds=new Set(groupConversationStream(current,run).flatMap(item=>item.type==='process-block'&&expanded[processBlockKey(item.entries)]?item.entries.map(e=>e.id):[]));
+ if(!openIds.size)return expanded;
+ const entries=[...new Map([...added,...current].map(e=>[e.id,e])).values()].sort((a,b)=>a.sequence-b.sequence),next={...expanded};
+ for(const item of groupConversationStream(entries,run))if(item.type==='process-block'&&item.entries.some(e=>openIds.has(e.id)))next[processBlockKey(item.entries)]=true;
+ return next;
+}

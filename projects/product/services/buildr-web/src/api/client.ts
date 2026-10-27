@@ -31,10 +31,10 @@ export function createApiClient(options: {
   return async function api(resource: string, init: RequestInit = {}) {
     const send = async () => {
       const headers = new Headers(init.headers || {});
-      if (init.body || !['GET', 'HEAD'].includes((init.method || 'GET').toUpperCase())) {
+      if (init.body || headers.has('x-buildr-session') || !['GET', 'HEAD'].includes((init.method || 'GET').toUpperCase())) {
         const writeHeaders = options.sessionAdapter.writeHeaders();
         for (const [key, value] of Object.entries(writeHeaders)) {
-          if (!headers.has(key)) headers.set(key, value);
+          if (key.toLowerCase()==='x-buildr-session' || !headers.has(key)) headers.set(key, value);
         }
       }
       // JSON endpoints already return no-store. Bypass the browser's cache entry

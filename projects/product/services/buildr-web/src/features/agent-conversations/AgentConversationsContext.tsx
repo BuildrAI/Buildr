@@ -8,7 +8,7 @@ type Scope = {workspaceId: string; conversationId: string};
 export type DraftScope = {workspaceId: string; taskId?: string};
 type VisibilityOptions={preserveVisibility?:boolean};
 type ContextValue = {
-  api: AgentConversationsClient; open: boolean; side: 'left' | 'right'; full: boolean; view: 'conversation' | 'history';
+  api: AgentConversationsClient; reconnecting:boolean; recovering:boolean; open: boolean; side: 'left' | 'right'; full: boolean; view: 'conversation' | 'history';
   scope: Scope | null; draftScope: DraftScope | null; conversation: ConversationView | null; connections: ConnectionView[]; pending: PendingConversation[];
   modelCatalog:CatalogModel[]; refreshModelCatalog():Promise<void>;
   loading: boolean; error: string; streamError: string; settings: boolean;
@@ -35,6 +35,7 @@ export function AgentConversationsProvider({children, client = agentConversation
   const [side, setSide] = useState<'left' | 'right'>(() => readOptionalPreference('buildr.agent-conversation-side') === 'left' ? 'left' : 'right');
   const [settings, setSettings] = useState(false), [scope, setScope] = useState<Scope | null>(null), [draftScope, setDraftScope] = useState<DraftScope | null>(null), [conversation, setConversation] = useState<ConversationView | null>(null);
   const [connections, setConnections] = useState<ConnectionView[]>([]), [pending, setPending] = useState<PendingConversation[]>([]), [loading, setLoading] = useState(false), [error, setError] = useState(''), [streamError, setStreamError] = useState('');
+  const [reconnecting,setReconnecting]=useState(false),[recovering,setRecovering]=useState(false);
   const [modelCatalog,setModelCatalog]=useState<CatalogModel[]>([]);
   const modelReadGeneration=useRef(0);
   const refreshModelCatalog=useCallback(async()=>{const generation=++modelReadGeneration.current;const result=await client.modelCatalog();if(generation===modelReadGeneration.current)setModelCatalog(result.models);},[client]);
@@ -63,7 +64,7 @@ export function AgentConversationsProvider({children, client = agentConversation
   useEffect(() => {
     if (!scope || !conversation) return;
     const controller = new AbortController(); let generation: string | undefined;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined, retried = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined, failures = 0;
     const handle = (event: ConversationEvent) => {
       if (controller.signal.aborted) return;
       const expectedGeneration = generation;
@@ -76,7 +77,8 @@ export function AgentConversationsProvider({children, client = agentConversation
       setStreamError('');
       // Only live changes prove the subscription healthy; a lone snapshot on a
       // connection that closes again must not loop the silent retry.
-      if (event.type !== 'snapshot') retried = false;
+      if (event.type !== 'snapshot') failures = 0;
+      setReconnecting(false);
       const snapshot=event.payload.conversation;
       if(snapshot){const signature=[snapshot.workspaceId,snapshot.id,snapshot.run?.status||'',...snapshot.requests.map(request=>request.id)].join(':');if(signature!==attentionSignature.current){attentionSignature.current=signature;void refreshPending().catch(()=>{});}}
     };
@@ -87,15 +89,26 @@ export function AgentConversationsProvider({children, client = agentConversation
       try { await client.subscribe(scope.workspaceId, scope.conversationId, controller.signal, handle, eventCursor.current); }
       catch (failure) {
         if (controller.signal.aborted) return;
-        if (!retried) { retried = true; retryTimer = setTimeout(() => { void connect(); }, 1_500); return; }
+        if (failures<5) {const delay=Math.min(5000,500*2**failures++);setReconnecting(true);retryTimer=setTimeout(()=>{void connect();},delay);return;}
+        setReconnecting(false);
         setStreamError(failure instanceof Error ? failure.message : '对话连接已中断；请重新核对执行状态。');
       }
     };
     void connect();
-    return () => { controller.abort(); if (retryTimer) clearTimeout(retryTimer); };
+    return () => { controller.abort(); if (retryTimer) clearTimeout(retryTimer);setReconnecting(false); };
     // Snapshot updates must not recreate the subscriber or lose its cursor.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client, scope?.workspaceId, scope?.conversationId, Boolean(conversation), observation, refreshPending, refreshConnections]);
+  useEffect(()=>{
+    if(!scope||conversation?.run?.status!=='unknown')return;
+    let active=true,attempts=0,timer:ReturnType<typeof setTimeout>|undefined;setRecovering(true);
+    const recover=async()=>{
+      try{const before=conversationRef.current;if(!before)return;const result=await client.observe(before);if(!active)return;apply(result,before.revision);if(result.run?.status!=='unknown'){setRecovering(false);return;}}
+      catch(failure){if(!active)return;if(attempts>=2)setStreamError(failure instanceof Error?failure.message:'原执行状态仍未确认。');}
+      if(!active)return;if(++attempts<3)timer=setTimeout(()=>{void recover();},1500*attempts);else setRecovering(false);
+    };
+    void recover();return()=>{active=false;if(timer)clearTimeout(timer);setRecovering(false);};
+  },[client,scope?.workspaceId,scope?.conversationId,conversation?.run?.id,conversation?.run?.status,apply]);
   const newConversation = useCallback((options:VisibilityOptions&{scope?:DraftScope|null}={}) => { advanceSelection(); eventCursor.current=undefined; scopeRef.current = null; setScope(null); setDraftScope(options.scope??null); setConversation(null); setError(''); setStreamError(''); setView('conversation'); if(!options.preserveVisibility)setVisibility(true); setLoading(false); savePanel(visibility.current.open,null); }, [advanceSelection,setVisibility]);
   const create = useCallback(async (input: {workspaceId: string; cwd: string; taskId?: string},selection?:ConversationSelection) => {
     const observed=selection??{generation:advanceSelection(),scope:scopeRef.current};
@@ -112,7 +125,7 @@ export function AgentConversationsProvider({children, client = agentConversation
   const openGlobal = useCallback(() => { if (pending.length === 1) {void openConversation(pending[0].workspaceId, pending[0].conversationId); return;} setVisibility(true); savePanel(true,scopeRef.current); if (pending.length > 1) setView('history'); }, [pending, openConversation,setVisibility]);
   const toggle=useCallback(()=>setOpen(!open),[open,setOpen]);
   const shell=useMemo(()=>({open,full,pending,openGlobal,toggle,setSettings}),[open,full,pending,openGlobal,toggle]);
-  return <ShellContext.Provider value={shell}><Context.Provider value={{api:client, modelCatalog,refreshModelCatalog,open,side,full,view,scope,draftScope,conversation,connections,pending,loading,error,streamError,settings,setSettings,setOpen,setFull,setView,move:() => setSide(current => { const next = current === 'right' ? 'left' : 'right'; writeOptionalPreference('buildr.agent-conversation-side',next); return next; }),openGlobal,toggle,openConversation,newConversation,refresh,refreshConnections,refreshPending,apply,prependEntries,updateConnection,create,selectionGeneration,getSelection,isSelectionCurrent}}>{children}</Context.Provider></ShellContext.Provider>;
+  return <ShellContext.Provider value={shell}><Context.Provider value={{api:client,reconnecting,recovering, modelCatalog,refreshModelCatalog,open,side,full,view,scope,draftScope,conversation,connections,pending,loading,error,streamError,settings,setSettings,setOpen,setFull,setView,move:() => setSide(current => { const next = current === 'right' ? 'left' : 'right'; writeOptionalPreference('buildr.agent-conversation-side',next); return next; }),openGlobal,toggle,openConversation,newConversation,refresh,refreshConnections,refreshPending,apply,prependEntries,updateConnection,create,selectionGeneration,getSelection,isSelectionCurrent}}>{children}</Context.Provider></ShellContext.Provider>;
 }
 export function useAgentConversations() { const value = useContext(Context); if (!value) throw new Error('AgentConversationsProvider 未提供。'); return value; }
 export function useOptionalAgentConversations() { return useContext(Context); }
