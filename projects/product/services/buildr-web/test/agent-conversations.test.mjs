@@ -314,3 +314,31 @@ test('模型套餐客户端携带观察版本且发送来源固定，不把凭�
   assert.deepEqual(JSON.parse(calls[3].init.body),{expectedRevision:'account-r1'});assert.equal(JSON.parse(calls[5].init.body).modelAccountId,'account-id');assert.equal(JSON.parse(calls[5].init.body).connectionId,'dsh');
   assert.ok(calls.every(call=>!call.url.includes('native-test-session')));
 });
+
+test('default conversations use application routes independently from the browsing workspace', async()=>{
+ const calls=[];
+ const client=async(url,options)=>{calls.push({url,options});return {id:'default-chat',workspaceId:'@default'};};
+ const api=createAgentConversationsClient(client,session);
+ await api.create({workspaceId:'@default'});
+ await api.list('@default');
+ await api.read('@default','default-chat');
+ assert.deepEqual(calls.map(call=>call.url),[
+  '/api/v1/app/agent-service/conversations',
+  '/api/v1/app/agent-service/conversations',
+  '/api/v1/app/agent-service/conversations/default-chat',
+ ]);
+ assert.deepEqual(JSON.parse(calls[0].options.body),{});
+ await api.create({workspaceId:'chosen-workspace',cwd:'/chosen'});
+ assert.equal(calls.at(-1).url,'/api/v1/workspaces/chosen-workspace/agent-conversations');
+ assert.equal(JSON.parse(calls.at(-1).options.body).cwd,'/chosen');
+});
+
+
+test('default workspace directory is read from the host without creating a conversation',async()=>{
+ const calls=[];
+ const api=createAgentConversationsClient(async(url,options)=>{calls.push({url,options});return {rootPath:'/app/default'};},session);
+ assert.deepEqual(await api.defaultWorkspace(),{rootPath:'/app/default'});
+ assert.equal(calls.length,1);
+ assert.equal(calls[0].url,'/api/v1/app/agent-service/default-workspace');
+ assert.equal(calls[0].options.method,undefined);
+});

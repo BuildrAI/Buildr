@@ -88,6 +88,8 @@ export function createLocalWorkspaceRequestRouter({
         authorizeRead: () => assertReadRequest(request, trustedOrigin, sessionToken),
         authorizeWrite: () => assertWriteRequest(request, trustedOrigin, sessionToken),
         readJsonBody: (maxBytes?: number) => readJsonBody(request, maxBytes),
+        authorizeMutation: () => assertMutationRequest(request, trustedOrigin, sessionToken),
+        readBinaryBody: (maxBytes: number) => readBinaryBody(request, maxBytes),
         pickWorkspaceDirectory,
         previewIdentity,
         respond: contributionRespond(response),

@@ -15,15 +15,19 @@ function query(input: URLSearchParams, allowed: string[]): void {
 }
 function numberQuery(value: string | null): number | undefined { if (value === null) return; if (!/^\d+$/.test(value)) throw inputError(); const number = Number(value); if (!Number.isSafeInteger(number)) throw inputError(); return number; }
 
-export function createAgentServiceHttpContribution(resolve: () => AgentService) {
+export function createAgentServiceHttpContribution(resolve: () => AgentService, defaultWorkspace?: () => { rootPath: string }) {
   return {
     id: 'agent-service.http', schemas: SCHEMAS, operations: AGENT_SERVICE_HTTP_OPERATIONS,
     async handleTopLevel(context: any) {
       const { request, pathname, searchParams, authorizeRead, authorizeWrite, readJsonBody } = context;
       const prefix = '/api/v1/app/agent-service';
       if (pathname !== prefix && !pathname.startsWith(`${prefix}/`)) return null;
+      if (pathname === `${prefix}/conversations` || pathname.startsWith(`${prefix}/conversations/`)) {
+        return this.handle({ ...context, workspaceId: '@default', suffix: '/agent-conversations' + pathname.slice(`${prefix}/conversations`.length) });
+      }
       if (request.method === 'GET') authorizeRead(); else authorizeWrite();
       query(searchParams, []);
+      if (pathname === `${prefix}/default-workspace` && request.method === 'GET' && defaultWorkspace) return result('defaultWorkspace', defaultWorkspace());
       const service = resolve();
       if (pathname === `${prefix}/model-accounts`) {
         if (request.method === 'GET') return result('modelAccounts', await service.models.accounts.list({refresh:false}));
@@ -77,7 +81,11 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService) 
           return result('conversations', service.conversations.list(workspaceId, { taskId: searchParams.get('taskId') ?? undefined, cursor: searchParams.get('cursor') ?? undefined, limit: numberQuery(searchParams.get('limit')), hidden: searchParams.get('hidden') === 'true', query: searchParams.get('query') ?? undefined }));
         }
         query(searchParams, []);
-        if (request.method === 'POST') return result('conversation', await service.conversations.create(workspaceId, validate('create', await readJsonBody())), 201);
+        if (request.method === 'POST') {
+          const input = validate('create', await readJsonBody());
+          if (workspaceId === '@default' && (input.cwd !== undefined || input.taskId !== undefined)) throw inputError();
+          return result('conversation', await service.conversations.create(workspaceId, input), 201);
+        }
         return null;
       }
       const match = suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})(?:\/(prepare-send|send|generate-title|observe|stop|events|entries|attachments|requests)(?:\/([a-f0-9-]{36})(?:\/(reply))?)?)?$/);

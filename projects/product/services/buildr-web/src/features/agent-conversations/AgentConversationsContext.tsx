@@ -16,7 +16,7 @@ type ContextValue = {
   openGlobal(): void; toggle(): void; openConversation(workspaceId: string, conversationId: string,options?:VisibilityOptions): Promise<void>; newConversation(options?:VisibilityOptions&{scope?:DraftScope|null}): void;
   refresh(): Promise<void>; refreshConnections(): Promise<void>; refreshPending(): Promise<void>; apply(value: ConversationView, observedRevision?:string): void; prependEntries(value: ConversationView): void; updateConnection(value: ConnectionView): void;
   selectionGeneration:number; getSelection():ConversationSelection; isSelectionCurrent(selection:ConversationSelection):boolean;
-  create(input: {workspaceId: string; cwd: string; taskId?: string},selection?:ConversationSelection): Promise<ConversationView>;
+  create(input: {workspaceId: string; cwd?: string; taskId?: string},selection?:ConversationSelection): Promise<ConversationView>;
 };
 const Context = createContext<ContextValue | null>(null);
 type ShellValue=Pick<ContextValue,'open'|'full'|'pending'|'openGlobal'|'toggle'|'setSettings'>;
@@ -110,7 +110,7 @@ export function AgentConversationsProvider({children, client = agentConversation
     void recover();return()=>{active=false;if(timer)clearTimeout(timer);setRecovering(false);};
   },[client,scope?.workspaceId,scope?.conversationId,conversation?.run?.id,conversation?.run?.status,apply]);
   const newConversation = useCallback((options:VisibilityOptions&{scope?:DraftScope|null}={}) => { advanceSelection(); eventCursor.current=undefined; scopeRef.current = null; setScope(null); setDraftScope(options.scope??null); setConversation(null); setError(''); setStreamError(''); setView('conversation'); if(!options.preserveVisibility)setVisibility(true); setLoading(false); savePanel(visibility.current.open,null); }, [advanceSelection,setVisibility]);
-  const create = useCallback(async (input: {workspaceId: string; cwd: string; taskId?: string},selection?:ConversationSelection) => {
+  const create = useCallback(async (input: {workspaceId: string; cwd?: string; taskId?: string},selection?:ConversationSelection) => {
     const observed=selection??{generation:advanceSelection(),scope:scopeRef.current};
     if(!isSelectionCurrent(observed))throw new Error('已切换对话，原创建操作已取消。');
     const observedVisibility={...visibility.current};

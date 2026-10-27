@@ -241,3 +241,63 @@ test('the real web CLI discovers host interruptions on listening without a brows
   }
   assert.match(diagnostic,/执行未完成.*尚不能确认/,output);
 });
+
+
+test('default conversations use a stable application directory without a registered workspace', async t => {
+  const { base, root } = taskRecordFixture(t, 'agent-default-http');
+  const previous = process.env.BUILDR_APP_DATA_DIR;
+  process.env.BUILDR_APP_DATA_DIR = path.join(base, 'private-app');
+  t.after(() => { if (previous === undefined) delete process.env.BUILDR_APP_DATA_DIR; else process.env.BUILDR_APP_DATA_DIR = previous; });
+  const runtime = createRuntime();
+  const server = createLocalWorkspaceServer(runtime, { targetRoot: root, httpContributions: runtimeContributions(runtime, 'http') });
+  const { url, sessionToken } = await server.ready;
+  t.after(async () => { server.server.closeAllConnections(); await new Promise<void>(resolve => server.server.close(() => resolve())); });
+  const endpoint = `${url}/api/v1/app/agent-service/conversations`;
+  const headers = { origin: url, 'x-buildr-session': sessionToken, 'content-type': 'application/json' };
+  assert.equal((await fetch(endpoint)).status, 403);
+  assert.equal((await fetch(endpoint, { method: 'POST', headers: { ...headers, 'x-buildr-session': 'invalid' }, body: '{}' })).status, 403);
+  for (const body of [{ cwd: root }, { taskId: 'some-task' }]) {
+    assert.equal((await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) })).status, 400);
+  }
+  const directoryEndpoint = `${url}/api/v1/app/agent-service/default-workspace`;
+  assert.equal((await fetch(directoryEndpoint)).status, 403);
+  const directoryResponse = await fetch(directoryEndpoint, { headers });
+  assert.equal(directoryResponse.status, 200);
+  const directory = await directoryResponse.json() as { rootPath: string };
+  assert.ok(path.isAbsolute(directory.rootPath));
+  assert.equal(fs.existsSync(directory.rootPath), false);
+  const response = await fetch(endpoint, { method: 'POST', headers, body: '{}' });
+  assert.equal(response.status, 201);
+  const chat = await response.json() as { id: string; workspaceId: string; cwd: string; revision: string };
+  assert.equal(chat.workspaceId, '@default');
+  assert.equal(chat.cwd, fs.realpathSync(directory.rootPath));
+  assert.notEqual(chat.cwd, fs.realpathSync(root));
+  assert.equal(path.basename(chat.cwd), 'default-workspace');
+  assert.ok(fs.statSync(chat.cwd).isDirectory());
+  const read = await fetch(`${endpoint}/${chat.id}`, { headers });
+  assert.equal(read.status, 200);
+  assert.equal((await read.json() as { cwd: string }).cwd, chat.cwd);
+  const list = await fetch(endpoint, { headers });
+  assert.equal(list.status, 200);
+  assert.ok((await list.json() as { conversations: Array<{ id: string }> }).conversations.some(row => row.id === chat.id));
+  assert.equal((await fetch(`${endpoint}/${chat.id}`, { method: 'PATCH', headers, body: JSON.stringify({ expectedRevision: chat.revision, cwd: root }) })).status, 400);
+});
+
+test('changing the default workspace only affects new conversations and preserves existing files', async t => {
+  const { base, root } = taskRecordFixture(t, 'default-workspace-preservation');
+  const dataRoot = path.join(base, 'profile');
+  const newRoot = path.join(base, 'default-workspace');
+  fs.mkdirSync(newRoot);
+  fs.writeFileSync(path.join(root, 'existing.txt'), 'original work');
+  fs.writeFileSync(path.join(newRoot, 'existing.txt'), 'new workspace work');
+  const original = createAgentService({ dataRoot, resolveWorkspace: () => ({ rootPath: root }), assertTask: () => {} });
+  const oldChat = await original.conversations.create('@default', {});
+  await original.close();
+  const current = createAgentService({ dataRoot, resolveWorkspace: () => ({ rootPath: newRoot }), assertTask: () => {} });
+  t.after(() => current.close());
+  assert.equal(current.conversations.read('@default', oldChat.id).cwd, fs.realpathSync(root));
+  const newChat = await current.conversations.create('@default', {});
+  assert.equal(newChat.cwd, fs.realpathSync(newRoot));
+  assert.equal(fs.readFileSync(path.join(root, 'existing.txt'), 'utf8'), 'original work');
+  assert.equal(fs.readFileSync(path.join(newRoot, 'existing.txt'), 'utf8'), 'new workspace work');
+});

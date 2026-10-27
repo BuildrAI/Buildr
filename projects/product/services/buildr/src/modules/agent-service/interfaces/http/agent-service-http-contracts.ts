@@ -47,6 +47,7 @@ export const AGENT_SERVICE_HTTP_SCHEMAS = {
   connect: named('AgentServiceConnectRequest', closed({ expectedRevision: text, executable: text }, ['expectedRevision'])),
   revision: named('AgentServiceRevisionRequest', closed({ expectedRevision: text })),
   check: named('AgentServiceCheckRequest', closed({ expectedRevision: text }, [])),
+  defaultWorkspace: named('AgentDefaultWorkspace', closed({ rootPath: text })),
   conversations: named('AgentConversationsPage', closed({ conversations: list(conversation), nextCursor: text }, ['conversations'])),
   conversation: named('AgentConversation', conversation),
   create: named('AgentConversationCreateRequest', closed({ cwd: text, taskId: text, title: text }, [])),
@@ -89,6 +90,7 @@ export const AGENT_SERVICE_HTTP_OPERATIONS = [
   operation('login', 'POST', `${base}/connections/:connectionId/login-attempts`, 'revision', 'connection'),
   operation('login-attempt', 'GET', `${base}/connections/:connectionId/login-attempts/:attemptId`, 'empty', 'connection'),
   operation('cancel-login', 'POST', `${base}/connections/:connectionId/login-attempts/:attemptId/cancel`, 'revision', 'connection'),
+  operation('default-workspace', 'GET', `${base}/default-workspace`, 'empty', 'defaultWorkspace'),
   operation('pending', 'GET', `${base}/pending-requests`, 'empty', 'conversations'),
   operation('list', 'GET', workspace, 'empty', 'conversations'),
   operation('create', 'POST', workspace, 'create', 'conversation'),
@@ -104,4 +106,6 @@ export const AGENT_SERVICE_HTTP_OPERATIONS = [
   operation('attachment', 'POST', `${workspace}/:conversationId/attachments`, 'attachment', 'attachmentResult'),
   operation('image', 'GET', `${workspace}/:conversationId/attachments/:attachmentId`, 'empty', 'attachmentResult', 'binary'),
   operation('events', 'GET', `${workspace}/:conversationId/events`, 'empty', 'event', 'stream'),
-];
+].flatMap(item => item.path.startsWith(workspace)
+  ? [item, { ...item, id: item.id + '.default', path: item.path.replace(workspace, `${base}/conversations`) }]
+  : [item]);
