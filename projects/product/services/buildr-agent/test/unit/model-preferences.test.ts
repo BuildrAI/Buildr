@@ -16,6 +16,19 @@ test('Devin groups family/depth/speed using only real configurations and keeps F
 });
 
 const basic={id:'m',label:'Model',contextWindow:258000,images:false,tools:true};
+test('Devin adapts only exact known Codex descriptions and preserves tools, parameters and permission text',()=>{
+ const model=modelOfferings([{id:'swe-2-high',label:'SWE-2 High Thinking',isDefault:true,family:'swe-2',images:false,disabled:false,contextWindow:128000}])[0];
+ const descriptions=['Runs a command in a PTY, returning output or a session ID for ongoing interaction.','Writes characters to an existing unified exec session and returns recent output.'];
+ const parameters={type:'object',properties:{session_id:{type:'number',description:'Identifier of the running session.'}},required:['session_id'],additionalProperties:false};
+ const tools=['exec_command','write_stdin','custom_shell'].map((name,index)=>({type:'function',function:{name,description:descriptions[index%2],parameters,strict:false}}));
+ const body={messages:[{role:'developer',content:'Keep native permission instructions unchanged.'},{role:'user',content:'read probe.txt'}],reasoning_effort:'high',tools};const before=structuredClone(body);
+ const context={accountId:'a',agentId:'codex',conversationId:'c',runId:'r',requestId:'i'},input={body,modelId:model.id,signal:new AbortController().signal,context};
+ const result=buildDevinRequest(input,model,'private');
+ assert.deepEqual(result.tools.map(tool=>tool.name),['exec_command','write_stdin','custom_shell']);assert.equal(result.tools[0].description,'Run the specified command, optionally using a PTY. Return output and the session identifier when the command remains active.');assert.equal(result.tools[1].description,'Send characters to an existing command session, or poll its available output when chars is empty.');assert.equal(result.tools[2].description,descriptions[0]);
+ assert.ok(result.tools.every(tool=>tool.parameters===JSON.stringify(parameters)&&tool.strict===false));assert.equal(result.system,'Keep native permission instructions unchanged.');assert.deepEqual(body,before);
+ assert.deepEqual(buildDevinRequest({...input,context:{...context,agentId:'dsh'}},model,'private').tools.map(tool=>tool.description),tools.map(tool=>tool.function.description));
+ tools[0].function.description='Custom command semantics';assert.equal(buildDevinRequest(input,model,'private').tools[0].description,'Custom command semantics');
+});
 test('a configured default window is separate from the supported maximum',()=>{
  const model={...basic,contextWindow:200000,reportedContextWindow:1000000};
  assert.equal(effectiveModel(model,undefined).contextWindow,200000);

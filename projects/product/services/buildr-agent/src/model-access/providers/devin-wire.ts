@@ -99,7 +99,7 @@ export function buildDevinRequest(input: ProviderInferenceInput, offering: Devin
   const tools = (Array.isArray(body.tools) ? body.tools : []).map(entry => {
     const tool = record(entry), fn = record(tool.function), name = string(fn.name);
     if (tool.type !== 'function' || !name) throw new Error('model_tool_unsupported');
-    return { name, description: string(fn.description) ?? '', parameters: JSON.stringify(record(fn.parameters)), strict: fn.strict === true };
+    return { name, description: devinToolDescription(agentId, name, string(fn.description) ?? ''), parameters: JSON.stringify(record(fn.parameters)), strict: fn.strict === true };
   });
   let toolChoice: string | undefined;
   if (typeof body.tool_choice === 'string') { if (!['auto', 'none', 'required'].includes(body.tool_choice)) throw new Error('model_tool_choice_unsupported'); toolChoice = body.tool_choice; }
@@ -108,4 +108,12 @@ export function buildDevinRequest(input: ProviderInferenceInput, offering: Devin
   if (!Number.isSafeInteger(maxTokens) || selected.maxOutput && maxTokens > selected.maxOutput) throw new Error('model_output_limit_unsupported');
   for (const field of ['audio', 'modalities', 'response_format', 'stop', 'logprobs', 'logit_bias', 'seed', 'prediction']) if (body[field] !== undefined) throw new Error('model_parameter_unsupported');
   return { token, system: system.join('\n\n'), prompts, tools, model: selected.id, cascade, execution: uuid(JSON.stringify([cascade, runId, requestId])), maxTokens, ...(typeof body.temperature === 'number' ? { temperature: body.temperature } : {}), ...(typeof body.top_p === 'number' ? { topP: body.top_p } : {}), toolChoice, parallelTools: body.parallel_tool_calls === true };
+}
+
+/** Preserve tool meaning; Devin rejects these exact native Codex descriptions. */
+function devinToolDescription(agentId: string, name: string, description: string): string {
+  if (agentId !== 'codex') return description;
+  if (name === 'exec_command' && description === 'Runs a command in a PTY, returning output or a session ID for ongoing interaction.') return 'Run the specified command, optionally using a PTY. Return output and the session identifier when the command remains active.';
+  if (name === 'write_stdin' && description === 'Writes characters to an existing unified exec session and returns recent output.') return 'Send characters to an existing command session, or poll its available output when chars is empty.';
+  return description;
 }

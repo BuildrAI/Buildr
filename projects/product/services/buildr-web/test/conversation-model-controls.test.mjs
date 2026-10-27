@@ -18,6 +18,16 @@ test('Devin兼容限制按执行方和来源判断，不改变账号或选择',(
 test('六种已测交叉来源保持可选，不以来源显示名猜测Devin',()=>{
  for(const [provider,source] of [['codex','native-qoder'],['codex','native-dsh'],['qoder','native-codex'],['qoder','native-dsh'],['dsh','native-codex'],['dsh','native-qoder']])assert.equal(conversationModelCompatibility({provider},{provider:source,label:'Devin'}),undefined);
 });
+test('仅Codex的Devin SWE-2显式完全访问可用，切回默认重新限制且不修改选择',()=>{
+ const source={provider:'devin',modelId:'swe-2',label:'改名模型'},original=structuredClone(source);
+ assert.match(conversationModelCompatibility({provider:'codex'},source),/完全访问/);
+ assert.equal(conversationModelCompatibility({provider:'codex'},source,'full-access'),undefined);
+ assert.match(conversationModelCompatibility({provider:'codex'},source,'default'),/完全访问/);
+ assert.ok(conversationModelCompatibility({provider:'codex'},{...source,modelId:'gpt-6-1-sol'},'full-access'));
+ assert.ok(conversationModelCompatibility({provider:'qoder'},source,'full-access'));
+ assert.equal(conversationModelCompatibility({provider:'dsh'},source,'default'),undefined);
+ assert.deepEqual(source,original);
+});
 test('紧凑控件仅使用模型原生档位，区分默认继承和显式覆盖',()=>{
  const inherited=conversationReasoningSelection(connection,{connectionId:'qoder'});
  assert.deepEqual(inherited.options.map(option=>option.id),['low','high']);assert.equal(inherited.index,1);assert.equal(inherited.label,'高');assert.equal(inherited.inherited,true);

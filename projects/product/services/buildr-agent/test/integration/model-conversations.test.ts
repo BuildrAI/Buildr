@@ -8,6 +8,25 @@ import {createAgentService} from '../../src/index.ts';
 import type {AgentExecutor,ExecutorItem,ExecutorOpenOptions} from '../../src/contracts.ts';
 import type {ModelProvider} from '../../src/model-access/contracts.ts';
 
+test('Codex Devin participants bind permission modes and hand off visible history without mixing native instructions',async()=>{
+ for(const providerId of ['devin','fixture']){
+  const root=mkdtempSync(join(tmpdir(),'buildr-permission-context-')),contexts=new Map<string,string>(),sent:Array<{context:string;mode:string;text:string}>=[];let execution='';
+  const capabilities={text:true,images:false,approval:true,questions:true,stop:true,resume:true,maxInputBytes:65536,permissionModes:['default','full-access'] as Array<'default'|'full-access'>};
+  const executor:AgentExecutor={descriptor:{id:'codex',label:'Codex',capabilities},async open(){return{bindingIdentity:'same-binding',capabilities,async inspectAccount(){return{status:'not-authenticated'};},async models(){return[];},async beginLogin(){},async cancelLogin(){},async createContext({permissionMode}){const id=randomUUID();contexts.set(id,permissionMode??'default');return{id};},async resumeContext({contextRef}){assert.ok(contexts.has(contextRef.id));},async readHistory(){return[];},async send(input){execution=input.clientRequestId;sent.push({context:input.contextRef.id,mode:input.permissionMode??'default',text:input.text});if(providerId==='devin')assert.equal(contexts.get(input.contextRef.id),input.permissionMode);input.onEvent({type:'accepted',executionRef:{id:execution}});input.onEvent({type:'item',item:{id:execution,kind:'message',role:'assistant',text:'confirmed '+input.permissionMode,status:'completed'}});input.onEvent({type:'completed',status:'completed'});},async observe(){return{status:'idle',executionRef:{id:execution},tools:[]};},async reply(){},async stop(){return{status:'stopped',tools:[]};},async close(){}};}};
+  const provider:ModelProvider={id:providerId,label:'Plan',async open(){return{protocol:'chat-completions',async inspect(){return{status:'ready',models:[{id:'swe-2',label:'SWE-2',images:false,tools:true}]};},async beginLogin(){},async cancelLogin(){},async infer(){throw new Error('unused fixture inference');},async close(){}};}};
+  const service=createAgentService({dataRoot:root,executors:[executor],modelProviders:[provider],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+  try{
+   await service.connections.connect('codex',{expectedRevision:'unconfigured'});const added=await service.models.accounts.add({provider:providerId}),checked=await service.models.accounts.check(added.id);await service.models.accounts.preferences(added.id,{expectedRevision:checked.revision,models:[{id:'swe-2',enabled:true}]});const conversation=await service.conversations.create('workspace',{});
+   for(const [index,permissionMode]of (['default','full-access','full-access','default'] as const).entries()){
+    const view=service.conversations.read('workspace',conversation.id),draft={expectedRevision:view.revision,connectionId:'codex',modelAccountId:added.id,model:'swe-2',permissionMode,text:'explicit current request '+index};const preview=service.conversations.prepareSend('workspace',view.id,draft);
+    if(index===1&&providerId==='devin'){assert.equal(preview.participantId,undefined);assert.ok(preview.history.some(entry=>entry.text==='explicit current request 0'));}
+    service.conversations.send('workspace',view.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});for(let i=0;i<200&&service.conversations.read('workspace',view.id).run?.status!=='completed';i++)await new Promise(resolve=>setTimeout(resolve,5));assert.equal(service.conversations.read('workspace',view.id).run?.status,'completed');
+   }
+   assert.equal(contexts.size,providerId==='devin'?2:1);assert.equal(sent[1].context,sent[2].context);assert.equal(sent[0].context,sent[3].context);if(providerId==='devin'){assert.notEqual(sent[0].context,sent[1].context);assert.ok(sent[1].text.includes('不新增授权'));}
+  }finally{await service.close();rmSync(root,{recursive:true,force:true});}
+ }
+});
+
 test('a prepared executor without its own model login uses the selected account, tools and isolated resumable contexts',async()=>{
   const root=mkdtempSync(join(tmpdir(),'buildr-shared-model-')),workspace=join(root,'workspace');mkdirSync(workspace);
   const calls:Array<{account:string;body:Record<string,any>}>=[],opens:ExecutorOpenOptions[]=[],contexts=new Map<string,ExecutorItem[]>(), executions=new Map<string,string>();

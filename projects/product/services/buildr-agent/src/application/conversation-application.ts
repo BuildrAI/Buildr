@@ -150,7 +150,12 @@ export class ConversationApplication {
     const boundModel=source&&selectedModel?selectedOffering(selectedModel as ModelOffering,input.serviceTier):selectedModel;
     if(input.serviceTier&&!source)fail('agent_model_tier_unavailable','原生默认模型不支持此共享服务档位。',409);
     input.serviceTier=source?(boundModel as ModelOffering|undefined)?.defaultServiceTier:undefined;
-    const configuration=source&&selectedModel?modelConfiguration(selectedModel as ModelOffering,input.serviceTier):undefined;
+    const modelConfig=source&&selectedModel?modelConfiguration(selectedModel as ModelOffering,input.serviceTier):undefined;
+    // Native Codex keeps earlier permission instructions in its thread. Devin
+    // rejects the default-mode block even after a later full-access turn.
+    // Match a permission-bound participant and use the normal visible handoff;
+    // never remove native instructions or silently raise the selected mode.
+    const configuration=source?.provider==='devin'&&connection.provider==='codex'?hash({model:modelConfig,permission:input.permissionMode}):modelConfig;
     input.reasoningEffort ??= boundModel?.defaultReasoningEffort;
     if (input.reasoningEffort && !boundModel?.reasoningEfforts?.some(effort => effort.id === input.reasoningEffort)) fail('agent_reasoning_unavailable', '该思考深度不在所选模型的可用目录中。', 409);
     if (!connection.capabilities.text) fail('agent_capability_unavailable', '此接入尚不支持文本输入。', 409);
