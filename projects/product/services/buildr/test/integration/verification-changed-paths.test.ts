@@ -97,7 +97,7 @@ test('独立插件发布工作流从实际 Git 变更选择其全部服务检查
       const plan: any = createVerificationPlan({ paths: changed.paths });
       assert.equal(plan.status, 'ready');
       assert.equal(plan.scope.mode, 'affected');
-      const expected = pluginChecks.filter((check: any) => check.sourcePaths.includes(workflowPath)).map((check: any) => check.id);
+      const expected = pluginChecks.filter((check: any) => check.selection !== 'explicit-only' && check.sourcePaths.includes(workflowPath)).map((check: any) => check.id);
       assert.ok(expected.length > 0);
       assert.deepEqual(plan.steps.map((step: any) => step.id).sort(), [...expected].sort());
       assert.equal(new Set(plan.steps.map((step: any) => step.id)).size, expected.length);
