@@ -8,6 +8,7 @@ import test from 'node:test';
 import YAML from 'yaml';
 import { findExecutableOnPath, spawnCommandSync } from '../../src/infrastructure/process.ts';
 import { parseConnectionDefinition } from '../../src/modules/connection-skills/domain/definition.ts';
+import { VERSION as MYSQL_PROGRAM_VERSION } from '../../src/modules/mysql-query/interfaces/program/mysql-connection-program.ts';
 
 function files(root: string, relative = ''): string[] {
   return fs.readdirSync(path.join(root, relative), { withFileTypes: true }).flatMap(entry => {
@@ -70,7 +71,7 @@ test('installed package independently delivers three complete builtin connection
   assert.ok(mysqlPath, 'installed PATH must expose buildr-mysql');
   if (process.platform !== 'win32') assert.equal(fs.realpathSync(mysqlPath), fs.realpathSync(path.join(packageRoot, 'bin/buildr-mysql.mjs')));
   const mysqlVersion = spawnCommandSync(mysqlPath, ['--version'], { cwd: extracted, env, encoding: 'utf8', timeout: 5000 });
-  assert.equal(mysqlVersion.status, 0, mysqlVersion.stderr); assert.match(mysqlVersion.stdout, /^buildr-mysql 1\.0\.0\s*$/u);
+  assert.equal(mysqlVersion.status, 0, mysqlVersion.stderr); assert.equal(mysqlVersion.stdout.trim(), `buildr-mysql ${MYSQL_PROGRAM_VERSION}`);
   const mysqlHelp = spawnCommandSync(mysqlPath, ['--help'], { cwd: extracted, env, encoding: 'utf8', timeout: 5000 });
   assert.equal(mysqlHelp.status, 0, mysqlHelp.stderr); assert.match(JSON.parse(mysqlHelp.stdout).help.join('\n'), /test.*databases|版本检查[\s\S]*数据库/u);
   const cli = path.join(packageRoot, 'bin/buildr.mjs');

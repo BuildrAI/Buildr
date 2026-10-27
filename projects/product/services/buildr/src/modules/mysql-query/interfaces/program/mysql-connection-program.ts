@@ -5,7 +5,7 @@ import type { EventEmitter } from 'node:events';
 import { affectedRowLimit, mysqlFailure, inputObject, mysqlTarget, passwordInput, tableFingerprintInput, type MySqlChangeResult, type MySqlConnectionClient } from '../../domain/mysql.ts';
 import { createMySqlClient, prepareChangeStatement } from '../../infrastructure/mysql-client.ts';
 
-const VERSION = '1.1.0';
+export const VERSION = '1.1.0';
 const ENVIRONMENTS = ['dev', 'test', 'qa', 'reg', 'prod'] as const;
 const STATEMENT_BYTES = 64 * 1024;
 const DIAGNOSTICS: Record<string, string> = {
