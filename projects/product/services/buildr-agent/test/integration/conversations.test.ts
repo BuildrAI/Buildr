@@ -195,7 +195,7 @@ test('preview revision binds the local source range and legacy summaries cannot 
     const tooLarge = f.service.conversations.prepareSend('workspace-one', created.id, draft); assert.equal(tooLarge.fits, false);
     assert.throws(() => f.service.conversations.send('workspace-one', created.id, { ...draft, previewToken: tooLarge.token, clientRequestId: 'too-large' }), { code: 'agent_handoff_capacity' });
     assert.equal(b.sends.length, 0);
-    const changed = f.service.conversations.update('workspace-one', created.id, { expectedRevision: completed.revision, title: 'changed' });
+    const changed = await f.service.conversations.update('workspace-one', created.id, { expectedRevision: completed.revision, title: 'changed' });
     assert.throws(() => f.service.conversations.prepareSend('workspace-one', created.id, draft), { code: 'agent_revision_conflict' });
     const summary = f.service.conversations.prepareSend('workspace-one', created.id, { ...draft, expectedRevision: changed.revision, handoffSummary: 'user chosen scope' });
     assert.equal(summary.history[0]!.text,'x'.repeat(1000));assert.ok(summary.handoff!.body.includes('user chosen scope'));
@@ -383,15 +383,15 @@ test('a conversation stream begins with the current snapshot and observes only l
   try {
     const created = await f.service.conversations.create('workspace-one', {});
     const another = await f.service.conversations.create('workspace-one', {});
-    const before = f.service.conversations.update('workspace-one', created.id, { expectedRevision: created.revision, title: 'before subscription' });
+    const before = await f.service.conversations.update('workspace-one', created.id, { expectedRevision: created.revision, title: 'before subscription' });
     const subscription = f.service.conversations.subscribe('workspace-one', created.id);
     const iterator = subscription.events[Symbol.asyncIterator]();
     try {
       const snapshot = (await iterator.next()).value!;
       assert.equal(snapshot.type, 'snapshot'); assert.equal(snapshot.revision, before.revision);
       assert.equal(snapshot.payload.conversation!.title, 'before subscription'); assert.equal(snapshot.generation, f.service.generation);
-      f.service.conversations.update('workspace-one', another.id, { expectedRevision: another.revision, title: 'unrelated change' });
-      const after = f.service.conversations.update('workspace-one', created.id, { expectedRevision: before.revision, title: 'after subscription' });
+      await f.service.conversations.update('workspace-one', another.id, { expectedRevision: another.revision, title: 'unrelated change' });
+      const after = await f.service.conversations.update('workspace-one', created.id, { expectedRevision: before.revision, title: 'after subscription' });
       const change = (await iterator.next()).value!;
       assert.equal(change.type, 'conversation'); assert.equal(change.conversationId, created.id);
       assert.equal(change.revision, after.revision); assert.equal(change.payload.conversation!.title, 'after subscription');
@@ -692,12 +692,57 @@ test('automatic title uses one separate bounded summary and never inserts a titl
   const f = fixture([native.executor]);
   try {
     await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {}); send(f.service, view.id, 'local', '请梳理供应商入驻业务');
-    const named = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.title === '供应商入驻审核流程梳理');
-    assert.equal(named.run!.status, 'completed'); assert.equal(titles.length, 1); assert.deepEqual(JSON.parse(titles[0].description), { messages: [{ role: 'user', text: '请梳理供应商入驻业务' }, { role: 'assistant', text: 'answer from local' }] });
+    const named = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.title === '供应商入驻审核流程梳理' && value.run?.status === 'completed');
+    assert.equal(named.run!.status, 'completed'); assert.equal(titles.length, 1); assert.deepEqual(JSON.parse(titles[0].description), { messages: [{ role: 'user', text: '请梳理供应商入驻业务' }] });
     assert.equal(native.sends.length, 1); assert.equal(named.entries.filter(entry => entry.role === 'user').length, 1);
     send(f.service, view.id, 'local', '继续检查'); await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed');
     assert.equal(titles.length, 1);
     await f.service.close(); const restored = createAgentService(f.options); try { await restored.conversations.observe('workspace-one', view.id); assert.equal(titles.length, 1); } finally { await restored.close(); }
+  } finally { await f.close(); }
+});
+
+test('a running run already receives its generated title while the first round is still in flight', async () => {
+  const native = fake('local', { hold: true }); const open = native.executor.open; const titles: any[] = [];
+  native.executor.open = async input => ({ ...await open(input), async generateTitle(input) { titles.push(input); return '执行中已回填的标题'; } });
+  const f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {}); send(f.service, view.id, 'local', '请在执行开始时就给出名字');
+    await waitUntil(() => native.sends[0]?.contextRef && native.contexts.get(native.sends[0].contextRef.id), Boolean);
+    const running = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'running' && value.title === '执行中已回填的标题');
+    assert.equal(titles.length, 1); assert.deepEqual(JSON.parse(titles[0].description), { messages: [{ role: 'user', text: '请在执行开始时就给出名字' }] });
+    for (const context of native.contexts.values()) context.unblock?.();
+    const done = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed');
+    assert.equal(done.title, '执行中已回填的标题'); assert.equal(titles.length, 1);
+  } finally { await f.close(); }
+});
+
+test('a failed early title falls back to the completed-run attempt, then the automatic budget is spent', async () => {
+  const native = fake('local', { hold: true }); const open = native.executor.open; let calls = 0;
+  native.executor.open = async input => ({ ...await open(input), async generateTitle() { calls++; throw new Error('agent_title_failed'); } });
+  const f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {}); send(f.service, view.id, 'local', 'start work');
+    await waitUntil(() => calls, Boolean); for (const context of native.contexts.values()) context.unblock?.();
+    const done = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed');
+    await waitUntil(() => calls === 2, Boolean); assert.equal(done.title, '新对话');
+    send(f.service, view.id, 'local', 'next'); await waitUntil(() => native.sends.length > 1, Boolean); for (const context of native.contexts.values()) context.unblock?.();
+    await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed');
+    assert.equal(calls, 2);
+  } finally { await f.close(); }
+});
+
+test('conversation task association can be set, replaced and cleared with the observed revision', async () => {
+  const native = fake(); const f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {});
+    assert.equal(view.taskId, undefined);
+    let current = await f.service.conversations.update('workspace-one', view.id, { expectedRevision: view.revision, taskId: 'task-one' });
+    assert.equal(current.taskId, 'task-one'); assert.equal(f.service.conversations.list('workspace-one', { taskId: 'task-one' }).conversations[0]?.id, view.id);
+    await assert.rejects(f.service.conversations.update('workspace-one', view.id, { expectedRevision: current.revision, taskId: 'task-two' }));
+    assert.equal(f.service.conversations.read('workspace-one', view.id).taskId, 'task-one');
+    current = await f.service.conversations.update('workspace-one', view.id, { expectedRevision: current.revision, taskId: null });
+    assert.equal(current.taskId, undefined); assert.equal(f.service.conversations.list('workspace-one', { taskId: 'task-one' }).conversations.length, 0);
+    await assert.rejects(f.service.conversations.update('workspace-one', view.id, { expectedRevision: view.revision, taskId: 'task-one' }), { code: 'agent_revision_conflict' });
   } finally { await f.close(); }
 });
 
@@ -708,7 +753,7 @@ test('manual rename wins over a delayed automatic title and failed summaries do 
   try {
     await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {}); send(f.service, view.id, 'local', 'first work');
     await waitUntil(() => started, Boolean); const current = f.service.conversations.read('workspace-one', view.id);
-    f.service.conversations.update('workspace-one', view.id, { expectedRevision: current.revision, title: '我的手动标题' }); release('延迟生成的标题');
+    await f.service.conversations.update('workspace-one', view.id, { expectedRevision: current.revision, title: '我的手动标题' }); release('延迟生成的标题');
     await new Promise(resolve => setTimeout(resolve, 10)); assert.equal(f.service.conversations.read('workspace-one', view.id).title, '我的手动标题'); assert.equal(native.sends.length, 1);
     send(f.service, view.id, 'local', 'second work'); await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed'); assert.equal(calls, 1);
   } finally { await f.close(); }
@@ -724,7 +769,7 @@ test('explicit title action summarizes a legacy/manual name with exact revision 
     await assert.rejects(f.service.conversations.generateTitle('workspace-one', view.id, { expectedRevision: view.revision }), { code: 'agent_revision_conflict' });
     current = await f.service.conversations.generateTitle('workspace-one', view.id, { expectedRevision: current.revision }); assert.equal(current.title, '供应商入驻异常处理梳理'); assert.equal(native.sends.length, 1);
     delayed = true; const pending = f.service.conversations.generateTitle('workspace-one', view.id, { expectedRevision: current.revision });
-    await waitUntil(() => Boolean(release), Boolean); current = f.service.conversations.read('workspace-one', view.id); f.service.conversations.update('workspace-one', view.id, { expectedRevision: current.revision, title: '保留我的最新命名' }); release('不能覆盖的新名字');
+    await waitUntil(() => Boolean(release), Boolean); current = f.service.conversations.read('workspace-one', view.id); await f.service.conversations.update('workspace-one', view.id, { expectedRevision: current.revision, title: '保留我的最新命名' }); release('不能覆盖的新名字');
     await assert.rejects(pending, { code: 'agent_revision_conflict' }); assert.equal(f.service.conversations.read('workspace-one', view.id).title, '保留我的最新命名');
   } finally { await f.close(); }
 });
@@ -735,9 +780,9 @@ test('oversized or failed title inference preserves the neutral name and reserve
   const f = fixture([native.executor]);
   try {
     await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {}); send(f.service, view.id, 'local', 'first');
-    await waitUntil(() => calls, Boolean); await new Promise(resolve => setTimeout(resolve, 10)); assert.equal(f.service.conversations.read('workspace-one', view.id).title, '新对话');
+    await waitUntil(() => calls === 2, Boolean); await new Promise(resolve => setTimeout(resolve, 10)); assert.equal(f.service.conversations.read('workspace-one', view.id).title, '新对话');
     await f.service.close(); const restored = createAgentService(f.options);
-    try { send(restored, view.id, 'local', 'after restart'); await waitUntil(() => restored.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed'); await new Promise(resolve => setTimeout(resolve, 10)); assert.equal(calls, 1); assert.equal(native.sends.length, 2); }
+    try { send(restored, view.id, 'local', 'after restart'); await waitUntil(() => restored.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed'); await new Promise(resolve => setTimeout(resolve, 10)); assert.equal(calls, 2); assert.equal(native.sends.length, 2); }
     finally { await restored.close(); }
   } finally { await f.close(); }
 });
@@ -765,7 +810,7 @@ test('native late title metadata updates the unified stream but cannot overwrite
     const subscription = f.service.conversations.subscribe('workspace-one', view.id); const iterator = subscription.events[Symbol.asyncIterator](); await iterator.next();
     native.sends[0]!.onEvent({ type: 'title', title: '原生延迟生成的业务标题' });
     const event = (await iterator.next()).value!; assert.equal(event.type, 'conversation'); assert.equal(event.payload.conversation.title, '原生延迟生成的业务标题'); subscription.close();
-    let current = f.service.conversations.read('workspace-one', view.id); assert.equal(current.entries.length, done.entries.length); current = f.service.conversations.update('workspace-one', view.id, { expectedRevision: current.revision, title: '手动标题' });
+    let current = f.service.conversations.read('workspace-one', view.id); assert.equal(current.entries.length, done.entries.length); current = await f.service.conversations.update('workspace-one', view.id, { expectedRevision: current.revision, title: '手动标题' });
     native.sends[0]!.onEvent({ type: 'title', title: '不能覆盖手动名的原生标题' }); assert.equal(f.service.conversations.read('workspace-one', view.id).title, '手动标题');
   } finally { await f.close(); }
 });
@@ -1021,7 +1066,7 @@ test('a delayed summary cannot bypass a changed conversation revision',async()=>
   await connected(f.service,'a');await connected(f.service,'b');const chat=await f.service.conversations.create('workspace-one',{});
   send(f.service,chat.id,'a','x'.repeat(12000));const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
   const pending=f.service.conversations.prepareHandoff('workspace-one',chat.id,{expectedRevision:done.revision,connectionId:'b',text:'continue'});
-  await started;f.service.conversations.update('workspace-one',chat.id,{expectedRevision:done.revision,title:'new title'});release('summary');
+  await started;await f.service.conversations.update('workspace-one',chat.id,{expectedRevision:done.revision,title:'new title'});release('summary');
   await assert.rejects(pending,{code:'agent_revision_conflict'});assert.equal(b.sends.length,0);
  }finally{await f.close();}
 });
@@ -1294,7 +1339,7 @@ test('a pinned database reader cannot block conversation event persistence',asyn
     await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
     reader=new DatabaseSync(path.join(f.options.dataRoot,'agent-service/conversations.sqlite'),{readOnly:true});
     reader.exec('BEGIN');reader.prepare('SELECT body FROM conversations WHERE id=?').get(chat.id);
-    const updated=f.service.conversations.update('workspace-one',chat.id,{expectedRevision:chat.revision,title:'updated while native tool reads'});
+    const updated=await f.service.conversations.update('workspace-one',chat.id,{expectedRevision:chat.revision,title:'updated while native tool reads'});
     assert.equal(updated.title,'updated while native tool reads');
     const old=JSON.parse((reader.prepare('SELECT body FROM conversations WHERE id=?').get(chat.id) as {body:string}).body);
     assert.equal(old.view.title,'新对话');reader.exec('ROLLBACK');reader.close();reader=undefined;

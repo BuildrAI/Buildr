@@ -51,7 +51,7 @@ export const AGENT_SERVICE_HTTP_SCHEMAS = {
   conversations: named('AgentConversationsPage', closed({ conversations: list(conversation), nextCursor: text }, ['conversations'])),
   conversation: named('AgentConversation', conversation),
   create: named('AgentConversationCreateRequest', closed({ cwd: text, taskId: text, title: text }, [])),
-  update: named('AgentConversationUpdateRequest', closed({ expectedRevision: text, title: text, hidden: boolean }, ['expectedRevision'])),
+  update: named('AgentConversationUpdateRequest', closed({ expectedRevision: text, title: text, hidden: boolean, taskId: { anyOf: [text, { type: 'null' }] } }, ['expectedRevision'])),
   draft: named('AgentConversationDraftRequest', closed(draftFields, ['expectedRevision', 'connectionId', 'text'])),
   send: named('AgentConversationSendRequest', closed({ ...draftFields, previewToken: text, clientRequestId: text }, ['expectedRevision', 'connectionId', 'text', 'previewToken', 'clientRequestId'])),
   sent: named('AgentConversationSendResult', closed({ run, conversation })),

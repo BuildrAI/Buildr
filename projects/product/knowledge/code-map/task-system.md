@@ -20,9 +20,9 @@
 
 ## 内部对话怎样关联任务？
 
-任务页[TaskConversationEntry.tsx](../../services/buildr-web/src/features/agent-conversations/TaskConversationEntry.tsx)是此任务对话的唯一入口：没有对话时进入绑定此任务的新对话草稿（发送才创建会话），一段时直接打开，多段时选择。新对话按工作空间（Workspace）共享一份未发送草稿（文本、模型/权限、附件）；任务绑定是这份草稿的一个字段，跟随草稿跨入口共享，空草稿不留绑定，可在输入区下方显式移除，发送时才写入真实会话。任务只保存自身事实，对话及可见历史由独立 `buildr-agent` 服务（Service）保存；任务关联不是外部桌面会话（Session）的导航关系，也不会自动改变任务状态。
+任务页[TaskConversationEntry.tsx](../../services/buildr-web/src/features/agent-conversations/TaskConversationEntry.tsx)是任务侧的对话入口：没有对话时进入绑定此任务的新对话草稿（发送才创建会话），一段时直接打开，多段时选择。反方向由对话内的[ConversationTaskLink.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationTaskLink.tsx)承担：列出同一工作空间未结束任务，对已建对话经 PATCH 设置、更换或解除引用，对未发送草稿更新绑定字段。新对话按工作空间（Workspace）共享一份未发送草稿（文本、模型/权限、附件）；任务绑定是这份草稿的一个字段，跟随草稿跨入口共享，空草稿不留绑定，发送时才写入真实会话。任务只保存自身事实，对话及可见历史由独立 `buildr-agent` 服务（Service）保存；任务关联不是外部桌面会话（Session）的导航关系，也不会自动改变任务状态。
 
-[宿主装配](../../services/buildr/src/modules/agent-service/module.ts)用任务查询能力核对身份，[对话应用](../../services/buildr-agent/src/application/conversation-application.ts)在创建时保存 `workspaceId`、`taskId` 与真实 `cwd`。它不把任务全文或当前页面静默复制成模型输入；执行者仍须重读任务和实际成果。全局对话可以不关联任务，统一历史也不按 Codex、DSH、Qoder 分组。换执行方先分别恢复原生上下文，再交付未见可见记录，未知运行不重发；见[智能体接入](../docs/architecture/agent-integration.md)。
+[宿主装配](../../services/buildr/src/modules/agent-service/module.ts)用任务查询能力核对身份，[对话应用](../../services/buildr-agent/src/application/conversation-application.ts)在创建时保存 `workspaceId`、`taskId` 与真实 `cwd`，创建后也可经同一更新动作按观察版本更换或解除任务引用。它不把任务全文或当前页面静默复制成模型输入；交付给执行方的工作上下文包含当前对话标题与任务引用，供后续创建任务保持一致命名，执行者仍须重读任务和实际成果。全局对话可以不关联任务，统一历史也不按 Codex、DSH、Qoder 分组。换执行方先分别恢复原生上下文，再交付未见可见记录，未知运行不重发；见[智能体接入](../docs/architecture/agent-integration.md)。
 
 输入栏的[ConversationOptions.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationOptions.tsx)提供独立的智能体（Agent）与模型选择器，并按实际模型能力呈现思考档位；切换执行方后恢复其默认模型并清除不兼容档位，只更新未发送选择，不创建参与者或执行。权限选择与附件位于左侧，保留独立的模式范围。[conversation-preferences.ts](../../services/buildr-web/src/features/agent-conversations/conversation-preferences.ts)按应用配置域保存两个独立偏好：对话模块记忆智能体与最近权限工作空间，模型选择器记忆来源、模型、服务档位和思考深度；两者只解析到新对话，且与提交说明的 `buildr.execution-model` 分离。完全访问只在同一工作空间恢复，跨工作空间新对话使用默认权限。
 

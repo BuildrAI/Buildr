@@ -134,9 +134,13 @@ export class ConversationApplication {
     this.options.events.publish({ type: 'conversation', workspaceId, conversationId: record.view.id, revision: record.view.revision, payload: { conversation: this.view(record) } });
     return this.view(record);
   }
-  update(workspaceId: string, id: string, input: { expectedRevision: string; title?: string; hidden?: boolean }): ConversationView {
+  async update(workspaceId: string, id: string, input: { expectedRevision: string; title?: string; hidden?: boolean; taskId?: string | null }): Promise<ConversationView> {
     const record = this.load(workspaceId, id); expected(record.view.revision, input.expectedRevision);
     if (input.title !== undefined) { record.view.title = nonempty(input.title, '对话标题', 160); record.titleOrigin = 'manual'; }
+    if (input.taskId !== undefined) {
+      if (input.taskId === null) record.view.taskId = undefined;
+      else { const taskId = nonempty(input.taskId, '任务身份'); await this.options.host.assertTask(workspaceId, taskId); record.view.taskId = taskId; }
+    }
     if (input.hidden !== undefined) { if (typeof input.hidden !== 'boolean') fail('agent_input_invalid', '隐藏状态无效。'); record.view.hidden = input.hidden; }
     this.save(record); return this.view(record);
   }
@@ -196,7 +200,7 @@ export class ConversationApplication {
     const priorImages=canAttachHistory&&currentImages.length<4?historicalImages.filter(image=>image.available&&!currentImages.includes(image.id)).slice(-Math.max(0,4-currentImages.length)).map(image=>image.id):[];
     const ids=[...new Set([...priorImages,...currentImages])];
     const images = ids.map(id => this.attachment(record, id));
-    const context=JSON.stringify({conversationId:record.view.id,workspaceId:record.view.workspaceId,cwd:record.view.cwd,taskId:record.view.taskId,sourceThrough:through,permissionMode:input.permissionMode,executionState:record.view.run?.status??'idle',sourceIndex:sources?.index,imageInputIds:ids,currentImageIds:currentImages,currentImages:images.filter(image=>currentImages.includes(image.id)),historicalImages:historicalImages.slice(-4),historicalImageCount:historicalImages.length,historicalImageNotice:historicalImages.length?'历史图片的全部准确引用见本地索引；此处只列最近四张。没有作为图像输入发送的部分须按需读取，不能假装已看到。':undefined});
+    const context=JSON.stringify({conversationId:record.view.id,workspaceId:record.view.workspaceId,cwd:record.view.cwd,conversationTitle:record.view.title,taskId:record.view.taskId,sourceThrough:through,permissionMode:input.permissionMode,executionState:record.view.run?.status??'idle',sourceIndex:sources?.index,imageInputIds:ids,currentImageIds:currentImages,currentImages:images.filter(image=>currentImages.includes(image.id)),historicalImages:historicalImages.slice(-4),historicalImageCount:historicalImages.length,historicalImageNotice:historicalImages.length?'历史图片的全部准确引用见本地索引；此处只列最近四张。没有作为图像输入发送的部分须按需读取，不能假装已看到。':undefined});
     const suffix=`\n\n本次用户要求：\n${input.text}${input.handoffSummary?'\n用户补充的交接说明（不替代本地历史）：\n'+input.handoffSummary:''}`;
     const fullText=changes.length||switching?`${HANDOFF_PROMPT}\n工作位置与来源：${context}\n按轮次组织的本地记录：\n${formatHandoffRounds(rounds)}${suffix}`:input.text;
     const needsCompression=Buffer.byteLength(fullText)>maxInputBytes;
@@ -425,6 +429,7 @@ export class ConversationApplication {
       if (beforeDispatch.view.run!.status === 'stopping') { beforeDispatch.view.run!.status = 'stopped'; this.save(beforeDispatch); return; }
       if (!this.options.connections.get(prepared.draft.connectionId).enabled) fail('agent_connection_disabled', '接入已断开，本次输入尚未交付。', 409);
       dispatched = true;
+      void this.titleAtRunStart(workspaceId, id, runId, runtime).catch(() => {});
       await runtime.send({ contextRef: participant.contextRef!, cwd: record.view.cwd, text: prepared.text, images: prepared.images, model: prepared.draft.modelAccountId ? selectedRuntime.model : prepared.draft.model, reasoningEffort: prepared.draft.reasoningEffort, permissionMode: prepared.draft.permissionMode, clientRequestId: record.attempts.find(value => value.runId === runId)!.clientRequestId, onEvent: event => this.event(workspaceId, id, runId, event) });
       await this.observe(workspaceId, id);
       void this.generateAutomaticTitle(workspaceId, id, runId, runtime).catch(() => {});
@@ -453,6 +458,23 @@ export class ConversationApplication {
   private titleEligible(record: StoredConversation): boolean {
     return !this.closing && record.titleOrigin === 'default' && record.view.title === '新对话';
   }
+  /** Backfill the neutral name as soon as execution starts; the completed-run path stays the fallback. */
+  private async titleAtRunStart(workspaceId: string, id: string, runId: string, runtime: AgentRuntime): Promise<void> {
+    const record = this.currentRun(workspaceId, id, runId);
+    if (!record || !this.titleEligible(record) || record.titleAttempted || !runtime.generateTitle || this.titleWork.has(id)) return;
+    const participant = record.participants.find(value => value.id === record.view.run!.participantId);
+    const description = this.titleDescription(record, false);
+    if (!participant?.contextRef || !description) return;
+    const controller = new AbortController(); this.titleWork.set(id, controller);
+    const timeout = setTimeout(() => controller.abort(), 12_000); timeout.unref();
+    try {
+      const title = await within(runtime.generateTitle({ contextRef: participant.contextRef, cwd: record.view.cwd, description, model: record.view.run?.model, signal: controller.signal }), 10_000, 'agent_title_timeout');
+      const current = this.currentRun(workspaceId, id, runId);
+      if (!current || controller.signal.aborted) return;
+      if (this.acceptTitle(current, title)) this.save(current);
+    } catch { /* Early failures stay silent; the completed-run path still gets its single bounded attempt. */ }
+    finally { clearTimeout(timeout); if (this.titleWork.get(id) === controller) this.titleWork.delete(id); }
+  }
   private acceptTitle(record: StoredConversation, raw: string | undefined, explicit = false): boolean {
     if (!raw || this.closing || !explicit && !this.titleEligible(record)) return false;
     const title = raw.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g, '').replace(/\s+/g, ' ').trim();
@@ -460,11 +482,11 @@ export class ConversationApplication {
     if (!title || [...title].length > (/\p{Script=Han}/u.test(title) ? 24 : 64)) return false;
     record.view.title = title; record.titleOrigin = 'generated'; return true;
   }
-  private titleDescription(record: StoredConversation): string | undefined {
+  private titleDescription(record: StoredConversation, requireAnswer = true): string | undefined {
     const visible = record.view.entries.filter(entry => ['user', 'assistant'].includes(entry.role) && entry.kind === 'message' && entry.status !== 'failed' && entry.text.trim());
     const users = visible.filter(entry => entry.role === 'user'); const answers = visible.filter(entry => entry.role === 'assistant');
-    if (!users.length || !answers.length) return;
-    const selected = new Map([users[0]!, answers[0]!, users.at(-1)!, answers.at(-1)!].map(entry => [entry.id, entry]));
+    if (!users.length || requireAnswer && !answers.length) return;
+    const selected = new Map([users[0], answers[0], users.at(-1), answers.at(-1)].filter((entry): entry is NonNullable<typeof entry> => Boolean(entry)).map(entry => [entry.id, entry]));
     const messages = [...selected.values()].sort((a, b) => a.sequence - b.sequence).map(entry => {
       let bytes = 0; let text = ''; for (const character of entry.text) { const size = Buffer.byteLength(character); if (bytes + size > 1024) break; text += character; bytes += size; }
       return { role: entry.role, text };

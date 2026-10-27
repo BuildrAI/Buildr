@@ -105,6 +105,11 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   response = await fetch(`${conversations}/${created.id}/attachments/${attachment.id}`, { headers: readHeaders }); assert.equal(response.status, 200); assert.deepEqual(Buffer.from(await response.arrayBuffer()), png);
   response = await fetch(`${conversations}/${created.id}/prepare-send`, { method: 'POST', headers, body: JSON.stringify({ expectedRevision: attachment.revision, connectionId: 'not-registered', text: 'x'.repeat(129 * 1024) }) }); assert.equal(response.status, 413);
   response = await fetch(`${conversations}?hidden=true&query=updated`, { headers: readHeaders }); assert.equal(response.status, 200); assert.equal((await response.json()).conversations.length, 1);
+  response = await fetch(`${conversations}/${created.id}`, { method: 'PATCH', headers, body: JSON.stringify({ expectedRevision: attachment.revision, taskId: 'task-http' }) }); assert.equal(response.status, 200);
+  const linked = await response.json() as { revision: string; taskId?: string };
+  assert.equal(linked.taskId, 'task-http');
+  response = await fetch(`${conversations}/${created.id}`, { method: 'PATCH', headers, body: JSON.stringify({ expectedRevision: linked.revision, taskId: null }) }); assert.equal(response.status, 200);
+  assert.equal((await response.json() as { taskId?: string }).taskId, undefined);
   const coverage = inspectHttpOperationCoverage([AGENT_SERVICE_HTTP_OPERATIONS], []);
   assert.equal(coverage.status, 'aligned', JSON.stringify(coverage));
 });
@@ -281,6 +286,7 @@ test('default conversations use a stable application directory without a registe
   assert.equal(list.status, 200);
   assert.ok((await list.json() as { conversations: Array<{ id: string }> }).conversations.some(row => row.id === chat.id));
   assert.equal((await fetch(`${endpoint}/${chat.id}`, { method: 'PATCH', headers, body: JSON.stringify({ expectedRevision: chat.revision, cwd: root }) })).status, 400);
+  assert.equal((await fetch(`${endpoint}/${chat.id}`, { method: 'PATCH', headers, body: JSON.stringify({ expectedRevision: chat.revision, taskId: 'some-task' }) })).status, 400);
 });
 
 test('changing the default workspace only affects new conversations and preserves existing files', async t => {

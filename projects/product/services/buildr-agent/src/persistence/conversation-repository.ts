@@ -107,7 +107,7 @@ export class ConversationRepository {
       db.exec('BEGIN IMMEDIATE');
       const prior = db.prepare('SELECT revision FROM conversations WHERE id=?').get(record.view.id) as { revision: string } | undefined;
       if ((prior?.revision ?? undefined) !== priorRevision) fail('agent_revision_conflict', '对话已变化，请重新读取。', 409);
-      db.prepare('INSERT INTO conversations(id,workspace_id,task_id,hidden,updated_at,revision,body) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET hidden=excluded.hidden,updated_at=excluded.updated_at,revision=excluded.revision,body=excluded.body').run(record.view.id, record.view.workspaceId, record.view.taskId ?? null, Number(record.view.hidden), record.view.updatedAt, record.view.revision, JSON.stringify(record));
+      db.prepare('INSERT INTO conversations(id,workspace_id,task_id,hidden,updated_at,revision,body) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET task_id=excluded.task_id,hidden=excluded.hidden,updated_at=excluded.updated_at,revision=excluded.revision,body=excluded.body').run(record.view.id, record.view.workspaceId, record.view.taskId ?? null, Number(record.view.hidden), record.view.updatedAt, record.view.revision, JSON.stringify(record));
       db.exec('COMMIT');
     } catch (error) { try { db.exec('ROLLBACK'); } catch {} throw error; }
     finally { db.close(); }
