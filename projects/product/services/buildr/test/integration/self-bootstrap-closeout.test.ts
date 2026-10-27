@@ -9,6 +9,7 @@ import { runDirectSelfBootstrapCloseout, runSelfBootstrapCloseoutCommand, SELF_B
 import { DEFAULT_DEVELOPMENT_WEB_PORT, restartDevelopmentInstance, inspectDevelopmentInstance } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs';
 import { parseTaskCommitTrailer } from '../../src/modules/task/commits/domain/task-commit.ts';
 import { readDevelopmentRuntimeIdentity } from '../../src/modules/installation/infrastructure/development-runtime-inputs.ts';
+import { runDetachedCloseout } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/detached-execution.mjs';
 
 function run(executable: any, args: any, cwd: any, binary = false): any  {
   const result: any = spawnSync(executable, args, { cwd, encoding: binary ? null : 'utf8' });
@@ -913,4 +914,111 @@ test('自举技能源变更必须同步组件完整性声明', async () => {
   for (const member of Object.values(definition.members).flat() as string[]) {
     assert.equal(assetIntegrity(path.join(workspaceRoot,member)),expected.get(member),`组件成员摘要未跟随源文件更新：${member}`);
   }
+});
+
+async function waitForExecutionFile(file: string, timeoutMs = 10000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!fs.existsSync(file)) {
+    if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${file}`);
+    await new Promise(resolve => setTimeout(resolve, 15));
+  }
+}
+
+function detachedFixture(t: any) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-closeout-handoff-test-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const runnerModule = path.join(directory, 'runner.mjs');
+  fs.writeFileSync(runnerModule, `
+    import fs from 'node:fs';
+    import path from 'node:path';
+    export async function runSelfBootstrapCloseoutCommand({args}) {
+      const [directory, mode] = args;
+      const lock = path.join(directory, 'activation.lock');
+      fs.mkdirSync(lock);
+      fs.writeFileSync(path.join(directory, 'worker-ready'), String(process.pid));
+      if (mode === 'crash') process.exit(23);
+      try {
+        if (mode === 'wait') {
+          while (!fs.existsSync(path.join(directory, 'continue'))) await new Promise(resolve => setTimeout(resolve, 15));
+          fs.writeFileSync(path.join(directory, 'replacement-started'), 'healthy');
+        }
+        if (mode === 'throw') throw Object.assign(new Error('identity changed; preserved'), {code:'owner-mismatch'});
+        return {schemaVersion:'buildr.self-bootstrap-closeout-result/v1',status:mode === 'blocked'?'blocked':'passed',args};
+      } finally { fs.rmdirSync(lock); }
+    }
+  `);
+  return { directory, runnerModule };
+}
+
+for (const mode of ['passed', 'blocked']) {
+  test(`detached closeout returns the original ${mode} result and preserves a readable output`, async (t: any) => {
+    const fixture = detachedFixture(t);
+    let handoff: any;
+    const result = await runDetachedCloseout({args:[fixture.directory,mode,'literal value with spaces'],runnerModule:fixture.runnerModule,onHandoff(value: any){handoff=value;}});
+    t.after(() => fs.rmSync(path.dirname(handoff.resultFile), { recursive: true, force: true }));
+    assert.equal(result.status, mode === 'passed'?'passed':'blocked');
+    assert.deepEqual(JSON.parse(fs.readFileSync(handoff.resultFile,'utf8')),result);
+    assert.equal(fs.existsSync(path.join(fixture.directory,'activation.lock')),false);
+    assert.deepEqual(result.args,[fixture.directory,mode,'literal value with spaces']);
+    if (process.platform !== 'win32') assert.equal(fs.statSync(path.dirname(handoff.resultFile)).mode & 0o777,0o700);
+  });
+}
+
+test('detached closeout preserves driver exceptions and saves their original diagnostic', async (t: any) => {
+  const fixture=detachedFixture(t);let handoff: any;
+  await assert.rejects(runDetachedCloseout({args:[fixture.directory,'throw'],runnerModule:fixture.runnerModule,onHandoff(value: any){handoff=value;}}),
+    (error: any) => error.code === 'owner-mismatch' && error.message === 'identity changed; preserved');
+  t.after(()=>fs.rmSync(path.dirname(handoff.resultFile),{recursive:true,force:true}));
+  assert.equal(JSON.parse(fs.readFileSync(handoff.resultFile,'utf8')).diagnostic.code,'owner-mismatch');
+  assert.equal(fs.existsSync(path.join(fixture.directory,'activation.lock')),false);
+});
+
+test('detached closeout never reports success when the worker exits without a result', async (t: any) => {
+  const fixture=detachedFixture(t);let handoff: any;
+  await assert.rejects(runDetachedCloseout({args:[fixture.directory,'crash'],runnerModule:fixture.runnerModule,onHandoff(value: any){handoff=value;}}),
+    (error: any) => error.code === 'self-bootstrap-closeout.worker-result-missing' && error.details.code === 23);
+  t.after(() => fs.rmSync(path.dirname(handoff.resultFile), { recursive: true, force: true }));
+  assert.equal(fs.existsSync(path.join(fixture.directory,'activation.lock')),true,'an uncompleted operation keeps its recovery evidence');
+});
+
+test('independent closeout finishes restoration and releases its lock after the initiating process group is terminated', {skip:process.platform === 'win32'}, async (t: any) => {
+  const fixture=detachedFixture(t),handoffFile=path.join(fixture.directory,'handoff.json');
+  const entry=path.join(fixture.directory,'caller.mjs');
+  const helper=path.resolve(import.meta.dirname,'../../../../../../skills/buildr-self-bootstrap-sync/scripts/detached-execution.mjs');
+  fs.writeFileSync(entry, `
+    import fs from 'node:fs';
+    import {runDetachedCloseout} from ${JSON.stringify(helper)};
+    await runDetachedCloseout({args:${JSON.stringify([fixture.directory,'wait'])},runnerModule:${JSON.stringify(fixture.runnerModule)},
+      onHandoff(value){fs.writeFileSync(${JSON.stringify(handoffFile)},JSON.stringify(value));}});
+  `);
+  const caller=spawn(process.execPath,[entry],{detached:true,stdio:'ignore'});
+  const callerExit=new Promise(resolve=>caller.once('exit',resolve));
+  t.after(()=>{try{process.kill(-caller.pid!,'SIGKILL');}catch{}});
+  await waitForExecutionFile(handoffFile);
+  const handoff=JSON.parse(fs.readFileSync(handoffFile,'utf8'));
+  t.after(()=>{try{process.kill(handoff.pid,'SIGKILL');}catch{}fs.rmSync(path.dirname(handoff.resultFile),{recursive:true,force:true});});
+  await waitForExecutionFile(path.join(fixture.directory,'worker-ready'));
+  process.kill(-caller.pid!,'SIGTERM');
+  await callerExit;
+  process.kill(handoff.pid,0);
+  fs.writeFileSync(path.join(fixture.directory,'continue'),'old host has exited');
+  await waitForExecutionFile(handoff.resultFile);
+  assert.equal(fs.readFileSync(path.join(fixture.directory,'replacement-started'),'utf8'),'healthy');
+  assert.equal(fs.existsSync(path.join(fixture.directory,'activation.lock')),false);
+  assert.equal(JSON.parse(fs.readFileSync(handoff.resultFile,'utf8')).status,'passed');
+});
+
+test('the real closeout CLI transfers ownership before parsing and returns the worker failure unchanged', async (t: any) => {
+  const script=path.resolve(import.meta.dirname,'../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs');
+  const result=run(process.execPath,[script,'--unsupported','value'],process.cwd());
+  assert.equal(result.status,1);
+  const [handoffLine,...errorLines]=result.stderr.trim().split('\n');
+  const handoff=JSON.parse(handoffLine);
+  t.after(()=>fs.rmSync(path.dirname(handoff.resultFile),{recursive:true,force:true}));
+  assert.equal(handoff.schemaVersion,'buildr.self-bootstrap-execution/v1');
+  assert.equal(result.stdout,'');
+  const output=JSON.parse(errorLines.join('\n'));
+  assert.equal(output.status,'blocked');
+  assert.equal(output.primaryFailure.code,'self-bootstrap-closeout.option-unknown');
+  assert.equal(JSON.parse(fs.readFileSync(handoff.resultFile,'utf8')).diagnostic.code,'self-bootstrap-closeout.option-unknown');
 });

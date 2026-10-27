@@ -796,9 +796,13 @@ export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), 
   return runDirectSelfBootstrapCloseout({ workspaceRoot, taskId: option(args, '--task'), baseRef: option(args, '--base-ref'), deliveredRef: option(args, '--delivered-ref'), targetBranch: option(args, '--branch'), remote: option(args, '--remote'), agent: option(args, '--agent'), nodeExecutable, resumeSync: option(args, '--resume-sync'), execute, environment });
 }
 
-function main() {
+async function main() {
   try {
-    const result = runSelfBootstrapCloseoutCommand();
+    const { runDetachedCloseout } = await import('./detached-execution.mjs');
+    const result = await runDetachedCloseout({
+      args: process.argv.slice(2),
+      onHandoff(evidence) { console.error(JSON.stringify(evidence)); },
+    });
     const detail = option(process.argv.slice(2), '--detail') || 'compact';
     console.log(JSON.stringify(detail === 'full' ? result : compactSelfBootstrapCloseout(result), null, 2));
     if (result.status === 'blocked') process.exitCode = 1;
@@ -815,4 +819,4 @@ function main() {
   }
 }
 
-if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) main();
+if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) await main();
