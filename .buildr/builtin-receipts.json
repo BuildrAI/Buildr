@@ -233,15 +233,15 @@
       "type": "skill",
       "id": "mysql-connection",
       "target": "skills/connections/mysql-connection",
-      "integrity": "sha256-fa4bdf7913b3eec435aaee04652681d29dc98a6b57152da62c0b3efae6a96990",
+      "integrity": "sha256-fd8e2b73344a86410c16848b5bbff41f24aa98cdd6c8da61ec981cc666555e67",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-0edbe2a1d795989983b4ac50e44aa54298f8da71645c158953a72f041b3ced81"
+          "integrity": "sha256-cb060bb6552cf2b1b54d038b71af12514526d8c9ec383654531274c92b6843f0"
         },
         {
           "path": "assets/connection.yml",
-          "integrity": "sha256-87550f63b890301a7f0269889704859bae748d21d81879f49b6d32adbbbb43fe"
+          "integrity": "sha256-8d7b4aea4a8e48e38ff2f34423f6a8bbc92c7fdda2c03a19775eed4a33ceba18"
         },
         {
           "path": "references/commands-and-results.md",
