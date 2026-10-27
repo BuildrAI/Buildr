@@ -1,7 +1,7 @@
 schemaVersion: buildr.connection-definition/v1
 definitionId: mysql
 name: MySQL
-description: MySQL 地址、完整认证组、只读连接测试与必要数据库发现；查询工具保持独立。
+description: MySQL 地址、完整认证组、只读连接测试与发现，以及非生产环境的受控变更；查询工具保持独立只读。
 category: data-source
 systemId: mysql
 configVersion: 1
@@ -26,6 +26,16 @@ config:
       type: select
       optionsFrom: databases
       maxLength: 64
+    - key: targetEnvironment
+      label: 目标环境
+      description: 只影响受控变更；未声明时拒绝执行变更，只读测试、发现与查询不受影响。
+      type: enum
+      values: [dev, test, qa, reg, prod]
+    - key: allowDestructive
+      label: 允许破坏性语句
+      description: 默认拒绝 DROP TABLE 与 TRUNCATE；开启后仍需写前核对结构摘要并回读结果。生产环境始终拒绝变更。
+      type: boolean
+      default: false
 authentication:
   fields:
     - key: username
@@ -46,7 +56,7 @@ programs:
     contextProtocol: buildr.connection-context/v1
     version:
       args: [--version]
-      constraint: '=1.0.0'
+      constraint: '=1.1.0'
     dependencies:
       - executable: node
         version:
@@ -74,3 +84,6 @@ presentation:
     - id: scope
       title: 使用范围
       fields: [config.defaultDatabase]
+    - id: write
+      title: 写入范围
+      fields: [config.targetEnvironment, config.allowDestructive]

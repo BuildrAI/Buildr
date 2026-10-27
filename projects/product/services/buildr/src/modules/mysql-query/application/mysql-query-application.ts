@@ -1,5 +1,5 @@
 import type { ConnectionBinding, ConnectionDefinition } from '../../connection-skills/domain/definition.ts';
-import { mysqlFailure, databaseName, expectedRevision, inputObject, mysqlConfiguration, passwordInput, queryPreferenceValues, type MySqlConfiguration, type MySqlCredentials, type MySqlQueryClient } from '../domain/mysql.ts';
+import { mysqlFailure, databaseName, expectedRevision, inputObject, mysqlTarget, passwordInput, queryPreferenceValues, type MySqlConfiguration, type MySqlCredentials, type MySqlQueryClient } from '../domain/mysql.ts';
 import { createMySqlClient } from '../infrastructure/mysql-client.ts';
 import { MySqlQueryPreferences, type MySqlQueryStore } from '../persistence/query-preferences.ts';
 
@@ -24,9 +24,9 @@ export class MySqlQueryApplication {
       const program = definition.programs.cli;
       if (selected.skillId !== 'mysql-connection' || selected.binding.skillAssetIdentity !== 'buildr:skill:mysql-connection' || selected.binding.sourceIdentity !== 'package:skills/connections/mysql-connection' || definition.definitionId !== 'mysql' || definition.systemId !== 'mysql' || definition.category !== 'data-source' || definition.configVersion !== 1 || selected.binding.definitionId !== 'mysql' || selected.binding.configVersion !== 1 || !['host', 'port'].every(key => definition.authentication.targetFields.includes(key)) || program?.kind !== 'installed' || program.executable !== 'buildr-mysql' || program.contextProtocol !== 'buildr.connection-context/v1') throw mysqlFailure('mysql_query_connection_unsupported', '当前独立查询工具仅支持已明确绑定的内置 MySQL 接入。', 422);
       if (selected.connection.id !== id || selected.connection.revision !== revision) throw mysqlFailure('connection_skill_revision_conflict', '连接目标或版本已变化，请刷新后重试。', 409);
-      const config = inputObject(selected.connection.config, ['host', 'port', 'defaultDatabase']);
+      const config = inputObject(selected.connection.config, ['host', 'port', 'defaultDatabase', 'targetEnvironment', 'allowDestructive']);
       const authentication = inputObject(selected.connection.authentication.values, ['username', 'password']);
-      const target = mysqlConfiguration({ ...config, username: authentication.username });
+      const target = mysqlTarget(config, authentication.username);
       const credentials = { password: passwordInput(authentication.password) };
       return consume(selected, target, credentials);
     });

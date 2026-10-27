@@ -265,7 +265,7 @@ Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git comm
 
 ## 独立 MySQL 查询
 
-通过 `buildr connection-skill definitions list`、`list` 及 `get` 选择准确的内置 `mysql-connection` 实例及当前 `revision`。连接配置与完整认证继续由通用连接入口维护；`buildr-mysql` 随主包安装，只通过私有进程间通信（IPC）执行测试与数据库发现，查询工具使用独立 `buildr mysql-query`。
+通过 `buildr connection-skill definitions list`、`list` 及 `get` 选择准确的内置 `mysql-connection` 实例及当前 `revision`。连接配置与完整认证继续由通用连接入口维护；`buildr-mysql` 随主包安装，只通过私有进程间通信（IPC）执行测试、数据库发现、结构摘要与受控变更；查询工具使用独立 `buildr mysql-query`，始终单条只读。
 
 | 命令 | 用途 |
 |---|---|
@@ -278,6 +278,8 @@ Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git comm
 所有命令可指定 `--target`。版本或完整认证来源变化后重新读取，不回退团队组或同名实例。连接页的“查询”动作打开独立查询工作面；偏好与团队配置分别保存。
 
 未传 `--database` 时使用连接默认库，`--database ""` 明确不设当前库。只执行单条只读查询；无最外层 LIMIT 时补充 100 行，显式 1—500 保留，超过 500 拒绝。每次最多 10 秒、4 MiB，失败不当作完整结果。
+
+受控变更只经 `buildr connection-skill run --connection <id> --expected-revision <revision> --program cli -- apply ...` 执行。被标记为 `prod` 的连接一律拒绝；未声明环境时按非生产执行并在结果中标注。`DROP TABLE` 与 `TRUNCATE` 默认拒绝，可在连接配置开启允许破坏性语句。一次只执行一条语句：数据修改必须带 `WHERE` 并显式提供受影响行数上限，结构变更不接受上限且不可回滚。写前以 `fingerprint` 返回的结构摘要核对目标，未知结果不自动重试。
 
 结果的 `columns` 与行数组 `rows` 按位置对应，支持重名列和空结果表头，大整数与小数以文本保留精度。`limitReached` 只表示达到本次限制，不推断总数或自动读取下一页。查询结果不落库，启用库和当前库是每个实例独立的本机偏好。
 

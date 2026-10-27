@@ -10,7 +10,7 @@
 
 | 目标 | 使用方法 |
 | --- | --- |
-| MySQL 连接测试或数据库发现 | 加载绑定的 `mysql-connection`，核对随包程序 `buildr-mysql`；结构浏览、只读查询及本机偏好使用独立 `buildr mysql-query --help`。 |
+| MySQL 连接测试、数据库发现或受控变更 | 加载绑定的 `mysql-connection`，核对随包程序 `buildr-mysql`；结构浏览、只读查询及本机偏好使用独立 `buildr mysql-query --help`。变更只经连接程序在已声明的非生产环境执行，查询工具始终只读。 |
 | Nacos 配置 | 加载绑定的 `nacos-connection`，从服务配置定位目标，再按专业帮助读取、比较和受控发布。 |
 | Kibana 日志 | 加载绑定的 `kibana-connection`，从环境及部署线索核对视图、字段与时间，再进行有界检索和统计。 |
 | XXL-JOB 调度 | 加载绑定的 `xxl-job-connection`，从服务代码确认真实 AppName，远端核实关联后维护任务及读取日志。 |

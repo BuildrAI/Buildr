@@ -172,7 +172,7 @@ test('开发MySQL薄入口保持离线帮助、版本、所选Node和私有IPC�
   for (const args of [['--help'], ['--version']]) {
     const result = spawnSync(helper, args, { env, encoding: 'utf8', timeout: 10_000 });
     assert.equal(result.status, 0, result.stderr);
-    if (args[0] === '--version') assert.equal(result.stdout.trim(), 'buildr-mysql 1.0.0');
+    if (args[0] === '--version') assert.equal(result.stdout.trim(), 'buildr-mysql 1.1.0');
     else assert.ok(JSON.parse(result.stdout).help.length > 0);
   }
   const result = await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {

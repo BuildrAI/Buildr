@@ -62,12 +62,12 @@
 
 ### 内置专业技能与独立查询
 
-- **[独立 MySQL 查询（mysql-query）](../../services/buildr/src/modules/mysql-query/)** — 消费明确绑定的实例；保留单条只读执行约束，不拥有团队连接配置。
+- **[MySQL 连接程序与独立查询（mysql-query）](../../services/buildr/src/modules/mysql-query/)** — 连接程序执行测试、发现、结构摘要与受控变更；独立查询保留单条只读执行约束。两者都消费明确绑定的实例，不拥有团队连接配置。
   - [访问与结果约束（domain/mysql.ts）](../../services/buildr/src/modules/mysql-query/domain/mysql.ts) — MySQL 访问配置、认证、结果类型和输入校验。
-  - [只读执行内核（infrastructure/mysql-client.ts）](../../services/buildr/src/modules/mysql-query/infrastructure/mysql-client.ts) — `createMySqlClient` 提供测试、结构读取及查询，`prepareReadOnlySql` 保留单条只读约束。
+  - [执行内核（infrastructure/mysql-client.ts）](../../services/buildr/src/modules/mysql-query/infrastructure/mysql-client.ts) — `createMySqlClient` 提供测试、结构读取、查询与受控变更；`prepareReadOnlySql` 与 `prepareChangeStatement` 分别保留只读与变更边界。
   - [查询应用（mysql-query-application.ts）](../../services/buildr/src/modules/mysql-query/application/mysql-query-application.ts) — 核对准确内置来源、完整认证及当前版本，提供结构读取和查询。
   - [本机偏好（query-preferences.ts）](../../services/buildr/src/modules/mysql-query/persistence/query-preferences.ts) — 独立 SQLite 表及偏好版本，不保存查询结果。
-  - [专业接入程序（mysql-connection-program.ts）](../../services/buildr/src/modules/mysql-query/interfaces/program/mysql-connection-program.ts) — `buildr-mysql` 的私有上下文（Context）、测试和数据库发现；主包携带运行依赖。
+  - [专业接入程序（mysql-connection-program.ts）](../../services/buildr/src/modules/mysql-query/interfaces/program/mysql-connection-program.ts) — `buildr-mysql` 的私有上下文（Context）、测试、数据库发现、结构摘要与受控变更；执行生产环境拒绝、破坏性语句开关和写前上下文复核，主包携带运行依赖。
   - [开发辅助命令（tools/development/programs/）](../../services/buildr/tools/development/programs/) — 源码桥接与 macOS 开发启动器（Development Launcher）的进程私有入口，使用已选 Node.js 调用同一程序，保留默认 npm `buildr` 的独立身份。
   - [命令入口（mysql-query-cli.ts）](../../services/buildr/src/modules/mysql-query/interfaces/cli/mysql-query-cli.ts)及[网页入口（mysql-query-http.ts）](../../services/buildr/src/modules/mysql-query/interfaces/http/mysql-query-http.ts) — 同一查询应用的输入输出适配。
 - **[独立查询前端（mysql-query）](../../services/buildr-web/src/features/mysql-query/)** — 连接目录使用的查询组件（Component）、库表浏览、客户端（Client）、编辑器、结果与本机布局；库表浏览与当前数据库选择解耦，客户端固定本次实例及观察版本。
@@ -113,7 +113,7 @@
   - [已保存个人秘密（ConnectionSavedPersonalSecrets.tsx）](../../services/buildr-web/src/features/connection-skills/components/ConnectionSavedPersonalSecrets.tsx) — 显式单字段查看、默认隐藏、按当前对象及观察清空，隔离迟到响应且不回填认证草稿。
   - [浏览器授权（ConnectionBrowserAuthorization.tsx）](../../services/buildr-web/src/features/connection-skills/components/ConnectionBrowserAuthorization.tsx)及[授权状态（useConnectionAuthorization.ts）](../../services/buildr-web/src/features/connection-skills/useConnectionAuthorization.ts) — 首次授权、重新授权及取消；新增先保存无认证配置壳，内部认证字段不进入表单，关闭或目标变化时丢弃迟到结果。
 
-实际操作为“智能体（Agent）发现绑定 → 读取专业技能（Skill）及程序帮助 → 通用入口启动程序 → 所选程序访问真实系统”。程序写前请求本机上下文再次校验，通用宿主不审批业务；Nacos 随附程序另维护远端版本、授权及结果。MySQL 另由独立查询应用消费同一明确实例，所有入口保留观察版本及只读边界。
+实际操作为“智能体（Agent）发现绑定 → 读取专业技能（Skill）及程序帮助 → 通用入口启动程序 → 所选程序访问真实系统”。程序写前请求本机上下文再次校验，通用宿主不审批业务；Nacos 随附程序另维护远端版本、授权及结果。MySQL 另由独立查询应用消费同一明确实例；变更拒绝生产环境并受破坏性策略约束，独立查询入口始终只读。
 
 ## 服务本地运行
 
