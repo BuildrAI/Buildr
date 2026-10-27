@@ -319,11 +319,13 @@ test('HTTP catalog validates request and enforces write authorization', async (t
 
 
 
-test('shared code repository yields one task worktree and module directories do not become Git roots', (t: any) => {
+test('shared code repository yields one task worktree and module directories do not become Git roots', async (t: any) => {
   const { root, runtime } = setup(t);
   const git = (cwd: string, ...args: string[]) => { const r = spawnSync('git', args, { cwd, encoding: 'utf8' }); assert.equal(r.status, 0, r.stderr); return r.stdout.trim(); };
   let c = ready(runtime, root); c = addRepo(runtime, root, c.revision, 'shared', 'dev');
   const repository = c.repositories[0], codeRoot = path.join(root, repository.source.path);
+  await runtime.repositoryCloneIdle();
+  assert.equal(runtime.repositoryCloneStatus(root, repository.id).state, 'failed', 'unreachable origin clone must surface failed state');
   fs.mkdirSync(path.join(codeRoot, 'modules/pig'), { recursive: true });
   git(codeRoot, 'init', '--initial-branch=dev'); git(codeRoot, 'config', 'user.name', 'Test'); git(codeRoot, 'config', 'user.email', 'test@example.com');
   git(codeRoot, 'remote', 'add', 'origin', repository.source.git.url); git(codeRoot, 'commit', '--allow-empty', '-m', 'baseline');

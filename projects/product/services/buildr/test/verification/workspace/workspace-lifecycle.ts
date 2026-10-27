@@ -30,6 +30,7 @@ try {
   runBuildr(['service', 'create', 'demo/api', serviceRepository, '--target', fixture.workspace, '--type', 'backend']);
 
   const rule: any = path.join(fixture.workspace, 'rules', 'review-policy.md');
+  fs.mkdirSync(path.dirname(rule), { recursive: true });
   fs.writeFileSync(rule, '# Review Policy\n\nReview representative changes before delivery.\n');
   runBuildr(['rules', 'add', 'review-policy', '--description', 'Review representative changes', '--target', fixture.workspace]);
   runBuildr(['commands', 'add', 'node-runtime', '--purpose', 'Execute JavaScript verification', '--executable', 'node', '--target', fixture.workspace]);
