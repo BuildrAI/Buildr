@@ -40,7 +40,7 @@
 
 [智能体接入架构](../docs/architecture/agent-integration.md)解释用户可见行为；这里定位新内部对话的实际边界。单次生成也复用同一模型（Model）能力；旧生成后台和外部桌面关联已退役。
 
-- **宿主（Host）适配**：[agent-service/module.ts](../../services/buildr/src/modules/agent-service/module.ts) 按公开包名装配 `createAgentService`，提供已登记工作空间（Workspace）解析和任务（Task）存在检查；按可信运行配置（Profile）选择恢复策略，启动时后台发现系统中断的执行，开发版才自动续做；[HTTP 入口](../../services/buildr/src/modules/agent-service/interfaces/http/agent-service-http.ts)接入本机认证和独立控制请求，不维护对话副本。
+- **宿主（Host）适配**：[agent-service/module.ts](../../services/buildr/src/modules/agent-service/module.ts) 按公开包名装配 `createAgentService`，提供已登记工作空间（Workspace）解析和任务（Task）存在检查；按可信运行配置（Profile）选择恢复策略，由网页真实就绪入口调用 `start`，后台发现系统中断的执行，开发版才自动续做；[HTTP 入口](../../services/buildr/src/modules/agent-service/interfaces/http/agent-service-http.ts)接入本机认证和独立控制请求，不维护对话副本。
 - **独立服务（Service）**：[公开入口](../../services/buildr-agent/src/index.ts)创建账号应用、对话应用、事件与私有库；[contracts.ts](../../services/buildr-agent/src/contracts.ts)只公开宿主依赖、视图及执行器（Executor）协议，主包不导入私有源码。
 - **工具路径**：[工具环境](../../services/buildr-agent/src/executors/tool-environment.ts)仅提供原用户路径线索和官方浏览器缓存，账号 HOME 仍独立；[接入环境说明](../../services/buildr/resources/runtime/skills/buildr/references/agent-operations.md#内部对话与持续执行)由智能体发现、复用或按官方方式安装工具，不新增工具管理平台。
   - [connection-application.ts](../../services/buildr-agent/src/application/connection-application.ts)：每家独立配置、官方登录、模型目录及真实程序绑定；运行中关闭、停止和授权可以独立响应。

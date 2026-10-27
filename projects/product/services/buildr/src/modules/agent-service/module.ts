@@ -26,8 +26,9 @@ export function createAgentServiceModule(options: { readProductIdentity(): unkno
         });
         return service;
       };
+      const start = () => resolve().conversations.recoverInterrupted();
       const close = async () => { await service?.close(); };
-      return { provides: { [AGENT_SERVICE_APPLICATION]: { close, generate: (input: Parameters<AgentService['models']['generate']>[0]) => resolve().models.generate(input) } }, contributions: { http: [createAgentServiceHttpContribution(resolve)] }, lifecycle: { start: async () => { void resolve().conversations.recoverInterrupted().catch(() => {}); }, stop: close } };
+      return { provides: { [AGENT_SERVICE_APPLICATION]: { start, close, generate: (input: Parameters<AgentService['models']['generate']>[0]) => resolve().models.generate(input) } }, contributions: { http: [createAgentServiceHttpContribution(resolve)] }, lifecycle: { start: async () => { void start().catch(() => { console.warn('中断执行恢复检查未完成，已有工作记录保留。'); }); }, stop: close } };
     },
   };
 }

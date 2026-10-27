@@ -4,6 +4,8 @@ import path from 'node:path';
 import process from 'node:process';
 import test from 'node:test';
 import { createServer } from 'node:http';
+import { spawn } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
 import { createAgentService } from '@buildr-ai/buildr-agent';
 import { createRuntime, runtimeContributions } from '../helpers/runtime-harness.ts';
 import { taskRecordFixture } from '../helpers/task-record-system-fixture.ts';
@@ -212,4 +214,30 @@ test('HTTP handoff exposes the exact bounded body, local sources and confirmed r
   const after=await completed(),receipt=after.entries.find(entry=>entry.kind==='handoff')!;
   assert.equal(sent[1],prepared.handoff.body);assert.equal(receipt.handoff!.body,prepared.handoff.body);assert.equal(receipt.status,'accepted');
   response=await fetch(endpoint,{headers});assert.equal(response.status,200);assert.equal((await response.json()).entries.find((entry:any)=>entry.kind==='handoff').handoff.body,sent[1]);
+});
+
+
+test('the real web CLI discovers host interruptions on listening without a browser request', {timeout:30_000}, async t=>{
+  const {base,root}=taskRecordFixture(t,'agent-startup-recovery');
+  const dataRoot=path.join(base,'restart-profile');
+  const service=createAgentService({dataRoot,executors:[],resolveWorkspace:()=>({rootPath:root}),assertTask:()=>{}});
+  const conversation=await service.conversations.create('startup-workspace',{});await service.close();
+  const filename=path.join(dataRoot,'agent-service','conversations.sqlite');
+  const db=new DatabaseSync(filename);
+  const record=JSON.parse((db.prepare('SELECT body FROM conversations WHERE id=?').get(conversation.id) as {body:string}).body);
+  record.view.run={id:'interrupted-run',participantId:'missing-participant',provider:'codex',generation:'previous-host',status:'stopped',accepted:true,tools:[],interrupted:true,diagnostic:'before-startup',startedAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+  record.interruption={runId:'interrupted-run',awaitingUser:false};
+  db.prepare('UPDATE conversations SET body=? WHERE id=?').run(JSON.stringify(record),conversation.id);db.close();
+  const child=spawn(process.execPath,[path.resolve('bin/buildr.mjs'),'web','--port','0','--no-open'],{env:{...process.env,BUILDR_APP_DATA_DIR:dataRoot},stdio:['ignore','pipe','pipe']});
+  let output='';child.stdout.on('data',chunk=>{output+=chunk});child.stderr.on('data',chunk=>{output+=chunk});
+  t.after(async()=>{if(child.exitCode===null){child.kill('SIGTERM');await new Promise<void>(resolve=>child.once('exit',()=>resolve()));}});
+  const end=Date.now()+20_000;let diagnostic='before-startup';
+  while(Date.now()<end){
+    const read=new DatabaseSync(filename,{readOnly:true});
+    const current=JSON.parse((read.prepare('SELECT body FROM conversations WHERE id=?').get(conversation.id) as {body:string}).body);read.close();
+    diagnostic=current.view.run.diagnostic;
+    if(diagnostic!=='before-startup')break;
+    assert.equal(child.exitCode,null,output);await new Promise(resolve=>setTimeout(resolve,50));
+  }
+  assert.match(diagnostic,/执行未完成.*尚不能确认/,output);
 });
