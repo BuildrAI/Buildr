@@ -48,6 +48,7 @@ function windowsWscriptPath(env: any = process.env) {
  * Launcher 自有日志并以非零码退出，由 .vbs host 给出用户可见反馈。
  */
 function windowsRunnerScript(binding: any) {
+  // cmd.exe 批处理按 CRLF 分词解析；LF 行尾在多行 if/for 块上会出现静默误解析。
   return `@echo off
 setlocal
 set "NODE=${commandValue(binding.hostNode.path)}"
@@ -73,22 +74,32 @@ if not "%ACTUAL_NODE_VERSION%"=="%EXPECTED_NODE_VERSION%" (
 echo Node identity: executable=%NODE% version=%ACTUAL_NODE_VERSION% >>"%LOG_FILE%"
 "%NODE%" "%ENTRY%" web --launcher-binding "%BINDING%" >>"%LOG_FILE%" 2>&1
 exit /b %ERRORLEVEL%
-`;
+`.replaceAll('\n', '\r\n');
 }
 
 /** wscript.exe 以窗口样式 0 隐藏运行 runner，不占控制台；非零退出时给出简短可见反馈。 */
 function windowsHostScript(wrapper: any) {
   const script = `Set shell = CreateObject("WScript.Shell")
-base = CreateObject("Scripting.FileSystemObject").GetParentFolderName(WScript.ScriptFullName)
+Set files = CreateObject("Scripting.FileSystemObject")
+base = files.GetParentFolderName(WScript.ScriptFullName)
 command = Chr(34) & base & "\\${path.basename(wrapper.runner)}" & Chr(34)
 On Error Resume Next
 exitCode = shell.Run(command, 0, True)
 runError = Err.Number
 On Error GoTo 0
+If runError <> 0 Then
+  On Error Resume Next
+  If Not files.FolderExists(base & "\\logs") Then files.CreateFolder(base & "\\logs")
+  Set logFile = files.OpenTextFile(base & "\\logs\\launcher.log", 8, True)
+  logFile.WriteLine "Launcher host could not execute runner: error=" & runError
+  logFile.Close
+  On Error GoTo 0
+End If
 If runError <> 0 Or exitCode <> 0 Then
   If shell.ExpandEnvironmentStrings("%BUILDR_LAUNCHER_NO_NOTIFY%") <> "1" Then
     MsgBox "Buildr Web 无法启动。请在终端运行 buildr web launcher status 查看诊断，或执行 buildr web launcher repair 修复。", 16, "Buildr Web"
   End If
+  WScript.Quit 1
 End If
 `;
   return Buffer.from(`\uFEFF${script}`, 'utf16le');
