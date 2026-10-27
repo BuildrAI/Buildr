@@ -30,7 +30,7 @@
 - **[`services/buildr/src/`](../../services/buildr/src/)**：产品源码。
   - [`bootstrap/`](../../services/buildr/src/bootstrap/) 创建技术运行时（Runtime）、装配模块、汇集命令与诊断入口。
   - [`modules/`](../../services/buildr/src/modules/) 按上表的业务职责组织。
-  - [`web/`](../../services/buildr/src/web/) 管理本机实例与预览生命周期、会话（Session）、静态托管和请求分发；同身份重启由 `web/http` 的重启端口交给 `web/application` 的后继进程编排，复用更新交接的启动锁、观察摘要与认证退出，不执行 npm 安装归属断言。
+  - [`web/`](../../services/buildr/src/web/) 管理本机实例与预览生命周期、会话（Session）、静态托管和请求分发；同身份重启由 `web/http` 的重启端口交给 `web/application` 的后继进程编排，复用更新交接的启动锁、观察摘要与认证退出，不执行 npm 安装归属断言。[`preview-reuse.ts`](../../services/buildr/src/web/application/preview-reuse.ts) 与同目录 facet 实现承接 `web preview start --reuse development[:facet,…]` 的来源解析、facet 注册、播种/复用/刷新和结果汇总；写入限定在预览实例根，`web preview stop --purge` 的安全校验也由预览生命周期维护。
   - [`infrastructure/`](../../services/buildr/src/infrastructure/) 提供文件、SQLite、Git、进程、网络与资源定位，不接管业务规则。
 - **[`resources/`](../../services/buildr/resources/)**：文件型交付来源。清单声明工作空间（Workspace）及运行时（Runtime）映射，安装资源和文本契约各自维护；[资源职责](../../services/buildr/docs/cli-architecture.md#文件型交付资源)集中解释。
 - **[`tools/`](../../services/buildr/tools/)**：进入 Git 的工程程序，包括构建、协议生成、固定环境、验证准备及性能基准。独立性能基准不默认执行。
@@ -50,7 +50,7 @@
   - [`src/executors/program-manager.ts`](../../services/buildr-agent/src/executors/program-manager.ts) 与 [`program-policy.ts`](../../services/buildr-agent/src/executors/program-policy.ts)：本机来源发现、ChatGPT App 身份和签名、固定官方包独立安装及共享版本策略；浏览器工具不在此处安装。
   - [`src/application/conversation-application.ts`](../../services/buildr-agent/src/application/conversation-application.ts)：普通或任务对话、预览与受理、参与者接续、历史归并、状态观察及准确控制。
   - [`src/application/conversation-events.ts`](../../services/buildr-agent/src/application/conversation-events.ts)：带代次与游标的事件流，补读仍以私有库为准。
-  - [`src/domain/agent-state.ts`](../../services/buildr-agent/src/domain/agent-state.ts) 与 [`src/persistence/conversation-repository.ts`](../../services/buildr-agent/src/persistence/conversation-repository.ts)：交互身份、状态边界和 SQLite；不写任务数据库或工作空间（Workspace）源资产。
+  - [`src/domain/agent-state.ts`](../../services/buildr-agent/src/domain/agent-state.ts) 与 [`src/persistence/conversation-repository.ts`](../../services/buildr-agent/src/persistence/conversation-repository.ts)：交互身份、状态边界和 SQLite；不写任务数据库或工作空间（Workspace）源资产。[`src/persistence/connection-relocation.ts`](../../services/buildr-agent/src/persistence/connection-relocation.ts) 是预览沿用连接的唯一重定位入口：只读取来源 `connections` 表，重写数据根前缀并重建原生绑定，不复制会话、附件或交接材料。
   - [`src/executors/`](../../services/buildr-agent/src/executors/)：Codex 应用服务（App Server）、DSH 完整本机网页宿主（Web Host）、Qoder 软件开发工具包（SDK）及原生命令行（CLI）的协议、进程和上下文。`native-process.ts` 只承担隔离环境、程序核验及私有进程通信。
   - [`tools/build.ts`](../../services/buildr-agent/tools/build.ts) 与 [`test/`](../../services/buildr-agent/test/)：严格编译公开包及服务独立检查；`build/` 是派生运行结果。
 

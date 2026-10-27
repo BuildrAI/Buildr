@@ -38,13 +38,17 @@ export function createWebCliContributions(application: WebCliRuntime | null = nu
   {
     key: "web preview start",
     surface: "maintenance",
-    summary: "提供 --task 时，从该 Task 的受管 Git Worktree 启动；预览能力保存精确 owner 并负责认证停止自己创建的进程。",
+    summary: "提供 --task 时，从该 Task 的受管 Git Worktree 启动；--reuse 可显式沿用开发版环境事实，预览能力保存精确 owner 并负责认证停止自己创建的进程。",
     help: [
-      "Usage: buildr web preview start <instance> [--task <task-id> --target <canonical-workspace>] [--workspace <root> ...] [--port <port>] [--no-open] [--json]",
+      "Usage: buildr web preview start <instance> [--task <task-id> --target <canonical-workspace>] [--workspace <root> ...] [--port <port>] [--reuse <profile>[:facet,...]] [--refresh-reuse] [--no-open] [--json]",
       "",
       "提供 --task 时，从该 Task 的受管 Git Worktree 启动；预览能力保存精确 owner 并负责认证停止自己创建的进程。",
       "不提供 --task 时保留独立 checkout 预览。实例名不能接管其他健康预览，也不会替换默认 Buildr Web Runtime。",
       "不指定 --port 时复用该实例上次端口（被占用则改用随机端口）；--workspace 可重复，把其他已初始化 Workspace 登记进本实例用于验收。",
+      "--reuse development 沿用开发版应用数据：默认包含 model-catalog（模型账号、缓存模型与启用偏好）与 agent-runtime（provider 登录配置、所需程序与预览内连接绑定）。",
+      "可用 --reuse development:model-catalog,agent-runtime 只选择明确 facet；agent-runtime 自动包含 model-catalog。来源只读，写入限定在预览实例根内。",
+      "首次启动缺失时播种，已有副本默认复用；--refresh-reuse 从来源重新复制所选 facet 并原子替换，失败保留旧副本。来源不可用或 facet 未知时在写入前失败。",
+      "预览会话、附件、交接材料与模型运行缓存不复制；预览内执行不会写入开发版会话。",
     ],
     match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'preview' && runtimeId === 'start',
     run: (r, c) => (application || r).manageBuildrWebPreview('start', c.argv.slice(5)),
@@ -64,11 +68,13 @@ export function createWebCliContributions(application: WebCliRuntime | null = nu
   {
     key: "web preview stop",
     surface: "maintenance",
-    summary: "Task preview 必须同时提供 canonical Workspace 与 Task ID，并与 Worktree evidence、preview owner 和进程 secret 完全匹配。独立 preview 保持实例级停止。",
+    summary: "Task preview 必须同时提供 canonical Workspace 与 Task ID，并与 Worktree evidence、preview owner 和进程 secret 完全匹配。默认保留实例数据；--purge 在停止确认和 owner 校验后删除整个实例目录。",
     help: [
-      "Usage: buildr web preview stop <instance> [--task <task-id> --target <canonical-workspace>] [--json]",
+      "Usage: buildr web preview stop <instance> [--task <task-id> --target <canonical-workspace>] [--purge] [--json]",
       "",
-      "Task preview 必须同时提供 canonical Workspace 与 Task ID，并与 Worktree evidence、preview owner 和进程 secret 完全匹配。独立 preview 保持实例级停止。"
+      "Task preview 必须同时提供 canonical Workspace 与 Task ID，并与 Worktree evidence、preview owner 和进程 secret 完全匹配。独立 preview 保持实例级停止。",
+      "默认只停止实例并保留数据。--purge 删除该实例根内的会话、附件、交接材料、账号与配置副本、程序副本、日志和登记。",
+      "停止未确认、owner 不匹配、目标不在预览根内或存在越界符号链接时拒绝清理并保留现场。",
     ],
     match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'preview' && runtimeId === 'stop',
     run: (r, c) => (application || r).manageBuildrWebPreview('stop', c.argv.slice(5)),

@@ -23,6 +23,8 @@ import { PreparationApplication } from './application/preparation-application.ts
 export * from './contracts.ts';
 export * from './model-access/contracts.ts';
 export { AgentServiceError } from './domain/agent-state.ts';
+export { listConnectionExecutables, relocateConnections } from './persistence/connection-relocation.ts';
+export type { ConnectionRelocationFailure, ConnectionRelocationResult } from './persistence/connection-relocation.ts';
 
 /** Public application service. Its host supplies authority, authentication and transport. */
 export function createAgentService(options: AgentServiceOptions) {

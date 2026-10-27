@@ -142,7 +142,7 @@ buildr help assets
 |---|---|
 | `buildr init [--agent <agent>] [--adapter <adapter-id>]` | 默认初始化源资产并完整同步标准或已选文件约定，安装产品入口技能（Skill）、投射并执行最终诊断（Doctor）。仅源资产使用互斥的 `--source-only`。 |
 | `buildr web [--target <workspace>] [--no-open] [--replace-mismatched-development]` | 启动或复用只监听 `127.0.0.1` 的默认本机 Web 应用；默认打开浏览器，登记和切换多个 Workspace，`--target` 登记并打开指定 Workspace。`--replace-mismatched-development` 仅 development 实例：运行中的开发版与当前来源不匹配或缺少来源证明时，先认证退出旧实例再按当前来源启动；来源仍匹配的实例照常复用，正式版及与更新交接、Launcher binding 的组合拒绝该选项。 |
-| `buildr web preview start\|list\|stop` | 启动、查看或停止隔离的开发预览。带 `--task <task-id> --target <canonical-workspace>` 时，Preview使用matching Task Worktree并保存精确owner；停止时复核Worktree evidence与进程secret。不带Task时保持独立checkout preview。 |
+| `buildr web preview start\|list\|stop` | 启动、查看或停止隔离的开发预览。带 `--task <task-id> --target <canonical-workspace>` 时，Preview使用matching Task Worktree并保存精确owner；停止时复核Worktree evidence与进程secret。不带Task时保持独立checkout preview。`start --reuse development[:facet,…]` 显式沿用开发版模型目录或智能体运行时，已存在副本默认复用，`--refresh-reuse` 原子刷新；`stop --purge` 在停止确认与owner匹配后删除实例根。 |
 | `buildr installation status [--json]` | 分别报告receipt证明的npm CLI、Buildr Web Launcher、Buildr Web Dev、当前安装与当前Web实例的版本、路径、runtime role、protocol、payload和ownership identity；不扫描PATH。 |
 | `buildr web launcher install/status/repair/uninstall` | 从verified formal npm安装显式创建、诊断、修复或卸载本机Buildr Web Launcher；wrapper只执行binding中的Host Node和同一package entry。Windows 入口经 `wscript.exe` 隐藏运行的 `.vbs` 托管 `.cmd` runner，后台启动不占用控制台窗口，输出写入 Launcher 自有日志。Development checkout使用隔离的Buildr Web Dev入口。 |
 | `buildr project create <code>` | 创建或登记 Project；`--name`/`--description` 设置 metadata，`--repo`、`--remote`、`--integration-branch` 声明独立 Git source，并补齐空 `commands.yml` requirement context。 |
