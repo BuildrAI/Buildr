@@ -204,6 +204,7 @@
       - [hooks/useTaskWorkContext.ts](../../services/buildr-web/src/features/task/hooks/useTaskWorkContext.ts) — 刷新与取消旧请求，防止不同任务内容混入
     - **`features/workbench/`** — 日常关注入口
       - [pages/WorkbenchPage.tsx](../../services/buildr-web/src/features/workbench/pages/WorkbenchPage.tsx) — 等我回应（明确的决定、验收或补充信息请求）、继续推进、项目变化与常用资料；没有回应请求时紧凑展示
+      - [taskSummary.ts](../../services/buildr-web/src/features/workbench/taskSummary.ts) — 按任务状态选择任务行摘要：进行中取工作摘要最近进展，终态取任务结果摘要，都缺失时取任务目标
 
 ## 哪些专业方法指导执行？
 

@@ -7,6 +7,7 @@ import { useAppShell } from '../../../app/AppShellContext';
 import { workspaceHref } from '../../../lib/labels';
 import { formatDateTime, taskStatusLabel } from '../../../lib/taskLabels';
 import { useWorkbenchPreferences } from '../hooks/useWorkbenchPreferences';
+import { workbenchTaskSummary } from '../taskSummary';
 import { TaskTypeBadge } from '../../../components/TaskTypeBadge';
 
 export const attentionLabels = { decision: '等你决定', acceptance: '等你验收', question: '需要你介入' };
@@ -26,7 +27,7 @@ export function WorkbenchTaskRow({ item, projectNames, compact = false, onError 
     if (window.getSelection()?.toString()) return;
     navigate(href, { state: { from } });
   };
-  const summary = context?.progress || record.result?.summary || record.intent;
+  const summary = workbenchTaskSummary(item);
   const openable = record.status === 'todo' || record.status === 'active';
   const attention = openable && context?.attention?.state === 'pending' ? context.attention : null;
   const pin = async () => {
