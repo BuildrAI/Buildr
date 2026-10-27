@@ -318,7 +318,9 @@ class CodexRuntime implements AgentRuntime {
 }
 function codexItem(item: any, executionId: string, status: string): ExecutorItem[] {
   if (!item?.id) return [];
-  const final = status === 'completed' ? 'completed' as const : status === 'failed' ? 'failed' as const : 'running' as const;
+  // A stopped turn does not undo tools which already completed. Conversely,
+  // an unfinished historical item is uncertain, not a live execution.
+  const final: ExecutorItem['status'] = item.status === 'completed' ? 'completed' : item.status === 'failed' || item.status === 'declined' ? 'failed' : item.status === 'inProgress' ? status === 'inProgress' ? 'running' : undefined : status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : status === 'interrupted' ? undefined : 'running';
   if (item.type === 'agentMessage') return [{ id: item.id, kind: 'message', role: 'assistant', text: String(item.text ?? ''), executionId, status: final }];
   if (item.type === 'userMessage') return [{ id: item.id, kind: 'message', role: 'user', text: visibleText(item.content), executionId, status: 'completed' }];
   if (item.type === 'commandExecution') return [{ id: item.id, kind: 'tool', role: 'system', name: 'command', input: String(item.command ?? ''), text: String(item.command ?? '命令') + (item.aggregatedOutput ? '\n' + nativePreview(String(item.aggregatedOutput)) : ''), executionId, status: final }];

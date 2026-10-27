@@ -55,6 +55,7 @@ test('Codex native adapter preserves exact context, streams, answers and stops o
     const binding = runtime.bindingIdentity; await runtime.close(); runtime = await createCodexExecutor().open(options); assert.equal(runtime.bindingIdentity, binding);
     await runtime.resumeContext({ contextRef: reference, cwd: workspace });
     const history = await runtime.readHistory({ contextRef: reference, cwd: workspace }); assert.ok(history.some(item => item.id === 'user-turn-0' && item.executionId === 'turn-0'));
+    assert.equal(history.find(item=>item.id==='command-turn-0')?.status,'completed','completed native tool stays completed inside an interrupted turn');
     await assert.rejects(runtime.resumeContext({ contextRef: reference, cwd: root }), /binding_mismatch/);
     const prior={identity:runtime.bindingIdentity,data:runtime.bindingData};await runtime.close();
     await writeFile(executable,source.replace('codex 0.163.0','codex 0.164.0-alpha.11.1'));

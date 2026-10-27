@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {groupConversationStream,processBlockKey,carryExpandedProcessBlocks} from '../src/features/agent-conversations/conversation-state.ts';
+import {groupConversationStream,processBlockKey,carryExpandedProcessBlocks,processEntryStatus} from '../src/features/agent-conversations/conversation-state.ts';
 import {processTool,conversationFileTarget} from '../src/features/agent-conversations/conversation-process.ts';
 const message=(id,text,runId='r1',role='assistant')=>({id,sequence:0,kind:'message',role,text,runId,createdAt:'2026-10-26T00:00:00Z'});
 const tool=(id,options={})=>({...message(id,'output'),kind:'tool',role:'system',status:'completed',...options});
@@ -83,4 +83,14 @@ test('prepending earlier steps preserves expansion of the overlapping process',(
  const current=[{...tool('current'),sequence:10},{...message('answer','完成'),sequence:11}];
  const added=[{...message('question','开始','r1','user'),sequence:1},{...tool('earlier'),sequence:2}];
  const key=processBlockKey([current[0]]),next=carryExpandedProcessBlocks(current,added,{[key]:true});assert.equal(next[processBlockKey([added[1],current[0]])],true);assert.deepEqual(carryExpandedProcessBlocks(current,added,{}),{});
+});
+
+
+test('继续后的历史轮次不会因残留running条目重新显示正在处理，也不伪造成成功',()=>{
+  const old=tool('old',{runId:'old-run',status:'running'}),current=tool('current',{runId:'new-run',status:'running'});
+  const blocks=groupConversationStream([old,message('continue','继续','new-run','user'),current],{id:'new-run',status:'running'}).filter(item=>item.type==='process-block');
+  assert.equal(blocks[0].active,false);assert.equal(processEntryStatus(old,blocks[0].active),'unknown');
+  assert.equal(blocks[1].active,true);assert.equal(processEntryStatus(current,blocks[1].active),'running');
+  assert.equal(processEntryStatus(tool('failed',{status:'failed'}),false),'failed');
+  assert.equal(processEntryStatus(tool('done'),false),'completed');
 });

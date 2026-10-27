@@ -160,3 +160,8 @@ export function carryExpandedProcessBlocks(current:readonly ConversationEntry[],
  for(const item of groupConversationStream(entries,run))if(item.type==='process-block'&&item.entries.some(e=>openIds.has(e.id)))next[processBlockKey(item.entries)]=true;
  return next;
 }
+
+/** Persisted running items do not prove a historical execution is still live. */
+export function processEntryStatus(entry:ConversationEntry,active:boolean):string|undefined {
+  return !active&&(!entry.status||entry.status==='running')?'unknown':entry.status;
+}
