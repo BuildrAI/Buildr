@@ -5,9 +5,10 @@ import { spawn } from 'node:child_process';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { AgentProgramManager, ProgramCandidate, ProgramCatalog } from '../contracts.ts';
-import { fail } from '../domain/agent-state.ts';
+import { AgentServiceError, fail } from '../domain/agent-state.ts';
 import { executableIdentity, findExecutable, inspectVersion, isolatedEnvironment, nativeCommand, privateDirectories } from './native-process.ts';
 import { nativeProgramPolicy, isCompatibleProgram } from './program-policy.ts';
+import { ProgramInstallDiagnostics } from './program-install-diagnostics.ts';
 
 const run = promisify(execFile);
 const sourceLabels = { configured: '原接入程序', selected: '指定程序', path: '本机命令行', managed: 'Buildr 独立安装', application: '桌面应用内程序', sdk: 'Qoder 配套程序' };
@@ -128,9 +129,10 @@ export class NativeProgramManager implements AgentProgramManager {
 async function installPackage(executable: string, args: string[], env: NodeJS.ProcessEnv, signal: AbortSignal): Promise<void> {
   signal.throwIfAborted();
   const command = nativeCommand(executable);
+  const diagnostics = new ProgramInstallDiagnostics(env);
   const child = spawn(command.command, [...command.prefix, ...args], { env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32' });
-  // Never expose npm logs: they may include proxy or registry credentials.
-  child.stdout.on('data', () => {}); child.stderr.on('data', () => {});
+  child.stdout.on('data', chunk => diagnostics.append('stdout', chunk));
+  child.stderr.on('data', chunk => diagnostics.append('stderr', chunk));
   let forceTimer: ReturnType<typeof setTimeout> | undefined;
   const force = () => { if (process.platform !== 'win32' && child.pid) { try { process.kill(-child.pid, 'SIGKILL'); } catch { /* Own process group is gone. */ } } };
   const terminate = () => {
@@ -144,9 +146,13 @@ async function installPackage(executable: string, args: string[], env: NodeJS.Pr
   const timer = setTimeout(() => { timedOut = true; terminate(); }, 10 * 60_000); timer.unref();
   signal.addEventListener('abort', terminate, { once: true }); if (signal.aborted) terminate();
   try {
-    const status = await new Promise<number | null>((resolve, reject) => { child.once('exit', resolve); child.once('error', () => reject(new Error('agent_install_start_failed'))); });
+    const result = await new Promise<{ status: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+      // close follows stdio draining, so a final error fragment is not lost after exit.
+      child.once('close', (status, signal) => resolve({ status, signal }));
+      child.once('error', (error: NodeJS.ErrnoException) => reject(new AgentServiceError('agent_install_start_failed', diagnostics.startFailure(error))));
+    });
     signal.throwIfAborted();
-    if (timedOut) fail('agent_install_timeout', '程序准备超时，请检查网络后重试；原配置已保留。');
-    if (status !== 0) fail('agent_install_failed', '官方下载或安装未完成，请检查网络、磁盘及系统依赖后重试。');
+    if (timedOut) fail('agent_install_timeout', diagnostics.failure(result.status, result.signal, true));
+    if (result.status !== 0) fail('agent_install_failed', diagnostics.failure(result.status, result.signal));
   } finally { if (signal.aborted || timedOut) force(); clearTimeout(forceTimer); clearTimeout(timer); signal.removeEventListener('abort', terminate); }
 }

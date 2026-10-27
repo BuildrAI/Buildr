@@ -5,7 +5,6 @@ export const BOOTSTRAP_CHECK_PATH = 'tools/verification/package-check/bootstrap.
 export const GENERATED_USER_REGISTRY_RESOURCE_SOURCES = Object.freeze([
   `${RESOURCE_WORKSPACE_ROOT}/.buildr/workspace.yml`,
   `${RESOURCE_WORKSPACE_ROOT}/projects/manifest.yml`,
-  `${RESOURCE_WORKSPACE_ROOT}/rules/manifest.yml`,
   `${RESOURCE_WORKSPACE_ROOT}/skills/manifest.yml`,
   `${RESOURCE_WORKSPACE_ROOT}/commands/manifest.yml`,
   `${RESOURCE_WORKSPACE_ROOT}/components/manifest.yml`,

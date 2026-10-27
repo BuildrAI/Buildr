@@ -54,19 +54,6 @@ export function createAgentAssetsHttpContribution(application: any): any  {
         request('agent-assets.inventory', {});
         return { status: 200, body: success('agent-assets.inventory', application.listAgentAssets(root)) };
       }
-      if (httpRequest.method === 'POST' && suffix === '/agent-assets/rules') {
-        authorizeWrite();
-        const input = request('agent-assets.rules.add', await readJsonBody());
-        application.rulesAdd({ id: input.id, description: input.description, path: input.path || `rules/${input.id}.md`, replace: input.replace, scope: '.', targetRoot: root });
-        return { status: 200, body: success('agent-assets.rules.add', { operation: 'rules.add', inventory: application.listAgentAssets(root) }) };
-      }
-      const removeMatch = suffix.match(/^\/agent-assets\/rules\/([^/]+)$/);
-      if (httpRequest.method === 'DELETE' && removeMatch) {
-        authorizeWrite();
-        const input = request('agent-assets.rules.remove', { id: decodeURIComponent(removeMatch[1]) });
-        application.rulesRemove({ id: input.id, keepFile: input.keepFile, scope: '.', targetRoot: root });
-        return { status: 200, body: success('agent-assets.rules.remove', { operation: 'rules.remove', inventory: application.listAgentAssets(root) }) };
-      }
       return null;
     },
     operations: AGENT_ASSETS_HTTP_OPERATIONS,

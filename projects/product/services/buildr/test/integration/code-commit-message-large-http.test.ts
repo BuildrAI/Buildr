@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { createRuntime, runtimeProvide } from '../../src/bootstrap/runtime.ts';
-import { AGENT_OPERATIONS_APPLICATION, type AgentGenerationInput, type AgentOperationsApplication, type AgentRunView } from '../../src/modules/agent-operations/module.ts';
+import { AGENT_SERVICE_APPLICATION } from '../../src/modules/agent-service/module.ts';
+import type { GenerateModel, GenerationRun } from '../../src/modules/code/application/code-generation.ts';
 import { WORKSPACE_APPLICATION } from '../../src/modules/workspace/module.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import type { CodeCommitContextCommitContext, CodeSourceControlSourceControl } from '../../build/generated/code-http-dto.ts';
@@ -11,15 +12,13 @@ import type { CodeCommitMaterial } from '../../src/modules/code/infrastructure/c
 import { COMMIT_MESSAGE_PROMPT_LIMIT_BYTES } from '../../src/modules/code/application/code-commit-message-application.ts';
 import { largeCommitMessageFixture, LARGE_HTML_MARKER, LARGE_PATH_COUNT, LARGE_TEXT_BYTES } from '../fixtures/code-commit-message-large-fixture.ts';
 
-test('93路径与5MiB文本、四份HTML和二进制由Buildr准备16KiB内材料，真实HTTP生成不读工具或改变linked工作树', {skip: process.platform === 'win32' ? 'The protocol process fixture uses a POSIX wrapper.' : false, timeout: 30_000}, async t => {
+test('93路径与5MiB文本、四份HTML和二进制由Buildr准备16KiB内材料，真实HTTP生成不读工具或改变linked工作树', {timeout:30_000}, async t => {
   const fixture = largeCommitMessageFixture(t), runtime = createRuntime();
-  const agents = runtimeProvide(runtime, AGENT_OPERATIONS_APPLICATION) as AgentOperationsApplication;
-  const submissions: AgentGenerationInput[] = [], startGeneration = agents.startGeneration.bind(agents);
-  agents.startGeneration = async input => {submissions.push(input); return startGeneration(input);};
-  const workspace = runtimeProvide(runtime, WORKSPACE_APPLICATION);
-  fixture.onCleanup(() => agents.close());
-  const registry = agents.registerCodex({executable: fixture.executable, codexHome: fixture.home, label: 'Large fixture Codex', expectedRevision: agents.listRegistry().revision});
-  assert.equal(fixture.messages().length, 0, '登记和读取状态不启动模型服务');
+  const models=runtimeProvide(runtime,AGENT_SERVICE_APPLICATION) as {generate:GenerateModel;close():Promise<void>};
+  const submissions: Parameters<GenerateModel>[0][]=[];
+  models.generate=async input=>{submissions.push(input);return JSON.stringify({commitMessage:'feat: 支持有界变更材料'});};
+  const workspace=runtimeProvide(runtime,WORKSPACE_APPLICATION);
+  fixture.onCleanup(()=>models.close());
   const instance = createLocalWorkspaceServer(runtime, {targetRoot: fixture.root, ensureRegisteredTarget: workspace.ensureRegisteredTarget, resolveRegisteredWorkspace: workspace.resolveRegisteredWorkspace});
   fixture.onCleanup(() => new Promise<void>(resolve => instance.server.close(() => resolve())));
   const {url, initialWorkspaceId, sessionToken} = await instance.ready;
@@ -36,38 +35,22 @@ test('93路径与5MiB文本、四份HTML和二进制由Buildr准备16KiB内材�
   assert.equal(fs.statSync(path.join(fixture.location, 'src/large-input.ts')).size, LARGE_TEXT_BYTES);
   assert.ok(fixture.totalBytes > 9 * 1024 * 1024 && fixture.totalBytes < 16 * 1024 * 1024);
   const before = fixture.observe();
-  const request = {...location, expectedRevision: context.revision, agentId: registry.defaultAgentId};
+  const request = {...location, expectedRevision: context.revision, modelAccountId:'account',modelId:'model',accountIdentity:'identity',accountRevision:'v1',label:'Model'};
   const post = (body: unknown) => fetch(base + '/code/commit-message', {method: 'POST', headers: {origin: url, 'content-type': 'application/json', 'x-buildr-session': sessionToken}, body: JSON.stringify(body)});
   await json(await post({...request, execution: {reasoningEffort: 'high', timeoutMs: 600_000}}), 400);
   assert.equal(submissions.length, 0, '网页不能覆盖业务专用执行参数');
-  assert.equal(fixture.messages().length, 0, '非法覆盖不能启动专用服务');
   const generationStarted = performance.now();
-  const started = await json<AgentRunView>(await post(request), 202);
+  const started = await json<GenerationRun>(await post(request), 202);
   assert.equal(submissions.length, 1);
-  assert.equal(submissions[0].execution?.reasoningEffort, 'low');
-  assert.ok(submissions[0].execution!.timeoutMs! > 0 && submissions[0].execution!.timeoutMs! <= 60_000, '本地准备消耗后仅传递整次60秒预算的剩余部分');
-  assert.equal(submissions[0].environment, undefined, '提交说明只使用给定材料，不授予工作树工具环境');
   const deadline = Date.now() + 10_000; let completed = started;
   while (!['succeeded', 'failed', 'cancelled'].includes(completed.status) && Date.now() < deadline) {
     await new Promise(resolve => setTimeout(resolve, 10));
-    completed = await json<AgentRunView>(await fetch(url + '/api/v1/app/agents/runs?' + new URLSearchParams({runId: started.id})));
+    completed = await json<GenerationRun>(await fetch(base + '/code/commit-message-runs?' + new URLSearchParams({runId: started.id}),{headers:{'x-buildr-session':sessionToken}}));
   }
   const generationDurationMs = Math.round(performance.now() - generationStarted);
   assert.equal(completed.status, 'succeeded', JSON.stringify(completed));
-  assert.equal(completed.executionConfig?.reasoningEffort, 'low', '展示服务端确认的专用低推理配置');
   assert.ok(completed.output && typeof completed.output === 'object' && 'commitMessage' in completed.output && typeof completed.output.commitMessage === 'string' && completed.output.commitMessage.trim());
-  const records = fixture.messages(), starts = records.filter(item => item.method === 'thread/start'), turns = records.filter(item => item.method === 'turn/start');
-  assert.equal(records.filter(item => item.boot).length, 1); assert.equal(starts.length, 1); assert.equal(turns.length, 1);
-  const thread = starts[0].params as Record<string, unknown>, turn = turns[0].params as Record<string, unknown> & {input: Array<{type: string; text: string}>};
-  assert.equal(thread.cwd, fixture.location); assert.equal(thread.ephemeral, true); assert.equal(thread.approvalPolicy, 'never'); assert.equal(thread.permissions, undefined); assert.equal(thread.sandbox, 'read-only');
-  const threadConfig = thread.config as Record<string, unknown>;
-  assert.equal(threadConfig.model_reasoning_effort, 'low');
-  for (const feature of ['shell_tool', 'unified_exec', 'code_mode_host', 'apps', 'plugins', 'hooks', 'multi_agent']) assert.equal(threadConfig['features.' + feature], false, feature + ' disabled');
-  assert.equal(threadConfig.project_doc_max_bytes, 0); assert.equal(threadConfig['features.skip_host_skill_discovery'], true);
-  assert.equal(threadConfig.model, undefined); assert.equal(threadConfig.model_provider, undefined);
-  assert.equal(thread.model, undefined); assert.equal(thread.modelProvider, undefined);
-  assert.equal(turn.model, undefined); assert.equal(turn.effort, undefined, '仅会话配置覆盖一次，执行阶段不重复覆写');
-  const prompt = turn.input.find(item => item.type === 'text')!.text;
+  const prompt=submissions[0].prompt;
   assert.ok(Buffer.byteLength(prompt) <= COMMIT_MESSAGE_PROMPT_LIMIT_BYTES, '包括固定指令和材料标记的整次输入不超过16KiB');
   assert.equal(prompt.includes(LARGE_HTML_MARKER), false); assert.equal(prompt.includes('GIT binary patch'), false); assert.doesNotMatch(prompt, /<environment>|"readableRoots"|"cwd"/);
   const match = prompt.match(/<materials>\s*([\s\S]*?)\s*<\/materials>/); assert.ok(match);
@@ -81,8 +64,6 @@ test('93路径与5MiB文本、四份HTML和二进制由Buildr准备16KiB内材�
   assert.ok(materials.rules.some(item => item.text.trim()), 'Buildr提供实际规范片段');
   assert.ok(materials.evidence.some(item => item.path === 'src/large-input.ts' && item.text.includes('ON_DEMAND_LARGE_CONTEXT')), 'Buildr提供实际必要代码片段，不能只给文件名');
   assert.ok(materials.coverage.evidencePartial || materials.coverage.omittedEvidenceFiles > 0, '有界材料明确省略或片段覆盖');
-  assert.equal(records.filter(item => item.inspection).length, 0, 'Agent无工具读取，包括失败读取也不允许');
   assert.deepEqual(fixture.observe(), before, '仅生成说明，HEAD、索引、状态及全部文件保持');
   assert.equal((await json<CodeCommitContextCommitContext>(await fetch(contextUrl))).revision, context.revision);
-  t.diagnostic(JSON.stringify({pathCount: LARGE_PATH_COUNT, textBytes: LARGE_TEXT_BYTES, totalBytes: fixture.totalBytes, initialPromptBytes: Buffer.byteLength(prompt), coverage: materials.coverage, evidencePaths: materials.evidence.map(item => item.path), requestedExecution: submissions[0].execution, executionConfig: completed.executionConfig, generationDurationMs, nativeCommands: 0, result: completed.status, gitUnchanged: true, source: 'linked-worktree', protocolSubstitute: true}));
 });

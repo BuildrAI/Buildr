@@ -25,6 +25,96 @@ function quotePowerShell(value: any) {
   return `'${String(value).replaceAll("'", "''")}'`;
 }
 
+function commandValue(value: any) {
+  return String(value).replaceAll('%', '%%').replaceAll('"', '""');
+}
+
+/** Windows Start Menu shortcut 指向 wscript.exe 隐藏执行的 .vbs；.vbs 再隐藏运行 .cmd runner。 */
+function windowsLauncherWrapperFiles(bindingDir: any) {
+  return {
+    runner: path.join(bindingDir, 'Buildr Web Runner.cmd'),
+    host: path.join(bindingDir, 'Buildr Web.vbs'),
+  };
+}
+
+function windowsWscriptPath(env: any = process.env) {
+  const root = env?.SystemRoot || env?.WINDIR || 'C:\\Windows';
+  return path.win32.join(path.win32.resolve(root), 'System32', 'wscript.exe');
+}
+
+/**
+ * npm Launcher 的 Windows runner 复刻 macOS wrapper 的职责：只执行 binding 记录的
+ * Host Node + package entry + web --launcher-binding，失败时把可诊断输出落到
+ * Launcher 自有日志并以非零码退出，由 .vbs host 给出用户可见反馈。
+ */
+function windowsRunnerScript(binding: any) {
+  // cmd.exe 批处理按 CRLF 分词解析；LF 行尾在多行 if/for 块上会出现静默误解析。
+  return `@echo off
+setlocal
+set "NODE=${commandValue(binding.hostNode.path)}"
+set "ENTRY=${commandValue(binding.packageEntry.path)}"
+set "EXPECTED_NODE_VERSION=${commandValue(binding.hostNode.version)}"
+set "BINDING=${commandValue(binding.bindingPath)}"
+set "LOG_DIR=%~dp0logs"
+set "LOG_FILE=%LOG_DIR%\\launcher.log"
+if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
+echo runner-start >>"%LOG_FILE%"
+if not exist "%NODE%" (
+  echo Host Node unavailable: %NODE% >>"%LOG_FILE%"
+  exit /b 1
+)
+if not exist "%ENTRY%" (
+  echo Buildr entry unavailable: %ENTRY% >>"%LOG_FILE%"
+  exit /b 1
+)
+rem 版本探测不经 for 子命令：for 的 in-command 会再过一次 cmd /c，其旧式引号规则
+rem 会剥掉首尾引号破坏命令行。改为直接落盘再读文件，usebackq 使双引号按文件路径解析。
+"%NODE%" -p "process.versions.node" >"%LOG_DIR%\\node-version.txt" 2>&1
+for /f "usebackq delims=" %%V in ("%LOG_DIR%\\node-version.txt") do set "ACTUAL_NODE_VERSION=%%V"
+del "%LOG_DIR%\\node-version.txt" >nul 2>&1
+if not "%ACTUAL_NODE_VERSION%"=="%EXPECTED_NODE_VERSION%" (
+  echo Host Node version drifted: %ACTUAL_NODE_VERSION% >>"%LOG_FILE%"
+  exit /b 1
+)
+echo Node identity: executable=%NODE% version=%ACTUAL_NODE_VERSION% >>"%LOG_FILE%"
+"%NODE%" "%ENTRY%" web --launcher-binding "%BINDING%" >>"%LOG_FILE%" 2>&1
+exit /b %ERRORLEVEL%
+`.replaceAll('\n', '\r\n');
+}
+
+/** wscript.exe 以窗口样式 0 隐藏运行 runner，不占控制台；非零退出时给出简短可见反馈。 */
+function windowsHostScript(wrapper: any) {
+  const script = `Set shell = CreateObject("WScript.Shell")
+Set files = CreateObject("Scripting.FileSystemObject")
+base = files.GetParentFolderName(WScript.ScriptFullName)
+On Error Resume Next
+If Not files.FolderExists(base & "\\logs") Then files.CreateFolder(base & "\\logs")
+Set logFile = files.OpenTextFile(base & "\\logs\\launcher.log", 8, True)
+logFile.WriteLine "Launcher host invoking runner"
+logFile.Close
+On Error GoTo 0
+command = Chr(34) & base & "\\${path.basename(wrapper.runner)}" & Chr(34)
+On Error Resume Next
+exitCode = shell.Run(command, 0, True)
+runError = Err.Number
+On Error GoTo 0
+If runError <> 0 Then
+  On Error Resume Next
+  Set logFile = files.OpenTextFile(base & "\\logs\\launcher.log", 8, True)
+  logFile.WriteLine "Launcher host could not execute runner: error=" & runError
+  logFile.Close
+  On Error GoTo 0
+End If
+If runError <> 0 Or exitCode <> 0 Then
+  If shell.ExpandEnvironmentStrings("%BUILDR_LAUNCHER_NO_NOTIFY%") <> "1" Then
+    MsgBox "Buildr Web 无法启动。请在终端运行 buildr web launcher status 查看诊断，或执行 buildr web launcher repair 修复。", 16, "Buildr Web"
+  End If
+  WScript.Quit 1
+End If
+`;
+  return Buffer.from(`\uFEFF${script}`, 'utf16le');
+}
+
 /**
  * macOS install 的默认目标固定为 /Applications；status/repair/uninstall/refresh 等既有
  * 管理动作按候选顺序探测真实目标，使早期装在 ~/Applications 的 Launcher 仍可管理。
@@ -171,8 +261,9 @@ function writeMacLauncherCandidate(stage: any, binding: any) {
   if (process.platform === 'darwin' && signed.status !== 0) throw new Error(`Cannot ad-hoc sign Buildr Web Launcher: ${(signed.stderr || '').trim()}`);
 }
 
-function windowsShortcutScript(target: any, binding: any, icon: any) {
-  const argumentsValue = `"${binding.packageEntry.path.replaceAll('"', '""')}" web --launcher-binding "${binding.bindingPath.replaceAll('"', '""')}"`;
+function windowsShortcutScript(target: any, binding: any, icon: any, options: any = {}) {
+  const wrapper = windowsLauncherWrapperFiles(path.dirname(binding.bindingPath));
+  const argumentsValue = `"${wrapper.host.replaceAll('"', '""')}"`;
   return [
     '$ErrorActionPreference = "Stop"',
     `$target = ${quotePowerShell(target)}`,
@@ -180,7 +271,7 @@ function windowsShortcutScript(target: any, binding: any, icon: any) {
     'New-Item -ItemType Directory -Force -Path $parent | Out-Null',
     '$shell = New-Object -ComObject WScript.Shell',
     '$shortcut = $shell.CreateShortcut($target)',
-    `$shortcut.TargetPath = ${quotePowerShell(binding.hostNode.path)}`,
+    `$shortcut.TargetPath = ${quotePowerShell(windowsWscriptPath(options.env))}`,
     `$shortcut.Arguments = ${quotePowerShell(argumentsValue)}`,
     `$shortcut.WorkingDirectory = ${quotePowerShell(binding.packageRoot)}`,
     `$shortcut.IconLocation = ${quotePowerShell(`${icon},0`)}`,
@@ -193,38 +284,43 @@ function writeWindowsLauncherCandidate(target: any, binding: any, options: any =
   const bindingDir = path.dirname(binding.bindingPath);
   fs.mkdirSync(bindingDir, { recursive: true });
   const icon = path.join(bindingDir, 'Buildr.ico');
+  const wrapper = windowsLauncherWrapperFiles(bindingDir);
   const token = `${process.pid}-${crypto.randomUUID()}`;
-  const stagedBinding = `${binding.bindingPath}.buildr-stage-${token}`;
-  const stagedIcon = `${icon}.buildr-stage-${token}`;
-  const originals = [target, binding.bindingPath, icon].map((file: any) => ({ file, backup: `${file}.buildr-backup-${token}`, present: fs.existsSync(file), moved: false }));
+  const stagedFiles = [
+    { file: binding.bindingPath, staged: `${binding.bindingPath}.buildr-stage-${token}` },
+    { file: icon, staged: `${icon}.buildr-stage-${token}` },
+    { file: wrapper.runner, staged: `${wrapper.runner}.buildr-stage-${token}` },
+    { file: wrapper.host, staged: `${wrapper.host}.buildr-stage-${token}` },
+  ];
+  const originals = [target, ...stagedFiles.map(({ file }) => file)].map((file: any) => ({ file, backup: `${file}.buildr-backup-${token}`, present: fs.existsSync(file), moved: false }));
   const restore = () => {
     for (const { file, present, moved } of originals) if (moved || !present) fs.rmSync(file, { force: true });
     for (const { file, backup, moved } of originals) if (moved && fs.existsSync(backup)) fs.renameSync(backup, file);
   };
   try {
-    fs.copyFileSync(resolveProductResource('product/resources/installation/launcher/Buildr.ico'), stagedIcon);
-    atomicWriteJson(stagedBinding, binding, { mode: 0o600 });
+    fs.copyFileSync(resolveProductResource('product/resources/installation/launcher/Buildr.ico'), stagedFiles[1].staged);
+    atomicWriteJson(stagedFiles[0].staged, binding, { mode: 0o600 });
+    fs.writeFileSync(stagedFiles[2].staged, windowsRunnerScript(binding), { encoding: 'utf8', mode: 0o755 });
+    fs.writeFileSync(stagedFiles[3].staged, windowsHostScript(wrapper));
     for (const original of originals) if (original.present) {
       fs.renameSync(original.file, original.backup);
       original.moved = true;
     }
-    fs.renameSync(stagedBinding, binding.bindingPath);
-    fs.renameSync(stagedIcon, icon);
-    if (options.writeShortcut) options.writeShortcut({ target, binding, icon });
+    for (const { file, staged } of stagedFiles) fs.renameSync(staged, file);
+    if (options.writeShortcut) options.writeShortcut({ target, binding, icon, wrapper });
     else {
       if (process.platform !== 'win32') throw new Error('Windows Launcher shortcut creation requires a Windows host.');
-      const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', windowsShortcutScript(target, binding, icon)], { encoding: 'utf8' });
+      const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', windowsShortcutScript(target, binding, icon, options)], { encoding: 'utf8', windowsHide: true });
       if (result.status !== 0) throw new Error(`Cannot create Buildr Web shortcut: ${(result.stderr || '').trim()}`);
     }
     const shortcut = readWindowsShortcut(target, options);
-    const expected = expectedWindowsShortcut(binding);
+    const expected = expectedWindowsShortcut(binding, options.env);
     if (!shortcut || !Object.entries(expected).every(([field, value]: any) => String(shortcut[field] || '').toLowerCase() === String(value).toLowerCase())) {
       throw new Error('Created Buildr Web shortcut does not match its npm Launcher binding.');
     }
     for (const { backup } of originals) fs.rmSync(backup, { force: true });
   } catch (error: any) {
-    fs.rmSync(stagedBinding, { force: true });
-    fs.rmSync(stagedIcon, { force: true });
+    for (const { staged } of stagedFiles) fs.rmSync(staged, { force: true });
     restore();
     throw error;
   }
@@ -247,10 +343,11 @@ function readWindowsShortcut(target: any, options: any = {}) {
   return JSON.parse(result.stdout);
 }
 
-function expectedWindowsShortcut(binding: any) {
+function expectedWindowsShortcut(binding: any, env: any = process.env) {
+  const wrapper = windowsLauncherWrapperFiles(path.dirname(binding.bindingPath));
   return {
-    target: binding.hostNode.path,
-    arguments: `"${binding.packageEntry.path}" web --launcher-binding "${binding.bindingPath}"`,
+    target: windowsWscriptPath(env),
+    arguments: `"${wrapper.host}"`,
     workingDirectory: binding.packageRoot,
   };
 }
@@ -276,9 +373,18 @@ function launcherStructure(platform: any, target: any, observed: any, options: a
     if (!shortcut) return options.readShortcut
       ? { ...observed, status: 'stale', code: 'launcher.shortcut_missing', message: `Launcher shortcut is unavailable: ${target}.` }
       : observed;
-    const expected = expectedWindowsShortcut(observed.binding);
+    const expected = expectedWindowsShortcut(observed.binding, options.env);
     const equal = Object.entries(expected).every(([field, value]: any) => String(shortcut[field] || '').toLowerCase() === String(value).toLowerCase());
     if (!equal) return { ...observed, status: 'invalid', code: 'launcher.shortcut_foreign', message: 'Launcher shortcut target, arguments, or working directory differs from its binding.' };
+    const wrapper = windowsLauncherWrapperFiles(path.dirname(observed.binding.bindingPath));
+    const wrapperFiles: Array<[string, Buffer]> = [
+      [wrapper.runner, Buffer.from(windowsRunnerScript(observed.binding), 'utf8')],
+      [wrapper.host, windowsHostScript(wrapper)],
+    ];
+    for (const [file, expectedBytes] of wrapperFiles) {
+      if (!fs.statSync(file, { throwIfNoEntry: false })?.isFile()) return { ...observed, status: 'stale', code: 'launcher.structure_drift', message: `Launcher wrapper is missing: ${file}.` };
+      if (!fs.readFileSync(file).equals(expectedBytes)) return { ...observed, status: 'stale', code: 'launcher.wrapper_drift', message: `Launcher wrapper bytes differ from the recorded npm binding: ${file}.` };
+    }
   }
   return observed;
 }
@@ -420,7 +526,10 @@ export function uninstallNpmLauncher({ registration, platform = process.platform
   else if (platform === 'win32') {
     fs.rmSync(resolvedTarget, { force: true });
     fs.rmSync(bindingPath, { force: true });
+    const wrapper = windowsLauncherWrapperFiles(path.dirname(bindingPath));
     fs.rmSync(path.join(path.dirname(bindingPath), 'Buildr.ico'), { force: true });
+    fs.rmSync(wrapper.runner, { force: true });
+    fs.rmSync(wrapper.host, { force: true });
   }
   return { ...npmLauncherStatus({ platform, target: resolvedTarget }), action: observed.status === 'absent' ? 'absent' : 'uninstalled' };
 }

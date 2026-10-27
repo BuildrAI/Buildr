@@ -20,7 +20,6 @@ test('用户 Registry 不作为产品包源或映射存在', () => {
   assert.deepEqual(GENERATED_USER_REGISTRY_RESOURCE_SOURCES, [
     'resources/workspace/.buildr/workspace.yml',
     'resources/workspace/projects/manifest.yml',
-    'resources/workspace/rules/manifest.yml',
     'resources/workspace/skills/manifest.yml',
     'resources/workspace/commands/manifest.yml',
     'resources/workspace/components/manifest.yml',

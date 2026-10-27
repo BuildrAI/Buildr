@@ -16,5 +16,5 @@
 
 .task-row-heading{display:flex;align-items:baseline;min-width:0}.task-row-heading .task-row-main{flex:0 1 auto;min-width:0}.task-row-heading .task-type-badge{flex:none}
 
-.task-goal-preview{width:min(520px,75vw);max-height:min(440px,65vh);overflow:auto;line-height:1.8}.task-goal-preview .markdown-body{font-size:13px}.task-goal-summary{cursor:help}.task-goal-summary:focus-visible{outline:2px solid var(--soft-primary,#397d74);outline-offset:2px}
+.task-goal-summary:focus-visible{outline:2px solid var(--soft-primary,#397d74);outline-offset:2px}
 .task-list-table .ant-table-tbody>tr.ant-table-row:hover>td,.task-list-table .ant-table-tbody>tr.ant-table-row:focus-within>td{background:var(--soft-primary-soft,#e7efec)}

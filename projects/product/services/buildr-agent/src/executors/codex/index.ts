@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import { errorDiagnostic } from '../../domain/error-diagnostic.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
 import { join } from 'node:path';
 import { lstat, readFile, writeFile } from 'node:fs/promises';
@@ -30,7 +31,7 @@ function codexGatewayCatalog(gateway: ExecutorGateway) {
     truncation_policy: { mode: 'tokens', limit: 10000 },
   })) };
 }
-interface ActiveTurn { contextId: string; id: string; input: ExecutorSendInput; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown'; processId?: string }>; pending: Map<string, { nativeId: string | number; method: string; params: any }>; texts: Map<string, string>; terminal?: 'completed' | 'stopped' | 'failed'; done: () => void; reject: (error: Error) => void; accepted: boolean; buffered: RpcMessage[] }
+interface ActiveTurn { contextId: string; id: string; input: ExecutorSendInput; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown'; processId?: string }>; pending: Map<string, { nativeId: string | number; method: string; params: any }>; texts: Map<string, string>; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; done: () => void; reject: (error: Error) => void; accepted: boolean; buffered: RpcMessage[] }
 export function createCodexExecutor(): AgentExecutor {
   return { descriptor: { id: 'codex', label: 'Codex', capabilities }, async open(options) { return await CodexRuntime.open(options); } };
 }
@@ -42,6 +43,7 @@ class CodexRuntime implements AgentRuntime {
   readonly bindingIdentity: string;
   bindingData?: Record<string, unknown>;
   private rpc: NativeRpc;
+  get closed(): boolean { return this.rpc.closed; }
   private readonly titleDirectory: string;
   private readonly auxiliary = new Set<string>();
   private gateway?: ExecutorGateway;
@@ -169,6 +171,11 @@ class CodexRuntime implements AgentRuntime {
     if (this.gateway) input = { ...input, model: gatewayModel(this.gateway).id };
     return await generateCodexTitle(this.rpc, input, this.titleDirectory, this.auxiliary);
   }
+  async summarizeHandoff(input:ExecutorTitleInput):Promise<string|undefined>{
+    this.reference(input.contextRef,input.cwd);
+    if(this.gateway)input={...input,model:gatewayModel(this.gateway).id};
+    return generateCodexTitle(this.rpc,input,this.titleDirectory,this.auxiliary,true);
+  }
   async send(input: ExecutorSendInput): Promise<void> {
     this.reference(input.contextRef, input.cwd);
     if (this.gateway) {
@@ -192,6 +199,10 @@ class CodexRuntime implements AgentRuntime {
     } catch (error) { if (!turn.accepted) { this.turns.delete(turn.contextId); } throw error; }
   }
   private message(message: RpcMessage): void {
+    if (message.method === 'buildr/eventConsumerFailed') {
+      for (const turn of this.turns.values()) if (!turn.terminal && (!message.params?.threadId || turn.contextId === message.params.threadId)) turn.reject(new Error('codex_event_observation_lost'));
+      return;
+    }
     if (message.method === 'buildr/transportClosed') { for (const turn of this.turns.values()) if (!turn.terminal) turn.reject(new Error('codex_execution_observation_lost')); return; }
     if (message.method === 'account/login/completed') {
       const login = this.login;
@@ -213,6 +224,7 @@ class CodexRuntime implements AgentRuntime {
     if(message.method==='thread/tokenUsage/updated'){const usage=p.tokenUsage;const used=usage?.last?.totalTokens;const window=usage?.modelContextWindow;if(Number.isSafeInteger(used)&&used>=0)emit({type:'context-usage',usedTokens:used,...(Number.isSafeInteger(window)&&window>0?{windowTokens:window}:{})});return;}
     if (message.method === 'thread/name/updated') { if (typeof p.threadName === 'string') emit({ type: 'title', title: p.threadName }); return; }
     if (p.turnId && p.turnId !== turn.id || p.turn?.id && p.turn.id !== turn.id) return;
+    if (message.method === 'error' && !p.willRetry) turn.diagnostic = errorDiagnostic(p.error?.message, this.gateway ? [this.gateway.apiKey] : []);
     if (message.id !== undefined && message.method) {
       const request = codexRequest(String(message.id), message.method, p);
       if (!request) { this.rpc.write({ id: message.id, error: { code: -32601, message: 'Unsupported Buildr request' } }); return; }
@@ -231,13 +243,21 @@ class CodexRuntime implements AgentRuntime {
     }
     if (message.method === 'turn/completed') {
       turn.terminal = p.turn?.status === 'completed' ? 'completed' : p.turn?.status === 'interrupted' ? 'stopped' : 'failed';
-      for (const request of turn.pending.keys()) emit({ type: 'request-resolved', requestId: request }); turn.pending.clear();
-      emit({ type: 'completed', status: turn.terminal, ...(turn.terminal === 'failed' ? { diagnostic: 'codex_turn_failed' } : {}) }); turn.done();
+      if (turn.terminal === 'failed') {
+        const message = errorDiagnostic(p.turn?.error?.message, this.gateway ? [this.gateway.apiKey] : []) ?? turn.diagnostic;
+        turn.diagnostic = message ? `Codex · ${turn.tools.size ? '工具调用后' : '本轮执行'}：${message}` : 'codex_turn_failed';
+      } else turn.diagnostic = undefined;
+      try {
+        for (const request of turn.pending.keys()) emit({ type: 'request-resolved', requestId: request }); turn.pending.clear();
+        emit({ type: 'completed', status: turn.terminal, ...(turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) });
+        // Recovered observers can outlive send's rejected wait.
+        emit({ type: 'observation', observation: this.activeObservation(turn) });
+      } finally { turn.done(); } // A local terminal projection failure cannot strand send.
     }
   }
   private activeObservation(turn: ActiveTurn): ExecutorObservation {
     const tools = [...turn.tools.values()].map(({ processId, ...tool }) => ({ ...tool, canStop: Boolean(processId) && tool.status === 'running' }));
-    return { status: turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : turn.terminal === 'stopped' ? 'stopped' : 'idle' : turn.pending.size ? 'waiting' : 'running', executionRef: { id: turn.id }, tools };
+    return { status: turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : turn.terminal === 'stopped' ? 'stopped' : 'idle' : turn.pending.size ? 'waiting' : 'running', executionRef: { id: turn.id }, tools, ...(turn.terminal === 'failed' && turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
   }
   async observe({ contextRef, executionRef }: { contextRef: ContextRef; executionRef?: ExecutionRef }): Promise<ExecutorObservation> {
     this.reference(contextRef);
@@ -246,7 +266,7 @@ class CodexRuntime implements AgentRuntime {
     const history = await this.rpc.call('thread/read', { threadId: contextRef.id, includeTurns: true });
     const exact = executionRef ? history.thread?.turns?.find((item: any) => item.id === executionRef.id) : history.thread?.turns?.at(-1);
     if (!exact) return { status: 'unknown', tools: [], diagnostic: 'codex_turn_not_observed' };
-    return { status: exact.status === 'inProgress' ? 'unknown' : exact.status === 'interrupted' ? 'stopped' : 'idle', executionRef: { id: exact.id }, tools: (exact.items ?? []).filter((item: any) => item.type === 'commandExecution' && item.status === 'inProgress').map((item: any) => ({ id: item.id, label: String(item.command ?? '命令'), status: 'unknown' as const, canStop: false })) };
+    return { status: exact.status === 'inProgress' ? 'unknown' : exact.status === 'interrupted' ? 'stopped' : 'idle', executionRef: { id: exact.id }, tools: (exact.items ?? []).filter((item: any) => ['commandExecution', 'fileChange', 'mcpToolCall'].includes(item.type) && !['completed', 'failed', 'declined'].includes(item.status)).map((item: any) => ({ id: item.id, label: String(item.command ?? '命令'), status: 'unknown' as const, canStop: false })) };
   }
   async reply({ contextRef, executionRef, requestId, answer }: { contextRef: ContextRef; executionRef: ExecutionRef; requestId: string; answer: unknown }): Promise<void> {
     this.reference(contextRef); const turn = this.turns.get(contextRef.id); const pending = turn?.pending.get(requestId);
@@ -307,12 +327,14 @@ class CodexRuntime implements AgentRuntime {
 }
 function codexItem(item: any, executionId: string, status: string): ExecutorItem[] {
   if (!item?.id) return [];
-  const final = status === 'completed' ? 'completed' as const : status === 'failed' ? 'failed' as const : 'running' as const;
+  // A stopped turn does not undo tools which already completed. Conversely,
+  // an unfinished historical item is uncertain, not a live execution.
+  const final: ExecutorItem['status'] = item.status === 'completed' ? 'completed' : item.status === 'failed' || item.status === 'declined' ? 'failed' : item.status === 'inProgress' ? status === 'inProgress' ? 'running' : undefined : status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : status === 'interrupted' ? undefined : 'running';
   if (item.type === 'agentMessage') return [{ id: item.id, kind: 'message', role: 'assistant', text: String(item.text ?? ''), executionId, status: final }];
   if (item.type === 'userMessage') return [{ id: item.id, kind: 'message', role: 'user', text: visibleText(item.content), executionId, status: 'completed' }];
-  if (item.type === 'commandExecution') return [{ id: item.id, kind: 'tool', role: 'system', text: String(item.command ?? '命令') + (item.aggregatedOutput ? '\n' + nativePreview(String(item.aggregatedOutput)) : ''), executionId, status: final }];
-  if (item.type === 'fileChange') return [{ id: item.id, kind: 'tool', role: 'system', text: '修改文件\n' + (item.changes ?? []).map((change: any) => String(change.path ?? '')).join('\n'), executionId, status: final }];
-  if (item.type === 'mcpToolCall') return [{ id: item.id, kind: 'tool', role: 'system', text: String(item.tool ?? '工具'), executionId, status: final }];
+  if (item.type === 'commandExecution') return [{ id: item.id, kind: 'tool', role: 'system', name: 'command', input: String(item.command ?? ''), text: String(item.command ?? '命令') + (item.aggregatedOutput ? '\n' + nativePreview(String(item.aggregatedOutput)) : ''), executionId, status: final }];
+  if (item.type === 'fileChange') return [{ id: item.id, kind: 'tool', role: 'system', name: 'file-change', text: '修改文件\n' + (item.changes ?? []).map((change: any) => String(change.path ?? '')).join('\n'), executionId, status: final }];
+  if (item.type === 'mcpToolCall') return [{ id: item.id, kind: 'tool', role: 'system', name: 'mcp-tool', input: item.arguments === undefined ? undefined : nativePreview(JSON.stringify(item.arguments)), text: String(item.tool ?? '工具'), executionId, status: final }];
   return [];
 }
 function codexRequest(id: string, method: string, params: any): ExecutorRequest | undefined {

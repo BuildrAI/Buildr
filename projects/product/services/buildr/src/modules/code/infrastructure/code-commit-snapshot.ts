@@ -78,11 +78,20 @@ export function readCommitSnapshot(source: CodeSource, options: CodeCommitSnapsh
   return { source, revision, head: status.head, branch: status.branch, branchRef, paths, files, diff, indexPath, indexDigest, indexRevision, configDigest, hasChanges: status.files.length > 0 };
 }
 
-export function readCodePushSnapshot(source: CodeSource): CodePushSnapshot {
+export function readCodePushSnapshot(source: CodeSource, options: { configuration?: Buffer } = {}): CodePushSnapshot {
   const branchRef = optional(source, ['symbolic-ref', '-q', 'HEAD']), head = optional(source, ['rev-parse', '--verify', 'HEAD^{commit}']);
   const branch = branchRef?.startsWith('refs/heads/') ? branchRef.slice(11) : null;
-  const remote = branch ? optional(source, ['config', '--get', 'branch.' + branch + '.remote']) : null;
-  const destinationRef = branch ? optional(source, ['config', '--get', 'branch.' + branch + '.merge']) : null;
+  const configuration = options.configuration ?? codeGit(source.location, ['config', '--null', '--list']);
+  const configValue = (key: string) => {
+    let value: string | undefined;
+    for (const record of configuration.toString('utf8').split('\0')) {
+      const newline = record.indexOf('\n');
+      if (newline > 0 && record.slice(0, newline) === key) value = record.slice(newline + 1);
+    }
+    return value || null;
+  };
+  const remote = branch ? configValue('branch.' + branch + '.remote') : null;
+  const destinationRef = branch ? configValue('branch.' + branch + '.merge') : null;
   const urls = remote && remote !== '.' ? optional(source, ['remote', 'get-url', '--push', '--all', remote])?.split('\n') || [] : [];
   const url = urls.length === 1 && !/[\0\r\n]/.test(urls[0]) ? urls[0] : null;
   const upstreamRef = branchRef ? optional(source, ['for-each-ref', '--format=%(upstream)', branchRef]) : null;

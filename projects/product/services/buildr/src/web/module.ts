@@ -34,7 +34,7 @@ type WebModuleDependency = {
 };
 type WebModuleRequires = Record<string, WebModuleDependency>;
 
-export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: { httpContributions?: unknown[]; closeResources?: () => Promise<void> } = {}) {
+export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: { httpContributions?: unknown[]; closeResources?: () => Promise<void>; onReady?:()=>void } = {}) {
   const httpContributions = options.httpContributions || [];
   return Object.freeze({
     id: WEB_MODULE_ID,
@@ -61,7 +61,7 @@ export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: {
       registerWebInstanceLifecycle(composition, {
         httpContributions,
         closeResources: options.closeResources,
-        createLocalWorkspaceServer: (webRuntime, serverOptions) => Reflect.apply(createLocalWorkspaceServer, undefined, [webRuntime, { ...serverOptions, onReady: () => { if (!serverOptions.previewIdentity) resumeUpdate(); } }]),
+        createLocalWorkspaceServer: (webRuntime, serverOptions) => Reflect.apply(createLocalWorkspaceServer, undefined, [webRuntime, { ...serverOptions, onReady: () => { if (!serverOptions.previewIdentity) { options.onReady?.(); resumeUpdate(); } } }]),
         ensureRegisteredTarget: workspace.ensureRegisteredTarget,
         resolveRegisteredWorkspace: workspace.resolveRegisteredWorkspace,
         readProductIdentity: identity.readCurrentProductIdentity,

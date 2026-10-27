@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createModelAccess } from '../../src/model-access/application.ts';
 import { translateRequest, translateResponse, type OpaqueReasoning } from '../../src/model-access/protocols.ts';
-import type { ModelProvider, ProviderInferenceInput, ProtocolJson } from '../../src/model-access/contracts.ts';
+import type { ModelOffering, ModelProvider, ProviderInferenceInput, ProtocolJson } from '../../src/model-access/contracts.ts';
 
 const model={id:'source-model',label:'真实来源模型',images:true,tools:true,contextWindow:32000};
 const noOpaque:OpaqueReasoning={encode(value){return JSON.stringify(value);},decode(value){return JSON.parse(value);}};
@@ -14,6 +14,45 @@ function provider(infer:(input:ProviderInferenceInput)=>Promise<Response>,protoc
 }
 const chat=(message:ProtocolJson)=>Response.json({choices:[{message,finish_reason:message.tool_calls?'tool_calls':'stop'}],usage:{prompt_tokens:12,completion_tokens:4}});
 function frames(values:unknown[]){return new Response(values.map(value=>'data: '+JSON.stringify(value)+'\n\n').join('')+'data: [DONE]\n\n',{headers:{'Content-Type':'text/event-stream'}});}
+
+test('gateway preserves a bounded HTTP failure before streaming without exposing credentials or HTML',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-model-error-'));let mode='json';
+  const access=createModelAccess({root,providers:[provider(async()=>mode==='json'?Response.json({error:{code:'model_devin_quota_or_rate_limit',message:'Devin · 请求响应：HTTP 429 Authorization: Bearer private-token'}},{status:429}):new Response('<html>private upstream body</html>',{status:503}))]});
+  try{
+    const added=await access.accounts.add({provider:'fixture'}),ready=await checkEnabled(access,added.id);
+    const lease=await access.leases.create({accountId:ready.id,modelId:model.id,agentId:'codex',conversationId:'one',runId:'one'});
+    const request=()=>fetch(lease.baseUrl+'/responses',{method:'POST',headers:{Authorization:'Bearer '+lease.apiKey,'Content-Type':'application/json'},body:JSON.stringify({model:lease.model,input:'test',stream:true})});
+    const response=await request();assert.equal(response.status,429);const result=await response.json();
+    assert.equal(result.error.code,'model_devin_quota_or_rate_limit');assert.match(result.error.message,/请求响应.*429/);assert.ok(!JSON.stringify(result).includes('private-token'));
+    mode='html';const other=await request();assert.equal(other.status,503);assert.ok(!(await other.text()).includes('private upstream body'));
+  }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('account checks only rotate revisions for material changes in that account',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-model-revisions-')),models=new Map<string,ModelOffering[]>();let tick=0;
+  const ordered:ModelOffering={id:'ordered-model',label:'Ordered',images:false,tools:true,reasoningEfforts:[{id:'high',label:'高'},{id:'low',label:'低'}],defaultServiceTier:'standard',serviceTiers:[
+    {id:'standard',label:'标准',reasoningEfforts:[{id:'high',label:'高'},{id:'medium',label:'中'}],defaultReasoningEffort:'medium'},
+    {id:'fast',label:'快速',reasoningEfforts:[{id:'low',label:'低'}],defaultReasoningEffort:'low'},
+  ]};
+  const source:ModelProvider={id:'fixture',label:'Fixture',async open({accountId}){return{protocol:'chat-completions',async inspect(){return{status:'ready',models:structuredClone(models.get(accountId)??[model]),quota:{available:true,observedAt:new Date(Date.UTC(2026,9,25,0,0,tick++)).toISOString()}};},async beginLogin(){},async cancelLogin(){},async infer(){return Response.json({});},async close(){}};}};
+  const access=createModelAccess({root,providers:[source]});
+  try{
+    const first=await access.accounts.add({provider:'fixture'}),second=await access.accounts.add({provider:'fixture'});
+    models.set(first.id,[model,ordered]);
+    for(const account of [first,second]){const checked=await access.accounts.check(account.id);await access.accounts.preferences(account.id,{expectedRevision:checked.revision,models:checked.models.map(model=>({id:model.id,enabled:true}))});}
+    const firstBefore=access.accounts.read(first.id),secondBefore=access.accounts.read(second.id);
+    models.set(first.id,[{...ordered,reasoningEfforts:[...ordered.reasoningEfforts!].reverse(),serviceTiers:[...ordered.serviceTiers!].reverse().map(tier=>({...tier,reasoningEfforts:[...tier.reasoningEfforts!].reverse()}))},model]);
+    await access.accounts.check(first.id);await access.accounts.check(second.id);
+    assert.equal(access.accounts.read(first.id).revision,firstBefore.revision,'quota, time and returned ordering alone must not rotate the revision');
+    assert.equal(access.accounts.read(second.id).revision,secondBefore.revision,'other accounts keep their own revision');
+    models.set(first.id,[model,{id:'new-model',label:'New model',images:false,tools:true}]);
+    await access.accounts.check(first.id);
+    assert.notEqual(access.accounts.read(first.id).revision,firstBefore.revision,'material catalog changes rotate the account revision');
+    assert.equal(access.accounts.read(second.id).revision,secondBefore.revision,'another account is unaffected');
+    const lease=await access.leases.create({accountId:second.id,modelId:model.id,expectedRevision:secondBefore.revision,agentId:'qoder',conversationId:'conversation',runId:'run'});
+    assert.equal(lease.accountId,second.id);
+  }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});
 
 test('private metadata survives restart; stale account writes and unbound models are rejected',async()=>{
   const root=await mkdtemp(join(tmpdir(),'buildr-model-access-'));let called=0;
@@ -74,6 +113,33 @@ test('cross-protocol streams preserve content order and never complete a truncat
   const output=await response.text();const final=output.split('\n').filter(line=>line.startsWith('data: ')).map(line=>JSON.parse(line.slice(6))).find(item=>item.type==='response.completed');
   assert.deepEqual(final.response.output.map((item:ProtocolJson)=>item.type),['message','function_call','message']);assert.equal(final.response.output[1].arguments,'{"command":"pwd"}');
   const truncated=await translateResponse(frames([{choices:[{delta:{content:'partial'}}]}]),'chat-completions','responses',{model:'route',stream:true,request:{},opaque:noOpaque,signal:new AbortController().signal});const text=await truncated.text();assert.ok(text.includes('response.failed'));assert.ok(!text.includes('response.completed'));
+});
+
+test('streamed parallel tools and a delayed reasoning signature replay as the same signed assistant turn',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-model-signed-turn-'));const inputs:ProviderInferenceInput[]=[];
+  const source=provider(async input=>{
+    inputs.push(input);
+    if(inputs.length>1)return chat({content:'checked'});
+    return frames([
+      {choices:[{delta:{reasoning_content:'private thought'}}]},
+      {choices:[{delta:{content:'reading files'}}]},
+      {choices:[{delta:{tool_calls:[{index:0,id:'read-a',function:{name:'read',arguments:'{"path":"a"}'}},{index:1,id:'read-b',function:{name:'read',arguments:'{"path":"b"}'}}]}}]},
+      {choices:[{delta:{reasoning_signature:'signed-turn'},finish_reason:'tool_calls'}]},
+    ]);
+  });
+  const access=createModelAccess({root,providers:[source]});
+  try{
+    const added=await access.accounts.add({provider:'fixture'}),ready=await checkEnabled(access,added.id),lease=await access.leases.create({accountId:ready.id,modelId:model.id,agentId:'dsh',conversationId:'signed',runId:'1'});
+    const request=async(body:ProtocolJson)=>fetch(lease.baseUrl+'/responses',{method:'POST',headers:{Authorization:'Bearer '+lease.apiKey,'Content-Type':'application/json'},body:JSON.stringify({model:lease.model,...body})});
+    const response=await request({input:'inspect',stream:true});const events=(await response.text()).split('\n').filter(line=>line.startsWith('data: ')).map(line=>JSON.parse(line.slice(6)));
+    const output=events.find(event=>event.type==='response.completed').response.output as ProtocolJson[];
+    const replay=await request({input:[{role:'user',content:'inspect'},...output,...['read-a','read-b'].map(call_id=>({type:'function_call_output',call_id,output:'value '+call_id}))]});
+    assert.equal(replay.status,200);await replay.arrayBuffer();
+    const messages=inputs[1].body.messages as ProtocolJson[];
+    assert.deepEqual(messages.map(message=>message.role),['user','assistant','tool','tool']);
+    assert.deepEqual(messages[1],{role:'assistant',content:'reading files',tool_calls:['a','b'].map(path=>({id:'read-'+path,type:'function',function:{name:'read',arguments:JSON.stringify({path})}})),reasoning_content:'private thought',reasoning_signature:'signed-turn'});
+    assert.deepEqual(messages.slice(2).map(message=>[message.tool_call_id,message.content]),[['read-a','value read-a'],['read-b','value read-b']]);
+  }finally{await access.close();await rm(root,{recursive:true,force:true});}
 });
 
 test('corrupt model metadata does not prevent construction or overwrite retained facts',async()=>{
@@ -150,3 +216,30 @@ test('login remains checking until model discovery completes and cancelled disco
 });
 
 async function checkEnabled(application:any,id:string,input:any={}){const row=await application.accounts.check(id,input);const disabled=row.models.filter((model:any)=>model.enabled===false);return disabled.length?await application.accounts.preferences(id,{expectedRevision:row.revision,models:disabled.map((model:any)=>({id:model.id,enabled:true}))}):row;}
+
+test('single generation uses the selected account without tools or persistent conversation and rejects stale identity',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-model-generate-'));const inputs:ProviderInferenceInput[]=[];
+ const access=createModelAccess({root,providers:[provider(async input=>{inputs.push(input);return chat({content:'{"commitMessage":"ok"}'});})]});
+ try{
+  const added=await access.accounts.add({provider:'fixture'}),ready=await checkEnabled(access,added.id);
+  const input={accountId:ready.id,modelId:model.id,expectedIdentity:ready.identity,expectedRevision:ready.revision,agentId:'commit-message',conversationId:'temporary-1',runId:'run-1',prompt:'only supplied material',signal:new AbortController().signal};
+  assert.equal(await access.generate(input),'{"commitMessage":"ok"}');
+  assert.deepEqual(inputs[0].body.tools,[]);assert.deepEqual(inputs[0].body.messages,[{role:'user',content:'only supplied material'}]);assert.equal(inputs[0].modelId,model.id);
+  await assert.rejects(access.generate({...input,expectedIdentity:'other'}),/来源已变化/);assert.equal(inputs.length,1);
+  await access.generate({...input,conversationId:'temporary-2',runId:'run-2'});assert.equal(inputs[1].context.conversationId,'temporary-2');
+ }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('single generation rejects unsolicited tool calls and abort propagates to only that request',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-model-generate-cancel-'));let started!:()=>void;const start=new Promise<void>(resolve=>{started=resolve;});let signal:AbortSignal|undefined;
+ let mode='tool';const access=createModelAccess({root,providers:[provider(async input=>{
+  if(mode==='tool')return chat({tool_calls:[{id:'x',type:'function',function:{name:'write_file',arguments:'{}'}}]});
+  signal=input.signal;started();return new Promise<Response>((_,reject)=>input.signal.addEventListener('abort',()=>reject(Error('cancelled')),{once:true}));
+ })]});
+ try{
+  const added=await access.accounts.add({provider:'fixture'}),ready=await checkEnabled(access,added.id);
+  const controller=new AbortController(),input={accountId:ready.id,modelId:model.id,expectedIdentity:ready.identity,expectedRevision:ready.revision,agentId:'commit-message',conversationId:'one',runId:'one',prompt:'given',signal:controller.signal};
+  await assert.rejects(access.generate(input),/纯文本/);mode='wait';const pending=access.generate({...input,conversationId:'two'});await start;controller.abort();await assert.rejects(pending);
+  for(let i=0;i<20&&!signal?.aborted;i++)await new Promise(resolve=>setTimeout(resolve,5));assert.equal(signal?.aborted,true);
+ }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});

@@ -5,8 +5,8 @@ import { registerHooks } from 'node:module';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createApiClient } from '../src/api/client.ts';
-import { appendDraftAttachment, canGenerateConversationTitle, canStopConversationTool, createdConversationVisibility, executionLocked, shouldSendOnKey, draftKey, readDraft, removeSubmittedAttachments, transferDraftText, writeDraft, applyConversationEvent, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, parseEventFrame, sameConversationSelection, latestConversationParticipant } from '../src/features/agent-conversations/conversation-state.ts';
-import {conversationPermissionKey,conversationPermissionStorageKey,conversationReasoningOptions,readConversationPermission,reasoningEffortLabel,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,writeConversationPermission} from '../src/features/agent-conversations/conversation-options.ts';
+import { appendDraftAttachment, canGenerateConversationTitle, canStopConversationTool, conversationConflictNeedsRefresh, createdConversationVisibility, executionLocked, participantAgentIds, shouldSendOnKey, draftKey, readDraft, removeSubmittedAttachments, transferDraftText, writeDraft, applyConversationEvent, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, parseEventFrame, sameConversationSelection, latestConversationParticipant } from '../src/features/agent-conversations/conversation-state.ts';
+import {conversationPermissionKey,conversationPermissionStorageKey,conversationReasoningOptions,conversationRunIdentity,readConversationPermission,reasoningEffortLabel,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,writeConversationPermission} from '../src/features/agent-conversations/conversation-options.ts';
 registerHooks({resolve(specifier,context,next){
   if(specifier==='../../../api'&&context.parentURL?.endsWith('/agent-conversations-api.ts'))return next(new URL('../src/api/index.ts',import.meta.url).href,context);
   try{return next(specifier,context);}catch(cause){if(!specifier.startsWith('.')||!context.parentURL?.includes('/src/'))throw cause;for(const suffix of ['.ts','/index.ts']){const url=new URL(specifier+suffix,context.parentURL);if(existsSync(fileURLToPath(url)))return next(url.href,context);}throw cause;}
@@ -53,6 +53,21 @@ test('服务端事件流携带header游标，正确解析跨块中文/CRLF，不
   assert.equal(parseEventFrame('data: first\ndata: second').data,'first\nsecond');
 });
 
+test('参与过此对话按智能体去重，同一执行者的多个参与者只展示一次',()=>{
+  assert.deepEqual(participantAgentIds([{id:'p1',provider:'codex'},{id:'p2',provider:'dsh'},{id:'p3',provider:'dsh'}]),['codex','dsh']);
+  assert.deepEqual(participantAgentIds([]),[]);
+});
+
+test('执行状态行只表达智能体与模型，不把模型来源账号标签当作状态',()=>{
+  const catalog=[{accountId:'account-devin',accountIdentity:'identity-devin',modelId:'grok-4.7',accountLabel:'someone@example.com · Pro',accountRevision:'account-r1',provider:'devin',label:'Grok 4.7',available:true,enabled:true}];
+  const shared={...conversation.run,provider:'dsh',modelAccountId:'account-devin',modelAccountIdentity:'identity-devin',model:'grok-4.7',modelSourceLabel:'someone@example.com · Pro'};
+  assert.equal(conversationRunIdentity(shared,undefined,catalog),'DSH · Devin / Grok 4.7');
+  assert.ok(!conversationRunIdentity(shared,undefined,catalog).includes('@'));
+  const native={id:'codex',provider:'codex',models:[{id:'gpt-5-codex',label:'GPT-5 Codex'}]};
+  assert.equal(conversationRunIdentity({...conversation.run,provider:'codex',model:'gpt-5-codex'},native,[]),'Codex · GPT-5 Codex');
+  assert.equal(conversationRunIdentity({...conversation.run,provider:'codex',model:'custom-model'},undefined,[]),'Codex · custom-model');
+});
+
 test('输入法组合和Shift+Enter不发送，执行与未知状态保留新内容为草稿',()=>{
   assert.equal(shouldSendOnKey({key:'Enter',shiftKey:false,isComposing:true}),false);assert.equal(shouldSendOnKey({key:'Enter',shiftKey:false,keyCode:229}),false);assert.equal(shouldSendOnKey({key:'Enter',shiftKey:true}),false);assert.equal(shouldSendOnKey({key:'Enter',shiftKey:false}),true);
   for(const status of ['starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown'])assert.equal(executionLocked({...conversation.run,status}),true,status);
@@ -61,8 +76,24 @@ test('输入法组合和Shift+Enter不发送，执行与未知状态保留新内
 
 test('草稿按配置域/工作空间/对话隔离，存储拒绝不会假称保存或自动发送',()=>{
   const rows=new Map(),storage={getItem:key=>rows.get(key)||null,setItem:(key,value)=>rows.set(key,value),removeItem:key=>rows.delete(key)};
-  const first=draftKey('dev','ws','first'),second=draftKey('dev','ws','second');assert.equal(writeDraft(first,'unsent',storage),true);assert.deepEqual(readDraft(first,storage),{text:'unsent',available:true});assert.equal(readDraft(second,storage).text,'');assert.notEqual(first,draftKey('released','ws','first'));
-  assert.equal(writeDraft(first,'same input',{setItem(){throw Error('denied');}}),false);assert.deepEqual(readDraft(first,{getItem(){throw Error('denied');}}),{text:'',available:false});assert.equal(writeDraft(first,'',storage),true);assert.equal(readDraft(first,storage).text,'');
+  const first=draftKey('dev','ws','first'),second=draftKey('dev','ws','second');assert.equal(writeDraft(first,'unsent',storage),true);assert.deepEqual(readDraft(first,storage),{text:'unsent',taskId:undefined,available:true});assert.equal(readDraft(second,storage).text,'');assert.notEqual(first,draftKey('released','ws','first'));
+  assert.equal(writeDraft(first,'same input',{setItem(){throw Error('denied');}}),false);assert.deepEqual(readDraft(first,{getItem(){throw Error('denied');}}),{text:'',taskId:undefined,available:false});assert.equal(writeDraft(first,'',storage),true);assert.equal(readDraft(first,storage).text,'');
+});
+
+test('草稿任务绑定跟随工作空间草稿记录，纯文本旧草稿不破坏兼容，清空文本不留绑定',()=>{
+  const rows=new Map(),storage={getItem:key=>rows.get(key)||null,setItem:(key,value)=>rows.set(key,value),removeItem:key=>rows.delete(key)};
+  const key=draftKey('dev','ws-a','new');
+  assert.equal(writeDraft(key,'从任务进入的草稿',storage,'task-one'),true);
+  assert.deepEqual(readDraft(key,storage),{text:'从任务进入的草稿',taskId:'task-one',available:true},'有绑定随文本一同持久化');
+  assert.equal(writeDraft(key,'改写的草稿',storage),true);
+  assert.deepEqual(readDraft(key,storage),{text:'改写的草稿',taskId:undefined,available:true},'解除绑定后只保留文本');
+  assert.equal(writeDraft(key,'',storage,'task-one'),true);
+  assert.deepEqual(readDraft(key,storage),{text:'',taskId:undefined,available:true},'空草稿不留绑定痕迹');
+  const transferred=transferDraftText(key,draftKey('dev','ws-a','created'),k=>readDraft(k,storage),(k,text,taskId)=>writeDraft(k,text,storage,taskId));
+  assert.equal(transferred.taskId,undefined);
+  assert.equal(writeDraft(key,'绑定草稿',storage,'task-two'),true);
+  const moved=transferDraftText(key,draftKey('dev','ws-a','created'),k=>readDraft(k,storage),(k,text,taskId)=>writeDraft(k,text,storage,taskId));
+  assert.deepEqual(moved,{text:'绑定草稿',taskId:'task-two',available:true},'真实会话建立后草稿连同绑定一起迁移');
 });
 
 test('迟到、重复及其他对话事件不能覆盖当前对话，重启快照可恢复新代次',()=>{
@@ -206,9 +237,10 @@ test('切离再返回后的旧发送回执仅移除已提交图片，后来新�
   assert.deepEqual(removeSubmittedAttachments(latest,[]),latest);
 });
 
-test('权限模式按准确对话和新草稿代次隔离，旧记录及新对话默认受原生默认权限约束',()=>{
-  const first=conversationPermissionKey(null,1),next=conversationPermissionKey(null,2);assert.notEqual(first,next);
-  assert.notEqual(conversationPermissionKey({workspaceId:'a',conversationId:'same'},1),conversationPermissionKey({workspaceId:'b',conversationId:'same'},1));
+test('权限模式按准确对话隔离，新草稿权限按工作空间共享，旧轮次缺失模式仍按原生默认解释',()=>{
+  const first=conversationPermissionKey(null,'ws-a'),next=conversationPermissionKey(null,'ws-b');assert.notEqual(first,next);
+  assert.equal(conversationPermissionKey(null,'ws-a'),conversationPermissionKey(null,'ws-a'),'同一工作空间的新对话共享一份权限选择');
+  assert.notEqual(conversationPermissionKey({workspaceId:'a',conversationId:'same'},'x'),conversationPermissionKey({workspaceId:'b',conversationId:'same'},'x'));
   assert.equal(selectedConversationPermission(undefined,undefined),'default');
   assert.equal(selectedConversationPermission(undefined,conversation.run),'default');
   assert.equal(selectedConversationPermission(undefined,{...conversation.run,permissionMode:'full-access'}),'full-access');
@@ -254,6 +286,14 @@ test('工具只在明确声明可单独停止且未结束时提供单项停止�
   assert.equal(canStopConversationTool({...tool,status:'completed',canStop:true}),false);
 });
 
+test('409只刷新真实过期观察，忙碌与权限问题保留准确原因',()=>{
+  for(const code of ['agent_revision_conflict','agent_preview_stale','agent_model_source_changed','agent_model_source_unavailable','agent_model_unavailable','agent_model_disabled'])assert.equal(conversationConflictNeedsRefresh({status:409,code}),true,code);
+  for(const code of ['agent_conversation_busy','agent_permission_unavailable','agent_model_incompatible','qoder_platform_login_required'])assert.equal(conversationConflictNeedsRefresh({status:409,code}),false,code);
+  assert.equal(conversationConflictNeedsRefresh({status:400,code:'agent_revision_conflict'}),false);
+  assert.equal(conversationConflictNeedsRefresh({status:409}),false);
+  assert.equal(conversationConflictNeedsRefresh(undefined),false);
+});
+
 test('历史图片按原对话身份携带认证头读取，认证轮换重试不暴露令牌且保留取消信号',async()=>{
   let token='old';const calls=[];const bytes=new Uint8Array([137,80,78,71]);const signal=new AbortController().signal;
   const api=createAgentConversationsClient(async()=>({}),{writeHeaders:()=>({'x-buildr-session':token}),refreshSession:async()=>{token='new';return true;}},async(url,init)=>{calls.push({url,init});return calls.length===1?new Response(JSON.stringify({error:{code:'session_forbidden'}}),{status:403,headers:{'content-type':'application/json'}}):new Response(bytes,{headers:{'content-type':'image/png'}});});
@@ -273,4 +313,59 @@ test('模型套餐客户端携带观察版本且发送来源固定，不把凭�
   assert.equal(calls[0].url,'/api/v1/app/agent-service/model-accounts');assert.equal(calls[1].url,'/api/v1/app/agent-service/model-catalog');
   assert.deepEqual(JSON.parse(calls[3].init.body),{expectedRevision:'account-r1'});assert.equal(JSON.parse(calls[5].init.body).modelAccountId,'account-id');assert.equal(JSON.parse(calls[5].init.body).connectionId,'dsh');
   assert.ok(calls.every(call=>!call.url.includes('native-test-session')));
+});
+
+test('default conversations use application routes independently from the browsing workspace', async()=>{
+ const calls=[];
+ const client=async(url,options)=>{calls.push({url,options});return {id:'default-chat',workspaceId:'@default'};};
+ const api=createAgentConversationsClient(client,session);
+ await api.create({workspaceId:'@default'});
+ await api.list('@default');
+ await api.read('@default','default-chat');
+ assert.deepEqual(calls.map(call=>call.url),[
+  '/api/v1/app/agent-service/conversations',
+  '/api/v1/app/agent-service/conversations',
+  '/api/v1/app/agent-service/conversations/default-chat',
+ ]);
+ assert.deepEqual(JSON.parse(calls[0].options.body),{});
+ await api.create({workspaceId:'chosen-workspace',cwd:'/chosen'});
+ assert.equal(calls.at(-1).url,'/api/v1/workspaces/chosen-workspace/agent-conversations');
+ assert.equal(JSON.parse(calls.at(-1).options.body).cwd,'/chosen');
+});
+
+
+test('default workspace directory is read from the host without creating a conversation',async()=>{
+ const calls=[];
+ const api=createAgentConversationsClient(async(url,options)=>{calls.push({url,options});return {rootPath:'/app/default'};},session);
+ assert.deepEqual(await api.defaultWorkspace(),{rootPath:'/app/default'});
+ assert.equal(calls.length,1);
+ assert.equal(calls[0].url,'/api/v1/app/agent-service/default-workspace');
+ assert.equal(calls[0].options.method,undefined);
+});
+
+test('活动主状态只显示一个静态结果，完成未查看仍属于活动',async()=>{
+  const {activityState,isActiveConversation}=await import('../src/features/agent-conversations/conversation-activity.ts');
+  const row={...conversation,activity:{version:3,seenThrough:1,active:true,updatedAt:'2026-10-27'}};
+  assert.equal(activityState(row),'running');
+  assert.equal(activityState({...row,run:{...row.run,status:'waiting-question'}}),'waiting');
+  assert.equal(activityState({...row,run:{...row.run,status:'unknown'}}),'unknown');
+  assert.equal(activityState({...row,run:{...row.run,status:'completed'}}),'unseen');
+  assert.equal(isActiveConversation({...row,run:{...row.run,status:'completed'}}),true);
+  const seen={...row,run:{...row.run,status:'completed'},activity:{...row.activity,active:false,seenThrough:3}};
+  assert.equal(activityState(seen),null);assert.equal(isActiveConversation(seen),false);
+});
+test('全空间查询不继承浏览空间，查看确认携带准确身份与已呈现位置',async t=>{
+  const requests=[];t.mock.method(globalThis,'fetch',async(url,init)=>{requests.push({url,init});return new Response(JSON.stringify({conversations:[],activity:{version:4,seenThrough:3}}));});
+  const api=createAgentConversationsClient(createApiClient({getWorkspaceId:()=> 'browsing-ws',sessionAdapter:session}),session);
+  await api.listAll({activeOnly:true,workspaceId:'saved/ws',agent:'codex',limit:10});await api.seen(conversation,3);
+  const url=new URL(requests[0].url,'http://local');assert.equal(url.pathname,'/api/v1/app/agent-service/conversations');assert.equal(url.searchParams.get('workspaceId'),'saved/ws');assert.equal(url.searchParams.get('activeOnly'),'true');
+  assert.equal(requests[1].url,'/api/v1/workspaces/saved%2Fws/agent-conversations/chat%2Fid/seen');assert.deepEqual(JSON.parse(requests[1].init.body),{through:3});
+});
+
+test('双入口按自己的视图打开、切换或收起，不把历史当作当前对话',async()=>{
+  const {nextConversationPanel}=await import('../src/features/agent-conversations/conversation-state.ts');
+  for(const view of ['conversation','history'])for(const target of ['conversation','history']){
+    assert.deepEqual(nextConversationPanel(false,view,target),{open:true,view:target});
+    assert.deepEqual(nextConversationPanel(true,view,target),{open:view!==target,view:target});
+  }
 });

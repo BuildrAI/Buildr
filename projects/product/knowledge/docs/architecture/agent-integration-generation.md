@@ -1,53 +1,19 @@
 # 提交说明怎样生成
 
-Codex 与 DSH 共用一次生成的业务链路，具体提供者（Provider）负责原生调用。它独立于原生会话（Session）与任务（Task）的关联；当前业务消费者是提交说明生成。
+本文依据代码模块（Code Module）和统一模型能力的当前候选实现，说明提交说明生成的输入、执行与回填边界，不代表真实账号或发布验收。
 
-![生成提交说明的共同调用链](../../archify/flows/agent-generation-chain.html)
+1. Buildr 从准确工作树（Worktree）读取有界变更材料和适用规则，总提示词最多 16 KiB。
+2. 人从现有模型（Model）目录选择来源。请求固定账号、模型、账号身份及观察版本，经统一模型能力执行一次，不提供工具，不创建持久对话。
+3. 模型返回后，业务核对结构、任务尾注、变更、规则与材料版本；界面再核对草稿版本，仍适用才回填。
 
-## 只看三个步骤
+未选择可用模型时只禁用生成，仍可手写说明并提交。失败不切换账号、不自动重发；取消与 60 秒总预算只影响本次请求，迟到结果不会覆盖草稿。支持可排序推理深度的模型采用其声明的最低档，否则沿用该模型默认，不改账号设置。
 
-1. **准备**：Buildr 从准确工作树（Worktree）准备有上限的变更材料，附带固定指令、适用提交规范和结构要求。
-2. **生成**：统一层固定本次执行者，轮到本身份执行时提交给具体提供者（Provider），只根据给定材料调用一次，不自行补查。
-3. **呈现**：校验内容、来源和草稿版本，仍适用时填回编辑框。失败、取消或期间已有编辑，保留现有草稿。
+说明生成与提交是独立动作。生成只回填可编辑草稿；提交、同步和推送仍由现有 Git 能力执行。已核验任务（Task）背景要求准确尾注，没有可靠关联时不猜测任务。
 
-生成只写说明；提交、同步（Sync）和推送由 Buildr 的 Git 能力执行，不由本次模型请求代办。
+## 实现位置
 
-主按钮固定为“提交”；下拉菜单依次提供“提交并同步”和“提交并推送”，点击直接执行，不改变主按钮动作。“提交并同步”先完成本机提交，再获取固定上游、按需快进或变基（Rebase）并推送；后续失败时保留已成立提交并分别显示阶段结果，从该来源的“同步”入口继续，不重复提交同一批内容。
-
-## 两种后端的区别
-
-| 项目 | Codex | DSH |
-| --- | --- | --- |
-| 执行位置 | Buildr 管理的专用应用服务进程 | 已运行桌面的同一宿主（Host）模型服务 |
-| 请求上下文 | 临时会话（Ephemeral Session）中的给定材料 | 无 `sessionId` 的单次模型调用，仅给定材料 |
-| 模型配置 | 已登记原生配置；提交说明采用经确认的低推理级别（Reasoning Effort） | 读取桌面当前默认模型（Model）及提供者（Provider）；提交说明按该模型（Model）原生声明选择并确认最低受支持推理级别（Reasoning Effort），只作用于本次请求 |
-| 完成与回收 | 临时会话（Ephemeral Session）释放，专用进程按需复用或回收 | 本次请求结束，连接可复用或释放；桌面和原生聊天继续运行 |
-
-DSH 共享实际模型服务及生效的模型中间件；不自动继承已有聊天的内容、所选模型、工具、技能（Skill）、记忆或执行钩子（Hook）。桌面不可用时不会启动独立 DSH 生成进程作为替代。
-
-DSH 普通调用继续继承桌面推理级别（Reasoning Effort）。轻量提交生成读取准确路由的模型（Model）能力，不能把不同模型（Model）的最低级别统一写成 `low`；例如原生声明最低为 `medium` 时就使用 `medium`，不会改动桌面聊天的 `max` 设置。声明不可读取、存在无法排序的级别或原生准备未确认本次选择时，生成局部失败并保留草稿。原生明确不支持可选推理级别（Reasoning Effort）的模型（Model）省略级别覆盖，按原生默认准备。旧桌面插件（Plugin）未声明轻量能力时提示更新，不静默沿用高推理。
-
-## 提交语言从哪里来
-
-Buildr 在统一业务层准备适用规则的有界原文摘录，优先保留显式提交语言及通用输出语言要求，再提供格式和变化证据。当前规则要求中文时应生成中文；规则要求英文时应遵循英文。近期英文提交、示例或界面语言都不能替代适用规则，产品也不写死中文。摘录继续表达来源、作用域及省略事实，生成后再次核对材料版本。
-
-## 失败和取消怎样收敛
-
-统一层保留按身份排队、业务时限和输出结构校验。提供者（Provider）先报告实际配置，再报告开始运行；界面只展示观察到的事实。取消、超时或断开只停止本次调用，不能取消其他请求或停止 DSH 桌面；没有确认终止时不得显示已成功取消。
-
-运行（Run）得到结果后，业务仍会核对工作树（Worktree）的来源版本；界面再核对草稿是否被用户编辑。模型返回文本并不直接证明结果可以覆盖当前草稿。
-
-## 核心代码入口与图示来源
-
-| 职责 | 优先看这里 |
-| --- | --- |
-| 界面动作与草稿 | [SourceControlActions](../../../services/buildr-web/src/features/code/source-control-actions.ts) |
-| 本机提交与后续组合动作 | [createCodeCommitApplication](../../../services/buildr/src/modules/code/application/code-commit-application.ts) |
-| 固定上游同步（Sync）及阶段结果 | [createCodeSyncApplication](../../../services/buildr/src/modules/code/application/code-sync-application.ts) |
-| 准备资料、提示词与业务校验 | [generateCommitMessage](../../../services/buildr/src/modules/code/application/code-commit-message-application.ts) |
-| 选择、排队、运行与取消 | [startGeneration](../../../services/buildr/src/modules/agent-operations/application/agent-operations-application.ts) |
-| Codex 原生调用 | [CodexAppServer](../../../services/buildr/src/modules/agent-operations/infrastructure/codex-app-server.ts) |
-| DSH 桌面调用 | [DshDesktopProvider](../../../services/buildr/src/modules/agent-operations/infrastructure/dsh-desktop-provider.ts) · [DshDesktopTransport](../../../services/buildr/src/modules/agent-operations/infrastructure/dsh-desktop-transport.ts) |
-| DSH 同宿主（Host）服务与请求隔离 | [桌面插件桥](../../../services/dsh-plugin/plugin/desktop-server.ts) |
-
-时序图（Sequence Diagram）保留共同主干，不展开两种后端各自的报文。更细的配置、协议和异常处理以这些源码为准。
+- [有界材料与业务校验](../../../services/buildr/src/modules/code/application/code-commit-message-application.ts)：准备材料并在回填前重读真实来源。
+- [生成请求状态与取消](../../../services/buildr/src/modules/code/application/code-generation.ts)：短期内存请求，按工作空间（Workspace）查询和取消，保留超时与失败。
+- [统一模型调用](../../../services/buildr-agent/src/model-access/application.ts)：复用现有账号、目录、版本检查和协议转换，释放本次调用绑定。
+- [界面草稿保护](../../../services/buildr-web/src/features/code/source-control-actions.ts)：按来源保持草稿，隔离迟到结果与切换页面。
+- [生成入口](../../../services/buildr-web/src/features/code/components/SourceControlCommitPanel.tsx)：选模型、生成、取消及手写提交。

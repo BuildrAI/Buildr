@@ -15,7 +15,7 @@
 .workbench-page .ant-alert{margin-bottom:14px}
 .workbench-loading{display:grid;gap:26px}
 .workbench-attention{margin-bottom:28px}
-.workbench-attention-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}
+.workbench-attention-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:13px}
 .workbench-attention-card{border:1px solid var(--soft-line);border-radius:10px;padding:16px 17px 13px;display:flex;flex-direction:column;min-width:0;background:#fff;cursor:pointer;transition:border-color 140ms ease,box-shadow 140ms ease}
 .workbench-attention-card:hover{border-color:#c6d5cd;box-shadow:0 4px 16px #244f3910}
 .workbench-attention-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:13px}

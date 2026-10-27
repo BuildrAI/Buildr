@@ -81,6 +81,28 @@ test('检查适用性结论逐项合并替换，终态任务拒绝修改', (t) =
   assert.throws(() => runtime.recordTaskWorkContext(root, 'closed-task', { expectedContextDigest: 'absent', progress: '说明', nextStep: '无', checks: [{ check: 'verification', status: 'not-applicable', reason: '无' }] }), (error: any) => error.code === 'task_work_context_task_terminal');
 });
 
+test('终态任务仍可补写进展与下一步，检查结论保持冻结', (t) => {
+  const { root } = taskRecordFixture(t, 'work-context-terminal-record');
+  const runtime = createRuntime();
+  const created = record(runtime, root, 'closed-task');
+  const first = runtime.recordTaskWorkContext(root, 'closed-task', { expectedContextDigest: 'absent', progress: '实现完成', nextStep: '验证', checks: [{ check: 'verification', status: 'needed', reason: '需要回归受影响测试' }] });
+  runtime.updateTask(root, 'closed-task', { expectedRecordDigest: created.recordDigest, status: 'completed', summary: '已交付' });
+  const value = runtime.recordTaskWorkContext(root, 'closed-task', { expectedContextDigest: first.contextDigest, progress: '交付已集成', nextStep: '无待办', stage: 'closeout' });
+  conforms('TaskWorkContextResponse', value);
+  assert.equal(value.context.progress, '交付已集成');
+  assert.equal(value.context.nextStep, '无待办');
+  assert.equal(value.context.stage, 'closeout');
+  assert.equal(value.context.checks.length, 1);
+  assert.equal(value.context.checks[0].status, 'needed');
+  const task = runtime.inspectTask(root, 'closed-task');
+  assert.equal(task.record.status, 'completed');
+  assert.equal(task.record.result.summary, '已交付');
+  assert.throws(() => runtime.recordTaskWorkContext(root, 'closed-task', { expectedContextDigest: value.contextDigest, progress: 'x', nextStep: 'y', checks: [{ check: 'verification', status: 'not-applicable', reason: 'z' }] }), (error: any) => error.code === 'task_work_context_task_terminal');
+  const kept = runtime.inspectTaskWorkContext(root, 'closed-task');
+  assert.equal(kept.context.progress, '交付已集成');
+  assert.equal(kept.context.checks[0].status, 'needed');
+});
+
 test('逐项偏好幂等与范围隔离，拒绝外部和逃逸链接，最近访问只留30项', (t) => {
   const { root } = taskRecordFixture(t, 'workbench-prefs');
   const other = taskRecordFixture(t, 'workbench-other').root;

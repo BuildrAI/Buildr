@@ -18,11 +18,13 @@ Buildr MUST 使用 Organization 表示最高层级的所有权、规则和项目
 - **THEN** Buildr MUST 以该 root 表示企业、组织或客户的规则和资产边界
 
 ### Requirement: Buildr root 承载默认 Organization 资产路径
-Buildr MUST 将 Buildr root 作为默认 Organization 资产路径，并在根目录维护组织级 Rules、Skills、Components、Commands 和项目入口。
+Buildr MUST 将 Buildr root 作为默认 Organization 资产路径，并在根目录通过 `AGENTS.md` 维护组织级 Rules，通过 `skills/`、`components/` 和 `commands/` 维护其他组织资产与项目入口。
 
 #### Scenario: 组织级资产路径
 - **WHEN** Buildr 表示当前 Organization 上下文的 Rules、Skills、Components 或 Commands
-- **THEN** 这些资产 MUST 位于 Buildr root 的 `AGENTS.md`/`rules/`、`skills/`、`components/` 和 `commands/` 下
+- **THEN** Rules MUST 位于 Buildr root 的 `AGENTS.md`
+- **AND** Skills、Components 与 Commands MUST 分别位于 Buildr root 的 `skills/`、`components/` 和 `commands/` 下
+- **AND** Buildr MUST NOT 将 `rules/` 或 `rules/manifest.yml` 表示为当前 Organization 规则资产路径
 - **AND** Buildr MUST NOT 将 `practices/` 表示为独立 Organization 资产类型
 
 #### Scenario: 项目级资产路径

@@ -41,7 +41,7 @@ export function createCodeSyncApplication(dependencies: Dependencies) {
     if (current.commitHash || current.worktreeId !== input.worktreeId) throw codeFailure('code_sync_source_invalid', '同步必须选择当前真实工作位置。', 409);
     const configuration = codeGit(current.location, ['config', '--null', '--list'], 1024 * 1024);
     const filters = readCodeCheckoutFilterConfig(current, configuration);
-    const status = observeSourceControl(current, { gitConfig: filters.overrides }), push = readCodePushSnapshot(current);
+    const status = observeSourceControl(current, { gitConfig: filters.overrides }), push = readCodePushSnapshot(current, { configuration });
     const index = codeGit(current.location, ['ls-files', '--stage', '-v', '-z']);
     const gitDirectory = text(current, ['rev-parse', '--absolute-git-dir']);
     const progress = progressNames.filter(name => fs.existsSync(path.join(gitDirectory, name)));

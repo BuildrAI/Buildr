@@ -13,7 +13,6 @@ export function createPackageSyncPlan({
       path.join(targetRoot, 'AGENTS.md'),
       path.join(targetRoot, '.gitattributes'),
       path.join(targetRoot, '.gitignore'),
-      path.join(targetRoot, 'rules', 'manifest.yml'),
       path.join(targetRoot, 'skills', 'manifest.yml'),
       path.join(targetRoot, 'skills', 'contracts', 'buildr'),
       path.join(targetRoot, 'commands', 'manifest.yml'),
@@ -22,7 +21,7 @@ export function createPackageSyncPlan({
       path.join(targetRoot, '.buildr', 'local', 'package-resources.json'),
       ...packageRegistryMutationPaths(targetRoot),
     ]);
-    for (const builtin of [...manifest.builtins.rules, ...manifest.builtins.skills]) {
+    for (const builtin of manifest.builtins.skills) {
       if (builtin.component) continue;
       const target = targetPathFromBuiltin(targetRoot, builtin);
       affected.add(target);
@@ -36,7 +35,6 @@ export function createPackageSyncPlan({
       }
     }
     const currentBuiltinKeys: any = new Set([
-      ...manifest.builtins.rules.map((item: any) => `rule:${item.id}`),
       ...manifest.builtins.skills.map((item: any) => `skill:${item.id}`),
       ...manifest.builtins.commands.map((item: any) => `command:${item.id}`),
     ]);
@@ -60,9 +58,6 @@ export function createPackageSyncPlan({
         affected.add(path.join(targetRoot, 'skills/buildr/archify.buildr-stage'));
         const missingParent = missingAncestorForMutation(targetRoot, path.join(targetRoot, 'skills/buildr'));
         if (missingParent) affected.add(missingParent);
-      }
-      if (finding.type === 'rule' && finding.id === 'buildr-core' && finding.status === 'retired') {
-        affected.add(path.join(targetRoot, 'rules/buildr/core.md'));
       }
     }
     return assertSafeSyncMutationPaths(targetRoot, [...affected]);

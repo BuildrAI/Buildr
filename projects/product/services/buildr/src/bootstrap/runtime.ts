@@ -1,14 +1,11 @@
+import { retireLegacyAgentData } from '../modules/installation/infrastructure/retire-legacy-agent-data.ts';
 import { publishPackageResources, ensurePackageResources, observeSharedResourcePublication } from '../infrastructure/product-resources/shared-resources.ts';
 import { AGENT_ASSETS_SOURCE_MODULE } from '../modules/agent-assets/source/module.ts';
 import { createConnectionSkillsModule, CONNECTION_SKILLS_APPLICATION } from '../modules/connection-skills/module.ts';
 import { SERVICE_RUNTIME_MODULE } from '../modules/service-runtime/module.ts';
 import { createMySqlQueryModule } from '../modules/mysql-query/module.ts';
-import { CODE_MODULE, CODE_SOURCE_CONTROL_OBSERVATIONS } from '../modules/code/module.ts';
-import { AGENT_OPERATIONS_APPLICATION, createAgentOperationsModule } from '../modules/agent-operations/module.ts';
+import { CODE_MODULE, CODE_GENERATION_APPLICATION, CODE_SOURCE_CONTROL_OBSERVATIONS } from '../modules/code/module.ts';
 import { AGENT_SERVICE_APPLICATION, createAgentServiceModule } from '../modules/agent-service/module.ts';
-import { createCodexDesktopModule } from '../modules/codex-desktop/module.ts';
-import { createNativeSessionLinksModule, NATIVE_SESSION_LINKS_APPLICATION } from '../modules/native-session-links/module.ts';
-import { createDshDesktopModule, DSH_DESKTOP_APPLICATION, DSH_PAGE_OBSERVATIONS } from '../modules/dsh-desktop/module.ts';
 import { WORKBENCH_MODULE } from '../modules/workbench/module.ts';
 import { createKnowledgeModule } from '../modules/knowledge/module.ts';
 import * as platform from '../infrastructure/platform.ts';
@@ -35,7 +32,7 @@ import {
   createParentCoordinationModule,
 } from '../modules/task/module.ts';
 import { createModuleRegistry } from './module-registry.ts';
-import { createWebModule, readCurrentBuildrWebOrigin, WEB_INSTANCE_LIFECYCLE } from '../web/module.ts';
+import { createWebModule, WEB_INSTANCE_LIFECYCLE } from '../web/module.ts';
 import { createWorkspaceModule, WORKSPACE_AGENT_ASSETS_BINDER, WORKSPACE_APPLICATION, WORKSPACE_QUERY } from '../modules/workspace/module.ts';
 import { createSystemInstallationModule, readCurrentProductIdentity, SYSTEM_INSTALLATION_APPLICATION, SYSTEM_INSTALLATION_WEB_BINDER } from '../modules/installation/module.ts';
 import { createSystemDoctorModule, SYSTEM_DOCTOR_APPLICATION } from '../modules/diagnostics/module.ts';
@@ -79,12 +76,7 @@ export function createRuntime(): any  {
   registry.install(createPublicationModule(runtime));
   registry.install(AGENT_ASSETS_SOURCE_MODULE);
   registry.install(createChangeModule(runtime));
-  registry.install(createAgentOperationsModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile }));
   registry.install(createAgentServiceModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile }));
-  registry.install(createNativeSessionLinksModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile, readOrigin: readCurrentBuildrWebOrigin }));
-  registry.install(createCodexDesktopModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile, readOrigin: readCurrentBuildrWebOrigin }));
-  registry.install(createDshDesktopModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile, readOrigin: readCurrentBuildrWebOrigin }));
-  registry.provide(NATIVE_SESSION_LINKS_APPLICATION).bindDshDesktop(registry.provide(DSH_DESKTOP_APPLICATION));
   registry.install(CODE_MODULE);
   registry.install(createConnectionSkillsModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile }));
   registry.install(SERVICE_RUNTIME_MODULE);
@@ -96,11 +88,19 @@ export function createRuntime(): any  {
   registry.install(createParentCoordinationModule(runtime));
   registry.install(createArtifactLifecycleModule(runtime));
   registry.install(createSystemInstallationModule(runtime));
-  registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http'), closeResources: async () => {
+  registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http'), onReady: () => {
+    void registry.provide(AGENT_SERVICE_APPLICATION).start().catch(() => { console.warn('中断执行恢复检查未完成，已有工作记录保留。'); });
+    try {
+      const profile=webProfileContract.resolveWebProfile(readCurrentProductIdentity());
+      const roots=registry.provide(WORKSPACE_APPLICATION).listRegisteredWorkspaces().workspaces.filter((entry:any)=>entry.registryScope!=='shared'&&entry.workspace?.id).map((entry:any)=>entry.rootPath);
+      const result=retireLegacyAgentData(profile.dataRoot,roots);
+      for(const diagnostic of result.diagnostics)console.warn('旧智能体接入清理未完成：',diagnostic.path,diagnostic.message);
+    } catch { console.warn('旧智能体接入清理未完成，其他功能可继续使用。'); }
+  }, closeResources: async () => {
     registry.provide(CODE_SOURCE_CONTROL_OBSERVATIONS).close();
+    registry.provide(CODE_GENERATION_APPLICATION).close();
     registry.provide(CONNECTION_SKILLS_APPLICATION).close();
-    registry.provide(DSH_PAGE_OBSERVATIONS).close();
-    await Promise.all([registry.provide(DSH_DESKTOP_APPLICATION).close(), registry.provide(AGENT_OPERATIONS_APPLICATION).close(), registry.provide(AGENT_SERVICE_APPLICATION).close()]);
+    await Promise.all([registry.provide(AGENT_SERVICE_APPLICATION).close()]);
   } }));
   registry.provide(SYSTEM_INSTALLATION_WEB_BINDER).bindWorkspaceUpdates({
     observeResources: observeSharedResourcePublication,

@@ -29,7 +29,6 @@ import { runLayoutJourney } from '../../../buildr-web/test/browser/layout-journe
 import { runTaskCommitsJourney } from '../../../buildr-web/test/browser/task-commits-journey.ts';
 import { runTaskMaterialsJourney } from '../../../buildr-web/test/browser/task-materials-journey.ts';
 import { runCompositeTaskChildrenJourney } from '../../../buildr-web/test/browser/composite-task-children-journey.ts';
-import { runCodexNavigationJourney } from '../../../buildr-web/test/browser/codex-navigation-journey.ts';
 import { runWorkbenchJourney } from './workbench-journey.ts';
 import { runPublicationJourney, publicationTestPng } from './publication-journey.ts';
 import { useLegacyAssetCatalog } from '../helpers/legacy-asset-catalog.ts';
@@ -386,7 +385,7 @@ async function capture(page: any, name: any): Promise<any>  {
 
 // Dispatcher splits code into independent Explorer/SCM parents (240/900 seconds)
 // and reserves 15 seconds outside each parent for its isolated cleanup.
-test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeout: SELECTORS.has('code') && codeGroup ? codeGroup.nodeTimeoutMs : SELECTORS.has('code') || SELECTORS.has('task') ? 480_000 : SELECTORS.has('all') ? 300_000 : SELECTORS.has('task-materials') ? 240_000 : SELECTORS.has('service') ? 180_000 : SELECTORS.has('agent-conversations') || SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
+test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeout: SELECTORS.has('code') && codeGroup ? codeGroup.nodeTimeoutMs : SELECTORS.has('code') || SELECTORS.has('task') ? 480_000 : SELECTORS.has('all') ? 300_000 : SELECTORS.has('task-materials') ? 240_000 : SELECTORS.has('service') || SELECTORS.has('agent-conversations') ? 180_000 : SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
   const requestedSmokeRoot: any = process.env.BUILDR_SMOKE_ROOT;
   const managedSmokeRoot: any = requestedSmokeRoot && fs.existsSync(path.join(requestedSmokeRoot, '.buildr-smoke-owner')) ? requestedSmokeRoot : null;
   const base: any = managedSmokeRoot || fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-e2e-'));
@@ -692,7 +691,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     await runSourceControlJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,fixture:{path:sourceControlPath,location:fs.realpathSync(workspaceRoot),commitHash:history.stdout.trim(),historyText:historicalSource.stdout,indexText,workingText,prepareWorktrees,prepareRemoteStatuses,withStatusDigits,withDuplicateFiles,withImages,withBranches,withRegisteredSource,cleanLocation:codeWorktreeFixture.nativeCheckoutLocation,baselineWorktrees,unrelatedRetiredTaskId:codeWorktreeFixture.worktreeTaskId,unavailableRepositoryLocation,withUnavailableRepository}});
     }
   }
-  if (selected('agent-conversations')) await runAgentConversationsJourney({t,page,workspaceUrl,capture});
+  if (selected('agent-conversations')) await runAgentConversationsJourney({t,page,workspaceUrl,capture,expectedBrowserErrors});
   if (selected('layout')) await runLayoutJourney({ t, page, workspaceUrl, capture });
 
   if (SELECTORS.has('core')) await t.test('核心流程进入 Workspace、Task 路由并读取代表性 Tab', async () => {
@@ -2423,7 +2422,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     assert.equal(saved.services.find((s: any) => s.id === service.id).repositoryId, repository.id);
     assert.equal(saved.services.find((s: any) => s.id === service.id).name, '保留服务名称草稿');
     assert.equal(repository.source.path, 'repositories/inline-picker-code');
-    assert.equal(fs.existsSync(path.join(workspaceRoot, 'repositories/inline-picker-code')), false);
+    assert.ok(['cloning', 'failed'].includes(runtime.repositoryCloneStatus(workspaceRoot, repository.id).state), 'registration does not imply clone completion');
   });
 
   if (selected('service')) await t.test('新增代码库从地址自动填入编码目录并分别保护手动值', async () => {
@@ -2525,7 +2524,6 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
 
   if (selected('task')) await runTaskListJourney({antdSelectDisplay, antdSelectOptionTexts, applyTaskFilters, assert, browserErrors, capture, closeTaskReading, confirmAntModal, crypto, expectedBrowserErrors, fs, openAntdSelect, openTaskActionModal, openTaskFilterPanel, openTaskSearch, otherWorkspaceId, page, path, prepareEvidenceFixture, process, recordVerificationResultFromEvidence, runBuildr, runtime, selectAntdOption, selected, showPrimaryNavigation, t: taskFocusedT(t), taskFocusedT, url, workspaceRoot, workspaceUrl, writeChange});
   if (selected('task')) await runTaskCommitsJourney({ t: taskFocusedT(t), page, runtime, workspaceRoot, workspaceUrl, expectedBrowserErrors, capture });
-  if (selected('task')) await runCodexNavigationJourney({ t: taskFocusedT(t), page, runtime, workspaceRoot, workspaceUrl, runBuildr, capture, expectedBrowserErrors });
 
   if (selected('task-materials')) await runTaskMaterialsJourney({ t, page, runtime, materials: runtimeProvide(webRuntime, TASK_MATERIALS_APPLICATION), workspaceRoot, workspaceUrl, runBuildr, runGit, capture, expectedBrowserErrors });
 

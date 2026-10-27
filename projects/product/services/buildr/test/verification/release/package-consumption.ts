@@ -26,6 +26,9 @@ const platformLauncherIntegration: any = process.argv.includes('--platform-launc
 export const RELEASE_ARTIFACT_MANIFEST_ENV: any = 'BUILDR_RELEASE_ARTIFACT_MANIFEST';
 export const RELEASE_PACKAGE_SPEC_ENV: any = 'BUILDR_RELEASE_PACKAGE_SPEC';
 export const RELEASE_LAUNCHER_READINESS_TIMEOUT_MS: any = 15_000;
+/** 平台 Launcher 真实链路（.lnk→wscript→vbs→cmd→Host Node→web）比直启多数段
+ * 串行进程创建与首扫成本，共享 Windows runner 上需要更宽的就绪预算。 */
+export const RELEASE_PLATFORM_LAUNCHER_READINESS_TIMEOUT_MS: any = 45_000;
 export const RELEASE_READINESS_POLL_INTERVAL_MS: any = 50;
 
 const progressStages = new Set([
@@ -209,11 +212,22 @@ export function preserveLauncherFailureEvidence(options: any): any  {
   const instancePath: any = path.join(options.appData, 'instance.json');
   const instance: any = readJsonIfPresent(instancePath);
   const processObservation: any = options.error?.readiness?.process ?? observeProcess(instance?.pid);
-  const launcherLogPath: any = options.launcherHome
-    ? path.join(options.launcherHome, 'Library', 'Logs', 'Buildr', 'launcher.log')
-    : null;
+  const launcherLogCandidates: any[] = [];
+  if (options.launcherHome) launcherLogCandidates.push(path.join(options.launcherHome, 'Library', 'Logs', 'Buildr', 'launcher.log'));
+  // Windows npm Launcher 的 runner 把输出写到 binding 目录下的 logs/；binding 根
+  // 位于 BUILDR_PRODUCT_DATA_DIR（本检查固定为 appData）下的 launchers/<channel>。
+  if (options.appData) {
+    const launchersRoot: any = path.join(options.appData, 'launchers');
+    for (const channel of ['npm']) launcherLogCandidates.push(path.join(launchersRoot, channel, 'logs', 'launcher.log'));
+    try {
+      for (const entry of fs.readdirSync(launchersRoot, { withFileTypes: true })) {
+        if (entry.isDirectory() && entry.name !== 'npm') launcherLogCandidates.push(path.join(launchersRoot, entry.name, 'logs', 'launcher.log'));
+      }
+    } catch {}
+  }
+  const launcherLogPath: any = launcherLogCandidates.find((file: any) => fs.statSync(file, { throwIfNoEntry: false })?.isFile()) ?? null;
   let launcherLog: any = null;
-  if (launcherLogPath && fs.statSync(launcherLogPath, { throwIfNoEntry: false })?.isFile()) {
+  if (launcherLogPath) {
     fs.mkdirSync(path.dirname(retainedLogPath), { recursive: true });
     fs.copyFileSync(launcherLogPath, retainedLogPath);
     launcherLog = {
@@ -223,6 +237,7 @@ export function preserveLauncherFailureEvidence(options: any): any  {
     };
   }
   const readiness: any = options.error?.readiness ?? {};
+  const launcherProcess: any = options.launcherProcess;
   const evidence: any = {
     schemaVersion: 'buildr.release-launcher-failure-evidence/v1',
     status: 'failed',
@@ -233,6 +248,12 @@ export function preserveLauncherFailureEvidence(options: any): any  {
     instancePath,
     instance: sanitizeInstance(instance),
     process: processObservation,
+    launcherProcess: launcherProcess ? {
+      pid: launcherProcess.pid ?? null,
+      exitCode: launcherProcess.exitCode ?? null,
+      signalCode: launcherProcess.signalCode ?? null,
+      stderr: typeof options.launcherStderr === 'function' ? options.launcherStderr() : null,
+    } : null,
     node: options.nodeAudit,
     launcherLog,
     error: options.error?.message ?? 'Launcher readiness failed.',
@@ -429,6 +450,7 @@ export async function runPackageConsumption(env: any = process.env): Promise<any
 
     assert.equal(fs.existsSync(path.join(appData, 'instance.json')), false, 'ordinary CLI must not start HTTP');
     let webStderr: any = '';
+    let launcherStderr: any = '';
     progress.runSync('direct-web-start', () => { web = spawn(nodeExecutable, [buildrScript, 'web', '--no-open', '--port', '0'], {
       cwd: workspace,
       env: { ...process.env, ...runtimeEnv },
@@ -470,6 +492,10 @@ export async function runPackageConsumption(env: any = process.env): Promise<any
           const { launchPlatformLauncher }: any = await import('./platform-launcher-invocation.ts');
           const launched: any = launchPlatformLauncher({ target: launcherTarget, workspace, environment: launcherEnvironment });
           launcherProcess = launched.process;
+          if (launcherProcess?.stderr) {
+            launcherProcess.stderr.setEncoding('utf8');
+            launcherProcess.stderr.on('data', (chunk: any) => { launcherStderr += chunk; });
+          }
           launchObservation = launcherProcess;
           assert.doesNotMatch(launched.output, /already running/i, 'platform Launcher must execute the short-lived entry');
           return;
@@ -486,6 +512,10 @@ export async function runPackageConsumption(env: any = process.env): Promise<any
           env: launcherEnvironment,
           stdio: ['ignore', 'ignore', 'pipe'],
         });
+        if (launcherProcess?.stderr) {
+          launcherProcess.stderr.setEncoding('utf8');
+          launcherProcess.stderr.on('data', (chunk: any) => { launcherStderr += chunk; });
+        }
         launchObservation = launcherProcess;
         }, () => launchObservation);
       };
@@ -498,7 +528,7 @@ export async function runPackageConsumption(env: any = process.env): Promise<any
       const waitForLauncherReadiness: any = async (startup: any, progressStage: string) => progress.run(progressStage, async () => {
         const startedAt: any = Date.now();
         try {
-          const launcherHealth: any = await waitForWebReadiness({ appData });
+          const launcherHealth: any = await waitForWebReadiness({ appData, timeoutMs: RELEASE_PLATFORM_LAUNCHER_READINESS_TIMEOUT_MS });
           assertExactRuntimeIdentity(launcherHealth, `${startup} Launcher`);
           return launcherHealth;
         } catch (error: any) {
@@ -506,6 +536,8 @@ export async function runPackageConsumption(env: any = process.env): Promise<any
             appData,
             launcherHome,
             launcherTarget,
+            launcherProcess,
+            launcherStderr: () => launcherStderr ? launcherStderr.slice(-8192) : null,
             nodeAudit: exactNode.audit,
             startup,
             startedAt,

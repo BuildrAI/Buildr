@@ -6,7 +6,8 @@ const source = {workspaceId: 'w', repositoryId: 'repo', worktreeId: 'checkout-a'
 const other = {...source, worktreeId: 'checkout-b', branch: 'feature'};
 const identity = value => ({repositoryId: value.repositoryId, checkoutId: value.worktreeId, worktreeId: value.worktreeId, worktreeGroupId: 'main', taskId: null, commitHash: null, location: '/fixture/' + value.worktreeId, version: 'current', kind: 'default'});
 const context = (value, revision = 'content-1') => ({source: identity(value), revision, head: 'a'.repeat(40), branch: value.branch, hasChanges: true, fileCount: 2, push: {revision: 'push-1', target: 'origin/dev', available: true, reason: null, ahead: 2}});
-const run = (status = 'succeeded', output = {commitMessage: 'generated'}, agentId = 'codex') => ({id: 'run-1', agentId, registrationRevision: 'registry-1', status, output, error: null, executionConfig: null});
+const selection={id:JSON.stringify(['account','model']),label:'Model',modelAccountId:'account',modelId:'model',accountIdentity:'identity',accountRevision:'v1'};
+const run=(status='succeeded',output={commitMessage:'generated'},modelId='model')=>({id:'run-1',modelAccountId:'account',modelId,label:'Model',accountRevision:'v1',status,output,error:null});
 const result = (value = source, pushStatus = 'not-requested') => ({source: identity(value), commit: {completed: true, hash: 'b'.repeat(40), message: 'submitted', status: 'succeeded'}, push: {status: pushStatus, target: 'origin/dev', message: pushStatus, retry: pushStatus === 'failed' ? {expectedHead: 'b'.repeat(40), expectedPushRevision: 'push-after-commit'} : null}, sync: null, effects: {indexUpdated: true, warnings: []}});
 const syncResult = (value = source, status = 'succeeded') => ({...result(value), sync: {source: identity(value), readAt: '2026-10-16T00:00:00.000Z', branch: value.branch, head: 'c'.repeat(40), upstream: 'origin/dev', status, message: '同步阶段说明', fetch: {status: 'succeeded', message: '已获取固定上游'}, rebase: {status: 'succeeded', message: '已整合远端更新'}, push: {status: status === 'succeeded' ? 'succeeded' : 'not-requested', message: '同步内的推送说明'}}});
 const deferred = () => {let resolve, reject; const promise = new Promise((yes, no) => {resolve = yes; reject = no;}); return {promise, resolve, reject};};
@@ -19,56 +20,40 @@ test('来源键同时区分工作空间、代码库、工作树与分支，结�
   assert.equal(commitMessageOutput({commitMessage: 'subject\n\nbody'}), 'subject\n\nbody');
 });
 
-test('来源切换保留独立草稿，迟到生成只写原来源并固定执行者，覆盖开始即消费', async () => {
+test('来源切换保留独立草稿，迟到生成只写原来源并固定执行者', async () => {
   const start = deferred(), calls = [], actions = create(client({generate: (...args) => {calls.push(args); return start.promise;}}));
   await Promise.all([actions.observe(source), actions.observe(other)]);
-  actions.setText(source, 'original'); actions.setText(other, 'other draft'); actions.setOverride(source, 'codex');
-  const pending = actions.generate(source, {id: 'codex', label: 'Codex'});
-  assert.equal(actions.state(source).overrideId, null); assert.equal(actions.state(source).generation.agentId, 'codex');
-  actions.setOverride(other, 'other-agent'); start.resolve(run()); await pending;
-  assert.equal(actions.state(source).text, 'generated'); assert.equal(actions.state(source).generatedBy.agentId, 'codex');
-  assert.equal(actions.state(other).text, 'other draft'); assert.equal(calls[0][2], 'codex');
+  actions.setText(source, 'original'); actions.setText(other, 'other draft');
+  const pending = actions.generate(source, selection);
+  assert.equal(actions.state(source).generation.modelKey, selection.id);
+  start.resolve(run()); await pending;
+  assert.equal(actions.state(source).text, 'generated'); assert.equal(actions.state(source).generatedBy.modelKey, selection.id);
+  assert.equal(actions.state(other).text, 'other draft'); assert.equal(calls[0][2], selection);
 });
 
 test('取消先于开始响应仍发送取消，迟到成功不覆盖原草稿', async () => {
-  const start = deferred(), cancelled = [], actions = create(client({generate: () => start.promise, cancel: async id => {cancelled.push(id); return run('cancelled', null);}}));
+  const start = deferred(), cancelled = [], actions = create(client({generate: () => start.promise, cancel: async (source,id) => {cancelled.push([source,id]); return run('cancelled', null);}}));
   await actions.observe(source); actions.setText(source, 'edited');
-  const pending = actions.generate(source, {id: 'codex', label: 'Codex'}); await actions.cancel(source);
+  const pending = actions.generate(source, selection); await actions.cancel(source);
   start.resolve(run('running', null)); await pending;
-  assert.deepEqual(cancelled, ['run-1']); assert.equal(actions.state(source).text, 'edited'); assert.equal(actions.state(source).generation, null);
+  assert.deepEqual(cancelled, [[source,'run-1']]); assert.equal(actions.state(source).text, 'edited'); assert.equal(actions.state(source).generation, null);
 });
 
-test('生成来源固定本次确认配置的独立快照，另一次配置和未知值不改写旧结果', async () => {
-  let confirmed = {model: 'confirmed-first', modelProvider: 'provider-first', reasoningEffort: 'high'};
-  const actions = create(client({generate: async () => ({...run(), executionConfig: confirmed})}));
-  await Promise.all([actions.observe(source), actions.observe(other)]);
-  await actions.generate(source, {id: 'codex', label: 'Codex'});
-  confirmed.model = 'mutated-after-response';
-  assert.equal(actions.state(source).generatedBy.executionConfig.model, 'confirmed-first');
-  confirmed = {model: 'confirmed-later', modelProvider: null, reasoningEffort: null};
-  await actions.generate(other, {id: 'codex', label: 'Codex'});
-  assert.equal(actions.state(other).generatedBy.executionConfig.model, 'confirmed-later');
-  assert.equal(actions.state(source).generatedBy.executionConfig.model, 'confirmed-first');
-  confirmed = null; await actions.generate(other, {id: 'codex', label: 'Codex'});
-  assert.equal(actions.state(other).generatedBy.executionConfig, null);
-  assert.equal(actions.state(other).text, 'generated');
+test('生成来源固定本次账号和模型，其他来源的模型不覆盖旧结果', async()=>{
+ const actions=create(client());await actions.observe(source);await actions.generate(source,selection);
+ assert.equal(actions.state(source).generatedBy.modelId,'model');
+ const mismatch=create(client({generate:async()=>run('succeeded',{commitMessage:'wrong'},'other-model')}));
+ await mismatch.observe(source);mismatch.setText(source,'keep');await mismatch.generate(source,selection);
+ assert.equal(mismatch.state(source).text,'keep');assert.match(mismatch.state(source).generationError,/不一致/);
 });
 
 test('生成期间的新草稿与失败结果都不被覆盖；内容漂移保留说明', async () => {
   const start = deferred(), actions = create(client({generate: () => start.promise}));
-  await actions.observe(source); actions.setText(source, 'old'); const pending = actions.generate(source, {id: 'codex', label: 'Codex'});
+  await actions.observe(source); actions.setText(source, 'old'); const pending = actions.generate(source, selection);
   actions.setText(source, 'new edit'); start.resolve(run()); await pending; assert.equal(actions.state(source).text, 'new edit');
   const failed = create(client({generate: async () => ({...run('failed', null), error: {code: 'code_source_changed', message: '内容变化'}})}));
-  await failed.observe(source); failed.setText(source, 'keep'); await failed.generate(source, {id: 'codex', label: 'Codex'});
+  await failed.observe(source); failed.setText(source, 'keep'); await failed.generate(source, selection);
   assert.equal(failed.state(source).text, 'keep'); assert.equal(failed.state(source).stale, true);
-});
-
-test('有效生成结果照常回填，清理异常独立提示且不触发重复生成', async () => {
-  let generations = 0;
-  const actions = create(client({generate: async () => {generations++; return {...run(), cleanupWarning: {code: 'cleanup_failed', message: '结果已生成，临时资源清理未确认。'}};}}));
-  await actions.observe(source); await actions.generate(source, {id: 'codex', label: 'Codex'});
-  assert.equal(actions.state(source).text, 'generated'); assert.equal(actions.state(source).generationError, '');
-  assert.equal(actions.state(source).generationWarning, '结果已生成，临时资源清理未确认。'); assert.equal(generations, 1);
 });
 
 test('手写提交不调用智能体，清除的仅是提交时说明并刷新真实读取', async () => {
@@ -146,7 +131,7 @@ test('重新观察到新内容后，旧版本已完成的迟到生成不能覆�
   const start = deferred(); let revision = 'content-1';
   const actions = create(client({context: async value => context(value, revision), generate: () => start.promise}));
   await actions.observe(source); actions.setText(source, '保留当前说明');
-  const pending = actions.generate(source, {id: 'codex', label: 'Codex'});
+  const pending = actions.generate(source, selection);
   revision = 'content-2'; await actions.observe(source); start.resolve(run()); await pending;
   assert.equal(actions.state(source).context.revision, 'content-2');
   assert.equal(actions.state(source).text, '保留当前说明'); assert.equal(actions.state(source).generatedBy, null);

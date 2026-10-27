@@ -7,11 +7,9 @@ import { RUNTIME_ADAPTERS } from '../infrastructure/runtime/adapter-contract.ts'
 import { sourceError, sourceMemberIdentity, type SourceObservation, type SourceObject, type SourceParty } from '../domain/source-observations.ts';
 
 export interface RegisteredSourceSkill { id: string; path?: string; runtimePath?: string; assetIdentity?: string; sourceIdentity?: string; source?: unknown; enabled?: boolean; }
-export interface RegisteredSourceRule { id: string; path: string; source: string; enabled?: boolean; state?: string; }
 export interface RegisteredSourceContract { id: string; version: number; path: string; }
 export interface SourceAssetRead {
   readSkills(root: string): RegisteredSourceSkill[];
-  readRules(root: string): RegisteredSourceRule[];
   readContracts(root: string): RegisteredSourceContract[];
   requiredBlock(): string;
   productSkills?: () => Array<{ id: string; path: string }>;
@@ -123,11 +121,6 @@ export function createSourceObjectRepository(assets: SourceAssetRead) {
         if (observation.locator.resourceBase && sourceRelativePath(root, observation.locator.resourceBase) !== prefix.slice(0, -1)) throw sourceError('source_scope_conflict', '实际技能源目录不匹配。');
         const current = readSkillText(root, relative, { requireRootProof: true });
         return { objects: [object(workspaceId, '.', 'skill', sourceMemberIdentity(skill.assetIdentity || `workspace:${workspaceId}:skill:${skill.id}`, file), { assetIdentity: skill.assetIdentity || `workspace:${workspaceId}:skill:${skill.id}`, skillId: skill.id, relativePath: file }, current.content, observation, party(skill.source), 'buildr', [{ authority: 'buildr.skills-manifest', locator: 'skills/manifest.yml' }, { authority: 'registered-source', locator: relative, digest: current.digest }])] };
-      }
-      const rule = assets.readRules(root).find(entry => entry.path === relative && entry.enabled !== false && !['uninstalled', 'missing'].includes(entry.state || 'installed'));
-      if (rule) {
-        const current = readSkillText(root, relative, { requireRootProof: true });
-        return { objects: [object(workspaceId, '.', 'rule', `workspace:${workspaceId}:rule:.:${rule.id}`, { ruleId: rule.id, relativePath: relative }, current.content, observation, party(rule.source), 'buildr', [{ authority: 'buildr.rules-manifest', locator: 'rules/manifest.yml' }, { authority: 'registered-source', locator: relative, digest: current.digest }])] };
       }
       return { objects: [] };
     },

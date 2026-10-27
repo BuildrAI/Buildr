@@ -7,8 +7,9 @@ import test from 'node:test';
 import { createCodeApplication } from '../../src/modules/code/application/code-application.ts';
 import { createCodeCommitMessageApplication } from '../../src/modules/code/application/code-commit-message-application.ts';
 import { readCodeCommitGuidance, type CodeCommitGuidanceDependencies } from '../../src/modules/code/infrastructure/code-commit-guidance.ts';
-import { createCodeCommitMaterialReader, type CodeCommitMaterialReaderDependencies } from '../../src/modules/code/infrastructure/code-commit-material.ts';
-import type { AgentGenerationInput } from '../../src/modules/agent-operations/module.ts';
+import { createCodeCommitMaterialReader } from '../../src/modules/code/infrastructure/code-commit-material.ts';
+import type { GenerationInput } from '../../src/modules/code/application/code-generation.ts';
+const selection={modelAccountId:'account',modelId:'model',accountIdentity:'identity',accountRevision:'v1',label:'Model'};
 
 function fixture(t: test.TestContext) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-commit-guidance-')), repository = path.join(root, 'repository');
@@ -28,14 +29,13 @@ function fixture(t: test.TestContext) {
     tasks.set(id, { taskId: id, title: 'Reliable task title', intent: 'Describe the target behavior', scope: { projects: [], services: [{ project: 'one', service: 'service' }] } });
     evidence.set(id, { evidence: { repositories: [{ sourceRepository: repository, checkoutPath: directory, branch }] } }); fs.writeFileSync(path.join(evidenceDirectory, id + '.json'), '{}');
   };
-  const selectedRules = new Map<string, ReturnType<CodeCommitMaterialReaderDependencies['readRules']>>();
-  const commitMaterial = createCodeCommitMaterialReader({ readRules: target => selectedRules.get(target) || [] });
+  const commitMaterial = createCodeCommitMaterialReader();
   const generation = (directory = repository) => {
-    let captured: AgentGenerationInput | undefined;
-    const application = createCodeCommitMessageApplication({ commitSnapshot: app.commitSnapshot, commitGuidance: (workspace, snapshot) => readCodeCommitGuidance(workspace, snapshot, dependencies), commitMaterial, startGeneration: input => { captured = input; return { id: 'run', agentId: 'codex', registrationRevision: 'v1', status: 'queued', output: null, error: null, executionConfig: null }; } });
-    return { application, input: () => ({ ...location(directory), expectedRevision: app.commitContext(root, location(directory)).revision }), captured: () => captured! };
+    let captured: GenerationInput | undefined;
+    const application = createCodeCommitMessageApplication({ commitSnapshot: app.commitSnapshot, commitGuidance: (workspace, snapshot) => readCodeCommitGuidance(workspace, snapshot, dependencies), commitMaterial, startGeneration: input => { captured = input; return { id:'run',modelAccountId:'account',modelId:'model',label:'Model',accountRevision:'v1',status:'running', output: null, error: null }; } });
+    return { application, input: () => ({ ...location(directory), ...selection, expectedRevision: app.commitContext(root, location(directory)).revision }), captured: () => captured! };
   };
-  return { root, repository, git, write, catalog, tasks, evidence, dependencies, app, location, commit, associate, generation, selectedRules, commitMaterial };
+  return { root, repository, git, write, catalog, tasks, evidence, dependencies, app, location, commit, associate, generation, commitMaterial };
 }
 
 test('mixed text, binary and type changes supply bounded real evidence without granting tools', async t => {
@@ -44,7 +44,7 @@ test('mixed text, binary and type changes supply bounded real evidence without g
   const before = f.git(f.repository, 'status', '--porcelain'), g = f.generation(); await g.application.generateCommitMessage(f.root, g.input());
   assert.match(g.captured().prompt, /NEW-TEXT-SENTINEL|CURRENT-TEXT-SENTINEL/); assert.match(g.captured().prompt, /modified.bin/); assert.doesNotMatch(g.captured().prompt, /GIT binary patch/);
   assert.match(g.captured().prompt, /all-final-uncommitted-changes/); assert.ok(Buffer.byteLength(g.captured().prompt) < 16 * 1024);
-  assert.equal(g.captured().environment, undefined); assert.match(g.captured().prompt, /after/);
+  assert.equal('environment' in g.captured(), false); assert.match(g.captured().prompt, /after/);
   await g.captured().validateResult!({ commitMessage: 'Update resources and current text' });
   assert.equal(f.git(f.repository, 'rev-list', '--count', 'HEAD'), '1'); assert.equal(f.git(f.repository, 'status', '--porcelain'), before);
 });
@@ -69,9 +69,9 @@ test('a complete source with a diff exceeding 8 MiB still starts generation with
 
 test('existing 16 MiB and 1000-path source observation bounds remain explicit before agent start', async t => {
   const f = fixture(t); f.write('large.bin', Buffer.alloc(17 * 1024 * 1024));
-  const g = f.generation(); await assert.rejects(g.application.generateCommitMessage(f.root, { ...f.location(), expectedRevision: 'unused' }), { code: 'code_commit_observation_incomplete' }); assert.equal(g.captured(), undefined);
+  const g = f.generation(); await assert.rejects(g.application.generateCommitMessage(f.root, { ...f.location(), ...selection, expectedRevision: 'unused' }), { code: 'code_commit_observation_incomplete' }); assert.equal(g.captured(), undefined);
   fs.unlinkSync(path.join(f.repository, 'large.bin')); for (let index = 0; index < 1001; index++) f.write('file-' + index, 'x');
-  await assert.rejects(g.application.generateCommitMessage(f.root, { ...f.location(), expectedRevision: 'unused' }), { code: 'code_commit_observation_incomplete' }); assert.equal(g.captured(), undefined);
+  await assert.rejects(g.application.generateCommitMessage(f.root, { ...f.location(), ...selection, expectedRevision: 'unused' }), { code: 'code_commit_observation_incomplete' }); assert.equal(g.captured(), undefined);
 });
 
 test('entry discovery uses selected checkout and explicit task scopes with exact external rule roots', async t => {
@@ -96,11 +96,11 @@ test('missing, ambiguous and branch-drifted task associations omit task backgrou
   const g = f.generation(checkout); await g.application.generateCommitMessage(f.root, g.input()); await g.captured().validateResult!({ commitMessage: 'Update current behavior' });
 });
 
-test('oversized or unselected rules remain explicit partial material without blocking generation', async t => {
-  const f = fixture(t); f.write('code.txt', 'before\n'); f.commit(); f.write('code.txt', 'after\n'); f.write('AGENTS.md', 'RULE-BODY-SENTINEL'.repeat(40_000), f.root); f.write('rules/manifest.yml', 'AGENT-DECIDES-MANIFEST-CONTENT', f.root); f.write('rules/optional.md', 'OPTIONAL-RULE-SENTINEL', f.root);
+test('oversized workspace guidance remains explicit partial material without blocking generation', async t => {
+  const f = fixture(t); f.write('code.txt', 'before\n'); f.commit(); f.write('code.txt', 'after\n'); f.write('AGENTS.md', 'RULE-BODY-SENTINEL'.repeat(40_000), f.root);
   const g = f.generation(); await g.application.generateCommitMessage(f.root, g.input());
-  assert.ok(Buffer.byteLength(g.captured().prompt) < 16 * 1024); assert.doesNotMatch(g.captured().prompt, /RULE-BODY-SENTINEL|AGENT-DECIDES-MANIFEST-CONTENT|OPTIONAL-RULE-SENTINEL/);
-  assert.equal(g.captured().environment, undefined); assert.match(g.captured().prompt, /"rulesPartial":true/);
+  assert.ok(Buffer.byteLength(g.captured().prompt) < 16 * 1024); assert.doesNotMatch(g.captured().prompt, /RULE-BODY-SENTINEL/);
+  assert.equal('environment' in g.captured(), false); assert.match(g.captured().prompt, /"rulesPartial":true/);
 });
 
 test('independent rule entry changes invalidate results while unrelated workspace files do not', async t => {
@@ -111,12 +111,12 @@ test('independent rule entry changes invalidate results while unrelated workspac
   await assert.rejects(async () => g.captured().validateResult!({ commitMessage: 'Update behavior' }), { code: 'code_source_changed' });
 });
 
-test('newly created entry files and manifest metadata changes are observed without hashing every external rule body', async t => {
+test('newly created AGENTS entries invalidate results while retired rules files do not', async t => {
   const f = fixture(t); f.write('code.txt', 'before\n'); f.commit(); f.write('code.txt', 'after\n'); const g = f.generation(); await g.application.generateCommitMessage(f.root, g.input());
   f.write('AGENTS.md', 'Newly created entry', f.root); await assert.rejects(async () => g.captured().validateResult!({ commitMessage: 'Update behavior' }), { code: 'code_source_changed' });
   f.write('rules/manifest.yml', 'Initial manifest', f.root); f.write('rules/required.md', 'Original rule body', f.root); const fresh = f.generation(); await fresh.application.generateCommitMessage(f.root, fresh.input());
-  f.write('rules/required.md', 'Changed body is outside the entry snapshot guarantee', f.root); await fresh.captured().validateResult!({ commitMessage: 'Update behavior' });
-  f.write('rules/manifest.yml', 'Manifest changed while generating', f.root); await assert.rejects(async () => fresh.captured().validateResult!({ commitMessage: 'Update behavior' }), { code: 'code_source_changed' });
+  f.write('rules/required.md', 'Retired rule bodies are not observed', f.root); await fresh.captured().validateResult!({ commitMessage: 'Update behavior' });
+  f.write('rules/manifest.yml', 'Retired manifest changes are not observed', f.root); await fresh.captured().validateResult!({ commitMessage: 'Update behavior' });
 });
 
 test('symlinked external entry files cannot grant access to a replacement outside the declared roots', async t => {
@@ -132,28 +132,24 @@ test('task evidence changing after start invalidates the previous trailer withou
   const fresh = f.generation(checkout); await fresh.application.generateCommitMessage(f.root, fresh.input()); await fresh.captured().validateResult!({ commitMessage: 'Update behavior' });
 });
 
-test('bounded material retains late language rules, override precedence and selected installed rule defaults', async t => {
+test('bounded material retains late language rules and override precedence', async t => {
   const f = fixture(t); f.write('code.txt', 'before\n'); f.commit(); f.write('code.txt', 'after\n');
   f.write('AGENTS.md', '普通开发流程。'.repeat(1500) + '\n\n面向用户的回复和文档默认使用中文。', f.root);
   f.write('AGENTS.md', 'Use Chinese for commit messages.'); f.write('AGENTS.override.md', 'Use English for commit messages.');
-  f.write('rules/manifest.yml', 'opaque fixture manifest', f.root); f.write('rules/required.md', '## Commit message\n\nUse type(scope): subject.\n', f.root); f.write('rules/modified.md', '## Commit subject\n\nKeep the subject factual.\n', f.root); f.write('rules/disabled.md', 'commit message DISABLED-SENTINEL', f.root); f.write('rules/optional.md', 'UNRELATED-OPTIONAL-SENTINEL', f.root);
-  f.selectedRules.set(fs.realpathSync(f.root), [{ path: 'rules/required.md', required: true }, { path: 'rules/modified.md', required: true, state: 'modified' }, { path: 'rules/disabled.md', required: true, enabled: false }, { path: 'rules/optional.md', required: false, description: 'Unrelated development flow' }]);
   const g = f.generation(); await g.application.generateCommitMessage(f.root, g.input());
   const data = JSON.parse(g.captured().prompt.split('<materials>\n')[1].split('\n</materials>')[0]);
-  assert.match(JSON.stringify(data.rules), /默认使用中文/); assert.match(JSON.stringify(data.rules), /Use English/); assert.doesNotMatch(JSON.stringify(data.rules), /Use Chinese|普通开发流程|DISABLED-SENTINEL|UNRELATED-OPTIONAL-SENTINEL/);
-  assert.match(JSON.stringify(data.rules), /type\(scope\): subject/); assert.match(JSON.stringify(data.rules), /Keep the subject factual/);
+  assert.match(JSON.stringify(data.rules), /默认使用中文/); assert.match(JSON.stringify(data.rules), /Use English/); assert.doesNotMatch(JSON.stringify(data.rules), /Use Chinese|普通开发流程/);
   assert.ok(data.rules.some((rule: { source: string }) => rule.source === 'AGENTS.override.md'));
   assert.ok(Buffer.byteLength(g.captured().prompt) <= 16 * 1024);
 });
 
-test('an actually read external rule body is revalidated without relying only on manifest or Git versions', async t => {
+test('an actually read external rule body is revalidated without relying only on Git versions', async t => {
   const f = fixture(t); f.write('code.txt', 'before\n'); f.commit(); f.write('code.txt', 'after\n');
-  f.write('rules/manifest.yml', 'opaque fixture manifest', f.root); f.write('rules/required.md', 'Commit messages must use English.\n', f.root);
-  f.selectedRules.set(fs.realpathSync(f.root), [{ path: 'rules/required.md', required: true }]);
+  f.write('AGENTS.md', 'Commit messages must use English.\n', f.root);
   const g = f.generation(); await g.application.generateCommitMessage(f.root, g.input());
-  const revision = f.app.commitContext(f.root, f.location()).revision; f.write('rules/required.md', 'Commit messages must use Chinese.\n', f.root);
+  const revision = f.app.commitContext(f.root, f.location()).revision; f.write('AGENTS.md', 'Commit messages must use Chinese.\n', f.root);
   assert.equal(f.app.commitContext(f.root, f.location()).revision, revision);
-  await assert.rejects(async () => g.captured().validateResult!({ commitMessage: 'Update behavior' }), error => (error as { code?: string }).code === 'code_source_changed' && /材料/.test((error as Error).message));
+  await assert.rejects(async () => g.captured().validateResult!({ commitMessage: 'Update behavior' }), error => (error as { code?: string }).code === 'code_source_changed' && /规则入口或任务关联已变化/u.test((error as Error).message));
 });
 
 test('bounded evidence balances a real tracked change with large new source and skips leading imports', async t => {

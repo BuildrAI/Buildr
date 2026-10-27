@@ -44,6 +44,8 @@
     "build": "node tools/build-package.ts",
     "build:dev": "node tools/build-package.ts --dev",
     "sdk:prepare": "node tools/prepare-source-sdk.ts",
+    "sdk:status": "node tools/sdk-build.ts status",
+    "sdk:clean": "node tools/sdk-build.ts clean",
     "composition:dev": "node tools/build-development-composition.ts",
     "preset:adapter": "node tools/build-preset-adapter.ts",
     "release:status": "node ../../../../skills/buildr-release/scripts/dsh-plugin/release.ts status",

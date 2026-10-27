@@ -1,4 +1,5 @@
 import { readFile, writeFile, rm } from 'node:fs/promises';
+import { errorDiagnostic } from '../../domain/error-diagnostic.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
@@ -9,17 +10,31 @@ import { launchDshHost, dshValue, type DshClient } from './client.ts';
 import { dshItem, dshHistoryItems, dshExecutionObservation } from './protocol.ts';
 import { modelOptions } from '../model-options.ts';
 import { applyDshPermissions, dshPermissionCatalog } from './permissions.ts';
+import { AgentServiceError } from '../../domain/agent-state.ts';
 import { checkedGateway, consumerBinding, gatewayModel, gatewayEffort, type ExecutorGateway } from '../model-gateway.ts';
 const capabilities = { text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
+// @deepseek-ai/dsh-llm-pi-ai Config.reasoningEfforts uses these THINKING_LEVELS keys (0.2.1-rc.3).
+const dshReasoningEfforts = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+export function dshGatewayModels(gateway: ExecutorGateway) {
+  return gateway.models.map(model => {
+    const efforts = model.reasoningEfforts?.filter(effort => dshReasoningEfforts.has(effort.id));
+    return { id: model.id, name: model.label, ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}), ...(model.maxOutputTokens ? { maxTokens: model.maxOutputTokens } : {}), input: model.vision ? ['text', 'image'] : ['text'], reasoningEfforts: efforts?.length ? Object.fromEntries(efforts.map(effort => [effort.id, effort.id])) : false };
+  });
+}
+export function dshGatewayEffort(gateway: ExecutorGateway, modelId?: string, effort?: string): string | undefined {
+  const selected = gatewayEffort(gateway, modelId, effort), offered = gatewayModel(gateway, modelId).reasoningEfforts;
+  if (selected && !dshReasoningEfforts.has(selected) || !selected && offered?.length && !offered.some(option => dshReasoningEfforts.has(option.id))) throw new AgentServiceError('agent_reasoning_unavailable', 'DSH 暂不支持所选推理强度，请选择其他已支持档位。');
+  return selected;
+}
 /** An additive overlay owns only the Buildr route; the native profile stays intact. */
 export async function writeGatewayPatch(directory: string, gateway: ExecutorGateway): Promise<string> {
   checkedGateway(gateway);
   const filename = join(directory, 'buildr-model-gateway.json');
-  const models = gateway.models.map(model => ({ id: model.id, name: model.label, ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}), ...(model.maxOutputTokens ? { maxTokens: model.maxOutputTokens } : {}), input: model.vision ? ['text', 'image'] : ['text'], reasoningEfforts: model.reasoningEfforts?.length ? Object.fromEntries(model.reasoningEfforts.map(effort => [effort.id, effort.id])) : false }));
+  const models = dshGatewayModels(gateway);
   await writeFile(filename, JSON.stringify([{ id: 'llm-pi-ai', name: '@deepseek-ai/dsh-llm-pi-ai', config: { providers: { 'buildr-models': { displayName: 'Buildr', api: 'openai-responses', baseURL: gateway.baseUrl.replace(/\/$/, ''), apiKeyEnv: 'BUILDR_MODEL_GATEWAY_KEY', models } } } }]), { mode: 0o600 });
   return filename;
 }
-interface ActiveTurn { id: string; input: ExecutorSendInput; nativeTurn?: number; terminal?: 'completed' | 'stopped' | 'failed'; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown' }>; pending: Map<string, { request: ExecutorRequest; resolve?: (value: string) => void; answer?: (value: { answers: any[] }) => void; reject?: (error: Error) => void; wait?: any }>; stream?: any; pump?: Promise<void>; streamAttempt?: { id: string; turn: number; step: number; nextIndex: number; text: string }; }
+interface ActiveTurn { id: string; input: ExecutorSendInput; nativeTurn?: number; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown' }>; pending: Map<string, { request: ExecutorRequest; resolve?: (value: string) => void; answer?: (value: { answers: any[] }) => void; reject?: (error: Error) => void; wait?: any }>; stream?: any; pump?: Promise<void>; streamAttempt?: { id: string; turn: number; step: number; nextIndex: number; text: string }; }
 export function createDshExecutor(): AgentExecutor { return { descriptor: { id: 'dsh', label: 'DSH', capabilities }, open: options => DshRuntime.open(options) }; }
 export class DshRuntime implements AgentRuntime {
   readonly capabilities = { ...capabilities, permissionModes: ['default'] as PermissionMode[] };
@@ -173,7 +188,7 @@ export class DshRuntime implements AgentRuntime {
     await applyDshPermissions(this.client.remote, input.contextRef.id, input.permissionMode, () => this.snapshot(input.contextRef.id));
     if (this.gateway) {
       const model = gatewayModel(this.gateway, input.model);
-      const effort = gatewayEffort(this.gateway, input.model, input.reasoningEffort);
+      const effort = dshGatewayEffort(this.gateway, input.model, input.reasoningEffort);
       dshValue(await this.client.remote.session.selectModel({ sessionId: input.contextRef.id, provider: 'buildr-models', model: model.id, ...(effort ? { reasoningEffort: effort } : {}) }));
     } else if (input.model) {
       const split = input.model.indexOf('::'); if (split < 1) throw new Error('dsh_model_identity_invalid');
@@ -243,8 +258,12 @@ export class DshRuntime implements AgentRuntime {
     if (event.type === 'approval/decided') { for (const [id, pending] of turn.pending) if (pending.resolve && id === String(data.id)) { turn.pending.delete(id); emit({ type: 'request-resolved', requestId: id }); } }
     if (event.type === 'turn/end') {
       const reason = data.reason?.kind; turn.terminal = reason === 'completed' ? 'completed' : ['cancelled', 'interrupted', 'aborted'].includes(reason) ? 'stopped' : 'failed';
+      if (turn.terminal === 'failed') {
+        const message = errorDiagnostic(data.reason?.error?.message, this.gateway ? [this.gateway.apiKey] : []);
+        turn.diagnostic = message ? `DSH · ${turn.tools.size ? '工具调用后' : '本轮执行'}：${message}` : 'dsh_turn_failed';
+      }
       for (const [id, pending] of turn.pending) { pending.resolve?.('cancelled'); pending.reject?.(new Error('dsh_question_expired')); void pending.wait?.dispose(); if (turn.pending.delete(id)) emit({ type: 'request-resolved', requestId: id }); } turn.pending.clear();
-      emit({ type: 'completed', status: turn.terminal, ...(turn.terminal === 'failed' ? { diagnostic: 'dsh_turn_failed' } : {}) });
+      emit({ type: 'completed', status: turn.terminal, ...(turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) });
     }
     emit({ type: 'observation', observation: this.activeObservation(turn) });
   }
@@ -284,7 +303,7 @@ export class DshRuntime implements AgentRuntime {
     });
   }
   private activeObservation(turn: ActiveTurn): ExecutorObservation {
-    const tools = [...turn.tools.values()].map(tool => ({ ...tool, canStop: false })); return { status: turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : turn.terminal === 'stopped' ? 'stopped' : 'idle' : turn.pending.size ? 'waiting' : 'running', executionRef: { id: turn.id }, tools, requests: [...turn.pending.values()].map(value => value.request) };
+    const tools = [...turn.tools.values()].map(tool => ({ ...tool, canStop: false })); return { status: turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : turn.terminal === 'stopped' ? 'stopped' : 'idle' : turn.pending.size ? 'waiting' : 'running', executionRef: { id: turn.id }, tools, requests: [...turn.pending.values()].map(value => value.request), ...(turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
   }
   async observe({ contextRef, executionRef }: { contextRef: ContextRef; executionRef?: ExecutionRef }): Promise<ExecutorObservation> {
     this.reference(contextRef); const turn = this.turns.get(contextRef.id);

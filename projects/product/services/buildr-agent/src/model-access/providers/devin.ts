@@ -4,6 +4,9 @@ import type { ModelProvider, ModelProviderRuntime, ModelProviderObservation, Pro
 import { PrivateAccount, beginPkce, record, string } from './private-account.ts';
 import { metadata, bytesField, decodeModels, decodeStatus, encodeRequest, connectFrame, splitFrames, unaryBody, decodeDelta, type DevinDelta } from './devin-codec.ts';
 import { modelOfferings, buildDevinRequest, type DevinOffering } from './devin-wire.ts';
+import { errorDiagnostic } from '../../domain/error-diagnostic.ts';
+import { ModelAccessError } from '../contracts.ts';
+import { modelFailure } from '../errors.ts';
 
 const API = 'https://api.devin.ai', APP = 'https://app.devin.ai', SERVER = 'https://server.codeium.com';
 const MODELS = '/exa.api_server_pb.ApiServerService/GetCliModelConfigs', STATUS = '/exa.seat_management_pb.SeatManagementService/GetUserStatus', CHAT = '/exa.api_server_pb.ApiServerService/GetChatMessage';
@@ -71,14 +74,32 @@ class DevinRuntime implements ModelProviderRuntime {
     const controller = new AbortController(), signal = AbortSignal.any([controller.signal, input.signal, this.lifetime.signal]); signal.throwIfAborted();
     const response = await this.fetch(SERVER + CHAT, { method: 'POST', headers: { 'content-type': 'application/connect+proto', 'connect-protocol-version': '1', 'connect-content-encoding': 'gzip', 'connect-accept-encoding': 'gzip', 'accept-encoding': 'identity', authorization: basic(credential.accessToken) }, body: new Uint8Array(connectFrame(encodeRequest(request))), signal, redirect: 'error' });
     if (!response.ok) { await response.body?.cancel(); return errorResponse(response.status === 401 ? 'model_devin_login_expired' : response.status === 429 ? 'model_devin_quota_or_rate_limit' : 'model_devin_upstream_failed', response.status); }
-    const deltas = readDeltas(response, signal), state = new Completion(input.modelId);
+    const stage = Array.isArray(input.body.messages) && input.body.messages.some(message => record(message).role === 'tool') ? '工具结果接续 / 响应流' : '响应流';
+    const deltas = readDeltas(response, signal, credential.accessToken, stage), state = new Completion(input.modelId);
     if (input.body.stream !== true) { for await (const delta of deltas) state.accept(delta); return Response.json(state.result()); }
     const encoder = new TextEncoder();
+    // Keep an immediate upstream refusal as an HTTP error. Opening SSE first
+    // makes native consumers mistake a permanent denial for a broken stream.
+    let initial: ProtocolJson[] = [], ended = false;
+    try {
+      while (!initial.length) {
+        const next = await deltas.next();
+        if (next.done) { ended = true; break; }
+        initial = state.accept(next.value);
+      }
+    } catch (error) {
+      controller.abort(); await deltas.return(undefined);
+      // These refusals describe this request, not an expired login or a transient
+      // connection. Codex retries even HTTP 403; a bad request must remain final.
+      if (error instanceof ModelAccessError && error.status === 403 && /MCP configuration issue|blocked by (?:our |the )?content policy/i.test(error.message)) throw new ModelAccessError('model_devin_request_rejected', error.message, 400);
+      throw error;
+    }
     async function* chunks(): AsyncGenerator<Uint8Array> {
       try {
-        for await (const delta of deltas) for (const value of state.accept(delta)) yield encoder.encode(`data: ${JSON.stringify(value)}\n\n`);
+        for (const value of initial) yield encoder.encode(`data: ${JSON.stringify(value)}\n\n`);
+        if (!ended) for await (const delta of deltas) for (const value of state.accept(delta)) yield encoder.encode(`data: ${JSON.stringify(value)}\n\n`);
         yield encoder.encode(`data: ${JSON.stringify(state.finished())}\n\ndata: [DONE]\n\n`);
-      } finally { controller.abort(); }
+      } finally { controller.abort(); await deltas.return(undefined); }
     }
     const iterator = chunks();
     return new Response(new ReadableStream<Uint8Array>({ async pull(stream) { try { const next = await iterator.next(); if (next.done) stream.close(); else stream.enqueue(next.value); } catch (error) { stream.error(error); } }, async cancel() { controller.abort(); await iterator.return(undefined); } }), { headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-store' } });
@@ -87,13 +108,13 @@ class DevinRuntime implements ModelProviderRuntime {
 }
 function basic(token: string): string { return `Basic ${Buffer.from(`${token}-${token}`).toString('base64')}`; }
 function percent(value: number | undefined): number | undefined { return value !== undefined && value >= 0 && value <= 100 ? value : undefined; }
-function errorResponse(code: string, status: number): Response { return Response.json({ error: { message: code, type: 'model_provider_error', code } }, { status: status >= 400 && status <= 599 ? status : 502 }); }
+function errorResponse(code: string, status: number): Response { return Response.json({ error: { message: `Devin · 请求响应：HTTP ${status}（${code}）`, type: 'model_provider_error', code } }, { status: status >= 400 && status <= 599 ? status : 502 }); }
 async function boundedBody(response: Response): Promise<Uint8Array> {
   if (!response.body) throw new Error('model_devin_empty_response'); const reader = response.body.getReader(); let size = 0; const chunks: Uint8Array[] = [];
   try { for (;;) { const next = await reader.read(); if (next.done) break; size += next.value.byteLength; if (size > 16 * 1024 * 1024) throw new Error('model_devin_response_too_large'); chunks.push(next.value); } return Buffer.concat(chunks); }
   finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
-async function* readDeltas(response: Response, signal: AbortSignal): AsyncGenerator<DevinDelta> {
+async function* readDeltas(response: Response, signal: AbortSignal, token: string, stage: string): AsyncGenerator<DevinDelta> {
   if (!response.body) throw new Error('model_devin_empty_response'); const reader = response.body.getReader(); let buffered: Buffer = Buffer.alloc(0), ended = false, meaningful = false;
   const abort = () => { void reader.cancel().catch(() => {}); }; signal.addEventListener('abort', abort, { once: true });
   try {
@@ -102,13 +123,24 @@ async function* readDeltas(response: Response, signal: AbortSignal): AsyncGenera
       const split = splitFrames(Buffer.concat([buffered, next.value])); buffered = split.rest;
       for (const frame of split.frames) {
         if (ended) throw new Error('model_devin_frame_after_end');
-        if (frame.end) { const trailer = record(JSON.parse(frame.payload.toString('utf8'))); if (trailer.error) throw new Error('model_devin_stream_failed'); ended = true; continue; }
+        if (frame.end) {
+          const trailer = record(JSON.parse(frame.payload.toString('utf8')));
+          if (trailer.error) {
+            const error = record(trailer.error), code = typeof error.code === 'string' && /^[a-z_]{1,64}$/.test(error.code) ? error.code : 'unknown';
+            const message = errorDiagnostic(error.message, [token, token.replace(/^devin-session-token\$/, '')]);
+            throw new ModelAccessError('model_devin_stream_failed', `Devin · ${stage}：${code}${message ? ': ' + message : ''}`, code === 'permission_denied' ? 403 : code === 'unauthenticated' ? 401 : code === 'resource_exhausted' ? 429 : 502);
+          }
+          ended = true; continue;
+        }
         const delta = decodeDelta(frame.payload); if (delta.stop === 13) throw new Error('model_devin_generation_failed');
         meaningful ||= Boolean(delta.text || delta.thinking || delta.calls.length || delta.stop); yield delta;
       }
     }
     if (!ended || buffered.length) throw new Error('model_devin_stream_truncated');
     if (!meaningful) throw new Error('model_devin_empty_response');
+  } catch (error) {
+    if (signal.aborted || error instanceof ModelAccessError) throw error;
+    const failure = modelFailure(error); throw new ModelAccessError(failure.code, `Devin · ${stage}：${failure.message}`, 502);
   } finally { signal.removeEventListener('abort', abort); await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 class Completion {
@@ -135,7 +167,8 @@ class Completion {
     return output;
   }
   private finish(): string { return this.calls.size || this.stop === 10 ? 'tool_calls' : this.stop === 3 ? 'length' : 'stop'; }
-  private usageView(): ProtocolJson | undefined { return this.usage ? { prompt_tokens: this.usage.input, completion_tokens: this.usage.output, total_tokens: this.usage.input + this.usage.output, prompt_tokens_details: { cached_tokens: this.usage.cacheRead }, prompt_cache_write_tokens: this.usage.cacheWrite } : undefined; }
+  /** Devin reports the prompt split into uncached, cache-read and cache-write tokens; OpenAI prompt_tokens counts them all. */
+  private usageView(): ProtocolJson | undefined { if (!this.usage) return undefined; const prompt = this.usage.input + this.usage.cacheRead + this.usage.cacheWrite; return { prompt_tokens: prompt, completion_tokens: this.usage.output, total_tokens: prompt + this.usage.output, prompt_tokens_details: { cached_tokens: this.usage.cacheRead }, prompt_cache_write_tokens: this.usage.cacheWrite }; }
   finished(): ProtocolJson { return { ...this.chunk(this.signature.length && !this.signatureSent ? { reasoning_signature: this.signature.toString('base64') } : {}, this.finish()), ...(this.usage ? { usage: this.usageView() } : {}) }; }
   result(): ProtocolJson {
     return { id: this.id, object: 'chat.completion', created: this.created, model: this.model, choices: [{ index: 0, message: { role: 'assistant', content: this.text || null, ...(this.thinking ? { reasoning_content: this.thinking } : {}), ...(this.signature.length ? { reasoning_signature: this.signature.toString('base64') } : {}), ...(this.calls.size ? { tool_calls: [...this.calls].map(([id, value]) => ({ id, type: 'function', function: { name: value.name, arguments: value.args } })) } : {}) }, finish_reason: this.finish() }], ...(this.usage ? { usage: this.usageView() } : {}) };

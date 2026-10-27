@@ -56,6 +56,7 @@ export class NativeRpc {
   readonly child: ChildProcessWithoutNullStreams;
   private disposed = false;
   private failed = false;
+  get closed(): boolean { return this.disposed || this.failed || this.child.exitCode !== null || this.child.signalCode !== null || this.child.stdin.destroyed; }
   constructor(command: string, args: string[], options: { cwd: string; env: NativeEnvironment }) {
     this.child = spawn(command, args, { ...options, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     // Native diagnostics may contain credentials. They never become public errors or events.
@@ -80,7 +81,14 @@ export class NativeRpc {
         const pending = this.pending.get(message.id)!; this.pending.delete(message.id);
         if (message.error) pending.reject(new Error(/^(?:agent_|qoder_|dsh_)[a-z0-9_]+$/.test(message.error.message ?? '') ? message.error.message : 'agent_native_request_failed'));
         else pending.resolve(message.result);
-      } else for (const listener of this.listeners) { try { listener(message); } catch { this.fail('agent_event_consumer_failed'); this.child.kill('SIGTERM'); return; } }
+      } else for (const listener of this.listeners) {
+        try { listener(message); }
+        catch {
+          // A local projection/persistence error is not a native protocol failure.
+          // Keep the process and independent RPC controls alive for exact observation.
+          try { listener({ method: 'buildr/eventConsumerFailed', params: { threadId: message.params?.threadId } }); } catch { /* Preserve native execution even if the diagnostic consumer also fails. */ }
+        }
+      }
     }
   }
   private fail(code: string): void { for (const pending of this.pending.values()) pending.reject(new Error(code)); this.pending.clear(); if (!this.failed) { this.failed = true; for (const listener of this.listeners) { try { listener({ method: 'buildr/transportClosed', params: { code } }); } catch { /* Consumer errors cannot escape a process event handler. */ } } } }

@@ -1,11 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {conversationReasoningSelection,officialConversationChoice} from '../src/features/agent-conversations/conversation-options.ts';
+import {conversationModelCompatibility,conversationReasoningSelection,nextServiceTier,officialConversationChoice,tierReasoningEffort} from '../src/features/agent-conversations/conversation-options.ts';
 const connection={models:[
   {id:'first',label:'First',isDefault:true,defaultReasoningEffort:'high',reasoningEfforts:[{id:'low',label:'Low'},{id:'high',label:'High'}]},
   {id:'second',label:'Second',defaultReasoningEffort:'medium',reasoningEfforts:[{id:'medium',label:'Medium'}]},
   {id:'plain',label:'Plain'}
 ]};
+test('Devin兼容限制按执行方和来源判断，不改变账号或选择',()=>{
+ const source={provider:'devin',accountId:'renamed-account',modelId:'any-model',available:true,enabled:true};
+ const original=structuredClone(source);
+ for(const provider of ['codex','qoder'])assert.ok(conversationModelCompatibility({id:'custom-'+provider,provider},source)?.includes(provider==='codex'?'Codex':'Qoder'));
+ assert.equal(conversationModelCompatibility({provider:'dsh'},source),undefined);
+ assert.equal(conversationModelCompatibility(undefined,source),undefined);
+ assert.equal(conversationModelCompatibility({provider:'codex'},undefined),undefined);
+ assert.deepEqual(source,original);
+});
+test('六种已测交叉来源保持可选，不以来源显示名猜测Devin',()=>{
+ for(const [provider,source] of [['codex','native-qoder'],['codex','native-dsh'],['qoder','native-codex'],['qoder','native-dsh'],['dsh','native-codex'],['dsh','native-qoder']])assert.equal(conversationModelCompatibility({provider},{provider:source,label:'Devin'}),undefined);
+});
+test('Codex的Devin SWE-2支持默认与完全访问，其他未验证组合仍限制且不修改选择',()=>{
+ const source={provider:'devin',modelId:'swe-2',label:'改名模型'},original=structuredClone(source);
+ assert.equal(conversationModelCompatibility({provider:'codex'},source),undefined);
+ assert.equal(conversationModelCompatibility({provider:'codex'},source,'full-access'),undefined);
+ assert.equal(conversationModelCompatibility({provider:'codex'},source,'default'),undefined);
+ assert.ok(conversationModelCompatibility({provider:'codex'},{...source,modelId:'gpt-6-1-sol'},'full-access'));
+ assert.ok(conversationModelCompatibility({provider:'qoder'},source,'full-access'));
+ assert.equal(conversationModelCompatibility({provider:'dsh'},source,'default'),undefined);
+ assert.deepEqual(source,original);
+});
 test('紧凑控件仅使用模型原生档位，区分默认继承和显式覆盖',()=>{
  const inherited=conversationReasoningSelection(connection,{connectionId:'qoder'});
  assert.deepEqual(inherited.options.map(option=>option.id),['low','high']);assert.equal(inherited.index,1);assert.equal(inherited.label,'高');assert.equal(inherited.inherited,true);
@@ -38,6 +60,23 @@ test('自动、未知或同义档位不强制放入有序滑杆，单档位保�
  }
 });
 
+test('闪电只在模型实际提供的档位间循环，不编造缺失档位',()=>{
+ const tiers=[{id:'standard:200'},{id:'fast:128'},{id:'lightning:200'}];
+ assert.equal(nextServiceTier(tiers,undefined,'standard:200'),'fast:128');
+ assert.equal(nextServiceTier(tiers,'fast:128','standard:200'),'lightning:200');
+ assert.equal(nextServiceTier(tiers,'lightning:200','standard:200'),'standard:200');
+ assert.equal(nextServiceTier(tiers,'missing','standard:200'),'standard:200');
+ assert.equal(nextServiceTier(undefined,'fast','standard'),'fast');
+ assert.equal(nextServiceTier([{id:'only'}],undefined,'only'),'only');
+});
+test('切换档位保留目标档位提供的已选强度，其余回落继承',()=>{
+ const tier={reasoningEfforts:[{id:'low'},{id:'high'}]},fallback=[{id:'medium'},{id:'high'}];
+ assert.equal(tierReasoningEffort(tier,fallback,'high'),'high');
+ assert.equal(tierReasoningEffort(tier,fallback,'medium'),undefined,'目标档位没有的强度不落库');
+ assert.equal(tierReasoningEffort({reasoningEfforts:[]},fallback,'high'),undefined);
+ assert.equal(tierReasoningEffort(undefined,fallback,'medium'),'medium','档位未声明强度时用模型自身强度集');
+ assert.equal(tierReasoningEffort(tier,fallback,undefined),undefined,'未显式选择仍继承目标默认');
+});
 test('切换智能体优先采用官方来源，不自动消费其他套餐',()=>{
  const own={accountId:'native-codex',modelId:'m',available:true,enabled:true,accountIdentity:'own',accountRevision:'r'};
  const other={...own,accountId:'devin',accountIdentity:'other'};

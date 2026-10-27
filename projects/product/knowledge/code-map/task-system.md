@@ -20,13 +20,13 @@
 
 ## 内部对话怎样关联任务？
 
-任务页[TaskConversationEntry.tsx](../../services/buildr-web/src/features/agent-conversations/TaskConversationEntry.tsx)使用工作空间（Workspace）、任务（Task）和明确起始目录创建内部对话；没有对话时直接创建，一段时直接打开，多段时选择。任务只保存自身事实，对话及可见历史由独立 `buildr-agent` 服务（Service）保存；任务关联不是外部桌面会话（Session）的导航关系，也不会自动改变任务状态。
+任务页[TaskConversationEntry.tsx](../../services/buildr-web/src/features/agent-conversations/TaskConversationEntry.tsx)是任务侧的对话入口：没有对话时进入绑定此任务的新对话草稿（发送才创建会话），一段时直接打开，多段时选择。反方向由对话内的[ConversationTaskLink.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationTaskLink.tsx)承担：列出同一工作空间未结束任务，对已建对话经 PATCH 设置、更换或解除引用，对未发送草稿更新绑定字段。新对话按工作空间（Workspace）共享一份未发送草稿（文本、模型/权限、附件）；任务绑定是这份草稿的一个字段，跟随草稿跨入口共享，空草稿不留绑定，发送时才写入真实会话。任务只保存自身事实，对话及可见历史由独立 `buildr-agent` 服务（Service）保存；任务关联不是外部桌面会话（Session）的导航关系，也不会自动改变任务状态。
 
-[宿主装配](../../services/buildr/src/modules/agent-service/module.ts)用任务查询能力核对身份，[对话应用](../../services/buildr-agent/src/application/conversation-application.ts)在创建时保存 `workspaceId`、`taskId` 与真实 `cwd`。它不把任务全文或当前页面静默复制成模型输入；执行者仍须重读任务和实际成果。全局对话可以不关联任务，统一历史也不按 Codex、DSH、Qoder 分组。换执行方先分别恢复原生上下文，再交付未见可见记录，未知运行不重发；见[智能体接入](../docs/architecture/agent-integration.md)。
+[宿主装配](../../services/buildr/src/modules/agent-service/module.ts)用任务查询能力核对身份，[对话应用](../../services/buildr-agent/src/application/conversation-application.ts)在创建时保存 `workspaceId`、`taskId` 与真实 `cwd`，创建后也可经同一更新动作按观察版本更换或解除任务引用。它不把任务全文或当前页面静默复制成模型输入；交付给执行方的工作上下文包含当前对话标题与任务引用，供后续创建任务保持一致命名，执行者仍须重读任务和实际成果。全局对话可以不关联任务，统一历史也不按 Codex、DSH、Qoder 分组。换执行方先分别恢复原生上下文，再交付未见可见记录，未知运行不重发；见[智能体接入](../docs/architecture/agent-integration.md)。
 
-输入栏的[ConversationOptions.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationOptions.tsx)提供独立的智能体（Agent）与模型选择器，并按实际模型能力呈现思考档位；切换执行方后恢复其默认模型并清除不兼容档位，只更新未发送选择，不创建参与者或执行。权限选择与附件位于左侧，保留独立的模式范围。
+输入栏的[ConversationOptions.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationOptions.tsx)提供独立的智能体（Agent）与模型选择器，并按实际模型能力呈现思考档位；切换执行方后恢复其默认模型并清除不兼容档位，只更新未发送选择，不创建参与者或执行。权限选择与附件位于左侧，保留独立的模式范围。[conversation-preferences.ts](../../services/buildr-web/src/features/agent-conversations/conversation-preferences.ts)按应用配置域保存两个独立偏好：对话模块记忆智能体与最近权限工作空间，模型选择器记忆来源、模型、服务档位和思考深度；两者只解析到新对话，且与提交说明的 `buildr.execution-model` 分离。完全访问只在同一工作空间恢复，跨工作空间新对话使用默认权限。
 
-原有[外部会话关系聚合](../../services/buildr/src/modules/native-session-links/module.ts)、[Codex 桌面关联](../../services/buildr/src/modules/codex-desktop/module.ts)和[DSH 桌面导航](../../services/buildr/src/modules/dsh-desktop/module.ts)继续维护外部聊天的多对多任务关系，不迁入新私有库。工作摘要（Work Context）中的答复仍不是自动启动内部对话或执行的触发器（Trigger）。
+外部桌面会话（Session）关系已退役；内部对话保留可选任务（Task）引用，任务状态与成果继续由任务应用及实际系统维护。
 
 ## 任务说明与过程材料怎样落到实现？
 
@@ -92,7 +92,7 @@
     - **`specs/task-verification/`** — 真实验证报告
       - [spec.md](../../openspec/specs/task-verification/spec.md) — 检查、未覆盖项、内容身份及合法写入
   - **`services/buildr/src/modules/agent-assets/`** — 工作方法治理与运行时投射
-    - [module.ts](../../services/buildr/src/modules/agent-assets/module.ts) — 组装规则（Rule）、技能（Skill）、能力绑定和运行时投射职责
+    - [module.ts](../../services/buildr/src/modules/agent-assets/module.ts) — 组装技能（Skill）、命令、组件、能力绑定和运行时投射职责，并保留规则（Rule）存量兼容诊断
   - **`services/buildr/src/modules/workspace/`** — 用户的工作空间（Workspace）管理
     - [application/workspace-query-application.ts](../../services/buildr/src/modules/workspace/application/workspace-query-application.ts) — 读取同一空间身份、项目、服务及登记事实
   - **`services/buildr/src/modules/task/`** — 后端任务事实与具体操作
@@ -204,6 +204,7 @@
       - [hooks/useTaskWorkContext.ts](../../services/buildr-web/src/features/task/hooks/useTaskWorkContext.ts) — 刷新与取消旧请求，防止不同任务内容混入
     - **`features/workbench/`** — 日常关注入口
       - [pages/WorkbenchPage.tsx](../../services/buildr-web/src/features/workbench/pages/WorkbenchPage.tsx) — 等我回应（明确的决定、验收或补充信息请求）、继续推进、项目变化与常用资料；没有回应请求时紧凑展示
+      - [taskSummary.ts](../../services/buildr-web/src/features/workbench/taskSummary.ts) — 按任务状态选择任务行摘要：进行中取工作摘要最近进展，终态取任务结果摘要，都缺失时取任务目标
 
 ## 哪些专业方法指导执行？
 

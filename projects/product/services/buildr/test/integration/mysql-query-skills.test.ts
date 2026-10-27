@@ -141,8 +141,11 @@ test('independent query HTTP and CLI share the same selected revision and local 
 test('installed MySQL connection program is offline for help/version, rejects query and only exposes bounded connection facts', async () => {
   for (const args of [['--help'], ['--version']]) {
     const result = spawnSync(process.execPath, [bin, ...args], { encoding: 'utf8', timeout: 10_000 }); assert.equal(result.status, 0, result.stderr);
-    assert.ok(args[0] === '--version' ? result.stdout.includes('1.0.0') : JSON.parse(result.stdout).help.length);
+    assert.ok(args[0] === '--version' ? result.stdout.includes('1.1.0') : JSON.parse(result.stdout).help.length);
   }
+  const help = JSON.parse(spawnSync(process.execPath, [bin, '--help'], { encoding: 'utf8', timeout: 10_000 }).stdout).help.join('\n');
+  assert.match(help, /标记为 prod 时拒绝/u);
+  assert.equal(help.includes('未声明 targetEnvironment 时拒绝'), false, '帮助不得把未声明环境描述为拒绝');
   const unsupported = spawnSync(process.execPath, [bin, 'query', '--sql', 'SELECT never_run'], { encoding: 'utf8', timeout: 10_000 });
   assert.equal(unsupported.status, 1); assert.equal(JSON.parse(unsupported.stdout).error.code, 'mysql_command_unsupported'); assert.equal(unsupported.stdout.includes('never_run'), false);
   const direct = spawnSync(process.execPath, [bin, 'test'], { encoding: 'utf8', timeout: 10_000 }); assert.equal(JSON.parse(direct.stdout).error.code, 'mysql_context_required');
@@ -150,6 +153,8 @@ test('installed MySQL connection program is offline for help/version, rejects qu
   const client: MySqlConnectionClient = {
     async test(config, credentials) { assert.equal(config.username, 'person'); assert.equal(credentials.password, 'never-print'); return { ok: true, serverVersion: '8.fixture', elapsedMs: 1 }; },
     async databases(config, credentials) { assert.equal(config.username, 'person'); assert.equal(credentials.password, 'never-print'); return ['orders']; },
+    async fingerprint() { throw new Error('unused in this test'); },
+    async applyChange() { throw new Error('unused in this test'); },
   };
   const tested = await executeMySqlConnectionCommand('test', context, client), discovered = await executeMySqlConnectionCommand('databases', context, client);
   assert.equal(tested.status, 'success'); assert.deepEqual(discovered.options, [{ value: 'orders', label: 'orders' }]); assert.equal(JSON.stringify([tested, discovered]).includes('never-print'), false);

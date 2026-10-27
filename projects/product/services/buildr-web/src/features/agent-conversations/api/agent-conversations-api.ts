@@ -3,8 +3,9 @@ import type { ApiClient, ApiError, SessionAdapter } from '../../../api';
 import { parseEventFrame } from '../conversation-state';
 import type { ModelAccount, CatalogModel, AttachmentView, ConnectionView, ConversationEvent, ConversationSummary, ConversationView, PendingConversation, PreparationView, ProviderId, SendInput, SendPreview } from '../types';
 
+export type ConversationPage={conversations:ConversationView[];nextCursor?:string;total?:number;stats?:{agents:Array<{label:string;count:number}>;models:Array<{label:string;count:number}>}};
 const appPath = '/api/v1/app/agent-service';
-const path = (workspaceId: string, conversationId?: string) => `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/agent-conversations${conversationId ? '/' + encodeURIComponent(conversationId) : ''}`;
+const path = (workspaceId: string, conversationId?: string) => `${workspaceId === '@default' ? appPath + '/conversations' : '/api/v1/workspaces/' + encodeURIComponent(workspaceId) + '/agent-conversations'}${conversationId ? '/' + encodeURIComponent(conversationId) : ''}`;
 const post = (body: unknown): RequestInit => ({method: 'POST', body: JSON.stringify(body)});
 export function createAgentConversationsClient(client: ApiClient, session: SessionAdapter, fetcher: typeof fetch = fetch) {
   const request = async <T,>(url: string, init: RequestInit = {}): Promise<T> => {
@@ -15,6 +16,7 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     }
   };
   return {
+    defaultWorkspace(signal?: AbortSignal) { return request<{rootPath: string}>(appPath+'/default-workspace', {signal}); },
     modelAccounts(signal?:AbortSignal) {return request<{accounts:ModelAccount[];providers:Array<{id:string;label:string}>}>(appPath+'/model-accounts',{signal});},
     modelCatalog(signal?:AbortSignal) {return request<{models:CatalogModel[]}>(appPath+'/model-catalog',{signal});},
     addModelAccount(provider:string) {return request<ModelAccount>(appPath+'/model-accounts',post({provider}));},
@@ -34,11 +36,13 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     loginAttempt(connectionId: string, id: string, signal?: AbortSignal) { return request<ConnectionView>(`${appPath}/connections/${encodeURIComponent(connectionId)}/login-attempts/${encodeURIComponent(id)}`, {signal}); },
     cancelLogin(connection: ConnectionView, id: string) { return request<ConnectionView>(`${appPath}/connections/${encodeURIComponent(connection.id)}/login-attempts/${encodeURIComponent(id)}/cancel`, post({expectedRevision:connection.revision})); },
     pending(signal?: AbortSignal) { return request<{conversations: ConversationView[]}>(appPath + '/pending-requests', {signal}).then(result => ({conversations: result.conversations.map(item => ({conversationId:item.id,workspaceId:item.workspaceId,title:item.title,status:item.run?.status || 'unknown',count:item.requests.length}) as PendingConversation)})); },
+    listAll(options:{workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;cursor?:string;limit?:number;signal?:AbortSignal}={}) {const params=new URLSearchParams();for(const [key,value] of Object.entries(options))if(key!=='signal'&&value!==undefined)params.set(key,String(value));return request<ConversationPage>(appPath+'/conversations'+(params.size?'?'+params:''),{signal:options.signal});},
+    seen(conversation:ConversationView,through:number) {return request<{activity:NonNullable<ConversationView['activity']>}>(path(conversation.workspaceId,conversation.id)+'/seen',post({through}));},
     list(workspaceId: string, options: {taskId?: string; cursor?: string; hidden?: boolean; query?: string; signal?: AbortSignal} = {}) { const params = new URLSearchParams(); if (options.taskId) params.set('taskId', options.taskId); if (options.cursor) params.set('cursor', options.cursor); if (options.hidden) params.set('hidden', 'true'); if (options.query) params.set('query', options.query); return request<{conversations: ConversationSummary[]; nextCursor?: string}>(path(workspaceId) + (params.size ? '?' + params : ''), {signal: options.signal}); },
-    create(input: {workspaceId: string; cwd: string; taskId?: string}) { return request<ConversationView>(path(input.workspaceId), post({cwd: input.cwd, taskId: input.taskId})); },
+    create(input: {workspaceId: string; cwd?: string; taskId?: string}) { return request<ConversationView>(path(input.workspaceId), post({cwd: input.cwd, taskId: input.taskId})); },
     read(workspaceId: string, id: string, signal?: AbortSignal) { return request<ConversationView>(path(workspaceId, id), {signal}); },
     entries(workspaceId: string, id: string, cursor: number, signal?: AbortSignal) { return request<ConversationView>(path(workspaceId, id) + '/entries?' + new URLSearchParams({before: String(cursor),limit:'100'}), {signal}); },
-    update(conversation: ConversationView, input: {title?: string; hidden?: boolean}) { return request<ConversationView>(path(conversation.workspaceId, conversation.id), {method: 'PATCH', body: JSON.stringify({...input, expectedRevision: conversation.revision})}); },
+    update(conversation: ConversationView, input: {title?: string; hidden?: boolean; taskId?: string | null}) { return request<ConversationView>(path(conversation.workspaceId, conversation.id), {method: 'PATCH', body: JSON.stringify({...input, expectedRevision: conversation.revision})}); },
     generateTitle(conversation:ConversationView) {return request<ConversationView>(path(conversation.workspaceId,conversation.id)+'/generate-title',post({expectedRevision:conversation.revision}));},
     prepare(conversation: ConversationView, input: SendInput) { return request<SendPreview>(path(conversation.workspaceId, conversation.id) + '/prepare-send', post(input)); },
     send(conversation: ConversationView, input: SendInput & {previewToken: string; clientRequestId: string}) { return request<{conversation: ConversationView}>(path(conversation.workspaceId, conversation.id) + '/send', post(input)); },

@@ -62,13 +62,13 @@ export function registerWorkspaceInfrastructure(runtime: any): any  {
 
   function developmentWorkspaceRoot(): any  {
     const root = productRoot();
-    const parent = path.resolve(root, '..');
+    if (path.basename(root) !== 'product') return null;
+    const workspace = path.resolve(root, '../..');
     if (
-      path.basename(root) === 'product' &&
-      existsFile(path.join(parent, 'AGENTS.md')) &&
-      existsDirectory(path.join(parent, 'rules'))
+      existsFile(path.join(workspace, 'AGENTS.md')) &&
+      existsDirectory(path.join(workspace, 'projects', 'product'))
     ) {
-      return parent;
+      return workspace;
     }
     return null;
   }

@@ -218,16 +218,6 @@ export function registerSystemDoctorApplication(dependencies: DoctorDependencies
         const builtinStatus = inspectPackageBuiltins(targetRoot);
         result.builtins.items = builtinStatus.findings;
         for (const finding of builtinStatus.findings.filter((item: any) => !item.component)) {
-          if (finding.type === 'rule' && finding.id === 'buildr-core') {
-            addDoctorFinding(result, 'warning', 'rules.legacy_core', finding.reason || '独立核心规则已退役，可通过同步清理受管旧文件。', {
-              path: finding.path,
-              suggestion: finding.status === 'retired'
-                ? '运行 buildr sync <agent> 更新入口并清理已确认归属的旧核心规则。'
-                : '核心规则现位于 AGENTS.md。请审阅保留的遗留内容，按需迁到用户规则后再明确删除；不影响其他安全同步。',
-              userActionRequired: false,
-            });
-            continue;
-          }
           if (finding.status === 'customized' || (finding.status === 'installed' && !finding.converge) || (finding.status === 'uninstalled' && !includeInfo)) continue;
           if(finding.type==='contract'&&finding.status==='modified'){addDoctorFinding(result,'warning','workspace.contract_modified','此工作空间保留了本地方法约定，尚未确认采用方式。',{path:finding.path,suggestion:'在 Buildr 中准备此工作空间并核对是否保留定制。',userActionRequired:true});continue;}
           if (finding.status === 'installed' && finding.converge) { addDoctorFinding(result, 'warning', 'builtin.outdated', `工作内容 ${finding.id} 尚未更新到当前 Buildr。`, {path:finding.path,suggestion:'在 Buildr 中重新准备此工作空间。',userActionRequired:false}); continue; }

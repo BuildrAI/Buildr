@@ -8,7 +8,7 @@ import { assertNoExternalCheckoutFilters } from './code-branch-switch.ts';
 import { enumerateCodeWorktrees } from './code-worktree-reader.ts';
 import type { CodeBranchEntry } from '../domain/source-control.ts';
 
-/** Only creates a new checkout. Git's live inventory owns reuse; existing files are never switched or reset. */
+/** Only creates a new checkout. Git's live inventory owns reuse; existing files are never switched or reset. The caller holds the shared Git operation lease. */
 export function prepareServiceWorktree(root: string, source: CodeSource, target: CodeBranchEntry, entries: CodeBranchEntry[], requiredPath = '') {
   relativeCodePath(requiredPath, true);
   if (requiredPath && codeGit(source.location, ['cat-file', '-t', target.hash + ':' + requiredPath]).toString().trim() !== 'tree') throw codeFailure('code_service_module_missing', '目标分支没有该服务目录，未创建工作树。');

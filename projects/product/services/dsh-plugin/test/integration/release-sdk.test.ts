@@ -157,7 +157,7 @@ test('preparer fetches only the fixed tag, installs frozen patched dependencies,
   assert.equal(install.cwd, fake.getSource());
   const prepare = fake.calls.find(call => call.args[0] === join(service, 'tools/prepare-source-sdk.ts'))!;
   assert.equal(prepare.file, process.execPath);
-  assert.deepEqual(prepare.args, [join(service, 'tools/prepare-source-sdk.ts'), '--source', fake.getSource(), '--manifest', plan.manifestFile, '--node', process.execPath]);
+  assert.deepEqual(prepare.args, [join(service, 'tools/prepare-source-sdk.ts'), '--source', fake.getSource(), '--manifest', plan.manifestFile, '--node', process.execPath, '--fresh']);
 });
 test('default input and final validation also run under explicit Node with isolated credentials and config', async t => {
   const fake = collaborators(t), ordinary = fake.dependencies.command;

@@ -10,7 +10,6 @@ import { createRuntime } from '../helpers/runtime-harness.ts';
 import { runtimeProvide } from '../../src/bootstrap/runtime.ts';
 import { WORKSPACE_QUERY } from '../../src/modules/workspace/module.ts';
 
-const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
 const digest = (value: Buffer | string) => crypto.createHash('sha256').update(value).digest('hex');
 export const LARGE_TEXT_BYTES = 5 * 1024 * 1024 + 128;
 export const LARGE_PATH_COUNT = 93;
@@ -60,13 +59,9 @@ export function largeCommitMessageFixture(t: TestContext) {
   write('assets/icon.bin', Buffer.alloc(128 * 1024, 0));
   for (let index = 0; index < 87; index++) write('src/support/file-' + String(index).padStart(3, '0') + '.ts', 'export const support' + index + ' = ' + index + ';\n');
   files.sort(); assert.equal(files.length, LARGE_PATH_COUNT);
-  const home = path.join(base, 'codex-home'); fs.mkdirSync(home);
-  const executable = path.join(base, 'codex-large-fixture');
-  fs.writeFileSync(executable, '#!/bin/sh\nexport BUILDR_FAKE_CODEX_MODE=success\nexec ' + quote(process.execPath) + ' ' + quote(path.resolve(import.meta.dirname, 'agent-codex-app-server.ts')) + ' "$@"\n', {mode: 0o755});
   const observe = () => {
     const index = git(location, ['rev-parse', '--path-format=absolute', '--git-path', 'index']);
     return {head: git(location, ['rev-parse', 'HEAD']), mainHead: git(root, ['rev-parse', 'HEAD']), index: digest(fs.readFileSync(index)), status: git(location, ['status', '--porcelain=v2', '-z', '--untracked-files=all']), files: files.map(relative => ({path: relative, digest: digest(fs.readFileSync(path.join(location, relative)))}))};
   };
-  const messages = (): Record<string, unknown>[] => fs.existsSync(path.join(home, 'protocol.jsonl')) ? fs.readFileSync(path.join(home, 'protocol.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line)) : [];
-  return {base, root, location: fs.realpathSync(location), repositoryId: repository.id as string, home, executable, files, observe, messages, onCleanup: (close: () => void | Promise<void>) => cleanup.push(close), totalBytes: files.reduce((total, file) => total + fs.statSync(path.join(location, file)).size, 0), gitCommonDirectory: fs.realpathSync(git(location, ['rev-parse', '--path-format=absolute', '--git-common-dir']))};
+  return {base, root, location: fs.realpathSync(location), repositoryId: repository.id as string, files, observe, onCleanup: (close: () => void | Promise<void>) => cleanup.push(close), totalBytes: files.reduce((total, file) => total + fs.statSync(path.join(location, file)).size, 0), gitCommonDirectory: fs.realpathSync(git(location, ['rev-parse', '--path-format=absolute', '--git-common-dir']))};
 }

@@ -22,7 +22,6 @@ import { createSourceReader } from './source-reader.ts';
 import { SourceColumn, SourceObjects, SourceView, type SourceInjected } from './SourceViews.tsx';
 import { createOpenAction, type Status } from './orchestration.ts';
 import { en, zh, type BuildrKey } from './locales.ts';
-import { mountDesktopClient, type DesktopClientRemote } from './desktop-client.ts';
 import { BindingConfiguration, type BindingConfigurationRemote } from './BindingConfiguration.tsx';
 import styles from './styles.module.css';
 
@@ -128,7 +127,7 @@ export async function apply(ctx: Context): Promise<void> {
       activation(): Promise<{ ok: boolean; value: ActivationStatus }>;
       open(): Promise<{ ok: boolean; value: OpenResult }>;
       sourceRecord(input: SourceRecordRequest): Promise<{ ok: boolean; value: SourceRecordResult }>;
-    } & DesktopClientRemote & BindingConfigurationRemote) | undefined;
+    } & BindingConfigurationRemote) | undefined;
     let recheck = (): void => {};
     const injected = (): Injected => ({ open: () => {}, recheck: () => recheck(), desktop,
       hooks: { status, compatible, activation, mounted: ctx.sidebarRight.mounted } });
@@ -174,13 +173,6 @@ export async function apply(ctx: Context): Promise<void> {
         }
       }, desktop, value => status.set(value), ctx.layout.panelInfo, ENTRY_ID as 'buildr' | 'buildr-dev');
       ctx.effect(() => () => action.dispose());
-      if (desktop) ctx.inject(['uiWorkspace', 'sessions', 'conversation'], scope => {
-        const namespace = remoteNamespace;
-        if (namespace && typeof namespace.desktopCommands === 'function') scope.effect(() => {
-          try { return mountDesktopClient(scope, namespace, ENTRY_ID); }
-          catch { return () => {}; }
-        });
-      });
       const injected = (): Injected => ({ open: () => { void action.click(); }, recheck: () => recheck(), desktop,
         hooks: { status, compatible, activation, mounted: ctx.sidebarRight.mounted } });
       ctx.slots.inject('sidebar.footer.action', function* () {

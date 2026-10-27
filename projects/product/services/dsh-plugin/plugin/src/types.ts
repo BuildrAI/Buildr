@@ -33,7 +33,6 @@ export interface Config {
 }
 
 export type * from './source-types.ts';
-export type { DshDesktopClientState, DshDesktopClientAck, DshDesktopClientCommand, DshDesktopTaskPageRequest, DshDesktopTaskPageResult } from '../../../buildr/src/modules/agent-operations/contracts/dsh-desktop-bridge.ts';
 export type MaintainerBinding = { nodeExecutable: string; cliEntry: string; nodeSha256?: string; cliSha256?: string };
 export type BindingMaintenanceView = { revision: string; binding: MaintainerBinding | null };
 export type BindingMaintenanceUpdate = { expectedRevision: string; binding: MaintainerBinding | null };

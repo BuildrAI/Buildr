@@ -2,6 +2,7 @@
 
 ## Purpose
 定义 Buildr 产品管理的内置能力状态，以及 `update` / `sync` 从当前产品 package 单向物化 workspace 源资产和 Agent runtime 的行为。
+
 ## Requirements
 
 ### Requirement: Buildr 内置能力层
@@ -105,6 +106,11 @@ Buildr MUST 通过 sync 支持已有 Buildr workspace 升级到内置能力和 a
 - **WHEN** 已有 workspace 使用旧版 package baseline rules
 - **THEN** Buildr sync MUST 将核心规则内联到根 `AGENTS.md`，其他专业规则仍使用通用规则清单
 - **AND** `runtime.md` 的语义 MUST 内化进 根 `AGENTS.md` 受管区块
+
+#### Scenario: 清单引用的旧共享资源不可解析
+- **WHEN** workspace 清单中的官方 `resource:` 引用在当前共享集及退役封存中均不可解析
+- **THEN** sync 收敛 MUST 将该条目按缺源处理并交由既有 installed/modified/missing 与 replaces 判定，不得因解析失败中断整次收敛
+- **AND** 结果 MUST 在 findings 中定位该来源缺失，供 Agent 与用户解释
 
 #### Scenario: MVP 不提供 migrate 命令
 - **WHEN** Buildr 处于本变更的 MVP 实施阶段

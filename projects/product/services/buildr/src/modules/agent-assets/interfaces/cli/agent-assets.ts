@@ -97,44 +97,6 @@ function runCommandsCheck(application: any, args: string[]) {
   return result;
 }
 
-function printRulesMutationReceipt(receipt: any) {
-  console.log(`已${receipt.action}规则资产：${receipt.id}`);
-  console.log('已更新 Buildr 源资产：');
-  for (const file of receipt.updatedPaths) console.log(`  ${path.relative(receipt.targetRoot, file).split(path.sep).join('/')}`);
-  console.log('下一步：');
-  console.log(`  ${receipt.nextAction}`);
-}
-
-function runRulesAdd(application: any, args: string[]) {
-  assertNoUnknownOptions(args, new Set(['--target', '--scope', '--path', '--description', '--replace']), new Set(['--replace']));
-  const [id] = positionalArgs(args);
-  if (!id) throw new Error('Missing rule id');
-  const receipt = application.rulesAdd({
-    id,
-    targetRoot: path.resolve(optionValue(args, '--target', process.cwd())),
-    scope: optionValue(args, '--scope', '.'),
-    path: optionValue(args, '--path', `rules/${id}.md`),
-    description: optionValue(args, '--description', null),
-    replace: hasFlag(args, '--replace'),
-  });
-  printRulesMutationReceipt(receipt);
-  return receipt;
-}
-
-function runRulesRemove(application: any, args: string[]) {
-  assertNoUnknownOptions(args, new Set(['--target', '--scope', '--keep-file']), new Set(['--keep-file']));
-  const [id] = positionalArgs(args);
-  if (!id) throw new Error('Missing rule id');
-  const receipt = application.rulesRemove({
-    id,
-    targetRoot: path.resolve(optionValue(args, '--target', process.cwd())),
-    scope: optionValue(args, '--scope', '.'),
-    keepFile: hasFlag(args, '--keep-file'),
-  });
-  printRulesMutationReceipt(receipt);
-  return receipt;
-}
-
 function runComponentListOrCheck(application: any, args: string[], checkOnlyOne: boolean) {
   assertNoUnknownOptions(args, new Set(['--target', '--json', '--scope']), new Set(['--json']));
   const [id] = positionalArgs(args);
@@ -381,10 +343,6 @@ export function createAgentAssetsCliContributions(): any  {
       ['component install', '安装 workspace Component，reconcile 指定 Agent runtime，并运行 doctor。', 'Usage: buildr component install <id> --agent <agent> [--target <dir>]', (runtime: any, context: any) => runComponentMutation(runtime, context.argv.slice(4), 'install')],
       ['component uninstall', '卸载 workspace Component 及其受管源资产；不会卸载外部 CLI，也不会删除 Project 内容。', 'Usage: buildr component uninstall <id> --agent <agent> [--target <dir>] [--reason <text>]', (runtime: any, context: any) => runComponentMutation(runtime, context.argv.slice(4), 'uninstall')],
     ].map(([key, summary, usage, run]: any) => route({ key, summary, usage, match: ({ domain, action }: any) => domain === 'component' && action === key.split(' ')[1], run })),
-    ...[
-      ['rules add', '注册已存在的 root Rule 文件到 rules/manifest.yml。未传 --path 时默认使用 rules/<id>.md。', 'Usage: buildr rules add <id> [--path <rules/file.md>] --description <text> [--target <dir>] [--replace]', (runtime: any, context: any) => runRulesAdd(runtime, context.argv.slice(4))],
-      ['rules remove', '删除 root Rule 登记和规则文件。传入 --keep-file 时只取消注册并保留文件。', 'Usage: buildr rules remove <id> [--target <dir>] [--keep-file]', (runtime: any, context: any) => runRulesRemove(runtime, context.argv.slice(4))],
-    ].map(([key, summary, usage, run]: any) => route({ key, summary, usage, match: ({ domain, action }: any) => domain === 'rules' && action === key.split(' ')[1], run })),
     ...[
       ['builtin list', '列出 Buildr 内置能力状态。', 'Usage: buildr builtin list [--target <dir>] [--json]', (runtime: any, context: any) => runtime.builtinList(context.argv.slice(4)), []],
       ['builtin uninstall', '卸载 optional Buildr 内置能力。required 内置能力不能卸载。', 'Usage: buildr builtin uninstall <id> --target <dir> [--reason <text>]', (runtime: any, context: any) => runBuiltinMutation(runtime, 'builtinUninstall', context.argv.slice(4)), []],

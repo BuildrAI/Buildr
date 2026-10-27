@@ -31,7 +31,7 @@ export const WORKSPACE_ROOT_GITIGNORE_ENTRIES = Object.freeze([
 type WorkspaceOperationMethod =
   | 'syncPackageComponents' | 'syncPackageBuiltins' | 'readPackageManifest'
   | 'parseManifestFileEntry' | 'assertName' | 'assertAgentId'
-  | 'renderSkillsManifestYaml' | 'renderRulesManifestYaml' | 'renderCommandsManifestYaml'
+  | 'renderSkillsManifestYaml' | 'renderCommandsManifestYaml'
   | 'renderComponentsManifestYaml' | 'trackWrite' | 'ensureDirectory'
   | 'atomicWriteJson' | 'mutationStateRoot' | 'mutationLockPath' | 'mutationRecoveryReceiptPath'
   | 'prepareMutationRestore' | 'restoreMutationSnapshot' | 'removeMutationRestoreTarget'
@@ -60,7 +60,6 @@ export function registerWorkspaceOperations(runtime: WorkspaceOperationsRuntime)
   const assertName = (...args: any[]) => runtime.assertName(...args);
   const renderSkillsManifestYaml = (...args: any[]) => runtime.renderSkillsManifestYaml(...args);
   const renderProjectsYaml = runtime.projectRepository.renderProjectsYaml;
-  const renderRulesManifestYaml = (...args: any[]) => runtime.renderRulesManifestYaml(...args);
   const renderCommandsManifestYaml = (...args: any[]) => runtime.renderCommandsManifestYaml(...args);
   const renderComponentsManifestYaml = (...args: any[]) => runtime.renderComponentsManifestYaml(...args);
   const trackWrite = (...args: any[]) => runtime.trackWrite(...args);
@@ -220,7 +219,6 @@ export function registerWorkspaceOperations(runtime: WorkspaceOperationsRuntime)
       // Existing layouts retain their explicit migration and recovery boundaries.
       trackWrite(targetRoot, path.join(targetRoot, 'projects', 'manifest.yml'), renderProjectsYaml({ schemaVersion: 'buildr.projects/v2', projects: {} }), created);
     }
-    trackWrite(targetRoot, path.join(targetRoot, 'rules', 'manifest.yml'), renderRulesManifestYaml({ rules: [] }), created);
     trackWrite(targetRoot, path.join(targetRoot, 'skills', 'manifest.yml'), renderSkillsManifestYaml({ schemaVersion: 'buildr.skills/v3', workspaceId, skills: [] }), created);
     trackWrite(targetRoot, path.join(targetRoot, 'commands', 'manifest.yml'), renderCommandsManifestYaml({ commands: [] }), created);
     trackWrite(targetRoot, path.join(targetRoot, 'components', 'manifest.yml'), renderComponentsManifestYaml({ components: [] }), created);

@@ -15,8 +15,9 @@ export function createComponentDefinitionDomain(dependencies: Dependencies) {
     const definition = dependencies.parseYamlDocument(content, 'component definition');
     definition.upstream = dependencies.isPlainObject(definition.upstream) ? definition.upstream : {};
     definition.members = dependencies.isPlainObject(definition.members) ? definition.members : {};
+    if (Array.isArray(definition.members.rules) && definition.members.rules.length === 0) delete definition.members.rules;
     definition.contributions = dependencies.isPlainObject(definition.contributions) ? definition.contributions : { skillFragments: [], skillDependencies: [] };
-    for (const key of ['rules', 'skills', 'commandCollections', 'skillContributions']) if (definition.members[key] === undefined) definition.members[key] = [];
+    for (const key of ['skills', 'commandCollections', 'skillContributions']) if (definition.members[key] === undefined) definition.members[key] = [];
     if (definition.contributions.skillFragments === undefined) definition.contributions.skillFragments = [];
     if (definition.contributions.skillDependencies === undefined) definition.contributions.skillDependencies = [];
     if (definition.integrity === undefined) definition.integrity = [];
@@ -36,7 +37,7 @@ export function createComponentDefinitionDomain(dependencies: Dependencies) {
       for (const [key, value] of Object.entries(definition.upstream)) lines.push(`  ${key}: ${dependencies.quoteYaml(value)}`);
     }
     lines.push('members:');
-    for (const key of ['rules', 'skills', 'commandCollections', 'skillContributions']) lines.push(`  ${key}: ${dependencies.quoteYaml(definition.members?.[key] || [])}`);
+    for (const key of ['skills', 'commandCollections', 'skillContributions']) lines.push(`  ${key}: ${dependencies.quoteYaml(definition.members?.[key] || [])}`);
     if (definition.contributions?.skillFragments?.length || definition.contributions?.skillDependencies?.length) {
       lines.push('contributions:', `  skillFragments: ${dependencies.quoteYaml(definition.contributions.skillFragments || [])}`);
       if (definition.contributions.skillDependencies?.length) {
@@ -65,7 +66,6 @@ export function createComponentDefinitionDomain(dependencies: Dependencies) {
 
   function componentMemberPaths(definition: any): string[] {
     return [
-      ...(definition.members?.rules || []),
       ...(definition.members?.skills || []),
       ...(definition.members?.commandCollections || []),
       ...(definition.members?.skillContributions || []),
@@ -110,11 +110,17 @@ export function createComponentDefinitionDomain(dependencies: Dependencies) {
     if (!['buildr', 'workspace'].includes(definition.source)) errors.push('component source must be buildr or workspace.');
     for (const key of Object.keys(definition.upstream || {})) if (!['name', 'version'].includes(key)) errors.push(`component upstream field is not supported: ${key}.`);
     const members = definition.members || {};
-    for (const key of Object.keys(members)) {
-      if (['adapters', 'adapterModules', 'runtimeHooks', 'executables', 'registryPatches'].includes(key)) errors.push(`component member type cannot extend or execute runtime adapters: ${key}.`);
-      else if (!['rules', 'skills', 'commandCollections', 'skillContributions'].includes(key)) errors.push(`component members field is not supported: ${key}.`);
+    if (Object.hasOwn(members, 'rules')) {
+      if (!Array.isArray(members.rules) || members.rules.length > 0) {
+        errors.push('component members.rules is retired; move rule content to AGENTS.md and remove the member.');
+      }
     }
-    for (const key of ['rules', 'skills', 'commandCollections', 'skillContributions']) {
+    for (const key of Object.keys(members)) {
+      if (key === 'rules') continue;
+      if (['adapters', 'adapterModules', 'runtimeHooks', 'executables', 'registryPatches'].includes(key)) errors.push(`component member type cannot extend or execute runtime adapters: ${key}.`);
+      else if (!['skills', 'commandCollections', 'skillContributions'].includes(key)) errors.push(`component members field is not supported: ${key}.`);
+    }
+    for (const key of ['skills', 'commandCollections', 'skillContributions']) {
       if (!Array.isArray(members[key]) || !members[key].every((item: unknown) => typeof item === 'string')) errors.push(`component members.${key} must be an array of paths.`);
     }
     const all = componentMemberPaths(definition);
@@ -125,12 +131,11 @@ export function createComponentDefinitionDomain(dependencies: Dependencies) {
       seen.add(member);
       try {
         const normalized = dependencies.normalizeRelativePathForBuildr(member, `component member path is unsafe: ${member}`);
-        const validRule = members.rules?.includes(member) && normalized.startsWith('rules/') && normalized !== 'rules/manifest.yml';
         const validSkill = members.skills?.includes(member) && normalized.startsWith('skills/') && normalized !== 'skills/manifest.yml';
         const validCommands = members.commandCollections?.includes(member) && normalized.startsWith('commands/') && normalized !== 'commands/manifest.yml' && normalized.endsWith('/manifest.yml');
         const contributionRoot = `components/${definition.source}/${definition.id}/contributions/`;
         const validContribution = members.skillContributions?.includes(member) && normalized.startsWith(contributionRoot) && normalized.endsWith('.md');
-        if (!validRule && !validSkill && !validCommands && !validContribution) errors.push(`component member path does not match its type: ${member}.`);
+        if (!validSkill && !validCommands && !validContribution) errors.push(`component member path does not match its type: ${member}.`);
       } catch (error) { errors.push(error instanceof Error ? error.message : String(error)); }
     }
     const contributions = definition.contributions || {};

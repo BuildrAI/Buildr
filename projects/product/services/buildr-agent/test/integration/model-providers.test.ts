@@ -95,7 +95,38 @@ test('Devin streaming converts cumulative tool parameters to deltas and fails tr
   const signatures = events.flatMap(event => event.choices[0].delta.reasoning_signature ?? []); assert.deepEqual(signatures, [Buffer.from([0, 255, 128, 1]).toString('base64')]);
   assert.ok(events.findIndex(event => event.choices[0].delta.reasoning_signature) < events.findIndex(event => event.choices[0].delta.tool_calls));
   mode = 'truncated'; await assert.rejects(() => runtime.infer(input({ ...body, stream: false })).then(response => response.json()), /stream_truncated/);
-  mode = 'error'; await assert.rejects(() => runtime.infer(input({ ...body, stream: false })).then(response => response.json()), /stream_failed/);
+  mode = 'error'; await assert.rejects(() => runtime.infer(input({ ...body, stream: false })).then(response => response.json()), error => (error as {code?:string}).code === 'model_devin_stream_failed' && /resource_exhausted: quota/.test((error as Error).message));
+});
+
+test('Devin rejects before opening a response stream when only metadata precedes a permanent denial', {timeout:10000},async t=>{
+  let message='Unable to process request due to an MCP configuration issue.';
+  const {runtime}=await devinFixture(t,()=>new Response(new Uint8Array(responseFrames([Buffer.alloc(0)],JSON.stringify({error:{code:'permission_denied',message}})))));
+  const infer=()=>runtime.infer(input({messages:[{role:'user',content:'inspect'}],stream:true}));
+  await assert.rejects(infer,error=>(error as {status?:number}).status===400&&/permission_denied.*MCP configuration/.test((error as Error).message));
+  message='Your request was blocked by our content policy.';
+  await assert.rejects(infer,{status:400,code:'model_devin_request_rejected'});
+  message='This account is not allowed to use the model.';
+  await assert.rejects(infer,{status:403,code:'model_devin_stream_failed'});
+});
+
+test('Devin tool continuation failure keeps partial output, upstream code and stage across Responses streaming', { timeout: 10000 }, async t => {
+  let calls = 0;
+  const { runtime } = await devinFixture(t, () => {
+    calls++;
+    return new Response(new Uint8Array(calls === 1 ? responseFrames([
+      bytesField(6, Buffer.concat([stringField(1, 'read-call'), stringField(2, 'read_file'), stringField(3, '{}')])), intField(5, 10),
+    ]) : responseFrames([stringField(3, 'partial answer')], JSON.stringify({error:{code:'permission_denied',message:'Unable to process request due to an MCP configuration issue. private-test-token Authorization: Bearer secret-value'}}))));
+  });
+  const request = {model:'consumer-route',input:[{role:'user',content:'inspect'}],tools:[{type:'function',name:'read_file',parameters:{type:'object'}}]};
+  const first = await runtime.infer(input(translateRequest(request,'responses','chat-completions',opaque)));
+  const result = await (await translateResponse(first,'chat-completions','responses',{model:'consumer-route',stream:false,request,opaque,signal:new AbortController().signal})).json();
+  const next = {...request,stream:true,input:[...request.input,...result.output,{type:'function_call_output',call_id:'read-call',output:'file result'}]};
+  const response = await runtime.infer(input(translateRequest(next,'responses','chat-completions',opaque)));
+  const stream = await (await translateResponse(response,'chat-completions','responses',{model:'consumer-route',stream:true,request:next,opaque,signal:new AbortController().signal})).text();
+  assert.match(stream,/partial answer/); assert.match(stream,/response.failed/); assert.match(stream,/model_devin_stream_failed/);
+  assert.match(stream,/permission_denied/); assert.match(stream,/MCP configuration issue/); assert.match(stream,/工具结果接续/);
+  assert.ok(!stream.includes('response.completed')); assert.ok(!stream.includes('private-test-token')); assert.ok(!stream.includes('secret-value'));
+  assert.equal(calls,2,'failure must not replay the tool continuation');
 });
 
 test('Devin caller cancellation aborts the real fetch signal and prevents completed output', { timeout: 10000 }, async t => {
@@ -135,6 +166,63 @@ test('Codex explicit login, dynamic catalog and Responses negotiation work witho
   assert.ok(!JSON.stringify(view).includes('private-codex-token'));
 });
 
+test('native Codex headerless Responses streams complete a Chat tool loop through the real translators', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-codex-owner-stream-')), requests: Record<string, unknown>[] = [];
+  const runtime = await createCodexModelProvider({ owner: {
+    async inspect() { return { status: 'ready' }; }, async identity() { return 'native-codex-fixture'; },
+    async request(path, init = {}) {
+      if (path.startsWith('/codex/models')) return Response.json({ models: [{ slug: 'gpt-test' }] });
+      if (path === '/wham/usage') return Response.json({});
+      assert.equal(path, '/codex/responses'); const body = JSON.parse(String(init.body)); requests.push(body); assert.equal(body.stream, true);
+      const call = { id: 'fc-read', type: 'function_call', call_id: 'call-read', name: 'read_file', arguments: '{"path":"a.ts"}' };
+      const output = requests.length === 1 ? [call] : [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'file checked' }] }];
+      const events = requests.length === 1 ? [{ type: 'response.output_item.added', output_index: 0, item: { ...call, arguments: '' } }, { type: 'response.function_call_arguments.delta', item_id: call.id, output_index: 0, delta: call.arguments }] : [{ type: 'response.output_text.delta', output_index: 0, delta: 'file checked' }];
+      const bytes = new TextEncoder().encode([...events, { type: 'response.completed', response: { id: 'response-' + requests.length, status: 'completed', output } }].map(event => 'data: ' + JSON.stringify(event) + '\n\n').join(''));
+      const response = new Response(new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(bytes.slice(0, 19)); controller.enqueue(bytes.slice(19)); controller.close(); } }));
+      assert.equal(response.headers.get('content-type'), null, 'the owner fixture must reproduce a missing header, not string Response text/plain');
+      return response;
+    },
+  } }).open({ accountId: 'account', configRoot: root, environment: {} });
+  t.after(async () => { await runtime.close(); await rm(root, { recursive: true, force: true }); });
+  const request = { model: 'consumer-route', stream: true, messages: [{ role: 'user', content: 'inspect file' }], tools: [{ type: 'function', function: { name: 'read_file', parameters: { type: 'object' } } }] };
+  const consume = async (body: Record<string, unknown>, stream = false) => {
+    const response = await runtime.infer(input(translateRequest(body, 'chat-completions', 'responses', opaque), 'gpt-test'));
+    return translateResponse(response, 'responses', 'chat-completions', { model: 'consumer-route', stream, request: body, opaque, signal: new AbortController().signal });
+  };
+  const first = await (await consume(request)).json(), message = first.choices[0].message;
+  assert.deepEqual(message.tool_calls, [{ id: 'call-read', type: 'function', function: { name: 'read_file', arguments: '{"path":"a.ts"}' } }]);
+  assert.equal(first.choices[0].finish_reason, 'tool_calls');
+  const final = await (await consume({ ...request, messages: [...request.messages, message, { role: 'tool', tool_call_id: 'call-read', content: 'actual fixture file result' }] }, true)).text();
+  const events = final.split('\n\n').filter(frame => frame.startsWith('data: {')).map(frame => JSON.parse(frame.slice(6)));
+  assert.equal(events.map(event => event.choices[0].delta.content ?? '').join(''), 'file checked');
+  assert.equal(events.at(-1).choices[0].finish_reason, 'stop'); assert.match(final, /\[DONE\]/);
+  assert.ok((requests[1].input as Record<string, unknown>[]).some(item => item.type === 'function_call_output' && item.call_id === 'call-read' && item.output === 'actual fixture file result'));
+  assert.equal(requests.length, 2);
+});
+
+test('native Codex stream header normalization preserves bytes, declared headers, cancellation and HTTP failures', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-codex-owner-stream-boundaries-'));
+  const bytes = new TextEncoder().encode('event: response.completed\r\ndata: {"type":"response.completed","response":{"status":"completed","output":[]}}\r\n\r\n');
+  let mode: 'headerless' | 'declared' | 'cancel' | 'error' = 'headerless', cancelled = false, failedBodyCancelled = false;
+  const runtime = await createCodexModelProvider({ owner: {
+    async inspect() { return { status: 'ready' }; }, async identity() { return 'native-codex-fixture'; },
+    async request(path) {
+      if (path.startsWith('/codex/models')) return Response.json({ models: [{ slug: 'gpt-test' }] });
+      if (path === '/wham/usage') return Response.json({});
+      assert.equal(path, '/codex/responses');
+      if (mode === 'error') return new Response(new ReadableStream({ cancel() { failedBodyCancelled = true; } }), { status: 429 });
+      return new Response(new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(bytes); if (mode !== 'cancel') controller.close(); }, cancel() { cancelled = true; } }), { headers: { 'x-owner-header': 'preserved', ...(mode === 'declared' ? { 'content-type': 'text/event-stream; charset=utf-8' } : {}) } });
+    },
+  } }).open({ accountId: 'account', configRoot: root, environment: {} });
+  t.after(async () => { await runtime.close(); await rm(root, { recursive: true, force: true }); });
+  const infer = () => runtime.infer(input({ input: 'test', stream: true }, 'gpt-test'));
+  const normalized = await infer(); assert.equal(normalized.headers.get('content-type'), 'text/event-stream'); assert.equal(normalized.headers.get('x-owner-header'), 'preserved');
+  assert.deepEqual(new Uint8Array(await normalized.arrayBuffer()), bytes);
+  mode = 'declared'; const declared = await infer(); assert.equal(declared.headers.get('content-type'), 'text/event-stream; charset=utf-8'); assert.deepEqual(new Uint8Array(await declared.arrayBuffer()), bytes);
+  mode = 'cancel'; const ongoing = await infer(), reader = ongoing.body!.getReader(); await reader.read(); await reader.cancel(); assert.equal(cancelled, true);
+  mode = 'error'; const failure = await infer(); assert.equal(failure.status, 429); assert.match(failure.headers.get('content-type')!, /application\/json/); assert.deepEqual(await failure.json(), { error: { code: 'model_codex_upstream_failed' } }); assert.equal(failedBodyCancelled, true);
+});
+
 test('Codex Responses consumer completes a two-turn Devin tool loop through the real protocol translators', { timeout: 10000 }, async t => {
   const captured: Buffer[] = [];
   const { runtime } = await devinFixture(t, init => {
@@ -153,6 +241,13 @@ test('Codex Responses consumer completes a two-turn Devin tool loop through the 
   assert.equal(final.output[0].content[0].text, 'done');
   const prompts = allBytes(fields(captured[1]!), 3).map(fields), result = prompts.find(value => integer(value, 2) === 4)!;
   assert.equal(text(result, 7), 'read-call'); assert.equal(text(result, 3), 'file contents'); assert.equal(text(fields(captured[0]!), 16), text(fields(captured[1]!), 16)); assert.notEqual(text(fields(captured[0]!), 22), text(fields(captured[1]!), 22));
+});
+
+test('Devin usage reports cache-read and cache-write tokens inside OpenAI prompt_tokens', { timeout: 10000 }, async t => {
+  const usage = bytesField(7, Buffer.concat([intField(2, 23), intField(3, 37), intField(4, 5), intField(5, 448)]));
+  const { runtime } = await devinFixture(t, () => new Response(new Uint8Array(responseFrames([Buffer.concat([stringField(3, 'ok'), usage, intField(5, 2)])]))));
+  const result = await (await runtime.infer(input({ messages: [{ role: 'user', content: 'hi' }], stream: false }, 'test'))).json() as { usage: Record<string, unknown> };
+  assert.deepEqual(result.usage, { prompt_tokens: 476, completion_tokens: 37, total_tokens: 513, prompt_tokens_details: { cached_tokens: 448 }, prompt_cache_write_tokens: 5 });
 });
 
 test('DeepSeek source delegates native login and raw inference to its sole owner', async () => {

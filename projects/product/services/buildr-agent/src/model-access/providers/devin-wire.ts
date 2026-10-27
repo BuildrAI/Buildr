@@ -77,7 +77,7 @@ export function buildDevinRequest(input: ProviderInferenceInput, offering: Devin
   const prompts: DevinPrompt[] = [], system: string[] = [];
   for (const [index, entry] of body.messages.entries()) {
     const message = record(entry), value = content(message.content);
-    if ((message.role === 'system' || message.role === 'developer') && !value.images.length) { system.push(value.text); continue; }
+    if ((message.role === 'system' || message.role === 'developer') && !value.images.length) { system.push(devinSystemText(agentId, value.text)); continue; }
     if (!['user', 'assistant', 'tool'].includes(String(message.role))) throw new Error('model_role_unsupported');
     if (value.images.length && !selected.images) throw new Error('model_image_unsupported');
     const role = message.role === 'assistant' ? 2 : message.role === 'tool' ? 4 : 1;
@@ -99,7 +99,7 @@ export function buildDevinRequest(input: ProviderInferenceInput, offering: Devin
   const tools = (Array.isArray(body.tools) ? body.tools : []).map(entry => {
     const tool = record(entry), fn = record(tool.function), name = string(fn.name);
     if (tool.type !== 'function' || !name) throw new Error('model_tool_unsupported');
-    return { name, description: string(fn.description) ?? '', parameters: JSON.stringify(record(fn.parameters)), strict: fn.strict === true };
+    return { name, description: devinToolDescription(agentId, name, string(fn.description) ?? ''), parameters: JSON.stringify(record(fn.parameters)), strict: fn.strict === true };
   });
   let toolChoice: string | undefined;
   if (typeof body.tool_choice === 'string') { if (!['auto', 'none', 'required'].includes(body.tool_choice)) throw new Error('model_tool_choice_unsupported'); toolChoice = body.tool_choice; }
@@ -108,4 +108,21 @@ export function buildDevinRequest(input: ProviderInferenceInput, offering: Devin
   if (!Number.isSafeInteger(maxTokens) || selected.maxOutput && maxTokens > selected.maxOutput) throw new Error('model_output_limit_unsupported');
   for (const field of ['audio', 'modalities', 'response_format', 'stop', 'logprobs', 'logit_bias', 'seed', 'prediction']) if (body[field] !== undefined) throw new Error('model_parameter_unsupported');
   return { token, system: system.join('\n\n'), prompts, tools, model: selected.id, cascade, execution: uuid(JSON.stringify([cascade, runId, requestId])), maxTokens, ...(typeof body.temperature === 'number' ? { temperature: body.temperature } : {}), ...(typeof body.top_p === 'number' ? { topP: body.top_p } : {}), toolChoice, parallelTools: body.parallel_tool_calls === true };
+}
+
+/** Preserve tool meaning; Devin rejects these exact native Codex descriptions. */
+function devinToolDescription(agentId: string, name: string, description: string): string {
+  if (agentId !== 'codex') return description;
+  if (name === 'exec_command' && description === 'Runs a command in a PTY, returning output or a session ID for ongoing interaction.') return 'Run the specified command, optionally using a PTY. Return output and the session identifier when the command remains active.';
+  if (name === 'write_stdin' && description === 'Writes characters to an existing unified exec session and returns recent output.') return 'Send characters to an existing command session, or poll its available output when chars is empty.';
+  return description;
+}
+
+/** Rephrase one known native approval instruction without changing its requirement or example. */
+function devinSystemText(agentId: string, text: string): string {
+  if (agentId !== 'codex') return text;
+  const original = '- Include a short question asking the user if they want to allow the action in `justification` parameter. e.g. "Do you want to download and install dependencies for this project?"';
+  const equivalent = '- Set `justification` to a brief approval question for the user about the proposed action. For example: "Do you want to download and install dependencies for this project?"';
+  return text.replace(/<permissions instructions>[\s\S]*?<\/permissions instructions>/g, block =>
+    block.includes('`sandbox_mode` is `workspace-write`') ? block.replace(original, equivalent) : block);
 }

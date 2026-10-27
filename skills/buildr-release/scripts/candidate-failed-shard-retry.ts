@@ -8,6 +8,7 @@ import { spawnCommandSync } from '../../../projects/product/services/buildr/src/
 import { verificationFailureFacts } from '../../../projects/product/services/buildr/test/verification/timing/parallel-runner.ts';
 import { CANDIDATE_CI_EVIDENCE_SCHEMA } from '../../../projects/product/services/buildr/test/verification/release/candidate-ci-contract.ts';
 import { releasePublishAuthority } from './release-authority.ts';
+import { readStepTimings } from './candidate-step-timings.ts';
 
 const WORKFLOW: any = '.github/workflows/verify.yml';
 const SHA: any = /^[a-f0-9]{40,64}$/u;
@@ -53,6 +54,7 @@ export function classifyCandidateStructuredFailures(evidence: any[], expected: a
     && String(item.workflow?.runId) === String(expected.runId) && item.workflow?.runAttempt === expected.runAttempt
     && item.sourceCommit === expected.sourceCommit);
   const facts: any[] = [];
+  const timedOutResults: Array<{ resultId: string; runner: string | null }> = [];
   for (const id of expected.failedIds) {
     const matches = selected.filter(item => item.id === id && item.status === 'failed');
     if (matches.length !== 1) return 'diagnosis-required';
@@ -69,14 +71,31 @@ export function classifyCandidateStructuredFailures(evidence: any[], expected: a
         if (result.processCleanup?.status === 'failed') facts.push({ kind: 'cleanup' });
         if (result.status === 'passed') continue;
         if (result.status === 'blocked') continue;
-        if (result.status === 'timed-out' || ['capability-timeout', 'process-close-timeout'].includes(result.failureCode)) facts.push({ kind: 'timeout' });
-        if (!Array.isArray(result.failureFacts) || result.failureFacts.length === 0) facts.push({ kind: 'unknown' });
+        const timedOut = result.status === 'timed-out' || ['capability-timeout', 'process-close-timeout'].includes(result.failureCode);
+        if (timedOut) {
+          facts.push({ kind: 'timeout' });
+          timedOutResults.push({ resultId: result.id, runner: item.runner?.os ?? null });
+        }
+        if (!timedOut && (!Array.isArray(result.failureFacts) || result.failureFacts.length === 0)) facts.push({ kind: 'unknown' });
         else facts.push(...result.failureFacts.map((fact: any) => fact && typeof fact === 'object' ? fact : { kind: 'unknown' }));
       }
     }
   }
   if (facts.some(fact => fact.kind === 'assertion' || fact.kind === 'execution')) return 'deterministic';
   if (facts.length > 0 && facts.every(fact => fact.kind === 'transient' && ['ECONNRESET', 'EAI_AGAIN', 'E429', 'E502', 'E503', 'E504'].includes(fact.code))) return 'transient';
+  // A capability timeout on a step that previously passed on the same runner is
+  // eligible for one failed-jobs rerun: retried evidence still binds the same
+  // run and stays within the aggregate attempt, while the automatic recovery
+  // is capped at runAttempt < 2. Steps that never passed (or lack timing
+  // observations for this runner) still require diagnosis.
+  if (facts.length > 0 && facts.every(fact => fact.kind === 'timeout') && timedOutResults.length > 0 && expected.buildrServiceRoot) {
+    const timings = readStepTimings(expected.buildrServiceRoot);
+    const previouslyPassed = timedOutResults.every(({ resultId, runner }) => {
+      const observations = timings[resultId]?.[runner ?? ''] ?? [];
+      return observations.some((observation: any) => Number.isSafeInteger(observation?.durationMs) && observation.durationMs > 0);
+    });
+    if (previouslyPassed) return 'transient';
+  }
   return 'diagnosis-required';
 }
 
@@ -157,7 +176,7 @@ export function inspectCandidateFailedShardRetry(options: any, dependencies: any
     let evidence: any[] = [];
     if (!aggregateOnly) try { evidence = dependencies.readFailureEvidence ? dependencies.readFailureEvidence({ runId, runAttempt, sourceCommit: options.sourceCommit }) : readFailureEvidence(run, gh, runId, repo); } catch { /* Legacy runs may not contain structured evidence. */ }
     const failedIds = failedShards.map((name: string) => name === 'Candidate bootstrap' ? 'artifact-macos' : name.match(/\(([^)]+)\)$/u)?.[1] ?? null);
-    const structured = aggregateOnly ? null : classifyCandidateStructuredFailures(evidence, { runId, runAttempt, sourceCommit: options.sourceCommit, failedIds });
+    const structured = aggregateOnly ? null : classifyCandidateStructuredFailures(evidence, { runId, runAttempt, sourceCommit: options.sourceCommit, failedIds, buildrServiceRoot: options.buildrServiceRoot });
     if (structured !== null) {
       failureClass = structured;
       classificationSource = 'structured-evidence';
@@ -219,7 +238,7 @@ function parseArgs(argv: any): any  {
     const key: any = argv[index];
     if (key.startsWith('--')) options[key.slice(2).replaceAll('-', '')] = argv[++index];
   }
-  return { action, options: { runId: options.runid, sourceCommit: options.sourcecommit, ghCommand: options.gh, repo: options.repo, confirm: options.confirm } };
+  return { action, options: { runId: options.runid, sourceCommit: options.sourcecommit, ghCommand: options.gh, repo: options.repo, confirm: options.confirm, buildrServiceRoot: options.buildrserviceroot } };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

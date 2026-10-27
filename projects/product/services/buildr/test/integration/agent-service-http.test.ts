@@ -4,6 +4,8 @@ import path from 'node:path';
 import process from 'node:process';
 import test from 'node:test';
 import { createServer } from 'node:http';
+import { spawn } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
 import { createAgentService } from '@buildr-ai/buildr-agent';
 import { createRuntime, runtimeContributions } from '../helpers/runtime-harness.ts';
 import { taskRecordFixture } from '../helpers/task-record-system-fixture.ts';
@@ -50,7 +52,7 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   let workspaceId: string;
   const service = createAgentService({ dataRoot: path.join(base, 'agent-profile'), executors: [], resolveWorkspace: id => { assert.equal(id, workspaceId); return { rootPath: root }; }, assertTask: () => {} });
   const contributions = runtimeContributions(runtime, 'http').filter((item: { id: string }) => item.id !== 'agent-service.http');
-  contributions.push(createAgentServiceHttpContribution(() => service));
+  contributions.push(createAgentServiceHttpContribution(() => service,{registeredWorkspaceIds:()=>[workspaceId]}));
   const server = createLocalWorkspaceServer(runtime, { targetRoot: root, httpContributions: contributions });
   const { url, initialWorkspaceId, sessionToken } = await server.ready;
   workspaceId = initialWorkspaceId;
@@ -69,6 +71,23 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   response = await fetch(conversations, { method: 'POST', headers, body: JSON.stringify({ title: 'HTTP work' }) }); assert.equal(response.status, 201);
   const created = await response.json() as { id: string; revision: string; entries: unknown[] };
   assert.deepEqual(created.entries, []);
+  response = await fetch(`${app}/conversations`); assert.equal(response.status,403);
+  response = await fetch(`${app}/conversations`, {headers:readHeaders}); assert.equal(response.status,200);
+  let summaries=await response.json();
+  // 已创建但从未发出内容的草稿不进入对话历史。
+  assert.equal(summaries.total,0);assert.deepEqual(summaries.conversations,[]);
+  {
+    const store=new DatabaseSync(path.join(base,'agent-profile','agent-service','conversations.sqlite'));
+    try{const row=store.prepare('SELECT body FROM conversations WHERE id=?').get(created.id) as {body:string};const record=JSON.parse(row.body);record.view.entries.push({id:'seed-entry',sequence:1,kind:'message',role:'user',text:'started work',createdAt:'2026-10-27T00:00:00Z'});store.prepare('UPDATE conversations SET body=? WHERE id=?').run(JSON.stringify(record),created.id);}finally{store.close();}
+  }
+  response = await fetch(`${app}/conversations`, {headers:readHeaders}); assert.equal(response.status,200);
+  summaries=await response.json();assert.equal(summaries.total,1);assert.equal(summaries.conversations[0].id,created.id);assert.deepEqual(summaries.conversations[0].entries,[]);
+  response = await fetch(`${app}/conversations?workspaceId=unregistered`, {headers:readHeaders});assert.equal(response.status,404);
+  response = await fetch(`${app}/conversations?activeOnly=1`, {headers:readHeaders});assert.equal(response.status,400);
+  response = await fetch(`${conversations}/${created.id}/seen`, {method:'POST',headers:{...headers,'x-buildr-session':'invalid'},body:JSON.stringify({through:0})});assert.equal(response.status,403);
+  response = await fetch(`${conversations}/${created.id}/seen`, {method:'POST',headers,body:JSON.stringify({through:1})});assert.equal(response.status,409);
+  response = await fetch(`${conversations}/${created.id}/seen`, {method:'POST',headers,body:JSON.stringify({through:0})});assert.equal(response.status,200);assert.equal((await response.json()).activity.seenThrough,0);
+
   const permissionDraft = { expectedRevision: created.revision, connectionId: 'not-registered', text: 'Keep this unsent.' };
   for (const permissionMode of ['always-approve', true, null]) {
     response = await fetch(`${conversations}/${created.id}/prepare-send`, { method: 'POST', headers, body: JSON.stringify({ ...permissionDraft, permissionMode }) });
@@ -103,6 +122,11 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   response = await fetch(`${conversations}/${created.id}/attachments/${attachment.id}`, { headers: readHeaders }); assert.equal(response.status, 200); assert.deepEqual(Buffer.from(await response.arrayBuffer()), png);
   response = await fetch(`${conversations}/${created.id}/prepare-send`, { method: 'POST', headers, body: JSON.stringify({ expectedRevision: attachment.revision, connectionId: 'not-registered', text: 'x'.repeat(129 * 1024) }) }); assert.equal(response.status, 413);
   response = await fetch(`${conversations}?hidden=true&query=updated`, { headers: readHeaders }); assert.equal(response.status, 200); assert.equal((await response.json()).conversations.length, 1);
+  response = await fetch(`${conversations}/${created.id}`, { method: 'PATCH', headers, body: JSON.stringify({ expectedRevision: attachment.revision, taskId: 'task-http' }) }); assert.equal(response.status, 200);
+  const linked = await response.json() as { revision: string; taskId?: string };
+  assert.equal(linked.taskId, 'task-http');
+  response = await fetch(`${conversations}/${created.id}`, { method: 'PATCH', headers, body: JSON.stringify({ expectedRevision: linked.revision, taskId: null }) }); assert.equal(response.status, 200);
+  assert.equal((await response.json() as { taskId?: string }).taskId, undefined);
   const coverage = inspectHttpOperationCoverage([AGENT_SERVICE_HTTP_OPERATIONS], []);
   assert.equal(coverage.status, 'aligned', JSON.stringify(coverage));
 });
@@ -150,6 +174,23 @@ test('model account HTTP preserves authentication, revisions, source identity an
   response=await fetch(endpoint+'/'+created.id+'/login-attempts/'+login.loginAttempt.id+'/cancel',{method:'POST',headers,body:JSON.stringify({expectedRevision:login.revision})});assert.equal(response.status,200);const cancelled=await response.json();assert.equal(cancelled.loginAttempt.state,'cancelled');
 });
 
+test('model selection HTTP waits for refreshed account revisions while other reads remain available', {timeout:30000},async t=>{
+  const {base,root}=taskRecordFixture(t,'model-catalog-current-http');
+  const service=createAgentService({dataRoot:path.join(base,'profile'),executors:[],modelProviders:[{id:'fixture',label:'Fixture',async open(){return{protocol:'chat-completions',async inspect(){return{status:'ready',models:[{id:'model',label:'Model',images:false,tools:true}]};},async beginLogin(){},async cancelLogin(){},async infer(){return assert.fail('catalog must not infer');},async close(){}};}}],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+  const added=await service.models.accounts.add({provider:'fixture'});await service.models.accounts.check(added.id);
+  const list=service.models.catalog.list,cached=await list(),updated=await service.models.accounts.check(added.id);
+  let release!:()=>void,started!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;}),reading=new Promise<void>(resolve=>{started=resolve;});
+  // The discovery boundary offers a quick cached read or its current refresh.
+  service.models.catalog.list=async(input={})=>{started();if(input.refresh===false)return cached;await gate;return list();};
+  const runtime=createRuntime(),contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+  const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions}),{url,sessionToken}=await server.ready,headers={'x-buildr-session':sessionToken};
+  t.after(async()=>{release();await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(()=>resolve()));});
+  const pending=fetch(url+'/api/v1/app/agent-service/model-catalog',{headers});await reading;
+  assert.equal((await fetch(url+'/api/v1/app/agent-service/connections',{headers})).status,200);
+  release();const response=await pending;assert.equal(response.status,200);
+  assert.equal((await response.json()).models[0].accountRevision,updated.revision);
+});
+
 test('model preferences enforce authentication, revision and context limits', {timeout:30000},async t=>{
  const {base,root}=taskRecordFixture(t,'model-preferences-http');
  const service=createAgentService({dataRoot:path.join(base,'agent-profile'),executors:[],modelProviders:[{id:'fixture',label:'Fixture',async open(){return{protocol:'chat-completions',inspect:async()=>({status:'ready',models:[{id:'model',label:'Model',images:false,tools:true,contextWindow:258000}],quota:{available:true,observedAt:'2026-10-25T00:00:00Z',windows:[{id:'weekly',label:'每周窗口',remainingPercent:93}]}}),beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>assert.fail('metadata must not infer'),close:async()=>{}};}}],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
@@ -164,4 +205,135 @@ test('model preferences enforce authentication, revision and context limits', {t
  const response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:checked.revision,models:[{id:'model',enabled:true,contextWindow:128000}]})});assert.equal(response.status,200);const updated=await response.json();assert.equal(updated.models[0].contextWindow,128000);assert.equal(updated.models[0].contextWindowOverride,128000);assert.equal(updated.quota.windows[0].remainingPercent,93);assert.equal(JSON.stringify(updated).includes('apiKey'),false);
  assert.equal((await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:checked.revision,models:[{id:'model',enabled:false}]})})).status,409);
  const reset=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:updated.revision,models:[{id:'model',contextWindow:null}]})});assert.equal(reset.status,200);assert.equal((await reset.json()).models[0].contextWindow,258000);
+});
+
+test('HTTP handoff exposes the exact bounded body, local sources and confirmed receipt without manual condensation', {timeout:15_000}, async t=>{
+  const {base,root}=taskRecordFixture(t,'handoff-http');
+  const previous=process.env.BUILDR_APP_DATA_DIR;process.env.BUILDR_APP_DATA_DIR=path.join(base,'private-app');
+  t.after(()=>{if(previous===undefined)delete process.env.BUILDR_APP_DATA_DIR;else process.env.BUILDR_APP_DATA_DIR=previous;});
+  let workspaceId='';const sent:string[]=[];
+  const executors=['a','b'].map(id=>({descriptor:{id,label:id,capabilities:{text:true,images:false,approval:true,questions:true,stop:true,resume:true,maxInputBytes:id==='b'?8192:128*1024}},async open(){return {
+    bindingIdentity:id,capabilities:this.descriptor.capabilities,inspectAccount:async()=>({status:'ready' as const}),models:async()=>[{id:'fixture',label:'Fixture',isDefault:true}],beginLogin:async()=>{},cancelLogin:async()=>{},createContext:async()=>({id:'native-'+id}),resumeContext:async()=>{},readHistory:async()=>[],
+    async send(input:any){sent.push(input.text);input.onEvent({type:'accepted',executionRef:{id:'run-'+id}});input.onEvent({type:'item',item:{id:'answer-'+id,kind:'message',role:'assistant',text:'still need real startup validation',status:'completed'}});input.onEvent({type:'completed',status:'completed'});},
+    observe:async()=>({status:'idle' as const,executionRef:{id:'run-'+id},tools:[]}),reply:async()=>{},stop:async()=>({status:'stopped' as const,tools:[]}),close:async()=>{}
+  };}}));
+  const service=createAgentService({dataRoot:path.join(base,'agent-profile'),executors,resolveWorkspace:id=>{assert.equal(id,workspaceId);return{rootPath:root};},assertTask:()=>{}});
+  const runtime=createRuntime(),contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+  const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions});
+  const ready=await server.ready;workspaceId=ready.initialWorkspaceId;
+  t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(()=>resolve()));});
+  const headers={origin:ready.url,'x-buildr-session':ready.sessionToken,'content-type':'application/json'};
+  for(const id of ['a','b'])await service.connections.connect(id,{expectedRevision:service.connections.read(id).revision});
+  const chat=await service.conversations.create(workspaceId,{});
+  const first={expectedRevision:chat.revision,connectionId:'a',text:'original user requirement '.repeat(900)};
+  const preview=service.conversations.prepareSend(workspaceId,chat.id,first);service.conversations.send(workspaceId,chat.id,{...first,previewToken:preview.token,clientRequestId:'first'});
+  const completed=async()=>{for(let n=0;n<500;n++){const value=service.conversations.read(workspaceId,chat.id);if(value.run?.status==='completed')return value;if(value.run?.status==='failed'||value.run?.status==='unknown')assert.fail(JSON.stringify(value.run));await new Promise<void>(resolve=>setTimeout(resolve,2));}assert.fail(JSON.stringify(service.conversations.read(workspaceId,chat.id).run));};
+  const before=await completed(),draft={expectedRevision:before.revision,connectionId:'b',text:'continue'};
+  const endpoint=`${ready.url}/api/v1/workspaces/${workspaceId}/agent-conversations/${chat.id}`;
+  let response=await fetch(endpoint+'/prepare-send',{method:'POST',headers,body:JSON.stringify(draft)});assert.equal(response.status,200);
+  const prepared=await response.json();assert.equal(prepared.fits,true);assert.equal(prepared.handoff.mode,'indexed');assert.ok(fs.existsSync(prepared.handoff.sourcePath));assert.ok(prepared.inputBytes<=8192);
+  response=await fetch(endpoint+'/send',{method:'POST',headers,body:JSON.stringify({...draft,previewToken:prepared.token,clientRequestId:'second'})});assert.equal(response.status,202);
+  const after=await completed(),receipt=after.entries.find(entry=>entry.kind==='handoff')!;
+  assert.equal(sent[1],prepared.handoff.body);assert.equal(receipt.handoff!.body,prepared.handoff.body);assert.equal(receipt.status,'accepted');
+  response=await fetch(endpoint,{headers});assert.equal(response.status,200);assert.equal((await response.json()).entries.find((entry:any)=>entry.kind==='handoff').handoff.body,sent[1]);
+});
+
+
+test('the real web CLI discovers host interruptions on listening without a browser request', {timeout:30_000}, async t=>{
+  const {base,root}=taskRecordFixture(t,'agent-startup-recovery');
+  const dataRoot=path.join(base,'restart-profile');
+  const service=createAgentService({dataRoot,executors:[],resolveWorkspace:()=>({rootPath:root}),assertTask:()=>{}});
+  const conversation=await service.conversations.create('startup-workspace',{});await service.close();
+  const filename=path.join(dataRoot,'agent-service','conversations.sqlite');
+  const db=new DatabaseSync(filename);
+  const record=JSON.parse((db.prepare('SELECT body FROM conversations WHERE id=?').get(conversation.id) as {body:string}).body);
+  record.view.run={id:'interrupted-run',participantId:'missing-participant',provider:'codex',generation:'previous-host',status:'stopped',accepted:true,tools:[],interrupted:true,diagnostic:'before-startup',startedAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+  record.interruption={runId:'interrupted-run',awaitingUser:false};
+  db.prepare('UPDATE conversations SET body=? WHERE id=?').run(JSON.stringify(record),conversation.id);db.close();
+  const child=spawn(process.execPath,[path.resolve('bin/buildr.mjs'),'web','--port','0','--no-open'],{env:{...process.env,BUILDR_APP_DATA_DIR:dataRoot},stdio:['ignore','pipe','pipe']});
+  let output='';child.stdout.on('data',chunk=>{output+=chunk});child.stderr.on('data',chunk=>{output+=chunk});
+  t.after(async()=>{if(child.exitCode===null){child.kill('SIGTERM');await new Promise<void>(resolve=>child.once('exit',()=>resolve()));}});
+  const end=Date.now()+20_000;let diagnostic='before-startup';
+  while(Date.now()<end){
+    const read=new DatabaseSync(filename,{readOnly:true});
+    read.exec('PRAGMA busy_timeout=1000');
+    const current=JSON.parse((read.prepare('SELECT body FROM conversations WHERE id=?').get(conversation.id) as {body:string}).body);read.close();
+    diagnostic=current.view.run.diagnostic;
+    if(diagnostic!=='before-startup')break;
+    assert.equal(child.exitCode,null,output);await new Promise(resolve=>setTimeout(resolve,50));
+  }
+  assert.match(diagnostic,/执行未完成.*尚不能确认/,output);
+});
+
+
+test('default conversations use a stable application directory without a registered workspace', async t => {
+  const { base, root } = taskRecordFixture(t, 'agent-default-http');
+  const previous = process.env.BUILDR_APP_DATA_DIR;
+  process.env.BUILDR_APP_DATA_DIR = path.join(base, 'private-app');
+  t.after(() => { if (previous === undefined) delete process.env.BUILDR_APP_DATA_DIR; else process.env.BUILDR_APP_DATA_DIR = previous; });
+  const runtime = createRuntime();
+  const server = createLocalWorkspaceServer(runtime, { targetRoot: root, httpContributions: runtimeContributions(runtime, 'http') });
+  const { url, sessionToken } = await server.ready;
+  t.after(async () => { server.server.closeAllConnections(); await new Promise<void>(resolve => server.server.close(() => resolve())); });
+  const endpoint = `${url}/api/v1/app/agent-service/conversations`;
+  const headers = { origin: url, 'x-buildr-session': sessionToken, 'content-type': 'application/json' };
+  assert.equal((await fetch(endpoint)).status, 403);
+  assert.equal((await fetch(endpoint, { method: 'POST', headers: { ...headers, 'x-buildr-session': 'invalid' }, body: '{}' })).status, 403);
+  for (const body of [{ cwd: root }, { taskId: 'some-task' }]) {
+    assert.equal((await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) })).status, 400);
+  }
+  const directoryEndpoint = `${url}/api/v1/app/agent-service/default-workspace`;
+  assert.equal((await fetch(directoryEndpoint)).status, 403);
+  const directoryResponse = await fetch(directoryEndpoint, { headers });
+  assert.equal(directoryResponse.status, 200);
+  const directory = await directoryResponse.json() as { rootPath: string };
+  assert.ok(path.isAbsolute(directory.rootPath));
+  assert.equal(fs.existsSync(directory.rootPath), false);
+  const response = await fetch(endpoint, { method: 'POST', headers, body: '{}' });
+  assert.equal(response.status, 201);
+  const chat = await response.json() as { id: string; workspaceId: string; cwd: string; revision: string };
+  assert.equal(chat.workspaceId, '@default');
+  assert.equal(chat.cwd, fs.realpathSync(directory.rootPath));
+  assert.notEqual(chat.cwd, fs.realpathSync(root));
+  assert.equal(path.basename(chat.cwd), 'default-workspace');
+  assert.ok(fs.statSync(chat.cwd).isDirectory());
+  const read = await fetch(`${endpoint}/${chat.id}`, { headers });
+  assert.equal(read.status, 200);
+  assert.equal((await read.json() as { cwd: string }).cwd, chat.cwd);
+  const list = await fetch(endpoint, { headers });
+  assert.equal(list.status, 200);
+  // 已创建但未发送的对话属于草稿：可按 ID 读取，但不进入对话列表。
+  assert.ok(!(await list.json() as { conversations: Array<{ id: string }> }).conversations.some(row => row.id === chat.id));
+  {
+    const store = new DatabaseSync(path.join(base, 'private-app', 'agent-service', 'conversations.sqlite'));
+    try {
+      const row = store.prepare('SELECT body FROM conversations WHERE id=?').get(chat.id) as { body: string };
+      const record = JSON.parse(row.body);
+      record.view.entries.push({ id: 'seed-entry', sequence: 1, kind: 'message', role: 'user', text: 'started work', createdAt: '2026-10-27T00:00:00Z' });
+      store.prepare('UPDATE conversations SET body=? WHERE id=?').run(JSON.stringify(record), chat.id);
+    } finally { store.close(); }
+  }
+  const list2 = await fetch(endpoint, { headers });
+  assert.ok((await list2.json() as { conversations: Array<{ id: string }> }).conversations.some(row => row.id === chat.id));
+  assert.equal((await fetch(`${endpoint}/${chat.id}`, { method: 'PATCH', headers, body: JSON.stringify({ expectedRevision: chat.revision, cwd: root }) })).status, 400);
+  assert.equal((await fetch(`${endpoint}/${chat.id}`, { method: 'PATCH', headers, body: JSON.stringify({ expectedRevision: chat.revision, taskId: 'some-task' }) })).status, 400);
+});
+
+test('changing the default workspace only affects new conversations and preserves existing files', async t => {
+  const { base, root } = taskRecordFixture(t, 'default-workspace-preservation');
+  const dataRoot = path.join(base, 'profile');
+  const newRoot = path.join(base, 'default-workspace');
+  fs.mkdirSync(newRoot);
+  fs.writeFileSync(path.join(root, 'existing.txt'), 'original work');
+  fs.writeFileSync(path.join(newRoot, 'existing.txt'), 'new workspace work');
+  const original = createAgentService({ dataRoot, resolveWorkspace: () => ({ rootPath: root }), assertTask: () => {} });
+  const oldChat = await original.conversations.create('@default', {});
+  await original.close();
+  const current = createAgentService({ dataRoot, resolveWorkspace: () => ({ rootPath: newRoot }), assertTask: () => {} });
+  t.after(() => current.close());
+  assert.equal(current.conversations.read('@default', oldChat.id).cwd, fs.realpathSync(root));
+  const newChat = await current.conversations.create('@default', {});
+  assert.equal(newChat.cwd, fs.realpathSync(newRoot));
+  assert.equal(fs.readFileSync(path.join(root, 'existing.txt'), 'utf8'), 'original work');
+  assert.equal(fs.readFileSync(path.join(newRoot, 'existing.txt'), 'utf8'), 'new workspace work');
 });

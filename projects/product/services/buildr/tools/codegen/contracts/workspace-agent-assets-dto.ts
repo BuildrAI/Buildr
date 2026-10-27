@@ -1,9 +1,5 @@
 import { CODE_HTTP_SCHEMAS } from '../../../src/modules/code/interfaces/http/code-http-contracts.ts';
-import { AGENT_OPERATIONS_HTTP_SCHEMAS } from '../../../src/modules/agent-operations/interfaces/http/agent-operations-http-contracts.ts';
 import { AGENT_SERVICE_HTTP_SCHEMAS } from '../../../src/modules/agent-service/interfaces/http/agent-service-http-contracts.ts';
-import { CODEX_DESKTOP_HTTP_SCHEMAS } from '../../../src/modules/codex-desktop/interfaces/http/codex-desktop-http-contracts.ts';
-import { NATIVE_SESSION_LINKS_HTTP_SCHEMAS } from '../../../src/modules/native-session-links/interfaces/http/native-session-links-http-contracts.ts';
-import { DSH_DESKTOP_HTTP_SCHEMAS } from '../../../src/modules/dsh-desktop/interfaces/http/dsh-desktop-http-contracts.ts';
 import { CODE_GENERATION_HTTP_SCHEMAS } from '../../../src/modules/code/interfaces/http/code-generation-http.ts';
 import { KNOWLEDGE_HTTP_SCHEMAS } from '../../../src/modules/knowledge/interfaces/http/knowledge-http-contracts.ts';
 
@@ -19,11 +15,7 @@ const productRoot: any = path.resolve(serviceRoot, '../..');
 
 const targets: any = Object.freeze([
   { name: 'code-http-dto.ts', schemas: CODE_HTTP_SCHEMAS },
-  { name: 'agent-operations-http-dto.ts', schemas: AGENT_OPERATIONS_HTTP_SCHEMAS },
   { name: 'agent-service-http-dto.ts', schemas: AGENT_SERVICE_HTTP_SCHEMAS },
-  { name: 'codex-desktop-http-dto.ts', schemas: CODEX_DESKTOP_HTTP_SCHEMAS },
-  { name: 'native-session-links-http-dto.ts', schemas: NATIVE_SESSION_LINKS_HTTP_SCHEMAS },
-  { name: 'dsh-desktop-http-dto.ts', schemas: DSH_DESKTOP_HTTP_SCHEMAS },
   { name: 'code-generation-http-dto.ts', schemas: CODE_GENERATION_HTTP_SCHEMAS },
   { name: 'knowledge-http-dto.ts', schemas: KNOWLEDGE_HTTP_SCHEMAS },
   { name: 'workspace-http-dto.ts', backendRelative: 'modules/workspace/interfaces/http', schemas: WORKSPACE_HTTP_SCHEMAS },

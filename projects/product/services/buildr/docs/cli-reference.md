@@ -142,15 +142,9 @@ buildr help assets
 |---|---|
 | `buildr init [--agent <agent>] [--adapter <adapter-id>]` | 默认初始化源资产并完整同步标准或已选文件约定，安装产品入口技能（Skill）、投射并执行最终诊断（Doctor）。仅源资产使用互斥的 `--source-only`。 |
 | `buildr web [--target <workspace>] [--no-open] [--replace-mismatched-development]` | 启动或复用只监听 `127.0.0.1` 的默认本机 Web 应用；默认打开浏览器，登记和切换多个 Workspace，`--target` 登记并打开指定 Workspace。`--replace-mismatched-development` 仅 development 实例：运行中的开发版与当前来源不匹配或缺少来源证明时，先认证退出旧实例再按当前来源启动；来源仍匹配的实例照常复用，正式版及与更新交接、Launcher binding 的组合拒绝该选项。 |
-| `buildr web preview start\|list\|stop` | 启动、查看或停止隔离的开发预览。带 `--task <task-id> --target <canonical-workspace>` 时，Preview使用matching Task Worktree并保存精确owner；停止时复核Worktree evidence与进程secret。不带Task时保持独立checkout preview。 |
-| `buildr agent list --json` | 查看本机执行接入与唯一默认；区别于规则、技能文件投射的 `runtime list`。 |
-| `buildr agent register codex\|dsh --executable <actual-entry> --expected-revision <revision> --json` | 由智能体（Agent）发现并验证真实入口后登记，不复制凭据或启动模型。Codex 可显式传 `--codex-home`，DSH 可显式传 `--dsh-home`；其余沿用原生默认。 |
-| `buildr codex connections --json` | 查看已确认的 Codex 关联登记及配置范围。已配置不表示桌面在线，不要求插件、卡片或握手。 |
-| `buildr codex link --target <workspace> --task <code> --native-session-id <direct-thread-id> [--connection-id <id>] --json` | 用户在当前 Codex 会话要求关联，或该会话新建任务成功后，直接采集 `CODEX_THREAD_ID` 并幂等建立关系。无需面板或待确认请求；多接入时明确选择，返回准确会话与固定任务链接。 |
-| `buildr codex sessions --target <workspace> [--task <code>] [--native-session-id <id>] [--connection-id <id>] --json` | 查询任务或具体会话的长期关系和准确双向链接，不创建请求、发送消息或要求插件。 |
-| `buildr agent select <agent-id> --expected-revision <revision> --json` | 按已观察版本改变默认，仅影响新执行；单次生成仍可覆盖选择。 |
+| `buildr web preview start\|list\|stop` | 启动、查看或停止隔离的开发预览。带 `--task <task-id> --target <canonical-workspace>` 时，Preview使用matching Task Worktree并保存精确owner；停止时复核Worktree evidence与进程secret。不带Task时保持独立checkout preview。`start --reuse development[:facet,…]` 显式沿用开发版模型目录或智能体运行时，已存在副本默认复用，`--refresh-reuse` 原子刷新；`stop --purge` 在停止确认与owner匹配后删除实例根。 |
 | `buildr installation status [--json]` | 分别报告receipt证明的npm CLI、Buildr Web Launcher、Buildr Web Dev、当前安装与当前Web实例的版本、路径、runtime role、protocol、payload和ownership identity；不扫描PATH。 |
-| `buildr web launcher install/status/repair/uninstall` | 从verified formal npm安装显式创建、诊断、修复或卸载本机Buildr Web Launcher；wrapper只执行binding中的Host Node和同一package entry。Development checkout使用隔离的Buildr Web Dev入口。 |
+| `buildr web launcher install/status/repair/uninstall` | 从verified formal npm安装显式创建、诊断、修复或卸载本机Buildr Web Launcher；wrapper只执行binding中的Host Node和同一package entry。Windows 入口经 `wscript.exe` 隐藏运行的 `.vbs` 托管 `.cmd` runner，后台启动不占用控制台窗口，输出写入 Launcher 自有日志。Development checkout使用隔离的Buildr Web Dev入口。 |
 | `buildr project create <code>` | 创建或登记 Project；`--name`/`--description` 设置 metadata，`--repo`、`--remote`、`--integration-branch` 声明独立 Git source，并补齐空 `commands.yml` requirement context。 |
 | `buildr assets create service --input <json-file>` | 当前全局服务（Service）登记入口，输入包含当前 `revision` 和明确的服务（Service）、目录及代码库选择；通过 `assets associate` 维护项目（Project）引用。 |
 | `buildr service create <project>/<service> <repo-ref>` | 仅保留给未迁移的旧工作空间（Workspace）。存在全局 `services/manifest.yml` 时会要求使用 `assets create service`，不能作为新用户接入入口。 |
@@ -176,13 +170,13 @@ buildr help assets
 | `buildr task work-context inspect\|record\|respond <task-id>` | 独立工作摘要与显式待处理事项。`record` 使用 `--expected-current <absent\|digest>`、`--progress`、`--next-step`；可明确登记或清除事项。`respond` 以当前版本、事项身份和真实用户意见保存答复，不改变任务状态或完成结果。 |
 | `buildr task parent inspect` | 只读查看整体目标、真实子任务及结果、完成观察身份和历史父计划。旧 record、reconcile、bind-child、refresh-planning、reconcile-child-delivery、accept 写入口已退役。父任务通过已有 task complete 提交当前版本、验收和明确用户授权。 |
 | `buildr task verification inspect\|record <task-id>` | 读取或整值保存Workspace SQLite中的current任务验证报告。`record --report <json-file>`接收Agent在开发完成后形成的实际检查、选择范围、目标、结果、未覆盖项和结论；`inspect`可带当前内容identity判断报告是否仍适用。命令不生成计划、不执行测试、不绑定Candidate。 |
-| `buildr rules add/remove` | 维护 root Rules manifest 和文件生命周期。 |
+| `buildr rules render` | 按 `AGENTS.md` 的 scope 祖先链与子树投射规则内容；`rules add/remove` 与 `rules/manifest.yml` 已退役，既有文件保留为兼容内容。 |
 | `buildr skills add/remove` | 只维护 workspace `skills/` 中的 Skill source；旧 `--scope .` 仅兼容并警告，Project scope 被拒绝。 |
 | `buildr skills bind/unbind` | 维护 workspace 默认 binding，或在 `projects/<project>/capabilities.yml` 维护 Project context binding。 |
 | `buildr skills render [<agent>] [--adapter <adapter-id>] --destination workspace\|user` | 从 `--target <workspace>` 读取源资产，投射到工作空间（Workspace）或个人用户层；默认 workspace，不按品牌登记限制通用技能（Skill）。 |
 | `buildr commands add/remove` | 维护 workspace Command catalog definitions；最后一个 definition 仍被 requirement 引用时零写入。 |
 | `buildr commands check [--project <project> ...]` | 按显式 Project task context 合并 requirements 并观察本机环境；无 Project 时只检查 workspace defaults。 |
-| `buildr component list/check/install/uninstall` | 管理 workspace 级 Rules、Skills、Command collections 与声明式 Skill Contribution。 |
+| `buildr component list/check/install/uninstall` | 管理 workspace 级 Skills、Command collections 与声明式 Skill Contribution。 |
 | `buildr builtin list/uninstall/restore` | 查看或维护 Buildr 内置能力；required 能力不能卸载。`restore` 表示明确放弃该 Builtin 的本地修改；replacement 只接管可证明为 Buildr-managed 的 predecessor，恢复 source 后再运行 `sync <agent>` 收敛 runtime。 |
 | `buildr update [check]` | 按安装回执（Installation Receipt）检查或更新当前 npm 安装或开发检出（Development Checkout）；不负责工作空间（Workspace）同步。 |
 
@@ -271,7 +265,7 @@ Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git comm
 
 ## 独立 MySQL 查询
 
-通过 `buildr connection-skill definitions list`、`list` 及 `get` 选择准确的内置 `mysql-connection` 实例及当前 `revision`。连接配置与完整认证继续由通用连接入口维护；`buildr-mysql` 随主包安装，只通过私有进程间通信（IPC）执行测试与数据库发现，查询工具使用独立 `buildr mysql-query`。
+通过 `buildr connection-skill definitions list`、`list` 及 `get` 选择准确的内置 `mysql-connection` 实例及当前 `revision`。连接配置与完整认证继续由通用连接入口维护；`buildr-mysql` 随主包安装，只通过私有进程间通信（IPC）执行测试、数据库发现、结构摘要与受控变更；查询工具使用独立 `buildr mysql-query`，始终单条只读。
 
 | 命令 | 用途 |
 |---|---|
@@ -284,6 +278,8 @@ Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git comm
 所有命令可指定 `--target`。版本或完整认证来源变化后重新读取，不回退团队组或同名实例。连接页的“查询”动作打开独立查询工作面；偏好与团队配置分别保存。
 
 未传 `--database` 时使用连接默认库，`--database ""` 明确不设当前库。只执行单条只读查询；无最外层 LIMIT 时补充 100 行，显式 1—500 保留，超过 500 拒绝。每次最多 10 秒、4 MiB，失败不当作完整结果。
+
+受控变更只经 `buildr connection-skill run --connection <id> --expected-revision <revision> --program cli -- apply ...` 执行。被标记为 `prod` 的连接一律拒绝；未声明环境时按非生产执行并在结果中标注。`DROP TABLE` 与 `TRUNCATE` 默认拒绝，可在连接配置开启允许破坏性语句。一次只执行一条语句：数据修改必须带 `WHERE` 并显式提供受影响行数上限，结构变更不接受上限且不可回滚。写前以 `fingerprint` 返回的结构摘要核对目标，未知结果不自动重试。
 
 结果的 `columns` 与行数组 `rows` 按位置对应，支持重名列和空结果表头，大整数与小数以文本保留精度。`limitReached` 只表示达到本次限制，不推断总数或自动读取下一页。查询结果不落库，启用库和当前库是每个实例独立的本机偏好。
 

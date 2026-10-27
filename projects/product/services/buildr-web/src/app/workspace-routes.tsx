@@ -1,5 +1,4 @@
 import { Navigate, useRoutes, type Location, type RouteObject } from 'react-router-dom';
-import { CodexEntryNotice } from '../features/agents/components/CodexEntryNotice';
 import { SkillsPage } from '../features/agent-assets/pages/SkillsPage';
 import { CodeExplorerPage, CodeSourceControlPage } from '../features/code/pages/CodeExplorerPage';
 import { ConnectionSkillsPage } from '../features/connection-skills/pages/ConnectionSkillsPage';
@@ -28,7 +27,6 @@ export const workspaceRoutes: RouteObject[] = [
   { index: true, element: <Navigate to="overview" replace /> },
   { path: 'workspace-overview', element: <WorkspaceOverviewPage /> },
   { path: 'overview', element: <WorkbenchPage /> },
-  { path: 'codex', element: <CodexEntryNotice /> },
   { path: 'settings', element: <SettingsPage /> },
   { path: 'code', element: <Navigate to="source-control" replace /> },
   { path: 'code/explorer', element: <CodeExplorerPage /> },

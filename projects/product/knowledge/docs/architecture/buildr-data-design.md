@@ -45,7 +45,7 @@
 
 ## 工作资产与项目声明怎样使用
 
-规则（Rule）保存约束，技能（Skill）保存方法，组件（Component）把相关资产作为一组安装和维护，命令定义（Command Definition）描述外部工具的识别与诊断。各自清单指向原文，登记本身不复制正文，也不会安装外部工具或保存它的凭证。
+规则（Rule）保存约束，技能（Skill）保存方法，组件（Component）把相关资产作为一组安装和维护，命令定义（Command Definition）描述外部工具的识别与诊断。规则正文位于组织根、项目（Project）或服务（Service）的 `AGENTS.md`，按作用域逐层读取；技能与命令各自清单指向原文，登记本身不复制正文，也不会安装外部工具或保存它的凭证。
 
 普通技能（Skill）在工作空间（Workspace）的 `skills/` 维护，`assetIdentity` 与 `sourceIdentity` 分别表示资产与来源。项目（Project）只声明需要什么和选择谁，不另存源副本。组合与投射细节见[技能体系](buildr-skill-system.md)。
 
@@ -125,7 +125,7 @@ OpenSpec 的 `specs/` 保存当前承诺，`changes/` 保存一次变更的提�
 | `A/instance.json`、`instance-start.lock` | 进程发现、实例密钥、运行配置（Profile）和启动争用；删除记录不等于停止进程 |
 | 启动器（Launcher）的 `launcher-binding.json` | Node、入口及启动策略，重建前需核对真实安装 |
 | `G/buildr/task-worktrees/<task-id>.json` | 工作树（Worktree）的目录、分支和创建归属；不是任务完成或环境就绪证明 |
-| 预览根的 `previews/<name>/` | `preview.json`、`instance.json`、`preview.log`；名称或端口相同不能代替进程归属 |
+| 预览根的 `previews/<name>/` | `preview.json`、`instance.json`、`preview.log`、可选 `reuse.json` 与沿用的 `agent-service/` 副本；名称或端口相同不能代替进程归属 |
 | `W/.worktrees/<task-id>/.buildr/local/workspace.sqlite` | `--task` 预览为服务目标工作树播种的 canonical 任务库一致副本；时点快照，不回灌 canonical，已存在时复用 |
 | `W/.buildr/agent-runtime/`、`H/.buildr/agent-runtime/` | 派生文件的所有权与完整性回执，不能仅凭内容相似重建 |
 | `W/.buildr/builtin-receipts.json` | 随包资产的受管事实，不是资产正文 |
@@ -135,6 +135,10 @@ OpenSpec 的 `specs/` 保存当前承诺，`changes/` 保存一次变更的提�
 `P` 可由 `BUILDR_PRODUCT_DATA_DIR` 覆盖，`A` 可由 `BUILDR_APP_DATA_DIR` 覆盖。它们可能指向同一目录，但语义和覆盖参数不同。macOS 的正式应用默认使用 `~/Library/Application Support/Buildr`，开发应用使用 `~/Library/Application Support/Buildr Dev`；Windows 使用本机应用数据目录，Linux 遵循状态目录约定。具体值以[产品路径解析](../../../services/buildr/src/infrastructure/filesystem/product-data-root.ts)与[应用运行配置](../../../services/buildr/src/modules/installation/contracts/web-profile.ts)为准。
 
 预览根由 `buildrWebDataRoot()` 解析，使用应用覆盖目录，否则使用系统默认产品数据位置；仅设置 `BUILDR_PRODUCT_DATA_DIR` 不能推断预览已隔离。macOS 启动器绑定位于目标的 `Contents/Resources/`，Windows npm 启动器使用 `P/launchers/npm/`。工作树（Worktree）副本通常位于 `W/.worktrees/<task-id>/`；登记、真实 Git 状态和未提交内容需共同保全。
+
+`buildr web preview start --reuse development[:facet,…]` 可显式沿用开发版应用数据：`model-catalog` 复制 `agent-service/model-access`，`agent-runtime` 另复制所选连接的登录配置（排除 `model-bindings`、`tmp` 及日志、会话等运行缓存）、引用到的 `agent-service/programs/` 程序，并在预览交互库中只重写 `connections` 表与原生绑定。开发版数据根始终只读；预览会话、附件、交接材料与模型运行缓存不复制，预览自身生成的同类数据也不会写回开发版。`reuse.json` 记录来源、facet、播种/刷新时间与逐 facet 结果，`preview.json` 同步保存可选 `reuse` 事实。
+
+已有副本默认复用；`--refresh-reuse` 以临时目录写入、校验后替换，失败保留旧副本。默认 `preview stop` 只停止并保留实例数据；`preview stop --purge` 仅在停止确认、owner 匹配、目标位于预览根内且不存在越界符号链接时删除整个实例目录，包括会话、凭证与配置副本、程序副本和日志。
 
 实例文件包含密钥，本机副本和故障报告都应保护这些内容。源资产与用户配置、凭证、临时日志分开保存，不意味着后者可无条件删除。
 

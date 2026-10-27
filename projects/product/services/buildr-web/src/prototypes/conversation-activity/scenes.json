@@ -1,0 +1,335 @@
+{
+  "version": 1,
+  "pages": [
+    {
+      "id": "work",
+      "title": "所有对话与活动浮窗",
+      "notes": [
+        {
+          "id": "rail",
+          "title": "当前对话与所有对话，分开使用",
+          "text": "气泡与列表都遵循：收起时打开自己的视图，显示另一视图时切换，已经显示自己的视图时再次点击收起。气泡悬停临时预览当前对话；列表悬停查看分组活动，固定显示历史时不再弹活动浮窗。高亮只标明当前显示的视图，触屏点按也按此规则。 本轮不新增统计图标或独立数字，“全部对话”入口放在活动浮窗顶部右侧。",
+          "position": "activity-rail"
+        },
+        {
+          "id": "active",
+          "title": "直接回到正在关注的对话",
+          "text": "每条可直接打开，执行中、等待回应、未查看都属于活动；只显示一个静态状态，不转圈、不闪烁。空间名称只在组标题显示，行内保留智能体、模型与最近消息时间，不放长 ID。列表加高，超出视口时内部滚动。",
+          "position": "activity-rail"
+        },
+        {
+          "id": "stats-overview",
+          "title": "执行数与活动数分开看",
+          "text": "浮窗始终统计全部工作空间当前轮次确定执行的对话。活动数量还包含等待回应、状态待确认与已结束未查看，因此可以大于执行数；按智能体与模型是同一批对话的两种分布，不可相加。",
+          "position": "activity-stats"
+        }
+      ],
+      "states": [
+        {
+          "id": "finished",
+          "title": "执行结束，结果未查看",
+          "notes": [
+            {
+              "id": "done",
+              "title": "结束后有新内容，仍留在活动区",
+              "text": "悬停“所有对话”图标，可看到已结束但仍未查看的对话标为“未查看”。打开到最新消息后它退出活动区；仍在执行的对话不会因为查看而退出。",
+              "position": "activity-rail"
+            }
+          ]
+        },
+        {
+          "id": "quiet",
+          "title": "没有需要提醒的对话",
+          "notes": [
+            {
+              "id": "quiet",
+              "title": "没有活动时保持安静",
+              "text": "没有活动时只显示“所有对话”图标。悬停浮窗显示暂无活动，不混入已结束且已查看的历史对话。",
+              "position": "activity-rail"
+            }
+          ]
+        },
+        {
+          "id": "overflow",
+          "title": "同时有较多对话",
+          "notes": [
+            {
+              "id": "overflow",
+              "title": "更多活动也不占用页面",
+              "text": "所有活动都收在同一个浮窗里，多条时在浮窗内滚动。顶部右侧“全部对话”始终保留，进入完整对话列表。",
+              "position": "activity-rail"
+            }
+          ]
+        },
+        {
+          "id": "stats-default",
+          "title": "执行统计 · 浮窗默认",
+          "notes": [
+            {
+              "id": "stats-default-note",
+              "title": "随时查看执行分布",
+              "text": "同一浮窗内，顶部为全部空间的执行统计，下方仍显示全部活动，顶部右侧可进入完整对话列表。悬停、查看统计不清除未查看提醒。",
+              "position": "activity-stats"
+            }
+          ]
+        },
+        {
+          "id": "stats-agent",
+          "title": "执行统计 · 按智能体筛选",
+          "notes": [
+            {
+              "id": "stats-agent-note",
+              "title": "点统计，只筛列表",
+              "text": "示例选中 Codex，下方仅显示当前轮次使用 Codex 的执行中对话。总览数字和活动总数不变；再次点击或清除筛选恢复全部活动。",
+              "position": "activity-stats-filter"
+            }
+          ]
+        },
+        {
+          "id": "stats-model",
+          "title": "执行统计 · 按模型筛选",
+          "notes": [
+            {
+              "id": "stats-model-note",
+              "title": "按本轮实际模型查看",
+              "text": "示例选中 SWE-2；筛选同一活动列表，不依据历史参与者或下一轮选择。点击其他项目切换条件。",
+              "position": "activity-stats-filter"
+            }
+          ]
+        },
+        {
+          "id": "stats-other-active",
+          "title": "执行统计 · 无执行仍有活动",
+          "notes": [
+            {
+              "id": "stats-other-note",
+              "title": "零执行不等于没有活动",
+              "text": "没有确定执行时统计压成一行，但等待回应、状态待确认和未查看仍留在活动区，不会被当作执行数量。",
+              "position": "activity-stats"
+            }
+          ]
+        },
+        {
+          "id": "stats-many",
+          "title": "执行统计 · 较多活动与模型",
+          "notes": [
+            {
+              "id": "stats-many-note",
+              "title": "统计与列表分别有界",
+              "text": "统计项自然换行，较多模型在统计区域内有界滚动，活动列表独立滚动；顶部右侧“全部对话”入口保持可见。",
+              "position": "activity-stats"
+            }
+          ]
+        },
+        {
+          "id": "stats-unknown",
+          "title": "执行统计 · 数量待确认",
+          "notes": [
+            {
+              "id": "stats-unknown-note",
+              "title": "未知不能显示为零",
+              "text": "未确认统计时保留活动内容，明确显示执行数量暂未确认，不伪造零或空列表。",
+              "position": "activity-stats"
+            }
+          ]
+        },
+        {
+          "id": "stats-error",
+          "title": "执行统计 · 读取失败",
+          "notes": [
+            {
+              "id": "stats-error-note",
+              "title": "失败只影响统计",
+              "text": "读取失败不代表没有执行。活动列表保留，统计显示局部不可用，不清除提醒，也不冒充成功。",
+              "position": "activity-stats"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "history",
+      "title": "对话列表",
+      "notes": [
+        {
+          "id": "stats",
+          "title": "执行分布与历史放在一起",
+          "text": "统计位于空间选择下方，只统计所选空间的执行中对话。点击智能体或模型筛选原列表，搜索不改变总览数字。宽时两组并排，窄时上下排列。活动总数还包括等待回应和未查看，因此可以大于执行总数。",
+          "position": "execution-stats"
+        },
+        {
+          "id": "order",
+          "title": "全部活动集中在顶部",
+          "text": "筛选范围内的执行中、等待回应及未查看对话统一放在顶部活动区，按最新消息排序；其他对话单独列在下方，不重复出现。",
+          "position": "history-active"
+        },
+        {
+          "id": "scope",
+          "title": "查看全部工作空间",
+          "text": "在当前空间与全部空间间切换。全部视图显示每条对话的来源，点击仍打开原属对话，不迁移工作位置。",
+          "position": "history-filter"
+        },
+        {
+          "id": "stats-shared",
+          "title": "同一口径，跟随空间范围",
+          "text": "卡片与浮窗复用统计口径和展示。历史跟随所选空间，搜索与点击统计项只筛选同一列表，不改变总览；切换空间清除分组筛选。宽窄取决于卡片实际容器宽度。",
+          "position": "execution-stats"
+        }
+      ],
+      "states": [
+        {
+          "id": "all",
+          "title": "全部工作空间",
+          "notes": [
+            {
+              "id": "all",
+              "title": "多空间共用一份列表",
+              "text": "Buildr 与业务平台的对话一起排序，元信息标明来源；搜索和隐藏筛选也使用这个范围。",
+              "position": "history-filter"
+            }
+          ]
+        },
+        {
+          "id": "new-message",
+          "title": "另一对话收到新消息",
+          "notes": [
+            {
+              "id": "new",
+              "title": "有新输入，自然上浮",
+              "text": "“服务列表筛选优化”有新的未查看消息，进入活动区并按最新消息排在最上面；活动区不再只包含执行中的对话。",
+              "position": "history-active"
+            }
+          ]
+        },
+        {
+          "id": "empty",
+          "title": "没有匹配结果",
+          "notes": [
+            {
+              "id": "empty",
+              "title": "空结果可恢复",
+              "text": "搜索没有匹配的对话时显示空白状态，清除搜索可恢复原列表，原有提醒不丢失。",
+              "position": "history-filter"
+            }
+          ]
+        },
+        {
+          "id": "error",
+          "title": "刷新暂时失败",
+          "notes": [
+            {
+              "id": "error",
+              "title": "失败不冒充没有对话",
+              "text": "保留上次列表并说明更新失败，点击重试后恢复；不会把正在执行的对话显示为已经结束。",
+              "position": "history-list"
+            }
+          ]
+        },
+        {
+          "id": "stats-wide",
+          "title": "统计卡片 · 宽版",
+          "notes": [
+            {
+              "id": "stats-wide",
+              "title": "统计卡片 · 宽版",
+              "text": "两组统计横向并排，点击名称和数字筛选下方列表；点击同一项或清除筛选恢复。",
+              "position": "execution-stats"
+            }
+          ]
+        },
+        {
+          "id": "stats-narrow",
+          "title": "统计卡片 · 窄版",
+          "notes": [
+            {
+              "id": "stats-narrow",
+              "title": "统计卡片 · 窄版",
+              "text": "同一历史面板限制为 420 像素宽，两组统计自动上下排列；项目多时各组内部换行，不横向滚动。",
+              "position": "execution-stats"
+            }
+          ]
+        },
+        {
+          "id": "stats-empty",
+          "title": "统计卡片 · 无执行",
+          "notes": [
+            {
+              "id": "stats-empty",
+              "title": "统计卡片 · 无执行",
+              "text": "没有执行中的对话时卡片压成一行；仍可查看已有历史，不把已结束的对话算进执行数量。",
+              "position": "execution-stats"
+            }
+          ]
+        },
+        {
+          "id": "stats-unknown",
+          "title": "统计卡片 · 数量待确认",
+          "notes": [
+            {
+              "id": "unknown-h",
+              "title": "保留列表，不伪造零",
+              "text": "统计尚待确认时不展示零，已有历史仍可阅读。",
+              "position": "execution-stats"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "conversation",
+      "title": "打开对话与标题",
+      "notes": [
+        {
+          "id": "reading",
+          "title": "查看后仍在执行",
+          "text": "打开并看到最新内容后，未查看记录已更新；只要还在执行，就继续留在活动浮窗和列表顶部。没有重复的执行标记与未查看蓝点，也不再用转圈动画。",
+          "position": "conversation-panel"
+        },
+        {
+          "id": "title",
+          "title": "标题为什么还没填",
+          "text": "标题相关操作解释当前状态，不用大段错误占据标题。首轮成功结束、有可见问答后才自动生成。",
+          "position": "title-status"
+        }
+      ],
+      "states": [
+        {
+          "id": "title-pending",
+          "title": "首轮执行中，标题待生成",
+          "notes": [
+            {
+              "id": "pending",
+              "title": "等待成功完成首轮",
+              "text": "此时“新对话”不代表生成失败。标题提示说明触发条件，生成按钮不可用，仍可手动命名。",
+              "position": "title-status"
+            }
+          ]
+        },
+        {
+          "id": "title-failed",
+          "title": "标题生成超时",
+          "notes": [
+            {
+              "id": "failed",
+              "title": "看得懂，也能处理",
+              "text": "工作回复已经完成，标题生成超时不影响结果。可明确点击重新生成，或手动改名；不会自动重跑工作。",
+              "position": "title-status"
+            }
+          ]
+        },
+        {
+          "id": "waiting",
+          "title": "等待你回应",
+          "notes": [
+            {
+              "id": "waiting",
+              "title": "不是普通执行中",
+              "text": "授权或补充问题使用静态“等待回应”标记。打开查看不会代替你回答问题，只有真正答复后才更新执行状态。",
+              "position": "conversation-panel"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

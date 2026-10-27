@@ -6,7 +6,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import type { AccountObservation, AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorSendInput, ExecutorTitleInput, LoginObservation, PermissionMode } from '../../contracts.ts';
 import { NativeRpc, nativeBinding, bounded, closeOwnedProcess, findExecutable, inspectVersion, isolatedEnvironment, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories } from '../native-process.ts';
 import {readQoderIdentity,requestQoderModel} from '../../model-access/providers/qoder.ts';
-import { checkedGateway, consumerBinding, gatewayModel, gatewayEffort, type ExecutorGateway } from '../model-gateway.ts';
+import { checkedGateway, consumerBinding, gatewayModel, qoderGatewayPolicy, type ExecutorGateway } from '../model-gateway.ts';
 const capabilities = { permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 export function createQoderExecutor(): AgentExecutor { return { descriptor: { id: 'qoder', label: 'Qoder', capabilities }, open: options => QoderRuntime.open(options) }; }
 class QoderRuntime implements AgentRuntime {
@@ -39,7 +39,7 @@ class QoderRuntime implements AgentRuntime {
     // qodercliAuth owns this one Buildr login; model leases isolate execution, not credentials.
     const config = join(options.nativeAccountConfigRoot ?? options.configRoot, 'qoder-config');
     await privateDirectories(options.configRoot, home, temporary, config);
-    const env = isolatedEnvironment(options.environment, home, temporary, { QODER_CONFIG_DIR: config, ...(gateway ? { NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) });
+    const env = isolatedEnvironment(options.environment, home, temporary, { QODER_CONFIG_DIR: config, ...(gateway ? { QODER_SDK_CUSTOM_BASE_URL_BYOK: '1', BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) });
     const executable = await findExecutable(options.executable, ['qodercli', 'qoder', 'qodercli.exe'], env); const version = await inspectVersion(executable, env, options.signal);
     if (!isCompatibleProgram('qoder', version)) throw new Error(`qoder_version_unsupported: requires ${nativeProgramPolicy('qoder').compatibility}`);
     const binding = await consumerBinding('qoder', executable, version, config, options);
@@ -112,7 +112,7 @@ class QoderRuntime implements AgentRuntime {
   async readHistory({ contextRef, cwd }: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]> { this.reference(contextRef, cwd); return await this.rpc.call('history', { contextId: contextRef.id, cwd }); }
   async send(input: ExecutorSendInput): Promise<void> {
     this.reference(input.contextRef, input.cwd);
-    if (this.gateway) input = { ...input, model: gatewayModel(this.gateway, input.model).id, reasoningEffort: gatewayEffort(this.gateway, input.model, input.reasoningEffort) };
+    if (this.gateway) input = { ...input, model: gatewayModel(this.gateway, input.model).id, reasoningEffort: qoderGatewayPolicy(this.gateway, input.model, input.reasoningEffort).parameters.reasoningEffort };
     this.handlers.set(input.contextRef.id, input.onEvent);
     try { await this.rpc.call('send', { contextId: input.contextRef.id, cwd: input.cwd, text: input.text, images: input.images, model: input.model, reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode, clientRequestId: input.clientRequestId }, 24 * 60 * 60 * 1000); }
     finally { this.handlers.delete(input.contextRef.id); }

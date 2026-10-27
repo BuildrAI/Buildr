@@ -34,8 +34,6 @@ test('Workspace 与 Agent Assets HTTP 契约覆盖成功、非法请求和零写
   } finally {
     console.log = oldLog;
   }
-  fs.mkdirSync(path.join(root, 'rules'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'rules', 'http.md'), '# HTTP\n');
   const instance: any = createLocalWorkspaceServer(runtime, { targetRoot: root });
   t.after(() => new Promise((resolve: any) => instance.server.close(resolve)));
   const { url, initialWorkspaceId, sessionToken }: any = await instance.ready;
@@ -57,6 +55,7 @@ test('Workspace 与 Agent Assets HTTP 契约覆盖成功、非法请求和零写
   response = await request(`${endpoint}/agent-assets`);
   assert.equal(response.status, 200);
   validate(AGENT_ASSETS_HTTP_VALIDATORS, AGENT_ASSETS_HTTP_OPERATIONS, 'agent-assets.inventory', 'success', response.body);
+  assert.equal('rules' in response.body, false, 'retired rule inventory must not be exposed');
 
   const workspaceBefore: any = await request(`${endpoint}`);
   const workspaceUpdate: any = await request(`${endpoint}`, { method: 'PUT', headers, body: JSON.stringify({ revision: workspaceBefore.body.revision, unknown: true }) });
@@ -64,16 +63,9 @@ test('Workspace 与 Agent Assets HTTP 契约覆盖成功、非法请求和零写
   assert.equal(workspaceUpdate.body.error.code, 'workspace_http_request_invalid');
   validate(WORKSPACE_HTTP_VALIDATORS, WORKSPACE_HTTP_OPERATIONS, 'workspace.update', 'error', workspaceUpdate.body);
 
-  const before: any = fs.readFileSync(path.join(root, 'rules', 'manifest.yml'), 'utf8');
-  response = await request(`${endpoint}/agent-assets/rules`, { method: 'POST', headers, body: JSON.stringify({ id: 'http', description: 42, unknown: true }) });
-  assert.equal(response.status, 400);
-  assert.equal(response.body.error.code, 'agent_assets_http_request_invalid');
-  validate(AGENT_ASSETS_HTTP_VALIDATORS, AGENT_ASSETS_HTTP_OPERATIONS, 'agent-assets.rules.add', 'error', response.body);
-  assert.equal(fs.readFileSync(path.join(root, 'rules', 'manifest.yml'), 'utf8'), before);
-
-  response = await request(`${endpoint}/agent-assets/rules`, { method: 'POST', headers, body: JSON.stringify({ id: 'http', path: 'rules/http.md', description: 'HTTP rule' }) });
-  assert.equal(response.status, 200);
-  validate(AGENT_ASSETS_HTTP_VALIDATORS, AGENT_ASSETS_HTTP_OPERATIONS, 'agent-assets.rules.add', 'success', response.body);
+  response = await request(`${endpoint}/agent-assets/rules`, { method: 'POST', headers, body: JSON.stringify({ id: 'http', description: 'HTTP rule' }) });
+  assert.equal(response.status, 404);
+  assert.equal(fs.existsSync(path.join(root, 'rules')), false, 'retired HTTP route must not write rules');
 });
 
 test('Workspace 与 Agent Assets schema 默认不转换输入', () => {

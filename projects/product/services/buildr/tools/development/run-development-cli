@@ -13,9 +13,28 @@ script_root=$(CDPATH= cd "${self%/*}" && pwd)
 launcher_entry="$script_root/run-development-cli"
 cli_root=$(CDPATH= cd "$script_root/../../bin" && pwd)
 cli_entry="$cli_root/buildr.mjs"
-selected_node=$($script_root/resolve-development-node)
+selected_node=$("$script_root"/resolve-development-node)
 PATH="$script_root/programs:${selected_node%/*}${PATH:+:$PATH}"
 export PATH
+
+# Same fast preparation probe as run-development-node: the CLI entry imports
+# node_modules, so a fresh worktree pays the declared preparation once first.
+service_root=$(CDPATH= cd "$script_root/../.." && pwd)
+product_root=$(CDPATH= cd "$service_root/../.." && pwd)
+if [ "${BUILDR_DEVELOPMENT_PREPARE_SKIP:-0}" != "1" ] && [ -f "$product_root/preparation.yml" ]; then
+  needs_prepare=0
+  for svc in buildr buildr-web buildr-agent dsh-plugin; do
+    svc_dir="$product_root/services/$svc"
+    if [ -f "$svc_dir/package-lock.json" ] \
+      && { [ ! -f "$svc_dir/node_modules/.package-lock.json" ] \
+        || [ "$svc_dir/package-lock.json" -nt "$svc_dir/node_modules/.package-lock.json" ]; }; then
+      needs_prepare=1
+    fi
+  done
+  if [ "$needs_prepare" = "1" ] || [ ! -f "$product_root/services/buildr-agent/build/index.js" ]; then
+    "$selected_node" "$script_root/prepare-development-dependencies.ts" || exit $?
+  fi
+fi
 
 run_with_node() {
   selected_node=$1

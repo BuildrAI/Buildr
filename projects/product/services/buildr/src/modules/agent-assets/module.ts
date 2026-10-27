@@ -13,7 +13,7 @@ import { registerDomainsCommands, type CommandsDependencies } from './applicatio
 import { registerDomainsComponents, type ComponentsDependencies } from './application/components.ts';
 import { registerApplicationPackageMaintenance, type PackageMaintenanceDependencies } from './application/package-maintenance.ts';
 import { registerAgentAssetsPackageAssets } from './application/package-maintenance/package-assets.ts';
-import { registerDomainsRules, type RulesDependencies } from './application/rules.ts';
+import { registerDomainsRules } from './application/rules.ts';
 import { registerApplicationRuntime } from './application/runtime-projection.ts';
 import { selectWorkspaceRuntime } from './application/runtime-selection.ts';
 import { registerDomainsRuntime, type RuntimeApplicationDependencies } from './application/runtime.ts';
@@ -207,7 +207,6 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
         isPlainObject: (...args: Parameters<ComponentsDependencies['isPlainObject']>) => commands.isPlainObject(...args),
         readPackageManifest: (...args: Parameters<ComponentsDependencies['readPackageManifest']>) => packageAssets.readPackageManifest(...args),
         collectFiles: (...args: Parameters<ComponentsDependencies['collectFiles']>) => packageAssets.collectFiles(...args),
-        builtinRuleEntry: (...args: Parameters<ComponentsDependencies['builtinRuleEntry']>) => packageAssets.builtinRuleEntry(...args),
         builtinSkillEntry: (...args: Parameters<ComponentsDependencies['builtinSkillEntry']>) => packageAssets.builtinSkillEntry(...args),
         sourcePathFromBuiltin: (...args: Parameters<ComponentsDependencies['sourcePathFromBuiltin']>) => packageAssets.sourcePathFromBuiltin(...args),
         missingAncestorForMutation: (...args: Parameters<ComponentsDependencies['missingAncestorForMutation']>) => packageAssets.missingAncestorForMutation(...args),
@@ -215,9 +214,6 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
         assertSafeSyncMutationPaths: (...args: Parameters<ComponentsDependencies['assertSafeSyncMutationPaths']>) => packageAssets.assertSafeSyncMutationPaths(...args),
         isValidAssetId: (...args: Parameters<ComponentsDependencies['isValidAssetId']>) => packageAssets.isValidAssetId(...args),
         listManagedDirectories: (...args: Parameters<ComponentsDependencies['listManagedDirectories']>) => packageAssets.listManagedDirectories(...args),
-        rulesManifestPath: (...args: Parameters<ComponentsDependencies['rulesManifestPath']>) => rules.rulesManifestPath(...args),
-        readRulesManifestForWrite: (...args: Parameters<ComponentsDependencies['readRulesManifestForWrite']>) => rules.readRulesManifestForWrite(...args),
-        writeRulesManifest: (...args: Parameters<ComponentsDependencies['writeRulesManifest']>) => rules.writeRulesManifest(...args),
         assertAgentId: runtimeApplication.assertAgentId,
         normalizeRelativePathForBuildr: (...args: Parameters<ComponentsDependencies['normalizeRelativePathForBuildr']>) => skills.normalizeRelativePathForBuildr(...args),
         skillsManifestPath: (...args: Parameters<ComponentsDependencies['skillsManifestPath']>) => skills.skillsManifestPath(...args),
@@ -258,21 +254,10 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
         projectsManifestPath: workspace.projectsManifestPath,
       });
       const rules: ReturnType<typeof registerDomainsRules> = registerDomainsRules({
-        isPlainObject: commands.isPlainObject,
-        componentOwnerForMember: components.componentOwnerForMember,
-        isValidAssetId: (...args: Parameters<RulesDependencies['isValidAssetId']>) => packageAssets.isValidAssetId(...args),
-        assertName: runtimeApplication.assertName,
-        normalizeRelativePathForBuildr: (...args: Parameters<RulesDependencies['normalizeRelativePathForBuildr']>) => skills.normalizeRelativePathForBuildr(...args),
-        quoteYaml: infrastructure.quoteYaml,
-        atomicWriteFile: infrastructure.atomicWriteFile,
         parseYamlDocument: infrastructure.parseYamlDocument,
-        assertSafeAssetTarget: infrastructure.assertSafeAssetTarget,
-        withWorkspaceMutation: infrastructure.withWorkspaceMutation,
         toPosixRelative: infrastructure.toPosixRelative,
-        existsDirectory: infrastructure.existsDirectory,
         existsFile: infrastructure.existsFile,
         rootRequiredBlockStatus: infrastructure.rootRequiredBlockStatus,
-        assertInitializedBuildrWorkspace: infrastructure.assertInitializedBuildrWorkspace,
         addDoctorFinding: infrastructure.addDoctorFinding,
       });
       const skills: ReturnType<typeof registerDomainsSkills> = registerDomainsSkills({
@@ -304,7 +289,6 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
         readPackageManifest: (...args: Parameters<PackageMaintenanceDependencies['readPackageManifest']>) => packageAssets.readPackageManifest(...args),
         parseManifestFileEntry: (...args: Parameters<PackageMaintenanceDependencies['parseManifestFileEntry']>) => packageAssets.parseManifestFileEntry(...args),
         collectFiles: (...args: Parameters<PackageMaintenanceDependencies['collectFiles']>) => packageAssets.collectFiles(...args),
-        builtinRuleEntry: (...args: Parameters<PackageMaintenanceDependencies['builtinRuleEntry']>) => packageAssets.builtinRuleEntry(...args),
         builtinSkillEntry: (...args: Parameters<PackageMaintenanceDependencies['builtinSkillEntry']>) => packageAssets.builtinSkillEntry(...args),
         builtinCommandEntry: (...args: Parameters<PackageMaintenanceDependencies['builtinCommandEntry']>) => packageAssets.builtinCommandEntry(...args),
         sourcePathFromBuiltin: (...args: Parameters<PackageMaintenanceDependencies['sourcePathFromBuiltin']>) => packageAssets.sourcePathFromBuiltin(...args),
@@ -314,8 +298,6 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
         packageRegistryMutationPaths: (...args: Parameters<PackageMaintenanceDependencies['packageRegistryMutationPaths']>) => packageAssets.packageRegistryMutationPaths(...args),
         assertSafeSyncMutationPaths: (...args: Parameters<PackageMaintenanceDependencies['assertSafeSyncMutationPaths']>) => packageAssets.assertSafeSyncMutationPaths(...args),
         convergeRegistryManifests: (...args: Parameters<PackageMaintenanceDependencies['convergeRegistryManifests']>) => packageAssets.convergeRegistryManifests(...args),
-        readRulesManifestForWrite: rules.readRulesManifestForWrite,
-        writeRulesManifest: rules.writeRulesManifest,
         readSkillsManifestForWrite: skills.readSkillsManifestForWrite,
         writeSkillsManifest: skills.writeSkillsManifest,
         manifestDocumentFor: skills.manifestDocumentFor,
@@ -381,7 +363,6 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
         currentProductInvocation: infrastructure.currentProductInvocation,
       });
       const httpQuery: ReturnType<typeof registerAgentAssetsHttpQuery> = registerAgentAssetsHttpQuery({
-        readRulesManifestForWrite: rules.readRulesManifestForWrite,
         readSkillsManifestForWrite: skills.readSkillsManifestForWrite,
         readCommandsManifestForWrite: commands.readCommandsManifestForWrite,
         readPackageManifest: packageAssets.readPackageManifest,
@@ -391,8 +372,6 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
         runtimeDiscoveryPayload: adapters.runtimeDiscoveryPayload,
       });
       const application = Object.freeze({
-        rulesAdd: rules.rulesAdd,
-        rulesRemove: rules.rulesRemove,
         skillsAdd: skills.skillsAdd,
         skillsRemove: skills.skillsRemove,
         skillRegistrationCandidates: skills.skillRegistrationCandidates,
@@ -427,7 +406,6 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
         renderSkillsManifestYaml: skills.renderSkillsManifestYaml,
         renderProjectCapabilitiesYaml: skills.renderProjectCapabilitiesYaml,
         renderProjectCommandsYaml: commands.renderProjectCommandsYaml,
-        renderRulesManifestYaml: rules.renderRulesManifestYaml,
         renderCommandsManifestYaml: commands.renderCommandsManifestYaml,
         renderComponentsManifestYaml: components.renderComponentsManifestYaml,
         assertName: runtimeApplication.assertName,
@@ -506,7 +484,6 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
             readSkills: readConnectionSkillSources,
             readSkillFile: readConnectionSkillFile,
             readSkillFiles: readConnectionSkillFiles,
-            readRules: (root: string) => { sourceRelativePath(root, 'rules/manifest.yml'); return rules.readRulesManifestForInspection(root).rules; },
             readContracts: (root: string) => { sourceRelativePath(root, 'skills/manifest.yml'); return parseSkillsManifestContent(readSkillText(root, 'skills/manifest.yml', { requireRootProof: true }).content, path.join(root, 'skills', 'manifest.yml'), { validateContracts: false, validateConnectionDefinitions: false }).contracts || []; },
             requiredBlock: () => readPackageRequiredBlock({ requireRootProof: true }),
             productSkills: () => packageAssets.readPackageManifest().agentSkills || [],
@@ -533,10 +510,8 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
             parseManifestFileEntry: packageAssets.parseManifestFileEntry,
             collectFiles: packageAssets.collectFiles,
             validateBootstrapContract: packageAssets.validateBootstrapContract,
-            builtinRuleEntry: packageAssets.builtinRuleEntry,
             builtinSkillEntry: packageAssets.builtinSkillEntry,
             sourcePathFromBuiltin: packageAssets.sourcePathFromBuiltin,
-            parseRulesManifestYaml: rules.parseRulesManifestYaml,
             readSkillManifest: skills.readSkillManifest,
             validateSkillManifestEntries: skills.validateSkillManifestEntries,
             isManifestSourceLabel: skills.isManifestSourceLabel,
@@ -554,7 +529,6 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
             toPosixRelative: infrastructure.toPosixRelative,
             existsDirectory: infrastructure.existsDirectory,
             existsFile: infrastructure.existsFile,
-            renderRulesManifestYaml: rules.renderRulesManifestYaml,
             rootRequiredBlockStatus: infrastructure.rootRequiredBlockStatus,
             currentProductInvocation: infrastructure.currentProductInvocation,
             productInvocationArgs: infrastructure.productInvocationArgs,

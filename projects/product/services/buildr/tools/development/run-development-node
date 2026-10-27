@@ -1,7 +1,26 @@
 #!/bin/sh
 set -eu
 script_root=$(CDPATH= cd "${0%/*}" && pwd)
-node_executable=$($script_root/resolve-development-node)
+node_executable=$("$script_root"/resolve-development-node)
 PATH="${node_executable%/*}:${PATH:-}"
 export PATH
+# A fresh task worktree has no node_modules anywhere in the product services.
+# Two cheap stat probes keep every wrapped call fast; only a missing marker or
+# the unbuilt private Agent pays the declared preparation once.
+service_root=$(CDPATH= cd "$script_root/../.." && pwd)
+product_root=$(CDPATH= cd "$service_root/../.." && pwd)
+if [ "${BUILDR_DEVELOPMENT_PREPARE_SKIP:-0}" != "1" ] && [ -f "$product_root/preparation.yml" ]; then
+  needs_prepare=0
+  for svc in buildr buildr-web buildr-agent dsh-plugin; do
+    svc_dir="$product_root/services/$svc"
+    if [ -f "$svc_dir/package-lock.json" ] \
+      && { [ ! -f "$svc_dir/node_modules/.package-lock.json" ] \
+        || [ "$svc_dir/package-lock.json" -nt "$svc_dir/node_modules/.package-lock.json" ]; }; then
+      needs_prepare=1
+    fi
+  done
+  if [ "$needs_prepare" = "1" ] || [ ! -f "$product_root/services/buildr-agent/build/index.js" ]; then
+    "$node_executable" "$script_root/prepare-development-dependencies.ts" || exit $?
+  fi
+fi
 exec "$node_executable" "$@"

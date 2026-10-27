@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { ModelAccessError, type ModelProtocol, type ProtocolJson } from './contracts.ts';
+import { modelFailure, upstreamFailure } from './errors.ts';
 
 const record = (v: unknown): ProtocolJson => v !== null && typeof v === 'object' && !Array.isArray(v) ? v as ProtocolJson : {};
 const list = (v: unknown): unknown[] => Array.isArray(v) ? v : [];
@@ -59,7 +60,14 @@ function parseContent(content: unknown, protocol: ModelProtocol): Part[] {
 }
 function parseRequest(body: ProtocolJson, protocol: ModelProtocol, opaque: OpaqueReasoning): Parsed {
   const messages: Message[] = [], tools: ProtocolJson[] = [], customTools = new Set<string>();
-  const add = (role: string, parts: Part[]) => { if (parts.length) messages.push({ role, parts }); };
+  const add = (role: string, parts: Part[]) => {
+    if (!parts.length) return;
+    const previous = messages.at(-1);
+    // Responses represents one assistant turn as separate text, call and reasoning items.
+    // Keep them together until a user input or tool result starts the next turn.
+    if (protocol === 'responses' && role === 'assistant' && previous?.role === 'assistant') previous.parts.push(...parts);
+    else messages.push({ role, parts });
+  };
   if (protocol === 'responses') {
     if (typeof body.instructions === 'string') add('system', [{ type: 'text', text: body.instructions }]);
     if (typeof body.input === 'string') add('user', [{ type: 'text', text: body.input }]);
@@ -137,7 +145,11 @@ function serializeRequest(parsed: Parsed, protocol: ModelProtocol, opaque: Opaqu
         if (p.type === 'image') content.push({ type: 'image_url', image_url: { url: p.url } });
         if (p.type === 'tool') calls.push({ id: p.id, type: 'function', function: { name: p.name, arguments: p.arguments } });
         if (p.type === 'result') result.push({ role: 'tool', tool_call_id: p.id, content: resultContent(p.content,protocol) });
-        if (p.type === 'reasoning') reasoning = { reasoning_content: p.value.thinking ?? p.value.text ?? '', ...(p.value.signature ? { reasoning_signature: p.value.signature } : {}) };
+        if (p.type === 'reasoning') {
+          if (p.value.signature && reasoning.reasoning_signature) throw new ModelAccessError('model_reasoning_unsupported', '所选协议无法在同一条助手消息中保留多个独立推理签名。', 400);
+          reasoning.reasoning_content = string(reasoning.reasoning_content) + string(p.value.thinking ?? p.value.text);
+          if (p.value.signature) reasoning.reasoning_signature = p.value.signature;
+        }
       }
       if (content.length || calls.length || Object.keys(reasoning).length) result.unshift({ role: message.role, content: content.length === 1 && content[0].type === 'text' ? content[0].text : content.length ? content : null, ...(calls.length ? { tool_calls: calls } : {}), ...reasoning });
       return result;
@@ -209,7 +221,7 @@ async function* decodeEvents(response: Response, protocol: ModelProtocol): Async
   let finished = false;
   if (!streaming) {
     const body = record(await response.json());
-    if (body.error) throw new ModelAccessError('model_upstream_failed', '模型服务返回错误。', response.status >= 400 ? response.status : 502);
+    if (body.error) throw upstreamFailure(body.error, response.status >= 400 ? response.status : 502);
     if (protocol === 'chat-completions') {
       const choice = record(list(body.choices)[0]), message = record(choice.message);
       if (message.reasoning_content||message.reasoning_signature) yield { type: 'reasoning', delta: string(message.reasoning_content), signature: string(message.reasoning_signature) };
@@ -229,7 +241,7 @@ async function* decodeEvents(response: Response, protocol: ModelProtocol): Async
   }
   if (!response.body) throw new ModelAccessError('model_stream_empty', '模型流没有响应正文。', 502);
   for await (const body of sse(response.body)) {
-    if (body.error || body.type === 'error' || body.type === 'response.failed') throw new ModelAccessError('model_upstream_failed', '模型流返回错误。', 502);
+    if (body.error || body.type === 'error' || body.type === 'response.failed') throw upstreamFailure(body.error ?? record(body.response).error);
     if (protocol === 'chat-completions') {
       const choice = record(list(body.choices)[0]), delta = record(choice.delta);
       if (delta.content) yield { type: 'text', delta: string(delta.content) };
@@ -376,7 +388,7 @@ class Output {
     }
     return out + this.event(body.status === 'incomplete' ? 'response.incomplete' : 'response.completed', { response: body });
   }
-  error(): string { return this.protocol === 'responses' ? this.event('response.failed', { response: { id: this.responseId, object: 'response', status: 'failed', error: { code: 'model_upstream_failed', message: '模型流未完成，请检查本次执行。' } } }) : this.protocol === 'anthropic-messages' ? this.event('error', { error: { type: 'api_error', message: '模型流未完成，请检查本次执行。' } }) : `data: ${JSON.stringify({ error: { code: 'model_upstream_failed', message: '模型流未完成，请检查本次执行。' } })}\n\n`; }
+  error(cause: unknown): string { const error = modelFailure(cause); return this.protocol === 'responses' ? this.event('response.failed', { response: { id: this.responseId, object: 'response', status: 'failed', error } }) : this.protocol === 'anthropic-messages' ? this.event('error', { error: { type: 'api_error', ...error } }) : `data: ${JSON.stringify({ error })}\n\n`; }
 }
 export async function translateResponse(response: Response, from: ModelProtocol, to: ModelProtocol, options: { model: string; stream: boolean; request: ProtocolJson; opaque: OpaqueReasoning; signal: AbortSignal }): Promise<Response> {
   if (from === to) return response;
@@ -390,7 +402,7 @@ export async function translateResponse(response: Response, from: ModelProtocol,
       if (options.signal.aborted) { ended = true; await iterator.return?.(undefined); controller.error(new Error('model_request_cancelled')); return; }
       if (!started) { started = true; controller.enqueue(encoder.encode(output.start())); return; }
       try { while (!ended) { const next = await iterator.next(); if (next.done) { ended = true; controller.enqueue(encoder.encode(output.finish())); controller.close(); return; } const frame = output.accept(next.value); if (frame) { controller.enqueue(encoder.encode(frame)); return; } } }
-      catch { ended = true; controller.enqueue(encoder.encode(output.error())); controller.close(); }
+      catch (error) { ended = true; controller.enqueue(encoder.encode(output.error(error))); controller.close(); }
     },
     async cancel() { ended = true; await iterator.return?.(undefined); },
   });

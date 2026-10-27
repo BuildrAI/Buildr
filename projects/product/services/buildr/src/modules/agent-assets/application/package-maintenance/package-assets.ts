@@ -177,18 +177,6 @@ export function registerAgentAssetsPackageAssets(dependencies: PackageAssetsDepe
     return contract;
   }
 
-  function builtinRuleEntry(builtin: any): any  {
-    return {
-      id: builtin.id,
-      source: 'buildr',
-      path: builtin.target,
-      description: builtin.description,
-      enabled: true,
-      required: builtin.required === true,
-      state: 'installed',
-    };
-  }
-
   function builtinSkillEntry(builtin: any, existing: any = null): any  {
     const previousId = builtin.replaces && existing?.id === builtin.replaces.id ? builtin.replaces.id : builtin.id;
     const previousTarget = previousId === builtin.id ? builtin.target : builtin.replaces.target;
@@ -348,7 +336,7 @@ export function registerAgentAssetsPackageAssets(dependencies: PackageAssetsDepe
   function assertSafeSyncMutationPaths(targetRoot: any, affectedPaths: any): any  {
     const root = path.resolve(targetRoot);
     const protectedRoots: any = new Set([root]);
-    for (const collection of ['projects', 'rules', 'skills', 'commands', 'components']) {
+    for (const collection of ['projects', 'skills', 'commands', 'components']) {
       const collectionRoot = path.join(root, collection);
       if (existsDirectory(collectionRoot)) protectedRoots.add(collectionRoot);
     }
@@ -380,7 +368,6 @@ export function registerAgentAssetsPackageAssets(dependencies: PackageAssetsDepe
     parseManifestFileEntry,
     collectFiles,
     validateBootstrapContract,
-    builtinRuleEntry,
     builtinSkillEntry,
     builtinCommandEntry,
     sourcePathFromBuiltin,

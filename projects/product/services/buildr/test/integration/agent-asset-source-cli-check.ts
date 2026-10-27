@@ -60,7 +60,7 @@ if (process.argv.includes('--project-reader-only')) {
 if (process.argv.includes('--rules-reader-only')) {
   write('rules/manifest.yml', `schemaVersion: buildr.rules/v1\nrules: []\n# ${'x'.repeat(512 * 1024 + 1)}\n`);
   const before = { workspace: snapshot(root), app: snapshot(process.env.BUILDR_APP_DATA_DIR!), product: snapshot(process.env.BUILDR_PRODUCT_DATA_DIR!) };
-  const observed = JSON.parse(run(['agent-assets', 'source', 'inspect', '--target', root, '--input', '-', '--json'], JSON.stringify({ schemaVersion: SOURCE_OBSERVATIONS_SCHEMA, observations: [{ id: 'oversized-rule-manifest', type: 'file', locator: { path: 'rules/probe.md' } }, { id: 'unrelated-core', type: 'file', locator: { path: 'AGENTS.md' } }] })));
+  const observed = JSON.parse(run(['agent-assets', 'source', 'inspect', '--target', root, '--input', '-', '--json'], JSON.stringify({ schemaVersion: SOURCE_OBSERVATIONS_SCHEMA, observations: [{ id: 'retired-rule-manifest', type: 'file', locator: { path: 'rules/probe.md' } }, { id: 'unrelated-core', type: 'file', locator: { path: 'AGENTS.md' } }] })));
   assert.deepEqual(observed.items.map((item: { status: string }) => item.status), ['error', 'detected']);
   assert.equal(observed.items[0].diagnostic.code, 'skill_content_unavailable');
   assert.equal(observed.items[0].diagnostic.message, '对象当前不可读取；未改变任何工作资产。');
@@ -68,7 +68,7 @@ if (process.argv.includes('--rules-reader-only')) {
   assert.equal(observed.items[1].objects[0].providedBy, 'buildr');
   assert.deepEqual(observed.effects, []);
   assert.deepEqual({ workspace: snapshot(root), app: snapshot(process.env.BUILDR_APP_DATA_DIR!), product: snapshot(process.env.BUILDR_PRODUCT_DATA_DIR!) }, before, 'passive manifest failure writes no source, registry or profile files');
-  console.log(JSON.stringify({ schemaVersion: 'buildr.source-cli-smoke/v1', status: 'passed', checks: ['rules-manifest-bounded-before-YAML', 'oversized-rule-local-sanitized-error', 'unrelated-core-remains-detected', 'workspace-profile-and-mtime-unchanged'], effects: [] }));
+  console.log(JSON.stringify({ schemaVersion: 'buildr.source-cli-smoke/v1', status: 'passed', checks: ['retired-rules-manifest-ignored', 'oversized-legacy-manifest-sanitized-error', 'unrelated-core-remains-detected', 'workspace-profile-and-mtime-unchanged'], effects: [] }));
   process.exit(0);
 }
 

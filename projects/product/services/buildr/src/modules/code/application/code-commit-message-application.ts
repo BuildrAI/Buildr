@@ -1,4 +1,4 @@
-import type { AgentGenerationInput, AgentRunView } from '../../agent-operations/module.ts';
+import type { GenerationInput, GenerationRun, ModelSelection } from './code-generation.ts';
 import type { CodeCommitLocation } from './code-commit-model.ts';
 import type { CodeCommitSnapshot, CodeCommitSnapshotOptions } from '../infrastructure/code-commit-snapshot.ts';
 import { codeFailure } from '../infrastructure/code-file-reader.ts';
@@ -6,12 +6,12 @@ import type { CodeCommitGuidance } from '../infrastructure/code-commit-guidance.
 import type { CodeCommitMaterial } from '../infrastructure/code-commit-material.ts';
 import { parseTaskCommitTrailer } from '../../task/commits/domain/task-commit.ts';
 
-export type CodeCommitMessageInput = CodeCommitLocation & { expectedRevision: string; agentId?: string };
+export type CodeCommitMessageInput = CodeCommitLocation & { expectedRevision: string } & ModelSelection;
 export type CodeCommitMessageDependencies = {
   commitSnapshot(root: string, input: CodeCommitLocation, options?: CodeCommitSnapshotOptions): CodeCommitSnapshot;
   commitGuidance(root: string, snapshot: CodeCommitSnapshot): CodeCommitGuidance;
   commitMaterial(snapshot: CodeCommitSnapshot, guidance: CodeCommitGuidance, maxBytes: number): CodeCommitMaterial | Promise<CodeCommitMaterial>;
-  startGeneration(input: AgentGenerationInput): AgentRunView | Promise<AgentRunView>;
+  startGeneration(input: GenerationInput): GenerationRun | Promise<GenerationRun>;
 };
 export const COMMIT_MESSAGE_PROMPT = [
   '为所选代码库当前工作树的全部未提交最终变更生成简明、准确的 Git 提交说明，只返回 JSON 对象 {"commitMessage":"提交说明"}，不要代码围栏或其他文字。',
@@ -26,10 +26,9 @@ export const COMMIT_MESSAGE_PROMPT_LIMIT_BYTES = 16 * 1024;
 const generationBudgetMs = 60_000;
 const materialPrefix = '\n\n<materials>\n', materialSuffix = '\n</materials>';
 const materialBudget = COMMIT_MESSAGE_PROMPT_LIMIT_BYTES - Buffer.byteLength(COMMIT_MESSAGE_PROMPT + materialPrefix + materialSuffix);
-const outputSchema = Object.freeze({ type: 'object', additionalProperties: false, properties: { commitMessage: { type: 'string', minLength: 1, maxLength: 20_000 } }, required: ['commitMessage'] });
 function validateMessage(output: unknown, taskId: string | null) {
   const message = output && typeof output === 'object' && 'commitMessage' in output ? output.commitMessage : null;
-  if (typeof message !== 'string' || !message.trim() || !message.split(/\r?\n/)[0].trim()) throw codeFailure('code_commit_message_output_invalid', '生成结果没有可用标题，原说明已保留。', 502);
+  if (!output || typeof output !== 'object' || Object.keys(output).length !== 1 || typeof message !== 'string' || message.length > 20_000 || !message.trim() || !message.split(/\r?\n/)[0].trim()) throw codeFailure('code_commit_message_output_invalid', '生成结果没有可用标题，原说明已保留。', 502);
   const paragraphs = message.replace(/\r\n/g, '\n').trimEnd().split(/\n[ \t]*\n/);
   const trailerBlock = paragraphs.length > 1 ? paragraphs.at(-1)! : '';
   const trailers = [...trailerBlock.matchAll(/^Buildr-Task:([^\n]*)$/gim)].map(match => match[1].trim());
@@ -38,7 +37,7 @@ function validateMessage(output: unknown, taskId: string | null) {
 
 export function createCodeCommitMessageApplication(dependencies: CodeCommitMessageDependencies) {
   return Object.freeze({
-    async generateCommitMessage(root: string, input: CodeCommitMessageInput): Promise<AgentRunView> {
+    async generateCommitMessage(root: string, input: CodeCommitMessageInput): Promise<GenerationRun> {
       const invokedAt = Date.now();
       const location: CodeCommitLocation = { repositoryId: input.repositoryId, worktreeId: input.worktreeId };
       const snapshot = dependencies.commitSnapshot(root, location, { includeDiff: false });
@@ -52,7 +51,7 @@ export function createCodeCommitMessageApplication(dependencies: CodeCommitMessa
       const remainingMs = generationBudgetMs - Math.max(0, Date.now() - invokedAt);
       if (remainingMs <= 0) throw codeFailure('code_commit_message_timeout', '准备提交说明材料已超过本次时间预算，已有说明保留。', 504);
       return dependencies.startGeneration({
-        ...(input.agentId ? { agentId: input.agentId } : {}), cwd: snapshot.source.location, prompt, outputSchema, execution: { reasoningEffort: 'low', timeoutMs: remainingMs },
+        ...input, root, prompt, timeoutMs: remainingMs,
         validateResult: async output => {
           validateMessage(output, guidance.task?.taskId || null);
           const current = dependencies.commitSnapshot(root, location, { includeDiff: false });

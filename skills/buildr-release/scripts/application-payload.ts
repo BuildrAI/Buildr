@@ -21,6 +21,7 @@ import { assertGeneratedArtifactEntry } from '../../../projects/product/services
 const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../projects/product/services/buildr');
 const MAIN_ENTRY: any = path.join(serviceRoot, '../../../../skills/buildr-release/scripts/application-payload-entry.ts');
 const WORKER_ENTRY: any = path.join(serviceRoot, 'src/web/http/read-worker.ts');
+const WRITE_WORKER_ENTRY: any = path.join(serviceRoot, 'src/web/http/write-worker.ts');
 const UPSTREAM_OPENSPEC_WORKER_ENTRY: any = path.join(serviceRoot, 'src/modules/openspec/application/upstream-openspec-worker.ts');
 const RESOURCE_SOURCES: any = Object.freeze([
   ['resources', 'product/resources', { exclude: new Set(['installation', 'runtime']) }],
@@ -165,6 +166,7 @@ async function buildApplicationPayload(output: any, sourceCommit: any, options: 
         'runtime/buildr': MAIN_ENTRY,
         'runtime/mysql-connection': path.join(serviceRoot, '../../../../skills/buildr-release/scripts/mysql-connection-entry.ts'),
         'resources/runtime/read-worker': WORKER_ENTRY,
+        'resources/runtime/write-worker': WRITE_WORKER_ENTRY,
         'resources/runtime/upstream-openspec-worker': UPSTREAM_OPENSPEC_WORKER_ENTRY,
       },
       outdir: destination,

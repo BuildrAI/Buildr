@@ -1,16 +1,15 @@
-import type { AgentRun } from '../agents/api/agent-operations-api';
+import type { GenerationRun, ModelSelection } from './api/code-actions-api';
 import type { CodeActionSource, CodeActionsClient, CommitContext, CommitMode, GitMutationResult } from './api/code-actions-api';
 
-export type Generation = { token: number; agentId: string; label: string; runId: string | null; phase: 'queued' | 'starting' | 'running' | 'cancelling'; revision: string };
+export type Generation = { token: number; modelKey: string; label: string; runId: string | null; phase: 'queued' | 'starting' | 'running' | 'cancelling'; revision: string };
 export type SourceControlActionState = {
   text: string;
   textVersion: number;
-  overrideId: string | null;
   context: CommitContext | null;
   contextLoading: boolean;
   contextError: string;
   generation: Generation | null;
-  generatedBy: {agentId: string; label: string; registrationRevision: string; revision: string; executionConfig: AgentRun['executionConfig']} | null;
+  generatedBy: {modelKey: string; label: string; accountRevision: string; revision: string; modelId:string} | null;
   generationError: string;
   generationWarning: string;
   stale: boolean;
@@ -19,10 +18,10 @@ export type SourceControlActionState = {
   gitError: string;
   unknownCommit: boolean;
 };
-type Ticket = {token: number; cancelled: boolean; runId: string | null; textVersion: number; label: string; agentId: string; revision: string};
+type Ticket = {token: number; cancelled: boolean; runId: string | null; textVersion: number; label: string; modelKey: string; revision: string};
 export const actionSourceKey = (source: CodeActionSource) => JSON.stringify([source.workspaceId, source.repositoryId, source.worktreeId, source.branch]);
 export function emptyActionState(): SourceControlActionState {
-  return {text: '', textVersion: 0, overrideId: null, context: null, contextLoading: false, contextError: '', generation: null, generatedBy: null, generationError: '', generationWarning: '', stale: false, gitPending: null, gitResult: null, gitError: '', unknownCommit: false};
+  return {text: '', textVersion: 0, context: null, contextLoading: false, contextError: '', generation: null, generatedBy: null, generationError: '', generationWarning: '', stale: false, gitPending: null, gitResult: null, gitError: '', unknownCommit: false};
 }
 export function commitMessageOutput(value: unknown): string | null {
   if (typeof value !== 'object' || value === null || !('commitMessage' in value) || typeof value.commitMessage !== 'string' || !value.commitMessage.trim()) return null;
@@ -43,7 +42,7 @@ export function commitResultFeedback(result: GitMutationResult) {
   };
 }
 const message = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
-const terminal = (run: AgentRun) => run.status === 'succeeded' || run.status === 'failed' || run.status === 'cancelled';
+const terminal = (run: GenerationRun) => run.status === 'succeeded' || run.status === 'failed' || run.status === 'cancelled';
 const rejectedBeforeCommit = new Set(['code_commit_location_invalid', 'code_commit_input_invalid', 'code_commit_no_changes', 'code_commit_index_locked', 'code_commit_index_prepare_failed', 'code_commit_stage_failed', 'code_commit_tree_failed', 'code_worktree_identity_changed', 'code_source_changed', 'session_forbidden', 'code_query_invalid', 'code_commit_request_invalid']);
 function knownRejection(error: unknown): boolean { return typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string' && rejectedBeforeCommit.has(error.code); }
 function sameResultSource(source: CodeActionSource, result: GitMutationResult) { return result.source.repositoryId === source.repositoryId && result.source.worktreeId === source.worktreeId; }
@@ -69,7 +68,6 @@ export class SourceControlActions {
   }
   private update(source: CodeActionSource, patch: Partial<SourceControlActionState>) { this.records.set(actionSourceKey(source), {...this.state(source), ...patch}); if (!this.disposed) for (const listener of this.listeners) listener(); }
   setText(source: CodeActionSource, text: string) { const current = this.state(source); this.update(source, {text, textVersion: current.textVersion + 1}); }
-  setOverride(source: CodeActionSource, overrideId: string | null) { this.update(source, {overrideId}); }
   async observe(source: CodeActionSource): Promise<void> {
     const key = actionSourceKey(source), serial = ++this.serial, controller = new AbortController();
     this.reads.get(key)?.controller.abort(); this.reads.set(key, {serial, controller}); this.update(source, {contextLoading: true});
@@ -81,40 +79,39 @@ export class SourceControlActions {
       this.update(source, {context, contextError: '', contextLoading: false, stale: previous.stale || Boolean(previous.generatedBy && previous.generatedBy.revision !== context.revision)});
     } catch (error) { if (!this.disposed && !controller.signal.aborted && this.reads.get(key)?.serial === serial) this.update(source, {contextError: message(error, '无法核对提交内容。'), contextLoading: false}); }
   }
-  async generate(source: CodeActionSource, executor: {id: string; label: string}): Promise<void> {
+  async generate(source: CodeActionSource, executor: ModelSelection): Promise<void> {
     const key = actionSourceKey(source), previous = this.state(source), context = previous.context;
     if (!context || previous.contextLoading || previous.contextError || !context.hasChanges || previous.generation || previous.gitPending) return;
-    const ticket: Ticket = {token: ++this.serial, cancelled: false, runId: null, textVersion: previous.textVersion, label: executor.label, agentId: executor.id, revision: context.revision};
+    const ticket: Ticket = {token: ++this.serial, cancelled: false, runId: null, textVersion: previous.textVersion, label: executor.label, modelKey: executor.id, revision: context.revision};
     this.tickets.set(key, ticket);
-    this.update(source, {overrideId: null, generationError: '', generationWarning: '', generation: {token: ticket.token, agentId: executor.id, label: executor.label, runId: null, phase: 'queued', revision: context.revision}});
+    this.update(source, {generationError: '', generationWarning: '', generation: {token: ticket.token, modelKey: executor.id, label: executor.label, runId: null, phase: 'queued', revision: context.revision}});
     const current = () => !this.disposed && this.tickets.get(key) === ticket;
     try {
-      let run = await this.client.generate(source, context.revision, executor.id);
+      let run = await this.client.generate(source, context.revision, executor);
       ticket.runId = run.id;
       if (!current()) return;
-      if (run.agentId !== ticket.agentId) throw Error('返回的执行者与本次选择不一致，原说明已保留。');
-      if (ticket.cancelled) run = await this.client.cancel(run.id);
+      if (JSON.stringify([run.modelAccountId,run.modelId]) !== ticket.modelKey) throw Error('返回的执行者与本次选择不一致，原说明已保留。');
+      if (ticket.cancelled) run = await this.client.cancel(source,run.id);
       void this.onRuntimeChanged();
       while (current()) {
         if (terminal(run)) { this.finish(source, ticket, run); return; }
-        this.update(source, {generation: {token: ticket.token, agentId: ticket.agentId, label: ticket.label, runId: run.id, phase: ticket.cancelled ? 'cancelling' : run.status as 'queued' | 'starting' | 'running', revision: ticket.revision}});
+        this.update(source, {generation: {token: ticket.token, modelKey: ticket.modelKey, label: ticket.label, runId: run.id, phase: ticket.cancelled ? 'cancelling' : run.status as 'queued' | 'starting' | 'running', revision: ticket.revision}});
         await this.wait();
         if (!current()) return;
-        run = await this.client.run(run.id);
+        run = await this.client.run(source,run.id);
       }
     } catch (error) { if (current()) {this.tickets.delete(key); this.update(source, {generation: null, generationError: message(error, '生成失败，原说明已保留。')});} }
     finally { void this.onRuntimeChanged(); }
   }
-  private finish(source: CodeActionSource, ticket: Ticket, run: AgentRun) {
+  private finish(source: CodeActionSource, ticket: Ticket, run: GenerationRun) {
     const key = actionSourceKey(source), previous = this.state(source);
     if (this.tickets.get(key) !== ticket) return;
     this.tickets.delete(key);
-    this.update(source, {generationWarning: run.cleanupWarning?.message || ''});
     if (ticket.cancelled || run.status === 'cancelled') {this.update(source, {generation: null, generationError: ''}); return;}
     const output = run.status === 'succeeded' ? commitMessageOutput(run.output) : null;
     const contentChanged = previous.context?.revision !== ticket.revision;
     if (output !== null && !contentChanged && previous.textVersion === ticket.textVersion) {
-      this.update(source, {text: output, textVersion: previous.textVersion + 1, generation: null, generationError: '', stale: false, generatedBy: {agentId: run.agentId, label: ticket.label, registrationRevision: run.registrationRevision, revision: ticket.revision, executionConfig: run.executionConfig ? {...run.executionConfig} : null}});
+      this.update(source, {text: output, textVersion: previous.textVersion + 1, generation: null, generationError: '', stale: false, generatedBy: {modelKey:ticket.modelKey,label:ticket.label,accountRevision:run.accountRevision,revision:ticket.revision,modelId:run.modelId}});
     } else {
       this.update(source, {generation: null, generationError: run.error?.message || (contentChanged ? '变更已更新，生成结果未覆盖当前说明，请重新生成。' : output ? '说明已编辑，生成结果未覆盖当前内容。' : '生成未返回可用说明，原内容已保留。'), stale: contentChanged || Boolean(run.error && /changed|revision|stale/.test(run.error.code)) || previous.stale});
       if (run.error?.code === 'code_source_changed') void this.reobserve(source);
@@ -127,7 +124,7 @@ export class SourceControlActions {
     const generation = this.state(source).generation;
     if (generation) this.update(source, {generation: {...generation, phase: 'cancelling'}});
     if (!ticket.runId) return;
-    try { const run = await this.client.cancel(ticket.runId); if (terminal(run)) this.finish(source, ticket, run); }
+    try { const run = await this.client.cancel(source,ticket.runId); if (terminal(run)) this.finish(source, ticket, run); }
     catch (error) { this.update(source, {generationError: message(error, '取消请求未完成，请重试。')}); }
   }
   async commit(source: CodeActionSource, mode: CommitMode): Promise<void> {

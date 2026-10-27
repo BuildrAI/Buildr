@@ -143,3 +143,10 @@ test('安装资源位置保持本机全局路径，技能打开仍使用当前�
   assert.deepEqual(requests.map(r=>r.url),['/api/v1/installation/resources','/api/v1/installation/resources/open','/api/v1/workspaces/space-a/agent-assets/skills/demo/open']);
   assert.equal(requests[1].init.headers.get('x-buildr-session'),'token');assert.equal(requests[2].init.headers.get('x-buildr-session'),'token');
 });
+
+test('authenticated reads with an explicit old header refresh the actual retry instead of repeating the stale header',async t=>{
+ const previous=globalThis.fetch;t.after(()=>{globalThis.fetch=previous;});let token='old',refreshes=0;const seen=[];
+ globalThis.fetch=async(_url,init)=>{seen.push(init.headers.get('x-buildr-session'));return new Response(JSON.stringify(seen.length===1?{error:{code:'session_forbidden'}}:{ok:true}),{status:seen.length===1?403:200});};
+ const api=createApiClient({getWorkspaceId:()=>null,sessionAdapter:{writeHeaders:()=>({'x-buildr-session':token}),refreshSession:async()=>{refreshes++;token='fresh';return true;}}});
+ assert.deepEqual(await api('/api/v1/app/agent-service/pending-requests',{headers:{'x-buildr-session':'old'}}),{ok:true});assert.deepEqual(seen,['old','fresh']);assert.equal(refreshes,1);
+});

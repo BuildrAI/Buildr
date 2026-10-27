@@ -1,11 +1,12 @@
 # managed-components Specification
 
 ## Purpose
-定义 Buildr 在 workspace 范围内以 Component 统一管理 Rules、Skills、Command collections 及其自然语言贡献的当前契约，覆盖来源登记、完整性与所有权校验、事务化生命周期、runtime 投射边界，以及随包 OpenSpec Component 的交付方式。
+定义 Buildr 在 workspace 范围内以 Component 统一管理 Skills、Command collections、Skill Contributions 及其自然语言贡献的当前契约，覆盖来源登记、完整性与所有权校验、事务化生命周期、runtime 投射边界，以及随包 OpenSpec Component 的交付方式。
+
 ## Requirements
 
 ### Requirement: Workspace 管理 Component 源资产
-Buildr MUST 支持在 workspace 级维护 Component，并将 Component 作为一个或多个 Rules、Skills 和 Command collections 的统一生命周期单元。
+Buildr MUST 支持在 workspace 级维护 Component，并将 Component 作为一个或多个 Skills、Command collections 和 Skill Contributions 的统一生命周期单元。
 
 #### Scenario: 初始化 Component registry
 - **WHEN** Buildr 初始化新 workspace
@@ -23,15 +24,25 @@ Buildr MUST 支持在 workspace 级维护 Component，并将 Component 作为一
 - **AND** Buildr MUST 说明当前只支持 workspace Component
 
 ### Requirement: Component 支持单项或组合资产
-Buildr MUST 允许 Component 拥有一个或多个成员，成员类型限于当前 workspace 已支持的 Rules、Skills 和 Command collections。
+Buildr MUST 允许 Component 拥有一个或多个成员，成员类型限于当前 workspace 已支持的 Skills、Command collections 和 Skill Contributions。
 
 #### Scenario: 跨资产类型 Component
-- **WHEN** Component 定义同时声明 Command collection 和 Skills
+- **WHEN** Component 定义同时声明 Command collection、Skills 和 Skill Contributions
 - **THEN** Buildr MUST 将这些成员作为一个安装、更新和卸载单元管理
 
 #### Scenario: 单成员 Component
-- **WHEN** 用户明确要求将单个 Rule、Skill 或 Command collection 作为 Component 管理
+- **WHEN** 用户明确要求将单个 Skill、Command collection 或 Skill Contribution 作为 Component 管理
 - **THEN** Buildr MUST 允许 Component 只包含该成员
+
+#### Scenario: 非空 members.rules 退役
+- **WHEN** workspace 或 package Component 定义声明非空 `members.rules`
+- **THEN** Component check、install 与 `buildr package check` MUST 失败并给出迁移到 `AGENTS.md` 的指引
+- **AND** Buildr MUST NOT 物化任何 Rule 成员或写入 `rules/manifest.yml`
+
+#### Scenario: 空 members.rules 兼容
+- **WHEN** 已有 Component 定义声明空 `members.rules`
+- **THEN** Buildr MUST 将其读取为没有 Rule 成员
+- **AND** Buildr MUST NOT 因该空字段创建 Rule manifest entry 或拒绝 Component 生命周期
 
 #### Scenario: 不包含 Project Scaffold
 - **WHEN** Buildr 安装、更新或卸载 workspace Component
@@ -68,7 +79,7 @@ Buildr MUST 在安装、更新或卸载 Component 前预检全部成员，并在
 - **AND** Buildr MUST NOT 删除用户修改或其他 Component 成员
 
 #### Scenario: 成员唯一所有权
-- **WHEN** 两个已启用 Component 声明同一个 Rule、Skill 或 Command collection
+- **WHEN** 两个已启用 Component 声明同一个 Skill、Command collection 或 Skill Contribution
 - **THEN** Buildr MUST 将其报告为 ownership conflict
 - **AND** Buildr MUST NOT 静默选择所有者
 
@@ -107,7 +118,7 @@ Buildr MUST 提供 Component list、check、install 和 uninstall 命令，并�
 
 #### Scenario: 卸载 Component
 - **WHEN** Agent 运行 `buildr component uninstall <id> --agent <agent> --target <dir>`
-- **THEN** Buildr MUST 在预检通过后删除其受管 Rule、Skill 和 Command collection 成员
+- **THEN** Buildr MUST 在预检通过后删除其受管 Skill、Command collection 和 Skill Contribution 成员
 - **AND** Buildr MUST 使用指定 adapter 清理对应 runtime 投射
 - **AND** Buildr MUST 运行最终 `doctor --agent <agent> --json`
 
@@ -118,7 +129,7 @@ Buildr MUST 提供 Component list、check、install 和 uninstall 命令，并�
 - **AND** Buildr MUST NOT 报告 Component 操作已经完整完成
 
 ### Requirement: Component 成员只能通过 Component 生命周期维护
-Buildr MUST 阻止普通 Builtin、Rules、Skills 或 Commands 维护命令删除或替换已启用 Component 的成员。
+Buildr MUST 阻止普通 Builtin、Skills 或 Commands 维护命令删除或替换已启用 Component 的成员。
 
 #### Scenario: 单独删除 Component Skill
 - **WHEN** Agent 对 Component-owned Skill 运行 `skills remove` 或 `builtin uninstall`
@@ -131,7 +142,7 @@ Buildr MUST 阻止普通 Builtin、Rules、Skills 或 Commands 维护命令删�
 - **AND** Buildr MUST 报告拥有该 collection 的 Component
 
 #### Scenario: 用户自有资产不受限制
-- **WHEN** Rule、Skill 或 Command collection 不属于已启用 Component
+- **WHEN** Skill、Command collection 或 Skill Contribution 不属于已启用 Component
 - **THEN** Buildr MUST 继续允许现有资产维护命令按各自契约工作
 
 ### Requirement: OpenSpec 作为首个随包 Component
@@ -205,7 +216,7 @@ Buildr MUST 允许 workspace Component 声明受 Component 生命周期和 integ
 - **AND** 目标 Skill 后续安装并重新渲染时 MUST 自动获得该 contribution
 
 ### Requirement: Component 源资产通过统一 transaction 提交
-Buildr MUST 在集合级预检通过后，通过受管数据完整性 transaction 提交 Component 成员、Rules/Skills manifests、Component registry 和已安装 definition。
+Buildr MUST 在集合级预检通过后，通过受管数据完整性 transaction 提交 Component 成员、Skills manifest、Component registry 和已安装 definition。
 
 #### Scenario: Component 更新中途失败
 - **WHEN** Component install、update 或 uninstall 在任一 source commit step 失败

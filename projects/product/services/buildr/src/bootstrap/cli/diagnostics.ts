@@ -38,12 +38,15 @@ export function printCliError(rawArgs: any, { candidates, helpTopic = false }: a
   const input = topicArgs.join(' ').trim();
   const unknownOption = !helpTopic && inputArgs.length === 1 && inputArgs[0].startsWith('-');
   const retiredConnection = topicArgs[0] === 'connection';
-  const code = retiredConnection ? 'cli.connection_retired' : helpTopic ? 'cli.unknown_help_topic' : unknownOption ? 'cli.unknown_option' : 'cli.unknown_command';
+  const retiredRules = topicArgs[0] === 'rules' && ['add', 'remove'].includes(topicArgs[1]);
+  const code = retiredRules ? 'cli.rule_asset_retired' : retiredConnection ? 'cli.connection_retired' : helpTopic ? 'cli.unknown_help_topic' : unknownOption ? 'cli.unknown_option' : 'cli.unknown_command';
   const label = helpTopic ? 'help topic' : unknownOption ? 'option' : 'command';
-  const suggestions = retiredConnection ? ['connection-skill --help', 'mysql-query --help'] : unknownOption && input === '-v'
+  const suggestions = retiredRules ? ['rules render --help', 'doctor --help'] : retiredConnection ? ['connection-skill --help', 'mysql-query --help'] : unknownOption && input === '-v'
     ? ['--version', '-V']
     : commandSuggestions(input, candidates || []);
-  const message = retiredConnection ? '旧连接命令已退役；请使用 buildr connection-skill 管理连接，使用 buildr mysql-query 查询 MySQL。' : `Unknown ${label}: ${input || '(empty)'}`;
+  const message = retiredRules
+    ? 'Rule 资产登记命令已退役；请在组织根、项目或服务目录的 AGENTS.md 中维护规则正文，并使用 buildr rules render 投射 AGENTS.md 入口。'
+    : retiredConnection ? '旧连接命令已退役；请使用 buildr connection-skill 管理连接，使用 buildr mysql-query 查询 MySQL。' : `Unknown ${label}: ${input || '(empty)'}`;
   const help = 'buildr --help';
   if (json) {
     console.log(JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.cliError, {

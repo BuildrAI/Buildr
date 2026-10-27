@@ -4,11 +4,12 @@ export type ConversationChoice = Pick<SendDraft,'connectionId'|'model'|'reasonin
 export type PermissionMode=NonNullable<SendDraft['permissionMode']>;
 export const permissionModeLabels:Record<PermissionMode,string>={default:'默认权限','full-access':'完全访问'};
 
-export function conversationPermissionKey(scope:{workspaceId:string;conversationId:string}|null,generation:number):string {
-  return scope?JSON.stringify([scope.workspaceId,scope.conversationId]):`new:${generation}`;
+export function conversationPermissionKey(scope:{workspaceId:string;conversationId:string}|null,draftWorkspaceId:string):string {
+  return scope?JSON.stringify([scope.workspaceId,scope.conversationId]):`new:${draftWorkspaceId||'unselected'}`;
 }
-export function conversationPermissionStorageKey(profile:string,scope:{workspaceId:string;conversationId:string}|null):string|null {
-  return scope?`buildr.agent-conversation.permission:${encodeURIComponent(profile)}:${encodeURIComponent(scope.workspaceId)}:${encodeURIComponent(scope.conversationId)}`:null;
+export function conversationPermissionStorageKey(profile:string,scope:{workspaceId:string;conversationId:string}|null,draftWorkspaceId?:string):string|null {
+  if(scope)return `buildr.agent-conversation.permission:${encodeURIComponent(profile)}:${encodeURIComponent(scope.workspaceId)}:${encodeURIComponent(scope.conversationId)}`;
+  return draftWorkspaceId?`buildr.agent-conversation.permission:${encodeURIComponent(profile)}:${encodeURIComponent(draftWorkspaceId)}:new`:null;
 }
 export function readConversationPermission(key:string|null,storage:Pick<Storage,'getItem'>):PermissionMode|undefined {
   if(!key)return;
@@ -61,6 +62,35 @@ export function sortReasoningEfforts<T extends {id:string}>(options:readonly T[]
 export function modelSourceName(provider:string):string {
   const id=provider.replace(/^native-/, '');
   return ({codex:'Codex',dsh:'DSH',deepseek:'DeepSeek',qoder:'Qoder',devin:'Devin'} as Record<string,string>)[id]??provider;
+}
+
+/** Current conversation UI limitation; source account availability remains independent. */
+export function conversationModelCompatibility(connection:Pick<ConnectionView,'provider'>|undefined,model:(Pick<CatalogModel,'provider'>&Partial<Pick<CatalogModel,'modelId'>>)|undefined,permissionMode:PermissionMode='default'):string|undefined {
+  if(model?.provider!=='devin'||!connection||connection.provider==='dsh')return;
+  if(connection.provider==='codex'&&model.modelId==='swe-2'&&(permissionMode==='default'||permissionMode==='full-access'))return;
+  return `Devin 当前暂不兼容 ${modelSourceName(connection.provider)}，请切换到 DSH 或选择其他模型来源。`;
+}
+
+/** 状态行表达执行身份（智能体与模型）；来源账号只保留在模型设置和发送预览。 */
+export function conversationRunIdentity(run:ConversationRun,connection:ConnectionView|undefined,catalog:CatalogModel[]):string {
+  const shared=catalog.find(model=>model.accountId===run.modelAccountId&&model.modelId===run.model);
+  const model=shared?modelSourceName(shared.provider)+' / '+shared.label:selectedConversationModel(connection,run.model)?.label||run.model;
+  return [modelSourceName(run.provider),model].filter(Boolean).join(' · ');
+}
+
+/** Cycle only among tiers the selected model actually offers. */
+export function nextServiceTier(tiers:ReadonlyArray<{id:string}>|undefined,current:string|undefined,fallback:string|undefined):string|undefined {
+  if(!tiers?.length)return current;
+  const selected=current??fallback??tiers[0]!.id;
+  const index=tiers.findIndex(tier=>tier.id===selected);
+  return tiers[(index+1+tiers.length)%tiers.length]!.id;
+}
+
+/** 切换档位保留已选推理强度；目标档位不提供该强度时回落继承，不发送无效值。 */
+export function tierReasoningEffort(tier:{reasoningEfforts?:ReadonlyArray<{id:string}>}|undefined,fallback:ReadonlyArray<{id:string}>|undefined,effort:string|undefined):string|undefined {
+  if(!effort)return effort;
+  const options=tier?.reasoningEfforts??fallback;
+  return options?.some(option=>option.id===effort)?effort:undefined;
 }
 
 /** Never select a different subscription without an explicit user choice. */

@@ -1,11 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { TextAreaRef } from 'antd/es/input/TextArea';
 import { Alert, Button, Dropdown, Input, Space, Spin, Tooltip } from 'antd';
 import { CheckOutlined, CopyOutlined, DownOutlined, InfoCircleOutlined } from '@ant-design/icons';
-import { useAgentRuntime } from '../../../app/AgentRuntimeContext';
+import { useAgentConversations } from '../../agent-conversations/AgentConversationsContext';
 import { AgentActionControl } from '../../../components/AgentActionControl';
+import { useExecutionModelChoice } from '../../../components/ExecutionModelSelect';
+import { executionModelOptions } from '../../../lib/execution-model';
 import { copyText } from '../../../lib/copyText';
-import { agentOption, executionConfigSummary } from '../../agents/agent-model';
 import type { CommitMode, CodeActionSource } from '../api/code-actions-api';
 import type { SourceControlRepository, SourceControlWorktree } from '../source-control-model';
 import { actionSourceKey, commitResultFeedback, type SourceControlActions } from '../source-control-actions';
@@ -18,7 +19,7 @@ const messageSelections = new WeakMap<SourceControlActions, Map<string, MessageS
 
 type Props = {active?: boolean; workspaceId: string; repository: SourceControlRepository; worktree: SourceControlWorktree; actions: SourceControlActions; version: string};
 export function SourceControlCommitPanel({active = true, workspaceId, repository, worktree, actions, version}: Props) {
-  const agents = useAgentRuntime();
+  const models = useAgentConversations();
   const source: CodeActionSource = {workspaceId, repositoryId: repository.id, worktreeId: worktree.worktreeId, branch: worktree.branch};
   const key = actionSourceKey(source), state = actions.state(source);
   const textarea=useRef<TextAreaRef>(null);
@@ -37,14 +38,14 @@ export function SourceControlCommitPanel({active = true, workspaceId, repository
     return()=>{remember();for(const event of ['select','input','blur','keyup','pointerup'])input.removeEventListener(event,remember);};
   },[key,active,positions]);
   const [feedback, setFeedback] = useState(''), [menuOpen, setMenuOpen] = useState(false);
+  useEffect(()=>{if(active)void models.refreshModelCatalog().catch(()=>{});},[active,models.refreshModelCatalog]);
   const context = state.context, generating = Boolean(state.generation), writing = Boolean(state.gitPending);
   useEffect(() => { if (active) { void actions.observe(source); setFeedback(''); } }, [active, actions, key, version]);
-  const options = agents.registry?.agents.map(agentOption) || [];
-  const defaultExecutor = options.find(option => option.id === agents.registry?.defaultAgentId) || null;
-  const nextExecutor = state.overrideId ? options.find(option => option.id === state.overrideId) || null : defaultExecutor;
-  const executor = state.generation ? {id: state.generation.agentId, label: state.generation.label, available: true} : nextExecutor;
+  const options = useMemo(() => executionModelOptions(models.modelCatalog), [models.modelCatalog]);
+  const nextExecutor = useExecutionModelChoice(options);
+  const executor = state.generation ? {key: state.generation.modelKey, label: state.generation.label, available: true} : nextExecutor;
   const scope = `${repository.name} · ${worktree.isMain ? '主工作树' : worktree.name} ${worktree.branch || worktree.head?.slice(0, 8) || ''}；全部未提交变更，包含已暂存、未暂存和未跟踪。`;
-  const provenance = state.generatedBy ? ['由 ' + state.generatedBy.label + ' 生成', executionConfigSummary(state.generatedBy.executionConfig)].filter(Boolean).join(' · ') : '';
+  const provenance = state.generatedBy ? '由 ' + state.generatedBy.label + ' 生成' : '';
   const pushScope = scope + ' 推送包含当前分支此前所有未推送提交。' + (context?.push.target ? `目标：${context.push.target}。` : '未设置可核实上游时，只完成提交并停止推送，不猜测目标。');
   const syncScope = scope + ' 提交后获取（Fetch）固定上游，必要时快进（Fast-forward）或变基（Rebase），再普通推送（Push）；包含当前分支此前所有未推送提交。' + (context?.push.target ? `目标：${context.push.target}。` : '未设置可核实上游时，只完成提交并停止同步，不猜测目标。');
   const ready = Boolean(context && !state.contextLoading && !state.contextError), noChanges = !context?.hasChanges;
@@ -63,7 +64,7 @@ export function SourceControlCommitPanel({active = true, workspaceId, repository
   const copy = async () => setFeedback(await copyText(state.text) ? '已复制说明' : '无法复制，请选中文字后手动复制。');
   return <section className="source-control-commit-panel" aria-label="提交变更" data-source-commit-key={key}>
     <div className="source-control-message-input"><Input.TextArea key={key} ref={textarea} id="commit-message-text" aria-label="提交说明内容" title={provenance ? `${provenance}；${scope}` : scope} placeholder="提交说明" value={state.text} disabled={generating || writing} onChange={event => {actions.setText(source, event.target.value); setFeedback('');}} autoSize={{minRows: expandedMessage ? 6 : 1, maxRows: 12}} />
-      <AgentActionControl id="generate-commit-message" label={state.generatedBy ? '重新生成提交说明' : '生成提交说明'} executor={executor} defaultExecutor={defaultExecutor} options={options} overrideId={state.overrideId} disabled={!ready || noChanges || writing} pending={generating} onAction={() => {if (nextExecutor) void actions.generate(source, nextExecutor);}} onSelect={id => actions.setOverride(source, id)} onOpenAgents={() => agents.setOpen(true)} />
+      <AgentActionControl id="generate-commit-message" label={state.generatedBy ? '重新生成提交说明' : '生成提交说明'} executor={executor} options={options} disabled={!ready || noChanges || writing} pending={generating} onAction={() => {if (nextExecutor) void actions.generate(source, {id: nextExecutor.key, label: nextExecutor.label, modelAccountId: nextExecutor.accountId, modelId: nextExecutor.modelId, accountIdentity: nextExecutor.accountIdentity, accountRevision: nextExecutor.accountRevision, serviceTier: nextExecutor.serviceTier});}} onOpenModels={() => models.setSettings(true)} />
     </div>
     {generating && <div className="source-control-generation-status" role="status"><Spin size="small" /><span>{generationPhase}</span><Button id="cancel-commit-message" size="small" type="text" onClick={() => void actions.cancel(source)}>{state.generation?.phase === 'cancelling' ? '重试取消' : '取消'}</Button></div>}
     <div className="source-control-commit-actions"><Space.Compact className="source-control-commit-split" size="small">
@@ -78,7 +79,7 @@ export function SourceControlCommitPanel({active = true, workspaceId, repository
     {(state.generationError || state.gitError) && <Alert type="warning" showIcon message={state.generationError || state.gitError} />}
     {state.generationWarning && <Alert id="commit-generation-cleanup-warning" type="warning" showIcon message={state.generationWarning} />}
     {state.stale && !state.generationError && <p className="source-control-action-note">变更已更新，请核对说明。</p>}
-    {!generating && !agents.loading && !nextExecutor?.available && <p className="source-control-action-note">暂时无法生成说明<Button type="link" size="small" onClick={() => agents.setOpen(true)}>查看智能体</Button></p>}
+    {!generating && !models.loading && !nextExecutor?.available && <p className="source-control-action-note">{nextExecutor ? '当前执行模型不可用，请重新选择' : '选择模型后可生成说明'}<Button type="link" size="small" onClick={() => models.setSettings(true)}>配置模型</Button></p>}
     {feedback && <p className="source-control-action-note" role="status">{feedback}</p>}
   </section>;
 }

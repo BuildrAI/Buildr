@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
+import path from 'node:path';
+import process from 'node:process';
 import test from 'node:test';
 import {
   aggregateCandidateCiEvidence,
   candidateCiRegistryIdentity,
+  candidateCiRegistryProjection,
   candidateCiTiming,
   createCandidateCiCheckpoint,
   createCandidateCiEvidence,
@@ -105,6 +108,29 @@ test('Candidate CI coverage is a closed projection of the full local Candidate',
   assert.deepEqual([...coreOwners].sort(), [...CORE_MACOS_STEP_IDS].sort());
   assert.equal(new Set(coreOwners).size, coreOwners.length);
   assert.ok(verificationSteps.filter((item: any) => item.profiles.includes('candidate')).every((item: any) => Number.isInteger(item.timeoutMs) && item.timeoutMs > 0 && item.timeoutMs <= 360_000));
+});
+
+test('Candidate registry projection carries no host layout', () => {
+  // The identity must compare code-selected recipes only: executables, working
+  // directories and path arguments captured at registry import would make the
+  // same source hash differently on every runner and checkout root.
+  const projection: any = candidateCiRegistryProjection();
+  const serialized: any = JSON.stringify(projection);
+  const serviceRoot: any = path.resolve(import.meta.dirname, '../..');
+  assert.ok(!serialized.includes(process.execPath), 'projection must not embed the running Node executable');
+  for (const candidateRoot of [serviceRoot, serviceRoot.split(path.sep).join('/')]) {
+    assert.ok(!serialized.includes(candidateRoot), 'projection must not embed the checkout root');
+  }
+  const checkValue = (stepId: string, key: string, value: any) => {
+    assert.ok(typeof value !== 'string' || !path.isAbsolute(value) || value === 'node',
+      `step ${stepId} executor.${key} must be checkout-relative, got ${String(value)}`);
+  };
+  for (const step of projection.candidateSteps) {
+    for (const [key, value] of Object.entries(step.executor ?? {})) {
+      if (Array.isArray(value)) value.forEach((item: any) => checkValue(step.id, key, item));
+      else checkValue(step.id, key, value);
+    }
+  }
 });
 
 test('new Candidate host coverage is exactly macOS and Windows and rejects Linux relabeling', () => {

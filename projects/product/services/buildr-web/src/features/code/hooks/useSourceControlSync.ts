@@ -87,9 +87,12 @@ export function useSourceControlSync(workspaceId:string):SourceControlSyncAction
     runningAll.current = true;
     setState(previous => previous.workspaceId === workspaceId ? {...previous, all:true} : previous);
     const batchKeys = new Set<string>();
-    try {
-      for (const repository of repositories) {
-        if (!mounted.current || !active.current || current.current !== workspaceId) break;
+    // Repositories sharing one Git common directory must serialize on the same
+    // refs; lanes group by git identity so independent repositories run in parallel.
+    const lanes = new Map<string, Promise<void>>();
+    const runRepository = (repository:SourceControlRepository) => {
+      const laneKey = repository.gitId || repository.id;
+      const next = (lanes.get(laneKey) || Promise.resolve()).then(async () => {
         for (const worktree of repository.worktrees) {
           if (!mounted.current || !active.current || current.current !== workspaceId) break;
           const key = sourceControlWorktreeKey(repository.id, worktree.worktreeId); batchKeys.add(key);
@@ -98,7 +101,12 @@ export function useSourceControlSync(workspaceId:string):SourceControlSyncAction
           if (inFlight.current.has(JSON.stringify([workspaceId, repository.id]))) { save({repositoryId:repository.id, worktreeId:worktree.worktreeId, status:'unavailable', message:'该代码库已有同步或其他 Git 写入进行中，本次跳过。'}); continue; }
           await run(repository, worktree);
         }
-      }
+      });
+      lanes.set(laneKey, next.catch(() => {}));
+      return next;
+    };
+    try {
+      await Promise.allSettled(repositories.map(runRepository));
     } finally {
       // A later success would close an earlier failure notice; re-surface every non-succeeded result of this batch once at the end.
       for (const key of batchKeys) {

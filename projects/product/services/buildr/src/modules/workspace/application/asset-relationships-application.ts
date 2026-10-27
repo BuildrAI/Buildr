@@ -73,7 +73,8 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
       let present = false;
       try { present = fs.statSync(location).isDirectory(); } catch { /* Missing code is local. */ }
       if (repository.source.type === 'workspace' && repository.source.path !== '.') diagnostics.push({ code: 'repository_root_unverified', message: `代码库 ${repository.code} 尚未核对真实 Git 根目录，可显式规范化登记。`, objectId: repository.id });
-      return { ...repository, location, ...(present ? {} : { available: false }), present, observed: null };
+      const clone = repositoryClone.status(root, repository.id, repository);
+      return { ...repository, location, ...(present && !clone.state ? {} : { available: false }), present, observed: null };
 
     });
     for (const s of r.catalog.services) if (!repositories.some(repository => repository.id === s.repositoryId)) diagnostics.push({ code: 'service_repository_missing', message: `服务 ${s.code} 的代码库引用缺失。`, objectId: s.id });
@@ -101,6 +102,8 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
     const record = read(root);
     const repository = record.catalog.repositories.find(r => r.id === id || r.code === id);
     if (!repository) throw assetError('repository_not_found', '代码库不存在。', 404);
+    const clone = repositoryClone.status(root, repository.id, repository);
+    if (clone.state) return { revision: record.revision, id: repository.id, available: false, remotes: [], selectedRemote: null, currentBranch: null, diagnostic: clone.diagnostic || '代码库正在克隆，尚未准备完成。' };
     return { revision: record.revision, id: repository.id, ...readRepositoryLocalConfig(resolveSourceRoot(root, repository.source), repository.source.git?.remote) };
   }
   function catalogRepositoryStatus(root: string, id: string) {
@@ -108,6 +111,8 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
     const repository = c.catalog.repositories.find(r => r.id === id || r.code === id);
     if (!repository) throw assetError('repository_not_found', '代码库不存在。', 404);
     const location = resolveSourceRoot(root, repository.source);
+    const clone = repositoryClone.status(root, repository.id, repository);
+    if (clone.state) return { revision: c.revision, id: repository.id, available: false, alignment: 'pending', observed: {}, diagnostic: clone.diagnostic || '代码库正在克隆，尚未准备完成。' };
     const remote = repository.source.git?.remote || 'origin';
     const observation = { ...runtime.observeProjectGit(location, remote), remote };
     let actualRoot: string | null = null;
@@ -690,7 +695,7 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
   function repositoryCloneStatus(root: string, id: string) {
     const repository = read(root).catalog.repositories.find(item => item.id === id || item.code === id);
     if (!repository) throw assetError('repository_not_found', '代码库不存在。', 404);
-    return repositoryClone.status(root, repository.id);
+    return repositoryClone.status(root, repository.id, repository);
   }
   function repositoryCloneRequest(root: string, id: string) {
     const repository = read(root).catalog.repositories.find(item => item.id === id || item.code === id);

@@ -32,8 +32,6 @@ export function createPackageRuntimeChecks(deps: any): any  {
     parseProjectCommandsYaml,
     parseManifestFileEntry,
     parseProjectsYaml,
-    parseRulesManifestYaml,
-    renderRulesManifestYaml,
     rootRequiredBlockStatus,
     path,
     readSkillManifest,
@@ -264,60 +262,32 @@ export function createPackageRuntimeChecks(deps: any): any  {
       }
     }
     if (kind === 'rules') {
-      const rulesManifestFile = path.join(tempRoot, 'rules', 'manifest.yml');
-      const packageCheckRuleFile = path.join(tempRoot, 'rules', 'package-check-rule.md');
-      const claudeBeforeRulesAdd = existsFile(path.join(tempRoot, 'CLAUDE.md')) ? fs.readFileSync(path.join(tempRoot, 'CLAUDE.md'), 'utf8') : null;
-      fs.writeFileSync(packageCheckRuleFile, '# Package Check Rule\n', 'utf8');
-      const missingDescription = buildrSelf.spawn(['rules', 'add', 'missing-description', '--target', tempRoot], { cwd: root, encoding: 'utf8' });
-      if (missingDescription.status === 0 || !missingDescription.stderr.includes('Missing required option: --description')) {
-        problems.push('rules add must require a non-empty description.');
+      const rulesDir = path.join(tempRoot, 'rules');
+      const rulesManifestFile = path.join(rulesDir, 'manifest.yml');
+      const legacyRuleFile = path.join(rulesDir, 'legacy-check-rule.md');
+      const add = buildrSelf.spawn(['rules', 'add', 'package-check-rule', '--description', 'retired rule command', '--target', tempRoot], { cwd: root, encoding: 'utf8' });
+      if (add.status === 0 || !/退役/.test(add.stderr)) {
+        problems.push('rules add must fail with a retired diagnostic.');
       }
-      const missingRuleFile = buildrSelf.spawn(['rules', 'add', 'missing-rule-file', '--description', 'missing file', '--target', tempRoot], { cwd: root, encoding: 'utf8' });
-      if (missingRuleFile.status === 0 || !missingRuleFile.stderr.includes('registers an existing root Rule file')) {
-        problems.push('rules add must reject missing Rule source files.');
+      const remove = buildrSelf.spawn(['rules', 'remove', 'package-check-rule', '--target', tempRoot], { cwd: root, encoding: 'utf8' });
+      if (remove.status === 0 || !/退役/.test(remove.stderr)) {
+        problems.push('rules remove must fail with a retired diagnostic.');
       }
-      const projectRulesScope = buildrSelf.spawn(['rules', 'add', 'project-rule', '--scope', 'projects/demo', '--description', 'project scope', '--target', tempRoot], { cwd: root, encoding: 'utf8' });
-      if (projectRulesScope.status === 0 || !projectRulesScope.stderr.includes('Project rules are maintained through projects/<project>/AGENTS.md')) {
-        problems.push('rules add must reject Project scope usage with Project AGENTS.md guidance.');
+      if (existsFile(rulesManifestFile)) {
+        problems.push('rules add/remove must not create rules/manifest.yml.');
       }
-      buildrSelf.exec(['rules', 'add', 'package-check-rule', '--description', 'package check temporary rule', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
-      let packageCheckRules = parseRulesManifestYaml(fs.readFileSync(rulesManifestFile, 'utf8'));
-      let packageCheckRule = packageCheckRules.rules.find((rule: any) => rule.id === 'package-check-rule');
-      if (packageCheckRule?.path !== 'rules/package-check-rule.md' || packageCheckRule?.description !== 'package check temporary rule' || packageCheckRule?.source !== 'workspace') {
-        problems.push('rules add must default to rules/<id>.md and register a workspace Rule with description.');
+      if (existsFile(path.join(rulesDir, 'package-check-rule.md'))) {
+        problems.push('rules add/remove must not create rule files.');
       }
-      if (claudeBeforeRulesAdd !== null && fs.readFileSync(path.join(tempRoot, 'CLAUDE.md'), 'utf8') !== claudeBeforeRulesAdd) {
-        problems.push('rules add must not write Agent runtime output.');
-      }
-      packageCheckRules.rules.push({ id: 'package-required-rule', source: 'buildr', path: 'rules/package-required-rule.md', description: 'required rule fixture', required: true, enabled: true, state: 'installed' });
-      fs.writeFileSync(rulesManifestFile, renderRulesManifestYaml(packageCheckRules), 'utf8');
-      const requiredRuleRemove = buildrSelf.spawn(['rules', 'remove', 'package-required-rule', '--target', tempRoot], { cwd: root, encoding: 'utf8' });
-      if (requiredRuleRemove.status === 0 || !requiredRuleRemove.stderr.includes('Required Buildr Rule cannot be removed')) {
-        problems.push('rules remove must protect required Buildr Rules.');
-      }
-      packageCheckRules.rules = packageCheckRules.rules.filter((rule: any) => rule.id !== 'package-required-rule');
-      fs.writeFileSync(rulesManifestFile, renderRulesManifestYaml(packageCheckRules), 'utf8');
-      buildrSelf.exec(['rules', 'remove', 'package-check-rule', '--keep-file', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
-      if (!existsFile(packageCheckRuleFile)) {
-        problems.push('rules remove --keep-file must keep the Rule source file.');
-      }
-      packageCheckRules = parseRulesManifestYaml(fs.readFileSync(rulesManifestFile, 'utf8'));
-      if (packageCheckRules.rules.some((rule: any) => rule.id === 'package-check-rule')) {
-        problems.push('rules remove --keep-file must remove the manifest entry.');
-      }
-      const doctorAfterKeepRule = parseJsonOutput('doctor after rules remove --keep-file', buildrSelf.exec(['doctor', '--target', tempRoot, '--agent', 'codex', '--json'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
-      if (!doctorAfterKeepRule.findings.some((finding: any) => finding.code === 'rules.unregistered' && finding.path === 'rules/package-check-rule.md')) {
-        problems.push('doctor must report a Rule file kept by rules remove --keep-file as unregistered.');
-      }
-      buildrSelf.exec(['rules', 'add', 'package-check-rule', '--description', 'package check temporary rule', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
-      buildrSelf.exec(['rules', 'remove', 'package-check-rule', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
-      if (existsFile(packageCheckRuleFile)) {
-        problems.push('rules remove must delete the Rule source file by default.');
-      }
-      packageCheckRules = parseRulesManifestYaml(fs.readFileSync(rulesManifestFile, 'utf8'));
-      if (packageCheckRules.rules.some((rule: any) => rule.id === 'package-check-rule')) {
-        problems.push('rules remove must remove the manifest entry.');
-      }
+      ensureDirectory(rulesDir);
+      fs.writeFileSync(legacyRuleFile, '# Legacy rule\n', 'utf8');
+      fs.writeFileSync(rulesManifestFile, 'schemaVersion: buildr.rules/v1\nrules:\n  - id: legacy-check-rule\n    source: workspace\n    path: rules/legacy-check-rule.md\n    description: legacy fixture\n    enabled: true\n    required: false\n', 'utf8');
+      const doctor = parseJsonOutput('doctor with legacy rules', buildrSelf.exec(['doctor', '--target', tempRoot, '--agent', 'codex', '--json'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+      const entriesFinding = doctor.findings.find((finding: any) => finding.code === 'rules.retired_manifest_entries');
+      const filesFinding = doctor.findings.find((finding: any) => finding.code === 'rules.retired_files');
+      if (!entriesFinding || entriesFinding.userActionRequired !== false) problems.push('doctor must report legacy rules manifest entries as a non-blocking warning.');
+      if (!filesFinding || filesFinding.userActionRequired !== false) problems.push('doctor must report legacy rules files as a non-blocking warning.');
+      if (!existsFile(legacyRuleFile) || !existsFile(rulesManifestFile)) problems.push('doctor must not delete legacy rules assets.');
     }
     if (kind === 'skills') {
       const packageCheckSkillSource = path.join(tempRoot, 'package-check-skill-source');

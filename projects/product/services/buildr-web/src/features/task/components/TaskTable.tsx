@@ -1,5 +1,5 @@
 import { taskListScrollHost } from '../taskNavigation';
-import { TaskGoalSummary } from './TaskGoalSummary';
+import { TaskGoalPreview, compactGoal } from './TaskGoalSummary';
 import { TaskTypeBadge } from '../../../components/TaskTypeBadge';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -17,7 +17,7 @@ export function taskProjectGroup(item: TaskListItem, projectNames: Record<string
   return projects.length > 1 ? '跨项目工作' : projects.length === 1 ? (projectNames[projects[0]] || projects[0]) : '工作空间';
 }
 
-export function TaskTable({ activeTaskId, tasks, prefetchTaskId, projectNames, contexts, grouped, taskHref, onOpen, isPinned, onPin, pending }: {
+export function TaskTable({ activeTaskId, tasks, prefetchTaskId, projectNames, contexts, grouped, taskHref, projectHref, onOpen, isPinned, onPin, pending }: {
   activeTaskId?: string;
   tasks: TaskListItem[];
   prefetchTaskId?: string;
@@ -25,6 +25,7 @@ export function TaskTable({ activeTaskId, tasks, prefetchTaskId, projectNames, c
   grouped: boolean;
   contexts: Record<string, TaskWorkContextResponse>;
   taskHref(taskId: string): string;
+  projectHref(projectCode: string): string;
   onOpen(taskId: string): void;
   isPinned(taskId: string): boolean;
   onPin(taskId: string): void;
@@ -55,13 +56,17 @@ export function TaskTable({ activeTaskId, tasks, prefetchTaskId, projectNames, c
       const showGroup = grouped && (index === 0 || group !== taskProjectGroup(tasks[index - 1], projectNames));
       return <>
         {showGroup && <div className="task-project-group">{group}</div>}
-        <div className="task-compact-copy">
-          <div className="task-row-heading"><Link className="task-row-main" title={`${record.taskId} · ${group}`} to={taskHref(record.taskId)} onClick={event => { event.stopPropagation(); if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); onOpen(record.taskId); }}><strong>{record.title}</strong></Link><TaskTypeBadge isParent={record.isParent} /></div>
-          <TaskGoalSummary goal={record.intent} />
-        </div>
+        <TaskGoalPreview goal={record.intent}>
+          <div className="task-row-heading"><Link className="task-row-main" to={taskHref(record.taskId)} onClick={event => { event.stopPropagation(); if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); onOpen(record.taskId); }}><strong>{record.title}</strong></Link><TaskTypeBadge isParent={record.isParent} /></div>
+          <p className="task-row-summary">{compactGoal(record.intent)}</p>
+        </TaskGoalPreview>
       </>;
     } },
-    ...(width >= 570 && !grouped ? [{ title: '项目', key: 'project', width: 120, ellipsis: true, render: (_value: unknown, item: TaskListItem) => taskProjectGroup(item, projectNames) }] : []),
+    ...(width >= 570 && !grouped ? [{ title: '项目', key: 'project', width: 120, ellipsis: true, render: (_value: unknown, item: TaskListItem) => {
+      const projects = item.record.scope.projects;
+      if (projects.length !== 1) return taskProjectGroup(item, projectNames);
+      return <Link to={projectHref(projects[0])} onClick={event => event.stopPropagation()}>{projectNames[projects[0]] || projects[0]}</Link>;
+    } }] : []),
     { title: '状态', key: 'status', width: 88, render: (_value, item) => {
       const openable = item.record.status === 'todo' || item.record.status === 'active';
       const attention = openable ? contexts[item.record.taskId]?.context?.attention : undefined;

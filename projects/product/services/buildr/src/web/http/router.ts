@@ -42,6 +42,7 @@ export function createLocalWorkspaceRequestRouter({
   restart,
   restartRequested,
   submitTaskRead,
+  submitTaskWrite,
   staticRoot,
 }: any) {
   const validateRequest = (id: any, value: any) => validateBuildrWebHttp(buildrWebOperation(id).requestSchemaId, value, id);
@@ -87,6 +88,8 @@ export function createLocalWorkspaceRequestRouter({
         authorizeRead: () => assertReadRequest(request, trustedOrigin, sessionToken),
         authorizeWrite: () => assertWriteRequest(request, trustedOrigin, sessionToken),
         readJsonBody: (maxBytes?: number) => readJsonBody(request, maxBytes),
+        authorizeMutation: () => assertMutationRequest(request, trustedOrigin, sessionToken),
+        readBinaryBody: (maxBytes: number) => readBinaryBody(request, maxBytes),
         pickWorkspaceDirectory,
         previewIdentity,
         respond: contributionRespond(response),
@@ -160,6 +163,7 @@ export function createLocalWorkspaceRequestRouter({
           readJsonBody: (maxBytes?: number) => readJsonBody(request, maxBytes),
           readBinaryBody: (maxBytes: number) => readBinaryBody(request, maxBytes),
           submitTaskRead: (operation: any, taskId: any, input: any = {}, signal?: AbortSignal) => submitTaskRead(request, response, operation, root, taskId, input, signal),
+          submitTaskWrite: (operation: any, input: any = {}) => submitTaskWrite(operation, root, input),
           respond: contributionRespond(response),
         });
         if (contributedResponse === true) return;

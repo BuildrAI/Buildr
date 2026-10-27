@@ -331,7 +331,7 @@ export function TasksPage() {
       {preferenceError && <Alert type="warning" message={preferenceError} closable onClose={() => setPreferenceError(null)} />}
       <section className="resource-list-section task-workbench-list">
         <div id="task-table-wrap" className={showTable ? undefined : 'hidden'}>
-          <TaskTable activeTaskId={activeTaskId} tasks={visibleTasks} prefetchTaskId={prefetchTaskId} projectNames={projectNames} contexts={listContexts.contexts} grouped={grouped} taskHref={(id) => href(`/tasks/${encodeURIComponent(id)}${tasks.find(item => item.record.taskId === id)?.record.isParent ? '?taskType=composite' : ''}`)} onOpen={openTask} isPinned={(id) => preferences.has('pinned-task', id)} onPin={(id) => { void togglePin(id); }} pending={pendingPin} />
+          <TaskTable activeTaskId={activeTaskId} tasks={visibleTasks} prefetchTaskId={prefetchTaskId} projectNames={projectNames} contexts={listContexts.contexts} grouped={grouped} taskHref={(id) => href(`/tasks/${encodeURIComponent(id)}${tasks.find(item => item.record.taskId === id)?.record.isParent ? '?taskType=composite' : ''}`)} projectHref={(code) => href(`/projects/${encodeURIComponent(code)}`)} onOpen={openTask} isPinned={(id) => preferences.has('pinned-task', id)} onPin={(id) => { void togglePin(id); }} pending={pendingPin} />
           {(loadingMore || hasMore || loadMoreError) && <div id="task-load-more-state" className="task-load-more-state" aria-live="polite">
             {loadingMore ? '正在继续读取…' : null}
             {hasMore && !loadingMore && !loadMoreError ? <Button onClick={loadMore}>查看更多任务</Button> : null}

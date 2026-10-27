@@ -86,8 +86,9 @@ function typed<T>(request: Promise<unknown>): Promise<T> {
 
 export function createTaskClient(client: ApiClient) {
   return Object.freeze({
-    list(input: TaskListRequest = {}, options: ReadOptions = {}): Promise<TaskListResponse> {
-      return typed(client(`/api/v1/tasks${queryString(input)}`, options));
+    list(input: TaskListRequest = {}, options: ReadOptions = {}, workspaceId?: string | null): Promise<TaskListResponse> {
+      const prefix = workspaceId ? `/api/v1/workspaces/${encodeURIComponent(workspaceId)}` : '/api/v1';
+      return typed(client(`${prefix}/tasks${queryString(input)}`, options));
     },
     detail(taskId: string, options: ReadOptions = {}): Promise<TaskDetailResponse> {
       return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}`, options));

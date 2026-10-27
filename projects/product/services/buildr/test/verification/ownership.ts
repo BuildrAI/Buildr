@@ -76,6 +76,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration-code": {
     "inputs": [
+      "src/modules/installation/infrastructure/retire-legacy-agent-data.ts",
       "src/modules/code/**",
       "src/infrastructure/git/**",
       "src/modules/task/infrastructure/git-worktree-provider.ts",
@@ -84,17 +85,6 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/helpers/code-commit-application-fixture.ts",
       "test/helpers/code-sync-application-fixture.ts",
       "test/fixtures/code-commit-message-large-fixture.ts"
-    ],
-    "inputExclusions": []
-  },
-  "integration-desktop": {
-    "inputs": [
-      "src/modules/native-session-links/**",
-      "src/modules/codex-desktop/**",
-      "src/modules/dsh-desktop/**",
-      "src/modules/agent-operations/**",
-      "test/helpers/codex-desktop-fixture.ts",
-      "test/fixtures/agent-codex-app-server.ts"
     ],
     "inputExclusions": []
   },
@@ -1126,10 +1116,10 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "package-rules": {
     "inputs": [
-      "resources/workspace/rules/**",
       "src/modules/agent-assets/application/rules.ts",
       "src/modules/agent-assets/infrastructure/runtime/**",
-      "src/modules/agent-assets/application/package-maintenance/**"
+      "src/modules/agent-assets/application/package-maintenance/**",
+      "tools/verification/package-check/runtime-checks.ts"
     ],
     "inputExclusions": []
   },
@@ -1149,7 +1139,6 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/modules/workspace/**",
       "tools/verification/package-check/runtime-checks.ts",
       "resources/runtime/**",
-      "resources/workspace/rules/**",
       "src/modules/agent-assets/infrastructure/runtime/**",
       "src/modules/agent-assets/application/runtime.ts",
       "src/modules/agent-assets/application/package-maintenance/**"
@@ -1173,8 +1162,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/modules/diagnostics/application/runtime-diagnostics.ts",
       "test/verification/runtime/adapter-parity.ts",
       "test/verification/runtime/fixture.ts",
-      "resources/runtime/**",
-      "resources/workspace/rules/**"
+      "resources/runtime/**"
     ],
     "inputExclusions": []
   },
@@ -1205,8 +1193,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/modules/agent-assets/application/runtime.ts",
       "test/verification/workspace/fixture.ts",
       "test/verification/workspace/runtime-reconciliation.ts",
-      "resources/runtime/**",
-      "resources/workspace/rules/**"
+      "resources/runtime/**"
     ],
     "inputExclusions": []
   },

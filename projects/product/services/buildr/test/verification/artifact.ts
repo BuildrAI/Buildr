@@ -111,6 +111,10 @@ export function runLocalArtifactVerification(options: any, dependencies: any = {
     }
     const result = (dependencies.execute ?? spawnCommandSync)(process.execPath, [entry, node.action, node.id], {
       cwd: productRoot, encoding: 'utf8', env: { ...env, BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT: evidenceFile },
+      // The child also records its own evidence file; its forwarded diagnostics
+      // (whole-suite progress lines) can exceed the 1 MiB spawnSync default. A
+      // buffer overflow must not misreport an evidence-backed pass as failed.
+      maxBuffer: 64 * 1024 * 1024,
       timeout: 600_000,
     });
     if (result.stdout) process.stdout.write(result.stdout);

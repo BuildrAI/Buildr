@@ -42,14 +42,10 @@ test('全部HTTP DTO从空显式目标生成两端闭合输出', async (t) => {
   // Keep the complete output inventory of the five registered generator families closed.
   const expectedFiles = [
     'agent-assets-http-dto.ts',
-    'agent-operations-http-dto.ts',
     'agent-service-http-dto.ts',
     'code-generation-http-dto.ts',
     'code-http-dto.ts',
-    'codex-desktop-http-dto.ts',
-    'dsh-desktop-http-dto.ts',
     'knowledge-http-dto.ts',
-    'native-session-links-http-dto.ts',
     'runtime-system-http-dto.ts',
     'task-dto.ts',
     'task-professional-http-dto.ts',

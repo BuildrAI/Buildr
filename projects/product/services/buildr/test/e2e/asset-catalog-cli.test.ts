@@ -68,7 +68,7 @@ test('assets help examples execute through the public CLI and retired guide stay
   await waitFor(() => runtime.repositoryCloneStatus(root, repositoryId).state !== 'cloning', 'repository clone must finish');
   const cloned = runtime.repositoryCloneStatus(root, repositoryId);
   assert.equal(cloned.state, 'failed', `unreachable git url must surface a failed clone state, got ${JSON.stringify(cloned)}`);
-  assert.equal(fs.existsSync(path.join(root, 'repositories/help-code')), false, 'failed clone must leave no directory');
+  assert.equal(runtime.assetCatalog(root).repositories.find((repository: any) => repository.id === repositoryId).available, false, 'failed clone cannot become ready merely because a partial directory exists');
   const before = ['projects/manifest.yml', 'services/manifest.yml', 'repositories/manifest.yml'].map(file => fs.readFileSync(path.join(root, file)));
   const directoryBefore = fs.readdirSync(root);
   for (const args of [['bootstrap', 'guide'], ['bootstrap', 'guide', '--help'], ['help', 'bootstrap', 'guide']]) {

@@ -61,6 +61,10 @@ export interface ExecutorItem {
   kind: 'message' | 'tool' | 'notice';
   role: 'user' | 'assistant' | 'system';
   text: string;
+  /** Stable tool-step name when the source provides one (e.g. command, file-change, read). */
+  name?: string;
+  /** Original tool invocation input; retained when a later result replaces text. */
+  input?: string;
   executionId?: string;
   status?: 'running' | 'completed' | 'failed';
 }
@@ -104,6 +108,8 @@ export interface ExecutorSendInput {
   onEvent(event: ExecutorEvent): void;
 }
 export interface AgentRuntime {
+  /** True only when this owned transport is no longer usable; absence is not failure. */
+  readonly closed?: boolean;
   /** Stable for compatible program updates at the verified source and config. */
   bindingIdentity: string;
   bindingData?: Record<string, unknown>;
@@ -127,6 +133,7 @@ export interface AgentRuntime {
   readTitle?(input: { contextRef: ContextRef; cwd: string }): Promise<string | undefined>;
   /** Independent, bounded auxiliary inference; it must not add input to the work context. */
   generateTitle?(input: ExecutorTitleInput): Promise<string | undefined>;
+  summarizeHandoff?(input: ExecutorTitleInput): Promise<string | undefined>;
   close(): Promise<void>;
 }
 export interface AgentExecutor {
@@ -180,21 +187,28 @@ export interface PreparationView {
 }
 export interface PreparationInput { expectedRevision: string; executable?: string; install?: boolean }
 export type RunStatus = 'starting' | 'running' | 'waiting-approval' | 'waiting-question' | 'stopping' | 'stopped' | 'tools-active' | 'unknown' | 'completed' | 'failed';
-export interface ParticipantView { id: string; provider: ProviderId; connectionId: string; label: string; deliveredThrough: number; contextId: string }
+export interface ParticipantView { modelAccountId?: string; model?: string; id: string; provider: ProviderId; connectionId: string; label: string; deliveredThrough: number; contextId: string }
 export interface ConversationEntry {
   id: string;
   sequence: number;
   kind: 'message' | 'tool' | 'notice' | 'handoff';
   role: 'user' | 'assistant' | 'system';
   text: string;
+  /** Stable tool-step name when the source provided one. */
+  name?: string;
+  /** Original tool invocation input; retained when a later result replaces text. */
+  input?: string;
   participantId?: string;
   provider?: ProviderId;
   runId?: string;
   status?: 'sending' | 'accepted' | 'unknown' | 'running' | 'completed' | 'failed';
   attachments?: string[];
+  handoff?: HandoffMaterial;
   createdAt: string;
 }
 export interface RunView {
+  /** Host interruption is unfinished work, distinct from a user stop. */
+  interrupted?: boolean;
   contextUsage?: {usedTokens:number;windowTokens?:number};
   modelAccountId?: string; modelAccountIdentity?: string; modelSourceLabel?: string;
   id: string;
@@ -221,6 +235,8 @@ export interface PendingRequestView extends ExecutorRequest {
   generation: string;
 }
 export interface ConversationView {
+  activity?: { version: number; seenThrough: number; updatedAt: string; active: boolean };
+  titleState?: { status: 'pending' | 'generating' | 'generated' | 'manual' | 'failed' | 'unavailable' | 'unknown'; reason?: string };
   id: string;
   workspaceId: string;
   cwd: string;
@@ -235,7 +251,23 @@ export interface ConversationView {
   requests: PendingRequestView[];
   nextEntryCursor?: number;
 }
+export interface HandoffRound {
+  id: string; title: string; from: number; through: number;
+  executionCount?: number; artifactCount?: number;
+  state?: RunStatus; diagnostic?: string; provider?: string; model?: string;
+  userInputs: string[]; assistantNotes: string[];
+  execution: Array<{action:string;result:string;location?:string}>;
+  artifacts: Array<{location:string;description:string}>;
+  finalReply?: string; sourcePath?: string;
+}
+export interface HandoffMaterial {
+  agent: string; model: string;
+  changes: Array<{kind:'agent'|'model';label:string;before:string;after:string}>;
+  rounds: HandoffRound[]; roundCount?: number; body: string; sourceThrough: number;
+  mode: 'records'|'summary'|'indexed'; sourcePath?: string;
+}
 export interface SendDraft {
+  skipHandoffSummary?: boolean;
   modelAccountId?: string; modelAccountIdentity?: string; modelAccountRevision?: string;
   expectedRevision: string;
   connectionId: string;
@@ -249,6 +281,7 @@ export interface SendDraft {
   handoffSummary?: string;
 }
 export interface SendPreview {
+  handoff?: HandoffMaterial;
   modelAccountId?: string; modelAccountIdentity?: string; modelAccountRevision?: string; modelSourceLabel?: string;
   token: string;
   conversationId: string;
@@ -280,6 +313,8 @@ export interface ServiceEvent {
   payload: { conversation?: ConversationView; connection?: ConnectionView };
 }
 export interface AgentServiceOptions {
+  /** Trusted host profile only; released installations default to manual continuation. */
+  autoContinueInterrupted?: boolean;
   modelProviders?: ModelProvider[];
   dataRoot: string;
   executors?: AgentExecutor[];

@@ -109,7 +109,6 @@ export function createPackageStaticValidator(deps: any): any  {
     PACKAGE_RUNTIME_TARGET,
     RESOURCE_WORKSPACE_ROOT,
     collectFiles,
-    builtinRuleEntry,
     builtinSkillEntry,
     componentMemberPaths,
     existsDirectory,
@@ -124,7 +123,6 @@ export function createPackageStaticValidator(deps: any): any  {
     parseCommandsManifestYaml,
     parseManifestFileEntry,
     parseProjectsYaml,
-    parseRulesManifestYaml,
     parseSkillFrontmatter,
     parseSkillSourceRef,
     path,
@@ -152,7 +150,15 @@ export function createPackageStaticValidator(deps: any): any  {
     if (!existsFile(workspaceManifest)) return;
 
     const workspaceSkills: any = new Map(readSkillManifest(workspaceManifest).map((skill: any) => [skill.id, skill]));
-    for (const builtin of manifest.builtins.skills.filter((skill: any) => !skill.component)) {
+    // Deleting a builtin skill requires an explicit `replaces` or `retired`
+    // declaration so the removed shared source is preserved for stale adopters.
+    const declaredIds = new Set(manifest.builtins.skills.flatMap((skill: any) => [skill.id, skill.replaces?.id, skill.retired === true ? skill.id : null].filter(Boolean)));
+    for (const skill of workspaceSkills.values()) {
+      if (skill.source === 'buildr' && skill.component === undefined && !declaredIds.has(skill.id)) {
+        problems.push(`Workspace skills baseline ${skill.id} is no longer a package builtin; declare replaces or retired in resources/manifest.yml.`);
+      }
+    }
+    for (const builtin of manifest.builtins.skills.filter((skill: any) => !skill.component && skill.retired !== true)) {
       const baselineSkill = builtinSkillEntry(builtin);
       if (!baselineSkill.id || (baselineSkill.path === undefined && baselineSkill.source === undefined && baselineSkill.resolved === undefined)) {
         problems.push('Package builtin Skill entries must produce id and path, source, or resolved.');
@@ -224,22 +230,6 @@ export function createPackageStaticValidator(deps: any): any  {
         const block = (content: any) => content.match(/<!-- buildr:required begin -->[\s\S]*?<!-- buildr:required end -->/)?.[0];
         if (!block(rootContent) || block(rootContent) !== block(packageContent)) {
           problems.push(`Root ${rootRelative} differs from ${RESOURCE_WORKSPACE_ROOT}/${packageRelative}.`);
-        }
-      }
-    }
-
-    const rulesManifestFile = path.join(root, 'rules', 'manifest.yml');
-    if (existsFile(rulesManifestFile)) {
-      const rootRules = parseRulesManifestYaml(fs.readFileSync(rulesManifestFile, 'utf8')).rules || [];
-      for (const builtin of readPackageManifest().builtins.rules.filter((rule: any) => !rule.component)) {
-        const desired = builtinRuleEntry(builtin);
-        const actual = rootRules.find((rule: any) => rule.id === desired.id);
-        if (!actual) {
-          problems.push(`Workspace rules baseline ${desired.id} is missing from root rules/manifest.yml.`);
-          continue;
-        }
-        if (JSON.stringify(actual) !== JSON.stringify(desired)) {
-          problems.push(`Workspace rules baseline ${desired.id} differs from the package builtin declaration.`);
         }
       }
     }
@@ -587,10 +577,10 @@ export function createPackageStaticValidator(deps: any): any  {
           problems.push(`Package manifest must use ${RESOURCE_WORKSPACE_ROOT}/ as the source for workspace baseline assets: ${entry.raw}`);
         }
         if (entry.source.startsWith('rules/')) {
-          problems.push(`Package manifest must use ${RESOURCE_WORKSPACE_ROOT}/rules/ as the source for published rule modules: ${entry.raw}`);
+          problems.push(`Package manifest must not publish retired rule modules: ${entry.raw}`);
         }
-        if (entry.target.startsWith('rules/') && !entry.source.startsWith(`${RESOURCE_WORKSPACE_ROOT}/rules/`)) {
-          problems.push(`Package manifest rule targets must source from ${RESOURCE_WORKSPACE_ROOT}/rules/: ${entry.raw}`);
+        if (entry.target.startsWith('rules/')) {
+          problems.push(`Package manifest targets must not include retired rules/ paths: ${entry.raw}`);
         }
         if (entry.source.startsWith('product/')) {
           problems.push(`Package manifest source must be relative to the product root, not product/ prefixed: ${entry.raw}`);
@@ -868,32 +858,8 @@ export function createPackageStaticValidator(deps: any): any  {
         seen.add(integrity);
       }
     }
-    for (const rule of manifest.builtins.rules) {
-      const label = `builtins.rules.${rule.id || '<missing>'}`;
-      validateLegacyIntegrities(rule, label);
-      if (!rule.id || !rule.path || !rule.target || !rule.description || typeof rule.required !== 'boolean') {
-        problems.push(`${label} must include id, path, target, description, and required.`);
-        continue;
-      }
-      if (builtinIds.has(`rule:${rule.id}`)) problems.push(`Duplicate builtin rule id: ${rule.id}`);
-      builtinIds.add(`rule:${rule.id}`);
-      if (!rule.target.startsWith('rules/buildr/') || !rule.target.endsWith('.md')) {
-        problems.push(`${label}.target must be rules/buildr/*.md.`);
-      }
-      if (!rule.path.startsWith(`${RESOURCE_WORKSPACE_ROOT}/rules/`)) {
-        problems.push(`${label}.path must be under ${RESOURCE_WORKSPACE_ROOT}/rules/.`);
-      }
-      if (path.isAbsolute(rule.path) || rule.path.startsWith('..') || path.isAbsolute(rule.target) || rule.target.startsWith('..')) {
-        problems.push(`${label} paths must stay relative.`);
-        continue;
-      }
-      const sourceFile = path.resolve(root, rule.path);
-      if (!existsFile(sourceFile)) {
-        problems.push(`${label}.path does not exist: ${rule.path}`);
-      } else files.push(sourceFile);
-    }
-    if (manifest.builtins.rules.some((rule: any) => rule.id === 'buildr-core')) {
-      problems.push('Independent buildr-core is retired; use the inline AGENTS.md managed block.');
+    if (manifest.builtins.rules !== undefined) {
+      problems.push('builtins.rules is retired; remove the declaration and publish builtin guidance through AGENTS.md or Skills.');
     }
 
     const currentSkillIds: any = new Set(manifest.builtins.skills.map((skill: any) => skill.id).filter(Boolean));
@@ -916,6 +882,18 @@ export function createPackageStaticValidator(deps: any): any  {
         }
       }
       validateLegacyIntegrities(skill, label);
+      if (skill.retired === true) {
+        // A retired builtin declares a removed shared source for the migration
+        // window; it must not ship a package path and must not remain a live skill.
+        if (!skill.id || !skill.target || !skill.description) {
+          problems.push(`${label} retired builtin must include id, target, and description.`);
+          continue;
+        }
+        if (skill.path !== undefined) problems.push(`${label} retired builtin must not declare a package path; the source is only preserved locally.`);
+        if (existsFile(path.resolve(root, `resources/workspace/${skill.target}/SKILL.md`))) problems.push(`${label} retired builtin source still ships in resources/workspace: ${skill.target}`);
+        if (skill.replaces !== undefined) problems.push(`${label} retired builtin must not also declare replaces.`);
+        continue;
+      }
       if (!skill.id || !skill.path || !skill.target || !skill.description || typeof skill.required !== 'boolean') {
         problems.push(`${label} must include id, path, target, description, and required.`);
         continue;

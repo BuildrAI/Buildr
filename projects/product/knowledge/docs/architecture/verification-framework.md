@@ -30,9 +30,9 @@ Buildr 产品使用四类检查：静态检查（Static Check）、单元测试�
 
 用户可指定具体检查、类型、全量或相关范围，不要求先创建正式任务或先提供 Git 基线。已知检查直接执行；需要比较才使用明确来源。相关选择须依据实际公共行为、调用方、依赖及交付边界补足自动路径选择，零匹配不能冒充目标已验证。
 
-`--list` 列出检查标识，`--plan` 或 `--json` 只查看计划。`test:related -- --base <ref> --check <id>` 在相关集合中追加显式检查；只有 `--check` 时直接执行指定集合。`check` 始终包含全部源码静态检查（Static Check）与单元测试（Unit Test），添加 `--check` 不会缩小推送前范围。
+`--list` 列出检查标识，`--plan` 或 `--json` 只查看计划。`test:related -- --base <ref> --check <id>` 在相关集合中追加显式检查；只有 `--check` 时直接执行指定集合。`check` 包含全部不依赖外部运行时的源码静态检查（Static Check）与单元测试（Unit Test），添加 `--check` 不会缩小推送前范围。
 
-静态检查（Static Check）同时检查四服务测试及辅助脚本：JavaScript 做语法解析，TypeScript 做严格类型检查。`test-typecheck` 检查主体、网页和智能体测试；`plugin-test-typecheck` 使用准确的软件开发工具包（SDK）与已生成的协议声明，按入口分别检查插件宿主端和客户端，避免两端同名类型相互干扰。两项都自动包含在 `npm run check` 中。
+静态检查（Static Check）同时检查四服务测试及辅助脚本：JavaScript 做语法解析，TypeScript 做严格类型检查。`test-typecheck` 检查主体、网页和智能体测试，并随 `npm run check` 自动执行。`plugin-typecheck` 与 `plugin-test-typecheck` 使用准确的软件开发工具包（SDK）与已生成的协议声明，按入口分别检查插件宿主端和客户端，避免两端同名类型相互干扰；它们依赖本机准备的外部 DSH SDK，登记为仅显式选择，由插件服务自己的 `test:static` 与发布/候选验证（`tools/verify-all.ts --source-sdk`）执行，不进入日常全量检查。
 
 ## 测试内容与并行
 

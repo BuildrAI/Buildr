@@ -27,7 +27,7 @@ function Preview(){
  const {message}=App.useApp();
  const [sources,setSources]=useState(accountFixtures),[selection,setSelection]=useState<AccountSelection>({sourceId:'all',tab:'quota'});
  const [drawer,setDrawer]=useState(true),[collapsed,setCollapsed]=useState(false),[busy,setBusy]=useState(false);
- const [choice,setChoice]=useState(initialChoice),[scene,setScene]=useState({page:'agents',state:''});
+ const [choice,setChoice]=useState(initialChoice),[scene,setScene]=useState({page:'quota',state:''});
  const [generation,setGeneration]=useState(0);
  const [executors,setExecutors]=useState<SetupExecutor[]>([{id:'codex',label:'Codex',prepared:true},{id:'qoder',label:'Qoder',prepared:true},{id:'dsh',label:'DSH',prepared:false}]);
  const [refreshingIds,setRefreshingIds]=useState<string[]>([]);const refreshTimers=useRef<ReturnType<typeof setTimeout>[]>([]);

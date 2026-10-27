@@ -25,7 +25,6 @@ export function createBuiltinLifecycle(deps: any): any  {
     readBuiltinReceipts,
     readCommandsManifestForWrite,
     readPackageManifest,
-    readRulesManifestForWrite,
     readSkillsManifestForWrite,
     SUPPORTED_AGENT_IDS,
     syncPackageBuiltins,
@@ -33,7 +32,6 @@ export function createBuiltinLifecycle(deps: any): any  {
     withWorkspaceMutation,
     writeBuiltinReceipts,
     writeCommandsManifest,
-    writeRulesManifest,
     writeSkillsManifest,
   } = deps;
 
@@ -44,7 +42,7 @@ export function createBuiltinLifecycle(deps: any): any  {
 
   function packageBuiltinComponent(id: any): any  {
     const manifest = readPackageManifest();
-    for (const kind of ['rules', 'skills', 'commands']) {
+    for (const kind of ['skills', 'commands']) {
       const builtin = manifest.builtins[kind].find((item: any) => item.id === id);
       if (builtin?.component) return builtin.component;
     }
@@ -52,10 +50,6 @@ export function createBuiltinLifecycle(deps: any): any  {
   }
 
   function findBuiltinManifestEntry(targetRoot: any, id: any): any  {
-    const rulesManifest = readRulesManifestForWrite(targetRoot);
-    const ruleIndex = rulesManifest.rules.findIndex((rule: any) => rule.id === id && rule.source === 'buildr');
-    if (ruleIndex !== -1) return { type: 'rule', manifest: rulesManifest, index: ruleIndex, entry: rulesManifest.rules[ruleIndex] };
-
     const skillsManifest = readSkillsManifestForWrite(targetRoot);
     const skillIndex = skillsManifest.findIndex((skill: any) => skill.id === id && skill.source === 'buildr');
     if (skillIndex !== -1) return { type: 'skill', manifest: skillsManifest, index: skillIndex, entry: skillsManifest[skillIndex] };
@@ -103,14 +97,7 @@ export function createBuiltinLifecycle(deps: any): any  {
       receipts.builtins.splice(receiptIndex, 1);
       changed.push(writeBuiltinReceipts(targetRoot, receipts));
     }
-    if (found.type === 'rule') {
-      found.manifest.rules[found.index] = updated;
-      if (found.entry.path && existsFile(path.join(targetRoot, found.entry.path))) {
-        fs.rmSync(path.join(targetRoot, found.entry.path), { force: true });
-        changed.push(found.entry.path);
-      }
-      changed.push(toPosixRelative(targetRoot, writeRulesManifest(targetRoot, found.manifest)));
-    } else if (found.type === 'skill') {
+    if (found.type === 'skill') {
       found.manifest[found.index] = updated;
       const skillDir = path.join(targetRoot, 'skills', found.entry.path || id);
       if (existsDirectory(skillDir)) {
@@ -157,7 +144,6 @@ export function createBuiltinLifecycle(deps: any): any  {
     // Source mutation locks fail immediately when occupied, so holding the projection
     // lock while acquiring it cannot create a circular wait with source-first callers.
     const result = withRuntimeProjectionLock(targetRoot, () => withWorkspaceMutation(targetRoot, 'builtin.uninstall', [
-      path.join(targetRoot, 'rules'),
       path.join(targetRoot, 'skills'),
       path.join(targetRoot, 'commands'),
       ...runtimeRoots.map((root: any) => path.join(targetRoot, root)),

@@ -492,6 +492,35 @@ test('CI and publish workflows use the supported Node runtime', async () => {
     assert.equal(job.steps.filter((step: any) => /candidate-environment\.ts prepare --profile/u.test(step.run || '')).length, 1);
     assert.equal(job.steps.some((step: any) => step.run === 'npm ci' || /artifacts:prepare|prepare-development-web\.ts/u.test(step.run || '')), false);
   }
+  // Preparation is a closed contract: every prepare invocation names a declared
+  // profile or the plan-emitted matrix value, never a free-form command.
+  const { CANDIDATE_ENVIRONMENT_PROFILES } = await import('../../tools/verification/candidate-environment.ts');
+  const { CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES } = await import('../verification/registry.ts');
+  const declaredPreparations = new Set<string>([
+    ...CANDIDATE_CI_SHARDS.map((shard: any) => shard.preparation ?? 'base'),
+    ...CANDIDATE_CI_HOST_NODE_TUPLES.map((tuple: any) => tuple.id === 'host-minimum-macos' ? 'publisher' : 'host'),
+  ]);
+  for (const profile of declaredPreparations) assert.ok((CANDIDATE_ENVIRONMENT_PROFILES as readonly string[]).includes(profile), `declared preparation ${profile} must be a known profile`);
+  const prepareInvocations: any[] = Object.entries(verifyDocument.jobs as Record<string, any>)
+    .flatMap(([jobId, job]) => (job.steps ?? [])
+      .map((step: any, index: number) => ({ jobId, index, run: String(step.run ?? ''), preparationId: step.env?.BUILDR_CANDIDATE_PREPARATION_ID }))
+      .filter((step: any) => step.run.includes('candidate-environment.ts prepare')));
+  for (const step of prepareInvocations) {
+    const profileMatch = /--profile (\$\{\{[\s\S]*?\}\}|\S+)/.exec(step.run);
+    assert.ok(profileMatch, `${step.jobId} step ${step.index} must name --profile`);
+    const selected = profileMatch![1];
+    assert.ok((CANDIDATE_ENVIRONMENT_PROFILES as readonly string[]).includes(selected)
+      || selected === '${{ matrix.preparation }}' || selected.includes('inputs.diagnostic_scope'),
+      `${step.jobId} step ${step.index} selects an undeclared profile ${selected}`);
+    const isTuple = CANDIDATE_CI_HOST_NODE_TUPLES.some((item: any) => item.id === step.preparationId);
+    const shard = CANDIDATE_CI_SHARDS.find((item: any) => item.id === step.preparationId);
+    if ((shard || isTuple) && !selected.includes('${{')) {
+      const expected = isTuple
+        ? (step.preparationId === 'host-minimum-macos' ? 'publisher' : 'host')
+        : (shard.preparation ?? 'base');
+      assert.equal(selected, expected, `${step.jobId} preparation id ${step.preparationId} must run its declared profile ${expected}, not ${selected}`);
+    }
+  }
   // Every environment profile builds the private Agent package before the
   // enclosing install: artifact-consuming shards still run source tools that
   // import node_modules/@buildr-ai/buildr-agent/build/index.js.

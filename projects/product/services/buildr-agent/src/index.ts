@@ -23,6 +23,8 @@ import { PreparationApplication } from './application/preparation-application.ts
 export * from './contracts.ts';
 export * from './model-access/contracts.ts';
 export { AgentServiceError } from './domain/agent-state.ts';
+export { listConnectionExecutables, relocateConnections } from './persistence/connection-relocation.ts';
+export type { ConnectionRelocationFailure, ConnectionRelocationResult } from './persistence/connection-relocation.ts';
 
 /** Public application service. Its host supplies authority, authentication and transport. */
 export function createAgentService(options: AgentServiceOptions) {
@@ -65,7 +67,7 @@ export function createAgentService(options: AgentServiceOptions) {
   let closed = false;
   return {
     generation,
-    models: { accounts: {...models.accounts,list:async(input:{refresh?:boolean}={})=>{if(input.refresh===false)void discover().catch(()=>{});else await discover();return models.accounts.list();}}, catalog: {list:async(input:{refresh?:boolean}={})=>{if(input.refresh===false)void discover().catch(()=>{});else await discover();return models.catalog.list();}} },
+    models: { generate: models.generate, accounts: {...models.accounts,list:async(input:{refresh?:boolean}={})=>{if(input.refresh===false)void discover().catch(()=>{});else await discover();return models.accounts.list();}}, catalog: {list:async(input:{refresh?:boolean}={})=>{if(input.refresh===false)void discover().catch(()=>{});else await discover();return models.catalog.list();}} },
     connections: {
       list: () => ({ connections: connections.list() }),
       read: (id: string) => connections.get(id),
@@ -91,11 +93,15 @@ export function createAgentService(options: AgentServiceOptions) {
       },
     },
     conversations: {
+      recoverInterrupted: () => conversations.recoverInterrupted(),
+      listAll: (workspaceIds: string[], input: Parameters<ConversationApplication['listAll']>[1] = {}) => conversations.listAll(workspaceIds, input),
+      markSeen: (workspaceId: string, id: string, input: Parameters<ConversationApplication['markSeen']>[2]) => conversations.markSeen(workspaceId, id, input),
       list: (workspaceId: string, input: Parameters<ConversationApplication['list']>[1] = {}) => conversations.list(workspaceId, input),
       create: (workspaceId: string, input: Parameters<ConversationApplication['create']>[1]) => conversations.create(workspaceId, input),
       read: (workspaceId: string, id: string, input: Parameters<ConversationApplication['read']>[2] = {}) => conversations.read(workspaceId, id, input),
       update: (workspaceId: string, id: string, input: Parameters<ConversationApplication['update']>[2]) => conversations.update(workspaceId, id, input),
       generateTitle: (workspaceId: string, id: string, input: Parameters<ConversationApplication['generateTitle']>[2]) => conversations.generateTitle(workspaceId, id, input),
+      prepareHandoff: (workspaceId:string,id:string,input:SendDraft) => conversations.prepareHandoff(workspaceId,id,input),
       prepareSend: (workspaceId: string, id: string, input: SendDraft) => conversations.prepareSend(workspaceId, id, input),
       send: (workspaceId: string, id: string, input: Parameters<ConversationApplication['send']>[2]) => conversations.send(workspaceId, id, input),
       observe: (workspaceId: string, id: string) => conversations.observe(workspaceId, id),

@@ -137,7 +137,7 @@ test('source package selectors and isolated launcher checks are reusable while f
 });
 
 test('only reviewed fixture runtime checks exclude Product governance material while governance owners retain it', () => {
-  const ids = ['integration-runtime', 'integration-code', 'integration-desktop', 'integration-task-records', 'integration-connections', 'integration-connections-cli',
+  const ids = ['integration-runtime', 'integration-code', 'integration-task-records', 'integration-connections', 'integration-connections-cli',
     'integration-runtime-projection', 'integration-data-store', 'integration-task-read-models', 'integration-task-coordination',
     'integration-web-http', 'e2e-task', 'e2e-worktree', 'e2e-nested-git',
     'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection',

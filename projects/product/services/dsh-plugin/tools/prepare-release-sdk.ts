@@ -176,7 +176,7 @@ export async function prepareReleaseSdk(input: ReleaseSdkInput, dependencies: De
   verifyPatched(source, plan, run, env);
   finishPhase('dependencyInstall');
   const existingOutputs = new Set(readdirSync(build).map(entry => join(build, entry)));
-  const stdout = run(node, [join(SERVICE_ROOT, 'tools/prepare-source-sdk.ts'), '--source', source, '--manifest', plan.manifestFile, '--node', node], { cwd: SERVICE_ROOT, env });
+  const stdout = run(node, [join(SERVICE_ROOT, 'tools/prepare-source-sdk.ts'), '--source', source, '--manifest', plan.manifestFile, '--node', node, '--fresh'], { cwd: SERVICE_ROOT, env });
   const sdk = preparedReleaseSdkOutput(stdout, existingOutputs);
   finishPhase('sourceSdkBuild');
   let receipt: SourceSdkReceipt;

@@ -304,28 +304,61 @@ objects:
   - id: agent-integration
     parent: system-structure
     title: 智能体接入与执行
-    summary: 区分内部统一对话、三家独立配置和原生上下文，以及原有外部会话关联与一次生成。
+    summary: 内部对话与单次生成共用智能体和模型配置；外部桌面关联已退役。
 artifacts:
   - id: product-release-flow
     title: Buildr 发布
     kind: document
     path: knowledge/docs/flows/open-source-release.md
-    objects: [product-release]
-    sources: [release-coordination-source, release-selection-source, release-publication-source, verification-source-reader, verification-candidate-repair, verification-local-source, verification-platform-boundaries, verification-local-artifact, verification-artifact-reuse]
+    objects: [ product-release ]
+    sources:
+      [
+        release-coordination-source,
+        release-selection-source,
+        release-publication-source,
+        verification-source-reader,
+        verification-candidate-repair,
+        verification-local-source,
+        verification-platform-boundaries,
+        verification-local-artifact,
+        verification-artifact-reuse
+      ]
   - id: product-release-architecture
     title: Buildr 发布：谁负责什么
     kind: diagram
     path: knowledge/archify/flows/release-architecture.html
     graphSource: knowledge/archify/flows/release-architecture.json
-    objects: [product-release]
-    sources: [release-coordination-source, release-selection-source, release-publication-source, verification-source-reader, verification-candidate-source-binding, verification-candidate-repair, verification-local-source, verification-platform-boundaries, verification-local-artifact, verification-artifact-reuse]
+    objects: [ product-release ]
+    sources:
+      [
+        release-coordination-source,
+        release-selection-source,
+        release-publication-source,
+        verification-source-reader,
+        verification-candidate-source-binding,
+        verification-candidate-repair,
+        verification-local-source,
+        verification-platform-boundaries,
+        verification-local-artifact,
+        verification-artifact-reuse
+      ]
   - id: product-release-workflow
     title: Buildr 发布：五步流程
     kind: diagram
     path: knowledge/archify/flows/release-workflow.html
     graphSource: knowledge/archify/flows/release-workflow.json
-    objects: [product-release]
-    sources: [release-coordination-source, release-selection-source, release-publication-source, verification-candidate-repair, verification-local-source, verification-platform-boundaries, verification-local-artifact, verification-artifact-reuse]
+    objects: [ product-release ]
+    sources:
+      [
+        release-coordination-source,
+        release-selection-source,
+        release-publication-source,
+        verification-candidate-repair,
+        verification-local-source,
+        verification-platform-boundaries,
+        verification-local-artifact,
+        verification-artifact-reuse
+      ]
   - id: agent-integration-article
     title: 接入方式与职责
     kind: document
@@ -338,6 +371,9 @@ artifacts:
       - agent-service-preparation-source
       - agent-service-programs-source
       - agent-service-conversations-source
+      - agent-service-handoff-source
+      - agent-service-handoff-storage-source
+      - agent-service-handoff-ui-source
       - agent-service-storage-source
       - agent-service-codex-source
       - agent-service-dsh-source
@@ -346,16 +382,8 @@ artifacts:
       - agent-service-ui-source
       - agent-service-task-ui-source
       - agent-service-delivery-source
-      - codex-discovery-source
-      - dsh-discovery-source
-      - native-session-links-source
-      - dsh-desktop-navigation-source
-      - codex-chat-relations-source
-      - task-codex-sessions-ui-source
-      - agent-operations-application-source
-      - codex-generation-source
-      - dsh-desktop-generation-source
-      - dsh-desktop-bridge-source
+      - model-single-generation-source
+      - code-generation-run-source
   - id: agent-integration-generation-article
     title: 提交说明怎样生成
     kind: document
@@ -365,63 +393,8 @@ artifacts:
     sources:
       - code-commit-generation-source
       - code-commit-ui-source
-      - agent-operations-application-source
-      - codex-generation-source
-      - dsh-desktop-generation-source
-      - dsh-desktop-bridge-source
-  - id: agent-integration-diagram
-    title: 内部对话与原有接入图
-    kind: diagram
-    path: knowledge/archify/system/agent-integration.html
-    objects:
-      - agent-integration
-    sources:
-      - agent-service-public-source
-      - agent-service-connections-source
-      - agent-service-conversations-source
-      - agent-service-storage-source
-      - agent-service-codex-source
-      - agent-service-dsh-source
-      - agent-service-qoder-source
-      - agent-service-host-source
-      - agent-service-ui-source
-      - agent-service-task-ui-source
-      - agent-service-delivery-source
-      - codex-discovery-source
-      - dsh-discovery-source
-      - native-session-links-source
-      - dsh-desktop-navigation-source
-      - codex-chat-relations-source
-      - task-codex-sessions-ui-source
-      - agent-operations-application-source
-      - codex-generation-source
-      - dsh-desktop-generation-source
-      - dsh-desktop-bridge-source
-    graphSource: knowledge/archify/system/agent-integration.json
-    graphDigest: cd0724c2f9903c1f25f8ffca47670c991d2d3e5b8e091422649778ce578cdd48
-    observedDigest: ff5555df278ef82df38706380e5bb54630ff9c4abe4aff93a85fcc0232219a71
-    files:
-      - agent-integration-diagram-html
-      - agent-integration-diagram-json
-  - id: agent-generation-chain-diagram
-    title: 提交说明时序图
-    kind: diagram
-    path: knowledge/archify/flows/agent-generation-chain.html
-    objects:
-      - agent-integration
-    sources:
-      - code-commit-generation-source
-      - agent-operations-application-source
-      - code-commit-ui-source
-      - codex-generation-source
-      - dsh-desktop-generation-source
-      - dsh-desktop-bridge-source
-    graphSource: knowledge/archify/flows/agent-generation-chain.json
-    graphDigest: a5df2d839f8188fba9ecd688250c3027c8901b8a77e8cb484553612abb3c203b
-    observedDigest: 7a617396f22f195049fa5820b62993bd32ebfec3b800a0b1293c1dc21c1b23d3
-    files:
-      - agent-generation-chain-diagram-html
-      - agent-generation-chain-diagram-json
+      - model-single-generation-source
+      - code-generation-run-source
   - id: product-overview-article
     title: Buildr 整体认识
     kind: document
@@ -565,6 +538,9 @@ artifacts:
       - agent-service-public-source
       - agent-service-storage-source
       - agent-service-conversations-source
+      - agent-service-handoff-source
+      - agent-service-handoff-storage-source
+      - agent-service-handoff-ui-source
       - agent-service-host-source
       - agent-service-ui-source
       - product-reference-code-map
@@ -1938,6 +1914,21 @@ sources:
     kind: code
     path: services/buildr-agent/src/application/conversation-application.ts
     summary: 创建与预览、受理去重、参与者增量接续、原生历史归并及未知不重发。
+  - id: agent-service-handoff-source
+    title: 本地轮次交接与接收预算
+    kind: code
+    path: services/buildr-agent/src/domain/handoff-material.ts
+    summary: 从本地原始记录组织轮次、动作结果和确认成果，保留终态与诊断，定义交接提示词和保守预算。
+  - id: agent-service-handoff-storage-source
+    title: 完整交接资料的本地读取投射
+    kind: code
+    path: services/buildr-agent/src/application/handoff-sources.ts
+    summary: 按内容复用原始轮次资料，生成不可变索引；模型按需读取，不递归转发旧包。
+  - id: agent-service-handoff-ui-source
+    title: 交接详情与实际发送原文
+    kind: code
+    path: services/buildr-web/src/features/agent-conversations/ConversationHandoffDrawer.tsx
+    summary: 正式页面与原型共同展示轮次、来源和实际提交原文，默认收起正文并明确页面说明边界。
   - id: agent-service-preparation-source
     title: 准备并连接
     kind: code
@@ -2013,80 +2004,6 @@ sources:
     kind: code
     path: services/buildr/tools/build/agent-package.ts
     summary: 从主包已准备的公开包及其运行依赖复制负载，不回退相邻服务源码。
-  - id: dsh-discovery-source
-    title: DSH 桌面与插件发现
-    kind: code
-    path: services/buildr/src/modules/agent-operations/infrastructure/dsh-discovery.ts
-    summary: 发现准确安装、配置和渠道，核验已运行桌面插件，旧登记不能静默改绑。
-  - id: native-session-links-source
-    title: 多提供者原生会话关系
-    kind: code
-    path: services/buildr/src/modules/native-session-links/application/native-session-links-application.ts
-    summary: 聚合Codex与DSH的多对多关系，按提供者隔离查询失败，按版本解除和准确打开。
-  - id: dsh-desktop-navigation-source
-    title: DSH 桌面关系与导航
-    kind: code
-    path: services/buildr/src/modules/dsh-desktop/application/dsh-desktop-application.ts
-    summary: 核验准确桌面连接，打开指定原生会话与已关联任务并要求实际回执。
-  - id: codex-discovery-source
-    title: Codex 本机程序与配置发现
-    kind: code
-    path: services/buildr/src/modules/agent-operations/infrastructure/codex-discovery.ts
-    summary: 发现桌面内置、搜索路径和已登记程序，核对原生配置及可接入候选。
-  - id: codex-chat-relations-source
-    title: Codex 原生会话与任务关联
-    kind: code
-    path: services/buildr/src/modules/codex-desktop/application/codex-desktop-application.ts
-    summary: 保存多对多关系、查询和解除，返回原生会话与任务链接。
-  - id: task-codex-sessions-ui-source
-    title: 任务的原生会话入口
-    kind: code
-    path: services/buildr-web/src/features/task/components/TaskAgentSessions.tsx
-    summary: 按提供者显示任务关联会话，打开准确目标并隔离局部读取失败。
-  - id: agent-integration-diagram-html
-    title: 接入关系图 · 展示文件
-    kind: evidence
-    path: knowledge/archify/system/agent-integration.html
-    summary: 由 Archify 生成的独立图示，包含图形与阅读交互；说明本轮候选架构设计；未固定为交付提交，不是运行日志或真实模型验收。
-    observedDigest: ff5555df278ef82df38706380e5bb54630ff9c4abe4aff93a85fcc0232219a71
-  - id: agent-integration-diagram-json
-    title: 接入关系图 · 可维护图源
-    kind: evidence
-    path: knowledge/archify/system/agent-integration.json
-    summary: 定义本轮候选架构的节点、关系与布局；当前源码来源见配套文章，未冒充固定提交证据。
-    observedDigest: cd0724c2f9903c1f25f8ffca47670c991d2d3e5b8e091422649778ce578cdd48
-  - id: agent-generation-chain-diagram-html
-    title: 提交说明时序图 · 展示文件
-    kind: evidence
-    path: knowledge/archify/flows/agent-generation-chain.html
-    summary: 由 Archify 生成的独立图示，包含图形与阅读交互；表达设计及当前代码关系，不是运行日志。
-    observedDigest: 7a617396f22f195049fa5820b62993bd32ebfec3b800a0b1293c1dc21c1b23d3
-  - id: agent-generation-chain-diagram-json
-    title: 提交说明时序图 · 可维护图源
-    kind: evidence
-    path: knowledge/archify/flows/agent-generation-chain.json
-    summary: 定义节点、关系、事实来源与布局；修改后重新生成配套展示并复核事实。
-    observedDigest: a5df2d839f8188fba9ecd688250c3027c8901b8a77e8cb484553612abb3c203b
-  - id: agent-operations-application-source
-    title: 统一智能体操作
-    kind: code
-    path: services/buildr/src/modules/agent-operations/application/agent-operations-application.ts
-    summary: 登记、选择、单身份串行队列、结果校验、取消和回收。
-  - id: codex-generation-source
-    title: Codex 应用服务调用
-    kind: code
-    path: services/buildr/src/modules/agent-operations/infrastructure/codex-app-server.ts
-    summary: 独立原生进程、临时线程、实际选定配置、生成和中断。
-  - id: dsh-desktop-generation-source
-    title: DSH 桌面后台调用
-    kind: code
-    path: services/buildr/src/modules/agent-operations/infrastructure/dsh-desktop-provider.ts
-    summary: 准确桌面范围、本机回环连接（Loopback TCP）、实际配置、单次生成和请求取消，不启动独立DSH进程。
-  - id: dsh-desktop-bridge-source
-    title: DSH 同宿主桌面插件桥
-    kind: code
-    path: services/dsh-plugin/plugin/desktop-server.ts
-    summary: 同宿主当前默认配置、模型调用、请求隔离与桌面客户端导航，不携带原生会话上下文。
   - id: code-commit-generation-source
     title: 提交说明生成业务
     kind: code
@@ -2245,7 +2162,9 @@ sources:
     title: adapter-contract.ts
     kind: code
     path: services/buildr/src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts
-    summary: 前者取得已声明适配器的目标布局，不证明当前执行者身份；`resolveRuntimeAdapter` 按选择规则把运行时身份解析为实际适配器，退役品牌与 `codex`、`dsh` 都落到标准；后者给出某一投射范围内的目标根，当前每个适配器各只有一个。
+    summary: 前者取得已声明适配器的目标布局，不证明当前执行者身份；`resolveRuntimeAdapter`
+      按选择规则把运行时身份解析为实际适配器，退役品牌与 `codex`、`dsh`
+      都落到标准；后者给出某一投射范围内的目标根，当前每个适配器各只有一个。
   - id: skill-source-12
     title: inventory.ts
     kind: code
@@ -2487,7 +2406,8 @@ sources:
     kind: code
     path: services/buildr-web/src/features/agent-assets/components/SkillHome.tsx
     observedDigest: 7479ae4d360b884a4be56c2940b83a0ee41ce0c6786454be9e1aeb9172af065b
-    summary: 共用技能（Skill）详情默认读取 SKILL.md 正文，其他文件折叠检索；切换技能时隔离请求状态，最近访问和收藏独立保存到工作台（Workbench）偏好。
+    summary: 共用技能（Skill）详情默认读取 SKILL.md
+      正文，其他文件折叠检索；切换技能时隔离请求状态，最近访问和收藏独立保存到工作台（Workbench）偏好。
   - id: code-architecture
     title: 代码架构（code-architecture）
     summary: 指导智能体（Agent）按清晰职责组织真实代码。
@@ -3161,7 +3081,8 @@ sources:
   - id: task-bootstrap-runner
     path: scripts/closeout.mjs
     title: 自举唯一执行器
-    summary: 核对基线和交付、按实际后端 src/、bin/ 及前端与构建输入选择动作，完成同步后继提交及推送、开发应用更新、显式入口核验和最终 Doctor；不写任务状态。
+    summary: 核对基线和交付、按实际后端 src/、bin/ 及前端与构建输入选择动作，完成同步后继提交及推送、开发应用更新、显式入口核验和最终
+      Doctor；不写任务状态。
     kind: skill
     skillId: buildr-self-bootstrap-sync
     observedDigest: 3b429f0bc483f6b9cf3d9a235870f0963dd68707cb3947aa2bb4f47f37c5dd63
@@ -3681,19 +3602,22 @@ sources:
     title: 候选压缩包核心浏览器验收
     kind: code
     path: services/buildr/test/verification/release/browser-candidate.ts
-    summary: 校验唯一候选压缩包（Candidate Tarball）及网页载荷，隔离解包、直接托管、执行核心旅程（Browser Journey）并清理；不重新构建源码网页或替代安装后全部行为验收。
+    summary: 校验唯一候选压缩包（Candidate Tarball）及网页载荷，隔离解包、直接托管、执行核心旅程（Browser
+      Journey）并清理；不重新构建源码网页或替代安装后全部行为验收。
     observedDigest: 716755edae748e6bf446bcea1dd916c250b24aee29bc89ce5e8ac638d959f2d8
   - id: verification-candidate-environment
     title: 候选环境统一准备
     kind: code
     path: services/buildr/tools/verification/candidate-environment.ts
-    summary: 按档位（Profile）准备实际运行依赖；前端逻辑档位提供两服务依赖及测试输入，候选浏览器档位提供测试运行时（Runtime）和明确 Chromium，均不重新构建候选网页载荷。
+    summary: 按档位（Profile）准备实际运行依赖；前端逻辑档位提供两服务依赖及测试输入，候选浏览器档位提供测试运行时（Runtime）和明确
+      Chromium，均不重新构建候选网页载荷。
     observedDigest: 3500415525b4253f1d6d75a9182e04589d0a5c4be21cbcb2f052ec0f44577cf2
   - id: verification-frontend-test-runner
     title: 前端完整逻辑测试驱动
     kind: code
     path: services/buildr-web/tools/run-logic-tests.mjs
-    summary: npm test 与前端登记步骤共用全部测试文件发现，显式传递工作进程预算（Worker Budget）到 Node.js 测试并发参数；独立调用默认 1 个工作进程（Worker）。
+    summary: npm test 与前端登记步骤共用全部测试文件发现，显式传递工作进程预算（Worker Budget）到 Node.js
+      测试并发参数；独立调用默认 1 个工作进程（Worker）。
     observedDigest: cc338214322b387f85441084ff4309f0bee8cf9f87b6f534ccaf84dbef8a83fd
   - id: verification-ref-e568f1e4
     title: 跨平台候选证据聚合
@@ -3984,17 +3908,51 @@ sources:
     kind: code
     path: services/buildr-web/src/features/task/components/PrototypeReaderLayout.tsx
     summary: 独立任务阅读与离线预览共用页面目录和阅读布局，页面选择由入口接入。
+  - id: model-single-generation-source
+    title: 统一模型单次生成
+    kind: code
+    path: services/buildr-agent/src/model-access/application.ts
+    summary: 复用准确账号和模型绑定，只传给定资料，不提供工具并释放本次请求。
+  - id: code-generation-run-source
+    title: 提交说明生成请求
+    kind: code
+    path: services/buildr/src/modules/code/application/code-generation.ts
+    summary: 按工作空间隔离查询、取消、超时和迟到输出，业务校验后才能发布结果。
 relations:
-  - { from: product-overview-article, to: work-collaboration-diagram, kind: guides }
-  - { from: product-release-flow, to: product-release-architecture, kind: contains }
+  - {
+      from: product-overview-article,
+      to: work-collaboration-diagram,
+      kind: guides
+    }
+  - {
+      from: product-release-flow,
+      to: product-release-architecture,
+      kind: contains
+    }
   - { from: product-release-flow, to: product-release-workflow, kind: contains }
-  - { from: product-release-flow, to: verification-product-architecture, kind: guides }
-  - { from: external-connections-document, to: technical-layers-map, kind: guides }
+  - {
+      from: product-release-flow,
+      to: verification-product-architecture,
+      kind: guides
+    }
+  - {
+      from: external-connections-document,
+      to: technical-layers-map,
+      kind: guides
+    }
   - { from: product-overview-article, to: system, kind: guides }
   - { from: reference-technical-document, to: system, kind: guides }
-  - { from: reference-technical-document, to: system-services-assets-map, kind: guides }
+  - {
+      from: reference-technical-document,
+      to: system-services-assets-map,
+      kind: guides
+    }
   - { from: reference-technical-document, to: technical-layers-map, kind: guides }
-  - { from: project-relations-article, to: project-relations-diagram, kind: guides }
+  - {
+      from: project-relations-article,
+      to: project-relations-diagram,
+      kind: guides
+    }
   - { from: project-relations-article, to: project-relations-map, kind: guides }
   - { from: skill-system-explanation, to: skill-system-map, kind: guides }
   - { from: task-system-article, to: task-system-map, kind: guides }
@@ -4002,12 +3960,22 @@ relations:
   - { from: task-system-article, to: task-system-bootstrap, kind: guides }
   - { from: data-design-explanation, to: data-sqlite-diagram, kind: guides }
   - { from: data-sqlite-explanation, to: data-sqlite-diagram, kind: guides }
-  - { from: verification-overview, to: verification-implementation-map, kind: guides }
-  - { from: verification-product-architecture, to: verification-product-map, kind: guides }
-  - { from: verification-product-architecture, to: verification-implementation-map, kind: guides }
+  - {
+      from: verification-overview,
+      to: verification-implementation-map,
+      kind: guides
+    }
+  - {
+      from: verification-product-architecture,
+      to: verification-product-map,
+      kind: guides
+    }
+  - {
+      from: verification-product-architecture,
+      to: verification-implementation-map,
+      kind: guides
+    }
   - { from: explanation, to: implementation-map, kind: guides }
-  - { from: agent-integration-article, to: agent-integration-diagram, kind: contains }
-  - { from: agent-integration-generation-article, to: agent-generation-chain-diagram, kind: contains }
   - { from: reference-technical-document, to: responsibilities, kind: contains }
   - { from: skill-system-explanation, to: skill-projection, kind: contains }
   - { from: task-system-article, to: task-system-flow, kind: contains }

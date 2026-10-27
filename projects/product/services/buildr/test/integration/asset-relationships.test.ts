@@ -24,7 +24,10 @@ test('distinct branches and services share repository identity without duplicate
   assert.equal(catalog.services.length, 2);
   assert.equal(new Set(catalog.services.map((s: any) => s.repositoryId)).size, 1);
   assert.equal(catalog.repositories[0].available, false);
-  assert.equal(fs.existsSync(path.join(root, 'repositories/freshx-pigs')), false);
+  assert.ok(['cloning', 'failed'].includes(runtime.repositoryCloneStatus(root, repositoryId).state));
+  const status = runtime.catalogRepositoryStatus(root, repositoryId);
+  assert.equal(status.available, false);
+  assert.ok(status.observed && typeof status.observed === 'object', 'pending status preserves the HTTP object contract');
   assert.equal(fs.existsSync(path.join(root, 'services/pig-business')), false);
 });
 
@@ -316,11 +319,13 @@ test('HTTP catalog validates request and enforces write authorization', async (t
 
 
 
-test('shared code repository yields one task worktree and module directories do not become Git roots', (t: any) => {
+test('shared code repository yields one task worktree and module directories do not become Git roots', async (t: any) => {
   const { root, runtime } = setup(t);
   const git = (cwd: string, ...args: string[]) => { const r = spawnSync('git', args, { cwd, encoding: 'utf8' }); assert.equal(r.status, 0, r.stderr); return r.stdout.trim(); };
   let c = ready(runtime, root); c = addRepo(runtime, root, c.revision, 'shared', 'dev');
   const repository = c.repositories[0], codeRoot = path.join(root, repository.source.path);
+  await runtime.repositoryCloneIdle();
+  assert.equal(runtime.repositoryCloneStatus(root, repository.id).state, 'failed', 'unreachable origin clone must surface failed state');
   fs.mkdirSync(path.join(codeRoot, 'modules/pig'), { recursive: true });
   git(codeRoot, 'init', '--initial-branch=dev'); git(codeRoot, 'config', 'user.name', 'Test'); git(codeRoot, 'config', 'user.email', 'test@example.com');
   git(codeRoot, 'remote', 'add', 'origin', repository.source.git.url); git(codeRoot, 'commit', '--allow-empty', '-m', 'baseline');
@@ -342,7 +347,7 @@ test('git repository registration clones asynchronously; explicit request retrie
   const origin = makeOriginRepository(t, 'clone-origin');
   catalog = runtime.createCatalogRepository(root, { revision: catalog.revision, code: 'cloned-code', url: `file://${origin}`, integrationBranch: 'main' });
   const repositoryId = catalog.repositories.find((r: any) => r.code === 'cloned-code').id;
-  await waitFor(() => fs.existsSync(path.join(root, 'repositories/cloned-code/.git')), 'registration clone must materialize the repository');
+  await waitFor(() => runtime.repositoryCloneStatus(root, repositoryId).state === null, 'registration clone must complete before becoming ready');
   assert.equal(fs.readFileSync(path.join(root, 'repositories/cloned-code/README.md'), 'utf8'), '# demo\n');
   assert.equal(runtime.repositoryCloneStatus(root, repositoryId).state, null, 'successful clone clears transient state');
   assert.equal(runtime.repositoryCloneRequest(root, repositoryId).status, 'ready', 'cloning an existing directory is a no-op');

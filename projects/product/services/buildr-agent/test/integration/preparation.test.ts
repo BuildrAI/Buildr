@@ -129,6 +129,32 @@ test('fixed package installer uses an isolated prefix, verifies its result and r
   assert.deepEqual(fs.readdirSync(path.dirname(path.dirname(path.dirname(path.dirname(path.dirname(executable)))))).filter(name=>name.startsWith('.prepare-')),[]);
 });
 
+test('a real installer failure reaches preparation with its last error, redacted credentials and staging cleaned',async t=>{
+  const f=fixture(t),bin=path.join(f.root,'installer-bin');fs.mkdirSync(bin);
+  const script=path.join(bin,'npm-cli.js');
+  fs.writeFileSync(script,`process.stdout.write('[@qoder-ai/qoder-agent-sdk] Downloading: https://download.qoder.com/runtime.tgz\\n');process.stderr.write('npm error request to https://user:password@download.qoder.com/private?token=secret failed: ');setImmediate(()=>{process.stderr.write('ECONNRESET');process.exitCode=7;});`);
+  const profile=path.join(f.root,'installer-profile'),manager=new NativeProgramManager(profile,{PATH:bin,HOME:f.root});
+  f.manager.install=input=>manager.install(input);
+  const attempt=f.begin({install:true}),view=await settled(f.service,attempt.id,'failed');
+  assert.match(view.message,/退出码 7/);assert.match(view.message,/ECONNRESET/);assert.match(view.message,/https:\/\/download\.qoder\.com/);
+  assert.doesNotMatch(view.message,/user:password|private|token=secret/);
+  assert.equal(f.opens,0);assert.equal(view.connection.enabled,false);
+  assert.deepEqual(fs.readdirSync(path.join(profile,'programs/codex')),[]);
+});
+
+test('missing archive tools report the actual operating system error rather than a network guess',async t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-program-unpack-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const bin=path.join(root,'bin');fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin,'npm-cli.js'),`const {spawnSync}=require('node:child_process');const result=spawnSync('buildr-test-missing-unpacker',['--version'],{env:{PATH:process.env.PATH}});if(!result.error)process.exit(99);process.stderr.write('npm error archive extraction failed: '+result.error.message);process.exitCode=3;`);
+  const manager=new NativeProgramManager(path.join(root,'profile'),{PATH:bin,HOME:root});
+  await assert.rejects(manager.install({provider:'qoder',signal:new AbortController().signal,progress:()=>{}}),error=>{
+    assert.equal((error as any).code,'agent_install_failed');
+    assert.match((error as Error).message,/退出码 3/);assert.match((error as Error).message,/解压程序文件/);assert.match((error as Error).message,/buildr-test-missing-unpacker ENOENT/);
+    assert.doesNotMatch((error as Error).message,/请检查网络/);return true;
+  });
+  assert.deepEqual(fs.readdirSync(path.join(root,'profile/programs/qoder')),[]);
+});
+
 test('cancelling a real installer reaps its owned process group and removes only staging', {timeout:10000}, async t=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-program-cancel-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   const bin=path.join(root,'bin');fs.mkdirSync(bin);const script=path.join(bin,'npm-cli.js'),marker=path.join(root,'child.pid'),outside=path.join(root,'keep');fs.writeFileSync(outside,'preserve');

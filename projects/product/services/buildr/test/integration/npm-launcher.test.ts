@@ -429,24 +429,42 @@ test('Launcher refuses foreign targets and Windows shortcut binds exact Host Nod
 
   const shortcut: any = path.join(value.root, 'Start Menu', 'Buildr Web.lnk');
   let shortcutValue: any = null;
-  const writeShortcut: any = ({ target, binding }: any) => {
+  const writeShortcut: any = ({ target, binding, wrapper }: any) => {
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, 'test shortcut');
     shortcutValue = {
-      target: binding.hostNode.path,
-      arguments: `"${binding.packageEntry.path}" web --launcher-binding "${binding.bindingPath}"`,
+      target: 'C:\\Windows\\System32\\wscript.exe',
+      arguments: `"${wrapper.host}"`,
       workingDirectory: binding.packageRoot,
     };
   };
   const readShortcut: any = () => shortcutValue;
   const installed: any = installNpmLauncher({ registration: value.registration, platform: 'win32', target: shortcut, writeShortcut, readShortcut });
   assert.equal(installed.status, 'ready');
-  assert.equal(shortcutValue.target, process.execPath);
-  assert.match(shortcutValue.arguments, /buildr\.mjs" web --launcher-binding/);
+  // 快捷方式必须隐藏启动：TargetPath 指向 wscript.exe 托管的 .vbs，而不是会分配控制台的 node.exe。
+  assert.match(shortcutValue.target, /wscript\.exe$/i);
+  assert.match(shortcutValue.arguments, /Buildr Web\.vbs"$/);
 
   const bindingPath: any = installed.bindingPath;
-  const iconPath: any = path.join(path.dirname(bindingPath), 'Buildr.ico');
-  const frozen: any = new Map([shortcut, bindingPath, iconPath].map((file: any) => [file, fs.readFileSync(file)]));
+  const bindingDir: any = path.dirname(bindingPath);
+  const runnerPath: any = path.join(bindingDir, 'Buildr Web Runner.cmd');
+  const hostPath: any = path.join(bindingDir, 'Buildr Web.vbs');
+  const runnerScript: any = fs.readFileSync(runnerPath, 'utf8');
+  assert.match(runnerScript, /web --launcher-binding "%BINDING%"/);
+  assert.match(runnerScript, /set "BINDING=/);
+  // 版本探测必须绕过 for 子命令的 cmd /c 引号规则：直接落盘后按文件读回。
+  assert.match(runnerScript, /-p "process\.versions\.node" >/, 'version probe must run Host Node directly');
+  assert.match(runnerScript, /runner-start/, 'runner must leave an early marker so missing logs isolate the failing hop');
+  // cmd.exe 批处理必须按 CRLF 写盘；LF 行尾在多行 if/for 块上会静默误解析。
+  assert.ok(runnerScript.includes('\r\n') && !/(?<!\r)\n/u.test(runnerScript), 'Windows runner must be written with CRLF line endings');
+  const hostBytes: any = fs.readFileSync(hostPath);
+  assert.ok(hostBytes[0] === 0xff && hostBytes[1] === 0xfe, 'VBS host must be UTF-16LE so the Chinese failure notice renders correctly');
+  assert.match(hostBytes.toString('utf16le'), /shell\.Run\(command, 0, True\)/);
+  assert.match(hostBytes.toString('utf16le'), /launcher\.log/, 'VBS host must record runner invocation failures into the Launcher log');
+  assert.match(hostBytes.toString('utf16le'), /invoking runner/, 'VBS host must leave an invoke marker before shell.Run');
+
+  const iconPath: any = path.join(bindingDir, 'Buildr.ico');
+  const frozen: any = new Map([shortcut, bindingPath, iconPath, runnerPath, hostPath].map((file: any) => [file, fs.readFileSync(file)]));
   assert.throws(() => installNpmLauncher({
     registration: value.registration,
     platform: 'win32',
@@ -460,12 +478,26 @@ test('Launcher refuses foreign targets and Windows shortcut binds exact Host Nod
   for (const [file, bytes] of frozen) assert.deepEqual(fs.readFileSync(file), bytes, `${file} must roll back atomically`);
   assert.equal(npmLauncherStatus({ platform: 'win32', target: shortcut, readShortcut }).status, 'ready');
 
+  // wrapper 内容漂移按 stale 处理，repair 原子重写 runner/host/shortcut 后恢复 ready。
+  fs.writeFileSync(runnerPath, `${runnerScript}\nrem drift\n`);
+  const drifted: any = npmLauncherStatus({ platform: 'win32', target: shortcut, readShortcut });
+  assert.equal(drifted.status, 'stale');
+  assert.equal(drifted.diagnostic.code, 'launcher.wrapper_drift');
+  const repaired: any = repairNpmLauncher({ registration: value.registration, platform: 'win32', target: shortcut, writeShortcut, readShortcut });
+  assert.equal(repaired.status, 'ready');
+
   shortcutValue = { ...shortcutValue, target: 'C:\\foreign\\node.exe' };
   assert.equal(npmLauncherStatus({ platform: 'win32', target: shortcut, readShortcut }).status, 'invalid');
   assert.throws(
     () => uninstallNpmLauncher({ registration: value.registration, platform: 'win32', target: shortcut, readShortcut }),
     /Refusing to remove foreign Launcher target/,
   );
+
+  // owned uninstall 只移除 Launcher 自身文件：shortcut、binding、icon 与 wrapper，runner 日志目录保留。
+  shortcutValue = { ...shortcutValue, target: 'C:\\Windows\\System32\\wscript.exe' };
+  const uninstalled: any = uninstallNpmLauncher({ registration: value.registration, platform: 'win32', target: shortcut, readShortcut });
+  assert.equal(uninstalled.action, 'uninstalled');
+  for (const file of [shortcut, bindingPath, iconPath, runnerPath, hostPath]) assert.equal(fs.existsSync(file), false, `${file} must be removed with the owned Launcher`);
 });
 
 test('released npm Launcher falls back once from an occupied preferred port while direct CLI stays strict', async (t: any) => {

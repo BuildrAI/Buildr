@@ -10,7 +10,7 @@ function change(revision: string, text = ''): Omit<ServiceEvent, 'cursor' | 'gen
   } } };
 }
 
-test('one slow observer is bounded without blocking a fast observer, and reconnect starts at a current snapshot', async () => {
+test('one slow observer keeps only the latest conversation state without blocking a fast observer', async () => {
   const events = new ConversationEvents('generation-one');
   const snapshot = { ...change('snapshot'), type: 'snapshot' as const };
   const slow = events.subscribe(snapshot, () => true);
@@ -21,10 +21,13 @@ test('one slow observer is bounded without blocking a fast observer, and reconne
     events.publish(change(`revision-${index}`));
     assert.equal((await fastIterator.next()).value!.cursor, index);
   }
-  const buffered = [];
-  for await (const event of slow.events) buffered.push(event);
-  assert.equal(buffered.length, 1_000, 'the snapshot and queued changes share one bounded event budget');
-  assert.equal(buffered[0]!.type, 'snapshot'); assert.equal(buffered.at(-1)!.cursor, 999);
+  const slowIterator = slow.events[Symbol.asyncIterator]();
+  assert.equal((await slowIterator.next()).value!.type, 'snapshot');
+  const jumped = (await slowIterator.next()).value!;
+  assert.equal(jumped.cursor, 1_002, 'superseded conversation states are not replayed');
+  assert.equal(jumped.revision, 'revision-1002');
+  slow.close();
+  assert.equal((await slowIterator.next()).done, true);
   const reconnected = events.subscribe({ ...snapshot, revision: 'revision-1002' }, () => true);
   const reconnectIterator = reconnected.events[Symbol.asyncIterator]();
   const latest = (await reconnectIterator.next()).value!;
@@ -33,15 +36,22 @@ test('one slow observer is bounded without blocking a fast observer, and reconne
   assert.equal((await fastIterator.next()).done, true); assert.equal((await reconnectIterator.next()).done, true);
 });
 
-test('the byte limit closes a slow observer before the event-count limit and does not replay an overflowing event', async () => {
+function connectionEvent(revision: string, padding = ''): Omit<ServiceEvent, 'cursor' | 'generation'> {
+  return { type: 'connection', workspaceId: 'workspace-one', conversationId: 'conversation-one', revision, payload: { connection: {
+    id: 'codex', provider: 'codex', label: 'Codex' + padding, revision, status: 'ready', enabled: true, models: [],
+    capabilities: { text: true, images: false, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 65536 },
+  } } };
+}
+
+test('the byte limit still closes a slow observer and does not replay an overflowing event', async () => {
   const events = new ConversationEvents('generation-one');
   const subscription = events.subscribe({ ...change('snapshot'), type: 'snapshot' }, () => true);
-  const item = 'x'.repeat(512 * 1024);
-  events.publish(change('fits', item));
-  events.publish(change('exceeds-eight-MiB', item));
+  const item = 'x'.repeat(4 * 1024 * 1024);
+  events.publish(connectionEvent('fits', item));
+  events.publish(connectionEvent('exceeds-eight-MiB', item));
   const revisions = [];
   for await (const event of subscription.events) revisions.push(event.revision);
-  assert.deepEqual(revisions, ['snapshot', 'fits']);
+  assert.deepEqual(revisions, ['snapshot', 'fits'], 'the overflowing event is dropped and the stream ends');
   events.close();
 });
 

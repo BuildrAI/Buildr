@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { spawnSync } from 'node:child_process';
+import YAML from 'yaml';
 import { adoptPackageResources, ensurePackageResources, inspectSharedResources, publishPackageResources, readResourceAdoption, resolveSharedResource, sharedResourcesRoot } from '../../src/infrastructure/product-resources/shared-resources.ts';
 import { createWorkspacePreparation } from '../../src/modules/workspace/application/workspace-preparation.ts';
 import { WORKSPACE_HTTP_SCHEMAS, validateWorkspaceHttp } from '../../src/modules/workspace/interfaces/http/workspace-http-contracts.ts';
@@ -100,17 +101,87 @@ test('打开旧采用空间只刷新本机投射；自有源保留，重复打�
   assert.equal(renders,1);
 });
 
-test('投射失败仍可打开已准备工作空间，保留原采用并返回局部问题供重试', t => {
+test('投射失败时打开自动转入完整准备收敛，保留原采用', async t => {
   const {old,next,root,workspace}=fixture(t);const first=publishPackageResources(old);adoptPackageResources(workspace,true);
-  let failed=true;const app=preparation(root,workspace,()=>{if(failed)throw new Error('example attachment damaged');});
+  const app=preparation(root,workspace,()=>{throw new Error('example attachment damaged');});
   publishPackageResources(next);
+  // Refresh failure falls through to full preparation instead of reporting a retryable banner.
   const result=app.prepareWorkspaceForOpen('test');
-  assert.ok('ready' in result);
-  assert.equal(result.ready,true);assert.equal(result.resourceRefresh?.status,'failed');
+  assert.ok(!('ready' in result));
+  assert.equal(result.status,'preparing');
   assert.equal(validateWorkspaceHttp(WORKSPACE_HTTP_SCHEMAS.preparationOpenResponse.$id,result,'workspace.preparation.open','response'),result);
-  assert.match(result.resourceRefresh?.message||'',/attachment damaged/);
   assert.equal(readResourceAdoption(workspace)?.resourceSet,first.id);
-  failed=false;const restored=app.prepareWorkspaceForOpen('test');assert.ok('resourceRefresh' in restored);assert.equal(restored.resourceRefresh?.status,'refreshed');
+  // The asynchronous full preparation must settle without leaving a stuck run.
+  const deadline=Date.now()+120_000;
+  while(Date.now()<deadline){
+    const value=app.workspacePreparation(result.id);
+    if(value.status!=='preparing'){assert.ok(['ready','failed','selected'].includes(value.status));return;}
+    await new Promise(resolve=>setTimeout(resolve,100));
+  }
+  assert.fail('full preparation did not settle');
+});
+
+test('上次准备失败的打开如实返回失败，不静默重新开始', async t => {
+  const {root,workspace}=fixture(t);
+  const app=preparation(root,workspace,()=>{});
+  const first=app.prepareWorkspaceForOpen('test');
+  assert.ok(!('ready' in first));assert.equal(first.status,'preparing');
+  const deadline=Date.now()+120_000;
+  let failed:any=null;
+  while(Date.now()<deadline){
+    const value=app.workspacePreparation(first.id);
+    if(value.status!=='preparing'){failed=value;break;}
+    await new Promise(resolve=>setTimeout(resolve,100));
+  }
+  assert.ok(failed,'first preparation did not settle');
+  assert.equal(failed.status,'failed');
+  // Unattended opens (auto-open, registry refresh) must surface the failure
+  // instead of starting another attempt; retry stays with explicit /prepare.
+  const again=app.prepareWorkspaceForOpen('test');
+  assert.ok(!('ready' in again));
+  assert.equal(again.status,'failed');
+  assert.equal(again.id,failed.id);
+  assert.equal(again.revision,failed.revision);
+  assert.match(String(again.error),/自身维护程序/);
+});
+
+test('收敛降级：失效共享来源引用视为缺失，不阻塞整次同步', async t => {
+  const {root}=fixture(t);
+  t.mock.method(console,'log',()=>{});
+  const service=path.resolve(import.meta.dirname,'../..');
+  const {createRuntime}=await import('../helpers/runtime-harness.ts');
+  const runtime=createRuntime();
+  const workspace=path.join(root,'sync-target');
+  runtime.initBuildr(['--source-only','--target',workspace,'--name','stale-resource','--profile','personal']);
+  publishPackageResources(service); adoptPackageResources(workspace,true);
+  const manifestFile=path.join(workspace,'skills/manifest.yml');
+  const YAML=(await import('yaml')).default;
+  const manifest=YAML.parse(fs.readFileSync(manifestFile,'utf8'));
+  const entry=manifest.skills.find((item:any)=>item.id==='project-verification');
+  assert.ok(entry,'project-verification installed by init');
+  entry.resource='resources/workspace/skills/buildr/stale-removed-source';
+  fs.writeFileSync(manifestFile,YAML.stringify(manifest));
+  const result=runtime.syncPackageBuiltins(workspace);
+  const finding=result.findings.find((item:any)=>item.type==='skill'&&item.id==='project-verification');
+  assert.equal(finding?.status,'missing');
+  const after=YAML.parse(fs.readFileSync(manifestFile,'utf8'));
+  assert.equal(after.skills.find((item:any)=>item.id==='project-verification').state,'missing');
+});
+
+test('退役共享来源在发布时封存，陈旧引用仍能解析到保留副本', t => {
+  const {old,next,workspace,root}=fixture(t);
+  fs.writeFileSync(path.join(next,'resources/manifest.yml'),YAML.stringify({builtins:{skills:[{id:'example',target:'skills/example',description:'retired example',retired:true}]}}));
+  fs.rmSync(path.join(next,'resources/workspace/skills/example'),{recursive:true,force:true});
+  const first=publishPackageResources(old);adoptPackageResources(workspace,true);
+  const second=publishPackageResources(next,{expectedId:first.id});
+  assert.notEqual(first.id,second.id);
+  // The retired source left the shared set but stayed resolvable from the preserved copy.
+  assert.equal(inspectSharedResources().files.some((item:any)=>item.source.startsWith('workspace/skills/example/')),false);
+  assert.equal(fs.readFileSync(resolveSharedResource(workspace,'workspace/skills/example/SKILL.md'),'utf8'),'old');
+  const preserved=path.join(root,'data','local','preserved-skills','example','files','SKILL.md');
+  assert.equal(fs.readFileSync(preserved,'utf8'),'old');
+  // Unknown retired references still fail closed instead of guessing.
+  assert.throws(()=>resolveSharedResource(workspace,'workspace/skills/never-shipped/SKILL.md'),/not declared|尚未准备/);
 });
 
 test('显式发布也拒绝较低版本和较早候选回退', t => {

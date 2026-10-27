@@ -15,7 +15,21 @@ export interface MySqlClient {
   query(config: MySqlConfiguration, credentials: MySqlCredentials, input: { sql: unknown; database?: unknown }): Promise<MySqlQueryResult>;
 }
 export type MySqlQueryClient = Omit<MySqlClient, 'test'>;
-export type MySqlConnectionClient = Pick<MySqlClient, 'test' | 'databases'>;
+export type MySqlChangeCategory = 'dml' | 'ddl';
+export type MySqlChangeStatement = { category: MySqlChangeCategory; statement: string; database: string | null; table: string; destructive: boolean };
+export type MySqlTableState = { database: string | null; table: string; exists: boolean; fingerprint: string };
+export type MySqlChangeResult = {
+  category: MySqlChangeCategory; statement: string; database: string | null; table: string;
+  committed: true; rollbackable: boolean; affectedRows: number | null;
+  fingerprintBefore: string; fingerprintAfter: string;
+  readback: { exists: boolean; columns: number; indexes: number }; elapsedMs: number;
+};
+/** Controlled change operations. The independent query tool never receives these. */
+export interface MySqlChangeClient {
+  fingerprint(config: MySqlConfiguration, credentials: MySqlCredentials, input: { database?: unknown; table: unknown }): Promise<MySqlTableState>;
+  applyChange(config: MySqlConfiguration, credentials: MySqlCredentials, input: { statement: unknown; expectedFingerprint: unknown; maxAffectedRows?: unknown }): Promise<MySqlChangeResult>;
+}
+export type MySqlConnectionClient = Pick<MySqlClient, 'test' | 'databases'> & MySqlChangeClient;
 
 export function mysqlFailure(code: string, message: string, status = 400): Error & { code: string; status: number } {
   return Object.assign(new Error(message), { code, status });
@@ -40,6 +54,10 @@ export function mysqlConfiguration(value: unknown, previous?: MySqlConfiguration
     defaultDatabase: current.defaultDatabase === null || current.defaultDatabase === '' ? null : databaseName(current.defaultDatabase),
   };
 }
+/** Build the connection target from stored instance config, ignoring keys the connection program owns. */
+export function mysqlTarget(config: Record<string, unknown>, username: unknown): MySqlConfiguration {
+  return mysqlConfiguration({ host: config.host, port: config.port, ...(config.defaultDatabase === undefined ? {} : { defaultDatabase: config.defaultDatabase }), username });
+}
 export function passwordInput(value: unknown): string {
   if (typeof value !== 'string' || Buffer.byteLength(value, 'utf8') > 4096 || value.includes('\0')) throw mysqlFailure('connection_password_invalid', '密码输入无效。');
   return value;
@@ -47,6 +65,15 @@ export function passwordInput(value: unknown): string {
 export function expectedRevision(value: unknown): string {
   if (typeof value !== 'string' || !/^sha256-[a-f0-9]{64}$/.test(value)) throw mysqlFailure('connection_revision_required', '请刷新连接后再提交修改。', 409);
   return value;
+}
+export function tableFingerprintInput(value: unknown): string {
+  if (typeof value !== 'string' || !/^sha256-[a-f0-9]{64}$/.test(value)) throw mysqlFailure('mysql_change_fingerprint_invalid', '请先读取目标表当前结构摘要，并原样提交该摘要。', 409);
+  return value;
+}
+export function affectedRowLimit(value: unknown): number {
+  const limit = typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : value;
+  if (!Number.isSafeInteger(limit) || Number(limit) < 1 || Number(limit) > 10_000) throw mysqlFailure('mysql_change_limit_invalid', '受影响行数上限必须为 1—10000 的整数。');
+  return Number(limit);
 }
 export function queryPreferenceValues(value: unknown): Omit<QueryPreferences, 'revision'> {
   const input = inputObject(value, ['enabledDatabases', 'currentDatabase']);

@@ -1,17 +1,19 @@
 .ac-divider.split-divider{margin-inline:-4.5px;margin-top:43px;z-index:9}
 .ac-panel[hidden]{display:none!important}
-.ac-collapsed-rail{display:flex;flex-direction:column;flex:none;justify-content:flex-start;align-items:center;width:36px;background:#f4f6f7;border-left:1px solid var(--soft-line);padding-top:7px}
+.ac-collapsed-rail{display:flex;flex-direction:column;flex:none;justify-content:flex-start;align-items:center;box-sizing:border-box;width:52px;padding:6px 5px 10px;background:#fff;border-left:1px solid var(--soft-line)}
 .ac-collapsed-rail[data-dock=left]{order:-2;border-left:0;border-right:1px solid var(--soft-line)}
-.ac-conversation-icon.ant-btn{width:30px;height:30px;padding:0;color:var(--soft-muted);font-size:16px}
+.ac-conversation-icon.ant-btn{width:40px;height:40px;padding:0;border-radius:8px;color:var(--soft-muted);font-size:18px}
 .ac-conversation-icon.ant-btn:hover{color:var(--soft-primary);background:#edf4f0}
+.ac-conversation-icon.ant-btn.is-active{color:var(--soft-primary);background:#edf4f0}
+.ac-conversation-icon.ant-btn.is-active:hover{color:var(--soft-muted);background:transparent}
 @media(min-width:761px){
   .ac-panel{position:relative}
   .app-frame:has(.ac-collapsed-rail){position:relative}
-  .ac-panel.is-peeking{position:absolute;top:0;bottom:0;right:36px;z-index:11;height:100%;max-width:calc(100% - 88px);box-shadow:-4px 0 18px #273f3220;border:1px solid var(--soft-line);border-block:0;border-radius:8px 0 0 8px}
-  .ac-panel.is-peeking[data-dock=left]{left:36px;right:auto;box-shadow:4px 0 18px #273f3220;border-radius:0 8px 8px 0}
+  .ac-panel.is-peeking{position:absolute;top:0;bottom:0;right:52px;z-index:11;height:100%;max-width:calc(100% - 88px);box-shadow:-4px 0 18px #273f3220;border:1px solid var(--soft-line);border-block:0;border-radius:8px 0 0 8px}
+  .ac-panel.is-peeking[data-dock=left]{left:52px;right:auto;box-shadow:4px 0 18px #273f3220;border-radius:0 8px 8px 0}
 }
 .ac-boundary-toggle{position:absolute;top:0;right:0;width:36px;height:43px;display:flex;align-items:center;justify-content:center;background:#f4f6f7;border-bottom:1px solid var(--soft-line);z-index:9}
-.ac-panel[data-dock] .ac-thread-header{padding-left:9px;padding-right:40px}
+.ac-panel[data-dock] .ac-thread-header{padding-left:9px;padding-right:9px}
 .ac-panel:not(.is-full) .ac-message-list,.ac-panel:not(.is-full) .ac-compose-wrap{max-width:none}
 #global-conversations-entry.is-active{color:var(--soft-primary);background:#edf4f0}
 .global-conversations-control{display:none;align-items:center;gap:0}
@@ -25,11 +27,8 @@
   .ac-dock-attention{display:none!important}
   .ac-collapsed-rail{display:none}
   .ac-panel .ac-boundary-toggle{left:auto;right:0}
-  .ac-panel[data-dock] .ac-thread-header{padding-left:9px;padding-right:40px}
 }
 
-.ac-collapsed-rail{box-sizing:border-box;width:53px;padding:6px 5px 10px;background:#fff}.ac-conversation-icon.ant-btn{width:40px;height:40px;border-radius:8px;font-size:22px}.ac-conversation-icon.ant-btn.is-active{color:var(--soft-primary);background:#edf4f0}.ac-panel[data-dock] .ac-thread-header{padding-right:9px}@media(min-width:761px){.ac-panel.is-peeking{right:53px}.ac-panel.is-peeking[data-dock=left]{left:53px;right:auto}}
-
-.ac-conversation-icon.ant-btn.is-active:hover{color:var(--soft-muted);background:transparent}
-
 .ac-conversation-icon.ant-btn{border:0!important;box-shadow:none!important}.ac-conversation-icon .anticon,.ac-conversation-icon svg{color:inherit}.ac-conversation-icon:not(:focus-visible){outline:none!important}.ac-conversation-icon.ant-btn:not(.is-active):hover{color:var(--soft-primary)!important;background:#edf4f0!important}
+/* Hover does not erase the selected view: both entries indicate their own pinned state. */
+.ac-collapsed-rail .ac-conversation-icon.ant-btn.is-active:hover,.global-conversations-control .ac-conversation-icon.ant-btn.is-active:hover{color:var(--soft-primary);background:#edf4f0}

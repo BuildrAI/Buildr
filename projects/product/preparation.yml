@@ -1,5 +1,18 @@
 schemaVersion: buildr.project-preparation/v1
+# 顺序即依赖：buildr-agent 必须先安装并构建，buildr 的 postinstall 会物化它的公开包。
 entries:
+  - id: buildr-agent.npm-ci
+    title: 安装 Buildr 智能体服务锁定依赖
+    scope: {kind: service, service: buildr-agent}
+    cwd: services/buildr-agent
+    executable: ../buildr/tools/development/run-development-npm
+    args: [ci, --ignore-scripts]
+  - id: buildr-agent.build
+    title: 编译智能体服务公开包入口
+    scope: {kind: service, service: buildr-agent}
+    cwd: services/buildr-agent
+    executable: ../buildr/tools/development/run-development-npm
+    args: [run, build]
   - id: buildr.npm-ci
     title: 安装 Buildr 主体锁定依赖
     scope: {kind: service, service: buildr}
@@ -12,24 +25,12 @@ entries:
     cwd: services/buildr-web
     executable: ../buildr/tools/development/run-development-npm
     args: [ci]
-  - id: buildr-agent.npm-ci
-    title: 安装 Buildr 智能体服务锁定依赖
-    scope: {kind: service, service: buildr-agent}
-    cwd: services/buildr-agent
-    executable: ../buildr/tools/development/run-development-npm
-    args: [ci, --ignore-scripts]
   - id: dsh-plugin.npm-ci
     title: 安装 DSH 插件源码锁定依赖
     scope: {kind: service, service: dsh-plugin}
     cwd: services/dsh-plugin
     executable: ../buildr/tools/development/run-development-npm
     args: [ci, --ignore-scripts]
-  - id: buildr-agent.build
-    title: 编译智能体服务公开包入口
-    scope: {kind: service, service: buildr-agent}
-    cwd: services/buildr-agent
-    executable: ../buildr/tools/development/run-development-npm
-    args: [run, build]
   - id: buildr.browser-chromium
     title: 准备 Playwright 配套 Chromium
     scope: {kind: service, service: buildr}

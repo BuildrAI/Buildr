@@ -21,7 +21,6 @@ Agent 是 Buildr 功能的默认操作入口。在用户目标和已有授权内
 |---|---|
 | 安装、检查或更新 Buildr | [安装与更新](references/asset-maintenance.md#安装与更新)；不猜目标工作空间（Workspace） |
 | 在 Buildr 内使用 Codex、DSH、Qoder 对话，或配置内部对话账号 | [内部对话接入](references/agent-operations.md#内部对话与持续执行)；使用全局“对话”的独立账号与配置，先核对当前状态和真实程序，不复制桌面凭据 |
-| 将本机 Codex 或 DSH 用于原有的一次生成或外部会话关联，查看对应接入与默认选择 | [原有本机智能体接入](references/agent-operations.md#原有的一次生成与外部会话关联)；登记真实可调用入口，不让用户填写安装路径；不作为内部对话配置入口 |
 | 初始化工作空间（Workspace） | `buildr init --agent <agent> --target <dir> --name <name> --profile <personal\|team\|company>`；普通初始化默认登记到当前产品的本机 Buildr Web，随后完整准备标准或唯一既有方式并使用内置最终 Doctor；身份未知可省略 `--agent`。仅源资产使用 `init --source-only`，该模式不登记本机列表。登记不等于网页已打开；首次使用交接见 [资产维护](references/asset-maintenance.md#workspace--organization-root) |
 | 更新或同步工作空间（Workspace），或处理检出内容变化 | [工作空间更新与检出变化](references/asset-maintenance.md#工作空间更新与检出变化) |
 | 项目（Project）、服务（Service）、代码库实例（Repository Instance）、规则（Rule）、技能（Skill）、命令（Command）、组件（Component）或内置能力（Builtin）维护 | 按对象读取 [资产维护](references/asset-maintenance.md) 中对应小节；涉及组件（Component）成员时先核对整体所有权 |

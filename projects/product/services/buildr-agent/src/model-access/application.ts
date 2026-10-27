@@ -4,14 +4,26 @@ import { mkdir, chmod, lstat, readFile, rename, writeFile, unlink } from 'node:f
 import { join } from 'node:path';
 import { once } from 'node:events';
 import { lstatSync, readFileSync } from 'node:fs';
-import { ModelAccessError, type CatalogModel, type ModelAccessOptions, type ModelAccountView, type ModelGatewayLease, type ModelLeaseInput, type ModelProtocol, type ModelProviderRuntime, type ProtocolJson } from './contracts.ts';
+import { ModelAccessError, type CatalogModel, type ModelAccessOptions, type ModelAccountView, type ModelGatewayLease, type ModelLeaseInput, type ModelOffering, type ModelProtocol, type ModelProviderRuntime, type ProtocolJson } from './contracts.ts';
 import { effectiveModel, selectedOffering, modelConfiguration } from './model-preferences.ts';
 import type {ModelPreference,ModelPreferenceUpdate} from './contracts.ts';
 import { translateRequest, translateResponse, type OpaqueReasoning } from './protocols.ts';
+import { modelFailure, upstreamFailure } from './errors.ts';
 
 const object = (value: unknown): ProtocolJson => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as ProtocolJson : {};
 const safeId = (value: string) => /^[a-zA-Z0-9_-]{1,100}$/.test(value);
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
+const byId = (left: { id: string }, right: { id: string }) => left.id.localeCompare(right.id);
+const selectionEfforts = (values: Array<{ id: string; label: string }> | undefined) => (values ?? []).map(({ id, label }) => ({ id, label })).sort(byId);
+const selectionTiers = (values: ModelOffering['serviceTiers']) => (values ?? []).map(tier => ({ id: tier.id, label: tier.label, contextWindow: tier.contextWindow, defaultReasoningEffort: tier.defaultReasoningEffort, reasoningEfforts: selectionEfforts(tier.reasoningEfforts) })).sort(byId);
+/** Stable snapshot for revision changes; observable quota and timestamps stay outside selection identity. */
+const selectionModels = (models: ModelOffering[]) => models.map(model => ({
+  id: model.id, label: model.label, contextWindow: model.contextWindow, reportedContextWindow: model.reportedContextWindow,
+  contextWindowOverride: model.contextWindowOverride, maxOutputTokens: model.maxOutputTokens, images: model.images, tools: model.tools,
+  enabled: model.enabled, kind: model.kind, family: model.family, defaultReasoningEffort: model.defaultReasoningEffort,
+  reasoningEfforts: selectionEfforts(model.reasoningEfforts), defaultServiceTier: model.defaultServiceTier,
+  serviceTiers: selectionTiers(model.serviceTiers),
+})).sort(byId);
 function conflict(actual: string, expected: string | undefined) { if (expected !== undefined && expected !== actual) throw new ModelAccessError('model_revision_conflict', '模型账号已变化，请刷新后重试。'); }
 interface Stored { version: 1; accounts: ModelAccountView[]; preferences?:Record<string,Record<string,ModelPreference>> }
 interface LeaseRecord { view: ModelGatewayLease; input: ModelLeaseInput; tokenHash: string; requests: Set<AbortController> }
@@ -105,7 +117,18 @@ export class ModelAccessApplication {
     if (result.loginAttempt && url?.attemptId === result.loginAttempt.id) result.loginAttempt.url = url.url;
     return result;
   }
+  private selectionState(row: ModelAccountView): string {
+    const current=this.view(row);
+    return JSON.stringify({identity:current.identity,enabled:current.enabled,status:current.status,label:current.label,accountLabel:current.accountLabel,models:selectionModels(current.models)});
+  }
   private async changed(row: ModelAccountView) { row.revision = randomUUID(); await this.save(); this.options.changed?.(structuredClone(row)); return this.view(row); }
+  private async observed(row: ModelAccountView, before: string) {
+    const changed=before!==this.selectionState(row);
+    if(changed)row.revision=randomUUID();
+    await this.save();
+    if(changed)this.options.changed?.(structuredClone(row));
+    return this.view(row);
+  }
   private async runtime(id: string): Promise<ModelProviderRuntime> {
     if (this.closed) throw new ModelAccessError('model_access_closed', '模型服务已关闭。', 503);
     const row = this.current(id), provider = this.providers.get(row.provider);
@@ -144,9 +167,11 @@ export class ModelAccessApplication {
   async check(id: string, input: { expectedRevision?: string } = {}) {
     await this.ready; const row = this.current(id); conflict(row.revision, input.expectedRevision);
     const operation = (this.operations.get(id) ?? 0) + 1; this.operations.set(id, operation);
+    let before: string | undefined;
     try {
       const observation = await (await this.runtime(id)).inspect();
       if (this.operations.get(id) !== operation) return this.view(this.current(id));
+      before=this.selectionState(row);
       if(observation.identity && row.identity!==digest(observation.identity)){row.identity=digest(observation.identity);for(const lease of [...this.leasesByIdentity.values()])if(lease.input.accountId===id)this.release(lease.view.identity);}
       row.enabled = true; row.status = observation.status; if(observation.label) row.accountLabel = observation.label; row.diagnostic = observation.diagnostic;
       if(observation.status==='ready') {
@@ -155,8 +180,8 @@ export class ModelAccessApplication {
         this.preferences.set(id,prefs);row.models = structuredClone(observation.models); row.observedAt = this.now;
       }
       if(observation.quota)row.quota=!observation.quota.available&&row.quota?.available?{...row.quota,stale:true,diagnostic:'本次额度读取未完成，以下保留上次观察。'}:observation.quota;
-    } catch { if (this.operations.get(id) !== operation) return this.view(this.current(id)); row.status = 'failed'; row.diagnostic = '模型账号检查未完成，已保留上次目录。'; }
-    return await this.changed(row);
+    } catch { if (this.operations.get(id) !== operation) return this.view(this.current(id)); before??=this.selectionState(row); row.status = 'failed'; row.diagnostic = '模型账号检查未完成，已保留上次目录。'; }
+    return await this.observed(row, before!);
   }
   async login(id: string, input: { expectedRevision: string }) {
     await this.ready; const row = this.current(id); if(row.connectionId)throw new ModelAccessError('model_managed_account','此账号复用原生登录，请在对应账号入口操作。'); conflict(row.revision, input.expectedRevision);
@@ -262,6 +287,36 @@ export class ModelAccessApplication {
     const view: ModelGatewayLease = { identity, baseUrl: baseUrl + '/v1', apiKey: token, model: `buildr-${identity.slice(0,32)}`, offering: structuredClone(offering), accountId: account.id, accountLabel: account.accountLabel || account.label, provider: account.provider };
     const lease: LeaseRecord = { view, input: { ...input }, tokenHash: digest(token), requests: new Set() }; this.leasesByToken.set(lease.tokenHash,lease); this.leasesByIdentity.set(identity,lease); return structuredClone(view);
   }
+  async generate(input: ModelLeaseInput & { prompt: string; signal: AbortSignal }): Promise<string> {
+    input.signal.throwIfAborted();
+    const lease = await this.createLease(input);
+    try {
+      input.signal.throwIfAborted();
+      const efforts = lease.offering.reasoningEfforts;
+      const ranks: Record<string, number> = {off:0,none:0,disabled:0,minimal:1,low:2,medium:3,high:4,xhigh:5,max:6,ultra:7};
+      const effort = efforts?.length && efforts.every(value => ranks[value.id] !== undefined)
+        ? [...efforts].sort((a,b) => ranks[a.id]! - ranks[b.id]!)[0]?.id : undefined;
+      const response = await fetch(lease.baseUrl + '/chat/completions', {
+        method: 'POST', signal: input.signal,
+        headers: {'Content-Type':'application/json',Authorization:'Bearer ' + lease.apiKey},
+        body: JSON.stringify({model:lease.model,stream:false,messages:[{role:'user',content:input.prompt}],tools:[],
+          max_tokens: Math.min(4096, lease.offering.maxOutputTokens ?? 4096), ...(effort ? {reasoning_effort:effort} : {})}),
+      });
+      if (!response.ok) { await response.body?.cancel(); throw new ModelAccessError('model_generation_failed','模型生成未完成，请检查账号与额度。',502); }
+      if (!response.body) throw new ModelAccessError('model_response_empty','模型返回空响应。',502);
+      const reader=response.body.getReader(); const chunks: Uint8Array[]=[]; let size=0;
+      try { while(true){ input.signal.throwIfAborted(); const part=await reader.read(); if(part.done)break;size+=part.value.length;
+        if(size>2*1024*1024)throw new ModelAccessError('model_response_too_large','模型结果超过本次限制。',502); chunks.push(part.value); }
+      } finally { await reader.cancel().catch(()=>{}); reader.releaseLock(); }
+      input.signal.throwIfAborted();
+      const result = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      const message = result?.choices?.[0]?.message;
+      if (result?.choices?.length !== 1 || message?.tool_calls?.length || message?.function_call || result.choices[0].finish_reason === 'length' || typeof message?.content !== 'string' || !message.content.trim()) {
+        throw new ModelAccessError('model_generation_output_invalid','模型未返回完整的纯文本结果。',502);
+      }
+      return message.content;
+    } finally { this.release(lease.identity); }
+  }
   release(identity: string) { const lease = this.leasesByIdentity.get(identity); if (!lease) return; this.leasesByIdentity.delete(identity); this.leasesByToken.delete(lease.tokenHash); for (const request of lease.requests) request.abort(); }
   updateRun(identity:string,runId:string) { const lease=this.leasesByIdentity.get(identity); if(!lease||!runId) throw new ModelAccessError('model_binding_missing','本次模型绑定已失效。'); lease.input.runId=runId; }
   private async body(req: IncomingMessage): Promise<ProtocolJson> { const chunks: Buffer[] = []; let size = 0; for await (const chunk of req) { const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); size += value.length; if (size > 64 * 1024 * 1024) throw new ModelAccessError('model_request_too_large','模型输入超过本机限制。',413); chunks.push(value); } try { const value: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8')); if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('object'); return value as ProtocolJson; } catch { throw new ModelAccessError('model_request_invalid','模型请求不是有效 JSON 对象。',400); } }
@@ -287,7 +342,14 @@ export class ModelAccessApplication {
       const translated = translateRequest(body,protocol,runtime.protocol,opaque); translated.model = binding.modelId;
       delete translated.service_tier;if(binding.serviceTier)translated.service_tier=binding.serviceTier;
       const upstream = await runtime.infer({body:translated,modelId:binding.modelId,signal:controller.signal,context:{accountId:account.id,agentId:binding.agentId,conversationId:binding.conversationId,runId:binding.runId,requestId:randomUUID()}});
-      if (!upstream.ok) { await upstream.body?.cancel(); throw new ModelAccessError('model_upstream_failed','所选套餐的模型请求失败，请检查账号与额度。',upstream.status); }
+      if (!upstream.ok) {
+        // Read only a bounded JSON error, never expose an arbitrary upstream body.
+        let size = 0, body = ''; const reader = upstream.body?.getReader(), decoder = new TextDecoder();
+        try { if (reader) for (;;) { const part = await reader.read(); if (part.done) { body += decoder.decode(); break; } size += part.value.length; if (size > 8192) break; body += decoder.decode(part.value, {stream:true}); } }
+        finally { await reader?.cancel().catch(()=>{}); reader?.releaseLock(); }
+        let detail: unknown; try { if (size <= 8192) detail = object(JSON.parse(body)).error; } catch { /* Non-JSON error bodies stay private. */ }
+        throw upstreamFailure(detail, upstream.status);
+      }
       const response = await translateResponse(upstream,runtime.protocol,protocol,{model:lease.view.model,stream:body.stream===true,request:body,opaque,signal:controller.signal});
       if (!response.body) throw new ModelAccessError('model_response_empty','模型服务返回空响应。',502);
       res.writeHead(response.status,{'Content-Type':response.headers.get('content-type') || 'application/json','Cache-Control':'no-store'});
@@ -295,7 +357,7 @@ export class ModelAccessApplication {
       try { while (!controller.signal.aborted) { const chunk = await reader.read(); if (chunk.done) break; if (!res.write(chunk.value)) await once(res,'drain',{signal:controller.signal}); } if (!controller.signal.aborted) res.end(); }
       finally { if (controller.signal.aborted) await reader.cancel().catch(()=>{}); reader.releaseLock(); }
     } catch (error) {
-      if (!res.headersSent && !res.destroyed) { const known = error instanceof ModelAccessError; this.json(res,known ? error.status : 502,{error:{code:known ? error.code : 'model_gateway_failed',message:known ? error.message : '模型请求未完成，请检查本次执行。'}}); }
+      if (!res.headersSent && !res.destroyed) { this.json(res,error instanceof ModelAccessError ? error.status : 502,{error:modelFailure(error)}); }
       else if (!res.destroyed) res.destroy();
     } finally { lease?.requests.delete(controller); }
   }
@@ -308,6 +370,7 @@ export function createModelAccess(options: ModelAccessOptions) {
     ensureLinked: () => application.ensureLinked(), invalidate: (id:string) => application.invalidate(id),
     accounts: { list: () => application.list(), read: (id: string) => application.read(id), snapshot: (id:string) => application.read(id), preferences:(id:string,input:ModelPreferenceUpdate)=>application.updatePreferences(id,input), add: (input: {provider:string;label?:string}) => application.add(input), login: (id:string,input:{expectedRevision:string}) => application.login(id,input), attempt: (id:string,attemptId:string) => application.attempt(id,attemptId), cancelLogin: (id:string,attemptId:string,input:{expectedRevision:string}) => application.cancelLogin(id,attemptId,input), check: (id:string,input:{expectedRevision?:string}={}) => application.check(id,input), disconnect: (id:string,input:{expectedRevision:string}) => application.disconnect(id,input) },
     catalog: { list: () => application.catalog() },
+    generate: (input: ModelLeaseInput & {prompt:string;signal:AbortSignal}) => application.generate(input),
     leases: { create: (input:ModelLeaseInput) => application.createLease(input), release: (identity:string) => application.release(identity), updateRun:(identity:string,runId:string)=>application.updateRun(identity,runId) },
     close: () => application.close(),
   };

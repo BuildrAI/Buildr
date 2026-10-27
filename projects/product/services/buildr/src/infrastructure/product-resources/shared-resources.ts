@@ -1,7 +1,9 @@
+import YAML from 'yaml';
 import { parseSemver, compareVersions } from '../semantic-version.ts';
 import { withExclusiveFileLock } from '../filesystem/exclusive-file-lock.ts';
 import { isFinderMetadata } from '../filesystem/finder-metadata.ts';
 import { LEGACY_ARCHIFY_SOURCE, preserveArchifyBeforeReplacement, preservedArchifyRoot } from './preserved-archify.ts';
+import { preservedSkillRoot, preservedIdFromSource, preserveSkillSourceBeforeReplacement } from './preserved-skills.ts';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -148,11 +150,21 @@ export function publishPackageResources(product = resolveProductRoot(), options:
       if (parseSemver(current.version) && parseSemver(desired.version) && compareVersions(desired.version,current.version)<0) throw Object.assign(new Error('当前共享资源版本更高，已保留现有内容；请升级程序后再准备。'), {code:'shared_resources_downgrade'});
     }
     if (currentId !== expectedId && currentId !== desired.id) throw Object.assign(new Error('共享资源在更新期间已变化，请重新核对后重试。'), { code: 'shared_resources_changed' });
-    if (!desired.files.some(file => file.source.startsWith(LEGACY_ARCHIFY_SOURCE))) {
+    // Two-stage retirement: sources declared `replaces`/`retired` in the package
+    // manifest keep a preserved copy so workspaces still referencing them can
+    // resolve until their manifest converges. Archify keeps its historical path.
+    const retiredSources = retiredSkillSourcePrefixes(product);
+    if (!desired.files.some(file => file.source.startsWith(LEGACY_ARCHIFY_SOURCE))) retiredSources.add(LEGACY_ARCHIFY_SOURCE);
+    if (retiredSources.size) {
       let old: ResourceSet | null = null;
       try { old = readDescriptor(target); }
-      catch (error) { if (fs.existsSync(path.join(target, 'skills/buildr/archify'))) throw error; }
-      if (old) preserveArchifyBeforeReplacement(target, old, inspectResourceDirectory, assertPlainPath);
+      catch (error) { if (fs.existsSync(path.join(target, 'skills'))) throw error; }
+      if (old) {
+        for (const sourcePrefix of retiredSources) {
+          if (desired.files.some(file => file.source.startsWith(sourcePrefix))) continue;
+          preserveSkillSourceBeforeReplacement(target, old, sourcePrefix, sourcePrefix, inspectResourceDirectory, assertPlainPath);
+        }
+      }
     }
     try {
       const existing = inspectResourceDirectory(target, desired.id);
@@ -224,8 +236,16 @@ export function resolveSharedResource(root: string, source: string): string {
   }
   const adoption = readResourceAdoption(root);
   if (!adoption) throw new Error('工作空间资源尚未准备，请在 Buildr 中重试。');
-  const entry = descriptor.files.find(item => item.source === source.replace(/^resources\//, ''));
-  if (!entry) throw new Error(`Shared resource is not declared: ${source}`);
+  const entry = descriptor.files.find(item => item.source === normalizedSource);
+  if (!entry) {
+    // Retired shared skill sources stay resolvable from the preserved area so a
+    // stale manifest entry converges instead of failing the workspace outright.
+    if (normalizedSource.startsWith('workspace/skills/')) {
+      const preserved = readPreservedSkill(normalizedSource);
+      if (preserved) return preserved;
+    }
+    throw new Error(`Shared resource is not declared: ${source}`);
+  }
   relativeFile(entry.path);
   const file = path.join(base, entry.path); assertPlainPath(file);
   const stat = fs.lstatSync(file);
@@ -237,6 +257,38 @@ export function readPreservedArchify(): { root: string; sourceRoot: string; set:
   const set = inspectResourceDirectory(root);
   if (!set.files.every(file => file.source.startsWith(LEGACY_ARCHIFY_SOURCE) && file.path === `files/${file.source.slice(LEGACY_ARCHIFY_SOURCE.length)}`)) throw new Error('Archify 保留来源映射无效。');
   return { root, sourceRoot: path.join(root, 'files'), set };
+}
+/** Resolve a file inside the preserved copy of a retired shared skill source, or null. */
+export function readPreservedSkill(normalizedSource: string): string | null {
+  const match = normalizedSource.match(/^workspace\/skills\/(.+?)\/([^/]+)$/);
+  if (!match) return null;
+  const root = preservedSkillRoot(sharedResourcesRoot(), match[1]!);
+  try {
+    const set = inspectResourceDirectory(root);
+    const prefix = `skills/${match[1]}/`;
+    const entry = set.files.find(item => item.source === normalizedSource && item.path === `files/${match[2]}`);
+    if (!entry || !set.files.every(item => item.source.startsWith(`workspace/${prefix}`) && item.path === `files/${item.source.slice(`workspace/${prefix}`.length)}`)) return null;
+    relativeFile(entry.path);
+    const file = path.join(root, entry.path); assertPlainPath(file);
+    const stat = fs.lstatSync(file);
+    if (!stat.isFile() || digest(fs.readFileSync(file)) !== entry.sha256 || (process.platform !== 'win32' && (stat.mode & 0o111) !== (entry.mode & 0o111))) throw new Error(`Preserved shared resource damaged: ${normalizedSource}`);
+    return file;
+  } catch (error: any) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+/** Shared-source prefixes retired by the package manifest (`replaces` or explicit `retired`). */
+export function retiredSkillSourcePrefixes(product = resolveProductRoot()): Set<string> {
+  const manifestPath = path.join(product, 'resources', 'manifest.yml');
+  if (!fs.existsSync(manifestPath)) return new Set();
+  const parsed = (YAML as any).parse(fs.readFileSync(manifestPath, 'utf8')) || {};
+  const prefixes = new Set<string>();
+  for (const skill of parsed?.builtins?.skills || []) {
+    if (skill?.replaces?.target) prefixes.add(`workspace/${String(skill.replaces.target).replace(/\/$/, '')}/`);
+    if (skill?.retired === true && skill?.target) prefixes.add(`workspace/${String(skill.target).replace(/\/$/, '')}/`);
+  }
+  return prefixes;
 }
 /** Local references are rebuilt on another machine or after interrupted preparation. */
 export function prepareWorkspaceResourceAdoption(root: string) {

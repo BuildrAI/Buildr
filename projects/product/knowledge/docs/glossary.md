@@ -48,6 +48,7 @@
 
 - 定义：表达价值观、权威与授权边界、约束和结果不变量的长期要求。
 - 适用范围：组织、项目（Project）及服务（Service）的适用规则（Rule）与受管核心规则（Rule）。
+- 承载方式：规则正文位于对应作用域的 `AGENTS.md`，按组织根、项目到服务逐层读取；不再有独立的规则清单登记。
 - 避免混用：不承载命令序列、专业流程或当前任务（Task）状态；这些由方法与应用（Application）负责。
 - 来源：[核心规则](../../services/buildr/resources/workspace/AGENTS.md)。
 
@@ -74,7 +75,7 @@
 
 ## 组件（Component）
 
-- 定义：把相关规则（Rule）、技能（Skill）、命令集合及内容增强作为一组安装和维护的资产包。
+- 定义：把相关技能（Skill）、命令集合及内容增强作为一组安装和维护的资产包。
 - 适用范围：OpenSpec、Archify 等受管集成及其成员。
 - 避免混用：不是前端组件（UI Component）或组件测试（Component Test）；成员维护边界由组件（Component）声明确定。
 - 来源：[组件规范](../../openspec/specs/managed-components/spec.md)。
@@ -96,7 +97,7 @@
 ## 运行时投射（Runtime Projection）
 
 - 定义：依据当前源资产和适用配置，为目标智能体（Agent）生成可发现入口。
-- 适用范围：技能（Skill）正文、附件、规则（Rule）入口及其本机所有权记录。
+- 适用范围：技能（Skill）正文、附件、规则（Rule）入口（`AGENTS.md`）及其本机所有权记录。
 - 避免混用：生成成功不证明宿主已加载、当前会话已采用或工作已经完成。
 - 来源：[技能体系](architecture/buildr-skill-system.md)。
 
@@ -131,9 +132,9 @@
 ## 智能体会话（Agent Session）
 
 - 定义：带身份与上下文的智能体（Agent）工作单元，可以持续保存或临时使用；界面简称“会话”。
-- 适用范围：各家原生上下文、外部会话关联与智能体（Agent）临时生成。
+- 适用范围：各家原生上下文与内部对话的参与者恢复。
 - 避免混用：Buildr 统一对话可以有多个参与者和原生会话；会话不是执行进程或本机 HTTP 请求会话。Codex `thread`、DSH 原生会话及 Qoder 原生会话保持各自身份和生命周期。
-- 来源：[智能体接入](architecture/agent-integration.md)、[Codex 协作规范](../../openspec/specs/codex-desktop-collaboration/spec.md)与[智能体操作规范](../../openspec/specs/agent-operations/spec.md)。
+- 来源：[智能体接入](architecture/agent-integration.md)、[内部对话规范](../../openspec/specs/agent-conversations/spec.md)。
 
 ## 统一对话（Conversation）
 

@@ -109,11 +109,12 @@ export function acquireExclusiveFileLock(file: string, target: string, options: 
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
   if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || !Number.isFinite(retryDelayMs) || retryDelayMs <= 0) throw new Error('Exclusive filesystem lock timeout and retry delay must be bounded non-negative milliseconds.');
+  if (options.token !== undefined && (typeof options.token !== 'string' || !/^[a-f0-9]{32}$/.test(options.token))) throw new TypeError('Exclusive filesystem lock token must be 32 lowercase hexadecimal characters.');
   options.assertSafe?.();
   fs.mkdirSync(path.dirname(resolvedFile), { recursive: true });
   const startedAt = now();
   const deadline = startedAt + timeoutMs;
-  const record = Object.freeze({ schemaVersion: SCHEMA, pid: process.pid, token: crypto.randomBytes(16).toString('hex'), createdAt: new Date(startedAt).toISOString(), target: resolvedTarget });
+  const record = Object.freeze({ schemaVersion: SCHEMA, pid: process.pid, token: options.token ?? crypto.randomBytes(16).toString('hex'), createdAt: new Date(startedAt).toISOString(), target: resolvedTarget });
   while (true) {
     // A bounded wait may give another process time to replace the directory.
     options.assertSafe?.();

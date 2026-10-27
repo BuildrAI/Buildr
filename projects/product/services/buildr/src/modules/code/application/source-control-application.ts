@@ -62,6 +62,12 @@ export function createSourceControlApplication(dependencies: Dependencies) {
       const clone=cloneState(root,registered.id);
       const output: CodeSourceControlRepository = { ...registered, source: null, status: 'unavailable', clone:clone?.state?{state:clone.state,diagnostic:clone.diagnostic,startedAt:clone.startedAt}:null, branch: null, head: null, upstream: null, ahead: null, behind: null, fileCount: null, changes: [], observedRevision: null, diagnostics: [],worktrees:[],worktreeCount:null,worktreeCoverage:{limit:SOURCE_CONTROL_LIMITS.worktrees,total:null,read:0,truncated:false} };
       repositories.push(output);
+      if (clone?.state) {
+        output.available = false;
+        output.diagnostics.push({ code: clone.state === 'cloning' ? 'code_repository_cloning' : 'code_repository_clone_failed', message: clone.diagnostic || '代码库正在克隆，尚未准备完成。', repositoryId: registered.id });
+        diagnostics.push(...output.diagnostics);
+        continue;
+      }
       try {
         const reading=dependencies.worktrees(root,registered.id,registered),worktrees=reading.worktrees;output.worktreeCount=worktrees.length;output.worktreeCoverage.total=worktrees.length;
         for(const [position,worktree]of worktrees.entries()){

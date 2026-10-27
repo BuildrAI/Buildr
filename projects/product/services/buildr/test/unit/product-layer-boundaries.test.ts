@@ -44,8 +44,8 @@ test('source observation submodule only declares its real read ports, not a blan
  assert.equal(isAllowedProductLayerImport('modules/agent-assets/persistence/source-object-repository.ts', 'modules/agent-assets/domain/source-observations.ts'), true);
 });
 
-test('统一智能体操作按独立模块分层，只登记代码场景的真实能力端口', () => {
-  const root = 'modules/agent-operations/';
+test('统一模型服务按独立模块分层，只登记代码场景的真实能力端口', () => {
+  const root = 'modules/agent-service/';
   assert.equal(productLayerOf(root + 'module.ts'), 'module');
   for (const [directory, layer] of [['domain', 'domain'], ['application', 'application'], ['persistence', 'infrastructure'], ['infrastructure', 'infrastructure'], ['interfaces/http', 'interfaces'], ['interfaces/cli', 'interfaces']]) assert.equal(productLayerOf(root + directory + '/value.ts'), layer);
   assert.equal(isAllowedProductLayerImport('modules/code/module.ts', root + 'module.ts'), true);

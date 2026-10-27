@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { AgentModel, ExecutorOpenOptions } from '../contracts.ts';
 import { nativeBinding } from './native-process.ts';
+import { AgentServiceError } from '../domain/agent-state.ts';
 
 /** Only a restricted, local gateway lease crosses into a native consumer. */
 export interface ExecutorGateway {
@@ -35,9 +36,21 @@ export function gatewayEffort(gateway: ExecutorGateway, id: string | undefined, 
   if (effort && !model.reasoningEfforts?.some(option => option.id === effort)) throw new Error('agent_reasoning_unavailable');
   return effort ?? model.defaultReasoningEffort;
 }
-/** Called for every Qoder purpose; no default-account inference may leak through. */
+// Qoder CustomByokProviderThinkingCapabilities accepts exactly these effort levels.
+const qoderReasoningEfforts = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
+function qoderProviderId(gateway: ExecutorGateway): string {
+  return 'buildr-' + createHash('sha256').update(gateway.identity).digest('hex').slice(0, 24);
+}
+/** A query-local settings overlay; account settings and credentials remain native-owned. */
+export function qoderGatewaySettings(gateway: ExecutorGateway) {
+  const model = gatewayModel(gateway);
+  const efforts = model.reasoningEfforts?.filter(effort => qoderReasoningEfforts.has(effort.id)).map(effort => effort.id);
+  return { providers: { [qoderProviderId(gateway)]: { type: 'openai-compatible', protocol: 'openai', authType: 'bearer', baseUrl: gateway.baseUrl, apiKey: '${BUILDR_MODEL_GATEWAY_KEY}', displayName: 'Buildr', model: model.id, models: [{ model: model.id, displayName: model.label, ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}), ...(model.maxOutputTokens ? { maxOutputTokens: model.maxOutputTokens } : {}), capabilities: { ...(typeof model.tools === 'boolean' ? { tools: model.tools } : {}), ...(typeof model.vision === 'boolean' ? { vision: model.vision } : {}), ...(efforts?.length ? { thinking: { modes: ['enabled'], preferredMode: 'enabled', supportsEffort: true, supportedEffortLevels: efforts } } : {}) } }] } } };
+}
+/** Called for every Qoder purpose; a qualified string selects its registered direct route. */
 export function qoderGatewayPolicy(gateway: ExecutorGateway, selected?: string, effort?: string) {
   const model = gatewayModel(gateway, selected);
-  const reasoningEffort = gatewayEffort(gateway, selected, effort);
-  return { model: { provider: 'openai', api_key: gateway.apiKey, model: model.id, url: gateway.baseUrl.replace(/\/$/, ''), style: 'openai', isVl: model.vision === true }, parameters: { ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}), ...(reasoningEffort ? { reasoningEffort } : {}) } };
+  const reasoningEffort = effort ?? model.defaultReasoningEffort;
+  if (reasoningEffort && (!qoderReasoningEfforts.has(reasoningEffort) || !model.reasoningEfforts?.some(option => option.id === reasoningEffort)) || !reasoningEffort && model.reasoningEfforts?.length && !model.reasoningEfforts.some(option => qoderReasoningEfforts.has(option.id))) throw new AgentServiceError('agent_reasoning_unavailable', 'Qoder 暂不支持所选推理强度，请选择其他已支持档位。');
+  return { model: qoderProviderId(gateway) + '/' + model.id, parameters: { ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}), ...(reasoningEffort ? { reasoningEffort } : {}) } };
 }

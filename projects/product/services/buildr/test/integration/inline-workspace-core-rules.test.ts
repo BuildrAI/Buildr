@@ -1,16 +1,10 @@
 import assert from 'node:assert/strict';
-import crypto from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import YAML from 'yaml';
 import { registerWorkspaceInfrastructure } from '../../src/infrastructure/filesystem/index.ts';
-import { copyPreparedWorkspace } from '../helpers/prepared-fixtures.ts';
 import { createRuntime } from '../helpers/runtime-harness.ts';
-import { service, source, block, principles, hash, fixture, assertInline, legacy } from '../helpers/inline-core-fixture.ts';
+import { block, principles, fixture, assertInline, legacy } from '../helpers/inline-core-fixture.ts';
 
 
 
@@ -38,50 +32,47 @@ test('managed block upgrades, detects drift, repairs markers and preserves outsi
   assert.equal(runtime.rootRequiredBlockStatus(workspace).valid, false);
 });
 
-test('modified, unreceipted, foreign and symlink legacy files survive sync without global failure', async (t: any) => {
-  for (const options of [{ modified: true }, { receipt: false }, { foreign: true }, { symlink: true }, { missing: true }, { unregistered: true, receipt: false }]) {
+test('legacy rule assets survive sync and doctor reports non-blocking retirement warnings', async (t: any) => {
+  for (const options of [{ modified: true }, { missing: true }, { invalid: true }, { symlink: true }]) {
     await t.test(JSON.stringify(options), (t: any) => {
       // Initialization has its own real CLI and installed-package cases below.
-      // Each ownership variant uses the real builtin-sync and Doctor application
-      // on its own filesystem; the surrounding cases retain process, full-sync,
-      // installed-package and rollback coverage.
+      // Each variant uses the real builtin-sync and Doctor application on its own
+      // filesystem; the surrounding cases retain process, full-sync, installed-package
+      // and rollback coverage.
       const { root, workspace }: any = fixture(t, true);
       const runtime = createRuntime();
       legacy(workspace, options);
-      if (options.unregistered) {
-        const rulesPath: any = path.join(workspace, 'rules/manifest.yml');
-        const manifest: any = YAML.parse(fs.readFileSync(rulesPath, 'utf8'));
-        manifest.rules = manifest.rules.filter((r: any) => r.id !== 'buildr-core');
-        fs.writeFileSync(rulesPath, YAML.stringify(manifest));
-      }
+      const rulesPath: any = path.join(workspace, 'rules/manifest.yml');
       const file: any = path.join(workspace, 'rules/buildr/core.md');
       if (options.symlink) {
         fs.unlinkSync(file);
         fs.writeFileSync(path.join(root, 'outside.md'), 'outside user content');
         fs.symlinkSync(path.join(root, 'outside.md'), file);
       }
-      const before: any = options.missing ? null : fs.readFileSync(file, 'utf8');
+      const before: any = {
+        agents: fs.readFileSync(path.join(workspace, 'AGENTS.md')),
+        manifest: fs.readFileSync(rulesPath),
+        file: options.missing ? null : fs.readFileSync(file),
+      };
       runtime.syncPackageBuiltins(workspace);
       assertInline(workspace);
-      const entry: any = YAML.parse(fs.readFileSync(path.join(workspace, 'rules/manifest.yml'), 'utf8')).rules.find((r: any) => r.id === 'buildr-core');
-      if (options.missing) {
-        assert.equal(entry, undefined);
-        return;
-      }
-      assert.equal(fs.readFileSync(file, 'utf8'), before);
+      assert.deepEqual(fs.readFileSync(rulesPath), before.manifest);
+      if (options.missing) assert.equal(fs.existsSync(file), false);
+      else assert.deepEqual(fs.readFileSync(file), before.file);
       if (options.symlink) assert.equal(fs.lstatSync(file).isSymbolicLink(), true);
-      if (options.unregistered) assert.equal(entry, undefined);
-      else if (options.foreign) assert.equal(entry.source, 'workspace');
-      else {
-        assert.equal(entry.required, false);
-        assert.equal(entry.enabled, false);
-      }
+
       const doctor: any = runtime.doctor({ targetRoot: workspace, agent: 'codex' });
-      assert.ok(doctor.findings.some((f: any) => f.code === 'rules.legacy_core'));
-      assert.equal(doctor.findings.some((f: any) => f.code === 'rules.buildr_unregistered' && f.path === 'rules/buildr/core.md'), false);
-      assert.equal(doctor.findings.some((f: any) => f.code === 'rules.required_block_invalid'), false);
+      const retirementFindings: any[] = doctor.findings.filter((f: any) => f.code.startsWith('rules.retired_'));
+      assert.ok(retirementFindings.length > 0);
+      assert.equal(retirementFindings.every((f: any) => f.status === 'warning' && f.userActionRequired === false), true);
+      assert.equal(doctor.findings.some((f: any) => f.code === 'rules.retired_manifest_invalid'), options.invalid === true);
+      assert.equal(doctor.findings.some((f: any) => f.code === 'rules.retired_manifest_entries'), options.invalid !== true);
+      assert.equal(doctor.findings.some((f: any) => f.code === 'rules.retired_files'), options.missing !== true);
+      assert.equal(doctor.findings.some((f: any) => f.code === 'rules.legacy_core'), false);
+
       runtime.syncPackageBuiltins(workspace);
-      assert.equal(fs.readFileSync(file, 'utf8'), before);
+      assert.deepEqual(fs.readFileSync(rulesPath), before.manifest);
+      if (!options.missing) assert.deepEqual(fs.readFileSync(file), before.file);
     });
   }
 });

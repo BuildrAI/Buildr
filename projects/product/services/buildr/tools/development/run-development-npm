@@ -2,5 +2,23 @@
 set -eu
 script_root=$(CDPATH= cd "${0%/*}" && pwd)
 node_executable=$("$script_root/resolve-development-node")
+# The same preparation probe as run-development-node: verification families
+# invoke npm through this wrapper, so a fresh worktree prepares once first.
+service_root=$(CDPATH= cd "$script_root/../.." && pwd)
+product_root=$(CDPATH= cd "$service_root/../.." && pwd)
+if [ "${BUILDR_DEVELOPMENT_PREPARE_SKIP:-0}" != "1" ] && [ -f "$product_root/preparation.yml" ]; then
+  needs_prepare=0
+  for svc in buildr buildr-web buildr-agent dsh-plugin; do
+    svc_dir="$product_root/services/$svc"
+    if [ -f "$svc_dir/package-lock.json" ] \
+      && { [ ! -f "$svc_dir/node_modules/.package-lock.json" ] \
+        || [ "$svc_dir/package-lock.json" -nt "$svc_dir/node_modules/.package-lock.json" ]; }; then
+      needs_prepare=1
+    fi
+  done
+  if [ "$needs_prepare" = "1" ] || [ ! -f "$product_root/services/buildr-agent/build/index.js" ]; then
+    "$node_executable" "$script_root/prepare-development-dependencies.ts" || exit $?
+  fi
+fi
 # The selected process knows its physical executable and resolves its own npm.
 exec "$node_executable" "$script_root/run-development-npm.ts" "$@"

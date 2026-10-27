@@ -10,6 +10,16 @@ import { buildrWebDataRoot } from '../../modules/workspace/module.ts';
 import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.ts';
 import { workspaceStructuredStoreLocation } from '../../infrastructure/sqlite/workspace-sqlite.ts';
 import { INSTANCE_SCHEMA, healthyBuildrWebInstance, openDefaultBrowser } from '../infrastructure/instance-runtime.ts';
+import {
+  applyPreviewReuse,
+  parsePreviewReuseSelection,
+  previewReuseError,
+  readPreviewReuseFacts,
+  resolvePreviewReuseSource,
+  type PreviewReuseFacts,
+  type PreviewReuseFacet,
+  type PreviewReuseSelection,
+} from './preview-reuse.ts';
 
 const PREVIEW_SCHEMA = 'buildr.local-app-preview/v1';
 const PREVIEW_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
@@ -41,6 +51,7 @@ export type PreviewOwner = {
   repositorySet: PreviewRepository[];
   identityMode: 'task-worktree-v1' | 'standalone-checkout';
   taskStore?: { source: 'canonical' | 'existing'; seeded: boolean } | null;
+  reuse?: PreviewReuseFacts;
   managedProcess?: { pid: number; url?: string; state: 'healthy' | 'cleanup-failed' };
 };
 
@@ -71,14 +82,19 @@ export type PreviewRuntime = {
   inspectGitWorktrees(input: { workspaceRoot: string; taskId: string }): WorktreeInspection;
   readGitWorktreeEvidence(workspaceRoot: string, taskId: string): WorktreeEvidence;
   assertInitializedBuildrWorkspace(root: string): string;
-  atomicWriteJson(file: string, value: unknown): void;
+  atomicWriteJson(file: string, value: unknown, options?: Record<string, unknown>): void;
   removePath(file: string): void;
 };
 
-type PreviewStartOptions = { cliPath?: string; dataRoot?: string; startupTimeoutMs?: number };
-type PreviewStopOptions = { dataRoot?: string; caller?: PreviewCaller | null; retainOwner?: boolean };
+type PreviewStartOptions = {
+  cliPath?: string;
+  dataRoot?: string;
+  startupTimeoutMs?: number;
+  reuse?: { env?: NodeJS.ProcessEnv; home?: string; platform?: NodeJS.Platform; registry?: readonly PreviewReuseFacet[] };
+};
+type PreviewStopOptions = { dataRoot?: string; caller?: PreviewCaller | null; retainOwner?: boolean; purge?: boolean };
 type PreviewStartup = { spawnError: Error | null; processError: Error | null; phase: string; elapsedMs: number };
-type PreviewResult = { schemaVersion: typeof PREVIEW_SCHEMA; status: 'started' | 'reused'; owner: PreviewOwner; url: string; pid: number };
+type PreviewResult = { schemaVersion: typeof PREVIEW_SCHEMA; status: 'started' | 'reused'; owner: PreviewOwner; url: string; pid: number; portNote?: string | null };
 type PreviewListItem = { instance: string; owner: PreviewOwner; url: string | null; pid: number | null; status: 'healthy' | 'stale' | 'stopped' };
 
 const healthyInstance: (instance: PreviewInstance | null) => Promise<PreviewInstance | null> = healthyBuildrWebInstance;
@@ -156,6 +172,7 @@ function parsePreviewOwner(value: unknown, expectedName?: string): PreviewOwner 
     repositorySet,
     identityMode: item.identityMode,
     taskStore: parseTaskStore(item.taskStore),
+    reuse: readPreviewReuseFacts(item.reuse) ?? undefined,
     managedProcess: parseManagedProcess(item.managedProcess),
   };
 }
@@ -275,6 +292,14 @@ export function readPreviewOwner(name: string, dataRoot?: string): PreviewOwner 
 
 function readPreviewInstance(name: string, dataRoot?: string): PreviewInstance | null {
   return parsePreviewInstance(readJson(previewInstancePath(name, dataRoot)));
+}
+
+function previewReusePath(name: string, dataRoot?: string): string {
+  return path.join(previewDataRoot(name, dataRoot), 'reuse.json');
+}
+
+function readStoredPreviewReuse(name: string, dataRoot?: string): PreviewReuseFacts | null {
+  return readPreviewReuseFacts(readJson(previewReusePath(name, dataRoot)));
 }
 
 function writeOwner(runtime: PreviewRuntime, owner: PreviewOwner, dataRoot?: string): string {
@@ -406,12 +431,79 @@ function prepareTaskPreviewStore(taskWorktree: TaskPreviewWorktree): PreviewOwne
   }
 }
 
+function optionValues(args: string[], name: string): string[] {
+  const values: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] !== name) continue;
+    const value = args[index + 1];
+    if (!value || value.startsWith('--')) throw new Error(`Missing value for ${name}`);
+    values.push(value); index += 1;
+  }
+  return values;
+}
+
+function preferredPortPath(name: string, dataRoot?: string): string {
+  return path.join(previewDataRoot(name, dataRoot), 'preferred-port.json');
+}
+
+function readPreferredPort(name: string, dataRoot?: string): number | null {
+  const item = record(readJson(preferredPortPath(name, dataRoot)));
+  const port = item?.port;
+  return Number.isInteger(port) && (port as number) > 0 && (port as number) <= 65535 ? port as number : null;
+}
+
+function writePreferredPort(name: string, port: number, dataRoot?: string): void {
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) return;
+  fs.mkdirSync(previewDataRoot(name, dataRoot), { recursive: true });
+  const file = preferredPortPath(name, dataRoot);
+  fs.writeFileSync(file, `${JSON.stringify({ schemaVersion: 'buildr.local-app-preview/v1', port })}\n`, { mode: 0o600 });
+}
+
+// A preview that restarted should keep its loopback URL for the next run;
+// probe before binding so an occupied remembered port falls back to a fresh one.
+function probeLoopbackPort(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const probe = http.createServer();
+    probe.once('error', () => resolve(false));
+    probe.listen(port, '127.0.0.1', () => { probe.close(() => resolve(true)); });
+  });
+}
+
+// Preview instances register the service-target worktree themselves; extra
+// --workspace roots let the same instance open other workspaces for acceptance.
+// Realpath each root so the entry matches what the app resolves when opening.
+function seedPreviewWorkspaces(dataRoot: string, roots: string[]): void {
+  const file = path.join(path.resolve(dataRoot), 'workspace-registry.json');
+  const exists = fs.statSync(file, { throwIfNoEntry: false })?.isFile();
+  const current = record(readJson(file));
+  if ((exists && !current) || (current && !Array.isArray(current.roots))) {
+    throw codedError(`预览实例 ${path.basename(dataRoot)} 的 Workspace 登记文件已损坏：${file}。`, 'preview_registry_invalid', { file });
+  }
+  const merged = [...new Set([...((current?.roots as string[]) ?? []), ...roots])];
+  const registry = { schemaVersion: 'buildr.local-workspace-registry/v1', lastOpenedRoot: null, ...(current ?? {}), roots: merged };
+  fs.writeFileSync(file, `${JSON.stringify(registry)}\n`, { mode: 0o600 });
+}
+
 export async function startPreview(runtime: PreviewRuntime, name: string, args: string[], options: PreviewStartOptions = {}): Promise<PreviewResult> {
   const cliPath = options.cliPath || process.argv[1];
   const dataRoot = options.dataRoot || buildrWebDataRoot();
   const startupTimeoutMs = options.startupTimeoutMs ?? 10_000;
   const instance = assertPreviewName(name);
-  runtime.assertNoUnknownOptions(args, new Set(['--target', '--task', '--port', '--no-open', '--json']), new Set(['--no-open', '--json']));
+  runtime.assertNoUnknownOptions(args, new Set(['--target', '--task', '--port', '--workspace', '--no-open', '--json', '--reuse', '--refresh-reuse']), new Set(['--no-open', '--json', '--refresh-reuse']));
+  const rawReuse = runtime.optionValue(args, '--reuse', null);
+  const refreshReuse = args.includes('--refresh-reuse');
+  if (refreshReuse && !rawReuse) {
+    throw previewReuseError('--refresh-reuse 需要同时提供 --reuse。', 'preview_reuse_invalid', { argument: '--refresh-reuse', reason: 'selection_required' });
+  }
+  const reuseRegistry = options.reuse?.registry;
+  const reuseSelection: PreviewReuseSelection | null = rawReuse ? parsePreviewReuseSelection(rawReuse, reuseRegistry) : null;
+  const reuseSource = reuseSelection ? resolvePreviewReuseSource(reuseSelection.source, options.reuse) : null;
+  const workspaceRoots = optionValues(args, '--workspace').map((value) => {
+    const root = path.resolve(value);
+    const stat = fs.statSync(root, { throwIfNoEntry: false });
+    if (!stat?.isDirectory()) throw codedError(`--workspace 目录不存在或不是目录：${root}。`, 'preview_workspace_invalid', { root });
+    return fs.realpathSync(root);
+  });
   const requestedRoot = path.resolve(runtime.optionValue(args, '--target', process.cwd()) || process.cwd());
   const taskId = runtime.optionValue(args, '--task', null);
   let targetRoot = requestedRoot;
@@ -436,6 +528,19 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
   const rawPort = runtime.optionValue(args, '--port', '0') || '0';
   const port = Number(rawPort);
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`Invalid app port: ${rawPort}`);
+  // Remember the last port so restarts keep the same loopback URL; an
+  // occupied remembered port falls back to a fresh assignment rather than
+  // failing the whole preview start.
+  const explicitPort = args.includes('--port');
+  let desiredPort = port;
+  let portNote: string | null = null;
+  if (!explicitPort && port === 0) {
+    const remembered = readPreferredPort(instance, dataRoot);
+    if (remembered !== null) {
+      desiredPort = await probeLoopbackPort(remembered) ? remembered : 0;
+      portNote = desiredPort === remembered ? `复用上次端口 ${remembered}。` : `上次端口 ${remembered} 被占用，改用随机端口。`;
+    }
+  }
   const owner = previewOwnerForWorktree(instance, targetRoot, appInvocation.sourceRoot, taskWorktree);
   const existingOwner = readPreviewOwner(instance, dataRoot);
   const existingInstance = readPreviewInstance(instance, dataRoot);
@@ -444,7 +549,21 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
     throw codedError(`预览实例 ${instance} 已在运行，但无法证明属于当前 worktree；请改用其他实例名，或由原 owner 停止它。`, 'preview_owner_conflict', { instance, owner: existingOwner });
   }
   if (healthy && existingOwner) {
-    const result: PreviewResult = { schemaVersion: PREVIEW_SCHEMA, status: 'reused', owner: existingOwner, url: healthy.url, pid: healthy.pid };
+    let reusedOwner = existingOwner;
+    if (reuseSelection && reuseSource) {
+      const reuse = await applyPreviewReuse({
+        selection: reuseSelection,
+        sourceRoot: reuseSource.root,
+        previewRoot: previewDataRoot(instance, dataRoot),
+        refresh: refreshReuse,
+        previous: existingOwner.reuse,
+        registry: reuseRegistry,
+      });
+      reusedOwner = { ...existingOwner, reuse };
+      writeOwner(runtime, reusedOwner, dataRoot);
+      runtime.atomicWriteJson(previewReusePath(instance, dataRoot), reuse, { mode: 0o600 });
+    }
+    const result: PreviewResult = { schemaVersion: PREVIEW_SCHEMA, status: 'reused', owner: reusedOwner, url: healthy.url, pid: healthy.pid };
     if (!args.includes('--no-open')) openBrowser(healthy.url);
     return result;
   }
@@ -453,16 +572,29 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
   }
   const root = previewDataRoot(instance, dataRoot);
   fs.mkdirSync(root, { recursive: true });
-  writeOwner(runtime, owner, dataRoot);
+  const previousReuse = existingOwner?.reuse ?? readStoredPreviewReuse(instance, dataRoot);
+  const reuse = reuseSelection && reuseSource
+    ? await applyPreviewReuse({
+      selection: reuseSelection,
+      sourceRoot: reuseSource.root,
+      previewRoot: root,
+      refresh: refreshReuse,
+      previous: previousReuse,
+      registry: reuseRegistry,
+    })
+    : previousReuse;
+  if (reuse) runtime.atomicWriteJson(previewReusePath(instance, dataRoot), reuse, { mode: 0o600 });
+  const ownedOwner: PreviewOwner = reuse ? { ...owner, reuse } : owner;
+  writeOwner(runtime, ownedOwner, dataRoot);
   const logFile = path.join(root, 'preview.log');
   const logDescriptor = fs.openSync(logFile, 'a');
   let child: ChildProcess;
   try {
-    child = spawn(appInvocation.command, [...appInvocation.argsPrefix, 'web', '--target', targetRoot, '--port', String(port), '--no-open'], {
+    child = spawn(appInvocation.command, [...appInvocation.argsPrefix, 'web', '--target', targetRoot, '--port', String(desiredPort), '--no-open'], {
       cwd: targetRoot,
       detached: true,
       stdio: ['ignore', logDescriptor, logDescriptor],
-      env: { ...process.env, BUILDR_APP_DATA_DIR: root, BUILDR_LOCAL_APP_PREVIEW: JSON.stringify(owner) },
+      env: { ...process.env, BUILDR_APP_DATA_DIR: root, BUILDR_LOCAL_APP_PREVIEW: JSON.stringify(ownedOwner) },
     });
   } finally { fs.closeSync(logDescriptor); }
   const startup: PreviewStartup = { spawnError: null, processError: null, phase: 'spawned', elapsedMs: 0 };
@@ -482,7 +614,7 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
       clearOwner(instance, dataRoot);
     } catch (error) {
       cleanup = errorMessage(error);
-      writeOwner(runtime, { ...owner, managedProcess: { pid: child.pid || 0, state: 'cleanup-failed' } }, dataRoot);
+      writeOwner(runtime, { ...ownedOwner, managedProcess: { pid: child.pid || 0, state: 'cleanup-failed' } }, dataRoot);
     }
     let diagnostic: string | null = null;
     try { diagnostic = fs.readFileSync(logFile, 'utf8').trim().slice(-4096) || null; } catch {}
@@ -491,9 +623,12 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
     const code = !['terminated', 'already-exited'].includes(cleanup) ? 'preview_start_cleanup_failed' : failed ? 'preview_start_failed' : 'preview_start_timeout';
     throw codedError(message, code, { instance, pid: child.pid ?? null, phase: startup.phase, elapsedMs: startup.elapsedMs, exitCode: child.exitCode, signal: child.signalCode, cleanup, logFile, diagnostic });
   }
-  const managedOwner: PreviewOwner = { ...owner, managedProcess: { pid: started.pid, url: started.url, state: 'healthy' } };
+  if (workspaceRoots.length) seedPreviewWorkspaces(root, workspaceRoots);
+  const startedPort = Number(new URL(started.url).port);
+  if (Number.isInteger(startedPort) && startedPort > 0) writePreferredPort(instance, startedPort, dataRoot);
+  const managedOwner: PreviewOwner = { ...ownedOwner, managedProcess: { pid: started.pid, url: started.url, state: 'healthy' } };
   writeOwner(runtime, managedOwner, dataRoot);
-  const result: PreviewResult = { schemaVersion: PREVIEW_SCHEMA, status: 'started', owner: managedOwner, url: started.url, pid: started.pid };
+  const result: PreviewResult = { schemaVersion: PREVIEW_SCHEMA, status: 'started', owner: managedOwner, url: started.url, pid: started.pid, portNote };
   if (!args.includes('--no-open')) openBrowser(started.url);
   return result;
 }
@@ -514,7 +649,61 @@ export async function listPreviews(options: { dataRoot?: string } = {}): Promise
   return { schemaVersion: PREVIEW_SCHEMA, previews };
 }
 
-export async function stopPreview(name: string, options: PreviewStopOptions = {}): Promise<{ schemaVersion: typeof PREVIEW_SCHEMA; status: 'stopped' | 'stale_cleaned'; instance: string; owner: PreviewOwner }> {
+function processAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  if (process.platform !== 'win32') {
+    try {
+      // A signalled child can remain a zombie until reaped; only a live process holds the instance.
+      const state = execFileSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+      return Boolean(state) && !state.startsWith('Z');
+    } catch { return false; }
+  }
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return Boolean(error && typeof error === 'object' && 'code' in error && error.code === 'EPERM'); }
+}
+
+async function assertPreviewStopped(instance: string, dataRoot: string): Promise<void> {
+  const state = readPreviewInstance(instance, dataRoot);
+  if (!state || !processAlive(state.pid)) return;
+  // A just-signalled process may still be exiting; only an observed stop confirms cleanup.
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    if (!processAlive(state.pid)) return;
+  }
+  throw codedError(`预览实例 ${instance} 停止未确认，保留现场。`, 'preview_stop_unconfirmed', { instance, pid: state.pid });
+}
+
+function assertPurgeTargetSafe(instance: string, dataRoot: string): string {
+  const previewsRoot = path.resolve(dataRoot, 'previews');
+  const target = path.resolve(previewDataRoot(instance, dataRoot));
+  if (path.dirname(target) !== previewsRoot || path.basename(target) !== instance) {
+    throw codedError(`预览实例 ${instance} 的清理目标不在预览根内。`, 'preview_purge_unsafe', { instance });
+  }
+  const stat = fs.lstatSync(target, { throwIfNoEntry: false });
+  if (!stat) throw codedError(`预览实例 ${instance} 的实例目录不存在。`, 'preview_purge_unsafe', { instance });
+  if (stat.isSymbolicLink() || !stat.isDirectory()) throw codedError(`预览实例 ${instance} 的清理目标不是真实目录。`, 'preview_purge_unsafe', { instance });
+  const realRoot = fs.realpathSync(target);
+  const walk = (directory: string): void => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const file = path.join(directory, entry.name);
+      const info = fs.lstatSync(file);
+      if (info.isSymbolicLink()) {
+        let resolved: string;
+        try { resolved = fs.realpathSync(file); }
+        catch { continue; } // A broken link is removed with its directory, never followed.
+        if (resolved !== realRoot && !resolved.startsWith(`${realRoot}${path.sep}`)) {
+          throw codedError(`预览实例 ${instance} 包含越界符号链接，拒绝清理。`, 'preview_purge_unsafe', { instance });
+        }
+        continue;
+      }
+      if (info.isDirectory()) walk(file);
+    }
+  };
+  walk(target);
+  return target;
+}
+
+export async function stopPreview(name: string, options: PreviewStopOptions = {}): Promise<{ schemaVersion: typeof PREVIEW_SCHEMA; status: 'stopped' | 'stale_cleaned' | 'purged'; instance: string; owner: PreviewOwner }> {
   const dataRoot = options.dataRoot || buildrWebDataRoot();
   const instance = assertPreviewName(name);
   const owner = readPreviewOwner(instance, dataRoot);
@@ -529,6 +718,12 @@ export async function stopPreview(name: string, options: PreviewStopOptions = {}
       await new Promise<void>((resolve) => setTimeout(resolve, 50));
     }
     if (await healthyInstance(readPreviewInstance(instance, dataRoot))) throw codedError(`预览实例 ${instance} 停止后仍保持健康。`, 'preview_stop_unconfirmed');
+  }
+  if (options.purge) {
+    await assertPreviewStopped(instance, dataRoot);
+    const target = assertPurgeTargetSafe(instance, dataRoot);
+    fs.rmSync(target, { recursive: true, force: false });
+    return { schemaVersion: PREVIEW_SCHEMA, status: 'purged', instance, owner };
   }
   if (!options.retainOwner) clearOwner(instance, dataRoot);
   return { schemaVersion: PREVIEW_SCHEMA, status: healthy ? 'stopped' : 'stale_cleaned', instance, owner };

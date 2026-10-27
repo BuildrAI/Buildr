@@ -1,7 +1,12 @@
-import type { ConversationView, ConversationEvent, ConversationRun } from './types';
+import type { ConversationView, ConversationEntry, ConversationEvent, ConversationRun } from './types';
 
 export function executionLocked(run?: ConversationRun): boolean {
   return Boolean(run && ['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'tools-active', 'unknown'].includes(run.status));
+}
+const conversationConflictRefreshCodes = new Set(['agent_revision_conflict','agent_preview_stale','agent_model_source_changed','agent_model_source_unavailable','agent_model_unavailable','agent_model_disabled']);
+/** Only stale observations need a reread; busy and permission errors must keep their exact reason. */
+export function conversationConflictNeedsRefresh(error:{status?:number;code?:string}|undefined):boolean {
+  return error?.status===409&&Boolean(error.code&&conversationConflictRefreshCodes.has(error.code));
 }
 export function canStopConversationTool(tool:ConversationRun['tools'][number]):boolean {
   return tool.canStop===true&&tool.status!=='completed';
@@ -47,17 +52,21 @@ export function prependConversationEntries(current: ConversationView,page: Conve
 export function draftKey(profile: string, workspaceId: string | null, conversationId: string | null): string {
   return `buildr.agent-conversation.draft:${encodeURIComponent(profile)}:${encodeURIComponent(workspaceId || 'unselected')}:${encodeURIComponent(conversationId || 'new')}`;
 }
-export function readDraft(key: string, storage: Pick<Storage, 'getItem'>): {text: string; available: boolean} {
-  try { return { text: storage.getItem(key) || '', available: true }; } catch { return { text: '', available: false }; }
+export function readDraft(key: string, storage: Pick<Storage, 'getItem'>): {text: string; taskId?: string; available: boolean} {
+  try {
+    const saved=storage.getItem(key)||'';
+    if(saved.startsWith('{')){const parsed=JSON.parse(saved);return {text:typeof parsed.text==='string'?parsed.text:'',taskId:typeof parsed.taskId==='string'&&parsed.taskId?parsed.taskId:undefined,available:true};}
+    return { text: saved, taskId: undefined, available: true };
+  } catch { return { text: '', taskId: undefined, available: false }; }
 }
-export function writeDraft(key: string, text: string, storage: Pick<Storage, 'setItem' | 'removeItem'>): boolean {
-  try { if (text) storage.setItem(key, text); else storage.removeItem(key); return true; } catch { return false; }
+export function writeDraft(key: string, text: string, storage: Pick<Storage, 'setItem' | 'removeItem'>, taskId?: string): boolean {
+  try { if (text) storage.setItem(key, taskId ? JSON.stringify({ text, taskId }) : text); else storage.removeItem(key); return true; } catch { return false; }
 }
-export function transferDraftText(source:string,target:string,read:(key:string)=>{text:string},save:(key:string,text:string)=>boolean):{text:string;available:boolean} {
-  const {text}=read(source);
-  const available=save(target,text);
+export function transferDraftText(source:string,target:string,read:(key:string)=>{text:string;taskId?:string},save:(key:string,text:string,taskId?:string)=>boolean):{text:string;taskId?:string;available:boolean} {
+  const {text,taskId}=read(source);
+  const available=save(target,text,taskId);
   if(source!==target)save(source,'');
-  return {text,available};
+  return {text,taskId,available};
 }
 export function appendDraftAttachment<T extends{id:string}>(current:T[],accepted:T):T[] {
   return current.some(item=>item.id===accepted.id)?current:[...current,accepted];
@@ -89,4 +98,99 @@ export function sameConversationSelection(current:ConversationSelection,observed
 
 export function latestConversationParticipant(conversation:ConversationView|null) {
   return conversation?.participants.find(participant=>participant.id===conversation.run?.participantId)??conversation?.participants.at(-1);
+}
+/** The same agent may hold several participants (sources or models); the summary names it once. */
+export function participantAgentIds(participants:ConversationView['participants']):string[] {
+  return [...new Set(participants.map(participant=>participant.provider))];
+}
+
+/** Actual participant bindings only; a draft or another participant's current model is not evidence. */
+export function participantExecutionPairs(conversation:ConversationView|null):Array<{key:string;provider:string;model?:string;connectionId?:string;modelAccountId?:string}> {
+  const pairs=new Map<string,{key:string;provider:string;model?:string;connectionId?:string;modelAccountId?:string}>();
+  for(const participant of conversation?.participants??[]){
+    const current=conversation?.run?.participantId===participant.id?conversation.run:undefined;
+    const model=participant.model||current?.model;
+    const key=JSON.stringify([participant.provider,model??null]);
+    if(!pairs.has(key))pairs.set(key,{key,provider:participant.provider,model,connectionId:participant.connectionId,modelAccountId:participant.modelAccountId??current?.modelAccountId});
+  }
+  return [...pairs.values()];
+}
+
+// The visible stream interleaves conversation entries with per-run process blocks.
+export type ConversationStreamItem = {type:'entry';entry:ConversationEntry}|{type:'process-block';entries:ConversationEntry[];active:boolean;finishedAt?:string};
+/** Legacy records have no message phase: the last assistant message of a settled
+ * run is its visible reply, regardless of length. Never promote live narration. */
+export function groupConversationStream(entries:readonly ConversationEntry[],currentRun?:ConversationRun):ConversationStreamItem[] {
+  const items:ConversationStreamItem[]=[];
+  const isProcess=(entry:ConversationEntry)=>entry.kind==='tool'||entry.kind==='message'&&entry.role==='assistant';
+  for(let index=0;index<entries.length;){
+    const first=entries[index];
+    if(!isProcess(first)){items.push({type:'entry',entry:first});index++;continue;}
+    const run:ConversationEntry[]=[];
+    while(index<entries.length&&isProcess(entries[index])&&entries[index].runId===first.runId)run.push(entries[index++]);
+    const active=Boolean(currentRun&&currentRun.id===first.runId&&executionLocked(currentRun));
+    const result=active?undefined:[...run].reverse().find(entry=>entry.kind==='message'&&entry.role==='assistant');
+    const process=result?run.filter(entry=>entry!==result):run;
+    if(process.length)items.push({type:'process-block',entries:process,active,finishedAt:result?.createdAt});
+    if(result)items.push({type:'entry',entry:result});
+  }
+  return items;
+}
+export function toolEntryHeadline(entry:ConversationEntry):string {
+  return entry.text.split('\n',1)[0].trim();
+}
+const TOOL_NAME_LABELS:Record<string,string>={command:'已运行',commandExecution:'已运行','file-change':'已修改','mcp-tool':'已调用',bash:'已运行',read:'已读取',write:'已写入',edit:'已编辑',glob:'已查找',grep:'已搜索',web_fetch:'已获取',web_fetch_url:'已获取',web_search:'已搜索',ls:'已列出'};
+/** Stable tool names map to semantic action labels; names the dictionary misses show as-is. */
+export function toolStepLabel(entry:ConversationEntry):string {
+  const name=entry.name?.trim();
+  const headline=toolEntryHeadline(entry);
+  if(!name)return headline;
+  // File changes list affected paths below the generic first line.
+  if(name==='file-change'){const paths=entry.text.split('\n').slice(1).map(line=>line.trim()).filter(Boolean);return `已修改 ${paths.length} 个文件${paths.length?'：'+paths[0]+(paths.length>1?' 等':''):''}`;}
+  // Some executors keep the raw name as the text first line; prefer its argument line.
+  const detail=headline===name?(entry.text.split('\n',2)[1]??'').trim():headline;
+  const verb=TOOL_NAME_LABELS[name]??TOOL_NAME_LABELS[name.toLowerCase()];
+  if(verb)return `${verb} ${detail}`.trim();
+  return `已调用 ${name}${detail?' · '+detail:''}`;
+}
+export function processBlockSummary(entries:readonly ConversationEntry[]):{running:number;failed:number;latest:ConversationEntry;focus:ConversationEntry;startedAt:string;finishedAt:string} {
+  let running=0,failed=0;
+  let lastFailed:ConversationEntry|null=null;
+  for(const entry of entries){
+    if(entry.status==='running')running++;
+    else if(entry.status==='failed'){failed++;lastFailed=entry;}
+  }
+  const latest=entries[entries.length-1];
+  // Running blocks show the freshest step; settled blocks surface a failure over the tail.
+  return {running,failed,latest,focus:running>0||!lastFailed?latest:lastFailed,startedAt:entries[0].createdAt,finishedAt:latest.createdAt};
+}
+// Keep expansion stable as more steps arrive in the same process.
+export function processBlockKey(entries:readonly ConversationEntry[]):string {
+  return 'process-block:'+entries[0].id;
+}
+
+/** Prepending steps can change a block's first entry; keep explicit open/closed choices on overlapping blocks. */
+export function carryExpandedProcessBlocks(current:readonly ConversationEntry[],added:readonly ConversationEntry[],expanded:Record<string,boolean>,run?:ConversationRun):Record<string,boolean>{
+ const marks=new Map<string,boolean>();
+ for(const item of groupConversationStream(current,run))if(item.type==='process-block'){
+   const value=expanded[processBlockKey(item.entries)];
+   if(value!==undefined)for(const entry of item.entries)marks.set(entry.id,value);
+ }
+ if(!marks.size)return expanded;
+ const entries=[...new Map([...added,...current].map(e=>[e.id,e])).values()].sort((a,b)=>a.sequence-b.sequence),next={...expanded};
+ for(const item of groupConversationStream(entries,run))if(item.type==='process-block'){
+   const value=item.entries.map(e=>marks.get(e.id)).find((v):v is boolean=>v!==undefined);
+   if(value!==undefined)next[processBlockKey(item.entries)]=value;
+ }
+ return next;
+}
+
+/** Persisted running items do not prove a historical execution is still live. */
+export function processEntryStatus(entry:ConversationEntry,active:boolean):string|undefined {
+  return !active&&(!entry.status||entry.status==='running')?'unknown':entry.status;
+}
+
+/** Each entry toggles its own view; the other entry switches the visible view. */
+export function nextConversationPanel(open:boolean,view:'conversation'|'history',target:'conversation'|'history') {
+  return {open:!open||view!==target,view:target};
 }

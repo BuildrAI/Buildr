@@ -38,21 +38,23 @@
 
 ## 内部对话与原生执行
 
-[智能体接入架构](../docs/architecture/agent-integration.md)解释用户可见行为；这里定位新内部对话的实际边界。它与既有 `agent-operations` 的一次生成、`native-session-links` 的外部关联并列，不扩展或迁移旧数据。
+[智能体接入架构](../docs/architecture/agent-integration.md)解释用户可见行为；这里定位新内部对话的实际边界。单次生成也复用同一模型（Model）能力；旧生成后台和外部桌面关联已退役。
 
-- **宿主（Host）适配**：[agent-service/module.ts](../../services/buildr/src/modules/agent-service/module.ts) 按公开包名装配 `createAgentService`，提供已登记工作空间（Workspace）解析和任务（Task）存在检查；[HTTP 入口](../../services/buildr/src/modules/agent-service/interfaces/http/agent-service-http.ts)接入本机认证和独立控制请求，不维护对话副本。
+- **宿主（Host）适配**：[agent-service/module.ts](../../services/buildr/src/modules/agent-service/module.ts) 按公开包名装配 `createAgentService`，提供已登记工作空间（Workspace）解析和任务（Task）存在检查；按可信运行配置（Profile）选择恢复策略，由网页真实就绪入口调用 `start`，后台发现系统中断的执行，开发版才自动续做；[HTTP 入口](../../services/buildr/src/modules/agent-service/interfaces/http/agent-service-http.ts)接入本机认证和独立控制请求，不维护对话副本。
 - **独立服务（Service）**：[公开入口](../../services/buildr-agent/src/index.ts)创建账号应用、对话应用、事件与私有库；[contracts.ts](../../services/buildr-agent/src/contracts.ts)只公开宿主依赖、视图及执行器（Executor）协议，主包不导入私有源码。
 - **工具路径**：[工具环境](../../services/buildr-agent/src/executors/tool-environment.ts)仅提供原用户路径线索和官方浏览器缓存，账号 HOME 仍独立；[接入环境说明](../../services/buildr/resources/runtime/skills/buildr/references/agent-operations.md#内部对话与持续执行)由智能体发现、复用或按官方方式安装工具，不新增工具管理平台。
   - [connection-application.ts](../../services/buildr-agent/src/application/connection-application.ts)：每家独立配置、官方登录、模型目录及真实程序绑定；运行中关闭、停止和授权可以独立响应。
-  - [conversation-application.ts](../../services/buildr-agent/src/application/conversation-application.ts)：按对话版本和模型能力生成发送预览，保存实际模型、思考深度（Reasoning Effort）、权限模式（Permission Mode）及请求身份后启动原生执行；按参与者和原生条目身份归并历史，协调独立短标题及手动名保护，保留受理、待确认、仍有工具和已结束的区别。单工具停止失败不改写整轮停止事实。
-  - [conversation-repository.ts](../../services/buildr-agent/src/persistence/conversation-repository.ts)：写入本机运行配置（Profile）的 `agent-service/conversations.sqlite`，与任务数据库分离；保存比较前一修订，不在模型执行期间持有数据库事务（Transaction）。
+  - [conversation-application.ts](../../services/buildr-agent/src/application/conversation-application.ts)：按对话版本和模型能力生成发送预览，保存实际模型、思考深度（Reasoning Effort）、权限模式（Permission Mode）及请求身份后启动原生执行；按参与者和原生条目身份归并历史，协调独立短标题及手动名保护，保留受理、待确认、仍有工具和已结束的区别。逐轮终态和失败诊断不被新一轮覆盖；超长材料才调用有界隔离精简，失败以本地索引继续。单工具停止失败不改写整轮停止事实。`recoverInterrupted` 只恢复准确系统中断，先核对原执行与工具，以持久请求身份限制每次中断至多接续一次；原授权、待用户决定和主动停止继续有效。
+  - [handoff-material.ts](../../services/buildr-agent/src/domain/handoff-material.ts)：按本地运行身份分轮，组织用户输入、助手说明、动作结果、确认成果和终态；维护接收与精简提示词（Prompt）及保守接收预算，不执行工作或推断成果已完成。[handoff-sources.ts](../../services/buildr-agent/src/application/handoff-sources.ts)将完整原始记录投射为按内容复用的本地轮次文件和不可变索引，供新执行方按需读取。
+  - [conversation-repository.ts](../../services/buildr-agent/src/persistence/conversation-repository.ts)：写入本机运行配置（Profile）的 `agent-service/conversations.sqlite`，与任务数据库分离；保存比较前一修订，不在模型执行期间持有数据库事务（Transaction）；保存系统中断来源和恢复尝试，以对话执行而非任务状态发现未完成工作。
   - [executors/](../../services/buildr-agent/src/executors/)：分别管理 Codex、DSH、Qoder 原生上下文、消息、工具、停止和资源，不将厂商协议放入公共应用或前端。
   - [model-options.ts](../../services/buildr-agent/src/executors/model-options.ts)：保留原生逐模型默认值及合法思考档位，不建立品牌级虚构选项。[Codex 短标题](../../services/buildr-agent/src/executors/codex/title.ts)使用隔离的临时上下文，不复用工作线程或旧一次生成入口；Qoder 专用标题控制和 DSH 可信来源事件归各自适配器（Adapter）。
   - [Codex 权限参数](../../services/buildr-agent/src/executors/codex/permissions.ts)与[DSH 权限预设](../../services/buildr-agent/src/executors/dsh/permissions.ts)：将本轮默认／完全访问映射为原生策略，创建、恢复与发送时明确应用；Qoder 在[独立工作进程](../../services/buildr-agent/src/executors/qoder/worker.ts)逐次设置查询权限，业务提问与工具审批分开。
 - **前端功能**：[AgentConversationsContext.tsx](../../services/buildr-web/src/features/agent-conversations/AgentConversationsContext.tsx)持有当前对话、接入和事件读取；[ConversationPanel.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationPanel.tsx)呈现消息、执行及发送预览；[ConversationRequest.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationRequest.tsx)响应准确本轮问题及授权；[ConversationHistory.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationHistory.tsx)按对话而非厂商组织历史；[TaskConversationEntry.tsx](../../services/buildr-web/src/features/agent-conversations/TaskConversationEntry.tsx)只关联内部对话身份，不重写任务目标、状态或成果。
-  - [ConversationDock.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationDock.tsx)：复用面板暂看（Pane Peek）与分隔器（SplitDivider），负责图标悬停、固定展开、左右停靠、320–800px宽度偏好和焦点恢复；保留同一内容节点与滚动，不持有模型执行状态。[ConversationAttention.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationAttention.tsx)在侧轨、标题栏和窄屏顶栏复用待回应入口，保持显式导航与焦点交接。[ConversationOptions.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationOptions.tsx)按实际模型能力呈现完整且可换行的选择器，不把显示默认项当成已生效参数。
+  - [ConversationHandoffDrawer.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationHandoffDrawer.tsx)：正式页面和确认原型共同使用的纯展示组件（Component），同侧显示轮次和准确发送原文；原文默认收起，界面解释在正文边界外，已保存快照与接收状态分开。
+  - [ConversationDock.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationDock.tsx)：复用面板暂看（Pane Peek）与分隔器（SplitDivider），负责图标悬停、固定展开、左右停靠、320–800px宽度偏好和焦点恢复；保留同一内容节点与滚动，不持有模型执行状态。[ConversationActivity.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationActivity.tsx)接入全空间活动摘要、执行统计与筛选；[ConversationActivityEntry.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationActivityEntry.tsx)复用分组活动浮窗与全部对话入口；[ConversationExecutionStats.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationExecutionStats.tsx)共享执行分布、选中及未知反馈，不从分页推算总览。[conversation-model-label.ts](../../services/buildr-web/src/features/agent-conversations/conversation-model-label.ts)复用模型选择器的完整目录名称，内部编号保留为身份；顶部参与方按真实模型绑定显示，紧凑统计测量实际按钮行高，至少两排后滚动。[ConversationOptions.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationOptions.tsx)按实际模型能力呈现完整且可换行的选择器，不把显示默认项当成已生效参数。[conversation-preferences.ts](../../services/buildr-web/src/features/agent-conversations/conversation-preferences.ts)维护跨工作空间的智能体、权限和模型选择记忆，只在新对话恢复，并与提交说明执行模型偏好隔离。
 
-恢复先按原配置与程序恢复各参与者的原生上下文，再补它未收到的可见记录；超容量需要用户明确提供精简说明。网络失败或宿主（Host）重启后，未知输入不自动重发，旧授权句柄不复用。对话的任务关联、目录和发送预览为图形界面（GUI）与对话界面（Talk UI）提供最小明确输入；当前不会自动采集页面现场或注册任意业务写入。未来对象操作仍须交给原能力按对象身份和观察版本校验。
+恢复先按原配置与程序恢复各参与者的原生上下文，再补它未收到的可见记录；超容量时尝试原模型（Model）的隔离精简，不可用时用本地完整索引和分轮资料继续；必要内容仍不能交付则保留草稿并说明限制。网络失败或宿主（Host）重启后，未知输入不自动重发，旧授权句柄不复用。对话的任务关联、目录和发送预览为图形界面（GUI）与对话界面（Talk UI）提供最小明确输入；当前不会自动采集页面现场或注册任意业务写入。未来对象操作仍须交给原能力按对象身份和观察版本校验。
 
 ## 外部系统接入
 
@@ -60,12 +62,12 @@
 
 ### 内置专业技能与独立查询
 
-- **[独立 MySQL 查询（mysql-query）](../../services/buildr/src/modules/mysql-query/)** — 消费明确绑定的实例；保留单条只读执行约束，不拥有团队连接配置。
+- **[MySQL 连接程序与独立查询（mysql-query）](../../services/buildr/src/modules/mysql-query/)** — 连接程序执行测试、发现、结构摘要与受控变更；独立查询保留单条只读执行约束。两者都消费明确绑定的实例，不拥有团队连接配置。
   - [访问与结果约束（domain/mysql.ts）](../../services/buildr/src/modules/mysql-query/domain/mysql.ts) — MySQL 访问配置、认证、结果类型和输入校验。
-  - [只读执行内核（infrastructure/mysql-client.ts）](../../services/buildr/src/modules/mysql-query/infrastructure/mysql-client.ts) — `createMySqlClient` 提供测试、结构读取及查询，`prepareReadOnlySql` 保留单条只读约束。
+  - [执行内核（infrastructure/mysql-client.ts）](../../services/buildr/src/modules/mysql-query/infrastructure/mysql-client.ts) — `createMySqlClient` 提供测试、结构读取、查询与受控变更；`prepareReadOnlySql` 与 `prepareChangeStatement` 分别保留只读与变更边界。
   - [查询应用（mysql-query-application.ts）](../../services/buildr/src/modules/mysql-query/application/mysql-query-application.ts) — 核对准确内置来源、完整认证及当前版本，提供结构读取和查询。
   - [本机偏好（query-preferences.ts）](../../services/buildr/src/modules/mysql-query/persistence/query-preferences.ts) — 独立 SQLite 表及偏好版本，不保存查询结果。
-  - [专业接入程序（mysql-connection-program.ts）](../../services/buildr/src/modules/mysql-query/interfaces/program/mysql-connection-program.ts) — `buildr-mysql` 的私有上下文（Context）、测试和数据库发现；主包携带运行依赖。
+  - [专业接入程序（mysql-connection-program.ts）](../../services/buildr/src/modules/mysql-query/interfaces/program/mysql-connection-program.ts) — `buildr-mysql` 的私有上下文（Context）、测试、数据库发现、结构摘要与受控变更；执行生产环境拒绝、破坏性语句开关和写前上下文复核，主包携带运行依赖。
   - [开发辅助命令（tools/development/programs/）](../../services/buildr/tools/development/programs/) — 源码桥接与 macOS 开发启动器（Development Launcher）的进程私有入口，使用已选 Node.js 调用同一程序，保留默认 npm `buildr` 的独立身份。
   - [命令入口（mysql-query-cli.ts）](../../services/buildr/src/modules/mysql-query/interfaces/cli/mysql-query-cli.ts)及[网页入口（mysql-query-http.ts）](../../services/buildr/src/modules/mysql-query/interfaces/http/mysql-query-http.ts) — 同一查询应用的输入输出适配。
 - **[独立查询前端（mysql-query）](../../services/buildr-web/src/features/mysql-query/)** — 连接目录使用的查询组件（Component）、库表浏览、客户端（Client）、编辑器、结果与本机布局；库表浏览与当前数据库选择解耦，客户端固定本次实例及观察版本。
@@ -111,7 +113,7 @@
   - [已保存个人秘密（ConnectionSavedPersonalSecrets.tsx）](../../services/buildr-web/src/features/connection-skills/components/ConnectionSavedPersonalSecrets.tsx) — 显式单字段查看、默认隐藏、按当前对象及观察清空，隔离迟到响应且不回填认证草稿。
   - [浏览器授权（ConnectionBrowserAuthorization.tsx）](../../services/buildr-web/src/features/connection-skills/components/ConnectionBrowserAuthorization.tsx)及[授权状态（useConnectionAuthorization.ts）](../../services/buildr-web/src/features/connection-skills/useConnectionAuthorization.ts) — 首次授权、重新授权及取消；新增先保存无认证配置壳，内部认证字段不进入表单，关闭或目标变化时丢弃迟到结果。
 
-实际操作为“智能体（Agent）发现绑定 → 读取专业技能（Skill）及程序帮助 → 通用入口启动程序 → 所选程序访问真实系统”。程序写前请求本机上下文再次校验，通用宿主不审批业务；Nacos 随附程序另维护远端版本、授权及结果。MySQL 另由独立查询应用消费同一明确实例，所有入口保留观察版本及只读边界。
+实际操作为“智能体（Agent）发现绑定 → 读取专业技能（Skill）及程序帮助 → 通用入口启动程序 → 所选程序访问真实系统”。程序写前请求本机上下文再次校验，通用宿主不审批业务；Nacos 随附程序另维护远端版本、授权及结果。MySQL 另由独立查询应用消费同一明确实例；变更拒绝生产环境并受破坏性策略约束，独立查询入口始终只读。
 
 ## 服务本地运行
 

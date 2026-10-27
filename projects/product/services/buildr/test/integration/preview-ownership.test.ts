@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -123,15 +124,21 @@ else {
       if (req.headers['x-buildr-instance'] !== 'fixture-secret') { res.writeHead(403).end(); return; }
       if (req.method === 'POST') {
         res.writeHead(202).end();
-        server.close(() => process.exit(0));
+        // Exit on the next tick instead of server.close(): an in-flight or
+        // keep-alive probe connection can hold close() open past the
+        // stop-confirmation window.
+        setImmediate(() => process.exit(0));
       } else { res.end(JSON.stringify({ schemaVersion: 'buildr.local-app-health/v1', status: mode === 'unhealthy' ? 'starting' : 'ready', pid: process.pid })); }
     });
-    server.listen(0, '127.0.0.1', () => {
+    const portIndex = process.argv.indexOf('--port');
+    const requested = portIndex >= 0 ? Number(process.argv[portIndex + 1]) : 0;
+    server.listen(requested || 0, '127.0.0.1', () => {
       fs.writeFileSync(path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json'), JSON.stringify({
         schemaVersion: 'buildr.local-app-instance/v1', pid: process.pid,
         url: 'http://127.0.0.1:' + server.address().port, secret: 'fixture-secret',
       }));
     });
+    server.on('error', (error) => { console.error('fixture listen failure', error.message); process.exit(24); });
   }, mode === 'slow' ? 5000 : 0);
 }
 `);
@@ -147,8 +154,9 @@ else {
     atomicWriteJson(file: string, value: unknown) { fs.writeFileSync(file, JSON.stringify(value)); },
     removePath(file: string) { fs.rmSync(file, { force: true }); },
   };
-  return { target, dataRoot, pidFile, runtime, start(options: { startupTimeoutMs?: number } = {}) {
-    return startPreview(runtime, 'demo', ['--target', target, '--no-open'], { dataRoot, ...options });
+  return { target, dataRoot, pidFile, runtime, start(options: { startupTimeoutMs?: number; extraArgs?: string[] } = {}) {
+    const { extraArgs = [], ...start } = options;
+    return startPreview(runtime, 'demo', ['--target', target, '--no-open', ...extraArgs], { dataRoot, ...start });
   } };
 }
 
@@ -513,4 +521,47 @@ test('task preview 快照失败只清理本次生成的临时文件，不创建�
   assert.deepEqual(fs.readdirSync(path.dirname(fixture.seededStore())), []);
   assert.equal(fs.existsSync(fixture.seededStore()), false);
   assert.equal(fs.existsSync(fixture.pidFile), false);
+});
+
+test('preview restart reuses its remembered port while it stays free', { timeout: 20_000 }, async (t) => {
+  const fixture = startupFixture(t, 'ready');
+  const first = await fixture.start();
+  const firstPort = Number(new URL(first.url).port);
+  assert.ok(firstPort > 0);
+  await stopPreview('demo', { dataRoot: fixture.dataRoot });
+  const second = await fixture.start();
+  assert.equal(second.status, 'started');
+  assert.equal(Number(new URL(second.url).port), firstPort, 'restart keeps the same loopback port');
+  assert.match(second.portNote || '', /复用上次端口/);
+  await stopPreview('demo', { dataRoot: fixture.dataRoot });
+});
+
+test('an occupied remembered port falls back to a fresh assignment', { timeout: 20_000 }, async (t) => {
+  const fixture = startupFixture(t, 'ready');
+  const first = await fixture.start();
+  const firstPort = Number(new URL(first.url).port);
+  await stopPreview('demo', { dataRoot: fixture.dataRoot });
+  const squatter = http.createServer().listen(firstPort, '127.0.0.1');
+  await new Promise<void>((resolve) => squatter.once('listening', resolve));
+  t.after(() => squatter.close());
+  const second = await fixture.start();
+  assert.notEqual(Number(new URL(second.url).port), firstPort, 'occupied port must not be rebound');
+  assert.match(second.portNote || '', /被占用，改用随机端口/);
+  await stopPreview('demo', { dataRoot: fixture.dataRoot });
+});
+
+test('preview start seeds extra --workspace roots into the instance registry', { timeout: 20_000 }, async (t) => {
+  const fixture = startupFixture(t, 'ready');
+  const extra = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-preview-ws-'));
+  t.after(() => fs.rmSync(extra, { recursive: true, force: true }));
+  const result = await fixture.start({ extraArgs: ['--workspace', extra] });
+  assert.equal(result.status, 'started');
+  const registryFile = path.join(fixture.dataRoot, 'previews', 'demo', 'workspace-registry.json');
+  const registry = JSON.parse(fs.readFileSync(registryFile, 'utf8'));
+  assert.deepEqual(registry.roots, [fs.realpathSync(extra)]);
+  const again = await fixture.start({ extraArgs: ['--workspace', extra] });
+  assert.equal(again.status, 'reused');
+  const stable = JSON.parse(fs.readFileSync(registryFile, 'utf8'));
+  assert.deepEqual(stable.roots, [fs.realpathSync(extra)], 'reusing a healthy preview must not reseed');
+  await stopPreview('demo', { dataRoot: fixture.dataRoot });
 });

@@ -46,7 +46,10 @@ const allowed: any = new Map([
     'acquireBuildrWebStartLock', 'releaseBuildrWebStartLock', 'clearBuildrWebInstance',
   ])],
   ['src/bootstrap/cli/main.ts', new Set(['writeInternalDownload'])],
-  ['src/web/application/preview-lifecycle.ts', new Set(['clearOwner', 'prepareTaskPreviewStore'])],
+  ['src/web/application/preview-lifecycle.ts', new Set(['clearOwner', 'prepareTaskPreviewStore', 'writePreferredPort', 'seedPreviewWorkspaces', 'stopPreview'])],
+  // Reuse copies stage every facet in an owned sibling, verify, then rename; purge is
+  // guarded by stop confirmation, owner identity, preview-root containment and symlinks.
+  ['src/web/application/preview-reuse-files.ts', new Set(['copyTree', 'replacePreviewDirectory'])],
   ['src/modules/task/infrastructure/worktree-application.ts', new Set(['writeReceipt'])],
   ['src/modules/task/materials/application/task-materials-application.ts', new Set(['publish'])],
   ['src/modules/publication/application/publication-application.ts', new Set(['createPublication', 'uploadPublicationAsset'])],
@@ -58,7 +61,6 @@ const allowed: any = new Map([
   ])],
   ['src/modules/project-testing/application/verification-application.ts', new Set(['withRetainedControllerPlanArgs'])],
   ['src/bootstrap/cli/task-finish-bootstrap.ts', new Set(['atomicWriteFile'])],
-  ['src/modules/agent-assets/application/rules.ts', new Set(['rulesRemoveUnsafe'])],
   ['src/modules/agent-assets/application/skills.ts', new Set(['copySupportedSkillSource', 'skillsRemoveUnsafe'])],
   ['src/modules/agent-assets/application/components.ts', new Set(['removeComponentMember', 'installComponentMember'])],
   ['src/modules/workspace/application/registry-maintenance.ts', new Set(['convergeServiceManifest', 'convergeRegistryManifests'])],
@@ -70,6 +72,8 @@ const allowed: any = new Map([
   ['src/infrastructure/product-resources/shared-resources.ts', new Set(['ensurePackageResources', 'publishPackageResources', 'adoptPackageResources', 'prepareWorkspaceResourceAdoption'])],
   // Preserved Archify installs are relocated into Buildr-owned data before the shared set replaces them.
   ['src/infrastructure/product-resources/preserved-archify.ts', new Set(['preserveArchifyBeforeReplacement'])],
+  // Retired shared skill sources are sealed under local/preserved-skills/ through the same staging protocol before the shared set replaces them.
+  ['src/infrastructure/product-resources/preserved-skills.ts', new Set(['preserveSkillSourceBeforeReplacement'])],
   ['src/modules/agent-assets/application/package-maintenance/archify-retirement.ts', new Set(['retirePackagedArchify'])],
   ['tools/verification/package-check/runtime-checks.ts', new Set([
     'verifyRecursiveRules', 'verifyWorkspaceAssetLifecycle', 'verifyInitializedWorkspace',
@@ -89,6 +93,12 @@ const allowed: any = new Map([
   // discardChanges follows the same owned index-lock, temporary index and rename protocol as commitChanges.
   ['src/modules/code/application/code-discard-application.ts', new Set(['discardChanges'])],
   ['src/modules/code/infrastructure/code-fetch-refs.ts', new Set(['fetchCodeRemoteRefs'])],
+  // registryNote appends only to the write Worker's own registry file so a
+  // crashed Worker's Git operation records can be reclaimed by the executor.
+  ['src/modules/code/infrastructure/code-git-operation-lock.ts', new Set(['registryNote'])],
+  // reclaimWorkerLocks removes the dead Worker's own registry after reading it;
+  // lock file removal itself goes through releaseExclusiveFileLock.
+  ['src/web/http/write-executor.ts', new Set(['reclaimWorkerLocks'])],
   ['src/modules/code/infrastructure/editable-file.ts', new Set(['replaceEditableFile'])],
   // Removes only its own mkdtemp directory after matching its device and inode.
   ['src/modules/connection-skills/application/connection-skills-application.ts', new Set(['authorize'])],

@@ -85,7 +85,12 @@ class CodexRuntime implements ModelProviderRuntime {
     const body = codexBody(input.body, input.modelId);
     const response = await this.request('/codex/responses', { method: 'POST', headers: { 'content-type': 'application/json', accept: 'text/event-stream', 'x-codex-routing-hint': `model=${input.modelId}`, 'session_id': input.context.conversationId }, body: JSON.stringify(body) }, input.signal);
     if (!response.ok) { await response.body?.cancel(); return Response.json({ error: { code: response.status === 401 ? 'model_codex_login_expired' : 'model_codex_upstream_failed' } }, { status: response.status }); }
-    if (input.body.stream === true) return response;
+    if (input.body.stream === true) {
+      if (response.headers.has('content-type')) return response;
+      // This Codex endpoint always streams Responses events, including through its native owner.
+      const headers = new Headers(response.headers); headers.set('content-type', 'text/event-stream');
+      return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+    }
     return Response.json(await completedResponse(response, input.signal));
   }
   async close(): Promise<void> { this.lifetime.abort(); await this.cancelLogin(); }

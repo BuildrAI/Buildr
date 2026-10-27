@@ -90,12 +90,10 @@ export function readCodeCommitGuidance(root: string, snapshot: CodeCommitSnapsho
     const actual = observe(directory, 'directory');
     if (!actual) continue;
     scopes.push({ kind, path: actual });
-    for (const name of ['AGENTS.override.md', 'AGENTS.md', 'rules/manifest.yml']) {
+    for (const name of ['AGENTS.override.md', 'AGENTS.md']) {
       const file = observe(path.join(actual, name), 'file');
       if (file) { ruleEntrypoints.add(file); readableRoots.add(file); }
     }
-    const rules = observe(path.join(actual, 'rules'), 'directory', true);
-    if (rules) readableRoots.add(rules);
   }
   const background = task ? { taskId: task.taskId, title: task.title, intent: task.intent || '' } : null;
   const roots = [...readableRoots].sort(), entries = [...ruleEntrypoints].sort();

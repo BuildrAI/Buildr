@@ -84,10 +84,12 @@ test('API client 通过 LocalSessionAdapter 为写请求附加 session，并拒�
   assert.match(adapter, /x-buildr-session/);
   assert.match(adapter, /meta\[name="buildr-session"\]/);
   assert.match(client, /sessionAdapter\.writeHeaders/);
-  assert.match(client, /init\.body \|\| !\['GET', 'HEAD'\]\.includes/);
+  assert.match(client, /if \(init\.body[\s\S]{0,160}?\['GET', 'HEAD'\]\.includes[\s\S]{0,160}?sessionAdapter\.writeHeaders\(\)/);
   assert.match(client, /error\.code = body\.error\?\.code/);
   assert.match(client, /error\.details = body\.error\?\.details/);
-  assert.doesNotMatch(client, /document\.|querySelector|buildr-session/);
+  assert.doesNotMatch(client, /document\.|querySelector/);
+  // 客户端只允许覆盖同名会话头以替换失效令牌，令牌本身仍由会话适配器从 DOM 取得。
+  assert.doesNotMatch(client, /meta\[name="buildr-session"\]/);
   assert.match(session, /\['target', 'root', 'path'\]\.includes\(field\)/);
   assert.match(session, /Task API 不接受 filesystem path/);
 });
