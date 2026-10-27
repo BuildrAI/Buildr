@@ -35,3 +35,19 @@ test('a configured default window is separate from the supported maximum',()=>{
  assert.equal(effectiveModel(model,{enabled:true,contextWindow:512000}).contextWindow,512000);
  assert.equal(effectiveModel(model,{enabled:true,contextWindow:2000000}).contextWindow,1000000);
 });
+
+test('Devin rephrases only the known Codex default approval sentence inside native permission instructions',()=>{
+ const model=modelOfferings([{id:'swe-2-high',label:'SWE-2 High Thinking',isDefault:true,family:'swe-2',images:false,disabled:false}])[0];
+ const original='- Include a short question asking the user if they want to allow the action in `justification` parameter. e.g. "Do you want to download and install dependencies for this project?"';
+ const equivalent='- Set `justification` to a brief approval question for the user about the proposed action. For example: "Do you want to download and install dependencies for this project?"';
+ const permission=['<permissions instructions>','`sandbox_mode` is `workspace-write`: Writes outside writable roots require approval. Network access is restricted.',original,'- Provide `sandbox_permissions` with `"require_escalated"`.','NEVER provide a prefix_rule argument for destructive commands like rm.','The writable roots are `/work`.','</permissions instructions>'].join('\n');
+ const context={accountId:'a',agentId:'codex',conversationId:'c',runId:'r',requestId:'i'};
+ const body={messages:[{role:'developer',content:[{type:'text',text:original},{type:'text',text:permission}]},{role:'user',content:permission}]};const before=structuredClone(body);
+ const input={body,modelId:model.id,signal:new AbortController().signal,context};const result=buildDevinRequest(input,model,'private');
+ assert.equal(result.system,original+'\n'+permission.replace(original,equivalent));assert.equal(result.prompts[0].text,permission);assert.deepEqual(body,before);
+ for(const agentId of ['dsh','qoder'])assert.equal(buildDevinRequest({...input,context:{...context,agentId}},model,'private').system,original+'\n'+permission);
+ for(const unknown of [permission.replace('Include a short question','Include an approval question'),permission.replace('workspace-write','danger-full-access'),original]) {
+  assert.equal(buildDevinRequest({...input,body:{messages:[{role:'system',content:unknown}]}},model,'private').system,unknown);
+ }
+ assert.equal(buildDevinRequest({...input,body:{messages:[{role:'system',content:permission}]}},model,'private').system,permission.replace(original,equivalent));
+});

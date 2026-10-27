@@ -18,11 +18,11 @@ test('Devin兼容限制按执行方和来源判断，不改变账号或选择',(
 test('六种已测交叉来源保持可选，不以来源显示名猜测Devin',()=>{
  for(const [provider,source] of [['codex','native-qoder'],['codex','native-dsh'],['qoder','native-codex'],['qoder','native-dsh'],['dsh','native-codex'],['dsh','native-qoder']])assert.equal(conversationModelCompatibility({provider},{provider:source,label:'Devin'}),undefined);
 });
-test('仅Codex的Devin SWE-2显式完全访问可用，切回默认重新限制且不修改选择',()=>{
+test('Codex的Devin SWE-2支持默认与完全访问，其他未验证组合仍限制且不修改选择',()=>{
  const source={provider:'devin',modelId:'swe-2',label:'改名模型'},original=structuredClone(source);
- assert.match(conversationModelCompatibility({provider:'codex'},source),/完全访问/);
+ assert.equal(conversationModelCompatibility({provider:'codex'},source),undefined);
  assert.equal(conversationModelCompatibility({provider:'codex'},source,'full-access'),undefined);
- assert.match(conversationModelCompatibility({provider:'codex'},source,'default'),/完全访问/);
+ assert.equal(conversationModelCompatibility({provider:'codex'},source,'default'),undefined);
  assert.ok(conversationModelCompatibility({provider:'codex'},{...source,modelId:'gpt-6-1-sol'},'full-access'));
  assert.ok(conversationModelCompatibility({provider:'qoder'},source,'full-access'));
  assert.equal(conversationModelCompatibility({provider:'dsh'},source,'default'),undefined);

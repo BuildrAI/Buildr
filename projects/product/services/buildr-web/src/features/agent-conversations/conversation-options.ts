@@ -67,7 +67,7 @@ export function modelSourceName(provider:string):string {
 /** Current conversation UI limitation; source account availability remains independent. */
 export function conversationModelCompatibility(connection:Pick<ConnectionView,'provider'>|undefined,model:(Pick<CatalogModel,'provider'>&Partial<Pick<CatalogModel,'modelId'>>)|undefined,permissionMode:PermissionMode='default'):string|undefined {
   if(model?.provider!=='devin'||!connection||connection.provider==='dsh')return;
-  if(connection.provider==='codex'&&model.modelId==='swe-2')return permissionMode==='full-access'?undefined:'Codex 使用 Devin / SWE-2 当前仅在完全访问下通过验证；请显式选择完全访问或切换到 DSH。';
+  if(connection.provider==='codex'&&model.modelId==='swe-2'&&(permissionMode==='default'||permissionMode==='full-access'))return;
   return `Devin 当前暂不兼容 ${modelSourceName(connection.provider)}，请切换到 DSH 或选择其他模型来源。`;
 }
 
