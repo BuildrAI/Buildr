@@ -143,6 +143,9 @@ test('installed MySQL connection program is offline for help/version, rejects qu
     const result = spawnSync(process.execPath, [bin, ...args], { encoding: 'utf8', timeout: 10_000 }); assert.equal(result.status, 0, result.stderr);
     assert.ok(args[0] === '--version' ? result.stdout.includes('1.1.0') : JSON.parse(result.stdout).help.length);
   }
+  const help = JSON.parse(spawnSync(process.execPath, [bin, '--help'], { encoding: 'utf8', timeout: 10_000 }).stdout).help.join('\n');
+  assert.match(help, /标记为 prod 时拒绝/u);
+  assert.equal(help.includes('未声明 targetEnvironment 时拒绝'), false, '帮助不得把未声明环境描述为拒绝');
   const unsupported = spawnSync(process.execPath, [bin, 'query', '--sql', 'SELECT never_run'], { encoding: 'utf8', timeout: 10_000 });
   assert.equal(unsupported.status, 1); assert.equal(JSON.parse(unsupported.stdout).error.code, 'mysql_command_unsupported'); assert.equal(unsupported.stdout.includes('never_run'), false);
   const direct = spawnSync(process.execPath, [bin, 'test'], { encoding: 'utf8', timeout: 10_000 }); assert.equal(JSON.parse(direct.stdout).error.code, 'mysql_context_required');

@@ -186,7 +186,7 @@ export async function runMySqlConnectionProgram(argv: string[] = process.argv.sl
       'databases --json：发现当前账号可见数据库。',
       'fingerprint --table <表> [--database <库>] --json：读取目标表当前结构摘要，用于变更前核对。',
       'apply --statement-file <文件|-> --expected-fingerprint <摘要> [--max-affected-rows <1-10000>] --json：执行单条 DML 或 DDL；DML 需要行数上限，DDL 不接受该参数。',
-      '变更只允许非生产环境；连接未声明 targetEnvironment 时拒绝。破坏性结构语句需要连接开启 allowDestructive。',
+      '连接被标记为 prod 时拒绝变更；未声明环境按非生产执行，并在结果中标注没有生产保护。破坏性结构语句需要连接开启 allowDestructive。',
       '仅由 Buildr 私有进程间通信（IPC）交接认证；查询工具保持独立且只读。',
     ] })); return;
   }
