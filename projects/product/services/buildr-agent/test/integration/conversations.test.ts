@@ -59,7 +59,7 @@ function fake(id = 'local', options: { hold?: boolean; unknown?: boolean; images
   } };
   return { executor, contexts, sends, opens, loginUpdate: () => loginUpdate };
 }
-function fixture(executors: AgentExecutor[], settings: { shutdownTimeoutMs?: number; now?: () => Date } = {}) {
+function fixture(executors: AgentExecutor[], settings: { autoContinueInterrupted?: boolean; shutdownTimeoutMs?: number; now?: () => Date } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-core-'));
   const workspace = path.join(root, 'workspace'); fs.mkdirSync(workspace);
   const options = { ...settings, dataRoot: path.join(root, 'profile'), executors, resolveWorkspace(id: string) { assert.equal(id, 'workspace-one'); return { rootPath: workspace }; }, assertTask(_id: string, taskId: string) { assert.equal(taskId, 'task-one'); } };
@@ -1103,4 +1103,62 @@ test('host shutdown records its own interruption without relabelling a user stop
   if(userStop)await f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:running.revision,runId:running.run!.id,participantId:running.run!.participantId,generation:running.run!.generation});
   await f.service.close();const db=new DatabaseSync(path.join(f.options.dataRoot,'agent-service/conversations.sqlite'),{readOnly:true});try{const row=db.prepare('SELECT body FROM conversations WHERE id=?').get(chat.id) as {body:string};const record=JSON.parse(row.body);if(userStop)assert.ok(!record.view.run.diagnostic?.includes('宿主退出'));else assert.match(record.view.run.diagnostic,/宿主退出/);}finally{db.close();}assert.equal(native.sends.length,1);
  }finally{await f.close();}}
+});
+
+
+test('development startup continues a confirmed host interruption once; released startup leaves unfinished work visible',async()=>{
+  for(const development of [false,true]){
+    const native=fake('local',{hold:true}),f=fixture([native.executor],{autoContinueInterrupted:development});
+    let cold:ReturnType<typeof createAgentService>|undefined;
+    try{
+      await connected(f.service,'local');const created=await f.service.conversations.create('workspace-one',{});
+      send(f.service,created.id,'local','finish the goal');
+      await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),view=>view.run?.accepted===true);
+      await f.service.close();cold=createAgentService(f.options);
+      await Promise.all([cold.conversations.recoverInterrupted(),cold.conversations.recoverInterrupted()]);
+      const view=cold.conversations.read('workspace-one',created.id);
+      if(development){
+        await waitUntil(()=>native.sends.length,count=>count===2);
+        assert.equal(view.entries.filter(entry=>entry.role==='user').length,1);
+        assert.ok(view.entries.some(entry=>entry.role==='system'&&entry.text.startsWith('系统自动恢复')));
+        assert.equal(native.sends[1]!.contextRef.id,native.sends[0]!.contextRef.id);
+        assert.equal(native.sends[1]!.clientRequestId.startsWith('host-recovery:'),true);
+      }else{
+        assert.equal(native.sends.length,1);assert.equal(view.run?.interrupted,true);assert.match(view.run!.diagnostic!,/执行未完成/);
+      }
+    }finally{await cold?.close();await f.close();}
+  }
+});
+
+test('startup never continues user stops, unresolved approvals or unconfirmed native identities',async()=>{
+  for(const kind of ['user-stop','approval','unknown'] as const){
+    const native=fake('local',{hold:true,request:kind==='approval',coldUnknown:kind==='unknown'}),f=fixture([native.executor],{autoContinueInterrupted:true});
+    let cold:ReturnType<typeof createAgentService>|undefined;
+    try{
+      await connected(f.service,'local');const created=await f.service.conversations.create('workspace-one',{});
+      send(f.service,created.id,'local','work');
+      const running=await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),view=>view.run?.accepted===true);
+      if(kind==='user-stop')await f.service.conversations.stop('workspace-one',created.id,{expectedRevision:running.revision,runId:running.run!.id,participantId:running.run!.participantId,generation:running.run!.generation});
+      await f.service.close();cold=createAgentService(f.options);await cold.conversations.recoverInterrupted();
+      assert.equal(native.sends.length,1);
+      if(kind!=='user-stop')assert.equal(cold.conversations.read('workspace-one',created.id).run?.interrupted,true);
+    }finally{await cold?.close();await f.close();}
+  }
+});
+
+
+test('recovery observes live work without resending and refuses active or uncertain tools',async()=>{
+  for(const observed of ['running','tools-active','unknown-tool'] as const){
+    const native=fake('local',{hold:true}),f=fixture([native.executor],{autoContinueInterrupted:true});
+    let cold:ReturnType<typeof createAgentService>|undefined;
+    try{
+      await connected(f.service,'local');const created=await f.service.conversations.create('workspace-one',{});send(f.service,created.id,'local','work');
+      await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),view=>view.run?.accepted===true);
+      await f.service.close();const context=[...native.contexts.values()][0]!;
+      context.observation={...context.observation,status:observed==='running'?'running':'stopped',tools:observed==='running'?[]:[{id:'tool',label:'work',status:observed==='tools-active'?'running':'unknown',canStop:false}]};
+      cold=createAgentService(f.options);await cold.conversations.recoverInterrupted();
+      assert.equal(native.sends.length,1);const view=cold.conversations.read('workspace-one',created.id);
+      assert.equal(view.run?.interrupted,observed==='running'?undefined:true);
+    }finally{await cold?.close();await f.close();}
+  }
 });

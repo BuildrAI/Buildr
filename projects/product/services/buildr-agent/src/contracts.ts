@@ -205,6 +205,8 @@ export interface ConversationEntry {
   createdAt: string;
 }
 export interface RunView {
+  /** Host interruption is unfinished work, distinct from a user stop. */
+  interrupted?: boolean;
   contextUsage?: {usedTokens:number;windowTokens?:number};
   modelAccountId?: string; modelAccountIdentity?: string; modelSourceLabel?: string;
   id: string;
@@ -307,6 +309,8 @@ export interface ServiceEvent {
   payload: { conversation?: ConversationView; connection?: ConnectionView };
 }
 export interface AgentServiceOptions {
+  /** Trusted host profile only; released installations default to manual continuation. */
+  autoContinueInterrupted?: boolean;
   modelProviders?: ModelProvider[];
   dataRoot: string;
   executors?: AgentExecutor[];

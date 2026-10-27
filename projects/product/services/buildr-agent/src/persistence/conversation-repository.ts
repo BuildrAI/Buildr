@@ -91,6 +91,12 @@ export class ConversationRepository {
     try { return (db.prepare('SELECT body FROM conversations ORDER BY updated_at DESC').all() as { body: string }[]).map(row => JSON.parse(row.body)).filter((record: StoredConversation) => record.view.requests.length || (includeActive ? ['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'unknown', 'tools-active'] : ['unknown', 'tools-active']).includes(record.view.run?.status ?? '')); }
     finally { db.close(); }
   }
+  listInterrupted(): StoredConversation[] {
+    const db = this.open(false); if (!db) return [];
+    try {
+      return (db.prepare(`SELECT body FROM conversations WHERE json_extract(body,'$.interruption.runId')=json_extract(body,'$.view.run.id') OR json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') ORDER BY updated_at DESC`).all() as {body:string}[]).map(row=>JSON.parse(row.body));
+    } finally { db.close(); }
+  }
   saveConversation(record: StoredConversation, priorRevision?: string): void {
     const db = this.open(true)!;
     try {

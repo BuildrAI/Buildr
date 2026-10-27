@@ -6,7 +6,7 @@ import { createAgentServiceHttpContribution } from './interfaces/http/agent-serv
 
 export const AGENT_SERVICE_APPLICATION = 'agent-service.application';
 
-export function createAgentServiceModule(options: { readProductIdentity(): unknown; resolveWebProfile(identity: unknown): { dataRoot: string } }) {
+export function createAgentServiceModule(options: { readProductIdentity(): unknown; resolveWebProfile(identity: unknown): { dataRoot: string; profile?: string } }) {
   return {
     id: 'agent-service', requires: [WORKSPACE_APPLICATION, TASK_QUERY_APPLICATION],
     create(requires: Record<string, any>) {
@@ -14,6 +14,7 @@ export function createAgentServiceModule(options: { readProductIdentity(): unkno
       const resolve = () => {
         service ??= createAgentService({
           dataRoot: options.resolveWebProfile(options.readProductIdentity()).dataRoot,
+          autoContinueInterrupted: options.resolveWebProfile(options.readProductIdentity()).profile === 'development',
           resolveWorkspace: id => requires[WORKSPACE_APPLICATION].resolveRegisteredWorkspace(id),
           assertTask: (workspaceId, taskId) => {
             const workspace = requires[WORKSPACE_APPLICATION].resolveRegisteredWorkspace(workspaceId);
@@ -26,7 +27,7 @@ export function createAgentServiceModule(options: { readProductIdentity(): unkno
         return service;
       };
       const close = async () => { await service?.close(); };
-      return { provides: { [AGENT_SERVICE_APPLICATION]: { close, generate: (input: Parameters<AgentService['models']['generate']>[0]) => resolve().models.generate(input) } }, contributions: { http: [createAgentServiceHttpContribution(resolve)] }, lifecycle: { start: async () => {}, stop: close } };
+      return { provides: { [AGENT_SERVICE_APPLICATION]: { close, generate: (input: Parameters<AgentService['models']['generate']>[0]) => resolve().models.generate(input) } }, contributions: { http: [createAgentServiceHttpContribution(resolve)] }, lifecycle: { start: async () => { void resolve().conversations.recoverInterrupted().catch(() => {}); }, stop: close } };
     },
   };
 }

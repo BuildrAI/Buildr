@@ -91,6 +91,7 @@ export function createAgentService(options: AgentServiceOptions) {
       },
     },
     conversations: {
+      recoverInterrupted: () => conversations.recoverInterrupted(),
       list: (workspaceId: string, input: Parameters<ConversationApplication['list']>[1] = {}) => conversations.list(workspaceId, input),
       create: (workspaceId: string, input: Parameters<ConversationApplication['create']>[1]) => conversations.create(workspaceId, input),
       read: (workspaceId: string, id: string, input: Parameters<ConversationApplication['read']>[2] = {}) => conversations.read(workspaceId, id, input),

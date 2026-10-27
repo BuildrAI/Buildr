@@ -53,6 +53,7 @@ export interface StoredParticipant {
 }
 export interface StoredConversation {
   view: ConversationView;
+  interruption?: { runId: string; awaitingUser: boolean; attempted?: boolean; cancelled?: boolean };
   runOutcomes?: Record<string,Pick<RunView,'status'|'diagnostic'|'model'|'provider'|'updatedAt'>>;
   titleOrigin?: 'default' | 'generated' | 'manual';
   titleAttempted?: boolean;
