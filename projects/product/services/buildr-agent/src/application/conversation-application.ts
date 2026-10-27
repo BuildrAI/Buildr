@@ -14,6 +14,7 @@ import {HANDOFF_PROMPT,HANDOFF_SUMMARY_PROMPT,handoffEntries,organizeHandoff,dis
 import {handoffSources} from './handoff-sources.ts';
 import { resolvePermissionMode } from '../domain/permission-mode.ts';
 
+const TITLE_TIMEOUT_MS = 45_000;
 const MAX_TEXT_BYTES = 64 * 1024;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const TEMP_IMAGE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -22,10 +23,16 @@ const MAX_ITEM_BYTES = 1024 * 1024;
 const PAGE_SIZE = 100;
 const MAX_PAGE_BYTES = 4 * 1024 * 1024;
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-async function within<T>(work: Promise<T>, milliseconds: number, code: string): Promise<T> {
+async function within<T>(work: Promise<T>, milliseconds: number, code: string, signal?: AbortSignal): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  try { return await Promise.race([work, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(code)), milliseconds); })]); }
-  finally { if (timer) clearTimeout(timer); }
+  let cancel: (() => void) | undefined;
+  const cancelled = new Promise<never>((_, reject) => {
+    if (!signal) return;
+    cancel = () => reject(new Error('agent_title_cancelled'));
+    if (signal.aborted) cancel(); else signal.addEventListener('abort', cancel, {once:true});
+  });
+  try { return await Promise.race([work, cancelled, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(code)), milliseconds); })]); }
+  finally { if (timer) clearTimeout(timer); if (cancel) signal?.removeEventListener('abort', cancel); }
 }
 const bounded = (value: number | undefined, fallback: number, max: number) => Math.max(1, Math.min(Number.isFinite(value) ? Math.trunc(value!) : fallback, max));
 const providerNames:Record<string,string>={codex:'Codex',dsh:'DSH',qoder:'Qoder'};
@@ -41,6 +48,7 @@ export class ConversationApplication {
   private readonly observations = new Map<string, Promise<ConversationView>>();
   private readonly repliesInFlight = new Set<string>();
   private readonly titleWork = new Map<string, AbortController>();
+  private readonly earlyTitles = new Map<string, Promise<void>>();
   private readonly sourceConnections = new Map<string,string>();
   private readonly sourceRuntimes = new Map<string, Promise<{runtime: AgentRuntime; model: string}>>();
   private closing = false;
@@ -442,7 +450,11 @@ export class ConversationApplication {
       if (beforeDispatch.view.run!.status === 'stopping') { beforeDispatch.view.run!.status = 'stopped'; this.save(beforeDispatch); return; }
       if (!this.options.connections.get(prepared.draft.connectionId).enabled) fail('agent_connection_disabled', '接入已断开，本次输入尚未交付。', 409);
       dispatched = true;
-      void this.titleAtRunStart(workspaceId, id, runId, runtime).catch(() => {});
+      if (!this.earlyTitles.has(id)) {
+        const early = this.titleAtRunStart(workspaceId, id, runId, runtime).catch(() => {});
+        this.earlyTitles.set(id, early);
+        void early.finally(() => { if (this.earlyTitles.get(id) === early) this.earlyTitles.delete(id); });
+      }
       await runtime.send({ contextRef: participant.contextRef!, cwd: record.view.cwd, text: prepared.text, images: prepared.images, model: prepared.draft.modelAccountId ? selectedRuntime.model : prepared.draft.model, reasoningEffort: prepared.draft.reasoningEffort, permissionMode: prepared.draft.permissionMode, clientRequestId: record.attempts.find(value => value.runId === runId)!.clientRequestId, onEvent: event => this.event(workspaceId, id, runId, event) });
       await this.observe(workspaceId, id);
       void this.generateAutomaticTitle(workspaceId, id, runId, runtime).catch(() => {});
@@ -474,20 +486,54 @@ export class ConversationApplication {
   /** Backfill the neutral name as soon as execution starts; the completed-run path stays the fallback. */
   private async titleAtRunStart(workspaceId: string, id: string, runId: string, runtime: AgentRuntime): Promise<void> {
     const record = this.currentRun(workspaceId, id, runId);
-    if (!record || !this.titleEligible(record) || record.titleAttempted || !runtime.generateTitle || this.titleWork.has(id)) return;
+    if (!record || !this.titleEligible(record) || record.titleAttempted || record.earlyTitleAttempted || this.titleWork.has(id)) return;
     const participant = record.participants.find(value => value.id === record.view.run!.participantId);
     const description = this.titleDescription(record, false);
     if (!participant?.contextRef || !description) return;
+    record.earlyTitleAttempted = true;
+    if (!runtime.generateTitle) { this.recordTitleFailure(workspaceId, id, runId, 'early', new Error('agent_title_unavailable')); return; }
     record.view.titleState={status:'generating'}; this.save(record);
     const controller = new AbortController(); this.titleWork.set(id, controller);
-    const timeout = setTimeout(() => controller.abort(), 12_000); timeout.unref();
+    const timeout = setTimeout(() => controller.abort(), TITLE_TIMEOUT_MS + 2_000); timeout.unref();
     try {
-      const title = await within(runtime.generateTitle({ contextRef: participant.contextRef, cwd: record.view.cwd, description, model: record.view.run?.model, signal: controller.signal }), 10_000, 'agent_title_timeout');
+      const title = await within(runtime.generateTitle({ contextRef: participant.contextRef, cwd: record.view.cwd, description, model: record.view.run?.model, signal: controller.signal }), TITLE_TIMEOUT_MS, 'agent_title_timeout', controller.signal);
       const current = this.currentRun(workspaceId, id, runId);
       if (!current || controller.signal.aborted) return;
-      if (this.acceptTitle(current, title)) this.save(current);
-    } catch { /* Early failures stay silent; the completed-run path still gets its single bounded attempt. */ }
+      if (!this.titleEligible(current)) return;
+      if (!this.acceptTitle(current, title)) throw new Error(title ? 'agent_title_invalid' : 'agent_title_empty');
+      this.save(current);
+    } catch (error) {
+      controller.abort();
+      this.recordTitleFailure(workspaceId, id, runId, 'early', error);
+    }
     finally { clearTimeout(timeout); if (this.titleWork.get(id) === controller) this.titleWork.delete(id); }
+  }
+  private recordTitleFailure(workspaceId: string, id: string, runId: string, phase: 'early'|'completion'|'manual', error: unknown): void {
+    const current = this.currentRun(workspaceId, id, runId);
+    if (!current || this.closing) return;
+    const raw = error instanceof Error ? ('code' in error ? String(error.code) : error.message) : '';
+    const code = /^agent_(?:title|native|revision)_[a-z_]+$/.test(raw) ? raw : 'agent_title_failed';
+    const explanations: Record<string,string> = {
+      agent_title_timeout: '独立标题请求超时，已中断本次生成',
+      agent_title_cancelled: '独立标题请求已取消',
+      agent_title_transport_closed: '生成标题时原生连接断开',
+      agent_native_process_closed: '生成标题时原生进程退出',
+      agent_native_request_failed: '原生程序拒绝了标题请求',
+      agent_title_unavailable: '当前执行方未提供独立标题生成能力',
+      agent_title_isolation_unverified: '标题请求的隔离权限未能确认',
+      agent_title_tools_forbidden: '标题请求尝试使用工具，已拒绝',
+      agent_title_invalid: '返回的标题超出长度限制或不合格',
+      agent_title_empty: '标题请求没有返回有效标题',
+      agent_title_output_invalid: '标题返回内容不是有效的结构化标题',
+      agent_revision_conflict: '生成期间对话已变化，未覆盖当前名称',
+    };
+    const reason = `[${code}] ${explanations[code] ?? '独立标题生成未完成'}；工作执行与回复不受影响。`;
+    current.titleDiagnostics = [...(current.titleDiagnostics ?? []), {runId, phase, code, reason, at:this.options.now()}].slice(-8);
+    if (current.titleOrigin === 'default') current.earlyTitleAttempted = true;
+    if (current.titleOrigin === 'default' || current.view.titleState?.status === 'generating') {
+      current.view.titleState = {status:code==='agent_title_unavailable'?'unavailable':'failed', reason};
+    }
+    this.save(current);
   }
   private acceptTitle(record: StoredConversation, raw: string | undefined, explicit = false): boolean {
     if (!raw || this.closing || !explicit && !this.titleEligible(record)) return false;
@@ -508,6 +554,9 @@ export class ConversationApplication {
     return JSON.stringify({ messages });
   }
   private async generateAutomaticTitle(workspaceId: string, id: string, runId: string, runtime: AgentRuntime): Promise<void> {
+    // Completion may race the independent early request. Wait for it to settle
+    // before deciding whether the one completion fallback is still necessary.
+    await this.earlyTitles.get(id);
     const record = this.currentRun(workspaceId, id, runId);
     if (!record || !this.titleEligible(record) || record.titleAttempted || record.view.run?.status !== 'completed') return;
     await this.summarizeTitle(workspaceId, id, record.view.revision, runtime, false).catch(() => {});
@@ -532,26 +581,21 @@ export class ConversationApplication {
     if (!participant?.contextRef || !description || record.view.run?.status !== 'completed' || !explicit && (!this.titleEligible(record) || record.titleAttempted)) return;
     const runId = record.view.run.id; const controller = new AbortController(); this.titleWork.set(id, controller);
     record.titleAttempted = true; record.view.titleState={status:'generating'}; this.save(record); revision = record.view.revision;
-    const timeout = setTimeout(() => controller.abort(), 12_000); timeout.unref();
+    const timeout = setTimeout(() => controller.abort(), TITLE_TIMEOUT_MS + 2_000); timeout.unref();
     try {
       let title: string | undefined;
       if (runtime.readTitle) title = await within(runtime.readTitle({ contextRef: participant.contextRef, cwd: record.view.cwd }), 2_000, 'agent_title_timeout').catch(() => undefined);
       record = this.load(workspaceId, id); expected(record.view.revision, revision);
       if (this.acceptTitle(record, title, explicit)) { this.save(record); return; }
       if (!runtime.generateTitle) fail('agent_title_unavailable', '此执行方尚未提供可用的精短标题，原有标题已保留。', 409);
-      title = await within(runtime.generateTitle({ contextRef: participant.contextRef, cwd: record.view.cwd, description, model: record.view.run?.model, signal: controller.signal }), 10_000, 'agent_title_timeout');
+      title = await within(runtime.generateTitle({ contextRef: participant.contextRef, cwd: record.view.cwd, description, model: record.view.run?.model, signal: controller.signal }), TITLE_TIMEOUT_MS, 'agent_title_timeout', controller.signal);
       const current = this.load(workspaceId, id);
       if (controller.signal.aborted || current.view.run?.id !== runId || current.view.revision !== revision) fail('agent_revision_conflict', '对话已变化，保留当前标题。', 409);
       if (!this.acceptTitle(current, title, explicit)) fail('agent_title_failed', '未生成符合长度要求的精短标题，原有标题已保留。', 502);
       this.save(current);
     } catch (error) {
       controller.abort();
-      const current=this.load(workspaceId,id);
-      if(current.view.titleState?.status==='generating'){
-        const code=error instanceof Error?('code' in error?String(error.code):error.message):'';
-        current.view.titleState={status:code==='agent_title_unavailable'?'unavailable':'failed',reason:code==='agent_title_timeout'?'标题生成超时，工作回复已保留。':code==='agent_revision_conflict'?'生成期间对话已变化，未覆盖当前名称。':'未得到合格的简短标题，工作回复已保留。'};
-        this.save(current);
-      }
+      this.recordTitleFailure(workspaceId, id, runId, explicit ? 'manual' : 'completion', error);
       if (explicit) { if (error && typeof error === 'object' && 'code' in error) throw error; fail('agent_title_failed', '标题生成未完成，原有标题与工作结果已保留。', 502); }
     } finally { clearTimeout(timeout); if (this.titleWork.get(id) === controller) this.titleWork.delete(id); }
   }

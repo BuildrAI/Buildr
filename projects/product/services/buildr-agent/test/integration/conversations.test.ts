@@ -1360,3 +1360,59 @@ test('unavailable title generation is recorded once and a restart recovers inter
     try{await restored.conversations.recoverInterrupted();const recovered=restored.conversations.read('workspace-one',view.id);assert.equal(recovered.titleState?.status,'failed');assert.match(recovered.titleState?.reason??'',/重启/);assert.equal(native.sends.length,1);}finally{await restored.close();}
   }finally{await f.close();}
 });
+
+test('a delayed early title failure after work completion still runs exactly one completion fallback', async () => {
+  const native=fake('local',{hold:true}),open=native.executor.open;
+  let rejectEarly!: (error:Error)=>void;let calls=0;
+  native.executor.open=async input=>({...await open(input),async generateTitle(){calls++;if(calls===1)return await new Promise<string>((_,reject)=>{rejectEarly=reject;});return '完成后可靠回填的标题';}});
+  const f=fixture([native.executor]);
+  try{
+    await connected(f.service,'local');const created=await f.service.conversations.create('workspace-one',{});
+    send(f.service,created.id,'local','准备标题时工作先完成');
+    await waitUntil(()=>calls,n=>n===1);
+    for(const context of native.contexts.values())context.unblock?.();
+    await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),v=>v.run?.status==='completed');
+    assert.equal(calls,1);rejectEarly(new Error('agent_title_timeout'));
+    const named=await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),v=>v.title==='完成后可靠回填的标题');
+    assert.equal(calls,2);assert.equal(named.titleState?.status,'generated');assert.equal(native.sends.length,1);
+    const db=new DatabaseSync(path.join(f.options.dataRoot,'agent-service/conversations.sqlite'),{readOnly:true});
+    const stored=JSON.parse((db.prepare('select body from conversations where id=?').get(created.id) as {body:string}).body);db.close();
+    assert.equal(stored.titleDiagnostics[0].code,'agent_title_timeout');assert.equal(stored.titleDiagnostics[0].phase,'early');
+    assert.equal(stored.earlyTitleAttempted,true);assert.equal(stored.titleAttempted,true);
+  }finally{rejectEarly?.(new Error('agent_title_cancelled'));await f.close();}
+});
+
+test('early title failures are visible, safe and persistent without replaying work',async()=>{
+  const native=fake('local',{hold:true}),open=native.executor.open;
+  native.executor.open=async input=>({...await open(input),async generateTitle(){throw new Error('agent_title_isolation_unverified');}});
+  const f=fixture([native.executor]);
+  try{
+    await connected(f.service,'local');const created=await f.service.conversations.create('workspace-one',{});send(f.service,created.id,'local','独立标题失败不影响工作');
+    const failed=await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),v=>v.titleState?.status==='failed');
+    assert.match(failed.titleState!.reason!,/agent_title_isolation_unverified/);assert.match(failed.titleState!.reason!,/隔离权限/);assert.equal(failed.title,'新对话');
+    await waitUntil(()=>native.sends.length,n=>n===1);
+    const db=new DatabaseSync(path.join(f.options.dataRoot,'agent-service/conversations.sqlite'),{readOnly:true});
+    const stored=JSON.parse((db.prepare('select body from conversations where id=?').get(created.id) as {body:string}).body);db.close();
+    assert.equal(stored.titleDiagnostics.length,1);assert.equal(stored.titleDiagnostics[0].runId,failed.run!.id);assert.ok(stored.titleDiagnostics[0].at);
+    assert.equal(stored.titleAttempted,undefined);assert.equal(stored.earlyTitleAttempted,true);
+    await f.service.close();const restored=createAgentService(f.options);try{assert.match(restored.conversations.read('workspace-one',created.id).titleState!.reason!,/隔离权限/);}finally{await restored.close();}
+    assert.equal(native.sends.length,1);
+  }finally{await f.close();}
+});
+
+
+test('manual title refresh failure leaves a persisted safe reason and preserves the existing title',async()=>{
+  const native=fake(),open=native.executor.open;
+  native.executor.open=async input=>({...await open(input),async generateTitle(){throw new Error('Bearer private-secret arbitrary vendor error');}});
+  const f=fixture([native.executor]);
+  try{
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{title:'用户的名字'});send(f.service,chat.id,'local','工作');
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
+    await assert.rejects(f.service.conversations.generateTitle('workspace-one',chat.id,{expectedRevision:done.revision}));
+    const current=f.service.conversations.read('workspace-one',chat.id);assert.equal(current.title,'用户的名字');assert.equal(current.titleState?.status,'failed');
+    assert.match(current.titleState!.reason!,/agent_title_failed/);assert.doesNotMatch(current.titleState!.reason!,/private-secret|Bearer|vendor/);assert.equal(native.sends.length,1);
+    const db=new DatabaseSync(path.join(f.options.dataRoot,'agent-service/conversations.sqlite'),{readOnly:true});
+    const body=(db.prepare('select body from conversations where id=?').get(chat.id) as {body:string}).body;db.close();
+    assert.doesNotMatch(body,/private-secret|Bearer|vendor/);assert.equal(JSON.parse(body).titleDiagnostics[0].phase,'manual');
+  }finally{await f.close();}
+});

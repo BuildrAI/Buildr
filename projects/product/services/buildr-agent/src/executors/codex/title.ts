@@ -48,8 +48,10 @@ export async function generateCodexTitle(rpc: NativeRpc, input: ExecutorTitleInp
       outputSchema: { type: 'object', properties: { [handoff?'summary':'title']: { type: 'string', maxLength: handoff?16000:64 } }, required: [handoff?'summary':'title'], additionalProperties: false },
     }, 3_000);
     turnId = turn.turn?.id; if (!turnId) throw new Error('agent_title_turn_missing');
-    await bounded(ended, handoff?11_000:8_000, 'agent_title_timeout');
-    const output = JSON.parse([...texts.values()].join('\n'));
+    await bounded(ended, handoff?11_000:30_000, 'agent_title_timeout');
+    let output: Record<string,unknown>;
+    try { output = JSON.parse([...texts.values()].join('\n')); }
+    catch { throw new Error('agent_title_output_invalid'); }
     const value=output[handoff?'summary':'title'];return typeof value === 'string' ? value : undefined;
   } finally {
     input.signal.removeEventListener('abort', abort); remove();

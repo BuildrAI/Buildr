@@ -60,6 +60,8 @@ export interface StoredConversation {
   runOutcomes?: Record<string,Pick<RunView,'status'|'diagnostic'|'model'|'provider'|'updatedAt'>>;
   titleOrigin?: 'default' | 'generated' | 'manual';
   titleAttempted?: boolean;
+  earlyTitleAttempted?: boolean;
+  titleDiagnostics?: Array<{runId:string;phase:'early'|'completion'|'manual';code:string;reason:string;at:string}>;
   participants: StoredParticipant[];
   sources: Record<string, string>;
   attachments: Record<string, { mimeType: string; size: number; createdAt?: string }>;

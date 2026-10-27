@@ -17,7 +17,7 @@ test('reasoning catalogs expose model-owned choices and supported defaults only'
   assert.deepEqual(qoderModel({ value: 'catalog-v2', efforts: ['light', 'light', 'heavy'], defaultEffort: 'not-advertised' }).reasoningEfforts, [{ id: 'light', label: 'light' }, { id: 'heavy', label: 'heavy' }]);
 });
 
-function titleRpc(directory: string, options: { network?: boolean; permission?: boolean; handoff?:boolean } = {}) {
+function titleRpc(directory: string, options: { network?: boolean; permission?: boolean; handoff?:boolean; delay?:number; output?:string } = {}) {
   const calls: Array<{ method: string; params: any }> = []; const writes: any[] = []; let listener: ((message: RpcMessage) => void) | undefined;
   const rpc = {
     onMessage(value: (message: RpcMessage) => void) { listener = value; return () => { listener = undefined; }; },
@@ -27,10 +27,11 @@ function titleRpc(directory: string, options: { network?: boolean; permission?: 
       if (method === 'config/read') return { config: { mcp_servers: { business: { enabled: true } } } };
       if (method === 'thread/start') return { thread: { id: 'aux-thread', cwd: directory }, sandbox: { type: 'readOnly', ...(options.network !== undefined ? { networkAccess: options.network } : {}) } };
       if (method === 'turn/start') {
-        queueMicrotask(() => {
+        const emit = () => {
           if (options.permission) listener?.({ id: 'forbidden-permission', method: 'item/commandExecution/requestApproval', params: { threadId: 'aux-thread', turnId: 'aux-turn', command: 'touch should-never-run' } });
-          else { listener?.({ method: 'item/completed', params: { threadId: 'aux-thread', turnId: 'aux-turn', item: { id: 'title', type: 'agentMessage', text: options.handoff?'{"summary":"已检查目录，真实启动待验证。"}':'{"title":"供应商入驻审核流程梳理"}' } } }); listener?.({ method: 'turn/completed', params: { threadId: 'aux-thread', turn: { id: 'aux-turn', status: 'completed' } } }); }
-        });
+          else { listener?.({ method: 'item/completed', params: { threadId: 'aux-thread', turnId: 'aux-turn', item: { id: 'title', type: 'agentMessage', text: options.output ?? (options.handoff?'{"summary":"已检查目录，真实启动待验证。"}':'{"title":"供应商入驻审核流程梳理"}') } } }); listener?.({ method: 'turn/completed', params: { threadId: 'aux-thread', turn: { id: 'aux-turn', status: 'completed' } } }); }
+        };
+        if(options.delay)setTimeout(emit,options.delay);else queueMicrotask(emit);
         return { turn: { id: 'aux-turn' } };
       }
       return {};
@@ -161,4 +162,27 @@ test('handoff summarization reuses verified isolation, never the work thread, an
   const refused=titleRpc(directory,{network:false,permission:true,handoff:true});
   await assert.rejects(generateCodexTitle(refused.rpc,{contextRef:{id:'work'},cwd:'/work',description:'records',signal:new AbortController().signal},directory,new Set(),true),/tools_forbidden/);
  }finally{await fs.rm(directory,{recursive:true,force:true});}
+});
+
+
+test('Codex title accepts a response after the former eight-second cutoff', async t => {
+  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'buildr-slow-title-'));
+  try {
+    t.mock.timers.enable({apis:['setTimeout']});
+    const fixture=titleRpc(directory,{network:false,delay:9_000});
+    const pending=generateCodexTitle(fixture.rpc,{contextRef:{id:'work'},cwd:'/work',description:'{}',signal:new AbortController().signal},directory,new Set());
+    for(let i=0;i<1000&&!fixture.calls.some(call=>call.method==='turn/start');i++)await new Promise<void>(resolve=>setImmediate(resolve));
+    assert.ok(fixture.calls.some(call=>call.method==='turn/start'));
+    await new Promise<void>(resolve=>setImmediate(resolve));
+    t.mock.timers.tick(9_000);
+    assert.equal(await pending,'供应商入驻审核流程梳理');
+    assert.ok(!fixture.calls.some(call=>call.method==='turn/interrupt'));
+  } finally {t.mock.timers.reset();await fs.rm(directory,{recursive:true,force:true});}
+});
+
+test('Codex malformed structured title has a stable diagnostic code',async()=>{
+  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'buildr-invalid-title-'));
+  try {const fixture=titleRpc(directory,{network:false,output:'invalid json'});
+    await assert.rejects(generateCodexTitle(fixture.rpc,{contextRef:{id:'work'},cwd:'/work',description:'{}',signal:new AbortController().signal},directory,new Set()),/agent_title_output_invalid/);
+  } finally {await fs.rm(directory,{recursive:true,force:true});}
 });
