@@ -128,7 +128,7 @@ async function waitForRestart({ dataRoot, expected, fetchImpl, timeoutMs, wait, 
  * @param {{projectBridge: string, launcherIdentityPath: string, expectedSourceRoot: string,
  * expectedHead: string, expectedRuntimeIdentity: string, nodeExecutable: string, previousPid: number,
  * port?: number, previousPort?: number, dataRoot?: string, environment?: NodeJS.ProcessEnv,
- * timeoutMs?: number, fetchImpl?: typeof fetch,
+ * forceRestart?: boolean, timeoutMs?: number, fetchImpl?: typeof fetch,
  * spawnImpl?: (command: string, args: string[], options: import('node:child_process').SpawnOptions) => import('node:child_process').ChildProcess,
  * killProcess?: typeof process.kill, wait?: (duration: number) => Promise<unknown>}} options
  */
@@ -144,6 +144,7 @@ export async function restartDevelopmentInstance({
   previousPid,
   dataRoot = developmentWebDataRoot(),
   environment = process.env,
+  forceRestart = false,
   timeoutMs = 10000,
   fetchImpl = fetch,
   spawnImpl = spawn,
@@ -160,7 +161,7 @@ export async function restartDevelopmentInstance({
   const before = await inspectDevelopmentInstance({ dataRoot, fetchImpl });
   if (before.status === 'different-owner') throw Object.assign(new Error('The current instance belongs to a different owner.'), { code: 'development-web-continuity.owner-mismatch' });
   if (before.status === 'healthy-development') {
-    if (matchesRunningSource(before.instance, expected)) {
+    if (!forceRestart && matchesRunningSource(before.instance, expected)) {
       return { schemaVersion: DEVELOPMENT_WEB_CONTINUITY_SCHEMA, action: 'restart', status: 'passed',
         disposition: 'reused', previous: { pid: previousPid, port: previousPort }, instance: before.instance, launcherIdentity: identity, cleanup: null };
     }
@@ -263,6 +264,7 @@ async function main(args = process.argv.slice(2)) {
     expectedRuntimeIdentity: option(args, '--expected-runtime-identity'),
     nodeExecutable: option(args, '--node-executable'),
     previousPid: Number(option(args, '--previous-pid')),
+    forceRestart: option(args, '--force-restart', 'false') === 'true',
   });
 }
 

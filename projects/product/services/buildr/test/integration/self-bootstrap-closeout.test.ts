@@ -902,6 +902,11 @@ for (const failFirstStart of [false, true]) {
     const reused = await restartDevelopmentInstance({ ...input, timeoutMs: 2000 });
     assert.equal(reused.disposition, 'reused'); assert.ok(reused.instance); assert.equal(reused.instance.pid, result.instance.pid);
     assert.equal(attempts, beforeReuse);
+    const forced = await restartDevelopmentInstance({ ...input, previousPid: result.instance.pid, forceRestart: true, timeoutMs: 2000 });
+    assert.equal(forced.status, 'passed');
+    assert.notEqual(forced.instance?.pid, result.instance.pid);
+    assert.equal(attempts, beforeReuse + 1);
+    assert.equal((await inspectDevelopmentInstance({ dataRoot, fetchImpl })).instance?.pid, forced.instance?.pid);
   });
 }
 
@@ -1021,4 +1026,19 @@ test('the real closeout CLI transfers ownership before parsing and returns the w
   assert.equal(output.status,'blocked');
   assert.equal(output.primaryFailure.code,'self-bootstrap-closeout.option-unknown');
   assert.equal(JSON.parse(fs.readFileSync(handoff.resultFile,'utf8')).diagnostic.code,'self-bootstrap-closeout.option-unknown');
+});
+
+
+test('explicit restart reaches the owned continuity path even without runtime changes', t => {
+  const f=fixture(t),calls: any[]=[];
+  const perform=executor(f.root,{runningDevelopmentInstance:true});
+  const result=runSelfBootstrapCloseoutCommand({
+    args:['--target',f.root,'--base-ref',f.baseRef,'--delivered-ref',git(f.root,'rev-parse','HEAD'),'--branch','dev','--remote','origin','--agent','codex','--node-executable',process.execPath,'--restart-development-web','true'],
+    environment:f.environment,execute:(executable: string,args: string[],context: any)=>{calls.push(args);return perform(executable,args,context);},
+  });
+  assert.equal(result.status,'passed',JSON.stringify(result));
+  assert.ok(result.phases.some((p: any)=>p.id==='install-buildr-web'));
+  const restart=calls.find(args=>args[0].endsWith('development-web-continuity.mjs')&&args[1]==='restart');
+  assert.ok(restart);assert.deepEqual(restart.slice(-2),['--force-restart','true']);
+  assert.throws(()=>runSelfBootstrapCloseoutCommand({args:['--node-executable',process.execPath,'--restart-development-web','yes']}), (e: any)=>e.code==='self-bootstrap-closeout.restart-value-invalid');
 });

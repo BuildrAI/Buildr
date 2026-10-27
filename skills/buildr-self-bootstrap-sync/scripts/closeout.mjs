@@ -257,7 +257,7 @@ function developmentLauncherIdentityPath(payload) {
     : path.join(payload.target, 'launcher-identity.json');
 }
 
-function recoverDevelopmentWebContinuity({ execute, root, nodeExecutable, successor, launcher, continuity, environment, phaseResult }) {
+function recoverDevelopmentWebContinuity({ execute, root, nodeExecutable, successor, launcher, continuity, environment, phaseResult, forceRestart = false }) {
   if (continuity.status !== 'healthy-development') {
     return {
       schemaVersion: 'buildr.development-web-continuity/v1',
@@ -288,6 +288,7 @@ function recoverDevelopmentWebContinuity({ execute, root, nodeExecutable, succes
     '--node-executable', nodeExecutable,
     '--previous-pid', String(previous.pid),
   ];
+  if (forceRestart) args.push('--force-restart', 'true');
   const restarted = command(execute, nodeExecutable, args, root, 'restart-development-web-continuity', phaseResult, {
     kind: 'development-web-continuity',
     script,
@@ -633,9 +634,9 @@ function option(args, name) {
 /**
  * @param {{workspaceRoot: string, taskId?: string|null, baseRef: string, deliveredRef: string,
  * targetBranch: string, remote: string, agent: string, nodeExecutable: string,
- * resumeSync?: string|null, execute?: typeof defaultExecute, environment?: NodeJS.ProcessEnv}} options
+ * resumeSync?: string|null, restartDevelopmentWeb?: boolean, execute?: typeof defaultExecute, environment?: NodeJS.ProcessEnv}} options
  */
-export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, baseRef, deliveredRef, targetBranch, remote, agent, nodeExecutable, resumeSync = null, execute = defaultExecute, environment = process.env }) {
+export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, baseRef, deliveredRef, targetBranch, remote, agent, nodeExecutable, resumeSync = null, restartDevelopmentWeb = false, execute = defaultExecute, environment = process.env }) {
   const root = fs.realpathSync(path.resolve(workspaceRoot));
   const phases = [];
   let active = null;
@@ -663,7 +664,7 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
     const scopedPaths = zeroList(read(['diff', '--name-only', '-z', baseRef, deliveredRef, '--'], 'activation-paths'));
     const actions = classifications(scopedPaths, root);
     if (resume && !actions['sync-retained-workspace'].length) throw closeoutError('self-bootstrap-closeout.resume-input-mismatch', '本次交付范围不包含可恢复的同步动作。');
-    if (!Object.values(actions).some((paths) => paths.length) && !fs.existsSync(developmentWebRecoveryFile(root))) return result('not-applicable');
+    if (!restartDevelopmentWeb && !Object.values(actions).some((paths) => paths.length) && !fs.existsSync(developmentWebRecoveryFile(root))) return result('not-applicable');
     // A short-lived lock belongs to this runner; it is not delivery evidence.
     const common = read(['rev-parse', '--path-format=absolute', '--git-common-dir'], 'git-common-directory');
     const lockParent = path.join(common, 'buildr');
@@ -732,16 +733,17 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
       if (after !== successor) throw closeoutError('self-bootstrap-closeout.remote-readback-mismatch', '推送后远端提交不匹配。');
       markPassed(active, beforeRemote, after);
     }
-    if (actions['install-development-buildr-web'].length || developmentWebRecovery) {
+    if (actions['install-development-buildr-web'].length || developmentWebRecovery || restartDevelopmentWeb) {
       start('install-buildr-web'); assertHead(successor);
       const continuity = inspectDevelopmentWebContinuity(execute, root, nodeExecutable, environment, active);
+      if (restartDevelopmentWeb && continuity.status !== 'healthy-development') throw closeoutError('self-bootstrap-closeout.restart-instance-unavailable', '显式重启要求存在可核验的健康开发实例，未停止或替换其他实例。');
       if (continuity.status === 'different-owner' && developmentWebRecovery) throw closeoutError('self-bootstrap-closeout.development-web-recovery-owner-mismatch', '待恢复的开发应用数据目录已有其他实例，未执行替换。');
       if (continuity.status === 'healthy-development') developmentWebRecovery = rememberDevelopmentWebRecovery(root, nodeExecutable, continuity, environment);
       const installed = command(execute, nodeExecutable, [path.join(root, SERVICE_ROOT, 'tools/build/launcher/manage.ts'), 'install', '--channel', 'development', '--no-stop-instance'], root, 'install-development-buildr-web', active);
       requirePassed(installed, 'self-bootstrap-closeout.local-app-install-failed', '开发应用更新失败。');
       const launcher = validateDevelopmentLauncherResult(parseJson(installed, 'self-bootstrap-closeout.local-app-result-invalid', '安装结果无效。'), root, nodeExecutable, successor);
       assertHead(successor);
-      const continuityAfter = recoverDevelopmentWebContinuity({ execute, root, nodeExecutable, successor, launcher, continuity: developmentWebRecovery?.continuity || continuity, environment, phaseResult: active });
+      const continuityAfter = recoverDevelopmentWebContinuity({ execute, root, nodeExecutable, successor, launcher, continuity: developmentWebRecovery?.continuity || continuity, environment, phaseResult: active, forceRestart: restartDevelopmentWeb });
       if (developmentWebRecovery) {
         clearDevelopmentWebRecovery(root, developmentWebRecovery);
         developmentWebRecovery = null;
@@ -784,16 +786,18 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
 }
 
 export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), actualNodeExecutable = process.execPath, execute = defaultExecute, environment = process.env } = {}) {
-  const allowed = new Set(['--target', '--node-executable', '--detail', '--task', '--base-ref', '--delivered-ref', '--branch', '--remote', '--agent', '--resume-sync']);
+  const allowed = new Set(['--target', '--node-executable', '--detail', '--task', '--base-ref', '--delivered-ref', '--branch', '--remote', '--agent', '--resume-sync', '--restart-development-web']);
   if (args.length % 2 !== 0) throw closeoutError('self-bootstrap-closeout.arguments-invalid', '参数必须是选项和值。');
   for (let index = 0; index < args.length; index += 2) if (!allowed.has(args[index])) throw closeoutError('self-bootstrap-closeout.option-unknown', `不支持的选项：${args[index]}。`);
   const nodeExecutable = option(args, '--node-executable');
   if (!nodeExecutable || !sameFilesystemPath(actualNodeExecutable, nodeExecutable)) throw closeoutError('self-bootstrap-closeout.node-identity-mismatch', '必须使用保留环境声明的 Node。');
   const detail = option(args, '--detail') || 'compact';
   if (!['compact', 'full'].includes(detail)) throw closeoutError('self-bootstrap-closeout.detail-invalid', 'detail 只支持 compact 或 full。');
+  const restart = option(args, '--restart-development-web') || 'false';
+  if (!['true', 'false'].includes(restart)) throw closeoutError('self-bootstrap-closeout.restart-value-invalid', 'restart-development-web 只支持 true 或 false。');
   const workspaceRoot = option(args, '--target');
   if (!workspaceRoot) throw closeoutError('self-bootstrap-closeout.arguments-incomplete', '需要明确的工作空间。');
-  return runDirectSelfBootstrapCloseout({ workspaceRoot, taskId: option(args, '--task'), baseRef: option(args, '--base-ref'), deliveredRef: option(args, '--delivered-ref'), targetBranch: option(args, '--branch'), remote: option(args, '--remote'), agent: option(args, '--agent'), nodeExecutable, resumeSync: option(args, '--resume-sync'), execute, environment });
+  return runDirectSelfBootstrapCloseout({ workspaceRoot, taskId: option(args, '--task'), baseRef: option(args, '--base-ref'), deliveredRef: option(args, '--delivered-ref'), targetBranch: option(args, '--branch'), remote: option(args, '--remote'), agent: option(args, '--agent'), nodeExecutable, resumeSync: option(args, '--resume-sync'), restartDevelopmentWeb: restart === 'true', execute, environment });
 }
 
 async function main() {
