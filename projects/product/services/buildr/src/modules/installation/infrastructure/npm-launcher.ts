@@ -66,7 +66,9 @@ if not exist "%ENTRY%" (
   echo Buildr entry unavailable: %ENTRY% >>"%LOG_FILE%"
   exit /b 1
 )
-for /f "delims=" %%V in ('"%NODE%" -p "process.versions.node" 2^>^&1') do set "ACTUAL_NODE_VERSION=%%V"
+rem for 子命令经 cmd /c 执行；命令以引号开头且整体不以引号结尾时，cmd /c 会剥掉
+rem 首尾引号破坏命令行，因此最外层再包一层引号（cmd /c "..." 双引号惯例）。
+for /f "delims=" %%V in ('""%NODE%" -p "process.versions.node" 2^>^&1') do set "ACTUAL_NODE_VERSION=%%V"
 if not "%ACTUAL_NODE_VERSION%"=="%EXPECTED_NODE_VERSION%" (
   echo Host Node version drifted: %ACTUAL_NODE_VERSION% >>"%LOG_FILE%"
   exit /b 1
