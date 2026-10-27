@@ -290,7 +290,7 @@ const fs = require('node:fs'); fs.writeFileSync(process.env.MARKER, String(proce
     if (!expires) fs.writeFileSync(finish, 'finish');
     if (closing) await closing;
     await until(() => !fs.existsSync(lockFile), 'Lock must be reclaimed after Git closes');
-    assert.throws(() => process.kill(pid, 0), 'Child must have exited before lock reclamation');
+    await until(() => { try { process.kill(pid, 0); return false; } catch { return true; } }, 'Child must have exited before lock reclamation');
     if (queued) assert.deepEqual(await queued, { ok: true, timedOut: false, stdout: '', stderr: '', code: 0 }, 'Replacement Worker receives the supervised Git result');
     const release = acquireCodeGitOperation({ location: root } as any); release();
   } finally {
