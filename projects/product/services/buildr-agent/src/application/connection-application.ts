@@ -94,7 +94,11 @@ export class ConnectionApplication {
     if (gateway) return this.gatewayRuntime(id, gateway);
     const record = this.stored(id);
     const existing = this.runtimes.get(id);
-    if (existing) return existing; // Existing owned runtime remains available to stop/reply during disconnect.
+    if (existing) {
+      const runtime = await existing;
+      if (!runtime.closed) return runtime; // A healthy owned runtime remains available to stop/reply.
+      if (this.runtimes.get(id) === existing) this.runtimes.delete(id);
+    }
     if (this.closing) fail('agent_service_closing', '智能体服务正在退出。', 503);
     if (!record.view.enabled) fail('agent_connection_disabled', '请先连接此独立接入。', 409);
     let promise = this.runtimes.get(id);
@@ -126,7 +130,14 @@ export class ConnectionApplication {
   }
   private async gatewayRuntime(id: string, gateway: ModelGatewayConfiguration): Promise<AgentRuntime> {
     const key = `${id}:${gateway.identity}`;
-    const existing = this.gatewayRuntimes.get(key); if (existing) return existing;
+    const existing = this.gatewayRuntimes.get(key);
+    if (existing) {
+      const runtime = await existing;
+      if (!runtime.closed) return runtime;
+      if (this.gatewayRuntimes.get(key) === existing) this.gatewayRuntimes.delete(key);
+      // Another observer may already have replaced this exact closed instance.
+      const replacement = this.gatewayRuntimes.get(key); if (replacement) return replacement;
+    }
     const record = this.stored(id);
     if (!record.view.enabled || this.closing) fail('agent_connection_disabled', '请先准备此智能体程序。', 409);
     const configRoot = path.join(this.options.root, 'connections', id, 'model-bindings', createHash('sha256').update(gateway.identity).digest('hex'));

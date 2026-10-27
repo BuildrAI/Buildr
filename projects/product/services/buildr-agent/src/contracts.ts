@@ -108,6 +108,8 @@ export interface ExecutorSendInput {
   onEvent(event: ExecutorEvent): void;
 }
 export interface AgentRuntime {
+  /** True only when this owned transport is no longer usable; absence is not failure. */
+  readonly closed?: boolean;
   /** Stable for compatible program updates at the verified source and config. */
   bindingIdentity: string;
   bindingData?: Record<string, unknown>;

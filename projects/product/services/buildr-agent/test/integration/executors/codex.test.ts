@@ -68,3 +68,33 @@ test('Codex native adapter preserves exact context, streams, answers and stops o
     await assert.rejects(createCodexExecutor().open({...options,binding:prior}),/version_unsupported/);
   } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
 });
+
+
+test('closed Codex transport restores the exact interrupted execution from native history', async () => {
+  const root=await mkdtemp(join(tmpdir(),'buildr-codex-transport-'));let runtime:AgentRuntime|undefined;
+  try {
+    const executable=join(root,'codex.mjs'),before="setTimeout(()=>{event('item/started'";
+    assert.ok(source.includes(before));
+    await writeFile(executable,source.replace(before,"setTimeout(()=>{active.status='interrupted';save();process.exit(0);event('item/started'"));
+    const options={connectionId:'codex',configRoot:root,executable,environment:{PATH:process.env.PATH??''}};
+    runtime=await createCodexExecutor().open(options);assert.equal(runtime.closed,false);
+    const contextRef=await runtime.createContext({cwd:root}),events:ExecutorEvent[]=[];
+    await assert.rejects(runtime.send({contextRef,cwd:root,text:'finish once',images:[],clientRequestId:'transport-loss',onEvent:event=>events.push(event)}),/codex_execution_observation_lost/);
+    assert.equal(runtime.closed,true);
+    const accepted=events.find(event=>event.type==='accepted');assert.equal(accepted?.type,'accepted');
+    const binding=runtime.bindingIdentity;await runtime.close();
+    runtime=await createCodexExecutor().open(options);assert.equal(runtime.closed,false);assert.equal(runtime.bindingIdentity,binding);
+    await runtime.resumeContext({contextRef,cwd:root});
+    const observation=await runtime.observe({contextRef,executionRef:accepted.executionRef});
+    assert.equal(observation.status,'stopped');assert.equal(observation.executionRef?.id,accepted.executionRef.id);
+    assert.equal((await runtime.readHistory({contextRef,cwd:root})).filter(item=>item.role==='user').length,1);
+    await runtime.close();
+    const statePath=join(root,'codex-home/state.json'),state=JSON.parse(await readFile(statePath,'utf8'));
+    state[contextRef.id].turns[0].items.push({id:'unfinished',type:'commandExecution',command:'partially executed'});
+    await writeFile(statePath,JSON.stringify(state));runtime=await createCodexExecutor().open(options);
+    await runtime.resumeContext({contextRef,cwd:root});
+    const uncertain=await runtime.observe({contextRef,executionRef:accepted.executionRef});
+    assert.equal(uncertain.tools[0]?.status,'unknown');assert.equal(uncertain.tools[0]?.id,'unfinished');
+
+  } finally {await runtime?.close();await rm(root,{recursive:true,force:true});}
+});

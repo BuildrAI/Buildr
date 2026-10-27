@@ -6,25 +6,25 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
 import { createAgentService } from '../../src/index.ts';
-import type { AgentExecutor, AgentRuntime, ContextRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorSendInput, ExecutorTitleInput, LoginObservation } from '../../src/contracts.ts';
+import type { AgentExecutor, AgentRuntime, AgentServiceOptions, ContextRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorSendInput, ExecutorTitleInput, LoginObservation } from '../../src/contracts.ts';
 
 type Context = { items: ExecutorItem[]; observation: ExecutorObservation; unblock?: () => void };
-function fake(id = 'local', options: { hold?: boolean; unknown?: boolean; images?: boolean; request?: boolean; coldUnknown?: boolean; beforeAccepted?: Promise<void>; replyAfterTerminal?: boolean; toolSurvives?: boolean; toolInput?: boolean; failure?: string; summary?:(input:ExecutorTitleInput)=>Promise<string|undefined> } = {}) {
+function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'running'|'unknown'|'tool'; beforeDisconnect?: Promise<void>; disconnectAlways?: boolean; beforeResume?: Promise<void>; unknown?: boolean; images?: boolean; request?: boolean; coldUnknown?: boolean; beforeAccepted?: Promise<void>; replyAfterTerminal?: boolean; toolSurvives?: boolean; toolInput?: boolean; failure?: string; summary?:(input:ExecutorTitleInput)=>Promise<string|undefined> } = {}) {
   const contexts = new Map<string, Context>(); const sends: ExecutorSendInput[] = []; const opens: ExecutorOpenOptions[] = [];
   let loginUpdate: ((value: LoginObservation) => void) | undefined;
   const capabilities = { text: true, images: Boolean(options.images), approval: true, questions: true, stop: true, resume: true, maxInputBytes: 128 * 1024 };
   const get = (ref: ContextRef) => { const context = contexts.get(ref.id); assert.ok(context, 'exact context must be restored'); return context; };
   const executor: AgentExecutor = { descriptor: { id, label: id, capabilities }, async open(input) {
     opens.push(input);
-    let didSend = false;
+    let didSend = false; let closed = false;
     const runtime: AgentRuntime = {
-      bindingIdentity: `${id}:${input.configRoot}`, capabilities,
+      bindingIdentity: `${id}:${input.configRoot}`, capabilities, get closed() { return closed; },
       async inspectAccount() { return { status: 'ready', label: 'local account' }; },
       async models() { return [{ id: 'test-model', label: 'test-model' }]; },
       async beginLogin(update) { loginUpdate = update; update({ state: 'waiting-browser', url: 'https://example.test/official?secret=temporary' }); },
       async cancelLogin() {},
       async createContext() { const ref = { id: randomUUID() }; contexts.set(ref.id, { items: [], observation: { status: 'idle', tools: [] } }); return ref; },
-      async resumeContext({ contextRef }) { get(contextRef); },
+      async resumeContext({ contextRef }) { if (opens.length > 1) await options.beforeResume; get(contextRef); },
       async readHistory({ contextRef }) { return structuredClone(get(contextRef).items); },
       async send(input) {
         didSend = true;
@@ -36,6 +36,13 @@ function fake(id = 'local', options: { hold?: boolean; unknown?: boolean; images
         const user: ExecutorItem = { id: `input-${sends.length}`, kind: 'message', role: 'user', text: input.text, executionId: executionRef.id };
         context.items.push(user); input.onEvent({ type: 'item', item: user });
         if (options.request) input.onEvent({ type: 'request', request: { id: 'permit-one', kind: 'approval', title: 'Write a file?', options: [{ id: 'allow-once', label: 'Allow once' }, { id: 'deny', label: 'Deny' }] } });
+        if (options.disconnect && (sends.length === 1 || options.disconnectAlways)) {
+          await options.beforeDisconnect;
+          closed = true;
+          context.observation = { status: options.disconnect === 'tool' ? 'stopped' : options.disconnect, executionRef,
+            tools: options.disconnect === 'tool' ? [{id:'uncertain-tool',label:'write',status:'unknown',canStop:false}] : [] };
+          throw new Error('codex_execution_observation_lost');
+        }
         if (options.hold || options.request) await new Promise<void>(resolve => { context.unblock = resolve; });
         if (context.observation.status === 'stopped') { input.onEvent({ type: 'completed', status: 'stopped' }); return; }
         if (options.toolInput) {
@@ -59,7 +66,7 @@ function fake(id = 'local', options: { hold?: boolean; unknown?: boolean; images
   } };
   return { executor, contexts, sends, opens, loginUpdate: () => loginUpdate };
 }
-function fixture(executors: AgentExecutor[], settings: { autoContinueInterrupted?: boolean; shutdownTimeoutMs?: number; now?: () => Date } = {}) {
+function fixture(executors: AgentExecutor[], settings: { modelProviders?: AgentServiceOptions['modelProviders']; autoContinueInterrupted?: boolean; shutdownTimeoutMs?: number; now?: () => Date } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-core-'));
   const workspace = path.join(root, 'workspace'); fs.mkdirSync(workspace);
   const options = { ...settings, dataRoot: path.join(root, 'profile'), executors, resolveWorkspace(id: string) { assert.equal(id, 'workspace-one'); return { rootPath: workspace }; }, assertTask(_id: string, taskId: string) { assert.equal(taskId, 'task-one'); } };
@@ -1161,4 +1168,121 @@ test('recovery observes live work without resending and refuses active or uncert
       assert.equal(view.run?.interrupted,observed==='running'?undefined:true);
     }finally{await cold?.close();await f.close();}
   }
+});
+
+
+test('live transport loss reopens the same binding and continues once without a host restart', async () => {
+  const native = fake('local', {disconnect:'stopped'}), f = fixture([native.executor], {autoContinueInterrupted:true});
+  try {
+    await connected(f.service,'local'); const chat = await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','finish my work');
+    const done = await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
+    await Promise.all([f.service.conversations.recoverInterrupted(),f.service.conversations.observe('workspace-one',chat.id)]);
+    assert.equal(native.sends.length,2);
+    assert.equal(native.opens.length,2);
+    assert.equal(native.opens[0]!.configRoot,native.opens[1]!.configRoot);
+    assert.equal(native.sends[0]!.contextRef.id,native.sends[1]!.contextRef.id);
+    assert.match(native.sends[1]!.text,/系统自动恢复.*原生连接断开/);
+    assert.equal(done.entries.filter(e=>e.role==='user').length,1);
+  } finally { await f.close(); }
+});
+
+test('live recovery never resends active work, unknown tools, pending decisions or release-profile work', async () => {
+  for (const kind of ['running','unknown','tool','approval','release'] as const) {
+    const native=fake('local',{disconnect:kind==='approval'||kind==='release'?'stopped':kind,request:kind==='approval'});
+    const f=fixture([native.executor],{autoContinueInterrupted:kind!=='release'});
+    try {
+      await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','work');
+      await waitUntil(()=>native.opens.length,n=>n===2);
+      await Promise.all([f.service.conversations.recoverInterrupted(),f.service.conversations.recoverInterrupted()]);
+      const view=f.service.conversations.read('workspace-one',chat.id);
+      assert.equal(native.sends.length,1);
+      if(kind==='running')assert.equal(view.run?.status,'running');
+      else assert.equal(view.run?.interrupted,true);
+    } finally { await f.close(); }
+  }
+});
+
+test('a user stop before transport loss cannot turn into automatic continuation', async () => {
+  let release!:()=>void;const beforeDisconnect=new Promise<void>(resolve=>{release=resolve;});
+  const native=fake('local',{disconnect:'stopped',beforeDisconnect}),f=fixture([native.executor],{autoContinueInterrupted:true});
+  try {
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','work');
+    const view=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.accepted===true),run=view.run!;
+    await f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:view.revision,runId:run.id,participantId:run.participantId,generation:run.generation});
+    release();await f.service.conversations.recoverInterrupted();
+    assert.equal(native.sends.length,1);
+  } finally {release();await f.close();}
+});
+
+
+test('a failed automatic continuation has no unbounded transport retry chain', async () => {
+  const native=fake('local',{disconnect:'stopped',disconnectAlways:true}),f=fixture([native.executor],{autoContinueInterrupted:true});
+  try {
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','work');
+    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>native.sends.length===2&&v.run?.status==='unknown');
+    await Promise.all([f.service.conversations.recoverInterrupted(),f.service.conversations.recoverInterrupted()]);
+    assert.equal(native.sends.length,2);
+  }finally{await f.close();}
+});
+
+test('legacy accepted unknown runs are reconciled at startup without inventing continuation consent', async () => {
+  const native=fake('local',{hold:true}),f=fixture([native.executor],{autoContinueInterrupted:true});let cold:ReturnType<typeof createAgentService>|undefined;
+  try {
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','work');
+    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.accepted===true);
+    await f.service.close();
+    const db=new DatabaseSync(path.join(f.options.dataRoot,'agent-service/conversations.sqlite'));
+    try {
+      const row=db.prepare('SELECT body FROM conversations WHERE id=?').get(chat.id) as {body:string};const record=JSON.parse(row.body);
+      delete record.interruption;record.view.run.status='unknown';record.view.run.diagnostic='原生智能体连接未完成，请检查程序、独立登录及兼容版本。';
+      db.prepare('UPDATE conversations SET body=? WHERE id=?').run(JSON.stringify(record),chat.id);
+    }finally{db.close();}
+    cold=createAgentService(f.options);await cold.conversations.recoverInterrupted();
+    const view=cold.conversations.read('workspace-one',chat.id);
+    assert.equal(view.run?.status,'stopped');assert.equal(native.sends.length,1);
+    assert.match(view.run!.diagnostic!,/已确认停止/);
+    assert.doesNotThrow(()=>cold!.conversations.prepareSend('workspace-one',chat.id,{expectedRevision:view.revision,connectionId:'local',text:'continue'}));
+  }finally{await cold?.close();await f.close();}
+});
+
+
+test('model-account transport recovery replaces both caches without changing account or participant', async () => {
+  const native=fake('codex',{disconnect:'stopped'});
+  const f=fixture([native.executor],{autoContinueInterrupted:true,modelProviders:[{id:'fixture',label:'Fixture',async open(){return{protocol:'chat-completions',async inspect(){return{status:'ready',models:[{id:'test-model',label:'Test',images:false,tools:true}]};},async beginLogin(){},async cancelLogin(){},async infer(){throw Error('unused');},async close(){}};}}]});
+  try {
+    await connected(f.service,'codex');const account=await f.service.models.accounts.add({provider:'fixture'}),checked=await f.service.models.accounts.check(account.id);
+    await f.service.models.accounts.preferences(account.id,{expectedRevision:checked.revision,models:[{id:'test-model',enabled:true}]});
+    const chat=await f.service.conversations.create('workspace-one',{}),draft={expectedRevision:chat.revision,connectionId:'codex',modelAccountId:account.id,model:'test-model',text:'finish once'};
+    const preview=f.service.conversations.prepareSend('workspace-one',chat.id,draft);
+    f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:preview.token,clientRequestId:'model-recovery'});
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
+    assert.equal(native.sends.length,2);assert.equal(done.participants.length,1);assert.equal(done.run?.modelAccountId,account.id);
+    assert.equal(native.sends[0]!.contextRef.id,native.sends[1]!.contextRef.id);
+    const gateways=native.opens.filter(input=>input.gateway);assert.equal(gateways.length,2);assert.equal(gateways[0]!.configRoot,gateways[1]!.configRoot);assert.equal(gateways[0]!.gateway!.identity,gateways[1]!.gateway!.identity);
+  }finally{await f.close();}
+});
+
+test('a user stop during reconnection cancels the pending automatic continuation', async () => {
+  let release!:()=>void;const beforeResume=new Promise<void>(resolve=>{release=resolve;});
+  const native=fake('local',{disconnect:'stopped',beforeResume}),f=fixture([native.executor],{autoContinueInterrupted:true});
+  try {
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','work');
+    await waitUntil(()=>native.opens.length,n=>n===2);
+    const view=f.service.conversations.read('workspace-one',chat.id),run=view.run!;
+    await f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:view.revision,runId:run.id,participantId:run.participantId,generation:run.generation});
+    release();await f.service.conversations.recoverInterrupted();assert.equal(native.sends.length,1);
+  }finally{release();await f.close();}
+});
+
+
+test('a later exact stopped observation releases uncertain recovery once',async()=>{
+  const native=fake('local',{disconnect:'unknown'}),f=fixture([native.executor],{autoContinueInterrupted:true});
+  try {
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','finish');
+    await waitUntil(()=>native.opens.length,n=>n===2);await f.service.conversations.recoverInterrupted();assert.equal(native.sends.length,1);
+    const context=[...native.contexts.values()][0]!;context.observation={...context.observation,status:'stopped',tools:[]};
+    await Promise.all([f.service.conversations.observe('workspace-one',chat.id),f.service.conversations.observe('workspace-one',chat.id)]);
+    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');assert.equal(native.sends.length,2);
+  }finally{await f.close();}
 });

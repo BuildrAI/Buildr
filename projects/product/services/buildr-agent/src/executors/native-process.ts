@@ -56,6 +56,7 @@ export class NativeRpc {
   readonly child: ChildProcessWithoutNullStreams;
   private disposed = false;
   private failed = false;
+  get closed(): boolean { return this.disposed || this.failed || this.child.exitCode !== null || this.child.signalCode !== null || this.child.stdin.destroyed; }
   constructor(command: string, args: string[], options: { cwd: string; env: NativeEnvironment }) {
     this.child = spawn(command, args, { ...options, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     // Native diagnostics may contain credentials. They never become public errors or events.
