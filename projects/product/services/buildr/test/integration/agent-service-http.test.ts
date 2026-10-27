@@ -52,7 +52,7 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   let workspaceId: string;
   const service = createAgentService({ dataRoot: path.join(base, 'agent-profile'), executors: [], resolveWorkspace: id => { assert.equal(id, workspaceId); return { rootPath: root }; }, assertTask: () => {} });
   const contributions = runtimeContributions(runtime, 'http').filter((item: { id: string }) => item.id !== 'agent-service.http');
-  contributions.push(createAgentServiceHttpContribution(() => service));
+  contributions.push(createAgentServiceHttpContribution(() => service,()=>[workspaceId]));
   const server = createLocalWorkspaceServer(runtime, { targetRoot: root, httpContributions: contributions });
   const { url, initialWorkspaceId, sessionToken } = await server.ready;
   workspaceId = initialWorkspaceId;
@@ -71,6 +71,15 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   response = await fetch(conversations, { method: 'POST', headers, body: JSON.stringify({ title: 'HTTP work' }) }); assert.equal(response.status, 201);
   const created = await response.json() as { id: string; revision: string; entries: unknown[] };
   assert.deepEqual(created.entries, []);
+  response = await fetch(`${app}/conversations`); assert.equal(response.status,403);
+  response = await fetch(`${app}/conversations`, {headers:readHeaders}); assert.equal(response.status,200);
+  const summaries=await response.json();assert.equal(summaries.total,1);assert.equal(summaries.conversations[0].id,created.id);assert.deepEqual(summaries.conversations[0].entries,[]);
+  response = await fetch(`${app}/conversations?workspaceId=unregistered`, {headers:readHeaders});assert.equal(response.status,404);
+  response = await fetch(`${app}/conversations?activeOnly=1`, {headers:readHeaders});assert.equal(response.status,400);
+  response = await fetch(`${conversations}/${created.id}/seen`, {method:'POST',headers:{...headers,'x-buildr-session':'invalid'},body:JSON.stringify({through:0})});assert.equal(response.status,403);
+  response = await fetch(`${conversations}/${created.id}/seen`, {method:'POST',headers,body:JSON.stringify({through:1})});assert.equal(response.status,409);
+  response = await fetch(`${conversations}/${created.id}/seen`, {method:'POST',headers,body:JSON.stringify({through:0})});assert.equal(response.status,200);assert.equal((await response.json()).activity.seenThrough,0);
+
   const permissionDraft = { expectedRevision: created.revision, connectionId: 'not-registered', text: 'Keep this unsent.' };
   for (const permissionMode of ['always-approve', true, null]) {
     response = await fetch(`${conversations}/${created.id}/prepare-send`, { method: 'POST', headers, body: JSON.stringify({ ...permissionDraft, permissionMode }) });

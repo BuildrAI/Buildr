@@ -341,4 +341,29 @@ test('default workspace directory is read from the host without creating a conve
  assert.equal(calls.length,1);
  assert.equal(calls[0].url,'/api/v1/app/agent-service/default-workspace');
  assert.equal(calls[0].options.method,undefined);
+test('活动主状态只显示一个静态结果，完成未查看仍属于活动',async()=>{
+  const {activityState,isActiveConversation}=await import('../src/features/agent-conversations/conversation-activity.ts');
+  const row={...conversation,activity:{version:3,seenThrough:1,active:true,updatedAt:'2026-10-27'}};
+  assert.equal(activityState(row),'running');
+  assert.equal(activityState({...row,run:{...row.run,status:'waiting-question'}}),'waiting');
+  assert.equal(activityState({...row,run:{...row.run,status:'unknown'}}),'unknown');
+  assert.equal(activityState({...row,run:{...row.run,status:'completed'}}),'unseen');
+  assert.equal(isActiveConversation({...row,run:{...row.run,status:'completed'}}),true);
+  const seen={...row,run:{...row.run,status:'completed'},activity:{...row.activity,active:false,seenThrough:3}};
+  assert.equal(activityState(seen),null);assert.equal(isActiveConversation(seen),false);
+});
+test('全空间查询不继承浏览空间，查看确认携带准确身份与已呈现位置',async t=>{
+  const requests=[];t.mock.method(globalThis,'fetch',async(url,init)=>{requests.push({url,init});return new Response(JSON.stringify({conversations:[],activity:{version:4,seenThrough:3}}));});
+  const api=createAgentConversationsClient(createApiClient({getWorkspaceId:()=> 'browsing-ws',sessionAdapter:session}),session);
+  await api.listAll({activeOnly:true,workspaceId:'saved/ws',agent:'codex',limit:10});await api.seen(conversation,3);
+  const url=new URL(requests[0].url,'http://local');assert.equal(url.pathname,'/api/v1/app/agent-service/conversations');assert.equal(url.searchParams.get('workspaceId'),'saved/ws');assert.equal(url.searchParams.get('activeOnly'),'true');
+  assert.equal(requests[1].url,'/api/v1/workspaces/saved%2Fws/agent-conversations/chat%2Fid/seen');assert.deepEqual(JSON.parse(requests[1].init.body),{through:3});
+});
+
+test('双入口按自己的视图打开、切换或收起，不把历史当作当前对话',async()=>{
+  const {nextConversationPanel}=await import('../src/features/agent-conversations/conversation-state.ts');
+  for(const view of ['conversation','history'])for(const target of ['conversation','history']){
+    assert.deepEqual(nextConversationPanel(false,view,target),{open:true,view:target});
+    assert.deepEqual(nextConversationPanel(true,view,target),{open:view!==target,view:target});
+  }
 });

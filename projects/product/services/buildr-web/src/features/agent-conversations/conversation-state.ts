@@ -177,3 +177,8 @@ export function carryExpandedProcessBlocks(current:readonly ConversationEntry[],
 export function processEntryStatus(entry:ConversationEntry,active:boolean):string|undefined {
   return !active&&(!entry.status||entry.status==='running')?'unknown':entry.status;
 }
+
+/** Each entry toggles its own view; the other entry switches the visible view. */
+export function nextConversationPanel(open:boolean,view:'conversation'|'history',target:'conversation'|'history') {
+  return {open:!open||view!==target,view:target};
+}

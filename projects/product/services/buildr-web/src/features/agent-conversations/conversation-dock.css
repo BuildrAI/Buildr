@@ -30,3 +30,5 @@
 }
 
 .ac-conversation-icon.ant-btn{border:0!important;box-shadow:none!important}.ac-conversation-icon .anticon,.ac-conversation-icon svg{color:inherit}.ac-conversation-icon:not(:focus-visible){outline:none!important}.ac-conversation-icon.ant-btn:not(.is-active):hover{color:var(--soft-primary)!important;background:#edf4f0!important}
+/* Hover does not erase the selected view: both entries indicate their own pinned state. */
+.ac-collapsed-rail .ac-conversation-icon.ant-btn.is-active:hover,.global-conversations-control .ac-conversation-icon.ant-btn.is-active:hover{color:var(--soft-primary);background:#edf4f0}

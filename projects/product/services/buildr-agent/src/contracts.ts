@@ -235,6 +235,8 @@ export interface PendingRequestView extends ExecutorRequest {
   generation: string;
 }
 export interface ConversationView {
+  activity?: { version: number; seenThrough: number; updatedAt: string; active: boolean };
+  titleState?: { status: 'pending' | 'generating' | 'generated' | 'manual' | 'failed' | 'unavailable' | 'unknown'; reason?: string };
   id: string;
   workspaceId: string;
   cwd: string;

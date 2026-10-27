@@ -19,7 +19,10 @@ const entry = closed({ handoff, id: text, sequence: integer, kind: { enum: ['mes
 const tool = closed({ id: text, label: text, status: { enum: ['running', 'completed', 'unknown'] }, canStop: boolean }, ['id', 'label', 'status']);
 const run = closed({ interrupted: boolean, contextUsage:closed({usedTokens:integer,windowTokens:integer},['usedTokens']), id: text, participantId: text, provider: text, generation: text, status: { enum: ['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'stopped', 'tools-active', 'unknown', 'completed', 'failed'] }, accepted: boolean, tools: list(tool), model: text, modelAccountId: text, modelAccountIdentity: text, modelAccountRevision: text, modelSourceLabel: text, reasoningEffort: text, serviceTier: text, permissionMode, diagnostic: string, startedAt: text, updatedAt: text }, ['id', 'participantId', 'provider', 'generation', 'status', 'accepted', 'tools', 'startedAt', 'updatedAt']);
 const participant = closed({ id: text, provider: text, connectionId: text, label: text, deliveredThrough: integer, contextId: string });
-const conversation = closed({ id: text, workspaceId: text, cwd: text, taskId: text, title: text, revision: text, hidden: boolean, updatedAt: text, participants: list(participant), entries: list(entry), run, requests: list(request), nextEntryCursor: integer }, ['id', 'workspaceId', 'cwd', 'title', 'revision', 'hidden', 'updatedAt', 'participants', 'entries', 'requests']);
+const activity=closed({version:integer,seenThrough:integer,updatedAt:text,active:boolean});
+const titleState=closed({status:{enum:['pending','generating','generated','manual','failed','unavailable','unknown']},reason:string},['status']);
+const stats=closed({agents:list(closed({label:text,count:integer})),models:list(closed({label:text,count:integer}))});
+const conversation = closed({ activity,titleState, id: text, workspaceId: text, cwd: text, taskId: text, title: text, revision: text, hidden: boolean, updatedAt: text, participants: list(participant), entries: list(entry), run, requests: list(request), nextEntryCursor: integer }, ['id', 'workspaceId', 'cwd', 'title', 'revision', 'hidden', 'updatedAt', 'participants', 'entries', 'requests']);
 const connection = closed({ id: text, provider: text, label: text, revision: text, status: { enum: ['disconnected', 'connecting', 'not-authenticated', 'ready', 'expired', 'failed'] }, enabled: boolean, executable: text, configPath: text, account: closed({ label: string, loginMethod: string }, []), diagnostic: string, models: list(model), capabilities, loginAttempt: closed({ id: text, generation: text, state: { enum: ['initializing', 'waiting-browser', 'checking', 'completed', 'cancelled', 'expired', 'failed'] }, updatedAt: text, url: string, diagnostic: string }, ['id', 'generation', 'state', 'updatedAt']) }, ['id', 'provider', 'label', 'revision', 'status', 'enabled', 'models', 'capabilities']);
 const draftFields = { skipHandoffSummary:boolean, expectedRevision: text, connectionId: text, text: { type: 'string', maxLength: 65536 }, model: text, modelAccountId: text, modelAccountIdentity: text, modelAccountRevision: text, modelSourceLabel: text, reasoningEffort: text, serviceTier: text, permissionMode, attachmentIds: { type: 'array', maxItems: 4, items: text }, handoffSummary: text };
 const controlFields = { expectedRevision: text, runId: text, participantId: text, generation: text };
@@ -48,8 +51,10 @@ export const AGENT_SERVICE_HTTP_SCHEMAS = {
   revision: named('AgentServiceRevisionRequest', closed({ expectedRevision: text })),
   check: named('AgentServiceCheckRequest', closed({ expectedRevision: text }, [])),
   defaultWorkspace: named('AgentDefaultWorkspace', closed({ rootPath: text })),
-  conversations: named('AgentConversationsPage', closed({ conversations: list(conversation), nextCursor: text }, ['conversations'])),
+  conversations: named('AgentConversationsPage', closed({ conversations: list(conversation), nextCursor: text,total:integer,stats }, ['conversations'])),
   conversation: named('AgentConversation', conversation),
+  seen: named('AgentConversationSeen',closed({through:integer})),
+  seenResult: named('AgentConversationSeenResult',closed({activity})),
   create: named('AgentConversationCreateRequest', closed({ cwd: text, taskId: text, title: text }, [])),
   update: named('AgentConversationUpdateRequest', closed({ expectedRevision: text, title: text, hidden: boolean, taskId: { anyOf: [text, { type: 'null' }] } }, ['expectedRevision'])),
   draft: named('AgentConversationDraftRequest', closed(draftFields, ['expectedRevision', 'connectionId', 'text'])),
@@ -92,6 +97,8 @@ export const AGENT_SERVICE_HTTP_OPERATIONS = [
   operation('cancel-login', 'POST', `${base}/connections/:connectionId/login-attempts/:attemptId/cancel`, 'revision', 'connection'),
   operation('default-workspace', 'GET', `${base}/default-workspace`, 'empty', 'defaultWorkspace'),
   operation('pending', 'GET', `${base}/pending-requests`, 'empty', 'conversations'),
+  operation('global-conversations','GET',`${base}/conversations`,'empty','conversations'),
+  operation('seen','POST',`${workspace}/:conversationId/seen`,'seen','seenResult'),
   operation('list', 'GET', workspace, 'empty', 'conversations'),
   operation('create', 'POST', workspace, 'create', 'conversation'),
   operation('read', 'GET', `${workspace}/:conversationId`, 'empty', 'conversation'),

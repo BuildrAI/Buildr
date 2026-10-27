@@ -15,13 +15,21 @@ function query(input: URLSearchParams, allowed: string[]): void {
 }
 function numberQuery(value: string | null): number | undefined { if (value === null) return; if (!/^\d+$/.test(value)) throw inputError(); const number = Number(value); if (!Number.isSafeInteger(number)) throw inputError(); return number; }
 
-export function createAgentServiceHttpContribution(resolve: () => AgentService, defaultWorkspace?: () => { rootPath: string }) {
+export function createAgentServiceHttpContribution(resolve: () => AgentService, options: { defaultWorkspace?: () => { rootPath: string }; registeredWorkspaceIds?: () => string[] } = {}) {
+  const { defaultWorkspace, registeredWorkspaceIds = () => [] } = options;
   return {
     id: 'agent-service.http', schemas: SCHEMAS, operations: AGENT_SERVICE_HTTP_OPERATIONS,
     async handleTopLevel(context: any) {
       const { request, pathname, searchParams, authorizeRead, authorizeWrite, readJsonBody } = context;
       const prefix = '/api/v1/app/agent-service';
       if (pathname !== prefix && !pathname.startsWith(`${prefix}/`)) return null;
+      if(pathname===prefix+'/conversations'&&request.method==='GET'&&!searchParams.has('taskId')){
+        authorizeRead();
+        query(searchParams,['workspaceId','cursor','limit','hidden','query','activeOnly','agent','model']);
+        for(const key of ['activeOnly','hidden'])if(searchParams.has(key)&&!['true','false'].includes(searchParams.get(key)!))throw inputError();
+        return result('conversations',resolve().conversations.listAll(registeredWorkspaceIds(),{workspaceId:searchParams.get('workspaceId')??undefined,cursor:searchParams.get('cursor')??undefined,limit:numberQuery(searchParams.get('limit')),hidden:searchParams.get('hidden')==='true',activeOnly:searchParams.get('activeOnly')==='true',query:searchParams.get('query')??undefined,agent:searchParams.get('agent')??undefined,model:searchParams.get('model')??undefined}));
+      }
+      // 任务按空间的默认工作空间列表沿用单空间入口；其余默认工作空间对话操作同样委派。
       if (pathname === `${prefix}/conversations` || pathname.startsWith(`${prefix}/conversations/`)) {
         return this.handle({ ...context, workspaceId: '@default', suffix: '/agent-conversations' + pathname.slice(`${prefix}/conversations`.length) });
       }
@@ -88,7 +96,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService, 
         }
         return null;
       }
-      const match = suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})(?:\/(prepare-send|send|generate-title|observe|stop|events|entries|attachments|requests)(?:\/([a-f0-9-]{36})(?:\/(reply))?)?)?$/);
+      const match = suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})(?:\/(prepare-send|send|generate-title|seen|observe|stop|events|entries|attachments|requests)(?:\/([a-f0-9-]{36})(?:\/(reply))?)?)?$/);
       if (!match) return null;
       const [, id, action, childId, reply] = match;
       if (request.method === 'GET') {
@@ -118,6 +126,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService, 
       if (request.method !== 'POST') return null;
       if (action === 'prepare-send') return result('preview', await service.conversations.prepareHandoff(workspaceId, id, validate('draft', await readJsonBody(128 * 1024))));
       if (action === 'send') return result('sent', service.conversations.send(workspaceId, id, validate('send', await readJsonBody(128 * 1024))), 202);
+      if (action === 'seen') return result('seenResult',service.conversations.markSeen(workspaceId,id,validate('seen',await readJsonBody())));
       if (action === 'observe') { validate('empty', await readJsonBody()); return result('conversation', await service.conversations.observe(workspaceId, id)); }
       if (action === 'generate-title') return result('conversation', await service.conversations.generateTitle(workspaceId, id, validate('revision', await readJsonBody())));
       if (action === 'stop') return result('conversation', await service.conversations.stop(workspaceId, id, validate('stop', await readJsonBody())));

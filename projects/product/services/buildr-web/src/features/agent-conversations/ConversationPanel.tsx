@@ -8,7 +8,6 @@ import { useAgentConversations } from './AgentConversationsContext';
 import {useEarlierConversationEntries} from './useEarlierConversationEntries';
 import {carryExpandedProcessBlocks} from './conversation-state';
 import { ConversationHistory, type ConversationWorkspace } from './ConversationHistory';
-import { ConversationAttention } from './ConversationAttention';
 import { ConversationRequest } from './ConversationRequest';
 import { ConversationAgentSelect, ConversationOptions } from './ConversationOptions';
 import { ConversationDock } from './ConversationDock';
@@ -212,12 +211,32 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
     prepend:page=>{if(chat)setExpandedToolGroups(previous=>carryExpandedProcessBlocks(chat.entries,page.entries,previous,chat.run));context.prependEntries(page);},
     onError:fail,
   });
+  const seenAttempt=useRef('');
+  useEffect(()=>{
+    const element=stream.current;
+    if(!chat||!element||!context.open||context.view!=='conversation')return;
+    const latest=chat.entries.filter(entry=>(entry.kind==='message'&&(entry.role==='user'||entry.role==='assistant')||entry.role==='user'&&entry.kind==='notice'&&entry.id.startsWith('reply-'))&&entry.status!=='failed').at(-1);
+    const check=()=>{
+      if(document.visibilityState!=='visible'||!bottom.current||!latest||!element.getClientRects().length)return;
+      const message=Array.from(element.querySelectorAll<HTMLElement>('[data-entry-id]')).find(node=>node.dataset.entryId===latest.id);
+      if(!message)return;
+      const bounds=element.getBoundingClientRect(),rect=message.getBoundingClientRect();
+      if(rect.bottom>bounds.bottom+2||rect.bottom<=bounds.top||rect.width===0)return;
+      const key=chat.workspaceId+':'+chat.id+':'+chat.activity?.version;
+      if(seenAttempt.current===key)return;
+      seenAttempt.current=key;void context.markSeen(chat);
+    };
+    const frame=requestAnimationFrame(check);
+    element.addEventListener('scroll',check);document.addEventListener('visibilitychange',check);window.addEventListener('focus',check);
+    return()=>{cancelAnimationFrame(frame);element.removeEventListener('scroll',check);document.removeEventListener('visibilitychange',check);window.removeEventListener('focus',check);};
+  },[chat,context.open,context.view,context.markSeen]);
   const run=chat?.run;
   const runConnection=context.connections.find(item=>item.id===chat?.participants.find(participant=>participant.id===run?.participantId)?.connectionId);
   const runIdentity=run?conversationRunIdentity(run,runConnection,context.modelCatalog):'';
   const participantNames=participantAgentIds(chat?.participants||[]).map(provider=>providerNames[provider]||provider);
-  const workspace=workspaces.find(item=>item.id===chat?.workspaceId);
-  const settings=<div className="ac-location-settings"><strong>工作空间</strong>{chat?<><span>{workspace?.name||(chat.workspaceId==='@default'?'默认工作空间':chat.workspaceId)}</span><code>{chat.cwd}</code>{chat.taskId&&<small>关联任务：{chat.taskId}</small>}</>:<><Select classNames={{popup:{root:'ac-panel-popup'}}} aria-label="新对话工作空间" allowClear={draftWorkspaceId!=='@default'} value={draftWorkspaceId} placeholder="默认工作空间" options={workspaces.map(item=>({value:item.id,label:item.name}))} onChange={value=>{context.newConversation({preserveVisibility:true});setNewWorkspaceId(value||'');}}/>{newCwd&&<code className="ac-workspace-directory">{newCwd}</code>}</>}</div>;
+  const titleStatus=chat?.titleState;
+  const titleLabels={pending:'等待首轮成功回复后生成标题',generating:'正在生成标题',generated:'标题已自动生成',manual:'标题已手动设置',failed:'标题未能自动生成',unavailable:'当前无法自动生成标题',unknown:'旧对话未记录标题生成状态'};
+  const settings=<div className="ac-location-settings">{chat&&<><strong>标题</strong><span>{titleLabels[titleStatus?.status??'unknown']}</span>{titleStatus?.reason&&<small>{titleStatus.reason}</small>}{canGenerateConversationTitle(chat)&&<Button size="small" loading={generatingTitle} onClick={()=>void generateTitle()}>生成简短标题</Button>}</>}<strong>工作空间</strong>{chat?<><span>{workspace?.name||(chat.workspaceId==='@default'?'默认工作空间':chat.workspaceId)}</span><code>{chat.cwd}</code>{chat.taskId&&<small>关联任务：{chat.taskId}</small>}</>:<><Select classNames={{popup:{root:'ac-panel-popup'}}} aria-label="新对话工作空间" allowClear={draftWorkspaceId!=='@default'} value={draftWorkspaceId} placeholder="默认工作空间" options={workspaces.map(item=>({value:item.id,label:item.name}))} onChange={value=>{context.newConversation({preserveVisibility:true});setNewWorkspaceId(value||'');}}/>{newCwd&&<code className="ac-workspace-directory">{newCwd}</code>}</>}</div>;
   const transcript=chat?groupConversationStream(chat.entries,chat.run):[];
   const replyFollowsProcess=(index:number)=>{
     const previous=transcript[index-1],item=transcript[index];
@@ -228,7 +247,6 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
     {context.view==='history'?<ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId}/>:<>
       <header className="ac-thread-header">
         <Button type="text" icon={<MenuOutlined/>} aria-label="查看对话历史" title="对话历史" onClick={()=>context.setView('history')}/>
-        {context.open&&<ConversationAttention className="ac-dock-attention"/>}
         <div className="ac-thread-heading">
         <Popover rootClassName="ac-panel-popup" title="工作空间" trigger="click" open={locationOpen} onOpenChange={setLocationOpen} content={settings}>
           <button type="button" className="ac-thread-title" aria-label="对话信息" title={chat?.title||'新对话'}>{chat?.title||'新对话'}</button>
@@ -240,6 +258,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
           <Dropdown overlayClassName="ac-panel-popup" trigger={['click']} open={moreOpen} onOpenChange={setMoreOpen} menu={{items:[
             {key:'settings',label:'智能体与模型'},
             {type:'divider'},
+            {key:'collapse',label:'收起对话'},
             {key:'full',label:context.full?'恢复分屏':'专注对话'},
             {key:'side',label:context.side==='right'?'对话移到最左侧':'对话移到右侧'},
             {type:'divider'},
@@ -248,7 +267,8 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
             {key:'hide',label:chat?.hidden?'恢复到最近对话':'从最近对话隐藏',disabled:!chat}
           ],onClick:({key})=>{
             setMoreOpen(false);
-            if(key==='side')context.move();
+            if(key==='collapse')context.setOpen(false);
+            else if(key==='side')context.move();
             else if(key==='full'){context.setOpen(true);context.setFull(!context.full);}
             else if(key==='settings')context.setSettings(true);
             else if(key==='generate-title')void generateTitle();
@@ -302,5 +322,5 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
     <ConversationHandoffDrawer open={previewOpen} side={context.side} material={viewedHandoff?.handoff??prepared?.preview.handoff??null} onChooseModel={!viewedHandoff&&prepared&&!prepared.preview.fits?()=>{setPreviewOpen(false);requestAnimationFrame(()=>document.querySelector<HTMLButtonElement>('#agent-conversation-panel .ac-model-trigger')?.click());}:undefined} delivery={viewedHandoff&&viewedHandoff.status!=='accepted'?viewedHandoff.status==='failed'?'failed':'unknown':undefined} received={viewedHandoff?.status==='accepted'} issue={viewedHandoff&&viewedHandoff.status!=='accepted'?'尚未确认接收，请先核对原执行。':prepared&&!prepared.preview.fits?prepared.preview.diagnostic:undefined} onClose={()=>{setPreviewOpen(false);setSelectedHandoff(null);}}/>
     <Modal open={rename} title="重命名对话" getContainer={false} styles={{mask:{position:'absolute'},wrapper:{position:'absolute'}}} onCancel={()=>setRename(false)} onOk={()=>void updateMetadata({title:title.trim()})} okButtonProps={{disabled:!title.trim()}} okText="保存" cancelText="取消"><Input aria-label="对话名称" value={title} onChange={event=>setTitle(event.target.value)}/></Modal>
   </section>;
-  return <ConversationDock panel={panel} portalTarget={portalTarget}/>;
+  return <ConversationDock panel={panel} portalTarget={portalTarget} workspaces={workspaces}/>;
 }

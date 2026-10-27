@@ -39,7 +39,9 @@ export function createAgentServiceModule(options: { readProductIdentity(): unkno
       };
       const start = () => resolve().conversations.recoverInterrupted();
       const close = async () => { await service?.close(); };
-      return { provides: { [AGENT_SERVICE_APPLICATION]: { start, close, generate: (input: Parameters<AgentService['models']['generate']>[0]) => resolve().models.generate(input) } }, contributions: { http: [createAgentServiceHttpContribution(resolve, defaultWorkspace)] }, lifecycle: { start: async () => { void start().catch(() => { console.warn('中断执行恢复检查未完成，已有工作记录保留。'); }); }, stop: close } };
+      // 默认工作空间的对话同样落在私有交互库中，纳入全空间查询范围。
+      const registeredWorkspaceIds = () => ['@default', ...requires[WORKSPACE_APPLICATION].listRegisteredWorkspaces().workspaces.filter((entry: any) => entry.workspace?.id && entry.status !== 'identity_conflict').map((entry: any) => entry.workspace.id)];
+      return { provides: { [AGENT_SERVICE_APPLICATION]: { start, close, generate: (input: Parameters<AgentService['models']['generate']>[0]) => resolve().models.generate(input) } }, contributions: { http: [createAgentServiceHttpContribution(resolve, { defaultWorkspace, registeredWorkspaceIds })] }, lifecycle: { start: async () => { void start().catch(() => { console.warn('中断执行恢复检查未完成，已有工作记录保留。'); }); }, stop: close } };
     },
   };
 }

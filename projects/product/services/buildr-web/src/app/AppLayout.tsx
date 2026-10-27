@@ -2,10 +2,10 @@ import { InstallationInfoDialog } from '../features/installation/components/Inst
 import { WorkspacePreparationNotice } from '../features/workspace/components/WorkspacePreparationNotice';
 import { AgentConversationsProvider, useAgentConversationShell } from '../features/agent-conversations/AgentConversationsContext';
 import { ConversationPanel } from '../features/agent-conversations/ConversationPanel';
-import { ConversationAttention } from '../features/agent-conversations/ConversationAttention';
+import { ConversationActivity } from '../features/agent-conversations/ConversationActivity';
+import { CommentOutlined } from '@ant-design/icons';
 import { AgentConnectionSettings } from '../features/agent-conversations/AgentConnectionSettings';
 import { AppPrimaryNavigation } from './AppPrimaryNavigation';
-import { CommentOutlined } from '@ant-design/icons';
 import { AppShellHeader, AppShellFrame } from './AppShellView';
 import { WorkbenchPreferencesProvider } from '../features/workbench/hooks/useWorkbenchPreferences';
 import { WorkspaceReadCacheProvider } from '../components/WorkspaceReadCache';
@@ -76,6 +76,7 @@ export function AppLayout(props: { renderResource: (item: ResourcePreview) => Re
 function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePreview) => ReactNode }) {
   useFileEditingDraftProtection();
   const conversations = useAgentConversationShell();
+  const [mobileActivityOpen,setMobileActivityOpen]=useState(false);
   const [conversationMount, setConversationMount] = useState<HTMLDivElement | null>(null);
   const params = useParams();
   const navigate = useNavigate();
@@ -408,7 +409,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
       <div className={"app-shell has-primary-navigation area-" + area + (conversations.open && conversations.full ? " has-full-conversation" : "")}>
         <AppShellHeader primaryNavigation="rail" isGlobal={isGlobal} brandHref={isGlobal ? '/' : workspaceHref('/overview')} development={webProfile === 'development'} workspaceName={isGlobal ? '全部工作空间' : (workspace?.name || '正在读取…')} workspaceMenuItems={workspaceMenuItems} area={area} workbenchHref={workspaceHref('/overview')} codeHref={codeEntryPath} workspaceDestination={{to:workspaceDestination.current.path,state:workspaceDestination.current.state}} actions={<>
             {!isGlobal ? <WorkbenchSearch key={workspaceId} /> : null}
-            <div className="global-conversations-control"><Button id="global-conversations-entry" type="text" className={conversations.open?'is-active':''} icon={<CommentOutlined />} aria-pressed={conversations.open} aria-controls="agent-conversation-panel" title={conversations.open?'收起对话':'打开对话'} aria-label={conversations.open ? "收起全局对话" : "打开全局对话"} onClick={conversations.toggle}>对话</Button><ConversationAttention/></div>
+            <div className="global-conversations-control"><Button id="global-conversations-entry" className={conversations.open&&conversations.view==='conversation'?'is-active':''} type="text" icon={<CommentOutlined aria-hidden="true"/>} aria-label={conversations.open&&conversations.view==='conversation'?'收起当前对话':'展开当前对话'} aria-expanded={conversations.open&&conversations.view==='conversation'} onClick={()=>{setMobileActivityOpen(false);conversations.toggleView('conversation');}}/><ConversationActivity open={mobileActivityOpen} onOpenChange={setMobileActivityOpen} workspaces={registry.flatMap(entry=>entry.workspace?[{id:entry.workspace.id,name:entry.workspace.name,rootPath:entry.rootPath}]:[])}/></div>
             {!isGlobal ? <Button className="shell-menu-toggle" aria-label="打开导航菜单" icon={<MenuOutlined />} onClick={() => setNavigationOpen(true)} /> : null}
             <InstallationInfoDialog open={installationInfoOpen} onClose={() => setInstallationInfoOpen(false)} />
             <UpdateEntry ref={updateEntryRef} enabled checkOnly={Boolean(preview)} openAgentAction={openAgentAction} onCompleted={webProfile === 'development' ? devUpdateCompleted : undefined} />
