@@ -68,3 +68,21 @@ test('legacy reads are zero-write, upgrade establishes seen baseline, then count
   save(repo,r,r=>{r.view.title='upgraded';});assert.equal(r.view.activity?.version,0);assert.equal(r.view.activity?.active,false);
   save(repo,r,r=>message(r,'new','new'));assert.equal(r.view.activity?.version,1);
 });
+
+test('execution overview is full-scope, independent from search/page/filter and counts only actual current runs',t=>{
+  const repo=fixture(t);
+  const statuses=['running','tools-active','waiting-question','unknown','completed'] as const;
+  for(let i=0;i<statuses.length;i++){
+    const r=record('stats-'+i,i===1?'w2':'w1');
+    message(r,'input','hello '+i);
+    r.view.run={id:'run-'+i,participantId:'p',provider:'codex',generation:'g',status:statuses[i],accepted:true,tools:[],model:i===1?undefined:'actual-model',startedAt:r.view.updatedAt,updatedAt:r.view.updatedAt};
+    repo.saveConversation(r);
+  }
+  const all=repo.querySummaries(['w1','w2'],{limit:1});
+  assert.equal(all.conversations.length,1);assert.deepEqual(all.stats.agents,[{label:'codex',count:2}]);
+  const search=repo.querySummaries(['w1','w2'],{limit:1,query:'no matching text',model:'actual-model'});
+  assert.equal(search.total,0);assert.deepEqual(search.stats,all.stats);
+  const missing=repo.querySummaries(['w1','w2'],{limit:10,model:'未指定'});
+  assert.equal(missing.total,1);assert.equal(missing.conversations[0].workspaceId,'w2');
+  assert.deepEqual(repo.querySummaries(['w1','w2'],{limit:1,workspaceId:'w1'}).stats.agents,[{label:'codex',count:1}]);
+});

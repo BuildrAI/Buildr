@@ -5,11 +5,11 @@ import { usePanePeek } from '../../components/usePanePeek';
 import type { ActivityPopupControl } from './ConversationActivityEntry';
 import './conversation-dock.css';
 
-type Props={panel:ReactElement<HTMLAttributes<HTMLElement>&{ref?:Ref<HTMLElement>}>;activity:ReactElement<ActivityPopupControl>;open:boolean;view?:'conversation'|'history';onPreviewCurrent?():void;full?:boolean;side?:'left'|'right';width:number;onToggle():void;divider?:ReactElement;railClassName?:string};
+type Props={panel:ReactElement<HTMLAttributes<HTMLElement>&{ref?:Ref<HTMLElement>}>;activity:ReactElement<ActivityPopupControl>;open:boolean;initialActivityOpen?:boolean;view?:'conversation'|'history';onPreviewCurrent?():void;full?:boolean;side?:'left'|'right';width:number;onToggle():void;divider?:ReactElement;railClassName?:string};
 /** Current conversation keeps its transient/pinned behavior; activity is a separate entry. */
-export function ConversationDockSurface({panel,activity,open,view='conversation',onPreviewCurrent,full,side='right',width,onToggle,divider,railClassName=''}:Props) {
+export function ConversationDockSurface({panel,activity,open,initialActivityOpen=false,view='conversation',onPreviewCurrent,full,side='right',width,onToggle,divider,railClassName=''}:Props) {
   const pane=useRef<HTMLElement>(null),current=useRef<HTMLButtonElement>(null);
-  const [activityOpen,setActivityOpen]=useState(false);
+  const [activityOpen,setActivityOpen]=useState(initialActivityOpen);
   const peek=usePanePeek({enabled:!open,paneRef:pane,railRef:current});
   const activityChange=(next:boolean)=>{if(next)peek.close();setActivityOpen(next);};
   const enterCurrent=(pointerType:string)=>{setActivityOpen(false);if(!open)onPreviewCurrent?.();peek.enter('current',pointerType,current.current??undefined);};

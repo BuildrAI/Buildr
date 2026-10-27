@@ -146,8 +146,8 @@ export class ConversationRepository {
       else {where.push('(is_active=1 OR hidden=?)');values.push(Number(input.hidden===true));}
       if(input.query){where.push("(instr(lower(json_extract(summary,'$.title')),lower(?))>0 OR EXISTS(SELECT 1 FROM json_each(body,'$.view.entries') AS e WHERE instr(lower(json_extract(e.value,'$.text')),lower(?))>0))");values.push(input.query,input.query);}
       if(input.agent||input.model)where.push("json_extract(summary,'$.run.status') IN ('starting','running','stopping','tools-active')");
-      if(input.agent){where.push("json_extract(summary,'$.run.provider')=?");values.push(input.agent);}
-      if(input.model){where.push("json_extract(summary,'$.run.model')=?");values.push(input.model);}
+      if(input.agent){where.push("coalesce(nullif(json_extract(summary,'$.run.provider'),''),'未指定')=?");values.push(input.agent);}
+      if(input.model){where.push("coalesce(nullif(json_extract(summary,'$.run.model'),''),'未指定')=?");values.push(input.model);}
       const total=(db.prepare(`SELECT count(*) AS n FROM ${source} WHERE ${where.join(' AND ')}`).get(...values) as {n:number}).n;
       if(input.cursor){
         let cursor:{scope:string;epoch:number;active:number;at:string;id:string};
@@ -157,7 +157,7 @@ export class ConversationRepository {
       }
       const rows=db.prepare(`SELECT summary,is_active,activity_at,id FROM ${source} WHERE ${where.join(' AND ')} ORDER BY is_active DESC,activity_at DESC,id DESC LIMIT ?`).all(...values,input.limit+1) as Array<{summary:string;is_active:number;activity_at:string;id:string}>;
       const chosen=rows.slice(0,input.limit),last=chosen.at(-1);
-      const group=(field:'provider'|'model')=>(db.prepare(`SELECT json_extract(summary,'$.run.${field}') AS label,count(*) AS count FROM ${source} WHERE ${statsWhere.join(' AND ')} AND json_extract(summary,'$.run.status') IN ('starting','running','stopping','tools-active') GROUP BY label ORDER BY count DESC,label`).all(...statsValues) as Array<{label:string|null;count:number}>).map(row=>({label:row.label||'未指定',count:row.count}));
+      const group=(field:'provider'|'model')=>(db.prepare(`SELECT coalesce(nullif(json_extract(summary,'$.run.${field}'),''),'未指定') AS label,count(*) AS count FROM ${source} WHERE ${statsWhere.join(' AND ')} AND json_extract(summary,'$.run.status') IN ('starting','running','stopping','tools-active') GROUP BY label ORDER BY count DESC,label`).all(...statsValues) as Array<{label:string|null;count:number}>).map(row=>({label:row.label||'未指定',count:row.count}));
       return {conversations:chosen.map(row=>{const view=JSON.parse(row.summary) as ConversationView;return {...view,entries:[],requests:[],run:view.run?{...view.run,tools:[]}:undefined,participants:view.participants.map(participant=>({...participant,contextId:''}))};}),total,stats:{agents:group('provider'),models:group('model')},nextCursor:rows.length>input.limit&&last?Buffer.from(JSON.stringify({scope,epoch,active:last.is_active,at:last.activity_at,id:last.id})).toString('base64url'):undefined};
     }finally{db.close();}
   }
