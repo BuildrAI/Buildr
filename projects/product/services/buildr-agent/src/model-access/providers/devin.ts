@@ -167,7 +167,8 @@ class Completion {
     return output;
   }
   private finish(): string { return this.calls.size || this.stop === 10 ? 'tool_calls' : this.stop === 3 ? 'length' : 'stop'; }
-  private usageView(): ProtocolJson | undefined { return this.usage ? { prompt_tokens: this.usage.input, completion_tokens: this.usage.output, total_tokens: this.usage.input + this.usage.output, prompt_tokens_details: { cached_tokens: this.usage.cacheRead }, prompt_cache_write_tokens: this.usage.cacheWrite } : undefined; }
+  /** Devin reports the prompt split into uncached, cache-read and cache-write tokens; OpenAI prompt_tokens counts them all. */
+  private usageView(): ProtocolJson | undefined { if (!this.usage) return undefined; const prompt = this.usage.input + this.usage.cacheRead + this.usage.cacheWrite; return { prompt_tokens: prompt, completion_tokens: this.usage.output, total_tokens: prompt + this.usage.output, prompt_tokens_details: { cached_tokens: this.usage.cacheRead }, prompt_cache_write_tokens: this.usage.cacheWrite }; }
   finished(): ProtocolJson { return { ...this.chunk(this.signature.length && !this.signatureSent ? { reasoning_signature: this.signature.toString('base64') } : {}, this.finish()), ...(this.usage ? { usage: this.usageView() } : {}) }; }
   result(): ProtocolJson {
     return { id: this.id, object: 'chat.completion', created: this.created, model: this.model, choices: [{ index: 0, message: { role: 'assistant', content: this.text || null, ...(this.thinking ? { reasoning_content: this.thinking } : {}), ...(this.signature.length ? { reasoning_signature: this.signature.toString('base64') } : {}), ...(this.calls.size ? { tool_calls: [...this.calls].map(([id, value]) => ({ id, type: 'function', function: { name: value.name, arguments: value.args } })) } : {}) }, finish_reason: this.finish() }], ...(this.usage ? { usage: this.usageView() } : {}) };

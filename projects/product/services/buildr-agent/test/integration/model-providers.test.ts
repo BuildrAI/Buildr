@@ -243,6 +243,13 @@ test('Codex Responses consumer completes a two-turn Devin tool loop through the 
   assert.equal(text(result, 7), 'read-call'); assert.equal(text(result, 3), 'file contents'); assert.equal(text(fields(captured[0]!), 16), text(fields(captured[1]!), 16)); assert.notEqual(text(fields(captured[0]!), 22), text(fields(captured[1]!), 22));
 });
 
+test('Devin usage reports cache-read and cache-write tokens inside OpenAI prompt_tokens', { timeout: 10000 }, async t => {
+  const usage = bytesField(7, Buffer.concat([intField(2, 23), intField(3, 37), intField(4, 5), intField(5, 448)]));
+  const { runtime } = await devinFixture(t, () => new Response(new Uint8Array(responseFrames([Buffer.concat([stringField(3, 'ok'), usage, intField(5, 2)])]))));
+  const result = await (await runtime.infer(input({ messages: [{ role: 'user', content: 'hi' }], stream: false }, 'test'))).json() as { usage: Record<string, unknown> };
+  assert.deepEqual(result.usage, { prompt_tokens: 476, completion_tokens: 37, total_tokens: 513, prompt_tokens_details: { cached_tokens: 448 }, prompt_cache_write_tokens: 5 });
+});
+
 test('DeepSeek source delegates native login and raw inference to its sole owner', async () => {
   const requests: Array<{ url: string; init: RequestInit }> = []; let closed = false, logged = false;
   const runtime = await createDeepSeekModelProvider({ ownerFactory: () => ({
