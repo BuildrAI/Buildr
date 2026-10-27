@@ -1,5 +1,5 @@
 import {ModelAccessError} from '../model-access/contracts.ts';
-import type { ConnectionView, ContextRef, ConversationView, ExecutionRef, RunStatus } from '../contracts.ts';
+import type { ConnectionView, ContextRef, ConversationView, ExecutionRef, RunStatus, RunView } from '../contracts.ts';
 
 export class AgentServiceError extends Error {
   readonly code: string;
@@ -53,6 +53,7 @@ export interface StoredParticipant {
 }
 export interface StoredConversation {
   view: ConversationView;
+  runOutcomes?: Record<string,Pick<RunView,'status'|'diagnostic'|'model'|'provider'|'updatedAt'>>;
   titleOrigin?: 'default' | 'generated' | 'manual';
   titleAttempted?: boolean;
   participants: StoredParticipant[];

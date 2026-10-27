@@ -182,3 +182,34 @@ test('model preferences enforce authentication, revision and context limits', {t
  assert.equal((await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:checked.revision,models:[{id:'model',enabled:false}]})})).status,409);
  const reset=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:updated.revision,models:[{id:'model',contextWindow:null}]})});assert.equal(reset.status,200);assert.equal((await reset.json()).models[0].contextWindow,258000);
 });
+
+test('HTTP handoff exposes the exact bounded body, local sources and confirmed receipt without manual condensation', {timeout:15_000}, async t=>{
+  const {base,root}=taskRecordFixture(t,'handoff-http');
+  const previous=process.env.BUILDR_APP_DATA_DIR;process.env.BUILDR_APP_DATA_DIR=path.join(base,'private-app');
+  t.after(()=>{if(previous===undefined)delete process.env.BUILDR_APP_DATA_DIR;else process.env.BUILDR_APP_DATA_DIR=previous;});
+  let workspaceId='';const sent:string[]=[];
+  const executors=['a','b'].map(id=>({descriptor:{id,label:id,capabilities:{text:true,images:false,approval:true,questions:true,stop:true,resume:true,maxInputBytes:id==='b'?8192:128*1024}},async open(){return {
+    bindingIdentity:id,capabilities:this.descriptor.capabilities,inspectAccount:async()=>({status:'ready' as const}),models:async()=>[{id:'fixture',label:'Fixture',isDefault:true}],beginLogin:async()=>{},cancelLogin:async()=>{},createContext:async()=>({id:'native-'+id}),resumeContext:async()=>{},readHistory:async()=>[],
+    async send(input:any){sent.push(input.text);input.onEvent({type:'accepted',executionRef:{id:'run-'+id}});input.onEvent({type:'item',item:{id:'answer-'+id,kind:'message',role:'assistant',text:'still need real startup validation',status:'completed'}});input.onEvent({type:'completed',status:'completed'});},
+    observe:async()=>({status:'idle' as const,executionRef:{id:'run-'+id},tools:[]}),reply:async()=>{},stop:async()=>({status:'stopped' as const,tools:[]}),close:async()=>{}
+  };}}));
+  const service=createAgentService({dataRoot:path.join(base,'agent-profile'),executors,resolveWorkspace:id=>{assert.equal(id,workspaceId);return{rootPath:root};},assertTask:()=>{}});
+  const runtime=createRuntime(),contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+  const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions});
+  const ready=await server.ready;workspaceId=ready.initialWorkspaceId;
+  t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(()=>resolve()));});
+  const headers={origin:ready.url,'x-buildr-session':ready.sessionToken,'content-type':'application/json'};
+  for(const id of ['a','b'])await service.connections.connect(id,{expectedRevision:service.connections.read(id).revision});
+  const chat=await service.conversations.create(workspaceId,{});
+  const first={expectedRevision:chat.revision,connectionId:'a',text:'original user requirement '.repeat(900)};
+  const preview=service.conversations.prepareSend(workspaceId,chat.id,first);service.conversations.send(workspaceId,chat.id,{...first,previewToken:preview.token,clientRequestId:'first'});
+  const completed=async()=>{for(let n=0;n<500;n++){const value=service.conversations.read(workspaceId,chat.id);if(value.run?.status==='completed')return value;if(value.run?.status==='failed'||value.run?.status==='unknown')assert.fail(JSON.stringify(value.run));await new Promise<void>(resolve=>setTimeout(resolve,2));}assert.fail(JSON.stringify(service.conversations.read(workspaceId,chat.id).run));};
+  const before=await completed(),draft={expectedRevision:before.revision,connectionId:'b',text:'continue'};
+  const endpoint=`${ready.url}/api/v1/workspaces/${workspaceId}/agent-conversations/${chat.id}`;
+  let response=await fetch(endpoint+'/prepare-send',{method:'POST',headers,body:JSON.stringify(draft)});assert.equal(response.status,200);
+  const prepared=await response.json();assert.equal(prepared.fits,true);assert.equal(prepared.handoff.mode,'indexed');assert.ok(fs.existsSync(prepared.handoff.sourcePath));assert.ok(prepared.inputBytes<=8192);
+  response=await fetch(endpoint+'/send',{method:'POST',headers,body:JSON.stringify({...draft,previewToken:prepared.token,clientRequestId:'second'})});assert.equal(response.status,202);
+  const after=await completed(),receipt=after.entries.find(entry=>entry.kind==='handoff')!;
+  assert.equal(sent[1],prepared.handoff.body);assert.equal(receipt.handoff!.body,prepared.handoff.body);assert.equal(receipt.status,'accepted');
+  response=await fetch(endpoint,{headers});assert.equal(response.status,200);assert.equal((await response.json()).entries.find((entry:any)=>entry.kind==='handoff').handoff.body,sent[1]);
+});

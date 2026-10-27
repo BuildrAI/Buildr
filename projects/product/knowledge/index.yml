@@ -371,6 +371,9 @@ artifacts:
       - agent-service-preparation-source
       - agent-service-programs-source
       - agent-service-conversations-source
+      - agent-service-handoff-source
+      - agent-service-handoff-storage-source
+      - agent-service-handoff-ui-source
       - agent-service-storage-source
       - agent-service-codex-source
       - agent-service-dsh-source
@@ -535,6 +538,9 @@ artifacts:
       - agent-service-public-source
       - agent-service-storage-source
       - agent-service-conversations-source
+      - agent-service-handoff-source
+      - agent-service-handoff-storage-source
+      - agent-service-handoff-ui-source
       - agent-service-host-source
       - agent-service-ui-source
       - product-reference-code-map
@@ -1908,6 +1914,21 @@ sources:
     kind: code
     path: services/buildr-agent/src/application/conversation-application.ts
     summary: 创建与预览、受理去重、参与者增量接续、原生历史归并及未知不重发。
+  - id: agent-service-handoff-source
+    title: 本地轮次交接与接收预算
+    kind: code
+    path: services/buildr-agent/src/domain/handoff-material.ts
+    summary: 从本地原始记录组织轮次、动作结果和确认成果，保留终态与诊断，定义交接提示词和保守预算。
+  - id: agent-service-handoff-storage-source
+    title: 完整交接资料的本地读取投射
+    kind: code
+    path: services/buildr-agent/src/application/handoff-sources.ts
+    summary: 按内容复用原始轮次资料，生成不可变索引；模型按需读取，不递归转发旧包。
+  - id: agent-service-handoff-ui-source
+    title: 交接详情与实际发送原文
+    kind: code
+    path: services/buildr-web/src/features/agent-conversations/ConversationHandoffDrawer.tsx
+    summary: 正式页面与原型共同展示轮次、来源和实际提交原文，默认收起正文并明确页面说明边界。
   - id: agent-service-preparation-source
     title: 准备并连接
     kind: code

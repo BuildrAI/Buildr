@@ -170,6 +170,11 @@ class CodexRuntime implements AgentRuntime {
     if (this.gateway) input = { ...input, model: gatewayModel(this.gateway).id };
     return await generateCodexTitle(this.rpc, input, this.titleDirectory, this.auxiliary);
   }
+  async summarizeHandoff(input:ExecutorTitleInput):Promise<string|undefined>{
+    this.reference(input.contextRef,input.cwd);
+    if(this.gateway)input={...input,model:gatewayModel(this.gateway).id};
+    return generateCodexTitle(this.rpc,input,this.titleDirectory,this.auxiliary,true);
+  }
   async send(input: ExecutorSendInput): Promise<void> {
     this.reference(input.contextRef, input.cwd);
     if (this.gateway) {

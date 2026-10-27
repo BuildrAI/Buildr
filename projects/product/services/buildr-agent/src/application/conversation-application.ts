@@ -10,6 +10,8 @@ import type { StoredConversation, StoredParticipant } from '../domain/agent-stat
 import type { ConversationRepository } from '../persistence/conversation-repository.ts';
 import type { ConnectionApplication } from './connection-application.ts';
 import type { ConversationEvents } from './conversation-events.ts';
+import {HANDOFF_PROMPT,HANDOFF_SUMMARY_PROMPT,handoffEntries,organizeHandoff,displayRounds,receivingBudget} from '../domain/handoff-material.ts';
+import {handoffSources} from './handoff-sources.ts';
 import { resolvePermissionMode } from '../domain/permission-mode.ts';
 
 const MAX_TEXT_BYTES = 64 * 1024;
@@ -36,6 +38,7 @@ export class ConversationApplication {
   private readonly sourceConnections = new Map<string,string>();
   private readonly sourceRuntimes = new Map<string, Promise<{runtime: AgentRuntime; model: string}>>();
   private closing = false;
+  private readonly handoffPreviews = new Map<string,{baseToken:string;prepared:ReturnType<ConversationApplication['prepare']>}>();
   private readonly options: {
     repository: ConversationRepository;
     connections: ConnectionApplication;
@@ -83,6 +86,7 @@ export class ConversationApplication {
     return view;
   }
   private save(record: StoredConversation): void {
+    const observed=record.view.run;if(observed&&['completed','failed','stopped','unknown','tools-active'].includes(observed.status)){record.runOutcomes??={};record.runOutcomes[observed.id]={status:observed.status,diagnostic:observed.diagnostic,model:observed.model,provider:observed.provider,updatedAt:observed.updatedAt};}
     const prior = record.view.revision;
     record.view.revision = randomUUID(); record.view.updatedAt = this.options.now();
     this.options.repository.saveConversation(record, prior);
@@ -129,10 +133,11 @@ export class ConversationApplication {
     if (typeof input.text !== 'string' || Buffer.byteLength(input.text) > MAX_TEXT_BYTES) fail('agent_input_too_large', '输入过长，请缩小本次指令。', 413);
     if (!input.text.trim() && !input.attachmentIds?.length) fail('agent_input_empty', '请填写内容或添加图片。');
     if (input.attachmentIds && (!Array.isArray(input.attachmentIds) || input.attachmentIds.length > 4 || input.attachmentIds.some(id => typeof id !== 'string'))) fail('agent_attachments_invalid', '每次最多添加4张图片。');
-    if (input.handoffSummary !== undefined && (typeof input.handoffSummary !== 'string' || !input.handoffSummary.trim() || Buffer.byteLength(input.handoffSummary) > MAX_TEXT_BYTES)) fail('agent_handoff_invalid', '请明确填写精简接续说明。');
-    return { expectedRevision: nonempty(input.expectedRevision, '对话版本'), connectionId: nonempty(input.connectionId, '接入身份'), text: input.text, modelAccountId: input.modelAccountId === undefined ? undefined : nonempty(input.modelAccountId, '套餐账号'), modelAccountRevision: input.modelAccountRevision, modelAccountIdentity: input.modelAccountIdentity, permissionMode: resolvePermissionMode(input.permissionMode), model: input.model === undefined ? undefined : nonempty(input.model, '模型', 256), serviceTier:input.serviceTier===undefined?undefined:nonempty(input.serviceTier,'服务档位',256),reasoningEffort: input.reasoningEffort === undefined ? undefined : nonempty(input.reasoningEffort, '思考深度', 80), attachmentIds: input.attachmentIds ?? [], handoffSummary: input.handoffSummary };
+    if (input.handoffSummary !== undefined && (typeof input.handoffSummary !== 'string' || !input.handoffSummary.trim() || Buffer.byteLength(input.handoffSummary) > MAX_TEXT_BYTES)) fail('agent_handoff_invalid', '补充的交接说明无效。');
+    if(input.skipHandoffSummary!==undefined&&typeof input.skipHandoffSummary!=='boolean')fail('agent_input_invalid','整理方式无效。');
+    return { skipHandoffSummary:input.skipHandoffSummary, expectedRevision: nonempty(input.expectedRevision, '对话版本'), connectionId: nonempty(input.connectionId, '接入身份'), text: input.text, modelAccountId: input.modelAccountId === undefined ? undefined : nonempty(input.modelAccountId, '套餐账号'), modelAccountRevision: input.modelAccountRevision, modelAccountIdentity: input.modelAccountIdentity, permissionMode: resolvePermissionMode(input.permissionMode), model: input.model === undefined ? undefined : nonempty(input.model, '模型', 256), serviceTier:input.serviceTier===undefined?undefined:nonempty(input.serviceTier,'服务档位',256),reasoningEffort: input.reasoningEffort === undefined ? undefined : nonempty(input.reasoningEffort, '思考深度', 80), attachmentIds: input.attachmentIds ?? [], handoffSummary: input.handoffSummary };
   }
-  private prepare(record: StoredConversation, raw: SendDraft): { preview: SendPreview; text: string; images: ExecutorImage[]; draft: SendDraft;configuration?:string } {
+  private prepare(record: StoredConversation, raw: SendDraft): { preview: SendPreview; text: string; images: ExecutorImage[]; draft: SendDraft;configuration?:string;needsCompression:boolean;fullText:string } {
     const input = this.draft(raw); expected(record.view.revision, input.expectedRevision); this.assertIdle(record);
     const connection = this.options.connections.get(input.connectionId);
     if (!connection.enabled || (!input.modelAccountId && connection.status !== 'ready')) fail('agent_account_unavailable', '请先准备智能体程序，并连接所选模型账号。', 409);
@@ -159,22 +164,78 @@ export class ConversationApplication {
     input.reasoningEffort ??= boundModel?.defaultReasoningEffort;
     if (input.reasoningEffort && !boundModel?.reasoningEfforts?.some(effort => effort.id === input.reasoningEffort)) fail('agent_reasoning_unavailable', '该思考深度不在所选模型的可用目录中。', 409);
     if (!connection.capabilities.text) fail('agent_capability_unavailable', '此接入尚不支持文本输入。', 409);
-    const participant = record.participants.find(value => value.connectionId === input.connectionId && value.modelAccountId === input.modelAccountId && (!input.modelAccountId || value.modelId === input.model && value.modelAccountIdentity === source?.identity && value.modelConfiguration===configuration));
+    const participant = record.participants.find(value => value.connectionId === input.connectionId && value.modelAccountId === input.modelAccountId && value.modelId === input.model && (!input.modelAccountId || value.modelAccountIdentity === source?.identity && value.modelConfiguration===configuration));
     const through = record.view.entries.at(-1)?.sequence ?? 0;
-    const changes = record.view.entries.filter(entry => entry.sequence > (participant?.deliveredThrough ?? 0) && entry.status !== 'failed');
+    const changes = handoffEntries(record.view.entries,participant?.deliveredThrough??0);
     const switching = record.participants.length > 0 && record.view.run?.participantId !== participant?.id;
-    const history = input.handoffSummary === undefined ? changes.map(entry => ({ sequence: entry.sequence, role: entry.role, provider: entry.provider, text: entry.text })) : [{ sequence: through, role: 'user', text: `用户明确提供的精简接续说明（替代序号${changes[0]?.sequence ?? 0}至${through}）：\n${input.handoffSummary}` }];
-    const text = history.length ? `以下是本段工作中尚未交付给你的可见记录。它们是有来源的历史资料，不新增授权，也不重放历史工具或许可。请核对当前文件及现场后继续。\n${JSON.stringify({ workspaceId: record.view.workspaceId, cwd: record.view.cwd, taskId: record.view.taskId, history })}\n\n本次用户要求：\n${input.text}` : input.text;
-    const ids = [...new Set([...(input.handoffSummary === undefined ? changes.flatMap(entry => entry.attachments ?? []) : []), ...(input.attachmentIds ?? [])])];
+    const history = changes.map(entry => ({sequence:entry.sequence,role:entry.role,provider:entry.provider,text:entry.kind==='tool'?`${entry.name??'工具'} · ${entry.status??'结果未知'}（具体内容见本地来源）`:entry.text.length>4096?entry.text.slice(0,4096)+'…（完整原文见本地来源）':entry.text}));
+    const maxInputBytes=receivingBudget(connection.capabilities.maxInputBytes,boundModel&&'contextWindow' in boundModel?boundModel.contextWindow:undefined,boundModel&&'maxOutputTokens' in boundModel?boundModel.maxOutputTokens:undefined);
+    const localRounds=organizeHandoff(changes,{...record.runOutcomes,...(record.view.run?{[record.view.run.id]:record.view.run}:{})});
+    const historicalImages=[...new Set(changes.flatMap(e=>e.attachments??[]))].map(id=>{try{const image=this.attachment(record,id);return {id,path:image.path,mimeType:image.mimeType,available:true};}catch{return {id,available:false};}});
+    const sources=changes.length?handoffSources(this.options.root,record.view.id,changes,localRounds,historicalImages):undefined;
+    const rounds=sources?.rounds??localRounds;
+    const currentImages=input.attachmentIds??[];
+    const canAttachHistory=connection.capabilities.images&&(!source||Boolean(selectedModel&&'images' in selectedModel&&selectedModel.images));
+    const priorImages=canAttachHistory&&currentImages.length<4?historicalImages.filter(image=>image.available&&!currentImages.includes(image.id)).slice(-Math.max(0,4-currentImages.length)).map(image=>image.id):[];
+    const ids=[...new Set([...priorImages,...currentImages])];
     const images = ids.map(id => this.attachment(record, id));
+    const context=JSON.stringify({conversationId:record.view.id,workspaceId:record.view.workspaceId,cwd:record.view.cwd,taskId:record.view.taskId,sourceThrough:through,permissionMode:input.permissionMode,executionState:record.view.run?.status??'idle',sourceIndex:sources?.index,imageInputIds:ids,currentImageIds:currentImages,currentImages:images.filter(image=>currentImages.includes(image.id)),historicalImages:historicalImages.slice(-4),historicalImageCount:historicalImages.length,historicalImageNotice:historicalImages.length?'历史图片的全部准确引用见本地索引；此处只列最近四张。没有作为图像输入发送的部分须按需读取，不能假装已看到。':undefined});
+    const suffix=`\n\n本次用户要求：\n${input.text}${input.handoffSummary?'\n用户补充的交接说明（不替代本地历史）：\n'+input.handoffSummary:''}`;
+    const fullText=changes.length||switching?`${HANDOFF_PROMPT}\n工作位置与来源：${context}\n按轮次组织的本地记录：\n${JSON.stringify(rounds)}${suffix}`:input.text;
+    const needsCompression=Buffer.byteLength(fullText)>maxInputBytes;
+    const text=needsCompression&&sources?`${HANDOFF_PROMPT}\n工作位置与来源：${context}\n完整历史共有 ${rounds.length} 轮，记录 #${changes[0]?.sequence??0}–#${through}，超过内联容量。请先读取本地索引 ${sources.index}，按各轮路径读取用户要求、授权纠正、失败未知、成果和待办。正文没有省略来源，具体内容需按引用读取。${suffix}`:fullText;
+    const previous=record.participants.find(p=>p.id===record.view.run?.participantId);
+    const difference:Array<{kind:'agent'|'model';label:string;before:string;after:string}>=[];
+    if(previous&&previous.connectionId!==input.connectionId)difference.push({kind:'agent',label:'智能体',before:previous.label,after:connection.label});
+    if(previous&&(record.view.run?.model!==input.model||previous.modelAccountId!==input.modelAccountId))difference.push({kind:'model',label:'模型',before:record.view.run?.model??'默认模型',after:boundModel?.label??input.model??'默认模型'});
+    const handoff={agent:connection.label,model:boundModel?.label??input.model??'默认模型',changes:difference,rounds:displayRounds(rounds),roundCount:rounds.length,body:text,sourceThrough:through,mode:needsCompression?'indexed' as const:'records' as const,...(sources?{sourcePath:sources.index}:{})};
     const inputBytes = Buffer.byteLength(text);
-    const maxInputBytes = Math.min(MAX_TEXT_BYTES, connection.capabilities.maxInputBytes);
     const imageBytes = ids.reduce((total, id) => total + record.attachments[id]!.size, 0);
     const fits = inputBytes <= maxInputBytes && images.length <= 4 && imageBytes <= 32 * 1024 * 1024 && ids.every(id => record.attachments[id]!.size <= (connection.capabilities.maxImageBytes ?? MAX_IMAGE_BYTES)) && (!images.length || (connection.capabilities.images && (!source || Boolean(selectedModel && 'images' in selectedModel && selectedModel.images))));
     const token = createHmac('sha256', this.previewSecret).update(JSON.stringify({ id: record.view.id, input, sourceRevision: source?.revision, through, text, ids })).digest('hex');
-    return { preview: { token, conversationId: record.view.id, revision: record.view.revision, connectionId: input.connectionId, modelAccountId: input.modelAccountId, modelAccountIdentity: source?.identity, modelAccountRevision: source?.revision, modelSourceLabel: source?.accountLabel ?? source?.label, model: input.model, serviceTier:input.serviceTier,reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode!, participantId: participant?.id, cwd: record.view.cwd, taskId: record.view.taskId, text: input.text, history, sourceThrough: through, inputBytes, maxInputBytes, fits, switching, diagnostic: fits ? undefined : images.length && !connection.capabilities.images ? '此执行方未验收图片输入，请继续原执行方或明确提供文字接续说明。' : '接续内容超过已验收容量，请继续原执行方或明确提供精简接续说明。' }, text, images, draft: input,configuration };
+    return { preview: { handoff, token, conversationId: record.view.id, revision: record.view.revision, connectionId: input.connectionId, modelAccountId: input.modelAccountId, modelAccountIdentity: source?.identity, modelAccountRevision: source?.revision, modelSourceLabel: source?.accountLabel ?? source?.label, model: input.model, serviceTier:input.serviceTier,reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode!, participantId: participant?.id, cwd: record.view.cwd, taskId: record.view.taskId, text: input.text, history, sourceThrough: through, inputBytes, maxInputBytes, fits, switching, diagnostic: fits ? undefined : images.length && !canAttachHistory ? '所选执行方或模型无法接收这些图片，请选择支持图片的执行组合；草稿已保留。' : '必要交接资料仍超出接收容量，请选择容量更大的模型；草稿与本地资料保留。' }, text, images, draft: input,configuration,needsCompression,fullText };
   }
   prepareSend(workspaceId: string, id: string, input: SendDraft): SendPreview { return this.prepare(this.load(workspaceId, id), input).preview; }
+
+  async prepareHandoff(workspaceId:string,id:string,input:SendDraft):Promise<SendPreview>{
+    const record=this.load(workspaceId,id),prepared=this.prepare(record,input);
+    if(input.skipHandoffSummary||!prepared.needsCompression||!prepared.preview.handoff)return prepared.preview;
+    for(const cached of this.handoffPreviews.values())if(cached.baseToken===prepared.preview.token)return cached.prepared.preview;
+    const previous=record.participants.find(p=>p.id===record.view.run?.participantId);
+    const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),12_000);
+    try{
+      // The local source index always survives; an auxiliary model never replaces it.
+      if(!previous) return prepared.preview;
+      const selected:typeof prepared.preview.handoff.rounds=[];let size=0;
+      for(const round of [...prepared.preview.handoff.rounds].reverse()){const bytes=Buffer.byteLength(JSON.stringify(round));if(size+bytes>32*1024)break;selected.unshift(round);size+=bytes;}
+      if(!selected.length)return prepared.preview;
+      const prompt=HANDOFF_SUMMARY_PROMPT+'\n本次摘要仅覆盖以下轮次 #'+selected[0]!.from+'–#'+selected.at(-1)!.through+'；其余历史请通过完整索引读取。\n'+JSON.stringify(selected);
+      let summary:string|undefined;
+      if(previous.modelAccountId&&this.options.modelAccess){
+        const source=this.options.modelAccess.accounts.snapshot(previous.modelAccountId);
+        const quota=source.quota;
+        if(source.identity!==previous.modelAccountIdentity||!source.enabled||source.status!=='ready'||quota?.available&&quota.remainingPercent===0)return prepared.preview;
+        summary=await within(this.options.modelAccess.generate({accountId:previous.modelAccountId,expectedIdentity:previous.modelAccountIdentity,modelId:previous.modelId!,serviceTier:previous.serviceTier,conversationId:id,agentId:previous.connectionId,runId:'handoff-'+randomUUID(),prompt,signal:controller.signal}),12_000,'agent_handoff_summary_timeout');
+      }else if(previous.contextRef){
+        const runtime=await within(this.options.connections.runtime(previous.connectionId),3_000,'agent_handoff_source_timeout');
+        if(runtime.bindingIdentity!==previous.bindingIdentity||!runtime.summarizeHandoff)return prepared.preview;
+        summary=await within(runtime.summarizeHandoff({contextRef:previous.contextRef,cwd:record.view.cwd,description:prompt,model:previous.modelId,signal:controller.signal}),12_000,'agent_handoff_summary_timeout');
+      }
+      if(!summary?.trim()||Buffer.byteLength(summary)>24*1024)return prepared.preview;
+      const current=this.prepare(this.load(workspaceId,id),input);
+      if(current.preview.token!==prepared.preview.token)fail('agent_preview_stale','交接来源已变化，请重新读取；草稿保留。',409);
+      const text=prepared.text+'\n\n原模型整理的辅助摘要（仅覆盖提供的轮次摘录，完整资料请读取本地索引；来源截至 #'+prepared.preview.sourceThrough+'）：\n'+summary;
+      if(Buffer.byteLength(text)>prepared.preview.maxInputBytes)return prepared.preview;
+      const baseToken=prepared.preview.token;
+      prepared.text=text;prepared.preview={...prepared.preview,token:createHmac('sha256',this.previewSecret).update(baseToken+text).digest('hex'),inputBytes:Buffer.byteLength(text),handoff:{...prepared.preview.handoff,body:text,mode:'summary'}};
+      if(this.handoffPreviews.size>=32)this.handoffPreviews.delete(this.handoffPreviews.keys().next().value!);
+      prepared.fullText='';this.handoffPreviews.set(prepared.preview.token,{baseToken,prepared});return prepared.preview;
+    }catch(error){
+      if(error instanceof AgentServiceError&&['agent_revision_conflict','agent_preview_stale','agent_model_source_changed'].includes(error.code))throw error;
+      // No work input was submitted, so local-source fallback is safe after failure.
+      expected(this.load(workspaceId,id).view.revision,input.expectedRevision);return prepared.preview;
+    }finally{clearTimeout(timer);controller.abort();}
+  }
 
   send(workspaceId: string, id: string, raw: SendDraft & { previewToken: string; clientRequestId: string }): { run: RunView; conversation: ConversationView } {
     const record = this.load(workspaceId, id);
@@ -187,7 +248,9 @@ export class ConversationApplication {
       if (record.view.run?.id !== repeated.runId) fail('agent_request_already_accepted', '该请求已受理，请读取其原有历史。', 409);
       return { run: structuredClone(record.view.run), conversation: this.view(record) };
     }
-    const prepared = this.prepare(record, raw);
+    const baseline = this.prepare(record, raw);
+    const cached=this.handoffPreviews.get(raw.previewToken);
+    const prepared=cached?.baseToken===baseline.preview.token?cached.prepared:baseline;
     const a = Buffer.from(prepared.preview.token); const b = Buffer.from(String(raw.previewToken));
     if (a.length !== b.length || !timingSafeEqual(a, b)) fail('agent_preview_stale', '发送预览已变化，请重新核对后发送。', 409);
     if (!prepared.preview.fits) fail('agent_handoff_capacity', prepared.preview.diagnostic!, 413);
@@ -199,11 +262,12 @@ export class ConversationApplication {
     }
     const run: RunView = { id: randomUUID(), participantId: participant.id, provider: participant.provider, generation: this.options.generation, status: 'starting', accepted: false, tools: [], modelAccountId: prepared.draft.modelAccountId, modelAccountIdentity: prepared.preview.modelAccountIdentity, modelSourceLabel: prepared.preview.modelSourceLabel, model: prepared.draft.model, serviceTier:prepared.draft.serviceTier,reasoningEffort: prepared.draft.reasoningEffort, permissionMode: prepared.draft.permissionMode, startedAt: this.options.now(), updatedAt: this.options.now() };
     const append = (entry: Omit<ConversationEntry, 'sequence' | 'createdAt'>) => { record.view.entries.push({ ...entry, sequence: (record.view.entries.at(-1)?.sequence ?? 0) + 1, createdAt: this.options.now() }); };
-    if (prepared.preview.switching) append({ id: randomUUID(), kind: 'handoff', role: 'system', text: `由 ${connection.label} 接续本对话`, participantId: participant.id, provider: participant.provider });
-    if (prepared.draft.handoffSummary !== undefined) append({ id: randomUUID(), kind: 'notice', role: 'user', text: `用户确认的精简接续说明：\n${prepared.draft.handoffSummary}`, participantId: participant.id });
+    if (prepared.preview.switching) append({ id: randomUUID(), kind: 'handoff', role: 'system', text: `交给 ${connection.label} · ${prepared.draft.model??'默认模型'}`, participantId: participant.id, provider: participant.provider, runId:run.id, status:'sending', handoff:prepared.preview.handoff });
+    if (prepared.draft.handoffSummary !== undefined) append({ id: randomUUID(), kind: 'notice', role: 'user', text: `用户补充的交接说明：\n${prepared.draft.handoffSummary}`, participantId: participant.id,runId:run.id });
     const userEntryId = randomUUID();
     append({ id: userEntryId, kind: 'message', role: 'user', text: prepared.draft.text, runId: run.id, status: 'sending', attachments: prepared.draft.attachmentIds });
     record.attempts.push({ clientRequestId, inputDigest, runId: run.id, participantId: participant.id, through: record.view.entries.at(-1)!.sequence, userEntryId, accepted: false });
+    const previousRun=record.view.run;if(previousRun){record.runOutcomes??={};record.runOutcomes[previousRun.id]={status:previousRun.status,diagnostic:previousRun.diagnostic,model:previousRun.model,provider:previousRun.provider,updatedAt:previousRun.updatedAt};}
     record.view.run = run;
     this.save(record);
     const work = this.execute(workspaceId, id, run.id, prepared).finally(() => this.workers.delete(run.id));
@@ -232,7 +296,7 @@ export class ConversationApplication {
       if (entry.text === item.text && entry.status === item.status && !nameChanged && !inputChanged) return false;
       entry.text = item.text; entry.status = item.status; if (nameChanged) entry.name = item.name; if (inputChanged) entry.input = item.input; return true;
     }
-    entry = { id: randomUUID(), sequence: (record.view.entries.at(-1)?.sequence ?? 0) + 1, createdAt: this.options.now(), kind: item.kind, role: item.role, text: item.text, name: item.name, input: item.input, participantId: participant.id, provider: participant.provider, runId, status: item.status };
+    entry = { id: randomUUID(), sequence: (record.view.entries.at(-1)?.sequence ?? 0) + 1, createdAt: this.options.now(), kind: item.kind, role: item.role, text: item.text, name: item.name, input: item.input, participantId: participant.id, provider: participant.provider, runId:runId??record.attempts.find(a=>a.participantId===participant.id&&a.executionRef?.id===item.executionId)?.runId, status: item.status };
     record.view.entries.push(entry); record.sources[source] = entry.id;
     participant.deliveredThrough = Math.max(participant.deliveredThrough, entry.sequence);
     return true;
@@ -250,6 +314,7 @@ export class ConversationApplication {
     if (['completed', 'stopped', 'failed'].includes(run.status) && (event.type === 'accepted' || event.type === 'request')) return;
     if (event.type === 'accepted') {
       attempt.accepted = true; attempt.executionRef = event.executionRef; attempt.nativeInputItemId = event.inputItemId;
+      for(const receipt of record.view.entries.filter(e=>e.kind==='handoff'&&e.runId===runId))receipt.status='accepted';
       run.accepted = true; if (run.status !== 'stopping') run.status = 'running';
       participant.deliveredThrough = Math.max(participant.deliveredThrough, attempt.through);
       const entry = record.view.entries.find(value => value.id === attempt.userEntryId)!; entry.status = 'accepted';
@@ -326,7 +391,7 @@ export class ConversationApplication {
         const history = await runtime.readHistory({ contextRef: participant.contextRef, cwd: record.view.cwd });
         let changed = false;
         for (const item of history) changed = this.applyItem(record, participant, item) || changed;
-        if (changed) { this.save(record); fail('agent_history_changed', '原生历史有新变化，请重新查看接续预览后发送。', 409); }
+        if (changed) { this.save(record); fail('agent_history_changed', '原生记录有新变化，本次要求已保留；请核对后再继续。', 409); }
       } else {
         const ref = await runtime.createContext({ cwd: record.view.cwd, permissionMode: prepared.draft.permissionMode });
         record = this.currentRun(workspaceId, id, runId); if (!record) return;
@@ -352,6 +417,7 @@ export class ConversationApplication {
       const attempt = record.attempts.find(value => value.runId === runId);
       const entry = record.view.entries.find(value => value.id === attempt?.userEntryId);
       if (entry && !run.accepted) entry.status = possiblyDelivered ? 'unknown' : 'failed';
+      if(!run.accepted)for(const receipt of record.view.entries.filter(e=>e.kind==='handoff'&&e.runId===runId))receipt.status=possiblyDelivered?'unknown':'failed';
       try { this.save(record); } catch { /* Preserve existing DB and native state; never retry a possibly delivered input. */ }
     }
   }
@@ -515,9 +581,15 @@ export class ConversationApplication {
     // Recheck after asynchronous connection setup before causing a native effect.
     const fresh = this.load(workspaceId, id);
     if (!fresh.requests[requestId] || fresh.view.run?.id !== input.runId) fail('agent_request_stale', '此交互已变化。', 409);
-    await runtime.reply({ contextRef: control.participant.contextRef, executionRef: binding.executionRef, requestId: binding.nativeId, answer: input.answer });
+    const answerText=JSON.stringify({请求标识:requestId,问题:request.title,说明:request.description,问题列表:request.questions,选项:request.options,回答:input.answer,授权性质:request.kind==='approval'?'仅原请求及其明确范围，不自动扩展到后续执行方或重放':'用户答复'});
+    if(Buffer.byteLength(answerText)>MAX_TEXT_BYTES)fail('agent_reply_too_large','回答过长，请缩小后重试。',413);
+    const baseReplyId='reply-'+requestId;const priorReply=fresh.view.entries.find(e=>e.id===baseReplyId);
+    const replyId=priorReply&&priorReply.text!==answerText?baseReplyId+'-'+hash(answerText):baseReplyId;
+    if(!fresh.view.entries.some(e=>e.id===replyId)){fresh.view.entries.push({id:replyId,sequence:(fresh.view.entries.at(-1)?.sequence??0)+1,kind:'notice',role:'user',text:answerText,runId:input.runId,participantId:input.participantId,status:'sending',createdAt:this.options.now()});this.save(fresh);}
+    try{await runtime.reply({ contextRef: control.participant.contextRef, executionRef: binding.executionRef, requestId: binding.nativeId, answer: input.answer });}
+    catch(error){const latest=this.load(workspaceId,id);const answer=latest.view.entries.find(e=>e.id===replyId);if(answer){answer.status='unknown';this.save(latest);}throw error;}
     const record = this.currentRun(workspaceId, id, input.runId);
-    if (record) { delete record.requests[requestId]; record.view.requests = record.view.requests.filter(value => value.id !== requestId); if (!record.view.requests.length && ['waiting-approval', 'waiting-question'].includes(record.view.run!.status)) record.view.run!.status = 'running'; this.save(record); }
+    if (record) { const answer=record.view.entries.find(e=>e.id===replyId);if(answer)answer.status='accepted';delete record.requests[requestId]; record.view.requests = record.view.requests.filter(value => value.id !== requestId); if (!record.view.requests.length && ['waiting-approval', 'waiting-question'].includes(record.view.run!.status)) record.view.run!.status = 'running'; this.save(record); }
     return this.read(workspaceId, id);
     } finally { this.repliesInFlight.delete(requestId); }
   }

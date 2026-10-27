@@ -104,7 +104,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService) 
       query(searchParams, []);
       if (request.method === 'PATCH' && !action) return result('conversation', service.conversations.update(workspaceId, id, validate('update', await readJsonBody())));
       if (request.method !== 'POST') return null;
-      if (action === 'prepare-send') return result('preview', service.conversations.prepareSend(workspaceId, id, validate('draft', await readJsonBody(128 * 1024))));
+      if (action === 'prepare-send') return result('preview', await service.conversations.prepareHandoff(workspaceId, id, validate('draft', await readJsonBody(128 * 1024))));
       if (action === 'send') return result('sent', service.conversations.send(workspaceId, id, validate('send', await readJsonBody(128 * 1024))), 202);
       if (action === 'observe') { validate('empty', await readJsonBody()); return result('conversation', await service.conversations.observe(workspaceId, id)); }
       if (action === 'generate-title') return result('conversation', await service.conversations.generateTitle(workspaceId, id, validate('revision', await readJsonBody())));

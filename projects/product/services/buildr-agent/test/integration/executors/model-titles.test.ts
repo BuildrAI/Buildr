@@ -17,7 +17,7 @@ test('reasoning catalogs expose model-owned choices and supported defaults only'
   assert.deepEqual(qoderModel({ value: 'catalog-v2', efforts: ['light', 'light', 'heavy'], defaultEffort: 'not-advertised' }).reasoningEfforts, [{ id: 'light', label: 'light' }, { id: 'heavy', label: 'heavy' }]);
 });
 
-function titleRpc(directory: string, options: { network?: boolean; permission?: boolean } = {}) {
+function titleRpc(directory: string, options: { network?: boolean; permission?: boolean; handoff?:boolean } = {}) {
   const calls: Array<{ method: string; params: any }> = []; const writes: any[] = []; let listener: ((message: RpcMessage) => void) | undefined;
   const rpc = {
     onMessage(value: (message: RpcMessage) => void) { listener = value; return () => { listener = undefined; }; },
@@ -29,7 +29,7 @@ function titleRpc(directory: string, options: { network?: boolean; permission?: 
       if (method === 'turn/start') {
         queueMicrotask(() => {
           if (options.permission) listener?.({ id: 'forbidden-permission', method: 'item/commandExecution/requestApproval', params: { threadId: 'aux-thread', turnId: 'aux-turn', command: 'touch should-never-run' } });
-          else { listener?.({ method: 'item/completed', params: { threadId: 'aux-thread', turnId: 'aux-turn', item: { id: 'title', type: 'agentMessage', text: '{"title":"供应商入驻审核流程梳理"}' } } }); listener?.({ method: 'turn/completed', params: { threadId: 'aux-thread', turn: { id: 'aux-turn', status: 'completed' } } }); }
+          else { listener?.({ method: 'item/completed', params: { threadId: 'aux-thread', turnId: 'aux-turn', item: { id: 'title', type: 'agentMessage', text: options.handoff?'{"summary":"已检查目录，真实启动待验证。"}':'{"title":"供应商入驻审核流程梳理"}' } } }); listener?.({ method: 'turn/completed', params: { threadId: 'aux-thread', turn: { id: 'aux-turn', status: 'completed' } } }); }
         });
         return { turn: { id: 'aux-turn' } };
       }
@@ -147,4 +147,18 @@ test('Codex effort is explicit per turn and null clears a prior sticky native ef
     const turns = (await fs.readFile(log, 'utf8')).trim().split('\n').map(line => JSON.parse(line)).filter(call => call.method === 'turn/start');
     assert.equal(turns.length, 2); assert.equal(turns[0].params.effort, 'high'); assert.equal(turns[1].params.effort, null); assert.equal(turns[1].params.model, 'plain-model'); assert.ok(turns.every(call => call.params.threadId === contextRef.id));
   } finally { await runtime?.close(); await fs.rm(root, { recursive: true, force: true }); }
+});
+
+
+test('handoff summarization reuses verified isolation, never the work thread, and refuses tool requests',async()=>{
+ const directory=await fs.mkdtemp(path.join(os.tmpdir(),'buildr-handoff-summary-'));
+ try{
+  const fixture=titleRpc(directory,{network:false,handoff:true});
+  const result=await generateCodexTitle(fixture.rpc,{contextRef:{id:'work'},cwd:'/work',description:'用户原文和动作结果。'.repeat(700),signal:new AbortController().signal},directory,new Set(),true);
+  assert.equal(result,'已检查目录，真实启动待验证。');
+  const start=fixture.calls.find(c=>c.method==='thread/start')!;assert.equal(start.params.ephemeral,true);assert.equal(start.params.approvalPolicy,'never');
+  const turn=fixture.calls.find(c=>c.method==='turn/start')!;assert.equal(turn.params.threadId,'aux-thread');assert.deepEqual(turn.params.outputSchema.required,['summary']);
+  const refused=titleRpc(directory,{network:false,permission:true,handoff:true});
+  await assert.rejects(generateCodexTitle(refused.rpc,{contextRef:{id:'work'},cwd:'/work',description:'records',signal:new AbortController().signal},directory,new Set(),true),/tools_forbidden/);
+ }finally{await fs.rm(directory,{recursive:true,force:true});}
 });

@@ -131,6 +131,7 @@ export interface AgentRuntime {
   readTitle?(input: { contextRef: ContextRef; cwd: string }): Promise<string | undefined>;
   /** Independent, bounded auxiliary inference; it must not add input to the work context. */
   generateTitle?(input: ExecutorTitleInput): Promise<string | undefined>;
+  summarizeHandoff?(input: ExecutorTitleInput): Promise<string | undefined>;
   close(): Promise<void>;
 }
 export interface AgentExecutor {
@@ -200,6 +201,7 @@ export interface ConversationEntry {
   runId?: string;
   status?: 'sending' | 'accepted' | 'unknown' | 'running' | 'completed' | 'failed';
   attachments?: string[];
+  handoff?: HandoffMaterial;
   createdAt: string;
 }
 export interface RunView {
@@ -243,7 +245,23 @@ export interface ConversationView {
   requests: PendingRequestView[];
   nextEntryCursor?: number;
 }
+export interface HandoffRound {
+  id: string; title: string; from: number; through: number;
+  executionCount?: number; artifactCount?: number;
+  state?: RunStatus; diagnostic?: string; provider?: string; model?: string;
+  userInputs: string[]; assistantNotes: string[];
+  execution: Array<{action:string;result:string;location?:string}>;
+  artifacts: Array<{location:string;description:string}>;
+  finalReply?: string; sourcePath?: string;
+}
+export interface HandoffMaterial {
+  agent: string; model: string;
+  changes: Array<{kind:'agent'|'model';label:string;before:string;after:string}>;
+  rounds: HandoffRound[]; roundCount?: number; body: string; sourceThrough: number;
+  mode: 'records'|'summary'|'indexed'; sourcePath?: string;
+}
 export interface SendDraft {
+  skipHandoffSummary?: boolean;
   modelAccountId?: string; modelAccountIdentity?: string; modelAccountRevision?: string;
   expectedRevision: string;
   connectionId: string;
@@ -257,6 +275,7 @@ export interface SendDraft {
   handoffSummary?: string;
 }
 export interface SendPreview {
+  handoff?: HandoffMaterial;
   modelAccountId?: string; modelAccountIdentity?: string; modelAccountRevision?: string; modelSourceLabel?: string;
   token: string;
   conversationId: string;
