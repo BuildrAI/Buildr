@@ -452,9 +452,12 @@ test('Launcher refuses foreign targets and Windows shortcut binds exact Host Nod
   const runnerScript: any = fs.readFileSync(runnerPath, 'utf8');
   assert.match(runnerScript, /web --launcher-binding "%BINDING%"/);
   assert.match(runnerScript, /set "BINDING=/);
+  // cmd.exe 批处理必须按 CRLF 写盘；LF 行尾在多行 if/for 块上会静默误解析。
+  assert.ok(runnerScript.includes('\r\n') && !/(?<!\r)\n/u.test(runnerScript), 'Windows runner must be written with CRLF line endings');
   const hostBytes: any = fs.readFileSync(hostPath);
   assert.ok(hostBytes[0] === 0xff && hostBytes[1] === 0xfe, 'VBS host must be UTF-16LE so the Chinese failure notice renders correctly');
   assert.match(hostBytes.toString('utf16le'), /shell\.Run\(command, 0, True\)/);
+  assert.match(hostBytes.toString('utf16le'), /launcher\.log/, 'VBS host must record runner invocation failures into the Launcher log');
 
   const iconPath: any = path.join(bindingDir, 'Buildr.ico');
   const frozen: any = new Map([shortcut, bindingPath, iconPath, runnerPath, hostPath].map((file: any) => [file, fs.readFileSync(file)]));
