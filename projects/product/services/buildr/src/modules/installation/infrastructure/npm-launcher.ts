@@ -58,6 +58,7 @@ set "BINDING=${commandValue(binding.bindingPath)}"
 set "LOG_DIR=%~dp0logs"
 set "LOG_FILE=%LOG_DIR%\\launcher.log"
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
+echo runner-start >>"%LOG_FILE%"
 if not exist "%NODE%" (
   echo Host Node unavailable: %NODE% >>"%LOG_FILE%"
   exit /b 1
@@ -66,9 +67,11 @@ if not exist "%ENTRY%" (
   echo Buildr entry unavailable: %ENTRY% >>"%LOG_FILE%"
   exit /b 1
 )
-rem for 子命令经 cmd /c 执行；命令以引号开头且整体不以引号结尾时，cmd /c 会剥掉
-rem 首尾引号破坏命令行，因此最外层再包一层引号（cmd /c "..." 双引号惯例）。
-for /f "delims=" %%V in ('""%NODE%" -p "process.versions.node" 2^>^&1') do set "ACTUAL_NODE_VERSION=%%V"
+rem 版本探测不经 for 子命令：for 的 in-command 会再过一次 cmd /c，其旧式引号规则
+rem 会剥掉首尾引号破坏命令行。改为直接落盘再读文件，usebackq 使双引号按文件路径解析。
+"%NODE%" -p "process.versions.node" >"%LOG_DIR%\\node-version.txt" 2>&1
+for /f "usebackq delims=" %%V in ("%LOG_DIR%\\node-version.txt") do set "ACTUAL_NODE_VERSION=%%V"
+del "%LOG_DIR%\\node-version.txt" >nul 2>&1
 if not "%ACTUAL_NODE_VERSION%"=="%EXPECTED_NODE_VERSION%" (
   echo Host Node version drifted: %ACTUAL_NODE_VERSION% >>"%LOG_FILE%"
   exit /b 1
@@ -84,6 +87,12 @@ function windowsHostScript(wrapper: any) {
   const script = `Set shell = CreateObject("WScript.Shell")
 Set files = CreateObject("Scripting.FileSystemObject")
 base = files.GetParentFolderName(WScript.ScriptFullName)
+On Error Resume Next
+If Not files.FolderExists(base & "\\logs") Then files.CreateFolder(base & "\\logs")
+Set logFile = files.OpenTextFile(base & "\\logs\\launcher.log", 8, True)
+logFile.WriteLine "Launcher host invoking runner"
+logFile.Close
+On Error GoTo 0
 command = Chr(34) & base & "\\${path.basename(wrapper.runner)}" & Chr(34)
 On Error Resume Next
 exitCode = shell.Run(command, 0, True)
@@ -91,7 +100,6 @@ runError = Err.Number
 On Error GoTo 0
 If runError <> 0 Then
   On Error Resume Next
-  If Not files.FolderExists(base & "\\logs") Then files.CreateFolder(base & "\\logs")
   Set logFile = files.OpenTextFile(base & "\\logs\\launcher.log", 8, True)
   logFile.WriteLine "Launcher host could not execute runner: error=" & runError
   logFile.Close
