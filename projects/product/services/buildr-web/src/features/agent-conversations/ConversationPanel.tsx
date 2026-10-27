@@ -262,7 +262,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
               const provider=result?.provider||item.entries[0].provider;
               return <section className="ac-assistant-reply" key={key} data-run-id={item.entries[0].runId}>
                 <small className="ac-message-identity">{provider?providerNames[provider]||provider:'智能体'}</small>
-                <ConversationProcessBlock blockKey={key} entries={item.entries} active={item.active} finishedAt={item.finishedAt} onOpenFile={path=>void openProcessFile(path)} open={expandedToolGroups[key]===true} onToggle={(name,open)=>setExpandedToolGroups(previous=>({...previous,[name]:open}))}/>
+                <ConversationProcessBlock blockKey={key} entries={item.entries} active={item.active} finishedAt={item.finishedAt} onOpenFile={path=>void openProcessFile(path)} open={expandedToolGroups[key]??item.active} onToggle={(name,open)=>setExpandedToolGroups(previous=>({...previous,[name]:open}))}/>
                 {result&&renderEntry(result)}
               </section>;
             }

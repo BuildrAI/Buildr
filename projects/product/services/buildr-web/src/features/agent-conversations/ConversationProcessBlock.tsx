@@ -31,6 +31,39 @@ function ToolStep({entry,active,onOpenFile}:{entry:ConversationEntry;active:bool
     </div>
   </details>;
 }
+/** 连续工具条目折叠为一个分组行；单个步骤仍独占一行。 */
+function ToolGroup({entries,active,onOpenFile}:{entries:ConversationEntry[];active:boolean;onOpenFile:FileOpener}){
+  const tools=entries.map(processTool);
+  const kinds=new Set(tools.map(tool=>tool.kind));
+  const counts=new Map<string,number>();
+  for(const tool of tools)counts.set(tool.action,(counts.get(tool.action)||0)+1);
+  const label=[...counts].map(([action,count])=>count>1?`${action} ×${count}`:action).join(' · ');
+  const failed=entries.filter(entry=>processEntryStatus(entry,active)==='failed').length;
+  const running=entries.filter(entry=>processEntryStatus(entry,active)==='running').length;
+  return <details className={'ac-step-group'+(failed?' is-failed':'')+(running?' is-running':'')}>
+    <summary>
+      <span className="ac-step-node" aria-hidden="true"><ToolIcon kind={kinds.size===1?tools[0].kind:'tool'}/></span>
+      <span className="ac-step-action">{entries.length} 个步骤</span>
+      <span className="ac-step-label" title={label}>{label}</span>
+      {running>0&&<span className="ac-step-status">执行中</span>}
+      {failed>0&&<span className="ac-step-status"><WarningOutlined aria-hidden="true"/>{failed} 项失败</span>}
+      <RightOutlined className="ac-step-chevron" aria-hidden="true"/>
+    </summary>
+    <div className="ac-step-group-items">{entries.map(entry=><ToolStep key={entry.id} entry={entry} active={active} onOpenFile={onOpenFile}/>)}</div>
+  </details>;
+}
+type TimelineItem={type:'tools';entries:ConversationEntry[]}|{type:'narration';entry:ConversationEntry};
+function processTimeline(entries:readonly ConversationEntry[]):TimelineItem[]{
+  const items:TimelineItem[]=[];
+  for(const entry of entries){
+    const last=items[items.length-1];
+    if(entry.kind==='tool'){
+      if(last?.type==='tools')last.entries.push(entry);
+      else items.push({type:'tools',entries:[entry]});
+    }else items.push({type:'narration',entry});
+  }
+  return items;
+}
 function durationLabel(startedAt:string,finishedAt:string):string {
   const seconds=Math.max(0,Math.round((Date.parse(finishedAt)-Date.parse(startedAt))/1000));
   if(!Number.isFinite(seconds)||seconds<5)return '';
@@ -44,7 +77,11 @@ export function ConversationProcessBlock({blockKey,entries,active,finishedAt,ope
   const title=running?'正在处理':tools.length?`执行了 ${tools.length} 次工具调用`:'处理过程';
   const duration=running?'':durationLabel(summary.startedAt,finishedAt||summary.finishedAt);
   const current=summary.focus.kind==='tool'?processTool(summary.focus).action+' '+processTool(summary.focus).description:summary.focus.text;
-  return <details className={'ac-process'+(summary.failed?' is-failed':'')+(running?' is-running':'')} open={open} onToggle={event=>{if(event.target===event.currentTarget)onToggle(blockKey,event.currentTarget.open);}}>
+  return <details className={'ac-process'+(summary.failed?' is-failed':'')+(running?' is-running':'')} open={open} onToggle={event=>{
+    // 程序化开合（执行中展开、结束自动折叠）把 DOM 对齐到渲染值；只记录用户交互造成的差异。
+    if(event.target!==event.currentTarget||event.currentTarget.open===open)return;
+    onToggle(blockKey,event.currentTarget.open);
+  }}>
     <summary>
       <RightOutlined className="ac-process-chevron" aria-hidden="true"/>
       {running&&<span className="ac-process-running-dot" aria-hidden="true"/>}
@@ -53,6 +90,11 @@ export function ConversationProcessBlock({blockKey,entries,active,finishedAt,ope
       {summary.failed>0&&<span className="ac-process-failures"><WarningOutlined aria-hidden="true"/>{summary.failed} 项失败</span>}
       {running&&<span className="ac-process-current" title={current}>{current}</span>}
     </summary>
-    <div className="ac-process-timeline">{entries.map(entry=>entry.kind==='tool'?<ToolStep key={entry.id} entry={entry} active={active} onOpenFile={onOpenFile}/>:<div key={entry.id} className="ac-process-narration" data-entry-id={entry.id}><MarkdownHost markdown={entry.text} className="markdown-body"/></div>)}</div>
+    <div className="ac-process-timeline">{processTimeline(entries).map(item=>item.type==='narration'
+      ?<div key={item.entry.id} className="ac-process-narration" data-entry-id={item.entry.id}><MarkdownHost markdown={item.entry.text} className="markdown-body"/></div>
+      :item.entries.length>1
+        ?<ToolGroup key={item.entries[0].id} entries={item.entries} active={active} onOpenFile={onOpenFile}/>
+        :<ToolStep key={item.entries[0].id} entry={item.entries[0]} active={active} onOpenFile={onOpenFile}/>)}
+    </div>
   </details>;
 }

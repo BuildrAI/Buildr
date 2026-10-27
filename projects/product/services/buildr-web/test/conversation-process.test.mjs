@@ -85,6 +85,11 @@ test('prepending earlier steps preserves expansion of the overlapping process',(
  const key=processBlockKey([current[0]]),next=carryExpandedProcessBlocks(current,added,{[key]:true});assert.equal(next[processBlockKey([added[1],current[0]])],true);assert.deepEqual(carryExpandedProcessBlocks(current,added,{}),{});
 });
 
+test('加载更早记录保留用户对过程的显式折叠选择',()=>{
+ const current=[{...tool('current'),sequence:10}],added=[{...tool('earlier'),sequence:2}];
+ const key=processBlockKey([current[0]]),next=carryExpandedProcessBlocks(current,added,{[key]:false});
+ assert.equal(next[processBlockKey([added[0],current[0]])],false);
+});
 
 test('继续后的历史轮次不会因残留running条目重新显示正在处理，也不伪造成成功',()=>{
   const old=tool('old',{runId:'old-run',status:'running'}),current=tool('current',{runId:'new-run',status:'running'});

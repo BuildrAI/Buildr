@@ -157,12 +157,19 @@ export function processBlockKey(entries:readonly ConversationEntry[]):string {
   return 'process-block:'+entries[0].id;
 }
 
-/** Prepending steps can change a block's first entry; keep expanded overlapping blocks open. */
+/** Prepending steps can change a block's first entry; keep explicit open/closed choices on overlapping blocks. */
 export function carryExpandedProcessBlocks(current:readonly ConversationEntry[],added:readonly ConversationEntry[],expanded:Record<string,boolean>,run?:ConversationRun):Record<string,boolean>{
- const openIds=new Set(groupConversationStream(current,run).flatMap(item=>item.type==='process-block'&&expanded[processBlockKey(item.entries)]?item.entries.map(e=>e.id):[]));
- if(!openIds.size)return expanded;
+ const marks=new Map<string,boolean>();
+ for(const item of groupConversationStream(current,run))if(item.type==='process-block'){
+   const value=expanded[processBlockKey(item.entries)];
+   if(value!==undefined)for(const entry of item.entries)marks.set(entry.id,value);
+ }
+ if(!marks.size)return expanded;
  const entries=[...new Map([...added,...current].map(e=>[e.id,e])).values()].sort((a,b)=>a.sequence-b.sequence),next={...expanded};
- for(const item of groupConversationStream(entries,run))if(item.type==='process-block'&&item.entries.some(e=>openIds.has(e.id)))next[processBlockKey(item.entries)]=true;
+ for(const item of groupConversationStream(entries,run))if(item.type==='process-block'){
+   const value=item.entries.map(e=>marks.get(e.id)).find((v):v is boolean=>v!==undefined);
+   if(value!==undefined)next[processBlockKey(item.entries)]=value;
+ }
  return next;
 }
 
