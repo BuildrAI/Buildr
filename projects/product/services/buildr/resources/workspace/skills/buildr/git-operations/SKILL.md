@@ -90,6 +90,8 @@ push 前重新观察实际 remote、source ref、destination ref 和 destination
 
 普通 push 被拒绝时停止；不自动 force push、不改写共享历史、不切换目标或策略。只有 caller/Agent 重新核验事实并取得所需决定后才能重试。
 
+远端访问失败（`could not read Username`、`Permission denied (publickey)`、凭据帮助器（Credential Helper）无输出）先核对身份解析环境，再下"无凭据"结论：用 `git config --list --show-origin` 确认实际参与求值的配置文件——缺少用户级 `~/.gitconfig` 说明 `HOME` 或 `GIT_CONFIG_GLOBAL` 未指向真实用户主目录；执行环境可能把 `HOME`、钥匙串（Keychain）或 SSH 代理（SSH Agent）隔离到绑定目录，而 `gh auth git-credential`、自定义 `credential.helper` 与 SSH 配置都按 `HOME` 定位，在真实 `HOME` 下重新解析（如 `HOME=<真实主目录> git credential fill`）并验证帮助器实际返回。环境与帮助器核对后仍无凭据才按缺失处理：请求凭据、改用已授权凭据或交还用户推送，不得因此切换 remote、账号或目标。本诊断同样适用于 fetch 与 `ls-remote` 等需要远端认证的只读观察。
+
 ## 6. 最小 Result 与部分失败
 
 每次 operation 只报告适用字段：
