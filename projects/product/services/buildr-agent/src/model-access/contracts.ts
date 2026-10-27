@@ -17,6 +17,8 @@ export interface ModelOffering {
   reportedContextWindow?: number;
   contextWindowOverride?: number;
   defaultServiceTier?: string;
+  /** Platform-reported per-request credit multiplier (for example Qoder `price_factor`). */
+  creditFactor?: number;
   serviceTiers?: Array<{id:string;label:string;contextWindow?:number;reasoningEfforts?:Array<{id:string;label:string}>;defaultReasoningEffort?:string}>;
 }
 export interface ModelPreference { enabled:boolean;contextWindow?:number; }

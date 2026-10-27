@@ -20,11 +20,13 @@ export async function readQoderIdentity(config: string) {
   if(!userID||!authToken) throw new Error('qoder_login_required');
   return {userID,authToken,machineID,name:string(user.name)??'',email:string(user.email)??''};
 }
-/** Only the two fixed global model endpoints are reachable through this owner. */
+/** Only the fixed model and quota endpoints are reachable through this owner. */
 export async function requestQoderModel(config: string, path: string, init: RequestInit = {}, fetchFn: typeof fetch=fetch, expectedIdentity?:string):Promise<Response> {
-  if(path!=='/models'&&path!=='/chat') throw new Error('qoder_model_target_invalid');
+  if(path!=='/models'&&path!=='/chat'&&path!=='/usage') throw new Error('qoder_model_target_invalid');
   const creds=await readQoderIdentity(config);
   if(expectedIdentity&&createHash('sha256').update('qoder:'+creds.userID).digest('hex')!==expectedIdentity)throw new Error('model_identity_conflict');
+  // The openapi host authenticates with the plain OAuth bearer instead of COSY signing.
+  if(path==='/usage')return fetchFn('https://center.qoder.sh/api/v2/quota/usage',{method:'GET',headers:{accept:'application/json',authorization:`Bearer ${creds.authToken}`},signal:init.signal,redirect:'error'});
   const url=path==='/models'?'https://api3.qoder.sh/algo/api/v2/model/list?Encode=1':'https://api3.qoder.sh/algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1';
   const body=path==='/chat'?qoderEncodeBody(String(init.body)):null;
   return fetchFn(url,{method:path==='/chat'?'POST':'GET',headers:{...buildAuthHeaders(body,url,creds),accept:path==='/chat'?'text/event-stream':'application/json',...(body?{'content-type':'application/json'}:{})},...(body?{body:new Uint8Array(body)}:{}),signal:init.signal,redirect:'error'});
@@ -33,6 +35,34 @@ export interface QoderModelOwner {
   inspect(): Promise<AccountObservation>;
   identity(): Promise<string>;
   request(path:string,init?:RequestInit):Promise<Response>;
+}
+const quotaNumber=(value:unknown):number|undefined=>typeof value==='number'&&Number.isFinite(value)?value:undefined;
+const quotaFormat=(value:number):string=>Number.isInteger(value)?String(value):value.toFixed(1);
+const quotaPercent=(value:number):number=>Math.round(Math.max(0,Math.min(100,value))*10)/10;
+/** Read the openapi credits usage. A failed read keeps the model catalog usable. */
+async function observeQoderQuota(request:(path:string,init?:RequestInit)=>Promise<Response>):Promise<ModelProviderObservation['quota']>{
+  const observedAt=new Date().toISOString();
+  try{
+    const response=await request('/usage',{signal:AbortSignal.timeout(10000)});
+    if(!response.ok){await response.body?.cancel();return{available:false,observedAt};}
+    const data=record(await response.json());
+    const resetsAt=positive(data.expiresAt)?new Date(positive(data.expiresAt)!).toISOString():undefined;
+    const remainingPercent=(bucket:Record<string,unknown>,totalField:string):number|undefined=>{
+      const total=positive(bucket[totalField]),remaining=quotaNumber(bucket.remaining);
+      if(total!==undefined&&remaining!==undefined)return quotaPercent(remaining/total*100);
+      const used=quotaNumber(bucket.percentage);return used===undefined?undefined:quotaPercent((1-used)*100);
+    };
+    const windows:Array<{id:string;label:string;remainingPercent:number;resetsAt?:string}>=[];
+    const user=record(data.userQuota),userPercent=remainingPercent(user,'total');
+    if(userPercent!==undefined)windows.push({id:'credits',label:'Credits',remainingPercent:userPercent,...(resetsAt?{resetsAt}:{})});
+    const org=record(data.orgResourcePackage),orgPercent=org.available===true?remainingPercent(org,'cap'):undefined;
+    if(orgPercent!==undefined)windows.push({id:'org-package',label:'组织资源包',remainingPercent:orgPercent});
+    if(!windows.length)return{available:false,observedAt};
+    const userType=string(data.userType),planLabel=userType==='teams'?'Teams':userType?userType[0]!.toUpperCase()+userType.slice(1):undefined;
+    const total=positive(user.total),remaining=quotaNumber(user.remaining);
+    const summary=total!==undefined&&remaining!==undefined?`Qoder · 剩余 ${quotaFormat(remaining)} / ${quotaFormat(total)} credits`:undefined;
+    return{available:true,observedAt,...(planLabel?{planLabel}:{}),windows,remainingPercent:Math.min(...windows.map(window=>window.remainingPercent)),...(resetsAt?{resetsAt}:{}),...(summary?{summary}:{})};
+  }catch{return{available:false,observedAt};}
 }
 export function createQoderModelProvider(owner:QoderModelOwner):ModelProvider {
   return {id:'native-qoder',label:'Qoder',connectionId:'qoder',async open(){
@@ -47,9 +77,10 @@ export function createQoderModelProvider(owner:QoderModelOwner):ModelProvider {
           const thinking=record(config.thinking_config),enabled=record(thinking.enabled),efforts=Object.keys(record(enabled.efforts));
           const contexts=Object.values(record(config.context_config)).map(record);const windows=contexts.flatMap(v=>positive(v.token_count)??[]);const contextWindow=positive(contexts.find(v=>v.is_default===true)?.token_count)??positive(config.max_input_tokens)??(windows.length?Math.min(...windows):undefined);
           const reportedContextWindow=windows.length?Math.max(...windows):positive(config.max_input_tokens);
-          const offering:ModelOffering={id,...(reportedContextWindow?{reportedContextWindow}:{}),label:string(config.display_name)??id,tools:true,images:config.is_vl===true,...(contextWindow?{contextWindow}:{}),...(efforts.length?{reasoningEfforts:efforts.map(id=>({id,label:id})),defaultReasoningEffort:efforts.find(id=>record(record(enabled.efforts)[id]).is_default===true)}:{})};
+          const creditFactor=quotaNumber(config.price_factor);
+          const offering:ModelOffering={id,...(reportedContextWindow?{reportedContextWindow}:{}),label:string(config.display_name)??id,tools:true,images:config.is_vl===true,...(contextWindow?{contextWindow}:{}),...(creditFactor!==undefined?{creditFactor}:{}),...(efforts.length?{reasoningEfforts:efforts.map(id=>({id,label:id})),defaultReasoningEffort:efforts.find(id=>record(record(enabled.efforts)[id]).is_default===true)}:{})};
           models.set(id,{offering,config});}
-        return{status:models.size?'ready':'failed',label:account.label??'Qoder',identity:await owner.identity(),models:[...models.values()].map(v=>v.offering),quota:{available:false,observedAt:new Date().toISOString()}};
+        return{status:models.size?'ready':'failed',label:account.label??'Qoder',identity:await owner.identity(),models:[...models.values()].map(v=>v.offering),quota:await observeQoderQuota((path,init)=>owner.request(path,init))};
     };
     return {protocol:'chat-completions',inspect,
       async beginLogin(){throw new Error('请在Qoder账号中登录。');},async cancelLogin(){},async close(){},

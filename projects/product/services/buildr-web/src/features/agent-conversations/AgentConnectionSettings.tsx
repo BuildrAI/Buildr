@@ -11,7 +11,7 @@ const waiting=(value:{state:string}|undefined)=>!!value&&['initializing','waitin
 export function AgentConnectionSettings(){
  const context=useAgentConversations(),{message}=App.useApp();
  const [programGeneration,setProgramGeneration]=useState(0),[startProgram,setStartProgram]=useState(false);
- const [mode,setMode]=useState<'agents'|'accounts'>('agents');
+ const [mode,setMode]=useState<'agents'|'accounts'>('accounts');
  const [providers,setProviders]=useState<Array<{id:string;label:string}>>([]);
  const [accounts,setAccounts]=useState<ModelAccount[]>([]),[selection,setSelection]=useState<AccountSelection>({sourceId:'all',tab:'quota'});
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[program,setProgram]=useState<string|null>(null),[pendingLogin,setPendingLogin]=useState<string|null>(null),[preparing,setPreparing]=useState<Record<string,boolean>>({});
