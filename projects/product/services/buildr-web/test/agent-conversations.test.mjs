@@ -5,7 +5,7 @@ import { registerHooks } from 'node:module';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createApiClient } from '../src/api/client.ts';
-import { appendDraftAttachment, canGenerateConversationTitle, canStopConversationTool, createdConversationVisibility, executionLocked, participantAgentIds, shouldSendOnKey, draftKey, readDraft, removeSubmittedAttachments, transferDraftText, writeDraft, applyConversationEvent, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, parseEventFrame, sameConversationSelection, latestConversationParticipant } from '../src/features/agent-conversations/conversation-state.ts';
+import { appendDraftAttachment, canGenerateConversationTitle, canStopConversationTool, conversationConflictNeedsRefresh, createdConversationVisibility, executionLocked, participantAgentIds, shouldSendOnKey, draftKey, readDraft, removeSubmittedAttachments, transferDraftText, writeDraft, applyConversationEvent, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, parseEventFrame, sameConversationSelection, latestConversationParticipant } from '../src/features/agent-conversations/conversation-state.ts';
 import {conversationPermissionKey,conversationPermissionStorageKey,conversationReasoningOptions,conversationRunIdentity,readConversationPermission,reasoningEffortLabel,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,writeConversationPermission} from '../src/features/agent-conversations/conversation-options.ts';
 registerHooks({resolve(specifier,context,next){
   if(specifier==='../../../api'&&context.parentURL?.endsWith('/agent-conversations-api.ts'))return next(new URL('../src/api/index.ts',import.meta.url).href,context);
@@ -284,6 +284,14 @@ test('工具只在明确声明可单独停止且未结束时提供单项停止�
   assert.equal(canStopConversationTool({...tool,canStop:false}),false);
   assert.equal(canStopConversationTool(tool),false);
   assert.equal(canStopConversationTool({...tool,status:'completed',canStop:true}),false);
+});
+
+test('409只刷新真实过期观察，忙碌与权限问题保留准确原因',()=>{
+  for(const code of ['agent_revision_conflict','agent_preview_stale','agent_model_source_changed','agent_model_source_unavailable','agent_model_unavailable','agent_model_disabled'])assert.equal(conversationConflictNeedsRefresh({status:409,code}),true,code);
+  for(const code of ['agent_conversation_busy','agent_permission_unavailable','agent_model_incompatible','qoder_platform_login_required'])assert.equal(conversationConflictNeedsRefresh({status:409,code}),false,code);
+  assert.equal(conversationConflictNeedsRefresh({status:400,code:'agent_revision_conflict'}),false);
+  assert.equal(conversationConflictNeedsRefresh({status:409}),false);
+  assert.equal(conversationConflictNeedsRefresh(undefined),false);
 });
 
 test('历史图片按原对话身份携带认证头读取，认证轮换重试不暴露令牌且保留取消信号',async()=>{

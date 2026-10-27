@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Alert, App, Button, Dropdown, Input, Modal, Popover, Select, Spin, Tag } from 'antd';
 import { ArrowUpOutlined, CommentOutlined, CopyOutlined, EllipsisOutlined, MenuOutlined, PlusOutlined, SafetyCertificateOutlined, StopOutlined, VerticalAlignTopOutlined } from '@ant-design/icons';
 import { MarkdownHost } from '../../components/MarkdownHost';
@@ -15,8 +15,8 @@ import { ConversationDock } from './ConversationDock';
 import { ConversationMessageImages } from './ConversationMessageImages';
 import { ConversationImageInput, type DraftImage } from './ConversationImageInput';
 import { imageSelectionError, conversationImageTypes } from './conversation-images';
-import {conversationModelCompatibility,officialConversationChoice,conversationPermissionKey,conversationPermissionStorageKey,conversationRunIdentity,permissionModeLabels,readConversationPermission,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,writeConversationPermission,type ConversationChoice,type PermissionMode} from './conversation-options';
-import { appendDraftAttachment, canGenerateConversationTitle, canStopConversationTool, executionLocked, groupConversationStream, participantAgentIds, removeSubmittedAttachments, shouldSendOnKey, latestConversationParticipant, processBlockKey, type ConversationSelection } from './conversation-state';
+import {conversationModelCompatibility,conversationPermissionKey,conversationPermissionStorageKey,conversationRunIdentity,permissionModeLabels,readConversationPermission,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,writeConversationPermission,type ConversationChoice,type PermissionMode} from './conversation-options';
+import { appendDraftAttachment, canGenerateConversationTitle, canStopConversationTool, conversationConflictNeedsRefresh, executionLocked, groupConversationStream, participantAgentIds, removeSubmittedAttachments, shouldSendOnKey, latestConversationParticipant, processBlockKey, type ConversationSelection } from './conversation-state';
 import { conversationActionKey, createConversationActions } from './conversation-actions';
 import { useConversationDraft } from './useConversationDraft';
 import { providerNames, type ConversationEntry, type ConversationView, type SendDraft, type SendPreview } from './types';
@@ -26,6 +26,7 @@ import { conversationFileTarget } from './conversation-process';
 import {conversationReplyText} from './conversation-reply';
 import {ConversationHandoffDrawer} from './ConversationHandoffDrawer';
 import { ConversationProcessBlock } from './ConversationProcessBlock';
+import {modelPreferenceFromChoice,preferredConversationChoice,readConversationModelPreference,readConversationModulePreference,rememberConversationAgent,rememberConversationPermission,rememberedConversationPermission,writeConversationModelPreference,writeConversationModulePreference} from './conversation-preferences';
 import './agent-conversations.css';
 const statusLabels = {starting:'正在准备执行',running:'正在执行','waiting-approval':'等待授权','waiting-question':'等待你的回复',stopping:'正在停止',stopped:'已确认停止','tools-active':'模型已中断，仍有命令运行',unknown:'执行状态待确认',completed:'本轮已结束',failed:'本轮执行失败'};
 type Prepared = {conversation:ConversationView;input:SendDraft;preview:SendPreview;clientRequestId:string;selection:ConversationSelection};
@@ -36,6 +37,8 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
   const {message}=App.useApp();
   const navigate=useNavigate(),location=useLocation();
   const [newWorkspaceId,setNewWorkspaceId]=useState(defaultWorkspaceId||'');
+  const [modulePreference,setModulePreference]=useState(readConversationModulePreference);
+  const [modelPreference,setModelPreference]=useState(readConversationModelPreference);
   const draftWorkspaceId=context.draftScope?.workspaceId||newWorkspaceId;
   const newCwd=workspaces.find(item=>item.id===draftWorkspaceId)?.rootPath||'';
   // 新对话是同工作空间一份草稿：文本、模型/权限、附件与任务绑定按 workspace 共享；入口只提出绑定，有内容的草稿才留住绑定。
@@ -52,15 +55,20 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
   const [choices,setChoices]=useState<Record<string,ConversationChoice>>({});
   const choiceKey=draftSlot;
   const lastParticipant=latestConversationParticipant(chat);
-  const defaultConnection=context.connections.find(item=>item.id===lastParticipant?.connectionId)||context.connections.find(item=>item.status==='ready')||context.connections[0];
-  const choice=choices[choiceKey]||{connectionId:defaultConnection?.id||'',model:chat?.run?.model,modelAccountId:chat?.run?.modelAccountId,modelAccountIdentity:chat?.run?.modelAccountIdentity,serviceTier:chat?.run?.serviceTier,reasoningEffort:chat?.run?.reasoningEffort};
+  const newConversationChoice=useMemo(()=>context.scope?undefined:preferredConversationChoice(modulePreference,modelPreference,context.connections,context.modelCatalog),[context.scope,modulePreference,modelPreference,context.connections,context.modelCatalog]);
+  const seededChoice=choices[choiceKey];
+  const defaultConnection=context.scope
+    ?context.connections.find(item=>item.id===lastParticipant?.connectionId)||context.connections.find(item=>item.status==='ready')||context.connections[0]
+    :context.connections.find(item=>item.id===newConversationChoice?.connectionId)||context.connections.find(item=>item.status==='ready')||context.connections[0];
+  const choice=seededChoice||(context.scope?{connectionId:defaultConnection?.id||'',model:chat?.run?.model,modelAccountId:chat?.run?.modelAccountId,modelAccountIdentity:chat?.run?.modelAccountIdentity,serviceTier:chat?.run?.serviceTier,reasoningEffort:chat?.run?.reasoningEffort}:newConversationChoice)||{connectionId:defaultConnection?.id||''};
   const connection=context.connections.find(item=>item.id===choice.connectionId);
   const [permissionChoices,setPermissionChoices]=useState<Record<string,PermissionMode>>({});
   const permissionKey=conversationPermissionKey(context.scope,draftWorkspaceId);
   const permissionProfile=document.querySelector('meta[name="buildr-web-profile"]')?.getAttribute('content')||'local';
   const permissionStorageKey=conversationPermissionStorageKey(permissionProfile,context.scope,draftWorkspaceId);
   const savedPermission=(()=>{try{return readConversationPermission(permissionStorageKey,sessionStorage);}catch{return;}})();
-  const permissionMode=selectedConversationPermission(permissionChoices[permissionKey]??savedPermission,chat?.run);
+  const rememberedPermission=context.scope?undefined:rememberedConversationPermission(modulePreference,draftWorkspaceId);
+  const permissionMode=selectedConversationPermission(permissionChoices[permissionKey]??(context.scope?savedPermission:rememberedPermission),chat?.run);
   const permissionAvailable=supportsConversationPermission(connection,permissionMode);
   const [attachments,setAttachments]=useState<Record<string,DraftImage[]>>({});
   const attachmentKey=draftSlot;
@@ -78,16 +86,26 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
   const [moreOpen,setMoreOpen]=useState(false),[locationOpen,setLocationOpen]=useState(false);
   const [expandedToolGroups,setExpandedToolGroups]=useState<Record<string,boolean>>({});
   const stream=useRef<HTMLDivElement>(null),readPosition=useRef(0),bottom=useRef(true),fileInput=useRef<HTMLInputElement>(null),composing=useRef(false);
-  const selectedSourceModel=context.modelCatalog.find(model=>model.accountId===choice.modelAccountId&&model.modelId===choice.model);
+  const selectedSourceModel=context.modelCatalog.find(model=>model.accountId===choice.modelAccountId&&model.modelId===choice.model&&(!choice.modelAccountIdentity||model.accountIdentity===choice.modelAccountIdentity));
   const effectiveModel=choice.model??selectedConversationModel(connection,undefined)?.id;
   const effectiveModelLabel=selectedSourceModel?.label||selectedConversationModel(connection,effectiveModel)?.label||effectiveModel||'默认模型';
   const modelCompatibility=conversationModelCompatibility(connection,selectedSourceModel,permissionMode);
   const activeSend=useRef<SendOperation|null>(null),locked=executionLocked(chat?.run),canSend=!context.loading&&(!context.scope||Boolean(chat))&&!locked&&!sending&&!uploading&&!modelCompatibility&&(choice.modelAccountId?connection?.enabled&&selectedSourceModel?.available:connection?.status==='ready')&&permissionAvailable&&(!images.length||connection?.capabilities.images);
-  const select=(value:ConversationChoice)=>{setChoices(previous=>({...previous,[choiceKey]:value}));setPrepared(null);setSelectedHandoff(null);setPreviewOpen(false);};
-  useEffect(()=>{
-    if(choiceKey.startsWith('new:')&&defaultConnection?.status==='ready')setChoices(previous=>previous[choiceKey]?previous:{...previous,[choiceKey]:officialConversationChoice(defaultConnection,context.modelCatalog)});
-  },[choiceKey,defaultConnection?.id,defaultConnection?.status]);
-  const selectPermission=(value:PermissionMode)=>{setPermissionChoices(previous=>({...previous,[permissionKey]:value}));try{writeConversationPermission(permissionStorageKey,value,sessionStorage);}catch{/* Same-page selection remains usable. */}setPrepared(null);setSelectedHandoff(null);setPreviewOpen(false);};
+  useEffect(()=>{if(context.scope||seededChoice||!newConversationChoice)return;setChoices(previous=>previous[choiceKey]?previous:{...previous,[choiceKey]:newConversationChoice});},[choiceKey,context.scope,seededChoice,newConversationChoice]);
+  const select=(value:ConversationChoice,remember=true)=>{
+    setChoices(previous=>({...previous,[choiceKey]:value}));
+    if(remember){
+      setModulePreference(current=>{const next=rememberConversationAgent(current,value.connectionId);writeConversationModulePreference(next);return next;});
+      const nextModel=modelPreferenceFromChoice(value);setModelPreference(nextModel);writeConversationModelPreference(nextModel);
+    }
+    setPrepared(null);setSelectedHandoff(null);setPreviewOpen(false);
+  };
+  const selectPermission=(value:PermissionMode)=>{
+    setPermissionChoices(previous=>({...previous,[permissionKey]:value}));
+    setModulePreference(current=>{const next=rememberConversationPermission(current,value,context.scope?.workspaceId||draftWorkspaceId);writeConversationModulePreference(next);return next;});
+    try{writeConversationPermission(permissionStorageKey,value,sessionStorage);}catch{/* Same-page selection remains usable. */}
+    setPrepared(null);setSelectedHandoff(null);setPreviewOpen(false);
+  };
   useEffect(()=>{if(!newWorkspaceId&&defaultWorkspaceId)setNewWorkspaceId(defaultWorkspaceId);},[newWorkspaceId,defaultWorkspaceId]);
   useEffect(()=>{if(context.draftScope?.workspaceId)setNewWorkspaceId(context.draftScope.workspaceId);},[context.draftScope]);
   useEffect(()=>{setError('');setFeedback('');setExpandedToolGroups({});const active=activeSend.current;if(!active||!context.isSelectionCurrent(active.selection)){activeSend.current=null;setSending(false);setPreparing(false);setPrepared(null);setSelectedHandoff(null);setPreviewOpen(false);}bottom.current=true;},[context.selectionGeneration,context.scope?.workspaceId,context.scope?.conversationId,context.isSelectionCurrent]);
@@ -107,9 +125,10 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
     }catch(failure){if(context.isSelectionCurrent(selection))fail(failure);}
   };
   const recoverConflict=async(failure:unknown)=>{
-    if((failure as ApiError)?.status!==409)return false;
+    const api=failure as ApiError;if(api?.status!==409)return false;
     setPrepared(null);setPreviewOpen(false);
-    try{await context.refresh();await context.refreshConnections().catch(()=>{});await context.refreshModelCatalog().catch(()=>{});setError('对话或套餐状态已变化，已重新读取；套餐登录来源变化时请重新选择模型。草稿保留。');}catch{fail(failure);}
+    if(!conversationConflictNeedsRefresh(api)){fail(failure);return true;}
+    try{await context.refresh();await Promise.allSettled([context.refreshConnections(),context.refreshModelCatalog()]);const message=api.message.trim()||'请求未完成。';setError(/[。！？]$/.test(message)?message+' 草稿保留。':message+'。草稿保留。');}catch{fail(failure);}
     return true;
   };
   const ensureConversation=async(selection=context.getSelection())=>{

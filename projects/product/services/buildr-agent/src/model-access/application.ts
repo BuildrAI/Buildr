@@ -4,7 +4,7 @@ import { mkdir, chmod, lstat, readFile, rename, writeFile, unlink } from 'node:f
 import { join } from 'node:path';
 import { once } from 'node:events';
 import { lstatSync, readFileSync } from 'node:fs';
-import { ModelAccessError, type CatalogModel, type ModelAccessOptions, type ModelAccountView, type ModelGatewayLease, type ModelLeaseInput, type ModelProtocol, type ModelProviderRuntime, type ProtocolJson } from './contracts.ts';
+import { ModelAccessError, type CatalogModel, type ModelAccessOptions, type ModelAccountView, type ModelGatewayLease, type ModelLeaseInput, type ModelOffering, type ModelProtocol, type ModelProviderRuntime, type ProtocolJson } from './contracts.ts';
 import { effectiveModel, selectedOffering, modelConfiguration } from './model-preferences.ts';
 import type {ModelPreference,ModelPreferenceUpdate} from './contracts.ts';
 import { translateRequest, translateResponse, type OpaqueReasoning } from './protocols.ts';
@@ -13,6 +13,17 @@ import { modelFailure, upstreamFailure } from './errors.ts';
 const object = (value: unknown): ProtocolJson => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as ProtocolJson : {};
 const safeId = (value: string) => /^[a-zA-Z0-9_-]{1,100}$/.test(value);
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
+const byId = (left: { id: string }, right: { id: string }) => left.id.localeCompare(right.id);
+const selectionEfforts = (values: Array<{ id: string; label: string }> | undefined) => (values ?? []).map(({ id, label }) => ({ id, label })).sort(byId);
+const selectionTiers = (values: ModelOffering['serviceTiers']) => (values ?? []).map(tier => ({ id: tier.id, label: tier.label, contextWindow: tier.contextWindow, defaultReasoningEffort: tier.defaultReasoningEffort, reasoningEfforts: selectionEfforts(tier.reasoningEfforts) })).sort(byId);
+/** Stable snapshot for revision changes; observable quota and timestamps stay outside selection identity. */
+const selectionModels = (models: ModelOffering[]) => models.map(model => ({
+  id: model.id, label: model.label, contextWindow: model.contextWindow, reportedContextWindow: model.reportedContextWindow,
+  contextWindowOverride: model.contextWindowOverride, maxOutputTokens: model.maxOutputTokens, images: model.images, tools: model.tools,
+  enabled: model.enabled, kind: model.kind, family: model.family, defaultReasoningEffort: model.defaultReasoningEffort,
+  reasoningEfforts: selectionEfforts(model.reasoningEfforts), defaultServiceTier: model.defaultServiceTier,
+  serviceTiers: selectionTiers(model.serviceTiers),
+})).sort(byId);
 function conflict(actual: string, expected: string | undefined) { if (expected !== undefined && expected !== actual) throw new ModelAccessError('model_revision_conflict', '模型账号已变化，请刷新后重试。'); }
 interface Stored { version: 1; accounts: ModelAccountView[]; preferences?:Record<string,Record<string,ModelPreference>> }
 interface LeaseRecord { view: ModelGatewayLease; input: ModelLeaseInput; tokenHash: string; requests: Set<AbortController> }
@@ -106,7 +117,18 @@ export class ModelAccessApplication {
     if (result.loginAttempt && url?.attemptId === result.loginAttempt.id) result.loginAttempt.url = url.url;
     return result;
   }
+  private selectionState(row: ModelAccountView): string {
+    const current=this.view(row);
+    return JSON.stringify({identity:current.identity,enabled:current.enabled,status:current.status,label:current.label,accountLabel:current.accountLabel,models:selectionModels(current.models)});
+  }
   private async changed(row: ModelAccountView) { row.revision = randomUUID(); await this.save(); this.options.changed?.(structuredClone(row)); return this.view(row); }
+  private async observed(row: ModelAccountView, before: string) {
+    const changed=before!==this.selectionState(row);
+    if(changed)row.revision=randomUUID();
+    await this.save();
+    if(changed)this.options.changed?.(structuredClone(row));
+    return this.view(row);
+  }
   private async runtime(id: string): Promise<ModelProviderRuntime> {
     if (this.closed) throw new ModelAccessError('model_access_closed', '模型服务已关闭。', 503);
     const row = this.current(id), provider = this.providers.get(row.provider);
@@ -145,9 +167,11 @@ export class ModelAccessApplication {
   async check(id: string, input: { expectedRevision?: string } = {}) {
     await this.ready; const row = this.current(id); conflict(row.revision, input.expectedRevision);
     const operation = (this.operations.get(id) ?? 0) + 1; this.operations.set(id, operation);
+    let before: string | undefined;
     try {
       const observation = await (await this.runtime(id)).inspect();
       if (this.operations.get(id) !== operation) return this.view(this.current(id));
+      before=this.selectionState(row);
       if(observation.identity && row.identity!==digest(observation.identity)){row.identity=digest(observation.identity);for(const lease of [...this.leasesByIdentity.values()])if(lease.input.accountId===id)this.release(lease.view.identity);}
       row.enabled = true; row.status = observation.status; if(observation.label) row.accountLabel = observation.label; row.diagnostic = observation.diagnostic;
       if(observation.status==='ready') {
@@ -156,8 +180,8 @@ export class ModelAccessApplication {
         this.preferences.set(id,prefs);row.models = structuredClone(observation.models); row.observedAt = this.now;
       }
       if(observation.quota)row.quota=!observation.quota.available&&row.quota?.available?{...row.quota,stale:true,diagnostic:'本次额度读取未完成，以下保留上次观察。'}:observation.quota;
-    } catch { if (this.operations.get(id) !== operation) return this.view(this.current(id)); row.status = 'failed'; row.diagnostic = '模型账号检查未完成，已保留上次目录。'; }
-    return await this.changed(row);
+    } catch { if (this.operations.get(id) !== operation) return this.view(this.current(id)); before??=this.selectionState(row); row.status = 'failed'; row.diagnostic = '模型账号检查未完成，已保留上次目录。'; }
+    return await this.observed(row, before!);
   }
   async login(id: string, input: { expectedRevision: string }) {
     await this.ready; const row = this.current(id); if(row.connectionId)throw new ModelAccessError('model_managed_account','此账号复用原生登录，请在对应账号入口操作。'); conflict(row.revision, input.expectedRevision);

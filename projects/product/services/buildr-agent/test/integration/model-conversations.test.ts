@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {createAgentService} from '../../src/index.ts';
 import type {AgentExecutor,ExecutorItem,ExecutorOpenOptions} from '../../src/contracts.ts';
-import type {ModelProvider} from '../../src/model-access/contracts.ts';
+import type {ModelOffering,ModelProvider} from '../../src/model-access/contracts.ts';
 
 test('Codex Devin participants bind permission modes and hand off visible history without mixing native instructions',async()=>{
  for(const providerId of ['devin','fixture']){
@@ -61,5 +61,46 @@ test('a prepared executor without its own model login uses the selected account,
     assert.equal(service.conversations.read('workspace',current.id).run?.status,'completed');assert.equal(contexts.size,3);assert.equal(opens.filter(input=>input.gateway).at(-1)!.gateway!.models[0].contextWindow,128000);
     await service.models.accounts.preferences(first.id,{expectedRevision:adjusted.revision,models:[{id:'same-model',enabled:false}]});
     assert.throws(()=>service.conversations.prepareSend('workspace',current.id,{...next,expectedRevision:service.conversations.read('workspace',current.id).revision}),/已停用/);
+  }finally{await service.close();rmSync(root,{recursive:true,force:true});}
+});
+
+test('an unrelated account change does not invalidate a conversation using another account',async()=>{
+  const root=mkdtempSync(join(tmpdir(),'buildr-account-isolation-'));mkdirSync(join(root,'workspace'));
+  const models=new Map<string,ModelOffering[]>();const provider:ModelProvider={id:'fixture',label:'Fixture plan',async open({accountId}){return{protocol:'chat-completions',async inspect(){return{status:'ready' as const,models:structuredClone(models.get(accountId)??[{id:'source-model',label:'Shared model',images:false,tools:true}])};},async beginLogin(){},async cancelLogin(){},async infer(){return Response.json({});},async close(){}};}};
+  const capabilities={text:true,images:false,approval:true,questions:true,stop:true,resume:true,maxInputBytes:65536};
+  const executor:AgentExecutor={descriptor:{id:'local',label:'Local',capabilities},async open(){return{bindingIdentity:'binding',capabilities,async inspectAccount(){return{status:'not-authenticated'};},async models(){return[];},async beginLogin(){},async cancelLogin(){},async createContext(){return{id:randomUUID()};},async resumeContext(){},async readHistory(){return[];},async send(){},async observe(){return{status:'idle',tools:[]};},async reply(){},async stop(){return{status:'stopped',tools:[]};},async close(){}};}};
+  const service=createAgentService({dataRoot:join(root,'profile'),executors:[executor],modelProviders:[provider],resolveWorkspace:()=>({rootPath:join(root,'workspace')}),assertTask(){}});
+  try{
+    await service.connections.connect('local',{expectedRevision:'unconfigured'});
+    const first=await service.models.accounts.add({provider:'fixture'}),second=await service.models.accounts.add({provider:'fixture'});
+    models.set(first.id,[{id:'source-model',label:'Shared model',images:false,tools:true}]);
+    for(const account of [first,second]){const checked=await service.models.accounts.check(account.id);await service.models.accounts.preferences(account.id,{expectedRevision:checked.revision,models:[{id:'source-model',enabled:true}]});}
+    const firstBefore=service.models.accounts.read(first.id),current=service.models.accounts.read(second.id),conversation=await service.conversations.create('workspace',{}),view=service.conversations.read('workspace',conversation.id);
+    models.set(first.id,[{id:'source-model',label:'Shared model',images:false,tools:true},{id:'extra-model',label:'Extra',images:false,tools:true}]);
+    await service.models.accounts.check(first.id);
+    assert.notEqual(service.models.accounts.read(first.id).revision,current.revision,'the changed account rotates its own revision');
+    assert.equal(service.models.accounts.read(second.id).revision,current.revision,'the selected account keeps its revision');
+    const preview=service.conversations.prepareSend('workspace',view.id,{expectedRevision:view.revision,connectionId:'local',modelAccountId:second.id,modelAccountRevision:current.revision,model:'source-model',text:'continue with the unchanged account'});
+    assert.equal(preview.modelAccountId,second.id);assert.equal(preview.modelAccountRevision,current.revision);
+    const refreshed=service.conversations.read('workspace',conversation.id);
+    const staleRevisionPreview=service.conversations.prepareSend('workspace',refreshed.id,{expectedRevision:refreshed.revision,connectionId:'local',modelAccountId:first.id,modelAccountRevision:firstBefore.revision,model:'source-model',text:'the selected model remains valid'});
+    assert.equal(staleRevisionPreview.modelAccountId,first.id);assert.notEqual(staleRevisionPreview.modelAccountRevision,firstBefore.revision,'the preview adopts the current account observation');
+  }finally{await service.close();rmSync(root,{recursive:true,force:true});}
+});
+
+test('the current executor rejects unverified Devin model-source combinations before execution',async()=>{
+  const root=mkdtempSync(join(tmpdir(),'buildr-model-compatibility-')),workspace=join(root,'workspace');mkdirSync(workspace);
+  const capabilities={text:true,images:false,approval:true,questions:true,stop:true,resume:true,maxInputBytes:65536,permissionModes:['default'] as Array<'default'>};
+  const executor=(id:string):AgentExecutor=>({descriptor:{id,label:id,capabilities},async open(){return{bindingIdentity:id,capabilities,async inspectAccount(){return{status:'ready'};},async models(){return[];},async beginLogin(){},async cancelLogin(){},async createContext(){return{id:randomUUID()};},async resumeContext(){},async readHistory(){return[];},async send(){},async observe(){return{status:'idle',tools:[]};},async reply(){},async stop(){return{status:'stopped',tools:[]};},async close(){}};}});
+  const provider:ModelProvider={id:'devin',label:'Devin',async open(){return{protocol:'chat-completions',async inspect(){return{status:'ready',identity:'devin-account',models:[{id:'swe-2',label:'SWE-2',images:false,tools:true},{id:'other-model',label:'Other',images:false,tools:true}]};},async beginLogin(){},async cancelLogin(){},async infer(){return Response.json({});},async close(){}};}};
+  const service=createAgentService({dataRoot:join(root,'profile'),executors:['qoder','dsh','codex'].map(executor),modelProviders:[provider],resolveWorkspace:()=>({rootPath:workspace}),assertTask(){}});
+  try{
+    for(const id of ['qoder','dsh','codex'])await service.connections.connect(id,{expectedRevision:'unconfigured'});
+    const added=await service.models.accounts.add({provider:'devin'}),checked=await service.models.accounts.check(added.id);
+    await service.models.accounts.preferences(added.id,{expectedRevision:checked.revision,models:checked.models.map(model=>({id:model.id,enabled:true}))});
+    const conversation=await service.conversations.create('workspace',{});
+    const draft={expectedRevision:conversation.revision,modelAccountId:added.id,modelAccountIdentity:checked.identity,text:'compatibility probe',permissionMode:'default' as const};
+    for(const [connectionId,model] of [['qoder','swe-2'],['codex','other-model']])assert.throws(()=>service.conversations.prepareSend('workspace',conversation.id,{...draft,connectionId,model}),/Devin 当前暂不兼容/);
+    for(const [connectionId,model] of [['dsh','swe-2'],['dsh','other-model'],['codex','swe-2']])service.conversations.prepareSend('workspace',conversation.id,{...draft,connectionId,model});
   }finally{await service.close();rmSync(root,{recursive:true,force:true});}
 });

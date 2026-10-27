@@ -3,6 +3,11 @@ import type { ConversationView, ConversationEntry, ConversationEvent, Conversati
 export function executionLocked(run?: ConversationRun): boolean {
   return Boolean(run && ['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'tools-active', 'unknown'].includes(run.status));
 }
+const conversationConflictRefreshCodes = new Set(['agent_revision_conflict','agent_preview_stale','agent_model_source_changed','agent_model_source_unavailable','agent_model_unavailable','agent_model_disabled']);
+/** Only stale observations need a reread; busy and permission errors must keep their exact reason. */
+export function conversationConflictNeedsRefresh(error:{status?:number;code?:string}|undefined):boolean {
+  return error?.status===409&&Boolean(error.code&&conversationConflictRefreshCodes.has(error.code));
+}
 export function canStopConversationTool(tool:ConversationRun['tools'][number]):boolean {
   return tool.canStop===true&&tool.status!=='completed';
 }

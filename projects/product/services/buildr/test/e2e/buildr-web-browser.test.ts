@@ -691,7 +691,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     await runSourceControlJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,fixture:{path:sourceControlPath,location:fs.realpathSync(workspaceRoot),commitHash:history.stdout.trim(),historyText:historicalSource.stdout,indexText,workingText,prepareWorktrees,prepareRemoteStatuses,withStatusDigits,withDuplicateFiles,withImages,withBranches,withRegisteredSource,cleanLocation:codeWorktreeFixture.nativeCheckoutLocation,baselineWorktrees,unrelatedRetiredTaskId:codeWorktreeFixture.worktreeTaskId,unavailableRepositoryLocation,withUnavailableRepository}});
     }
   }
-  if (selected('agent-conversations')) await runAgentConversationsJourney({t,page,workspaceUrl,capture});
+  if (selected('agent-conversations')) await runAgentConversationsJourney({t,page,workspaceUrl,capture,expectedBrowserErrors});
   if (selected('layout')) await runLayoutJourney({ t, page, workspaceUrl, capture });
 
   if (SELECTORS.has('core')) await t.test('核心流程进入 Workspace、Task 路由并读取代表性 Tab', async () => {

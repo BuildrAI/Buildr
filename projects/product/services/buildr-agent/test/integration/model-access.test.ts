@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createModelAccess } from '../../src/model-access/application.ts';
 import { translateRequest, translateResponse, type OpaqueReasoning } from '../../src/model-access/protocols.ts';
-import type { ModelProvider, ProviderInferenceInput, ProtocolJson } from '../../src/model-access/contracts.ts';
+import type { ModelOffering, ModelProvider, ProviderInferenceInput, ProtocolJson } from '../../src/model-access/contracts.ts';
 
 const model={id:'source-model',label:'真实来源模型',images:true,tools:true,contextWindow:32000};
 const noOpaque:OpaqueReasoning={encode(value){return JSON.stringify(value);},decode(value){return JSON.parse(value);}};
@@ -25,6 +25,32 @@ test('gateway preserves a bounded HTTP failure before streaming without exposing
     const response=await request();assert.equal(response.status,429);const result=await response.json();
     assert.equal(result.error.code,'model_devin_quota_or_rate_limit');assert.match(result.error.message,/请求响应.*429/);assert.ok(!JSON.stringify(result).includes('private-token'));
     mode='html';const other=await request();assert.equal(other.status,503);assert.ok(!(await other.text()).includes('private upstream body'));
+  }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('account checks only rotate revisions for material changes in that account',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-model-revisions-')),models=new Map<string,ModelOffering[]>();let tick=0;
+  const ordered:ModelOffering={id:'ordered-model',label:'Ordered',images:false,tools:true,reasoningEfforts:[{id:'high',label:'高'},{id:'low',label:'低'}],defaultServiceTier:'standard',serviceTiers:[
+    {id:'standard',label:'标准',reasoningEfforts:[{id:'high',label:'高'},{id:'medium',label:'中'}],defaultReasoningEffort:'medium'},
+    {id:'fast',label:'快速',reasoningEfforts:[{id:'low',label:'低'}],defaultReasoningEffort:'low'},
+  ]};
+  const source:ModelProvider={id:'fixture',label:'Fixture',async open({accountId}){return{protocol:'chat-completions',async inspect(){return{status:'ready',models:structuredClone(models.get(accountId)??[model]),quota:{available:true,observedAt:new Date(Date.UTC(2026,9,25,0,0,tick++)).toISOString()}};},async beginLogin(){},async cancelLogin(){},async infer(){return Response.json({});},async close(){}};}};
+  const access=createModelAccess({root,providers:[source]});
+  try{
+    const first=await access.accounts.add({provider:'fixture'}),second=await access.accounts.add({provider:'fixture'});
+    models.set(first.id,[model,ordered]);
+    for(const account of [first,second]){const checked=await access.accounts.check(account.id);await access.accounts.preferences(account.id,{expectedRevision:checked.revision,models:checked.models.map(model=>({id:model.id,enabled:true}))});}
+    const firstBefore=access.accounts.read(first.id),secondBefore=access.accounts.read(second.id);
+    models.set(first.id,[{...ordered,reasoningEfforts:[...ordered.reasoningEfforts!].reverse(),serviceTiers:[...ordered.serviceTiers!].reverse().map(tier=>({...tier,reasoningEfforts:[...tier.reasoningEfforts!].reverse()}))},model]);
+    await access.accounts.check(first.id);await access.accounts.check(second.id);
+    assert.equal(access.accounts.read(first.id).revision,firstBefore.revision,'quota, time and returned ordering alone must not rotate the revision');
+    assert.equal(access.accounts.read(second.id).revision,secondBefore.revision,'other accounts keep their own revision');
+    models.set(first.id,[model,{id:'new-model',label:'New model',images:false,tools:true}]);
+    await access.accounts.check(first.id);
+    assert.notEqual(access.accounts.read(first.id).revision,firstBefore.revision,'material catalog changes rotate the account revision');
+    assert.equal(access.accounts.read(second.id).revision,secondBefore.revision,'another account is unaffected');
+    const lease=await access.leases.create({accountId:second.id,modelId:model.id,expectedRevision:secondBefore.revision,agentId:'qoder',conversationId:'conversation',runId:'run'});
+    assert.equal(lease.accountId,second.id);
   }finally{await access.close();await rm(root,{recursive:true,force:true});}
 });
 
