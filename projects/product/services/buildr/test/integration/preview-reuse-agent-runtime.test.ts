@@ -184,7 +184,7 @@ test('agent-runtime 沿用登录配置和程序、重建绑定并保持会话双
     assert.equal(service.connections.read('qoder').status, 'ready');
     const created = await service.conversations.create('ws', { cwd: data.previewRoot });
     const listed = service.conversations.list('ws').conversations.map((conversation) => conversation.id);
-    assert.ok(listed.includes(created.id));
+    assert.equal(listed.includes(created.id), false);
     assert.equal(listed.includes('source-conversation'), false);
     assert.throws(() => service.conversations.read('ws', 'source-conversation'), { code: 'agent_conversation_missing' });
     const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
@@ -201,6 +201,9 @@ test('agent-runtime 沿用登录配置和程序、重建绑定并保持会话双
     }
     assert.equal(completed?.run?.status, 'completed');
     assert.ok(completed?.entries.some((entry) => entry.text === 'fixture answer'));
+    const listedAfterSend = service.conversations.list('ws').conversations.map((conversation) => conversation.id);
+    assert.ok(listedAfterSend.includes(created.id));
+    assert.equal(listedAfterSend.includes('source-conversation'), false);
 
     const targetDb = new DatabaseSync(path.join(data.previewAgent, 'conversations.sqlite'), { readOnly: true });
     const relocated = JSON.parse((targetDb.prepare("SELECT body FROM connections WHERE id='qoder'").get() as { body: string }).body);

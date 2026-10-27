@@ -110,6 +110,7 @@ try {
   }
 
   const ruleFile: any = path.join(workspace, 'rules', 'fixture.md');
+  fs.mkdirSync(path.dirname(ruleFile), { recursive: true });
   fs.writeFileSync(ruleFile, '# Fixture\n');
   run(['rules', 'add', 'fixture', '--description', 'fixture rule', '--target', workspace], { expectFailure: true });
   run(['rules', 'remove', 'fixture', '--target', workspace], { expectFailure: true });
