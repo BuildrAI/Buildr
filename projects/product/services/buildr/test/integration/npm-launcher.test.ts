@@ -452,14 +452,16 @@ test('Launcher refuses foreign targets and Windows shortcut binds exact Host Nod
   const runnerScript: any = fs.readFileSync(runnerPath, 'utf8');
   assert.match(runnerScript, /web --launcher-binding "%BINDING%"/);
   assert.match(runnerScript, /set "BINDING=/);
-  // for 子命令经 cmd /c 执行：最外层必须再包一层引号，否则 cmd /c 剥掉首尾引号会破坏命令行。
-  assert.match(runnerScript, /in \('""%NODE%"/, 'for-command must wrap an extra outer quote pair for cmd /c');
+  // 版本探测必须绕过 for 子命令的 cmd /c 引号规则：直接落盘后按文件读回。
+  assert.match(runnerScript, /-p "process\.versions\.node" >/, 'version probe must run Host Node directly');
+  assert.match(runnerScript, /runner-start/, 'runner must leave an early marker so missing logs isolate the failing hop');
   // cmd.exe 批处理必须按 CRLF 写盘；LF 行尾在多行 if/for 块上会静默误解析。
   assert.ok(runnerScript.includes('\r\n') && !/(?<!\r)\n/u.test(runnerScript), 'Windows runner must be written with CRLF line endings');
   const hostBytes: any = fs.readFileSync(hostPath);
   assert.ok(hostBytes[0] === 0xff && hostBytes[1] === 0xfe, 'VBS host must be UTF-16LE so the Chinese failure notice renders correctly');
   assert.match(hostBytes.toString('utf16le'), /shell\.Run\(command, 0, True\)/);
   assert.match(hostBytes.toString('utf16le'), /launcher\.log/, 'VBS host must record runner invocation failures into the Launcher log');
+  assert.match(hostBytes.toString('utf16le'), /invoking runner/, 'VBS host must leave an invoke marker before shell.Run');
 
   const iconPath: any = path.join(bindingDir, 'Buildr.ico');
   const frozen: any = new Map([shortcut, bindingPath, iconPath, runnerPath, hostPath].map((file: any) => [file, fs.readFileSync(file)]));
