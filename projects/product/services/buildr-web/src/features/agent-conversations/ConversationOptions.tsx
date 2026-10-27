@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button, Popover, Select, Slider, Progress } from 'antd';
 import { CheckOutlined, DownOutlined, ThunderboltFilled, RobotOutlined } from '@ant-design/icons';
 import { providerNames, type ConnectionView, type CatalogModel } from './types';
-import {conversationModelCompatibility,officialConversationChoice,modelSourceName,nextServiceTier,conversationReasoningSelection,reasoningEffortLabel,selectedConversationModel,type ConversationChoice,type PermissionMode} from './conversation-options';
+import {conversationModelCompatibility,officialConversationChoice,modelSourceName,nextServiceTier,tierReasoningEffort,conversationReasoningSelection,reasoningEffortLabel,selectedConversationModel,type ConversationChoice,type PermissionMode} from './conversation-options';
 
 type Props = {
   connections:ConnectionView[];
@@ -62,7 +62,7 @@ export function ConversationOptions({connections,modelCatalog,value,disabled,onC
   const controls=<div ref={controlsRef} className="ac-model-controls" role="dialog" aria-label="模型与推理强度设置" onKeyDown={event=>{
     if(event.key==='Escape'){event.stopPropagation();setOpen(false);trigger.current?.focus();}
   }}>
-    <div className="ac-model-top-row">{selectedShared?.serviceTiers && selectedShared.serviceTiers.length>1?<Button type="text" size="small" className={'ac-tier-lightning'+(accelerated?' is-active':'')} aria-label="切换服务档位" aria-pressed={accelerated} title={tier?.label||'切换服务档位'} onClick={()=>onChange({...value,serviceTier:nextServiceTier(selectedShared.serviceTiers,value.serviceTier,selectedShared.defaultServiceTier),reasoningEffort:undefined})}><ThunderboltFilled/></Button>:<Button type="text" size="small" className="ac-tier-lightning" disabled aria-label="服务档位不可切换" title="该模型未提供可切换的快速档位"><ThunderboltFilled/></Button>}<Select className="ac-model-picker" aria-label="执行模型" title="模型" variant="borderless" size="small" showSearch optionFilterProp="label"
+    <div className="ac-model-top-row">{selectedShared?.serviceTiers && selectedShared.serviceTiers.length>1?<Button type="text" size="small" className={'ac-tier-lightning'+(accelerated?' is-active':'')} aria-label="切换服务档位" aria-pressed={accelerated} title={tier?.label||'切换服务档位'} onClick={()=>{const next=nextServiceTier(selectedShared.serviceTiers,value.serviceTier,selectedShared.defaultServiceTier),target=selectedShared.serviceTiers?.find(item=>item.id===next);onChange({...value,serviceTier:next,reasoningEffort:tierReasoningEffort(target,selectedShared.reasoningEfforts,value.reasoningEffort)});}}><ThunderboltFilled/></Button>:<Button type="text" size="small" className="ac-tier-lightning" disabled aria-label="服务档位不可切换" title="该模型未提供可切换的快速档位"><ThunderboltFilled/></Button>}<Select className="ac-model-picker" aria-label="执行模型" title="模型" variant="borderless" size="small" showSearch optionFilterProp="label"
       value={value.modelAccountId?'shared:'+value.modelAccountId+'::'+value.model:value.model||''} labelRender={({label})=>value.model?label:defaultModel?.label||'默认模型'}
       disabled={unavailable} popupMatchSelectWidth placement="topRight" virtual={false} listHeight={248}
       popupRender={menu=><div ref={modelPopup}><nav className="ac-model-source-nav" aria-label="模型来源快速定位">{groups.map(group=><Button key={group.id} size="small" type="text" onMouseDown={event=>{event.preventDefault();event.stopPropagation();}} onClick={event=>{event.stopPropagation();jumpToGroup(group.id);}}>{group.label}</Button>)}</nav>{menu}</div>}

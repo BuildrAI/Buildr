@@ -1,7 +1,7 @@
 import {useEffect,useLayoutEffect,useRef,useState,type RefObject} from 'react';
 import type {ConversationView} from './types';
 
-type Props={conversation:ConversationView|null;selectionKey:string;stream:RefObject<HTMLDivElement|null>;bottom:RefObject<boolean>;position:RefObject<number>;loadPage:(chat:ConversationView,before:number)=>Promise<ConversationView>;prepend:(page:ConversationView)=>void;onError:(error:unknown)=>void;onLoaded:(text:string)=>void};
+type Props={conversation:ConversationView|null;selectionKey:string;stream:RefObject<HTMLDivElement|null>;bottom:RefObject<boolean>;position:RefObject<number>;loadPage:(chat:ConversationView,before:number)=>Promise<ConversationView>;prepend:(page:ConversationView)=>void;onError:(error:unknown)=>void};
 type Anchor={attribute:string;id:string;offset:number;height:number;top:number;first:string;scope:string;fit:boolean};
 /** Paging belongs to a reading gesture, never to a stream update or an opened pane. */
 export function useEarlierConversationEntries(props:Props){
@@ -47,7 +47,6 @@ export function useEarlierConversationEntries(props:Props){
     anchor.current={attribute,id:item?.getAttribute(attribute)||'',offset:(item?.getBoundingClientRect().top??rect.top)-rect.top,height:node.scrollHeight,top:node.scrollTop,first:entries[0].id,scope:observed,fit:node.scrollHeight<=node.clientHeight+1};
    }
    props.prepend({...last,entries});
-   props.onLoaded(entries.length?`已加载 ${entries.length} 条更早记录${entries.some(e=>e.role==='user'&&e.kind==='message')?'':'，包含本轮执行过程，可展开查看'}${last.nextEntryCursor===undefined?'，已到对话开头':''}`:'已到对话开头');
   }catch(error){if(scope.current===observed)props.onError(error);}
   finally{if(active.current===operation){active.current=null;setLoading(false);}}
  };

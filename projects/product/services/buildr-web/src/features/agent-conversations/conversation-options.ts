@@ -86,6 +86,13 @@ export function nextServiceTier(tiers:ReadonlyArray<{id:string}>|undefined,curre
   return tiers[(index+1+tiers.length)%tiers.length]!.id;
 }
 
+/** 切换档位保留已选推理强度；目标档位不提供该强度时回落继承，不发送无效值。 */
+export function tierReasoningEffort(tier:{reasoningEfforts?:ReadonlyArray<{id:string}>}|undefined,fallback:ReadonlyArray<{id:string}>|undefined,effort:string|undefined):string|undefined {
+  if(!effort)return effort;
+  const options=tier?.reasoningEfforts??fallback;
+  return options?.some(option=>option.id===effort)?effort:undefined;
+}
+
 /** Never select a different subscription without an explicit user choice. */
 export function officialConversationChoice(connection:ConnectionView|undefined,catalog:CatalogModel[]):ConversationChoice {
  const connectionId=connection?.id??'';

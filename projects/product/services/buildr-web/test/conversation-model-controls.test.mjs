@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {conversationModelCompatibility,conversationReasoningSelection,nextServiceTier,officialConversationChoice} from '../src/features/agent-conversations/conversation-options.ts';
+import {conversationModelCompatibility,conversationReasoningSelection,nextServiceTier,officialConversationChoice,tierReasoningEffort} from '../src/features/agent-conversations/conversation-options.ts';
 const connection={models:[
   {id:'first',label:'First',isDefault:true,defaultReasoningEffort:'high',reasoningEfforts:[{id:'low',label:'Low'},{id:'high',label:'High'}]},
   {id:'second',label:'Second',defaultReasoningEffort:'medium',reasoningEfforts:[{id:'medium',label:'Medium'}]},
@@ -68,6 +68,14 @@ test('闪电只在模型实际提供的档位间循环，不编造缺失档位',
  assert.equal(nextServiceTier(tiers,'missing','standard:200'),'standard:200');
  assert.equal(nextServiceTier(undefined,'fast','standard'),'fast');
  assert.equal(nextServiceTier([{id:'only'}],undefined,'only'),'only');
+});
+test('切换档位保留目标档位提供的已选强度，其余回落继承',()=>{
+ const tier={reasoningEfforts:[{id:'low'},{id:'high'}]},fallback=[{id:'medium'},{id:'high'}];
+ assert.equal(tierReasoningEffort(tier,fallback,'high'),'high');
+ assert.equal(tierReasoningEffort(tier,fallback,'medium'),undefined,'目标档位没有的强度不落库');
+ assert.equal(tierReasoningEffort({reasoningEfforts:[]},fallback,'high'),undefined);
+ assert.equal(tierReasoningEffort(undefined,fallback,'medium'),'medium','档位未声明强度时用模型自身强度集');
+ assert.equal(tierReasoningEffort(tier,fallback,undefined),undefined,'未显式选择仍继承目标默认');
 });
 test('切换智能体优先采用官方来源，不自动消费其他套餐',()=>{
  const own={accountId:'native-codex',modelId:'m',available:true,enabled:true,accountIdentity:'own',accountRevision:'r'};
