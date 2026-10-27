@@ -16,18 +16,30 @@ const catalog=[
  ]},
 ];
 
-test('对话模块记忆按软件级保存智能体与权限，完全访问只在来源工作空间恢复',()=>{
- const keys=conversationPreferenceKeys('dev'),store=storage();
+test('新草稿初始完全访问，旧明确默认和准确空间偏好优先',()=>{
+ assert.equal(rememberedConversationPermission({version:1},'workspace-a'),'full-access');
+ assert.equal(rememberedConversationPermission({version:1,permission:{mode:'default'}},'workspace-a'),'default');
+ const legacy={version:1,permission:{mode:'full-access',workspaceId:'workspace-a'}};
+ const next=rememberConversationPermission(legacy,'default','workspace-b');
+ assert.equal(rememberedConversationPermission(next,'workspace-a'),'full-access');
+ assert.equal(rememberedConversationPermission(next,'workspace-b'),'default');
+ assert.equal(rememberedConversationPermission(next,'workspace-c'),'full-access');
+});
+
+test('权限按工作空间分别记忆，切回默认不清掉其他空间，存储刷新保留',()=>{
+ const store=storage();
  let preference=rememberConversationAgent({version:1},'qoder');
  preference=rememberConversationPermission(preference,'full-access','workspace-a');
+ preference=rememberConversationPermission(preference,'default','workspace-b');
+ preference=rememberConversationPermission(preference,'default','workspace-a');
+ preference=rememberConversationPermission(preference,'full-access','workspace-c');
  assert.equal(writeConversationModulePreference(preference,store,'dev'),true);
  const read=readConversationModulePreference(store,'dev');
- assert.equal(read.agent.connectionId,'qoder');
- assert.equal(rememberedConversationPermission(read,'workspace-a'),'full-access');
+ assert.equal(rememberedConversationPermission(read,'workspace-a'),'default');
  assert.equal(rememberedConversationPermission(read,'workspace-b'),'default');
+ assert.equal(rememberedConversationPermission(read,'workspace-c'),'full-access');
  assert.equal(rememberedConversationAgent(read,connections).id,'qoder');
- assert.ok(store.dump()[keys.module]);
- assert.equal(rememberedConversationPermission(rememberConversationPermission(read,'default','workspace-a'),'workspace-b'),'default');
+ assert.deepEqual(readConversationModulePreference(store,'other'),{version:1});
 });
 
 test('损坏或未知偏好按无记忆处理，不阻断默认选择',()=>{

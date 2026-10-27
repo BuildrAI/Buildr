@@ -737,7 +737,12 @@ test('conversation task association can be set, replaced and cleared with the ob
     await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {});
     assert.equal(view.taskId, undefined);
     let current = await f.service.conversations.update('workspace-one', view.id, { expectedRevision: view.revision, taskId: 'task-one' });
-    assert.equal(current.taskId, 'task-one'); assert.equal(f.service.conversations.list('workspace-one', { taskId: 'task-one' }).conversations[0]?.id, view.id);
+    assert.equal(current.taskId, 'task-one');
+    assert.equal(f.service.conversations.read('workspace-one', view.id).taskId, 'task-one');
+    assert.equal(f.service.conversations.list('workspace-one', { taskId: 'task-one' }).conversations.length, 0, '任务关联不使空草稿进入列表');
+    send(f.service, view.id, 'local', 'start associated work');
+    current = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed');
+    assert.equal(f.service.conversations.list('workspace-one', { taskId: 'task-one' }).conversations[0]?.id, view.id);
     await assert.rejects(f.service.conversations.update('workspace-one', view.id, { expectedRevision: current.revision, taskId: 'task-two' }));
     assert.equal(f.service.conversations.read('workspace-one', view.id).taskId, 'task-one');
     current = await f.service.conversations.update('workspace-one', view.id, { expectedRevision: current.revision, taskId: null });

@@ -53,7 +53,6 @@
 .ac-step-status{display:inline-flex;align-items:center;gap:4px;flex:none;font-size:10px}
 .ac-step.is-running>summary>.ac-step-status,.ac-step-group.is-running>summary>.ac-step-status{color:var(--ac-process-accent)}
 .ac-step.is-failed>summary>.ac-step-status,.ac-step.is-failed>summary>.ac-step-node,.ac-step-group.is-failed>summary>.ac-step-status,.ac-step-group.is-failed>summary>.ac-step-node{color:#a2742e}
-.ac-step.is-failed>summary,.ac-step-group.is-failed>summary{background:#fcf8ef}
 .ac-step[open]>summary>.ac-step-action,.ac-step-group[open]>summary>.ac-step-action{color:#404f44}
 .ac-step-group-items{margin:1px 0 2px 7px;padding-left:11px;border-left:1px solid #e7ece8}
 .ac-tool-file-link{display:inline-block;max-width:100%;padding:0 4px;border:0;border-radius:3px;background:#f0f4f1;color:#53765f;font:inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;cursor:pointer;text-align:left}

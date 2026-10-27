@@ -237,7 +237,7 @@ test('切离再返回后的旧发送回执仅移除已提交图片，后来新�
   assert.deepEqual(removeSubmittedAttachments(latest,[]),latest);
 });
 
-test('权限模式按准确对话隔离，新草稿权限按工作空间共享，旧记录及新对话默认受原生默认权限约束',()=>{
+test('权限模式按准确对话隔离，新草稿权限按工作空间共享，旧轮次缺失模式仍按原生默认解释',()=>{
   const first=conversationPermissionKey(null,'ws-a'),next=conversationPermissionKey(null,'ws-b');assert.notEqual(first,next);
   assert.equal(conversationPermissionKey(null,'ws-a'),conversationPermissionKey(null,'ws-a'),'同一工作空间的新对话共享一份权限选择');
   assert.notEqual(conversationPermissionKey({workspaceId:'a',conversationId:'same'},'x'),conversationPermissionKey({workspaceId:'b',conversationId:'same'},'x'));

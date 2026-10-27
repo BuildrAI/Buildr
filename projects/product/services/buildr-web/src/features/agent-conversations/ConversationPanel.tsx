@@ -70,7 +70,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
   const permissionProfile=document.querySelector('meta[name="buildr-web-profile"]')?.getAttribute('content')||'local';
   const permissionStorageKey=conversationPermissionStorageKey(permissionProfile,context.scope,draftWorkspaceId);
   const savedPermission=(()=>{try{return readConversationPermission(permissionStorageKey,sessionStorage);}catch{return;}})();
-  const rememberedPermission=context.scope?undefined:rememberedConversationPermission(modulePreference,draftWorkspaceId);
+  const rememberedPermission=context.scope?undefined:modulePreference.permission?rememberedConversationPermission(modulePreference,draftWorkspaceId):savedPermission??rememberedConversationPermission(modulePreference,draftWorkspaceId);
   const permissionMode=selectedConversationPermission(permissionChoices[permissionKey]??(context.scope?savedPermission:rememberedPermission),chat?.run);
   const permissionAvailable=supportsConversationPermission(connection,permissionMode);
   const [attachments,setAttachments]=useState<Record<string,DraftImage[]>>({});
@@ -104,9 +104,10 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
     setPrepared(null);setSelectedHandoff(null);setPreviewOpen(false);
   };
   const selectPermission=(value:PermissionMode)=>{
-    setPermissionChoices(previous=>({...previous,[permissionKey]:value}));
+    const workspaceId=context.scope?.workspaceId||draftWorkspaceId;
+    setPermissionChoices(previous=>({...previous,[permissionKey]:value,[conversationPermissionKey(null,workspaceId)]:value}));
     setModulePreference(current=>{const next=rememberConversationPermission(current,value,context.scope?.workspaceId||draftWorkspaceId);writeConversationModulePreference(next);return next;});
-    try{writeConversationPermission(permissionStorageKey,value,sessionStorage);}catch{/* Same-page selection remains usable. */}
+    try{writeConversationPermission(permissionStorageKey,value,sessionStorage);writeConversationPermission(conversationPermissionStorageKey(permissionProfile,null,workspaceId),value,sessionStorage);}catch{/* Same-page selection remains usable. */}
     setPrepared(null);setSelectedHandoff(null);setPreviewOpen(false);
   };
   useEffect(()=>{if(context.draftScope?.workspaceId)setNewWorkspaceId(context.draftScope.workspaceId);},[context.draftScope]);
@@ -248,7 +249,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
   const panel=<section id="agent-conversation-panel" className={'ac-panel'+(context.full?' is-full':'')} aria-label="内部对话" data-dock={context.side} data-conversation-id={chat?.id}>
     {context.view==='history'?<ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId}/>:<>
       <header className="ac-thread-header">
-        <Button type="text" icon={<MenuOutlined/>} aria-label="查看对话历史" title="对话历史" onClick={()=>context.setView('history')}/>
+        <Button type="text" icon={<MenuOutlined/>} aria-label="查看对话列表" title="对话列表" onClick={()=>context.setView('history')}/>
         <div className="ac-thread-heading">
         <Popover rootClassName="ac-panel-popup" title="工作空间" trigger="click" open={locationOpen} onOpenChange={setLocationOpen} content={settings}>
           <button type="button" className="ac-thread-title" aria-label="对话信息" title={chat?.title||'新对话'}>{chat?.title||'新对话'}</button>
@@ -290,7 +291,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
               const provider=result?.provider||item.entries[0].provider;
               return <section className="ac-assistant-reply" key={key} data-run-id={item.entries[0].runId}>
                 <small className="ac-message-identity">{provider?providerNames[provider]||provider:'智能体'}</small>
-                <ConversationProcessBlock blockKey={key} entries={item.entries} active={item.active} finishedAt={item.finishedAt} onOpenFile={path=>void openProcessFile(path)} open={expandedToolGroups[key]??item.active} onToggle={(name,open)=>setExpandedToolGroups(previous=>({...previous,[name]:open}))}/>
+                <ConversationProcessBlock blockKey={key} entries={item.entries} active={item.active} finishedAt={item.finishedAt} onOpenFile={path=>void openProcessFile(path)} groupsOpen={expandedToolGroups} onGroupToggle={(ids,open)=>setExpandedToolGroups(previous=>({...previous,...Object.fromEntries(ids.map(id=>['tool-group:'+id,open]))}))} open={expandedToolGroups[key]??item.active} onToggle={(name,open)=>setExpandedToolGroups(previous=>({...previous,[name]:open}))}/>
                 {result&&renderEntry(result)}
               </section>;
             }

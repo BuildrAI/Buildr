@@ -86,3 +86,21 @@ test('execution overview is full-scope, independent from search/page/filter and 
   assert.equal(missing.total,1);assert.equal(missing.conversations[0].workspaceId,'w2');
   assert.deepEqual(repo.querySummaries(['w1','w2'],{limit:1,workspaceId:'w1'}).stats.agents,[{label:'codex',count:1}]);
 });
+
+test('empty and attachment-only drafts stay readable but absent from every list; failed or unknown work remains discoverable',t=>{
+ const repo=fixture(t),draft=record('draft');draft.view.taskId='task';
+ draft.attachments.image={mimeType:'image/png',size:8,createdAt:draft.view.updatedAt};
+ repo.saveConversation(draft);
+ assert.ok(repo.readConversation('draft')?.attachments.image);
+ assert.deepEqual(repo.listConversations('w1',{limit:10}),[]);
+ assert.deepEqual(repo.listConversations('w1',{limit:10,taskId:'task',query:'测试'}),[]);
+ assert.equal(repo.querySummaries(['w1'],{limit:10}).total,0);
+ assert.equal(repo.querySummaries(['w1'],{limit:10,hidden:true}).total,0);
+ const unknown=record('unknown');unknown.view.run={id:'run',participantId:'p',provider:'codex',generation:'g',status:'unknown',accepted:true,tools:[],startedAt:unknown.view.updatedAt,updatedAt:unknown.view.updatedAt};repo.saveConversation(unknown);
+ const failed=record('failed');message(failed,'input','sent before failure');failed.view.run={...unknown.view.run,status:'failed'};repo.saveConversation(failed);
+ assert.deepEqual(new Set(repo.listConversations('w1',{limit:10}).map(row=>row.view.id)),new Set(['unknown','failed']));
+ assert.equal(repo.querySummaries(['w1'],{limit:10}).total,2);
+ save(repo,draft,r=>message(r,'first','first sent input'));
+ assert.equal(repo.querySummaries(['w1'],{limit:10}).total,3);
+ assert.equal(repo.listConversations('w1',{limit:10,taskId:'task'}).length,1);
+});

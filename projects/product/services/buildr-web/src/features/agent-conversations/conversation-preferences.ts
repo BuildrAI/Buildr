@@ -2,7 +2,7 @@ import type {CatalogModel,ConnectionView} from './types.ts';
 import {conversationModelCompatibility,officialConversationChoice,type ConversationChoice,type PermissionMode} from './conversation-options.ts';
 
 type PreferenceStorage=Pick<Storage,'getItem'|'setItem'|'removeItem'>;
-export type ConversationModulePreference={version:1;agent?:{connectionId:string};permission?:{mode:PermissionMode;workspaceId?:string}};
+export type ConversationModulePreference={version:1;agent?:{connectionId:string};permission?:{mode?:PermissionMode;workspaceId?:string;workspaces?:Record<string,PermissionMode>}};
 export type ConversationModelPreference={version:1;connectionId:string;model?:string;modelAccountId?:string;serviceTier?:string;reasoningEffort?:string};
 
 const emptyModule=():ConversationModulePreference=>({version:1});
@@ -27,10 +27,13 @@ export function readConversationModulePreference(storage:PreferenceStorage|undef
  const connectionId=optionalString(object(value.agent)?.connectionId);
  const permission=object(value.permission);
  const mode=permission?.mode;
+ const workspacesIn=object(permission?.workspaces);
+ const workspaces=workspacesIn?Object.fromEntries(Object.entries(workspacesIn).filter((entry):entry is [string,PermissionMode]=>entry[1]==='default'||entry[1]==='full-access')):undefined;
+ const hasWorkspaces=Boolean(workspaces&&Object.keys(workspaces).length);
  return {
   version:1,
   ...(typeof connectionId==='string'&&connectionId?{agent:{connectionId}}:{}),
-  ...(mode==='default'||mode==='full-access'?{permission:{mode,...(typeof permission?.workspaceId==='string'&&permission.workspaceId?{workspaceId:permission.workspaceId}:{})}}:{}),
+  ...((mode==='default'||mode==='full-access'||hasWorkspaces)?{permission:{...(mode==='default'||mode==='full-access'?{mode}:{}) ,...(typeof permission?.workspaceId==='string'&&permission.workspaceId?{workspaceId:permission.workspaceId}:{}) ,...(hasWorkspaces?{workspaces}:{})}}:{}),
  };
 }
 export function writeConversationModulePreference(preference:ConversationModulePreference,storage:PreferenceStorage|undefined=defaultStorage(),profile=webProfile()):boolean{
@@ -41,7 +44,13 @@ export function rememberConversationAgent(preference:ConversationModulePreferenc
  const next={...preference};delete next.agent;return next;
 }
 export function rememberConversationPermission(preference:ConversationModulePreference,mode:PermissionMode,workspaceId?:string):ConversationModulePreference{
- return {...preference,permission:{mode,...(mode==='full-access'&&workspaceId?{workspaceId}:{})}};
+ if(!workspaceId)return {...preference,permission:{...preference.permission,mode}};
+ const prior=preference.permission;
+ const workspaces={...prior?.workspaces};
+ // 迁移旧单槽的明确选择，避免切换空间时覆盖它。
+ if(prior?.workspaceId&&prior.mode&&!Object.hasOwn(workspaces,prior.workspaceId))workspaces[prior.workspaceId]=prior.mode;
+ workspaces[workspaceId]=mode;
+ return {...preference,permission:{mode,workspaceId,workspaces}};
 }
 
 export function readConversationModelPreference(storage:PreferenceStorage|undefined=defaultStorage(),profile=webProfile()):ConversationModelPreference|null{
@@ -69,8 +78,12 @@ export function rememberedConversationAgent(preference:ConversationModulePrefere
 }
 export function rememberedConversationPermission(preference:ConversationModulePreference,workspaceId:string):PermissionMode{
  const selected=preference.permission;
- if(!selected||selected.mode==='default')return 'default';
- return selected.workspaceId&&workspaceId&&selected.workspaceId===workspaceId?'full-access':'default';
+ const scoped=selected?.workspaces?.[workspaceId];
+ if(scoped==='default'||scoped==='full-access')return scoped;
+ // 旧单槽偏好只应用到原空间；旧全局默认选择仍然有效。
+ if(selected?.workspaceId===workspaceId&&selected.mode)return selected.mode;
+ if(selected?.mode==='default'&&!selected.workspaceId)return 'default';
+ return 'full-access';
 }
 
 function selectableModel(connection:ConnectionView,catalog:CatalogModel[],preference:ConversationModelPreference){

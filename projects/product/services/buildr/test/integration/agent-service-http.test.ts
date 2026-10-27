@@ -73,7 +73,15 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   assert.deepEqual(created.entries, []);
   response = await fetch(`${app}/conversations`); assert.equal(response.status,403);
   response = await fetch(`${app}/conversations`, {headers:readHeaders}); assert.equal(response.status,200);
-  const summaries=await response.json();assert.equal(summaries.total,1);assert.equal(summaries.conversations[0].id,created.id);assert.deepEqual(summaries.conversations[0].entries,[]);
+  let summaries=await response.json();
+  // 已创建但从未发出内容的草稿不进入对话历史。
+  assert.equal(summaries.total,0);assert.deepEqual(summaries.conversations,[]);
+  {
+    const store=new DatabaseSync(path.join(base,'agent-profile','agent-service','conversations.sqlite'));
+    try{const row=store.prepare('SELECT body FROM conversations WHERE id=?').get(created.id) as {body:string};const record=JSON.parse(row.body);record.view.entries.push({id:'seed-entry',sequence:1,kind:'message',role:'user',text:'started work',createdAt:'2026-10-27T00:00:00Z'});store.prepare('UPDATE conversations SET body=? WHERE id=?').run(JSON.stringify(record),created.id);}finally{store.close();}
+  }
+  response = await fetch(`${app}/conversations`, {headers:readHeaders}); assert.equal(response.status,200);
+  summaries=await response.json();assert.equal(summaries.total,1);assert.equal(summaries.conversations[0].id,created.id);assert.deepEqual(summaries.conversations[0].entries,[]);
   response = await fetch(`${app}/conversations?workspaceId=unregistered`, {headers:readHeaders});assert.equal(response.status,404);
   response = await fetch(`${app}/conversations?activeOnly=1`, {headers:readHeaders});assert.equal(response.status,400);
   response = await fetch(`${conversations}/${created.id}/seen`, {method:'POST',headers:{...headers,'x-buildr-session':'invalid'},body:JSON.stringify({through:0})});assert.equal(response.status,403);
@@ -248,6 +256,7 @@ test('the real web CLI discovers host interruptions on listening without a brows
   const end=Date.now()+20_000;let diagnostic='before-startup';
   while(Date.now()<end){
     const read=new DatabaseSync(filename,{readOnly:true});
+    read.exec('PRAGMA busy_timeout=1000');
     const current=JSON.parse((read.prepare('SELECT body FROM conversations WHERE id=?').get(conversation.id) as {body:string}).body);read.close();
     diagnostic=current.view.run.diagnostic;
     if(diagnostic!=='before-startup')break;
@@ -293,7 +302,19 @@ test('default conversations use a stable application directory without a registe
   assert.equal((await read.json() as { cwd: string }).cwd, chat.cwd);
   const list = await fetch(endpoint, { headers });
   assert.equal(list.status, 200);
-  assert.ok((await list.json() as { conversations: Array<{ id: string }> }).conversations.some(row => row.id === chat.id));
+  // 已创建但未发送的对话属于草稿：可按 ID 读取，但不进入对话列表。
+  assert.ok(!(await list.json() as { conversations: Array<{ id: string }> }).conversations.some(row => row.id === chat.id));
+  {
+    const store = new DatabaseSync(path.join(base, 'private-app', 'agent-service', 'conversations.sqlite'));
+    try {
+      const row = store.prepare('SELECT body FROM conversations WHERE id=?').get(chat.id) as { body: string };
+      const record = JSON.parse(row.body);
+      record.view.entries.push({ id: 'seed-entry', sequence: 1, kind: 'message', role: 'user', text: 'started work', createdAt: '2026-10-27T00:00:00Z' });
+      store.prepare('UPDATE conversations SET body=? WHERE id=?').run(JSON.stringify(record), chat.id);
+    } finally { store.close(); }
+  }
+  const list2 = await fetch(endpoint, { headers });
+  assert.ok((await list2.json() as { conversations: Array<{ id: string }> }).conversations.some(row => row.id === chat.id));
   assert.equal((await fetch(`${endpoint}/${chat.id}`, { method: 'PATCH', headers, body: JSON.stringify({ expectedRevision: chat.revision, cwd: root }) })).status, 400);
   assert.equal((await fetch(`${endpoint}/${chat.id}`, { method: 'PATCH', headers, body: JSON.stringify({ expectedRevision: chat.revision, taskId: 'some-task' }) })).status, 400);
 });

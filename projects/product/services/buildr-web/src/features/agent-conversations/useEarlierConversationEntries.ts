@@ -17,7 +17,9 @@ export function useEarlierConversationEntries(props:Props){
   if(!a||!node||a.scope!==selectionKey||!chat?.entries.some(e=>e.id===a.first))return;
   const restore=()=>{
    if(anchor.current!==a||scope.current!==a.scope)return;
-   const item=[...node.querySelectorAll<HTMLElement>('['+a.attribute+']')].find(n=>n.getAttribute(a.attribute)===a.id);
+   const visible=(n:HTMLElement)=>n.getBoundingClientRect().height>0;
+   const direct=a.attribute==='data-entry-id'?[...node.querySelectorAll<HTMLElement>('[data-entry-id]')].find(n=>n.dataset.entryId===a.id&&visible(n)):undefined;
+   const item=direct??[...node.querySelectorAll<HTMLElement>('[data-entry-group]')].find(n=>JSON.parse(n.dataset.entryGroup!).includes(a.id)&&visible(n))??[...node.querySelectorAll<HTMLElement>('[data-run-id]')].find(n=>n.getAttribute(a.attribute)===a.id&&visible(n));
    node.scrollTop=a.fit?0:item?node.scrollTop+item.getBoundingClientRect().top-node.getBoundingClientRect().top-a.offset:a.top+node.scrollHeight-a.height;
    bottom.current=false;position.current=node.scrollTop;
   };
@@ -41,10 +43,11 @@ export function useEarlierConversationEntries(props:Props){
    if(!last)return;
    const entries=[...added.values()].sort((a,b)=>a.sequence-b.sequence),node=stream.current;
    if(node&&entries.length){
-    const rect=node.getBoundingClientRect();const candidates=[...node.querySelectorAll<HTMLElement>('[data-entry-id]')];
-    const item=candidates.find(n=>n.getBoundingClientRect().bottom>rect.top+4)||[...node.querySelectorAll<HTMLElement>('[data-run-id]')].find(n=>n.getBoundingClientRect().bottom>rect.top+4);
-    const attribute=item?.hasAttribute('data-entry-id')?'data-entry-id':'data-run-id';
-    anchor.current={attribute,id:item?.getAttribute(attribute)||'',offset:(item?.getBoundingClientRect().top??rect.top)-rect.top,height:node.scrollHeight,top:node.scrollTop,first:entries[0].id,scope:observed,fit:node.scrollHeight<=node.clientHeight+1};
+    const rect=node.getBoundingClientRect();const candidates=[...node.querySelectorAll<HTMLElement>('[data-entry-id],[data-entry-group]')];
+    const item=candidates.find(n=>{const box=n.getBoundingClientRect();return !(n.hasAttribute('data-entry-group')&&n.parentElement?.hasAttribute('open'))&&box.height>0&&box.bottom>rect.top+4;})||[...node.querySelectorAll<HTMLElement>('[data-run-id]')].find(n=>n.getBoundingClientRect().bottom>rect.top+4);
+    const attribute=item?.hasAttribute('data-entry-group')?'data-entry-group':item?.hasAttribute('data-entry-id')?'data-entry-id':'data-run-id';
+    const id=attribute==='data-entry-group'?JSON.parse(item!.getAttribute(attribute)!)[0]:item?.getAttribute(attribute)||'';
+    anchor.current={attribute,id,offset:(item?.getBoundingClientRect().top??rect.top)-rect.top,height:node.scrollHeight,top:node.scrollTop,first:entries[0].id,scope:observed,fit:node.scrollHeight<=node.clientHeight+1};
    }
    props.prepend({...last,entries});
   }catch(error){if(scope.current===observed)props.onError(error);}

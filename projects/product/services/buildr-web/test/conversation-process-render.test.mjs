@@ -38,9 +38,10 @@ test('连续工具调用默认折叠为一个分组，助手说明保持可见',
   assert.doesNotMatch(html,/class="ac-step-group" open/);
   assert.equal((html.match(/ac-step ac-step-tool/g)||[]).length,5);
 });
-test('单个工具调用不套分组，仍独占一行',()=>{
+test('单个工具调用也从一开始呈现为分组行',()=>{
   const html=renderEntries([tool('t1'),narration('n1'),tool('t2','read')]);
-  assert.doesNotMatch(html,/ac-step-group/);
+  assert.equal((html.match(/class="ac-step-group"/g)||[]).length,2);
+  assert.match(html,/1 个步骤/);assert.match(html,/运行命令 echo t1/);
   assert.equal((html.match(/ac-step ac-step-tool/g)||[]).length,2);
 });
 test('分组行汇总步骤类型并标记失败',()=>{

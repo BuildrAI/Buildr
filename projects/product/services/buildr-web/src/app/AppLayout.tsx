@@ -490,7 +490,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
       <WorkspaceSettingsDrawer open={settingsOpen} workspaceId={settingsWorkspaceId}
         onClose={() => setSettingsOpen(false)} onSaved={workspaceSettingsSaved} />
     </WorkbenchPreferencesProvider>
-    <ConversationPanel portalTarget={conversationMount} defaultWorkspaceId={null} workspaces={[{id:'@default',name:'默认工作空间',rootPath:''},...registry.flatMap(entry => entry.workspace ? [{id:entry.workspace.id,name:entry.workspace.name,rootPath:entry.rootPath}] : [])]} />
+    <ConversationPanel portalTarget={conversationMount} defaultWorkspaceId={workspaceId} workspaces={[{id:'@default',name:'默认工作空间',rootPath:''},...registry.flatMap(entry => entry.workspace ? [{id:entry.workspace.id,name:entry.workspace.name,rootPath:entry.rootPath}] : [])]} />
     </WorkspaceReadCacheProvider>
     </WorkspaceSourceControlProvider>
     </AppShellContext.Provider>

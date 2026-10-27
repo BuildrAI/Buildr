@@ -30,7 +30,7 @@
 .ac-history-group>h3{font-size:11px;font-weight:500;color:#718b7b;margin:14px 0 7px;display:flex;align-items:center;gap:8px}
 .ac-history-group+.ac-history-group{border-top:1px solid #edf1ee;padding-top:5px}
 .ac-history-row-title{display:flex;align-items:center;gap:12px}
-.ac-history-row-title>strong{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ac-history-row-title>strong{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:550;line-height:20px}
 .ac-panel .ac-process-running-dot{animation:none}
 @media(max-width:760px){.ac-activity-menu{width:300px}.ac-activity-items{max-height:min(600px,68vh)}}
 

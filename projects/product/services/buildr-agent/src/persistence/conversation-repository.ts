@@ -9,6 +9,8 @@ import { AgentServiceError, fail } from '../domain/agent-state.ts';
 import type { StoredConnection, StoredConversation } from '../domain/agent-state.ts';
 
 const SCHEMA_VERSION = 2;
+// 附件准备不等于开始；已发送或结果未知的尝试仍必须可发现。
+const HAS_WORK = "(json_array_length(json_extract(body,'$.view.entries'))>0 OR json_array_length(json_extract(body,'$.attempts'))>0 OR json_type(body,'$.view.run')='object')";
 
 /** Sole owner of the application's private interaction database. Reads never initialize it. */
 export class ConversationRepository {
@@ -102,6 +104,8 @@ export class ConversationRepository {
     const db = this.open(false); if (!db) return [];
     try {
       const where = ['workspace_id=?']; const values: Array<string | number> = [workspaceId];
+      // 已创建但从未发出内容的草稿不属于对话历史。
+      where.push(HAS_WORK);
       if (!options.includeHidden) where.push('hidden=0');
       if (options.taskId) { where.push('task_id=?'); values.push(options.taskId); }
       if (options.query) {
@@ -141,6 +145,7 @@ export class ConversationRepository {
       const epoch=modern?(db.prepare('SELECT value FROM conversation_epoch WHERE id=1').get() as {value:number}).value:0;
       const where=[`workspace_id IN (${ids.map(()=>'?').join(',')})`];const values:Array<string|number>=[...ids];
       if(input.workspaceId){where.push('workspace_id=?');values.push(input.workspaceId);}
+      where.push(HAS_WORK);
       const statsWhere=[...where],statsValues=[...values];
       if(input.activeOnly)where.push('is_active=1');
       else {where.push('(is_active=1 OR hidden=?)');values.push(Number(input.hidden===true));}

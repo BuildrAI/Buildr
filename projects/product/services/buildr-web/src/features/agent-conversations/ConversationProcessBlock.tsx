@@ -31,17 +31,17 @@ function ToolStep({entry,active,onOpenFile}:{entry:ConversationEntry;active:bool
     </div>
   </details>;
 }
-/** 连续工具条目折叠为一个分组行；单个步骤仍独占一行。 */
-function ToolGroup({entries,active,onOpenFile}:{entries:ConversationEntry[];active:boolean;onOpenFile:FileOpener}){
+/** 连续工具条目折叠为一个分组行；单条命令从一开始也以分组呈现，避免后续折叠跳动。 */
+function ToolGroup({entries,active,onOpenFile,open,onToggle}:{entries:ConversationEntry[];active:boolean;onOpenFile:FileOpener;open:boolean;onToggle:(open:boolean)=>void}){
   const tools=entries.map(processTool);
   const kinds=new Set(tools.map(tool=>tool.kind));
   const counts=new Map<string,number>();
   for(const tool of tools)counts.set(tool.action,(counts.get(tool.action)||0)+1);
-  const label=[...counts].map(([action,count])=>count>1?`${action} ×${count}`:action).join(' · ');
+  const label=entries.length>1?[...counts].map(([action,count])=>count>1?`${action} ×${count}`:action).join(' · '):`${tools[0].action} ${tools[0].description}`.trim();
   const failed=entries.filter(entry=>processEntryStatus(entry,active)==='failed').length;
   const running=entries.filter(entry=>processEntryStatus(entry,active)==='running').length;
-  return <details className={'ac-step-group'+(failed?' is-failed':'')+(running?' is-running':'')}>
-    <summary>
+  return <details className={'ac-step-group'+(failed?' is-failed':'')+(running?' is-running':'')} open={open} onToggle={event=>{if(event.target===event.currentTarget&&event.currentTarget.open!==open)onToggle(event.currentTarget.open);}}>
+    <summary data-entry-group={JSON.stringify(entries.map(entry=>entry.id))}>
       <span className="ac-step-node" aria-hidden="true"><ToolIcon kind={kinds.size===1?tools[0].kind:'tool'}/></span>
       <span className="ac-step-action">{entries.length} 个步骤</span>
       <span className="ac-step-label" title={label}>{label}</span>
@@ -70,8 +70,8 @@ function durationLabel(startedAt:string,finishedAt:string):string {
   const minutes=Math.floor(seconds/60),rest=seconds%60;
   return `${minutes?`${minutes} 分 `:''}${rest} 秒`;
 }
-type Props={blockKey:string;entries:ConversationEntry[];active:boolean;finishedAt?:string;open:boolean;onToggle:(key:string,open:boolean)=>void;onOpenFile:FileOpener};
-export function ConversationProcessBlock({blockKey,entries,active,finishedAt,open,onToggle,onOpenFile}:Props){
+type Props={blockKey:string;entries:ConversationEntry[];active:boolean;finishedAt?:string;open:boolean;onToggle:(key:string,open:boolean)=>void;onOpenFile:FileOpener;groupsOpen?:Record<string,boolean>;onGroupToggle?:(ids:string[],open:boolean)=>void};
+export function ConversationProcessBlock({blockKey,entries,active,finishedAt,open,onToggle,onOpenFile,groupsOpen={},onGroupToggle}:Props){
   const summary=processBlockSummary(entries),running=active;
   const tools=entries.filter(entry=>entry.kind==='tool');
   const title=running?'正在处理':tools.length?`执行了 ${tools.length} 次工具调用`:'处理过程';
@@ -92,9 +92,7 @@ export function ConversationProcessBlock({blockKey,entries,active,finishedAt,ope
     </summary>
     <div className="ac-process-timeline">{processTimeline(entries).map(item=>item.type==='narration'
       ?<div key={item.entry.id} className="ac-process-narration" data-entry-id={item.entry.id}><MarkdownHost markdown={item.entry.text} className="markdown-body"/></div>
-      :item.entries.length>1
-        ?<ToolGroup key={item.entries[0].id} entries={item.entries} active={active} onOpenFile={onOpenFile}/>
-        :<ToolStep key={item.entries[0].id} entry={item.entries[0]} active={active} onOpenFile={onOpenFile}/>)}
+      :<ToolGroup key={item.entries[0].id} entries={item.entries} active={active} onOpenFile={onOpenFile} open={item.entries.map(entry=>groupsOpen['tool-group:'+entry.id]).find(value=>value!==undefined)??false} onToggle={value=>onGroupToggle?.(item.entries.map(entry=>entry.id),value)}/>)}
     </div>
   </details>;
 }
