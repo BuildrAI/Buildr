@@ -1,6 +1,6 @@
 ---
 name: mysql-connection
-description: 使用明确绑定的 MySQL 连接管理地址与完整认证组、执行只读测试与数据库发现，并在已声明的非生产环境执行受控变更；不按同名接管实例，查询使用独立内置查询工具。
+description: 使用明确绑定的 MySQL 连接管理地址与完整认证组、执行只读测试与数据库发现，并在非生产环境执行受控变更；不按同名接管实例，查询使用独立内置查询工具。
 connectionDefinitions:
   - assets/connection.yml
 ---

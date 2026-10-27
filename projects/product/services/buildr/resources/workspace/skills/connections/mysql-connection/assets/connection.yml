@@ -28,7 +28,7 @@ config:
       maxLength: 64
     - key: targetEnvironment
       label: 目标环境
-      description: 只影响受控变更；未声明时拒绝执行变更，只读测试、发现与查询不受影响。
+      description: 只影响受控变更；未声明时按非生产执行并在结果中标注，标记为生产时拒绝；只读测试、发现与查询不受影响。
       type: enum
       values: [dev, test, qa, reg, prod]
     - key: allowDestructive
