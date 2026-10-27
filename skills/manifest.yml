@@ -408,7 +408,7 @@ skills:
     sourceIdentity: package:skills/connections/mysql-connection
     source: buildr
     path: connections/mysql-connection
-    description: 配置和核验明确绑定的 MySQL 连接，发现数据库，并使用独立内置查询工具读取结构与数据。
+    description: 配置和核验明确绑定的 MySQL 连接，发现数据库，在非生产环境执行受控变更，并使用独立内置查询工具读取结构与数据。
     enabled: true
     required: false
     state: installed
