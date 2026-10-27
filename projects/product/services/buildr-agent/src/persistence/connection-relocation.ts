@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const BINDING_FORMAT = 'buildr-native-binding/v2';
 
 export type ConnectionRelocationFailure = {
