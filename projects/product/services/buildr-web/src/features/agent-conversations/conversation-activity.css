@@ -63,5 +63,5 @@
 .ac-history-toolbar>.ant-input-affix-wrapper{flex:1 1 160px;min-width:0}
 .ac-history-toolbar>.ant-select{flex:1 1 140px;min-width:0}
 
-.ac-execution-stats.is-compact .ac-stats-group>div{overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:0 2px 4px 0}
+.ac-execution-stats.is-compact .ac-stats-group>div{align-items:flex-start;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:0 2px 4px 0}
 .ac-stats-group button{max-width:100%;flex-shrink:0}.ac-stats-group button span{min-width:0;overflow-wrap:anywhere;text-align:left}.ac-stats-group button b{flex:none}
