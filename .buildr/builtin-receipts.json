@@ -153,11 +153,11 @@
       "type": "skill",
       "id": "git-operations",
       "target": "skills/buildr/git-operations",
-      "integrity": "sha256-12446d42125cab8eb5d255a7f2559d2ed6b530a53b61e180ffc1601dadee7e8c",
+      "integrity": "sha256-f758e0879e5aec8a9e79537826f6bdd5273562cd37556e1e119649323f2e7c50",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-7f944fa5e61ff077ab74ec94202b9a51161ce15e7f8bb629bb50d3c6beaa5dc9"
+          "integrity": "sha256-fed775f127db634ad49e06740ccf7cea30564beb2d10a05d21f8f99205b87e08"
         }
       ]
     },
