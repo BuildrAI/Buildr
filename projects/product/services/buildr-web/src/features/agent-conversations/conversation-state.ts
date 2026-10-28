@@ -101,6 +101,14 @@ export function sameConversationSelection(current:ConversationSelection,observed
 export function latestConversationParticipant(conversation:ConversationView|null) {
   return conversation?.participants.find(participant=>participant.id===conversation.run?.participantId)??conversation?.participants.at(-1);
 }
+/** A prompt may have only a run ID; never borrow an unrelated run or participant. */
+export function conversationTurnBinding(entry:ConversationEntry|undefined,conversation:ConversationView|null) {
+  const current=conversation?.run;
+  const run=entry?.runId&&entry.runId===current?.id&&(!entry.participantId||entry.participantId===current.participantId)?current:undefined;
+  const participantId=entry?.participantId??run?.participantId;
+  const participant=participantId?conversation?.participants.find(item=>item.id===participantId):undefined;
+  return {participant,run};
+}
 /** The same agent may hold several participants (sources or models); the summary names it once. */
 export function participantAgentIds(participants:ConversationView['participants']):string[] {
   return [...new Set(participants.map(participant=>participant.provider))];

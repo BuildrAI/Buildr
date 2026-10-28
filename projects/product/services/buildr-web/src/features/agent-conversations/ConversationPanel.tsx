@@ -21,7 +21,7 @@ import { ConversationTurn } from './ConversationTurn';
 import { attachmentMimeType, imageSelectionError } from './conversation-images';
 import { extractVideoFrames } from './conversation-video';
 import {conversationPermissionKey,conversationPermissionStorageKey,conversationRunIdentity,permissionModeLabels,readConversationPermission,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,writeConversationPermission,type ConversationChoice,type PermissionMode} from './conversation-options';
-import { appendDraftAttachment, canGenerateConversationTitle, canStopConversationTool, conversationConflictNeedsRefresh, executionLocked, groupConversationStream, conversationStreamTurns, participantExecutionPairs, removeSubmittedAttachments, shouldSendOnKey, latestConversationParticipant, processBlockKey, type ConversationSelection } from './conversation-state';
+import { appendDraftAttachment, canGenerateConversationTitle, canStopConversationTool, conversationConflictNeedsRefresh, conversationTurnBinding, executionLocked, groupConversationStream, conversationStreamTurns, participantExecutionPairs, removeSubmittedAttachments, shouldSendOnKey, latestConversationParticipant, processBlockKey, type ConversationSelection } from './conversation-state';
 import { conversationActionKey, createConversationActions, createConversationInputAttempts } from './conversation-actions';
 import { useConversationDraft } from './useConversationDraft';
 import { providerNames, type ConversationEntry, type ConversationView, type SendDraft, type SendPreview } from './types';
@@ -330,11 +330,10 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
   const turns=conversationStreamTurns(transcript);
   const turnIdentity=(entry:ConversationEntry|undefined)=>{
     if(!entry)return '';
-    const participant=chat?.participants.find(item=>item.id===entry.participantId);
-    const boundRun=chat?.run&&chat.run.participantId===entry.participantId&&chat.run.id===entry.runId?chat.run:undefined;
-    const provider=entry.provider||participant?.provider;
+    const {participant,run:boundRun}=conversationTurnBinding(entry,chat);
+    const provider=entry.provider||participant?.provider||boundRun?.provider;
     const agent=provider?providerNames[provider]||participant?.label||provider:participant?.label||'智能体';
-    return agent+' · '+conversationModelLabel(participant?.model||boundRun?.model,context.connections,context.modelCatalog,participant||boundRun);
+    return agent+' · '+conversationModelLabel(boundRun?.model||participant?.model,context.connections,context.modelCatalog,{connectionId:participant?.connectionId,modelAccountId:boundRun?.modelAccountId??participant?.modelAccountId});
   };
   const renderEntry=(entry:ConversationEntry)=>entry.kind==='handoff'?<div className="ac-handoff-receipt" key={entry.id}><span>{entry.handoff?`${entry.handoff.changes.map(c=>c.after).join(' · ')||entry.handoff.agent} ${entry.status==='accepted'?'已接手':entry.status==='failed'?'未接收':'接收待确认'}`:entry.text}</span>{entry.handoff&&<Button type="link" size="small" onClick={()=>{setSelectedHandoff(entry);setPreviewOpen(true);}}>交接内容</Button>}</div>:<article key={entry.id} className={'ac-message is-'+entry.role} data-entry-id={entry.id} data-message-provider={entry.provider}>{entry.role==='assistant'?<MarkdownHost markdown={entry.text} className="markdown-body"/>:<p>{entry.kind==='notice'&&entry.id.startsWith('reply-')?conversationReplyText(entry.text):entry.text}</p>}{entry.attachments?.length?<ConversationMessageImages conversation={chat!} ids={entry.attachments} read={context.api.readImage}/>:null}{entry.status==='unknown'&&<Tag color="warning">是否送达待确认</Tag>}{entry.role==='assistant'&&<CopyButton type="text" text={entry.text} ariaLabel="复制回复" failureMessage="复制失败，请手动选择文字。"/>}</article>;
   const panel=<section id="agent-conversation-panel" className={'ac-panel'+(context.full?' is-full':'')} aria-label="内部对话" data-dock={context.side} data-conversation-id={chat?.id}>

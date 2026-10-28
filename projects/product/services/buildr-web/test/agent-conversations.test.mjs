@@ -6,7 +6,7 @@ import { registerHooks } from 'node:module';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createApiClient } from '../src/api/client.ts';
-import { appendDraftAttachment, canGenerateConversationTitle, canStopConversationTool, conversationConflictNeedsRefresh, createdConversationVisibility, executionLocked, participantAgentIds, shouldSendOnKey, draftKey, readDraft, removeSubmittedAttachments, transferDraftText, writeDraft, applyConversationEvent, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, parseEventFrame, sameConversationSelection, latestConversationParticipant } from '../src/features/agent-conversations/conversation-state.ts';
+import { appendDraftAttachment, canGenerateConversationTitle, canStopConversationTool, conversationConflictNeedsRefresh, conversationTurnBinding, createdConversationVisibility, executionLocked, participantAgentIds, shouldSendOnKey, draftKey, readDraft, removeSubmittedAttachments, transferDraftText, writeDraft, applyConversationEvent, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, parseEventFrame, sameConversationSelection, latestConversationParticipant } from '../src/features/agent-conversations/conversation-state.ts';
 import {conversationPermissionKey,conversationPermissionStorageKey,conversationReasoningOptions,conversationRunIdentity,readConversationPermission,reasoningEffortLabel,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,writeConversationPermission} from '../src/features/agent-conversations/conversation-options.ts';
 registerHooks({resolve(specifier,context,next){
   if(specifier==='../../../api'&&context.parentURL?.endsWith('/agent-conversations-api.ts'))return next(new URL('../src/api/index.ts',import.meta.url).href,context);
@@ -57,6 +57,21 @@ test('服务端事件流携带header游标，正确解析跨块中文/CRLF，不
 test('参与过此对话按智能体去重，同一执行者的多个参与者只展示一次',()=>{
   assert.deepEqual(participantAgentIds([{id:'p1',provider:'codex'},{id:'p2',provider:'dsh'},{id:'p3',provider:'dsh'}]),['codex','dsh']);
   assert.deepEqual(participantAgentIds([]),[]);
+});
+
+test('首条用户输入按准确执行绑定身份，历史和冲突身份不借用当前执行',()=>{
+  const prior={id:'old-participant',connectionId:'dsh',provider:'dsh',model:'old-model'};
+  const current={id:'original-codex',connectionId:'codex',provider:'codex',model:'older-model'};
+  const run={...conversation.run,model:'current-model'};
+  const chat={...conversation,participants:[prior,current],run};
+  const prompt={id:'prompt',role:'user',runId:run.id};
+  assert.deepEqual(conversationTurnBinding(prompt,chat),{participant:current,run});
+  assert.deepEqual(conversationTurnBinding({...prompt,participantId:current.id},chat),{participant:current,run});
+  assert.deepEqual(conversationTurnBinding({...prompt,participantId:prior.id},chat),{participant:prior,run:undefined});
+  assert.deepEqual(conversationTurnBinding({...prompt,runId:'old-run'},chat),{participant:undefined,run:undefined});
+  assert.deepEqual(conversationTurnBinding({...prompt,runId:undefined},chat),{participant:undefined,run:undefined});
+  assert.deepEqual(conversationTurnBinding(prompt,{...chat,participants:[]}),{participant:undefined,run});
+  assert.deepEqual(conversationTurnBinding(undefined,chat),{participant:undefined,run:undefined});
 });
 
 test('执行状态行只表达智能体与模型，不把模型来源账号标签当作状态',()=>{
