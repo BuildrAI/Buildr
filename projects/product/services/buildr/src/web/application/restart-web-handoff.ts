@@ -1,13 +1,16 @@
+import fs from 'node:fs';
 import process from 'node:process';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { currentProductInvocation, productInvocationArgs } from '../../infrastructure/product-invocation/index.ts';
 import { buildrWebInstanceObservationDigest } from '../infrastructure/instance-runtime.ts';
 import { updatedWebEnvironment } from './update-web-handoff.ts';
+import { openWebHandoffSuccessorLog, releaseWebHandoffSuccessorLog } from './web-handoff-successor-log.ts';
 
 type SpawnSuccessorDependencies = {
   spawnProcess?: typeof spawn;
   buildInvocation?: () => { command: string; argsPrefix: string[] };
   environment?: NodeJS.ProcessEnv;
+  openLog?: (file: string) => number;
   onSpawned?: (child: ChildProcess) => void;
 };
 
@@ -28,12 +31,24 @@ export function spawnBuildrWebRestartSuccessor(
     dependencies.buildInvocation ? dependencies.buildInvocation() : currentProductInvocation({ cliPath: process.argv[1] }),
     ['web', '--restart', observed, '--no-open', '--port', port],
   );
-  const child = (dependencies.spawnProcess || spawn)(command, argsPrefix, {
-    env: updatedWebEnvironment(dependencies.environment),
-    detached: true,
-    stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
-    windowsHide: true,
-  });
+  const logFd = openWebHandoffSuccessorLog(
+    state.webProfile as { dataRoot?: unknown } | null,
+    `restart successor argv=web --restart ${observed} --no-open --port ${port}`,
+    dependencies.openLog,
+  );
+  let child: ChildProcess;
+  try {
+    child = (dependencies.spawnProcess || spawn)(command, argsPrefix, {
+      env: updatedWebEnvironment(dependencies.environment),
+      detached: true,
+      stdio: logFd === null ? ['ignore', 'ignore', 'ignore', 'ipc'] : ['ignore', logFd, logFd, 'ipc'],
+      windowsHide: true,
+    });
+  } catch (error) {
+    if (logFd !== null) try { fs.closeSync(logFd); } catch { /* Best-effort close on synchronous spawn failure. */ }
+    throw error;
+  }
+  releaseWebHandoffSuccessorLog(child, logFd);
   const report = (code: string, message: string): void => {
     console.error(`Buildr Web restart handoff failed: ${message}`, code !== 'web_restart_process_failed' ? `(${code})` : '');
   };

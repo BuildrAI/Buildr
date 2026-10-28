@@ -8,12 +8,14 @@ import {
   assertUpdateHandoffInstanceAddress, buildrWebInstanceObservationDigest, buildrWebInstancePath,
   healthyBuildrWebInstance, readBuildrWebInstance, sameNpmProductIdentity,
 } from '../infrastructure/instance-runtime.ts';
+import { openWebHandoffSuccessorLog, releaseWebHandoffSuccessorLog } from './web-handoff-successor-log.ts';
 
 type HandoffDependencies = {
   readNpmUpdateHandoffInstallation(input: NpmWebUpdateInput): any;
   assertNpmUpdateHandoffTarget(instance: any, options?: any): unknown;
   assertNpmLauncherBinding?(file: string, identity: any): any;
   spawnProcess?: typeof spawn;
+  openLog?: (file: string) => number;
   readInstance?: typeof readBuildrWebInstance;
   instanceRecordExists?: (profile: ReturnType<typeof resolveWebProfile>) => boolean;
   healthyInstance?: typeof healthyBuildrWebInstance;
@@ -61,9 +63,17 @@ export async function handoffUpdatedBuildrWeb(input: NpmWebUpdateInput, dependen
         args.push('--launcher-binding', observed.launcherIdentity.bindingPath);
       } catch { /* A missing or stale desktop binding does not prevent an owned CLI handoff. */ }
     }
-    child = (dependencies.spawnProcess || spawn)(entry.runtime.executable, args, {
-      cwd: path.dirname(entry.entryPath), env: updatedWebEnvironment(), detached: true, stdio: ['ignore', 'ignore', 'ignore', 'ipc'], windowsHide: true,
-    });
+    const logFd = openWebHandoffSuccessorLog(profile, `update successor argv=web --update-handoff ${args[3]} --no-open --port ${address.port}`, dependencies.openLog);
+    try {
+      child = (dependencies.spawnProcess || spawn)(entry.runtime.executable, args, {
+        cwd: path.dirname(entry.entryPath), env: updatedWebEnvironment(), detached: true,
+        stdio: logFd === null ? ['ignore', 'ignore', 'ignore', 'ipc'] : ['ignore', logFd, logFd, 'ipc'], windowsHide: true,
+      });
+    } catch (error) {
+      if (logFd !== null) try { fs.closeSync(logFd); } catch { /* Best-effort close on synchronous spawn failure. */ }
+      throw error;
+    }
+    releaseWebHandoffSuccessorLog(child, logFd);
     const diagnostic: { failure: { code: string; message: string } | null } = { failure: null };
     child.on('message', (message: any) => {
       if (message?.type === 'buildr.web-update-handoff-failed' && typeof message.code === 'string' && typeof message.message === 'string') {

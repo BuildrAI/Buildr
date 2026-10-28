@@ -100,6 +100,11 @@ test('真实重启交接：旧实例退出、新实例同端口接管回执与 h
   assert.equal(await waitForExit(first.child), 0, `旧实例未按预期退出：${first.stderr()}`);
   const after: any = await waitForInstanceReceipt(instanceFile, { children, previousPid: before.pid });
   assert.notEqual(after.pid, before.pid, '继任实例必须是新进程');
+  const successorLog: any = path.join(appData, 'logs', 'web-handoff-successor.log');
+  assert.ok(fs.existsSync(successorLog), '交接后继输出必须落盘到实例日志');
+  const successorLogText: any = fs.readFileSync(successorLog, 'utf8');
+  assert.match(successorLogText, /restart successor argv=web --restart sha256-[a-f0-9]{64} --no-open --port \d+/);
+  assert.match(successorLogText, /Buildr Web：http:\/\/127\.0\.0\.1:\d+/);
   assert.equal(after.url, before.url, '重启接管原端口');
   assert.notEqual(after.secret, before.secret, '实例 secret 轮换');
 

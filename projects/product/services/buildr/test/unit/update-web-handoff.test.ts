@@ -17,6 +17,7 @@ function fixture() {
   const child = Object.assign(new EventEmitter(), { connected: true, unrefs: 0, channel: { unref() {} }, unref() { this.unrefs += 1; }, disconnect() { this.connected = false; } });
   const spawns: any[] = [];
   const assertions: any[] = [];
+  const openLogs: any[] = [];
   const dependencies: any = {
     readNpmUpdateHandoffInstallation: () => ({ entry: { origin, runtime, entryPath: '/registered/package/bin/buildr.mjs' } }),
     assertNpmUpdateHandoffTarget: (value: any) => { assertions.push(value); },
@@ -24,9 +25,10 @@ function fixture() {
     instanceRecordExists: () => false,
     healthyInstance: async (value: any) => value,
     spawnProcess: (...args: any[]) => { spawns.push(args); current = next; return child; },
+    openLog: (file: string) => { openLogs.push(file); return 777; },
     intervalMs: 1, waitMs: 20,
   };
-  return { input, dependencies, previous, next, identity, child, spawns, assertions, setCurrent: (value: any) => { current = value; } };
+  return { input, dependencies, previous, next, identity, child, spawns, assertions, openLogs, setCurrent: (value: any) => { current = value; } };
 }
 
 test('更新子进程只移除旧产品和启动器环境，保留显式隔离根', () => {
@@ -57,7 +59,12 @@ test('自动交接使用登记中的Node和入口、原端口及观察摘要，�
   assert.equal(executable, '/registered/node');
   assert.deepEqual(args, ['/registered/package/bin/buildr.mjs', 'web', '--update-handoff', buildrWebInstanceObservationDigest(f.previous), '--no-open', '--port', '4458']);
   assert.equal(options.detached, true);
-  assert.deepEqual(options.stdio, ['ignore', 'ignore', 'ignore', 'ipc']);
+  assert.equal(options.stdio[0], 'ignore');
+  assert.equal(options.stdio[1], 777);
+  assert.equal(options.stdio[2], 777);
+  assert.equal(options.stdio[3], 'ipc');
+  assert.equal(f.openLogs.length, 1);
+  assert.match(f.openLogs[0], /logs[\\/]web-handoff-successor\.log$/);
   assert.equal(f.child.connected, false);
   assert.ok(f.child.unrefs >= 2);
   assert.deepEqual(f.assertions, [f.previous, f.next]);

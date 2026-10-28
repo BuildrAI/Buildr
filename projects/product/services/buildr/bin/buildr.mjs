@@ -6,5 +6,5 @@ import { reportCliFailure, runCli } from '../src/bootstrap/cli/main.ts';
 try {
   await runCli(process.argv);
 } catch (error) {
-  reportCliFailure(error, process.argv);
+  await reportCliFailure(error, process.argv);
 }
