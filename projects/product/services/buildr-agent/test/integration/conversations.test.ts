@@ -1871,3 +1871,64 @@ test('shared video draft keeps original and frames without creating a conversati
     assert.deepEqual(f.service.conversations.removeDraftImage('@default',id,{expectedRevision:removable.revision,attachmentId:removable.images.find(image=>image.video)!.id}).images,[]);
   }finally{await f.close();}
 });
+
+function titleFake(id:string,options:{hold?:boolean;title:()=>Promise<string|undefined>}) {
+  const native=fake(id,{hold:options.hold}),open=native.executor.open;
+  native.executor.open=async input=>({...await open(input),generateTitle:options.title});
+  return native;
+}
+
+test('title retry belongs to each participant: an empty first executor cannot block the healthy replacement',async()=>{
+  let aCalls=0,bCalls=0;const a=titleFake('first',{title:async()=>{aCalls++;return undefined;}}),b=titleFake('second',{hold:true,title:async()=>{bCalls++;return '切换执行方后恢复的标题';}}),f=fixture([a.executor,b.executor]);
+  try{
+    await connected(f.service,'first');await connected(f.service,'second');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'first','调整对话布局');await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed'&&v.titleState?.status==='failed'&&aCalls===2);
+    send(f.service,chat.id,'second','接着完成布局调整');const named=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.title==='切换执行方后恢复的标题');
+    assert.equal(named.run?.status,'running');assert.equal(bCalls,1);assert.equal(aCalls,2);assert.equal(a.sends.length,1);assert.equal(b.sends.length,1);
+  }finally{for(const c of b.contexts.values())c.unblock?.();await f.close();}
+});
+
+test('title retry migrates legacy flags and preserves each participant budget across switching back and restart',async()=>{
+  let aCalls=0,bCalls=0;const a=titleFake('first',{title:async()=>{aCalls++;return undefined;}}),b=titleFake('second',{title:async()=>{bCalls++;return undefined;}}),f=fixture([a.executor,b.executor]);let service=f.service;
+  try{
+    await connected(service,'first');await connected(service,'second');const chat=await service.conversations.create('workspace-one',{});
+    send(service,chat.id,'first','原执行方标题失败');await waitUntil(()=>service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed'&&v.titleState?.status==='failed'&&aCalls===2);
+    await service.close();
+    const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service')),legacy=repository.readConversation(chat.id)!;
+    assert.equal(legacy.earlyTitleAttempted,true);assert.equal(legacy.titleAttempted,true);delete legacy.titleAttemptsByParticipant;repository.saveConversation(legacy,legacy.view.revision);
+    service=createAgentService(f.options);
+    send(service,chat.id,'first','原执行方普通后续消息');await waitUntil(()=>service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');assert.equal(aCalls,2);
+    send(service,chat.id,'second','切换执行方获得独立预算');await waitUntil(()=>service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed'&&v.titleState?.status==='failed'&&bCalls===2);
+    await service.close();service=createAgentService(f.options);
+    send(service,chat.id,'first','切回不重置');await waitUntil(()=>service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
+    send(service,chat.id,'second','重启也不重置');await waitUntil(()=>service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
+    await service.conversations.observe('workspace-one',chat.id);assert.equal(aCalls,2);assert.equal(bCalls,2);assert.equal(a.sends.length,3);assert.equal(b.sends.length,2);
+    const stored=repository.readConversation(chat.id)!;assert.equal(Object.keys(stored.titleAttemptsByParticipant!).length,2);assert.ok(Object.values(stored.titleAttemptsByParticipant!).every(value=>value.early&&value.completion));
+  }finally{if(service!==f.service)await service.close();await f.close();}
+});
+
+for(const manual of [false,true])test('title retry serializes a late old result and protects current/manual title; manual='+manual,async()=>{
+  let release!:(value:string)=>void;const pending=new Promise<string>(resolve=>{release=resolve;});let bCalls=0;
+  const a=titleFake('first',{title:async()=>pending}),b=titleFake('second',{hold:true,title:async()=>{bCalls++;return '新执行方的准确标题';}}),f=fixture([a.executor,b.executor]);
+  try{
+    await connected(f.service,'first');await connected(f.service,'second');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'first','原执行方');await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed'&&v.titleState?.status==='generating');
+    send(f.service,chat.id,'second','新执行方继续工作');await waitUntil(()=>b.sends.length,n=>n===1);assert.equal(bCalls,0,'the working turn does not wait for the previous title request');
+    if(manual){const current=f.service.conversations.read('workspace-one',chat.id);await f.service.conversations.update('workspace-one',chat.id,{expectedRevision:current.revision,title:'用户手动名称'});}
+    release('旧执行方迟到的标题');
+    const named=await waitUntil(()=>{const v=f.service.conversations.read('workspace-one',chat.id);return {title:v.title,titleState:v.titleState,bCalls};},v=>v.title===(manual?'用户手动名称':'新执行方的准确标题'));
+    assert.equal(named.titleState?.status,manual?'manual':'generated');assert.equal(bCalls,manual?0:1);assert.equal(a.sends.length,1);assert.equal(b.sends.length,1);
+  }finally{release?.('结束');for(const c of b.contexts.values())c.unblock?.();await f.close();}
+});
+
+test('title retry persists an unavailable new participant before its working turn completes',async()=>{
+  let calls=0;const a=titleFake('first',{title:async()=>{calls++;return undefined;}}),b=fake('second',{hold:true}),f=fixture([a.executor,b.executor]);
+  try{
+    await connected(f.service,'first');await connected(f.service,'second');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'first','先前标题失败');await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed'&&v.titleState?.status==='failed'&&calls===2);
+    send(f.service,chat.id,'second','执行方暂不支持独立标题');const running=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='running'&&v.titleState?.status==='unavailable');
+    const stored=new ConversationRepository(path.join(f.options.dataRoot,'agent-service')).readConversation(chat.id)!;
+    assert.equal(stored.titleAttemptsByParticipant?.[running.run!.participantId]?.early,true);assert.equal(stored.titleAttemptsByParticipant?.[running.run!.participantId]?.completion,undefined);
+    assert.equal(a.sends.length,1);assert.equal(b.sends.length,1);
+  }finally{for(const c of b.contexts.values())c.unblock?.();await f.close();}
+});

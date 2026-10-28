@@ -647,11 +647,9 @@ export class ConversationApplication {
       if (beforeDispatch.view.run!.status === 'stopping') { beforeDispatch.view.run!.status = 'stopped'; this.save(beforeDispatch); return; }
       if (!this.options.connections.get(prepared.draft.connectionId).enabled) fail('agent_connection_disabled', '接入已断开，本次输入尚未交付。', 409);
       dispatched = true;
-      if (!this.earlyTitles.has(id)) {
-        const early = this.titleAtRunStart(workspaceId, id, runId, runtime).catch(() => {});
-        this.earlyTitles.set(id, early);
-        void early.finally(() => { if (this.earlyTitles.get(id) === early) this.earlyTitles.delete(id); });
-      }
+      const early = this.titleAtRunStart(workspaceId, id, runId, runtime).catch(() => {});
+      this.earlyTitles.set(id, early);
+      void early.finally(() => { if (this.earlyTitles.get(id) === early) this.earlyTitles.delete(id); });
       await runtime.send({ contextRef: participant.contextRef!, cwd: record.view.cwd, text: prepared.text, images: prepared.images, model: prepared.draft.modelAccountId ? selectedRuntime.model : prepared.draft.model, reasoningEffort: prepared.draft.reasoningEffort, permissionMode: prepared.draft.permissionMode, clientRequestId: record.attempts.find(value => value.runId === runId)!.clientRequestId, onEvent: event => this.event(workspaceId, id, runId, event) });
       await this.observe(workspaceId, id);
       const ended = this.currentRun(workspaceId, id, runId);
@@ -734,15 +732,35 @@ export class ConversationApplication {
   private titleEligible(record: StoredConversation): boolean {
     return !this.closing && record.titleOrigin === 'default' && record.view.title === '新对话';
   }
+  private titleAttempts(record:StoredConversation, participantId:string): {early?:boolean;completion?:boolean} {
+    if (!record.titleAttemptsByParticipant) {
+      record.titleAttemptsByParticipant={};
+      // Older records consumed global flags. Keep that budget with the participant
+      // that actually attempted the phase, rather than blocking every new executor.
+      const owner=(phase:'early'|'completion')=>{
+        const diagnostic=record.titleDiagnostics?.findLast(value=>value.phase===phase || phase==='completion' && value.phase==='manual');
+        return record.attempts.find(value=>value.runId===diagnostic?.runId)?.participantId ?? record.attempts[0]?.participantId;
+      };
+      for (const [phase,attempted] of [['early',record.earlyTitleAttempted],['completion',record.titleAttempted]] as const) {
+        const id=attempted?owner(phase):undefined;
+        if(id)(record.titleAttemptsByParticipant[id]??={})[phase]=true;
+      }
+    }
+    return record.titleAttemptsByParticipant[participantId]??={};
+  }
   /** Backfill the neutral name as soon as execution starts; the completed-run path stays the fallback. */
   private async titleAtRunStart(workspaceId: string, id: string, runId: string, runtime: AgentRuntime): Promise<void> {
+    const previous=this.earlyTitles.get(id);
+    if (this.titleWork.has(id) && previous) await previous.catch(()=>{});
     const record = this.currentRun(workspaceId, id, runId);
-    if (!record || !this.titleEligible(record) || record.titleAttempted || record.earlyTitleAttempted || this.titleWork.has(id)) return;
+    if (!record || !this.titleEligible(record) || this.titleWork.has(id)) return;
     const participant = record.participants.find(value => value.id === record.view.run!.participantId);
     const description = this.titleDescription(record, false);
     if (!participant?.contextRef || !description) return;
-    record.earlyTitleAttempted = true;
-    if (!runtime.generateTitle) { this.recordTitleFailure(workspaceId, id, runId, 'early', new Error('agent_title_unavailable')); return; }
+    const attempts=this.titleAttempts(record,participant.id);
+    if(attempts.early || attempts.completion)return;
+    attempts.early=true;record.earlyTitleAttempted = true;
+    if (!runtime.generateTitle) { this.save(record); this.recordTitleFailure(workspaceId, id, runId, 'early', new Error('agent_title_unavailable')); return; }
     record.view.titleState={status:'generating'}; this.save(record);
     const controller = new AbortController(); this.titleWork.set(id, controller);
     const timeout = setTimeout(() => controller.abort(), TITLE_TIMEOUT_MS + 2_000); timeout.unref();
@@ -767,6 +785,7 @@ export class ConversationApplication {
     const explanations: Record<string,string> = {
       agent_title_timeout: '独立标题请求超时，已中断本次生成',
       agent_title_cancelled: '独立标题请求已取消',
+      agent_title_cleanup_unconfirmed: '标题请求停止尚未确认',
       agent_title_transport_closed: '生成标题时原生连接断开',
       agent_native_process_closed: '生成标题时原生进程退出',
       agent_native_request_failed: '原生程序拒绝了标题请求',
@@ -809,7 +828,8 @@ export class ConversationApplication {
     // before deciding whether the one completion fallback is still necessary.
     await this.earlyTitles.get(id);
     const record = this.currentRun(workspaceId, id, runId);
-    if (!record || !this.titleEligible(record) || record.titleAttempted || record.view.run?.status !== 'completed') return;
+    if (!record || !this.titleEligible(record) || record.view.run?.status !== 'completed') return;
+    if(this.titleAttempts(record,record.view.run.participantId).completion)return;
     await this.summarizeTitle(workspaceId, id, record.view.revision, runtime, false).catch(() => {});
   }
   async generateTitle(workspaceId: string, id: string, input: { expectedRevision: string }): Promise<ConversationView> {
@@ -829,8 +849,9 @@ export class ConversationApplication {
     let record = this.load(workspaceId, id); expected(record.view.revision, revision);
     const participant = record.participants.find(value => value.id === record.view.run?.participantId);
     const description = this.titleDescription(record);
-    if (!participant?.contextRef || !description || record.view.run?.status !== 'completed' || !explicit && (!this.titleEligible(record) || record.titleAttempted)) return;
+    if (!participant?.contextRef || !description || record.view.run?.status !== 'completed' || !explicit && (!this.titleEligible(record) || this.titleAttempts(record,participant.id).completion)) return;
     const runId = record.view.run.id; const controller = new AbortController(); this.titleWork.set(id, controller);
+    this.titleAttempts(record,participant.id).completion=true;
     record.titleAttempted = true; record.view.titleState={status:'generating'}; this.save(record); revision = record.view.revision;
     const timeout = setTimeout(() => controller.abort(), TITLE_TIMEOUT_MS + 2_000); timeout.unref();
     try {

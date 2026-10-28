@@ -70,6 +70,7 @@ export interface StoredConversation {
   titleOrigin?: 'default' | 'generated' | 'manual';
   titleAttempted?: boolean;
   earlyTitleAttempted?: boolean;
+  titleAttemptsByParticipant?: Record<string,{early?:boolean;completion?:boolean}>;
   titleDiagnostics?: Array<{runId:string;phase:'early'|'completion'|'manual';code:string;reason:string;at:string}>;
   participants: StoredParticipant[];
   sources: Record<string, string>;

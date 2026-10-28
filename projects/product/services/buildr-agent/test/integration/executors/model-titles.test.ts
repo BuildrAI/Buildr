@@ -190,3 +190,23 @@ test('Codex malformed structured title has a stable diagnostic code',async()=>{
     await assert.rejects(generateCodexTitle(fixture.rpc,{contextRef:{id:'work'},cwd:'/work',description:'{}',signal:new AbortController().signal},directory,new Set()),/agent_title_output_invalid/);
   } finally {await fs.rm(directory,{recursive:true,force:true});}
 });
+
+test('Qoder title cancellation reaps only its auxiliary CLI and permits another title',async()=>{
+  const {createQoderExecutor}=await import('../../../src/executors/qoder/index.ts');const root=await fs.mkdtemp(path.join(os.tmpdir(),'qoder-title-cancel-')),workspace=path.join(root,'workspace');await fs.mkdir(workspace);
+  const log=path.join(root,'calls.jsonl'),executable=path.join(root,'fixture.mjs');let source=await fs.readFile(new URL('./fixtures/qoder-cli.mjs',import.meta.url),'utf8');
+  source="import fs from 'node:fs';\n"+source;
+  source=source.replace("r.on('line',line=>{const m=JSON.parse(line);",`r.on('line',line=>{const m=JSON.parse(line);fs.appendFileSync(${JSON.stringify(log)},JSON.stringify({pid:process.pid,message:m})+'\\n');if(m.type==='control_request'&&(m.request.type??m.request.subtype)==='generate_session_title'){if(JSON.stringify(m.request).includes('hang-title'))return;ack(m.request_id,{title:'独立标题仍可正常生成'});return;}`);
+  await fs.writeFile(executable,source);let runtime:AgentRuntime|undefined;const controller=new AbortController();
+  const records=async()=>{try{return(await fs.readFile(log,'utf8')).trim().split('\n').map(line=>JSON.parse(line));}catch{return[];}};
+  const until=async<T>(read:()=>Promise<T>,accept:(value:T)=>boolean)=>{for(let n=0;n<300;n++){const v=await read();if(accept(v))return v;await new Promise(resolve=>setTimeout(resolve,5));}throw new Error('auxiliary state did not settle');};
+  try{
+    runtime=await createQoderExecutor().open({connectionId:'qoder',configRoot:path.join(root,'profile'),executable,environment:{PATH:process.env.PATH??''}});const contextRef=await runtime.createContext({cwd:workspace});
+    const pending=runtime.generateTitle!({contextRef,cwd:workspace,description:'hang-title',signal:controller.signal});const failed=assert.rejects(pending,/agent_title_cancelled/);
+    const observed=await until(records,rows=>rows.some((row:any)=>JSON.stringify(row.message.request??{}).includes('hang-title')));const auxiliary=observed.find((row:any)=>JSON.stringify(row.message.request??{}).includes('hang-title'));
+    assert.equal(await runtime.generateTitle!({contextRef,cwd:workspace,description:'parallel title',signal:new AbortController().signal}),'独立标题仍可正常生成');
+    controller.abort();await failed;
+    await until(async()=>{try{process.kill(auxiliary.pid,0);return false;}catch{return true;}},Boolean);
+    assert.equal(await runtime.generateTitle!({contextRef,cwd:workspace,description:'after cancellation',signal:new AbortController().signal}),'独立标题仍可正常生成');
+    assert.ok(!(await records()).some((row:any)=>row.message.type==='user'));
+  }finally{controller.abort();await runtime?.close();await fs.rm(root,{recursive:true,force:true});}
+});

@@ -1,3 +1,4 @@
+import {generateQoderTitle} from './title.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
@@ -81,7 +82,7 @@ class QoderRuntime implements AgentRuntime {
   async generateTitle(input: ExecutorTitleInput): Promise<string | undefined> {
     this.reference(input.contextRef, input.cwd); input.signal.throwIfAborted();
     await this.assertNativeAccount();
-    return await this.rpc.call('title', { description: input.description }, 10_000);
+    return await generateQoderTitle(this.rpc,input.description,input.signal);
   }
   async beginLogin(update: (value: LoginObservation) => void): Promise<void> {
     await this.cancelLogin(); update({ state: 'initializing' });
