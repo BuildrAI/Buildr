@@ -41,12 +41,6 @@ async function within<T>(work: Promise<T>, milliseconds: number, code: string, s
   finally { if (timer) clearTimeout(timer); if (cancel) signal?.removeEventListener('abort', cancel); }
 }
 const bounded = (value: number | undefined, fallback: number, max: number) => Math.max(1, Math.min(Number.isFinite(value) ? Math.trunc(value!) : fallback, max));
-const providerNames:Record<string,string>={codex:'Codex',dsh:'DSH',qoder:'Qoder'};
-/** Keep provider-specific model compatibility at the write boundary, not only in the picker. */
-function modelSourceIncompatibility(sourceProvider:string,modelId:string,connectionProvider:string):string|undefined {
-  if(sourceProvider!=='devin'||connectionProvider==='dsh'||connectionProvider==='codex'&&modelId==='swe-2')return;
-  return `Devin 当前暂不兼容 ${providerNames[connectionProvider]??connectionProvider}，请切换到 DSH 或选择其他模型来源。`;
-}
 
 export class ConversationApplication {
   activity(): Array<{kind:string;count:number}> {
@@ -287,7 +281,6 @@ export class ConversationApplication {
     if (input.model && !selectedModel) fail('agent_model_unavailable', '该模型不在当前接入的可用目录中。', 409);
     input.model = selectedModel?.id ?? input.model;
     if(source&&selectedModel&&'enabled' in selectedModel&&selectedModel.enabled===false)fail('agent_model_disabled','所选模型已停用，请重新选择。',409);
-    if(source&&selectedModel){const incompatibility=modelSourceIncompatibility(source.provider,selectedModel.id,connection.provider);if(incompatibility)fail('agent_model_incompatible',incompatibility,409);}
     const boundModel=source&&selectedModel?selectedOffering(selectedModel as ModelOffering,input.serviceTier):selectedModel;
     if(input.serviceTier&&!source)fail('agent_model_tier_unavailable','原生默认模型不支持此共享服务档位。',409);
     input.serviceTier=source?(boundModel as ModelOffering|undefined)?.defaultServiceTier:undefined;

@@ -64,8 +64,8 @@ test('模型选择器记忆恢复准确来源、档位与思考深度，并按�
  assert.deepEqual([missingTier.serviceTier,missingTier.reasoningEffort],['standard',undefined]);
  const unavailable=preferredConversationChoice(modulePreference,{version:1,connectionId:'dsh',model:'swe-2',modelAccountId:'gone'},connections,catalog);
  assert.deepEqual([unavailable.modelAccountId,unavailable.model],['native-dsh','dsh-model']);
- const incompatible=preferredConversationChoice({version:1,agent:{connectionId:'qoder'}},{version:1,connectionId:'qoder',model:'swe-2',modelAccountId:'devin'},connections,catalog);
- assert.deepEqual([incompatible.modelAccountId,incompatible.model],['native-qoder','native-model']);
+ const restored=preferredConversationChoice({version:1,agent:{connectionId:'qoder'}},{version:1,connectionId:'qoder',model:'swe-2',modelAccountId:'devin'},connections,catalog);
+ assert.deepEqual([restored.modelAccountId,restored.model],['devin','swe-2']);
 });
 
 test('不同智能体不借用模型记忆，且对话模型写入不改变执行模型偏好',()=>{
