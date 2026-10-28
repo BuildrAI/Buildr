@@ -49,7 +49,7 @@ export function ConversationHistory({workspaces,defaultWorkspaceId}:{workspaces:
   const renderRow=(row:ConversationSummary,showWorkspace=false)=><div key={row.workspaceId+':'+row.id} className={'ac-history-row'+(context.scope?.workspaceId===row.workspaceId&&context.scope.conversationId===row.id?' is-selected':'')}>
     <button type="button" className="ac-history-row-main" data-conversation-id={row.id} onClick={()=>void context.openConversation(row.workspaceId,row.id,{preserveVisibility:true})}>
       <span className="ac-history-row-title"><strong title={row.title}>{row.title}</strong><ConversationActivityStatus state={activityState(row)}/></span>
-      <small><span className="ac-history-id" title={row.id}>ID {row.id}</span><span className="ac-history-meta">{conversationMetadata(row,showWorkspace?workspaceName(row.workspaceId):undefined,row.run?.model?modelName(row.run.model):undefined)}</span></small>
+      <small><span className="ac-history-id" title={row.id}>{row.id}</span><span className="ac-history-meta">{conversationMetadata(row,showWorkspace?workspaceName(row.workspaceId):undefined,row.run?.model?modelName(row.run.model):undefined)}</span></small>
     </button>
     <CopyButton type="text" className="ac-history-row-copy" text={row.id} ariaLabel="复制对话 ID" failureMessage="复制失败，请手动选择对话 ID 复制。"/>
   </div>;
