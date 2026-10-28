@@ -54,7 +54,7 @@ class CodexRuntime implements ModelProviderRuntime {
   async inspect(): Promise<ModelProviderObservation> {
     try {
       let nativeLabel:string|undefined;
-      if(this.options.owner){const account=await this.options.owner.inspect();nativeLabel=account.label;if(account.status!=='ready')return{status:account.status,models:[],label:account.label};}
+      if(this.options.owner){const account=await this.options.owner.inspect();nativeLabel=account.label;if(account.status!=='ready')return{status:account.status,incomplete:account.status==='failed',models:[],label:account.label,diagnostic:account.diagnostic};}
       else {const credential=await this.credential();if(!credential)return{status:'not-authenticated',models:[]};}
       const response = await this.request(`/codex/models?client_version=${VERSION}`);
       if (response.status === 401) { await response.body?.cancel(); return { status: 'expired', models: [], diagnostic: 'model_codex_login_expired' }; }
@@ -77,7 +77,7 @@ class CodexRuntime implements ModelProviderRuntime {
         } else await response.body?.cancel();
       } catch { /* Quota observation cannot invalidate an otherwise usable source. */ }
       return { status: models.length ? 'ready' : 'failed', label: nativeLabel??'Codex / ChatGPT', ...(this.options.owner?{identity:await this.options.owner.identity()}:{}), models, quota, ...(!models.length ? { diagnostic: 'model_codex_catalog_empty' } : {}) };
-    } catch (error) { return { status: (error as Error).message === 'model_codex_login_expired' ? 'expired' : 'failed', models: [], diagnostic: (error as Error).message === 'model_codex_login_expired' ? 'model_codex_login_expired' : 'model_codex_observation_failed' }; }
+    } catch (error) { return { incomplete: (error as Error).message !== 'model_codex_login_expired', status: (error as Error).message === 'model_codex_login_expired' ? 'expired' : 'failed', models: [], diagnostic: (error as Error).message === 'model_codex_login_expired' ? 'model_codex_login_expired' : 'model_codex_observation_failed' }; }
   }
   async beginLogin(update: (value: LoginObservation) => void): Promise<void> {
     if(this.options.owner)throw new Error('model_managed_account');

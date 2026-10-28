@@ -62,7 +62,7 @@ test('Qoder reports credits quota and per-model credit factor without blocking t
 });
 
 
-test('background catalog starts once, ticks every 30 seconds, never overlaps, preserves failures and stops on close',async t=>{
+test('background catalog starts once, ticks every 60 seconds, never overlaps, preserves failures and stops on close',async t=>{
  const root=await mkdtemp(join(tmpdir(),'buildr-model-refresh-'));
  t.mock.timers.enable({apis:['setInterval','Date']});
  let calls=0,hold=false,failed=false,release:()=>void=()=>{},started:()=>void=()=>{};
@@ -77,12 +77,13 @@ test('background catalog starts once, ticks every 30 seconds, never overlaps, pr
   assert.equal(calls,1);await service.models.catalog.list();await service.models.accounts.list();assert.equal(calls,1,'ordinary reads never contact the provider');
   service.models.startRefreshing();service.models.startRefreshing();await service.models.catalog.list({refresh:true});assert.equal(calls,2,'startup and explicit observers share one check');
   hold=true;gate=new Promise<void>(resolve=>{release=resolve;});const begun=new Promise<void>(resolve=>{started=resolve;});
+  t.mock.timers.tick(30_000);assert.equal(calls,2,'30 seconds must not trigger an external check');
   t.mock.timers.tick(30_000);await begun;assert.equal(calls,3);
   t.mock.timers.tick(60_000);assert.equal(calls,3,'slow refresh cannot overlap the next ticks');
   const cached=await service.models.catalog.list();assert.equal(cached.models[0]?.available,true,'reads do not wait for the held external check');
   failed=true;release();const failure=await service.models.catalog.list({refresh:true});
-  assert.equal(failure.models.length,1);assert.equal(failure.models[0]?.available,false);assert.match(failure.diagnostic||'',/核对失败/);assert.ok(!JSON.stringify(failure).includes('private-upstream-secret'));
-  hold=false;failed=false;t.mock.timers.tick(30_000);const restored=await service.models.catalog.list({refresh:true});
+  assert.equal(failure.models.length,1);assert.equal(failure.models[0]?.available,true);assert.match(failure.diagnostic||'',/核对失败/);assert.ok(!JSON.stringify(failure).includes('private-upstream-secret'));
+  hold=false;failed=false;t.mock.timers.tick(60_000);const restored=await service.models.catalog.list({refresh:true});
   assert.equal(calls,4);assert.equal(restored.models[0]?.available,true);assert.equal(restored.diagnostic,undefined);
   await service.close();const after=calls;t.mock.timers.tick(60_000);service.models.startRefreshing();assert.equal(calls,after,'close clears scheduling and forbids restarting');
   const reopened=create();try{const saved=await reopened.models.catalog.list();assert.equal(saved.models[0]?.available,true);assert.equal(calls,after,'persisted result is immediately readable after restart');}finally{await reopened.close();}

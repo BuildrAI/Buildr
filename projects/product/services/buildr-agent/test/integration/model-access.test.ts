@@ -261,3 +261,38 @@ test('single generation rejects unsolicited tool calls and abort propagates to o
   for(let i=0;i<20&&!signal?.aborted;i++)await new Promise(resolve=>setTimeout(resolve,5));assert.equal(signal?.aborted,true);
  }finally{await access.close();await rm(root,{recursive:true,force:true});}
 });
+
+test('incomplete checks retain usable observations; confirmed logout and identity changes do not',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-model-check-'));
+  let state:'ready'|'failed'|'expired'|'not-authenticated'|'throw'='ready',identity='account-a',checks=0,incomplete=true;
+  const source:ModelProvider={id:'fixture',label:'Fixture',async open(){return{
+    protocol:'chat-completions',async inspect(){checks++;if(state==='throw')throw new Error('timeout');return{status:state,incomplete:state==='failed'&&incomplete,identity,models:state==='ready'?[model]:[],...(state==='failed'?{diagnostic:'inspection_unfinished'}:{})};},
+    async beginLogin(){},async cancelLogin(){},async infer(){return Response.json({});},async close(){},
+  };}};
+  const access=createModelAccess({root,providers:[source]});
+  try{
+    const added=await access.accounts.add({provider:'fixture'});await checkEnabled(access,added.id);
+    const before=access.accounts.read(added.id);
+    for(let i=0;i<5;i++)access.catalog.list();
+    assert.equal(checks,1,'cached reads must not issue inspections or invalidate models');
+    for(const incomplete of ['throw','failed'] as const){
+      state=incomplete;const result=await access.accounts.check(added.id);
+      assert.equal(result.status,'ready');assert.equal(result.revision,before.revision);
+      assert.equal(result.observedAt,before.observedAt);assert.ok(result.diagnostic);
+      assert.equal(access.catalog.list().models[0].available,true);
+    }
+    state='ready';assert.equal((await access.accounts.check(added.id)).diagnostic,undefined);
+    for(const confirmed of ['expired','not-authenticated'] as const){
+      state=confirmed;assert.equal((await access.accounts.check(added.id)).status,confirmed);
+      assert.equal(access.catalog.list().models[0].available,false);
+      state='ready';await access.accounts.check(added.id);
+    }
+    state='failed';incomplete=false;
+    assert.equal((await access.accounts.check(added.id)).status,'failed','confirmed failure must remain unavailable');
+    assert.equal(access.catalog.list().models[0].available,false);
+    state='ready';await access.accounts.check(added.id);incomplete=true;
+    identity='account-b';state='failed';
+    assert.equal((await access.accounts.check(added.id)).status,'failed');
+    assert.equal(access.catalog.list().models[0].available,false,'old identity cannot survive a confirmed change');
+  }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});

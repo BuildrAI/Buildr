@@ -59,7 +59,7 @@ export function createAgentService(options: AgentServiceOptions) {
         await models.ensureLinked();
         if(closed)return;
         const results=await Promise.allSettled(models.accounts.list().accounts.filter(account=>account.enabled&&(account.connectionId||['ready','failed'].includes(account.status))&&!account.loginAttempt?.state?.match(/^(initializing|waiting-browser|checking)$/)).map(account=>models.accounts.check(account.id)));
-        discoveryDiagnostic=results.some(result=>result.status==='rejected')?'部分模型账号核对失败，已保留已有模型列表。':undefined;
+        discoveryDiagnostic=results.some(result=>result.status==='rejected'||!!result.value.diagnostic)?'部分模型账号核对失败，已保留已有模型列表。':undefined;
       } catch(error) {
         discoveryDiagnostic='模型账号核对未完成，已保留已有模型列表。';
         throw error;
@@ -71,7 +71,7 @@ export function createAgentService(options: AgentServiceOptions) {
   const startRefreshing=()=>{
     if(closed||discoveryTimer)return;
     refreshInBackground();
-    discoveryTimer=setInterval(refreshInBackground,30_000);discoveryTimer.unref();
+    discoveryTimer=setInterval(refreshInBackground,60_000);discoveryTimer.unref();
   };
   linkedChanged=connection=>{
     if(!connection.enabled||['not-authenticated','expired'].includes(connection.status)||connection.loginAttempt&&['initializing','waiting-browser'].includes(connection.loginAttempt.state))models.invalidate('native-'+connection.id);

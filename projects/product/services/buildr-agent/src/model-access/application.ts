@@ -182,15 +182,17 @@ export class ModelAccessApplication {
       const observation = await (await this.runtime(id)).inspect();
       if (this.operations.get(id) !== operation) return this.view(this.current(id));
       before=this.selectionState(row);
-      if(observation.identity && row.identity!==digest(observation.identity)){row.identity=digest(observation.identity);for(const lease of [...this.leasesByIdentity.values()])if(lease.input.accountId===id)this.release(lease.view.identity);}
-      row.enabled = true; row.status = observation.status; if(observation.label) row.accountLabel = observation.label; row.diagnostic = observation.diagnostic;
+      if(observation.identity && row.identity!==digest(observation.identity)){row.status='not-authenticated';row.identity=digest(observation.identity);for(const lease of [...this.leasesByIdentity.values()])if(lease.input.accountId===id)this.release(lease.view.identity);}
+      // An incomplete observation is not evidence that a previously usable account expired.
+      // Explicit authentication results and identity changes still invalidate it immediately.
+      row.enabled = true; row.status = observation.status === 'failed' && observation.incomplete === true && row.status === 'ready' && (!observation.identity || row.identity === digest(observation.identity)) ? 'ready' : observation.status; if(observation.label) row.accountLabel = observation.label; row.diagnostic = observation.diagnostic;
       if(observation.status==='ready') {
         const prefs=this.preferences.get(id)??{};
         for(const model of observation.models)if(!Object.hasOwn(prefs,model.id))Object.defineProperty(prefs,model.id,{value:{enabled:false},enumerable:true,writable:true,configurable:true});
         this.preferences.set(id,prefs);row.models = structuredClone(observation.models); row.observedAt = this.now;
       }
       if(observation.quota)row.quota=!observation.quota.available&&row.quota?.available?{...row.quota,stale:true,diagnostic:'本次额度读取未完成，以下保留上次观察。'}:observation.quota;
-    } catch { if (this.operations.get(id) !== operation) return this.view(this.current(id)); before??=this.selectionState(row); row.status = 'failed'; row.diagnostic = '模型账号检查未完成，已保留上次目录。'; }
+    } catch { if (this.operations.get(id) !== operation) return this.view(this.current(id)); before??=this.selectionState(row); if (row.status !== 'ready') row.status = 'failed'; row.diagnostic = '模型账号检查未完成，已保留上次目录。'; }
     return await this.observed(row, before!);
   }
   async login(id: string, input: { expectedRevision: string }) {

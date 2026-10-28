@@ -68,7 +68,7 @@ export function createQoderModelProvider(owner:QoderModelOwner):ModelProvider {
   return {id:'native-qoder',label:'Qoder',connectionId:'qoder',async open(){
     const models=new Map<string,{offering:ModelOffering;config:ProtocolJson}>();
     const inspect=async():Promise<ModelProviderObservation>=>{
-        const account=await owner.inspect(); if(account.status!=='ready')return{status:account.status,models:[],label:account.label};
+        const account=await owner.inspect(); if(account.status!=='ready')return{status:account.status,incomplete:account.status==='failed',models:[],label:account.label,diagnostic:account.diagnostic};
         const response=await owner.request('/models',{signal:AbortSignal.timeout(15000)});
         if(response.status===401){await response.body?.cancel();return{status:'expired',models:[]};}
         if(!response.ok){await response.body?.cancel();throw new Error('qoder_catalog_failed');}

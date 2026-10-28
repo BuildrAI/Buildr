@@ -190,11 +190,11 @@ export async function runAgentConversationsJourney({t,page,workspaceUrl,capture:
       await code.focus();await code.press('ArrowRight');await primary.locator('[data-navigation-mode="fixed"][data-navigation-area="code"]:visible').waitFor();assert.equal(await code.evaluate((node:HTMLElement)=>node===document.activeElement),true,'键盘展开保留明确触发位置');await code.press('Tab');await page.getByRole('link',{name:'源代码管理',exact:true}).waitFor();assert.equal(await primary.locator('[data-navigation-mode="fixed"] .shell-nav-item').first().evaluate((node:HTMLElement)=>node===document.activeElement),true,'键盘可进入固定菜单');
       await code.focus();await code.press('Enter');await primary.locator('[data-navigation-mode="fixed"]').waitFor({state:'hidden'});await page.mouse.move(500,80);await code.hover();const codePopup=page.getByLabel('代码二级导航',{exact:true});await codePopup.waitFor();await codePopup.getByRole('link',{name:'源代码管理',exact:true}).click();await codePopup.waitFor({state:'hidden'});assert.equal(await primary.locator('[data-navigation-mode="preview"]:visible').count(),0,'选择页面后预览关闭');await page.goto(workUrl);await page.locator('#workbench-overview').waitFor();
     });
-    await step('模型目录首次无结果保持安静，失败提示且恢复只撤掉异常',async()=>{
+    await step('模型目录初次读取和无关账号核对失败不打扰对话',async()=>{
       await reset();
       await openDesktopConversation();await input().waitFor();assert.equal(await panel().getByText(/正在获取|正在刷新|刷新成功|恢复成功/).count(),0);
       catalogDiagnostic='部分模型账号核对失败，已保留已有模型列表。';await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
-      await panel().getByText(catalogDiagnostic,{exact:true}).waitFor();await input().fill('刷新异常不丢失草稿');
+      await page.waitForTimeout(200);assert.equal(await panel().getByText(catalogDiagnostic,{exact:true}).count(),0);await input().fill('刷新异常不丢失草稿');
       catalogDiagnostic=undefined;await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
       await panel().getByText('部分模型账号核对失败，已保留已有模型列表。',{exact:true}).waitFor({state:'hidden'});
       assert.equal(await input().inputValue(),'刷新异常不丢失草稿');assert.equal(await panel().getByText(/刷新成功|恢复成功/).count(),0);
