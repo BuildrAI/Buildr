@@ -9,6 +9,7 @@ import type { AgentRuntime, ExecutorEvent } from '../../../src/contracts.ts';
 class Stream {
   private values: any[] = []; private waiting?: (value: IteratorResult<any>) => void; private closed = false;
   push(value: any) { if (this.waiting) { const wait = this.waiting; this.waiting = undefined; wait({ done: false, value }); } else this.values.push(value); }
+  get active() { return !this.closed; }
   async next(): Promise<IteratorResult<any>> { if (this.values.length) return { done: false, value: this.values.shift() }; if (this.closed) return { done: true, value: undefined }; return await new Promise(resolve => { this.waiting = resolve; }); }
   [Symbol.asyncIterator]() { return this; }
   async dispose() { this.closed = true; this.waiting?.({ done: true, value: undefined }); this.waiting = undefined; }
@@ -174,10 +175,101 @@ test('DSH lost follow recovers only the exact durable terminal, never a differen
     const failed=assert.rejects(sending,/dsh_execution_observation_lost/);await eventually(()=>visible.some(e=>e.type==='accepted'));await streams.at(-1)!.dispose();await failed;
     events.push({type:'turn/start',seq:3,data:{turn:2}},{type:'user/message',seq:4,data:{id:'other',source:{kind:'user',rpcId:'other-request'},content:[{type:'text',text:'other'}]}},{type:'turn/end',seq:5,data:{turn:2,reason:{kind:'completed'}}});
     const executionRef={id:'original-request'};assert.notEqual((await runtime.observe({contextRef,executionRef})).status,'idle');
+    await streams.at(-1)!.dispose();
     events.push({type:'tool/call',seq:6,data:{turn:1,callId:'tool1',name:'bash'}},{type:'turn/end',seq:7,data:{turn:1,reason:{kind:'completed'}}});
     assert.notEqual((await runtime.observe({contextRef,executionRef})).status,'idle');
+    await streams.at(-1)!.dispose();
     events.push({type:'tool/result',seq:8,data:{turn:1,message:{toolCallId:'tool1',content:[]}}});
     const restored=await runtime.observe({contextRef,executionRef});assert.equal(restored.status,'idle');assert.equal(restored.executionRef?.id,executionRef.id);assert.equal(restored.tools[0].status,'completed');assert.equal(sends,1);
     assert.equal((await runtime.observe({contextRef,executionRef})).status,'idle');assert.equal(sends,1);
   }finally{await runtime.close();}
+});
+
+function reconnectFixture() {
+  const streams:Stream[]=[],events:any[]=[],visible:ExecutorEvent[]=[],cwd='/synthetic/workspace',ok=(value:any)=>({ok:true,value});
+  let sends=0;
+  const publish=(event:any)=>{event.seq=events.length+1;events.push(event);for(const stream of streams)if(stream.active)stream.push({type:'event',event});};
+  const remote={
+    permissionPresets:{catalog:async()=>ok({defaultPreset:'workspace-write',options:[{value:'workspace-write'}]})},
+    commands:{list:async()=>ok([{name:'permission',definitionId:'@deepseek-ai/dsh-permission-presets'}]),execute:async()=>ok({result:{kind:'success'}})},
+    session:{
+      create:async()=>ok({sessionId:'live-reconnect'}),
+      follow:()=>{const stream=new Stream();streams.push(stream);stream.push({type:'snapshot',header:{id:'live-reconnect',cwd},cursor:events.length,records:events.slice(-2).map(event=>({event})),hasMore:events.length>2,projections:{values:{permissions:{currentValue:'workspace-write'}}},assistantStream:{revision:1,activeAttempt:{attemptId:'partial',turn:1,step:2,nextIndex:5,stream:[{type:'reasoning-chunks',index:0,time0:1,dt:[0],texts:['hidden reasoning']},{type:'text-chunks',index:1,time0:1,dt:[0],texts:['已补回']}]}}});return stream;},
+      page:async(input:any)=>{const records=events.filter(event=>event.seq<=input.throughSeq&&(input.beforeSeq===undefined||event.seq<input.beforeSeq));return ok({records:records.slice(-2).map(event=>({event})),hasMore:records.length>2});},
+      prompt:async(input:any)=>{sends++;publish({type:'turn/start',data:{turn:1}});publish({type:'user/message',data:{id:'original',source:{kind:'user',rpcId:input.requestId},content:input.content}});return ok({accepted:true});},
+      cancel:async()=>{publish({type:'turn/end',data:{turn:1,reason:{kind:'cancelled'}}});return ok({});},
+    },
+  };
+  const runtime=Reflect.construct(DshRuntime,['live-binding',{close:async()=>{for(const stream of streams)await stream.dispose();}},{remote,close:async()=>{},ctx:{}}]) as AgentRuntime;
+  return {runtime,remote,streams,events,visible,publish,cwd,get sends(){return sends;}};
+}
+test('DSH reconnects one live follow, repairs paged gaps and resumes partial text without sending input again',async()=>{
+  const f=reconnectFixture();
+  try{
+    const contextRef=await f.runtime.createContext({cwd:f.cwd}),executionRef={id:'live-request'};
+    const sending=f.runtime.send({contextRef,cwd:f.cwd,text:'work',images:[],clientRequestId:executionRef.id,onEvent:event=>f.visible.push(event)});
+    const failed=assert.rejects(sending,/dsh_execution_observation_lost/);
+    await eventually(()=>f.visible.some(event=>event.type==='accepted'));await f.streams.at(-1)!.dispose();await failed;
+    f.publish({type:'tool/call',data:{turn:1,callId:'gap-tool',name:'read'}});
+    f.publish({type:'tool/result',data:{turn:1,message:{toolCallId:'gap-tool',content:[{type:'text',text:'gap repaired'}]}}});
+    await Promise.all([f.runtime.observe({contextRef,executionRef}),f.runtime.observe({contextRef,executionRef})]);
+    assert.equal(f.streams.filter(stream=>stream.active).length,1);assert.equal(f.sends,1);
+    assert.ok(f.visible.some(event=>event.type==='item'&&event.item.id==='gap-tool'&&event.item.text==='gap repaired'));
+    const stream=f.streams.find(stream=>stream.active)!;
+    stream.push({type:'assistant-stream',frame:{type:'chunk',attemptId:'partial',index:5,chunk:{type:'text-delta',text:'并继续'}}});
+    await eventually(()=>f.visible.some(event=>event.type==='item'&&event.item.text==='已补回并继续'));
+    f.publish({type:'turn/end',data:{turn:1,reason:{kind:'completed'}}});
+    await eventually(()=>f.visible.some(event=>event.type==='completed'&&event.status==='completed'));
+    assert.equal((await f.runtime.observe({contextRef,executionRef})).status,'idle');assert.equal(f.sends,1);
+  }finally{await f.runtime.close();}
+});
+test('DSH projection errors preserve the native turn and retain a sanitized failure cause',async()=>{
+  const f=reconnectFixture();let failOnce=true;
+  try{
+    const contextRef=await f.runtime.createContext({cwd:f.cwd}),executionRef={id:'projection-request'};
+    const sending=f.runtime.send({contextRef,cwd:f.cwd,text:'work',images:[],clientRequestId:executionRef.id,onEvent:event=>{
+      if(failOnce&&event.type==='item'&&event.item.id==='failed-local-write'){failOnce=false;throw new Error('database is locked; Authorization: Bearer private-secret https://private.example/path');}
+      f.visible.push(event);
+    }});
+    const failed=assert.rejects(sending,(error:any)=>error.message==='dsh_event_observation_lost'&&error.diagnostic.includes('database is locked')&&!error.diagnostic.includes('private-secret')&&!error.diagnostic.includes('private.example'));
+    await eventually(()=>f.visible.some(event=>event.type==='accepted'));
+    f.publish({type:'tool/call',data:{turn:1,callId:'failed-local-write',name:'read'}});await failed;
+    f.publish({type:'tool/result',data:{turn:1,message:{toolCallId:'failed-local-write',content:[{type:'text',text:'kept native output'}]}}});
+    await f.runtime.observe({contextRef,executionRef});
+    assert.equal(f.sends,1);assert.equal(f.streams.filter(stream=>stream.active).length,1);
+    assert.ok(f.visible.some(event=>event.type==='item'&&event.item.text==='kept native output'));
+    const stopped=await f.runtime.stop({contextRef,executionRef});
+    await eventually(()=>f.visible.some(event=>event.type==='completed'&&event.status==='stopped'));
+    assert.equal((await f.runtime.observe({contextRef,executionRef})).status,'stopped');assert.equal(f.sends,1);
+  }finally{await f.runtime.close();}
+});
+
+test('DSH automatically restores a lost live follow and bounds repeated reconnect failures',async()=>{
+  const f=reconnectFixture();
+  try{
+    const contextRef=await f.runtime.createContext({cwd:f.cwd}),executionRef={id:'automatic-request'};
+    const sending=f.runtime.send({contextRef,cwd:f.cwd,text:'work',images:[],clientRequestId:executionRef.id,onEvent:event=>f.visible.push(event)});
+    const failed=assert.rejects(sending,/dsh_execution_observation_lost/);
+    await eventually(()=>f.visible.some(event=>event.type==='accepted'));await f.streams.at(-1)!.dispose();await failed;
+    await eventually(()=>f.streams.filter(stream=>stream.active).length===1);
+    f.publish({type:'tool/call',data:{turn:1,callId:'after-auto-restore',name:'read'}});
+    await eventually(()=>f.visible.some(event=>event.type==='item'&&event.item.id==='after-auto-restore'));
+    assert.equal(f.sends,1);
+    let attempts=0;(f.remote.session as any).follow=()=>{attempts++;throw new Error('native transport unavailable');};
+    await f.streams.find(stream=>stream.active)!.dispose();
+    const deadline=Date.now()+3000;
+    while(attempts<3&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,5));
+    assert.equal(attempts,3);assert.equal(f.sends,1);
+    await new Promise(resolve=>setTimeout(resolve,1050));assert.equal(attempts,3);
+  }finally{await f.runtime.close();}
+});
+test('DSH close settles an accepted send even when no more native frames arrive',async()=>{
+  const f=reconnectFixture();
+  try{
+    const contextRef=await f.runtime.createContext({cwd:f.cwd});
+    const sending=f.runtime.send({contextRef,cwd:f.cwd,text:'work',images:[],clientRequestId:'close-request',onEvent:event=>f.visible.push(event)});
+    const failed=assert.rejects(sending,/agent_native_process_closed/);
+    await eventually(()=>f.visible.some(event=>event.type==='accepted'));await f.runtime.close();await failed;
+    assert.equal(f.runtime.closed,true);assert.equal(f.streams.filter(stream=>stream.active).length,0);
+  }finally{await f.runtime.close();}
 });

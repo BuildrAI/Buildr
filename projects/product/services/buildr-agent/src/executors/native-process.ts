@@ -6,7 +6,7 @@ import { dirname, isAbsolute, join } from 'node:path';
 import type { ExecutorBinding } from '../contracts.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from './program-policy.ts';
 import { toolEnvironment } from './tool-environment.ts';
-import { NativeRequestError } from '../domain/error-diagnostic.ts';
+import { errorDiagnostic, NativeRequestError } from '../domain/error-diagnostic.ts';
 
 export type NativeEnvironment = NodeJS.ProcessEnv;
 /** Deliberately excludes desktop RPC credentials and default provider credentials. */
@@ -86,10 +86,10 @@ export class NativeRpc {
         else pending.resolve(message.result);
       } else for (const listener of this.listeners) {
         try { listener(message); }
-        catch {
+        catch (error) {
           // A local projection/persistence error is not a native protocol failure.
           // Keep the process and independent RPC controls alive for exact observation.
-          try { listener({ method: 'buildr/eventConsumerFailed', params: { threadId: message.params?.threadId } }); } catch { /* Preserve native execution even if the diagnostic consumer also fails. */ }
+          try { listener({ method: 'buildr/eventConsumerFailed', params: { threadId: message.params?.threadId, contextId: message.params?.contextId, diagnostic: errorDiagnostic(error instanceof Error ? error.message : undefined, this.diagnosticSecrets) } }); } catch { /* Preserve native execution even if the diagnostic consumer also fails. */ }
         }
       }
     }

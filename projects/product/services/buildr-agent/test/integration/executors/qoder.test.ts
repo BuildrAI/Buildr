@@ -50,3 +50,32 @@ test('Qoder close releases an active SDK query while a question is unanswered', 
     await assert.rejects(sending, /qoder_|agent_/); assert.ok(Date.now() - start < 6000);
   } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
 });
+
+test('Qoder local event failure keeps the exact worker and controls alive until the original turn stops', {timeout:15000}, async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-qoder-projection-')),workspace=join(root,'workspace');await mkdir(workspace);
+  const executable=join(root,'qoder.mjs');await writeFile(executable,cli);let runtime:AgentRuntime|undefined;let failed=false;
+  const events:ExecutorEvent[]=[];
+  try{
+    runtime=await createQoderExecutor().open({connectionId:'qoder',configRoot:join(root,'config'),executable,environment:{PATH:process.env.PATH??''}});
+    const contextRef=await runtime.createContext({cwd:workspace});
+    const sending=runtime.send({contextRef,cwd:workspace,text:'等待用户',images:[],clientRequestId:'b424efce-efb3-44d0-8053-93f2e0b978a5',onEvent:event=>{
+      if(event.type==='request'&&!failed){failed=true;throw new Error('database is locked');}events.push(event);
+    }});
+    await assert.rejects(sending,/qoder_event_observation_lost/);
+    const accepted=events.find(event=>event.type==='accepted');assert.equal(accepted?.type,'accepted');
+    const observed=await runtime.observe({contextRef,executionRef:accepted.executionRef});
+    assert.equal(runtime.closed,false);assert.equal(observed.executionRef?.id,accepted.executionRef.id);assert.equal(observed.status,'waiting');
+    assert.equal(observed.requests?.length,1);
+    await runtime.stop({contextRef,executionRef:accepted.executionRef});
+    await eventually(()=>events.some(event=>event.type==='completed'&&event.status==='stopped'));
+    assert.equal((await runtime.observe({contextRef,executionRef:accepted.executionRef})).status,'stopped');
+  }finally{await runtime?.close();await rm(root,{recursive:true,force:true});}
+});
+test('Qoder reports a closed worker transport instead of retaining a reusable runtime', {timeout:15000}, async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-qoder-closed-')),workspace=join(root,'workspace');await mkdir(workspace);
+  const executable=join(root,'qoder.mjs');await writeFile(executable,cli);let runtime:AgentRuntime|undefined;
+  try{
+    runtime=await createQoderExecutor().open({connectionId:'qoder',configRoot:join(root,'config'),executable,environment:{PATH:process.env.PATH??''}});
+    assert.equal(runtime.closed,false);await runtime.close();assert.equal(runtime.closed,true);
+  }finally{await runtime?.close();await rm(root,{recursive:true,force:true});}
+});

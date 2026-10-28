@@ -24,3 +24,14 @@ test('native RPC rejection preserves sanitized cause without claiming login fail
   assert.doesNotMatch(safeDiagnostic(rejection), /secret-value|internal.invalid|登录/);
   assert.doesNotMatch(safeDiagnostic(new Error('opaque internal failure')), /登录|opaque internal/);
 });
+
+test('observation failures identify the affected executor and preserve only the safe cause',async()=>{
+  const {NativeObservationError}=await import('../../src/domain/error-diagnostic.ts');
+  const {safeDiagnostic}=await import('../../src/domain/agent-state.ts');
+  for(const provider of ['codex','dsh','qoder']){
+    const error=new NativeObservationError(provider+'_event_observation_lost',new Error('database is locked; Authorization: Bearer secret-value https://internal.invalid/request'));
+    const message=safeDiagnostic(error);
+    assert.match(message,/database is locked/);assert.doesNotMatch(message,/secret-value|internal.invalid/);
+    assert.match(message,/核对原执行/);
+  }
+});

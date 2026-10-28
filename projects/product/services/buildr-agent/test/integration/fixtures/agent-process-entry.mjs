@@ -18,7 +18,7 @@ function executor(id){return{descriptor:{id,label:id,capabilities},async open({c
       state.executionRef=executionRef;state.status='running';state.kind=input.text;state.stopRequested=false;state.tools=[];save(ref,state);
       fs.appendFileSync(path.join(bootstrap.dataRoot,'native-sends.jsonl'),JSON.stringify({id,text:input.text,executionRef,version:marker.version})+'\n');
       input.onEvent({type:'accepted',executionRef});
-      if(input.text==='lost-observation')throw new Error('dsh_execution_observation_lost');
+      if(input.text==='lost-observation'){state.status='unknown';save(ref,state);throw new Error('dsh_execution_observation_lost');}
       if(input.text==='approval'){input.onEvent({type:'request',request:{id:'permit',kind:'approval',title:'Continue?',options:[{id:'allow',label:'Allow'}]}});}
       for(let n=0;n<3000;n++){
         const current=read(ref);

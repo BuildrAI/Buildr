@@ -598,7 +598,12 @@ export class ConversationApplication {
       run.status = run.status === 'stopping' ? 'stopped' : run.status === 'failed' ? 'failed' : 'completed';
       if (run.status==='completed' && !observation.diagnostic) delete run.diagnostic;
       record.view.requests = []; record.requests = {};
-    } else if (observation.status === 'running') run.status = run.status === 'stopping' ? 'stopping' : 'running';
+    } else if (observation.status === 'running') {
+      run.status = run.status === 'stopping' ? 'stopping' : 'running';
+      if (run.status === 'running' && !observation.diagnostic && record.interruption?.reason === 'transport') {
+        delete record.interruption; delete run.interrupted; delete run.diagnostic;
+      }
+    }
     run.updatedAt = this.options.now();
   }
 
@@ -663,7 +668,7 @@ export class ConversationApplication {
       const possiblyDelivered = dispatched && !rejectedBeforeInput;
       if (!['stopped', 'completed'].includes(run.status)) run.status = possiblyDelivered ? 'unknown' : 'failed';
       run.diagnostic = safeDiagnostic(error); run.updatedAt = this.options.now();
-      const transportLost = error instanceof Error && ['codex_execution_observation_lost', 'codex_event_observation_lost'].includes(error.message);
+      const transportLost = error instanceof Error && ['codex_execution_observation_lost', 'codex_event_observation_lost', 'dsh_execution_observation_lost', 'dsh_event_observation_lost', 'qoder_execution_observation_lost', 'qoder_event_observation_lost'].includes(error.message);
       if (!this.closing && !userStopping && transportLost && run.accepted && run.status === 'unknown' && !record.interruption?.cancelled) {
         record.interruption = { runId, reason: 'transport', awaitingUser: record.view.requests.length > 0, attempted: record.attempts.some(attempt => attempt.runId === runId && attempt.clientRequestId.startsWith('host-recovery:')) };
         run.interrupted = true;

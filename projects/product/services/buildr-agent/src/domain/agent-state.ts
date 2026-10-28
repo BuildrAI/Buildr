@@ -1,5 +1,5 @@
 import {ModelAccessError} from '../model-access/contracts.ts';
-import { NativeRequestError } from './error-diagnostic.ts';
+import { NativeObservationError, NativeRequestError } from './error-diagnostic.ts';
 import type { ConnectionView, ContextRef, ConversationView, ExecutionRef, RunStatus, RunView } from '../contracts.ts';
 
 export class AgentServiceError extends Error {
@@ -36,13 +36,18 @@ export function safeDiagnostic(error: unknown): string {
     agent_context_binding_mismatch: '原生上下文与当前目录或配置身份不匹配，原记录已保留。',
     codex_event_observation_lost: '本机执行记录暂时未能更新，正在核对原执行；不会重发原指令。',
     codex_execution_observation_lost: 'Codex 执行连接已中断，正在核对原执行；不会重发原指令。',
+    dsh_execution_observation_lost: 'DSH 执行观察已中断，正在恢复原执行的进度；不会重发原指令。',
+    dsh_event_observation_lost: 'DSH 本机执行记录暂时未能更新，正在核对原执行；不会重发原指令。',
+    qoder_execution_observation_lost: 'Qoder 执行连接已中断，正在核对原执行；不会重发原指令。',
+    qoder_event_observation_lost: 'Qoder 本机执行记录暂时未能更新，正在核对原执行；不会重发原指令。',
     agent_native_process_closed: '原生执行连接已关闭，请核对原执行；不会重发原指令。',
     agent_native_timeout: '原生程序响应超时，请重新观察；不会自动重发工作指令。',
     agent_native_request_failed: '原生程序拒绝本次请求，未返回具体原因；原输入已保留。',
     agent_native_process_failed: '原生执行程序暂时无法启动，原输入已保留。',
     agent_request_stale: '原生问题或授权已失效，请重新观察。',
   };
-  return messages[code] ?? '原生执行未能完成，原输入与工作记录已保留，请核对程序连接状态后重试。';
+  const message = messages[code] ?? '原生执行未能完成，原输入与工作记录已保留，请核对程序连接状态后重试。';
+  return error instanceof NativeObservationError && error.diagnostic ? message + ' 原因：' + error.diagnostic : message;
 }
 export const BUSY_STATES: ReadonlySet<RunStatus> = new Set(['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'tools-active', 'unknown']);
 

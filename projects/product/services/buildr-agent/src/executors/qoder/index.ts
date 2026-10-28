@@ -1,4 +1,5 @@
 import {generateQoderTitle} from './title.ts';
+import { NativeObservationError } from '../../domain/error-diagnostic.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
@@ -16,6 +17,9 @@ class QoderRuntime implements AgentRuntime {
   readonly bindingIdentity: string;
   bindingData?: Record<string, unknown>;
   private rpc: NativeRpc;
+  get closed(): boolean { return this.rpc.closed; }
+  private observationWaits = new Map<string, (error: Error) => void>();
+  private projectionFailures = new Set<string>();
   private executable: string;
   private environment: NodeJS.ProcessEnv;
   private configRoot: string;
@@ -27,13 +31,28 @@ class QoderRuntime implements AgentRuntime {
   private constructor(bindingIdentity: string, rpc: NativeRpc, executable: string, environment: NodeJS.ProcessEnv, configRoot: string) {
     this.bindingIdentity = bindingIdentity; this.rpc = rpc; this.executable = executable; this.environment = environment; this.configRoot = configRoot;
     rpc.onMessage(message => {
+      if (message.method === 'buildr/transportClosed') {
+        for (const contextId of this.handlers.keys()) this.observationFailed(contextId, 'qoder_execution_observation_lost', message.params?.code);
+        return;
+      }
       if (message.method === 'event') {
         const { contextId, event } = message.params;
+        if (event.type === 'accepted') this.observations.set(contextId, { status: 'running', executionRef: event.executionRef, tools: [] });
         if (event.type === 'observation') this.observations.set(contextId, event.observation);
-        this.handlers.get(contextId)?.(event);
+        try { this.handlers.get(contextId)?.(event); }
+        catch (error) { this.observationFailed(contextId, 'qoder_event_observation_lost', error); }
+        if (event.type === 'observation' && ['idle', 'stopped'].includes(event.observation.status)) { this.handlers.delete(contextId); this.projectionFailures.delete(contextId); }
       }
     });
   }
+  private observationFailed(contextId: string, code: string, cause: unknown): void {
+    this.projectionFailures.add(contextId);
+    const error = new NativeObservationError(code, cause, this.gateway ? [this.gateway.apiKey] : []);
+    this.observationWaits.get(contextId)?.(error);
+    const prior = this.observations.get(contextId);
+    try { this.handlers.get(contextId)?.({ type: 'observation', observation: { status: 'unknown', executionRef: prior?.executionRef, tools: prior?.tools ?? [], diagnostic: error.diagnostic } }); } catch { /* The original worker and exact controls remain alive. */ }
+  }
+
   static async open(options: ExecutorOpenOptions): Promise<QoderRuntime> {
     options.signal?.throwIfAborted();
     const gateway = checkedGateway(options.gateway);
@@ -119,9 +138,19 @@ class QoderRuntime implements AgentRuntime {
     await this.assertNativeAccount();
     if (this.gateway) input = { ...input, model: gatewayModel(this.gateway, input.model).id, reasoningEffort: qoderGatewayPolicy(this.gateway, input.model, input.reasoningEffort).parameters.reasoningEffort };
     this.handlers.set(input.contextRef.id, input.onEvent);
-    try { await this.rpc.call('send', { contextId: input.contextRef.id, cwd: input.cwd, text: input.text, images: input.images, model: input.model, reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode, clientRequestId: input.clientRequestId }, 24 * 60 * 60 * 1000); }
-    finally { this.handlers.delete(input.contextRef.id); }
+    this.projectionFailures.delete(input.contextRef.id);
+    const observationFailed = new Promise<never>((_, reject) => this.observationWaits.set(input.contextRef.id, reject));
+    try {
+      await Promise.race([this.rpc.call('send', { contextId: input.contextRef.id, cwd: input.cwd, text: input.text, images: input.images, model: input.model, reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode, clientRequestId: input.clientRequestId }, 24 * 60 * 60 * 1000), observationFailed]);
+    } catch (error) {
+      if (this.closed) throw new NativeObservationError('qoder_execution_observation_lost', error, this.gateway ? [this.gateway.apiKey] : []);
+      throw error;
+    } finally {
+      this.observationWaits.delete(input.contextRef.id);
+      if (this.closed || !this.projectionFailures.has(input.contextRef.id)) this.handlers.delete(input.contextRef.id);
+    }
   }
+
   private async assertNativeAccount(): Promise<void> {
     if (!this.gateway?.nativeModel) return;
     const identity = await readQoderIdentity(this.environment.QODER_CONFIG_DIR!);

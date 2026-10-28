@@ -11,7 +11,7 @@ import { NativeRequestError } from '../../src/domain/error-diagnostic.ts';
 import { ConversationRepository } from '../../src/persistence/conversation-repository.ts';
 
 type Context = { items: ExecutorItem[]; observation: ExecutorObservation; unblock?: () => void };
-function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'running'|'unknown'|'tool'; beforeDisconnect?: Promise<void>; disconnectAlways?: boolean; disconnectOn?: number; beforeResume?: Promise<void>; unknown?: boolean; images?: boolean; noAnswer?: boolean; multipleModels?: boolean; request?: boolean; coldUnknown?: boolean; beforeAccepted?: Promise<void>; replyAfterTerminal?: boolean; toolSurvives?: boolean; toolInput?: boolean; failure?: string | ((attempt: number) => string | undefined); prepareFailures?: number; unknownCreate?: boolean; beforeObservation?: Promise<void>; wrongObservation?: boolean; summary?:(input:ExecutorTitleInput)=>Promise<string|undefined> } = {}) {
+function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'running'|'unknown'|'tool'; disconnectError?: string; beforeDisconnect?: Promise<void>; disconnectAlways?: boolean; disconnectOn?: number; beforeResume?: Promise<void>; unknown?: boolean; images?: boolean; noAnswer?: boolean; multipleModels?: boolean; request?: boolean; coldUnknown?: boolean; beforeAccepted?: Promise<void>; replyAfterTerminal?: boolean; toolSurvives?: boolean; toolInput?: boolean; failure?: string | ((attempt: number) => string | undefined); prepareFailures?: number; unknownCreate?: boolean; beforeObservation?: Promise<void>; wrongObservation?: boolean; summary?:(input:ExecutorTitleInput)=>Promise<string|undefined> } = {}) {
   const contexts = new Map<string, Context>(); const sends: ExecutorSendInput[] = []; const opens: ExecutorOpenOptions[] = [];
   let preparations = 0;
   let loginUpdate: ((value: LoginObservation) => void) | undefined;
@@ -44,7 +44,7 @@ function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'r
           closed = true;
           context.observation = { status: options.disconnect === 'tool' ? 'stopped' : options.disconnect, executionRef,
             tools: options.disconnect === 'tool' ? [{id:'uncertain-tool',label:'write',status:'unknown',canStop:false}] : [] };
-          throw new Error('codex_execution_observation_lost');
+          throw new Error(options.disconnectError ?? 'codex_execution_observation_lost');
         }
         if (options.hold || options.request) await new Promise<void>(resolve => { context.unblock = resolve; });
         if (context.observation.status === 'stopped') { input.onEvent({ type: 'completed', status: 'stopped' }); return; }
@@ -1315,8 +1315,8 @@ test('live transport loss reopens the same binding and continues once without a 
 });
 
 test('live recovery never resends active work, unknown tools, pending decisions or release-profile work', async () => {
-  for (const kind of ['running','unknown','tool','approval','release'] as const) {
-    const native=fake('local',{disconnect:kind==='approval'||kind==='release'?'stopped':kind,request:kind==='approval'});
+  for (const disconnectError of ['codex_execution_observation_lost','dsh_execution_observation_lost','qoder_execution_observation_lost']) for (const kind of ['running','unknown','tool','approval','release'] as const) {
+    const native=fake('local',{disconnectError,disconnect:kind==='approval'||kind==='release'?'stopped':kind,request:kind==='approval'});
     const f=fixture([native.executor],{autoContinueInterrupted:kind!=='release'});
     try {
       await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','work');
@@ -1931,4 +1931,18 @@ test('title retry persists an unavailable new participant before its working tur
     assert.equal(stored.titleAttemptsByParticipant?.[running.run!.participantId]?.early,true);assert.equal(stored.titleAttemptsByParticipant?.[running.run!.participantId]?.completion,undefined);
     assert.equal(a.sends.length,1);assert.equal(b.sends.length,1);
   }finally{for(const c of b.contexts.values())c.unblock?.();await f.close();}
+});
+
+test('DSH and Qoder exact stopped transport losses enter the existing single continuation policy',async()=>{
+  for(const disconnectError of ['dsh_execution_observation_lost','dsh_event_observation_lost','qoder_execution_observation_lost','qoder_event_observation_lost']){
+    const native=fake('local',{disconnect:'stopped',disconnectError}),f=fixture([native.executor],{autoContinueInterrupted:true});
+    try{
+      await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','finish existing work');
+      await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+      await Promise.all([f.service.conversations.recoverInterrupted(),f.service.conversations.observe('workspace-one',chat.id)]);
+      assert.equal(native.sends.length,2,disconnectError);assert.equal(native.opens.length,2);
+      assert.equal(native.sends[0]!.contextRef.id,native.sends[1]!.contextRef.id);
+      assert.equal(native.opens[0]!.configRoot,native.opens[1]!.configRoot);
+    }finally{await f.close();}
+  }
 });

@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import { errorDiagnostic } from '../../domain/error-diagnostic.ts';
+import { errorDiagnostic, NativeObservationError } from '../../domain/error-diagnostic.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
 import { join } from 'node:path';
 import { lstat, readFile, writeFile } from 'node:fs/promises';
@@ -209,7 +209,7 @@ class CodexRuntime implements AgentRuntime {
   }
   private message(message: RpcMessage): void {
     if (message.method === 'buildr/eventConsumerFailed') {
-      for (const turn of this.turns.values()) if (!turn.terminal && (!message.params?.threadId || turn.contextId === message.params.threadId)) turn.reject(new Error('codex_event_observation_lost'));
+      for (const turn of this.turns.values()) if (!turn.terminal && (!message.params?.threadId || turn.contextId === message.params.threadId)) turn.reject(new NativeObservationError('codex_event_observation_lost', message.params?.diagnostic));
       return;
     }
     if (message.method === 'buildr/transportClosed') { for (const turn of this.turns.values()) if (!turn.terminal) turn.reject(new Error('codex_execution_observation_lost')); return; }

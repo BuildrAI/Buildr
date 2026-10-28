@@ -6,6 +6,15 @@ export class NativeRequestError extends Error {
     this.diagnostic = errorDiagnostic(message, secrets) ?? '原生程序拒绝本次请求。';
   }
 }
+/** Observation can fail while the exact native execution continues. */
+export class NativeObservationError extends Error {
+  readonly diagnostic?: string;
+  constructor(code: string, cause?: unknown, secrets: readonly string[] = []) {
+    super(code);
+    this.diagnostic = cause instanceof NativeObservationError ? cause.diagnostic
+      : errorDiagnostic(cause instanceof Error ? cause.message : cause, secrets);
+  }
+}
 /** Only explicit error messages cross the public boundary, never headers or whole responses. */
 export function errorDiagnostic(value: unknown, secrets: readonly string[] = []): string | undefined {
   if (typeof value !== 'string' || !value.trim()) return undefined;
