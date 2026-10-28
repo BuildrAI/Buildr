@@ -35,7 +35,7 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
   - [candidate-ci-evidence.ts](../../services/buildr/test/verification/candidate-ci-evidence.ts) — 检查证据齐全性以及源码、登记、作业和唯一压缩包身份
   - [candidate-repair.ts](../../services/buildr/test/verification/candidate-repair.ts) — 同轮原包补验保留成功、只补失败及缺项；核对原字节、真实平台和最低宿主，保留原始来源
   - [candidate-repair-cli.ts](../../services/buildr/test/verification/candidate-repair-cli.ts) — 受控原运行、真实包读取，生成缺项矩阵及保留证据；采用不变 DSH 原包与精确对端证明
-  - [browser-selector-dispatcher.ts](../../services/buildr/test/verification/browser-selector-dispatcher.ts) — 选择页面检查，准备隔离 `web-dist`，通过隔离执行器（Runner）启动浏览器（Browser）测试
+  - [browser-selector-dispatcher.ts](../../services/buildr/test/verification/browser-selector-dispatcher.ts) — 选择页面检查并准备隔离 `web-dist`；对话场景可选单组，完整运行按资源预算调度共享队列中的场景组
   - `release/`
     - [browser-candidate.ts](../../services/buildr/test/verification/release/browser-candidate.ts) — 校验唯一候选压缩包（Candidate Tarball）、解包并直接托管包内 `web-dist`，执行核心旅程及清理；测试驱动仍来自当前源码，不替代安装后全部行为验收
     - [verify-pr-candidate.ts](../../services/buildr/test/verification/release/verify-pr-candidate.ts) — 生成受控候选矩阵并汇总源码、平台、原包及插件证明
@@ -46,6 +46,20 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
     - [quality.ts](../../services/buildr/test/verification/docs/quality.ts) — 检查文档相对链接存在且不越出产品根；不判断正文语义
 - [services/buildr/package.json](../../services/buildr/package.json) — 稳定命令、生成物准备、测试及公开包导出
 - [services/buildr-web/package.json](../../services/buildr-web/package.json) — 前端构建及独立逻辑测试入口
+- **`services/buildr-web/test/browser/`** — 对话浏览器场景按职责分文件；完整运行最多启动两个受资源预算约束的工作进程（Worker），从共享队列动态领取组，在各自现场复用浏览器和服务，每组重新隔离页面与测试数据。单组可通过 `BUILDR_AGENT_JOURNEY_PART` 选择；组失败保留失败结果，受污染现场不再领取其他组。
+  - [agent-conversation-fixture.ts](../../services/buildr-web/test/browser/agent-conversation-fixture.ts) — 每组的对话接口替身、测试数据、页面操作与清理
+  - [agent-conversation-groups.ts](../../services/buildr-web/test/browser/agent-conversation-groups.ts) — 可选场景组、工作进程数量、逐组执行与失败汇总
+  - [agent-conversation-queue.ts](../../services/buildr-web/test/browser/agent-conversation-queue.ts) — 共享队列的原子领取、已尝试标记和未完成组检查；标记不代表通过
+  - [agent-conversation-isolation.ts](../../services/buildr-web/test/browser/agent-conversation-isolation.ts) — 限制未模拟的服务端写入并重置允许的最近访问，异常时停止复用现场
+  - [agent-conversations-journey.ts](../../services/buildr-web/test/browser/agent-conversations-journey.ts) — 选择场景组，为每组装配和释放独立夹具
+  - [agent-conversations-setup-scenarios.ts](../../services/buildr-web/test/browser/agent-conversations-setup-scenarios.ts) — 导航、对话入口与基础交互
+  - [agent-conversations-history-scenarios.ts](../../services/buildr-web/test/browser/agent-conversations-history-scenarios.ts) — 对话记录、展示与恢复
+  - [agent-conversations-handoff-scenarios.ts](../../services/buildr-web/test/browser/agent-conversations-handoff-scenarios.ts) — 执行者交接、异常后的继续与重试
+  - [agent-conversations-tasks-scenarios.ts](../../services/buildr-web/test/browser/agent-conversations-tasks-scenarios.ts) — 任务对话入口、草稿与并发交互
+  - [agent-conversations-models-scenarios.ts](../../services/buildr-web/test/browser/agent-conversations-models-scenarios.ts) — 模型与推理强度、执行操作及窄屏交互
+  - [agent-conversations-recovery-scenarios.ts](../../services/buildr-web/test/browser/agent-conversations-recovery-scenarios.ts) — 未知执行状态核对与事件流断线恢复
+  - [agent-conversations-selection-scenarios.ts](../../services/buildr-web/test/browser/agent-conversations-selection-scenarios.ts) — 新建草稿、跨工作空间选择与首次发送
+  - [agent-conversations-video-scenarios.ts](../../services/buildr-web/test/browser/agent-conversations-video-scenarios.ts) — 视频输入、发送、播放与错误处理
 - **`skills/buildr-release/scripts/`（工作空间根）** — 发布协调、产包及恢复；检查仍由验证框架承担
   - [release-orchestration-runner.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/release-orchestration-runner.ts) — 正常准备、只读逐包运行观察、授权公开及恢复入口
   - [candidate-package.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/candidate-package.ts) — 生产主包原字节，供后续检查共同消费
