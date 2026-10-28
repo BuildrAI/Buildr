@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { createAgentService } from '../../../build/index.js';
 import { createCodexExecutor } from '../../../build/executors/codex/index.js';
 import type { ExecutorEvent, AgentRuntime, ContextRef, ExecutionRef } from '../../../src/contracts.ts';
 
@@ -17,17 +19,62 @@ test('Codex supplementary text and local images bind to the exact active turn an
     runtime = await createCodexExecutor().open({connectionId:'codex',configRoot:root,executable,environment:{PATH:process.env.PATH??''}});
     const contextRef=await runtime.createContext({cwd:root}),events:ExecutorEvent[]=[];
     const sending=runtime.send({contextRef,cwd:root,text:'initial',images:[],clientRequestId:'initial-request',onEvent:event=>events.push(event)});
+    sending.catch(()=>{});
     await eventually(()=>events.some(event=>event.type==='request'));
     const accepted=events.find(event=>event.type==='accepted');assert.equal(accepted?.type,'accepted');
     const receipt=await runtime.supplement!({contextRef,executionRef:accepted.executionRef,cwd:root,text:'extra',images:[{id:'image',path:imagePath,mimeType:'image/png'}],clientRequestId:'extra-request'});
     assert.equal(receipt.executionRef.id,accepted.executionRef.id);assert.equal(receipt.inputItemId,'extra-request');
-    await eventually(()=>events.some(event=>event.type==='item'&&event.item.id==='extra-request'));
-    const history=await runtime.readHistory({contextRef,cwd:root});assert.deepEqual(history.filter(item=>item.role==='user').map(item=>item.id),['initial-request','extra-request']);
+    await eventually(()=>events.some(event=>event.type==='item'&&event.item.id==='native-extra-request'));
+    const extra=events.find(event=>event.type==='item'&&event.item.id==='native-extra-request');assert.equal(extra?.type,'item');assert.equal(extra.item.clientRequestId,'extra-request');
+    const history=await runtime.readHistory({contextRef,cwd:root});assert.deepEqual(history.filter(item=>item.role==='user').map(item=>[item.id,item.clientRequestId]),[['initial-request',undefined],['native-extra-request','extra-request']]);
     const state=JSON.parse(await readFile(join(root,'codex-home/state.json'),'utf8'));assert.equal(state[contextRef.id].turns.length,1);assert.ok(state[contextRef.id].turns[0].items[1].content.some((part:any)=>part.type==='localImage'&&part.path===imagePath));
     assert.equal((await runtime.observe({contextRef,executionRef:accepted.executionRef})).status,'waiting');
     await assert.rejects(runtime.supplement!({contextRef,executionRef:{id:'other'},cwd:root,text:'wrong',images:[],clientRequestId:'wrong'}),/stale/);
     await runtime.stop({contextRef,executionRef:accepted.executionRef});await sending;
+    await runtime.close();runtime=await createCodexExecutor().open({connectionId:'codex',configRoot:root,executable,environment:{PATH:process.env.PATH??''}});
+    await runtime.resumeContext({contextRef,cwd:root});
+    assert.equal((await runtime.readHistory({contextRef,cwd:root})).find(item=>item.id==='native-extra-request')?.clientRequestId,'extra-request');
   } finally { await runtime?.close();await rm(root,{recursive:true,force:true}); }
+});
+test('Codex supplementary native identities repair legacy history and allow a new turn in the same conversation', async () => {
+  const root=await mkdtemp(join(tmpdir(),'buildr-codex-supplement-resume-'));
+  const options={dataRoot:join(root,'profile'),executors:[createCodexExecutor()],modelProviders:[],environment:{PATH:process.env.PATH??''},resolveWorkspace(){return {rootPath:root};}};
+  let service:ReturnType<typeof createAgentService>|undefined;
+  try {
+    const executable=join(root,'codex.mjs');await writeFile(executable,source);
+    service=createAgentService(options);
+    await service.connections.connect('codex',{expectedRevision:service.connections.read('codex').revision,executable});
+    const view=await service.conversations.create('workspace',{}),id=view.id;
+    const send=(text:string,clientRequestId:string)=>{const draft={expectedRevision:service!.conversations.read('workspace',id).revision,connectionId:'codex',text};const preview=service!.conversations.prepareSend('workspace',id,draft);return service!.conversations.send('workspace',id,{...draft,previewToken:preview.token,clientRequestId});};
+    send('initial','initial-request');
+    await eventually(()=>service!.conversations.read('workspace',id).run?.status==='waiting-question');
+    const run=service.conversations.read('workspace',id).run!;
+    // Identical content must still match the two explicit client identities.
+    for(const clientRequestId of ['extra-one','extra-two']){
+      assert.equal((await service.conversations.supplement('workspace',id,{runId:run.id,participantId:run.participantId,generation:run.generation,text:'same text',clientRequestId})).delivery,'accepted');
+    }
+    assert.equal(service.conversations.read('workspace',id).run?.status,'waiting-question');
+    await service.conversations.stop('workspace',id,{expectedRevision:service.conversations.read('workspace',id).revision,runId:run.id,participantId:run.participantId,generation:run.generation});
+    await service.close();service=undefined;
+    // The old adapter saved the client id as the native id and never indexed
+    // the native supplementary item. Recreate that existing persisted shape.
+    const db=new DatabaseSync(join(options.dataRoot,'agent-service/conversations.sqlite'));
+    let contextId:string;
+    try {
+      const row=db.prepare('SELECT body FROM conversations WHERE id=?').get(id) as {body:string};const record=JSON.parse(row.body);contextId=record.participants[0].contextRef.id;
+      for(const attempt of record.attempts.filter((a:any)=>a.supplement)){delete record.sources[`${attempt.participantId}:message:${attempt.nativeInputItemId}`];attempt.nativeInputItemId=attempt.clientRequestId;record.sources[`${attempt.participantId}:message:${attempt.clientRequestId}`]=attempt.userEntryId;}
+      db.prepare('UPDATE conversations SET body=? WHERE id=?').run(JSON.stringify(record),id);
+    } finally {db.close();}
+    service=createAgentService(options);
+    await service.conversations.observe('workspace',id);
+    assert.deepEqual(service.conversations.read('workspace',id).entries.filter(entry=>entry.role==='user').map(entry=>[entry.text,entry.status]),[['initial','accepted'],['same text','accepted'],['same text','accepted']]);
+    send('next instruction','next-request');
+    await eventually(()=>service!.conversations.read('workspace',id).run?.status==='waiting-question');
+    const state=JSON.parse(await readFile(join(options.dataRoot,'agent-service/connections/codex/codex-home/state.json'),'utf8'));
+    assert.deepEqual(Object.values(state).filter((thread:any)=>thread.turns.some((turn:any)=>turn.items.some((item:any)=>item.id==='next-request'))).map((thread:any)=>thread.id),[contextId!]);assert.equal(state[contextId!].turns.length,2);
+    assert.deepEqual(state[contextId!].turns[0].items.filter((item:any)=>item.type==='userMessage').map((item:any)=>item.id),['initial-request','native-extra-one','native-extra-two']);
+    const next=service.conversations.read('workspace',id).run!;await service.conversations.stop('workspace',id,{expectedRevision:service.conversations.read('workspace',id).revision,runId:next.id,participantId:next.participantId,generation:next.generation});
+  } finally {await service?.close();await rm(root,{recursive:true,force:true});}
 });
 test('Codex retains a safe native failure after tools in completion and observation', async () => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-codex-error-')); let runtime: AgentRuntime | undefined;

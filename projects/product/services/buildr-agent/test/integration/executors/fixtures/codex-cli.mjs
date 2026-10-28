@@ -59,7 +59,7 @@ return;
 if(m.method==='turn/steer'){
 const p=m.params;
 if(!active||active.status!=='inProgress'||p.expectedTurnId!==active.id||p.threadId!==active.threadId){process.stdout.write(JSON.stringify({id:m.id,error:{code:-32600,message:'inactive turn'}})+'\n');return;}
-const user={id:p.clientUserMessageId,type:'userMessage',content:p.input};active.items.push(user);save();reply(m.id,{turnId:active.id});event('item/completed',{threadId:active.threadId,turnId:active.id,item:user});return;
+const user={id:'native-'+p.clientUserMessageId,clientId:p.clientUserMessageId,type:'userMessage',content:p.input};active.items.push(user);save();reply(m.id,{turnId:active.id});event('item/completed',{threadId:active.threadId,turnId:active.id,item:user});return;
 }
 if(m.method==='thread/backgroundTerminals/list'){reply(m.id,{data:active?.items.filter(i=>i.type==='commandExecution'&&i.status!=='completed').map(i=>({itemId:i.id,processId:i.processId}))??[],nextCursor:null});
 return;
