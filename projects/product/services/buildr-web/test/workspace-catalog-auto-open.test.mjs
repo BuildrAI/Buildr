@@ -91,3 +91,24 @@ test('failed preparation result is surfaced once and not retried by refresh', as
     assert.equal(opens, 1, 'no implicit retry after the failure settles');
   } finally { h.dispose(); }
 });
+
+test('background readiness refreshes without overlap or auto-open and stops on completion or hiding', async t => {
+  t.mock.timers.enable({apis:['setInterval']});
+  const previousDocument=globalThis.document;
+  const doc=Object.assign(new EventTarget(),{visibilityState:'visible'});globalThis.document=doc;
+  let lists=0,opens=0,release;
+  const initial={...readyEntry,readiness:'preparing'};
+  let current=initial;
+  globalThis.__catalogWorkspaceApi={listRegistered:async()=>{lists++;if(release===undefined&&lists===2)await new Promise(resolve=>{release=resolve;});return {revision:1,workspaces:[current],lastOpenedWorkspaceId:null};}};
+  globalThis.__catalogPreparationApi={open:async()=>{opens++;return {ready:true,workspaceId:'ws-1'};}};
+  const h=view(),opts=options({stayOnCatalog:true});
+  try {
+    h.render(opts);await settle();h.render(opts);await settle();
+    assert.equal(lists,2);t.mock.timers.tick(6000);await settle();assert.equal(lists,2,'in-flight polling is not duplicated');
+    doc.visibilityState='hidden';doc.dispatchEvent(new Event('visibilitychange'));
+    release();await settle();t.mock.timers.tick(6000);await settle();assert.equal(lists,2);
+    current=readyEntry;doc.visibilityState='visible';doc.dispatchEvent(new Event('visibilitychange'));await settle();
+    const latest=h.render(opts);assert.equal(latest.registry.workspaces[0].readiness,'ready');
+    const done=lists;t.mock.timers.tick(6000);await settle();assert.equal(lists,done,'finished preparation stops polling');assert.equal(opens,0);
+  } finally {h.dispose();if(previousDocument===undefined)delete globalThis.document;else globalThis.document=previousDocument;}
+});

@@ -83,7 +83,7 @@ export function WorkspacesPage() {
     refreshing={refreshing}
     onOpen={entry=>void openPreparedWorkspace(entry)}
     onRemove={entry => void removeWorkspace(entry)}
-    renderStatus={entry=>{const status=preparation?.rootPath===entry.rootPath?preparation.status:null;const readiness=(entry as WorkspaceEntry & {readiness?:string}).readiness;return <Tag color={status==='preparing'?'processing':status==='failed'||readiness&&readiness!=='ready'?'warning':entry.status==='ready'?'success':'warning'}>{status==='preparing'?'准备中':status==='failed'?'待完成':readiness&&readiness!=='ready'?'待准备':entry.status==='ready'?'可用':'暂不可用'}</Tag>;}}
+    renderStatus={entry=>{const status=preparation?.rootPath===entry.rootPath?preparation.status:null;const readiness=(entry as WorkspaceEntry & {readiness?:string}).readiness;return <Tag color={status==='preparing'||readiness==='preparing'?'processing':status==='failed'||readiness&&readiness!=='ready'?'warning':entry.status==='ready'?'success':'warning'}>{status==='preparing'||readiness==='preparing'?'准备中':status==='failed'||readiness==='failed'?'待完成':readiness&&readiness!=='ready'?'待准备':entry.status==='ready'?'可用':'暂不可用'}</Tag>;}}
     onSettings={openWorkspaceSettings}
     renderExtra={entry=>preparation?.rootPath===entry.rootPath&&preparation.status!=='ready'?<Button onClick={()=>setAddOpen(true)}>{preparation.status==='preparing'?'正在准备，查看进度':'继续准备'}</Button>:null}
     onRetry={() => void refresh()}

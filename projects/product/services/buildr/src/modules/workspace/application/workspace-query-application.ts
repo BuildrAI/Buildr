@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { createWorkspacePreparationStore, type WorkspacePreparation } from '../persistence/workspace-preparation-store.ts';
 import { readResourceAdoption, readSharedResourceSet } from '../../../infrastructure/product-resources/shared-resources.ts';
 import type { RegistryRepository } from '../persistence/workspace-registry-repository.ts';
 import type { WorkspaceRepository } from '../persistence/workspace-manifest-repository.ts';
@@ -92,15 +95,28 @@ export function registerWorkspaceQueryApplication(runtime: WorkspaceQueryApplica
     return publicWorkspace(readWorkspaceRecord(targetRoot, options));
   }
 
-  function workspaceRegistryEntry(root: any, scope: 'local' | 'shared' = 'local') {
+  function workspaceRegistryEntry(root: any, scope: 'local' | 'shared' = 'local', preparation?: WorkspacePreparation) {
     try {
       const record = readWorkspaceRecord(root);
       if (!record.workspace.id) {
         return { rootPath: root, status: 'migration_required', workspace: record.workspace, migrationRequired: true, registryScope: scope };
       }
       let readiness = 'pending';
-      try { const adopted=readResourceAdoption(root); if(adopted?.ready&&readSharedResourceSet().id===adopted.resourceSet)readiness='ready'; } catch { readiness='failed'; }
-      return { rootPath: root, status: 'ready', readiness, workspace: record.workspace, migrationRequired: record.migrationRequired, registryScope: scope };
+      let currentResourceSet: string | undefined;
+      try { const adopted=readResourceAdoption(root); if(adopted?.ready) { currentResourceSet=readSharedResourceSet().id; if(currentResourceSet===adopted.resourceSet)readiness='ready'; } } catch { readiness='failed'; }
+      let preparationError: {code:string;message:string} | undefined;
+      if (scope === 'local' && preparation?.resourceSet && preparation.resourceSet === currentResourceSet && preparation.workspaceId === record.workspace.id) {
+        const stat = fs.statSync(root);
+        if (preparation.directoryIdentity === `${stat.dev}:${stat.ino}`) {
+          if (preparation.status === 'preparing') {
+            try { process.kill(preparation.ownerPid!, 0); readiness = 'preparing'; } catch { /* Interrupted work is pending until startup resumes it. */ }
+          } else if (preparation.status === 'failed') {
+            readiness = 'failed';
+            preparationError = {code:'workspace_preparation_failed',message:preparation.error || '工作空间刷新未完成，请重试准备。'};
+          }
+        }
+      }
+      return { rootPath: root, status: 'ready', readiness, ...(preparationError ? {error:preparationError}:{}), workspace: record.workspace, migrationRequired: record.migrationRequired, registryScope: scope };
     } catch (error: any) {
       return {
         rootPath: root,
@@ -118,9 +134,15 @@ export function registerWorkspaceQueryApplication(runtime: WorkspaceQueryApplica
     // 预览上下文把共享 Profile 的登记条目以只读来源并入列表；revision 仍指向本实例登记文件。
     const sharedRoots = (runtime.registryRepository.readSharedRegistryRoots?.().roots || [])
       .filter((root: any) => !localRoots.includes(root));
+    let preparations: WorkspacePreparation[] = [];
+    try { preparations = createWorkspacePreparationStore(path.join(path.dirname(runtime.registryRepository.workspaceRegistryPath()), 'workspace-preparations')).list(); } catch { /* Preparation observations cannot hide valid registered workspaces. */ }
     const entries = [
       ...sharedRoots.map((root: any) => workspaceRegistryEntry(root, 'shared')),
-      ...localRoots.map((root: any) => workspaceRegistryEntry(root)),
+      ...localRoots.map((root: any) => {
+        let preparation: WorkspacePreparation | undefined;
+        try { const stat = fs.statSync(root); preparation = preparations.find(item => item.rootPath === root && item.directoryIdentity === `${stat.dev}:${stat.ino}`); } catch { /* The ordinary entry reader reports inaccessible directories. */ }
+        return workspaceRegistryEntry(root, 'local', preparation);
+      }),
     ];
     const identities = new Map();
     for (const entry of entries) {

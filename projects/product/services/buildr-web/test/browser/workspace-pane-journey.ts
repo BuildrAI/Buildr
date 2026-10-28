@@ -2,6 +2,35 @@ import assert from 'node:assert/strict';
 
 /** Exercises the production host against the layout journey's isolated workspace. */
 export async function runWorkspacePaneJourney({ t, page, workspaceUrl, capture }: any) {
+  await t.test('后台准备完成或失败后工作空间卡片自动更新，不要求打开空间', async () => {
+    const id = new URL(workspaceUrl).pathname.split('/').at(-1)!;
+    let state: 'preparing' | 'ready' | 'failed' = 'preparing';
+    const handler = async (route:any) => {
+      const response = await route.fetch();
+      const body = await response.json();
+      body.workspaces = body.workspaces.map((entry:any) => entry.workspace?.id === id
+        ? {...entry, readiness:state, ...(state === 'failed' ? {error:{code:'workspace_preparation_failed',message:'本地定制需要确认，其他空间已继续刷新。'}} : {})} : entry);
+      await route.fulfill({response, json:body});
+    };
+    const catalogUrl = new URL('/?catalog=1',workspaceUrl).href;
+    await page.route('**/api/v1/workspaces',handler);
+    try {
+      await page.goto(catalogUrl);
+      const card=page.locator(`[data-workspace-id="${id}"]`);
+      await card.getByText('准备中',{exact:true}).waitFor();
+      state='ready';
+      await card.getByText('可用',{exact:true}).waitFor({timeout:10000});
+      assert.equal(new URL(page.url()).pathname,'/','刷新结果不得自动进入工作空间');
+      state='preparing';await page.reload();await card.getByText('准备中',{exact:true}).waitFor();
+      state='failed';await card.getByText('待完成',{exact:true}).waitFor({timeout:10000});
+      await card.getByText('本地定制需要确认，其他空间已继续刷新。',{exact:true}).waitFor();
+      await capture(page,'background-workspace-refresh-result.png');
+    } finally {
+      await page.unroute('**/api/v1/workspaces',handler);
+      await page.goto(`${workspaceUrl}/overview`);
+      await page.locator('#workbench-overview').waitFor();
+    }
+  });
   const navigateWorkspace = async (name:string) => {
     await page.locator('.primary-navigation-rail [data-nav="workspace"]').hover();
     await page.locator('.primary-secondary-navigation:visible .shell-navigation').getByRole('link',{name,exact:true}).click();

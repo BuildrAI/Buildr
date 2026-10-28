@@ -637,6 +637,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/standard-runtime-projection.test.ts',
   ], { schedulingCostMs: 4000, args: ['--test-concurrency=2'] }),
   integrationSlice('integration-runtime', [
+    'test/integration/development-workspace-refresh.test.ts',
     'test/integration/buildr-web-read-executor.test.ts',
     'test/integration/buildr-web-write-executor.test.ts',
     'test/integration/buildr-web-runtime.test.ts',

@@ -17,6 +17,7 @@ export type WorkspacePreparation = {
   details?: string;
   customizations?: Array<{id:string;integrity:string}>;
   updatedAt: string;
+  resourceSet?: string;
 };
 const fail=(code:string,message:string)=>Object.assign(new Error(message),{code,status:409});
 

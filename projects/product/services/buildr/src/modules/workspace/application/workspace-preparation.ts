@@ -10,8 +10,9 @@ import { ephemeralWorkspaceRootReason } from './workspace-command-application.ts
 export type { WorkspacePreparation } from '../persistence/workspace-preparation-store.ts';
 import { createWorkspacePreparationStore, type WorkspacePreparation } from '../persistence/workspace-preparation-store.ts';
 const fail = (code: string, message: string) => Object.assign(new Error(message), { code, status: 409 });
-export function createWorkspacePreparation(runtime: any) {
-  const running = new Set<string>();
+export function createWorkspacePreparation(runtime: any, options: { spawnProcess?: typeof spawnCommand } = {}) {
+  const running = new Map<string, Promise<void>>();
+  let refreshBatch: Promise<void> | undefined;
   const alive = (pid: number) => { if (!Number.isSafeInteger(pid) || pid < 1) return false; try { process.kill(pid, 0); return true; } catch { return false; } };
   const store=createWorkspacePreparationStore(path.join(path.dirname(runtime.registryRepository.workspaceRegistryPath()),'workspace-preparations'));
   const write=store.write;
@@ -30,7 +31,7 @@ export function createWorkspacePreparation(runtime: any) {
       const observed = read(known.id);
       if (observed.status === 'preparing') return observed;
       // Completed preparation is not proof of a current registry entry.
-      return write({ ...observed, status: 'selected', error: null, details: undefined, customizations: undefined, ownerPid: undefined }, observed.revision);
+      return write({ ...observed, status: 'selected', error: null, details: undefined, customizations: undefined, ownerPid: undefined, resourceSet: undefined }, observed.revision);
     }
     return write({ id: randomUUID(), revision: 0, rootPath: root, directoryIdentity: identity(root), name: registered?.workspace?.name || path.basename(root), workspaceId: registered?.workspace?.id || null, status: 'selected', error: null, updatedAt: '' }, null);
   }
@@ -92,7 +93,7 @@ export function createWorkspacePreparation(runtime: any) {
     if (keep.length) runtime.keepPackageCustomizations(root,keep);
     const invocation = currentProductInvocation();
     const run = async (args: string[]) => {
-      const result = await spawnCommand(invocation.command, [...invocation.argsPrefix, ...args], { cwd: root });
+      const result = await (options.spawnProcess || spawnCommand)(invocation.command, [...invocation.argsPrefix, ...args], { cwd: root });
       if (!result.ok) {
         const diagnostic=String(result.stderr || result.stdout || result.error || '').slice(-6000);
         const message=/EACCES|EPERM|permission denied/i.test(diagnostic)?'目录暂时无法写入，请确认目录权限后重试。':/ENOSPC/.test(diagnostic)?'磁盘空间不足，释放空间后重试。':/projection.*(?:conflict|modified)|owned.*modified/i.test(diagnostic)?'发现本地修改，已有内容已保留。检查差异后重试。':'工作空间尚未准备完成。已完成的内容会保留，可以重试。';
@@ -112,26 +113,70 @@ export function createWorkspacePreparation(runtime: any) {
     const registered=runtime.listRegisteredWorkspaces().workspaces.some((entry:any)=>entry.rootPath===root&&entry.workspace?.id===record.workspace.id&&entry.registryScope!=='shared');
     return { workspaceId: record.workspace.id, name: record.workspace.name, ...(registered?{}:{status:'removed'}) };
   }
-  function start(input: any) {
+  function start(input: any, after: Promise<void> = Promise.resolve(), resourceSet?: string) {
     if (!input || Object.keys(input).some(key => !['id','revision','name','keepCustomizations'].includes(key)) || typeof input.name !== 'string' || !input.name.trim() || input.name.length > 160) throw fail('workspace_preparation_input_invalid', '请确认工作空间名称和目录。');
     const before = read(input.id);
     if (before.revision !== input.revision || before.status === 'preparing' || running.has(before.id)) throw fail('workspace_preparation_conflict', '准备正在进行或状态已变化。');
     if (identity(before.rootPath) !== before.directoryIdentity) throw fail('workspace_directory_changed', '所选目录已被替换，请重新选择。');
-    const value = write({ ...before, name: input.name.trim(), ownerPid: process.pid, status: 'preparing', error: null }, before.revision);
-    running.add(value.id);
-    setImmediate(() => { void (async () => {
-      try { const result = await prepareRoot(value.rootPath, value.workspaceId, value.name, input.keepCustomizations === true ? value.customizations || [] : [], true); if(result.status==='removed')throw fail('workspace_unregistered','此目录已从列表移除，已准备的内容会保留。'); write({ ...value, ...result, status: 'ready' }, value.revision); }
+    const value = write({ ...before, name: input.name.trim(), ownerPid: process.pid, status: 'preparing', error: null, resourceSet }, before.revision);
+    const completion = new Promise<void>(resolve => setImmediate(() => { void (async () => {
+      await after;
+      try {
+        if (resourceSet) {
+          if (identity(value.rootPath) !== value.directoryIdentity) throw fail('workspace_directory_changed','工作目录已变化，未执行后台刷新。');
+          const current = runtime.listRegisteredWorkspaces().workspaces.find((entry:any) => entry.rootPath === value.rootPath && entry.workspace?.id === value.workspaceId && entry.registryScope !== 'shared');
+          if (!current) throw fail('workspace_unregistered','目录已移除或身份已变化，未执行后台刷新。');
+          runtime.assertWorkspaceManagementAccess(value.rootPath);
+        }
+        const result = await prepareRoot(value.rootPath, value.workspaceId, value.name, input.keepCustomizations === true ? value.customizations || [] : [], true); if(result.status==='removed')throw fail('workspace_unregistered','此目录已从列表移除，已准备的内容会保留。'); write({ ...value, ...result, status: 'ready' }, value.revision); }
       catch (error: any) { try { write({ ...value, status: 'failed', error: error.message, details: error.diagnostic || '', customizations: error.customizations || [] }, value.revision); } catch {} }
-      finally { running.delete(value.id); }
-    })(); });
+      finally { running.delete(value.id); resolve(); }
+    })(); }));
+    running.set(value.id, completion);
     return value;
+  }
+  // Called only by the verified development host after HTTP readiness. The
+  // existing preparation store owns observations; no second update ledger.
+  function refreshPreparedWorkspaces(): Promise<void> {
+    if (refreshBatch) return refreshBatch;
+    refreshBatch = (async () => {
+      const target = readSharedResourceSet().id;
+      let tail = Promise.resolve();
+      for (const entry of runtime.listRegisteredWorkspaces().workspaces) {
+        try {
+          if (entry.registryScope === 'shared' || entry.status !== 'ready' || !entry.workspace?.id) continue;
+          const root = fs.realpathSync(entry.rootPath);
+          const adopted = readResourceAdoption(root);
+          if (!adopted?.ready || adopted.resourceSet === target) continue;
+          runtime.assertWorkspaceManagementAccess(root);
+          if (runtime.readComponentsManifestForWrite(root).components.some((item:any) => item.id === 'buildr-self-bootstrap' && item.enabled !== false && item.state !== 'uninstalled')) continue;
+          const prior = store.list().find(item => item.rootPath === root && item.directoryIdentity === identity(root));
+          if (prior?.status === 'failed' && prior.resourceSet === target) continue;
+          if (prior?.status === 'preparing' && (running.has(prior.id) || alive(prior.ownerPid!))) continue;
+          const selected = select(root);
+          const launched = start({id:selected.id, revision:selected.revision, name:selected.name}, tail, target);
+          tail = running.get(launched.id)!;
+        } catch (error:any) {
+          console.warn('工作空间后台刷新未开始，其他空间继续：', entry.rootPath, error.message);
+        }
+      }
+      await tail;
+    })().finally(() => { refreshBatch = undefined; });
+    return refreshBatch;
   }
   function prepareWorkspaceForOpen(id: string) {
     const resolved = runtime.resolveRegisteredWorkspace(id);
     const local = runtime.listRegisteredWorkspaces().workspaces.find((entry: any) => entry.workspace?.id === id && entry.registryScope !== 'shared');
     if (!local) throw fail('workspace_management_channel_conflict', '此目录属于其他管理来源，不能从当前页面更新。');
     runtime.assertWorkspaceManagementAccess(resolved.rootPath);
+    const owned = store.list().find(item => item.rootPath === fs.realpathSync(resolved.rootPath) && item.directoryIdentity === identity(resolved.rootPath) && item.status === 'preparing');
+    if (owned) {
+      const observed = read(owned.id);
+      if (observed.status === 'preparing') { const {ownerPid, directoryIdentity, ...preparation} = observed; return preparation; }
+    }
     try {
+      const failed = store.list().find(item => item.rootPath === fs.realpathSync(resolved.rootPath) && item.directoryIdentity === identity(resolved.rootPath) && item.status === 'failed' && item.resourceSet === readSharedResourceSet().id);
+      if (failed) { const {ownerPid, directoryIdentity, ...preparation} = failed; return preparation; }
       const adopted = readResourceAdoption(resolved.rootPath);
       if (adopted?.ready) {
         const refresh = refreshResourceProjection(resolved.rootPath);
@@ -150,7 +195,7 @@ export function createWorkspacePreparation(runtime: any) {
     const { ownerPid, directoryIdentity, ...preparation } = launched;
     return preparation;
   }
-  return { prepareWorkspaceForOpen, selectWorkspaceDirectory: select, workspacePreparation: read, prepareSelectedWorkspace: start,
+  return { refreshPreparedWorkspaces, prepareWorkspaceForOpen, selectWorkspaceDirectory: select, workspacePreparation: read, prepareSelectedWorkspace: start,
     prepareRegisteredWorkspace: async (entry: {rootPath: string; workspaceId: string | null}, options: {keepCustomizations?:Array<{id:string;integrity:string}>} = {}) => {
       const registry = runtime.listRegisteredWorkspaces();
       const current = registry.workspaces.find((item: any) => item.rootPath === entry.rootPath && item.registryScope !== 'shared');

@@ -1,4 +1,6 @@
 import { runTaskListJourney } from '../../../buildr-web/test/browser/task-list-journey.ts';
+import { AGENT_SERVICE_APPLICATION } from '../../src/modules/agent-service/module.ts';
+import { stopAgentProcess } from '@buildr-ai/buildr-agent';
 import { TASK_MATERIALS_APPLICATION } from '../../src/modules/task/materials/module.ts';
 import { showPrimaryNavigation } from '../../../buildr-web/test/browser/primary-navigation-controls.ts';
 import assert from 'node:assert/strict';
@@ -53,7 +55,7 @@ const codeGroup = selected('code') && codeFocusProvided ? planCodeBrowserGroups(
 const runCodeExplorer = !codeGroup || codeGroup.id === 'explorer';
 const runSourceControl = !codeGroup || codeGroup.id === 'source-control';
 const selectorLabel: any = [...SELECTORS].join(',') + (SELECTORS.has('code') && codeGroup ? ':' + codeGroup.id : '');
-// Optional scenario-name filter for long task journeys; same pipe-separated
+// Optional scenario-name filter for long task/layout journeys; same pipe-separated
 // semantics as BUILDR_SOURCE_CONTROL_FOCUS. Empty runs everything.
 const taskFocus: any = process.env.BUILDR_TASK_FOCUS || '';
 const taskFocused = (name: string) => !taskFocus || taskFocus === 'all' || taskFocus.split('|').some((part: string) => part && name.includes(part));
@@ -395,10 +397,15 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
   let browser: any;
   let server: any;
   let previewServer: any;
+  let webRuntime: any;
   t.after(async () => {
     if (browser) await browser.close();
     if (server) await new Promise((resolve: any) => server.close(resolve));
     if (previewServer) await new Promise((resolve: any) => previewServer.close(resolve));
+    if (webRuntime) await runtimeProvide(webRuntime, AGENT_SERVICE_APPLICATION).close();
+    // The direct HTTP fixture owns its callback bridge and isolated execution
+    // daemon; closing server sockets alone cannot release those resources.
+    await stopAgentProcess({dataRoot:path.join(base,'app-data'),mode:'stop-owned'});
     fs.rmSync(base, { recursive: true, force: true });
     process.stderr.write(`[buildr-browser] selector=${selectorLabel} phase=cleanup-complete\n`);
   });
@@ -459,7 +466,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
   registry = runtime.registerLocalWorkspace({ rootPath: otherRoot, revision: registry.revision });
   const otherWorkspaceId: any = registry.workspaces.find((item: any) => item.rootPath === otherRoot).workspace.id;
   // Fixture writers may use the test adapter; the HTTP host must use production composition.
-  const webRuntime = createProductionRuntime();
+  webRuntime = createProductionRuntime();
   const workspaceApplication = runtimeProvide(webRuntime, WORKSPACE_APPLICATION);
   const workspacePorts = {
     ensureRegisteredTarget: workspaceApplication.ensureRegisteredTarget,
@@ -692,7 +699,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     }
   }
   if (selected('agent-conversations')) await runAgentConversationsJourney({t,page,workspaceUrl,capture,expectedBrowserErrors});
-  if (selected('layout')) await runLayoutJourney({ t, page, workspaceUrl, capture });
+  if (selected('layout')) await runLayoutJourney({ t: taskFocusedT(t), page, workspaceUrl, capture });
 
   if (SELECTORS.has('core')) await t.test('核心流程进入 Workspace、Task 路由并读取代表性 Tab', async () => {
     await page.goto(`${workspaceUrl}/tasks`);
