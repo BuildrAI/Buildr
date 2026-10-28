@@ -42,7 +42,7 @@ export function ConversationPendingSend({ conversation }: { conversation: Conver
     <Modal open={Boolean(edit)} title="修改待发送指令" getContainer={false} styles={{mask:{position:'absolute'},wrapper:{position:'absolute'}}} onCancel={()=>setEdit(null)} onOk={()=>void save()} confirmLoading={busy} okText="保存并等待发送" cancelText="保留原内容" okButtonProps={{disabled:!edit?.draft.text.trim()&&!edit?.draft.attachmentIds?.length}}>
       {error&&<Alert type="warning" message={error}/ >}
       <Input.TextArea aria-label="待发送内容" value={edit?.draft.text??''} autoSize={{minRows:3,maxRows:10}} onChange={event=>setEdit(value=>value?{...value,draft:{...value.draft,text:event.target.value}}:value)}/>
-      {edit&&<Space wrap><ConversationOptions connections={context.connections} value={edit.draft} permissionMode={edit.draft.permissionMode??'default'} disabled={busy} onChange={choose}/><Select<PermissionMode> aria-label="待发送权限" value={edit.draft.permissionMode??'default'} disabled={busy} options={[{value:'default',label:'默认权限'},{value:'full-access',label:'完全访问'}]} onChange={permissionMode=>setEdit(value=>value?{...value,draft:{...value.draft,permissionMode}}:value)}/></Space>}
+      {edit&&<Space wrap><ConversationOptions connections={context.connections} value={edit.draft} disabled={busy} onChange={choose}/><Select<PermissionMode> aria-label="待发送权限" value={edit.draft.permissionMode??'default'} disabled={busy} options={[{value:'default',label:'默认权限'},{value:'full-access',label:'完全访问'}]} onChange={permissionMode=>setEdit(value=>value?{...value,draft:{...value.draft,permissionMode}}:value)}/></Space>}
     </Modal>
   </>;
 }
