@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { ConversationRepository } from '../persistence/conversation-repository.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
-import { claim, controlRoot, live, readLock, readPrivate, readProcessRecord } from './ownership.ts';
+import { claim, controlRoot, live, readLock, readPrivate, readProcessRecord, readProcessInstances } from './ownership.ts';
 
 /** Called before shutting down a legacy in-process host. No live work migrates. */
 export function assertAgentUpgradeIdle(dataRoot: string, options: {legacyHostRunning?: boolean} = {}): void {
@@ -30,7 +30,7 @@ export function withAgentDataOffline<T>(dataRoot: string, work: () => T): T {
   const owner = claim(key, 'owner');
   const release = () => { owner.release(); };
   try {
-    if (readProcessRecord(key)) throw new AgentServiceError('agent_process_offline_unconfirmed', '执行后台退出未确认，不能改写其私有资料。', 409);
+    if (readProcessRecord(key) || readProcessInstances(key).some(record=>!record.stopped||!record.confirmed)) throw new AgentServiceError('agent_process_offline_unconfirmed', '仍有新旧执行后台或未确认的释放，不能改写其私有资料。', 409);
     const stopped = readPrivate<{confirmed:boolean}>(path.join(controlRoot(key), 'last-stop.json'));
     if (stopped && !stopped.confirmed) throw new AgentServiceError('agent_process_offline_unconfirmed', '原执行或工具尚待核对，私有资料已保留。', 409);
     assertAgentUpgradeIdle(key);

@@ -120,12 +120,12 @@ export class ConversationRepository {
   }
   listPending(includeActive = false): StoredConversation[] {
     const db = this.open(false); if (!db) return [];
-    try { return (db.prepare('SELECT body FROM conversations ORDER BY updated_at DESC').all() as { body: string }[]).map(row => JSON.parse(row.body)).filter((record: StoredConversation) => record.view.requests.length || (includeActive ? ['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'unknown', 'tools-active'] : ['unknown', 'tools-active']).includes(record.view.run?.status ?? '')); }
+    try { return (db.prepare('SELECT body FROM conversations ORDER BY updated_at DESC').all() as { body: string }[]).map(row => JSON.parse(row.body)).filter((record: StoredConversation) => record.view.requests.length || record.view.run?.tools.some(tool=>tool.status!=='completed') || (includeActive ? ['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'unknown', 'tools-active'] : ['unknown', 'tools-active']).includes(record.view.run?.status ?? '')); }
     finally { db.close(); }
   }
   hasUnfinishedWork(): boolean {
     const db=this.open(false);if(!db)return false;
-    try{return !!db.prepare("SELECT 1 FROM conversations WHERE json_array_length(body,'$.view.requests')>0 OR json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') OR json_extract(body,'$.view.titleState.status')='generating' LIMIT 1").get();}
+    try{return !!db.prepare("SELECT 1 FROM conversations WHERE json_array_length(body,'$.view.requests')>0 OR json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') OR EXISTS(SELECT 1 FROM json_each(conversations.body,'$.view.run.tools') AS tool WHERE COALESCE(json_extract(tool.value,'$.status'),'unknown')<>'completed') OR json_extract(body,'$.view.titleState.status')='generating' LIMIT 1").get();}
     finally{db.close();}
   }
   listInterruptedTitles(generation:string): StoredConversation[] {
@@ -138,7 +138,7 @@ export class ConversationRepository {
       return (db.prepare(`SELECT body FROM conversations WHERE json_extract(body,'$.interruption.runId')=json_extract(body,'$.view.run.id') OR json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') ORDER BY updated_at DESC`).all() as {body:string}[]).map(row=>JSON.parse(row.body));
     } finally { db.close(); }
   }
-  querySummaries(workspaceIds: string[], input: {workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;generation?:string;cursor?:string;limit:number}): {conversations:ConversationView[];nextCursor?:string;total:number;stats:{agents:Array<{label:string;count:number}>;models:Array<{label:string;count:number}>};activityCounts:{active:number;running:number;waiting:number;unseen:number;unknown:number;attention:number}} {
+  querySummaries(workspaceIds: string[], input: {workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;generation?:string;cursor?:string;limit:number}, generationAlive?: (generation:string)=>boolean): {conversations:ConversationView[];nextCursor?:string;total:number;stats:{agents:Array<{label:string;count:number}>;models:Array<{label:string;count:number}>};activityCounts:{active:number;running:number;waiting:number;unseen:number;unknown:number;attention:number}} {
     const empty={conversations:[],total:0,stats:{agents:[],models:[]},activityCounts:{active:0,running:0,waiting:0,unseen:0,unknown:0,attention:0}};
     const db=this.open(false);if(!db||!workspaceIds.length){db?.close();return empty;}
     try {
@@ -147,13 +147,17 @@ export class ConversationRepository {
       // Legacy reads remain zero-write and omit private records and full entries.
       const storedSource=modern?'conversations':`(SELECT *,updated_at AS activity_at,0 AS activity_version,0 AS seen_version,CASE WHEN json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown') THEN 1 ELSE 0 END AS is_active,json_set(json_extract(body,'$.view'),'$.entries',json('[]'),'$.requests',json('[]'),'$.activity',json_object('version',0,'seenThrough',0,'updatedAt',updated_at,'active',json(CASE WHEN json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown') THEN 'true' ELSE 'false' END))) AS summary FROM conversations)`;
       const status = "json_extract(summary,'$.run.status')";
-      const effectiveStatus = input.generation ? `CASE WHEN coalesce(json_extract(summary,'$.run.generation'),'') <> ? AND ${status} IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown') THEN 'unknown' ELSE ${status} END` : status;
+      // Parallel owners are still authoritative. Compute this from compact
+      // summaries so activity counts and filters need not load full histories.
+      const retained = input.generation && generationAlive ? (db.prepare(`SELECT DISTINCT json_extract(summary,'$.run.generation') AS generation FROM ${storedSource} WHERE ${status} IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown')`).all() as Array<{generation:string|null}>).map(row=>row.generation).filter((generation):generation is string=>Boolean(generation&&generation!==input.generation&&generationAlive(generation))) : [];
+      const generations = input.generation ? [...new Set([input.generation,...retained])].sort() : [];
+      const effectiveStatus = generations.length ? `CASE WHEN coalesce(json_extract(summary,'$.run.generation'),'') NOT IN (${generations.map(()=>'?').join(',')}) AND ${status} IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown') THEN 'unknown' ELSE ${status} END` : status;
       const state = `CASE WHEN effective_status='unknown' THEN 'unknown' WHEN effective_status IN ('waiting-approval','waiting-question') THEN 'waiting' WHEN effective_status IN ('starting','running','stopping','tools-active') THEN 'running' WHEN activity_version>seen_version THEN 'unseen' ELSE NULL END`;
       const source=`(SELECT *,${state} AS activity_state FROM (SELECT *,${effectiveStatus} AS effective_status FROM ${storedSource}))`;
       const ids=[...new Set(workspaceIds)].sort();
-      const scope=createHash('sha256').update(JSON.stringify([ids,{...input,cursor:undefined,limit:undefined}])).digest('hex');
+      const scope=createHash('sha256').update(JSON.stringify([ids,{...input,cursor:undefined,limit:undefined},generations])).digest('hex');
       const epoch=modern?(db.prepare('SELECT value FROM conversation_epoch WHERE id=1').get() as {value:number}).value:0;
-      const where=[`workspace_id IN (${ids.map(()=>'?').join(',')})`];const values:Array<string|number>=[...(input.generation?[input.generation]:[]),...ids];
+      const where=[`workspace_id IN (${ids.map(()=>'?').join(',')})`];const values:Array<string|number>=[...generations,...ids];
       if(input.workspaceId){where.push('workspace_id=?');values.push(input.workspaceId);}
       where.push(HAS_WORK);
       const statsWhere=[...where],statsValues=[...values];

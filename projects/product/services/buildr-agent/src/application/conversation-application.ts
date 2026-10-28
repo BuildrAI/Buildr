@@ -1,3 +1,4 @@
+import { normalizeSendDraft } from '../domain/send-draft.ts';
 import {selectedOffering,modelConfiguration} from '../model-access/model-preferences.ts';
 import type {ModelOffering} from '../model-access/contracts.ts';
 import type { ModelAccess } from '../model-access/application.ts';
@@ -14,6 +15,7 @@ import {HANDOFF_PROMPT,HANDOFF_SUMMARY_PROMPT,handoffEntries,organizeHandoff,dis
 import {handoffSources} from './handoff-sources.ts';
 import { resolvePermissionMode } from '../domain/permission-mode.ts';
 import type { HostContext } from './host-context.ts';
+import { PendingSendRepository } from '../persistence/pending-send-repository.ts';
 
 const TITLE_TIMEOUT_MS = 45_000;
 const MAX_TEXT_BYTES = 64 * 1024;
@@ -75,8 +77,10 @@ export class ConversationApplication {
     now(): string;
     host: HostContext;
     autoContinueInterrupted?: boolean;
+    generationAlive?: (generation: string) => boolean;
   };
   constructor(options: ConversationApplication['options']) { this.options = options; }
+  private get pendingSends() { return new PendingSendRepository(this.options.root); }
 
   private async sourceRuntime(record: StoredConversation, participant: StoredParticipant): Promise<{runtime: AgentRuntime; model: string}> {
     if (!participant.modelAccountId) return this.options.connections.runtime(participant.connectionId).then(runtime => ({runtime, model: record.view.run?.model ?? ''}));
@@ -130,9 +134,10 @@ export class ConversationApplication {
       id: participant.id, provider: participant.provider, connectionId: participant.connectionId,
       label: participant.label, model: participant.modelId, modelAccountId:participant.modelAccountId, deliveredThrough: participant.deliveredThrough, contextId: participant.contextRef?.id ?? '',
     }));
-    if (view.run && view.run.generation !== this.options.generation && BUSY_STATES.has(view.run.status)) {
+    if (view.run && view.run.generation !== this.options.generation && !this.options.generationAlive?.(view.run.generation) && BUSY_STATES.has(view.run.status)) {
       view.run.status = 'unknown'; view.run.interrupted = true; view.run.diagnostic = '服务重启后原执行尚待核对，工作记录已保留。';
     }
+    view.pendingSend = this.pendingSends.view(this.pendingSends.read(view.workspaceId, view.id));
     return view;
   }
   private save(record: StoredConversation): void {
@@ -159,9 +164,9 @@ export class ConversationApplication {
   pending(): { conversations: ConversationView[] } { return { conversations: this.options.repository.listPending().map(record => ({ ...this.view(record, undefined, 1), entries: [] })) }; }
   listAll(workspaceIds:string[],input:{workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;cursor?:string;limit?:number}={}) {
     if(input.workspaceId&&!workspaceIds.includes(input.workspaceId))fail('agent_workspace_missing','工作空间未登记。',404);
-    const result=this.options.repository.querySummaries(workspaceIds,{...input,generation:this.options.generation,query:input.query?.trim().slice(0,200),limit:bounded(input.limit,30,100)});
+    const result=this.options.repository.querySummaries(workspaceIds,{...input,generation:this.options.generation,query:input.query?.trim().slice(0,200),limit:bounded(input.limit,30,100)},this.options.generationAlive);
     for(const view of result.conversations){
-      if(view.run&&view.run.generation!==this.options.generation&&BUSY_STATES.has(view.run.status)){view.run.status='unknown';view.run.interrupted=true;}
+      if(view.run&&view.run.generation!==this.options.generation&&!this.options.generationAlive?.(view.run.generation)&&BUSY_STATES.has(view.run.status)){view.run.status='unknown';view.run.interrupted=true;}
     }
     return result;
   }
@@ -200,14 +205,48 @@ export class ConversationApplication {
     if (this.closing) fail('agent_service_closing', '智能体服务正在退出。', 503);
     if (record.view.run && BUSY_STATES.has(record.view.run.status)) fail('agent_conversation_busy', '请先处理当前执行或未知状态；新内容仍可保留为草稿。', 409);
   }
-  private draft(input: SendDraft): SendDraft {
-    if (typeof input.text !== 'string' || Buffer.byteLength(input.text) > MAX_TEXT_BYTES) fail('agent_input_too_large', '输入过长，请缩小本次指令。', 413);
-    if (!input.text.trim() && !input.attachmentIds?.length) fail('agent_input_empty', '请填写内容或添加图片。');
-    if (input.attachmentIds && (!Array.isArray(input.attachmentIds) || input.attachmentIds.length > 4 || input.attachmentIds.some(id => typeof id !== 'string'))) fail('agent_attachments_invalid', '每次最多添加4张图片。');
-    if (input.handoffSummary !== undefined && (typeof input.handoffSummary !== 'string' || !input.handoffSummary.trim() || Buffer.byteLength(input.handoffSummary) > MAX_TEXT_BYTES)) fail('agent_handoff_invalid', '补充的交接说明无效。');
-    if(input.skipHandoffSummary!==undefined&&typeof input.skipHandoffSummary!=='boolean')fail('agent_input_invalid','整理方式无效。');
-    return { skipHandoffSummary:input.skipHandoffSummary, expectedRevision: nonempty(input.expectedRevision, '对话版本'), connectionId: nonempty(input.connectionId, '接入身份'), text: input.text, modelAccountId: input.modelAccountId === undefined ? undefined : nonempty(input.modelAccountId, '套餐账号'), modelAccountRevision: input.modelAccountRevision, modelAccountIdentity: input.modelAccountIdentity, permissionMode: resolvePermissionMode(input.permissionMode), model: input.model === undefined ? undefined : nonempty(input.model, '模型', 256), serviceTier:input.serviceTier===undefined?undefined:nonempty(input.serviceTier,'服务档位',256),reasoningEffort: input.reasoningEffort === undefined ? undefined : nonempty(input.reasoningEffort, '思考深度', 80), attachmentIds: input.attachmentIds ?? [], handoffSummary: input.handoffSummary };
+  busy(workspaceId: string, id: string): boolean {
+    const record = this.load(workspaceId, id);
+    return Boolean(record.view.run && (BUSY_STATES.has(record.view.run.status) || record.view.run.tools.some(tool=>tool.status!=='completed') || this.workers.has(record.view.run.id)) || record.view.requests.length || this.titleWork.has(id) || this.earlyTitles.has(id) || this.recoveries.has(`${workspaceId}/${id}`) || this.observations.has(`${workspaceId}/${id}`));
   }
+  async verifyNext(workspaceId: string, id: string): Promise<void> {
+    const record = this.load(workspaceId, id);
+    await this.options.host.resolve(workspaceId);
+    if (record.view.taskId) await this.options.host.verify(workspaceId, record.view.taskId);
+  }
+  validatePending(workspaceId: string, id: string, input: SendDraft): SendDraft {
+    const record = this.load(workspaceId, id);
+    const draft = this.draft(input);
+    for (const attachment of draft.attachmentIds ?? []) this.attachment(record, attachment);
+    const account = draft.modelAccountId ? this.options.modelAccess?.accounts.read(draft.modelAccountId) : undefined;
+    if (draft.modelAccountId && !account) fail('agent_model_source_unavailable', '所选模型账号不可用。', 409);
+    if (account && draft.modelAccountIdentity && draft.modelAccountIdentity !== account.identity) fail('agent_model_source_changed', '所选模型账号身份已变化，请重新选择。', 409);
+    return { ...draft, ...(account ? { modelAccountIdentity: account.identity } : {}) };
+  }
+  queueSend(workspaceId: string, id: string, input: SendDraft & { clientRequestId: string; expectedPendingRevision?: string; previousRunId?: string }): ConversationView {
+    const { clientRequestId, expectedPendingRevision, previousRunId, ...raw } = input;
+    const requestId = nonempty(clientRequestId, '请求身份', 200);
+    const existing = this.pendingSends.lookup(workspaceId, id, requestId);
+    if (existing && expectedPendingRevision === undefined) {
+      this.pendingSends.submit(workspaceId, id, this.draft(raw), requestId);
+      return this.read(workspaceId, id);
+    }
+    const observed = this.load(workspaceId,id).view.run;
+    if (previousRunId !== undefined && observed?.id !== previousRunId) fail('agent_revision_conflict','上一轮执行已变化，请重新读取后提交；草稿保留。',409);
+    const draft = this.validatePending(workspaceId, id, raw);
+    this.pendingSends.submit(workspaceId, id, draft, requestId, expectedPendingRevision, this.draft(raw));
+    const view = this.read(workspaceId, id);
+    this.options.events.publish({ type: 'conversation', workspaceId, conversationId: id, revision: view.revision, payload: { conversation: view } });
+    return view;
+  }
+  cancelPendingSend(workspaceId: string, id: string, input: { expectedPendingRevision: string }): ConversationView {
+    this.load(workspaceId, id);
+    this.pendingSends.cancel(workspaceId, id, input.expectedPendingRevision);
+    const view = this.read(workspaceId, id);
+    this.options.events.publish({ type: 'conversation', workspaceId, conversationId: id, revision: view.revision, payload: { conversation: view } });
+    return view;
+  }
+  private draft(input: SendDraft): SendDraft { return normalizeSendDraft(input); }
   private prepare(record: StoredConversation, raw: SendDraft): { preview: SendPreview; text: string; images: ExecutorImage[]; draft: SendDraft;configuration?:string;needsCompression:boolean;fullText:string } {
     const input = this.draft(raw); expected(record.view.revision, input.expectedRevision); this.assertIdle(record);
     const connection = this.options.connections.get(input.connectionId);
@@ -637,11 +676,12 @@ export class ConversationApplication {
   recoverInterrupted(): Promise<void> {
     if(this.recoveryWork)return this.recoveryWork;
     for(const record of this.options.repository.listInterruptedTitles(this.options.generation)){
+      if(record.view.run && this.options.generationAlive?.(record.view.run.generation))continue;
       if(record.titleOrigin!=='default')continue;
       record.view.titleState={status:'failed',reason:'标题生成因服务重启中断，原有回复已保留，可显式重新生成。'};
       try{this.save(record);}catch{/* A concurrent newer record wins; do not block unrelated executions. */}
     }
-    const candidates=this.options.repository.listInterrupted().filter(record=>record.view.run?.generation!==this.options.generation || record.interruption?.reason==='transport');
+    const candidates=this.options.repository.listInterrupted().filter(record=>(record.view.run?.generation!==this.options.generation && !this.options.generationAlive?.(record.view.run?.generation ?? '')) || record.interruption?.reason==='transport');
     const work=async()=>{
       let next=0;
       await Promise.all(Array.from({length:Math.min(2,candidates.length)},async()=>{
@@ -722,6 +762,7 @@ export class ConversationApplication {
   }
   private async reconcile(workspaceId: string, id: string): Promise<ConversationView> {
     let record = this.load(workspaceId, id);
+    if (record.view.run && record.view.run.generation !== this.options.generation && this.options.generationAlive?.(record.view.run.generation)) return this.read(workspaceId, id);
     for (const saved of record.participants) {
       if (!saved.contextRef) continue;
       try {
@@ -843,7 +884,7 @@ export class ConversationApplication {
     const directory = path.join(attachmentsRoot, id);
     fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
     if (fs.lstatSync(directory).isSymbolicLink()) fail('agent_attachment_unsafe', '附件目录来源不安全。', 409);
-    const referenced = new Set(record.view.entries.flatMap(entry => entry.attachments ?? []));
+    const referenced = new Set([...record.view.entries.flatMap(entry => entry.attachments ?? []), ...(this.pendingSends.read(workspaceId, id)?.draft.attachmentIds ?? [])]);
     const expired: string[] = [];
     const now = Date.parse(this.options.now());
     let temporaryBytes = 0; let temporaryCount = 0;
@@ -885,7 +926,7 @@ export class ConversationApplication {
     return this.options.events.subscribe({ type: 'snapshot', workspaceId, conversationId: id, revision: conversation.revision, payload: { conversation } }, event => event.workspaceId === workspaceId && event.conversationId === id);
   }
   async closeConnection(connectionId: string): Promise<void> {
-    await Promise.allSettled(this.options.repository.listPending(true).map(async record => {
+    await Promise.allSettled(this.options.repository.listPending(true).filter(record => !this.options.generationAlive || record.view.run?.generation === this.options.generation).map(async record => {
       const run = record.view.run; const participant = record.participants.find(value => value.id === run?.participantId);
       if (run && participant?.connectionId === connectionId && BUSY_STATES.has(run.status)) {
         try { await this.stop(record.view.workspaceId, record.view.id, { expectedRevision: record.view.revision, runId: run.id, participantId: participant.id, generation: run.generation }); }
@@ -897,13 +938,14 @@ export class ConversationApplication {
   async close(): Promise<void> {
     this.closing = true;
     for (const controller of this.titleWork.values()) controller.abort();
-    const interrupted=this.options.repository.listPending(true).map(record=>({workspaceId:record.view.workspaceId,id:record.view.id,runId:record.view.run?.id}));
-    for (const record of this.options.repository.listPending(true)) {
+    const owned = this.options.repository.listPending(true).filter(record => !this.options.generationAlive || record.view.run?.generation === this.options.generation);
+    const interrupted=owned.map(record=>({workspaceId:record.view.workspaceId,id:record.view.id,runId:record.view.run?.id}));
+    for (const record of owned) {
       if (record.view.run) {
         if(record.view.run.status!=='stopping'){record.interruption={runId:record.view.run.id,awaitingUser:record.view.requests.length>0||['waiting-approval','waiting-question'].includes(record.view.run.status)};record.view.run.interrupted=true;}
         record.view.run.status = 'unknown'; record.view.run.diagnostic = '宿主正在退出，原生执行尚待确认。'; this.save(record); }
     }
-    const ids = new Set(this.options.repository.listPending(true).map(record => record.participants.find(value => value.id === record.view.run?.participantId)?.connectionId).filter((id): id is string => Boolean(id)));
+    const ids = new Set(owned.map(record => record.participants.find(value => value.id === record.view.run?.participantId)?.connectionId).filter((id): id is string => Boolean(id)));
     await Promise.allSettled([...ids].map(id => this.closeConnection(id)));
     for(const item of interrupted){const record=this.load(item.workspaceId,item.id);if(record.view.run?.id===item.runId&&record.view.run&&['stopped','unknown','tools-active','stopping'].includes(record.view.run.status)){record.view.run.diagnostic=record.view.run.status==='stopped'?'宿主退出导致执行停止；这不是用户主动停止。':'宿主退出后原执行仍待核对，不能重复发送。';this.save(record);}}
   }

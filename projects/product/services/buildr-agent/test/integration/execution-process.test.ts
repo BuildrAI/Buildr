@@ -10,6 +10,7 @@ import { connectAgentProcess, prepareAgentRuntime, stopAgentProcess, executionSc
 import type { AgentProcessConnection, AgentRuntimeUnit, ConversationView } from '../../src/index.ts';
 
 const prepared=path.resolve(import.meta.dirname,'../../../buildr/node_modules/@buildr-ai/buildr-agent');
+const isLive=(pid:number)=>{try{process.kill(pid,0);return true;}catch{return false;}};
 async function until<T>(read:()=>Promise<T>,accept:(value:T)=>boolean):Promise<T>{let last:unknown;for(let n=0;n<200;n++){try{const value=await read();if(accept(value))return value;last=value;}catch(error){last=error;}await new Promise(resolve=>setTimeout(resolve,50));}assert.fail('state did not settle: '+JSON.stringify(last));}
 async function actor(options:{dataRoot:string;profileId:string;runtime:AgentRuntimeUnit;workspace:string}){
   const child=fork(path.join(import.meta.dirname,'fixtures/agent-host-process.mjs'),[path.join(options.runtime.directory,'build/index.js'),JSON.stringify(options)],{execPath:options.runtime.node,stdio:['ignore','pipe','pipe','ipc']});
@@ -28,6 +29,9 @@ test('independent process survives real host exits, preserves approvals and hand
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-process-')),dataRoot=path.join(root,'profile'),workspace=path.join(root,'work');fs.mkdirSync(workspace);
   const packageRoot=path.join(root,'package');fs.cpSync(prepared,packageRoot,{recursive:true});
   fs.copyFileSync(path.join(import.meta.dirname,'fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/process-fixture.mjs'));
+  // Keep the original no-parallel handshake as a real first-upgrade regression.
+  const contractsFile=path.join(packageRoot,'build/runtime-contracts.json');
+  const contracts=JSON.parse(fs.readFileSync(contractsFile,'utf8'));delete contracts.parallelCompatibility;fs.writeFileSync(contractsFile,JSON.stringify(contracts));
   const marker=path.join(packageRoot,'build/fixture-version.json');fs.writeFileSync(marker,JSON.stringify({version:'one'}));
   const runtime=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'}),profileId='isolated-test';
   const options={dataRoot,profileId,runtime,workspace};
@@ -133,6 +137,101 @@ test('independent process survives real host exits, preserves approvals and hand
   }finally{
     if(main)await main.close().catch(()=>{main?.child.kill('SIGTERM');});await observer?.disconnect();
     await stopAgentProcess({dataRoot,profileId}).catch(()=>{});
+    fs.rmSync(root,{recursive:true,force:true});
+  }
+});
+
+test('parallel versions retain old controls, dispatch durable next instructions per conversation, and reap the drained runtime', {timeout:90000}, async()=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-parallel-')),dataRoot=path.join(root,'profile'),workspace=path.join(root,'work'),packageRoot=path.join(root,'package');
+  fs.mkdirSync(workspace);fs.cpSync(prepared,packageRoot,{recursive:true});
+  fs.copyFileSync(path.join(import.meta.dirname,'fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/process-fixture.mjs'));
+  const marker=path.join(packageRoot,'build/fixture-version.json');fs.writeFileSync(marker,JSON.stringify({version:'old'}));
+  const runtime=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'}),profileId='parallel-test',scope=executionScopeKey({sourceId:'minimal',id:'directory'});
+  assert.equal(runtime.parallelCompatibility,1);
+  let main:Awaited<ReturnType<typeof actor>>|undefined,observer:AgentProcessConnection|undefined;
+  try{
+    main=await actor({dataRoot,profileId,runtime,workspace});
+    observer=await connectAgentProcess({dataRoot,profileId,runtime,sourceId:'minimal'});
+    const firstIdentity=await observer.lifecycle.identity();
+    const connection=await main.call('connections.read',['first']);await main.call('connections.connect',['first',{expectedRevision:connection.revision}]);
+    const start=async(text:string)=>{
+      const chat:ConversationView=await main!.call('conversations.create',[scope,{}]);
+      const draft={expectedRevision:chat.revision,connectionId:'first',text};
+      const preview=await main!.call('conversations.prepareSend',[scope,chat.id,draft]);
+      await main!.call('conversations.send',[scope,chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()}]);
+      return await until(()=>observer!.operations.conversations.read(scope,chat.id),value=>value.run?.accepted===true);
+    };
+    let first=await start('hold:slow'),second=await start('hold:second'),approval=await start('approval');
+    const failedRequest=randomUUID();
+    first=await observer.operations.conversations.queueSend(scope,first.id,{expectedRevision:first.revision,connectionId:'first',text:'saved during failed update',clientRequestId:failedRequest,previousRunId:first.run!.id});
+    fs.writeFileSync(path.join(packageRoot,'build/parallel-broken.mjs'),'throw new Error("parallel startup failure");\n');
+    const broken=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/parallel-broken.mjs'});
+    await observer.lifecycle.requestRuntime({expectedGeneration:firstIdentity.generation,runtime:broken});
+    const failed=await until(()=>observer!.lifecycle.status(),value=>Boolean(value.diagnostic));
+    assert.equal(failed.identity.generation,firstIdentity.generation);assert.equal(failed.pendingRuntime?.digest,broken.digest);assert.ok(isLive(firstIdentity.pid));
+    first=await observer.operations.conversations.read(scope,first.id);
+    assert.equal(first.run?.generation,firstIdentity.generation);assert.equal(first.pendingSend?.id,failedRequest);assert.equal(first.pendingSend?.state,'waiting');
+    await observer.operations.conversations.cancelPendingSend(scope,first.id,{expectedPendingRevision:first.pendingSend!.revision});
+    fs.writeFileSync(marker,JSON.stringify({version:'new'}));
+    const next=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'});
+    await observer.lifecycle.requestRuntime({expectedGeneration:firstIdentity.generation,runtime:next});
+    const adopted=await until(()=>observer!.lifecycle.status(),value=>value.identity.runtime.digest===next.digest);
+    assert.notEqual(adopted.identity.generation,firstIdentity.generation);
+    assert.ok(isLive(firstIdentity.pid));assert.ok(fs.existsSync(runtime.entry));
+    approval=await until(()=>main!.call('conversations.read',[scope,approval.id]),value=>value.requests.length===1);
+    const activity=await observer.operations.conversations.listAll([scope],{activityState:'running'});
+    assert.equal(activity.activityCounts.running,2);assert.equal(activity.activityCounts.waiting,1);assert.equal(activity.activityCounts.unknown,0);
+    assert.deepEqual(activity.conversations.map(view=>view.id).sort(),[first.id,second.id].sort(),'retained live rounds remain in running counts and filters');
+    await main.call('conversations.reply',[scope,approval.id,approval.requests[0]!.id,{expectedRevision:approval.revision,runId:approval.run!.id,participantId:approval.run!.participantId,generation:approval.run!.generation,answer:'allow'}]);
+    await until(()=>observer!.operations.conversations.read(scope,approval.id),value=>value.run?.status==='completed');
+    first=await main.call('conversations.read',[scope,first.id]);
+    assert.equal(first.run?.generation,firstIdentity.generation);assert.equal(first.run?.status,'running');assert.ok(!first.run?.interrupted);
+    const fresh=await start('new independent work');
+    assert.equal(fresh.run?.generation,adopted.identity.generation);
+    first=await observer.operations.conversations.stop(scope,first.id,{expectedRevision:first.revision,runId:first.run!.id,participantId:first.run!.participantId,generation:first.run!.generation});
+    assert.equal(first.run?.status,'tools-active');
+    const requestId=randomUUID(),draft={expectedRevision:first.revision,connectionId:'first',text:'queued original'};
+    first=await observer.operations.conversations.queueSend(scope,first.id,{...draft,clientRequestId:requestId,previousRunId:first.run!.id});
+    assert.equal(first.pendingSend?.state,'waiting');
+    const queuedRevision=first.pendingSend!.revision;
+    assert.equal((await observer.operations.conversations.queueSend(scope,first.id,{...draft,clientRequestId:requestId})).pendingSend?.id,requestId);
+    await main.close();main=undefined;await observer.disconnect();observer=undefined;
+    main=await actor({dataRoot,profileId,runtime:next,workspace});
+    observer=await connectAgentProcess({dataRoot,profileId,runtime:next,sourceId:'minimal'});
+    first=await main.call('conversations.read',[scope,first.id]);assert.equal(first.pendingSend?.id,requestId);
+    first=await observer.operations.conversations.queueSend(scope,first.id,{...draft,expectedRevision:first.revision,text:'queued revised',clientRequestId:requestId,expectedPendingRevision:first.pendingSend!.revision});
+    await assert.rejects(observer.operations.conversations.cancelPendingSend(scope,first.id,{expectedPendingRevision:queuedRevision}),{code:'agent_pending_conflict'});
+    assert.equal(fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').split('\n').filter(line=>line.includes('queued')).length,0);
+    fs.writeFileSync(path.join(dataRoot,'finish-stop'),'yes');
+    first=await until(()=>observer!.operations.conversations.read(scope,first.id),value=>value.run?.generation===adopted.identity.generation&&value.run?.status==='completed'&&!value.pendingSend);
+    const sent=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(line=>JSON.parse(line));
+    assert.equal(sent.filter(value=>value.text==='queued revised').length,1);assert.equal(sent.find(value=>value.text==='queued revised').version,'new');
+    assert.equal(sent.filter(value=>value.text==='queued original').length,0);
+    // A response lost before the edit must not recreate its initial submission.
+    await observer.operations.conversations.queueSend(scope,first.id,{...draft,clientRequestId:requestId});
+    assert.equal((await observer.operations.conversations.lookupRequest(scope,first.id,requestId)).runId,first.run!.id);
+    second=await observer.operations.conversations.read(scope,second.id);
+    assert.equal(second.run?.generation,firstIdentity.generation);assert.equal(second.run?.status,'running');assert.ok(isLive(firstIdentity.pid));
+    second=await observer.operations.conversations.queueSend(scope,second.id,{expectedRevision:second.revision,connectionId:'first',text:'cancel this',clientRequestId:randomUUID(),previousRunId:second.run!.id});
+    const cancelled=await observer.operations.conversations.cancelPendingSend(scope,second.id,{expectedPendingRevision:second.pendingSend!.revision});assert.ok(!cancelled.pendingSend);
+    // A still-open old client must restart the latest adopted unit, not roll it
+    // back to the binary that happened to create that client.
+    const stale=await connectAgentProcess({dataRoot,profileId,runtime,sourceId:'minimal'});
+    try{
+      process.kill(adopted.identity.pid,'SIGTERM');await until(async()=>!isLive(adopted.identity.pid),Boolean);
+      const restarted=await until(()=>stale.lifecycle.status(),value=>value.identity.instanceId!==adopted.identity.instanceId);
+      assert.equal(restarted.identity.runtime.digest,next.digest);
+      await main.call('conversations.read',[scope,second.id]);
+      assert.equal((await observer.operations.conversations.read(scope,second.id)).run?.generation,firstIdentity.generation);
+    }finally{await stale.disconnect();}
+    fs.writeFileSync(path.join(dataRoot,'release-second'),'yes');
+    await until(()=>observer!.operations.conversations.read(scope,second.id),value=>value.run?.status==='completed');
+    await until(async()=>!isLive(firstIdentity.pid)&&!fs.existsSync(runtime.directory),Boolean);
+    assert.ok(fs.existsSync(next.entry));assert.ok(fs.existsSync(path.join(dataRoot,'agent-service/conversations.sqlite')));
+    assert.equal(fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').split('\n').filter(line=>line.includes('cancel this')).length,0);
+  }finally{
+    if(main)await main.close().catch(()=>main?.child.kill('SIGTERM'));
+    await observer?.disconnect();await stopAgentProcess({dataRoot,profileId}).catch(()=>{});
     fs.rmSync(root,{recursive:true,force:true});
   }
 });

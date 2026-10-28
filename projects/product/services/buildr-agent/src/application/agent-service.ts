@@ -90,18 +90,33 @@ export function createAgentService(options: AgentServiceOptions) {
     const diagnostic=discoveryDiagnostic||(failed?'部分模型账号核对失败或登录已失效，请在智能体与模型中查看。':undefined);
     return {...result,hasSnapshot,...(diagnostic?{diagnostic}:{})};
   };
-  const conversations = new ConversationApplication({ repository, connections, modelAccess: models, events, root, generation, now, host: new HostContext(options), autoContinueInterrupted: options.autoContinueInterrupted });
+  const conversations = new ConversationApplication({ repository, connections, modelAccess: models, events, root, generation, now, host: new HostContext(options), autoContinueInterrupted: options.autoContinueInterrupted, generationAlive: options.generationAlive });
   return {
     generation,
     activity() {
       const reasons = [...conversations.activity(), ...preparations.activity(), ...connections.activity(), ...models.activity()];
       if(discovery)reasons.push({kind:'model-discovery',count:1});
       try {
-        const pending = repository.listPending(true);
+        const pending = repository.listPending(true).filter(record => !options.generationAlive || record.view.run?.generation === generation);
         if(pending.length)reasons.push({kind:'unfinished-execution',count:pending.length});
       } catch { reasons.push({kind:'storage-unconfirmed',count:1}); }
       return {busy:reasons.length>0,reasons};
     },
+    async freezeMetadata() {
+      clearInterval(discoveryTimer); discoveryTimer = undefined;
+      await discovery?.catch(() => {});
+      if ([...preparations.activity(), ...connections.activity(), ...models.activity().filter(reason => reason.kind !== 'model-request')].length) {
+        startRefreshing();
+        const { AgentServiceError } = await import('../domain/agent-state.ts');
+        throw new AgentServiceError('agent_process_busy', '仍有账号、准备或配置写入操作，尚未交接维护权。', 409);
+      }
+      connections.freezeMetadata(); models.freezeMetadata();
+    },
+    resumeMetadata() { connections.freezeMetadata(false); models.freezeMetadata(false); startRefreshing(); },
+    conversationBusy: (scope: string, id: string) => conversations.busy(scope, id),
+    verifyNext: (scope: string, id: string) => conversations.verifyNext(scope, id),
+    validatePending: (scope: string, id: string, input: SendDraft) => conversations.validatePending(scope, id, input),
+    revokeModel: (id: string) => models.invalidate(id),
     models: { startRefreshing, generate: models.generate, accounts: {...models.accounts,list:async(input:{refresh?:boolean}={})=>{if(input.refresh===true)await discover();return models.accounts.list();}}, catalog: {list:async(input:{refresh?:boolean}={})=>{if(input.refresh===true)await discover();return cachedCatalog();}} },
     connections: {
       list: () => ({ connections: connections.list() }),
@@ -140,6 +155,8 @@ export function createAgentService(options: AgentServiceOptions) {
       prepareHandoff: (workspaceId:string,id:string,input:SendDraft) => conversations.prepareHandoff(workspaceId,id,input),
       prepareSend: (workspaceId: string, id: string, input: SendDraft) => conversations.prepareSend(workspaceId, id, input),
       send: (workspaceId: string, id: string, input: Parameters<ConversationApplication['send']>[2]) => conversations.send(workspaceId, id, input),
+      queueSend: (workspaceId: string, id: string, input: Parameters<ConversationApplication['queueSend']>[2]) => conversations.queueSend(workspaceId, id, input),
+      cancelPendingSend: (workspaceId: string, id: string, input: Parameters<ConversationApplication['cancelPendingSend']>[2]) => conversations.cancelPendingSend(workspaceId, id, input),
       observe: (workspaceId: string, id: string) => conversations.observe(workspaceId, id),
       stop: (workspaceId: string, id: string, input: Parameters<ConversationApplication['stop']>[2]) => conversations.stop(workspaceId, id, input),
       reply: (workspaceId: string, id: string, requestId: string, input: Parameters<ConversationApplication['reply']>[3]) => conversations.reply(workspaceId, id, requestId, input),

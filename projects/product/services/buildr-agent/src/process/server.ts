@@ -8,25 +8,32 @@ import { AGENT_EXECUTION_CONTRACTS, executionScopeRef } from '../execution-contr
 import type { AgentProcessIdentity, AgentProcessStatus, AgentRuntimeUnit } from '../execution-contracts.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
 import { AgentHostRegistry } from './host-channel.ts';
-import { dispatchOperation } from './operations.ts';
-import { authorize, body, json, listen } from './transport.ts';
-import { claim, clearProcessRecord, controlRoot, readPrivate, writePrivate } from './ownership.ts';
-import type { ProcessBootstrap } from './ownership.ts';
-import { validateAgentRuntime } from './runtime-unit.ts';
+import { dispatchOperation, validateOperation } from './operations.ts';
+import { authorize, body, json, listen, request, privateToken } from './transport.ts';
+import { claim, clearProcessRecord, controlRoot, readPrivate, writePrivate, readProcessRecord, readProcessInstances, writeProcessInstance, generationAlive, live, readLock } from './ownership.ts';
+import type { ProcessBootstrap, ProcessRecord } from './ownership.ts';
+import { validateAgentRuntime, canRunParallel } from './runtime-unit.ts';
+import { launchAgentProcess } from './handoff.ts';
+import { ConversationRepository } from '../persistence/conversation-repository.ts';
+import { PendingSends } from './pending-sends.ts';
+import { PendingSendRepository } from '../persistence/pending-send-repository.ts';
+import { cleanupStoppedProcesses } from './cleanup.ts';
 
-interface PendingRuntime { runtime: AgentRuntimeUnit; state: 'waiting' | 'switching' | 'failed'; coordinatorPid?: number; handoffFile?: string; diagnostic?: string }
+interface PendingRuntime { runtime: AgentRuntimeUnit; state: 'waiting' | 'switching' | 'parallel-starting' | 'failed'; coordinatorPid?: number; handoffFile?: string; diagnostic?: string }
 export async function startAgentExecutionServer(options: ProcessBootstrap & { serviceOptions?: Pick<AgentServiceOptions, 'executors' | 'modelProviders' | 'programManager'> }) {
   validateAgentRuntime(options.dataRoot, options.runtime);
-  const owner = claim(options.dataRoot, 'owner');
+  let owner = claim(options.dataRoot, 'owner'), ownsMetadata = true;
   let abortStart: (() => Promise<void>) | undefined;
   try {
   const hosts = new AgentHostRegistry();
-  const service = createAgentService({ ...options.serviceOptions, dataRoot: options.dataRoot, legacySourceId: options.legacySourceId, autoContinueInterrupted: options.autoContinueInterrupted, host: hosts });
+  const service = createAgentService({ ...options.serviceOptions, dataRoot: options.dataRoot, legacySourceId: options.legacySourceId, autoContinueInterrupted: options.autoContinueInterrupted, host: hosts, generationAlive: generation => generationAlive(options.dataRoot, generation) });
+  const repository = new ConversationRepository(path.join(options.dataRoot, 'agent-service'));
   service.models.startRefreshing();
   abortStart = () => service.close();
   const instanceId = randomUUID(), pendingFile = path.join(controlRoot(options.dataRoot), 'pending.json');
-  const identity: AgentProcessIdentity = { contracts: AGENT_EXECUTION_CONTRACTS, instanceId, generation: service.generation, profileId: options.profileId, dataRoot: path.resolve(options.dataRoot), pid: process.pid, runtime: options.runtime };
+  const identity: AgentProcessIdentity = { contracts: AGENT_EXECUTION_CONTRACTS, instanceId, generation: service.generation, profileId: options.profileId, dataRoot: path.resolve(options.dataRoot), pid: process.pid, runtime: options.runtime, parallelCompatibility: options.runtime.parallelCompatibility };
   let accepting = true, closing = false, recovering = false, startedRecovery = false, inflight = 0;
+  let retiring = false, adopting: Promise<void> | undefined;
   let pending = readPrivate<PendingRuntime>(pendingFile);
   if (pending?.runtime.digest === options.runtime.digest) { pending = undefined; writePrivate(pendingFile, { runtime: options.runtime, state: 'adopted' }); }
   if (pending?.state === 'switching') pending = { ...pending, state: 'failed', diagnostic: '上次切换尚未确认，请核对实际运行版本。' };
@@ -36,8 +43,34 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     if (inflight) activity.reasons.push({ kind: 'operation', count: inflight });
     if (recovering) activity.reasons.push({ kind: 'recovery-start', count: 1 });
     activity.busy = activity.reasons.length > 0;
-    return { identity, activity, accepting, ...(pending && pending.runtime.digest !== options.runtime.digest ? { pendingRuntime: pending.runtime, diagnostic: pending.diagnostic } : {}) };
+    return { identity, activity, accepting, retiring, instances: readProcessInstances(options.dataRoot).filter(record => !record.stopped && live(record.identity.pid)).map(record => ({generation:record.identity.generation,runtimeDigest:record.identity.runtime.digest,retiring:Boolean(record.retiring)})), ...(pending && pending.runtime.digest !== options.runtime.digest ? { pendingRuntime: pending.runtime, diagnostic: pending.diagnostic } : {}) };
   }
+  async function recipient(scope: string, id: string, generation?: string): Promise<ProcessRecord | undefined> {
+    const run = repository.readConversation(id)?.view.run;
+    const ownerGeneration = generation ?? run?.generation;
+    if (!ownerGeneration || ownerGeneration === identity.generation) return;
+    const record = readProcessInstances(options.dataRoot).find(record => record.identity.generation === ownerGeneration && !record.stopped);
+    if (!record || !live(record.identity.pid)) return;
+    if (record.identity.profileId !== options.profileId) throw new AgentServiceError('agent_process_identity_mismatch', '执行所属配置域不匹配。', 409);
+    if (generation) return record;
+    const state = await request(record.origin, record.token, '/conversation-state', { scope, id }, AbortSignal.timeout(3000)).catch(error => {
+      if (error instanceof AgentServiceError) throw error;
+      throw new AgentServiceError('agent_process_state_unconfirmed', '上一轮后台状态尚未确认，指令已保存并继续等待。', 503);
+    });
+    if (state.generation !== ownerGeneration) throw new AgentServiceError('agent_process_identity_mismatch', '执行所属后台身份不匹配。', 409);
+    return state.busy ? record : undefined;
+  }
+  async function conversationBusy(scope: string, id: string): Promise<boolean> {
+    if (await recipient(scope, id)) return true;
+    return service.conversationBusy(scope, id);
+  }
+  async function forward(record: ProcessRecord, route: string, input: any): Promise<any> {
+    const visited: string[] = input.forwarded ?? [];
+    if (!Array.isArray(visited) || visited.length > 8 || visited.includes(identity.instanceId)) throw new AgentServiceError('agent_process_route_conflict', '执行归属发生变化，请重新读取。', 409);
+    try { return await request(record.origin, record.token, route, {...input,forwarded:[...visited,identity.instanceId]}); }
+    catch (error) { if (error instanceof AgentServiceError) throw error; throw new AgentServiceError('agent_operation_result_unknown', '原后台操作结果尚待核对，不会自动重发。', 503); }
+  }
+  const sends = new PendingSends({dataRoot:options.dataRoot,service,active:()=>!closing&&accepting&&!retiring&&(!pending||pending.runtime.digest===options.runtime.digest)&&readProcessRecord(options.dataRoot)?.identity.instanceId===instanceId,generationAlive:generation=>generationAlive(options.dataRoot,generation),conversationBusy});
   function scope(sourceId: string, key: unknown): void {
     if (typeof key !== 'string' || !key || executionScopeRef(key, options.legacySourceId).sourceId !== sourceId) throw new AgentServiceError('agent_host_source_mismatch', '执行范围不属于当前接入来源。', 409);
   }
@@ -54,13 +87,21 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     if (req.method !== 'POST') throw new AgentServiceError('agent_process_operation_invalid', '不支持的执行后台入口。', 404);
     const input = await body(req);
     if (req.url === '/host/attach') {
-      if (!accepting || closing) throw new AgentServiceError('agent_process_switching','执行后台正在切换，宿主尚未接入。',503);
+      if (closing) throw new AgentServiceError('agent_process_switching','执行后台正在退出，宿主尚未接入。',503);
       hosts.attach(input.peer);
-      if (!startedRecovery) { startedRecovery = true; recovering = true; void service.conversations.recoverInterrupted().catch(() => {}).finally(() => { recovering = false; }); }
+      if (!startedRecovery && !retiring) { startedRecovery = true; recovering = true; void service.conversations.recoverInterrupted().catch(() => {}).finally(() => { recovering = false; }); }
       json(res, 200, { attached: true }); return;
     }
     if (req.url === '/host/detach') { hosts.detach(input.peerId); json(res, 200, { detached: true }); return; }
+    if (req.url === '/conversation-state') { json(res, 200, {generation:identity.generation,busy:service.conversationBusy(input.scope,input.id)}); return; }
+    if (req.url === '/revoke') {
+      if (input.connectionId) { service.revokeModel('native-'+input.connectionId); await service.connections.disconnect(input.connectionId, {expectedRevision:service.connections.read(input.connectionId).revision}); }
+      if (input.accountId) service.revokeModel(input.accountId);
+      json(res, 200, {revoked:true}); return;
+    }
     if (req.url === '/runtime') {
+      const current = readProcessRecord(options.dataRoot);
+      if (retiring && current && current.identity.instanceId !== instanceId) { json(res, 200, await forward(current, '/runtime', {...input,expectedGeneration:current.identity.generation})); return; }
       if(closing || !accepting)throw new AgentServiceError('agent_process_switching','执行后台正在切换，尚未受理新更新。',503);
       if (input.expectedGeneration !== identity.generation) throw new AgentServiceError('agent_control_stale', '执行后台代次已变化。', 409);
       validateAgentRuntime(options.dataRoot, input.runtime);
@@ -73,21 +114,43 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       if (input.mode === 'if-idle' && status().activity.busy) throw new AgentServiceError('agent_process_busy', '执行后台仍有工作或待确认事项。', 409);
       accepting = false; json(res, 202, { accepted: true }); setImmediate(() => { void close().finally(() => { process.exitCode = 0; }); }); return;
     }
-    if (!accepting) throw new AgentServiceError('agent_process_switching', '执行后台正在切换，本次新操作尚未受理。', 503);
     if (req.url === '/cancel-generation') { generations.get(input.requestId)?.abort(); json(res, 200, { cancelled: true }); return; }
     if (req.url === '/events') {
       scope(input.sourceId, input.scope);
       const subscription = service.conversations.subscribe(input.scope, input.id);
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store' });
       const controller = new AbortController();
-      const stop = () => { controller.abort(); subscription.close(); }; res.once('close', stop);
-      try { for await (const event of subscription.events) { if (res.destroyed) break; if (!res.write('data: ' + JSON.stringify(event) + '\n\n')) await once(res, 'drain', {signal:controller.signal}); } }
-      finally { res.removeListener('close', stop); subscription.close(); if (!res.destroyed) res.end(); }
+      let signature = '', relayCursor = 0;
+      const refresh = () => {
+        if (res.destroyed || controller.signal.aborted) return;
+        try {
+          const conversation = service.conversations.read(input.scope, input.id);
+          const next = [conversation.revision,conversation.pendingSend?.revision,conversation.activity?.seenThrough].join(':');
+          if (next === signature) return;
+          signature = next;
+          if (res.writableLength > 8 * 1024 * 1024) { res.destroy(); return; }
+          res.write('data: ' + JSON.stringify({type:'conversation',generation:identity.generation,cursor:++relayCursor,workspaceId:input.scope,conversationId:input.id,revision:conversation.revision,payload:{conversation}}) + '\n\n');
+        } catch { /* Preserve the last observed snapshot on a transient read conflict. */ }
+      };
+      // Shared snapshots also cover another retained generation and pending-only
+      // changes; they do not resume native contexts or trigger an execution.
+      const poll = setInterval(refresh, 500); poll.unref();
+      const stop = () => { controller.abort(); subscription.close(); clearInterval(poll); }; res.once('close', stop);
+      try { for await (const event of subscription.events) {
+        if (res.destroyed) break;
+        const conversation = service.conversations.read(input.scope, input.id);
+        signature = [conversation.revision,conversation.pendingSend?.revision,conversation.activity?.seenThrough].join(':');
+        if (!res.write('data: ' + JSON.stringify({...event,cursor:++relayCursor,revision:conversation.revision,payload:{conversation}}) + '\n\n')) await once(res, 'drain', {signal:controller.signal});
+      } }
+      finally { res.removeListener('close', stop); clearInterval(poll); controller.abort(); subscription.close(); if (!res.destroyed) res.end(); }
       return;
     }
     inflight++;
     try {
       if (req.url === '/generate') {
+        const current = readProcessRecord(options.dataRoot);
+        if (retiring && current && current.identity.instanceId !== instanceId) throw new AgentServiceError('agent_process_switching','新模型调用请重新连接当前后台，本次尚未受理。',503);
+        if (!accepting) throw new AgentServiceError('agent_process_switching', '新版尚未就绪，本次模型请求尚未受理。', 503);
         if (typeof input.requestId !== 'string' || generations.has(input.requestId)) throw new AgentServiceError('agent_generation_conflict', '模型调用身份已占用。', 409);
         const controller = new AbortController(); generations.set(input.requestId, controller);
         const disconnected = () => { if(!res.writableEnded)controller.abort(); }; res.once('close',disconnected);
@@ -97,13 +160,40 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       }
       if (req.url !== '/operations' || input.contract !== AGENT_EXECUTION_CONTRACTS.operations || typeof input.sourceId !== 'string' || typeof input.operation !== 'string' || !Array.isArray(input.args)) throw new AgentServiceError('agent_process_operation_invalid', '执行操作契约不匹配。');
       operationScopes(input.sourceId, input.operation, input.args);
+      validateOperation(input.operation, input.args);
+      const name: string = input.operation;
+      let target: ProcessRecord | undefined;
+      const perConversation = name.startsWith('conversations.') && typeof input.args[0] === 'string' && typeof input.args[1] === 'string';
+      if (perConversation && !['conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) {
+        const control = name === 'conversations.stop' ? input.args[2] : name === 'conversations.reply' ? input.args[3] : undefined;
+        target = await recipient(input.args[0], input.args[1], control?.generation);
+      }
+      const current = readProcessRecord(options.dataRoot);
+      if (!target && retiring && current && current.identity.instanceId !== instanceId) {
+        const run = perConversation ? repository.readConversation(input.args[1])?.view.run : undefined;
+        const ownsRun = run?.generation === identity.generation;
+        if (!ownsRun || ['conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) target = current;
+      }
+      if (target) { json(res, 200, await forward(target, '/operations', input)); return; }
+      const startsWork = !name.startsWith('conversations.') || ['conversations.create','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.generateTitle'].includes(name);
+      if (startsWork && !accepting) throw new AgentServiceError('agent_process_switching', '执行后台正在采用新版，本次新操作尚未受理。', 503);
+      if (name === 'conversations.send' && pending?.runtime.digest !== undefined && pending.runtime.digest !== options.runtime.digest) throw new AgentServiceError('agent_process_switching','新版尚未就绪，可以提交待发送内容。',503);
+      if (name === 'conversations.send' && await conversationBusy(input.args[0],input.args[1])) throw new AgentServiceError('agent_conversation_busy','上一轮仍未释放，可以提交待发送内容。',409);
+      if (name === 'conversations.send' && new PendingSendRepository(path.join(options.dataRoot,'agent-service')).read(input.args[0],input.args[1])) throw new AgentServiceError('agent_pending_conflict','已有待发送内容，请等待、修改或取消。',409);
       let result: any = await dispatchOperation(service, input.operation, input.args);
+      if (name === 'connections.disconnect' || name === 'models.accounts.disconnect') {
+        const revoke = name === 'connections.disconnect' ? {connectionId:input.args[0]} : {accountId:input.args[0]};
+        const released=await Promise.allSettled(readProcessInstances(options.dataRoot).filter(record=>record.identity.instanceId!==instanceId&&!record.stopped&&live(record.identity.pid)).map(record=>request(record.origin,record.token,'/revoke',revoke)));
+        if(released.some(value=>value.status==='rejected'))throw new AgentServiceError('agent_connection_release_unconfirmed','接入已断开，部分旧执行释放尚待核对。',409);
+      }
       if (input.operation === 'conversations.pending') result = { conversations: result.conversations.filter((value: {workspaceId:string}) => executionScopeRef(value.workspaceId, options.legacySourceId).sourceId === input.sourceId) };
       json(res, 200, result);
     } finally { inflight--; }
   });
   abortStart = async () => { await channel.close(); await service.close(); };
-  writePrivate(path.join(controlRoot(options.dataRoot), 'instance.json'), { identity, origin: channel.origin, token: options.token });
+  const processRecord = (): ProcessRecord => ({identity,origin:channel.origin,token:options.token,retiring});
+  writeProcessInstance(options.dataRoot, processRecord());
+  writePrivate(path.join(controlRoot(options.dataRoot), 'instance.json'), processRecord());
   let closeWork: Promise<void> | undefined;
   function close(): Promise<void> {
     if (closeWork) return closeWork;
@@ -116,14 +206,73 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
         const activity = service.activity();
         confirmed=!activity.busy;
         writePrivate(path.join(controlRoot(options.dataRoot), 'last-stop.json'), { instanceId, confirmed, reasons: activity.reasons });
+        writeProcessInstance(options.dataRoot, {...processRecord(),stopped:true,confirmed});
         await channel.close(); clearProcessRecord(options.dataRoot, instanceId);
-      } finally { if(confirmed)owner.release(); clearInterval(timer); process.removeListener('SIGTERM', signal); process.removeListener('SIGINT', signal); }
+      } finally { if(confirmed&&ownsMetadata)owner.release(); clearInterval(timer); process.removeListener('SIGTERM', signal); process.removeListener('SIGINT', signal); }
     })(); return closeWork;
   }
   const signal = () => { void close().finally(() => { process.exitCode = 0; }); };
   process.once('SIGTERM', signal); process.once('SIGINT', signal);
+  async function adoptParallel(target: AgentRuntimeUnit): Promise<void> {
+    let startup: ReturnType<typeof claim> | undefined;
+    let pid: number | undefined;
+    accepting = false;
+    try {
+      startup = claim(options.dataRoot, 'startup');
+      await service.freezeMetadata();
+      if (inflight || recovering || closing) { service.resumeMetadata(); accepting = !closing; return; }
+      retiring = true;
+      writeProcessInstance(options.dataRoot, processRecord());
+      writePrivate(path.join(controlRoot(options.dataRoot),'instance.json'),processRecord());
+      owner.release(); ownsMetadata = false;
+      pending = {runtime:target,state:'parallel-starting'}; writePrivate(pendingFile,pending);
+      pid = launchAgentProcess({...options,runtime:target,token:privateToken()});
+      for (let attempt=0;attempt<200;attempt++) {
+        const current = readProcessRecord(options.dataRoot);
+        if (current && current.identity.runtime.digest===target.digest && current.identity.instanceId!==instanceId) {
+          const observed = await request(current.origin,current.token,'/identity',undefined,AbortSignal.timeout(1000)).catch(()=>undefined);
+          if (observed?.instanceId===current.identity.instanceId && observed.generation===current.identity.generation) { pending=undefined;return; }
+        }
+        if (!live(pid)) break;
+        await new Promise(resolve=>setTimeout(resolve,100));
+      }
+      throw new AgentServiceError('agent_process_start_unconfirmed','新版尚未确认就绪，原工作和待发送内容已保留。',503);
+    } catch (error) {
+      if (ownsMetadata) { accepting = true; pending = {runtime:target,state:'waiting'}; }
+      else {
+        const holder=readLock(options.dataRoot,'owner');
+        if ((!pid||!live(pid))&&(!holder||!live(holder.pid))) {
+          // Another offline observer may briefly own the metadata lock. Failure
+          // to reacquire it must not reject the adoption task and kill old runs.
+          let restored: ReturnType<typeof claim> | undefined;
+          try { restored=claim(options.dataRoot,'owner'); } catch { /* Keep the original execution owner and wait. */ }
+          if(restored){
+            owner=restored;ownsMetadata=true;retiring=false;
+            service.resumeMetadata();accepting=true;
+            writeProcessInstance(options.dataRoot,processRecord());writePrivate(path.join(controlRoot(options.dataRoot),'instance.json'),processRecord());
+          }
+        }
+        pending={runtime:target,state:'failed',diagnostic:'新版后台未确认就绪，原工作和待发送内容已保留。'};
+        sends.waiting('新版执行后台尚未就绪，指令已保存；恢复后将自动接续。');
+      }
+      writePrivate(pendingFile,pending);
+    } finally { startup?.release(); }
+  }
   const timer = setInterval(() => {
+    if (closing || adopting) return;
+    if (retiring) {
+      if (!status().activity.busy && !inflight) void close().finally(()=>{process.exitCode=0;});
+      return;
+    }
+    if (accepting) { void sends.pump().catch(()=>{}); try { cleanupStoppedProcesses(options.dataRoot,options.runtime); } catch { /* Unknown resources remain retained. */ } }
+    if (pending?.state==='waiting' && canRunParallel(options.runtime,pending.runtime) && !inflight && !recovering && !sends.busy) {
+      const target=pending.runtime;
+      adopting=adoptParallel(target).finally(()=>{adopting=undefined;});
+      return;
+    }
     if (closing || pending?.state !== 'waiting' || !accepting || status().activity.busy) return;
+    const starting=readLock(options.dataRoot,'startup');if(starting&&live(starting.pid))return;
+    if (readProcessInstances(options.dataRoot).some(record=>record.identity.instanceId!==instanceId&&!record.stopped&&live(record.identity.pid))) return;
     accepting = false;
     if (status().activity.busy) { accepting = true; return; }
     const target = pending.runtime;

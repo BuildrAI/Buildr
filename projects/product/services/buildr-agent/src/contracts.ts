@@ -236,6 +236,7 @@ export interface PendingRequestView extends ExecutorRequest {
   generation: string;
 }
 export interface ConversationView {
+  pendingSend?: PendingSendView;
   activity?: { version: number; seenThrough: number; updatedAt: string; active: boolean };
   titleState?: { status: 'pending' | 'generating' | 'generated' | 'manual' | 'failed' | 'unavailable' | 'unknown'; reason?: string };
   id: string;
@@ -281,6 +282,15 @@ export interface SendDraft {
   /** Explicit user-authored replacement for the selected history range. */
   handoffSummary?: string;
 }
+export interface PendingSendView {
+  id: string;
+  revision: string;
+  state: 'waiting' | 'dispatching' | 'failed';
+  draft: SendDraft;
+  reason: string;
+  createdAt: string;
+  updatedAt: string;
+}
 export interface SendPreview {
   handoff?: HandoffMaterial;
   modelAccountId?: string; modelAccountIdentity?: string; modelAccountRevision?: string; modelSourceLabel?: string;
@@ -314,6 +324,8 @@ export interface ServiceEvent {
   payload: { conversation?: ConversationView; connection?: ConnectionView };
 }
 export interface AgentServiceOptions {
+  /** Other accurately discovered process generations must not be recovered. */
+  generationAlive?: (generation: string) => boolean;
   /** Trusted host profile only; released installations default to manual continuation. */
   autoContinueInterrupted?: boolean;
   modelProviders?: ModelProvider[];

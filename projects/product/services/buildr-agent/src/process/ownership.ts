@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type { AgentProcessIdentity, AgentRuntimeUnit } from '../execution-contracts.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
 
-export interface ProcessRecord { identity: AgentProcessIdentity; origin: string; token: string }
+export interface ProcessRecord { identity: AgentProcessIdentity; origin: string; token: string; retiring?: boolean; stopped?: boolean; confirmed?: boolean }
 export interface ProcessBootstrap { dataRoot: string; profileId: string; runtime: AgentRuntimeUnit; token: string; legacySourceId?: string; autoContinueInterrupted?: boolean }
 export const controlRoot = (dataRoot: string) => path.join(path.resolve(dataRoot), 'agent-service', 'process');
 export function privateDirectory(directory: string): void {
@@ -77,6 +77,38 @@ export function claim(dataRoot: string, name: 'owner' | 'startup'): { release():
 }
 export function readProcessRecord(dataRoot: string): ProcessRecord | undefined {
   return readPrivate<ProcessRecord>(path.join(controlRoot(dataRoot), 'instance.json'));
+}
+const instanceFile = (dataRoot: string, generation: string) => {
+  if (!/^[a-f0-9-]{36}$/.test(generation)) throw new AgentServiceError('agent_process_identity_mismatch', '后台代次无效。', 409);
+  return path.join(controlRoot(dataRoot), 'instances', generation + '.json');
+};
+export function writeProcessInstance(dataRoot: string, record: ProcessRecord): void {
+  if (record.identity.dataRoot !== path.resolve(dataRoot)) throw new AgentServiceError('agent_process_identity_mismatch', '后台数据范围不匹配。', 409);
+  writePrivate(instanceFile(dataRoot, record.identity.generation), record);
+}
+export function readProcessInstances(dataRoot: string): ProcessRecord[] {
+  const directory = path.join(controlRoot(dataRoot), 'instances');
+  const records = new Map<string, ProcessRecord>();
+  if (fs.existsSync(directory)) {
+    if (fs.lstatSync(directory).isSymbolicLink()) throw new AgentServiceError('agent_process_storage_unsafe', '后台实例目录来源不安全。', 409);
+    for (const name of fs.readdirSync(directory)) {
+      if (!/^[a-f0-9-]{36}\.json$/.test(name)) continue;
+      const record = readPrivate<ProcessRecord>(path.join(directory, name));
+      if (!record || record.identity.dataRoot !== path.resolve(dataRoot) || name !== record.identity.generation + '.json') throw new AgentServiceError('agent_process_identity_mismatch', '后台实例登记不匹配。', 409);
+      records.set(record.identity.generation, record);
+    }
+  }
+  const current = readProcessRecord(dataRoot);
+  if (current) records.set(current.identity.generation, current);
+  return [...records.values()];
+}
+export function generationAlive(dataRoot: string, generation: string): boolean {
+  return readProcessInstances(dataRoot).some(record => record.identity.generation === generation && !record.stopped && live(record.identity.pid));
+}
+export function removeProcessInstance(dataRoot: string, record: ProcessRecord): void {
+  const filename = instanceFile(dataRoot, record.identity.generation);
+  const current = readPrivate<ProcessRecord>(filename);
+  if (current?.identity.instanceId === record.identity.instanceId) fs.unlinkSync(filename);
 }
 export function clearProcessRecord(dataRoot: string, instanceId: string): void {
   const filename = path.join(controlRoot(dataRoot), 'instance.json');

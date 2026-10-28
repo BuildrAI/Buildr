@@ -42,6 +42,8 @@ export const AGENT_SERVICE_HTTP_OPERATIONS = [
   operation('entries', 'GET', `${workspace}/:conversationId/entries`, 'empty', 'conversation'),
   operation('prepare-send', 'POST', `${workspace}/:conversationId/prepare-send`, 'draft', 'preview'),
   operation('send', 'POST', `${workspace}/:conversationId/send`, 'send', 'sent'),
+  operation('queue-send', 'POST', `${workspace}/:conversationId/pending-send`, 'queueSend', 'conversation'),
+  operation('cancel-pending-send', 'POST', `${workspace}/:conversationId/cancel-pending-send`, 'cancelPendingSend', 'conversation'),
   operation('generate-title', 'POST', `${workspace}/:conversationId/generate-title`, 'revision', 'conversation'),
   operation('observe', 'POST', `${workspace}/:conversationId/observe`, 'empty', 'conversation'),
   operation('stop', 'POST', `${workspace}/:conversationId/stop`, 'stop', 'conversation'),

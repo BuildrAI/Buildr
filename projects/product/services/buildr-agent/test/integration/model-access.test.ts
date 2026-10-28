@@ -13,6 +13,24 @@ function provider(infer:(input:ProviderInferenceInput)=>Promise<Response>,protoc
   return {id:'fixture',label:'Fixture',async open(){return {protocol,async inspect(){return {status:'ready',label:'套餐账号',models:[model],quota:{available:false,observedAt:new Date().toISOString()}};},async beginLogin(update){update({state:'waiting-browser',url:'https://auth.example.com/?state=secret-login-state'});},async cancelLogin(){},infer,async close(){}};}};
 }
 const chat=(message:ProtocolJson)=>Response.json({choices:[{message,finish_reason:message.tool_calls?'tool_calls':'stop'}],usage:{prompt_tokens:12,completion_tokens:4}});
+
+test('retiring model gateway observes successor account state without writing stale metadata',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-model-retiring-'));
+  const source=provider(async()=>chat({role:'assistant',content:'ok'}));
+  const old=createModelAccess({root,providers:[source]});let current:ReturnType<typeof createModelAccess>|undefined;
+  try{
+    const added=await old.accounts.add({provider:'fixture'}),ready=await checkEnabled(old,added.id);
+    const lease=await old.leases.create({accountId:ready.id,modelId:model.id,agentId:'codex',conversationId:'one',runId:'one'});
+    old.freezeMetadata();current=createModelAccess({root,providers:[source]});
+    await current.accounts.disconnect(ready.id,{expectedRevision:ready.revision});
+    const metadata=await readFile(join(root,'accounts.json'),'utf8');
+    assert.equal(old.accounts.read(ready.id).enabled,false);
+    await assert.rejects(old.accounts.preferences(ready.id,{expectedRevision:old.accounts.read(ready.id).revision,models:[{id:model.id,enabled:true}]}),{code:'model_owner_transferred'});
+    const response=await fetch(lease.baseUrl+'/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+lease.apiKey,'Content-Type':'application/json'},body:JSON.stringify({model:lease.model,messages:[{role:'user',content:'test'}]})});
+    assert.equal(response.status,409);await response.body?.cancel();
+    assert.equal(await readFile(join(root,'accounts.json'),'utf8'),metadata);
+  }finally{await old.close();await current?.close();await rm(root,{recursive:true,force:true});}
+});
 function frames(values:unknown[]){return new Response(values.map(value=>'data: '+JSON.stringify(value)+'\n\n').join('')+'data: [DONE]\n\n',{headers:{'Content-Type':'text/event-stream'}});}
 
 test('gateway preserves a bounded HTTP failure before streaming without exposing credentials or HTML',async()=>{

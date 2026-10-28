@@ -7,6 +7,8 @@ import type { StoredConnection } from '../domain/agent-state.ts';
 import type { ConversationRepository } from '../persistence/conversation-repository.ts';
 
 export class ConnectionApplication {
+  private metadataReadOnly = false;
+  freezeMetadata(value = true): void { this.metadataReadOnly = value; }
   private readonly executors: Map<string, AgentExecutor>;
   private readonly gatewayRuntimes = new Map<string, Promise<AgentRuntime>>();
   private readonly runtimes = new Map<string, Promise<AgentRuntime>>();
@@ -45,6 +47,9 @@ export class ConnectionApplication {
     } };
   }
   private save(record: StoredConnection): ConnectionView {
+    // A retiring instance may observe its owned runtime, but shared metadata
+    // belongs to the successor. Do not publish a stale runtime observation.
+    if (this.metadataReadOnly) return this.get(record.view.id);
     const prior = record.view.revision === 'unconfigured' ? undefined : record.view.revision;
     record.view.revision = randomUUID();
     // Auth URLs live only in the current login attempt, never in persistent records or event diagnostics.

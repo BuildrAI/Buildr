@@ -49,6 +49,7 @@ export class ModelAccessApplication {
   private keyLoading?: Promise<Buffer>;
   private storageError?: ModelAccessError;
   private storedDigest?: string;
+  private metadataReadOnly = false;
   private readonly options: ModelAccessOptions;
   private get now() { return (this.options.now?.() ?? new Date()).toISOString(); }
   constructor(options: ModelAccessOptions) {
@@ -73,7 +74,7 @@ export class ModelAccessApplication {
         // Legacy records predate credential generations; their stable account ID is isolated.
         if(!view.identity) view.identity = digest('legacy-account:'+view.id);
         if(view.loginAttempt) delete view.loginAttempt.url;
-        if (view.loginAttempt && ['initializing', 'waiting-browser', 'checking'].includes(view.loginAttempt.state)) view.loginAttempt = { ...view.loginAttempt, state: 'expired', diagnostic: '服务已重启，请重新登录。' };
+        if (!this.metadataReadOnly && view.loginAttempt && ['initializing', 'waiting-browser', 'checking'].includes(view.loginAttempt.state)) view.loginAttempt = { ...view.loginAttempt, state: 'expired', diagnostic: '服务已重启，请重新登录。' };
         const prefs=object(object(stored.preferences)[view.id]) as Record<string,ModelPreference>;
         for(const model of view.models)if(!Object.hasOwn(prefs,model.id))Object.defineProperty(prefs,model.id,{value:{enabled:model.kind!=='combination'&&!/^fusion(?:-|$)/i.test(model.id)},enumerable:true,writable:true,configurable:true});
         for(const value of Object.values(prefs))if(!value||typeof value.enabled!=='boolean'||value.contextWindow!==undefined&&(!Number.isSafeInteger(value.contextWindow)||value.contextWindow<1||value.contextWindow>10000000))throw new Error('invalid-preference');
@@ -88,6 +89,7 @@ export class ModelAccessApplication {
     await chmod(this.options.root, 0o700);
   }
   private async save() {
+    if (this.metadataReadOnly) throw new ModelAccessError('model_owner_transferred', '账号配置已交由新版维护，请使用当前入口。', 409);
     if (this.storageError) throw this.storageError;
     const body: Stored = { version: 1, preferences:structuredClone(Object.fromEntries(this.preferences)), accounts: [...this.rows.values()].map(row => { const copy = structuredClone(row); if (copy.loginAttempt) delete copy.loginAttempt.url; return copy; }) };
     this.pendingWrites++;
@@ -108,6 +110,12 @@ export class ModelAccessApplication {
     this.writeChain = work.catch(() => {}); try { await work; } finally { this.pendingWrites--; }
   }
   private current(id: string): ModelAccountView {
+    if (this.metadataReadOnly) {
+      const filename=join(this.options.root,'accounts.json'),stat=lstatSync(filename);
+      if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1)throw new ModelAccessError('model_storage_unsafe','模型账号存储来源不安全。',409);
+      const content = readFileSync(filename, 'utf8');
+      if (digest(content) !== this.storedDigest) { this.rows.clear(); this.preferences.clear(); this.load(); }
+    }
     if (this.storageError) throw this.storageError;
     const row = this.rows.get(id);
     if (!row) throw new ModelAccessError('model_account_missing', '模型账号不存在。', 404);
@@ -287,7 +295,7 @@ export class ModelAccessApplication {
     const existing = this.leasesByIdentity.get(identity); if (existing) { existing.input.runId = input.runId; return structuredClone(existing.view); }
     const baseUrl = await this.start(), token = randomBytes(32).toString('base64url'); await this.encryptionKey();
     const view: ModelGatewayLease = { identity, baseUrl: baseUrl + '/v1', apiKey: token, model: `buildr-${identity.slice(0,32)}`, offering: structuredClone(offering), accountId: account.id, accountLabel: account.accountLabel || account.label, provider: account.provider };
-    const lease: LeaseRecord = { view, input: { ...input }, tokenHash: digest(token), requests: new Set() }; this.leasesByToken.set(lease.tokenHash,lease); this.leasesByIdentity.set(identity,lease); return structuredClone(view);
+    const lease: LeaseRecord = { view, input: { ...input, expectedIdentity: account.identity }, tokenHash: digest(token), requests: new Set() }; this.leasesByToken.set(lease.tokenHash,lease); this.leasesByIdentity.set(identity,lease); return structuredClone(view);
   }
   async generate(input: ModelLeaseInput & { prompt: string; signal: AbortSignal }): Promise<string> {
     input.signal.throwIfAborted();
@@ -333,6 +341,7 @@ export class ModelAccessApplication {
       if(!token || (typeof apiKey==='string'&&auth?.startsWith('Bearer ')&&apiKey!==token)) throw new ModelAccessError('model_gateway_unauthorized','模型调用缺少准确本机认证。',401);
       lease = this.leasesByToken.get(digest(token)); if (!lease) throw new ModelAccessError('model_gateway_unauthorized','模型调用的本机凭据已失效。',401);
       const account = this.current(lease.input.accountId); if (!account.enabled) throw new ModelAccessError('model_account_unavailable','所选套餐已断开。');
+      if(account.identity!==lease.input.expectedIdentity)throw new ModelAccessError('model_account_identity_changed','账号登录来源已变化，原调用不可改用新身份。',409);
       const pathname = new URL(req.url ?? '/',this.origin).pathname;
       if (req.method === 'GET' && (pathname === '/v1/models' || pathname === '/models')) { this.json(res,200,{object:'list',data:[{id:lease.view.model,object:'model',owned_by:account.provider}]}); return; }
       const protocols: Record<string,ModelProtocol> = {'/v1/responses':'responses','/v1/chat/completions':'chat-completions','/v1/messages':'anthropic-messages'};
@@ -364,9 +373,19 @@ export class ModelAccessApplication {
     } finally { lease?.requests.delete(controller); }
   }
   activity() {
+    if(this.metadataReadOnly)for(const lease of [...this.leasesByIdentity.values()]){
+      try{const account=this.current(lease.input.accountId);if(!account.enabled||account.identity!==lease.input.expectedIdentity)this.release(lease.view.identity);}catch{this.release(lease.view.identity);}
+    }
     const requests=[...this.leasesByIdentity.values()].reduce((count,lease)=>count+lease.requests.size,0);
-    const logins=[...this.rows.values()].filter(row=>['initializing','waiting-browser','checking'].includes(row.loginAttempt?.state??'')).length;
+    const logins=this.metadataReadOnly ? 0 : [...this.rows.values()].filter(row=>['initializing','waiting-browser','checking'].includes(row.loginAttempt?.state??'')).length;
     return [{kind:'model-request',count:requests},{kind:'model-login',count:logins},{kind:'model-write',count:this.pendingWrites}].filter(value=>value.count>0);
+  }
+  freezeMetadata(value = true) {
+    const wasReadOnly=this.metadataReadOnly;this.metadataReadOnly=value;
+    if(wasReadOnly&&!value){
+      try{this.rows.clear();this.preferences.clear();this.storedDigest=undefined;this.load();}
+      catch{this.storageError=new ModelAccessError('model_storage_unavailable','配置维护恢复后账号资料未能核对，原数据已保留。',409);}
+    }
   }
   async close() { if (this.closed) return; this.closed = true; await this.ready.catch(()=>{}); for (const identity of [...this.leasesByIdentity.keys()]) this.release(identity); this.urls.clear(); await Promise.allSettled([...this.runtimes.values()].map(async pending => { await (await pending).close(); })); this.runtimes.clear(); if (this.server) { this.server.closeAllConnections(); await new Promise<void>(resolve => this.server!.close(()=>resolve())); } await this.writeChain; }
 }
@@ -378,6 +397,7 @@ export function createModelAccess(options: ModelAccessOptions) {
     accounts: { list: () => application.list(), read: (id: string) => application.read(id), snapshot: (id:string) => application.read(id), preferences:(id:string,input:ModelPreferenceUpdate)=>application.updatePreferences(id,input), add: (input: {provider:string;label?:string}) => application.add(input), login: (id:string,input:{expectedRevision:string}) => application.login(id,input), attempt: (id:string,attemptId:string) => application.attempt(id,attemptId), cancelLogin: (id:string,attemptId:string,input:{expectedRevision:string}) => application.cancelLogin(id,attemptId,input), check: (id:string,input:{expectedRevision?:string}={}) => application.check(id,input), disconnect: (id:string,input:{expectedRevision:string}) => application.disconnect(id,input) },
     catalog: { list: () => application.catalog() },
     activity: () => application.activity(),
+    freezeMetadata: (value = true) => application.freezeMetadata(value),
     generate: (input: ModelLeaseInput & {prompt:string;signal:AbortSignal}) => application.generate(input),
     leases: { create: (input:ModelLeaseInput) => application.createLease(input), release: (identity:string) => application.release(identity), updateRun:(identity:string,runId:string)=>application.updateRun(identity,runId) },
     close: () => application.close(),
