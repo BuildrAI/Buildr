@@ -837,6 +837,9 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     await page.locator('#more-actions').hover();
     await page.locator('#quit-buildr').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#restart-buildr').locator('xpath=ancestor::*[@role="menuitem"]').getAttribute('aria-disabled'), 'true', '托管预览在统一菜单中禁用重启');
+    // Navigation preserves the pointer position; leave the trigger so the
+    // next page cannot reopen its hover menu before the closed-state check.
+    await page.mouse.move(0, 0);
     await page.goto(url);
     assert.equal(await page.locator('#more-actions').isVisible(), true, '默认实例通过更多操作菜单提供重启和退出');
     assert.equal(await page.locator('#quit-buildr').count(), 0, '退出入口收进下拉菜单，未展开时不存在');

@@ -99,8 +99,23 @@ test('preview stop includes its independent backend and refuses purge after unce
   await stopPreview('demo',{dataRoot:data.dataRoot,retainOwner:true});
   assert.equal(fs.existsSync(path.join(profileRoot,'agent-service/process/instance.json')),false);
   assert.ok(fs.existsSync(profileRoot));
-  fs.writeFileSync(path.join(profileRoot,'agent-service/process/last-stop.json'),JSON.stringify({instanceId:status.identity.instanceId,confirmed:false}));
-  await assert.rejects(stopPreview('demo',{dataRoot:data.dataRoot,purge:true}),error=>coded(error,'agent_process_stop_unconfirmed'));
+  const receiptFile=path.join(profileRoot,'agent-service/process/instances',status.identity.generation+'.json');
+  const confirmedReceipt=fs.readFileSync(receiptFile,'utf8'),receipt=JSON.parse(confirmedReceipt);
+  assert.equal(receipt.identity.instanceId,status.identity.instanceId);assert.equal(receipt.stopped,true);assert.equal(receipt.confirmed,true);
+  fs.writeFileSync(receiptFile,JSON.stringify({...receipt,confirmed:false}));
+  try {
+    // Real process shutdown was proved above; advance only the refusal poll.
+    t.mock.timers.enable({apis:['setTimeout']});
+    let settled=false;
+    const rejected=assert.rejects(stopPreview('demo',{dataRoot:data.dataRoot,purge:true}),error=>coded(error,'agent_process_stop_unconfirmed'));
+    void rejected.then(()=>{settled=true;},()=>{settled=true;});
+    for(let tick=0;tick<600&&!settled;tick++){await new Promise<void>(resolve=>setImmediate(resolve));t.mock.timers.tick(50);}
+    assert.ok(settled,'uncertain generation release must reject within its controlled polling budget');
+    await rejected;
+  } finally {
+    t.mock.timers.reset();
+    if(fs.existsSync(receiptFile))fs.writeFileSync(receiptFile,confirmedReceipt);
+  }
   assert.ok(fs.existsSync(profileRoot));
 });
 

@@ -48,9 +48,16 @@ test('concurrent source preparations wait for their owner and publish a complete
   assert.equal(releaseExclusiveFileLock(lock), true);
   assert.deepEqual(await Promise.all(running), [destination, destination]);
   assert.equal(fs.readFileSync(path.join(destination, 'build/index.js'), 'utf8'), 'export const ready = true;\n');
+  const publicEntry = path.join(destination, 'build/index.js');
+  const preparedFile = fs.statSync(publicEntry);
+  prepareDevelopmentAgent({ serviceRoot: host, agentRoot: agent, build: false });
+  assert.equal(fs.statSync(publicEntry).ino, preparedFile.ino, 'unchanged preparation preserves the public files that concurrent consumers are reading');
+  fs.writeFileSync(path.join(agent, 'build/index.js'), 'export const ready = "updated";\n');
+  prepareDevelopmentAgent({ serviceRoot: host, agentRoot: agent, build: false });
+  assert.equal(fs.readFileSync(publicEntry, 'utf8'), 'export const ready = "updated";\n', 'changed runtime bytes must still be adopted');
   fs.writeFileSync(path.join(agent, 'package.json'), JSON.stringify({ name: '@buildr-ai/buildr-agent', version: '0.1.0', private: true, dependencies: { '@buildr-agent-fixture/missing': '1.0.0' } }));
   assert.throws(() => prepareDevelopmentAgent({ serviceRoot: host, agentRoot: agent, build: false }), /agent_runtime_dependency_missing/u);
-  assert.equal(fs.readFileSync(path.join(destination, 'build/index.js'), 'utf8'), 'export const ready = true;\n', 'failed staging preserves the previously usable runtime');
+  assert.equal(fs.readFileSync(path.join(destination, 'build/index.js'), 'utf8'), 'export const ready = "updated";\n', 'failed staging preserves the previously usable runtime');
   assert.deepEqual(fs.readdirSync(path.dirname(destination)), ['buildr-agent']);
 });
 
@@ -65,7 +72,11 @@ test('the compiled public Agent package and vendor clients load away from the de
   fs.writeFileSync(path.join(root, 'consumer.mjs'), `
     import assert from 'node:assert/strict';
     import { createRequire } from 'node:module';
+    const hostRequire = createRequire(import.meta.url);
+    const hostApi = hostRequire('@buildr-ai/buildr-agent');
+    assert.equal(typeof hostApi.createAgentService, 'function', 'the bundled CJS host must load the cold public package synchronously');
     const api = await import('@buildr-ai/buildr-agent');
+    assert.equal(api.createAgentService, hostApi.createAgentService);
     assert.ok(Object.keys(api).length > 0);
     const require = createRequire(import.meta.resolve('@buildr-ai/buildr-agent'));
     const sdk = await import(require.resolve('@qoder-ai/qoder-agent-sdk'));

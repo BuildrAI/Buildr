@@ -17,6 +17,7 @@ import { createAgentServiceHttpContribution } from '../../src/modules/agent-serv
 import { AGENT_SERVICE_HTTP_OPERATIONS } from '../../src/modules/agent-service/interfaces/http/agent-service-http-contracts.ts';
 import { inspectHttpOperationCoverage } from '../../src/web/http/http-operation-coverage.ts';
 import { eventStreamResponse } from '../../src/web/http/responses.ts';
+import { stopOwnedChildProcess } from '../verification/support/owned-process.ts';
 
 test('program preparation is authenticated, schema checked and independently observable/cancellable', { timeout: 30_000 }, async t => {
   const { base, root } = taskRecordFixture(t, 'agent-program-http');
@@ -254,7 +255,6 @@ test('HTTP handoff exposes the exact bounded body, local sources and confirmed r
 
 
 test('the real web CLI discovers host interruptions on listening without a browser request', {timeout:30_000}, async t=>{
-  t.after(async()=>{if(child.exitCode===null){child.kill('SIGTERM');await new Promise<void>(resolve=>child.once('exit',()=>resolve()));}await stopAgentProcess({dataRoot}).catch(error=>{if(error.code!=='agent_process_stop_unconfirmed')throw error;});});
   const {base,root}=taskRecordFixture(t,'agent-startup-recovery');
   const dataRoot=path.join(base,'restart-profile');
   const service=createAgentService({dataRoot,executors:[],resolveWorkspace:()=>({rootPath:root}),assertTask:()=>{}});
@@ -267,7 +267,10 @@ test('the real web CLI discovers host interruptions on listening without a brows
   db.prepare('UPDATE conversations SET body=? WHERE id=?').run(JSON.stringify(record),conversation.id);db.close();
   const child=spawn(process.execPath,[path.resolve('bin/buildr.mjs'),'web','--port','0','--no-open'],{env:{...process.env,BUILDR_APP_DATA_DIR:dataRoot},stdio:['ignore','pipe','pipe']});
   let output='';child.stdout.on('data',chunk=>{output+=chunk});child.stderr.on('data',chunk=>{output+=chunk});
-  t.after(async()=>{if(child.exitCode===null){child.kill('SIGTERM');await new Promise<void>(resolve=>child.once('exit',()=>resolve()));}});
+  t.after(async()=>{
+    try { await stopOwnedChildProcess(child); }
+    finally { await stopAgentProcess({dataRoot}).catch(error=>{if(error.code!=='agent_process_stop_unconfirmed')throw error;}); }
+  });
   const end=Date.now()+20_000;let diagnostic='before-startup';
   while(Date.now()<end){
     const read=new DatabaseSync(filename,{readOnly:true});
@@ -277,7 +280,8 @@ test('the real web CLI discovers host interruptions on listening without a brows
     if(diagnostic!=='before-startup')break;
     assert.equal(child.exitCode,null,output);await new Promise(resolve=>setTimeout(resolve,50));
   }
-  assert.match(diagnostic,/执行未完成.*尚不能确认/,output);
+  const startupLog=path.join(dataRoot,'agent-service/process/startup.log');
+  assert.match(diagnostic,/执行未完成.*尚不能确认/,JSON.stringify({output,startupLog:fs.existsSync(startupLog)?fs.readFileSync(startupLog,'utf8').slice(-6000):null}));
 });
 
 

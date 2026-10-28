@@ -562,14 +562,36 @@ test('a version probe cannot replace the receiver before a draft hook hands over
   assert.equal(fs.realpathSync(command), fs.realpathSync(replacement));
   assert.equal(fs.existsSync(received), false, 'neither old nor replacement program receives a private context after the probe changes its path');
 });
-test('timeout terminates the owned process group even when descendants keep output pipes open', { skip: process.platform === 'win32' }, async t => {
-  const f = fixture(t), created = f.create(), started = Date.now();
-  const result = await f.app.run(f.workspace, { id: created.id, expectedRevision: created.revision, args: ['descendants'], timeoutMs: 200 });
-  assert.equal(result.status, 'timeout'); assert.ok(Date.now() - started < 2000);
+test('timeout terminates the owned process group even when descendants keep output pipes open', { skip: process.platform === 'win32', timeout: 15_000 }, async t => {
+  const f = fixture(t), created = f.create();
   const directory = f.app.files.privateState({ rootPath: f.workspace, workspaceId: 'fixture-workspace' }, 'asset:example');
-  const pid = Number(fs.readFileSync(path.join(directory, 'nested.pid'), 'utf8'));
-  await new Promise(resolve => setTimeout(resolve, 50));
-  assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
+  const pidFile = path.join(directory, 'nested.pid');
+  const realSetTimeout = setTimeout;
+  const pause = () => new Promise<void>(resolve => realSetTimeout(resolve, 10));
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const pending = f.app.run(f.workspace, { id: created.id, expectedRevision: created.revision, args: ['descendants'], timeoutMs: 200 });
+  try {
+    // Process startup has its own bound. Advance the execution deadline only
+    // after this fixture proves that there is a descendant to terminate.
+    const readyBy = Date.now() + 10_000;
+    while (!fs.existsSync(pidFile) && Date.now() < readyBy) await pause();
+    assert.ok(fs.existsSync(pidFile), 'descendant must be ready before testing its timeout cleanup');
+    const pid = Number(fs.readFileSync(pidFile, 'utf8'));
+    t.mock.timers.tick(200);
+    t.mock.timers.tick(250);
+    assert.equal((await pending).status, 'timeout');
+    const exitedBy = Date.now() + 2_000;
+    let exited = false;
+    do {
+      try { process.kill(pid, 0); }
+      catch (error: any) { if (error.code !== 'ESRCH') throw error; exited = true; }
+      if (!exited) await pause();
+    } while (!exited && Date.now() < exitedBy);
+    assert.ok(exited, 'the timed-out program must leave no descendant');
+  } finally {
+    t.mock.timers.tick(450);
+    await pending;
+  }
 });
 test('disabled or missing methods preserve safe editing and explicit personal removal without allowing execution', async t => {
   const f = fixture(t), created = f.create();

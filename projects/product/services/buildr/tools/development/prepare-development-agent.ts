@@ -7,6 +7,18 @@ import { withExclusiveFileLock } from '../../src/infrastructure/filesystem/exclu
 
 const buildrRoot = path.resolve(import.meta.dirname, '../..');
 
+function sameRuntimeTree(left: string, right: string): boolean {
+  const expected = fs.lstatSync(left);
+  const current = fs.lstatSync(right, { throwIfNoEntry: false });
+  if (!current || expected.isSymbolicLink() || current.isSymbolicLink()
+    || expected.isDirectory() !== current.isDirectory() || (expected.mode & 0o777) !== (current.mode & 0o777)) return false;
+  if (expected.isFile()) return current.isFile() && expected.size === current.size && fs.readFileSync(left).equals(fs.readFileSync(right));
+  if (!expected.isDirectory()) return false;
+  const names = fs.readdirSync(left).sort(), existing = fs.readdirSync(right).sort();
+  return names.length === existing.length && names.every((name, index) => name === existing[index]
+    && sameRuntimeTree(path.join(left, name), path.join(right, name)));
+}
+
 /** Materialize the same public package consumed by an installed Buildr. */
 export function prepareDevelopmentAgent({
   serviceRoot = buildrRoot,
@@ -109,6 +121,9 @@ function materializeDevelopmentAgent({ serviceRoot, agentRoot, build }: { servic
     delete runtimeMetadata.devDependencies;
     delete runtimeMetadata.scripts;
     fs.writeFileSync(path.join(destination, 'package.json'), `${JSON.stringify(runtimeMetadata, null, 2)}\n`);
+    // Concurrent CLI and runtime preparation can be reading these public files.
+    // Repeated preparation must not retire an identical package underneath them.
+    if (sameRuntimeTree(destination, finalDestination)) return finalDestination;
     const previous = `${destination}-previous`;
     if (fs.existsSync(finalDestination)) fs.renameSync(finalDestination, previous);
     try { fs.renameSync(destination, finalDestination); }

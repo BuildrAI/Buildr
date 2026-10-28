@@ -100,6 +100,9 @@ try {
     BUILDR_LAUNCHER_INSTALL_DIR: launcherRoot,
     BUILDR_APP_DATA_DIR: appDataRoot,
     BUILDR_PRODUCT_DATA_DIR: appDataRoot,
+    // This proves checkout preparation, not external Qoder program installation.
+    // Keep package lifecycle scripts, using the SDK's supported download switch.
+    QODER_SKIP_DOWNLOAD: '1',
     PATH: `${installBin}${path.delimiter}${process.env.PATH || ''}`,
   };
   fs.mkdirSync(installBin, { recursive: true });

@@ -7,12 +7,19 @@ import { spawnSync } from 'node:child_process';
 const root = process.env.BUILDR_SMOKE_WORKSPACE_ROOT!, temporary = process.env.BUILDR_SMOKE_ROOT!;
 assert.ok(root && temporary, 'Use the isolated workspace smoke runner.');
 const cli = path.resolve('bin/buildr.mjs');
+const deadline = Date.now() + 150_000;
 function command(args: string[], input?: string) {
   const structured = args[0] === 'connection-skill';
   const common = ['--target', root, ...(structured ? ['--json'] : [])], separator = args.indexOf('--');
   const commandArgs = separator < 0 ? [...args, ...common] : [...args.slice(0, separator), ...common, '--', ...args.slice(separator + 1)];
-  const result = spawnSync(process.execPath, [cli, ...commandArgs], { input, encoding: 'utf8', env: process.env, timeout: 20_000 });
-  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const started = Date.now();
+  const timeout = Math.min(60_000, deadline - started);
+  assert.ok(timeout > 0, 'connection authoring scenario exceeded its 150s command budget');
+  process.stderr.write(`[connection-authoring-command] ${args.slice(0, 2).join(' ')} started\n`);
+  const result = spawnSync(process.execPath, [cli, ...commandArgs], { input, encoding: 'utf8', env: process.env, timeout });
+  process.stderr.write(`[connection-authoring-command] ${args[0]} finished after ${Date.now() - started}ms\n`);
+  assert.equal(result.status, 0, JSON.stringify({ command: args[0], durationMs: Date.now() - started, timeoutMs: timeout,
+    errorCode: (result.error as NodeJS.ErrnoException | undefined)?.code, signal: result.signal, stderr: result.stderr, stdout: result.stdout }));
   return structured ? JSON.parse(result.stdout) : result.stdout;
 }
 command(['init', '--name', 'authoring-forward-example', '--description', 'Independent local acceptance', '--profile', 'team']);

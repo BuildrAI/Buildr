@@ -68,10 +68,15 @@ async function handoff(input: {bootstrap:ProcessBootstrap;expectedInstanceId:str
   const owner = readLock(bootstrap.dataRoot, 'owner');
   if (!live(pid) && (!owner || !live(owner.pid)) && storageVersion(bootstrap.dataRoot) === beforeVersion && stopped()?.instanceId === input.expectedInstanceId && stopped()?.confirmed) launchAgentProcess(bootstrap);
 }
-if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+async function runHandoffEntry(): Promise<void> {
   const filename = process.argv[2], input = filename && readPrivate<Parameters<typeof handoff>[0]>(filename);
   if (!input) throw new Error('agent_handoff_input_missing');
   try { await handoff(input); }
   catch { writePrivate(path.join(controlRoot(input.bootstrap.dataRoot), 'pending.json'), { runtime: input.target, state: 'failed', diagnostic: '版本交接未完成，请核对准确后台身份；未覆盖已有数据。' }); process.exitCode = 1; }
   finally { fs.unlinkSync(filename); }
+}
+// The public package is also synchronously loaded by the bundled CJS host.
+// Keep executable-only async work out of the imported module's top level.
+if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  void runHandoffEntry().catch(error => { console.error(error); process.exitCode = 1; });
 }

@@ -75,6 +75,9 @@ export async function handoffUpdatedBuildrWeb(input: NpmWebUpdateInput, dependen
     }
     releaseWebHandoffSuccessorLog(child, logFd);
     const diagnostic: { failure: { code: string; message: string } | null } = { failure: null };
+    const throwObservedFailure = () => {
+      if (diagnostic.failure) throw handoffError(diagnostic.failure.code, diagnostic.failure.message);
+    };
     child.on('message', (message: any) => {
       if (message?.type === 'buildr.web-update-handoff-failed' && typeof message.code === 'string' && typeof message.message === 'string') {
         diagnostic.failure = { code: message.code.slice(0, 200), message: message.message.slice(0, 4096) };
@@ -101,9 +104,12 @@ export async function handoffUpdatedBuildrWeb(input: NpmWebUpdateInput, dependen
           throw handoffError('web_update_instance_changed', '交接期间实例记录已被其他实例替换，未确认新版就绪。');
         }
       } else if (exists(profile)) throw handoffError('web_update_instance_invalid', '交接期间实例记录无法解析，已保留现场。');
-      if (diagnostic.failure) throw handoffError(diagnostic.failure.code, diagnostic.failure.message);
+      throwObservedFailure();
       await new Promise(resolve => setTimeout(resolve, dependencies.intervalMs ?? 100));
     } while (Date.now() < deadline);
+    // A diagnostic can arrive during the last wait before its timer resumes.
+    // Preserve that observed failure even when the wait crosses the deadline.
+    throwObservedFailure();
     throw handoffError('web_update_readiness_timeout', '软件包已更新，但未在预期时间内确认新版网页就绪；再次运行 buildr update 可恢复交接。');
   } catch (error: any) {
     return { status: 'failed', code: error.code || 'web_update_failed', message: error.message, ...(previousPid ? { previousPid } : {}) };

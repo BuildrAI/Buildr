@@ -167,7 +167,7 @@ function setFixturePayloadVersion(payloadRoot: string, version: string) {
   fs.writeFileSync(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
-async function updateFixture(t: any, { launcher = false }: { launcher?: boolean } = {}) {
+async function updateFixture(t: any, { launcher = false, shutdownDelayMs = 0 }: { launcher?: boolean; shutdownDelayMs?: number } = {}) {
   const templates = prepareUpdatePackages();
   const staged = await fixture({ runnable: true, template: templates.old });
   const value = { ...staged, root: fs.realpathSync(staged.root), prefix: fs.realpathSync(staged.prefix), packageRoot: fs.realpathSync(staged.packageRoot) };
@@ -181,6 +181,22 @@ async function updateFixture(t: any, { launcher = false }: { launcher?: boolean 
   const receiptFile = path.join(appData, 'instance.json');
   copyFixture(templates.next, nextPackageRoot);
   const entry = path.join(value.packageRoot, 'bin', 'buildr.mjs');
+  const shutdownMarker = path.join(value.root, 'delayed-shutdown');
+  if (shutdownDelayMs) {
+    const originalEntry = fs.readFileSync(entry, 'utf8').replace(/^#![^\n]*\n/u, '');
+    // Model slow graceful resource cleanup before the old receipt is released.
+    fs.writeFileSync(entry, `import fs from 'node:fs';
+const originalRm = fs.rmSync;
+let delayed = false;
+fs.rmSync = (file, ...args) => {
+  if (!delayed && String(file) === ${JSON.stringify(receiptFile)}) {
+    delayed = true; fs.writeFileSync(${JSON.stringify(shutdownMarker)}, 'delayed');
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ${shutdownDelayMs});
+  }
+  return originalRm(file, ...args);
+};
+${originalEntry}`);
+  }
   const nextEntry = path.join(nextPackageRoot, 'bin', 'buildr.mjs');
   fs.writeFileSync(nextEntry, `import fs from 'node:fs';\nfs.appendFileSync(${JSON.stringify(entryLog)}, JSON.stringify({ node: process.execPath, entry: process.argv[1], args: process.argv.slice(2), version: ${JSON.stringify(newVersion)} }) + '\\n');\n${fs.readFileSync(nextEntry, 'utf8').replace(/^#![^\n]*\n/u, '')}`);
   fs.writeFileSync(npmCliPath, `import assert from 'node:assert/strict';
@@ -259,7 +275,7 @@ if (args[0] === 'view') {
   async function update() {
     const child = spawn(process.execPath, [entry, 'update', '--track', 'stable', '--json'], {
       cwd: value.root,
-      env: { ...process.env, PATH: '', BUILDR_LAUNCHER_NO_OPEN: '1', BUILDR_LAUNCHER_HANDOFF_WAIT_MS: '500' },
+      env: { ...process.env, PATH: '', BUILDR_LAUNCHER_NO_OPEN: '1', BUILDR_LAUNCHER_HANDOFF_WAIT_MS: undefined },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     children.add(child);
@@ -273,7 +289,7 @@ if (args[0] === 'view') {
     if (result.webUpdate?.pid) webPids.add(result.webUpdate.pid);
     return result;
   }
-  return { ...value, entry, registration, installedLauncher, oldVersion, newVersion, receiptFile, npmLog, entryLog, startOld, update };
+  return { ...value, entry, registration, installedLauncher, oldVersion, newVersion, receiptFile, npmLog, entryLog, shutdownMarker, startOld, update };
 }
 
 function productIdentityFor(binding: any): any  {
@@ -655,14 +671,15 @@ test('npm Launcher takes over CLI ownership, serializes concurrent opens, reuses
 
 for (const launcher of [true, false]) {
   test(`installed npm update automatically hands off an old ${launcher ? 'Launcher' : 'CLI'} Web to the new version`, async (t: any) => {
-    const value = await updateFixture(t, { launcher });
+    const value = await updateFixture(t, { launcher, shutdownDelayMs: launcher ? 0 : 750 });
     const { child, receipt: previous } = await value.startOld();
     const updated = await value.update();
     assert.equal(updated.status, 'updated');
-    assert.equal(updated.webUpdate.status, 'restarted');
+    assert.equal(updated.webUpdate.status, 'restarted', JSON.stringify(updated.webUpdate));
     assert.equal(updated.webUpdate.version, value.newVersion);
     assert.equal(updated.webUpdate.previousPid, previous.pid);
     await waitForChildExit(child, 'old Web after npm update');
+    if (!launcher) assert.ok(fs.existsSync(value.shutdownMarker), 'the old CLI must actually exercise slow graceful receipt release');
     const current = JSON.parse(fs.readFileSync(value.receiptFile, 'utf8'));
     assert.notEqual(current.pid, previous.pid);
     assert.equal(current.pid, updated.webUpdate.pid);

@@ -12,13 +12,25 @@ import { verifyApplicationPayload } from '../../src/infrastructure/product-resou
 import { createGeneratedReleaseInputs } from '../helpers/generated-release-inputs.ts';
 import { SOURCE_COMMIT, serviceRoot } from '../helpers/application-payload-release.ts';
 
+let preparedRoot: string;
+let prepared: { firstInputs: any; secondInputs: any; first: any; second: any };
+test.before(async () => {
+  preparedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-payload-source-suite-'));
+  const firstInputs = createGeneratedReleaseInputs(path.join(preparedRoot, 'first-inputs'), SOURCE_COMMIT);
+  const secondInputs = createGeneratedReleaseInputs(path.join(preparedRoot, 'second-inputs'), SOURCE_COMMIT);
+  const started = Date.now();
+  const first = await buildApplicationPayload(path.join(preparedRoot, 'first'), SOURCE_COMMIT, { generatedArtifactManifest: firstInputs.manifest, webDistRoot: firstInputs.webDistRoot });
+  process.stderr.write(`[payload-source-preparation] first payload ready after ${Date.now() - started}ms\n`);
+  const second = await buildApplicationPayload(path.join(preparedRoot, 'second'), SOURCE_COMMIT, { generatedArtifactManifest: secondInputs.manifest, webDistRoot: secondInputs.webDistRoot });
+  process.stderr.write(`[payload-source-preparation] both independent payloads ready after ${Date.now() - started}ms\n`);
+  prepared = { firstInputs, secondInputs, first, second };
+});
+test.after(() => { if (preparedRoot) fs.rmSync(preparedRoot, { recursive: true, force: true }); });
+
 test('same inputs create byte-identical payload and installed resource mapping detects drift', async () => {
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-application-payload-'));
   try {
-    const firstInputs: any = createGeneratedReleaseInputs(path.join(root, 'first-inputs'), SOURCE_COMMIT);
-    const secondInputs: any = createGeneratedReleaseInputs(path.join(root, 'second-inputs'), SOURCE_COMMIT);
-    const first: any = await buildApplicationPayload(path.join(root, 'first'), SOURCE_COMMIT, { generatedArtifactManifest: firstInputs.manifest, webDistRoot: firstInputs.webDistRoot });
-    const second: any = await buildApplicationPayload(path.join(root, 'second'), SOURCE_COMMIT, { generatedArtifactManifest: secondInputs.manifest, webDistRoot: secondInputs.webDistRoot });
+    const { firstInputs, first, second } = prepared;
     assert.deepEqual(first.manifest, second.manifest);
     assert.deepEqual(fs.readFileSync(path.join(first.root, 'runtime/buildr.cjs')), fs.readFileSync(path.join(second.root, 'runtime/buildr.cjs')));
     assert.deepEqual(first.manifest.files.filter((entry: any) => entry.path.includes('/installation/launcher/')).map((entry: any) => entry.path), [
@@ -56,10 +68,7 @@ test('same inputs create byte-identical payload and installed resource mapping d
 test('same generated inputs create byte-identical npm Candidate and reject unbound local output', async () => {
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-generated-candidate-repeat-'));
   try {
-    const firstInputs: any = createGeneratedReleaseInputs(path.join(root, 'first-inputs'), SOURCE_COMMIT);
-    const secondInputs: any = createGeneratedReleaseInputs(path.join(root, 'second-inputs'), SOURCE_COMMIT);
-    const firstPayload: any = await buildApplicationPayload(path.join(root, 'first-payload'), SOURCE_COMMIT, { generatedArtifactManifest: firstInputs.manifest, webDistRoot: firstInputs.webDistRoot });
-    const secondPayload: any = await buildApplicationPayload(path.join(root, 'second-payload'), SOURCE_COMMIT, { generatedArtifactManifest: secondInputs.manifest, webDistRoot: secondInputs.webDistRoot });
+    const { firstInputs, secondInputs, first: firstPayload, second: secondPayload } = prepared;
     const first: any = createReleaseArtifact(firstPayload.root, path.join(root, 'first-artifact'), { testContextRoot: firstInputs.testContextRoot });
     const second: any = createReleaseArtifact(secondPayload.root, path.join(root, 'second-artifact'), { testContextRoot: secondInputs.testContextRoot });
     assert.equal(first.manifest.generatedArtifactIdentity, second.manifest.generatedArtifactIdentity);
@@ -81,8 +90,7 @@ test('same generated inputs create byte-identical npm Candidate and reject unbou
 test('payload verify runs from a clean tree with no node_modules or esbuild', async () => {
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-payload-clean-verify-'));
   try {
-    const generated: any = createGeneratedReleaseInputs(path.join(root, 'generated'), SOURCE_COMMIT);
-    const payload: any = await buildApplicationPayload(path.join(root, 'payload'), SOURCE_COMMIT, { generatedArtifactManifest: generated.manifest, webDistRoot: generated.webDistRoot });
+    const payload = prepared.first;
     const cleanWorkspace: any = path.join(root, 'clean-workspace');
     const cleanRoot: any = path.join(cleanWorkspace, 'projects/product/services/buildr');
     for (const relative of [

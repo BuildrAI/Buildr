@@ -5,11 +5,24 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
+import { once } from 'node:events';
 import { pathToFileURL } from 'node:url';
 import { executeVerificationCommand } from '../verification/support/process-executor.ts';
 import { spawnSupervised, parseSuccessfulJson } from '../helpers/child-process-supervisor.ts';
 import { stopOwnedChildProcess } from '../verification/support/owned-process.ts';
 import { createVerificationExecutor } from '../verification/executor.ts';
+
+test('owned child cleanup is repeatable after an exit caused by a signal', { timeout: 5_000 }, async t => {
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+  t.after(() => stopOwnedChildProcess(child));
+  await once(child, 'spawn');
+  const exited = once(child, 'exit');
+  child.kill('SIGTERM');
+  await exited;
+  assert.ok(child.exitCode !== null || child.signalCode !== null);
+  await stopOwnedChildProcess(child);
+  await stopOwnedChildProcess(child);
+});
 
 test('unexpected preparation failure leaves its dependent command unexecuted', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-preparation-error-'));
