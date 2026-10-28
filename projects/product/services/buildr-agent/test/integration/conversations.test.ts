@@ -6,7 +6,8 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
 import { createAgentService } from '../../src/index.ts';
-import type { AgentExecutor, AgentRuntime, AgentServiceOptions, ContextRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorSendInput, ExecutorTitleInput, LoginObservation } from '../../src/contracts.ts';
+import type { AgentExecutor, AgentRuntime, AgentServiceOptions, ContextRef, ConversationEntry, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorSendInput, ExecutorTitleInput, LoginObservation } from '../../src/contracts.ts';
+import { ConversationRepository } from '../../src/persistence/conversation-repository.ts';
 
 type Context = { items: ExecutorItem[]; observation: ExecutorObservation; unblock?: () => void };
 function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'running'|'unknown'|'tool'; beforeDisconnect?: Promise<void>; disconnectAlways?: boolean; beforeResume?: Promise<void>; unknown?: boolean; images?: boolean; request?: boolean; coldUnknown?: boolean; beforeAccepted?: Promise<void>; replyAfterTerminal?: boolean; toolSurvives?: boolean; toolInput?: boolean; failure?: string; summary?:(input:ExecutorTitleInput)=>Promise<string|undefined> } = {}) {
@@ -563,6 +564,79 @@ test('expired image cleanup refuses a replaced attachment directory before delet
     assert.throws(() => f.service.conversations.addAttachment('workspace-one', created.id, { expectedRevision: attached.revision, mimeType: 'image/png', bytes: png }), { code: 'agent_attachment_unsafe' });
     assert.equal(fs.readFileSync(path.join(foreign, attached.id), 'utf8'), 'foreign-owned-file');
     assert.equal(f.service.conversations.read('workspace-one', created.id).revision, attached.revision);
+  } finally { await f.close(); }
+});
+
+test('default history pages retain five rounds including dense tools and in-round answers, with exact earlier cursors', async t => {
+  for (const mode of ['named', 'legacy', 'mixed']) await t.test(`${mode} round identities`, async () => {
+    const f = fixture([]);
+    try {
+      const created = await f.service.conversations.create('workspace-one', {});
+      const entries: ConversationEntry[] = [];
+      for (let round = 1; round <= 12; round++) {
+        const append = (kind: ConversationEntry['kind'], role: ConversationEntry['role'], text: string) => entries.push({ id: `entry-${entries.length + 1}`, sequence: entries.length + 1, createdAt: created.updatedAt, kind, role, text, ...(mode === 'legacy' || mode === 'mixed' && (kind !== 'message' || round % 2 === 0 && role === 'user') ? {} : {runId:`run-${round}`}) });
+        append('message', 'user', `request ${round}`);
+        append('notice', 'user', `answer to approval ${round}`);
+        for (let tool = 0; tool < (round === 12 ? 120 : 2); tool++) append('tool', 'system', `tool ${round}/${tool}`);
+        append('message', 'assistant', `reply ${round}`);
+      }
+      const repository = new ConversationRepository(path.join(f.options.dataRoot, 'agent-service'));
+      const stored = repository.readConversation(created.id)!;
+      const revision = stored.view.revision;
+      stored.view.entries = entries; stored.view.revision = randomUUID();
+      repository.saveConversation(stored, revision);
+      const recent = f.service.conversations.read('workspace-one', created.id);
+      assert.ok(recent.entries.length > 100, 'a tool-heavy round must not displace the latest five rounds');
+      const pages: ConversationEntry[] = []; let page = recent;
+      for (const rounds of [[8, 9, 10, 11, 12], [3, 4, 5, 6, 7], [1, 2]]) {
+        assert.deepEqual(page.entries.filter(entry => entry.kind === 'message' && entry.role === 'user').map(entry => entry.text), rounds.map(round => `request ${round}`));
+        assert.equal(page.entries.filter(entry => entry.kind === 'notice').length, rounds.length);
+        pages.unshift(...page.entries);
+        if (page.nextEntryCursor === undefined) break;
+        assert.equal(page.nextEntryCursor, page.entries[0]!.sequence);
+        page = f.service.conversations.read('workspace-one', created.id, {before:page.nextEntryCursor});
+      }
+      assert.equal(page.nextEntryCursor, undefined);
+      assert.deepEqual(pages, entries);
+      assert.equal(new Set(pages.map(entry => entry.id)).size, entries.length);
+      const explicit = f.service.conversations.read('workspace-one', created.id, {limit:100});
+      assert.deepEqual(explicit.entries, entries.slice(-100), 'explicit entry-count callers retain their existing semantics');
+      assert.equal(explicit.nextEntryCursor, explicit.entries[0]!.sequence);
+      const subscription = f.service.conversations.subscribe('workspace-one', created.id);
+      const iterator = subscription.events[Symbol.asyncIterator]();
+      try {
+        const snapshot = (await iterator.next()).value!;
+        assert.deepEqual(snapshot.payload.conversation!.entries, recent.entries);
+        assert.equal(snapshot.payload.conversation!.nextEntryCursor, recent.nextEntryCursor);
+      } finally { subscription.close(); await iterator.return?.(); }
+    } finally { await f.close(); }
+  });
+});
+
+test('default round pages split oversized rounds by bytes without dropping durable entries', async () => {
+  const f = fixture([]);
+  try {
+    const created = await f.service.conversations.create('workspace-one', {});
+    const entries: ConversationEntry[] = Array.from({length:10}, (_, index) => ({id:`large-${index}`,sequence:index + 1,createdAt:created.updatedAt,kind:'tool',role:'system',runId:'large-round',text:'x'.repeat(700 * 1024)}));
+    const repository = new ConversationRepository(path.join(f.options.dataRoot, 'agent-service'));
+    const stored = repository.readConversation(created.id)!;
+    const revision = stored.view.revision;
+    stored.view.entries = entries; stored.view.revision = randomUUID();
+    repository.saveConversation(stored, revision);
+    const recovered: ConversationEntry[] = [];
+    let page = f.service.conversations.read('workspace-one', created.id);
+    assert.ok(page.nextEntryCursor);
+    for (;;) {
+      assert.ok(page.entries.length > 0);
+      assert.ok(Buffer.byteLength(JSON.stringify(page.entries)) <= 4 * 1024 * 1024);
+      recovered.unshift(...page.entries);
+      if (page.nextEntryCursor === undefined) break;
+      const next = f.service.conversations.read('workspace-one', created.id, {before:page.nextEntryCursor});
+      assert.ok(next.entries.at(-1)!.sequence < page.entries[0]!.sequence);
+      page = next;
+    }
+    assert.deepEqual(recovered, entries);
+    assert.deepEqual(repository.readConversation(created.id)!.view.entries, entries);
   } finally { await f.close(); }
 });
 

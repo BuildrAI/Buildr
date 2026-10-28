@@ -22,6 +22,7 @@ const TEMP_IMAGE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_TEMP_IMAGE_BYTES = 64 * 1024 * 1024;
 const MAX_ITEM_BYTES = 1024 * 1024;
 const PAGE_SIZE = 100;
+const PAGE_ROUNDS = 5;
 const MAX_PAGE_BYTES = 4 * 1024 * 1024;
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 async function within<T>(work: Promise<T>, milliseconds: number, code: string, signal?: AbortSignal): Promise<T> {
@@ -96,23 +97,39 @@ export class ConversationApplication {
     record.attachments ??= {};
     return record;
   }
-  private view(record: StoredConversation, before?: number, limit = PAGE_SIZE): ConversationView {
-    const view = structuredClone(record.view);
+  private view(record: StoredConversation, before?: number, limit?: number): ConversationView {
+    const entries = record.view.entries.filter(entry => before === undefined || entry.sequence < before);
+    const count = limit === undefined ? undefined : bounded(limit, PAGE_SIZE, 200);
+    let inferredRound = {id:'legacy:0'};
+    const entryRounds = count === undefined ? entries.map(entry => {
+      const identified = entry.runId ? `run:${entry.runId}` : undefined;
+      if (entry.kind === 'message' && entry.role === 'user') {
+        if (!identified || inferredRound.id !== identified) inferredRound = {id:identified ?? `legacy:${entry.id}`};
+      } else if (identified && inferredRound.id !== identified) {
+        // Recovered legacy input may acquire its run identity from a later item.
+        if (inferredRound.id.startsWith('legacy:')) inferredRound.id = identified;
+        else inferredRound = {id:identified};
+      }
+      // Untagged tools and request answers inherit their surrounding round.
+      return inferredRound;
+    }) : [];
+    const rounds = new Set<string>();
+    let pageBytes = 2, start = entries.length;
+    while (start > 0) {
+      const entry = entries[start - 1]!;
+      const round = entryRounds[start - 1]?.id ?? '';
+      if (count !== undefined ? entries.length - start >= count : !rounds.has(round) && rounds.size >= PAGE_ROUNDS) break;
+      const size = Buffer.byteLength(JSON.stringify(entry)) + Number(start < entries.length);
+      if (start < entries.length && pageBytes + size > MAX_PAGE_BYTES) break;
+      pageBytes += size; start--; rounds.add(round);
+    }
+    // Historical tool output can be large; clone only the page that will be sent.
+    const view = structuredClone({ ...record.view, entries: entries.slice(start), nextEntryCursor: start > 0 ? entries[start]!.sequence : undefined });
     view.titleState??={status:'unknown'};
     view.participants = record.participants.map(participant => ({
       id: participant.id, provider: participant.provider, connectionId: participant.connectionId,
       label: participant.label, model: participant.modelId, modelAccountId:participant.modelAccountId, deliveredThrough: participant.deliveredThrough, contextId: participant.contextRef?.id ?? '',
     }));
-    const entries = view.entries.filter(entry => before === undefined || entry.sequence < before);
-    const countBounded = entries.slice(-bounded(limit, PAGE_SIZE, 200));
-    let pageBytes = 0; let start = countBounded.length;
-    while (start > 0) {
-      const size = Buffer.byteLength(JSON.stringify(countBounded[start - 1]));
-      if (start < countBounded.length && pageBytes + size > MAX_PAGE_BYTES) break;
-      pageBytes += size; start--;
-    }
-    view.entries = countBounded.slice(start);
-    if (entries.length > view.entries.length) view.nextEntryCursor = view.entries[0]!.sequence;
     if (view.run && view.run.generation !== this.options.generation && BUSY_STATES.has(view.run.status)) {
       view.run.status = 'unknown'; view.run.interrupted = true; view.run.diagnostic = '服务重启后原执行尚待核对，工作记录已保留。';
     }

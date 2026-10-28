@@ -1,7 +1,7 @@
 import { conversationModelLabel } from './conversation-model-label';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Alert, App, Button, Dropdown, Input, Modal, Popover, Select, Spin, Tag } from 'antd';
-import { ArrowUpOutlined, CommentOutlined, CopyOutlined, EllipsisOutlined, MenuOutlined, PlusOutlined, SafetyCertificateOutlined, StopOutlined, VerticalAlignTopOutlined } from '@ant-design/icons';
+import { ArrowUpOutlined, CommentOutlined, CopyOutlined, EllipsisOutlined, MenuOutlined, PlusOutlined, SafetyCertificateOutlined, StopOutlined } from '@ant-design/icons';
 import { MarkdownHost } from '../../components/MarkdownHost';
 import type { ApiError } from '../../api';
 import { copyText } from '../../lib/copyText';
@@ -207,9 +207,8 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
     finally{actions.finish(key);}
   };
   const earlier=useEarlierConversationEntries({conversation:chat,selectionKey:`${context.selectionGeneration}:${chat?.workspaceId}:${chat?.id}`,stream,bottom,position:readPosition,
-    loadPage:(value,cursor)=>context.api.entries(value.workspaceId,value.id,cursor),
+    loadPage:(value,cursor,signal)=>context.api.entries(value.workspaceId,value.id,cursor,signal),
     prepend:page=>{if(chat)setExpandedToolGroups(previous=>carryExpandedProcessBlocks(chat.entries,page.entries,previous,chat.run));context.prependEntries(page);},
-    onError:fail,
   });
   const seenAttempt=useRef('');
   useEffect(()=>{
@@ -279,9 +278,9 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
         </div>
       </header>
       {participantPairs.length?<div className="ac-participants" aria-label="参与过此对话的智能体与模型">参与过此对话 {participantPairs.map(pair=><span key={pair.key} title={`${providerNames[pair.provider]||pair.provider} · ${pair.modelName}`}>{providerNames[pair.provider]||pair.provider} · {pair.modelName}</span>)}</div>:null}
-      <div className="ac-stream" ref={stream} onScroll={earlier.onScroll} onWheel={earlier.onWheel} onTouchStart={earlier.onTouchStart} onTouchMove={earlier.onTouchMove} onTouchEnd={earlier.onTouchEnd} onTouchCancel={earlier.onTouchCancel}>
+      <div className="ac-stream" ref={stream} tabIndex={0} aria-label="对话记录" aria-busy={earlier.loading} onScroll={earlier.onScroll} onWheel={earlier.onWheel} onKeyDown={earlier.onKeyDown} onTouchStart={earlier.onTouchStart} onTouchMove={earlier.onTouchMove} onTouchEnd={earlier.onTouchEnd} onTouchCancel={earlier.onTouchCancel}>
+        {earlier.loading&&<div className="ac-history-loading" role="status" aria-label="正在加载更早记录"><Spin size="small"/></div>}
         {context.loading?<Spin/>:context.error?<Alert type="error" showIcon message={context.error} action={<Button onClick={()=>void context.refresh().catch(fail)}>重新读取</Button>}/>:!chat?.entries.length?<div className="ac-welcome"><CommentOutlined/><h1>{chat?.taskId||boundTaskId?'从这项任务继续':'今天想做什么？'}</h1><p>了解一个问题，或者交办一件事。</p>{!chat&&settings}</div>:<div className="ac-message-list">
-          {earlier.pull>0&&<div className="ac-pull-history" role="status">{earlier.pull>=60?'松开加载更早记录':'下拉加载更早记录'}</div>}{chat.nextEntryCursor!==undefined&&<div className="ac-load-earlier"><Button size="small" type="text" aria-label="加载更早的记录" icon={<VerticalAlignTopOutlined aria-hidden/>} loading={earlier.loading} onClick={()=>void earlier.load()}>加载更早的记录</Button></div>}
           {transcript.map((item,index)=>{
             if(item.type==='process-block'){
               const key=processBlockKey(item.entries),next=transcript[index+1];
@@ -306,7 +305,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
         {chat?.run?.status==='tools-active'&&<Alert type="warning" showIcon message="模型已中断，仍有命令运行" description={<div>{chat.run.tools.filter(tool=>tool.status!=='completed').map(tool=><p key={tool.id}>{tool.label}{canStopConversationTool(tool)?<Button size="small" loading={stopping} onClick={()=>void stop(tool.id)}>停止此命令</Button>:<small> · 不支持单独停止</small>}</p>)}<Button type="link" size="small" loading={observing} onClick={()=>void observe()}>核对执行状态</Button></div>} action={<Button loading={stopping} onClick={()=>void stop()}>停止剩余执行</Button>}/>}
         {chat?.requests.map(request=><ConversationRequest key={request.id} request={request} provider={chat.run?.provider||chat.participants.find(item=>item.id===request.participantId)?.provider||'codex'} busy={actions.has(actionKey(chat,'reply',request.id))} onReply={answer=>void reply(request.id,answer)}/>)}
       </div>
-      <div className="ac-compose-wrap">{(context.reconnecting||context.recovering)&&<small className="ac-recovery-status" role="status">{context.recovering?'正在自动核对原执行状态…':'连接中断，正在自动重连…'}</small>}{run&&<div className="ac-run-status" role="status" data-run-status={run.status}>{run.interrupted?'执行未完成':statusLabels[run.status]}{runIdentity&&` · ${runIdentity}`} · {permissionModeLabels[run.permissionMode||'default']}{run.diagnostic&&<p>{run.diagnostic}</p>}</div>}{modelCompatibility&&<Alert type="warning" showIcon message={modelCompatibility}/>} {context.modelCatalogError&&<Alert type="warning" showIcon message={context.modelCatalogError}/>} {context.modelCatalogReady&&choice.modelAccountId&&!selectedSourceModel?.available&&<Alert type="warning" showIcon message="所选模型已停用或来源不可用，请重新选择。"/>}{error&&<Alert type="warning" showIcon message={error} closable onClose={()=>setError('')}/>} {feedback&&<small role="status">{feedback}</small>}{!draft.available&&<Alert type="warning" message="浏览器存储不可用，刷新后无法恢复未发送草稿。"/>}
+      <div className="ac-compose-wrap">{(context.reconnecting||context.recovering)&&<small className="ac-recovery-status" role="status">{context.recovering?'正在自动核对原执行状态…':'连接中断，正在自动重连…'}</small>}{run&&<div className="ac-run-status" role="status" data-run-status={run.status}>{run.interrupted?'执行未完成':statusLabels[run.status]}{runIdentity&&` · ${runIdentity}`} · {permissionModeLabels[run.permissionMode||'default']}{run.diagnostic&&<p>{run.diagnostic}</p>}</div>}{modelCompatibility&&<Alert type="warning" showIcon message={modelCompatibility}/>} {context.modelCatalogError&&<Alert type="warning" showIcon message={context.modelCatalogError}/>} {context.modelCatalogReady&&choice.modelAccountId&&!selectedSourceModel?.available&&<Alert type="warning" showIcon message="所选模型已停用或来源不可用，请重新选择。"/>}{earlier.error&&<Alert type="warning" showIcon message={earlier.error}/>} {error&&<Alert type="warning" showIcon message={error} closable onClose={()=>setError('')}/>} {feedback&&<small role="status">{feedback}</small>}{!draft.available&&<Alert type="warning" message="浏览器存储不可用，刷新后无法恢复未发送草稿。"/>}
         {!connection?.enabled&&<div className="ac-connect-notice"><span>{connection?`${providerNames[connection.provider]} 尚未就绪`:'请先接入智能体'}</span><Button type="link" size="small" onClick={()=>context.setSettings(true)}>智能体与模型</Button></div>}
         {chat?.run&&(lastParticipant?.connectionId!==choice.connectionId||chat.run.model!==effectiveModel||chat.run.modelAccountId!==choice.modelAccountId)?<div className="ac-transfer-notice"><span>{lastParticipant?.connectionId!==choice.connectionId?`接下来由 ${connection?providerNames[connection.provider]||connection.label:''}${chat.run.model!==effectiveModel||chat.run.modelAccountId!==choice.modelAccountId?' · '+(effectiveModelLabel):''} 继续处理`:`接下来使用 ${effectiveModelLabel} 继续处理`}</span><Button type="link" size="small" disabled={!canSend} loading={sending} onClick={()=>void prepare(true)}>交接内容</Button></div>:null}
         {preparing&&<div className="ac-notice" role="status">正在准备交接资料… <Button type="link" size="small" title="跳过模型精简，使用本地记录与按需读取" onClick={()=>{activeSend.current=null;setSending(false);setPreparing(false);void prepare(false,true);}}>直接交接</Button><Button type="text" size="small" onClick={()=>{activeSend.current=null;setSending(false);setPreparing(false);}}>取消发送</Button></div>}

@@ -1,4 +1,5 @@
 import { EditOutlined, FileAddOutlined, FileTextOutlined, FolderOpenOutlined, GlobalOutlined, RightOutlined, SearchOutlined, ToolOutlined, WarningOutlined } from '@ant-design/icons';
+import {useEffect,useState} from 'react';
 import { MarkdownHost } from '../../components/MarkdownHost';
 import { processBlockSummary, processEntryStatus } from './conversation-state';
 import { processTool, type ProcessToolKind } from './conversation-process';
@@ -33,6 +34,8 @@ function ToolStep({entry,active,onOpenFile}:{entry:ConversationEntry;active:bool
 }
 /** 连续工具条目折叠为一个分组行；单条命令从一开始也以分组呈现，避免后续折叠跳动。 */
 function ToolGroup({entries,active,onOpenFile,open,onToggle}:{entries:ConversationEntry[];active:boolean;onOpenFile:FileOpener;open:boolean;onToggle:(open:boolean)=>void}){
+  const [visited,setVisited]=useState(open);
+  useEffect(()=>{if(open)setVisited(true);},[open]);
   const tools=entries.map(processTool);
   const kinds=new Set(tools.map(tool=>tool.kind));
   const counts=new Map<string,number>();
@@ -49,7 +52,7 @@ function ToolGroup({entries,active,onOpenFile,open,onToggle}:{entries:Conversati
       {failed>0&&<span className="ac-step-status"><WarningOutlined aria-hidden="true"/>{failed} 项失败</span>}
       <RightOutlined className="ac-step-chevron" aria-hidden="true"/>
     </summary>
-    <div className="ac-step-group-items">{entries.map(entry=><ToolStep key={entry.id} entry={entry} active={active} onOpenFile={onOpenFile}/>)}</div>
+    {(open||visited)&&<div className="ac-step-group-items">{entries.map(entry=><ToolStep key={entry.id} entry={entry} active={active} onOpenFile={onOpenFile}/>)}</div>}
   </details>;
 }
 type TimelineItem={type:'tools';entries:ConversationEntry[]}|{type:'narration';entry:ConversationEntry};
@@ -72,6 +75,8 @@ function durationLabel(startedAt:string,finishedAt:string):string {
 }
 type Props={blockKey:string;entries:ConversationEntry[];active:boolean;finishedAt?:string;open:boolean;onToggle:(key:string,open:boolean)=>void;onOpenFile:FileOpener;groupsOpen?:Record<string,boolean>;onGroupToggle?:(ids:string[],open:boolean)=>void};
 export function ConversationProcessBlock({blockKey,entries,active,finishedAt,open,onToggle,onOpenFile,groupsOpen={},onGroupToggle}:Props){
+  const [visited,setVisited]=useState(open);
+  useEffect(()=>{if(open)setVisited(true);},[open]);
   const summary=processBlockSummary(entries),running=active;
   const tools=entries.filter(entry=>entry.kind==='tool');
   const title=running?'正在处理':tools.length?`执行了 ${tools.length} 次工具调用`:'处理过程';
@@ -90,9 +95,9 @@ export function ConversationProcessBlock({blockKey,entries,active,finishedAt,ope
       {summary.failed>0&&<span className="ac-process-failures"><WarningOutlined aria-hidden="true"/>{summary.failed} 项失败</span>}
       {running&&<span className="ac-process-current" title={current}>{current}</span>}
     </summary>
-    <div className="ac-process-timeline">{processTimeline(entries).map(item=>item.type==='narration'
+    {(open||visited)&&<div className="ac-process-timeline">{processTimeline(entries).map(item=>item.type==='narration'
       ?<div key={item.entry.id} className="ac-process-narration" data-entry-id={item.entry.id}><MarkdownHost markdown={item.entry.text} className="markdown-body"/></div>
       :<ToolGroup key={item.entries[0].id} entries={item.entries} active={active} onOpenFile={onOpenFile} open={item.entries.map(entry=>groupsOpen['tool-group:'+entry.id]).find(value=>value!==undefined)??false} onToggle={value=>onGroupToggle?.(item.entries.map(entry=>entry.id),value)}/>)}
-    </div>
+    </div>}
   </details>;
 }
