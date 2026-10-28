@@ -1183,10 +1183,10 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     await page.locator('#restart-buildr').click();
     const confirmDialog = page.getByRole('dialog', { name: '重启 Buildr Web？', exact: true });
     await confirmDialog.waitFor({ state: 'visible' });
-    assert.match(await confirmDialog.innerText(), /进行中的生成与任务验证将被取消/);
+    assert.match(await confirmDialog.innerText(), /独立智能体（Agent）执行服务不会被强制停止/);
     await confirmAntModal(page);
     await page.locator('#restart-buildr-error').waitFor();
-    assert.match(await page.locator('#restart-buildr-error').innerText(), /尚未重启/);
+    assert.match(await page.locator('#restart-buildr-error').innerText(), /未能确认重启请求/);
     assert.equal(await page.locator('#workspace-grid').isVisible(), true);
     assert.equal(await page.locator('#restart-screen').count(), 0);
     await page.unroute(restartUrl, failRestart);

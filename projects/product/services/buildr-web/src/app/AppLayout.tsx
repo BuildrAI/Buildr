@@ -32,7 +32,7 @@ import { ArticleEditorProvider } from '../features/publication/components/Articl
 import { WorkspaceFileEditingProvider, useFileEditingDraftProtection } from './WorkspaceFileEditingProvider';
 import { WorkspaceSourceControlProvider } from './WorkspaceSourceControlProvider';
 import { readOptionalPreference, writeOptionalPreference } from '../lib/optional-preferences';
-import { waitForRestart } from './restart-watch';
+import { waitForRestart, withRestartRequest, type RestartFailure } from './restart-watch';
 
 type PreviewIdentity = {
   instance: string;
@@ -142,9 +142,15 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
   const quitPending = useRef(false);
   const [installationInfoOpen, setInstallationInfoOpen] = useState(false);
   const updateEntryRef = useRef<UpdateEntryHandle>(null);
-  const [restartPhase, setRestartPhase] = useState<null | 'watching' | 'timed-out'>(null);
+  const [restartPhase, setRestartPhase] = useState<null | 'watching' | 'timed-out' | 'failed'>(null);
   const [restartError, setRestartError] = useState('');
   const restartPending = useRef(false);
+  const restartWatcher = useRef<AbortController | null>(null);
+  const restartRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => {
+    restartWatcher.current?.abort();
+    restartRequest.current?.abort();
+  }, []);
   const [taskListResetToken, setTaskListResetToken] = useState(0);
   const [navigationRevision, setNavigationRevision] = useState(0);
   const refreshNavigation = useCallback(() => setNavigationRevision((value) => value + 1), []);
@@ -271,35 +277,54 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
   };
 
   const watchRestart = useCallback(async () => {
+    restartWatcher.current?.abort();
+    const controller = new AbortController();
+    restartWatcher.current = controller;
+    let failure: RestartFailure | undefined;
     const status = await waitForRestart({
       url: window.location.origin + '/',
       previousToken: document.querySelector('meta[name="buildr-session"]')?.getAttribute('content') ?? null,
+      signal: controller.signal,
+      readStatus: signal => runtimeSystemApi.restartStatus(signal),
+      onFailure: error => { failure = error; },
     });
+    if (controller.signal.aborted || restartWatcher.current !== controller) return;
+    restartWatcher.current = null;
     if (status === 'ready') {
       window.location.reload();
       return;
     }
-    setRestartPhase('timed-out');
+    setRestartError(failure?.message || '');
+    setRestartPhase(status === 'failed' ? 'failed' : 'timed-out');
   }, []);
 
   const restart = async () => {
     if (restartPending.current || quitPending.current) return;
     restartPending.current = true;
+    let controller: AbortController | null = null;
     try {
       const ok = await confirmModal({
         title: '重启 Buildr Web？',
-        content: '重启将停止当前实例并启动新实例，进行中的生成与任务验证将被取消。确定重启吗？',
+        content: '重启会短暂断开网页连接，网页服务中的验证可能中断；独立智能体（Agent）执行服务不会被强制停止。确定重启吗？',
         okText: '重启',
         okButtonProps: { danger: true },
       });
       if (!ok) return;
       setRestartError('');
-      await runtimeSystemApi.restart();
+      controller = new AbortController();
+      restartRequest.current = controller;
+      await withRestartRequest(signal => runtimeSystemApi.restart(signal), { signal: controller.signal, timeoutMs: 5000 });
+      if (controller.signal.aborted) return;
       setRestartPhase('watching');
       void watchRestart();
     } catch (error) {
+      if (controller?.signal.aborted) return;
       setRestartError(error instanceof Error ? error.message : '重启失败，请重试。');
+      // A lost response does not establish whether the server accepted restart.
+      // Keep reconnection available without sending another mutation blindly.
+      if (restartPhase || typeof (error as { status?: unknown })?.status !== 'number') setRestartPhase('timed-out');
     } finally {
+      if (restartRequest.current === controller) restartRequest.current = null;
       restartPending.current = false;
     }
   };
@@ -310,7 +335,13 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
   }, [watchRestart]);
 
   const devUpdateCompleted = useCallback(() => {
-    void runtimeSystemApi.restart().catch(() => {}).then(beginRestartWatch);
+    const controller = new AbortController();
+    restartRequest.current = controller;
+    void withRestartRequest(signal => runtimeSystemApi.restart(signal), { signal: controller.signal, timeoutMs: 5000 }).catch(() => {}).then(() => {
+      if (controller.signal.aborted) return;
+      if (restartRequest.current === controller) restartRequest.current = null;
+      beginRestartWatch();
+    });
   }, [beginRestartWatch]);
 
   const retryRestartWatch = () => {
@@ -388,14 +419,26 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
   if (restartPhase) {
     return (
       <div className="exit-screen" id="restart-screen">
-        <Typography.Title level={2}>{restartPhase === 'watching' ? '正在重启 Buildr Web…' : '重启仍在进行'}</Typography.Title>
+        <Typography.Title level={2}>{restartPhase === 'watching' ? '正在重启 Buildr Web…' : restartPhase === 'failed' ? 'Buildr Web 重启失败' : '尚未确认重启完成'}</Typography.Title>
         <Typography.Paragraph type="secondary">
           {restartPhase === 'watching'
             ? '页面将在新实例就绪后自动刷新，请稍候。'
-            : '等待超过预期仍未检测到新实例就绪。你可以继续等待，或稍后重新打开 Buildr Web。'}
+            : restartPhase === 'failed'
+              ? '原服务仍可访问。你可以重新发起重启，或返回页面继续工作。'
+              : '尚未从原地址检测到新页面。你可以继续连接；也可以重新打开 Buildr Web 应用，由应用查找当前服务地址。'}
         </Typography.Paragraph>
+        {restartPhase === 'failed' ? (
+          <>
+            <Alert id="restart-buildr-error" type="error" showIcon message="重启未完成" description={restartError} />
+            <Button id="restart-again" type="primary" onClick={() => void restart()}>重新重启</Button>
+            <Button id="restart-return" onClick={() => { setRestartPhase(null); setRestartError(''); }}>返回页面</Button>
+          </>
+        ) : null}
         {restartPhase === 'timed-out' ? (
-          <Button id="restart-retry" type="primary" onClick={retryRestartWatch}>继续等待</Button>
+          <>
+            {restartError ? <Alert type="warning" showIcon message="未能确认重启请求" description={restartError} /> : null}
+            <Button id="restart-retry" type="primary" onClick={retryRestartWatch}>继续等待</Button>
+          </>
         ) : null}
       </div>
     );
@@ -450,7 +493,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
         {workspaceId&&!preview&&<WorkspacePreparationNotice key={workspaceId} workspaceId={workspaceId}/>}
         {quitError && <Alert id="quit-buildr-error" type="error" showIcon message="Buildr Web 尚未退出" description={quitError}
           action={<Button size="small" loading={quitting} onClick={() => void quit(false)}>重试退出</Button>} />}
-        {restartError && <Alert id="restart-buildr-error" type="error" showIcon message="Buildr Web 尚未重启" description={restartError}
+        {restartError && <Alert id="restart-buildr-error" type="error" showIcon message="未能确认重启请求" description={restartError}
           action={<Button size="small" onClick={() => { setRestartError(''); void restart(); }}>重试重启</Button>} />}
         <AppShellFrame isGlobal={isGlobal} compactNavigation={compactNavigation} sidebarCollapsed={sidebarCollapsed} sidebarWidth={sidebarWidth} onSidebarResize={resizeSidebar} onToggleSidebar={() => { setSidebarCollapsed(value => !value); writeOptionalPreference('buildr.sidebar-collapsed', String(!sidebarCollapsed)); }} navigation={<AppNavigation key={workspaceId} />} navigationRail={workspaceId ? <AppPrimaryNavigation sidebarWidth={sidebarWidth} onSidebarResize={resizeSidebar} workspaceId={workspaceId} area={area} /> : undefined} afterContent={<div className="ac-panel-mount" ref={setConversationMount} style={{display: 'contents'}} /> }>{/* Business content stays in the live adapter. */}<>{workspaceId ? <WorkspaceFileEditingProvider key={workspaceId} workspaceId={workspaceId}><ArticleEditorProvider workspaceId={workspaceId}><WorkspacePages workspaceId={workspaceId} renderResource={renderResource} navigationRequest={pageNavigationRequest} /></ArticleEditorProvider></WorkspaceFileEditingProvider> : <Outlet />}</></AppShellFrame>
       </div>

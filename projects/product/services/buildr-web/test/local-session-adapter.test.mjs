@@ -59,3 +59,46 @@ test('refreshSession fails cleanly without a served token or a fetch implementat
   assert.equal(await adapter.refreshSession(), false, 'pages without an injected token are not accepted');
   delete globalThis.window;
 });
+
+test('cancelled bounded refresh aborts its body without occupying another session refresh', async t => {
+  const previousWindow = globalThis.window;
+  t.after(() => { if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow; });
+  globalThis.window = { location: { href: 'http://127.0.0.1:1234/' } };
+  const controller = new AbortController();
+  let requests = 0;
+  let bodyStarted;
+  const started = new Promise(resolve => { bodyStarted = resolve; });
+  t.mock.method(globalThis, 'fetch', async (_url, init) => {
+    requests++;
+    if (requests > 1) return new Response(injectedPage('fresh-token'));
+    assert.equal(init.signal, controller.signal);
+    return { ok: true, text: () => new Promise((_resolve, reject) => {
+      bodyStarted();
+      init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true });
+    }) };
+  });
+  const adapter = new LocalSessionAdapter(() => 'old-token', null);
+  const pending = adapter.refreshSession(controller.signal);
+  await started;
+  assert.equal(await adapter.refreshSession(), true, 'another caller is not held by the bounded request');
+  controller.abort();
+  assert.equal(await pending, false);
+  assert.equal(adapter.writeHeaders()['x-buildr-session'], 'fresh-token');
+  assert.equal(await adapter.refreshSession(), true);
+});
+
+test('a late body from an aborted observer cannot replace the recovered session', async t => {
+  const previousWindow = globalThis.window;
+  t.after(() => { if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow; });
+  globalThis.window = { location: { href: 'http://127.0.0.1:1234/' } };
+  let releaseBody;
+  t.mock.method(globalThis, 'fetch', async () => ({ ok: true, text: () => new Promise(resolve => { releaseBody = resolve; }) }));
+  const adapter = new LocalSessionAdapter(() => 'old-token', null);
+  const controller = new AbortController();
+  const pending = adapter.refreshSession(controller.signal);
+  await new Promise(resolve => setImmediate(resolve));
+  controller.abort();
+  releaseBody(injectedPage('late-token'));
+  assert.equal(await pending, false);
+  assert.equal(adapter.writeHeaders()['x-buildr-session'], 'old-token');
+});

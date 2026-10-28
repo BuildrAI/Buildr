@@ -5,6 +5,8 @@ import { currentProductInvocation, productInvocationArgs } from '../../infrastru
 import { buildrWebInstanceObservationDigest } from '../infrastructure/instance-runtime.ts';
 import { updatedWebEnvironment } from './update-web-handoff.ts';
 import { openWebHandoffSuccessorLog, releaseWebHandoffSuccessorLog } from './web-handoff-successor-log.ts';
+import type { WebRestartFailure } from './restart-control.ts';
+import { WEB_RESTART_ATTEMPT_ENV } from '../startup-context.ts';
 
 type SpawnSuccessorDependencies = {
   spawnProcess?: typeof spawn;
@@ -12,6 +14,8 @@ type SpawnSuccessorDependencies = {
   environment?: NodeJS.ProcessEnv;
   openLog?: (file: string) => number;
   onSpawned?: (child: ChildProcess) => void;
+  attemptToken?: string;
+  onFailure?: (error: WebRestartFailure) => void;
 };
 
 /**
@@ -39,7 +43,7 @@ export function spawnBuildrWebRestartSuccessor(
   let child: ChildProcess;
   try {
     child = (dependencies.spawnProcess || spawn)(command, argsPrefix, {
-      env: updatedWebEnvironment(dependencies.environment),
+      env: { ...updatedWebEnvironment(dependencies.environment), ...(dependencies.attemptToken ? { [WEB_RESTART_ATTEMPT_ENV]: dependencies.attemptToken } : {}) },
       detached: true,
       stdio: logFd === null ? ['ignore', 'ignore', 'ignore', 'ipc'] : ['ignore', logFd, logFd, 'ipc'],
       windowsHide: true,
@@ -51,6 +55,7 @@ export function spawnBuildrWebRestartSuccessor(
   releaseWebHandoffSuccessorLog(child, logFd);
   const report = (code: string, message: string): void => {
     console.error(`Buildr Web restart handoff failed: ${message}`, code !== 'web_restart_process_failed' ? `(${code})` : '');
+    dependencies.onFailure?.({ code, message });
   };
   child.on('message', (message: any) => {
     if (message?.type === 'buildr.web-update-handoff-failed' && typeof message.message === 'string') {
@@ -59,7 +64,9 @@ export function spawnBuildrWebRestartSuccessor(
   });
   child.on('error', (error: Error) => report('web_restart_process_failed', error.message));
   child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
-    if (code !== 0 || signal) report('web_restart_process_failed', `Buildr Web 重启后继进程已退出（${signal || code}）。`);
+    const message = `Buildr Web 重启后继进程已退出（${signal || code}）。`;
+    if (code !== 0 || signal) report('web_restart_process_failed', message);
+    else dependencies.onFailure?.({ code: 'web_restart_process_failed', message });
   });
   child.channel?.unref();
   child.unref();

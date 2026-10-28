@@ -2,6 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { isAllowedProductLayerImport, productLayerOf } from '../verification/cli/product-layer-boundaries.ts';
 
+test('the private restart bootstrap context exposes only its three explicit consumer edges', () => {
+  for (const consumer of ['bootstrap/cli/main.ts', 'web/application/instance-lifecycle.ts', 'web/application/restart-web-handoff.ts']) {
+    assert.equal(isAllowedProductLayerImport(consumer, 'web/startup-context.ts'), true);
+    assert.equal(isAllowedProductLayerImport(consumer, 'web/unregistered-startup-context.ts'), false);
+  }
+  assert.equal(isAllowedProductLayerImport('web/application/unrelated.ts', 'web/startup-context.ts'), false);
+  assert.equal(isAllowedProductLayerImport('modules/task/application/value.ts', 'web/startup-context.ts'), false);
+  assert.equal(isAllowedProductLayerImport('infrastructure/process.ts', 'web/startup-context.ts'), false);
+});
+
 test('任务提交子模块按真实职责分层，只接通声明的Task和Workspace端口', () => {
   const root = 'modules/task/commits/';
   for (const [directory, layer] of [['domain', 'domain'], ['application', 'application'], ['infrastructure', 'infrastructure'], ['interfaces/http', 'interfaces'], ['interfaces/cli', 'interfaces']]) assert.equal(productLayerOf(`${root}${directory}/value.ts`), layer);

@@ -318,6 +318,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   "integration-self-bootstrap": {
     "inputs": [
       "test/integration/self-bootstrap-closeout.test.ts",
+      "test/integration/development-web-continuity.test.ts",
       "src/modules/installation/infrastructure/development-runtime-inputs.ts",
       "skills/buildr-self-bootstrap-sync/**",
       "resources/workspace/skills/buildr/buildr-self-bootstrap-sync/**",
@@ -626,6 +627,12 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/integration/development-workspace-check-isolation.test.ts",
       "test/e2e/buildr-web-channel-isolation.test.ts",
       "test/e2e/buildr-web-launcher.test.ts",
+      "test/e2e/buildr-web-restart.test.ts",
+      "test/e2e/buildr-web-restart-browser.test.ts",
+      "services/buildr-web/src/api/client.ts",
+      "services/buildr-web/src/api/LocalSessionAdapter.ts",
+      "services/buildr-web/src/app/AppLayout.tsx",
+      "services/buildr-web/src/app/restart-watch.ts",
       "test/e2e/workspace-app-process.test.ts",
       "src/web/**",
       "src/infrastructure/process.ts",

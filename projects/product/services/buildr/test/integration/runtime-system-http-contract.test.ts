@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import test from 'node:test';
+import http from 'node:http';
 
 import { createRuntime, runtimeContributions } from '../helpers/runtime-harness.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
@@ -279,4 +280,124 @@ test('Runtime/System validators 不变异输入且全局 operation coverage 闭�
   const broken: any = inspectHttpOperationCoverage([[...LOCAL_APP_HTTP_OPERATIONS, { id: 'unknown.route', disposition: 'migrated-json' }]], []);
   assert.equal(broken.status, 'blocked');
   assert.deepEqual(broken.blockers, ['unknown.route']);
+});
+
+test('restart status and authenticated shutdown coordinate retries without exposing private attempt tokens', async t => {
+  const { base, root }: any = fixture(t, 'runtime-system-restart-recovery');
+  const previousDataRoot = process.env.BUILDR_APP_DATA_DIR;
+  process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
+  t.after(() => {
+    if (previousDataRoot === undefined) delete process.env.BUILDR_APP_DATA_DIR;
+    else process.env.BUILDR_APP_DATA_DIR = previousDataRoot;
+  });
+  const runtime: any = createRuntime();
+  const attempts: Array<{ attemptToken: string; onFailure: (error: { code: string; message: string }) => void }> = [];
+  let releaseShutdown: (() => void) | undefined;
+  const shutdownBarrier = new Promise<void>(resolve => { releaseShutdown = resolve; });
+  const instance: any = createLocalWorkspaceServer(runtime, {
+    targetRoot: root, httpContributions: runtimeContributions(runtime, 'http'),
+    beforeShutdown: () => shutdownBarrier,
+    spawnSuccessor: (_state: unknown, options: typeof attempts[number]) => {
+      attempts.push(options);
+      if (attempts.length === 1) throw Object.assign(new Error('injected spawn failure'), { code: 'fixture_spawn_failed' });
+      return null;
+    },
+  });
+  t.after(async () => { releaseShutdown?.(); await instance.shutdown(); });
+  const { url, sessionToken, instanceSecret }: any = await instance.ready;
+  const sessionHeaders = { origin: url, 'x-buildr-session': sessionToken, 'content-type': 'application/json' };
+  const readStatus = async () => {
+    const response = await fetch(`${url}/api/v1/app/restart-status`, { headers: sessionHeaders });
+    assert.equal(response.status, 200);
+    const status = await response.json();
+    validate(LOCAL_APP_HTTP_VALIDATORS, LOCAL_APP_HTTP_OPERATIONS, 'local-app.restart-status', 'success', status);
+    return status;
+  };
+  assert.deepEqual(await readStatus(), { status: 'idle' });
+  let response = await fetch(`${url}/api/v1/app/restart-status`);
+  assert.equal(response.status, 403);
+  response = await fetch(`${url}/api/v1/app/restart-status`, { headers: { ...sessionHeaders, origin: 'https://example.com' } });
+  assert.equal(response.status, 403);
+
+  response = await fetch(`${url}/api/v1/app/restart`, { method: 'POST', headers: sessionHeaders, body: '{}' });
+  assert.equal(response.status, 202);
+  await response.arrayBuffer();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(await readStatus(), { status: 'failed', error: { code: 'fixture_spawn_failed', message: 'injected spawn failure' } });
+  response = await fetch(`${url}/api/v1/app/quit-instance`, { method: 'POST', headers: { 'x-buildr-instance': instanceSecret, 'x-buildr-restart-attempt': attempts[0].attemptToken } });
+  assert.equal(response.status, 409, 'revoked predecessor must not stop a host after failure');
+
+  response = await fetch(`${url}/api/v1/app/restart`, { method: 'POST', headers: sessionHeaders, body: '{}' });
+  assert.equal(response.status, 202);
+  await response.arrayBuffer();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(attempts.length, 2);
+  assert.notEqual(attempts[0].attemptToken, attempts[1].attemptToken);
+  attempts[0].onFailure({ code: 'late_old_failure', message: 'late' });
+  assert.deepEqual(await readStatus(), { status: 'restarting' });
+  response = await fetch(`${url}/api/v1/health`, { headers: { 'x-buildr-instance': instanceSecret } });
+  const health = await response.json();
+  assert.equal(health.restartInProgress, true);
+  assert.equal(JSON.stringify(health).includes(attempts[1].attemptToken), false);
+  response = await fetch(`${url}/api/v1/app/quit-instance`, { method: 'POST', headers: { 'x-buildr-instance': instanceSecret } });
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).error.code, 'restart_in_progress');
+  response = await fetch(`${url}/api/v1/app/quit-instance`, { method: 'POST', headers: { 'x-buildr-instance': instanceSecret, 'x-buildr-restart-attempt': attempts[0].attemptToken } });
+  assert.equal(response.status, 409);
+  response = await fetch(`${url}/api/v1/app/quit-instance`, { method: 'POST', headers: { 'x-buildr-instance': instanceSecret, 'x-buildr-restart-attempt': attempts[1].attemptToken } });
+  assert.equal(response.status, 202);
+  await response.arrayBuffer();
+  attempts[1].onFailure({ code: 'shutdown_failure', message: 'must not release a closing host' });
+  response = await fetch(`${url}/api/v1/app/restart`, { method: 'POST', headers: sessionHeaders, body: '{}' });
+  assert.equal(response.status, 503, 'shutdown-first refuses a competing page restart');
+  assert.equal((await response.json()).error.code, 'app_shutting_down');
+});
+
+test('shutdown accepted while a restart request body is pending prevents a competing successor', async t => {
+  const { base, root }: any = fixture(t, 'runtime-system-slow-restart-body');
+  const previousDataRoot = process.env.BUILDR_APP_DATA_DIR;
+  process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
+  t.after(() => {
+    if (previousDataRoot === undefined) delete process.env.BUILDR_APP_DATA_DIR;
+    else process.env.BUILDR_APP_DATA_DIR = previousDataRoot;
+  });
+  const runtime: any = createRuntime();
+  let spawnCalls = 0;
+  let releaseShutdown!: () => void;
+  const shutdownBarrier = new Promise<void>(resolve => { releaseShutdown = resolve; });
+  const instance: any = createLocalWorkspaceServer(runtime, {
+    targetRoot: root, httpContributions: runtimeContributions(runtime, 'http'),
+    beforeShutdown: () => shutdownBarrier,
+    spawnSuccessor: () => { spawnCalls += 1; return null; },
+  });
+  t.after(async () => { releaseShutdown(); await instance.shutdown(); });
+  const { url, sessionToken, instanceSecret }: any = await instance.ready;
+  let observeRequest!: () => void;
+  const receivedHeaders = new Promise<void>(resolve => { observeRequest = resolve; });
+  instance.server.once('request', () => { observeRequest(); });
+  const restartRequest = http.request(`${url}/api/v1/app/restart`, {
+    method: 'POST',
+    headers: { origin: url, 'x-buildr-session': sessionToken, 'content-type': 'application/json', 'content-length': '2' },
+  });
+  t.after(() => restartRequest.destroy());
+  const restartResponse = new Promise<{ status: number | undefined; body: any }>((resolve, reject) => {
+    restartRequest.once('error', reject);
+    restartRequest.once('response', response => {
+      const chunks: Buffer[] = [];
+      response.on('data', chunk => chunks.push(chunk));
+      response.once('end', () => resolve({ status: response.statusCode, body: JSON.parse(Buffer.concat(chunks).toString('utf8')) }));
+      response.once('error', reject);
+    });
+  });
+  restartRequest.flushHeaders();
+  await receivedHeaders;
+  const stopping = await fetch(`${url}/api/v1/app/quit-instance`, { method: 'POST', headers: { 'x-buildr-instance': instanceSecret } });
+  assert.equal(stopping.status, 202);
+  await stopping.arrayBuffer();
+  restartRequest.end('{}');
+  const response = await restartResponse;
+  assert.equal(response.status, 503);
+  assert.equal(response.body.error.code, 'app_shutting_down');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(spawnCalls, 0);
 });

@@ -708,6 +708,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
   ], { schedulingCostMs: 2000, args: ['--test-concurrency=1'] }),
   integrationSlice('integration-self-bootstrap', [
     'test/integration/self-bootstrap-closeout.test.ts',
+    'test/integration/development-web-continuity.test.ts',
   ], { schedulingCostMs: 50000, resources: ['workspace-saturating'], args: ['--test-concurrency=1'] }),
   integrationSlice('integration-task-read-models', [
     'test/integration/task-review-repository.test.ts',

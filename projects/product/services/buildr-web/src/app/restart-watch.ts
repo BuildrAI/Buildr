@@ -4,7 +4,10 @@
  * session token. Pure logic — tests drive it with a fake fetch and clock.
  */
 
-export type RestartWatchStatus = 'waiting' | 'ready' | 'timed-out';
+export type RestartWatchStatus = 'waiting' | 'ready' | 'timed-out' | 'failed';
+
+export type RestartFailure = { code: string; message: string };
+export type RestartOperationStatus = { status: 'idle' | 'restarting' | 'failed'; error?: RestartFailure };
 
 export type RestartWatchOptions = {
   url: string;
@@ -13,9 +16,39 @@ export type RestartWatchOptions = {
   sleep?: (milliseconds: number) => Promise<void>;
   attempts?: number;
   intervalMs?: number;
+  timeoutMs?: number;
+  requestTimeoutMs?: number;
+  now?: () => number;
   onWaiting?: () => void;
+  readStatus?: (signal: AbortSignal) => Promise<RestartOperationStatus>;
+  onFailure?: (error: RestartFailure) => void;
   signal?: AbortSignal;
 };
+
+/** Bound both fetch and body reads, including collaborators that ignore abort. */
+export async function withRestartRequest<T>(
+  request: (signal: AbortSignal) => Promise<T>,
+  { signal, timeoutMs = 1500 }: { signal?: AbortSignal; timeoutMs?: number } = {},
+): Promise<T> {
+  const controller = new AbortController();
+  let dispose = () => {};
+  const interrupted = new Promise<never>((_resolve, reject) => {
+    const stop = (reason: unknown) => { controller.abort(reason); reject(reason); };
+    const onAbort = () => stop(signal?.reason ?? new DOMException('请求已取消。', 'AbortError'));
+    const timer = setTimeout(() => stop(Object.assign(new Error('Buildr Web 请求超过预期时间，请重新连接后查看。'), { code: 'restart_request_timeout' })), Math.max(1, timeoutMs));
+    dispose = () => { clearTimeout(timer); signal?.removeEventListener('abort', onAbort); };
+    if (signal?.aborted) onAbort();
+    else signal?.addEventListener('abort', onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([Promise.resolve().then(() => {
+      controller.signal.throwIfAborted();
+      return request(controller.signal);
+    }), interrupted]);
+  } finally {
+    dispose();
+  }
+}
 
 export function sessionTokenOf(html: string): string | null {
   const match = html.match(/<meta\s+name="buildr-session"\s+content="([a-f0-9]+)"\s*\/?>/u);
@@ -28,21 +61,57 @@ async function fetchToken(fetchImpl: typeof fetch, url: string, signal?: AbortSi
   return sessionTokenOf(await response.text());
 }
 
+async function pause(milliseconds: number, signal: AbortSignal, sleep?: RestartWatchOptions['sleep']): Promise<void> {
+  if (sleep) return sleep(milliseconds);
+  return new Promise(resolve => {
+    const done = () => { clearTimeout(timer); signal.removeEventListener('abort', done); resolve(); };
+    const timer = setTimeout(done, milliseconds);
+    if (signal.aborted) done();
+    else signal.addEventListener('abort', done, { once: true });
+  });
+}
+
 export async function waitForRestart(options: RestartWatchOptions): Promise<RestartWatchStatus> {
   const fetchImpl = options.fetchImpl || fetch;
-  const sleep = options.sleep || ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)));
   const attempts = options.attempts ?? 30;
   const intervalMs = options.intervalMs ?? 1000;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    if (options.signal?.aborted) return 'timed-out';
-    options.onWaiting?.();
-    try {
-      const token = await fetchToken(fetchImpl, options.url, options.signal);
-      if (token && token !== options.previousToken) return 'ready';
-    } catch {
-      // The old process refuses connections while it stops; keep watching.
-    }
-    await sleep(intervalMs);
+  const timeoutMs = options.timeoutMs ?? Math.max(1000, attempts * intervalMs);
+  const requestTimeoutMs = options.requestTimeoutMs ?? 1500;
+  const now = options.now || Date.now;
+  const deadline = now() + timeoutMs;
+  try {
+    return await withRestartRequest(async signal => {
+      const requestBudget = () => Math.min(requestTimeoutMs, Math.max(1, deadline - now()));
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        if (signal.aborted || now() >= deadline) return 'timed-out';
+        options.onWaiting?.();
+        try {
+          const token = await withRestartRequest(requestSignal => fetchToken(fetchImpl, options.url, requestSignal), { signal, timeoutMs: requestBudget() });
+          if (signal.aborted || now() >= deadline) return 'timed-out';
+          if (token && token !== options.previousToken) return 'ready';
+        } catch {
+          // An unreachable address does not prove whether the successor started.
+        }
+        if (signal.aborted || now() >= deadline) return 'timed-out';
+        if (options.readStatus) {
+          try {
+            const status = await withRestartRequest(options.readStatus, { signal, timeoutMs: requestBudget() });
+            if (signal.aborted || now() >= deadline) return 'timed-out';
+            if (status.status === 'failed') {
+              options.onFailure?.(status.error || { code: 'web_restart_failed', message: 'Buildr Web 未能完成重启，请重试。' });
+              return 'failed';
+            }
+          } catch {
+            // Older servers and a disconnected address may not expose status.
+          }
+        }
+        if (attempt + 1 < attempts && !signal.aborted && now() < deadline) {
+          await pause(Math.min(intervalMs, deadline - now()), signal, options.sleep);
+        }
+      }
+      return 'timed-out';
+    }, { signal: options.signal, timeoutMs });
+  } catch {
+    return 'timed-out';
   }
-  return 'timed-out';
 }

@@ -150,3 +150,18 @@ test('authenticated reads with an explicit old header refresh the actual retry i
  const api=createApiClient({getWorkspaceId:()=>null,sessionAdapter:{writeHeaders:()=>({'x-buildr-session':token}),refreshSession:async()=>{refreshes++;token='fresh';return true;}}});
  assert.deepEqual(await api('/api/v1/app/agent-service/pending-requests',{headers:{'x-buildr-session':'old'}}),{ok:true});assert.deepEqual(seen,['old','fresh']);assert.equal(refreshes,1);
 });
+
+test('cancelled session refresh cannot resend a restart request', async t => {
+  const controller = new AbortController();
+  let requests = 0;
+  t.mock.method(globalThis, 'fetch', async () => {
+    requests++;
+    return new Response(JSON.stringify({ error: { code: 'session_forbidden' } }), { status: 403 });
+  });
+  const api = createApiClient({ getWorkspaceId: () => null, sessionAdapter: {
+    writeHeaders: () => ({ 'x-buildr-session': 'old' }),
+    refreshSession: async signal => { assert.equal(signal, controller.signal); controller.abort(); return true; },
+  } });
+  await assert.rejects(api('/api/v1/app/restart', { method: 'POST', body: '{}', signal: controller.signal }), error => error.name === 'AbortError');
+  assert.equal(requests, 1);
+});

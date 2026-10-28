@@ -41,6 +41,8 @@ export function createLocalWorkspaceRequestRouter({
   shutdown,
   restart,
   restartRequested,
+  restartStatus,
+  permitsRestartShutdown,
   submitTaskRead,
   submitTaskWrite,
   staticRoot,
@@ -76,6 +78,7 @@ export function createLocalWorkspaceRequestRouter({
         productIdentity,
         webProfile,
         previewIdentity,
+        restartInProgress: Boolean(restartRequested?.()),
       });
       return;
     }
@@ -104,9 +107,21 @@ export function createLocalWorkspaceRequestRouter({
       shutdown();
       return;
     }
+    if (request.method === 'GET' && pathname === '/api/v1/app/restart-status') {
+      assertReadRequest(request, trustedOrigin, sessionToken);
+      validateRequest('local-app.restart-status', {});
+      jsonResponse(response, 200, restartStatus?.() || { status: 'idle' });
+      return;
+    }
     if (request.method === 'POST' && pathname === '/api/v1/app/restart') {
       assertWriteRequest(request, trustedOrigin, sessionToken);
       validateRequest('local-app.restart', await readJsonBody(request));
+      // Reading a slow body yields to authenticated shutdown requests. Recheck
+      // immediately before accepting a restart so a closing host cannot spawn.
+      if (isClosing()) {
+        jsonResponse(response, 503, { error: { code: 'app_shutting_down', message: 'Buildr 正在退出。' } });
+        return;
+      }
       if (previewIdentity) {
         const error: Error & Record<string, any> = new Error('开发预览实例不支持重启，请使用 preview stop 后重新启动。');
         error.code = 'restart_preview_unsupported';
@@ -129,6 +144,10 @@ export function createLocalWorkspaceRequestRouter({
         return;
       }
       validateRequest('local-app.quit-instance', {});
+      if (permitsRestartShutdown && !permitsRestartShutdown(request.headers['x-buildr-restart-attempt'])) {
+        jsonResponse(response, 409, { error: { code: 'restart_in_progress', message: 'Buildr Web 重启交接正在进行，请等待后重新核对实例。' } });
+        return;
+      }
       jsonResponse(response, 202, { status: 'stopping' });
       shutdown();
       return;

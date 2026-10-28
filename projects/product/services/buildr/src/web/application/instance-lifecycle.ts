@@ -36,6 +36,7 @@ import {
   type PreviewOwner,
   type PreviewRuntime,
 } from './preview-lifecycle.ts';
+import { takeWebRestartAttempt } from '../startup-context.ts';
 
 type ProductIdentity = {
   protocolIdentity: string;
@@ -113,7 +114,7 @@ const releaseLock: (lock: StartLock | null) => void = releaseBuildrWebStartLock;
 const clearInstance = (expected: WebInstance | null, profile: WebProfile): boolean => Reflect.apply(clearBuildrWebInstance, undefined, [expected, profile]);
 const instanceDisposition: (instance: WebInstance, binding: LauncherBinding) => InstanceDisposition = npmLauncherInstanceDisposition;
 const matchesBinding: (instance: WebInstance, binding: LauncherBinding) => boolean = matchesNpmLauncherBinding;
-const shutdownInstance: (instance: WebInstance) => Promise<unknown> = requestBuildrWebInstanceShutdown;
+const shutdownInstance: (instance: WebInstance, options?: { restartAttemptToken?: string }) => Promise<unknown> = requestBuildrWebInstanceShutdown;
 const waitForExit: (instance: WebInstance, options: { profile: WebProfile; attempts?: number; intervalMs?: number }) => Promise<{ status: string }> = waitForBuildrWebInstanceExit;
 const waitForInstance = (options: { profile: WebProfile; match: ((instance: WebInstance) => boolean) | null; attempts?: number; intervalMs?: number }): Promise<WebInstance | null> => Reflect.apply(waitForBuildrWebInstance, undefined, [options]);
 const writeInstance: (runtime: WebRuntime, instance: WebInstance) => string = writeBuildrWebInstance;
@@ -171,6 +172,9 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
     if (args.includes('--restart') && (typeof restartObservation !== 'string' || !observationPattern.test(restartObservation) || args.includes('--target'))) throw new Error('同身份重启需要准确的实例观察摘要，且不能改变工作空间登记。');
     const handoffObservation = updateObservation || restartObservation;
     const handoffMode: 'update' | 'restart' | null = updateObservation ? 'update' : restartObservation ? 'restart' : null;
+    const inheritedRestartAttempt = takeWebRestartAttempt();
+    const restartAttemptToken = handoffMode === 'restart' ? inheritedRestartAttempt : undefined;
+    if (handoffMode === 'restart' && !restartAttemptToken) throw codedError('同身份重启后继缺少本次请求资格，未请求退出旧实例。', 'web_restart_attempt_missing');
     const replaceDevelopment = args.includes('--replace-mismatched-development');
     if (replaceDevelopment && (handoffObservation || args.includes('--launcher-binding'))) throw new Error('--replace-mismatched-development 不能与更新交接、同身份重启或 Launcher binding 组合。');
     const observeInstance = async (instance: WebInstance | null): Promise<WebInstance | null> => {
@@ -191,7 +195,7 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
     const noOpen = Boolean(handoffObservation) || args.includes('--no-open') || Boolean(launcherBindingPath && process.env.BUILDR_LAUNCHER_NO_OPEN === '1');
     const productIdentity = options.readProductIdentity();
     const npmLauncherBinding = launcherBindingPath ? options.assertNpmLauncherBinding(path.resolve(launcherBindingPath), productIdentity) : null;
-    const launcherIdentity = npmLauncherBinding || (handoffObservation ? null : launcherFromEnvironment());
+    let launcherIdentity = npmLauncherBinding || (handoffObservation ? null : launcherFromEnvironment());
     const previewIdentity = handoffObservation ? null : readPreviewIdentityFromEnvironment();
     const webProfile = resolveProfile(productIdentity);
     if (replaceDevelopment && webProfile.profile !== 'development') throw new Error('--replace-mismatched-development 只适用于 development 实例。');
@@ -271,6 +275,12 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
     const assertHandoffTarget = (instance: WebInstance): void => {
       assertUpdateHandoffInstanceAddress(instance);
       if (buildrWebInstanceObservationDigest(instance) !== handoffObservation) throw codedError('交接期间实例已变化，未停止后来出现的实例。', 'web_update_instance_changed');
+      if (handoffMode === 'restart') {
+        // The verified old receipt is authoritative. Its launcher file may
+        // already have been replaced by a concurrent installation update.
+        assertProfile(instance.launcherIdentity, webProfile, { productIdentity, productRoot: runtime.productRoot() });
+        launcherIdentity = instance.launcherIdentity;
+      }
       if (handoffMode === 'update') {
         if (!options.assertNpmUpdateHandoffTarget) throw codedError('更新交接缺少安装归属核验能力。', 'web_update_ownership_port_unavailable');
         options.assertNpmUpdateHandoffTarget(instance);
@@ -278,6 +288,7 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
     };
 
     const recorded = readInstance(webProfile);
+    if (handoffMode === 'restart' && restartAttemptToken && !recorded) throw codedError('重启请求对应的旧实例已不可核实，未启动迟到的后继。', 'web_update_instance_unconfirmed');
     if (handoffObservation && !recorded && fs.existsSync(buildrWebInstancePath(webProfile))) throw codedError('交接实例记录无法解析，已保留现场。', 'web_update_instance_invalid');
     if (handoffObservation && recorded) assertUpdateHandoffInstanceAddress(recorded);
     const healthy = await observeInstance(recorded);
@@ -347,7 +358,7 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
         // A legacy host owns its native work directly. Its first transition
         // must wait for idle; an isolated execution process only loses a peer.
         assertAgentUpgradeIdle(webProfile.dataRoot, {legacyHostRunning:true});
-        await shutdownInstance(currentHealthy);
+        await shutdownInstance(currentHealthy, handoffMode === 'restart' && restartAttemptToken ? { restartAttemptToken } : undefined);
         const exit = await waitForExit(currentHealthy, { profile: webProfile, ...successorExitWait });
         if (exit.status !== 'exited') throw codedError(
           replaceDevelopmentInstance
@@ -359,6 +370,8 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
           undefined,
           { pid: currentHealthy.pid, status: exit.status },
         );
+      } else if (handoffMode === 'restart' && restartAttemptToken && !currentRecorded) {
+        throw codedError('重启请求对应的旧实例已变化，未启动迟到的后继。', 'web_update_instance_unconfirmed');
       } else if (handoffObservation && currentRecorded) {
         throw codedError('启动锁内无法确认旧实例健康，未清理其他实例记录。', 'web_update_instance_unconfirmed');
       } else if (currentRecorded?.webProfile && !profilesMatch(currentRecorded.webProfile, webProfile)) {
