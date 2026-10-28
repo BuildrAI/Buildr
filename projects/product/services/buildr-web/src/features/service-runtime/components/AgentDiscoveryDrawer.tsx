@@ -1,8 +1,7 @@
-import { useState } from 'react';
-import { Alert, App, Button, Input, Space, Typography } from 'antd';
-import { CopyOutlined, ScanOutlined } from '@ant-design/icons';
+import { Alert, Button, Input, Space } from 'antd';
+import { ScanOutlined } from '@ant-design/icons';
 import { DrawerShell } from '../../../components/DrawerShell';
-import { copyText } from '../../../lib/copyText';
+import { CopyButton } from '../../../components/CopyButton';
 import { useAppShell } from '../../../app/AppShellContext';
 import { runtimeConfigurationPrompt } from '../configurationPrompt';
 
@@ -15,20 +14,8 @@ type Props = {
 
 /** 首期不提供手动配置入口；运行定义只来自智能体发现并实际验证。 */
 export function AgentDiscoveryDrawer({ open, serviceCode, serviceName, onClose }: Props) {
-  const { message } = App.useApp();
   const { workspace } = useAppShell();
-  const [notice, setNotice] = useState('');
   const prompt = runtimeConfigurationPrompt({ workspace, serviceCode, serviceName });
-
-  const copy = async () => {
-    if (!prompt) return;
-    if (await copyText(prompt)) {
-      setNotice('指令已复制。');
-      message.success('指令已复制');
-    } else {
-      setNotice('自动复制失败，请选择文本复制。');
-    }
-  };
 
   return <DrawerShell
     open={open}
@@ -59,9 +46,8 @@ export function AgentDiscoveryDrawer({ open, serviceCode, serviceName, onClose }
         <Input.TextArea aria-label="运行配置指令" value={prompt} readOnly autoSize={{ minRows: 7, maxRows: 10 }} />
       </div>
       <Space wrap>
-        <Button type="primary" icon={<CopyOutlined />} disabled={!prompt} onClick={() => void copy()}>复制指令</Button>
+        <CopyButton type="primary" size="middle" text={prompt} disabled={!prompt} failureMessage="自动复制失败，请选择文本复制。">复制指令</CopyButton>
       </Space>
-      {notice ? <Typography.Text type="secondary">{notice}</Typography.Text> : null}
       <div className="discovery-note">已有配置会先被检查，再按需要调整。保存新配置不会自动重启正在运行的实例。</div>
     </div>
   </DrawerShell>;

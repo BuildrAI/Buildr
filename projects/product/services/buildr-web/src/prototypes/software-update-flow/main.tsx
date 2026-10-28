@@ -9,7 +9,6 @@ import { WorkspacesPage } from '../../features/workspace/pages/WorkspacesPage';
 import { UpdateDialog } from '../../features/installation/components/UpdateDialog';
 import { buildUpdateView } from '../../features/installation/lib/update-view';
 import { softProductTheme } from '../../theme';
-import { copyText } from '../../lib/copyText';
 import { usePrototypeBridge } from '../prototype-bridge';
 import { stepStatuses, PREVIOUS, TARGET, type Stage } from './flow-state';
 import scenes from './scenes.json';
@@ -53,7 +52,7 @@ function Preview(){
     <AppShellFrame isGlobal sidebarCollapsed={false} onToggleSidebar={()=>{}} navigation={null}><WorkspacesPage/></AppShellFrame>
     <UpdateDialog demo open={open} view={view} busy={false} actionError="" disconnected={['reconnect-error','combined-error'].includes(stage)} onClose={()=>setOpen(false)} onCheck={check} onTargetChange={()=>{}} onDownload={()=>setStage('downloading')} onInstall={()=>setStage('installing')}
       onRecover={action=>{if(action==='launcher'){setLauncherNeedsRepair(false);setStage('launcher-repairing');}else setStage(action==='install'?'installing':'restarting');}}
-      onReconnect={()=>setStage('restarting')} onCopy={command=>void copyText(command).then(ok=>message.info(ok?'命令已复制；原型不会执行命令。':'请选中命令后复制。'))} onAgent={()=>void message.info('仅演示当前版本的更新指令，不发送真实任务。')}/>
+      onReconnect={()=>setStage('restarting')} onAgent={()=>void message.info('仅演示当前版本的更新指令，不发送真实任务。')}/>
   </div>;
 }
 createRoot(document.getElementById('root')!).render(<ConfigProvider locale={zhCN} theme={{...softProductTheme,cssVar:true,hashed:false}} wave={{disabled:true}}><App><MemoryRouter initialEntries={['/?catalog=1']}><Preview/></MemoryRouter></App></ConfigProvider>);

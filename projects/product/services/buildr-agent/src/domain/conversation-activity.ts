@@ -8,6 +8,16 @@ export function messageSignature(record: StoredConversation): string {
     .map(entry => [entry.id, entry.text, entry.attachments ?? []]);
   return createHash('sha256').update(JSON.stringify(messages)).digest('hex');
 }
+/** 列表顺序只跟随用户输入：用户消息与对问题的答复。 */
+export function userActivityAt(record: StoredConversation): string | undefined {
+  let latest: string | undefined;
+  for (const entry of record.view.entries) {
+    const fromUser = entry.kind === 'message' && entry.role === 'user' || entry.role === 'user' && entry.kind === 'notice' && entry.id.startsWith('reply-');
+    if (!fromUser || entry.status === 'failed') continue;
+    if (!latest || entry.createdAt > latest) latest = entry.createdAt;
+  }
+  return latest;
+}
 export function summaryView(record: StoredConversation, version: number, seenThrough: number, updatedAt: string): ConversationView {
   const view = record.view;
   return {

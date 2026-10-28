@@ -3,6 +3,7 @@ import { Alert, Button, Empty, Popover } from 'antd';
 import { UnorderedListOutlined, ArrowRightOutlined } from '@ant-design/icons';
 import { ConversationActivityStatus } from './ConversationActivityStatus';
 import { activityReminder, type ActivityCounts, type ActivityState } from './conversation-activity';
+import { CopyButton } from '../../components/CopyButton';
 import './conversation-activity.css';
 export type ActivityItem={id:string;workspaceId:string;title:string;meta:string;state:ActivityState};
 export type ActivityPopupControl={open?:boolean;onOpenChange?(value:boolean):void};
@@ -18,7 +19,7 @@ export function ConversationActivityEntry(props:Props) {
   const history=()=>{dismiss();props.onHistory();};
   const stale=props.countsStale??Boolean(props.error);
   const reminder=activityReminder(props.counts,stale);
-  return <Popover open={open} placement={props.side==='left'?'rightTop':'leftTop'} trigger={['hover']} mouseEnterDelay={0.15} mouseLeaveDelay={0.2} rootClassName="ac-activity-popover"
+  return <Popover open={open} placement={props.side==='left'?'rightTop':'leftTop'} trigger={['hover']} mouseEnterDelay={0.15} mouseLeaveDelay={0.5} rootClassName="ac-activity-popover"
     onOpenChange={next=>{if(next&&dismissed.current)return;if(!next&&(document.activeElement===entry.current||document.activeElement?.closest('.ac-activity-menu')))return;setOpen(next);}}
     content={<section className={'ac-activity-menu '+(props.menuClassName??'')} aria-label="活动中的对话"
       onBlur={event=>{const next=event.relatedTarget;if(next instanceof Element&&(next.closest('.ac-activity-menu')||next===entry.current))return;setOpen(false);}}
@@ -29,9 +30,12 @@ export function ConversationActivityEntry(props:Props) {
       {props.error&&<Alert type="warning" showIcon message={props.error}/>}
       <div className="ac-activity-items">{[...groups].map(([workspaceId,items])=><section className="ac-activity-workspace" key={workspaceId} data-activity-workspace={workspaceId} aria-label={props.workspaces.find(row=>row.id===workspaceId)?.name||workspaceId}>
         <h3><span title={props.workspaces.find(row=>row.id===workspaceId)?.name||workspaceId}>{props.workspaces.find(row=>row.id===workspaceId)?.name||workspaceId}</span><small>{items.length}</small></h3>
-        {items.map(item=><button key={item.workspaceId+':'+item.id} data-activity-id={item.id} className={props.selectedId===item.id?'is-selected':''} onClick={()=>{dismiss();props.onOpen(item);}}>
-        <span className="ac-activity-title"><strong title={item.title}>{item.title}</strong><ConversationActivityStatus state={item.state}/></span><small title={item.meta}>{item.meta}</small>
-      </button>)}</section>)}
+        {items.map(item=><div key={item.workspaceId+':'+item.id} className={'ac-activity-row'+(props.selectedId===item.id?' is-selected':'')}>
+        <button type="button" data-activity-id={item.id} className="ac-activity-row-main" onClick={()=>{dismiss();props.onOpen(item);}}>
+        <span className="ac-activity-title"><strong title={item.title}>{item.title}</strong><ConversationActivityStatus state={item.state}/></span><small><span className="ac-activity-id" title={item.id}>ID {item.id}</span><span className="ac-activity-meta" title={item.meta}>{item.meta}</span></small>
+        </button>
+        <CopyButton type="text" className="ac-activity-row-copy" text={item.id} ariaLabel="复制对话 ID" failureMessage="复制失败，请手动选择对话 ID 复制。"/>
+        </div>)}</section>)}
       {!props.items.length&&<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={props.emptyDescription??'暂无活动中的对话'}/>}
       {props.hasMore&&<Button type="text" className="ac-activity-more" onClick={props.onMore}>显示更多活动对话</Button>}</div>
       {props.historyPlacement==='footer'&&<footer className="ac-activity-history-footer"><Button type="text" aria-label="全部对话" onClick={history}>全部对话<ArrowRightOutlined aria-hidden="true"/></Button></footer>}

@@ -26,6 +26,7 @@ registerHooks({
       if (specifier.endsWith('/AppShellContext')) return facade('export const useAppShell=()=>({workspaceId:globalThis.__runtimeWorkspace});');
       if (specifier.endsWith('/DrawerShell')) return facade('export const DrawerShell="drawer";');
       if (specifier.endsWith('/copyText')) return facade('export const copyText=async text=>{globalThis.__runtimeCopied.push(text);return true;};');
+      if (specifier.endsWith('/CopyButton')) return facade('export const CopyButton="copy-button";');
       if (specifier === 'antd') return facade('export const Alert="alert",Button="log-button",Input="log-input",Space="space",Switch="log-switch",Tag="tag";export const App={useApp:()=>({message:{success:text=>globalThis.__runtimeMessages.push(text),error:text=>globalThis.__runtimeMessages.push(text)}})};');
       if (specifier === '@ant-design/icons') return facade('export const CopyOutlined="copy-icon",FileTextOutlined="file-icon",SearchOutlined="search-icon";');
       if (specifier.startsWith('.')) return next(new URL(specifier + '.ts', context.parentURL).href, context);
@@ -108,7 +109,7 @@ test('日志换实例、关闭和同名跨工作空间后拒绝旧响应；搜�
     h.requests[0].resolve(response('old', 'OLD LEAK')); await settle(); tree = h.render(props('current')); assert.doesNotMatch(find(tree, 'pre')[0].props.children, /OLD LEAK/);
     find(tree, 'log-input')[0].props.onChange({ target: { value: 'error' } }); tree = h.render(props('current'));
     assert.equal(find(tree, 'pre')[0].props.children, 'ERROR current-failure'); assert.equal(find(tree, 'log-switch')[0].props.checked, false);
-    const copy = find(tree, 'log-button').find(button => button.props.icon); await copy.props.onClick(); assert.deepEqual(globalThis.__runtimeCopied, ['ERROR current-failure']); assert.deepEqual(globalThis.__runtimeMessages, ['日志已复制']);
+    const copy = find(tree, 'copy-button')[0]; assert.equal(copy.props.text, 'ERROR current-failure'); assert.equal(copy.props.disabled, false);
     tree = h.render(props('current'), 'B'); assert.doesNotMatch(find(tree, 'pre')[0].props.children, /current-failure/);
     const last = h.requests.at(-1); h.render({ ...props('current'), open: false }, 'B'); assert.equal(last.signal.aborted, true);
     last.resolve(response('current', 'CLOSED LEAK')); await settle(); tree = h.render(props('current'), 'B'); assert.doesNotMatch(find(tree, 'pre')[0].props.children, /CLOSED LEAK/);

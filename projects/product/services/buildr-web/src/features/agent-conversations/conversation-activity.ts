@@ -18,5 +18,5 @@ export function activityState(row:ConversationSummary):ActivityState {
 export const isActiveConversation=(row:ConversationSummary)=>Boolean(row.activity?.active||activityState(row));
 export function conversationMetadata(row:ConversationSummary,workspaceName?:string,modelLabel?:string) {
   const names:Record<string,string>={codex:'Codex',dsh:'DSH',qoder:'Qoder'};
-  return [workspaceName, row.run?(names[row.run.provider]||row.run.provider):undefined,modelLabel??row.run?.model,new Date(row.activity?.updatedAt??row.updatedAt).toLocaleString()].filter(Boolean).join(' · ');
+  return [workspaceName, row.run?(names[row.run.provider]||row.run.provider):undefined,modelLabel??row.run?.model].filter(Boolean).join(' · ');
 }

@@ -1,18 +1,13 @@
-import { App, Button, Space, Tooltip } from 'antd';
-import { BranchesOutlined, CopyOutlined, NodeIndexOutlined, ProjectOutlined, TagsOutlined } from '@ant-design/icons';
+import { Button, Space, Tooltip } from 'antd';
+import { BranchesOutlined, NodeIndexOutlined, ProjectOutlined, TagsOutlined } from '@ant-design/icons';
 import { formatShortDateTime } from '../../../lib/taskLabels';
-import { copyText } from '../../../lib/copyText';
+import { CopyButton } from '../../../components/CopyButton';
 import type { SourceControlCommit } from '../source-control-model';
 
 type Props = { commit: SourceControlCommit; onOpenTask(taskId: string): void; compact?: boolean };
 
 /** Hover summaries and the fixed reader share the same observed commit and task identity. */
 export function CommitInfoContent({commit, onOpenTask, compact = false}: Props) {
-  const { message } = App.useApp();
-  const copy = async (text: string) => {
-    if (await copyText(text)) message.success('已复制');
-    else message.info('可以选中文字复制。');
-  };
   const fullText = `${commit.hash}\n${commit.authorName} <${commit.authorEmail}>\n${formatShortDateTime(commit.committedAt)}\n\n${commit.message}`;
   const lines = commit.message.split(/\r?\n/);
   const descriptionLines = (lines[0] === commit.subject ? lines.slice(1) : lines).join('\n').trim().split('\n');
@@ -28,6 +23,6 @@ export function CommitInfoContent({commit, onOpenTask, compact = false}: Props) 
     </div>}
     {!compact && description && <pre className="source-control-commit-message">{description}</pre>}
     <div className="source-control-commit-detail-task"><Tooltip title={'任务：' + (commit.taskId ? commit.taskTitle || commit.taskId : commit.taskDiagnostic ? '关联未确认' : '未关联')}><ProjectOutlined /></Tooltip><div><small>对应任务</small>{commit.taskId ? <><Button type="link" size="small" aria-label={'打开任务 ' + (commit.taskTitle || commit.taskId)} onClick={() => onOpenTask(commit.taskId!)}>{commit.taskTitle || commit.taskId}</Button>{!compact && <code>{commit.taskId}</code>}</> : <span>{commit.taskDiagnostic || '未关联任务'}</span>}</div></div>
-    <Space wrap className="source-control-commit-detail-actions"><Button size="small" aria-label="复制完整信息" icon={<CopyOutlined />} onClick={() => void copy(fullText)}>复制完整信息</Button><Button size="small" aria-label="复制提交标识" icon={<CopyOutlined />} onClick={() => void copy(commit.hash)}>复制提交标识</Button></Space>
+    <Space wrap className="source-control-commit-detail-actions"><CopyButton text={fullText} ariaLabel="复制完整信息" failureMessage="可以选中文字复制。">复制完整信息</CopyButton><CopyButton text={commit.hash} ariaLabel="复制提交标识" failureMessage="可以选中文字复制。">复制提交标识</CopyButton></Space>
   </article>;
 }

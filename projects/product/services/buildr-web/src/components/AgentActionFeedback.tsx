@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createPromptRequest } from '../lib/promptRequest';
-import { copyText } from '../lib/copyText';
+import { CopyButton } from './CopyButton';
 import { Alert, Button, Input } from 'antd';
 
 export const ACTION_LABELS: Record<string, string> = {
@@ -17,7 +17,6 @@ export const ACTION_LABELS: Record<string, string> = {
 export function useAgentActionFeedback(backToChooser: () => void) {
   const [error, setError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState<string | null>(null);
-  const [copyState, setCopyState] = useState('');
   const [preparing, setPreparing] = useState(false);
   const [request] = useState(createPromptRequest);
   useEffect(() => () => request.invalidate(), [request]);
@@ -25,42 +24,22 @@ export function useAgentActionFeedback(backToChooser: () => void) {
     request.invalidate();
     setPrompt(null);
     setError(null);
-    setCopyState('');
     setPreparing(false);
   }, [request]);
   const updateInput = (update: () => void) => {
     invalidatePrompt();
     update();
   };
-  const copyPrompt = async (noun: string, unchangedState: string) => {
-    if (!prompt) return;
-    const current = request.observe();
-    const copied = await copyText(prompt);
-    if (current()) setCopyState(copied
-      ? `指令已复制。${unchangedState || `${noun}尚未创建。`}`
-      : `自动复制失败，请选择指令手动复制。${unchangedState || `${noun}尚未创建。`}`);
-  };
-
-  const showResult = (nextPrompt: string, noun: string, unchangedState = '') => {
+  const showResult = (nextPrompt: string, _noun: string, _unchangedState = '') => {
     setPrompt(nextPrompt);
-    setCopyState(unchangedState || `${noun}尚未创建。`);
   };
 
   const generatePrompt = (prepare: () => string | Promise<string>, noun: string, unchangedState = '', fallback = '生成指令失败。') => request.run(prepare, {
-    start: () => { setPrompt(null); setError(null); setCopyState(''); setPreparing(true); },
+    start: () => { setPrompt(null); setError(null); setPreparing(true); },
     ready: (value) => showResult(value, noun, unchangedState),
     failed: (error) => setError(error instanceof Error ? error.message : fallback),
     settled: () => setPreparing(false),
   });
-
-  const copyProvidedPrompt = async (value: string, unchangedState: string) => {
-    const current = request.observe();
-    const copied = await copyText(value);
-    if (current()) setCopyState(copied
-      ? `指令已复制。${unchangedState}`
-      : `自动复制失败，请选择指令手动复制。${unchangedState}`);
-  };
-
 
   const formHeader = (noun: string, verb = '创建') => (
     <>
@@ -87,18 +66,13 @@ export function useAgentActionFeedback(backToChooser: () => void) {
           <Input.TextArea id="action-prompt-output" rows={13} readOnly value={prompt} />
         </label>
         <div className="copy-row">
-          <Button
-            id="copy-action-prompt"
-            onClick={() => void copyPrompt(noun, unchangedState)}
-          >
-            复制指令
-          </Button>
-          <span id="action-copy-state">{copyState}</span>
+          <CopyButton id="copy-action-prompt" size="middle" text={prompt} failureMessage="自动复制失败，请选择指令手动复制。">复制指令</CopyButton>
+          <span id="action-copy-state">{unchangedState || `${noun}尚未创建。`}</span>
         </div>
       </div>
     ) : null
   );
 
 
-  return { error, setError, prompt, copyState, setCopyState, preparing, invalidatePrompt, updateInput, generatePrompt, showResult, copyProvidedPrompt, formHeader, promptResult };
+  return { error, setError, prompt, preparing, invalidatePrompt, updateInput, generatePrompt, showResult, formHeader, promptResult };
 }

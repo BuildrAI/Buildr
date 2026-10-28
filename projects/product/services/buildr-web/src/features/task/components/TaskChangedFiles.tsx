@@ -1,8 +1,8 @@
-import { App, Alert, Button, Spin, Tooltip } from 'antd';
-import { BranchesOutlined, CheckOutlined, CopyOutlined, DownOutlined, ExpandOutlined, FileAddOutlined, FileSearchOutlined, FolderOpenOutlined, ReloadOutlined, RightOutlined, SwapOutlined } from '@ant-design/icons';
-import { useState, type ReactNode } from 'react';
+import { Alert, Button, Spin, Tooltip } from 'antd';
+import { BranchesOutlined, DownOutlined, ExpandOutlined, FileAddOutlined, FileSearchOutlined, FolderOpenOutlined, ReloadOutlined, RightOutlined, SwapOutlined } from '@ant-design/icons';
+import type { ReactNode } from 'react';
 import { formatShortDateTime } from '../../../lib/taskLabels';
-import { copyText } from '../../../lib/copyText';
+import { CopyButton } from '../../../components/CopyButton';
 import './task-changed-files.css';
 
 import type { TaskChangedFilesResult as TaskChangedFilesResultDto } from '../../../../build/generated/task-dto';
@@ -30,14 +30,6 @@ export function ChangedFileList({ files, expanded, onExpand, compact = false, on
   renderFileAction?(file: ChangedFileEntry): ReactNode;
   files: ChangedFileEntry[]; expanded: string | null; onExpand(key: string | null): void; compact?: boolean; onOpenDiff?(file: ChangedFileEntry): void; selectedKey?: string | null; selectable?: boolean; fileTooltipPath?(file: ChangedFileEntry): string | undefined; filePathHint?(file: ChangedFileEntry): string | undefined;
 }) {
-  const { message } = App.useApp();
-  const [copied, setCopied] = useState('');
-  async function copy(value: string, key: string) {
-    if (await copyText(value)) {
-      setCopied(key);
-      message.success('已复制');
-    } else message.info('当前环境不允许访问剪贴板，请选中文字复制。');
-  }
   return <ol className={`task-changed-list${compact ? ' is-compact' : ''}`}>
     {files.map(file => {
       const key = changedFileKey(file);
@@ -56,7 +48,7 @@ export function ChangedFileList({ files, expanded, onExpand, compact = false, on
         {renderFileAction && <span className="task-changed-row-action">{renderFileAction(file)}</span>}
         {onOpenDiff && <Tooltip title="查看全文差异"><button type="button" className="task-changed-open" aria-label={`查看 ${fileName(file.path)} 全文差异`} onClick={event => { event.stopPropagation(); onOpenDiff(file); }}><ExpandOutlined /></button></Tooltip>}
         {open && <div className="task-commits-detail task-changed-detail" id={domId(key)} data-prototype-position="changes-diff">
-          <div className="task-commits-detail-title"><h3>差异预览（Diff Preview）</h3><span className="task-changed-detail-actions">{onOpenDiff && <Button size="small" type="text" icon={<ExpandOutlined />} onClick={() => onOpenDiff(file)}>查看全文差异</Button>}{copied === `${key}-path` ? <Button size="small" type="text" icon={<CheckOutlined />}>已复制路径</Button> : <Button size="small" type="text" aria-label="复制路径" icon={<CopyOutlined />} onClick={() => void copy(file.path, `${key}-path`)}>复制路径</Button>}</span></div>
+          <div className="task-commits-detail-title"><h3>差异预览（Diff Preview）</h3><span className="task-changed-detail-actions">{onOpenDiff && <Button size="small" type="text" icon={<ExpandOutlined />} onClick={() => onOpenDiff(file)}>查看全文差异</Button>}<CopyButton type="text" text={file.path} failureMessage="当前环境不允许访问剪贴板，请选中文字复制。">复制路径</CopyButton></span></div>
           <code className="task-changed-fullpath">{file.previousPath ? `${file.previousPath} → ${file.path}` : file.path}</code>
           {file.preview
             ? <pre className="task-changed-diff">{file.preview.split('\n').map((line, index) => <span key={index} className={line.startsWith('+++') || line.startsWith('---') ? 'diff-meta' : line.startsWith('@@') ? 'diff-hunk' : line.startsWith('+') ? 'diff-add' : line.startsWith('-') ? 'diff-del' : 'diff-ctx'}>{line}{'\n'}</span>)}</pre>

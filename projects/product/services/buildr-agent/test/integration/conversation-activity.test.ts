@@ -140,3 +140,16 @@ test('empty and attachment-only drafts stay readable but absent from every list;
  assert.equal(repo.querySummaries(['w1'],{limit:10}).total,3);
  assert.equal(repo.listConversations('w1',{limit:10,taskId:'task'}).length,1);
 });
+test('列表顺序只跟随用户输入，智能体输出与工具动作不改变位置',t=>{
+  const repo=fixture(t),a=record('a'),b=record('b');
+  repo.saveConversation(a);repo.saveConversation(b);
+  const order=()=>repo.querySummaries(['w1'],{limit:10}).conversations.map(row=>row.id);
+  save(repo,a,r=>{r.view.updatedAt='2026-10-27T00:01:00Z';message(r,'a1','first');});
+  save(repo,b,r=>{r.view.updatedAt='2026-10-27T00:02:00Z';message(r,'b1','first');});
+  assert.deepEqual(order(),['b','a']);
+  save(repo,a,r=>{r.view.updatedAt='2026-10-27T00:03:00Z';message(r,'a-assistant','reply','message','assistant');message(r,'a-tool','tool output','notice','system');});
+  assert.equal(a.view.activity?.version,2,'智能体回复仍推进活动提醒');
+  assert.deepEqual(order(),['b','a'],'回复与工具输出不改变列表顺序');
+  save(repo,a,r=>{r.view.updatedAt='2026-10-27T00:04:00Z';message(r,'a2','next');});
+  assert.deepEqual(order(),['a','b'],'用户再次输入后才前移');
+});

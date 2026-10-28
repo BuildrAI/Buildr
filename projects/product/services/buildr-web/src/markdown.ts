@@ -218,8 +218,14 @@ function createCodeBlock(language, code, doc, sourcePath) {
   copy.setAttribute('type', 'button');
   copy.setAttribute('data-copy-code', '');
   copy.textContent = '复制代码';
+  let restore: ReturnType<typeof setTimeout> | undefined;
   copy.addEventListener?.('click', async () => {
-    copy.textContent = await copyText(code) ? '已复制' : '复制失败，请选择代码复制';
+    if (copy.dataset.copied === 'true') return;
+    if (!await copyText(code)) { copy.textContent = '复制失败，请选择代码复制'; return; }
+    copy.dataset.copied = 'true';
+    copy.textContent = '已复制';
+    clearTimeout(restore);
+    restore = setTimeout(() => { copy.dataset.copied = ''; copy.textContent = '复制代码'; }, 3000);
   });
   block.append(copy);
   if (language.toLowerCase() === 'mermaid') {

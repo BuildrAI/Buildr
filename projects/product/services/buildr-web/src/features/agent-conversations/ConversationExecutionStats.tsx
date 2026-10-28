@@ -3,8 +3,8 @@ import { Button } from 'antd';
 import { DownOutlined, UpOutlined } from '@ant-design/icons';
 import type { ConversationPage } from './api/agent-conversations-api';
 export type ExecutionFilter={kind:'agent'|'model';value:string}|null;
-type GroupProps={kind:'agent'|'model';rows:Array<{label:string;count:number}>;filter:ExecutionFilter;onFilter(value:ExecutionFilter):void;compact:boolean;modelLabel?:(id:string)=>string};
-function ExecutionStatsGroup({kind,rows,filter,onFilter,compact,modelLabel}:GroupProps) {
+type GroupProps={rows:Array<{label:string;count:number}>;filter:ExecutionFilter;onFilter(value:ExecutionFilter):void;compact:boolean;modelLabel?:(id:string)=>string};
+function ExecutionStatsGroup({rows,filter,onFilter,compact,modelLabel}:GroupProps) {
   const chips=useRef<HTMLDivElement>(null),[maxHeight,setMaxHeight]=useState<number>();
   useLayoutEffect(()=>{
     const element=chips.current;if(!element||!compact)return;
@@ -18,14 +18,13 @@ function ExecutionStatsGroup({kind,rows,filter,onFilter,compact,modelLabel}:Grou
     measure();const observer=new ResizeObserver(measure);observer.observe(element);for(const child of element.children)observer.observe(child);
     return()=>observer.disconnect();
   },[rows,compact,modelLabel]);
-  const providers:Record<string,string>={codex:'Codex',dsh:'DSH',qoder:'Qoder'};
-  return <div className="ac-stats-group"><span>{kind==='agent'?'按智能体':'按模型'}</span><div ref={chips} style={compact?{maxHeight}:undefined}>{rows.map(row=>{
-    const label=kind==='agent'?providers[row.label]??row.label:modelLabel?.(row.label)??row.label;
-    return <button key={row.label} type="button" title={label===row.label?label:`${label}（${row.label}）`} aria-label={`${kind==='agent'?'智能体':'模型'} ${label}，正在执行 ${row.count}`} aria-pressed={filter?.kind===kind&&filter.value===row.label} onClick={()=>onFilter(filter?.kind===kind&&filter.value===row.label?null:{kind,value:row.label})}><span>{label}</span><b>{row.count}</b></button>;
+  return <div className="ac-stats-group"><span>按模型</span><div ref={chips} style={compact?{maxHeight}:undefined}>{rows.map(row=>{
+    const label=modelLabel?.(row.label)??row.label,selected=filter?.kind==='model'&&filter.value===row.label;
+    return <button key={row.label} type="button" title={label===row.label?label:`${label}（${row.label}）`} aria-label={`模型 ${label}，正在执行 ${row.count}`} aria-pressed={selected} onClick={()=>onFilter(selected?null:{kind:'model',value:row.label})}><span>{label}</span><b>{row.count}</b></button>;
   })}</div></div>;
 }
 export function ConversationExecutionStats({stats,filter,onFilter,description,status,compact=false,modelLabel}:{compact?:boolean;status?:'ready'|'unknown'|'error';description?:string;stats:ConversationPage['stats'];filter:ExecutionFilter;onFilter(value:ExecutionFilter):void;modelLabel?:(id:string)=>string}) {
-  const [expanded,setExpanded]=useState(true),count=stats?.agents.reduce((sum,item)=>sum+item.count,0)??0;
+  const [expanded,setExpanded]=useState(true),count=stats?.models.reduce((sum,item)=>sum+item.count,0)??0;
   if(status==='error'||status==='unknown'||!stats)return <section className="ac-execution-stats" aria-label="执行统计"><header><strong>{status==='error'?'执行统计暂时无法读取':'执行统计尚未确认'}</strong></header></section>;
-  return <section className={'ac-execution-stats'+(compact?' is-compact':'')} aria-label="执行统计"><header><strong>{count?<>正在执行 <b>{count}</b></>:'当前没有正在执行的对话'}</strong>{count>0&&<Button size="small" type="text" icon={expanded?<UpOutlined/>:<DownOutlined/>} aria-label={expanded?'收起执行统计':'展开执行统计'} aria-expanded={expanded} onClick={()=>setExpanded(value=>!value)}/>}</header>{count>0&&expanded&&<><div className="ac-stats-groups"><ExecutionStatsGroup kind="agent" rows={stats.agents} filter={filter} onFilter={onFilter} compact={compact}/><ExecutionStatsGroup kind="model" rows={stats.models} filter={filter} onFilter={onFilter} compact={compact} modelLabel={modelLabel}/></div>{description&&<p>{description}</p>}</>}</section>;
+  return <section className={'ac-execution-stats'+(compact?' is-compact':'')} aria-label="执行统计"><header><strong>{count?<>正在执行 <b>{count}</b></>:'当前没有正在执行的对话'}</strong>{count>0&&<Button size="small" type="text" icon={expanded?<UpOutlined/>:<DownOutlined/>} aria-label={expanded?'收起执行统计':'展开执行统计'} aria-expanded={expanded} onClick={()=>setExpanded(value=>!value)}/>}</header>{count>0&&expanded&&<><div className="ac-stats-groups"><ExecutionStatsGroup rows={stats.models} filter={filter} onFilter={onFilter} compact={compact} modelLabel={modelLabel}/></div>{description&&<p>{description}</p>}</>}</section>;
 }

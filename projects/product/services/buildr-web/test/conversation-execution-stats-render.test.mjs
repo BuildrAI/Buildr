@@ -15,7 +15,12 @@ const render=(props={})=>renderToStaticMarkup(React.createElement(ConversationEx
 test('正式共享统计只计一组总数，无默认解释小字，紧凑模式与选中状态明确',()=>{
   const html=render({compact:true,filter:{kind:'model',value:'actual-model'}});
   assert.match(html,/is-compact/);assert.match(html,/正在执行 <b>6<\/b>/);assert.doesNotMatch(html,/<p>|<b>12<\/b>/);
-  assert.match(html,/aria-pressed="true"/);assert.match(html,/Codex/);
+  assert.match(html,/aria-pressed="true"/);assert.match(html,/按模型[\s\S]*actual-model/);
+});
+test('统计只展示模型分布，不再输出智能体分组',()=>{
+  const html=render();
+  assert.match(html,/按模型/);assert.doesNotMatch(html,/按智能体|Codex|codex/);
+  assert.equal((html.match(/class="ac-stats-group"/g)??[]).length,1);
 });
 test('真正零压一行；未知或读取失败绝不伪装零或显示旧数',()=>{
   assert.match(render({stats:{agents:[],models:[]}}),/当前没有正在执行的对话/);

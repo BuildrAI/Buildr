@@ -3,7 +3,6 @@ import { assetEditDraft } from './asset-edit-draft';
 import { useAppShell } from '../../../app/AppShellContext';
 import { MetadataConflictNotice } from '../../../components/MetadataConflictNotice';
 import { rebaseEditedFields } from '../../../lib/metadata-recovery';
-import { copyText } from '../../../lib/copyText';
 import { codeFieldTrim, textFieldTrim } from '../../../lib/input-trim';
 import { CODE_INPUT_PATTERN, CODE_INPUT_TITLE, normalizeCodeInput } from '../../../lib/code-input';
 import { RepositoryFields } from './RepositoryFields';
@@ -102,9 +101,6 @@ export function AssetEditDrawer({ catalog: initialCatalog, kind, id, onClose, on
     if (!form.current?.reportValidity()) return;
     if (latest && latestDraft) void save(latest, rebaseEditedFields(baseDraft, draft, latestDraft));
   };
-  const copy = async () => {
-    if (!await copyText(JSON.stringify({ ...draft, ...(creatingRepository ? { repository: repositoryDraft } : {}) }, null, 2))) setRecoveryError('自动复制失败，请直接选择并复制输入内容。');
-  };
   const label = { project: '项目', service: '服务', repository: '代码库' }[kind];
   const serviceName = (value: string) => (latest || catalog).services.find(entry => entry.id === value)?.name || value;
   const projectName = (value: string) => (latest || catalog).projects.find(entry => entry.id === value)?.name || value;
@@ -115,7 +111,7 @@ export function AssetEditDrawer({ catalog: initialCatalog, kind, id, onClose, on
         {kind === 'service' && <><dt>服务编码</dt><dd>{latestDraft.code}</dd><dt>服务类型</dt><dd>{latestDraft.type}</dd><dt>代码库</dt><dd>{latest?.repositories.find(item => item.id === latestDraft.repositoryId)?.name || latestDraft.repositoryId}</dd><dt>模块目录</dt><dd>{latestDraft.modulePath || '代码库根目录'}</dd><dt>所属项目</dt><dd>{latestDraft.projectIds.map(projectName).join('、') || '尚未关联'}</dd></>}
         {kind === 'project' && <><dt>项目编码</dt><dd>{latestDraft.code}</dd><dt>关联服务</dt><dd>{latestDraft.serviceIds.map(serviceName).join('、') || '无'}</dd></>}
         {kind === 'repository' && <><dt>仓库目录</dt><dd>{latestDraft.path}</dd><dt>Git 地址</dt><dd>{latestDraft.url || '未填写'}</dd><dt>远端名称（Remote）</dt><dd>{latestDraft.remote}</dd><dt>集成分支</dt><dd>{latestDraft.integrationBranch || '未填写'}</dd><dt>引用服务</dt><dd>{latestDraft.serviceIds.map(serviceName).join('、') || '无'}</dd></>}
-      </dl>} onRead={() => void readLatest()} onUseLatest={useLatest} onKeep={keepChanges} onCopy={() => void copy()} />}
+      </dl>} onRead={() => void readLatest()} onUseLatest={useLatest} onKeep={keepChanges} copyText={JSON.stringify({ ...draft, ...(creatingRepository ? { repository: repositoryDraft } : {}) }, null, 2)} />}
     <form ref={form} id="catalog-edit" onSubmit={event => { event.preventDefault(); if (!conflict) void save(observed); }}>
       <Form layout="vertical" component={false} disabled={busy || readOnly}><Form.Item label="名称" required><Input aria-label="名称" value={name} required {...textFieldTrim(setName)} /></Form.Item>
       {kind !== 'repository' && <Form.Item label={`${label}编码`} required help={kind === 'project' ? '字母、数字、点、下划线与短横线；改编码会重写历史定位，并在目标空闲时迁移受管项目目录及其中已登记代码库路径；若代码库根位于上层，则同步调整受影响的服务模块路径；附接源不移动，目标占用时拒绝保存。' : '字母、数字、点、下划线与短横线；服务改码保留历史定位，已有服务文档目录会随清单在同一事务内改名；目标占用时拒绝保存，不移动代码库模块目录。'}><Input aria-label={`${label}编码`} required pattern={CODE_INPUT_PATTERN} title={CODE_INPUT_TITLE} value={code} {...codeFieldTrim(text => setCode(normalizeCodeInput(text)))} /></Form.Item>}

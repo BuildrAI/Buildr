@@ -1,9 +1,9 @@
-import { App, Button, Spin, Alert } from 'antd';
-import { BranchesOutlined, CheckOutlined, CopyOutlined, DownOutlined, FolderOpenOutlined, RightOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Button, Spin, Alert } from 'antd';
+import { BranchesOutlined, DownOutlined, FolderOpenOutlined, RightOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useState, type ReactNode } from 'react';
 import type { TaskCommitsResult } from '../../../../build/generated/task-dto';
 import { formatShortDateTime } from '../../../lib/taskLabels';
-import { copyText } from '../../../lib/copyText';
+import { CopyButton } from '../../../components/CopyButton';
 import { taskCommitKey, taskCommitsState } from './task-commit-model';
 import { ChangedFileList, type ChangedFileEntry } from './TaskChangedFiles';
 import './task-commit-records.css';
@@ -29,21 +29,13 @@ type Props = {
 
 /** Present repository observations without inferring completeness from an empty list. */
 export function TaskCommitRecords({ taskId, data, loading = false, error = '', notice, expanded, exampleOpen, onExpand, onExample, onRetry, commitFiles, repositoryMeta, onOpenCommitFileDiff }: Props) {
-  const { message } = App.useApp();
-  const [copied, setCopied] = useState('');
   const [expandedFile, setExpandedFile] = useState<string | null>(null);
   const state = taskCommitsState(data, loading, error);
   const commits = data?.commits || [];
   const repositories = new Map(data?.repositories.map(repository => [repository.id, repository]) || []);
   const labels = data?.repositories.map(repository => repository.label).join('、') || '本机仓库';
   const example = `feat(task): 展示关联提交记录\n\n在任务中查看提交主题、完整说明与哈希值。\n\nBuildr-Task: ${taskId}`;
-  async function copy(value: string, key: string) {
-    if (await copyText(value)) {
-      setCopied(key);
-      message.success('已复制');
-    } else message.info('当前环境不允许访问剪贴板，请选中文字复制。');
-  }
-  const copyButton = (value: string, key: string, label: string) => <Button size="small" type="text" aria-label={label} icon={copied === key ? <CheckOutlined /> : <CopyOutlined />} onClick={() => void copy(value, key)}>{copied === key ? '已复制' : label}</Button>;
+  const copyButton = (value: string, label: string) => <CopyButton type="text" text={value} ariaLabel={label} failureMessage="当前环境不允许访问剪贴板，请选中文字复制。">{label}</CopyButton>;
   return <section className="task-commits" aria-label="任务提交记录" data-prototype-position="commit-records">
     <div className="task-commits-heading">
       <div><h2>提交记录 {data && <span>{commits.length}</span>}</h2><p>查看本任务留下的代码与文档改动。</p></div>
@@ -56,7 +48,7 @@ export function TaskCommitRecords({ taskId, data, loading = false, error = '', n
       <div className="task-commits-detail-title"><h3>在提交说明中写入任务编码</h3><Button type="text" size="small" onClick={() => onExample(false)}>收起示例</Button></div>
       <p>保留原来的主题和正文，在末尾另起一段添加下面这一行。一个任务可以有多次提交；通常每次提交只写一个任务编码。</p>
       <pre>{example}</pre>
-      <div className="task-commits-example-actions">{copyButton(example, 'example', '复制示例')}{copyButton(`Buildr-Task: ${taskId}`, 'trailer', '复制任务标记')}</div>
+      <div className="task-commits-example-actions">{copyButton(example, '复制示例')}{copyButton(`Buildr-Task: ${taskId}`, '复制任务标记')}</div>
     </section>}
     {state === 'loading' && <div className="task-commits-state" data-prototype-position="commit-state"><Spin size="small" /><h3>正在读取提交记录…</h3><p>正在查找与本任务关联的提交。</p></div>}
     {state === 'failure' && <div className="task-commits-state" data-prototype-position="commit-state"><Alert type="warning" showIcon message="提交记录暂时不可用" description={<>{error || '未能读取提交记录，请重试。'}<br />读取失败不代表没有提交。</>} /><Button aria-label="重新读取" icon={<ReloadOutlined />} onClick={onRetry}>重新读取</Button></div>}
@@ -85,9 +77,9 @@ export function TaskCommitRecords({ taskId, data, loading = false, error = '', n
                   <span className="task-commits-expand">{open ? <DownOutlined /> : <RightOutlined />}</span>
                 </button>
                 {open && <div className="task-commits-detail" id={`commit-${key}`} data-prototype-position="commit-detail">
-                  <div className="task-commits-detail-title"><h3>完整提交说明（Commit Message）</h3>{copyButton(commit.message, `${key}-message`, '复制完整说明')}</div>
+                  <div className="task-commits-detail-title"><h3>完整提交说明（Commit Message）</h3>{copyButton(commit.message, '复制完整说明')}</div>
                   <pre>{commit.message}</pre>
-                  <div className="task-commits-hash"><span>完整哈希（Hash）</span><code>{commit.hash}</code>{copyButton(commit.hash, `${key}-hash`, '复制完整哈希')}</div>
+                  <div className="task-commits-hash"><span>完整哈希（Hash）</span><code>{commit.hash}</code>{copyButton(commit.hash, '复制完整哈希')}</div>
                   {commitFiles?.[key]?.length ? <div className="task-commit-files" data-prototype-position="commit-files">
                     <h3>本次提交的文件改动 {commitFiles[key].length}</h3>
                     <ChangedFileList compact files={commitFiles[key]} expanded={expandedFile} onExpand={setExpandedFile} onOpenDiff={onOpenCommitFileDiff ? file => onOpenCommitFileDiff(commit, file) : undefined} />

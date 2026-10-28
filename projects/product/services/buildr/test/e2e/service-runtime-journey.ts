@@ -380,7 +380,7 @@ export async function runServiceRuntimeJourney({ page, runtime, workspaceRoot, w
     await logs.getByRole('textbox', { name: '搜索本实例日志', exact: true }).fill('RuntimeFixture target');
     assert.equal(await logs.getByRole('switch', { name: '跟随日志输出', exact: true }).getAttribute('aria-checked'), 'false');
     assert.equal(await logs.locator('.local-log-lines').innerText(), `RuntimeFixture target ${REMOTE_URL}`);
-    await logs.getByRole('button', { name: /复制匹配日志$/ }).click(); await page.getByText('日志已复制', { exact: true }).waitFor({ state: 'visible' });
+    await logs.getByRole('button', { name: /复制匹配日志$/ }).click(); const copiedLogs = logs.getByRole('button', { name: '已复制', exact: true }); await copiedLogs.waitFor({ state: 'visible' }); assert.equal(await copiedLogs.isDisabled(), true);
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), `RuntimeFixture target ${REMOTE_URL}`); await capture(page, 'service-runtime-log-search.png');
     await page.locator('.ant-drawer-open .ant-drawer-footer').getByRole('button', { name: /关\s*闭/ }).click(); await logs.waitFor({ state: 'hidden' });
     // Leaving the drawer near the conversation rail can open its hover preview.

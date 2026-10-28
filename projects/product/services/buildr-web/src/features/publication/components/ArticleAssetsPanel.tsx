@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react';
-import { Alert, Button, Empty, Image, Segmented, Space, Tag, Tooltip, message } from 'antd';
-import { CopyOutlined, FileOutlined, PlusOutlined, ReloadOutlined, UploadOutlined } from '@ant-design/icons';
+import { Alert, Button, Empty, Image, Segmented, Space, Tag, Tooltip } from 'antd';
+import { FileOutlined, PlusOutlined, ReloadOutlined, UploadOutlined } from '@ant-design/icons';
 import { publicationApi, type PublicationAsset } from '../api/publication-api';
 import { assetMarkdown, publicationAssetUrl, referencedAssets } from '../publication-model';
-import { copyText } from '../../../lib/copyText';
+import { CopyButton } from '../../../components/CopyButton';
 
 type Props = {
   workspaceId: string; projectCode: string; publicationId: string; revision: string; sourceTaskId?: string;
@@ -25,7 +25,6 @@ function readBase64(file: File): Promise<string> {
 export function ArticleAssetsPanel({ workspaceId, projectCode, publicationId, sourceTaskId, revision, content, assets, disabled, onAssets, onInsert, onConflict }: Props) {
   const input = useRef<HTMLInputElement>(null);
   const [scope, setScope] = useState('referenced'), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('');
-  const [messages, holder] = message.useMessage();
   const referenced = referencedAssets(content), used = new Set(referenced);
   const shown = scope === 'referenced' ? assets.filter(asset => used.has(asset.relativePath)) : assets;
   const missing = referenced.filter(path => !assets.some(asset => asset.relativePath === path));
@@ -53,7 +52,7 @@ export function ArticleAssetsPanel({ workspaceId, projectCode, publicationId, so
     } catch (err) { handleError(err); }
     finally { setBusy(false); if (input.current) input.current.value = ''; }
   };
-  return <section className="publication-assets-panel" aria-label="文章图片与附件">{holder}<div className="publication-aside-heading"><h2>图片与附件</h2><Tooltip title="刷新资源"><Button size="small" type="text" icon={<ReloadOutlined />} aria-label="刷新文章资源" loading={busy} disabled={disabled} onClick={() => void refresh()} /></Tooltip></div>
+  return <section className="publication-assets-panel" aria-label="文章图片与附件"><div className="publication-aside-heading"><h2>图片与附件</h2><Tooltip title="刷新资源"><Button size="small" type="text" icon={<ReloadOutlined />} aria-label="刷新文章资源" loading={busy} disabled={disabled} onClick={() => void refresh()} /></Tooltip></div>
     <p className="publication-hint">{sourceTaskId ? '使用来源任务中的图片与附件，可插入已有资源引用。' : <>文件保存在项目 <code>assets/</code> 中，通过引用加入文章。</>}</p>
     {!sourceTaskId && <><input ref={input} type="file" id="article-asset-file" aria-label="上传文章图片或附件" accept={accepted} hidden onChange={event => { const file = event.target.files?.[0]; if (file) void upload(file); }} />
     <Button id="article-asset-upload" block icon={<UploadOutlined />} loading={busy} disabled={disabled} onClick={() => input.current?.click()}>上传图片或附件</Button>
@@ -67,7 +66,7 @@ export function ArticleAssetsPanel({ workspaceId, projectCode, publicationId, so
       return <article className="publication-asset" key={asset.relativePath} data-article-asset={asset.relativePath}>
         {asset.isImage ? <Image src={url} alt={asset.name} width="100%" /> : <a className="publication-attachment" href={url} target="_blank" rel="noopener noreferrer"><FileOutlined /><span>{asset.name}</span><small>下载附件 ↗</small></a>}
         <div className="publication-asset-title"><strong title={asset.name}>{asset.name}</strong>{used.has(asset.relativePath) && <Tag>已引用</Tag>}</div><code>{asset.relativePath}</code><small>{fileSize(asset.size)}</small>
-        <Space><Button size="small" icon={<PlusOutlined />} disabled={disabled} data-insert-asset={asset.relativePath} onClick={() => { onInsert(assetMarkdown(asset)); setNotice('引用已插入正文，保存文章后生效。'); }}>插入引用</Button><Tooltip title="复制相对路径"><Button size="small" type="text" icon={<CopyOutlined />} aria-label={`复制资源路径：${asset.name}`} onClick={() => { void copyText(asset.relativePath).then(copied => copied ? messages.success('资源路径已复制') : messages.error('自动复制失败，请选择路径文本复制')); }} /></Tooltip></Space>
+        <Space><Button size="small" icon={<PlusOutlined />} disabled={disabled} data-insert-asset={asset.relativePath} onClick={() => { onInsert(assetMarkdown(asset)); setNotice('引用已插入正文，保存文章后生效。'); }}>插入引用</Button><CopyButton type="text" text={asset.relativePath} ariaLabel={`复制资源路径：${asset.name}`} failureMessage="自动复制失败，请选择路径文本复制。" /></Space>
       </article>;
     }) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={scope === 'referenced' ? '正文还没有引用本地资源' : '项目还没有资源'} />}</div>
   </section>;

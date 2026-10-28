@@ -41,7 +41,8 @@ export async function verifyKnowledgeQuestionHandoff(page: Page, trigger: Locato
   assert.doesNotMatch(prompt, /即请求在指定范围建设|将实际文章|将更新后的地图/);
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   await action.getByRole('button', { name: '复制给智能体', exact: true }).click();
-  await action.getByRole('status').filter({ hasText: '已复制' }).waitFor({ state: 'visible' });
+  const copied = action.getByRole('button', { name: '已复制', exact: true });
+  await copied.waitFor({ state: 'visible' }); assert.equal(await copied.isDisabled(), true);
   assert.equal(await page.evaluate(() => navigator.clipboard.readText()), prompt);
   await page.locator('#close-agent-action').click();
   await action.waitFor({ state: 'detached' });

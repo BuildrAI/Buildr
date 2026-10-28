@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Alert, Button, Modal, Select, Spin, Tag } from 'antd';
 import { ArrowUpOutlined, CheckCircleOutlined, ClockCircleOutlined, ExclamationCircleOutlined, MinusCircleOutlined, SyncOutlined } from '@ant-design/icons';
+import { CopyButton } from '../../../components/CopyButton';
 import type { UpdateView } from '../lib/update-view';
 import './update-flow.css';
 
@@ -18,7 +19,6 @@ export type UpdateDialogProps = {
   onInstall():void;
   onRecover(action:'install'|'launcher'|'restart'|'workspaces'):void;
   onReconnect():void;
-  onCopy(command:string):void;
   onAgent():void;
   scopeContent?:ReactNode;
   progressContent?:ReactNode;
@@ -27,7 +27,7 @@ export type UpdateDialogProps = {
   allowBackground?:boolean;
   statusTone?:'warning';
 };
-export function UpdateDialog({demo=false,open,view,busy,actionError,disconnected,onClose,onCheck,onTargetChange,onDownload,onInstall,onRecover,onReconnect,onCopy,scopeContent,progressContent,extraContent,footerContent,allowBackground=false,statusTone}:UpdateDialogProps) {
+export function UpdateDialog({demo=false,open,view,busy,actionError,disconnected,onClose,onCheck,onTargetChange,onDownload,onInstall,onRecover,onReconnect,scopeContent,progressContent,extraContent,footerContent,allowBackground=false,statusTone}:UpdateDialogProps) {
   const [advanced,setAdvanced]=useState(false);
   const {phase,target}=view;
   const active=['installing','launcher-updating','restarting','verifying','workspaces-updating'].includes(phase);
@@ -71,7 +71,7 @@ export function UpdateDialog({demo=false,open,view,busy,actionError,disconnected
         {['latest','completed'].includes(phase)&&<Button type="primary" onClick={onClose}>{phase==='completed'?'继续工作':'知道了'}</Button>}
       </div>}
       {['launcher-error','verification-error'].includes(phase)&&<div className="buildr-update-secondary"><Button type="link" size="small" onClick={()=>setAdvanced(!advanced)}>{advanced?'收起恢复方法':'查看恢复方法'}</Button></div>}
-      {advanced&&failed&&!showOther&&<div className="buildr-update-recovery-help"><strong>手动恢复</strong><p>{disconnected?'当前页面无法直接执行恢复。请在终端运行以下命令，再回到此页刷新。':'自动恢复不可用时，可在终端运行以下命令。'}</p><pre>{view.recoveryCommand}</pre><Button size="small" onClick={()=>onCopy(view.recoveryCommand)}>复制恢复命令</Button><small>请核对终端输出，返回页面后确认实际运行版本。</small></div>}
+      {advanced&&failed&&!showOther&&<div className="buildr-update-recovery-help"><strong>手动恢复</strong><p>{disconnected?'当前页面无法直接执行恢复。请在终端运行以下命令，再回到此页刷新。':'自动恢复不可用时，可在终端运行以下命令。'}</p><pre>{view.recoveryCommand}</pre><CopyButton text={view.recoveryCommand} failureMessage="复制失败，请选择命令手动复制。">复制恢复命令</CopyButton><small>请核对终端输出，返回页面后确认实际运行版本。</small></div>}
       {demo?<div className="buildr-update-bottom-caption">交互演示 · 不会修改本机安装</div>:view.simulated?<div className="buildr-update-bottom-caption">开发模拟 · 不下载真实软件包、不修改安装或启动入口；确认后本实例会重启。</div>:null}
     </section>
   </Modal>;

@@ -3,7 +3,6 @@ import { App, Button, Space, Tag, Tooltip } from 'antd';
 import { ExclamationCircleOutlined, SyncOutlined, DownloadOutlined } from '@ant-design/icons';
 import { useUpdateFlow } from '../hooks/useUpdateFlow';
 import { buildUpdateView, updateEntryVisible } from '../lib/update-view';
-import { copyText } from '../../../lib/copyText';
 import { UpdateDialog } from './UpdateDialog';
 
 export type UpdateEntryHandle = { check():void };
@@ -11,7 +10,7 @@ type Props = { enabled:boolean; checkOnly?:boolean; openAgentAction(action?:stri
 const storageKey='buildr.pending-update';
 function pendingUpdate():{id:string;version:string}|null {try{const value=JSON.parse(sessionStorage.getItem(storageKey)||'null');return typeof value?.id==='string'&&typeof value?.version==='string'?value:null;}catch{return null;}}
 export const UpdateEntry=forwardRef<UpdateEntryHandle,Props>(function UpdateEntry({enabled,checkOnly=false,onCompleted},ref){
-  const {notification,message}=App.useApp();
+  const {notification}=App.useApp();
   const flow=useUpdateFlow({enabled,onCompleted});
   const [open,setOpen]=useState(()=>Boolean(pendingUpdate())),[busy,setBusy]=useState(false),[actionError,setActionError]=useState(''),[selectedTrack,setSelectedTrack]=useState('');
   const [showCompleted,setShowCompleted]=useState(()=>Boolean(pendingUpdate()));
@@ -47,7 +46,6 @@ export const UpdateEntry=forwardRef<UpdateEntryHandle,Props>(function UpdateEntr
       onInstall={()=>{remember();if(flow.job?.version)void run(()=>flow.apply(flow.job!.version!));}}
       onRecover={action=>{remember();void run(()=>flow.recover(action));}}
       onReconnect={()=>void flow.reconnect()}
-      onCopy={command=>void (async()=>{if(await copyText(command))void message.success('命令已复制。');else void message.warning('复制失败，请选中命令手动复制。');})()}
       onAgent={()=>{}}/>
   </>;
 });

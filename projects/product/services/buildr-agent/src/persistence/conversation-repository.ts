@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { summaryView, messageSignature } from '../domain/conversation-activity.ts';
+import { summaryView, messageSignature, userActivityAt } from '../domain/conversation-activity.ts';
 import type { ConversationView } from '../contracts.ts';
 import { BUSY_STATES } from '../domain/agent-state.ts';
 import { DatabaseSync } from 'node:sqlite';
@@ -8,7 +8,7 @@ import path from 'node:path';
 import { AgentServiceError, fail } from '../domain/agent-state.ts';
 import type { StoredConnection, StoredConversation } from '../domain/agent-state.ts';
 
-export const CONVERSATION_SCHEMA_VERSION = 2;
+export const CONVERSATION_SCHEMA_VERSION = 3;
 const SCHEMA_VERSION = CONVERSATION_SCHEMA_VERSION;
 // 附件准备不等于开始；已发送或结果未知的尝试仍必须可发现。
 const HAS_WORK = "(json_array_length(json_extract(body,'$.view.entries'))>0 OR json_array_length(json_extract(body,'$.attempts'))>0 OR json_type(body,'$.view.run')='object')";
@@ -65,6 +65,18 @@ export class ConversationRepository {
             db.prepare('UPDATE conversations SET summary=?,message_signature=?,activity_at=?,is_active=? WHERE id=?').run(JSON.stringify(view),messageSignature(record),record.view.updatedAt,Number(view.activity!.active),item.id);
           }
           db.exec('PRAGMA user_version=2; COMMIT;');
+        }
+        if (write && row.user_version < 3) {
+          db.exec('BEGIN IMMEDIATE; ALTER TABLE conversations ADD COLUMN user_at TEXT NOT NULL DEFAULT \'\';');
+          for (const item of db.prepare('SELECT id,body,activity_at FROM conversations').all() as Array<{id:string;body:string;activity_at:string}>) {
+            const at=userActivityAt(JSON.parse(item.body) as StoredConversation)??item.activity_at;
+            if (at) db.prepare('UPDATE conversations SET user_at=? WHERE id=?').run(at,item.id);
+          }
+          db.exec(`DROP INDEX IF EXISTS conversations_activity;
+            DROP INDEX IF EXISTS conversations_workspace_activity;
+            CREATE INDEX conversations_activity ON conversations(is_active DESC,user_at DESC,id DESC);
+            CREATE INDEX conversations_workspace_activity ON conversations(workspace_id,is_active DESC,user_at DESC,id DESC);
+            PRAGMA user_version=3; COMMIT;`);
         }
         if (write) fs.chmodSync(this.filename, 0o600);
         return db;
@@ -143,9 +155,9 @@ export class ConversationRepository {
     const db=this.open(false);if(!db||!workspaceIds.length){db?.close();return empty;}
     try {
       db.exec('BEGIN');
-      const modern=(db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version>=2;
+      const version=(db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version,modern=version>=2;
       // Legacy reads remain zero-write and omit private records and full entries.
-      const storedSource=modern?'conversations':`(SELECT *,updated_at AS activity_at,0 AS activity_version,0 AS seen_version,CASE WHEN json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown') THEN 1 ELSE 0 END AS is_active,json_set(json_extract(body,'$.view'),'$.entries',json('[]'),'$.requests',json('[]'),'$.activity',json_object('version',0,'seenThrough',0,'updatedAt',updated_at,'active',json(CASE WHEN json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown') THEN 'true' ELSE 'false' END))) AS summary FROM conversations)`;
+      const storedSource=version>=3?'conversations':modern?'(SELECT *,activity_at AS user_at FROM conversations)':`(SELECT *,updated_at AS activity_at,updated_at AS user_at,0 AS activity_version,0 AS seen_version,CASE WHEN json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown') THEN 1 ELSE 0 END AS is_active,json_set(json_extract(body,'$.view'),'$.entries',json('[]'),'$.requests',json('[]'),'$.activity',json_object('version',0,'seenThrough',0,'updatedAt',updated_at,'active',json(CASE WHEN json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown') THEN 'true' ELSE 'false' END))) AS summary FROM conversations)`;
       const status = "json_extract(summary,'$.run.status')";
       // Parallel owners are still authoritative. Compute this from compact
       // summaries so activity counts and filters need not load full histories.
@@ -178,12 +190,12 @@ export class ConversationRepository {
         let cursor:{scope:string;epoch:number;active:number;at:string;id:string};
         try{cursor=JSON.parse(Buffer.from(input.cursor,'base64url').toString('utf8'));}catch{fail('agent_cursor_invalid','对话列表位置无效，请刷新列表。',409);}
         if(!cursor||typeof cursor!=='object'||cursor.scope!==scope||cursor.epoch!==epoch||typeof cursor.at!=='string'||typeof cursor.id!=='string'||![0,1].includes(cursor.active))fail('agent_cursor_stale','对话列表顺序已变化，请刷新后继续。',409);
-        where.push('(is_active < ? OR (is_active=? AND (activity_at < ? OR (activity_at=? AND id < ?))))');values.push(cursor.active,cursor.active,cursor.at,cursor.at,cursor.id);
+        where.push('(is_active < ? OR (is_active=? AND (user_at < ? OR (user_at=? AND id < ?))))');values.push(cursor.active,cursor.active,cursor.at,cursor.at,cursor.id);
       }
-      const rows=db.prepare(`SELECT summary,is_active,activity_at,id FROM ${source} WHERE ${where.join(' AND ')} ORDER BY is_active DESC,activity_at DESC,id DESC LIMIT ?`).all(...values,input.limit+1) as Array<{summary:string;is_active:number;activity_at:string;id:string}>;
+      const rows=db.prepare(`SELECT summary,is_active,user_at,id FROM ${source} WHERE ${where.join(' AND ')} ORDER BY is_active DESC,user_at DESC,id DESC LIMIT ?`).all(...values,input.limit+1) as Array<{summary:string;is_active:number;user_at:string;id:string}>;
       const chosen=rows.slice(0,input.limit),last=chosen.at(-1);
       const group=(field:'provider'|'model')=>(db.prepare(`SELECT coalesce(nullif(json_extract(summary,'$.run.${field}'),''),'未指定') AS label,count(*) AS count FROM ${source} WHERE ${statsWhere.join(' AND ')} AND effective_status IN ('starting','running','stopping','tools-active') GROUP BY label ORDER BY count DESC,label`).all(...statsValues) as Array<{label:string|null;count:number}>).map(row=>({label:row.label||'未指定',count:row.count}));
-      return {conversations:chosen.map(row=>{const view=JSON.parse(row.summary) as ConversationView;return {...view,entries:[],requests:[],run:view.run?{...view.run,tools:[]}:undefined,participants:view.participants.map(participant=>({...participant,contextId:''}))};}),total,activityCounts:{...counts},stats:{agents:group('provider'),models:group('model')},nextCursor:rows.length>input.limit&&last?Buffer.from(JSON.stringify({scope,epoch,active:last.is_active,at:last.activity_at,id:last.id})).toString('base64url'):undefined};
+      return {conversations:chosen.map(row=>{const view=JSON.parse(row.summary) as ConversationView;return {...view,entries:[],requests:[],run:view.run?{...view.run,tools:[]}:undefined,participants:view.participants.map(participant=>({...participant,contextId:''}))};}),total,activityCounts:{...counts},stats:{agents:group('provider'),models:group('model')},nextCursor:rows.length>input.limit&&last?Buffer.from(JSON.stringify({scope,epoch,active:last.is_active,at:last.user_at,id:last.id})).toString('base64url'):undefined};
     }finally{db.close();}
   }
   markSeen(workspaceId:string,id:string,through:number): NonNullable<ConversationView['activity']> {
@@ -208,15 +220,18 @@ export class ConversationRepository {
     const db = this.open(true)!;
     try {
       db.exec('BEGIN IMMEDIATE');
-      const prior = db.prepare('SELECT revision,summary,message_signature,activity_at,activity_version,seen_version FROM conversations WHERE id=?').get(record.view.id) as {revision:string;summary:string;message_signature:string;activity_at:string;activity_version:number;seen_version:number}|undefined;
+      const prior = db.prepare('SELECT revision,summary,message_signature,activity_at,user_at,activity_version,seen_version FROM conversations WHERE id=?').get(record.view.id) as {revision:string;summary:string;message_signature:string;activity_at:string;user_at:string;activity_version:number;seen_version:number}|undefined;
       if ((prior?.revision ?? undefined) !== priorRevision) fail('agent_revision_conflict', '对话已变化，请重新读取。', 409);
       db.prepare('INSERT INTO conversations(id,workspace_id,task_id,hidden,updated_at,revision,body) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET task_id=excluded.task_id,hidden=excluded.hidden,updated_at=excluded.updated_at,revision=excluded.revision,body=excluded.body').run(record.view.id, record.view.workspaceId, record.view.taskId ?? null, Number(record.view.hidden), record.view.updatedAt, record.view.revision, JSON.stringify(record));
       const signature=messageSignature(record);
       const version=(prior?.activity_version??0)+(prior&&prior.message_signature!==signature?1:0);
       const activityAt=prior&&prior.message_signature===signature?prior.activity_at:record.view.updatedAt;
+      // 顺序只跟随用户输入；智能体输出与工具动作不改变位置。
+      const latest=userActivityAt(record);
+      const userAt=prior&&prior.user_at>=(latest??'')?prior.user_at:latest??prior?.user_at??record.view.updatedAt;
       const summary=summaryView(record,version,prior?.seen_version??0,activityAt);
       record.view.activity=summary.activity;
-      db.prepare('UPDATE conversations SET summary=?,message_signature=?,activity_at=?,activity_version=?,is_active=? WHERE id=?').run(JSON.stringify(summary),signature,activityAt,version,Number(summary.activity!.active),record.view.id);
+      db.prepare('UPDATE conversations SET summary=?,message_signature=?,activity_at=?,user_at=?,activity_version=?,is_active=? WHERE id=?').run(JSON.stringify(summary),signature,activityAt,userAt,version,Number(summary.activity!.active),record.view.id);
       const before=prior?.summary?JSON.parse(prior.summary) as ConversationView:undefined;
       const rank=(v:ConversationView|undefined)=>JSON.stringify([v?.title,v?.hidden,v?.run?.status,v?.activity,v?.run?.provider,v?.run?.model]);
       if(rank(before)!==rank(summary))db.exec('UPDATE conversation_epoch SET value=value+1 WHERE id=1');
