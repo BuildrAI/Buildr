@@ -288,6 +288,8 @@ export async function runAgentConversationsJourney({t,page,workspaceUrl,workspac
       await activityBadge.waitFor();await page.getByRole('complementary',{name:'当前对话与所有对话',exact:true}).getByRole('button',{name:'展开当前对话',exact:true}).hover();await input().waitFor();assert.equal(await panel().locator('.ac-activity-count').count(),0,'暂看时仅侧边保留活动徽标');await openDesktopConversation();await input().waitFor();assert.equal(await panel().getAttribute('data-conversation-id'),null,'侧边普通展开不因另一段活动而切换当前草稿');assert.equal(await input().inputValue(),'草稿只保存，不自动执行');
       await railActivity.hover();await activityMenu().locator('button[data-activity-id="attention-other"]').waitFor();
       assert.equal(await activityMenu().locator('button[data-activity-id="attention-other"] .ac-activity-id').innerText(),'attention-other','提醒只显示标识本身，不重复 ID 字样');
+      const activityCopyOrder=await activityMenu().locator('button[data-activity-id="attention-other"]').evaluate((node:HTMLElement)=>{const parent=node.parentElement!,copy=parent.querySelector('.ac-activity-row-copy')!,id=node.querySelector('.ac-activity-id')!;const a=copy.getBoundingClientRect(),b=id.getBoundingClientRect();return{copyLeft:a.left,copyRight:a.right,idLeft:b.left,copyMid:a.top+a.height/2,idMid:b.top+b.height/2};});
+      assert.ok(activityCopyOrder.copyRight<=activityCopyOrder.idLeft&&Math.abs(activityCopyOrder.copyMid-activityCopyOrder.idMid)<4,JSON.stringify(activityCopyOrder));
       assert.equal(await activityMenu().locator('.ac-activity-filters,.ac-stats-groups').count(),0,'浮窗移除分类及重复维度统计');
       await railActivity.focus();const groups=activityMenu().locator('.ac-reminder-section');await groups.waitFor();assert.equal(await groups.count(),1);assert.equal(await groups.getAttribute('aria-label'),'活动中');
       assert.equal(await railActivity.locator('[data-count-kind]').count(),1,'入口只保留一个角标');
@@ -401,6 +403,8 @@ export async function runAgentConversationsJourney({t,page,workspaceUrl,workspac
       const history=async()=>{await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await panel().locator('.ac-history-list button[data-conversation-id="'+identity+'"]').waitFor();};
       const assertTwoLines=async()=>{
         const row=panel().locator('.ac-history-list button[data-conversation-id="'+identity+'"]');assert.equal(await row.locator('.ac-history-id').innerText(),identity);
+        const copyOrder=await row.evaluate((node:HTMLElement)=>{const parent=node.parentElement!,copy=parent.querySelector('.ac-history-row-copy')!,id=node.querySelector('.ac-history-id')!;const a=copy.getBoundingClientRect(),b=id.getBoundingClientRect();return{copyLeft:a.left,copyRight:a.right,idLeft:b.left,copyMid:a.top+a.height/2,idMid:b.top+b.height/2};});
+        assert.ok(copyOrder.copyRight<=copyOrder.idLeft&&Math.abs(copyOrder.copyMid-copyOrder.idMid)<4,JSON.stringify(copyOrder));
         const geometry=await row.evaluate((node:HTMLElement)=>{const title=node.querySelector('strong')!,meta=node.querySelector('small')!;return{height:node.getBoundingClientRect().height,title:title.getBoundingClientRect().height,meta:meta.getBoundingClientRect().height,overflow:node.scrollWidth>node.clientWidth};});
         assert.ok(geometry.height<=60&&geometry.title<=21&&geometry.meta<=19&&!geometry.overflow,JSON.stringify(geometry));
       };

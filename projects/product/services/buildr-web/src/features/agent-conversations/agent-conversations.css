@@ -97,12 +97,12 @@
 .ac-history-toolbar .ant-input-prefix{color:#a8b3ad}
 .ac-history-heading{display:flex;align-items:center;justify-content:space-between;font-size: var(--font-size-secondary);color:#8b9b90}
 .ac-history-list{min-width:0}
-.ac-history-row{display:flex;align-items:flex-start;gap:2px;border-radius:7px;margin-bottom:5px}
+.ac-history-row{position:relative;display:flex;align-items:flex-start;gap:2px;border-radius:7px;margin-bottom:5px}
 .ac-history-row:hover,.ac-history-row.is-selected{background:#edf4ef}
 .ac-history-row-main{display:block;flex:1;min-width:0;text-align:left;padding:9px 11px;border:0;background:transparent;border-radius:7px;color:#52685b;cursor:pointer}
-.ac-history-row-copy.ant-btn{flex:none;margin-top:4px;padding-inline:6px;color:#9aa8a0}
+.ac-history-row-copy.ant-btn{position:absolute;left:8px;bottom:9px;z-index:1;width:20px;height:18px;padding:0;color:#9aa8a0}
 .ac-history-row-copy.ant-btn:hover{color:var(--soft-primary)}
-.ac-history-row-main small{display:flex;align-items:center;gap:10px;min-width:0;font-size: var(--font-size-meta);color:#94a096;line-height:18px;margin-top:2px;white-space:nowrap}
+.ac-history-row-main small{display:flex;align-items:center;gap:10px;min-width:0;padding-left:20px;font-size: var(--font-size-meta);color:#94a096;line-height:18px;margin-top:2px;white-space:nowrap}
 .ac-history-body>.ant-btn:last-child{margin-top:auto;flex:none;height:48px;border-top:1px solid #e5ece7;border-radius:0}
 .ac-pending-history{flex:none;max-height:35%;overflow:auto}
 .ac-pending-history h3{font-size: var(--font-size-secondary);font-weight:500;color:#a28d5c;margin:0 10px 6px}
