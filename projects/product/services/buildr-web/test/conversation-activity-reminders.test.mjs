@@ -71,9 +71,9 @@ test('快速档位显式绑定原生来源，保留合法强度并不修改原�
 
 test('浮窗显示真实账号与模型，旧响应不猜账号，失败保留观察',()=>{
   const stats={agents:[{label:'codex',count:3}],models:[{label:'m',count:3}],executions:[{provider:'codex',model:'m',count:3}],modelExecutions:[{accountId:'one',accountLabel:'账号甲',model:'m',count:2},{accountId:'two',accountLabel:'账号乙',model:'m',count:1}]};
-  const html=renderToStaticMarkup(React.createElement(ConversationExecutionSummary,{stats,stale:true,modelLabel:()=> '完整模型名'}));
-  assert.match(html,/执行中模型/);assert.match(html,/账号甲 · 完整模型名/);assert.match(html,/账号乙 · 完整模型名/);assert.match(html,/未更新/);
+  const html=renderToStaticMarkup(React.createElement(ConversationExecutionSummary,{stats,stale:true,modelLabel:()=> '完整模型名',sourceLabel:id=>id==='one'?'Devin':'ChatGPT'}));
+  assert.match(html,/执行中模型/);assert.match(html,/>Devin · 完整模型名<\/span>/);assert.match(html,/>ChatGPT · 完整模型名<\/span>/);assert.match(html,/未更新/);assert.doesNotMatch(html,/账号甲|账号乙|title=/);
   assert.doesNotMatch(html,/Codex|Qoder|按智能体|按模型|<button/);
-  const legacy=renderToStaticMarkup(React.createElement(ConversationExecutionSummary,{stats:{agents:stats.agents,models:stats.models,executions:stats.executions},modelLabel:()=> '完整模型名'}));
+  const legacy=renderToStaticMarkup(React.createElement(ConversationExecutionSummary,{stats:{agents:stats.agents,models:stats.models,executions:stats.executions},modelLabel:()=> '完整模型名',sourceLabel:id=>id==='one'?'Devin':'ChatGPT'}));
   assert.match(legacy,/账号与模型明细尚未读取/);assert.doesNotMatch(legacy,/Codex ·/);
 });
