@@ -100,6 +100,28 @@ test('文件执行保持普通写入、普通删除、最终写入、最终删�
   assert.deepEqual(events, ['write:payload', 'remove:stale', 'write:receipt', 'remove:legacy']);
 });
 
+test('计划中删除项与写入目标冲突时丢弃删除项，写入照常生效', (t: any) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-plan-collision-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const file = (name: string) => path.join(root, name);
+  fs.writeFileSync(file('stale.txt'), 'stale');
+  const plan = createRuntimePlan({
+    adapterId: 'codex', targetRoot: root, scope: '.',
+    capabilityEvidence: REQUIRED_RENDER_CAPABILITIES.map((capability) => ({ capability, supported: true })),
+    writes: [{ targetFile: file('rewritten.txt'), content: 'fresh\n' }, { targetFile: file('nested/kept.txt'), content: 'kept\n' }],
+    removals: [
+      { targetFile: file('rewritten.txt'), kind: 'skill-stale-file' },
+      { targetFile: file('nested'), type: 'directory' },
+      { targetFile: file('stale.txt'), kind: 'skill-stale-file' },
+    ],
+  });
+  assert.deepEqual(plan.removals.map((item: any) => item.targetFile), [file('stale.txt')]);
+  reconcileRuntimePlan(plan);
+  assert.equal(fs.readFileSync(file('rewritten.txt'), 'utf8'), 'fresh\n');
+  assert.equal(fs.readFileSync(file('nested/kept.txt'), 'utf8'), 'kept\n');
+  assert.equal(fs.existsSync(file('stale.txt')), false);
+});
+
 test('Windows runtime 文件一致性忽略 POSIX executable bit', (t: any) => {
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-mode-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

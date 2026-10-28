@@ -619,7 +619,11 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
       for (const skill of skills) {
         if (skill.enabled === false || skill.state === 'uninstalled' || skill.install?.mode === 'agent') continue;
         if (adapter.traits.skills.root !== '.agents' && Array.isArray(skill.runtimes) && !skill.runtimes.includes(agent)) continue;
-        declared.add(skill.runtimePath || skill.id);
+        // The render loader resolves runtimePath, then falls back to the
+        // manifest path, then the id; declarations must cover the same
+        // runtime layout or live projections are mistaken for orphans.
+        const declaredPath = skill.runtimePath ?? skill.path ?? skill.id;
+        declared.add(normalizeRelativePathForBuildr(declaredPath, `Skill runtime path must stay inside skills root: ${declaredPath}`));
         if (adapter.traits.skills.root === '.agents') {
           declared.add(skill.id);
           for (const legacyPath of skill.legacyRuntimePaths || []) declared.add(legacyPath);
