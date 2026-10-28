@@ -78,7 +78,7 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   response = await fetch(`${app}/conversations`, {headers:readHeaders}); assert.equal(response.status,200);
   let summaries=await response.json();
   // 已创建但从未发出内容的草稿不进入对话历史。
-  assert.equal(summaries.total,0);assert.deepEqual(summaries.conversations,[]);
+  assert.equal(summaries.total,0);assert.deepEqual(summaries.conversations,[]);assert.deepEqual(summaries.stats.executions,[],'执行组合摘要穿过真实HTTP契约，不被丢弃');
   {
     const store=new DatabaseSync(path.join(base,'agent-profile','agent-service','conversations.sqlite'));
     try{const row=store.prepare('SELECT body FROM conversations WHERE id=?').get(created.id) as {body:string};const record=JSON.parse(row.body);record.view.entries.push({id:'seed-entry',sequence:1,kind:'message',role:'user',text:'started work',createdAt:'2026-10-27T00:00:00Z'});store.prepare('UPDATE conversations SET body=? WHERE id=?').run(JSON.stringify(record),created.id);}finally{store.close();}
