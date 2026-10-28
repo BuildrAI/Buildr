@@ -1,5 +1,5 @@
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
@@ -40,7 +40,7 @@ class QoderRuntime implements AgentRuntime {
     // qodercliAuth owns this one Buildr login; model leases isolate execution, not credentials.
     const config = join(options.nativeAccountConfigRoot ?? options.configRoot, 'qoder-config');
     await privateDirectories(options.configRoot, home, temporary, config);
-    const env = isolatedEnvironment(options.environment, home, temporary, { QODER_CONFIG_DIR: config, ...(gateway ? { QODER_SDK_CUSTOM_BASE_URL_BYOK: '1', BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) });
+    const env = isolatedEnvironment(options.environment, home, temporary, { QODER_CONFIG_DIR: config, ...(gateway && !gateway.nativeModel ? { QODER_SDK_CUSTOM_BASE_URL_BYOK: '1', BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) });
     const executable = await findExecutable(options.executable, ['qodercli', 'qoder', 'qodercli.exe'], env); const version = await inspectVersion(executable, env, options.signal);
     if (!isCompatibleProgram('qoder', version)) throw new Error(`qoder_version_unsupported: requires ${nativeProgramPolicy('qoder').compatibility}`);
     const binding = await consumerBinding('qoder', executable, version, config, options);
@@ -53,6 +53,7 @@ class QoderRuntime implements AgentRuntime {
     try {
       await rpc.call('initialize', { executable, ...(gateway ? { gateway } : {}) });
       if (gateway) {
+        await runtime.assertNativeAccount();
         // The platform login starts Qoder itself; paid native model access is unrelated.
         const account: AccountObservation = await rpc.call('account', { cwd: options.configRoot }, 40000);
         if (account.status !== 'ready') throw new Error(account.status === 'expired' ? 'qoder_platform_login_expired' : account.status === 'not-authenticated' ? 'qoder_platform_login_required' : 'qoder_platform_auth_unavailable');
@@ -79,6 +80,7 @@ class QoderRuntime implements AgentRuntime {
   async models() { return this.gateway ? structuredClone(this.gateway.models) : await this.rpc.call('models', { cwd: this.configRoot }, 40000); }
   async generateTitle(input: ExecutorTitleInput): Promise<string | undefined> {
     this.reference(input.contextRef, input.cwd); input.signal.throwIfAborted();
+    await this.assertNativeAccount();
     return await this.rpc.call('title', { description: input.description }, 10_000);
   }
   async beginLogin(update: (value: LoginObservation) => void): Promise<void> {
@@ -113,10 +115,16 @@ class QoderRuntime implements AgentRuntime {
   async readHistory({ contextRef, cwd }: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]> { this.reference(contextRef, cwd); return await this.rpc.call('history', { contextId: contextRef.id, cwd }); }
   async send(input: ExecutorSendInput): Promise<void> {
     this.reference(input.contextRef, input.cwd);
+    await this.assertNativeAccount();
     if (this.gateway) input = { ...input, model: gatewayModel(this.gateway, input.model).id, reasoningEffort: qoderGatewayPolicy(this.gateway, input.model, input.reasoningEffort).parameters.reasoningEffort };
     this.handlers.set(input.contextRef.id, input.onEvent);
     try { await this.rpc.call('send', { contextId: input.contextRef.id, cwd: input.cwd, text: input.text, images: input.images, model: input.model, reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode, clientRequestId: input.clientRequestId }, 24 * 60 * 60 * 1000); }
     finally { this.handlers.delete(input.contextRef.id); }
+  }
+  private async assertNativeAccount(): Promise<void> {
+    if (!this.gateway?.nativeModel) return;
+    const identity = await readQoderIdentity(this.environment.QODER_CONFIG_DIR!);
+    if (createHash('sha256').update('qoder:' + identity.userID).digest('hex') !== this.gateway.nativeModel.accountIdentity) throw new Error('qoder_native_account_changed');
   }
   async observe({ contextRef, executionRef }: { contextRef: ContextRef; executionRef?: ExecutionRef }): Promise<ExecutorObservation> {
     this.reference(contextRef);

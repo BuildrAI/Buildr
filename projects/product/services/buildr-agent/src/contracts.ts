@@ -42,6 +42,8 @@ export interface ExecutorBinding {
 export interface ModelGatewayConfiguration {
   identity: string; baseUrl: string; apiKey: string;
   models: Array<AgentModel & { contextWindow?: number; maxOutputTokens?: number; vision?: boolean; tools?: boolean }>;
+  /** Same-account Qoder execution uses its native model route, retaining the source lease binding. */
+  nativeModel?: { provider: 'qoder'; id: string; accountIdentity: string };
 }
 export interface ExecutorOpenOptions {
   gateway?: ModelGatewayConfiguration;

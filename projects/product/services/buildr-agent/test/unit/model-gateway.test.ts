@@ -23,6 +23,15 @@ test('Qoder registers one query-local direct provider with validated model capab
   assert.deepEqual(lease, original);
 });
 
+test('Qoder selects its exact native model while retaining leased parameters and rejecting other routes', () => {
+  const gateway: ExecutorGateway = { ...structuredClone(lease), nativeModel: {provider:'qoder',id:'qmodel_38max',accountIdentity:'account-fingerprint'} };
+  const policy = qoderGatewayPolicy(gateway, gateway.models[0].id, 'high');
+  assert.equal(policy.model, 'qmodel_38max');
+  assert.deepEqual(policy.parameters, {contextWindow:200000,reasoningEffort:'high'});
+  assert.throws(() => qoderGatewayPolicy(gateway,'other-model'), /model_mismatch/);
+  assert.throws(() => qoderGatewayPolicy(gateway,undefined,'ultra'), (error:any) => error.code === 'agent_reasoning_unavailable');
+});
+
 test('Qoder filters unsupported declarations and rejects selected or default effort without downgrading', () => {
   const gateway = structuredClone(lease), model = gateway.models[0];
   model.reasoningEfforts = ['off', 'none', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].map(id => ({ id, label: id }));

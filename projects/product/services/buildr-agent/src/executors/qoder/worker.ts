@@ -9,7 +9,8 @@ import { query, qodercliAuth, ProcessTransport, getSessionInfo, getSessionMessag
 import { qoderHistoryItems, qoderResultOutcome } from './protocol.ts';
 import { qoderModel } from '../model-options.ts';
 import { resolvePermissionMode } from '../../domain/permission-mode.ts';
-import { checkedGateway, qoderGatewayPolicy, qoderGatewaySettings, type ExecutorGateway } from '../model-gateway.ts';
+import { safeDiagnostic } from '../../domain/agent-state.ts';
+import { checkedGateway, qoderGatewayModelId, qoderGatewayPolicy, qoderGatewaySettings, type ExecutorGateway } from '../model-gateway.ts';
 
 console.log = console.info = console.warn = console.error = console.debug = () => {};
 const send = (message: unknown) => { process.stdout.write(JSON.stringify(message) + '\n'); };
@@ -29,16 +30,22 @@ const accepted = (state: LiveQuery) => { if (!state.accepted) { state.accepted =
 const observe = (state: LiveQuery): ExecutorObservation => ({ status: state.terminal ? [...state.tools.values()].some(tool => tool.status === 'running') ? 'tools-active' : [...state.tools.values()].some(tool => tool.status === 'unknown') ? 'unknown' : state.terminal === 'stopped' ? 'stopped' : 'idle' : state.pending.size ? 'waiting' : 'running', executionRef: { id: state.id }, tools: [...state.tools.values()].map(({ taskId, ...tool }) => ({ ...tool, canStop: Boolean(taskId) && tool.status === 'running' })), requests: [...state.pending.values()].map(pending => pending.request), ...(state.diagnostic ? { diagnostic: state.diagnostic } : {}) });
 function gatewayPolicy(context: any, selected?: string, effort?: string) {
   const policy = qoderGatewayPolicy(gateway!, selected, effort);
-  if (!context.availableModels?.some((model: any) => (model.value ?? model.id) === policy.model)) throw new Error('qoder_gateway_model_unavailable');
+  assertGatewayModel(context.availableModels);
   return policy;
+}
+function assertGatewayModel(models: any[]) {
+  if (!models?.some((model: any) => model.isEnabled !== false && (model.value ?? model.id) === qoderGatewayModelId(gateway!))) throw new Error(gateway!.nativeModel ? 'qoder_native_model_unavailable' : 'qoder_gateway_model_unavailable');
 }
 function options(cwd: string, state?: LiveQuery, onChild?: (child: ChildProcessWithoutNullStreams) => void): any {
   return {
     auth: qodercliAuth(), transport: ProcessTransport.default, pathToQoderCLIExecutable: executable, cwd, env: { ...process.env },
-    settingSources: ['user', 'project', 'local'], skills: 'all', settings: { skills: { loadFromAgentsDirectory: true }, ...(gateway ? qoderGatewaySettings(gateway) : {}) }, permissionMode: state?.permissionMode === 'full-access' ? 'bypassPermissions' : 'default', allowDangerouslySkipPermissions: state?.permissionMode === 'full-access',
+    settingSources: ['user', 'project', 'local'], skills: 'all', settings: { skills: { loadFromAgentsDirectory: true }, ...(gateway && !gateway.nativeModel ? qoderGatewaySettings(gateway) : {}) }, permissionMode: state?.permissionMode === 'full-access' ? 'bypassPermissions' : 'default', allowDangerouslySkipPermissions: state?.permissionMode === 'full-access',
     stderr: () => {}, includePartialMessages: true,
     // Apply the lease to every purpose, including title, compaction and child agents.
-    ...(gateway ? { resolveModel: (context: any) => gatewayPolicy(context) } : {}),
+    ...(gateway ? { resolveModel: (context: any) => {
+      try { return gatewayPolicy(context); }
+      catch (error) { if (state) state.diagnostic = safeDiagnostic(error); throw error; }
+    } } : {}),
     spawnQoderCLIProcess: (input: any) => {
       const child = spawn(input.command, input.args, { cwd: input.cwd, env: input.env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
       child.stderr.on('data', () => {}); if (state) state.child = child; onChild?.(child); return child;
@@ -65,11 +72,13 @@ async function accountQuery(cwd: string, operation: 'account' | 'models'): Promi
     await bounded(q.initializationResult(), 30000);
     if (operation === 'account') {
       const account = await q.accountInfo();
+      if (gateway && (account?.userId || account?.email || account?.name)) assertGatewayModel(await q.getAvailableModels({ fetchStrategy: 'live' }));
       return account?.userId || account?.email || account?.name ? { status: 'ready', label: 'Qoder' + (account.subscriptionType ? ' · ' + account.subscriptionType : ''), loginMethod: 'Qoder 账号' } : { status: 'not-authenticated' };
     }
     const models = await q.getAvailableModels({ fetchStrategy: 'live' });
     return models.filter((model: any) => model.isEnabled !== false && typeof (model.value ?? model.id) === 'string').map(qoderModel);
   } catch (error: any) {
+    if (['qoder_gateway_model_unavailable', 'qoder_native_model_unavailable'].includes(error?.message)) throw error;
     if (operation === 'account') {
       if (authExpired) return { status: 'expired', diagnostic: 'qoder_auth_expired' };
       if (error?.name === 'QoderCliInitializationError' && error.message === 'No qodercli login found. Run \"qodercli login\" first.') return { status: 'not-authenticated' };
@@ -112,7 +121,10 @@ async function execute(params: any): Promise<void> {
     await gate;
   }
   const opts = { ...options(params.cwd, state), ...(info ? { resume: params.contextId } : { sessionId: params.contextId }), ...(params.model ? { model: params.model } : {}) };
-  if (gateway) Object.assign(opts, { model: qoderGatewayPolicy(gateway, params.model, params.reasoningEffort).model, resolveModel: (context: any) => gatewayPolicy(context, params.model, params.reasoningEffort) });
+  if (gateway) Object.assign(opts, { model: qoderGatewayPolicy(gateway, params.model, params.reasoningEffort).model, resolveModel: (context: any) => {
+    try { return gatewayPolicy(context, params.model, params.reasoningEffort); }
+    catch (error) { state.diagnostic = safeDiagnostic(error); throw error; }
+  } });
   else if (params.reasoningEffort) Object.assign(opts, { resolveModel: (context: any) => {
     if (context.purpose !== 'main' && context.purpose !== 'plan') return undefined;
     const id = params.model ?? context.resolvedModel;
@@ -161,7 +173,7 @@ async function execute(params: any): Promise<void> {
       }
       emit(state, { type: 'observation', observation: observe(state) });
       if (message.type === 'result') {
-        const outcome=qoderResultOutcome(message,state.stopping,gateway?[gateway.apiKey]:[]);state.terminal=outcome.status;state.diagnostic=outcome.diagnostic;
+        const outcome=qoderResultOutcome(message,state.stopping,gateway?[gateway.apiKey]:[]);state.terminal=outcome.status;state.diagnostic=outcome.status==='failed'?(state.diagnostic??outcome.diagnostic):outcome.diagnostic;
         // Closing flushes the exact native transcript; pending tools stay unknown until native completion evidence.
         break;
       }
