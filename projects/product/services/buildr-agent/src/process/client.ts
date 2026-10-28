@@ -152,7 +152,7 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
       // The first upgrade cannot add operations to an already running binary.
       // Its compatible client can persist the same private next-instruction
       // record, which the successor discovers after the protected idle handoff.
-      if(current.identity.parallelCompatibility!==1&&['conversations.queueSend','conversations.cancelPendingSend'].includes(name)){
+      if(!current.identity.parallelCompatibility&&['conversations.queueSend','conversations.cancelPendingSend'].includes(name)){
         validateOperation(name,args);
         const conversation=await call('/operations',{contract:AGENT_EXECUTION_CONTRACTS.operations,sourceId:options.sourceId,operation:'conversations.read',args:args.slice(0,2)});
         if(name==='conversations.cancelPendingSend')pendingSends.cancel(args[0],args[1],args[2].expectedPendingRevision);

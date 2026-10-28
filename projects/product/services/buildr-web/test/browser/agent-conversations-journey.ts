@@ -529,12 +529,20 @@ export async function runAgentConversationsJourney({t,page,workspaceUrl,capture:
           await input().fill('保留正在编辑的新要求');
           const action=panel().locator('.ac-recovery-action'),before=sends,users=conversation.entries.filter((entry:any)=>entry.role==='user').length;
           const label=mode==='undelivered'?'重试':'继续';await action.getByRole('button',{name:label,exact:true}).waitFor();
+          assert.equal(await action.locator('.anticon-reload').count(),1);
+          assert.equal(await action.locator(':scope > span').count(),0,'已有异常原因时不重复追加通用失败提示');
+          const actionBox=await action.boundingBox(),buttonBox=await action.getByRole('button',{name:label,exact:true}).boundingBox();
+          assert.ok(actionBox&&buttonBox&&buttonBox.x-actionBox.x<10,'恢复动作紧邻左侧异常，不漂到输入区右端');
+          assert.equal(await action.getByRole('button',{name:label,exact:true}).innerText(),label,'两个字不插入额外间距');
           holdSend=true;const started=new Promise<void>(resolve=>{sendStarted=resolve;});if(mode==='same'){holdPrepare=true;const preparing=new Promise<void>(resolve=>{prepareStarted=resolve;});await action.getByRole('button',{name:label,exact:true}).click();await preparing;await panel().getByRole('button',{name:'直接交接',exact:true}).click();await started;releasePrepare!();}else{await action.getByRole('button',{name:label,exact:true}).click();await started;}
           assert.equal(sends,before+1);assert.equal(sentInputs.at(-1).continueRunId,'run-fixture');assert.equal(sentInputs.at(-1).text,'');assert.deepEqual(sentInputs.at(-1).attachmentIds,[]);
           assert.equal(conversation.entries.filter((entry:any)=>entry.role==='user').length,users);
           if(mode==='model')assert.equal(sentInputs.at(-1).model,'fixture-fast');if(mode==='executor')assert.equal(sentInputs.at(-1).connectionId,'dsh');
           releaseSend!();await panel().locator('[data-run-status="running"]').waitFor();assert.equal(await input().inputValue(),'保留正在编辑的新要求');assert.equal(await panel().locator('.ac-recovery-action').count(),0);
         }
+        update({entries:[...conversation.entries,{id:'legacy-failed-input',sequence:999,kind:'message',role:'user',text:'未送达的历史要求',createdAt:'2026-10-28T00:00:00Z',runId:'older-failed-run',status:'failed'}]});
+        await page.reload();await panel().locator('.ac-turn[data-run-id="older-failed-run"]').waitFor();
+        assert.equal(await panel().locator('.ac-turn[data-run-id="older-failed-run"] .ac-turn-identity').count(),0,'历史失败输入没有来源事实时不显示空智能体标题');
         update({run:run('unknown','codex'),requests:[]});await page.reload();await panel().locator('.ac-recovery-action').getByRole('button',{name:'核对状态',exact:true}).waitFor();
         assert.equal(await panel().locator('.ac-recovery-action').getByRole('button',{name:'继续',exact:true}).count(),0);
       }finally{holdSend=false;releaseSend?.();conversation=saved;sends=savedSends;prepares=savedPrepares;stops=savedStops;sentInputs.splice(savedSentLength);await page.reload();await input().waitFor();await input().fill('');}

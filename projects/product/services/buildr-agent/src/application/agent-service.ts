@@ -114,6 +114,8 @@ export function createAgentService(options: AgentServiceOptions) {
     },
     resumeMetadata() { connections.freezeMetadata(false); models.freezeMetadata(false); startRefreshing(); },
     conversationBusy: (scope: string, id: string) => conversations.busy(scope, id),
+    releaseIdleSources: () => conversations.releaseIdleSources(),
+    canAdoptParallel: () => conversations.canAdoptParallel(),
     verifyNext: (scope: string, id: string) => conversations.verifyNext(scope, id),
     validatePending: (scope: string, id: string, input: SendDraft) => conversations.validatePending(scope, id, input),
     revokeModel: (id: string) => models.invalidate(id),

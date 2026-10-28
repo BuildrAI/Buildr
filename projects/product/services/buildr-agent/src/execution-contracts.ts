@@ -25,7 +25,7 @@ export interface AgentRuntimeUnit {
   entry: string;
   node: string;
   /** Equal values explicitly permit concurrent use of the private storage. */
-  parallelCompatibility?: 1;
+  parallelCompatibility?: 1 | 2;
 }
 export interface AgentProcessIdentity {
   contracts: typeof AGENT_EXECUTION_CONTRACTS;
@@ -35,7 +35,7 @@ export interface AgentProcessIdentity {
   dataRoot: string;
   pid: number;
   runtime: AgentRuntimeUnit;
-  parallelCompatibility?: 1;
+  parallelCompatibility?: 1 | 2;
 }
 export interface AgentProcessStatus {
   identity: AgentProcessIdentity;

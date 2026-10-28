@@ -62,6 +62,10 @@ export class ConversationApplication {
   private readonly earlyTitles = new Map<string, Promise<void>>();
   private readonly sourceConnections = new Map<string,string>();
   private readonly sourceRuntimes = new Map<string, Promise<{runtime: AgentRuntime; model: string}>>();
+  private readonly sourceOwners = new Map<string, {workspaceId: string; id: string}>();
+  private releasingIdleSources?: Promise<void>;
+  private sharedNativeContext = false;
+  canAdoptParallel(): boolean { return !this.sharedNativeContext; }
   private closing = false;
   private recoveryWork?: Promise<void>;
   private readonly recoveries = new Map<string, Promise<void>>();
@@ -106,7 +110,11 @@ export class ConversationApplication {
   private get pendingSends() { return new PendingSendRepository(this.options.root); }
 
   private async sourceRuntime(record: StoredConversation, participant: StoredParticipant): Promise<{runtime: AgentRuntime; model: string}> {
-    if (!participant.modelAccountId) return this.options.connections.runtime(participant.connectionId).then(runtime => ({runtime, model: record.view.run?.model ?? ''}));
+    if (!participant.modelAccountId) {
+      this.sharedNativeContext = true;
+      return this.options.connections.runtime(participant.connectionId).then(runtime => ({runtime, model: record.view.run?.model ?? ''}));
+    }
+    this.sourceOwners.set(participant.id, {workspaceId:record.view.workspaceId,id:record.view.id});
     const found = this.sourceRuntimes.get(participant.id);
     if (found) {
       const source = await found;
@@ -117,6 +125,33 @@ export class ConversationApplication {
     const access = this.options.modelAccess; if (!access) fail('agent_model_source_unavailable', '模型套餐组件不可用。', 409);
     const work = access.leases.create({ accountId: participant.modelAccountId, expectedIdentity: participant.modelAccountIdentity, modelId: participant.modelId!,serviceTier:participant.serviceTier, conversationId: record.view.id, agentId: participant.connectionId, runId: record.view.run?.id ?? 'observe' }).then(async lease => ({ runtime: await this.options.connections.runtime(participant.connectionId, { identity: lease.identity, baseUrl: lease.baseUrl, apiKey: lease.apiKey, models: [{id: lease.model, label: lease.offering.label, isDefault: true, reasoningEfforts: lease.offering.reasoningEfforts, defaultReasoningEffort: lease.offering.defaultReasoningEffort, contextWindow: lease.offering.contextWindow, maxOutputTokens: lease.offering.maxOutputTokens, vision: lease.offering.images, tools: lease.offering.tools}] }), model: lease.model })).catch(error => { this.sourceRuntimes.delete(participant.id); throw error; });
     this.sourceConnections.set(participant.id, participant.connectionId); this.sourceRuntimes.set(participant.id, work); return work;
+  }
+  /** Retiring generations release only idle, conversation-specific runtimes.
+   * Native contexts keep their writer until their owning process actually exits. */
+  releaseIdleSources(): Promise<void> {
+    if (this.releasingIdleSources) return this.releasingIdleSources;
+    const work = (async () => {
+      const groups = new Map<AgentRuntime, Array<{id:string; source:Promise<{runtime:AgentRuntime;model:string}>}>>();
+      for (const [id, source] of this.sourceRuntimes) {
+        const value = await source.catch(() => undefined);
+        if (!value) continue;
+        const {runtime} = value;
+        const members = groups.get(runtime) ?? []; members.push({id,source}); groups.set(runtime,members);
+      }
+      for (const [runtime, members] of groups) {
+        if (members.some(({id,source}) => {
+          const owner = this.sourceOwners.get(id);
+          return !owner || this.sourceRuntimes.get(id) !== source || this.busy(owner.workspaceId,owner.id);
+        })) continue;
+        await this.options.connections.releaseGatewayRuntime(runtime);
+        for (const {id,source} of members) if (this.sourceRuntimes.get(id) === source) {
+          this.sourceRuntimes.delete(id); this.sourceOwners.delete(id); this.sourceConnections.delete(id);
+        }
+      }
+    })();
+    this.releasingIdleSources = work;
+    void work.finally(() => { if (this.releasingIdleSources === work) this.releasingIdleSources = undefined; }).catch(() => {});
+    return work;
   }
   private load(workspaceId: string, id: string): StoredConversation {
     const record = this.options.repository.readConversation(nonempty(id, '对话身份'));
@@ -404,10 +439,11 @@ export class ConversationApplication {
     if (prepared.draft.handoffSummary !== undefined) append({ id: randomUUID(), kind: 'notice', role: 'user', text: `用户补充的交接说明：\n${prepared.draft.handoffSummary}`, participantId: participant.id,runId:run.id });
     const userEntryId = randomUUID();
     const manualRecovery = Boolean(raw.continueRunId);
-    append({ id: userEntryId, kind: systemRecovery || manualRecovery ? 'notice' : 'message', role: systemRecovery || manualRecovery ? 'system' : 'user', text: manualRecovery ? record.view.run?.accepted ? '已请求继续上次执行。' : '已请求重试上次未送达的要求。' : prepared.draft.text, runId: run.id, status: 'sending', attachments: prepared.draft.attachmentIds });
+    append({ id: userEntryId, kind: systemRecovery || manualRecovery ? 'notice' : 'message', role: systemRecovery || manualRecovery ? 'system' : 'user', text: manualRecovery ? record.view.run?.accepted ? '已请求继续上次执行。' : '已请求重试上次未送达的要求。' : prepared.draft.text, participantId:participant.id, provider:participant.provider, runId: run.id, status: 'sending', attachments: prepared.draft.attachmentIds });
     const automaticRetry = systemRecovery ? record.attempts.find(value => value.runId === record.view.run?.id)?.automaticRetry : undefined;
     record.attempts.push({ clientRequestId, inputDigest, runId: run.id, participantId: participant.id, through: record.view.entries.at(-1)!.sequence, userEntryId, accepted: false, ...(raw.continueRunId ? {continuationOf: raw.continueRunId} : {}), ...(automaticRetry ? {automaticRetry: {...automaticRetry}} : {}) });
     const previousRun=record.view.run;if(previousRun){record.runOutcomes??={};record.runOutcomes[previousRun.id]={status:previousRun.status,diagnostic:previousRun.diagnostic,model:previousRun.model,provider:previousRun.provider,updatedAt:previousRun.updatedAt};}
+    if (!participant.modelAccountId) this.sharedNativeContext = true;
     delete record.interruption;
     record.view.run = run;
     this.save(record);
@@ -998,7 +1034,7 @@ export class ConversationApplication {
         catch { const latest = this.load(record.view.workspaceId, record.view.id); latest.view.run!.status = 'unknown'; latest.view.run!.diagnostic = '断开时未能确认原生执行退出。'; this.save(latest); }
       }
     }));
-    for (const [id, sourceConnection] of this.sourceConnections) if (sourceConnection === connectionId) { this.sourceRuntimes.delete(id); this.sourceConnections.delete(id); }
+    for (const [id, sourceConnection] of this.sourceConnections) if (sourceConnection === connectionId) { this.sourceRuntimes.delete(id); this.sourceOwners.delete(id); this.sourceConnections.delete(id); }
   }
   async close(): Promise<void> {
     this.closing = true;

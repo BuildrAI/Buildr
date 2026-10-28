@@ -155,6 +155,19 @@ export class ConnectionApplication {
     this.gatewayRuntimes.set(key, promise); return promise;
   }
   binding(id: string): string | undefined { return this.stored(id).bindingIdentity; }
+  async releaseGatewayRuntime(runtime: AgentRuntime): Promise<void> {
+    const owned = [];
+    for (const [key, pending] of this.gatewayRuntimes) {
+      const candidate = await pending.catch(() => undefined);
+      if (candidate === runtime) owned.push({key,pending});
+    }
+    if (!owned.length) {
+      if (!runtime.closed) fail('agent_runtime_release_unconfirmed', '原执行资源归属尚未确认，不能交接原对话。', 409);
+      return;
+    }
+    await runtime.close();
+    for (const {key,pending} of owned) if (this.gatewayRuntimes.get(key) === pending) this.gatewayRuntimes.delete(key);
+  }
   observeModels(id: string, bindingIdentity: string, models: ConnectionView['models']): ConnectionView {
     const record = this.stored(id);
     if (!this.closing && record.view.enabled && record.bindingIdentity === bindingIdentity) {

@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { connectAgentProcess, prepareAgentRuntime, stopAgentProcess, executionScopeKey } from '../../src/index.ts';
 import type { AgentProcessConnection, AgentRuntimeUnit, ConversationView } from '../../src/index.ts';
+import { canRunParallel } from '../../src/process/runtime-unit.ts';
 
 const prepared=path.resolve(import.meta.dirname,'../../../buildr/node_modules/@buildr-ai/buildr-agent');
 const isLive=(pid:number)=>{try{process.kill(pid,0);return true;}catch{return false;}};
@@ -154,23 +155,30 @@ test('parallel versions retain old controls, dispatch durable next instructions 
   fs.copyFileSync(path.join(import.meta.dirname,'fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/process-fixture.mjs'));
   const marker=path.join(packageRoot,'build/fixture-version.json');fs.writeFileSync(marker,JSON.stringify({version:'old'}));
   const runtime=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'}),profileId='parallel-test',scope=executionScopeKey({sourceId:'minimal',id:'directory'});
-  assert.equal(runtime.parallelCompatibility,1);
+  assert.equal(runtime.parallelCompatibility,2);
+  assert.equal(canRunParallel(runtime,{...runtime,parallelCompatibility:1}),false,'old versions retain native writers and must drain before adopting this version');
+  assert.equal(canRunParallel({...runtime,parallelCompatibility:1},runtime),false);
+  assert.equal(canRunParallel(runtime,runtime),true);
   let main:Awaited<ReturnType<typeof actor>>|undefined,observer:AgentProcessConnection|undefined;
   try{
     main=await actor({dataRoot,profileId,runtime,workspace});
     observer=await connectAgentProcess({dataRoot,profileId,runtime,sourceId:'minimal'});
     const firstIdentity=await observer.lifecycle.identity();
     const connection=await main.call('connections.read',['first']);await main.call('connections.connect',['first',{expectedRevision:connection.revision}]);
+    const added=await main.call('models.accounts.add',[{provider:'fixture-model'}]);
+    const checked=await main.call('models.accounts.check',[added.id]);
+    await main.call('models.accounts.preferences',[added.id,{expectedRevision:checked.revision,models:[{id:'fixture',enabled:true}]}]);
+    const sourceChoice={modelAccountId:added.id,model:'fixture'};
     const start=async(text:string)=>{
       const chat:ConversationView=await main!.call('conversations.create',[scope,{}]);
-      const draft={expectedRevision:chat.revision,connectionId:'first',text};
+      const draft={expectedRevision:chat.revision,connectionId:'first',...sourceChoice,text};
       const preview=await main!.call('conversations.prepareSend',[scope,chat.id,draft]);
       await main!.call('conversations.send',[scope,chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()}]);
       return await until(()=>observer!.operations.conversations.read(scope,chat.id),value=>value.run?.accepted===true);
     };
     let first=await start('hold:slow'),second=await start('hold:second'),approval=await start('approval');
     const failedRequest=randomUUID();
-    first=await observer.operations.conversations.queueSend(scope,first.id,{expectedRevision:first.revision,connectionId:'first',text:'saved during failed update',clientRequestId:failedRequest,previousRunId:first.run!.id});
+    first=await observer.operations.conversations.queueSend(scope,first.id,{expectedRevision:first.revision,connectionId:'first',...sourceChoice,text:'saved during failed update',clientRequestId:failedRequest,previousRunId:first.run!.id});
     fs.writeFileSync(path.join(packageRoot,'build/parallel-broken.mjs'),'throw new Error("parallel startup failure");\n');
     const broken=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/parallel-broken.mjs'});
     await observer.lifecycle.requestRuntime({expectedGeneration:firstIdentity.generation,runtime:broken});
@@ -201,7 +209,7 @@ test('parallel versions retain old controls, dispatch durable next instructions 
     assert.equal(fresh.run?.generation,adopted.identity.generation);
     first=await observer.operations.conversations.stop(scope,first.id,{expectedRevision:first.revision,runId:first.run!.id,participantId:first.run!.participantId,generation:first.run!.generation});
     assert.equal(first.run?.status,'tools-active');
-    const requestId=randomUUID(),draft={expectedRevision:first.revision,connectionId:'first',text:'queued original'};
+    const requestId=randomUUID(),draft={expectedRevision:first.revision,connectionId:'first',...sourceChoice,text:'queued original'};
     first=await observer.operations.conversations.queueSend(scope,first.id,{...draft,clientRequestId:requestId,previousRunId:first.run!.id});
     assert.equal(first.pendingSend?.state,'waiting');
     const queuedRevision=first.pendingSend!.revision;
@@ -223,7 +231,7 @@ test('parallel versions retain old controls, dispatch durable next instructions 
     assert.equal((await observer.operations.conversations.lookupRequest(scope,first.id,requestId)).runId,first.run!.id);
     second=await observer.operations.conversations.read(scope,second.id);
     assert.equal(second.run?.generation,firstIdentity.generation);assert.equal(second.run?.status,'running');assert.ok(isLive(firstIdentity.pid));
-    second=await observer.operations.conversations.queueSend(scope,second.id,{expectedRevision:second.revision,connectionId:'first',text:'cancel this',clientRequestId:randomUUID(),previousRunId:second.run!.id});
+    second=await observer.operations.conversations.queueSend(scope,second.id,{expectedRevision:second.revision,connectionId:'first',...sourceChoice,text:'cancel this',clientRequestId:randomUUID(),previousRunId:second.run!.id});
     const cancelled=await observer.operations.conversations.cancelPendingSend(scope,second.id,{expectedPendingRevision:second.pendingSend!.revision});assert.ok(!cancelled.pendingSend);
     // A still-open old client must restart the latest adopted unit, not roll it
     // back to the binary that happened to create that client.

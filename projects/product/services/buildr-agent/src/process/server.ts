@@ -95,7 +95,10 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       json(res, 200, { attached: true }); return;
     }
     if (req.url === '/host/detach') { hosts.detach(input.peerId); json(res, 200, { detached: true }); return; }
-    if (req.url === '/conversation-state') { json(res, 200, {generation:identity.generation,busy:service.conversationBusy(input.scope,input.id)}); return; }
+    if (req.url === '/conversation-state') {
+      if (retiring) await service.releaseIdleSources();
+      json(res, 200, {generation:identity.generation,busy:service.conversationBusy(input.scope,input.id)}); return;
+    }
     if (req.url === '/revoke') {
       if (input.connectionId) { service.revokeModel('native-'+input.connectionId); await service.connections.disconnect(input.connectionId, {expectedRevision:service.connections.read(input.connectionId).revision}); }
       if (input.accountId) service.revokeModel(input.accountId);
@@ -223,6 +226,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       startup = claim(options.dataRoot, 'startup');
       await service.freezeMetadata();
       if (inflight || recovering || closing) { service.resumeMetadata(); accepting = !closing; return; }
+      await service.releaseIdleSources();
       retiring = true;
       writeProcessInstance(options.dataRoot, processRecord());
       writePrivate(path.join(controlRoot(options.dataRoot),'instance.json'),processRecord());
@@ -263,11 +267,13 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   const timer = setInterval(() => {
     if (closing || adopting) return;
     if (retiring) {
-      if (!status().activity.busy && !inflight) void close().finally(()=>{process.exitCode=0;});
+      adopting = service.releaseIdleSources().then(() => {
+        if (!status().activity.busy && !inflight) void close().finally(()=>{process.exitCode=0;});
+      }).catch(() => { /* Keep the exact old owner until native release is confirmed. */ }).finally(() => { adopting=undefined; });
       return;
     }
     if (accepting) { void sends.pump().catch(()=>{}); try { cleanupStoppedProcesses(options.dataRoot,options.runtime); } catch { /* Unknown resources remain retained. */ } }
-    if (pending?.state==='waiting' && canRunParallel(options.runtime,pending.runtime) && !inflight && !recovering && !sends.busy) {
+    if (pending?.state==='waiting' && canRunParallel(options.runtime,pending.runtime) && service.canAdoptParallel() && !inflight && !recovering && !sends.busy) {
       const target=pending.runtime;
       adopting=adoptParallel(target).finally(()=>{adopting=undefined;});
       return;

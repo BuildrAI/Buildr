@@ -18,7 +18,7 @@ export function buildAgentService(serviceRoot = root): string {
   });
   if (result.error || result.status !== 0) throw new Error(`agent_build_failed: ${result.error?.message ?? result.signal ?? result.status}`);
   if (!fs.statSync(path.join(serviceRoot, 'build/index.js'), { throwIfNoEntry: false })?.isFile()) throw new Error('agent_public_entry_missing');
-  fs.writeFileSync(path.join(serviceRoot, 'build/runtime-contracts.json'), JSON.stringify({ contracts: AGENT_EXECUTION_CONTRACTS, storageVersion: CONVERSATION_SCHEMA_VERSION, parallelCompatibility: 1 }) + '\n');
+  fs.writeFileSync(path.join(serviceRoot, 'build/runtime-contracts.json'), JSON.stringify({ contracts: AGENT_EXECUTION_CONTRACTS, storageVersion: CONVERSATION_SCHEMA_VERSION, parallelCompatibility: 2 }) + '\n');
   const notice = path.join(serviceRoot, 'src/model-access/providers/THIRD_PARTY_NOTICES.md');
   if (fs.existsSync(notice)) fs.copyFileSync(notice, path.join(serviceRoot, 'build/THIRD_PARTY_NOTICES.md'));
   return path.join(serviceRoot, 'build');
