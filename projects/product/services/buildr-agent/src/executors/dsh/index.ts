@@ -270,11 +270,11 @@ export class DshRuntime implements AgentRuntime {
       } catch (error) {
         reject(error instanceof Error ? error : new Error('dsh_follow_closed'));
         if (!this.closed) this.followFailed(turn, error);
-      } finally { await stream.dispose().catch(() => {}); }
+      } finally { try { await stream.dispose(); } catch {} }
     })();
     const opened = bounded(opening, 15000).catch(async error => {
       if (!this.closed && turn.stream === stream) this.followFailed(turn, error);
-      await stream.dispose().catch(() => {});
+      try { await stream.dispose(); } catch {}
       throw error;
     });
     return { opened, pump, buffer };

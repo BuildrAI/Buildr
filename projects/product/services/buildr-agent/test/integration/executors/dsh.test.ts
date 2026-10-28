@@ -12,7 +12,8 @@ class Stream {
   get active() { return !this.closed; }
   async next(): Promise<IteratorResult<any>> { if (this.values.length) return { done: false, value: this.values.shift() }; if (this.closed) return { done: true, value: undefined }; return await new Promise(resolve => { this.waiting = resolve; }); }
   [Symbol.asyncIterator]() { return this; }
-  async dispose() { this.closed = true; this.waiting?.({ done: true, value: undefined }); this.waiting = undefined; }
+  // The native session.follow stream disposes synchronously and returns void.
+  dispose(): void { this.closed = true; this.waiting?.({ done: true, value: undefined }); this.waiting = undefined; }
 }
 async function eventually(condition: () => unknown) { const deadline = Date.now() + 1000; while (!condition()) { if (Date.now() > deadline) throw new Error('condition timeout'); await new Promise(resolve => setTimeout(resolve, 5)); } }
 test('DSH steering preserves exact input sources and holds a completion racing native admission', async () => {
