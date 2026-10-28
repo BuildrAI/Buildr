@@ -913,7 +913,13 @@ const browserSteps = BROWSER_SELECTORS.map((selector: string) => Object.freeze({
   executor: { type: 'node', file: 'test/verification/browser-selector-dispatcher.ts', args: ['--selector', selector, '--run'], discoveredFiles: selector === 'core' ? ['test/e2e/buildr-web-browser.test.ts'] : [] },
   ...(browserSchedulingCostMs[selector] ? { schedulingCostMs: browserSchedulingCostMs[selector] } : {}),
   timeoutMs: selector === 'code' ? 1_300_000 : 600_000, concurrencyClass: 'workspace-heavy', resources: ['browser-runtime'],
-  isolationMode: 'full-lifecycle', resetStrategy: 'recreate', parallelSafety: 'bounded', resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 },
+  // Conversation workers acquire browser-runtime individually in the dispatcher.
+  // The parent must not hold a slot while waiting for its own child workers.
+  ...(selector === 'agent-conversations' ? { resourceClaims: [] } : {}),
+  isolationMode: 'full-lifecycle', resetStrategy: 'recreate', parallelSafety: 'bounded',
+  resourceDemand: selector === 'agent-conversations'
+    ? { workers: 2, processes: 2, workspaceIo: 2 }
+    : { workers: 1, processes: 1, workspaceIo: 1 },
   reuse: false,
   testing: { ownerScope: 'project:product', primaryIntent: 'Development', executionBoundary: 'E2E', primaryEvidenceOwner: `e2e-browser:${selector}`,
     proves: `The ${selector} user journey works through the real hosted frontend and backend.`,

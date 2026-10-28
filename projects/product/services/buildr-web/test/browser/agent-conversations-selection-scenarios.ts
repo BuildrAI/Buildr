@@ -1,0 +1,69 @@
+import assert from 'node:assert/strict';
+import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
+
+/** selection 场景使用独立准备的对话现场。 */
+export async function runSelectionScenarios(fixture:AgentConversationFixture){
+  const {assertModelSummary,chooseAgent,chooseModel,chooseOption,closeModelSettings,expectedBrowserErrors,input,modelSettings,page,panel,preparedInputs,sentInputs,setHighEffort,step,workspaceId}=fixture;
+await step('新对话跨工作空间恢复软件级选择，无关账号变化不造成假冲突且不改写执行模型记忆',async()=>{
+      const storage=await page.evaluate(()=>{const profile=document.querySelector('meta[name="buildr-web-profile"]')?.getAttribute('content')||'local',suffix=encodeURIComponent(profile);const moduleKey='buildr.agent-conversation.preference:'+suffix,modelKey='buildr.agent-conversation.model-preference:'+suffix;return{moduleKey,modelKey,module:localStorage.getItem(moduleKey),model:localStorage.getItem(modelKey),execution:localStorage.getItem('buildr.execution-model'),workspaceName:document.querySelector('.workspace-switcher strong')?.textContent||''};});
+      const previousModels=fixture.sharedModels;
+      const qoderSource={id:'qoder-shared-offering',modelId:'qoder-shared-model',label:'Qoder 共享模型',accountId:'qoder-subscription',accountIdentity:'qoder-identity',accountRevision:'qoder-r1',accountLabel:'Qoder 套餐',provider:'qoder',available:true,enabled:true,images:false,tools:true,contextWindow:128000,defaultServiceTier:'standard',reasoningEfforts:[{id:'medium',label:'中'},{id:'high',label:'高'}],defaultReasoningEffort:'medium',serviceTiers:[{id:'standard',label:'标准',contextWindow:128000,reasoningEfforts:[{id:'medium',label:'中'},{id:'high',label:'高'}],defaultReasoningEffort:'medium'},{id:'fast',label:'快速',contextWindow:64000,reasoningEfforts:[{id:'low',label:'低'},{id:'high',label:'高'}],defaultReasoningEffort:'low'}]};
+      const unrelatedSource={id:'devin-shared-offering',modelId:'swe-2',label:'SWE-2',accountId:'devin-subscription',accountIdentity:'devin-identity',accountRevision:'devin-r1',accountLabel:'Devin 套餐',provider:'devin',available:true,enabled:true,images:true,tools:true,contextWindow:256000};
+      try{
+        fixture.sharedModels=[qoderSource,unrelatedSource];
+        await page.evaluate(({moduleKey,modelKey}:{moduleKey:string;modelKey:string})=>{localStorage.removeItem(moduleKey);localStorage.removeItem(modelKey);localStorage.setItem('buildr.execution-model',JSON.stringify(['commit-account','commit-model']));},{moduleKey:storage.moduleKey,modelKey:storage.modelKey});
+        await page.reload();await input().waitFor();await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();await input().fill('');
+        await chooseOption('新对话工作空间',storage.workspaceName);await chooseAgent('Qoder');await chooseOption('执行权限','默认权限');await chooseOption('执行权限','完全访问');await chooseModel('Qoder 共享模型');
+        const tierButton=()=>modelSettings().getByRole('button',{name:'切换服务档位',exact:true});await tierButton().click();await setHighEffort();await closeModelSettings();
+        assert.equal(await panel().locator('.ac-permission-select .ant-select-selection-item').innerText(),'完全访问');
+        await assertModelSummary('Qoder / Qoder 共享模型','高');assert.equal(await panel().locator('.ac-model-trigger .ac-tier-mark').count(),1);
+        const written=await page.evaluate(({moduleKey,modelKey}:{moduleKey:string;modelKey:string})=>({module:JSON.parse(localStorage.getItem(moduleKey)||'null'),model:JSON.parse(localStorage.getItem(modelKey)||'null'),execution:localStorage.getItem('buildr.execution-model')}),{moduleKey:storage.moduleKey,modelKey:storage.modelKey});
+        assert.equal(written.module.agent.connectionId,'qoder');assert.equal(written.module.permission.mode,'full-access');assert.equal(written.module.permission.workspaceId,workspaceId);assert.deepEqual([written.model.connectionId,written.model.modelAccountId,written.model.model,written.model.serviceTier,written.model.reasoningEffort],['qoder','qoder-subscription','qoder-shared-model','fast','high']);assert.equal(written.execution,JSON.stringify(['commit-account','commit-model']),'对话模型选择不写提交说明执行模型偏好');
+        await page.reload();await input().waitFor();assert.equal(await panel().locator('.ac-provider-select .ant-select-selection-item').innerText(),'Qoder');assert.equal(await panel().locator('.ac-permission-select .ant-select-selection-item').innerText(),'完全访问');await assertModelSummary('Qoder / Qoder 共享模型','高');assert.equal(await panel().locator('.ac-model-trigger .ac-tier-mark').count(),1,'新对话恢复服务档位与思考深度');
+        await chooseOption('新对话工作空间','other-workspace');
+        assert.equal(await panel().locator('.ac-location-name').innerText(),'other-workspace');assert.equal(await panel().locator('.ac-provider-select .ant-select-selection-item').innerText(),'Qoder','智能体记忆跨工作空间保留');assert.equal(await panel().locator('.ac-permission-select .ant-select-selection-item').innerText(),'完全访问','未设置空间采用初始策略');await chooseOption('执行权限','默认权限');await assertModelSummary('Qoder / Qoder 共享模型','高');
+        await chooseOption('新对话工作空间',storage.workspaceName);assert.equal(await panel().locator('.ac-permission-select .ant-select-selection-item').innerText(),'完全访问','同工作空间新对话恢复完全访问');
+        const beforeFailure=fixture.creations;await input().fill('冲突原因不应被统一状态文案覆盖');fixture.prepareError={code:'agent_conversation_busy',message:'请先处理当前执行或未知状态；新内容仍可保留为草稿。'};const conflictResponse=page.waitForResponse((response:any)=>response.url().includes('/drafts/')&&response.url().endsWith('/send'));await panel().getByRole('button',{name:'发送对话',exact:true}).click();await conflictResponse;await panel().getByText('请先处理当前执行或未知状态；新内容仍可保留为草稿。',{exact:true}).waitFor();assert.equal(fixture.creations,beforeFailure);assert.equal(await panel().getAttribute('data-conversation-id'),null);assert.equal(await input().inputValue(),'冲突原因不应被统一状态文案覆盖');assert.equal(await panel().locator('[data-pending-send-state]').count(),0,'a rejected first input remains the shared draft, not a queued empty conversation');
+        await input().fill('无关账号变化后继续发送');unrelatedSource.accountRevision='devin-r2';unrelatedSource.accountLabel='Devin 套餐 · 已刷新';const catalogRefresh=page.waitForResponse((response:any)=>response.url().endsWith('/model-catalog'));await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await catalogRefresh;await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+        assert.equal(await panel().locator('.ac-provider-select .ant-select-selection-item').innerText(),'Qoder');await assertModelSummary('Qoder / Qoder 共享模型','高');assert.equal(await panel().getByText('对话或套餐状态已变化，已重新读取；套餐登录来源变化时请重新选择模型。草稿保留。',{exact:true}).count(),0);
+        const sendsBefore=fixture.sends;await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.sends,sendsBefore+1);assert.equal(sentInputs.at(-1).modelAccountId,'qoder-subscription');assert.equal(sentInputs.at(-1).modelAccountRevision,'qoder-r1','无关 Devin 账号修订不改变 Qoder 对话来源');await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
+        await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();assert.equal(await panel().locator('.ac-permission-select .ant-select-selection-item').innerText(),'完全访问','同工作空间再次新建仍恢复完全访问');assert.equal(await page.evaluate(()=>localStorage.getItem('buildr.execution-model')),JSON.stringify(['commit-account','commit-model']),'全部对话选择不改变执行模型偏好');
+      }finally{fixture.sharedModels=previousModels;fixture.prepareError=undefined;await page.evaluate(({moduleKey,modelKey,module,model,execution}:{moduleKey:string;modelKey:string;module:string|null;model:string|null;execution:string|null})=>{for(const [key,value] of [[moduleKey,module],[modelKey,model],['buildr.execution-model',execution]] as const){if(value===null)localStorage.removeItem(key);else localStorage.setItem(key,value);}},storage);}
+    });
+
+await step('唯一新草稿跨空间、旧对话与刷新恢复，默认空间不进入选项',async()=>{
+      const existingId=fixture.conversation.id;
+      await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();
+      const name=await page.locator('.workspace-switcher strong').innerText();await chooseOption('新对话工作空间',name);
+      await input().fill('唯一草稿跨空间保留');await chooseOption('新对话工作空间','other-workspace');assert.equal(await input().inputValue(),'唯一草稿跨空间保留');
+      await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await chooseOption('对话列表工作空间','全部工作空间');
+      await panel().locator('.ac-history-list [data-conversation-id="'+existingId+'"]').click();await input().waitFor();
+      await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();assert.equal(await input().inputValue(),'唯一草稿跨空间保留');
+      assert.equal(await panel().locator('.ac-location-settings .ant-select-selection-item').innerText(),'other-workspace');
+      await page.reload();await input().waitFor();assert.equal(await input().inputValue(),'唯一草稿跨空间保留');
+      const select=panel().locator('.ac-location-settings .ant-select');await select.hover();await select.locator('.ant-select-clear').click();
+      const combo=panel().getByRole('combobox',{name:'新对话工作空间',exact:true});await combo.focus();await combo.press('ArrowDown');
+      assert.equal(await page.locator('.ant-select-dropdown:visible').getByText('默认工作空间',{exact:true}).count(),0);await combo.press('Escape');
+      assert.equal(await input().inputValue(),'唯一草稿跨空间保留');await page.reload();await input().waitFor();
+      assert.equal(await panel().locator('.ac-location-settings .ant-select-selection-placeholder').innerText(),'默认工作空间');
+      await input().fill('');
+    });
+
+await step('lost first-send reply recovers the accepted conversation after refresh without replay',async()=>{
+      await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();await chooseAgent('Codex');await input().fill('recover the accepted first input');
+      const beforeSends=fixture.sends,beforeCreations=fixture.creations;fixture.loseFirstResponse=true;
+      await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().getByRole('button',{name:'核对并重试原提交',exact:true}).waitFor();
+      assert.equal(fixture.sends,beforeSends+1);assert.equal(fixture.creations,beforeCreations+1);const acceptedId=fixture.conversation.id;
+      await page.reload();await page.locator('#agent-conversation-panel[data-conversation-id="'+acceptedId+'"]').waitFor();await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.sends,beforeSends+1);assert.equal(fixture.creations,beforeCreations+1);
+      await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
+    });
+
+await step('默认工作空间走应用会话路由，空草稿不列出且首轮模式一致',async()=>{
+      await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();await chooseOption('新对话工作空间',await page.locator('.workspace-switcher strong').innerText());const workspaceSelect=panel().locator('.ac-location-settings .ant-select');await workspaceSelect.hover();await workspaceSelect.locator('.ant-select-clear').click();await chooseAgent('Codex');
+      await chooseModel('Fixture model');await closeModelSettings();await chooseOption('执行权限','完全访问');
+      await panel().locator('input[type=file]').setInputFiles({name:'default.png',mimeType:'image/png',buffer:Buffer.from([137,80,78,71,13,10,26,10])});await panel().getByRole('button',{name:'移除图片 default.png',exact:true}).waitFor();assert.equal(await panel().getAttribute('data-conversation-id'),null);
+      const creationsBefore=fixture.creations;await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await chooseOption('对话列表工作空间','全部工作空间');await panel().locator('.ac-history-list').first().waitFor({state:'attached'});await panel().locator('.ac-history-body>.ant-spin').waitFor({state:'hidden'});assert.equal(fixture.creations,creationsBefore,'adding an image does not create a conversation');
+      await panel().getByRole('button',{name:'返回当前对话',exact:true}).click();await input().fill('默认空间首轮');const sent=page.waitForRequest((r:any)=>r.method()==='POST'&&r.url().includes('/api/v1/app/agent-service/conversations/drafts/')&&r.url().endsWith('/send'));await panel().getByRole('button',{name:'发送对话',exact:true}).click();await sent;await panel().locator('[data-run-status="running"]').waitFor();assert.equal(sentInputs.at(-1).permissionMode,'full-access');assert.equal(fixture.conversation.workspaceId,'@default');assert.equal(fixture.creations,creationsBefore+1);
+      await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
+    });
+}

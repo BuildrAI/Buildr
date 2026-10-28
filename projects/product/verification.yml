@@ -4,7 +4,11 @@ testing:
     title: Buildr 静态检查（Static Check）
     scope:
       project: product
-      services: [buildr, buildr-web, buildr-agent, dsh-plugin]
+      services:
+        - buildr
+        - buildr-web
+        - buildr-agent
+        - dsh-plugin
     purpose: 检查四服务类型、源码依赖、声明、资源和交付结构，不执行业务流程。
     sourcePaths:
       - services/buildr/**
@@ -20,14 +24,18 @@ testing:
       - services/dsh-plugin/test/**
     full:
       kind: command
-      argv: [tools/development/run-development-npm, run, test:static]
+      argv:
+        - tools/development/run-development-npm
+        - run
+        - test:static
       cwd: services/buildr
     selection:
       - 完整入口以实际登记和发现集合运行本类全部检查，不按旧目录名推定分类，不在地图复制成员。
       - 所有公开入口支持 --plan 查看选择，使用 --check <id> 显式指定检查；计划和选择成功不等于实际验证通过。
       - 任务开发按用户请求、目标、真实改动及调用边界选齐相关四类，使用 test:related 或明确指定的现有检查，不要求正式任务或比较基线。
       - 推送前必须取得四服务全部静态检查（Static Check）与单元测试（Unit Test）的有效完整证明；不能仅用相关检查冒充全量。
-      - DSH 插件的 plugin-typecheck 与 plugin-test-typecheck 依赖外部准备的 DSH SDK，登记为仅显式选择，由插件服务 test:static 与发布/候选验证执行，不属于日常 check 全量范围。
+      - DSH 插件的 plugin-typecheck 与 plugin-test-typecheck 依赖外部准备的 DSH
+        SDK，登记为仅显式选择，由插件服务 test:static 与发布/候选验证执行，不属于日常 check 全量范围。
       - 仅在内容、配方、依赖、工具与必要环境仍适用时复用有效结果，保留实际来源；缺失、失败和未覆盖如实报告。
     requirements:
       - 稳定版 Node >=24.15.0 与相邻 npm，通过项目包装入口运行
@@ -35,7 +43,11 @@ testing:
     title: Buildr 单元测试（Unit Test）
     scope:
       project: product
-      services: [buildr, buildr-web, buildr-agent, dsh-plugin]
+      services:
+        - buildr
+        - buildr-web
+        - buildr-agent
+        - dsh-plugin
     purpose: 验证四服务隔离条件下的内部逻辑与完整内部功能；替换外部协作者，整套保持低成本。
     sourcePaths:
       - services/buildr/**
@@ -51,7 +63,9 @@ testing:
       - services/dsh-plugin/test/**
     full:
       kind: command
-      argv: [tools/development/run-development-npm, test]
+      argv:
+        - tools/development/run-development-npm
+        - test
       cwd: services/buildr
     selection:
       - 完整入口以实际登记和发现集合运行本类全部检查，不按旧目录名推定分类，不在地图复制成员。
@@ -65,7 +79,11 @@ testing:
     title: Buildr 集成测试（Integration Test）
     scope:
       project: product
-      services: [buildr, buildr-web, buildr-agent, dsh-plugin]
+      services:
+        - buildr
+        - buildr-web
+        - buildr-agent
+        - dsh-plugin
     purpose: 验证真实数据库、HTTP、文件系统、Git、消息和子进程等技术边界；按真实平台和依赖执行。
     sourcePaths:
       - services/buildr/**
@@ -81,7 +99,10 @@ testing:
       - services/dsh-plugin/test/**
     full:
       kind: command
-      argv: [tools/development/run-development-npm, run, test:integration]
+      argv:
+        - tools/development/run-development-npm
+        - run
+        - test:integration
       cwd: services/buildr
     selection:
       - 完整入口以实际登记和发现集合运行本类全部检查，不按旧目录名推定分类，不在地图复制成员。
@@ -97,7 +118,11 @@ testing:
     title: Buildr 端到端测试（End-to-End Test，E2E）
     scope:
       project: product
-      services: [buildr, buildr-web, buildr-agent, dsh-plugin]
+      services:
+        - buildr
+        - buildr-web
+        - buildr-agent
+        - dsh-plugin
     purpose: 从命令行或浏览器实际入口完成应用流程，核对最终结果，明确替换的外部系统。
     sourcePaths:
       - services/buildr/**
@@ -113,11 +138,19 @@ testing:
       - services/dsh-plugin/test/**
     full:
       kind: command
-      argv: [tools/development/run-development-npm, run, test:e2e]
+      argv:
+        - tools/development/run-development-npm
+        - run
+        - test:e2e
       cwd: services/buildr
     selection:
       - 完整入口以实际登记和发现集合运行本类全部检查，不按旧目录名推定分类，不在地图复制成员。
       - 所有公开入口支持 --plan 查看选择，使用 --check <id> 显式指定检查；计划和选择成功不等于实际验证通过。
+      - 对话浏览器检查 e2e-browser:agent-conversations
+        默认按资源预算使用最多两个持续复用的浏览器和服务现场，动态领取全部场景组；各组使用独立页面和测试数据，异常现场停止复用。
+        BUILDR_AGENT_JOURNEY_PART 可指定
+        setup、history、handoff、tasks、models、recovery、selection 或 video
+        只运行该组，不代表完整覆盖。
       - 任务开发按用户请求、目标、真实改动及调用边界选齐相关四类，使用 test:related 或明确指定的现有检查，不要求正式任务或比较基线。
       - 发布或明确要求时按所需范围执行；任务已涉及的必要真实边界在开发完成前验证，不因发布阶段命名而推迟。
       - 仅在内容、配方、依赖、工具与必要环境仍适用时复用有效结果，保留实际来源；缺失、失败和未覆盖如实报告。
