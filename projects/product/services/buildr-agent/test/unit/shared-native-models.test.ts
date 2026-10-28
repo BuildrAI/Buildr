@@ -9,7 +9,7 @@ import { translateResponse } from '../../src/model-access/protocols.ts';
 
 const signal=()=>AbortSignal.timeout(3000);
 
-function sse(frames:unknown[],done=true){return new Response(frames.map(frame=>'data: '+(typeof frame==='string'?frame:JSON.stringify(frame))+'\n\n').join('')+(done?'data: [DONE]\n\n':''));}
+function sse(frames:unknown[],done:boolean|'event'=true){return new Response(frames.map(frame=>'data: '+(typeof frame==='string'?frame:JSON.stringify(frame))+'\n\n').join('')+(done==='event'?'event:finish\ndata:{"firstTokenDuration":1,"totalDuration":2,"serverDuration":1}\n\n':done?'data: [DONE]\n\n':''));}
 
 test('Qoder loads its catalog on first inference without changing the native account',async()=>{
  const paths:string[]=[],account={status:'ready' as const,label:'Qoder account'},original=structuredClone(account);
@@ -36,6 +36,20 @@ test('Qoder completes an explicit MiniMax tool stream without a finish reason',a
   const response=await translateResponse(upstream,'chat-completions','responses',{model:'mmodel',stream:true,request:{tools:[{type:'function',name:'bash',parameters:{type:'object'}}]},opaque:{encode:JSON.stringify,decode:JSON.parse},signal:signal()});
   const text=await response.text();assert.doesNotMatch(text,/response\.failed/);assert.match(text,/response\.completed/);assert.match(text,/"name":"bash"/);assert.match(text,/"arguments":"\{\\"command\\":\\"pwd\\"\}"/);
  }finally{await runtime.close();}
+});
+
+test('Qoder treats the native finish event as a complete MiniMax tool stream',async()=>{
+ const runtime=await createQoderModelProvider({inspect:async()=>({status:'ready'}),identity:async()=>'user',async request(path){if(path==='/models')return Response.json({chat:[{key:'mmodel',display_name:'MiniMax',enable:true}]});if(path==='/usage')return Response.json({});return sse([{statusCodeValue:200,body:JSON.stringify({choices:[{delta:{tool_calls:[{index:0,id:'call-bash',function:{name:'bash',arguments:'{"command":"pwd"}'}}]},finish_reason:'tool_calls'}]})}], 'event');}}).open({accountId:'native-qoder',configRoot:'unused',environment:{}});
+ try{
+  await runtime.inspect();const upstream=await runtime.infer({modelId:'mmodel',signal:signal(),context:{accountId:'q',agentId:'dsh',conversationId:'c',runId:'r',requestId:'i'},body:{stream:true,messages:[{role:'user',content:'check cwd'}],tools:[{type:'function',function:{name:'bash',parameters:{type:'object'}}}]}});
+  const response=await translateResponse(upstream,'chat-completions','responses',{model:'mmodel',stream:true,request:{tools:[{type:'function',name:'bash',parameters:{type:'object'}}]},opaque:{encode:JSON.stringify,decode:JSON.parse},signal:signal()});
+  const text=await response.text();assert.doesNotMatch(text,/response\.failed/);assert.match(text,/response\.completed/);assert.match(text,/"name":"bash"/);assert.match(text,/"arguments":"\{\\"command\\":\\"pwd\\"\}"/);
+ }finally{await runtime.close();}
+});
+
+test('Qoder continues past finish metadata for direct stream consumers',async()=>{
+ const stream=unwrapQoderStream(sse([{statusCodeValue:200,body:JSON.stringify({choices:[{delta:{content:'done'},finish_reason:'stop'}]})}], 'event'),AbortSignal.timeout(50));
+ const text=await new Response(stream).text();assert.match(text,/"finish_reason":"stop"/);assert.match(text,/data: \[DONE\]/);
 });
 
 test('Qoder normalizes null assistant tool-call content without changing history or caller input',async()=>{
