@@ -16,9 +16,9 @@ export function qoderHistoryItems(messages: any[], contextId: string): ExecutorI
   for (const message of messages) {
     if (message.session_id !== contextId) throw new Error('qoder_context_identity_mismatch');
     const content = message.message?.content; const text = visibleText(content);
-    const isOrdinaryInput = message.type === 'user' && Boolean(text) && !message.parent_tool_use_id && !(Array.isArray(content) && content.some((part: any) => part.type === 'tool_result'));
+    const isOrdinaryInput = message.type === 'user' && (Boolean(text) || Array.isArray(content) && content.some((part: any) => part.type === 'image')) && !message.parent_tool_use_id && !(Array.isArray(content) && content.some((part: any) => part.type === 'tool_result'));
     if (isOrdinaryInput) executionId = message.uuid;
-    if (text && (message.type === 'assistant' || isOrdinaryInput)) items.push({ id: message.type === 'assistant' ? `message:${message.message?.id ?? message.uuid}` : message.uuid, kind: 'message', role: message.type === 'assistant' ? 'assistant' : 'user', text, executionId, status: 'completed' });
+    if (text && message.type === 'assistant' || isOrdinaryInput) items.push({ id: message.type === 'assistant' ? `message:${message.message?.id ?? message.uuid}` : message.uuid, ...(isOrdinaryInput ? { clientRequestId: message.uuid } : {}), kind: 'message', role: message.type === 'assistant' ? 'assistant' : 'user', text, executionId, status: 'completed' });
     for (const part of Array.isArray(content) ? content : []) {
       if (part.type === 'tool_use') items.push({ id: part.id, kind: 'tool', role: 'system', name: typeof part.name === 'string' && part.name ? part.name : undefined, input: nativePreview(JSON.stringify(part.input ?? {})), text: String(part.name ?? '工具') + '\n' + nativePreview(JSON.stringify(part.input ?? {})), executionId, status: 'running' });
       if (part.type === 'tool_result') items.push({ id: part.tool_use_id, kind: 'tool', role: 'system', text: nativePreview(visibleText(part.content)), executionId, status: part.is_error ? 'failed' : 'completed' });

@@ -16,6 +16,8 @@ const send = (message: unknown) => { process.stdout.write(JSON.stringify(message
 let executable = '';
 let gateway: ExecutorGateway | undefined;
 interface LiveQuery {
+  inputGate?: Promise<void>;
+  inputAcks: Map<string, { resolve(value: { executionRef: { id: string }; inputItemId: string }): void; reject(error: Error): void }>;
   id: string; contextId: string; permissionMode: PermissionMode; q: any; child?: ChildProcessWithoutNullStreams; accepted: boolean; stopping: boolean; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string;
   tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown'; taskId?: string }>;
   pending: Map<string, { request: ExecutorRequest; input: any; resolve: (value: any) => void }>; texts: Map<string, string>; streamMessageId?: string;
@@ -102,8 +104,9 @@ async function execute(params: any): Promise<void> {
   if (live.has(params.contextId) && !live.get(params.contextId)!.terminal) throw new Error('agent_native_turn_active');
   const info = await getSessionInfo(params.contextId, { dir: params.cwd });
   if (info && (info.sessionId !== params.contextId || info.cwd && info.cwd !== params.cwd)) throw new Error('qoder_context_identity_mismatch');
-  const state: LiveQuery = { id: params.clientRequestId, contextId: params.contextId, permissionMode: resolvePermissionMode(params.permissionMode), q: undefined, accepted: false, stopping: false, tools: new Map(), pending: new Map(), texts: new Map() }; live.set(params.contextId, state);
+  const state: LiveQuery = { id: params.clientRequestId, contextId: params.contextId, permissionMode: resolvePermissionMode(params.permissionMode), q: undefined, accepted: false, stopping: false, tools: new Map(), pending: new Map(), texts: new Map(), inputAcks: new Map() }; live.set(params.contextId, state);
   let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+  state.inputGate = gate;
   async function* input(): AsyncGenerator<any> {
     yield { type: 'user', message: { role: 'user', content: [{ type: 'text', text: params.text }, ...await Promise.all((params.images ?? []).map(async (image: {path:string;mimeType:string}) => ({ type: 'image', source: { type: 'base64', media_type: image.mimeType, data: (await readFile(image.path)).toString('base64') } })))] }, parent_tool_use_id: null, uuid: state.id, session_id: state.contextId };
     await gate;
@@ -139,6 +142,12 @@ async function execute(params: any): Promise<void> {
         }
       }
       if (message.type === 'user') {
+        const content = message.message?.content;
+        if (typeof message.uuid === 'string' && !message.parent_tool_use_id && Array.isArray(content) && !content.some((part: any) => part.type === 'tool_result') && content.some((part: any) => part.type === 'image' || part.type === 'text' && part.text?.trim())) {
+          if (message.uuid === state.id) accepted(state);
+          state.inputAcks.get(message.uuid)?.resolve({ executionRef: { id: state.id }, inputItemId: message.uuid });
+          emit(state, { type: 'item', item: { id: message.uuid, clientRequestId: message.uuid, kind: 'message', role: 'user', text: visibleText(content), executionId: state.id, status: 'completed' } });
+        }
         for (const part of message.message?.content ?? []) if (part.type === 'tool_result') {
           const tool = state.tools.get(part.tool_use_id); if (tool) tool.status = 'completed';
           emit(state, { type: 'item', item: { id: part.tool_use_id, kind: 'tool', role: 'system', text: nativePreview(visibleText(part.content)), executionId: state.id, status: part.is_error ? 'failed' : 'completed' } });
@@ -159,6 +168,8 @@ async function execute(params: any): Promise<void> {
     }
     if (!state.terminal) throw new Error('qoder_terminal_observation_missing');
   } finally {
+    for (const ack of state.inputAcks.values()) ack.reject(new Error('agent_supplement_unknown'));
+    state.inputAcks.clear();
     release(); for (const [id, pending] of state.pending) { pending.resolve({ behavior: 'deny', message: 'Execution ended.' }); emit(state, { type: 'request-resolved', requestId: id }); } state.pending.clear();
     await bounded(state.q.close(), 8000).catch(async () => { if (state.child) await closeOwnedProcess(state.child); });
     for (const tool of state.tools.values()) if (tool.status === 'running') tool.status = 'unknown';
@@ -177,6 +188,23 @@ async function dispatch(method: string, params: any): Promise<any> {
   if (method === 'resume') { const info = await getSessionInfo(params.contextId, { dir: params.cwd }); if (!info || info.sessionId !== params.contextId || info.cwd && info.cwd !== params.cwd) throw new Error('qoder_context_not_found'); return {}; }
   if (method === 'history') return await history(params.contextId, params.cwd);
   if (method === 'send') { await execute(params); return {}; }
+  if (method === 'supplement') {
+    const state = live.get(params.contextId);
+    if (!state?.accepted || state.terminal || state.stopping || state.id !== params.executionId) throw new Error('agent_supplement_rejected');
+    const content = [{ type: 'text', text: params.text }, ...await Promise.all((params.images ?? []).map(async (image: { path: string; mimeType: string }) => ({ type: 'image', source: { type: 'base64', media_type: image.mimeType, data: (await readFile(image.path)).toString('base64') } })))];
+    if (state.terminal || state.stopping) throw new Error('agent_supplement_rejected');
+    let ack!: { resolve(value: { executionRef: { id: string }; inputItemId: string }): void; reject(error: Error): void };
+    const received = new Promise<{ executionRef: { id: string }; inputItemId: string }>((resolve, reject) => { ack = { resolve, reject }; });
+    received.catch(() => {}); state.inputAcks.set(params.clientRequestId, ack);
+    async function* supplement(): AsyncGenerator<any> {
+      yield { type: 'user', message: { role: 'user', content }, parent_tool_use_id: null, uuid: params.clientRequestId, session_id: state!.contextId, priority: 'next', shouldQuery: false };
+      await state!.inputGate;
+    }
+    try {
+      await state.q.streamInput(supplement());
+      return await bounded(received, 10000, 'agent_supplement_unknown');
+    } finally { if (state.inputAcks.get(params.clientRequestId) === ack) state.inputAcks.delete(params.clientRequestId); }
+  }
   if (method === 'close') {
     await Promise.allSettled([...titleQueries].map(async owner => { owner.release(); await bounded(owner.q.close(), 1_000).catch(() => {}); if (owner.child) await closeOwnedProcess(owner.child, 500); }));
     await Promise.allSettled([...live.values()].map(async item => {

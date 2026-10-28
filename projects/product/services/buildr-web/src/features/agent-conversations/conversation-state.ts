@@ -125,18 +125,34 @@ export type ConversationStreamItem = {type:'entry';entry:ConversationEntry}|{typ
 export function groupConversationStream(entries:readonly ConversationEntry[],currentRun?:ConversationRun):ConversationStreamItem[] {
   const items:ConversationStreamItem[]=[];
   const isProcess=(entry:ConversationEntry)=>entry.kind==='tool'||entry.kind==='message'&&entry.role==='assistant';
+  const finals=new Map<string,ConversationEntry>(),keys=new Map<ConversationEntry,string>();let legacy=0;
+  for(const entry of entries){
+    if(!entry.runId&&entry.kind==='message'&&entry.role==='user')legacy++;
+    const key=entry.runId||'legacy:'+legacy;keys.set(entry,key);
+    if(entry.kind==='message'&&entry.role==='assistant'&&!(entry.runId===currentRun?.id&&executionLocked(currentRun)))finals.set(key,entry);
+  }
   for(let index=0;index<entries.length;){
     const first=entries[index];
     if(!isProcess(first)){items.push({type:'entry',entry:first});index++;continue;}
     const run:ConversationEntry[]=[];
     while(index<entries.length&&isProcess(entries[index])&&entries[index].runId===first.runId)run.push(entries[index++]);
     const active=Boolean(currentRun&&currentRun.id===first.runId&&executionLocked(currentRun));
-    const result=active?undefined:[...run].reverse().find(entry=>entry.kind==='message'&&entry.role==='assistant');
+    const candidate=finals.get(keys.get(first)!);
+    const result=active?undefined:run.find(entry=>entry===candidate);
     const process=result?run.filter(entry=>entry!==result):run;
     if(process.length)items.push({type:'process-block',entries:process,active,finishedAt:result?.createdAt});
     if(result)items.push({type:'entry',entry:result});
   }
   return items;
+}
+export type ConversationTurnItems={key:string;prompt?:ConversationEntry;items:ConversationStreamItem[]};
+export function conversationStreamTurns(items:readonly ConversationStreamItem[]):ConversationTurnItems[]{
+  const turns:ConversationTurnItems[]=[];
+  for(const item of items){
+    if(item.type==='entry'&&item.entry.kind==='message'&&item.entry.role==='user')turns.push({key:item.entry.id,prompt:item.entry,items:[]});
+    else {if(!turns.length)turns.push({key:'earlier',items:[]});turns.at(-1)!.items.push(item);}
+  }
+  return turns;
 }
 export function toolEntryHeadline(entry:ConversationEntry):string {
   return entry.text.split('\n',1)[0].trim();

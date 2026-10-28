@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {groupConversationStream,processBlockKey,carryExpandedProcessBlocks,processEntryStatus} from '../src/features/agent-conversations/conversation-state.ts';
+import {groupConversationStream,processBlockKey,carryExpandedProcessBlocks,processEntryStatus,conversationStreamTurns} from '../src/features/agent-conversations/conversation-state.ts';
 import {processTool,conversationFileTarget} from '../src/features/agent-conversations/conversation-process.ts';
 const message=(id,text,runId='r1',role='assistant')=>({id,sequence:0,kind:'message',role,text,runId,createdAt:'2026-10-26T00:00:00Z'});
 const tool=(id,options={})=>({...message(id,'output'),kind:'tool',role:'system',status:'completed',...options});
@@ -98,4 +98,13 @@ test('继续后的历史轮次不会因残留running条目重新显示正在处�
   assert.equal(blocks[1].active,true);assert.equal(processEntryStatus(current,blocks[1].active),'running');
   assert.equal(processEntryStatus(tool('failed',{status:'failed'}),false),'failed');
   assert.equal(processEntryStatus(tool('done'),false),'completed');
+});
+
+test('同一执行被补充分段后只保留整轮最后一份答复，授权提示不制造新轮次',()=>{
+ const entries=[message('u','开始','r1','user'),message('n1','先检查'),tool('t1'),message('extra','补充图文','r1','user'),{...message('approval','允许','r1','user'),kind:'notice'},message('n2','继续检查'),tool('t2'),message('final','完成')];
+ const items=groupConversationStream(entries,{id:'r1',status:'completed'});
+ assert.deepEqual(items.filter(item=>item.type==='entry'&&item.entry.role==='assistant').map(item=>item.entry.id),['final']);
+ const turns=conversationStreamTurns(items);assert.equal(turns.length,2);assert.equal(turns[1].prompt.id,'extra');
+ assert.equal(turns[0].items[0].entries[0].id,'n1');assert.equal(turns[1].items.at(-1).entry.id,'final');
+ assert.deepEqual(groupConversationStream(entries,{id:'r1',status:'running'}).filter(item=>item.type==='entry'&&item.entry.role==='assistant'),[]);
 });

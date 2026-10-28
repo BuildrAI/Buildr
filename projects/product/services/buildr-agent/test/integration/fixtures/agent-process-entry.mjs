@@ -5,7 +5,7 @@ import { startAgentExecutionServer } from './index.js';
 
 const bootstrap=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
 const marker=JSON.parse(fs.readFileSync(new URL('./fixture-version.json',import.meta.url),'utf8'));
-const capabilities={text:true,images:true,approval:true,questions:true,stop:true,resume:true,maxInputBytes:65536};
+const capabilities={supplement:true,text:true,images:true,approval:true,questions:true,stop:true,resume:true,maxInputBytes:65536};
 function executor(id){return{descriptor:{id,label:id,capabilities},async open({configRoot}){
   fs.mkdirSync(configRoot,{recursive:true});
   const read=ref=>JSON.parse(fs.readFileSync(path.join(configRoot,ref.id+'.json'),'utf8'));
@@ -31,6 +31,7 @@ function executor(id){return{descriptor:{id,label:id,capabilities},async open({c
       current.items.push(item);input.onEvent({type:'item',item});
       current.status=current.status==='stopped'?'stopped':'idle';save(ref,current);input.onEvent({type:'completed',status:current.status==='stopped'?'stopped':'completed'});
     },
+    async supplement(input){fs.appendFileSync(path.join(bootstrap.dataRoot,'native-inputs.jsonl'),JSON.stringify({text:input.text,version:marker.version})+'\n');const state=read(input.contextRef);if(state.executionRef.id!==input.executionRef.id)throw Error('wrong execution');const item={id:input.clientRequestId,clientRequestId:input.clientRequestId,kind:'message',role:'user',text:input.text,executionId:state.executionRef.id};state.items.push(item);save(input.contextRef,state);return{executionRef:state.executionRef,inputItemId:item.id};},
     observe:async({contextRef})=>{const value=read(contextRef);return{status:value.status,tools:value.tools,executionRef:value.executionRef};},
     reply:async({contextRef})=>{const value=read(contextRef);value.approved=true;save(contextRef,value);},
     stop:async({contextRef})=>{const value=read(contextRef);if(value.kind==='hold:slow'&&!fs.existsSync(path.join(bootstrap.dataRoot,'finish-stop'))){value.stopRequested=true;value.status='tools-active';value.tools=[{id:'slow-tool',label:'正在停止的命令',status:'running',canStop:true}];}else{value.status='stopped';value.tools=[];}save(contextRef,value);return{status:value.status,tools:value.tools,executionRef:value.executionRef};},close:async()=>{if(fs.existsSync(path.join(bootstrap.dataRoot,'slow-close')))await new Promise(resolve=>setTimeout(resolve,800));},

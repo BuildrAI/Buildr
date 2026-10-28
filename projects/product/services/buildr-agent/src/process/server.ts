@@ -165,7 +165,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       let target: ProcessRecord | undefined;
       const perConversation = name.startsWith('conversations.') && typeof input.args[0] === 'string' && typeof input.args[1] === 'string';
       if (perConversation && !['conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) {
-        const control = name === 'conversations.stop' ? input.args[2] : name === 'conversations.reply' ? input.args[3] : undefined;
+        const control = ['conversations.stop','conversations.supplement'].includes(name) ? input.args[2] : name === 'conversations.reply' ? input.args[3] : undefined;
         target = await recipient(input.args[0], input.args[1], control?.generation);
       }
       const current = readProcessRecord(options.dataRoot);

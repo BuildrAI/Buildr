@@ -7,6 +7,8 @@ export type ContextRef = { id: string; data?: Record<string, unknown> };
 export type ExecutionRef = { id: string; data?: Record<string, unknown> };
 
 export interface AgentCapabilities {
+  /** Admission into an already active execution; absence means unavailable. */
+  supplement?: boolean;
   text: boolean;
   images: boolean;
   approval: boolean;
@@ -59,6 +61,7 @@ export interface LoginObservation {
 export interface ExecutorImage { id: string; path: string; mimeType: string }
 export interface ExecutorItem {
   id: string;
+  clientRequestId?: string;
   kind: 'message' | 'tool' | 'notice';
   role: 'user' | 'assistant' | 'system';
   text: string;
@@ -108,6 +111,17 @@ export interface ExecutorSendInput {
   clientRequestId: string;
   onEvent(event: ExecutorEvent): void;
 }
+export interface ExecutorSupplementInput {
+  contextRef: ContextRef;
+  executionRef: ExecutionRef;
+  cwd: string;
+  text: string;
+  images: ExecutorImage[];
+  clientRequestId: string;
+}
+export interface ExecutorInputReceipt { executionRef: ExecutionRef; inputItemId?: string }
+/** Only a proven pre-admission rejection may leave input safe to send again. */
+export class ExecutorInputRejected extends Error {}
 export interface AgentRuntime {
   /** True only when this owned transport is no longer usable; absence is not failure. */
   readonly closed?: boolean;
@@ -127,6 +141,7 @@ export interface AgentRuntime {
   readHistory(input: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]>;
   /** Resolves at terminal observation. Control requests must stay independent. */
   send(input: ExecutorSendInput): Promise<void>;
+  supplement?(input: ExecutorSupplementInput): Promise<ExecutorInputReceipt>;
   observe(input: { contextRef: ContextRef; executionRef?: ExecutionRef }): Promise<ExecutorObservation>;
   reply(input: { contextRef: ContextRef; executionRef: ExecutionRef; requestId: string; answer: unknown }): Promise<void>;
   stop(input: { contextRef: ContextRef; executionRef: ExecutionRef; toolId?: string }): Promise<ExecutorObservation>;
@@ -204,6 +219,7 @@ export interface ConversationEntry {
   runId?: string;
   status?: 'sending' | 'accepted' | 'unknown' | 'running' | 'completed' | 'failed';
   attachments?: string[];
+  deliveryDiagnostic?: string;
   handoff?: HandoffMaterial;
   createdAt: string;
 }
@@ -237,6 +253,8 @@ export interface PendingRequestView extends ExecutorRequest {
 }
 export interface ConversationView {
   pendingSend?: PendingSendView;
+  /** Independent observation version for append-only image admission. */
+  attachmentRevision?: string;
   activity?: { version: number; seenThrough: number; updatedAt: string; active: boolean };
   titleState?: { status: 'pending' | 'generating' | 'generated' | 'manual' | 'failed' | 'unavailable' | 'unknown'; reason?: string };
   id: string;
@@ -290,6 +308,18 @@ export interface PendingSendView {
   reason: string;
   createdAt: string;
   updatedAt: string;
+}
+export interface SupplementInput {
+  runId: string;
+  participantId: string;
+  generation: string;
+  clientRequestId: string;
+  text: string;
+  attachmentIds?: string[];
+}
+export interface SupplementResult {
+  conversation: ConversationView;
+  delivery: 'accepted' | 'unknown' | 'rejected';
 }
 export interface SendPreview {
   handoff?: HandoffMaterial;

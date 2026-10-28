@@ -16,6 +16,8 @@ import {handoffSources} from './handoff-sources.ts';
 import { resolvePermissionMode } from '../domain/permission-mode.ts';
 import type { HostContext } from './host-context.ts';
 import { PendingSendRepository } from '../persistence/pending-send-repository.ts';
+import { ConversationSupplements } from './conversation-supplements.ts';
+import type { SupplementInput } from '../contracts.ts';
 
 const TITLE_TIMEOUT_MS = 45_000;
 const MAX_TEXT_BYTES = 64 * 1024;
@@ -50,6 +52,7 @@ export class ConversationApplication {
   activity(): Array<{kind:string;count:number}> {
     return [
       {kind:'execution',count:this.workers.size},
+      {kind:'input',count:this.supplements.size},
       {kind:'title',count:this.titleWork.size + this.earlyTitles.size},
       {kind:'recovery',count:this.recoveries.size},
       {kind:'reply',count:this.repliesInFlight.size},
@@ -67,6 +70,7 @@ export class ConversationApplication {
   private recoveryWork?: Promise<void>;
   private readonly recoveries = new Map<string, Promise<void>>();
   private readonly handoffPreviews = new Map<string,{baseToken:string;prepared:ReturnType<ConversationApplication['prepare']>}>();
+  private readonly supplements: ConversationSupplements;
   private readonly options: {
     repository: ConversationRepository;
     connections: ConnectionApplication;
@@ -79,7 +83,26 @@ export class ConversationApplication {
     autoContinueInterrupted?: boolean;
     generationAlive?: (generation: string) => boolean;
   };
-  constructor(options: ConversationApplication['options']) { this.options = options; }
+  constructor(options: ConversationApplication['options']) {
+    this.options = options;
+    this.supplements = new ConversationSupplements({ generation: options.generation, now: options.now, closing: () => this.closing,
+      load: (workspaceId, id) => this.load(workspaceId, id), save: record => this.save(record), view: record => this.view(record),
+      runtime: async (record, participant) => {
+        if (!options.connections.get(participant.connectionId).enabled) fail('agent_connection_disabled', '接入已断开，输入已保留。', 409);
+        return (await this.sourceRuntime(record, participant)).runtime;
+      }, images: (record, participant, ids) => {
+        const connection = options.connections.get(participant.connectionId);
+        if (!connection.enabled) fail('agent_connection_disabled', '接入已断开，输入已保留。', 409);
+        const source = participant.modelAccountId ? options.modelAccess?.accounts.snapshot(participant.modelAccountId) : undefined;
+        if (participant.modelAccountId && (!source || source.identity !== participant.modelAccountIdentity)) fail('agent_model_source_changed', '原模型来源已变化，输入已保留。', 409);
+        const model = source?.models.find(item => item.id === participant.modelId);
+        if (ids.length && (!connection.capabilities.images || source && !model?.images)) fail('agent_capability_unavailable', '当前执行的模型不支持这些图片，输入已保留。', 409);
+        const images = ids.map(id => this.attachment(record, id));
+        if (ids.some(id => record.attachments[id].size > (connection.capabilities.maxImageBytes ?? MAX_IMAGE_BYTES)) || ids.reduce((sum, id) => sum + record.attachments[id].size, 0) > 32 * 1024 * 1024) fail('agent_image_invalid', '图片超过当前接入的容量，输入已保留。', 413);
+        return images;
+      },
+    });
+  }
   private get pendingSends() { return new PendingSendRepository(this.options.root); }
 
   private async sourceRuntime(record: StoredConversation, participant: StoredParticipant): Promise<{runtime: AgentRuntime; model: string}> {
@@ -129,6 +152,7 @@ export class ConversationApplication {
     }
     // Historical tool output can be large; clone only the page that will be sent.
     const view = structuredClone({ ...record.view, entries: entries.slice(start), nextEntryCursor: start > 0 ? entries[start]!.sequence : undefined });
+    view.attachmentRevision = hash(record.attachments ?? {});
     view.titleState??={status:'unknown'};
     view.participants = record.participants.map(participant => ({
       id: participant.id, provider: participant.provider, connectionId: participant.connectionId,
@@ -388,6 +412,8 @@ export class ConversationApplication {
     return { run: structuredClone(run), conversation: this.read(workspaceId, id) };
   }
 
+  supplement(workspaceId: string, id: string, input: SupplementInput) { return this.supplements.send(workspaceId, id, input); }
+
   private currentRun(workspaceId: string, id: string, runId: string): StoredConversation | undefined {
     const record = this.load(workspaceId, id);
     return record.view.run?.id === runId && record.view.run.generation === this.options.generation ? record : undefined;
@@ -397,8 +423,17 @@ export class ConversationApplication {
     const source = `${participant.id}:${item.kind}:${item.id}`;
     let entry = record.view.entries.find(value => value.id === record.sources[source]);
     if (!entry && item.role === 'user') {
-      const attempt = record.attempts.find(value => value.participantId === participant.id && (value.nativeInputItemId === item.id || (item.executionId && value.executionRef?.id === item.executionId)));
-      if (attempt) { entry = record.view.entries.find(value => value.id === attempt.userEntryId); attempt.nativeInputItemId = item.id; }
+      const candidates = record.attempts.filter(value => value.participantId === participant.id && (value.nativeInputItemId === item.id || value.clientRequestId === item.id || item.clientRequestId && value.clientRequestId === item.clientRequestId));
+      const legacy = record.attempts.filter(value => value.participantId === participant.id && item.executionId && value.executionRef?.id === item.executionId);
+      const attempt = candidates.length === 1 ? candidates[0] : candidates.length === 0 && legacy.length === 1 && !legacy[0].supplement ? legacy[0] : undefined;
+      if (attempt) {
+        entry = record.view.entries.find(value => value.id === attempt.userEntryId);
+        if (!entry) fail('agent_native_user_unmapped', '原生输入记录尚不能准确映射。', 409);
+        const changed = record.sources[source] !== entry.id || attempt.nativeInputItemId !== item.id || !attempt.accepted || entry.status !== 'accepted';
+        record.sources[source] = entry.id; attempt.nativeInputItemId = item.id; attempt.accepted = true; entry.status = 'accepted'; delete entry.deliveryDiagnostic;
+        participant.deliveredThrough = Math.max(participant.deliveredThrough, attempt.through);
+        return changed;
+      }
       else fail('agent_native_user_unmapped', '原生用户输入尚不能准确映射，已保留现有记录，请重新观察。', 409);
     }
     if (entry) {
@@ -409,7 +444,7 @@ export class ConversationApplication {
       if (entry.text === item.text && entry.status === item.status && !nameChanged && !inputChanged) return false;
       entry.text = item.text; entry.status = item.status; if (nameChanged) entry.name = item.name; if (inputChanged) entry.input = item.input; return true;
     }
-    entry = { id: randomUUID(), sequence: (record.view.entries.at(-1)?.sequence ?? 0) + 1, createdAt: this.options.now(), kind: item.kind, role: item.role, text: item.text, name: item.name, input: item.input, participantId: participant.id, provider: participant.provider, runId:runId??record.attempts.find(a=>a.participantId===participant.id&&a.executionRef?.id===item.executionId)?.runId, status: item.status };
+    entry = { id: randomUUID(), sequence: (record.view.entries.at(-1)?.sequence ?? 0) + 1, createdAt: this.options.now(), kind: item.kind, role: item.role, text: item.text, name: item.name, input: item.input, participantId: participant.id, provider: participant.provider, runId:runId??record.attempts.find(a=>a.participantId===participant.id&&(a.executionRef?.id===item.executionId||a.clientRequestId===item.executionId))?.runId, status: item.status };
     record.view.entries.push(entry); record.sources[source] = entry.id;
     participant.deliveredThrough = Math.max(participant.deliveredThrough, entry.sequence);
     return true;
@@ -871,8 +906,10 @@ export class ConversationApplication {
     } finally { this.repliesInFlight.delete(requestId); }
   }
 
-  addAttachment(workspaceId: string, id: string, input: { expectedRevision: string; mimeType: string; bytes: Uint8Array }): { id: string; mimeType: string; size: number; revision: string } {
-    const record = this.load(workspaceId, id); expected(record.view.revision, input.expectedRevision);
+  addAttachment(workspaceId: string, id: string, input: { expectedRevision?: string; expectedAttachmentRevision?: string; mimeType: string; bytes: Uint8Array }): { id: string; mimeType: string; size: number; revision: string; attachmentRevision: string } {
+    const record = this.load(workspaceId, id);
+    if (input.expectedAttachmentRevision !== undefined) expected(hash(record.attachments), input.expectedAttachmentRevision);
+    else expected(record.view.revision, input.expectedRevision);
     if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(input.mimeType) || !(input.bytes instanceof Uint8Array)) fail('agent_image_invalid', '请选择容量不超过8 MiB的PNG、JPEG、GIF或WebP图片。');
     const bytes = Buffer.from(input.bytes);
     if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) fail('agent_image_invalid', '图片内容无效或超过8 MiB。');
@@ -906,7 +943,7 @@ export class ConversationApplication {
     const filename = path.join(directory, attachmentId); fs.writeFileSync(filename, bytes, { flag: 'wx', mode: 0o600 });
     record.attachments[attachmentId] = { mimeType: input.mimeType, size: bytes.length, createdAt: this.options.now() };
     try { this.save(record); } catch (error) { fs.unlinkSync(filename); throw error; }
-    return { id: attachmentId, mimeType: input.mimeType, size: bytes.length, revision: record.view.revision };
+    return { id: attachmentId, mimeType: input.mimeType, size: bytes.length, revision: record.view.revision, attachmentRevision: hash(record.attachments) };
   }
   private attachment(record: StoredConversation, id: string): ExecutorImage {
     const meta = record.attachments[id]; if (!meta || !/^[a-f0-9-]{36}$/.test(id)) fail('agent_attachment_missing', '图片不属于此对话。', 404);

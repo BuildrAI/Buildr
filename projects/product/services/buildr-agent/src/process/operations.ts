@@ -16,7 +16,7 @@ export interface AgentOperations {
 
 const names = {
   connections: ['list','read','prepare','preparation','currentPreparation','cancelPreparation','connect','check','login','loginAttempt','cancelLogin','disconnect'],
-  conversations: ['listAll','markSeen','list','create','read','update','generateTitle','prepareHandoff','prepareSend','send','queueSend','cancelPendingSend','observe','stop','reply','addAttachment','readAttachment','pending','lookupRequest'],
+  conversations: ['listAll','markSeen','list','create','read','update','generateTitle','prepareHandoff','prepareSend','send','supplement','queueSend','cancelPendingSend','observe','stop','reply','addAttachment','readAttachment','pending','lookupRequest'],
   'models.accounts': ['list','read','preferences','add','login','attempt','cancelLogin','check','disconnect'],
   'models.catalog': ['list'],
 } as const;
@@ -28,7 +28,7 @@ const validators = new Map(Object.entries(AGENT_OPERATION_SCHEMAS).map(([name, s
 const inputs: Record<string, [number, string]> = {
   'conversations.queueSend': [2, 'queueSend'], 'conversations.cancelPendingSend': [2, 'cancelPendingSend'],
   'connections.prepare':[1,'prepare'], 'connections.connect':[1,'connect'], 'connections.check':[1,'check'], 'connections.login':[1,'revision'], 'connections.disconnect':[1,'revision'], 'connections.cancelLogin':[2,'revision'],
-  'conversations.create':[1,'create'], 'conversations.update':[2,'update'], 'conversations.markSeen':[2,'seen'], 'conversations.generateTitle':[2,'revision'], 'conversations.prepareHandoff':[2,'draft'], 'conversations.prepareSend':[2,'draft'], 'conversations.send':[2,'send'], 'conversations.stop':[2,'stop'], 'conversations.reply':[3,'reply'],
+  'conversations.create':[1,'create'], 'conversations.update':[2,'update'], 'conversations.markSeen':[2,'seen'], 'conversations.generateTitle':[2,'revision'], 'conversations.prepareHandoff':[2,'draft'], 'conversations.prepareSend':[2,'draft'], 'conversations.send':[2,'send'], 'conversations.supplement':[2,'supplement'], 'conversations.stop':[2,'stop'], 'conversations.reply':[3,'reply'],
   'models.accounts.preferences':[1,'modelPreferences'], 'models.accounts.add':[0,'addModelAccount'], 'models.accounts.login':[1,'revision'], 'models.accounts.cancelLogin':[2,'revision'], 'models.accounts.check':[1,'check'], 'models.accounts.disconnect':[1,'revision'],
 };
 export function validateOperation(name: string, args: unknown): asserts args is any[] {
@@ -37,7 +37,7 @@ export function validateOperation(name: string, args: unknown): asserts args is 
   if (input && !validators.get(input[1])!(JSON.parse(JSON.stringify(args[input[0]] ?? (input[1] === 'check' ? {} : null))))) throw new AgentServiceError('agent_process_input_invalid', '执行操作字段无效。');
   if (name === 'conversations.addAttachment') {
     const value = args[2];
-    if (!value || typeof value.base64 !== 'string' || value.base64.length > 12 * 1024 * 1024 || !validators.get('attachment')!({ expectedRevision: value.expectedRevision, mimeType: value.mimeType })) throw new AgentServiceError('agent_process_input_invalid', '附件字段无效。');
+    if (!value || typeof value.base64 !== 'string' || value.base64.length > 12 * 1024 * 1024 || !validators.get('attachment')!({ expectedRevision: value.expectedRevision, expectedAttachmentRevision: value.expectedAttachmentRevision, mimeType: value.mimeType })) throw new AgentServiceError('agent_process_input_invalid', '附件字段无效。');
   }
 }
 export async function dispatchOperation(service: AgentService, name: string, args: any[]): Promise<unknown> {

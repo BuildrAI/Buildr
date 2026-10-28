@@ -8,9 +8,10 @@ import { NativeRpc, nativePreview, nativeBinding, bounded, findExecutable, inspe
 import { modelOptions } from '../model-options.ts';
 import { generateCodexTitle } from './title.ts';
 import { codexThreadPermissions, codexTurnPermissions } from './permissions.ts';
+import { ExecutorInputRejected, type ExecutorSupplementInput, type ExecutorInputReceipt } from '../../contracts.ts';
 import { checkedGateway, consumerBinding, gatewayModel, gatewayEffort, type ExecutorGateway } from '../model-gateway.ts';
 
-const capabilities = { permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
+const capabilities = { supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 function codexEffort(value?: string): string | undefined {
   if (value === 'off') return 'none';
   return value && ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(value) ? value : undefined;
@@ -189,7 +190,7 @@ class CodexRuntime implements AgentRuntime {
     const turn: ActiveTurn = { contextId: input.contextRef.id, id: '', input, tools: new Map(), pending: new Map(), texts: new Map(), done, reject, accepted: false, buffered: [] };
     this.turns.set(turn.contextId, turn);
     try {
-      const response = await this.rpc.call('turn/start', { threadId: turn.contextId, input: [{ type: 'text', text: input.text }, ...input.images.map(image => ({ type: 'localImage', path: image.path }))], ...(input.model ? { model: input.model } : {}), effort: input.reasoningEffort ?? null, ...codexTurnPermissions(input.permissionMode, input.cwd) });
+      const response = await this.rpc.call('turn/start', { threadId: turn.contextId, clientUserMessageId: input.clientRequestId, input: [{ type: 'text', text: input.text }, ...input.images.map(image => ({ type: 'localImage', path: image.path }))], ...(input.model ? { model: input.model } : {}), effort: input.reasoningEffort ?? null, ...codexTurnPermissions(input.permissionMode, input.cwd) });
       if (!response.turn?.id) throw new Error('codex_turn_identity_missing');
       turn.id = response.turn.id;
       input.onEvent({ type: 'accepted', executionRef: { id: turn.id }, inputItemId: response.turn.items?.find((item: any) => item.type === 'userMessage')?.id });
@@ -197,6 +198,14 @@ class CodexRuntime implements AgentRuntime {
       for (const message of turn.buffered.splice(0)) this.turnMessage(turn, message);
       await ended;
     } catch (error) { if (!turn.accepted) { this.turns.delete(turn.contextId); } throw error; }
+  }
+  async supplement(input: ExecutorSupplementInput): Promise<ExecutorInputReceipt> {
+    this.reference(input.contextRef, input.cwd);
+    const turn = this.turns.get(input.contextRef.id);
+    if (!turn?.accepted || turn.terminal || turn.id !== input.executionRef.id) throw new ExecutorInputRejected('agent_supplement_stale');
+    const response = await this.rpc.call('turn/steer', { threadId: turn.contextId, expectedTurnId: turn.id, clientUserMessageId: input.clientRequestId, input: [{ type: 'text', text: input.text }, ...input.images.map(image => ({ type: 'localImage', path: image.path }))] });
+    if (response.turnId !== turn.id) throw new Error('codex_steer_identity_mismatch');
+    return { executionRef: { id: turn.id }, inputItemId: input.clientRequestId };
   }
   private message(message: RpcMessage): void {
     if (message.method === 'buildr/eventConsumerFailed') {

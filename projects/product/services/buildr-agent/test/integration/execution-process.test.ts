@@ -73,6 +73,9 @@ test('independent process survives real host exits, preserves approvals and hand
     const draft={expectedRevision:view.revision,connectionId:'first',text:'hold'},preview=await main.call('conversations.prepareSend',[scope,view.id,draft]),requestId=randomUUID();
     await main.call('conversations.send',[scope,view.id,{...draft,previewToken:preview.token,clientRequestId:requestId}]);
     view=await until(()=>observer!.operations.conversations.read(scope,view.id),value=>value.run?.accepted===true);
+    const supplementary={runId:view.run!.id,participantId:view.run!.participantId,generation:view.run!.generation,clientRequestId:randomUUID(),text:'additional context'};
+    const received=await observer.operations.conversations.supplement(scope,view.id,supplementary);assert.equal(received.delivery,'accepted');
+    assert.equal((await observer.operations.conversations.supplement(scope,view.id,supplementary)).conversation.entries.filter(entry=>entry.text==='additional context').length,1);
     const runId=view.run!.id;await main.close();main=undefined;
     assert.equal((await observer.lifecycle.identity()).generation,firstIdentity.generation);
     assert.equal((await observer.operations.conversations.read(scope,view.id)).run?.id,runId);
@@ -186,6 +189,10 @@ test('parallel versions retain old controls, dispatch durable next instructions 
     await until(()=>observer!.operations.conversations.read(scope,approval.id),value=>value.run?.status==='completed');
     first=await main.call('conversations.read',[scope,first.id]);
     assert.equal(first.run?.generation,firstIdentity.generation);assert.equal(first.run?.status,'running');assert.ok(!first.run?.interrupted);
+    const supplement=await observer.operations.conversations.supplement(scope,first.id,{runId:first.run!.id,participantId:first.run!.participantId,generation:first.run!.generation,clientRequestId:randomUUID(),text:'continue original execution'});
+    assert.equal(supplement.delivery,'accepted');first=supplement.conversation;
+    assert.equal(first.run?.generation,firstIdentity.generation);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dataRoot,'native-inputs.jsonl'),'utf8').trim()),{text:'continue original execution',version:'old'},'new clients route supplementary input to the original runtime');
     const fresh=await start('new independent work');
     assert.equal(fresh.run?.generation,adopted.identity.generation);
     first=await observer.operations.conversations.stop(scope,first.id,{expectedRevision:first.revision,runId:first.run!.id,participantId:first.run!.participantId,generation:first.run!.generation});

@@ -9,6 +9,26 @@ import type { ExecutorEvent, AgentRuntime, ContextRef, ExecutionRef } from '../.
 
 const source = readFileSync(new URL('./fixtures/codex-cli.mjs', import.meta.url), 'utf8');
 async function eventually(condition: () => unknown, timeout = 1000) { const until = Date.now() + timeout; while (!condition()) { if (Date.now() > until) throw new Error('condition timeout'); await new Promise(resolve => setTimeout(resolve, 5)); } }
+test('Codex supplementary text and local images bind to the exact active turn and client input identity', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-codex-supplement-')); let runtime: AgentRuntime | undefined;
+  try {
+    const executable = join(root,'codex.mjs'); await writeFile(executable, source);
+    const imagePath=join(root,'image.png');await writeFile(imagePath,Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII=','base64'));
+    runtime = await createCodexExecutor().open({connectionId:'codex',configRoot:root,executable,environment:{PATH:process.env.PATH??''}});
+    const contextRef=await runtime.createContext({cwd:root}),events:ExecutorEvent[]=[];
+    const sending=runtime.send({contextRef,cwd:root,text:'initial',images:[],clientRequestId:'initial-request',onEvent:event=>events.push(event)});
+    await eventually(()=>events.some(event=>event.type==='request'));
+    const accepted=events.find(event=>event.type==='accepted');assert.equal(accepted?.type,'accepted');
+    const receipt=await runtime.supplement!({contextRef,executionRef:accepted.executionRef,cwd:root,text:'extra',images:[{id:'image',path:imagePath,mimeType:'image/png'}],clientRequestId:'extra-request'});
+    assert.equal(receipt.executionRef.id,accepted.executionRef.id);assert.equal(receipt.inputItemId,'extra-request');
+    await eventually(()=>events.some(event=>event.type==='item'&&event.item.id==='extra-request'));
+    const history=await runtime.readHistory({contextRef,cwd:root});assert.deepEqual(history.filter(item=>item.role==='user').map(item=>item.id),['initial-request','extra-request']);
+    const state=JSON.parse(await readFile(join(root,'codex-home/state.json'),'utf8'));assert.equal(state[contextRef.id].turns.length,1);assert.ok(state[contextRef.id].turns[0].items[1].content.some((part:any)=>part.type==='localImage'&&part.path===imagePath));
+    assert.equal((await runtime.observe({contextRef,executionRef:accepted.executionRef})).status,'waiting');
+    await assert.rejects(runtime.supplement!({contextRef,executionRef:{id:'other'},cwd:root,text:'wrong',images:[],clientRequestId:'wrong'}),/stale/);
+    await runtime.stop({contextRef,executionRef:accepted.executionRef});await sending;
+  } finally { await runtime?.close();await rm(root,{recursive:true,force:true}); }
+});
 test('Codex retains a safe native failure after tools in completion and observation', async () => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-codex-error-')); let runtime: AgentRuntime | undefined;
   try {
@@ -54,7 +74,7 @@ test('Codex native adapter preserves exact context, streams, answers and stops o
     const nativeState = JSON.parse(await readFile(join(configRoot, 'codex-home/state.json'), 'utf8')); assert.equal(nativeState[reference.id].turns[0].items[0].content[1].type, 'localImage');
     const binding = runtime.bindingIdentity; await runtime.close(); runtime = await createCodexExecutor().open(options); assert.equal(runtime.bindingIdentity, binding);
     await runtime.resumeContext({ contextRef: reference, cwd: workspace });
-    const history = await runtime.readHistory({ contextRef: reference, cwd: workspace }); assert.ok(history.some(item => item.id === 'user-turn-0' && item.executionId === 'turn-0'));
+    const history = await runtime.readHistory({ contextRef: reference, cwd: workspace }); assert.ok(history.some(item => item.id === 'client-1' && item.executionId === 'turn-0'));
     assert.equal(history.find(item=>item.id==='command-turn-0')?.status,'completed','completed native tool stays completed inside an interrupted turn');
     await assert.rejects(runtime.resumeContext({ contextRef: reference, cwd: root }), /binding_mismatch/);
     const prior={identity:runtime.bindingIdentity,data:runtime.bindingData};await runtime.close();
@@ -62,7 +82,7 @@ test('Codex native adapter preserves exact context, streams, answers and stops o
     runtime=await createCodexExecutor().open({...options,binding:prior});
     assert.equal(runtime.bindingIdentity,binding);assert.equal(runtime.bindingData?.observedVersion,'0.164.0-alpha.11.1');
     await runtime.resumeContext({contextRef:reference,cwd:workspace});
-    assert.ok((await runtime.readHistory({contextRef:reference,cwd:workspace})).some(item=>item.id==='user-turn-0'));
+    assert.ok((await runtime.readHistory({contextRef:reference,cwd:workspace})).some(item=>item.id==='client-1'));
     await runtime.close();runtime=undefined;
     await writeFile(executable,source.replace('codex 0.163.0','codex 1.0.0'));
     await assert.rejects(createCodexExecutor().open({...options,binding:prior}),/version_unsupported/);

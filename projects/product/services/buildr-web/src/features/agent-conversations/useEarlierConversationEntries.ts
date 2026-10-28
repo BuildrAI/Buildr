@@ -45,7 +45,9 @@ export function useEarlierConversationEntries(props:Props){
    const existing=new Set(chat.entries.map(e=>e.id)),entries=page.entries.filter(e=>!existing.has(e.id)),node=stream.current;
    if(node&&entries.length){
     const rect=node.getBoundingClientRect(),candidates=[...node.querySelectorAll<HTMLElement>('[data-entry-id],[data-entry-group]')];
-    const item=candidates.find(n=>{const box=n.getBoundingClientRect();return !(n.hasAttribute('data-entry-group')&&n.parentElement?.hasAttribute('open'))&&box.height>0&&box.bottom>rect.top+4;})||[...node.querySelectorAll<HTMLElement>('[data-run-id]')].find(n=>n.getBoundingClientRect().bottom>rect.top+4);
+    const visible=(n:HTMLElement)=>{const box=n.getBoundingClientRect();return !(n.hasAttribute('data-entry-group')&&n.parentElement?.hasAttribute('open'))&&box.height>0&&box.bottom>rect.top+4;};
+    // A sticky prompt can stay at the same coordinate while the reading content moves.
+    const item=candidates.find(n=>!n.closest('.ac-turn-context')&&visible(n))||candidates.find(visible)||[...node.querySelectorAll<HTMLElement>('[data-run-id]')].find(n=>n.getBoundingClientRect().bottom>rect.top+4);
     const attribute=item?.hasAttribute('data-entry-group')?'data-entry-group':item?.hasAttribute('data-entry-id')?'data-entry-id':'data-run-id';
     const id=attribute==='data-entry-group'?JSON.parse(item!.getAttribute(attribute)!)[0]:item?.getAttribute(attribute)||'';
     anchor.current={attribute,id,offset:(item?.getBoundingClientRect().top??rect.top)-rect.top,height:node.scrollHeight,top:node.scrollTop,first:entries[0].id,scope:observed,fit:node.scrollHeight<=node.clientHeight+1};

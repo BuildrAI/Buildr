@@ -1,3 +1,4 @@
+import {createConversationInputAttempts} from '../src/features/agent-conversations/conversation-actions.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {conversationActionKey,createConversationActions} from '../src/features/agent-conversations/conversation-actions.ts';
@@ -404,4 +405,34 @@ test('模型写入使旧目录读取失效，旧完成不能解除新读取的�
   reads[0]({models:[{id:'old'}]});await old;
   const shared=api.modelCatalog();assert.equal(reads.length,2,'旧读取完成不清除新的合并槽位');
   reads[1]({models:[{id:'fresh'}]});assert.equal((await fresh).models[0].id,'fresh');assert.equal((await shared).models[0].id,'fresh');
+});
+
+test('补充发送绑定原执行且与停止和授权回复独立，认证重试保留同一编号',async()=>{
+ let release,first=true,token='old';const calls=[];
+ const api=createAgentConversationsClient(async(url,init)=>{
+  const body=JSON.parse(init.body);calls.push({url,body,token:init.headers['x-buildr-session']});
+  if(url.endsWith('/supplement')){if(first){first=false;throw Object.assign(Error('expired'),{code:'session_forbidden'});}return new Promise(resolve=>{release=resolve;});}return conversation;
+ },{writeHeaders:()=>({'x-buildr-session':token}),refreshSession:async()=>{token='new';return true;}});
+ const pending=api.supplement(conversation,{text:'',attachmentIds:['image-only'],clientRequestId:'same-input'});
+ await new Promise(resolve=>setImmediate(resolve));await api.stop(conversation);await api.reply(conversation,'approval/id',{answer:'deny'});
+ assert.equal(calls.length,4);assert.deepEqual(calls[0].body,calls[1].body);
+ assert.deepEqual(calls[1].body,{text:'',attachmentIds:['image-only'],clientRequestId:'same-input',runId:'run/1',participantId:'original-codex',generation:'generation-1'});
+ assert.equal(calls[1].token,'new');release({conversation,delivery:'accepted'});assert.equal((await pending).delivery,'accepted');
+});
+test('图片上传优先使用附件集合版本，保留旧版本协议兼容',async()=>{
+ const calls=[];const api=createAgentConversationsClient(async()=>({}),session,async(url,init)=>{calls.push({url,init});return Response.json({id:'image',revision:'next',attachmentRevision:'materials-next'});});
+ const file=new File([new Uint8Array([1,2])],'image.png',{type:'image/png'});
+ await api.upload({...conversation,attachmentRevision:'materials-observed'},file);await api.upload(conversation,file);
+ assert.equal(calls[0].init.headers['x-buildr-attachment-revision'],'materials-observed');assert.equal(calls[0].init.headers['x-buildr-conversation-revision'],undefined);
+ assert.equal(calls[1].init.headers['x-buildr-conversation-revision'],conversation.revision);
+});
+
+test('补充请求身份按对话保存，丢失回执刷新后复用，确认拒绝后新尝试可重试',()=>{
+ const rows=new Map(),storage={getItem:key=>rows.get(key)||null,setItem:(key,value)=>rows.set(key,value),removeItem:key=>rows.delete(key)};
+ const images=[{id:'image',name:'a.png',mimeType:'image/png',size:8,revision:'r1'}];
+ const first=createConversationInputAttempts(storage),one=first.begin(conversation,'text',images);
+ const other={...conversation,id:'other'};first.begin(other,'other text',[]);
+ assert.equal(first.begin(conversation,'text',images).clientRequestId,one.clientRequestId);
+ const reloaded=createConversationInputAttempts(storage);assert.deepEqual(reloaded.read(conversation).images,images);assert.equal(reloaded.begin(conversation,'text',images).clientRequestId,one.clientRequestId);
+ reloaded.finish(conversation,one.clientRequestId);assert.notEqual(reloaded.begin(conversation,'text',images).clientRequestId,one.clientRequestId);
 });

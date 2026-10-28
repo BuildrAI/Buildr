@@ -7,7 +7,7 @@ import type { CatalogModel, ConnectionView, ConversationEvent, ConversationView,
 type Scope = {workspaceId: string; conversationId: string};
 export type DraftScope = {workspaceId: string; taskId?: string};
 type VisibilityOptions={preserveVisibility?:boolean};
-type ContextValue = {
+export type AgentConversationsContextValue = {
   activityCounts:ConversationPage['activityCounts'];activityStats:ConversationPage['stats'];activityRows:ConversationView[];activityTotal:number;activityCursor?:string;activityError:string;activityTick:number;
   historyWorkspaceId:string|null|undefined;openHistory(workspaceId?:string|null):void;
   refreshActivity():Promise<void>;loadMoreActivity():Promise<void>;markSeen(value:ConversationView):Promise<void>;
@@ -22,9 +22,14 @@ type ContextValue = {
   selectionGeneration:number; getSelection():ConversationSelection; isSelectionCurrent(selection:ConversationSelection):boolean;
   create(input: {workspaceId: string; cwd?: string; taskId?: string},selection?:ConversationSelection): Promise<ConversationView>;
 };
-const Context = createContext<ContextValue | null>(null);
-type ShellValue=Pick<ContextValue,'open'|'view'|'full'|'pending'|'openGlobal'|'toggle'|'toggleView'|'setSettings'>;
+const Context = createContext<AgentConversationsContextValue | null>(null);
+type ShellValue=Pick<AgentConversationsContextValue,'open'|'view'|'full'|'pending'|'openGlobal'|'toggle'|'toggleView'|'setSettings'>;
 const ShellContext=createContext<ShellValue|null>(null);
+
+/** A pure view binding allows isolated callers to supply data and operations without host initialization. */
+export function AgentConversationsViewProvider({value,children}:{value:AgentConversationsContextValue;children:ReactNode}) {
+  return <ShellContext.Provider value={value}><Context.Provider value={value}>{children}</Context.Provider></ShellContext.Provider>;
+}
 const panelStateKey = () => 'buildr.agent-conversation.panel:' + (document.querySelector('meta[name="buildr-web-profile"]')?.getAttribute('content') || 'local');
 function savedPanel(): {open: boolean; scope: Scope | null} {
   try { const parsed = JSON.parse(sessionStorage.getItem(panelStateKey()) || 'null'); return {open: parsed?.open === true, scope: typeof parsed?.scope?.workspaceId === 'string' && typeof parsed?.scope?.conversationId === 'string' ? parsed.scope : null}; } catch { return {open:false,scope:null}; }

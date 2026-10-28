@@ -5,14 +5,15 @@ import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import type { AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorRequest, ExecutorSendInput, LoginObservation, PermissionMode } from '../../contracts.ts';
-import { nativeBinding, bounded, findExecutable, inspectVersion, isolatedEnvironment, nativeHome, opaqueReference, parseReference, privateDirectories } from '../native-process.ts';
+import { nativeBinding, visibleText, bounded, findExecutable, inspectVersion, isolatedEnvironment, nativeHome, opaqueReference, parseReference, privateDirectories } from '../native-process.ts';
 import { launchDshHost, dshValue, type DshClient } from './client.ts';
 import { dshItem, dshHistoryItems, dshExecutionObservation } from './protocol.ts';
 import { modelOptions } from '../model-options.ts';
 import { applyDshPermissions, dshPermissionCatalog } from './permissions.ts';
 import { AgentServiceError } from '../../domain/agent-state.ts';
+import { ExecutorInputRejected, type ExecutorSupplementInput, type ExecutorInputReceipt } from '../../contracts.ts';
 import { checkedGateway, consumerBinding, gatewayModel, gatewayEffort, type ExecutorGateway } from '../model-gateway.ts';
-const capabilities = { text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
+const capabilities = { supplement: true, text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 // @deepseek-ai/dsh-llm-pi-ai Config.reasoningEfforts uses these THINKING_LEVELS keys (0.2.1-rc.3).
 const dshReasoningEfforts = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 export function dshGatewayModels(gateway: ExecutorGateway) {
@@ -34,7 +35,7 @@ export async function writeGatewayPatch(directory: string, gateway: ExecutorGate
   await writeFile(filename, JSON.stringify([{ id: 'llm-pi-ai', name: '@deepseek-ai/dsh-llm-pi-ai', config: { providers: { 'buildr-models': { displayName: 'Buildr', api: 'openai-responses', baseURL: gateway.baseUrl.replace(/\/$/, ''), apiKeyEnv: 'BUILDR_MODEL_GATEWAY_KEY', models } } } }]), { mode: 0o600 });
   return filename;
 }
-interface ActiveTurn { id: string; input: ExecutorSendInput; nativeTurn?: number; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown' }>; pending: Map<string, { request: ExecutorRequest; resolve?: (value: string) => void; answer?: (value: { answers: any[] }) => void; reject?: (error: Error) => void; wait?: any }>; stream?: any; pump?: Promise<void>; streamAttempt?: { id: string; turn: number; step: number; nextIndex: number; text: string }; }
+interface ActiveTurn { stopRequested?: boolean; cancellation?: Promise<void>; supplementInputs?: Set<string>; supplementAdmissions?: number; supplementUnknown?: boolean; pendingEnd?: any; finish?: () => void; id: string; input: ExecutorSendInput; nativeTurn?: number; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown' }>; pending: Map<string, { request: ExecutorRequest; resolve?: (value: string) => void; answer?: (value: { answers: any[] }) => void; reject?: (error: Error) => void; wait?: any }>; stream?: any; pump?: Promise<void>; streamAttempt?: { id: string; turn: number; step: number; nextIndex: number; text: string }; }
 export function createDshExecutor(): AgentExecutor { return { descriptor: { id: 'dsh', label: 'DSH', capabilities }, open: options => DshRuntime.open(options) }; }
 export class DshRuntime implements AgentRuntime {
   readonly capabilities = { ...capabilities, permissionModes: ['default'] as PermissionMode[] };
@@ -211,7 +212,7 @@ export class DshRuntime implements AgentRuntime {
         if (!turn.terminal) throw new Error('dsh_follow_closed');
       } catch { if (!turn.terminal) fail(new Error('dsh_execution_observation_lost')); ready(); }
     })();
-    turn.pump = pump;
+    turn.pump = pump; turn.finish = finish;
     try {
       await bounded(opening, 15000); dshValue(await bounded(this.client.remote.session.prompt({ sessionId: input.contextRef.id, requestId: input.clientRequestId, mode: 'queue', content: [{ type: 'text', text: input.text }, ...await Promise.all(input.images.map(async image => ({ type: 'image' as const, mediaType: image.mimeType as 'image/png'|'image/jpeg'|'image/webp'|'image/gif', data: (await readFile(image.path)).toString('base64') })))] }), 5000));
       input.onEvent({ type: 'accepted', executionRef: { id: turn.id } }); accepted = true;
@@ -237,6 +238,29 @@ export class DshRuntime implements AgentRuntime {
     }
     if (frame.type === 'end') turn.streamAttempt = undefined;
   }
+  async supplement(input: ExecutorSupplementInput): Promise<ExecutorInputReceipt> {
+    this.reference(input.contextRef, input.cwd);
+    const turn = this.turns.get(input.contextRef.id);
+    if (!turn || turn.terminal || turn.stopRequested || turn.id !== input.executionRef.id) throw new ExecutorInputRejected('agent_supplement_stale');
+    turn.supplementInputs ??= new Set(); turn.supplementInputs.add(input.clientRequestId);
+    turn.supplementAdmissions = (turn.supplementAdmissions ?? 0) + 1;
+    try {
+      const content = [{ type: 'text', text: input.text }, ...await Promise.all(input.images.map(async image => ({ type: 'image', mediaType: image.mimeType, data: (await readFile(image.path)).toString('base64') })))];
+      if (turn.terminal || turn.stopRequested) throw new ExecutorInputRejected('agent_supplement_stale');
+      const result = await bounded(this.client.remote.session.prompt({ sessionId: input.contextRef.id, requestId: input.clientRequestId, mode: 'steer', content }), 5000);
+      if (!(result as any)?.ok) throw new ExecutorInputRejected('agent_supplement_rejected');
+      if (!(result as any).value?.accepted) throw new Error('dsh_supplement_receipt_missing');
+      return { executionRef: { id: turn.id } };
+    } catch (error) {
+      if (error instanceof ExecutorInputRejected) turn.supplementInputs.delete(input.clientRequestId);
+      else turn.supplementUnknown = true;
+      throw error;
+    } finally {
+      turn.supplementAdmissions--;
+      if (turn.stopRequested) await this.cancelSteering(turn).catch(() => { turn.supplementUnknown = true; });
+      if (!turn.supplementAdmissions && !turn.supplementInputs.size && turn.pendingEnd) { const end = turn.pendingEnd; turn.pendingEnd = undefined; this.event(turn, end); }
+    }
+  }
   private event(turn: ActiveTurn, event: any): void {
     const data = event.data ?? {}; const emit = turn.input.onEvent;
     if (event.type === 'session/title') {
@@ -247,8 +271,10 @@ export class DshRuntime implements AgentRuntime {
       return;
     }
     if (turn.terminal) return;
-    if (event.type === 'turn/start') turn.nativeTurn = data.turn;
+    if (event.type === 'turn/start') { turn.nativeTurn = data.turn; turn.pendingEnd = undefined; if (turn.stopRequested) void this.cancelSteering(turn).catch(() => { turn.supplementUnknown = true; }); }
     if (turn.nativeTurn !== undefined && data.turn !== undefined && data.turn !== turn.nativeTurn) return;
+    if (event.type === 'user/message' && turn.supplementInputs?.delete(data.source?.rpcId)) { turn.pendingEnd = undefined; if (!turn.supplementInputs.size) turn.supplementUnknown = false; }
+    if (event.type === 'turn/end' && ((turn.supplementAdmissions ?? 0) > 0 || turn.supplementInputs?.size)) { turn.pendingEnd = event; if (turn.stopRequested) turn.supplementUnknown = true; emit({ type: 'observation', observation: this.activeObservation(turn) }); return; }
     for (const item of dshItem(event)) emit({ type: 'item', item: { ...item, executionId: turn.id } });
     if (event.type === 'tool/call') {
       turn.tools.set(data.callId, { id: data.callId, label: String(data.name ?? '工具'), status: 'running' });
@@ -264,6 +290,7 @@ export class DshRuntime implements AgentRuntime {
       }
       for (const [id, pending] of turn.pending) { pending.resolve?.('cancelled'); pending.reject?.(new Error('dsh_question_expired')); void pending.wait?.dispose(); if (turn.pending.delete(id)) emit({ type: 'request-resolved', requestId: id }); } turn.pending.clear();
       emit({ type: 'completed', status: turn.terminal, ...(turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) });
+      turn.finish?.();
     }
     emit({ type: 'observation', observation: this.activeObservation(turn) });
   }
@@ -302,12 +329,36 @@ export class DshRuntime implements AgentRuntime {
       request.signal?.addEventListener('abort', () => { if (turn.pending.delete(requestId)) { resolve('cancelled'); turn.input.onEvent({ type: 'request-resolved', requestId }); } }, { once: true });
     });
   }
+  /** Native cancel retains its inbox; remove only this execution's unconsumed inputs. */
+  private cancelSteering(turn: ActiveTurn): Promise<void> {
+    if (turn.cancellation) return turn.cancellation;
+    const contextId=turn.input.contextRef.id;
+    const work=(async()=>{
+      if (this.turns.get(contextId)!==turn) return;
+      dshValue(await bounded(this.client.remote.session.cancel({sessionId:contextId}),5000));
+      if (turn.supplementInputs?.size) {
+        const projection:any=dshValue(await bounded(this.client.remote.session.projections({sessionId:contextId}),5000));
+        if (projection?.kind!=='sequenced'||!projection.values?.inbox) throw new Error('dsh_pending_input_observation_missing');
+        const inbox=projection.values.inbox;
+        for (const message of [...(inbox['next-step']??[]),...(inbox['next-turn']??[])]) {
+          const requestId=message.source?.rpcId;
+          if (!turn.supplementInputs.has(requestId)) continue;
+          turn.input.onEvent({type:'item',item:{id:message.id,clientRequestId:requestId,kind:'message',role:'user',text:visibleText(message.content),executionId:turn.id,status:'completed'}});
+          dshValue(await bounded(this.client.remote.session.updateQueue({sessionId:contextId,itemId:message.id,action:{kind:'remove'}}),5000));
+          turn.supplementInputs.delete(requestId);
+        }
+      }
+      turn.supplementUnknown=Boolean(turn.supplementInputs?.size||(turn.supplementAdmissions??0)>0);
+      if (!turn.supplementUnknown&&turn.pendingEnd) { const end=turn.pendingEnd;turn.pendingEnd=undefined;this.event(turn,end); }
+    })().finally(()=>{if(turn.cancellation===work)turn.cancellation=undefined;});
+    turn.cancellation=work;return work;
+  }
   private activeObservation(turn: ActiveTurn): ExecutorObservation {
-    const tools = [...turn.tools.values()].map(tool => ({ ...tool, canStop: false })); return { status: turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : turn.terminal === 'stopped' ? 'stopped' : 'idle' : turn.pending.size ? 'waiting' : 'running', executionRef: { id: turn.id }, tools, requests: [...turn.pending.values()].map(value => value.request), ...(turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
+    const tools = [...turn.tools.values()].map(tool => ({ ...tool, canStop: false })); return { status: turn.supplementUnknown ? 'unknown' : turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : turn.terminal === 'stopped' ? 'stopped' : 'idle' : turn.pending.size ? 'waiting' : 'running', executionRef: { id: turn.id }, tools, requests: [...turn.pending.values()].map(value => value.request), ...(turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
   }
   async observe({ contextRef, executionRef }: { contextRef: ContextRef; executionRef?: ExecutionRef }): Promise<ExecutorObservation> {
     this.reference(contextRef); const turn = this.turns.get(contextRef.id);
-    if (turn && (!executionRef || turn.id === executionRef.id)) return this.activeObservation(turn);
+    if (turn && (!executionRef || turn.id === executionRef.id)) { if(turn.stopRequested&&!turn.terminal)await this.cancelSteering(turn).catch(()=>{turn.supplementUnknown=true;});return this.activeObservation(turn); }
     const cwd = this.reference(contextRef);
     await this.readHistory({ contextRef, cwd });
     const events = this.historyEvents.get(contextRef.id) ?? [];
@@ -330,7 +381,8 @@ export class DshRuntime implements AgentRuntime {
     this.reference(contextRef); const turn = this.turns.get(contextRef.id);
     if (!turn || turn.id !== executionRef.id) return { status: 'unknown', tools: [], diagnostic: 'dsh_exact_live_turn_unavailable' };
     if (toolId) throw new Error('dsh_individual_tool_stop_unsupported');
-    if (!turn.terminal) dshValue(await bounded(this.client.remote.session.cancel({ sessionId: contextRef.id }), 5000));
+    turn.stopRequested=true;
+    if (!turn.terminal) await this.cancelSteering(turn).catch(()=>{turn.supplementUnknown=true;});
     return this.activeObservation(turn);
   }
   async close(): Promise<void> {

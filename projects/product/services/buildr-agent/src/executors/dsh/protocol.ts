@@ -3,7 +3,7 @@ import { visibleText, nativePreview } from '../native-process.ts';
 export function dshItem(event: any): ExecutorItem[] {
   const data = event?.data ?? {}; const id = `event:${event?.seq}`;
   if (event?.type === 'assistant/message') { const text = visibleText(data.message?.content); return text ? [{ id: `assistant:${data.turn}:${data.step}`, kind: 'message', role: 'assistant', text, status: 'completed' }] : []; }
-  if (event?.type === 'user/message') { const text = visibleText(data.content); return text ? [{ id: data.id ?? id, kind: 'message', role: 'user', text, executionId: data.source?.rpcId, status: 'completed' }] : []; }
+  if (event?.type === 'user/message') { const text = visibleText(data.content); return text || data.content?.some((part: any) => part.type === 'image') ? [{ id: data.id ?? id, kind: 'message', role: 'user', text, clientRequestId: data.source?.rpcId, executionId: data.source?.rpcId, status: 'completed' }] : []; }
   if (event?.type === 'tool/call') return [{ id: data.callId, kind: 'tool', role: 'system', name: typeof data.name === 'string' && data.name ? data.name : undefined, input: nativePreview(String(data.arguments ?? '')), text: String(data.name ?? '工具') + '\n' + nativePreview(String(data.arguments ?? '')), status: 'running' }];
   if (event?.type === 'tool/result') return [{ id: data.message?.toolCallId ?? id, kind: 'tool', role: 'system', text: nativePreview(visibleText(data.message?.content)), status: data.message?.isError ? 'failed' : 'completed' }];
   return [];

@@ -23,6 +23,12 @@ test('Qoder SDK worker keeps control responsive and binds native input UUID whil
     assert.ok(events.some(event=>event.type==='item'&&event.item.text==='图片已接收'));
     const accepted = events.find(event => event.type === 'accepted'); const request = events.find(event => event.type === 'request'); assert.equal(accepted?.type, 'accepted'); assert.equal(request?.type, 'request');
     assert.equal(accepted.inputItemId, '4d2b231e-3ddd-4e85-8b5c-6a18a623ac8d');
+    const supplement = await runtime.supplement!({ contextRef, executionRef: accepted.executionRef, cwd: workspace, text: '', images: [{id:'more-image',path:imagePath,mimeType:'image/png'}], clientRequestId: '6ded507e-94e5-47cd-bb71-5dc40b30ba5a' });
+    assert.equal(supplement.inputItemId, '6ded507e-94e5-47cd-bb71-5dc40b30ba5a');
+    assert.equal(supplement.executionRef.id, accepted.executionRef.id);
+    assert.ok(events.some(event => event.type === 'item' && event.item.clientRequestId === supplement.inputItemId));
+    assert.equal((await runtime.observe({contextRef,executionRef:accepted.executionRef})).requests?.[0].id,request.request.id);
+    await assert.rejects(runtime.supplement!({contextRef,executionRef:{id:'other'},cwd:workspace,text:'wrong execution',images:[],clientRequestId:'wrong'}), /rejected/);
     await runtime.reply({ contextRef, executionRef: accepted.executionRef, requestId: request.request.id, answer: { '0': '蓝' } });
     await eventually(() => events.some(event => event.type === 'item' && event.item.text.includes('已收到蓝色')));
     await runtime.stop({ contextRef, executionRef: accepted.executionRef }); await sending;

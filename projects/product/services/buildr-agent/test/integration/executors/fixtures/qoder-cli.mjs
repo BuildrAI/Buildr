@@ -22,6 +22,7 @@ return;
 }ack(m.request_id,{});
 return;
 }
+if(m.type==='user'&&m.shouldQuery===false){if(m.priority!=='next'||!input)throw Error('wrong supplementary delivery');emit({...m,isReplay:true});return;}
 if(m.type==='user'){input=m;
 const image=m.message.content.find(p=>p.type==='image');if(image){if(image.source.type!=='base64'||image.source.media_type!=='image/png'||image.source.data!=='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII=')throw Error('image bytes mismatch');emit({type:'assistant',uuid:'message-live',session_id:m.session_id,message:{id:'message-live',content:[{type:'text',text:'图片已接收'}]}});}
 sid=m.session_id??process.argv[process.argv.indexOf('--session-id')+1];

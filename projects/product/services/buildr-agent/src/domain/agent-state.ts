@@ -76,6 +76,7 @@ export interface StoredConversation {
     executionRef?: ExecutionRef;
     nativeInputItemId?: string;
     accepted: boolean;
+    supplement?: boolean;
   }>;
   requests: Record<string, { nativeId: string; executionRef: ExecutionRef }>;
 }

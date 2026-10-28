@@ -353,3 +353,38 @@ test('changing the default workspace only affects new conversations and preserve
   assert.equal(fs.readFileSync(path.join(root, 'existing.txt'), 'utf8'), 'original work');
   assert.equal(fs.readFileSync(path.join(newRoot, 'existing.txt'), 'utf8'), 'new workspace work');
 });
+
+
+test('live text and image input uses exact admission identity while stop remains independent', {timeout:15000},async t=>{
+ const {base,root}=taskRecordFixture(t,'agent-live-http');let workspaceId='',emit:any,finish!:()=>void,admit!:()=>void,admissionStarted!:()=>void;
+ const ending=new Promise<void>(resolve=>{finish=resolve;}),admission=new Promise<void>(resolve=>{admit=resolve;}),started=new Promise<void>(resolve=>{admissionStarted=resolve;});let supplements=0;
+ const capabilities={supplement:true,text:true,images:true,approval:true,questions:true,stop:true,resume:true,maxInputBytes:65536};
+ const service=createAgentService({dataRoot:path.join(base,'profile'),modelProviders:[],executors:[{descriptor:{id:'fixture',label:'Fixture',capabilities},async open(){return{
+  bindingIdentity:'fixture-binding',capabilities,inspectAccount:async()=>({status:'ready' as const}),models:async()=>[{id:'fixture-model',label:'Fixture model',isDefault:true}],beginLogin:async()=>{},cancelLogin:async()=>{},createContext:async()=>({id:'context'}),resumeContext:async()=>{},readHistory:async()=>[],
+  async send(input:any){emit=input.onEvent;emit({type:'accepted',executionRef:{id:'native-run'},inputItemId:input.clientRequestId});await ending;},
+  async supplement(input:any){supplements++;admissionStarted();await admission;emit({type:'item',item:{id:input.clientRequestId,clientRequestId:input.clientRequestId,kind:'message',role:'user',text:input.text,executionId:'native-run'}});return{executionRef:input.executionRef,inputItemId:input.clientRequestId};},
+  observe:async()=>({status:'running' as const,executionRef:{id:'native-run'},tools:[]}),reply:async()=>{},stop:async()=>{finish();return{status:'stopped' as const,tools:[]};},close:async()=>{finish();admit();},
+ };}}],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+ await service.connections.connect('fixture',{expectedRevision:'unconfigured'});
+ const runtime=createRuntime(),contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+ const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions}),ready=await server.ready;workspaceId=ready.initialWorkspaceId;
+ t.after(async()=>{admit();finish();await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(()=>resolve()));});
+ const headers={origin:ready.url,'x-buildr-session':ready.sessionToken,'content-type':'application/json'},endpoint=`${ready.url}/api/v1/workspaces/${workspaceId}/agent-conversations`;
+ let response=await fetch(endpoint,{method:'POST',headers,body:'{}'});const created=await response.json();
+ const draft={expectedRevision:created.revision,connectionId:'fixture',text:'initial'},preview=service.conversations.prepareSend(workspaceId,created.id,draft);
+ response=await fetch(endpoint+'/'+created.id+'/send',{method:'POST',headers,body:JSON.stringify({...draft,previewToken:preview.token,clientRequestId:'initial-client'})});assert.equal(response.status,202);
+ for(let n=0;n<100&&!service.conversations.read(workspaceId,created.id).run?.accepted;n++)await new Promise(resolve=>setTimeout(resolve,2));
+ const before=service.conversations.read(workspaceId,created.id),run=before.run!;
+ emit({type:'item',item:{id:'live-note',kind:'message',role:'assistant',text:'concurrent text',executionId:'native-run'}});
+ const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==','base64');
+ response=await fetch(endpoint+'/'+created.id+'/attachments',{method:'POST',headers:{origin:ready.url,'x-buildr-session':ready.sessionToken,'content-type':'image/png','x-buildr-attachment-revision':before.attachmentRevision!},body:png});assert.equal(response.status,201);const image=await response.json();assert.ok(image.attachmentRevision);
+ const input={runId:run.id,participantId:run.participantId,generation:run.generation,text:'',attachmentIds:[image.id],clientRequestId:'image-client'},supplementUrl=endpoint+'/'+created.id+'/supplement';
+ assert.equal((await fetch(supplementUrl,{method:'POST',body:JSON.stringify(input)})).status,403);
+ assert.equal((await fetch(supplementUrl,{method:'POST',headers,body:JSON.stringify({...input,untrusted:true})})).status,400);
+ assert.equal((await fetch(supplementUrl,{method:'POST',headers,body:JSON.stringify({...input,runId:'other'})})).status,409);
+ const pending=fetch(supplementUrl,{method:'POST',headers,body:JSON.stringify(input)});await started;
+ const current=service.conversations.read(workspaceId,created.id);
+ response=await fetch(endpoint+'/'+created.id+'/stop',{method:'POST',headers,body:JSON.stringify({expectedRevision:current.revision,runId:run.id,participantId:run.participantId,generation:run.generation})});assert.equal(response.status,200);assert.equal((await response.json()).run.status,'stopped');
+ admit();response=await pending;assert.equal(response.status,202);const receipt=await response.json();assert.equal(receipt.delivery,'accepted');assert.equal(receipt.conversation.run.status,'stopped');assert.ok(receipt.conversation.entries.some((entry:any)=>entry.text==='concurrent text'));
+ response=await fetch(supplementUrl,{method:'POST',headers,body:JSON.stringify(input)});assert.equal((await response.json()).delivery,'accepted');assert.equal(supplements,1);
+});

@@ -14,6 +14,27 @@ class Stream {
   async dispose() { this.closed = true; this.waiting?.({ done: true, value: undefined }); this.waiting = undefined; }
 }
 async function eventually(condition: () => unknown) { const deadline = Date.now() + 1000; while (!condition()) { if (Date.now() > deadline) throw new Error('condition timeout'); await new Promise(resolve => setTimeout(resolve, 5)); } }
+test('DSH steering preserves exact input sources and holds a completion racing native admission', async () => {
+  const streams:Stream[]=[],events:any[]=[],visible:ExecutorEvent[]=[],prompts:any[]=[];const cwd='/synthetic/workspace',ok=(value:any)=>({ok:true,value});
+  let release!:()=>void;const admission=new Promise<void>(resolve=>{release=resolve;});
+  const publish=(event:any)=>{event.seq=events.length+1;events.push(event);for(const stream of streams)stream.push({type:'event',event});};
+  const remote={permissionPresets:{catalog:async()=>ok({defaultPreset:'workspace-write',options:[{value:'workspace-write'}]})},commands:{list:async()=>ok([{name:'permission',definitionId:'@deepseek-ai/dsh-permission-presets'}]),execute:async()=>ok({result:{kind:'success'}})},session:{create:async()=>ok({sessionId:'steering-session'}),follow:()=>{const stream=new Stream();streams.push(stream);stream.push({type:'snapshot',header:{id:'steering-session',cwd},cursor:0,records:[],projections:{values:{permissions:{currentValue:'workspace-write'}}}});return stream;},prompt:async(input:any)=>{
+    prompts.push(input);
+    if(input.mode==='queue'){queueMicrotask(()=>{publish({type:'turn/start',data:{turn:1}});publish({type:'user/message',data:{id:'first',content:input.content,source:{rpcId:input.requestId}}});});return ok({accepted:true});}
+    await admission;publish({type:'turn/start',data:{turn:2}});publish({type:'user/message',data:{id:'extra',content:input.content,source:{rpcId:input.requestId}}});publish({type:'turn/end',data:{turn:2,reason:{kind:'completed'}}});return ok({accepted:true});
+  }}};
+  const runtime=Reflect.construct(DshRuntime,['binding-steer',{close:async()=>{for(const stream of streams)await stream.dispose();}},{remote,close:async()=>{},ctx:{}}]) as AgentRuntime;
+  try {
+    const contextRef=await runtime.createContext({cwd});const sending=runtime.send({contextRef,cwd,text:'initial',images:[],clientRequestId:'first-request',onEvent:event=>visible.push(event)});
+    await eventually(()=>visible.some(event=>event.type==='accepted'));const accepted=visible.find(event=>event.type==='accepted');assert.equal(accepted?.type,'accepted');
+    const extra=runtime.supplement!({contextRef,executionRef:accepted.executionRef,cwd,text:'extra',images:[],clientRequestId:'extra-request'});
+    await eventually(()=>prompts.length===2);publish({type:'turn/end',data:{turn:1,reason:{kind:'completed'}}});
+    await eventually(()=>events.some(event=>event.type==='turn/end'));assert.equal((await runtime.observe({contextRef,executionRef:accepted.executionRef})).status,'running');
+    release();assert.equal((await extra).executionRef.id,accepted.executionRef.id);await sending;
+    assert.equal(visible.filter(event=>event.type==='completed').length,1);assert.ok(visible.some(event=>event.type==='item'&&event.item.clientRequestId==='extra-request'));
+    assert.equal(prompts[1].mode,'steer');assert.equal(prompts[1].sessionId,contextRef.id);
+  } finally {release();await runtime.close();}
+});
 test('DSH retains the model failure after successful tools without losing prior output', async () => {
   const streams: Stream[]=[]; const events:any[]=[]; const cwd='/synthetic/workspace'; const ok=(value:any)=>({ok:true,value});
   const publish=(event:any)=>{event.seq=events.length+1;events.push(event);for(const stream of streams)stream.push({type:'event',event});};
@@ -85,4 +106,36 @@ test('DSH stream shows accumulated text, answers the native question and observe
     assert.equal(new Set(text.map(item => item!.id)).size, 1); assert.equal(text.at(-1)?.text, '正在处理'); assert.ok(!JSON.stringify(visible).includes('private reasoning'));
     const history = await runtime.readHistory({ contextRef, cwd }); assert.equal(history.find(item => item.id === 'user-dsh')?.executionId, 'request-exact');
   } finally { await runtime.close(); await rm(root,{recursive:true,force:true}); }
+});
+
+test('DSH confirmed cancellation remains authoritative after a lost supplementary receipt',async()=>{
+ const streams:Stream[]=[],visible:ExecutorEvent[]=[],cwd='/synthetic/workspace',ok=(value:any)=>({ok:true,value});let sequence=0;
+ const publish=(event:any)=>{event.seq=++sequence;for(const stream of streams)stream.push({type:'event',event});};
+ const remote={permissionPresets:{catalog:async()=>ok({defaultPreset:'workspace-write',options:[{value:'workspace-write'}]})},commands:{list:async()=>ok([{name:'permission',definitionId:'@deepseek-ai/dsh-permission-presets'}]),execute:async()=>ok({result:{kind:'success'}})},session:{create:async()=>ok({sessionId:'unknown-input'}),follow:()=>{const stream=new Stream();streams.push(stream);stream.push({type:'snapshot',header:{id:'unknown-input',cwd},cursor:0,records:[],projections:{values:{permissions:{currentValue:'workspace-write'}}}});return stream;},prompt:async(input:any)=>{
+  if(input.mode==='steer')throw Error('receipt lost');queueMicrotask(()=>publish({type:'turn/start',data:{turn:1}}));return ok({accepted:true});
+ },cancel:async()=>{publish({type:'turn/end',data:{turn:1,reason:{kind:'aborted'}}});return ok({accepted:true});},projections:async()=>ok({kind:'sequenced',values:{inbox:{'next-step':[{id:'queued-input',source:{rpcId:'unknown'},content:[{type:'text',text:'extra'}]}],'next-turn':[{id:'unrelated',source:{rpcId:'other-owner'},content:[{type:'text',text:'retain'}]}]}}}),updateQueue:async(input:any)=>{assert.equal(input.itemId,'queued-input');assert.equal(input.action.kind,'remove');return ok({accepted:true});}}};
+ const runtime=Reflect.construct(DshRuntime,['binding-unknown',{close:async()=>{for(const stream of streams)await stream.dispose();}},{remote,close:async()=>{},ctx:{}}]) as AgentRuntime;
+ try{
+  const contextRef=await runtime.createContext({cwd});const sending=runtime.send({contextRef,cwd,text:'initial',images:[],clientRequestId:'initial',onEvent:event=>visible.push(event)});await eventually(()=>visible.some(event=>event.type==='accepted'));
+  const accepted=visible.find(event=>event.type==='accepted');assert.equal(accepted?.type,'accepted');const executionRef=accepted.executionRef;
+  await assert.rejects(runtime.supplement!({contextRef,executionRef,cwd,text:'extra',images:[],clientRequestId:'unknown'}),/receipt lost/);assert.equal((await runtime.observe({contextRef,executionRef})).status,'unknown');
+  await runtime.stop({contextRef,executionRef});await sending;assert.equal((await runtime.observe({contextRef,executionRef})).status,'stopped');
+ }finally{await runtime.close();}
+});
+
+test('DSH stop holds admission and cancels a native turn started by a late supplementary receipt',async()=>{
+ const streams:Stream[]=[],visible:ExecutorEvent[]=[],cwd='/synthetic/workspace',ok=(value:any)=>({ok:true,value});let sequence=0,native=1,cancels=0,release!:()=>void;
+ const admission=new Promise<void>(resolve=>{release=resolve;});const publish=(event:any)=>{event.seq=++sequence;for(const stream of streams)stream.push({type:'event',event});};
+ const remote={permissionPresets:{catalog:async()=>ok({defaultPreset:'workspace-write',options:[{value:'workspace-write'}]})},commands:{list:async()=>ok([{name:'permission',definitionId:'@deepseek-ai/dsh-permission-presets'}]),execute:async()=>ok({result:{kind:'success'}})},session:{create:async()=>ok({sessionId:'late-input'}),follow:()=>{const stream=new Stream();streams.push(stream);stream.push({type:'snapshot',header:{id:'late-input',cwd},cursor:0,records:[],projections:{values:{permissions:{currentValue:'workspace-write'}}}});return stream;},prompt:async(input:any)=>{
+  if(input.mode==='queue'){queueMicrotask(()=>publish({type:'turn/start',data:{turn:1}}));return ok({accepted:true});}
+  await admission;native=2;publish({type:'turn/start',data:{turn:2}});publish({type:'user/message',data:{id:'extra',content:input.content,source:{rpcId:input.requestId}}});return ok({accepted:true});
+ },cancel:async()=>{cancels++;publish({type:'turn/end',data:{turn:native,reason:{kind:'aborted'}}});return ok({accepted:true});},projections:async()=>ok({kind:'sequenced',values:{inbox:{'next-step':[],'next-turn':[]}}})}};
+ const runtime=Reflect.construct(DshRuntime,['binding-late',{close:async()=>{for(const stream of streams)await stream.dispose();}},{remote,close:async()=>{},ctx:{}}]) as AgentRuntime;
+ try{
+  const contextRef=await runtime.createContext({cwd});const sending=runtime.send({contextRef,cwd,text:'initial',images:[],clientRequestId:'initial',onEvent:event=>visible.push(event)});await eventually(()=>visible.some(event=>event.type==='accepted'));
+  const accepted=visible.find(event=>event.type==='accepted');assert.equal(accepted?.type,'accepted');const executionRef=accepted.executionRef;
+  const extra=runtime.supplement!({contextRef,executionRef,cwd,text:'extra',images:[],clientRequestId:'extra-request'});await Promise.resolve();
+  assert.equal((await runtime.stop({contextRef,executionRef})).status,'unknown');assert.equal(visible.filter(event=>event.type==='completed').length,0);
+  release();await extra;await sending;assert.ok(cancels>=2);assert.equal((await runtime.observe({contextRef,executionRef})).status,'stopped');assert.equal(visible.filter(event=>event.type==='completed').length,1);
+ }finally{release();await runtime.close();}
 });
