@@ -513,6 +513,12 @@ export async function runAgentConversationsJourney({t,page,workspaceUrl,workspac
         await panel().locator('[data-run-id="history-round-217"]').getByRole('button',{name:'展开处理过程',exact:true}).evaluate((node:HTMLElement)=>node.click());await group.locator(':scope>summary').evaluate((node:HTMLElement)=>node.click());await group.locator('.ac-step>summary').first().evaluate((node:HTMLElement)=>node.click());
         assert.equal(await process.getAttribute('data-expanded'),'true');assert.equal(await group.getAttribute('open'),'');
         await moveTo(1200);assert.equal(entryReads,readsBefore,'距离顶部大于800像素不预取');
+        const scrollLatest=panel().getByRole('button',{name:'向下到底',exact:true});
+        await scrollLatest.waitFor();
+        assert.ok(await stream.evaluate((node:HTMLElement)=>node.scrollHeight-node.scrollTop-node.clientHeight>80));
+        await scrollLatest.click();
+        await page.waitForFunction(()=>{const node=document.querySelector<HTMLElement>('#agent-conversation-panel .ac-stream');return Boolean(node&&node.scrollHeight-node.scrollTop-node.clientHeight<2);});
+        await settle();assert.equal(await scrollLatest.count(),0,'回到底部后按钮隐藏');
         holdEntryRead=true;const started=new Promise<void>(resolve=>{entryReadStarted=resolve;});await moveTo(700);await started;
         assert.equal(entryReads,readsBefore+1,'尚未到顶时提前读取一批');assert.equal(await stream.getAttribute('aria-busy'),'true');
         const anchor=await stream.evaluate((node:HTMLElement)=>{const top=node.getBoundingClientRect().top;const item=[...node.querySelectorAll<HTMLElement>('[data-entry-id]')].find(item=>{const rect=item.getBoundingClientRect();return !item.closest('.ac-turn-context')&&rect.height>0&&rect.bottom>top+4;})!;return{id:item.dataset.entryId!,y:item.getBoundingClientRect().y};});
@@ -528,6 +534,10 @@ export async function runAgentConversationsJourney({t,page,workspaceUrl,workspac
         assert.equal(entryReads,readsBefore+4);assert.equal(await panel().locator('[data-entry-id="history-121"]').count(),0,'失败保留现有记录');
         await wheelUp();await panel().locator('[data-entry-id="history-121"]').waitFor({state:'attached'});await settle();assert.equal(entryReads,readsBefore+5,'下次向上滚动可重试失败页');assert.equal(await panel().getByText('更早记录暂时不可用',{exact:true}).count(),0,'重试成功清除本次历史读取警告');
         await page.setViewportSize({width:390,height:844});await moveTo(900);
+        const mobileScrollLatest=panel().getByRole('button',{name:'向下到底',exact:true});await mobileScrollLatest.waitFor();assert.ok(await mobileScrollLatest.isVisible());
+        const mobileLatestBox=await mobileScrollLatest.boundingBox();assert.ok(mobileLatestBox&&mobileLatestBox.y>0&&mobileLatestBox.y+mobileLatestBox.height<844,JSON.stringify(mobileLatestBox));
+        await mobileScrollLatest.click();await page.waitForFunction(()=>{const node=document.querySelector<HTMLElement>('#agent-conversation-panel .ac-stream');return Boolean(node&&node.scrollHeight-node.scrollTop-node.clientHeight<2);});await settle();assert.equal(await mobileScrollLatest.count(),0,'窄屏回到底部后按钮隐藏');
+        await moveTo(900);
         holdEntryRead=true;const requested=page.waitForRequest((value:any)=>new URL(value.url()).pathname.endsWith('/entries'));const touchStarted=new Promise<void>(resolve=>{entryReadStarted=resolve;});await touch('touchstart',100);await stream.evaluate((node:HTMLElement)=>node.scrollTop=700);await touch('touchmove',145);await touchStarted;
         assert.equal(entryReads,readsBefore+6,'触摸阅读更早内容时直接加载，无需松手');assert.equal(await panel().locator('.ac-pull-history').count(),0);await touch('touchmove',190);await touch('touchend');assert.equal(entryReads,readsBefore+6,'触摸加载中不重入');
         await capture(page,'conversation-history-scroll-mobile.png');
