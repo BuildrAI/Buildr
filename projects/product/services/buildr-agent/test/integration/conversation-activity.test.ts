@@ -87,6 +87,42 @@ test('execution overview is full-scope, independent from search/page/filter and 
   assert.deepEqual(repo.querySummaries(['w1','w2'],{limit:1,workspaceId:'w1'}).stats.agents,[{label:'codex',count:1}]);
 });
 
+test('activity counts are exclusive, full-scope and filter before pagination without marking seen',t=>{
+  const repo=fixture(t);
+  const statuses=['running','starting','tools-active','waiting-approval','waiting-question','completed','failed','unknown'] as const;
+  for(const [i,status] of statuses.entries()){
+    const r=record('counts-'+i,i===7?'w2':'w1');
+    repo.saveConversation(r);
+    save(repo,r,r=>{
+      message(r,'input','work '+i);
+      r.view.hidden=true;
+      r.view.run={id:'run-'+i,participantId:'p',provider:'codex',generation:'g',status,accepted:true,tools:[],model:'m',startedAt:r.view.updatedAt,updatedAt:r.view.updatedAt};
+    });
+  }
+  const counts={active:8,running:3,waiting:2,unseen:2,unknown:1,attention:5};
+  const first=repo.querySummaries(['w1','w2'],{limit:1,activeOnly:true});
+  assert.deepEqual(first.activityCounts,counts);
+  const search=repo.querySummaries(['w1','w2'],{limit:1,query:'no result',hidden:false,model:'m'});
+  assert.equal(search.total,0);assert.deepEqual(search.activityCounts,counts);
+  const waiting=repo.querySummaries(['w1','w2'],{limit:1,activityState:'waiting'});
+  assert.equal(waiting.total,2);assert.equal(waiting.conversations[0].run?.status,'waiting-question');
+  assert.deepEqual(waiting.activityCounts,counts);
+  assert.equal(repo.querySummaries(['w1','w2'],{limit:1,activityState:'waiting',cursor:waiting.nextCursor}).conversations[0].run?.status,'waiting-approval');
+  assert.throws(()=>repo.querySummaries(['w1','w2'],{limit:1,activityState:'unseen',cursor:waiting.nextCursor}),/位置|顺序/);
+  assert.equal(repo.querySummaries(['w1','w2'],{limit:10,activityState:'attention'}).total,5);
+  assert.equal(repo.querySummaries(['w1','w2'],{limit:10,workspaceId:'w1'}).activityCounts.unknown,0);
+  assert.throws(()=>repo.querySummaries(['w1'],{limit:1,activityState:'invalid'}),/分类/);
+  assert.equal(repo.readConversation('counts-4')?.view.activity?.seenThrough,0);
+  repo.markSeen('w1','counts-4',1);
+  assert.equal(repo.querySummaries(['w1','w2'],{limit:1}).activityCounts.waiting,2,'viewing a question does not answer it');
+  repo.markSeen('w1','counts-5',1);
+  assert.equal(repo.querySummaries(['w1','w2'],{limit:1}).activityCounts.unseen,1);
+  const stale=repo.querySummaries(['w1','w2'],{limit:1,generation:'new'});
+  assert.deepEqual(stale.activityCounts,{active:7,running:0,waiting:0,unseen:1,unknown:6,attention:7});
+  assert.deepEqual(stale.stats.agents,[]);
+  assert.equal(repo.querySummaries(['w1'],{limit:10,generation:'new',activityState:'unknown'}).total,5);
+});
+
 test('empty and attachment-only drafts stay readable but absent from every list; failed or unknown work remains discoverable',t=>{
  const repo=fixture(t),draft=record('draft');draft.view.taskId='task';
  draft.attachments.image={mimeType:'image/png',size:8,createdAt:draft.view.updatedAt};

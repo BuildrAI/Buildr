@@ -51,7 +51,7 @@ export const AGENT_OPERATION_SCHEMAS = {
   revision: named('AgentServiceRevisionRequest', closed({ expectedRevision: text })),
   check: named('AgentServiceCheckRequest', closed({ expectedRevision: text }, [])),
   defaultWorkspace: named('AgentDefaultWorkspace', closed({ rootPath: text })),
-  conversations: named('AgentConversationsPage', closed({ conversations: list(conversation), nextCursor: text,total:integer,stats }, ['conversations'])),
+  conversations: named('AgentConversationsPage', closed({ conversations: list(conversation), nextCursor: text,total:integer,stats,activityCounts:closed({active:integer,running:integer,waiting:integer,unseen:integer,unknown:integer,attention:integer}) }, ['conversations'])),
   conversation: named('AgentConversation', conversation),
   seen: named('AgentConversationSeen',closed({through:integer})),
   seenResult: named('AgentConversationSeenResult',closed({activity})),

@@ -93,6 +93,13 @@ export function tierReasoningEffort(tier:{reasoningEfforts?:ReadonlyArray<{id:st
   return options?.some(option=>option.id===effort)?effort:undefined;
 }
 
+/** A legacy native choice must bind its own catalog source before selecting a tier. */
+export function conversationTierChoice(choice:ConversationChoice,source:CatalogModel,tierId:string|undefined):ConversationChoice {
+ const tier=source.serviceTiers?.find(item=>item.id===tierId);
+ return {...choice,model:source.modelId,modelAccountId:source.accountId,modelAccountIdentity:source.accountIdentity,modelAccountRevision:source.accountRevision,
+   serviceTier:tierId,reasoningEffort:tierReasoningEffort(tier,source.reasoningEfforts,choice.reasoningEffort)};
+}
+
 /** Never select a different subscription without an explicit user choice. */
 export function officialConversationChoice(connection:ConnectionView|undefined,catalog:CatalogModel[]):ConversationChoice {
  const connectionId=connection?.id??'';
