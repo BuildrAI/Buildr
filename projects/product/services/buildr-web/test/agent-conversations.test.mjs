@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { createApiClient } from '../src/api/client.ts';
 import { conversationRecoveryAction, conversationContinuationText, appendDraftAttachment, canGenerateConversationTitle, canStopConversationTool, conversationConflictNeedsRefresh, conversationTurnBinding, createdConversationVisibility, executionLocked, participantAgentIds, shouldSendOnKey, draftKey, readDraft, removeSubmittedAttachments, transferDraftText, writeDraft, applyConversationEvent, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, parseEventFrame, sameConversationSelection, latestConversationParticipant } from '../src/features/agent-conversations/conversation-state.ts';
 import {conversationPermissionKey,conversationPermissionStorageKey,conversationReasoningOptions,conversationRunIdentity,readConversationPermission,reasoningEffortLabel,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,writeConversationPermission} from '../src/features/agent-conversations/conversation-options.ts';
+import {conversationImageSource} from '../src/features/agent-conversations/conversation-markdown-images.ts';
 registerHooks({resolve(specifier,context,next){
   if(specifier==='../../../api'&&context.parentURL?.endsWith('/agent-conversations-api.ts'))return next(new URL('../src/api/index.ts',import.meta.url).href,context);
   try{return next(specifier,context);}catch(cause){if(!specifier.startsWith('.')||!context.parentURL?.includes('/src/'))throw cause;for(const suffix of ['.ts','/index.ts']){const url=new URL(specifier+suffix,context.parentURL);if(existsSync(fileURLToPath(url)))return next(url.href,context);}throw cause;}
@@ -492,4 +493,16 @@ test('草稿图片入口独立于工作空间，首次发送和观察保持同�
   assert.equal(calls[1].url,'/api/v1/workspaces/selected-workspace/agent-conversations/drafts/draft-id/send');assert.equal(calls[1].body.clientRequestId,'same-request');
   assert.equal(calls[2].url,'/api/v1/workspaces/selected-workspace/agent-conversations/drafts/draft-id/submissions/same-request');
   assert.equal(calls.some(call=>call.url.endsWith('/agent-conversations')),false,'图片准备没有创建真实对话请求');
+});
+
+test('对话 Markdown 图片按可访问来源解析，拒绝脚本与不安全协议',()=>{
+  assert.deepEqual(conversationImageSource('/work','https://example.org/a.png'),{href:'https://example.org/a.png'});
+  assert.deepEqual(conversationImageSource('/work','data:image/png;base64,AAAA'),{href:'data:image/png;base64,AAAA'});
+  assert.deepEqual(conversationImageSource('/work','blob:https://example.org/id'),{href:'blob:https://example.org/id'});
+  const absolute=conversationImageSource('/work','/tmp/图 片.PNG?size=1#preview');
+  assert.equal(absolute.href,'/api/v1/conversation-image?path=%2Ftmp%2F%E5%9B%BE%20%E7%89%87.PNG');
+  const relative=conversationImageSource('/work','images/a.png');
+  assert.equal(relative.href,'/api/v1/conversation-image?path=%2Fwork%2Fimages%2Fa.png');
+  assert.equal(conversationImageSource(undefined,'images/a.png'),null);
+  for(const href of ['javascript:alert(1)','file:///tmp/a.png','//example.org/a.png','a%zz.png','a\0b.png']) assert.equal(conversationImageSource('/work',href),null,href);
 });

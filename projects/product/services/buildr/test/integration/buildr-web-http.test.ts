@@ -108,3 +108,29 @@ test('Buildr Web Runtime 提供全局只读 Release Awareness 且没有 npm 更�
   assert.equal(rejected.status, 404);
   assert.equal((await rejected.json()).error.code, 'not_found');
 });
+
+test('对话图片通过路径作用域 cookie 读取本机文件并拒绝非图片', async (t: any) => {
+  const { base, root }: any = fixture(t, 'buildr-web-http-images');
+  process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
+  t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
+  const runtime: any = createRuntime();
+  const instance: any = createLocalWorkspaceServer(runtime, { targetRoot: root });
+  t.after(() => new Promise((resolve: any) => instance.server.close(resolve)));
+  const { url, sessionToken }: any = await instance.ready;
+  const imagePath = path.join(base, 'pixel.png');
+  const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII=', 'base64');
+  fs.writeFileSync(imagePath, image);
+  fs.writeFileSync(path.join(base, 'notes.txt'), 'text');
+  const document = await fetch(`${url}/`);
+  const cookie = String(document.headers.get('set-cookie') || '').split(';')[0];
+  assert.match(cookie, /^buildr-image=/);
+  const headers = { cookie };
+  const loaded = await fetch(`${url}/api/v1/conversation-image?path=${encodeURIComponent(imagePath)}`, { headers });
+  assert.equal(loaded.status, 200);
+  assert.equal(loaded.headers.get('content-type'), 'image/png');
+  assert.deepEqual(Buffer.from(await loaded.arrayBuffer()), image);
+  assert.equal((await fetch(`${url}/api/v1/conversation-image?path=${encodeURIComponent(imagePath)}`)).status, 403);
+  assert.equal((await fetch(`${url}/api/v1/conversation-image?path=${encodeURIComponent(path.join(base, 'notes.txt'))}`, { headers })).status, 415);
+  assert.equal((await fetch(`${url}/api/v1/conversation-image?path=${encodeURIComponent(path.join(base, 'missing.png'))}`, { headers })).status, 404);
+  assert.equal(sessionToken.length > 20, true);
+});

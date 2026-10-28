@@ -1489,6 +1489,7 @@ button.table-action {
 .markdown-body th { background: #f5f7f5; color: var(--soft-ink); font-weight: 700; }
 .markdown-body strong { color: var(--soft-ink); }
 .markdown-body img { display: block; width: auto; max-width: min(100%, 840px); height: auto; margin: 4px auto; border: 1px solid var(--soft-line); border-radius: 8px; }
+.markdown-image-fallback { display: block; padding: 8px 10px; border: 1px dashed var(--soft-line); border-radius: 6px; color: var(--soft-muted); font-size: var(--font-size-secondary); }
 .task-intent-markdown { margin-top: 8px; }
 .task-intent-markdown > .markdown-body > p { color: inherit; font-size: inherit; line-height: inherit; }
 .task-document-preview { display: grid; gap: 12px; }

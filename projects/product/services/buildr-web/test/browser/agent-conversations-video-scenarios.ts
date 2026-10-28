@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 
 /** video 场景使用独立准备的对话现场。 */
 export async function runVideoScenarios(fixture:AgentConversationFixture){
-  const {capture,chooseAgent,input,page,panel,sentInputs,step,uploadedMedia}=fixture;
+  const {capture,chooseAgent,conversation,input,page,panel,run,sentInputs,step,update,uploadedMedia,workspaceRoot}=fixture;
 await step('视频选择、粘贴与拖入均保留原件和画面，发送及刷新可播放，解码失败保留文字',async()=>{
       await page.setViewportSize({width:1280,height:900});
       await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();await chooseAgent('Codex');await input().fill('录屏说明保留');
@@ -42,5 +44,17 @@ await step('视频选择、粘贴与拖入均保留原件和画面，发送及�
       await capture(page,'agent-conversation-video.png');
       await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
     });
+  await step('对话 Markdown 图片按可访问路径显示，缺失图片给出说明',async()=>{
+    const imagePath=path.join(workspaceRoot,'conversation-markdown.png');
+    fs.writeFileSync(imagePath,Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAKAAAABaCAIAAACwpMoFAAAAwUlEQVR42u3bMQ0AIRREQZzggR5baEAE4igpkYCF6w5+JnkKdupNuRYFLpkAsADrCeA2ugIEGLAAC7AAC7AACzBgwIAFWIAFWIAFGDBgwAIswAIswAIswIAFWG8Cz70UIMCABViABViABViAAQMGLMACLMACLMCAAQMWYAEWYAEWYAEGLMACLMACLMD6Dux46R8swAIswAIswIABAxZgARZgARZgAQYswAIswAIswIABAxZg/QeseAEGLMC6tgOkuRgbjUznoQAAAABJRU5ErkJggg==','base64'));
+    update({entries:[{id:'markdown-image',sequence:1,kind:'message',role:'assistant',runId:'run-fixture',text:`本机图片\n\n![本机图片](<${imagePath}>)\n\n![缺失图片](file:///conversation-missing.png)`,createdAt:new Date().toISOString()}],run:run('completed','codex')});
+    await page.reload();await input().waitFor();
+    const article=panel().locator('[data-entry-id="markdown-image"]'),image=article.getByAltText('本机图片',{exact:true});await image.waitFor();
+    await page.waitForFunction(()=>{const node=document.querySelector<HTMLImageElement>('[data-entry-id="markdown-image"] img[alt="本机图片"]');return Boolean(node&&node.complete&&node.naturalWidth===160&&node.naturalHeight===90);});
+    assert.equal(await article.getByText('![本机图片]',{exact:false}).count(),0,'图片源码不再作为正文出现');
+    const fallback=article.locator('.markdown-image-fallback');await fallback.waitFor();assert.match(await fallback.innerText(),/图片无法预览：缺失图片/);
+    await capture(page,'agent-conversation-markdown-image.png');
+  });
+
 
 }

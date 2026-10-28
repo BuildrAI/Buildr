@@ -58,7 +58,7 @@ export function MarkdownHost({ markdown, className, options, fragment, renderVer
     }
     host.replaceChildren(view);
     if (fragment) requestAnimationFrame(() => scrollMarkdownFragment(view, fragment));
-  }, [markdown, className, fragment, renderVersion, options?.taskLinkPathname, JSON.stringify(options?.headingCounts)]);
+  }, [markdown, className, fragment, renderVersion, options?.taskLinkPathname, options?.imageResolver, JSON.stringify(options?.headingCounts)]);
 
   return <div ref={ref} />;
 }

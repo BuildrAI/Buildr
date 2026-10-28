@@ -1,5 +1,8 @@
 // @ts-nocheck
 import { copyText } from './lib/copyText.ts';
+/** Failed destinations stay textual across re-renders; a new document load starts with a clean view. */
+const failedMarkdownImages = new Set<string>();
+
 export type MarkdownRenderOptions = {
   document?: Document;
   headingOffset?: number;
@@ -64,6 +67,14 @@ function isTableSeparator(line) {
   return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
 }
 
+function imageFallback(doc, alt) {
+  const fallback = doc.createElement('span');
+  fallback.className = 'markdown-image-fallback';
+  fallback.setAttribute('role', 'img');
+  fallback.textContent = alt ? `图片无法预览：${alt}` : '图片无法预览';
+  return fallback;
+}
+
 function appendInline(parent, text, doc, linkOptions) {
   const pattern = /!\[([^\]]*)\]\(([^)]+)\)|(\`+)([^\`]+?)\3|\*\*([^*]+)\*\*|\*([^*]+)\*|\[([^\]]+)\]\(([^)]+)\)/g;
   let lastIndex = 0;
@@ -72,14 +83,20 @@ function appendInline(parent, text, doc, linkOptions) {
     if (match.index > lastIndex) parent.append(doc.createTextNode(text.slice(lastIndex, match.index)));
     if (match[1] !== undefined) {
       const resolved = linkOptions.imageResolver?.(match[2]);
-      if (resolved?.href) {
+      if (resolved?.href && !failedMarkdownImages.has(resolved.href)) {
+        const alt = match[1];
         const image = doc.createElement('img');
-        image.setAttribute('src', resolved.href);
-        image.setAttribute('alt', match[1]);
+        image.setAttribute('alt', alt);
         image.setAttribute('loading', 'lazy');
+        image.setAttribute('referrerpolicy', 'no-referrer');
+        if (typeof image.addEventListener === 'function') image.addEventListener('error', () => {
+          failedMarkdownImages.add(resolved.href);
+          if (image.parentNode) image.replaceWith(imageFallback(doc, alt));
+        });
         parent.append(image);
+        image.setAttribute('src', resolved.href);
       } else {
-        parent.append(doc.createTextNode(`![${match[1]}](${match[2]})`));
+        parent.append(imageFallback(doc, match[1]));
       }
     } else if (match[3] !== undefined) {
       const code = doc.createElement('code');

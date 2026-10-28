@@ -1,8 +1,10 @@
+import { readFile, stat } from 'node:fs/promises';
+import path from 'node:path';
 import process from 'node:process';
 
 import { pickWorkspaceDirectory } from '../infrastructure/directory-picker.ts';
 import { binaryResponse, jsonResponse, textResponse, uiPrototypeHtmlResponse, diagramHtmlResponse, eventStreamResponse } from './responses.ts';
-import { assertRequestHost, assertReadRequest, assertWriteRequest, assertMutationRequest, readBinaryBody, readAllowedJsonBody, readJsonBody } from './session.ts';
+import { assertRequestHost, assertReadRequest, assertWriteRequest, assertMutationRequest, assertImageRequest, imageSessionCookie, readBinaryBody, readAllowedJsonBody, readJsonBody } from './session.ts';
 import { injectedIndexHtml, serveDistAsset } from './static-files.ts';
 import {
   BUILDR_WEB_HTTP_OPERATIONS,
@@ -12,6 +14,8 @@ import {
 } from './buildr-web-http-contracts.ts';
 
 const WORKSPACE_ID = '[0-9a-fA-F-]{36}';
+const CONVERSATION_IMAGE_LIMIT = 20 * 1024 * 1024;
+const conversationImageTypes = new Map([['.png', 'image/png'], ['.jpg', 'image/jpeg'], ['.jpeg', 'image/jpeg'], ['.gif', 'image/gif'], ['.webp', 'image/webp'], ['.avif', 'image/avif'], ['.bmp', 'image/bmp'], ['.ico', 'image/x-icon']]);
 
 function workspaceApiMatch(pathname: any) {
   return pathname.match(new RegExp(`^/api/v1/workspaces/(${WORKSPACE_ID})(/.*)?$`));
@@ -60,6 +64,7 @@ export function createLocalWorkspaceRequestRouter({
       return;
     }
     if (request.method === 'GET' && (pathname === '/' || workspaceAppRoute.test(pathname))) {
+      response.setHeader('set-cookie', imageSessionCookie(sessionToken));
       textResponse(response, 200, injectedIndexHtml(sessionToken, previewIdentity, webProfile, staticRoot), 'text/html; charset=utf-8');
       return;
     }
@@ -80,6 +85,33 @@ export function createLocalWorkspaceRequestRouter({
         previewIdentity,
         restartInProgress: Boolean(restartRequested?.()),
       });
+      return;
+    }
+    if (request.method === 'GET' && pathname === '/api/v1/conversation-image') {
+      assertImageRequest(request, trustedOrigin, sessionToken);
+      const filePath = requestUrl.searchParams.get('path') ?? '';
+      const imageType = conversationImageTypes.get(path.extname(filePath).toLowerCase());
+      if (!filePath || filePath.length > 4096 || /[\u0000-\u001f\u007f]/u.test(filePath) || !path.isAbsolute(filePath) || /^[/\\]{2}/u.test(filePath)) {
+        jsonResponse(response, 400, { error: { code: 'conversation_image_path_invalid', message: '图片路径无效。' } });
+        return;
+      }
+      if (!imageType) {
+        jsonResponse(response, 415, { error: { code: 'conversation_image_type_unsupported', message: '仅支持常见位图图片。' } });
+        return;
+      }
+      try {
+        const info = await stat(filePath);
+        if (!info.isFile()) throw Object.assign(new Error('not a file'), { code: 'ENOENT' });
+        if (info.size > CONVERSATION_IMAGE_LIMIT) {
+          jsonResponse(response, 413, { error: { code: 'conversation_image_too_large', message: '图片超过 20 MB 限制。' } });
+          return;
+        }
+        binaryResponse(response, 200, await readFile(filePath), imageType);
+      } catch (error: any) {
+        if (error?.code === 'EACCES') jsonResponse(response, 403, { error: { code: 'conversation_image_forbidden', message: '图片不可读取。' } });
+        else if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') jsonResponse(response, 404, { error: { code: 'conversation_image_missing', message: '图片不存在。' } });
+        else jsonResponse(response, 500, { error: { code: 'conversation_image_unavailable', message: '图片读取失败。' } });
+      }
       return;
     }
     for (const contribution of httpContributions) {
