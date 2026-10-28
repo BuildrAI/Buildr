@@ -35,7 +35,7 @@ export async function writeGatewayPatch(directory: string, gateway: ExecutorGate
   await writeFile(filename, JSON.stringify([{ id: 'llm-pi-ai', name: '@deepseek-ai/dsh-llm-pi-ai', config: { providers: { 'buildr-models': { displayName: 'Buildr', api: 'openai-responses', baseURL: gateway.baseUrl.replace(/\/$/, ''), apiKeyEnv: 'BUILDR_MODEL_GATEWAY_KEY', models } } } }]), { mode: 0o600 });
   return filename;
 }
-interface ActiveTurn { stopRequested?: boolean; cancellation?: Promise<void>; supplementInputs?: Set<string>; supplementAdmissions?: number; supplementUnknown?: boolean; pendingEnd?: any; finish?: () => void; id: string; input: ExecutorSendInput; nativeTurn?: number; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown' }>; pending: Map<string, { request: ExecutorRequest; resolve?: (value: string) => void; answer?: (value: { answers: any[] }) => void; reject?: (error: Error) => void; wait?: any }>; stream?: any; pump?: Promise<void>; streamAttempt?: { id: string; turn: number; step: number; nextIndex: number; text: string }; }
+interface ActiveTurn { stopRequested?: boolean; cancellation?: Promise<void>; supplementInputs?: Set<string>; supplementAdmissions?: number; supplementUnknown?: boolean; pendingEnd?: any; finish?: () => void; id: string; input: ExecutorSendInput; nativeTurn?: number; contextWindow?: number; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown' }>; pending: Map<string, { request: ExecutorRequest; resolve?: (value: string) => void; answer?: (value: { answers: any[] }) => void; reject?: (error: Error) => void; wait?: any }>; stream?: any; pump?: Promise<void>; streamAttempt?: { id: string; turn: number; step: number; nextIndex: number; text: string }; }
 export function createDshExecutor(): AgentExecutor { return { descriptor: { id: 'dsh', label: 'DSH', capabilities }, open: options => DshRuntime.open(options) }; }
 export class DshRuntime implements AgentRuntime {
   readonly capabilities = { ...capabilities, permissionModes: ['default'] as PermissionMode[] };
@@ -273,6 +273,10 @@ export class DshRuntime implements AgentRuntime {
     if (turn.terminal) return;
     if (event.type === 'turn/start') { turn.nativeTurn = data.turn; turn.pendingEnd = undefined; if (turn.stopRequested) void this.cancelSteering(turn).catch(() => { turn.supplementUnknown = true; }); }
     if (turn.nativeTurn !== undefined && data.turn !== undefined && data.turn !== turn.nativeTurn) return;
+    if (event.type === 'request/context' && Number.isSafeInteger(data.contextWindow) && data.contextWindow > 0) turn.contextWindow = data.contextWindow;
+    if (event.type === 'assistant/message' && data.usage && Number.isSafeInteger(data.usage.inputTokens) && data.usage.inputTokens >= 0) {
+      emit({ type: 'context-usage', usedTokens: data.usage.inputTokens, ...(turn.contextWindow ? { windowTokens: turn.contextWindow } : {}) });
+    }
     if (event.type === 'user/message' && turn.supplementInputs?.delete(data.source?.rpcId)) { turn.pendingEnd = undefined; if (!turn.supplementInputs.size) turn.supplementUnknown = false; }
     if (event.type === 'turn/end' && ((turn.supplementAdmissions ?? 0) > 0 || turn.supplementInputs?.size)) { turn.pendingEnd = event; if (turn.stopRequested) turn.supplementUnknown = true; emit({ type: 'observation', observation: this.activeObservation(turn) }); return; }
     for (const item of dshItem(event)) emit({ type: 'item', item: { ...item, executionId: turn.id } });

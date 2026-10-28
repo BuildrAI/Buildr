@@ -142,3 +142,24 @@ test('DSH stop holds admission and cancels a native turn started by a late suppl
   release();await extra;await sending;assert.ok(cancels>=2);assert.equal((await runtime.observe({contextRef,executionRef})).status,'stopped');assert.equal(visible.filter(event=>event.type==='completed').length,1);
  }finally{release();await runtime.close();}
 });
+test('DSH reports the native context window and input-token usage', async () => {
+  const streams:Stream[]=[],events:any[]=[],visible:ExecutorEvent[]=[];const cwd='/synthetic/workspace',ok=(value:any)=>({ok:true,value});
+  const publish=(event:any)=>{event.seq=events.length+1;events.push(event);for(const stream of streams)stream.push({type:'event',event});};
+  const remote={
+    permissionPresets:{catalog:async()=>ok({defaultPreset:'workspace-write',options:[{value:'workspace-write'}]})},
+    commands:{list:async()=>ok([{name:'permission',definitionId:'@deepseek-ai/dsh-permission-presets'}]),execute:async()=>ok({result:{kind:'success'}})},
+    session:{create:async()=>ok({sessionId:'usage-session'}),follow:()=>{const stream=new Stream();streams.push(stream);stream.push({type:'snapshot',header:{id:'usage-session',cwd},cursor:0,records:[],projections:{values:{permissions:{currentValue:'workspace-write'}}}});return stream;},
+      prompt:async(_input:any)=>{queueMicrotask(()=>{
+        publish({type:'turn/start',data:{turn:1}});
+        publish({type:'request/context',data:{provider:'buildr-models',model:'qoder-deepseek-flash',contextWindow:500000}});
+        publish({type:'assistant/message',data:{turn:1,step:1,usage:{inputTokens:23190,outputTokens:137,totalTokens:23327},message:{content:[{type:'text',text:'完成'}]}}});
+        publish({type:'turn/end',data:{turn:1,reason:{kind:'completed'}}});
+      });return ok({accepted:true});}},
+  };
+  const runtime=Reflect.construct(DshRuntime,['binding-usage',{close:async()=>{for(const stream of streams)await stream.dispose();}},{remote,close:async()=>{},ctx:{}}]) as AgentRuntime;
+  try {
+    const contextRef=await runtime.createContext({cwd});
+    await runtime.send({contextRef,cwd,text:'统计用量',images:[],clientRequestId:'usage-request',onEvent:event=>visible.push(event)});
+    assert.deepEqual(visible.find(event=>event.type==='context-usage'),{type:'context-usage',usedTokens:23190,windowTokens:500000});
+  }finally{await runtime.close();}
+});
