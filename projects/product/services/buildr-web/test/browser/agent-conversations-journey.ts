@@ -326,11 +326,12 @@ export async function runAgentConversationsJourney({t,page,workspaceUrl,capture:
       await page.setViewportSize({width:390,height:844});await panel().locator('.ac-thread-identity').waitFor();assert.ok(await panel().getByRole('button',{name:'复制对话 ID',exact:true}).isVisible());await capture(page,'agent-conversation-identity-mobile.png');
       await history();await assertTwoLines();await capture(page,'agent-conversation-history-mobile.png');await panel().locator('.ac-history-list button[data-conversation-id="'+originalId+'"]').click();await input().waitFor();additionalConversations=additionalConversations.filter(item=>item.id!==identity);await page.setViewportSize(viewport);
     });
-    await step('执行过程平铺、详情节点稳定，结束折叠且失败提醒保留',async()=>{
+    await step('连续工具默认汇总折叠，明确展开在追加时保持，结束折叠且失败提醒保留',async()=>{
       const previous=structuredClone(conversation);
       const tool=(id:string,status='completed')=>({id,sequence:id==='single-tool'?1:2,kind:'tool',role:'system',name:'command',text:'echo verify\ncommand output',status,runId:'run-fixture',createdAt:new Date().toISOString()});
       update({entries:[tool('single-tool')],run:run('running')});await page.reload();
-      const first=panel().locator('[data-entry-id="single-tool"]');await first.locator(':scope>summary').waitFor();assert.equal(await panel().locator('.ac-step-group').count(),0);
+      const initialGroup=panel().locator('.ac-step-group');await initialGroup.locator(':scope>summary').waitFor();assert.equal(await initialGroup.getAttribute('open'),null);assert.equal(await panel().locator('.ac-step').count(),0,'工具默认只显示汇总');await initialGroup.locator(':scope>summary').click();
+      const first=panel().locator('[data-entry-id="single-tool"]');await first.locator(':scope>summary').waitFor();
       const handle=await first.elementHandle();await first.locator(':scope>summary').click();await first.locator('.ac-tool-detail').waitFor();
       update({entries:[tool('single-tool'),tool('second-tool','failed')]});await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
       await panel().locator('[data-entry-id="second-tool"]').waitFor();assert.equal(await first.evaluate((node:HTMLElement,old:HTMLElement)=>node===old,handle),true);assert.equal(await first.getAttribute('open'),'');
@@ -353,6 +354,29 @@ export async function runAgentConversationsJourney({t,page,workspaceUrl,capture:
       supplementaryDelivery='accepted';holdSupplement=true;const waiting=new Promise<void>(resolve=>{supplementStarted=resolve;});await input().fill('发送等待时可以停止');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await waiting;await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();const admitted=page.waitForResponse((r:any)=>r.url().endsWith('/supplement'));releaseSupplement!();await admitted;assert.equal(supplementaryCalls,4);await panel().getByRole('button',{name:'发送对话',exact:true}).waitFor();
       conversation=previous;attachmentUploads=previousUploads;await page.reload();await input().fill('下一轮仍是草稿');
     });
+    await step('固定边界清晰，输入与助手可定位，长过程可从顶部或底部收起且窄屏可达',async()=>{
+      const previous=structuredClone(conversation),viewport=page.viewportSize();
+      const item=(id:string,sequence:number,kind:string,role:string,text:string)=>({id,sequence,kind,role,text,name:kind==='tool'?'command':undefined,provider:'codex',participantId:'participant-codex',runId:'run-fixture',status:'completed',createdAt:new Date().toISOString()});
+      const entries=[item('controls-user',1,'message','user','检查长过程时，输入和助手必须可以就近定位与收起。'),...Array.from({length:18},(_,i)=>[
+        item('controls-note-'+i,i*3+2,'message','assistant',`检查第 ${i+1} 项：保留用户上下文、工具汇总和原阅读位置。`),
+        item('controls-tool-'+i+'-a',i*3+3,'tool','system','echo first\noutput'),item('controls-tool-'+i+'-b',i*3+4,'tool','system','echo second\noutput')
+      ]).flat(),item('controls-answer',60,'message','assistant',Array.from({length:30},(_,i)=>'最终答复内容 '+i).join('\n\n'))];
+      update({participants:[{id:'participant-codex',connectionId:'codex',provider:'codex',label:'Codex',model:'fixture-model',contextId:'native',deliveredThrough:0}],entries,nextEntryCursor:undefined,run:run('completed','codex',{model:'fixture-model'}),requests:[]});await page.reload();await input().waitFor();
+      const stream=panel().locator('.ac-stream'),context=panel().locator('.ac-turn-context'),process=panel().locator('.ac-process');
+      const settle=()=>page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+      await stream.evaluate((node:HTMLElement)=>node.scrollTop=0);await process.locator(':scope>summary').click();await context.getByRole('button',{name:'收起处理过程',exact:true}).waitFor();await stream.evaluate((node:HTMLElement)=>node.scrollTop=550);await settle();
+      const bounds=await context.evaluate((node:HTMLElement)=>{const style=getComputedStyle(node),r=node.getBoundingClientRect(),s=node.closest('.ac-stream')!.getBoundingClientRect();return{top:r.top,stream:s.top,border:style.borderTopWidth,shadow:style.boxShadow,background:style.backgroundColor,covered:document.elementFromPoint(r.left+8,r.bottom-3)?.closest('.ac-turn-context')===node};});
+      assert.ok(Math.abs(bounds.top-bounds.stream)<2,JSON.stringify(bounds));assert.equal(bounds.border,'1px');assert.notEqual(bounds.shadow,'none');assert.notEqual(bounds.background,'rgba(0, 0, 0, 0)');assert.equal(bounds.covered,true);
+      const outer=await page.evaluate(()=>window.scrollY);await context.getByRole('button',{name:'定位用户输入',exact:true}).click();await settle();assert.equal(await page.evaluate(()=>window.scrollY),outer);assert.ok(await stream.evaluate((node:HTMLElement)=>node.scrollTop<60));
+      await stream.evaluate((node:HTMLElement)=>node.scrollTop=550);await context.getByRole('button',{name:'定位助手内容',exact:true}).click();await settle();
+      const located=await panel().locator('[data-entry-id="controls-answer"]').evaluate((node:HTMLElement)=>({top:node.getBoundingClientRect().top,context:node.closest('.ac-turn')!.querySelector('.ac-turn-context')!.getBoundingClientRect().bottom}));assert.ok(located.top>=located.context-2&&located.top<located.context+20,JSON.stringify(located));assert.equal(await page.evaluate(()=>window.scrollY),outer);
+      await stream.evaluate((node:HTMLElement)=>node.scrollTop=550);await context.getByRole('button',{name:'收起处理过程',exact:true}).click();await settle();assert.equal(await process.getAttribute('open'),null);assert.ok(await stream.evaluate((node:HTMLElement)=>node.scrollTop<60));
+      await process.locator(':scope>summary').click();await process.locator(':scope>.ac-process-collapse').click();await settle();assert.equal(await process.getAttribute('open'),null);
+      const collapsed=await process.locator(':scope>summary').evaluate((node:HTMLElement)=>({top:node.getBoundingClientRect().top,context:node.closest('.ac-turn')!.querySelector('.ac-turn-context')!.getBoundingClientRect().bottom}));assert.ok(collapsed.top>=collapsed.context-2,JSON.stringify(collapsed));
+      await process.locator(':scope>summary').click();const group=process.locator('.ac-step-group').first();await group.locator(':scope>summary').click();assert.equal(await group.locator('.ac-step-group-items').evaluate((node:HTMLElement)=>getComputedStyle(node).borderLeftWidth),'0px');await group.locator(':scope>.ac-process-collapse').click();assert.equal(await group.getAttribute('open'),null);
+      await page.setViewportSize({width:390,height:844});await stream.evaluate((node:HTMLElement)=>node.scrollTop=400);await settle();assert.ok(await context.getByRole('button',{name:'收起处理过程',exact:true}).isVisible());assert.ok(await panel().evaluate((node:HTMLElement)=>node.scrollWidth<=node.clientWidth));await capture(page,'conversation-flow-controls-narrow.png');
+      await page.setViewportSize(viewport);await capture(page,'conversation-flow-controls-desktop.png');conversation=previous;await page.reload();await input().waitFor();
+    });
     await step('向上接近历史自动单批加载，阅读定位与展开保持，键盘触摸及失败重试隔离',async()=>{
       const previous=structuredClone(conversation),oldViewport=page.viewportSize(),readsBefore=entryReads;
       const entry=(sequence:number,kind:string,role:string,round:number)=>({id:'history-'+sequence,sequence,kind,role,runId:'history-round-'+round,name:kind==='tool'?'read':undefined,text:kind==='tool'?'读取 a.ts':role==='user'?'更早的用户要求 '+sequence:Array.from({length:10},(_,i)=>`第 ${round} 轮答复的阅读内容 ${i}`).join('\n\n'),input:kind==='tool'?'{}':undefined,status:'completed',createdAt:new Date().toISOString()});
@@ -370,8 +394,8 @@ export async function runAgentConversationsJourney({t,page,workspaceUrl,capture:
         assert.equal(entryReads,readsBefore,'打开历史不会自动翻页');
         assert.equal(await panel().getByRole('button',{name:'加载更早的记录',exact:true}).count(),0);assert.equal(await panel().locator('.ac-pull-history').count(),0);
         assert.equal(await panel().locator('.ac-compose-wrap>.ac-run-status').count(),0);assert.equal(await panel().locator('.ac-stream>.ac-run-status').count(),0);
-        const process=panel().locator('[data-run-id="history-round-217"] .ac-process'),group=process.locator('.ac-step').first();
-        await process.locator(':scope>summary').evaluate((node:HTMLElement)=>node.click());await group.locator(':scope>summary').evaluate((node:HTMLElement)=>node.click());
+        const process=panel().locator('[data-run-id="history-round-217"] .ac-process'),group=process.locator('.ac-step-group').first();
+        await process.locator(':scope>summary').evaluate((node:HTMLElement)=>node.click());await group.locator(':scope>summary').evaluate((node:HTMLElement)=>node.click());await group.locator('.ac-step>summary').first().evaluate((node:HTMLElement)=>node.click());
         assert.equal(await process.getAttribute('open'),'');assert.equal(await group.getAttribute('open'),'');
         await moveTo(1200);assert.equal(entryReads,readsBefore,'距离顶部大于800像素不预取');
         holdEntryRead=true;const started=new Promise<void>(resolve=>{entryReadStarted=resolve;});await moveTo(700);await started;
