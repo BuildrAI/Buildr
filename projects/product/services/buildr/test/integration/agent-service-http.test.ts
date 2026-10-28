@@ -134,6 +134,11 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   const attachment = await response.json() as { id: string; revision: string };
   response = await fetch(`${conversations}/${created.id}/attachments/${attachment.id}`); assert.equal(response.status, 403);
   response = await fetch(`${conversations}/${created.id}/attachments/${attachment.id}`, { headers: readHeaders }); assert.equal(response.status, 200); assert.deepEqual(Buffer.from(await response.arrayBuffer()), png);
+  const videoBytes=Buffer.alloc(9*1024*1024);Buffer.from('000000186674797069736f6d0000020069736f6d69736f32','hex').copy(videoBytes);
+  const videoHeaders={origin:url,...readHeaders,'content-type':'video/mp4','x-buildr-conversation-revision':attachment.revision,'x-buildr-video':JSON.stringify({duration:2,frames:[{id:attachment.id,time:0}]})};
+  response=await fetch(`${conversations}/${created.id}/attachments`,{method:'POST',headers:{...videoHeaders,'x-buildr-session':'invalid'},body:videoBytes});assert.equal(response.status,403);
+  response=await fetch(`${conversations}/${created.id}/attachments`,{method:'POST',headers:videoHeaders,body:videoBytes});assert.equal(response.status,201);const video=await response.json();attachment.revision=video.revision;
+  response=await fetch(`${conversations}/${created.id}/attachments/${video.id}`,{headers:readHeaders});assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'video/mp4');assert.deepEqual(Buffer.from(await response.arrayBuffer()),videoBytes);
   response = await fetch(`${conversations}/${created.id}/prepare-send`, { method: 'POST', headers, body: JSON.stringify({ expectedRevision: attachment.revision, connectionId: 'not-registered', text: 'x'.repeat(129 * 1024) }) }); assert.equal(response.status, 413);
   response = await fetch(`${conversations}?hidden=true&query=updated`, { headers: readHeaders }); assert.equal(response.status, 200); assert.equal((await response.json()).conversations.length, 1);
   response = await fetch(`${conversations}/${created.id}`, { method: 'PATCH', headers, body: JSON.stringify({ expectedRevision: attachment.revision, taskId: 'task-http' }) }); assert.equal(response.status, 200);

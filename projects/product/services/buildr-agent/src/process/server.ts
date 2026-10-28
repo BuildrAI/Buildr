@@ -85,7 +85,9 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     if (req.method === 'GET' && req.url === '/identity') { json(res, 200, identity); return; }
     if (req.method === 'GET' && req.url === '/status') { json(res, 200, status()); return; }
     if (req.method !== 'POST') throw new AgentServiceError('agent_process_operation_invalid', '不支持的执行后台入口。', 404);
-    const input = await body(req);
+    const attachmentUpload = req.url === '/operations' && req.headers['x-buildr-operation'] === 'conversations.addAttachment';
+    const input = await body(req, attachmentUpload ? 46 * 1024 * 1024 : undefined);
+    if (attachmentUpload && input.operation !== 'conversations.addAttachment') throw new AgentServiceError('agent_process_operation_invalid', '附件传输操作不匹配。');
     if (req.url === '/host/attach') {
       if (closing) throw new AgentServiceError('agent_process_switching','执行后台正在退出，宿主尚未接入。',503);
       hosts.attach(input.peer);

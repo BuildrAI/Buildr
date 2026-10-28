@@ -65,7 +65,7 @@ export interface StoredConversation {
   titleDiagnostics?: Array<{runId:string;phase:'early'|'completion'|'manual';code:string;reason:string;at:string}>;
   participants: StoredParticipant[];
   sources: Record<string, string>;
-  attachments: Record<string, { mimeType: string; size: number; createdAt?: string }>;
+  attachments: Record<string, { mimeType: string; size: number; createdAt?: string; video?: import('../contracts.ts').VideoAttachment }>;
   attempts: Array<{
     clientRequestId: string;
     inputDigest: string;

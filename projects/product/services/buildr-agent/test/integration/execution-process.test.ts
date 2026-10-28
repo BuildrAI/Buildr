@@ -69,6 +69,10 @@ test('independent process survives real host exits, preserves approvals and hand
     const png=Buffer.from('89504e470d0a1a0a','hex');
     const attachment=await observer.operations.conversations.addAttachment(scope,view.id,{expectedRevision:view.revision,mimeType:'image/png',bytes:png});
     assert.deepEqual((await observer.operations.conversations.readAttachment(scope,view.id,attachment.id)).bytes,png);
+    const videoBytes=Buffer.alloc(13*1024*1024);Buffer.from('000000186674797069736f6d0000020069736f6d69736f32','hex').copy(videoBytes);
+    const video=await observer.operations.conversations.addAttachment(scope,view.id,{expectedRevision:attachment.revision,mimeType:'video/mp4',bytes:videoBytes,video:{duration:2,frames:[{id:attachment.id,time:0}]}});
+    const videoRead=await observer.operations.conversations.readAttachment(scope,view.id,video.id);assert.equal(videoRead.mimeType,'video/mp4');assert.deepEqual(videoRead.bytes,videoBytes);
+
     view=await main.call('conversations.read',[scope,view.id]);
     const draft={expectedRevision:view.revision,connectionId:'first',text:'hold'},preview=await main.call('conversations.prepareSend',[scope,view.id,draft]),requestId=randomUUID();
     await main.call('conversations.send',[scope,view.id,{...draft,previewToken:preview.token,clientRequestId:requestId}]);

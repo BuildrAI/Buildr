@@ -138,8 +138,10 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       if (action === 'stop') return result('conversation', await service.conversations.stop(workspaceId, id, validate('stop', await readJsonBody())));
       if (action === 'requests' && childId && reply) return result('conversation', await service.conversations.reply(workspaceId, id, childId, validate('reply', await readJsonBody())));
       if (action === 'attachments' && !childId) {
-        const metadata = validate('attachment', { expectedRevision: request.headers['x-buildr-conversation-revision'], expectedAttachmentRevision: request.headers['x-buildr-attachment-revision'], mimeType: request.headers['content-type'] });
-        return result('attachmentResult', await service.conversations.addAttachment(workspaceId, id, { ...metadata, bytes: await readBinaryBody(8 * 1024 * 1024) }), 201);
+        let video: unknown;
+        try { if (request.headers['x-buildr-video']) video = JSON.parse(request.headers['x-buildr-video']); } catch { throw inputError(); }
+        const metadata = validate('attachment', { expectedRevision: request.headers['x-buildr-conversation-revision'], expectedAttachmentRevision: request.headers['x-buildr-attachment-revision'], mimeType: request.headers['content-type'], ...(video !== undefined ? { video } : {}) });
+        return result('attachmentResult', await service.conversations.addAttachment(workspaceId, id, { ...metadata, bytes: await readBinaryBody((metadata.mimeType.startsWith('video/') ? 32 : 8) * 1024 * 1024) }), 201);
       }
       return null;
     },

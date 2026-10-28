@@ -435,11 +435,11 @@ test('temporary image expiry and capacity preserve every image referenced by a s
     assert.deepEqual(f.service.conversations.readAttachment('workspace-one', created.id, retained.id).bytes, png);
     assert.throws(() => f.service.conversations.readAttachment('workspace-one', created.id, temporary.id), { code: 'agent_attachment_missing' });
     assert.equal(fs.existsSync(path.join(f.options.dataRoot, 'agent-service', 'attachments', created.id, temporary.id)), false);
-    for (let index = 1; index < 32; index++) upload();
+    for (let index = 1; index < 64; index++) upload();
     const before = f.service.conversations.read('workspace-one', created.id);
     assert.throws(upload, { code: 'agent_attachment_capacity', status: 413 });
     assert.equal(f.service.conversations.read('workspace-one', created.id).revision, before.revision);
-    assert.equal(fs.readdirSync(path.join(f.options.dataRoot, 'agent-service', 'attachments', created.id)).length, 33, '32 temporary files plus the submitted image remain');
+    assert.equal(fs.readdirSync(path.join(f.options.dataRoot, 'agent-service', 'attachments', created.id)).length, 65, '64 temporary files plus the submitted image remain');
   } finally { await f.close(); }
 });
 
@@ -1493,5 +1493,54 @@ test('manual title refresh failure leaves a persisted safe reason and preserves 
     const db=new DatabaseSync(path.join(f.options.dataRoot,'agent-service/conversations.sqlite'),{readOnly:true});
     const body=(db.prepare('select body from conversations where id=?').get(chat.id) as {body:string}).body;db.close();
     assert.doesNotMatch(body,/private-secret|Bearer|vendor/);assert.equal(JSON.parse(body).titleDiagnostics[0].phase,'manual');
+  }finally{await f.close();}
+});
+
+test('video keeps original bytes, timed visual inputs, history sources and referenced frames across expiry and restart', async () => {
+  const native=fake('visual',{images:true}),reader=fake('reader');let now=new Date('2026-10-28T00:00:00Z');
+  const f=fixture([native.executor,reader.executor],{now:()=>now});
+  const png=Buffer.from('89504e470d0a1a0a','hex'),mp4=Buffer.from('000000186674797069736f6d0000020069736f6d69736f32','hex');
+  try {
+    await connected(f.service,'visual');await connected(f.service,'reader');
+    const chat=await f.service.conversations.create('workspace-one',{});
+    const upload=(mimeType:string,bytes:Buffer,video?:{duration:number;frames:Array<{id:string;time:number}>})=>f.service.conversations.addAttachment('workspace-one',chat.id,{expectedRevision:f.service.conversations.read('workspace-one',chat.id).revision,mimeType,bytes,video});
+    const frames=Array.from({length:8},(_,i)=>({id:upload('image/png',png).id,time:i*2}));
+    const video=upload('video/mp4',mp4,{duration:14.4,frames});
+    const draft={expectedRevision:video.revision,connectionId:'visual',text:'inspect the recording',attachmentIds:[video.id]};
+    const preview=f.service.conversations.prepareSend('workspace-one',chat.id,draft);assert.equal(preview.fits,true);
+    f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:preview.token,clientRequestId:'video-input'});
+    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
+    assert.deepEqual(native.sends[0].images.map(image=>image.id),frames.map(frame=>frame.id));
+    assert.match(native.sends[0].text,/抽样画面，不含音轨/);assert.match(native.sends[0].text,/"time":14/);assert.ok(native.sends[0].text.includes(video.id));
+    const original=f.service.conversations.read('workspace-one',chat.id).entries.find(entry=>entry.role==='user');assert.equal(original?.text,'inspect the recording');assert.deepEqual(original?.attachments,[video.id]);
+    now=new Date(now.getTime()+25*60*60*1000);upload('image/png',png);
+    for(const frame of frames)assert.deepEqual(f.service.conversations.readAttachment('workspace-one',chat.id,frame.id).bytes,png);
+    assert.deepEqual(f.service.conversations.readAttachment('workspace-one',chat.id,video.id).bytes,mp4);
+    const current=f.service.conversations.read('workspace-one',chat.id),handoff=f.service.conversations.prepareSend('workspace-one',chat.id,{expectedRevision:current.revision,connectionId:'reader',text:'continue'});
+    assert.equal(handoff.fits,true,'historical video never blocks a later text-only executor');
+    const index=JSON.parse(fs.readFileSync(handoff.handoff!.sourcePath!,'utf8'));
+    const source=index.images.find((image:any)=>image.id===video.id);assert.equal(source.mimeType,'video/mp4');assert.equal(source.video.frames.length,8);assert.ok(fs.existsSync(source.video.frames[0].path));
+    await f.service.close();const cold=createAgentService(f.options);
+    try{assert.deepEqual(cold.conversations.readAttachment('workspace-one',chat.id,video.id).bytes,mp4);assert.deepEqual(cold.conversations.readAttachment('workspace-one',chat.id,frames[0].id).bytes,png);}finally{await cold.close();}
+  } finally {await f.close();}
+});
+
+test('video ownership, metadata, bytes, revision and visual capability reject incomplete input without dispatch',async()=>{
+  const native=fake('text'),f=fixture([native.executor]);
+  const png=Buffer.from('89504e470d0a1a0a','hex'),mp4=Buffer.from('000000186674797069736f6d0000020069736f6d69736f32','hex');
+  try{
+    await connected(f.service,'text');const chat=await f.service.conversations.create('workspace-one',{}),other=await f.service.conversations.create('workspace-one',{});
+    const frame=f.service.conversations.addAttachment('workspace-one',chat.id,{expectedRevision:chat.revision,mimeType:'image/png',bytes:png});
+    const input={mimeType:'video/mp4',bytes:mp4,video:{duration:2,frames:[{id:frame.id,time:0}]}};
+    assert.throws(()=>f.service.conversations.addAttachment('workspace-one',other.id,{...input,expectedRevision:other.revision}),{code:'agent_attachment_missing'});
+    assert.throws(()=>f.service.conversations.addAttachment('workspace-one',chat.id,{...input,expectedRevision:chat.revision}),{code:'agent_revision_conflict'});
+    const upload=(extra:Record<string,unknown>)=>f.service.conversations.addAttachment('workspace-one',chat.id,{...input,expectedRevision:f.service.conversations.read('workspace-one',chat.id).revision,...extra});
+    assert.throws(()=>upload({bytes:Buffer.from('bad')}),{code:'agent_video_invalid'});
+    assert.throws(()=>upload({bytes:Buffer.alloc(32*1024*1024+1)}),{code:'agent_video_invalid',status:413});
+    assert.throws(()=>upload({video:{duration:2,frames:[]}}),{code:'agent_video_invalid'});
+    assert.throws(()=>upload({video:{duration:2,frames:[{id:frame.id,time:3}]}}),{code:'agent_video_invalid'});
+    const video=upload({});
+    const preview=f.service.conversations.prepareSend('workspace-one',chat.id,{expectedRevision:video.revision,connectionId:'text',text:'',attachmentIds:[video.id]});
+    assert.equal(preview.fits,false);assert.match(preview.diagnostic!,/无法接收这些图片/);assert.equal(native.sends.length,0);
   }finally{await f.close();}
 });

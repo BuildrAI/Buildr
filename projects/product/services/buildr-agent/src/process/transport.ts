@@ -50,8 +50,9 @@ export async function listen(handler: (req: IncomingMessage, res: ServerResponse
   } };
 }
 export async function request(origin: string, token: string, route: string, value?: unknown, signal?: AbortSignal): Promise<any> {
+  const operation = route === '/operations' ? (value as { operation?: string } | undefined)?.operation : undefined;
   const response = await fetch(localOrigin(origin) + route, {
-    method: value === undefined ? 'GET' : 'POST', headers: { Authorization: 'Bearer ' + token, ...(value === undefined ? {} : { 'Content-Type': 'application/json' }) },
+    method: value === undefined ? 'GET' : 'POST', headers: { Authorization: 'Bearer ' + token, ...(value === undefined ? {} : { 'Content-Type': 'application/json' }), ...(operation === 'conversations.addAttachment' ? { 'x-buildr-operation': operation } : {}) },
     ...(value === undefined ? {} : { body: JSON.stringify(value) }), signal,
   });
   const chunks: Uint8Array[] = []; let size = 0;
@@ -60,7 +61,7 @@ export async function request(origin: string, token: string, route: string, valu
     if (reader) for (;;) {
       const chunk = await reader.read(); if (chunk.done) break;
       size += chunk.value.byteLength;
-      if (size > 16 * 1024 * 1024) throw new AgentServiceError('agent_process_response_too_large', '执行后台返回超过限制。', 502);
+      if (size > (operation === 'conversations.readAttachment' ? 46 : 16) * 1024 * 1024) throw new AgentServiceError('agent_process_response_too_large', '执行后台返回超过限制。', 502);
       chunks.push(chunk.value);
     }
   } finally { await reader?.cancel().catch(() => {}); reader?.releaseLock(); }

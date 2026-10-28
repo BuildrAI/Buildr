@@ -37,7 +37,7 @@ export function validateOperation(name: string, args: unknown): asserts args is 
   if (input && !validators.get(input[1])!(JSON.parse(JSON.stringify(args[input[0]] ?? (input[1] === 'check' ? {} : null))))) throw new AgentServiceError('agent_process_input_invalid', '执行操作字段无效。');
   if (name === 'conversations.addAttachment') {
     const value = args[2];
-    if (!value || typeof value.base64 !== 'string' || value.base64.length > 12 * 1024 * 1024 || !validators.get('attachment')!({ expectedRevision: value.expectedRevision, expectedAttachmentRevision: value.expectedAttachmentRevision, mimeType: value.mimeType })) throw new AgentServiceError('agent_process_input_invalid', '附件字段无效。');
+    if (!value || typeof value.base64 !== 'string' || value.base64.length > (typeof value.mimeType === 'string' && value.mimeType.startsWith('video/') ? 44 : 12) * 1024 * 1024 || !validators.get('attachment')!({ expectedRevision: value.expectedRevision, expectedAttachmentRevision: value.expectedAttachmentRevision, mimeType: value.mimeType, video: value.video })) throw new AgentServiceError('agent_process_input_invalid', '附件字段无效。');
   }
 }
 export async function dispatchOperation(service: AgentService, name: string, args: any[]): Promise<unknown> {

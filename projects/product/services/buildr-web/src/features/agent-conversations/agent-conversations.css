@@ -191,3 +191,6 @@
 
 .ac-pending-send { margin: 12px 0; padding: 12px; border: 1px solid var(--border-color, #e5e7eb); border-radius: 10px; }
 .ac-pending-send-text { margin: 10px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ac-video-thumbnail{width:240px!important;height:auto!important;max-width:100%;align-items:stretch;flex-direction:column;gap:4px;padding:4px;border:1px solid var(--soft-line);border-radius:8px}
+.ac-video-thumbnail video{display:block;width:100%;max-height:160px;border-radius:5px;background:#17251e}
+.ac-video-thumbnail>small{font-size:10px;color:var(--soft-muted);padding:0 3px 2px}

@@ -59,6 +59,8 @@ export interface LoginObservation {
   diagnostic?: string;
 }
 export interface ExecutorImage { id: string; path: string; mimeType: string }
+export interface VideoAttachment { duration: number; frames: Array<{ id: string; time: number }> }
+export interface AttachmentInput { expectedRevision?: string; expectedAttachmentRevision?: string; mimeType: string; bytes: Uint8Array; video?: VideoAttachment }
 export interface ExecutorItem {
   id: string;
   clientRequestId?: string;
@@ -255,7 +257,7 @@ export interface ConversationView {
   pendingSend?: PendingSendView;
   /** Independent observation version for append-only image admission. */
   attachmentRevision?: string;
-  activity?: { version: number; seenThrough: number; updatedAt: string; active: boolean };
+  activity?: { version: number; seenThrough: number; updatedAt: string; active: boolean; userInputAt?: string };
   titleState?: { status: 'pending' | 'generating' | 'generated' | 'manual' | 'failed' | 'unavailable' | 'unknown'; reason?: string };
   id: string;
   workspaceId: string;

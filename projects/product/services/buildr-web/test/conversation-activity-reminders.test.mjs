@@ -69,11 +69,11 @@ test('快速档位显式绑定原生来源，保留合法强度并不修改原�
   assert.equal(original.modelAccountId,undefined);
 });
 
-test('浮窗只保留带智能体的模型组合摘要，旧响应不猜配对，失败保留观察',()=>{
-  const stats={agents:[{label:'codex',count:3}],models:[{label:'m',count:3}],executions:[{provider:'codex',model:'m',count:2},{provider:'qoder',model:'m',count:1}]};
+test('浮窗显示真实账号与模型，旧响应不猜账号，失败保留观察',()=>{
+  const stats={agents:[{label:'codex',count:3}],models:[{label:'m',count:3}],executions:[{provider:'codex',model:'m',count:3}],modelExecutions:[{accountId:'one',accountLabel:'账号甲',model:'m',count:2},{accountId:'two',accountLabel:'账号乙',model:'m',count:1}]};
   const html=renderToStaticMarkup(React.createElement(ConversationExecutionSummary,{stats,stale:true,modelLabel:()=> '完整模型名'}));
-  assert.match(html,/Codex · 完整模型名/);assert.match(html,/Qoder · 完整模型名/);assert.match(html,/未更新/);
-  assert.doesNotMatch(html,/按智能体|按模型|<button/);
-  const legacy=renderToStaticMarkup(React.createElement(ConversationExecutionSummary,{stats:{agents:stats.agents,models:stats.models},modelLabel:()=> '完整模型名'}));
-  assert.match(legacy,/明细尚未读取/);assert.doesNotMatch(legacy,/Codex ·/);
+  assert.match(html,/执行中模型/);assert.match(html,/账号甲 · 完整模型名/);assert.match(html,/账号乙 · 完整模型名/);assert.match(html,/未更新/);
+  assert.doesNotMatch(html,/Codex|Qoder|按智能体|按模型|<button/);
+  const legacy=renderToStaticMarkup(React.createElement(ConversationExecutionSummary,{stats:{agents:stats.agents,models:stats.models,executions:stats.executions},modelLabel:()=> '完整模型名'}));
+  assert.match(legacy,/账号与模型明细尚未读取/);assert.doesNotMatch(legacy,/Codex ·/);
 });

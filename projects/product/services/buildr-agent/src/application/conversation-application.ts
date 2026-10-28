@@ -1,4 +1,6 @@
 import { normalizeSendDraft } from '../domain/send-draft.ts';
+import { ConversationAttachments, MAX_IMAGE_BYTES, MAX_VISUAL_INPUTS } from './conversation-attachments.ts';
+import type { AttachmentInput } from '../contracts.ts';
 import {selectedOffering,modelConfiguration} from '../model-access/model-preferences.ts';
 import type {ModelOffering} from '../model-access/contracts.ts';
 import type { ModelAccess } from '../model-access/application.ts';
@@ -21,9 +23,6 @@ import type { SupplementInput } from '../contracts.ts';
 
 const TITLE_TIMEOUT_MS = 45_000;
 const MAX_TEXT_BYTES = 64 * 1024;
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
-const TEMP_IMAGE_TTL_MS = 24 * 60 * 60 * 1000;
-const MAX_TEMP_IMAGE_BYTES = 64 * 1024 * 1024;
 const MAX_ITEM_BYTES = 1024 * 1024;
 const PAGE_SIZE = 100;
 const PAGE_ROUNDS = 5;
@@ -65,6 +64,7 @@ export class ConversationApplication {
   private readonly recoveries = new Map<string, Promise<void>>();
   private readonly handoffPreviews = new Map<string,{baseToken:string;prepared:ReturnType<ConversationApplication['prepare']>}>();
   private readonly supplements: ConversationSupplements;
+  private readonly media: ConversationAttachments;
   private readonly options: {
     repository: ConversationRepository;
     connections: ConnectionApplication;
@@ -79,21 +79,22 @@ export class ConversationApplication {
   };
   constructor(options: ConversationApplication['options']) {
     this.options = options;
+    this.media = new ConversationAttachments({ root: options.root, now: options.now, save: record => this.save(record) });
     this.supplements = new ConversationSupplements({ generation: options.generation, now: options.now, closing: () => this.closing,
       load: (workspaceId, id) => this.load(workspaceId, id), save: record => this.save(record), view: record => this.view(record),
       runtime: async (record, participant) => {
         if (!options.connections.get(participant.connectionId).enabled) fail('agent_connection_disabled', '接入已断开，输入已保留。', 409);
         return (await this.sourceRuntime(record, participant)).runtime;
-      }, images: (record, participant, ids) => {
+      }, materials: (record, participant, ids) => {
         const connection = options.connections.get(participant.connectionId);
         if (!connection.enabled) fail('agent_connection_disabled', '接入已断开，输入已保留。', 409);
         const source = participant.modelAccountId ? options.modelAccess?.accounts.snapshot(participant.modelAccountId) : undefined;
         if (participant.modelAccountId && (!source || source.identity !== participant.modelAccountIdentity)) fail('agent_model_source_changed', '原模型来源已变化，输入已保留。', 409);
         const model = source?.models.find(item => item.id === participant.modelId);
         if (ids.length && (!connection.capabilities.images || source && !model?.images)) fail('agent_capability_unavailable', '当前执行的模型不支持这些图片，输入已保留。', 409);
-        const images = ids.map(id => this.attachment(record, id));
-        if (ids.some(id => record.attachments[id].size > (connection.capabilities.maxImageBytes ?? MAX_IMAGE_BYTES)) || ids.reduce((sum, id) => sum + record.attachments[id].size, 0) > 32 * 1024 * 1024) fail('agent_image_invalid', '图片超过当前接入的容量，输入已保留。', 413);
-        return images;
+        const materials = this.media.expand(record, ids);
+        if (materials.images.length > MAX_VISUAL_INPUTS || materials.images.some(image => record.attachments[image.id]!.size > (connection.capabilities.maxImageBytes ?? MAX_IMAGE_BYTES)) || materials.images.reduce((sum, image) => sum + record.attachments[image.id]!.size, 0) > 32 * 1024 * 1024) fail('agent_image_invalid', '图片或视频画面超过当前接入的容量，输入已保留。', 413);
+        return materials;
       },
     });
   }
@@ -235,7 +236,7 @@ export class ConversationApplication {
   validatePending(workspaceId: string, id: string, input: SendDraft): SendDraft {
     const record = this.load(workspaceId, id);
     const draft = this.draft(input);
-    for (const attachment of draft.attachmentIds ?? []) this.attachment(record, attachment);
+    for (const attachment of draft.attachmentIds ?? []) this.media.get(record, attachment);
     const account = draft.modelAccountId ? this.options.modelAccess?.accounts.read(draft.modelAccountId) : undefined;
     if (draft.modelAccountId && !account) fail('agent_model_source_unavailable', '所选模型账号不可用。', 409);
     if (account && draft.modelAccountIdentity && draft.modelAccountIdentity !== account.identity) fail('agent_model_source_changed', '所选模型账号身份已变化，请重新选择。', 409);
@@ -300,17 +301,18 @@ export class ConversationApplication {
     const history = changes.map(entry => ({sequence:entry.sequence,role:entry.role,provider:entry.provider,text:entry.kind==='tool'?`${entry.name??'工具'} · ${entry.status??'结果未知'}（具体内容见本地来源）`:entry.text.length>4096?entry.text.slice(0,4096)+'…（完整原文见本地来源）':entry.text}));
     const maxInputBytes=receivingBudget(connection.capabilities.maxInputBytes,boundModel&&'contextWindow' in boundModel?boundModel.contextWindow:undefined,boundModel&&'maxOutputTokens' in boundModel?boundModel.maxOutputTokens:undefined);
     const localRounds=organizeHandoff(changes,{...record.runOutcomes,...(record.view.run?{[record.view.run.id]:record.view.run}:{})});
-    const historicalImages=[...new Set(changes.flatMap(e=>e.attachments??[]))].map(id=>{try{const image=this.attachment(record,id);return {id,path:image.path,mimeType:image.mimeType,available:true};}catch{return {id,available:false};}});
+    const historicalImages=[...new Set(changes.flatMap(e=>e.attachments??[]))].map(id=>{try{const image=this.media.describe(record,id);return {...image,available:true};}catch{return {id,available:false};}});
     const sources=changes.length?handoffSources(this.options.root,record.view.id,changes,localRounds,historicalImages):undefined;
     const rounds=sources?.rounds??localRounds;
     const currentImages=input.attachmentIds??[];
     const canAttachHistory=connection.capabilities.images&&(!source||Boolean(selectedModel&&'images' in selectedModel&&selectedModel.images));
-    const priorImages=canAttachHistory&&currentImages.length<4?historicalImages.filter(image=>image.available&&!currentImages.includes(image.id)).slice(-Math.max(0,4-currentImages.length)).map(image=>image.id):[];
+    const priorImages=canAttachHistory&&currentImages.length<4?historicalImages.filter(image=>image.available&&'mimeType' in image&&image.mimeType?.startsWith('image/')&&!currentImages.includes(image.id)).slice(-Math.max(0,4-currentImages.length)).map(image=>image.id):[];
     const ids=[...new Set([...priorImages,...currentImages])];
-    const images = ids.map(id => this.attachment(record, id));
+    const materials = this.media.expand(record, ids);
+    const images = materials.images;
     const context=JSON.stringify({conversationId:record.view.id,workspaceId:record.view.workspaceId,cwd:record.view.cwd,conversationTitle:record.view.title,taskId:record.view.taskId,sourceThrough:through,permissionMode:input.permissionMode,executionState:record.view.run?.status??'idle',sourceIndex:sources?.index,imageInputIds:ids,currentImageIds:currentImages,currentImages:images.filter(image=>currentImages.includes(image.id)),historicalImages:historicalImages.slice(-4),historicalImageCount:historicalImages.length,historicalImageNotice:historicalImages.length?'历史图片的全部准确引用见本地索引；此处只列最近四张。没有作为图像输入发送的部分须按需读取，不能假装已看到。':undefined});
-    const suffix=`\n\n本次用户要求：\n${input.text}${input.handoffSummary?'\n用户补充的交接说明（不替代本地历史）：\n'+input.handoffSummary:''}`;
-    const fullText=changes.length||switching?`${HANDOFF_PROMPT}\n工作位置与来源：${context}\n按轮次组织的本地记录：\n${formatHandoffRounds(rounds)}${suffix}`:input.text;
+    const suffix=`\n\n本次用户要求：\n${input.text}${materials.description}${input.handoffSummary?'\n用户补充的交接说明（不替代本地历史）：\n'+input.handoffSummary:''}`;
+    const fullText=changes.length||switching?`${HANDOFF_PROMPT}\n工作位置与来源：${context}\n按轮次组织的本地记录：\n${formatHandoffRounds(rounds)}${suffix}`:input.text+materials.description;
     const needsCompression=Buffer.byteLength(fullText)>maxInputBytes;
     const text=needsCompression&&sources?`${HANDOFF_PROMPT}\n工作位置与来源：${context}\n完整历史共有 ${rounds.length} 轮，记录 #${changes[0]?.sequence??0}–#${through}，超过内联容量。请先读取本地索引 ${sources.index}，按各轮路径读取用户要求、授权纠正、失败未知、成果和待办。正文没有省略来源，具体内容需按引用读取。${suffix}`:fullText;
     const previous=record.participants.find(p=>p.id===record.view.run?.participantId);
@@ -319,8 +321,8 @@ export class ConversationApplication {
     if(previous&&(record.view.run?.model!==input.model||previous.modelAccountId!==input.modelAccountId))difference.push({kind:'model',label:'模型',before:record.view.run?.model??'默认模型',after:boundModel?.label??input.model??'默认模型'});
     const handoff={agent:connection.label,model:boundModel?.label??input.model??'默认模型',changes:difference,rounds:displayRounds(rounds),roundCount:rounds.length,body:text,sourceThrough:through,mode:needsCompression?'indexed' as const:'records' as const,...(sources?{sourcePath:sources.index}:{})};
     const inputBytes = Buffer.byteLength(text);
-    const imageBytes = ids.reduce((total, id) => total + record.attachments[id]!.size, 0);
-    const fits = inputBytes <= maxInputBytes && images.length <= 4 && imageBytes <= 32 * 1024 * 1024 && ids.every(id => record.attachments[id]!.size <= (connection.capabilities.maxImageBytes ?? MAX_IMAGE_BYTES)) && (!images.length || (connection.capabilities.images && (!source || Boolean(selectedModel && 'images' in selectedModel && selectedModel.images))));
+    const imageBytes = images.reduce((total, image) => total + record.attachments[image.id]!.size, 0);
+    const fits = inputBytes <= maxInputBytes && images.length <= MAX_VISUAL_INPUTS && imageBytes <= 32 * 1024 * 1024 && images.every(image => record.attachments[image.id]!.size <= (connection.capabilities.maxImageBytes ?? MAX_IMAGE_BYTES)) && (!images.length || (connection.capabilities.images && (!source || Boolean(selectedModel && 'images' in selectedModel && selectedModel.images))));
     const token = createHmac('sha256', this.previewSecret).update(JSON.stringify({ id: record.view.id, input, sourceRevision: source?.revision, through, text, ids })).digest('hex');
     return { preview: { handoff, token, conversationId: record.view.id, revision: record.view.revision, connectionId: input.connectionId, modelAccountId: input.modelAccountId, modelAccountIdentity: source?.identity, modelAccountRevision: source?.revision, modelSourceLabel: source?.accountLabel ?? source?.label, model: input.model, serviceTier:input.serviceTier,reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode!, participantId: participant?.id, cwd: record.view.cwd, taskId: record.view.taskId, text: input.text, history, sourceThrough: through, inputBytes, maxInputBytes, fits, switching, diagnostic: fits ? undefined : images.length && !canAttachHistory ? '所选执行方或模型无法接收这些图片，请选择支持图片的执行组合；草稿已保留。' : '必要交接资料仍超出接收容量，请选择容量更大的模型；草稿与本地资料保留。' }, text, images, draft: input,configuration,needsCompression,fullText };
   }
@@ -899,57 +901,12 @@ export class ConversationApplication {
     } finally { this.repliesInFlight.delete(requestId); }
   }
 
-  addAttachment(workspaceId: string, id: string, input: { expectedRevision?: string; expectedAttachmentRevision?: string; mimeType: string; bytes: Uint8Array }): { id: string; mimeType: string; size: number; revision: string; attachmentRevision: string } {
+  addAttachment(workspaceId: string, id: string, input: AttachmentInput) {
     const record = this.load(workspaceId, id);
-    if (input.expectedAttachmentRevision !== undefined) expected(hash(record.attachments), input.expectedAttachmentRevision);
-    else expected(record.view.revision, input.expectedRevision);
-    if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(input.mimeType) || !(input.bytes instanceof Uint8Array)) fail('agent_image_invalid', '请选择容量不超过8 MiB的PNG、JPEG、GIF或WebP图片。');
-    const bytes = Buffer.from(input.bytes);
-    if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) fail('agent_image_invalid', '图片内容无效或超过8 MiB。');
-    const magic = input.mimeType === 'image/png' ? bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) : input.mimeType === 'image/jpeg' ? bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255 : input.mimeType === 'image/gif' ? ['GIF87a', 'GIF89a'].includes(bytes.subarray(0, 6).toString()) : bytes.subarray(0, 4).toString() === 'RIFF' && bytes.subarray(8, 12).toString() === 'WEBP';
-    if (!magic) fail('agent_image_invalid', '图片类型与实际内容不符。');
-    const attachmentsRoot = path.join(this.options.root, 'attachments');
-    fs.mkdirSync(attachmentsRoot, { recursive: true, mode: 0o700 });
-    if (fs.lstatSync(attachmentsRoot).isSymbolicLink()) fail('agent_attachment_unsafe', '附件目录来源不安全。', 409);
-    const directory = path.join(attachmentsRoot, id);
-    fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
-    if (fs.lstatSync(directory).isSymbolicLink()) fail('agent_attachment_unsafe', '附件目录来源不安全。', 409);
-    const referenced = new Set([...record.view.entries.flatMap(entry => entry.attachments ?? []), ...(this.pendingSends.read(workspaceId, id)?.draft.attachmentIds ?? [])]);
-    const expired: string[] = [];
-    const now = Date.parse(this.options.now());
-    let temporaryBytes = 0; let temporaryCount = 0;
-    for (const [key, meta] of Object.entries(record.attachments)) {
-      if (!/^[a-f0-9-]{36}$/.test(key)) fail('agent_attachment_unsafe', '附件记录来源不安全。', 409);
-      if (referenced.has(key)) continue;
-      const filename = path.join(this.options.root, 'attachments', id, key);
-      const createdAt = meta.createdAt ? Date.parse(meta.createdAt) : fs.lstatSync(filename, { throwIfNoEntry: false })?.mtimeMs ?? 0;
-      if (now - createdAt >= TEMP_IMAGE_TTL_MS) { delete record.attachments[key]; expired.push(filename); }
-      else { temporaryBytes += meta.size; temporaryCount++; }
-    }
-    if (expired.length) {
-      // Commit the loss of references before removing only our registered private files.
-      this.save(record);
-      for (const filename of expired) { try { fs.unlinkSync(filename); } catch { /* Retry is safe; no public reference remains. */ } }
-    }
-    if (temporaryCount >= 32 || temporaryBytes + bytes.length > MAX_TEMP_IMAGE_BYTES) fail('agent_attachment_capacity', '未发送图片已达32张或64 MiB；临时图片保留24小时，请稍后重试。', 413);
-    const attachmentId = randomUUID();
-    const filename = path.join(directory, attachmentId); fs.writeFileSync(filename, bytes, { flag: 'wx', mode: 0o600 });
-    record.attachments[attachmentId] = { mimeType: input.mimeType, size: bytes.length, createdAt: this.options.now() };
-    try { this.save(record); } catch (error) { fs.unlinkSync(filename); throw error; }
-    return { id: attachmentId, mimeType: input.mimeType, size: bytes.length, revision: record.view.revision, attachmentRevision: hash(record.attachments) };
-  }
-  private attachment(record: StoredConversation, id: string): ExecutorImage {
-    const meta = record.attachments[id]; if (!meta || !/^[a-f0-9-]{36}$/.test(id)) fail('agent_attachment_missing', '图片不属于此对话。', 404);
-    const filename = path.join(this.options.root, 'attachments', record.view.id, id);
-    const stat = fs.lstatSync(filename, { throwIfNoEntry: false });
-    if (!stat?.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || stat.size !== meta.size) fail('agent_attachment_changed', '图片来源已变化，请重新添加。', 409);
-    return { id, path: filename, mimeType: meta.mimeType };
+    return this.media.add(record, input, this.pendingSends.read(workspaceId, id)?.draft.attachmentIds ?? []);
   }
   readAttachment(workspaceId: string, id: string, attachmentId: string): { bytes: Buffer; mimeType: string } {
-    const attachment = this.attachment(this.load(workspaceId, id), attachmentId);
-    const descriptor = fs.openSync(attachment.path, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
-    try { const stat = fs.fstatSync(descriptor); if (!stat.isFile() || stat.nlink !== 1 || stat.size > MAX_IMAGE_BYTES) fail('agent_attachment_changed', '图片来源已变化。', 409); return { bytes: fs.readFileSync(descriptor), mimeType: attachment.mimeType }; }
-    finally { fs.closeSync(descriptor); }
+    return this.media.read(this.load(workspaceId, id), attachmentId);
   }
   subscribe(workspaceId: string, id: string) {
     const conversation = this.read(workspaceId, id);

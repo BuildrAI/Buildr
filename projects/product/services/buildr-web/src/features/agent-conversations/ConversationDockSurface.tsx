@@ -18,7 +18,9 @@ export function ConversationDockSurface({panel,activity,open,initialActivityOpen
     style:{...panel.props.style,width:full?'calc(100% - 52px)':width},
     className:(panel.props.className??'')+(!open?' is-peeking':''),
     'data-dock':side,
-    onPointerEnter:event=>{setActivityOpen(false);peek.enter('pane',event.pointerType);},onPointerLeave:event=>peek.exit('pane',event.pointerType),
+    // The pointer crosses this pane in the gap before entering the activity portal.
+    // Let the popover's shared hover boundary close it, without opening another peek.
+    onPointerEnter:event=>{if(!activityOpen)peek.enter('pane',event.pointerType);},onPointerLeave:event=>peek.exit('pane',event.pointerType),
   } as HTMLAttributes<HTMLElement>&{ref:Ref<HTMLElement>});
   return <>{open&&!full&&side==='right'&&divider}{content}{open&&!full&&side==='left'&&divider}
     <aside className={'ac-collapsed-rail '+railClassName} data-dock={side} aria-label="当前对话与所有对话" data-prototype-position="activity-rail">

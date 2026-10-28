@@ -4,7 +4,7 @@ import type { ApiClient, ApiError, SessionAdapter } from '../../../api';
 import { parseEventFrame } from '../conversation-state';
 import type { ModelAccount, CatalogModel, AttachmentView, ConnectionView, ConversationEvent, ConversationSummary, ConversationView, PendingConversation, PreparationView, ProviderId, SendInput, SendPreview, SupplementInput, SupplementResult } from '../types';
 
-export type ConversationPage={conversations:ConversationView[];nextCursor?:string;total?:number;activityCounts?:ActivityCounts;stats?:{executions?:Array<{provider:string;model:string;count:number}>;agents:Array<{label:string;count:number}>;models:Array<{label:string;count:number}>}};
+export type ConversationPage={conversations:ConversationView[];nextCursor?:string;total?:number;activityCounts?:ActivityCounts;stats?:{modelExecutions?:Array<{accountId:string;accountLabel:string;model:string;count:number}>;executions?:Array<{provider:string;model:string;count:number}>;agents:Array<{label:string;count:number}>;models:Array<{label:string;count:number}>}};
 const appPath = '/api/v1/app/agent-service';
 const path = (workspaceId: string, conversationId?: string) => `${workspaceId === '@default' ? appPath + '/conversations' : '/api/v1/workspaces/' + encodeURIComponent(workspaceId) + '/agent-conversations'}${conversationId ? '/' + encodeURIComponent(conversationId) : ''}`;
 const post = (body: unknown): RequestInit => ({method: 'POST', body: JSON.stringify(body)});
@@ -67,14 +67,14 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     stop(conversation: ConversationView, toolId?: string) { const run = conversation.run; if (!run) return Promise.reject(new Error('没有可以停止的执行。')); return request<ConversationView>(path(conversation.workspaceId, conversation.id) + '/stop', post({expectedRevision: conversation.revision, runId: run.id, participantId: run.participantId, generation: run.generation, toolId})); },
     observe(conversation: ConversationView) { return request<ConversationView>(path(conversation.workspaceId, conversation.id) + '/observe', post({})); },
     reply(conversation: ConversationView, requestId: string, input: {answer: unknown}) { const pending = conversation.requests.find(item => item.id === requestId); if (!pending) return Promise.reject(new Error('原请求已经变化，请重新读取。')); return request<ConversationView>(path(conversation.workspaceId, conversation.id) + `/requests/${encodeURIComponent(requestId)}/reply`, post({...input, expectedRevision: conversation.revision, runId: pending.runId, participantId: pending.participantId, generation: pending.generation})); },
-    async upload(conversation: ConversationView, file: File) {
+    async upload(conversation: ConversationView, file: File, video?: { duration: number; frames: Array<{ id: string; time: number }> }) {
       const bytes = await file.arrayBuffer();
       const revisionHeader:Record<string,string>=conversation.attachmentRevision?{'x-buildr-attachment-revision':conversation.attachmentRevision}:{'x-buildr-conversation-revision':conversation.revision};
-      const send = () => fetcher(path(conversation.workspaceId,conversation.id) + '/attachments', {method:'POST',cache:'no-store',headers:{...session.writeHeaders(),'content-type':file.type,...revisionHeader},body:bytes});
+      const send = () => fetcher(path(conversation.workspaceId,conversation.id) + '/attachments', {method:'POST',cache:'no-store',headers:{...session.writeHeaders(),'content-type':file.type,...revisionHeader,...(video?{'x-buildr-video':JSON.stringify(video)}:{})},body:bytes});
       let response = await send();
       if(response.status===403 && session.refreshSession){const body=await response.clone().json().catch(()=>null);if(body?.error?.code==='session_forbidden' && await session.refreshSession())response=await send();}
       const body=await response.json();
-      if(!response.ok){const error:ApiError=new Error(body.error?.message||'图片上传失败。');error.status=response.status;error.code=body.error?.code;error.details=body.error?.details;throw error;}
+      if(!response.ok){const error:ApiError=new Error(body.error?.message||'附件上传失败。');error.status=response.status;error.code=body.error?.code;error.details=body.error?.details;throw error;}
       return body as AttachmentView;
     },
     async readImage(conversation: ConversationView, id: string, signal?: AbortSignal): Promise<Blob> {
@@ -84,7 +84,7 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
         const body = await response.clone().json().catch(() => null);
         if (body?.error?.code === 'session_forbidden' && await session.refreshSession()) response = await send();
       }
-      if (!response.ok) throw new Error('图片读取失败，请重新加载。');
+      if (!response.ok) throw new Error('附件读取失败，请重新加载。');
       return response.blob();
     },
     async subscribe(workspaceId: string, id: string, signal: AbortSignal, onEvent: (event: ConversationEvent) => void, cursor?: number) {

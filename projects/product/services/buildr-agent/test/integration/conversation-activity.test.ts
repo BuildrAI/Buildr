@@ -166,3 +166,17 @@ test('execution model and agent pairs aggregate full scope without guessing acro
   assert.equal(page.conversations.length,0);
   assert.deepEqual(page.stats.executions,[{provider:'codex',model:'shared-model',count:2},{provider:'qoder',model:'shared-model',count:1}]);
 });
+
+test('executing models aggregate by actual account across executors and expose user input time independently of replies',t=>{
+  const repo=fixture(t);
+  for(const [id,provider,accountId,label] of [['a','codex','account-a','账号甲'],['b','qoder','account-a','账号甲'],['c','codex','account-b','账号乙']] as const){
+    const item=record(id);message(item,'input','work');
+    item.view.run={id:'run-'+id,participantId:'p',provider,generation:'g',status:'running',accepted:true,tools:[],model:'shared-model',modelAccountId:accountId,modelSourceLabel:label,startedAt:item.view.updatedAt,updatedAt:item.view.updatedAt};repo.saveConversation(item);
+  }
+  const page=repo.querySummaries(['w1'],{limit:1,query:'no match',activityState:'waiting'});
+  assert.deepEqual(page.stats.modelExecutions,[{accountId:'account-a',accountLabel:'账号甲',model:'shared-model',count:2},{accountId:'account-b',accountLabel:'账号乙',model:'shared-model',count:1}]);
+  const before=repo.querySummaries(['w1'],{limit:10}).conversations;
+  const item=repo.readConversation('a')!;item.view.updatedAt='2026-10-29T00:00:00Z';message(item,'answer','new assistant output','message','assistant');repo.saveConversation(item,item.view.revision);
+  const after=repo.querySummaries(['w1'],{limit:10}).conversations;
+  assert.deepEqual(after.map(row=>row.id),before.map(row=>row.id));assert.deepEqual(after.map(row=>row.activity?.userInputAt),before.map(row=>row.activity?.userInputAt));
+});

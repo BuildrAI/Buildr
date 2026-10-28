@@ -13,7 +13,7 @@ export function textResponse(response: any, status: any, content: any, contentTy
     'cache-control': 'no-store',
     // style-src allows 'unsafe-inline' so Ant Design 5 css-in-js / motion can apply
     // element styles; scripts and network stay same-origin (no CDN).
-    'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'",
+    'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; media-src 'self' blob:; base-uri 'none'; frame-ancestors 'none'",
     'referrer-policy': 'no-referrer',
     'x-content-type-options': 'nosniff',
     'x-frame-options': 'DENY',

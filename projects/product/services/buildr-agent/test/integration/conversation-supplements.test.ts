@@ -105,3 +105,13 @@ test('image admission has its own observed revision and never overwrites streame
     const current = f.read(); assert.ok(f.service.conversations.addAttachment('workspace', current.id, { expectedRevision: current.revision, mimeType: 'image/png', bytes: png }).id);
   } finally { await f.close(); }
 });
+
+test('video supplement preserves one run and sends timed visual frames with original source, retaining only the submitted original in history',async()=>{
+  const f=await fixture();try{
+    const chat=f.read(),frame=f.service.conversations.addAttachment('workspace',chat.id,{expectedRevision:chat.revision,mimeType:'image/png',bytes:png});
+    const video=f.service.conversations.addAttachment('workspace',chat.id,{expectedRevision:frame.revision,mimeType:'video/mp4',bytes:Buffer.from('000000186674797069736f6d0000020069736f6d69736f32','hex'),video:{duration:2,frames:[{id:frame.id,time:0}]}});
+    const result=await f.service.conversations.supplement('workspace',chat.id,{...f.input('look at the recording'),attachmentIds:[video.id]});
+    assert.equal(result.delivery,'accepted');assert.equal(f.calls[0].images[0].id,frame.id);assert.match(f.calls[0].text,/不含音轨/);assert.ok(f.calls[0].text.includes(video.id));
+    const entry=f.read().entries.find(entry=>entry.attachments?.includes(video.id));assert.equal(entry?.text,'look at the recording');assert.deepEqual(entry?.attachments,[video.id]);assert.equal(f.read().run?.id,chat.run?.id);
+  }finally{await f.close();}
+});

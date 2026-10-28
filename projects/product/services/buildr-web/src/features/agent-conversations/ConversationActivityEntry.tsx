@@ -5,7 +5,7 @@ import { ConversationActivityStatus } from './ConversationActivityStatus';
 import { activityBadge, activityReminder, type ActivityCounts, type ActivityState } from './conversation-activity';
 import { CopyButton } from '../../components/CopyButton';
 import './conversation-activity.css';
-export type ActivityItem={id:string;workspaceId:string;title:string;meta:string;state:ActivityState};
+export type ActivityItem={id:string;workspaceId:string;title:string;meta:string;state:ActivityState;userInputAt?:string};
 export type ActivityPopupControl={open?:boolean;onOpenChange?(value:boolean):void};
 type Props=ActivityPopupControl&{counts?:ActivityCounts;countsStale?:boolean;summary?:ReactNode;historyPlacement?:'header'|'footer';menuClassName?:string;emptyDescription?:string;items:ActivityItem[];total:number;error?:string;hasMore?:boolean;workspaces:Array<{id:string;name:string}>;selectedId?:string;active?:boolean;side?:'left'|'right';onOpen(item:ActivityItem):void;onHistory():void;onToggleHistory?():void;onMore?():void};
 /** Shared by the product and offline prototype. It never reads or mutates conversations. */
@@ -13,18 +13,18 @@ export function ConversationActivityEntry(props:Props) {
   const [localOpen,setLocalOpen]=useState(false),dismissed=useRef(false),pointerFocus=useRef(false),entry=useRef<HTMLButtonElement>(null);
   const open=!props.active&&(props.open??localOpen);
   const setOpen=(value:boolean)=>{const next=value&&!props.active;setLocalOpen(next);props.onOpenChange?.(next);};
-  const sections=[{id:'attention',label:'待处理',count:props.counts?props.counts.waiting+props.counts.unseen:undefined,items:props.items.filter(item=>item.state==='waiting'||item.state==='unseen')},{id:'running',label:'执行中',count:props.counts?.running,items:props.items.filter(item=>item.state==='running')}];
-  const unknown=props.items.filter(item=>item.state==='unknown');
+  const priority=(item:ActivityItem)=>item.state==='waiting'||item.state==='unseen'?0:item.state==='unknown'?1:2;
+  const items=[...props.items].sort((a,b)=>priority(a)-priority(b)||(a.userInputAt&&b.userInputAt?b.userInputAt.localeCompare(a.userInputAt):0));
   const renderRows=(items:ActivityItem[])=>{
     const groups=new Map<string,ActivityItem[]>();
-    for(const item of items){const group=groups.get(item.workspaceId);if(group)group.push(item);else groups.set(item.workspaceId,[item]);}
-    return [...groups].map(([workspaceId,rows])=><section className="ac-activity-workspace" key={workspaceId} data-activity-workspace={workspaceId} aria-label={props.workspaces.find(row=>row.id===workspaceId)?.name||workspaceId}>
+    for(const item of items){const key=priority(item)+':'+item.workspaceId,group=groups.get(key);if(group)group.push(item);else groups.set(key,[item]);}
+    return [...groups].map(([key,rows])=>{const workspaceId=rows[0].workspaceId;return <section className="ac-activity-workspace" key={key} data-activity-workspace={workspaceId} aria-label={props.workspaces.find(row=>row.id===workspaceId)?.name||workspaceId}>
       <h3><span>{props.workspaces.find(row=>row.id===workspaceId)?.name||workspaceId}</span><small>{rows.length}</small></h3>
       {rows.map(item=><div key={item.workspaceId+':'+item.id} className={'ac-activity-row'+(props.selectedId===item.id?' is-selected':'')}>
         <button type="button" data-activity-id={item.id} className="ac-activity-row-main" onClick={()=>{dismiss();props.onOpen(item);}}><span className="ac-activity-title"><strong title={item.title}>{item.title}</strong><ConversationActivityStatus state={item.state}/></span><small><span className="ac-activity-id" title={item.id}>ID {item.id}</span><span className="ac-activity-meta" title={item.meta}>{item.meta}</span></small></button>
         <CopyButton type="text" className="ac-activity-row-copy" text={item.id} ariaLabel="复制对话 ID" failureMessage="复制失败，请手动选择对话 ID 复制。"/>
       </div>)}
-    </section>);
+    </section>;});
   };
   const dismiss=()=>{dismissed.current=true;setOpen(false);};
   const history=()=>{dismiss();props.onHistory();};
@@ -41,12 +41,12 @@ export function ConversationActivityEntry(props:Props) {
       {props.summary}
       {props.error&&<Alert type="warning" showIcon message={props.error}/>}
       {!props.counts&&<p className="ac-activity-counts-note">提醒数量尚未读取</p>}
-      <div className="ac-activity-items">{sections.map(section=><section className="ac-reminder-section" key={section.id} aria-label={section.label}>
-        <h3>{section.label}<small>{section.count??'—'}</small></h3>
-        {renderRows(section.items)}
-        {!section.items.length&&<p className="ac-reminder-empty">{section.count===0?`暂无${section.label}对话`:props.emptyDescription||'正在读取对话…'}</p>}
-      </section>)}
-      {(unknown.length>0||!!props.counts?.unknown)&&<section className="ac-reminder-anomaly" aria-label="执行状态需确认"><Alert type="warning" showIcon message={`${props.counts?.unknown??unknown.length} 个对话的执行状态需确认`}/>{renderRows(unknown)}</section>}
+      <div className="ac-activity-items"><section className="ac-reminder-section" aria-label="活动中">
+        <h3>活动中<small>{props.counts?.active??'—'}</small></h3>
+        {!!props.counts?.unknown&&<Alert type="warning" showIcon message={`${props.counts.unknown} 个对话的执行状态需确认`}/>}
+        {renderRows(items)}
+        {!items.length&&<p className="ac-reminder-empty">{props.counts?.active===0?'暂无活动对话':props.emptyDescription||'正在读取对话…'}</p>}
+      </section>
       {props.hasMore&&<Button type="text" className="ac-activity-more" onClick={props.onMore}>显示更多对话</Button>}</div>
       {props.historyPlacement==='footer'&&<footer className="ac-activity-history-footer"><Button type="text" aria-label="全部对话" onClick={history}>全部对话<ArrowRightOutlined aria-hidden="true"/></Button></footer>}
     </section>}>
