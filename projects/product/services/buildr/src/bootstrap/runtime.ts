@@ -89,7 +89,10 @@ export function createRuntime(): any  {
   registry.install(createArtifactLifecycleModule(runtime));
   registry.install(createSystemInstallationModule(runtime));
   registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http'), onReady: () => {
-    void registry.provide(AGENT_SERVICE_APPLICATION).start().catch(() => { console.warn('中断执行恢复检查未完成，已有工作记录保留。'); });
+    // start() resolves the service lazily; a synchronous throw here must not
+    // escape the listen callback and kill the process.
+    try { void registry.provide(AGENT_SERVICE_APPLICATION).start().catch(() => { console.warn('中断执行恢复检查未完成，已有工作记录保留。'); }); }
+    catch { console.warn('中断执行恢复检查未完成，已有工作记录保留。'); }
     try {
       const profile=webProfileContract.resolveWebProfile(readCurrentProductIdentity());
       const roots=registry.provide(WORKSPACE_APPLICATION).listRegisteredWorkspaces().workspaces.filter((entry:any)=>entry.registryScope!=='shared'&&entry.workspace?.id).map((entry:any)=>entry.rootPath);

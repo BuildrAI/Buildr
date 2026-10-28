@@ -136,6 +136,11 @@ const HANDOFF_WAIT_INTERVAL_MS = 50;
 const HANDOFF_WAIT_LOCAL_ATTEMPTS = 40;
 const HANDOFF_WAIT_CI_ATTEMPTS = 1200;
 const HANDOFF_WAIT_OVERRIDE_ENV = 'BUILDR_LAUNCHER_HANDOFF_WAIT_MS';
+// Successor takeovers (update/restart handoff, npm Launcher binding) must
+// absorb a slow predecessor shutdown — graceful close runs resource cleanup —
+// while the tight interactive budget exists to surface manual-start hangs
+// quickly. ~8s at the shared interval; an explicit override still wins.
+const SUCCESSOR_EXIT_WAIT_ATTEMPTS = 160;
 
 export function handoffWaitBudget(env: Record<string, string | undefined> = process.env): { attempts: number; intervalMs: number } {
   const raw = env[HANDOFF_WAIT_OVERRIDE_ENV];
@@ -191,6 +196,9 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
     const webProfile = resolveProfile(productIdentity);
     if (replaceDevelopment && webProfile.profile !== 'development') throw new Error('--replace-mismatched-development 只适用于 development 实例。');
     const handoffWait = handoffWaitBudget();
+    const successorExitWait = (handoffObservation || npmLauncherBinding) && process.env[HANDOFF_WAIT_OVERRIDE_ENV] === undefined
+      ? { attempts: Math.max(handoffWait.attempts, SUCCESSOR_EXIT_WAIT_ATTEMPTS), intervalMs: handoffWait.intervalMs }
+      : handoffWait;
     assertProfile(launcherIdentity, webProfile, { productIdentity, productRoot: runtime.productRoot() });
     if (handoffMode === 'update' && (productIdentity.channel !== 'npm' || productIdentity.runtime?.role !== 'host')) throw codedError('更新交接只适用于 npm 安装。', 'web_update_channel_conflict');
     prepareTaskPreviewStructuredStore(runtime, targetRoot, previewIdentity);
@@ -340,7 +348,7 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
         // must wait for idle; an isolated execution process only loses a peer.
         assertAgentUpgradeIdle(webProfile.dataRoot, {legacyHostRunning:true});
         await shutdownInstance(currentHealthy);
-        const exit = await waitForExit(currentHealthy, { profile: webProfile, ...handoffWait });
+        const exit = await waitForExit(currentHealthy, { profile: webProfile, ...successorExitWait });
         if (exit.status !== 'exited') throw codedError(
           replaceDevelopmentInstance
             ? exit.status === 'replaced' ? '替换旧 Buildr 开发版期间实例 receipt 被另一实例替换，已保留现场并停止启动。' : '旧 Buildr 开发版未在预期时间内完成认证退出，已保留现场并停止启动。'

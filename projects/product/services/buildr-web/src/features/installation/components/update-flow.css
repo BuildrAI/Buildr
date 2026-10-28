@@ -9,6 +9,8 @@
 .buildr-update-description{font-size:13px;color:#68717b;line-height:1.8;margin:18px 0}
 .buildr-update-version-card{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:16px;border:1px solid #e5eae8;background:#f8faf9;border-radius:9px;padding:14px 16px;margin:18px 0}
 .buildr-update-version-card:has(>div:only-child){grid-template-columns:1fr}
+.buildr-update-version-card>.buildr-update-version-arrow+div{justify-self:end;text-align:right}
+.buildr-update-version-card>.buildr-update-version-arrow+div>span{justify-content:flex-end}
 .buildr-update-version-card>div>span{display:flex;align-items:center;gap:6px;color:#68717b;font-size:12px;min-height:22px}
 .buildr-update-version-line{margin-top:4px;font-size:14px;font-variant-numeric:tabular-nums;white-space:normal;overflow-wrap:anywhere}
 .buildr-update-version-line strong{font-size:16px;font-weight:600;color:#252a31}

@@ -173,7 +173,7 @@ export function matchesNpmLauncherBinding(instance: any, binding: any) {
   return npmLauncherInstanceDisposition(instance, binding).disposition === 'reuse';
 }
 
-export async function requestBuildrWebInstanceShutdown(instance: any, { fetchImpl = fetch, timeoutMs = 1000 }: any = {}) {
+export async function requestBuildrWebInstanceShutdown(instance: any, { fetchImpl = fetch, timeoutMs = 3000 }: any = {}) {
   let response;
   try {
     response = await fetchImpl(new URL('/api/v1/app/quit-instance', instance.url), {
