@@ -80,7 +80,7 @@ test('草稿按配置域/工作空间/对话隔离，存储拒绝不会假称保
   assert.equal(writeDraft(first,'same input',{setItem(){throw Error('denied');}}),false);assert.deepEqual(readDraft(first,{getItem(){throw Error('denied');}}),{text:'',taskId:undefined,available:false});assert.equal(writeDraft(first,'',storage),true);assert.equal(readDraft(first,storage).text,'');
 });
 
-test('草稿任务绑定跟随工作空间草稿记录，纯文本旧草稿不破坏兼容，清空文本不留绑定',()=>{
+test('草稿任务绑定跟随唯一新草稿记录，纯文本旧草稿不破坏兼容，清空文本不留绑定',()=>{
   const rows=new Map(),storage={getItem:key=>rows.get(key)||null,setItem:(key,value)=>rows.set(key,value),removeItem:key=>rows.delete(key)};
   const key=draftKey('dev','ws-a','new');
   assert.equal(writeDraft(key,'从任务进入的草稿',storage,'task-one'),true);
@@ -368,4 +368,40 @@ test('双入口按自己的视图打开、切换或收起，不把历史当作�
     assert.deepEqual(nextConversationPanel(false,view,target),{open:true,view:target});
     assert.deepEqual(nextConversationPanel(true,view,target),{open:view!==target,view:target});
   }
+});
+
+
+test('新草稿只有一份，归属可切换或清除，已创建对话与配置域仍隔离',()=>{
+  const rows=new Map(),storage={getItem:key=>rows.get(key)||null,setItem:(key,value)=>rows.set(key,value),removeItem:key=>rows.delete(key)};
+  const key=draftKey('dev','ws-a',null);
+  assert.equal(key,draftKey('dev','ws-b',null));assert.equal(key,draftKey('dev',null,'new'));
+  assert.notEqual(key,draftKey('release','ws-a',null));assert.notEqual(key,draftKey('dev','ws-a','existing'));
+  writeDraft(key,'未发送输入',storage,'task-a','ws-a');
+  assert.equal(readDraft(draftKey('dev','ws-b',null),storage).text,'未发送输入');
+  writeDraft(key,readDraft(key,storage).text,storage,undefined,'ws-b');
+  assert.deepEqual(readDraft(key,storage),{text:'未发送输入',taskId:undefined,workspaceId:'ws-b',available:true});
+  writeDraft(key,readDraft(key,storage).text,storage,undefined,'@default');
+  assert.equal(readDraft(key,storage).workspaceId,'@default');assert.equal(readDraft(key,storage).text,'未发送输入');
+  writeDraft(key,'',storage,undefined,'@default');assert.equal(readDraft(key,storage).workspaceId,'@default','空文本也保留明确清除后的选择');
+});
+
+test('并发模型目录请求合并，完成或失败后允许重新读取，取消保持独立',async()=>{
+  let resolve,reject,calls=0;
+  const api=createAgentConversationsClient(()=>{calls++;return new Promise((yes,no)=>{resolve=yes;reject=no;});},session);
+  const first=api.modelCatalog(),second=api.modelCatalog();assert.equal(calls,1);
+  resolve({models:[]});assert.deepEqual(await Promise.all([first,second]),[{models:[]},{models:[]}]);
+  const failing=api.modelCatalog();assert.equal(calls,2);reject(new Error('offline'));await assert.rejects(failing,/offline/);
+  const fresh=api.modelCatalog();assert.equal(calls,3);const finishShared=resolve;
+  const cancelled=api.modelCatalog(new AbortController().signal);assert.equal(calls,4);resolve({models:[]});finishShared({models:[]});await Promise.all([fresh,cancelled]);
+});
+
+
+test('模型写入使旧目录读取失效，旧完成不能解除新读取的合并',async()=>{
+  const reads=[];let posts=0;
+  const api=createAgentConversationsClient((url,init)=>init?.method==='POST'?(posts++,Promise.resolve({id:'account'})):new Promise(resolve=>reads.push(resolve)),session);
+  const old=api.modelCatalog();await api.addModelAccount('devin');assert.equal(posts,1);
+  const fresh=api.modelCatalog();assert.equal(reads.length,2);
+  reads[0]({models:[{id:'old'}]});await old;
+  const shared=api.modelCatalog();assert.equal(reads.length,2,'旧读取完成不清除新的合并槽位');
+  reads[1]({models:[{id:'fresh'}]});assert.equal((await fresh).models[0].id,'fresh');assert.equal((await shared).models[0].id,'fresh');
 });

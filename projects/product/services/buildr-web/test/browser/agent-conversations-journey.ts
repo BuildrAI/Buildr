@@ -16,6 +16,7 @@ export async function runAgentConversationsJourney({t,page,workspaceUrl,capture:
   const disconnectedAccounts=new Set<string>();let nativeLoginPosts=0;
   const preferenceOverrides=new Map<string,Map<string,{enabled?:boolean;contextWindow?:number|null}>>();
   const nativeAccounts=()=>connections.map(connection=>({id:'native-'+connection.id,identity:'identity-'+connection.id,connectionId:connection.id,provider:connection.provider,label:connection.label,accountLabel:'fixture account',revision:'model-account-'+connection.id,enabled:connection.enabled,status:disconnectedAccounts.has(connection.id)?'not-authenticated':connection.status,models:connection.models.map(model=>{const patch=preferenceOverrides.get('native-'+connection.id)?.get(model.id);const override=patch?.contextWindow===undefined?undefined:patch.contextWindow===null?undefined:patch.contextWindow;return {...model,enabled:patch?.enabled??true,contextWindow:override??32000,contextWindowOverride:override,images:connection.capabilities.images,tools:true};}),quota:{available:false,planLabel:'Fixture套餐',observedAt:'2026-10-25T00:00:00Z'}}));
+  let catalogDiagnostic:string|undefined;
   let sharedModels:any[]=[];let latestPreview:any;let forceCapacity=false,prepareError:{code:string;message:string}|undefined;
   let conversation:any=null,revision=0,sends=0,prepares=0,stops=0,replies=0,cursor=0,creations=0;
   let additionalConversations:any[]=[];
@@ -39,7 +40,7 @@ export async function runAgentConversationsJourney({t,page,workspaceUrl,capture:
   const run=(status:string,provider='codex',options:any={})=>({id:'run-fixture',participantId:'participant-'+provider,provider,generation:'generation-fixture',status,accepted:true,permissionMode:'default',tools:[],startedAt:new Date().toISOString(),updatedAt:new Date().toISOString(),...options});
   const route=async(route:any)=>{
     const request=route.request(),url=new URL(request.url()),method=request.method();
-    if(url.pathname==='/api/v1/app/agent-service/model-catalog')return route.fulfill({json:{models:sharedModels}});
+    if(url.pathname==='/api/v1/app/agent-service/model-catalog'){return route.fulfill({json:{models:sharedModels,hasSnapshot:sharedModels.length>0,...(catalogDiagnostic?{diagnostic:catalogDiagnostic}:{})}});}
     if(url.pathname==='/api/v1/app/agent-service/model-accounts')return route.fulfill({json:{accounts:nativeAccounts(),providers:[]}});
     if(url.pathname.startsWith('/api/v1/app/agent-service/model-accounts/')){
       const parts=url.pathname.split('/'),account=nativeAccounts().find(item=>item.id===parts[6]);assert.ok(account,'model action targets an observed native account');
@@ -160,6 +161,16 @@ export async function runAgentConversationsJourney({t,page,workspaceUrl,capture:
       await code.focus();await code.press('ArrowRight');await primary.locator('[data-navigation-mode="fixed"][data-navigation-area="code"]:visible').waitFor();assert.equal(await code.evaluate((node:HTMLElement)=>node===document.activeElement),true,'键盘展开保留明确触发位置');await code.press('Tab');await page.getByRole('link',{name:'源代码管理',exact:true}).waitFor();assert.equal(await primary.locator('[data-navigation-mode="fixed"] .shell-nav-item').first().evaluate((node:HTMLElement)=>node===document.activeElement),true,'键盘可进入固定菜单');
       await code.focus();await code.press('Enter');await primary.locator('[data-navigation-mode="fixed"]').waitFor({state:'hidden'});await page.mouse.move(500,80);await code.hover();const codePopup=page.getByLabel('代码二级导航',{exact:true});await codePopup.waitFor();await codePopup.getByRole('link',{name:'源代码管理',exact:true}).click();await codePopup.waitFor({state:'hidden'});assert.equal(await primary.locator('[data-navigation-mode="preview"]:visible').count(),0,'选择页面后预览关闭');await page.goto(workUrl);await page.locator('#workbench-overview').waitFor();
     });
+    await step('模型目录首次无结果保持安静，失败提示且恢复只撤掉异常',async()=>{
+      await reset();
+      await openDesktopConversation();await input().waitFor();assert.equal(await panel().getByText(/正在获取|正在刷新|刷新成功|恢复成功/).count(),0);
+      catalogDiagnostic='部分模型账号核对失败，已保留已有模型列表。';await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+      await panel().getByText(catalogDiagnostic,{exact:true}).waitFor();await input().fill('刷新异常不丢失草稿');
+      catalogDiagnostic=undefined;await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+      await panel().getByText('部分模型账号核对失败，已保留已有模型列表。',{exact:true}).waitFor({state:'hidden'});
+      assert.equal(await input().inputValue(),'刷新异常不丢失草稿');assert.equal(await panel().getByText(/刷新成功|恢复成功/).count(),0);
+      await input().fill('');await closeConversation();
+    });
     await step('统一账号来源按真实登录观察更新，登录链接和迟到接入列表不冒充账号已连接',async()=>{
       connections[0].status='expired';await openDesktopConversation();await panel().getByRole('button',{name:'更多对话操作',exact:true}).click();await page.getByRole('menuitem',{name:'智能体与模型',exact:true}).click();const drawer=page.getByRole('dialog',{name:/^智能体与模型/});await drawer.waitFor();await drawer.locator('.ams-setup').getByRole('tab',{name:'模型',exact:true}).click();await drawer.locator('.amm-source-list').getByRole('button').filter({hasText:'Codex'}).click();const card=drawer.locator('.amm-quota-card');await card.getByText('登录已过期',{exact:true}).waitFor();
       await card.getByRole('button',{name:'重新登录',exact:true}).click();const login=card.getByRole('link',{name:'打开登录页',exact:true});await login.waitFor();assert.match(await login.getAttribute('href'),/^https:\/\/auth\.openai\.com\//);assert.equal(await card.getByText('已登录',{exact:true}).count(),0,'等待官方登录不冒充已登录');
@@ -189,7 +200,7 @@ export async function runAgentConversationsJourney({t,page,workspaceUrl,capture:
       await capture(page,'agent-program-prepared.png');await drawer.getByRole('button',{name:'关闭智能体账号与配置',exact:true}).click();await closeConversation();await panel().waitFor({state:'hidden'});assert.equal(sends,0,'程序管理不发送工作指令');
     });
     await step('全局对话保留草稿与执行位置，左右停靠到一级导航外侧，刷新不发送',async()=>{
-      assert.equal(await page.locator('#global-conversations-entry').isHidden(),true,'桌面顶部不重复提供对话主按钮');await openDesktopConversation();await panel().waitFor();await input().fill('草稿只保存，不自动执行');
+      assert.equal(await page.locator('#global-conversations-entry').isHidden(),true,'桌面顶部不重复提供对话主按钮');await openDesktopConversation();await panel().waitFor();assert.equal(await panel().locator('.ac-location-settings .ant-select-selection-item').innerText(),await page.locator('.workspace-switcher strong').innerText(),'首次新建默认当前页面工作空间');await input().fill('草稿只保存，不自动执行');
       await assertFixed(true);assert.equal(await panel().locator('.ac-thread-header .ant-btn').count(),3,'顶部只保留历史、新建和更多三个图标动作');await closeConversation();await panel().waitFor({state:'hidden'});await assertFixed(false);await page.getByRole('complementary',{name:'当前对话与所有对话',exact:true}).getByRole('button',{name:'展开当前对话',exact:true}).click();await input().waitFor();assert.equal(await input().inputValue(),'草稿只保存，不自动执行');await assertFixed(true);
       await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await panel().locator('.ac-history').waitFor();await closeConversation();await panel().waitFor({state:'hidden'});assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'所有对话','边界收起后焦点回到刚使用的历史入口');await page.locator('.ac-collapsed-rail').getByRole('button',{name:'所有对话',exact:true}).focus();await page.locator('.ac-collapsed-rail').getByRole('button',{name:'所有对话',exact:true}).press('Enter');await panel().locator('.ac-history').waitFor();assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'所有对话','边界展开后焦点留在同一入口');await panel().getByRole('button',{name:'返回当前对话',exact:true}).click();assert.equal(await input().inputValue(),'草稿只保存，不自动执行');
       additionalPending=[{id:'attention-other',workspaceId,cwd:'/isolated/attention',title:'另一段待回应对话',revision:'attention-r1',hidden:false,updatedAt:new Date().toISOString(),participants:[],entries:[],requests:[],run:run('unknown'),activity:{version:1,seenThrough:0,active:true,updatedAt:new Date().toISOString()}}];await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
@@ -358,9 +369,9 @@ export async function runAgentConversationsJourney({t,page,workspaceUrl,capture:
       await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().fill('新草稿需要保留');const previewResponse=page.waitForResponse((response:any)=>response.url().endsWith('/prepare-send'));releasePrepare!();await previewResponse;await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve())));assert.equal(sends,sentBefore);assert.equal(await page.getByRole('dialog',{name:'确认发送与接续范围',exact:true}).count(),0);assert.equal(await panel().getAttribute('data-conversation-id'),null);assert.equal(await input().inputValue(),'新草稿需要保留');assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isEnabled(),true);
       holdCreate=true;const createdStarted=new Promise<void>(resolve=>{createStarted=resolve;});await panel().getByRole('button',{name:'发送对话',exact:true}).click();await createdStarted;await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().fill('同为新对话，但已经是另一份草稿');const createResponse=page.waitForResponse((response:any)=>response.request().method()==='POST'&&response.url().endsWith('/agent-conversations'));releaseCreate!();await createResponse;await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve())));assert.equal(sends,sentBefore);assert.equal(await panel().getAttribute('data-conversation-id'),null);assert.equal(await input().inputValue(),'同为新对话，但已经是另一份草稿');assert.equal(await page.getByRole('dialog',{name:'确认发送与接续范围',exact:true}).count(),0);
     });
-    await step('反复新建共用同一份工作空间草稿，含权限与模型选择',async()=>{
+    await step('反复新建共用同一份新草稿，含权限与模型选择',async()=>{
       await input().fill('跨入口共享的草稿');await chooseOption('执行权限','完全访问');
-      await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();assert.equal(await input().inputValue(),'跨入口共享的草稿','再次新建沿用同一工作空间草稿');
+      await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();assert.equal(await input().inputValue(),'跨入口共享的草稿','再次新建沿用唯一新草稿');
       await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await panel().locator('.ac-history').waitFor();await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();assert.equal(await input().inputValue(),'跨入口共享的草稿','历史视图新建仍是同一份草稿');
       assert.equal(await panel().locator('.ac-permission-select .ant-select-selection-item').innerText(),'完全访问','新建不丢弃未发送的权限选择');
       await chooseOption('执行权限','默认权限');
@@ -468,8 +479,25 @@ export async function runAgentConversationsJourney({t,page,workspaceUrl,capture:
         await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();assert.equal(await panel().locator('.ac-permission-select .ant-select-selection-item').innerText(),'完全访问','同工作空间再次新建仍恢复完全访问');assert.equal(await page.evaluate(()=>localStorage.getItem('buildr.execution-model')),JSON.stringify(['commit-account','commit-model']),'全部对话选择不改变执行模型偏好');
       }finally{sharedModels=previousModels;prepareError=undefined;await page.evaluate(({moduleKey,modelKey,module,model,execution}:{moduleKey:string;modelKey:string;module:string|null;model:string|null;execution:string|null})=>{for(const [key,value] of [[moduleKey,module],[modelKey,model],['buildr.execution-model',execution]] as const){if(value===null)localStorage.removeItem(key);else localStorage.setItem(key,value);}},storage);}
     });
+    await step('唯一新草稿跨空间、旧对话与刷新恢复，默认空间不进入选项',async()=>{
+      const existingId=conversation.id;
+      await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();
+      const name=await page.locator('.workspace-switcher strong').innerText();await chooseOption('新对话工作空间',name);
+      await input().fill('唯一草稿跨空间保留');await chooseOption('新对话工作空间','other-workspace');assert.equal(await input().inputValue(),'唯一草稿跨空间保留');
+      await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await chooseOption('对话列表工作空间','全部工作空间');
+      await panel().locator('.ac-history-list [data-conversation-id="'+existingId+'"]').click();await input().waitFor();
+      await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();assert.equal(await input().inputValue(),'唯一草稿跨空间保留');
+      assert.equal(await panel().locator('.ac-location-settings .ant-select-selection-item').innerText(),'other-workspace');
+      await page.reload();await input().waitFor();assert.equal(await input().inputValue(),'唯一草稿跨空间保留');
+      const select=panel().locator('.ac-location-settings .ant-select');await select.hover();await select.locator('.ant-select-clear').click();
+      const combo=panel().getByRole('combobox',{name:'新对话工作空间',exact:true});await combo.focus();await combo.press('ArrowDown');
+      assert.equal(await page.locator('.ant-select-dropdown:visible').getByText('默认工作空间',{exact:true}).count(),0);await combo.press('Escape');
+      assert.equal(await input().inputValue(),'唯一草稿跨空间保留');await page.reload();await input().waitFor();
+      assert.equal(await panel().locator('.ac-location-settings .ant-select-selection-placeholder').innerText(),'默认工作空间');
+      await input().fill('');
+    });
     await step('默认工作空间走应用会话路由，空草稿不列出且首轮模式一致',async()=>{
-      await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();await chooseOption('新对话工作空间','默认工作空间');await chooseAgent('Codex');
+      await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();await chooseOption('新对话工作空间',await page.locator('.workspace-switcher strong').innerText());const workspaceSelect=panel().locator('.ac-location-settings .ant-select');await workspaceSelect.hover();await workspaceSelect.locator('.ant-select-clear').click();await chooseAgent('Codex');
       await chooseModel('Fixture model');await closeModelSettings();await chooseOption('执行权限','完全访问');
       await panel().locator('input[type=file]').setInputFiles({name:'default.png',mimeType:'image/png',buffer:Buffer.from([137,80,78,71,13,10,26,10])});await panel().getByRole('button',{name:'移除图片 default.png',exact:true}).waitFor();assert.equal(conversation.workspaceId,'@default');
       const createdId=conversation.id;await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await chooseOption('对话列表工作空间','全部工作空间');await panel().locator('.ac-history-list').waitFor({state:'attached'});await panel().locator('.ac-history-body>.ant-spin').waitFor({state:'hidden'});assert.equal(await panel().locator('[data-conversation-id="'+createdId+'"]').count(),0,'附件草稿不进列表');

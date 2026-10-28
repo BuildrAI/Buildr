@@ -42,7 +42,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         if (request.method === 'GET') return result('modelAccounts', await service.models.accounts.list({refresh:false}));
         if (request.method === 'POST') return result('modelAccount', await service.models.accounts.add(validate('addModelAccount', await readJsonBody())), 201);
       }
-      if (pathname === `${prefix}/model-catalog` && request.method === 'GET') return result('modelCatalog', await service.models.catalog.list());
+      if (pathname === `${prefix}/model-catalog` && request.method === 'GET') return result('modelCatalog', await service.models.catalog.list({refresh:false}));
       const accountRoute = pathname.slice(prefix.length).match(/^\/model-accounts\/([a-zA-Z0-9_-]{1,100})(?:\/(check|disconnect|login-attempts|preferences)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);
       if (accountRoute) {
         const [, accountId, action, attemptId, cancel] = accountRoute;

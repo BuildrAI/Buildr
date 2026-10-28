@@ -22,6 +22,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   try {
   const hosts = new AgentHostRegistry();
   const service = createAgentService({ ...options.serviceOptions, dataRoot: options.dataRoot, legacySourceId: options.legacySourceId, autoContinueInterrupted: options.autoContinueInterrupted, host: hosts });
+  service.models.startRefreshing();
   abortStart = () => service.close();
   const instanceId = randomUUID(), pendingFile = path.join(controlRoot(options.dataRoot), 'pending.json');
   const identity: AgentProcessIdentity = { contracts: AGENT_EXECUTION_CONTRACTS, instanceId, generation: service.generation, profileId: options.profileId, dataRoot: path.resolve(options.dataRoot), pid: process.pid, runtime: options.runtime };

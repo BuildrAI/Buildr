@@ -48,18 +48,49 @@ export function createAgentService(options: AgentServiceOptions) {
     if(candidates.length!==1) throw new ModelAccessError('model_dsh_program_unavailable','请先在智能体程序中准备并选择准确的 DSH 程序。');
     return createDeepSeekAccountOwner({...input,executable:candidates[0]!.executable});
   }})], environment: executorEnvironment(options.environment ?? process.env)});
-  let discoveryVersion=0;let lastDiscovery=0;let discovery:Promise<void>|undefined;
-  const discover=async()=>{
-    if(options.modelProviders)return;
+  let closed = false;
+  let discovery:Promise<void>|undefined, discoveryDiagnostic:string|undefined;
+  let discoveryTimer:ReturnType<typeof setInterval>|undefined;
+  const discover=():Promise<void>=>{
+    if(closed)return Promise.resolve();
     if(discovery)return discovery;
-    if(Date.now()-lastDiscovery<30000)return;
-    const observed=discoveryVersion;
-    discovery=(async()=>{await models.ensureLinked();await Promise.allSettled(models.accounts.list().accounts.filter(account=>account.enabled&&(account.connectionId||['ready','failed'].includes(account.status))&&!account.loginAttempt?.state?.match(/^(initializing|waiting-browser|checking)$/)).map(account=>models.accounts.check(account.id)));if(observed===discoveryVersion)lastDiscovery=Date.now();})().finally(()=>{discovery=undefined;});
+    discovery=(async()=>{
+      try {
+        await models.ensureLinked();
+        if(closed)return;
+        const results=await Promise.allSettled(models.accounts.list().accounts.filter(account=>account.enabled&&(account.connectionId||['ready','failed'].includes(account.status))&&!account.loginAttempt?.state?.match(/^(initializing|waiting-browser|checking)$/)).map(account=>models.accounts.check(account.id)));
+        discoveryDiagnostic=results.some(result=>result.status==='rejected')?'部分模型账号核对失败，已保留已有模型列表。':undefined;
+      } catch(error) {
+        discoveryDiagnostic='模型账号核对未完成，已保留已有模型列表。';
+        throw error;
+      }
+    })().finally(()=>{discovery=undefined;});
     return discovery;
   };
-  linkedChanged=connection=>{discoveryVersion++;lastDiscovery=0;if(!connection.enabled||['not-authenticated','expired'].includes(connection.status)||connection.loginAttempt&&['initializing','waiting-browser'].includes(connection.loginAttempt.state))models.invalidate('native-'+connection.id);};
+  const refreshInBackground=()=>{void discover().catch(()=>{});};
+  const startRefreshing=()=>{
+    if(closed||discoveryTimer)return;
+    refreshInBackground();
+    discoveryTimer=setInterval(refreshInBackground,30_000);discoveryTimer.unref();
+  };
+  linkedChanged=connection=>{
+    if(!connection.enabled||['not-authenticated','expired'].includes(connection.status)||connection.loginAttempt&&['initializing','waiting-browser'].includes(connection.loginAttempt.state))models.invalidate('native-'+connection.id);
+    if(discoveryTimer)refreshInBackground();
+  };
+  const cachedCatalog=()=>{
+    const result=models.catalog.list();
+    const accounts=models.accounts.list().accounts;
+    const hasSnapshot=accounts.some(account=>account.observedAt||account.models.length);
+    const failed=accounts.some(account=>{
+      if(!account.enabled||account.loginAttempt?.state.match(/^(initializing|waiting-browser|checking)$/))return false;
+      const connection=account.connectionId?connections.get(account.connectionId):undefined;
+      if(connection&&(!connection.enabled||connection.loginAttempt?.state.match(/^(initializing|waiting-browser|checking)$/)))return false;
+      return account.status==='failed'||account.status==='expired'||account.status==='not-authenticated'&&!!account.observedAt;
+    });
+    const diagnostic=discoveryDiagnostic||(failed?'部分模型账号核对失败或登录已失效，请在智能体与模型中查看。':undefined);
+    return {...result,hasSnapshot,...(diagnostic?{diagnostic}:{})};
+  };
   const conversations = new ConversationApplication({ repository, connections, modelAccess: models, events, root, generation, now, host: new HostContext(options), autoContinueInterrupted: options.autoContinueInterrupted });
-  let closed = false;
   return {
     generation,
     activity() {
@@ -71,7 +102,7 @@ export function createAgentService(options: AgentServiceOptions) {
       } catch { reasons.push({kind:'storage-unconfirmed',count:1}); }
       return {busy:reasons.length>0,reasons};
     },
-    models: { generate: models.generate, accounts: {...models.accounts,list:async(input:{refresh?:boolean}={})=>{if(input.refresh===false)void discover().catch(()=>{});else await discover();return models.accounts.list();}}, catalog: {list:async(input:{refresh?:boolean}={})=>{if(input.refresh===false)void discover().catch(()=>{});else await discover();return models.catalog.list();}} },
+    models: { startRefreshing, generate: models.generate, accounts: {...models.accounts,list:async(input:{refresh?:boolean}={})=>{if(input.refresh===true)await discover();return models.accounts.list();}}, catalog: {list:async(input:{refresh?:boolean}={})=>{if(input.refresh===true)await discover();return cachedCatalog();}} },
     connections: {
       list: () => ({ connections: connections.list() }),
       read: (id: string) => connections.get(id),
@@ -119,6 +150,7 @@ export function createAgentService(options: AgentServiceOptions) {
     },
     async close() {
       if (closed) return; closed = true;
+      clearInterval(discoveryTimer);discoveryTimer=undefined;
       const budget = Math.max(50, Math.min(options.shutdownTimeoutMs ?? 10_000, 10_000));
       const deadline = Date.now() + budget;
       const within = async (work: Promise<unknown>, milliseconds: number) => {
@@ -131,7 +163,7 @@ export function createAgentService(options: AgentServiceOptions) {
       try { await within(conversations.close(), Math.max(1, Math.floor(budget * 0.7))); }
       finally {
         // Always start actual resource release, even if a vendor's stop never responds.
-        await within(Promise.allSettled([preparations.close(), connections.close(), models.close()]), Math.max(1, deadline - Date.now()));
+        await within(Promise.allSettled([discovery, preparations.close(), connections.close(), models.close()]), Math.max(1, deadline - Date.now()));
         events.close();
       }
     },

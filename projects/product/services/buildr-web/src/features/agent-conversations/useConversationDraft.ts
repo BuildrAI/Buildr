@@ -4,18 +4,33 @@ const profile = () => document.querySelector('meta[name="buildr-web-profile"]')?
 export function conversationDraftKey(workspaceId: string | null, conversationId: string | null) { return draftKey(profile(), workspaceId, conversationId); }
 export function useConversationDraft(workspaceId: string | null, conversationId: string | null) {
   const key = conversationDraftKey(workspaceId, conversationId);
-  const memory = useRef(new Map<string,{text:string;taskId?:string}>());
+  const memory = useRef(new Map<string,{text:string;taskId?:string;workspaceId?:string}>());
   const read = (target = key) => {
-    let saved:{text:string;taskId?:string;available:boolean} = {text:'',taskId:undefined,available:false};
-    try {saved = readDraft(target,sessionStorage);} catch { /* Keep same-page drafts usable. */ }
-    return {...saved,...(memory.current.get(target)||{text:saved.text,taskId:saved.taskId})};
+    let saved:{text:string;taskId?:string;workspaceId?:string;available:boolean} = {text:'',taskId:undefined,available:false};
+    try {
+      saved = readDraft(target,sessionStorage);
+      // One bounded migration: preserve other legacy workspace drafts without merging them.
+      if(target===key&&!conversationId&&!sessionStorage.getItem(key+':migrated')) {
+        if(!sessionStorage.getItem(key)) {
+          const legacy=`buildr.agent-conversation.draft:${encodeURIComponent(profile())}:${encodeURIComponent(workspaceId||'unselected')}:new`;
+          const old=readDraft(legacy,sessionStorage);
+          if(old.text&&writeDraft(key,old.text,sessionStorage,old.taskId,workspaceId||'@default')) {
+            saved={...old,workspaceId:workspaceId||'@default'};sessionStorage.removeItem(legacy);
+          }
+        }
+        sessionStorage.setItem(key+':migrated','true');
+      }
+    } catch { /* Keep same-page drafts usable. */ }
+    return {...saved,...(memory.current.get(target)||{})};
   };
-  const save = (target:string,text:string,taskId?:string) => {if(text)memory.current.set(target,{text,taskId});else memory.current.delete(target);try {return writeDraft(target,text,sessionStorage,taskId);}catch {return false;}};
+  const save = (target:string,text:string,taskId?:string,selectedWorkspace?:string) => {memory.current.set(target,{text,taskId,workspaceId:selectedWorkspace});try {return writeDraft(target,text,sessionStorage,taskId,selectedWorkspace);}catch {return false;}};
   const [state, setState] = useState(() => ({key,...read()}));
   const value = state.key === key ? state : {key,...read()};
   useEffect(() => { if (state.key !== key) setState({key,...read()}); }, [key, state.key]);
-  const setText = (text: string) => {const taskId=text?value.taskId:undefined;const available=save(key,text,taskId);setState({key,text,taskId,available});};
-  const setTaskId = (taskId?: string) => {const available=save(key,value.text,taskId);setState({key,text:value.text,taskId,available});};
+  const selectedWorkspace=value.workspaceId||workspaceId||'@default';
+  const setText = (text: string) => {const taskId=text?value.taskId:undefined;const selected=!conversationId?selectedWorkspace:undefined;const available=save(key,text,taskId,selected);setState({key,text,taskId,workspaceId:selected,available});};
+  const setTaskId = (taskId?: string) => {const selected=!conversationId?selectedWorkspace:undefined;const available=save(key,value.text,taskId,selected);setState({key,text:value.text,taskId,workspaceId:selected,available});};
+  const setWorkspace = (workspaceId:string,taskId?:string) => {const available=save(key,value.text,taskId,workspaceId);setState({key,text:value.text,taskId,workspaceId,available});};
   // Creating the real conversation transfers its draft even when browser storage is denied.
   const transferTo = (nextWorkspaceId:string,nextConversationId:string) => {
     const next=conversationDraftKey(nextWorkspaceId,nextConversationId);
@@ -29,5 +44,5 @@ export function useConversationDraft(workspaceId: string | null, conversationId:
     const available=save(target,'');
     setState(previous=>previous.key===target?{key:target,text:'',taskId:undefined,available}:previous);
   };
-  return {text:value.text, taskId:value.taskId, available:value.available, setText,setTaskId,transferTo,clearSubmitted};
+  return {text:value.text, taskId:value.taskId, workspaceId:selectedWorkspace, setWorkspace, available:value.available, setText,setTaskId,transferTo,clearSubmitted};
 }

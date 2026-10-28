@@ -37,24 +37,23 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
   const context=useAgentConversations(),chat=context.conversation;
   const {message}=App.useApp();
   const navigate=useNavigate(),location=useLocation();
-  const [newWorkspaceId,setNewWorkspaceId]=useState('');
   const [modulePreference,setModulePreference]=useState(readConversationModulePreference);
   const [modelPreference,setModelPreference]=useState(readConversationModelPreference);
-  const draftWorkspaceId=context.draftScope?.workspaceId||newWorkspaceId||'@default';
+  const draft=useConversationDraft(context.scope?.workspaceId||defaultWorkspaceId||'@default',context.scope?.conversationId||null);
+  const draftWorkspaceId=context.draftScope?.workspaceId||draft.workspaceId;
   const [defaultRoot,setDefaultRoot]=useState('');
   useEffect(()=>{const controller=new AbortController();void context.api.defaultWorkspace(controller.signal).then(value=>setDefaultRoot(value.rootPath)).catch(failure=>{if(!controller.signal.aborted)setError(failure instanceof Error?failure.message:'无法读取默认工作空间目录。');});return()=>controller.abort();},[context.api]);
   const newCwd=draftWorkspaceId==='@default'?defaultRoot:workspaces.find(item=>item.id===draftWorkspaceId)?.rootPath||'';
-  // 新对话是同工作空间一份草稿：文本、模型/权限、附件与任务绑定按 workspace 共享；入口只提出绑定，有内容的草稿才留住绑定。
-  const draftSlot=context.scope?.conversationId||'new:'+draftWorkspaceId;
-  const draft=useConversationDraft(context.scope?.workspaceId||draftWorkspaceId||null,context.scope?.conversationId||null);
+  // 新建入口始终恢复同一份草稿；权限继续按工作空间保存。
+  const draftSlot=context.scope?.conversationId||'new';
   // 明确的入口意图优先；没有入口意图时跟随草稿自身已保存的绑定。
   const boundTaskId=context.draftScope?(context.draftScope.taskId||''):(draft.taskId||'');
   useEffect(()=>{
     if(context.scope||!context.draftScope||context.draftScope.workspaceId!==draftWorkspaceId)return;
-    if(draft.taskId===context.draftScope.taskId)return;
-    draft.setTaskId(context.draftScope.taskId);
+    if(draft.workspaceId===context.draftScope.workspaceId&&draft.taskId===context.draftScope.taskId)return;
+    draft.setWorkspace(context.draftScope.workspaceId,context.draftScope.taskId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[context.scope,context.draftScope,draftWorkspaceId,draft.taskId]);
+  },[context.scope,context.draftScope,draftWorkspaceId,draft.workspaceId,draft.taskId]);
   const [choices,setChoices]=useState<Record<string,ConversationChoice>>({});
   const choiceKey=draftSlot;
   const lastParticipant=latestConversationParticipant(chat);
@@ -110,7 +109,6 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
     try{writeConversationPermission(permissionStorageKey,value,sessionStorage);writeConversationPermission(conversationPermissionStorageKey(permissionProfile,null,workspaceId),value,sessionStorage);}catch{/* Same-page selection remains usable. */}
     setPrepared(null);setSelectedHandoff(null);setPreviewOpen(false);
   };
-  useEffect(()=>{if(context.draftScope?.workspaceId)setNewWorkspaceId(context.draftScope.workspaceId);},[context.draftScope]);
   useEffect(()=>{setError('');setFeedback('');setExpandedToolGroups({});const active=activeSend.current;if(!active||!context.isSelectionCurrent(active.selection)){activeSend.current=null;setSending(false);setPreparing(false);setPrepared(null);setSelectedHandoff(null);setPreviewOpen(false);}bottom.current=true;},[context.selectionGeneration,context.scope?.workspaceId,context.scope?.conversationId,context.isSelectionCurrent]);
   useEffect(()=>{setMoreOpen(false);setLocationOpen(false);},[context.selectionGeneration,context.open,context.side,context.full,context.view]);
   useEffect(()=>{if(bottom.current)stream.current?.scrollTo({top:stream.current.scrollHeight});},[chat?.id,chat?.entries.length,chat?.entries.at(-1)?.text,chat?.requests.length,chat?.run?.status]);
@@ -239,7 +237,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
   const workspace=workspaces.find(item=>item.id===chat?.workspaceId);
   const titleStatus=chat?.titleState;
   const titleLabels={pending:'等待执行开始后生成标题，首轮结束后可补生成',generating:'正在生成标题',generated:'标题已自动生成',manual:'标题已手动设置',failed:'标题未能自动生成',unavailable:'当前无法自动生成标题',unknown:'旧对话未记录标题生成状态'};
-  const settings=<div className="ac-location-settings">{chat&&<><strong>标题</strong><span>{titleLabels[titleStatus?.status??'unknown']}</span>{titleStatus?.reason&&<small>{titleStatus.reason}</small>}{canGenerateConversationTitle(chat)&&<Button size="small" loading={generatingTitle} onClick={()=>void generateTitle()}>生成简短标题</Button>}</>}<strong>工作空间</strong>{chat?<><span>{workspace?.name||(chat.workspaceId==='@default'?'默认工作空间':chat.workspaceId)}</span><code>{chat.cwd}</code>{chat.taskId&&<small>关联任务：{chat.taskId}</small>}</>:<><Select classNames={{popup:{root:'ac-panel-popup'}}} aria-label="新对话工作空间" allowClear={draftWorkspaceId!=='@default'} value={draftWorkspaceId} placeholder="默认工作空间" options={workspaces.map(item=>({value:item.id,label:item.name}))} onChange={value=>{context.newConversation({preserveVisibility:true});setNewWorkspaceId(value||'');}}/>{newCwd&&<code className="ac-workspace-directory">{newCwd}</code>}</>}</div>;
+  const settings=<div className="ac-location-settings">{chat&&<><strong>标题</strong><span>{titleLabels[titleStatus?.status??'unknown']}</span>{titleStatus?.reason&&<small>{titleStatus.reason}</small>}{canGenerateConversationTitle(chat)&&<Button size="small" loading={generatingTitle} onClick={()=>void generateTitle()}>生成简短标题</Button>}</>}<strong>工作空间</strong>{chat?<><span>{workspace?.name||(chat.workspaceId==='@default'?'默认工作空间':chat.workspaceId)}</span><code>{chat.cwd}</code>{chat.taskId&&<small>关联任务：{chat.taskId}</small>}</>:<><Select classNames={{popup:{root:'ac-panel-popup'}}} aria-label="新对话工作空间" allowClear={draftWorkspaceId!=='@default'} value={draftWorkspaceId==='@default'?undefined:draftWorkspaceId} placeholder="默认工作空间" options={workspaces.filter(item=>item.id!=='@default').map(item=>({value:item.id,label:item.name}))} onChange={value=>{const workspaceId=value||'@default';draft.setWorkspace(workspaceId);context.newConversation({preserveVisibility:true,scope:{workspaceId}});setPrepared(null);}}/>{newCwd&&<code className="ac-workspace-directory">{newCwd}</code>}</>}</div>;
   const transcript=chat?groupConversationStream(chat.entries,chat.run):[];
   const replyFollowsProcess=(index:number)=>{
     const previous=transcript[index-1],item=transcript[index];
@@ -308,7 +306,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
         {chat?.run?.status==='tools-active'&&<Alert type="warning" showIcon message="模型已中断，仍有命令运行" description={<div>{chat.run.tools.filter(tool=>tool.status!=='completed').map(tool=><p key={tool.id}>{tool.label}{canStopConversationTool(tool)?<Button size="small" loading={stopping} onClick={()=>void stop(tool.id)}>停止此命令</Button>:<small> · 不支持单独停止</small>}</p>)}<Button type="link" size="small" loading={observing} onClick={()=>void observe()}>核对执行状态</Button></div>} action={<Button loading={stopping} onClick={()=>void stop()}>停止剩余执行</Button>}/>}
         {chat?.requests.map(request=><ConversationRequest key={request.id} request={request} provider={chat.run?.provider||chat.participants.find(item=>item.id===request.participantId)?.provider||'codex'} busy={actions.has(actionKey(chat,'reply',request.id))} onReply={answer=>void reply(request.id,answer)}/>)}
       </div>
-      <div className="ac-compose-wrap">{(context.reconnecting||context.recovering)&&<small className="ac-recovery-status" role="status">{context.recovering?'正在自动核对原执行状态…':'连接中断，正在自动重连…'}</small>}{run&&<div className="ac-run-status" role="status" data-run-status={run.status}>{run.interrupted?'执行未完成':statusLabels[run.status]}{runIdentity&&` · ${runIdentity}`} · {permissionModeLabels[run.permissionMode||'default']}{run.diagnostic&&<p>{run.diagnostic}</p>}</div>}{modelCompatibility&&<Alert type="warning" showIcon message={modelCompatibility}/>} {choice.modelAccountId&&!selectedSourceModel?.available&&<Alert type="warning" showIcon message="所选模型已停用或来源不可用，请重新选择。"/>}{error&&<Alert type="warning" showIcon message={error} closable onClose={()=>setError('')}/>} {feedback&&<small role="status">{feedback}</small>}{!draft.available&&<Alert type="warning" message="浏览器存储不可用，刷新后无法恢复未发送草稿。"/>}
+      <div className="ac-compose-wrap">{(context.reconnecting||context.recovering)&&<small className="ac-recovery-status" role="status">{context.recovering?'正在自动核对原执行状态…':'连接中断，正在自动重连…'}</small>}{run&&<div className="ac-run-status" role="status" data-run-status={run.status}>{run.interrupted?'执行未完成':statusLabels[run.status]}{runIdentity&&` · ${runIdentity}`} · {permissionModeLabels[run.permissionMode||'default']}{run.diagnostic&&<p>{run.diagnostic}</p>}</div>}{modelCompatibility&&<Alert type="warning" showIcon message={modelCompatibility}/>} {context.modelCatalogError&&<Alert type="warning" showIcon message={context.modelCatalogError}/>} {context.modelCatalogReady&&choice.modelAccountId&&!selectedSourceModel?.available&&<Alert type="warning" showIcon message="所选模型已停用或来源不可用，请重新选择。"/>}{error&&<Alert type="warning" showIcon message={error} closable onClose={()=>setError('')}/>} {feedback&&<small role="status">{feedback}</small>}{!draft.available&&<Alert type="warning" message="浏览器存储不可用，刷新后无法恢复未发送草稿。"/>}
         {!connection?.enabled&&<div className="ac-connect-notice"><span>{connection?`${providerNames[connection.provider]} 尚未就绪`:'请先接入智能体'}</span><Button type="link" size="small" onClick={()=>context.setSettings(true)}>智能体与模型</Button></div>}
         {chat?.run&&(lastParticipant?.connectionId!==choice.connectionId||chat.run.model!==effectiveModel||chat.run.modelAccountId!==choice.modelAccountId)?<div className="ac-transfer-notice"><span>{lastParticipant?.connectionId!==choice.connectionId?`接下来由 ${connection?providerNames[connection.provider]||connection.label:''}${chat.run.model!==effectiveModel||chat.run.modelAccountId!==choice.modelAccountId?' · '+(effectiveModelLabel):''} 继续处理`:`接下来使用 ${effectiveModelLabel} 继续处理`}</span><Button type="link" size="small" disabled={!canSend} loading={sending} onClick={()=>void prepare(true)}>交接内容</Button></div>:null}
         {preparing&&<div className="ac-notice" role="status">正在准备交接资料… <Button type="link" size="small" title="跳过模型精简，使用本地记录与按需读取" onClick={()=>{activeSend.current=null;setSending(false);setPreparing(false);void prepare(false,true);}}>直接交接</Button><Button type="text" size="small" onClick={()=>{activeSend.current=null;setSending(false);setPreparing(false);}}>取消发送</Button></div>}

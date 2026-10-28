@@ -14,7 +14,7 @@ type ContextValue = {
 
   api: AgentConversationsClient; reconnecting:boolean; recovering:boolean; open: boolean; side: 'left' | 'right'; full: boolean; view: 'conversation' | 'history';
   scope: Scope | null; draftScope: DraftScope | null; conversation: ConversationView | null; connections: ConnectionView[]; pending: PendingConversation[];
-  modelCatalog:CatalogModel[]; refreshModelCatalog():Promise<void>;
+  modelCatalog:CatalogModel[]; modelCatalogReady:boolean; modelCatalogError:string; refreshModelCatalog():Promise<void>;
   loading: boolean; error: string; streamError: string; settings: boolean;
   setSettings(value: boolean): void; setOpen(value: boolean): void; setFull(value: boolean): void; setView(value: 'conversation' | 'history'): void; move(): void;
   openGlobal(): void; toggle(): void; toggleView(view:'conversation'|'history'):void; openConversation(workspaceId: string, conversationId: string,options?:VisibilityOptions): Promise<void>; newConversation(options?:VisibilityOptions&{scope?:DraftScope|null}): void;
@@ -46,9 +46,20 @@ export function AgentConversationsProvider({children, client = agentConversation
   const refreshActivity=useCallback(async()=>{if(!client.listAll)return;const generation=++activityGeneration.current;try{const result=await client.listAll({activeOnly:true,limit:100});if(generation!==activityGeneration.current)return;const signature=JSON.stringify([result.nextCursor,result.conversations.map(row=>[row.workspaceId,row.id,row.title,row.run?.status,row.run?.model,row.activity])]);if(signature!==activitySignature.current){setActivityRows(result.conversations);setActivityCursor(result.nextCursor);}setActivityStats(result.stats);setActivityTotal(result.total??result.conversations.length);setActivityError('');if(signature!==activitySignature.current){activitySignature.current=signature;setActivityTick(value=>value+1);}}catch(error){if(generation===activityGeneration.current)setActivityError(error instanceof Error?error.message:'活动对话尚未更新，保留上次结果。');}},[client]);
   const loadMoreActivity=useCallback(async()=>{if(!activityCursor)return;const generation=activityGeneration.current;try{const result=await client.listAll({activeOnly:true,limit:100,cursor:activityCursor});if(generation!==activityGeneration.current)return;setActivityRows(previous=>[...previous,...result.conversations.filter(row=>!previous.some(item=>item.id===row.id))]);setActivityCursor(result.nextCursor);}catch{await refreshActivity();}},[client,activityCursor,refreshActivity]);
   const [modelCatalog,setModelCatalog]=useState<CatalogModel[]>([]);
+  const [modelCatalogReady,setModelCatalogReady]=useState(false),[modelCatalogError,setModelCatalogError]=useState('');
   const modelReadGeneration=useRef(0);
-  const refreshModelCatalog=useCallback(async()=>{const generation=++modelReadGeneration.current;const result=await client.modelCatalog();if(generation===modelReadGeneration.current)setModelCatalog(result.models);},[client]);
-  useEffect(()=>{void refreshModelCatalog().catch(()=>{});},[refreshModelCatalog,settings]);
+  const refreshModelCatalog=useCallback(async()=>{
+    const generation=++modelReadGeneration.current;
+    try{const result=await client.modelCatalog();if(generation===modelReadGeneration.current){setModelCatalog(result.models);setModelCatalogReady(result.hasSnapshot??true);setModelCatalogError(result.diagnostic||'');}}
+    catch(error){if(generation===modelReadGeneration.current)setModelCatalogError('模型列表读取失败，已保留已有结果。');throw error;}
+  },[client]);
+  useEffect(()=>{
+    if(!open&&!settings)return;
+    const timer=setInterval(()=>{if(document.visibilityState==='visible')void refreshModelCatalog().catch(()=>{});},5000);
+    return()=>clearInterval(timer);
+  },[open,settings,refreshModelCatalog]);
+  const previousSettings=useRef(settings);
+  useEffect(()=>{if(previousSettings.current===settings)return;previousSettings.current=settings;void refreshModelCatalog().catch(()=>{});},[refreshModelCatalog,settings]);
   const scopeRef = useRef(scope);
   const conversationRef=useRef(conversation);conversationRef.current=conversation;
   const attentionSignature=useRef('');
@@ -138,7 +149,7 @@ export function AgentConversationsProvider({children, client = agentConversation
   const toggleView=useCallback((target:'conversation'|'history')=>{const next=nextConversationPanel(open,view,target);if(target==='history'&&next.open)setHistoryWorkspaceId(null);setView(next.view);setOpen(next.open);},[open,view,setOpen]);
   const toggle=useCallback(()=>setOpen(!open),[open,setOpen]);
   const shell=useMemo(()=>({open,view,full,pending,openGlobal,toggle,toggleView,setSettings}),[open,view,full,pending,openGlobal,toggle,toggleView]);
-  return <ShellContext.Provider value={shell}><Context.Provider value={{activityStats,activityRows,activityTotal,activityCursor,activityError,activityTick,historyWorkspaceId,openHistory,refreshActivity,loadMoreActivity,markSeen,api:client,reconnecting,recovering, modelCatalog,refreshModelCatalog,open,side,full,view,scope,draftScope,conversation,connections,pending,loading,error,streamError,settings,setSettings,setOpen,setFull,setView,move:() => setSide(current => { const next = current === 'right' ? 'left' : 'right'; writeOptionalPreference('buildr.agent-conversation-side',next); return next; }),openGlobal,toggle,toggleView,openConversation,newConversation,refresh,refreshConnections,refreshPending,apply,prependEntries,updateConnection,create,selectionGeneration,getSelection,isSelectionCurrent}}>{children}</Context.Provider></ShellContext.Provider>;
+  return <ShellContext.Provider value={shell}><Context.Provider value={{activityStats,activityRows,activityTotal,activityCursor,activityError,activityTick,historyWorkspaceId,openHistory,refreshActivity,loadMoreActivity,markSeen,api:client,reconnecting,recovering, modelCatalog,modelCatalogReady,modelCatalogError,refreshModelCatalog,open,side,full,view,scope,draftScope,conversation,connections,pending,loading,error,streamError,settings,setSettings,setOpen,setFull,setView,move:() => setSide(current => { const next = current === 'right' ? 'left' : 'right'; writeOptionalPreference('buildr.agent-conversation-side',next); return next; }),openGlobal,toggle,toggleView,openConversation,newConversation,refresh,refreshConnections,refreshPending,apply,prependEntries,updateConnection,create,selectionGeneration,getSelection,isSelectionCurrent}}>{children}</Context.Provider></ShellContext.Provider>;
 }
 export function useAgentConversations() { const value = useContext(Context); if (!value) throw new Error('AgentConversationsProvider 未提供。'); return value; }
 export function useOptionalAgentConversations() { return useContext(Context); }

@@ -15,15 +15,25 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
       return send();
     }
   };
+  let catalogRead:Promise<{models:CatalogModel[];diagnostic?:string;hasSnapshot?:boolean}>|undefined;
+  const changeModels=async<T,>(url:string,init:RequestInit={}):Promise<T>=>{
+    catalogRead=undefined;
+    try{return await request<T>(url,init);}finally{catalogRead=undefined;}
+  };
   return {
     defaultWorkspace(signal?: AbortSignal) { return request<{rootPath: string}>(appPath+'/default-workspace', {signal}); },
     modelAccounts(signal?:AbortSignal) {return request<{accounts:ModelAccount[];providers:Array<{id:string;label:string}>}>(appPath+'/model-accounts',{signal});},
-    modelCatalog(signal?:AbortSignal) {return request<{models:CatalogModel[]}>(appPath+'/model-catalog',{signal});},
-    addModelAccount(provider:string) {return request<ModelAccount>(appPath+'/model-accounts',post({provider}));},
-    modelPreferences(account:ModelAccount,models:Array<{id:string;enabled?:boolean;contextWindow?:number|null}>) {return request<ModelAccount>(appPath+'/model-accounts/'+account.id+'/preferences',post({expectedRevision:account.revision,models}));},
-    modelAccountAction(account:ModelAccount,action:'check'|'disconnect'|'login-attempts') {return request<ModelAccount>(appPath+'/model-accounts/'+account.id+'/'+action,post({expectedRevision:account.revision}));},
-    modelLoginAttempt(accountId:string,attemptId:string,signal?:AbortSignal) {return request<ModelAccount>(appPath+'/model-accounts/'+accountId+'/login-attempts/'+attemptId,{signal});},
-    cancelModelLogin(account:ModelAccount) {return request<ModelAccount>(appPath+'/model-accounts/'+account.id+'/login-attempts/'+account.loginAttempt!.id+'/cancel',post({expectedRevision:account.revision}));},
+    modelCatalog(signal?:AbortSignal) {
+      // Independently cancellable callers must not cancel a shared read.
+      if(signal)return request<{models:CatalogModel[];diagnostic?:string;hasSnapshot?:boolean}>(appPath+'/model-catalog',{signal});
+      if(!catalogRead){const pending=request<{models:CatalogModel[];diagnostic?:string;hasSnapshot?:boolean}>(appPath+'/model-catalog').finally(()=>{if(catalogRead===pending)catalogRead=undefined;});catalogRead=pending;}
+      return catalogRead;
+    },
+    addModelAccount(provider:string) {return changeModels<ModelAccount>(appPath+'/model-accounts',post({provider}));},
+    modelPreferences(account:ModelAccount,models:Array<{id:string;enabled?:boolean;contextWindow?:number|null}>) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/preferences',post({expectedRevision:account.revision,models}));},
+    modelAccountAction(account:ModelAccount,action:'check'|'disconnect'|'login-attempts') {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/'+action,post({expectedRevision:account.revision}));},
+    modelLoginAttempt(accountId:string,attemptId:string,signal?:AbortSignal) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+accountId+'/login-attempts/'+attemptId,{signal});},
+    cancelModelLogin(account:ModelAccount) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/login-attempts/'+account.loginAttempt!.id+'/cancel',post({expectedRevision:account.revision}));},
     connections(signal?: AbortSignal) { return request<{connections: ConnectionView[]}>(appPath + '/connections', {signal}); },
     prepareConnection(connection: ConnectionView, options: {executable?: string; install?: boolean} = {}) { return request<PreparationView>(`${appPath}/connections/${encodeURIComponent(connection.id)}/preparation-attempts`, post({expectedRevision: connection.revision, ...options})); },
     currentPreparation(connectionId: string, signal?: AbortSignal) { return request<{attempt: PreparationView|null}>(`${appPath}/connections/${encodeURIComponent(connectionId)}/preparation-attempts`, {signal}); },

@@ -39,7 +39,7 @@ export const AGENT_OPERATION_SCHEMAS = {
   modelPreferences: named('AgentModelPreferences',closed({expectedRevision:text,models:{type:'array',minItems:1,maxItems:2000,items:closed({id:text,enabled:boolean,contextWindow:{anyOf:[{type:'integer',minimum:1,maximum:10000000},{type:'null'}]}},['id'])}})),
   modelAccount: named('AgentModelAccount', modelAccount),
   modelAccounts: named('AgentModelAccounts', closed({accounts:list(modelAccount),providers:list(closed({id:text,label:text}))})),
-  modelCatalog: named('AgentModelCatalog', closed({models:list(catalogModel)})),
+  modelCatalog: named('AgentModelCatalog', closed({models:list(catalogModel),diagnostic:text,hasSnapshot:boolean},['models'])),
   addModelAccount: named('AgentModelAccountAdd', closed({provider:text,label:text},['provider'])),
   empty: named('AgentServiceEmptyRequest', closed({})),
   connection: named('AgentServiceConnection', connection),

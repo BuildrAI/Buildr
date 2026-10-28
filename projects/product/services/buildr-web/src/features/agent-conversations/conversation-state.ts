@@ -50,17 +50,19 @@ export function prependConversationEntries(current: ConversationView,page: Conve
 }
 
 export function draftKey(profile: string, workspaceId: string | null, conversationId: string | null): string {
-  return `buildr.agent-conversation.draft:${encodeURIComponent(profile)}:${encodeURIComponent(workspaceId || 'unselected')}:${encodeURIComponent(conversationId || 'new')}`;
+  return !conversationId || conversationId === 'new'
+    ? `buildr.agent-conversation.draft:${encodeURIComponent(profile)}:new`
+    : `buildr.agent-conversation.draft:${encodeURIComponent(profile)}:${encodeURIComponent(workspaceId || 'unselected')}:${encodeURIComponent(conversationId)}`;
 }
-export function readDraft(key: string, storage: Pick<Storage, 'getItem'>): {text: string; taskId?: string; available: boolean} {
+export function readDraft(key: string, storage: Pick<Storage, 'getItem'>): {text: string; taskId?: string; workspaceId?: string; available: boolean} {
   try {
     const saved=storage.getItem(key)||'';
-    if(saved.startsWith('{')){const parsed=JSON.parse(saved);return {text:typeof parsed.text==='string'?parsed.text:'',taskId:typeof parsed.taskId==='string'&&parsed.taskId?parsed.taskId:undefined,available:true};}
+    if(saved.startsWith('{')){const parsed=JSON.parse(saved);return {text:typeof parsed.text==='string'?parsed.text:'',taskId:typeof parsed.taskId==='string'&&parsed.taskId?parsed.taskId:undefined,...(typeof parsed.workspaceId==='string'&&parsed.workspaceId?{workspaceId:parsed.workspaceId}:{}),available:true};}
     return { text: saved, taskId: undefined, available: true };
   } catch { return { text: '', taskId: undefined, available: false }; }
 }
-export function writeDraft(key: string, text: string, storage: Pick<Storage, 'setItem' | 'removeItem'>, taskId?: string): boolean {
-  try { if (text) storage.setItem(key, taskId ? JSON.stringify({ text, taskId }) : text); else storage.removeItem(key); return true; } catch { return false; }
+export function writeDraft(key: string, text: string, storage: Pick<Storage, 'setItem' | 'removeItem'>, taskId?: string, workspaceId?: string): boolean {
+  try { if (text || workspaceId) storage.setItem(key, taskId || workspaceId ? JSON.stringify({ text, taskId, workspaceId }) : text); else storage.removeItem(key); return true; } catch { return false; }
 }
 export function transferDraftText(source:string,target:string,read:(key:string)=>{text:string;taskId?:string},save:(key:string,text:string,taskId?:string)=>boolean):{text:string;taskId?:string;available:boolean} {
   const {text,taskId}=read(source);

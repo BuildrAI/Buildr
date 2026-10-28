@@ -15,12 +15,12 @@ test('linked sources are discovered once without adding accounts, native login, 
  const service=createAgentService({dataRoot:root,executors,resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
  try{
   for(const id of ['codex','dsh','qoder'])await service.connections.connect(id,{expectedRevision:'unconfigured'});
-  const catalog=await service.models.catalog.list();assert.equal(catalog.models.length,3);assert.ok(catalog.models.every(m=>m.enabled===false&&!m.available));
+  const catalog=await service.models.catalog.list({refresh:true});assert.equal(catalog.models.length,3);assert.ok(catalog.models.every(m=>m.enabled===false&&!m.available));
   const first=(await service.models.accounts.list()).accounts;assert.deepEqual(first.map(a=>a.connectionId),['codex','dsh','qoder']);assert.equal(requests,5);
   await service.models.catalog.list();assert.equal(requests,5);
   const qoder=service.connections.read('qoder');await service.connections.disconnect('qoder',{expectedRevision:qoder.revision});
-  const disabled=await service.models.catalog.list();assert.equal(disabled.models.some(m=>m.accountId==='native-qoder'&&m.available),false);
-  const previous=first.find(a=>a.connectionId==='codex')!.identity;account='b';await service.connections.check('codex',{expectedRevision:service.connections.read('codex').revision});await service.models.catalog.list();assert.notEqual((await service.models.accounts.list()).accounts.find(a=>a.connectionId==='codex')!.identity,previous);
+  const disabled=await service.models.catalog.list();assert.equal(disabled.models.some(m=>m.accountId==='native-qoder'&&m.available),false);assert.equal(disabled.diagnostic,undefined,'intentional disconnect is not a background failure');
+  const previous=first.find(a=>a.connectionId==='codex')!.identity;account='b';await service.connections.check('codex',{expectedRevision:service.connections.read('codex').revision});await service.models.catalog.list({refresh:true});assert.notEqual((await service.models.accounts.list()).accounts.find(a=>a.connectionId==='codex')!.identity,previous);
  }finally{await service.close();await rm(root,{recursive:true,force:true});}
 });
 test('native identity changes and disconnect invalidate scoped leases while old independent accounts survive',async()=>{
@@ -59,4 +59,32 @@ test('Qoder reports credits quota and per-model credit factor without blocking t
  assert.equal(observation.models[0].creditFactor,0.5);assert.equal(observation.models[1].creditFactor,0);assert.equal(observation.models[2].creditFactor,undefined);
  assert.equal(observation.quota?.available,true);assert.equal(observation.quota?.planLabel,'Teams');assert.equal(observation.quota?.resetsAt,'2026-10-30T08:07:42.000Z');assert.equal(observation.quota?.remainingPercent,93.1);assert.equal(observation.quota?.windows?.length,1);assert.ok(observation.quota?.summary?.includes('2794 / 3000'));
  usage='not-json';const failed=await runtime.inspect();assert.equal(failed.status,'ready');assert.equal(failed.quota?.available,false);await runtime.close();
+});
+
+
+test('background catalog starts once, ticks every 30 seconds, never overlaps, preserves failures and stops on close',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-model-refresh-'));
+ t.mock.timers.enable({apis:['setInterval','Date']});
+ let calls=0,hold=false,failed=false,release:()=>void=()=>{},started:()=>void=()=>{};
+ let gate=Promise.resolve();
+ const provider={id:'fixture',label:'Fixture',async open(){return{protocol:'chat-completions' as const,async inspect(){calls++;if(hold){started();await gate;}if(failed)throw Error('private-upstream-secret');return{status:'ready' as const,models:[offering]};},async beginLogin(){},async cancelLogin(){},async infer(){throw Error('catalog must not infer');},async close(){}};}};
+ const create=()=>createAgentService({dataRoot:root,executors:[],modelProviders:[provider],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+ const service=create();
+ try{
+  const empty=await service.models.catalog.list();assert.equal(empty.hasSnapshot,false);assert.equal(empty.diagnostic,undefined);assert.deepEqual(empty.models,[]);assert.equal(calls,0);
+  const added=await service.models.accounts.add({provider:'fixture'});const checked=await service.models.accounts.check(added.id);
+  await service.models.accounts.preferences(added.id,{expectedRevision:checked.revision,models:[{id:offering.id,enabled:true}]});
+  assert.equal(calls,1);await service.models.catalog.list();await service.models.accounts.list();assert.equal(calls,1,'ordinary reads never contact the provider');
+  service.models.startRefreshing();service.models.startRefreshing();await service.models.catalog.list({refresh:true});assert.equal(calls,2,'startup and explicit observers share one check');
+  hold=true;gate=new Promise<void>(resolve=>{release=resolve;});const begun=new Promise<void>(resolve=>{started=resolve;});
+  t.mock.timers.tick(30_000);await begun;assert.equal(calls,3);
+  t.mock.timers.tick(60_000);assert.equal(calls,3,'slow refresh cannot overlap the next ticks');
+  const cached=await service.models.catalog.list();assert.equal(cached.models[0]?.available,true,'reads do not wait for the held external check');
+  failed=true;release();const failure=await service.models.catalog.list({refresh:true});
+  assert.equal(failure.models.length,1);assert.equal(failure.models[0]?.available,false);assert.match(failure.diagnostic||'',/核对失败/);assert.ok(!JSON.stringify(failure).includes('private-upstream-secret'));
+  hold=false;failed=false;t.mock.timers.tick(30_000);const restored=await service.models.catalog.list({refresh:true});
+  assert.equal(calls,4);assert.equal(restored.models[0]?.available,true);assert.equal(restored.diagnostic,undefined);
+  await service.close();const after=calls;t.mock.timers.tick(60_000);service.models.startRefreshing();assert.equal(calls,after,'close clears scheduling and forbids restarting');
+  const reopened=create();try{const saved=await reopened.models.catalog.list();assert.equal(saved.models[0]?.available,true);assert.equal(calls,after,'persisted result is immediately readable after restart');}finally{await reopened.close();}
+ }finally{await service.close();t.mock.timers.reset();await rm(root,{recursive:true,force:true});}
 });

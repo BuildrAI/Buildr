@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { modelOptions, qoderModel } from '../../../src/executors/model-options.ts';
+import { translateRequest } from '../../../src/model-access/protocols.ts';
 import { generateCodexTitle } from '../../../src/executors/codex/title.ts';
 import { DshRuntime } from '../../../src/executors/dsh/index.ts';
 import type { NativeRpc, RpcMessage } from '../../../src/executors/native-process.ts';
@@ -46,7 +47,10 @@ test('Codex title is one separate ephemeral text turn with observed no-network i
     assert.equal(title, '供应商入驻审核流程梳理');
     const start = fixture.calls.find(call => call.method === 'thread/start')!.params;
     assert.equal(start.ephemeral, true); assert.equal(start.cwd, directory); assert.equal(start.approvalPolicy, 'never'); assert.deepEqual(start.dynamicTools, []); assert.equal(start.config.features.shell_tool, false); assert.equal(start.config.features.apps, false); assert.equal(start.config.web_search, 'disabled'); assert.deepEqual(start.config.mcp_servers, { business: { enabled: false } });
-    const turns = fixture.calls.filter(call => call.method === 'turn/start'); assert.equal(turns.length, 1); assert.equal(turns[0]!.params.threadId, 'aux-thread'); assert.deepEqual(turns[0]!.params.sandboxPolicy, { type: 'readOnly', networkAccess: false }); assert.ok(turns[0]!.params.outputSchema); assert.equal(turns[0]!.params.input.length, 1);
+    const turns = fixture.calls.filter(call => call.method === 'turn/start'); assert.equal(turns.length, 1); assert.equal(turns[0]!.params.threadId, 'aux-thread'); assert.deepEqual(turns[0]!.params.sandboxPolicy, { type: 'readOnly', networkAccess: false }); assert.ok(turns[0]!.params.outputSchema); assert.match(start.baseInstructions, /JSON.*title/); assert.match(turns[0]!.params.input[0].text, /\{"title":"精短标题"\}/); assert.equal(turns[0]!.params.input.length, 1);
+    const translated=translateRequest({model:'swe-2',instructions:start.baseInstructions,input:[{role:'user',content:[{type:'input_text',text:turns[0]!.params.input[0].text}]}],text:{format:{type:'json_schema',schema:turns[0]!.params.outputSchema}}},'responses','chat-completions',{encode:()=>'',decode:()=>({})});
+    assert.match(JSON.stringify(translated.messages), /title/, 'field survives protocol conversion without structured-output support');
+    assert.match(JSON.stringify(translated.messages), /JSON/);
     assert.ok(!fixture.calls.some(call => call.params.threadId === 'actual-work-thread')); assert.ok(fixture.calls.some(call => call.method === 'thread/unsubscribe')); assert.equal(auxiliary.size, 0);
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });
