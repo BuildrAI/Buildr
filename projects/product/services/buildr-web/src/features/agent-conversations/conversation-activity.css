@@ -1,6 +1,6 @@
 .ac-all-conversations.ant-btn{position:relative}
 .ac-activity-count{position:absolute;right:0;top:0;min-width:14px;height:14px;padding-inline:2px;border-radius:5px;background:#e9f1ed;color:#648b79;font:10px/14px system-ui;text-align:center}
-.ac-attention-count{top:auto;bottom:0;background:#fff0d2;color:#895217;border:1px solid #e9c689;border-radius:8px}
+.ac-attention-count{background:#fff0d2;color:#895217;border:1px solid #e9c689;border-radius:8px}
 .ac-all-conversations.is-stale .ac-activity-count{border:1px dashed currentColor}
 .ac-activity-filters{display:flex;flex-wrap:wrap;gap:4px;padding:8px 4px}
 .ac-activity-filters .ant-btn{display:inline-flex;align-items:center;gap:5px;font-size:11px;border:1px solid var(--soft-line);border-radius:7px}
@@ -85,3 +85,16 @@
 
 .ac-execution-stats.is-compact .ac-stats-group>div{align-items:flex-start;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:0 2px 4px 0}
 .ac-stats-group button{max-width:100%;flex-shrink:0}.ac-stats-group button span{min-width:0;overflow-wrap:anywhere;text-align:left}.ac-stats-group button b{flex:none}
+
+.ac-reminder-section>h3{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;margin:0;padding:12px 8px 5px;color:var(--soft-ink)}
+.ac-reminder-section>h3>small{font-weight:400;font-size:11px;color:var(--soft-muted);font-variant-numeric:tabular-nums}
+.ac-reminder-section+.ac-reminder-section,.ac-reminder-anomaly{border-top:1px solid var(--soft-line);margin-top:8px;padding-top:3px}
+.ac-reminder-empty{margin:6px 8px 12px;color:var(--soft-muted);font-size:12px}
+.ac-reminder-section .ac-activity-workspace>h3{padding-top:6px}
+.ac-execution-summary{padding:10px 8px 9px;border-bottom:1px solid var(--soft-line);color:var(--soft-ink)}
+.ac-execution-summary>header{display:flex;align-items:center;gap:8px;font-size:12px}
+.ac-execution-summary strong{font-weight:500}.ac-execution-summary strong>b{margin-left:4px;color:var(--soft-primary)}
+.ac-execution-summary small{font-size:10px;color:var(--soft-muted)}
+.ac-execution-summary>div{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;max-height:132px;overflow:auto}
+.ac-execution-summary>div>span{display:flex;align-items:center;gap:9px;max-width:100%;padding:3px 7px;border-radius:5px;background:#f0f5f2;font-size:11px}
+.ac-execution-summary>div>span>span{min-width:0;overflow-wrap:anywhere}.ac-execution-summary>div>span>b{flex:none;font-weight:500;color:var(--soft-primary)}

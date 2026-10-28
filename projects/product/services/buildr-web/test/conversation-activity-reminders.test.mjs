@@ -5,7 +5,7 @@ import {readFileSync,existsSync} from 'node:fs';
 import ts from 'typescript';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {activityReminder,activityState} from '../src/features/agent-conversations/conversation-activity.ts';
+import {activityBadge,activityReminder,activityState} from '../src/features/agent-conversations/conversation-activity.ts';
 import {conversationTierChoice} from '../src/features/agent-conversations/conversation-options.ts';
 
 registerHooks({
@@ -27,26 +27,33 @@ registerHooks({
 });
 const {ConversationActivityEntry}=await import('../src/features/agent-conversations/ConversationActivityEntry.tsx');
 const {ConversationActivityFilters}=await import('../src/features/agent-conversations/ConversationActivityFilters.tsx');
+const {ConversationExecutionSummary}=await import('../src/features/agent-conversations/ConversationExecutionSummary.tsx');
 const counts={active:8,running:3,waiting:2,unseen:2,unknown:1,attention:5};
 const render=(props={})=>renderToStaticMarkup(React.createElement(ConversationActivityEntry,{items:[],workspaces:[],total:8,counts,onOpen(){},onHistory(){},...props}));
 
-test('入口分别显示活动与需关注，说明中准确区分分类，不从已加载条目推算',()=>{
+test('单角标优先待决策加待查看，不从一页条目推算，也不计未知执行',()=>{
   const html=render();
-  assert.match(html,/8 个活动对话/);assert.match(html,/5 个需关注对话/);
-  assert.match(html,/待处理 2、待查看 2、状态待确认 1、执行中 3/);
-  assert.match(html,/data-count-kind="active"/);assert.match(html,/data-count-kind="attention"/);
+  assert.match(html,/4 个待处理对话/);assert.match(html,/待处理 4（待决策 2、待查看 2），执行中 3/);
+  assert.equal((html.match(/data-count-kind=/g)||[]).length,1);assert.match(html,/data-count-kind="attention"/);
+  assert.deepEqual(activityBadge(counts),{kind:'attention',count:4,label:'待处理'});
   assert.equal(activityState({run:{status:'running'},activity:{version:2,seenThrough:0}}),'running');
   assert.equal(activityState({run:{status:'waiting-question'},activity:{version:2,seenThrough:2}}),'waiting');
 });
-test('零值、大数、首次未知与刷新失败不冒充已更新或零',()=>{
-  assert.doesNotMatch(render({counts:{...counts,attention:0}}),/data-count-kind="attention"/);
-  const html=render({total:120,counts:{...counts,active:120,attention:111},error:'读取失败'});
-  assert.match(html,/120 个活动对话/);assert.match(html,/111 个需关注对话/);
-  assert.match(html,/99\+/);assert.match(html,/未更新/);
-  assert.equal(activityReminder(undefined),'活动分类尚未读取');
-  assert.doesNotMatch(render({total:0,counts:undefined}),/0 个活动对话|data-count-kind/);
+test('没有待处理时显示执行中，静默与未知执行都不产生角标',()=>{
+  const running={...counts,waiting:0,unseen:0};
+  assert.match(render({counts:running}),/3 个执行中对话/);
+  assert.match(render({counts:running}),/data-count-kind="running"/);
+  assert.equal(activityBadge({...running,running:0}),null);
+  assert.doesNotMatch(render({counts:{...running,running:0}}),/data-count-kind/);
+  assert.match(activityReminder({...running,running:0}),/1 个执行状态需确认/);
 });
-test('浮窗与列表共享分类，提供准确数量、键盘按钮及选中反馈',()=>{
+test('大数与读取失败保留准确数量，首次未知不冒充零',()=>{
+  const html=render({total:120,counts:{...counts,active:120,waiting:111,unseen:0},error:'读取失败'});
+  assert.match(html,/111 个待处理对话/);assert.match(html,/99\+/);assert.match(html,/未更新/);
+  assert.equal(activityReminder(undefined),'对话提醒尚未读取');
+  assert.doesNotMatch(render({total:120,counts:undefined}),/data-count-kind/);
+});
+test('完整列表保留分类数量、键盘按钮及选中反馈',()=>{
   const html=renderToStaticMarkup(React.createElement(ConversationActivityFilters,{counts,value:'waiting',onChange(){}}));
   assert.match(html,/aria-label="活动分类"/);assert.match(html,/待处理/);assert.match(html,/aria-pressed="true"/);
   assert.match(html,/需关注/);assert.match(html,/状态待确认/);
@@ -60,4 +67,13 @@ test('快速档位显式绑定原生来源，保留合法强度并不修改原�
   assert.equal(fast.modelAccountId,'native-codex');assert.equal(fast.serviceTier,'priority');assert.equal(fast.reasoningEffort,'high');
   assert.equal(conversationTierChoice(fast,source,'default').serviceTier,'default');
   assert.equal(original.modelAccountId,undefined);
+});
+
+test('浮窗只保留带智能体的模型组合摘要，旧响应不猜配对，失败保留观察',()=>{
+  const stats={agents:[{label:'codex',count:3}],models:[{label:'m',count:3}],executions:[{provider:'codex',model:'m',count:2},{provider:'qoder',model:'m',count:1}]};
+  const html=renderToStaticMarkup(React.createElement(ConversationExecutionSummary,{stats,stale:true,modelLabel:()=> '完整模型名'}));
+  assert.match(html,/Codex · 完整模型名/);assert.match(html,/Qoder · 完整模型名/);assert.match(html,/未更新/);
+  assert.doesNotMatch(html,/按智能体|按模型|<button/);
+  const legacy=renderToStaticMarkup(React.createElement(ConversationExecutionSummary,{stats:{agents:stats.agents,models:stats.models},modelLabel:()=> '完整模型名'}));
+  assert.match(legacy,/明细尚未读取/);assert.doesNotMatch(legacy,/Codex ·/);
 });

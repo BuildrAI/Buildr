@@ -80,6 +80,7 @@ test('execution overview is full-scope, independent from search/page/filter and 
   }
   const all=repo.querySummaries(['w1','w2'],{limit:1});
   assert.equal(all.conversations.length,1);assert.deepEqual(all.stats.agents,[{label:'codex',count:2}]);
+  assert.deepEqual(all.stats.executions,[{provider:'codex',model:'actual-model',count:1},{provider:'codex',model:'未指定',count:1}]);
   const search=repo.querySummaries(['w1','w2'],{limit:1,query:'no matching text',model:'actual-model'});
   assert.equal(search.total,0);assert.deepEqual(search.stats,all.stats);
   const missing=repo.querySummaries(['w1','w2'],{limit:10,model:'未指定'});
@@ -152,4 +153,16 @@ test('列表顺序只跟随用户输入，智能体输出与工具动作不改�
   assert.deepEqual(order(),['b','a'],'回复与工具输出不改变列表顺序');
   save(repo,a,r=>{r.view.updatedAt='2026-10-27T00:04:00Z';message(r,'a2','next');});
   assert.deepEqual(order(),['a','b'],'用户再次输入后才前移');
+});
+
+test('execution model and agent pairs aggregate full scope without guessing across pagination',t=>{
+  const repo=fixture(t);
+  for(const [id,provider,model,status] of [['c1','codex','shared-model','running'],['c2','codex','shared-model','tools-active'],['q1','qoder','shared-model','running'],['wait','qoder','shared-model','waiting-question']] as const){
+    const item=record(id);message(item,'input','work');
+    item.view.run={id:'run-'+id,participantId:'p',provider,generation:'g',status,accepted:true,tools:[],model,startedAt:item.view.updatedAt,updatedAt:item.view.updatedAt};
+    repo.saveConversation(item);
+  }
+  const page=repo.querySummaries(['w1'],{limit:1,query:'no match',activityState:'waiting'});
+  assert.equal(page.conversations.length,0);
+  assert.deepEqual(page.stats.executions,[{provider:'codex',model:'shared-model',count:2},{provider:'qoder',model:'shared-model',count:1}]);
 });
