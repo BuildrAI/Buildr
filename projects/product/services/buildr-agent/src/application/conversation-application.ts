@@ -66,6 +66,8 @@ export class ConversationApplication {
   private readonly sourceRuntimes = new Map<string, Promise<{runtime: AgentRuntime; model: string}>>();
   private readonly sourceOwners = new Map<string, {workspaceId: string; id: string}>();
   private releasingIdleSources?: Promise<void>;
+  private readonly releaseChecks = new Map<string,Promise<boolean>>();
+  private readonly releasedRuns = new Set<string>();
   private sharedNativeContext = false;
   canAdoptParallel(): boolean { return !this.sharedNativeContext; }
   private closing = false;
@@ -137,7 +139,7 @@ export class ConversationApplication {
   }
   /** Retiring generations release only idle, conversation-specific runtimes.
    * Native contexts keep their writer until their owning process actually exits. */
-  releaseIdleSources(): Promise<void> {
+  releaseIdleSources(owner?: {workspaceId:string; id:string}): Promise<void> {
     if (this.releasingIdleSources) return this.releasingIdleSources;
     const work = (async () => {
       const groups = new Map<AgentRuntime, Array<{id:string; source:Promise<{runtime:AgentRuntime;model:string}>}>>();
@@ -148,6 +150,7 @@ export class ConversationApplication {
         const members = groups.get(runtime) ?? []; members.push({id,source}); groups.set(runtime,members);
       }
       for (const [runtime, members] of groups) {
+        if (owner && !members.some(({id}) => { const value=this.sourceOwners.get(id); return value?.workspaceId===owner.workspaceId && value.id===owner.id; })) continue;
         if (members.some(({id,source}) => {
           const owner = this.sourceOwners.get(id);
           return !owner || this.sourceRuntimes.get(id) !== source || this.busy(owner.workspaceId,owner.id);
@@ -161,6 +164,26 @@ export class ConversationApplication {
     this.releasingIdleSources = work;
     void work.finally(() => { if (this.releasingIdleSources === work) this.releasingIdleSources = undefined; }).catch(() => {});
     return work;
+  }
+  retainsConversationSource(workspaceId:string,id:string): boolean {
+    return this.sharedNativeContext || [...this.sourceOwners.values()].some(owner=>owner.workspaceId===workspaceId && owner.id===id);
+  }
+  /** A retained process acknowledges release only after the exact native round and
+   * all conversation-specific work have ended. Shared writers are never closed here. */
+  async observeForRelease(workspaceId:string, id:string, expectedRunId:string, generation:string): Promise<boolean> {
+    const before=this.load(workspaceId,id).view.run;
+    if (!before || before.id!==expectedRunId || before.generation!==generation || generation!==this.options.generation) fail('agent_control_stale','原执行已变化，请重新核对。',409);
+    if (this.releasedRuns.has(expectedRunId)) return true;
+    const pending=this.releaseChecks.get(expectedRunId); if(pending)return pending;
+    const work=(async()=>{
+      await this.observe(workspaceId,id);
+      const run=this.load(workspaceId,id).view.run;
+      if (!run || run.id!==expectedRunId || run.generation!==generation || this.busy(workspaceId,id)) return false;
+      await this.releaseIdleSources({workspaceId,id});
+      if (this.busy(workspaceId,id) || this.retainsConversationSource(workspaceId,id)) return false;
+      this.releasedRuns.add(expectedRunId);return true;
+    })().finally(()=>this.releaseChecks.delete(expectedRunId));
+    this.releaseChecks.set(expectedRunId,work);return work;
   }
   private load(workspaceId: string, id: string): StoredConversation {
     const record = this.options.repository.readConversation(nonempty(id, '对话身份'));
@@ -571,6 +594,7 @@ export class ConversationApplication {
     else if (observation.status === 'idle') {
       if (!run.accepted) { if (run.status !== 'starting' && run.status !== 'stopping') run.status = 'unknown'; return; }
       run.status = run.status === 'stopping' ? 'stopped' : run.status === 'failed' ? 'failed' : 'completed';
+      if (run.status==='completed' && !observation.diagnostic) delete run.diagnostic;
       record.view.requests = []; record.requests = {};
     } else if (observation.status === 'running') run.status = run.status === 'stopping' ? 'stopping' : 'running';
     run.updatedAt = this.options.now();
@@ -916,7 +940,7 @@ export class ConversationApplication {
   private async reconcile(workspaceId: string, id: string): Promise<ConversationView> {
     let record = this.load(workspaceId, id);
     if (record.view.run && this.retryWaits.has(record.view.run.id)) return this.view(record);
-    if (record.view.run && record.view.run.generation !== this.options.generation && this.options.generationAlive?.(record.view.run.generation)) return this.read(workspaceId, id);
+    if (record.view.run && BUSY_STATES.has(record.view.run.status) && record.view.run.generation !== this.options.generation && this.options.generationAlive?.(record.view.run.generation)) return this.read(workspaceId, id);
     for (const saved of record.participants) {
       if (!saved.contextRef) continue;
       try {

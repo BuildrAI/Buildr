@@ -17,3 +17,8 @@ test('待确认只保留一个紧凑状态，诊断默认折叠且不宣称失�
   assert.match(html,/<details><summary>查看原因<\/summary>/);
   assert.doesNotMatch(html,/<details open|ant-alert|执行失败|恢复执行/);
 });
+
+test('核对期间显示恢复连接，保持单一状态且不宣称已经接管',()=>{
+  const html=renderToStaticMarkup(React.createElement(ConversationExecutionNotice,{observing:true,stopping:false,onObserve(){},onStop(){}}));
+  assert.match(html,/正在恢复连接/);assert.match(html,/正在核对/);assert.doesNotMatch(html,/执行状态待确认|恢复成功|正在执行/);
+});

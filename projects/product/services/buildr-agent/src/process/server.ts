@@ -96,8 +96,13 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     }
     if (req.url === '/host/detach') { hosts.detach(input.peerId); json(res, 200, { detached: true }); return; }
     if (req.url === '/conversation-state') {
+      if (input.observe===true) {
+        scope(input.sourceId,input.scope);
+        const released=await service.observeForRelease(input.scope,input.id,input.runId,input.generation);
+        json(res,200,{generation:identity.generation,runId:input.runId,observed:true,busy:!released}); return;
+      }
       if (retiring) await service.releaseIdleSources();
-      json(res, 200, {generation:identity.generation,busy:service.conversationBusy(input.scope,input.id)}); return;
+      json(res, 200, {generation:identity.generation,busy:service.conversationBusy(input.scope,input.id) || retiring && service.retainsConversationSource(input.scope,input.id)}); return;
     }
     if (req.url === '/revoke') {
       if (input.connectionId) { service.revokeModel('native-'+input.connectionId); await service.connections.disconnect(input.connectionId, {expectedRevision:service.connections.read(input.connectionId).revision}); }
@@ -172,6 +177,14 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       if (perConversation && !['conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) {
         const control = ['conversations.stop','conversations.supplement'].includes(name) ? input.args[2] : name === 'conversations.reply' ? input.args[3] : undefined;
         target = await recipient(input.args[0], input.args[1], control?.generation);
+      }
+      if (target && name==='conversations.observe') {
+        const run=repository.readConversation(input.args[1])?.view.run;
+        if (run && run.generation===target.identity.generation) {
+          const state=await request(target.origin,target.token,'/conversation-state',{sourceId:input.sourceId,scope:input.args[0],id:input.args[1],observe:true,runId:run.id,generation:run.generation},AbortSignal.timeout(15000));
+          const latest=repository.readConversation(input.args[1])?.view.run;
+          if (state.observed===true && state.busy===false && state.generation===run.generation && state.runId===run.id && latest?.id===run.id && latest.generation===run.generation && ['completed','stopped','failed'].includes(latest.status)) target=undefined;
+        }
       }
       const current = readProcessRecord(options.dataRoot);
       if (!target && retiring && current && current.identity.instanceId !== instanceId) {

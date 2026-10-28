@@ -46,5 +46,6 @@ export function dshExecutionObservation(events: any[], requestId: string): impor
     if (event.type === 'tool/result' && tools.has(event.data.message?.toolCallId)) tools.get(event.data.message.toolCallId)!.status = 'completed';
     if (event.type === 'turn/end') end = event.data.reason?.kind;
   }
+  if (end && !['completed','aborted','cancelled','interrupted'].includes(end)) return {status:'unknown',executionRef:{id:requestId},tools:[...tools.values()],diagnostic:'dsh_native_execution_failed'};
   return { status: [...tools.values()].some(tool => tool.status === 'unknown') ? 'unknown' : !end ? 'unknown' : ['aborted', 'cancelled', 'interrupted'].includes(end) ? 'stopped' : 'idle', executionRef: { id: requestId }, tools: [...tools.values()] };
 }

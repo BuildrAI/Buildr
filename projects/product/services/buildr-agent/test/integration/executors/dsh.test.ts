@@ -163,3 +163,21 @@ test('DSH reports the native context window and input-token usage', async () => 
     assert.deepEqual(visible.find(event=>event.type==='context-usage'),{type:'context-usage',usedTokens:23190,windowTokens:500000});
   }finally{await runtime.close();}
 });
+
+test('DSH lost follow recovers only the exact durable terminal, never a different round or unfinished tools', async()=>{
+  const streams:Stream[]=[],events:any[]=[],visible:ExecutorEvent[]=[];const cwd='/synthetic/workspace',ok=(value:any)=>({ok:true,value});let sends=0;
+  const remote={permissionPresets:{catalog:async()=>ok({defaultPreset:'workspace-write',options:[{value:'workspace-write'}]})},commands:{list:async()=>ok([{name:'permission',definitionId:'@deepseek-ai/dsh-permission-presets'}]),execute:async()=>ok({result:{kind:'success'}})},session:{create:async()=>ok({sessionId:'recover-session'}),follow:()=>{const stream=new Stream();streams.push(stream);stream.push({type:'snapshot',header:{id:'recover-session',cwd},cursor:events.length,records:events.map(event=>({event})),projections:{values:{permissions:{currentValue:'workspace-write'}}}});return stream;},prompt:async(input:any)=>{sends++;events.push({type:'turn/start',seq:1,data:{turn:1}},{type:'user/message',seq:2,data:{id:'original',content:input.content,source:{kind:'user',rpcId:input.requestId}}});return ok({accepted:true});}}};
+  const runtime=Reflect.construct(DshRuntime,['recover-binding',{close:async()=>{for(const stream of streams)await stream.dispose();}},{remote,close:async()=>{},ctx:{}}]) as AgentRuntime;
+  try{
+    (remote.session as any).page=async()=>ok({records:events.map(event=>({event})),hasMore:false});
+    const contextRef=await runtime.createContext({cwd});const sending=runtime.send({contextRef,cwd,text:'work',images:[],permissionMode:'default',clientRequestId:'original-request',onEvent:e=>visible.push(e)});
+    const failed=assert.rejects(sending,/dsh_execution_observation_lost/);await eventually(()=>visible.some(e=>e.type==='accepted'));await streams.at(-1)!.dispose();await failed;
+    events.push({type:'turn/start',seq:3,data:{turn:2}},{type:'user/message',seq:4,data:{id:'other',source:{kind:'user',rpcId:'other-request'},content:[{type:'text',text:'other'}]}},{type:'turn/end',seq:5,data:{turn:2,reason:{kind:'completed'}}});
+    const executionRef={id:'original-request'};assert.notEqual((await runtime.observe({contextRef,executionRef})).status,'idle');
+    events.push({type:'tool/call',seq:6,data:{turn:1,callId:'tool1',name:'bash'}},{type:'turn/end',seq:7,data:{turn:1,reason:{kind:'completed'}}});
+    assert.notEqual((await runtime.observe({contextRef,executionRef})).status,'idle');
+    events.push({type:'tool/result',seq:8,data:{turn:1,message:{toolCallId:'tool1',content:[]}}});
+    const restored=await runtime.observe({contextRef,executionRef});assert.equal(restored.status,'idle');assert.equal(restored.executionRef?.id,executionRef.id);assert.equal(restored.tools[0].status,'completed');assert.equal(sends,1);
+    assert.equal((await runtime.observe({contextRef,executionRef})).status,'idle');assert.equal(sends,1);
+  }finally{await runtime.close();}
+});

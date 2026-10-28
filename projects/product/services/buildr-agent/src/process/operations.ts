@@ -10,7 +10,7 @@ export interface AgentSubscription { events: AsyncIterable<ServiceEvent>; close(
 export interface AgentOperations {
   generation: string;
   connections: RemoteMethods<AgentService['connections']>;
-  conversations: Omit<RemoteMethods<AgentService['conversations']>, 'subscribe' | 'recoverInterrupted'> & { subscribe(scope: string, id: string): Promise<AgentSubscription> };
+  conversations: Omit<RemoteMethods<AgentService['conversations']>, 'subscribe' | 'recoverInterrupted' | 'observeForRelease' | 'retainsConversationSource'> & { subscribe(scope: string, id: string): Promise<AgentSubscription> };
   models: { accounts: Omit<RemoteMethods<AgentService['models']['accounts']>, 'snapshot'>; catalog: RemoteMethods<AgentService['models']['catalog']>; generate: AgentService['models']['generate'] };
 }
 

@@ -35,7 +35,7 @@ export async function writeGatewayPatch(directory: string, gateway: ExecutorGate
   await writeFile(filename, JSON.stringify([{ id: 'llm-pi-ai', name: '@deepseek-ai/dsh-llm-pi-ai', config: { providers: { 'buildr-models': { displayName: 'Buildr', api: 'openai-responses', baseURL: gateway.baseUrl.replace(/\/$/, ''), apiKeyEnv: 'BUILDR_MODEL_GATEWAY_KEY', models } } } }]), { mode: 0o600 });
   return filename;
 }
-interface ActiveTurn { stopRequested?: boolean; cancellation?: Promise<void>; supplementInputs?: Set<string>; supplementAdmissions?: number; supplementUnknown?: boolean; pendingEnd?: any; finish?: () => void; id: string; input: ExecutorSendInput; nativeTurn?: number; contextWindow?: number; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown' }>; pending: Map<string, { request: ExecutorRequest; resolve?: (value: string) => void; answer?: (value: { answers: any[] }) => void; reject?: (error: Error) => void; wait?: any }>; stream?: any; pump?: Promise<void>; streamAttempt?: { id: string; turn: number; step: number; nextIndex: number; text: string }; }
+interface ActiveTurn { observationLost?: boolean; stopRequested?: boolean; cancellation?: Promise<void>; supplementInputs?: Set<string>; supplementAdmissions?: number; supplementUnknown?: boolean; pendingEnd?: any; finish?: () => void; id: string; input: ExecutorSendInput; nativeTurn?: number; contextWindow?: number; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown' }>; pending: Map<string, { request: ExecutorRequest; resolve?: (value: string) => void; answer?: (value: { answers: any[] }) => void; reject?: (error: Error) => void; wait?: any }>; stream?: any; pump?: Promise<void>; streamAttempt?: { id: string; turn: number; step: number; nextIndex: number; text: string }; }
 export function createDshExecutor(): AgentExecutor { return { descriptor: { id: 'dsh', label: 'DSH', capabilities }, open: options => DshRuntime.open(options) }; }
 export class DshRuntime implements AgentRuntime {
   readonly capabilities = { ...capabilities, permissionModes: ['default'] as PermissionMode[] };
@@ -210,7 +210,7 @@ export class DshRuntime implements AgentRuntime {
           if (!accepted) buffer.push(frame.event); else { this.event(turn, frame.event); if (turn.terminal) finish(); }
         }
         if (!turn.terminal) throw new Error('dsh_follow_closed');
-      } catch { if (!turn.terminal) fail(new Error('dsh_execution_observation_lost')); ready(); }
+      } catch { if (!turn.terminal) { turn.observationLost=true; fail(new Error('dsh_execution_observation_lost')); } ready(); }
     })();
     turn.pump = pump; turn.finish = finish;
     try {
@@ -362,6 +362,16 @@ export class DshRuntime implements AgentRuntime {
   }
   async observe({ contextRef, executionRef }: { contextRef: ContextRef; executionRef?: ExecutionRef }): Promise<ExecutorObservation> {
     this.reference(contextRef); const turn = this.turns.get(contextRef.id);
+    if (turn?.observationLost && executionRef?.id===turn.id && !turn.pending.size && !turn.supplementUnknown) {
+      await this.readHistory({contextRef,cwd:this.reference(contextRef)});
+      const durable=dshExecutionObservation(this.historyEvents.get(contextRef.id)??[],turn.id);
+      if ((durable.status==='idle' || durable.status==='stopped') && durable.executionRef?.id===turn.id && durable.tools.every(tool=>tool.status==='completed')) {
+        turn.terminal=durable.status==='idle'?'completed':'stopped';
+        turn.tools=new Map(durable.tools.map(tool=>[tool.id,{...tool}]));
+        turn.diagnostic=durable.diagnostic;turn.observationLost=false;
+        await turn.stream?.dispose();await turn.pump;turn.stream=undefined;
+      }
+    }
     if (turn && (!executionRef || turn.id === executionRef.id)) { if(turn.stopRequested&&!turn.terminal)await this.cancelSteering(turn).catch(()=>{turn.supplementUnknown=true;});return this.activeObservation(turn); }
     const cwd = this.reference(contextRef);
     await this.readHistory({ contextRef, cwd });
