@@ -12,6 +12,7 @@ import { createRuntime, runtimeContributions } from '../helpers/runtime-harness.
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { createWebStaticFixture } from '../helpers/web-static-fixture.ts';
 import { materializeCleanProductSource } from '../helpers/clean-product-source.ts';
+import { stopOwnedChildProcess } from '../verification/support/owned-process.ts';
 
 const SERVICE_ROOT: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const CLI: any = path.join(SERVICE_ROOT, 'bin', 'buildr.mjs');
@@ -40,11 +41,12 @@ async function waitForInstanceReceipt(file: any, { children = [], timeoutMs = IN
 }
 
 async function waitForExit(child: any, timeoutMs: any = 15_000): Promise<any> {
-  if (child.exitCode !== null) return child.exitCode;
+  if (child.exitCode !== null || child.signalCode !== null) return child.exitCode;
   return new Promise((resolve: any, reject: any) => {
-    const timer: any = setTimeout(() => reject(new Error(`Timed out waiting for PID ${child.pid}.`)), timeoutMs);
+    const exited = (code: any) => { clearTimeout(timer); resolve(code); };
+    const timer: any = setTimeout(() => { child.off('exit', exited); reject(new Error(`Timed out waiting for PID ${child.pid}.`)); }, timeoutMs);
     timer.unref();
-    child.once('exit', (code: any) => { clearTimeout(timer); resolve(code); });
+    child.once('exit', exited);
   });
 }
 
@@ -65,8 +67,7 @@ test('真实重启交接：旧实例退出、新实例同端口接管回执与 h
   createWebStaticFixture(path.join(controller.root, 'web-dist'));
   const children: any[] = [];
   t.after(async () => {
-    for (const item of children) if (item.child.exitCode === null) item.child.kill('SIGKILL');
-    for (const item of children) await waitForExit(item.child, 5_000).catch(() => {});
+    await Promise.all(children.map(item => stopOwnedChildProcess(item.child)));
     await stopAgentProcess({dataRoot:appData});
     fs.rmSync(base, { recursive: true, force: true });
   });

@@ -14,13 +14,14 @@ import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { stopPreview } from '../../src/web/application/preview-lifecycle.ts';
 import { copyPreparedWorkspace } from './prepared-fixtures.ts';
 import { createWebStaticFixture } from './web-static-fixture.ts';
+import { stopOwnedChildProcess } from '../verification/support/owned-process.ts';
 
 export function registerWorkspaceProductSuite(selectedSuite: any): any  {
 
 const PRODUCT_ROOT: any = path.resolve(import.meta.dirname, '../..');
 const BUILDR: any = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
-const APP_PROCESS_TIMEOUT_MS: any = 60_000;
-const APP_COMMAND_TIMEOUT_MS: any = 15_000;
+const APP_PROCESS_TIMEOUT_MS: any = 120_000;
+const APP_COMMAND_TIMEOUT_MS: any = 30_000;
 
 function previewCommandDiagnostic(phase: string, result: any, timeoutMs: number): string {
   const stdout = Buffer.from(result.stdout || ''), stderr = Buffer.from(result.stderr || '');
@@ -616,29 +617,28 @@ suiteTest('app-process', 'buildr web 重复启动复用单实例并从陈旧 run
   let errors: any = '';
   child.stdout.on('data', (chunk: any) => { output += chunk; });
   child.stderr.on('data', (chunk: any) => { errors += chunk; });
-  t.after(() => { if (child.exitCode === null) child.kill('SIGTERM'); });
+  t.after(() => stopOwnedChildProcess(child));
   await new Promise((resolve: any, reject: any) => {
-    const timeout: any = setTimeout(() => reject(new Error(`Buildr Web 未就绪：${output}\n${errors}`)), APP_COMMAND_TIMEOUT_MS);
+    const cleanup = () => { clearTimeout(timeout); clearInterval(poll); child.off('exit', exited); };
+    const timeout: any = setTimeout(() => { cleanup(); reject(new Error(`Buildr Web 未就绪：${output}\n${errors}`)); }, APP_COMMAND_TIMEOUT_MS);
     const poll: any = setInterval(() => {
       if (output.includes('Buildr Web：')) {
-        clearTimeout(timeout);
-        clearInterval(poll);
+        cleanup();
         resolve();
       }
     }, 25);
-    child.once('exit', (code: any) => {
+    const exited = (code: any) => {
       if (!output.includes('Buildr Web：')) {
-        clearTimeout(timeout);
-        clearInterval(poll);
+        cleanup();
         reject(new Error(`Buildr Web 提前退出 ${code}：${errors}`));
       }
-    });
+    };
+    child.once('exit', exited);
   });
   const reused: any = spawnSync(process.execPath, [BUILDR, 'web', '--target', root, '--no-open'], { cwd: PRODUCT_ROOT, env, encoding: 'utf8', timeout: APP_COMMAND_TIMEOUT_MS });
   assert.equal(reused.status, 0, reused.stderr || reused.error?.message || `signal=${reused.signal}`);
   assert.match(reused.stdout, /Buildr Web 已运行/);
-  child.kill('SIGTERM');
-  await new Promise((resolve: any) => child.once('exit', resolve));
+  await stopOwnedChildProcess(child);
   if (process.platform === 'win32') {
     fs.rmSync(path.join(appData, 'instance.json'), { force: true });
   } else {

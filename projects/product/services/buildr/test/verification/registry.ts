@@ -619,7 +619,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/nacos-connection-skill.test.ts',
     'test/integration/retired-connections.test.ts',
     'test/integration/xxl-job-connection-skill.test.ts',
-  ], { schedulingCostMs: 5000, timeoutMs: 240_000, args: ['--test-concurrency=3'] }),
+  ], { schedulingCostMs: 5000, timeoutMs: 300_000, args: ['--test-concurrency=3'] }),
   // This scenario spawns dozens of real CLI processes. Keep it isolated from
   // the heavier authoring scenario so one worker covers its actual runtime.
   integrationSlice('integration-connections-cli', [

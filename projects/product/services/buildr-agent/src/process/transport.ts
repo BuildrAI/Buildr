@@ -37,7 +37,17 @@ export async function listen(handler: (req: IncomingMessage, res: ServerResponse
   server.requestTimeout = 30_000; server.headersTimeout = 15_000;
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address(); if (!address || typeof address === 'string') throw new Error('agent_process_address_invalid');
-  return { server, origin: `http://127.0.0.1:${address.port}`, async close() { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); } };
+  let closing: Promise<void> | undefined;
+  return { server, origin: `http://127.0.0.1:${address.port}`, close() {
+    return closing ??= new Promise<void>(resolve => {
+      // Flush accepted control responses before reclaiming long-lived streams.
+      // Immediate destruction can leave an accepted update with an unknown result.
+      const deadline = setTimeout(() => server.closeAllConnections(), 1_000);
+      deadline.unref();
+      server.close(() => { clearTimeout(deadline); resolve(); });
+      server.closeIdleConnections();
+    });
+  } };
 }
 export async function request(origin: string, token: string, route: string, value?: unknown, signal?: AbortSignal): Promise<any> {
   const response = await fetch(localOrigin(origin) + route, {

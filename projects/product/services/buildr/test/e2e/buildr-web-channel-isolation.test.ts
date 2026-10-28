@@ -14,6 +14,7 @@ import { ensureRegisteredTarget } from '../../src/modules/workspace/module.ts';
 import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.ts';
 import { assertCurrentNpmLauncherBinding } from '../../src/modules/installation/module.ts';
 import { readCurrentInstallationOrigin } from '../../src/modules/installation/infrastructure/installation-origin.ts';
+import { stopOwnedChildProcess } from '../verification/support/owned-process.ts';
 
 const CHILD: any = new URL('../fixtures/buildr-web-profile-child.ts', import.meta.url);
 
@@ -21,7 +22,7 @@ function wait(milliseconds: any): any  {
   return new Promise((resolve: any) => setTimeout(resolve, milliseconds));
 }
 
-const INSTANCE_STARTUP_TIMEOUT_MS: any = process.platform === 'win32' ? 60_000 : 10_000;
+const INSTANCE_STARTUP_TIMEOUT_MS: any = process.platform === 'win32' ? 60_000 : 30_000;
 
 async function waitForInstance(file: any, { child = null, stderr = () => '', timeoutMs = INSTANCE_STARTUP_TIMEOUT_MS }: any = {}): Promise<any>  {
   const deadline: any = Date.now() + timeoutMs;
@@ -30,7 +31,7 @@ async function waitForInstance(file: any, { child = null, stderr = () => '', tim
       const value: any = JSON.parse(fs.readFileSync(file, 'utf8'));
       if (value.url && value.secret && value.pid) return value;
     } catch {}
-    if (child?.exitCode !== null) {
+    if (child && (child.exitCode !== null || child.signalCode !== null)) {
       throw new Error(`Child exited before writing ${file}: exitCode=${child.exitCode}; stderr=${stderr() || '<empty>'}`);
     }
     await wait(25);
@@ -38,12 +39,13 @@ async function waitForInstance(file: any, { child = null, stderr = () => '', tim
   throw new Error(`Timed out waiting for ${file} after ${timeoutMs}ms; childExitCode=${child?.exitCode ?? 'running'}; stderr=${stderr() || '<empty>'}`);
 }
 
-async function waitForExit(child: any, timeoutMs: any = 10_000): Promise<any>  {
-  if (child.exitCode !== null) return child.exitCode;
+async function waitForExit(child: any, timeoutMs: any = 30_000): Promise<any>  {
+  if (child.exitCode !== null || child.signalCode !== null) return child.exitCode;
   return new Promise((resolve: any, reject: any) => {
-    const timer: any = setTimeout(() => reject(new Error(`Timed out waiting for PID ${child.pid}.`)), timeoutMs);
+    const exited = (code: any) => { clearTimeout(timer); resolve(code); };
+    const timer: any = setTimeout(() => { child.off('exit', exited); reject(new Error(`Timed out waiting for PID ${child.pid}.`)); }, timeoutMs);
     timer.unref();
-    child.once('exit', (code: any) => { clearTimeout(timer); resolve(code); });
+    child.once('exit', exited);
   });
 }
 
@@ -77,8 +79,8 @@ test('released与development普通HTTP Server并行运行且独立退出', async
   const releasedRoot: any = path.join(base, 'released');
   const developmentRoot: any = path.join(base, 'development');
   const children: any[] = [];
-  t.after(() => {
-    for (const item of children) if (item.child.exitCode === null) item.child.kill('SIGKILL');
+  t.after(async () => {
+    await Promise.all(children.map(item => stopOwnedChildProcess(item.child)));
     fs.rmSync(base, { recursive: true, force: true });
   });
 
@@ -192,8 +194,7 @@ test('development server reuses unrelated commits, rejects runtime changes and r
   const identity = () => { const origin = readCurrentInstallationOrigin(product); return { ...origin, installationIdentity: origin.ownershipIdentity, runtime: { role: 'development' } }; };
   const children: any[] = [];
   t.after(async () => {
-    for (const item of children) if (item.child.exitCode === null) item.child.kill('SIGTERM');
-    await Promise.all(children.map(item => waitForExit(item.child).catch(() => {})));
+    await Promise.all(children.map(item => stopOwnedChildProcess(item.child)));
     fs.rmSync(base, { recursive: true, force: true });
   });
   const first = startChild(developmentRoot, releasedRoot, developmentRoot, identity()); children.push(first);

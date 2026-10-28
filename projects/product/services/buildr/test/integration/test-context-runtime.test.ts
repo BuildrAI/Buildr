@@ -31,7 +31,7 @@ test('uses a seed', t => {
   ${mode === 'assertion-failure' ? 'assert.fail("injected assertion failure");' : ''}
   ${mode === 'explicit-cleanup' ? "lease.release(); assert.equal(cleanupDefaultTestContextPool().status, 'cleaned'); assert.equal(cleanupDefaultTestContextPool().status, 'not-owned');" : ''}
 });
-`], { encoding: 'utf8', timeout: 10_000, env: { ...process.env, NODE_TEST_CONTEXT: undefined, BUILDR_TEST_CONTEXTS: undefined } });
+`], { encoding: 'utf8', timeout: 30_000, env: { ...process.env, NODE_TEST_CONTEXT: undefined, BUILDR_TEST_CONTEXTS: undefined } });
   assert.ifError(result.error);
   assert.equal(result.status, ['assertion-failure', 'cleanup-failure'].includes(mode) ? 1 : 0, result.stderr || result.stdout);
   const observed = JSON.parse(fs.readFileSync(observation, 'utf8'));

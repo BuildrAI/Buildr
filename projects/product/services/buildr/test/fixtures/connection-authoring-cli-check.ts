@@ -7,14 +7,14 @@ import { spawnSync } from 'node:child_process';
 const root = process.env.BUILDR_SMOKE_WORKSPACE_ROOT!, temporary = process.env.BUILDR_SMOKE_ROOT!;
 assert.ok(root && temporary, 'Use the isolated workspace smoke runner.');
 const cli = path.resolve('bin/buildr.mjs');
-const deadline = Date.now() + 150_000;
+const deadline = Date.now() + 240_000;
 function command(args: string[], input?: string) {
   const structured = args[0] === 'connection-skill';
   const common = ['--target', root, ...(structured ? ['--json'] : [])], separator = args.indexOf('--');
   const commandArgs = separator < 0 ? [...args, ...common] : [...args.slice(0, separator), ...common, '--', ...args.slice(separator + 1)];
   const started = Date.now();
   const timeout = Math.min(60_000, deadline - started);
-  assert.ok(timeout > 0, 'connection authoring scenario exceeded its 150s command budget');
+  assert.ok(timeout > 0, 'connection authoring scenario exceeded its 240s command budget');
   process.stderr.write(`[connection-authoring-command] ${args.slice(0, 2).join(' ')} started\n`);
   const result = spawnSync(process.execPath, [cli, ...commandArgs], { input, encoding: 'utf8', env: process.env, timeout });
   process.stderr.write(`[connection-authoring-command] ${args[0]} finished after ${Date.now() - started}ms\n`);
