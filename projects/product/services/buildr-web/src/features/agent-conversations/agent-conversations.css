@@ -209,3 +209,19 @@
 .ac-stream-disconnect .ant-alert-action{margin-inline-start:auto;align-self:center}
 .ac-stream-disconnect .ant-alert-action .ant-btn{height:auto;min-height:28px;padding:3px 8px;color:#6e6047;font-size:var(--font-size-body);font-weight:500}
 @media(max-width:480px){.ac-panel .ac-stream>.ac-stream-disconnect{width:calc(100% - 40px);flex-wrap:wrap}.ac-stream-disconnect .ant-alert-content{flex-basis:calc(100% - 25px)}.ac-stream-disconnect .ant-alert-action{margin-inline-start:25px;align-self:auto}}
+/* A quiet, persistent model field and a larger pointer/touch target. */
+.ac-model-top-row .ac-model-picker.ant-select{height:38px;border-radius:9px;background:color-mix(in srgb,var(--soft-primary,#397d74) 5%,var(--soft-surface,#fff));border:1px solid var(--soft-line,#d8e1dc)}
+.ac-model-top-row .ac-model-picker .ant-select-selector{padding-inline:12px!important;background:transparent!important;border:0!important}
+.ac-model-top-row .ac-model-picker .ant-select-selection-item{text-align:left;font-size:var(--font-size-body);font-weight:500}
+.ac-model-top-row .ac-model-picker .ant-select-arrow{opacity:1!important;color:var(--soft-muted)}
+.ac-model-top-row .ac-model-picker.ant-select-focused{outline:2px solid color-mix(in srgb,var(--soft-primary,#397d74) 30%,transparent);outline-offset:2px}
+.ac-depth-slider{padding-inline:18px}
+.ac-depth-slider .ant-slider{padding-block:16px;margin:4px 0 0;height:40px;touch-action:none}
+.ac-depth-slider .ant-slider-rail,.ac-depth-slider .ant-slider-track{top:16px;height:7px;border-radius:5px}
+.ac-depth-slider .ant-slider-step{top:16px;height:7px}
+.ac-depth-slider .ant-slider-dot{width:9px;height:9px;top:-1px}
+.ac-depth-slider .ant-slider-handle{top:6px;width:28px;height:28px;margin-top:0;transform:translateX(-50%)!important}
+.ac-depth-slider .ant-slider-handle::before{width:28px;height:28px;inset:0}
+.ac-depth-slider .ant-slider-handle::after{width:18px;height:18px;inset:5px;box-shadow:0 0 0 2px var(--soft-primary,#397d74)}
+.ac-depth-slider .ant-slider-handle:hover::after,.ac-depth-slider .ant-slider-handle:focus::after,.ac-depth-slider .ant-slider-handle:active::after{width:18px;height:18px;inset:5px;box-shadow:0 0 0 4px color-mix(in srgb,var(--soft-primary,#397d74) 35%,transparent)}
+.ac-depth-labels{margin-top:2px;font-size:var(--font-size-body);height:20px}

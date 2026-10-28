@@ -2,7 +2,7 @@ import type { ConversationSummary } from './types';
 export type ActivityState = 'running'|'waiting'|'unknown'|'unseen'|null;
 export type ActivityFilter = Exclude<ActivityState,null>|'attention'|null;
 export type ActivityCounts = {active:number;running:number;waiting:number;unseen:number;unknown:number;attention:number};
-export const activityFilterLabels = {active:'全部活动',attention:'需关注',waiting:'待处理',unseen:'待查看',running:'执行中',unknown:'状态待确认'} as const;
+export const activityFilterLabels = {unseen:'待查看',waiting:'待处理',running:'执行中'} as const;
 export function activityBadge(counts:ActivityCounts|undefined) {
   if(!counts)return null;
   const pending=counts.waiting+counts.unseen;
@@ -24,4 +24,11 @@ export const isActiveConversation=(row:ConversationSummary)=>Boolean(row.activit
 export function conversationMetadata(row:ConversationSummary,workspaceName?:string,modelLabel?:string) {
   const names:Record<string,string>={codex:'Codex',dsh:'DSH',qoder:'Qoder'};
   return [workspaceName, row.run?(names[row.run.provider]||row.run.provider):undefined,modelLabel??row.run?.model].filter(Boolean).join(' · ');
+}
+
+/** Preserve the caller's priority order without splitting a workspace by status. */
+export function groupConversationWorkspaces<T extends {workspaceId:string}>(items:readonly T[]):Map<string,T[]> {
+  const groups=new Map<string,T[]>();
+  for(const item of items){const group=groups.get(item.workspaceId);if(group)group.push(item);else groups.set(item.workspaceId,[item]);}
+  return groups;
 }

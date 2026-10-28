@@ -46,3 +46,12 @@
 @media(hover:none){.ac-turn-locate-input,.ac-turn-locate-icon{opacity:1}}
 .ac-recovery-action{display:flex;align-items:center;gap:8px;margin:4px 0 8px;color:var(--soft-muted,#6d7a77);font-size:var(--font-size-body)}
 .ac-recovery-action .ant-btn{color:var(--soft-primary,#397d74);font-size:var(--font-size-body);padding-inline:6px;height:26px}
+
+.ac-turn-identity{border-bottom:1px solid color-mix(in srgb,var(--soft-line,#dce5df) 65%,transparent);padding-bottom:8px;flex-wrap:nowrap}
+.ac-turn-identity>.ac-message-identity{flex:0 1 auto}
+.ac-turn-identity>.ac-turn-collapse{flex:none;justify-content:center;width:30px;height:30px;padding:0;border-radius:6px}
+.ac-turn.is-executing>.ac-turn-context{border-bottom:1px solid var(--soft-line,#dce5df);box-shadow:0 7px 16px -8px color-mix(in srgb,var(--soft-ink,#252a31) 30%,transparent)}
+.ac-turn.is-executing>.ac-turn-context>.ac-turn-identity{border-bottom:0;padding-bottom:0}
+.ac-process-inline:empty{display:none}
+
+.ac-turn-prompt.ac-message{padding-right:0}

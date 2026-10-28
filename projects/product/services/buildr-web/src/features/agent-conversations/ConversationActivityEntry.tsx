@@ -2,7 +2,7 @@ import { useRef, useState, type ReactNode } from 'react';
 import { Alert, Button, Popover } from 'antd';
 import { UnorderedListOutlined, ArrowRightOutlined } from '@ant-design/icons';
 import { ConversationActivityStatus } from './ConversationActivityStatus';
-import { activityBadge, activityReminder, type ActivityCounts, type ActivityState } from './conversation-activity';
+import { groupConversationWorkspaces, activityBadge, activityReminder, type ActivityCounts, type ActivityState } from './conversation-activity';
 import { CopyButton } from '../../components/CopyButton';
 import './conversation-activity.css';
 export type ActivityItem={id:string;workspaceId:string;title:string;meta:string;state:ActivityState;userInputAt?:string};
@@ -16,8 +16,7 @@ export function ConversationActivityEntry(props:Props) {
   const priority=(item:ActivityItem)=>item.state==='waiting'||item.state==='unseen'?0:item.state==='unknown'?1:2;
   const items=[...props.items].sort((a,b)=>priority(a)-priority(b)||(a.userInputAt&&b.userInputAt?b.userInputAt.localeCompare(a.userInputAt):0));
   const renderRows=(items:ActivityItem[])=>{
-    const groups=new Map<string,ActivityItem[]>();
-    for(const item of items){const key=priority(item)+':'+item.workspaceId,group=groups.get(key);if(group)group.push(item);else groups.set(key,[item]);}
+    const groups=groupConversationWorkspaces(items);
     return [...groups].map(([key,rows])=>{const workspaceId=rows[0].workspaceId;return <section className="ac-activity-workspace" key={key} data-activity-workspace={workspaceId} aria-label={props.workspaces.find(row=>row.id===workspaceId)?.name||workspaceId}>
       <h3><span>{props.workspaces.find(row=>row.id===workspaceId)?.name||workspaceId}</span><small>{rows.length}</small></h3>
       {rows.map(item=><div key={item.workspaceId+':'+item.id} className={'ac-activity-row'+(props.selectedId===item.id?' is-selected':'')}>
@@ -50,7 +49,7 @@ export function ConversationActivityEntry(props:Props) {
       {props.hasMore&&<Button type="text" className="ac-activity-more" onClick={props.onMore}>显示更多对话</Button>}</div>
       {props.historyPlacement==='footer'&&<footer className="ac-activity-history-footer"><Button type="text" aria-label="全部对话" onClick={history}>全部对话<ArrowRightOutlined aria-hidden="true"/></Button></footer>}
     </section>}>
-    <Button ref={entry} type="text" className={'ac-conversation-icon ac-all-conversations'+(props.active?' is-active':'')+(stale?' is-stale':'')} aria-label={`所有对话，${reminder}`} aria-expanded={Boolean(props.active||open)} aria-pressed={Boolean(props.active)} aria-controls="agent-conversation-panel" title={(props.active?'收起对话列表':'对话列表')+'；'+reminder} aria-haspopup="dialog"
+    <Button ref={entry} type="text" className={'ac-conversation-icon ac-all-conversations'+(props.active?' is-active':'')+(stale?' is-stale':'')} aria-label={`所有对话，${reminder}`} aria-expanded={Boolean(props.active||open)} aria-pressed={Boolean(props.active)} aria-controls="agent-conversation-panel" title="对话列表" aria-haspopup="dialog"
       onFocus={()=>{if(pointerFocus.current)return;dismissed.current=false;setOpen(true);}} onBlur={event=>{pointerFocus.current=false;if(event.relatedTarget instanceof Element&&event.relatedTarget.closest('.ac-activity-menu'))return;setOpen(false);}}
       onPointerEnter={()=>{if(!pointerFocus.current)dismissed.current=false;}}
       // Pointer focus precedes click. Cancel both focus-open and the pending hover,

@@ -5,7 +5,7 @@ import {readFileSync,existsSync} from 'node:fs';
 import ts from 'typescript';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {activityBadge,activityReminder,activityState} from '../src/features/agent-conversations/conversation-activity.ts';
+import {groupConversationWorkspaces,activityBadge,activityReminder,activityState} from '../src/features/agent-conversations/conversation-activity.ts';
 import {conversationTierChoice} from '../src/features/agent-conversations/conversation-options.ts';
 
 registerHooks({
@@ -56,7 +56,7 @@ test('大数与读取失败保留准确数量，首次未知不冒充零',()=>{
 test('完整列表保留分类数量、键盘按钮及选中反馈',()=>{
   const html=renderToStaticMarkup(React.createElement(ConversationActivityFilters,{counts,value:'waiting',onChange(){}}));
   assert.match(html,/aria-label="活动分类"/);assert.match(html,/待处理/);assert.match(html,/aria-pressed="true"/);
-  assert.match(html,/需关注/);assert.match(html,/状态待确认/);
+  assert.doesNotMatch(html,/需关注/);assert.match(html,/执行状态暂时无法确认/);
   const unknown=renderToStaticMarkup(React.createElement(ConversationActivityFilters,{value:null,onChange(){}}));
   assert.match(unknown,/分类暂不可用/);assert.doesNotMatch(unknown,/<small>0<\/small>/);
 });
@@ -76,4 +76,33 @@ test('浮窗显示真实账号与模型，旧响应不猜账号，失败保留�
   assert.doesNotMatch(html,/Codex|Qoder|按智能体|按模型|<button/);
   const legacy=renderToStaticMarkup(React.createElement(ConversationExecutionSummary,{stats:{agents:stats.agents,models:stats.models,executions:stats.executions},modelLabel:()=> '完整模型名',sourceLabel:id=>id==='one'?'Devin':'ChatGPT'}));
   assert.match(legacy,/账号与模型明细尚未读取/);assert.doesNotMatch(legacy,/Codex ·/);
+});
+
+test('工作空间只分一组，混合状态保留组内优先顺序',()=>{
+  const items=[{workspaceId:'a',id:'unseen',state:'unseen'},{workspaceId:'b',id:'waiting',state:'waiting'},{workspaceId:'a',id:'running',state:'running'}];
+  const groups=groupConversationWorkspaces(items);
+  assert.deepEqual([...groups.keys()],['a','b']);
+  assert.deepEqual(groups.get('a').map(item=>item.id),['unseen','running']);
+  assert.deepEqual(groupConversationWorkspaces([]).size,0);
+  assert.equal(items.length,3);
+});
+test('入口悬停提示固定，分类仅保留待查看待处理执行中',()=>{
+  assert.match(render({active:true}),/title="对话列表"/);
+  assert.match(render({counts:undefined}),/title="对话列表"/);
+  const html=renderToStaticMarkup(React.createElement(ConversationActivityFilters,{counts,value:null,onChange(){}}));
+  assert.ok(html.indexOf('待查看')<html.indexOf('待处理'));
+  assert.ok(html.indexOf('待处理')<html.indexOf('执行中'));
+  assert.doesNotMatch(html,/>活动中<|>需关注<|>状态待确认</);
+});
+
+test('没有异常时不显示状态待确认，有异常才提供查看与返回入口',()=>{
+  const filters=props=>renderToStaticMarkup(React.createElement(ConversationActivityFilters,{counts:{...counts,unknown:0},value:null,onChange(){},...props}));
+  const normal=filters({});
+  assert.doesNotMatch(normal,/暂时无法确认|查看对话|返回全部/);
+  assert.equal((normal.match(/<button/g)||[]).length,3);
+  const abnormal=filters({counts,value:'unknown',stale:true});
+  assert.match(abnormal,/1 个对话的执行状态暂时无法确认（未更新）/);
+  assert.match(abnormal,/返回全部/);
+  assert.match(abnormal,/aria-pressed="true"/);
+  assert.match(filters({counts}),/查看对话/);
 });

@@ -1,13 +1,14 @@
 import { ConversationActivityFilters } from './ConversationActivityFilters';
 import type { ActivityFilter, ActivityCounts } from './conversation-activity';
-import { conversationModelLabel } from './conversation-model-label';
+import { ConversationExecutionSummary } from './ConversationExecutionSummary';
+import { conversationModelSourceLabel, conversationModelLabel } from './conversation-model-label';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Empty, Input, Select, Spin } from 'antd';
 import { ArrowLeftOutlined, HolderOutlined, PlusOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons';
 import { useAgentConversations } from './AgentConversationsContext';
 import { ConversationActivityStatus } from './ConversationActivityStatus';
-import { activityState, conversationMetadata, isActiveConversation } from './conversation-activity';
-import { ConversationExecutionStats, type ExecutionFilter } from './ConversationExecutionStats';
+import { groupConversationWorkspaces, activityState, conversationMetadata, isActiveConversation } from './conversation-activity';
+import type { ExecutionFilter } from './ConversationExecutionStats';
 import { CopyButton } from '../../components/CopyButton';
 import { DEFAULT_HISTORY_GROUP, HISTORY_GROUP_LIMIT, historyGroupOrder, moveHistoryGroup, readHistoryGroupPreference, writeHistoryGroupPreference } from './conversation-history-groups';
 import type { ConversationSummary } from './types';
@@ -23,6 +24,7 @@ export function ConversationHistory({workspaces,defaultWorkspaceId}:{workspaces:
   const [groupOrder,setGroupOrder]=useState<string[]>(readHistoryGroupPreference),[expandedGroups,setExpandedGroups]=useState<Record<string,boolean>>({});
   const [draggingGroup,setDraggingGroup]=useState(''),[dropGroup,setDropGroup]=useState('');
   const generation=useRef(0),firstPage=useRef(''),scope=useRef(''),reading=useRef(false),readSequence=useRef(0);
+  useEffect(()=>{if(activityFilter==='unknown'&&counts?.unknown===0&&!error)setActivityFilter(null);},[activityFilter,counts?.unknown,error]);
   useEffect(()=>{if(context.historyWorkspaceId!==undefined){setWorkspaceId(context.historyWorkspaceId??'');setFilter(null);setActivityFilter(null);setCounts(undefined);}},[context.historyWorkspaceId]);
   const agent=filter?.kind==='agent'?filter.value:undefined,model=filter?.kind==='model'?filter.value:undefined;
   useEffect(()=>{
@@ -46,16 +48,16 @@ export function ConversationHistory({workspaces,defaultWorkspaceId}:{workspaces:
   }catch(failure){if(generation.current===current){firstPage.current='';setReload(value=>value+1);setError(failure instanceof Error?failure.message:'列表顺序已变化，重新读取中。');}}finally{if(generation.current===current){reading.current=false;setBusy(false);}}};
   const modelName=(id:string)=>conversationModelLabel(id,context.connections,context.modelCatalog);
   const workspaceName=(id:string)=>id===DEFAULT_HISTORY_GROUP?'默认':workspaces.find(item=>item.id===id)?.name||id;
-  const renderRow=(row:ConversationSummary,showWorkspace=false)=><div key={row.workspaceId+':'+row.id} className={'ac-history-row'+(context.scope?.workspaceId===row.workspaceId&&context.scope.conversationId===row.id?' is-selected':'')}>
+  const renderRow=(row:ConversationSummary)=><div key={row.workspaceId+':'+row.id} className={'ac-history-row'+(context.scope?.workspaceId===row.workspaceId&&context.scope.conversationId===row.id?' is-selected':'')}>
     <button type="button" className="ac-history-row-main" data-conversation-id={row.id} onClick={()=>void context.openConversation(row.workspaceId,row.id,{preserveVisibility:true})}>
       <span className="ac-history-row-title"><strong title={row.title}>{row.title}</strong><ConversationActivityStatus state={activityState(row)}/></span>
-      <small><span className="ac-history-id" title={row.id}>{row.id}</span><span className="ac-history-meta">{conversationMetadata(row,showWorkspace?workspaceName(row.workspaceId):undefined,row.run?.model?modelName(row.run.model):undefined)}</span></small>
+      <small><span className="ac-history-id" title={row.id}>{row.id}</span><span className="ac-history-meta">{conversationMetadata(row,undefined,row.run?.model?conversationModelLabel(row.run.model,context.connections,context.modelCatalog,{modelAccountId:row.run.modelAccountId}):undefined)}</span></small>
     </button>
     <CopyButton type="text" className="ac-history-row-copy" text={row.id} ariaLabel="复制对话 ID" failureMessage="复制失败，请手动选择对话 ID 复制。"/>
   </div>;
   const active=rows.filter(isActiveConversation),recent=rows.filter(row=>!isActiveConversation(row));
-  const grouped=new Map<string,ConversationSummary[]>();
-  for(const row of recent){const items=grouped.get(row.workspaceId);if(items)items.push(row);else grouped.set(row.workspaceId,[row]);}
+  const priority=(row:ConversationSummary)=>{const state=activityState(row);return state==='waiting'||state==='unseen'?0:state==='unknown'?1:2;};
+  const grouped=groupConversationWorkspaces([...active].sort((a,b)=>priority(a)-priority(b)).concat(recent));
   const order=historyGroupOrder([...grouped.keys()],groupOrder);
   const movable=order.filter(id=>id!==DEFAULT_HISTORY_GROUP);
   const reorder=(moved:string,target:string|'end')=>{const next=moveHistoryGroup(order,moved,target);setGroupOrder(next);writeHistoryGroupPreference(next);};
@@ -77,7 +79,7 @@ export function ConversationHistory({workspaces,defaultWorkspaceId}:{workspaces:
         onDragEnd={()=>{setDraggingGroup('');setDropGroup('');}}
         onKeyDown={event=>{if(!event.altKey||(event.key!=='ArrowUp'&&event.key!=='ArrowDown'))return;event.preventDefault();keyboardMove(id,event.key==='ArrowUp'?-1:1);}}><HolderOutlined aria-hidden/></span>}
     </h3>
-    <div className="ac-history-list">{(expandedGroups[id]?grouped.get(id)??[]:(grouped.get(id)??[]).slice(0,HISTORY_GROUP_LIMIT)).map(row=>renderRow(row))}</div>
+    <div className="ac-history-list">{(expandedGroups[id]?grouped.get(id)??[]:(grouped.get(id)??[]).slice(0,Math.max(HISTORY_GROUP_LIMIT,(grouped.get(id)??[]).filter(isActiveConversation).length))).map(row=>renderRow(row))}</div>
     {(grouped.get(id)?.length??0)>HISTORY_GROUP_LIMIT&&<Button type="text" size="small" className="ac-history-expand" aria-expanded={Boolean(expandedGroups[id])} onClick={()=>setExpandedGroups(previous=>({...previous,[id]:!previous[id]}))}>{expandedGroups[id]?'收起':`展开全部 ${grouped.get(id)?.length} 条`}</Button>}
   </section>;
   return <section className="ac-history" aria-label="对话列表">
@@ -85,11 +87,10 @@ export function ConversationHistory({workspaces,defaultWorkspaceId}:{workspaces:
     <div className="ac-history-body">
       <div className="ac-history-toolbar"><Input allowClear prefix={<SearchOutlined/>} aria-label="搜索对话" placeholder="搜索对话" value={query} onChange={event=>setQuery(event.target.value)}/><Select aria-label="对话列表工作空间" value={workspaceId} options={[{value:'',label:'全部工作空间'},...workspaces.map(item=>({value:item.id,label:item.name}))]} onChange={value=>{setWorkspaceId(value);setStats(undefined);setCounts(undefined);setFilter(null);setActivityFilter(null);}}/></div>
       <ConversationActivityFilters executionFiltered={!!filter} counts={counts} value={activityFilter} stale={!!error} onChange={value=>{setActivityFilter(value);setFilter(null);}}/>
-      <ConversationExecutionStats modelLabel={modelName} status={error?'error':stats?'ready':'unknown'} stats={stats} filter={filter} onFilter={value=>{setFilter(value);setActivityFilter(null);}}/>
+      <ConversationExecutionSummary stats={stats} stale={!!error} sourceLabel={id=>conversationModelSourceLabel(id,context.modelCatalog)} modelLabel={(id,accountId)=>conversationModelLabel(id,context.connections,context.modelCatalog,{modelAccountId:accountId})}/>
       {filter&&<div className="ac-execution-filter"><span>执行中 · {filter.kind==='model'?modelName(filter.value):filter.value}</span><Button type="link" size="small" onClick={()=>setFilter(null)}>清除筛选</Button></div>}
       {error&&<Alert type="warning" showIcon message={error} action={<Button size="small" onClick={()=>{firstPage.current='';setReload(value=>value+1);}}>重试</Button>}/>}
-      {active.length>0&&<section className="ac-history-group ac-history-active" aria-label="活动中的对话"><h3><span className="ac-history-group-name">活动中的对话</span><small>{active.length}{cursor?' +':''}</small></h3><div className="ac-history-list">{active.map(row=>renderRow(row,!workspaceId))}</div></section>}
-      {recent.length>0&&<div className="ac-history-groups-heading"><strong>{hidden?'已隐藏的对话':'其他对话'}</strong><Button type="text" size="small" onClick={()=>setHidden(value=>!value)}>{hidden?'返回最近':'查看隐藏'}</Button></div>}
+      <div className="ac-history-groups-heading"><strong>对话</strong><Button type="text" size="small" onClick={()=>setHidden(value=>!value)}>{hidden?'返回最近':'查看隐藏'}</Button></div>
       {order.map(sortGroup)}
       {busy&&<Spin/>}{!busy&&!rows.length&&<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有匹配的对话"/>}{cursor&&<Button loading={busy} onClick={()=>void more()}>加载更多</Button>}
       <Button type="text" icon={<SettingOutlined/>} onClick={()=>context.setSettings(true)}>账号与配置</Button>
