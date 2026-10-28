@@ -1,3 +1,11 @@
+/** An explicit RPC rejection, distinct from a transport failure with unknown delivery. */
+export class NativeRequestError extends Error {
+  readonly diagnostic: string;
+  constructor(message?: string, secrets: readonly string[] = []) {
+    super('agent_native_request_failed');
+    this.diagnostic = errorDiagnostic(message, secrets) ?? '原生程序拒绝本次请求。';
+  }
+}
 /** Only explicit error messages cross the public boundary, never headers or whole responses. */
 export function errorDiagnostic(value: unknown, secrets: readonly string[] = []): string | undefined {
   if (typeof value !== 'string' || !value.trim()) return undefined;

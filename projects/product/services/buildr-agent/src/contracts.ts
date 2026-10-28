@@ -289,6 +289,8 @@ export interface HandoffMaterial {
   mode: 'records'|'summary'|'indexed'; sourcePath?: string;
 }
 export interface SendDraft {
+  /** Explicit recovery of this exact latest run, without a new user message. */
+  continueRunId?: string;
   skipHandoffSummary?: boolean;
   modelAccountId?: string; modelAccountIdentity?: string; modelAccountRevision?: string;
   expectedRevision: string;

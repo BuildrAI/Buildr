@@ -44,3 +44,4 @@
 .ac-turn-identity-link:focus-visible,.ac-turn-locate-input:focus-visible,.ac-turn-collapse:focus-visible,.ac-process-collapse:focus-visible{outline:2px solid var(--soft-primary,#397d74);outline-offset:2px}
 .ac-turn:focus,.ac-turn-content:focus{outline:none}
 @media(hover:none){.ac-turn-locate-input,.ac-turn-locate-icon{opacity:1}}
+.ac-recovery-action{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:8px 0;color:var(--soft-muted,#6d7a77);font-size:12px}

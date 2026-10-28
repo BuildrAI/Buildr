@@ -1,4 +1,5 @@
 import {ModelAccessError} from '../model-access/contracts.ts';
+import { NativeRequestError } from './error-diagnostic.ts';
 import type { ConnectionView, ContextRef, ConversationView, ExecutionRef, RunStatus, RunView } from '../contracts.ts';
 
 export class AgentServiceError extends Error {
@@ -19,6 +20,7 @@ export function expected(actual: string, supplied: unknown): void {
 export function safeDiagnostic(error: unknown): string {
   // Do not expose raw vendor errors, which can contain headers, URLs or credentials.
   if (error instanceof AgentServiceError || error instanceof ModelAccessError) return error.message;
+  if (error instanceof NativeRequestError) return error.diagnostic;
   const code = error instanceof Error ? error.message.split(':')[0] : '';
   const messages: Record<string, string> = {
     qoder_platform_login_required: 'Qoder 程序需要先完成基础平台登录；不要求购买或选择 Qoder 模型套餐。',
@@ -33,9 +35,11 @@ export function safeDiagnostic(error: unknown): string {
     codex_execution_observation_lost: 'Codex 执行连接已中断，正在核对原执行；不会重发原指令。',
     agent_native_process_closed: '原生执行连接已关闭，请核对原执行；不会重发原指令。',
     agent_native_timeout: '原生程序响应超时，请重新观察；不会自动重发工作指令。',
+    agent_native_request_failed: '原生程序拒绝本次请求，未返回具体原因；原输入已保留。',
+    agent_native_process_failed: '原生执行程序暂时无法启动，原输入已保留。',
     agent_request_stale: '原生问题或授权已失效，请重新观察。',
   };
-  return messages[code] ?? '原生智能体连接未完成，请检查程序、独立登录及兼容版本。';
+  return messages[code] ?? '原生执行未能完成，原输入与工作记录已保留，请核对程序连接状态后重试。';
 }
 export const BUSY_STATES: ReadonlySet<RunStatus> = new Set(['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'tools-active', 'unknown']);
 
@@ -77,6 +81,8 @@ export interface StoredConversation {
     nativeInputItemId?: string;
     accepted: boolean;
     supplement?: boolean;
+    automaticRetry?: { rootRunId: string; count: number };
+    continuationOf?: string;
   }>;
   requests: Record<string, { nativeId: string; executionRef: ExecutionRef }>;
 }

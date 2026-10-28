@@ -1,9 +1,24 @@
 import type { ConversationView, ConversationEntry, ConversationEvent, ConversationRun } from './types';
 
+export function conversationRecoveryAction(conversation: ConversationView | null): {kind:'recover'|'observe';label:string} | null {
+  const run = conversation?.run; if (!conversation || !run) return null;
+  if (run.status === 'unknown' || run.status === 'tools-active' || ['failed','stopped','completed'].includes(run.status) && run.tools.some(tool => tool.status !== 'completed')) return {kind:'observe',label:'核对状态'};
+  if (executionLocked(run) || conversation.requests.length || run.tools.some(tool => tool.status !== 'completed')) return null;
+  const replied = conversation.entries.some(entry => entry.role === 'assistant' && entry.kind === 'message' && entry.text.trim() && (entry.runId === run.id || !entry.runId && entry.createdAt >= run.startedAt));
+  if (!['failed','stopped','completed'].includes(run.status) || run.status === 'completed' && replied) return null;
+  return {kind:'recover',label:run.accepted?'继续':'重试'};
+}
+
+/** A changed execution choice may continue existing work after an explicit send. */
+export function conversationContinuationText(conversation: ConversationView | null, changed: boolean, text: string, imageCount: number): string {
+  if (text.trim() || imageCount || !changed || !conversation?.entries.some(entry => entry.role === 'user' && entry.kind === 'message')) return text;
+  return '继续当前工作。请核对已有对话、尚未交付的用户要求和当前成果，接着完成未完成的目标；不要重复执行已完成的操作，不扩大原有授权。';
+}
+
 export function executionLocked(run?: ConversationRun): boolean {
   return Boolean(run && ['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'tools-active', 'unknown'].includes(run.status));
 }
-const conversationConflictRefreshCodes = new Set(['agent_revision_conflict','agent_preview_stale','agent_model_source_changed','agent_model_source_unavailable','agent_model_unavailable','agent_model_disabled']);
+const conversationConflictRefreshCodes = new Set(['agent_revision_conflict','agent_preview_stale','agent_model_source_changed','agent_model_source_unavailable','agent_model_unavailable','agent_model_disabled','agent_continue_stale']);
 /** Only stale observations need a reread; busy and permission errors must keep their exact reason. */
 export function conversationConflictNeedsRefresh(error:{status?:number;code?:string}|undefined):boolean {
   return error?.status===409&&Boolean(error.code&&conversationConflictRefreshCodes.has(error.code));

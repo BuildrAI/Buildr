@@ -6,6 +6,7 @@ import { dirname, isAbsolute, join } from 'node:path';
 import type { ExecutorBinding } from '../contracts.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from './program-policy.ts';
 import { toolEnvironment } from './tool-environment.ts';
+import { NativeRequestError } from '../domain/error-diagnostic.ts';
 
 export type NativeEnvironment = NodeJS.ProcessEnv;
 /** Deliberately excludes desktop RPC credentials and default provider credentials. */
@@ -56,8 +57,10 @@ export class NativeRpc {
   readonly child: ChildProcessWithoutNullStreams;
   private disposed = false;
   private failed = false;
+  private readonly diagnosticSecrets: string[];
   get closed(): boolean { return this.disposed || this.failed || this.child.exitCode !== null || this.child.signalCode !== null || this.child.stdin.destroyed; }
   constructor(command: string, args: string[], options: { cwd: string; env: NativeEnvironment }) {
+    this.diagnosticSecrets = Object.entries(options.env).filter(([key, value]) => /(?:TOKEN|KEY|PASSWORD|SECRET)$/i.test(key) && value).map(([, value]) => value!);
     this.child = spawn(command, args, { ...options, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     // Native diagnostics may contain credentials. They never become public errors or events.
     this.child.stderr.on('data', () => {});
@@ -79,7 +82,7 @@ export class NativeRpc {
       try { message = JSON.parse(line); } catch { this.fail('agent_native_protocol_invalid'); this.child.kill('SIGTERM'); return; }
       if (message.id !== undefined && !message.method && this.pending.has(message.id)) {
         const pending = this.pending.get(message.id)!; this.pending.delete(message.id);
-        if (message.error) pending.reject(new Error(/^(?:agent_|qoder_|dsh_)[a-z0-9_]+$/.test(message.error.message ?? '') ? message.error.message : 'agent_native_request_failed'));
+        if (message.error) pending.reject(/^(?:agent_|qoder_|dsh_)[a-z0-9_]+$/.test(message.error.message ?? '') ? new Error(message.error.message) : new NativeRequestError(message.error.message, this.diagnosticSecrets));
         else pending.resolve(message.result);
       } else for (const listener of this.listeners) {
         try { listener(message); }

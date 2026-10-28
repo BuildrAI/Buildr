@@ -123,3 +123,18 @@ test('a private native directory cannot redirect into a shared profile', async (
     assert.equal(nativePreview('short'), 'short'); assert.match(nativePreview('a'.repeat(16001)), /内容已截断/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('an explicit RPC rejection preserves a sanitized service cause for recovery classification', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-executor-rejection-'));
+  const fixture = join(root, 'rpc.mjs');
+  await writeFile(fixture, `import{createInterface}from'node:readline';createInterface({input:process.stdin}).on('line',l=>{let m=JSON.parse(l);process.stdout.write(JSON.stringify({id:m.id,error:{message:'Selected model is at capacity. Bearer private-credential opaque-env-secret https://private.invalid/request'}})+'\\n');});`);
+  const rpc = new NativeRpc(process.execPath, [fixture], {cwd: root, env: isolatedEnvironment(process.env, root, root, {BUILDR_MODEL_GATEWAY_KEY:'opaque-env-secret'})});
+  try {
+    await assert.rejects(rpc.call('thread/resume'), (error: any) => {
+      assert.equal(error.message, 'agent_native_request_failed');
+      assert.match(error.diagnostic, /Selected model is at capacity/);
+      assert.doesNotMatch(error.diagnostic, /private-credential|private.invalid|opaque-env-secret/);
+      return true;
+    });
+  } finally { await rpc.close(); await rm(root, {recursive: true, force: true}); }
+});

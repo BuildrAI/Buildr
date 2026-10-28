@@ -7,11 +7,13 @@ import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
 import { createAgentService } from '../../src/index.ts';
 import type { AgentExecutor, AgentRuntime, AgentServiceOptions, ContextRef, ConversationEntry, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorSendInput, ExecutorTitleInput, LoginObservation } from '../../src/contracts.ts';
+import { NativeRequestError } from '../../src/domain/error-diagnostic.ts';
 import { ConversationRepository } from '../../src/persistence/conversation-repository.ts';
 
 type Context = { items: ExecutorItem[]; observation: ExecutorObservation; unblock?: () => void };
-function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'running'|'unknown'|'tool'; beforeDisconnect?: Promise<void>; disconnectAlways?: boolean; beforeResume?: Promise<void>; unknown?: boolean; images?: boolean; request?: boolean; coldUnknown?: boolean; beforeAccepted?: Promise<void>; replyAfterTerminal?: boolean; toolSurvives?: boolean; toolInput?: boolean; failure?: string; summary?:(input:ExecutorTitleInput)=>Promise<string|undefined> } = {}) {
+function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'running'|'unknown'|'tool'; beforeDisconnect?: Promise<void>; disconnectAlways?: boolean; disconnectOn?: number; beforeResume?: Promise<void>; unknown?: boolean; images?: boolean; noAnswer?: boolean; multipleModels?: boolean; request?: boolean; coldUnknown?: boolean; beforeAccepted?: Promise<void>; replyAfterTerminal?: boolean; toolSurvives?: boolean; toolInput?: boolean; failure?: string | ((attempt: number) => string | undefined); prepareFailures?: number; unknownCreate?: boolean; beforeObservation?: Promise<void>; wrongObservation?: boolean; summary?:(input:ExecutorTitleInput)=>Promise<string|undefined> } = {}) {
   const contexts = new Map<string, Context>(); const sends: ExecutorSendInput[] = []; const opens: ExecutorOpenOptions[] = [];
+  let preparations = 0;
   let loginUpdate: ((value: LoginObservation) => void) | undefined;
   const capabilities = { text: true, images: Boolean(options.images), approval: true, questions: true, stop: true, resume: true, maxInputBytes: 128 * 1024 };
   const get = (ref: ContextRef) => { const context = contexts.get(ref.id); assert.ok(context, 'exact context must be restored'); return context; };
@@ -21,10 +23,10 @@ function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'r
     const runtime: AgentRuntime = {
       bindingIdentity: `${id}:${input.configRoot}`, capabilities, get closed() { return closed; },
       async inspectAccount() { return { status: 'ready', label: 'local account' }; },
-      async models() { return [{ id: 'test-model', label: 'test-model' }]; },
+      async models() { return [{ id: 'test-model', label: 'test-model' }, ...(options.multipleModels ? [{id:'other-model',label:'other-model'}] : [])]; },
       async beginLogin(update) { loginUpdate = update; update({ state: 'waiting-browser', url: 'https://example.test/official?secret=temporary' }); },
       async cancelLogin() {},
-      async createContext() { const ref = { id: randomUUID() }; contexts.set(ref.id, { items: [], observation: { status: 'idle', tools: [] } }); return ref; },
+      async createContext() { if (++preparations <= (options.prepareFailures ?? 0)) throw options.unknownCreate ? new Error('agent_native_timeout') : new NativeRequestError('service temporarily unavailable'); const ref = { id: randomUUID() }; contexts.set(ref.id, { items: [], observation: { status: 'idle', tools: [] } }); return ref; },
       async resumeContext({ contextRef }) { if (opens.length > 1) await options.beforeResume; get(contextRef); },
       async readHistory({ contextRef }) { return structuredClone(get(contextRef).items); },
       async send(input) {
@@ -37,7 +39,7 @@ function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'r
         const user: ExecutorItem = { id: `input-${sends.length}`, kind: 'message', role: 'user', text: input.text, executionId: executionRef.id };
         context.items.push(user); input.onEvent({ type: 'item', item: user });
         if (options.request) input.onEvent({ type: 'request', request: { id: 'permit-one', kind: 'approval', title: 'Write a file?', options: [{ id: 'allow-once', label: 'Allow once' }, { id: 'deny', label: 'Deny' }] } });
-        if (options.disconnect && (sends.length === 1 || options.disconnectAlways)) {
+        if (options.disconnect && (sends.length === (options.disconnectOn ?? 1) || options.disconnectAlways)) {
           await options.beforeDisconnect;
           closed = true;
           context.observation = { status: options.disconnect === 'tool' ? 'stopped' : options.disconnect, executionRef,
@@ -53,11 +55,12 @@ function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'r
           context.items.push(result);input.onEvent({type:'item',item:result});
         }
         const item: ExecutorItem = { id: `answer-${sends.length}`, kind: 'message', role: 'assistant', text: `answer from ${id}`, executionId: executionRef.id, status: 'completed' };
-        context.items.push(item); input.onEvent({ type: 'item', item });
+        if (!options.noAnswer) { context.items.push(item); input.onEvent({ type: 'item', item }); }
         context.observation = options.toolSurvives ? { status: 'tools-active', executionRef, tools: [{ id: 'own-tool', label: 'owned command', status: 'running', canStop: true }] } : { status: 'idle', executionRef, tools: [] };
-        input.onEvent({ type: 'completed', status: options.failure ? 'failed' : 'completed', ...(options.failure ? {diagnostic:options.failure} : {}) });
+        const failure = typeof options.failure === 'function' ? options.failure(sends.length) : options.failure;
+        input.onEvent({ type: 'completed', status: failure ? 'failed' : 'completed', ...(failure ? {diagnostic:failure} : {}) });
       },
-      async observe({ contextRef }) { return options.coldUnknown && !didSend ? { status: 'unknown', tools: [] } : structuredClone(get(contextRef).observation); },
+      async observe({ contextRef }) { await options.beforeObservation; if (options.wrongObservation) return {...structuredClone(get(contextRef).observation), executionRef:{id:'wrong-execution'}}; return options.coldUnknown && !didSend ? { status: 'unknown', tools: [] } : structuredClone(get(contextRef).observation); },
       async reply({ contextRef, answer }) { assert.equal(answer, 'allow-once'); const context = get(contextRef); context.unblock?.(); if (options.replyAfterTerminal) await new Promise(resolve => setTimeout(resolve, 25)); },
       async stop({ contextRef }) { const context = get(contextRef); context.observation = { ...context.observation, status: 'stopped', tools: [] }; context.unblock?.(); return context.observation; },
       summarizeHandoff:options.summary,
@@ -77,7 +80,7 @@ function fixture(executors: AgentExecutor[], settings: { modelProviders?: AgentS
 async function connected(service: ReturnType<typeof createAgentService>, id: string) { return service.connections.connect(id, { expectedRevision: service.connections.read(id).revision }); }
 async function waitUntil<T>(read: () => T, predicate: (value: T) => boolean): Promise<T> {
   for (let i = 0; i < 500; i++) { const value = read(); if (predicate(value)) return value; await new Promise(resolve => setTimeout(resolve, 2)); }
-  assert.fail('observable state did not settle');
+  assert.fail('observable state did not settle: ' + JSON.stringify(read()).slice(-1800));
 }
 function send(service: ReturnType<typeof createAgentService>, id: string, connectionId: string, text: string, clientRequestId: string = randomUUID()) {
   const view = service.conversations.read('workspace-one', id);
@@ -1543,4 +1546,246 @@ test('video ownership, metadata, bytes, revision and visual capability reject in
     const preview=f.service.conversations.prepareSend('workspace-one',chat.id,{expectedRevision:video.revision,connectionId:'text',text:'',attachmentIds:[video.id]});
     assert.equal(preview.fits,false);assert.match(preview.diagnostic!,/无法接收这些图片/);assert.equal(native.sends.length,0);
   }finally{await f.close();}
+});
+
+function fastRetries(t: import('node:test').TestContext) {
+  t.mock.method(globalThis, 'setTimeout', new Proxy(setTimeout, { apply(target, receiver, args) {
+    if ([2000, 5000, 10000].includes(args[1])) args[1] = 1;
+    return Reflect.apply(target, receiver, args);
+  } }));
+}
+
+test('temporary preparation failures retry the original input without creating duplicate user turns', async t => {
+  fastRetries(t);
+  const native = fake('local', {prepareFailures: 2}), f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {});
+    const initial = send(f.service, chat.id, 'local', 'inspect current work');
+    const done = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => view.run?.status === 'completed');
+    assert.equal(done.run?.id, initial.run.id); assert.equal(native.sends.length, 1);
+    assert.equal(native.sends[0].text, 'inspect current work');
+    assert.equal(done.entries.filter(entry => entry.role === 'user').length, 1);
+  } finally { await f.close(); }
+});
+
+test('capacity failure continues the exact context as a system retry and retains original failure', async t => {
+  fastRetries(t);
+  const native = fake('local', {failure: n => n === 1 ? 'Selected model is at capacity. Please try a different model.' : undefined}), f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {});
+    const initial = send(f.service, chat.id, 'local', 'finish the change');
+    const done = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => view.run?.status === 'completed');
+    assert.equal(native.sends.length, 2); assert.equal(native.sends[0].contextRef.id, native.sends[1].contextRef.id);
+    assert.equal(native.sends[0].model, native.sends[1].model); assert.equal(native.sends[0].permissionMode, native.sends[1].permissionMode);
+    assert.match(native.sends[1].text, /系统自动重试/);
+    assert.equal(done.entries.filter(entry => entry.role === 'user').length, 1);
+    assert.ok(done.entries.some(entry => entry.role === 'system' && entry.kind === 'notice' && entry.status === 'accepted'));
+    assert.equal(new ConversationRepository(path.join(f.options.dataRoot, 'agent-service')).readConversation(chat.id)?.runOutcomes?.[initial.run.id]?.status, 'failed');
+  } finally { await f.close(); }
+});
+
+test('persistent capacity errors stop after three automatic attempts', async t => {
+  fastRetries(t);
+  const native = fake('local', {failure: 'Selected model is at capacity.'}), f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', 'finish');
+    await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => native.sends.length === 4 && view.run?.status === 'failed');
+    assert.equal(new Set(native.sends.map(input => input.clientRequestId)).size, 4);
+    assert.equal(native.contexts.size, 1);
+  } finally { await f.close(); }
+});
+
+test('stop cancels a retry wait and concurrent observations do not start a second execution', async () => {
+  const native = fake('local', {failure: 'Selected model is at capacity.'}), f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', 'finish');
+    await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => Boolean(view.run?.diagnostic?.includes('自动重试')));
+    await Promise.all([f.service.conversations.observe('workspace-one', chat.id), f.service.conversations.observe('workspace-one', chat.id)]);
+    const pending = f.service.conversations.read('workspace-one', chat.id), run = pending.run!;
+    const stopped = await f.service.conversations.stop('workspace-one', chat.id, {expectedRevision: pending.revision, runId: run.id, participantId: run.participantId, generation: run.generation});
+    assert.equal(stopped.run?.status, 'stopped');
+    await new Promise(resolve => setImmediate(resolve)); assert.equal(native.sends.length, 1);
+  } finally { await f.close(); }
+});
+
+test('quota, authentication, unknown delivery and unfinished tools are not automatically retried', async t => {
+  fastRetries(t);
+  for (const options of [{failure: 'at capacity; daily quota exhausted'}, {failure: 'unauthorized: temporary failure'}, {failure: 'at capacity', toolSurvives: true}, {unknown: true}]) {
+    const native = fake('local', options), f = fixture([native.executor]);
+    try {
+      await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {});
+      send(f.service, chat.id, 'local', 'finish');
+      const ended = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => ['failed', 'tools-active', 'unknown'].includes(view.run?.status ?? ''));
+      assert.doesNotMatch(ended.run?.diagnostic ?? '', /自动重试/); assert.equal(native.sends.length, 1);
+    } finally { await f.close(); }
+  }
+});
+
+test('host shutdown cancels a retry wait without converting it into host recovery', async () => {
+  const native = fake('local', {failure: 'at capacity'}), f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', 'finish');
+    await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => Boolean(view.run?.diagnostic?.includes('自动重试')));
+    await f.service.close(); const cold = createAgentService(f.options);
+    try {
+      await cold.conversations.recoverInterrupted();
+      assert.equal(cold.conversations.read('workspace-one', chat.id).run?.status, 'failed'); assert.equal(native.sends.length, 1);
+    } finally { await cold.close(); }
+  } finally { await f.close(); }
+});
+
+
+test('an explicit stop during terminal observation cancels a not-yet-scheduled retry', async () => {
+  let release!: () => void;
+  const beforeObservation = new Promise<void>(resolve => {release = resolve;});
+  const native = fake('local', {failure: 'at capacity', beforeObservation}), f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', 'finish');
+    const failed = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => view.run?.status === 'failed');
+    const run = failed.run!;
+    await f.service.conversations.stop('workspace-one', chat.id, {expectedRevision:failed.revision, runId:run.id, participantId:run.participantId, generation:run.generation});
+    release(); await new Promise(resolve => setImmediate(resolve));
+    assert.doesNotMatch(f.service.conversations.read('workspace-one', chat.id).run?.diagnostic ?? '', /自动重试/);
+    assert.equal(native.sends.length, 1);
+  } finally {release(); await f.close();}
+});
+
+test('a terminal observation for a different execution cannot authorize retry', async () => {
+  const native = fake('local', {failure: 'at capacity', wrongObservation:true}), f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', 'finish');
+    await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => view.run?.status === 'failed');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.doesNotMatch(f.service.conversations.read('workspace-one', chat.id).run?.diagnostic ?? '', /自动重试/);
+    assert.equal(native.sends.length, 1);
+  } finally {await f.close();}
+});
+
+
+test('ambiguous context creation is preserved without automatically creating another context', async () => {
+  const native = fake('local', {prepareFailures:1, unknownCreate:true}), f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', 'finish');
+    const failed = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => view.run?.status === 'failed');
+    assert.doesNotMatch(failed.run?.diagnostic ?? '', /自动重试/); assert.equal(native.sends.length, 0);
+    assert.equal(native.contexts.size, 0);
+  } finally {await f.close();}
+});
+
+
+test('transport recovery preserves the temporary-failure retry budget instead of resetting it', async t => {
+  fastRetries(t);
+  const native = fake('local', {failure:'at capacity', disconnect:'stopped', disconnectOn:2}), f = fixture([native.executor], {autoContinueInterrupted:true});
+  try {
+    await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', 'finish');
+    const ended = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => Boolean(view.run?.diagnostic?.includes('已达上限')));
+    assert.equal(native.sends.length, 5); // Original + three temporary-failure retries + one transport recovery.
+    assert.equal(native.sends.filter(input => input.clientRequestId.startsWith('automatic-retry:')).length, 3);
+    assert.equal(native.sends.filter(input => input.clientRequestId.startsWith('host-recovery:')).length, 1);
+    assert.equal(ended.run?.status, 'failed');
+  } finally {await f.close();}
+});
+
+
+function continueDraft(service: ReturnType<typeof createAgentService>, id:string, connectionId='local', model?:string) {
+  const current=service.conversations.read('workspace-one',id);
+  return {expectedRevision:current.revision, connectionId, model, text:'', continueRunId:current.run!.id};
+}
+
+test('explicit retry restores undelivered text and images without a duplicate user message', async () => {
+  const native=fake('local',{images:true,prepareFailures:1,unknownCreate:true}), f=fixture([native.executor]);
+  try {
+    await connected(f.service,'local'); const chat=await f.service.conversations.create('workspace-one',{});
+    const image=f.service.conversations.addAttachment('workspace-one',chat.id,{expectedRevision:chat.revision,mimeType:'image/png',bytes:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==','base64')});
+    const input={expectedRevision:image.revision,connectionId:'local',text:'Inspect the image and finish the original task',attachmentIds:[image.id]};
+    const preview=f.service.conversations.prepareSend('workspace-one',chat.id,input);
+    const original=f.service.conversations.send('workspace-one',chat.id,{...input,previewToken:preview.token,clientRequestId:randomUUID()});
+    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='failed');
+    const draft=continueDraft(f.service,chat.id), next=f.service.conversations.prepareSend('workspace-one',chat.id,draft), request={...draft,previewToken:next.token,clientRequestId:randomUUID()};
+    const started=f.service.conversations.send('workspace-one',chat.id,request);
+    assert.equal(f.service.conversations.send('workspace-one',chat.id,request).run.id,started.run.id);
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+    assert.equal(native.sends.length,1);assert.match(native.sends[0].text,/Inspect the image/);assert.equal(native.sends[0].images.length,1);
+    assert.equal(done.entries.filter(entry=>entry.kind==='message'&&entry.role==='user').length,1);
+    assert.ok(done.entries.some(entry=>entry.role==='system'&&entry.text==='已请求重试上次未送达的要求。'));
+    assert.equal(new ConversationRepository(path.join(f.options.dataRoot,'agent-service')).readConversation(chat.id)?.attempts.at(-1)?.continuationOf,original.run.id);
+    assert.throws(()=>f.service.conversations.prepareSend('workspace-one',chat.id,{...draft,expectedRevision:done.revision}),{code:'agent_continue_stale'});
+  } finally {await f.close();}
+});
+
+test('manual continuation works with the same selection, another model or another executor', async () => {
+  for (const target of ['same','model','executor']) {
+    const first=fake('local',{multipleModels:true,failure:n=>n===1?'permission_denied: previous execution failed':undefined}),second=fake('other',{multipleModels:true}),f=fixture([first.executor,second.executor]);
+    try {
+      await connected(f.service,'local');await connected(f.service,'other');const chat=await f.service.conversations.create('workspace-one',{});
+      send(f.service,chat.id,'local','Complete the existing goal');
+      await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='failed');
+      const draft=continueDraft(f.service,chat.id,target==='executor'?'other':'local',target==='model'?'other-model':undefined);
+      const preview=f.service.conversations.prepareSend('workspace-one',chat.id,draft);
+      f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
+      const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+      const sent=target==='executor'?second.sends[0]:first.sends.at(-1)!;
+      assert.match(sent.text,/接着完成原目标/);if(target==='model')assert.equal(sent.model,'other-model');
+      assert.equal(done.entries.filter(entry=>entry.kind==='message'&&entry.role==='user').length,1);
+      assert.ok(done.entries.some(entry=>entry.role==='system'&&entry.text==='已请求继续上次执行。'));
+      if(target==='same')assert.equal(first.sends[0].contextRef.id,sent.contextRef.id);
+      else assert.match(sent.text,/Complete the existing goal/);
+    } finally {await f.close();}
+  }
+});
+
+test('an empty completed response can continue, but a normal response or unknown work cannot', async () => {
+  for(const options of [{noAnswer:true},{unknown:true},{toolSurvives:true},{}]) {
+    const native=fake('local',options),f=fixture([native.executor]);
+    try {
+      await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','finish');
+      await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>['completed','unknown','tools-active'].includes(view.run?.status??''));
+      const draft=continueDraft(f.service,chat.id);
+      if('noAnswer' in options)assert.ok(f.service.conversations.prepareSend('workspace-one',chat.id,draft).fits);
+      else assert.throws(()=>f.service.conversations.prepareSend('workspace-one',chat.id,draft),error=>['agent_conversation_busy','agent_continue_unavailable'].includes((error as any).code));
+      assert.throws(()=>f.service.conversations.prepareSend('workspace-one',chat.id,{...draft,text:'unrelated new instruction'}),{code:'agent_continue_input_conflict'});
+      assert.throws(()=>f.service.conversations.queueSend('workspace-one',chat.id,{...draft,clientRequestId:randomUUID()}),{code:'agent_continue_unavailable'});
+      assert.equal(native.sends.length,1);
+    } finally {await f.close();}
+  }
+});
+
+test('manual continuation can still use bounded automatic retry without replaying the manual action', async t => {
+  fastRetries(t);
+  const native=fake('local',{failure:n=>n===1?'permission_denied: failed':n===2?'Selected model is at capacity.':undefined}),f=fixture([native.executor]);
+  try {
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','finish original goal');
+    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='failed');
+    const draft=continueDraft(f.service,chat.id),preview=f.service.conversations.prepareSend('workspace-one',chat.id,draft);
+    f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+    assert.equal(native.sends.length,3);assert.equal(done.entries.filter(entry=>entry.kind==='message'&&entry.role==='user').length,1);
+    assert.equal(done.entries.filter(entry=>entry.text==='已请求继续上次执行。').length,1);
+  } finally {await f.close();}
+});
+
+test('explicit retry keeps an undelivered video and its timed frames after mainline integration', async () => {
+  const native=fake('local',{images:true,prepareFailures:1,unknownCreate:true}),f=fixture([native.executor]);
+  const png=Buffer.from('89504e470d0a1a0a','hex'),mp4=Buffer.from('000000186674797069736f6d0000020069736f6d69736f32','hex');
+  try {
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    const frame=f.service.conversations.addAttachment('workspace-one',chat.id,{expectedRevision:chat.revision,mimeType:'image/png',bytes:png});
+    const video=f.service.conversations.addAttachment('workspace-one',chat.id,{expectedRevision:frame.revision,mimeType:'video/mp4',bytes:mp4,video:{duration:2,frames:[{id:frame.id,time:0}]}});
+    const input={expectedRevision:video.revision,connectionId:'local',text:'finish reviewing this recording',attachmentIds:[video.id]};
+    const preview=f.service.conversations.prepareSend('workspace-one',chat.id,input);
+    f.service.conversations.send('workspace-one',chat.id,{...input,previewToken:preview.token,clientRequestId:randomUUID()});
+    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='failed');
+    const draft=continueDraft(f.service,chat.id),next=f.service.conversations.prepareSend('workspace-one',chat.id,draft);
+    f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:next.token,clientRequestId:randomUUID()});
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+    assert.equal(native.sends.length,1);assert.deepEqual(native.sends[0].images.map(image=>image.id),[frame.id]);assert.match(native.sends[0].text,/抽样画面，不含音轨/);
+    assert.equal(done.entries.filter(entry=>entry.role==='user').length,1);assert.deepEqual(f.service.conversations.readAttachment('workspace-one',chat.id,video.id).bytes,mp4);
+  } finally {await f.close();}
 });

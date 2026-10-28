@@ -6,7 +6,7 @@ import { registerHooks } from 'node:module';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createApiClient } from '../src/api/client.ts';
-import { appendDraftAttachment, canGenerateConversationTitle, canStopConversationTool, conversationConflictNeedsRefresh, conversationTurnBinding, createdConversationVisibility, executionLocked, participantAgentIds, shouldSendOnKey, draftKey, readDraft, removeSubmittedAttachments, transferDraftText, writeDraft, applyConversationEvent, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, parseEventFrame, sameConversationSelection, latestConversationParticipant } from '../src/features/agent-conversations/conversation-state.ts';
+import { conversationRecoveryAction, conversationContinuationText, appendDraftAttachment, canGenerateConversationTitle, canStopConversationTool, conversationConflictNeedsRefresh, conversationTurnBinding, createdConversationVisibility, executionLocked, participantAgentIds, shouldSendOnKey, draftKey, readDraft, removeSubmittedAttachments, transferDraftText, writeDraft, applyConversationEvent, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, parseEventFrame, sameConversationSelection, latestConversationParticipant } from '../src/features/agent-conversations/conversation-state.ts';
 import {conversationPermissionKey,conversationPermissionStorageKey,conversationReasoningOptions,conversationRunIdentity,readConversationPermission,reasoningEffortLabel,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,writeConversationPermission} from '../src/features/agent-conversations/conversation-options.ts';
 registerHooks({resolve(specifier,context,next){
   if(specifier==='../../../api'&&context.parentURL?.endsWith('/agent-conversations-api.ts'))return next(new URL('../src/api/index.ts',import.meta.url).href,context);
@@ -450,4 +450,33 @@ test('补充请求身份按对话保存，丢失回执刷新后复用，确认�
  assert.equal(first.begin(conversation,'text',images).clientRequestId,one.clientRequestId);
  const reloaded=createConversationInputAttempts(storage);assert.deepEqual(reloaded.read(conversation).images,images);assert.equal(reloaded.begin(conversation,'text',images).clientRequestId,one.clientRequestId);
  reloaded.finish(conversation,one.clientRequestId);assert.notEqual(reloaded.begin(conversation,'text',images).clientRequestId,one.clientRequestId);
+});
+
+
+test('空草稿只在有用户历史且明确切换执行组合后生成继续要求',()=>{
+  const history={...conversation,entries:[{kind:'message',role:'user',text:'尚未完成的目标',status:'failed'}]};
+  assert.match(conversationContinuationText(history,true,'',0),/继续当前工作/);
+  assert.match(conversationContinuationText(history,true,'',0),/尚未交付的用户要求/);
+  assert.equal(conversationContinuationText(history,true,'新的要求',0),'新的要求');
+  assert.equal(conversationContinuationText(history,false,'',0),'');
+  assert.equal(conversationContinuationText(conversation,true,'',0),'');
+  assert.equal(conversationContinuationText(null,true,'',0),'');
+  assert.equal(conversationContinuationText(history,true,'',1),'');
+});
+
+
+test('异常恢复入口只取决于原执行状态，与选择模型或智能体无关',()=>{
+  const base={...conversation,requests:[],run:{...conversation.run,tools:[],startedAt:'2026-10-28T00:00:00Z'}};
+  const view=(status,accepted=true,entries=[])=>({...base,entries,run:{...base.run,status,accepted}});
+  assert.deepEqual(conversationRecoveryAction(view('failed',false)),{kind:'recover',label:'重试'});
+  assert.deepEqual(conversationRecoveryAction(view('failed')),{kind:'recover',label:'继续'});
+  assert.deepEqual(conversationRecoveryAction(view('stopped')),{kind:'recover',label:'继续'});
+  assert.deepEqual(conversationRecoveryAction(view('completed')),{kind:'recover',label:'继续'});
+  const reply={kind:'message',role:'assistant',runId:base.run.id,text:'已完成并答复',createdAt:'2026-10-28T00:00:01Z'};
+  assert.equal(conversationRecoveryAction(view('completed',true,[reply])),null);
+  assert.deepEqual(conversationRecoveryAction(view('unknown')),{kind:'observe',label:'核对状态'});
+  for(const status of ['starting','running','stopping','waiting-approval','waiting-question']) assert.equal(conversationRecoveryAction(view(status)),null);
+  assert.equal(conversationRecoveryAction({...view('failed'),requests:[{id:'pending'}]}),null);
+  assert.deepEqual(conversationRecoveryAction({...view('failed'),run:{...view('failed').run,tools:[{status:'unknown'}]}}),{kind:'observe',label:'核对状态'});
+  assert.equal(conversationRecoveryAction(null),null);
 });

@@ -1,6 +1,9 @@
 import { normalizeSendDraft } from '../domain/send-draft.ts';
 import { ConversationAttachments, MAX_IMAGE_BYTES, MAX_VISUAL_INPUTS } from './conversation-attachments.ts';
 import type { AttachmentInput } from '../contracts.ts';
+import { continuationDraft } from '../domain/conversation-continuation.ts';
+import { RETRY_DELAYS, transientFailure } from '../domain/transient-failure.ts';
+import { NativeRequestError } from '../domain/error-diagnostic.ts';
 import {selectedOffering,modelConfiguration} from '../model-access/model-preferences.ts';
 import type {ModelOffering} from '../model-access/contracts.ts';
 import type { ModelAccess } from '../model-access/application.ts';
@@ -62,6 +65,8 @@ export class ConversationApplication {
   private closing = false;
   private recoveryWork?: Promise<void>;
   private readonly recoveries = new Map<string, Promise<void>>();
+  private readonly retryWaits = new Map<string, AbortController>();
+  private readonly cancelledRetries = new Set<string>();
   private readonly handoffPreviews = new Map<string,{baseToken:string;prepared:ReturnType<ConversationApplication['prepare']>}>();
   private readonly supplements: ConversationSupplements;
   private readonly media: ConversationAttachments;
@@ -234,6 +239,7 @@ export class ConversationApplication {
     if (record.view.taskId) await this.options.host.verify(workspaceId, record.view.taskId);
   }
   validatePending(workspaceId: string, id: string, input: SendDraft): SendDraft {
+    if (input.continueRunId) fail('agent_continue_unavailable', '恢复动作不能排队到其他执行之后，请核对当前状态再继续。', 409);
     const record = this.load(workspaceId, id);
     const draft = this.draft(input);
     for (const attachment of draft.attachmentIds ?? []) this.media.get(record, attachment);
@@ -267,7 +273,8 @@ export class ConversationApplication {
   }
   private draft(input: SendDraft): SendDraft { return normalizeSendDraft(input); }
   private prepare(record: StoredConversation, raw: SendDraft): { preview: SendPreview; text: string; images: ExecutorImage[]; draft: SendDraft;configuration?:string;needsCompression:boolean;fullText:string } {
-    const input = this.draft(raw); expected(record.view.revision, input.expectedRevision); this.assertIdle(record);
+    let input = this.draft(raw); expected(record.view.revision, input.expectedRevision); this.assertIdle(record);
+    input = continuationDraft(record, input);
     const connection = this.options.connections.get(input.connectionId);
     if (!connection.enabled || (!input.modelAccountId && connection.status !== 'ready')) fail('agent_account_unavailable', '请先准备智能体程序，并连接所选模型账号。', 409);
     if (input.modelAccountId && connection.provider === 'qoder' && ['not-authenticated','expired'].includes(connection.status)) fail('qoder_platform_login_required', 'Qoder 程序需要先完成基础平台登录；所选套餐不变，不要求使用 Qoder 自有模型。', 409);
@@ -396,13 +403,15 @@ export class ConversationApplication {
     if (prepared.preview.switching) append({ id: randomUUID(), kind: 'handoff', role: 'system', text: `交给 ${connection.label} · ${prepared.draft.model??'默认模型'}`, participantId: participant.id, provider: participant.provider, runId:run.id, status:'sending', handoff:prepared.preview.handoff });
     if (prepared.draft.handoffSummary !== undefined) append({ id: randomUUID(), kind: 'notice', role: 'user', text: `用户补充的交接说明：\n${prepared.draft.handoffSummary}`, participantId: participant.id,runId:run.id });
     const userEntryId = randomUUID();
-    append({ id: userEntryId, kind: systemRecovery ? 'notice' : 'message', role: systemRecovery ? 'system' : 'user', text: prepared.draft.text, runId: run.id, status: 'sending', attachments: prepared.draft.attachmentIds });
-    record.attempts.push({ clientRequestId, inputDigest, runId: run.id, participantId: participant.id, through: record.view.entries.at(-1)!.sequence, userEntryId, accepted: false });
+    const manualRecovery = Boolean(raw.continueRunId);
+    append({ id: userEntryId, kind: systemRecovery || manualRecovery ? 'notice' : 'message', role: systemRecovery || manualRecovery ? 'system' : 'user', text: manualRecovery ? record.view.run?.accepted ? '已请求继续上次执行。' : '已请求重试上次未送达的要求。' : prepared.draft.text, runId: run.id, status: 'sending', attachments: prepared.draft.attachmentIds });
+    const automaticRetry = systemRecovery ? record.attempts.find(value => value.runId === record.view.run?.id)?.automaticRetry : undefined;
+    record.attempts.push({ clientRequestId, inputDigest, runId: run.id, participantId: participant.id, through: record.view.entries.at(-1)!.sequence, userEntryId, accepted: false, ...(raw.continueRunId ? {continuationOf: raw.continueRunId} : {}), ...(automaticRetry ? {automaticRetry: {...automaticRetry}} : {}) });
     const previousRun=record.view.run;if(previousRun){record.runOutcomes??={};record.runOutcomes[previousRun.id]={status:previousRun.status,diagnostic:previousRun.diagnostic,model:previousRun.model,provider:previousRun.provider,updatedAt:previousRun.updatedAt};}
     delete record.interruption;
     record.view.run = run;
     this.save(record);
-    const work = this.execute(workspaceId, id, run.id, prepared).finally(() => this.workers.delete(run.id));
+    const work = this.execute(workspaceId, id, run.id, prepared).finally(() => { this.workers.delete(run.id); this.cancelledRetries.delete(run.id); });
     this.workers.set(run.id, work);
     return { run: structuredClone(run), conversation: this.read(workspaceId, id) };
   }
@@ -515,8 +524,14 @@ export class ConversationApplication {
     run.updatedAt = this.options.now();
   }
 
-  private async execute(workspaceId: string, id: string, runId: string, prepared: ReturnType<ConversationApplication['prepare']>): Promise<void> {
+  private async execute(workspaceId: string, id: string, runId: string, prepared: ReturnType<ConversationApplication['prepare']>, retryCount?: number): Promise<void> {
+    const attempt = this.currentRun(workspaceId, id, runId)?.attempts.find(value => value.runId === runId);
+    const request = attempt?.clientRequestId ?? '';
+    const lineage = /^automatic-retry:([^:]+):(\d+)$/.exec(request);
+    const retries = retryCount ?? attempt?.automaticRetry?.count ?? Number(lineage?.[2] ?? 0);
+    const rootRunId = attempt?.automaticRetry?.rootRunId ?? lineage?.[1] ?? runId;
     let dispatched = false;
+    let creatingContext = false;
     try {
       let record = this.currentRun(workspaceId, id, runId); if (!record) return;
       const workspace = await this.options.host.resolve(workspaceId, record.hostScope?.revision);
@@ -541,11 +556,13 @@ export class ConversationApplication {
         for (const item of history) changed = this.applyItem(record, participant, item) || changed;
         if (changed) { this.save(record); fail('agent_history_changed', '原生记录有新变化，本次要求已保留；请核对后再继续。', 409); }
       } else {
+        creatingContext = true;
         const ref = await runtime.createContext({ cwd: record.view.cwd, permissionMode: prepared.draft.permissionMode });
         record = this.currentRun(workspaceId, id, runId); if (!record) return;
         const storedParticipant = record.participants.find(value => value.id === participant.id)!;
         storedParticipant.contextRef = ref; storedParticipant.bindingIdentity = runtime.bindingIdentity;
         participant.contextRef = ref; this.save(record);
+        creatingContext = false;
       }
       const beforeDispatch = this.currentRun(workspaceId, id, runId); if (!beforeDispatch) return;
       record = beforeDispatch;
@@ -559,6 +576,8 @@ export class ConversationApplication {
       }
       await runtime.send({ contextRef: participant.contextRef!, cwd: record.view.cwd, text: prepared.text, images: prepared.images, model: prepared.draft.modelAccountId ? selectedRuntime.model : prepared.draft.model, reasoningEffort: prepared.draft.reasoningEffort, permissionMode: prepared.draft.permissionMode, clientRequestId: record.attempts.find(value => value.runId === runId)!.clientRequestId, onEvent: event => this.event(workspaceId, id, runId, event) });
       await this.observe(workspaceId, id);
+      const ended = this.currentRun(workspaceId, id, runId);
+      if (ended?.view.run?.status === 'failed') await this.retryFailure(workspaceId, id, runId, prepared, retries, rootRunId, ended.view.run.diagnostic ?? '', runtime);
       void this.generateAutomaticTitle(workspaceId, id, runId, runtime).catch(() => {});
     } catch (error) {
       const record = this.currentRun(workspaceId, id, runId); if (!record) return;
@@ -579,7 +598,59 @@ export class ConversationApplication {
       if(!run.accepted)for(const receipt of record.view.entries.filter(e=>e.kind==='handoff'&&e.runId===runId))receipt.status=possiblyDelivered?'unknown':'failed';
       try { this.save(record); } catch { return; /* Preserve existing DB and native state. */ }
       if (record.interruption?.reason === 'transport' && !this.closing) await this.recoverOne(workspaceId, id);
+      else if (!dispatched && !userStopping && (!creatingContext || error instanceof NativeRequestError)) await this.retryFailure(workspaceId, id, runId, prepared, retries, rootRunId, error instanceof Error && transientFailure(error.message) ? error.message : safeDiagnostic(error), undefined);
     }
+  }
+
+  private async retryFailure(workspaceId: string, id: string, runId: string, prepared: ReturnType<ConversationApplication['prepare']>, count: number, rootRunId: string, reason: string, runtime?: AgentRuntime): Promise<void> {
+    if (this.closing || this.cancelledRetries.has(runId) || !transientFailure(reason)) return;
+    let record = this.currentRun(workspaceId, id, runId);
+    if (!record || record.view.run?.status !== 'failed' || record.view.requests.length || record.interruption?.cancelled || record.view.run.tools.some(tool => tool.status !== 'completed')) return;
+    if (count >= RETRY_DELAYS.length) { record.view.run.diagnostic = `自动重试已达上限（${RETRY_DELAYS.length} 次），工作记录已保留。${record.view.run.diagnostic ?? ''}`; this.save(record); return; }
+    if (runtime) {
+      const participant = record.participants.find(value => value.id === record!.view.run!.participantId)!;
+      const executionRef = record.attempts.find(value => value.runId === runId)?.executionRef;
+      if (!participant.contextRef || !executionRef) return;
+      const observed = await runtime.observe({ contextRef: participant.contextRef, executionRef }).catch(() => undefined);
+      if (!observed || observed.executionRef?.id !== executionRef.id || observed.status !== 'idle' || observed.tools.some(tool => tool.status !== 'completed')) return;
+      record = this.currentRun(workspaceId, id, runId);
+      if (this.cancelledRetries.has(runId) || !record || record.view.run?.status !== 'failed' || record.view.requests.length || record.interruption?.cancelled) return;
+    }
+    const diagnostic = record.view.run!.diagnostic;
+    const attempt = record.attempts.find(value => value.runId === runId)!;
+    attempt.automaticRetry = {rootRunId, count: count + 1};
+    const controller = new AbortController();
+    this.retryWaits.set(runId, controller);
+    record.view.run!.status = 'starting';
+    record.view.run!.diagnostic = `暂时未完成，${RETRY_DELAYS[count] / 1000} 秒后自动重试（${count + 1}/${RETRY_DELAYS.length}）。${diagnostic ?? ''}`;
+    this.save(record);
+    try {
+      await new Promise<void>(resolve => {
+        const finish = () => { clearTimeout(timer); controller.signal.removeEventListener('abort', finish); resolve(); };
+        const timer = setTimeout(finish, RETRY_DELAYS[count]);
+        controller.signal.addEventListener('abort', finish, { once: true });
+      });
+      record = this.currentRun(workspaceId, id, runId);
+      if (controller.signal.aborted || this.closing || !record || record.view.run?.status !== 'starting') return;
+      this.retryWaits.delete(runId);
+      record.view.run.status = 'failed'; record.view.run.diagnostic = diagnostic; this.save(record);
+      // Preparation rechecks source identity, current model, permission and saved revision.
+      const draft: SendDraft = { ...prepared.draft, continueRunId: undefined, expectedRevision: record.view.revision, skipHandoffSummary: true,
+        ...(runtime ? { text: '系统自动重试：上次执行因临时服务故障明确结束，已确认没有未结束的工具。请核对原对话、当前成果及工具结果，继续完成用户尚未完成的目标；不要重放全部历史命令，不扩大原有授权。' } : {}) };
+      const preview = this.prepareSend(workspaceId, id, draft);
+      if (runtime) this.send(workspaceId, id, { ...draft, previewToken: preview.token, clientRequestId: `automatic-retry:${rootRunId}:${count + 1}` }, true);
+      else {
+        const retried = { ...this.prepare(this.load(workspaceId, id), draft), text: prepared.text };
+        const current = this.currentRun(workspaceId, id, runId); if (!current) return;
+        current.view.run!.status = 'starting'; current.view.run!.diagnostic = undefined;
+        const entry = current.view.entries.find(value => value.id === current.attempts.find(value => value.runId === runId)?.userEntryId);
+        if (entry) entry.status = 'sending'; this.save(current);
+        await this.execute(workspaceId, id, runId, retried, count + 1);
+      }
+    } catch (error) {
+      const current = this.currentRun(workspaceId, id, runId);
+      if (current && !controller.signal.aborted && !this.closing) { current.view.run!.status = 'failed'; current.view.run!.diagnostic = '自动重试未完成：' + safeDiagnostic(error); this.save(current); }
+    } finally { if (this.retryWaits.get(runId) === controller) this.retryWaits.delete(runId); }
   }
 
   private titleEligible(record: StoredConversation): boolean {
@@ -792,6 +863,7 @@ export class ConversationApplication {
   }
   private async reconcile(workspaceId: string, id: string): Promise<ConversationView> {
     let record = this.load(workspaceId, id);
+    if (record.view.run && this.retryWaits.has(record.view.run.id)) return this.view(record);
     if (record.view.run && record.view.run.generation !== this.options.generation && this.options.generationAlive?.(record.view.run.generation)) return this.read(workspaceId, id);
     for (const saved of record.participants) {
       if (!saved.contextRef) continue;
@@ -851,6 +923,12 @@ export class ConversationApplication {
       pending.interruption.cancelled=true;run.diagnostic='已取消自动接续；原执行状态仍待核对。';this.save(pending);return this.view(pending);
     }
     const control = this.control(workspaceId, id, input);
+    if (!input.toolId) this.cancelledRetries.add(input.runId);
+    const retry = this.retryWaits.get(input.runId);
+    if (retry && !input.toolId) {
+      control.record.view.run!.status = 'stopped'; control.record.view.run!.diagnostic = '已停止自动重试，工作记录已保留。';
+      this.save(control.record); retry.abort(); this.retryWaits.delete(input.runId); return this.view(control.record);
+    }
     if(!this.closing && !input.toolId && control.record.interruption){control.record.interruption.cancelled=true;this.save(control.record);}
     if (!BUSY_STATES.has(control.record.view.run!.status)) return this.view(control.record);
     if (input.toolId) {
@@ -924,6 +1002,11 @@ export class ConversationApplication {
   }
   async close(): Promise<void> {
     this.closing = true;
+    for (const controller of this.retryWaits.values()) controller.abort();
+    for (const record of this.options.repository.listPending(true)) if (record.view.run?.generation === this.options.generation && this.retryWaits.has(record.view.run.id)) {
+      record.view.run.status = 'failed'; record.view.run.diagnostic = '宿主退出，自动重试已取消；工作记录已保留。'; this.save(record);
+    }
+    this.retryWaits.clear();
     for (const controller of this.titleWork.values()) controller.abort();
     const owned = this.options.repository.listPending(true).filter(record => !this.options.generationAlive || record.view.run?.generation === this.options.generation);
     const interrupted=owned.map(record=>({workspaceId:record.view.workspaceId,id:record.view.id,runId:record.view.run?.id}));
