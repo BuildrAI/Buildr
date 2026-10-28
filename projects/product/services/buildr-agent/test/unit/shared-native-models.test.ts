@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 
 import { createQoderModelProvider, unwrapQoderStream } from '../../src/model-access/providers/qoder.ts';
+import { translateResponse } from '../../src/model-access/protocols.ts';
 
 const signal=()=>AbortSignal.timeout(3000);
 
@@ -26,6 +27,15 @@ test('Qoder preserves native tool fragments and tool results instead of parsing 
  await runtime.inspect();const input={modelId:'model',signal:signal(),context:{accountId:'q',agentId:'codex',conversationId:'c',runId:'r',requestId:'i'},body:{stream:false,messages:[{role:'developer',content:'instructions'},{role:'user',content:'read'}],tools:[{type:'function',function:{name:'read',parameters:{type:'object'}}}]}};
  const result=await(await runtime.infer(input)).json();assert.equal(result.choices[0].message.tool_calls[0].function.arguments,'{"p":"a"}');assert.deepEqual(inputs[0].tools,input.body.tools);assert.equal(inputs[0].messages[0].role,'system');
  await runtime.infer({...input,body:{...input.body,messages:[...input.body.messages,result.choices[0].message,{role:'tool',content:'actual result',tool_call_id:'t'}]}});assert.equal(inputs[1].messages.at(-1).content,'actual result');await runtime.close();
+});
+
+test('Qoder completes an explicit MiniMax tool stream without a finish reason',async()=>{
+ const runtime=await createQoderModelProvider({inspect:async()=>({status:'ready'}),identity:async()=>'user',async request(path){if(path==='/models')return Response.json({chat:[{key:'mmodel',display_name:'MiniMax',enable:true}]});if(path==='/usage')return Response.json({});return sse([{statusCodeValue:200,body:JSON.stringify({choices:[{delta:{tool_calls:[{index:0,id:'call-bash',function:{name:'bash',arguments:'{"command":"pwd"}'}}]},finish_reason:null}]})},{statusCodeValue:200,body:JSON.stringify({usage:{prompt_tokens:10,completion_tokens:5}})}]);}}).open({accountId:'native-qoder',configRoot:'unused',environment:{}});
+ try{
+  await runtime.inspect();const upstream=await runtime.infer({modelId:'mmodel',signal:signal(),context:{accountId:'q',agentId:'dsh',conversationId:'c',runId:'r',requestId:'i'},body:{stream:true,messages:[{role:'user',content:'check cwd'}],tools:[{type:'function',function:{name:'bash',parameters:{type:'object'}}}]}});
+  const response=await translateResponse(upstream,'chat-completions','responses',{model:'mmodel',stream:true,request:{tools:[{type:'function',name:'bash',parameters:{type:'object'}}]},opaque:{encode:JSON.stringify,decode:JSON.parse},signal:signal()});
+  const text=await response.text();assert.doesNotMatch(text,/response\.failed/);assert.match(text,/response\.completed/);assert.match(text,/"name":"bash"/);assert.match(text,/"arguments":"\{\\"command\\":\\"pwd\\"\}"/);
+ }finally{await runtime.close();}
 });
 
 test('Qoder normalizes null assistant tool-call content without changing history or caller input',async()=>{
