@@ -225,3 +225,10 @@
 .ac-depth-slider .ant-slider-handle::after{width:18px;height:18px;inset:5px;box-shadow:0 0 0 2px var(--soft-primary,#397d74)}
 .ac-depth-slider .ant-slider-handle:hover::after,.ac-depth-slider .ant-slider-handle:focus::after,.ac-depth-slider .ant-slider-handle:active::after{width:18px;height:18px;inset:5px;box-shadow:0 0 0 4px color-mix(in srgb,var(--soft-primary,#397d74) 35%,transparent)}
 .ac-depth-labels{margin-top:2px;font-size:var(--font-size-body);height:20px}
+.ac-execution-uncertain{margin:0 4px 8px;color:var(--soft-muted);font-size:var(--font-size-meta);line-height:1.6}
+.ac-execution-uncertain-summary{display:flex;align-items:center;gap:8px;min-height:28px;color:#a28a5b}
+.ac-execution-uncertain-actions{display:flex;gap:2px;margin-left:auto;flex:none}
+.ac-execution-uncertain .ant-btn{color:var(--soft-primary);font-size:inherit}
+.ac-execution-uncertain small,.ac-execution-uncertain details{font-size:inherit}
+.ac-execution-uncertain summary{cursor:pointer;color:var(--soft-primary);width:fit-content}
+.ac-execution-uncertain details p{margin:4px 0;white-space:pre-wrap;overflow-wrap:anywhere}

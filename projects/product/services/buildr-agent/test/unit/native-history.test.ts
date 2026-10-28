@@ -1,7 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dshHistoryItems } from '../../src/executors/dsh/protocol.ts';
+import { dshHistoryItems, dshItem } from '../../src/executors/dsh/protocol.ts';
 import { qoderHistoryItems, qoderResultOutcome } from '../../src/executors/qoder/protocol.ts';
+
+test('DSH context envelopes are not user inputs and steering keeps the original execution owner',()=>{
+  const user=(id:string,rpcId:string)=>({type:'user/message',data:{id,source:{kind:'user',rpcId},content:[{type:'text',text:'继续'}]}});
+  const contexts=['time-context','runtime-context','agent-instructions','tool-jobs'].map((kind,index)=>({type:'user/message',seq:index+10,data:{id:'context-'+index,source:{kind,rpcId:'internal-request'},content:[{type:'text',text:'private runtime context'}]}}));
+  for(const event of contexts)assert.deepEqual(dshItem(event),[]);
+  const items=dshHistoryItems([{type:'turn/start',data:{turn:1}},user('initial','request-one'),...contexts,{type:'tool/call',data:{turn:1,callId:'tool',name:'bash',arguments:'{}'}},user('extra','request-two'),{type:'tool/result',data:{turn:1,message:{toolCallId:'tool',content:[{type:'text',text:'done'}]}}}]);
+  assert.deepEqual(items.filter(item=>item.role==='user').map(item=>[item.id,item.clientRequestId]),[['initial','request-one'],['extra','request-two']]);
+  assert.equal(items.find(item=>item.id==='tool')?.executionId,'request-one');
+  assert.ok(!JSON.stringify(items).includes('private runtime context'));
+});
 
 test('Qoder result failures retain explicit errors with credentials and URLs redacted',()=>{
   const outcome=qoderResultOutcome({type:'result',subtype:'error_during_execution',is_error:true,errors:['invalid_argument: request rejected https://qoder.invalid/?token=private-url api_key="private-key" Bearer vendor-secret raw-gateway-key','The selected provider rejected the request.']},false,['raw-gateway-key']);

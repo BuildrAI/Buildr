@@ -73,6 +73,7 @@ test('DSH stream shows accumulated text, answers the native question and observe
     page: async () => ok({ records: events.map(event => ({ event })), hasMore: false }),
     prompt: async (input: any) => {const image=input.content.find((part:any)=>part.type==='image');assert.equal(image.mediaType,'image/png');assert.equal(image.data,imageBytes.toString('base64')); setTimeout(() => {
       publish({ type: 'turn/start', data: { turn: 1 } }); publish({ type: 'user/message', data: { id: 'user-dsh', content: input.content, source: { rpcId: input.requestId } } });
+      for(const kind of ['time-context','runtime-context','agent-instructions','tool-jobs'])publish({type:'user/message',data:{id:'context-'+kind,source:{kind},content:[{type:'text',text:'private runtime context'}]}});
       for (const stream of streams) { stream.push({ type: 'assistant-stream', frame: { type: 'start', attemptId: 'a1', turn: 1, step: 1 } }); stream.push({ type: 'assistant-stream', frame: { type: 'chunk', attemptId: 'a1', index: 0, chunk: { type: 'text-delta', text: '正在' } } }); stream.push({ type: 'assistant-stream', frame: { type: 'chunk', attemptId: 'a1', index: 1, chunk: { type: 'reasoning-delta', text: 'private reasoning' } } }); stream.push({ type: 'assistant-stream', frame: { type: 'chunk', attemptId: 'a1', index: 2, chunk: { type: 'text-delta', text: '处理' } } }); }
       publish({ type: 'assistant/message', data: { turn: 1, step: 1, message: { content: [{ type: 'text', text: '正在处理' }] } } });
       publish({ type: 'tool/call', data: { turn: 1, callId: 'question-dsh', name: 'ask_user_question', arguments: JSON.stringify({ questions: [{ id: 'color', question: '颜色', options: [{ label: '蓝' }] }] }) } });
@@ -105,6 +106,8 @@ test('DSH stream shows accumulated text, answers the native question and observe
     const text = visible.filter(event => event.type === 'item' && event.item.role === 'assistant').map(event => event.type === 'item' ? event.item : null);
     assert.equal(new Set(text.map(item => item!.id)).size, 1); assert.equal(text.at(-1)?.text, '正在处理'); assert.ok(!JSON.stringify(visible).includes('private reasoning'));
     const history = await runtime.readHistory({ contextRef, cwd }); assert.equal(history.find(item => item.id === 'user-dsh')?.executionId, 'request-exact');
+    assert.deepEqual(history.filter(item=>item.role==='user').map(item=>item.id),['user-dsh']);
+    assert.ok(!JSON.stringify(visible).includes('private runtime context'));
   } finally { await runtime.close(); await rm(root,{recursive:true,force:true}); }
 });
 
