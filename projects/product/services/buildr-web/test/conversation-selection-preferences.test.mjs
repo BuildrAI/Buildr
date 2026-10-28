@@ -76,3 +76,10 @@ test('不同智能体不借用模型记忆，且对话模型写入不改变执�
  writeConversationModulePreference(modulePreference,store,'dev');writeConversationModelPreference(memory,store,'dev');
  assert.equal(store.dump()['buildr.execution-model'],JSON.stringify(['execution-account','execution-model']));
 });
+
+test('native model draft memory restores only a currently supported reasoning effort',()=>{
+  const native=[{id:'codex',provider:'codex',label:'Codex',enabled:true,status:'ready',models:[{id:'native-model',label:'Native',isDefault:true,reasoningEfforts:[{id:'high',label:'High'}]}]}];
+  const module={version:1,agent:{connectionId:'codex'}};
+  assert.equal(preferredConversationChoice(module,{version:1,connectionId:'codex',model:'native-model',reasoningEffort:'high'},native,[]).reasoningEffort,'high');
+  assert.equal(preferredConversationChoice(module,{version:1,connectionId:'codex',model:'native-model',reasoningEffort:'unsupported'},native,[]).reasoningEffort,undefined);
+});

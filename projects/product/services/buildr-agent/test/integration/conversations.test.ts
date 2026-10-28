@@ -1633,6 +1633,30 @@ test('host shutdown cancels a retry wait without converting it into host recover
     try {
       await cold.conversations.recoverInterrupted();
       assert.equal(cold.conversations.read('workspace-one', chat.id).run?.status, 'failed'); assert.equal(native.sends.length, 1);
+    }finally{await cold.close();}
+  }finally{await f.close();}
+});
+
+test('draft images survive ownership changes and cold reads without creating a conversation', async () => {
+  const f = fixture([]), id = randomUUID(), png = Buffer.from([137,80,78,71,13,10,26,10]);
+  try {
+    const empty = f.service.conversations.readDraft('@default', id);
+    assert.deepEqual(empty.images, []); assert.equal(fs.existsSync(f.options.dataRoot), false);
+    const added = f.service.conversations.addDraftImage('@default', id, { expectedRevision: empty.revision, name: 'image.png', mimeType: 'image/png', bytes: png });
+    assert.equal(added.images.length, 1);
+    assert.deepEqual(f.service.conversations.readDraft('workspace-one', id), added);
+    assert.equal(new ConversationRepository(path.join(f.options.dataRoot, 'agent-service')).readConversation(id), undefined);
+    assert.equal(fs.existsSync(path.join(f.options.dataRoot, 'agent-service/conversations.sqlite')), false);
+    assert.throws(() => f.service.conversations.addDraftImage('@default', id, { expectedRevision: empty.revision, name: 'old.png', mimeType: 'image/png', bytes: png }), { code: 'agent_revision_conflict' });
+    assert.throws(() => f.service.conversations.addDraftImage('@default', id, { expectedRevision: added.revision, name: 'bad.png', mimeType: 'image/png', bytes: Buffer.from('not an image') }), { code: 'agent_image_invalid' });
+    assert.deepEqual(f.service.conversations.readDraftImage('@default', id, added.images[0]!.id).bytes, png);
+    const foreign = 'scope:' + Buffer.from(JSON.stringify(['another-host', '@default'])).toString('base64url');
+    assert.deepEqual(f.service.conversations.readDraft(foreign, id).images, []);
+    await f.service.close(); const cold = createAgentService(f.options);
+    try {
+      assert.deepEqual(cold.conversations.readDraft('workspace-one', id), added);
+      const removed = cold.conversations.removeDraftImage('@default', id, { expectedRevision: added.revision, attachmentId: added.images[0]!.id });
+      assert.deepEqual(removed.images, []);
     } finally { await cold.close(); }
   } finally { await f.close(); }
 });
@@ -1788,4 +1812,62 @@ test('explicit retry keeps an undelivered video and its timed frames after mainl
     assert.equal(native.sends.length,1);assert.deepEqual(native.sends[0].images.map(image=>image.id),[frame.id]);assert.match(native.sends[0].text,/抽样画面，不含音轨/);
     assert.equal(done.entries.filter(entry=>entry.role==='user').length,1);assert.deepEqual(f.service.conversations.readAttachment('workspace-one',chat.id,video.id).bytes,mp4);
   } finally {await f.close();}
+});
+
+test('first submission persists input and conversation together and is idempotent across restart', async () => {
+  const native = fake('local', { images: true }), f = fixture([native.executor]), id = randomUUID();
+  try {
+    const staged = f.service.conversations.addDraftImage('@default', id, { expectedRevision: f.service.conversations.readDraft('@default', id).revision, name: 'one.png', mimeType: 'image/png', bytes: Buffer.from([137,80,78,71,13,10,26,10]) });
+    const input = { connectionId: 'local', text: 'inspect this picture', attachmentIds: staged.images.map(image => image.id), clientRequestId: randomUUID(), expectedDraftRevision: staged.revision };
+    await assert.rejects(f.service.conversations.startDraft('workspace-one', id, input), { code: 'agent_account_unavailable' });
+    assert.deepEqual(f.service.conversations.readDraft('@default', id), staged);
+    assert.equal(f.service.conversations.lookupDraft('workspace-one', id, input.clientRequestId).found, false);
+    assert.deepEqual(f.service.conversations.list('workspace-one').conversations, []);
+    await connected(f.service, 'local');
+    const [first, repeated] = await Promise.all([f.service.conversations.startDraft('workspace-one', id, input), f.service.conversations.startDraft('workspace-one', id, input)]);
+    assert.equal(first.conversation.id, repeated.conversation.id);
+    assert.equal(first.conversation.entries.filter(entry => entry.role === 'user').length, 1);
+    const accepted = await waitUntil(() => f.service.conversations.read('workspace-one', first.conversation.id), view => view.run?.status === 'completed');
+    assert.equal(native.sends.length, 1); assert.equal(native.sends[0]!.images?.length, 1);
+    assert.deepEqual(f.service.conversations.readDraft('@default', id).images, []);
+    assert.deepEqual(f.service.conversations.readAttachment('workspace-one', accepted.id, staged.images[0]!.id).bytes, Buffer.from([137,80,78,71,13,10,26,10]));
+    assert.throws(() => f.service.conversations.startDraft('workspace-one', id, { ...input, text: 'different' }), { code: 'agent_request_conflict' });
+    await f.service.close(); const cold = createAgentService(f.options);
+    try {
+      assert.equal(cold.conversations.lookupDraft('workspace-one', id, input.clientRequestId).conversation?.id, accepted.id);
+      assert.equal((await cold.conversations.startDraft('workspace-one', id, input)).conversation.id, accepted.id);
+      assert.equal(native.sends.length, 1);
+    } finally { await cold.close(); }
+  } finally { await f.close(); }
+});
+
+test('shared video draft keeps original and frames without creating a conversation, then transfers them once', async () => {
+  const native=fake('local',{images:true}),f=fixture([native.executor]),id=randomUUID();
+  const png=Buffer.from('89504e470d0a1a0a','hex'),mp4=Buffer.from('000000186674797069736f6d0000020069736f6d69736f32','hex');
+  try {
+    let staged=f.service.conversations.readDraft('@default',id);
+    staged=f.service.conversations.addDraftImage('@default',id,{expectedRevision:staged.revision,name:'frame.png',mimeType:'image/png',bytes:png,frame:true});
+    const frame=staged.images[0]!;
+    assert.throws(()=>f.service.conversations.addDraftImage('@default',id,{expectedRevision:staged.revision,name:'broken.mp4',mimeType:'video/mp4',bytes:mp4,video:{duration:2,frames:[{id:randomUUID(),time:0}]}}),{code:'agent_video_invalid'});
+    staged=f.service.conversations.addDraftImage('@default',id,{expectedRevision:staged.revision,name:'recording.mp4',mimeType:'video/mp4',bytes:mp4,video:{duration:2,frames:[{id:frame.id,time:0}]}});
+    const video=staged.images.find(image=>image.video)!;
+    assert.deepEqual(f.service.conversations.readDraft('workspace-one',id),staged);
+    assert.deepEqual(f.service.conversations.readDraftImage('@default',id,video.id).bytes,mp4);
+    assert.deepEqual(f.service.conversations.list('workspace-one').conversations,[]);
+    assert.throws(()=>f.service.conversations.removeDraftImage('@default',id,{expectedRevision:staged.revision,attachmentId:frame.id}),{code:'agent_video_invalid'});
+    const input={connectionId:'local',text:'inspect recording',attachmentIds:[video.id],expectedDraftRevision:staged.revision,clientRequestId:randomUUID()};
+    await assert.rejects(f.service.conversations.startDraft('workspace-one',id,input),{code:'agent_account_unavailable'});
+    assert.deepEqual(f.service.conversations.readDraft('@default',id),staged);
+    await connected(f.service,'local');
+    const accepted=await f.service.conversations.startDraft('workspace-one',id,input);
+    await waitUntil(()=>f.service.conversations.read('workspace-one',accepted.conversation.id),view=>view.run?.status==='completed');
+    assert.deepEqual(native.sends[0].images.map(image=>image.id),[frame.id]);assert.match(native.sends[0].text,/抽样画面，不含音轨/);
+    assert.deepEqual(f.service.conversations.readAttachment('workspace-one',accepted.conversation.id,video.id).bytes,mp4);
+    assert.deepEqual(f.service.conversations.readAttachment('workspace-one',accepted.conversation.id,frame.id).bytes,png);
+    assert.deepEqual(f.service.conversations.readDraft('@default',id).images,[]);
+    assert.equal((await f.service.conversations.startDraft('workspace-one',id,input)).conversation.id,accepted.conversation.id);assert.equal(native.sends.length,1);
+    let removable=f.service.conversations.addDraftImage('@default',id,{expectedRevision:f.service.conversations.readDraft('@default',id).revision,name:'frame.png',mimeType:'image/png',bytes:png,frame:true});
+    removable=f.service.conversations.addDraftImage('@default',id,{expectedRevision:removable.revision,name:'recording.mp4',mimeType:'video/mp4',bytes:mp4,video:{duration:2,frames:[{id:removable.images[0]!.id,time:0}]}});
+    assert.deepEqual(f.service.conversations.removeDraftImage('@default',id,{expectedRevision:removable.revision,attachmentId:removable.images.find(image=>image.video)!.id}).images,[]);
+  }finally{await f.close();}
 });

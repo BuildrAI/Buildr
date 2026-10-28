@@ -10,13 +10,14 @@ type Props = {
   identity?: string;
   executing?: boolean;
   startedAt?: string;
+  showExecutionIndicator?: boolean;
   onCollapseProcess?: () => void;
   collapseLabel?: string;
   children?: ReactNode;
 };
 
 /** Keeps the input and its assistant together while reading this part of the conversation. */
-export function ConversationTurn({ id, runId, prompt, identity, executing = false, startedAt, onCollapseProcess, collapseLabel = '收起处理过程', children }: Props) {
+export function ConversationTurn({ id, runId, prompt, identity, executing = false, startedAt, showExecutionIndicator = true, onCollapseProcess, collapseLabel = '收起处理过程', children }: Props) {
   const turn = useRef<HTMLElement>(null), body = useRef<HTMLDivElement>(null), content = useRef<HTMLDivElement>(null);
   const [long, setLong] = useState(false), [expanded, setExpanded] = useState(false);
   useLayoutEffect(() => {
@@ -43,7 +44,7 @@ export function ConversationTurn({ id, runId, prompt, identity, executing = fals
       </article>}
       {identity && <div className="ac-turn-identity">
         <button type="button" className="ac-message-identity ac-turn-identity-link" aria-label="定位助手内容" title="定位助手内容" onClick={locateAssistant}>{identity}<AimOutlined className="ac-turn-locate-icon" aria-hidden="true" /></button>
-        {startedAt && <ConversationExecutionIndicator startedAt={startedAt} active />}
+        {showExecutionIndicator && startedAt && <ConversationExecutionIndicator startedAt={startedAt} active />}
         {onCollapseProcess && <button type="button" className="ac-turn-collapse" onClick={() => { onCollapseProcess(); requestAnimationFrame(locateInput); }}><UpOutlined aria-hidden="true" />{collapseLabel}</button>}
       </div>}
     </div>

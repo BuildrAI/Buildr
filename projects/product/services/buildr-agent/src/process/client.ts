@@ -169,10 +169,11 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
         }
         return withPending(conversation);
       }
-      if(requestedDigest&&current.identity.runtime.digest!==requestedDigest&&['conversations.send','conversations.prepareSend','conversations.prepareHandoff'].includes(name))throw new AgentServiceError('agent_process_switching','新版尚未就绪，可以提交待发送内容。',503);
+      if(requestedDigest&&current.identity.runtime.digest!==requestedDigest&&['conversations.startDraft','conversations.send','conversations.prepareSend','conversations.prepareHandoff'].includes(name))throw new AgentServiceError('agent_process_switching','新版尚未就绪，可以提交待发送内容。',503);
+      if (name === 'conversations.addDraftImage') args[2] = { expectedRevision: args[2].expectedRevision, name: args[2].name, frame: args[2].frame, mimeType: args[2].mimeType, video: args[2].video, base64: Buffer.from(args[2].bytes).toString('base64') };
       if (name === 'conversations.addAttachment') args[2] = { expectedRevision: args[2].expectedRevision, expectedAttachmentRevision: args[2].expectedAttachmentRevision, mimeType: args[2].mimeType, video: args[2].video, base64: Buffer.from(args[2].bytes).toString('base64') };
       const result = await call('/operations', { contract: AGENT_EXECUTION_CONTRACTS.operations, sourceId: options.sourceId, operation: name, args });
-      return name === 'conversations.readAttachment' ? { bytes: Buffer.from(result.base64, 'base64'), mimeType: result.mimeType } : withPending(result);
+      return ['conversations.readAttachment','conversations.readDraftImage'].includes(name) ? { bytes: Buffer.from(result.base64, 'base64'), mimeType: result.mimeType } : withPending(result);
     };
   }
   operations.models.generate = async (value: { signal: AbortSignal } & Record<string, unknown>) => {

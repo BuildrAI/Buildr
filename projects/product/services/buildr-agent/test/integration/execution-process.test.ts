@@ -54,6 +54,17 @@ test('independent process survives real host exits, preserves approvals and hand
     const privateRecord=JSON.parse(fs.readFileSync(path.join(dataRoot,'agent-service/process/instance.json'),'utf8'));
     const unauthenticated=await fetch(privateRecord.origin+'/identity');assert.equal(unauthenticated.status,401);
     assert.ok(!(await unauthenticated.text()).includes(privateRecord.token));
+    const draftId=randomUUID(),emptyDraft=await observer.operations.conversations.readDraft(scope,draftId);
+    const staged=await observer.operations.conversations.addDraftImage(scope,draftId,{expectedRevision:emptyDraft.revision,name:'draft.png',mimeType:'image/png',bytes:Buffer.from([137,80,78,71,13,10,26,10])});
+    assert.equal(staged.images.length,1);
+    assert.deepEqual((await observer.operations.conversations.readDraftImage(scope,draftId,staged.images[0]!.id)).bytes,Buffer.from([137,80,78,71,13,10,26,10]));
+    assert.equal((await observer.operations.conversations.removeDraftImage(scope,draftId,{expectedRevision:staged.revision,attachmentId:staged.images[0]!.id})).images.length,0);
+    const frame=await observer.operations.conversations.addDraftImage(scope,draftId,{expectedRevision:(await observer.operations.conversations.readDraft(scope,draftId)).revision,name:'frame.png',mimeType:'image/png',bytes:Buffer.from([137,80,78,71,13,10,26,10]),frame:true});
+    const recording=Buffer.from('000000186674797069736f6d0000020069736f6d69736f32','hex');
+    const stagedVideo=await observer.operations.conversations.addDraftImage(scope,draftId,{expectedRevision:frame.revision,name:'recording.mp4',mimeType:'video/mp4',bytes:recording,video:{duration:2,frames:[{id:frame.images[0]!.id,time:0}]}});
+    assert.equal(stagedVideo.images[0]!.frame,true);const stagedOriginal=stagedVideo.images.find(image=>image.video)!;assert.equal(stagedOriginal.video!.frames[0]!.id,frame.images[0]!.id);
+    assert.deepEqual((await observer.operations.conversations.readDraftImage(scope,draftId,stagedOriginal.id)).bytes,recording);
+    assert.deepEqual((await observer.operations.conversations.removeDraftImage(scope,draftId,{expectedRevision:stagedVideo.revision,attachmentId:stagedOriginal.id})).images,[]);
     const added=await observer.operations.models.accounts.add({provider:'fixture-model'});
     let account=await observer.operations.models.accounts.check(added.id);
     account=await observer.operations.models.accounts.preferences(account.id,{expectedRevision:account.revision,models:[{id:'fixture',enabled:true}]});

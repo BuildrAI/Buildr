@@ -145,6 +145,12 @@ export function createAgentService(options: AgentServiceOptions) {
       },
     },
     conversations: {
+      readDraft: (scope: string, id: string) => conversations.drafts.list(scope, id),
+      addDraftImage: (scope: string, id: string, input: Parameters<typeof conversations.drafts.add>[2]) => conversations.drafts.add(scope, id, input),
+      removeDraftImage: (scope: string, id: string, input: Parameters<typeof conversations.drafts.remove>[2]) => conversations.drafts.remove(scope, id, input),
+      readDraftImage: (scope: string, id: string, imageId: string) => conversations.drafts.image(scope, id, imageId),
+      startDraft: (scope: string, id: string, input: Parameters<typeof conversations.drafts.start>[2]) => conversations.drafts.start(scope, id, input),
+      lookupDraft: (scope: string, id: string, requestId: string) => conversations.drafts.lookup(scope, id, requestId),
       lookupRequest: (workspaceId:string,id:string,clientRequestId:string) => conversations.lookupRequest(workspaceId,id,clientRequestId),
       recoverInterrupted: () => conversations.recoverInterrupted(),
       listAll: (workspaceIds: string[], input: Parameters<ConversationApplication['listAll']>[1] = {}) => conversations.listAll(workspaceIds, input),

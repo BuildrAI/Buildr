@@ -480,3 +480,16 @@ test('异常恢复入口只取决于原执行状态，与选择模型或智能�
   assert.deepEqual(conversationRecoveryAction({...view('failed'),run:{...view('failed').run,tools:[{status:'unknown'}]}}),{kind:'observe',label:'核对状态'});
   assert.equal(conversationRecoveryAction(null),null);
 });
+
+test('草稿图片入口独立于工作空间，首次发送和观察保持同一请求身份',async()=>{
+  const calls=[],wire=[];
+  const api=createAgentConversationsClient(async(url,init)=>{calls.push({url,body:init.body&&JSON.parse(init.body)});return {revision:'images-1',images:[]};},session,async(url,init)=>{wire.push({url,init});return new Response(JSON.stringify({revision:'images-2',images:[]}));});
+  await api.draftImages('draft-id');await api.uploadDraftImage('draft-id','images-1',new File([new Uint8Array([137,80,78,71,13,10,26,10])],'picture.png',{type:'image/png'}));
+  await api.startDraft('selected-workspace','draft-id',{connectionId:'codex',text:'one',expectedDraftRevision:'images-2',clientRequestId:'same-request'});
+  await api.lookupDraft('selected-workspace','draft-id','same-request');
+  assert.equal(calls[0].url,'/api/v1/app/agent-service/conversations/drafts/draft-id');
+  assert.equal(wire[0].url,'/api/v1/app/agent-service/conversations/drafts/draft-id/attachments');assert.equal(wire[0].init.headers['x-buildr-draft-revision'],'images-1');
+  assert.equal(calls[1].url,'/api/v1/workspaces/selected-workspace/agent-conversations/drafts/draft-id/send');assert.equal(calls[1].body.clientRequestId,'same-request');
+  assert.equal(calls[2].url,'/api/v1/workspaces/selected-workspace/agent-conversations/drafts/draft-id/submissions/same-request');
+  assert.equal(calls.some(call=>call.url.endsWith('/agent-conversations')),false,'图片准备没有创建真实对话请求');
+});

@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Dropdown, Input, Modal, Popover, Select, Spin, Tag } from 'antd';
 import { ArrowUpOutlined, CommentOutlined, EllipsisOutlined, MenuOutlined, PlusOutlined, ReloadOutlined, SafetyCertificateOutlined, StopOutlined } from '@ant-design/icons';
 import { MarkdownHost } from '../../components/MarkdownHost';
+import type { MarkdownRenderOptions } from '../../markdown';
 import type { ApiError } from '../../api';
 import { CopyButton } from '../../components/CopyButton';
 import { useAgentConversations } from './AgentConversationsContext';
@@ -15,7 +16,6 @@ import { pendingSubmission, clearPendingSubmission } from './conversation-pendin
 import { ConversationAgentSelect, ConversationOptions } from './ConversationOptions';
 import { ConversationDock } from './ConversationDock';
 import { ConversationMessageImages } from './ConversationMessageImages';
-import type { DraftImage } from './ConversationImageInput';
 import { ConversationComposer } from './ConversationComposer';
 import { ConversationTurn } from './ConversationTurn';
 import { attachmentMimeType, imageSelectionError } from './conversation-images';
@@ -23,11 +23,15 @@ import { extractVideoFrames } from './conversation-video';
 import {conversationPermissionKey,conversationPermissionStorageKey,conversationRunIdentity,permissionModeLabels,readConversationPermission,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,writeConversationPermission,type ConversationChoice,type PermissionMode} from './conversation-options';
 import { appendDraftAttachment, canGenerateConversationTitle, canStopConversationTool, conversationConflictNeedsRefresh, conversationTurnBinding, executionLocked, groupConversationStream, conversationStreamTurns, participantExecutionPairs, removeSubmittedAttachments, shouldSendOnKey, latestConversationParticipant, processBlockKey, type ConversationSelection } from './conversation-state';
 import { conversationActionKey, createConversationActions, createConversationInputAttempts } from './conversation-actions';
+import { useNewConversationImages } from './useNewConversationImages';
+import { useConversationAttachments } from './useConversationAttachments';
+import { draftMaterialIds, firstConversationSubmissions, type FirstSubmission } from './conversation-first-submission';
+import { ConversationExecutionIndicator } from './ConversationExecutionIndicator';
 import { useConversationDraft } from './useConversationDraft';
 import { providerNames, type ConversationEntry, type ConversationView, type SendDraft, type SendPreview } from './types';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { codeApi } from '../code/api/code-api';
-import { conversationFileTarget } from './conversation-process';
+import { conversationFileReference, conversationFileTarget } from './conversation-process';
 import {conversationReplyText} from './conversation-reply';
 import {ConversationHandoffDrawer} from './ConversationHandoffDrawer';
 import { ConversationProcessBlock } from './ConversationProcessBlock';
@@ -77,9 +81,10 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
   const rememberedPermission=context.scope?undefined:modulePreference.permission?rememberedConversationPermission(modulePreference,draftWorkspaceId):savedPermission??rememberedConversationPermission(modulePreference,draftWorkspaceId);
   const permissionMode=selectedConversationPermission(permissionChoices[permissionKey]??(context.scope?savedPermission:rememberedPermission),chat?.run);
   const permissionAvailable=supportsConversationPermission(connection,permissionMode);
-  const [attachments,setAttachments]=useState<Record<string,DraftImage[]>>({});
+  const {attachments,setAttachments,available:attachmentsAvailable}=useConversationAttachments(context.api,chat,permissionProfile);
   const attachmentKey=draftSlot;
-  const images=attachments[attachmentKey]||[];
+  const newImages=useNewConversationImages(context.api,!context.scope);
+  const images=context.scope?(attachments[attachmentKey]||[]):newImages.images;
   const [preparing,setPreparing]=useState(false);
   const [sending,setSending]=useState(false),[error,setError]=useState(''),[feedback,setFeedback]=useState('');
   const [,setActionVersion]=useState(0);
@@ -91,6 +96,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
   const [selectedHandoff,setSelectedHandoff]=useState<ConversationEntry|null>(null),[prepared,setPrepared]=useState<Prepared|null>(null),[previewOpen,setPreviewOpen]=useState(false),[rename,setRename]=useState(false),[title,setTitle]=useState('');
   const viewedHandoff=selectedHandoff?(chat?.entries.find(entry=>entry.id===selectedHandoff.id)??selectedHandoff):null;
   const [moreOpen,setMoreOpen]=useState(false),[locationOpen,setLocationOpen]=useState(false);
+  const [fileLinkFailure,setFileLinkFailure]=useState<{reference:string;message:string}|null>(null);
   const [expandedToolGroups,setExpandedToolGroups]=useState<Record<string,boolean>>({});
   const stream=useRef<HTMLDivElement>(null),readPosition=useRef(0),bottom=useRef(true),composing=useRef(false);
   const selectedSourceModel=context.modelCatalog.find(model=>model.accountId===choice.modelAccountId&&model.modelId===choice.model&&(!choice.modelAccountIdentity||model.accountIdentity===choice.modelAccountIdentity));
@@ -101,7 +107,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
   const recovery=conversationRecoveryAction(chat);
   const pendingAttempt=useRef<{workspaceId:string;conversationId:string;value:ReturnType<typeof pendingSubmission>}|undefined>(undefined);
   const activeSend=useRef<SendOperation|null>(null),locked=executionLocked(chat?.run);
-  const canSend=!context.loading&&(!context.scope||Boolean(chat))&&!sending&&!uploading;
+  const canSend=(Boolean(context.scope)||newImages.ready)&&!context.loading&&(!context.scope||Boolean(chat))&&!sending&&!uploading;
   const supplementing=Boolean(chat?.run?.accepted&&['running','waiting-approval','waiting-question'].includes(chat.run.status)&&lastParticipant?.connectionId===choice.connectionId&&chat.run.model===effectiveModel&&chat.run.modelAccountId===choice.modelAccountId);
   const [inputAttempts]=useState(()=>{try{return createConversationInputAttempts(sessionStorage,permissionProfile+':conversation-input:');}catch{return createConversationInputAttempts();}});
   useEffect(()=>{
@@ -142,12 +148,16 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
     if(!chat)return;
     const selection=context.getSelection();
     try{
+      const reference=conversationFileReference(path);
+      if(!reference)throw new Error('来源路径或行号无效，请复制原路径核对。');
       const catalog=await codeApi.repositories(chat.workspaceId,chat.taskId);
       if(!context.isSelectionCurrent(selection))return;
-      const file=conversationFileTarget(chat.cwd,path,catalog);
+      const file=conversationFileTarget(chat.cwd,reference.path,catalog);
       if(!file)throw new Error('无法确认这个文件的原工作目录，请从代码目录选择实际位置。调用记录已保留。');
-      navigate(`/workspaces/${encodeURIComponent(chat.workspaceId)}/code/explorer`,{state:{codeEntry:{file,from:{pathname:location.pathname,search:location.search,hash:location.hash,state:location.state}}}});
-    }catch(failure){if(context.isSelectionCurrent(selection))fail(failure);}
+      context.setFull(false);
+      navigate(`/workspaces/${encodeURIComponent(chat.workspaceId)}/code/explorer`,{state:{codeEntry:{file:{...file,...(reference.line?{line:reference.line}:{})},from:{pathname:location.pathname,search:location.search,hash:location.hash,state:location.state}}}});
+      setFileLinkFailure(null);
+    }catch(failure){if(context.isSelectionCurrent(selection))setFileLinkFailure({reference:path,message:failure instanceof Error?failure.message:'无法打开来源文件。'});}
   };
   const recoverConflict=async(failure:unknown)=>{
     const api=failure as ApiError;if(api?.status!==409)return false;
@@ -156,17 +166,54 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
     try{await context.refresh();await Promise.allSettled([context.refreshConnections(),context.refreshModelCatalog()]);const message=api.message.trim()||'请求未完成。';setError(/[。！？]$/.test(message)?message+' 草稿保留。':message+'。草稿保留。');}catch{fail(failure);}
     return true;
   };
-  const ensureConversation=async(selection=context.getSelection())=>{
-    if(chat)return chat;
-    if(draftWorkspaceId!=='@default'&&!newCwd.trim())throw new Error('工作空间目录不可用，请重新选择。');
-    const created=await context.create({workspaceId:draftWorkspaceId,...(draftWorkspaceId!=='@default'&&newCwd?{cwd:newCwd.trim()}:{}),...(boundTaskId?{taskId:boundTaskId}:{})},selection);
-    if(!context.isSelectionCurrent({...selection,scope:{workspaceId:created.workspaceId,conversationId:created.id}}))return created;
-    draft.transferTo(created.workspaceId,created.id);
-    if(images.length)setAttachments(previous=>({...previous,[attachmentKey]:removeSubmittedAttachments(previous[attachmentKey]||[],images.map(image=>image.id)),[created.id]:images}));
-    const createdScope={workspaceId:created.workspaceId,conversationId:created.id};
-    setPermissionChoices(previous=>({...previous,[conversationPermissionKey(createdScope,'')]:permissionMode}));
-    try{writeConversationPermission(conversationPermissionStorageKey(permissionProfile,createdScope),permissionMode,sessionStorage);}catch{/* Same-page selection remains usable. */}
-    setChoices(previous=>({...previous,[created.id]:choice}));return created;
+  const [firstSubmissions]=useState(()=>{try{return firstConversationSubmissions(sessionStorage,'buildr.conversation-first:'+permissionProfile);}catch{return firstConversationSubmissions();}});
+  const [unconfirmedFirst,setUnconfirmedFirst]=useState(()=>firstSubmissions.read());
+  const acceptFirst=async(submitted:FirstSubmission,result:ConversationView,selection:ConversationSelection,transferRemainder=false)=>{
+    draft.acceptNewSubmitted(result.workspaceId,result.id,submitted.input.text,transferRemainder&&context.isSelectionCurrent(selection));
+    firstSubmissions.clear(submitted.input.clientRequestId);setUnconfirmedFirst(undefined);
+    const createdScope={workspaceId:result.workspaceId,conversationId:result.id};
+    setPermissionChoices(previous=>({...previous,[conversationPermissionKey(createdScope,'')]:submitted.input.permissionMode||'default'}));
+    setChoices(previous=>({...previous,[result.id]:{connectionId:submitted.input.connectionId,model:submitted.input.model,modelAccountId:submitted.input.modelAccountId,modelAccountIdentity:submitted.input.modelAccountIdentity,serviceTier:submitted.input.serviceTier,reasoningEffort:submitted.input.reasoningEffort}}));
+    await newImages.refresh().catch(fail);
+    if(context.isSelectionCurrent(selection))await context.openConversation(result.workspaceId,result.id,{preserveVisibility:true});
+    void context.refreshPending().catch(()=>{});
+  };
+  useEffect(()=>{if(!context.scope)setUnconfirmedFirst(firstSubmissions.read());},[context.selectionGeneration,context.scope,firstSubmissions]);
+  useEffect(()=>{
+    const pending=firstSubmissions.read();if(context.scope||!pending)return;
+    const selection=context.getSelection();let active=true;
+    void context.api.lookupDraft(pending.workspaceId,pending.draftId,pending.input.clientRequestId).then(async result=>{
+      if(active&&result.found&&result.conversation)await acceptFirst(pending,result.conversation,selection);
+    }).catch(failure=>{if(active)fail(failure);});
+    return()=>{active=false;};
+  },[context.api,firstSubmissions]);
+  const sendFirst=async(operation:SendOperation)=>{
+    let submitted=firstSubmissions.read();
+    const fresh=!submitted;
+    if(submitted){
+      const result=await context.api.lookupDraft(submitted.workspaceId,submitted.draftId,submitted.input.clientRequestId);
+      if(result.found&&result.conversation){await acceptFirst(submitted,result.conversation,operation.selection);return;}
+      // An explicit retry uses the original payload and identity, never today's edited draft.
+    }else{
+      if(draftWorkspaceId!=='@default'&&!newCwd.trim())throw new Error('工作空间目录不可用，请重新选择。');
+      const snapshot=await newImages.refresh();
+      if(!context.isSelectionCurrent(operation.selection))return;
+      const expectedIds=images.map(image=>image.id);
+      if(JSON.stringify(draftMaterialIds(snapshot.images))!==JSON.stringify(expectedIds))throw new Error('草稿图片已变化，请核对后重新发送。');
+      submitted=firstSubmissions.save({draftId:newImages.id,workspaceId:draftWorkspaceId,input:{connectionId:choice.connectionId,modelAccountId:choice.modelAccountId,modelAccountRevision:choice.modelAccountRevision,modelAccountIdentity:choice.modelAccountIdentity,model:choice.model,serviceTier:choice.serviceTier,reasoningEffort:choice.reasoningEffort,permissionMode,text:draft.text,attachmentIds:expectedIds as NonNullable<SendDraft['attachmentIds']>,expectedDraftRevision:snapshot.revision,clientRequestId:crypto.randomUUID(),...(draftWorkspaceId!=='@default'&&newCwd?{cwd:newCwd.trim()}:{}),...(boundTaskId?{taskId:boundTaskId}:{})}});
+    }
+    try{
+      const result=await context.api.startDraft(submitted.workspaceId,submitted.draftId,submitted.input);
+      await acceptFirst(submitted,result.conversation,operation.selection,fresh);
+    }catch(failure){
+      const error=failure as ApiError;
+      setUnconfirmedFirst(submitted);
+      // Explicit validation errors prove non-acceptance. Server/transport failures require observation.
+      if(error.status&&error.status<500&&error.code!=='agent_request_conflict'){
+        firstSubmissions.clear(submitted.input.clientRequestId);setUnconfirmedFirst(undefined);
+      }
+      throw failure;
+    }
   };
   const queue=async(current:ConversationView,input:SendDraft)=>{
     const selection=context.getSelection();
@@ -224,10 +271,18 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
       setError(api.status?api.message:'是否送达尚待确认，输入已保留。再次发送相同内容会核对同一条消息。');
     }}finally{if(activeSend.current===operation){activeSend.current=null;setSending(false);}}
   };
-  const prepare=async(show=true,skipSummary=false,recoveryRunId?:string)=>{
+  const prepare=async(show=true,skipSummary=false,recoveryRunId?:string,retryFirst=false)=>{
     const continueRunId=recoveryRunId??(!draft.text.trim()&&!images.length&&recovery?.kind==='recover'?chat?.run?.id:undefined);
     if(continueRunId&&locked)return;
     const requestImages=continueRunId?[]:images;
+    if(!chat&&firstSubmissions.read()){
+      if(activeSend.current)return;
+      if(!retryFirst){setUnconfirmedFirst(firstSubmissions.read());setError('还有一条首次提交结果待核对，请先核对原提交；当前新输入已保留。');return;}
+      const operation:SendOperation={selection:context.getSelection()};activeSend.current=operation;setSending(true);setError('');
+      try{await sendFirst(operation);}catch(failure){if(context.isSelectionCurrent(operation.selection))fail(failure);}
+      finally{if(activeSend.current===operation){activeSend.current=null;setSending(false);}}
+      return;
+    }
     if(locked&&supplementing){if(!show)await supplement();return;}
     const unavailable=(!connection?.enabled?'请先接入可用的智能体。':!permissionAvailable?'当前执行者不支持'+permissionModeLabels[permissionMode]:requestImages.length&&!connection.capabilities.images?'当前执行者不支持图片或视频画面。请移除附件或选择支持图片的执行者。':choice.modelAccountId&&context.modelCatalogReady&&!selectedSourceModel?.available?'所选模型暂不可用，请重新选择。':'');
     if(unavailable){setError(unavailable);return;}
@@ -235,7 +290,8 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
     setSelectedHandoff(null);
     const operation:SendOperation={selection:context.getSelection(),continueRunId};activeSend.current=operation;setSending(true);setPreparing(true);setError('');
     try{
-      const current=await ensureConversation(operation.selection);
+      if(!chat){await sendFirst(operation);return;}
+      const current=chat;
       operation.selection={...operation.selection,scope:{workspaceId:current.workspaceId,conversationId:current.id}};
       if(activeSend.current!==operation||!context.isSelectionCurrent(operation.selection))return;
       const input:SendDraft={expectedRevision:current.revision,connectionId:choice.connectionId,modelAccountId:choice.modelAccountId,modelAccountRevision:choice.modelAccountRevision,modelAccountIdentity:choice.modelAccountIdentity,model:choice.model,serviceTier:choice.serviceTier,reasoningEffort:choice.reasoningEffort,skipHandoffSummary:skipSummary,permissionMode,...(continueRunId?{continueRunId}:{}),text:continueRunId?'':skipSummary&&!sendText.trim()&&!requestImages.length?'继续当前工作。':sendText,attachmentIds:requestImages.map(item=>item.id) as NonNullable<SendDraft['attachmentIds']>};
@@ -266,7 +322,8 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
     if(validation){setError(validation);return;}
     let key=uploadKey;if(!actions.begin(key))return;let selection=context.getSelection();
     try {
-      let current=await ensureConversation(selection);
+      if(!chat){await newImages.add(selected);return;}
+      let current=chat;
       selection={...selection,scope:{workspaceId:current.workspaceId,conversationId:current.id}};
       if(!context.isSelectionCurrent(selection))return;
       const boundKey=actionKey(current,'upload','');actions.move(key,boundKey);key=boundKey;
@@ -344,7 +401,9 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
     const agent=provider?providerNames[provider]||participant?.label||provider:participant?.label||'智能体';
     return agent+' · '+conversationModelLabel(boundRun?.model||participant?.model,context.connections,context.modelCatalog,{connectionId:participant?.connectionId,modelAccountId:boundRun?.modelAccountId??participant?.modelAccountId});
   };
-  const renderEntry=(entry:ConversationEntry)=>entry.kind==='handoff'?<div className="ac-handoff-receipt" key={entry.id}><span>{entry.handoff?`${entry.handoff.changes.map(c=>c.after).join(' · ')||entry.handoff.agent} ${entry.status==='accepted'?'已接手':entry.status==='failed'?'未接收':'接收待确认'}`:entry.text}</span>{entry.handoff&&<Button type="link" size="small" onClick={()=>{setSelectedHandoff(entry);setPreviewOpen(true);}}>交接内容</Button>}</div>:<article key={entry.id} className={'ac-message is-'+entry.role} data-entry-id={entry.id} data-message-provider={entry.provider}>{entry.role==='assistant'?<MarkdownHost markdown={entry.text} className="markdown-body"/>:<p>{entry.kind==='notice'&&entry.id.startsWith('reply-')?conversationReplyText(entry.text):entry.text}</p>}{entry.attachments?.length?<ConversationMessageImages conversation={chat!} ids={entry.attachments} read={context.api.readImage}/>:null}{entry.status==='unknown'&&<Tag color="warning">是否送达待确认</Tag>}{entry.role==='assistant'&&<CopyButton type="text" text={entry.text} ariaLabel="复制回复" failureMessage="复制失败，请手动选择文字。"/>}</article>;
+  const markdownOptions:MarkdownRenderOptions={allowRelativeLinks:true,allowParentRelativeLinks:true,allowAbsoluteFileLinks:true,taskLinkPathname:chat&&chat.workspaceId!=='@default'?'/workspaces/'+encodeURIComponent(chat.workspaceId):null,onRelativeLinkClick:reference=>void openProcessFile(reference)};
+  const renderEntry=(entry:ConversationEntry)=>entry.kind==='handoff'?<div className="ac-handoff-receipt" key={entry.id}><span>{entry.handoff?`${entry.handoff.changes.map(c=>c.after).join(' · ')||entry.handoff.agent} ${entry.status==='accepted'?'已接手':entry.status==='failed'?'未接收':'接收待确认'}`:entry.text}</span>{entry.handoff&&<Button type="link" size="small" onClick={()=>{setSelectedHandoff(entry);setPreviewOpen(true);}}>交接内容</Button>}</div>:<article key={entry.id} className={'ac-message is-'+entry.role} data-entry-id={entry.id} data-message-provider={entry.provider}>{entry.role==='assistant'?<MarkdownHost markdown={entry.text} className="markdown-body" options={markdownOptions}/>:<p>{entry.kind==='notice'&&entry.id.startsWith('reply-')?conversationReplyText(entry.text):entry.text}</p>}{entry.attachments?.length?<ConversationMessageImages conversation={chat!} ids={entry.attachments} read={context.api.readImage}/>:null}{entry.status==='unknown'&&<Tag color="warning">是否送达待确认</Tag>}{entry.role==='assistant'&&<CopyButton type="text" text={entry.text} ariaLabel="复制回复" failureMessage="复制失败，请手动选择文字。"/>}</article>;
+  const fileError=fileLinkFailure&&<Alert type="warning" message={fileLinkFailure.message} description={<code>{fileLinkFailure.reference}</code>} closable onClose={()=>setFileLinkFailure(null)} action={<CopyButton type="text" text={fileLinkFailure.reference} ariaLabel="复制来源路径" failureMessage="复制失败，请手动复制来源路径。"/>}/>;
   const panel=<section id="agent-conversation-panel" className={'ac-panel'+(context.full?' is-full':'')} aria-label="内部对话" data-dock={context.side} data-conversation-id={chat?.id}>
     {context.view==='history'?<ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId}/>:<>
       <header className="ac-thread-header" data-run-status={run&&['running','completed'].includes(run.status)?run.status:undefined}>
@@ -356,7 +415,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
         {chat&&<div className="ac-thread-identity"><CopyButton type="text" text={chat.id} ariaLabel="复制对话 ID" failureMessage="复制失败，请手动选择对话 ID 复制。"/><span title={chat.id}>{chat.id}</span></div>}
         </div>
         <div className="ac-thread-actions">
-          {locked&&run&&<Button className="ac-stop-button" type="text" icon={<StopOutlined/>} aria-label="停止本次执行" title="停止本次执行" loading={stopping} disabled={run.status==='stopping'} onClick={()=>void stop()}>停止</Button>}
+
           <Button type="text" icon={<PlusOutlined/>} aria-label="新建对话" title="新建对话" onClick={()=>context.newConversation({preserveVisibility:true})}/>
           <Dropdown overlayClassName="ac-panel-popup" trigger={['click']} open={moreOpen} onOpenChange={setMoreOpen} menu={{items:[
             {key:'settings',label:'智能体与模型'},
@@ -391,12 +450,12 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
             const executing=Boolean(index===turns.length-1&&run?.status==='running'&&(assistant?.runId||prompt?.runId)===run.id);
             const processKeys=turn.items.flatMap(item=>item.type==='process-block'?[...(!item.active?[processBlockKey(item.entries)]:[]),...item.entries.filter(entry=>entry.kind==='tool').flatMap(entry=>['tool-group:'+entry.id,'tool:'+entry.id])]:[]);
             const hasExpandedProcess=turn.items.some(item=>item.type==='process-block'&&!item.active&&expandedToolGroups[processBlockKey(item.entries)]===true);
-            return <ConversationTurn key={turn.key} id={turn.key} runId={assistant?.runId||prompt?.runId} prompt={prompt?{id:prompt.id,text:prompt.text,images:prompt.attachments?.length?<ConversationMessageImages conversation={chat} ids={prompt.attachments} read={context.api.readImage}/>:undefined,diagnostic:prompt.deliveryDiagnostic?<small className="ac-input-diagnostic" role="status">{prompt.deliveryDiagnostic}</small>:prompt.status==='unknown'?<Tag color="warning">是否送达待确认</Tag>:undefined}:undefined}
+            return <ConversationTurn showExecutionIndicator={false} key={turn.key} id={turn.key} runId={assistant?.runId||prompt?.runId} prompt={prompt?{id:prompt.id,text:prompt.text,images:prompt.attachments?.length?<ConversationMessageImages conversation={chat} ids={prompt.attachments} read={context.api.readImage}/>:undefined,diagnostic:prompt.deliveryDiagnostic?<small className="ac-input-diagnostic" role="status">{prompt.deliveryDiagnostic}</small>:prompt.status==='unknown'?<Tag color="warning">是否送达待确认</Tag>:undefined}:undefined}
               onCollapseProcess={processKeys.some(key=>expandedToolGroups[key]===true)?()=>setExpandedToolGroups(previous=>({...previous,...Object.fromEntries(processKeys.map(key=>[key,false]))})):undefined} collapseLabel={hasExpandedProcess?'收起处理过程':'收起工具调用'} identity={turnIdentity(assistant||prompt)} executing={executing} startedAt={executing?run?.startedAt:undefined}>
               {turn.items.map(item=>{
                 if(item.type==='entry')return renderEntry(item.entry);
                 const key=processBlockKey(item.entries);
-                return <ConversationProcessBlock key={key} groupsOpen={expandedToolGroups} onGroupToggle={(ids,open)=>setExpandedToolGroups(previous=>({...previous,...Object.fromEntries(ids.map(id=>['tool-group:'+id,open]))}))} toolsOpen={expandedToolGroups} onToolToggle={(id,open)=>setExpandedToolGroups(previous=>({...previous,['tool:'+id]:open}))} blockKey={key} entries={item.entries} active={item.active} finishedAt={item.finishedAt} onOpenFile={path=>void openProcessFile(path)} open={expandedToolGroups[key]??false} onToggle={(name,open)=>setExpandedToolGroups(previous=>({...previous,[name]:open}))}/>;
+                return <ConversationProcessBlock markdownOptions={markdownOptions} key={key} groupsOpen={expandedToolGroups} onGroupToggle={(ids,open)=>setExpandedToolGroups(previous=>({...previous,...Object.fromEntries(ids.map(id=>['tool-group:'+id,open]))}))} toolsOpen={expandedToolGroups} onToolToggle={(id,open)=>setExpandedToolGroups(previous=>({...previous,['tool:'+id]:open}))} blockKey={key} entries={item.entries} active={item.active} finishedAt={item.finishedAt} onOpenFile={path=>void openProcessFile(path)} open={expandedToolGroups[key]??false} onToggle={(name,open)=>setExpandedToolGroups(previous=>({...previous,[name]:open}))}/>;
               })}
             </ConversationTurn>;
           })}
@@ -406,13 +465,13 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
         {chat?.run?.status==='tools-active'&&<Alert type="warning" showIcon message="模型已中断，仍有命令运行" description={<div>{chat.run.tools.filter(tool=>tool.status!=='completed').map(tool=><p key={tool.id}>{tool.label}{canStopConversationTool(tool)?<Button size="small" loading={stopping} onClick={()=>void stop(tool.id)}>停止此命令</Button>:<small> · 不支持单独停止</small>}</p>)}<Button type="link" size="small" loading={observing} onClick={()=>void observe()}>核对执行状态</Button></div>} action={<Button loading={stopping} onClick={()=>void stop()}>停止剩余执行</Button>}/>}
         <ConversationPendingSend conversation={chat}/>{chat?.requests.map(request=><ConversationRequest key={request.id} request={request} provider={chat.run?.provider||chat.participants.find(item=>item.id===request.participantId)?.provider||'codex'} busy={actions.has(actionKey(chat,'reply',request.id))} onReply={answer=>void reply(request.id,answer)}/>)}
       </div>
-      <div className="ac-compose-wrap">{run&&run.status!=='running'&&run.status!=='completed'&&<div className="ac-run-status" role="status" data-run-status={run.status}>{run.interrupted?'执行未完成':statusLabels[run.status]}{runIdentity&&` · ${runIdentity}`} · {permissionModeLabels[run.permissionMode||'default']}{run.diagnostic&&<p>{run.diagnostic}</p>}</div>} {context.modelCatalogReady&&choice.modelAccountId&&selectedSourceModel&&!selectedSourceModel.available&&<Alert type="warning" showIcon message="所选模型已停用或来源不可用，请重新选择。"/>}{earlier.error&&<Alert type="warning" showIcon message={earlier.error}/>} {error&&<Alert type="warning" showIcon message={error} closable onClose={()=>setError('')}/>} {feedback&&<small role="status">{feedback}</small>}{!draft.available&&<Alert type="warning" message="浏览器存储不可用，刷新后无法恢复未发送草稿。"/>}
+      <div className="ac-compose-wrap">{fileError}{run&&locked&&<div className="ac-execution-statusbar" role="status" data-execution-state={run.status}><span>{statusLabels[run.status]}</span>{run.status==='running'&&<ConversationExecutionIndicator startedAt={run.startedAt} active/>}<Button className="ac-stop-button" type="text" icon={<StopOutlined/>} aria-label="停止本次执行" title="停止本次执行" loading={stopping} disabled={run.status==='stopping'} onClick={()=>void stop()}>{stopping||run.status==='stopping'?'正在停止…':'停止'}</Button></div>}{!chat&&newImages.error&&<Alert type="warning" message={newImages.error} action={<Button size="small" onClick={()=>void newImages.refresh().catch(fail)}>重新读取图片</Button>}/>} {!chat&&unconfirmedFirst&&<Alert type="warning" message="首次发送结果待核对，原内容已保留；重试将核对并沿用原提交，不发送后来编辑的内容。" action={<Button size="small" loading={sending} onClick={()=>void prepare(false,false,undefined,true)}>核对并重试原提交</Button>}/>}{run&&run.status!=='running'&&run.status!=='completed'&&<div className="ac-run-status" role="status" data-run-status={run.status}>{run.interrupted?'执行未完成':statusLabels[run.status]}{runIdentity&&` · ${runIdentity}`} · {permissionModeLabels[run.permissionMode||'default']}{run.diagnostic&&<p>{run.diagnostic}</p>}</div>} {context.modelCatalogReady&&choice.modelAccountId&&selectedSourceModel&&!selectedSourceModel.available&&<Alert type="warning" showIcon message="所选模型已停用或来源不可用，请重新选择。"/>}{earlier.error&&<Alert type="warning" showIcon message={earlier.error}/>} {error&&<Alert type="warning" showIcon message={error} closable onClose={()=>setError('')}/>} {feedback&&<small role="status">{feedback}</small>}{(!draft.available||!attachmentsAvailable)&&<Alert type="warning" message="浏览器存储不可用，刷新后无法恢复未发送草稿。"/>}
         {recovery&&<div className="ac-recovery-action" data-recovery-kind={recovery.kind}>{!run?.diagnostic&&<span>{recovery.kind==='observe'?'原执行状态仍待核对。':'上次执行未正常答复。'}</span>}<Button type="text" size="small" icon={<ReloadOutlined/>} autoInsertSpace={false} aria-label={recovery.kind==='recover'&&executionChanged?'继续':recovery.label} disabled={!canSend||observing} loading={recovery.kind==='observe'?observing:sending} onClick={()=>recovery.kind==='observe'?void observe():void prepare(false,false,chat!.run!.id)}>{recovery.kind==='recover'&&executionChanged?'继续':recovery.label}</Button></div>}
         {!connection?.enabled&&<div className="ac-connect-notice"><span>{connection?`${providerNames[connection.provider]} 尚未就绪`:'请先接入智能体'}</span><Button type="link" size="small" onClick={()=>context.setSettings(true)}>智能体与模型</Button></div>}
         {chat?.run&&(lastParticipant?.connectionId!==choice.connectionId||chat.run.model!==effectiveModel||chat.run.modelAccountId!==choice.modelAccountId)?<div className="ac-transfer-notice"><span>{lastParticipant?.connectionId!==choice.connectionId?`接下来由 ${connection?providerNames[connection.provider]||connection.label:''}${chat.run.model!==effectiveModel||chat.run.modelAccountId!==choice.modelAccountId?' · '+(effectiveModelLabel):''} 继续处理`:`接下来使用 ${effectiveModelLabel} 继续处理`}</span><Button type="link" size="small" disabled={!canSend||locked} loading={sending} onClick={()=>void prepare(true)}>交接内容</Button></div>:null}
         {preparing&&<div className="ac-notice" role="status">正在准备交接资料… <Button type="link" size="small" title="跳过模型精简，使用本地记录与按需读取" onClick={()=>{const continueRunId=activeSend.current?.continueRunId;activeSend.current=null;setSending(false);setPreparing(false);void prepare(false,true,continueRunId);}}>直接交接</Button><Button type="text" size="small" onClick={()=>{activeSend.current=null;setSending(false);setPreparing(false);}}>取消发送</Button></div>}
         {choice.connectionId&&!permissionAvailable&&<Alert type="warning" showIcon message={"当前执行者不支持"+permissionModeLabels[permissionMode]} description="已保留所选权限。请选择可用权限或切换执行者后再发送，草稿保留。"/>}{images.length>0&&!connection?.capabilities.images&&<Alert type="warning" message="当前执行者不支持图片或视频画面。请移除附件或选择支持图片的执行者。"/>}
-        <ConversationComposer images={images} materialDisabled={sending||uploading||context.loading||Boolean(context.scope&&!chat)} addDisabled={sending||context.loading||Boolean(context.scope&&!chat)} uploading={uploading} onAdd={upload} onBlocked={()=>setError('当前正在发送或上传，请稍后再添加图片或视频。')} onRemove={id=>{setAttachments(previous=>({...previous,[attachmentKey]:(previous[attachmentKey]||[]).filter(item=>item.id!==id)}));setPrepared(null);setPreviewOpen(false);}}
+        <ConversationComposer images={images} materialDisabled={sending||uploading||context.loading||Boolean(context.scope&&!chat)} addDisabled={sending||context.loading||Boolean(context.scope&&!chat)} uploading={uploading} onAdd={upload} onBlocked={()=>setError('当前正在发送或上传，请稍后再添加图片或视频。')} onRemove={id=>{if(!chat){void newImages.remove(id).catch(fail);}else setAttachments(previous=>({...previous,[attachmentKey]:(previous[attachmentKey]||[]).filter(item=>item.id!==id)}));setPrepared(null);setPreviewOpen(false);}}
           input={{id:'agent-conversation-input','aria-label':'对话输入',disabled:context.loading||Boolean(context.scope&&!chat),placeholder:supplementing?'继续补充要求，也可以粘贴截图…':locked?'可以提交下一条指令，上一轮结束后自动发送…':'提出问题，或描述想完成的工作…（可粘贴图片或视频）',value:draft.text,onChange:event=>{draft.setText(event.target.value);setPrepared(null);},autoSize:{minRows:2,maxRows:8},onCompositionStart:()=>{composing.current=true;},onCompositionEnd:()=>{composing.current=false;},onKeyDown:event=>{if(shouldSendOnKey({key:event.key,shiftKey:event.shiftKey,isComposing:composing.current||event.nativeEvent.isComposing,keyCode:event.nativeEvent.keyCode})){event.preventDefault();if(canSend)void prepare(false);}}}}
           access={<><ConversationAgentSelect connections={context.connections} value={choice} disabled={sending} onChange={select}/><Select<PermissionMode> className="ac-choice ac-permission-select" aria-label="执行权限" placement="topLeft" variant="borderless" size="small" suffixIcon={null} labelRender={({label})=><span className="ac-permission-label"><SafetyCertificateOutlined/>{label}</span>} value={permissionMode} disabled={sending||uploading||context.loading||Boolean(context.scope&&!chat)} popupMatchSelectWidth={false} classNames={{popup:{root:'ac-panel-popup ac-choice-popup'}}} title="权限更改用于本对话下一轮。完全访问会跳过逐次工具审批；业务问题仍需回复，系统与厂家限制继续有效。" options={[{value:'default',label:'默认权限',disabled:!supportsConversationPermission(connection,'default')},{value:'full-access',label:'完全访问',disabled:!supportsConversationPermission(connection,'full-access')}]} onChange={selectPermission}/></>}
           execution={<><ConversationOptions showAgent={false} key={choiceKey+':'+context.side+':'+context.open} connections={context.connections} value={choice} disabled={sending} onChange={select}/><Button type="primary" shape="circle" icon={<ArrowUpOutlined/>} aria-label="发送对话" title="发送" disabled={!canSend||(!sendText.trim()&&!images.length)} loading={sending} onClick={()=>void prepare(false)}/></>}/>

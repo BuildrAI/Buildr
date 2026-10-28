@@ -108,3 +108,12 @@ test('同一执行被补充分段后只保留整轮最后一份答复，授权�
  assert.equal(turns[0].items[0].entries[0].id,'n1');assert.equal(turns[1].items.at(-1).entry.id,'final');
  assert.deepEqual(groupConversationStream(entries,{id:'r1',status:'running'}).filter(item=>item.type==='entry'&&item.entry.role==='assistant'),[]);
 });
+
+test('来源引用行号不混入文件名，准确工作树定位保持安全边界',async()=>{
+  const {conversationFileReference}=await import('../src/features/agent-conversations/conversation-process.ts');
+  for(const [reference,path,line] of [['projects/a.ts:155','projects/a.ts',155],['/repo/a.ts#L15-L20','/repo/a.ts',15],['C:/repo/a.ts:8:2','C:/repo/a.ts',8],['src/a%20b.ts#L3','src/a b.ts',3]])assert.deepEqual(conversationFileReference(reference),{path,line});
+  for(const reference of ['//foreign/path','src/a.ts?download=1','src/a.ts#bad','%00bad','src/a.ts#L999999999999999999999'])assert.equal(conversationFileReference(reference),null);
+  const catalog={worktrees:[{id:'actual',repositoryId:'repo',path:'/repo',available:true}]};
+  assert.deepEqual(conversationFileTarget('/repo',conversationFileReference('src/a.ts:12').path,catalog),{repositoryId:'repo',checkoutId:'actual',path:'src/a.ts'});
+  assert.equal(conversationFileTarget('/repo',conversationFileReference('%2e%2e/other/a.ts:12').path,catalog),null);
+});

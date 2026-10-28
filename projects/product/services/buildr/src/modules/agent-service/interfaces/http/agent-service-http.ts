@@ -81,9 +81,34 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
     async handle(context: any) {
       const { request, suffix, workspaceId, searchParams, authorizeRead, authorizeWrite, authorizeMutation, readJsonBody, readBinaryBody, respond } = context;
       if (suffix !== '/agent-conversations' && !suffix.startsWith('/agent-conversations/')) return null;
-      const isImageUpload = request.method === 'POST' && /^\/agent-conversations\/[a-f0-9-]{36}\/attachments$/.test(suffix);
+      const isImageUpload = request.method === 'POST' && /^\/agent-conversations\/(?:drafts\/)?[a-f0-9-]{36}\/attachments$/.test(suffix);
       if (request.method === 'GET') authorizeRead(); else if (isImageUpload) authorizeMutation(); else authorizeWrite();
       const service = await resolve();
+      const draftRoute = suffix.match(/^\/agent-conversations\/drafts\/([a-f0-9-]{36})(?:\/(attachments|send|submissions)(?:\/([a-f0-9-]{36}))?)?$/);
+      if (draftRoute) {
+        query(searchParams, []);
+        const [, draftId, action, childId] = draftRoute;
+        if (request.method === 'GET' && !action) return result('draftImages', await service.conversations.readDraft(workspaceId, draftId));
+        if (request.method === 'GET' && action === 'submissions' && childId) return result('draftLookup', await service.conversations.lookupDraft(workspaceId, draftId, childId));
+        if (request.method === 'GET' && action === 'attachments' && childId) {
+          const image = await service.conversations.readDraftImage(workspaceId, draftId, childId);
+          respond.binary(image.bytes, image.mimeType, { disposition: 'inline', filename: childId }); return true;
+        }
+        if (request.method === 'POST' && action === 'attachments' && !childId) {
+          let name: string; try { name = decodeURIComponent(request.headers['x-buildr-image-name'] ?? '图片'); } catch { throw inputError(); }
+          let video: unknown;try {if(request.headers['x-buildr-video'])video=JSON.parse(request.headers['x-buildr-video']);}catch{throw inputError();}
+          const metadata = validate('draftImage', { expectedRevision: request.headers['x-buildr-draft-revision'], name, mimeType: request.headers['content-type'], ...(request.headers['x-buildr-frame']==='true'?{frame:true}:{}), ...(video!==undefined?{video}:{}) });
+          return result('draftImages', await service.conversations.addDraftImage(workspaceId, draftId, { ...metadata, bytes: await readBinaryBody((metadata.mimeType.startsWith('video/')?32:8) * 1024 * 1024) }), 201);
+        }
+        if (request.method === 'DELETE' && action === 'attachments' && childId) return result('draftImages', await service.conversations.removeDraftImage(workspaceId, draftId, validate('removeDraftImage', { ...await readJsonBody(), attachmentId: childId })));
+        if (request.method === 'POST' && action === 'send' && !childId) {
+          const input = validate('startDraft', await readJsonBody(128 * 1024));
+          if (workspaceId === '@default' && (input.cwd !== undefined || input.taskId !== undefined)) throw inputError();
+          if (workspaceId === '@default') options.prepareDefaultWorkspace?.();
+          return result('draftStarted', await service.conversations.startDraft(workspaceId, draftId, input), 202);
+        }
+        return null;
+      }
       if (suffix === '/agent-conversations') {
         if (request.method === 'GET') {
           query(searchParams, ['taskId', 'cursor', 'limit', 'hidden', 'query']);

@@ -23,6 +23,7 @@ import type { HostContext } from './host-context.ts';
 import { PendingSendRepository } from '../persistence/pending-send-repository.ts';
 import { ConversationSupplements } from './conversation-supplements.ts';
 import type { SupplementInput } from '../contracts.ts';
+import { ConversationDrafts } from './conversation-drafts.ts';
 
 const TITLE_TIMEOUT_MS = 45_000;
 const MAX_TEXT_BYTES = 64 * 1024;
@@ -45,6 +46,7 @@ async function within<T>(work: Promise<T>, milliseconds: number, code: string, s
 const bounded = (value: number | undefined, fallback: number, max: number) => Math.max(1, Math.min(Number.isFinite(value) ? Math.trunc(value!) : fallback, max));
 
 export class ConversationApplication {
+  readonly drafts: ConversationDrafts;
   activity(): Array<{kind:string;count:number}> {
     return [
       {kind:'execution',count:this.workers.size},
@@ -89,6 +91,13 @@ export class ConversationApplication {
   constructor(options: ConversationApplication['options']) {
     this.options = options;
     this.media = new ConversationAttachments({ root: options.root, now: options.now, save: record => this.save(record) });
+    this.drafts = new ConversationDrafts({
+      root: options.root, repository: options.repository, source: scope => options.host.ref(scope).sourceId,
+      candidate: (scope, input) => this.candidate(scope, input),
+      prepare: (record, input) => this.prepare(record, input).preview,
+      submit: (record, input) => this.submit(record, input, false, true),
+      read: (scope, id) => this.read(scope, id),
+    });
     this.supplements = new ConversationSupplements({ generation: options.generation, now: options.now, closing: () => this.closing,
       load: (workspaceId, id) => this.load(workspaceId, id), save: record => this.save(record), view: record => this.view(record),
       runtime: async (record, participant) => {
@@ -199,12 +208,12 @@ export class ConversationApplication {
     view.pendingSend = this.pendingSends.view(this.pendingSends.read(view.workspaceId, view.id));
     return view;
   }
-  private save(record: StoredConversation): void {
+  private save(record: StoredConversation, initial = false): void {
     if(record.view.run?.status==='completed'){record.view.run.interrupted=undefined;delete record.interruption;}
     const observed=record.view.run;if(observed&&['completed','failed','stopped','unknown','tools-active'].includes(observed.status)){record.runOutcomes??={};record.runOutcomes[observed.id]={status:observed.status,diagnostic:observed.diagnostic,model:observed.model,provider:observed.provider,updatedAt:observed.updatedAt};}
     const prior = record.view.revision;
     record.view.revision = randomUUID(); record.view.updatedAt = this.options.now();
-    this.options.repository.saveConversation(record, prior);
+    this.options.repository.saveConversation(record, initial ? undefined : prior);
     this.options.events.publish({ type: 'conversation', workspaceId: record.view.workspaceId, conversationId: record.view.id, revision: record.view.revision, payload: { conversation: this.view(record) } });
   }
   read(workspaceId: string, id: string, options: { before?: number; limit?: number } = {}): ConversationView {
@@ -235,6 +244,12 @@ export class ConversationApplication {
   }
 
   async create(workspaceId: string, input: { cwd?: string; taskId?: string; title?: string }): Promise<ConversationView> {
+    const record = await this.candidate(workspaceId, input);
+    this.options.repository.saveConversation(record);
+    this.options.events.publish({ type: 'conversation', workspaceId, conversationId: record.view.id, revision: record.view.revision, payload: { conversation: this.view(record) } });
+    return this.view(record);
+  }
+  private async candidate(workspaceId: string, input: { cwd?: string; taskId?: string; title?: string }): Promise<StoredConversation> {
     const workspace = await this.options.host.resolve(workspaceId);
     if (input.taskId) await this.options.host.verify(workspaceId, nonempty(input.taskId, '任务身份'));
     const selected = input.cwd ?? workspace.rootPath;
@@ -246,9 +261,7 @@ export class ConversationApplication {
       id: randomUUID(), workspaceId, cwd, taskId: input.taskId, title: input.title ? nonempty(input.title, '对话标题', 160) : '新对话', titleState:{status:input.title?'manual':'pending'},
       revision: randomUUID(), hidden: false, updatedAt: this.options.now(), participants: [], entries: [], requests: [],
     }, hostScope: workspace, titleOrigin: input.title ? 'manual' : 'default', participants: [], sources: {}, attempts: [], requests: {}, attachments: {} };
-    this.options.repository.saveConversation(record);
-    this.options.events.publish({ type: 'conversation', workspaceId, conversationId: record.view.id, revision: record.view.revision, payload: { conversation: this.view(record) } });
-    return this.view(record);
+    return record;
   }
   async update(workspaceId: string, id: string, input: { expectedRevision: string; title?: string; hidden?: boolean; taskId?: string | null }): Promise<ConversationView> {
     const record = this.load(workspaceId, id); expected(record.view.revision, input.expectedRevision);
@@ -411,7 +424,10 @@ export class ConversationApplication {
   }
 
   send(workspaceId: string, id: string, raw: SendDraft & { previewToken: string; clientRequestId: string }, systemRecovery = false): { run: RunView; conversation: ConversationView } {
-    const record = this.load(workspaceId, id);
+    return this.submit(this.load(workspaceId, id), raw, systemRecovery);
+  }
+  private submit(record: StoredConversation, raw: SendDraft & { previewToken: string; clientRequestId: string }, systemRecovery = false, initial = false): { run: RunView; conversation: ConversationView } {
+    const { workspaceId, id } = record.view;
     const clientRequestId = nonempty(raw.clientRequestId, '请求身份', 200);
     const inputDigest = hash({ ...this.draft(raw), expectedRevision: undefined });
     const repeated = record.attempts.find(attempt => attempt.clientRequestId === clientRequestId);
@@ -446,7 +462,7 @@ export class ConversationApplication {
     if (!participant.modelAccountId) this.sharedNativeContext = true;
     delete record.interruption;
     record.view.run = run;
-    this.save(record);
+    this.save(record, initial);
     const work = this.execute(workspaceId, id, run.id, prepared).finally(() => { this.workers.delete(run.id); this.cancelledRetries.delete(run.id); });
     this.workers.set(run.id, work);
     return { run: structuredClone(run), conversation: this.read(workspaceId, id) };

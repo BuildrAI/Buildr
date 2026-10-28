@@ -397,3 +397,30 @@ test('live text and image input uses exact admission identity while stop remains
  admit();response=await pending;assert.equal(response.status,202);const receipt=await response.json();assert.equal(receipt.delivery,'accepted');assert.equal(receipt.conversation.run.status,'stopped');assert.ok(receipt.conversation.entries.some((entry:any)=>entry.text==='concurrent text'));
  response=await fetch(supplementUrl,{method:'POST',headers,body:JSON.stringify(input)});assert.equal((await response.json()).delivery,'accepted');assert.equal(supplements,1);
 });
+
+test('draft image HTTP is authenticated and never creates a conversation or binds a workspace',async t=>{
+  const {base,root}=taskRecordFixture(t,'draft-image-http');
+  const previous=process.env.BUILDR_APP_DATA_DIR;process.env.BUILDR_APP_DATA_DIR=path.join(base,'private-app');
+  t.after(()=>{if(previous===undefined)delete process.env.BUILDR_APP_DATA_DIR;else process.env.BUILDR_APP_DATA_DIR=previous;});
+  const runtime=createRuntime(),service=createAgentService({dataRoot:path.join(base,'agent-profile'),executors:[],resolveWorkspace:()=>assert.fail('image staging must not resolve a workspace')});
+  const contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+  const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions}),{url,sessionToken}=await server.ready;
+  t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(()=>resolve()));});
+  const draftId='9eab19bd-94b9-4cfa-93d0-1d277715737f',endpoint=url+'/api/v1/app/agent-service/conversations/drafts/'+draftId,readHeaders={'x-buildr-session':sessionToken};
+  let response=await fetch(endpoint);assert.equal(response.status,403);
+  response=await fetch(endpoint,{headers:readHeaders});assert.equal(response.status,200);const empty=await response.json();assert.deepEqual(empty.images,[]);
+  const png=Buffer.from([137,80,78,71,13,10,26,10]),headers={...readHeaders,origin:url,'content-type':'image/png','x-buildr-draft-revision':empty.revision,'x-buildr-image-name':encodeURIComponent('截图.png')};
+  response=await fetch(endpoint+'/attachments',{method:'POST',headers:{...headers,'x-buildr-session':'wrong'},body:png});assert.equal(response.status,403);
+  response=await fetch(endpoint+'/attachments',{method:'POST',headers,body:png});assert.equal(response.status,201);const saved=await response.json();assert.equal(saved.images[0].name,'截图.png');
+  assert.equal(fs.existsSync(path.join(base,'agent-profile/agent-service/conversations.sqlite')),false);
+  response=await fetch(endpoint+'/attachments/'+saved.images[0].id,{headers:readHeaders});assert.equal(response.status,200);assert.deepEqual(Buffer.from(await response.arrayBuffer()),png);
+  response=await fetch(endpoint+'/attachments/'+saved.images[0].id,{method:'DELETE',headers:{...readHeaders,origin:url,'content-type':'application/json'},body:JSON.stringify({expectedRevision:empty.revision})});assert.equal(response.status,409);
+  response=await fetch(endpoint+'/attachments/'+saved.images[0].id,{method:'DELETE',headers:{...readHeaders,origin:url,'content-type':'application/json'},body:JSON.stringify({expectedRevision:saved.revision})});assert.equal(response.status,200);assert.deepEqual((await response.json()).images,[]);
+  response=await fetch(endpoint,{headers:readHeaders});const cleared=await response.json();
+  response=await fetch(endpoint+'/attachments',{method:'POST',headers:{...headers,'x-buildr-draft-revision':cleared.revision,'x-buildr-frame':'true'},body:png});assert.equal(response.status,201);const frame=await response.json();assert.equal(frame.images[0].frame,true);
+  const recording=Buffer.from('000000186674797069736f6d0000020069736f6d69736f32','hex');
+  response=await fetch(endpoint+'/attachments',{method:'POST',headers:{...headers,'content-type':'video/mp4','x-buildr-image-name':'recording.mp4','x-buildr-draft-revision':frame.revision,'x-buildr-video':JSON.stringify({duration:2,frames:[{id:frame.images[0].id,time:0}]})},body:recording});assert.equal(response.status,201);const video=await response.json(),original=video.images.find((image:any)=>image.video);assert.ok(original);
+  response=await fetch(endpoint+'/attachments/'+original.id,{headers:readHeaders});assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'video/mp4');assert.deepEqual(Buffer.from(await response.arrayBuffer()),recording);
+  response=await fetch(endpoint+'/attachments/'+original.id,{method:'DELETE',headers:{...readHeaders,origin:url,'content-type':'application/json'},body:JSON.stringify({expectedRevision:video.revision})});assert.equal(response.status,200);assert.deepEqual((await response.json()).images,[]);
+  assert.equal(fs.existsSync(path.join(base,'agent-profile/agent-service/conversations.sqlite')),false);
+});

@@ -58,3 +58,16 @@ export function conversationFileTarget(cwd:string,path:string,catalog:Pick<CodeC
   if(!first||!first.member.available||candidates[1]?.root.length===first.root.length)return null;
   return {repositoryId:first.member.repositoryId,checkoutId:first.member.id,path:absolute.slice(first.root.length+1)};
 }
+
+/** Citation suffixes are locations, never part of a repository filename. */
+export function conversationFileReference(reference:string):{path:string;line?:number}|null {
+  let value:string;try{value=decodeURIComponent(reference);}catch{return null;}
+  if(!value||/[\0\r\n?]/.test(value)||value.startsWith('//'))return null;
+  const hash=value.match(/#L([1-9]\d*)(?:[-:]L?([1-9]\d*))?$/i);
+  const colon=!hash?value.match(/:([1-9]\d*)(?::[1-9]\d*)?$/):null;
+  const suffix=hash||colon;
+  const filename=suffix?value.slice(0,-suffix[0].length):value;
+  const line=suffix?Number(suffix[1]):undefined;
+  if(filename.includes('#')||line!==undefined&&!Number.isSafeInteger(line))return null;
+  return {path:filename,...(line?{line}:{})};
+}

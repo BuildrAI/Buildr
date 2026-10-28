@@ -44,5 +44,14 @@ export function useConversationDraft(workspaceId: string | null, conversationId:
     const available=save(target,'');
     setState(previous=>previous.key===target?{key:target,text:'',taskId:undefined,available}:previous);
   };
-  return {text:value.text, taskId:value.taskId, workspaceId:selectedWorkspace, setWorkspace, available:value.available, setText,setTaskId,transferTo,clearSubmitted};
+  const acceptNewSubmitted = (nextWorkspaceId:string,nextConversationId:string,submittedText:string,transferRemainder:boolean) => {
+    const source=conversationDraftKey(null,null),target=conversationDraftKey(nextWorkspaceId,nextConversationId),latest=read(source);
+    if(latest.text!==submittedText){
+      if(!transferRemainder||read(target).text)return;
+      if(!save(target,latest.text))return;
+    }
+    const available=save(source,'',undefined,latest.workspaceId);
+    setState(previous=>previous.key===source?{key:source,text:'',workspaceId:latest.workspaceId,taskId:undefined,available}:previous);
+  };
+  return {text:value.text, taskId:value.taskId, workspaceId:selectedWorkspace, setWorkspace, available:value.available, setText,setTaskId,transferTo,clearSubmitted,acceptNewSubmitted};
 }

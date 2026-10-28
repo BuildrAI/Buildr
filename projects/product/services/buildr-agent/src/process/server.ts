@@ -168,7 +168,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       validateOperation(input.operation, input.args);
       const name: string = input.operation;
       let target: ProcessRecord | undefined;
-      const perConversation = name.startsWith('conversations.') && typeof input.args[0] === 'string' && typeof input.args[1] === 'string';
+      const perConversation = name.startsWith('conversations.') && !/Draft/.test(name) && typeof input.args[0] === 'string' && typeof input.args[1] === 'string';
       if (perConversation && !['conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) {
         const control = ['conversations.stop','conversations.supplement'].includes(name) ? input.args[2] : name === 'conversations.reply' ? input.args[3] : undefined;
         target = await recipient(input.args[0], input.args[1], control?.generation);
@@ -180,9 +180,9 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
         if (!ownsRun || ['conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) target = current;
       }
       if (target) { json(res, 200, await forward(target, '/operations', input)); return; }
-      const startsWork = !name.startsWith('conversations.') || ['conversations.create','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.generateTitle'].includes(name);
+      const startsWork = !name.startsWith('conversations.') || ['conversations.startDraft','conversations.create','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.generateTitle'].includes(name);
       if (startsWork && !accepting) throw new AgentServiceError('agent_process_switching', '执行后台正在采用新版，本次新操作尚未受理。', 503);
-      if (name === 'conversations.send' && pending?.runtime.digest !== undefined && pending.runtime.digest !== options.runtime.digest) throw new AgentServiceError('agent_process_switching','新版尚未就绪，可以提交待发送内容。',503);
+      if (['conversations.startDraft','conversations.send'].includes(name) && pending?.runtime.digest !== undefined && pending.runtime.digest !== options.runtime.digest) throw new AgentServiceError('agent_process_switching','新版尚未就绪，可以提交待发送内容。',503);
       if (name === 'conversations.send' && await conversationBusy(input.args[0],input.args[1])) throw new AgentServiceError('agent_conversation_busy','上一轮仍未释放，可以提交待发送内容。',409);
       if (name === 'conversations.send' && new PendingSendRepository(path.join(options.dataRoot,'agent-service')).read(input.args[0],input.args[1])) throw new AgentServiceError('agent_pending_conflict','已有待发送内容，请等待、修改或取消。',409);
       let result: any = await dispatchOperation(service, input.operation, input.args);

@@ -6,13 +6,17 @@ export type MarkdownRenderOptions = {
   sourcePath?: string;
   headingCounts?: Record<string, number>;
   allowRelativeLinks?: boolean;
+  /** Only callers with a source-checked opener may enable absolute file references. */
+  allowAbsoluteFileLinks?: boolean;
+  /** Explicit task source for retained conversations; null means there is no task workspace. */
+  taskLinkPathname?: string | null;
   /** When true with allowRelativeLinks, relative href may include `..` segments (still sanitized by consumer / API). */
   allowParentRelativeLinks?: boolean;
   imageResolver?: (href: string) => { href: string } | null | undefined;
   onRelativeLinkClick?: (href: string, event: MouseEvent) => void;
 };
 
-function resolveSafeHref(href, { allowRelativeLinks = false, allowParentRelativeLinks = false } = {}) {
+function resolveSafeHref(href, { allowRelativeLinks = false, allowParentRelativeLinks = false, allowAbsoluteFileLinks = false } = {}) {
   const value = String(href ?? '').trim();
   if (!value) return null;
 
@@ -29,7 +33,9 @@ function resolveSafeHref(href, { allowRelativeLinks = false, allowParentRelative
   }
 
   if (!allowRelativeLinks) return null;
-  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value)) return null;
+  if (allowAbsoluteFileLinks && (/^\/(?!\/)/.test(value) || /^[a-z]:[\\/]/i.test(value)) && !/[\0\r\n]/.test(value)) return {href:value,external:false};
+  const citation = /^[^:?#]+:[1-9]\d*(?::[1-9]\d*)?$/.test(value);
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value) && !citation) return null;
   if (value.startsWith('//') || value.startsWith('/') || value.includes('\\')) return null;
 
   const hashIndex = value.indexOf('#');
@@ -44,7 +50,8 @@ function resolveSafeHref(href, { allowRelativeLinks = false, allowParentRelative
 
   const normalizedPath = segments.filter((segment) => segment && segment !== '.').join('/');
   if (!normalizedPath && !suffix.startsWith('#')) return null;
-  return { href: `${normalizedPath}${suffix}`, external: false };
+  // A root filename with a line suffix must not become a browser URL scheme.
+  return { href: `${citation ? './' : ''}${normalizedPath}${suffix}`, external: false };
 }
 
 function splitTableRow(line) {
@@ -298,6 +305,7 @@ export function renderMarkdown(markdown: string, docOrOptions: Document | Markdo
   const headingOffset = Math.max(0, Number.isFinite(options.headingOffset) ? options.headingOffset : 0);
   const linkOptions = {
     allowRelativeLinks: Boolean(options.allowRelativeLinks),
+    allowAbsoluteFileLinks: Boolean(options.allowAbsoluteFileLinks),
     allowParentRelativeLinks: Boolean(options.allowParentRelativeLinks),
     imageResolver: options.imageResolver,
     headings: new Map(Object.entries(options.headingCounts || {})),

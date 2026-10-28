@@ -118,6 +118,11 @@
 @media(max-width:1100px){.ac-panel{max-width:calc(100vw - 52px);min-width:560px}.ac-message-list{padding-inline:18px}.ac-compose-wrap{padding-inline:13px}.ac-thread-header .ant-tag{display:none}}
 @media(max-width:760px){.ac-panel{position:fixed;inset:var(--app-header-height,56px) 0 0;z-index:12;width:100%!important;max-width:100%;min-width:0;height:auto}.ac-divider{display:none}.ac-thread-header>strong{font-size: var(--font-size-body)}.ac-stream .ac-message-list{padding:22px 20px}.ac-location-settings{max-width:calc(100vw - 70px)}}
 
+.ac-execution-statusbar{display:flex;align-items:center;gap:8px;min-height:32px;margin-bottom:6px;color:var(--soft-muted);font-size:var(--font-size-meta)}
+.ac-execution-statusbar .ac-execution-indicator{margin:0}
+.ac-execution-statusbar .ac-stop-button{margin-left:auto;color:var(--soft-primary)}
+.ac-message .markdown-relative-link{overflow-wrap:anywhere;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+
 /* Docking reorders one retained panel instead of remounting its drafts and attachments. */
 .ac-panel[data-dock=left]{order:-2}.ac-divider[data-dock=left]{order:-1}
 

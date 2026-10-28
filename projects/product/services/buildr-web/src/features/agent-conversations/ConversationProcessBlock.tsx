@@ -1,6 +1,7 @@
 import { EditOutlined, FileAddOutlined, FileTextOutlined, FolderOpenOutlined, GlobalOutlined, RightOutlined, SearchOutlined, ToolOutlined, WarningOutlined } from '@ant-design/icons';
 import {useEffect,useState} from 'react';
 import { MarkdownHost } from '../../components/MarkdownHost';
+import type { MarkdownRenderOptions } from '../../markdown';
 import { processBlockSummary, processEntryStatus } from './conversation-state';
 import { processTool, type ProcessToolKind } from './conversation-process';
 import type { ConversationEntry } from './types';
@@ -75,15 +76,15 @@ function durationLabel(startedAt:string,finishedAt:string):string {
   const minutes=Math.floor(seconds/60),rest=seconds%60;
   return `${minutes?`${minutes} 分 `:''}${rest} 秒`;
 }
-type Props={blockKey:string;entries:ConversationEntry[];active:boolean;finishedAt?:string;open:boolean;onToggle:(key:string,open:boolean)=>void;onOpenFile:FileOpener;toolsOpen?:Record<string,boolean>;onToolToggle?:(id:string,open:boolean)=>void;groupsOpen?:Record<string,boolean>;onGroupToggle?:(ids:string[],open:boolean)=>void};
-export function ConversationProcessBlock({blockKey,entries,active,finishedAt,open,onToggle,onOpenFile,toolsOpen,onToolToggle,groupsOpen={},onGroupToggle}:Props){
+type Props={markdownOptions?:MarkdownRenderOptions;blockKey:string;entries:ConversationEntry[];active:boolean;finishedAt?:string;open:boolean;onToggle:(key:string,open:boolean)=>void;onOpenFile:FileOpener;toolsOpen?:Record<string,boolean>;onToolToggle?:(id:string,open:boolean)=>void;groupsOpen?:Record<string,boolean>;onGroupToggle?:(ids:string[],open:boolean)=>void};
+export function ConversationProcessBlock({markdownOptions,blockKey,entries,active,finishedAt,open,onToggle,onOpenFile,toolsOpen,onToolToggle,groupsOpen={},onGroupToggle}:Props){
   const [visited,setVisited]=useState(active||open);
   useEffect(()=>{if(active||open)setVisited(true);},[active,open]);
   const summary=processBlockSummary(entries);
   const tools=entries.filter(entry=>entry.kind==='tool');
   const duration=active?'':durationLabel(summary.startedAt,finishedAt||summary.finishedAt);
   const timeline=active||open||visited?<div className="ac-process-timeline">{processTimeline(entries).map(item=>item.type==='narration'
-    ?<div key={item.entry.id} className="ac-process-narration" data-entry-id={item.entry.id}><MarkdownHost markdown={item.entry.text} className="markdown-body"/></div>
+    ?<div key={item.entry.id} className="ac-process-narration" data-entry-id={item.entry.id}><MarkdownHost markdown={item.entry.text} className="markdown-body" options={markdownOptions}/></div>
     :<ToolGroup key={item.entries[0].id} entries={item.entries} active={active} onOpenFile={onOpenFile} toolsOpen={toolsOpen} onToolToggle={onToolToggle} open={item.entries.map(entry=>groupsOpen['tool-group:'+entry.id]).find(value=>value!==undefined)??false} onToggle={value=>onGroupToggle?.(item.entries.map(entry=>entry.id),value)}/> )}</div>:null;
     if(active)return <div className="ac-process is-flow" data-process-state="live">{timeline}</div>;
     return <details className={'ac-process is-flow'+(summary.failed?' is-failed':'')} data-process-state="settled" open={open} onToggle={event=>{

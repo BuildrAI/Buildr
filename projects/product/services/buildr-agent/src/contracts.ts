@@ -313,6 +313,12 @@ export interface PendingSendView {
   createdAt: string;
   updatedAt: string;
 }
+export interface StartConversationDraft extends Omit<SendDraft, 'expectedRevision'> {
+  cwd?: string;
+  taskId?: string;
+  expectedDraftRevision: string;
+  clientRequestId: string;
+}
 export interface SupplementInput {
   runId: string;
   participantId: string;

@@ -1,9 +1,12 @@
+import type { AgentDraftImagesDraftImages, AgentDraftStartStartDraft } from '../../../../build/generated/agent-service-http-dto';
 import type { ActivityCounts, ActivityFilter } from '../conversation-activity';
 import { createApiClient, LocalSessionAdapter } from '../../../api';
 import type { ApiClient, ApiError, SessionAdapter } from '../../../api';
 import { parseEventFrame } from '../conversation-state';
 import type { ModelAccount, CatalogModel, AttachmentView, ConnectionView, ConversationEvent, ConversationSummary, ConversationView, PendingConversation, PreparationView, ProviderId, SendInput, SendPreview, SupplementInput, SupplementResult } from '../types';
 
+export type DraftImages = AgentDraftImagesDraftImages;
+export type StartDraftInput = AgentDraftStartStartDraft;
 export type ConversationPage={conversations:ConversationView[];nextCursor?:string;total?:number;activityCounts?:ActivityCounts;stats?:{modelExecutions?:Array<{accountId:string;accountLabel:string;model:string;count:number}>;executions?:Array<{provider:string;model:string;count:number}>;agents:Array<{label:string;count:number}>;models:Array<{label:string;count:number}>}};
 const appPath = '/api/v1/app/agent-service';
 const path = (workspaceId: string, conversationId?: string) => `${workspaceId === '@default' ? appPath + '/conversations' : '/api/v1/workspaces/' + encodeURIComponent(workspaceId) + '/agent-conversations'}${conversationId ? '/' + encodeURIComponent(conversationId) : ''}`;
@@ -50,6 +53,26 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     listAll(options:{workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:Exclude<ActivityFilter,null>;cursor?:string;limit?:number;signal?:AbortSignal}={}) {const params=new URLSearchParams();for(const [key,value] of Object.entries(options))if(key!=='signal'&&value!==undefined)params.set(key,String(value));return request<ConversationPage>(appPath+'/conversations'+(params.size?'?'+params:''),{signal:options.signal});},
     seen(conversation:ConversationView,through:number) {return request<{activity:NonNullable<ConversationView['activity']>}>(path(conversation.workspaceId,conversation.id)+'/seen',post({through}));},
     list(workspaceId: string, options: {taskId?: string; cursor?: string; hidden?: boolean; query?: string; signal?: AbortSignal} = {}) { const params = new URLSearchParams(); if (options.taskId) params.set('taskId', options.taskId); if (options.cursor) params.set('cursor', options.cursor); if (options.hidden) params.set('hidden', 'true'); if (options.query) params.set('query', options.query); return request<{conversations: ConversationSummary[]; nextCursor?: string}>(path(workspaceId) + (params.size ? '?' + params : ''), {signal: options.signal}); },
+    draftImages(id:string) {return request<DraftImages>(path('@default')+'/drafts/'+encodeURIComponent(id));},
+    removeDraftImage(id:string,expectedRevision:string,imageId:string) {return request<DraftImages>(path('@default')+'/drafts/'+encodeURIComponent(id)+'/attachments/'+encodeURIComponent(imageId),{method:'DELETE',body:JSON.stringify({expectedRevision})});},
+    startDraft(workspaceId:string,id:string,input:StartDraftInput) {return request<{conversation:ConversationView}>(path(workspaceId)+'/drafts/'+encodeURIComponent(id)+'/send',post(input));},
+    lookupDraft(workspaceId:string,id:string,requestId:string) {return request<{found:boolean;conversation?:ConversationView}>(path(workspaceId)+'/drafts/'+encodeURIComponent(id)+'/submissions/'+encodeURIComponent(requestId));},
+    async uploadDraftImage(id:string,revision:string,file:File,metadata?:{frame?:boolean;video?:{duration:number;frames:Array<{id:string;time:number}>}}) {
+      const bytes=await file.arrayBuffer();
+      const send=()=>fetcher(path('@default')+'/drafts/'+encodeURIComponent(id)+'/attachments',{method:'POST',cache:'no-store',headers:{...session.writeHeaders(),'content-type':file.type,'x-buildr-draft-revision':revision,'x-buildr-image-name':encodeURIComponent(file.name),...(metadata?.frame?{'x-buildr-frame':'true'}:{}),...(metadata?.video?{'x-buildr-video':JSON.stringify(metadata.video)}:{})},body:bytes});
+      let response=await send();
+      if(response.status===403&&session.refreshSession){const body=await response.clone().json().catch(()=>null);if(body?.error?.code==='session_forbidden'&&await session.refreshSession())response=await send();}
+      const body=await response.json();
+      if(!response.ok){const error:ApiError=new Error(body.error?.message||'草稿图片保存失败。');error.status=response.status;error.code=body.error?.code;throw error;}
+      return body as DraftImages;
+    },
+    async readDraftImage(id:string,imageId:string,signal?:AbortSignal):Promise<Blob> {
+      const send=()=>fetcher(path('@default')+'/drafts/'+encodeURIComponent(id)+'/attachments/'+encodeURIComponent(imageId),{cache:'no-store',signal,headers:session.writeHeaders()});
+      let response=await send();
+      if(response.status===403&&session.refreshSession){const body=await response.clone().json().catch(()=>null);if(body?.error?.code==='session_forbidden'&&await session.refreshSession())response=await send();}
+      if(!response.ok)throw new Error('草稿图片读取失败，请重新添加或稍后重试。');
+      return response.blob();
+    },
     create(input: {workspaceId: string; cwd?: string; taskId?: string}) { return request<ConversationView>(path(input.workspaceId), post({cwd: input.cwd, taskId: input.taskId})); },
     read(workspaceId: string, id: string, signal?: AbortSignal) { return request<ConversationView>(path(workspaceId, id), {signal}); },
     entries(workspaceId: string, id: string, cursor: number, signal?: AbortSignal) { return request<ConversationView>(path(workspaceId, id) + '/entries?' + new URLSearchParams({before: String(cursor)}), {signal}); },

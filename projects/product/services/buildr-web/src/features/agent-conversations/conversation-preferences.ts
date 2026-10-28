@@ -96,7 +96,7 @@ function selectableModel(connection:ConnectionView,catalog:CatalogModel[],prefer
  }
  if(preference.model){
   const native=connection.models.find(model=>model.id===preference.model);
-  if(native)return {choice:{connectionId:connection.id,model:native.id} satisfies ConversationChoice};
+  if(native)return {choice:{connectionId:connection.id,model:native.id,reasoningEffort:preference.reasoningEffort&&native.reasoningEfforts?.some(item=>item.id===preference.reasoningEffort)?preference.reasoningEffort:undefined} satisfies ConversationChoice};
  }
 }
 
