@@ -123,28 +123,6 @@ export function createBoundedBuildrWebReadExecutor({ workerCount = DEFAULT_WORKE
     });
   }
 
-  function recycle(state: any) {
-    const worker = state.worker;
-    if (!worker) return;
-    state.worker = null;
-    state.item = null;
-    state.failed = true;
-    void Promise.resolve(worker.terminate()).then(() => {
-      if (closed || state.worker) return;
-      try {
-        spawn(state);
-        pump();
-      } catch (error: any) {
-        state.failed = true;
-        rejectQueued(readExecutorError('local_app_read_executor_unavailable', `Buildr Web read executor 无法补充 Worker：${error.message}`, 503));
-      }
-    }, (error: any) => {
-      if (closed) return;
-      state.failed = true;
-      rejectQueued(readExecutorError('local_app_read_executor_unavailable', `Buildr Web read executor 无法回收 Worker：${error.message}`, 503));
-    });
-  }
-
   function pump() {
     if (closed) return;
     for (const state of workers) {
@@ -227,9 +205,10 @@ export function createBoundedBuildrWebReadExecutor({ workerCount = DEFAULT_WORKE
         if (index >= 0) queue.splice(index, 1);
         const state = item.workerState;
         if (state?.item === item) {
-          item.workerState = null;
+          // Keep the slot until the worker replies. Terminating an ESM worker
+          // during its lazy import can abort the entire Node process (V8 fatal).
+          // The settled request cannot publish a late result or run twice.
           settle(item, readExecutorError('local_app_read_cancelled', 'Buildr Web read request 已取消。', 499));
-          recycle(state);
           return;
         }
         settle(item, readExecutorError('local_app_read_cancelled', 'Buildr Web read request 已取消。', 499));
@@ -254,7 +233,15 @@ export function createBoundedBuildrWebReadExecutor({ workerCount = DEFAULT_WORKE
         settle(state.item, readExecutorError('local_app_read_executor_closed', 'Buildr Web read executor 已关闭。', 503));
       }
       state.item = null;
-      if (state.worker) terminations.push(Promise.resolve(state.worker.terminate()).catch(() => {}));
+      if (state.worker) {
+        const worker = state.worker;
+        // Let module loading and any in-flight read finish before closing the
+        // message port. Never asynchronously terminate an evaluating ESM graph.
+        terminations.push(new Promise<void>(resolve => {
+          worker.once('exit', () => resolve());
+          worker.postMessage({ type: 'close' });
+        }));
+      }
     }
     await Promise.all(terminations);
   }

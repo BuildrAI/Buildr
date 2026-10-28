@@ -9,7 +9,16 @@ const catalog = createConnectionCatalog({ assets: { readSkills: readConnectionSk
 let applications: Promise<typeof import('./read-worker-applications.ts')> | undefined;
 if (!parentPort) throw new Error('Buildr Web read Worker requires a parent port.');
 const workerPort = parentPort;
+let closing = false;
+let active = 0;
 workerPort.on('message', async (message: any) => {
+  if (message?.type === 'close') {
+    closing = true;
+    if (!active) workerPort.close();
+    return;
+  }
+  if (closing) return;
+  active++;
   try {
     let value;
     if (message?.operation === 'connection-catalog') {
@@ -30,5 +39,8 @@ workerPort.on('message', async (message: any) => {
       message: error?.message || 'Buildr Web read Application failed.',
       ...(error?.details === undefined ? {} : { details: error.details }),
     } });
+  } finally {
+    active--;
+    if (closing && !active) workerPort.close();
   }
 });
