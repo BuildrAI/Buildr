@@ -125,7 +125,7 @@ function Preview({ record }: { record: { current: ConversationView } }) {
     const keys=[...(!active?[segment.id]:[]),...segment.process.filter(entry=>entry.kind==='tool').flatMap(entry=>['tool-group:'+entry.id,'tool:'+entry.id])];
     return <ConversationTurn key={id+':'+segment.id} id={id+':'+segment.id} runId={id}
       prompt={{id:'user-'+segment.id,text:segment.user.text,images:segment.user.attachments.length>0?<ConversationMessageImages conversation={chat} ids={segment.user.attachments} read={readImage}/>:undefined}}
-      identity="Codex · GPT-6.1-Sol" startedAt={active&&!pending&&index===rows.length-1?start:undefined}
+      identity="Codex · GPT-6.1-Sol" executing={active&&!pending&&index===rows.length-1} startedAt={active&&!pending&&index===rows.length-1?start:undefined}
       onCollapseProcess={keys.some(key=>expanded[key]===true)?()=>setExpanded(previous=>({...previous,...Object.fromEntries(keys.map(key=>[key,false]))})):undefined} collapseLabel={!active&&expanded[segment.id]?'收起处理过程':'收起工具调用'}>
       {segment.process.length>0&&<div data-run-id={id} data-prototype-position={positions?(index===0?'process-before':index===rows.length-1?'process-after':undefined):undefined}><ConversationProcessBlock blockKey={segment.id} entries={segment.process} active={active} finishedAt={endedAt} open={expanded[segment.id]??false}
         groupsOpen={expanded} onGroupToggle={(ids,open)=>setExpanded(previous=>({...previous,...Object.fromEntries(ids.map(key=>['tool-group:'+key,open]))}))} toolsOpen={expanded} onToolToggle={(key,open)=>setExpanded(previous=>({...previous,['tool:'+key]:open}))}

@@ -8,6 +8,7 @@ type Props = {
   runId?: string;
   prompt?: { id: string; text: string; images?: ReactNode; diagnostic?: ReactNode };
   identity?: string;
+  executing?: boolean;
   startedAt?: string;
   onCollapseProcess?: () => void;
   collapseLabel?: string;
@@ -15,7 +16,7 @@ type Props = {
 };
 
 /** Keeps the input and its assistant together while reading this part of the conversation. */
-export function ConversationTurn({ id, runId, prompt, identity, startedAt, onCollapseProcess, collapseLabel = '收起处理过程', children }: Props) {
+export function ConversationTurn({ id, runId, prompt, identity, executing = false, startedAt, onCollapseProcess, collapseLabel = '收起处理过程', children }: Props) {
   const turn = useRef<HTMLElement>(null), body = useRef<HTMLDivElement>(null), content = useRef<HTMLDivElement>(null);
   const [long, setLong] = useState(false), [expanded, setExpanded] = useState(false);
   useLayoutEffect(() => {
@@ -30,7 +31,7 @@ export function ConversationTurn({ id, runId, prompt, identity, startedAt, onCol
     const target = body.current?.querySelector<HTMLElement>('.ac-message.is-assistant') || body.current;
     if (target) locateConversationContent(target);
   };
-  return <section ref={turn} className="ac-turn" data-turn-id={id} data-run-id={runId} tabIndex={-1}>
+  return <section ref={turn} className={'ac-turn' + (executing ? ' is-executing' : '')} data-turn-id={id} data-run-id={runId} tabIndex={-1}>
     <div className="ac-turn-context">
       {prompt && <article className="ac-message is-user ac-turn-prompt" data-entry-id={prompt.id}>
         <button type="button" className="ac-turn-locate-input" aria-label="定位用户输入" title="定位用户输入" onClick={locateInput}><AimOutlined /></button>
@@ -41,7 +42,7 @@ export function ConversationTurn({ id, runId, prompt, identity, startedAt, onCol
         {prompt.diagnostic}
       </article>}
       {identity && <div className="ac-turn-identity">
-        <button type="button" className="ac-message-identity ac-turn-identity-link" aria-label="定位助手内容" title="定位助手内容" onClick={locateAssistant}>{identity}</button>
+        <button type="button" className="ac-message-identity ac-turn-identity-link" aria-label="定位助手内容" title="定位助手内容" onClick={locateAssistant}>{identity}<AimOutlined className="ac-turn-locate-icon" aria-hidden="true" /></button>
         {startedAt && <ConversationExecutionIndicator startedAt={startedAt} active />}
         {onCollapseProcess && <button type="button" className="ac-turn-collapse" onClick={() => { onCollapseProcess(); requestAnimationFrame(locateInput); }}><UpOutlined aria-hidden="true" />{collapseLabel}</button>}
       </div>}
