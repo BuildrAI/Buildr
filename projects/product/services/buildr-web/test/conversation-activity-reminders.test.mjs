@@ -10,6 +10,7 @@ import {conversationTierChoice} from '../src/features/agent-conversations/conver
 
 registerHooks({
   resolve(specifier,context,next){
+    if(specifier.endsWith('/components/CopyButton'))return {url:'data:text/javascript,'+encodeURIComponent('export const CopyButton=()=>null;'),shortCircuit:true};
     if(context.parentURL?.includes('/features/agent-conversations/')&&specifier.startsWith('./')&&!/\.\w+$/.test(specifier)){
       for(const ext of ['.tsx','.ts']){
         const url=new URL(specifier+ext,context.parentURL);
