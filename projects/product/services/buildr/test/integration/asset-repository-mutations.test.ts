@@ -78,6 +78,18 @@ test('repository location edits preserve old files, allow missing targets and re
 });
 
 
+test('repository declaration edits neither start a clone nor create the target directory', (t: any) => {
+  const { root, runtime } = setup(t); let c = ready(runtime, root);
+  const codeRoot = path.join(root, 'declared-edit'); initRepository(codeRoot);
+  c = runtime.createCatalogRepository(root, { revision: c.revision, code: 'declared-edit', path: 'declared-edit' });
+  const id = c.repositories[0].id;
+  c = runtime.updateCatalogAsset(root, 'repository', id, { revision: c.revision, url: 'https://example.com/declared.git', remote: 'origin', integrationBranch: 'main', path: 'declared-future' });
+  assert.equal(runtime.repositoryCloneStatus(root, id).state, null, 'saving declarations must not start a clone');
+  assert.equal(fs.existsSync(path.join(root, 'declared-future')), false, 'saving declarations must not materialize code');
+  assert.match(runtime.catalogRepositoryLocalConfig(root, id).diagnostic, /不存在/);
+});
+
+
 test('local repository integration branch is consumed by subsequent task worktree planning', (t: any) => {
   const { root, runtime } = setup(t); initRepository(root);
   const git = (cwd: string, ...args: string[]) => { const result = spawnSync('git', args, { cwd, encoding: 'utf8' }); assert.equal(result.status, 0, result.stderr); return result.stdout.trim(); };
@@ -139,8 +151,10 @@ test('local config resolves tracked and sole remotes but does not guess ambiguou
   config = runtime.catalogRepositoryLocalConfig(root, id); assert.equal(config.selectedRemote, null); assert.match(config.diagnostic, /absent/); assert.equal(config.remotes.length, 2);
   c = runtime.updateCatalogAsset(root, 'repository', id, { revision: c.revision, path: 'missing-local' });
   config = runtime.catalogRepositoryLocalConfig(root, id); assert.equal(config.available, false);
+  assert.ok(config.diagnostic, 'missing declaration target reports before any clone attempt');
+  assert.equal(runtime.repositoryCloneRequest(root, id).status, 'started');
   assert.ok(['cloning', 'failed'].includes(runtime.repositoryCloneStatus(root, id).state));
-  assert.ok(config.diagnostic, 'preparation reports its running or failed clone instead of reading a partial Git directory');
+  assert.ok(runtime.catalogRepositoryLocalConfig(root, id).diagnostic, 'explicit preparation reports its running or failed clone instead of reading a partial Git directory');
 });
 
 

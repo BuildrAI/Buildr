@@ -1913,10 +1913,9 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     assert.deepEqual(project.serviceIds, [service.id]);
     assert.equal(service.type, 'backend');
     assert.equal(service.repositoryId, repository.id);
-    assert.equal(repository.present, false);
     assert.equal(repository.source.path, 'repositories/nested-code');
     assert.equal(runtime.catalogRepositoryStatus(workspaceRoot, repository.id).available, false);
-    assert.ok(!fs.existsSync(path.join(workspaceRoot, repository.source.path)));
+    assert.ok(['cloning', 'failed'].includes(runtime.repositoryCloneStatus(workspaceRoot, repository.id).state), '登记后异步克隆，未完成前不可用');
     assert.equal(fs.existsSync(path.join(workspaceRoot, 'projects/nested-project/services/nested-business')), false);
     assert.equal(fs.existsSync(path.join(workspaceRoot, 'services/nested-business')), false);
     await page.getByRole('button', { name: '解除关联 嵌套业务服务', exact: true }).click();
