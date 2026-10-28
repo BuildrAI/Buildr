@@ -282,6 +282,7 @@ export async function runAgentConversationsJourney({t,page,workspaceUrl,capture:
       await railActivity.locator('[data-count-kind="running"][aria-label="1 个执行中对话"]').waitFor();
       await activityMenu().locator('button[data-activity-id="running-reminder"]').waitFor();
       await activityMenu().locator('.ac-execution-summary').getByText('来源未记录 · 模型未记录',{exact:true}).waitFor();
+      assert.equal(await activityMenu().locator('.ac-execution-summary').getByText('测试账号',{exact:true}).count(),0,'提醒摘要不显示账号名');
       reminderPaging=true;
       additionalPending=[...Array.from({length:105},(_,i)=>({...originalPending[0],id:'paged-running-'+i,title:'并行执行 '+i,run:run('running')})),{...originalPending[0],id:'paged-pending',title:'未加载活动页的待决策'}];
       await page.evaluate(()=>window.dispatchEvent(new Event('focus')));

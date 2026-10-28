@@ -1,0 +1,24 @@
+schemaVersion: buildr.knowledge-impact/v1
+task: conversation-context-continuity
+operation: assess
+impacts:
+  - type: reference
+    target: knowledge/docs/architecture/agent-integration.md
+    reason: 上下文用量入口原描述“仅向同一执行方和模型显示对应观察”，已改为保留最近一次真实报告并标明来源的连续展示语义，按实际实现更新。
+    status: applied
+    sourceIdentities:
+      - services/buildr-web/src/features/agent-conversations/conversation-state.ts
+      - services/buildr-web/src/features/agent-conversations/ConversationOptions.tsx
+  - type: reference
+    target: knowledge/docs/glossary.md
+    reason: 上下文窗口与词元为通用定义，本次展示语义变化不涉及。
+    status: not-applicable
+    sourceIdentities:
+      - openspec/changes/conversation-context-continuity/specs/agent-conversations/spec.md
+  - type: reference
+    target: knowledge/code-map/task-system.md
+    reason: 任务关联语义与接口未变化，本次仅修正输入区展示对齐。
+    status: aligned
+    sourceIdentities:
+      - openspec/changes/conversation-context-continuity/specs/agent-conversations/spec.md
+unresolvedItems: []

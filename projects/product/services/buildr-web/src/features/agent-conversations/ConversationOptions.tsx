@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Button, Popover, Select, Slider, Progress } from 'antd';
 import { CheckOutlined, DownOutlined, ThunderboltFilled, ThunderboltOutlined, RobotOutlined } from '@ant-design/icons';
 import { providerNames, type ConnectionView, type CatalogModel } from './types';
+import { contextReportWindow, conversationUsageReport } from './conversation-state';
+import { ContextUsageSummary } from './ContextUsageSummary';
 import {officialConversationChoice,modelSourceName,nextServiceTier,conversationTierChoice,conversationReasoningSelection,reasoningEffortLabel,selectedConversationModel,type ConversationChoice} from './conversation-options';
 
 type Props = {
@@ -24,15 +26,15 @@ export function ConversationOptions({connections,modelCatalog,value,disabled,onC
   const original=connections.find(item=>item.id===value.connectionId);
   const nativeModelId=value.model??original?.models.find(item=>item.isDefault)?.id??original?.models[0]?.id;
   const selectedShared=shared.find(item=>item.accountId===(value.modelAccountId??'native-'+value.connectionId)&&item.modelId===nativeModelId);
-  const currentRun=context?.conversation?.run;
-  const usage=currentRun?.model===nativeModelId&&currentRun?.modelAccountId===value.modelAccountId&&currentRun?.provider===original?.provider?currentRun?.contextUsage:undefined;
+  const usageReport=conversationUsageReport(context?.contextReport,context?.conversation);
   const tier=selectedShared?.serviceTiers?.find(tier=>tier.id===(value.serviceTier??selectedShared.defaultServiceTier));
   const accelerated=!!(selectedShared?.serviceTiers&&selectedShared.serviceTiers.length>1&&tier&&(tier.id==='priority'||tier.id!==selectedShared.defaultServiceTier));
   const effectiveShared=selectedShared?{...selectedShared,reasoningEfforts:tier?.reasoningEfforts??selectedShared.reasoningEfforts,defaultReasoningEffort:tier?.defaultReasoningEffort??selectedShared.defaultReasoningEffort}:undefined;
   const configuredWindow=selectedShared?.contextWindowOverride===undefined?(tier?.contextWindow??selectedShared?.contextWindow):Math.min(selectedShared.contextWindowOverride,tier?.contextWindow??selectedShared.reportedContextWindow??selectedShared.contextWindowOverride);
-  const effectiveWindow=usage?.windowTokens??configuredWindow;
-  const usedPercent=usage&&effectiveWindow?Math.min(100,Math.floor(usage.usedTokens/effectiveWindow*100)):undefined;
-  const windowLabel=(tokens:number|undefined)=>tokens===undefined?'未知':Math.floor(tokens/1000)+'K';
+  const reportWindow=usageReport?contextReportWindow(usageReport,shared):undefined;
+  const usedPercent=usageReport&&reportWindow?Math.min(100,Math.floor(usageReport.usedTokens/reportWindow*100)):undefined;
+  const reportSource=usageReport&&shared.find(item=>item.accountId===usageReport.modelAccountId&&item.modelId===usageReport.model&&(!usageReport.modelAccountIdentity||item.accountIdentity===usageReport.modelAccountIdentity));
+  const reportLabel=usageReport?(reportSource?modelSourceName(reportSource.provider)+' / '+reportSource.label:usageReport.model||usageReport.modelSourceLabel||modelSourceName(usageReport.provider??'')):undefined;
   const candidates=shared.filter(item=>item.enabled!==false||item.accountId===value.modelAccountId&&item.modelId===value.model);
   const groups=Array.from(new Set(candidates.map(item=>item.accountId))).map(id=>{const source=candidates.find(item=>item.accountId===id)!;const name=modelSourceName(source.provider);return {id,label:name+(new Set(candidates.filter(item=>modelSourceName(item.provider)===name).map(item=>item.accountId)).size>1?' · '+source.accountLabel:'')};});
   const jumpToGroup=(id:string)=>{const root=modelPopup.current;const header=Array.from(root?.querySelectorAll<HTMLElement>('[data-model-source]')??[]).find(node=>node.dataset.modelSource===id)?.closest<HTMLElement>('.ant-select-item-group');const scroll=root?.querySelector<HTMLElement>('.rc-virtual-list-holder');const first=header?.nextElementSibling as HTMLElement|null;if(header&&scroll&&first)scroll.scrollTo({top:scroll.scrollTop+first.getBoundingClientRect().top-scroll.getBoundingClientRect().top-header.getBoundingClientRect().height,behavior:'auto'});};
@@ -74,7 +76,7 @@ export function ConversationOptions({connections,modelCatalog,value,disabled,onC
   </div>;
   return <div className="ac-execution-options">
     {showAgent&&<ConversationAgentSelect connections={connections} value={value} modelCatalog={shared} disabled={disabled} onChange={onChange}/>}
-    <Popover trigger={['hover','click']} placement="top" content={<div className="ac-context-summary"><strong>上下文窗口</strong><div>配置窗口：{windowLabel(configuredWindow)}</div>{usage?<><div>已用：{windowLabel(usage.usedTokens)}{usedPercent!==undefined?` · ${usedPercent}%（剩余 ${100-usedPercent}%）`:''}</div>{usage.windowTokens!==undefined&&<div>运行窗口：{windowLabel(usage.windowTokens)}</div>}<small>执行智能体最近一次报告，非累计计费用量</small></>:<div>已用：尚未收到执行智能体报告</div>}</div>}><Button type="text" size="small" className="ac-context-trigger" aria-label="上下文窗口与用量"><Progress type="circle" size={14} strokeWidth={15} percent={usedPercent??0} showInfo={false}/></Button></Popover>
+    <Popover trigger={['hover','click']} placement="top" content={<ContextUsageSummary configuredWindow={configuredWindow} report={usageReport} reportWindow={reportWindow} reportLabel={reportLabel}/>}><Button type="text" size="small" className="ac-context-trigger" aria-label="上下文窗口与用量"><Progress type="circle" size={14} strokeWidth={15} percent={usedPercent??0} showInfo={false}/></Button></Popover>
     <Popover rootClassName="ac-panel-popup ac-model-popover" trigger="click" placement="topRight" open={open&&!unavailable} onOpenChange={next=>setOpen(next&&!unavailable)} content={controls}>
       <Button ref={trigger} type="text" size="small" className="ac-model-trigger" aria-label="模型与推理强度" aria-haspopup="dialog" aria-expanded={open&&!unavailable}
         title={modelLabel+(reasoning.options.length?` · ${reasoning.label}${reasoning.inherited?'（默认）':''}`:'')} disabled={unavailable}>

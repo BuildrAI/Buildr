@@ -1,4 +1,4 @@
-import type { ConversationView, ConversationEntry, ConversationEvent, ConversationRun } from './types';
+import type { ConversationView, ConversationEntry, ConversationEvent, ConversationRun, CatalogModel } from './types';
 
 export function conversationRecoveryAction(conversation: ConversationView | null): {kind:'recover'|'observe';label:string} | null {
   const run = conversation?.run; if (!conversation || !run) return null;
@@ -234,4 +234,60 @@ export function processEntryStatus(entry:ConversationEntry,active:boolean):strin
 /** Each entry toggles its own view; the other entry switches the visible view. */
 export function nextConversationPanel(open:boolean,view:'conversation'|'history',target:'conversation'|'history') {
   return {open:!open||view!==target,view:target};
+}
+
+/** The latest real context-usage report observed for a conversation, kept with its original source. */
+export type ConversationContextReport = {
+  workspaceId: string;
+  conversationId: string;
+  runId: string;
+  provider?: string;
+  model?: string;
+  modelAccountId?: string;
+  modelAccountIdentity?: string;
+  modelSourceLabel?: string;
+  serviceTier?: string;
+  usedTokens: number;
+  windowTokens?: number;
+};
+
+/** A newer run without a report never erases the retained one; a real report (including zero) replaces it wholesale. */
+export function rememberContextReport(current: ConversationContextReport | null, conversation: ConversationView | null | undefined): ConversationContextReport | null {
+  const run = conversation?.run;
+  const usage = run?.contextUsage;
+  if (!conversation || !run || !usage || !Number.isSafeInteger(usage.usedTokens) || usage.usedTokens < 0) return current;
+  if (current?.runId === run.id && current.conversationId === conversation.id && current.usedTokens === usage.usedTokens && current.windowTokens === usage.windowTokens) return current;
+  return {
+    workspaceId: conversation.workspaceId,
+    conversationId: conversation.id,
+    runId: run.id,
+    provider: run.provider,
+    model: run.model,
+    modelAccountId: run.modelAccountId,
+    modelAccountIdentity: run.modelAccountIdentity,
+    modelSourceLabel: run.modelSourceLabel,
+    serviceTier: run.serviceTier,
+    usedTokens: usage.usedTokens,
+    windowTokens: Number.isSafeInteger(usage.windowTokens) && usage.windowTokens! > 0 ? usage.windowTokens : undefined,
+  };
+}
+
+/** A retained report is only visible in the workspace and conversation that produced it. */
+export function visibleContextReport(report: ConversationContextReport | null | undefined, conversation: ConversationView | null | undefined): ConversationContextReport | null {
+  if (!report || !conversation || report.workspaceId !== conversation.workspaceId || report.conversationId !== conversation.id) return null;
+  return report;
+}
+
+/** The percentage basis belongs to the report; a missing window is filled only from the same catalog source and tier, never from the current selection. */
+export function contextReportWindow(report: ConversationContextReport, catalog: CatalogModel[]): number | undefined {
+  if (Number.isSafeInteger(report.windowTokens) && report.windowTokens! > 0) return report.windowTokens;
+  const source = catalog.find(item => item.accountId === report.modelAccountId && item.modelId === report.model && (!report.modelAccountIdentity || item.accountIdentity === report.modelAccountIdentity));
+  if (!source) return undefined;
+  const tier = source.serviceTiers?.find(item => item.id === (report.serviceTier ?? source.defaultServiceTier));
+  return source.contextWindowOverride === undefined ? tier?.contextWindow ?? source.contextWindow : Math.min(source.contextWindowOverride, tier?.contextWindow ?? source.reportedContextWindow ?? source.contextWindowOverride);
+}
+
+/** The current run's own report wins; a retained report fills the gap while a new run has not reported yet. */
+export function conversationUsageReport(contextReport: ConversationContextReport | null | undefined, conversation: ConversationView | null | undefined): ConversationContextReport | null {
+  return rememberContextReport(null, conversation) ?? visibleContextReport(contextReport, conversation);
 }
