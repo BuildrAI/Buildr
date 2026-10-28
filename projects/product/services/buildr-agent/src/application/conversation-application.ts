@@ -13,6 +13,7 @@ import type { ConversationEvents } from './conversation-events.ts';
 import {HANDOFF_PROMPT,HANDOFF_SUMMARY_PROMPT,handoffEntries,organizeHandoff,displayRounds,receivingBudget,formatHandoffRounds} from '../domain/handoff-material.ts';
 import {handoffSources} from './handoff-sources.ts';
 import { resolvePermissionMode } from '../domain/permission-mode.ts';
+import type { HostContext } from './host-context.ts';
 
 const TITLE_TIMEOUT_MS = 45_000;
 const MAX_TEXT_BYTES = 64 * 1024;
@@ -43,6 +44,14 @@ function modelSourceIncompatibility(sourceProvider:string,modelId:string,connect
 }
 
 export class ConversationApplication {
+  activity(): Array<{kind:string;count:number}> {
+    return [
+      {kind:'execution',count:this.workers.size},
+      {kind:'title',count:this.titleWork.size + this.earlyTitles.size},
+      {kind:'recovery',count:this.recoveries.size},
+      {kind:'reply',count:this.repliesInFlight.size},
+    ].filter(value=>value.count>0);
+  }
   private readonly previewSecret = randomUUID();
   private readonly workers = new Map<string, Promise<void>>();
   private readonly observations = new Map<string, Promise<ConversationView>>();
@@ -63,7 +72,8 @@ export class ConversationApplication {
     root: string;
     generation: string;
     now(): string;
-    host: Pick<AgentServiceOptions, 'resolveWorkspace' | 'assertTask' | 'autoContinueInterrupted'>;
+    host: HostContext;
+    autoContinueInterrupted?: boolean;
   };
   constructor(options: ConversationApplication['options']) { this.options = options; }
 
@@ -125,6 +135,10 @@ export class ConversationApplication {
     const chosen = records.slice(0, limit);
     return { conversations: chosen.map(record => ({ ...this.view(record, undefined, 1), entries: [] })), nextCursor: records.length > limit ? `${chosen.at(-1)!.view.updatedAt}/${chosen.at(-1)!.view.id}` : undefined };
   }
+  lookupRequest(workspaceId:string,id:string,clientRequestId:string) {
+    const record=this.load(workspaceId,id),attempt=record.attempts.find(value=>value.clientRequestId===clientRequestId);
+    return attempt ? {found:true,runId:attempt.runId,accepted:attempt.accepted,conversation:this.view(record)} : {found:false};
+  }
   pending(): { conversations: ConversationView[] } { return { conversations: this.options.repository.listPending().map(record => ({ ...this.view(record, undefined, 1), entries: [] })) }; }
   listAll(workspaceIds:string[],input:{workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;cursor?:string;limit?:number}={}) {
     if(input.workspaceId&&!workspaceIds.includes(input.workspaceId))fail('agent_workspace_missing','工作空间未登记。',404);
@@ -140,8 +154,8 @@ export class ConversationApplication {
   }
 
   async create(workspaceId: string, input: { cwd?: string; taskId?: string; title?: string }): Promise<ConversationView> {
-    const workspace = await this.options.host.resolveWorkspace(workspaceId);
-    if (input.taskId) await this.options.host.assertTask(workspaceId, nonempty(input.taskId, '任务身份'));
+    const workspace = await this.options.host.resolve(workspaceId);
+    if (input.taskId) await this.options.host.verify(workspaceId, nonempty(input.taskId, '任务身份'));
     const selected = input.cwd ?? workspace.rootPath;
     if (!path.isAbsolute(selected)) fail('agent_cwd_invalid', '请选择准确的绝对工作目录。');
     let cwd: string;
@@ -150,7 +164,7 @@ export class ConversationApplication {
     const record: StoredConversation = { view: {
       id: randomUUID(), workspaceId, cwd, taskId: input.taskId, title: input.title ? nonempty(input.title, '对话标题', 160) : '新对话', titleState:{status:input.title?'manual':'pending'},
       revision: randomUUID(), hidden: false, updatedAt: this.options.now(), participants: [], entries: [], requests: [],
-    }, titleOrigin: input.title ? 'manual' : 'default', participants: [], sources: {}, attempts: [], requests: {}, attachments: {} };
+    }, hostScope: workspace, titleOrigin: input.title ? 'manual' : 'default', participants: [], sources: {}, attempts: [], requests: {}, attachments: {} };
     this.options.repository.saveConversation(record);
     this.options.events.publish({ type: 'conversation', workspaceId, conversationId: record.view.id, revision: record.view.revision, payload: { conversation: this.view(record) } });
     return this.view(record);
@@ -160,7 +174,7 @@ export class ConversationApplication {
     if (input.title !== undefined) { record.view.title = nonempty(input.title, '对话标题', 160); record.titleOrigin = 'manual'; record.view.titleState={status:'manual'}; }
     if (input.taskId !== undefined) {
       if (input.taskId === null) record.view.taskId = undefined;
-      else { const taskId = nonempty(input.taskId, '任务身份'); await this.options.host.assertTask(workspaceId, taskId); record.view.taskId = taskId; }
+      else { const taskId = nonempty(input.taskId, '任务身份'); await this.options.host.verify(workspaceId, taskId); record.view.taskId = taskId; }
     }
     if (input.hidden !== undefined) { if (typeof input.hidden !== 'boolean') fail('agent_input_invalid', '隐藏状态无效。'); record.view.hidden = input.hidden; }
     this.save(record); return this.view(record);
@@ -418,10 +432,12 @@ export class ConversationApplication {
   private async execute(workspaceId: string, id: string, runId: string, prepared: ReturnType<ConversationApplication['prepare']>): Promise<void> {
     let dispatched = false;
     try {
-      const workspace = await this.options.host.resolveWorkspace(workspaceId);
-      if (!workspace.rootPath) fail('agent_workspace_missing', '原工作空间不可用。', 409);
       let record = this.currentRun(workspaceId, id, runId); if (!record) return;
-      if (record.view.taskId) await this.options.host.assertTask(workspaceId, record.view.taskId);
+      const workspace = await this.options.host.resolve(workspaceId, record.hostScope?.revision);
+      if (!workspace.rootPath) fail('agent_workspace_missing', '原工作空间不可用。', 409);
+      record = this.currentRun(workspaceId, id, runId); if (!record) return;
+      if(record.hostScope && (record.hostScope.ref.sourceId!==workspace.ref.sourceId || record.hostScope.ref.id!==workspace.ref.id || record.hostScope.rootPath!==workspace.rootPath))fail('agent_scope_binding_changed','执行环境身份或位置已变化，请核对原工作。',409);
+      if (record.view.taskId) await this.options.host.verify(workspaceId, record.view.taskId);
       if (!fs.statSync(record.view.cwd, { throwIfNoEntry: false })?.isDirectory()) fail('agent_cwd_missing', '对话保存的工作目录已不可用。', 409);
       const startingParticipant = record.participants.find(value => value.id === record!.view.run!.participantId)!;
       if (startingParticipant.modelAccountId) await this.options.modelAccess!.leases.create({accountId:startingParticipant.modelAccountId, expectedIdentity:startingParticipant.modelAccountIdentity, modelId:startingParticipant.modelId!,serviceTier:startingParticipant.serviceTier,conversationId:record.view.id,agentId:startingParticipant.connectionId,runId});
@@ -659,7 +675,7 @@ export class ConversationApplication {
       if(run.generation===this.options.generation&&run.status==='running'){
         delete record.interruption;run.interrupted=undefined;run.diagnostic=undefined;this.save(record);return;
       }
-    if(!this.options.host.autoContinueInterrupted){unavailable('系统中断后执行未完成。工作记录已保留，你可以发送“继续”接着处理。');return;}
+    if(!this.options.autoContinueInterrupted){unavailable('系统中断后执行未完成。工作记录已保留，你可以发送“继续”接着处理。');return;}
       if(marker.awaitingUser){unavailable('执行未完成：中断前有待确认的问题或授权，请查看原问题后继续。');return;}
       if(run.generation!==this.options.generation||run.status!=='stopped'||run.tools.some(tool=>['running','unknown'].includes(tool.status))){unavailable('执行未完成：尚不能确认原执行和工具均已停止，已保留记录，避免重复操作。');return;}
       const participant=record.participants.find(value=>value.id===run!.participantId);

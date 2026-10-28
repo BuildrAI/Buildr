@@ -184,7 +184,8 @@ test('agent-runtime 沿用登录配置和程序、重建绑定并保持会话双
     assert.equal(service.connections.read('qoder').status, 'ready');
     const created = await service.conversations.create('ws', { cwd: data.previewRoot });
     const listed = service.conversations.list('ws').conversations.map((conversation) => conversation.id);
-    assert.equal(listed.includes(created.id), false);
+    assert.equal(listed.includes(created.id),false,'unsent drafts remain readable by ID but do not enter history');
+    assert.equal(service.conversations.read('ws',created.id).id,created.id);
     assert.equal(listed.includes('source-conversation'), false);
     assert.throws(() => service.conversations.read('ws', 'source-conversation'), { code: 'agent_conversation_missing' });
     const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);

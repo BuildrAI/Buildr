@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import type http from 'node:http';
+import { assertAgentUpgradeIdle } from '@buildr-ai/buildr-agent';
 
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.ts';
 import { assertLauncherWebProfile, resolveWebProfile, sameWebProfile } from '../../modules/installation/contracts/web-profile.ts';
@@ -335,6 +336,9 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
           if (disposition.disposition === 'reuse') return reuseInstance(currentHealthy, startLock);
           if (!['handoff-cli', 'handoff-launcher'].includes(disposition.disposition)) throw launcherConflict(disposition, currentHealthy);
         }
+        // A legacy host owns its native work directly. Its first transition
+        // must wait for idle; an isolated execution process only loses a peer.
+        assertAgentUpgradeIdle(webProfile.dataRoot, {legacyHostRunning:true});
         await shutdownInstance(currentHealthy);
         const exit = await waitForExit(currentHealthy, { profile: webProfile, ...handoffWait });
         if (exit.status !== 'exited') throw codedError(

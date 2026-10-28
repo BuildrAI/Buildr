@@ -1,6 +1,6 @@
 # Buildr 怎样实现
 
-本文帮助开发者判断改动属于哪里、会影响哪些事实，以及需要分别验证什么。Buildr 由四个服务（Service）协作：`services/buildr` 负责命令、业务能力、文件与 SQLite、本机网页宿主（Host）和 Buildr npm 分发；`services/buildr-web` 负责 React 页面与交互；`services/buildr-agent` 负责独立配置、统一对话与原生执行接入，以私有库随主包统一发行；`services/dsh-plugin` 独立构建、验证和发布 DSH 桌面插件。四者共用一个 Git 代码库（Repository），保持明确源码与构建边界，沿用同一[产品术语表](../glossary.md)。
+本文帮助开发者判断改动属于哪里、会影响哪些事实，以及需要分别验证什么。Buildr 由四个服务（Service）协作：`services/buildr` 负责命令、业务能力、文件与 SQLite、本机网页宿主（Host）和 Buildr npm 分发；`services/buildr-web` 负责 React 页面与交互；`services/buildr-agent` 负责独立配置、统一对话与原生执行接入，以私有包提供独立执行进程（Agent Process）及公共客户端（Client），随主包统一发行；`services/dsh-plugin` 独立构建、验证和发布 DSH 桌面插件。四者共用一个 Git 代码库（Repository），保持明确源码与构建边界，沿用同一[产品术语表](../glossary.md)。
 
 整体组成见[系统全景图](../../archify/system/buildr-system-overview.html)，下面按调用与写入职责展开。
 
@@ -24,7 +24,7 @@
 
 前端按功能维护页面、业务请求和完整交互，应用壳只组合导航及真正跨页共享的状态。缓存页面、筛选或草稿不表示数据一直最新；编辑前仍需核对当前事实，保存时比较已观察版本。工作摘要（Work Context）中的答复不自动启动智能体（Agent），界面原型（UI Prototype）不能继承正式页面的写入能力。具体状态与隔离边界见[前端技术层](../../code-map/technical-layers.md#前端技术层)。
 
-内部对话由 `buildr-agent` 的公开应用服务（Application Service）维护，Buildr 的 `agent-service` 模块只装配工作空间（Workspace）、任务（Task）权威和 HTTP/事件流。账号、对话和原生上下文绑定保存在本机运行配置（Profile）的私有交互库，原生凭据留各家独立配置；任务状态和文件成果不转移到此库。Codex 应用服务（App Server）、DSH 完整本机网页宿主（Web Host）、Qoder 软件开发工具包（SDK）与命令行（CLI）各自执行和恢复。同一对话保存统一可见历史，各参与者分别恢复自己的原生上下文；未知执行不自动重发。前端全局对话功能可停靠右侧或一级导航最左侧，原有中右工作屏继续独立展开与折叠。职责和恢复边界见[智能体接入](agent-integration.md)。
+内部对话由 `buildr-agent` 的独立执行进程（Agent Process）维护，Buildr 的 `agent-service` 模块只装配宿主能力（Host Capabilities）及网页 HTTP/事件映射，通过公共客户端（Client）连接后台；普通退出只释放连接。账号、对话和原生上下文绑定保存在本机运行配置（Profile）的私有交互库，原生凭据留各家独立配置；任务状态和文件成果不转移到此库。Codex 应用服务（App Server）、DSH 完整本机网页宿主（Web Host）、Qoder 软件开发工具包（SDK）与命令行（CLI）各自执行和恢复。同一对话保存统一可见历史，各参与者分别恢复自己的原生上下文；未知执行不自动重发。前端全局对话功能可停靠右侧或一级导航最左侧，原有中右工作屏继续独立展开与折叠。职责和恢复边界见[智能体接入](agent-integration.md)。
 
 提交说明由 `code` 准备有界材料和生成请求，调用 `buildr-agent` 的统一模型（Model）能力。账号与模型来源显式固定，不提供工具、不创建持久对话；业务和界面分别校验来源及草稿版本，提交与推送继续直接调用 Git。
 
@@ -54,3 +54,5 @@
 工程工具属于 `tools/`，普通生成结果属于被 Git 忽略的 `build/` 和 `web-dist/`。正式用户命令不加载开发工具；`buildr package check` 需要开发检出，不能作为安装后健康检查。测试库、协议生成与打包来源见[构建与消费地图](../../code-map/system-services-assets.md#构建与消费)，资源边界见[命令架构](../../../services/buildr/docs/cli-architecture.md#文件型交付资源)。
 
 开发环境由[准备声明](../../../preparation.yml)、[Node.js 版本](../../../.node-version)和对应服务（Service）的包清单确定。类型检查、逻辑测试、真实页面交互、安装包消费和目标平台证据分别证明不同边界；构建通过不能替代其他验收。日常按改动选择已有检查，正式发布另行固定源码、完整候选（Candidate）和唯一产物，见[产品验证](verification-framework.md)与[发布流程](../flows/open-source-release.md)。
+
+执行后台（Execution Backend）另以内容摘要保留编译包、完整依赖和 Node.js；主程序版本与后台实际版本分别观察。空闲切换不覆盖活动文件，预览和离线维护共用后台持有边界，详见[进程连接与切换](agent-integration.md#主程序与执行后台怎样连接)。

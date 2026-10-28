@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { withAgentDataOffline } from '@buildr-ai/buildr-agent';
 
 import type { PreviewReuseFacet } from './preview-reuse.ts';
 import { assertWithinRoot, pathExists, replacePreviewDirectory } from './preview-reuse-files.ts';
@@ -21,7 +22,7 @@ export function createModelCatalogFacet(): PreviewReuseFacet {
       assertWithinRoot(input.previewRoot, target);
       const current = pathExists(target);
       try {
-        const result = replacePreviewDirectory({ source, target, refresh: input.refresh });
+        const result = withAgentDataOffline(input.previewRoot, () => replacePreviewDirectory({ source, target, refresh: input.refresh }));
         return {
           status: result.replaced ? 'refreshed' : current ? 'reused' : 'seeded',
           files: result.stats.files,

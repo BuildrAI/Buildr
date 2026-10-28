@@ -8,7 +8,8 @@ import path from 'node:path';
 import { AgentServiceError, fail } from '../domain/agent-state.ts';
 import type { StoredConnection, StoredConversation } from '../domain/agent-state.ts';
 
-const SCHEMA_VERSION = 2;
+export const CONVERSATION_SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = CONVERSATION_SCHEMA_VERSION;
 // 附件准备不等于开始；已发送或结果未知的尝试仍必须可发现。
 const HAS_WORK = "(json_array_length(json_extract(body,'$.view.entries'))>0 OR json_array_length(json_extract(body,'$.attempts'))>0 OR json_type(body,'$.view.run')='object')";
 
@@ -121,6 +122,11 @@ export class ConversationRepository {
     const db = this.open(false); if (!db) return [];
     try { return (db.prepare('SELECT body FROM conversations ORDER BY updated_at DESC').all() as { body: string }[]).map(row => JSON.parse(row.body)).filter((record: StoredConversation) => record.view.requests.length || (includeActive ? ['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'unknown', 'tools-active'] : ['unknown', 'tools-active']).includes(record.view.run?.status ?? '')); }
     finally { db.close(); }
+  }
+  hasUnfinishedWork(): boolean {
+    const db=this.open(false);if(!db)return false;
+    try{return !!db.prepare("SELECT 1 FROM conversations WHERE json_array_length(body,'$.view.requests')>0 OR json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') OR json_extract(body,'$.view.titleState.status')='generating' LIMIT 1").get();}
+    finally{db.close();}
   }
   listInterruptedTitles(generation:string): StoredConversation[] {
     const db=this.open(false);if(!db)return [];

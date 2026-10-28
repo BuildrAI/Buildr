@@ -56,6 +56,7 @@ export interface StoredParticipant {
 }
 export interface StoredConversation {
   view: ConversationView;
+  hostScope?: import('../execution-contracts.ts').ExecutionScope;
   interruption?: { runId: string; awaitingUser: boolean; reason?: 'transport'; attempted?: boolean; cancelled?: boolean };
   runOutcomes?: Record<string,Pick<RunView,'status'|'diagnostic'|'model'|'provider'|'updatedAt'>>;
   titleOrigin?: 'default' | 'generated' | 'manual';

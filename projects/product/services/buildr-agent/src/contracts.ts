@@ -1,4 +1,5 @@
 import type { ModelProvider } from './model-access/contracts.ts';
+import type { AgentHostCapabilities } from './execution-contracts.ts';
 /** Public executor protocol. Vendor credentials and opaque state never become UI state. */
 export type ProviderId = string;
 export type PermissionMode = 'default' | 'full-access';
@@ -321,9 +322,12 @@ export interface AgentServiceOptions {
   environment?: Record<string, string | undefined>;
   /** Native program discovery/install port; credentials remain in executor-owned configs. */
   programManager?: AgentProgramManager;
-  /** Host authority: resolve a registered workspace and validate an optional task. */
-  resolveWorkspace(workspaceId: string): Promise<{ rootPath: string }> | { rootPath: string };
-  assertTask(workspaceId: string, taskId: string): Promise<void> | void;
+  /** Product-independent host authority; source identity survives connection replacement. */
+  host?: AgentHostCapabilities;
+  legacySourceId?: string;
+  /** Compatibility for in-memory embedders. New process integrations use host. */
+  resolveWorkspace?(workspaceId: string): Promise<{ rootPath: string }> | { rootPath: string };
+  assertTask?(workspaceId: string, taskId: string): Promise<void> | void;
   now?: () => Date;
   /** Bounded host shutdown; chiefly useful for deterministic lifecycle tests. */
   shutdownTimeoutMs?: number;

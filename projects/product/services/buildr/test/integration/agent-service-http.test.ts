@@ -1,3 +1,6 @@
+import { AGENT_SERVICE_APPLICATION } from '../../src/modules/agent-service/module.ts';
+import { stopAgentProcess } from '@buildr-ai/buildr-agent';
+import { runtimeProvide } from '../../src/bootstrap/runtime.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -240,6 +243,7 @@ test('HTTP handoff exposes the exact bounded body, local sources and confirmed r
 
 
 test('the real web CLI discovers host interruptions on listening without a browser request', {timeout:30_000}, async t=>{
+  t.after(async()=>{if(child.exitCode===null){child.kill('SIGTERM');await new Promise<void>(resolve=>child.once('exit',()=>resolve()));}await stopAgentProcess({dataRoot}).catch(error=>{if(error.code!=='agent_process_stop_unconfirmed')throw error;});});
   const {base,root}=taskRecordFixture(t,'agent-startup-recovery');
   const dataRoot=path.join(base,'restart-profile');
   const service=createAgentService({dataRoot,executors:[],resolveWorkspace:()=>({rootPath:root}),assertTask:()=>{}});
@@ -267,6 +271,7 @@ test('the real web CLI discovers host interruptions on listening without a brows
 
 
 test('default conversations use a stable application directory without a registered workspace', async t => {
+  t.after(async()=>{await runtimeProvide(runtime,AGENT_SERVICE_APPLICATION).close();await stopAgentProcess({dataRoot:path.join(base,'private-app')});});
   const { base, root } = taskRecordFixture(t, 'agent-default-http');
   const previous = process.env.BUILDR_APP_DATA_DIR;
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'private-app');

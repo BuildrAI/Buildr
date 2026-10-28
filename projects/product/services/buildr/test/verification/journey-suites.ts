@@ -152,6 +152,7 @@ export const JOURNEY_SUITES: any = Object.freeze([
       'test/e2e/buildr-web-channel-isolation.test.ts',
       'test/e2e/buildr-web-launcher.test.ts',
       'test/e2e/buildr-web-restart.test.ts',
+      'test/e2e/agent-process-isolation.test.ts',
       'test/e2e/workspace-app-process.test.ts',
     ]),
   }),

@@ -6,6 +6,7 @@ import path from 'node:path';
 import process from 'node:process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { stopAgentProcess } from '@buildr-ai/buildr-agent';
 
 import { createRuntime, runtimeContributions } from '../helpers/runtime-harness.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
@@ -66,6 +67,7 @@ test('真实重启交接：旧实例退出、新实例同端口接管回执与 h
   t.after(async () => {
     for (const item of children) if (item.child.exitCode === null) item.child.kill('SIGKILL');
     for (const item of children) await waitForExit(item.child, 5_000).catch(() => {});
+    await stopAgentProcess({dataRoot:appData});
     fs.rmSync(base, { recursive: true, force: true });
   });
 

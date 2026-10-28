@@ -40,6 +40,7 @@ export class ModelAccessApplication {
   private readonly operations = new Map<string, number>();
   private ready: Promise<void>;
   private writeChain: Promise<void> = Promise.resolve();
+  private pendingWrites = 0;
   private server?: Server;
   private starting?: Promise<string>;
   private origin?: string;
@@ -89,6 +90,7 @@ export class ModelAccessApplication {
   private async save() {
     if (this.storageError) throw this.storageError;
     const body: Stored = { version: 1, preferences:structuredClone(Object.fromEntries(this.preferences)), accounts: [...this.rows.values()].map(row => { const copy = structuredClone(row); if (copy.loginAttempt) delete copy.loginAttempt.url; return copy; }) };
+    this.pendingWrites++;
     const work = this.writeChain.then(async () => {
       await this.privateRoot();
       const lock = join(this.options.root, 'accounts.lock');
@@ -103,7 +105,7 @@ export class ModelAccessApplication {
         await rename(temporary, join(this.options.root, 'accounts.json')); this.storedDigest = digest(content);
       } finally { await unlink(temporary).catch(()=>{}); await unlink(lock).catch(()=>{}); }
     });
-    this.writeChain = work.catch(() => {}); await work;
+    this.writeChain = work.catch(() => {}); try { await work; } finally { this.pendingWrites--; }
   }
   private current(id: string): ModelAccountView {
     if (this.storageError) throw this.storageError;
@@ -361,6 +363,11 @@ export class ModelAccessApplication {
       else if (!res.destroyed) res.destroy();
     } finally { lease?.requests.delete(controller); }
   }
+  activity() {
+    const requests=[...this.leasesByIdentity.values()].reduce((count,lease)=>count+lease.requests.size,0);
+    const logins=[...this.rows.values()].filter(row=>['initializing','waiting-browser','checking'].includes(row.loginAttempt?.state??'')).length;
+    return [{kind:'model-request',count:requests},{kind:'model-login',count:logins},{kind:'model-write',count:this.pendingWrites}].filter(value=>value.count>0);
+  }
   async close() { if (this.closed) return; this.closed = true; await this.ready.catch(()=>{}); for (const identity of [...this.leasesByIdentity.keys()]) this.release(identity); this.urls.clear(); await Promise.allSettled([...this.runtimes.values()].map(async pending => { await (await pending).close(); })); this.runtimes.clear(); if (this.server) { this.server.closeAllConnections(); await new Promise<void>(resolve => this.server!.close(()=>resolve())); } await this.writeChain; }
 }
 
@@ -370,6 +377,7 @@ export function createModelAccess(options: ModelAccessOptions) {
     ensureLinked: () => application.ensureLinked(), invalidate: (id:string) => application.invalidate(id),
     accounts: { list: () => application.list(), read: (id: string) => application.read(id), snapshot: (id:string) => application.read(id), preferences:(id:string,input:ModelPreferenceUpdate)=>application.updatePreferences(id,input), add: (input: {provider:string;label?:string}) => application.add(input), login: (id:string,input:{expectedRevision:string}) => application.login(id,input), attempt: (id:string,attemptId:string) => application.attempt(id,attemptId), cancelLogin: (id:string,attemptId:string,input:{expectedRevision:string}) => application.cancelLogin(id,attemptId,input), check: (id:string,input:{expectedRevision?:string}={}) => application.check(id,input), disconnect: (id:string,input:{expectedRevision:string}) => application.disconnect(id,input) },
     catalog: { list: () => application.catalog() },
+    activity: () => application.activity(),
     generate: (input: ModelLeaseInput & {prompt:string;signal:AbortSignal}) => application.generate(input),
     leases: { create: (input:ModelLeaseInput) => application.createLease(input), release: (identity:string) => application.release(identity), updateRun:(identity:string,runId:string)=>application.updateRun(identity,runId) },
     close: () => application.close(),

@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
+import { connectAgentProcess, stopAgentProcess } from '@buildr-ai/buildr-agent';
 
 import { previewDataRoot, startPreview, stopPreview, listPreviews, readPreviewOwner, type PreviewRuntime } from '../../src/web/application/preview-lifecycle.ts';
 import { defaultWebDataRoot } from '../../src/modules/installation/contracts/web-profile.ts';
@@ -87,6 +88,21 @@ server.listen(0, '127.0.0.1', () => {
     },
   };
 }
+
+test('preview stop includes its independent backend and refuses purge after uncertain native release', {timeout:30_000}, async t => {
+  t.after(async()=>{await connection?.disconnect();await stopAgentProcess({dataRoot:profileRoot}).catch(()=>{});});
+  const data=fixture(t),profileRoot=previewDataRoot('demo',data.dataRoot);
+  await data.start([]);
+  const connection=await connectAgentProcess({dataRoot:profileRoot,profileId:'preview-fixture',sourceId:'minimal'});
+  const status=await connection.lifecycle.status();assert.ok(status.identity.pid>0);
+  await connection.disconnect();
+  await stopPreview('demo',{dataRoot:data.dataRoot,retainOwner:true});
+  assert.equal(fs.existsSync(path.join(profileRoot,'agent-service/process/instance.json')),false);
+  assert.ok(fs.existsSync(profileRoot));
+  fs.writeFileSync(path.join(profileRoot,'agent-service/process/last-stop.json'),JSON.stringify({instanceId:status.identity.instanceId,confirmed:false}));
+  await assert.rejects(stopPreview('demo',{dataRoot:data.dataRoot,purge:true}),error=>coded(error,'agent_process_stop_unconfirmed'));
+  assert.ok(fs.existsSync(profileRoot));
+});
 
 test('预览沿用开发版模型目录并可复用、刷新与彻底清理', { timeout: 30_000 }, async (t) => {
   const data = fixture(t);

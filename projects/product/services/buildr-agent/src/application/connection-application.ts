@@ -266,5 +266,6 @@ export class ConnectionApplication {
     const runtimes = [...this.runtimes.values(), ...this.gatewayRuntimes.values()]; this.runtimes.clear(); this.gatewayRuntimes.clear();
     await Promise.allSettled(runtimes.map(async runtime => (await runtime).close()));
   }
+  activity() { return [{kind:'connection-operation',count:this.opening.size+this.checking.size},{kind:'native-login',count:this.list().filter(value=>['initializing','waiting-browser','checking'].includes(value.loginAttempt?.state??'')).length}].filter(value=>value.count>0); }
   beginClosing(): void { this.closing = true; }
 }

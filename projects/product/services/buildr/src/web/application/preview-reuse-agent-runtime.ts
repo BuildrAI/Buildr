@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { withAgentDataOffline } from '@buildr-ai/buildr-agent';
 
 import type { PreviewReuseFacet, PreviewReuseFacetOutcome } from './preview-reuse.ts';
 import { MODEL_CATALOG_FACET } from './preview-reuse-model-catalog.ts';
@@ -78,6 +79,7 @@ export function createAgentRuntimeFacet(): PreviewReuseFacet {
     ownership: ['agent-service/model-access', 'agent-service/connections', 'agent-service/programs'],
     exclusions: [...RUNTIME_NAMES],
     async apply(input) {
+      return withAgentDataOffline(input.previewRoot, async () => {
       const catalog = input.dependency(MODEL_CATALOG_FACET);
       if (!catalog || catalog.status === 'failed') {
         return { status: 'failed', files: catalog?.files ?? 0, bytes: catalog?.bytes ?? 0, diagnostics: ['智能体运行时失败：模型目录未成功沿用'], changedAt: input.now() };
@@ -139,6 +141,7 @@ export function createAgentRuntimeFacet(): PreviewReuseFacet {
         diagnostics,
         changedAt: input.now(),
       };
+      });
     },
   };
 }

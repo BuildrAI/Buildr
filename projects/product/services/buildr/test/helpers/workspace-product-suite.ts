@@ -6,6 +6,7 @@ import path from 'node:path';
 import { execFile, execFileSync, spawn, spawnSync } from 'node:child_process';
 import test from 'node:test';
 import YAML from 'yaml';
+import { stopAgentProcess } from '@buildr-ai/buildr-agent';
 
 import { createRuntime } from './runtime-harness.ts';
 import { renderWorkspaceManifest } from '../../src/modules/workspace/persistence/workspace-manifest-repository.ts';
@@ -37,7 +38,12 @@ function previewCommandDiagnostic(phase: string, result: any, timeoutMs: number)
 
 function temporaryRoot(t: any): any  {
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-workspace-product-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(async () => {
+    if (selectedSuite === 'app-process') for (const file of fs.globSync('**/agent-service/process/instance.json', {cwd:root})) {
+      await stopAgentProcess({dataRoot:path.resolve(root,path.dirname(file),'../..')});
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  });
   return root;
 }
 
