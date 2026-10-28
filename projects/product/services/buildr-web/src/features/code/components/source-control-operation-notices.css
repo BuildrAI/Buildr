@@ -1,5 +1,5 @@
 .source-control-operation-notice.ant-notification-notice { width:100%; }
 .ant-notification-notice-wrapper:has(>.source-control-operation-notice.ant-notification-notice) { width:min(440px,calc(100vw - 48px)); border:1px solid color-mix(in srgb,var(--soft-ink) 22%,var(--soft-line)); background:var(--soft-surface); box-shadow:0 8px 24px color-mix(in srgb,var(--soft-ink) 12%,transparent); }
 .source-control-operation-notice .ant-notification-notice-description { max-height:min(360px,50vh); overflow:auto; overscroll-behavior:contain; user-select:text; }
-.source-control-operation-notice :is(.source-control-fetch-results,.source-control-sync-results) { max-height:none; padding:0; border:0; font-size:12px; }
+.source-control-operation-notice :is(.source-control-fetch-results,.source-control-sync-results) { max-height:none; padding:0; border:0; font-size:var(--font-size-secondary); }
 .source-control-operation-notice :is(.source-control-fetch-results,.source-control-sync-results)>ul { margin-top:0; }

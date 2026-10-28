@@ -75,8 +75,12 @@ export function useEarlierConversationEntries(props:Props){
   onTouchCancel:()=>{touch.current=null;},
   onKeyDown:(event:{key:string;shiftKey:boolean;defaultPrevented:boolean;target:EventTarget|null})=>{
    if(event.defaultPrevented||event.target instanceof Element&&event.target.closest('input,textarea,select,[contenteditable="true"]'))return;
-   if(['ArrowUp','PageUp','Home'].includes(event.key)||event.key===' '&&event.shiftKey)readEarlier();
-   else anchor.current=null;
+   if(['ArrowUp','PageUp','Home'].includes(event.key)||event.key===' '&&event.shiftKey){
+    // Let the native key scroll request its page through onScroll. Starting a
+    // fetch before Home moves can race anchor restoration and fetch twice.
+    // At the top there is no scroll event, so an explicit request is necessary.
+    if((stream.current?.scrollTop??0)<=1)readEarlier();
+   }else anchor.current=null;
   },
  };
 }

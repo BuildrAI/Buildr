@@ -116,7 +116,7 @@ const decorations = ViewPlugin.fromClass(class {
 }, { decorations: plugin => plugin.decorations });
 
 const theme = EditorView.theme({
-  '&': { height: '100%', fontSize: '13px', backgroundColor: 'var(--ant-color-bg-container, #fff)' },
+  '&': { height: '100%', fontSize: 'var(--font-size-code)', backgroundColor: 'var(--ant-color-bg-container, #fff)' },
   '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', lineHeight: '1.8', overflow: 'auto', overscrollBehavior: 'contain' },
   '.cm-content': { padding: '14px 0 32px', minHeight: '100%' },
   '.cm-line.repository-source-row': { display: 'block', padding: '0 16px', minHeight: '23px' },

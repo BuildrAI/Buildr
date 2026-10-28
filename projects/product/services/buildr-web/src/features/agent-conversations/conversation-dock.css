@@ -2,7 +2,7 @@
 .ac-panel[hidden]{display:none!important}
 .ac-collapsed-rail{display:flex;flex-direction:column;flex:none;justify-content:flex-start;align-items:center;box-sizing:border-box;width:52px;padding:6px 5px 10px;background:#fff;border-left:1px solid var(--soft-line)}
 .ac-collapsed-rail[data-dock=left]{order:-2;border-left:0;border-right:1px solid var(--soft-line)}
-.ac-conversation-icon.ant-btn{width:40px;height:40px;padding:0;border-radius:8px;color:var(--soft-muted);font-size:18px}
+.ac-conversation-icon.ant-btn{width:40px;height:40px;padding:0;border-radius:8px;color:var(--soft-muted);font-size:var(--icon-size-navigation)}
 .ac-conversation-icon.ant-btn:hover{color:var(--soft-primary);background:#edf4f0}
 .ac-conversation-icon.ant-btn.is-active{color:var(--soft-primary);background:#edf4f0}
 .ac-conversation-icon.ant-btn.is-active:hover{color:var(--soft-muted);background:transparent}

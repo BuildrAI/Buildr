@@ -6,7 +6,7 @@
 /* 工作台是工具面：整块内容区放宽上限，正文/列表视图仍保持原限宽 */
 .task-commits-preview .workspace-page:not(:has(.pane-stage)) > .task-detail-page.is-wide { max-width:100%; transition:max-width .18s ease; }
 .task-commits-preview .task-detail-page.is-wide .task-commits-reading { width:100%; max-width:none; }
-.task-commits-preview .task-commits-tab-count { margin-left:6px; font-size:10px; }
+.task-commits-preview .task-commits-tab-count { margin-left:6px; font-size:var(--font-size-meta); }
 .task-commits-preview .task-path-track { overflow-x:auto; scrollbar-width:thin; }
 .task-commits-preview .task-work-tab { flex:none; }
 .task-commits-preview .task-commits-project-link { width:100%; background:transparent; border:0; text-align:left; cursor:pointer; }

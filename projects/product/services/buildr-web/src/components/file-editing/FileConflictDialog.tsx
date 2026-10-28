@@ -8,7 +8,7 @@ import { normalizeEditorText } from './file-editing-text';
 import { CopyButton } from '../CopyButton';
 import type { FileEditingController, FileEditingDocument, FileEditingSession } from './file-editing-types';
 
-const comparisonTheme = EditorView.theme({ '&': { height: '185px', fontSize: '12px' }, '.cm-scroller': { overflow: 'auto', lineHeight: '1.8', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }, '&.cm-focused': { outline: 'none' } });
+const comparisonTheme = EditorView.theme({ '&': { height: '185px', fontSize: 'var(--font-size-code)' }, '.cm-scroller': { overflow: 'auto', lineHeight: '1.8', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }, '&.cm-focused': { outline: 'none' } });
 function ReadOnlyContent({ content, label }: { content: string; label: string }) {
   const state = useMemo(() => EditorState.create({ doc: normalizeEditorText(content), extensions: [basicSetup, comparisonTheme, EditorState.readOnly.of(true), EditorView.editable.of(false), EditorView.contentAttributes.of({ 'aria-label': label })] }), [content, label]);
   return <FileCodeEditor documentId={label} state={state} />;

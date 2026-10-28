@@ -1,4 +1,11 @@
 import type { ThemeConfig } from 'antd';
+import { applyProductTypography, productTypography } from './typography';
+
+// Theme initialization is shared by the product and existing prototype entries.
+// Keep CSS roles and Ant Design tokens backed by the same numeric authority.
+if (typeof document !== 'undefined') {
+  applyProductTypography(document.documentElement.style);
+}
 
 /** Soft product tokens — mist teal primary, light radius, light shadow. */
 export const softProductTheme: ThemeConfig = {
@@ -16,7 +23,15 @@ export const softProductTheme: ThemeConfig = {
     colorBgContainer: '#ffffff',
     colorBgLayout: '#f7f8f9',
     colorText: '#252a31',
-    colorTextSecondary: '#68717b',
+    colorTextSecondary: '#5e6873',
+    fontSize: productTypography.body,
+    fontSizeSM: productTypography.meta,
+    fontSizeLG: productTypography.subheading,
+    fontSizeHeading1: productTypography.page,
+    fontSizeHeading2: productTypography.title,
+    fontSizeHeading3: productTypography.heading,
+    fontSizeHeading4: productTypography.subheading,
+    fontSizeHeading5: productTypography.reading,
     colorBorder: '#e1e5e9',
     colorBorderSecondary: '#eceef1',
     borderRadius: 8,

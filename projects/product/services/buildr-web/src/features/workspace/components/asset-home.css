@@ -1,8 +1,8 @@
 .asset-home { container: asset-home / inline-size; min-width: 0; }
 .asset-home .resource-home-head { padding: 4px 0 22px; margin-bottom: 0; border: 0; border-radius: 0; background: none; gap: 20px; flex-wrap: wrap; }
 .asset-home-summary { flex: 1 1 320px; min-width: 0; }
-.asset-home-type { margin-inline:6px 0; font-size:11px; vertical-align:1px; }
-.asset-home .resource-home-head h1 { font-size: 24px; }
+.asset-home-type { margin-inline:6px 0; font-size:var(--font-size-meta); vertical-align:1px; }
+.asset-home .resource-home-head h1 { font-size: var(--font-size-page); }
 .asset-home .resource-home-head p { overflow-wrap: anywhere; }
 .asset-home > .resource-section { margin: 0; padding: 22px 0; border: 0; border-top: 1px solid var(--soft-line); border-radius: 0; }
 .asset-home .asset-home-tabs .ant-tabs-nav { margin-bottom: 4px; }
@@ -14,20 +14,20 @@
 .asset-home .asset-repository-summary > a { min-width: 0; width: 100%; flex: none; }
 .asset-home .asset-repository-summary > a strong { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .asset-home .asset-repository-summary > .ant-btn { justify-self: start; }
-.asset-facts { display: grid; gap: 10px; margin: 0; font-size: 13px; line-height: 1.65; }
+.asset-facts { display: grid; gap: 10px; margin: 0; font-size: var(--font-size-body); line-height: 1.65; }
 .asset-facts > div { display: grid; grid-template-columns: 104px minmax(0, 1fr); column-gap: 14px; }
 .asset-facts dt, .repository-status-label { color: var(--soft-muted); }
 .asset-facts dd { min-width: 0; margin: 0; color: var(--soft-ink); overflow-wrap: anywhere; }
-.asset-facts code { font-size: 12px; overflow-wrap: anywhere; white-space: normal; }
+.asset-facts code { font-size: var(--font-size-code); overflow-wrap: anywhere; white-space: normal; }
 .asset-remote-url { display: block; }
 .repository-status { min-width: 0; }
-.repository-status-line { display: grid; grid-template-columns: 104px auto minmax(0, 1fr); gap: 10px 14px; align-items: center; font-size: 13px; }
+.repository-status-line { display: grid; grid-template-columns: 104px auto minmax(0, 1fr); gap: 10px 14px; align-items: center; font-size: var(--font-size-meta); }
 .repository-status-line .ant-tag { justify-self: start; margin-inline-end: 0; }
 .repository-status-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
 .repository-status-facts { margin-top: 12px; }
 .repository-status > .ant-alert { margin-top: 12px; }
 .asset-repository-facts > .repository-status { margin-top: 16px; }
-.asset-knowledge-notice { display: flex; align-items: center; gap: 6px; padding: 4px 6px; color: var(--soft-muted); font-size: 12px; }
+.asset-knowledge-notice { display: flex; align-items: center; gap: 6px; padding: 4px 6px; color: var(--soft-muted); font-size: var(--font-size-secondary); }
 @container asset-home (max-width: 440px) {
   .asset-facts > div { grid-template-columns: 88px minmax(0, 1fr); column-gap: 10px; }
   .repository-status-line { grid-template-columns: 88px minmax(0, 1fr); column-gap: 10px; }
