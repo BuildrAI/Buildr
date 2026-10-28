@@ -194,3 +194,13 @@
 .ac-video-thumbnail{width:240px!important;height:auto!important;max-width:100%;align-items:stretch;flex-direction:column;gap:4px;padding:4px;border:1px solid var(--soft-line);border-radius:8px}
 .ac-video-thumbnail video{display:block;width:100%;max-height:160px;border-radius:5px;background:#17251e}
 .ac-video-thumbnail>small{font-size:10px;color:var(--soft-muted);padding:0 3px 2px}
+
+/* 断线提醒与消息保持同一内容宽度，避免错误信息挤压恢复操作。 */
+.ac-panel .ac-stream>.ac-stream-disconnect{width:calc(100% - 48px);max-width:732px;box-sizing:border-box;margin:8px auto 16px;padding:12px 14px;border-radius:10px;align-items:flex-start;gap:10px}
+.ac-stream-disconnect .ant-alert-icon{font-size:15px;line-height:20px;margin:0!important}
+.ac-stream-disconnect .ant-alert-content{min-width:0}
+.ac-stream-disconnect .ant-alert-message{font-size:12px;font-weight:600;line-height:20px;color:#62583f;margin-bottom:2px}
+.ac-stream-disconnect .ant-alert-description{font-size:12px;line-height:1.6;color:#786e5a;overflow-wrap:anywhere}
+.ac-stream-disconnect .ant-alert-action{margin-inline-start:auto;align-self:center}
+.ac-stream-disconnect .ant-alert-action .ant-btn{height:auto;min-height:28px;padding:3px 8px;color:#6e6047;font-size:12px;font-weight:500}
+@media(max-width:480px){.ac-panel .ac-stream>.ac-stream-disconnect{width:calc(100% - 40px);flex-wrap:wrap}.ac-stream-disconnect .ant-alert-content{flex-basis:calc(100% - 25px)}.ac-stream-disconnect .ant-alert-action{margin-inline-start:25px;align-self:auto}}

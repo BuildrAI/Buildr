@@ -716,7 +716,12 @@ export async function runAgentConversationsJourney({t,page,workspaceUrl,capture:
       await panel().getByText('对话连接已中断',{exact:true}).waitFor({timeout:20000});
       assert.ok(eventStreams-streamsBefore>=3,'连续两次断线后仍自动重连，未要求用户手动核对');
       assert.equal(await panel().locator('[data-run-status="stopped"]').count(),1,'重连不改写已观察的执行状态');
-      await panel().getByRole('button',{name:'重新连接并核对',exact:true}).waitFor();
+      const notice=panel().locator('.ac-stream-disconnect');await notice.getByRole('button',{name:'重新连接并核对',exact:true}).waitFor();
+      assert.equal(await notice.getByText('原执行状态尚未确认。',{exact:true}).count(),1,'去除重复标题后仍保留未确认状态');
+      assert.equal(await notice.getByText('对话连接已中断',{exact:true}).count(),1);
+      await page.setViewportSize({width:375,height:800});await notice.scrollIntoViewIfNeeded();
+      const geometry=await notice.evaluate((node:HTMLElement)=>{const action=node.querySelector<HTMLElement>('.ant-alert-action')!.getBoundingClientRect(),box=node.getBoundingClientRect();return {left:action.left-box.left,right:box.right-action.right};});
+      assert.ok(geometry.left>=0&&geometry.right>=0,'窄屏下核对操作仍在提醒范围内');await page.setViewportSize({width:1600,height:1000});
     });
     }
     await step('新对话跨工作空间恢复软件级选择，无关账号变化不造成假冲突且不改写执行模型记忆',async()=>{

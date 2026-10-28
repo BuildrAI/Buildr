@@ -401,7 +401,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
             </ConversationTurn>;
           })}
         </div>}
-        {context.streamError&&<Alert type="warning" showIcon message="对话连接已中断" description={context.streamError} action={<Button loading={observing} onClick={()=>void observe()}>重新连接并核对</Button>}/>}
+        {context.streamError&&<Alert className="ac-stream-disconnect" type="warning" showIcon message="对话连接已中断" description={context.streamError.replace(/^对话连接已中断[；;]\s*/,'')} action={<Button type="text" size="small" loading={observing} onClick={()=>void observe()}>重新连接并核对</Button>}/>}
         {chat?.run?.status==='unknown'&&<Alert type="warning" showIcon message="执行状态待确认" description="可提交下一条指令等待接续；原执行确认结束前不会自动开始，重新连接不会重发。" action={<Button loading={observing} onClick={()=>void observe()}>核对执行状态</Button>}/>}
         {chat?.run?.status==='tools-active'&&<Alert type="warning" showIcon message="模型已中断，仍有命令运行" description={<div>{chat.run.tools.filter(tool=>tool.status!=='completed').map(tool=><p key={tool.id}>{tool.label}{canStopConversationTool(tool)?<Button size="small" loading={stopping} onClick={()=>void stop(tool.id)}>停止此命令</Button>:<small> · 不支持单独停止</small>}</p>)}<Button type="link" size="small" loading={observing} onClick={()=>void observe()}>核对执行状态</Button></div>} action={<Button loading={stopping} onClick={()=>void stop()}>停止剩余执行</Button>}/>}
         <ConversationPendingSend conversation={chat}/>{chat?.requests.map(request=><ConversationRequest key={request.id} request={request} provider={chat.run?.provider||chat.participants.find(item=>item.id===request.participantId)?.provider||'codex'} busy={actions.has(actionKey(chat,'reply',request.id))} onReply={answer=>void reply(request.id,answer)}/>)}
