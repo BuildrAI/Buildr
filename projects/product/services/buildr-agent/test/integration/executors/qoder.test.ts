@@ -79,3 +79,22 @@ test('Qoder reports a closed worker transport instead of retaining a reusable ru
     assert.equal(runtime.closed,false);await runtime.close();assert.equal(runtime.closed,true);
   }finally{await runtime?.close();await rm(root,{recursive:true,force:true});}
 });
+
+for (const unavailable of [false,true]) test('Qoder repairs lost items before publishing terminal observation; history unavailable='+unavailable,{timeout:15000},async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-qoder-terminal-repair-')),workspace=join(root,'workspace');await mkdir(workspace);
+  const executable=join(root,'qoder.mjs');await writeFile(executable,cli);let runtime:AgentRuntime|undefined,failed=false,lostId="";
+  const events:ExecutorEvent[]=[],requestId='ce70f3b5-244c-4485-bd68-16b51bdc0ada';
+  try{
+    runtime=await createQoderExecutor().open({connectionId:'qoder',configRoot:join(root,'config'),executable,environment:{PATH:process.env.PATH??''}});
+    const contextRef=await runtime.createContext({cwd:workspace}),rpc=(runtime as any).rpc,call=rpc.call.bind(rpc);
+    rpc.call=(method:string,args:any,...rest:any[])=>method==='history'?(unavailable?Promise.reject(Error('history unavailable')):Promise.resolve([{id:lostId,kind:'message',role:'assistant',text:'completed once',executionId:requestId,status:'completed'}])):call(method,args,...rest);
+    const sending=runtime.send({contextRef,cwd:workspace,text:'等待用户',images:[],clientRequestId:requestId,onEvent:event=>{if(event.type==='item'&&!failed){failed=true;lostId=event.item.id;throw Error('record write failed');}events.push(event);}});
+    await assert.rejects(sending,/qoder_event_observation_lost/);
+    const accepted=events.find(e=>e.type==='accepted');assert.equal(accepted?.type,'accepted');
+    await runtime.stop({contextRef,executionRef:accepted.executionRef});
+    await eventually(()=>events.some(e=>e.type==='completed'));
+    const observed=await runtime.observe({contextRef,executionRef:accepted.executionRef});
+    if(unavailable){assert.equal(observed.status,'unknown');assert.ok(!events.some(e=>e.type==='observation'&&e.observation.status==='stopped'));}
+    else{assert.equal(observed.status,'stopped');const repaired=events.findIndex(e=>e.type==='item'&&e.item.text==='completed once'),terminal=events.findIndex(e=>e.type==='observation'&&e.observation.status==='stopped');assert.ok(repaired>=0&&terminal>repaired);}
+  }finally{await runtime?.close();await rm(root,{recursive:true,force:true});}
+});

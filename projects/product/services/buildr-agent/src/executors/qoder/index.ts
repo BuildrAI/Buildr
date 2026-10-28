@@ -20,6 +20,8 @@ class QoderRuntime implements AgentRuntime {
   get closed(): boolean { return this.rpc.closed; }
   private observationWaits = new Map<string, (error: Error) => void>();
   private projectionFailures = new Set<string>();
+  private historyFailures = new Map<string, Set<string>>();
+  private historyRepairs = new Map<string, Promise<void>>();
   private executable: string;
   private environment: NodeJS.ProcessEnv;
   private configRoot: string;
@@ -39,11 +41,37 @@ class QoderRuntime implements AgentRuntime {
         const { contextId, event } = message.params;
         if (event.type === 'accepted') this.observations.set(contextId, { status: 'running', executionRef: event.executionRef, tools: [] });
         if (event.type === 'observation') this.observations.set(contextId, event.observation);
+        if (event.type === 'observation' && ['idle', 'stopped'].includes(event.observation.status) && this.historyFailures.has(contextId)) {
+          void this.repairHistory(contextId, event.observation.executionRef?.id).then(() => {
+            this.handlers.get(contextId)?.(event);
+            this.handlers.delete(contextId); this.projectionFailures.delete(contextId);
+          }).catch(error => this.observationFailed(contextId, 'qoder_event_observation_lost', error));
+          return;
+        }
         try { this.handlers.get(contextId)?.(event); }
-        catch (error) { this.observationFailed(contextId, 'qoder_event_observation_lost', error); }
+        catch (error) {
+          if (event.type === 'item') { const missing = this.historyFailures.get(contextId) ?? new Set<string>(); missing.add(event.item.id); this.historyFailures.set(contextId, missing); }
+          this.observationFailed(contextId, 'qoder_event_observation_lost', error);
+        }
         if (event.type === 'observation' && ['idle', 'stopped'].includes(event.observation.status)) { this.handlers.delete(contextId); this.projectionFailures.delete(contextId); }
       }
     });
+  }
+  private repairHistory(contextId: string, executionId?: string): Promise<void> {
+    const pending = this.historyRepairs.get(contextId); if (pending) return pending;
+    const work = (async () => {
+      if (!executionId) throw new Error('qoder_exact_execution_not_observed');
+      const items: ExecutorItem[] = await this.rpc.call('history', { contextId, cwd: this.contexts.get(contextId) });
+      const handler = this.handlers.get(contextId);
+      if (!handler) throw new Error('qoder_event_observation_lost');
+      const owned = items.filter(item => item.executionId === executionId);
+      if ([...this.historyFailures.get(contextId) ?? []].some(id => !owned.some(item => item.id === id))) throw new Error('qoder_history_repair_incomplete');
+      for (const item of owned) handler({ type: 'item', item });
+      this.historyFailures.delete(contextId);
+    })();
+    this.historyRepairs.set(contextId, work);
+    void work.finally(() => { if (this.historyRepairs.get(contextId) === work) this.historyRepairs.delete(contextId); }).catch(() => {});
+    return work;
   }
   private observationFailed(contextId: string, code: string, cause: unknown): void {
     this.projectionFailures.add(contextId);
@@ -158,7 +186,11 @@ class QoderRuntime implements AgentRuntime {
   }
   async observe({ contextRef, executionRef }: { contextRef: ContextRef; executionRef?: ExecutionRef }): Promise<ExecutorObservation> {
     this.reference(contextRef);
-    try { return await this.rpc.call('observe', { contextId: contextRef.id, executionId: executionRef?.id }, 5000); }
+    try {
+      const observed = await this.rpc.call('observe', { contextId: contextRef.id, executionId: executionRef?.id }, 5000);
+      if (['idle', 'stopped'].includes(observed.status) && this.historyFailures.has(contextRef.id)) await this.repairHistory(contextRef.id, observed.executionRef?.id);
+      return observed;
+    }
     catch { return { status: 'unknown', tools: this.observations.get(contextRef.id)?.tools ?? [], diagnostic: 'qoder_exact_execution_not_observed' }; }
   }
   async supplement(input: ExecutorSupplementInput): Promise<ExecutorInputReceipt> {
