@@ -2,7 +2,6 @@ import type { ConversationSummary } from './types';
 export type ActivityState = 'running'|'waiting'|'unknown'|'unseen'|null;
 export type ActivityFilter = Exclude<ActivityState,null>|'attention'|null;
 export type ActivityCounts = {active:number;running:number;waiting:number;unseen:number;unknown:number;attention:number};
-export const activityFilterLabels = {unseen:'待查看',waiting:'待处理',running:'执行中'} as const;
 export function activityBadge(counts:ActivityCounts|undefined) {
   if(!counts)return null;
   const pending=counts.waiting+counts.unseen;

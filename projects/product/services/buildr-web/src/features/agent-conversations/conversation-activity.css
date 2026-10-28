@@ -2,10 +2,6 @@
 .ac-activity-count{position:absolute;right:0;top:0;min-width:14px;height:14px;padding-inline:2px;border-radius:5px;background:#e9f1ed;color:#648b79;font:var(--font-size-meta)/14px system-ui;text-align:center}
 .ac-attention-count{background:#fff0d2;color:#895217;border:1px solid #e9c689;border-radius:8px}
 .ac-all-conversations.is-stale .ac-activity-count{border:1px dashed currentColor}
-.ac-activity-filters{display:flex;flex-wrap:wrap;gap:4px;padding:8px 4px}
-.ac-activity-filters .ant-btn{display:inline-flex;align-items:center;gap:5px;font-size:var(--font-size-meta);border:1px solid var(--soft-line);border-radius:7px}
-.ac-activity-filters .ant-btn.is-selected{color:var(--soft-primary);background:#e9f1ed;border-color:#b9d3c4}
-.ac-activity-filters .ant-btn small{font-size:var(--font-size-meta);font-variant-numeric:tabular-nums}
 .ac-activity-counts-note{align-self:center;color:var(--soft-muted);font-size:var(--font-size-meta)}
 .ac-activity-popover .ant-popover-inner{border:1px solid var(--soft-line)}
 .ac-activity-menu{width:410px;max-width:calc(100vw - 65px);padding:2px;color:var(--soft-ink)}

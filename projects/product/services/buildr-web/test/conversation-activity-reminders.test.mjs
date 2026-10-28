@@ -26,7 +26,7 @@ registerHooks({
   }
 });
 const {ConversationActivityEntry}=await import('../src/features/agent-conversations/ConversationActivityEntry.tsx');
-const {ConversationActivityFilters}=await import('../src/features/agent-conversations/ConversationActivityFilters.tsx');
+const {ConversationActivityStatus}=await import('../src/features/agent-conversations/ConversationActivityStatus.tsx');
 const {ConversationExecutionSummary}=await import('../src/features/agent-conversations/ConversationExecutionSummary.tsx');
 const counts={active:8,running:3,waiting:2,unseen:2,unknown:1,attention:5};
 const render=(props={})=>renderToStaticMarkup(React.createElement(ConversationActivityEntry,{items:[],workspaces:[],total:8,counts,onOpen(){},onHistory(){},...props}));
@@ -52,13 +52,6 @@ test('大数与读取失败保留准确数量，首次未知不冒充零',()=>{
   assert.match(html,/111 个待处理对话/);assert.match(html,/99\+/);assert.match(html,/未更新/);
   assert.equal(activityReminder(undefined),'对话提醒尚未读取');
   assert.doesNotMatch(render({total:120,counts:undefined}),/data-count-kind/);
-});
-test('完整列表保留分类数量、键盘按钮及选中反馈',()=>{
-  const html=renderToStaticMarkup(React.createElement(ConversationActivityFilters,{counts,value:'waiting',onChange(){}}));
-  assert.match(html,/aria-label="活动分类"/);assert.match(html,/待处理/);assert.match(html,/aria-pressed="true"/);
-  assert.doesNotMatch(html,/需关注/);assert.match(html,/执行状态暂时无法确认/);
-  const unknown=renderToStaticMarkup(React.createElement(ConversationActivityFilters,{value:null,onChange(){}}));
-  assert.match(unknown,/分类暂不可用/);assert.doesNotMatch(unknown,/<small>0<\/small>/);
 });
 test('快速档位显式绑定原生来源，保留合法强度并不修改原选择',()=>{
   const source={modelId:'sol',accountId:'native-codex',accountIdentity:'i',accountRevision:'r',reasoningEfforts:[{id:'high'}],serviceTiers:[{id:'default'},{id:'priority'}]};
@@ -86,23 +79,12 @@ test('工作空间只分一组，混合状态保留组内优先顺序',()=>{
   assert.deepEqual(groupConversationWorkspaces([]).size,0);
   assert.equal(items.length,3);
 });
-test('入口悬停提示固定，分类仅保留待查看待处理执行中',()=>{
+test('入口悬停提示固定，未知执行只保留条目徽标与入口说明',()=>{
   assert.match(render({active:true}),/title="对话列表"/);
   assert.match(render({counts:undefined}),/title="对话列表"/);
-  const html=renderToStaticMarkup(React.createElement(ConversationActivityFilters,{counts,value:null,onChange(){}}));
-  assert.ok(html.indexOf('待查看')<html.indexOf('待处理'));
-  assert.ok(html.indexOf('待处理')<html.indexOf('执行中'));
-  assert.doesNotMatch(html,/>活动中<|>需关注<|>状态待确认</);
-});
-
-test('没有异常时不显示状态待确认，有异常才提供查看与返回入口',()=>{
-  const filters=props=>renderToStaticMarkup(React.createElement(ConversationActivityFilters,{counts:{...counts,unknown:0},value:null,onChange(){},...props}));
-  const normal=filters({});
-  assert.doesNotMatch(normal,/暂时无法确认|查看对话|返回全部/);
-  assert.equal((normal.match(/<button/g)||[]).length,3);
-  const abnormal=filters({counts,value:'unknown',stale:true});
-  assert.match(abnormal,/1 个对话的执行状态暂时无法确认（未更新）/);
-  assert.match(abnormal,/返回全部/);
-  assert.match(abnormal,/aria-pressed="true"/);
-  assert.match(filters({counts}),/查看对话/);
+  const html=render();
+  assert.match(html,/1 个执行状态需确认/);
+  assert.doesNotMatch(html,/个对话的执行状态需确认|暂时无法确认|查看对话|返回全部/);
+  const status=renderToStaticMarkup(React.createElement(ConversationActivityStatus,{state:'unknown'}));
+  assert.match(status,/状态待确认/);
 });
