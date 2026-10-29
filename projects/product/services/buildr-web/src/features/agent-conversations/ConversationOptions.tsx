@@ -5,6 +5,7 @@ import { CheckOutlined, DownOutlined, ThunderboltFilled, ThunderboltOutlined, Ro
 import { providerNames, type ConnectionView, type CatalogModel } from './types';
 import { contextReportWindow, conversationUsageReport } from './conversation-state';
 import { ContextUsageSummary } from './ContextUsageSummary';
+import {rememberReasoningEffort,restoreReasoningChoice} from './conversation-preferences';
 import {officialConversationChoice,modelSourceName,nextServiceTier,conversationTierChoice,conversationReasoningSelection,reasoningEffortLabel,selectedConversationModel,type ConversationChoice} from './conversation-options';
 
 type Props = {
@@ -39,7 +40,7 @@ export function ConversationOptions({connections,modelCatalog,value,disabled,onC
   const groups=Array.from(new Set(candidates.map(item=>item.accountId))).map(id=>{const source=candidates.find(item=>item.accountId===id)!;const name=modelSourceName(source.provider);return {id,label:name+(new Set(candidates.filter(item=>modelSourceName(item.provider)===name).map(item=>item.accountId)).size>1?' · '+source.accountLabel:'')};});
   const jumpToGroup=(id:string)=>{const root=modelPopup.current;const header=Array.from(root?.querySelectorAll<HTMLElement>('[data-model-source]')??[]).find(node=>node.dataset.modelSource===id)?.closest<HTMLElement>('.ant-select-item-group');const scroll=root?.querySelector<HTMLElement>('.rc-virtual-list-holder');const first=header?.nextElementSibling as HTMLElement|null;if(header&&scroll&&first)scroll.scrollTo({top:scroll.scrollTop+first.getBoundingClientRect().top-scroll.getBoundingClientRect().top-header.getBoundingClientRect().height,behavior:'auto'});};
   const nativeFallback=!shared.some(item=>item.accountId==='native-'+original?.id);
-  const connection=value.modelAccountId&&original?{...original,models:effectiveShared?[{...effectiveShared,id:effectiveShared.modelId,isDefault:true}]:[]}:original;
+  const connection=original&&(value.modelAccountId||effectiveShared)?{...original,models:effectiveShared?[{...effectiveShared,id:effectiveShared.modelId,isDefault:true}]:[]}:original;
   const model=selectedConversationModel(connection,value.model);
   useEffect(()=>{if(selectedShared&&value.modelAccountIdentity===selectedShared.accountIdentity&&value.modelAccountRevision!==selectedShared.accountRevision)onChange({...value,modelAccountRevision:selectedShared.accountRevision},false);},[selectedShared?.accountRevision,selectedShared?.accountIdentity,value.modelAccountIdentity,value.modelAccountRevision]);
   const defaultModel=selectedConversationModel(connection);
@@ -58,7 +59,7 @@ export function ConversationOptions({connections,modelCatalog,value,disabled,onC
   },[open]);
   const selectEffort=(index:number)=>{
     const effort=reasoning.options[index];
-    if(effort)onChange({...value,reasoningEffort:effort.id},true);
+    if(effort){rememberReasoningEffort({...value,model:nativeModelId,...(selectedShared?{modelAccountId:selectedShared.accountId,modelAccountIdentity:selectedShared.accountIdentity}:{})},effort.id);onChange({...value,reasoningEffort:effort.id},true);}
   };
   const controls=<div ref={controlsRef} className="ac-model-controls" role="dialog" aria-label="模型与推理强度设置" onKeyDown={event=>{
     if(event.key==='Escape'){event.stopPropagation();setOpen(false);trigger.current?.focus();}
@@ -69,7 +70,7 @@ export function ConversationOptions({connections,modelCatalog,value,disabled,onC
       popupRender={menu=><div ref={modelPopup}><nav className="ac-model-source-nav" aria-label="模型来源快速定位">{groups.map(group=><Button key={group.id} size="small" type="text" onMouseDown={event=>{event.preventDefault();event.stopPropagation();}} onClick={event=>{event.stopPropagation();jumpToGroup(group.id);}}>{group.label}</Button>)}</nav>{menu}</div>}
       classNames={{popup:{root:'ac-panel-popup ac-choice-popup ac-model-list-popup'}}}
       options={[...(original?.models.length&&nativeFallback?[{label:'原生账号',options:[{value:'',label:'原生默认模型'},...(original?.models||[]).map(item=>({value:item.id,label:item.label}))]}]:[]),...groups.map(group=>({label:<span data-model-source={group.id}>{group.label}</span>,options:candidates.filter(item=>item.accountId===group.id).map(item=>({value:'shared:'+group.id+'::'+item.modelId,label:item.creditFactor!==undefined?`${item.label} · ${item.creditFactor.toFixed(2)}x`:item.label,disabled:!item.available}))}))]}
-      onChange={model=>{requestAnimationFrame(()=>{const input=controlsRef.current?.querySelector<HTMLInputElement>('.ac-model-picker input');if(input===document.activeElement&&input?.getAttribute('aria-expanded')!=='true')input?.blur();});const source=shared.find(item=>'shared:'+item.accountId+'::'+item.modelId===model);onChange({...value,model:source?.modelId||model||undefined,modelAccountId:source?.accountId,modelAccountRevision:source?.accountRevision,modelAccountIdentity:source?.accountIdentity,serviceTier:source?.defaultServiceTier,reasoningEffort:undefined},true);}}/></div>
+      onChange={model=>{requestAnimationFrame(()=>{const input=controlsRef.current?.querySelector<HTMLInputElement>('.ac-model-picker input');if(input===document.activeElement&&input?.getAttribute('aria-expanded')!=='true')input?.blur();});const source=shared.find(item=>'shared:'+item.accountId+'::'+item.modelId===model);const next={...value,model:source?.modelId||model||undefined,modelAccountId:source?.accountId,modelAccountRevision:source?.accountRevision,modelAccountIdentity:source?.accountIdentity,serviceTier:source?.defaultServiceTier,reasoningEffort:undefined};onChange(restoreReasoningChoice(next,original,shared),true);}}/></div>
     <div className="ac-effort-controls">
       {reasoning.ordered&&reasoning.index>=0?<div className="ac-depth-slider"><Slider min={0} max={reasoning.options.length-1} step={1} dots value={reasoning.index} disabled={disabled} ariaLabelForHandle="思考深度" ariaValueTextFormatterForHandle={index=>reasoningEffortLabel(reasoning.options[index]!)} tooltip={{open:false}} onChange={selectEffort}/><div className="ac-depth-labels" aria-hidden="true">{reasoning.options.map((option,index)=><span key={option.id} className={index===reasoning.index?'is-selected':''} style={{left:`${index/(reasoning.options.length-1)*100}%`}}>{reasoningEffortLabel(option)}</span>)}</div></div>:reasoning.options.length?<div className="ac-effort-list" role="radiogroup" aria-label="思考深度" onKeyDown={event=>{if(!['ArrowDown','ArrowUp','ArrowLeft','ArrowRight'].includes(event.key)||disabled)return;event.preventDefault();const next=(Math.max(0,reasoning.index)+(event.key==='ArrowDown'||event.key==='ArrowRight'?1:-1)+reasoning.options.length)%reasoning.options.length;selectEffort(next);event.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]')[next]?.focus();}}>{reasoning.options.map((effort,index)=><Button key={effort.id} role="radio" tabIndex={index===Math.max(0,reasoning.index)?0:-1} aria-checked={index===reasoning.index} type="text" className={index===reasoning.index?'is-selected':''} disabled={disabled} onClick={()=>selectEffort(index)}><span>{reasoningEffortLabel(effort)}</span>{index===reasoning.index&&<CheckOutlined aria-hidden="true"/>}</Button>)}</div>:<p className="ac-effort-unavailable">此模型未提供可调节的推理强度</p>}
     </div>
@@ -92,5 +93,5 @@ export function ConversationAgentSelect({connections,value,disabled,onChange,mod
       labelRender={({label})=><span className="ac-agent-label"><RobotOutlined aria-hidden="true"/>{label}</span>} value={value.connectionId||undefined} placeholder="选择智能体" disabled={disabled} popupMatchSelectWidth={false} placement="topLeft"
       classNames={{popup:{root:'ac-panel-popup ac-choice-popup'}}}
       options={connections.map(item=>({value:item.id,label:providerNames[item.provider]||item.label}))}
-      onChange={connectionId=>onChange(officialConversationChoice(connections.find(item=>item.id===connectionId),modelCatalog??context?.modelCatalog??[]),true)}/>);
+      onChange={connectionId=>{const connection=connections.find(item=>item.id===connectionId),catalog=modelCatalog??context?.modelCatalog??[];onChange(restoreReasoningChoice(officialConversationChoice(connection,catalog),connection,catalog),true);}}/>);
 }

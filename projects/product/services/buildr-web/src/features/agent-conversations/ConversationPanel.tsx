@@ -24,7 +24,7 @@ import { ConversationComposer } from './ConversationComposer';
 import { ConversationTurn } from './ConversationTurn';
 import { attachmentMimeType, imageSelectionError } from './conversation-images';
 import { extractVideoFrames } from './conversation-video';
-import {conversationPermissionKey,conversationPermissionStorageKey,conversationRunIdentity,permissionModeLabels,readConversationPermission,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,writeConversationPermission,type ConversationChoice,type PermissionMode} from './conversation-options';
+import {conversationPermissionKey,conversationPermissionStorageKey,conversationRunIdentity,permissionModeLabels,readConversationPermission,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,validConversationChoice,writeConversationPermission,type ConversationChoice,type PermissionMode} from './conversation-options';
 import { appendDraftAttachment, canGenerateConversationTitle, canStopConversationTool, conversationConflictNeedsRefresh, conversationTurnBinding, executionLocked, groupConversationStream, conversationStreamTurns, conversationTurnExecution, participantExecutionPairs, removeSubmittedAttachments, shouldSendOnKey, latestConversationParticipant, processBlockKey, type ConversationSelection } from './conversation-state';
 import { conversationActionKey, createConversationActions, createConversationInputAttempts } from './conversation-actions';
 import { useNewConversationImages } from './useNewConversationImages';
@@ -76,8 +76,9 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
   const defaultConnection=context.scope
     ?context.connections.find(item=>item.id===lastParticipant?.connectionId)||context.connections.find(item=>item.status==='ready')||context.connections[0]
     :context.connections.find(item=>item.id===newConversationChoice?.connectionId)||context.connections.find(item=>item.status==='ready')||context.connections[0];
-  const choice=seededChoice||(context.scope?{connectionId:defaultConnection?.id||'',model:chat?.run?.model,modelAccountId:chat?.run?.modelAccountId,modelAccountIdentity:chat?.run?.modelAccountIdentity,serviceTier:chat?.run?.serviceTier,reasoningEffort:chat?.run?.reasoningEffort}:newConversationChoice)||{connectionId:defaultConnection?.id||''};
-  const connection=context.connections.find(item=>item.id===choice.connectionId);
+  const rawChoice=seededChoice||(context.scope?{connectionId:defaultConnection?.id||'',model:chat?.run?.model,modelAccountId:chat?.run?.modelAccountId,modelAccountIdentity:chat?.run?.modelAccountIdentity,serviceTier:chat?.run?.serviceTier,reasoningEffort:chat?.run?.reasoningEffort}:newConversationChoice)||{connectionId:defaultConnection?.id||''};
+  const connection=context.connections.find(item=>item.id===rawChoice.connectionId);
+  const choice=validConversationChoice(rawChoice,connection,context.modelCatalog);
   const [permissionChoices,setPermissionChoices]=useState<Record<string,PermissionMode>>({});
   const permissionKey=conversationPermissionKey(context.scope,draftWorkspaceId);
   const permissionProfile=document.querySelector('meta[name="buildr-web-profile"]')?.getAttribute('content')||'local';

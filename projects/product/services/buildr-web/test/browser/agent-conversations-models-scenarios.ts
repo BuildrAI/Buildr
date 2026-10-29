@@ -51,4 +51,21 @@ await step('Devin SWE-2默认及完全访问可选，模式切换保留草稿与
         await chooseModel('共享模型');await closeModelSettings();assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isDisabled(),false);assert.equal(await input().inputValue(),'兼容选择草稿');assert.equal(fixture.sends,sendsBefore+4);assert.equal(fixture.prepares,preparesBefore+4);
       }finally{fixture.sharedModels=previousModels;update(previousConversation);await page.reload();await input().waitFor();await input().fill(previousDraft);await chooseOption('执行权限',previousPermission);}
     });
+
+await step('旧对话原生模型绑定来源和切换档位后仍恢复上次强度',async()=>{
+      const previousModels=fixture.sharedModels,previousConversation=structuredClone(fixture.conversation);
+      const native={id:'native-reasoning',modelId:'fixture-model',label:'原生模型记忆',accountId:'native-codex',accountIdentity:'native-identity',accountRevision:'native-r1',accountLabel:'原生账号',provider:'codex',available:true,enabled:true,images:true,tools:true,defaultServiceTier:'standard',serviceTiers:[
+        {id:'standard',label:'标准',reasoningEfforts:[{id:'medium',label:'中'},{id:'high',label:'高'}],defaultReasoningEffort:'medium'},
+        {id:'fast',label:'快速',reasoningEfforts:[{id:'medium',label:'中'},{id:'high',label:'高'}],defaultReasoningEffort:'medium'}]};
+      const other={...native,id:'other-reasoning',modelId:'other-model',label:'其他模型',accountId:'other-source',accountIdentity:'other-identity',provider:'fixture'};
+      try{
+        fixture.sharedModels=[native,other];update({participants:[{id:'participant-codex',connectionId:'codex',provider:'codex'}],run:run('stopped','codex',{model:'fixture-model',reasoningEffort:'medium'})});
+        await page.reload();await input().waitFor();await setHighEffort();
+        await modelSettings().getByRole('button',{name:'切换服务档位',exact:true}).click();
+        await chooseModel('其他模型');await chooseModel('原生模型记忆');
+        assert.equal(await modelSettings().getByRole('slider',{name:'思考深度',exact:true}).getAttribute('aria-valuetext'),'高');
+        assert.equal(fixture.conversation.run.reasoningEffort,'medium','主动选择不改写旧运行记录');
+        await closeModelSettings();await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();await assertModelSummary('Codex / 原生模型记忆','高');
+      }finally{fixture.sharedModels=previousModels;update(previousConversation);}
+    });
 }

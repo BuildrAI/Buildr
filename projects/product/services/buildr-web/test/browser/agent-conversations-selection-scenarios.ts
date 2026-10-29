@@ -31,6 +31,28 @@ await step('新对话跨工作空间恢复软件级选择，无关账号变化�
       }finally{fixture.sharedModels=previousModels;fixture.prepareError=undefined;await page.evaluate(({moduleKey,modelKey,module,model,execution}:{moduleKey:string;modelKey:string;module:string|null;model:string|null;execution:string|null})=>{for(const [key,value] of [[moduleKey,module],[modelKey,model],['buildr.execution-model',execution]] as const){if(value===null)localStorage.removeItem(key);else localStorage.setItem(key,value);}},storage);}
     });
 
+await step('不同来源的模型强度独立恢复，能力失效后首次发送不携带无效强度',async()=>{
+      const previousModels=fixture.sharedModels;
+      const first={id:'reasoning-a',modelId:'fixture-model',label:'记忆来源 A',accountId:'reasoning-a',accountIdentity:'identity-a',accountRevision:'r1',accountLabel:'来源 A',provider:'fixture',available:true,enabled:true,images:true,tools:true,reasoningEfforts:[{id:'medium',label:'中'},{id:'high',label:'高'}],defaultReasoningEffort:'medium'};
+      const second={...first,id:'reasoning-b',label:'记忆来源 B',accountId:'reasoning-b',accountIdentity:'identity-b',accountLabel:'来源 B',reasoningEfforts:[{id:'low',label:'低'},{id:'medium',label:'中'}],defaultReasoningEffort:'medium'};
+      try{
+        fixture.sharedModels=[first,second];await page.reload();await input().waitFor();await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();await chooseAgent('Codex');
+        const before=fixture.creations;await input().fill('推理强度失效后发送');
+        await chooseModel('记忆来源 A');await setHighEffort();
+        await chooseModel('记忆来源 B');const slider=modelSettings().getByRole('slider',{name:'思考深度',exact:true});await slider.press('Home');assert.equal(await slider.getAttribute('aria-valuetext'),'低');
+        await chooseModel('记忆来源 A');assert.equal(await slider.getAttribute('aria-valuetext'),'高');
+        await chooseModel('记忆来源 B');assert.equal(await slider.getAttribute('aria-valuetext'),'低');
+        await chooseModel('记忆来源 A');await closeModelSettings();await page.reload();await input().waitFor();await assertModelSummary('fixture / 记忆来源 A','高');
+        assert.equal(fixture.creations,before,'切换及刷新仍是统一草稿');
+        fixture.sharedModels=[{...first,reasoningEfforts:undefined,defaultReasoningEffort:undefined},second];
+        const catalogRefresh=page.waitForResponse((response:any)=>response.url().endsWith('/model-catalog'));await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await catalogRefresh;
+        await modelSettings().waitFor({state:'hidden'});await fixture.openModelSettings();await modelSettings().getByText('此模型未提供可调节的推理强度',{exact:true}).waitFor();await closeModelSettings();
+        await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();
+        assert.equal(fixture.creations,before+1);assert.equal(sentInputs.at(-1).modelAccountId,'reasoning-a');assert.equal(sentInputs.at(-1).reasoningEffort,undefined,'同名原生模型不能使共享来源发送失效强度');
+        await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
+      }finally{fixture.sharedModels=previousModels;}
+    });
+
 await step('唯一新草稿跨空间、旧对话与刷新恢复，默认空间不进入选项',async()=>{
       const existingId=fixture.conversation.id;
       await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();

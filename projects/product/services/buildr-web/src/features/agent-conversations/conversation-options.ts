@@ -35,6 +35,25 @@ export function conversationReasoningOptions(connection:ConnectionView|undefined
   return sortReasoningEfforts(model?.reasoningEfforts||[]);
 }
 
+/** 只依据所选来源及档位判断能力，不借用同名原生模型。undefined 表示尚未观察到来源。 */
+export function choiceReasoningOptions(choice:ConversationChoice,connection:ConnectionView|undefined,catalog:CatalogModel[]):ReadonlyArray<{id:string}>|undefined {
+  const modelId=choice.model??selectedConversationModel(connection)?.id??connection?.models[0]?.id;
+  const source=catalog.find(item=>item.accountId===(choice.modelAccountId??'native-'+choice.connectionId)&&item.modelId===modelId&&(!choice.modelAccountIdentity||item.accountIdentity===choice.modelAccountIdentity));
+  if(choice.modelAccountId||source){
+    if(!source)return;
+    const tier=source.serviceTiers?.find(item=>item.id===(choice.serviceTier??source.defaultServiceTier));
+    return tier?.reasoningEfforts??source.reasoningEfforts??[];
+  }
+  const model=selectedConversationModel(connection,modelId);
+  return model?model.reasoningEfforts??[]:undefined;
+}
+
+/** 只修正下一次选择和发送，不修改历史运行记录。 */
+export function validConversationChoice(choice:ConversationChoice,connection:ConnectionView|undefined,catalog:CatalogModel[]):ConversationChoice {
+  const options=choiceReasoningOptions(choice,connection,catalog);
+  return choice.reasoningEffort&&options&&!options.some(item=>item.id===choice.reasoningEffort)?{...choice,reasoningEffort:undefined}:choice;
+}
+
 export function conversationReasoningSelection(connection:ConnectionView|undefined,choice:ConversationChoice) {
   const model=selectedConversationModel(connection,choice.model);
   const options=conversationReasoningOptions(connection,choice.model);

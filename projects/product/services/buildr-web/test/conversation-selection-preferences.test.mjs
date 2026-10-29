@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {conversationPreferenceKeys,modelPreferenceFromChoice,preferredConversationChoice,readConversationModelPreference,readConversationModulePreference,rememberedConversationAgent,rememberedConversationPermission,rememberConversationAgent,rememberConversationPermission,writeConversationModelPreference,writeConversationModulePreference} from '../src/features/agent-conversations/conversation-preferences.ts';
+import {conversationPreferenceKeys,modelPreferenceFromChoice,preferredConversationChoice,readConversationModelPreference,readConversationModulePreference,rememberedConversationAgent,rememberedConversationPermission,rememberConversationAgent,rememberConversationPermission,rememberReasoningEffort,restoreReasoningChoice,reasoningMemoryKey,writeConversationModelPreference,writeConversationModulePreference} from '../src/features/agent-conversations/conversation-preferences.ts';
+import {validConversationChoice} from '../src/features/agent-conversations/conversation-options.ts';
 
 function storage(initial={}){const values=new Map(Object.entries(initial));return{getItem:key=>values.get(key)??null,setItem:(key,value)=>{values.set(key,value);},removeItem:key=>{values.delete(key);},dump:()=>Object.fromEntries(values)};}
 const connections=[
@@ -56,7 +57,7 @@ test('损坏或未知偏好按无记忆处理，不阻断默认选择',()=>{
 
 test('模型选择器记忆恢复准确来源、档位与思考深度，并按当前目录重新观察',()=>{
  const store=storage(),modulePreference={version:1,agent:{connectionId:'dsh'}};
- const remembered=modelPreferenceFromChoice({connectionId:'dsh',model:'swe-2',modelAccountId:'devin',serviceTier:'fast',reasoningEffort:'low'});
+ const remembered=modelPreferenceFromChoice({connectionId:'dsh',model:'swe-2',modelAccountId:'devin',modelAccountIdentity:'devin-identity',serviceTier:'fast',reasoningEffort:'low'});
  assert.equal(writeConversationModelPreference(remembered,store,'dev'),true);
  const selection=preferredConversationChoice(modulePreference,readConversationModelPreference(store,'dev'),connections,catalog);
  assert.deepEqual([selection.connectionId,selection.modelAccountId,selection.model,selection.serviceTier,selection.reasoningEffort,selection.modelAccountRevision,selection.modelAccountIdentity],['dsh','devin','swe-2','fast','low','devin-r1','devin-identity']);
@@ -82,4 +83,56 @@ test('native model draft memory restores only a currently supported reasoning ef
   const module={version:1,agent:{connectionId:'codex'}};
   assert.equal(preferredConversationChoice(module,{version:1,connectionId:'codex',model:'native-model',reasoningEffort:'high'},native,[]).reasoningEffort,'high');
   assert.equal(preferredConversationChoice(module,{version:1,connectionId:'codex',model:'native-model',reasoningEffort:'unsupported'},native,[]).reasoningEffort,undefined);
+});
+
+test('推理强度按执行者、模型和准确来源独立保存，其他选择器写入不会覆盖',()=>{
+ const store=storage(),connection={id:'codex',models:[{id:'same',isDefault:true,reasoningEfforts:[{id:'high'},{id:'low'}]}]};
+ const source={accountId:'one',accountIdentity:'identity-one',modelId:'same',reasoningEfforts:[{id:'medium'},{id:'high'}]};
+ const other={...source,accountId:'two',accountIdentity:'identity-two',reasoningEfforts:[{id:'low'}]};
+ const a={connectionId:'codex',model:'same',modelAccountId:'one',modelAccountIdentity:'identity-one'};
+ const b={...a,modelAccountId:'two',modelAccountIdentity:'identity-two'};
+ const native={connectionId:'codex',model:'same'},differentAgent={...a,connectionId:'dsh'};
+ for(const [choice,effort] of [[a,'high'],[b,'low'],[native,'low'],[differentAgent,'medium']])assert.equal(rememberReasoningEffort(choice,effort,store,'isolation'),true);
+ assert.equal(restoreReasoningChoice(a,connection,[source,other],store,'isolation').reasoningEffort,'high');
+ assert.equal(restoreReasoningChoice(b,connection,[source,other],store,'isolation').reasoningEffort,'low');
+ assert.equal(restoreReasoningChoice(native,connection,[source,other],store,'isolation').reasoningEffort,'low');
+ assert.equal(restoreReasoningChoice(differentAgent,connection,[source,other],store,'isolation').reasoningEffort,'medium');
+ assert.equal(restoreReasoningChoice(a,connection,[source],store,'another-profile').reasoningEffort,undefined);
+ assert.equal(restoreReasoningChoice({...a,modelAccountIdentity:'replaced'},connection,[{...source,accountIdentity:'replaced'}],store,'isolation').reasoningEffort,undefined);
+ assert.equal(store.dump()[reasoningMemoryKey(a,'isolation')],'high');
+});
+
+test('来源或档位不支持已选强度时回落，不借用同名原生模型，历史对象不变',()=>{
+ const store=storage(),connection={id:'codex',models:[{id:'same',isDefault:true,reasoningEfforts:[{id:'high'}]}]};
+ const choice={connectionId:'codex',model:'same',modelAccountId:'shared',modelAccountIdentity:'source',serviceTier:'fast',reasoningEffort:'high'};
+ const source={accountId:'shared',accountIdentity:'source',modelId:'same',reasoningEfforts:[{id:'high'}],defaultServiceTier:'fast',serviceTiers:[{id:'fast',reasoningEfforts:[{id:'high'}]},{id:'standard',reasoningEfforts:[{id:'low'}]}]};
+ rememberReasoningEffort(choice,'high',store,'capability');
+ assert.equal(restoreReasoningChoice({...choice,serviceTier:'standard'},connection,[source],store,'capability').reasoningEffort,undefined);
+ const noCapability={...source,reasoningEfforts:undefined,serviceTiers:undefined};
+ assert.equal(restoreReasoningChoice(choice,connection,[noCapability],store,'capability').reasoningEffort,undefined);
+ assert.equal(validConversationChoice(choice,connection,[noCapability]).reasoningEffort,undefined);
+ assert.equal(choice.reasoningEffort,'high','不修改历史或调用方原始对象');
+ assert.equal(restoreReasoningChoice(choice,connection,[source],store,'capability').reasoningEffort,'high','恢复支持后记忆仍在');
+});
+
+test('存储不可用仍可在当前页面记住选择；来源变更不沿用旧单槽强度',()=>{
+ const denied={getItem(){throw Error('denied')},setItem(){throw Error('denied')},removeItem(){}};
+ const native={connectionId:'codex',model:'native'},connection={id:'codex',models:[{id:'native',isDefault:true,reasoningEfforts:[{id:'high'}]}]};
+ assert.equal(rememberReasoningEffort(native,'high',denied,'denied'),false);
+ assert.equal(restoreReasoningChoice(native,connection,[],denied,'denied').reasoningEffort,'high');
+ const module={version:1,agent:{connectionId:'dsh'}};
+ const old={version:1,connectionId:'dsh',model:'swe-2',modelAccountId:'devin',modelAccountIdentity:'old-identity',reasoningEffort:'high'};
+ assert.equal(preferredConversationChoice(module,old,connections,catalog).reasoningEffort,undefined);
+ assert.equal(preferredConversationChoice(module,{...old,modelAccountIdentity:undefined},connections,catalog).reasoningEffort,undefined);
+});
+
+test('旧对话的原生模型绑定当前来源时使用同一份强度记忆',()=>{
+ const store=storage(),connection={id:'codex',models:[{id:'same',isDefault:true,reasoningEfforts:[{id:'medium'},{id:'high'}]}]};
+ const source={accountId:'native-codex',accountIdentity:'native-identity',modelId:'same',reasoningEfforts:[{id:'medium'},{id:'high'}]};
+ const legacy={connectionId:'codex',model:'same'},bound={...legacy,modelAccountId:source.accountId,modelAccountIdentity:source.accountIdentity};
+ rememberReasoningEffort(bound,'high',store,'native-binding');
+ assert.equal(restoreReasoningChoice(legacy,connection,[source],store,'native-binding').reasoningEffort,'high');
+ assert.equal(restoreReasoningChoice(bound,connection,[source],store,'native-binding').reasoningEffort,'high');
+ assert.equal(validConversationChoice({...legacy,reasoningEffort:'high'},connection,[{...source,reasoningEfforts:[]}]).reasoningEffort,undefined);
+ assert.equal(restoreReasoningChoice(legacy,connection,[{...source,accountIdentity:'replacement'}],store,'native-binding').reasoningEffort,undefined);
 });
