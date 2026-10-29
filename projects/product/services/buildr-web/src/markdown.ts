@@ -76,7 +76,7 @@ function imageFallback(doc, alt) {
 }
 
 function appendInline(parent, text, doc, linkOptions) {
-  const pattern = /!\[([^\]]*)\]\(([^)]+)\)|(\`+)([^\`]+?)\3|\*\*([^*]+)\*\*|\*([^*]+)\*|\[([^\]]+)\]\(([^)]+)\)/g;
+  const pattern = /!\[([^\]]*)\]\(([^)]+)\)|(\`+)([^\`]+?)\3|\*\*([^*]+)\*\*|\*([^*]+)\*|\[([^\]]+)\]\(([^)]+)\)|(https?:\/\/[^\s<>"']+)/g;
   let lastIndex = 0;
   let match;
   while ((match = pattern.exec(text)) !== null) {
@@ -101,7 +101,19 @@ function appendInline(parent, text, doc, linkOptions) {
     } else if (match[3] !== undefined) {
       const code = doc.createElement('code');
       code.textContent = match[4];
-      parent.append(code);
+      const codeUrl = /^https?:\/\/[^\s]+$/i.test(match[4].trim()) ? resolveSafeHref(match[4].trim(), linkOptions) : null;
+      if (codeUrl) {
+        const codeLink = doc.createElement('a');
+        codeLink.setAttribute('href', codeUrl.href);
+        if (codeUrl.external) {
+          codeLink.setAttribute('rel', 'noopener noreferrer');
+          codeLink.setAttribute('target', '_blank');
+        }
+        codeLink.append(code);
+        parent.append(codeLink);
+      } else {
+        parent.append(code);
+      }
     } else if (match[5] !== undefined) {
       const strong = doc.createElement('strong');
       strong.textContent = match[5];
@@ -110,6 +122,28 @@ function appendInline(parent, text, doc, linkOptions) {
       const em = doc.createElement('em');
       em.textContent = match[6];
       parent.append(em);
+    } else if (match[9] !== undefined) {
+      let url = match[9];
+      let trailing = '';
+      const trimmed = url.match(/[(.,;:!?\)\]'"，。；：！？、》）】」』]+$/);
+      if (trimmed) {
+        trailing = trimmed[0];
+        url = url.slice(0, url.length - trailing.length);
+      }
+      const resolved = resolveSafeHref(url, linkOptions);
+      if (resolved) {
+        const link = doc.createElement('a');
+        link.setAttribute('href', resolved.href);
+        if (resolved.external) {
+          link.setAttribute('rel', 'noopener noreferrer');
+          link.setAttribute('target', '_blank');
+        }
+        link.textContent = url;
+        parent.append(link);
+        if (trailing) parent.append(doc.createTextNode(trailing));
+      } else {
+        parent.append(doc.createTextNode(url + trailing));
+      }
     } else {
       const label = match[7];
       const resolved = resolveSafeHref(match[8], linkOptions);

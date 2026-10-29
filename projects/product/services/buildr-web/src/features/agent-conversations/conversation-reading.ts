@@ -2,8 +2,9 @@
 export function locateConversationContent(target: HTMLElement, underContext = true) {
   const stream = target.closest<HTMLElement>('.ac-stream');
   if (!stream) return;
-  const context = target.closest('.ac-turn')?.querySelector<HTMLElement>(':scope > .ac-turn-context');
-  const inset = underContext && context && getComputedStyle(context).position === 'sticky' && !context.contains(target) ? context.offsetHeight + 8 : 0;
+  /* The executing turn pins only its identity line; keep located content below that line. */
+  const line = target.closest('.ac-turn')?.querySelector<HTMLElement>(':scope > .ac-turn-identity');
+  const inset = underContext && line && getComputedStyle(line).position === 'sticky' && !line.contains(target) ? line.offsetHeight + 8 : 0;
   const top = stream.scrollTop + target.getBoundingClientRect().top - stream.getBoundingClientRect().top - inset;
   stream.scrollTo({ top: Math.max(0, top), behavior: 'auto' });
   if (target.tabIndex < 0 && !target.hasAttribute('tabindex')) target.tabIndex = -1;

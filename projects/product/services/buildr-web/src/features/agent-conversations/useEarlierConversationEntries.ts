@@ -64,7 +64,7 @@ export function useEarlierConversationEntries(props:Props){
  const onScroll=()=>{
   const node=stream.current;if(!node?.getClientRects().length)return;
   const upward=node.scrollTop<lastTop.current-1;
-  lastTop.current=node.scrollTop;position.current=node.scrollTop;bottom.current=node.scrollHeight-node.scrollTop-node.clientHeight<80;
+  lastTop.current=node.scrollTop;position.current=node.scrollTop;bottom.current=node.scrollHeight-node.scrollTop-node.clientHeight<24;
   if(upward)readEarlier();
  };
  return {loading,error,onScroll,

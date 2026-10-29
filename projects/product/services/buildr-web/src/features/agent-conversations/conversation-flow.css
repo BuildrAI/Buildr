@@ -15,15 +15,18 @@
 .ac-execution-indicator time{color:#84958b;line-height:20px}
 .ac-turn{position:relative;min-width:0;margin-bottom:24px}
 .ac-turn-context{position:static;min-width:0;margin-bottom:8px}
-.ac-turn.is-executing>.ac-turn-context{position:sticky;top:0;z-index:2;padding:8px 0;border-bottom:1px solid var(--soft-line,#dce5df);background:var(--soft-surface,#fff);box-shadow:0 6px 10px -9px color-mix(in srgb,var(--soft-ink,#252a31) 24%,transparent)}
-.ac-turn-prompt.ac-message{position:relative;margin-bottom:18px;padding-right:34px}
-.ac-turn-prompt-content{max-height:100px;overflow:hidden;overflow-wrap:anywhere}
-.ac-turn-prompt-content.is-expanded{height:240px;max-height:35vh;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.ac-turn.is-executing>.ac-turn-identity{position:sticky;top:0;z-index:2;padding-top:6px;background:var(--soft-surface,#fff);border-bottom:1px solid var(--soft-line,#dce5df);box-shadow:0 8px 14px -10px color-mix(in srgb,var(--soft-ink,#252a31) 32%,transparent)}
+.ac-turn-prompt.ac-message{position:relative;margin-bottom:18px;margin-right:12px}
+.ac-turn-prompt-content{max-height:100px;overflow:clip;overflow-wrap:anywhere}
+.ac-turn-prompt-content.is-expanded{height:auto;max-height:35vh;overflow:auto;scrollbar-width:thin}
 .ac-turn-prompt-content>p{white-space:pre-wrap;margin:0}
 .ac-turn-prompt-toggle{display:block;margin-top:6px;padding:0;border:0;background:transparent;font:inherit;font-size:var(--font-size-meta);color:var(--soft-primary,#397d74);cursor:pointer}
-.ac-turn-identity{display:flex;align-items:center;gap:6px 10px;min-height:27px;flex-wrap:wrap}
+.ac-turn-identity{display:flex;align-items:center;gap:6px 10px;min-height:27px;margin-bottom:8px;flex-wrap:wrap}
 .ac-turn-identity>.ac-message-identity{min-width:0;margin:0;overflow-wrap:anywhere}
 .ac-turn-identity>.ac-execution-indicator{flex:none;display:inline-flex}
+.ac-turn-identity-link.ac-turn-identity-toggle{gap:6px;padding:2px 6px;margin-left:-6px;border-radius:6px}
+.ac-turn-identity-link.ac-turn-identity-toggle:hover{background:color-mix(in srgb,var(--soft-primary,#397d74) 8%,var(--soft-surface,#fff))}
+.ac-turn-identity-caret{font-size:var(--icon-size-tiny,10px);color:var(--soft-muted,#698079)}
 .ac-turn-content{min-width:0}
 .ac-turn-content>.ac-assistant-reply{border:0;padding:0;margin-bottom:14px}
 .ac-thread-actions>.ac-stop-button.ant-btn{width:auto;padding-inline:8px;gap:5px;font-size: var(--font-size-body);color:var(--soft-primary,#397d74)}
@@ -50,8 +53,8 @@
 .ac-turn-identity{border-bottom:1px solid color-mix(in srgb,var(--soft-line,#dce5df) 65%,transparent);padding-bottom:8px;flex-wrap:nowrap}
 .ac-turn-identity>.ac-message-identity{flex:0 1 auto}
 .ac-turn-identity>.ac-turn-collapse{flex:none;justify-content:center;width:30px;height:30px;padding:0;border-radius:6px}
-.ac-turn.is-executing>.ac-turn-context{border-bottom:1px solid var(--soft-line,#dce5df);box-shadow:0 7px 16px -8px color-mix(in srgb,var(--soft-ink,#252a31) 30%,transparent)}
-.ac-turn.is-executing>.ac-turn-context>.ac-turn-identity{border-bottom:0;padding-bottom:0}
 .ac-process-inline:empty{display:none}
+.ac-step-group.is-live>summary,.ac-step.is-running>summary{animation:ac-live-row 2.2s ease-in-out infinite}
+@keyframes ac-live-row{0%,100%{background-color:transparent}50%{background-color:color-mix(in srgb,var(--soft-primary,#397d74) 9%,transparent)}}
+@media(prefers-reduced-motion:reduce){.ac-step-group.is-live>summary,.ac-step.is-running>summary{animation:none}}
 
-.ac-turn-prompt.ac-message{padding-right:0}

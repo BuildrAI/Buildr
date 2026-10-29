@@ -42,10 +42,12 @@ function ToolGroup({entries,active,onOpenFile,open,onToggle,toolsOpen,onToolTogg
   const kinds=new Set(tools.map(tool=>tool.kind));
   const counts=new Map<string,number>();
   for(const tool of tools)counts.set(tool.action,(counts.get(tool.action)||0)+1);
-  const label=entries.length>1?[...counts].map(([action,count])=>count>1?`${action} ×${count}`:action).join(' · '):`${tools[0].action} ${tools[0].description}`.trim();
+  const runningEntry=active?[...entries].reverse().find(entry=>entry.status==='running'):undefined;
+  const label=runningEntry?`${processTool(runningEntry).action} ${processTool(runningEntry).description}`.trim():entries.length>1?[...counts].map(([action,count])=>count>1?`${action} ×${count}`:action).join(' · '):`${tools[0].action} ${tools[0].description}`.trim();
   const failed=entries.filter(entry=>processEntryStatus(entry,active)==='failed').length;
   const unknown=entries.filter(entry=>processEntryStatus(entry,active)==='unknown').length;
-  return <details className={'ac-step-group'+(failed?' is-failed':'')} open={open} onToggle={event=>{if(event.target===event.currentTarget&&event.currentTarget.open!==open)onToggle(event.currentTarget.open);}}>
+  const live=Boolean(runningEntry);
+  return <details className={'ac-step-group'+(failed?' is-failed':'')+(live?' is-live':'')} open={open} onToggle={event=>{if(event.target===event.currentTarget&&event.currentTarget.open!==open)onToggle(event.currentTarget.open);}}>
     <summary data-entry-group={JSON.stringify(entries.map(entry=>entry.id))}>
       <span className="ac-step-node" aria-hidden="true"><ToolIcon kind={kinds.size===1?tools[0].kind:'tool'}/></span>
       <span className="ac-step-action">{entries.length} 次工具调用</span>
