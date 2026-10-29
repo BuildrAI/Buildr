@@ -17,7 +17,10 @@ export function ConversationForkAction({ conversation, entryId }: { conversation
       const child = await context.api.fork(conversation, entryId, requestId.current);
       if (context.isSelectionCurrent(selection)) {
         await context.openConversation(child.workspaceId, child.id, {preserveVisibility:true});
-        requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('.ac-panel textarea')?.focus());
+        requestAnimationFrame(() => {
+          const panel=document.getElementById('agent-conversation-panel');
+          if(panel?.dataset.conversationId===child.id)panel.querySelector<HTMLTextAreaElement>('textarea')?.focus();
+        });
       }
       void context.refreshActivity();
     } catch (failure) { setError(failure instanceof Error ? failure.message : '分叉未完成，原对话已保留。'); }

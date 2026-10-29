@@ -11,7 +11,7 @@ import type { StoredConnection, StoredConversation } from '../domain/agent-state
 export const CONVERSATION_SCHEMA_VERSION = 3;
 const SCHEMA_VERSION = CONVERSATION_SCHEMA_VERSION;
 // 附件准备不等于开始；已发送或结果未知的尝试仍必须可发现。
-const HAS_WORK = "(json_array_length(json_extract(body,'$.view.entries'))>0 OR json_array_length(json_extract(body,'$.attempts'))>0 OR json_type(body,'$.view.run')='object')";
+const HAS_WORK = "(json_array_length(json_extract(body,'$.view.entries'))>0 OR json_array_length(json_extract(body,'$.attempts'))>0 OR json_type(body,'$.view.run')='object' OR json_type(body,'$.view.childOf')='object')";
 
 /** Sole owner of the application's private interaction database. Reads never initialize it. */
 export class ConversationRepository {
@@ -113,7 +113,7 @@ export class ConversationRepository {
     try { const modern=(db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version>=2; const row = db.prepare(`SELECT body${modern?',summary':''} FROM conversations WHERE id=?`).get(id) as {body:string;summary?:string}|undefined; if(!row)return;const record=JSON.parse(row.body) as StoredConversation;if(row.summary)record.view.activity=JSON.parse(row.summary).activity;return record; }
     finally { db.close(); }
   }
-  listConversations(workspaceId: string, options: { taskId?: string; before?: string; limit: number; includeHidden?: boolean; query?: string }): StoredConversation[] {
+  listConversations(workspaceId: string, options: { parentConversationId?: string; taskId?: string; before?: string; limit: number; includeHidden?: boolean; query?: string }): StoredConversation[] {
     const db = this.open(false); if (!db) return [];
     try {
       const where = ['workspace_id=?']; const values: Array<string | number> = [workspaceId];
@@ -121,13 +121,20 @@ export class ConversationRepository {
       where.push(HAS_WORK);
       if (!options.includeHidden) where.push('hidden=0');
       if (options.taskId) { where.push('task_id=?'); values.push(options.taskId); }
+      if (options.parentConversationId) { where.push("json_extract(body,'$.view.childOf.conversationId')=?"); values.push(options.parentConversationId); }
       if (options.query) {
         where.push("(instr(lower(json_extract(body,'$.view.title')),lower(?))>0 OR EXISTS(SELECT 1 FROM json_each(body,'$.view.entries') AS entry WHERE instr(lower(json_extract(entry.value,'$.text')),lower(?))>0))");
         values.push(options.query, options.query);
       }
       if (options.before) { where.push('(updated_at || \'/\' || id) < ?'); values.push(options.before); }
       values.push(options.limit);
-      return (db.prepare(`SELECT body FROM conversations WHERE ${where.join(' AND ')} ORDER BY updated_at DESC,id DESC LIMIT ?`).all(...values) as { body: string }[]).map(row => JSON.parse(row.body));
+      const modern=(db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version>=2;
+      return (db.prepare(`SELECT body${modern?',summary':''} FROM conversations WHERE ${where.join(' AND ')} ORDER BY updated_at DESC,id DESC LIMIT ?`).all(...values) as {body:string;summary?:string}[]).map(row=>{
+        const record=JSON.parse(row.body) as StoredConversation;
+        // Seen state is maintained independently of conversation revisions.
+        if(row.summary)record.view.activity=JSON.parse(row.summary).activity;
+        return record;
+      });
     } finally { db.close(); }
   }
   listPending(includeActive = false): StoredConversation[] {

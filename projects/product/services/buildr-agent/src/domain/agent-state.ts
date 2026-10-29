@@ -69,6 +69,12 @@ export interface StoredParticipant {
 }
 export interface StoredConversation {
   forkRequest?: { digest: string; clientRequestId: string };
+  /** Immutable, visible source records, separate from this conversation's own messages. */
+  inheritedContext?: {
+    entries: import('../contracts.ts').ConversationEntry[];
+    outcomes: NonNullable<StoredConversation['runOutcomes']>;
+    pendingQuestions: string[];
+  };
   initialDraft?: { id: string; requestId: string; digest: string };
   view: ConversationView;
   hostScope?: import('../execution-contracts.ts').ExecutionScope;

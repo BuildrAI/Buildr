@@ -65,6 +65,7 @@ export class ConversationForks {
     child.view.id = childId;
     child.view.forkedFrom = { conversationId: id, workspaceId: scope, entryId: entry.id, runId, throughSequence: through, title: source.view.title, forkedAt: this.options.now() };
     child.view.entries = structuredClone(source.view.entries.filter(value => value.sequence <= through));
+    if (source.inheritedContext) child.inheritedContext = structuredClone(source.inheritedContext);
     child.runOutcomes = structuredClone(Object.fromEntries(Object.entries(source.runOutcomes ?? {}).filter(([key]) => child.view.entries.some(value => value.runId === key))));
     // Historical identities remain visible, but no original context can be resumed or controlled.
     child.participants = source.participants.filter(value => child.view.entries.some(entry => entry.participantId === value.id))
@@ -88,6 +89,7 @@ export class ConversationForks {
     }
     try {
       this.options.media.inherit(source, child);
+      this.checkpoint(child);
       const contextRef = await targetRuntime.forkContext({
         source: sourceRuntime, contextRef: participant.contextRef, cwd: child.view.cwd,
         executionRef: attempt.executionRef, itemId: sourceKey.slice(participant.id.length + ':message:'.length),

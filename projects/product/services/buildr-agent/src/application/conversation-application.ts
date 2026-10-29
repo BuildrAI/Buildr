@@ -29,6 +29,7 @@ import type { SupplementInput } from '../contracts.ts';
 import { ConversationDrafts } from './conversation-drafts.ts';
 import { ConversationForks } from './conversation-forks.ts';
 import type { ConversationForkInput } from '../contracts.ts';
+import { ConversationChildren, type CreateChildInput } from './conversation-children.ts';
 
 const TITLE_TIMEOUT_MS = 45_000;
 const MAX_TEXT_BYTES = 64 * 1024;
@@ -89,6 +90,7 @@ export class ConversationApplication {
   private readonly supplements: ConversationSupplements;
   private readonly media: ConversationAttachments;
   private readonly forks: ConversationForks;
+  private readonly children: ConversationChildren;
   private readonly options: {
     repository: ConversationRepository;
     connections: ConnectionApplication;
@@ -110,6 +112,9 @@ export class ConversationApplication {
       runtime: async (record, participant) => (await this.sourceRuntime(record, participant)).runtime,
       save: (record, initial) => this.save(record, initial), view: record => this.view(record),
     });
+    this.children = new ConversationChildren({repository:options.repository,media:this.media,now:options.now,
+      load:(scope,id)=>this.load(scope,id),candidate:(scope,input)=>this.candidate(scope,input),
+      save:record=>this.save(record,true),view:record=>this.view(record)});
     this.drafts = new ConversationDrafts({
       root: options.root, repository: options.repository, source: scope => options.host.ref(scope).sourceId,
       candidate: (scope, input) => this.candidate(scope, input),
@@ -329,6 +334,16 @@ export class ConversationApplication {
     return {activity:this.options.repository.markSeen(workspaceId,id,input.through)};
   }
 
+  createChild(workspaceId: string,id: string,input: CreateChildInput): Promise<ConversationView> {
+    return this.children.create(workspaceId,id,input);
+  }
+  listChildren(workspaceId: string,id: string,input: {cursor?:string;limit?:number} = {}) {
+    this.load(workspaceId,id);
+    const limit=bounded(input.limit,30,100);
+    const records=this.options.repository.listConversations(workspaceId,{parentConversationId:id,before:input.cursor,limit:limit+1});
+    const chosen=records.slice(0,limit);
+    return {conversations:chosen.map(record=>({...this.view(record,undefined,1),entries:[]})),nextCursor:records.length>limit?`${chosen.at(-1)!.view.updatedAt}/${chosen.at(-1)!.view.id}`:undefined};
+  }
   async create(workspaceId: string, input: { cwd?: string; taskId?: string; title?: string }): Promise<ConversationView> {
     const record = await this.candidate(workspaceId, input);
     this.options.repository.saveConversation(record);
@@ -448,12 +463,12 @@ export class ConversationApplication {
     if (!connection.capabilities.text) fail('agent_capability_unavailable', '此接入尚不支持文本输入。', 409);
     if (record.view.forkState && record.view.forkState.status !== 'ready') fail('agent_fork_pending', '此分叉尚未完成，不能发送新指令；原对话不受影响。', 409);
     const participant = record.participants.find(value => !value.historical && value.connectionId === input.connectionId && value.modelAccountId === input.modelAccountId && value.modelId === input.model && (!input.modelAccountId || value.modelAccountIdentity === source?.identity && value.modelConfiguration===configuration));
-    const through = record.view.entries.at(-1)?.sequence ?? 0;
-    const changes = handoffEntries(record.view.entries,participant?.deliveredThrough??0);
+    const through = record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0;
+    const changes = handoffEntries([...(record.inheritedContext?.entries??[]),...record.view.entries],participant?.deliveredThrough??0);
     const switching = record.participants.length > 0 && record.view.run?.participantId !== participant?.id;
     const history = changes.map(entry => ({sequence:entry.sequence,role:entry.role,provider:entry.provider,text:entry.kind==='tool'?`${entry.name??'工具'} · ${entry.status??'结果未知'}（具体内容见本地来源）`:entry.text.length>4096?entry.text.slice(0,4096)+'…（完整原文见本地来源）':entry.text}));
     const maxInputBytes=receivingBudget(connection.capabilities.maxInputBytes,boundModel&&'contextWindow' in boundModel?boundModel.contextWindow:undefined,boundModel&&'maxOutputTokens' in boundModel?boundModel.maxOutputTokens:undefined);
-    const localRounds=organizeHandoff(changes,{...record.runOutcomes,...(record.view.run?{[record.view.run.id]:record.view.run}:{})});
+    const localRounds=organizeHandoff(changes,{...record.inheritedContext?.outcomes,...record.runOutcomes,...(record.view.run?{[record.view.run.id]:record.view.run}:{})});
     const historicalImages=[...new Set(changes.flatMap(e=>e.attachments??[]))].map(id=>{try{const image=this.media.describe(record,id);return {...image,available:true};}catch{return {id,available:false};}});
     const sources=changes.length?handoffSources(this.options.root,record.view.id,changes,localRounds,historicalImages):undefined;
     const rounds=sources?.rounds??localRounds;
@@ -465,14 +480,15 @@ export class ConversationApplication {
     const ids=[...new Set([...priorImages,...currentImages])];
     const materials = this.media.expand(record, ids);
     const images = materials.images;
-    const context=JSON.stringify({conversationId:record.view.id,workspaceId:record.view.workspaceId,cwd:record.view.cwd,conversationTitle:record.view.title,taskId:record.view.taskId,sourceThrough:through,permissionMode:input.permissionMode,executionState:record.view.run?.status??'idle',sourceIndex:sources?.index,imageInputIds:ids,currentImageIds:currentImages,currentImages:images.filter(image=>currentImages.includes(image.id)),historicalImages:historicalImages.slice(-4),historicalImageCount:historicalImages.length,historicalImageNotice:historicalImages.length?'历史图片的全部准确引用见本地索引；此处只列最近四张。没有作为图像输入发送的部分须按需读取，不能假装已看到。':undefined});
+    const context=JSON.stringify({childOf:record.view.childOf,inheritedPendingQuestions:record.inheritedContext?.pendingQuestions,conversationId:record.view.id,workspaceId:record.view.workspaceId,cwd:record.view.cwd,conversationTitle:record.view.title,taskId:record.view.taskId,sourceThrough:through,permissionMode:input.permissionMode,executionState:record.view.run?.status??'idle',sourceIndex:sources?.index,imageInputIds:ids,currentImageIds:currentImages,currentImages:images.filter(image=>currentImages.includes(image.id)),historicalImages:historicalImages.slice(-4),historicalImageCount:historicalImages.length,historicalImageNotice:historicalImages.length?'历史图片的全部准确引用见本地索引；此处只列最近四张。没有作为图像输入发送的部分须按需读取，不能假装已看到。历史视频只提供带时间点的抽样画面，不含音轨，不能声称连续观看。':undefined});
     const questionEntries = changes.filter(entry=>entry.kind==='notice'&&entry.runId===record.view.run?.id);
     const hasHandoffAnswers = questionEntries.some(entry=>entry.id.startsWith('waiting-handoff-'));
     const unanswered = questionEntries.filter(entry=>entry.role==='system'&&entry.id.startsWith(hasHandoffAnswers?'waiting-handoff-':'waiting-question-')).map(entry=>entry.text);
     const suffix=`\n\n本次用户要求：\n${input.text}${materials.description}${unanswered.length?'\n原轮保留的问题与未回答事项（答复以明确记录为准，交接不代表同意）：\n'+unanswered.join('\n'):''}${waitingQuestions?'\n原轮问题及本次明确提交的回答：\n'+waitingQuestions.map(question=>waitingQuestionText(question,input.waitingHandoff!, answer => resolveQuestionAnswer(question,answer,ids=>this.media.expand(record,ids)).answer).text).join('\n'):''}${input.handoffSummary?'\n用户补充的交接说明（不替代本地历史）：\n'+input.handoffSummary:''}`;
-    const fullText=changes.length||switching?`${HANDOFF_PROMPT}\n工作位置与来源：${context}\n按轮次组织的本地记录：\n${formatHandoffRounds(rounds)}${suffix}`:input.text+materials.description;
+    const handoffPrompt=record.view.childOf?HANDOFF_PROMPT+'\n这是独立子对话。以上主对话记录只作为创建时的背景；不要继续或重复执行主对话任务、回答其问题或沿用一次性许可，只处理下方本次新要求。创建子对话只沿用起始工作位置，本身不新建或切换工作树（Worktree）；后续任务（Task）和实际工作位置仍按本次用户要求及适用规则安排，需要时使用已有能力新建任务（Task）与工作树（Worktree），不要求始终共享目录。主对话可能仍在执行，文件和外部系统必须重新核对。':HANDOFF_PROMPT;
+    const fullText=changes.length||switching?`${handoffPrompt}\n工作位置与来源：${context}\n按轮次组织的本地记录：\n${formatHandoffRounds(rounds)}${suffix}`:input.text+materials.description;
     const needsCompression=Buffer.byteLength(fullText)>maxInputBytes;
-    const text=needsCompression&&sources?`${HANDOFF_PROMPT}\n工作位置与来源：${context}\n完整历史共有 ${rounds.length} 轮，记录 #${changes[0]?.sequence??0}–#${through}，超过内联容量。请先读取本地索引 ${sources.index}，按各轮路径读取用户要求、授权纠正、失败未知、成果和待办。正文没有省略来源，具体内容需按引用读取。${suffix}`:fullText;
+    const text=needsCompression&&sources?`${handoffPrompt}\n工作位置与来源：${context}\n完整历史共有 ${rounds.length} 轮，记录 #${changes[0]?.sequence??0}–#${through}，超过内联容量。请先读取本地索引 ${sources.index}，按各轮路径读取用户要求、授权纠正、失败未知、成果和待办。正文没有省略来源，具体内容需按引用读取。${suffix}`:fullText;
     const previous=record.participants.find(p=>p.id===record.view.run?.participantId);
     const difference:Array<{kind:'agent'|'model';label:string;before:string;after:string}>=[];
     if(previous&&previous.connectionId!==input.connectionId)difference.push({kind:'agent',label:'智能体',before:previous.label,after:connection.label});
@@ -592,7 +608,7 @@ export class ConversationApplication {
       record.participants.push(participant);
     }
     const run: RunView = { id: randomUUID(), participantId: participant.id, provider: participant.provider, generation: this.options.generation, status: 'starting', accepted: false, tools: [], modelAccountId: prepared.draft.modelAccountId, modelAccountIdentity: prepared.preview.modelAccountIdentity, modelSourceLabel: prepared.preview.modelSourceLabel, model: prepared.draft.model, serviceTier:prepared.draft.serviceTier,reasoningEffort: prepared.draft.reasoningEffort, permissionMode: prepared.draft.permissionMode, startedAt: this.options.now(), updatedAt: this.options.now() };
-    const append = (entry: Omit<ConversationEntry, 'sequence' | 'createdAt'>) => { record.view.entries.push({ ...entry, sequence: (record.view.entries.at(-1)?.sequence ?? 0) + 1, createdAt: this.options.now() }); };
+    const append = (entry: Omit<ConversationEntry, 'sequence' | 'createdAt'>) => { record.view.entries.push({ ...entry, sequence: (record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0) + 1, createdAt: this.options.now() }); };
     if (prepared.preview.switching) append({ id: randomUUID(), kind: 'handoff', role: 'system', text: `交给 ${connection.label} · ${prepared.draft.model??'默认模型'}`, participantId: participant.id, provider: participant.provider, runId:run.id, status:'sending', handoff:prepared.preview.handoff });
     if (prepared.draft.handoffSummary !== undefined) append({ id: randomUUID(), kind: 'notice', role: 'user', text: `用户补充的交接说明：\n${prepared.draft.handoffSummary}`, participantId: participant.id,runId:run.id });
     const userEntryId = randomUUID();
@@ -645,7 +661,7 @@ export class ConversationApplication {
       if (entry.text === item.text && entry.status === item.status && !nameChanged && !inputChanged) return false;
       entry.text = item.text; entry.status = item.status; if (nameChanged) entry.name = item.name; if (inputChanged) entry.input = item.input; return true;
     }
-    entry = { id: randomUUID(), sequence: (record.view.entries.at(-1)?.sequence ?? 0) + 1, createdAt: this.options.now(), kind: item.kind, role: item.role, text: item.text, name: item.name, input: item.input, participantId: participant.id, provider: participant.provider, runId:runId??record.attempts.find(a=>a.participantId===participant.id&&(a.executionRef?.id===item.executionId||a.clientRequestId===item.executionId))?.runId, status: item.status };
+    entry = { id: randomUUID(), sequence: (record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0) + 1, createdAt: this.options.now(), kind: item.kind, role: item.role, text: item.text, name: item.name, input: item.input, participantId: participant.id, provider: participant.provider, runId:runId??record.attempts.find(a=>a.participantId===participant.id&&(a.executionRef?.id===item.executionId||a.clientRequestId===item.executionId))?.runId, status: item.status };
     record.view.entries.push(entry); record.sources[source] = entry.id;
     // A late native projection is known to this participant; intervening foreign
     // work and an input still awaiting acceptance are not. Never skip that gap.

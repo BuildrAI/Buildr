@@ -163,6 +163,8 @@ export function createAgentService(options: AgentServiceOptions) {
       markSeen: (workspaceId: string, id: string, input: Parameters<ConversationApplication['markSeen']>[2]) => conversations.markSeen(workspaceId, id, input),
       list: (workspaceId: string, input: Parameters<ConversationApplication['list']>[1] = {}) => conversations.list(workspaceId, input),
       fork: (workspaceId: string, id: string, input: Parameters<ConversationApplication['fork']>[2]) => conversations.fork(workspaceId, id, input),
+      createChild: (workspaceId:string,id:string,input:Parameters<ConversationApplication['createChild']>[2]) => conversations.createChild(workspaceId,id,input),
+      listChildren: (workspaceId:string,id:string,input:Parameters<ConversationApplication['listChildren']>[2]={}) => conversations.listChildren(workspaceId,id,input),
       create: (workspaceId: string, input: Parameters<ConversationApplication['create']>[1]) => conversations.create(workspaceId, input),
       read: (workspaceId: string, id: string, input: Parameters<ConversationApplication['read']>[2] = {}) => conversations.read(workspaceId, id, input),
       update: (workspaceId: string, id: string, input: Parameters<ConversationApplication['update']>[2]) => conversations.update(workspaceId, id, input),

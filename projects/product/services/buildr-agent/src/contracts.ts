@@ -289,6 +289,11 @@ export interface ConversationView {
   /** Immutable direct-parent provenance, independent of current titles and UI state. */
   forkedFrom?: ConversationForkOrigin;
   forkState?: { status: 'creating' | 'ready' | 'failed'; reason?: string };
+  /** Frozen provenance only; it never grants control over the parent execution. */
+  childOf?: {
+    conversationId: string; workspaceId: string; title: string; createdAt: string;
+    sourceRevision: string; throughSequence: number; state?: RunStatus;
+  };
   pendingSend?: PendingSendView;
   /** Independent observation version for append-only image admission. */
   attachmentRevision?: string;

@@ -2067,3 +2067,145 @@ for(const visual of [true,false])test('正式材料回答的容量与能力失�
   if(visual){await f.service.conversations.reply('workspace-one',chat.id,waiting.requests[0]!.id,{...input,answer:{scope:{text:'四份材料',attachmentIds:ids.slice(0,4)}}});assert.equal(native.replies.length,1);}
  }finally{await f.close();}
 });
+
+test('child conversations freeze all prior rounds and never replay inherited messages as new work',async()=>{
+  const native=fake(),f=fixture([native.executor]);
+  try{
+    await connected(f.service,'local');const parent=await f.service.conversations.create('workspace-one',{});
+    for(const text of ['早期决定：一次只展开一个','第二轮：使用右上角浮窗']){send(f.service,parent.id,'local',text);await waitUntil(()=>f.service.conversations.read('workspace-one',parent.id),v=>v.run?.status==='completed');}
+    const before=f.service.conversations.read('workspace-one',parent.id),calls=native.sends.length;
+    const input={expectedRevision:before.revision,clientRequestId:randomUUID()};
+    const child=await f.service.conversations.createChild('workspace-one',parent.id,input);
+    assert.deepEqual(f.service.conversations.read('workspace-one',parent.id),before);
+    assert.equal(native.sends.length,calls);assert.deepEqual(child.entries,[]);assert.deepEqual(child.participants,[]);assert.equal(child.run,undefined);
+    assert.equal(child.cwd,before.cwd,'creation inherits only the starting work location');
+    assert.equal(child.childOf?.throughSequence,before.entries.at(-1)!.sequence);
+    assert.equal(f.service.conversations.listChildren('workspace-one',parent.id).conversations[0]?.id,child.id);
+    send(f.service,parent.id,'local','创建后才出现的新消息');await waitUntil(()=>f.service.conversations.read('workspace-one',parent.id),v=>v.run?.status==='completed');
+    const untouched=f.service.conversations.read('workspace-one',parent.id);
+    const draft={expectedRevision:child.revision,connectionId:'local',text:'新建一个任务，使用独立工作树实现相关改动'};
+    const preview=f.service.conversations.prepareSend('workspace-one',child.id,draft);
+    assert.match(preview.handoff!.body,/早期决定：一次只展开一个/);assert.match(preview.handoff!.body,/第二轮：使用右上角浮窗/);
+    assert.doesNotMatch(preview.handoff!.body,/创建后才出现的新消息/);assert.match(preview.handoff!.body,/不要继续或重复执行主对话任务/);
+    assert.match(preview.handoff!.body,/后续任务.*本次用户要求及适用规则安排/);
+    assert.match(preview.handoff!.body,/需要时使用已有能力新建任务.*工作树/);
+    assert.doesNotMatch(preview.handoff!.body,/子对话不隔离实际文件/);
+    f.service.conversations.send('workspace-one',child.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',child.id),v=>v.run?.status==='completed');
+    assert.ok(native.sends.at(-1)!.text.includes('本次用户要求：\n'+draft.text),'the executor receives the new task/worktree instruction unchanged');
+    assert.equal(done.entries.filter(e=>e.role==='user').length,1);assert.ok(done.entries[0]!.sequence>before.entries.at(-1)!.sequence);
+    assert.notEqual(done.participants[0]?.contextId,before.participants[0]?.contextId);assert.deepEqual(f.service.conversations.read('workspace-one',parent.id),untouched);
+    const second=f.service.conversations.prepareSend('workspace-one',child.id,{expectedRevision:done.revision,connectionId:'local',text:'继续解释'});
+    assert.ok(!second.history.some(entry=>entry.text.includes('早期决定')),'same native participant already received inherited context');
+    await f.service.close();const cold=createAgentService(f.options);
+    try{assert.equal(cold.conversations.read('workspace-one',child.id).childOf?.conversationId,parent.id);assert.equal((await cold.conversations.createChild('workspace-one',parent.id,input)).id,child.id);assert.equal(native.sends.length,calls+2);}finally{await cold.close();}
+  }finally{await f.close();}
+});
+
+test('child creation from a waiting parent preserves the parent control and treats questions as background',async()=>{
+  const waiting=fake('parent',{question:true}),other=fake('child'),f=fixture([waiting.executor,other.executor]);
+  try{
+    for(const id of ['parent','child'])await connected(f.service,id);
+    const parent=await f.service.conversations.create('workspace-one',{});send(f.service,parent.id,'parent','先确认范围');
+    const before=await waitUntil(()=>f.service.conversations.read('workspace-one',parent.id),v=>v.run?.status==='waiting-question');
+    const child=await f.service.conversations.createChild('workspace-one',parent.id,{expectedRevision:before.revision,clientRequestId:randomUUID()});
+    assert.deepEqual(child.requests,[]);assert.equal(child.childOf?.state,'waiting-question');assert.deepEqual(waiting.replies,[]);
+    const preview=f.service.conversations.prepareSend('workspace-one',child.id,{expectedRevision:child.revision,connectionId:'child',text:'解释这个范围问题'});
+    assert.match(preview.handoff!.body,/具体范围/);assert.match(preview.handoff!.body,/waiting-question/);
+    send(f.service,child.id,'child','解释，不做选择');await waitUntil(()=>f.service.conversations.read('workspace-one',child.id),v=>v.run?.status==='completed');
+    assert.deepEqual(f.service.conversations.read('workspace-one',parent.id),before);assert.equal(waiting.replies.length,0);
+  }finally{await f.close();}
+});
+
+test('child creation is idempotent under concurrency and rejects a changed source version',async()=>{
+  const f=fixture([]);
+  try{
+    const parent=await f.service.conversations.create('workspace-one',{}),input={expectedRevision:parent.revision,clientRequestId:randomUUID()};
+    const children=await Promise.all(Array.from({length:4},()=>f.service.conversations.createChild('workspace-one',parent.id,input)));
+    assert.equal(new Set(children.map(row=>row.id)).size,1);assert.equal(f.service.conversations.listChildren('workspace-one',parent.id).conversations.length,1);
+    assert.equal(f.service.conversations.list('workspace-one').conversations.length,1,'an unsent child is discoverable, not a discarded draft');
+    const changed=await f.service.conversations.update('workspace-one',parent.id,{expectedRevision:parent.revision,title:'changed'});
+    await assert.rejects(f.service.conversations.createChild('workspace-one',parent.id,{...input,expectedRevision:changed.revision}),{code:'agent_request_conflict'});
+    await assert.rejects(f.service.conversations.createChild('workspace-one',parent.id,{...input,clientRequestId:randomUUID()}),{code:'agent_revision_conflict'});
+    assert.equal((await f.service.conversations.createChild('workspace-one',parent.id,input)).id,children[0]!.id);
+    assert.equal(f.service.conversations.read('workspace-one',children[0]!.id).childOf?.title,'新对话');
+    assert.throws(()=>f.service.conversations.listChildren('foreign',parent.id),{code:'agent_conversation_missing'});
+  }finally{await f.close();}
+});
+
+test('a child independently retains referenced video and frames but not unsent parent media',async()=>{
+  let now=new Date('2026-10-29T10:00:00Z');const native=fake('local',{images:true}),f=fixture([native.executor],{now:()=>now});
+  try{
+    await connected(f.service,'local');const parent=await f.service.conversations.create('workspace-one',{});
+    const png=Buffer.from('89504e470d0a1a0a','hex'),mp4=Buffer.from('000000186674797069736f6d0000020069736f6d69736f32','hex');
+    const upload=(mimeType:string,bytes:Buffer,video?:any)=>f.service.conversations.addAttachment('workspace-one',parent.id,{expectedRevision:f.service.conversations.read('workspace-one',parent.id).revision,mimeType,bytes,video});
+    const frame=upload('image/png',png),video=upload('video/mp4',mp4,{duration:1,frames:[{id:frame.id,time:0}]}),unsent=upload('image/png',png);
+    let before=f.service.conversations.read('workspace-one',parent.id);const draft={expectedRevision:before.revision,connectionId:'local',text:'看这个视频',attachmentIds:[video.id]};
+    const preview=f.service.conversations.prepareSend('workspace-one',parent.id,draft);f.service.conversations.send('workspace-one',parent.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
+    before=await waitUntil(()=>f.service.conversations.read('workspace-one',parent.id),v=>v.run?.status==='completed');
+    const child=await f.service.conversations.createChild('workspace-one',parent.id,{expectedRevision:before.revision,clientRequestId:randomUUID()});
+    assert.deepEqual(f.service.conversations.readAttachment('workspace-one',child.id,frame.id).bytes,png);
+    assert.deepEqual(f.service.conversations.readAttachment('workspace-one',child.id,video.id).bytes,mp4);
+    assert.throws(()=>f.service.conversations.readAttachment('workspace-one',child.id,unsent.id),{code:'agent_attachment_missing'});
+    const directory=path.join(f.options.dataRoot,'agent-service','attachments');
+    assert.notEqual(fs.statSync(path.join(directory,parent.id,video.id)).ino,fs.statSync(path.join(directory,child.id,video.id)).ino);
+    fs.unlinkSync(path.join(directory,parent.id,video.id));assert.deepEqual(f.service.conversations.readAttachment('workspace-one',child.id,video.id).bytes,mp4);
+    now=new Date(now.getTime()+25*60*60*1000);
+    f.service.conversations.addAttachment('workspace-one',child.id,{expectedRevision:child.revision,mimeType:'image/png',bytes:png});
+    assert.deepEqual(f.service.conversations.readAttachment('workspace-one',child.id,frame.id).bytes,png);
+    const prepared=f.service.conversations.prepareSend('workspace-one',child.id,{expectedRevision:f.service.conversations.read('workspace-one',child.id).revision,connectionId:'local',text:'解释抽样限制'});
+    assert.match(prepared.handoff!.body,/不含音轨/);
+  }finally{await f.close();}
+});
+
+test('long inherited background keeps complete indexed sources and never silently narrows to the latest turn',async()=>{
+  const native=fake(),f=fixture([native.executor]);
+  try{
+    await connected(f.service,'local');const parent=await f.service.conversations.create('workspace-one',{});
+    const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service')),record=repository.readConversation(parent.id)!;
+    record.view.entries=Array.from({length:8},(_,i)=>({id:randomUUID(),sequence:i+1,kind:'message',role:'user',text:`第${i}轮原始决定：`+'文'.repeat(16000),createdAt:'2026-10-29T00:00:00Z',runId:'round-'+i}));
+    repository.saveConversation(record,parent.revision);
+    const child=await f.service.conversations.createChild('workspace-one',parent.id,{expectedRevision:record.view.revision,clientRequestId:randomUUID()});
+    const preview=f.service.conversations.prepareSend('workspace-one',child.id,{expectedRevision:child.revision,connectionId:'local',text:'只解释第一轮决定'});
+    assert.equal(preview.handoff!.mode,'indexed');assert.equal(preview.fits,true);
+    assert.match(preview.handoff!.body,/后续任务.*本次用户要求及适用规则安排/);
+    const index=JSON.parse(fs.readFileSync(preview.handoff!.sourcePath!,'utf8'));assert.equal(index.rounds.length,8);
+    const first=JSON.parse(fs.readFileSync(index.rounds[0].path,'utf8'));assert.equal(first.records[0].text,record.view.entries[0]!.text);
+    assert.deepEqual(child.entries,[]);assert.equal(native.sends.length,0);
+  }finally{await f.close();}
+});
+
+test('missing inherited media rejects only child creation and paginated relation reads retain all children',async()=>{
+ const f=fixture([]);
+ try{
+  const parent=await f.service.conversations.create('workspace-one',{});
+  for(let n=0;n<3;n++)await f.service.conversations.createChild('workspace-one',parent.id,{expectedRevision:parent.revision,clientRequestId:'page-'+n});
+  const first=f.service.conversations.listChildren('workspace-one',parent.id,{limit:1});assert.equal(first.conversations.length,1);assert.ok(first.nextCursor);
+  const second=f.service.conversations.listChildren('workspace-one',parent.id,{limit:1,cursor:first.nextCursor});assert.notEqual(first.conversations[0]!.id,second.conversations[0]!.id);
+  const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service')),record=repository.readConversation(parent.id)!;
+  record.view.entries.push({id:randomUUID(),sequence:1,kind:'message',role:'user',text:'附件必须可读',attachments:[randomUUID()],createdAt:new Date().toISOString()});
+  repository.saveConversation(record,parent.revision);
+  await assert.rejects(f.service.conversations.createChild('workspace-one',parent.id,{expectedRevision:record.view.revision,clientRequestId:'missing'}),{code:'agent_attachment_missing'});
+  assert.equal(f.service.conversations.listChildren('workspace-one',parent.id).conversations.length,3);assert.equal(f.service.conversations.read('workspace-one',parent.id).revision,record.view.revision);
+ }finally{await f.close();}
+});
+
+test('child discovery reflects current unread and seen activity without changing conversation revisions',async()=>{
+  const native=fake('local'),f=fixture([native.executor]);
+  try{
+    await connected(f.service,'local');
+    const parent=await f.service.conversations.create('workspace-one',{});
+    const child=await f.service.conversations.createChild('workspace-one',parent.id,{expectedRevision:parent.revision,clientRequestId:randomUUID()});
+    send(f.service,child.id,'local','独立说明');
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',child.id),value=>value.run?.status==='completed');
+    assert.ok(done.activity!.version>done.activity!.seenThrough);
+    assert.deepEqual(f.service.conversations.listChildren('workspace-one',parent.id).conversations[0]!.activity,done.activity);
+    f.service.conversations.markSeen('workspace-one',child.id,{through:done.activity!.version});
+    const seen=f.service.conversations.read('workspace-one',child.id);
+    assert.equal(seen.revision,done.revision);
+    assert.equal(seen.activity!.seenThrough,seen.activity!.version);
+    assert.deepEqual(f.service.conversations.listChildren('workspace-one',parent.id).conversations[0]!.activity,seen.activity);
+    assert.deepEqual(f.service.conversations.list('workspace-one').conversations[0]!.activity,seen.activity);
+    assert.equal(f.service.conversations.read('workspace-one',parent.id).revision,parent.revision);
+  }finally{await f.close();}
+});

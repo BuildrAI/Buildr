@@ -124,10 +124,14 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         }
         return null;
       }
-      const match = suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})(?:\/(fork|prepare-send|send|supplement|pending-send|cancel-pending-send|generate-title|seen|observe|stop|events|entries|attachments|requests)(?:\/([a-f0-9-]{36})(?:\/(reply))?)?)?$/);
+      const match = suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})(?:\/(fork|prepare-send|send|supplement|pending-send|cancel-pending-send|generate-title|children|seen|observe|stop|events|entries|attachments|requests)(?:\/([a-f0-9-]{36})(?:\/(reply))?)?)?$/);
       if (!match) return null;
       const [, id, action, childId, reply] = match;
       if (request.method === 'GET') {
+        if (action === 'children' && !childId) {
+          query(searchParams,['cursor','limit']);
+          return result('conversations',await service.conversations.listChildren(workspaceId,id,{cursor:searchParams.get('cursor')??undefined,limit:numberQuery(searchParams.get('limit'))}));
+        }
         if (!action || action === 'entries') {
           query(searchParams, ['before', 'limit']);
           return result('conversation', await service.conversations.read(workspaceId, id, { before: numberQuery(searchParams.get('before')), limit: numberQuery(searchParams.get('limit')) }));
@@ -152,6 +156,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         return result('conversation', await service.conversations.update(workspaceId, id, input));
       }
       if (request.method !== 'POST') return null;
+      if (action === 'children' && !childId) return result('conversation',await service.conversations.createChild(workspaceId,id,validate('createChild',await readJsonBody())),201);
       if (action === 'prepare-send') return result('preview', await service.conversations.prepareHandoff(workspaceId, id, validate('draft', await readJsonBody(128 * 1024))));
       if (action === 'send') return result('sent', await service.conversations.send(workspaceId, id, validate('send', await readJsonBody(128 * 1024))), 202);
       if (action === 'pending-send') return result('conversation', await service.conversations.queueSend(workspaceId, id, validate('queueSend', await readJsonBody(128 * 1024))), 202);

@@ -17,22 +17,6 @@ const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(valu
 export class ConversationAttachments {
   private readonly options: { root: string; now(): string; save(record: StoredConversation): void };
   constructor(options: ConversationAttachments['options']) { this.options = options; }
-  inherit(source: StoredConversation, target: StoredConversation): void {
-    const ids = new Set(target.view.entries.flatMap(entry => entry.attachments ?? []));
-    for (const id of [...ids]) for (const frame of source.attachments[id]?.video?.frames ?? []) ids.add(frame.id);
-    if (!ids.size) return;
-    const directory = path.join(this.options.root, 'attachments', target.view.id);
-    for (const location of [path.dirname(directory), directory]) {
-      fs.mkdirSync(location, { recursive: true, mode: 0o700 });
-      if (!fs.lstatSync(location).isDirectory() || fs.lstatSync(location).isSymbolicLink()) fail('agent_attachment_unsafe', '附件目录来源不安全。', 409);
-    }
-    for (const id of ids) {
-      const material = this.read(source, id);
-      fs.writeFileSync(path.join(directory, id), material.bytes, { flag: 'wx', mode: 0o600 });
-      target.attachments[id] = structuredClone(source.attachments[id]!);
-    }
-    this.options.save(target);
-  }
   get(record: StoredConversation, id: string): ExecutorImage {
     const meta = record.attachments[id];
     if (!meta || !/^[a-f0-9-]{36}$/.test(id)) fail('agent_attachment_missing', '附件不属于此对话。', 404);
@@ -58,6 +42,29 @@ export class ConversationAttachments {
   }
   describe(record: StoredConversation, id: string) {
     return { ...this.get(record, id), ...(record.attachments[id]!.video ? { video: { ...record.attachments[id]!.video, frames: record.attachments[id]!.video!.frames.map(frame => ({ ...this.get(record, frame.id), time: frame.time })) } } : {}) };
+  }
+  /** Copy referenced media, not unsent drafts or native resource ownership. Safe to retry. */
+  inherit(source: StoredConversation, target: StoredConversation, ids: string[] = [...(target.inheritedContext?.entries??[]),...target.view.entries].flatMap(entry=>entry.attachments??[])): void {
+    const selected = new Set(ids);
+    for (const id of selected) for (const frame of source.attachments[id]?.video?.frames ?? []) selected.add(frame.id);
+    if (!selected.size) return;
+    for (const id of selected) this.get(source,id);
+    const root = path.join(this.options.root, 'attachments');
+    const directory = path.join(root, target.view.id);
+    for (const location of [root, path.join(root, source.view.id), directory]) {
+      if (location !== path.join(root, source.view.id)) fs.mkdirSync(location, {recursive:true,mode:0o700});
+      const stat = fs.lstatSync(location);
+      if (!stat.isDirectory() || stat.isSymbolicLink()) fail('agent_attachment_unsafe', '附件目录来源不安全。', 409);
+    }
+    for (const id of selected) {
+      const media = this.read(source, id);
+      target.attachments[id] = structuredClone(source.attachments[id]!);
+      try { fs.writeFileSync(path.join(directory,id),media.bytes,{flag:'wx',mode:0o600}); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+        if (!this.read(target,id).bytes.equals(media.bytes)) fail('agent_attachment_changed','子对话附件与原始内容不一致。',409);
+      }
+    }
   }
   add(record: StoredConversation, input: AttachmentInput, pendingIds: string[]) {
     if (input.expectedAttachmentRevision !== undefined) expected(hash(record.attachments), input.expectedAttachmentRevision);
@@ -85,7 +92,7 @@ export class ConversationAttachments {
       fs.mkdirSync(location, { recursive: true, mode: 0o700 });
       if (fs.lstatSync(location).isSymbolicLink()) fail('agent_attachment_unsafe', '附件目录来源不安全。', 409);
     }
-    const referenced = new Set([...record.view.entries.flatMap(entry => entry.attachments ?? []), ...pendingIds]);
+    const referenced = new Set([...(record.inheritedContext?.entries ?? []).flatMap(entry => entry.attachments ?? []), ...record.view.entries.flatMap(entry => entry.attachments ?? []), ...pendingIds]);
     for (const id of [...referenced]) for (const frame of record.attachments[id]?.video?.frames ?? []) referenced.add(frame.id);
     // Frames keep the parent's age; they must not expire seconds before an unsent video.
     const parentAge = new Map<string, number>();

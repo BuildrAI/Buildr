@@ -56,8 +56,9 @@ export function organizeHandoff(entries:ConversationEntry[],outcomes:Record<stri
  }
  return [...groups].map(([id,rows],i)=>{
   const assistant=rows.filter(e=>e.role==='assistant'&&e.kind==='message');const tools=rows.filter(e=>e.kind==='tool');
-  const candidate=assistant.at(-1);const final=candidate&&candidate.sequence>(tools.at(-1)?.sequence??0)&&candidate.status!=='running'?candidate:undefined;
   const outcome=outcomes[id];
+  const unfinished=outcome&&['starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown'].includes(outcome.status);
+  const candidate=assistant.at(-1);const final=!unfinished&&candidate&&candidate.sequence>(tools.at(-1)?.sequence??0)&&candidate.status!=='running'?candidate:undefined;
   return {id,title:`第 ${i+1} 轮`,...(outcome?{state:outcome.status,diagnostic:outcome.diagnostic,provider:outcome.provider,model:outcome.model}:{provider:rows.find(e=>e.provider)?.provider}),from:rows[0]!.sequence,through:rows.at(-1)!.sequence,
    userInputs:rows.filter(e=>e.role==='user').map(e=>e.text),assistantNotes:assistant.filter(e=>e!==final).map(e=>e.text),
    execution:executionOverview(tools),executionCount:tools.length,

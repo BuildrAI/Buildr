@@ -502,3 +502,28 @@ test('draft image HTTP is authenticated and never creates a conversation or bind
   response=await fetch(endpoint+'/attachments/'+original.id,{method:'DELETE',headers:{...readHeaders,origin:url,'content-type':'application/json'},body:JSON.stringify({expectedRevision:video.revision})});assert.equal(response.status,200);assert.deepEqual((await response.json()).images,[]);
   assert.equal(fs.existsSync(path.join(base,'agent-profile/agent-service/conversations.sqlite')),false);
 });
+
+test('child creation and discovery preserve provenance through authenticated HTTP without starting work',{timeout:30000},async t=>{
+  const {base,root}=taskRecordFixture(t,'agent-child-http'),previous=process.env.BUILDR_APP_DATA_DIR;
+  process.env.BUILDR_APP_DATA_DIR=path.join(base,'private-app');
+  t.after(()=>{if(previous===undefined)delete process.env.BUILDR_APP_DATA_DIR;else process.env.BUILDR_APP_DATA_DIR=previous;});
+  const runtime=createRuntime();let workspaceId:string;
+  const service=createAgentService({dataRoot:path.join(base,'profile'),executors:[],resolveWorkspace:id=>{assert.equal(id,workspaceId);return {rootPath:root};},assertTask:()=>{}});
+  const contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');
+  contributions.push(createAgentServiceHttpContribution(()=>service));
+  const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions});
+  const {url,initialWorkspaceId,sessionToken}=await server.ready;workspaceId=initialWorkspaceId;
+  t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(()=>resolve()));});
+  const headers={origin:url,'x-buildr-session':sessionToken,'content-type':'application/json'},endpoint=`${url}/api/v1/workspaces/${workspaceId}/agent-conversations`;
+  let response=await fetch(endpoint,{method:'POST',headers,body:'{}'});assert.equal(response.status,201);const parent=await response.json();
+  const input={expectedRevision:parent.revision,clientRequestId:'one-child-request'},children=`${endpoint}/${parent.id}/children`;
+  response=await fetch(children,{method:'POST',headers:{...headers,'x-buildr-session':'invalid'},body:JSON.stringify(input)});assert.equal(response.status,403);
+  response=await fetch(children,{method:'POST',headers,body:JSON.stringify({...input,cwd:'/unrelated'})});assert.equal(response.status,400);
+  response=await fetch(children,{method:'POST',headers,body:JSON.stringify(input)});assert.equal(response.status,201);const child=await response.json();
+  assert.equal(child.childOf.conversationId,parent.id);assert.equal(child.childOf.sourceRevision,parent.revision);assert.deepEqual(child.entries,[]);assert.equal(child.run,undefined);
+  response=await fetch(children,{method:'POST',headers,body:JSON.stringify(input)});assert.equal((await response.json()).id,child.id);
+  response=await fetch(children+'?limit=1',{headers});assert.equal(response.status,200);assert.equal((await response.json()).conversations[0].childOf.conversationId,parent.id);
+  response=await fetch(children+'?unknown=yes',{headers});assert.equal(response.status,400);
+  response=await fetch(`${endpoint}/${child.id}`,{headers});assert.equal((await response.json()).childOf.conversationId,parent.id);
+  response=await fetch(`${endpoint}/${parent.id}`,{headers});assert.equal((await response.json()).revision,parent.revision);
+});

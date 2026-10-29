@@ -176,3 +176,26 @@ test('an unused model-backed fork releases its idle private process and later re
     assert.equal(f.read(original.id).revision,source.revision);
   }finally{await f.close();}
 });
+
+test('forking a child preserves frozen background and referenced media for later independent handoff',async()=>{
+  const f=fixture();
+  try{
+    const parent=await f.start(),png=Buffer.from('89504e470d0a1a0a','hex');
+    const image=f.service.conversations.addAttachment('workspace',parent.id,{expectedRevision:parent.revision,mimeType:'image/png',bytes:png});
+    const source=await f.send(parent.id,'早期决定：只改支线',[image.id]);
+    const child=await f.service.conversations.createChild('workspace',parent.id,{expectedRevision:source.revision,clientRequestId:randomUUID()});
+    const done=await f.send(child.id,'解释支线实现');
+    const branch=await f.service.conversations.fork('workspace',child.id,{expectedRevision:done.revision,entryId:done.entries.findLast(entry=>entry.role==='assistant')!.id,clientRequestId:randomUUID()});
+    assert.equal(branch.forkedFrom?.conversationId,child.id);assert.equal(branch.childOf,undefined);
+    assert.equal(f.sends,2,'neither creation path sends a new work instruction');
+    const attachments=path.join(f.options.dataRoot,'agent-service','attachments');
+    for(const id of [parent.id,child.id])fs.unlinkSync(path.join(attachments,id,image.id));
+    assert.deepEqual(f.service.conversations.readAttachment('workspace',branch.id,image.id).bytes,png);
+    const next=await f.service.conversations.createChild('workspace',branch.id,{expectedRevision:branch.revision,clientRequestId:randomUUID()});
+    const preview=f.service.conversations.prepareSend('workspace',next.id,{expectedRevision:next.revision,connectionId:'local',text:'另开任务处理'});
+    assert.match(preview.handoff!.body,/早期决定：只改支线/);
+    assert.match(preview.handoff!.body,/解释支线实现/);
+    assert.deepEqual(f.service.conversations.readAttachment('workspace',next.id,image.id).bytes,png);
+    assert.deepEqual(f.read(child.id),done);assert.equal(f.sends,2);
+  }finally{await f.close();}
+});
