@@ -360,7 +360,8 @@ function hostRouterFixture(t: any, { origin = 'http://127.0.0.1:4457', closing =
       });
       const result = { status: 0, headers: {} as any, body: '' };
       const response = {
-        writeHead(status: number, responseHeaders: any) { result.status = status; result.headers = responseHeaders; },
+        setHeader(name: string, value: any) { result.headers[name.toLowerCase()] = value; },
+        writeHead(status: number, responseHeaders: any) { result.status = status; Object.assign(result.headers, responseHeaders); },
         end(body: any) { result.body = String(body); },
       };
       try { await router(input, response); } catch (error) { apiError(response, error); }
@@ -375,6 +376,7 @@ test('HTTP Host serves the connections workspace route on direct navigation and 
     const response = await fixture.request({ url: `/workspaces/00000000-0000-4000-8000-000000000000/${suffix}` });
     assert.equal(response.status, 200);
     assert.match(response.headers['content-type'], /text\/html/);
+    assert.match(response.headers['set-cookie'], /private-session-token/);
   }
   assert.equal((await fixture.request({ url: '/workspaces/00000000-0000-4000-8000-000000000000/connections-extra' })).status, 404);
 });
