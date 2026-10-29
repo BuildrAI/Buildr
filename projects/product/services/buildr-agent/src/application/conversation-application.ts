@@ -2,11 +2,13 @@ import { normalizeSendDraft } from '../domain/send-draft.ts';
 import { ConversationAttachments, MAX_IMAGE_BYTES, MAX_VISUAL_INPUTS } from './conversation-attachments.ts';
 import type { AttachmentInput } from '../contracts.ts';
 import { continuationDraft } from '../domain/conversation-continuation.ts';
+import { waitingHandoffQuestions, waitingQuestionText } from '../domain/waiting-question-handoff.ts';
 import { RETRY_DELAYS, transientFailure } from '../domain/transient-failure.ts';
 import { NativeRequestError } from '../domain/error-diagnostic.ts';
 import {selectedOffering,modelConfiguration} from '../model-access/model-preferences.ts';
 import type {ModelOffering} from '../model-access/contracts.ts';
 import type { ModelAccess } from '../model-access/application.ts';
+import { modelQuotaFailure } from '../model-access/quota.ts';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -144,13 +146,13 @@ export class ConversationApplication {
     const access = this.options.modelAccess; if (!access) fail('agent_model_source_unavailable', '模型套餐组件不可用。', 409);
     const work = access.leases.create({ accountId: participant.modelAccountId, expectedIdentity: participant.modelAccountIdentity, modelId: participant.modelId!,serviceTier:participant.serviceTier, conversationId: record.view.id, agentId: participant.connectionId, runId: record.view.run?.id ?? 'observe' }).then(async lease => ({ runtime: await this.options.connections.runtime(participant.connectionId, { identity: lease.identity, baseUrl: lease.baseUrl, apiKey: lease.apiKey,
       ...(lease.provider === 'native-qoder' && participant.connectionId === 'qoder' ? { nativeModel: { provider: 'qoder' as const, id: participant.modelId!, accountIdentity: participant.modelAccountIdentity! } } : {}),
-      models: [{id: lease.model, label: lease.offering.label, isDefault: true, reasoningEfforts: lease.offering.reasoningEfforts, defaultReasoningEffort: lease.offering.defaultReasoningEffort, contextWindow: lease.offering.contextWindow, maxOutputTokens: lease.offering.maxOutputTokens, vision: lease.offering.images, tools: lease.offering.tools}] }), model: lease.model, leaseIdentity:lease.identity })).catch(error => { this.sourceRuntimes.delete(participant.id); throw error; });
+      models: [{id: lease.model, label: lease.offering.label, isDefault: true, reasoningEfforts: lease.offering.reasoningEfforts, defaultReasoningEffort: lease.offering.defaultReasoningEffort, contextWindow: lease.offering.contextWindow, maxOutputTokens: lease.offering.maxOutputTokens, vision: lease.offering.images, tools: lease.offering.tools}] }), model: lease.model, leaseIdentity:lease.identity })).catch(error => { if(this.sourceRuntimes.get(participant.id)===work){this.sourceRuntimes.delete(participant.id);this.sourceOwners.delete(participant.id);this.sourceConnections.delete(participant.id);} throw error; });
     this.sourceConnections.set(participant.id, participant.connectionId); this.sourceRuntimes.set(participant.id, work); return work;
   }
   /** Retiring generations release only idle, conversation-specific runtimes.
    * Native contexts keep their writer until their owning process actually exits. */
   releaseIdleSources(owner?: {workspaceId:string; id:string}): Promise<void> {
-    if (this.releasingIdleSources) return this.releasingIdleSources;
+    if (this.releasingIdleSources) return owner ? this.releasingIdleSources.then(() => this.releaseIdleSources(owner)) : this.releasingIdleSources;
     const work = (async () => {
       for(const finish of [...this.sourceReleasePending.values()])await finish().catch(()=>false);
       const groups = new Map<AgentRuntime, Array<{id:string; leaseIdentity?:string; source:Promise<{runtime:AgentRuntime;model:string;leaseIdentity?:string}>}>>();
@@ -209,7 +211,7 @@ export class ConversationApplication {
     return work;
   }
   retainsConversationSource(workspaceId:string,id:string): boolean {
-    return this.sharedNativeContext || [...this.sourceOwners.values()].some(owner=>owner.workspaceId===workspaceId && owner.id===id);
+    return this.sharedNativeContext || [...this.sourceOwners.entries()].some(([participant,owner])=>this.sourceRuntimes.has(participant)&&owner.workspaceId===workspaceId && owner.id===id);
   }
   /** A retained process acknowledges release only after the exact native round and
    * all conversation-specific work have ended. Shared writers are never closed here. */
@@ -353,7 +355,7 @@ export class ConversationApplication {
     if (record.view.taskId) await this.options.host.verify(workspaceId, record.view.taskId);
   }
   validatePending(workspaceId: string, id: string, input: SendDraft): SendDraft {
-    if (input.continueRunId) fail('agent_continue_unavailable', '恢复动作不能排队到其他执行之后，请核对当前状态再继续。', 409);
+    if (input.continueRunId && !input.waitingHandoff) fail('agent_continue_unavailable', '恢复动作不能排队到其他执行之后，请核对当前状态再继续。', 409);
     const record = this.load(workspaceId, id);
     const draft = this.draft(input);
     for (const attachment of draft.attachmentIds ?? []) this.media.get(record, attachment);
@@ -373,7 +375,11 @@ export class ConversationApplication {
     const observed = this.load(workspaceId,id).view.run;
     if (previousRunId !== undefined && observed?.id !== previousRunId) fail('agent_revision_conflict','上一轮执行已变化，请重新读取后提交；草稿保留。',409);
     const draft = this.validatePending(workspaceId, id, raw);
-    this.pendingSends.submit(workspaceId, id, draft, requestId, expectedPendingRevision, this.draft(raw));
+    const record = this.load(workspaceId, id);
+    const waitingQuestions = draft.waitingHandoff ? waitingHandoffQuestions(record, draft, existing?.waitingQuestions) : undefined;
+    if (waitingQuestions && waitingQuestions.some(question => this.repliesInFlight.has(question.id))) fail('agent_reply_in_flight', '原问题正在回应，请等待原结果；交接内容保留。', 409);
+    if (draft.waitingHandoff && record.view.run?.status === 'waiting-question') this.prepare(record, draft);
+    this.pendingSends.submit(workspaceId, id, draft, requestId, expectedPendingRevision, this.draft(raw), waitingQuestions, record.view.run?.status === 'waiting-question');
     const view = this.read(workspaceId, id);
     this.options.events.publish({ type: 'conversation', workspaceId, conversationId: id, revision: view.revision, payload: { conversation: view } });
     return view;
@@ -387,7 +393,9 @@ export class ConversationApplication {
   }
   private draft(input: SendDraft): SendDraft { return normalizeSendDraft(input); }
   private prepare(record: StoredConversation, raw: SendDraft): { preview: SendPreview; text: string; images: ExecutorImage[]; draft: SendDraft;configuration?:string;needsCompression:boolean;fullText:string } {
-    let input = this.draft(raw); expected(record.view.revision, input.expectedRevision); this.assertIdle(record);
+    let input = this.draft(raw); expected(record.view.revision, input.expectedRevision);
+    const waitingQuestions = input.waitingHandoff ? waitingHandoffQuestions(record, input) : undefined;
+    if (!waitingQuestions) this.assertIdle(record);
     input = continuationDraft(record, input);
     const connection = this.options.connections.get(input.connectionId);
     if (!connection.enabled || (!input.modelAccountId && connection.status !== 'ready')) fail('agent_account_unavailable', '请先准备智能体程序，并连接所选模型账号。', 409);
@@ -400,8 +408,10 @@ export class ConversationApplication {
     // identity, model availability and capability are revalidated below.
     const availableModels = source?.models ?? connection.models;
     const selectedModel = input.model ? availableModels.find(model => model.id === input.model) : source ? source.models.find(model=>model.enabled!==false) : connection.models.find(model => model.isDefault);
+    if (waitingQuestions && source) { const quotaError = modelQuotaFailure(source, selectedModel as ModelOffering | undefined, Date.parse(this.options.now())); if (quotaError) throw quotaError; }
     if (input.model && !selectedModel) fail('agent_model_unavailable', '该模型不在当前接入的可用目录中。', 409);
     input.model = selectedModel?.id ?? input.model;
+    if (waitingQuestions) waitingHandoffQuestions(record, input);
     if(source&&selectedModel&&'enabled' in selectedModel&&selectedModel.enabled===false)fail('agent_model_disabled','所选模型已停用，请重新选择。',409);
     const boundModel=source&&selectedModel?selectedOffering(selectedModel as ModelOffering,input.serviceTier):selectedModel;
     if(input.serviceTier&&!source)fail('agent_model_tier_unavailable','原生默认模型不支持此共享服务档位。',409);
@@ -432,7 +442,10 @@ export class ConversationApplication {
     const materials = this.media.expand(record, ids);
     const images = materials.images;
     const context=JSON.stringify({conversationId:record.view.id,workspaceId:record.view.workspaceId,cwd:record.view.cwd,conversationTitle:record.view.title,taskId:record.view.taskId,sourceThrough:through,permissionMode:input.permissionMode,executionState:record.view.run?.status??'idle',sourceIndex:sources?.index,imageInputIds:ids,currentImageIds:currentImages,currentImages:images.filter(image=>currentImages.includes(image.id)),historicalImages:historicalImages.slice(-4),historicalImageCount:historicalImages.length,historicalImageNotice:historicalImages.length?'历史图片的全部准确引用见本地索引；此处只列最近四张。没有作为图像输入发送的部分须按需读取，不能假装已看到。':undefined});
-    const suffix=`\n\n本次用户要求：\n${input.text}${materials.description}${input.handoffSummary?'\n用户补充的交接说明（不替代本地历史）：\n'+input.handoffSummary:''}`;
+    const questionEntries = changes.filter(entry=>entry.kind==='notice'&&entry.runId===record.view.run?.id);
+    const hasHandoffAnswers = questionEntries.some(entry=>entry.id.startsWith('waiting-handoff-'));
+    const unanswered = questionEntries.filter(entry=>entry.role==='system'&&entry.id.startsWith(hasHandoffAnswers?'waiting-handoff-':'waiting-question-')).map(entry=>entry.text);
+    const suffix=`\n\n本次用户要求：\n${input.text}${materials.description}${unanswered.length?'\n原轮保留的问题与未回答事项（答复以明确记录为准，交接不代表同意）：\n'+unanswered.join('\n'):''}${waitingQuestions?'\n原轮问题及本次明确提交的回答：\n'+waitingQuestions.map(question=>waitingQuestionText(question,input.waitingHandoff!).text).join('\n'):''}${input.handoffSummary?'\n用户补充的交接说明（不替代本地历史）：\n'+input.handoffSummary:''}`;
     const fullText=changes.length||switching?`${HANDOFF_PROMPT}\n工作位置与来源：${context}\n按轮次组织的本地记录：\n${formatHandoffRounds(rounds)}${suffix}`:input.text+materials.description;
     const needsCompression=Buffer.byteLength(fullText)>maxInputBytes;
     const text=needsCompression&&sources?`${HANDOFF_PROMPT}\n工作位置与来源：${context}\n完整历史共有 ${rounds.length} 轮，记录 #${changes[0]?.sequence??0}–#${through}，超过内联容量。请先读取本地索引 ${sources.index}，按各轮路径读取用户要求、授权纠正、失败未知、成果和待办。正文没有省略来源，具体内容需按引用读取。${suffix}`:fullText;
@@ -451,7 +464,7 @@ export class ConversationApplication {
 
   async prepareHandoff(workspaceId:string,id:string,input:SendDraft):Promise<SendPreview>{
     const record=this.load(workspaceId,id),prepared=this.prepare(record,input);
-    if(input.skipHandoffSummary||!prepared.needsCompression||!prepared.preview.handoff)return prepared.preview;
+    if(input.waitingHandoff||input.skipHandoffSummary||!prepared.needsCompression||!prepared.preview.handoff)return prepared.preview;
     for(const cached of this.handoffPreviews.values())if(cached.baseToken===prepared.preview.token)return cached.prepared.preview;
     const previous=record.participants.find(p=>p.id===record.view.run?.participantId);
     const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),12_000);
@@ -490,7 +503,45 @@ export class ConversationApplication {
   }
 
   send(workspaceId: string, id: string, raw: SendDraft & { previewToken: string; clientRequestId: string }, systemRecovery = false): { run: RunView; conversation: ConversationView } {
+    if (raw.waitingHandoff) fail('agent_handoff_queue_required', '等待回答时请保存交接内容，系统会先结束原轮再发送。', 409);
     return this.submit(this.load(workspaceId, id), raw, systemRecovery);
+  }
+  /** Called only by the current receiver after claiming the durable submission. */
+  checkWaitingHandoff(workspaceId: string, id: string, requestId: string): void {
+    const pending = this.pendingSends.lookup(workspaceId, id, requestId);
+    if (!pending || ['cancelled','delivered'].includes(pending.state) || !pending.draft.waitingHandoff || !pending.waitingQuestions) fail('agent_handoff_stale', '交接已取消或变化。', 409);
+    waitingHandoffQuestions(this.load(workspaceId, id), pending.draft, pending.waitingQuestions);
+  }
+  preserveWaitingQuestions(workspaceId:string,id:string,requestId:string):void {
+    this.checkWaitingHandoff(workspaceId,id,requestId);
+    const pending=this.pendingSends.lookup(workspaceId,id,requestId)!,record=this.load(workspaceId,id);
+    let changed=false;
+    for(const question of pending.waitingQuestions!){
+      const entryId='waiting-question-'+question.runId+'-'+question.id;
+      if(record.view.entries.some(entry=>entry.id===entryId))continue;
+      record.view.entries.push({id:entryId,sequence:(record.view.entries.at(-1)?.sequence??0)+1,kind:'notice',role:'system',text:JSON.stringify({请求标识:question.id,问题:question.title,说明:question.description,问题列表:question.questions,选项:question.options,状态:'原问题；回答以用户明确提交的记录为准。',授权性质:'本记录只保留问题，不构成答复或授权。'}),runId:question.runId,participantId:question.participantId,createdAt:this.options.now()});
+      changed=true;
+    }
+    if(changed)this.save(record);
+  }
+  dispatchWaitingHandoff(workspaceId: string, id: string, requestId: string): ReturnType<ConversationApplication['send']> {
+    this.checkWaitingHandoff(workspaceId,id,requestId);
+    const pending = this.pendingSends.lookup(workspaceId,id,requestId)!;
+    if(pending.state!=='dispatching'||pending.owner!==this.options.generation)fail('agent_pending_conflict','交接领取已变化，请重新读取。',409);
+    const record = this.load(workspaceId,id), run = record.view.run!;
+    if (BUSY_STATES.has(run.status) || record.view.requests.length || run.tools.some(tool=>tool.status!=='completed')) fail('agent_conversation_busy', '原执行和工具尚未确认结束，交接已保存。', 409);
+    for (const question of pending.waitingQuestions!) {
+      const entryId = 'waiting-handoff-'+requestId+'-'+question.id;
+      if (record.view.entries.some(entry=>entry.id===entryId)) continue;
+      const {text,answered} = waitingQuestionText(question,pending.draft.waitingHandoff!);
+      record.view.entries.push({id:entryId,sequence:(record.view.entries.at(-1)?.sequence??0)+1,kind:'notice',role:answered?'user':'system',text,runId:run.id,participantId:run.participantId,status:'accepted',createdAt:this.options.now()});
+    }
+    // Save explicit answers atomically with the next run. A cancelled or failed
+    // handoff must not leave a business answer that a later model could adopt.
+    const {waitingHandoff,...ordinary}=pending.draft;
+    const draft={...ordinary,expectedRevision:record.view.revision,skipHandoffSummary:true};
+    const preview=this.prepare(record,draft).preview;
+    return this.submit(record,{...draft,previewToken:preview.token,clientRequestId:requestId});
   }
   private submit(record: StoredConversation, raw: SendDraft & { previewToken: string; clientRequestId: string }, systemRecovery = false, initial = false): { run: RunView; conversation: ConversationView } {
     const { workspaceId, id } = record.view;
@@ -751,9 +802,13 @@ export class ConversationApplication {
   }
 
   private async retryFailure(workspaceId: string, id: string, runId: string, prepared: ReturnType<ConversationApplication['prepare']>, count: number, rootRunId: string, reason: string, runtime?: AgentRuntime): Promise<void> {
-    if (this.closing || this.cancelledRetries.has(runId) || !transientFailure(reason)) return;
+    if (this.closing || this.cancelledRetries.has(runId)) return;
     let record = this.currentRun(workspaceId, id, runId);
     if (!record || record.view.run?.status !== 'failed' || record.view.requests.length || record.interruption?.cancelled || record.view.run.tools.some(tool => tool.status !== 'completed')) return;
+    const account=record.view.run.modelAccountId?this.options.modelAccess?.accounts.snapshot(record.view.run.modelAccountId):undefined;
+    const quotaFailure=account&&account.identity===record.view.run.modelAccountIdentity&&modelQuotaFailure(account,account.models.find(model=>model.id===record!.view.run!.model),Date.parse(this.options.now()));
+    if(quotaFailure){record.view.run.diagnostic=quotaFailure.message;this.save(record);return;}
+    if(!transientFailure(reason))return;
     if (count >= RETRY_DELAYS.length) { record.view.run.diagnostic = `自动重试已达上限（${RETRY_DELAYS.length} 次），工作记录已保留。${record.view.run.diagnostic ?? ''}`; this.save(record); return; }
     if (runtime) {
       const participant = record.participants.find(value => value.id === record!.view.run!.participantId)!;
@@ -782,6 +837,9 @@ export class ConversationApplication {
       if (controller.signal.aborted || this.closing || !record || record.view.run?.status !== 'starting') return;
       this.retryWaits.delete(runId);
       record.view.run.status = 'failed'; record.view.run.diagnostic = diagnostic; this.save(record);
+      const latestAccount=record.view.run.modelAccountId?this.options.modelAccess?.accounts.snapshot(record.view.run.modelAccountId):undefined;
+      const latestQuotaFailure=latestAccount&&latestAccount.identity===record.view.run.modelAccountIdentity&&modelQuotaFailure(latestAccount,latestAccount.models.find(model=>model.id===record!.view.run!.model),Date.parse(this.options.now()));
+      if(latestQuotaFailure){record.view.run.diagnostic=latestQuotaFailure.message;this.save(record);return;}
       // Preparation rechecks source identity, current model, permission and saved revision.
       const draft: SendDraft = { ...prepared.draft, continueRunId: undefined, expectedRevision: record.view.revision, skipHandoffSummary: true,
         ...(runtime ? { text: '系统自动重试：上次执行因临时服务故障明确结束，已确认没有未结束的工具。请核对原对话、当前成果及工具结果，继续完成用户尚未完成的目标；不要重放全部历史命令，不扩大原有授权。' } : {}) };
@@ -1141,11 +1199,13 @@ export class ConversationApplication {
     const binding = control.record.requests[requestId];
     if (!request || !binding || !control.participant.contextRef || request.generation !== this.options.generation) fail('agent_request_stale', '此问题或授权已失效，请重新观察。', 409);
     if (this.repliesInFlight.has(requestId)) fail('agent_reply_in_flight', '此请求正在回应，请等待原结果。', 409);
+    if (this.pendingSends.read(workspaceId,id)?.draft.waitingHandoff) fail('agent_handoff_pending', '已保存交接，回答将交给新模型；如要回应原轮，请先取消待发送。', 409);
     this.repliesInFlight.add(requestId);
     try {
     const runtime = (await this.sourceRuntime(control.record, control.participant)).runtime;
     // Recheck after asynchronous connection setup before causing a native effect.
     const fresh = this.load(workspaceId, id);
+    if (this.pendingSends.read(workspaceId,id)?.draft.waitingHandoff) fail('agent_handoff_pending', '已保存交接，请先取消后再回应原轮。', 409);
     if (!fresh.requests[requestId] || fresh.view.run?.id !== input.runId) fail('agent_request_stale', '此交互已变化。', 409);
     const answerText=JSON.stringify({请求标识:requestId,问题:request.title,说明:request.description,问题列表:request.questions,选项:request.options,回答:input.answer,授权性质:request.kind==='approval'?'仅原请求及其明确范围，不自动扩展到后续执行方或重放':'用户答复'});
     if(Buffer.byteLength(answerText)>MAX_TEXT_BYTES)fail('agent_reply_too_large','回答过长，请缩小后重试。',413);

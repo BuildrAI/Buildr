@@ -8,6 +8,24 @@ import { createAgentService } from '../../src/index.ts';
 import type { AgentExecutor, ExecutorOpenOptions } from '../../src/contracts.ts';
 import type { ModelProvider } from '../../src/model-access/contracts.ts';
 
+test('failed source initialization releases its owner so the same conversation can retry',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-source-owner-'));let failOpen=true,execution='';
+ const capabilities={text:true,images:false,approval:false,questions:false,stop:true,resume:true,maxInputBytes:65536};
+ const executor:AgentExecutor={descriptor:{id:'codex',label:'Codex',capabilities},async open(options){
+  if(options.gateway&&failOpen)throw new Error('fixture source runtime unavailable');
+  return{bindingIdentity:'fixture',capabilities,inspectAccount:async()=>({status:'ready'}),models:async()=>[{id:'fixture',label:'Fixture'}],beginLogin:async()=>{},cancelLogin:async()=>{},createContext:async()=>({id:randomUUID()}),resumeContext:async()=>{},readHistory:async()=>[],send:async input=>{execution=input.clientRequestId;input.onEvent({type:'accepted',executionRef:{id:execution}});input.onEvent({type:'completed',status:'completed'});},observe:async()=>({status:'idle',tools:[],executionRef:{id:execution}}),reply:async()=>{},stop:async()=>({status:'stopped',tools:[]}),close:async()=>{}};
+ }};
+ const provider:ModelProvider={id:'fixture',label:'Fixture',async open(){return{protocol:'chat-completions',inspect:async()=>({status:'ready',models:[{id:'fixture',label:'Fixture',images:false,tools:false}]}),beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>{throw new Error('no paid calls');},close:async()=>{}};}};
+ const service=createAgentService({dataRoot:root,executors:[executor],modelProviders:[provider],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+ try{
+  await service.connections.connect('codex',{expectedRevision:'unconfigured'});const added=await service.models.accounts.add({provider:'fixture'}),account=await service.models.accounts.check(added.id);await service.models.accounts.preferences(account.id,{expectedRevision:account.revision,models:[{id:'fixture',enabled:true}]});
+  const chat=await service.conversations.create('workspace',{}),draft={expectedRevision:chat.revision,connectionId:'codex',modelAccountId:account.id,model:'fixture',text:'original goal'},preview=service.conversations.prepareSend('workspace',chat.id,draft);service.conversations.send('workspace',chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
+  let current=service.conversations.read('workspace',chat.id);for(let n=0;n<200&&current.run?.status!=='failed';n++){await new Promise(resolve=>setTimeout(resolve,5));current=service.conversations.read('workspace',chat.id);}assert.equal(current.run?.status,'failed');assert.equal(service.retainsConversationSource('workspace',chat.id),false);
+  failOpen=false;const retry={...draft,text:'',expectedRevision:current.revision,continueRunId:current.run!.id},next=service.conversations.prepareSend('workspace',chat.id,retry);service.conversations.send('workspace',chat.id,{...retry,previewToken:next.token,clientRequestId:randomUUID()});
+  for(let n=0;n<200&&service.conversations.read('workspace',chat.id).run?.status!=='completed';n++)await new Promise(resolve=>setTimeout(resolve,5));assert.equal(service.conversations.read('workspace',chat.id).run?.status,'completed');
+ }finally{await service.close();await rm(root,{recursive:true,force:true});}
+});
+
 test('only Qoder consuming its own linked account gets a native model route, with resumable source-bound contexts', async () => {
   const root = await mkdtemp(join(tmpdir(),'buildr-native-qoder-conversation-'));
   const opens: ExecutorOpenOptions[] = [], sent: Array<{context:string;model?:string;mode?:string}> = [], contexts = new Map<string,string>();

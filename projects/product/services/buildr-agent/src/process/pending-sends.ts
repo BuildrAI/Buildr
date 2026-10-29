@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { AgentService } from '../application/agent-service.ts';
-import { PendingSendRepository } from '../persistence/pending-send-repository.ts';
+import { PendingSendRepository, type PendingSendRecord } from '../persistence/pending-send-repository.ts';
 import { AgentServiceError, safeDiagnostic } from '../domain/agent-state.ts';
 
 /** Only the current receiver dispatches. Request lookup closes the crash window. */
@@ -13,6 +13,7 @@ export class PendingSends {
     active(): boolean;
     generationAlive(generation: string): boolean;
     conversationBusy(scope: string, id: string): Promise<boolean>;
+    stopWaitingHandoff?(row: PendingSendRecord, alreadyRequested: boolean): Promise<void>;
   };
   constructor(options: PendingSends['options']) { this.options = options; this.repository = new PendingSendRepository(path.join(options.dataRoot, 'agent-service')); }
   async pump(): Promise<void> {
@@ -28,14 +29,35 @@ export class PendingSends {
         if (row.state === 'dispatching' && row.owner && this.options.generationAlive(row.owner)) continue;
         let claimed: ReturnType<PendingSendRepository['claim']> = undefined;
         try {
-          if (await this.options.conversationBusy(row.scope, row.conversationId)) continue;
+          if (row.draft.waitingHandoff) {
+            service.checkWaitingHandoff(row.scope,row.conversationId,row.id);
+            await service.verifyNext(row.scope,row.conversationId);
+            const waiting = service.conversations.read(row.scope,row.conversationId);
+            if (waiting.run?.status==='waiting-question' && !row.handoffStopRequested) {
+              const preview = service.conversations.prepareSend(row.scope,row.conversationId,{...row.draft,expectedRevision:waiting.revision});
+              if(!preview.fits)throw new AgentServiceError('agent_input_too_large',preview.diagnostic??'交接内容超过所选模型容量。',409);
+            }
+            if (!this.options.active()) continue;
+            if(!this.options.stopWaitingHandoff)throw new AgentServiceError('agent_handoff_unavailable','当前后台尚不支持结束问题等待，交接内容已保留。',409);
+            claimed=this.repository.claim(row,service.generation,this.options.generationAlive);
+            if(!claimed)continue;
+            service.preserveWaitingQuestions(row.scope,row.conversationId,row.id);
+            await this.options.stopWaitingHandoff(claimed,Boolean(row.handoffStopRequested));
+            service.checkWaitingHandoff(row.scope,row.conversationId,row.id);
+          }
+          if (await this.options.conversationBusy(row.scope, row.conversationId)) { const reason=row.draft.waitingHandoff?'正在核对原轮及工具是否结束，确认释放后交给新模型；可取消下一轮，已停止的等待不会恢复。':'等待上一轮释放执行资源，结束后将自动发送。'; if(claimed||row.reason!==reason)this.repository.finish(claimed??row,'waiting',reason); continue; }
           await service.verifyNext(row.scope, row.conversationId);
+          if(row.draft.waitingHandoff){
+            if(!this.options.active()){this.repository.finish(claimed!,'waiting','交接已保存，等待当前接收后台就绪。');continue;}
+            service.dispatchWaitingHandoff(row.scope,row.conversationId,row.id);
+            this.repository.finish(claimed!,'delivered','已登记执行。');continue;
+          }
           const current = service.conversations.read(row.scope, row.conversationId);
           const draft = { ...row.draft, expectedRevision: current.revision };
           const preview = await service.conversations.prepareHandoff(row.scope, row.conversationId, draft);
           if (!preview.fits) throw new AgentServiceError('agent_input_too_large', preview.diagnostic ?? '待发送内容超过当前模型限制。', 409);
-          if (!this.options.active() || await this.options.conversationBusy(row.scope, row.conversationId)) continue;
-          claimed = this.repository.claim(row, service.generation, this.options.generationAlive);
+          if (!this.options.active() || await this.options.conversationBusy(row.scope, row.conversationId)) { if(claimed)this.repository.finish(claimed,'waiting','交接已保存，等待原轮释放或当前接收后台就绪。'); continue; }
+          claimed ??= this.repository.claim(row, service.generation, this.options.generationAlive);
           if (!claimed) continue;
           service.conversations.send(row.scope, row.conversationId, { ...draft, previewToken: preview.token, clientRequestId: row.id });
           this.repository.finish(claimed, 'delivered', '已登记执行。');
@@ -43,8 +65,8 @@ export class PendingSends {
           const saved = service.conversations.lookupRequest(row.scope, row.conversationId, row.id);
           if (saved.found) { this.repository.finish(claimed ?? row, 'delivered', '已登记执行。'); continue; }
           const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
-          // No native side effect has occurred. Transient observations can be
-          // retried, while invalid choices stay visible until explicitly edited.
+          // A waiting handoff may have stopped the old turn. Only observations,
+          // never new work, may be repeated until its exact end is confirmed.
           const waiting = /host_.*(unavailable|unreachable)|revision_conflict|preview_stale|conversation_busy|process_state_unconfirmed/.test(code);
           this.repository.finish(claimed ?? row, waiting ? 'waiting' : 'failed', safeDiagnostic(error));
         }

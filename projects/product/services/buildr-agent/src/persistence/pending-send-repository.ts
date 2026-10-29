@@ -11,6 +11,7 @@ export interface PendingSendRecord extends Omit<PendingSendView, 'state'> {
   conversationId: string;
   submissionDigest: string;
   owner?: string;
+  handoffStopRequested?: boolean;
 }
 const active = (value: PendingSendRecord) => value.state !== 'cancelled' && value.state !== 'delivered';
 /** A single durable next instruction per conversation, separate from native acceptance. */
@@ -49,10 +50,10 @@ export class PendingSendRepository {
   list(): PendingSendRecord[] { return this.use(false, db => this.rows(db).filter(active), []); }
   view(record: PendingSendRecord | undefined): PendingSendView | undefined {
     if (!record || !active(record)) return;
-    const { id, revision, state, draft, reason, createdAt, updatedAt } = record;
-    return structuredClone({ id, revision, state: state as PendingSendView['state'], draft, reason, createdAt, updatedAt });
+    const { id, revision, state, draft, reason, createdAt, updatedAt, waitingQuestions } = record;
+    return structuredClone({ id, revision, state: state as PendingSendView['state'], draft, reason, createdAt, updatedAt, ...(waitingQuestions ? {waitingQuestions} : {}) });
   }
-  submit(scope: string, id: string, draft: SendDraft, requestId: string, expectedRevision?: string, submitted = draft): PendingSendRecord {
+  submit(scope: string, id: string, draft: SendDraft, requestId: string, expectedRevision?: string, submitted = draft, waitingQuestions?: PendingSendView['waitingQuestions'], retryStop = false): PendingSendRecord {
     const submissionDigest = createHash('sha256').update(JSON.stringify(submitted)).digest('hex');
     return this.use(true, db => {
       const rows = this.rows(db, scope, id), existing = rows.find(row => row.id === requestId);
@@ -64,7 +65,7 @@ export class PendingSendRepository {
       if (expectedRevision !== undefined && (!current || current.id !== requestId || current.revision !== expectedRevision || current.state === 'dispatching')) fail('agent_pending_conflict', '待发送内容已变化或正在发送，请重新读取。', 409);
       if (expectedRevision === undefined && current) fail('agent_pending_conflict', '已有待发送内容，请修改或取消后继续。', 409);
       const now = new Date().toISOString();
-      return this.write(db, { scope, conversationId: id, id: requestId, revision: randomUUID(), state: 'waiting', draft, reason: '等待上一轮结束，新版就绪后将自动执行。', submissionDigest: existing?.submissionDigest ?? submissionDigest, createdAt: current?.createdAt ?? now, updatedAt: now });
+      return this.write(db, { scope, conversationId: id, id: requestId, revision: randomUUID(), state: 'waiting', draft, ...(waitingQuestions ? {waitingQuestions} : {}), ...(current?.handoffStopRequested && !retryStop ? {handoffStopRequested:true} : {}), reason: draft.waitingHandoff ? '交接内容已保存，正在核对并结束原轮等待；确认结束后交给新模型。' : '已保存，正在核对上一轮状态与执行后台。', submissionDigest: existing?.submissionDigest ?? submissionDigest, createdAt: current?.createdAt ?? now, updatedAt: now });
     }, undefined as never);
   }
   cancel(scope: string, id: string, revision: string): void {
@@ -78,7 +79,7 @@ export class PendingSendRepository {
     return this.use(true, db => {
       const current = this.rows(db, row.scope, row.conversationId).find(value => value.id === row.id);
       if (!current || current.revision !== row.revision || current.state === 'failed' || !active(current) || current.state === 'dispatching' && current.owner && ownerAlive(current.owner)) return;
-      return this.write(db, { ...current, state: 'dispatching', owner: generation, revision: randomUUID(), updatedAt: new Date().toISOString() });
+      return this.write(db, { ...current, state: 'dispatching', owner: generation, ...(current.draft.waitingHandoff ? {handoffStopRequested:true} : {}), revision: randomUUID(), updatedAt: new Date().toISOString() });
     }, undefined);
   }
   finish(row: PendingSendRecord, state: PendingSendRecord['state'], reason: string): void {

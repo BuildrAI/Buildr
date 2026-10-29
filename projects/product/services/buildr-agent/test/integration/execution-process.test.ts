@@ -14,7 +14,7 @@ import {request} from '../../src/process/transport.ts';
 
 const prepared=path.resolve(import.meta.dirname,'../../../buildr/node_modules/@buildr-ai/buildr-agent');
 const isLive=(pid:number)=>{try{process.kill(pid,0);return true;}catch{return false;}};
-async function until<T>(read:()=>Promise<T>,accept:(value:T)=>boolean):Promise<T>{let last:unknown;for(let n=0;n<200;n++){try{const value=await read();if(accept(value))return value;last=value;}catch(error){last=error;}await new Promise(resolve=>setTimeout(resolve,50));}assert.fail('state did not settle: '+JSON.stringify(last));}
+async function until<T>(read:()=>Promise<T>,accept:(value:T)=>boolean):Promise<T>{let last:unknown;for(let n=0;n<200;n++){try{const value=await read();if(accept(value))return value;last=value;}catch(error){last=error;}await new Promise(resolve=>setTimeout(resolve,50));}let startup='';const observed=last as {identity?:{dataRoot?:string}};if(observed?.identity?.dataRoot?.startsWith(os.tmpdir())){try{startup='\nstartup log: '+fs.readFileSync(path.join(observed.identity.dataRoot,'agent-service/process/startup.log'),'utf8').slice(-8192);}catch{}}assert.fail('state did not settle: '+JSON.stringify(last)+startup);}
 async function actor(options:{dataRoot:string;profileId:string;runtime:AgentRuntimeUnit;workspace:string}){
   const child=fork(path.join(import.meta.dirname,'fixtures/agent-host-process.mjs'),[path.join(options.runtime.directory,'build/index.js'),JSON.stringify(options)],{execPath:options.runtime.node,stdio:['ignore','pipe','pipe','ipc']});
   let output='';child.stderr?.on('data',value=>{output+=value;});
@@ -27,6 +27,39 @@ async function actor(options:{dataRoot:string;profileId:string;runtime:AgentRunt
   const call=(operation:string,args:unknown[]=[])=>new Promise<any>((resolve,reject)=>{const id=randomUUID();waiting.set(id,{resolve,reject});child.send({id,operation,args});});
   return{child,info,call,async close(){if(child.exitCode!==null||child.signalCode!==null)return;const exited=once(child,'exit');const id=randomUUID();child.send({id,action:'close'});await exited;}};
 }
+
+for(const answer of [false,true])test('waiting question handoff crosses retained generations and never replies to the old model; answer='+answer,{timeout:90000},async()=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-question-process-')),dataRoot=path.join(root,'profile'),workspace=path.join(root,'work'),packageRoot=path.join(root,'package');
+  fs.mkdirSync(workspace);fs.cpSync(prepared,packageRoot,{recursive:true});
+  fs.copyFileSync(path.join(import.meta.dirname,'fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/process-fixture.mjs'));
+  const marker=path.join(packageRoot,'build/fixture-version.json');fs.writeFileSync(marker,JSON.stringify({version:'old'}));
+  const runtime=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'}),profileId='question-handoff',scope=executionScopeKey({sourceId:'minimal',id:'directory'});
+  let main:Awaited<ReturnType<typeof actor>>|undefined,observer:AgentProcessConnection|undefined;
+  try{
+    main=await actor({dataRoot,profileId,runtime,workspace});observer=await connectAgentProcess({dataRoot,profileId,runtime,sourceId:'minimal'});const old=await observer.lifecycle.identity();
+    for(const id of ['first','second']){const connection=await main.call('connections.read',[id]);await main.call('connections.connect',[id,{expectedRevision:connection.revision}]);}
+    const added=await main.call('models.accounts.add',[{provider:'fixture-model'}]),checked=await main.call('models.accounts.check',[added.id]);await main.call('models.accounts.preferences',[added.id,{expectedRevision:checked.revision,models:[{id:'fixture',enabled:true}]}]);
+    const source={modelAccountId:added.id,model:'fixture'};
+    const start=async(text:string)=>{const chat=await main!.call('conversations.create',[scope,{}]),draft={expectedRevision:chat.revision,connectionId:'first',...source,text},preview=await main!.call('conversations.prepareSend',[scope,chat.id,draft]);await main!.call('conversations.send',[scope,chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()}]);return await until(()=>observer!.operations.conversations.read(scope,chat.id),view=>view.run?.accepted===true);};
+    let target=await start('question');const other=await start('hold:other');target=await until(()=>observer!.operations.conversations.read(scope,target.id),view=>view.run?.status==='waiting-question');
+    const original=target.run!,question=target.requests[0]!,requestId=randomUUID();
+    fs.writeFileSync(marker,JSON.stringify({version:'new'}));const next=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'});
+    await observer.lifecycle.requestRuntime({expectedGeneration:old.generation,runtime:next});const adopted=await until(()=>observer!.lifecycle.status(),status=>status.identity.runtime.digest===next.digest);
+    await main.close();main=undefined; // Content remains durable while no host can admit new work.
+    target=await observer.operations.conversations.read(scope,target.id);
+    const draft={expectedRevision:target.revision,connectionId:'second',...source,text:answer?'':'handle a new instruction',...(answer?{continueRunId:original.id}:{}),waitingHandoff:{runId:original.id,participantId:original.participantId,generation:original.generation,requestIds:[question.id],...(answer?{answers:[{requestId:question.id,answer:{scope:'later'}}]}:{})}};
+    target=await observer.operations.conversations.queueSend(scope,target.id,{...draft,clientRequestId:requestId});
+    assert.equal(target.pendingSend?.waitingQuestions?.[0]?.id,question.id);
+    main=await actor({dataRoot,profileId,runtime:next,workspace});await main.call('conversations.read',[scope,target.id]);
+    target=await until(()=>observer!.operations.conversations.read(scope,target.id),view=>!view.pendingSend&&view.run?.generation===adopted.identity.generation&&view.run?.status==='completed');
+    assert.equal(target.requests.length,0);assert.ok(target.entries.some(entry=>entry.id.startsWith('waiting-handoff-')&&entry.text.includes('Choose next work')));
+    assert.equal(fs.existsSync(path.join(dataRoot,'native-replies.jsonl')),false);
+    await observer.operations.conversations.queueSend(scope,target.id,{...draft,clientRequestId:requestId});
+    const sent=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(line=>JSON.parse(line));
+    assert.equal(sent.filter(value=>value.version==='new').length,1);assert.match(sent.find(value=>value.version==='new').text,answer?/"回答":\{"scope":"later"\}/:/未回答/);
+    assert.equal((await observer.operations.conversations.read(scope,other.id)).run?.status,'running');assert.ok(isLive(old.pid));
+  }finally{fs.writeFileSync(path.join(dataRoot,'release-other'),'yes');await main?.close();await observer?.disconnect();await stopAgentProcess({dataRoot,profileId,mode:'stop-owned'}).catch(()=>{});fs.rmSync(root,{recursive:true,force:true});}
+});
 
 test('independent process survives real host exits, preserves approvals and hands off only when idle', {timeout:90000},async()=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-process-')),dataRoot=path.join(root,'profile'),workspace=path.join(root,'work');fs.mkdirSync(workspace);
@@ -330,4 +363,34 @@ test('retiring process exits with an unknown historical result only after exact 
   const sent=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(v=>JSON.parse(v));assert.equal(sent.filter(v=>v.text==='uncertain-ended').length,1);assert.equal(sent.some(v=>v.text==='NEVER_REPLAY'),false);
   uncertain=await observer.operations.conversations.read(scope,uncertain.id);assert.equal(uncertain.run?.status,'unknown');assert.equal(uncertain.run?.resourcesReleased,true);assert.ok(uncertain.pendingSend);await observer.operations.conversations.cancelPendingSend(scope,uncertain.id,{expectedPendingRevision:uncertain.pendingSend!.revision});
  }finally{fs.writeFileSync(path.join(dataRoot,'release-other'),'yes');fs.writeFileSync(path.join(dataRoot,'release-uncertain-resource'),'yes');await main?.close();await observer?.disconnect();await stopAgentProcess({dataRoot,profileId,mode:'stop-owned'}).catch(()=>{});fs.rmSync(root,{recursive:true,force:true});}
+});
+
+test('cancelled next input can continue a terminal old round after automatic exact release, without stopping another conversation',{timeout:90000},async()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-cancel-continue-')),dataRoot=path.join(root,'profile'),workspace=path.join(root,'work'),packageRoot=path.join(root,'package');
+ fs.mkdirSync(workspace);fs.cpSync(prepared,packageRoot,{recursive:true});fs.copyFileSync(path.join(import.meta.dirname,'fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/process-fixture.mjs'));
+ const marker=path.join(packageRoot,'build/fixture-version.json');fs.writeFileSync(marker,JSON.stringify({version:'old'}));
+ const runtime=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'}),profileId='cancel-continue',scope=executionScopeKey({sourceId:'minimal',id:'directory'});
+ let main:Awaited<ReturnType<typeof actor>>|undefined,observer:AgentProcessConnection|undefined;
+ try{
+  main=await actor({dataRoot,profileId,runtime,workspace});observer=await connectAgentProcess({dataRoot,profileId,runtime,sourceId:'minimal'});const old=await observer.lifecycle.identity();
+  const connection=await main.call('connections.read',['first']);await main.call('connections.connect',['first',{expectedRevision:connection.revision}]);
+  const added=await main.call('models.accounts.add',[{provider:'fixture-model'}]),checked=await main.call('models.accounts.check',[added.id]);await main.call('models.accounts.preferences',[added.id,{expectedRevision:checked.revision,models:[{id:'fixture',enabled:true}]}]);
+  const choice={connectionId:'first',modelAccountId:added.id,model:'fixture'};
+  const start=async(text:string)=>{const chat=await main!.call('conversations.create',[scope,{}]),draft={...choice,text,expectedRevision:chat.revision},preview=await main!.call('conversations.prepareSend',[scope,chat.id,draft]);await main!.call('conversations.send',[scope,chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()}]);return await until(()=>observer!.operations.conversations.read(scope,chat.id),v=>v.run?.accepted===true);};
+  let target=await start('lost-observation');const other=await start('hold:other');target=await until(()=>observer!.operations.conversations.read(scope,target.id),v=>v.run?.status==='unknown');
+  target=await observer.operations.conversations.queueSend(scope,target.id,{...choice,text:'cancelled-next-input',clientRequestId:randomUUID(),expectedRevision:target.revision});await observer.operations.conversations.cancelPendingSend(scope,target.id,{expectedPendingRevision:target.pendingSend!.revision});
+  const walk=(dir:string):string[]=>fs.readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()?walk(path.join(dir,e.name)):[path.join(dir,e.name)]);
+  const filename=walk(path.join(dataRoot,'agent-service','connections')).find(file=>{try{return JSON.parse(fs.readFileSync(file,'utf8')).kind==='lost-observation';}catch{return false;}})!;assert.ok(filename);
+  const native=JSON.parse(fs.readFileSync(filename,'utf8'));native.status='stopped';fs.writeFileSync(filename,JSON.stringify(native));
+  target=await observer.operations.conversations.observe(scope,target.id);assert.equal(target.run?.status,'stopped');const originalRun=target.run!.id;
+  native.awaitingObservation=true;fs.writeFileSync(filename,JSON.stringify(native));
+  fs.writeFileSync(marker,JSON.stringify({version:'new'}));const next=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'});await observer.lifecycle.requestRuntime({expectedGeneration:old.generation,runtime:next});const adopted=await until(()=>observer!.lifecycle.status(),v=>v.identity.runtime.digest===next.digest);
+  await main.call('conversations.read',[scope,target.id]); // Attach the actual host to its adopted backend.
+  target=await observer.operations.conversations.read(scope,target.id);assert.equal(target.pendingSend,undefined);
+  const draft={...choice,continueRunId:originalRun,text:'',expectedRevision:target.revision},preview=await observer.operations.conversations.prepareSend(scope,target.id,draft),requestId=randomUUID();
+  await observer.operations.conversations.send(scope,target.id,{...draft,previewToken:preview.token,clientRequestId:requestId});
+  target=await until(()=>observer!.operations.conversations.read(scope,target.id),v=>v.run?.generation===adopted.identity.generation&&v.run?.status==='completed');
+  const sends=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(line=>JSON.parse(line));assert.equal(sends.filter(v=>v.version==='new').length,1);assert.ok(!sends.some(v=>v.text==='cancelled-next-input'));
+  assert.equal((await observer.operations.conversations.read(scope,other.id)).run?.status,'running');assert.ok(isLive(old.pid));assert.ok(!JSON.parse(fs.readFileSync(filename,'utf8')).awaitingObservation);
+ }finally{fs.writeFileSync(path.join(dataRoot,'release-other'),'yes');await main?.close();await observer?.disconnect();await stopAgentProcess({dataRoot,profileId,mode:'stop-owned'}).catch(()=>{});fs.rmSync(root,{recursive:true,force:true});}
 });

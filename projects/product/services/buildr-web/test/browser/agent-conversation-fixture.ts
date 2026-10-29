@@ -148,7 +148,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
       const body=request.postDataJSON(),previous=conversation.pendingSend;
       if(body.expectedPendingRevision&&previous?.revision!==body.expectedPendingRevision)return route.fulfill({status:409,json:{error:{code:'agent_pending_conflict',message:'待发送内容已经变化。'}}});
       const {clientRequestId,expectedPendingRevision,previousRunId,...draft}=body;
-      conversation.pendingSend={id:clientRequestId,revision:'pending-'+(++revision),state:'waiting',draft,reason:'等待上一轮停止，新版就绪后将自动执行。',createdAt:previous?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
+      conversation.pendingSend={id:clientRequestId,revision:'pending-'+(++revision),state:'waiting',draft,...(draft.waitingHandoff?{waitingQuestions:structuredClone(conversation.requests)}:{}),reason:draft.waitingHandoff?'正在结束原轮等待，确认后交给新模型。':'等待上一轮停止，新版就绪后将自动执行。',createdAt:previous?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
       return route.fulfill({status:202,json:conversation});
     }
     if(url.pathname.endsWith('/cancel-pending-send')){

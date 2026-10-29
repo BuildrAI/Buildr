@@ -299,6 +299,11 @@ export interface HandoffMaterial {
   mode: 'records'|'summary'|'indexed'; sourcePath?: string;
 }
 export interface SendDraft {
+  /** Explicitly end this waiting question round before handing work to a different selection. */
+  waitingHandoff?: {
+    runId: string; participantId: string; generation: string; requestIds: string[];
+    answers?: Array<{ requestId: string; answer: unknown }>;
+  };
   /** Explicit recovery of this exact latest run, without a new user message. */
   continueRunId?: string;
   skipHandoffSummary?: boolean;
@@ -315,6 +320,8 @@ export interface SendDraft {
   handoffSummary?: string;
 }
 export interface PendingSendView {
+  /** Authoritative questions saved before the original native wait is stopped. */
+  waitingQuestions?: PendingRequestView[];
   id: string;
   revision: string;
   state: 'waiting' | 'dispatching' | 'failed';

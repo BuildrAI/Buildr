@@ -55,12 +55,13 @@ await step('停止期间提交待发送内容，刷新保留、可修改取消�
       await panel().locator('.ac-pending-send-text').filter({hasText:'修改后的下一轮指令'}).waitFor();assert.equal(fixture.sends,before);
       await capture(page,'agent-conversation-pending-send.png');
       await panel().getByRole('button',{name:'取消待发送',exact:true}).click();await panel().locator('[data-pending-send-state]').waitFor({state:'hidden'});
-      assert.equal(fixture.sends,before);
+      update({run:run('stopped','dsh'),requests:[]});await reopen();const observesBefore=fixture.observes;await panel().locator('.ac-recovery-action').getByRole('button',{name:'继续',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.sends,before+1,'取消只撤回待发送，之后仍能继续原目标');assert.ok(fixture.observes>observesBefore,'继续会先核对原执行');assert.ok(fixture.sentInputs.at(-1).continueRunId);
+      update({run:run('stopping','dsh')});await reopen();assert.equal(fixture.sends,before+1);
       await input().fill('自动交给新版');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().getByText('已提交，等待自动发送',{exact:true}).waitFor();
       const submitted=fixture.conversation.pendingSend.draft;
       update({pendingSend:undefined,entries:[...fixture.conversation.entries,{id:'auto-new-version',sequence:fixture.conversation.entries.length+1,kind:'message',role:'user',text:submitted.text,createdAt:new Date().toISOString()}],run:run('running','dsh',{generation:'new-service-generation',permissionMode:submitted.permissionMode,model:submitted.model,modelAccountId:submitted.modelAccountId})});
       await panel().getByText('自动交给新版',{exact:true}).waitFor();await panel().locator('[data-pending-send-state]').waitFor({state:'hidden'});
-      await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.sends,before,'界面不自行重发后台已接续的指令');
+      await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.sends,before+1,'界面不自行重发后台已接续的指令');
       await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
     });
 

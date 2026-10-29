@@ -1,0 +1,159 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { createAgentService } from '../../src/application/agent-service.ts';
+import { PendingSends } from '../../src/process/pending-sends.ts';
+import { PendingSendRepository } from '../../src/persistence/pending-send-repository.ts';
+import { ConversationRepository } from '../../src/persistence/conversation-repository.ts';
+import type { AgentExecutor, ContextRef, ExecutorObservation, ExecutorSendInput, SendDraft } from '../../src/contracts.ts';
+
+function executor(id:string, question=false) {
+  const contexts=new Map<string,{observation:ExecutorObservation;finish?():void}>(),inputs:ExecutorSendInput[]=[],replies:unknown[]=[];
+  let stops=0,unknownStop=false;
+  const capabilities={text:true,images:false,questions:true,approval:true,stop:true,resume:true,maxInputBytes:128*1024};
+  const get=(ref:ContextRef)=>contexts.get(ref.id)!;
+  const value:AgentExecutor={descriptor:{id,label:id,capabilities},async open(){return{
+    bindingIdentity:id,capabilities,inspectAccount:async()=>({status:'ready'}),models:async()=>[{id:'a',label:'A'},{id:'b',label:'B'}],
+    beginLogin:async()=>{},cancelLogin:async()=>{},createContext:async()=>{const ref={id:randomUUID()};contexts.set(ref.id,{observation:{status:'idle',tools:[]}});return ref;},
+    resumeContext:async()=>{},readHistory:async()=>[],
+    async send(input){
+      inputs.push(input);const context=get(input.contextRef),executionRef={id:randomUUID()};
+      context.observation={status:'running',tools:[],executionRef};input.onEvent({type:'accepted',executionRef});
+      if(question){
+        input.onEvent({type:'request',request:{id:'native-question',kind:'question',title:'是否验收？',questions:[{id:'result',label:'结果如何？',allowOther:true,options:[{id:'later',label:'稍后确认'},{id:'ok',label:'符合预期'}]}]}});
+        await new Promise<void>(resolve=>{context.finish=resolve;});
+      }else{context.observation={status:'idle',tools:[],executionRef};input.onEvent({type:'item',item:{id:randomUUID(),kind:'message',role:'assistant',text:'new answer',executionId:executionRef.id}});}
+      input.onEvent({type:'completed',status:context.observation.status==='stopped'?'stopped':'completed'});
+    },
+    observe:async({contextRef})=>structuredClone(get(contextRef).observation),
+    canRelease:async({contextRef})=>['stopped','idle'].includes(get(contextRef).observation.status),
+    async stop({contextRef}){stops++;const context=get(contextRef);context.observation={...context.observation,status:unknownStop?'unknown':'stopped',tools:[]};if(!unknownStop)context.finish?.();return context.observation;},
+    async reply({contextRef,answer}){replies.push(answer);const context=get(contextRef);context.observation={...context.observation,status:'idle'};context.finish?.();},
+    close:async()=>{}
+  };}};
+  return{value,inputs,replies,contexts,get stops(){return stops;},setUnknown(value:boolean){unknownStop=value;},finish(){for(const context of contexts.values()){context.observation={...context.observation,status:'stopped',tools:[]};context.finish?.();}}};
+}
+async function until<T>(read:()=>T|Promise<T>,check:(value:T)=>boolean):Promise<T>{for(let n=0;n<200;n++){const value=await read();if(check(value))return value;await new Promise(resolve=>setTimeout(resolve,2));}assert.fail('state did not settle: '+JSON.stringify(await read()).slice(-2000));}
+async function fixture(){
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-question-handoff-')),old=executor('old',true),next=executor('next');
+  const options={dataRoot:root,executors:[old.value,next.value],resolveWorkspace:()=>({rootPath:root}),assertTask:()=>{}};
+  const service=createAgentService(options),repository=new PendingSendRepository(path.join(root,'agent-service'));
+  for(const id of ['old','next'])await service.connections.connect(id,{expectedRevision:service.connections.read(id).revision});
+  const created=await service.conversations.create('scope',{}),draft={expectedRevision:created.revision,connectionId:'old',model:'a',text:'检查当前成果，必要时询问我'};
+  const preview=service.conversations.prepareSend('scope',created.id,draft);
+  service.conversations.send('scope',created.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
+  const chat=await until(()=>service.conversations.read('scope',created.id),view=>view.run?.status==='waiting-question');
+  const intent:NonNullable<SendDraft['waitingHandoff']>={runId:chat.run!.id,participantId:chat.run!.participantId,generation:chat.run!.generation,requestIds:chat.requests.map(request=>request.id)};
+  const queued=(text='',answers?:NonNullable<typeof intent.answers>)=>({expectedRevision:chat.revision,connectionId:'next',model:'a',text,...(!text?{continueRunId:chat.run!.id}:{}),waitingHandoff:{...intent,...(answers?{answers}:{})}});
+  const pump=(afterStop?:()=>void|Promise<void>)=>new PendingSends({dataRoot:root,service,active:()=>true,generationAlive:()=>false,conversationBusy:async(scope,id)=>service.conversationBusy(scope,id),stopWaitingHandoff:async(row,alreadyRequested)=>{
+    const current=service.conversations.read(row.scope,row.conversationId);
+    if(current.run?.status==='waiting-question'&&!alreadyRequested)await service.conversations.stop(row.scope,row.conversationId,{expectedRevision:current.revision,runId:current.run.id,participantId:current.run.participantId,generation:current.run.generation});
+    else if(!['stopped','failed','completed'].includes(current.run!.status))await service.conversations.observe(row.scope,row.conversationId);
+    await afterStop?.();
+  }});
+  return{root,old,next,service,repository,chat,intent,queued,pump,async close(){old.finish();await service.close();fs.rmSync(root,{recursive:true,force:true});}};
+}
+
+for(const mode of ['answer','instruction','continue'] as const)test('waiting handoff '+mode+' keeps exact questions and delivers once without answering the old model',async()=>{
+  const f=await fixture();
+  try{
+    const draft=f.queued(mode==='instruction'?'先处理新的失败路径':'',mode==='answer'?[{requestId:f.chat.requests[0]!.id,answer:{result:'ok'}}]:undefined);
+    const preview=await f.service.conversations.prepareHandoff('scope',f.chat.id,draft);
+    assert.equal(preview.fits,true);assert.equal(f.old.stops,0);assert.equal(f.old.replies.length,0);assert.equal(f.next.inputs.length,0);
+    assert.match(preview.handoff!.body,/是否验收/);assert.match(preview.handoff!.body,mode==='answer'?/用户已提交回答/:/未回答/);
+    assert.throws(()=>f.service.conversations.send('scope',f.chat.id,{...draft,previewToken:preview.token,clientRequestId:'not-queued'}),{code:'agent_handoff_queue_required'});
+    const requestId=randomUUID();let queued=f.service.conversations.queueSend('scope',f.chat.id,{...draft,clientRequestId:requestId});
+    assert.equal(queued.pendingSend?.waitingQuestions?.[0]?.title,'是否验收？');
+    assert.throws(()=>f.service.conversations.queueSend('scope',f.chat.id,{...draft,clientRequestId:randomUUID(),waitingHandoff:{...draft.waitingHandoff!,answers:[{requestId:f.chat.requests[0]!.id,answer:{result:''}}]}}),{code:'agent_question_answer_invalid'});
+    await assert.rejects(f.service.conversations.reply('scope',f.chat.id,f.chat.requests[0]!.id,{expectedRevision:queued.revision,runId:f.intent.runId,participantId:f.intent.participantId,generation:f.intent.generation,answer:{result:'later'}}),{code:'agent_handoff_pending'});
+    const sends=f.pump();await sends.pump();await until(async()=>{await sends.pump();return f.service.conversations.read('scope',f.chat.id);},view=>view.run?.id!==f.intent.runId&&view.run?.status==='completed');
+    await f.pump().pump();
+    assert.equal(f.next.inputs.length,1);assert.equal(f.old.stops,1);assert.equal(f.old.replies.length,0);
+    assert.match(f.next.inputs[0]!.text,/是否验收/);assert.match(f.next.inputs[0]!.text,mode==='answer'?/"回答":\{"result":"ok"\}/:/未回答/);
+    const read=f.service.conversations.read('scope',f.chat.id);
+    assert.equal(read.pendingSend,undefined);assert.equal(read.entries.filter(entry=>entry.id.startsWith('waiting-handoff-')).length,1);
+    assert.equal(read.entries.find(entry=>entry.id.startsWith('waiting-handoff-'))?.role,mode==='answer'?'user':'system');
+    assert.equal(read.entries.filter(entry=>entry.role==='user'&&entry.kind==='message').length,mode==='instruction'?2:1);
+    queued=f.service.conversations.queueSend('scope',f.chat.id,{...draft,clientRequestId:requestId});assert.equal(queued.pendingSend,undefined);assert.equal(f.next.inputs.length,1);
+  }finally{await f.close();}
+});
+
+test('failed target validation and cancellation leave no submitted business answer in future history',async()=>{
+  const f=await fixture();
+  try{
+    const requestId=randomUUID(),draft=f.queued('',[{requestId:f.chat.requests[0]!.id,answer:{result:'ok'}}]);
+    f.service.conversations.queueSend('scope',f.chat.id,{...draft,clientRequestId:requestId});
+    const sends=f.pump(async()=>{const next=f.service.connections.read('next');if(next.enabled)await f.service.connections.disconnect('next',{expectedRevision:next.revision});});
+    await until(async()=>{await sends.pump();return f.repository.read('scope',f.chat.id);},row=>row?.state==='failed');
+    const pending=f.repository.read('scope',f.chat.id)!;
+    f.service.conversations.cancelPendingSend('scope',f.chat.id,{expectedPendingRevision:pending.revision});
+    const current=f.service.conversations.read('scope',f.chat.id);
+    assert.ok(current.entries.some(entry=>entry.id.startsWith('waiting-question-')));
+    assert.equal(current.entries.some(entry=>entry.id.startsWith('waiting-handoff-')),false);
+    assert.equal(f.next.inputs.length,0);
+  }finally{await f.close();}
+});
+
+test('cancelling before stop leaves the question actionable; unknown stop survives a new pump without replay',async()=>{
+  const f=await fixture();
+  try{
+    const draft=f.queued('新的要求'),id=randomUUID();
+    let queued=f.service.conversations.queueSend('scope',f.chat.id,{...draft,clientRequestId:id});
+    f.service.conversations.cancelPendingSend('scope',f.chat.id,{expectedPendingRevision:queued.pendingSend!.revision});
+    await f.pump().pump();assert.equal(f.old.stops,0);assert.equal(f.next.inputs.length,0);assert.equal(f.service.conversations.read('scope',f.chat.id).requests.length,1);
+    f.old.setUnknown(true);
+    queued=f.service.conversations.queueSend('scope',f.chat.id,{...draft,clientRequestId:randomUUID()});
+    await f.pump().pump();assert.equal(f.old.stops,1);assert.equal(f.next.inputs.length,0);
+    const pending=f.repository.read('scope',f.chat.id)!;assert.equal(pending.state,'waiting');assert.equal(pending.handoffStopRequested,true);
+    assert.ok(f.service.conversations.read('scope',f.chat.id).entries.some(entry=>entry.id.startsWith('waiting-question-')&&entry.text.includes('是否验收')));
+    assert.ok(f.repository.claim(pending,'crashed-receiver',()=>false));
+    await f.pump().pump();assert.equal(f.old.stops,1);assert.equal(f.next.inputs.length,0);assert.equal(f.repository.read('scope',f.chat.id)?.draft.text,'新的要求');
+    f.service.conversations.cancelPendingSend('scope',f.chat.id,{expectedPendingRevision:f.repository.read('scope',f.chat.id)!.revision});
+    f.old.finish();await f.service.conversations.observe('scope',f.chat.id);await f.pump().pump();assert.equal(f.next.inputs.length,0);
+  }finally{await f.close();}
+});
+
+test('an answer through another entry invalidates an old preview and changed identities cannot hand off',async()=>{
+  const f=await fixture();
+  try{
+    const draft=f.queued('另一个要求');
+    assert.throws(()=>f.service.conversations.prepareSend('scope',f.chat.id,{...draft,waitingHandoff:{...draft.waitingHandoff!,runId:'other-run'}}),{code:'agent_handoff_stale'});
+    assert.throws(()=>f.service.conversations.prepareSend('scope',f.chat.id,{...draft,connectionId:'old'}),{code:'agent_handoff_unchanged'});
+    await f.service.conversations.reply('scope',f.chat.id,f.chat.requests[0]!.id,{expectedRevision:f.chat.revision,runId:f.intent.runId,participantId:f.intent.participantId,generation:f.intent.generation,answer:{result:'later'}});
+    const latest=f.service.conversations.read('scope',f.chat.id);
+    assert.throws(()=>f.service.conversations.queueSend('scope',f.chat.id,{...draft,expectedRevision:latest.revision,clientRequestId:randomUUID()}),{code:'agent_handoff_answered'});
+    assert.equal(f.old.stops,0);assert.equal(f.next.inputs.length,0);
+  }finally{await f.close();}
+});
+
+test('a newly arrived approval or question invalidates the saved intent before stopping',async()=>{
+  for(const kind of ['approval','question'] as const){
+    const f=await fixture();
+    try{
+      f.service.conversations.queueSend('scope',f.chat.id,{...f.queued('new work'),clientRequestId:randomUUID()});
+      f.old.inputs[0]!.onEvent({type:'request',request:{id:'late-'+kind,kind,title:'another decision'}});
+      await f.pump().pump();
+      assert.equal(f.repository.read('scope',f.chat.id)?.state,'failed');assert.equal(f.old.stops,0);assert.equal(f.next.inputs.length,0);
+    }finally{await f.close();}
+  }
+});
+
+test('a reply accepted by a retained old entry during stop prevents new delivery and preserves the pending answer',async()=>{
+  const f=await fixture();
+  try{
+    const requestId=randomUUID(),draft=f.queued('',[{requestId:f.chat.requests[0]!.id,answer:{result:'later'}}]);
+    f.service.conversations.queueSend('scope',f.chat.id,{...draft,clientRequestId:requestId});
+    const repository=new ConversationRepository(path.join(f.root,'agent-service'));
+    await f.pump(()=>{
+      const record=repository.readConversation(f.chat.id)!,prior=record.view.revision;
+      record.view.entries.push({id:'reply-'+f.chat.requests[0]!.id,kind:'notice',role:'user',text:'accepted by an older reply route',sequence:record.view.entries.at(-1)!.sequence+1,status:'accepted',runId:f.intent.runId,createdAt:new Date().toISOString()});
+      record.view.revision=randomUUID();repository.saveConversation(record,prior);
+    }).pump();
+    const pending=f.repository.read('scope',f.chat.id)!;
+    assert.equal(pending.state,'failed');assert.match(pending.reason,/已有答复/);assert.deepEqual(pending.draft.waitingHandoff?.answers,draft.waitingHandoff?.answers);
+    assert.equal(f.next.inputs.length,0);
+  }finally{await f.close();}
+});

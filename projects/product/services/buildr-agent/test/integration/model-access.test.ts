@@ -14,6 +14,23 @@ function provider(infer:(input:ProviderInferenceInput)=>Promise<Response>,protoc
 }
 const chat=(message:ProtocolJson)=>Response.json({choices:[{message,finish_reason:message.tool_calls?'tool_calls':'stop'}],usage:{prompt_tokens:12,completion_tokens:4}});
 
+test('fresh quota exhaustion rejects new leases and retained gateway calls, without affecting another account',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-model-quota-'));let exhausted:string|undefined,calls=0,stale=false;
+ const source:ModelProvider={id:'fixture',label:'Fixture',async open({accountId}){return{protocol:'chat-completions',inspect:async()=>({status:'ready',models:[model],quota:{available:true,observedAt:new Date().toISOString(),remainingPercent:exhausted===accountId?0:50,stale}}),beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>{calls++;return chat({content:'ok'});},close:async()=>{}};}};
+ const access=createModelAccess({root,providers:[source]});
+ try{
+  const account=await access.accounts.add({provider:'fixture'});await checkEnabled(access,account.id);
+  const other=await access.accounts.add({provider:'fixture'});await checkEnabled(access,other.id);
+  const input={accountId:account.id,modelId:model.id,agentId:'codex',conversationId:'one',runId:'one'},lease=await access.leases.create(input);
+  exhausted=account.id;await access.accounts.check(account.id);
+  await assert.rejects(access.leases.create({...input,conversationId:'two'}),{code:'model_quota_exhausted'});
+  const response=await fetch(lease.baseUrl+'/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+lease.apiKey,'Content-Type':'application/json'},body:JSON.stringify({model:lease.model,messages:[]})});
+  assert.equal(response.status,429);assert.equal((await response.json()).error.code,'model_quota_exhausted');assert.equal(calls,0);
+  assert.ok(await access.leases.create({...input,accountId:other.id}));
+  stale=true;await access.accounts.check(account.id);assert.ok(await access.leases.create({...input,conversationId:'stale-observation'}));
+ }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});
+
 test('retiring model gateway observes successor account state without writing stale metadata',async()=>{
   const root=await mkdtemp(join(tmpdir(),'buildr-model-retiring-'));
   const source=provider(async()=>chat({role:'assistant',content:'ok'}));

@@ -9,6 +9,7 @@ import { effectiveModel, selectedOffering, modelConfiguration } from './model-pr
 import type {ModelPreference,ModelPreferenceUpdate} from './contracts.ts';
 import { translateRequest, translateResponse, type OpaqueReasoning } from './protocols.ts';
 import { modelFailure, upstreamFailure } from './errors.ts';
+import { modelQuotaFailure } from './quota.ts';
 
 const object = (value: unknown): ProtocolJson => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as ProtocolJson : {};
 const safeId = (value: string) => /^[a-zA-Z0-9_-]{1,100}$/.test(value);
@@ -292,6 +293,7 @@ export class ModelAccessApplication {
     const model = this.view(account).models.find(model => model.id === input.modelId);
     if(model?.enabled===false)throw new ModelAccessError('model_disabled','所选模型已停用，请重新选择。');
     const offering=model?selectedOffering(model,input.serviceTier):undefined; if (!offering) throw new ModelAccessError('model_unavailable', '所选模型不在账号当前目录中。');
+    const quotaFailure = modelQuotaFailure(account, offering, Date.parse(this.now)); if (quotaFailure) throw quotaFailure;
     if (!input.agentId || !input.conversationId || !input.runId) throw new ModelAccessError('model_binding_invalid','模型绑定缺少准确执行身份。',400);
     const identity = digest(JSON.stringify([account.id,account.identity,input.modelId,input.conversationId,input.agentId,modelConfiguration(offering,input.serviceTier)]));
     const existing = this.leasesByIdentity.get(identity); if (existing) { existing.input.runId = input.runId; return structuredClone(existing.view); }
@@ -353,6 +355,7 @@ export class ModelAccessApplication {
       lease.requests.add(controller);
       const runtime = await this.runtime(account.id), opaque = this.opaque(await this.encryptionKey(),lease.view.identity);
       const binding={...lease.input};
+      const quotaFailure = modelQuotaFailure(account, lease.view.offering, Date.parse(this.now)); if (quotaFailure) throw quotaFailure;
       const translated = translateRequest(body,protocol,runtime.protocol,opaque); translated.model = binding.modelId;
       delete translated.service_tier;if(binding.serviceTier)translated.service_tier=binding.serviceTier;
       const upstream = await runtime.infer({body:translated,modelId:binding.modelId,signal:controller.signal,context:{accountId:account.id,agentId:binding.agentId,conversationId:binding.conversationId,runId:binding.runId,requestId:randomUUID()}});

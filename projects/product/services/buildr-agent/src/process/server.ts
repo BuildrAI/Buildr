@@ -46,18 +46,24 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     return { identity, activity, accepting, retiring, instances: readProcessInstances(options.dataRoot).filter(record => !record.stopped && live(record.identity.pid)).map(record => ({generation:record.identity.generation,runtimeDigest:record.identity.runtime.digest,retiring:Boolean(record.retiring)})), ...(pending && pending.runtime.digest !== options.runtime.digest ? { pendingRuntime: pending.runtime, diagnostic: pending.diagnostic } : {}) };
   }
   async function recipient(scope: string, id: string, generation?: string): Promise<ProcessRecord | undefined> {
-    const run = repository.readConversation(id)?.view.run;
+    const conversation = repository.readConversation(id)?.view;
+    const run = conversation?.run;
     const ownerGeneration = generation ?? run?.generation;
     if (!ownerGeneration || ownerGeneration === identity.generation) return;
     const record = readProcessInstances(options.dataRoot).find(record => record.identity.generation === ownerGeneration && !record.stopped);
     if (!record || !live(record.identity.pid)) return;
     if (record.identity.profileId !== options.profileId) throw new AgentServiceError('agent_process_identity_mismatch', '执行所属配置域不匹配。', 409);
     if (generation) return record;
-    const state = await request(record.origin, record.token, '/conversation-state', { scope, id }, AbortSignal.timeout(3000)).catch(error => {
+    let state = await request(record.origin, record.token, '/conversation-state', { scope, id }, AbortSignal.timeout(3000)).catch(error => {
       if (error instanceof AgentServiceError) throw error;
       throw new AgentServiceError('agent_process_state_unconfirmed', '上一轮后台状态尚未确认，指令已保存并继续等待。', 503);
     });
     if (state.generation !== ownerGeneration) throw new AgentServiceError('agent_process_identity_mismatch', '执行所属后台身份不匹配。', 409);
+    if(state.busy && run && ['completed','failed','stopped'].includes(run.status) && !conversation!.requests.length && run.tools.every(tool=>tool.status==='completed')){
+      const observed=await request(record.origin,record.token,'/conversation-state',{sourceId:executionScopeRef(scope,options.legacySourceId).sourceId,scope,id,observe:true,runId:run.id,generation:run.generation},AbortSignal.timeout(15000));
+      const latest=repository.readConversation(id)?.view.run;
+      if(observed.observed===true&&observed.generation===ownerGeneration&&observed.runId===run.id&&latest?.id===run.id&&latest.generation===ownerGeneration)state=observed;
+    }
     return state.busy ? record : undefined;
   }
   async function conversationBusy(scope: string, id: string): Promise<boolean> {
@@ -70,7 +76,28 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     try { return await request(record.origin, record.token, route, {...input,forwarded:[...visited,identity.instanceId]}); }
     catch (error) { if (error instanceof AgentServiceError) throw error; throw new AgentServiceError('agent_operation_result_unknown', '原后台操作结果尚待核对，不会自动重发。', 503); }
   }
-  const sends = new PendingSends({dataRoot:options.dataRoot,service,active:()=>!closing&&accepting&&!retiring&&(!pending||pending.runtime.digest===options.runtime.digest)&&readProcessRecord(options.dataRoot)?.identity.instanceId===instanceId,generationAlive:generation=>generationAlive(options.dataRoot,generation),conversationBusy});
+  const sends = new PendingSends({dataRoot:options.dataRoot,service,active:()=>!closing&&accepting&&!retiring&&(!pending||pending.runtime.digest===options.runtime.digest)&&readProcessRecord(options.dataRoot)?.identity.instanceId===instanceId,generationAlive:generation=>generationAlive(options.dataRoot,generation),conversationBusy,stopWaitingHandoff:async(row,alreadyRequested)=>{
+    service.checkWaitingHandoff(row.scope,row.conversationId,row.id);
+    const view=service.conversations.read(row.scope,row.conversationId), run=view.run!;
+    if(['stopped','failed','completed'].includes(run.status)&&!view.requests.length&&run.tools.every(tool=>tool.status==='completed'))return;
+    const stop=run.status==='waiting-question'&&!alreadyRequested;
+    const operation=stop?'conversations.stop':'conversations.observe';
+    const control={expectedRevision:view.revision,runId:run.id,participantId:run.participantId,generation:run.generation};
+    const target=await recipient(row.scope,row.conversationId,run.generation);
+    try {
+      if(target)await forward(target,'/operations',{contract:AGENT_EXECUTION_CONTRACTS.operations,sourceId:executionScopeRef(row.scope,options.legacySourceId).sourceId,operation,args:stop?[row.scope,row.conversationId,control]:[row.scope,row.conversationId]});
+      else if(stop)await service.conversations.stop(row.scope,row.conversationId,control);
+      else await service.conversations.observe(row.scope,row.conversationId);
+    }catch(error){
+      const latest=service.conversations.read(row.scope,row.conversationId).run;
+      if(latest?.id===run.id&&['unknown','stopping'].includes(latest.status))throw new AgentServiceError('agent_process_state_unconfirmed',latest.diagnostic??'停止尚未确认，交接内容已保存，正在核对原执行。',409);
+      throw error;
+    }
+    service.checkWaitingHandoff(row.scope,row.conversationId,row.id);
+    const latest=service.conversations.read(row.scope,row.conversationId).run!;
+    if(latest.status==='waiting-question')throw new AgentServiceError('agent_handoff_stop_unconfirmed','原轮仍在等待回答，尚未确认停止。交接内容已保留，可修改后重试或取消。',409);
+    if(latest.status==='unknown')throw new AgentServiceError('agent_process_state_unconfirmed',latest.diagnostic??'原轮停止结果尚未确认，正在核对，未发送给新模型。',409);
+  }});
   function scope(sourceId: string, key: unknown): void {
     if (typeof key !== 'string' || !key || executionScopeRef(key, options.legacySourceId).sourceId !== sourceId) throw new AgentServiceError('agent_host_source_mismatch', '执行范围不属于当前接入来源。', 409);
   }
@@ -101,7 +128,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
         const released=await service.observeForRelease(input.scope,input.id,input.runId,input.generation);
         json(res,200,{generation:identity.generation,runId:input.runId,observed:true,busy:!released}); return;
       }
-      if (retiring) await service.releaseIdleSources();
+      if (retiring) await service.releaseIdleSources({workspaceId:input.scope,id:input.id});
       json(res, 200, {generation:identity.generation,busy:service.conversationBusy(input.scope,input.id) || retiring && service.retainsConversationSource(input.scope,input.id)}); return;
     }
     if (req.url === '/revoke') {
